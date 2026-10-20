@@ -25,19 +25,30 @@ impl App {
             draw_logo(ui, 18.0, p.accent);
             ui.add_space(2.0);
             egui::menu::menu_button(ui, RichText::new("Файл ▾").color(p.text).strong(), |ui| {
-                if ui.button("Открыть COMTRADE (.cfg/.dat)…   Ctrl+O").clicked() {
-                    cmds.push(Command::Open);
-                    ui.close_menu();
-                }
-                if ui.button("Демо-осциллограмма (авария A-0)").clicked() {
-                    cmds.push(Command::Demo);
-                    ui.close_menu();
+                for (label, cmd) in [
+                    ("Открыть COMTRADE (.cfg/.dat)…   Ctrl+O", Command::Open),
+                    ("Демо-осциллограмма (авария A-0)", Command::Demo),
+                    ("Проводник", Command::ToggleExplorer),
+                ] {
+                    if ui.button(label).clicked() {
+                        cmds.push(cmd);
+                        ui.close_menu();
+                    }
                 }
                 ui.separator();
-                if ui.button("Экспорт каналов в CSV…").clicked() {
-                    cmds.push(Command::ExportCsv);
-                    ui.close_menu();
+                for (label, cmd) in [
+                    ("Сохранить как COMTRADE…   Ctrl+S", Command::Save),
+                    ("Экспорт каналов в CSV…", Command::ExportCsv),
+                    ("Отправка и архивирование (.zip)…", Command::Archive),
+                    ("Печать — экспорт изображения…   Ctrl+P", Command::Print),
+                    ("Параметры файла…", Command::FileParams),
+                ] {
+                    if ui.button(label).clicked() {
+                        cmds.push(cmd);
+                        ui.close_menu();
+                    }
                 }
+                ui.separator();
                 if ui.button("Открыть библиотеку характеристик .fvb…").clicked() {
                     cmds.push(Command::OpenFvb);
                     ui.close_menu();
@@ -62,6 +73,15 @@ impl App {
                     .clicked()
                 {
                     self.show_about = true;
+                }
+                // Minimise / restore the ribbon (Настройка панели инструментов).
+                let min = self.ribbon_minimized;
+                if ui
+                    .add(egui::Button::new(RichText::new(if min { "▾" } else { "▴" }).color(p.text)).frame(false))
+                    .on_hover_text("Свернуть/развернуть ленту")
+                    .clicked()
+                {
+                    cmds.push(Command::ToggleRibbonMin);
                 }
                 // Style switcher (MENU 200)
                 egui::ComboBox::from_id_salt("skincombo")
@@ -91,18 +111,20 @@ impl App {
             }
         });
 
-        // ---- Row 3: ribbon body (fixed height) ----
-        egui::Frame::none()
-            .fill(p.tab_active)
-            .stroke(egui::Stroke::new(1.0f32, p.group_border))
-            .inner_margin(egui::Margin::symmetric(6.0, 4.0))
-            .show(ui, |ui| {
-                ui.set_min_height(86.0);
-                ui.horizontal_top(|ui| match self.tab {
-                    RibbonTab::Home => self.ribbon_home(ui, &mut cmds),
-                    RibbonTab::Omp => self.ribbon_omp(ui, &mut cmds),
+        // ---- Row 3: ribbon body (fixed height; hidden when minimised) ----
+        if !self.ribbon_minimized {
+            egui::Frame::none()
+                .fill(p.tab_active)
+                .stroke(egui::Stroke::new(1.0f32, p.group_border))
+                .inner_margin(egui::Margin::symmetric(6.0, 4.0))
+                .show(ui, |ui| {
+                    ui.set_min_height(86.0);
+                    ui.horizontal_top(|ui| match self.tab {
+                        RibbonTab::Home => self.ribbon_home(ui, &mut cmds),
+                        RibbonTab::Omp => self.ribbon_omp(ui, &mut cmds),
+                    });
                 });
-            });
+        }
 
         for c in cmds {
             self.dispatch(c);

@@ -251,12 +251,36 @@ impl App {
     // ---- Векторная диаграмма ----
     fn view_vector(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
+            // Options bar (MENU 355).
+            ui.horizontal_wrapped(|ui| {
+                ui.checkbox(&mut self.vec_show_values, "Показывать значения");
+                ui.checkbox(&mut self.vec_radians, "Углы в радианах");
+                ui.checkbox(&mut self.vec_direction_only, "Только направление");
+                ui.checkbox(&mut self.vec_abs_angle, "Абсолютный угол");
+            });
+            ui.separator();
+            let radians = self.vec_radians;
+            let dir_only = self.vec_direction_only;
+            let show_values = self.vec_show_values;
+            let abs_angle = self.vec_abs_angle;
             let Some(d) = self.active_doc() else {
                 ui.centered_and_justified(|ui| ui.label("Загрузите осциллограмму для векторной диаграммы."));
                 return;
             };
             ui.label(format!("Векторы при t = {:.4} с (осн. визир)", d.osc.time.get(d.main_cursor).copied().unwrap_or(0.0)));
             let k = d.main_cursor;
+            let is_voltage = |ch: &fvb_core::comtrade::AnalogChannel| ch.unit.to_lowercase().starts_with('v') || ch.unit.to_lowercase().contains('в');
+            // Reference angle: when not absolute, measure relative to the first
+            // visible voltage phasor.
+            let ref_ang = if abs_angle {
+                0.0
+            } else {
+                d.osc.analog.iter().enumerate()
+                    .find(|(idx, ch)| d.chans[*idx].on_vector && is_voltage(ch))
+                    .and_then(|(idx, _)| d.analysis.phasors.get(idx).and_then(|p| p.get(k)))
+                    .map(|z| z.arg())
+                    .unwrap_or(0.0)
+            };
             let mut u_max = 1e-9;
             let mut i_max = 1e-9;
             for (idx, ch) in d.osc.analog.iter().enumerate() {
@@ -264,21 +288,29 @@ impl App {
                     continue;
                 }
                 let m = d.analysis.phasors.get(idx).and_then(|p| p.get(k)).map(|z| z.norm()).unwrap_or(0.0);
-                if ch.unit.to_lowercase().starts_with('v') || ch.unit.to_lowercase().contains('в') {
+                if is_voltage(ch) {
                     u_max = f64::max(u_max, m);
                 } else {
                     i_max = f64::max(i_max, m);
                 }
             }
-            let mut arrows: Vec<(String, egui::Color32, [f64; 2])> = Vec::new();
+            struct Arrow { name: String, color: egui::Color32, v: [f64; 2], mag: f64, ang_deg: f64 }
+            let mut arrows: Vec<Arrow> = Vec::new();
             for (idx, ch) in d.osc.analog.iter().enumerate() {
                 if !d.chans[idx].on_vector {
                     continue;
                 }
                 let z = d.analysis.phasors.get(idx).and_then(|p| p.get(k)).copied().unwrap_or(Complex64::new(0.0, 0.0));
-                let is_v = ch.unit.to_lowercase().starts_with('v') || ch.unit.to_lowercase().contains('в');
-                let scale = if is_v { 1.0 / u_max } else { 1.0 / i_max };
-                arrows.push((ch.id.clone(), d.chans[idx].color, [z.re * scale, z.im * scale]));
+                let mag = z.norm();
+                let ang = z.arg() - ref_ang;
+                let draw_len = if dir_only { 1.0 } else if is_voltage(ch) { mag / u_max } else { mag / i_max };
+                arrows.push(Arrow {
+                    name: ch.id.clone(),
+                    color: d.chans[idx].color,
+                    v: [draw_len * ang.cos(), draw_len * ang.sin()],
+                    mag,
+                    ang_deg: ang.to_degrees(),
+                });
             }
             Plot::new("vectorplot").data_aspect(1.0).show(ui, |pu| {
                 let circle: Vec<[f64; 2]> = (0..=180)
@@ -288,9 +320,18 @@ impl App {
                     })
                     .collect();
                 pu.line(Line::new(PlotPoints::from(circle)).color(egui::Color32::DARK_GRAY));
-                for (name, color, v) in &arrows {
-                    pu.line(Line::new(PlotPoints::from(vec![[0.0, 0.0], *v])).color(*color).width(2.5_f32).name(name));
-                    pu.points(Points::new(vec![*v]).radius(4.0_f32).color(*color));
+                for a in &arrows {
+                    let label = if show_values {
+                        if radians {
+                            format!("{}  {:.3} ∠{:.2} рад", a.name, a.mag, a.ang_deg.to_radians())
+                        } else {
+                            format!("{}  {:.3} ∠{:+.1}°", a.name, a.mag, a.ang_deg)
+                        }
+                    } else {
+                        a.name.clone()
+                    };
+                    pu.line(Line::new(PlotPoints::from(vec![[0.0, 0.0], a.v])).color(a.color).width(2.5_f32).name(label));
+                    pu.points(Points::new(vec![a.v]).radius(4.0_f32).color(a.color));
                 }
             });
         });

@@ -100,6 +100,57 @@ pub fn load(path: impl AsRef<Path>) -> Result<Oscillogram, ComtradeError> {
     Ok(rec)
 }
 
+/// Serialise an oscillogram to a COMTRADE 1999 ASCII `(cfg, dat)` pair
+/// (analog + digital channels; computed channels are not COMTRADE channels).
+pub fn write(osc: &Oscillogram) -> (String, String) {
+    let na = osc.analog.len();
+    let nd = osc.digital.len();
+    let n = osc.sample_count();
+    let rate = if osc.sample_rate > 0.0 {
+        osc.sample_rate
+    } else if n > 1 && osc.time[1] > osc.time[0] {
+        1.0 / (osc.time[1] - osc.time[0])
+    } else {
+        0.0
+    };
+
+    let mut cfg = String::new();
+    cfg.push_str(&format!("{},{},1999\n", osc.station, osc.device));
+    cfg.push_str(&format!("{},{}A,{}D\n", na + nd, na, nd));
+    for (i, ch) in osc.analog.iter().enumerate() {
+        cfg.push_str(&format!(
+            "{},{},{},,{},{},{},0,-32768,32767,{},{},{}\n",
+            i + 1, ch.id, ch.phase, ch.unit, ch.a, ch.b, ch.primary, ch.secondary,
+            if ch.is_primary { "P" } else { "S" },
+        ));
+    }
+    for (i, ch) in osc.digital.iter().enumerate() {
+        cfg.push_str(&format!("{},{},{},,0\n", i + 1, ch.id, ch.phase));
+    }
+    cfg.push_str(&format!("{}\n", osc.line_freq));
+    cfg.push_str("1\n");
+    cfg.push_str(&format!("{},{}\n", rate, n));
+    cfg.push_str("01/01/2000,00:00:00.000000\n");
+    cfg.push_str("01/01/2000,00:00:00.000000\n");
+    cfg.push_str("ASCII\n1\n");
+
+    let mut dat = String::new();
+    for k in 0..n {
+        let ts = (osc.time.get(k).copied().unwrap_or(0.0) * 1e6).round() as i64;
+        dat.push_str(&format!("{},{}", k + 1, ts));
+        for ch in &osc.analog {
+            let v = ch.samples.get(k).copied().unwrap_or(0.0);
+            let raw = if ch.a.abs() > 1e-12 { (v - ch.b) / ch.a } else { v };
+            dat.push_str(&format!(",{}", raw.round() as i64));
+        }
+        for ch in &osc.digital {
+            dat.push_str(&format!(",{}", if ch.samples.get(k).copied().unwrap_or(false) { 1 } else { 0 }));
+        }
+        dat.push('\n');
+    }
+    (cfg, dat)
+}
+
 /// Parse from in-memory cfg text + dat bytes (used by tests and the `.cff` path).
 pub fn parse(cfg_text: &str, dat: &[u8]) -> Result<Oscillogram, ComtradeError> {
     let (mut rec, fmt) = parse_cfg(cfg_text)?;

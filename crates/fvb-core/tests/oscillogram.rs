@@ -226,3 +226,25 @@ fn analysis_phase_phase_and_differential() {
     // During an A-ground fault the residual (differential) current is significant.
     assert!(id > 0.1, "fault should produce residual current, got {id}");
 }
+
+#[test]
+fn comtrade_write_round_trips() {
+    let rec = comtrade::parse(
+        include_str!("../../../assets/demo/demo_fault.cfg"),
+        include_bytes!("../../../assets/demo/demo_fault.dat"),
+    )
+    .expect("demo");
+    let (cfg, dat) = comtrade::write(&rec);
+    let rec2 = comtrade::parse(&cfg, dat.as_bytes()).expect("reparse written");
+    assert_eq!(rec2.analog.len(), rec.analog.len());
+    assert_eq!(rec2.digital.len(), rec.digital.len());
+    assert_eq!(rec2.sample_count(), rec.sample_count());
+    // Values survive the integer-count round trip within one quantisation step.
+    for (a, b) in rec.analog.iter().zip(rec2.analog.iter()) {
+        assert_eq!(a.id, b.id);
+        let step = a.a.abs().max(1e-9);
+        for (x, y) in a.samples.iter().zip(b.samples.iter()) {
+            assert!((x - y).abs() <= step * 1.5 + 1e-6, "sample {x} vs {y} (step {step})");
+        }
+    }
+}

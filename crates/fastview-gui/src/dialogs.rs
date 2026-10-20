@@ -8,6 +8,45 @@ impl App {
         self.about_window(ctx);
         self.channel_props_window(ctx);
         self.comment_window(ctx);
+        self.file_params_window(ctx);
+    }
+
+    fn file_params_window(&mut self, ctx: &egui::Context) {
+        if !self.show_file_params {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Параметры файла")
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                let Some(d) = self.active_doc() else {
+                    ui.label("Нет активной осциллограммы.");
+                    return;
+                };
+                let o = &d.osc;
+                let dur = o.time.last().copied().unwrap_or(0.0) - o.time.first().copied().unwrap_or(0.0);
+                egui::Grid::new("fileparams").num_columns(2).spacing([12.0, 5.0]).show(ui, |ui| {
+                    let row = |ui: &mut egui::Ui, k: &str, v: String| {
+                        ui.label(k);
+                        ui.label(egui::RichText::new(v).strong());
+                        ui.end_row();
+                    };
+                    row(ui, "Имя:", d.name.clone());
+                    row(ui, "Станция:", if o.station.is_empty() { "—".into() } else { o.station.clone() });
+                    row(ui, "Устройство:", if o.device.is_empty() { "—".into() } else { o.device.clone() });
+                    row(ui, "Ревизия COMTRADE:", format!("{}", o.rev_year));
+                    row(ui, "Частота сети:", format!("{} Гц", o.line_freq));
+                    row(ui, "Частота дискретизации:", format!("{:.0} Гц", o.sample_rate));
+                    row(ui, "Отсчётов за период:", format!("{}", o.samples_per_cycle()));
+                    row(ui, "Аналоговых каналов:", format!("{}", o.analog.len()));
+                    row(ui, "Дискретных каналов:", format!("{}", o.digital.len()));
+                    row(ui, "Число отсчётов:", format!("{}", o.sample_count()));
+                    row(ui, "Длительность:", format!("{:.4} с", dur));
+                });
+            });
+        self.show_file_params = open;
     }
 
     fn about_window(&mut self, ctx: &egui::Context) {
@@ -156,6 +195,9 @@ impl App {
                 });
             });
         let level = ed.level_str.trim().replace(',', ".").parse::<f64>().ok();
+        if matches!(action, Some(CommentAction::Save) | Some(CommentAction::Delete)) {
+            self.snapshot_undo();
+        }
         match action {
             Some(CommentAction::Save) => {
                 if let Some(doc) = self.active.and_then(|a| self.docs.get_mut(a)) {

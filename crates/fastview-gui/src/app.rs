@@ -280,13 +280,21 @@ pub fn default_channel_color(ch: &fvb_core::comtrade::AnalogChannel, i: usize) -
     egui::Color32::from_rgb(r, g, b)
 }
 
+/// A snapshot of a document's editable view-state for undo/redo.
+#[derive(Clone)]
+pub struct DocSnapshot {
+    pub chans: Vec<ChanView>,
+    pub comments: Vec<Comment>,
+    pub computed: Vec<Computed>,
+}
+
 /// Commands dispatched from the ribbon, QAT, keybinds and context menus. The
 /// numeric ids mirror the original's command ids where they are meaningful.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     Open,          // Ctrl+O / QAT
-    Save,          // Ctrl+S
-    Print,         // Ctrl+P
+    Save,          // Ctrl+S  (save as COMTRADE)
+    Print,         // Ctrl+P  (export image)
     Copy,          // Ctrl+C
     Paste,         // Ctrl+V
     Undo,          // Ctrl+Z
@@ -294,6 +302,10 @@ pub enum Command {
     Demo,
     ExportCsv,
     OpenFvb,
+    FileParams,
+    Archive,
+    ToggleExplorer,
+    ToggleRibbonMin,
     Show(View),
     SetPrimaryValues(bool),
     InvertVisible,
@@ -333,6 +345,12 @@ pub struct App {
     pub formula_name: String,
     pub formula_text: String,
 
+    // vector diagram options (MENU 355)
+    pub vec_radians: bool,
+    pub vec_direction_only: bool,
+    pub vec_show_values: bool,
+    pub vec_abs_angle: bool,
+
     // analysis / omp
     pub analysis_tab: AnalysisTab,
     pub line: LineParams,
@@ -341,13 +359,23 @@ pub struct App {
     /// Remote-end document for the double-ended ОМП method.
     pub omp_remote: Option<usize>,
 
-    // dialogs
+    // dialogs / panels
     pub show_about: bool,
+    pub show_file_params: bool,
+    pub show_explorer: bool,
+    pub explorer_dir: std::path::PathBuf,
+    pub ribbon_minimized: bool,
     pub props_channel: Option<usize>,
     pub comment_edit: Option<CommentEdit>,
+    /// Pending image-export target (filled once the screenshot arrives).
+    pub want_screenshot: Option<std::path::PathBuf>,
 
     /// Channels copied for merging oscillograms (Объединение).
     pub channel_clip: Vec<ClipChan>,
+
+    // undo / redo of per-document view edits
+    pub undo_stack: Vec<(usize, DocSnapshot)>,
+    pub redo_stack: Vec<(usize, DocSnapshot)>,
 
     pub status: String,
 }
@@ -383,6 +411,10 @@ impl App {
             primary_values: false,
             formula_name: "Uab".to_string(),
             formula_text: "Ua-Ub".to_string(),
+            vec_radians: false,
+            vec_direction_only: false,
+            vec_show_values: true,
+            vec_abs_angle: true,
             analysis_tab: AnalysisTab::Symmetric,
             line: LineParams {
                 r1_per_km: 0.1,
@@ -395,9 +427,16 @@ impl App {
             neutral: NeutralMode::Grounded,
             omp_remote: None,
             show_about: false,
+            show_file_params: false,
+            show_explorer: false,
+            explorer_dir: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            ribbon_minimized: false,
             props_channel: None,
             comment_edit: None,
+            want_screenshot: None,
             channel_clip: Vec::new(),
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
             status: "Готово".to_string(),
         };
         app.ensure_block_state();
@@ -466,16 +505,19 @@ impl App {
             },
             Command::ExportCsv => self.export_csv(),
             Command::OpenFvb => self.open_fvb(),
-            Command::Save => {
-                self.status = "Сохранение: экспортируйте каналы в CSV (Экспорт).".into()
-            }
-            Command::Print => {
-                self.status = "Печать заменена экспортом (CSV / изображение диаграммы).".into()
-            }
+            Command::FileParams => self.show_file_params = true,
+            Command::Archive => self.archive_record(),
+            Command::ToggleExplorer => self.show_explorer = !self.show_explorer,
+            Command::ToggleRibbonMin => self.ribbon_minimized = !self.ribbon_minimized,
+            Command::Save => self.save_comtrade(),
+            Command::Print => self.request_image_export(),
             Command::Copy => self.copy_channels_for_merge(),
-            Command::Paste => self.paste_channels_for_merge(),
-            Command::Undo => self.status = "Отмена.".into(),
-            Command::Redo => self.status = "Возврат.".into(),
+            Command::Paste => {
+                self.snapshot_undo();
+                self.paste_channels_for_merge();
+            }
+            Command::Undo => self.undo(),
+            Command::Redo => self.redo(),
             Command::Show(v) => {
                 self.view = v;
                 self.tab = if v == View::Omp {
@@ -498,6 +540,7 @@ impl App {
                 };
             }
             Command::InvertVisible => {
+                self.snapshot_undo();
                 if let Some(d) = self.active_doc_mut() {
                     for c in d.chans.iter_mut().filter(|c| c.visible) {
                         c.invert = !c.invert;
@@ -505,6 +548,7 @@ impl App {
                 }
             }
             Command::RemoveDcVisible => {
+                self.snapshot_undo();
                 if let Some(d) = self.active_doc_mut() {
                     for c in d.chans.iter_mut().filter(|c| c.visible) {
                         c.remove_dc = !c.remove_dc;
@@ -513,6 +557,7 @@ impl App {
             }
             Command::SetValueMode(m) => self.value_mode = m,
             Command::ShowAllChannels(on) => {
+                self.snapshot_undo();
                 if let Some(d) = self.active_doc_mut() {
                     for c in d.chans.iter_mut() {
                         c.visible = on;
@@ -718,18 +763,8 @@ impl App {
         }
     }
 
-    pub fn export_csv(&mut self) {
-        let Some(d) = self.active_doc() else {
-            self.status = "Нет осциллограммы для экспорта.".into();
-            return;
-        };
-        let Some(path) = rfd::FileDialog::new()
-            .add_filter("CSV", &["csv"])
-            .set_file_name(format!("{}.csv", d.name))
-            .save_file()
-        else {
-            return;
-        };
+    /// Build the CSV (time + analog + computed channels) for a document.
+    fn csv_string(d: &Doc) -> String {
         let mut out = String::from("t");
         for ch in &d.osc.analog {
             out.push(',');
@@ -750,9 +785,136 @@ impl App {
             }
             out.push('\n');
         }
+        out
+    }
+
+    pub fn export_csv(&mut self) {
+        let Some(d) = self.active_doc() else {
+            self.status = "Нет осциллограммы для экспорта.".into();
+            return;
+        };
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("CSV", &["csv"])
+            .set_file_name(format!("{}.csv", d.name))
+            .save_file()
+        else {
+            return;
+        };
+        let out = Self::csv_string(d);
         match std::fs::write(&path, out) {
             Ok(()) => self.status = format!("Экспортировано в {}", path.display()),
             Err(e) => self.status = format!("Ошибка экспорта: {e}"),
+        }
+    }
+
+    /// Save the active document as a COMTRADE `.cfg`/`.dat` pair.
+    pub fn save_comtrade(&mut self) {
+        let Some(d) = self.active_doc() else {
+            self.status = "Нет осциллограммы для сохранения.".into();
+            return;
+        };
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("COMTRADE", &["cfg"])
+            .set_file_name(format!("{}.cfg", d.name))
+            .save_file()
+        else {
+            return;
+        };
+        let (cfg, dat) = fvb_core::comtrade::write(&d.osc);
+        let dat_path = path.with_extension("dat");
+        match std::fs::write(&path, cfg).and_then(|_| std::fs::write(&dat_path, dat)) {
+            Ok(()) => self.status = format!("Сохранено: {} (+ .dat)", path.display()),
+            Err(e) => self.status = format!("Ошибка сохранения: {e}"),
+        }
+    }
+
+    /// Archive the active record (COMTRADE + CSV) into a `.zip` for sending.
+    pub fn archive_record(&mut self) {
+        let Some(d) = self.active_doc() else {
+            self.status = "Нет осциллограммы для архивирования.".into();
+            return;
+        };
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("ZIP", &["zip"])
+            .set_file_name(format!("{}.zip", d.name))
+            .save_file()
+        else {
+            return;
+        };
+        let (cfg, dat) = fvb_core::comtrade::write(&d.osc);
+        let csv = Self::csv_string(d);
+        let zip = crate::util::zip_store(&[
+            (format!("{}.cfg", d.name), cfg.into_bytes()),
+            (format!("{}.dat", d.name), dat.into_bytes()),
+            (format!("{}.csv", d.name), csv.into_bytes()),
+        ]);
+        match std::fs::write(&path, zip) {
+            Ok(()) => self.status = format!("Архив сохранён: {}", path.display()),
+            Err(e) => self.status = format!("Ошибка архивирования: {e}"),
+        }
+    }
+
+    /// Ask for an export path and flag that the next frame's screenshot should be
+    /// saved there (the actual capture happens in the update loop).
+    pub fn request_image_export(&mut self) {
+        if self.active_doc().is_none() {
+            self.status = "Нет осциллограммы для печати/экспорта изображения.".into();
+            return;
+        }
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("PNG", &["png"])
+            .set_file_name("fastview.png")
+            .save_file()
+        {
+            self.want_screenshot = Some(path);
+            self.status = "Готовится изображение…".into();
+        }
+    }
+
+    // ---- undo / redo ----
+    fn snapshot_of(d: &Doc) -> DocSnapshot {
+        DocSnapshot { chans: d.chans.clone(), comments: d.comments.clone(), computed: d.computed.clone() }
+    }
+    fn restore(d: &mut Doc, s: DocSnapshot) {
+        d.chans = s.chans;
+        d.comments = s.comments;
+        d.computed = s.computed;
+    }
+
+    /// Record the active document's state for undo, clearing the redo stack.
+    pub fn snapshot_undo(&mut self) {
+        if let Some(ai) = self.active {
+            if let Some(d) = self.docs.get(ai) {
+                self.undo_stack.push((ai, Self::snapshot_of(d)));
+                if self.undo_stack.len() > 100 {
+                    self.undo_stack.remove(0);
+                }
+                self.redo_stack.clear();
+            }
+        }
+    }
+
+    pub fn undo(&mut self) {
+        let Some((ai, snap)) = self.undo_stack.pop() else {
+            self.status = "Нечего отменять.".into();
+            return;
+        };
+        if let Some(d) = self.docs.get_mut(ai) {
+            self.redo_stack.push((ai, Self::snapshot_of(d)));
+            Self::restore(d, snap);
+            self.status = "Отменено.".into();
+        }
+    }
+
+    pub fn redo(&mut self) {
+        let Some((ai, snap)) = self.redo_stack.pop() else {
+            self.status = "Нечего возвращать.".into();
+            return;
+        };
+        if let Some(d) = self.docs.get_mut(ai) {
+            self.undo_stack.push((ai, Self::snapshot_of(d)));
+            Self::restore(d, snap);
+            self.status = "Возвращено.".into();
         }
     }
 

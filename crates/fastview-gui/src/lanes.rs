@@ -574,7 +574,10 @@ impl App {
             });
         });
 
-        // Apply deferred actions.
+        // Apply deferred actions (snapshot first if any edit the document content).
+        if actions.iter().any(|a| matches!(a, Act::Channel(..) | Act::ToggleCommentHidden(_))) {
+            self.snapshot_undo();
+        }
         for a in actions {
             match a {
                 Act::SetTimeUnit(u) => self.time_unit = u,
