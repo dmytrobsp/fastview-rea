@@ -9,6 +9,65 @@ impl App {
         self.channel_props_window(ctx);
         self.comment_window(ctx);
         self.file_params_window(ctx);
+        self.channel_map_window(ctx);
+    }
+
+    /// Explicit channel-to-role assignment (the original's DIALOG 536 / «Отображение
+    /// каналов»): pick which analog channel plays Ua/Ub/Uc and Ia/Ib/Ic for every
+    /// analysis and diagram. Pre-filled from name-based auto-detection.
+    fn channel_map_window(&mut self, ctx: &egui::Context) {
+        if !self.show_channel_map {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Отображение каналов — назначение Ua/Ia…")
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                let Some(d) = self.active.and_then(|a| self.docs.get_mut(a)) else {
+                    ui.label("Нет активной осциллограммы.");
+                    return;
+                };
+                let ids: Vec<(usize, String)> = d
+                    .osc
+                    .analog
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| (i, format!("{} [{}]", c.id, c.unit)))
+                    .collect();
+                ui.label("Токи");
+                let calc_ib = d.analysis.calc_ib;
+                egui::Grid::new("imap").num_columns(2).spacing([10.0, 4.0]).show(ui, |ui| {
+                    role_combo(ui, "Ia:", &mut d.analysis.i_abc[0], &ids, true);
+                    ui.end_row();
+                    role_combo(ui, "Ib:", &mut d.analysis.i_abc[1], &ids, !calc_ib);
+                    ui.end_row();
+                    role_combo(ui, "Ic:", &mut d.analysis.i_abc[2], &ids, true);
+                    ui.end_row();
+                });
+                ui.checkbox(&mut d.analysis.calc_ib, "Рассчитать Ib по Ia и Iс (сети с изолированной нейтралью)");
+                ui.separator();
+                ui.label("Напряжения (фазные)");
+                egui::Grid::new("umap").num_columns(2).spacing([10.0, 4.0]).show(ui, |ui| {
+                    role_combo(ui, "Ua:", &mut d.analysis.u_abc[0], &ids, true);
+                    ui.end_row();
+                    role_combo(ui, "Ub:", &mut d.analysis.u_abc[1], &ids, true);
+                    ui.end_row();
+                    role_combo(ui, "Uc:", &mut d.analysis.u_abc[2], &ids, true);
+                    ui.end_row();
+                });
+                ui.separator();
+                ui.label(
+                    egui::RichText::new(
+                        "Назначение используется во всех расчётах: симметричные составляющие, \
+                         сопротивления, векторная/круговая диаграммы, ОМП.",
+                    )
+                    .small()
+                    .weak(),
+                );
+            });
+        self.show_channel_map = open;
     }
 
     fn file_params_window(&mut self, ctx: &egui::Context) {
@@ -241,6 +300,23 @@ enum CommentAction {
     Save,
     Delete,
     Cancel,
+}
+
+/// A labelled channel-role combo bound to an `Option<usize>` slot.
+fn role_combo(ui: &mut egui::Ui, label: &str, slot: &mut Option<usize>, ids: &[(usize, String)], enabled: bool) {
+    ui.label(label);
+    let cur = slot
+        .and_then(|i| ids.iter().find(|(j, _)| *j == i))
+        .map(|(_, n)| n.clone())
+        .unwrap_or_else(|| "— нет —".to_string());
+    ui.add_enabled_ui(enabled, |ui| {
+        egui::ComboBox::from_id_salt(label).selected_text(cur).width(170.0).show_ui(ui, |ui| {
+            ui.selectable_value(slot, None, "— нет —");
+            for (i, n) in ids {
+                ui.selectable_value(slot, Some(*i), n);
+            }
+        });
+    });
 }
 
 /// Draw the Механотроника chevron mark in `rect`.

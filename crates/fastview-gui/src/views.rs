@@ -387,6 +387,10 @@ impl App {
                 ] {
                     ui.selectable_value(&mut self.analysis_tab, tab, label);
                 }
+                ui.separator();
+                if ui.button("Каналы…").on_hover_text("Назначить Ua/Ia… каналам").clicked() {
+                    self.show_channel_map = true;
+                }
             });
             ui.separator();
             if self.analysis_tab == AnalysisTab::Formula {

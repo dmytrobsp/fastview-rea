@@ -248,3 +248,24 @@ fn comtrade_write_round_trips() {
         }
     }
 }
+
+#[test]
+fn calc_ib_from_ia_ic_when_isolated() {
+    use fvb_core::analysis::Analysis;
+    let rec = comtrade::parse(
+        include_str!("../../../assets/demo/demo_fault.cfg"),
+        include_bytes!("../../../assets/demo/demo_fault.dat"),
+    )
+    .expect("demo");
+    let mut an = Analysis::compute(&rec);
+    let k = rec.sample_count() / 2;
+    // With calc_ib, Ib must equal -(Ia+Ic) exactly.
+    an.calc_ib = true;
+    let (ia, ib, ic) = an.i_phase(k);
+    let expect = -(ia + ic);
+    assert_relative_eq!(ib.re, expect.re, epsilon = 1e-9);
+    assert_relative_eq!(ib.im, expect.im, epsilon = 1e-9);
+    // Residual (differential) current then vanishes.
+    let (id, _) = an.differential_currents(k);
+    assert!(id < 1e-6, "with computed Ib the residual should be ~0, got {id}");
+}

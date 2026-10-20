@@ -40,10 +40,15 @@ fn is_voltage(unit: &str) -> bool {
 pub struct Analysis {
     /// Phasor series aligned to the oscillogram samples, one per analog channel.
     pub phasors: Vec<Phasors>,
-    /// Indices of detected voltage phases (A,B,C) if present.
+    /// Channel indices assigned to voltage phases (A,B,C). Initially auto-detected
+    /// from channel names; the user can reassign them (the original's channel-role
+    /// mapping, e.g. DIALOG 536).
     pub u_abc: [Option<usize>; 3],
-    /// Indices of detected current phases (A,B,C) if present.
+    /// Channel indices assigned to current phases (A,B,C).
     pub i_abc: [Option<usize>; 3],
+    /// Compute `Ib = −(Ia + Ic)` instead of reading a channel (isolated-neutral
+    /// networks — «Рассчитать Ib по Ia и Iс»).
+    pub calc_ib: bool,
     pub n: usize,
 }
 
@@ -78,7 +83,17 @@ impl Analysis {
             phasors,
             u_abc,
             i_abc,
+            calc_ib: false,
             n,
+        }
+    }
+
+    /// Current phasor for phase B, honouring the «Рассчитать Ib по Ia и Iс» option.
+    fn ib(&self, k: usize) -> Complex64 {
+        if self.calc_ib {
+            -(self.ph(self.i_abc[0], k) + self.ph(self.i_abc[2], k))
+        } else {
+            self.ph(self.i_abc[1], k)
         }
     }
 
@@ -99,18 +114,17 @@ impl Analysis {
 
     /// Current symmetric components `(3I0, I1, I2)` at sample `k`.
     pub fn i_symmetric(&self, k: usize) -> (Complex64, Complex64, Complex64) {
-        symmetric_components(
-            self.ph(self.i_abc[0], k),
-            self.ph(self.i_abc[1], k),
-            self.ph(self.i_abc[2], k),
-        )
+        symmetric_components(self.ph(self.i_abc[0], k), self.ib(k), self.ph(self.i_abc[2], k))
     }
 
     /// Phase-A/B/C loop impedance `Uφ/Iφ` at sample `k`.
     pub fn phase_impedance(&self, phase: usize, k: usize) -> Option<Complex64> {
-        let u = self.u_abc.get(phase).copied().flatten();
-        let i = self.i_abc.get(phase).copied().flatten();
-        let (u, i) = (self.ph(u, k), self.ph(i, k));
+        let u = self.ph(self.u_abc.get(phase).copied().flatten(), k);
+        let i = if phase == 1 {
+            self.ib(k)
+        } else {
+            self.ph(self.i_abc.get(phase).copied().flatten(), k)
+        };
         if i.norm() > 1e-9 {
             Some(u / i)
         } else {
@@ -139,7 +153,7 @@ impl Analysis {
 
     /// Phase currents `(Ia, Ib, Ic)` at sample `k`.
     pub fn i_phase(&self, k: usize) -> (Complex64, Complex64, Complex64) {
-        (self.ph(self.i_abc[0], k), self.ph(self.i_abc[1], k), self.ph(self.i_abc[2], k))
+        (self.ph(self.i_abc[0], k), self.ib(k), self.ph(self.i_abc[2], k))
     }
 
     /// Line (phase-to-phase) voltages `(Uab, Ubc, Uca)` at sample `k`.

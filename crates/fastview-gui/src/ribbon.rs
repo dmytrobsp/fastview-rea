@@ -178,6 +178,9 @@ impl App {
                 if small_button(ui, p, Icon::FitTime, "Вся осцил.").clicked() {
                     cmds.push(Command::FitTime);
                 }
+                if small_button(ui, p, Icon::Channels, "Назн. каналы…").clicked() {
+                    cmds.push(Command::ChannelMap);
+                }
             });
         });
         // Вычисления
