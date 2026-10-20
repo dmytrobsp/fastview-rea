@@ -124,9 +124,11 @@ pub fn parse_library(xml: &str) -> Result<Library, ParseError> {
                         cur_points.clear();
                         cur_combine = Combine::parse(get(&a, "type"));
                         cur_mode = Mode::parse(get(&a, "mode"));
-                        cur_closed = matches!(
+                        // FUN_0040c7e0: only "off" opens a polypoint; a
+                        // missing attribute leaves the constructor default (closed).
+                        cur_closed = !matches!(
                             get(&a, "closed").map(|s| s.trim().to_ascii_lowercase()).as_deref(),
-                            Some("on")
+                            Some("off")
                         );
                     }
                     "line" => {

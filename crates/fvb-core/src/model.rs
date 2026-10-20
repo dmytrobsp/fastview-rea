@@ -34,10 +34,15 @@ impl Dimension {
     }
 }
 
-/// How a primitive combines into the characteristic region (GDI CombineRgn).
+/// How a primitive combines into the characteristic region: the CombineRgn
+/// mode applied when it is folded into the region built so far (`and`=1,
+/// `or`=2, `xor`=3, `not`=4). The first figure of each mode starts the region
+/// and its `type` is ignored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Combine {
-    /// No `type` attribute: part of the base region (unioned together).
+    /// No `type` attribute. The original leaves the mode uninitialised here
+    /// (undefined for a non-first figure; never occurs in the shipped
+    /// library); we union.
     Base,
     /// `type="or"`: unioned with the region.
     Or,
@@ -45,6 +50,8 @@ pub enum Combine {
     And,
     /// `type="not"`: subtracted from the region (e.g. load-encroachment cutout).
     Not,
+    /// `type="xor"`: symmetric difference (accepted by the original's parser).
+    Xor,
 }
 
 impl Combine {
@@ -52,6 +59,7 @@ impl Combine {
         match s.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
             Some("or") => Combine::Or,
             Some("and") => Combine::And,
+            Some("xor") => Combine::Xor,
             Some("not") => Combine::Not,
             _ => Combine::Base,
         }
@@ -67,9 +75,11 @@ pub enum Mode {
 
 impl Mode {
     pub fn parse(s: Option<&str>) -> Mode {
+        // FUN_0040c7e0: mode is 1 only for "on"; anything else, including a
+        // missing attribute, is 0 (reset).
         match s.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
-            Some("off") => Mode::Off,
-            _ => Mode::On,
+            Some("on") => Mode::On,
+            _ => Mode::Off,
         }
     }
 }
@@ -81,13 +91,17 @@ pub enum LineKind {
     Slope,
     /// `type="2"`: x = k*y + b (used for near-vertical boundaries).
     InverseSlope,
+    /// Any other `_wtoi(type)` value: the original places every vertex that
+    /// touches such a line at the origin.
+    Invalid,
 }
 
 impl LineKind {
     pub fn parse(s: Option<&str>) -> LineKind {
         match s.map(|v| v.trim()) {
+            Some("1") => LineKind::Slope,
             Some("2") => LineKind::InverseSlope,
-            _ => LineKind::Slope,
+            _ => LineKind::Invalid,
         }
     }
 }

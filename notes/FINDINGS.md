@@ -68,8 +68,9 @@ UTF-16 XML. Structure:
   (e.g. `radius`→0 via a `тип` selector) simply drops out — this is how one `<characteristic>`
   parameterises alternative shapes (polygon vs mho-circle) selected by a `_тип` parameter.
 - `<ellipse>`: centre (xcenter,ycenter), axes (width,height), rotation `angle` degrees.
-- `<polypoint closed>`: explicit vertex list (x,y expressions); `closed="off"` = open polyline
-  (used for ДЗТ piecewise restraint curves in the DIF plane).
+- `<polypoint closed>`: explicit vertex list (x,y expressions). `closed="off"` is still a
+  filled region, closed through a box around the view (ДЗТ restraint curves → operate region
+  above the curve) — superseded by the decompiled behaviour in RECONSTRUCTION_LEDGER L4.
 - `dimension`: `OHM` → impedance plane (R on x, jX on y); `DIF` → differential plane
   (I_brake on x, I_diff on y). Same renderer, different axis labels/units.
 

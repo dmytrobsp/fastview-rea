@@ -338,6 +338,9 @@ pub struct App {
     pub chars: HashMap<(usize, usize), CharState>,
     pub selected_char: Option<usize>,
     pub show_reset: bool,
+    /// World rectangle the characteristic plot showed last frame; open
+    /// polypoints are closed against it (`fvb_core::geom::evaluate_in_view`).
+    pub char_view: Option<fvb_core::geom::View>,
     pub fill_regions: bool,
 
     // documents
@@ -417,6 +420,7 @@ impl App {
             chars: HashMap::new(),
             selected_char: None,
             show_reset: true,
+            char_view: None,
             fill_regions: true,
             docs: Vec::new(),
             active: None,

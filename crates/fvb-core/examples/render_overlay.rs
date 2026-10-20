@@ -131,32 +131,30 @@ fn stroke_line(pm: &mut Pixmap, x0: f32, y0: f32, x1: f32, y1: f32, paint: &Pain
 }
 
 fn draw_region(pm: &mut Pixmap, shapes: &[Shape], (r, g, b): (u8, u8, u8), fill: bool, to_px: &dyn Fn(&[f64; 2]) -> (f32, f32)) {
-    for shape in shapes {
-        if let Shape::Region(rings) = shape {
-            for (idx, ring) in rings.iter().enumerate() {
-                if ring.len() < 3 {
-                    continue;
+    for Shape::Region(rings) in shapes {
+        for (idx, ring) in rings.iter().enumerate() {
+            if ring.len() < 3 {
+                continue;
+            }
+            let mut pb = PathBuilder::new();
+            let (x, y) = to_px(&ring[0]);
+            pb.move_to(x, y);
+            for p in &ring[1..] {
+                let (x, y) = to_px(p);
+                pb.line_to(x, y);
+            }
+            pb.close();
+            if let Some(path) = pb.finish() {
+                if idx == 0 && fill {
+                    let mut paint = Paint::default();
+                    paint.set_color_rgba8(r, g, b, 40);
+                    paint.anti_alias = true;
+                    pm.fill_path(&path, &paint, FillRule::EvenOdd, Transform::identity(), None);
                 }
-                let mut pb = PathBuilder::new();
-                let (x, y) = to_px(&ring[0]);
-                pb.move_to(x, y);
-                for p in &ring[1..] {
-                    let (x, y) = to_px(p);
-                    pb.line_to(x, y);
-                }
-                pb.close();
-                if let Some(path) = pb.finish() {
-                    if idx == 0 && fill {
-                        let mut paint = Paint::default();
-                        paint.set_color_rgba8(r, g, b, 40);
-                        paint.anti_alias = true;
-                        pm.fill_path(&path, &paint, FillRule::EvenOdd, Transform::identity(), None);
-                    }
-                    let mut sp = Paint::default();
-                    sp.set_color_rgba8(r, g, b, if fill { 255 } else { 130 });
-                    sp.anti_alias = true;
-                    pm.stroke_path(&path, &sp, &Stroke { width: if fill { 2.0 } else { 1.0 }, ..Default::default() }, Transform::identity(), None);
-                }
+                let mut sp = Paint::default();
+                sp.set_color_rgba8(r, g, b, if fill { 255 } else { 130 });
+                sp.anti_alias = true;
+                pm.stroke_path(&path, &sp, &Stroke { width: if fill { 2.0 } else { 1.0 }, ..Default::default() }, Transform::identity(), None);
             }
         }
     }

@@ -5,7 +5,7 @@
 use crate::app::{AnalysisTab, App, OmpMethod, View};
 use eframe::egui;
 use fvb_core::omp::NeutralMode;
-use egui_plot::{Bar, BarChart, Line, LineStyle, Plot, PlotPoints, Points, Polygon};
+use egui_plot::{Bar, BarChart, Line, LineStyle, Plot, PlotBounds, PlotPoints, Points, Polygon};
 use fvb_core::geom::Shape;
 use fvb_core::model::Dimension;
 use num_complex::Complex64;
@@ -191,21 +191,38 @@ impl App {
             rs: Vec<Shape>,
         }
         let mut draws = Vec::new();
+        // Autoscale extent from the view-independent geometry, as the
+        // original's autoscale pass builds regions without a clip box.
+        let mut extent: Option<(f64, f64, f64, f64)> = None;
+        let view = self.char_view;
         if let Some(block) = self.library.blocks.get(b) {
-            for ci in 0..block.characteristics.len() {
-                if let Some(st) = self.chars.get(&(b, ci)) {
-                    if !st.visible {
-                        continue;
-                    }
-                    if let Some(geo) = &st.geo {
-                        draws.push(D {
-                            name: block.characteristics[ci].name.clone(),
-                            color: st.color,
-                            op: geo.operate.shapes.clone(),
-                            rs: if self.show_reset { geo.reset.shapes.clone() } else { vec![] },
-                        });
-                    }
+            for (ci, ch) in block.characteristics.iter().enumerate() {
+                let Some(st) = self.chars.get(&(b, ci)) else { continue };
+                if !st.visible {
+                    continue;
                 }
+                let Some(geo) = &st.geo else { continue };
+                if let Some((x0, y0, x1, y1)) = geo.bounds {
+                    extent = Some(match extent {
+                        None => (x0, y0, x1, y1),
+                        Some((a, b, c, d)) => (a.min(x0), b.min(y0), c.max(x1), d.max(y1)),
+                    });
+                }
+                // Open polypoints are closed against the visible area.
+                let in_view = match view {
+                    Some(v) if fvb_core::geom::depends_on_view(ch) => ch
+                        .context(&st.settings)
+                        .and_then(|cx| fvb_core::geom::evaluate_in_view(ch, &cx, Some(v)))
+                        .ok(),
+                    _ => None,
+                };
+                let geo = in_view.as_ref().unwrap_or(geo);
+                draws.push(D {
+                    name: ch.name.clone(),
+                    color: st.color,
+                    op: geo.operate.shapes.clone(),
+                    rs: if self.show_reset { geo.reset.shapes.clone() } else { vec![] },
+                });
             }
         }
         let overlay = if dim == Dimension::Ohm {
@@ -220,12 +237,18 @@ impl App {
         };
         let fill = self.fill_regions;
         let bg = ui.visuals().extreme_bg_color;
-        Plot::new("charplot")
+        let shown = Plot::new("charplot")
             .data_aspect(1.0)
             .x_axis_label(dim.x_label())
             .y_axis_label(dim.y_label())
             .legend(egui_plot::Legend::default())
             .show(ui, |pu| {
+                if pu.auto_bounds().any() {
+                    if let Some((x0, y0, x1, y1)) = extent {
+                        let (mx, my) = ((x1 - x0) * 0.05 + 1e-9, (y1 - y0) * 0.05 + 1e-9);
+                        pu.set_plot_bounds(PlotBounds::from_min_max([x0 - mx, y0 - my], [x1 + mx, y1 + my]));
+                    }
+                }
                 for d in &draws {
                     draw_region(pu, &d.op, d.color, fill, false, bg, &d.name);
                     draw_region(pu, &d.rs, d.color.gamma_multiply(0.6f32), false, true, bg, "");
@@ -246,6 +269,12 @@ impl App {
                     }
                 }
             });
+        let pb = shown.transform.bounds();
+        let next = Some((pb.min()[0], pb.min()[1], pb.max()[0], pb.max()[1]));
+        if next != self.char_view {
+            self.char_view = next;
+            ui.ctx().request_repaint();
+        }
     }
 
     // ---- Векторная диаграмма ----
@@ -728,13 +757,6 @@ fn draw_region(
                         pu.line(Line::new(PlotPoints::from(lp)).color(color).width(1.2_f32).style(style));
                     }
                 }
-            }
-            Shape::Polyline(pl) => {
-                let mut ln = Line::new(PlotPoints::from(pl.clone())).color(color).width(1.8_f32).style(style);
-                if !name.is_empty() {
-                    ln = ln.name(name);
-                }
-                pu.line(ln);
             }
         }
     }

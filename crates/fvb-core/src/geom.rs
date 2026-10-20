@@ -1,12 +1,21 @@
-//! Geometry engine: evaluate a characteristic's primitives into drawable
-//! shapes and combine them into operate/reset regions.
+//! Geometry engine: evaluate a characteristic's figures into operate/reset
+//! regions, reproducing the original renderer (ledger L4).
 //!
-//! Mirrors the original renderer (`CircleDiagramWnd`): each `<polygon>` becomes
-//! an ordered vertex loop (successive intersections of its bounding lines, as
-//! fed to GDI `Polygon`), filled by the even-odd rule, and primitives combine
-//! with region booleans (`CombineRgn`: `type=and|or|not` -> intersect / union /
-//! difference). Here we use `i_overlay`, which — like the original GDI path —
-//! tolerates self-intersecting loops (e.g. the directional РНМ characteristic).
+//! Each figure (`PolygonF`, `PolypointF`, `Circle`, `EllipseF` in the original)
+//! builds its own region through a GDI path (`BeginPath` / `Polygon|Ellipse` /
+//! `EndPath` / `PathToRegion`, ALTERNATE fill). Regions are then folded
+//! **sequentially in document order, separately for each mode**: the first
+//! figure of a mode starts the region (its `type` is ignored) and every later
+//! one is combined into it with `CombineRgn(rgn, rgn, fig, type)` —
+//! `and`/`or`/`xor`/`not` = RGN_AND/OR/XOR/DIFF (paint `0x43a4a0`).
+//!
+//! An open polypoint (`closed="off"`) is still a filled region: while painting,
+//! the original closes it through a box five view-widths wide around the window
+//! (`0x40ae40`, see [`close_open_polypoint`]); without a view (its autoscale
+//! pass) it closes straight back to the first point.
+//!
+//! The original works in integer pixels (round-half-up world→device); we keep
+//! world coordinates, so edges can differ from the original by under a pixel.
 
 use crate::expr::{Context, Expr, ExprError};
 use crate::model::*;
@@ -23,13 +32,13 @@ type IShape = Vec<Contour>;
 /// A set of shapes.
 type IShapes = Vec<IShape>;
 
-/// A drawn shape: either a filled region (outer ring + holes) or an open polyline.
+/// The visible world rectangle `(minx, miny, maxx, maxy)` of the plot.
+pub type View = (f64, f64, f64, f64);
+
+/// A filled region: `[0]` is the outer ring, the rest are holes.
 #[derive(Debug, Clone)]
 pub enum Shape {
-    /// Filled region: `[0]` is the outer ring, the rest are holes.
     Region(Vec<Vec<Pt>>),
-    /// Open polyline (e.g. a differential restraint curve).
-    Polyline(Vec<Pt>),
 }
 
 /// The evaluated geometry of a characteristic for one [`Mode`].
@@ -48,50 +57,58 @@ pub struct CharGeometry {
 }
 
 /// Half-extent beyond which a consecutive-line intersection is treated as a
-/// runaway (near-parallel edges) and dropped.
+/// runaway (near-parallel edges) and dropped. The original has no guard: the
+/// inf/NaN becomes `0x80000000` in device space and GDI fails.
 const BIG: f64 = 1.0e6;
 
-fn empty_clip() -> IShapes {
-    Vec::new()
-}
+/// Determinant tolerance used by the polypoint closing code (`0x40ae40`).
+const DET_EPS: f64 = 1e-6;
 
 fn simplify_ring(ring: Contour) -> IShapes {
     if ring.len() < 3 {
         return Vec::new();
     }
     let subj: IShape = vec![ring];
-    subj.overlay(&empty_clip(), OverlayRule::Subject, FillRule::EvenOdd)
+    subj.overlay(&Vec::<IShape>::new(), OverlayRule::Subject, FillRule::EvenOdd)
 }
 
-fn union(a: &IShapes, b: &IShapes) -> IShapes {
-    if a.is_empty() {
-        return b.clone();
+/// `CombineRgn(rgn, rgn, fig, op)`.
+fn combine(rgn: IShapes, fig: &IShapes, op: Combine) -> IShapes {
+    let rule = match op {
+        Combine::And => OverlayRule::Intersect,
+        Combine::Or | Combine::Base => OverlayRule::Union,
+        Combine::Xor => OverlayRule::Xor,
+        Combine::Not => OverlayRule::Difference,
+    };
+    match (rgn.is_empty(), fig.is_empty()) {
+        (true, true) => Vec::new(),
+        (true, false) => match rule {
+            OverlayRule::Union | OverlayRule::Xor => fig.clone(),
+            _ => Vec::new(),
+        },
+        (false, true) => match rule {
+            OverlayRule::Intersect => Vec::new(),
+            _ => rgn,
+        },
+        (false, false) => rgn.overlay(fig, rule, FillRule::NonZero),
     }
-    if b.is_empty() {
-        return a.clone();
-    }
-    a.overlay(b, OverlayRule::Union, FillRule::NonZero)
 }
 
-fn intersect(a: &IShapes, b: &IShapes) -> IShapes {
-    if a.is_empty() || b.is_empty() {
-        return Vec::new();
-    }
-    a.overlay(b, OverlayRule::Intersect, FillRule::NonZero)
-}
-
-fn difference(a: &IShapes, b: &IShapes) -> IShapes {
-    if a.is_empty() || b.is_empty() {
-        return a.clone();
-    }
-    a.overlay(b, OverlayRule::Difference, FillRule::NonZero)
-}
-
-/// Evaluate every primitive of `ch` with the given `ctx` and build the operate
-/// and reset geometry.
+/// Evaluate every figure of `ch` with no view: open polypoints close straight
+/// back to their first point (the original's autoscale pass).
 pub fn evaluate(ch: &Characteristic, ctx: &Context) -> Result<CharGeometry, ExprError> {
-    let operate = build_mode(ch, ctx, Mode::On)?;
-    let reset = build_mode(ch, ctx, Mode::Off)?;
+    evaluate_in_view(ch, ctx, None)
+}
+
+/// Evaluate every figure of `ch` as painted in a plot showing `view`: open
+/// polypoints are closed through the box around that view.
+pub fn evaluate_in_view(
+    ch: &Characteristic,
+    ctx: &Context,
+    view: Option<View>,
+) -> Result<CharGeometry, ExprError> {
+    let operate = build_mode(ch, ctx, Mode::On, view)?;
+    let reset = build_mode(ch, ctx, Mode::Off, view)?;
     let mut geo = CharGeometry {
         operate,
         reset,
@@ -101,93 +118,180 @@ pub fn evaluate(ch: &Characteristic, ctx: &Context) -> Result<CharGeometry, Expr
     Ok(geo)
 }
 
-fn build_mode(ch: &Characteristic, ctx: &Context, mode: Mode) -> Result<ModeGeometry, ExprError> {
-    // Region = (base ∪ or) ∩ (∩ ands) ∖ (∪ nots). When there is no base/or,
-    // the `and` primitives alone form the region (the directional РНМ element
-    // uses only `and` primitives). Degenerate primitives drop out, which is how
-    // a `тип`-selected primitive with zero size is ignored.
-    let mut base_or: IShapes = Vec::new();
-    let mut anded: Option<IShapes> = None;
-    let mut nots: Vec<IShapes> = Vec::new();
-    let mut polylines: Vec<Vec<Pt>> = Vec::new();
+/// True if any figure of `ch` is an open polypoint, i.e. its geometry depends
+/// on the view.
+pub fn depends_on_view(ch: &Characteristic) -> bool {
+    ch.primitives
+        .iter()
+        .any(|p| matches!(p, Primitive::PolyPoint { closed: false, .. }))
+}
 
+fn build_mode(
+    ch: &Characteristic,
+    ctx: &Context,
+    mode: Mode,
+    view: Option<View>,
+) -> Result<ModeGeometry, ExprError> {
+    // `None` until the first figure of this mode starts the region. A figure
+    // whose region is degenerate (zero area) still starts it: the original
+    // substitutes a 1x1-pixel rectangle, which we treat as empty.
+    let mut region: Option<IShapes> = None;
     for p in ch.primitives.iter().filter(|p| p.mode() == mode) {
-        // Resolve the primitive into either a region shape-set or a polyline.
-        let shapes: IShapes = match p {
-            Primitive::PolyPoint { closed, points, .. } => {
-                let pts = eval_points(points, ctx)?;
-                if !*closed {
-                    if pts.len() >= 2 {
-                        polylines.push(pts);
-                    }
-                    continue;
-                }
-                simplify_ring(pts)
-            }
-            Primitive::Polygon { lines, .. } => {
-                let evaled = eval_lines(lines, ctx)?;
-                match polygon_from_lines(&evaled) {
-                    Some(ring) => simplify_ring(ring),
-                    None => continue,
-                }
-            }
-            Primitive::Circle {
-                radius, xcenter, ycenter, ..
-            } => {
-                let r = radius.eval(ctx)?;
-                if r.abs() < 1e-9 {
-                    continue;
-                }
-                let c = [xcenter.eval(ctx)?, ycenter.eval(ctx)?];
-                simplify_ring(ellipse_points(c, r.abs(), r.abs(), 0.0))
-            }
-            Primitive::Ellipse {
-                xcenter, ycenter, width, height, angle, ..
-            } => {
-                let w = width.eval(ctx)?;
-                let h = height.eval(ctx)?;
-                if w.abs() < 1e-9 || h.abs() < 1e-9 {
-                    continue;
-                }
-                let c = [xcenter.eval(ctx)?, ycenter.eval(ctx)?];
-                simplify_ring(ellipse_points(c, w.abs() / 2.0, h.abs() / 2.0, angle.eval(ctx)?))
-            }
-        };
-        if shapes.is_empty() {
-            continue;
-        }
-        match p.combine() {
-            Combine::Base | Combine::Or => base_or = union(&base_or, &shapes),
-            Combine::And => {
-                anded = Some(match anded {
-                    Some(a) => intersect(&a, &shapes),
-                    None => shapes,
-                });
-            }
-            Combine::Not => nots.push(shapes),
-        }
+        let fig = figure_region(p, ctx, view)?;
+        region = Some(match region {
+            None => fig,
+            Some(r) => combine(r, &fig, p.combine()),
+        });
     }
-
-    let mut region = match (base_or.is_empty(), anded) {
-        (false, Some(a)) => intersect(&base_or, &a),
-        (false, None) => base_or,
-        (true, Some(a)) => a,
-        (true, None) => Vec::new(),
-    };
-    for n in &nots {
-        region = difference(&region, n);
-    }
-
-    let mut shapes = Vec::new();
-    for shape in region {
-        if !shape.is_empty() && shape[0].len() >= 3 {
-            shapes.push(Shape::Region(shape));
-        }
-    }
-    for pl in polylines {
-        shapes.push(Shape::Polyline(pl));
-    }
+    let shapes = region
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|s| !s.is_empty() && s[0].len() >= 3)
+        .map(Shape::Region)
+        .collect();
     Ok(ModeGeometry { shapes })
+}
+
+/// The region one figure contributes (its vtable slot 3).
+fn figure_region(p: &Primitive, ctx: &Context, view: Option<View>) -> Result<IShapes, ExprError> {
+    Ok(match p {
+        Primitive::PolyPoint { closed, points, .. } => {
+            let pts = eval_points(points, ctx)?;
+            match (closed, view) {
+                (false, Some(v)) => simplify_ring(close_open_polypoint(&pts, v)),
+                _ => simplify_ring(pts),
+            }
+        }
+        Primitive::Polygon { lines, .. } => {
+            let evaled = eval_lines(lines, ctx)?;
+            polygon_from_lines(&evaled).map(simplify_ring).unwrap_or_default()
+        }
+        Primitive::Circle {
+            radius, xcenter, ycenter, ..
+        } => {
+            let r = radius.eval(ctx)?;
+            if r.abs() < 1e-9 {
+                return Ok(Vec::new());
+            }
+            let c = [xcenter.eval(ctx)?, ycenter.eval(ctx)?];
+            simplify_ring(ellipse_points(c, r.abs(), r.abs(), 0.0))
+        }
+        Primitive::Ellipse {
+            xcenter, ycenter, width, height, angle, ..
+        } => {
+            // width/height are full axes (the original halves them).
+            let w = width.eval(ctx)?;
+            let h = height.eval(ctx)?;
+            if w.abs() < 1e-9 || h.abs() < 1e-9 {
+                return Ok(Vec::new());
+            }
+            let c = [xcenter.eval(ctx)?, ycenter.eval(ctx)?];
+            simplify_ring(ellipse_points(c, w.abs() / 2.0, h.abs() / 2.0, angle.eval(ctx)?))
+        }
+    })
+}
+
+/// Close an open polypoint the way `0x40ae40` does while painting.
+///
+/// 1. If the lines of the first segment (p1→p0) and the last segment
+///    (p[n-2]→p[n-1]) meet beyond both ends, that point closes the polygon.
+/// 2. Otherwise each end segment is extended past its end point onto the
+///    lines of a box spanning the view plus two view-sizes on every side
+///    (corners TL, TR, BR, BL; edge i runs corner i → i+1). The nearest hit
+///    on the outward side wins. The polygon continues from the last point to
+///    its hit, walks the box corners backwards (counter-clockwise in world
+///    coordinates) to the first point's hit and closes. If either end misses,
+///    nothing is added.
+///
+/// The region therefore lies to the left of the path p0 → p[n-1].
+pub fn close_open_polypoint(pts: &[Pt], view: View) -> Vec<Pt> {
+    let mut out = pts.to_vec();
+    let n = pts.len();
+    if n < 2 {
+        return out;
+    }
+    let (p0, p1, pl, pm) = (pts[0], pts[1], pts[n - 1], pts[n - 2]);
+
+    // 1. End-segment lines meeting beyond both ends.
+    let (dx1, dy1) = (p1[0] - p0[0], p1[1] - p0[1]);
+    let (fx, fy) = (pm[0] - pl[0], pm[1] - pl[1]);
+    let det = dx1 * fy - fx * dy1;
+    if det.abs() >= DET_EPS {
+        let d22 = p0[1] * p1[0] - p1[1] * p0[0];
+        let d1 = pm[0] * pl[1] - pl[0] * pm[1];
+        let y = (d22 * fy - d1 * dy1) / det;
+        let x = (d22 * fx - d1 * dx1) / det;
+        if (x - p0[0]).abs() <= (x - p1[0]).abs()
+            && (y - p0[1]).abs() <= (y - p1[1]).abs()
+            && (x - pl[0]).abs() <= (x - pm[0]).abs()
+            && (y - pl[1]).abs() <= (y - pm[1]).abs()
+        {
+            out.push([x, y]);
+            return out;
+        }
+    }
+
+    // 2. Rays onto the box around the view.
+    let (vx0, vy0, vx1, vy1) = view;
+    let (w, h) = (vx1 - vx0, vy1 - vy0);
+    let (xl, xr, yt, yb) = (vx0 - 2.0 * w, vx1 + 2.0 * w, vy1 + 2.0 * h, vy0 - 2.0 * h);
+    let corners: [Pt; 4] = [[xl, yt], [xr, yt], [xr, yb], [xl, yb]];
+    // Per end: (edge index, hit). End 0 extends p1→p0, end 1 extends p[n-2]→p[n-1].
+    let mut hits: [Option<(usize, Pt)>; 2] = [None, None];
+    for (end, (tip, inner)) in [(p0, p1), (pl, pm)].into_iter().enumerate() {
+        let (dx, dy) = (inner[0] - tip[0], inner[1] - tip[1]);
+        for i in 0..4 {
+            let (ci, cj) = (corners[i], corners[(i + 1) % 4]);
+            let (ex, ey) = (ci[0] - cj[0], ci[1] - cj[1]);
+            let det = ey * dx - ex * dy;
+            if det.abs() < DET_EPS {
+                continue;
+            }
+            let d1 = tip[1] * inner[0] - inner[1] * tip[0];
+            let d22 = ci[0] * cj[1] - ci[1] * cj[0];
+            let y = (ey * d1 - d22 * dy) / det;
+            let x = (ex * d1 - d22 * dx) / det;
+            if (x - tip[0]).abs() > (x - inner[0]).abs() || (y - tip[1]).abs() > (y - inner[1]).abs() {
+                continue;
+            }
+            let better = match hits[end] {
+                None => true,
+                Some((_, prev)) => {
+                    (x - inner[0]).abs() < (prev[0] - inner[0]).abs()
+                        || (y - inner[1]).abs() < (prev[1] - inner[1]).abs()
+                }
+            };
+            if better {
+                hits[end] = Some((i, [x, y]));
+            }
+        }
+    }
+    let (Some((e0, h0)), Some((e1, h1))) = (hits[0], hits[1]) else {
+        return out;
+    };
+    out.push(h1);
+    let walk: Vec<usize> = if e0 < e1 {
+        (e0 + 1..=e1).rev().collect()
+    } else if e1 < e0 {
+        (0..=e1).rev().chain((e0 + 1..=3).rev()).collect()
+    } else {
+        // Both on one edge: go all the way round only when the first point's
+        // hit lies behind the last point's hit in the walking direction.
+        let around = match e0 {
+            0 => h1[0] < h0[0],
+            1 => h0[1] < h1[1],
+            2 => h0[0] < h1[0],
+            _ => h1[1] < h0[1],
+        };
+        if around {
+            (0..4).map(|k| (e0 + 4 - k) % 4).collect()
+        } else {
+            Vec::new()
+        }
+    };
+    out.extend(walk.into_iter().map(|k| corners[k]));
+    out.push(h0);
+    out
 }
 
 /// Evaluated bounding line.
@@ -218,52 +322,46 @@ fn eval_points(points: &[(Expr, Expr)], ctx: &Context) -> Result<Vec<Pt>, ExprEr
         .collect()
 }
 
-/// General form `p*x + q*y = r` of an evaluated line.
-fn general_form(l: &EvalLine) -> (f64, f64, f64) {
-    match l.kind {
-        // y = k*x + b  ->  -k*x + y = b
-        LineKind::Slope => (-l.k, 1.0, l.b),
-        // x = k*y + b  ->  x - k*y = b
-        LineKind::InverseSlope => (1.0, -l.k, l.b),
-    }
-}
-
-/// Intersection point of two evaluated lines, or `None` if (near) parallel.
+/// Intersection of a polygon's previous line `a` with the current line `b`,
+/// with the original's per-type formulas (`0x409860`); `None` if not finite
+/// (parallel lines). A line of invalid type puts the vertex at the origin.
 pub fn line_intersection(a: &EvalLine, b: &EvalLine) -> Option<Pt> {
-    let (pa, qa, ra) = general_form(a);
-    let (pb, qb, rb) = general_form(b);
-    let det = pa * qb - pb * qa;
-    if det.abs() < 1e-12 {
-        return None;
-    }
-    Some([
-        (ra * qb - rb * qa) / det,
-        (pa * rb - pb * ra) / det,
-    ])
+    let (k1, b1, k2, b2) = (a.k, a.b, b.k, b.b);
+    let p = match (a.kind, b.kind) {
+        (LineKind::Invalid, _) | (_, LineKind::Invalid) => [0.0, 0.0],
+        (LineKind::Slope, LineKind::Slope) => {
+            let x = (b2 - b1) / (k1 - k2);
+            [x, k1 * x + b1]
+        }
+        (LineKind::InverseSlope, LineKind::InverseSlope) => {
+            let y = (b2 - b1) / (k1 - k2);
+            [k1 * y + b1, y]
+        }
+        (LineKind::Slope, LineKind::InverseSlope) => {
+            let y = (k1 * b2 + b1) / (1.0 - k2 * k1);
+            [k2 * y + b2, y]
+        }
+        (LineKind::InverseSlope, LineKind::Slope) => {
+            let x = (k1 * b2 + b1) / (1.0 - k2 * k1);
+            [x, k2 * x + b2]
+        }
+    };
+    (p[0].is_finite() && p[1].is_finite()).then_some(p)
 }
 
-/// Build the ordered vertex loop of a `<polygon>` from its bounding lines by
-/// intersecting successive lines in document order (wrapping last -> first),
-/// exactly as the original feeds vertices to GDI `Polygon`. Self-intersections
-/// are resolved later by the even-odd fill in [`simplify_ring`].
+/// Build the vertex loop of a `<polygon>`: vertex i = line[i-1] ∩ line[i]
+/// (vertex 0 = last ∩ first), as fed to GDI `Polygon` by `0x409c00`.
+/// Self-intersections are resolved by the even-odd fill in [`simplify_ring`].
 pub fn polygon_from_lines(lines: &[EvalLine]) -> Option<Vec<Pt>> {
     let n = lines.len();
     if n < 3 {
         return None;
     }
-    let mut pts = Vec::with_capacity(n);
-    for i in 0..n {
-        if let Some(p) = line_intersection(&lines[i], &lines[(i + 1) % n]) {
-            if p[0].abs() < BIG && p[1].abs() < BIG {
-                pts.push(p);
-            }
-        }
-    }
-    if pts.len() >= 3 {
-        Some(pts)
-    } else {
-        None
-    }
+    let pts: Vec<Pt> = (0..n)
+        .filter_map(|i| line_intersection(&lines[(i + n - 1) % n], &lines[i]))
+        .filter(|p| p[0].abs() < BIG && p[1].abs() < BIG)
+        .collect();
+    (pts.len() >= 3).then_some(pts)
 }
 
 /// Sample an (optionally rotated) ellipse into a polygon ring. `angle` degrees.
@@ -298,7 +396,6 @@ fn compute_bounds(geo: &CharGeometry) -> Option<(f64, f64, f64, f64)> {
         for s in &mg.shapes {
             match s {
                 Shape::Region(rings) => rings.iter().flatten().for_each(&mut acc),
-                Shape::Polyline(pl) => pl.iter().for_each(&mut acc),
             }
         }
     }

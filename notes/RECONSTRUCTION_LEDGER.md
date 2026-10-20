@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 53 pass)
+- `cargo test --workspace`   (currently 65 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 53 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 65 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -53,12 +53,12 @@ memory (Flatpak overlay + CLI wrapper `~/projects/slack-rea/tools/rea-ghidra.sh`
 6. **Update this ledger**: the entry's evidence (address), what you verified, and
    the verdict. Append new entries as `L<n>`.
 
-**NEXT TASK (start here).** L4 — implement the reversed geometry/region
-semantics in `model.rs`/`geom.rs` (sequential per-mode CombineRgn fold, `xor`,
-`mode` default off, `closed` default on, open polypoints filled) with tests,
-then continue down the **Engines to reverse** table (`.fvb` parser re-verify →
-DFT/signal + Calculator channel mode → ОМП → COMTRADE `.cff`/`.osc`). L2 (the
-evaluator) is done ✅.
+**NEXT TASK (start here).** `.fvb` parser re-verify (`FUN_0040c7e0`): what a
+missing/empty expression attribute does (we default to "0"), parameter-default
+vs `<var>` evaluation order and redefinition, `dimension` parsing, and how the
+settings editor (BlockPropertyGrid) feeds overrides — then continue down the
+**Engines to reverse** table (DFT/signal + Calculator channel mode → ОМП →
+COMTRADE `.cff`/`.osc`). Done so far: L2 evaluator ✅, L4 geometry ✅.
 
 **Scope reality.** "Every byte" literally = 9129 funcs of mostly MFC boilerplate;
 the *provable* target is the behavioural engines (this ledger's table). `.sto`
@@ -133,7 +133,7 @@ decompilation (pending, listed below).
 | Formula token table | `FUN_00401000` @0x401000 | `expr.rs` | 🟡 L1 (math ✅, channel accessors ❌) |
 | Formula evaluator (tokenizer/grammar/values) | `FUN_00418c40`, `0x419950`..`0x41f960` | `expr.rs` | ✅ L2 (numeric) |
 | `.fvb` parser dispatch | `FUN_0040c7e0` (prior session) | `parse.rs` | ⏳ re-verify |
-| Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ❌ L4 reversed, fix pending |
+| Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ✅ L4 |
 | DFT / phasors / RMS | (pending) | `signal.rs` | ⏳ pending |
 | Symmetric components / impedances | (pending) | `signal.rs`/`analysis.rs` | ⏳ pending |
 | ОМП single/double/k0 | (pending) | `omp.rs` | ⏳ pending |
@@ -141,12 +141,13 @@ decompilation (pending, listed below).
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
 
-Next: L4 implementation (geometry), then `.fvb` parser re-verify, DFT/signal
-(incl. the Calculator channel mode + `rms: fourie: a0: …`), ОМП, COMTRADE.
+Next: `.fvb` parser re-verify (attribute defaults, missing attributes, parameter
+/var evaluation order), DFT/signal (incl. the Calculator channel mode + `rms:
+fourie: a0: …`), ОМП, COMTRADE.
 
 ---
 
-## L4 — Geometry / region engine  ·  ❌ reversed, Rust fix PENDING (next task)
+## L4 — Geometry / region engine  ·  ✅ MATCH (world-space; pixel quantisation not modelled)
 
 Evidence (subagent decompile of FastView.exe; scratch at the session scratchpad,
 not committed). Each primitive is a `Figure` subclass — header `{vtable, +4 mode,
@@ -186,11 +187,46 @@ Behaviour:
    reset region outline only, drawn only if window flag +0x489; characteristics
    drawn last→first; nothing drawn when `scale·extent ≥ 800·printScale`.
 
-Rust action: model.rs (`Mode` default Off, `closed` default true, `Combine::Xor`,
-explicit "absent" op), geom.rs sequential CombineRgn fold with first-figure-
-starts semantics, open polypoint closed via a far box, degenerate figure =
-empty-but-starts. Check the shipped library for figures relying on the
-uninitialised-op path before choosing its behaviour.
+Library scan (original UTF-16 `FastView.fvb`): no later figure lacks `type`
+(the uninitialised-op path is never hit); every `mode` is explicit; no `xor`;
+all 374 polygon lines are type 1/2; three characteristics start a pass with an
+`and` (Эллиптическая ×2, РНМ) — harmless under first-starts semantics; **all 58
+polypoints are `closed="off"` in DIF characteristics** — the original paints
+them as filled operate/reset regions, we drew bare polylines (visible on every
+differential characteristic).
+
+Our impl (reconciled): `model.rs` — `Mode` "on" else Off, `Combine::Xor`,
+`LineKind::Invalid`; `parse.rs` — `closed` false only for "off". `geom.rs` —
+per-mode sequential CombineRgn fold (first figure starts, its type ignored;
+degenerate figures start the pass as empty), the original's per-type-pair line
+intersection formulas and vertex order (vertex i = line[i−1] ∩ line[i]),
+invalid-type vertices at the origin, `close_open_polypoint` = the `0x40ae40`
+closing (end-line intersection test, far box = view ± 2 view-sizes, nearest
+outward hit, backwards corner walk incl. the same-edge full-loop rule),
+`evaluate` (no view = autoscale pass, direct close) vs `evaluate_in_view`
+(paint pass). GUI: view-dependent characteristics re-evaluated against the last
+plot bounds; autoscale uses the view-independent extent (no feedback loop).
+Pinned by `tests/geometry.rs` (12 tests incl. sequential-vs-grouped,
+first-type-ignored, xor, defaults, vertex order, same-edge corner walk, every
+shipped DIF characteristic fills). Headless render of block 4 (transformer
+ДЗТ/ДТО) shows operate regions above the restraint curves.
+
+Residual / not modelled (honest):
+- Integer-pixel GDI regions (round-half-up, floor/ceil bboxes, Bézier ellipse)
+  vs our world-space polygons: edges may differ by < 1 pixel; the 1×1-pixel
+  stand-in for degenerate figures is treated as empty.
+- Parallel consecutive polygon lines: original → inf → `0x80000000` → GDI
+  failure; we drop the vertex (graceful divergence on invalid input).
+- Absent `type` on a non-first figure: undefined in the original (uninitialised
+  heap); we union. Not reachable with the shipped library.
+- `mode`/`type`/`closed` string compares: Ordinal_2948 case-sensitivity NOT
+  DETERMINED; we compare case-insensitively.
+- Paint details (presentation, not geometry): characteristics drawn last→first,
+  operate fill alpha 50, reset outline only and gated by a window flag, nothing
+  drawn when `scale·extent ≥ 800·printScale`, the 9-entry colour table
+  `0x4c3030`. The GUI after this change was NOT screenshot-verified (the
+  Wayland capture missed the window this session); the headless example render
+  was checked instead.
 
 ---
 

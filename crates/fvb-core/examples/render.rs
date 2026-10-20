@@ -3,7 +3,7 @@
 //!
 //! Usage: `cargo run -p fvb-core --example render -- <block_index> <out.png>`
 
-use fvb_core::geom::Shape;
+use fvb_core::geom::{evaluate_in_view, Shape};
 use fvb_core::*;
 use tiny_skia::*;
 
@@ -66,6 +66,14 @@ fn main() {
     miny = cy0 - span / 2.0;
     maxy = cy0 + span / 2.0;
 
+    // Paint pass: like the original, open polypoints are closed against the
+    // view that the (view-independent) autoscale pass chose.
+    for (ci, geo) in items.iter_mut() {
+        let ch = &block.characteristics[*ci];
+        let cx = ch.context(&ch.default_settings()).unwrap();
+        *geo = evaluate_in_view(ch, &cx, Some((minx, miny, maxx, maxy))).unwrap();
+    }
+
     let margin = 40.0_f32;
     let plot = W as f32 - 2.0 * margin;
     let to_px = |p: &[f64; 2]| -> (f32, f32) {
@@ -117,65 +125,37 @@ fn draw_shapes(
     fill: bool,
     to_px: &dyn Fn(&[f64; 2]) -> (f32, f32),
 ) {
-    for shape in shapes {
-        match shape {
-            Shape::Region(rings) => {
-                for (idx, ring) in rings.iter().enumerate() {
-                    if ring.len() < 2 {
-                        continue;
-                    }
-                    let mut pb = PathBuilder::new();
-                    let (x, y) = to_px(&ring[0]);
-                    pb.move_to(x, y);
-                    for p in &ring[1..] {
-                        let (x, y) = to_px(p);
-                        pb.line_to(x, y);
-                    }
-                    pb.close();
-                    if let Some(path) = pb.finish() {
-                        if idx == 0 && fill {
-                            let mut paint = Paint::default();
-                            paint.set_color_rgba8(r, g, b, 40);
-                            paint.anti_alias = true;
-                            pm.fill_path(&path, &paint, FillRule::EvenOdd, Transform::identity(), None);
-                        }
-                        let mut sp = Paint::default();
-                        let a = if fill { 255 } else { 150 };
-                        sp.set_color_rgba8(r, g, b, a);
-                        sp.anti_alias = true;
-                        pm.stroke_path(
-                            &path,
-                            &sp,
-                            &Stroke { width: if fill { 2.0 } else { 1.2 }, ..Default::default() },
-                            Transform::identity(),
-                            None,
-                        );
-                    }
-                }
+    for Shape::Region(rings) in shapes {
+        for (idx, ring) in rings.iter().enumerate() {
+            if ring.len() < 2 {
+                continue;
             }
-            Shape::Polyline(pl) => {
-                if pl.len() < 2 {
-                    continue;
+            let mut pb = PathBuilder::new();
+            let (x, y) = to_px(&ring[0]);
+            pb.move_to(x, y);
+            for p in &ring[1..] {
+                let (x, y) = to_px(p);
+                pb.line_to(x, y);
+            }
+            pb.close();
+            if let Some(path) = pb.finish() {
+                if idx == 0 && fill {
+                    let mut paint = Paint::default();
+                    paint.set_color_rgba8(r, g, b, 40);
+                    paint.anti_alias = true;
+                    pm.fill_path(&path, &paint, FillRule::EvenOdd, Transform::identity(), None);
                 }
-                let mut pb = PathBuilder::new();
-                let (x, y) = to_px(&pl[0]);
-                pb.move_to(x, y);
-                for p in &pl[1..] {
-                    let (x, y) = to_px(p);
-                    pb.line_to(x, y);
-                }
-                if let Some(path) = pb.finish() {
-                    let mut sp = Paint::default();
-                    sp.set_color_rgba8(r, g, b, if fill { 255 } else { 150 });
-                    sp.anti_alias = true;
-                    pm.stroke_path(
-                        &path,
-                        &sp,
-                        &Stroke { width: 2.0, ..Default::default() },
-                        Transform::identity(),
-                        None,
-                    );
-                }
+                let mut sp = Paint::default();
+                let a = if fill { 255 } else { 150 };
+                sp.set_color_rgba8(r, g, b, a);
+                sp.anti_alias = true;
+                pm.stroke_path(
+                    &path,
+                    &sp,
+                    &Stroke { width: if fill { 2.0 } else { 1.2 }, ..Default::default() },
+                    Transform::identity(),
+                    None,
+                );
             }
         }
     }
