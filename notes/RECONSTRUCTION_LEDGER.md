@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 65 pass)
+- `cargo test --workspace`   (currently 74 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 65 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 74 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -53,12 +53,14 @@ memory (Flatpak overlay + CLI wrapper `~/projects/slack-rea/tools/rea-ghidra.sh`
 6. **Update this ledger**: the entry's evidence (address), what you verified, and
    the verdict. Append new entries as `L<n>`.
 
-**NEXT TASK (start here).** `.fvb` parser re-verify (`FUN_0040c7e0`): what a
-missing/empty expression attribute does (we default to "0"), parameter-default
-vs `<var>` evaluation order and redefinition, `dimension` parsing, and how the
-settings editor (BlockPropertyGrid) feeds overrides — then continue down the
-**Engines to reverse** table (DFT/signal + Calculator channel mode → ОМП →
-COMTRADE `.cff`/`.osc`). Done so far: L2 evaluator ✅, L4 geometry ✅.
+**NEXT TASK (start here).** L6 — reconcile `signal.rs` with the reversed
+channel methods (N = rate / trunc(f_nom); phasor sine-referenced at the newest
+sample, window ending at idx inclusive; `fault` = lag-N second difference with
+the 2N zero rule; rms/a0 windows), then the Calculator channel mode (CHANNEL
+tokens: scalar = sample, complex = phasor) and the channel accessors `rms:
+fourie: a0: fault: frequency: 3i0: i1: i2: zl: zf:`. Then L7 — rewrite `omp.rs`
+as the reversed per-sample, multi-section engine. Then COMTRADE `.cff`/`.osc`.
+Done: L2 evaluator ✅, L4 geometry ✅, L5 loader/evaluation ✅ (persistence ❌).
 
 **Scope reality.** "Every byte" literally = 9129 funcs of mostly MFC boilerplate;
 the *provable* target is the behavioural engines (this ledger's table). `.sto`
@@ -132,11 +134,11 @@ decompilation (pending, listed below).
 |---|---|---|---|
 | Formula token table | `FUN_00401000` @0x401000 | `expr.rs` | 🟡 L1 (math ✅, channel accessors ❌) |
 | Formula evaluator (tokenizer/grammar/values) | `FUN_00418c40`, `0x419950`..`0x41f960` | `expr.rs` | ✅ L2 (numeric) |
-| `.fvb` parser dispatch | `FUN_0040c7e0` (prior session) | `parse.rs` | ⏳ re-verify |
+| `.fvb` loader / evaluation / settings | `FUN_0040c7e0`, `FUN_00409260`, `FUN_00407750` | `parse.rs`/`model.rs`/`geom.rs` | ✅ L5 (persistence ❌) |
 | Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ✅ L4 |
-| DFT / phasors / RMS | (pending) | `signal.rs` | ⏳ pending |
-| Symmetric components / impedances | (pending) | `signal.rs`/`analysis.rs` | ⏳ pending |
-| ОМП single/double/k0 | (pending) | `omp.rs` | ⏳ pending |
+| DFT / phasors / RMS | `FUN_00426fc0` & channel methods | `signal.rs` | ❌ L6 reversed, fix pending |
+| Symmetric components / impedances | Calculator `i1: i2: 3i0: zl: zf:` | `signal.rs`/`analysis.rs` | 🟡 L6 (view code not located) |
+| ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | ❌ L7 reversed, rewrite pending |
 | COMTRADE reader/writer | `ComtradeConverter` | `comtrade.rs` | ⏳ pending |
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
@@ -227,6 +229,169 @@ Residual / not modelled (honest):
   `0x4c3030`. The GUI after this change was NOT screenshot-verified (the
   Wayland capture missed the window this session); the headless example render
   was checked instead.
+
+---
+
+## L5 — `.fvb` loader + characteristic evaluation + settings grid  ·  ✅ MATCH (persistence ❌)
+
+Evidence (subagent decompile; MFC ordinals resolved against the bundled
+mfc120u.dll 12.0.40649 export table: Ordinal_2948 = `CString::Compare`
+(wcscmp), 2954 = `CompareNoCase`, 8594 = `MakeLower`):
+- Loader `FUN_0040c7e0`: in-house XML tree (`FUN_004aa220`, nodes {tag,
+  children, std::map<CString,CString> attrs}); loads **every `*.fvb` in the exe
+  directory** (FindFirstFileW). Walked by structure — block/characteristic/line
+  tag names never checked; characteristic children dispatched by Compare
+  against parameter/var/polygon/polypoint/circle/ellipse, others ignored.
+  `FUN_00408ab0`: exact-key lookup, **missing attribute = empty string**,
+  stored as text (nothing evaluated at load). All value compares exact and
+  case-sensitive; `dimension` only `Compare(.., L"DIF")` (0x4c3c28). Flag 0
+  (CircleDiagramWnd 0x43608f/0x43641e/0x437691) keeps non-DIF, flag 1
+  (DiffDiagramWnd 0x44227f/0x4424fe/0x443191) keeps DIF; empty blocks dropped.
+- Evaluation `FUN_00409260` (only from `FUN_00437520`, then InvalidateRect):
+  per characteristic: clear its map; each parameter's grid value text →
+  `SetVariable` (`FUN_004083b0`: lowercase name, tokenize+evaluate, insert/
+  overwrite); each var likewise; then each figure's evaluate. Single pass
+  (defaults see earlier params; vars see params + earlier vars); last
+  assignment wins. **One try/catch around the whole loop** (0x40948c → message
+  0x40A to the error window): the first error abandons the rest of the block —
+  later figures/characteristics keep previous values. Triggered by
+  `BlockPropertyGrid::OnPropertyChanged` (0x407580), block selection (0x407ab8)
+  and diagram init (0x436b30/0x442a10) — not by paint.
+- Error text `"<formula>: <msg>"`; string table (read from the PE): 0x157
+  "Синтаксическая ошибка в формуле", 0x42f "Переменная не найдена", 0x430
+  "Неправильное число переменных", 0x431 "Аргумент функции должен быть
+  каналом", 0x42e "Результат не действителен". An empty formula → 0x157.
+- `BlockPropertyGrid` (`FUN_00407750`): property 0 = block selector; one group
+  per characteristic, parameters as **string** properties (COleVariant BSTR =
+  default text, no mask/min/max/format) re-evaluated as formulas. Persistence
+  (`FUN_00408cf0` save / `FUN_00409030` load): settings tree section "Circle
+  Chart" / "Diff Chart" → "Selected Block" → per characteristic `visible` and
+  per parameter `value` text (backing file NOT DETERMINED).
+
+Our impl: `parse.rs` rewritten as a structural DOM walk with exact compares
+and lenient (`Expr::lenient`) expression storage; `model.rs` exact
+`Dimension`/`Mode`/`Combine`, `_wtoi` line types, `Settings` = name → formula
+text, `Characteristic::context` (single pass, `FormulaError` with the
+original's message), `Library::for_dimension`, `Library::extend`; `geom.rs`
+`FigureValues` + `evaluate_figures` (stop at first error, keep stale) +
+`evaluate_block` (abort the block) + `build_geometry`; `ExprError` messages =
+the original strings. GUI: separate circle/differential diagram state, each
+with its own filtered library (fixes the two mixed blocks "Защита
+электродвигателей/генераторов (с 2025 г.в.)" whose OHM and DIF characteristics
+we drew on one plane); settings grid = groups per characteristic with text
+values, committing re-evaluates the whole block and shows the error text; all
+`*.fvb` beside the executable are loaded (bundled copy as fallback). Pinned by
+`tests/loader.rs` (7) + 2 GUI tests.
+
+Residual / honest:
+- ❌ Settings/visibility **persistence** across runs not implemented (original
+  saves them in its settings tree).
+- Figure-granular staleness: the original updates a failing figure's fields up
+  to the failing attribute; we keep the whole figure's previous values.
+- Never-evaluated figures: original's zero-initialised fields → we treat as
+  degenerate.
+- Our extra "Сбросить уставки" button and per-characteristic visibility list
+  are conveniences (the original's visible flag exists; its UI not mapped).
+- GUI change not screenshot-verified this session (Wayland capture missed).
+
+---
+
+## L6 — Signal engine (channel methods)  ·  ❌ reversed, Rust reconcile PENDING
+
+Evidence (subagent objdump/decompile; all double constants read from bytes).
+OscillHelper.dll exports only `ComtradeConverter` — no signal code there.
+- **N (samples/period)** (0x427062, 0x426320, 0x427320, 0x426d40, 0x4276f0):
+  per-channel resampled rate `chan+0x108` ≠ 0 → `round(rate/50.0)` (0x4d1718);
+  else `N = rate / trunc(f_nom)` (unsigned int division; `rate` = `rec+0x228`,
+  `f_nom` = `rec+0x220` from the CFG). Never a measured frequency.
+- **Phasor** `FUN_00428ac0` reads a cache filled by `FUN_00428490` via
+  `FUN_00426fc0`: static `sinT[k]=sin(2πk/N)`, `cosT[k]=cos(2πk/N)`, k=1..N;
+  window = the N samples ending at idx **inclusive** (s = idx−N+k);
+  `Re = (√2/N)Σ sinT[k]·x[s]`, `Im = (√2/N)Σ cosT[k]·x[s]` (RMS-scaled,
+  √2 = sqrt(2.0) at runtime); 0 while idx < N−1. ⇒ P_FV = j·e^{−j2π/N}·P_ours:
+  **sine-referenced at the newest sample** (magnitudes & relative angles equal
+  ours, absolute angles differ by 90° − 360°/N). No DC/mimic filtering.
+  Flag 0x2000: cache copied from stored phasors × ±k. Frequency-channel
+  variant `FUN_004267e0` (record with one rate segment + a selected "Гц"
+  channel `rec+0x874`): trapezoidal integral over exactly one measured period
+  with fractional end correction, × √2·f/P.
+- **rms** `FUN_004272a0(idx, periods)`: true RMS over W = N·periods samples
+  ending at idx inclusive; 0 while W−1 > idx. Calculator passes periods=1.
+- **fourie:(ch,n)** `FUN_00426240`: RMS magnitude of harmonic n over the phasor
+  window (`sqrt(C²+S²)·√2/N`); n==1 additionally × `rec+0x278` (1.0128 /
+  1.00259 / 1.014065 by a non-COMTRADE header type; COMTRADE default NOT
+  DETERMINED); n==0 → |a0|.
+- **a0** `FUN_00426c90(idx, P)`: signed mean over W = N·P ending at idx.
+- **fault** `FUN_00427670`: `d = x[s] − 2x[s−N] + x[s−2N]` (**one-period lag**,
+  terms with s < 2N are 0), result `sqrt(Σd²)/sqrt(N)` over k=1..N.
+  ← ours uses a lag-1 second difference / dt². WRONG.
+- **Instantaneous** `FUN_00426020`: raw (COMTRADE a·x+b applied at load,
+  0x451904) × k, k = Primary/Secondary ratio by flags `+0x88/+0x89`; flag word
+  `+0x60`: 0x1000 ADC code `round((raw−b)/(a·m))`, 0x400 subtract
+  k·mean-over-whole-periods, 0x800 invert. Digital: raw.
+- **frequency:** = `rec+0x1fc[idx]` = nominal (per rate segment), NOT
+  measured. `arg:` warm-up = N (Calculator `.fvb` context: frequency 0.0,
+  warm-up 0 — vtable 0x4c3df4 slots 0x4084f0/0x404ba0; channels context
+  `CalcChannels` vtable 0x4c65c4).
+- Formula accessors: `3i0:`/`3u0:` = Ia+Ib+Ic (not /3), scalar = |·|; `i1:` =
+  (Ia + a·Ib + a²·Ic)/3, `i2:` = (Ia + a²·Ib + a·Ic)/3 (√3 = sqrt(3.0), /6 const
+  0x4d1a00); `zl:(U,I1,I2,Imin)` = U/(I1−I2), divides by 0 when
+  Imin > |I1/k1 − I2/k2|; `zf:` (11 args) = U/(I + K0·a2 + Km·a3) with
+  K0 = ((a4+ja7)/(a5+ja8) − 1)/3, Km = ((a6+ja9)/(a5+ja8))/3 (roles inferred);
+  `zk:` NOT DETERMINED. The "Быстрый анализ" view code itself NOT located.
+
+Rust action (`signal.rs`): N rule; phasor sine/newest-sample reference (keep
+an explicit conversion); `fault` lag-N second difference with the 2N zero
+rule and /sqrt(N); rms/a0 windows; then the Calculator channel mode (CHANNEL
+tokens, flags 7) + `rms: fourie: a0: fault: frequency: 3i0: i1: i2: zl: zf:`.
+
+---
+
+## L7 — ОМП (fault location)  ·  ❌ reversed, Rust rewrite PENDING
+
+Evidence (subagent decompile; main `0x4a00b0`). Our `omp.rs` (single
+cursor-instant phasor, plain reactance / textbook two-terminal formula) is
+**structurally different** from the original:
+- Inputs: tree editor (DIALOG 336 "Параметры ОМП"), values via `_wtof`.
+  Method `obj+0x64`: 1 isolated, 2 grounded, 4 double-ended. Per substation
+  Inom (positive-sequence nominal current). Line = list of **sections**
+  (0x58-byte records): R,X per km (isolated), length km, R0,X0, R1,X1 per km,
+  number of supports, parallel lines (Rm,Xm per km + current channel), taps
+  (R0,X0 total Ω). Channels by name: isolated Uab/Ubc/Uca + Ia/Ib/Ic; grounded
+  Ua/Ub/Uc + Ia/Ib/Ic. No sections or Inom = 0 → message 349. Validation
+  0x4a5d70 (R0&X0 / R1&X1 not both 0, section length ≠ 0). Primary vs
+  secondary NOT DETERMINED (no ratio applied in ОМП code).
+- Phasors (0x477280): one-cycle DFT over samples [i−N, i−1] (**excludes i**),
+  scaled 2/N (peak); 0 for i < N. Symmetrical comps I1, I2, I0=(Ia+Ib+Ic)/3,
+  U0 (0x497090).
+- Per-sample fault-type detection (0x498580, hysteresis 0.9): 3ph if
+  |I1|>4|I2| and |I1|>√2·Inom; asymmetric if 4|I2|>|I1|; no-earth if
+  |I2|>6|I0|; 2ph/1ph need |I1|>0.1·√2·Inom. Debounce (0x499930): rises after
+  N/4 samples, falls immediately. Phase selection 0x498c64.. by hysteretic
+  current comparisons. Isolated variant 0x497f10.
+- Loops: grounded (0x499e90) 1ph U_ph/I_ph ref I0; 2ph difference loop; 3ph
+  AB. Isolated (0x499c80) Uab/(Ia−Ib)…, phase-earth not located.
+- Grounded formula (0x49a670): K = Z0/Z1 − 1 on I0; Iloop = Iph + K·I0 +
+  Σ(Zm/Z1)·I_par; d = Im(U/Iref′)/Im(Z1·Iloop/Iref′), Iref′ = Iref·e^{jθ}
+  (Takagi-type, θ from taps NOT DETERMINED); section walking with voltage drop
+  and tap admittances; d<0 → 0. Isolated (0x49a430): Z′ = U/I − Z_acc; if
+  arg(R+jX) − arg(Z′) > 0 → d = Im Z′/X else Re Z′/R.
+- Double-ended (0x49cf00/0x49cd10): minimise | |U_f(end1,x)| − |U_f(end2,L−x)| |
+  (magnitudes only, no angle alignment); 1ph via U0/I0/Z0 incl. mutual, 2/3ph
+  via U2/I2/Z1; bisection-like search step L/2 … ≤ 0.01 km, x<0 → 0;
+  direction check: median arg(Z1end)−arg(Z2end) within ±90° → adjacent line.
+  Second end = second oscillogram; separate time-sync tool (0x47bb90: by
+  record start / emergency component / pre-fault, messages 3259/3305/3456).
+- Window (0x499b50, 0x477db0, 0x477a20, 0x477c40): longest run of one fault
+  type, one-period window chosen by min σ of distance + min |mean| of loop
+  current (≤1000 iterations), written to cursors 1/2; moving cursors
+  recomputes. Result = **median** of per-sample distances; error = 2σ/mean·100
+  (population σ); section/support location; texts 3020/3026/3006–3008/3025
+  ("на смежной линии" if d > L or ≤ 0, no clamping); extra channels "Lкз" (m)
+  and "КЗ фазы A/B/C"; save .txt / settings .omp.
+
+Rust action: rewrite `omp.rs` as this engine (sections, per-sample distances,
+detection, window, median/σ) with tests; GUI dialog as a section tree.
 
 ---
 

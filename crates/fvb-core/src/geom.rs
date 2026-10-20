@@ -17,7 +17,7 @@
 //! The original works in integer pixels (round-half-up world→device); we keep
 //! world coordinates, so edges can differ from the original by under a pixel.
 
-use crate::expr::{Context, Expr, ExprError};
+use crate::expr::{Context, Expr, FormulaError};
 use crate::model::*;
 use i_overlay::core::fill_rule::FillRule;
 use i_overlay::core::overlay_rule::OverlayRule;
@@ -94,9 +94,72 @@ fn combine(rgn: IShapes, fig: &IShapes, op: Combine) -> IShapes {
     }
 }
 
+/// A figure's evaluated numbers — the output of the original's figure vtable
+/// slot 2, kept between evaluations.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FigureValues {
+    Polygon(Vec<EvalLine>),
+    PolyPoint(Vec<Pt>),
+    Circle { center: Pt, radius: f64 },
+    Ellipse { center: Pt, width: f64, height: f64, angle: f64 },
+}
+
+/// Evaluate one figure's expressions.
+pub fn evaluate_figure(p: &Primitive, ctx: &Context) -> Result<FigureValues, FormulaError> {
+    Ok(match p {
+        Primitive::Polygon { lines, .. } => FigureValues::Polygon(eval_lines(lines, ctx)?),
+        Primitive::PolyPoint { points, .. } => FigureValues::PolyPoint(eval_points(points, ctx)?),
+        Primitive::Circle {
+            radius, xcenter, ycenter, ..
+        } => FigureValues::Circle {
+            center: [xcenter.eval_formula(ctx)?, ycenter.eval_formula(ctx)?],
+            radius: radius.eval_formula(ctx)?,
+        },
+        Primitive::Ellipse {
+            xcenter, ycenter, width, height, angle, ..
+        } => FigureValues::Ellipse {
+            center: [xcenter.eval_formula(ctx)?, ycenter.eval_formula(ctx)?],
+            width: width.eval_formula(ctx)?,
+            height: height.eval_formula(ctx)?,
+            angle: angle.eval_formula(ctx)?,
+        },
+    })
+}
+
+/// Evaluate a characteristic's figures in document order into `figs` (one slot
+/// per figure; `None` = never evaluated). On the first error evaluation stops:
+/// earlier figures hold their new values, the failing and later ones keep
+/// their previous ones — there is no per-figure fallback in the original.
+pub fn evaluate_figures(
+    ch: &Characteristic,
+    ctx: &Context,
+    figs: &mut Vec<Option<FigureValues>>,
+) -> Result<(), FormulaError> {
+    figs.resize(ch.primitives.len(), None);
+    for (p, slot) in ch.primitives.iter().zip(figs.iter_mut()) {
+        *slot = Some(evaluate_figure(p, ctx)?);
+    }
+    Ok(())
+}
+
+/// Evaluate a whole block as `FUN_00409260` does after any settings change:
+/// for each characteristic in order, rebuild its variable map from its
+/// settings and vars, then evaluate its figures. One `try` covers the loop, so
+/// the first error abandons the rest of the block — characteristics after it
+/// keep their previous figure values.
+pub fn evaluate_block<'a>(
+    items: impl IntoIterator<Item = (&'a Characteristic, &'a Settings, &'a mut Vec<Option<FigureValues>>)>,
+) -> Result<(), FormulaError> {
+    for (ch, settings, figs) in items {
+        let ctx = ch.context(settings)?;
+        evaluate_figures(ch, &ctx, figs)?;
+    }
+    Ok(())
+}
+
 /// Evaluate every figure of `ch` with no view: open polypoints close straight
 /// back to their first point (the original's autoscale pass).
-pub fn evaluate(ch: &Characteristic, ctx: &Context) -> Result<CharGeometry, ExprError> {
+pub fn evaluate(ch: &Characteristic, ctx: &Context) -> Result<CharGeometry, FormulaError> {
     evaluate_in_view(ch, ctx, None)
 }
 
@@ -106,16 +169,24 @@ pub fn evaluate_in_view(
     ch: &Characteristic,
     ctx: &Context,
     view: Option<View>,
-) -> Result<CharGeometry, ExprError> {
-    let operate = build_mode(ch, ctx, Mode::On, view)?;
-    let reset = build_mode(ch, ctx, Mode::Off, view)?;
+) -> Result<CharGeometry, FormulaError> {
+    let mut figs = Vec::new();
+    evaluate_figures(ch, ctx, &mut figs)?;
+    Ok(build_geometry(ch, &figs, view))
+}
+
+/// Build the operate and reset regions from evaluated figure values (the
+/// original's vtable slot 3 + the CombineRgn fold of paint `0x43a4a0`).
+pub fn build_geometry(ch: &Characteristic, figs: &[Option<FigureValues>], view: Option<View>) -> CharGeometry {
+    let operate = build_mode(ch, figs, Mode::On, view);
+    let reset = build_mode(ch, figs, Mode::Off, view);
     let mut geo = CharGeometry {
         operate,
         reset,
         bounds: None,
     };
     geo.bounds = compute_bounds(&geo);
-    Ok(geo)
+    geo
 }
 
 /// True if any figure of `ch` is an open polypoint, i.e. its geometry depends
@@ -126,18 +197,17 @@ pub fn depends_on_view(ch: &Characteristic) -> bool {
         .any(|p| matches!(p, Primitive::PolyPoint { closed: false, .. }))
 }
 
-fn build_mode(
-    ch: &Characteristic,
-    ctx: &Context,
-    mode: Mode,
-    view: Option<View>,
-) -> Result<ModeGeometry, ExprError> {
+fn build_mode(ch: &Characteristic, figs: &[Option<FigureValues>], mode: Mode, view: Option<View>) -> ModeGeometry {
     // `None` until the first figure of this mode starts the region. A figure
     // whose region is degenerate (zero area) still starts it: the original
-    // substitutes a 1x1-pixel rectangle, which we treat as empty.
+    // substitutes a 1x1-pixel rectangle, which we treat as empty. A figure
+    // that was never evaluated is treated as degenerate.
     let mut region: Option<IShapes> = None;
-    for p in ch.primitives.iter().filter(|p| p.mode() == mode) {
-        let fig = figure_region(p, ctx, view)?;
+    for (i, p) in ch.primitives.iter().enumerate().filter(|(_, p)| p.mode() == mode) {
+        let fig = match figs.get(i) {
+            Some(Some(v)) => figure_region(p, v, view),
+            _ => Vec::new(),
+        };
         region = Some(match region {
             None => fig,
             Some(r) => combine(r, &fig, p.combine()),
@@ -149,46 +219,39 @@ fn build_mode(
         .filter(|s| !s.is_empty() && s[0].len() >= 3)
         .map(Shape::Region)
         .collect();
-    Ok(ModeGeometry { shapes })
+    ModeGeometry { shapes }
 }
 
 /// The region one figure contributes (its vtable slot 3).
-fn figure_region(p: &Primitive, ctx: &Context, view: Option<View>) -> Result<IShapes, ExprError> {
-    Ok(match p {
-        Primitive::PolyPoint { closed, points, .. } => {
-            let pts = eval_points(points, ctx)?;
+fn figure_region(p: &Primitive, v: &FigureValues, view: Option<View>) -> IShapes {
+    match v {
+        FigureValues::PolyPoint(pts) => {
+            let closed = !matches!(p, Primitive::PolyPoint { closed: false, .. });
             match (closed, view) {
-                (false, Some(v)) => simplify_ring(close_open_polypoint(&pts, v)),
-                _ => simplify_ring(pts),
+                (false, Some(view)) => simplify_ring(close_open_polypoint(pts, view)),
+                _ => simplify_ring(pts.clone()),
             }
         }
-        Primitive::Polygon { lines, .. } => {
-            let evaled = eval_lines(lines, ctx)?;
-            polygon_from_lines(&evaled).map(simplify_ring).unwrap_or_default()
-        }
-        Primitive::Circle {
-            radius, xcenter, ycenter, ..
-        } => {
-            let r = radius.eval(ctx)?;
-            if r.abs() < 1e-9 {
-                return Ok(Vec::new());
+        FigureValues::Polygon(lines) => polygon_from_lines(lines).map(simplify_ring).unwrap_or_default(),
+        FigureValues::Circle { center, radius } => {
+            if radius.abs() < 1e-9 {
+                return Vec::new();
             }
-            let c = [xcenter.eval(ctx)?, ycenter.eval(ctx)?];
-            simplify_ring(ellipse_points(c, r.abs(), r.abs(), 0.0))
+            simplify_ring(ellipse_points(*center, radius.abs(), radius.abs(), 0.0))
         }
-        Primitive::Ellipse {
-            xcenter, ycenter, width, height, angle, ..
+        FigureValues::Ellipse {
+            center,
+            width,
+            height,
+            angle,
         } => {
             // width/height are full axes (the original halves them).
-            let w = width.eval(ctx)?;
-            let h = height.eval(ctx)?;
-            if w.abs() < 1e-9 || h.abs() < 1e-9 {
-                return Ok(Vec::new());
+            if width.abs() < 1e-9 || height.abs() < 1e-9 {
+                return Vec::new();
             }
-            let c = [xcenter.eval(ctx)?, ycenter.eval(ctx)?];
-            simplify_ring(ellipse_points(c, w.abs() / 2.0, h.abs() / 2.0, angle.eval(ctx)?))
+            simplify_ring(ellipse_points(*center, width.abs() / 2.0, height.abs() / 2.0, *angle))
         }
-    })
+    }
 }
 
 /// Close an open polypoint the way `0x40ae40` does while painting.
@@ -295,30 +358,30 @@ pub fn close_open_polypoint(pts: &[Pt], view: View) -> Vec<Pt> {
 }
 
 /// Evaluated bounding line.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EvalLine {
     pub k: f64,
     pub b: f64,
     pub kind: LineKind,
 }
 
-fn eval_lines(lines: &[PolyLine], ctx: &Context) -> Result<Vec<EvalLine>, ExprError> {
+fn eval_lines(lines: &[PolyLine], ctx: &Context) -> Result<Vec<EvalLine>, FormulaError> {
     lines
         .iter()
         .map(|l| {
             Ok(EvalLine {
-                k: l.k.eval(ctx)?,
-                b: l.b.eval(ctx)?,
+                k: l.k.eval_formula(ctx)?,
+                b: l.b.eval_formula(ctx)?,
                 kind: l.kind,
             })
         })
         .collect()
 }
 
-fn eval_points(points: &[(Expr, Expr)], ctx: &Context) -> Result<Vec<Pt>, ExprError> {
+fn eval_points(points: &[(Expr, Expr)], ctx: &Context) -> Result<Vec<Pt>, FormulaError> {
     points
         .iter()
-        .map(|(x, y)| Ok([x.eval(ctx)?, y.eval(ctx)?]))
+        .map(|(x, y)| Ok([x.eval_formula(ctx)?, y.eval_formula(ctx)?]))
         .collect()
 }
 

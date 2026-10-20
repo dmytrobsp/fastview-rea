@@ -1,7 +1,7 @@
 //! Data model for a FastView `.fvb` characteristic library and evaluation of a
 //! characteristic (settings -> concrete geometry) against the expression engine.
 
-use crate::expr::{Context, Expr, ExprError};
+use crate::expr::{Context, Expr, FormulaError};
 use std::collections::HashMap;
 
 /// The plane a characteristic is drawn in.
@@ -14,10 +14,13 @@ pub enum Dimension {
 }
 
 impl Dimension {
+    /// `Compare(dimension, L"DIF")` (case-sensitive, `0x4c3c28`): anything but
+    /// exactly `DIF` — including `dif` — is the impedance plane.
     pub fn parse(s: &str) -> Dimension {
-        match s.trim().to_ascii_uppercase().as_str() {
-            "DIF" => Dimension::Dif,
-            _ => Dimension::Ohm,
+        if s == "DIF" {
+            Dimension::Dif
+        } else {
+            Dimension::Ohm
         }
     }
     pub fn x_label(self) -> &'static str {
@@ -55,10 +58,11 @@ pub enum Combine {
 }
 
 impl Combine {
+    /// Exact, case-sensitive compares (`CString::Compare`) in `FUN_0040c7e0`.
     pub fn parse(s: Option<&str>) -> Combine {
-        match s.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
-            Some("or") => Combine::Or,
+        match s {
             Some("and") => Combine::And,
+            Some("or") => Combine::Or,
             Some("xor") => Combine::Xor,
             Some("not") => Combine::Not,
             _ => Combine::Base,
@@ -75,11 +79,12 @@ pub enum Mode {
 
 impl Mode {
     pub fn parse(s: Option<&str>) -> Mode {
-        // FUN_0040c7e0: mode is 1 only for "on"; anything else, including a
-        // missing attribute, is 0 (reset).
-        match s.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
-            Some("on") => Mode::On,
-            _ => Mode::Off,
+        // FUN_0040c7e0: mode is 1 only for exactly "on" (case-sensitive);
+        // anything else, including a missing attribute, is 0 (reset).
+        if s == Some("on") {
+            Mode::On
+        } else {
+            Mode::Off
         }
     }
 }
@@ -97,12 +102,33 @@ pub enum LineKind {
 }
 
 impl LineKind {
+    /// `_wtoi(type)`: 1 and 2 are the two line forms, anything else (a
+    /// missing attribute is 0) is invalid.
     pub fn parse(s: Option<&str>) -> LineKind {
-        match s.map(|v| v.trim()) {
-            Some("1") => LineKind::Slope,
-            Some("2") => LineKind::InverseSlope,
+        match wtoi(s.unwrap_or("")) {
+            1 => LineKind::Slope,
+            2 => LineKind::InverseSlope,
             _ => LineKind::Invalid,
         }
+    }
+}
+
+/// CRT `_wtoi`: leading whitespace, optional sign, decimal digits; 0 if none.
+fn wtoi(s: &str) -> i64 {
+    let t = s.trim_start();
+    let (neg, digits) = match t.as_bytes().first() {
+        Some(b'-') => (true, &t[1..]),
+        Some(b'+') => (false, &t[1..]),
+        _ => (false, t),
+    };
+    let n = digits
+        .bytes()
+        .take_while(u8::is_ascii_digit)
+        .fold(0i64, |acc, d| acc.saturating_mul(10).saturating_add(i64::from(d - b'0')));
+    if neg {
+        -n
+    } else {
+        n
     }
 }
 
@@ -195,43 +221,73 @@ pub struct Library {
     pub blocks: Vec<Block>,
 }
 
+/// Parameter values as the settings grid holds them: name -> formula text.
+pub type Settings = HashMap<String, String>;
+
 impl Characteristic {
-    /// Build the evaluation context: parameter defaults (optionally overridden
-    /// by `settings`) followed by vars in document order. Later assignments to
-    /// the same name win, matching the original name-keyed map.
-    pub fn context(&self, settings: &HashMap<String, f64>) -> Result<Context, ExprError> {
-        // Keys are stored lowercased for case-insensitive resolution (see the
-        // note in `Expr::eval`).
+    /// Build the variable map exactly as `FUN_00409260` does for one
+    /// characteristic: each parameter's current value text (the settings grid
+    /// value, initially the `default` text) is evaluated as a formula against
+    /// the parameters before it, then each `<var>` against everything before
+    /// it. Names are stored lowercased; a later assignment overwrites. The
+    /// first failing formula aborts with its error.
+    pub fn context(&self, settings: &Settings) -> Result<Context, FormulaError> {
         let mut ctx = Context::new();
         for p in &self.parameters {
             let v = match settings.get(&p.name) {
-                Some(v) => *v,
-                None => p.default.eval(&ctx)?,
+                Some(text) => Expr::lenient(text).eval_formula(&ctx)?,
+                None => p.default.eval_formula(&ctx)?,
             };
             ctx.insert(p.name.to_lowercase(), v);
         }
         for v in &self.vars {
-            let val = v.expr.eval(&ctx)?;
+            let val = v.expr.eval_formula(&ctx)?;
             ctx.insert(v.name.to_lowercase(), val);
         }
         Ok(ctx)
     }
 
-    /// Default settings = each parameter's default value.
-    pub fn default_settings(&self) -> HashMap<String, f64> {
-        let mut m = HashMap::new();
-        let mut ctx = Context::new();
-        for p in &self.parameters {
-            if let Ok(v) = p.default.eval(&ctx) {
-                ctx.insert(p.name.clone(), v);
-                m.insert(p.name.clone(), v);
-            }
-        }
-        m
+    /// The settings grid's initial values: each parameter's `default` text.
+    pub fn default_settings(&self) -> Settings {
+        self.parameters
+            .iter()
+            .map(|p| (p.name.clone(), p.default.source().to_string()))
+            .collect()
     }
 }
 
 impl Library {
+    /// The library one diagram loads: `FUN_0040c7e0` with flag 0 (circle
+    /// diagram) keeps characteristics whose dimension is not `DIF`, flag 1
+    /// (differential diagram) keeps only `DIF` ones; blocks left without
+    /// characteristics are dropped.
+    pub fn for_dimension(&self, dim: Dimension) -> Library {
+        Library {
+            blocks: self
+                .blocks
+                .iter()
+                .filter_map(|b| {
+                    let characteristics: Vec<_> = b
+                        .characteristics
+                        .iter()
+                        .filter(|c| c.dimension == dim)
+                        .cloned()
+                        .collect();
+                    (!characteristics.is_empty()).then(|| Block {
+                        name: b.name.clone(),
+                        characteristics,
+                    })
+                })
+                .collect(),
+        }
+    }
+
+    /// Append another library's blocks (the original loads every `*.fvb` next
+    /// to the executable into one list).
+    pub fn extend(&mut self, other: Library) {
+        self.blocks.extend(other.blocks);
+    }
+
     pub fn block(&self, name: &str) -> Option<&Block> {
         self.blocks.iter().find(|b| b.name == name)
     }

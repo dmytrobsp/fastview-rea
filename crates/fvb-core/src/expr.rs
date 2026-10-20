@@ -47,26 +47,38 @@ use std::f64::consts::PI;
 /// Variable/parameter environment: name -> value.
 pub type Context = HashMap<String, f64>;
 
+/// Evaluation errors. The messages are the original's string-table entries
+/// (`0x157`, `0x42f`, `0x430`, `0x431`); the original shows them as
+/// `"<formula>: <message>"` (see [`FormulaError`]).
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ExprError {
-    #[error("unexpected end of expression")]
+    #[error("Синтаксическая ошибка в формуле")]
     UnexpectedEof,
-    #[error("unexpected character {0:?} at byte {1}")]
+    #[error("Синтаксическая ошибка в формуле")]
     UnexpectedChar(char, usize),
-    #[error("expected {0}")]
+    #[error("Синтаксическая ошибка в формуле")]
     Expected(&'static str),
-    #[error("unknown function {0:?}")]
+    #[error("Синтаксическая ошибка в формуле")]
     UnknownFunction(String),
-    #[error("unknown identifier {0:?}")]
+    #[error("Переменная не найдена")]
     UnknownIdent(String),
-    #[error("trailing input after expression")]
+    #[error("Синтаксическая ошибка в формуле")]
     Trailing,
-    #[error("function {0:?} takes {1} argument(s), got {2}")]
+    #[error("Неправильное число переменных")]
     ArgCount(&'static str, usize, usize),
-    #[error("exponent must be an integer")]
+    #[error("Синтаксическая ошибка в формуле")]
     NonIntegerPower,
-    #[error("function {0:?} needs an oscillogram channel argument")]
+    #[error("Аргумент функции должен быть каналом")]
     NeedsChannel(&'static str),
+}
+
+/// An [`ExprError`] together with the formula text it came from, displayed
+/// as the original's message box does.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[error("{formula}: {error}")]
+pub struct FormulaError {
+    pub formula: String,
+    pub error: ExprError,
 }
 
 /// Formula functions (token ids 0x08..0x3f of the original table). Only the
@@ -248,19 +260,47 @@ enum Node {
 /// [`Context`]s (settings change, geometry re-evaluates).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Expr {
-    root: Box<Node>,
+    src: String,
+    /// The parse result; a formula that does not parse is kept and reports
+    /// its error when evaluated, as the original (which stores the text and
+    /// tokenizes on evaluation) does.
+    root: Result<Box<Node>, ExprError>,
     /// Every identifier the tokenizer saw, including ones in ignored trailing
     /// input — the original resolves them all while tokenizing.
     idents: Vec<String>,
 }
 
 impl Expr {
-    /// Parse a formula string.
+    /// Parse a formula string, failing on a syntax error.
     pub fn parse(src: &str) -> Result<Expr, ExprError> {
-        let (toks, idents) = tokenize(src)?;
-        let mut p = Parser { toks, pos: 0 };
-        let root = Box::new(Node::List(p.list()?));
-        Ok(Expr { root, idents })
+        let e = Expr::lenient(src);
+        match &e.root {
+            Ok(_) => Ok(e),
+            Err(err) => Err(err.clone()),
+        }
+    }
+
+    /// Keep a formula string whatever it contains; a syntax error (an empty
+    /// attribute included) surfaces when it is evaluated.
+    pub fn lenient(src: &str) -> Expr {
+        let parsed = tokenize(src).and_then(|(toks, idents)| {
+            let mut p = Parser { toks, pos: 0 };
+            Ok((Box::new(Node::List(p.list()?)), idents))
+        });
+        let (root, idents) = match parsed {
+            Ok((root, idents)) => (Ok(root), idents),
+            Err(e) => (Err(e), Vec::new()),
+        };
+        Expr {
+            src: src.to_string(),
+            root,
+            idents,
+        }
+    }
+
+    /// The formula text as written.
+    pub fn source(&self) -> &str {
+        &self.src
     }
 
     /// Evaluate against a [`Context`]; returns the scalar of the single
@@ -268,16 +308,25 @@ impl Expr {
     /// stored lowercased): the original lowercases the formula before lookup,
     /// and the shipped library relies on it (`ДЗМф2_Rср` vs `ДЗМФ2_Rср`).
     pub fn eval(&self, ctx: &Context) -> Result<f64, ExprError> {
+        let root = self.root.as_ref().map_err(Clone::clone)?;
         for id in &self.idents {
             if !ctx.contains_key(id) {
                 return Err(ExprError::UnknownIdent(id.clone()));
             }
         }
-        let vals = eval_node(&self.root, ctx)?;
+        let vals = eval_node(root, ctx)?;
         if vals.len() != 1 {
             return Err(ExprError::Expected("a single value"));
         }
         Ok(vals[0].v)
+    }
+
+    /// [`Expr::eval`] with the formula text attached to the error.
+    pub fn eval_formula(&self, ctx: &Context) -> Result<f64, FormulaError> {
+        self.eval(ctx).map_err(|error| FormulaError {
+            formula: self.src.clone(),
+            error,
+        })
     }
 }
 

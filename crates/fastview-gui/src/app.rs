@@ -12,6 +12,38 @@ use fvb_core::Library;
 use std::collections::HashMap;
 
 pub const DEFAULT_LIBRARY: &[u8] = include_bytes!("../../../assets/FastView.fvb");
+
+/// The original loads every `*.fvb` in the executable's directory (in
+/// `FindFirstFile` order, i.e. by name on NTFS) into one list. We do the same
+/// and fall back to the bundled copy of the shipped library when none is there.
+pub fn load_libraries() -> (Library, String) {
+    let dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    let mut files: Vec<std::path::PathBuf> = dir
+        .and_then(|d| std::fs::read_dir(d).ok())
+        .map(|rd| {
+            rd.filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("fvb")))
+                .collect()
+        })
+        .unwrap_or_default();
+    files.sort();
+    let mut lib = Library::default();
+    let mut names = Vec::new();
+    for f in &files {
+        if let Ok(l) = std::fs::read(f).map_err(|e| e.to_string()).and_then(|b| {
+            fvb_core::load_fvb_bytes(&b).map_err(|e| e.to_string())
+        }) {
+            lib.extend(l);
+            names.push(f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+        }
+    }
+    if names.is_empty() {
+        let lib = fvb_core::load_fvb_bytes(DEFAULT_LIBRARY)
+            .unwrap_or_else(|e| panic!("bundled library failed to parse: {e}"));
+        return (lib, "FastView.fvb (встроенная)".to_string());
+    }
+    (lib, names.join(", "))
+}
 pub const DEMO_CFG: &str = include_str!("../../../assets/demo/demo_fault.cfg");
 pub const DEMO_DAT: &[u8] = include_bytes!("../../../assets/demo/demo_fault.dat");
 
@@ -330,8 +362,23 @@ pub enum Command {
     ActivateDoc(usize),
 }
 
+/// One characteristic diagram's state (circle or differential), stashed while
+/// the other diagram is active.
+pub struct DiagramState {
+    pub library: Library,
+    pub block_idx: usize,
+    pub chars: HashMap<(usize, usize), CharState>,
+    pub selected_char: Option<usize>,
+}
+
 pub struct App {
-    // library / circle-diagram state
+    /// Every loaded `.fvb` library, both planes.
+    pub full_library: Library,
+    /// Plane of the active characteristic diagram, and the stashed state of
+    /// each diagram (`[Ohm, Dif]`) while it is not active.
+    pub diagram_dim: Dimension,
+    pub diagrams: [Option<DiagramState>; 2],
+    // active diagram state
     pub library: Library,
     pub source_name: String,
     pub block_idx: usize,
@@ -404,18 +451,23 @@ pub struct App {
 /// Per-characteristic UI state (circle diagram).
 pub struct CharState {
     pub visible: bool,
-    pub settings: HashMap<String, f64>,
+    /// Parameter values as formula text (the settings grid's string values).
+    pub settings: fvb_core::Settings,
+    /// Last evaluated figure values (kept when an evaluation fails).
+    pub figs: Vec<Option<fvb_core::FigureValues>>,
     pub geo: Option<CharGeometry>,
     pub color: egui::Color32,
 }
 
 impl App {
     pub fn new() -> Self {
-        let library = fvb_core::load_fvb_bytes(DEFAULT_LIBRARY)
-            .unwrap_or_else(|e| panic!("bundled library failed to parse: {e}"));
+        let (full_library, source_name) = load_libraries();
         let mut app = App {
-            library,
-            source_name: "FastView.fvb (встроенная)".to_string(),
+            library: full_library.for_dimension(Dimension::Ohm),
+            full_library,
+            diagram_dim: Dimension::Ohm,
+            diagrams: [None, None],
+            source_name,
             block_idx: 0,
             chars: HashMap::new(),
             selected_char: None,
@@ -473,15 +525,6 @@ impl App {
                 app.add_doc(Doc::new(osc, "demo_fault".into()));
             }
         }
-        if let Ok(bi) = std::env::var("FV_BLOCK") {
-            if let Ok(i) = bi.parse::<usize>() {
-                if i < app.library.blocks.len() {
-                    app.block_idx = i;
-                    app.selected_char = None;
-                    app.ensure_block_state();
-                }
-            }
-        }
         app.view = match std::env::var("FV_VIEW").as_deref() {
             Ok("freq") => View::Frequency,
             Ok("vector") => View::Vector,
@@ -493,6 +536,18 @@ impl App {
         };
         if app.view == View::Omp {
             app.tab = RibbonTab::Omp;
+        }
+        if app.view == View::Differential {
+            app.switch_diagram(Dimension::Dif);
+        }
+        if let Ok(bi) = std::env::var("FV_BLOCK") {
+            if let Ok(i) = bi.parse::<usize>() {
+                if i < app.library.blocks.len() {
+                    app.block_idx = i;
+                    app.selected_char = None;
+                    app.ensure_block_state();
+                }
+            }
         }
         if let Ok(s) = std::env::var("FV_SKIN") {
             app.skin = match s.as_str() {
@@ -554,8 +609,8 @@ impl App {
                     RibbonTab::Home
                 };
                 match v {
-                    View::Circle => self.select_first_block_dim(Dimension::Ohm),
-                    View::Differential => self.select_first_block_dim(Dimension::Dif),
+                    View::Circle => self.switch_diagram(Dimension::Ohm),
+                    View::Differential => self.switch_diagram(Dimension::Dif),
                     _ => {}
                 }
             }
@@ -674,6 +729,7 @@ impl App {
             self.chars.entry((b, ci)).or_insert_with(|| CharState {
                 visible: true,
                 settings: ch.default_settings(),
+                figs: Vec::new(),
                 geo: None,
                 color: Self::palette(ci),
             });
@@ -684,62 +740,63 @@ impl App {
         self.recompute_block();
     }
 
+    /// Re-evaluate the whole selected block, as the original does after any
+    /// settings change (`FUN_00409260`): characteristics in order, stopping at
+    /// the first failing formula — the rest keep their previous figures.
     pub fn recompute_block(&mut self) {
         let b = self.block_idx;
         let Some(block) = self.library.blocks.get(b) else {
             return;
         };
-        for (ci, ch) in block.characteristics.iter().enumerate() {
-            if let Some(st) = self.chars.get_mut(&(b, ci)) {
-                st.geo = ch
-                    .context(&st.settings)
-                    .and_then(|cx| fvb_core::evaluate(ch, &cx))
-                    .ok();
-            }
+        let mut states: Vec<(usize, CharState)> = (0..block.characteristics.len())
+            .filter_map(|ci| self.chars.remove(&(b, ci)).map(|st| (ci, st)))
+            .collect();
+        let result = fvb_core::evaluate_block(
+            states
+                .iter_mut()
+                .map(|(ci, st)| (&block.characteristics[*ci], &st.settings, &mut st.figs)),
+        );
+        for (ci, mut st) in states {
+            let ch = &block.characteristics[ci];
+            st.geo = Some(fvb_core::geom::build_geometry(ch, &st.figs, None));
+            self.chars.insert((b, ci), st);
+        }
+        if let Err(e) = result {
+            self.status = e.to_string();
         }
     }
 
-    pub fn recompute_one(&mut self, ci: usize) {
-        let b = self.block_idx;
-        if let (Some(block), Some(st)) = (self.library.blocks.get(b), self.chars.get_mut(&(b, ci))) {
-            if let Some(ch) = block.characteristics.get(ci) {
-                st.geo = ch
-                    .context(&st.settings)
-                    .and_then(|cx| fvb_core::evaluate(ch, &cx))
-                    .ok();
-            }
+    /// Switch the characteristic panel to the circle (`Ohm`) or differential
+    /// (`Dif`) diagram. Each diagram has its own library (only characteristics
+    /// of its plane, empty blocks dropped) and its own block/settings state.
+    pub fn switch_diagram(&mut self, dim: Dimension) {
+        if dim == self.diagram_dim {
+            return;
         }
-    }
-
-    /// Select the first characteristic block whose plane matches `dim` (used when
-    /// switching between the круговая (Ohm) and дифференциальная (Dif) views).
-    pub fn select_first_block_dim(&mut self, dim: Dimension) {
-        if self
-            .library
-            .blocks
-            .get(self.block_idx)
-            .and_then(|b| b.characteristics.first())
-            .map(|c| c.dimension)
-            == Some(dim)
-        {
-            return; // already on a matching block
-        }
-        if let Some(i) = self.library.blocks.iter().position(|b| {
-            b.characteristics.first().map(|c| c.dimension) == Some(dim)
-        }) {
-            self.block_idx = i;
-            self.selected_char = None;
-            self.ensure_block_state();
-        }
+        let current = DiagramState {
+            library: std::mem::take(&mut self.library),
+            block_idx: self.block_idx,
+            chars: std::mem::take(&mut self.chars),
+            selected_char: self.selected_char,
+        };
+        let idx = |d: Dimension| usize::from(d == Dimension::Dif);
+        self.diagrams[idx(self.diagram_dim)] = Some(current);
+        let next = self.diagrams[idx(dim)].take().unwrap_or_else(|| DiagramState {
+            library: self.full_library.for_dimension(dim),
+            block_idx: 0,
+            chars: HashMap::new(),
+            selected_char: None,
+        });
+        self.library = next.library;
+        self.block_idx = next.block_idx;
+        self.chars = next.chars;
+        self.selected_char = next.selected_char;
+        self.diagram_dim = dim;
+        self.ensure_block_state();
     }
 
     pub fn current_dimension(&self) -> Dimension {
-        self.library
-            .blocks
-            .get(self.block_idx)
-            .and_then(|b| b.characteristics.first())
-            .map(|c| c.dimension)
-            .unwrap_or(Dimension::Ohm)
+        self.diagram_dim
     }
 
     // ---------- data loading ----------
@@ -753,7 +810,9 @@ impl App {
                 .and_then(|b| fvb_core::load_fvb_bytes(&b).map_err(|e| e.to_string()))
             {
                 Ok(lib) => {
-                    self.library = lib;
+                    self.library = lib.for_dimension(self.diagram_dim);
+                    self.full_library = lib;
+                    self.diagrams = [None, None];
                     self.source_name = path
                         .file_name()
                         .map(|s| s.to_string_lossy().into_owned())
@@ -1138,6 +1197,31 @@ mod tests {
         let mut app = demo_app();
         app.dispatch(Command::SetValueMode(ValueMode::FirstHarmonic));
         assert_eq!(app.value_mode, ValueMode::FirstHarmonic);
+    }
+
+    #[test]
+    fn each_diagram_shows_only_its_plane() {
+        let mut app = demo_app();
+        for (view, dim) in [(View::Circle, Dimension::Ohm), (View::Differential, Dimension::Dif)] {
+            app.dispatch(Command::Show(view));
+            assert_eq!(app.current_dimension(), dim);
+            for b in &app.library.blocks {
+                assert!(b.characteristics.iter().all(|c| c.dimension == dim), "{}", b.name);
+            }
+        }
+    }
+
+    #[test]
+    fn bad_setting_reports_the_formula_and_keeps_old_geometry() {
+        let mut app = demo_app();
+        app.dispatch(Command::Show(View::Circle));
+        let key = (app.block_idx, 0);
+        let before = app.chars[&key].figs.clone();
+        let name = app.library.blocks[app.block_idx].characteristics[0].parameters[0].name.clone();
+        app.chars.get_mut(&key).unwrap().settings.insert(name, "1+".into());
+        app.recompute_block();
+        assert_eq!(app.status, "1+: Синтаксическая ошибка в формуле");
+        assert_eq!(app.chars[&key].figs, before);
     }
 
     #[test]

@@ -10,32 +10,6 @@ use fvb_core::geom::Shape;
 use fvb_core::model::Dimension;
 use num_complex::Complex64;
 
-enum Widget {
-    Enum(i64),
-    Bool,
-    Angle,
-    Ohm,
-    Coeff,
-    Number,
-}
-
-fn infer_widget(name: &str) -> (Widget, &'static str) {
-    let n = name.to_lowercase();
-    if n.contains("тип") {
-        (Widget::Enum(3), "")
-    } else if n.contains("ввод") || n.contains("направленност") {
-        (Widget::Bool, "")
-    } else if n.contains("_ф") || n.ends_with('ф') || n.contains("угол") || n.contains("фмч") || n.contains("_фн") {
-        (Widget::Angle, "°")
-    } else if n.contains('z') || n.contains('r') || n.contains('x') || n.contains("сопрот") {
-        (Widget::Ohm, "Ом")
-    } else if n.contains("кт") || n.contains("кс") || n.contains("коэф") {
-        (Widget::Coeff, "")
-    } else {
-        (Widget::Number, "")
-    }
-}
-
 impl App {
     pub fn render_tab(&mut self, ctx: &egui::Context) {
         match self.view {
@@ -119,65 +93,56 @@ impl App {
         self.settings_editor(ui);
     }
 
+    /// The settings grid (`BlockPropertyGrid`): one group per characteristic of
+    /// the block with its parameters in document order. Values are plain text,
+    /// evaluated as formulas; committing an edit re-evaluates the whole block.
     fn settings_editor(&mut self, ui: &mut egui::Ui) {
         let b = self.block_idx;
-        let Some(ci) = self.selected_char else {
-            ui.label("Выберите характеристику.");
-            return;
-        };
-        let params: Vec<String> = self
+        let groups: Vec<(usize, String, Vec<String>)> = self
             .library
             .blocks
             .get(b)
-            .and_then(|blk| blk.characteristics.get(ci))
-            .map(|ch| ch.parameters.iter().map(|p| p.name.clone()).collect())
+            .map(|blk| {
+                blk.characteristics
+                    .iter()
+                    .enumerate()
+                    .map(|(ci, ch)| (ci, ch.name.clone(), ch.parameters.iter().map(|p| p.name.clone()).collect()))
+                    .collect()
+            })
             .unwrap_or_default();
-        if params.is_empty() {
-            ui.label("Нет настраиваемых уставок.");
-            return;
-        }
         let mut changed = false;
         egui::ScrollArea::vertical().id_salt("paramscroll").show(ui, |ui| {
-            egui::Grid::new("paramgrid").num_columns(3).striped(true).show(ui, |ui| {
-                for name in &params {
-                    let (widget, unit) = infer_widget(name);
-                    ui.label(name);
-                    if let Some(st) = self.chars.get_mut(&(b, ci)) {
-                        let v = st.settings.entry(name.clone()).or_insert(0.0);
-                        let resp = match widget {
-                            Widget::Bool => {
-                                let mut on = *v != 0.0;
-                                let r = ui.checkbox(&mut on, "");
-                                if r.changed() {
-                                    *v = if on { 1.0 } else { 0.0 };
+            for (ci, name, params) in &groups {
+                egui::CollapsingHeader::new(name)
+                    .id_salt(("paramgroup", b, *ci))
+                    .default_open(self.selected_char == Some(*ci))
+                    .show(ui, |ui| {
+                        egui::Grid::new(("paramgrid", b, *ci)).num_columns(2).striped(true).show(ui, |ui| {
+                            for p in params {
+                                ui.label(p);
+                                if let Some(st) = self.chars.get_mut(&(b, *ci)) {
+                                    let text = st.settings.entry(p.clone()).or_default();
+                                    let r = ui.add(egui::TextEdit::singleline(text).desired_width(140.0));
+                                    changed |= r.lost_focus();
                                 }
-                                r
+                                ui.end_row();
                             }
-                            Widget::Enum(max) => ui.add(
-                                egui::DragValue::new(v).range(1.0..=max as f64).speed(0.05).fixed_decimals(0),
-                            ),
-                            Widget::Angle => ui.add(egui::DragValue::new(v).speed(0.5).suffix("°")),
-                            Widget::Ohm => ui.add(egui::DragValue::new(v).speed(0.05)),
-                            Widget::Coeff => ui.add(egui::DragValue::new(v).speed(0.01)),
-                            Widget::Number => ui.add(egui::DragValue::new(v).speed(0.05)),
-                        };
-                        changed |= resp.changed();
-                    }
-                    ui.label(unit);
-                    ui.end_row();
-                }
-            });
-            if ui.button("Сбросить уставки").clicked() {
-                if let (Some(blk), Some(st)) = (self.library.blocks.get(b), self.chars.get_mut(&(b, ci))) {
-                    if let Some(ch) = blk.characteristics.get(ci) {
-                        st.settings = ch.default_settings();
-                        changed = true;
+                        });
+                    });
+            }
+            if let Some(ci) = self.selected_char {
+                if ui.button("Сбросить уставки").clicked() {
+                    if let (Some(blk), Some(st)) = (self.library.blocks.get(b), self.chars.get_mut(&(b, ci))) {
+                        if let Some(ch) = blk.characteristics.get(ci) {
+                            st.settings = ch.default_settings();
+                            changed = true;
+                        }
                     }
                 }
             }
         });
         if changed {
-            self.recompute_one(ci);
+            self.recompute_block();
         }
     }
 
@@ -210,10 +175,9 @@ impl App {
                 }
                 // Open polypoints are closed against the visible area.
                 let in_view = match view {
-                    Some(v) if fvb_core::geom::depends_on_view(ch) => ch
-                        .context(&st.settings)
-                        .and_then(|cx| fvb_core::geom::evaluate_in_view(ch, &cx, Some(v)))
-                        .ok(),
+                    Some(v) if fvb_core::geom::depends_on_view(ch) => {
+                        Some(fvb_core::geom::build_geometry(ch, &st.figs, Some(v)))
+                    }
                     _ => None,
                 };
                 let geo = in_view.as_ref().unwrap_or(geo);

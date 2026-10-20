@@ -18,10 +18,10 @@ pub mod parse;
 pub mod signal;
 
 pub use comtrade::{AnalogChannel, DigitalChannel, Oscillogram};
-pub use expr::{Context, Expr, ExprError};
-pub use geom::{evaluate, CharGeometry, ModeGeometry, Shape};
+pub use expr::{Context, Expr, ExprError, FormulaError};
+pub use geom::{evaluate, evaluate_block, CharGeometry, FigureValues, ModeGeometry, Shape};
 pub use model::{
-    Block, Characteristic, Combine, Dimension, Library, LineKind, Mode, Parameter, Primitive, Var,
+    Block, Characteristic, Combine, Dimension, Library, LineKind, Mode, Parameter, Primitive, Settings, Var,
 };
 pub use parse::{parse_library, ParseError};
 
