@@ -468,7 +468,7 @@ fn harmonics(samples: &[f64], center: usize, n: usize, hmax: usize) -> Vec<f64> 
         return out;
     }
     let start = center.saturating_sub(n - 1).min(samples.len().saturating_sub(n));
-    for h in 0..=hmax {
+    for (h, slot) in out.iter_mut().enumerate() {
         let mut re = 0.0;
         let mut im = 0.0;
         for m in 0..n {
@@ -478,7 +478,7 @@ fn harmonics(samples: &[f64], center: usize, n: usize, hmax: usize) -> Vec<f64> 
             im += v * ang.sin();
         }
         let scale = if h == 0 { 1.0 / n as f64 } else { 2.0 / n as f64 / std::f64::consts::SQRT_2 };
-        out[h] = (re * re + im * im).sqrt() * scale;
+        *slot = (re * re + im * im).sqrt() * scale;
     }
     out
 }

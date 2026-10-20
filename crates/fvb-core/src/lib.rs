@@ -43,6 +43,8 @@ pub fn decode_fvb(bytes: &[u8]) -> String {
     String::from_utf8_lossy(s).into_owned()
 }
 
+// `chunks_exact(2)` is portable; the suggested `as_chunks` would raise the MSRV.
+#[allow(clippy::chunks_exact_to_as_chunks)]
 fn decode_utf16(bytes: &[u8], big_endian: bool) -> String {
     let units: Vec<u16> = bytes
         .chunks_exact(2)

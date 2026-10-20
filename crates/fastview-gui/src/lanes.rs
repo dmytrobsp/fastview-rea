@@ -121,7 +121,7 @@ impl App {
                 let label = if time_unit == crate::app::TimeUnit::Samples {
                     format!("{}", nearest_sample(&doc.osc.time, tt))
                 } else {
-                    format!("{:.0}", time_unit.from_secs(tt))
+                    format!("{:.0}", time_unit.scale_secs(tt))
                 };
                 painter.text(
                     Pos2::new(x, plot_y1 + 6.0),
@@ -525,7 +525,7 @@ impl App {
             if u == crate::app::TimeUnit::Samples {
                 format!("{}", nearest_sample(&d.osc.time, t))
             } else {
-                format!("{:.1} {}", u.from_secs(t), u.label())
+                format!("{:.1} {}", u.scale_secs(t), u.label())
             }
         };
         let first = d.chans.iter().position(|c| c.visible);
@@ -539,7 +539,7 @@ impl App {
             if u == crate::app::TimeUnit::Samples {
                 empty()
             } else {
-                format!("{:.1} {}", u.from_secs((t1 - t2).abs()), u.label())
+                format!("{:.1} {}", u.scale_secs((t1 - t2).abs()), u.label())
             },
             hv(d.main_cursor),
             hv(d.aux_cursor),

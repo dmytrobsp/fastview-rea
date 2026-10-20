@@ -73,7 +73,7 @@ impl TimeUnit {
         }
     }
     /// Convert seconds to this unit (samples handled separately by index).
-    pub fn from_secs(self, t: f64) -> f64 {
+    pub fn scale_secs(self, t: f64) -> f64 {
         match self {
             TimeUnit::Micro => t * 1e6,
             TimeUnit::Milli => t * 1e3,

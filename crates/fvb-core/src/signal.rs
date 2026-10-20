@@ -38,13 +38,13 @@ pub fn sliding_phasors(samples: &[f64], n: usize) -> Phasors {
     }
     // Peak-normalised DFT bin: X = (2/N) Σ x[m] e^{-j2π m/N}; RMS = |X|/√2.
     let scale = 2.0 / (n as f64) / std::f64::consts::SQRT_2;
-    for i in (n - 1)..len {
+    for (i, slot) in out.iter_mut().enumerate().skip(n - 1) {
         let start = i + 1 - n;
         let mut acc = Complex64::new(0.0, 0.0);
         for m in 0..n {
             acc += cs[m] * samples[start + m];
         }
-        out[i] = acc * scale;
+        *slot = acc * scale;
     }
     out
 }
@@ -57,14 +57,14 @@ pub fn sliding_rms(samples: &[f64], n: usize) -> Vec<f64> {
     if n == 0 || len < n {
         return out;
     }
-    for i in (n - 1)..len {
+    for (i, slot) in out.iter_mut().enumerate().skip(n - 1) {
         let start = i + 1 - n;
         let mut s = 0.0;
         for m in 0..n {
             let v = samples[start + m];
             s += v * v;
         }
-        out[i] = (s / n as f64).sqrt();
+        *slot = (s / n as f64).sqrt();
     }
     out
 }
@@ -76,10 +76,10 @@ pub fn sliding_dc(samples: &[f64], n: usize) -> Vec<f64> {
     if n == 0 || len < n {
         return out;
     }
-    for i in (n - 1)..len {
+    for (i, slot) in out.iter_mut().enumerate().skip(n - 1) {
         let start = i + 1 - n;
         let s: f64 = samples[start..start + n].iter().sum();
-        out[i] = s / n as f64;
+        *slot = s / n as f64;
     }
     out
 }
@@ -96,14 +96,14 @@ pub fn sliding_emergency(samples: &[f64], n: usize, dt: f64) -> Vec<f64> {
     for i in 1..len - 1 {
         d2[i] = (samples[i + 1] - 2.0 * samples[i] + samples[i - 1]) / (dt * dt);
     }
-    for i in (n - 1)..len {
+    for (i, slot) in out.iter_mut().enumerate().skip(n - 1) {
         let start = i + 1 - n;
         let mut s = 0.0;
         for m in 0..n {
             let v = d2[start + m];
             s += v * v;
         }
-        out[i] = (s / n as f64).sqrt();
+        *slot = (s / n as f64).sqrt();
     }
     out
 }

@@ -343,8 +343,8 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8]) -> Result<(), C
         }
         DataFormat::Int16 | DataFormat::Int32 | DataFormat::Float32 => {
             let (abytes, dwords) = match fmt {
-                DataFormat::Int16 => (2usize, (nd + 15) / 16),
-                DataFormat::Int32 | DataFormat::Float32 => (4usize, (nd + 15) / 16),
+                DataFormat::Int16 => (2usize, nd.div_ceil(16)),
+                DataFormat::Int32 | DataFormat::Float32 => (4usize, nd.div_ceil(16)),
                 _ => unreachable!(),
             };
             // record = 4 (sample#) + 4 (timestamp) + na*abytes + dwords*2

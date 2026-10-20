@@ -85,7 +85,7 @@ pub enum LineKind {
 
 impl LineKind {
     pub fn parse(s: Option<&str>) -> LineKind {
-        match s.map(|v| v.trim()).as_deref() {
+        match s.map(|v| v.trim()) {
             Some("2") => LineKind::InverseSlope,
             _ => LineKind::Slope,
         }
