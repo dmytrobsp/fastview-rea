@@ -16,9 +16,13 @@ Keep ALL of these green at every commit:
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** git HEAD `55bb7fa`, working tree clean, 40 tests, 0 warnings,
-clippy clean, Windows cross-compiles. Current direction = the **reverse-ALL-
-behavioural-engines** program the user approved (not just features).
+**State at handoff.** Working tree clean; 40 tests pass, 0 build warnings, clippy
+clean, Windows cross-compiles. The latest commits are this ledger + the engine
+work — run `git log --oneline -12` to see them (most recent ledger commit added
+this section). Current direction = the **reverse-ALL-behavioural-engines** program
+the user approved (not just adding features). Work commits straight to the current
+branch (no SDD/feature-branch flow); keep the tree green and the ledger updated at
+every commit.
 
 **Read these first (context you won't have):**
 - Memory notes (in `~/.claude/projects/-home-poniraq-projects-fastview-rea/memory/`):
