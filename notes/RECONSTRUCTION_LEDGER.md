@@ -1,5 +1,69 @@
 # Reconstruction obligation ledger — behaviour mapped to the decompiled original
 
+## 0 — HOW A FRESH SESSION RECOVERS AND CONTINUES (read this first)
+
+**Mission.** The user wants the original Mekhanotronika **Fast View 5** reversed
+and mapped so there is *tangible proof* that this Rust reconstruction is
+**behaviourally identical**, not approximated from screenshots. **Proceed
+AUTONOMOUSLY until completion.** Update THIS ledger at every checkpoint so any
+later cold session can resume from it alone.
+
+**Project.** `~/projects/fastview-rea` — clean-room, cross-platform (egui/Rust)
+reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
+Keep ALL of these green at every commit:
+- `cargo build --workspace`  (0 warnings)
+- `cargo test --workspace`   (currently 40 pass)
+- `cargo clippy --workspace` (0)
+- `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
+
+**State at handoff.** git HEAD `55bb7fa`, working tree clean, 40 tests, 0 warnings,
+clippy clean, Windows cross-compiles. Current direction = the **reverse-ALL-
+behavioural-engines** program the user approved (not just features).
+
+**Read these first (context you won't have):**
+- Memory notes (in `~/.claude/projects/-home-poniraq-projects-fastview-rea/memory/`):
+  `ghidra-rea-setup.md`, `fastview-rea-ui-state.md`, `wayland-gui-capture.md`.
+- `notes/UI_SPEC.md`, `notes/FINDINGS.md`, and the local-only RE dumps in
+  `notes/ui/` (`menus.txt`, `dialogs.txt` = 99 decoded dialogs, `strings.txt`,
+  `accelerators.txt`). `notes/ui/` and `extracted/` are **gitignored proprietary
+  material — never commit them**.
+
+**Reverse-engineering tooling (REA + Ghidra 12.1.3).** The original binary is
+`extracted/stage1/FastView.exe`
+(sha256 `6c503790d13d9d2d0b80711f27b4daba57b209462cfb626cc5a6f719c150d046`,
+image base `0x400000`, 9129 procedures, PDB not loaded → names are `FUN_xxxx`,
+use RTTI strings + behaviour). To drive it, call the REA MCP tools:
+`open_binary` (path above) once, then `search_strings` (param `pattern`),
+`xrefs`, `resolve_containing_procedure`, `procedure_pseudo_code` (param
+`procedure`), `read_bytes` (`address`,`length`). Tool JSON is verbose — extract
+only the essential logic. If REA/Ghidra is unavailable, see `ghidra-rea-setup`
+memory (Flatpak overlay + CLI wrapper `~/projects/slack-rea/tools/rea-ghidra.sh`).
+
+**Per-engine working loop (repeat until the table below is all ✅/⛔):**
+1. Decompile the original function(s) for the engine (addresses in the table).
+2. Distil its exact behaviour (constants, order, rounding, degrees/radians…).
+3. Compare to the Rust module; **reconcile** — fix the Rust to match, add a test
+   that pins the behaviour.
+4. `cargo test` + `cargo clippy` green (+ Windows build for engine changes).
+5. Commit (end message with the Co-Authored-By line from the session reminder).
+6. **Update this ledger**: the entry's evidence (address), what you verified, and
+   the verdict. Append new entries as `L<n>`.
+
+**NEXT TASK (start here).** L2 — decompile the `Calculator` evaluator (RTTI
+`.?AVCalculator@@` @ `0x4eb4a4`): find its vtable / evaluate method, verify the
+semantics `expr.rs` assumes (trig in **degrees**, `mod:` = abs, `^` right-assoc &
+tighter than `* /`, colon-suffix postfix calls) → upgrade L1's shipped-`.fvb`
+verdict to MATCH; then implement the missing formula functions (L1 action list)
+with per-function decompiled evidence. Then work down the **Engines to reverse**
+table top to bottom.
+
+**Scope reality.** "Every byte" literally = 9129 funcs of mostly MFC boilerplate;
+the *provable* target is the behavioural engines (this ledger's table). `.sto`
+reading is ⛔ (no sample file ships — map the header from `GetInfoFromStoHeader`
+but it can't be byte-verified).
+
+---
+
 Goal: behavioural parity **proven by decompilation**, not approximated from
 screenshots. For each behaviour we record the original function (address +
 Ghidra evidence), what it does, how our Rust implements it, and the verdict
