@@ -1,0 +1,16 @@
+[package]
+name = "fastview-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "FastView — relay-protection characteristic viewer (cross-platform reconstruction)"
+
+[[bin]]
+name = "fastview"
+path = "src/main.rs"
+
+[dependencies]
+fvb-core = { path = "../fvb-core" }
+eframe = "0.29"
+egui_plot = "0.29"
+rfd = "0.14"

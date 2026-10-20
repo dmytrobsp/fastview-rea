@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["crates/fvb-core", "crates/fastview-gui"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["FastView-REA reconstruction"]
+repository = "https://example.invalid/fastview-rea"
+
+[profile.release]
+opt-level = 3
+lto = "thin"

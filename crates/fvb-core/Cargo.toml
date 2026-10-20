@@ -1,0 +1,15 @@
+[package]
+name = "fvb-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Parser, expression evaluator and geometry engine for FastView .fvb relay-protection characteristic libraries"
+
+[dependencies]
+quick-xml = "0.36"
+i_overlay = "1"
+thiserror = "1.0"
+
+[dev-dependencies]
+approx = "0.5"
+tiny-skia = "0.11"

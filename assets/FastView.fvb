@@ -1,0 +1,1791 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<blocks>
+   <block name="БМРЗ - Защита линий">
+   <characteristic name="ДЗ 1 ступень" dimension="OHM">
+      <parameter name="ДЗ1_тип" default="2"/>
+      <parameter name="ДЗ1_Zcp" default="10.0"/>
+      <parameter name="ДЗ1_Фл" default="50"/>
+      <parameter name="ДЗ1_Ф1" default="-10"/>
+      <parameter name="ДЗ1_Ф2" default="50"/>
+      <parameter name="ДЗ1_Rср" default="5.0"/>
+      <parameter name="ДЗ1_Ксм" default="0.00"/>
+      <parameter name="ДЗ1_Zсм" default="0.0"/>
+      <parameter name="Направленность_к_шинам" default="0"/>
+      <parameter name="Ввод_нагрузочной_зоны_несрабатывания_ДЗ" default="0"/>
+      <parameter name="ДЗ_Rн" default="30"/>
+      <parameter name="ДЗ_Фн" default="15"/>
+      <var name="Load" expression="Ввод_нагрузочной_зоны_несрабатывания_ДЗ"/>
+      <var name="Zcp" expression="ДЗ1_Zcp"/> 
+      <var name="Zcm" expression="ДЗ1_Zсм"/> 
+      <var name="Fмч" expression="ДЗ1_Фл"/> 
+      <var name="D" expression="(Zcp-Zcm)"/> 
+      <var name="Направленность" expression="Направленность_к_шинам"/>
+      <var name="N" expression="-2*Направленность + 1"/> 
+      <var name="Zy" expression="ДЗ1_Zcp"/>
+      <var name="Kcm" expression="ДЗ1_Ксм"/>
+      <var name="Fz" expression="ДЗ1_Фл"/>
+      <var name="F1" expression="ДЗ1_Ф1"/>
+      <var name="F2" expression="ДЗ1_Ф2"/>
+      <var name="Ry" expression="ДЗ1_Rср"/>
+      <var name="N" expression="-2*Направленность + 1"/>
+      <var name="A" expression="(tg:(5.00001)*cos:(Fz)+sin:(Fz))"/>
+      <var name="A1" expression="(tg:(-F1)*cos:(Fz)+sin:(Fz))"/>
+      <var name="KZ" expression="Kcm * Zy + (1.05 - 1) * mod:(Kcm * Zy)"/>
+      <var name="Type" expression="ДЗ1_тип"/>
+      <var name="kn" expression="tg:(ДЗ_Фн)"/>
+      <var name="knv" expression="tg:(ДЗ_Фн-5)"/>
+      <var name="Rn" expression="ДЗ_Rн"/>
+<polygon mode="on">
+        <line k="tg:(-5.00001)" b="N*Zy*A" type="1"/>
+        <line k="tg:(F1)" b="N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b="N* Ry" type="2"/>
+        <line k="-tg:(5)" b="-N* Kcm*Zy * A" type="1"/>
+        <line k="-tg:(15)" b="-0.125 *N* Ry" type="2"/>
+      </polygon>
+<polygon mode="off">
+        <line k="tg:(-5.00001)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(F1)" b="1.05*N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(5)" b="-KZ*A*N" type="1"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="on">
+        <line k="tg:(-5.00001)" b="Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="off">
+        <line k="tg:(-5)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+</polygon>
+      <circle type="and" mode="on" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="and" mode="off" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="or" mode="on" radius="(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="D/2*cos:(Fмч)*N" ycenter="D/2*sin:(Fмч)*N"/>
+      <circle type="or" mode="off" radius="1.05*(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="0.525*D*cos:(Fмч)*N" ycenter="0.525*D*sin:(Fмч)*N"/>
+<polygon type="not" mode="on">
+        <line k="0" b="Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="on">
+        <line k="0" b="-Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="-1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+  </characteristic> 
+   <characteristic name="ДЗ 2 ступень" dimension="OHM">
+      <parameter name="ДЗ2_тип" default="1"/>
+      <parameter name="ДЗ2_Zcp" default="10.0"/>
+      <parameter name="ДЗ2_Фл" default="50"/>
+      <parameter name="ДЗ2_Ф2" default="50"/>
+      <parameter name="ДЗ2_Rср" default="5.0"/>
+      <parameter name="ДЗ2_Ксм" default="0.00"/>
+      <parameter name="ДЗ2_Zсм" default="0.0"/>
+      <parameter name="Направленность_к_шинам" default="0"/>
+      <parameter name="Ввод_нагрузочной_зоны_несрабатывания_ДЗ" default="0"/>
+      <parameter name="ДЗ_Rн" default="30"/>
+      <parameter name="ДЗ_Фн" default="15"/>
+      <var name="Load" expression="Ввод_нагрузочной_зоны_несрабатывания_ДЗ"/>
+      <var name="Zcp" expression="ДЗ2_Zcp"/> 
+      <var name="Zcm" expression="ДЗ2_Zсм"/> 
+      <var name="Fмч" expression="ДЗ2_Фл"/> 
+      <var name="D" expression="(Zcp-Zcm)"/> 
+      <var name="Направленность" expression="Направленность_к_шинам"/>
+      <var name="N" expression="-2*Направленность + 1"/> 
+      <var name="Zy" expression="ДЗ2_Zcp"/>
+      <var name="Kcm" expression="ДЗ2_Ксм"/>
+      <var name="Fz" expression="ДЗ2_Фл"/>
+      <var name="F1" expression="-5"/>
+      <var name="F2" expression="ДЗ2_Ф2"/>
+      <var name="Ry" expression="ДЗ2_Rср"/>
+      <var name="N" expression="-2*Направленность + 1"/>
+      <var name="A" expression="(tg:(5.00001)*cos:(Fz)+sin:(Fz))"/>
+      <var name="A1" expression="(tg:(-F1)*cos:(Fz)+sin:(Fz))"/>
+      <var name="KZ" expression="Kcm * Zy + (1.05 - 1) * mod:(Kcm * Zy)"/>
+      <var name="Type" expression="ДЗ2_тип"/>
+      <var name="kn" expression="tg:(ДЗ_Фн)"/>
+      <var name="knv" expression="tg:(ДЗ_Фн-5)"/>
+      <var name="Rn" expression="ДЗ_Rн"/>
+<polygon mode="on">
+        <line k="tg:(-5.00001)" b="N*Zy*A" type="1"/>
+        <line k="tg:(F1)" b="N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b="N* Ry" type="2"/>
+        <line k="-tg:(5)" b="-N* Kcm*Zy * A" type="1"/>
+        <line k="-tg:(15)" b="-0.125 *N* Ry" type="2"/>
+      </polygon>
+<polygon mode="off">
+        <line k="tg:(-5.00001)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(F1)" b="1.05*N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(5)" b="-KZ*A*N" type="1"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="on">
+        <line k="tg:(-5.00001)" b="Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="off">
+        <line k="tg:(-5)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+</polygon>
+      <circle type="and" mode="on" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="and" mode="off" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="or" mode="on" radius="(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="D/2*cos:(Fмч)*N" ycenter="D/2*sin:(Fмч)*N"/>
+      <circle type="or" mode="off" radius="1.05*(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="0.525*D*cos:(Fмч)*N" ycenter="0.525*D*sin:(Fмч)*N"/>
+<polygon type="not" mode="on">
+        <line k="0" b="Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="on">
+        <line k="0" b="-Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="-1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+  </characteristic> 
+   <characteristic name="ДЗ 3 ступень" dimension="OHM">
+      <parameter name="ДЗ3_тип" default="3"/>
+      <parameter name="ДЗ3_Zcp" default="10.0"/>
+      <parameter name="ДЗ3_Фл" default="50"/>
+      <parameter name="ДЗ3_Ф2" default="50"/>
+      <parameter name="ДЗ3_Rср" default="5.0"/>
+      <parameter name="ДЗ3_Ксм" default="0.00"/>
+      <parameter name="ДЗ3_Zсм" default="0.0"/>
+      <parameter name="Направленность_к_шинам" default="0"/>
+      <parameter name="Ввод_нагрузочной_зоны_несрабатывания_ДЗ" default="0"/>
+      <parameter name="ДЗ_Rн" default="30"/>
+      <parameter name="ДЗ_Фн" default="15"/>
+      <var name="Load" expression="Ввод_нагрузочной_зоны_несрабатывания_ДЗ"/>
+      <var name="Zcp" expression="ДЗ3_Zcp"/> 
+      <var name="Zcm" expression="ДЗ3_Zсм"/> 
+      <var name="Fмч" expression="ДЗ3_Фл"/> 
+      <var name="D" expression="(Zcp-Zcm)"/> 
+      <var name="Направленность" expression="Направленность_к_шинам"/>
+      <var name="N" expression="-2*Направленность + 1"/> 
+      <var name="Zy" expression="ДЗ3_Zcp"/>
+      <var name="Kcm" expression="ДЗ3_Ксм"/>
+      <var name="Fz" expression="ДЗ3_Фл"/>
+      <var name="F1" expression="-5"/>
+      <var name="F2" expression="ДЗ3_Ф2"/>
+      <var name="Ry" expression="ДЗ3_Rср"/>
+      <var name="N" expression="-2*Направленность + 1"/>
+      <var name="A" expression="(tg:(5.00001)*cos:(Fz)+sin:(Fz))"/>
+      <var name="A1" expression="(tg:(-F1)*cos:(Fz)+sin:(Fz))"/>
+      <var name="KZ" expression="Kcm * Zy + (1.05 - 1) * mod:(Kcm * Zy)"/>
+      <var name="Type" expression="ДЗ3_тип"/>
+      <var name="kn" expression="tg:(ДЗ_Фн)"/>
+      <var name="knv" expression="tg:(ДЗ_Фн-5)"/>
+      <var name="Rn" expression="ДЗ_Rн"/>
+<polygon mode="on">
+        <line k="tg:(-5.00001)" b="N*Zy*A" type="1"/>
+        <line k="tg:(F1)" b="N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b="N* Ry" type="2"/>
+        <line k="-tg:(5)" b="-N* Kcm*Zy * A" type="1"/>
+        <line k="-tg:(15)" b="-0.125 *N* Ry" type="2"/>
+      </polygon>
+<polygon mode="off">
+        <line k="tg:(-5.00001)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(F1)" b="1.05*N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(5)" b="-KZ*A*N" type="1"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="on">
+        <line k="tg:(-5.00001)" b="Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="off">
+        <line k="tg:(-5)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+</polygon>
+      <circle type="and" mode="on" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="and" mode="off" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+<polygon type="or" mode="on">
+        <line k="tg:(-5)" b="N*A*Zy*(Type-2)*(0.5*Type-0.5)" type="1"/>
+        <line k="tg:(90-F2)" b="0" type="2"/>
+        <line k="-tg:(15)" b="0" type="2"/>
+      </polygon>
+<polygon type="or" mode="off">
+        <line k="tg:(-5)" b="N*A*Zy*1.05*(Type-2)*(0.5*Type-0.5)" type="1"/>
+        <line k="tg:(90-F2+4)" b="0" type="2"/>
+        <line k="-tg:(15+4)" b="0" type="2"/>
+</polygon>
+      <circle type="or" mode="on" radius="(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="D/2*cos:(Fмч)*N" ycenter="D/2*sin:(Fмч)*N"/>
+      <circle type="or" mode="off" radius="1.05*(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="0.525*D*cos:(Fмч)*N" ycenter="0.525*D*sin:(Fмч)*N"/>
+<polygon type="not" mode="on">
+        <line k="0" b="Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="on">
+        <line k="0" b="-Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="-1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+  </characteristic>
+ 
+   <characteristic name="Резервная защита трансформаторов отпаечных ПС" dimension="OHM">
+      <parameter name="РЗТ_R" default="10"/>
+      <parameter name="РЗТ_Ф" default="60"/>
+      <parameter name="Верхняя_граница" default="20"/>
+      <var name="border" expression="Верхняя_граница"/>
+<polygon mode="on">
+        <line k="tg:(РЗТ_Ф)" b="0" type="1"/>
+        <line k="0" b="РЗТ_R" type="2"/>
+        <line k="0" b="border" type="1"/>
+        <line k="tg:(105)" b="0" type="1"/>
+</polygon>
+<polygon mode="off">
+        <line k="tg:(РЗТ_Ф-4)" b="0" type="1"/>
+        <line k="0" b="1.05*РЗТ_R" type="2"/>
+        <line k="0" b="border" type="1"/>
+        <line k="tg:(109)" b="0" type="1"/>
+</polygon>
+  </characteristic>
+  
+ </block>
+ 
+
+ <block name="БМРЗ - Защита генераторов">
+    <characteristic name="1 ступень резервной дистанционной защиты" dimension="OHM">
+      <parameter name="РДЗ_Zср1" default="10.0"/>
+      <parameter name="РДЗ_Zсм1" default="1.0"/>
+      <parameter name="РДЗ_Ф1" default="45.0"/>
+      <var name="D" expression="(РДЗ_Zср1-РДЗ_Zсм1)"/> 
+      <circle mode="on" radius="(РДЗ_Zср1+РДЗ_Zсм1)/2" xcenter="D/2*cos:(РДЗ_Ф1)" ycenter="D/2*sin:(РДЗ_Ф1)"/>
+      <circle mode="off" radius="1.05*(РДЗ_Zср1+РДЗ_Zсм1)/2" xcenter="0.525*D*cos:(РДЗ_Ф1)" ycenter="0.525*D*sin:(РДЗ_Ф1)"/>
+    </characteristic>
+    <characteristic name="2 ступень резервной дистанционной защиты" dimension="OHM">
+      <parameter name="РДЗ_Zср2" default="10.0"/>
+      <parameter name="РДЗ_Zсм2" default="1.0"/>
+      <parameter name="РДЗ_Ф2" default="45.0"/>
+      <var name="D" expression="(РДЗ_Zср2-РДЗ_Zсм2)"/> 
+      <circle mode="on" radius="(РДЗ_Zср2+РДЗ_Zсм2)/2" xcenter="D/2*cos:(РДЗ_Ф2)" ycenter="D/2*sin:(РДЗ_Ф2)"/>
+      <circle mode="off" radius="1.05*(РДЗ_Zср2+РДЗ_Zсм2)/2" xcenter="0.525*D*cos:(РДЗ_Ф2)" ycenter="0.525*D*sin:(РДЗ_Ф2)"/>
+    </characteristic>
+    <characteristic name="Защита от потери возбуждения" dimension="OHM">
+      <parameter name="ЗПВ_Zср" default="50.0"/>
+      <parameter name="ЗПВ_Zсм" default="2.0"/>
+      <var name="R" expression="(ЗПВ_Zср-ЗПВ_Zсм)/2"/> 
+      <circle mode="on" radius="R" xcenter="0" ycenter="-(ЗПВ_Zсм+R)"/>
+      <circle mode="off" radius="1.05*R" xcenter="0" ycenter="-(ЗПВ_Zсм+R)"/>
+    </characteristic>
+    <characteristic name="1 ступень защиты от асинхронного режима без потери возбуждения" dimension="OHM">
+      <parameter name="ЗАР1_Zср" default="50.0"/>
+      <parameter name="ЗАР1_Zсм" default="2.0"/>
+      <parameter name="ЗАР1_Ф" default="45.0"/>
+      <var name="xc" expression="ЗАР1_Zср/(2*tg:(ЗАР1_Ф))"/> 
+      <var name="yc" expression="(ЗАР1_Zср-ЗАР1_Zсм)/2"/> 
+      <var name="p" expression="(ЗАР1_Zср+ЗАР1_Zсм)/2"/> 
+      <circle mode="on" radius="sqrt:(xc^2+p^2)" xcenter="xc" ycenter="yc"/>
+      <circle mode="off" radius="1.05*sqrt:(xc^2+p^2)" xcenter="1.05*xc" ycenter="1.05*yc"/>
+    </characteristic>
+    <characteristic name="2 ступень защиты от асинхронного режима без потери возбуждения" dimension="OHM">
+      <parameter name="ЗАР2_Zср" default="50.0"/>
+      <parameter name="ЗАР2_Zсм" default="2.0"/>
+      <parameter name="ЗАР2_Ф" default="270"/>
+      <var name="xc" expression="-ЗАР2_Zср/(2*tg:(ЗАР2_Ф))"/> 
+      <var name="yc" expression="-(ЗАР2_Zср-ЗАР2_Zсм)/2"/> 
+      <var name="p" expression="(ЗАР2_Zср+ЗАР2_Zсм)/2"/> 
+      <circle mode="on" radius="sqrt:(xc^2+p^2)" xcenter="xc" ycenter="yc"/>
+      <circle mode="off" radius="1.05*sqrt:(xc^2+p^2)" xcenter="1.05*xc" ycenter="1.05*yc"/>
+    </characteristic>  
+  </block>
+  
+  <block name="БМРЗ - Защита двигателей">
+     <characteristic name="Защита от асинхронного режима" dimension="OHM">
+      <parameter name="ЗАР_Zср" default="60.0"/>
+      <parameter name="ЗАР_Zсм" default="2.0"/>
+      <var name="R" expression="(ЗАР_Zср-ЗАР_Zсм)/2"/> 
+      <circle mode="on" radius="R" xcenter="0" ycenter="(ЗАР_Zсм+R)"/>
+      <circle mode="off" radius="1.05*R" xcenter="0" ycenter="(ЗАР_Zсм+R)"/>
+    </characteristic>
+   </block>
+   
+   <block name="БМРЗ - Защита контактной сети 27,5 и 2х25 кВ">
+    <characteristic name="Четырехугольная характеристика" dimension="OHM">
+      <parameter name="Zср" default="10.0"/>
+      <parameter name="Ксм" default="0.00"/>
+      <parameter name="Ф" default="45"/>
+      <parameter name="Rср" default="5.0"/>
+      <var name="Zy" expression="Zср"/>
+      <var name="Kcm" expression="Ксм"/>
+      <var name="Fz" expression="Ф"/>
+      <var name="Ry" expression="Rср"/>
+      <var name="A" expression="(tg:(5)*cos:(Fz)+sin:(Fz))"/>
+      <var name="KZ" expression="Kcm * Zy + (1.05 - 1) * mod:(Kcm * Zy)"/>
+<polygon mode="on">
+        <line k="tg:(-5)" b="Zy*A" type="1"/>
+        <line k="tg:(95-Fz)" b="Ry" type="2"/>
+        <line k="-tg:(5)" b="-Kcm*Zy * A" type="1"/>
+        <line k="-tg:(15)" b="-0.125 *Ry" type="2"/>
+      </polygon>
+  <polygon mode="off">
+        <line k="tg:(-5)" b="1.05*Zy*A" type="1"/>
+        <line k="tg:(95-Fz)" b=" 1.05*Ry" type="2"/>
+        <line k="-tg:(5)" b="-KZ*A" type="1"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05" type="2"/>
+      </polygon>
+  </characteristic>
+    <characteristic name="Полигональная характеристика" dimension="OHM">
+      <parameter name="R" default="20.0"/>
+      <parameter name="Xн1" default="1.0"/>
+      <parameter name="Xк1" default="2.0"/>
+      <parameter name="Xн2" default="-1.0"/>
+      <parameter name="Xк2" default="-2.0"/>
+      <var name="ДЗ_R" expression="R"/>
+      <var name="ДЗ_Хн1" expression="Xн1"/>
+      <var name="ДЗ_Хк1" expression="Xк1"/>
+      <var name="ДЗ_Хн2" expression="Xн2"/>
+      <var name="ДЗ_Хк2" expression="Xк2"/>
+<polygon mode="on">
+        <line k="(ДЗ_Хк1-ДЗ_Хн1)/ДЗ_R" b="ДЗ_Хн1" type="1"/>
+        <line k="0" b="ДЗ_R" type="2"/>
+        <line k="(ДЗ_Хк2-ДЗ_Хн2)/ДЗ_R" b="ДЗ_Хн2" type="1"/>
+        <line k="0" b="0" type="2"/>
+      </polygon>
+  </characteristic>
+
+    <characteristic name="Характеристика Окружность" dimension="OHM">
+      <parameter name="Zср" default="10.0"/>
+      <circle mode="on" radius="Zср" xcenter="0" ycenter="0"/>
+      <circle mode="off" radius="1.05*Zср" xcenter="0" ycenter="0"/>
+    </characteristic>
+		
+    <characteristic name="Характеристика Сектор" dimension="OHM">
+      <parameter name="Zср" default="10.0"/>
+      <parameter name="Ф1" default="45"/>
+      <parameter name="Ф2" default="110"/>
+      <parameter name="Ввод_зеркальной_зоны_срабатывания" default="0"/>
+
+		<polygon mode="on">
+			<line k="tg:(Ф1)" b="0" type="1"/>
+			<line k="0" b="Zср*100" type="1"/>
+			<line k="tg:(Ф2)" b="0" type="1"/>
+		</polygon>
+		<polygon mode="on" type="or">
+			<line k="tg:(Ф1)" b="0" type="1"/>
+			<line k="0" b="-Zср*100*Ввод_зеркальной_зоны_срабатывания" type="1"/>
+			<line k="tg:(Ф2)" b="0" type="1"/>
+		</polygon>
+      <circle type="and" mode="on" radius="Zср" xcenter="0" ycenter="0"/>
+
+		<polygon mode="off">
+			<line k="tg:(Ф1-4)" b="0" type="1"/>
+			<line k="0" b="Zср*100" type="1"/>
+			<line k="tg:(Ф2+4)" b="0" type="1"/>
+		</polygon>
+		<polygon type="or" mode="off">
+			<line k="tg:(Ф1-4)" b="0" type="1"/>
+			<line k="0" b="-Zср*100*Ввод_зеркальной_зоны_срабатывания" type="1"/>
+			<line k="tg:(Ф2+4)" b="0" type="1"/>
+		</polygon>
+      <circle type="and" mode="off" radius="1.05*Zср" xcenter="0" ycenter="0"/>
+    </characteristic>
+  
+  </block>     
+  
+  <block name="БМРЗ - Защита трансформаторов">
+   <characteristic name="ДТО" dimension="DIF">
+      <parameter name="ДТО_РТ" default="5.00"/>
+      <var name="DtoRt" expression="ДТО_РТ"/>
+      <var name="DtoRtV" expression="DtoRt*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DtoRt+1"/>
+        <line x="0.0001" y="DtoRt"/>
+        <line x="1" y="DtoRt"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DtoRtV+1"/>
+        <line x="0.0001" y="DtoRtV"/>
+        <line x="1" y="DtoRtV"/>
+      </polypoint>
+  </characteristic>
+   <characteristic name="Грубая ДЗТ" dimension="DIF">
+      <parameter name="ДЗТ_нач" default="0.40"/>
+      <parameter name="ДЗТ_Кт2" default="0.50"/>
+      <parameter name="ДЗТ_Кт3" default="0.70"/>
+      <var name="DztNach" expression="ДЗТ_нач"/>
+      <var name="DztNt2" expression="0.5"/>
+      <var name="DztNt3" expression="1.5"/>
+      <var name="DztKt2" expression="ДЗТ_Кт2"/>
+      <var name="DztKt3" expression="ДЗТ_Кт3"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.0001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNach+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.0001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNachV+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+  </characteristic>
+  
+     <characteristic name="Чувствительная ДЗТ" dimension="DIF">
+      <parameter name="ДЗТ_нач" default="0.30"/>
+      <parameter name="ДЗТ_Кт2" default="0.40"/>
+      <parameter name="ДЗТ_Кт3" default="0.60"/>
+      <var name="DztNach" expression="ДЗТ_нач"/>
+      <var name="DztNt2" expression="0.5"/>
+      <var name="DztNt3" expression="1.5"/>
+      <var name="DztKt2" expression="ДЗТ_Кт2"/>
+      <var name="DztKt3" expression="ДЗТ_Кт3"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.0001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNach+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.00001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNachV+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+  </characteristic>
+  
+     <characteristic name="Сигнализация небаланса" dimension="DIF">
+      <parameter name="НБ_нач" default="0.20"/>
+      <parameter name="НБ_Кт2" default="0.40"/>
+      <var name="DztNach" expression="НБ_нач"/>
+      <var name="DztNt2" expression="0.5"/>
+      <var name="DztNt3" expression="1.5"/>
+      <var name="DztKt2" expression="НБ_Кт2"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.00001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.0001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+      </polypoint>
+  </characteristic>
+  </block>
+  
+       <block name="БМРЗ - Защита шин и ошиновок">
+   <characteristic name="ДТО" dimension="DIF">
+      <parameter name="ДТО_РТ" default="5.00"/>
+      <var name="DtoRt" expression="ДТО_РТ"/>
+      <var name="DtoRtV" expression="DtoRt*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DtoRt+1"/>
+        <line x="0.00001" y="DtoRt"/>
+        <line x="1" y="DtoRt"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DtoRtV+1"/>
+        <line x="0.00001" y="DtoRtV"/>
+        <line x="1" y="DtoRtV"/>
+      </polypoint>
+  </characteristic>
+   <characteristic name="ДЗТ" dimension="DIF">
+      <parameter name="ДЗТ_нач" default="1.00"/>
+      <parameter name="ДЗТ_Iнт" default="2.00"/>
+      <parameter name="ДЗТ_Кт" default="1.00"/>
+      <var name="DztNach" expression="ДЗТ_нач"/>
+      <var name="DztNt2" expression="ДЗТ_Iнт"/>
+      <var name="DztKt2" expression="ДЗТ_Кт"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.000001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt2+1" y="DztNach+DztKt2"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.00001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt2+1" y="DztNachV+DztKt2"/>
+      </polypoint>
+  </characteristic>
+  
+     <characteristic name="Сигнализация небаланса" dimension="DIF">
+      <parameter name="НБ_РТ" default="0.30"/>
+      <var name="DtoRt" expression="НБ_РТ"/>
+      <var name="DtoRtV" expression="DtoRt*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DtoRt+1"/>
+        <line x="0.00001" y="DtoRt"/>
+        <line x="1" y="DtoRt"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DtoRtV+1"/>
+        <line x="0.00001" y="DtoRtV"/>
+        <line x="1" y="DtoRtV"/>
+      </polypoint>
+  </characteristic>
+  
+  </block>
+  
+       <block name="БМРЗ - Защита линии">
+   <characteristic name="ДТО" dimension="DIF">
+      <parameter name="ДТО_РТ" default="10.00"/>
+      <var name="DtoRt" expression="ДТО_РТ"/>
+      <var name="DtoRtV" expression="DtoRt*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DtoRt+1"/>
+        <line x="0.0001" y="DtoRt"/>
+        <line x="1" y="DtoRt"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DtoRtV+1"/>
+        <line x="0.0001" y="DtoRtV"/>
+        <line x="1" y="DtoRtV"/>
+      </polypoint>
+  </characteristic>
+   <characteristic name="ДЗТ1" dimension="DIF">
+      <parameter name="ДЗТ_нач" default="0.30"/>
+      <parameter name="ДЗТ_Кт2" default="0.20"/>
+      <parameter name="ДЗТ_Кт3" default="0.30"/>
+      <var name="DztNach" expression="ДЗТ_нач"/>
+      <var name="DztNt2" expression="0.5"/>
+      <var name="DztNt3" expression="1.5"/>
+      <var name="DztKt2" expression="ДЗТ_Кт2"/>
+      <var name="DztKt3" expression="ДЗТ_Кт3"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.0001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNach+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.00001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNachV+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+  </characteristic>
+  
+     <characteristic name="ДЗТ2" dimension="DIF">
+      <parameter name="ДЗТ_нач" default="0.30"/>
+      <parameter name="ДЗТ_Кт2" default="0.20"/>
+      <parameter name="ДЗТ_Кт3" default="0.30"/>
+      <var name="DztNach" expression="ДЗТ_нач"/>
+      <var name="DztNt2" expression="0.5"/>
+      <var name="DztNt3" expression="1.5"/>
+      <var name="DztKt2" expression="ДЗТ_Кт2"/>
+      <var name="DztKt3" expression="ДЗТ_Кт3"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.00001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNach+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.0001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNachV+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+  </characteristic>
+    </block>
+  
+     <block name="БМРЗ - Защита генераторов">
+   <characteristic name="ДТО" dimension="DIF">
+      <parameter name="ДТО_РТ" default="5.00"/>
+      <var name="DtoRt" expression="ДТО_РТ"/>
+      <var name="DtoRtV" expression="DtoRt*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DtoRt+1"/>
+        <line x="0.0001" y="DtoRt"/>
+        <line x="1" y="DtoRt"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DtoRtV+1"/>
+        <line x="0.00001" y="DtoRtV"/>
+        <line x="1" y="DtoRtV"/>
+      </polypoint>
+  </characteristic>
+   <characteristic name="ДЗТ" dimension="DIF">
+      <parameter name="ДЗТ_нач" default="0.30"/>
+      <parameter name="ДЗТ_Iнт2" default="0.50"/>
+      <parameter name="ДЗТ_Кт2" default="0.30"/>
+      <parameter name="ДЗТ_Iнт3" default="1.50"/>
+      <parameter name="ДЗТ_Кт3" default="0.70"/>
+      <var name="DztNach" expression="ДЗТ_нач"/>
+      <var name="DztNt2" expression="ДЗТ_Iнт2"/>
+      <var name="DztNt3" expression="ДЗТ_Iнт3"/>
+      <var name="DztKt2" expression="ДЗТ_Кт2"/>
+      <var name="DztKt3" expression="ДЗТ_Кт3"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.00001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNach+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.0001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNachV+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+  </characteristic>
+   
+     <characteristic name="Сигнализация небаланса" dimension="DIF">
+      <parameter name="НБ_нач" default="0.20"/>
+      <parameter name="НБ_Кт2" default="0.30"/>
+      <var name="DztNach" expression="НБ_нач"/>
+      <var name="DztNt2" expression="0.5"/>
+      <var name="DztNt3" expression="1.5"/>
+      <var name="DztKt2" expression="НБ_Кт2"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.00001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.00001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+      </polypoint>
+  </characteristic>
+  </block>
+    
+       <block name="БМРЗ - Защита двигателей">
+   <characteristic name="ДТО" dimension="DIF">
+      <parameter name="ДТО_РТ" default="15.00"/>
+      <var name="DtoRt" expression="ДТО_РТ"/>
+      <var name="DtoRtV" expression="DtoRt*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DtoRt+1"/>
+        <line x="0.0001" y="DtoRt"/>
+        <line x="1" y="DtoRt"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DtoRtV+1"/>
+        <line x="0.00001" y="DtoRtV"/>
+        <line x="1" y="DtoRtV"/>
+      </polypoint>
+  </characteristic>
+  
+     <characteristic name="Чувствительная ДЗТ" dimension="DIF">
+      <parameter name="ДЗТ_нач" default="1.00"/>
+      <parameter name="ДЗТ_Кт" default="0.50"/>
+      <var name="DztNach" expression="ДЗТ_нач"/>
+      <var name="DztKt2" expression="ДЗТ_Кт"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.00001" y="DztNach"/>
+        <line x="DztNach/DztKt2" y="DztNach"/>
+        <line x="DztNach/DztKt2+1" y="DztNach+DztKt2"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.00001" y="DztNachV"/>
+        <line x="DztNach/DztKt2" y="DztNachV"/>
+        <line x="DztNach/DztKt2+1" y="0.95*(DztNach+DztKt2)"/>
+      </polypoint>
+  </characteristic>
+    
+     <characteristic name="Грубая ДЗТ" dimension="DIF">
+      <parameter name="ДЗТ_нач" default="5.00"/>
+      <parameter name="ДЗТ_Кт" default="0.50"/>
+      <var name="DztNach" expression="ДЗТ_нач"/>
+      <var name="DztKt2" expression="ДЗТ_Кт"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.00001" y="DztNach"/>
+        <line x="DztNach/DztKt2" y="DztNach"/>
+        <line x="DztNach/DztKt2+1" y="DztNach+DztKt2"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.00001" y="DztNachV"/>
+        <line x="DztNach/DztKt2" y="DztNachV"/>
+        <line x="DztNach/DztKt2+1" y="0.95*(DztNach+DztKt2)"/>
+      </polypoint>
+  </characteristic>
+   
+     <characteristic name="Сигнализация небаланса" dimension="DIF">
+      <parameter name="НБ_нач" default="0.50"/>
+      <var name="DztNach" expression="НБ_нач"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.00001" y="DztNach"/>
+        <line x="1" y="DztNach"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.00001" y="DztNachV"/>
+        <line x="1" y="DztNachV"/>
+      </polypoint>
+  </characteristic>
+  </block>  
+  
+  <block name="БМРЗ - Защита электродвигателей (с 2025 г.в.)">
+    <characteristic name="1 ступень защиты от асинхронного режима без потери возбуждения" dimension="OHM">
+      <parameter name="ЗАР1_Zср" default="50.0"/>
+      <parameter name="ЗАР1_Zсм" default="2.0"/>
+      <parameter name="ЗАР1_Ф" default="45.0"/>
+      <var name="xc" expression="ЗАР1_Zср/(2*tg:(ЗАР1_Ф))"/> 
+      <var name="yc" expression="(ЗАР1_Zср-ЗАР1_Zсм)/2"/> 
+      <var name="p" expression="(ЗАР1_Zср+ЗАР1_Zсм)/2"/> 
+      <circle mode="on" radius="sqrt:(xc^2+p^2)" xcenter="xc" ycenter="yc"/>
+      <circle mode="off" radius="1.05*sqrt:(xc^2+p^2)" xcenter="1.05*xc" ycenter="1.05*yc"/>
+    </characteristic>
+    <characteristic name="2 ступень защиты от асинхронного режима без потери возбуждения" dimension="OHM">
+      <parameter name="ЗАР2_Zср" default="50.0"/>
+      <parameter name="ЗАР2_Zсм" default="2.0"/>
+      <parameter name="ЗАР2_Ф" default="270"/>
+      <var name="xc" expression="-ЗАР2_Zср/(2*tg:(ЗАР2_Ф))"/> 
+      <var name="yc" expression="-(ЗАР2_Zср-ЗАР2_Zсм)/2"/> 
+      <var name="p" expression="(ЗАР2_Zср+ЗАР2_Zсм)/2"/> 
+      <circle mode="on" radius="sqrt:(xc^2+p^2)" xcenter="xc" ycenter="yc"/>
+      <circle mode="off" radius="1.05*sqrt:(xc^2+p^2)" xcenter="1.05*xc" ycenter="1.05*yc"/>
+    </characteristic>
+    <characteristic name="Защита от потери возбуждения" dimension="OHM">
+      <parameter name="ЗПВ_Zср" default="60.0"/>
+      <parameter name="ЗПВ_Zсм" default="2.0"/>
+      <var name="R" expression="(ЗПВ_Zср-ЗПВ_Zсм)/2"/> 
+      <circle mode="on" radius="R" xcenter="0" ycenter="-(ЗПВ_Zсм+R)"/>
+      <circle mode="off" radius="1.05*R" xcenter="0" ycenter="-(ЗПВ_Zсм+R)"/>
+    </characteristic>
+	<characteristic name="ДТО" dimension="DIF">
+      <parameter name="ДТО_I" default="5.00"/>
+      <var name="DtoRt" expression="ДТО_I"/>
+      <var name="DtoRtV" expression="DtoRt*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DtoRt+1"/>
+        <line x="0.0001" y="DtoRt"/>
+        <line x="1" y="DtoRt"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DtoRtV+1"/>
+        <line x="0.00001" y="DtoRtV"/>
+        <line x="1" y="DtoRtV"/>
+      </polypoint>
+   </characteristic>
+   <characteristic name="ДЗТ" dimension="DIF">
+      <parameter name="ДЗТ_I" default="0.30"/>
+      <parameter name="ДЗТ_Iт2" default="0.50"/>
+      <parameter name="ДЗТ_Кт2" default="0.50"/>
+      <parameter name="ДЗТ_Iт3" default="1.50"/>
+      <parameter name="ДЗТ_Кт3" default="0.70"/>
+      <var name="DztNach" expression="ДЗТ_I"/>
+      <var name="DztNt2" expression="ДЗТ_Iт2"/>
+      <var name="DztNt3" expression="ДЗТ_Iт3"/>
+      <var name="DztKt2" expression="ДЗТ_Кт2"/>
+      <var name="DztKt3" expression="ДЗТ_Кт3"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.00001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNach+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.0001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNachV+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+  </characteristic>
+  <characteristic name="ДЗТ грубый" dimension="DIF">
+      <parameter name="ДЗТ_Iгр" default="1.00"/>
+      <var name="DtoRt" expression="ДЗТ_Iгр"/>
+      <var name="DtoRtV" expression="DtoRt*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DtoRt+1"/>
+        <line x="0.0001" y="DtoRt"/>
+        <line x="1" y="DtoRt"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DtoRtV+1"/>
+        <line x="0.00001" y="DtoRtV"/>
+        <line x="1" y="DtoRtV"/>
+      </polypoint>
+   </characteristic>   
+   
+  <characteristic name="Сигнализация небаланса" dimension="DIF">
+      <parameter name="ДЗТ_Iнб" default="0.20"/>
+	  <parameter name="ДЗТ_Iт2" default="0.50"/>
+      <parameter name="ДЗТ_Кт2" default="0.50"/>
+      <var name="DztNach" expression="ДЗТ_Iнб"/>
+      <var name="DztNt2" expression="ДЗТ_Iт2"/>
+      <var name="DztNt3" expression="ДЗТ_Iт2+1.0"/>
+      <var name="DztKt2" expression="ДЗТ_Кт2"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.00001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.0001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+      </polypoint>
+  </characteristic>
+  </block>
+  
+  <block name="БМРЗ - Защита трансформаторов (с 2025 г.в.)">
+   <characteristic name="ДТО" dimension="DIF">
+      <parameter name="ДТО_I" default="5.00"/>
+      <var name="DtoRt" expression="ДТО_I"/>
+      <var name="DtoRtV" expression="DtoRt*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DtoRt+1"/>
+        <line x="0.0001" y="DtoRt"/>
+        <line x="1" y="DtoRt"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DtoRtV+1"/>
+        <line x="0.0001" y="DtoRtV"/>
+        <line x="1" y="DtoRtV"/>
+      </polypoint>
+  </characteristic>
+   <characteristic name="ДЗТ" dimension="DIF">
+      <parameter name="ДЗТ_I" default="0.40"/>
+	  <parameter name="ДЗТ_Iт2" default="0.50"/>
+      <parameter name="ДЗТ_Кт2" default="0.50"/>
+	  <parameter name="ДЗТ_Iт3" default="1.50"/>
+      <parameter name="ДЗТ_Кт3" default="0.70"/>
+      <var name="DztNach" expression="ДЗТ_I"/>
+      <var name="DztNt2" expression="ДЗТ_Iт2"/>
+      <var name="DztNt3" expression="ДЗТ_Iт3"/>
+      <var name="DztKt2" expression="ДЗТ_Кт2"/>
+      <var name="DztKt3" expression="ДЗТ_Кт3"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.0001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNach+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.0001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNachV+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+  </characteristic>
+  <characteristic name="Сигнализация небаланса" dimension="DIF">
+      <parameter name="НБ_I" default="0.20"/>
+	  <parameter name="ДЗТ_Iт2" default="0.50"/>
+      <parameter name="ДЗТ_Кт2" default="0.50"/>
+      <var name="DztNach" expression="НБ_I"/>
+      <var name="DztNt2" expression="ДЗТ_Iт2"/>
+      <var name="DztNt3" expression="ДЗТ_Iт2+1.0"/>
+      <var name="DztKt2" expression="ДЗТ_Кт2"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.00001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.0001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+      </polypoint>
+  </characteristic>   
+  </block>
+  
+  <block name="БМРЗ - Защита фидеров контактной сети 10 кВ (с 2025 г.в.)">
+  <characteristic name="Характеристика Сектор ДЗМФ 1 ступень" dimension="OHM">
+      <parameter name="ДЗМФ1_Zср" default="10.0"/>
+      <parameter name="ДЗМФ1_Ф1" default="5"/>
+      <parameter name="ДЗМФ1_Ф2" default="100"/>    
+
+		<polygon mode="on">
+			<line k="tg:(ДЗМФ1_Ф1)" b="0" type="1"/>
+			<line k="0" b="ДЗМФ1_Zср*100" type="1"/>
+			<line k="tg:(ДЗМФ1_Ф2)" b="0" type="1"/>
+		</polygon>		
+      <circle type="and" mode="on" radius="ДЗМФ1_Zср" xcenter="0" ycenter="0"/>
+
+		<polygon mode="off">
+			<line k="tg:(ДЗМФ1_Ф1-4)" b="0" type="1"/>
+			<line k="0" b="ДЗМФ1_Zср*100" type="1"/>
+			<line k="tg:(ДЗМФ1_Ф2+4)" b="0" type="1"/>
+		</polygon>		
+      <circle type="and" mode="off" radius="1.05*ДЗМФ1_Zср" xcenter="0" ycenter="0"/>
+    </characteristic>
+	<characteristic name="Характеристика Сектор ДЗМФ 2 ступень" dimension="OHM">
+      <parameter name="ДЗМФ2_Zср" default="20.0"/>
+      <parameter name="ДЗМФ2_Ф1" default="45"/>
+      <parameter name="ДЗМФ2_Ф2" default="110"/>     
+
+		<polygon mode="on">
+			<line k="tg:(ДЗМФ2_Ф1)" b="0" type="1"/>
+			<line k="0" b="ДЗМФ2_Zср*100" type="1"/>
+			<line k="tg:(ДЗМФ2_Ф2)" b="0" type="1"/>
+		</polygon>		
+      <circle type="and" mode="on" radius="ДЗМФ2_Zср" xcenter="0" ycenter="0"/>
+
+		<polygon mode="off">
+			<line k="tg:(ДЗМФ2_Ф1-4)" b="0" type="1"/>
+			<line k="0" b="ДЗМФ2_Zср*100" type="1"/>
+			<line k="tg:(ДЗМФ2_Ф2+4)" b="0" type="1"/>
+		</polygon>		
+      <circle type="and" mode="off" radius="1.05*ДЗМФ2_Zср" xcenter="0" ycenter="0"/>
+    </characteristic>
+	<characteristic name="Характеристика Окружность ННДЗМФ" dimension="OHM">
+      <parameter name="ННДЗМФ_Zср" default="3.0"/>
+      <circle mode="on" radius="ННДЗМФ_Zср" xcenter="0" ycenter="0"/>
+      <circle mode="off" radius="1.05*ННДЗМФ_Zср" xcenter="0" ycenter="0"/>
+    </characteristic>
+    <characteristic name="Полигональная характеристика" dimension="OHM">
+      <parameter name="ДЗМФ3_Rср" default="20.0"/>
+      <parameter name="ДЗМФ3_X1" default="1.0"/>
+      <parameter name="ДЗМФ3_X2" default="2.0"/>
+      <parameter name="ДЗМФ3_X3" default="-1.0"/>
+      <parameter name="ДЗМФ3_X4" default="-2.0"/>
+      <var name="ДЗ_R" expression="ДЗМФ3_Rср"/>
+      <var name="ДЗ_Хн1" expression="ДЗМФ3_X1"/>
+      <var name="ДЗ_Хк1" expression="ДЗМФ3_X2"/>
+      <var name="ДЗ_Хн2" expression="ДЗМФ3_X3"/>
+      <var name="ДЗ_Хк2" expression="ДЗМФ3_X4"/>
+    <polygon mode="on">
+        <line k="(ДЗ_Хк1-ДЗ_Хн1)/ДЗ_R" b="ДЗ_Хн1" type="1"/>
+        <line k="0" b="ДЗ_R" type="2"/>
+        <line k="(ДЗ_Хк2-ДЗ_Хн2)/ДЗ_R" b="ДЗ_Хн2" type="1"/>
+        <line k="0" b="0" type="2"/>
+      </polygon>
+  </characteristic>   
+  </block>
+  
+  <block name="БМРЗ - Защита линий 6-35 кВ (с 2025 г.в.)">
+   <characteristic name="ДЗМФ1 ступень" dimension="OHM">
+      <parameter name="ДЗМФ1_Nхар" default="2"/>
+      <parameter name="ДЗМФ1_Zcp" default="5.0"/>
+      <parameter name="ДЗМФ1_Ф" default="50"/>
+      <parameter name="ДЗМФ1_Ф1" default="-10"/>
+      <parameter name="ДЗМФ1_Ф2" default="50"/>
+      <parameter name="ДЗМФ1_Rср" default="2.0"/>
+      <parameter name="ДЗМФ1_Ксм" default="0.00"/>
+      <parameter name="ДЗМФ1_Zсм" default="0.0"/>
+      <parameter name="Ввод_инвертирования_ДЗМФ1" default="0"/>
+      <parameter name="Ввод_нагрузочной_зоны_для_характеристики_ДЗМФ1" default="0"/>
+      <parameter name="ДЗМФ_Rн" default="30"/>
+      <parameter name="ДЗМФ_Фн" default="15"/>	  
+      <var name="Load" expression="Ввод_нагрузочной_зоны_для_характеристики_ДЗМФ1"/>
+      <var name="Zcp" expression="ДЗМФ1_Zcp"/> 
+      <var name="Zcm" expression="ДЗМФ1_Zсм"/> 
+      <var name="Fмч" expression="ДЗМФ1_Ф"/> 
+      <var name="D" expression="(Zcp-Zcm)"/> 
+      <var name="Направленность" expression="Ввод_инвертирования_ДЗМФ1"/>
+      <var name="N" expression="-2*Направленность + 1"/> 
+      <var name="Zy" expression="ДЗМФ1_Zcp"/>
+      <var name="Kcm" expression="ДЗМФ1_Ксм"/>
+      <var name="Fz" expression="ДЗМФ1_Ф"/>
+      <var name="F1" expression="ДЗМФ1_Ф1"/>
+      <var name="F2" expression="ДЗМФ1_Ф2"/>
+      <var name="Ry" expression="ДЗМФ1_Rср"/>
+      <var name="N" expression="-2*Направленность + 1"/>
+      <var name="A" expression="(tg:(5.00001)*cos:(Fz)+sin:(Fz))"/>
+      <var name="A1" expression="(tg:(-F1)*cos:(Fz)+sin:(Fz))"/>
+      <var name="KZ" expression="Kcm * (-Zy) + (1.05 - 1) * mod:(Kcm * (-Zy))"/>
+      <var name="Type" expression="ДЗМФ1_Nхар"/>
+      <var name="kn" expression="tg:(ДЗМФ_Фн)"/>
+      <var name="knv" expression="tg:(ДЗМФ_Фн-5)"/>
+      <var name="Rn" expression="ДЗМФ_Rн"/>
+<polygon mode="on">
+        <line k="tg:(-5.00001)" b="N*Zy*A" type="1"/>
+        <line k="tg:(F1)" b="N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b="N* Ry" type="2"/>
+        <line k="-tg:(5)" b="-N* Kcm*Zy * A" type="1"/>
+        <line k="-tg:(15)" b="-0.125 *N* Ry" type="2"/>
+      </polygon>
+<polygon mode="off">
+        <line k="tg:(-5.00001)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(F1)" b="1.05*N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(5)" b="-KZ*A*N" type="1"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="on">
+        <line k="tg:(-5.00001)" b="Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="off">
+        <line k="tg:(-5)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+</polygon>
+      <circle type="and" mode="on" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="and" mode="off" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="or" mode="on" radius="(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="D/2*cos:(Fмч)*N" ycenter="D/2*sin:(Fмч)*N"/>
+      <circle type="or" mode="off" radius="1.05*(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="0.525*D*cos:(Fмч)*N" ycenter="0.525*D*sin:(Fмч)*N"/>
+<polygon type="not" mode="on">
+        <line k="0" b="Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="on">
+        <line k="0" b="-Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="-1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+  </characteristic> 
+  
+  <characteristic name="ДЗМФ1 ступень (дополнительная)" dimension="OHM">
+      <parameter name="ДЗМФд1_Nхар" default="2"/>
+      <parameter name="ДЗМФд1_Zcp" default="5.0"/>
+      <parameter name="ДЗМФд1_Ф" default="50"/>
+      <parameter name="ДЗМФд1_Ф1" default="-10"/>
+      <parameter name="ДЗМФд1_Ф2" default="50"/>
+      <parameter name="ДЗМФд1_Rср" default="2.0"/>
+      <parameter name="ДЗМФд1_Ксм" default="0.00"/>
+      <parameter name="ДЗМФд1_Zсм" default="0.0"/>
+      <parameter name="Ввод_нагрузочной_зоны_для_характеристики_ДЗМФд1" default="0"/>
+      <parameter name="ДЗМФд_Rн" default="30"/>
+      <parameter name="ДЗМФд_Фн" default="15"/>	  
+      <var name="Load" expression="Ввод_нагрузочной_зоны_для_характеристики_ДЗМФд1"/>
+      <var name="Zcp" expression="ДЗМФд1_Zcp"/> 
+      <var name="Zcm" expression="ДЗМФд1_Zсм"/> 
+      <var name="Fмч" expression="ДЗМФд1_Ф"/> 
+      <var name="D" expression="(Zcp-Zcm)"/> 
+      <var name="Направленность" expression="1"/>
+      <var name="N" expression="-2*Направленность + 1"/> 
+      <var name="Zy" expression="ДЗМФд1_Zcp"/>
+      <var name="Kcm" expression="ДЗМФд1_Ксм"/>
+      <var name="Fz" expression="ДЗМФд1_Ф"/>
+      <var name="F1" expression="ДЗМФд1_Ф1"/>
+      <var name="F2" expression="ДЗМФд1_Ф2"/>
+      <var name="Ry" expression="ДЗМФд1_Rср"/>
+      <var name="N" expression="-2*Направленность + 1"/>
+      <var name="A" expression="(tg:(5.00001)*cos:(Fz)+sin:(Fz))"/>
+      <var name="A1" expression="(tg:(-F1)*cos:(Fz)+sin:(Fz))"/>
+      <var name="KZ" expression="Kcm * (-Zy) + (1.05 - 1) * mod:(Kcm * (-Zy))"/>
+      <var name="Type" expression="ДЗМФд1_Nхар"/>
+      <var name="kn" expression="tg:(ДЗМФд_Фн)"/>
+      <var name="knv" expression="tg:(ДЗМФд_Фн-5)"/>
+      <var name="Rn" expression="ДЗМФд_Rн"/>
+<polygon mode="on">
+        <line k="tg:(-5.00001)" b="N*Zy*A" type="1"/>
+        <line k="tg:(F1)" b="N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b="N* Ry" type="2"/>
+        <line k="-tg:(5)" b="-N* Kcm*Zy * A" type="1"/>
+        <line k="-tg:(15)" b="-0.125 *N* Ry" type="2"/>
+      </polygon>
+<polygon mode="off">
+        <line k="tg:(-5.00001)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(F1)" b="1.05*N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(5)" b="-KZ*A*N" type="1"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="on">
+        <line k="tg:(-5.00001)" b="Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="off">
+        <line k="tg:(-5)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+</polygon>
+      <circle type="and" mode="on" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="and" mode="off" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="or" mode="on" radius="(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="D/2*cos:(Fмч)*N" ycenter="D/2*sin:(Fмч)*N"/>
+      <circle type="or" mode="off" radius="1.05*(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="0.525*D*cos:(Fмч)*N" ycenter="0.525*D*sin:(Fмч)*N"/>
+<polygon type="not" mode="on">
+        <line k="0" b="-Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="-1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+  </characteristic> 
+  <characteristic name="ДЗМФ 2 ступень" dimension="OHM">
+      <parameter name="ДЗМФ2_Nхар" default="1"/>
+      <parameter name="ДЗМФ2_Zcp" default="10.0"/>
+      <parameter name="ДЗМФ2_Ф" default="50"/>
+      <parameter name="ДЗМФ2_Ф2" default="50"/>
+      <parameter name="ДЗМф2_Rср" default="5.0"/>
+      <parameter name="ДЗМФ2_Ксм" default="0.00"/>
+      <parameter name="ДЗМФ2_Zсм" default="0.0"/>
+      <parameter name="Ввод_инвертирования_ДЗМФ2" default="0"/>
+      <parameter name="Ввод_нагрузочной_зоны_для_характеристики_ДЗМФ2" default="0"/>
+      <parameter name="ДЗМФ_Rн" default="30"/>
+      <parameter name="ДЗМФ_Фн" default="15"/>
+      <var name="Load" expression="Ввод_нагрузочной_зоны_для_характеристики_ДЗМФ2"/>
+      <var name="Zcp" expression="ДЗМФ2_Zcp"/> 
+      <var name="Zcm" expression="ДЗМФ2_Zсм"/> 
+      <var name="Fмч" expression="ДЗМФ2_Ф"/> 
+      <var name="D" expression="(Zcp-Zcm)"/> 
+      <var name="Направленность" expression="Ввод_инвертирования_ДЗМФ2"/>
+      <var name="N" expression="-2*Направленность + 1"/> 
+      <var name="Zy" expression="ДЗМФ2_Zcp"/>
+      <var name="Kcm" expression="ДЗМФ2_Ксм"/>
+      <var name="Fz" expression="ДЗМФ2_Ф"/>
+      <var name="F1" expression="-5"/>
+      <var name="F2" expression="ДЗМФ2_Ф2"/>
+      <var name="Ry" expression="ДЗМФ2_Rср"/>
+      <var name="N" expression="-2*Направленность + 1"/>
+      <var name="A" expression="(tg:(5.00001)*cos:(Fz)+sin:(Fz))"/>
+      <var name="A1" expression="(tg:(-F1)*cos:(Fz)+sin:(Fz))"/>
+      <var name="KZ" expression="Kcm * Zy + (1.05 - 1) * mod:(Kcm * Zy)"/>
+      <var name="Type" expression="ДЗМФ2_Nхар"/>
+      <var name="kn" expression="tg:(ДЗМФ_Фн)"/>
+      <var name="knv" expression="tg:(ДЗМФ_Фн-5)"/>
+      <var name="Rn" expression="ДЗМФ_Rн"/>
+<polygon mode="on">
+        <line k="tg:(-5.00001)" b="N*Zy*A" type="1"/>
+        <line k="tg:(F1)" b="N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b="N* Ry" type="2"/>
+        <line k="-tg:(5)" b="-N* Kcm*Zy * A" type="1"/>
+        <line k="-tg:(15)" b="-0.125 *N* Ry" type="2"/>
+      </polygon>
+<polygon mode="off">
+        <line k="tg:(-5.00001)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(F1)" b="1.05*N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(5)" b="-KZ*A*N" type="1"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="on">
+        <line k="tg:(-5.00001)" b="Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="off">
+        <line k="tg:(-5)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+</polygon>
+      <circle type="and" mode="on" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="and" mode="off" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="or" mode="on" radius="(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="D/2*cos:(Fмч)*N" ycenter="D/2*sin:(Fмч)*N"/>
+      <circle type="or" mode="off" radius="1.05*(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="0.525*D*cos:(Fмч)*N" ycenter="0.525*D*sin:(Fмч)*N"/>
+<polygon type="not" mode="on">
+        <line k="0" b="Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="on">
+        <line k="0" b="-Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="-1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+  </characteristic> 
+
+ <characteristic name="ДЗМФд 2 ступень (дополнительная)" dimension="OHM">
+      <parameter name="ДЗМФд2_Nхар" default="2"/>
+      <parameter name="ДЗМФд2_Zcp" default="10.0"/>
+      <parameter name="ДЗМФд2_Ф" default="50"/>
+      <parameter name="ДЗМФд2_Ф2" default="50"/>
+      <parameter name="ДЗМфд2_Rср" default="5.0"/>
+      <parameter name="ДЗМФд2_Ксм" default="0.00"/>
+      <parameter name="ДЗМФд2_Zсм" default="0.0"/>      
+      <parameter name="Ввод_нагрузочной_зоны_для_характеристики_ДЗМФд2" default="0"/>
+      <parameter name="ДЗМФд_Rн" default="30"/>
+      <parameter name="ДЗМФд_Фн" default="15"/>
+      <var name="Load" expression="Ввод_нагрузочной_зоны_для_характеристики_ДЗМФд2"/>
+      <var name="Zcp" expression="ДЗМФд2_Zcp"/> 
+      <var name="Zcm" expression="ДЗМФд2_Zсм"/> 
+      <var name="Fмч" expression="ДЗМФд2_Ф"/> 
+      <var name="D" expression="(Zcp-Zcm)"/> 
+      <var name="Направленность" expression="1"/>
+      <var name="N" expression="-2*Направленность + 1"/> 
+      <var name="Zy" expression="ДЗМФд2_Zcp"/>
+      <var name="Kcm" expression="ДЗМФд2_Ксм"/>
+      <var name="Fz" expression="ДЗМФд2_Ф"/>
+      <var name="F1" expression="-5"/>
+      <var name="F2" expression="ДЗМФд2_Ф2"/>
+      <var name="Ry" expression="ДЗМФд2_Rср"/>
+      <var name="N" expression="-2*Направленность + 1"/>
+      <var name="A" expression="(tg:(5.00001)*cos:(Fz)+sin:(Fz))"/>
+      <var name="A1" expression="(tg:(-F1)*cos:(Fz)+sin:(Fz))"/>
+      <var name="KZ" expression="Kcm * Zy + (1.05 - 1) * mod:(Kcm * Zy)"/>
+      <var name="Type" expression="ДЗМФд2_Nхар"/>
+      <var name="kn" expression="tg:(ДЗМФд_Фн)"/>
+      <var name="knv" expression="tg:(ДЗМФд_Фн-5)"/>
+      <var name="Rn" expression="ДЗМФд_Rн"/>
+<polygon mode="on">
+        <line k="tg:(-5.00001)" b="N*Zy*A" type="1"/>
+        <line k="tg:(F1)" b="N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b="N* Ry" type="2"/>
+        <line k="-tg:(5)" b="-N* Kcm*Zy * A" type="1"/>
+        <line k="-tg:(15)" b="-0.125 *N* Ry" type="2"/>
+      </polygon>
+<polygon mode="off">
+        <line k="tg:(-5.00001)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(F1)" b="1.05*N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(5)" b="-KZ*A*N" type="1"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="on">
+        <line k="tg:(-5.00001)" b="Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="off">
+        <line k="tg:(-5)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+</polygon>
+      <circle type="and" mode="on" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="and" mode="off" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="or" mode="on" radius="(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="D/2*cos:(Fмч)*N" ycenter="D/2*sin:(Fмч)*N"/>
+      <circle type="or" mode="off" radius="1.05*(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="0.525*D*cos:(Fмч)*N" ycenter="0.525*D*sin:(Fмч)*N"/>
+<polygon type="not" mode="on">
+        <line k="0" b="-Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="-1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+  </characteristic>
+
+   <characteristic name="ДЗМФ 3 ступень" dimension="OHM">
+      <parameter name="ДЗМФ3_Nхар" default="3"/>
+      <parameter name="ДЗМФ3_Zcp" default="20.0"/>
+      <parameter name="ДЗМФ3_Ф" default="50"/>
+      <parameter name="ДЗМФ3_Ф2" default="50"/>
+      <parameter name="ДЗМФ3_Rср" default="10.0"/>
+      <parameter name="ДЗМФ3_Ксм" default="0.00"/>
+      <parameter name="ДЗМФ3_Zсм" default="0.0"/>
+      <parameter name="Ввод_инвертирования_ДЗМФ3" default="0"/>
+      <parameter name="Ввод_нагрузочной_зоны_для_характеристики_ДЗМФ3" default="0"/>
+      <parameter name="ДЗМФ_Rн" default="30"/>
+      <parameter name="ДЗМФ_Фн" default="15"/>
+      <var name="Load" expression="Ввод_нагрузочной_зоны_для_характеристики_ДЗМФ3"/>
+      <var name="Zcp" expression="ДЗМФ3_Zcp"/> 
+      <var name="Zcm" expression="ДЗМФ3_Zсм"/> 
+      <var name="Fмч" expression="ДЗМФ3_Ф"/> 
+      <var name="D" expression="(Zcp-Zcm)"/> 
+      <var name="Направленность" expression="Ввод_инвертирования_ДЗМФ3"/>
+      <var name="N" expression="-2*Направленность + 1"/> 
+      <var name="Zy" expression="ДЗМФ3_Zcp"/>
+      <var name="Kcm" expression="ДЗМФ3_Ксм"/>
+      <var name="Fz" expression="ДЗМФ3_Ф"/>
+      <var name="F1" expression="-5"/>
+      <var name="F2" expression="ДЗМФ3_Ф2"/>
+      <var name="Ry" expression="ДЗМФ3_Rср"/>
+      <var name="N" expression="-2*Направленность + 1"/>
+      <var name="A" expression="(tg:(5.00001)*cos:(Fz)+sin:(Fz))"/>
+      <var name="A1" expression="(tg:(-F1)*cos:(Fz)+sin:(Fz))"/>
+      <var name="KZ" expression="Kcm * Zy + (1.05 - 1) * mod:(Kcm * Zy)"/>
+      <var name="Type" expression="ДЗМФ3_Nхар"/>
+      <var name="kn" expression="tg:(ДЗМФ_Фн)"/>
+      <var name="knv" expression="tg:(ДЗМФ_Фн-5)"/>
+      <var name="Rn" expression="ДЗМФ_Rн"/>
+<polygon mode="on">
+        <line k="tg:(-5.00001)" b="N*Zy*A" type="1"/>
+        <line k="tg:(F1)" b="N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b="N* Ry" type="2"/>
+        <line k="-tg:(5)" b="-N* Kcm*Zy * A" type="1"/>
+        <line k="-tg:(15)" b="-0.125 *N* Ry" type="2"/>
+      </polygon>
+<polygon mode="off">
+        <line k="tg:(-5.00001)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(F1)" b="1.05*N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(5)" b="-KZ*A*N" type="1"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="on">
+        <line k="tg:(-5.00001)" b="Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="off">
+        <line k="tg:(-5)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+</polygon>
+      <circle type="and" mode="on" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="and" mode="off" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+<polygon type="or" mode="on">
+        <line k="tg:(-5)" b="N*A*Zy*(Type-2)*(0.5*Type-0.5)" type="1"/>
+        <line k="tg:(90-F2)" b="0" type="2"/>
+        <line k="-tg:(15)" b="0" type="2"/>
+      </polygon>
+<polygon type="or" mode="off">
+        <line k="tg:(-5)" b="N*A*Zy*1.05*(Type-2)*(0.5*Type-0.5)" type="1"/>
+        <line k="tg:(90-F2+4)" b="0" type="2"/>
+        <line k="-tg:(15+4)" b="0" type="2"/>
+</polygon>
+      <circle type="or" mode="on" radius="(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="D/2*cos:(Fмч)*N" ycenter="D/2*sin:(Fмч)*N"/>
+      <circle type="or" mode="off" radius="1.05*(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="0.525*D*cos:(Fмч)*N" ycenter="0.525*D*sin:(Fмч)*N"/>
+<polygon type="not" mode="on">
+        <line k="0" b="Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="on">
+        <line k="0" b="-Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="-1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+  </characteristic>  
+
+<characteristic name="ДЗМФд 3 ступень (дополнительная)" dimension="OHM">
+      <parameter name="ДЗМФд3_Nхар" default="2"/>
+      <parameter name="ДЗМФд3_Zcp" default="20.0"/>
+      <parameter name="ДЗМФд3_Ф" default="50"/>
+      <parameter name="ДЗМФд3_Ф2" default="50"/>
+      <parameter name="ДЗМФд3_Rср" default="10.0"/>
+      <parameter name="ДЗМФд3_Ксм" default="0.00"/>
+      <parameter name="ДЗМФд3_Zсм" default="0.0"/>
+      <parameter name="Ввод_нагрузочной_зоны_для_характеристики_ДЗМФд3" default="0"/>
+      <parameter name="ДЗМФд_Rн" default="30"/>
+      <parameter name="ДЗМФд_Фн" default="15"/>
+      <var name="Load" expression="Ввод_нагрузочной_зоны_для_характеристики_ДЗМФд3"/>
+      <var name="Zcp" expression="ДЗМФд3_Zcp"/> 
+      <var name="Zcm" expression="ДЗМФд3_Zсм"/> 
+      <var name="Fмч" expression="ДЗМФд3_Ф"/> 
+      <var name="D" expression="(Zcp-Zcm)"/> 
+      <var name="Направленность" expression="1"/>
+      <var name="N" expression="-2*Направленность + 1"/> 
+      <var name="Zy" expression="ДЗМФд3_Zcp"/>
+      <var name="Kcm" expression="ДЗМФд3_Ксм"/>
+      <var name="Fz" expression="ДЗМФд3_Ф"/>
+      <var name="F1" expression="-5"/>
+      <var name="F2" expression="ДЗМФд3_Ф2"/>
+      <var name="Ry" expression="ДЗМФд3_Rср"/>
+      <var name="N" expression="-2*Направленность + 1"/>
+      <var name="A" expression="(tg:(5.00001)*cos:(Fz)+sin:(Fz))"/>
+      <var name="A1" expression="(tg:(-F1)*cos:(Fz)+sin:(Fz))"/>
+      <var name="KZ" expression="Kcm * Zy + (1.05 - 1) * mod:(Kcm * Zy)"/>
+      <var name="Type" expression="ДЗМФд3_Nхар"/>
+      <var name="kn" expression="tg:(ДЗМФд_Фн)"/>
+      <var name="knv" expression="tg:(ДЗМФд_Фн-5)"/>
+      <var name="Rn" expression="ДЗМФд_Rн"/>
+<polygon mode="on">
+        <line k="tg:(-5.00001)" b="N*Zy*A" type="1"/>
+        <line k="tg:(F1)" b="N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b="N* Ry" type="2"/>
+        <line k="-tg:(5)" b="-N* Kcm*Zy * A" type="1"/>
+        <line k="-tg:(15)" b="-0.125 *N* Ry" type="2"/>
+      </polygon>
+<polygon mode="off">
+        <line k="tg:(-5.00001)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(F1)" b="1.05*N*Zy*A1" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(5)" b="-KZ*A*N" type="1"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="on">
+        <line k="tg:(-5.00001)" b="Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*N" type="2"/>
+      </polygon>
+<polygon type="and" mode="off">
+        <line k="tg:(-5)" b="1.05*Zy*A*N" type="1"/>
+        <line k="tg:(90-F2)" b=" 1.05*Ry*N" type="2"/>
+        <line k="-tg:(15)" b="-0.125 * Ry*1.05*N" type="2"/>
+</polygon>
+      <circle type="and" mode="on" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+      <circle type="and" mode="off" radius="10*Zy*(Type-1)*(-0.5*Type+1.5)" xcenter="0" ycenter="0"/>
+<polygon type="or" mode="on">
+        <line k="tg:(-5)" b="N*A*Zy*(Type-2)*(0.5*Type-0.5)" type="1"/>
+        <line k="tg:(90-F2)" b="0" type="2"/>
+        <line k="-tg:(15)" b="0" type="2"/>
+      </polygon>
+<polygon type="or" mode="off">
+        <line k="tg:(-5)" b="N*A*Zy*1.05*(Type-2)*(0.5*Type-0.5)" type="1"/>
+        <line k="tg:(90-F2+4)" b="0" type="2"/>
+        <line k="-tg:(15+4)" b="0" type="2"/>
+</polygon>
+      <circle type="or" mode="on" radius="(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="D/2*cos:(Fмч)*N" ycenter="D/2*sin:(Fмч)*N"/>
+      <circle type="or" mode="off" radius="1.05*(Zcp+Zcm)*(-Type+2)*(-0.5*Type+1.5)/2" xcenter="0.525*D*cos:(Fмч)*N" ycenter="0.525*D*sin:(Fмч)*N"/>
+<polygon type="not" mode="on">
+        <line k="0" b="-Rn" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="-1.05*Rn" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zy*Rn" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+  </characteristic>  
+ </block>
+    
+  <block name="БМРЗ - Защита генераторов (с 2025 г.в.)">
+    <characteristic name="1 ступень защиты от асинхронного режима без потери возбуждения" dimension="OHM">
+      <parameter name="ЗАР1_Zср" default="50.0"/>
+      <parameter name="ЗАР1_Zсм" default="2.0"/>
+      <parameter name="ЗАР1_Ф" default="45.0"/>
+      <var name="xc" expression="ЗАР1_Zср/(2*tg:(ЗАР1_Ф))"/> 
+      <var name="yc" expression="(ЗАР1_Zср-ЗАР1_Zсм)/2"/> 
+      <var name="p" expression="(ЗАР1_Zср+ЗАР1_Zсм)/2"/> 
+      <circle mode="on" radius="sqrt:(xc^2+p^2)" xcenter="xc" ycenter="yc"/>
+      <circle mode="off" radius="1.05*sqrt:(xc^2+p^2)" xcenter="1.05*xc" ycenter="1.05*yc"/>
+    </characteristic>
+    <characteristic name="2 ступень защиты от асинхронного режима без потери возбуждения" dimension="OHM">
+      <parameter name="ЗАР2_Zср" default="50.0"/>
+      <parameter name="ЗАР2_Zсм" default="2.0"/>
+      <parameter name="ЗАР2_Ф" default="270"/>
+      <var name="xc" expression="-ЗАР2_Zср/(2*tg:(ЗАР2_Ф))"/> 
+      <var name="yc" expression="-(ЗАР2_Zср-ЗАР2_Zсм)/2"/> 
+      <var name="p" expression="(ЗАР2_Zср+ЗАР2_Zсм)/2"/> 
+      <circle mode="on" radius="sqrt:(xc^2+p^2)" xcenter="xc" ycenter="yc"/>
+      <circle mode="off" radius="1.05*sqrt:(xc^2+p^2)" xcenter="1.05*xc" ycenter="1.05*yc"/>
+    </characteristic>
+    <characteristic name="Защита от потери возбуждения" dimension="OHM">
+      <parameter name="ЗПВ_Zср" default="60.0"/>
+      <parameter name="ЗПВ_Zсм" default="2.0"/>
+      <var name="R" expression="(ЗПВ_Zср-ЗПВ_Zсм)/2"/> 
+      <circle mode="on" radius="R" xcenter="0" ycenter="-(ЗПВ_Zсм+R)"/>
+      <circle mode="off" radius="1.05*R" xcenter="0" ycenter="-(ЗПВ_Zсм+R)"/>
+    </characteristic>
+	<characteristic name="ДТО" dimension="DIF">
+      <parameter name="ДТО_I" default="5.00"/>
+      <var name="DtoRt" expression="ДТО_I"/>
+      <var name="DtoRtV" expression="DtoRt*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DtoRt+1"/>
+        <line x="0.0001" y="DtoRt"/>
+        <line x="1" y="DtoRt"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DtoRtV+1"/>
+        <line x="0.00001" y="DtoRtV"/>
+        <line x="1" y="DtoRtV"/>
+      </polypoint>
+   </characteristic>
+   <characteristic name="ДЗТ" dimension="DIF">
+      <parameter name="ДЗТ_I" default="0.30"/>
+      <parameter name="ДЗТ_Iт2" default="0.50"/>
+      <parameter name="ДЗТ_Кт2" default="0.50"/>
+      <parameter name="ДЗТ_Iт3" default="1.50"/>
+      <parameter name="ДЗТ_Кт3" default="0.70"/>
+      <var name="DztNach" expression="ДЗТ_I"/>
+      <var name="DztNt2" expression="ДЗТ_Iт2"/>
+      <var name="DztNt3" expression="ДЗТ_Iт3"/>
+      <var name="DztKt2" expression="ДЗТ_Кт2"/>
+      <var name="DztKt3" expression="ДЗТ_Кт3"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.00001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNach+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.0001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+        <line x="DztNt3+1" y="DztNachV+DztKt2*(DztNt3-DztNt2)+DztKt3"/>
+      </polypoint>
+  </characteristic>
+  <characteristic name="ДЗТ гр." dimension="DIF">
+      <parameter name="ДЗТ_Iгр" default="1.00"/>
+      <var name="DtoRt" expression="ДЗТ_Iгр"/>
+      <var name="DtoRtV" expression="DtoRt*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DtoRt+1"/>
+        <line x="0.0001" y="DtoRt"/>
+        <line x="1" y="DtoRt"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DtoRtV+1"/>
+        <line x="0.00001" y="DtoRtV"/>
+        <line x="1" y="DtoRtV"/>
+      </polypoint>
+   </characteristic>
+   <characteristic name="Сигнализация небаланса" dimension="DIF">
+      <parameter name="ДЗТ_Iнб" default="0.20"/>
+	  <parameter name="ДЗТ_Iт2" default="0.50"/>
+      <parameter name="ДЗТ_Кт2" default="0.50"/>
+      <var name="DztNach" expression="ДЗТ_Iнб"/>
+      <var name="DztNt2" expression="ДЗТ_Iт2"/>
+      <var name="DztNt3" expression="ДЗТ_Iт2+1.0"/>
+      <var name="DztKt2" expression="ДЗТ_Кт2"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.00001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt3" y="DztNach+DztKt2*(DztNt3-DztNt2)"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.0001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt3" y="DztNachV+DztKt2*(DztNt3-DztNt2)"/>
+      </polypoint>
+  </characteristic>
+  </block>
+  <block name="БМРЗ - Защита генераторов 0.4 кВ (с 2025 г.в.)">
+   <characteristic name="ДЗТ НП" dimension="DIF">
+      <parameter name="ДЗТ_НП_нач" default="0.30"/>      
+      <parameter name="ДЗТ_НП_Кторм" default="0.30"/>
+      <var name="DztNach" expression="ДЗТ_НП_нач"/>
+      <var name="DztNt2" expression="1.0"/>
+      <var name="DztKt2" expression="ДЗТ_НП_Кторм"/>
+      <var name="DztNachV" expression="DztNach*0.95"/>
+      <polypoint mode="on" closed="off"> 
+        <line x="0" y="DztNach+1"/>
+        <line x="0.000001" y="DztNach"/>
+        <line x="DztNt2" y="DztNach"/>
+        <line x="DztNt2+1" y="DztNach+DztKt2"/>
+      </polypoint>
+      <polypoint mode="off" closed="off">
+        <line x="0" y="DztNachV+1"/>
+        <line x="0.00001" y="DztNachV"/>
+        <line x="DztNt2" y="DztNachV"/>
+        <line x="DztNt2+1" y="DztNachV+DztKt2"/>
+      </polypoint>
+  </characteristic> 
+  </block>
+  
+  <block name="Универсальные характеристики">
+   <characteristic name="Четырехугольная характеристика" dimension="OHM">
+      <parameter name="Zcp" default="10.0"/>
+      <parameter name="Фл" default="70"/>
+      <parameter name="Ф1" default="-5"/>
+      <parameter name="Rср" default="5.0"/>
+      <parameter name="Ф2" default="70"/>
+      <parameter name="Ксм" default="0.20"/>
+	  <parameter name="Ф3" default="-5"/>
+      <parameter name="Rобр" default="5.0"/>
+      <parameter name="Ф4" default="70"/>
+      <parameter name="Направленность_к_шинам" default="0"/>
+      <parameter name="Ввод_нагрузочной_зоны_несрабатывания" default="0"/>
+      <parameter name="Rн" default="30"/>
+      <parameter name="Фн" default="15"/>
+      <var name="Load" expression="Ввод_нагрузочной_зоны_несрабатывания"/>
+      <var name="N" expression="-2*Направленность_к_шинам + 1"/> 
+      <var name="A1" expression="(-tg:(Ф1)*cos:(Фл)+sin:(Фл))"/>
+      <var name="A3" expression="(-tg:(Ф3)*cos:(Фл)+sin:(Фл))"/>
+      <var name="KZ" expression="Ксм * Zcp + (1.05 - 1) * mod:(Ксм * Zcp)"/>
+      <var name="kn" expression="tg:(Фн)"/>
+      <var name="knv" expression="tg:(Фн-5)"/>
+<polygon mode="on">
+        <line k="tg:(Ф1)" b="N*Zcp*A1" type="1"/>
+        <line k="tg:(90-Ф2)" b="N* Rср" type="2"/>
+        <line k="tg:(Ф3)" b="-N* Ксм*Zcp * A3" type="1"/>
+        <line k="tg:(90-Ф4)" b="-N* Rобр" type="2"/>
+      </polygon>
+<polygon mode="off">
+        <line k="tg:(Ф1)" b="1.05*N*Zcp*A1" type="1"/>
+        <line k="tg:(90-Ф2)" b="1.05*N* Rср" type="2"/>
+        <line k="tg:(Ф3)" b="-1.05*N* Ксм*Zcp * A3" type="1"/>
+        <line k="tg:(90-Ф4)" b="-1.05*N* Rобр" type="2"/>
+      </polygon>
+<polygon type="not" mode="on">
+        <line k="0" b="Rн" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="100*Zcp*Rн" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="on">
+        <line k="0" b="-Rн" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zcp*Rн" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="1.05*Rн" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="100*Zcp*Rн" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="-1.05*Rн" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zcp*Rн" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+  </characteristic>
+   <characteristic name="Эллиптическая характеристика" dimension="OHM">
+      <parameter name="Zcp" default="10.0"/>
+      <parameter name="Фл" default="70"/>
+      <parameter name="Ксм" default="0.20"/>
+      <parameter name="Кэ" default="0.5"/>
+      <parameter name="Направленность_к_шинам" default="0"/>
+      <parameter name="Ввод_нагрузочной_зоны_несрабатывания" default="0"/>
+      <parameter name="Rн" default="30"/>
+      <parameter name="Фн" default="15"/>
+      <var name="Load" expression="Ввод_нагрузочной_зоны_несрабатывания"/>
+      <var name="N" expression="-2*Направленность_к_шинам + 1"/> 
+      <var name="xc" expression="N*cos:(Фл)*(1-Ксм)/2*Zcp"/>
+      <var name="yc" expression="N*sin:(Фл)*(1-Ксм)/2*Zcp"/>
+      <var name="xcv" expression="N*1.05*cos:(Фл)*(1-Ксм)/2*Zcp"/>
+      <var name="ycv" expression="N*1.05*sin:(Фл)*(1-Ксм)/2*Zcp"/>
+      <var name="w" expression="(Ксм+1) * Zcp"/>
+	  <var name="h" expression="w*Кэ"/>
+      <var name="wv" expression="1.05*(Ксм+1) * Zcp"/>
+	  <var name="hv" expression="wv*Кэ"/>
+      <var name="kn" expression="tg:(Фн)"/>
+      <var name="knv" expression="tg:(Фн-5)"/>
+      <ellipse type="and" mode="on" xcenter="xc" ycenter="yc" width="w" height="h" angle="Фл" />
+      <ellipse type="and" mode="off" xcenter="xcv" ycenter="ycv" width="wv" height="hv" angle="Фл" />
+<polygon type="not" mode="on">
+        <line k="0" b="Rн" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="100*Zcp*Rн" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="on">
+        <line k="0" b="-Rн" type="2"/>
+        <line k="kn*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zcp*Rн" type="2"/>
+        <line k="-kn*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="1.05*Rн" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="100*Zcp*Rн" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+<polygon type="not" mode="off">
+        <line k="0" b="-1.05*Rн" type="2"/>
+        <line k="knv*Load" b="0" type="1"/>
+        <line k="0" b="-100*Zcp*Rн" type="2"/>
+        <line k="-knv*Load" b="0" type="1"/>
+</polygon>
+  </characteristic>
+  </block>
+  <block name="Реле направления мощности">
+    <characteristic name="РНМ" dimension="OHM">
+      <parameter name="Фмч" default="-30"/>
+      <polygon type="and" mode="on">
+        <line k="tg:(Фмч+85)" b="0" type="1"/>
+        <line k="Фмч/900" b="10" type="1"/>
+        <line k="tg:(Фмч+95)" b="0" type="1"/>
+        <line k="Фмч/900" b="-10" type="1"/>
+      </polygon>
+      <circle type="and" mode="on" radius="5" xcenter="0" ycenter="0"/>
+    </characteristic>
+  </block>
+  
+  </blocks>
