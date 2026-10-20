@@ -8,11 +8,15 @@
 //! The crate is pure Rust with no platform dependencies, so it builds and runs
 //! identically on Linux, Windows and macOS.
 
+pub mod comtrade;
 pub mod expr;
 pub mod geom;
 pub mod model;
+pub mod omp;
 pub mod parse;
+pub mod signal;
 
+pub use comtrade::{AnalogChannel, DigitalChannel, Oscillogram};
 pub use expr::{Context, Expr, ExprError};
 pub use geom::{evaluate, CharGeometry, ModeGeometry, Shape};
 pub use model::{
