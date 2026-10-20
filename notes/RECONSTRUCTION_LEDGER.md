@@ -373,8 +373,11 @@ cursor-instant phasor, plain reactance / textbook two-terminal formula) is
   Ua/Ub/Uc + Ia/Ib/Ic. No sections or Inom = 0 → message 349. Validation
   0x4a5d70 (R0&X0 / R1&X1 not both 0, section length ≠ 0). Primary vs
   secondary NOT DETERMINED (no ratio applied in ОМП code).
-- Phasors (0x477280): one-cycle DFT over samples [i−N, i−1] (**excludes i**),
-  scaled 2/N (peak); 0 for i < N. Symmetrical comps I1, I2, I0=(Ia+Ib+Ic)/3,
+- Phasors (0x477280, ✔ read directly): fixed-rate path = Σ_{j=0}^{N−1}
+  x[i−N+j]·(sin θj + j·cos θj), θj = 2πj/N, × 2/N (**peak**, window
+  [i−N, i−1], excludes i) — i.e. the channel phasor (L6) at i−1 times √2;
+  0 for i < N. A variable-rate path (param ≠ −1) integrates over one measured
+  period using the record's per-sample rate (1e-6 time scaling). Symmetrical comps I1, I2, I0=(Ia+Ib+Ic)/3,
   U0 (0x497090).
 - Per-sample fault-type detection (0x498580, hysteresis 0.9): 3ph if
   |I1|>4|I2| and |I1|>√2·Inom; asymmetric if 4|I2|>|I1|; no-earth if
@@ -401,6 +404,38 @@ cursor-instant phasor, plain reactance / textbook two-terminal formula) is
   (population σ); section/support location; texts 3020/3026/3006–3008/3025
   ("на смежной линии" if d > L or ≤ 0, no clamping); extra channels "Lкз" (m)
   and "КЗ фазы A/B/C"; save .txt / settings .omp.
+
+**L7 detection spec (subagent, read in code; constants 4.0@4d16e0 6.0@4d16f0
+3.0@4d16d0 0.9@4d1658 0.1@4d1630 1.15@4d1688; I1,I2,I0 already /3):**
+- Hysteresis H(set, reset, prev): set → 1, then reset → 0 (reset wins), else
+  hold prev; reset level = 0.9 × set threshold; strict `>`; arrays start 0.
+- 0x498580 (grounded/double-ended), k = 1..N−1, outputs[0] = 0.
+  Pass 1: s = H(|I1| > 4|I2|, |I1| < 3.6|I2|); h = H(|I1| > √2·In,
+  |I1| < 0.9√2·In); F3 = s∧h. Pass 2: a = H(4|I2| > |I1|, 0.9|I1| > 4|I2|);
+  n = H(|I2| > 6|I0|, 5.4|I0| > |I2|); G = |I1| > 0.1√2·In; F2 = a∧n∧G;
+  E = a∧¬n∧G. Then debounce E, F2, F3 in place.
+- 0x497f10 (isolated, no hysteresis/debounce), k = 0..N−1: if |I1| ≤ 0.1√2·In
+  → F2=F3=0; else F2 = 3|I2| > |I1|, F3 = |I1| ≥ 3|I2| ∧ |I1| > 1.15√2·In.
+  Phases: A = F3 ∨ (F2 ∧ (|Ia|>|Ib| ∨ |Ia|>|Ic|)), B, C likewise.
+- 0x499930 debounce: T_rise = trunc(P/4); y[0]=0, c=0; for i≥1: y=y[i−1];
+  c = (c+1)·[x[i] ≠ y[i−1]]; fall when y[i−1]=1, x=0, c≥0 → y=0, c=−1; rise
+  when y[i−1]=0, x=1, c ≥ T_rise → y=1, c=−1; x[0] ignored.
+- Grounded phase selection (498be3–498f6c): p_ab = H(|Ia|>|Ib|, 0.9|Ib|>|Ia|),
+  p_ac, p_bc likewise; A = F3 ∨ F2∧(p_ab∨p_ac) ∨ E∧p_ab∧p_ac;
+  B = F3 ∨ F2∧(¬p_ab∨p_bc) ∨ E∧¬p_ab∧p_bc; C = F3 ∨ F2∧(¬p_ac∨¬p_bc) ∨
+  E∧¬p_ac∧¬p_bc.
+- Loop choice grounded 0x499e90 (k = P..N−1, later writes override): F3 → AB
+  (Ua−Ub, Ia−Ib); F2 → first of AB, BC, CA by phase pairs (else 1+0j); E →
+  first of A, B, C (Uph, Iph; else 1+0j), inst = ia+ib+ic; Iref = Iloop if
+  F2∨F3 else I0 (=(Ia+Ib+Ic)/3) if E; none → U=I=Iref=1+0j, inst 1.
+  Isolated 0x499c80: defaults 1+0j; if F2∨F3: AB, BC, CA tested in turn, last
+  match wins (3-ph → CA); line-voltage phasors at obj+0x1e8/1f4/200 (likely
+  Uab/Ubc/Uca, NOT confirmed); Iref not written.
+- Still NOT specified (agents stopped before reporting): section math
+  (0x49a670/0x49a430/θ), window choice (0x499b50/0x477db0), median/σ/output
+  text, double-ended (0x49cf00…), interval finders 0x499aa0/0x499b50,
+  double-ended detection 0x499000. Calculator channel accessors (L6) also
+  pending — their agent was stopped too.
 
 Rust action: rewrite `omp.rs` as this engine (sections, per-sample distances,
 detection, window, median/σ) with tests; GUI dialog as a section tree.
