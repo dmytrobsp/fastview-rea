@@ -123,7 +123,7 @@ crates/
     analysis.rs detect three-phase channels, derive phasors/sequences/impedance loci
     omp.rs      single- and double-ended fault location
     tests/      engine + whole-library + oscillogram tests (21 tests)
-                (+ 10 GUI tests in fastview-gui: keybinds, commands, helpers)
+                (+ GUI tests in fastview-gui: keybinds, commands, PNG/ZIP, helpers)
     examples/     headless PNG renderers + demo COMTRADE generator (validation)
   fastview-gui/ egui/eframe desktop app (Linux + Windows + macOS)
     app.rs        shared state, documents, commands, keybinds, CSV export
@@ -131,7 +131,8 @@ crates/
     icons.rs      clean-room vector ribbon icons (no proprietary bitmaps)
     ribbon.rs     the ribbon: QAT, tabs, command groups, Стиль switcher
     lanes.rs      lane-based oscillogram: stats, cursors, comments, context menus
-    dialogs.rs    About, channel properties, comment editor
+    dialogs.rs    About, channel properties, comment editor, file parameters
+    util.rs       dependency-free PNG (image export) and ZIP (archive) writers
     views.rs      круговая/дифференциальная/векторная/частотная/анализ/ОМП
 assets/FastView.fvb        the real characteristic library (UTF-8)
 assets/demo/demo_fault.*   bundled synthetic COMTRADE A-ground fault record
@@ -181,31 +182,35 @@ cargo build -p fastview-gui --release --target x86_64-pc-windows-gnu
 ## Scope & fidelity
 
 **Implemented:** the Office-2007 **ribbon shell** (QAT, tabs, command groups,
-four skins), the original **keybinds** and **context menus**, **MDI documents**,
-and the **lane-based oscillogram** (per-channel stats, dual cursors, selection,
-time-axis units); the characteristic viewer (`.fvb` parsing, formula language,
-geometry/region engine, impedance & differential plane, settings editing);
-COMTRADE loading; phasor/vector diagram; harmonic (frequency) diagram; symmetric
-components and loop impedances; the formula editor for computed channels;
-oscillogram **merging** (Объединение: copy/paste channels between records);
-single- & double-ended fault location; the impedance-trajectory overlay; and CSV
-export. All backed by **32 tests** (incl. a keybind-table test) and headless
-render validation in `docs/validation/`.
+four skins, clean-room vector icons, minimise), the original **keybinds**,
+**context menus** and **MDI documents**; the **lane-based oscillogram**
+(per-channel stats, dual vertical + draggable horizontal визиры, selection,
+time-axis units, **channel overlay / ADC-counts / vertical zoom**, **comments**
+with amplitude levels); the characteristic viewer (`.fvb`, formula language,
+geometry/region engine, impedance & differential plane, settings); COMTRADE
+load **and save**; **Быстрый анализ** as six tabs (symmetric, zero-sequence,
+phase-phase & phase impedances, differential currents, formula editor); vector
+diagram (radians/direction-only/absolute-angle options); harmonic (frequency)
+diagram; oscillogram **merging** (Объединение); **ОМП** single- & double-ended
+with grounded (k0-compensated) / isolated neutral; the impedance-trajectory
+overlay; **Проводник** file browser; **Параметры файла**, channel **Свойства**,
+**About** dialogs; **CSV / ZIP archive / PNG image** export; and **Undo/Redo**.
+All backed by **38 tests** (incl. a keybind-table test) and headless render
+validation in `docs/validation/`.
 
-**Residual items** (documented in `notes/FINDINGS.md`), which need the original's
-own files/environment to close faithfully rather than being guessed, or are
-planned polish:
+**Residual items** (documented in `notes/FINDINGS.md`) — the two that genuinely
+need the original's own files/environment rather than being guessable:
 
 - **Native `.sto` binary reader** — `.sto` is a CRC-protected SCADA binary + XML
   metadata; no sample `.sto` ships with the installer, so its exact layout can't be
   verified. The tool loads **COMTRADE**, which is precisely what the original's
   `OscillHelper::ConvertSto2Comtrade` emits. Import the COMTRADE export.
-- **Pixel-exact native chrome & print-preview** — the ribbon is a faithful egui
-  rendering of the Office-2007 theme with the same structure, skins, keybinds,
-  menus and icons, not a byte-identical GDI clone (which would require native
-  Win32/MFC and drop Linux/macOS). Export (CSV/image) replaces the print spooler.
-  The ribbon icons are **clean-room line-art** that evoke the originals; the
-  proprietary toolbar bitmaps are deliberately not embedded (kept local).
+- **Pixel-exact native chrome & the Windows print spooler** — the ribbon is a
+  faithful egui rendering of the Office-2007 theme with the same structure, skins,
+  keybinds, menus and icons, not a byte-identical GDI clone (which would require
+  native Win32/MFC and drop Linux/macOS). Printing is replaced by PNG image export
+  and CSV/ZIP; the ribbon icons are **clean-room line-art** (the proprietary
+  toolbar bitmaps are deliberately not embedded — kept local).
 
 ## Legal
 
