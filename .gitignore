@@ -1,3 +1,13 @@
 /target
 **/*.rs.bk
 Cargo.lock.bak
+
+# Extracted proprietary installer payload (original program, DLLs, help) — kept
+# locally for analysis, never redistributed.
+/extracted/
+
+# Raw decompilation / tool dumps (derivative of proprietary code). The distilled,
+# original findings live in notes/FINDINGS.md which IS tracked.
+/notes/*.txt
+/notes/*.json
+/notes/*.log
