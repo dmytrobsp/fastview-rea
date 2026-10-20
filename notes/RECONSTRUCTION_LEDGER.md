@@ -76,3 +76,41 @@ decompilation (pending, listed below).
 Next: decompile the evaluator cases to pin exact semantics (degrees vs radians,
 `mod:`=abs, `arg:` range, `fourie:`/`rms:` window), then implement the missing
 functions with per-function evidence recorded here.
+
+---
+
+## L2 — Formula evaluator class `Calculator`  ·  RTTI `.?AVCalculator@@` @ `0x4eb4a4`
+
+The evaluator that consumes the L1 token stream is the `Calculator` C++ class
+(RTTI confirmed). Next target: locate its vtable/evaluate method and decompile
+the per-token arithmetic to **verify** the semantics our `expr.rs` assumes —
+trig in degrees, `mod:` = abs, `^` right-assoc tighter than `* /`, colon-suffix
+postfix calls — turning L1's "shipped .fvb correct" into a MATCH, then implement
+the missing functions (L1 action). Status: ⏳ entry point found, decompile pending.
+
+---
+
+## L3 — COMTRADE / oscillogram loading  ·  `ComtradeConverter` (RTTI @ `0x4ebe1c`)
+
+Decompiled class methods (MSVC-mangled names recovered):
+- `ComtradeConverter(int,bool)` ctor / `~ComtradeConverter`
+- `GetInfoFromStoHeader(CFile&, ushort&, ulong&)` — static `.sto` header reader
+- `ReadFromXml(CString)` — `.sto` XML metadata
+- `ConvertSto2Comtrade(CString, CString, void*, int, int, …)` — `.sto` → COMTRADE
+- `CheckDstCompatibility(...)`, progress callbacks
+- sibling class `FVComtradeConv` (RTTI @ `0x4ebe3c`)
+
+The file-open filter (`0x905218`) proves the original opens **four input formats**:
+`*.cfg` (COMTRADE), `*.cff` (COMTRADE'13 single-file), `*.osc` (OSC2),
+`*.sto` (Configurator-MT native).
+
+Our impl (`comtrade.rs`): `.cfg`/`.dat` only (ASCII + binary), plus a 1999-ASCII
+writer. Verdict: 🟡 **PARTIAL**.
+- ✅ `.cfg`/`.dat` reading.
+- ❌ `.cff` (single-file COMTRADE 2013 — straightforward: header+data concatenated).
+- ❌ `.osc` (OSC2 format — needs RE of its layout).
+- ⛔ `.sto` (native Configurator-MT — no sample ships; `GetInfoFromStoHeader`/
+  `ConvertSto2Comtrade` can be read but not byte-verified without a file).
+
+Action: implement `.cff`; decompile the `.osc` reader; document `.sto` as
+infeasible-to-verify with the decompiled header layout as the best available map.
