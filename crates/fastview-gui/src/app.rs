@@ -113,6 +113,15 @@ pub struct Comment {
     pub text: String,
 }
 
+/// A channel copied for merging oscillograms (Объединение: «Копировать/Вставить
+/// каналы для объединения осциллограмм», MENU 358).
+#[derive(Debug, Clone)]
+pub struct ClipChan {
+    pub name: String,
+    pub samples: Vec<f64>,
+    pub color: egui::Color32,
+}
+
 /// State of the comment editor popup.
 #[derive(Debug, Clone)]
 pub struct CommentEdit {
@@ -299,6 +308,9 @@ pub struct App {
     pub props_channel: Option<usize>,
     pub comment_edit: Option<CommentEdit>,
 
+    /// Channels copied for merging oscillograms (Объединение).
+    pub channel_clip: Vec<ClipChan>,
+
     pub status: String,
 }
 
@@ -341,6 +353,7 @@ impl App {
             show_about: false,
             props_channel: None,
             comment_edit: None,
+            channel_clip: Vec::new(),
             status: "Готово".to_string(),
         };
         app.ensure_block_state();
@@ -415,12 +428,8 @@ impl App {
             Command::Print => {
                 self.status = "Печать заменена экспортом (CSV / изображение диаграммы).".into()
             }
-            Command::Copy => {
-                self.status = "Копировать каналы для объединения — выберите канал (ПКМ).".into()
-            }
-            Command::Paste => {
-                self.status = "Вставить каналы для объединения осциллограмм.".into()
-            }
+            Command::Copy => self.copy_channels_for_merge(),
+            Command::Paste => self.paste_channels_for_merge(),
             Command::Undo => self.status = "Отмена.".into(),
             Command::Redo => self.status = "Возврат.".into(),
             Command::Show(v) => {
@@ -703,6 +712,58 @@ impl App {
         }
     }
 
+    /// Copy the active document's visible analog channels to the merge clipboard
+    /// (Объединение: «Копировать каналы для объединения осциллограмм»).
+    pub fn copy_channels_for_merge(&mut self) {
+        let Some(d) = self.active_doc() else {
+            self.status = "Нет осциллограммы для копирования каналов.".into();
+            return;
+        };
+        let clip: Vec<ClipChan> = d
+            .osc
+            .analog
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| d.chans.get(*i).map(|c| c.visible).unwrap_or(false))
+            .map(|(i, ch)| ClipChan {
+                name: ch.id.clone(),
+                samples: ch.samples.clone(),
+                color: d.chans[i].color,
+            })
+            .collect();
+        let n = clip.len();
+        self.channel_clip = clip;
+        self.status = format!("Скопировано каналов для объединения: {n}");
+    }
+
+    /// Paste the merge-clipboard channels into the active document as extra
+    /// (computed) lanes, aligned by sample index (Объединение: «Вставить каналы»).
+    pub fn paste_channels_for_merge(&mut self) {
+        if self.channel_clip.is_empty() {
+            self.status = "Буфер каналов пуст — сначала «Копировать».".into();
+            return;
+        }
+        let clip = self.channel_clip.clone();
+        let Some(d) = self.active_doc_mut() else {
+            self.status = "Нет осциллограммы для вставки каналов.".into();
+            return;
+        };
+        let n = d.osc.sample_count();
+        let mut added = 0;
+        for c in clip {
+            // Align by sample index (truncate/pad to the target length).
+            let mut samples = c.samples;
+            samples.resize(n, f64::NAN);
+            let mut name = format!("{}*", c.name); // mark merged-in channels
+            while d.computed.iter().any(|x| x.name == name) {
+                name.push('\'');
+            }
+            d.computed.push(Computed { name, formula: "объединение".into(), samples, color: c.color });
+            added += 1;
+        }
+        self.status = format!("Вставлено каналов (объединение): {added}");
+    }
+
     pub fn add_computed(&mut self) {
         let idx = self.docs.len();
         let Some(d) = self.active_doc() else {
@@ -809,6 +870,19 @@ mod tests {
         // removing DC changes the value (demo has an emergency DC offset somewhere)
         let nd = app.active_doc().unwrap().sample(i, k);
         assert!(nd.is_finite());
+    }
+
+    #[test]
+    fn copy_paste_merges_channels() {
+        let mut app = demo_app();
+        app.dispatch(Command::Copy);
+        assert!(!app.channel_clip.is_empty(), "copy should fill the clipboard");
+        let before = app.active_doc().unwrap().computed.len();
+        app.dispatch(Command::Paste);
+        let d = app.active_doc().unwrap();
+        assert!(d.computed.len() > before, "paste should add merged channels");
+        let n = d.osc.sample_count();
+        assert!(d.computed.iter().all(|c| c.samples.len() == n), "merged channels align to length");
     }
 
     #[test]

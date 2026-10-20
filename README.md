@@ -186,10 +186,11 @@ and the **lane-based oscillogram** (per-channel stats, dual cursors, selection,
 time-axis units); the characteristic viewer (`.fvb` parsing, formula language,
 geometry/region engine, impedance & differential plane, settings editing);
 COMTRADE loading; phasor/vector diagram; harmonic (frequency) diagram; symmetric
-components and loop impedances; the formula editor for computed channels; single-
-& double-ended fault location; the impedance-trajectory overlay; and CSV export.
-All backed by **31 tests** (incl. a keybind-table test) and headless render
-validation in `docs/validation/`.
+components and loop impedances; the formula editor for computed channels;
+oscillogram **merging** (Объединение: copy/paste channels between records);
+single- & double-ended fault location; the impedance-trajectory overlay; and CSV
+export. All backed by **32 tests** (incl. a keybind-table test) and headless
+render validation in `docs/validation/`.
 
 **Residual items** (documented in `notes/FINDINGS.md`), which need the original's
 own files/environment to close faithfully rather than being guessed, or are
