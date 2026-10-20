@@ -14,3 +14,4 @@ fvb-core = { path = "../fvb-core" }
 eframe = "0.29"
 egui_plot = "0.29"
 rfd = "0.14"
+num-complex = "0.4"

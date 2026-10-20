@@ -1,0 +1,134 @@
+//! High-level analysis of a loaded oscillogram: detect the three-phase voltage
+//! and current channels, compute their phasors, symmetric components and the
+//! impedance loci used by the "Быстрый анализ" tabs and the impedance-plane
+//! overlay.
+
+use crate::comtrade::Oscillogram;
+use crate::signal::*;
+use num_complex::Complex64;
+
+/// Phase tag inferred from a channel's phase/id label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    A,
+    B,
+    C,
+    Other,
+}
+
+fn classify_phase(label: &str, id: &str) -> Phase {
+    let s = format!("{label}{id}").to_lowercase();
+    // Latin A/B/C and Cyrillic А/В/С (and common а/в/с/n).
+    let has = |cs: &[&str]| cs.iter().any(|c| s.contains(c));
+    if has(&["a", "а", "l1"]) && !has(&["ab"]) {
+        Phase::A
+    } else if has(&["b", "в", "l2"]) {
+        Phase::B
+    } else if has(&["c", "с", "l3"]) {
+        Phase::C
+    } else {
+        Phase::Other
+    }
+}
+
+fn is_voltage(unit: &str) -> bool {
+    let u = unit.to_lowercase();
+    u.starts_with('v') || u.contains("кв") || u.contains("kv") || u == "в"
+}
+
+/// Derived per-channel phasor series plus three-phase groups.
+pub struct Analysis {
+    /// Phasor series aligned to the oscillogram samples, one per analog channel.
+    pub phasors: Vec<Phasors>,
+    /// Indices of detected voltage phases (A,B,C) if present.
+    pub u_abc: [Option<usize>; 3],
+    /// Indices of detected current phases (A,B,C) if present.
+    pub i_abc: [Option<usize>; 3],
+    pub n: usize,
+}
+
+impl Analysis {
+    pub fn compute(osc: &Oscillogram) -> Analysis {
+        let n = osc.samples_per_cycle().max(2);
+        let phasors: Vec<Phasors> = osc
+            .analog
+            .iter()
+            .map(|c| sliding_phasors(&c.samples, n))
+            .collect();
+
+        let mut u_abc = [None, None, None];
+        let mut i_abc = [None, None, None];
+        for (idx, ch) in osc.analog.iter().enumerate() {
+            let ph = classify_phase(&ch.phase, &ch.id);
+            let slot = match ph {
+                Phase::A => 0,
+                Phase::B => 1,
+                Phase::C => 2,
+                Phase::Other => continue,
+            };
+            if is_voltage(&ch.unit) {
+                if u_abc[slot].is_none() {
+                    u_abc[slot] = Some(idx);
+                }
+            } else if i_abc[slot].is_none() {
+                i_abc[slot] = Some(idx);
+            }
+        }
+        Analysis {
+            phasors,
+            u_abc,
+            i_abc,
+            n,
+        }
+    }
+
+    fn ph(&self, idx: Option<usize>, k: usize) -> Complex64 {
+        idx.and_then(|i| self.phasors.get(i))
+            .and_then(|p| p.get(k).copied())
+            .unwrap_or(Complex64::new(0.0, 0.0))
+    }
+
+    /// Voltage symmetric components `(3U0, U1, U2)` at sample `k`.
+    pub fn u_symmetric(&self, k: usize) -> (Complex64, Complex64, Complex64) {
+        symmetric_components(
+            self.ph(self.u_abc[0], k),
+            self.ph(self.u_abc[1], k),
+            self.ph(self.u_abc[2], k),
+        )
+    }
+
+    /// Current symmetric components `(3I0, I1, I2)` at sample `k`.
+    pub fn i_symmetric(&self, k: usize) -> (Complex64, Complex64, Complex64) {
+        symmetric_components(
+            self.ph(self.i_abc[0], k),
+            self.ph(self.i_abc[1], k),
+            self.ph(self.i_abc[2], k),
+        )
+    }
+
+    /// Phase-A/B/C loop impedance `Uφ/Iφ` at sample `k`.
+    pub fn phase_impedance(&self, phase: usize, k: usize) -> Option<Complex64> {
+        let u = self.u_abc.get(phase).copied().flatten();
+        let i = self.i_abc.get(phase).copied().flatten();
+        let (u, i) = (self.ph(u, k), self.ph(i, k));
+        if i.norm() > 1e-9 {
+            Some(u / i)
+        } else {
+            None
+        }
+    }
+
+    /// Phase-A impedance locus over `[start, end]` samples (for overlaying on the
+    /// characteristic plane). Returns `(R, X)` points.
+    pub fn phase_a_locus(&self, start: usize, end: usize) -> Vec<[f64; 2]> {
+        let mut out = Vec::new();
+        for k in start..=end.min(self.phasors.first().map(|p| p.len().saturating_sub(1)).unwrap_or(0)) {
+            if let Some(z) = self.phase_impedance(0, k) {
+                if z.norm() < 1e6 {
+                    out.push([z.re, z.im]);
+                }
+            }
+        }
+        out
+    }
+}

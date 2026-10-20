@@ -129,3 +129,58 @@ fn comtrade_binary_round_trip() {
     assert_eq!(rec.analog[0].samples, vec![111.0, 333.0]);
     assert_eq!(rec.analog[1].samples, vec![-222.0, 444.0]);
 }
+
+#[test]
+fn line_voltages_from_phase() {
+    use fvb_core::signal::line_from_phase;
+    let ua = Complex64::new(1.0, 0.0);
+    let ub = Complex64::new(0.0, 1.0);
+    let uc = Complex64::new(-1.0, 0.0);
+    let (ab, bc, ca) = line_from_phase(ua, ub, uc);
+    assert_relative_eq!(ab.re, 1.0);
+    assert_relative_eq!(ab.im, -1.0);
+    assert_relative_eq!(bc.re, 1.0);
+    assert_relative_eq!(bc.im, 1.0);
+    assert_relative_eq!(ca.re, -2.0);
+    assert_relative_eq!(ca.im, 0.0);
+}
+
+#[test]
+fn double_ended_midline_fault() {
+    use fvb_core::omp::{double_ended_distance, LineParams};
+    // Symmetric infeed, fault at the midpoint: distance ~= half the line.
+    let line = LineParams { r1_per_km: 0.0, x1_per_km: 0.4, length_km: 100.0 };
+    let z = Complex64::new(0.0, 0.4 * 100.0);
+    let i_m = Complex64::new(1.0, 0.0);
+    let i_n = Complex64::new(1.0, 0.0);
+    // U_m = m*Z*I_m (to fault); U_n = (1-m)*Z*I_n; with m=0.5 both = 0.5*Z*I
+    let u_m = Complex64::new(0.5, 0.0) * z * i_m;
+    let u_n = Complex64::new(0.5, 0.0) * z * i_n;
+    let d = double_ended_distance(u_m, i_m, u_n, i_n, &line).unwrap();
+    assert!((d - 50.0).abs() < 5.0, "expected ~50 km, got {d}");
+}
+
+#[test]
+fn analysis_detects_phases_and_computes_symmetric() {
+    use fvb_core::analysis::Analysis;
+    let rec = comtrade::parse(
+        include_str!("../../../assets/demo/demo_fault.cfg"),
+        include_bytes!("../../../assets/demo/demo_fault.dat"),
+    )
+    .expect("demo");
+    let an = Analysis::compute(&rec);
+    assert!(an.u_abc[0].is_some() && an.u_abc[1].is_some() && an.u_abc[2].is_some());
+    assert!(an.i_abc[0].is_some() && an.i_abc[1].is_some() && an.i_abc[2].is_some());
+    // Pre-fault (early, balanced) -> small negative/zero sequence.
+    let pre = rec.samples_per_cycle() * 2;
+    let (_i0, i1, i2) = an.i_symmetric(pre);
+    assert!(i1.norm() > i2.norm() * 3.0, "pre-fault should be mostly positive sequence");
+    // During fault (A-phase) -> significant 3I0 and I2.
+    let mid = rec.sample_count() / 2;
+    let (i0f, _i1f, i2f) = an.i_symmetric(mid);
+    assert!(i0f.norm() > 0.5 && i2f.norm() > 0.5, "fault should show zero/neg sequence");
+    // Phase-A impedance locus should reach near the origin (into the zone).
+    let locus = an.phase_a_locus(0, rec.sample_count() - 1);
+    let min_r = locus.iter().map(|p| (p[0] * p[0] + p[1] * p[1]).sqrt()).fold(f64::MAX, f64::min);
+    assert!(min_r < 10.0, "fault impedance should approach the zone, min |Z|={min_r}");
+}

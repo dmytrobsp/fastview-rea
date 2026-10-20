@@ -96,3 +96,14 @@ full ribbon UI, print preview, other diagram types, ОМП fault location.
 - **Angle unit = degrees**, conclusive from the literal idiom `tg:(90-F2)` (complement-to-90°).
 - Native oscillogram format is **`.sto`**, converted to COMTRADE by `OscillHelper::ComtradeConverter`
   (`ConvertSto2Comtrade`, `ReadFromXml`, `GetInfoFromStoHeader`) — relevant to the later overlay feature.
+
+## Oscillogram formats
+- The native oscillogram is **`.sto`** (Mekhanotronika SCADA format): a CRC-protected
+  binary (`GetInfoFromStoHeader` seeks to 0 and reads a 26-byte header — a u32 at
+  offset 0 and a u16 channel count) plus XML parameter metadata parsed into a
+  `ParamsTreeNode` tree (`ReadFromXml`/`ArmXmlHelper`, nodes `Freq`,
+  `FreqAnalogInpName`, …). `OscillHelper::ComtradeConverter::ConvertSto2Comtrade`
+  converts `.sto` → **COMTRADE** (`.cfg`/`.dat`), the open IEEE C37.111 interchange
+  format. No sample `.sto` ships with the installer, so the full binary layout is
+  not verifiable; the reconstruction implements the validated COMTRADE path (what
+  the converter emits) and treats `.sto` as recognised-but-convert-first.
