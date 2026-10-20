@@ -647,25 +647,10 @@ fn impedance_table(ui: &mut egui::Ui, id: &str, first_col: &str, rows: &[(&str, 
 }
 
 /// Magnitudes of harmonics 0..=hmax from the one-cycle window ending at `center`.
+/// RMS magnitudes of harmonics 0..=hmax at sample `center`
+/// ([`fvb_core::signal::harmonic_rms`], the original's `fourie:`).
 fn harmonics(samples: &[f64], center: usize, n: usize, hmax: usize) -> Vec<f64> {
-    let mut out = vec![0.0; hmax + 1];
-    if n < 2 || samples.len() < n {
-        return out;
-    }
-    let start = center.saturating_sub(n - 1).min(samples.len().saturating_sub(n));
-    for (h, slot) in out.iter_mut().enumerate() {
-        let mut re = 0.0;
-        let mut im = 0.0;
-        for m in 0..n {
-            let ang = -2.0 * std::f64::consts::PI * (h as f64) * (m as f64) / (n as f64);
-            let v = samples[start + m];
-            re += v * ang.cos();
-            im += v * ang.sin();
-        }
-        let scale = if h == 0 { 1.0 / n as f64 } else { 2.0 / n as f64 / std::f64::consts::SQRT_2 };
-        *slot = (re * re + im * im).sqrt() * scale;
-    }
-    out
+    (0..=hmax).map(|h| fvb_core::signal::harmonic_rms(samples, center, n, h)).collect()
 }
 
 /// Draw a region (operate or reset), punching holes out of the fill.

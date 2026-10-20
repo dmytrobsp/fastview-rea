@@ -62,10 +62,11 @@ impl Oscillogram {
         self.time.len()
     }
 
-    /// Estimate samples-per-fundamental-period for DFT windows.
+    /// Samples per nominal period for DFT windows (the original's
+    /// `rate / trunc(f)`; estimated from the time axis if the rate is unknown).
     pub fn samples_per_cycle(&self) -> usize {
-        if self.sample_rate > 0.0 && self.line_freq > 0.0 {
-            (self.sample_rate / self.line_freq).round() as usize
+        if let Some(n) = crate::signal::samples_per_period(self.sample_rate, self.line_freq) {
+            n
         } else if self.time.len() > 1 {
             let dt = self.time[1] - self.time[0];
             if dt > 0.0 {

@@ -1,11 +1,14 @@
 //! Signal analysis over an oscillogram: DFT phasors, RMS, symmetric components
 //! and loop impedances.
 //!
-//! Formulas follow the help's "Математический аппарат" appendix (standard
-//! power-system definitions): the phasor of a channel at a point is the first
-//! DFT harmonic over a one-period window lying in the past (to the left) of that
-//! point; symmetric components use the Fortescue transform with
-//! `a = 1∠120°`; loop impedances are `U_loop / I_loop`.
+//! The per-channel methods reproduce the decompiled original (ledger L6):
+//! phasor `FUN_00426fc0`, rms `FUN_004272a0`, a0 `FUN_00426c90`, harmonic
+//! `FUN_00426240`, fault `FUN_00427670`. Every window is the `N` samples ending
+//! at (and including) the sample index, and every method returns 0 until a
+//! full window is available. Phasors are RMS-scaled and **sine-referenced at
+//! the newest sample**: `x[i] = √2·X·sin(ωi + ψ)` gives the phasor `X∠ψ` at `i`.
+//! Symmetric components use the Fortescue transform with `a = 1∠120°`; loop
+//! impedances are `U_loop / I_loop`.
 
 use num_complex::Complex64;
 
@@ -13,40 +16,64 @@ use num_complex::Complex64;
 /// (for points before a full window is available the value is zero).
 pub type Phasors = Vec<Complex64>;
 
+/// Samples per nominal period as the original computes it: `rate / trunc(f)`
+/// with unsigned integer division (`0x427062`), from the record's integer
+/// working sample rate and nominal frequency. Never a measured frequency.
+pub fn samples_per_period(sample_rate: f64, line_freq: f64) -> Option<usize> {
+    let (rate, f) = (sample_rate.trunc(), line_freq.trunc());
+    (rate >= 1.0 && f >= 1.0).then(|| (rate as u64 / f as u64) as usize)
+}
+
 /// The 120° rotation operator used by the symmetric-component transform.
 pub fn operator_a() -> Complex64 {
     Complex64::from_polar(1.0, 120f64.to_radians())
 }
 
-/// Compute the fundamental phasor at every sample using a sliding one-cycle DFT.
-///
-/// The window of `n` samples ending at (and including) index `i` is transformed;
-/// the returned complex value is scaled so that `|phasor|` is the **RMS**
-/// magnitude of the fundamental (matching the "действующее значение" the tool
-/// displays). Phase is in radians (`arg`).
+/// Fundamental phasor at every sample (`FUN_00426fc0`):
+/// `Re = (√2/N)·Σ sin(2πk/N)·x[i−N+k]`, `Im = (√2/N)·Σ cos(2πk/N)·x[i−N+k]`,
+/// k = 1..N; zero while `i < N − 1`.
 pub fn sliding_phasors(samples: &[f64], n: usize) -> Phasors {
     let len = samples.len();
     let mut out = vec![Complex64::new(0.0, 0.0); len];
     if n < 2 || len < n {
         return out;
     }
-    // Precompute the twiddle factors for the fundamental (k = 1).
-    let mut cs = Vec::with_capacity(n);
-    for m in 0..n {
-        let ang = -2.0 * std::f64::consts::PI * (m as f64) / (n as f64);
-        cs.push(Complex64::from_polar(1.0, ang));
-    }
-    // Peak-normalised DFT bin: X = (2/N) Σ x[m] e^{-j2π m/N}; RMS = |X|/√2.
-    let scale = 2.0 / (n as f64) / std::f64::consts::SQRT_2;
+    let tau = 2.0 * std::f64::consts::PI;
+    let sin_t: Vec<f64> = (1..=n).map(|k| (tau * k as f64 / n as f64).sin()).collect();
+    let cos_t: Vec<f64> = (1..=n).map(|k| (tau * k as f64 / n as f64).cos()).collect();
+    let scale = 2f64.sqrt() / n as f64;
     for (i, slot) in out.iter_mut().enumerate().skip(n - 1) {
-        let start = i + 1 - n;
-        let mut acc = Complex64::new(0.0, 0.0);
-        for m in 0..n {
-            acc += cs[m] * samples[start + m];
+        let (mut re, mut im) = (0.0, 0.0);
+        for k in 1..=n {
+            let x = samples[i + k - n];
+            re += sin_t[k - 1] * x;
+            im += cos_t[k - 1] * x;
         }
-        *slot = acc * scale;
+        *slot = Complex64::new(re * scale, im * scale);
     }
     out
+}
+
+/// RMS magnitude of harmonic `h` at sample `i` over the phasor window
+/// (`fourie:`, `FUN_00426240`): `sqrt(C² + S²)·√2/N` with angles `k·h·2π/N`;
+/// `h = 0` is `|a0|`. Zero before a full window. (The original also scales
+/// `h = 1` by a per-record gain that only non-COMTRADE loaders set.)
+pub fn harmonic_rms(samples: &[f64], i: usize, n: usize, h: usize) -> f64 {
+    if n == 0 || i + 1 < n || i >= samples.len() {
+        return 0.0;
+    }
+    let window = &samples[i + 1 - n..=i];
+    if h == 0 {
+        return (window.iter().sum::<f64>() / n as f64).abs();
+    }
+    let tau = 2.0 * std::f64::consts::PI;
+    let (mut c, mut s) = (0.0, 0.0);
+    for (k, x) in (1..=n).zip(window) {
+        let th = k as f64 * h as f64 * tau / n as f64;
+        c += x * th.cos();
+        s += x * th.sin();
+    }
+    (c * c + s * s).sqrt() * 2f64.sqrt() / n as f64
 }
 
 /// RMS of the full signal over a one-cycle sliding window (true RMS, all
@@ -84,26 +111,26 @@ pub fn sliding_dc(samples: &[f64], n: usize) -> Vec<f64> {
     out
 }
 
-/// Emergency component (аварийная составляющая): RMS of the second derivative
-/// over a one-cycle window — a stationarity-break indicator. Needs ≥ 2 cycles.
-pub fn sliding_emergency(samples: &[f64], n: usize, dt: f64) -> Vec<f64> {
+/// Fault (emergency, аварийная) component per sample (`FUN_00427670`): the
+/// RMS over one period of the one-period-lag second difference
+/// `d[s] = x[s] − 2·x[s−N] + x[s−2N]`, where terms with `s < 2N` count as 0:
+/// `sqrt(Σ d²) / sqrt(N)` over the N samples ending at `i`.
+pub fn sliding_fault(samples: &[f64], n: usize) -> Vec<f64> {
     let len = samples.len();
     let mut out = vec![0.0; len];
-    if n == 0 || len < 2 * n || dt <= 0.0 {
+    if n == 0 {
         return out;
     }
-    let mut d2 = vec![0.0; len];
-    for i in 1..len - 1 {
-        d2[i] = (samples[i + 1] - 2.0 * samples[i] + samples[i - 1]) / (dt * dt);
-    }
-    for (i, slot) in out.iter_mut().enumerate().skip(n - 1) {
-        let start = i + 1 - n;
-        let mut s = 0.0;
-        for m in 0..n {
-            let v = d2[start + m];
-            s += v * v;
+    let d = |s: usize| {
+        if s < 2 * n {
+            0.0
+        } else {
+            samples[s] - 2.0 * samples[s - n] + samples[s - 2 * n]
         }
-        *slot = (s / n as f64).sqrt();
+    };
+    for (i, slot) in out.iter_mut().enumerate().skip(n - 1) {
+        let sum: f64 = (1..=n).map(|k| d(i + k - n).powi(2)).sum();
+        *slot = sum.sqrt() / (n as f64).sqrt();
     }
     out
 }

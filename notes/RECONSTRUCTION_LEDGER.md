@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 74 pass)
+- `cargo test --workspace`   (currently 78 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 74 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 78 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -136,7 +136,7 @@ decompilation (pending, listed below).
 | Formula evaluator (tokenizer/grammar/values) | `FUN_00418c40`, `0x419950`..`0x41f960` | `expr.rs` | ✅ L2 (numeric) |
 | `.fvb` loader / evaluation / settings | `FUN_0040c7e0`, `FUN_00409260`, `FUN_00407750` | `parse.rs`/`model.rs`/`geom.rs` | ✅ L5 (persistence ❌) |
 | Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ✅ L4 |
-| DFT / phasors / RMS | `FUN_00426fc0` & channel methods | `signal.rs` | ❌ L6 reversed, fix pending |
+| DFT / phasors / RMS | `FUN_00426fc0` & channel methods | `signal.rs` | ✅ L6 (freq-channel variant ❌) |
 | Symmetric components / impedances | Calculator `i1: i2: 3i0: zl: zf:` | `signal.rs`/`analysis.rs` | 🟡 L6 (view code not located) |
 | ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | ❌ L7 reversed, rewrite pending |
 | COMTRADE reader/writer | `ComtradeConverter` | `comtrade.rs` | ⏳ pending |
@@ -296,7 +296,7 @@ Residual / honest:
 
 ---
 
-## L6 — Signal engine (channel methods)  ·  ❌ reversed, Rust reconcile PENDING
+## L6 — Signal engine (channel methods)  ·  🟡 per-channel methods ✅, Calculator channel mode ❌
 
 Evidence (subagent objdump/decompile; all double constants read from bytes).
 OscillHelper.dll exports only `ComtradeConverter` — no signal code there.
@@ -340,10 +340,22 @@ OscillHelper.dll exports only `ComtradeConverter` — no signal code there.
   K0 = ((a4+ja7)/(a5+ja8) − 1)/3, Km = ((a6+ja9)/(a5+ja8))/3 (roles inferred);
   `zk:` NOT DETERMINED. The "Быстрый анализ" view code itself NOT located.
 
-Rust action (`signal.rs`): N rule; phasor sine/newest-sample reference (keep
-an explicit conversion); `fault` lag-N second difference with the 2N zero
-rule and /sqrt(N); rms/a0 windows; then the Calculator channel mode (CHANNEL
-tokens, flags 7) + `rms: fourie: a0: fault: frequency: 3i0: i1: i2: zl: zf:`.
+Reconciled (`signal.rs`): `samples_per_period` = `trunc(rate)/trunc(f)` integer
+division (used by `Oscillogram::samples_per_cycle`); `sliding_phasors` = the
+original sin/cos-table formula (sine reference at the newest sample; only
+absolute angles change — impedances, symmetric components and relative angles
+are unaffected); `harmonic_rms` = `fourie:` (also drives the frequency diagram);
+`sliding_fault` replaces our lag-1 `sliding_emergency` (lag-N second
+difference, s < 2N terms 0, /sqrt(N)). rms/a0 already matched. Pinned by
+`tests/signal.rs` (4).
+
+Residual: frequency-channel DFT variant (`FUN_004267e0`, records with a
+selected "Гц" channel) not implemented; `rec+0x278` harmonic-1 gain assumed 1
+for COMTRADE (NOT DETERMINED); which method the frequency-diagram *view* calls
+NOT located (we use `fourie:`); primary/secondary/ADC/DC-removal flags of
+`FUN_00426020` mapped to the GUI's existing options, not re-verified.
+❌ Calculator channel mode + channel accessors (`rms: fourie: a0: fault:
+frequency: 3i0: i1: i2: zl: zf: …`) — next.
 
 ---
 
