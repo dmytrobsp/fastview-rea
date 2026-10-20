@@ -1,15 +1,42 @@
 # FastView-REA
 
 A clean-room, cross-platform (Linux **and** Windows) reconstruction in Rust of
-**Механотроника FastView** — the relay-protection *characteristic viewer* shipped
-by НТЦ «Механотроника» (www.mtrele.ru) for their БМРЗ microprocessor protection
-terminals.
+**Механотроника Fast View 5** — the relay-protection oscillogram & characteristic
+analysis tool shipped by НТЦ «Механотроника» (www.mtrele.ru) for their БМРЗ
+microprocessor protection terminals.
 
-The original is a 32-bit Windows MFC application. This project reverse-engineers
-its characteristic engine and reimplements it as portable Rust that builds and
-runs the same on Linux, Windows and macOS.
+The original is a 32-bit Windows MFC application with an Office-2007 ribbon UI.
+This project reverse-engineers both its analysis engine **and its user
+interface** and reimplements them as portable Rust that builds and runs the same
+on Linux, Windows and macOS.
 
-![FastView-REA plotting distance-protection characteristics](docs/screenshot.png)
+![FastView-REA — Office-2007 ribbon, lane-based oscillogram with dual cursors](docs/screenshot.png)
+
+## UI fidelity (1:1 recreation)
+
+The interface tracks the original closely, because the parts that define it are
+**structured resources inside the binary**, extracted rather than guessed
+(`notes/UI_SPEC.md`, dumps in `notes/ui/`):
+
+- **Office-2007 ribbon** — quick-access toolbar (Файл menu + open/save/print/
+  undo/redo), tabs *Главная* / *ОМП*, and the groups *Объединение · Диаграммы ·
+  Видимость · Вычисления · Осциллограмма* (and *ОМП*), with the **Стиль** skin
+  switcher (Office-2007 Голубой/Чёрный/Серебристый/Зеленовато-голубой).
+- **Exact keybinds** — the original's accelerator table verbatim: Ctrl+O/S/P
+  (open/save/print), Ctrl+C/V (copy/paste), Ctrl+Z/Y (undo/redo). Locked in by a
+  test against the extracted table.
+- **Lane-based oscillogram** — the real primary view: each channel is a
+  horizontal strip with a stats panel (name badge · value@cursor · Max/Min/СКЗ/
+  A1), alternating lane colours, two vertical визиры with a shaded selection
+  between them, a shared time axis, and status-bar readouts.
+- **Real context menus** — per-channel (colour, invert, remove-DC, value mode,
+  show-on-diagram) and time-axis (мкс/мс/с/отсчёты, grid), reproduced from the
+  binary's menu resources with their command ids.
+- **MDI documents** — several oscillograms open at once as closable tabs.
+
+The modern-ribbon look is a faithful egui rendering of the Office-2007 theme (and
+its four skins), not a pixel-for-pixel GDI clone — that would require native
+Win32/MFC and sacrifice the Linux/macOS target.
 
 ## What the tool does
 
@@ -88,10 +115,14 @@ crates/
     analysis.rs detect three-phase channels, derive phasors/sequences/impedance loci
     omp.rs      single- and double-ended fault location
     tests/      engine + whole-library + oscillogram tests (21 tests)
+                (+ 10 GUI tests in fastview-gui: keybinds, commands, helpers)
     examples/     headless PNG renderers + demo COMTRADE generator (validation)
-  fastview-gui/ egui/eframe desktop app, five views (Linux + Windows + macOS)
-    app.rs        shared state, data loading, computed channels, CSV export
-    views.rs      круговая диаграмма / осциллограмма / векторная / анализ / ОМП
+  fastview-gui/ egui/eframe desktop app (Linux + Windows + macOS)
+    app.rs        shared state, documents, commands, keybinds, CSV export
+    theme.rs      Office-2007 skins (Голубой/Чёрный/Серебристый/Зеленовато-голубой)
+    ribbon.rs     the ribbon: QAT, tabs, command groups, Стиль switcher
+    lanes.rs      lane-based oscillogram: stats panels, cursors, context menus
+    views.rs      круговая/дифференциальная/векторная/частотная/анализ/ОМП
 assets/FastView.fvb        the real characteristic library (UTF-8)
 assets/demo/demo_fault.*   bundled synthetic COMTRADE A-ground fault record
 ```
@@ -139,25 +170,33 @@ cargo build -p fastview-gui --release --target x86_64-pc-windows-gnu
 
 ## Scope & fidelity
 
-**Implemented:** the characteristic viewer (`.fvb` parsing, formula language,
-geometry/region engine, impedance & differential plane, settings editing); COMTRADE
-oscillogram loading; waveform view with cursors; phasor/vector diagram; symmetric
-components and loop impedances; the formula editor for computed channels; single- &
-double-ended fault location; the impedance-trajectory overlay; and CSV export. All
-backed by 21 tests and headless render validation in `docs/validation/`.
+**Implemented:** the Office-2007 **ribbon shell** (QAT, tabs, command groups,
+four skins), the original **keybinds** and **context menus**, **MDI documents**,
+and the **lane-based oscillogram** (per-channel stats, dual cursors, selection,
+time-axis units); the characteristic viewer (`.fvb` parsing, formula language,
+geometry/region engine, impedance & differential plane, settings editing);
+COMTRADE loading; phasor/vector diagram; harmonic (frequency) diagram; symmetric
+components and loop impedances; the formula editor for computed channels; single-
+& double-ended fault location; the impedance-trajectory overlay; and CSV export.
+All backed by **31 tests** (incl. a keybind-table test) and headless render
+validation in `docs/validation/`.
 
 **Residual items** (documented in `notes/FINDINGS.md`), which need the original's
-own files/environment to close faithfully rather than being guessed:
+own files/environment to close faithfully rather than being guessed, or are
+planned polish:
 
 - **Native `.sto` binary reader** — `.sto` is a CRC-protected SCADA binary + XML
   metadata; no sample `.sto` ships with the installer, so its exact layout can't be
   verified. The tool loads **COMTRADE**, which is precisely what the original's
   `OscillHelper::ConvertSto2Comtrade` emits. Import the COMTRADE export.
-- **Pixel-exact ribbon chrome and print-preview** — the UI is a clean modern egui
-  layout with the same capabilities (export replaces the Windows print spooler),
-  not a pixel clone of the MFC ribbon.
-- A few original niche tabs (frequency diagram, phase-phase vs phase impedance
-  sub-tabs) share this engine and are straightforward follow-ons.
+- **Pixel-exact native chrome & print-preview** — the ribbon is a faithful egui
+  rendering of the Office-2007 theme with the same structure, skins, keybinds and
+  menus, not a byte-identical GDI clone (which would require native Win32/MFC and
+  drop Linux/macOS). Export (CSV/image) replaces the Windows print spooler.
+- **Ribbon button artwork** — the real 16/32-px toolbar glyphs are extracted
+  (`notes/ui/png/`); the ribbon currently uses clean vector glyphs and wires the
+  ripped icons in as a follow-on. Taller lanes / vertical scroll would surface the
+  full Max/Min/СКЗ/A1 stats on every channel at once.
 
 ## Legal
 

@@ -1,17 +1,16 @@
-//! Per-tab view rendering for the FastView reconstruction.
+//! Diagram views (круговая/дифференциальная/векторная/частотная/быстрый анализ/
+//! ОМП) over the active document. The oscillogram (lane) view lives in
+//! `lanes.rs`.
 
-use crate::app::{App, Tab};
+use crate::app::{App, View};
 use eframe::egui;
-use egui_plot::{Line, LineStyle, Plot, PlotPoints, Points, Polygon};
+use egui_plot::{Bar, BarChart, Line, LineStyle, Plot, PlotPoints, Points, Polygon};
 use fvb_core::geom::Shape;
 use fvb_core::model::Dimension;
 use num_complex::Complex64;
 
-/// Inferred editor kind for a protection-setting parameter, from its name.
 enum Widget {
-    /// Enumerated type selector (e.g. `_тип`): integer 1..=max with a label.
     Enum(i64),
-    /// Boolean "ввод"/enable flag (0/1).
     Bool,
     Angle,
     Ohm,
@@ -38,24 +37,29 @@ fn infer_widget(name: &str) -> (Widget, &'static str) {
 
 impl App {
     pub fn render_tab(&mut self, ctx: &egui::Context) {
-        match self.tab {
-            Tab::Circle => self.view_circle(ctx),
-            Tab::Oscillogram => self.view_oscillogram(ctx),
-            Tab::Vector => self.view_vector(ctx),
-            Tab::Analysis => self.view_analysis(ctx),
-            Tab::Omp => self.view_omp(ctx),
+        match self.view {
+            View::Oscillogram => self.view_oscillogram(ctx),
+            View::Frequency => self.view_frequency(ctx),
+            View::Vector => self.view_vector(ctx),
+            View::Circle | View::Differential => self.char_view(ctx),
+            View::Analysis => self.view_analysis(ctx),
+            View::Omp => self.view_omp(ctx),
         }
     }
 
-    // ---- Круговая диаграмма: characteristics + impedance overlay ----
-    fn view_circle(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("circle_side")
-            .default_width(330.0)
-            .show(ctx, |ui| self.circle_side_panel(ui));
-        egui::CentralPanel::default().show(ctx, |ui| self.circle_plot(ui));
+    fn view_oscillogram(&mut self, ctx: &egui::Context) {
+        egui::CentralPanel::default().show(ctx, |ui| self.lanes_ui(ui));
     }
 
-    fn circle_side_panel(&mut self, ui: &mut egui::Ui) {
+    // ---- Круговая / Дифференциальная: characteristics + impedance overlay ----
+    fn char_view(&mut self, ctx: &egui::Context) {
+        egui::SidePanel::left("char_side")
+            .default_width(330.0)
+            .show(ctx, |ui| self.char_side_panel(ui));
+        egui::CentralPanel::default().show(ctx, |ui| self.char_plot(ui));
+    }
+
+    fn char_side_panel(&mut self, ui: &mut egui::Ui) {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.label("Блок:");
@@ -70,7 +74,7 @@ impl App {
                     }
                 });
             if self.block_idx != prev {
-                self.selected = None;
+                self.selected_char = None;
                 self.ensure_block_state();
             }
         });
@@ -99,8 +103,8 @@ impl App {
                             ui.label(egui::RichText::new("⬤").color(st.color));
                             ui.checkbox(&mut st.visible, "");
                         }
-                        if ui.selectable_label(self.selected == Some(*ci), name).clicked() {
-                            self.selected = Some(*ci);
+                        if ui.selectable_label(self.selected_char == Some(*ci), name).clicked() {
+                            self.selected_char = Some(*ci);
                         }
                     });
                 }
@@ -116,7 +120,7 @@ impl App {
 
     fn settings_editor(&mut self, ui: &mut egui::Ui) {
         let b = self.block_idx;
-        let Some(ci) = self.selected else {
+        let Some(ci) = self.selected_char else {
             ui.label("Выберите характеристику.");
             return;
         };
@@ -149,10 +153,7 @@ impl App {
                                 r
                             }
                             Widget::Enum(max) => ui.add(
-                                egui::DragValue::new(v)
-                                    .range(1.0..=max as f64)
-                                    .speed(0.05)
-                                    .fixed_decimals(0),
+                                egui::DragValue::new(v).range(1.0..=max as f64).speed(0.05).fixed_decimals(0),
                             ),
                             Widget::Angle => ui.add(egui::DragValue::new(v).speed(0.5).suffix("°")),
                             Widget::Ohm => ui.add(egui::DragValue::new(v).speed(0.05)),
@@ -166,9 +167,7 @@ impl App {
                 }
             });
             if ui.button("Сбросить уставки").clicked() {
-                if let (Some(blk), Some(st)) =
-                    (self.library.blocks.get(b), self.chars.get_mut(&(b, ci)))
-                {
+                if let (Some(blk), Some(st)) = (self.library.blocks.get(b), self.chars.get_mut(&(b, ci))) {
                     if let Some(ch) = blk.characteristics.get(ci) {
                         st.settings = ch.default_settings();
                         changed = true;
@@ -181,7 +180,7 @@ impl App {
         }
     }
 
-    fn circle_plot(&mut self, ui: &mut egui::Ui) {
+    fn char_plot(&mut self, ui: &mut egui::Ui) {
         let dim = self.current_dimension();
         let b = self.block_idx;
         struct D {
@@ -202,23 +201,17 @@ impl App {
                             name: block.characteristics[ci].name.clone(),
                             color: st.color,
                             op: geo.operate.shapes.clone(),
-                            rs: if self.show_reset {
-                                geo.reset.shapes.clone()
-                            } else {
-                                vec![]
-                            },
+                            rs: if self.show_reset { geo.reset.shapes.clone() } else { vec![] },
                         });
                     }
                 }
             }
         }
-        // Impedance overlay (phase-A locus between cursors) when an oscillogram is
-        // loaded and we're in the OHM plane.
         let overlay = if dim == Dimension::Ohm {
-            self.loaded.as_ref().map(|l| {
-                let (a, m) = (l.aux_cursor.min(l.main_cursor), l.aux_cursor.max(l.main_cursor));
-                let locus = l.analysis.phase_a_locus(a, m);
-                let point = l.analysis.phase_impedance(0, l.main_cursor).map(|z| [z.re, z.im]);
+            self.active_doc().map(|d| {
+                let (a, m) = (d.aux_cursor.min(d.main_cursor), d.aux_cursor.max(d.main_cursor));
+                let locus = d.analysis.phase_a_locus(a, m);
+                let point = d.analysis.phase_impedance(0, d.main_cursor).map(|z| [z.re, z.im]);
                 (locus, point)
             })
         } else {
@@ -226,7 +219,7 @@ impl App {
         };
         let fill = self.fill_regions;
         let bg = ui.visuals().extreme_bg_color;
-        Plot::new("circleplot")
+        Plot::new("charplot")
             .data_aspect(1.0)
             .x_axis_label(dim.x_label())
             .y_axis_label(dim.y_label())
@@ -234,7 +227,7 @@ impl App {
             .show(ui, |pu| {
                 for d in &draws {
                     draw_region(pu, &d.op, d.color, fill, false, bg, &d.name);
-                    draw_region(pu, &d.rs, d.color.gamma_multiply(0.6), false, true, bg, "");
+                    draw_region(pu, &d.rs, d.color.gamma_multiply(0.6f32), false, true, bg, "");
                 }
                 if let Some((locus, point)) = &overlay {
                     if locus.len() >= 2 {
@@ -247,158 +240,94 @@ impl App {
                     }
                     if let Some(p) = point {
                         pu.points(
-                            Points::new(vec![*p])
-                                .radius(5.0_f32)
-                                .color(egui::Color32::RED)
-                                .name("Z текущая"),
+                            Points::new(vec![*p]).radius(5.0_f32).color(egui::Color32::RED).name("Z текущая"),
                         );
                     }
                 }
             });
     }
 
-    // ---- Осциллограмма ----
-    fn view_oscillogram(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("osc_side").default_width(300.0).show(ctx, |ui| {
-            self.osc_side_panel(ui);
-        });
-        egui::CentralPanel::default().show(ctx, |ui| self.osc_plot(ui));
-    }
-
-    fn osc_side_panel(&mut self, ui: &mut egui::Ui) {
-        let Some(l) = &mut self.loaded else {
-            ui.add_space(8.0);
-            ui.label("Осциллограмма не загружена.");
-            ui.label("Файл → Открыть COMTRADE, либо «Демо-осциллограмма».");
-            return;
-        };
-        ui.add_space(4.0);
-        ui.label(egui::RichText::new(&l.name).strong());
-        ui.heading("Каналы");
-        egui::ScrollArea::vertical().id_salt("chanscroll").max_height(ui.available_height() * 0.5).show(ui, |ui| {
-            for (i, ch) in l.osc.analog.iter().enumerate() {
-                if let Some(v) = l.chan_visible.get_mut(i) {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("⬤").color(App::palette(i)));
-                        ui.checkbox(v, format!("{} [{}]", ch.id, ch.unit));
-                    });
-                }
-            }
-        });
-        ui.separator();
-        ui.heading("Визиры");
-        let n = l.osc.sample_count().saturating_sub(1);
-        ui.add(egui::Slider::new(&mut l.main_cursor, 0..=n).text("основной"));
-        ui.add(egui::Slider::new(&mut l.aux_cursor, 0..=n).text("вспомог."));
-        let t_main = l.osc.time.get(l.main_cursor).copied().unwrap_or(0.0);
-        ui.label(format!("t(осн.) = {:.4} с", t_main));
-        ui.separator();
-        ui.heading("Действующие значения (осн. визир)");
-        egui::Grid::new("rmsgrid").striped(true).show(ui, |ui| {
-            for (i, ch) in l.osc.analog.iter().enumerate() {
-                let ph = l.analysis.phasors.get(i).and_then(|p| p.get(l.main_cursor)).copied().unwrap_or(Complex64::new(0.0, 0.0));
-                ui.label(&ch.id);
-                ui.label(format!("{:.3}", ph.norm()));
-                ui.label(format!("{:+.1}°", ph.arg().to_degrees()));
-                ui.end_row();
-            }
-        });
-    }
-
-    fn osc_plot(&mut self, ui: &mut egui::Ui) {
-        let Some(l) = &self.loaded else {
-            ui.centered_and_justified(|ui| ui.label("Нет данных осциллограммы."));
-            return;
-        };
-        let main_t = l.osc.time.get(l.main_cursor).copied().unwrap_or(0.0);
-        let aux_t = l.osc.time.get(l.aux_cursor).copied().unwrap_or(0.0);
-        let mut lines: Vec<(String, egui::Color32, Vec<[f64; 2]>)> = Vec::new();
-        for (i, ch) in l.osc.analog.iter().enumerate() {
-            if !l.chan_visible.get(i).copied().unwrap_or(false) {
-                continue;
-            }
-            let pts: Vec<[f64; 2]> = l
-                .osc
-                .time
-                .iter()
-                .zip(ch.samples.iter())
-                .map(|(t, v)| [*t, *v])
-                .collect();
-            lines.push((ch.id.clone(), App::palette(i), pts));
-        }
-        // computed channels
-        for (ci, c) in self.computed.iter().enumerate() {
-            let pts: Vec<[f64; 2]> = l
-                .osc
-                .time
-                .iter()
-                .zip(c.samples.iter())
-                .map(|(t, v)| [*t, *v])
-                .collect();
-            lines.push((c.name.clone(), App::palette(ci + 7), pts));
-        }
-        Plot::new("oscplot")
-            .legend(egui_plot::Legend::default())
-            .x_axis_label("t, с")
-            .show(ui, |pu| {
-                for (name, color, pts) in &lines {
-                    pu.line(Line::new(PlotPoints::from(pts.clone())).color(*color).name(name));
-                }
-                // cursors
-                pu.line(
-                    Line::new(PlotPoints::from(vec![[main_t, f64::NEG_INFINITY], [main_t, f64::INFINITY]]))
-                        .color(egui::Color32::RED)
-                        .style(LineStyle::dashed_dense())
-                        .name("осн. визир"),
-                );
-                pu.line(
-                    Line::new(PlotPoints::from(vec![[aux_t, f64::NEG_INFINITY], [aux_t, f64::INFINITY]]))
-                        .color(egui::Color32::LIGHT_BLUE)
-                        .style(LineStyle::dashed_dense())
-                        .name("всп. визир"),
-                );
-            });
-    }
-
     // ---- Векторная диаграмма ----
     fn view_vector(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            let Some(l) = &self.loaded else {
+            let Some(d) = self.active_doc() else {
                 ui.centered_and_justified(|ui| ui.label("Загрузите осциллограмму для векторной диаграммы."));
                 return;
             };
-            ui.label(format!("Векторы при t = {:.4} с (осн. визир)", l.osc.time.get(l.main_cursor).copied().unwrap_or(0.0)));
-            let k = l.main_cursor;
-            // normalise U and I separately to comparable arrow lengths
+            ui.label(format!("Векторы при t = {:.4} с (осн. визир)", d.osc.time.get(d.main_cursor).copied().unwrap_or(0.0)));
+            let k = d.main_cursor;
             let mut u_max = 1e-9;
             let mut i_max = 1e-9;
-            for (idx, ch) in l.osc.analog.iter().enumerate() {
-                let m = l.analysis.phasors.get(idx).and_then(|p| p.get(k)).map(|z| z.norm()).unwrap_or(0.0);
-                if ch.unit.to_lowercase().starts_with('v') {
+            for (idx, ch) in d.osc.analog.iter().enumerate() {
+                if !d.chans[idx].on_vector {
+                    continue;
+                }
+                let m = d.analysis.phasors.get(idx).and_then(|p| p.get(k)).map(|z| z.norm()).unwrap_or(0.0);
+                if ch.unit.to_lowercase().starts_with('v') || ch.unit.to_lowercase().contains('в') {
                     u_max = f64::max(u_max, m);
                 } else {
                     i_max = f64::max(i_max, m);
                 }
             }
             let mut arrows: Vec<(String, egui::Color32, [f64; 2])> = Vec::new();
-            for (idx, ch) in l.osc.analog.iter().enumerate() {
-                let z = l.analysis.phasors.get(idx).and_then(|p| p.get(k)).copied().unwrap_or(Complex64::new(0.0, 0.0));
-                let is_v = ch.unit.to_lowercase().starts_with('v');
+            for (idx, ch) in d.osc.analog.iter().enumerate() {
+                if !d.chans[idx].on_vector {
+                    continue;
+                }
+                let z = d.analysis.phasors.get(idx).and_then(|p| p.get(k)).copied().unwrap_or(Complex64::new(0.0, 0.0));
+                let is_v = ch.unit.to_lowercase().starts_with('v') || ch.unit.to_lowercase().contains('в');
                 let scale = if is_v { 1.0 / u_max } else { 1.0 / i_max };
-                arrows.push((ch.id.clone(), App::palette(idx), [z.re * scale, z.im * scale]));
+                arrows.push((ch.id.clone(), d.chans[idx].color, [z.re * scale, z.im * scale]));
             }
             Plot::new("vectorplot").data_aspect(1.0).show(ui, |pu| {
-                // unit circle reference
-                let circle: Vec<[f64; 2]> = (0..=180).map(|d| {
-                    let a = (d as f64) * std::f64::consts::TAU / 180.0;
-                    [a.cos(), a.sin()]
-                }).collect();
+                let circle: Vec<[f64; 2]> = (0..=180)
+                    .map(|dd| {
+                        let a = (dd as f64) * std::f64::consts::TAU / 180.0;
+                        [a.cos(), a.sin()]
+                    })
+                    .collect();
                 pu.line(Line::new(PlotPoints::from(circle)).color(egui::Color32::DARK_GRAY));
                 for (name, color, v) in &arrows {
                     pu.line(Line::new(PlotPoints::from(vec![[0.0, 0.0], *v])).color(*color).width(2.5_f32).name(name));
                     pu.points(Points::new(vec![*v]).radius(4.0_f32).color(*color));
                 }
             });
+        });
+    }
+
+    // ---- Частотная диаграмма: harmonic spectrum at the cursor ----
+    fn view_frequency(&mut self, ctx: &egui::Context) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let Some(d) = self.active_doc() else {
+                ui.centered_and_justified(|ui| ui.label("Загрузите осциллограмму для частотной диаграммы."));
+                return;
+            };
+            ui.label("Гармонический состав в основном визире (доля от 1-й гармоники)");
+            let n = d.osc.samples_per_cycle().max(2);
+            let k = d.main_cursor;
+            const HMAX: usize = 15;
+            let mut charts: Vec<BarChart> = Vec::new();
+            let mut slot = 0usize;
+            let visible: Vec<usize> = (0..d.osc.analog.len()).filter(|i| d.chans[*i].on_freq && d.chans[*i].visible).collect();
+            let width = 0.8 / visible.len().max(1) as f64;
+            for (si, &i) in visible.iter().enumerate() {
+                let mags = harmonics(&d.osc.analog[i].samples, k, n, HMAX);
+                let base = mags.get(1).copied().unwrap_or(0.0).max(1e-9);
+                let bars: Vec<Bar> = (1..=HMAX)
+                    .map(|h| Bar::new(h as f64 + si as f64 * width, mags.get(h).copied().unwrap_or(0.0) / base).width(width))
+                    .collect();
+                charts.push(BarChart::new(bars).color(d.chans[i].color).name(&d.osc.analog[i].id));
+                slot += 1;
+            }
+            let _ = slot;
+            Plot::new("freqplot")
+                .legend(egui_plot::Legend::default())
+                .x_axis_label("№ гармоники")
+                .show(ui, |pu| {
+                    for c in charts {
+                        pu.bar_chart(c);
+                    }
+                });
         });
     }
 
@@ -421,40 +350,42 @@ impl App {
             ui.separator();
             ui.label("Доступно: имена каналов, + - * / ^, mod:() sqrt:() sin:() cos:() tg:() ctg:()");
             ui.separator();
-            if !self.computed.is_empty() {
-                ui.label("Расчётные каналы:");
-                let mut remove = None;
-                for (i, c) in self.computed.iter().enumerate() {
-                    ui.horizontal(|ui| {
-                        ui.label(format!("{} = {}", c.name, c.formula));
-                        if ui.small_button("✕").clicked() {
-                            remove = Some(i);
-                        }
-                    });
+            let mut remove = None;
+            if let Some(d) = self.active_doc() {
+                if !d.computed.is_empty() {
+                    ui.label("Расчётные каналы:");
+                    for (i, c) in d.computed.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("⬤").color(c.color));
+                            ui.label(format!("{} = {}", c.name, c.formula));
+                            if ui.small_button("✕").clicked() {
+                                remove = Some(i);
+                            }
+                        });
+                    }
                 }
-                if let Some(i) = remove {
-                    self.computed.remove(i);
+            }
+            if let (Some(i), Some(d)) = (remove, self.active_doc_mut()) {
+                if i < d.computed.len() {
+                    d.computed.remove(i);
                 }
             }
         });
         egui::CentralPanel::default().show(ctx, |ui| {
-            let Some(l) = &self.loaded else {
+            let Some(d) = self.active_doc() else {
                 ui.centered_and_justified(|ui| ui.label("Загрузите осциллограмму для анализа."));
                 return;
             };
-            let k = l.main_cursor;
+            let k = d.main_cursor;
             ui.heading("Симметричные составляющие (осн. визир)");
-            let (u0, u1, u2) = l.analysis.u_symmetric(k);
-            let (i0, i1, i2) = l.analysis.i_symmetric(k);
+            let (u0, u1, u2) = d.analysis.u_symmetric(k);
+            let (i0, i1, i2) = d.analysis.i_symmetric(k);
             egui::Grid::new("symgrid").striped(true).num_columns(3).show(ui, |ui| {
                 ui.label("Величина");
                 ui.label("Модуль");
                 ui.label("Угол");
                 ui.end_row();
-                for (name, z) in [
-                    ("3U0", u0), ("U1", u1), ("U2", u2),
-                    ("3I0", i0), ("I1", i1), ("I2", i2),
-                ] {
+                for (name, z) in [("3U0", u0), ("U1", u1), ("U2", u2), ("3I0", i0), ("I1", i1), ("I2", i2)] {
                     ui.label(name);
                     ui.label(format!("{:.3}", z.norm()));
                     ui.label(format!("{:+.1}°", z.arg().to_degrees()));
@@ -469,7 +400,7 @@ impl App {
                 ui.label("X, Ом");
                 ui.end_row();
                 for (name, ph) in [("Zа", 0usize), ("Zb", 1), ("Zc", 2)] {
-                    if let Some(z) = l.analysis.phase_impedance(ph, k) {
+                    if let Some(z) = d.analysis.phase_impedance(ph, k) {
                         ui.label(name);
                         ui.label(format!("{:.3}", z.re));
                         ui.label(format!("{:.3}", z.im));
@@ -497,19 +428,24 @@ impl App {
                 ui.end_row();
             });
             ui.separator();
-            let Some(l) = &self.loaded else {
+            let line = self.line;
+            let Some(d) = self.active_doc() else {
                 ui.label("Загрузите осциллограмму и установите основной визир в аварийный режим.");
                 return;
             };
-            let k = l.main_cursor;
-            let ua = l.analysis.phasors.get(l.analysis.u_abc[0].unwrap_or(0)).and_then(|p| p.get(k)).copied();
-            let ia = l.analysis.phasors.get(l.analysis.i_abc[0].unwrap_or(0)).and_then(|p| p.get(k)).copied();
-            match (ua, ia, l.analysis.u_abc[0], l.analysis.i_abc[0]) {
+            let k = d.main_cursor;
+            let ua = d.analysis.phasors.get(d.analysis.u_abc[0].unwrap_or(0)).and_then(|p| p.get(k)).copied();
+            let ia = d.analysis.phasors.get(d.analysis.i_abc[0].unwrap_or(0)).and_then(|p| p.get(k)).copied();
+            match (ua, ia, d.analysis.u_abc[0], d.analysis.i_abc[0]) {
                 (Some(u), Some(i), Some(_), Some(_)) => {
-                    if let Some(d) = fvb_core::omp::single_ended_distance(u, i, &self.line) {
-                        ui.label(egui::RichText::new(format!("Расстояние до места повреждения: {:.2} км", d)).strong().size(18.0));
-                        if self.line.length_km > 0.0 {
-                            ui.label(format!("({:.1}% длины линии)", 100.0 * d / self.line.length_km));
+                    if let Some(dist) = fvb_core::omp::single_ended_distance(u, i, &line) {
+                        ui.label(
+                            egui::RichText::new(format!("Расстояние до места повреждения: {:.2} км", dist))
+                                .strong()
+                                .size(18.0),
+                        );
+                        if line.length_km > 0.0 {
+                            ui.label(format!("({:.1}% длины линии)", 100.0 * dist / line.length_km));
                         }
                         let z = u / i;
                         ui.label(format!("Zпетли фазы A = {:.3} + j{:.3} Ом", z.re, z.im));
@@ -523,6 +459,28 @@ impl App {
             }
         });
     }
+}
+
+/// Magnitudes of harmonics 0..=hmax from the one-cycle window ending at `center`.
+fn harmonics(samples: &[f64], center: usize, n: usize, hmax: usize) -> Vec<f64> {
+    let mut out = vec![0.0; hmax + 1];
+    if n < 2 || samples.len() < n {
+        return out;
+    }
+    let start = center.saturating_sub(n - 1).min(samples.len().saturating_sub(n));
+    for h in 0..=hmax {
+        let mut re = 0.0;
+        let mut im = 0.0;
+        for m in 0..n {
+            let ang = -2.0 * std::f64::consts::PI * (h as f64) * (m as f64) / (n as f64);
+            let v = samples[start + m];
+            re += v * ang.cos();
+            im += v * ang.sin();
+        }
+        let scale = if h == 0 { 1.0 / n as f64 } else { 2.0 / n as f64 / std::f64::consts::SQRT_2 };
+        out[h] = (re * re + im * im).sqrt() * scale;
+    }
+    out
 }
 
 /// Draw a region (operate or reset), punching holes out of the fill.
@@ -546,7 +504,7 @@ fn draw_region(
                     if idx == 0 {
                         if fill && !reset {
                             let mut poly = Polygon::new(PlotPoints::from(ring.clone()))
-                                .fill_color(color.gamma_multiply(0.12))
+                                .fill_color(color.gamma_multiply(0.12f32))
                                 .stroke(egui::Stroke::new(1.6_f32, color))
                                 .style(style);
                             if !name.is_empty() {
@@ -564,21 +522,18 @@ fn draw_region(
                             }
                             pu.line(ln);
                         }
+                    } else if fill && !reset {
+                        pu.polygon(
+                            Polygon::new(PlotPoints::from(ring.clone()))
+                                .fill_color(bg)
+                                .stroke(egui::Stroke::new(1.0_f32, color.gamma_multiply(0.7f32))),
+                        );
                     } else {
-                        // hole: punch it out of the fill with the background colour
-                        if fill && !reset {
-                            pu.polygon(
-                                Polygon::new(PlotPoints::from(ring.clone()))
-                                    .fill_color(bg)
-                                    .stroke(egui::Stroke::new(1.0_f32, color.gamma_multiply(0.7))),
-                            );
-                        } else {
-                            let mut lp = ring.clone();
-                            if let Some(f) = lp.first().copied() {
-                                lp.push(f);
-                            }
-                            pu.line(Line::new(PlotPoints::from(lp)).color(color).width(1.2_f32).style(style));
+                        let mut lp = ring.clone();
+                        if let Some(f) = lp.first().copied() {
+                            lp.push(f);
                         }
+                        pu.line(Line::new(PlotPoints::from(lp)).color(color).width(1.2_f32).style(style));
                     }
                 }
             }
@@ -589,6 +544,26 @@ fn draw_region(
                 }
                 pu.line(ln);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::harmonics;
+
+    #[test]
+    fn harmonics_finds_the_fundamental_of_a_sine() {
+        let n = 40usize;
+        let cycles = 6;
+        let s: Vec<f64> = (0..n * cycles)
+            .map(|i| 100.0 * (2.0 * std::f64::consts::PI * (i as f64) / n as f64).sin())
+            .collect();
+        let m = harmonics(&s, n * cycles - 1, n, 10);
+        // fundamental (h=1) dominates; harmonics 2..=10 are ~0.
+        assert!(m[1] > 60.0, "fundamental magnitude {}", m[1]);
+        for h in 2..=10 {
+            assert!(m[h] < m[1] * 0.05, "harmonic {h} should be small: {}", m[h]);
         }
     }
 }

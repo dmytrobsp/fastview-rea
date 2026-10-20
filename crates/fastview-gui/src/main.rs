@@ -1,26 +1,25 @@
-//! FastView — a cross-platform reconstruction of the Mekhanotronika FastView
-//! relay-protection oscillogram-analysis tool. Builds and runs on Linux, Windows
-//! and macOS.
+//! FastView — a cross-platform reconstruction of НТЦ «Механотроника» Fast View 5,
+//! the relay-protection oscillogram/characteristic analysis tool. Office-2007
+//! ribbon shell, MDI documents and a lane-based oscillogram view. Builds and runs
+//! on Linux, Windows and macOS.
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod lanes;
+mod ribbon;
+mod theme;
 mod views;
 
-use app::{App, Tab};
+use app::App;
 use eframe::egui;
-
-/// A small demo COMTRADE fault record bundled so the oscillogram/analysis/ОМП
-/// features are usable without external files.
-const DEMO_CFG: &str = include_str!("../../../assets/demo/demo_fault.cfg");
-const DEMO_DAT: &[u8] = include_bytes!("../../../assets/demo/demo_fault.dat");
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1280.0, 840.0])
-            .with_min_inner_size([900.0, 600.0])
-            .with_title("FastView — анализ осциллограмм и характеристик защит"),
+            .with_inner_size([1320.0, 860.0])
+            .with_min_inner_size([960.0, 620.0])
+            .with_title("Механотроника FastView"),
         ..Default::default()
     };
     eframe::run_native(
@@ -64,56 +63,82 @@ fn install_fonts(ctx: &egui::Context) {
     }
 }
 
+impl App {
+    fn doc_tabs(&mut self, ui: &mut egui::Ui) {
+        let mut activate = None;
+        let mut close = None;
+        egui::ScrollArea::horizontal().show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.add_space(4.0);
+                let names: Vec<String> = self.docs.iter().map(|d| format!("{}.cfg", d.name)).collect();
+                for (i, name) in names.iter().enumerate() {
+                    let active = self.active == Some(i);
+                    let p = self.skin.palette();
+                    egui::Frame::none()
+                        .fill(if active { p.tab_active } else { p.group_bg })
+                        .stroke(egui::Stroke::new(1.0f32, p.group_border))
+                        .rounding(egui::Rounding { nw: 4.0, ne: 4.0, sw: 0.0, se: 0.0 })
+                        .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+                        .show(ui, |ui| {
+                            if ui.selectable_label(active, egui::RichText::new(name).color(p.text)).clicked() {
+                                activate = Some(i);
+                            }
+                            if ui.add(egui::Button::new("✕").frame(false).small()).clicked() {
+                                close = Some(i);
+                            }
+                        });
+                }
+            });
+        });
+        if let Some(i) = activate {
+            self.dispatch(app::Command::ActivateDoc(i));
+        }
+        if let Some(i) = close {
+            self.dispatch(app::Command::CloseDoc(i));
+        }
+    }
+
+    fn status_bar(&mut self, ui: &mut egui::Ui) {
+        let p = self.skin.palette();
+        let s = self.cursor_status();
+        ui.horizontal(|ui| {
+            let sep = |ui: &mut egui::Ui, label: &str, val: &str| {
+                ui.label(egui::RichText::new(label).small().weak());
+                ui.label(egui::RichText::new(val).small().color(p.text));
+                ui.separator();
+            };
+            sep(ui, "Верт. визир 1:", &s[0]);
+            sep(ui, "Верт. визир 2:", &s[1]);
+            sep(ui, "Разница:", &s[2]);
+            sep(ui, "Гор. визир 1:", &s[3]);
+            sep(ui, "Гор. визир 2:", &s[4]);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(egui::RichText::new("НТЦ Механотроника").small().weak());
+                ui.separator();
+                ui.label(egui::RichText::new(&self.status).small());
+            });
+        });
+    }
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
-                ui.menu_button("Файл", |ui| {
-                    if ui.button("Открыть библиотеку .fvb…").clicked() {
-                        self.open_fvb();
-                        ui.close_menu();
-                    }
-                    if ui.button("Открыть COMTRADE (.cfg/.dat)…").clicked() {
-                        self.open_comtrade();
-                        ui.close_menu();
-                    }
-                    if ui.button("Демо-осциллограмма (авария A-0)").clicked() {
-                        match fvb_core::comtrade::parse(DEMO_CFG, DEMO_DAT) {
-                            Ok(osc) => self.set_oscillogram(osc, "demo_fault".into()),
-                            Err(e) => self.status = format!("Демо: {e}"),
-                        }
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui.button("Экспорт каналов в CSV…").clicked() {
-                        self.export_csv();
-                        ui.close_menu();
-                    }
-                });
-                ui.separator();
-                ui.selectable_value(&mut self.tab, Tab::Circle, "Круговая диаграмма");
-                ui.selectable_value(&mut self.tab, Tab::Oscillogram, "Осциллограмма");
-                ui.selectable_value(&mut self.tab, Tab::Vector, "Векторная диаграмма");
-                ui.selectable_value(&mut self.tab, Tab::Analysis, "Быстрый анализ");
-                ui.selectable_value(&mut self.tab, Tab::Omp, "ОМП");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(egui::RichText::new(&self.source_name).weak());
-                });
-            });
-        });
+        theme::apply(ctx, self.skin);
+        self.handle_keys(ctx);
 
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(&self.status);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new("Ctrl+колесо — масштаб · перетаскивание — перемещение")
-                            .weak()
-                            .small(),
-                    );
-                });
+        let pal = self.skin.palette();
+        egui::TopBottomPanel::top("top")
+            .frame(egui::Frame::none().fill(pal.tab_active))
+            .show(ctx, |ui| {
+                self.ribbon_ui(ui);
+                if !self.docs.is_empty() {
+                    self.doc_tabs(ui);
+                }
             });
-        });
+
+        egui::TopBottomPanel::bottom("status")
+            .frame(egui::Frame::none().fill(pal.group_bg).inner_margin(egui::Margin::symmetric(6.0, 3.0)))
+            .show(ctx, |ui| self.status_bar(ui));
 
         self.render_tab(ctx);
     }

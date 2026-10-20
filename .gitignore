@@ -11,3 +11,6 @@ Cargo.lock.bak
 /notes/*.txt
 /notes/*.json
 /notes/*.log
+
+# Extracted UI resource dumps + proprietary toolbar bitmaps (raw RE, kept local)
+/notes/ui/
