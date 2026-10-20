@@ -930,6 +930,6 @@ mod tests {
     fn nice_ticks_are_round_and_in_range() {
         let ticks = nice_ticks(0.0, 1.0, 5);
         assert!(ticks.len() >= 3);
-        assert!(ticks.iter().all(|&t| t >= -1e-9 && t <= 1.0 + 0.3));
+        assert!(ticks.iter().all(|&t| (-1e-9..=1.0 + 0.3).contains(&t)));
     }
 }

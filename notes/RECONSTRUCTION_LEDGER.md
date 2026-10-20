@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 40 pass)
+- `cargo test --workspace`   (currently 53 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 40 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 53 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -53,13 +53,12 @@ memory (Flatpak overlay + CLI wrapper `~/projects/slack-rea/tools/rea-ghidra.sh`
 6. **Update this ledger**: the entry's evidence (address), what you verified, and
    the verdict. Append new entries as `L<n>`.
 
-**NEXT TASK (start here).** L2 — decompile the `Calculator` evaluator (RTTI
-`.?AVCalculator@@` @ `0x4eb4a4`): find its vtable / evaluate method, verify the
-semantics `expr.rs` assumes (trig in **degrees**, `mod:` = abs, `^` right-assoc &
-tighter than `* /`, colon-suffix postfix calls) → upgrade L1's shipped-`.fvb`
-verdict to MATCH; then implement the missing formula functions (L1 action list)
-with per-function decompiled evidence. Then work down the **Engines to reverse**
-table top to bottom.
+**NEXT TASK (start here).** L4 — implement the reversed geometry/region
+semantics in `model.rs`/`geom.rs` (sequential per-mode CombineRgn fold, `xor`,
+`mode` default off, `closed` default on, open polypoints filled) with tests,
+then continue down the **Engines to reverse** table (`.fvb` parser re-verify →
+DFT/signal + Calculator channel mode → ОМП → COMTRADE `.cff`/`.osc`). L2 (the
+evaluator) is done ✅.
 
 **Scope reality.** "Every byte" literally = 9129 funcs of mostly MFC boilerplate;
 the *provable* target is the behavioural engines (this ledger's table). `.sto`
@@ -107,10 +106,11 @@ Misc: `chan: uniik:` ; token categories `NUMBER VARIABLE CHANNEL DIMENSION NULL_
 Our impl (`crates/fvb-core/src/expr.rs`): `+ - * / ^` and `sin cos tg ctg sqrt
 mod` only (6 functions).
 
-Verdict: 🟡 **PARTIAL**.
+Verdict: 🟡 **PARTIAL** (math part ✅ — see L2).
 - ✅ The **shipped `FastView.fvb`** uses only `tg sin cos sqrt mod ctg` + operators
-  (verified: none of the richer tokens occur in it), so our characteristic
-  rendering is behaviourally correct for the bundled library.
+  and evaluates identically under the decompiled evaluator semantics (L2).
+- ✅ `pi exp: re: im: arg: cosui: absig:` + `null` now implemented per L2.
+- Correction: id 0x1a is `ib:` (no `ia:` exists); 0x1e/0x1f are `ulf: ull:`.
 - ❌ The **Редактор формул / computed-channel** vocabulary is far larger. Missing:
   `pi exp: re: im: arg: cosui: absig: rms: fourie: a0: fault: frequency:` and the
   quantity/power/impedance accessors (`ua: ib: zf: pf: pf2wm:` …) and
@@ -130,10 +130,10 @@ decompilation (pending, listed below).
 
 | Engine | Original | Our module | Status |
 |---|---|---|---|
-| Formula token table | `FUN_00401000` @0x401000 | `expr.rs` | 🟡 L1 above |
-| Formula evaluator (per-token cases) | callers of the token table (pending) | `expr.rs` eval | ⏳ pending |
+| Formula token table | `FUN_00401000` @0x401000 | `expr.rs` | 🟡 L1 (math ✅, channel accessors ❌) |
+| Formula evaluator (tokenizer/grammar/values) | `FUN_00418c40`, `0x419950`..`0x41f960` | `expr.rs` | ✅ L2 (numeric) |
 | `.fvb` parser dispatch | `FUN_0040c7e0` (prior session) | `parse.rs` | ⏳ re-verify |
-| Geometry / region engine | `CircleDiagramWnd` + GDI `PathToRegion`/`CombineRgn` | `geom.rs` | ⏳ pending |
+| Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ❌ L4 reversed, fix pending |
 | DFT / phasors / RMS | (pending) | `signal.rs` | ⏳ pending |
 | Symmetric components / impedances | (pending) | `signal.rs`/`analysis.rs` | ⏳ pending |
 | ОМП single/double/k0 | (pending) | `omp.rs` | ⏳ pending |
@@ -141,22 +141,123 @@ decompilation (pending, listed below).
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
 
-Next: decompile the evaluator cases to pin exact semantics (degrees vs radians,
-`mod:`=abs, `arg:` range, `fourie:`/`rms:` window), then implement the missing
-functions with per-function evidence recorded here.
+Next: L4 implementation (geometry), then `.fvb` parser re-verify, DFT/signal
+(incl. the Calculator channel mode + `rms: fourie: a0: …`), ОМП, COMTRADE.
 
 ---
 
-## L2 — Formula evaluator class `Calculator`  ·  RTTI `.?AVCalculator@@` @ `0x4eb4a4`
+## L4 — Geometry / region engine  ·  ❌ reversed, Rust fix PENDING (next task)
 
-The evaluator that consumes the L1 token stream is the `Calculator` C++ class
-(RTTI confirmed). Next target: locate its vtable/evaluate method and decompile
-the per-token arithmetic to **verify** the semantics our `expr.rs` assumes —
-trig in degrees, `mod:` = abs, `^` right-assoc tighter than `* /`, colon-suffix
-postfix calls — turning L1's "shipped .fvb correct" into a MATCH, then implement
-the missing functions (L1 action). Status: ⏳ entry point found, decompile pending.
+Evidence (subagent decompile of FastView.exe; scratch at the session scratchpad,
+not committed). Each primitive is a `Figure` subclass — header `{vtable, +4 mode,
++8 combine op}`; vtable slots 0 dtor, 1 clone, 2 evaluate exprs, 3 build HRGN
+`(CDC*, double scale, POINT* origin, RECT* clip|NULL)`:
+PolygonF `0x4c3dcc` (eval `0x409860`, rgn `0x409c00`) · PolypointF `0x4c3d90`
+(`0x40acb0`/`0x40ae40`) · Circle `0x4c3db8` (`0x40a010`/`0x40a170`) · EllipseF
+`0x4c3da4` (`0x40a3a0`/`0x40a5d0`). All regions: BeginPath/(Polygon|Ellipse)/
+EndPath/PathToRegion (no CreatePolygonRgn/CreateEllipticRgn imports).
+
+Parser mapping (`FUN_0040c7e0`): `mode` == "on" → 1, **anything else incl.
+absent → 0 (off)**; `type` "and"=1 "or"=2 **"xor"=3** "not"=4 = CombineRgn
+RGN_AND/OR/XOR/DIFF; absent `type` leaves +8 **uninitialised**; polypoint
+`closed` == "off" → false, **anything else incl. absent → true**; line
+`type` = `_wtoi`.
+
+Behaviour:
+1. Lines: type 1 `y = kx + b`, type 2 `x = ky + b`, k is a plain slope. Other
+   types → every vertex touching that line = (0,0).
+2. Polygon vertex[i] = line[i−1] ∩ line[i] (vertex 0 = last ∩ first); no
+   parallel guard (inf/NaN → `cvttsd2si` 0x80000000), no clamping.
+3. Circle: true radius; ellipse `width` (X) / `height` (Y) are FULL axes; angle
+   degrees, positive = CCW in world (stored −angle·pi/180, applied to the GDI
+   Bézier path in device space).
+4. **Combination is SEQUENTIAL in document order, per mode**: two passes (off,
+   on); `rgn = first figure of that mode (its type ignored)`, then
+   `CombineRgn(rgn, rgn, fig, fig.op)` for each later figure. No grouping.
+   ← our `geom.rs` groups `(base ∪ or) ∩ ands ∖ nots` — WRONG in general.
+5. Polypoint `closed="off"` is **still a filled region** combined like any
+   other figure: paint closes it through a box around the client area (end
+   segments extended; region lies left of p0→pn−1) — our `geom.rs` treats it as
+   a polyline only. ← WRONG.
+6. World→device `px = R(x·s)+ox, py = oy − R(y·s)` (round-half-up); circle/
+   ellipse bbox floor/ceil. Degenerate (zero-area) region → replaced by a 1×1
+   pixel rect (so a zero-radius figure still *starts* a pass).
+7. Paint (`0x43a4a0`): operate region filled with alpha 50 + FrameRgn outline;
+   reset region outline only, drawn only if window flag +0x489; characteristics
+   drawn last→first; nothing drawn when `scale·extent ≥ 800·printScale`.
+
+Rust action: model.rs (`Mode` default Off, `closed` default true, `Combine::Xor`,
+explicit "absent" op), geom.rs sequential CombineRgn fold with first-figure-
+starts semantics, open polypoint closed via a far box, degenerate figure =
+empty-but-starts. Check the shipped library for figures relying on the
+uninitialised-op path before choosing its behaviour.
 
 ---
+
+## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
+
+Evidence (Ghidra pseudocode + objdump of FastView.exe; spot-checked by hand
+where marked ✔):
+- Tokenizer `FUN_00418c40` (only reader of the token table @`0x4ecc20`, 12-byte
+  entries `{CString name, int id, char* label}`; names are ASCII literals, e.g.
+  `0x4c4f1c` = `ib:` ✔ — there is **no `ia:`** token). Lowercases the formula
+  (MFC MakeLower) but restores text inside `[...]`; skips **only U+0020** (tab is
+  an illegal char); tries the 70 table names **in array order as plain prefixes**
+  (so `pi`/`null`, which have no colon, split `pid` → `pi`+`d`); numbers = digits
+  and `.` via `_wtof` (no exponent, no leading `.`, >1 `.` throws); identifiers
+  start `iswalpha`/`_`/`"` (quoted names run to the next `"`); `[...]` →
+  DIMENSION (skipped after an atom); `,` before `,`/`)` gets a NULL inserted;
+  unknown identifiers throw at tokenize time (even in ignored trailing input).
+- Grammar (evaluating recursive descent, no AST/RPN): list `0x419af0`, add/sub
+  `0x419c50`, mul/div `0x419d80` ✔, pow `0x419f20` ✔, unary `0x419fc0` ✔,
+  primary `0x41a110`, group `0x41f390`, atom `0x41f960`, binop jump table
+  `0x41f944` ✔ (`+`/`-`/`*` `0x41f5f8/0x41f55f/0x41f657`, `/` `0x41f6e7`, `^` `0x41f7cb`).
+  `pow := unary ['^' unary]` — **one `^`, no chaining**; the top level
+  (`0x419950`) never checks for END, so `2^3^2 = 8` and trailing tokens are
+  ignored. Unary sign is applied before `^`: `-2^2 = 4`; `--2` throws. The `)`
+  after a group is consumed without being checked. A function takes a group
+  `(a, b, …)` **or one bare atom** (`sin:30`); argument count checked exactly
+  (`FUN_0041fd00`).
+- Value = 0x28-byte element: scalar `+0x18`, complex `re +8 / im +0x10`. Numbers
+  and variables set `re = v, im = 0`; `+ - * /` update both slots ✔ (complex
+  divide `FUN_00420ca0`); `sin cos tg ctg sqrt exp ^ re im` write **only the
+  scalar**; `mod:` = `|re + j·im|` (`FUN_00420610`) — so `mod:(sin:(30)) = 30`.
+- Math cases (`0x41a23d`..`0x41a431`) ✔: trig = `f(v * pi / 180)` (multiply by
+  pi `0x4d16d8`, then divide by 180.0 `0x4d1738`); `ctg = 1.0 / tan`; no domain
+  checks (IEEE inf/NaN). `^` ✔: exponent must satisfy `(double)(int)e == e`
+  (else error string 0x157); `n=0 → 1.0`; `n>0` repeated multiply; **`n<0`
+  returns the base unchanged** (original bug). `arg:` = `atan2(im,re)·180/pi`,
+  `≥180 → −360`, and 0 while the sample index is below the warm-up count
+  (vtable[2]). `cosui:(a,b)` = `cos(∠b − ∠a)` (radians); `absig:(a,b)` = the same
+  difference in degrees wrapped to (−180, 180].
+
+Our impl (`expr.rs`, rewritten to the above): token pass with the original's
+table/order, the exact grammar levels, the scalar/complex value model,
+`pi null sin cos tg ctg sqrt exp re im mod arg cosui absig`, the `^` integer
+loop, `v*pi/180` conversion order. Pinned by `tests/calculator.rs` (13 tests;
+perturbations `to_radians()` and chained `^` are both caught).
+
+Verdict: ✅ **MATCH for the numeric language** (everything the `.fvb` library and
+a channel-free formula can reach). Shipped `FastView.fvb` scan: `mod:` only wraps
+pure arithmetic of variables, `^` only `x^2`, no exponent literals / leading dots
+/ tabs / bare-atom calls / `pi`-prefixed names → identical results.
+
+Not verified / residual (honest):
+- CRT `sin/cos/tan/exp/_wtof` last-ulp differences between MSVC 2013 and Rust's
+  libm are not modelled.
+- Cyrillic case folding: the original uses MakeLower (likely ASCII-only in the C
+  locale) — we fold Unicode, which the shipped library needs (`ДЗМф2_Rср` vs
+  `ДЗМФ2_Rср`); how the original resolves that pair (map comparator?) is NOT
+  DETERMINED.
+- `arg:` warm-up count in the `.fvb` context (vtable[2] of that Calculator
+  subclass) not determined; we assume no warm-up.
+- ❌ Channel mode (computed channels): identifiers resolve via vtable[0] to
+  CHANNEL tokens (flags 7; scalar = sample `FUN_00426020`, complex = phasor
+  `FUN_00428ac0`; an unresolved name emits *nothing*). Our GUI feeds channel
+  samples as plain variables, so e.g. `mod:(Ia)` gives |sample| where the
+  original gives |phasor|. The channel accessors `rms: fourie: a0: fault:
+  frequency: ib: … uniik:` are recognised with their exact arg counts but return
+  `NeedsChannel`. → handled with the DFT/signal engine (task table).
 
 ## L3 — COMTRADE / oscillogram loading  ·  `ComtradeConverter` (RTTI @ `0x4ebe1c`)
 

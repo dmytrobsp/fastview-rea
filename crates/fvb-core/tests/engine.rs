@@ -3,7 +3,6 @@ use fvb_core::expr::{eval_str, Context};
 use fvb_core::geom::{line_intersection, polygon_from_lines, EvalLine};
 use fvb_core::model::LineKind;
 use fvb_core::*;
-use std::collections::HashMap;
 
 // Context keys are stored lowercased (case-insensitive resolution).
 fn ctx(pairs: &[(&str, f64)]) -> Context {
@@ -39,7 +38,8 @@ fn power_operator() {
     let c = Context::new();
     assert_relative_eq!(eval_str("3^2", &c).unwrap(), 9.0);
     assert_relative_eq!(eval_str("2*3^2", &c).unwrap(), 18.0); // ^ tighter than *
-    assert_relative_eq!(eval_str("-2^2", &c).unwrap(), -4.0); // -(2^2)
+    // Unary minus binds tighter than ^ in the original (0x419f20/0x419fc0).
+    assert_relative_eq!(eval_str("-2^2", &c).unwrap(), 4.0);
     // The library idiom: radius = sqrt(xc^2 + p^2)
     assert_relative_eq!(
         eval_str("sqrt:(xc^2+p^2)", &ctx(&[("xc", 3.0), ("p", 4.0)])).unwrap(),
