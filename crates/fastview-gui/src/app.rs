@@ -110,6 +110,12 @@ pub struct ChanView {
     pub invert: bool,
     /// Удалить постоянную составляющую (subtract the sliding DC).
     pub remove_dc: bool,
+    /// Отображать в отсчётах АЦП (show raw ADC counts instead of scaled units).
+    pub adc_counts: bool,
+    /// Per-channel vertical zoom (Увеличить/Уменьшить/Вернуть к исходному размеру).
+    pub vzoom: f64,
+    /// Совместить каналы: draw this channel in the previous lane's axes.
+    pub overlay: bool,
     pub on_freq: bool,
     pub on_vector: bool,
     pub on_circle: bool,
@@ -129,6 +135,10 @@ pub struct Computed {
 pub struct Comment {
     pub sample: usize,
     pub text: String,
+    /// Optional amplitude threshold shown as «Уровень: N».
+    pub level: Option<f64>,
+    /// «Скрыть комментарий» — keep the marker but hide the text label.
+    pub hidden: bool,
 }
 
 /// A channel copied for merging oscillograms (Объединение: «Копировать/Вставить
@@ -147,6 +157,8 @@ pub struct CommentEdit {
     /// Index into the document's `comments` if editing an existing one.
     pub idx: Option<usize>,
     pub text: String,
+    /// Raw text of the optional level field (parsed on save).
+    pub level_str: String,
 }
 
 /// One open oscillogram document.
@@ -188,6 +200,9 @@ impl Doc {
                 color: default_channel_color(&osc.analog[i], i),
                 invert: false,
                 remove_dc: false,
+                adc_counts: false,
+                vzoom: 1.0,
+                overlay: false,
                 on_freq: true,
                 on_vector: true,
                 on_circle: i == 0,

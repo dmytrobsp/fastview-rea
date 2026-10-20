@@ -30,6 +30,8 @@ enum Act {
     Channel(usize, ChanAct),
     AddComment(usize),
     EditComment(usize),
+    PinCursor(usize),
+    ToggleCommentHidden(usize),
     OpenProps(usize),
     Cmd(Command),
 }
@@ -42,6 +44,10 @@ enum ChanAct {
     OnFreq(bool),
     OnVector(bool),
     OnCircle(bool),
+    Overlay(bool),
+    Adc(bool),
+    VZoomMul(f64),
+    VZoomReset,
 }
 
 impl App {
@@ -62,18 +68,29 @@ impl App {
 
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let doc = &self.docs[ai];
-            // Build the lane list: visible analog, computed, then digital.
+            // Build lanes: visible analog (overlaid ones merge into the preceding
+            // lane — Совместить каналы), then computed, then digital. `overlays[li]`
+            // holds the extra analog channels drawn in lane `li`.
             let mut lanes: Vec<Lane> = Vec::new();
+            let mut overlays: Vec<Vec<usize>> = Vec::new();
             for (i, c) in doc.chans.iter().enumerate() {
-                if c.visible {
+                if !c.visible {
+                    continue;
+                }
+                if c.overlay && matches!(lanes.last(), Some(Lane::Analog(_))) {
+                    overlays.last_mut().unwrap().push(i);
+                } else {
                     lanes.push(Lane::Analog(i));
+                    overlays.push(Vec::new());
                 }
             }
             for i in 0..doc.computed.len() {
                 lanes.push(Lane::Computed(i));
+                overlays.push(Vec::new());
             }
             for i in 0..doc.osc.digital.len() {
                 lanes.push(Lane::Digital(i));
+                overlays.push(Vec::new());
             }
             let n_lanes = lanes.len().max(1);
 
@@ -182,36 +199,57 @@ impl App {
                     FontId::monospace(11.0),
                     color.gamma_multiply(0.9),
                 );
-                if lane_h > 44.0 {
-                    let mut yy = lane_top + 18.0;
-                    for (lbl, v) in [("Max", maxv), ("Min", minv), ("СКЗ", rms), ("A1", a1)] {
-                        if (lbl == "СКЗ" || lbl == "A1") && matches!(lane, Lane::Computed(_) | Lane::Digital(_)) {
-                            continue;
+                let base_vzoom = if let Lane::Analog(i) = lane { doc.chans[*i].vzoom } else { 1.0 };
+                if overlays[li].is_empty() {
+                    if lane_h > 44.0 {
+                        let mut yy = lane_top + 18.0;
+                        for (lbl, v) in [("Max", maxv), ("Min", minv), ("СКЗ", rms), ("A1", a1)] {
+                            if (lbl == "СКЗ" || lbl == "A1") && matches!(lane, Lane::Computed(_) | Lane::Digital(_)) {
+                                continue;
+                            }
+                            painter.text(
+                                Pos2::new(rect.left() + 6.0, yy),
+                                Align2::LEFT_TOP,
+                                format!("{lbl}:"),
+                                FontId::proportional(9.5),
+                                Color32::from_gray(110),
+                            );
+                            painter.text(
+                                Pos2::new(plot_x0 - 6.0, yy),
+                                Align2::RIGHT_TOP,
+                                fmt(v),
+                                FontId::monospace(9.5),
+                                Color32::from_gray(80),
+                            );
+                            yy += 10.5;
+                            if yy > lane_top + lane_h - 6.0 {
+                                break;
+                            }
                         }
-                        painter.text(
-                            Pos2::new(rect.left() + 6.0, yy),
-                            Align2::LEFT_TOP,
-                            format!("{lbl}:"),
-                            FontId::proportional(9.5),
-                            Color32::from_gray(110),
-                        );
-                        painter.text(
-                            Pos2::new(plot_x0 - 6.0, yy),
-                            Align2::RIGHT_TOP,
-                            fmt(v),
-                            FontId::monospace(9.5),
-                            Color32::from_gray(80),
-                        );
-                        yy += 10.5;
-                        if yy > lane_top + lane_h - 6.0 {
+                    }
+                } else {
+                    // Overlaid lane: compact badge+id+value per additional member.
+                    let mut yy = lane_top + 17.0;
+                    for &oi in &overlays[li] {
+                        let (on, ou, oc, .., ov) = lane_stats(doc, &Lane::Analog(oi), k_main, value_mode, primary);
+                        painter.rect_filled(Rect::from_min_size(Pos2::new(rect.left() + 3.0, yy + 1.0), Vec2::new(8.0, 8.0)), 1.0f32, oc);
+                        painter.text(Pos2::new(rect.left() + 15.0, yy), Align2::LEFT_TOP, &on, FontId::proportional(10.0), Color32::from_gray(40));
+                        painter.text(Pos2::new(plot_x0 - 6.0, yy), Align2::RIGHT_TOP, format!("{} {}", fmt(ov), ou), FontId::monospace(9.5), oc.gamma_multiply(0.9));
+                        yy += 11.0;
+                        if yy > lane_top + lane_h - 4.0 {
                             break;
                         }
                     }
                 }
 
-                // Waveform.
+                // Waveform(s): shared full-scale across base + overlays, scaled by
+                // the base channel's vertical zoom.
                 let amp = lane_h * 0.42;
-                let max_abs = maxv.abs().max(minv.abs()).max(1e-9);
+                let mut lane_max = maxv.abs().max(minv.abs());
+                for &oi in &overlays[li] {
+                    lane_max = lane_max.max(analog_maxabs(doc, oi, primary));
+                }
+                let max_abs = (lane_max / base_vzoom).max(1e-9);
                 let y_of = |v: f64| baseline - (v / max_abs) as f32 * amp;
                 let draw_wave = |pts: &dyn Fn(usize) -> f64, n: usize, times: &[f64]| -> Vec<Pos2> {
                     let i0 = times.partition_point(|&t| t < t0).saturating_sub(1);
@@ -229,9 +267,13 @@ impl App {
                 };
                 match lane {
                     Lane::Analog(i) => {
-                        let scale = primary_scale(doc, *i, primary);
-                        let pts = draw_wave(&|k| doc.sample(*i, k) * scale, doc.osc.sample_count(), &doc.osc.time);
+                        let pts = draw_wave(&|k| analog_disp(doc, *i, k, primary), doc.osc.sample_count(), &doc.osc.time);
                         painter.add(Shape::line(pts, Stroke::new(1.3f32, color)));
+                        for &oi in &overlays[li] {
+                            let oc = doc.chans[oi].color;
+                            let op = draw_wave(&|k| analog_disp(doc, oi, k, primary), doc.osc.sample_count(), &doc.osc.time);
+                            painter.add(Shape::line(op, Stroke::new(1.2f32, oc)));
+                        }
                     }
                     Lane::Computed(i) => {
                         let s = &doc.computed[*i].samples;
@@ -292,14 +334,38 @@ impl App {
                     FontId::proportional(9.0),
                     Color32::WHITE,
                 );
-                let short: String = c.text.lines().next().unwrap_or("").chars().take(24).collect();
-                painter.text(
-                    Pos2::new(x + 15.0, rect.top() + 2.0),
-                    Align2::LEFT_TOP,
-                    short,
-                    FontId::proportional(10.0),
-                    COMMENT_COLOR,
-                );
+                if !c.hidden {
+                    let mut label: String = c.text.lines().next().unwrap_or("").chars().take(24).collect();
+                    if let Some(lv) = c.level {
+                        label = if label.is_empty() {
+                            format!("Уровень: {lv:.3}")
+                        } else {
+                            format!("{label}  (Уровень: {lv:.3})")
+                        };
+                    }
+                    painter.text(
+                        Pos2::new(x + 15.0, rect.top() + 2.0),
+                        Align2::LEFT_TOP,
+                        label,
+                        FontId::proportional(10.0),
+                        COMMENT_COLOR,
+                    );
+                }
+                // Amplitude-level line (drawn in the first lane's scale).
+                if let (Some(lv), Some(first)) = (c.level, lanes.first()) {
+                    if let Lane::Analog(fi) = first {
+                        let base = rect.top();
+                        let lane_h2 = lane_h;
+                        let maxabs = analog_maxabs(doc, *fi, primary).max(1e-9);
+                        let yy = base + lane_h2 * 0.5 - (lv / maxabs) as f32 * (lane_h2 * 0.42);
+                        if yy > base && yy < base + lane_h2 {
+                            painter.line_segment(
+                                [Pos2::new(x - 10.0, yy), Pos2::new(x + 10.0, yy)],
+                                Stroke::new(1.2f32, COMMENT_COLOR),
+                            );
+                        }
+                    }
+                }
             }
 
             // Cursors.
@@ -385,6 +451,32 @@ impl App {
                     return;
                 }
                 if pos.x >= plot_x0 {
+                    // Right-click on a comment marker -> comment actions (MENU 563).
+                    let near = doc.comments.iter().position(|c| {
+                        let cx = x_of(doc.osc.time.get(c.sample).copied().unwrap_or(0.0));
+                        (cx - pos.x).abs() < 6.0
+                    });
+                    if let Some(idx) = near {
+                        ui.label("Комментарий");
+                        if ui.button("Изменить комментарий / уровень…").clicked() {
+                            actions.push(Act::EditComment(idx));
+                            ui.close_menu();
+                        }
+                        if ui.button("Зафиксировать визир").clicked() {
+                            actions.push(Act::PinCursor(doc.comments[idx].sample));
+                            ui.close_menu();
+                        }
+                        let hidden = doc.comments[idx].hidden;
+                        if ui.button(if hidden { "Показать комментарий" } else { "Скрыть комментарий" }).clicked() {
+                            actions.push(Act::ToggleCommentHidden(idx));
+                            ui.close_menu();
+                        }
+                        if ui.button("Удалить комментарий").clicked() {
+                            actions.push(Act::EditComment(idx)); // opens editor; delete there
+                            ui.close_menu();
+                        }
+                        return;
+                    }
                     let samp = nearest_sample(&doc.osc.time, t_of(pos.x));
                     if ui.button("Добавить комментарий здесь").clicked() {
                         actions.push(Act::AddComment(samp));
@@ -428,6 +520,33 @@ impl App {
                         actions.push(Act::Channel(i, ChanAct::RemoveDc));
                         ui.close_menu();
                     }
+                    if ui.checkbox(&mut { ch.adc_counts }, "Отображать в отсчётах АЦП").clicked() {
+                        actions.push(Act::Channel(i, ChanAct::Adc(!ch.adc_counts)));
+                        ui.close_menu();
+                    }
+                    if ch.overlay {
+                        if ui.button("Разъединить каналы").clicked() {
+                            actions.push(Act::Channel(i, ChanAct::Overlay(false)));
+                            ui.close_menu();
+                        }
+                    } else if li > 0 && ui.button("Совместить каналы (с предыдущим)").clicked() {
+                        actions.push(Act::Channel(i, ChanAct::Overlay(true)));
+                        ui.close_menu();
+                    }
+                    ui.menu_button("Масштаб по вертикали", |ui| {
+                        if ui.button("Увеличить").clicked() {
+                            actions.push(Act::Channel(i, ChanAct::VZoomMul(1.25)));
+                            ui.close_menu();
+                        }
+                        if ui.button("Уменьшить").clicked() {
+                            actions.push(Act::Channel(i, ChanAct::VZoomMul(0.8)));
+                            ui.close_menu();
+                        }
+                        if ui.button("Вернуть к исходному размеру").clicked() {
+                            actions.push(Act::Channel(i, ChanAct::VZoomReset));
+                            ui.close_menu();
+                        }
+                    });
                     ui.separator();
                     if ui.radio(value_mode == ValueMode::Instant, "Мгновенные значения").clicked() {
                         actions.push(Act::Cmd(Command::SetValueMode(ValueMode::Instant)));
@@ -482,12 +601,29 @@ impl App {
                     }
                 }
                 Act::AddComment(sample) => {
-                    self.comment_edit = Some(CommentEdit { sample, idx: None, text: String::new() });
+                    self.comment_edit = Some(CommentEdit { sample, idx: None, text: String::new(), level_str: String::new() });
                 }
                 Act::EditComment(idx) => {
                     if let Some(d) = self.docs.get(ai) {
                         if let Some(c) = d.comments.get(idx) {
-                            self.comment_edit = Some(CommentEdit { sample: c.sample, idx: Some(idx), text: c.text.clone() });
+                            self.comment_edit = Some(CommentEdit {
+                                sample: c.sample,
+                                idx: Some(idx),
+                                text: c.text.clone(),
+                                level_str: c.level.map(|l| format!("{l}")).unwrap_or_default(),
+                            });
+                        }
+                    }
+                }
+                Act::PinCursor(sample) => {
+                    if let Some(d) = self.docs.get_mut(ai) {
+                        d.main_cursor = sample;
+                    }
+                }
+                Act::ToggleCommentHidden(idx) => {
+                    if let Some(d) = self.docs.get_mut(ai) {
+                        if let Some(c) = d.comments.get_mut(idx) {
+                            c.hidden = !c.hidden;
                         }
                     }
                 }
@@ -503,6 +639,10 @@ impl App {
                                 ChanAct::OnFreq(v) => c.on_freq = v,
                                 ChanAct::OnVector(v) => c.on_vector = v,
                                 ChanAct::OnCircle(v) => c.on_circle = v,
+                                ChanAct::Overlay(v) => c.overlay = v,
+                                ChanAct::Adc(v) => c.adc_counts = v,
+                                ChanAct::VZoomMul(m) => c.vzoom = (c.vzoom * m).clamp(0.1, 50.0),
+                                ChanAct::VZoomReset => c.vzoom = 1.0,
                             }
                         }
                     }
@@ -557,6 +697,37 @@ fn primary_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
     }
 }
 
+/// Displayed sample of analog channel `i` at `k`: raw ADC counts when the channel
+/// is in «отсчёты АЦП» mode, otherwise the (optionally primary-scaled) value with
+/// invert / remove-DC applied.
+fn analog_disp(doc: &crate::app::Doc, i: usize, k: usize, primary: bool) -> f64 {
+    let ch = &doc.osc.analog[i];
+    if doc.chans[i].adc_counts {
+        let raw = ch.samples.get(k).copied().unwrap_or(0.0);
+        if ch.a.abs() > 1e-12 {
+            (raw - ch.b) / ch.a
+        } else {
+            raw
+        }
+    } else {
+        doc.sample(i, k) * primary_scale(doc, i, primary)
+    }
+}
+
+fn analog_maxabs(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
+    (0..doc.osc.sample_count())
+        .map(|k| analog_disp(doc, i, k, primary).abs())
+        .fold(1e-9, f64::max)
+}
+
+fn analog_unit(doc: &crate::app::Doc, i: usize) -> String {
+    if doc.chans[i].adc_counts {
+        "отсч.".to_string()
+    } else {
+        doc.osc.analog[i].unit.clone()
+    }
+}
+
 /// Compute (name, unit, color, max, min, rms, a1, value@cursor) for a lane.
 fn lane_stats(
     doc: &crate::app::Doc,
@@ -568,30 +739,26 @@ fn lane_stats(
     match lane {
         Lane::Analog(i) => {
             let ch = &doc.osc.analog[*i];
+            let adc = doc.chans[*i].adc_counts;
+            // RMS/1st-harmonic are computed in scaled units; divide by |a| for ADC.
+            let sdiv = if adc && ch.a.abs() > 1e-12 { ch.a.abs() } else { 1.0 };
             let scale = primary_scale(doc, *i, primary);
             let n = doc.osc.sample_count();
             let mut mx = f64::MIN;
             let mut mn = f64::MAX;
             for k in 0..n {
-                let v = doc.sample(*i, k) * scale;
+                let v = analog_disp(doc, *i, k, primary);
                 mx = mx.max(v);
                 mn = mn.min(v);
             }
+            let rms = doc.rms_at(*i, k_main) * scale / sdiv;
+            let a1 = doc.harmonic_at(*i, k_main) * scale / sdiv;
             let val = match value_mode {
-                ValueMode::Instant => doc.sample(*i, k_main) * scale,
-                ValueMode::Rms => doc.rms_at(*i, k_main) * scale,
-                ValueMode::FirstHarmonic => doc.harmonic_at(*i, k_main) * scale,
+                ValueMode::Instant => analog_disp(doc, *i, k_main, primary),
+                ValueMode::Rms => rms,
+                ValueMode::FirstHarmonic => a1,
             };
-            (
-                ch.id.clone(),
-                ch.unit.clone(),
-                doc.chans[*i].color,
-                mx,
-                mn,
-                doc.rms_at(*i, k_main) * scale,
-                doc.harmonic_at(*i, k_main) * scale,
-                val,
-            )
+            (ch.id.clone(), analog_unit(doc, *i), doc.chans[*i].color, mx, mn, rms, a1, val)
         }
         Lane::Computed(i) => {
             let c = &doc.computed[*i];

@@ -139,6 +139,11 @@ impl App {
                 ui.label(format!("От начала осциллограммы: {:.4} с (отсчёт {})", t, ed.sample));
                 ui.add(egui::TextEdit::multiline(&mut ed.text).desired_rows(3).desired_width(260.0));
                 ui.horizontal(|ui| {
+                    ui.label("Уровень:");
+                    ui.add(egui::TextEdit::singleline(&mut ed.level_str).desired_width(90.0).hint_text("нет"));
+                    ui.label(egui::RichText::new("(порог амплитуды, необязательно)").weak().small());
+                });
+                ui.horizontal(|ui| {
                     if ui.button("Сохранить").clicked() {
                         action = Some(CommentAction::Save);
                     }
@@ -150,16 +155,23 @@ impl App {
                     }
                 });
             });
+        let level = ed.level_str.trim().replace(',', ".").parse::<f64>().ok();
         match action {
             Some(CommentAction::Save) => {
                 if let Some(doc) = self.active.and_then(|a| self.docs.get_mut(a)) {
                     match ed.idx {
                         Some(idx) if idx < doc.comments.len() => {
                             doc.comments[idx].text = ed.text.clone();
+                            doc.comments[idx].level = level;
                         }
                         _ => {
                             if !ed.text.trim().is_empty() {
-                                doc.comments.push(Comment { sample: ed.sample, text: ed.text.clone() });
+                                doc.comments.push(Comment {
+                                    sample: ed.sample,
+                                    text: ed.text.clone(),
+                                    level,
+                                    hidden: false,
+                                });
                             }
                         }
                     }
