@@ -352,18 +352,15 @@ impl App {
                     );
                 }
                 // Amplitude-level line (drawn in the first lane's scale).
-                if let (Some(lv), Some(first)) = (c.level, lanes.first()) {
-                    if let Lane::Analog(fi) = first {
-                        let base = rect.top();
-                        let lane_h2 = lane_h;
-                        let maxabs = analog_maxabs(doc, *fi, primary).max(1e-9);
-                        let yy = base + lane_h2 * 0.5 - (lv / maxabs) as f32 * (lane_h2 * 0.42);
-                        if yy > base && yy < base + lane_h2 {
-                            painter.line_segment(
-                                [Pos2::new(x - 10.0, yy), Pos2::new(x + 10.0, yy)],
-                                Stroke::new(1.2f32, COMMENT_COLOR),
-                            );
-                        }
+                if let (Some(lv), Some(Lane::Analog(fi))) = (c.level, lanes.first()) {
+                    let base = rect.top();
+                    let maxabs = analog_maxabs(doc, *fi, primary).max(1e-9);
+                    let yy = base + lane_h * 0.5 - (lv / maxabs) as f32 * (lane_h * 0.42);
+                    if yy > base && yy < base + lane_h {
+                        painter.line_segment(
+                            [Pos2::new(x - 10.0, yy), Pos2::new(x + 10.0, yy)],
+                            Stroke::new(1.2f32, COMMENT_COLOR),
+                        );
                     }
                 }
             }
