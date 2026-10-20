@@ -269,3 +269,30 @@ fn calc_ib_from_ia_ic_when_isolated() {
     let (id, _) = an.differential_currents(k);
     assert!(id < 1e-6, "with computed Ib the residual should be ~0, got {id}");
 }
+
+#[test]
+fn cfg_encoding_decoders() {
+    // "Ua" + Cyrillic "фаза" in three single-byte code pages must decode right.
+    // CP1251 'фаза' = F4 E0 E7 E0 ; CP866 'фаза' = A4 A0 A7 A0 ; KOI8-R = C6 C1 DA C1
+    let cfg_tail = ",A,,V,1.0,0.0,0.0,-32768,32767,1.0,1.0,S\n50\n1\n1000,2\n\
+        01/01/2024,00:00:00.000000\n01/01/2024,00:00:00.001000\nASCII\n1\n";
+    let dat = b"1,0,1,1\n2,500,2,2\n";
+    for (bytes, enc) in [
+        (vec![0xF4u8, 0xE0, 0xE7, 0xE0], comtrade::Encoding::Cp1251),
+        (vec![0xE4u8, 0xA0, 0xA7, 0xA0], comtrade::Encoding::Cp866),
+        (vec![0xC6u8, 0xC1, 0xDA, 0xC1], comtrade::Encoding::Koi8r),
+    ] {
+        // Build a cfg with the channel id being the encoded word.
+        let mut cfg = Vec::new();
+        cfg.extend_from_slice(b"S,D,1999\n2,2A,0D\n1,");
+        cfg.extend_from_slice(&bytes);
+        cfg.extend_from_slice(cfg_tail.as_bytes());
+        // decode_text_enc is private; exercise it through a temp file + load_with.
+        let dir = std::env::temp_dir().join(format!("fvtest_{:?}", enc));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("x.cfg"), &cfg).unwrap();
+        std::fs::write(dir.join("x.dat"), dat).unwrap();
+        let rec = comtrade::load_with(dir.join("x.cfg"), enc).expect("load");
+        assert_eq!(rec.analog[0].id, "фаза", "encoding {:?}", enc);
+    }
+}

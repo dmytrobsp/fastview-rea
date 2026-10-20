@@ -4,7 +4,7 @@
 use crate::theme::Skin;
 use eframe::egui;
 use fvb_core::analysis::Analysis;
-use fvb_core::comtrade::Oscillogram;
+use fvb_core::comtrade::{Encoding, Oscillogram};
 use fvb_core::geom::CharGeometry;
 use fvb_core::model::Dimension;
 use fvb_core::omp::{LineParams, NeutralMode};
@@ -166,6 +166,8 @@ pub struct Doc {
     pub osc: Oscillogram,
     pub analysis: Analysis,
     pub name: String,
+    /// Source file path (for re-opening with a different encoding).
+    pub path: Option<std::path::PathBuf>,
     pub main_cursor: usize,
     pub aux_cursor: usize,
     pub chans: Vec<ChanView>,
@@ -217,6 +219,7 @@ impl Doc {
             osc,
             analysis,
             name,
+            path: None,
             main_cursor: count / 2,
             aux_cursor: count / 4,
             chans,
@@ -314,6 +317,7 @@ pub enum Command {
     ToggleExplorer,
     ToggleRibbonMin,
     ChannelMap,
+    Settings,
     Show(View),
     SetPrimaryValues(bool),
     InvertVisible,
@@ -371,6 +375,8 @@ pub struct App {
     pub show_about: bool,
     pub show_file_params: bool,
     pub show_channel_map: bool,
+    pub show_settings: bool,
+    pub encoding: Encoding,
     pub show_explorer: bool,
     pub explorer_dir: std::path::PathBuf,
     pub ribbon_minimized: bool,
@@ -441,6 +447,8 @@ impl App {
             show_about: false,
             show_file_params: false,
             show_channel_map: false,
+            show_settings: false,
+            encoding: Encoding::Auto,
             show_explorer: false,
             explorer_dir: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
             ribbon_minimized: false,
@@ -521,6 +529,7 @@ impl App {
             Command::OpenFvb => self.open_fvb(),
             Command::FileParams => self.show_file_params = true,
             Command::ChannelMap => self.show_channel_map = true,
+            Command::Settings => self.show_settings = true,
             Command::Archive => self.archive_record(),
             Command::ToggleExplorer => self.show_explorer = !self.show_explorer,
             Command::ToggleRibbonMin => self.ribbon_minimized = !self.ribbon_minimized,
@@ -766,15 +775,29 @@ impl App {
     }
 
     pub fn load_comtrade_path(&mut self, path: &std::path::Path) {
-        match fvb_core::comtrade::load(path) {
+        match fvb_core::comtrade::load_with(path, self.encoding) {
             Ok(osc) => {
                 let name = path
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 self.add_doc(Doc::new(osc, name));
+                if let Some(d) = self.active_doc_mut() {
+                    d.path = Some(path.to_path_buf());
+                }
             }
             Err(e) => self.status = format!("Ошибка загрузки осциллограммы: {e}"),
+        }
+    }
+
+    /// Re-open the active document's file with the current encoding (the original
+    /// re-reads on an encoding change).
+    pub fn reopen_active(&mut self) {
+        let path = self.active_doc().and_then(|d| d.path.clone());
+        if let Some(path) = path {
+            self.load_comtrade_path(&path);
+        } else {
+            self.status = "Файл для переоткрытия неизвестен.".into();
         }
     }
 

@@ -10,6 +10,56 @@ impl App {
         self.comment_window(ctx);
         self.file_params_window(ctx);
         self.channel_map_window(ctx);
+        self.settings_window(ctx);
+    }
+
+    /// Program settings (DIALOG 510): the `.cfg` text encoding, re-opening the
+    /// active record when it changes.
+    fn settings_window(&mut self, ctx: &egui::Context) {
+        if !self.show_settings {
+            return;
+        }
+        use fvb_core::comtrade::Encoding;
+        let mut open = true;
+        let mut reopen = false;
+        let mut close_btn = false;
+        egui::Window::new("Установка настроек программы")
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                ui.label("Кодировка текста файла описания (.cfg):");
+                for (enc, label) in [
+                    (Encoding::Auto, "Автоопределение (UTF-8 / Windows-1251)"),
+                    (Encoding::Utf8, "UTF-8"),
+                    (Encoding::Cp1251, "Windows-1251"),
+                    (Encoding::Cp866, "IBM866 (DOS)"),
+                    (Encoding::Koi8r, "KOI8-R"),
+                ] {
+                    ui.radio_value(&mut self.encoding, enc, label);
+                }
+                ui.label(
+                    egui::RichText::new(
+                        "Внимание! При смене кодировки изменения вступают в силу после \
+                         переоткрытия файла осциллограммы.",
+                    )
+                    .small()
+                    .weak(),
+                );
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(self.active_doc().and_then(|d| d.path.as_ref()).is_some(), egui::Button::new("Переоткрыть активную")).clicked() {
+                        reopen = true;
+                    }
+                    if ui.button("Закрыть").clicked() {
+                        close_btn = true;
+                    }
+                });
+            });
+        if reopen {
+            self.reopen_active();
+        }
+        self.show_settings = open && !close_btn;
     }
 
     /// Explicit channel-to-role assignment (the original's DIALOG 536 / «Отображение

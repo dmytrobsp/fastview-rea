@@ -42,6 +42,7 @@ impl App {
                     ("Отправка и архивирование (.zip)…", Command::Archive),
                     ("Печать — экспорт изображения…   Ctrl+P", Command::Print),
                     ("Параметры файла…", Command::FileParams),
+                    ("Установка настроек программы…", Command::Settings),
                 ] {
                     if ui.button(label).clicked() {
                         cmds.push(cmd);

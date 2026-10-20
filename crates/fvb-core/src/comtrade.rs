@@ -90,10 +90,16 @@ impl Oscillogram {
 /// Load a COMTRADE record given the path to either the `.cfg` or `.dat` file
 /// (the sibling is located by extension, case-insensitively).
 pub fn load(path: impl AsRef<Path>) -> Result<Oscillogram, ComtradeError> {
+    load_with(path, Encoding::Auto)
+}
+
+/// Load a COMTRADE record, decoding the `.cfg` with a specific text encoding
+/// (the original's program-settings dialog lets the user choose it).
+pub fn load_with(path: impl AsRef<Path>, enc: Encoding) -> Result<Oscillogram, ComtradeError> {
     let path = path.as_ref();
     let (cfg_path, dat_path) = sibling_paths(path)?;
     let cfg_bytes = std::fs::read(&cfg_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
-    let cfg_text = decode_text(&cfg_bytes);
+    let cfg_text = decode_text_enc(&cfg_bytes, enc);
     let (mut rec, fmt) = parse_cfg(&cfg_text)?;
     let dat = std::fs::read(&dat_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
     parse_dat(&mut rec, fmt, &dat)?;
@@ -180,12 +186,37 @@ fn sibling_paths(path: &Path) -> Result<(std::path::PathBuf, std::path::PathBuf)
     Ok((cfg, dat))
 }
 
+/// Text encoding for the `.cfg` (the original's program-settings dialog lets the
+/// user pick among these — `DIALOG 510`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Encoding {
+    /// UTF-8 if valid, else CP1251 — the previous behaviour.
+    #[default]
+    Auto,
+    Utf8,
+    Cp1251,
+    Cp866,
+    Koi8r,
+}
+
+/// Decode cfg bytes with the given encoding (Cyrillic single-byte code pages, or
+/// UTF-8 / auto-detect).
+fn decode_text_enc(bytes: &[u8], enc: Encoding) -> String {
+    match enc {
+        Encoding::Auto => match std::str::from_utf8(bytes) {
+            Ok(s) => s.to_string(),
+            Err(_) => bytes.iter().map(|&b| cp1251_to_char(b)).collect(),
+        },
+        Encoding::Utf8 => String::from_utf8_lossy(bytes).into_owned(),
+        Encoding::Cp1251 => bytes.iter().map(|&b| cp1251_to_char(b)).collect(),
+        Encoding::Cp866 => bytes.iter().map(|&b| cp866_to_char(b)).collect(),
+        Encoding::Koi8r => bytes.iter().map(|&b| koi8r_to_char(b)).collect(),
+    }
+}
+
 /// Decode cfg bytes: UTF-8/ASCII, or CP1251 fall-back for Cyrillic channel ids.
 fn decode_text(bytes: &[u8]) -> String {
-    match std::str::from_utf8(bytes) {
-        Ok(s) => s.to_string(),
-        Err(_) => bytes.iter().map(|&b| cp1251_to_char(b)).collect(),
-    }
+    decode_text_enc(bytes, Encoding::Auto)
 }
 
 fn cp1251_to_char(b: u8) -> char {
@@ -200,6 +231,30 @@ fn cp1251_to_char(b: u8) -> char {
             0xB8 => 'ё',
             _ => '?',
         }
+    }
+}
+
+fn cp866_to_char(b: u8) -> char {
+    match b {
+        0x00..=0x7F => b as char,
+        0x80..=0x9F => char::from_u32(0x0410 + (b as u32 - 0x80)).unwrap_or('?'), // А..Я
+        0xA0..=0xAF => char::from_u32(0x0430 + (b as u32 - 0xA0)).unwrap_or('?'), // а..п
+        0xE0..=0xEF => char::from_u32(0x0440 + (b as u32 - 0xE0)).unwrap_or('?'), // р..я
+        0xF0 => 'Ё',
+        0xF1 => 'ё',
+        _ => '?', // box-drawing range
+    }
+}
+
+fn koi8r_to_char(b: u8) -> char {
+    const UPPER: &str = "юабцдефгхийклмнопярстужвьызшэщчъ\
+ЮАБЦДЕФГХИЙКЛМНОПЯРСТУЖВЬЫЗШЭЩЧЪ";
+    match b {
+        0x00..=0x7F => b as char,
+        0xA3 => 'ё',
+        0xB3 => 'Ё',
+        0xC0..=0xFF => UPPER.chars().nth((b - 0xC0) as usize).unwrap_or('?'),
+        _ => '?',
     }
 }
 
