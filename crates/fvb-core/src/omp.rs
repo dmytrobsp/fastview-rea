@@ -11,12 +11,39 @@
 
 use num_complex::Complex64;
 
-/// Per-unit-length positive-sequence line parameters (secondary ohms per km).
+/// Per-unit-length line parameters (secondary ohms per km): positive-sequence
+/// `(r1,x1)` and zero-sequence `(r0,x0)` used for ground-fault compensation.
 #[derive(Debug, Clone, Copy)]
 pub struct LineParams {
     pub r1_per_km: f64,
     pub x1_per_km: f64,
+    pub r0_per_km: f64,
+    pub x0_per_km: f64,
     pub length_km: f64,
+}
+
+impl LineParams {
+    /// Zero-sequence compensation factor `k0 = (Z0 − Z1) / (3·Z1)`.
+    pub fn k0(&self) -> Complex64 {
+        let z1 = Complex64::new(self.r1_per_km, self.x1_per_km);
+        let z0 = Complex64::new(self.r0_per_km, self.x0_per_km);
+        if z1.norm() < 1e-12 {
+            Complex64::new(0.0, 0.0)
+        } else {
+            (z0 - z1) / (3.0 * z1)
+        }
+    }
+}
+
+/// How the network's neutral is treated, selecting the ОМП loop/compensation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NeutralMode {
+    /// Глухозаземлённая нейтраль — phase-ground loop with zero-sequence
+    /// compensation.
+    Grounded,
+    /// Изолированная нейтраль — interphase (phase-phase) loop, no zero-seq
+    /// compensation.
+    Isolated,
 }
 
 /// Single-ended reactance-method distance to fault, in km.
@@ -30,6 +57,25 @@ pub fn single_ended_distance(u_loop: Complex64, i_loop: Complex64, line: &LinePa
     let z = u_loop / i_loop;
     let x_fault = z.im;
     Some(x_fault / line.x1_per_km)
+}
+
+/// Single-ended distance for a solidly-grounded network, with zero-sequence
+/// compensation: `distance = Im( U_A / (I_A + k0·3I0) ) / x1`. `u_a`/`i_a` are the
+/// faulted phase's voltage/current, `i_3i0` the residual (`Ia+Ib+Ic`).
+pub fn single_ended_grounded(
+    u_a: Complex64,
+    i_a: Complex64,
+    i_3i0: Complex64,
+    line: &LineParams,
+) -> Option<f64> {
+    if line.x1_per_km.abs() < 1e-12 {
+        return None;
+    }
+    let denom = i_a + line.k0() * i_3i0;
+    if denom.norm() < 1e-9 {
+        return None;
+    }
+    Some((u_a / denom).im / line.x1_per_km)
 }
 
 /// Fraction (0..1) of the line length to the fault, single-ended.

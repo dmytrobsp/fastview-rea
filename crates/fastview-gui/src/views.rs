@@ -2,8 +2,9 @@
 //! ОМП) over the active document. The oscillogram (lane) view lives in
 //! `lanes.rs`.
 
-use crate::app::{App, View};
+use crate::app::{AnalysisTab, App, OmpMethod, View};
 use eframe::egui;
+use fvb_core::omp::NeutralMode;
 use egui_plot::{Bar, BarChart, Line, LineStyle, Plot, PlotPoints, Points, Polygon};
 use fvb_core::geom::Shape;
 use fvb_core::model::Dimension;
@@ -333,132 +334,278 @@ impl App {
 
     // ---- Быстрый анализ ----
     fn view_analysis(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::right("analysis_formula").default_width(320.0).show(ctx, |ui| {
-            ui.heading("Редактор формул");
-            ui.label("Расчётный канал по отсчётам:");
-            ui.horizontal(|ui| {
-                ui.label("имя");
-                ui.text_edit_singleline(&mut self.formula_name);
-            });
-            ui.horizontal(|ui| {
-                ui.label("формула");
-                ui.text_edit_singleline(&mut self.formula_text);
-            });
-            if ui.button("Добавить канал").clicked() {
-                self.add_computed();
-            }
-            ui.separator();
-            ui.label("Доступно: имена каналов, + - * / ^, mod:() sqrt:() sin:() cos:() tg:() ctg:()");
-            ui.separator();
-            let mut remove = None;
-            if let Some(d) = self.active_doc() {
-                if !d.computed.is_empty() {
-                    ui.label("Расчётные каналы:");
-                    for (i, c) in d.computed.iter().enumerate() {
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("⬤").color(c.color));
-                            ui.label(format!("{} = {}", c.name, c.formula));
-                            if ui.small_button("✕").clicked() {
-                                remove = Some(i);
-                            }
-                        });
-                    }
-                }
-            }
-            if let (Some(i), Some(d)) = (remove, self.active_doc_mut()) {
-                if i < d.computed.len() {
-                    d.computed.remove(i);
-                }
-            }
-        });
         egui::CentralPanel::default().show(ctx, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                for (tab, label) in [
+                    (AnalysisTab::Symmetric, "Симметричные составляющие"),
+                    (AnalysisTab::Zero, "Нулевая последовательность"),
+                    (AnalysisTab::PhasePhase, "Междуфазные сопротивления"),
+                    (AnalysisTab::Phase, "Фазные сопротивления"),
+                    (AnalysisTab::Differential, "Дифференциальные токи"),
+                    (AnalysisTab::Formula, "Редактор формул"),
+                ] {
+                    ui.selectable_value(&mut self.analysis_tab, tab, label);
+                }
+            });
+            ui.separator();
+            if self.analysis_tab == AnalysisTab::Formula {
+                self.formula_editor_ui(ui);
+                return;
+            }
             let Some(d) = self.active_doc() else {
                 ui.centered_and_justified(|ui| ui.label("Загрузите осциллограмму для анализа."));
                 return;
             };
             let k = d.main_cursor;
-            ui.heading("Симметричные составляющие (осн. визир)");
-            let (u0, u1, u2) = d.analysis.u_symmetric(k);
-            let (i0, i1, i2) = d.analysis.i_symmetric(k);
-            egui::Grid::new("symgrid").striped(true).num_columns(3).show(ui, |ui| {
-                ui.label("Величина");
-                ui.label("Модуль");
-                ui.label("Угол");
-                ui.end_row();
-                for (name, z) in [("3U0", u0), ("U1", u1), ("U2", u2), ("3I0", i0), ("I1", i1), ("I2", i2)] {
-                    ui.label(name);
-                    ui.label(format!("{:.3}", z.norm()));
-                    ui.label(format!("{:+.1}°", z.arg().to_degrees()));
-                    ui.end_row();
+            let t = d.osc.time.get(k).copied().unwrap_or(0.0);
+            ui.label(egui::RichText::new(format!("Основной визир: t = {:.4} с (отсчёт {k})", t)).weak());
+            ui.add_space(4.0);
+            match self.analysis_tab {
+                AnalysisTab::Symmetric => {
+                    let (u0, u1, u2) = d.analysis.u_symmetric(k);
+                    let (i0, i1, i2) = d.analysis.i_symmetric(k);
+                    phasor_table(ui, "symgrid", "Величина", &[
+                        ("3U0", u0), ("U1", u1), ("U2", u2), ("3I0", i0), ("I1", i1), ("I2", i2),
+                    ]);
                 }
-            });
-            ui.separator();
-            ui.heading("Сопротивления (осн. визир)");
-            egui::Grid::new("zgrid").striped(true).num_columns(3).show(ui, |ui| {
-                ui.label("Контур");
-                ui.label("R, Ом");
-                ui.label("X, Ом");
-                ui.end_row();
-                for (name, ph) in [("Zа", 0usize), ("Zb", 1), ("Zc", 2)] {
-                    if let Some(z) = d.analysis.phase_impedance(ph, k) {
-                        ui.label(name);
-                        ui.label(format!("{:.3}", z.re));
-                        ui.label(format!("{:.3}", z.im));
+                AnalysisTab::Zero => {
+                    let (u0x3, _, _) = d.analysis.u_symmetric(k);
+                    let (i0x3, _, _) = d.analysis.i_symmetric(k);
+                    ui.label("Составляющие нулевой последовательности (3U0, 3I0 — суммарные остаточные величины):");
+                    phasor_table(ui, "zerogrid", "Величина", &[
+                        ("3U0", u0x3), ("U0", u0x3 / 3.0), ("3I0", i0x3), ("I0", i0x3 / 3.0),
+                    ]);
+                }
+                AnalysisTab::PhasePhase => {
+                    let z = d.analysis.phase_phase_impedances(k);
+                    impedance_table(ui, "ppgrid", "Контур", &[("Zab", z[0]), ("Zbc", z[1]), ("Zca", z[2])]);
+                }
+                AnalysisTab::Phase => {
+                    let z = [
+                        ("Zа", d.analysis.phase_impedance(0, k)),
+                        ("Zb", d.analysis.phase_impedance(1, k)),
+                        ("Zc", d.analysis.phase_impedance(2, k)),
+                    ];
+                    impedance_table(ui, "phgrid", "Контур", &z);
+                }
+                AnalysisTab::Differential => {
+                    let (ia, ib, ic) = d.analysis.i_phase(k);
+                    let (id, ir) = d.analysis.differential_currents(k);
+                    phasor_table(ui, "dif_i", "Фазный ток", &[("Ia", ia), ("Ib", ib), ("Ic", ic)]);
+                    ui.separator();
+                    egui::Grid::new("difgrid").striped(true).num_columns(2).show(ui, |ui| {
+                        ui.label("Дифференциальный ток Iд = |Ia+Ib+Ic|");
+                        ui.label(format!("{id:.3}"));
                         ui.end_row();
-                    }
+                        ui.label("Тормозной ток Iт = (|Ia|+|Ib|+|Ic|)/2");
+                        ui.label(format!("{ir:.3}"));
+                        ui.end_row();
+                        ui.label("Отношение Iд/Iт");
+                        ui.label(if ir > 1e-9 { format!("{:.3}", id / ir) } else { "—".into() });
+                        ui.end_row();
+                    });
                 }
-            });
+                AnalysisTab::Formula => {}
+            }
         });
+    }
+
+    fn formula_editor_ui(&mut self, ui: &mut egui::Ui) {
+        ui.label("Расчётный канал по отсчётам (добавляется на осциллограмму):");
+        ui.horizontal(|ui| {
+            ui.label("имя");
+            ui.text_edit_singleline(&mut self.formula_name);
+            ui.label("формула");
+            ui.text_edit_singleline(&mut self.formula_text);
+            if ui.button("Добавить канал").clicked() {
+                self.add_computed();
+            }
+        });
+        ui.label(egui::RichText::new("Доступно: имена каналов, + - * / ^, mod:() sqrt:() sin:() cos:() tg:() ctg:()").weak());
+        ui.separator();
+        let mut remove = None;
+        if let Some(d) = self.active_doc() {
+            if d.computed.is_empty() {
+                ui.label("Нет расчётных каналов.");
+            } else {
+                ui.label("Расчётные каналы:");
+                for (i, c) in d.computed.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("⬤").color(c.color));
+                        ui.label(format!("{} = {}", c.name, c.formula));
+                        if ui.small_button("✕").clicked() {
+                            remove = Some(i);
+                        }
+                    });
+                }
+            }
+        }
+        if let (Some(i), Some(d)) = (remove, self.active_doc_mut()) {
+            if i < d.computed.len() {
+                d.computed.remove(i);
+            }
+        }
     }
 
     // ---- ОМП ----
     fn view_omp(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Определение места повреждения (одностороннего замера)");
+            ui.heading("Определение места повреждения (ОМП)");
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Метод:");
+                ui.selectable_value(&mut self.omp_method, OmpMethod::SingleEnded, "Односторонний замер");
+                ui.selectable_value(&mut self.omp_method, OmpMethod::DoubleEnded, "Двусторонний замер");
+                ui.separator();
+                ui.label("Нейтраль:");
+                ui.selectable_value(&mut self.neutral, NeutralMode::Grounded, "Глухозаземлённая");
+                ui.selectable_value(&mut self.neutral, NeutralMode::Isolated, "Изолированная");
+            });
             ui.separator();
-            egui::Grid::new("ompinputs").num_columns(2).show(ui, |ui| {
+            egui::Grid::new("ompinputs").num_columns(4).spacing([12.0, 6.0]).show(ui, |ui| {
                 ui.label("R1 уд., Ом/км");
                 ui.add(egui::DragValue::new(&mut self.line.r1_per_km).speed(0.001));
-                ui.end_row();
                 ui.label("X1 уд., Ом/км");
                 ui.add(egui::DragValue::new(&mut self.line.x1_per_km).speed(0.001));
                 ui.end_row();
+                if self.neutral == NeutralMode::Grounded {
+                    ui.label("R0 уд., Ом/км");
+                    ui.add(egui::DragValue::new(&mut self.line.r0_per_km).speed(0.001));
+                    ui.label("X0 уд., Ом/км");
+                    ui.add(egui::DragValue::new(&mut self.line.x0_per_km).speed(0.001));
+                    ui.end_row();
+                }
                 ui.label("Длина линии, км");
                 ui.add(egui::DragValue::new(&mut self.line.length_km).speed(0.1));
                 ui.end_row();
             });
+            // Remote-end selection for the double-ended method.
+            if self.omp_method == OmpMethod::DoubleEnded {
+                let names: Vec<(usize, String)> = self
+                    .docs
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| Some(*i) != self.active)
+                    .map(|(i, d)| (i, d.name.clone()))
+                    .collect();
+                ui.horizontal(|ui| {
+                    ui.label("Дальний конец (вторая осциллограмма):");
+                    let cur = self.omp_remote.and_then(|i| self.docs.get(i)).map(|d| d.name.clone()).unwrap_or_else(|| "— не выбрано —".into());
+                    egui::ComboBox::from_id_salt("ompremote").selected_text(cur).show_ui(ui, |ui| {
+                        for (i, name) in &names {
+                            ui.selectable_value(&mut self.omp_remote, Some(*i), name);
+                        }
+                    });
+                });
+            }
             ui.separator();
+
             let line = self.line;
+            let neutral = self.neutral;
+            let method = self.omp_method;
+            let remote = self.omp_remote;
             let Some(d) = self.active_doc() else {
                 ui.label("Загрузите осциллограмму и установите основной визир в аварийный режим.");
                 return;
             };
             let k = d.main_cursor;
-            let ua = d.analysis.phasors.get(d.analysis.u_abc[0].unwrap_or(0)).and_then(|p| p.get(k)).copied();
-            let ia = d.analysis.phasors.get(d.analysis.i_abc[0].unwrap_or(0)).and_then(|p| p.get(k)).copied();
-            match (ua, ia, d.analysis.u_abc[0], d.analysis.i_abc[0]) {
-                (Some(u), Some(i), Some(_), Some(_)) => {
-                    if let Some(dist) = fvb_core::omp::single_ended_distance(u, i, &line) {
-                        ui.label(
-                            egui::RichText::new(format!("Расстояние до места повреждения: {:.2} км", dist))
-                                .strong()
-                                .size(18.0),
-                        );
-                        if line.length_km > 0.0 {
-                            ui.label(format!("({:.1}% длины линии)", 100.0 * dist / line.length_km));
+            let ua = phase_ph(d, d.analysis.u_abc[0], k);
+            let ub = phase_ph(d, d.analysis.u_abc[1], k);
+            let ia = phase_ph(d, d.analysis.i_abc[0], k);
+            let ib = phase_ph(d, d.analysis.i_abc[1], k);
+            if d.analysis.u_abc[0].is_none() || d.analysis.i_abc[0].is_none() {
+                ui.label("Не удалось определить фазные каналы Ua/Ia в осциллограмме.");
+                return;
+            }
+            let (pa, pb, pc) = d.analysis.i_phase(k);
+            let i3i0 = pa + pb + pc;
+
+            let result = match method {
+                OmpMethod::SingleEnded => match neutral {
+                    NeutralMode::Grounded => {
+                        fvb_core::omp::single_ended_grounded(ua, ia, i3i0, &line).map(|dist| (dist, format!("Zпетли ф.A = {:.3}{:+.3}j Ом", (ua / ia).re, (ua / ia).im)))
+                    }
+                    NeutralMode::Isolated => {
+                        let uab = ua - ub;
+                        let iab = ia - ib;
+                        fvb_core::omp::single_ended_distance(uab, iab, &line).map(|dist| (dist, format!("Zпетли AB = {:.3}{:+.3}j Ом", (uab / iab).re, (uab / iab).im)))
+                    }
+                },
+                OmpMethod::DoubleEnded => {
+                    match remote.and_then(|i| self.docs.get(i)) {
+                        Some(r) => {
+                            let rk = r.main_cursor;
+                            let un = phase_ph(r, r.analysis.u_abc[0], rk);
+                            let in_ = phase_ph(r, r.analysis.i_abc[0], rk);
+                            if r.analysis.u_abc[0].is_none() || r.analysis.i_abc[0].is_none() {
+                                None
+                            } else {
+                                fvb_core::omp::double_ended_distance(ua, ia, un, in_, &line).map(|dist| (dist, format!("дальний конец: {}", r.name)))
+                            }
                         }
-                        let z = u / i;
-                        ui.label(format!("Zпетли фазы A = {:.3} + j{:.3} Ом", z.re, z.im));
-                    } else {
-                        ui.label("Недостаточный ток для расчёта.");
+                        None => {
+                            ui.label("Выберите вторую осциллограмму (дальний конец) для двустороннего замера.");
+                            return;
+                        }
                     }
                 }
-                _ => {
-                    ui.label("Не удалось определить фазные каналы Ua/Ia в осциллограмме.");
+            };
+            match result {
+                Some((dist, detail)) => {
+                    ui.label(egui::RichText::new(format!("Расстояние до места повреждения: {dist:.2} км")).strong().size(18.0));
+                    if line.length_km > 0.0 {
+                        ui.label(format!("({:.1}% длины линии)", 100.0 * dist / line.length_km));
+                    }
+                    ui.label(egui::RichText::new(detail).weak());
+                }
+                None => {
+                    ui.label("Недостаточно данных для расчёта (проверьте каналы/ток/дальний конец).");
                 }
             }
         });
     }
+}
+
+/// Phasor of an optional channel index at sample `k`.
+fn phase_ph(d: &crate::app::Doc, idx: Option<usize>, k: usize) -> Complex64 {
+    idx.and_then(|i| d.analysis.phasors.get(i)).and_then(|p| p.get(k)).copied().unwrap_or(Complex64::new(0.0, 0.0))
+}
+
+fn phasor_table(ui: &mut egui::Ui, id: &str, first_col: &str, rows: &[(&str, Complex64)]) {
+    egui::Grid::new(id).striped(true).num_columns(3).show(ui, |ui| {
+        ui.label(first_col);
+        ui.label("Модуль");
+        ui.label("Угол");
+        ui.end_row();
+        for (name, z) in rows {
+            ui.label(*name);
+            ui.label(format!("{:.3}", z.norm()));
+            ui.label(format!("{:+.1}°", z.arg().to_degrees()));
+            ui.end_row();
+        }
+    });
+}
+
+fn impedance_table(ui: &mut egui::Ui, id: &str, first_col: &str, rows: &[(&str, Option<Complex64>)]) {
+    egui::Grid::new(id).striped(true).num_columns(4).show(ui, |ui| {
+        ui.label(first_col);
+        ui.label("R, Ом");
+        ui.label("X, Ом");
+        ui.label("|Z|, Ом");
+        ui.end_row();
+        for (name, z) in rows {
+            ui.label(*name);
+            if let Some(z) = z {
+                ui.label(format!("{:.3}", z.re));
+                ui.label(format!("{:.3}", z.im));
+                ui.label(format!("{:.3}", z.norm()));
+            } else {
+                ui.label("—");
+                ui.label("—");
+                ui.label("—");
+            }
+            ui.end_row();
+        }
+    });
 }
 
 /// Magnitudes of harmonics 0..=hmax from the one-cycle window ending at `center`.

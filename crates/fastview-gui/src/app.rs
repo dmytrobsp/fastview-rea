@@ -7,7 +7,7 @@ use fvb_core::analysis::Analysis;
 use fvb_core::comtrade::Oscillogram;
 use fvb_core::geom::CharGeometry;
 use fvb_core::model::Dimension;
-use fvb_core::omp::LineParams;
+use fvb_core::omp::{LineParams, NeutralMode};
 use fvb_core::Library;
 use std::collections::HashMap;
 
@@ -41,6 +41,24 @@ pub enum View {
 pub enum RibbonTab {
     Home,
     Omp,
+}
+
+/// Sub-tabs of the Быстрый анализ panel (mirrors the original's tabbed layout).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnalysisTab {
+    Symmetric,
+    Zero,
+    PhasePhase,
+    Phase,
+    Differential,
+    Formula,
+}
+
+/// ОМП measuring method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OmpMethod {
+    SingleEnded,
+    DoubleEnded,
 }
 
 /// The per-channel value the stats panel and vector/circle views read.
@@ -300,8 +318,13 @@ pub struct App {
     pub formula_name: String,
     pub formula_text: String,
 
-    // omp
+    // analysis / omp
+    pub analysis_tab: AnalysisTab,
     pub line: LineParams,
+    pub omp_method: OmpMethod,
+    pub neutral: NeutralMode,
+    /// Remote-end document for the double-ended ОМП method.
+    pub omp_remote: Option<usize>,
 
     // dialogs
     pub show_about: bool,
@@ -345,11 +368,17 @@ impl App {
             primary_values: false,
             formula_name: "Uab".to_string(),
             formula_text: "Ua-Ub".to_string(),
+            analysis_tab: AnalysisTab::Symmetric,
             line: LineParams {
                 r1_per_km: 0.1,
                 x1_per_km: 0.4,
+                r0_per_km: 0.3,
+                x0_per_km: 1.2,
                 length_km: 50.0,
             },
+            omp_method: OmpMethod::SingleEnded,
+            neutral: NeutralMode::Grounded,
+            omp_remote: None,
             show_about: false,
             props_channel: None,
             comment_edit: None,

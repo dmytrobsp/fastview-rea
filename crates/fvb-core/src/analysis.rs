@@ -131,4 +131,49 @@ impl Analysis {
         }
         out
     }
+
+    /// Phase voltages `(Ua, Ub, Uc)` at sample `k`.
+    pub fn u_phase(&self, k: usize) -> (Complex64, Complex64, Complex64) {
+        (self.ph(self.u_abc[0], k), self.ph(self.u_abc[1], k), self.ph(self.u_abc[2], k))
+    }
+
+    /// Phase currents `(Ia, Ib, Ic)` at sample `k`.
+    pub fn i_phase(&self, k: usize) -> (Complex64, Complex64, Complex64) {
+        (self.ph(self.i_abc[0], k), self.ph(self.i_abc[1], k), self.ph(self.i_abc[2], k))
+    }
+
+    /// Line (phase-to-phase) voltages `(Uab, Ubc, Uca)` at sample `k`.
+    pub fn line_voltages(&self, k: usize) -> (Complex64, Complex64, Complex64) {
+        let (ua, ub, uc) = self.u_phase(k);
+        line_from_phase(ua, ub, uc)
+    }
+
+    /// Phase-to-phase loop impedances `[Zab, Zbc, Zca]` at `k`
+    /// (`Zab = Uab / (Ia − Ib)`, etc.). `None` where the loop current is ~0.
+    pub fn phase_phase_impedances(&self, k: usize) -> [Option<Complex64>; 3] {
+        let (ua, ub, uc) = self.u_phase(k);
+        let (ia, ib, ic) = self.i_phase(k);
+        let zz = |ull: Complex64, il: Complex64| {
+            if il.norm() > 1e-9 {
+                Some(ull / il)
+            } else {
+                None
+            }
+        };
+        [
+            zz(ua - ub, ia - ib),
+            zz(ub - uc, ib - ic),
+            zz(uc - ua, ic - ia),
+        ]
+    }
+
+    /// Differential and restraint currents at `k` for a three-phase set:
+    /// `(Id, Ir)` per phase where the differential is the residual sum
+    /// `Id = |Ia+Ib+Ic|` (= `|3I0|`) and the restraint `Ir = (|Ia|+|Ib|+|Ic|)/2`.
+    pub fn differential_currents(&self, k: usize) -> (f64, f64) {
+        let (ia, ib, ic) = self.i_phase(k);
+        let id = (ia + ib + ic).norm();
+        let ir = (ia.norm() + ib.norm() + ic.norm()) / 2.0;
+        (id, ir)
+    }
 }
