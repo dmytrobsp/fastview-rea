@@ -115,6 +115,7 @@ impl App {
             sep(ui, "Разница:", &s[2]);
             sep(ui, "Гор. визир 1:", &s[3]);
             sep(ui, "Гор. визир 2:", &s[4]);
+            sep(ui, "Разница г.:", &s[5]);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(egui::RichText::new("НТЦ Механотроника").small().weak());
                 ui.separator();

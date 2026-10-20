@@ -174,6 +174,10 @@ pub struct Doc {
     /// Time-axis view window in seconds `[t0, t1]` (shared across lanes).
     pub view_t0: f64,
     pub view_t1: f64,
+    /// Horizontal (amplitude) визиры, measured in the first lane's units.
+    pub hcur_on: bool,
+    pub hcur1: f64,
+    pub hcur2: f64,
     /// Precomputed per-channel one-cycle RMS and DC series (for stats / remove-DC).
     pub rms: Vec<Vec<f64>>,
     pub dc: Vec<Vec<f64>>,
@@ -220,6 +224,9 @@ impl Doc {
             comments: Vec::new(),
             view_t0: 0.0,
             view_t1: if t_last > 0.0 { t_last } else { 1.0 },
+            hcur_on: false,
+            hcur1: 0.0,
+            hcur2: 0.0,
             rms,
             dc,
         }
@@ -377,6 +384,9 @@ pub struct App {
     pub undo_stack: Vec<(usize, DocSnapshot)>,
     pub redo_stack: Vec<(usize, DocSnapshot)>,
 
+    /// Which horizontal визир (0/1) is being dragged, if any.
+    pub dragging_hcur: Option<u8>,
+
     pub status: String,
 }
 
@@ -437,6 +447,7 @@ impl App {
             channel_clip: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            dragging_hcur: None,
             status: "Готово".to_string(),
         };
         app.ensure_block_state();

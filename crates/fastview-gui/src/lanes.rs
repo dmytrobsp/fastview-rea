@@ -33,6 +33,10 @@ enum Act {
     PinCursor(usize),
     ToggleCommentHidden(usize),
     OpenProps(usize),
+    ToggleHcur,
+    StartDragHcur(u8),
+    SetHcur(u8, f64),
+    EndDragHcur,
     Cmd(Command),
 }
 
@@ -62,6 +66,7 @@ impl App {
         let time_unit = self.time_unit;
         let show_grid = self.show_grid;
         let primary = self.primary_values;
+        let hcur_dragging = self.dragging_hcur;
         let avail = ui.available_size();
 
         let mut actions: Vec<Act> = Vec::new();
@@ -375,6 +380,29 @@ impl App {
                 Stroke::new(1.8f32, Color32::from_rgb(0xD0, 0x20, 0x20)),
             );
 
+            // Horizontal (amplitude) визиры, measured in the first lane's scale.
+            let hcur_map = if doc.hcur_on {
+                if let Some(Lane::Analog(fi)) = lanes.first() {
+                    let vz = doc.chans[*fi].vzoom;
+                    let maxabs = (analog_maxabs(doc, *fi, primary) / vz).max(1e-9);
+                    Some((rect.top() + lane_h * 0.5, lane_h * 0.42, maxabs))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some((base_mid, amp, maxabs)) = hcur_map {
+                for (val, col) in [
+                    (doc.hcur1, Color32::from_rgb(0x18, 0x8A, 0x42)),
+                    (doc.hcur2, Color32::from_rgb(0xD0, 0x80, 0x10)),
+                ] {
+                    let y = (base_mid - (val / maxabs) as f32 * amp).clamp(rect.top(), plot_y1);
+                    painter.line_segment([Pos2::new(plot_x0, y), Pos2::new(plot_x1, y)], Stroke::new(1.3f32, col));
+                    painter.rect_filled(Rect::from_min_size(Pos2::new(plot_x1 - 8.0, y - 5.0), Vec2::new(8.0, 10.0)), 1.0f32, col);
+                }
+            }
+
             // ---- interaction ----
             let shift = ui.input(|i| i.modifiers.shift);
             // Double-click a stats panel -> channel properties.
@@ -404,7 +432,30 @@ impl App {
                     }
                 }
             }
-            if resp.dragged() {
+            // Horizontal-визир dragging via the right-edge handles (takes priority
+            // over panning).
+            if let Some((base_mid, amp, maxabs)) = hcur_map {
+                if resp.drag_started() {
+                    if let Some(pos) = resp.interact_pointer_pos() {
+                        if pos.x > plot_x1 - 14.0 {
+                            let y1 = base_mid - (doc.hcur1 / maxabs) as f32 * amp;
+                            let y2 = base_mid - (doc.hcur2 / maxabs) as f32 * amp;
+                            let h = if (pos.y - y1).abs() <= (pos.y - y2).abs() { 0u8 } else { 1u8 };
+                            actions.push(Act::StartDragHcur(h));
+                        }
+                    }
+                }
+                if let (Some(h), true) = (hcur_dragging, resp.dragged()) {
+                    if let Some(pos) = resp.interact_pointer_pos() {
+                        let v = ((base_mid - pos.y) / amp) as f64 * maxabs;
+                        actions.push(Act::SetHcur(h, v));
+                    }
+                }
+                if resp.drag_stopped() {
+                    actions.push(Act::EndDragHcur);
+                }
+            }
+            if resp.dragged() && hcur_dragging.is_none() {
                 let dx = resp.drag_delta().x;
                 if dx != 0.0 {
                     let dt = -(dx as f64) / plot_w as f64 * (t1 - t0);
@@ -443,6 +494,10 @@ impl App {
                     ui.separator();
                     if ui.checkbox(&mut { show_grid }, "Сетка").clicked() {
                         actions.push(Act::ToggleGrid);
+                        ui.close_menu();
+                    }
+                    if ui.checkbox(&mut { doc.hcur_on }, "Горизонтальные визиры").clicked() {
+                        actions.push(Act::ToggleHcur);
                         ui.close_menu();
                     }
                     return;
@@ -620,6 +675,22 @@ impl App {
                         d.main_cursor = sample;
                     }
                 }
+                Act::ToggleHcur => {
+                    if let Some(d) = self.docs.get_mut(ai) {
+                        d.hcur_on = !d.hcur_on;
+                    }
+                }
+                Act::StartDragHcur(h) => self.dragging_hcur = Some(h),
+                Act::EndDragHcur => self.dragging_hcur = None,
+                Act::SetHcur(h, v) => {
+                    if let Some(d) = self.docs.get_mut(ai) {
+                        if h == 0 {
+                            d.hcur1 = v;
+                        } else {
+                            d.hcur2 = v;
+                        }
+                    }
+                }
                 Act::ToggleCommentHidden(idx) => {
                     if let Some(d) = self.docs.get_mut(ai) {
                         if let Some(c) = d.comments.get_mut(idx) {
@@ -669,9 +740,21 @@ impl App {
             }
         };
         let first = d.chans.iter().position(|c| c.visible);
-        let hv = |k: usize| match first {
-            Some(i) => format!("{} {}", fmt(d.sample(i, k)), d.osc.analog[i].unit),
-            None => empty(),
+        let unit = first.map(|i| d.osc.analog[i].unit.clone()).unwrap_or_default();
+        // Horizontal визиры: their amplitude values when enabled, else the active
+        // channel's value at the vertical cursors.
+        let (h1, h2, hdiff) = if d.hcur_on {
+            (
+                format!("{} {}", fmt(d.hcur1), unit),
+                format!("{} {}", fmt(d.hcur2), unit),
+                format!("{} {}", fmt((d.hcur1 - d.hcur2).abs()), unit),
+            )
+        } else {
+            let hv = |k: usize| match first {
+                Some(i) => format!("{} {}", fmt(d.sample(i, k)), unit),
+                None => empty(),
+            };
+            (hv(d.main_cursor), hv(d.aux_cursor), empty())
         };
         [
             f(t1),
@@ -681,9 +764,9 @@ impl App {
             } else {
                 format!("{:.1} {}", u.scale_secs((t1 - t2).abs()), u.label())
             },
-            hv(d.main_cursor),
-            hv(d.aux_cursor),
-            empty(),
+            h1,
+            h2,
+            hdiff,
         ]
     }
 }
