@@ -3,14 +3,17 @@
 //! Each analog/computed/digital channel is a horizontal lane with a left stats
 //! panel (name badge · value@cursor · Max/Min/СКЗ/A1) and a waveform. Two
 //! vertical визиры (red main, blue aux) with a shaded selection between them,
-//! a shared time axis, and per-channel / time-axis context menus (cmd ids from
-//! `notes/ui/menus.txt`).
+//! a shared time axis, on-waveform comments, and per-channel / time-axis context
+//! menus (cmd ids from `notes/ui/menus.txt`). Lanes have a minimum height and the
+//! view scrolls vertically when there are many channels.
 
-use crate::app::{App, Command, ValueMode};
+use crate::app::{App, Command, CommentEdit, ValueMode};
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Shape, Stroke, Vec2};
 
 const LEFT_W: f32 = 158.0;
 const AXIS_H: f32 = 26.0;
+const MIN_LANE: f32 = 60.0;
+const COMMENT_COLOR: Color32 = Color32::from_rgb(0x00, 0x80, 0x80);
 
 enum Lane {
     Analog(usize),
@@ -25,6 +28,9 @@ enum Act {
     SetTimeUnit(crate::app::TimeUnit),
     ToggleGrid,
     Channel(usize, ChanAct),
+    AddComment(usize),
+    EditComment(usize),
+    OpenProps(usize),
     Cmd(Command),
 }
 
@@ -50,10 +56,11 @@ impl App {
         let time_unit = self.time_unit;
         let show_grid = self.show_grid;
         let primary = self.primary_values;
+        let avail = ui.available_size();
 
         let mut actions: Vec<Act> = Vec::new();
 
-        {
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let doc = &self.docs[ai];
             // Build the lane list: visible analog, computed, then digital.
             let mut lanes: Vec<Lane> = Vec::new();
@@ -70,14 +77,18 @@ impl App {
             }
             let n_lanes = lanes.len().max(1);
 
-            let rect = ui.available_rect_before_wrap();
-            let (resp, painter) = ui.allocate_painter(rect.size(), Sense::click_and_drag());
+            // Lane height: fill the viewport, but never below MIN_LANE (then scroll).
+            let fit = (avail.y - AXIS_H) / n_lanes as f32;
+            let lane_h = fit.max(MIN_LANE);
+            let total_h = if fit >= MIN_LANE { avail.y } else { n_lanes as f32 * lane_h + AXIS_H };
+
+            let (resp, painter) =
+                ui.allocate_painter(Vec2::new(avail.x, total_h), Sense::click_and_drag());
             let rect = resp.rect;
             let plot_x0 = rect.left() + LEFT_W;
             let plot_x1 = rect.right() - 6.0;
             let plot_w = (plot_x1 - plot_x0).max(1.0);
             let plot_y1 = rect.bottom() - AXIS_H;
-            let lane_h = ((plot_y1 - rect.top()) / n_lanes as f32).max(26.0);
 
             let (t0, t1) = (doc.view_t0, doc.view_t1.max(doc.view_t0 + 1e-9));
             let x_of = |t: f64| plot_x0 + ((t - t0) / (t1 - t0)) as f32 * plot_w;
@@ -86,7 +97,7 @@ impl App {
             // Plot background.
             painter.rect_filled(
                 Rect::from_min_max(Pos2::new(plot_x0, rect.top()), Pos2::new(plot_x1, plot_y1)),
-                 0.0f32,
+                0.0f32,
                 ui.visuals().extreme_bg_color,
             );
 
@@ -132,7 +143,6 @@ impl App {
             let k_main = doc.main_cursor;
             for (li, lane) in lanes.iter().enumerate() {
                 let lane_top = rect.top() + li as f32 * lane_h;
-                // Alternating lane background behind the stats panel + plot edges.
                 let lane_bg = if li % 2 == 0 {
                     Color32::from_rgb(0xEA, 0xF4, 0xFB)
                 } else {
@@ -140,7 +150,7 @@ impl App {
                 };
                 painter.rect_filled(
                     Rect::from_min_max(Pos2::new(rect.left(), lane_top), Pos2::new(plot_x0, lane_top + lane_h)),
-                     0.0f32,
+                    0.0f32,
                     lane_bg,
                 );
                 painter.line_segment(
@@ -148,57 +158,12 @@ impl App {
                     Stroke::new(1.0f32, Color32::from_gray(210)),
                 );
                 let baseline = lane_top + lane_h * 0.5;
-                // zero line
                 painter.line_segment(
                     [Pos2::new(plot_x0, baseline), Pos2::new(plot_x1, baseline)],
                     Stroke::new(1.0f32, Color32::from_gray(235)),
                 );
 
-                let (name, unit, color, maxv, minv, rms, a1, val) = match lane {
-                    Lane::Analog(i) => {
-                        let ch = &doc.osc.analog[*i];
-                        let scale = if primary && !ch.is_primary && ch.secondary != 0.0 {
-                            ch.primary / ch.secondary
-                        } else {
-                            1.0
-                        };
-                        let n = doc.osc.sample_count();
-                        let mut mx = f64::MIN;
-                        let mut mn = f64::MAX;
-                        for k in 0..n {
-                            let v = doc.sample(*i, k) * scale;
-                            mx = mx.max(v);
-                            mn = mn.min(v);
-                        }
-                        let val = match value_mode {
-                            ValueMode::Instant => doc.sample(*i, k_main) * scale,
-                            ValueMode::Rms => doc.rms_at(*i, k_main) * scale,
-                            ValueMode::FirstHarmonic => doc.harmonic_at(*i, k_main) * scale,
-                        };
-                        (
-                            ch.id.clone(),
-                            ch.unit.clone(),
-                            doc.chans[*i].color,
-                            mx,
-                            mn,
-                            doc.rms_at(*i, k_main) * scale,
-                            doc.harmonic_at(*i, k_main) * scale,
-                            val,
-                        )
-                    }
-                    Lane::Computed(i) => {
-                        let c = &doc.computed[*i];
-                        let mx = c.samples.iter().copied().fold(f64::MIN, f64::max);
-                        let mn = c.samples.iter().copied().fold(f64::MAX, f64::min);
-                        let val = c.samples.get(k_main).copied().unwrap_or(0.0);
-                        (c.name.clone(), String::new(), c.color, mx, mn, 0.0, 0.0, val)
-                    }
-                    Lane::Digital(i) => {
-                        let d = &doc.osc.digital[*i];
-                        let val = if d.samples.get(k_main).copied().unwrap_or(false) { 1.0 } else { 0.0 };
-                        (d.id.clone(), String::new(), Color32::from_rgb(0x44, 0x44, 0xAA), 1.0, 0.0, 0.0, 0.0, val)
-                    }
-                };
+                let (name, unit, color, maxv, minv, rms, a1, val) = lane_stats(doc, lane, k_main, value_mode, primary);
 
                 // Stats panel.
                 let badge = Rect::from_min_size(Pos2::new(rect.left() + 3.0, lane_top + 3.0), Vec2::new(10.0, 10.0));
@@ -215,7 +180,7 @@ impl App {
                     Align2::RIGHT_TOP,
                     format!("{}  {}", fmt(val), unit),
                     FontId::monospace(11.0),
-                    color.gamma_multiply(0.9f32),
+                    color.gamma_multiply(0.9),
                 );
                 if lane_h > 44.0 {
                     let mut yy = lane_top + 18.0;
@@ -264,11 +229,7 @@ impl App {
                 };
                 match lane {
                     Lane::Analog(i) => {
-                        let scale = if primary && !doc.osc.analog[*i].is_primary && doc.osc.analog[*i].secondary != 0.0 {
-                            doc.osc.analog[*i].primary / doc.osc.analog[*i].secondary
-                        } else {
-                            1.0
-                        };
+                        let scale = primary_scale(doc, *i, primary);
                         let pts = draw_wave(&|k| doc.sample(*i, k) * scale, doc.osc.sample_count(), &doc.osc.time);
                         painter.add(Shape::line(pts, Stroke::new(1.3f32, color)));
                     }
@@ -286,7 +247,6 @@ impl App {
                             s.len(),
                             &doc.osc.time,
                         );
-                        // step-style using the 0/1 mapping into [y0,y1b]
                         let step_pts: Vec<Pos2> = pts
                             .iter()
                             .map(|p| Pos2::new(p.x, if p.y < baseline { y1b } else { y0 }))
@@ -303,10 +263,45 @@ impl App {
             if (xe - xs).abs() > 1.0 {
                 painter.rect_filled(
                     Rect::from_min_max(Pos2::new(xs, rect.top()), Pos2::new(xe, plot_y1)),
-                     0.0f32,
+                    0.0f32,
                     Color32::from_rgba_unmultiplied(0xE0, 0x30, 0x30, 24),
                 );
             }
+
+            // Comments (anchored markers + labels).
+            for (ci, c) in doc.comments.iter().enumerate() {
+                let t = doc.osc.time.get(c.sample).copied().unwrap_or(0.0);
+                let x = x_of(t);
+                if x < plot_x0 - 1.0 || x > plot_x1 + 1.0 {
+                    continue;
+                }
+                painter.line_segment(
+                    [Pos2::new(x, rect.top()), Pos2::new(x, plot_y1)],
+                    Stroke::new(1.2f32, COMMENT_COLOR),
+                );
+                // flag
+                painter.rect_filled(
+                    Rect::from_min_size(Pos2::new(x, rect.top() + 1.0), Vec2::new(12.0, 12.0)),
+                    0.0f32,
+                    COMMENT_COLOR,
+                );
+                painter.text(
+                    Pos2::new(x + 6.0, rect.top() + 7.0),
+                    Align2::CENTER_CENTER,
+                    format!("{}", ci + 1),
+                    FontId::proportional(9.0),
+                    Color32::WHITE,
+                );
+                let short: String = c.text.lines().next().unwrap_or("").chars().take(24).collect();
+                painter.text(
+                    Pos2::new(x + 15.0, rect.top() + 2.0),
+                    Align2::LEFT_TOP,
+                    short,
+                    FontId::proportional(10.0),
+                    COMMENT_COLOR,
+                );
+            }
+
             // Cursors.
             painter.line_segment(
                 [Pos2::new(x_of(ta), rect.top()), Pos2::new(x_of(ta), plot_y1)],
@@ -319,11 +314,30 @@ impl App {
 
             // ---- interaction ----
             let shift = ui.input(|i| i.modifiers.shift);
-            if resp.clicked() {
+            // Double-click a stats panel -> channel properties.
+            if resp.double_clicked() {
+                if let Some(pos) = resp.interact_pointer_pos() {
+                    if pos.x < plot_x0 {
+                        let li = ((pos.y - rect.top()) / lane_h).floor() as usize;
+                        if let Some(Lane::Analog(i)) = lanes.get(li) {
+                            actions.push(Act::OpenProps(*i));
+                        }
+                    }
+                }
+            } else if resp.clicked() {
                 if let Some(pos) = resp.interact_pointer_pos() {
                     if pos.x >= plot_x0 {
-                        let k = nearest_sample(&doc.osc.time, t_of(pos.x));
-                        actions.push(if shift { Act::SetAux(k) } else { Act::SetMain(k) });
+                        // Click near a comment marker edits it; otherwise set a cursor.
+                        let hit = doc.comments.iter().position(|c| {
+                            let x = x_of(doc.osc.time.get(c.sample).copied().unwrap_or(0.0));
+                            (x - pos.x).abs() < 5.0
+                        });
+                        if let Some(idx) = hit {
+                            actions.push(Act::EditComment(idx));
+                        } else {
+                            let k = nearest_sample(&doc.osc.time, t_of(pos.x));
+                            actions.push(if shift { Act::SetAux(k) } else { Act::SetMain(k) });
+                        }
                     }
                 }
             }
@@ -334,20 +348,19 @@ impl App {
                     actions.push(Act::SetView(t0 + dt, t1 + dt));
                 }
             }
+            // Ctrl+wheel zooms time (plain wheel scrolls the view vertically).
             if let Some(pos) = resp.hover_pos() {
                 if pos.x >= plot_x0 {
-                    let scroll = ui.input(|i| i.raw_scroll_delta.y + i.smooth_scroll_delta.y);
-                    if scroll.abs() > 0.1 {
+                    let (zoom, scroll) = ui.input(|i| (i.modifiers.command || i.modifiers.ctrl, i.raw_scroll_delta.y + i.smooth_scroll_delta.y));
+                    if zoom && scroll.abs() > 0.1 {
                         let factor = (1.0 - scroll as f64 * 0.0015).clamp(0.2, 5.0);
                         let tc = t_of(pos.x);
-                        let n0 = tc - (tc - t0) * factor;
-                        let n1 = tc + (t1 - tc) * factor;
-                        actions.push(Act::SetView(n0, n1));
+                        actions.push(Act::SetView(tc - (tc - t0) * factor, tc + (t1 - tc) * factor));
                     }
                 }
             }
 
-            // Context menu — per-channel (on a lane) or time-axis (below plot).
+            // Context menu.
             let menu_pos = resp.hover_pos();
             resp.context_menu(|ui| {
                 let pos = menu_pos.unwrap_or(rect.center());
@@ -371,12 +384,22 @@ impl App {
                     }
                     return;
                 }
-                // which lane?
+                if pos.x >= plot_x0 {
+                    let samp = nearest_sample(&doc.osc.time, t_of(pos.x));
+                    if ui.button("Добавить комментарий здесь").clicked() {
+                        actions.push(Act::AddComment(samp));
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                }
                 let li = ((pos.y - rect.top()) / lane_h).floor() as usize;
-                let lane = lanes.get(li);
-                if let Some(Lane::Analog(i)) = lane {
+                if let Some(Lane::Analog(i)) = lanes.get(li) {
                     let i = *i;
                     ui.label(&doc.osc.analog[i].id);
+                    if ui.button("Свойства…").clicked() {
+                        actions.push(Act::OpenProps(i));
+                        ui.close_menu();
+                    }
                     if ui.button("Скрыть").clicked() {
                         actions.push(Act::Channel(i, ChanAct::Hide));
                         ui.close_menu();
@@ -433,7 +456,7 @@ impl App {
                     }
                 }
             });
-        }
+        });
 
         // Apply deferred actions.
         for a in actions {
@@ -458,6 +481,17 @@ impl App {
                         }
                     }
                 }
+                Act::AddComment(sample) => {
+                    self.comment_edit = Some(CommentEdit { sample, idx: None, text: String::new() });
+                }
+                Act::EditComment(idx) => {
+                    if let Some(d) = self.docs.get(ai) {
+                        if let Some(c) = d.comments.get(idx) {
+                            self.comment_edit = Some(CommentEdit { sample: c.sample, idx: Some(idx), text: c.text.clone() });
+                        }
+                    }
+                }
+                Act::OpenProps(i) => self.props_channel = Some(i),
                 Act::Channel(i, act) => {
                     if let Some(d) = self.docs.get_mut(ai) {
                         if let Some(c) = d.chans.get_mut(i) {
@@ -494,7 +528,6 @@ impl App {
                 format!("{:.1} {}", u.from_secs(t), u.label())
             }
         };
-        // horizontal визиры: the main-cursor value of the first visible channel.
         let first = d.chans.iter().position(|c| c.visible);
         let hv = |k: usize| match first {
             Some(i) => format!("{} {}", fmt(d.sample(i, k)), d.osc.analog[i].unit),
@@ -512,6 +545,66 @@ impl App {
             hv(d.aux_cursor),
             empty(),
         ]
+    }
+}
+
+fn primary_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
+    let ch = &doc.osc.analog[i];
+    if primary && !ch.is_primary && ch.secondary != 0.0 {
+        ch.primary / ch.secondary
+    } else {
+        1.0
+    }
+}
+
+/// Compute (name, unit, color, max, min, rms, a1, value@cursor) for a lane.
+fn lane_stats(
+    doc: &crate::app::Doc,
+    lane: &Lane,
+    k_main: usize,
+    value_mode: ValueMode,
+    primary: bool,
+) -> (String, String, Color32, f64, f64, f64, f64, f64) {
+    match lane {
+        Lane::Analog(i) => {
+            let ch = &doc.osc.analog[*i];
+            let scale = primary_scale(doc, *i, primary);
+            let n = doc.osc.sample_count();
+            let mut mx = f64::MIN;
+            let mut mn = f64::MAX;
+            for k in 0..n {
+                let v = doc.sample(*i, k) * scale;
+                mx = mx.max(v);
+                mn = mn.min(v);
+            }
+            let val = match value_mode {
+                ValueMode::Instant => doc.sample(*i, k_main) * scale,
+                ValueMode::Rms => doc.rms_at(*i, k_main) * scale,
+                ValueMode::FirstHarmonic => doc.harmonic_at(*i, k_main) * scale,
+            };
+            (
+                ch.id.clone(),
+                ch.unit.clone(),
+                doc.chans[*i].color,
+                mx,
+                mn,
+                doc.rms_at(*i, k_main) * scale,
+                doc.harmonic_at(*i, k_main) * scale,
+                val,
+            )
+        }
+        Lane::Computed(i) => {
+            let c = &doc.computed[*i];
+            let mx = c.samples.iter().copied().fold(f64::MIN, f64::max);
+            let mn = c.samples.iter().copied().fold(f64::MAX, f64::min);
+            let val = c.samples.get(k_main).copied().unwrap_or(0.0);
+            (c.name.clone(), String::new(), c.color, mx, mn, 0.0, 0.0, val)
+        }
+        Lane::Digital(i) => {
+            let d = &doc.osc.digital[*i];
+            let val = if d.samples.get(k_main).copied().unwrap_or(false) { 1.0 } else { 0.0 };
+            (d.id.clone(), String::new(), Color32::from_rgb(0x44, 0x44, 0xAA), 1.0, 0.0, 0.0, 0.0, val)
+        }
     }
 }
 

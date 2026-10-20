@@ -6,6 +6,8 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod dialogs;
+mod icons;
 mod lanes;
 mod ribbon;
 mod theme;
@@ -141,5 +143,6 @@ impl eframe::App for App {
             .show(ctx, |ui| self.status_bar(ui));
 
         self.render_tab(ctx);
+        self.dialogs_ui(ctx);
     }
 }

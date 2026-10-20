@@ -106,6 +106,22 @@ pub struct Computed {
     pub color: egui::Color32,
 }
 
+/// An on-waveform annotation anchored to a sample index.
+#[derive(Debug, Clone)]
+pub struct Comment {
+    pub sample: usize,
+    pub text: String,
+}
+
+/// State of the comment editor popup.
+#[derive(Debug, Clone)]
+pub struct CommentEdit {
+    pub sample: usize,
+    /// Index into the document's `comments` if editing an existing one.
+    pub idx: Option<usize>,
+    pub text: String,
+}
+
 /// One open oscillogram document.
 pub struct Doc {
     pub osc: Oscillogram,
@@ -115,6 +131,7 @@ pub struct Doc {
     pub aux_cursor: usize,
     pub chans: Vec<ChanView>,
     pub computed: Vec<Computed>,
+    pub comments: Vec<Comment>,
     /// Time-axis view window in seconds `[t0, t1]` (shared across lanes).
     pub view_t0: f64,
     pub view_t1: f64,
@@ -158,6 +175,7 @@ impl Doc {
             aux_cursor: count / 4,
             chans,
             computed: Vec::new(),
+            comments: Vec::new(),
             view_t0: 0.0,
             view_t1: if t_last > 0.0 { t_last } else { 1.0 },
             rms,
@@ -276,6 +294,11 @@ pub struct App {
     // omp
     pub line: LineParams,
 
+    // dialogs
+    pub show_about: bool,
+    pub props_channel: Option<usize>,
+    pub comment_edit: Option<CommentEdit>,
+
     pub status: String,
 }
 
@@ -315,6 +338,9 @@ impl App {
                 x1_per_km: 0.4,
                 length_km: 50.0,
             },
+            show_about: false,
+            props_channel: None,
+            comment_edit: None,
             status: "Готово".to_string(),
         };
         app.ensure_block_state();

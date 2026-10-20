@@ -4,6 +4,7 @@
 //! Осциллограмма; ОМП tab: Параметры · Анализ). See `notes/UI_SPEC.md`.
 
 use crate::app::{App, Command, RibbonTab, ValueMode, View};
+use crate::icons::{self, Icon};
 use crate::theme::Skin;
 use eframe::egui::{self, Color32, RichText};
 
@@ -43,27 +44,24 @@ impl App {
                 }
             });
             ui.add_space(4.0);
-            for (glyph, tip, cmd) in [
-                ("Откр", "Открыть  (Ctrl+O)", Command::Open),
-                ("Сохр", "Сохранить  (Ctrl+S)", Command::Save),
-                ("Печ", "Печать  (Ctrl+P)", Command::Print),
-                ("←", "Отмена  (Ctrl+Z)", Command::Undo),
-                ("→", "Возврат  (Ctrl+Y)", Command::Redo),
+            for (icon, tip, cmd) in [
+                (Icon::Open, "Открыть  (Ctrl+O)", Command::Open),
+                (Icon::Save, "Сохранить  (Ctrl+S)", Command::Save),
+                (Icon::Print, "Печать  (Ctrl+P)", Command::Print),
+                (Icon::Undo, "Отмена  (Ctrl+Z)", Command::Undo),
+                (Icon::Redo, "Возврат  (Ctrl+Y)", Command::Redo),
             ] {
-                if qat_button(ui, glyph).on_hover_text(tip).clicked() {
+                if qat_button(ui, p, icon).on_hover_text(tip).clicked() {
                     cmds.push(cmd);
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Help
-                if ui
-                    .add(egui::Button::new(RichText::new("?").color(p.accent).strong()).frame(false))
+                // Help / About
+                if qat_button(ui, p, Icon::Help)
                     .on_hover_text("О программе Fast View 5")
                     .clicked()
                 {
-                    self.status =
-                        "Fast View 5 — просмотр и анализ осциллограмм COMTRADE. © НТЦ «Механотроника»."
-                            .into();
+                    self.show_about = true;
                 }
                 // Style switcher (MENU 200)
                 egui::ComboBox::from_id_salt("skincombo")
@@ -115,47 +113,47 @@ impl App {
         let p = self.skin.palette();
         // Объединение
         ribbon_group(ui, p, "Объединение", |ui| {
-            if big_button(ui, p, "▣", "Вставить").clicked() {
+            if big_button(ui, p, Icon::Paste, "Вставить").clicked() {
                 cmds.push(Command::Paste);
             }
             ui.vertical(|ui| {
-                if small_button(ui, p, "Копировать").clicked() {
+                if small_button(ui, p, Icon::Copy, "Копировать").clicked() {
                     cmds.push(Command::Copy);
                 }
-                if small_button(ui, p, "← Отмена").clicked() {
+                if small_button(ui, p, Icon::Undo, "Отмена").clicked() {
                     cmds.push(Command::Undo);
                 }
-                if small_button(ui, p, "→ Возврат").clicked() {
+                if small_button(ui, p, Icon::Redo, "Возврат").clicked() {
                     cmds.push(Command::Redo);
                 }
             });
         });
         // Диаграммы
         ribbon_group(ui, p, "Диаграммы", |ui| {
-            for (glyph, label, v) in [
-                ("∑", "Частотная", View::Frequency),
-                ("→", "Векторная", View::Vector),
-                ("○", "Круговая", View::Circle),
-                ("±", "Диффе-\nренциальная", View::Differential),
+            for (icon, label, v) in [
+                (Icon::Freq, "Частотная", View::Frequency),
+                (Icon::Vector, "Векторная", View::Vector),
+                (Icon::Circle, "Круговая", View::Circle),
+                (Icon::Diff, "Диффе-\nренциальная", View::Differential),
             ] {
-                if big_button_sel(ui, p, glyph, label, self.view == v).clicked() {
+                if big_button_sel(ui, p, icon, label, self.view == v).clicked() {
                     cmds.push(Command::Show(v));
                 }
             }
         });
         // Видимость
         ribbon_group(ui, p, "Видимость", |ui| {
-            if big_button(ui, p, "≡", "Каналы").clicked() {
+            if big_button(ui, p, Icon::Channels, "Каналы").clicked() {
                 cmds.push(Command::Show(View::Oscillogram));
             }
             ui.vertical(|ui| {
-                if small_button(ui, p, "Показать все").clicked() {
+                if small_button(ui, p, Icon::ShowAll, "Показать все").clicked() {
                     cmds.push(Command::ShowAllChannels(true));
                 }
-                if small_button(ui, p, "Скрыть все").clicked() {
+                if small_button(ui, p, Icon::HideAll, "Скрыть все").clicked() {
                     cmds.push(Command::ShowAllChannels(false));
                 }
-                if small_button(ui, p, "Вся осцил.").clicked() {
+                if small_button(ui, p, Icon::FitTime, "Вся осцил.").clicked() {
                     cmds.push(Command::FitTime);
                 }
             });
@@ -174,23 +172,23 @@ impl App {
                 }
             });
             ui.vertical(|ui| {
-                if small_button(ui, p, "Инвертировать").clicked() {
+                if small_button(ui, p, Icon::Invert, "Инвертировать").clicked() {
                     cmds.push(Command::InvertVisible);
                 }
-                if small_button(ui, p, "Удал. постоянную").clicked() {
+                if small_button(ui, p, Icon::RemoveDc, "Удал. постоянную").clicked() {
                     cmds.push(Command::RemoveDcVisible);
                 }
-                if small_toggle(ui, p, "Первичные знач.", self.primary_values) {
+                if small_button_sel(ui, p, Icon::Primary, "Первичные знач.", self.primary_values).clicked() {
                     cmds.push(Command::SetPrimaryValues(!self.primary_values));
                 }
             });
-            if big_button_sel(ui, p, "≈", "Быстрый\nанализ", self.view == View::Analysis).clicked() {
+            if big_button_sel(ui, p, Icon::Analysis, "Быстрый\nанализ", self.view == View::Analysis).clicked() {
                 cmds.push(Command::Show(View::Analysis));
             }
         });
         // Осциллограмма
         ribbon_group(ui, p, "Осциллограмма", |ui| {
-            if big_button_sel(ui, p, "~", "Осцилло-\nграмма", self.view == View::Oscillogram).clicked() {
+            if big_button_sel(ui, p, Icon::Wave, "Осцилло-\nграмма", self.view == View::Oscillogram).clicked() {
                 cmds.push(Command::Show(View::Oscillogram));
             }
         });
@@ -199,10 +197,10 @@ impl App {
     fn ribbon_omp(&mut self, ui: &mut egui::Ui, cmds: &mut Vec<Command>) {
         let p = self.skin.palette();
         ribbon_group(ui, p, "ОМП", |ui| {
-            if big_button(ui, p, "◆", "Параметры").clicked() {
+            if big_button(ui, p, Icon::Params, "Параметры").clicked() {
                 cmds.push(Command::Show(View::Omp));
             }
-            if big_button_sel(ui, p, "▲", "Анализ", self.view == View::Omp).clicked() {
+            if big_button_sel(ui, p, Icon::OmpRun, "Анализ", self.view == View::Omp).clicked() {
                 cmds.push(Command::Show(View::Omp));
             }
         });
@@ -256,8 +254,15 @@ fn draw_logo(ui: &mut egui::Ui, h: f32, color: Color32) {
     }
 }
 
-fn qat_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
-    ui.add(egui::Button::new(RichText::new(glyph).size(11.5)).min_size(egui::vec2(0.0, 22.0)))
+fn qat_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(24.0, 22.0), egui::Sense::click());
+    let painter = ui.painter();
+    if resp.hovered() {
+        painter.rect(rect, 3.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
+    }
+    let box_ = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0));
+    icons::paint(painter, box_, icon, p.accent);
+    resp
 }
 
 fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, active_bg: Color32, text: Color32) -> egui::Response {
@@ -309,11 +314,11 @@ fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, con
     ui.add_space(6.0);
 }
 
-fn big_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: &str, label: &str) -> egui::Response {
-    big_button_sel(ui, p, glyph, label, false)
+fn big_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str) -> egui::Response {
+    big_button_sel(ui, p, icon, label, false)
 }
 
-fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: &str, label: &str, selected: bool) -> egui::Response {
+fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str, selected: bool) -> egui::Response {
     let size = egui::vec2(58.0, 64.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     let painter = ui.painter();
@@ -322,13 +327,8 @@ fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: &str, labe
         let fill = if selected { p.accent_soft } else { p.accent_soft.gamma_multiply(0.5f32) };
         painter.rect(rect, 3.0f32, fill, egui::Stroke::new(1.0f32, p.accent_border));
     }
-    painter.text(
-        egui::pos2(rect.center().x, rect.top() + 20.0),
-        egui::Align2::CENTER_CENTER,
-        glyph,
-        egui::FontId::proportional(22.0),
-        p.accent,
-    );
+    let box_ = egui::Rect::from_center_size(egui::pos2(rect.center().x, rect.top() + 20.0), egui::vec2(28.0, 28.0));
+    icons::paint(painter, box_, icon, p.accent);
     for (i, line) in label.split('\n').enumerate() {
         painter.text(
             egui::pos2(rect.center().x, rect.top() + 40.0 + i as f32 * 11.0),
@@ -341,13 +341,28 @@ fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: &str, labe
     resp
 }
 
-fn small_button(ui: &mut egui::Ui, p: crate::theme::Palette, label: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(RichText::new(label).size(11.0).color(p.text))
-            .frame(true)
-            .fill(Color32::TRANSPARENT)
-            .min_size(egui::vec2(118.0, 19.0)),
-    )
+fn small_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str) -> egui::Response {
+    small_button_sel(ui, p, icon, label, false)
+}
+
+fn small_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str, selected: bool) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(126.0, 19.0), egui::Sense::click());
+    let painter = ui.painter();
+    if selected {
+        painter.rect(rect, 2.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
+    } else if resp.hovered() {
+        painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
+    }
+    let box_ = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.top() + 2.5), egui::vec2(14.0, 14.0));
+    icons::paint(painter, box_, icon, p.accent);
+    painter.text(
+        egui::pos2(rect.left() + 22.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(11.0),
+        p.text,
+    );
+    resp
 }
 
 /// A small latching toggle (shows a check when on).

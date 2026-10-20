@@ -20,15 +20,23 @@ The interface tracks the original closely, because the parts that define it are
 
 - **Office-2007 ribbon** — quick-access toolbar (Файл menu + open/save/print/
   undo/redo), tabs *Главная* / *ОМП*, and the groups *Объединение · Диаграммы ·
-  Видимость · Вычисления · Осциллограмма* (and *ОМП*), with the **Стиль** skin
-  switcher (Office-2007 Голубой/Чёрный/Серебристый/Зеленовато-голубой).
+  Видимость · Вычисления · Осциллограмма* (and *ОМП*), with original **vector
+  icons** (clean-room line-art, not the proprietary bitmaps) and the **Стиль**
+  skin switcher (Office-2007 Голубой/Чёрный/Серебристый/Зеленовато-голубой).
 - **Exact keybinds** — the original's accelerator table verbatim: Ctrl+O/S/P
   (open/save/print), Ctrl+C/V (copy/paste), Ctrl+Z/Y (undo/redo). Locked in by a
   test against the extracted table.
 - **Lane-based oscillogram** — the real primary view: each channel is a
   horizontal strip with a stats panel (name badge · value@cursor · Max/Min/СКЗ/
   A1), alternating lane colours, two vertical визиры with a shaded selection
-  between them, a shared time axis, and status-bar readouts.
+  between them, a shared pan/zoom time axis (Ctrl+wheel), vertical scroll for
+  many channels, and status-bar readouts.
+- **On-waveform comments** — add/edit/delete annotations anchored to a sample
+  (right-click → *Добавить комментарий*; click a marker to edit), drawn as the
+  original's flagged markers.
+- **Dialogs** — channel **Свойства** (double-click a lane: colour, invert,
+  remove-DC, per-diagram visibility), the comment editor, and an **About** box
+  (the Механотроника chevron, drawn clean-room).
 - **Real context menus** — per-channel (colour, invert, remove-DC, value mode,
   show-on-diagram) and time-axis (мкс/мс/с/отсчёты, grid), reproduced from the
   binary's menu resources with their command ids.
@@ -120,8 +128,10 @@ crates/
   fastview-gui/ egui/eframe desktop app (Linux + Windows + macOS)
     app.rs        shared state, documents, commands, keybinds, CSV export
     theme.rs      Office-2007 skins (Голубой/Чёрный/Серебристый/Зеленовато-голубой)
+    icons.rs      clean-room vector ribbon icons (no proprietary bitmaps)
     ribbon.rs     the ribbon: QAT, tabs, command groups, Стиль switcher
-    lanes.rs      lane-based oscillogram: stats panels, cursors, context menus
+    lanes.rs      lane-based oscillogram: stats, cursors, comments, context menus
+    dialogs.rs    About, channel properties, comment editor
     views.rs      круговая/дифференциальная/векторная/частотная/анализ/ОМП
 assets/FastView.fvb        the real characteristic library (UTF-8)
 assets/demo/demo_fault.*   bundled synthetic COMTRADE A-ground fault record
@@ -190,13 +200,11 @@ planned polish:
   verified. The tool loads **COMTRADE**, which is precisely what the original's
   `OscillHelper::ConvertSto2Comtrade` emits. Import the COMTRADE export.
 - **Pixel-exact native chrome & print-preview** — the ribbon is a faithful egui
-  rendering of the Office-2007 theme with the same structure, skins, keybinds and
-  menus, not a byte-identical GDI clone (which would require native Win32/MFC and
-  drop Linux/macOS). Export (CSV/image) replaces the Windows print spooler.
-- **Ribbon button artwork** — the real 16/32-px toolbar glyphs are extracted
-  (`notes/ui/png/`); the ribbon currently uses clean vector glyphs and wires the
-  ripped icons in as a follow-on. Taller lanes / vertical scroll would surface the
-  full Max/Min/СКЗ/A1 stats on every channel at once.
+  rendering of the Office-2007 theme with the same structure, skins, keybinds,
+  menus and icons, not a byte-identical GDI clone (which would require native
+  Win32/MFC and drop Linux/macOS). Export (CSV/image) replaces the print spooler.
+  The ribbon icons are **clean-room line-art** that evoke the originals; the
+  proprietary toolbar bitmaps are deliberately not embedded (kept local).
 
 ## Legal
 
