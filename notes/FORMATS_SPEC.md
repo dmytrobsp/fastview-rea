@@ -45,27 +45,32 @@ Distilled from the decompiled `FastView.exe`; addresses as evidence.
   then the raw DAT bytes.
 
 ## `.osc` (OSC2) reader (`0x4524b0` → `0x4526a0`, samples `0x453010`)
-- 128-byte blocks, big-endian numbers.
-- Block 0: byte0 major, byte1 minor version (device name string 3063
-  "OSC Осциллограф. Версия %i.%i"); byte2 = header block count H; byte 0x7D ≠ 0
-  → K = 2 calibration blocks else 1. Version 2.3/2.4/2.5/2.8 → gain 1.0128,
-  2.6/2.7 → 1.00259, 2.9 → 1.014065 (the `fourie:` harmonic-1 gain, L6).
-- K calibration blocks (8 analog channels each): f32 F1[8] @0, i16 S1[8] @0x20,
-  f32 F2[8] @0x30, i16 S2[8] @0x50; a = F1/(F2·3276.8) (1 if F2 = 0),
-  b = −(S1+S2)·a; non-finite → a = 1, b = 0.
-- H−K−1 text blocks (ANSI, split on CR/LF): first line chars 0..3 = tag, 4..6 =
-  count c. `nnA` → next c lines analog `idx,name,phase,unit` or
-  `idx,name,phase,ccbm,unit` (first field ignored); `nnD` → digital
-  `idx,name[,ph,ccbm],normal`; empty name → "Резерв."; `nnF,<N>` = samples per
-  data block (mandatory). Other tag / missing F → error 330.
-- Info block: i16 @2 = max data blocks; i16 @0x0E = pre-trigger blocks
-  (pre-trigger samples = value·N); BCD @5..0xB = ms/10, s, min, h, day, month,
-  year−2000 (trigger time); start = trigger − (pretrig·N − 1)/Fs; f32 @0x40+4i
-  = ratio of analog channel i, outside (0.1, 1e5) → 1.
-- Data blocks (to EOF or the block limit): N samples of nA i16 then nD/16 u16
-  words (digital bit b of word w = channel 16w+b, LSB first);
-  value = raw·ratio·a + b. i16 @0x7C = timing code: Fs = round(1e6/(code·
-  0.03125·M)), M = analog channels with unit V/В/A/А/empty; rate changes
-  between blocks become rate segments. Defaults 2400 Hz, 50 Hz.
-- File type "ASCII", rev_year empty (cannot be saved as .cff); `<base>.set`
-  loaded if present.
+
+All numbers big-endian. 128-byte blocks, in order:
+| block | offset | contents |
+|---|---|---|
+| 0 | 0 | byte0 major, byte1 minor version, byte2 = H (header blocks incl. block 0, calibration and text blocks), byte 0x7D ≠ 0 → K = 2 calibration blocks else 1 |
+| 1..K | 128·i | calibration: f32 F1[8] @0, i16 S1[8] @0x20, f32 F2[8] @0x30, i16 S2[8] @0x50; analog channel i → block i/8, slot i%8; a = F1/(F2·3276.8) (1 if F2 = 0), b = −(S1+S2)·a, non-finite → a = 1, b = 0 |
+| K+1..H−1 | 128·i | text (ANSI, CR/LF lines): tag line chars 0..3 `nnA`/`nnD`/`nnF`, count at chars 4..6; `nnA` → c analog lines `idx,name,phase,unit` or `idx,name,phase,ccbm,unit`; `nnD` → digital `idx,name[,ph,ccbm],normal`; empty name → "Резерв."; `nnF,<N>` samples per data block (mandatory); other tag / no F → error 330 |
+| H | 128·H | info: i16 @2 max data blocks; i16 @0x0E pre-trigger blocks; BCD @5..0xB = ms/10, s, min, h, day, month, year−2000 (trigger); f32 @0x40+4i ratio (0.1 < r < 1e5 else 1) → primary rating, not used in values |
+| H+1.. | 128·(H+1+j) | data, fixed 128 bytes, until the max count or EOF (a partial last block ignored): N sample records from offset 0, each nA i16 then ⌊nD/16⌋ u16 (bit b of word w → digital 16w+b, LSB first); i16 timing code @0x7C |
+
+- Value = raw × unit multiplier (`0x422b10`: micro "мк"/"mk"/"u"/"µ" 1e-6, milli
+  1e-3, full table NOT DETERMINED) × a + b.
+- Block rate Fs = round(1e6/(code·0.03125·M)), M = analog channels whose unit is
+  V/В/A/А/empty; < 1 → keep the current rate. The first block's rate is snapped
+  (`0x453db0`, fnom 50): [14400,22000]→19200, [8000,14400]→9600, [5600,8000]→6400,
+  [4000,5600]→4800, [2800,4000]→3200, [2000,2800]→2400, [1400,2000]→1600,
+  [1000,1400]→1200, [700,1000]→800, [500,700]→600, [350,500]→400, [250,350]→300,
+  [160,250]→200; fnom 60: [17280,26000]→23040, [9600,17280]→11520,
+  [6720,9600]→7680, [4550,6720]→5760, [3110,4550]→3340, [2400,3110]→2880,
+  [1680,2400]→1920, [1200,1680]→1440, [840,1200]→960, [600,840]→720,
+  [420,600]→480, [300,420]→360, [200,300]→240; otherwise round(Fs/f)·round(f).
+  That is the document rate (default 2400, fnom 50). Later blocks are not
+  snapped; a change appends a rate segment. Per-sample time (µs, integer) grows
+  by ⌊1e6/current rate⌋.
+- Start = trigger − (pretrig·N − 1)·⌊1e7/round(Fs)⌋ (100-ns units).
+- Version 2.3/2.4/2.5/2.8 → gain 1.0128, 2.6/2.7 → 1.00259, 2.9 → 1.014065: the
+  record's harmonic-1 gain used by `fourie:` (L6).
+- Device name string 3063 "OSC Осциллограф. Версия %i.%i"; file type "ASCII";
+  revision year empty (cannot be saved as .cff).
