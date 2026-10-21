@@ -1259,7 +1259,7 @@ impl App {
             return;
         }
         let sections = self.omp_sections.clone();
-        let trace = match self.omp_method {
+        let mut trace = match self.omp_method {
             OmpMethod::Grounded | OmpMethod::Isolated => {
                 let neutral = if self.omp_method == OmpMethod::Grounded {
                     NeutralMode::Grounded
@@ -1299,8 +1299,8 @@ impl App {
         };
         let result = match self.omp_method {
             OmpMethod::DoubleEnded => fvb_core::omp::locate_double(&trace, &sections, p),
-            OmpMethod::Grounded => fvb_core::omp::locate(&trace, NeutralMode::Grounded, &sections, p),
-            OmpMethod::Isolated => fvb_core::omp::locate(&trace, NeutralMode::Isolated, &sections, p),
+            OmpMethod::Grounded => fvb_core::omp::locate(&mut trace, NeutralMode::Grounded, &sections, p),
+            OmpMethod::Isolated => fvb_core::omp::locate(&mut trace, NeutralMode::Isolated, &sections, p),
         };
         let idx0 = self.docs.len() + 3;
         let d = &mut self.docs[di];

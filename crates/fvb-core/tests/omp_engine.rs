@@ -187,8 +187,8 @@ fn located_earth_fault_text() {
     let mut sec = section(60.0, 0.12, 0.40, 0.30, 1.20);
     sec.supports = 120;
     let sec = [sec];
-    let t = grounded_trace(&sec, Complex64::new(800.0, -300.0), 23.0);
-    let r = locate(&t, NeutralMode::Grounded, &sec, P);
+    let mut t = grounded_trace(&sec, Complex64::new(800.0, -300.0), 23.0);
+    let r = locate(&mut t, NeutralMode::Grounded, &sec, P);
     assert_eq!(r.window.1, r.window.0 + P - 1);
     assert!((r.distance - 23.0).abs() < 1e-6);
     assert!(r.e && r.phases == [true, false, false]);
@@ -206,8 +206,8 @@ fn located_earth_fault_text() {
 #[test]
 fn adjacent_line_text() {
     let sec = [section(10.0, 0.12, 0.40, 0.30, 1.20)];
-    let t = grounded_trace(&sec, Complex64::new(800.0, -300.0), 25.0);
-    let r = locate(&t, NeutralMode::Grounded, &sec, P);
+    let mut t = grounded_trace(&sec, Complex64::new(800.0, -300.0), 25.0);
+    let r = locate(&mut t, NeutralMode::Grounded, &sec, P);
     assert_eq!(r.text, "    1-х фазное КЗ: фазы A на смежной линии.");
     let quiet = Trace { dist: vec![0.0; 50], e: vec![false; 50], f2: vec![false; 50], f3: vec![false; 50],
         pa: vec![false; 50], pb: vec![false; 50], pc: vec![false; 50], inst: vec![0.0; 50], ..Default::default() };
@@ -276,4 +276,20 @@ fn double_ended_internal_fault() {
     let r = locate_double(&t, &sec, P);
     assert_eq!(r.distance, 0.0);
     assert!(r.text.ends_with(" на смежной линии."), "{}", r.text);
+}
+
+/// With a tap on the last section θ is re-estimated once (0x49adc0); without
+/// taps it stays 0.
+#[test]
+fn theta_refinement_only_with_taps_on_last_section() {
+    let plain = [section(60.0, 0.12, 0.40, 0.30, 1.20)];
+    let mut t = grounded_trace(&plain, Complex64::new(800.0, -300.0), 23.0);
+    locate(&mut t, NeutralMode::Grounded, &plain, P);
+    assert_eq!(t.theta, 0.0);
+    let mut tapped = plain.clone();
+    tapped[0].taps.push(Tap { r0: 30.0, x0: 90.0 });
+    let mut t = grounded_trace(&tapped, Complex64::new(800.0, -300.0), 23.0);
+    let r = locate(&mut t, NeutralMode::Grounded, &tapped, P);
+    assert!(t.theta != 0.0 && t.theta.is_finite(), "θ = {}", t.theta);
+    assert!(r.distance.is_finite());
 }

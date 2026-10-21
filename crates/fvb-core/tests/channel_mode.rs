@@ -170,3 +170,19 @@ fn channel_helpers() {
     assert!(close(z("grstriangleic:(ia, ib, ic, 5)").1.unwrap(), a));
     assert!((at("tormsubcur:(ia, ib, 2)", 0).unwrap() - (b - a).norm() / 2.0).abs() < 1e-12);
 }
+
+/// Winding-group positive/negative-sequence transform (0x41d7a7).
+#[test]
+fn grspos_variants() {
+    let (a, b, c) = (Mock.phasor(0, 0), Mock.phasor(1, 0), Mock.phasor(2, 0));
+    // Balanced positive sequence, N = 0, no zero sequence: phases A, B, C back.
+    assert!(close(z("grsposlia:(ia, ib, ic, 0, 0)").1.unwrap(), a));
+    assert!(close(z("grsposlib:(ia, ib, ic, 0, 0)").1.unwrap(), b));
+    assert!(close(z("grsposlic:(ia, ib, ic, 0, 0)").1.unwrap(), c));
+    // N = 1 rotates the positive sequence by +30°.
+    let rot = Complex64::from_polar(1.0, 30f64.to_radians());
+    assert!(close(z("grsposlia:(ia, ib, ic, 1, 0)").1.unwrap(), a * rot));
+    // The zero-sequence factor is rounded to an integer: here U0 = 0 anyway,
+    // so only the scalar slot shows it: n0 · (Σ samples)/3.
+    assert!((at("grsposlia:(ia, ib, ic, 0, 2)", 3).unwrap() - 2.0 * (3.0 + 103.0 + 203.0) / 3.0).abs() < 1e-9);
+}

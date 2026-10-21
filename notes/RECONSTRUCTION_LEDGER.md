@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 105 pass)
+- `cargo test --workspace`   (currently 108 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 105 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 108 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -132,13 +132,13 @@ decompilation (pending, listed below).
 
 | Engine | Original | Our module | Status |
 |---|---|---|---|
-| Formula token table | `FUN_00401000` @0x401000 | `expr.rs` | ✅ L1/L6 (all but `grspos*`) |
+| Formula token table | `FUN_00401000` @0x401000 | `expr.rs` | ✅ L1/L6 |
 | Formula evaluator (tokenizer/grammar/values) | `FUN_00418c40`, `0x419950`..`0x41f960` | `expr.rs` | ✅ L2 (numeric) |
 | `.fvb` loader / evaluation / settings | `FUN_0040c7e0`, `FUN_00409260`, `FUN_00407750` | `parse.rs`/`model.rs`/`geom.rs` | ✅ L5 |
 | Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ✅ L4 |
 | DFT / phasors / RMS | `FUN_00426fc0` & channel methods | `signal.rs` | ✅ L6 (freq-channel variant ❌) |
 | Symmetric components / impedances | Calculator `i1: i2: 3i0: zl: zf:` | `signal.rs`/`analysis.rs` | 🟡 L6 (view code not located) |
-| ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | ✅ L7 (θ-tap refinement, parallel-line UI ❌) |
+| ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | ✅ L7 (parallel-line UI ❌) |
 | COMTRADE reader/writer | `0x450a30`, `.cff` `0x44fe30`/`0x44d0f0`, `.osc` `0x4524b0` | `comtrade.rs` | 🟡 L3 (`.cfg` ✅ `.cff` ✅ `.osc` read ✅, `.osc` write ❌) |
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
@@ -300,7 +300,7 @@ Residual / honest:
 
 ---
 
-## L6 — Signal engine (channel methods)  ·  ✅ (grspos*, freq-channel DFT, 0x46 retag ❌)
+## L6 — Signal engine (channel methods)  ·  ✅ (freq-channel DFT, 0x46 retag ❌)
 
 Evidence (subagent objdump/decompile; all double constants read from bytes).
 OscillHelper.dll exports only `ComtradeConverter` — no signal code there.
@@ -384,13 +384,16 @@ tormsubcur: tormmaxcur:` implemented, with the channel ratios k/r/s from
 primary/secondary and the show-primary switch (`OscChannels`, samples × k).
 Pinned by `tests/channel_mode.rs` (10).
 
-Residual: `grspos*` (constants/exponents NOT DETERMINED — returns 0x431);
+`grspos a/b/c` implemented (0x41d7a7: a = −½+j√3/2, P/Q = e^{±j30°}, binary-
+exponentiation integer powers of round(N), integer-rounded zero-sequence factor,
+per-variant a/a² multipliers, forced flags 3 at exit 0x41f1f7, ✔ exit read).
+Residual:
 the computed-channel name guard (error 0x1d4, text unknown); the 0x46 retag
 (only differs for primary-stored data); a computed channel's complex series is
 not kept (only its scalar samples).
 ---
 
-## L7 — ОМП (fault location)  ·  ✅ engine + GUI (θ tap refinement, parallel-line UI ❌)
+## L7 — ОМП (fault location)  ·  ✅ engine + GUI (parallel-line UI ❌)
 
 Evidence (subagent decompile; main `0x4a00b0`). Our `omp.rs` (single
 cursor-instant phasor, plain reactance / textbook two-terminal formula) is
@@ -485,8 +488,10 @@ strings 3006–3008/3016/3020/3025/3026 read from the PE), `locate`;
 `double_ended` (two-end detection, loop current, U0/I0 or U2/I2 propagation
 from both ends with taps and mutual coupling, |U| matching search) +
 `locate_double` (direction check zeroes all distances). Pinned by
-`tests/omp_engine.rs` (11). Residual: θ tap re-estimation (`0x49adc0`/
-`0x49bd40`) not reproduced; SI prefixes assume the Russian UI (Cyrillic);
+`tests/omp_engine.rs` (11). θ tap re-estimation implemented (`0x49adc0`: A_k zero-sequence carry, B_k
+nodal ladder `0x49bd40` solved with the original's zero-pivot elimination
+`0x477f70`, incl. the boundary bug using the whole remaining length; one
+repeat pass when the last section has taps). Residual: SI prefixes assume the Russian UI (Cyrillic);
 which signal feeds a parallel line's current NOT DETERMINED.
 GUI (done): method 1/2/4, Inom per substation, editable sections with taps,
 "Рассчитать" runs the engine on the role-mapped channels (isolated uses line

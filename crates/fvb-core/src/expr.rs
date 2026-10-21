@@ -1046,6 +1046,49 @@ fn channel_func(name: &'static str, a: &[Value], env: Env) -> Result<Value, Expr
             let mx = a.iter().map(|e| (e.z() * r(*e)).norm()).fold(f64::NEG_INFINITY, f64::max);
             Value { v: mx / r(x), f: 3, ch: None, ..x }
         }
+        // 0x41d7a7: symmetrical components rotated by the winding group.
+        "grsposlia:" | "grsposlib:" | "grsposlic:" => {
+            for e in &a[..3] {
+                check(*e, name)?;
+            }
+            let op = Complex64::new(-0.5, rt3 * 0.5);
+            let (p30, q30) = (Complex64::new(rt3 * 0.5, 0.5), Complex64::new(rt3 * 0.5, -0.5));
+            let (e0, e1, e2) = (a[0].z(), a[1].z(), a[2].z());
+            let u1 = (e0 + e1 * op + (e2 * op) * op) / 3.0;
+            let u2 = (e0 + (e1 * op) * op + e2 * op) / 3.0;
+            let u0 = (e0 + e1 + e2) / 3.0;
+            let n = round_fv(a[3].v) as i32;
+            let n0 = round_fv(a[4].v);
+            let t1 = u1 * int_pow(p30, n);
+            let t2 = u2 * int_pow(q30, n);
+            let r = match name {
+                "grsposlia:" => t1 + t2 + u0 * n0,
+                "grsposlib:" => t1 * op * op + t2 * op + u0 * n0,
+                _ => t1 * op + t2 * op * op + u0 * n0,
+            };
+            // Complex products zero the scalar slot; only n0·U0 keeps one.
+            let v = n0 * (a[0].v + a[1].v + a[2].v) / 3.0;
+            let sc = safe(sr(a[0]));
+            lin(v / sc, r / sc, 3)
+        }
         _ => return Err(ExprError::NeedsChannel(name)),
     })
+}
+
+/// Integer complex power by binary exponentiation (`0x420670`); a negative
+/// exponent gives the reciprocal.
+fn int_pow(z: Complex64, n: i32) -> Complex64 {
+    let (mut acc, mut base, mut k) = (Complex64::new(1.0, 0.0), z, n.unsigned_abs());
+    while k > 0 {
+        if k & 1 == 1 {
+            acc *= base;
+        }
+        base *= base;
+        k >>= 1;
+    }
+    if n < 0 {
+        Complex64::new(1.0, 0.0) / acc
+    } else {
+        acc
+    }
 }

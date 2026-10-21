@@ -73,6 +73,11 @@ pub struct Trace {
     pub dist: Vec<f64>,
     /// Double-ended: `arg(U/I)` at end 1 minus end 2, radians, per sample.
     pub angle: Vec<f64>,
+    /// Grounded: zero-sequence voltage and current per sample (θ refinement).
+    pub u0: Vec<Complex64>,
+    pub i0: Vec<Complex64>,
+    /// Grounded: the I0 rotation θ the distances were computed with.
+    pub theta: f64,
 }
 
 /// The ОМП phasor (`0x477280`): peak-scaled one-period DFT over the `p`
@@ -187,6 +192,9 @@ pub fn single_ended(inp: &SingleEnded) -> Trace {
         inst: vec![0.0; nk],
         dist: vec![0.0; nk],
         angle: vec![0.0; nk],
+        u0: vec![Complex64::default(); nk],
+        i0: vec![Complex64::default(); nk],
+        theta: 0.0,
     };
     let raw = |c: usize, k: usize| inp.i[c][k];
 
@@ -268,9 +276,12 @@ pub fn single_ended(inp: &SingleEnded) -> Trace {
                 t.iref[k] = iref;
                 t.inst[k] = inst;
             }
+            for k in 0..nk {
+                t.u0[k] = (uph(0, k) + uph(1, k) + uph(2, k)) / 3.0;
+                t.i0[k] = comps[k].2;
+            }
             for k in p..nk {
-                let u0 = (uph(0, k) + uph(1, k) + uph(2, k)) / 3.0;
-                t.dist[k] = grounded_distance(&t, k, u0, comps[k].2, inp.sections, 0.0);
+                t.dist[k] = grounded_distance(&t, k, t.u0[k], t.i0[k], inp.sections, 0.0);
             }
         }
         NeutralMode::Isolated => {
@@ -603,11 +614,182 @@ pub fn result_for_window(t: &Trace, sections: &[Section], c1: usize, c2: usize) 
     }
 }
 
-/// Interval, window and result for a finished single-ended trace.
-pub fn locate(t: &Trace, neutral: NeutralMode, sections: &[Section], p: usize) -> OmpResult {
+/// Interval, window and result for a finished single-ended trace. Grounded:
+/// if the last section has taps, θ is re-estimated once (`0x49adc0`) and the
+/// distances, window and result are computed again.
+pub fn locate(t: &mut Trace, neutral: NeutralMode, sections: &[Section], p: usize) -> OmpResult {
     let (lo, hi) = fault_interval(t, neutral, p);
     let (c1, c2) = choose_window(&t.dist, &t.inst, lo, hi, p);
+    let r = result_for_window(t, sections, c1, c2);
+    let taps_at_end = sections.last().is_some_and(|s| !s.taps.is_empty());
+    if neutral != NeutralMode::Grounded || !taps_at_end {
+        return r;
+    }
+    if let Some(theta) = refine_theta(t, sections, (c1, c2), r.distance) {
+        t.theta = theta;
+        for k in p..t.dist.len() {
+            t.dist[k] = grounded_distance(t, k, t.u0[k], t.i0[k], sections, theta);
+        }
+    }
+    let (c1, c2) = choose_window(&t.dist, &t.inst, lo, hi, p);
     result_for_window(t, sections, c1, c2)
+}
+
+/// Mutual-coupling sum `Σ Zm·Ip[k]` over a section's parallel lines.
+fn mutual_emf(sec: &Section, k: usize, skip_zero: bool) -> Complex64 {
+    sec.parallel
+        .iter()
+        .filter(|pl| !skip_zero || pl.rm_per_km != 0.0 || pl.xm_per_km != 0.0)
+        .fold(Complex64::default(), |s, pl| {
+            s + Complex64::new(pl.rm_per_km, pl.xm_per_km) * pl.current.get(k).copied().unwrap_or_default()
+        })
+}
+
+/// Carry U0, I0 from the line start to distance `d` through the
+/// zero-sequence ladder (`0x49b9e0`, and step 1 of `0x49bd40`); returns
+/// `(U(d), I(d))`.
+fn carry_zero_sequence(secs: &[Section], k: usize, mut u: Complex64, mut i: Complex64, d: f64) -> (Complex64, Complex64) {
+    let mut cum = 0.0;
+    for sec in secs {
+        if cum >= d {
+            break;
+        }
+        let z0 = Complex64::new(sec.r0_per_km, sec.x0_per_km);
+        let rem = d - cum;
+        let seg = sec.length_km.min(rem);
+        let s = cdiv(mutual_emf(sec, k, true), z0);
+        u -= z0 * (i + s) * seg;
+        if let Some(zt) = taps_zeq(sec) {
+            if rem > sec.length_km {
+                i -= cdiv(u, zt);
+            }
+        }
+        cum += seg;
+    }
+    (u, i)
+}
+
+/// Gaussian elimination as `0x477f70`: rows swapped only when a pivot is
+/// exactly zero; `None` if no non-zero pivot exists.
+fn solve(mut a: Vec<Vec<Complex64>>, mut b: Vec<Complex64>) -> Option<Vec<Complex64>> {
+    let n = b.len();
+    let zero = Complex64::default();
+    for c in 0..n {
+        if a[c][c] == zero {
+            let r = (c + 1..n).find(|&r| a[r][c] != zero)?;
+            a.swap(c, r);
+            b.swap(c, r);
+        }
+        let pivot = a[c].clone();
+        for r in c + 1..n {
+            let f = cdiv(a[r][c], pivot[c]);
+            for (dst, v) in a[r].iter_mut().zip(&pivot).skip(c) {
+                *dst -= f * v;
+            }
+            let v = b[c];
+            b[r] -= f * v;
+        }
+    }
+    let mut x = vec![zero; n];
+    for r in (0..n).rev() {
+        let s = (r + 1..n).fold(b[r], |s, j| s - a[r][j] * x[j]);
+        x[r] = cdiv(s, a[r][r]);
+    }
+    Some(x)
+}
+
+/// The zero-sequence current from distance `d` into the network beyond it
+/// (`0x49bd40`): a nodal ladder of the remaining sections, each with its tap
+/// admittance to ground (open circuit without taps), solved for the node
+/// voltages; `B = (U(d) + E_m − V_0)/Z_m`.
+fn current_beyond(secs: &[Section], k: usize, u0: Complex64, i0: Complex64, d: f64) -> Option<Complex64> {
+    if d <= 0.0 {
+        return None;
+    }
+    let (ud, _) = carry_zero_sequence(secs, k, u0, i0, d);
+    let n = secs.len();
+    let total: f64 = secs.iter().map(|s| s.length_km).sum();
+    // The section containing d and the distance to its far end.
+    let mut cum = 0.0;
+    let mut m = n;
+    for (i, s) in secs.iter().enumerate() {
+        if cum + s.length_km >= d {
+            m = i;
+            break;
+        }
+        cum += s.length_km;
+    }
+    if m >= n {
+        return None;
+    }
+    let lend = cum + secs[m].length_km;
+    let mut first_len = lend - d;
+    if lend == d {
+        // The original then uses the whole remaining length for the next section.
+        m += 1;
+        first_len = total - d;
+    }
+    if m >= n {
+        return None;
+    }
+    let mm = n - m;
+    let big = Complex64::new(f64::MAX, 0.0);
+    let (mut z, mut e, mut zt) = (Vec::with_capacity(mm), Vec::with_capacity(mm), Vec::with_capacity(mm));
+    for (j, sec) in secs[m..].iter().enumerate() {
+        let len = if j == 0 { first_len } else { sec.length_km };
+        z.push(Complex64::new(sec.r0_per_km, sec.x0_per_km) * len);
+        e.push(mutual_emf(sec, k, false) * len);
+        zt.push(taps_zeq(sec).unwrap_or(big));
+    }
+    let inv = |x: Complex64| cdiv(ONE, x);
+    let mut y = vec![vec![Complex64::default(); mm]; mm];
+    let mut rhs = vec![Complex64::default(); mm];
+    for j in 0..mm {
+        y[j][j] = inv(zt[j]) + inv(z[j]) + if j + 1 < mm { inv(z[j + 1]) } else { Complex64::default() };
+        if j + 1 < mm {
+            y[j][j + 1] = -inv(z[j + 1]);
+            y[j + 1][j] = -inv(z[j + 1]);
+            rhs[j] = cdiv(e[j], z[j]) - cdiv(e[j + 1], z[j + 1]);
+        } else {
+            rhs[j] = cdiv(e[j], z[j]);
+        }
+    }
+    rhs[0] += cdiv(ud, z[0]);
+    let v = solve(y, rhs)?;
+    Some(cdiv(ud + e[0] - v[0], z[0]))
+}
+
+/// θ re-estimation (`0x49adc0`): only when the distance is positive and the
+/// earth-fault flag's upper median over the window is set; from the medians
+/// of `arg B − arg A`, `|A|`, `|B|` over the window,
+/// `θ = arg(Mb − Mc·e^{jMa})`.
+fn refine_theta(t: &Trace, secs: &[Section], win: (usize, usize), d: f64) -> Option<f64> {
+    let (s, e) = (win.0.min(win.1), win.0.max(win.1).min(t.dist.len().saturating_sub(1)));
+    if d <= 0.0 || s > e {
+        return None;
+    }
+    let mut flags: Vec<bool> = t.e[s..=e].to_vec();
+    flags.sort();
+    if !flags[flags.len() / 2] {
+        return None;
+    }
+    let pi = std::f64::consts::PI;
+    let (mut v1, mut v2, mut v3) = (Vec::new(), Vec::new(), Vec::new());
+    for k in s..=e {
+        let (_, a) = carry_zero_sequence(secs, k, t.u0[k], t.i0[k], d);
+        let b = current_beyond(secs, k, t.u0[k], t.i0[k], d)?;
+        let mut da = b.im.atan2(b.re) - a.im.atan2(a.re);
+        if da < -pi {
+            da += 2.0 * pi;
+        } else if da > pi {
+            da -= 2.0 * pi;
+        }
+        v1.push(da);
+        v2.push(a.norm());
+        v3.push(b.norm());
+    }
+    let (ma, mb, mc) = (median(&v1), median(&v2), median(&v3));
+    Some((-mc * ma.sin()).atan2(mb - mc * ma.cos()))
 }
 
 /// Inputs of a double-ended analysis: phase voltages and currents at both
@@ -721,6 +903,9 @@ pub fn double_ended(inp: &DoubleEnded) -> Trace {
         inst: vec![0.0; nk],
         dist: vec![0.0; nk],
         angle: vec![0.0; nk],
+        u0: Vec::new(),
+        i0: Vec::new(),
+        theta: 0.0,
     };
     // Detection (0x499000).
     let (mut a1, mut a2, mut n1, mut n2) = (false, false, false, false);
@@ -847,4 +1032,28 @@ pub fn result_double_for_window(t: &Trace, sections: &[Section], c1: usize, c2: 
         return result_for_window(&zeroed, sections, c1, c2);
     }
     result_for_window(t, sections, c1, c2)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One remaining section without parallel lines: the ladder reduces to
+    /// `B = U(D) / (Z_m + Zt)`.
+    #[test]
+    fn ladder_single_section_reduction() {
+        let sec = Section {
+            length_km: 10.0,
+            r0_per_km: 0.3,
+            x0_per_km: 1.2,
+            taps: vec![Tap { r0: 40.0, x0: 80.0 }],
+            ..Default::default()
+        };
+        let (u0, i0, d) = (Complex64::new(1000.0, 200.0), Complex64::new(50.0, -20.0), 4.0);
+        let (ud, _) = carry_zero_sequence(std::slice::from_ref(&sec), 0, u0, i0, d);
+        let zm = Complex64::new(0.3, 1.2) * 6.0;
+        let want = ud / (zm + Complex64::new(40.0, 80.0));
+        let got = current_beyond(std::slice::from_ref(&sec), 0, u0, i0, d).unwrap();
+        assert!((got - want).norm() < 1e-9, "{got} vs {want}");
+    }
 }
