@@ -916,9 +916,11 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
             unit: g(4).to_string(),
             a: g(5).parse().unwrap_or(1.0),
             b: g(6).parse().unwrap_or(0.0),
-            primary: g(9).parse().unwrap_or(1.0),
-            secondary: g(10).parse().unwrap_or(1.0),
-            is_primary: g(11).eq_ignore_ascii_case("p"),
+            // An,ch_id,ph,ccbm,uu,a,b,skew,min,max,primary,secondary,PS
+            // (fields 11–13 of the 1999 line; absent in 1991 → 1, 1, S).
+            primary: g(10).parse().unwrap_or(1.0),
+            secondary: g(11).parse().unwrap_or(1.0),
+            is_primary: g(12).eq_ignore_ascii_case("p"),
             samples: Vec::new(),
         });
     }

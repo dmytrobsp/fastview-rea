@@ -19,6 +19,20 @@ fn loader_keeps_station_device_and_stamps() {
     assert_eq!(rec.stamps.local_code, "");
 }
 
+/// Primary / secondary / PS are fields 11–13 of an analog line (the
+/// coefficient dialog edits them); the writer's lines read back the same.
+#[test]
+fn analog_line_primary_secondary_ps() {
+    let cfg = CFG.replacen("1,Ua,A,,V,1.0,0.0,0.0,-1000000,1000000,1.0,1.0,S", "1,Ua,A,,V,1.0,0.0,0.0,-1000000,1000000,110000,100,P", 1);
+    let rec = comtrade::parse(&cfg, DAT).unwrap();
+    let ua = &rec.analog[0];
+    assert_eq!((ua.primary, ua.secondary, ua.is_primary), (110000.0, 100.0, true));
+    assert_eq!((rec.analog[1].primary, rec.analog[1].secondary, rec.analog[1].is_primary), (1.0, 1.0, false));
+    let (c, d) = comtrade::write(&rec);
+    let back = comtrade::parse(&c, d.as_bytes()).unwrap();
+    assert_eq!((back.analog[0].primary, back.analog[0].secondary, back.analog[0].is_primary), (110000.0, 100.0, true));
+}
+
 #[test]
 fn rev_2013_reads_time_code_line_and_writer_keeps_stamps() {
     let cfg = CFG.replace("\r\n", "\n").replacen(",1999", ",2013", 1).replacen("ASCII\n1\n", "ASCII\n1\n+3h30,+3h30\n0,0\n", 1);
