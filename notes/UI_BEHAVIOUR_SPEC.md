@@ -508,7 +508,7 @@ visibility, colour, zoom, comments are **not undoable** [R].
 | id | effect | CMDUI |
 |---|---|---|
 | 57634 Копировать (Ctrl+C, ribbon, 561) | serialise the **selected** channels (analog and digital) with times, rates and header to the system clipboard, format «Mechanotronica FastView Clipboard Data» (keys `times`, `net_frequency`, `num_values`, `channels`/`discr_frequency`, `hdrFile`, `startTime`, `blockID`, `stationID`, `title`, `Comments`, `Codepage`) | enabled iff some selected channel is not computed (bit13) |
-| 57637 Вставить (Ctrl+V) | undo snapshot; clear the ОМП result; deselect all; append the channels with their own time array and rate, flags 0x40e1 (bit14 pending); name collisions get "(2)", "(3)"…; UpdateAllViews; fill and show the merge bar | enabled iff the clipboard holds the format **and** no channel has bit14 |
+| 57637 Вставить (Ctrl+V) | undo snapshot; clear the ОМП result; deselect all; append the channels with their own time array and rate, flags 0x40e1 (bit14 pending); name collisions get "(2)", "(3)"… (no space; pasted channels come in selected, inserted before the first selected channel of their kind; the record comment is rewritten, L9.20); UpdateAllViews; fill and show the merge bar | enabled iff the clipboard holds the format **and** no channel has bit14 |
 | 57643 Отмена (Ctrl+Z) | restore the last snapshot | enabled iff undo count `doc+0x6fc` ≠ 0 |
 | 57644 Возврат (Ctrl+Y) | symmetric | enabled iff redo count `doc+0x710` ≠ 0 |
 
@@ -1233,7 +1233,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     hover info box, per-kind drawing, one-shot tools enabled for .cfg/.osc,
     `.set` persistence — `app.rs`, `lanes.rs`, `dialogs.rs`, `persist.rs`/
     `crates/fvb-core` — L
-15. 🟡 (L9.15: no system clipboard / merge undo) Merge workflow: system-clipboard format with times/rates/header, pending
+15. 🟡 (L9.15 + L9.19 undo + L9.20 clipboard XML; insertion point, EMF pending) Merge workflow: system-clipboard format with times/rates/header, pending
     bit14 channels with own rate, "(2)" naming, merge bar with three sync
     methods, drag time-shift (hand cursor), «Объединить» resampling, undo on
     bar close, paste disabled while pending; fix the test pinning index

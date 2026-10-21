@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 253 pass)
+- `cargo test --workspace`   (currently 256 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 253 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 256 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.19** below.
+temporary). Reconciled so far: **L9.1**–**L9.20** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -989,15 +989,14 @@ exceeds 1°), «Объединить» (`0x47d990`: rate = the highest rounded t
 multiple of f_net, zero padding, `round(R·dur) − 4` samples, quadratic fit /
 previous-sample hold), the bar CMergeBar (method, Канал 1 / Канал 2 enabled
 for methods 1/2, the buttons, status text; hiding with pending channels =
-Undo), paste (undo snapshot, ОМП cleared, deselect, " (2)" names, pending),
+Undo), paste (undo snapshot, ОМП cleared, deselect, "(2)" names (L9.20), pending),
 manual drag of a pending lane (mode 6, hand cursor, offset clamped to one
 period of overlap). Ours: `fvb_core::merge` (sync methods, `merged_rate`,
 `quad_at`, `hold_at`, `merge`; 4 tests), `comtrade::stamp_seconds`,
 `merge_ui.rs` (clipboard with times/rate/start, pending lanes refreshed at the
 offset, bar, «Объединить» in place keeping view state and remapping comments
 / визиры by time; 2 tests), lanes drag. Replaces our sample-index paste.
-Residual: in-process clipboard only (no system-clipboard format
-«Mechanotronica FastView Clipboard Data», no cross-instance merge); method 2's
+Residual: system-clipboard format done in L9.20; method 2's
 details beyond the spec summary not re-read; «Объединить» undo fixed in L9.19; values ÷ `ch+0xf0` on merge not
 modelled; pasted discrete channels show as 0/1 lanes until merged.
 
@@ -1117,6 +1116,38 @@ Deliberate: restore also rebuilds our derived caches (flagged values,
 RMS, phasors, pending lanes) and clamps визиры to the record; no beep; a
 manual Ctrl+Z while the bar is up still hides our bar (the original leaves
 it up, stale).
+
+### L9.20 — «Mechanotronica FastView Clipboard Data»: copy/paste through the clipboard document  ·  🟡
+
+Read (research report): the format is registered once at start-up
+(`0x404f5e`); copy `0x45be28` puts an EMF picture of the view and the data
+as UTF-16 XML (no BOM / declaration, CR LF, TAB, attributes by name) built
+by `0x430af0` — root `channels` (`num_values` %g, `time_multiplier`,
+`discr_frequency` %i, `times` µs %i low 32 bits, per-sample `net_frequency`,
+`stationID`, `blockID`, `title`, `hdrFile`, `startTime`) and per selected
+non-computed channel (`0x427f20`) name / dimension / type / desc2 / desc3 /
+values_type / primary_mode / mul / offset / timeShift / the four
+coefficients / normal_state / values_count / custom_color_set /
+color_custom / record_start_* / duration_milli_sec / `data` `%f,`. Paste
+`0x45ad02`: undo snapshot, insertion points, deselect, `num_values` by
+`_wtoi` bounding `times` / `net_frequency`, root must be `channels`
+(else no channels, rest still runs), flags 0x40e1 **and selected**, name +
+"(%i)" **without a space**, the record comment rewritten as «Механотроника.
+FastView, Объединенная осциллограмма…» (strings 3272/3221/3048/3218/3479/
+3308/3297/3249/3050) with `Comments/Codepage` = 1, ОМП cleared, bar shown.
+Copy CMDUI: a selected non-computed channel (digital counts).
+Ours: `fvb_core::clipdata` (`ClipRecord::{to_text, parse}`, `merged_header`;
+3 tests incl. the `1e+06` and 32-bit-time quirks), GUI `sysclip.rs`
+(Windows: the registered format via `windows-sys`; elsewhere a
+`clipboard.xml` in the settings folder stands in for the system clipboard,
+so instances on one machine still merge; tests in memory), copy/paste in
+`merge_ui.rs` through the document (so the `%f` precision loss happens as
+in the original), pasted lanes selected, "(2)", the merged-record comment,
+copy enabled by digital channels. Residual: no EMF picture; the pasted
+channels are still appended (insertion point next); `duration_milli_sec`
+text and `time_multiplier` are inferred (0x44c1d0 / `doc+0x230` not read);
+the clip's start date is read with the target record's revision rule; CR LF
+placement inside the merged comment inferred from the concatenation count.
 
 Next in L9: all dispatched tracks are merged (master clean). Remaining:
 `notes/UI_BEHAVIOUR_SPEC.md` §9 — print 36, OLE drag 48, and the residuals

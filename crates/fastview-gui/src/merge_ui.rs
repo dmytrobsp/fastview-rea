@@ -7,6 +7,7 @@
 
 use crate::app::{App, ChanKey, ChanView, Computed, Doc};
 use eframe::egui;
+use fvb_core::clipdata::{merged_header, ClipChannel, ClipRecord, HeaderSide};
 use fvb_core::merge::{self, Pasted, SyncChan, SyncMsg};
 
 /// A channel on the merge clipboard: its data with its own times, the
@@ -36,6 +37,113 @@ pub struct MergeBar {
     pub ch1: Option<usize>,
     pub ch2: Option<usize>,
     pub status: String,
+}
+
+/// COLORREF (0x00BBGGRR) ↔ colour.
+fn colorref(c: egui::Color32) -> u32 {
+    u32::from(c.r()) | u32::from(c.g()) << 8 | u32::from(c.b()) << 16
+}
+
+fn from_colorref(v: u32) -> egui::Color32 {
+    egui::Color32::from_rgb(v as u8, (v >> 8) as u8, (v >> 16) as u8)
+}
+
+/// The clipboard document of the selected file channels (`0x430af0`,
+/// per channel `0x427f20`).
+pub fn clip_record(d: &Doc) -> ClipRecord {
+    let s = &d.osc.stamps;
+    let n = d.osc.time.len();
+    let dur_ms = (duration(&d.osc.time) * 1000.0).round().to_string();
+    let mut rec = ClipRecord {
+        rate: d.osc.sample_rate,
+        time_multiplier: 1.0,
+        times_us: d.osc.time.iter().map(|t| (t * 1e6).round() as i64).collect(),
+        net_frequency: vec![d.osc.line_freq; n],
+        num_values: fvb_core::views::fmt_g(n as f64),
+        station_id: d.osc.station.clone(),
+        block_id: d.osc.device.clone(),
+        title: d.name.clone(),
+        hdr_file: d.hdr.clone().unwrap_or_default(),
+        start_time: format!("{}, {}", s.start_date, s.start_time),
+        channels: Vec::new(),
+        valid: true,
+    };
+    let common = |name: &str| ClipChannel {
+        name: name.to_string(),
+        record_start_date: s.start_date.clone(),
+        record_start_time: s.start_time.clone(),
+        duration_ms: dur_ms.clone(),
+        ..Default::default()
+    };
+    for k in &d.selection {
+        match *k {
+            ChanKey::Analog(i) if i < d.osc.analog.len() => {
+                let (a, v) = (&d.osc.analog[i], &d.chans[i]);
+                rec.channels.push(ClipChannel {
+                    dimension: a.unit.clone(),
+                    desc2: a.phase.clone(),
+                    primary_values: a.is_primary,
+                    primary_mode: v.primary,
+                    mul: a.a,
+                    offset: a.b,
+                    primary_value: a.primary,
+                    secondary_value: a.secondary,
+                    file_primary_value: a.primary,
+                    file_secondary_value: a.secondary,
+                    color: (v.color != App::palette(i)).then(|| colorref(v.color)),
+                    data: a.samples.clone(),
+                    ..common(&a.id)
+                });
+            }
+            ChanKey::Digital(i) if i < d.osc.digital.len() => {
+                let x = &d.osc.digital[i];
+                rec.channels.push(ClipChannel {
+                    discrete: true,
+                    desc2: x.phase.clone(),
+                    data: x.samples.iter().map(|&b| f64::from(u8::from(b))).collect(),
+                    ..common(&x.id)
+                });
+            }
+            _ => {}
+        }
+    }
+    rec
+}
+
+/// The pasted channels of a clipboard document (`0x424cb0`): times
+/// relative to the first, in seconds; past the `times` array (the
+/// `num_values` quirk) a channel's samples continue at 1/rate (inferred).
+fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
+    let t0 = rec.times_us.first().copied().unwrap_or(0);
+    let start = rec.start_time.split_once(", ").and_then(|(dt, tm)| fvb_core::comtrade::stamp_seconds(dt, tm, rev_year));
+    let step = if rec.rate > 0.0 { 1.0 / rec.rate } else { 0.0 };
+    rec.channels
+        .iter()
+        .map(|c| {
+            let mut times: Vec<f64> = rec.times_us.iter().map(|&t| (t - t0) as f64 / 1e6).collect();
+            while times.len() < c.data.len() {
+                times.push(times.last().map_or(0.0, |t| t + step));
+            }
+            times.truncate(c.data.len());
+            let channel = if c.discrete {
+                Err(fvb_core::comtrade::DigitalChannel { index: 0, id: c.name.clone(), phase: c.desc2.clone(), samples: c.data.iter().map(|&v| v != 0.0).collect() })
+            } else {
+                Ok(fvb_core::comtrade::AnalogChannel {
+                    index: 0,
+                    id: c.name.clone(),
+                    phase: c.desc2.clone(),
+                    unit: c.dimension.clone(),
+                    a: c.mul,
+                    b: c.offset,
+                    primary: c.primary_value,
+                    secondary: c.secondary_value,
+                    is_primary: c.primary_values,
+                    samples: c.data.clone(),
+                })
+            };
+            ClipChan { pasted: Pasted { channel, times, rate: rec.rate }, color: c.color.map_or(egui::Color32::TRANSPARENT, from_colorref), start }
+        })
+        .collect()
 }
 
 /// The record start of a document in seconds.
@@ -109,45 +217,41 @@ impl Doc {
 pub const PENDING: &str = "объединение";
 
 impl App {
-    /// 57634 (`FUN_00430af0`): the selected file channels, analog and
-    /// discrete, with their times, rate and record start.
+    /// 57634 (`0x45be28` → `0x430af0`): the selected file channels, analog
+    /// then discrete, with the record's times, rate and header, as the
+    /// clipboard document on the system clipboard.
     pub fn copy_channels_for_merge(&mut self) {
         let Some(d) = self.active_doc() else { return };
-        let t0 = d.osc.time.first().copied().unwrap_or(0.0);
-        let times: Vec<f64> = d.osc.time.iter().map(|t| t - t0).collect();
-        let start = doc_start(d);
-        let mut clip = Vec::new();
-        for k in &d.selection {
-            let (channel, color) = match *k {
-                ChanKey::Analog(i) if i < d.osc.analog.len() => (Ok(d.osc.analog[i].clone()), d.chans[i].color),
-                ChanKey::Digital(i) if i < d.osc.digital.len() => (Err(d.osc.digital[i].clone()), egui::Color32::from_rgb(0x44, 0x44, 0xAA)),
-                _ => continue,
-            };
-            clip.push(ClipChan { pasted: Pasted { channel, times: times.clone(), rate: d.osc.sample_rate }, color, start });
-        }
-        if clip.is_empty() {
+        let rec = clip_record(d);
+        if rec.channels.is_empty() {
             self.status = "Не выбраны каналы для копирования.".into();
             return;
         }
-        self.status = format!("Скопировано каналов для объединения: {}", clip.len());
-        self.channel_clip = clip;
+        let n = rec.channels.len();
+        self.status = if self.clip.put(&rec.to_text()) {
+            format!("Скопировано каналов для объединения: {n}")
+        } else {
+            "Не удалось записать в буфер обмена.".into()
+        };
     }
 
-    /// 57637: undo snapshot, clear the ОМП result, deselect all, append the
-    /// channels as pending lanes (duplicate names get " (2)", " (3)"…) and
-    /// show the merge bar.
+    /// 57637 (`0x45ad02`): read the clipboard document, undo snapshot, clear
+    /// the ОМП result, deselect all, add the channels as pending lanes that
+    /// come in selected (duplicate names get "(2)", "(3)"… without a space),
+    /// rewrite the record comment as the merged-record summary and show the
+    /// merge bar.
     pub fn paste_channels_for_merge(&mut self) {
-        if self.channel_clip.is_empty() {
-            return;
-        }
         let Some(ai) = self.active else { return };
         if crate::omp_ui::has_pending_paste(&self.docs[ai]) {
             return;
         }
+        let Some(text) = self.clip.get() else { return };
+        let rec = ClipRecord::parse(&text).unwrap_or_default();
         self.snapshot_undo();
         self.omp_clear(ai);
-        let clip = self.channel_clip.clone();
         let base = self.docs.len() + 11;
+        let rev = self.docs[ai].osc.rev_year;
+        let clip = clip_chans(&rec, rev);
         let d = &mut self.docs[ai];
         d.selection.clear();
         for (j, mut c) in clip.into_iter().enumerate() {
@@ -157,7 +261,7 @@ impl App {
             let mut name = c.name().to_string();
             let mut k = 2;
             while taken(&name, d) {
-                name = format!("{} ({k})", c.name());
+                name = format!("{}({k})", c.name());
                 k += 1;
             }
             match &mut c.pasted.channel {
@@ -169,8 +273,18 @@ impl App {
                 lane.unit = a.unit.clone();
             }
             d.computed.push(lane);
+            d.selection.insert(ChanKey::Computed(d.computed.len() - 1));
             d.pending.push(c);
         }
+        // The record comment becomes the two-record summary (`Comments/
+        // Codepage` = 1).
+        let s = &d.osc.stamps;
+        let own_start = format!("{}, {}", s.start_date, s.start_time);
+        let own_hdr = d.hdr.clone().unwrap_or_default();
+        let own = HeaderSide { title: &d.name, station: &d.osc.station, block: &d.osc.device, start: &own_start, comment: &own_hdr };
+        let other = HeaderSide { title: &rec.title, station: &rec.station_id, block: &rec.block_id, start: &rec.start_time, comment: &rec.hdr_file };
+        d.hdr = Some(merged_header(&own, &other));
+        d.hdr_cp = crate::setfile::cp_of(1);
         d.merge_offset = 0.0;
         d.refresh_pending();
         self.merge = Some(MergeBar::default());
@@ -347,7 +461,7 @@ mod tests {
         app.paste_channels_for_merge();
         let d = app.active_doc().unwrap();
         assert_eq!(d.pending.len(), 1);
-        assert!(d.computed.iter().any(|c| c.formula == PENDING && c.name.ends_with(" (2)")), "duplicate names get (2)");
+        assert!(d.computed.iter().any(|c| c.formula == PENDING && c.name.ends_with("(2)") && !c.name.ends_with(" (2)")), "duplicate names get (2), no space");
         assert!(crate::omp_ui::has_pending_paste(d), "ОМП and another paste are blocked");
         assert!(app.merge.is_some(), "the merge bar shows");
         // Shift by 2 ms; out-of-range offsets are clamped.

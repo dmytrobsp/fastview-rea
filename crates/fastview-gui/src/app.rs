@@ -844,7 +844,8 @@ pub struct App {
     pub want_screenshot: Option<std::path::PathBuf>,
 
     /// Channels copied for merging oscillograms (Объединение).
-    pub channel_clip: Vec<ClipChan>,
+    /// The clipboard of «Mechanotronica FastView Clipboard Data».
+    pub clip: crate::sysclip::SysClip,
 
     // undo / redo of per-document view edits
 
@@ -964,7 +965,7 @@ impl App {
             props_channel: None,
             comment_edit: None,
             want_screenshot: None,
-            channel_clip: Vec::new(),
+            clip: Default::default(),
             rect_zoom: RectZoom::Off,
             comment_drag: None,
             level_edit: None,
@@ -1349,6 +1350,7 @@ impl App {
     pub fn with_persistence(mut self) -> Self {
         self.store = crate::persist::Store::load();
         self.persist = true;
+        self.clip = crate::sysclip::SysClip::system();
         // `View` (XScale, YAnalogSize, RulerState, Sells) is per document,
         // in its settings file (`setfile`).
         let v = &self.store.view;
@@ -1879,11 +1881,11 @@ mod tests {
     fn copy_paste_merges_channels() {
         let mut app = demo_app();
         app.dispatch(Command::Copy);
-        assert!(app.channel_clip.is_empty(), "nothing selected, nothing copied");
+        assert!(!app.clip.available(), "nothing selected, nothing copied");
         app.active_doc_mut().unwrap().selection.extend([ChanKey::Analog(0), ChanKey::Analog(1)]);
         app.dispatch(Command::Copy);
-        assert_eq!(app.channel_clip.len(), 2, "copy takes the selected channels");
-        assert!(!app.channel_clip.is_empty(), "copy should fill the clipboard");
+        let rec = fvb_core::clipdata::ClipRecord::parse(&app.clip.get().unwrap()).unwrap();
+        assert_eq!(rec.channels.len(), 2, "copy takes the selected channels");
         let before = app.active_doc().unwrap().computed.len();
         app.dispatch(Command::Paste);
         let d = app.active_doc().unwrap();

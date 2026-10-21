@@ -175,8 +175,8 @@ impl App {
         ribbon_group(ui, p, "Объединение", |ui| {
             // 57637 needs the clipboard and no pending paste; 57634 a selected
             // file channel; 57643 / 57644 the undo / redo counts.
-            let can_paste = !self.channel_clip.is_empty() && !self.active_doc().is_some_and(crate::omp_ui::has_pending_paste);
-            let can_copy = self.active_doc().is_some_and(|d| !d.selected_analog().is_empty());
+            let can_paste = self.clip.available() && !self.active_doc().is_some_and(crate::omp_ui::has_pending_paste);
+            let can_copy = self.active_doc().is_some_and(|d| d.selection.iter().any(|k| !matches!(k, crate::app::ChanKey::Computed(_))));
             let (undo, redo) = self.active_doc().map_or((false, false), |d| (!d.undo.is_empty(), !d.redo.is_empty()));
             if ui.add_enabled_ui(can_paste, |ui| big_button(ui, p, Icon::Paste, "Вставить")).inner.clicked() {
                 cmds.push(Command::Paste);

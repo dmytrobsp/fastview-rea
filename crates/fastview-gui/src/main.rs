@@ -16,6 +16,7 @@ mod finder;
 mod formula_dlg;
 mod icons;
 mod instance;
+mod sysclip;
 mod lanes;
 mod merge_ui;
 mod omp_ui;

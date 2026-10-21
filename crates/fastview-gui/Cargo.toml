@@ -15,3 +15,6 @@ eframe = "0.29"
 egui_plot = "0.29"
 rfd = "0.14"
 num-complex = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_DataExchange", "Win32_System_Memory"] }

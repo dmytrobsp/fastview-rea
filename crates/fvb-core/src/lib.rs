@@ -11,6 +11,7 @@
 pub mod addformula;
 pub mod analysis;
 pub mod channels;
+pub mod clipdata;
 pub mod comtrade;
 pub mod expr;
 pub mod geom;

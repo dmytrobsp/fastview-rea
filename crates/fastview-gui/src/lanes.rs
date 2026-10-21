@@ -1134,7 +1134,7 @@ impl App {
                 return;
             }
         }
-        let (time_unit, grid, can_paste, band) = (self.time_unit, self.show_grid, !self.channel_clip.is_empty(), doc.diff_band);
+        let (time_unit, grid, can_paste, band) = (self.time_unit, self.show_grid, self.clip.available(), doc.diff_band);
         let mut chosen: Option<MenuCmd> = None;
         let area = egui::Area::new(egui::Id::new("fv_lane_menu").with(menu.serial))
             .kind(egui::UiKind::Menu)
