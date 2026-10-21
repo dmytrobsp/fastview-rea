@@ -1,8 +1,8 @@
-//! Diagram views (круговая/дифференциальная/векторная/частотная/быстрый анализ/
-//! ОМП) over the active document. The oscillogram (lane) view lives in
+//! Diagram views (круговая/дифференциальная/векторная/частотная/быстрый анализ)
+//! over the active document (ОМП lives in `omp_ui.rs`). The oscillogram (lane) view lives in
 //! `lanes.rs`.
 
-use crate::app::{AnalysisTab, App, Command, OmpMethod, Pane, Panes, View};
+use crate::app::{AnalysisTab, App, Command, Pane, Panes, View};
 use eframe::egui;
 use egui_plot::{Bar, BarChart, Line, LineStyle, Plot, PlotBounds, PlotPoints, Points, Polygon};
 use fvb_core::geom::Shape;
@@ -18,7 +18,6 @@ impl App {
         match self.view {
             View::Oscillogram => self.view_oscillogram(ctx),
             View::Analysis => self.view_analysis(ctx),
-            View::Omp => self.view_omp(ctx),
         }
     }
 
@@ -590,129 +589,6 @@ impl App {
                 d.computed.remove(i);
             }
         }
-    }
-
-    // ---- ОМП ----
-    /// ОМП: parameters (method, substation currents, line sections with
-    /// taps), the calculation, and the result text over the cursor interval.
-    fn view_omp(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Определение места повреждения (ОМП)");
-            ui.horizontal_wrapped(|ui| {
-                ui.label("Метод:");
-                ui.selectable_value(&mut self.omp_method, OmpMethod::Isolated, "Изолированная нейтраль");
-                ui.selectable_value(&mut self.omp_method, OmpMethod::Grounded, "Глухозаземлённая нейтраль");
-                ui.selectable_value(&mut self.omp_method, OmpMethod::DoubleEnded, "Двусторонний замер");
-            });
-            ui.horizontal(|ui| {
-                ui.label("Номинальный ток прямой последовательности, A:");
-                ui.add(egui::DragValue::new(&mut self.omp_inom[0]).speed(1.0));
-                if self.omp_method == OmpMethod::DoubleEnded {
-                    ui.label("подстанция №2:");
-                    ui.add(egui::DragValue::new(&mut self.omp_inom[1]).speed(1.0));
-                }
-            });
-            if self.omp_method == OmpMethod::DoubleEnded {
-                let names: Vec<(usize, String)> = self
-                    .docs
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| Some(*i) != self.active)
-                    .map(|(i, d)| (i, d.name.clone()))
-                    .collect();
-                ui.horizontal(|ui| {
-                    ui.label("Осциллограмма 2 (подстанция №2):");
-                    let cur = self
-                        .omp_remote
-                        .and_then(|i| self.docs.get(i))
-                        .map(|d| d.name.clone())
-                        .unwrap_or_else(|| "— не выбрано —".into());
-                    egui::ComboBox::from_id_salt("ompremote").selected_text(cur).show_ui(ui, |ui| {
-                        for (i, name) in &names {
-                            ui.selectable_value(&mut self.omp_remote, Some(*i), name);
-                        }
-                    });
-                });
-            }
-            ui.separator();
-            ui.label("Участки линии:");
-            let isolated = self.omp_method == OmpMethod::Isolated;
-            let mut remove = None;
-            egui::Grid::new("ompsections").striped(true).spacing([8.0, 4.0]).show(ui, |ui| {
-                ui.label("№");
-                ui.label("Длина, км");
-                if isolated {
-                    ui.label("R уд., Ом/км");
-                    ui.label("X уд., Ом/км");
-                } else {
-                    ui.label("R1 уд.");
-                    ui.label("X1 уд.");
-                    ui.label("R0 уд.");
-                    ui.label("X0 уд.");
-                }
-                ui.label("Число опор");
-                ui.label("Отпайки (R0, X0, Ом)");
-                ui.end_row();
-                for (n, s) in self.omp_sections.iter_mut().enumerate() {
-                    ui.label(format!("{}", n + 1));
-                    ui.add(egui::DragValue::new(&mut s.length_km).speed(0.1));
-                    if isolated {
-                        ui.add(egui::DragValue::new(&mut s.r_per_km).speed(0.001));
-                        ui.add(egui::DragValue::new(&mut s.x_per_km).speed(0.001));
-                    } else {
-                        ui.add(egui::DragValue::new(&mut s.r1_per_km).speed(0.001));
-                        ui.add(egui::DragValue::new(&mut s.x1_per_km).speed(0.001));
-                        ui.add(egui::DragValue::new(&mut s.r0_per_km).speed(0.001));
-                        ui.add(egui::DragValue::new(&mut s.x0_per_km).speed(0.001));
-                    }
-                    ui.add(egui::DragValue::new(&mut s.supports));
-                    ui.horizontal(|ui| {
-                        let mut drop_tap = None;
-                        for (ti, t) in s.taps.iter_mut().enumerate() {
-                            ui.add(egui::DragValue::new(&mut t.r0).speed(0.1));
-                            ui.add(egui::DragValue::new(&mut t.x0).speed(0.1));
-                            if ui.small_button("×").clicked() {
-                                drop_tap = Some(ti);
-                            }
-                        }
-                        if let Some(ti) = drop_tap {
-                            s.taps.remove(ti);
-                        }
-                        if ui.small_button("+").clicked() {
-                            s.taps.push(fvb_core::omp::Tap::default());
-                        }
-                    });
-                    if ui.small_button("Удалить").clicked() {
-                        remove = Some(n);
-                    }
-                    ui.end_row();
-                }
-            });
-            if let Some(n) = remove {
-                self.omp_sections.remove(n);
-            }
-            ui.horizontal(|ui| {
-                if ui.button("Добавить участок").clicked() {
-                    self.omp_sections.push(fvb_core::omp::Section::default());
-                }
-                if ui.button("Рассчитать").clicked() {
-                    self.run_omp();
-                }
-            });
-            ui.separator();
-            match self.omp_result() {
-                Some(r) => {
-                    ui.label(egui::RichText::new(r.text.trim()).strong().size(16.0));
-                    ui.label(
-                        egui::RichText::new(format!("Окно расчёта: отсчёты {} – {}", r.window.0.min(r.window.1), r.window.0.max(r.window.1)))
-                            .weak(),
-                    );
-                }
-                None => {
-                    ui.label("Введите параметры линии и нажмите «Рассчитать».");
-                }
-            }
-        });
     }
 }
 

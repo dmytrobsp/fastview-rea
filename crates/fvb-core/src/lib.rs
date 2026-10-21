@@ -15,6 +15,7 @@ pub mod expr;
 pub mod geom;
 pub mod model;
 pub mod omp;
+pub mod omp_params;
 pub mod parse;
 pub mod quick;
 pub mod signal;

@@ -14,3 +14,7 @@ Cargo.lock.bak
 
 # Extracted UI resource dumps + proprietary toolbar bitmaps (raw RE, kept local)
 /notes/ui/
+
+# Claude Code worktrees and Python caches
+/.claude/
+__pycache__/

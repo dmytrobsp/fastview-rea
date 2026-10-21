@@ -7,7 +7,6 @@ use fvb_core::analysis::Analysis;
 use fvb_core::comtrade::{Encoding, Oscillogram};
 use fvb_core::geom::CharGeometry;
 use fvb_core::model::Dimension;
-use fvb_core::omp::{NeutralMode, OmpResult, Section, Trace};
 use num_complex::Complex64;
 use fvb_core::Library;
 use std::collections::{BTreeSet, HashMap};
@@ -48,17 +47,15 @@ pub fn load_libraries() -> (Library, String) {
 pub const DEMO_CFG: &str = include_str!("../../../assets/demo/demo_fault.cfg");
 pub const DEMO_DAT: &[u8] = include_bytes!("../../../assets/demo/demo_fault.dat");
 
-/// Which document view fills the work area. In the original these are separate
-/// windows opened from the ribbon *Диаграммы* group and the *ОМП* tab; here they
-/// are selectable views over the active document.
+/// Which document view fills the work area. The diagrams are docking panes
+/// and ОМП is a result bar plus a dialog (`omp_ui`), so only the quick
+/// analysis still replaces the oscillogram.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     /// Осциллограмма — the stacked per-channel lanes (the main document view).
     Oscillogram,
     /// Быстрый анализ — symmetric components, impedances, formula editor.
     Analysis,
-    /// ОМП — fault location.
-    Omp,
 }
 
 /// A diagram docking pane (`0x474e10`). The diagrams are panes beside the
@@ -139,22 +136,6 @@ pub enum AnalysisTab {
     Phase,
     Differential,
     Formula,
-}
-
-/// ОМП method (the original's method code `obj+0x64`: 1 isolated neutral,
-/// 2 grounded neutral, 4 double-ended).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OmpMethod {
-    Isolated,
-    Grounded,
-    DoubleEnded,
-}
-
-/// The last ОМП calculation: its per-sample trace and the documents it ran on.
-pub struct OmpRun {
-    pub method: OmpMethod,
-    pub doc: usize,
-    pub trace: Trace,
 }
 
 /// The per-channel value the stats panel and vector/circle views read.
@@ -438,6 +419,8 @@ pub struct Doc {
     pub dc_mean: Vec<(f64, f64)>,
     /// Discrete channel visibility (32845 / 32846 / 32847).
     pub dig_visible: Vec<bool>,
+    /// The document's ОМП settings, last run and result flag (`doc+0x308`).
+    pub omp: crate::omp_ui::OmpDoc,
 }
 
 impl Doc {
@@ -495,6 +478,7 @@ impl Doc {
             flagged,
             dc_mean,
             dig_visible,
+            omp: Default::default(),
         }
     }
 
@@ -684,6 +668,10 @@ pub enum Command {
     SetValueMode(ValueMode),
     /// 155..157: toggle a comment placement mode (radio group with toggle-off).
     CommentMode(u8),
+    /// 32806 «Анализ» (ОМП): clear a shown result, else run.
+    OmpAnalysis,
+    /// 32807 «Параметры» (ОМП): the modal parameters dialog.
+    OmpParams,
     /// 32813 / 32814 / 139 / 32815 / 32816: show or hide В1 / В2 / В3 /
     /// ГВ1 / ГВ2 (index 0..5).
     ToggleVizir(usize),
@@ -775,14 +763,8 @@ pub struct App {
     pub analysis_tab: AnalysisTab,
     /// Quick-analysis forms (one per tab).
     pub quick: crate::quick_ui::QuickForms,
-    pub omp_method: OmpMethod,
-    /// Line sections (участки) of the ОМП parameter tree.
-    pub omp_sections: Vec<Section>,
-    /// Nominal positive-sequence current of substation 1 and 2, A.
-    pub omp_inom: [f64; 2],
-    /// Remote-end document for the double-ended ОМП method.
-    pub omp_remote: Option<usize>,
-    pub omp_run: Option<OmpRun>,
+    /// ОМП result bar, parameters dialog and message box.
+    pub omp_ui: crate::omp_ui::OmpUi,
     /// Persisted characteristic settings (only when enabled by `main`).
     pub store: crate::persist::Store,
     pub persist: bool,
@@ -896,11 +878,7 @@ impl App {
             freq_use_rms: false,
             analysis_tab: AnalysisTab::Symmetric,
             quick: Default::default(),
-            omp_method: OmpMethod::Grounded,
-            omp_sections: Vec::new(),
-            omp_inom: [0.0; 2],
-            omp_remote: None,
-            omp_run: None,
+            omp_ui: Default::default(),
             store: Default::default(),
             persist: false,
             show_about: false,
@@ -945,10 +923,9 @@ impl App {
         }
         app.view = match std::env::var("FV_VIEW").as_deref() {
             Ok("analysis") => View::Analysis,
-            Ok("omp") => View::Omp,
             _ => View::Oscillogram,
         };
-        if app.view == View::Omp {
+        if std::env::var("FV_VIEW").as_deref() == Ok("omp") {
             app.tab = RibbonTab::Omp;
         }
         match std::env::var("FV_VIEW").as_deref() {
@@ -1019,12 +996,10 @@ impl App {
             Command::Redo => self.redo(),
             Command::Show(v) => {
                 self.view = v;
-                self.tab = if v == View::Omp {
-                    RibbonTab::Omp
-                } else {
-                    RibbonTab::Home
-                };
+                self.tab = RibbonTab::Home;
             }
+            Command::OmpAnalysis => self.omp_toggle(),
+            Command::OmpParams => self.omp_open_params(),
             Command::TogglePane(p) => {
                 let on = !self.panes.visible(p);
                 self.panes.set(p, on);
@@ -1134,6 +1109,8 @@ impl App {
             Command::CloseDoc(i) => {
                 if i < self.docs.len() {
                     self.docs.remove(i);
+                    // Indices shift: re-bind the ОМП bar on the next frame.
+                    self.omp_ui.bar_doc = None;
                     self.active = if self.docs.is_empty() {
                         None
                     } else {
@@ -1271,7 +1248,7 @@ impl App {
         let primary = self.primary_values;
         let Some(ai) = self.active else { return };
         self.docs[ai].recompute(primary);
-        if self.omp_run.as_ref().is_some_and(|r| r.doc == ai) {
+        if self.docs[ai].omp.shown {
             self.run_omp();
         }
     }
@@ -1695,6 +1672,10 @@ impl App {
             d.computed.push(Computed::new(name, "объединение".into(), samples, c.color));
             added += 1;
         }
+        // Вставить clears the ОМП result (`0x4a17a0`).
+        if let Some(ai) = self.active {
+            self.omp_clear(ai);
+        }
         self.status = format!("Вставлено каналов (объединение): {added}");
     }
 
@@ -1776,112 +1757,6 @@ impl App {
     }
 }
 
-impl App {
-    /// Run the ОМП engine on the active oscillogram (and the remote one for
-    /// the double-ended method), as `0x4a00b0` does: per-sample distances,
-    /// the chosen window written to the cursors, the result text, and the
-    /// extra channels "Lкз" (m) and "КЗ фазы A/B/C".
-    pub fn run_omp(&mut self) {
-        let Some(di) = self.active else {
-            self.status = "Сначала загрузите осциллограмму.".into();
-            return;
-        };
-        if self.omp_sections.is_empty() || self.omp_inom[0] == 0.0 {
-            self.status = "Данные для определения места повреждения не введены.".into();
-            return;
-        }
-        let d = &self.docs[di];
-        let p = d.osc.samples_per_cycle().max(2);
-        let chan = |doc: &Doc, idx: Option<usize>| -> Vec<f64> {
-            idx.and_then(|i| doc.flagged.analog.get(i)).map(|c| c.samples.clone()).unwrap_or_default()
-        };
-        let three = |doc: &Doc, roles: [Option<usize>; 3]| roles.map(|r| chan(doc, r));
-        let (u, i) = (three(d, d.analysis.u_abc), three(d, d.analysis.i_abc));
-        if u.iter().chain(i.iter()).any(Vec::is_empty) {
-            self.status = "Не назначены каналы Ua, Ub, Uc, Ia, Ib, Ic.".into();
-            return;
-        }
-        let sections = self.omp_sections.clone();
-        let mut trace = match self.omp_method {
-            OmpMethod::Grounded | OmpMethod::Isolated => {
-                let neutral = if self.omp_method == OmpMethod::Grounded {
-                    NeutralMode::Grounded
-                } else {
-                    NeutralMode::Isolated
-                };
-                // The isolated method works on line voltages Uab, Ubc, Uca.
-                let line = |a: &[f64], b: &[f64]| a.iter().zip(b).map(|(x, y)| x - y).collect::<Vec<f64>>();
-                let ul = [line(&u[0], &u[1]), line(&u[1], &u[2]), line(&u[2], &u[0])];
-                let uu = if neutral == NeutralMode::Isolated { &ul } else { &u };
-                fvb_core::omp::single_ended(&fvb_core::omp::SingleEnded {
-                    neutral,
-                    u: [&uu[0], &uu[1], &uu[2]],
-                    i: [&i[0], &i[1], &i[2]],
-                    p,
-                    inom: self.omp_inom[0],
-                    sections: &sections,
-                })
-            }
-            OmpMethod::DoubleEnded => {
-                let Some(r) = self.omp_remote.and_then(|ri| self.docs.get(ri)) else {
-                    self.status = "Выберите вторую осциллограмму (подстанция №2).".into();
-                    return;
-                };
-                let (u2, i2) = (three(r, r.analysis.u_abc), three(r, r.analysis.i_abc));
-                fvb_core::omp::double_ended(&fvb_core::omp::DoubleEnded {
-                    u1: [&u[0], &u[1], &u[2]],
-                    i1: [&i[0], &i[1], &i[2]],
-                    u2: [&u2[0], &u2[1], &u2[2]],
-                    i2: [&i2[0], &i2[1], &i2[2]],
-                    p,
-                    inom1: self.omp_inom[0],
-                    inom2: self.omp_inom[1],
-                    sections: &sections,
-                })
-            }
-        };
-        let result = match self.omp_method {
-            OmpMethod::DoubleEnded => fvb_core::omp::locate_double(&trace, &sections, p),
-            OmpMethod::Grounded => fvb_core::omp::locate(&mut trace, NeutralMode::Grounded, &sections, p),
-            OmpMethod::Isolated => fvb_core::omp::locate(&mut trace, NeutralMode::Isolated, &sections, p),
-        };
-        let idx0 = self.docs.len() + 3;
-        let d = &mut self.docs[di];
-        // В1 at the window start, В2 one period later, both shown.
-        d.main_cursor = result.window.0;
-        d.aux_cursor = result.window.1;
-        d.v_shown[0] = true;
-        d.v_shown[1] = true;
-        let flag = |v: &[bool]| v.iter().map(|b| f64::from(u8::from(*b))).collect::<Vec<f64>>();
-        let extra = [
-            ("Lкз".to_string(), trace.dist.iter().map(|x| x * 1000.0).collect::<Vec<f64>>()),
-            ("КЗ фазы A".to_string(), flag(&trace.pa)),
-            ("КЗ фазы B".to_string(), flag(&trace.pb)),
-            ("КЗ фазы C".to_string(), flag(&trace.pc)),
-        ];
-        d.computed.retain(|c| !extra.iter().any(|(n, _)| *n == c.name));
-        // Computed rows are renumbered: drop them from the selection.
-        d.selection.retain(|k| !matches!(k, ChanKey::Computed(_)));
-        for (k, (name, samples)) in extra.into_iter().enumerate() {
-            d.computed.push(Computed::new(name, "ОМП".into(), samples, Self::palette(idx0 + k)));
-        }
-        self.status = result.text.trim().to_string();
-        self.omp_run = Some(OmpRun { method: self.omp_method, doc: di, trace });
-    }
-
-    /// The ОМП result over the active document's current cursor interval (the
-    /// original recomputes it when cursor 1 or 2 is moved).
-    pub fn omp_result(&self) -> Option<OmpResult> {
-        let run = self.omp_run.as_ref()?;
-        let d = self.docs.get(run.doc)?;
-        let (c1, c2) = (d.main_cursor.min(d.aux_cursor), d.main_cursor.max(d.aux_cursor));
-        Some(match run.method {
-            OmpMethod::DoubleEnded => fvb_core::omp::result_double_for_window(&run.trace, &self.omp_sections, c1, c2),
-            _ => fvb_core::omp::result_for_window(&run.trace, &self.omp_sections, c1, c2),
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1920,9 +1795,10 @@ mod tests {
     #[test]
     fn show_view_switches_view_and_tab() {
         let mut app = demo_app();
-        app.dispatch(Command::Show(View::Omp));
-        assert_eq!(app.view, View::Omp);
-        assert_eq!(app.tab, RibbonTab::Omp);
+        app.tab = RibbonTab::Omp;
+        app.dispatch(Command::Show(View::Analysis));
+        assert_eq!(app.view, View::Analysis);
+        assert_eq!(app.tab, RibbonTab::Home);
         app.dispatch(Command::Show(View::Oscillogram));
         assert_eq!(app.view, View::Oscillogram);
         assert_eq!(app.tab, RibbonTab::Home);
@@ -2024,20 +1900,26 @@ mod tests {
     fn omp_without_data_reports_message_349() {
         let mut app = demo_app();
         app.run_omp();
-        assert_eq!(app.status, "Данные для определения места повреждения не введены.");
-        assert!(app.omp_run.is_none());
+        assert_eq!(app.omp_ui.message.as_deref(), Some("Данные для определения места повреждения не введены."));
+        assert!(app.active_doc().unwrap().omp.run.is_none());
     }
 
     #[test]
     fn omp_run_sets_window_cursors_and_channels() {
         let mut app = demo_app();
-        app.omp_inom[0] = 100.0;
-        app.omp_sections.push(fvb_core::omp::Section {
-            length_km: 50.0,
-            r1_per_km: 0.1,
-            x1_per_km: 0.4,
-            r0_per_km: 0.3,
-            x0_per_km: 1.2,
+        let st = &mut app.active_doc_mut().unwrap().omp.params;
+        st.method = fvb_core::omp_params::GROUNDED;
+        let st = &mut st.stations[0];
+        st.inom = "100".into();
+        for (f, n) in [(&mut st.ia, "Ia"), (&mut st.ib, "Ib"), (&mut st.ic, "Ic"), (&mut st.ua, "Ua"), (&mut st.ub, "Ub"), (&mut st.uc, "Uc")] {
+            *f = n.into();
+        }
+        st.sections.push(fvb_core::omp_params::SectionParams {
+            length: "50".into(),
+            r1: "0.1".into(),
+            x1: "0.4".into(),
+            r0: "0.3".into(),
+            x0: "1.2".into(),
             ..Default::default()
         });
         app.run_omp();
@@ -2045,11 +1927,12 @@ mod tests {
         let p = d.osc.samples_per_cycle();
         assert_eq!(d.aux_cursor, d.main_cursor + p - 1, "В1 at the start, В2 one period later");
         assert!(d.v_shown[0] && d.v_shown[1]);
-        for name in ["Lкз", "КЗ фазы A", "КЗ фазы B", "КЗ фазы C"] {
-            assert!(d.computed.iter().any(|c| c.name == name), "{name}");
+        assert!(d.computed.iter().any(|c| c.name == "Lкз" && c.unit == "m"));
+        for name in ["КЗ фазы А", "КЗ фазы B", "КЗ фазы C"] {
+            assert!(d.osc.digital.iter().any(|c| c.id == name), "{name}");
         }
         let r = app.omp_result().unwrap();
-        assert_eq!(app.status, r.text.trim());
+        assert_eq!(app.omp_ui.bar.as_deref(), Some(r.text.as_str()));
     }
 
     #[test]

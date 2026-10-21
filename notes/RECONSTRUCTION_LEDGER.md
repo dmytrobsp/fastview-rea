@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 152 pass)
+- `cargo test --workspace`   (currently 171 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 152 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 171 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -882,6 +882,30 @@ indeterminate bar with «Отмена»; re-opening with another encoding stays
 synchronous (`load_comtrade_now`). Residual: no 0..100 progress (the parsers
 do not report it; the abandoned worker runs to completion and its result is
 dropped).
+
+### L9.11 — ОМП UI (track O, merged)  ·  ✅ (residuals)
+
+Merged from worktree branch `worktree-agent-a7005e8361db7a509` (`f93a099`,
+`5ecabbf`): `fvb_core::omp_params` (settings, `.omp` XML ver 2 with the
+original's "lenght", OK validation 3187/3535/3068/3074/3071/3076, UTF-16LE
+`.txt` report `0x49dbf0`), `omp_ui.rs` (Анализ toggle `0x449890`/`0x4a17a0`,
+result bar under the ribbon following the active document with live text and
+«Сохранить...» 32879, bar close = 32830 clears, the modal «Параметры ОМП» tree +
+grid with toolbar and enable rules, channels by name per station, message
+354, «Lкз» in m + digital «КЗ фазы А/B/C»); `View::Omp` removed. Merge fix: ОМП
+reads `Doc::flagged` (L9.7); `recompute_active` re-runs it when shown.
+Residual: report start/trigger times empty (loader keeps no timestamps), no
+legacy `.omp` reader / `.set` embedding.
+
+**HANDOFF (2026-10-21, usage limit):** track D (diagrams 19–22, 27, 40) is
+finished on branch `worktree-agent-a7526b4faa28680ce` (`cafd051`) but NOT yet
+merged — merge it next (expect conflicts in `app.rs`/`views.rs`/`dialogs.rs`;
+it replaces egui_plot views with `diagram.rs`/`diagram_ui.rs`/`popmenu.rs`;
+afterwards switch the frequency diagram to `Doc::flagged`). Track F (dialogs
+16, 18, 28, 29, 34, 39 + comtrade timestamps) was still running in its
+worktree — check `git branch` for `worktree-agent-a7cb4acef380f64fb`, merge,
+then do ribbon contents 11/31/33, merge workflow 15 (needs F's start times),
+and the rest of §9.
 
 Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — tracks D (diagrams 19–22, 27,
 40), O (ОМП 6, 12, 38) and F (dialogs 16, 18, 28, 29, 34, 39) were

@@ -14,6 +14,7 @@ impl App {
         self.color_window(ctx);
         self.finder_window(ctx);
         self.loading_window(ctx);
+        self.omp_windows(ctx);
     }
 
     /// «Загрузка» (DIALOG 492): an indeterminate progress bar per large file
