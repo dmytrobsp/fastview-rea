@@ -200,7 +200,7 @@ impl App {
                 painter.text(
                     Pos2::new(plot_x0 - 6.0, lane_top + 3.0),
                     Align2::RIGHT_TOP,
-                    format!("{}  {}", fmt(val), unit),
+                    fvb_core::views::readout_text(val, &unit).trim().to_string(),
                     FontId::monospace(11.0),
                     color.gamma_multiply(0.9),
                 );
@@ -209,7 +209,7 @@ impl App {
                     if lane_h > 44.0 {
                         let mut yy = lane_top + 18.0;
                         for (lbl, v) in [("Max", maxv), ("Min", minv), ("СКЗ", rms), ("A1", a1)] {
-                            if (lbl == "СКЗ" || lbl == "A1") && matches!(lane, Lane::Computed(_) | Lane::Digital(_)) {
+                            if (lbl == "СКЗ" || lbl == "A1") && matches!(lane, Lane::Digital(_)) {
                                 continue;
                             }
                             painter.text(
@@ -222,7 +222,7 @@ impl App {
                             painter.text(
                                 Pos2::new(plot_x0 - 6.0, yy),
                                 Align2::RIGHT_TOP,
-                                fmt(v),
+                                fvb_core::views::readout_text(v, &unit).trim().to_string(),
                                 FontId::monospace(9.5),
                                 Color32::from_gray(80),
                             );
@@ -272,11 +272,11 @@ impl App {
                 };
                 match lane {
                     Lane::Analog(i) => {
-                        let pts = draw_wave(&|k| analog_disp(doc, *i, k, primary), doc.osc.sample_count(), &doc.osc.time);
+                        let pts = draw_wave(&|k| mode_disp(doc, *i, k, primary, value_mode), doc.osc.sample_count(), &doc.osc.time);
                         painter.add(Shape::line(pts, Stroke::new(1.3f32, color)));
                         for &oi in &overlays[li] {
                             let oc = doc.chans[oi].color;
-                            let op = draw_wave(&|k| analog_disp(doc, oi, k, primary), doc.osc.sample_count(), &doc.osc.time);
+                            let op = draw_wave(&|k| mode_disp(doc, oi, k, primary, value_mode), doc.osc.sample_count(), &doc.osc.time);
                             painter.add(Shape::line(op, Stroke::new(1.2f32, oc)));
                         }
                     }
@@ -783,6 +783,19 @@ fn primary_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
 /// Displayed sample of analog channel `i` at `k`: raw ADC counts when the channel
 /// is in «отсчёты АЦП» mode, otherwise the (optionally primary-scaled) value with
 /// invert / remove-DC applied.
+/// An analog channel's plotted / read-out value in the display mode
+/// (`0x461440`): instantaneous, one-period RMS or first harmonic.
+fn mode_disp(doc: &crate::app::Doc, i: usize, k: usize, primary: bool, mode: ValueMode) -> f64 {
+    let ch = &doc.osc.analog[i];
+    let sdiv = if doc.chans[i].adc_counts && ch.a.abs() > 1e-12 { ch.a.abs() } else { 1.0 };
+    let scale = primary_scale(doc, i, primary) / sdiv;
+    match mode {
+        ValueMode::Instant => analog_disp(doc, i, k, primary),
+        ValueMode::Rms => doc.rms_at(i, k) * scale,
+        ValueMode::FirstHarmonic => doc.harmonic_at(i, k) * doc.osc.harmonic1_gain * scale,
+    }
+}
+
 fn analog_disp(doc: &crate::app::Doc, i: usize, k: usize, primary: bool) -> f64 {
     let ch = &doc.osc.analog[i];
     if doc.chans[i].adc_counts {
@@ -826,29 +839,39 @@ fn lane_stats(
             // RMS/1st-harmonic are computed in scaled units; divide by |a| for ADC.
             let sdiv = if adc && ch.a.abs() > 1e-12 { ch.a.abs() } else { 1.0 };
             let scale = primary_scale(doc, *i, primary);
+            // Value at the cursor and Max/Min follow the display mode; СКЗ
+            // and A1 are always the one-period RMS and first harmonic.
             let n = doc.osc.sample_count();
             let mut mx = f64::MIN;
             let mut mn = f64::MAX;
             for k in 0..n {
-                let v = analog_disp(doc, *i, k, primary);
+                let v = mode_disp(doc, *i, k, primary, value_mode);
                 mx = mx.max(v);
                 mn = mn.min(v);
             }
             let rms = doc.rms_at(*i, k_main) * scale / sdiv;
-            let a1 = doc.harmonic_at(*i, k_main) * scale / sdiv;
-            let val = match value_mode {
-                ValueMode::Instant => analog_disp(doc, *i, k_main, primary),
-                ValueMode::Rms => rms,
-                ValueMode::FirstHarmonic => a1,
-            };
+            let a1 = doc.harmonic_at(*i, k_main) * doc.osc.harmonic1_gain * scale / sdiv;
+            let val = mode_disp(doc, *i, k_main, primary, value_mode);
             (ch.id.clone(), analog_unit(doc, *i), doc.chans[*i].color, mx, mn, rms, a1, val)
         }
         Lane::Computed(i) => {
+            // A computed channel is read out like any other channel.
             let c = &doc.computed[*i];
-            let mx = c.samples.iter().copied().fold(f64::MIN, f64::max);
-            let mn = c.samples.iter().copied().fold(f64::MAX, f64::min);
-            let val = c.samples.get(k_main).copied().unwrap_or(0.0);
-            (c.name.clone(), String::new(), c.color, mx, mn, 0.0, 0.0, val)
+            let n = doc.osc.samples_per_cycle().max(2);
+            let series = |k: usize| match value_mode {
+                ValueMode::Instant => c.samples.get(k).copied().unwrap_or(0.0),
+                ValueMode::Rms => fvb_core::signal::rms_at(&c.samples, k, n),
+                ValueMode::FirstHarmonic => fvb_core::signal::harmonic_rms(&c.samples, k, n, 1),
+            };
+            let (mut mx, mut mn) = (f64::MIN, f64::MAX);
+            for k in 0..c.samples.len() {
+                let v = series(k);
+                mx = mx.max(v);
+                mn = mn.min(v);
+            }
+            let rms = fvb_core::signal::rms_at(&c.samples, k_main, n);
+            let a1 = fvb_core::signal::harmonic_rms(&c.samples, k_main, n, 1);
+            (c.name.clone(), c.unit.clone(), c.color, mx, mn, rms, a1, series(k_main))
         }
         Lane::Digital(i) => {
             let d = &doc.osc.digital[*i];

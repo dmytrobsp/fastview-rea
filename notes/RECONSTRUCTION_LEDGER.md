@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 118 pass)
+- `cargo test --workspace`   (currently 120 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 118 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 120 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -53,13 +53,13 @@ memory (Flatpak overlay + CLI wrapper `~/projects/slack-rea/tools/rea-ghidra.sh`
 6. **Update this ledger**: the entry's evidence (address), what you verified, and
    the verdict. Append new entries as `L<n>`.
 
-**NEXT TASK (start here).** L8 views per `notes/VIEWS_SPEC.md`: vector diagram
-(computed channels with the vector flag, angle reference channel / absolute,
-unit-"A" grouping with nice scaling, formats), circle locus (flag-0x8 channels'
-phasor series, between-cursors option, readout modes), differential-diagram
-pairs, frequency diagram (periods / harmonics / percent modes), per-channel
-readout semantics. Then: `.osc` writer, frequency-channel DFT, dialog
-mapping. Done: L2 ✅, L3 🟡, L4 ✅, L5 ✅, L6 ✅, L7 ✅, L8 🟡.
+**NEXT TASK (start here).** Remaining, lower-impact gaps: the `.osc` writer
+(`0x44ca80`) and OSC time stamps; the frequency-channel DFT variant
+(`FUN_004267e0`); R/X channel pairs on the circle diagram (DIALOG 554); the
+parallel-line (mutual coupling) entry in the ОМП UI; dialog-behaviour mapping
+of the channel-role dialogs (DIALOG 401–543); a GUI screenshot pass (Wayland
+capture) to sanity-check the reworked views. Done: L2 ✅, L3 🟡 (readers ✅),
+L4 ✅, L5 ✅, L6 ✅, L7 ✅, L8 ✅.
 
 **Scope reality.** "Every byte" literally = 9129 funcs of mostly MFC boilerplate;
 the *provable* target is the behavioural engines (this ledger's table). `.sto`
@@ -141,7 +141,7 @@ decompilation (pending, listed below).
 | COMTRADE reader/writer | `0x450a30`, `.cff` `0x44fe30`/`0x44d0f0`, `.osc` `0x4524b0` | `comtrade.rs` | 🟡 L3 (`.cfg` ✅ `.cff` ✅ `.osc` read ✅, `.osc` write ❌) |
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
-| Analysis views | CQAnPropSheet `0x48b970`, vector `0x490360`, freq `0x46f5a0` | `quick.rs`, `quick_ui.rs`, `views.rs` | 🟡 L8 (quick ✅, views ❌) |
+| Analysis views | CQAnPropSheet `0x48b970`, vector `0x490360`, freq `0x46f5a0`, readout `0x461440` | `quick.rs`, `views.rs`, GUI | ✅ L8 |
 
 Next: `.fvb` parser re-verify (attribute defaults, missing attributes, parameter
 /var evaluation order), DFT/signal (incl. the Calculator channel mode + `rms:
@@ -508,7 +508,7 @@ detection, window, median/σ) with tests; GUI dialog as a section tree.
 
 ---
 
-## L8 — Analysis views  ·  🟡 quick analysis ✅, vector ✅, loci ✅, frequency/readout ❌
+## L8 — Analysis views  ·  ✅ (quick analysis, vector, loci, frequency, readout)
 
 Spec: **`notes/VIEWS_SPEC.md`** (CQAnPropSheet `0x48b970`, vector `0x490360`,
 frequency `0x46f5a0`, readout `0x461440`, circle locus `0x43a880`).
@@ -546,6 +546,16 @@ diagram draws every channel with the circle flag as its phasor series
 cursor 1 (Re ± jIm / |·|∠); differential diagram draws the (Iторм, Iдиф)
 pairs. Not modelled: separate scales for "Ohm" vs other circle channels
 (NOT DETERMINED), R/X channel pairs (DIALOG 554), the vector table layout.
+Frequency diagram (done): `signal::spectrum` = `0x426510` (P-period window,
+bins k·f/P, bin 0 = |a0|, harmonic-1 gain on bin 1 even for P > 1), periods /
+harmonic count (≤ Nyquist) / percent (of bin P or of true RMS) settings, bars
+normalised to the channel maximum, `views::freq_label`. Readout (done): the
+display mode drives the plotted series, the value at the cursor and Max/Min;
+СКЗ/A1 always one-period RMS / first harmonic (with the record gain);
+computed channels read out like any channel; text = `views::readout_text`
+(`" %-8g %s"` + SI prefix, `fmt_g` emulating C `%g`). Residual: the default of
+the percent switch and the stat-visibility controls (NOT DETERMINED); MSVC
+printf tie rounding not modelled.
 
 ---
 

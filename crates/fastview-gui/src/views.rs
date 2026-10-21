@@ -399,33 +399,61 @@ impl App {
     }
 
     // ---- Частотная диаграмма: harmonic spectrum at the cursor ----
+    /// Frequency diagram (`0x46f5a0`): for every channel with the frequency
+    /// flag, the spectrum over `P` periods ending at the main cursor
+    /// (`fvb_core::signal::spectrum`), bars at `k·f/P` Hz normalised to the
+    /// channel's largest bin, labelled in absolute RMS or percent of the
+    /// fundamental (or of the true RMS).
     fn view_frequency(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Периодов:");
+                ui.add(egui::DragValue::new(&mut self.freq_periods).range(1..=50));
+                ui.label("Гармоник:");
+                ui.add(egui::DragValue::new(&mut self.freq_harmonics).range(1..=200));
+                ui.checkbox(&mut self.freq_percent, "В процентах");
+                if self.freq_percent {
+                    ui.checkbox(&mut self.freq_use_rms, "от действующего значения");
+                }
+            });
+            let (periods, percent, use_rms) = (self.freq_periods.max(1), self.freq_percent, self.freq_use_rms);
             let Some(d) = self.active_doc() else {
                 ui.centered_and_justified(|ui| ui.label("Загрузите осциллограмму для частотной диаграммы."));
                 return;
             };
-            ui.label("Гармонический состав в основном визире (доля от 1-й гармоники)");
             let n = d.osc.samples_per_cycle().max(2);
             let k = d.main_cursor;
-            const HMAX: usize = 15;
-            let mut charts: Vec<BarChart> = Vec::new();
-            let mut slot = 0usize;
+            // NumHarmonics is capped at the Nyquist bin of the window.
+            let k_max = self.freq_harmonics.min(n * periods / 2);
+            let f = d.osc.line_freq;
             let visible: Vec<usize> = (0..d.osc.analog.len()).filter(|i| d.chans[*i].on_freq && d.chans[*i].visible).collect();
-            let width = 0.8 / visible.len().max(1) as f64;
+            let width = 0.8 * f / periods as f64 / visible.len().max(1) as f64;
+            let mut charts: Vec<BarChart> = Vec::new();
             for (si, &i) in visible.iter().enumerate() {
-                let mags = harmonics(&d.osc.analog[i].samples, k, n, HMAX);
-                let base = mags.get(1).copied().unwrap_or(0.0).max(1e-9);
-                let bars: Vec<Bar> = (1..=HMAX)
-                    .map(|h| Bar::new(h as f64 + si as f64 * width, mags.get(h).copied().unwrap_or(0.0) / base).width(width))
+                let samples = &d.osc.analog[i].samples;
+                let sp = fvb_core::signal::spectrum(samples, k, n, periods, k_max, d.osc.harmonic1_gain);
+                let peak = sp.iter().copied().fold(0.0, f64::max).max(1e-300);
+                let base = if use_rms {
+                    fvb_core::signal::rms_at(samples, k, n * periods)
+                } else {
+                    sp.get(periods).copied().unwrap_or(0.0)
+                };
+                let bars: Vec<Bar> = sp
+                    .iter()
+                    .enumerate()
+                    .map(|(h, v)| {
+                        let shown = if percent { 100.0 * v / base.max(1e-300) } else { *v };
+                        Bar::new(h as f64 * f / periods as f64 + si as f64 * width, v / peak)
+                            .width(width)
+                            .name(fvb_core::views::freq_label(shown))
+                    })
                     .collect();
-                charts.push(BarChart::new(bars).color(d.chans[i].color).name(&d.osc.analog[i].id));
-                slot += 1;
+                let unit = if percent { ", %" } else { "" };
+                charts.push(BarChart::new(bars).color(d.chans[i].color).name(format!("{}{unit}", d.osc.analog[i].id)));
             }
-            let _ = slot;
             Plot::new("freqplot")
                 .legend(egui_plot::Legend::default())
-                .x_axis_label("№ гармоники")
+                .x_axis_label("f, Гц")
                 .show(ui, |pu| {
                     for c in charts {
                         pu.bar_chart(c);
@@ -626,12 +654,6 @@ impl App {
 }
 
 /// Magnitudes of harmonics 0..=hmax from the one-cycle window ending at `center`.
-/// RMS magnitudes of harmonics 0..=hmax at sample `center`
-/// ([`fvb_core::signal::harmonic_rms`], the original's `fourie:`).
-fn harmonics(samples: &[f64], center: usize, n: usize, hmax: usize) -> Vec<f64> {
-    (0..=hmax).map(|h| fvb_core::signal::harmonic_rms(samples, center, n, h)).collect()
-}
-
 /// Draw a region (operate or reset), punching holes out of the fill.
 fn draw_region(
     pu: &mut egui_plot::PlotUi,
@@ -686,26 +708,6 @@ fn draw_region(
                     }
                 }
             }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::harmonics;
-
-    #[test]
-    fn harmonics_finds_the_fundamental_of_a_sine() {
-        let n = 40usize;
-        let cycles = 6;
-        let s: Vec<f64> = (0..n * cycles)
-            .map(|i| 100.0 * (2.0 * std::f64::consts::PI * (i as f64) / n as f64).sin())
-            .collect();
-        let m = harmonics(&s, n * cycles - 1, n, 10);
-        // fundamental (h=1) dominates; harmonics 2..=10 are ~0.
-        assert!(m[1] > 60.0, "fundamental magnitude {}", m[1]);
-        for h in 2..=10 {
-            assert!(m[h] < m[1] * 0.05, "harmonic {h} should be small: {}", m[h]);
         }
     }
 }

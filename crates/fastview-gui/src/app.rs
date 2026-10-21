@@ -457,6 +457,12 @@ pub struct App {
     pub circle_readout: u8,
     /// Circle diagram: only the samples between the cursors (SightsOnly).
     pub circle_between_cursors: bool,
+    /// Frequency diagram: periods in the window, harmonic count, percent
+    /// labels and percent of the true RMS instead of the fundamental.
+    pub freq_periods: usize,
+    pub freq_harmonics: usize,
+    pub freq_percent: bool,
+    pub freq_use_rms: bool,
 
     // analysis / omp
     pub analysis_tab: AnalysisTab,
@@ -544,6 +550,10 @@ impl App {
             vec_angle_ref: None,
             circle_readout: 0,
             circle_between_cursors: false,
+            freq_periods: 1,
+            freq_harmonics: 10,
+            freq_percent: false,
+            freq_use_rms: false,
             analysis_tab: AnalysisTab::Symmetric,
             quick: Default::default(),
             omp_method: OmpMethod::Grounded,

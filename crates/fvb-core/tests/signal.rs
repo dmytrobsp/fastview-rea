@@ -75,3 +75,22 @@ fn harmonic_magnitudes() {
     assert!((harmonic_rms(&x, i, n, 0) - 1.5).abs() < 1e-9);
     assert_eq!(harmonic_rms(&x, n - 2, n, 1), 0.0, "zero before a full window");
 }
+
+/// Frequency-diagram spectrum over P periods: bin P is the fundamental, the
+/// harmonic-1 gain lands on bin 1 even then (0x426510 quirk).
+#[test]
+fn spectrum_over_periods() {
+    let n = 20;
+    let x = sine(n, 100, 10.0, 0.0);
+    let sp = spectrum(&x, 99, n, 1, 10, 1.0);
+    assert!((sp[1] - 10.0).abs() < 1e-9 && sp[2].abs() < 1e-9);
+    let sp = spectrum(&x, 99, n, 2, 10, 1.5);
+    assert!((sp[2] - 10.0).abs() < 1e-9, "bin P = fundamental");
+    assert!(sp[1].abs() < 1e-9, "gain applied to an empty bin 1");
+    let sp1 = spectrum(&x, 99, n, 1, 3, 1.5);
+    assert!((sp1[1] - 15.0).abs() < 1e-9);
+    assert_eq!(spectrum(&x, 10, n, 1, 3, 1.0), vec![0.0; 4]);
+    // phasor_at matches the sliding series.
+    let ph = sliding_phasors(&x, n);
+    assert_eq!(phasor_at(&x, 57, n), ph[57]);
+}

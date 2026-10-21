@@ -163,6 +163,38 @@ pub fn fault_at(samples: &[f64], i: usize, n: usize) -> f64 {
     sum.sqrt() / (n as f64).sqrt()
 }
 
+/// Frequency-diagram spectrum (`0x426510(k, idx, P)`): over the `n·periods`
+/// samples ending at `i`, bin `k` (frequency `k·f/periods`) =
+/// `√2·√(C²+S²)/W` with angles `j·k·2π/W`; bin 0 = |mean|; the record's
+/// harmonic-1 gain multiplies bin 1 (even when `periods > 1`, as the original
+/// does). Bins `0..=k_max`; all 0 before a full window.
+pub fn spectrum(samples: &[f64], i: usize, n: usize, periods: usize, k_max: usize, gain1: f64) -> Vec<f64> {
+    let w = n * periods.max(1);
+    let mut out = vec![0.0; k_max + 1];
+    if w == 0 || i + 1 < w || i >= samples.len() {
+        return out;
+    }
+    let window = &samples[i + 1 - w..=i];
+    let tau = 2.0 * std::f64::consts::PI;
+    for (k, slot) in out.iter_mut().enumerate() {
+        *slot = if k == 0 {
+            (window.iter().sum::<f64>() / w as f64).abs()
+        } else {
+            let (mut c, mut s) = (0.0, 0.0);
+            for (j, x) in (1..=w).zip(window) {
+                let th = j as f64 * k as f64 * tau / w as f64;
+                c += x * th.cos();
+                s += x * th.sin();
+            }
+            2f64.sqrt() * (c * c + s * s).sqrt() / w as f64
+        };
+    }
+    if k_max >= 1 {
+        out[1] *= gain1;
+    }
+    out
+}
+
 /// Fault (emergency, аварийная) component per sample (`FUN_00427670`): the
 /// RMS over one period of the one-period-lag second difference
 /// `d[s] = x[s] − 2·x[s−N] + x[s−2N]`, where terms with `s < 2N` count as 0:
