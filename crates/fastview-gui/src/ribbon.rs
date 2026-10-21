@@ -183,17 +183,34 @@ impl App {
                     cmds.push(Command::ChannelMap);
                 }
             });
+            ui.vertical(|ui| {
+                // 155 «Момент времени»: arm comment placement — the next left
+                // click on the plot places a moment comment (156/157 pending).
+                let on = self.active_doc().is_some_and(|d| d.comment_mode == 1);
+                ui.add_enabled_ui(self.active_doc().is_some_and(|d| d.comments_allowed()), |ui| {
+                    if small_toggle(ui, p, "Момент времени", on) {
+                        cmds.push(Command::CommentMode(1));
+                    }
+                });
+                let hcur = self.active_doc().is_some_and(|d| d.hcur_on);
+                if small_toggle(ui, p, "Гор. визиры", hcur) {
+                    cmds.push(Command::ToggleHcur);
+                }
+            });
         });
         // Вычисления
         ribbon_group(ui, p, "Вычисления", |ui| {
             ui.vertical(|ui| {
-                if small_toggle(ui, p, "Мгновенные знач.", self.value_mode == ValueMode::Instant) {
+                // 32820..32822 act on the selected channels; a button is checked
+                // only when every selected channel is in that mode.
+                let checked = |m| self.active_doc().is_some_and(|d| d.mode_state(m).checked);
+                if small_toggle(ui, p, "Мгновенные знач.", checked(ValueMode::Instant)) {
                     cmds.push(Command::SetValueMode(ValueMode::Instant));
                 }
-                if small_toggle(ui, p, "Среднеквадр. (СКЗ)", self.value_mode == ValueMode::Rms) {
+                if small_toggle(ui, p, "Среднеквадр. (СКЗ)", checked(ValueMode::Rms)) {
                     cmds.push(Command::SetValueMode(ValueMode::Rms));
                 }
-                if small_toggle(ui, p, "Первая гармоника", self.value_mode == ValueMode::FirstHarmonic) {
+                if small_toggle(ui, p, "Первая гармоника", checked(ValueMode::FirstHarmonic)) {
                     cmds.push(Command::SetValueMode(ValueMode::FirstHarmonic));
                 }
             });

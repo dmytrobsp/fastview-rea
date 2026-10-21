@@ -10,7 +10,7 @@ use fvb_core::model::Dimension;
 use fvb_core::omp::{NeutralMode, OmpResult, Section, Trace};
 use num_complex::Complex64;
 use fvb_core::Library;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 pub const DEFAULT_LIBRARY: &[u8] = include_bytes!("../../../assets/FastView.fvb");
 
@@ -156,8 +156,13 @@ pub struct ChanView {
     pub adc_counts: bool,
     /// Per-channel vertical zoom (Увеличить/Уменьшить/Вернуть к исходному размеру).
     pub vzoom: f64,
-    /// Совместить каналы: draw this channel in the previous lane's axes.
-    pub overlay: bool,
+    /// Совместить каналы: channels sharing a group are drawn in one lane (the
+    /// lane of the group's first visible member), as the original's channel
+    /// groups (33035 creates one from the selection, 33037 dissolves it).
+    pub group: Option<u32>,
+    /// Display mode of this channel (bits 7/8/9 of the original's channel
+    /// flags, set on the selected channels by 32820..32822).
+    pub mode: ValueMode,
     pub on_freq: bool,
     pub on_vector: bool,
     pub on_circle: bool,
@@ -204,6 +209,8 @@ pub struct Comment {
     pub level: Option<f64>,
     /// «Скрыть комментарий» — keep the marker but hide the text label.
     pub hidden: bool,
+    /// «Зафиксировать визир» (33039) — the comment is locked in place.
+    pub locked: bool,
 }
 
 /// A channel copied for merging oscillograms (Объединение: «Копировать/Вставить
@@ -226,6 +233,16 @@ pub struct CommentEdit {
     pub level_str: String,
 }
 
+/// A channel row of the oscillogram view. The original keeps one channel
+/// vector (analog, then discrete); our record splits analog / computed /
+/// digital, so a row is named by its kind and index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ChanKey {
+    Analog(usize),
+    Computed(usize),
+    Digital(usize),
+}
+
 /// One open oscillogram document.
 pub struct Doc {
     pub osc: Oscillogram,
@@ -243,6 +260,15 @@ pub struct Doc {
     /// (Iдиф, Iторм) computed-channel pairs for the differential diagram.
     pub dif_pairs: Vec<(String, String)>,
     pub comments: Vec<Comment>,
+    /// Selected channels (the original's per-channel `+0x100` flag): the
+    /// target of the channel context menu and the per-channel commands.
+    pub selection: BTreeSet<ChanKey>,
+    /// Anchor of a Shift+click range selection (the original's `view+0x114`).
+    pub sel_anchor: Option<ChanKey>,
+    /// Next free channel-group id (Совместить каналы).
+    pub next_group: u32,
+    /// Comment placement mode (`doc+0x858`): 0 off, 1 момент времени.
+    pub comment_mode: u8,
     /// Time-axis view window in seconds `[t0, t1]` (shared across lanes).
     pub view_t0: f64,
     pub view_t1: f64,
@@ -278,7 +304,8 @@ impl Doc {
                 remove_dc: false,
                 adc_counts: false,
                 vzoom: 1.0,
-                overlay: false,
+                group: None,
+                mode: ValueMode::Instant,
                 on_freq: true,
                 on_vector: true,
                 on_circle: i == 0,
@@ -297,6 +324,10 @@ impl Doc {
             cff: Default::default(),
             dif_pairs: Vec::new(),
             comments: Vec::new(),
+            selection: BTreeSet::new(),
+            sel_anchor: None,
+            next_group: 1,
+            comment_mode: 0,
             view_t0: 0.0,
             view_t1: if t_last > 0.0 { t_last } else { 1.0 },
             hcur_on: false,
@@ -338,6 +369,18 @@ impl Doc {
     }
 
     /// Reset the time view to the full record.
+    /// CMDUI 155..157: comments can be placed only on records opened from a
+    /// `.cfg` or `.osc` file (our bundled demo record, with no file, too).
+    pub fn comments_allowed(&self) -> bool {
+        match &self.path {
+            None => true,
+            Some(p) => p
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("cfg") || e.eq_ignore_ascii_case("osc")),
+        }
+    }
+
     pub fn fit_time(&mut self) {
         self.view_t0 = 0.0;
         self.view_t1 = self.osc.time.last().copied().unwrap_or(1.0).max(1e-9);
@@ -395,6 +438,10 @@ pub enum Command {
     InvertVisible,
     RemoveDcVisible,
     SetValueMode(ValueMode),
+    /// 155..157: toggle a comment placement mode (radio group with toggle-off).
+    CommentMode(u8),
+    /// Horizontal визиры on/off (the original's 32815/32816, one each).
+    ToggleHcur,
     ShowAllChannels(bool),
     SetSkin(Skin),
     FitTime,
@@ -438,7 +485,6 @@ pub struct App {
     pub tab: RibbonTab,
     pub view: View,
     pub skin: Skin,
-    pub value_mode: ValueMode,
     pub time_unit: TimeUnit,
     pub show_grid: bool,
     pub primary_values: bool,
@@ -503,6 +549,15 @@ pub struct App {
 
     /// Which horizontal визир (0/1) is being dragged, if any.
     pub dragging_hcur: Option<u8>,
+    /// The open oscillogram context menu, latched at the right-click.
+    pub lane_menu: Option<crate::lanes::LaneMenu>,
+    /// Bumped on every right-click so each menu gets a fresh popup area.
+    pub lane_menu_serial: u64,
+    /// A press that dismissed the menu is swallowed until the button is up.
+    pub lane_menu_eat: bool,
+    /// «Цвет канала» (33030) colour dialog, initialised from the first
+    /// selected channel and applied to every selected channel on OK.
+    pub color_dialog: Option<egui::Color32>,
 
     pub status: String,
 }
@@ -538,7 +593,6 @@ impl App {
             tab: RibbonTab::Home,
             view: View::Oscillogram,
             skin: Skin::Blue,
-            value_mode: ValueMode::Rms,
             time_unit: TimeUnit::Milli,
             show_grid: true,
             primary_values: false,
@@ -578,6 +632,10 @@ impl App {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             dragging_hcur: None,
+            lane_menu: None,
+            lane_menu_serial: 0,
+            lane_menu_eat: false,
+            color_dialog: None,
             status: "Готово".to_string(),
         };
         app.ensure_block_state();
@@ -701,7 +759,23 @@ impl App {
                     }
                 }
             }
-            Command::SetValueMode(m) => self.value_mode = m,
+            Command::SetValueMode(m) => {
+                if let Some(d) = self.active_doc_mut() {
+                    d.set_mode_selected(m);
+                }
+            }
+            Command::ToggleHcur => {
+                if let Some(d) = self.active_doc_mut() {
+                    d.hcur_on = !d.hcur_on;
+                }
+            }
+            Command::CommentMode(k) => {
+                if let Some(d) = self.active_doc_mut() {
+                    if d.comments_allowed() {
+                        d.comment_mode = if d.comment_mode == k { 0 } else { k };
+                    }
+                }
+            }
             Command::ShowAllChannels(on) => {
                 self.snapshot_undo();
                 if let Some(d) = self.active_doc_mut() {
@@ -1172,18 +1246,20 @@ impl App {
             self.status = "Нет осциллограммы для копирования каналов.".into();
             return;
         };
+        // 57634 copies the selected (file, not computed) channels.
         let clip: Vec<ClipChan> = d
-            .osc
-            .analog
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| d.chans.get(*i).map(|c| c.visible).unwrap_or(false))
-            .map(|(i, ch)| ClipChan {
-                name: ch.id.clone(),
-                samples: ch.samples.clone(),
+            .selected_analog()
+            .into_iter()
+            .map(|i| ClipChan {
+                name: d.osc.analog[i].id.clone(),
+                samples: d.osc.analog[i].samples.clone(),
                 color: d.chans[i].color,
             })
             .collect();
+        if clip.is_empty() {
+            self.status = "Не выбраны каналы для копирования.".into();
+            return;
+        }
         let n = clip.len();
         self.channel_clip = clip;
         self.status = format!("Скопировано каналов для объединения: {n}");
@@ -1376,6 +1452,8 @@ impl App {
             ("КЗ фазы C".to_string(), flag(&trace.pc)),
         ];
         d.computed.retain(|c| !extra.iter().any(|(n, _)| *n == c.name));
+        // Computed rows are renumbered: drop them from the selection.
+        d.selection.retain(|k| !matches!(k, ChanKey::Computed(_)));
         for (k, (name, samples)) in extra.into_iter().enumerate() {
             d.computed.push(Computed::new(name, "ОМП".into(), samples, Self::palette(idx0 + k)));
         }
@@ -1461,6 +1539,10 @@ mod tests {
     fn copy_paste_merges_channels() {
         let mut app = demo_app();
         app.dispatch(Command::Copy);
+        assert!(app.channel_clip.is_empty(), "nothing selected, nothing copied");
+        app.active_doc_mut().unwrap().selection.extend([ChanKey::Analog(0), ChanKey::Analog(1)]);
+        app.dispatch(Command::Copy);
+        assert_eq!(app.channel_clip.len(), 2, "copy takes the selected channels");
         assert!(!app.channel_clip.is_empty(), "copy should fill the clipboard");
         let before = app.active_doc().unwrap().computed.len();
         app.dispatch(Command::Paste);
@@ -1471,10 +1553,14 @@ mod tests {
     }
 
     #[test]
-    fn value_mode_command_sets_mode() {
+    fn value_mode_command_sets_mode_of_selected_channels() {
         let mut app = demo_app();
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(1));
         app.dispatch(Command::SetValueMode(ValueMode::FirstHarmonic));
-        assert_eq!(app.value_mode, ValueMode::FirstHarmonic);
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.chans[1].mode, ValueMode::FirstHarmonic);
+        assert_eq!(d.chans[0].mode, ValueMode::Instant, "unselected channels keep their mode");
+        assert!(d.mode_state(ValueMode::FirstHarmonic).checked);
     }
 
     #[test]

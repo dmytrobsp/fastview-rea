@@ -11,6 +11,40 @@ impl App {
         self.file_params_window(ctx);
         self.channel_map_window(ctx);
         self.settings_window(ctx);
+        self.color_window(ctx);
+    }
+
+    /// «Цвет канала» (33030): a colour dialog started from the first selected
+    /// channel's colour; OK gives the colour to every selected channel.
+    fn color_window(&mut self, ctx: &egui::Context) {
+        let Some(mut col) = self.color_dialog else { return };
+        let mut open = true;
+        let mut done: Option<bool> = None;
+        egui::Window::new("Цвет")
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                egui::color_picker::color_picker_color32(ui, &mut col, egui::color_picker::Alpha::Opaque);
+                ui.horizontal(|ui| {
+                    if ui.button("OK").clicked() {
+                        done = Some(true);
+                    }
+                    if ui.button("Отмена").clicked() {
+                        done = Some(false);
+                    }
+                });
+            });
+        self.color_dialog = match done {
+            Some(true) => {
+                if let Some(d) = self.active_doc_mut() {
+                    d.set_color_selected(col);
+                }
+                None
+            }
+            Some(false) => None,
+            None => open.then_some(col),
+        };
     }
 
     /// Program settings (DIALOG 510): the `.cfg` text encoding, re-opening the
@@ -322,6 +356,7 @@ impl App {
                                     text: ed.text.clone(),
                                     level,
                                     hidden: false,
+                                    locked: false,
                                 });
                             }
                         }

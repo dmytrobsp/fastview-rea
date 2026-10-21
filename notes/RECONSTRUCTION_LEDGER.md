@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 120 pass)
+- `cargo test --workspace`   (currently 129 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 120 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 129 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -155,7 +155,7 @@ decompilation (pending, listed below).
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
 | Analysis views | CQAnPropSheet `0x48b970`, vector `0x490360`, freq `0x46f5a0`, readout `0x461440` | `quick.rs`, `views.rs`, GUI | ✅ L8 |
-| UI layer (message maps → handlers) | 34 maps, CFastViewView `0x45a970`, CMainFrame `0x4720a0`/`0x4728d0` | `fastview-gui` | 🔄 L9 |
+| UI layer (message maps → handlers) | 34 maps, CFastViewView `0x45a970`, CMainFrame `0x4720a0`/`0x4728d0` | `fastview-gui` | 🔄 L9 (L9.1 context menu ✅) |
 
 Next: `.fvb` parser re-verify (attribute defaults, missing attributes, parameter
 /var evaluation order), DFT/signal (incl. the Calculator channel mode + `rms:
@@ -612,7 +612,63 @@ geometry) · B view painting (lanes, stats panel, axis, визиры, comments) 
 C view/doc COMMAND + CMDUI rules · D main frame: ribbon construction, panes,
 status bar, app · E diagram windows/panes/toolbars UI · F dialogs and bars.
 
-Status: research running; reconciliation not started.
+Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
+ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI — kept in the session
+scratchpad; to be distilled into `notes/UI_BEHAVIOUR_SPEC.md`). Reconciled so
+far: **L9.1** below.
+
+### L9.1 — Oscillogram context menu + channel selection  ·  ✅
+
+User report (2026-10-21): the right-click menu only looked right near the top;
+opened lower it became long and a few characters wide and stayed so until a
+restart; its subject was never the top row and shifted as the mouse moved over
+the menu. **Root causes (ours, not the original):** (1) the menu's subject was
+recomputed every frame from `resp.hover_pos()`, which is `None` while the
+pointer is over the popup (→ fallback to the view centre) and follows the
+pointer elsewhere; (2) egui 0.29.1 gives every context menu ONE shared popup
+`Area` whose remembered size is never dropped (`Areas::end_pass`) and which
+lays out inside that size each frame — one frame with a near-empty menu (e.g.
+a digital row's stats panel at the bottom) ratcheted the width down for the
+rest of the process (egui's own doc on `AreaState::size`: "not persisted
+between sessions, so that a bad … menu size won't be remembered forever").
+
+Original behaviour (read): `WM_RBUTTONDOWN 0x45a8d0` = the left-button handler
+`0x45dc10` (select-first: an unselected row becomes the only selection, a
+selected row keeps the multi-selection; plain/Ctrl/Shift click = only/toggle/
+range from the anchor, the anchor set only when a row becomes selected; a click
+on the time-axis band deselects all). `WM_RBUTTONUP 0x45efa0` picks the menu by
+region: axis band (y > client − 30, or − 75 with doc+0x870) → MENU 560; stats
+panel (x < view+0x108) → MENU 561; plot → MENU 563 only when a comment is under
+the pointer (relabelled by kind: strings 205–209/229/236–238; 33042 removed
+unless a level line), otherwise **no menu** — the right button places визир 2.
+Menu 561 commands act on the **selected** channels (`+0x100`): diagram flags /
+ADC / invert / DC toggle-all (`FUN_00430340`, `FUN_0042f4b0`), display modes
+per channel incl. group members (bits 7–9), hide, reset zoom (141), combine
+(33035: ≥2 selected visible analog, same non-empty unit) / split (33037),
+colour (33030 = CColorDialog from the first selected channel).
+
+Ours now: the subject is latched at the right-click via `lanes::hit_test`; each
+opening gets its own popup `Area` (fresh id per right-click, no text wrapping),
+closed by an item, Escape or a press outside (that press is swallowed);
+selection model `chansel::select_click` + `Doc::selection`/`sel_anchor`
+(selected rows drawn on a gold background); MENU 560/561/563 in resource order
+with the CMDUI enable/check rules; per-channel display mode (`ChanView::mode`,
+ribbon toggles checked iff all selected agree); channel groups
+(`ChanView::group`, replacing "overlay the previous lane"); comment lock flag;
+155 «Момент времени» placement mode (next plot click places a moment); copy for
+merge takes the selection; colour dialog. Pinned by `chansel` tests (4) and
+headless egui tests driving `lanes_ui` (`lanes::menu_tests`, 5) — the sizing
+test fails when the shared-area cause is reintroduced (176×526 px vs 317×408).
+
+Residual (honest): «Абсолютное время» and «Разница между визирами» shown
+disabled (not implemented); vector/circle unit eligibility of the diagram flags
+not applied; level/area comment kinds (156/157), comment dragging and the
+in-place level edit not done (33042 opens the editor); undo still snapshots
+some view edits the original does not undo; per-channel display mode default =
+instantaneous is **inferred** (not read); horizontal визиры get one ribbon
+toggle instead of 32815/32816; the selected-row gradient is drawn flat.
+Next in L9: the rest of agent A/B (wheel, power-of-two time zoom, fixed lane
+heights, визир mouse model, ruler), then D (panes), E, F, G.
 
 ---
 
