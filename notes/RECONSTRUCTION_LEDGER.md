@@ -1552,6 +1552,28 @@ frequency diagram also required lane visibility. Now as read. Test
   diagram takes Iдиф | Iторм pairs from its own «Каналы ▸ Создать», not
   per-channel flags, so the «Каналы» dialog has no column for it.
 
+### L9.37 — Print preview as MFC's ribbon category  ·  🟡
+Read (`vcredist_vs13_x86.exe` → carved WiX cabinets → `mfc120u` / `mfc120rus`,
+local only): `CMFCRibbonBar`'s preview category (`mfc120u` `0x100fcfc2`):
+panel 17092 «Печать» {0xE304}, 17093 «Масштаб» {0xE305, 0xE306, 0xE301},
+17094 «Просмотр» {0xE302, 0xE303, separator, 0xE300}; category 17091
+«&Просмотр для печати»; labels 58116 «&Печать», 58117 «Увеличить», 58118
+«Уменьшить», 61505 / 61506 «&Одна страница» / «Две с&траницы» (the mode
+it switches to), 58114 / 58115 «Следующая / Предыдущая страница», 58112
+«&Закрыть»; status 61507 «Стр. %u» / 61508 «Страницы %u-%u». In preview MFC
+shows only that category and its dock manager hides the panes.
+Ours: the ribbon shows the single tab «Просмотр для печати» with those
+panels (large buttons, our glyphs; two-word labels wrap at the space) while
+a preview is open; the buttons queue a `PreviewCmd` the preview applies with
+the existing enable rules; our button bar is gone; the parameters and
+merge bars are hidden; the first status pane shows the page text (the
+original's status bar has no message pane, so MFC's message-bar text lands
+in pane 0). Big ribbon buttons now size to their label. Test
+`preview_category_commands_and_page_text`.
+Residual: the panel/button layout is read from mfc120u's call sequence but
+the large/small sizing and images (proprietary, not reproduced) are not;
+the QAT and app button stay as in MFC [I]; MDI tabs stay visible [I].
+
 Next in L9 (HANDOFF 2026-10-21, second session): the four user-reported GUI
 bugs are fixed (L9.23 tiny-window crash + bottom scroll bar, L9.24 modal
 dialogs, L9.25 «Файл» main panel); a headless visual audit followed
@@ -1564,8 +1586,7 @@ channels|coef|fileparams|explorer|parambar|skin<k>] [FV_WINDOW_SIZE=w,h]
 [FV_WINDOW_CLICK=x,y] [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then
 Read the PNG (crop with `convert`); `window_tests` in `main.rs` drive the
 whole window (`App::frame_ui`). Open next: the dark look's low-contrast
-ribbon labels (disabled small buttons vanish), the preview as the stock
-ribbon category with panes hidden (L9.29 residual), print residuals
+ribbon labels (disabled small buttons vanish), print residuals
 (L9.22), pane re-docking (egui limit), splash (bitmap proprietary), and
 the smaller residuals in L9.1–L9.31.
 

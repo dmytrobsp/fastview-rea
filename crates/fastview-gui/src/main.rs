@@ -169,7 +169,12 @@ impl App {
 
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         let p = self.skin.palette();
-        let s = self.cursor_status();
+        let mut s = self.cursor_status();
+        // In print preview the page goes to the first pane (MFC's
+        // OnDisplayPageNumber writes the message bar's pane 0).
+        if let Some(pv) = &self.print.preview {
+            s[0] = pv.page_text();
+        }
         ui.horizontal(|ui| {
             // Six fixed-width panes (27 / 40-character templates, `0x4729b0`).
             let char_w = 6.2;
@@ -307,7 +312,9 @@ impl App {
                 }
             });
         // 142: the parameters bar, a 75 px strip under the ribbon.
-        if self.dlg.param_bar {
+        // MFC hides the docking panes during print preview.
+        let previewing = self.print.preview.is_some();
+        if self.dlg.param_bar && !previewing {
             egui::TopBottomPanel::top("parambar")
                 .exact_height(75.0)
                 .frame(egui::Frame::none().fill(pal.group_bg))
@@ -315,7 +322,7 @@ impl App {
         }
 
         // The merge bar (CMergeBar, 70 px), shown after a paste.
-        if self.merge.is_some() {
+        if self.merge.is_some() && !previewing {
             egui::TopBottomPanel::top("mergebar")
                 .exact_height(70.0)
                 .frame(egui::Frame::none().fill(pal.group_bg).inner_margin(egui::Margin::symmetric(15.0, 10.0)))

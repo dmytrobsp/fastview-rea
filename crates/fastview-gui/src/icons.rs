@@ -28,6 +28,13 @@ pub enum Icon {
     Primary,
     Params,
     OmpRun,
+    /// Print preview (our drawings for MFC's preview category).
+    ZoomIn,
+    ZoomOut,
+    Pages,
+    NextPage,
+    PrevPage,
+    ClosePreview,
 }
 
 /// Paint `icon` centred in `rect`, scaled to it, using `color` as the primary
@@ -62,6 +69,27 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
             poly(painter, vec![p(0.15, 0.15), p(0.78, 0.15), p(0.88, 0.25), p(0.88, 0.85), p(0.15, 0.85)]);
             painter.rect_stroke(Rect::from_min_max(p(0.32, 0.15), p(0.70, 0.40)), 0.0, stroke);
             painter.rect_stroke(Rect::from_min_max(p(0.28, 0.55), p(0.75, 0.82)), 0.0, stroke);
+        }
+        Icon::ZoomIn | Icon::ZoomOut => {
+            painter.circle_stroke(p(0.42, 0.42), r.width() * 0.28, stroke);
+            line(painter, p(0.62, 0.62), p(0.90, 0.90));
+            line(painter, p(0.28, 0.42), p(0.56, 0.42));
+            if icon == Icon::ZoomIn {
+                line(painter, p(0.42, 0.28), p(0.42, 0.56));
+            }
+        }
+        Icon::Pages => {
+            painter.rect_stroke(Rect::from_min_max(p(0.08, 0.15), p(0.46, 0.85)), 0.0, stroke);
+            painter.rect_stroke(Rect::from_min_max(p(0.54, 0.15), p(0.92, 0.85)), 0.0, stroke);
+        }
+        Icon::NextPage | Icon::PrevPage => {
+            painter.rect_stroke(Rect::from_min_max(p(0.20, 0.10), p(0.80, 0.90)), 0.0, stroke);
+            let (a, b) = if icon == Icon::NextPage { (0.38, 0.62) } else { (0.62, 0.38) };
+            path(painter, vec![p(a, 0.32), p(b, 0.50), p(a, 0.68)]);
+        }
+        Icon::ClosePreview => {
+            line(painter, p(0.20, 0.20), p(0.80, 0.80));
+            line(painter, p(0.80, 0.20), p(0.20, 0.80));
         }
         Icon::Print => {
             painter.rect_stroke(Rect::from_min_max(p(0.30, 0.12), p(0.70, 0.34)), 0.0, stroke);

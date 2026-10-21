@@ -42,6 +42,18 @@ pub struct SetupDlg {
     pub portrait: bool,
 }
 
+/// A command of MFC's print-preview ribbon category (`0xE300`–`0xE306`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewCmd {
+    Print,
+    ZoomIn,
+    ZoomOut,
+    NumPage,
+    Next,
+    Prev,
+    Close,
+}
+
 pub struct Preview {
     pub job: Job,
     pub tex: Vec<Option<egui::TextureHandle>>,
@@ -49,6 +61,47 @@ pub struct Preview {
     pub cur: usize,
     pub two: bool,
     pub zoom: u8,
+    /// A ribbon command waiting for the next preview frame.
+    pub cmd: Option<PreviewCmd>,
+}
+
+impl Preview {
+    pub fn pages(&self) -> usize {
+        self.job.pages.len().max(1)
+    }
+
+    fn step(&self) -> usize {
+        if self.two && self.zoom == 0 { 2 } else { 1 }
+    }
+
+    /// Whether a command is enabled (the preview's CMDUI).
+    pub fn enabled(&self, c: PreviewCmd) -> bool {
+        match c {
+            PreviewCmd::ZoomIn => self.zoom < 2,
+            PreviewCmd::ZoomOut => self.zoom > 0,
+            PreviewCmd::NumPage => self.pages() >= 2 && self.zoom == 0,
+            PreviewCmd::Next => self.cur + self.step() < self.pages(),
+            PreviewCmd::Prev => self.cur > 0,
+            PreviewCmd::Print | PreviewCmd::Close => true,
+        }
+    }
+
+    /// The page-count button's label: the mode it switches to (61505 /
+    /// 61506).
+    pub fn numpage_label(&self) -> &'static str {
+        if self.two { "Одна страница" } else { "Две страницы" }
+    }
+
+    /// The status text (`OnDisplayPageNumber`, 61507 / 61508): «Стр. %u»
+    /// or «Страницы %u-%u».
+    pub fn page_text(&self) -> String {
+        let shown = if self.two && self.zoom == 0 { (self.cur + 2).min(self.pages()) - self.cur } else { 1 };
+        if shown == 1 {
+            format!("Стр. {}", self.cur + 1)
+        } else {
+            format!("Страницы {}-{}", self.cur + 1, self.cur + shown)
+        }
+    }
 }
 
 /// Preview resolution.
@@ -80,7 +133,7 @@ impl App {
         let setup = self.print.setup;
         let job = self.print_job(di, Device::sheet(&setup, PREVIEW_DPI), setup);
         let two = job.pages.len() >= 2;
-        self.print.preview = Some(Preview { tex: vec![None; job.pages.len()], job, cur: 0, two, zoom: 0 });
+        self.print.preview = Some(Preview { tex: vec![None; job.pages.len()], job, cur: 0, two, zoom: 0, cmd: None });
     }
 
     /// 57605 Параметры страницы.
@@ -267,34 +320,20 @@ impl App {
             return;
         }
         let n = pv.job.pages.len().max(1);
+        // Commands come from the ribbon's preview category.
         let (mut close, mut print) = (false, false);
-        egui::TopBottomPanel::top("print_preview_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                print = ui.button("Печать").clicked();
-                ui.separator();
-                if ui.add_enabled(pv.zoom < 2, egui::Button::new("Увеличить")).clicked() {
-                    pv.zoom += 1;
-                }
-                if ui.add_enabled(pv.zoom > 0, egui::Button::new("Уменьшить")).clicked() {
-                    pv.zoom -= 1;
-                }
-                let label = if pv.two { "Одна страница" } else { "Две страницы" };
-                if ui.add_enabled(n >= 2 && pv.zoom == 0, egui::Button::new(label)).clicked() {
-                    pv.two = !pv.two;
-                }
-                ui.separator();
-                let step = if pv.two && pv.zoom == 0 { 2 } else { 1 };
-                if ui.add_enabled(pv.cur + step < n, egui::Button::new("Следующая страница")).clicked() {
-                    pv.cur = (pv.cur + step).min(n - 1);
-                }
-                if ui.add_enabled(pv.cur > 0, egui::Button::new("Предыдущая страница")).clicked() {
-                    pv.cur = pv.cur.saturating_sub(step);
-                }
-                ui.separator();
-                close = ui.button("Закрыть").clicked();
-                ui.label(format!("Страница {} из {}", pv.cur + 1, n));
-            });
-        });
+        if let Some(c) = pv.cmd.take().filter(|c| pv.enabled(*c)) {
+            let step = pv.step();
+            match c {
+                PreviewCmd::Print => print = true,
+                PreviewCmd::ZoomIn => pv.zoom += 1,
+                PreviewCmd::ZoomOut => pv.zoom -= 1,
+                PreviewCmd::NumPage => pv.two = !pv.two,
+                PreviewCmd::Next => pv.cur = (pv.cur + step).min(n - 1),
+                PreviewCmd::Prev => pv.cur = pv.cur.saturating_sub(step),
+                PreviewCmd::Close => close = true,
+            }
+        }
         let shown: Vec<usize> = if pv.two && pv.zoom == 0 { (pv.cur..(pv.cur + 2).min(n)).collect() } else { vec![pv.cur] };
         let fonts = self.print.fonts.clone();
         for &i in &shown {
@@ -384,5 +423,36 @@ mod tests {
         app.print.setup_dlg.as_mut().unwrap().mm[0] = 10.0;
         app.print.setup_dlg.as_mut().unwrap().portrait = false;
         assert!(app.print.setup_dlg.is_some());
+    }
+
+    /// MFC's preview category drives the preview through queued commands;
+    /// the enable rules and the status text (61507 / 61508) follow it.
+    #[test]
+    fn preview_category_commands_and_page_text() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        app.docs[0].print_ticks = [true, true, true, false, false];
+        app.dispatch(Command::PrintPreview);
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut app, vec![]);
+        let pv = app.print.preview.as_ref().unwrap();
+        let n = pv.pages();
+        assert!(n >= 3, "oscillogram + two diagram pages");
+        assert!(pv.two);
+        assert_eq!(pv.page_text(), "Страницы 1-2");
+        assert_eq!(pv.numpage_label(), "Одна страница");
+        assert!(!pv.enabled(PreviewCmd::Prev) && pv.enabled(PreviewCmd::Next) && !pv.enabled(PreviewCmd::ZoomOut));
+        let run = |app: &mut App, c: PreviewCmd| {
+            app.print.preview.as_mut().unwrap().cmd = Some(c);
+            frame(&ctx, app, vec![]);
+        };
+        run(&mut app, PreviewCmd::NumPage);
+        assert_eq!(app.print.preview.as_ref().unwrap().page_text(), "Стр. 1");
+        run(&mut app, PreviewCmd::Next);
+        assert_eq!(app.print.preview.as_ref().unwrap().cur, 1);
+        run(&mut app, PreviewCmd::ZoomIn);
+        assert!(!app.print.preview.as_ref().unwrap().enabled(PreviewCmd::NumPage), "no page count while zoomed in");
+        run(&mut app, PreviewCmd::Close);
+        assert!(app.print.preview.is_none());
     }
 }

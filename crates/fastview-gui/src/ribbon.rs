@@ -170,6 +170,30 @@ impl App {
         });
 
         // ---- Row 2: tab strip ----
+        // Print preview: MFC's own category is the only one shown
+        // (`CMFCRibbonBar::SetPrintPreviewMode`; labels from mfc120rus).
+        if self.print.preview.is_some() {
+            ui.horizontal(|ui| {
+                ui.add_space(6.0);
+                ribbon_tab(ui, "Просмотр для печати", true, p.tab_active, p.text);
+            });
+            if !self.ribbon_minimized {
+                egui::Frame::none()
+                    .fill(p.tab_active)
+                    .stroke(egui::Stroke::new(1.0f32, p.group_border))
+                    .inner_margin(egui::Margin::symmetric(6.0, 4.0))
+                    .show(ui, |ui| {
+                        ui.set_min_height(102.0);
+                        ui.set_min_width(ui.available_width());
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                        ui.horizontal_top(|ui| self.ribbon_preview(ui));
+                    });
+            }
+            for c in cmds {
+                self.dispatch(c);
+            }
+            return;
+        }
         ui.horizontal(|ui| {
             ui.add_space(6.0);
             for (label, tab) in [("Главная", RibbonTab::Home), ("ОМП", RibbonTab::Omp)] {
@@ -197,8 +221,10 @@ impl App {
                 .stroke(egui::Stroke::new(1.0f32, p.group_border))
                 .inner_margin(egui::Margin::symmetric(6.0, 4.0))
                 .show(ui, |ui| {
-                    // A constant height: expanded panels (buttons + title).
+                    // A constant height: expanded panels (buttons + title),
+                    // across the whole window.
                     ui.set_min_height(102.0);
+                    ui.set_min_width(ui.available_width());
                     // Never wrap a label: a group that does not fit is
                     // collapsed (below), not squeezed.
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
@@ -393,6 +419,40 @@ impl App {
                 cmds.push(Command::ToggleParamBar);
             }
         });
+    }
+
+    /// MFC's print-preview category (`mfc120u` `0x100fcfc2`): «Печать»
+    /// {0xE304 Печать}, «Масштаб» {0xE305 Увеличить, 0xE306 Уменьшить,
+    /// 0xE301 Одна / Две страницы}, «Просмотр» {0xE302 Следующая страница,
+    /// 0xE303 Предыдущая страница, ─, 0xE300 Закрыть}; all large buttons.
+    fn ribbon_preview(&mut self, ui: &mut egui::Ui) {
+        use crate::print_ui::PreviewCmd as P;
+        let p = self.skin.palette();
+        let Some(pv) = self.print.preview.as_ref() else { return };
+        let numpage = pv.numpage_label();
+        let state: Vec<(P, bool)> = [P::Print, P::ZoomIn, P::ZoomOut, P::NumPage, P::Next, P::Prev, P::Close].into_iter().map(|c| (c, pv.enabled(c))).collect();
+        let on = |c: P| state.iter().any(|&(k, e)| k == c && e);
+        let mut fire = None;
+        let mut button = |ui: &mut egui::Ui, icon: Icon, label: &str, c: P| {
+            if ui.add_enabled_ui(on(c), |ui| big_button(ui, p, icon, label)).inner.clicked() {
+                fire = Some(c);
+            }
+        };
+        ribbon_group(ui, p, "Печать", |ui| button(ui, Icon::Print, "Печать", P::Print));
+        ribbon_group(ui, p, "Масштаб", |ui| {
+            button(ui, Icon::ZoomIn, "Увеличить", P::ZoomIn);
+            button(ui, Icon::ZoomOut, "Уменьшить", P::ZoomOut);
+            button(ui, Icon::Pages, numpage, P::NumPage);
+        });
+        ribbon_group(ui, p, "Просмотр", |ui| {
+            button(ui, Icon::NextPage, "Следующая страница", P::Next);
+            button(ui, Icon::PrevPage, "Предыдущая страница", P::Prev);
+            group_separator(ui, p);
+            button(ui, Icon::ClosePreview, "Закрыть", P::Close);
+        });
+        if let (Some(c), Some(pv)) = (fire, self.print.preview.as_mut()) {
+            pv.cmd = Some(c);
+        }
     }
 
     /// Category «ОМП», panel ОМП: 32807 Параметры (always enabled with a
@@ -591,7 +651,17 @@ fn big_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &s
 }
 
 fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str, selected: bool) -> egui::Response {
-    let size = egui::vec2(58.0, 64.0);
+    // A large button's two-word label wraps at the space.
+    let wrapped;
+    let label = if !label.contains('\n') && label.contains(' ') {
+        wrapped = label.replacen(' ', "\n", 1);
+        wrapped.as_str()
+    } else {
+        label
+    };
+    let font = egui::FontId::proportional(10.5);
+    let text_w = label.split('\n').map(|l| ui.fonts(|f| f.layout_no_wrap(l.to_owned(), font.clone(), p.text).size().x)).fold(0.0, f32::max);
+    let size = egui::vec2((text_w + 6.0).max(50.0), 64.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     let painter = ui.painter();
     let hovered = resp.hovered();
@@ -606,14 +676,13 @@ fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label
             egui::pos2(rect.center().x, rect.top() + 40.0 + i as f32 * 11.0),
             egui::Align2::CENTER_CENTER,
             line,
-            egui::FontId::proportional(10.5),
+            font.clone(),
             p.text,
         );
     }
     resp
 }
 
-/// An app-menu item that queues `cmd` and closes the menu.
 /// Where the application menu keeps what its right column shows, with the
 /// pass number it was last drawn in.
 pub fn app_sub_id() -> egui::Id {
