@@ -1233,7 +1233,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     hover info box, per-kind drawing, one-shot tools enabled for .cfg/.osc,
     `.set` persistence — `app.rs`, `lanes.rs`, `dialogs.rs`, `persist.rs`/
     `crates/fvb-core` — L
-15. 🟡 (L9.15 + L9.19 undo + L9.20 clipboard XML; insertion point, EMF pending) Merge workflow: system-clipboard format with times/rates/header, pending
+15. 🟡 (L9.15 + L9.19 undo + L9.20 clipboard XML and insertion point; EMF picture pending) Merge workflow: system-clipboard format with times/rates/header, pending
     bit14 channels with own rate, "(2)" naming, merge bar with three sync
     methods, drag time-shift (hand cursor), «Объединить» resampling, undo on
     bar close, paste disabled while pending; fix the test pinning index

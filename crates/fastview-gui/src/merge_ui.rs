@@ -197,6 +197,36 @@ impl Doc {
         }
     }
 
+    /// Move the channels appended after `nb` analog / `nd` digital ones to
+    /// their insertion points `at_a` / `at_d` (`0x42e5c0`), shifting every
+    /// stored channel index at or after them.
+    pub fn move_appended(&mut self, at_a: usize, nb: usize, at_d: usize, nd: usize) {
+        let (ka, kd) = (self.osc.analog.len() - nb, self.osc.digital.len() - nd);
+        self.osc.analog[at_a..].rotate_right(ka);
+        self.chans[at_a..].rotate_right(ka);
+        self.osc.digital[at_d..].rotate_right(kd);
+        self.digital_visible[at_d..].rotate_right(kd);
+        let key = |k: ChanKey| match k {
+            ChanKey::Analog(i) if i >= at_a => ChanKey::Analog(i + ka),
+            ChanKey::Digital(i) if i >= at_d => ChanKey::Digital(i + kd),
+            k => k,
+        };
+        let analog = |i: usize| if i >= at_a { i + ka } else { i };
+        self.selection = self.selection.iter().map(|&k| key(k)).collect();
+        self.sel_anchor = self.sel_anchor.map(key);
+        for h in &mut self.hviz {
+            h.chan = h.chan.map(analog);
+        }
+        for c in &mut self.comments {
+            use crate::comments::CommentKind::*;
+            match &mut c.kind {
+                Level { chan, .. } => *chan = analog(*chan),
+                Area { chan_from, chan_to, .. } => (*chan_from, *chan_to) = (key(*chan_from), key(*chan_to)),
+                Moment { .. } => {}
+            }
+        }
+    }
+
     /// The allowed merge offsets: the pasted record may slide until one
     /// period of overlap is left.
     pub fn offset_range(&self) -> (f64, f64) {
@@ -253,6 +283,13 @@ impl App {
         let rev = self.docs[ai].osc.rev_year;
         let clip = clip_chans(&rec, rev);
         let d = &mut self.docs[ai];
+        // Insertion points, taken before deselecting: the first selected
+        // analog / digital channel, else the end of its block.
+        let at_analog = d.selection.iter().find_map(|k| match *k {
+            ChanKey::Analog(i) => Some(ChanKey::Analog(i)),
+            _ => None,
+        });
+        let at_digital = d.selection.iter().find_map(|k| matches!(k, ChanKey::Digital(_)).then_some(*k)).unwrap_or(ChanKey::Digital(d.osc.digital.len()));
         d.selection.clear();
         for (j, mut c) in clip.into_iter().enumerate() {
             let taken = |n: &str, d: &Doc| {
@@ -272,6 +309,7 @@ impl App {
             if let Ok(a) = &c.pasted.channel {
                 lane.unit = a.unit.clone();
             }
+            lane.before = if c.pasted.channel.is_ok() { at_analog } else { Some(at_digital) };
             d.computed.push(lane);
             d.selection.insert(ChanKey::Computed(d.computed.len() - 1));
             d.pending.push(c);
@@ -355,7 +393,15 @@ impl App {
         let pasted: Vec<Pasted> = d.pending.iter().map(|p| p.pasted.clone()).collect();
         let merged = merge::merge(&d.osc, &pasted, d.merge_offset);
         let old_rate = d.osc.sample_rate;
-        let nb = d.osc.analog.len();
+        let (nb, nd) = (d.osc.analog.len(), d.osc.digital.len());
+        let anchor = |digital: bool| {
+            d.computed.iter().filter(|c| c.formula == PENDING).find_map(|c| match c.before {
+                Some(ChanKey::Analog(i)) if !digital => Some(i),
+                Some(ChanKey::Digital(i)) if digital => Some(i),
+                _ => None,
+            })
+        };
+        let (at_a, at_d) = (anchor(false).unwrap_or(nb).min(nb), anchor(true).unwrap_or(nd).min(nd));
         d.osc = merged;
         for i in nb..d.osc.analog.len() {
             let mut v = ChanView::new(&d.osc.analog[i], i);
@@ -365,6 +411,7 @@ impl App {
             d.chans.push(v);
         }
         d.digital_visible.resize(d.osc.digital.len(), true);
+        d.move_appended(at_a, nb, at_d, nd);
         d.computed.retain(|c| c.formula != PENDING);
         d.pending.clear();
         d.merge_offset = 0.0;
@@ -515,6 +562,34 @@ mod tests {
         let d = app.active_doc().unwrap();
         assert_eq!(d.osc.analog.len(), n0 + 1);
         assert!(d.redo.is_empty() && d.undo.len() == 2);
+    }
+
+    #[test]
+    fn pasted_channels_go_before_the_first_selected_channel() {
+        let mut app = demo_app();
+        let n0 = app.active_doc().unwrap().osc.analog.len();
+        let id0 = app.active_doc().unwrap().osc.analog[0].id.clone();
+        let id1 = app.active_doc().unwrap().osc.analog[1].id.clone();
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        // Select channel 1 of the target: the paste goes in front of it.
+        let d = app.active_doc_mut().unwrap();
+        d.selection = [ChanKey::Analog(1)].into();
+        d.hviz[0].chan = Some(1);
+        app.paste_channels_for_merge();
+        let d = app.active_doc().unwrap();
+        let rows = crate::lanes::lane_layout(d, 93.0, false);
+        let pos = rows.iter().position(|r| matches!(r.key, ChanKey::Computed(_))).unwrap();
+        assert!(matches!(rows[pos - 1].key, ChanKey::Analog(0)) && matches!(rows[pos + 1].key, ChanKey::Analog(1)), "shown in front of channel 1");
+        assert!(d.selection.iter().all(|k| matches!(k, ChanKey::Computed(_))) && d.selection.len() == 1, "the pasted lane comes in selected");
+        app.merge_records();
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.osc.analog.len(), n0 + 1);
+        assert_eq!(d.osc.analog[0].id, id0);
+        assert_eq!(d.osc.analog[1].id, format!("{id0}(2)"), "merged in place");
+        assert_eq!(d.osc.analog[2].id, id1);
+        assert_eq!(d.hviz[0].chan, Some(2), "stored indices follow");
+        assert_eq!(d.chans.len(), d.osc.analog.len());
     }
 
     #[test]

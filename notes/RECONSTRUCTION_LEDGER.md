@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 256 pass)
+- `cargo test --workspace`   (currently 257 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 256 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 257 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -1143,8 +1143,14 @@ Ours: `fvb_core::clipdata` (`ClipRecord::{to_text, parse}`, `merged_header`;
 so instances on one machine still merge; tests in memory), copy/paste in
 `merge_ui.rs` through the document (so the `%f` precision loss happens as
 in the original), pasted lanes selected, "(2)", the merged-record comment,
-copy enabled by digital channels. Residual: no EMF picture; the pasted
-channels are still appended (insertion point next); `duration_milli_sec`
+copy enabled by digital channels; the insertion point — pending lanes
+shown in front of the first selected analog / digital channel
+(`Computed::before`, `lane_layout`) and «Объединить» moving the merged
+channels there with every stored index shifted (`Doc::move_appended`;
+test `pasted_channels_go_before_the_first_selected_channel`). Residual: no
+EMF picture; an analog paste with no selected analog channel goes to our
+computed section (whether `doc+0x1d8` counts computed channels is NOT
+DETERMINED); `duration_milli_sec`
 text and `time_multiplier` are inferred (0x44c1d0 / `doc+0x230` not read);
 the clip's start date is read with the target record's revision rule; CR LF
 placement inside the merged comment inferred from the concatenation count.

@@ -98,12 +98,18 @@ impl Row {
 
 /// Lane order and heights (`0x467ed0`, `0x460290`): visible analog channels
 /// (a group's members pulled together at its first member), computed
-/// channels, then digital channels; analog lanes `YAnalogSize` high (a group
-/// at least one name row per member), digital lanes 20 px. No stretch.
+/// channels, then digital channels; pending pasted lanes sit at their
+/// insertion point (`Computed::before`). Analog lanes `YAnalogSize` high (a
+/// group at least one name row per member), digital lanes 20 px. No stretch.
 pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<Row> {
     let mut rows: Vec<Row> = Vec::new();
     let mut group_row: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+    let pending_at = |key: Option<ChanKey>, rows: &mut Vec<Row>| {
+        let at = (0..doc.computed.len()).filter(|&j| doc.computed[j].visible && doc.computed[j].before == key);
+        rows.extend(at.map(|j| Row { key: Lane::Computed(j), members: Vec::new(), h: y_analog }));
+    };
     for (i, c) in doc.chans.iter().enumerate() {
+        pending_at(Some(Lane::Analog(i)), &mut rows);
         if !c.visible {
             continue;
         }
@@ -116,11 +122,16 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
         }
         rows.push(Row { key: Lane::Analog(i), members: vec![i], h: y_analog });
     }
-    let comp = (0..doc.computed.len()).filter(|&i| doc.computed[i].visible);
-    rows.extend(comp.map(|i| Row { key: Lane::Computed(i), members: Vec::new(), h: y_analog }));
+    pending_at(None, &mut rows);
+    for i in 0..=doc.osc.digital.len() {
+        pending_at(Some(Lane::Digital(i)), &mut rows);
+        if i < doc.osc.digital.len() && doc.digital_visible.get(i).copied().unwrap_or(true) {
+            rows.push(Row { key: Lane::Digital(i), members: Vec::new(), h: g::DIGITAL_H });
+        }
+    }
     // need = name row + 10 + one row per enabled stat (Max/Min two) + 23
     // when any status icon shows; a group lane one name row (+33) per member.
-    for r in &mut rows {
+    for r in rows.iter_mut().filter(|r| !matches!(r.key, Lane::Digital(_))) {
         let icons = if status_icons(doc, r, primary).is_empty() { 0.0 } else { 23.0 };
         let need = if r.members.len() > 1 {
             r.members.len() as f32 * GROUP_ROW_H
@@ -129,11 +140,6 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
         };
         r.h = r.h.max(need);
     }
-    rows.extend(
-        (0..doc.osc.digital.len())
-            .filter(|&i| doc.digital_visible.get(i).copied().unwrap_or(true))
-            .map(|i| Row { key: Lane::Digital(i), members: Vec::new(), h: g::DIGITAL_H }),
-    );
     rows
 }
 

@@ -252,6 +252,10 @@ pub struct Computed {
     pub on_vector: bool,
     pub on_circle: bool,
     pub stats: StatRows,
+    /// A pending (pasted) lane's place: in front of this analog / digital
+    /// channel (`Digital(n)` = the end of the digital block); `None` for the
+    /// computed section (`0x45ad02` insertion points).
+    pub before: Option<ChanKey>,
     /// Shown on the oscillogram (bit 0; «Каналы» dialog column 1).
     pub visible: bool,
 }
@@ -269,6 +273,7 @@ impl Computed {
             on_circle: false,
             stats: StatRows::default(),
             visible: true,
+            before: None,
         }
     }
 
