@@ -1619,20 +1619,28 @@ Ours were empty times and the file name; now the stamp tokens joined by
 `omp_ui` (the demo's start / trigger lines). (L9.11 residual closed.)
 Residual: the path-vs-title reading of `doc+0x24` is inferred.
 
-Next in L9 (HANDOFF 2026-10-21, second session): the four user-reported GUI
-bugs are fixed (L9.23 tiny-window crash + bottom scroll bar, L9.24 modal
-dialogs, L9.25 «Файл» main panel); a headless visual audit followed
-(L9.26 pane over its tabs, L9.27 ribbon icon-only buttons + panel
-collapse, L9.28 invisible idle controls, L9.29 preview centring), then
-L9.30 copy's EMF picture and L9.31 the loading progress. **How to look at
-the GUI without running it:** `FV_WINDOW_DUMP=<png> [FV_WINDOW_STATE=
-analysis|circle|diff|omp|ompparams|preview|print|pagesetup|settings|
-channels|coef|fileparams|explorer|parambar|skin<k>] [FV_WINDOW_SIZE=w,h]
-[FV_WINDOW_CLICK=x,y] [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then
-Read the PNG (crop with `convert`); `window_tests` in `main.rs` drive the
-whole window (`App::frame_ui`). Open next: print residuals
-(L9.22), pane re-docking (egui limit), splash (bitmap proprietary), and
-the smaller residuals in L9.1–L9.31.
+Next in L9 (HANDOFF 2026-10-22): after the four GUI bugs (L9.23–L9.25)
+and the render audit (L9.26–L9.29), copy's EMF (L9.30), loading progress
+(L9.31), a second user report was worked (L9.32 scroll thumb, L9.33 lane
+clip under vertical zoom, **L9.34 units normalised on load — «кА» is "A"
+×1000, canonical unit + raw unit + multiplier on `AnalogChannel`**, L9.35
+diagram channel lists / Показать-Скрыть все, L9.36 «Осциллограмма» / Undo /
+circle eligibility answered from the binary), then L9.37 the preview as
+MFC's ribbon category (labels read from the redistributable's `mfc120rus`;
+`vcredist` cabinets carved locally), L9.38 dark-look contrast, L9.39 ГВ in
+print, L9.40 scroll repeat, L9.41 ОМП report times. **How to look at the
+GUI without running it:** `FV_WINDOW_DUMP=<png> [FV_WINDOW_RECORD=<cfg>]
+[FV_WINDOW_STATE=analysis|circle|diff|omp|ompparams|preview|print|
+pagesetup|settings|channels|coef|fileparams|explorer|parambar|skin<k>]
+[FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y] [FV_WINDOW_HOVER=x,y] cargo
+test window_dump`, then Read the PNG (crop with `convert`); `window_tests`
+in `main.rs` drive the whole window (`App::frame_ui`); the user's sample
+records live outside the repo (never commit them). Open next: визир label
+clamping / merging and the В2 = В1 pen (research running at handoff time:
+`BRIEF_VIZLABEL.md`), print residuals (L9.22: logo proprietary, A4 only),
+pane re-docking (egui limit), splash (bitmap proprietary), and the smaller
+residuals in L9.1–L9.41 (several older "residuals" were already done —
+check the code before starting one).
 
 ---
 
