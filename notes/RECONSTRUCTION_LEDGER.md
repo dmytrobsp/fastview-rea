@@ -998,15 +998,22 @@ details beyond the spec summary not re-read; «Объединить» is not und
 (our snapshot does not hold the record); values ÷ `ch+0xf0` on merge not
 modelled; pasted discrete channels show as 0/1 lanes until merged.
 
-Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — remaining: (start times now kept), print 36,
-AddFormula 46, modified flag 47, OLE drag 48, plus residuals above. (Former
-note:) tracks D (diagrams 19–22, 27,
-40), O (ОМП 6, 12, 38) and F (dialogs 16, 18, 28, 29, 34, 39) were
-dispatched to parallel worktree agents on 2026-10-21 (merge their branches);
-main tree: ribbon contents 11 after merging F, then 31–37, 45–48 (ОМП banner/
-toggle, ribbon contents 11, ОМП run semantics 12, stats panel 13, comments
-14, …) (panes, визир
-mouse model, power-of-two time zoom, amplitude mapping, lane geometry, …).
+Next in L9 (HANDOFF 2026-10-21, master `4f6e530`): two worktree agents were
+still running at the handoff, both branched from `f07450a`:
+- **Track S** — `.set` per-record settings (comments, channel options, ОМП
+  `WrongPlaceFinding`, diagram sections, computed formulas), the
+  document-modified flag / save prompt, 32860 «Загрузка настроек...»: branch
+  `worktree-agent-a51dde577cd78f28c`.
+- **Track A2** — formula dialog DIALOG 359 «Добавить новую формулу» (template
+  tree, per-template forms, name rule 396): branch
+  `worktree-agent-a96d24074275c69d5`.
+Check `git log master..<branch>`; if a branch has commits, merge it `--no-ff`
+(resolve against L9.7 `Doc::flagged`, L9.13 `digital_visible`, L9.15
+`pending`), run the four gates, add its ledger paragraph (the agent's report
+may be lost — rebuild it from its commits), then `git worktree remove` +
+`git branch -d`. If a branch has no commits the agent died: re-dispatch that
+track. Then the rest of `notes/UI_BEHAVIOUR_SPEC.md` §9: print 36, OLE drag 48,
+and the residuals listed in L9.1–L9.15.
 
 ---
 
