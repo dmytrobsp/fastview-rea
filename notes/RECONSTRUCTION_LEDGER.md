@@ -1226,10 +1226,27 @@ gets the full sheet); «Свойства...» and printer status fields empty; o
 визиры and the comment hover not drawn in print; header/footer line pitch
 T assumed 12 screen px.
 
-Next in L9 (HANDOFF 2026-10-21, master clean): §9 items 36 and 48 are
-done (L9.21, L9.22). Remaining: the EMF picture on copy (L9.20), print
-residuals (L9.22), pane re-docking (egui limit), and the smaller residuals
-listed in L9.1–L9.22.
+Next in L9 (HANDOFF 2026-10-21, master clean at 4a83adc): §9 items 36 and
+48 are done (L9.21, L9.22). **FIRST — four GUI bugs the user found running
+the release build (ours, not original behaviour; reproduce headless with the
+`lanes::menu_tests` Harness pattern before fixing, add a regression test
+each):** (1) the program **crashes when the window is made too small**
+(suspects: `lanes_ui` geometry / `g::visible_count` / slicing with a
+negative or zero plot size, `Canvas`/diagram sizes, `rotate_right`
+ranges; the minimum window size 866×500 does not stop panels from
+shrinking); (2) the **«Файл ▾» application menu does not render
+properly** (`ribbon.rs` app menu: the two-column `horizontal_top` layout
+with the Печать ▸ and «Дополнительно» submenus and the MRU list); (3)
+**mouse events fall through the colour picker** (33030 `color_dialog`) and
+likely the other dialogs/windows (print, page setup, ОМП, formula …) — the
+oscillogram view underneath still receives presses/drags/wheel; the view
+must ignore input while a modal is open or the pointer is over a window
+(`ctx.is_pointer_over_area()` / a modal layer); (4) the **bottom
+horizontal scroll bar is drawn wrongly** (`lanes.rs` `scrollbar(..)` for
+`hbar` under the plot: geometry relative to `client.bottom()` /
+`HSCROLL_H`). Then: the EMF picture on copy (L9.20), print residuals
+(L9.22), pane re-docking (egui limit), and the smaller residuals listed in
+L9.1–L9.22.
 
 ---
 
