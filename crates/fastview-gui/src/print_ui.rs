@@ -314,7 +314,11 @@ impl App {
                 let page = Vec2::new(pv.job.dev.w as f32, pv.job.dev.h as f32);
                 let fit = ((avail.y - 20.0) / page.y).min((avail.x - 20.0) / (page.x * shown.len() as f32 + 10.0)).max(0.05);
                 let scale = fit * [1.0, 1.6, 2.6][pv.zoom as usize];
+                // The pages centred in the grey area (stock MFC preview).
+                let total = Vec2::new((page.x * scale + 10.0) * shown.len() as f32 + 10.0, page.y * scale + 20.0);
+                ui.add_space(((avail.y - total.y) / 2.0).max(0.0) + 10.0);
                 ui.horizontal(|ui| {
+                    ui.add_space(((avail.x - total.x) / 2.0).max(0.0));
                     for &i in &shown {
                         if let Some(Some(t)) = pv.tex.get(i) {
                             ui.add_space(10.0);

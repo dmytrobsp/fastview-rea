@@ -1351,6 +1351,15 @@ look. Ours: idle controls get a white interior, the lighter tab face for
 buttons and a frame-coloured outline (as Windows controls). Test:
 `theme::idle_controls_stand_out_from_the_panel` (all nine looks).
 
+### L9.29 — Print preview pages centred  ·  🟡
+Headless render: our preview drew the page(s) at the top-left of the grey
+area; the stock MFC preview (57609 `AFXPrintPreview`) centres them. Ours:
+centred horizontally and vertically at every zoom that fits.
+Residual (not read in detail, framework behaviour): the original's
+preview commands live in the ribbon's stock print-preview category and
+MFC hides the docking panes during preview; ours shows a button bar under
+the ribbon in place of the views.
+
 Next in L9 (HANDOFF 2026-10-21, master clean at 4a83adc): §9 items 36 and
 48 are done (L9.21, L9.22). **FIRST — four GUI bugs the user found running
 the release build (ours, not original behaviour; reproduce headless with the
