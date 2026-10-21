@@ -41,8 +41,43 @@
 //! Variables are resolved by name through a [`Context`] map, mirroring the
 //! name-keyed map lookup in the original binary.
 
+use num_complex::Complex64;
 use std::collections::HashMap;
 use std::f64::consts::PI;
+
+/// The oscillogram side of the formula language's channel mode (the
+/// original's `CalcChannels`, vtable `0x4c65c4`): channel lookup by name and
+/// the per-channel methods the channel functions call (ledger L6).
+pub trait Channels {
+    /// Resolve an identifier to a channel (vtable slot 0); `None` makes the
+    /// tokenizer drop the identifier.
+    fn resolve(&self, name: &str) -> Option<usize>;
+    /// Instantaneous value at `idx` (`FUN_00426020`).
+    fn sample(&self, ch: usize, idx: usize) -> f64;
+    /// RMS fundamental phasor at `idx` (`FUN_00428ac0`).
+    fn phasor(&self, ch: usize, idx: usize) -> Complex64;
+    /// True RMS over one period ending at `idx` (`FUN_004272a0(idx, 1)`).
+    fn rms(&self, ch: usize, idx: usize) -> f64;
+    /// Mean over one period ending at `idx` (`FUN_00426c90(idx, 1)`).
+    fn a0(&self, ch: usize, idx: usize) -> f64;
+    /// RMS magnitude of harmonic `n` at `idx` (`FUN_00426240`).
+    fn fourie(&self, ch: usize, n: i32, idx: usize) -> f64;
+    /// Fault (emergency) component at `idx` (`FUN_00427670`).
+    fn fault(&self, ch: usize, idx: usize) -> f64;
+    /// Frequency at `idx` (vtable slot 1: the nominal frequency).
+    fn frequency(&self, idx: usize) -> f64;
+    /// Samples before `arg:` is valid (vtable slot 2: one period).
+    fn warmup(&self) -> usize;
+}
+
+/// Evaluation environment: the variable map, and in channel mode the channel
+/// source and the current sample index.
+#[derive(Clone, Copy)]
+struct Env<'a> {
+    ctx: &'a Context,
+    chans: Option<&'a dyn Channels>,
+    idx: usize,
+}
 
 /// Variable/parameter environment: name -> value.
 pub type Context = HashMap<String, f64>;
@@ -217,14 +252,26 @@ struct Value {
     v: f64,
     re: f64,
     im: f64,
+    /// Flag bit 2 ("channel reference"); arithmetic keeps it when both sides
+    /// carry it, but only a bare channel atom keeps the channel itself.
+    chan: bool,
+    ch: Option<usize>,
 }
 
 impl Value {
     fn real(v: f64) -> Value {
-        Value { v, re: v, im: 0.0 }
+        Value { v, re: v, im: 0.0, chan: false, ch: None }
     }
+    /// A function result: scalar written, complex pair left as it was.
     fn scalar(self, v: f64) -> Value {
-        Value { v, ..self }
+        Value { v, chan: false, ch: None, ..self }
+    }
+    /// A function result with both slots written (flags 3).
+    fn both(v: f64, z: Complex64) -> Value {
+        Value { v, re: z.re, im: z.im, chan: false, ch: None }
+    }
+    fn z(self) -> Complex64 {
+        Complex64::new(self.re, self.im)
     }
 }
 
@@ -237,6 +284,7 @@ enum Tok {
     Null,
     Num(f64),
     Ident(String),
+    Chan(usize),
     Dimension,
     End,
 }
@@ -248,6 +296,7 @@ enum Tok {
 enum Node {
     Num(f64),
     Var(String),
+    Chan(usize),
     Pi,
     Null,
     Neg(Box<Node>),
@@ -283,7 +332,23 @@ impl Expr {
     /// Keep a formula string whatever it contains; a syntax error (an empty
     /// attribute included) surfaces when it is evaluated.
     pub fn lenient(src: &str) -> Expr {
-        let parsed = tokenize(src).and_then(|(toks, idents)| {
+        Expr::compile(src, None)
+    }
+
+    /// Parse a formula in channel mode (the formula editor's computed
+    /// channels): identifiers are resolved to channels by `chans`, and an
+    /// identifier that resolves to nothing is dropped from the token stream,
+    /// as the original's tokenizer does.
+    pub fn parse_channels(src: &str, chans: &dyn Channels) -> Result<Expr, ExprError> {
+        let e = Expr::compile(src, Some(chans));
+        match &e.root {
+            Ok(_) => Ok(e),
+            Err(err) => Err(err.clone()),
+        }
+    }
+
+    fn compile(src: &str, chans: Option<&dyn Channels>) -> Expr {
+        let parsed = tokenize(src, chans).and_then(|(toks, idents)| {
             let mut p = Parser { toks, pos: 0 };
             Ok((Box::new(Node::List(p.list()?)), idents))
         });
@@ -308,13 +373,23 @@ impl Expr {
     /// stored lowercased): the original lowercases the formula before lookup,
     /// and the shipped library relies on it (`ДЗМф2_Rср` vs `ДЗМФ2_Rср`).
     pub fn eval(&self, ctx: &Context) -> Result<f64, ExprError> {
+        self.eval_env(Env { ctx, chans: None, idx: 0 })
+    }
+
+    /// Evaluate a channel-mode formula at sample `idx`.
+    pub fn eval_at(&self, ctx: &Context, chans: &dyn Channels, idx: usize) -> Result<f64, ExprError> {
+        self.eval_env(Env { ctx, chans: Some(chans), idx })
+    }
+
+    fn eval_env(&self, env: Env) -> Result<f64, ExprError> {
+        let ctx = env.ctx;
         let root = self.root.as_ref().map_err(Clone::clone)?;
         for id in &self.idents {
             if !ctx.contains_key(id) {
                 return Err(ExprError::UnknownIdent(id.clone()));
             }
         }
-        let vals = eval_node(root, ctx)?;
+        let vals = eval_node(root, env)?;
         if vals.len() != 1 {
             return Err(ExprError::Expected("a single value"));
         }
@@ -335,7 +410,7 @@ pub fn eval_str(src: &str, ctx: &Context) -> Result<f64, ExprError> {
     Expr::parse(src)?.eval(ctx)
 }
 
-fn tokenize(src: &str) -> Result<(Vec<Tok>, Vec<String>), ExprError> {
+fn tokenize(src: &str, chans: Option<&dyn Channels>) -> Result<(Vec<Tok>, Vec<String>), ExprError> {
     // Lowercase outside [...] (`0x418ca4`..`0x418cee` restore bracketed text).
     let mut s = String::with_capacity(src.len());
     let mut in_dim = false;
@@ -387,8 +462,7 @@ fn tokenize(src: &str) -> Result<(Vec<Tok>, Vec<String>), ExprError> {
         if c == '"' {
             let body = &rest[1..];
             let end = body.find('"').ok_or(ExprError::Expected("closing \""))?;
-            idents.push(body[..end].to_string());
-            toks.push(Tok::Ident(body[..end].to_string()));
+            ident(&body[..end], chans, &mut toks, &mut idents);
             pos += end + 2;
             continue;
         }
@@ -396,8 +470,7 @@ fn tokenize(src: &str) -> Result<(Vec<Tok>, Vec<String>), ExprError> {
             let len = rest
                 .find(|ch: char| !(ch == '_' || ch.is_alphanumeric()))
                 .unwrap_or(rest.len());
-            idents.push(rest[..len].to_string());
-            toks.push(Tok::Ident(rest[..len].to_string()));
+            ident(&rest[..len], chans, &mut toks, &mut idents);
             pos += len;
             continue;
         }
@@ -420,6 +493,21 @@ fn tokenize(src: &str) -> Result<(Vec<Tok>, Vec<String>), ExprError> {
     }
     out.push(Tok::End);
     Ok((out, idents))
+}
+
+/// An identifier: a variable, or in channel mode a channel (`0x419126`).
+fn ident(name: &str, chans: Option<&dyn Channels>, toks: &mut Vec<Tok>, idents: &mut Vec<String>) {
+    match chans {
+        None => {
+            idents.push(name.to_string());
+            toks.push(Tok::Ident(name.to_string()));
+        }
+        Some(c) => {
+            if let Some(ch) = c.resolve(name) {
+                toks.push(Tok::Chan(ch));
+            }
+        }
+    }
 }
 
 /// `_wtof` over a digits-and-one-dot string (`"1."` is 1).
@@ -533,6 +621,7 @@ impl Parser {
         let n = match self.peek().clone() {
             Tok::Num(v) => Node::Num(v),
             Tok::Ident(name) => Node::Var(name),
+            Tok::Chan(ch) => Node::Chan(ch),
             Tok::Pi => Node::Pi,
             Tok::Null => Node::Null,
             Tok::End => return Err(ExprError::UnexpectedEof),
@@ -555,65 +644,83 @@ fn rad(v: f64) -> f64 {
     v * PI / 180.0
 }
 
-fn eval_node(n: &Node, ctx: &Context) -> Result<Vec<Value>, ExprError> {
+fn eval_node(n: &Node, env: Env) -> Result<Vec<Value>, ExprError> {
     Ok(match n {
         Node::Num(v) => vec![Value::real(*v)],
         Node::Var(name) => {
-            let v = *ctx
+            let v = *env
+                .ctx
                 .get(name)
                 .ok_or_else(|| ExprError::UnknownIdent(name.clone()))?;
             vec![Value::real(v)]
         }
+        Node::Chan(ch) => {
+            // 0x41f960: scalar = instantaneous value, complex = phasor, flags 7.
+            let c = env.chans.ok_or(ExprError::NeedsChannel("chan"))?;
+            let z = c.phasor(*ch, env.idx);
+            vec![Value {
+                v: c.sample(*ch, env.idx),
+                re: z.re,
+                im: z.im,
+                chan: true,
+                ch: Some(*ch),
+            }]
+        }
         Node::Pi => vec![Value::real(PI)],
-        Node::Null => vec![Value { v: 0.0, re: 0.0, im: 0.0 }],
+        Node::Null => vec![Value { v: 0.0, re: 0.0, im: 0.0, chan: false, ch: None }],
         Node::List(items) => {
             let mut out = Vec::new();
             for it in items {
-                out.extend(eval_node(it, ctx)?);
+                out.extend(eval_node(it, env)?);
             }
             out
         }
         Node::Neg(a) => {
-            let mut vals = eval_node(a, ctx)?;
+            // 0x419fc0: negate all three slots; flags kept, channel dropped.
+            let mut vals = eval_node(a, env)?;
             let x = first(&vals)?;
-            vals[0] = Value { v: -x.v, re: -x.re, im: -x.im };
+            vals[0] = Value { v: -x.v, re: -x.re, im: -x.im, ch: None, ..x };
             vals
         }
         Node::Bin(op, a, b) => {
-            let mut l = eval_node(a, ctx)?;
+            let mut l = eval_node(a, env)?;
             let x = first(&l)?;
-            let y = first(&eval_node(b, ctx)?)?;
+            let y = first(&eval_node(b, env)?)?;
             l[0] = binary(*op, x, y)?;
             l
         }
         Node::Call(f, name, n, args) => {
             let mut vals = Vec::new();
             for a in args {
-                vals.extend(eval_node(a, ctx)?);
+                vals.extend(eval_node(a, env)?);
             }
             if let Some(n) = n {
                 if vals.len() != *n {
                     return Err(ExprError::ArgCount(name, *n, vals.len()));
                 }
             }
-            vec![call(*f, name, &vals)?]
+            vec![call(*f, name, &vals, env)?]
         }
     })
 }
 
-/// Binary operator handlers (jump table `0x41f944`).
+/// Binary operator handlers (jump table `0x41f944`): flags = lhs & rhs, the
+/// channel pointer is cleared.
 fn binary(op: u8, x: Value, y: Value) -> Result<Value, ExprError> {
+    let chan = x.chan && y.chan;
     Ok(match op {
-        0x01 => Value { v: x.v + y.v, re: x.re + y.re, im: x.im + y.im },
-        0x02 => Value { v: x.v - y.v, re: x.re - y.re, im: x.im - y.im },
+        0x01 => Value { v: x.v + y.v, re: x.re + y.re, im: x.im + y.im, chan, ch: None },
+        0x02 => Value { v: x.v - y.v, re: x.re - y.re, im: x.im - y.im, chan, ch: None },
         0x03 => Value {
             v: x.v * y.v,
             re: x.re * y.re - x.im * y.im,
             im: x.re * y.im + x.im * y.re,
+            chan,
+            ch: None,
         },
         0x04 => {
             let (re, im) = complex_div(x.re, x.im, y.re, y.im);
-            Value { v: x.v / y.v, re, im }
+            Value { v: x.v / y.v, re, im, chan, ch: None }
         }
         _ => {
             // 0x41f7cb: integer exponent only; scalar only.
@@ -643,8 +750,18 @@ fn complex_div(ar: f64, ai: f64, br: f64, bi: f64) -> (f64, f64) {
     }
 }
 
-/// Function cases (`0x41a23d`..`0x41a431` and the 0x13/0x14 handlers).
-fn call(f: Func, name: &'static str, a: &[Value]) -> Result<Value, ExprError> {
+/// A channel argument: the value must carry the channel flag (else error
+/// 0x431). A flagged value without a channel (e.g. `rms:(a+b)`) dereferences
+/// a null channel in the original; we report the same error.
+fn channel_arg<'a>(x: Value, name: &'static str, env: Env<'a>) -> Result<(&'a dyn Channels, usize), ExprError> {
+    match (x.chan, x.ch, env.chans) {
+        (true, Some(ch), Some(c)) => Ok((c, ch)),
+        _ => Err(ExprError::NeedsChannel(name)),
+    }
+}
+
+/// Function cases (jump table `0x41f2a4`, index = token id − 8).
+fn call(f: Func, name: &'static str, a: &[Value], env: Env) -> Result<Value, ExprError> {
     let x = first(a)?;
     Ok(match f {
         Func::Sin => x.scalar(rad(x.v).sin()),
@@ -655,10 +772,13 @@ fn call(f: Func, name: &'static str, a: &[Value]) -> Result<Value, ExprError> {
         Func::Exp => x.scalar(x.v.exp()),
         Func::Re => x.scalar(x.re),
         Func::Im => x.scalar(x.im),
-        Func::Mod => x.scalar(x.re.hypot(x.im)),
+        Func::Mod => Value { v: x.re.hypot(x.im), chan: false, ch: None, ..x },
         Func::Arg => {
-            // Outside an oscillogram there is no warm-up window; the angle is
-            // atan2 in degrees folded into [-180, 180).
+            // 0 until the warm-up count (one period with channels, 0 in the
+            // `.fvb` context); then atan2 in degrees folded into [-180, 180).
+            if env.idx < env.chans.map_or(0, |c| c.warmup()) {
+                return Ok(x.scalar(0.0));
+            }
             let mut d = x.im.atan2(x.re) * 180.0 / PI;
             if d >= 180.0 {
                 d -= 360.0;
@@ -679,6 +799,50 @@ fn call(f: Func, name: &'static str, a: &[Value]) -> Result<Value, ExprError> {
             }
             x.scalar(d)
         }
-        Func::Channel(_) => return Err(ExprError::NeedsChannel(name)),
+        Func::Channel(_) => channel_func(name, a, env)?,
+    })
+}
+
+/// The channel/analysis accessors decoded so far (ledger L6).
+fn channel_func(name: &'static str, a: &[Value], env: Env) -> Result<Value, ExprError> {
+    let idx = env.idx;
+    let x = first(a)?;
+    // Like the math functions, these write the scalar of their first
+    // argument and leave its complex pair as it was.
+    let out = |v: f64| x.scalar(v);
+    Ok(match name {
+        "rms:" => {
+            let (c, ch) = channel_arg(x, name, env)?;
+            out(c.rms(ch, idx))
+        }
+        "a0:" => {
+            let (c, ch) = channel_arg(x, name, env)?;
+            out(c.a0(ch, idx))
+        }
+        "fault:" => {
+            let (c, ch) = channel_arg(x, name, env)?;
+            out(c.fault(ch, idx))
+        }
+        "fourie:" => {
+            let (c, ch) = channel_arg(x, name, env)?;
+            out(c.fourie(ch, a[1].v as i32, idx))
+        }
+        // vtable slot 1; the `.fvb` Calculator returns 0.0. The argument is
+        // parsed and ignored.
+        "frequency:" => out(env.chans.map_or(0.0, |c| c.frequency(idx))),
+        // 0x41ad96: sum of the three complex values, scalar = |sum|.
+        "3i0:" | "3u0:" => {
+            let z = a[0].z() + a[1].z() + a[2].z();
+            Value::both(z.norm(), z)
+        }
+        // 0x41a796 / 0x41aa6e: (2A − B − C ± j√3(B − C)) / 6, scalar = |.|.
+        "i1:" | "i2:" => {
+            let (pa, pb, pc) = (a[0].z(), a[1].z(), a[2].z());
+            let j3 = Complex64::new(0.0, 3f64.sqrt()) * (pb - pc);
+            let num = 2.0 * pa - pb - pc;
+            let z = if name == "i1:" { num + j3 } else { num - j3 } / 6.0;
+            Value::both(z.norm(), z)
+        }
+        _ => return Err(ExprError::NeedsChannel(name)),
     })
 }

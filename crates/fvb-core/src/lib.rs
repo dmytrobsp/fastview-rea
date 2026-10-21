@@ -9,6 +9,7 @@
 //! identically on Linux, Windows and macOS.
 
 pub mod analysis;
+pub mod channels;
 pub mod comtrade;
 pub mod expr;
 pub mod geom;

@@ -111,6 +111,41 @@ pub fn sliding_dc(samples: &[f64], n: usize) -> Vec<f64> {
     out
 }
 
+/// True RMS over the `n` samples ending at `i` (`FUN_004272a0(i, 1)`); 0
+/// before a full window.
+pub fn rms_at(samples: &[f64], i: usize, n: usize) -> f64 {
+    if n == 0 || i + 1 < n || i >= samples.len() {
+        return 0.0;
+    }
+    let s: f64 = samples[i + 1 - n..=i].iter().map(|v| v * v).sum();
+    (s / n as f64).sqrt()
+}
+
+/// Signed mean over the `n` samples ending at `i` (`FUN_00426c90(i, 1)`); 0
+/// before a full window.
+pub fn a0_at(samples: &[f64], i: usize, n: usize) -> f64 {
+    if n == 0 || i + 1 < n || i >= samples.len() {
+        return 0.0;
+    }
+    samples[i + 1 - n..=i].iter().sum::<f64>() / n as f64
+}
+
+/// [`sliding_fault`] at one sample.
+pub fn fault_at(samples: &[f64], i: usize, n: usize) -> f64 {
+    if n == 0 || i + 1 < n || i >= samples.len() {
+        return 0.0;
+    }
+    let d = |s: usize| {
+        if s < 2 * n {
+            0.0
+        } else {
+            samples[s] - 2.0 * samples[s - n] + samples[s - 2 * n]
+        }
+    };
+    let sum: f64 = (1..=n).map(|k| d(i + k - n).powi(2)).sum();
+    sum.sqrt() / (n as f64).sqrt()
+}
+
 /// Fault (emergency, аварийная) component per sample (`FUN_00427670`): the
 /// RMS over one period of the one-period-lag second difference
 /// `d[s] = x[s] − 2·x[s−N] + x[s−2N]`, where terms with `s < 2N` count as 0:

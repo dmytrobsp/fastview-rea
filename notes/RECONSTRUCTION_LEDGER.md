@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 78 pass)
+- `cargo test --workspace`   (currently 83 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 78 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 83 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -132,7 +132,7 @@ decompilation (pending, listed below).
 
 | Engine | Original | Our module | Status |
 |---|---|---|---|
-| Formula token table | `FUN_00401000` @0x401000 | `expr.rs` | 🟡 L1 (math ✅, channel accessors ❌) |
+| Formula token table | `FUN_00401000` @0x401000 | `expr.rs` | 🟡 L1 (math ✅, rms/a0/fault/fourie/frequency/3i0/i1/i2 ✅, rest ❌) |
 | Formula evaluator (tokenizer/grammar/values) | `FUN_00418c40`, `0x419950`..`0x41f960` | `expr.rs` | ✅ L2 (numeric) |
 | `.fvb` loader / evaluation / settings | `FUN_0040c7e0`, `FUN_00409260`, `FUN_00407750` | `parse.rs`/`model.rs`/`geom.rs` | ✅ L5 (persistence ❌) |
 | Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ✅ L4 |
@@ -296,7 +296,7 @@ Residual / honest:
 
 ---
 
-## L6 — Signal engine (channel methods)  ·  🟡 per-channel methods ✅, Calculator channel mode ❌
+## L6 — Signal engine (channel methods)  ·  🟡 per-channel methods ✅, channel mode core ✅, ~30 accessors ❌
 
 Evidence (subagent objdump/decompile; all double constants read from bytes).
 OscillHelper.dll exports only `ComtradeConverter` — no signal code there.
@@ -354,8 +354,26 @@ selected "Гц" channel) not implemented; `rec+0x278` harmonic-1 gain assumed 1
 for COMTRADE (NOT DETERMINED); which method the frequency-diagram *view* calls
 NOT located (we use `fourie:`); primary/secondary/ADC/DC-removal flags of
 `FUN_00426020` mapped to the GUI's existing options, not re-verified.
-❌ Calculator channel mode + channel accessors (`rms: fourie: a0: fault:
-frequency: 3i0: i1: i2: zl: zf: …`) — next.
+Calculator channel mode (implemented): `Channels` trait (= `CalcChannels`),
+`Expr::parse_channels` (identifiers resolve to CHANNEL tokens; unresolved ones
+are dropped from the token stream, 0x419126), `Expr::eval_at(idx)`; CHANNEL
+atom scalar = sample, complex = phasor, flag bit 2 kept through arithmetic only
+when both sides carry it, pointer cleared (so `rms:(a+b)` → 0x431); `rms: a0:
+fault: fourie:` via `channels::OscChannels` + `signal::{rms_at,a0_at,fault_at,
+harmonic_rms}`; `frequency:` = record frequency (0.0 in the `.fvb` context,
+vtable 0x4084f0); `arg:` = 0 below the warm-up (one period; 0 in `.fvb`);
+`3i0: 3u0:` = sum, scalar |·|; `i1: i2:` = (2A−B−C ± j√3(B−C))/6, scalar |·|
+(✔ read: shared tail 0x41aa4b divides by 6 @0x4d1a00, stores |z| via
+0x420610; common exit 0x41f227 sets flags 3 + truncates). GUI computed
+channels use channel mode (analog + earlier computed channels by name).
+Pinned by `tests/channel_mode.rs` (5, mock channel source).
+
+Still ❌ / NOT DETERMINED: which channel string names match (we use the COMTRADE
+id, case-insensitive) and the circular-reference guard list; where the
+original catches a per-sample evaluation error for a computed channel (we
+abort with the message); `zl: zf: zk: ib: ulf: ull: ua: ub: uc: u1f: u2f: u1l:
+u2l: uncn: pk: pf: pf3wm: pf2wm: coeff*: grs*: torm*: chan: uniik:` (recognised
+with exact arg counts, return 0x431 for now).
 
 ---
 

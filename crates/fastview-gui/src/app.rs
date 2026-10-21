@@ -1077,31 +1077,29 @@ impl App {
             self.status = "Сначала загрузите осциллограмму.".into();
             return;
         };
-        let expr = match fvb_core::Expr::parse(&self.formula_text) {
+        // Channel mode (`CalcChannels`): identifiers name channels — the
+        // record's analog channels and earlier computed ones — and the
+        // formula's scalar is evaluated at every sample.
+        let extra: Vec<(String, Vec<f64>)> =
+            d.computed.iter().map(|c| (c.name.clone(), c.samples.clone())).collect();
+        let chans = fvb_core::channels::OscChannels::new(&d.osc, &extra);
+        let expr = match fvb_core::Expr::parse_channels(&self.formula_text, &chans) {
             Ok(e) => e,
             Err(e) => {
-                self.status = format!("Ошибка формулы: {e}");
+                self.status = format!("{}: {e}", self.formula_text);
                 return;
             }
         };
-        let n = d.osc.sample_count();
-        let mut samples = Vec::with_capacity(n);
-        for i in 0..n {
-            let mut cx = fvb_core::Context::new();
-            for ch in &d.osc.analog {
-                if let Some(v) = ch.samples.get(i) {
-                    cx.insert(ch.id.to_lowercase(), *v);
-                    if !ch.phase.is_empty() {
-                        cx.entry(ch.phase.to_lowercase()).or_insert(*v);
-                    }
+        let ctx = fvb_core::Context::new();
+        let mut samples = Vec::with_capacity(chans.len());
+        for i in 0..chans.len() {
+            match expr.eval_at(&ctx, &chans, i) {
+                Ok(v) => samples.push(v),
+                Err(e) => {
+                    self.status = format!("{}: {e}", self.formula_text);
+                    return;
                 }
             }
-            for c in &d.computed {
-                if let Some(v) = c.samples.get(i) {
-                    cx.insert(c.name.to_lowercase(), *v);
-                }
-            }
-            samples.push(expr.eval(&cx).unwrap_or(f64::NAN));
         }
         let name = self.formula_name.clone();
         let formula = self.formula_text.clone();
