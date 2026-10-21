@@ -640,21 +640,50 @@ fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f
     if let (true, Some(g), Some(p)) = (r.dragged() && travel > 0.0, grab, r.interact_pointer_pos()) {
         return Some(((along_of(p) - g - arrow) / travel * max).clamp(0.0, max));
     }
-    if r.clicked() {
-        let pos = r.interact_pointer_pos()?;
-        let before_thumb = |q: Pos2| if horizontal { q.x < thumb.left() } else { q.y < thumb.top() };
-        let step = if dec.contains(pos) {
-            -line
-        } else if inc.contains(pos) {
-            line
-        } else if thumb.contains(pos) {
-            return None;
-        } else if before_thumb(pos) {
-            -page
+    // Arrows and track act on the press and then repeat while the button
+    // is held (window scroll bar behaviour; the track stops once the thumb
+    // reaches the pointer). Delays are the system's [I]: 0.4 s, then 0.05 s.
+    let rep_id = id.with("repeat");
+    let now = ui.input(|i| i.time);
+    let before_thumb = |q: Pos2| if horizontal { q.x < thumb.left() } else { q.y < thumb.top() };
+    let part_at = |q: Pos2| -> i8 {
+        if dec.contains(q) {
+            -1
+        } else if inc.contains(q) {
+            1
+        } else if thumb.contains(q) {
+            0
+        } else if before_thumb(q) {
+            -2
         } else {
-            page
-        };
-        return Some((value + step).clamp(0.0, max));
+            2
+        }
+    };
+    let step_of = |part: i8| match part {
+        -1 => -line,
+        1 => line,
+        -2 => -page,
+        _ => page,
+    };
+    if ui.input(|i| i.pointer.primary_pressed()) && r.is_pointer_button_down_on() {
+        let part = ui.input(|i| i.pointer.press_origin()).map_or(0, part_at);
+        if part != 0 {
+            ui.data_mut(|d| d.insert_temp(rep_id, (part, now + 0.4)));
+            return Some((value + step_of(part)).clamp(0.0, max));
+        }
+    }
+    if !r.is_pointer_button_down_on() {
+        ui.data_mut(|d| d.remove::<(i8, f64)>(rep_id));
+        return None;
+    }
+    if let Some((part, next)) = ui.data(|d| d.get_temp::<(i8, f64)>(rep_id)) {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+        // The track repeats only while the pointer is still beyond the thumb.
+        let still = r.interact_pointer_pos().is_some_and(|q| part.abs() == 1 || part_at(q) == part);
+        if now >= next && still {
+            ui.data_mut(|d| d.insert_temp(rep_id, (part, now + 0.05)));
+            return Some((value + step_of(part)).clamp(0.0, max));
+        }
     }
     None
 }
@@ -2009,6 +2038,43 @@ mod menu_tests {
         assert!(h.shapes.iter().any(|c| lane(c) && matches!(c.shape, Shape::Path(_) | Shape::LineSegment { .. } | Shape::Vec(_))), "the curve is drawn through the lane clip");
         // An unzoomed lane keeps the plot clip.
         assert!(h.doc().chans.iter().filter(|c| c.window.is_some()).count() == 1);
+    }
+
+    /// Holding an arrow keeps scrolling after a delay; holding the track
+    /// pages until the thumb reaches the pointer.
+    #[test]
+    fn held_scroll_arrow_and_track_repeat() {
+        let mut h = Harness::new();
+        let at = Pos2::new(600.0, h.row(0).y);
+        for _ in 0..4 {
+            h.wheel(at, 1.0, egui::Modifiers::CTRL);
+        }
+        let y = SCREEN.y - 8.0 - HSCROLL_H / 2.0;
+        let plot_right = SCREEN.x - 8.0 - VSCROLL_W;
+        let press = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let arrow = Pos2::new(plot_right - HSCROLL_H / 2.0, y);
+        h.frame(vec![egui::Event::PointerMoved(arrow), press(arrow, true)]);
+        let one = h.doc().first;
+        assert!(one > 0, "the press steps at once");
+        for _ in 0..20 {
+            h.frame(vec![]);
+        }
+        let held = h.doc().first;
+        assert!(held >= 5 * one, "a held arrow repeats: {held} after {one}");
+        h.frame(vec![press(arrow, false)]);
+        for _ in 0..10 {
+            h.frame(vec![]);
+        }
+        assert_eq!(h.doc().first, held, "release stops it");
+        // Track left of the thumb (now at the right end), held mid-track:
+        // pages back and stops with the thumb under the pointer, not at 0.
+        let spot = Pos2::new((8.0 + plot_right) / 2.0, y);
+        h.frame(vec![egui::Event::PointerMoved(spot), press(spot, true)]);
+        for _ in 0..80 {
+            h.frame(vec![]);
+        }
+        h.frame(vec![press(spot, false)]);
+        assert!(h.doc().first > 0 && h.doc().first < held, "stopped at the pointer: {}", h.doc().first);
     }
 
     #[test]

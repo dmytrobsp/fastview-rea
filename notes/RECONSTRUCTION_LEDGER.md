@@ -1256,7 +1256,7 @@ thickness 17 px (default system metric — inferred, not read). Tests:
 panes, preview, ОМП, nine dialogs — × sizes down to 1×1, hover + LMB/RMB
 drags + Esc each), `the_horizontal_scroll_bar_is_painted_along_the_bottom_
 and_steps_by_a_screen` (painted inside its clip, arrows/track step).
-Residual: arrow auto-repeat while held not modelled; whether the V bar is
+Residual: (arrow auto-repeat: L9.40); whether the V bar is
 present (disabled) when the lanes fit is NOT DETERMINED (DISABLENOSCROLL
 keeps an existing bar; the view's creation style was not read) — ours hides
 it as before; the original's thumb-position quirk (pos max 10001) not
@@ -1592,6 +1592,15 @@ map-mode test — a ГВ is drawn when shown (`+0x48`) and above the bottom band
 (`0x494179`–`0x4941a2`). Ours: printed slices draw shown ГВ lines and
 labels on their paged lanes (L9.22 residual closed). Test
 `horizontal_vizirs_are_printed`.
+
+### L9.40 — Scroll bar arrows and track act on the press and repeat  ·  🟡
+Window scroll bar behaviour (system, not program code): a press on an
+arrow or the track scrolls at once and repeats while held; the track stops
+once the thumb reaches the pointer. Ours (was: one step per click): the
+step on the press, then repeats after 0.4 s every 0.05 s — delays assumed
+[I] (the system's are set by the double-click time); the track repeat
+checks the pointer is still beyond the thumb. Test
+`held_scroll_arrow_and_track_repeat`. (L9.23 residual closed.)
 
 Next in L9 (HANDOFF 2026-10-21, second session): the four user-reported GUI
 bugs are fixed (L9.23 tiny-window crash + bottom scroll bar, L9.24 modal
