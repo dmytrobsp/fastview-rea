@@ -376,19 +376,85 @@ impl OscView<'_> {
 
     /// The vertical визиры (`0x493110`) from `top` to `v_bottom`, 1 px, no
     /// shading between В1 and В2; `labels` = the В1/В2/В3 badges at the top.
+    /// A vertical визир's x on screen (`0x493110`, with its fallback quirk).
+    pub fn vizir_x(&self, k: usize) -> f32 {
+        self.x0 + g::vizir_x(k, self.first, self.n, self.f, self.left - self.x0, self.right - self.x0)
+    }
+
+    /// The vertical визиры (`0x493110`): every shown line with x > leftW
+    /// from `top` to `v_bottom` (В2 takes В3's green pen when it coincides
+    /// with В1, shown or not), then the label row at `top` — clamped,
+    /// merged (`g::vizir_labels`), each on an opaque white text cell.
     pub fn vizirs(&self, painter: &egui::Painter, top: f32, v_bottom: f32, labels: bool) {
-        for (k, shown, col, label) in self.viz() {
-            let x = self.x_of(k as f64);
-            if !shown || x <= self.left || x > self.right {
+        let viz = self.viz();
+        let xs: Vec<f32> = viz.iter().map(|v| self.vizir_x(v.0)).collect();
+        for (i, (_, shown, col, _)) in viz.iter().enumerate() {
+            if !shown || xs[i] <= self.left {
                 continue;
             }
-            painter.vline(x, top..=v_bottom, Stroke::new(1.0f32, col));
-            if labels {
-                let galley = painter.layout_no_wrap(label.to_string(), FontId::proportional(11.0), col);
-                let r = Rect::from_center_size(Pos2::new(x, top + 8.0), galley.size() + Vec2::new(4.0, 0.0));
-                painter.rect_filled(r, 0.0, Color32::WHITE);
-                painter.galley(r.min + Vec2::new(2.0, 0.0), galley, col);
-            }
+            let col = if i == 1 && xs[1] == xs[0] { viz[2].2 } else { *col };
+            painter.vline(xs[i], top..=v_bottom, Stroke::new(1.0f32, col));
+        }
+        if !labels {
+            return;
+        }
+        let measure = |t: &str| painter.layout_no_wrap(t.to_string(), FontId::proportional(11.0), Color32::BLACK).size().x;
+        let rel = |i: usize| (viz[i].1, xs[i] - self.x0);
+        let row = g::vizir_labels([rel(0), rel(1), rel(2)], self.left - self.x0, self.right - self.x0, &measure);
+        for l in row {
+            let col = viz[l.idx].2;
+            let galley = painter.layout_no_wrap(l.text, FontId::proportional(11.0), col);
+            let (w, h) = (galley.size().x, galley.size().y);
+            let x = self.x0 + l.x;
+            // DrawText(DT_CENTER) in (x − w/2, 0, x + 1 + w/2, h), opaque.
+            let cell = Rect::from_min_max(Pos2::new(x - (w / 2.0).trunc(), top), Pos2::new(x + 1.0 + (w / 2.0).trunc(), top + h));
+            painter.rect_filled(cell, 0.0, Color32::WHITE);
+            painter.galley(Pos2::new(cell.center().x - w / 2.0, top), galley, col);
+        }
+    }
+}
+
+/// The horizontal визиры (`0x49414c`–`0x494437`) over the view whose client
+/// spans `x0..right` × `top..` with the bottom band at `band_top`: a shown
+/// line lies at `ys[j]` (None without a channel) from leftW to W when above
+/// the band; ГВ2 takes В3's green pen on ГВ1's y. A label appears **only
+/// for a line out of view** — clamped to the top or to the band — just left
+/// (ГВ1) or right (ГВ2) of half the client width, on an opaque cell.
+pub fn paint_hvizirs(painter: &egui::Painter, (x0, left, right): (f32, f32, f32), (top, band_top): (f32, f32), ys: [(bool, Option<f32>); 2]) {
+    let red = Color32::from_rgb(255, 100, 100);
+    let blue = Color32::from_rgb(100, 100, 255);
+    let green = Color32::from_rgb(0, 160, 0);
+    let mid = x0 + ((right - x0) / 2.0).trunc();
+    // ГВ1's y as ГВ2's pen test sees it: its clamped label y when clamped.
+    let mut y1_seen: Option<f32> = None;
+    for (j, (shown, y)) in ys.into_iter().enumerate() {
+        let Some(y) = y else { continue };
+        let label_y = if y <= top {
+            Some(top)
+        } else if y >= band_top {
+            Some(band_top)
+        } else {
+            None
+        };
+        if j == 0 {
+            y1_seen = Some(label_y.unwrap_or(y));
+        }
+        if !shown {
+            continue;
+        }
+        if y < band_top {
+            let col = if j == 1 && y1_seen == Some(y) { green } else if j == 0 { red } else { blue };
+            painter.hline(left..=right, y, Stroke::new(1.0f32, col));
+        }
+        if let Some(ly) = label_y {
+            let col = if j == 0 { red } else { blue };
+            let galley = painter.layout_no_wrap(if j == 0 { "ГВ1" } else { "ГВ2" }.to_string(), FontId::proportional(11.0), col);
+            let (cx, cy) = (galley.size().x, galley.size().y);
+            let (l, r) = if j == 0 { (mid - cx - 1.0, mid) } else { (mid, mid + cx + 1.0) };
+            let (t, b) = if ly == top { (top, top + cy) } else { ((ly - cy).max(top), ly) };
+            let cell = Rect::from_min_max(Pos2::new(l, t), Pos2::new(r, b));
+            painter.rect_filled(cell, 0.0, Color32::WHITE);
+            painter.galley(Pos2::new(cell.center().x - cx / 2.0, t), galley, col);
         }
     }
 }
@@ -877,13 +943,8 @@ impl App {
             }
             let yy = g::value_y(h.value, tops[li], rows[li].h, lo, hi);
             hrows[j] = Some((yy, li));
-            if !h.shown || yy >= plot_bottom || yy < client.top() {
-                continue;
-            }
-            let col = if j == 0 { Color32::from_rgb(255, 100, 100) } else { Color32::from_rgb(100, 100, 255) };
-            painter.hline(left..=plot_right, yy, Stroke::new(1.0f32, col));
-            painter.text(Pos2::new((left + plot_right) / 2.0, yy - 1.0), Align2::CENTER_BOTTOM, if j == 0 { "ГВ1" } else { "ГВ2" }, FontId::proportional(11.0), col);
         }
+        paint_hvizirs(&painter, (client.left(), left, plot_right), (client.top(), plot_bottom), [0, 1].map(|j| (doc.hviz[j].shown, hrows[j].map(|r| r.0))));
 
         // ---- comments (`0x43f630`), the one under the pointer selected ----
         let lane_of = |k: ChanKey| {
@@ -932,7 +993,8 @@ impl App {
         // ---- input (`0x45dc10`, `0x45ea70`, `0x45e6b0`, `0x45efa0`) ----
         let geo = RowGeo { left, axis_top: plot_bottom, tops: &tops, rows: &rows };
         let (shift, ctrl, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.command || i.modifiers.ctrl, i.modifiers.alt));
-        let v_hit = |x: f32| (0..3).find(|&k| viz[k].1 && (x_of(viz[k].0 as f64) - x).abs() < 3.0);
+        // Grabbed where it is drawn (`0x493110`'s x) [I].
+        let v_hit = |x: f32| (0..3).find(|&k| viz[k].1 && (ov.vizir_x(viz[k].0) - x).abs() < 3.0);
         let h_hit = |y: f32| (0..2).find(|&j| doc.hviz[j].shown && hrows[j].is_some_and(|(hy, _)| (hy - y).abs() < 3.0));
         // Whether `y` is over a pending (pasted, not yet merged) lane.
         let pending_at = |y: f32| {
@@ -2075,6 +2137,44 @@ mod menu_tests {
         }
         h.frame(vec![press(spot, false)]);
         assert!(h.doc().first > 0 && h.doc().first < held, "stopped at the pointer: {}", h.doc().first);
+    }
+
+    /// `0x493110`: a ГВ label only for a line out of view (clamped to the
+    /// top), close В labels merged into one, an off-screen В label clamped
+    /// onto the plot's edge.
+    #[test]
+    fn vizir_labels_follow_the_original() {
+        let texts = |h: &Harness| -> Vec<String> {
+            h.shapes.iter().filter_map(|c| if let Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect()
+        };
+        let mut h = Harness::new();
+        let (lo, hi) = chan_range(h.doc(), 0, false);
+        let d = h.app.active_doc_mut().unwrap();
+        d.hviz[0] = crate::app::HVizir { shown: true, chan: Some(0), value: (lo + hi) / 2.0 };
+        h.frame(vec![]);
+        assert!(!texts(&h).iter().any(|t| t == "ГВ1"), "an on-screen ГВ has no label");
+        // Tall lanes scrolled so lane 0 is above the view: the label hangs
+        // at the top.
+        h.app.y_analog = 400.0;
+        h.app.active_doc_mut().unwrap().vscroll = -1000.0;
+        h.frame(vec![]);
+        h.frame(vec![]);
+        assert!(texts(&h).iter().any(|t| t == "ГВ1"), "an out-of-view ГВ is labelled");
+        h.app.active_doc_mut().unwrap().vscroll = 0.0;
+        h.app.y_analog = 93.0;
+        // Three close визиры: one merged label.
+        let d = h.app.active_doc_mut().unwrap();
+        let k = d.first + 40;
+        (d.main_cursor, d.aux_cursor, d.v3_cursor) = (k, k + 1, k + 2);
+        d.v_shown = [true, true, true];
+        h.frame(vec![]);
+        let t = texts(&h);
+        assert!(t.iter().any(|t| t == "В1 В2 В3") && !t.iter().any(|t| t == "В2"), "{t:?}");
+        // В2 far left of the window: clamped onto the plot, unmerged.
+        let d = h.app.active_doc_mut().unwrap();
+        d.first = k + 100;
+        h.frame(vec![]);
+        assert!(texts(&h).iter().filter(|t| t.starts_with('В')).count() >= 3, "clamped labels never merge");
     }
 
     #[test]

@@ -297,19 +297,13 @@ impl App {
         let tops: Vec<f32> = paged.tops.iter().map(|t| t + dy).collect();
         let ranges: Vec<(f64, f64)> = rows.iter().map(|r| lanes::row_range(doc, r, primary)).collect();
         // Horizontal визиры: the screen Draw `0x45f950` calls `0x493110` in
-        // print as well, which draws a shown ГВ on its lane whenever it lies
-        // above the bottom band.
-        for (j, hv) in doc.hviz.iter().enumerate() {
-            let Some(ch) = hv.chan.filter(|_| hv.shown && hv.value.is_finite()) else { continue };
-            let Some(li) = rows.iter().position(|r| r.members.contains(&ch)) else { continue };
-            let y = g::value_y(hv.value, tops[li], rows[li].h, ranges[li].0, ranges[li].1);
-            if y >= v_bottom || y < dy {
-                continue;
-            }
-            let col = if j == 0 { Color32::from_rgb(255, 100, 100) } else { Color32::from_rgb(100, 100, 255) };
-            painter.hline(left..=right, y, Stroke::new(1.0f32, col));
-            painter.text(Pos2::new((left + right) / 2.0, y - 1.0), Align2::CENTER_BOTTOM, if j == 0 { "ГВ1" } else { "ГВ2" }, FontId::proportional(11.0), col);
-        }
+        // print as well (lines and the out-of-view labels).
+        let ys = [0, 1].map(|j| {
+            let hv = &doc.hviz[j];
+            let y = hv.chan.filter(|_| hv.value.is_finite()).and_then(|ch| rows.iter().position(|r| r.members.contains(&ch))).map(|li| g::value_y(doc.hviz[j].value, tops[li], rows[li].h, ranges[li].0, ranges[li].1));
+            (hv.shown, y)
+        });
+        lanes::paint_hvizirs(&painter, (x0, left, right), (dy, v_bottom), ys);
         // Comments over the whole image's plot area.
         let x_of = |k: f64| ov.x_of(k);
         let lane_of = |k: crate::app::ChanKey| {

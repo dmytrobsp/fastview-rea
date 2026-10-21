@@ -717,6 +717,7 @@ mod window_tests {
             "fileparams" => vec![C::FileParams],
             "explorer" => vec![C::ToggleExplorer],
             "parambar" => vec![C::ToggleParamBar],
+            "vizirs" => vec![C::ToggleVizir(0), C::ToggleVizir(1), C::ToggleVizir(2)],
             // `skin<k>`: the k-th look of `Skin::ALL`.
             s if s.starts_with("skin") => s[4..].parse::<usize>().ok().and_then(|k| theme::Skin::ALL.get(k).copied()).map(C::SetSkin).into_iter().collect(),
             _ => vec![],

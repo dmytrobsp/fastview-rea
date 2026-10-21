@@ -410,3 +410,140 @@ mod level_tests {
         assert_eq!(level_y(0.0, 100.0, 93.0, 1.0, 1.0), None);
     }
 }
+
+/// A vertical визир's x relative to the view's left edge (`0x493110`,
+/// `0x49316e`–`0x4936ca`): the sample is looked up among the drawn columns
+/// — offsets 1..=M at `trunc(o·k)` when k = 25·f ≥ 0.5, else the decimated
+/// columns 1..P−1 — and found at `leftW + xrel`; when not found the original
+/// falls back to `trunc((s − first)·k)` **without** leftW (a quirk: a визир
+/// on `first` lands at 0, one just past the right edge is drawn inside the
+/// plot).
+pub fn vizir_x(s: usize, first: usize, n: usize, f: f64, left_w: f32, w: f32) -> f32 {
+    let k = PX_PER_SAMPLE * f;
+    let rem = n as i64 - first as i64 - 1;
+    let cnt = (f64::from(w - left_w) / k).ceil() as i64 + 1;
+    let m = rem.min(cnt);
+    let d = s as i64 - first as i64;
+    let found = if k >= 0.5 {
+        (1..=m).contains(&d).then(|| (d as f64 * k).trunc())
+    } else {
+        let p = (((n as f64 - 1.0 - first as f64) * k + 0.5).floor()).min(f64::from(w - left_w - 4.0)) as i64;
+        let r = if p > 0 { m as f64 / p as f64 } else { 0.0 };
+        let tail = rem <= cnt;
+        (1..p.max(1))
+            .find(|&c| {
+                let lo = (c as f64 * r).trunc() as i64;
+                let hi = ((c + 1) as f64 * r).trunc() as i64 + i64::from(c + 1 == p && tail);
+                d >= lo && d < hi
+            })
+            .map(|c| c as f64)
+    };
+    match found {
+        Some(x) => left_w + x as f32,
+        None => (d as f64 * k).trunc() as f32,
+    }
+}
+
+/// One В label to draw: which визир's colour, its text, its centre x
+/// (relative to the view's left edge).
+#[derive(Debug, Clone, PartialEq)]
+pub struct VizLabel {
+    pub idx: usize,
+    pub text: String,
+    pub x: f32,
+}
+
+/// The В label row (`0x4938f3`–`0x49411f`): shown визиры left of the plot
+/// clamp to leftW + 2 + 13·n, past the right edge to W − 5 − 13·n (n per
+/// side, in order В1 В2 В3 — the step is sideways); unclamped labels on the
+/// plot closer than half their widths merge with one space — «В1 В2 [В3]»,
+/// else «В1 В3 [В2]», else «В2 В3» — keeping the first member's colour and
+/// x; clamped labels never merge. `xs` = (shown, x); `width` measures a text.
+pub fn vizir_labels(xs: [(bool, f32); 3], left_w: f32, w: f32, width: &dyn Fn(&str) -> f32) -> Vec<VizLabel> {
+    let mut x: Vec<f32> = xs.iter().map(|v| v.1).collect();
+    let mut clamped = [false; 3];
+    let mut n = 0.0;
+    for i in 0..3 {
+        if xs[i].0 && x[i] <= left_w {
+            x[i] = left_w + 2.0 + 13.0 * n;
+            clamped[i] = true;
+            n += 1.0;
+        }
+    }
+    n = 0.0;
+    for i in 0..3 {
+        if xs[i].0 && !clamped[i] && x[i] >= w {
+            x[i] = w - 5.0 - 13.0 * n;
+            clamped[i] = true;
+            n += 1.0;
+        }
+    }
+    let mut cand: Vec<bool> = (0..3).map(|i| xs[i].0 && x[i] > left_w && !clamped[i]).collect();
+    let mut text: Vec<String> = (1..=3).map(|i| format!("В{i}")).collect();
+    let mut wd: Vec<f32> = text.iter().map(|t| width(t)).collect();
+    let close = |a: usize, b: usize, wd: &[f32], x: &[f32]| (x[a] - x[b]).abs() < (wd[a] / 2.0).trunc() + (wd[b] / 2.0).trunc();
+    let mut absorbed = false;
+    if cand[0] && cand[1] && close(0, 1, &wd, &x) {
+        text[0] = format!("{} {}", text[0], text[1]);
+        wd[0] = width(&text[0]);
+        cand[1] = false;
+        absorbed = true;
+        if cand[2] && close(0, 2, &wd, &x) {
+            text[0] = format!("{} В3", text[0]);
+            cand[2] = false;
+        }
+    } else if cand[0] && cand[2] && close(0, 2, &wd, &x) {
+        text[0] = format!("{} В3", text[0]);
+        wd[0] = width(&text[0]);
+        cand[2] = false;
+        absorbed = true;
+        if cand[1] && close(0, 1, &wd, &x) {
+            text[0] = format!("{} В2", text[0]);
+            cand[1] = false;
+        }
+    }
+    if !absorbed && cand[1] && cand[2] && close(1, 2, &wd, &x) {
+        text[1] = format!("{} В3", text[1]);
+        cand[2] = false;
+    }
+    (0..3).filter(|&i| cand[i] || clamped[i]).map(|i| VizLabel { idx: i, text: text[i].clone(), x: x[i] }).collect()
+}
+
+#[cfg(test)]
+mod vizir_tests {
+    use super::*;
+
+    #[test]
+    fn vizir_x_is_the_drawn_column_with_the_fallback_quirk() {
+        // 25 px per sample (f = 1), first 10, leftW 150, W 1000.
+        assert_eq!(vizir_x(14, 10, 480, 1.0, 150.0, 1000.0), 150.0 + 100.0);
+        // On `first` itself: not searched — the fallback gives 0.
+        assert_eq!(vizir_x(10, 10, 480, 1.0, 150.0, 1000.0), 0.0);
+        // Past the right edge by less than leftW: drawn inside the plot.
+        let beyond = 10 + 36;
+        let x = vizir_x(beyond, 10, 480, 1.0, 150.0, 1000.0);
+        assert_eq!(x, (36.0f64 * 25.0).trunc() as f32);
+        assert!(x > 150.0 && x < 1000.0);
+        // Truncation, not rounding (k = 12.5).
+        assert_eq!(vizir_x(11, 10, 480, 0.5, 150.0, 1000.0), 150.0 + 12.0);
+    }
+
+    #[test]
+    fn labels_clamp_sideways_and_merge_with_a_space() {
+        let w = |t: &str| 8.0 * t.chars().count() as f32;
+        // В1 left of the plot, В2 and В3 past the right edge.
+        let l = vizir_labels([(true, 50.0), (true, 1200.0), (true, 1100.0)], 150.0, 1000.0, &w);
+        assert_eq!(l.iter().map(|v| (v.idx, v.x)).collect::<Vec<_>>(), vec![(0, 152.0), (1, 995.0), (2, 982.0)]);
+        // Close labels merge: «В1 В2 В3» in В1's colour at В1's x.
+        let l = vizir_labels([(true, 500.0), (true, 505.0), (true, 510.0)], 150.0, 1000.0, &w);
+        assert_eq!(l, vec![VizLabel { idx: 0, text: "В1 В2 В3".into(), x: 500.0 }]);
+        // В1 with В3 first, then В2 within the widened label: «В1 В3 В2».
+        let l = vizir_labels([(true, 500.0), (true, 525.0), (true, 504.0)], 150.0, 1000.0, &w);
+        assert_eq!(l[0].text, "В1 В3 В2");
+        // В1 apart: «В2 В3» in В2's colour.
+        let l = vizir_labels([(true, 300.0), (true, 600.0), (true, 604.0)], 150.0, 1000.0, &w);
+        assert_eq!(l.iter().map(|v| v.text.as_str()).collect::<Vec<_>>(), ["В1", "В2 В3"]);
+        // Hidden визиры take no part.
+        assert!(vizir_labels([(false, 500.0), (false, 0.0), (false, 0.0)], 150.0, 1000.0, &w).is_empty());
+    }
+}

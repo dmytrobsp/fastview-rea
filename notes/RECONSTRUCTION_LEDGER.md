@@ -1619,6 +1619,28 @@ Ours were empty times and the file name; now the stamp tokens joined by
 `omp_ui` (the demo's start / trigger lines). (L9.11 residual closed.)
 Residual: the path-vs-title reading of `doc+0x24` is inferred.
 
+### L9.42 — Визир lines and labels as `0x493110` draws them  ·  ✅
+Read (subagent, objdump of `0x493110`–`0x49449a`): see spec §3.5 — the
+column-search x with the no-leftW fallback quirk, truncation; lines only
+for x > leftW; В2 in В3's green pen when x2 = x1; all lines then labels;
+labels on opaque cells at the DC top, clamped sideways by 13 px per side,
+merged with one space in the orders «В1 В2 [В3]», «В1 В3 [В2]», «В2 В3»
+(first member's colour and x), clamped labels unmerged; ГВ lines while
+above the band, ГВ2 green on ГВ1's (clamped) y, ГВ labels **only when out
+of view** at W/2. 0x493110 has no print logic (print reaches it through
+Draw).
+Ours were: rounded x, labels only for on-screen визиры centred at the line
+with padding, no merging, no clamping, no pen special case, ГВ labels always
+drawn mid-plot just above the line. Now `oscgeom::vizir_x` /
+`vizir_labels` (pure, tested), `OscView::vizirs` and `lanes::paint_hvizirs`
+(screen and print); the визир hit test uses the drawn x [I: the mouse code's
+own mapping not read]. Tests `vizir_x_is_the_drawn_column_with_the_
+fallback_quirk`, `labels_clamp_sideways_and_merge_with_a_space`,
+`vizir_labels_follow_the_original`.
+Residual: the ГВ label font / background colour are the DC's (caller's)
+[ND] — ours the row font on white; the difference band's own визир
+positions still use the plain sample mapping.
+
 Next in L9 (HANDOFF 2026-10-22): after the four GUI bugs (L9.23–L9.25)
 and the render audit (L9.26–L9.29), copy's EMF (L9.30), loading progress
 (L9.31), a second user report was worked (L9.32 scroll thumb, L9.33 lane
@@ -1635,9 +1657,7 @@ pagesetup|settings|channels|coef|fileparams|explorer|parambar|skin<k>]
 [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y] [FV_WINDOW_HOVER=x,y] cargo
 test window_dump`, then Read the PNG (crop with `convert`); `window_tests`
 in `main.rs` drive the whole window (`App::frame_ui`); the user's sample
-records live outside the repo (never commit them). Open next: визир label
-clamping / merging and the В2 = В1 pen (research running at handoff time:
-`BRIEF_VIZLABEL.md`), print residuals (L9.22: logo proprietary, A4 only),
+records live outside the repo (never commit them). Open next: print residuals (L9.22: logo proprietary, A4 only),
 pane re-docking (egui limit), splash (bitmap proprietary), and the smaller
 residuals in L9.1–L9.41 (several older "residuals" were already done —
 check the code before starting one).

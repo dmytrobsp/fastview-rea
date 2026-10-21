@@ -362,15 +362,26 @@ leave it 0 (labels start-relative) [unknown].
   it fits (> 20 px).
 
 ### 3.5 Визиры [R, 0x493110]
-- V1/V2/V3: 1 px lines from y = 0 to H−30 (H−55 with the band), only if
-  x > leftW. Colours **В1 (255,100,100), В2 (100,100,255), В3 (0,160,0)**.
-  Labels «В1/В2/В3» at the top in their colours, normal 13, white background,
-  centred; off-screen labels clamp to leftW+2 / W−5 stacked by ±13 px; labels
-  closer than (w1+w2)/2 merge with a separator [I: space]. A special pen when
-  В2 coincides with В1 [I].
-- H1/H2: per channel — y from that channel's lane mapping; lines leftW..W, ГВ1
-  (255,100,100), ГВ2 (100,100,255), only above H−A; labels «ГВ1/ГВ2» just
-  above the line near W/2.
+- x of V1/V2/V3: the sample is looked up among the drawn columns (offsets
+  1..M at trunc(o·25f) when 25f ≥ 0.5, else the decimated columns 1..P−1)
+  → leftW + xrel; not found → trunc((s − first)·25f) **without leftW**
+  (quirk: a визир on `first` sits at 0 and is not drawn; one just past the
+  right edge is drawn inside the plot). Truncation, not rounding.
+- Lines: shown and x > leftW, 1 px solid, y 0 to H−30 (H−55 with the band);
+  В1 (255,100,100), В2 (100,100,255), В3 (0,160,0); **В2 takes В3's green
+  pen when x2 = x1** (even with В1 hidden). All lines first, then labels.
+- Labels «В1/В2/В3», Tahoma 13 normal, opaque white text cell (no padding),
+  DT_CENTER in (x − w/2, 0, x + 1 + w/2, h) at the DC's top. Shown визиры
+  left of the plot clamp to x = leftW + 2 + 13·n, past W to W − 5 − 13·n
+  (n per side, order В1 В2 В3 — the step is **sideways**). Unclamped labels
+  closer than ⌊w1/2⌋ + ⌊w2/2⌋ merge with **one space**: «В1 В2 [В3]», else
+  «В1 В3 [В2]», else «В2 В3»; the merged label keeps the first member's
+  colour and x; clamped labels never merge (ledger L9.42).
+- H1/H2: per channel — y from that channel's lane mapping; lines leftW..W
+  while y < H − A, ГВ1 (255,100,100), ГВ2 (100,100,255) or В3's green when
+  its y equals ГВ1's (clamped) y. **A label only when the line is out of
+  view**: clamped to y = 0 (hanging below) or H − A (sitting above), «ГВ1»
+  ending at W/2, «ГВ2» starting at W/2 (W = the whole client width), opaque.
 - **No shading between В1 and В2.**
 - Toggles (0x45c120, 0x492fa0): 32813 V1 / 32814 V2 / 139 V3 — if hidden and
   never placed (sample 0) → placed at **¼ / ½ / ¾ of the plot width** and
