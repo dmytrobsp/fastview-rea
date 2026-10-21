@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 92 pass)
+- `cargo test --workspace`   (currently 97 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 92 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 97 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -53,13 +53,11 @@ memory (Flatpak overlay + CLI wrapper `~/projects/slack-rea/tools/rea-ghidra.sh`
 6. **Update this ledger**: the entry's evidence (address), what you verified, and
    the verdict. Append new entries as `L<n>`.
 
-**NEXT TASK (start here).** COMTRADE `.cff` (single-file 2013) reader/writer
-and the `.osc` reader (L3) — a spec agent was dispatched for the original's
-`--- file type: … ---` handling; re-run it if its report isn't in the ledger.
-Then the remaining Calculator channel accessors (`zl: zf: zk: ib: ulf: ull: ua:
-ub: uc: u1f: u2f: u1l: u2l: uncn: pk: pf: pf3wm: pf2wm: coeff* grs* torm*
-chan: uniik:`, L6) and the channel-name resolution rule. Done: L2 ✅, L4 ✅, L5 ✅
-(persistence ❌), L6 core ✅, L7 ✅ (θ tap refinement ❌).
+**NEXT TASK (start here).** L3 file formats per **`notes/FORMATS_SPEC.md`**:
+the `.cfg` file-type strictness (only `ASCII`/`BINARY`/`binary32`, else error
+330), the `.cff` reader (incl. the original's one-byte DAT offset quirk) and
+writer (rev ≥ 2013, `DAT BINARY: n`), and the `.osc` (OSC2) reader. Done: L2 ✅,
+L4 ✅, L5 ✅ (persistence ❌), L6 ✅ (grspos* ❌), L7 ✅ (θ tap refinement ❌).
 
 **Scope reality.** "Every byte" literally = 9129 funcs of mostly MFC boilerplate;
 the *provable* target is the behavioural engines (this ledger's table). `.sto`
@@ -131,7 +129,7 @@ decompilation (pending, listed below).
 
 | Engine | Original | Our module | Status |
 |---|---|---|---|
-| Formula token table | `FUN_00401000` @0x401000 | `expr.rs` | 🟡 L1 (math ✅, rms/a0/fault/fourie/frequency/3i0/i1/i2 ✅, rest ❌) |
+| Formula token table | `FUN_00401000` @0x401000 | `expr.rs` | ✅ L1/L6 (all but `grspos*`) |
 | Formula evaluator (tokenizer/grammar/values) | `FUN_00418c40`, `0x419950`..`0x41f960` | `expr.rs` | ✅ L2 (numeric) |
 | `.fvb` loader / evaluation / settings | `FUN_0040c7e0`, `FUN_00409260`, `FUN_00407750` | `parse.rs`/`model.rs`/`geom.rs` | ✅ L5 (persistence ❌) |
 | Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ✅ L4 |
@@ -295,7 +293,7 @@ Residual / honest:
 
 ---
 
-## L6 — Signal engine (channel methods)  ·  🟡 per-channel methods ✅, channel mode core ✅, ~30 accessors ❌
+## L6 — Signal engine (channel methods)  ·  ✅ (grspos*, freq-channel DFT, 0x46 retag ❌)
 
 Evidence (subagent objdump/decompile; all double constants read from bytes).
 OscillHelper.dll exports only `ComtradeConverter` — no signal code there.
@@ -367,13 +365,22 @@ vtable 0x4084f0); `arg:` = 0 below the warm-up (one period; 0 in `.fvb`);
 channels use channel mode (analog + earlier computed channels by name).
 Pinned by `tests/channel_mode.rs` (5, mock channel source).
 
-Still ❌ / NOT DETERMINED: which channel string names match (we use the COMTRADE
-id, case-insensitive) and the circular-reference guard list; where the
-original catches a per-sample evaluation error for a computed channel (we
-abort with the message); `zl: zf: zk: ib: ulf: ull: ua: ub: uc: u1f: u2f: u1l:
-u2l: uncn: pk: pf: pf3wm: pf2wm: coeff*: grs*: torm*: chan: uniik:` (recognised
-with exact arg counts, return 0x431 for now).
+Channel functions completed per **`notes/CALC_CHANNELS_SPEC.md`**: value flags
+(bit0 scalar / bit1 complex / bit2 channel) tracked exactly; name resolution =
+trimmed COMTRADE id, exact-case first then case-insensitive, unknown → 0x162
+"Имя канала задано неправильно." (CalcChannels never drops a token);
+computed channel = scalar if valid at every sample, else Re(complex) if that
+is, else 0x42e "Результат не действителен"; `ib: ulf: ull: ua: ub: uc: u1f:
+u2f: u1l: u2l: uncn: pk: pf: pf3wm: pf2wm: zf: zk: chan: uniik: coeffpriv:
+coefftt: coeffpowerpriv: coeffamppriv: grstriangle*: grssumcur: tormsumcur:
+tormsubcur: tormmaxcur:` implemented, with the channel ratios k/r/s from
+primary/secondary and the show-primary switch (`OscChannels`, samples × k).
+Pinned by `tests/channel_mode.rs` (10).
 
+Residual: `grspos*` (constants/exponents NOT DETERMINED — returns 0x431);
+the computed-channel name guard (error 0x1d4, text unknown); the 0x46 retag
+(only differs for primary-stored data); a computed channel's complex series is
+not kept (only its scalar samples).
 ---
 
 ## L7 — ОМП (fault location)  ·  ✅ engine + GUI (θ tap refinement, parallel-line UI ❌)

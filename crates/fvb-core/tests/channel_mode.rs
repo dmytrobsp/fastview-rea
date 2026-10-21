@@ -51,11 +51,12 @@ fn channel_atom_slots() {
     assert!((at("mod:(ib)", 0).unwrap() - 1.0).abs() < 1e-12);
 }
 
-/// An identifier that resolves to no channel is dropped from the token
-/// stream (0x419126), which can silently change the formula.
+/// An identifier that names no channel is error 0x162 (`CalcChannels`
+/// never returns null).
 #[test]
-fn unresolved_identifiers_are_dropped() {
-    assert_eq!(at("2 zz + 1", 0).unwrap(), 3.0);
+fn unknown_channel_name_is_an_error() {
+    assert_eq!(at("2 zz + 1", 0), Err(ExprError::BadChannelName("zz".into())));
+    assert_eq!(ExprError::BadChannelName("zz".into()).to_string(), "Имя канала задано неправильно.");
 }
 
 /// Channel functions need a bare channel argument (error 0x431).
@@ -88,4 +89,84 @@ fn symmetric_components() {
     assert!(at("3i0:(ia, ib, ic)", 0).unwrap().abs() < 1e-12);
     // Negative sequence order: swap b and c.
     assert!((at("i2:(ia, ic, ib)", 0).unwrap() - 1.0).abs() < 1e-12);
+}
+
+fn z(src: &str) -> (Option<f64>, Option<Complex64>) {
+    Expr::parse_channels(src, &Mock).unwrap().eval_sample(&Context::new(), &Mock, 0).unwrap()
+}
+
+fn close(a: Complex64, b: Complex64) -> bool {
+    (a - b).norm() < 1e-9
+}
+
+/// Flag bits decide what a computed channel stores: scalar (bit 0) and/or
+/// complex (bit 1); `pf:` is complex-only, `null` neither (0x415780).
+#[test]
+fn result_flags() {
+    let (s, c) = z("ia");
+    assert!(s.is_some() && c.is_some());
+    let (s, c) = z("pf:(ia, ib)");
+    assert!(s.is_none() && c.is_some());
+    let (s, c) = z("rms:(ia)");
+    assert!(s.is_some() && c.is_none());
+    assert_eq!(z("null"), (None, None));
+}
+
+/// Line/phase helpers (0x41a611, 0x41b55d, 0x41b5f8, 0x41b712, 0x41c105).
+#[test]
+fn voltage_and_current_helpers() {
+    let (a, b, c) = (Mock.phasor(0, 0), Mock.phasor(1, 0), Mock.phasor(2, 0));
+    assert!(close(z("ib:(ia, ib, ic)").1.unwrap(), c - (a + b)));
+    assert!(close(z("ulf:(ia, ib)").1.unwrap(), a - b));
+    assert!(close(z("ull:(ia, ib)").1.unwrap(), -(a + b)));
+    // Positive sequence from two line voltages: (2·Uab + Ubc + j√3·Ubc)/6.
+    let (uab, ubc) = (a - b, b - c);
+    let want = (2.0 * uab + ubc + Complex64::new(0.0, 3f64.sqrt()) * ubc) / 6.0;
+    assert!(close(z("u1l:(ulf:(ia, ib), ulf:(ib, ic))").1.unwrap(), want));
+    let want = b + c - a + (a - b) / 3f64.sqrt();
+    assert!(close(z("uncn:(ia, ib, ic, ia, ib)").1.unwrap(), want));
+}
+
+/// Power and power factor (0x41c37b, 0x41c414, 0x41c756).
+#[test]
+fn power_functions() {
+    let (a, b) = (Mock.phasor(0, 0), Mock.phasor(1, 0));
+    assert!(close(z("pf:(ia, ib)").1.unwrap(), a.conj() * b));
+    assert!(close(z("pf2wm:(ia, ib, ib, ia)").1.unwrap(), a * b.conj() - b * a.conj()));
+    assert!((at("pk:(ib)", 0).unwrap() - (-0.5)).abs() < 1e-12);
+    assert_eq!(at("pk:(0)", 0).unwrap(), 1.0);
+}
+
+/// Loop impedance with K0 / mutual compensation and the minimum-current gate.
+#[test]
+fn zf_and_zk() {
+    let (a, b) = (Mock.phasor(0, 0), Mock.phasor(1, 0));
+    // R0=3 X0=9, R1=1 X1=3, Rm=Xm=0 → K0 = (Z0/Z1 − 1)/3.
+    let k0 = (Complex64::new(3.0, 9.0) / Complex64::new(1.0, 3.0) - 1.0) / 3.0;
+    let want = a / (b + k0 * a);
+    let got = z("zf:(ia, ib, ia, ib, 3, 1, 0, 9, 3, 0, 0.5)");
+    assert!(close(got.1.unwrap(), want), "{got:?} vs {want}");
+    // |Ib| = 1 < gate 2 → deliberate division by zero.
+    let (s, c) = z("zf:(ia, ib, ia, ib, 3, 1, 0, 9, 3, 0, 2)");
+    assert!(!s.unwrap().is_finite() && c.unwrap().re.is_nan());
+    let za = Complex64::from_polar(2.0, 30f64.to_radians());
+    let want = a / (b + a * za);
+    assert!(close(z("zk:(ia, ib, ia, ib, 2, 0, 30, 0, 0.5)").1.unwrap(), want));
+}
+
+/// Channel pass-through, sums and the winding-group/restraint helpers.
+#[test]
+fn channel_helpers() {
+    let (a, b, c) = (Mock.phasor(0, 0), Mock.phasor(1, 0), Mock.phasor(2, 0));
+    assert_eq!(at("chan:(ib)", 5).unwrap(), 105.0);
+    assert_eq!(at("chan:(2)", 0), Err(ExprError::NeedsChannel("chan:")));
+    assert!(close(z("uniik:(ia, ib)").1.unwrap(), a + b));
+    assert!((at("coeffpriv:(ib, 4)", 3).unwrap() - 412.0).abs() < 1e-12);
+    assert!((at("coeffamppriv:(ib, 4, 2)", 3).unwrap() - 206.0).abs() < 1e-12);
+    let rt3 = 3f64.sqrt();
+    assert!(close(z("grstriangleib:(ia, ib, ic, 1)").1.unwrap(), (b - c) / rt3));
+    assert!(close(z("grstriangleib:(ia, ib, ic, 11)").1.unwrap(), (b - a) / rt3));
+    assert!(close(z("grstriangleic:(ia, ib, ic, 0)").1.unwrap(), c));
+    assert!(close(z("grstriangleic:(ia, ib, ic, 5)").1.unwrap(), a));
+    assert!((at("tormsubcur:(ia, ib, 2)", 0).unwrap() - (b - a).norm() / 2.0).abs() < 1e-12);
 }

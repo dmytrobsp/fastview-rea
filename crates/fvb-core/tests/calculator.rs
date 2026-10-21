@@ -144,5 +144,7 @@ fn trailing_input_is_ignored_but_resolved() {
 #[test]
 fn channel_functions_need_a_channel() {
     assert!(matches!(eval_str("rms:(1)", &c()), Err(ExprError::NeedsChannel("rms:"))));
-    assert!(matches!(eval_str("pk:(1)", &c()), Err(ExprError::NeedsChannel("pk:"))));
+    assert!(matches!(eval_str("chan:(1)", &c()), Err(ExprError::NeedsChannel("chan:"))));
+    // pk: has no channel check: Re/|·| of a plain number.
+    assert_eq!(eval_str("pk:(1)", &c()).unwrap(), 1.0);
 }

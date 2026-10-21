@@ -68,6 +68,19 @@ pub trait Channels {
     fn frequency(&self, idx: usize) -> f64;
     /// Samples before `arg:` is valid (vtable slot 2: one period).
     fn warmup(&self) -> usize;
+    /// Channel ratio k (`+0xf0`): primary/secondary conversion applied to
+    /// displayed values.
+    fn ratio_k(&self, _ch: usize) -> f64 {
+        1.0
+    }
+    /// r(e): primary/secondary when values are not shown as primary.
+    fn ratio_r(&self, _ch: usize) -> f64 {
+        1.0
+    }
+    /// s(e): k unless the data is primary and shown as secondary.
+    fn ratio_s(&self, _ch: usize) -> f64 {
+        1.0
+    }
 }
 
 /// Evaluation environment: the variable map, and in channel mode the channel
@@ -105,6 +118,13 @@ pub enum ExprError {
     NonIntegerPower,
     #[error("Аргумент функции должен быть каналом")]
     NeedsChannel(&'static str),
+    /// 0x162: no channel of that name (channel mode).
+    #[error("Имя канала задано неправильно.")]
+    BadChannelName(String),
+    /// 0x42e: a computed channel whose samples are neither all scalar nor all
+    /// complex.
+    #[error("Результат не действителен")]
+    InvalidResult,
 }
 
 /// An [`ExprError`] together with the formula text it came from, displayed
@@ -252,23 +272,24 @@ struct Value {
     v: f64,
     re: f64,
     im: f64,
-    /// Flag bit 2 ("channel reference"); arithmetic keeps it when both sides
-    /// carry it, but only a bare channel atom keeps the channel itself.
-    chan: bool,
+    /// Flags: bit 0 scalar valid, bit 1 complex valid, bit 2 channel
+    /// reference. Arithmetic ANDs them; only a bare channel atom keeps the
+    /// channel itself.
+    f: u8,
     ch: Option<usize>,
 }
 
 impl Value {
     fn real(v: f64) -> Value {
-        Value { v, re: v, im: 0.0, chan: false, ch: None }
+        Value { v, re: v, im: 0.0, f: 3, ch: None }
     }
-    /// A function result: scalar written, complex pair left as it was.
+    /// A function result: scalar written (flags 1), complex pair left as it was.
     fn scalar(self, v: f64) -> Value {
-        Value { v, chan: false, ch: None, ..self }
+        Value { v, f: 1, ch: None, ..self }
     }
     /// A function result with both slots written (flags 3).
     fn both(v: f64, z: Complex64) -> Value {
-        Value { v, re: z.re, im: z.im, chan: false, ch: None }
+        Value { v, re: z.re, im: z.im, f: 3, ch: None }
     }
     fn z(self) -> Complex64 {
         Complex64::new(self.re, self.im)
@@ -381,7 +402,18 @@ impl Expr {
         self.eval_env(Env { ctx, chans: Some(chans), idx })
     }
 
+    /// Channel-mode evaluation at `idx` returning the scalar if its flag bit
+    /// 0 is set and the complex pair if bit 1 is set (`0x415780`).
+    pub fn eval_sample(&self, ctx: &Context, chans: &dyn Channels, idx: usize) -> Result<(Option<f64>, Option<Complex64>), ExprError> {
+        let v = self.eval_value(Env { ctx, chans: Some(chans), idx })?;
+        Ok(((v.f & 1 != 0).then_some(v.v), (v.f & 2 != 0).then(|| v.z())))
+    }
+
     fn eval_env(&self, env: Env) -> Result<f64, ExprError> {
+        Ok(self.eval_value(env)?.v)
+    }
+
+    fn eval_value(&self, env: Env) -> Result<Value, ExprError> {
         let ctx = env.ctx;
         let root = self.root.as_ref().map_err(Clone::clone)?;
         for id in &self.idents {
@@ -393,7 +425,7 @@ impl Expr {
         if vals.len() != 1 {
             return Err(ExprError::Expected("a single value"));
         }
-        Ok(vals[0].v)
+        Ok(vals[0])
     }
 
     /// [`Expr::eval`] with the formula text attached to the error.
@@ -462,7 +494,7 @@ fn tokenize(src: &str, chans: Option<&dyn Channels>) -> Result<(Vec<Tok>, Vec<St
         if c == '"' {
             let body = &rest[1..];
             let end = body.find('"').ok_or(ExprError::Expected("closing \""))?;
-            ident(&body[..end], chans, &mut toks, &mut idents);
+            ident(&body[..end], chans, &mut toks, &mut idents)?;
             pos += end + 2;
             continue;
         }
@@ -470,7 +502,7 @@ fn tokenize(src: &str, chans: Option<&dyn Channels>) -> Result<(Vec<Tok>, Vec<St
             let len = rest
                 .find(|ch: char| !(ch == '_' || ch.is_alphanumeric()))
                 .unwrap_or(rest.len());
-            ident(&rest[..len], chans, &mut toks, &mut idents);
+            ident(&rest[..len], chans, &mut toks, &mut idents)?;
             pos += len;
             continue;
         }
@@ -495,19 +527,20 @@ fn tokenize(src: &str, chans: Option<&dyn Channels>) -> Result<(Vec<Tok>, Vec<St
     Ok((out, idents))
 }
 
-/// An identifier: a variable, or in channel mode a channel (`0x419126`).
-fn ident(name: &str, chans: Option<&dyn Channels>, toks: &mut Vec<Tok>, idents: &mut Vec<String>) {
+/// An identifier: a variable, or in channel mode a channel (`0x419126`;
+/// `CalcChannels` never returns null — an unknown name is error 0x162).
+fn ident(name: &str, chans: Option<&dyn Channels>, toks: &mut Vec<Tok>, idents: &mut Vec<String>) -> Result<(), ExprError> {
     match chans {
         None => {
             idents.push(name.to_string());
             toks.push(Tok::Ident(name.to_string()));
         }
         Some(c) => {
-            if let Some(ch) = c.resolve(name) {
-                toks.push(Tok::Chan(ch));
-            }
+            let ch = c.resolve(name).ok_or_else(|| ExprError::BadChannelName(name.to_string()))?;
+            toks.push(Tok::Chan(ch));
         }
     }
+    Ok(())
 }
 
 /// `_wtof` over a digits-and-one-dot string (`"1."` is 1).
@@ -662,12 +695,12 @@ fn eval_node(n: &Node, env: Env) -> Result<Vec<Value>, ExprError> {
                 v: c.sample(*ch, env.idx),
                 re: z.re,
                 im: z.im,
-                chan: true,
+                f: 7,
                 ch: Some(*ch),
             }]
         }
         Node::Pi => vec![Value::real(PI)],
-        Node::Null => vec![Value { v: 0.0, re: 0.0, im: 0.0, chan: false, ch: None }],
+        Node::Null => vec![Value { v: 0.0, re: 0.0, im: 0.0, f: 0, ch: None }],
         Node::List(items) => {
             let mut out = Vec::new();
             for it in items {
@@ -707,20 +740,20 @@ fn eval_node(n: &Node, env: Env) -> Result<Vec<Value>, ExprError> {
 /// Binary operator handlers (jump table `0x41f944`): flags = lhs & rhs, the
 /// channel pointer is cleared.
 fn binary(op: u8, x: Value, y: Value) -> Result<Value, ExprError> {
-    let chan = x.chan && y.chan;
+    let f = x.f & y.f;
     Ok(match op {
-        0x01 => Value { v: x.v + y.v, re: x.re + y.re, im: x.im + y.im, chan, ch: None },
-        0x02 => Value { v: x.v - y.v, re: x.re - y.re, im: x.im - y.im, chan, ch: None },
+        0x01 => Value { v: x.v + y.v, re: x.re + y.re, im: x.im + y.im, f, ch: None },
+        0x02 => Value { v: x.v - y.v, re: x.re - y.re, im: x.im - y.im, f, ch: None },
         0x03 => Value {
             v: x.v * y.v,
             re: x.re * y.re - x.im * y.im,
             im: x.re * y.im + x.im * y.re,
-            chan,
+            f,
             ch: None,
         },
         0x04 => {
             let (re, im) = complex_div(x.re, x.im, y.re, y.im);
-            Value { v: x.v / y.v, re, im, chan, ch: None }
+            Value { v: x.v / y.v, re, im, f, ch: None }
         }
         _ => {
             // 0x41f7cb: integer exponent only; scalar only.
@@ -754,7 +787,7 @@ fn complex_div(ar: f64, ai: f64, br: f64, bi: f64) -> (f64, f64) {
 /// 0x431). A flagged value without a channel (e.g. `rms:(a+b)`) dereferences
 /// a null channel in the original; we report the same error.
 fn channel_arg<'a>(x: Value, name: &'static str, env: Env<'a>) -> Result<(&'a dyn Channels, usize), ExprError> {
-    match (x.chan, x.ch, env.chans) {
+    match (x.f & 4 != 0, x.ch, env.chans) {
         (true, Some(ch), Some(c)) => Ok((c, ch)),
         _ => Err(ExprError::NeedsChannel(name)),
     }
@@ -772,7 +805,7 @@ fn call(f: Func, name: &'static str, a: &[Value], env: Env) -> Result<Value, Exp
         Func::Exp => x.scalar(x.v.exp()),
         Func::Re => x.scalar(x.re),
         Func::Im => x.scalar(x.im),
-        Func::Mod => Value { v: x.re.hypot(x.im), chan: false, ch: None, ..x },
+        Func::Mod => Value { v: x.re.hypot(x.im), f: 3, ch: None, ..x },
         Func::Arg => {
             // 0 until the warm-up count (one period with channels, 0 in the
             // `.fvb` context); then atan2 in degrees folded into [-180, 180).
@@ -803,13 +836,53 @@ fn call(f: Func, name: &'static str, a: &[Value], env: Env) -> Result<Value, Exp
     })
 }
 
-/// The channel/analysis accessors decoded so far (ledger L6).
+/// Flag-bit-2 check of a channel argument (`0x41fe80`, error 0x431).
+fn check(x: Value, name: &'static str) -> Result<(), ExprError> {
+    if x.f & 4 != 0 {
+        Ok(())
+    } else {
+        Err(ExprError::NeedsChannel(name))
+    }
+}
+
+/// Divide, with a zero divisor replaced by 1e-6 (`0x418b70`).
+fn safe(x: f64) -> f64 {
+    if x == 0.0 {
+        1e-6
+    } else {
+        x
+    }
+}
+
+/// The original's rounding (`FUN_00411bf0`): floor unless at least half-way.
+fn round_fv(x: f64) -> f64 {
+    let f = x.floor();
+    if (f - x).abs() >= 0.5 {
+        x.ceil()
+    } else {
+        f
+    }
+}
+
+/// The channel/analysis accessors (ledger L6, `notes/CALC_CHANNELS_SPEC.md`).
 fn channel_func(name: &'static str, a: &[Value], env: Env) -> Result<Value, ExprError> {
     let idx = env.idx;
     let x = first(a)?;
     // Like the math functions, these write the scalar of their first
     // argument and leave its complex pair as it was.
     let out = |v: f64| x.scalar(v);
+    let ratio = |e: Value, f: fn(&dyn Channels, usize) -> f64| match (e.ch, env.chans) {
+        (Some(ch), Some(c)) => f(c, ch),
+        _ => 1.0,
+    };
+    let r = |e: Value| ratio(e, |c, ch| c.ratio_r(ch));
+    let sr = |e: Value| ratio(e, |c, ch| c.ratio_s(ch));
+    let kr = |e: Value| ratio(e, |c, ch| c.ratio_k(ch));
+    let rt3 = 3f64.sqrt();
+    let j = Complex64::new(0.0, 1.0);
+    // Scalar and complex combined the same way, flags given.
+    let lin = |v: f64, z: Complex64, f: u8| Value { v, re: z.re, im: z.im, f, ch: None };
+    let scaled = |e: Value, k: f64| lin(e.v * k, e.z() * k, 3);
     Ok(match name {
         "rms:" => {
             let (c, ch) = channel_arg(x, name, env)?;
@@ -836,12 +909,142 @@ fn channel_func(name: &'static str, a: &[Value], env: Env) -> Result<Value, Expr
             Value::both(z.norm(), z)
         }
         // 0x41a796 / 0x41aa6e: (2A − B − C ± j√3(B − C)) / 6, scalar = |.|.
-        "i1:" | "i2:" => {
+        "i1:" | "i2:" | "u1f:" | "u2f:" => {
             let (pa, pb, pc) = (a[0].z(), a[1].z(), a[2].z());
-            let j3 = Complex64::new(0.0, 3f64.sqrt()) * (pb - pc);
+            let j3 = j * rt3 * (pb - pc);
             let num = 2.0 * pa - pb - pc;
-            let z = if name == "i1:" { num + j3 } else { num - j3 } / 6.0;
+            let z = if name == "i1:" || name == "u1f:" { num + j3 } else { num - j3 } / 6.0;
             Value::both(z.norm(), z)
+        }
+        // 0x41b712 / 0x41b87d: from two line voltages.
+        "u1l:" | "u2l:" => {
+            let (pa, pb) = (a[0].z(), a[1].z());
+            let j3 = j * rt3 * pb;
+            let z = if name == "u1l:" { 2.0 * pa + pb + j3 } else { 2.0 * pa + pb - j3 } / 6.0;
+            Value::both(z.norm(), z)
+        }
+        // 0x41a611: c − (a + b).
+        "ib:" => lin(a[2].v - (a[0].v + a[1].v), a[2].z() - (a[0].z() + a[1].z()), a[0].f & a[1].f & a[2].f),
+        "ulf:" => lin(a[0].v - a[1].v, a[0].z() - a[1].z(), a[0].f & a[1].f),
+        "ull:" => lin(-(a[0].v + a[1].v), -(a[0].z() + a[1].z()), a[0].f & a[1].f),
+        // 0x41ae4d / 0x41b078 / 0x41b2a2.
+        "ua:" | "ub:" | "uc:" => {
+            for e in &a[..3] {
+                check(*e, name)?;
+            }
+            let q = a[4].v / safe(a[3].v);
+            let (wv, wz) = (q * a[2].v, a[2].z() * q);
+            let (e0, e1) = (a[0], a[1]);
+            let (v, z) = match name {
+                "ua:" => (2.0 * e0.v + e1.v + wv, 2.0 * e0.z() + e1.z() + wz),
+                "ub:" => (-e0.v + e1.v + wv, -e0.z() + e1.z() + wz),
+                _ => (-e0.v - 2.0 * e1.v + wv, -e0.z() - 2.0 * e1.z() + wz),
+            };
+            lin(v / 3.0, z / 3.0, a[0].f & a[1].f & a[2].f)
+        }
+        // 0x41c105.
+        "uncn:" => {
+            let z = a[1].z() + a[2].z() - a[0].z() + (a[3].z() - a[4].z()) / rt3;
+            Value::both(z.norm(), z)
+        }
+        // 0x41c37b.
+        "pk:" => {
+            let m = x.z().norm();
+            out(if m <= 0.001 { 1.0 } else { x.re / m })
+        }
+        // 0x41c414 / 0x41c4b2 / 0x41c756: complex power, scalar 0.
+        "pf:" => lin(0.0, a[0].z().conj() * a[1].z(), 2),
+        "pf3wm:" => lin(
+            0.0,
+            a[0].z() * a[1].z().conj() + a[2].z() * a[3].z().conj() + a[4].z() * a[5].z().conj(),
+            a[0].f & a[2].f & a[4].f & 2,
+        ),
+        "pf2wm:" => lin(0.0, a[0].z() * a[1].z().conj() - a[2].z() * a[3].z().conj(), a[0].f & a[2].f & 2),
+        // 0x41c8d2 / 0x41ccc7: loop impedances with a minimum-current gate.
+        "zf:" | "zk:" => {
+            check(a[0], name)?;
+            check(a[1], name)?;
+            let (e0, e1) = (a[0], a[1]);
+            let gate = if name == "zf:" { a[10].v } else { a[8].v };
+            if gate > e1.z().norm() / kr(e1) {
+                let (re, im) = complex_div(e0.re, e0.im, 0.0, 0.0);
+                return Ok(Value { v: e0.v / 0.0, re, im, f: e0.f & 3, ch: None });
+            }
+            let den = if name == "zf:" {
+                let d = Complex64::new(a[5].v, a[8].v);
+                let k0 = (Complex64::new(a[4].v, a[7].v) / d - 1.0) / 3.0;
+                let km = (Complex64::new(a[6].v, a[9].v) / d) / 3.0;
+                e1.z() + k0 * a[2].z() + km * a[3].z()
+            } else {
+                let za = Complex64::from_polar(a[4].v, rad(a[6].v));
+                let zb = Complex64::from_polar(a[5].v, rad(a[7].v));
+                e1.z() + a[2].z() * za + a[3].z() * zb
+            };
+            let (re, im) = complex_div(e0.re, e0.im, den.re, den.im);
+            Value { v: e0.v / e1.v, re, im, f: e0.f & e1.f & 2, ch: None }
+        }
+        // 0x41f123 / 0x41f151.
+        "chan:" => {
+            check(x, name)?;
+            Value { f: 3, ch: None, ..x }
+        }
+        "uniik:" => {
+            check(a[0], name)?;
+            check(a[1], name)?;
+            lin(a[0].v + a[1].v, a[0].z() + a[1].z(), 3)
+        }
+        // 0x41d27a / 0x41d3ae / 0x41d51a / 0x41d67b: coefficient-scaled channel.
+        "coeffpriv:" => scaled(x, a[1].v / safe(sr(x))),
+        "coefftt:" => scaled(x, a[1].v / safe(a[2].v) / safe(sr(x))),
+        "coeffpowerpriv:" => scaled(x, a[1].v / safe(a[2].v / safe(rt3 * a[3].v)) / safe(sr(x))),
+        "coeffamppriv:" => scaled(x, a[1].v / safe(a[2].v) / safe(sr(x))),
+        // 0x41e386: winding-group (triangle) currents.
+        "grstriangleia:" | "grstriangleib:" | "grstriangleic:" => {
+            for e in &a[..3] {
+                check(*e, name)?;
+            }
+            let var = match name {
+                "grstriangleia:" => 0,
+                "grstriangleib:" => 1,
+                _ => 2,
+            };
+            let (e, n) = (&a[..3], round_fv(a[3].v));
+            let (v, z) = if n == 0.0 {
+                (e[var].v, e[var].z())
+            } else if n == 1.0 {
+                let (p, q) = (var, (var + 1) % 3);
+                ((e[p].v - e[q].v) / rt3, (e[p].z() - e[q].z()) / rt3)
+            } else if n == 11.0 {
+                let (p, q) = (var, (var + 2) % 3);
+                ((e[p].v - e[q].v) / rt3, (e[p].z() - e[q].z()) / rt3)
+            } else {
+                (e[0].v, e[0].z())
+            };
+            let sc = sr(a[0]);
+            lin(v / sc, z / sc, 3)
+        }
+        // 0x41e903.
+        "grssumcur:" => {
+            check(x, name)?;
+            let (v, z) = a.iter().fold((0.0, Complex64::default()), |(v, z), e| (v + r(*e) * e.v, z + e.z() * r(*e)));
+            lin(v / r(x), z / r(x), 3)
+        }
+        // 0x41ec06 / 0x41ed88 / 0x41efa4: restraint currents (Z keeps arg 0).
+        "tormsumcur:" => {
+            check(a[1], name)?;
+            let sum: f64 = a[1..25].iter().map(|e| (e.z() * r(*e)).norm()).sum();
+            Value { v: sum / r(a[1]) / x.v, f: 3, ch: None, ..x }
+        }
+        "tormsubcur:" => {
+            check(a[0], name)?;
+            check(a[1], name)?;
+            let d = (a[1].z() * r(a[1]) - a[0].z() * r(a[0])).norm();
+            Value { v: d / r(a[0]) / a[2].v, f: 3, ch: None, ..x }
+        }
+        "tormmaxcur:" => {
+            check(x, name)?;
+            let mx = a.iter().map(|e| (e.z() * r(*e)).norm()).fold(f64::NEG_INFINITY, f64::max);
+            Value { v: mx / r(x), f: 3, ch: None, ..x }
         }
         _ => return Err(ExprError::NeedsChannel(name)),
     })

@@ -1080,34 +1080,52 @@ impl App {
 
     pub fn add_computed(&mut self) {
         let idx = self.docs.len();
+        let show_primary = self.primary_values;
         let Some(d) = self.active_doc() else {
             self.status = "Сначала загрузите осциллограмму.".into();
             return;
         };
-        // Channel mode (`CalcChannels`): identifiers name channels — the
-        // record's analog channels and earlier computed ones — and the
-        // formula's scalar is evaluated at every sample.
+        // Channel mode (`CalcChannels`, `0x415780`): identifiers name channels
+        // (the record's analog channels and earlier computed ones); the
+        // formula is evaluated at every sample and the channel keeps the
+        // scalar if it is valid at every sample, else the real part of the
+        // complex value if that is valid everywhere, else error 0x42e.
         let extra: Vec<(String, Vec<f64>)> =
             d.computed.iter().map(|c| (c.name.clone(), c.samples.clone())).collect();
-        let chans = fvb_core::channels::OscChannels::new(&d.osc, &extra);
+        let chans = fvb_core::channels::OscChannels::new(&d.osc, &extra, show_primary);
+        let fail = |e: fvb_core::ExprError| format!("{}: {e}", self.formula_text);
         let expr = match fvb_core::Expr::parse_channels(&self.formula_text, &chans) {
             Ok(e) => e,
             Err(e) => {
-                self.status = format!("{}: {e}", self.formula_text);
+                self.status = fail(e);
                 return;
             }
         };
         let ctx = fvb_core::Context::new();
-        let mut samples = Vec::with_capacity(chans.len());
+        let (mut scal, mut cplx) = (Vec::with_capacity(chans.len()), Vec::with_capacity(chans.len()));
+        let (mut all_s, mut all_c) = (true, true);
         for i in 0..chans.len() {
-            match expr.eval_at(&ctx, &chans, i) {
-                Ok(v) => samples.push(v),
+            match expr.eval_sample(&ctx, &chans, i) {
+                Ok((s, z)) => {
+                    all_s &= s.is_some();
+                    all_c &= z.is_some();
+                    scal.push(s.unwrap_or(0.0));
+                    cplx.push(z.unwrap_or_default());
+                }
                 Err(e) => {
-                    self.status = format!("{}: {e}", self.formula_text);
+                    self.status = fail(e);
                     return;
                 }
             }
         }
+        let samples = if all_s {
+            scal
+        } else if all_c {
+            cplx.iter().map(|z| z.re).collect()
+        } else {
+            self.status = fail(fvb_core::ExprError::InvalidResult);
+            return;
+        };
         let name = self.formula_name.clone();
         let formula = self.formula_text.clone();
         let color = Self::palette(idx + 7);

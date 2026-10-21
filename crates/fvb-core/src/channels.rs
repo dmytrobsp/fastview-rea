@@ -10,6 +10,8 @@ use num_complex::Complex64;
 /// name, with the per-channel methods of ledger L6.
 pub struct OscChannels {
     names: Vec<String>,
+    /// Per channel (k, r, s) ratios; 1 for computed channels.
+    ratios: Vec<(f64, f64, f64)>,
     samples: Vec<Vec<f64>>,
     phasors: Vec<Phasors>,
     n: usize,
@@ -18,18 +20,45 @@ pub struct OscChannels {
 
 impl OscChannels {
     /// The analog channels of `osc` followed by `extra` (name, samples)
-    /// channels, e.g. computed channels added earlier.
-    pub fn new(osc: &Oscillogram, extra: &[(String, Vec<f64>)]) -> OscChannels {
+    /// channels, e.g. computed channels added earlier. `show_primary` is the
+    /// display-in-primary-units switch (`+0x89`).
+    pub fn new(osc: &Oscillogram, extra: &[(String, Vec<f64>)], show_primary: bool) -> OscChannels {
         let n = osc.samples_per_cycle().max(2);
-        let mut names: Vec<String> = osc.analog.iter().map(|c| c.id.clone()).collect();
-        let mut samples: Vec<Vec<f64>> = osc.analog.iter().map(|c| c.samples.clone()).collect();
+        // Channel names are the COMTRADE ids with trailing spaces trimmed (+0x68).
+        let mut names: Vec<String> = osc.analog.iter().map(|c| c.id.trim_end_matches(' ').to_string()).collect();
+        let mut ratios: Vec<(f64, f64, f64)> = osc
+            .analog
+            .iter()
+            .map(|c| {
+                let (d0, d8, primary) = (c.primary, c.secondary, c.is_primary);
+                let k = if show_primary && !primary {
+                    d0 / d8
+                } else if primary && !show_primary {
+                    d8 / d0
+                } else {
+                    1.0
+                };
+                let r = if show_primary { 1.0 } else { d0 / d8 };
+                let s = if primary && !show_primary { 1.0 } else { k };
+                (k, r, s)
+            })
+            .collect();
+        // Instantaneous values are the stored values times k (FUN_00426020).
+        let mut samples: Vec<Vec<f64>> = osc
+            .analog
+            .iter()
+            .zip(&ratios)
+            .map(|(c, (k, _, _))| c.samples.iter().map(|v| v * k).collect())
+            .collect();
         for (name, s) in extra {
             names.push(name.clone());
             samples.push(s.clone());
+            ratios.push((1.0, 1.0, 1.0));
         }
         let phasors = samples.iter().map(|s| signal::sliding_phasors(s, n)).collect();
         OscChannels {
             names,
+            ratios,
             samples,
             phasors,
             n,
@@ -47,12 +76,22 @@ impl OscChannels {
 }
 
 impl Channels for OscChannels {
-    /// Case-insensitive match on the channel name (the comparison the
-    /// original's channel mode uses, `_wcsicmp`). Which channel string the
-    /// original matches against is not yet verified (ledger L6).
+    /// `0x42edf0`: the first exact-case match, else the first
+    /// case-insensitive one.
     fn resolve(&self, name: &str) -> Option<usize> {
-        let name = name.to_lowercase();
-        self.names.iter().position(|n| n.to_lowercase() == name)
+        self.names.iter().position(|n| n == name).or_else(|| {
+            let name = name.to_lowercase();
+            self.names.iter().position(|n| n.to_lowercase() == name)
+        })
+    }
+    fn ratio_k(&self, ch: usize) -> f64 {
+        self.ratios[ch].0
+    }
+    fn ratio_r(&self, ch: usize) -> f64 {
+        self.ratios[ch].1
+    }
+    fn ratio_s(&self, ch: usize) -> f64 {
+        self.ratios[ch].2
     }
     fn sample(&self, ch: usize, idx: usize) -> f64 {
         self.samples[ch].get(idx).copied().unwrap_or(0.0)
