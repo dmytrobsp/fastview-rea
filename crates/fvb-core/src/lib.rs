@@ -18,6 +18,7 @@ pub mod omp;
 pub mod parse;
 pub mod quick;
 pub mod signal;
+pub mod views;
 
 pub use comtrade::{AnalogChannel, DigitalChannel, Oscillogram};
 pub use expr::{Context, Expr, ExprError, FormulaError};

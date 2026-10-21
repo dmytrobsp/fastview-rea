@@ -54,6 +54,23 @@ pub fn sliding_phasors(samples: &[f64], n: usize) -> Phasors {
     out
 }
 
+/// [`sliding_phasors`] at one sample.
+pub fn phasor_at(samples: &[f64], i: usize, n: usize) -> Complex64 {
+    if n < 2 || i + 1 < n || i >= samples.len() {
+        return Complex64::default();
+    }
+    let tau = 2.0 * std::f64::consts::PI;
+    let (mut re, mut im) = (0.0, 0.0);
+    for k in 1..=n {
+        let x = samples[i + k - n];
+        let th = tau * k as f64 / n as f64;
+        re += th.sin() * x;
+        im += th.cos() * x;
+    }
+    let scale = 2f64.sqrt() / n as f64;
+    Complex64::new(re * scale, im * scale)
+}
+
 /// RMS magnitude of harmonic `h` at sample `i` over the phasor window
 /// (`fourie:`, `FUN_00426240`): `sqrt(C² + S²)·√2/N` with angles `k·h·2π/N`;
 /// `h = 0` is `|a0|`. Zero before a full window. (The original also scales

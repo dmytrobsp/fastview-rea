@@ -9,6 +9,10 @@ use fvb_core::geom::Shape;
 use fvb_core::model::Dimension;
 use num_complex::Complex64;
 
+/// A locus on the circle / differential diagram: name, colour, points, and the
+/// points at cursor 1 and cursor 2.
+type Locus = (String, egui::Color32, Vec<[f64; 2]>, [f64; 2], [f64; 2]);
+
 impl App {
     pub fn render_tab(&mut self, ctx: &egui::Context) {
         match self.view {
@@ -94,6 +98,16 @@ impl App {
             ui.heading("Уставки");
             ui.checkbox(&mut self.show_reset, "возврат");
             ui.checkbox(&mut self.fill_regions, "заливка");
+        });
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.circle_between_cursors, "Диапазон между визирами");
+            egui::ComboBox::from_id_salt("circreadout")
+                .selected_text(["Без значений", "Re + jIm", "Модуль и угол"][self.circle_readout.min(2) as usize])
+                .show_ui(ui, |ui| {
+                    for (i, t) in ["Без значений", "Re + jIm", "Модуль и угол"].iter().enumerate() {
+                        ui.selectable_value(&mut self.circle_readout, i as u8, *t);
+                    }
+                });
         });
         self.settings_editor(ui);
     }
@@ -194,16 +208,54 @@ impl App {
                 });
             }
         }
-        let overlay = if dim == Dimension::Ohm {
-            self.active_doc().map(|d| {
-                let (a, m) = (d.aux_cursor.min(d.main_cursor), d.aux_cursor.max(d.main_cursor));
-                let locus = d.analysis.phase_a_locus(a, m);
-                let point = d.analysis.phase_impedance(0, d.main_cursor).map(|z| [z.re, z.im]);
-                (locus, point)
+        // Loci (`0x43a880`): on the circle diagram every channel flagged for
+        // it, as its per-sample phasor (Re, Im); on the differential diagram
+        // the (Iторм, Iдиф) pairs. Samples N..end, or between the cursors.
+        let between = self.circle_between_cursors;
+        let readout = self.circle_readout;
+        let loci: Vec<Locus> = self
+            .active_doc()
+            .map(|d| {
+                let n = d.osc.samples_per_cycle().max(2);
+                let len = d.osc.sample_count();
+                let (c1, c2) = (d.main_cursor, d.aux_cursor);
+                let range = if between { c1.min(c2).max(n)..=c1.max(c2) } else { n..=len.saturating_sub(1) };
+                let mut out = Vec::new();
+                let pick = |series: &dyn Fn(usize) -> [f64; 2]| -> (Vec<[f64; 2]>, [f64; 2], [f64; 2]) {
+                    (range.clone().filter(|k| *k < len).map(series).collect(), series(c1.min(len.saturating_sub(1))), series(c2.min(len.saturating_sub(1))))
+                };
+                if dim == Dimension::Ohm {
+                    for (i, ch) in d.osc.analog.iter().enumerate() {
+                        if d.chans[i].on_circle {
+                            let ph = &d.analysis.phasors[i];
+                            let (pts, p1, p2) = pick(&|k| ph.get(k).map_or([0.0, 0.0], |z| [z.re, z.im]));
+                            out.push((ch.id.clone(), d.chans[i].color, pts, p1, p2));
+                        }
+                    }
+                    for c in d.computed.iter().filter(|c| c.on_circle) {
+                        let series = |k: usize| {
+                            let z = match &c.phasors {
+                                Some(p) => p.get(k).copied().unwrap_or_default(),
+                                None => fvb_core::signal::phasor_at(&c.samples, k, n),
+                            };
+                            [z.re, z.im]
+                        };
+                        let (pts, p1, p2) = pick(&series);
+                        out.push((c.name.clone(), c.color, pts, p1, p2));
+                    }
+                } else {
+                    for (dif, tor) in &d.dif_pairs {
+                        let get = |name: &str| d.computed.iter().find(|c| c.name == name);
+                        if let (Some(dc), Some(tc)) = (get(dif), get(tor)) {
+                            let series = |k: usize| [tc.samples.get(k).copied().unwrap_or(0.0), dc.samples.get(k).copied().unwrap_or(0.0)];
+                            let (pts, p1, p2) = pick(&series);
+                            out.push((format!("{dif} / {tor}"), dc.color, pts, p1, p2));
+                        }
+                    }
+                }
+                out
             })
-        } else {
-            None
-        };
+            .unwrap_or_default();
         let fill = self.fill_regions;
         let bg = ui.visuals().extreme_bg_color;
         let shown = Plot::new("charplot")
@@ -222,20 +274,17 @@ impl App {
                     draw_region(pu, &d.op, d.color, fill, false, bg, &d.name);
                     draw_region(pu, &d.rs, d.color.gamma_multiply(0.6f32), false, true, bg, "");
                 }
-                if let Some((locus, point)) = &overlay {
-                    if locus.len() >= 2 {
-                        pu.line(
-                            Line::new(PlotPoints::from(locus.clone()))
-                                .color(egui::Color32::from_rgb(255, 215, 0))
-                                .width(2.0_f32)
-                                .name("Траектория Z (ф.A)"),
-                        );
+                for (name, color, pts, p1, p2) in &loci {
+                    let label = match readout {
+                        1 => format!("{name}: {:.3} {:+.3}j", p1[0], p1[1]),
+                        2 => format!("{name}: {:.3} ∠{:.2}º", p1[0].hypot(p1[1]), p1[1].atan2(p1[0]).to_degrees()),
+                        _ => name.clone(),
+                    };
+                    if pts.len() >= 2 {
+                        pu.line(Line::new(PlotPoints::from(pts.clone())).color(*color).width(1.5_f32).name(label));
                     }
-                    if let Some(p) = point {
-                        pu.points(
-                            Points::new(vec![*p]).radius(5.0_f32).color(egui::Color32::RED).name("Z текущая"),
-                        );
-                    }
+                    pu.points(Points::new(vec![*p1]).shape(egui_plot::MarkerShape::Plus).radius(6.0_f32).color(egui::Color32::RED));
+                    pu.points(Points::new(vec![*p2]).shape(egui_plot::MarkerShape::Plus).radius(6.0_f32).color(egui::Color32::BLUE));
                 }
             });
         let pb = shown.transform.bounds();
@@ -247,89 +296,103 @@ impl App {
     }
 
     // ---- Векторная диаграмма ----
+    /// Vector diagram (`0x490360`): channels flagged for it (analog and
+    /// computed), their RMS phasors at the main cursor; angles absolute or
+    /// relative to a chosen channel; lengths scaled per group (unit exactly
+    /// "A" vs the rest) to a "nice" maximum.
     fn view_vector(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Options bar (MENU 355).
+            let names: Vec<String> = self
+                .active_doc()
+                .map(|d| d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect())
+                .unwrap_or_default();
+            // Options (MENU 355): the angle reference is "Абсолютный угол"
+            // (36000) or a channel (36000 + i).
             ui.horizontal_wrapped(|ui| {
                 ui.checkbox(&mut self.vec_show_values, "Показывать значения");
                 ui.checkbox(&mut self.vec_radians, "Углы в радианах");
                 ui.checkbox(&mut self.vec_direction_only, "Только направление");
-                ui.checkbox(&mut self.vec_abs_angle, "Абсолютный угол");
+                ui.label("Угол относительно:");
+                let cur = self.vec_angle_ref.clone().unwrap_or_else(|| "Абсолютный угол".into());
+                egui::ComboBox::from_id_salt("vecref").selected_text(cur).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.vec_angle_ref, None, "Абсолютный угол");
+                    for n in &names {
+                        ui.selectable_value(&mut self.vec_angle_ref, Some(n.clone()), n);
+                    }
+                });
             });
             ui.separator();
-            let radians = self.vec_radians;
-            let dir_only = self.vec_direction_only;
-            let show_values = self.vec_show_values;
-            let abs_angle = self.vec_abs_angle;
+            let (radians, dir_only, show_values) = (self.vec_radians, self.vec_direction_only, self.vec_show_values);
+            let angle_ref = self.vec_angle_ref.clone();
             let Some(d) = self.active_doc() else {
                 ui.centered_and_justified(|ui| ui.label("Загрузите осциллограмму для векторной диаграммы."));
                 return;
             };
-            ui.label(format!("Векторы при t = {:.4} с (осн. визир)", d.osc.time.get(d.main_cursor).copied().unwrap_or(0.0)));
             let k = d.main_cursor;
-            let is_voltage = |ch: &fvb_core::comtrade::AnalogChannel| ch.unit.to_lowercase().starts_with('v') || ch.unit.to_lowercase().contains('в');
-            // Reference angle: when not absolute, measure relative to the first
-            // visible voltage phasor.
-            let ref_ang = if abs_angle {
-                0.0
-            } else {
-                d.osc.analog.iter().enumerate()
-                    .find(|(idx, ch)| d.chans[*idx].on_vector && is_voltage(ch))
-                    .and_then(|(idx, _)| d.analysis.phasors.get(idx).and_then(|p| p.get(k)))
-                    .map(|z| z.arg())
-                    .unwrap_or(0.0)
+            let n = d.osc.samples_per_cycle().max(2);
+            // (name, unit, phasor, colour) of every channel on the diagram.
+            let phasor_of = |name: &str| -> Option<Complex64> {
+                if let Some(i) = d.osc.analog.iter().position(|c| c.id == name) {
+                    return d.analysis.phasors.get(i).and_then(|p| p.get(k)).copied();
+                }
+                d.computed.iter().find(|c| c.name == name).map(|c| match &c.phasors {
+                    Some(p) => p.get(k).copied().unwrap_or_default(),
+                    None => fvb_core::signal::phasor_at(&c.samples, k, n),
+                })
             };
-            let mut u_max = 1e-9;
-            let mut i_max = 1e-9;
-            for (idx, ch) in d.osc.analog.iter().enumerate() {
-                if !d.chans[idx].on_vector {
-                    continue;
-                }
-                let m = d.analysis.phasors.get(idx).and_then(|p| p.get(k)).map(|z| z.norm()).unwrap_or(0.0);
-                if is_voltage(ch) {
-                    u_max = f64::max(u_max, m);
-                } else {
-                    i_max = f64::max(i_max, m);
+            let mut shown: Vec<(String, String, Complex64, egui::Color32)> = Vec::new();
+            for (i, ch) in d.osc.analog.iter().enumerate() {
+                if d.chans[i].on_vector {
+                    shown.push((ch.id.clone(), ch.unit.clone(), phasor_of(&ch.id).unwrap_or_default(), d.chans[i].color));
                 }
             }
-            struct Arrow { name: String, color: egui::Color32, v: [f64; 2], mag: f64, ang_deg: f64 }
-            let mut arrows: Vec<Arrow> = Vec::new();
-            for (idx, ch) in d.osc.analog.iter().enumerate() {
-                if !d.chans[idx].on_vector {
-                    continue;
-                }
-                let z = d.analysis.phasors.get(idx).and_then(|p| p.get(k)).copied().unwrap_or(Complex64::new(0.0, 0.0));
-                let mag = z.norm();
-                let ang = z.arg() - ref_ang;
-                let draw_len = if dir_only { 1.0 } else if is_voltage(ch) { mag / u_max } else { mag / i_max };
-                arrows.push(Arrow {
-                    name: ch.id.clone(),
-                    color: d.chans[idx].color,
-                    v: [draw_len * ang.cos(), draw_len * ang.sin()],
-                    mag,
-                    ang_deg: ang.to_degrees(),
-                });
+            for c in d.computed.iter().filter(|c| c.on_vector) {
+                shown.push((c.name.clone(), c.unit.clone(), phasor_of(&c.name).unwrap_or_default(), c.color));
             }
+            let reference = angle_ref.as_deref().and_then(phasor_of).map(fvb_core::views::finite_or_zero);
+            let is_current = |unit: &str| unit == "A";
+            let group_max = |current: bool| {
+                shown.iter().filter(|s| is_current(&s.1) == current).map(|s| fvb_core::views::finite_or_zero(s.2).norm()).fold(0.0, f64::max)
+            };
+            let (i_scale, u_scale) = (fvb_core::views::nice_scale(group_max(true)), fvb_core::views::nice_scale(group_max(false)));
+            ui.label(format!(
+                "t = {:.4} с (осн. визир)    U max = {:.1} {}V    I max = {:.1} {}A",
+                d.osc.time.get(k).copied().unwrap_or(0.0),
+                fvb_core::omp::si(u_scale).0,
+                fvb_core::omp::si(u_scale).1,
+                fvb_core::omp::si(i_scale).0,
+                fvb_core::omp::si(i_scale).1,
+            ));
             Plot::new("vectorplot").data_aspect(1.0).show(ui, |pu| {
-                let circle: Vec<[f64; 2]> = (0..=180)
-                    .map(|dd| {
-                        let a = (dd as f64) * std::f64::consts::TAU / 180.0;
-                        [a.cos(), a.sin()]
-                    })
-                    .collect();
-                pu.line(Line::new(PlotPoints::from(circle)).color(egui::Color32::DARK_GRAY));
-                for a in &arrows {
+                // Grid: circles and 12 radial lines every 30°.
+                for r in [0.2, 0.4, 0.6, 0.8, 1.0] {
+                    let c: Vec<[f64; 2]> = (0..=180)
+                        .map(|dd| {
+                            let a = dd as f64 * std::f64::consts::TAU / 180.0;
+                            [r * a.cos(), r * a.sin()]
+                        })
+                        .collect();
+                    pu.line(Line::new(PlotPoints::from(c)).color(egui::Color32::DARK_GRAY).width(0.5_f32));
+                }
+                for j in 0..12 {
+                    let a = j as f64 * std::f64::consts::PI / 6.0;
+                    pu.line(Line::new(PlotPoints::from(vec![[0.0, 0.0], [a.cos(), a.sin()]])).color(egui::Color32::DARK_GRAY).width(0.5_f32));
+                }
+                for (name, unit, z, color) in &shown {
+                    let z = fvb_core::views::finite_or_zero(*z);
+                    let ang = fvb_core::views::vector_angle(z, reference);
+                    let scale = if is_current(unit) { i_scale } else { u_scale };
+                    let len = if dir_only { 1.0 } else { z.norm() / scale };
+                    let tip = [len * ang.cos(), len * ang.sin()];
                     let label = if show_values {
-                        if radians {
-                            format!("{}  {:.3} ∠{:.2} рад", a.name, a.mag, a.ang_deg.to_radians())
-                        } else {
-                            format!("{}  {:.3} ∠{:+.1}°", a.name, a.mag, a.ang_deg)
-                        }
+                        let (v, p) = fvb_core::omp::si(z.norm());
+                        format!("{name}  {v:.2} {p}{unit}{}", fvb_core::views::angle_text(ang, radians))
                     } else {
-                        a.name.clone()
+                        name.clone()
                     };
-                    pu.line(Line::new(PlotPoints::from(vec![[0.0, 0.0], a.v])).color(a.color).width(2.5_f32).name(label));
-                    pu.points(Points::new(vec![a.v]).radius(4.0_f32).color(a.color));
+                    let style = if unit == "V" { LineStyle::Solid } else { LineStyle::dotted_dense() };
+                    pu.line(Line::new(PlotPoints::from(vec![[0.0, 0.0], tip])).color(*color).width(2.5_f32).style(style).name(label));
+                    pu.points(Points::new(vec![tip]).radius(4.0_f32).color(*color));
                 }
             });
         });

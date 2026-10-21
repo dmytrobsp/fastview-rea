@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 115 pass)
+- `cargo test --workspace`   (currently 118 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 115 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 118 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -508,7 +508,7 @@ detection, window, median/σ) with tests; GUI dialog as a section tree.
 
 ---
 
-## L8 — Analysis views  ·  🟡 quick analysis ✅, vector/frequency/readout/locus ❌ (next)
+## L8 — Analysis views  ·  🟡 quick analysis ✅, vector ✅, loci ✅, frequency/readout ❌
 
 Spec: **`notes/VIEWS_SPEC.md`** (CQAnPropSheet `0x48b970`, vector `0x490360`,
 frequency `0x46f5a0`, readout `0x461440`, circle locus `0x43a880`).
@@ -535,8 +535,17 @@ circle readout, differential pairs). Pinned by `tests/quick.rs` (6) and a
 
 Not verified / residual: exact channel naming of the differential tab and the
 `CoeffTT` argument order; units of generated channels (only S0 = VA is set);
-the vector / circle / differential views do not yet draw computed channels
-(flags are kept) — next commit.
+Vector diagram (done): analog + computed channels with the vector flag, RMS
+phasor at the main cursor (computed channels: stored complex series, else
+DFT), NaN → 0, angle reference selector (absolute = raw sine-referenced, or a
+channel; wrapped to (−π, π]), groups by unit exactly "A", `nice_scale`, angle
+texts " %8.2fº" / value/π " %8.2fπ", direction-only, solid pen for "V",
+30° radial grid (`fvb_core::views`, unit-tested). Loci (done): circle
+diagram draws every channel with the circle flag as its phasor series
+(N..end or between the cursors), "+" markers at both cursors, readout at
+cursor 1 (Re ± jIm / |·|∠); differential diagram draws the (Iторм, Iдиф)
+pairs. Not modelled: separate scales for "Ohm" vs other circle channels
+(NOT DETERMINED), R/X channel pairs (DIALOG 554), the vector table layout.
 
 ---
 

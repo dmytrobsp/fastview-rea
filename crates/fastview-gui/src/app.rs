@@ -451,11 +451,12 @@ pub struct App {
     pub vec_radians: bool,
     pub vec_direction_only: bool,
     pub vec_show_values: bool,
-    pub vec_abs_angle: bool,
     /// Vector-diagram angle reference channel (None = absolute angles).
     pub vec_angle_ref: Option<String>,
     /// Circle-diagram readout at cursor 1: 0 none, 1 Re ± jIm, 2 |·|∠.
     pub circle_readout: u8,
+    /// Circle diagram: only the samples between the cursors (SightsOnly).
+    pub circle_between_cursors: bool,
 
     // analysis / omp
     pub analysis_tab: AnalysisTab,
@@ -540,9 +541,9 @@ impl App {
             vec_radians: false,
             vec_direction_only: false,
             vec_show_values: true,
-            vec_abs_angle: true,
             vec_angle_ref: None,
             circle_readout: 0,
+            circle_between_cursors: false,
             analysis_tab: AnalysisTab::Symmetric,
             quick: Default::default(),
             omp_method: OmpMethod::Grounded,
@@ -1513,6 +1514,31 @@ mod tests {
         assert_eq!(st.settings[&p], "1+1");
         assert!(!st.settings.contains_key("нет такого"));
         assert!(!st.visible);
+    }
+
+    #[test]
+    fn quick_zero_tab_generates_flagged_channels() {
+        let mut app = demo_app();
+        app.analysis_tab = AnalysisTab::Zero;
+        app.quick.ia = "Ia".into();
+        app.quick.ib = "Ib".into();
+        app.quick.ic = "Ic".into();
+        app.quick.ua = "Ua".into();
+        app.quick.ub = "Ub".into();
+        app.quick.uc = "Uc".into();
+        let g = app.quick.generate(AnalysisTab::Zero);
+        app.apply_quick(&g);
+        let d = app.active_doc().unwrap();
+        let get = |n: &str| d.computed.iter().find(|c| c.name == n).unwrap();
+        assert!(get("3I0").on_vector && get("3U0").on_vector && get("S0").on_circle);
+        assert_eq!(get("S0").unit, "VA");
+        assert_eq!(app.vec_angle_ref.as_deref(), Some("3U0"));
+        assert_eq!(app.circle_readout, 1);
+        // Applying again renames and toggles the new channels' flags.
+        let g = app.quick.generate(AnalysisTab::Zero);
+        app.apply_quick(&g);
+        let d = app.active_doc().unwrap();
+        assert!(d.computed.iter().any(|c| c.name == "3I0_2"));
     }
 
     #[test]
