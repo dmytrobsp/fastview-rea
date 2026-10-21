@@ -791,8 +791,7 @@ Ours: `comments.rs` (`Comment`, `CommentKind`, `hit`, `drag`, `normalise`,
 `paint`, the item-mode dialog; 2 unit tests), `lanes.rs` placement / drag /
 hover / level edit, three ribbon tools. Headless test: one-shot tools,
 level/area drag-out, moment drag, lock, menu by kind.
-Residual: comments are not yet saved to / loaded from the oscillogram
-settings file (`.set`: `Comments/Moments|Levels|Areas`); the moment info box
+Residual: (saving / loading comments in the `.set`: done in L9.17); the moment info box
 shows the time from the record start (no absolute date); bubble marks are
 our own drawing; digital level-line snapping not modelled (levels are
 analog-only).
