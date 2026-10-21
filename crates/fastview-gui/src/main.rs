@@ -15,6 +15,7 @@ mod dialogs;
 mod finder;
 mod formula_dlg;
 mod icons;
+mod instance;
 mod lanes;
 mod merge_ui;
 mod omp_ui;
@@ -44,12 +45,19 @@ fn main() -> eframe::Result<()> {
     // Command line (`InitInstance` 0x4483f0): `-Dst <dir>`, `-Find` (open
     // Проводник at start-up) and the file to open.
     let args = startup_args(std::env::args().skip(1));
+    // Single instance: a file argument goes to the running instance.
+    let inst_dir = instance::default_dir();
+    if !args.files.is_empty() && inst_dir.as_deref().is_some_and(|d| instance::hand_off(d, &args.files)) {
+        return Ok(());
+    }
     eframe::run_native(
         "FastView",
         options,
         Box::new(|cc| {
             install_fonts(&cc.egui_ctx);
             let mut app = App::new().with_persistence();
+            let ctx = cc.egui_ctx.clone();
+            app.instance = inst_dir.as_deref().and_then(|d| instance::serve(d, move || ctx.request_repaint()));
             if let Some(dir) = &args.dst {
                 app.dst_dir = Some(dir.clone());
             }
@@ -258,6 +266,13 @@ impl eframe::App for App {
         }
         let dropped: Vec<std::path::PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
         for f in dropped {
+            self.load_comtrade_path(&f);
+        }
+        let handed: Vec<std::path::PathBuf> = self.instance.as_ref().map(|s| s.rx.try_iter().collect()).unwrap_or_default();
+        if !handed.is_empty() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+        for f in handed {
             self.load_comtrade_path(&f);
         }
         theme::apply(ctx, self.skin);

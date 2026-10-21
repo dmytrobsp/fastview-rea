@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 251 pass)
+- `cargo test --workspace`   (currently 252 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 251 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 252 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -845,8 +845,11 @@ name without extension, ✕ on the active tab only, ▾ list); window title
 (`0x4728a0`). Ours: `main.rs` `doc_tabs`, `tab_color`, `startup_args`
 (tested), dropped files, viewport title. Residual: auto-colour order after
 the first NOT DETERMINED (MFC OneNote palette assumed; the bundled vcredist's
-mfc120u.dll sits in an attached burn container we did not unpack); single
-instance (WM_COPYDATA) and the 2 s splash not implemented; tabs cannot be
+mfc120u.dll sits in an attached burn container we did not unpack); the 2 s
+splash not implemented (its bitmap 0x1CE is a proprietary asset); single
+instance done in L9.18 (`instance.rs`: loopback port + token file instead of
+the stored HWND / WM_COPYDATA, the newest plain start wins, a file argument
+is handed over and the start exits once accepted); tabs cannot be
 dragged into new tab groups; «Окна...» not in the ▾ list.
 
 ### L9.9 — «Проводник» as the original's modal finder  ·  🟡

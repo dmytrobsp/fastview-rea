@@ -1299,7 +1299,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 43. ✅ (L9.5) SI prefix only for the listed units; "none" → empty — `crates/fvb-core/src/
     views.rs` — S
 44. ✅ (L9.5; names only) Hover popup for truncated stats text — `lanes.rs` — S
-45. 🟡 (L9.8: file argument, -Dst, -Find, dropped files, 866×500; no single instance / splash) Start-up: file argument, `-Dst`, `-Find`, dropped files, min size 866×500,
+45. 🟡 (L9.8 + L9.18: file argument, -Dst, -Find, dropped files, 866×500, single instance; no splash) Start-up: file argument, `-Dst`, `-Find`, dropped files, min size 866×500,
     optional single instance and splash — `main.rs` — M
 46. ✅ (merged L9.16) AddFormula template tree (at least name validation 396) — `views.rs` /
     `quick_ui.rs` — M (validation S)

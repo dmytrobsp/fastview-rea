@@ -885,6 +885,8 @@ pub struct App {
     pub status: String,
     /// The last `status` shown as a toast and when it appeared (ctx time).
     pub toast: (String, f64),
+    /// The single-instance listener (files handed over by later starts).
+    pub instance: Option<crate::instance::Server>,
 }
 
 /// Per-characteristic UI state (circle diagram).
@@ -977,6 +979,7 @@ impl App {
             dlg: Default::default(),
             status: "Готово".to_string(),
             toast: ("Готово".to_string(), f64::NEG_INFINITY),
+            instance: None,
         };
         app.ensure_block_state();
 
