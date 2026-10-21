@@ -1641,6 +1641,18 @@ Residual: the ГВ label font / background colour are the DC's (caller's)
 [ND] — ours the row font on white; the difference band's own визир
 positions still use the plain sample mapping.
 
+### L9.43 — Lane min / max computed once, not per frame  ·  ✅
+Measured (release, `frame_bench`): a 500 000-sample × 8 record took
+48.9 ms of CPU per frame — every lane's min / max (and the stats Max/Min)
+re-scanned all samples each frame; the original keeps them at
+`+0xa8`/`+0xb0`, recomputed when the values change. Ours: the unscaled
+series' [finite min, finite max, min, max] cached per (channel, display
+mode, `Doc::series_gen`), the generation bumped whenever the derived series
+are rebuilt (`Doc::recompute`, load); the primary/secondary scale applied
+on use. 7.0 ms per frame after; drawing every sample when zoomed out is
+next (the original draws columns — research running). `frame_bench`
+(`FV_FRAME_BENCH=<cfg>`) and test `range_cache_follows_value_changes`.
+
 Next in L9 (HANDOFF 2026-10-22): after the four GUI bugs (L9.23–L9.25)
 and the render audit (L9.26–L9.29), copy's EMF (L9.30), loading progress
 (L9.31), a second user report was worked (L9.32 scroll thumb, L9.33 lane

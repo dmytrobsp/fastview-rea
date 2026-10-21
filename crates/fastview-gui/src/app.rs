@@ -139,7 +139,7 @@ pub enum AnalysisTab {
 }
 
 /// The per-channel value the stats panel and vector/circle views read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValueMode {
     /// Мгновенные значения — the raw sample at the cursor.
     Instant,
@@ -450,6 +450,13 @@ pub struct Doc {
     /// The record as the channel math sees it: each analog channel's samples
     /// with its ADC / remove-DC / invert flags applied (`0x426020`).
     pub flagged: Oscillogram,
+    /// Bumped whenever the derived series (flagged values, RMS, phasors)
+    /// are rebuilt; keys the min / max cache.
+    pub series_gen: u64,
+    /// Per channel and display mode: the unscaled series' finite min / max
+    /// and its plain min / max (the original keeps them at `+0xa8` /
+    /// `+0xb0`, recomputed when the values change, not per paint).
+    pub minmax_cache: std::cell::RefCell<std::collections::HashMap<(usize, ValueMode), (u64, [f64; 4])>>,
     /// Per channel the DC removed by «Удалить постоянную составляющую»: the
     /// mean over the whole periods from the record start of the values and of
     /// the ADC codes (`ch+0xf8`, `0x428490`).
@@ -519,6 +526,8 @@ impl Doc {
             diff_band: true,
             rms,
             flagged,
+            series_gen: 0,
+            minmax_cache: Default::default(),
             dc_mean,
             digital_visible,
             codepage: Encoding::Cp1251,
@@ -542,6 +551,7 @@ impl Doc {
         // The record may have been re-timed or re-scaled (file parameters,
         // coefficients): rebuild the copy and the whole-period DC from it.
         self.flagged = self.osc.clone();
+        self.series_gen += 1;
         self.dc_mean = self.osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
         self.rms.resize(self.osc.analog.len(), Vec::new());
         for i in 0..self.osc.analog.len() {
@@ -1563,6 +1573,7 @@ impl App {
 
                     // Names may have been re-decoded; no flag is set yet.
                     d.flagged = d.osc.clone();
+                    d.series_gen += 1;
                 }
                 if let Some(di) = self.active {
                     self.load_record_settings(di);

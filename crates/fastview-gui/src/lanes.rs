@@ -550,14 +550,7 @@ pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, 
 /// An analog channel's drawing range: min..max of its displayed series over
 /// the whole record, or its window zoom (`0x42b640`).
 pub fn chan_range(doc: &crate::app::Doc, i: usize, primary: bool) -> (f64, f64) {
-    let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
-    for k in 0..doc.osc.sample_count() {
-        let v = mode_disp(doc, i, k, primary);
-        if v.is_finite() {
-            lo = lo.min(v);
-            hi = hi.max(v);
-        }
-    }
+    let [mut lo, mut hi, ..] = scaled_minmax(doc, i, primary);
     if lo > hi {
         (lo, hi) = (0.0, 0.0);
     }
@@ -1722,6 +1715,41 @@ fn primary_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
 /// invert / remove-DC applied.
 /// An analog channel's plotted / read-out value in the display mode
 /// (`0x461440`): instantaneous, one-period RMS or first harmonic.
+/// The unscaled display series of channel `i` in its mode.
+fn mode_raw(doc: &crate::app::Doc, i: usize, k: usize) -> f64 {
+    match doc.chans[i].mode {
+        ValueMode::Instant => doc.sample(i, k),
+        ValueMode::Rms => doc.rms_at(i, k),
+        ValueMode::FirstHarmonic => doc.harmonic_at(i, k) * doc.osc.harmonic1_gain,
+    }
+}
+
+/// [finite min, finite max, min, max] of channel `i`'s display series, the
+/// scan cached per (channel, mode, `series_gen`) and the scale applied.
+fn scaled_minmax(doc: &crate::app::Doc, i: usize, primary: bool) -> [f64; 4] {
+    let key = (i, doc.chans[i].mode);
+    let cached = doc.minmax_cache.borrow().get(&key).filter(|c| c.0 == doc.series_gen).map(|c| c.1);
+    let raw = cached.unwrap_or_else(|| {
+        let mut m = [f64::INFINITY, f64::NEG_INFINITY, f64::MAX, f64::MIN];
+        for k in 0..doc.osc.sample_count() {
+            let v = mode_raw(doc, i, k);
+            if v.is_finite() {
+                m[0] = m[0].min(v);
+                m[1] = m[1].max(v);
+            }
+            m[2] = m[2].min(v);
+            m[3] = m[3].max(v);
+        }
+        doc.minmax_cache.borrow_mut().insert(key, (doc.series_gen, m));
+        m
+    });
+    let s = value_scale(doc, i, primary);
+    let pair = |a: f64, b: f64| if s >= 0.0 { (a * s, b * s) } else { (b * s, a * s) };
+    let (lo, hi) = pair(raw[0], raw[1]);
+    let (mn, mx) = pair(raw[2], raw[3]);
+    [lo, hi, mn, mx]
+}
+
 fn mode_disp(doc: &crate::app::Doc, i: usize, k: usize, primary: bool) -> f64 {
     let scale = value_scale(doc, i, primary);
     match doc.chans[i].mode {
@@ -1762,14 +1790,7 @@ fn lane_stats(
             let scale = value_scale(doc, *i, primary);
             // Value at the cursor and Max/Min follow the display mode; СКЗ
             // and A1 are always the one-period RMS and first harmonic.
-            let n = doc.osc.sample_count();
-            let mut mx = f64::MIN;
-            let mut mn = f64::MAX;
-            for k in 0..n {
-                let v = mode_disp(doc, *i, k, primary);
-                mx = mx.max(v);
-                mn = mn.min(v);
-            }
+            let [.., mn, mx] = scaled_minmax(doc, *i, primary);
             let rms = doc.rms_at(*i, k_main) * scale;
             let a1 = doc.harmonic_at(*i, k_main) * doc.osc.harmonic1_gain * scale;
             let val = mode_disp(doc, *i, k_main, primary);
@@ -2175,6 +2196,21 @@ mod menu_tests {
         d.first = k + 100;
         h.frame(vec![]);
         assert!(texts(&h).iter().filter(|t| t.starts_with('В')).count() >= 3, "clamped labels never merge");
+    }
+
+    /// The min / max cache follows value changes: Invert flips the range,
+    /// a mode change has its own entry.
+    #[test]
+    fn range_cache_follows_value_changes() {
+        let mut h = Harness::new();
+        let (lo, hi) = chan_range(h.doc(), 0, false);
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into_iter().collect();
+        h.app.dispatch(Command::ToggleFlag(ChanFlag::Invert));
+        let (lo2, hi2) = chan_range(h.doc(), 0, false);
+        assert!((lo2 + hi).abs() < 1e-9 && (hi2 + lo).abs() < 1e-9, "inverted: {lo2}..{hi2} vs {lo}..{hi}");
+        h.app.dispatch(Command::SetValueMode(ValueMode::Rms));
+        let (lo3, _) = chan_range(h.doc(), 0, false);
+        assert!(lo3 >= 0.0, "an RMS series is never negative: {lo3}");
     }
 
     #[test]

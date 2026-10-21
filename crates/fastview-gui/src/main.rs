@@ -686,6 +686,25 @@ mod window_tests {
         assert!(w.app.clip.get().is_some());
     }
 
+    /// `FV_FRAME_BENCH=<file.cfg> cargo test --release frame_bench -- --nocapture`
+    /// prints the mean whole-window frame time on that record.
+    #[test]
+    fn frame_bench() {
+        let Ok(rec) = std::env::var("FV_FRAME_BENCH") else { return };
+        let mut app = App::new();
+        app.load_comtrade_path(std::path::Path::new(&rec));
+        while !app.loading.is_empty() {
+            app.poll_loading();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let ctx = egui::Context::default();
+        frames(&mut app, &ctx, Vec2::new(1320.0, 860.0), vec![vec![]; 3]);
+        let n = 30;
+        let t0 = std::time::Instant::now();
+        frames(&mut app, &ctx, Vec2::new(1320.0, 860.0), vec![vec![egui::Event::PointerMoved(Pos2::new(400.0, 400.0))]; n]);
+        eprintln!("frame: {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0 / n as f64);
+    }
+
     /// `FV_WINDOW_DUMP=<file.png> cargo test window_dump` renders the window
     /// (demo document, a few recent files) after a click at
     /// `FV_WINDOW_CLICK=x,y` (default: the «Файл ▾» menu button), the
