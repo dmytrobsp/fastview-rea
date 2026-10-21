@@ -1223,7 +1223,7 @@ printer's paper and hardware margins only via GDI caps on Windows; CUPS
 gets the full sheet); «Свойства...» and printer status fields empty; our
 «Файл PDF…» entry is an extension; diagram print-only branches (pen widths
 ×scale, frequency tiling for the page aspect) not modelled; horizontal
-визиры and the comment hover not drawn in print; header/footer line pitch
+визиры (now L9.39) and the comment hover not drawn in print; header/footer line pitch
 T assumed 12 screen px.
 
 ### L9.23 — User-reported: crash at small window sizes; the bottom scroll bar  ·  ✅
@@ -1583,6 +1583,16 @@ ribbon's own buttons paint without the fade, disabled = the text colour at
 half strength, checked labels dark. Test `ribbon_labels_contrast_with_
 their_background_in_every_look`. (The looks' palettes remain our
 approximations of the MFC visual managers.)
+
+### L9.39 — Horizontal визиры on printed pages  ·  ✅
+Read: the print slice painter `0x405970` draws through the screen Draw
+(`vt+0x1b8` = `0x45f950`, call at `0x405b56`), which calls the визир painter
+`0x493110` and the comment painter `0x43f630` unconditionally (`0x45fa29`,
+`0x45fa5e`; only the difference band is conditional); `0x493110` has no
+map-mode test — a ГВ is drawn when shown (`+0x48`) and above the bottom band
+(`0x494179`–`0x4941a2`). Ours: printed slices draw shown ГВ lines and
+labels on their paged lanes (L9.22 residual closed). Test
+`horizontal_vizirs_are_printed`.
 
 Next in L9 (HANDOFF 2026-10-21, second session): the four user-reported GUI
 bugs are fixed (L9.23 tiny-window crash + bottom scroll bar, L9.24 modal

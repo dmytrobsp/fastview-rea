@@ -294,9 +294,23 @@ impl App {
         }
         let v_bottom = if doc.diff_band { ruler_top - 25.0 } else { ruler_top };
         ov.vizirs(&painter, dy, v_bottom, true);
-        // Comments over the whole image's plot area.
         let tops: Vec<f32> = paged.tops.iter().map(|t| t + dy).collect();
         let ranges: Vec<(f64, f64)> = rows.iter().map(|r| lanes::row_range(doc, r, primary)).collect();
+        // Horizontal визиры: the screen Draw `0x45f950` calls `0x493110` in
+        // print as well, which draws a shown ГВ on its lane whenever it lies
+        // above the bottom band.
+        for (j, hv) in doc.hviz.iter().enumerate() {
+            let Some(ch) = hv.chan.filter(|_| hv.shown && hv.value.is_finite()) else { continue };
+            let Some(li) = rows.iter().position(|r| r.members.contains(&ch)) else { continue };
+            let y = g::value_y(hv.value, tops[li], rows[li].h, ranges[li].0, ranges[li].1);
+            if y >= v_bottom || y < dy {
+                continue;
+            }
+            let col = if j == 0 { Color32::from_rgb(255, 100, 100) } else { Color32::from_rgb(100, 100, 255) };
+            painter.hline(left..=right, y, Stroke::new(1.0f32, col));
+            painter.text(Pos2::new((left + right) / 2.0, y - 1.0), Align2::CENTER_BOTTOM, if j == 0 { "ГВ1" } else { "ГВ2" }, FontId::proportional(11.0), col);
+        }
+        // Comments over the whole image's plot area.
         let x_of = |k: f64| ov.x_of(k);
         let lane_of = |k: crate::app::ChanKey| {
             rows.iter()
@@ -531,6 +545,33 @@ mod tests {
             let c = app.render_page(&fonts, &job, i, true);
             assert_eq!((c.w, c.h), (dev.w, dev.h));
         }
+    }
+}
+
+#[cfg(test)]
+mod hviz_tests {
+    use super::*;
+    use crate::app::Command;
+
+    /// A shown ГВ prints on its lane (`0x45f950` → `0x493110` in print too).
+    #[test]
+    fn horizontal_vizirs_are_printed() {
+        let reddest_row = |app: &mut App| {
+            let setup = PageSetup::default();
+            let dev = Device::sheet(&setup, 100.0);
+            let job = app.print_job(0, dev, setup);
+            let c = app.render_page(&egui::FontDefinitions::default(), &job, 0, false);
+            let near = |p: [u8; 3]| i32::from(p[0]) > i32::from(p[1]) + 40 && i32::from(p[0]) > i32::from(p[2]) + 40 && (i32::from(p[1]) - i32::from(p[2])).abs() < 30;
+            (0..c.h).map(|y| (0..c.w).filter(|&x| near(c.get(x, y))).count()).max().unwrap_or(0)
+        };
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        let without = reddest_row(&mut app);
+        let d = &mut app.docs[0];
+        let (lo, hi) = crate::lanes::chan_range(d, 0, false);
+        d.hviz[0] = crate::app::HVizir { shown: true, chan: Some(0), value: (lo + hi) / 2.0 };
+        let with = reddest_row(&mut app);
+        assert!(with > without + 200, "a red line across the plot: {with} vs {without}");
     }
 }
 
