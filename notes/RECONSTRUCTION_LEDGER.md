@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 148 pass)
+- `cargo test --workspace`   (currently 149 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 148 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 149 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.7** below.
+temporary). Reconciled so far: **L9.1**–**L9.8** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -833,6 +833,21 @@ Residual: the frequency diagram still reads raw samples (track D rewrites it
 (the original subtracts `k·dc` from an unscaled code) not modelled; undo for
 merge operations only (paste) is now the only snapshotting command but the
 Отмена/Возврат enable-by-count rule is pending (ribbon item 11).
+
+### L9.8 — Document tabs, window title, start-up  ·  🟡
+
+Read (spec §1.1/§1.5; help screenshot clip0014 sampled with
+`tools/pngcrop.py`): OneNote-style tabs (slanted left edge, gradient
+(255,255,146)→(255,220,120) for the first document, bold title = the file
+name without extension, ✕ on the active tab only, ▾ list); window title
+«Механотроника FastView - <doc>» (`0x45f7d0`); command line `-Dst <dir>`,
+`-Find`, the file argument; DragAcceptFiles; minimum size 866×500
+(`0x4728a0`). Ours: `main.rs` `doc_tabs`, `tab_color`, `startup_args`
+(tested), dropped files, viewport title. Residual: auto-colour order after
+the first NOT DETERMINED (MFC OneNote palette assumed; the bundled vcredist's
+mfc120u.dll sits in an attached burn container we did not unpack); single
+instance (WM_COPYDATA) and the 2 s splash not implemented; tabs cannot be
+dragged into new tab groups; «Окна...» not in the ▾ list.
 
 Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — tracks D (diagrams 19–22, 27,
 40), O (ОМП 6, 12, 38) and F (dialogs 16, 18, 28, 29, 34, 39) were

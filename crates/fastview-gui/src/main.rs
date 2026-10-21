@@ -26,16 +26,30 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1320.0, 860.0])
-            .with_min_inner_size([960.0, 620.0])
-            .with_title("Механотроника FastView"),
+            .with_min_inner_size([866.0, 500.0])
+            .with_title("Механотроника FastView")
+            .with_drag_and_drop(true),
         ..Default::default()
     };
+    // Command line (`InitInstance` 0x4483f0): `-Dst <dir>`, `-Find` (open
+    // Проводник at start-up) and the file to open.
+    let args = startup_args(std::env::args().skip(1));
     eframe::run_native(
         "FastView",
         options,
         Box::new(|cc| {
             install_fonts(&cc.egui_ctx);
-            Ok(Box::new(App::new().with_persistence()))
+            let mut app = App::new().with_persistence();
+            if let Some(dir) = &args.dst {
+                app.dst_dir = Some(dir.clone());
+            }
+            if args.find {
+                app.dispatch(app::Command::ToggleExplorer);
+            }
+            for f in &args.files {
+                app.load_comtrade_path(f);
+            }
+            Ok(Box::new(app))
         }),
     )
 }
@@ -72,30 +86,58 @@ fn install_fonts(ctx: &egui::Context) {
 }
 
 impl App {
+    /// The tabbed-MDI strip: OneNote-style tabs coloured per document, the
+    /// close button on the active tab only, and the ▾ document list.
     fn doc_tabs(&mut self, ui: &mut egui::Ui) {
         let mut activate = None;
         let mut close = None;
-        egui::ScrollArea::horizontal().show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.add_space(4.0);
-                let names: Vec<String> = self.docs.iter().map(|d| format!("{}.cfg", d.name)).collect();
-                for (i, name) in names.iter().enumerate() {
-                    let active = self.active == Some(i);
-                    let p = self.skin.palette();
-                    egui::Frame::none()
-                        .fill(if active { p.tab_active } else { p.group_bg })
-                        .stroke(egui::Stroke::new(1.0f32, p.group_border))
-                        .rounding(egui::Rounding { nw: 4.0, ne: 4.0, sw: 0.0, se: 0.0 })
-                        .inner_margin(egui::Margin::symmetric(8.0, 3.0))
-                        .show(ui, |ui| {
-                            if ui.selectable_label(active, egui::RichText::new(name).color(p.text)).clicked() {
-                                activate = Some(i);
-                            }
-                            if ui.add(egui::Button::new("✕").frame(false).small()).clicked() {
-                                close = Some(i);
-                            }
-                        });
+        ui.horizontal(|ui| {
+            ui.add_space(6.0);
+            for i in 0..self.docs.len() {
+                let active = self.active == Some(i);
+                let title = self.docs[i].name.clone();
+                let font = egui::FontId::proportional(13.0);
+                let text_w = ui.fonts(|f| f.layout_no_wrap(title.clone(), font.clone(), egui::Color32::BLACK).size().x);
+                let w = text_w + 34.0 + if active { 20.0 } else { 0.0 };
+                let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 22.0), egui::Sense::click());
+                let base = tab_color(i);
+                let top = base.lerp_to_gamma(egui::Color32::WHITE, if active { 0.45 } else { 0.25 });
+                // Slanted left edge, square right edge (OneNote style).
+                let pts = [rect.left_bottom(), rect.left_top() + egui::vec2(16.0, 0.0), rect.right_top(), rect.right_bottom()];
+                let mut mesh = egui::Mesh::default();
+                for (p, c) in pts.iter().zip([base, top, top, base]) {
+                    mesh.colored_vertex(*p, if active { c } else { c.gamma_multiply(0.85) });
                 }
+                mesh.add_triangle(0, 1, 2);
+                mesh.add_triangle(0, 2, 3);
+                ui.painter().add(egui::Shape::mesh(mesh));
+                ui.painter().add(egui::Shape::line(pts.to_vec(), egui::Stroke::new(1.0f32, egui::Color32::from_gray(140))));
+                let text_pos = egui::pos2(rect.left() + 20.0, rect.center().y);
+                ui.painter().text(text_pos, egui::Align2::LEFT_CENTER, &title, font.clone(), egui::Color32::BLACK);
+                ui.painter().text(text_pos + egui::vec2(0.5, 0.0), egui::Align2::LEFT_CENTER, &title, font, egui::Color32::BLACK);
+                if active {
+                    let xr = egui::Rect::from_center_size(egui::pos2(rect.right() - 12.0, rect.center().y), egui::vec2(14.0, 14.0));
+                    let xresp = ui.interact(xr, ui.id().with(("tab_close", i)), egui::Sense::click());
+                    let col = if xresp.hovered() { egui::Color32::from_rgb(200, 0, 0) } else { egui::Color32::from_gray(90) };
+                    ui.painter().text(xr.center(), egui::Align2::CENTER_CENTER, "✕", egui::FontId::proportional(11.0), col);
+                    if xresp.clicked() {
+                        close = Some(i);
+                    }
+                }
+                if resp.clicked() && close.is_none() {
+                    activate = Some(i);
+                }
+                ui.add_space(-6.0);
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.menu_button("▾", |ui| {
+                    for i in 0..self.docs.len() {
+                        if ui.radio(self.active == Some(i), self.docs[i].name.clone()).clicked() {
+                            activate = Some(i);
+                            ui.close_menu();
+                        }
+                    }
+                });
             });
         });
         if let Some(i) = activate {
@@ -126,8 +168,63 @@ impl App {
     }
 }
 
+/// The original's command line.
+#[derive(Debug, Default, PartialEq)]
+struct StartupArgs {
+    dst: Option<std::path::PathBuf>,
+    find: bool,
+    files: Vec<std::path::PathBuf>,
+}
+
+fn startup_args(args: impl Iterator<Item = String>) -> StartupArgs {
+    let mut out = StartupArgs::default();
+    let mut args = args.peekable();
+    while let Some(a) = args.next() {
+        if a.eq_ignore_ascii_case("-dst") {
+            out.dst = args.next().map(Into::into);
+        } else if a.eq_ignore_ascii_case("-find") {
+            out.find = true;
+        } else {
+            out.files.push(a.into());
+        }
+    }
+    out
+}
+
+/// Tab colours of the documents, in order (MFC OneNote auto colours; the
+/// first one is the yellow of the help screenshots, the order of the rest is
+/// not determined).
+fn tab_color(i: usize) -> egui::Color32 {
+    const C: [(u8, u8, u8); 8] = [
+        (255, 219, 117),
+        (148, 175, 230),
+        (189, 205, 159),
+        (240, 158, 159),
+        (186, 166, 225),
+        (154, 191, 180),
+        (247, 182, 131),
+        (216, 171, 192),
+    ];
+    let (r, g, b) = C[i % C.len()];
+    egui::Color32::from_rgb(r, g, b)
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Window title «Механотроника FastView - <document>» (0x45f7d0) and
+        // files dropped on the window (DragAcceptFiles).
+        let title = match self.active_doc() {
+            Some(d) => format!("Механотроника FastView - {}", d.name),
+            None => "Механотроника FastView".to_string(),
+        };
+        if self.window_title != title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.window_title = title;
+        }
+        let dropped: Vec<std::path::PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
+        for f in dropped {
+            self.load_comtrade_path(&f);
+        }
         theme::apply(ctx, self.skin);
         self.handle_keys(ctx);
 
@@ -224,5 +321,16 @@ impl App {
         if let Some(path) = load {
             self.load_comtrade_path(&path);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_line_switches() {
+        let a = startup_args(["-Dst", "/d", "-FIND", "x.cfg"].into_iter().map(String::from));
+        assert_eq!(a, StartupArgs { dst: Some("/d".into()), find: true, files: vec!["x.cfg".into()] });
     }
 }

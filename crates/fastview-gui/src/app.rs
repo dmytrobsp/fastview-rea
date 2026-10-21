@@ -790,6 +790,10 @@ pub struct App {
     pub view_width: f32,
     /// Stats-panel width at the last layout (fitted to the text).
     pub view_left: f32,
+    /// The window title last sent to the viewport.
+    pub window_title: String,
+    /// `-Dst <dir>`: the folder of the DST description files.
+    pub dst_dir: Option<std::path::PathBuf>,
     /// The open oscillogram context menu, latched at the right-click.
     pub lane_menu: Option<crate::lanes::LaneMenu>,
     /// Bumped on every right-click so each menu gets a fresh popup area.
@@ -882,6 +886,8 @@ impl App {
             rename_edit: None,
             view_width: 1000.0,
             view_left: crate::lanes::LEFT_W_DEFAULT,
+            window_title: String::new(),
+            dst_dir: None,
             lane_menu: None,
             lane_menu_serial: 0,
             lane_menu_eat: false,
