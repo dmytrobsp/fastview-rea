@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 139 pass)
+- `cargo test --workspace`   (currently 141 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 139 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 141 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.4** below.
+temporary). Reconciled so far: **L9.1**–**L9.5** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -747,7 +747,37 @@ pixel-OR quirk approximated by drawing overlapping run rects; window zoom
 drawing recomputed each frame (no cache); the free-text status message is
 still shown at the right of the status bar (the original has none).
 
-Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 from item 6 down (ОМП banner/
+### L9.5 — Stats panel, SI units, cut-name hover  ·  ✅ (glyphs ours)
+
+Read: `0x461440` stats text (name cut to 25 characters in its colour, framed;
+value at В1 `-%-6g %s` / ` %-6g %s` on |v| in (69,85,199) after the label
+column; rows Max/Min (bit 4), СКЗ (bit 6), A1 (bit 5) only when set, ` %-8g
+%s`); `0x4606d0` widths (label column = widest cut name + 10; panel = label
+column + value template, `": -0.00000000 A"` for SI units else
+`": -0.0000000E-000 "`; 125 before measuring); `0x460290` lane need (name
+row + 10 + one row per stat (Max/Min two) + 23 with status icons);
+`FUN_0042f4b0` 32817–32819 toggle-all over all analog channels; **`0x43d960`
+SI prefix only for V, A, VA, W, ОM (Cyrillic О), Ohm, OHM, var, F, H, GN, Hz,
+m (exact case-sensitive `CString::Compare`, verified by hand), else the raw
+value**; `0x469060` hover shows a cut name in full. Help screenshot clip0014
+(cropped with `tools/pngcrop.py`) confirms the column layout and shows СКЗ +
+A1 on, Max/Min off.
+Ours: `fvb_core::views::{si_unit, si_scaled, stats_value_text}`, readout
+`%-8g` sign rule; `StatRows` on `ChanView`/`Computed` (default СКЗ+A1 —
+**inferred** from the screenshot), `Doc::toggle_stats_row`,
+`Command::StatsRow` + three ribbon toggles; `lanes.rs` stats drawing, fitted
+`view_left` (replaces the fixed 158 px), lane need, status-icon row (our own
+glyphs, not bitmap 0x136), hover popup. Tests: SI/format cases, toggle-all +
+lane growth, width fits the cut name.
+Residual: egui has no Tahoma/bold (bold simulated by double drawing); group
+lanes list member names + values only (the original's per-member stat rows
+inside a group not modelled).
+
+Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — tracks D (diagrams 19–22, 27,
+40), O (ОМП 6, 12, 38) and F (dialogs 16, 18, 28, 29, 34, 39) were
+dispatched to parallel worktree agents on 2026-10-21 (merge their branches);
+main tree: comments 14, rectangle zoom 23, invert/DC/undo semantics 30, then
+ribbon contents 11 after merging F (ОМП banner/
 toggle, ribbon contents 11, ОМП run semantics 12, stats panel 13, comments
 14, …) (panes, визир
 mouse model, power-of-two time zoom, amplitude mapping, lane geometry, …).

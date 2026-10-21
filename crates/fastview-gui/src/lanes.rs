@@ -13,8 +13,15 @@ use crate::oscgeom as g;
 use crate::chansel::{select_click, ChanFlag, ItemState, SelClick};
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Shape, Stroke, Vec2};
 
-/// Stats-panel width (the original fits it to the text; default 125).
-pub const LEFT_W: f32 = 158.0;
+/// Stats-panel width before the first measurement (`0x4606d0` default).
+pub const LEFT_W_DEFAULT: f32 = 125.0;
+/// Names are cut to this many characters in the stats panel.
+const NAME_CHARS: usize = 25;
+/// Name / value font (Tahoma 15 bold / heavy in the original) and the row
+/// font (Tahoma 13); `ROW_H` is the name font's line height ("Ay").
+const NAME_FONT: FontId = FontId::proportional(13.0);
+const ROW_FONT: FontId = FontId::proportional(11.0);
+const ROW_H: f32 = 15.0;
 /// Horizontal scrollbar height below the view and vertical scrollbar width.
 const HSCROLL_H: f32 = 14.0;
 const VSCROLL_W: f32 = 12.0;
@@ -93,7 +100,7 @@ impl Row {
 /// (a group's members pulled together at its first member), computed
 /// channels, then digital channels; analog lanes `YAnalogSize` high (a group
 /// at least one name row per member), digital lanes 20 px. No stretch.
-pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32) -> Vec<Row> {
+pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<Row> {
     let mut rows: Vec<Row> = Vec::new();
     let mut group_row: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
     for (i, c) in doc.chans.iter().enumerate() {
@@ -109,12 +116,80 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32) -> Vec<Row> {
         }
         rows.push(Row { key: Lane::Analog(i), members: vec![i], h: y_analog });
     }
-    for r in &mut rows {
-        r.h = r.h.max(r.members.len() as f32 * GROUP_ROW_H);
-    }
     rows.extend((0..doc.computed.len()).map(|i| Row { key: Lane::Computed(i), members: Vec::new(), h: y_analog }));
+    // need = name row + 10 + one row per enabled stat (Max/Min two) + 23
+    // when any status icon shows; a group lane one name row (+33) per member.
+    for r in &mut rows {
+        let icons = if status_icons(doc, r, primary).is_empty() { 0.0 } else { 23.0 };
+        let need = if r.members.len() > 1 {
+            r.members.len() as f32 * GROUP_ROW_H
+        } else {
+            ROW_H + 10.0 + stat_rows(doc, &r.key).map_or(0, |s| s.count()) as f32 * ROW_H + icons
+        };
+        r.h = r.h.max(need);
+    }
     rows.extend((0..doc.osc.digital.len()).map(|i| Row { key: Lane::Digital(i), members: Vec::new(), h: g::DIGITAL_H }));
     rows
+}
+
+/// The stat rows a lane shows (none for digital lanes).
+fn stat_rows(doc: &crate::app::Doc, key: &ChanKey) -> Option<crate::app::StatRows> {
+    match key {
+        Lane::Analog(i) => Some(doc.chans[*i].stats),
+        Lane::Computed(i) => Some(doc.computed[*i].stats),
+        Lane::Digital(_) => None,
+    }
+}
+
+/// Status icons of a lane (bitmap 0x136 in the original; our own glyphs):
+/// window zoom, remove DC, invert, primary/secondary scaling, RMS mode,
+/// harmonic mode, ADC counts.
+fn status_icons(doc: &crate::app::Doc, r: &Row, primary: bool) -> Vec<&'static str> {
+    let Lane::Analog(i) = r.key else { return Vec::new() };
+    let (c, ch) = (&doc.chans[i], &doc.osc.analog[i]);
+    let scaled = primary && !ch.is_primary && ch.secondary != 0.0 && ch.primary / ch.secondary != 1.0;
+    [
+        (c.vzoom != 1.0, "↕"),
+        (c.remove_dc, "DC"),
+        (c.invert, "−"),
+        (scaled, "П"),
+        (c.mode == ValueMode::Rms, "~"),
+        (c.mode == ValueMode::FirstHarmonic, "1"),
+        (c.adc_counts, "#"),
+    ]
+    .into_iter()
+    .filter_map(|(on, g)| on.then_some(g))
+    .collect()
+}
+
+/// Stats-panel columns (`0x4606d0`): the label column is the widest
+/// (cut) name + 10 (at least «Max:»); the panel adds a value template —
+/// `": -0.00000000 A"` for SI units, `": -0.0000000E-000 "` otherwise.
+fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], primary: bool) -> (f32, f32) {
+    let w = |s: &str, f: &FontId| fonts.layout_no_wrap(s.to_string(), f.clone(), Color32::BLACK).size().x;
+    let mut label = w("Max:", &ROW_FONT);
+    let mut template: f32 = 0.0;
+    for r in rows {
+        let (name, unit, ..) = lane_stats(doc, &r.key, 0, primary);
+        let names = std::iter::once(name).chain(r.members.iter().skip(1).map(|&m| doc.osc.analog[m].id.clone()));
+        for n in names {
+            let short: String = n.chars().take(NAME_CHARS).collect();
+            label = label.max(w(&short, &NAME_FONT) + 10.0);
+        }
+        let t = if fvb_core::views::si_unit(&unit) { ": -0.00000000 A" } else { ": -0.0000000E-000 " };
+        template = template.max(w(t, &ROW_FONT));
+    }
+    if rows.is_empty() {
+        return (label, LEFT_W_DEFAULT);
+    }
+    (label, label + template)
+}
+
+/// Text in a heavier weight (egui's default font has no bold face: the
+/// glyphs are drawn twice, half a pixel apart).
+fn bold_text(p: &egui::Painter, pos: Pos2, text: &str, font: FontId, color: Color32) -> Rect {
+    p.text(pos + Vec2::new(0.5, 0.0), Align2::LEFT_TOP, text, font.clone(), color);
+    p.text(pos, Align2::LEFT_TOP, text, font, color)
 }
 
 /// The amplitude range of a lane: min..max of the displayed series over the
@@ -317,15 +392,17 @@ impl App {
         // ---- layout (`0x460290`, `0x45d4a0`) ----
         let band = g::RULER_H + if doc.diff_band { g::DIFF_BAND_H } else { 0.0 };
         let client = Rect::from_min_max(full.min, Pos2::new(full.right(), full.bottom() - HSCROLL_H));
-        let rows = lane_layout(doc, y_analog);
+        let rows = lane_layout(doc, y_analog, primary);
+        let (label_col, left_w) = ui.fonts(|fo| stats_columns(fo, doc, &rows, primary));
+        self.view_left = left_w;
         let content_h: f32 = rows.iter().map(|r| r.h).sum();
         let vbar = content_h + band + 2.0 > client.height();
         let plot_right = client.right() - if vbar { VSCROLL_W } else { 0.0 };
-        let left = client.left() + LEFT_W;
+        let left = client.left() + left_w;
         let plot_bottom = client.bottom() - band;
         let vmin = -(content_h + band + 2.0 - client.height()).max(0.0);
         let vscroll = doc.vscroll.clamp(vmin, 0.0);
-        let visible = g::visible_count(plot_right - client.left(), LEFT_W, f);
+        let visible = g::visible_count(plot_right - client.left(), left_w, f);
         let first = doc.first.min(g::max_first(n, visible));
         let last = (first + visible + 1).min(n.saturating_sub(1));
         let x_of = |k: f64| g::x_of(k, first, f, left);
@@ -366,6 +443,8 @@ impl App {
         // ---- stats panel and waveforms ----
         let k_main = doc.main_cursor;
         let mut rename_rect = None;
+        let mut cut_hover: Option<String> = None;
+        let hover = resp.hover_pos();
         for (li, r) in rows.iter().enumerate() {
             let (top, h) = (tops[li], r.h);
             if top > plot_bottom || top + h < client.top() {
@@ -373,48 +452,67 @@ impl App {
             }
             let lane = &r.key;
             let (name, unit, color, maxv, minv, rms, a1, val) = lane_stats(doc, lane, k_main, primary);
-            let name_pos = Pos2::new(client.left() + 5.0, top + 5.0);
-            let name_rect = lp.text(name_pos, Align2::LEFT_TOP, &name, FontId::proportional(12.5), color);
-            if matches!(lane, Lane::Analog(_)) {
-                lp.rect_stroke(name_rect.expand2(Vec2::new(2.0, 0.0)), 0.0, Stroke::new(1.0f32, Color32::from_gray(128)));
+            // Stats text (`0x461440`): the name (cut to 25 characters) framed
+            // in its colour, the value at В1 after the label column, then
+            // the enabled rows; digital lanes show the name only.
+            let short: String = name.chars().take(NAME_CHARS).collect();
+            let name_pos = Pos2::new(client.left() + 5.0, top + if matches!(lane, Lane::Digital(_)) { 2.0 } else { 5.0 });
+            let name_rect = bold_text(&lp, name_pos, &short, NAME_FONT, color);
+            if short.len() < name.len() && hover.is_some_and(|p| name_rect.contains(p)) {
+                cut_hover = Some(name.clone());
             }
             if let (Lane::Analog(i), Some((ri, _))) = (lane, &self.rename_edit) {
                 if i == ri {
                     rename_rect = Some(name_rect.expand2(Vec2::new(2.0, 1.0)));
                 }
             }
-            lp.text(
-                Pos2::new(left - 6.0, top + 5.0),
-                Align2::RIGHT_TOP,
-                fvb_core::views::readout_text(val, &unit).trim().to_string(),
-                FontId::monospace(11.5),
-                Color32::from_rgb(69, 85, 199),
-            );
+            let col_x = client.left() + label_col + 5.0;
+            if !matches!(lane, Lane::Digital(_)) {
+                lp.rect_stroke(
+                    Rect::from_min_max(Pos2::new(client.left() + 3.0, top + 5.0), Pos2::new(name_rect.right() + 2.0, name_rect.bottom())),
+                    0.0,
+                    Stroke::new(1.0f32, Color32::from_gray(128)),
+                );
+                if let Some(t) = fvb_core::views::stats_value_text(val, &unit) {
+                    bold_text(&lp, Pos2::new(col_x, top + 5.0), &t, NAME_FONT, Color32::from_rgb(69, 85, 199));
+                }
+            }
+            let row_col = Color32::from_rgb(0, 0, 127);
+            let mut yy = top + 5.0 + ROW_H + 3.0;
             if r.members.len() > 1 {
-                // A channel group: its members are listed in the stats column.
-                let mut yy = top + 22.0;
+                // A channel group: its other members listed under the first.
                 for &oi in &r.members[1..] {
                     let (on, ou, oc, .., ov) = lane_stats(doc, &Lane::Analog(oi), k_main, primary);
-                    lp.text(Pos2::new(client.left() + 5.0, yy), Align2::LEFT_TOP, &on, FontId::proportional(11.0), oc);
-                    lp.text(Pos2::new(left - 6.0, yy), Align2::RIGHT_TOP, format!("{} {}", fmt(ov), ou), FontId::monospace(10.0), oc);
-                    yy += 14.0;
-                }
-            } else if !matches!(lane, Lane::Digital(_)) {
-                let mut yy = top + 24.0;
-                for (lbl, v) in [("Max", maxv), ("Min", minv), ("СКЗ", rms), ("A1", a1)] {
-                    if yy > top + h - 12.0 {
-                        break;
+                    let on: String = on.chars().take(NAME_CHARS).collect();
+                    bold_text(&lp, Pos2::new(client.left() + 5.0, yy), &on, NAME_FONT, oc);
+                    if let Some(t) = fvb_core::views::stats_value_text(ov, &ou) {
+                        bold_text(&lp, Pos2::new(col_x, yy), &t, NAME_FONT, Color32::from_rgb(69, 85, 199));
                     }
-                    lp.text(Pos2::new(client.left() + 5.0, yy), Align2::LEFT_TOP, format!("{lbl}:"), FontId::proportional(10.0), Color32::from_rgb(0, 0, 127));
-                    lp.text(
-                        Pos2::new(left - 6.0, yy),
-                        Align2::RIGHT_TOP,
-                        fvb_core::views::readout_text(v, &unit).trim().to_string(),
-                        FontId::monospace(10.0),
-                        Color32::from_rgb(0, 0, 127),
-                    );
-                    yy += 12.0;
+                    yy += ROW_H + 4.0;
                 }
+            } else if let Some(st) = stat_rows(doc, lane) {
+                let mut rows_txt: Vec<(&str, f64)> = Vec::new();
+                if st.minmax {
+                    rows_txt.extend([("Max:", maxv), ("Min:", minv)]);
+                }
+                if st.rms {
+                    rows_txt.push(("СКЗ:", rms));
+                }
+                if st.a1 {
+                    rows_txt.push(("A1:", a1));
+                }
+                for (lbl, v) in rows_txt {
+                    lp.text(Pos2::new(client.left() + 5.0, yy), Align2::LEFT_TOP, lbl, ROW_FONT, row_col);
+                    lp.text(Pos2::new(col_x, yy), Align2::LEFT_TOP, fvb_core::views::readout_text(v, &unit), ROW_FONT, row_col);
+                    yy += ROW_H;
+                }
+            }
+            // Status icons, right to left from the panel edge at the lane bottom.
+            for (j, glyph) in status_icons(doc, r, primary).into_iter().enumerate() {
+                let at = Rect::from_min_size(Pos2::new(left - 21.0 - 21.0 * j as f32, top + h - 21.0), Vec2::splat(16.0));
+                lp.rect_filled(at, 2.0, Color32::from_rgb(232, 236, 248));
+                lp.rect_stroke(at, 2.0, Stroke::new(1.0f32, Color32::from_rgb(120, 130, 170)));
+                lp.text(at.center(), Align2::CENTER_CENTER, glyph, FontId::proportional(9.0), Color32::from_rgb(40, 50, 110));
             }
 
             // Waveforms (`0x45fbe0`): every visible sample, 1 px, sample marks
@@ -592,7 +690,6 @@ impl App {
         let v_hit = |x: f32| (0..3).find(|&k| viz[k].1 && (x_of(viz[k].0 as f64) - x).abs() < 3.0);
         let h_hit = |y: f32| (0..2).find(|&j| doc.hviz[j].shown && hrows[j].is_some_and(|(hy, _)| (hy - y).abs() < 3.0));
         let comment_at = |pos: Pos2| doc.comments.iter().position(|c| (x_of(c.sample as f64) - pos.x).abs() < 5.0);
-        let hover = resp.hover_pos();
         let (pressed_l, pressed_r, press_pos) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.secondary_pressed(), i.pointer.press_origin()));
         let in_view = |p: Pos2| client.contains(p) && p.x < plot_right;
         if !menu_busy && (pressed_l || pressed_r) {
@@ -783,6 +880,10 @@ impl App {
             d.vscroll = d.vscroll.clamp(vmin_c, 0.0);
         }
 
+        // Hover popup over a cut name (`0x469060`): the full text.
+        if let Some(full) = cut_hover {
+            egui::show_tooltip_at_pointer(ui.ctx(), ui.layer_id(), egui::Id::new("fv_cut_name"), |ui| ui.label(full));
+        }
         self.rename_ui(ui, ai, rename_rect);
         self.lane_menu_ui(ui.ctx(), ai);
         if self.lane_menu_eat && !ui.input(|i| i.pointer.any_down()) {
@@ -1193,16 +1294,6 @@ fn lane_stats(
     }
 }
 
-fn fmt(v: f64) -> String {
-    if v == 0.0 {
-        "0".into()
-    } else if v.abs() >= 1000.0 || v.abs() < 0.01 {
-        format!("{v:.3e}")
-    } else {
-        format!("{v:.3}")
-    }
-}
-
 #[cfg(test)]
 mod menu_tests {
     use super::*;
@@ -1261,7 +1352,7 @@ mod menu_tests {
         /// Centre of stats-panel row `li`, from the layout `lanes_ui` uses
         /// (central panel margin 8 px, no scroll).
         fn row(&self, li: usize) -> Pos2 {
-            let rows = lane_layout(self.app.active_doc().unwrap(), self.app.y_analog);
+            let rows = lane_layout(self.app.active_doc().unwrap(), self.app.y_analog, false);
             let top: f32 = 8.0 + rows[..li].iter().map(|r| r.h).sum::<f32>();
             Pos2::new(40.0, top + rows[li].h / 2.0)
         }
@@ -1274,7 +1365,7 @@ mod menu_tests {
 
         /// Rows whose centre is above the bottom band.
         fn rows(&self) -> usize {
-            let n = lane_layout(self.app.active_doc().unwrap(), self.app.y_analog).len();
+            let n = lane_layout(self.app.active_doc().unwrap(), self.app.y_analog, false).len();
             (0..n).take_while(|&li| self.row(li).y < self.plot_bottom()).count()
         }
 
@@ -1306,7 +1397,7 @@ mod menu_tests {
     #[test]
     fn lanes_are_fixed_height_analog_93_digital_20() {
         let h = Harness::new();
-        let rows = lane_layout(h.doc(), h.app.y_analog);
+        let rows = lane_layout(h.doc(), h.app.y_analog, false);
         for r in &rows {
             let want = if matches!(r.key, ChanKey::Digital(_)) { 20.0 } else { 93.0 };
             assert_eq!(r.h, want, "{:?}", r.key);
@@ -1357,6 +1448,36 @@ mod menu_tests {
         let first = h.doc().first;
         h.wheel(at, -1.0, egui::Modifiers::SHIFT);
         assert!(h.doc().first > first, "Shift+wheel scrolls right");
+    }
+
+    #[test]
+    fn stats_rows_toggle_on_all_channels_and_grow_the_lane() {
+        let mut h = Harness::new();
+        assert!(h.doc().chans.iter().all(|c| !c.stats.minmax && c.stats.rms && c.stats.a1));
+        h.app.dispatch(Command::StatsRow(0));
+        assert!(h.doc().chans.iter().all(|c| c.stats.minmax), "32817 sets Max/Min on all");
+        h.app.dispatch(Command::StatsRow(1));
+        assert!(h.doc().chans.iter().all(|c| !c.stats.rms), "all had СКЗ: cleared on all");
+        h.app.dispatch(Command::StatsRow(1));
+        let d = h.app.active_doc_mut().unwrap();
+        d.chans[0].invert = true;
+        // name row + 10 + Max, Min, СКЗ, A1 + the icon row = 15 + 10 + 60 + 23.
+        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        assert_eq!(rows[0].h, 108.0);
+        assert_eq!(rows[1].h, 93.0, "no icons: YAnalogSize");
+    }
+
+    #[test]
+    fn stats_panel_width_fits_the_longest_name_cut_to_25() {
+        let mut h = Harness::new();
+        let w0 = h.app.view_left;
+        h.app.active_doc_mut().unwrap().osc.analog[0].id = "Ш".repeat(25);
+        h.frame(vec![]);
+        let w25 = h.app.view_left;
+        assert!(w25 > w0, "{w25} > {w0}");
+        h.app.active_doc_mut().unwrap().osc.analog[0].id = "Ш".repeat(40);
+        h.frame(vec![]);
+        assert_eq!(h.app.view_left, w25, "names are cut to 25 characters");
     }
 
     #[test]

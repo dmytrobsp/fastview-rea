@@ -1214,7 +1214,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     V2 = start+P−1 (ours swapped); defaults method 1, section 1/1;
     errors as message boxes — `app.rs` (`run_omp`), `crates/fvb-core/src/omp.rs`
     — M
-13. Stats panel: framed coloured name (25-char cut), value `%-6g` heavy blue,
+13. ✅ (L9.5) Stats panel: framed coloured name (25-char cut), value `%-6g` heavy blue,
     rows only per bits 4/5/6 with the 32817–19 toggles, fonts/colours, status
     icons, auto-fitted leftW (replace LEFT_W 158) — `lanes.rs` — M
 14. Comments: level (156) and area (157) kinds with create-drag, drag editing
@@ -1294,9 +1294,9 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 42. 🟡 (L9.4: grid, persistence; absolute time pending) Grid vertical only every 50 px; ruler units incl. «Абсолютное время»
     (33007) with the date; persist RulerState/Sells — `lanes.rs`, `persist.rs`
     — S
-43. SI prefix only for the listed units; "none" → empty — `crates/fvb-core/src/
+43. ✅ (L9.5) SI prefix only for the listed units; "none" → empty — `crates/fvb-core/src/
     views.rs` — S
-44. Hover popup for truncated stats text — `lanes.rs` — S
+44. ✅ (L9.5; names only) Hover popup for truncated stats text — `lanes.rs` — S
 45. Start-up: file argument, `-Dst`, `-Find`, dropped files, min size 866×500,
     optional single instance and splash — `main.rs` — M
 46. AddFormula template tree (at least name validation 396) — `views.rs` /

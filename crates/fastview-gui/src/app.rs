@@ -197,9 +197,34 @@ pub struct ChanView {
     /// Display mode of this channel (bits 7/8/9 of the original's channel
     /// flags, set on the selected channels by 32820..32822).
     pub mode: ValueMode,
+    pub stats: StatRows,
     pub on_freq: bool,
     pub on_vector: bool,
     pub on_circle: bool,
+}
+
+/// Stats-panel rows of a channel (channel flag bits 4 Max/Min, 6 СКЗ, 5 A1):
+/// drawn only when set; 32817 / 32818 / 32819 toggle them on every analog
+/// channel at once. A new channel shows СКЗ and A1 (as in the help
+/// screenshots; the constructor default was not read).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StatRows {
+    pub minmax: bool,
+    pub rms: bool,
+    pub a1: bool,
+}
+
+impl Default for StatRows {
+    fn default() -> Self {
+        StatRows { minmax: false, rms: true, a1: true }
+    }
+}
+
+impl StatRows {
+    /// Number of text rows they take (Max and Min are two).
+    pub fn count(self) -> usize {
+        2 * usize::from(self.minmax) + usize::from(self.rms) + usize::from(self.a1)
+    }
 }
 
 /// A user-defined computed channel (formula editor), evaluated per sample.
@@ -216,11 +241,22 @@ pub struct Computed {
     /// Shown on the vector / circle diagrams (flags 0x4 / 0x8).
     pub on_vector: bool,
     pub on_circle: bool,
+    pub stats: StatRows,
 }
 
 impl Computed {
     pub fn new(name: String, formula: String, samples: Vec<f64>, color: egui::Color32) -> Computed {
-        Computed { name, formula, samples, color, unit: String::new(), phasors: None, on_vector: false, on_circle: false }
+        Computed {
+            name,
+            formula,
+            samples,
+            color,
+            unit: String::new(),
+            phasors: None,
+            on_vector: false,
+            on_circle: false,
+            stats: StatRows::default(),
+        }
     }
 
     pub fn as_core(&self) -> fvb_core::quick::ComputedChannel {
@@ -360,6 +396,7 @@ impl Doc {
                 vzoom: 1.0,
                 group: None,
                 mode: ValueMode::Instant,
+                stats: StatRows::default(),
                 on_freq: true,
                 on_vector: true,
                 on_circle: i == 0,
@@ -441,7 +478,7 @@ impl Doc {
     /// flips. 32815 / 32816: a never-placed horizontal визир goes on the first
     /// analog lane (10 / 20 px from its top, resolved at the next layout),
     /// else it flips.
-    pub fn toggle_vizir(&mut self, k: usize, width: f32) {
+    pub fn toggle_vizir(&mut self, k: usize, width: f32, left: f32) {
         if k < 3 {
             let s = match k {
                 0 => &mut self.main_cursor,
@@ -449,7 +486,6 @@ impl Doc {
                 _ => &mut self.v3_cursor,
             };
             if !self.v_shown[k] && *s == 0 {
-                let left = crate::lanes::LEFT_W;
                 let f = self.xscale.unwrap_or(1.0);
                 let x = left + (width - left) * (k as f32 + 1.0) / 4.0;
                 let n = self.osc.sample_count().max(1);
@@ -471,7 +507,7 @@ impl Doc {
     /// 32802 / 32803 (`0x45c4f0`): `f` ×2 (below 1.0) / ÷2 (not below the
     /// fit scale), anchored on В1 if shown, else В2, else В3; `first` is then
     /// clamped to the record.
-    pub fn zoom_x(&mut self, zoom_in: bool, width: f32) {
+    pub fn zoom_x(&mut self, zoom_in: bool, width: f32, left: f32) {
         use crate::oscgeom as g;
         let n = self.osc.sample_count();
         let fit = g::fit_scale(width, n);
@@ -481,9 +517,23 @@ impl Doc {
             .zip(self.v_shown)
             .find_map(|(s, on)| on.then_some(s));
         let (f, first) = if zoom_in { g::zoom_in(f, self.first, anchor) } else { g::zoom_out(f, fit, self.first, anchor) };
-        let vis = g::visible_count(width, crate::lanes::LEFT_W, f);
+        let vis = g::visible_count(width, left, f);
         self.xscale = Some(f);
         self.first = first.min(g::max_first(n, vis));
+    }
+
+    /// 32817..32819 (`FUN_0042f4b0`): when not every analog channel has the
+    /// row it is set on all of them, otherwise cleared on all.
+    pub fn toggle_stats_row(&mut self, k: usize) {
+        let get = |s: &StatRows| [s.minmax, s.rms, s.a1][k.min(2)];
+        let all = self.chans.iter().map(|c| &c.stats).chain(self.computed.iter().map(|c| &c.stats)).all(get);
+        let set = |s: &mut StatRows| match k {
+            0 => s.minmax = !all,
+            1 => s.rms = !all,
+            _ => s.a1 = !all,
+        };
+        self.chans.iter_mut().for_each(|c| set(&mut c.stats));
+        self.computed.iter_mut().for_each(|c| set(&mut c.stats));
     }
 
     /// Show the whole record: the fit scale from the first sample.
@@ -553,6 +603,9 @@ pub enum Command {
     /// 32813 / 32814 / 139 / 32815 / 32816: show or hide В1 / В2 / В3 /
     /// ГВ1 / ГВ2 (index 0..5).
     ToggleVizir(usize),
+    /// 32817 / 32818 / 32819: the Max/Min, СКЗ or A1 stats rows (0, 1, 2) on
+    /// every analog channel, toggle-all.
+    StatsRow(usize),
     /// 32802 / 32803: horizontal scale ×2 / ÷2 anchored on a визир.
     ZoomX(bool),
     /// 32800 / 32801: analog lane height ×1.3 / ÷1.3.
@@ -673,6 +726,8 @@ pub struct App {
     pub rename_edit: Option<(usize, String)>,
     /// Width of the oscillogram view at the last layout (for «вся осциллограмма»).
     pub view_width: f32,
+    /// Stats-panel width at the last layout (fitted to the text).
+    pub view_left: f32,
     /// The open oscillogram context menu, latched at the right-click.
     pub lane_menu: Option<crate::lanes::LaneMenu>,
     /// Bumped on every right-click so each menu gets a fresh popup area.
@@ -761,6 +816,7 @@ impl App {
             xscale_pref: None,
             rename_edit: None,
             view_width: 1000.0,
+            view_left: crate::lanes::LEFT_W_DEFAULT,
             lane_menu: None,
             lane_menu_serial: 0,
             lane_menu_eat: false,
@@ -904,9 +960,9 @@ impl App {
                 }
             }
             Command::ToggleVizir(k) => {
-                let w = self.view_width;
+                let (w, left) = (self.view_width, self.view_left);
                 if let Some(d) = self.active_doc_mut() {
-                    d.toggle_vizir(k, w);
+                    d.toggle_vizir(k, w, left);
                 }
             }
             Command::CommentMode(k) => {
@@ -925,10 +981,15 @@ impl App {
                 }
             }
             Command::SetSkin(s) => self.skin = s,
-            Command::ZoomX(zin) => {
-                let w = self.view_width;
+            Command::StatsRow(k) => {
                 if let Some(d) = self.active_doc_mut() {
-                    d.zoom_x(zin, w);
+                    d.toggle_stats_row(k);
+                }
+            }
+            Command::ZoomX(zin) => {
+                let (w, left) = (self.view_width, self.view_left);
+                if let Some(d) = self.active_doc_mut() {
+                    d.zoom_x(zin, w, left);
                 }
                 self.xscale_pref = self.active_doc().and_then(|d| d.xscale);
                 self.persist_view();

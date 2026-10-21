@@ -87,8 +87,43 @@ pub fn fmt_g(v: f64) -> String {
 /// The per-channel readout text (`0x461440`): `" %-8g %s"` with an SI
 /// prefix on the unit.
 pub fn readout_text(v: f64, unit: &str) -> String {
-    let (scaled, prefix) = crate::omp::si(v);
-    format!(" {:<8} {prefix}{unit}", fmt_g(scaled))
+    let (scaled, unit) = si_scaled(v, unit);
+    if v < 0.0 {
+        format!("{:<8} {unit}", fmt_g(scaled))
+    } else {
+        format!(" {:<8} {unit}", fmt_g(scaled))
+    }
+}
+
+/// Units that get an SI prefix (`0x43d960`, exact case-sensitive compares):
+/// V, A, VA, W, ОM (Cyrillic О), Ohm, OHM, var, F, H, GN, Hz, m. Any other
+/// unit prints the raw value.
+pub fn si_unit(unit: &str) -> bool {
+    matches!(unit, "V" | "A" | "VA" | "W" | "ОM" | "Ohm" | "OHM" | "var" | "F" | "H" | "GN" | "Hz" | "m")
+}
+
+/// `v` scaled for display and its unit with the SI prefix, when the unit
+/// takes one.
+pub fn si_scaled(v: f64, unit: &str) -> (f64, String) {
+    if si_unit(unit) {
+        let (s, p) = crate::omp::si(v);
+        (s, format!("{p}{unit}"))
+    } else {
+        (v, unit.to_string())
+    }
+}
+
+/// The stats-panel value at В1 (`0x461440`): the sign, then `%-6g %s` of
+/// |v|; the unit (prefixed) cut to 5 characters, "none" printed as nothing;
+/// NaN is not drawn.
+pub fn stats_value_text(v: f64, unit: &str) -> Option<String> {
+    if v.is_nan() {
+        return None;
+    }
+    let unit = if unit == "none" { "" } else { unit };
+    let (s, u) = si_scaled(v.abs(), unit);
+    let u: String = u.chars().take(5).collect();
+    Some(format!("{}{:<6} {u}", if v < 0.0 { "-" } else { " " }, fmt_g(s)))
 }
 
 #[cfg(test)]
@@ -121,6 +156,13 @@ mod tests {
         assert_eq!(fmt_g(1234567.0), "1.23457e+06");
         assert_eq!(fmt_g(100.0), "100");
         assert_eq!(readout_text(57_100.0, "V"), " 57.1     кV");
+        assert_eq!(readout_text(-57_100.0, "V"), "-57.1    кV");
+        assert_eq!(readout_text(57_100.0, "kV"), " 57100    kV", "only listed units get a prefix");
+        assert_eq!(readout_text(0.012, "ОM"), " 12       мОM");
+        assert_eq!(stats_value_text(-23.4375, "A").unwrap(), "-23.4375 A");
+        assert_eq!(stats_value_text(1.5, "none").unwrap(), " 1.5    ");
+        assert_eq!(stats_value_text(2.0e5, "VA").unwrap(), " 200    кVA");
+        assert!(stats_value_text(f64::NAN, "A").is_none());
     }
 
     #[test]

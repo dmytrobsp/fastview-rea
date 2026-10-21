@@ -219,6 +219,18 @@ impl App {
         });
         // Вычисления
         ribbon_group(ui, p, "Вычисления", |ui| {
+            // 32817 / 32818 / 32819: stats rows on every analog channel,
+            // checked when all channels show the row.
+            ui.vertical(|ui| {
+                for (k, label) in ["Мин./Макс.", "СКЗ", "Первая гарм."].into_iter().enumerate() {
+                    let on = self.active_doc().is_some_and(|d| {
+                        !d.chans.is_empty() && d.chans.iter().all(|c| [c.stats.minmax, c.stats.rms, c.stats.a1][k])
+                    });
+                    if small_toggle(ui, p, label, on) {
+                        cmds.push(Command::StatsRow(k));
+                    }
+                }
+            });
             ui.vertical(|ui| {
                 // 32820..32822 act on the selected channels; a button is checked
                 // only when every selected channel is in that mode.
