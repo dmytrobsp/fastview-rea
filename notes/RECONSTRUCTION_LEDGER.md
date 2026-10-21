@@ -1443,6 +1443,29 @@ wandering 40 px above and below the bar). Residual: Windows' snap-back of
 the thumb when the pointer strays far from the bar (system behaviour, not
 the program's) is not modelled.
 
+### L9.33 — User-reported: a vertically zoomed curve left its lane  ·  ✅
+Read (subagent report): the analog painter `0x429490` (and the group member
+painter `0x429c30`) selects a GDI clip region **(0, top + 5)–(W, top + h)**
+(CreateRectRgn `0x4295a5`, SelectClipRgn `0x4295be`, removed at
+`0x429bb4`) **only while the channel has a window zoom** (`ch+0x114`),
+around the zero line, the polyline and the 4×4 marks; values are never
+clamped or skipped (y = top + h − 5 − round-half-up((v − lo)(h − 10)/
+(hi − lo))). Unzoomed ranges are the series' own min..max, so no clip is
+needed. The bottom edge is top + h (the 5 px inset is not cut). Level-line
+comments (`0x471020`, hit `0x470e4a`): t = (level − lo)/(hi − lo) with the
+channel's current range only when lo ≤ level ≤ hi, else neither drawn nor
+hit-testable; y truncates t·(h − 10). The rectangle zoom's end y is clamped
+to [laneTop, laneTop + h − 1] (`0x45ec4e`). The stats readout ignores the
+zoom; ГВ lines may leave the lane in the original too (`0x493110`, no clip).
+Ours: the per-member lane clip when `ChanView::window` is set; level lines
+via `oscgeom::level_y` (range check + truncation; a group lane uses the
+channel's own range); the rubber band end clamp. Tests:
+`a_rect_zoomed_curve_is_clipped_to_its_lane`, `level_lines_stay_in_their_
+lane`. Residual: round-half-up vs our round-half-away differs only for
+negative half values; the clip under print / EMF map modes NOT DETERMINED;
+the original's rect-zoom lane top sums preceding visible analog channels in
+channel order (differs for group members — quirk not modelled).
+
 Next in L9 (HANDOFF 2026-10-21, second session): the four user-reported GUI
 bugs are fixed (L9.23 tiny-window crash + bottom scroll bar, L9.24 modal
 dialogs, L9.25 «Файл» main panel); a headless visual audit followed

@@ -258,13 +258,20 @@ impl OscView<'_> {
                 }
             }
             _ => {
+                // A window-zoomed channel is drawn through a clip region of
+                // its lane, (0, top + 5)–(W, top + h) (`0x4295a5`,
+                // `0x429cb6`): values outside the window are cut, never
+                // clamped. Unzoomed channels need none.
+                let zoomed = |m: usize| doc.chans.get(m).is_some_and(|c| c.window.is_some());
+                let lane_clip = pp.with_clip_rect(pp.clip_rect().intersect(Rect::from_min_max(Pos2::new(left, top + 5.0), Pos2::new(plot_right, top + h))));
+                let painter_for = |m: Option<usize>| if m.is_some_and(zoomed) { &lane_clip } else { pp };
                 if lo <= 0.0 && 0.0 <= hi {
                     let zy = g::value_y(0.0, top, h, lo, hi);
-                    pp.hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
+                    painter_for(r.members.first().copied()).hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
                 }
                 for &m in &r.members {
                     let c = doc.chans[m].color;
-                    draw_series(pp, (first, last), &|k| mode_disp(doc, m, k, primary), &x_of, top, h, (lo, hi), c, f);
+                    draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, m, k, primary), &x_of, top, h, (lo, hi), c, f);
                 }
                 if let Lane::Computed(i) = lane {
                     let s = &doc.computed[*i].samples;
@@ -855,9 +862,12 @@ impl App {
                 .position(|r| r.key == k || matches!(k, Lane::Analog(i) if r.members.contains(&i)))
                 .map(|li| (tops[li], rows[li].h))
         };
+        // A level line (`0x471020` / `0x470e4a`) uses its channel's current
+        // range; outside it the line is neither drawn nor hit.
         let level_y = |ch: usize, v: f64| {
             let li = rows.iter().position(|r| r.members.contains(&ch))?;
-            Some(g::value_y(v, tops[li], rows[li].h, ranges[li].0, ranges[li].1))
+            let (lo, hi) = if rows[li].members.len() == 1 { ranges[li] } else { chan_range(doc, ch, primary) };
+            g::level_y(v, tops[li], rows[li].h, lo, hi)
         };
         let cgeo = crate::comments::Geo { x_of: &x_of, lane: &lane_of, value_y: &level_y, top: client.top(), v_bottom };
         let comment_at = |pos: Pos2| {
@@ -981,7 +991,8 @@ impl App {
         if let (RectZoom::Dragging { chan, x, y0, .. }, Some(pos)) = (self.rect_zoom, ui.input(|i| i.pointer.interact_pos())) {
             if let Some(li) = rows.iter().position(|r| r.members.contains(&chan)) {
                 let (top, h) = (tops[li], rows[li].h);
-                let y1 = pos.y.clamp(top, top + h);
+                // The end stays on the lane (`0x45ec4e`: top..top + h − 1).
+                let y1 = pos.y.clamp(top, top + h - 1.0);
                 if ui.input(|i| i.pointer.primary_down()) {
                     actions.push(Act::RectZoom(RectZoom::Dragging { chan, x, y0, y1 }));
                     // The rubber line with ±5 px end ticks.
@@ -1976,6 +1987,28 @@ mod menu_tests {
             last = first;
         }
         h.frame(vec![press(Pos2::new(grab.x + 300.0, y), false)]);
+    }
+
+    /// «Приблизить по вертикали» (138): the zoomed channel is drawn through
+    /// a clip of its own lane, (top + 5)–(top + h) (`0x4295a5`), so the part
+    /// of the curve outside the window never reaches the neighbours.
+    #[test]
+    fn a_rect_zoomed_curve_is_clipped_to_its_lane() {
+        let mut h = Harness::new();
+        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let (top, lh) = (8.0f32, rows[0].h);
+        h.app.dispatch(Command::RectZoom);
+        h.frame(vec![]);
+        // Drag over the middle fifth of lane 0 in the plot.
+        let x = 600.0;
+        drag(&mut h, Pos2::new(x, top + lh * 0.4), Pos2::new(x, top + lh * 0.6));
+        let Lane::Analog(ch) = rows[0].key else { panic!("an analog lane first") };
+        assert!(h.doc().chans[ch].window.is_some(), "the lane is window-zoomed");
+        h.frame(vec![]);
+        let lane = |c: &egui::epaint::ClippedShape| (c.clip_rect.top() - (top + 5.0)).abs() < 0.5 && (c.clip_rect.bottom() - (top + lh)).abs() < 0.5;
+        assert!(h.shapes.iter().any(|c| lane(c) && matches!(c.shape, Shape::Path(_) | Shape::LineSegment { .. } | Shape::Vec(_))), "the curve is drawn through the lane clip");
+        // An unzoomed lane keeps the plot clip.
+        assert!(h.doc().chans.iter().filter(|c| c.window.is_some()).count() == 1);
     }
 
     #[test]

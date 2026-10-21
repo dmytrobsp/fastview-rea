@@ -102,6 +102,18 @@ pub fn lane_zoom(y: f32, grow: bool) -> f32 {
 
 /// Value → y in a lane (`0x4944a0`): `top + h − 5 − round((v − min)(h − 10)/(max − min))`,
 /// the lane middle when the range is empty.
+/// A level-line comment's y (`0x471020`): `t = (v − lo)/(hi − lo)` only for
+/// lo ≤ v ≤ hi (else not drawn nor hit-testable), `y = top + h − 5 −
+/// trunc(t·(h − 10))`.
+pub fn level_y(v: f64, top: f32, h: f32, lo: f64, hi: f64) -> Option<f32> {
+    // (hi = lo divides 0/0 in the original: the line lands off-screen.)
+    if !(lo <= v && v <= hi) || hi <= lo {
+        return None;
+    }
+    let t = (v - lo) / (hi - lo);
+    Some(top + h - 5.0 - (t * f64::from(h - 10.0)).trunc() as f32)
+}
+
 pub fn value_y(v: f64, top: f32, h: f32, min: f64, max: f64) -> f32 {
     if max <= min || !v.is_finite() {
         return top + h / 2.0;
@@ -382,5 +394,19 @@ mod tests {
         assert_eq!(round_half_up(-2.5), -2);
         assert_eq!(round_half_up(2.5), 3);
         assert_eq!(group_thousands(-1234), "-1 234");
+    }
+}
+
+#[cfg(test)]
+mod level_tests {
+    use super::*;
+
+    /// `0x471020`: inside the range y = top + h − 5 − trunc(t·(h − 10));
+    /// outside it (e.g. off a zoomed window) the level line is not drawn.
+    #[test]
+    fn level_lines_stay_in_their_lane() {
+        assert_eq!(level_y(0.0, 100.0, 93.0, -1.0, 1.0), Some(100.0 + 93.0 - 5.0 - 41.0));
+        assert_eq!(level_y(2.0, 100.0, 93.0, -1.0, 1.0), None);
+        assert_eq!(level_y(0.0, 100.0, 93.0, 1.0, 1.0), None);
     }
 }
