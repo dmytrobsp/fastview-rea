@@ -363,6 +363,8 @@ enum Act {
     MoveComment(usize, crate::comments::Part, usize, Option<(ChanKey, Option<f64>)>),
     EndCommentDrag,
     RectZoom(RectZoom),
+    MergeDrag(Option<(f32, f64)>),
+    MergeOffset(f64),
     WindowZoom(usize, f64, f64),
     EditComment(usize),
     Rename(usize),
@@ -728,6 +730,12 @@ impl App {
         let (shift, ctrl, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.command || i.modifiers.ctrl, i.modifiers.alt));
         let v_hit = |x: f32| (0..3).find(|&k| viz[k].1 && (x_of(viz[k].0 as f64) - x).abs() < 3.0);
         let h_hit = |y: f32| (0..2).find(|&j| doc.hviz[j].shown && hrows[j].is_some_and(|(hy, _)| (hy - y).abs() < 3.0));
+        // Whether `y` is over a pending (pasted, not yet merged) lane.
+        let pending_at = |y: f32| {
+            rows.iter().zip(&tops).any(|(r, &t)| {
+                y >= t && y < t + r.h && matches!(r.key, Lane::Computed(i) if doc.computed[i].formula == crate::merge_ui::PENDING)
+            })
+        };
         let (pressed_l, pressed_r, press_pos) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.secondary_pressed(), i.pointer.press_origin()));
         let in_view = |p: Pos2| client.contains(p) && p.x < plot_right;
         if !menu_busy && (pressed_l || pressed_r) {
@@ -759,6 +767,9 @@ impl App {
                             actions.push(Act::Drag(VizDrag::V(v_hit(pos.x).unwrap())));
                         } else if pressed_l && h_hit(pos.y).is_some() {
                             actions.push(Act::Drag(VizDrag::H(h_hit(pos.y).unwrap())));
+                        } else if pressed_l && pending_at(pos.y) {
+                            // A pending pasted lane: drag it in time (mode 6).
+                            actions.push(Act::MergeDrag(Some((pos.x, doc.merge_offset))));
                         } else if let Some((ci, part)) = comment_at(pos) {
                             // LMB on a comment whose text is shown grabs it (the
                             // menu comes on the right button's release).
@@ -817,6 +828,14 @@ impl App {
                     let (a, b) = (((y0.min(y1) - top) / h) as f64, ((y0.max(y1) - top) / h) as f64);
                     actions.push(Act::WindowZoom(chan, a, b));
                 }
+            }
+        }
+        if let (Some((x0, off0)), Some(pos)) = (self.merge_drag, ui.input(|i| i.pointer.interact_pos())) {
+            if ui.input(|i| i.pointer.primary_down()) {
+                let px_per_s = g::PX_PER_SAMPLE * f * doc.osc.sample_rate.max(1.0);
+                actions.push(Act::MergeOffset(off0 + f64::from(pos.x - x0) / px_per_s));
+            } else {
+                actions.push(Act::MergeDrag(None));
             }
         }
         if let (Some((ci, part)), Some(pos)) = (self.comment_drag, ui.input(|i| i.pointer.interact_pos())) {
@@ -921,6 +940,8 @@ impl App {
         if let Some(pos) = hover.filter(|p| p.x > left && p.y < plot_bottom) {
             if self.rect_zoom != RectZoom::Off {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNorth);
+            } else if self.merge_drag.is_some() || pending_at(pos.y) {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
             }
             match self.vizir_drag {
                 Some(VizDrag::V(_)) => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal),
@@ -969,6 +990,8 @@ impl App {
                 }
                 Act::CommentDrag(i, part) => self.comment_drag = Some((i, part)),
                 Act::RectZoom(z) => self.rect_zoom = z,
+                Act::MergeDrag(s) => self.merge_drag = s,
+                Act::MergeOffset(o) => d.set_merge_offset(o),
                 Act::WindowZoom(chan, a, b) => {
                     let dd: &crate::app::Doc = d;
                     let cur: Vec<(f64, f64)> = (0..dd.chans.len()).map(|i| chan_range(dd, i, primary)).collect();

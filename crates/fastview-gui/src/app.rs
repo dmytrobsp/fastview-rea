@@ -212,6 +212,29 @@ impl StatRows {
     }
 }
 
+impl ChanView {
+    /// A new channel's view state (the `i`-th analog channel of its record).
+    pub fn new(ch: &fvb_core::comtrade::AnalogChannel, i: usize) -> ChanView {
+        ChanView {
+            visible: true,
+            color: default_channel_color(ch, i),
+            invert: false,
+            remove_dc: false,
+            adc_counts: false,
+            window: None,
+            group: None,
+            mode: ValueMode::Instant,
+            stats: StatRows::default(),
+            on_freq: true,
+            on_vector: true,
+            // The circle flag is cleared on attach unless the unit is
+            // Ohm / VA (`0x436b30`).
+            on_circle: i == 0 && crate::diagram::circle_pane_unit_ok(&ch.unit),
+            primary: false,
+        }
+    }
+}
+
 /// A user-defined computed channel (formula editor), evaluated per sample.
 #[derive(Debug, Clone)]
 pub struct Computed {
@@ -260,14 +283,7 @@ impl Computed {
 
 pub use crate::comments::{Comment, CommentEdit};
 
-/// A channel copied for merging oscillograms (Объединение: «Копировать/Вставить
-/// каналы для объединения осциллограмм», MENU 358).
-#[derive(Debug, Clone)]
-pub struct ClipChan {
-    pub name: String,
-    pub samples: Vec<f64>,
-    pub color: egui::Color32,
-}
+pub use crate::merge_ui::ClipChan;
 
 /// State of the rectangle vertical zoom (138).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -427,6 +443,10 @@ pub struct Doc {
     pub dc_mean: Vec<(f64, f64)>,
     /// The document's ОМП settings, last run and result flag (`doc+0x308`).
     pub omp: crate::omp_ui::OmpDoc,
+    /// Pasted channels waiting for «Объединить» (bit 14) and their offset in
+    /// seconds (`doc+0x6d8`).
+    pub pending: Vec<ClipChan>,
+    pub merge_offset: f64,
     /// Shown flag of each digital channel (bit 0; «Каналы» dialog column 1; 32845 / 32846 / 32847).
     pub digital_visible: Vec<bool>,
     /// The code page the record's names are currently decoded in (`doc+0x6e8`,
@@ -448,25 +468,7 @@ impl Doc {
             .collect();
         let dc_mean = osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
         let flagged = osc.clone();
-        let chans = (0..osc.analog.len())
-            .map(|i| ChanView {
-                visible: true,
-                color: default_channel_color(&osc.analog[i], i),
-                invert: false,
-                remove_dc: false,
-                adc_counts: false,
-                window: None,
-                group: None,
-                mode: ValueMode::Instant,
-                stats: StatRows::default(),
-                on_freq: true,
-                on_vector: true,
-                // The circle flag is cleared on attach unless the unit is
-                // Ohm / VA (`0x436b30`).
-                on_circle: i == 0 && crate::diagram::circle_pane_unit_ok(&osc.analog[i].unit),
-                primary: false,
-            })
-            .collect();
+        let chans = (0..osc.analog.len()).map(|i| ChanView::new(&osc.analog[i], i)).collect();
         let digital_visible = vec![true; osc.digital.len()];
         Doc {
             osc,
@@ -500,6 +502,8 @@ impl Doc {
             hdr: None,
             hdr_cp: Encoding::Cp1251,
             omp: Default::default(),
+            pending: Vec::new(),
+            merge_offset: 0.0,
         }
     }
 
@@ -839,6 +843,10 @@ pub struct App {
     pub view_width: f32,
     /// Stats-panel width at the last layout (fitted to the text).
     pub view_left: f32,
+    /// The merge bar (shown after a paste).
+    pub merge: Option<crate::merge_ui::MergeBar>,
+    /// A pending lane being dragged in time: start x and start offset.
+    pub merge_drag: Option<(f32, f64)>,
     /// «Последние документы»: up to 10 files, most recent first.
     pub mru: Vec<std::path::PathBuf>,
     /// Records being parsed.
@@ -942,6 +950,8 @@ impl App {
             finder: None,
             loading: Vec::new(),
             mru: Vec::new(),
+            merge: None,
+            merge_drag: None,
             dst_dir: None,
             lane_menu: None,
             lane_menu_serial: 0,
@@ -1026,7 +1036,6 @@ impl App {
             Command::Print => self.request_image_export(),
             Command::Copy => self.copy_channels_for_merge(),
             Command::Paste => {
-                self.snapshot_undo();
                 self.paste_channels_for_merge();
             }
             Command::Undo => self.undo(),
@@ -1654,63 +1663,7 @@ impl App {
         }
     }
 
-    /// Copy the active document's visible analog channels to the merge clipboard
-    /// (Объединение: «Копировать каналы для объединения осциллограмм»).
-    pub fn copy_channels_for_merge(&mut self) {
-        let Some(d) = self.active_doc() else {
-            self.status = "Нет осциллограммы для копирования каналов.".into();
-            return;
-        };
-        // 57634 copies the selected (file, not computed) channels.
-        let clip: Vec<ClipChan> = d
-            .selected_analog()
-            .into_iter()
-            .map(|i| ClipChan {
-                name: d.osc.analog[i].id.clone(),
-                samples: d.osc.analog[i].samples.clone(),
-                color: d.chans[i].color,
-            })
-            .collect();
-        if clip.is_empty() {
-            self.status = "Не выбраны каналы для копирования.".into();
-            return;
-        }
-        let n = clip.len();
-        self.channel_clip = clip;
-        self.status = format!("Скопировано каналов для объединения: {n}");
-    }
 
-    /// Paste the merge-clipboard channels into the active document as extra
-    /// (computed) lanes, aligned by sample index (Объединение: «Вставить каналы»).
-    pub fn paste_channels_for_merge(&mut self) {
-        if self.channel_clip.is_empty() {
-            self.status = "Буфер каналов пуст — сначала «Копировать».".into();
-            return;
-        }
-        let clip = self.channel_clip.clone();
-        let Some(d) = self.active_doc_mut() else {
-            self.status = "Нет осциллограммы для вставки каналов.".into();
-            return;
-        };
-        let n = d.osc.sample_count();
-        let mut added = 0;
-        for c in clip {
-            // Align by sample index (truncate/pad to the target length).
-            let mut samples = c.samples;
-            samples.resize(n, f64::NAN);
-            let mut name = format!("{}*", c.name); // mark merged-in channels
-            while d.computed.iter().any(|x| x.name == name) {
-                name.push('\'');
-            }
-            d.computed.push(Computed::new(name, "объединение".into(), samples, c.color));
-            added += 1;
-        }
-        // Вставить clears the ОМП result (`0x4a17a0`).
-        if let Some(ai) = self.active {
-            self.omp_clear(ai);
-        }
-        self.status = format!("Вставлено каналов (объединение): {added}");
-    }
 
     pub fn add_computed(&mut self) {
         let batch = vec![(self.formula_name.clone(), self.formula_text.clone(), String::new())];

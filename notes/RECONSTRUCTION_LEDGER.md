@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 216 pass)
+- `cargo test --workspace`   (currently 223 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 216 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 223 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.14** below.
+temporary). Reconciled so far: **L9.1**–**L9.15** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -970,7 +970,35 @@ original's in-place save rule not modelled); page setup, print preview and
 disabled (not drawn); Помощь disabled (no CHM viewer); icon-only buttons
 carry text labels; keytips not modelled.
 
-Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — remaining: merge workflow 15 (start times now kept), print 36,
+### L9.15 — Merging oscillograms («Объединение»)  ·  🟡
+
+Read: `0x47bc00` by hand (sync by fault component: per channel the jump
+`|x[k] − 2x[k−N] + x[k−2N]| / A(k−1)` with A the fault component
+`FUN_00427670` on flagged values, window `[3N+1, last]` narrowed to `c ± N`
+around В1 when there is room, peak = first maximum, success = peak ≥ 4×
+window mean in both channels (3456, else 3507), offset = t₁(peak₁) −
+t₂(peak₂) either way; 3260 / 3162 abort), with spec §7.8 for method 0
+(`0x47ce10`: start-time difference, 219 when the records do not overlap),
+method 2 (`0x47c440`: coarse `t₁(c) − t₂(c)` corrected by the mean
+fundamental phase difference over ±1 period / (f·360), 3305 when the spread
+exceeds 1°), «Объединить» (`0x47d990`: rate = the highest rounded to a
+multiple of f_net, zero padding, `round(R·dur) − 4` samples, quadratic fit /
+previous-sample hold), the bar CMergeBar (method, Канал 1 / Канал 2 enabled
+for methods 1/2, the buttons, status text; hiding with pending channels =
+Undo), paste (undo snapshot, ОМП cleared, deselect, " (2)" names, pending),
+manual drag of a pending lane (mode 6, hand cursor, offset clamped to one
+period of overlap). Ours: `fvb_core::merge` (sync methods, `merged_rate`,
+`quad_at`, `hold_at`, `merge`; 4 tests), `comtrade::stamp_seconds`,
+`merge_ui.rs` (clipboard with times/rate/start, pending lanes refreshed at the
+offset, bar, «Объединить» in place keeping view state and remapping comments
+/ визиры by time; 2 tests), lanes drag. Replaces our sample-index paste.
+Residual: in-process clipboard only (no system-clipboard format
+«Mechanotronica FastView Clipboard Data», no cross-instance merge); method 2's
+details beyond the spec summary not re-read; «Объединить» is not undoable
+(our snapshot does not hold the record); values ÷ `ch+0xf0` on merge not
+modelled; pasted discrete channels show as 0/1 lanes until merged.
+
+Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — remaining: (start times now kept), print 36,
 AddFormula 46, modified flag 47, OLE drag 48, plus residuals above. (Former
 note:) tracks D (diagrams 19–22, 27,
 40), O (ОМП 6, 12, 38) and F (dialogs 16, 18, 28, 29, 34, 39) were

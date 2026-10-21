@@ -787,6 +787,23 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
     (yoe + era * 400 + i64::from(m <= 2), m, d)
 }
 
+/// The record start as seconds since 1970-01-01 (the stamp as written, no
+/// time-zone shift), for synchronising two records by their start times.
+pub fn stamp_seconds(date: &str, time: &str, rev_year: i32) -> Option<f64> {
+    let (y, m, d) = stamp_date(date, rev_year)?;
+    let mut hms = time.split(':');
+    let (h, mi) = (hms.next()?.trim().parse::<i64>().ok()?, hms.next()?.trim().parse::<i64>().ok()?);
+    let sec: f64 = hms.next()?.trim().parse().ok()?;
+    // Days from the civil date (proleptic Gregorian).
+    let (yy, mm) = if m <= 2 { (y - 1, m + 9) } else { (y, m - 3) };
+    let era = yy.div_euclid(400);
+    let yoe = yy - era * 400;
+    let doy = (153 * mm + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(days as f64 * 86_400.0 + (h * 3600 + mi * 60) as f64 + sec)
+}
+
 /// The raw form of a time stamp (`0x4495e0` / `0x449690`): the date
 /// re-ordered as `dd/mm/yyyy` (empty when it does not parse) + ", " + the
 /// time field as written.
@@ -1117,4 +1134,14 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8]) -> Result<(), C
     }
     let _ = na;
     Ok(())
+}
+
+#[cfg(test)]
+mod stamp_seconds_tests {
+    #[test]
+    fn epoch_seconds() {
+        assert_eq!(super::stamp_seconds("01/01/1970", "00:00:00.0", 1999), Some(0.0));
+        assert_eq!(super::stamp_seconds("02/01/1970", "00:00:01.5", 2013), Some(86_401.5), "2013: day first");
+        assert_eq!(super::stamp_seconds("03/01/2000", "00:00:00", 1999), Some(951_868_800.0), "1999: month first");
+    }
 }

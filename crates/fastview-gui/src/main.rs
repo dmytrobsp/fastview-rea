@@ -15,6 +15,7 @@ mod dialogs;
 mod finder;
 mod icons;
 mod lanes;
+mod merge_ui;
 mod omp_ui;
 mod oscgeom;
 mod persist;
@@ -252,6 +253,14 @@ impl eframe::App for App {
                 .exact_height(75.0)
                 .frame(egui::Frame::none().fill(pal.group_bg))
                 .show(ctx, |ui| self.param_bar_ui(ui));
+        }
+
+        // The merge bar (CMergeBar, 70 px), shown after a paste.
+        if self.merge.is_some() {
+            egui::TopBottomPanel::top("mergebar")
+                .exact_height(70.0)
+                .frame(egui::Frame::none().fill(pal.group_bg).inner_margin(egui::Margin::symmetric(15.0, 10.0)))
+                .show(ctx, |ui| self.merge_bar_ui(ui));
         }
 
         egui::TopBottomPanel::bottom("status")
