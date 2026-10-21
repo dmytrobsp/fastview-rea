@@ -309,8 +309,10 @@ pub struct Doc {
     /// Text sections (HDR/INF/SET) of a record opened from a `.cff`, written
     /// back when it is saved as `.cff`.
     pub cff: fvb_core::comtrade::CffSections,
-    /// (Iдиф, Iторм) computed-channel pairs for the differential diagram.
-    pub dif_pairs: Vec<(String, String)>,
+    /// (Iдиф, Iторм) channel pairs of the differential diagram (`doc+0x878`).
+    pub dif_pairs: Vec<crate::diagram::ChanPair>,
+    /// (R, X) channel pairs of the circle diagram (DIALOG 554, `doc+0x884`).
+    pub rx_pairs: Vec<crate::diagram::ChanPair>,
     pub comments: Vec<Comment>,
     /// Selected channels (the original's per-channel `+0x100` flag): the
     /// target of the channel context menu and the per-channel commands.
@@ -362,7 +364,9 @@ impl Doc {
                 mode: ValueMode::Instant,
                 on_freq: true,
                 on_vector: true,
-                on_circle: i == 0,
+                // The circle flag is cleared on attach unless the unit is
+                // Ohm / VA (`0x436b30`).
+                on_circle: i == 0 && crate::diagram::circle_pane_unit_ok(&osc.analog[i].unit),
             })
             .collect();
         Doc {
@@ -379,6 +383,7 @@ impl Doc {
             computed: Vec::new(),
             cff: Default::default(),
             dif_pairs: Vec::new(),
+            rx_pairs: Vec::new(),
             comments: Vec::new(),
             selection: BTreeSet::new(),
             sel_anchor: None,
@@ -590,7 +595,8 @@ pub struct App {
     /// World rectangle the characteristic plot showed last frame; open
     /// polypoints are closed against it (`fvb_core::geom::evaluate_in_view`).
     pub char_view: Option<fvb_core::geom::View>,
-    pub fill_regions: bool,
+    /// Diagram windows' own state (zoom/pan, menus, dialogs).
+    pub diag: crate::diagram_ui::DiagState,
 
     // documents
     pub docs: Vec<Doc>,
@@ -711,7 +717,7 @@ impl App {
             selected_char: None,
             show_reset: true,
             char_view: None,
-            fill_regions: true,
+            diag: Default::default(),
             docs: Vec::new(),
             active: None,
             tab: RibbonTab::Home,
@@ -731,7 +737,8 @@ impl App {
             circle_between_cursors: false,
             freq_periods: 1,
             freq_harmonics: 10,
-            freq_percent: false,
+            // `Frequency Chart/ShowPersents` 0 = percent (`0x46f470`).
+            freq_percent: true,
             freq_use_rms: false,
             analysis_tab: AnalysisTab::Symmetric,
             quick: Default::default(),
@@ -993,20 +1000,9 @@ impl App {
     }
 
     // ---------- circle-diagram state ----------
+    /// Operate colour of characteristic `i` (`0x43a4a0` palette, mod 9).
     pub fn palette(i: usize) -> egui::Color32 {
-        const C: &[(u8, u8, u8)] = &[
-            (31, 119, 180),
-            (214, 39, 40),
-            (44, 160, 44),
-            (148, 103, 189),
-            (255, 127, 14),
-            (23, 190, 207),
-            (227, 119, 194),
-            (188, 189, 34),
-            (140, 86, 75),
-            (127, 127, 127),
-        ];
-        let (r, g, b) = C[i % C.len()];
+        let (r, g, b) = crate::diagram::CHAR_PALETTE[i % 9][0];
         egui::Color32::from_rgb(r, g, b)
     }
 
@@ -1535,7 +1531,7 @@ impl App {
                 }
             }
             for (dif, tor) in &g.dif_pairs {
-                d.dif_pairs.push((real(dif), real(tor)));
+                d.dif_pairs.push(crate::diagram::ChanPair::new(real(dif), real(tor)));
             }
         }
         if let Some(r) = &g.angle_ref {

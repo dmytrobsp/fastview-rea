@@ -162,14 +162,33 @@ impl Doc {
             ChanFlag::OnVector => self.computed[j].on_vector,
             _ => self.computed[j].on_circle,
         };
-        state_of(self.selected_analog().into_iter().map(|i| self.flag(i, f)).chain(comp.into_iter().map(cflag)))
+        let mut st = state_of(self.selected_analog().into_iter().map(|i| self.flag(i, f)).chain(comp.iter().map(|&j| cflag(j))));
+        // CMDUI 32849..32851 (`0x430650`): enabled while the record has an
+        // analog channel and no selected channel is ineligible by unit
+        // (vector A / V / «ном» / none, circle Ohm / W / VA / var).
+        let unit_ok = |u: &str| match f {
+            ChanFlag::OnVector => crate::diagram::vector_unit_ok(u),
+            ChanFlag::OnCircle => crate::diagram::circle_flag_unit_ok(u),
+            _ => true,
+        };
+        if matches!(f, ChanFlag::OnFreq | ChanFlag::OnVector | ChanFlag::OnCircle) {
+            // Our computed channels carry a unit only when the generator
+            // sets one (S0 = VA); an empty unit is not held against them.
+            let bad = self.selected_analog().into_iter().any(|i| !unit_ok(self.osc.analog[i].unit.trim()))
+                || comp.iter().any(|&j| {
+                    let u = self.computed[j].unit.trim();
+                    !u.is_empty() && !unit_ok(u)
+                });
+            st.enabled = !self.chans.is_empty() && !bad;
+        }
+        st
     }
 
     /// Toggle-all over the selection: when every target has the flag it is
     /// cleared on all of them, otherwise it is set on all of them.
     pub fn toggle_flag_selected(&mut self, f: ChanFlag) {
         let st = self.flag_state(f);
-        if !st.enabled {
+        if !st.enabled || self.selection.is_empty() {
             return;
         }
         let v = !st.checked;
@@ -338,6 +357,26 @@ mod tests {
         assert_eq!(sel, BTreeSet::from([Analog(0), Analog(1)]), "inside the selection: kept");
         click(&mut sel, &mut anchor, Analog(2), SelClick::Right);
         assert_eq!(sel, BTreeSet::from([Analog(2)]), "outside: only the clicked row");
+    }
+
+    /// CMDUI 32850 / 32851 (`0x430650`): a selected channel of the wrong
+    /// unit disables the diagram flag.
+    #[test]
+    fn diagram_flags_follow_the_unit_rules() {
+        let mut app = crate::app::App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        d.selection = BTreeSet::from([Analog(0)]);
+        for (unit, vector, circle) in [("A", true, false), ("Hz", false, false), ("Ohm", false, true), ("var", false, true), ("", true, false)] {
+            d.osc.analog[0].unit = unit.into();
+            assert_eq!(d.flag_state(ChanFlag::OnVector).enabled, vector, "vector, unit {unit:?}");
+            assert_eq!(d.flag_state(ChanFlag::OnCircle).enabled, circle, "circle, unit {unit:?}");
+            assert!(d.flag_state(ChanFlag::OnFreq).enabled);
+        }
+        d.osc.analog[0].unit = "Hz".into();
+        let before = d.chans[0].on_vector;
+        d.toggle_flag_selected(ChanFlag::OnVector);
+        assert_eq!(d.chans[0].on_vector, before, "a disabled item does nothing");
     }
 
     #[test]

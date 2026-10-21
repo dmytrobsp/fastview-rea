@@ -7,11 +7,14 @@
 
 mod app;
 mod chansel;
+mod diagram;
+mod diagram_ui;
 mod dialogs;
 mod icons;
 mod lanes;
 mod oscgeom;
 mod persist;
+mod popmenu;
 mod quick_ui;
 mod ribbon;
 mod theme;
