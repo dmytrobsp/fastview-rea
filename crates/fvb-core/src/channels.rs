@@ -21,10 +21,10 @@ pub struct OscChannels {
 }
 
 impl OscChannels {
-    /// The analog channels of `osc` followed by `extra` (name, samples)
-    /// channels, e.g. computed channels added earlier. `show_primary` is the
-    /// display-in-primary-units switch (`+0x89`).
-    pub fn new(osc: &Oscillogram, extra: &[(String, Vec<f64>)], show_primary: bool) -> OscChannels {
+    /// The analog channels of `osc` followed by the computed channels added
+    /// earlier (their stored complex series, if any, is their phasor).
+    /// `show_primary` is the display-in-primary-units switch (`+0x89`).
+    pub fn new(osc: &Oscillogram, extra: &[crate::quick::ComputedChannel], show_primary: bool) -> OscChannels {
         let n = osc.samples_per_cycle().max(2);
         // Channel names are the COMTRADE ids with trailing spaces trimmed (+0x68).
         let mut names: Vec<String> = osc.analog.iter().map(|c| c.id.trim_end_matches(' ').to_string()).collect();
@@ -52,12 +52,13 @@ impl OscChannels {
             .zip(&ratios)
             .map(|(c, (k, _, _))| c.samples.iter().map(|v| v * k).collect())
             .collect();
-        for (name, s) in extra {
-            names.push(name.clone());
-            samples.push(s.clone());
+        let mut phasors: Vec<Phasors> = samples.iter().map(|s| signal::sliding_phasors(s, n)).collect();
+        for c in extra {
+            names.push(c.name.clone());
+            phasors.push(c.phasors.clone().unwrap_or_else(|| signal::sliding_phasors(&c.samples, n)));
+            samples.push(c.samples.clone());
             ratios.push((1.0, 1.0, 1.0));
         }
-        let phasors = samples.iter().map(|s| signal::sliding_phasors(s, n)).collect();
         OscChannels {
             names,
             ratios,

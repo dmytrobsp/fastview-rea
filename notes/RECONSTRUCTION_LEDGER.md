@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 108 pass)
+- `cargo test --workspace`   (currently 115 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 108 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 115 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -53,14 +53,13 @@ memory (Flatpak overlay + CLI wrapper `~/projects/slack-rea/tools/rea-ghidra.sh`
 6. **Update this ledger**: the entry's evidence (address), what you verified, and
    the verdict. Append new entries as `L<n>`.
 
-**NEXT TASK (start here).** Remaining gaps, in rough priority: (1) the
-"Быстрый анализ" view code (not yet located — the per-tab quantities should be
-mapped to the original's view routines, not only to the formula functions);
-(2) θ tap refinement in ОМП (`0x49adc0`/`0x49bd40`); (3) `grspos*`; (4) the
-`.osc` writer and OSC time stamps; (5) the frequency-channel DFT variant
-(`FUN_004267e0`); (6) dialog-behaviour mapping for channel-role dialogs
-(DIALOG 401–543). Done: L2 ✅, L3 🟡 (readers ✅), L4 ✅, L5 ✅, L6 ✅
-(grspos* ❌), L7 ✅ (θ tap refinement ❌).
+**NEXT TASK (start here).** L8 views per `notes/VIEWS_SPEC.md`: vector diagram
+(computed channels with the vector flag, angle reference channel / absolute,
+unit-"A" grouping with nice scaling, formats), circle locus (flag-0x8 channels'
+phasor series, between-cursors option, readout modes), differential-diagram
+pairs, frequency diagram (periods / harmonics / percent modes), per-channel
+readout semantics. Then: `.osc` writer, frequency-channel DFT, dialog
+mapping. Done: L2 ✅, L3 🟡, L4 ✅, L5 ✅, L6 ✅, L7 ✅, L8 🟡.
 
 **Scope reality.** "Every byte" literally = 9129 funcs of mostly MFC boilerplate;
 the *provable* target is the behavioural engines (this ledger's table). `.sto`
@@ -142,6 +141,7 @@ decompilation (pending, listed below).
 | COMTRADE reader/writer | `0x450a30`, `.cff` `0x44fe30`/`0x44d0f0`, `.osc` `0x4524b0` | `comtrade.rs` | 🟡 L3 (`.cfg` ✅ `.cff` ✅ `.osc` read ✅, `.osc` write ❌) |
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
+| Analysis views | CQAnPropSheet `0x48b970`, vector `0x490360`, freq `0x46f5a0` | `quick.rs`, `quick_ui.rs`, `views.rs` | 🟡 L8 (quick ✅, views ❌) |
 
 Next: `.fvb` parser re-verify (attribute defaults, missing attributes, parameter
 /var evaluation order), DFT/signal (incl. the Calculator channel mode + `rms:
@@ -505,6 +505,38 @@ file and .txt result save, the tree-editor layout of DIALOG 336.
 
 Rust action: rewrite `omp.rs` as this engine (sections, per-sample distances,
 detection, window, median/σ) with tests; GUI dialog as a section tree.
+
+---
+
+## L8 — Analysis views  ·  🟡 quick analysis ✅, vector/frequency/readout/locus ❌ (next)
+
+Spec: **`notes/VIEWS_SPEC.md`** (CQAnPropSheet `0x48b970`, vector `0x490360`,
+frequency `0x46f5a0`, readout `0x461440`, circle locus `0x43a880`).
+
+Key correction: the original's **"Быстрый анализ" is a channel generator**, not
+a panel of values. On OK the active tab emits computed channels (formula
+strings in the formula language) plus vector/circle diagram flag toggles, an
+angle reference and differential pairs; the values are read on the
+oscillogram and diagrams like any channel. Our earlier tabs showed value
+tables computed by our own analysis code — replaced.
+
+Implemented: `fvb_core::quick` — `symmetric`, `zero`, `phase_phase`, `phase_z`
+(K0 / Km compensation via `Zf:`/`Zk:`), `differential` (reduction CoeffPriv/
+TT/PowerPriv/AmpPriv, group compensation GrsPosl/GrsTriangle, GrsSumCur,
+TormSumCur/TormSubCur/TormMaxCur), `unique_name` ("_2", "_3"…),
+`evaluate_batch` (ordered channel-mode evaluation, all-or-nothing, the
+scalar/complex rule; computed channels keep their complex series as the
+phasor — the original's stored-phasor path). `zl:` added to the channel
+functions (scalar/flag rule inferred from the shared divide helper as for
+`zf:`). GUI: `quick_ui.rs` forms per tab (channels default to the role map),
+OK → `App::apply_quick` (append, XOR flags, angle reference, show values,
+circle readout, differential pairs). Pinned by `tests/quick.rs` (6) and a
+`zl:` test.
+
+Not verified / residual: exact channel naming of the differential tab and the
+`CoeffTT` argument order; units of generated channels (only S0 = VA is set);
+the vector / circle / differential views do not yet draw computed channels
+(flags are kept) — next commit.
 
 ---
 

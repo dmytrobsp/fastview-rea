@@ -16,6 +16,7 @@ pub mod geom;
 pub mod model;
 pub mod omp;
 pub mod parse;
+pub mod quick;
 pub mod signal;
 
 pub use comtrade::{AnalogChannel, DigitalChannel, Oscillogram};

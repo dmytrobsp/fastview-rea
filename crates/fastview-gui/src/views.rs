@@ -395,61 +395,9 @@ impl App {
                 self.formula_editor_ui(ui);
                 return;
             }
-            let Some(d) = self.active_doc() else {
-                ui.centered_and_justified(|ui| ui.label("Загрузите осциллограмму для анализа."));
-                return;
-            };
-            let k = d.main_cursor;
-            let t = d.osc.time.get(k).copied().unwrap_or(0.0);
-            ui.label(egui::RichText::new(format!("Основной визир: t = {:.4} с (отсчёт {k})", t)).weak());
-            ui.add_space(4.0);
-            match self.analysis_tab {
-                AnalysisTab::Symmetric => {
-                    let (u0, u1, u2) = d.analysis.u_symmetric(k);
-                    let (i0, i1, i2) = d.analysis.i_symmetric(k);
-                    phasor_table(ui, "symgrid", "Величина", &[
-                        ("3U0", u0), ("U1", u1), ("U2", u2), ("3I0", i0), ("I1", i1), ("I2", i2),
-                    ]);
-                }
-                AnalysisTab::Zero => {
-                    let (u0x3, _, _) = d.analysis.u_symmetric(k);
-                    let (i0x3, _, _) = d.analysis.i_symmetric(k);
-                    ui.label("Составляющие нулевой последовательности (3U0, 3I0 — суммарные остаточные величины):");
-                    phasor_table(ui, "zerogrid", "Величина", &[
-                        ("3U0", u0x3), ("U0", u0x3 / 3.0), ("3I0", i0x3), ("I0", i0x3 / 3.0),
-                    ]);
-                }
-                AnalysisTab::PhasePhase => {
-                    let z = d.analysis.phase_phase_impedances(k);
-                    impedance_table(ui, "ppgrid", "Контур", &[("Zab", z[0]), ("Zbc", z[1]), ("Zca", z[2])]);
-                }
-                AnalysisTab::Phase => {
-                    let z = [
-                        ("Zа", d.analysis.phase_impedance(0, k)),
-                        ("Zb", d.analysis.phase_impedance(1, k)),
-                        ("Zc", d.analysis.phase_impedance(2, k)),
-                    ];
-                    impedance_table(ui, "phgrid", "Контур", &z);
-                }
-                AnalysisTab::Differential => {
-                    let (ia, ib, ic) = d.analysis.i_phase(k);
-                    let (id, ir) = d.analysis.differential_currents(k);
-                    phasor_table(ui, "dif_i", "Фазный ток", &[("Ia", ia), ("Ib", ib), ("Ic", ic)]);
-                    ui.separator();
-                    egui::Grid::new("difgrid").striped(true).num_columns(2).show(ui, |ui| {
-                        ui.label("Дифференциальный ток Iд = |Ia+Ib+Ic|");
-                        ui.label(format!("{id:.3}"));
-                        ui.end_row();
-                        ui.label("Тормозной ток Iт = (|Ia|+|Ib|+|Ic|)/2");
-                        ui.label(format!("{ir:.3}"));
-                        ui.end_row();
-                        ui.label("Отношение Iд/Iт");
-                        ui.label(if ir > 1e-9 { format!("{:.3}", id / ir) } else { "—".into() });
-                        ui.end_row();
-                    });
-                }
-                AnalysisTab::Formula => {}
-            }
+            // Like the original's property sheet, a tab generates computed
+            // channels; their values are read on the oscillogram and diagrams.
+            self.quick_tab_ui(ui);
         });
     }
 
@@ -612,44 +560,6 @@ impl App {
             }
         });
     }
-}
-
-fn phasor_table(ui: &mut egui::Ui, id: &str, first_col: &str, rows: &[(&str, Complex64)]) {
-    egui::Grid::new(id).striped(true).num_columns(3).show(ui, |ui| {
-        ui.label(first_col);
-        ui.label("Модуль");
-        ui.label("Угол");
-        ui.end_row();
-        for (name, z) in rows {
-            ui.label(*name);
-            ui.label(format!("{:.3}", z.norm()));
-            ui.label(format!("{:+.1}°", z.arg().to_degrees()));
-            ui.end_row();
-        }
-    });
-}
-
-fn impedance_table(ui: &mut egui::Ui, id: &str, first_col: &str, rows: &[(&str, Option<Complex64>)]) {
-    egui::Grid::new(id).striped(true).num_columns(4).show(ui, |ui| {
-        ui.label(first_col);
-        ui.label("R, Ом");
-        ui.label("X, Ом");
-        ui.label("|Z|, Ом");
-        ui.end_row();
-        for (name, z) in rows {
-            ui.label(*name);
-            if let Some(z) = z {
-                ui.label(format!("{:.3}", z.re));
-                ui.label(format!("{:.3}", z.im));
-                ui.label(format!("{:.3}", z.norm()));
-            } else {
-                ui.label("—");
-                ui.label("—");
-                ui.label("—");
-            }
-            ui.end_row();
-        }
-    });
 }
 
 /// Magnitudes of harmonics 0..=hmax from the one-cycle window ending at `center`.

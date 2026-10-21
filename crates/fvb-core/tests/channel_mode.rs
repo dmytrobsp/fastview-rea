@@ -186,3 +186,15 @@ fn grspos_variants() {
     // so only the scalar slot shows it: n0 · (Σ samples)/3.
     assert!((at("grsposlia:(ia, ib, ic, 0, 2)", 3).unwrap() - 2.0 * (3.0 + 103.0 + 203.0) / 3.0).abs() < 1e-9);
 }
+
+/// Phase-to-phase loop impedance U/(I1 − I2) with its minimum-current gate.
+#[test]
+fn zl_loop_impedance() {
+    let (a, b) = (Mock.phasor(0, 0), Mock.phasor(1, 0));
+    assert!(close(z("zl:(ia, ia, ib, 0.1)").1.unwrap(), a / (a - b)));
+    // |Ia − Ib| = √3 < 5 → division by zero.
+    assert!(z("zl:(ia, ia, ib, 5)").1.unwrap().re.is_nan());
+    // Complex-only result; Mod: then gives |Z| with both slots valid.
+    assert_eq!(z("zl:(ia, ia, ib, 0.1)").0, None);
+    assert!((at("mod:(zl:(ia, ia, ib, 0.1))", 0).unwrap() - (a / (a - b)).norm()).abs() < 1e-12);
+}

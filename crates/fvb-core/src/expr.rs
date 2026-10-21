@@ -983,6 +983,17 @@ fn channel_func(name: &'static str, a: &[Value], env: Env) -> Result<Value, Expr
             let (re, im) = complex_div(e0.re, e0.im, den.re, den.im);
             Value { v: e0.v / e1.v, re, im, f: e0.f & e1.f & 2, ch: None }
         }
+        // 0x41d072: U/(I1 − I2) with a minimum-current gate on
+        // |I1/k1 − I2/k2| (below it: division by zero). The divide helper
+        // (0x418b00) gives Z = a/b, s = a.s/b.s, flags a & b & 2.
+        "zl:" => {
+            let (u, i1, i2) = (a[0], a[1], a[2]);
+            let (dv, dz) = (i1.v - i2.v, i1.z() - i2.z());
+            let gated = a[3].v > (i1.z() / kr(i1) - i2.z() / kr(i2)).norm();
+            let (dv, dz) = if gated { (0.0, Complex64::default()) } else { (dv, dz) };
+            let (re, im) = complex_div(u.re, u.im, dz.re, dz.im);
+            Value { v: u.v / dv, re, im, f: u.f & i1.f & i2.f & 2, ch: None }
+        }
         // 0x41f123 / 0x41f151.
         "chan:" => {
             check(x, name)?;

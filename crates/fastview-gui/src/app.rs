@@ -8,6 +8,7 @@ use fvb_core::comtrade::{Encoding, Oscillogram};
 use fvb_core::geom::CharGeometry;
 use fvb_core::model::Dimension;
 use fvb_core::omp::{NeutralMode, OmpResult, Section, Trace};
+use num_complex::Complex64;
 use fvb_core::Library;
 use std::collections::HashMap;
 
@@ -169,6 +170,29 @@ pub struct Computed {
     pub formula: String,
     pub samples: Vec<f64>,
     pub color: egui::Color32,
+    pub unit: String,
+    /// The stored complex series (its phasor), when the formula's complex
+    /// value was valid at every sample.
+    pub phasors: Option<Vec<Complex64>>,
+    /// Shown on the vector / circle diagrams (flags 0x4 / 0x8).
+    pub on_vector: bool,
+    pub on_circle: bool,
+}
+
+impl Computed {
+    pub fn new(name: String, formula: String, samples: Vec<f64>, color: egui::Color32) -> Computed {
+        Computed { name, formula, samples, color, unit: String::new(), phasors: None, on_vector: false, on_circle: false }
+    }
+
+    pub fn as_core(&self) -> fvb_core::quick::ComputedChannel {
+        fvb_core::quick::ComputedChannel {
+            name: self.name.clone(),
+            unit: self.unit.clone(),
+            formula: self.formula.clone(),
+            samples: self.samples.clone(),
+            phasors: self.phasors.clone(),
+        }
+    }
 }
 
 /// An on-waveform annotation anchored to a sample index.
@@ -216,6 +240,8 @@ pub struct Doc {
     /// Text sections (HDR/INF/SET) of a record opened from a `.cff`, written
     /// back when it is saved as `.cff`.
     pub cff: fvb_core::comtrade::CffSections,
+    /// (Iдиф, Iторм) computed-channel pairs for the differential diagram.
+    pub dif_pairs: Vec<(String, String)>,
     pub comments: Vec<Comment>,
     /// Time-axis view window in seconds `[t0, t1]` (shared across lanes).
     pub view_t0: f64,
@@ -269,6 +295,7 @@ impl Doc {
             chans,
             computed: Vec::new(),
             cff: Default::default(),
+            dif_pairs: Vec::new(),
             comments: Vec::new(),
             view_t0: 0.0,
             view_t1: if t_last > 0.0 { t_last } else { 1.0 },
@@ -425,9 +452,15 @@ pub struct App {
     pub vec_direction_only: bool,
     pub vec_show_values: bool,
     pub vec_abs_angle: bool,
+    /// Vector-diagram angle reference channel (None = absolute angles).
+    pub vec_angle_ref: Option<String>,
+    /// Circle-diagram readout at cursor 1: 0 none, 1 Re ± jIm, 2 |·|∠.
+    pub circle_readout: u8,
 
     // analysis / omp
     pub analysis_tab: AnalysisTab,
+    /// Quick-analysis forms (one per tab).
+    pub quick: crate::quick_ui::QuickForms,
     pub omp_method: OmpMethod,
     /// Line sections (участки) of the ОМП parameter tree.
     pub omp_sections: Vec<Section>,
@@ -508,7 +541,10 @@ impl App {
             vec_direction_only: false,
             vec_show_values: true,
             vec_abs_angle: true,
+            vec_angle_ref: None,
+            circle_readout: 0,
             analysis_tab: AnalysisTab::Symmetric,
+            quick: Default::default(),
             omp_method: OmpMethod::Grounded,
             omp_sections: Vec::new(),
             omp_inom: [0.0; 2],
@@ -1164,72 +1200,87 @@ impl App {
             while d.computed.iter().any(|x| x.name == name) {
                 name.push('\'');
             }
-            d.computed.push(Computed { name, formula: "объединение".into(), samples, color: c.color });
+            d.computed.push(Computed::new(name, "объединение".into(), samples, c.color));
             added += 1;
         }
         self.status = format!("Вставлено каналов (объединение): {added}");
     }
 
     pub fn add_computed(&mut self) {
-        let idx = self.docs.len();
+        let batch = vec![(self.formula_name.clone(), self.formula_text.clone(), String::new())];
+        if let Some(added) = self.append_computed(&batch) {
+            self.status = format!("Добавлен расчётный канал «{}»", added[0]);
+        }
+    }
+
+    /// Append computed channels to the active record, evaluated in order in
+    /// channel mode (`fvb_core::quick::evaluate_batch`); all or nothing.
+    /// Returns the names given to them.
+    pub fn append_computed(&mut self, batch: &[(String, String, String)]) -> Option<Vec<String>> {
         let show_primary = self.primary_values;
+        let base = self.docs.len() + 7;
         let Some(d) = self.active_doc() else {
             self.status = "Сначала загрузите осциллограмму.".into();
-            return;
+            return None;
         };
-        // Channel mode (`CalcChannels`, `0x415780`): identifiers name channels
-        // (the record's analog channels and earlier computed ones); the
-        // formula is evaluated at every sample and the channel keeps the
-        // scalar if it is valid at every sample, else the real part of the
-        // complex value if that is valid everywhere, else error 0x42e.
-        let extra: Vec<(String, Vec<f64>)> =
-            d.computed.iter().map(|c| (c.name.clone(), c.samples.clone())).collect();
-        let chans = fvb_core::channels::OscChannels::new(&d.osc, &extra, show_primary);
-        let fail = |e: fvb_core::ExprError| format!("{}: {e}", self.formula_text);
-        let expr = match fvb_core::Expr::parse_channels(&self.formula_text, &chans) {
-            Ok(e) => e,
+        let existing: Vec<_> = d.computed.iter().map(Computed::as_core).collect();
+        match fvb_core::quick::evaluate_batch(&d.osc, &existing, batch, show_primary) {
+            Ok(added) => {
+                let d = self.active_doc_mut()?;
+                let n0 = d.computed.len();
+                let names = added.iter().map(|c| c.name.clone()).collect();
+                for (k, c) in added.into_iter().enumerate() {
+                    let mut cc = Computed::new(c.name, c.formula, c.samples, Self::palette(base + n0 + k));
+                    cc.unit = c.unit;
+                    cc.phasors = c.phasors;
+                    d.computed.push(cc);
+                }
+                Some(names)
+            }
             Err(e) => {
-                self.status = fail(e);
-                return;
-            }
-        };
-        let ctx = fvb_core::Context::new();
-        let (mut scal, mut cplx) = (Vec::with_capacity(chans.len()), Vec::with_capacity(chans.len()));
-        let (mut all_s, mut all_c) = (true, true);
-        for i in 0..chans.len() {
-            match expr.eval_sample(&ctx, &chans, i) {
-                Ok((s, z)) => {
-                    all_s &= s.is_some();
-                    all_c &= z.is_some();
-                    scal.push(s.unwrap_or(0.0));
-                    cplx.push(z.unwrap_or_default());
-                }
-                Err(e) => {
-                    self.status = fail(e);
-                    return;
-                }
+                self.status = e.to_string();
+                None
             }
         }
-        let samples = if all_s {
-            scal
-        } else if all_c {
-            cplx.iter().map(|z| z.re).collect()
-        } else {
-            self.status = fail(fvb_core::ExprError::InvalidResult);
+    }
+
+    /// Apply a quick-analysis tab's output (`CQAnPropSheet` OK): append its
+    /// channels, toggle their diagram flags (XOR), set the vector-diagram angle
+    /// reference / show-values and the circle readout, and remember the
+    /// differential pairs.
+    pub fn apply_quick(&mut self, g: &fvb_core::quick::Generated) {
+        let Some(names) = self.append_computed(&g.channels) else {
             return;
         };
-        let name = self.formula_name.clone();
-        let formula = self.formula_text.clone();
-        let color = Self::palette(idx + 7);
+        // Map generated names to the names actually given.
+        let given: HashMap<&str, &str> =
+            g.channels.iter().map(|(n, _, _)| n.as_str()).zip(names.iter().map(String::as_str)).collect();
+        let real = |n: &String| given.get(n.as_str()).map_or(n.clone(), |r| r.to_string());
         if let Some(d) = self.active_doc_mut() {
-            d.computed.push(Computed {
-                name: name.clone(),
-                formula,
-                samples,
-                color,
-            });
+            for n in &g.vector {
+                if let Some(c) = d.computed.iter_mut().find(|c| c.name == real(n)) {
+                    c.on_vector = !c.on_vector;
+                }
+            }
+            for n in &g.circle {
+                if let Some(c) = d.computed.iter_mut().find(|c| c.name == real(n)) {
+                    c.on_circle = !c.on_circle;
+                }
+            }
+            for (dif, tor) in &g.dif_pairs {
+                d.dif_pairs.push((real(dif), real(tor)));
+            }
         }
-        self.status = format!("Добавлен расчётный канал «{name}»");
+        if let Some(r) = &g.angle_ref {
+            self.vec_angle_ref = Some(real(r));
+        }
+        if g.show_values {
+            self.vec_show_values = true;
+        }
+        if let Some(m) = g.circle_readout {
+            self.circle_readout = m;
+        }
+        self.status = format!("Добавлено каналов: {}", names.len());
     }
 }
 
@@ -1315,7 +1366,7 @@ impl App {
         ];
         d.computed.retain(|c| !extra.iter().any(|(n, _)| *n == c.name));
         for (k, (name, samples)) in extra.into_iter().enumerate() {
-            d.computed.push(Computed { name, formula: "ОМП".into(), samples, color: Self::palette(idx0 + k) });
+            d.computed.push(Computed::new(name, "ОМП".into(), samples, Self::palette(idx0 + k)));
         }
         self.status = result.text.trim().to_string();
         self.omp_run = Some(OmpRun { method: self.omp_method, doc: di, trace });

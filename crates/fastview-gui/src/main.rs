@@ -10,6 +10,7 @@ mod dialogs;
 mod icons;
 mod lanes;
 mod persist;
+mod quick_ui;
 mod ribbon;
 mod theme;
 mod util;
