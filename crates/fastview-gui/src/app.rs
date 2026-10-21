@@ -55,18 +55,72 @@ pub const DEMO_DAT: &[u8] = include_bytes!("../../../assets/demo/demo_fault.dat"
 pub enum View {
     /// Осциллограмма — the stacked per-channel lanes (the main document view).
     Oscillogram,
-    /// Частотная диаграмма — per-harmonic bar spectrum at the cursor.
-    Frequency,
-    /// Векторная диаграмма — phasors at the cursor.
-    Vector,
-    /// Круговая диаграмма — protection characteristics + impedance overlay.
-    Circle,
-    /// Дифференциальная диаграмма — differential (Id–Iт) plane.
-    Differential,
     /// Быстрый анализ — symmetric components, impedances, formula editor.
     Analysis,
     /// ОМП — fault location.
     Omp,
+}
+
+/// A diagram docking pane (`0x474e10`). The diagrams are panes beside the
+/// oscillogram, not views replacing it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pane {
+    /// Векторная диаграмма (32809).
+    Vector,
+    /// Круговая диаграмма (32808) — tabbed with the vector pane.
+    Circle,
+    /// Дифференциальная диаграмма (140).
+    Differential,
+    /// Частотная диаграмма (32811) — docked below the tab group.
+    Frequency,
+}
+
+/// Visibility of the four diagram panes (all created visible) and the active
+/// tab of the Vector | Circle | Differential group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Panes {
+    pub vector: bool,
+    pub circle: bool,
+    pub differential: bool,
+    pub frequency: bool,
+    pub active: Pane,
+}
+
+impl Default for Panes {
+    fn default() -> Self {
+        Panes { vector: true, circle: true, differential: true, frequency: true, active: Pane::Vector }
+    }
+}
+
+impl Panes {
+    pub const GROUP: [Pane; 3] = [Pane::Vector, Pane::Circle, Pane::Differential];
+
+    pub fn visible(&self, p: Pane) -> bool {
+        match p {
+            Pane::Vector => self.vector,
+            Pane::Circle => self.circle,
+            Pane::Differential => self.differential,
+            Pane::Frequency => self.frequency,
+        }
+    }
+
+    fn set(&mut self, p: Pane, v: bool) {
+        match p {
+            Pane::Vector => self.vector = v,
+            Pane::Circle => self.circle = v,
+            Pane::Differential => self.differential = v,
+            Pane::Frequency => self.frequency = v,
+        }
+    }
+
+    /// The tab shown in the right-hand group, if any of its panes is visible.
+    pub fn shown_tab(&self) -> Option<Pane> {
+        if self.visible(self.active) && self.active != Pane::Frequency {
+            Some(self.active)
+        } else {
+            Self::GROUP.into_iter().find(|&p| self.visible(p))
+        }
+    }
 }
 
 /// Which ribbon tab is shown.
@@ -434,6 +488,10 @@ pub enum Command {
     ChannelMap,
     Settings,
     Show(View),
+    /// 32809 / 32808 / 140 / 32811: show or hide a diagram pane.
+    TogglePane(Pane),
+    /// Bring a pane of the tab group to the front.
+    ActivatePane(Pane),
     SetPrimaryValues(bool),
     InvertVisible,
     RemoveDcVisible,
@@ -484,6 +542,7 @@ pub struct App {
     // ribbon / view
     pub tab: RibbonTab,
     pub view: View,
+    pub panes: Panes,
     pub skin: Skin,
     pub time_unit: TimeUnit,
     pub show_grid: bool,
@@ -592,6 +651,7 @@ impl App {
             active: None,
             tab: RibbonTab::Home,
             view: View::Oscillogram,
+            panes: Panes::default(),
             skin: Skin::Blue,
             time_unit: TimeUnit::Milli,
             show_grid: true,
@@ -647,10 +707,6 @@ impl App {
             }
         }
         app.view = match std::env::var("FV_VIEW").as_deref() {
-            Ok("freq") => View::Frequency,
-            Ok("vector") => View::Vector,
-            Ok("circle") => View::Circle,
-            Ok("diff") => View::Differential,
             Ok("analysis") => View::Analysis,
             Ok("omp") => View::Omp,
             _ => View::Oscillogram,
@@ -658,8 +714,10 @@ impl App {
         if app.view == View::Omp {
             app.tab = RibbonTab::Omp;
         }
-        if app.view == View::Differential {
-            app.switch_diagram(Dimension::Dif);
+        match std::env::var("FV_VIEW").as_deref() {
+            Ok("circle") => app.dispatch(Command::ActivatePane(Pane::Circle)),
+            Ok("diff") => app.dispatch(Command::ActivatePane(Pane::Differential)),
+            _ => {}
         }
         if let Ok(bi) = std::env::var("FV_BLOCK") {
             if let Ok(i) = bi.parse::<usize>() {
@@ -729,9 +787,21 @@ impl App {
                 } else {
                     RibbonTab::Home
                 };
-                match v {
-                    View::Circle => self.switch_diagram(Dimension::Ohm),
-                    View::Differential => self.switch_diagram(Dimension::Dif),
+            }
+            Command::TogglePane(p) => {
+                let on = !self.panes.visible(p);
+                self.panes.set(p, on);
+                if on && p != Pane::Frequency {
+                    self.dispatch(Command::ActivatePane(p));
+                } else if let Some(t) = self.panes.shown_tab() {
+                    self.dispatch(Command::ActivatePane(t));
+                }
+            }
+            Command::ActivatePane(p) => {
+                self.panes.active = p;
+                match p {
+                    Pane::Circle => self.switch_diagram(Dimension::Ohm),
+                    Pane::Differential => self.switch_diagram(Dimension::Dif),
                     _ => {}
                 }
             }
@@ -1515,9 +1585,25 @@ mod tests {
         app.dispatch(Command::Show(View::Omp));
         assert_eq!(app.view, View::Omp);
         assert_eq!(app.tab, RibbonTab::Omp);
-        app.dispatch(Command::Show(View::Vector));
-        assert_eq!(app.view, View::Vector);
+        app.dispatch(Command::Show(View::Oscillogram));
+        assert_eq!(app.view, View::Oscillogram);
         assert_eq!(app.tab, RibbonTab::Home);
+    }
+
+    #[test]
+    fn diagram_panes_start_visible_and_toggle_beside_the_oscillogram() {
+        let mut app = demo_app();
+        assert!(Panes::GROUP.iter().all(|&p| app.panes.visible(p)) && app.panes.frequency);
+        assert_eq!(app.panes.shown_tab(), Some(Pane::Vector), "the vector pane is the active tab");
+        app.dispatch(Command::TogglePane(Pane::Vector));
+        assert!(!app.panes.vector);
+        assert_eq!(app.panes.shown_tab(), Some(Pane::Circle));
+        assert_eq!(app.current_dimension(), Dimension::Ohm);
+        app.dispatch(Command::TogglePane(Pane::Differential));
+        app.dispatch(Command::TogglePane(Pane::Differential));
+        assert_eq!(app.panes.shown_tab(), Some(Pane::Differential), "a re-shown pane comes to the front");
+        assert_eq!(app.current_dimension(), Dimension::Dif);
+        assert_eq!(app.view, View::Oscillogram, "the oscillogram never goes away");
     }
 
     #[test]
@@ -1640,8 +1726,8 @@ mod tests {
     #[test]
     fn each_diagram_shows_only_its_plane() {
         let mut app = demo_app();
-        for (view, dim) in [(View::Circle, Dimension::Ohm), (View::Differential, Dimension::Dif)] {
-            app.dispatch(Command::Show(view));
+        for (pane, dim) in [(Pane::Circle, Dimension::Ohm), (Pane::Differential, Dimension::Dif)] {
+            app.dispatch(Command::ActivatePane(pane));
             assert_eq!(app.current_dimension(), dim);
             for b in &app.library.blocks {
                 assert!(b.characteristics.iter().all(|c| c.dimension == dim), "{}", b.name);
@@ -1652,7 +1738,7 @@ mod tests {
     #[test]
     fn bad_setting_reports_the_formula_and_keeps_old_geometry() {
         let mut app = demo_app();
-        app.dispatch(Command::Show(View::Circle));
+        app.dispatch(Command::ActivatePane(Pane::Circle));
         let key = (app.block_idx, 0);
         let before = app.chars[&key].figs.clone();
         let name = app.library.blocks[app.block_idx].characteristics[0].parameters[0].name.clone();
@@ -1665,7 +1751,7 @@ mod tests {
     #[test]
     fn circle_view_selects_an_ohm_block() {
         let mut app = demo_app();
-        app.dispatch(Command::Show(View::Circle));
+        app.dispatch(Command::ActivatePane(Pane::Circle));
         assert_eq!(app.current_dimension(), Dimension::Ohm);
     }
 

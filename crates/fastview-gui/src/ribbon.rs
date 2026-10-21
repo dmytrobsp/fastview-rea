@@ -3,7 +3,7 @@
 //! Главная / ОМП; groups Объединение · Диаграммы · Видимость · Вычисления ·
 //! Осциллограмма; ОМП tab: Параметры · Анализ). See `notes/UI_SPEC.md`.
 
-use crate::app::{App, Command, RibbonTab, ValueMode, View};
+use crate::app::{App, Command, Pane, RibbonTab, ValueMode, View};
 use crate::icons::{self, Icon};
 use crate::theme::Skin;
 use eframe::egui::{self, Color32, RichText};
@@ -153,14 +153,15 @@ impl App {
         });
         // Диаграммы
         ribbon_group(ui, p, "Диаграммы", |ui| {
-            for (icon, label, v) in [
-                (Icon::Freq, "Частотная", View::Frequency),
-                (Icon::Vector, "Векторная", View::Vector),
-                (Icon::Circle, "Круговая", View::Circle),
-                (Icon::Diff, "Диффе-\nренциальная", View::Differential),
+            // 32811 / 32809 / 32808 / 140 toggle the panes; checked while shown.
+            for (icon, label, pane) in [
+                (Icon::Freq, "Частотная", Pane::Frequency),
+                (Icon::Vector, "Векторная", Pane::Vector),
+                (Icon::Circle, "Круговая", Pane::Circle),
+                (Icon::Diff, "Диффе-\nренциальная", Pane::Differential),
             ] {
-                if big_button_sel(ui, p, icon, label, self.view == v).clicked() {
-                    cmds.push(Command::Show(v));
+                if big_button_sel(ui, p, icon, label, self.panes.visible(pane)).clicked() {
+                    cmds.push(Command::TogglePane(pane));
                 }
             }
         });

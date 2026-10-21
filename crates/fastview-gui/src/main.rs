@@ -151,6 +151,7 @@ impl eframe::App for App {
             egui::SidePanel::left("explorer").default_width(260.0).show(ctx, |ui| self.explorer_panel(ui));
         }
 
+        self.diagram_panes(ctx);
         self.render_tab(ctx);
         self.dialogs_ui(ctx);
 

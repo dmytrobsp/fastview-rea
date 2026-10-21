@@ -1171,7 +1171,9 @@ iff all selected agree (`app.rs`, `ribbon.rs`).
 ✅ Comment lock flag (33039); 155 moment placement mode; copy takes the
 selection; colour dialog 33030; selected rows on a gold background (flat).
 
-1. Diagrams as docked panes beside the always-visible oscillogram (vector +
+1. 🟡 (L9.3: right column with tab group + frequency below, toggles with
+   check, grid-above-plot; no floating/re-dock/auto-hide)
+   Diagrams as docked panes beside the always-visible oscillogram (vector +
    circle tabbed right, diff right, frequency bottom; visible by default;
    ribbon buttons toggle with check; panes follow the active document) —
    `main.rs`, `views.rs`, `app.rs` (`View` enum → pane visibility) — L

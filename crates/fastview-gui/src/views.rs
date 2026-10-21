@@ -2,7 +2,7 @@
 //! ОМП) over the active document. The oscillogram (lane) view lives in
 //! `lanes.rs`.
 
-use crate::app::{AnalysisTab, App, OmpMethod, View};
+use crate::app::{AnalysisTab, App, Command, OmpMethod, Pane, Panes, View};
 use eframe::egui;
 use egui_plot::{Bar, BarChart, Line, LineStyle, Plot, PlotBounds, PlotPoints, Points, Polygon};
 use fvb_core::geom::Shape;
@@ -17,12 +17,67 @@ impl App {
     pub fn render_tab(&mut self, ctx: &egui::Context) {
         match self.view {
             View::Oscillogram => self.view_oscillogram(ctx),
-            View::Frequency => self.view_frequency(ctx),
-            View::Vector => self.view_vector(ctx),
-            View::Circle | View::Differential => self.char_view(ctx),
             View::Analysis => self.view_analysis(ctx),
             View::Omp => self.view_omp(ctx),
         }
+    }
+
+    /// The diagram docking panes (`0x474e10`): one right-hand column with
+    /// the Векторная | Круговая | Дифференциальная tab group (tabs at the
+    /// bottom) and Частотная below it, each with a caption and a close
+    /// button that hides it. Call before the central view.
+    pub fn diagram_panes(&mut self, ctx: &egui::Context) {
+        let tab = self.panes.shown_tab();
+        if tab.is_none() && !self.panes.frequency {
+            return;
+        }
+        egui::SidePanel::right("diagram_panes")
+            .resizable(true)
+            .default_width(500.0)
+            .width_range(260.0..=1200.0)
+            .show(ctx, |ui| {
+                let full_h = ui.available_height();
+                if self.panes.frequency {
+                    let freq = |app: &mut App, ui: &mut egui::Ui| {
+                        if pane_caption(ui, "Частотная диаграмма") {
+                            app.dispatch(Command::TogglePane(Pane::Frequency));
+                        }
+                        app.frequency_ui(ui);
+                    };
+                    if tab.is_some() {
+                        egui::TopBottomPanel::bottom("pane_frequency")
+                            .resizable(true)
+                            .default_height(200.0)
+                            .height_range(80.0..=(full_h - 120.0).max(80.0))
+                            .show_inside(ui, |ui| freq(self, ui));
+                    } else {
+                        freq(self, ui);
+                    }
+                }
+                if let Some(active) = tab {
+                    egui::TopBottomPanel::bottom("pane_tabs").show_inside(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            let panes = self.panes;
+                            for p in Panes::GROUP.into_iter().filter(|&p| panes.visible(p)) {
+                                if ui.selectable_label(p == active, pane_title(p)).clicked() && p != active {
+                                    self.dispatch(Command::ActivatePane(p));
+                                }
+                            }
+                        });
+                    });
+                    egui::CentralPanel::default().show_inside(ui, |ui| {
+                        if pane_caption(ui, pane_title(active)) {
+                            self.dispatch(Command::TogglePane(active));
+                            return;
+                        }
+                        match active {
+                            Pane::Vector => self.vector_ui(ui),
+                            Pane::Circle | Pane::Differential => self.char_ui(ui),
+                            Pane::Frequency => {}
+                        }
+                    });
+                }
+            });
     }
 
     fn view_oscillogram(&mut self, ctx: &egui::Context) {
@@ -30,11 +85,19 @@ impl App {
     }
 
     // ---- Круговая / Дифференциальная: characteristics + impedance overlay ----
-    fn char_view(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("char_side")
-            .default_width(330.0)
-            .show(ctx, |ui| self.char_side_panel(ui));
-        egui::CentralPanel::default().show(ctx, |ui| self.char_plot(ui));
+    /// Circle / differential pane: the block and settings grid above the
+    /// plot behind a splitter (200 px, 50 px .. height − 150), as the
+    /// original's pane.
+    fn char_ui(&mut self, ui: &mut egui::Ui) {
+        let h = ui.available_height();
+        egui::TopBottomPanel::top("char_grid")
+            .resizable(true)
+            .default_height(200.0)
+            .height_range(50.0..=(h - 150.0).max(50.0))
+            .show_inside(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| self.char_side_panel(ui));
+            });
+        egui::CentralPanel::default().show_inside(ui, |ui| self.char_plot(ui));
     }
 
     fn char_side_panel(&mut self, ui: &mut egui::Ui) {
@@ -300,8 +363,8 @@ impl App {
     /// computed), their RMS phasors at the main cursor; angles absolute or
     /// relative to a chosen channel; lengths scaled per group (unit exactly
     /// "A" vs the rest) to a "nice" maximum.
-    fn view_vector(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    fn vector_ui(&mut self, ui: &mut egui::Ui) {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             let names: Vec<String> = self
                 .active_doc()
                 .map(|d| d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect())
@@ -404,8 +467,8 @@ impl App {
     /// (`fvb_core::signal::spectrum`), bars at `k·f/P` Hz normalised to the
     /// channel's largest bin, labelled in absolute RMS or percent of the
     /// fundamental (or of the true RMS).
-    fn view_frequency(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    fn frequency_ui(&mut self, ui: &mut egui::Ui) {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label("Периодов:");
                 ui.add(egui::DragValue::new(&mut self.freq_periods).range(1..=50));
@@ -707,6 +770,71 @@ fn draw_region(
                         pu.line(Line::new(PlotPoints::from(lp)).color(color).width(1.2_f32).style(style));
                     }
                 }
+            }
+        }
+    }
+}
+
+fn pane_title(p: Pane) -> &'static str {
+    match p {
+        Pane::Vector => "Векторная диаграмма",
+        Pane::Circle => "Круговая диаграмма",
+        Pane::Differential => "Дифференциальная диаграмма",
+        Pane::Frequency => "Частотная диаграмма",
+    }
+}
+
+/// A docking-pane caption: the title and a close button (which only hides
+/// the pane). Returns true when the close button was clicked.
+fn pane_caption(ui: &mut egui::Ui, title: &str) -> bool {
+    let mut close = false;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(title).strong());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            close = ui.small_button("✕").on_hover_text("Закрыть").clicked();
+        });
+    });
+    ui.separator();
+    close
+}
+
+#[cfg(test)]
+mod pane_tests {
+    use super::*;
+
+    /// Every pane arrangement renders beside the oscillogram without panicking,
+    /// at a normal and at the frame's minimum size (866×500).
+    #[test]
+    fn panes_render_in_every_arrangement() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        let ctx = egui::Context::default();
+        let frame = |app: &mut App, size: egui::Vec2| {
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| {
+                app.diagram_panes(ctx);
+                app.render_tab(ctx);
+            });
+        };
+        for size in [egui::vec2(1320.0, 860.0), egui::vec2(866.0, 500.0)] {
+            for active in Panes::GROUP {
+                app.dispatch(Command::ActivatePane(active));
+                for _ in 0..3 {
+                    frame(&mut app, size);
+                }
+            }
+            for p in [Pane::Frequency, Pane::Vector, Pane::Circle, Pane::Differential] {
+                app.dispatch(Command::TogglePane(p));
+                frame(&mut app, size);
+                frame(&mut app, size);
+            }
+            assert!(app.panes.shown_tab().is_none() && !app.panes.frequency);
+            frame(&mut app, size);
+            for p in [Pane::Frequency, Pane::Vector, Pane::Circle, Pane::Differential] {
+                app.dispatch(Command::TogglePane(p));
             }
         }
     }

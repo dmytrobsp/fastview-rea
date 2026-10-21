@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 129 pass)
+- `cargo test --workspace`   (currently 131 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 129 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 131 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**, **L9.2** below.
+temporary). Reconciled so far: **L9.1**, **L9.2**, **L9.3** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -680,7 +680,29 @@ now negates end-2 current samples first; `tests/omp_engine.rs` records end 2
 in the standard into-the-line convention (the unfixed engine located an 18 km
 fault at 1.18 km). Spec: `notes/OMP_SPEC.md` §13.
 
-Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 from item 1 down (panes, визир
+### L9.3 — Diagrams as docking panes beside the oscillogram  ·  🟡
+
+Original (read, `0x474e10`, `0x475040`/`0x4750b0`, CMDUI `0x4750f0`; help
+screenshot clip0014): four CDockablePanes created visible — Vector and Circle
+tabbed, Differential, Frequency at the bottom — with captions (pin, close =
+hide); the oscillogram never disappears; 32809/32808/140/32811 toggle a pane
+and are checked while it is shown. Ours now: `App::panes` (`Panes`, all
+visible, Vector the active tab), `Command::TogglePane`/`ActivatePane`; one
+right-hand column (500 px, resizable) with the Векторная | Круговая |
+Дифференциальная tab group (tabs at the bottom, caption + ✕) and Частотная
+below it (200 px splitter), as in clip0014; the circle/diff pane puts the
+block/settings grid above the plot behind a 200 px splitter (50 .. h − 150);
+ribbon diagram buttons toggle with check. `View` keeps only Oscillogram /
+Analysis / Omp. Tests: pane toggle/activation semantics + a headless render of
+every arrangement at 1320×860 and 866×500.
+Residual: no floating / re-docking / auto-hide pin (egui has no docking; the
+saved Feature-Pack workspace is not modelled); the original's first-start
+Differential is a separate pane on the right edge (exact split NOT
+DETERMINED) — we follow the screenshot's single tab group; the vertical pane
+toolbars (550/552/553) and pane contents are item 19/20+ of the backlog;
+Быстрый анализ and ОМП still replace the central view (backlog 6, dialogs).
+
+Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 from item 2 down (panes, визир
 mouse model, power-of-two time zoom, amplitude mapping, lane geometry, …).
 
 ---
