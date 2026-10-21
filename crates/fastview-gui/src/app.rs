@@ -756,7 +756,6 @@ pub struct App {
     pub show_channel_map: bool,
     pub show_settings: bool,
     pub encoding: Encoding,
-    pub show_explorer: bool,
     pub explorer_dir: std::path::PathBuf,
     pub ribbon_minimized: bool,
     pub props_channel: Option<usize>,
@@ -790,6 +789,8 @@ pub struct App {
     pub view_width: f32,
     /// Stats-panel width at the last layout (fitted to the text).
     pub view_left: f32,
+    /// «Проводник» (32880), the modal finder.
+    pub finder: Option<crate::finder::Finder>,
     /// The window title last sent to the viewport.
     pub window_title: String,
     /// `-Dst <dir>`: the folder of the DST description files.
@@ -868,7 +869,6 @@ impl App {
             show_channel_map: false,
             show_settings: false,
             encoding: Encoding::Auto,
-            show_explorer: false,
             explorer_dir: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
             ribbon_minimized: false,
             props_channel: None,
@@ -887,6 +887,7 @@ impl App {
             view_width: 1000.0,
             view_left: crate::lanes::LEFT_W_DEFAULT,
             window_title: String::new(),
+            finder: None,
             dst_dir: None,
             lane_menu: None,
             lane_menu_serial: 0,
@@ -965,7 +966,7 @@ impl App {
             Command::ChannelMap => self.show_channel_map = true,
             Command::Settings => self.show_settings = true,
             Command::Archive => self.archive_record(),
-            Command::ToggleExplorer => self.show_explorer = !self.show_explorer,
+            Command::ToggleExplorer => self.open_finder(),
             Command::ToggleRibbonMin => self.ribbon_minimized = !self.ribbon_minimized,
             Command::Save => self.save_comtrade(),
             Command::Print => self.request_image_export(),

@@ -9,6 +9,7 @@ mod app;
 mod chansel;
 mod comments;
 mod dialogs;
+mod finder;
 mod icons;
 mod lanes;
 mod oscgeom;
@@ -242,9 +243,6 @@ impl eframe::App for App {
             .frame(egui::Frame::none().fill(pal.group_bg).inner_margin(egui::Margin::symmetric(6.0, 3.0)))
             .show(ctx, |ui| self.status_bar(ui));
 
-        if self.show_explorer {
-            egui::SidePanel::left("explorer").default_width(260.0).show(ctx, |ui| self.explorer_panel(ui));
-        }
 
         self.diagram_panes(ctx);
         self.render_tab(ctx);
@@ -278,50 +276,6 @@ impl eframe::App for App {
 }
 
 impl App {
-    fn explorer_panel(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Проводник").strong());
-            if ui.small_button("✕").clicked() {
-                self.show_explorer = false;
-            }
-        });
-        ui.label(egui::RichText::new(self.explorer_dir.display().to_string()).small().weak());
-        ui.separator();
-        let mut goto: Option<std::path::PathBuf> = None;
-        let mut load: Option<std::path::PathBuf> = None;
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            if let Some(parent) = self.explorer_dir.parent() {
-                if ui.selectable_label(false, "📁 ..").clicked() {
-                    goto = Some(parent.to_path_buf());
-                }
-            }
-            let mut entries: Vec<std::path::PathBuf> =
-                std::fs::read_dir(&self.explorer_dir).map(|rd| rd.flatten().map(|e| e.path()).collect()).unwrap_or_default();
-            entries.sort_by_key(|p| (!p.is_dir(), p.file_name().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default()));
-            for p in entries {
-                let name = p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-                if p.is_dir() {
-                    if ui.selectable_label(false, format!("📁 {name}")).clicked() {
-                        goto = Some(p);
-                    }
-                } else {
-                    let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-                    let is_cfg = ext == "cfg";
-                    let resp = ui.selectable_label(false, format!("{} {name}", if is_cfg { "〜" } else { "  " }));
-                    if is_cfg && (resp.double_clicked() || resp.clicked()) {
-                        load = Some(p);
-                    }
-                }
-            }
-        });
-        if let Some(dir) = goto {
-            self.explorer_dir = dir;
-        }
-        if let Some(path) = load {
-            self.load_comtrade_path(&path);
-        }
-    }
 }
 
 #[cfg(test)]

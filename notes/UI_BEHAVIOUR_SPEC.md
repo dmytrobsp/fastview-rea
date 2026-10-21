@@ -1275,7 +1275,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     `persist.rs` — S
 34. Program settings 510: no auto encoding, default 1251, .dst folder, UTC/
     local radios, persistence (+ print margins) — `dialogs.rs`, `persist.rs` — S
-35. Проводник as the modal finder (worker scan, filters, sort, multi-open,
+35. 🟡 (L9.9: all but the shell tree, .sto and recycle bin) Проводник as the modal finder (worker scan, filters, sort, multi-open,
     delete with companions, persistence) — `main.rs` → new module — L
 36. Print: dialog with five checkboxes, page setup, paged output (oscillogram
     sliced, diagrams one page each) and preview — new module — L

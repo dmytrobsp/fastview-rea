@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 149 pass)
+- `cargo test --workspace`   (currently 152 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 149 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 152 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.8** below.
+temporary). Reconciled so far: **L9.1**–**L9.9** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -848,6 +848,28 @@ the first NOT DETERMINED (MFC OneNote palette assumed; the bundled vcredist's
 mfc120u.dll sits in an attached burn container we did not unpack); single
 instance (WM_COPYDATA) and the 2 s splash not implemented; tabs cannot be
 dragged into new tab groups; «Окна...» not in the ▾ list.
+
+### L9.9 — «Проводник» as the original's modal finder  ·  🟡
+
+Read (spec §7.5 and the scope-F finder sub-report: `0x46b9c0` scan thread,
+`0x46bec0` by the last three characters, `0x46c080` COMTRADE header — station
+= token 1, block = token 2 or «-», start time `.cfg` month first / `.cff` day
+first, swapped when month > 12, +2000 below 100; `0x46c730` OSC «OSC
+Осциллограф. Версия %i.%i» with the time from header bytes 6..11; `0x46cb20`
+live filters, station/block exact or «Все», `С ≤ t ≤ По + 1 day`; sorting,
+«Время» by time of day, every scan forces Дата ascending; `0x46e120` opens
+every selected file; `0x46d4b0` deletes the file and its existing companions
+(cfg → dat hdr ini inf set; cff, osc → set; sto → dst); `FileFinder`
+persistence). Ours: `finder.rs` (header readers, `scan` on a worker with
+cancel + join, `passes`, `companions`, the dialog with folder list,
+«Выбрать», subfolders, combos, С/По, sortable columns, multi-select, open,
+delete with confirmation), replacing our docked folder panel; `-Find` opens
+it. Tests: header dates (cfg/cff order, swap, +2000, «-»), OSC header,
+filters incl. the inclusive По day, scan depth + companions.
+Residual: no shell folder tree (a folder list instead); `.sto` entries not
+read (no sample `.sto`; `0x46c960` reads its inner cfg); delete is permanent
+after our own confirmation (the original uses the shell prompt and the recycle
+bin with Shift); date pickers are day/month/year spinners.
 
 Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — tracks D (diagrams 19–22, 27,
 40), O (ОМП 6, 12, 38) and F (dialogs 16, 18, 28, 29, 34, 39) were
