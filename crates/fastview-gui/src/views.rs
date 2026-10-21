@@ -251,6 +251,10 @@ impl App {
 
     fn formula_editor_ui(&mut self, ui: &mut egui::Ui) {
         ui.label("Расчётный канал по отсчётам (добавляется на осциллограмму):");
+        // «Добавить» of the original's page (`0x486df0`): DIALOG 359.
+        if ui.button("Добавить…").on_hover_text("Добавить новую формулу по шаблону").clicked() {
+            self.open_formula_dlg();
+        }
         ui.horizontal(|ui| {
             ui.label("имя");
             ui.text_edit_singleline(&mut self.formula_name);

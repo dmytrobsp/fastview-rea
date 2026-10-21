@@ -13,6 +13,7 @@ mod diagram;
 mod diagram_ui;
 mod dialogs;
 mod finder;
+mod formula_dlg;
 mod icons;
 mod lanes;
 mod merge_ui;
