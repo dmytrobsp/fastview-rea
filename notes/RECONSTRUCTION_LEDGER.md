@@ -613,9 +613,10 @@ C view/doc COMMAND + CMDUI rules · D main frame: ribbon construction, panes,
 status bar, app · E diagram windows/panes/toolbars UI · F dialogs and bars.
 
 Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
-ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI — kept in the session
-scratchpad; to be distilled into `notes/UI_BEHAVIOUR_SPEC.md`). Reconciled so
-far: **L9.1** below.
+ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
+**`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
+backlog — work it top-down**, §10 unknowns; the scratchpad reports are
+temporary). Reconciled so far: **L9.1**, **L9.2** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -679,8 +680,8 @@ now negates end-2 current samples first; `tests/omp_engine.rs` records end 2
 in the standard into-the-line convention (the unfixed engine located an 18 km
 fault at 1.18 km). Spec: `notes/OMP_SPEC.md` §13.
 
-Next in L9: the rest of agent A/B (wheel, power-of-two time zoom, fixed lane
-heights, визир mouse model, ruler), then D (panes), E, F, G.
+Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 from item 1 down (panes, визир
+mouse model, power-of-two time zoom, amplitude mapping, lane geometry, …).
 
 ---
 
