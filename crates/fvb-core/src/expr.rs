@@ -795,6 +795,12 @@ fn channel_arg<'a>(x: Value, name: &'static str, env: Env<'a>) -> Result<(&'a dy
 
 /// Function cases (jump table `0x41f2a4`, index = token id − 8).
 fn call(f: Func, name: &'static str, a: &[Value], env: Env) -> Result<Value, ExprError> {
+    // `frequency:` ignores its argument; the formula dialog writes it with
+    // none ("Frequency: ()", `0x4129e0` case 0x1e8). What the original's
+    // evaluator does with the empty vector is not reversed: a scalar result.
+    if a.is_empty() && name == "frequency:" {
+        return Ok(Value::real(0.0).scalar(env.chans.map_or(0.0, |c| c.frequency(env.idx))));
+    }
     let x = first(a)?;
     Ok(match f {
         Func::Sin => x.scalar(rad(x.v).sin()),
