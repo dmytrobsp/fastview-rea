@@ -17,5 +17,9 @@ rfd = "0.14"
 num-complex = "0.4"
 flate2 = "1"
 
+[target.'cfg(not(windows))'.dependencies]
+# Copy's picture as an image on the system clipboard (Windows uses an EMF).
+arboard = { version = "3.7", default-features = false, features = ["image-data", "wayland-data-control"] }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_Graphics_Gdi", "Win32_Graphics_Printing", "Win32_Storage_Xps"] }

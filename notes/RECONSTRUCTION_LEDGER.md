@@ -1391,8 +1391,10 @@ then sets the picture (Windows: an EMF with one StretchDIBits record via
 diagram copy sets the picture only (our file / memory clipboards drop the
 document too). Test: `copy_pictures_the_view_or_the_focused_diagram`
 (`FV_COPY_DUMP=<png>` saves the view picture).
-Residual: off Windows the picture is not placed anywhere (no system
-clipboard image); the record is EMR_STRETCHDIBITS rather than EMR_BITBLT
+Residual: off Windows the picture goes to the desktop clipboard as an image
+(`arboard`, X11 / Wayland data-control / macOS; our extension, the handle
+kept for the process — compile-checked only, not exercised: running it
+would touch the user's real clipboard); the record is EMR_STRETCHDIBITS rather than EMR_BITBLT
 (same picture); focus on the property grid of the circle / differential
 pane (the original's third case, XML only) is not modelled — a click there
 leaves the focus unchanged; our status-bar messages are ours.

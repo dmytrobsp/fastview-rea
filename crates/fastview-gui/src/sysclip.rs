@@ -4,7 +4,8 @@
 //! format); elsewhere a file in our settings folder stands in for it, so two
 //! instances on one machine can still merge. Tests use the in-memory kind.
 //! Copy also puts a picture (`CF_ENHMETAFILE`, a raster of the view or of
-//! the focused diagram) first — on Windows only.
+//! the focused diagram) first; elsewhere the picture goes to the system
+//! clipboard as an image (our extension — the original is Windows-only).
 
 use crate::raster::Canvas;
 use std::cell::RefCell;
@@ -48,10 +49,16 @@ impl SysClip {
                 *m.borrow_mut() = (text.map(str::to_string), picture.map(|c| (c.w, c.h)));
                 true
             }
-            SysClip::File(p) => match text {
-                Some(t) => p.parent().is_some_and(|d| std::fs::create_dir_all(d).is_ok()) && std::fs::write(p, t).is_ok(),
-                None => !p.exists() || std::fs::remove_file(p).is_ok(),
-            },
+            SysClip::File(p) => {
+                #[cfg(not(windows))]
+                if let Some(c) = picture {
+                    image::put(c);
+                }
+                match text {
+                    Some(t) => p.parent().is_some_and(|d| std::fs::create_dir_all(d).is_ok()) && std::fs::write(p, t).is_ok(),
+                    None => !p.exists() || std::fs::remove_file(p).is_ok(),
+                }
+            }
             #[cfg(windows)]
             SysClip::System => win::put(text, picture),
         }
@@ -184,5 +191,30 @@ mod win {
             CloseClipboard();
             out
         }
+    }
+}
+
+/// The picture on the desktop clipboard (X11 / Wayland / macOS). The handle
+/// lives for the process: X11 and Wayland clipboards only serve data while
+/// their owner exists.
+#[cfg(not(windows))]
+mod image {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static CLIP: RefCell<Option<arboard::Clipboard>> = const { RefCell::new(None) };
+    }
+
+    pub fn put(c: &super::Canvas) {
+        let bytes: Vec<u8> = c.px.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
+        CLIP.with(|cell| {
+            let mut slot = cell.borrow_mut();
+            if slot.is_none() {
+                *slot = arboard::Clipboard::new().ok();
+            }
+            if let Some(cb) = slot.as_mut() {
+                let _ = cb.set_image(arboard::ImageData { width: c.w, height: c.h, bytes: bytes.into() });
+            }
+        });
     }
 }
