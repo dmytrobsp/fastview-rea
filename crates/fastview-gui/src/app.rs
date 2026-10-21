@@ -883,6 +883,8 @@ pub struct App {
     pub dlg: crate::recdlg::DialogState,
 
     pub status: String,
+    /// The last `status` shown as a toast and when it appeared (ctx time).
+    pub toast: (String, f64),
 }
 
 /// Per-characteristic UI state (circle diagram).
@@ -974,6 +976,7 @@ impl App {
             color_dialog: None,
             dlg: Default::default(),
             status: "Готово".to_string(),
+            toast: ("Готово".to_string(), f64::NEG_INFINITY),
         };
         app.ensure_block_state();
 

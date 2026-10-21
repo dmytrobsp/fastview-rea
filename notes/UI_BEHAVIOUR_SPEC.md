@@ -1232,7 +1232,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 16. ✅ (merged L9.13) Каналы dialog 463 (icon grid, header toggles column, in-place rename with
     397/398) replacing the view switch; rename our role-assignment window —
     `dialogs.rs`, `ribbon.rs` — M
-17. 🟡 (L9.4: six complete strings; free-text pane kept) Status bar: six fixed-width panes with full original strings and
+17. ✅ (L9.4 six complete strings; L9.18 free-text pane → toast) Status bar: six fixed-width panes with full original strings and
     RulerState formats, trigger-relative, H-diff only on the same channel;
     drop the free-text status (toast instead) — `main.rs`, `lanes.rs` — S
 18. ✅ (merged L9.13) Parameters bar (142, visible by default, 75 px) — `main.rs`, `ribbon.rs` — S

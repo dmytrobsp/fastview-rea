@@ -1077,7 +1077,9 @@ comtrade::{time_of_day, stamp_date_text}`, MENU 560 with all five radios and
 «Разница между визирами» enabled (toggles `Doc::diff_band`). Tests:
 `oscgeom::absolute_time_labels`, `app::cursor_status_absolute_time`. Closes
 the L9.1 and L9.4 «Абсолютное время» residuals.
-Residual: a start time without `:` makes the original read uninitialised
+Also: the status bar's free-text pane is gone (the original has none,
+`0x4729b0`); our own messages show as a 4 s toast above the bottom-right
+corner (our extension). Residual: a start time without `:` makes the original read uninitialised
 stack (ours: missing fields count 0); the ruler's `iStack_a0` label
 condition in mode 3 not decoded.
 

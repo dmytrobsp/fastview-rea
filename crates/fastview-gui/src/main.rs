@@ -171,10 +171,35 @@ impl App {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(egui::RichText::new("НТЦ Механотроника").small().weak());
-                ui.separator();
-                ui.label(egui::RichText::new(&self.status).small());
             });
         });
+        self.status_toast(ui.ctx());
+    }
+
+    /// The original's status bar has no free-text pane (`0x4729b0`); our own
+    /// messages appear as a short-lived toast above the bottom-right corner.
+    fn status_toast(&mut self, ctx: &egui::Context) {
+        const SHOW_S: f64 = 4.0;
+        let now = ctx.input(|i| i.time);
+        if self.toast.0 != self.status {
+            self.toast = (self.status.clone(), now);
+        }
+        let age = now - self.toast.1;
+        if self.toast.0.is_empty() || !(0.0..SHOW_S).contains(&age) {
+            return;
+        }
+        let screen = ctx.screen_rect();
+        egui::Area::new(egui::Id::new("fv_status_toast"))
+            .order(egui::Order::Tooltip)
+            .interactable(false)
+            .pivot(egui::Align2::RIGHT_BOTTOM)
+            .fixed_pos(screen.right_bottom() - egui::vec2(12.0, 34.0))
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.label(egui::RichText::new(&self.toast.0).small());
+                });
+            });
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(SHOW_S - age));
     }
 }
 
