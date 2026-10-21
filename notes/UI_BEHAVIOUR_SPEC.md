@@ -338,7 +338,7 @@ English. Other units print raw.
 | 0 µs | integer, space thousands grouping, leading "−" |
 | 1 ms (default) | round(µs/1000), same grouping |
 | 2 s | `%.3f`, 0 when \|v\| < 0.0005 |
-| 3 absolute | `%02d:%02d:%02d.%03d`; date `%02d/%02d/%04d` (years < 100 +2000) at (5, H−20) |
+| 3 absolute | start time `doc+0x250` (h:m:s) + (t − t_trig) as `%02d:%02d:%02d.%03d`, hours mod 24, ms rounded half up; date `doc+0x24c` `%02d/%02d/%04d` day first (parameters-bar month/day rule, years < 100 +2000) at (5, H−20); no unit |
 | 4 samples | k − trigger + 1 |
 
 Trigger `doc+0x214` is written only by a native-format loader; COMTRADE may
@@ -349,7 +349,9 @@ leave it 0 (labels start-relative) [unknown].
   the 30 px ruler; vertical визир lines then end at H−55; the grid continues
   down to H−30.
 - Each visible V-визир and each moment comment gets its time label
-  (RulerState format, 0x466170) centred at its x at y ≈ H−55; moment comments
+  (0x466170: plain `%i` µs / rounded `%i` ms / `%.3f` s / time of day /
+  k+1 — **no unit, no grouping**; the |Δ| label: samples as a count,
+  absolute as `h:mm:ss.mmm` of rounded ms, hours not wrapped) centred at its x at y ≈ H−55; moment comments
   add their text below it. Overlapping labels skipped (±3 px collision rects).
 - For consecutive markers more than 16 px apart: a dimension line at y = H−65
   with 8×4 px arrowheads and end ticks; the |Δt| label centred in the span when
@@ -1291,7 +1293,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 41. ✅ (L9.4) Digital lanes look (base bar, red-outlined runs, selected fill) and
     full-width alternating gradient backgrounds, selected gradient — `lanes.rs`
     — S
-42. 🟡 (L9.4: grid, persistence; absolute time pending) Grid vertical only every 50 px; ruler units incl. «Абсолютное время»
+42. ✅ (L9.4 + L9.18) Grid vertical only every 50 px; ruler units incl. «Абсолютное время»
     (33007) with the date; persist RulerState/Sells — `lanes.rs`, `persist.rs`
     — S
 43. ✅ (L9.5) SI prefix only for the listed units; "none" → empty — `crates/fvb-core/src/

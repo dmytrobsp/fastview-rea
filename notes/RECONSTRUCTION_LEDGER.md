@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 249 pass)
+- `cargo test --workspace`   (currently 251 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 249 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 251 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.17** below.
+temporary). Reconciled so far: **L9.1**–**L9.18** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -1052,6 +1052,34 @@ assumed (MFC resource); `Selected Block` subtree still in our program store;
 `NetFreq`, `.cff` SET, `.zip`, `.sto` not modelled; comments store file name
 vs alias NOT DETERMINED; whether paste / an ОМП run mark modified NOT
 DETERMINED (ours: no).
+
+### L9.18 — «Абсолютное время» (33007), band labels, 33033 toggle  ·  ✅
+
+Read: ruler `0x464350` mode 3 — the start date token (`doc+0x24c`, getter
+`0x4222a0`) split on `/` with the same month/day rule as the parameters bar
+(Compare with "2013", swap when the "month" > 12, +2000 below 100) drawn
+`%02d/%02d/%04d` day first at (5, H−20); every label = the start time token
+(`doc+0x250`, `0x4222d0`: `_wtoi` h, `_wtoi` m, `_wtof` s) + (t − t_trig)
+µs/1e6 as `%02d:%02d:%02d.%03d` (hours mod 24 — the `0x2aaaaaab` multiply;
+ms = fraction·1000 rounded half up, can print 1000), no unit. Marker /
+difference labels **`0x466170`** (callers `0x466a4e` marker, `0x46715c` |Δ|):
+plain `%i` µs, `%i` ms rounded by **`0x411bf0`** (floor when < ½ away else
+ceil), `%.3f` s, absolute time of day, samples k+1 (difference: the count);
+an absolute difference = rounded ms → `%02d:%02d:%02d.%03d` with hours not
+wrapped — **no unit and no grouping** (ours had both: fixed). Status bar
+(`0x4947d0`, strings 240/241/202): V1/V2 time of day, the V difference
+`%02d.%03d` = seconds within the minute + ms (`0x4951a3`: the minutes are
+dropped). 33033 `0x4557d0` toggles `doc+0x870` + UpdateAllViews, no
+modified mark; CMDUI `0x4557b0` SetCheck only (always enabled).
+Ours: `TimeUnit::Absolute` (RulerState 3 persisted), `oscgeom::{round_half_up,
+time_of_day_text, mark_label, diff_label, status_abs_diff}`, `fvb_core::
+comtrade::{time_of_day, stamp_date_text}`, MENU 560 with all five radios and
+«Разница между визирами» enabled (toggles `Doc::diff_band`). Tests:
+`oscgeom::absolute_time_labels`, `app::cursor_status_absolute_time`. Closes
+the L9.1 and L9.4 «Абсолютное время» residuals.
+Residual: a start time without `:` makes the original read uninitialised
+stack (ours: missing fields count 0); the ruler's `iStack_a0` label
+condition in mode 3 not decoded.
 
 Next in L9: all dispatched tracks are merged (master clean). Remaining:
 `notes/UI_BEHAVIOUR_SPEC.md` §9 — print 36, OLE drag 48, and the residuals

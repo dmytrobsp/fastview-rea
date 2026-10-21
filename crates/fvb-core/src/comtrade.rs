@@ -808,8 +808,37 @@ pub fn stamp_seconds(date: &str, time: &str, rev_year: i32) -> Option<f64> {
 /// re-ordered as `dd/mm/yyyy` (empty when it does not parse) + ", " + the
 /// time field as written.
 pub fn raw_stamp(date: &str, time: &str, rev_year: i32) -> String {
-    let d = stamp_date(date, rev_year).map(|(y, m, d)| format!("{d:02}/{m:02}/{y:04}")).unwrap_or_default();
-    format!("{d}, {time}")
+    format!("{}, {time}", stamp_date_text(date, rev_year).unwrap_or_default())
+}
+
+/// A stamp's date as `dd/mm/yyyy` (the absolute-time ruler `0x464350` and
+/// the raw stamp), `None` when it does not parse.
+pub fn stamp_date_text(date: &str, rev_year: i32) -> Option<String> {
+    stamp_date(date, rev_year).map(|(y, m, d)| format!("{d:02}/{m:02}/{y:04}"))
+}
+
+/// A stamp's time of day in seconds as the absolute-time labels read it
+/// (`0x464350`, `0x466170`): `_wtoi` of the hours and of the minutes after
+/// the first `:`, `_wtof` of the seconds after the second; a missing field
+/// counts 0.
+pub fn time_of_day(time: &str) -> f64 {
+    let mut f = time.splitn(3, ':');
+    let h = wtoi(f.next().unwrap_or(""));
+    let m = f.next().map_or(0, wtoi);
+    let s = f.next().map_or(0.0, wtof);
+    (h * 3600 + m * 60) as f64 + s
+}
+
+/// `_wtof`: the longest leading decimal number of `s`, 0 if none.
+fn wtof(s: &str) -> f64 {
+    let s = s.trim_start();
+    let end = s
+        .char_indices()
+        .take_while(|&(i, c)| c.is_ascii_digit() || c == '.' || (i == 0 && (c == '-' || c == '+')))
+        .map(|(i, c)| i + c.len_utf8())
+        .last()
+        .unwrap_or(0);
+    (0..=end).rev().find_map(|e| s[..e].parse().ok()).unwrap_or(0.0)
 }
 
 /// A record time stamp as the parameters bar shows it (`0x456e90`).

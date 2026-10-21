@@ -155,6 +155,8 @@ pub enum TimeUnit {
     Micro,
     Milli,
     Sec,
+    /// Time of day from the record's start stamp (33007).
+    Absolute,
     Samples,
 }
 
@@ -1991,5 +1993,22 @@ mod tests {
         let s = app.cursor_status();
         assert_eq!(s.len(), 6);
         assert!(s.iter().all(|x| !x.is_empty()));
+    }
+
+    #[test]
+    fn cursor_status_absolute_time() {
+        let mut app = demo_app();
+        app.time_unit = TimeUnit::Absolute;
+        let d = app.active_doc_mut().unwrap();
+        d.osc.stamps.start_time = "12:59:59.500000".into();
+        let (t0, k) = (d.osc.time[0], 10);
+        let dt = d.osc.time[k] - t0;
+        d.main_cursor = k;
+        d.aux_cursor = 0;
+        d.v_shown = [true, true, false];
+        let s = app.cursor_status();
+        assert_eq!(s[0], format!("Верт. визир 1: {}", crate::oscgeom::time_of_day_text(46_799.5 + dt)));
+        assert_eq!(s[1], "Верт. визир 2: 12:59:59.500");
+        assert_eq!(s[2], format!("Разница. верт. визиров: {}", crate::oscgeom::status_abs_diff(dt)));
     }
 }

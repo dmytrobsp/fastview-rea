@@ -387,6 +387,7 @@ enum MenuCmd {
     Color,
     TimeUnit(TimeUnit),
     Grid,
+    DiffBand,
     EditComment(usize),
     LockComment(usize),
     DeleteComment(usize),
@@ -588,13 +589,20 @@ impl App {
         let t0 = doc.osc.time.first().copied().unwrap_or(0.0);
         let time_at = |k: usize| doc.osc.time.get(k).copied().unwrap_or(0.0) - t0;
         let text_col = Color32::from_rgb(0, 0, 127);
+        let start_tod = fvb_core::comtrade::time_of_day(&doc.osc.stamps.start_time);
+        if time_unit == TimeUnit::Absolute {
+            // The start date at (5, H − 20) under the stats panel.
+            if let Some(date) = fvb_core::comtrade::stamp_date_text(&doc.osc.stamps.start_date, doc.osc.rev_year) {
+                painter.text(Pos2::new(client.left() + 5.0, client.bottom() - 20.0), Align2::LEFT_TOP, date, FontId::proportional(11.0), text_col);
+            }
+        }
         let mut first_label = true;
         for t in g::ruler_ticks(left, plot_right) {
             painter.vline(t.x, ruler_top..=ruler_top + t.len, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
             if t.labelled {
                 let k = g::tick_sample(first, t.i, f);
                 if k < n {
-                    let s = g::ruler_label(time_unit, time_at(k), k as i64, first_label);
+                    let s = g::ruler_label(time_unit, time_at(k), k as i64, first_label, start_tod);
                     painter.text(Pos2::new(t.x, client.bottom() - 20.0), Align2::CENTER_TOP, s, FontId::proportional(11.0), text_col);
                     first_label = false;
                 }
@@ -614,7 +622,7 @@ impl App {
             marks.sort_by(|a, b| a.0.total_cmp(&b.0));
             let mut taken: Vec<Rect> = Vec::new();
             for (x, k, text) in &marks {
-                let s = g::ruler_label(time_unit, time_at(*k), *k as i64, true);
+                let s = g::mark_label(time_unit, time_at(*k), *k as i64, start_tod);
                 let galley = painter.layout_no_wrap(s, FontId::proportional(11.0), text_col);
                 let r = Rect::from_center_size(Pos2::new(*x, ruler_top - 18.0), galley.size()).expand(3.0);
                 if taken.iter().any(|t| t.intersects(r)) {
@@ -644,7 +652,7 @@ impl App {
                     ));
                 }
                 let dt = (time_at(w[1].1) - time_at(w[0].1)).abs();
-                let s = g::ruler_label(time_unit, dt, w[1].1 as i64 - w[0].1 as i64 - 1, true);
+                let s = g::diff_label(time_unit, dt, (w[1].1 as i64 - w[0].1 as i64).abs());
                 let galley = painter.layout_no_wrap(s, FontId::proportional(10.0), text_col);
                 if galley.size().x + 4.0 < xb - xa && xb - xa > 20.0 {
                     let pos = Pos2::new((xa + xb) / 2.0 - galley.size().x / 2.0, dim_y - galley.size().y - 1.0);
@@ -1126,7 +1134,7 @@ impl App {
                 return;
             }
         }
-        let (time_unit, grid, can_paste) = (self.time_unit, self.show_grid, !self.channel_clip.is_empty());
+        let (time_unit, grid, can_paste, band) = (self.time_unit, self.show_grid, !self.channel_clip.is_empty(), doc.diff_band);
         let mut chosen: Option<MenuCmd> = None;
         let area = egui::Area::new(egui::Id::new("fv_lane_menu").with(menu.serial))
             .kind(egui::UiKind::Menu)
@@ -1140,7 +1148,7 @@ impl App {
                         let mut pick = |c: MenuCmd| chosen = Some(c);
                         match menu.kind {
                             LaneMenuKind::Channels => channel_menu(ui, doc, can_paste, &mut pick),
-                            LaneMenuKind::TimeAxis => time_axis_menu(ui, time_unit, grid, &mut pick),
+                            LaneMenuKind::TimeAxis => time_axis_menu(ui, time_unit, grid, band, &mut pick),
                             LaneMenuKind::Comment(i) => comment_menu(ui, &doc.comments[i], i, &mut pick),
                         }
                     });
@@ -1171,6 +1179,12 @@ impl App {
             MenuCmd::PasteMerge => self.paste_channels_for_merge(),
             MenuCmd::TimeUnit(u) => self.time_unit = u,
             MenuCmd::Grid => self.show_grid = !self.show_grid,
+            // 33033 (`0x4557d0`): a per-document toggle, no modified mark.
+            MenuCmd::DiffBand => {
+                if let Some(d) = self.docs.get_mut(ai) {
+                    d.diff_band = !d.diff_band;
+                }
+            }
             MenuCmd::Color => self.color_dialog = self.docs.get(ai).and_then(|d| d.first_selected_color()),
             MenuCmd::EditComment(i) => self.open_comment_editor(ai, i),
             MenuCmd::EditLevel(i) => {
@@ -1214,21 +1228,26 @@ impl App {
         let Some(d) = self.active_doc() else { return out };
         let t0 = d.osc.time.first().copied().unwrap_or(0.0);
         let t = |k: usize| d.osc.time.get(k).copied().unwrap_or(0.0) - t0;
-        let time = |dt: f64, k: i64| match self.time_unit {
+        let start_tod = fvb_core::comtrade::time_of_day(&d.osc.stamps.start_time);
+        // Absolute mode (strings 240/241/202): V1/V2 as the time of day, the
+        // difference as `ss.mmm` within the minute.
+        let time = |dt: f64, k: i64, diff: bool| match self.time_unit {
             TimeUnit::Micro => format!("{} мкс", (dt * 1e6).round() as i64),
             TimeUnit::Milli => format!("{} мс", (dt * 1e3).round() as i64),
             TimeUnit::Sec => format!("{dt:.3} сек."),
+            TimeUnit::Absolute if diff => g::status_abs_diff(dt),
+            TimeUnit::Absolute => g::time_of_day_text(start_tod + dt),
             TimeUnit::Samples => format!("{k}"),
         };
         let (v1, v2) = (d.main_cursor, d.aux_cursor);
         if d.v_shown[0] {
-            out[0] = format!("{} {}", captions[0], time(t(v1), v1 as i64 + 1));
+            out[0] = format!("{} {}", captions[0], time(t(v1), v1 as i64 + 1, false));
         }
         if d.v_shown[1] {
-            out[1] = format!("{} {}", captions[1], time(t(v2), v2 as i64 + 1));
+            out[1] = format!("{} {}", captions[1], time(t(v2), v2 as i64 + 1, false));
         }
         if d.v_shown[0] && d.v_shown[1] {
-            out[2] = format!("{} {}", captions[2], time((t(v1) - t(v2)).abs(), (v1 as i64 - v2 as i64).abs()));
+            out[2] = format!("{} {}", captions[2], time((t(v1) - t(v2)).abs(), (v1 as i64 - v2 as i64).abs(), true));
         }
         let hval = |j: usize| -> Option<(usize, f64)> {
             let h = &d.hviz[j];
@@ -1335,25 +1354,30 @@ fn channel_menu(ui: &mut egui::Ui, doc: &crate::app::Doc, can_paste: bool, pick:
     }
 }
 
-/// MENU 560 (time-axis band). «Абсолютное время» and «Разница между
-/// визирами» are not implemented yet and are shown disabled.
-fn time_axis_menu(ui: &mut egui::Ui, unit: TimeUnit, grid: bool, pick: &mut dyn FnMut(MenuCmd)) {
+/// MENU 560 (time-axis band): the RulerState radios, Сетка and 33033
+/// «Разница между визирами» (checked while the band is shown, `0x4557b0`);
+/// all always enabled.
+fn time_axis_menu(ui: &mut egui::Ui, unit: TimeUnit, grid: bool, band: bool, pick: &mut dyn FnMut(MenuCmd)) {
     let on = |u: TimeUnit| ItemState { enabled: true, checked: unit == u };
-    for (label, u) in [("Микросекунды", TimeUnit::Micro), ("Миллисекунды", TimeUnit::Milli), ("Секунды", TimeUnit::Sec)] {
+    for (label, u) in [
+        ("Микросекунды", TimeUnit::Micro),
+        ("Миллисекунды", TimeUnit::Milli),
+        ("Секунды", TimeUnit::Sec),
+        ("Абсолютное время", TimeUnit::Absolute),
+        ("Отсчеты", TimeUnit::Samples),
+    ] {
         if menu_radio(ui, label, on(u)) {
             pick(MenuCmd::TimeUnit(u));
         }
-    }
-    menu_radio(ui, "Абсолютное время", ItemState { enabled: false, checked: false });
-    if menu_radio(ui, "Отсчеты", on(TimeUnit::Samples)) {
-        pick(MenuCmd::TimeUnit(TimeUnit::Samples));
     }
     ui.separator();
     if menu_check(ui, "Сетка", ItemState { enabled: true, checked: grid }) {
         pick(MenuCmd::Grid);
     }
     ui.separator();
-    menu_check(ui, "Разница между визирами", ItemState { enabled: false, checked: false });
+    if menu_check(ui, "Разница между визирами", ItemState { enabled: true, checked: band }) {
+        pick(MenuCmd::DiffBand);
+    }
 }
 
 /// MENU 563 (a comment under the pointer), relabelled by the comment's kind

@@ -32,6 +32,7 @@ pub fn ruler_state(u: crate::app::TimeUnit) -> u8 {
         Micro => 0,
         Milli => 1,
         Sec => 2,
+        Absolute => 3,
         Samples => 4,
     }
 }
@@ -42,6 +43,7 @@ pub fn time_unit(code: u8) -> Option<crate::app::TimeUnit> {
         0 => Some(Micro),
         1 => Some(Milli),
         2 => Some(Sec),
+        3 => Some(Absolute),
         4 => Some(Samples),
         _ => None,
     }

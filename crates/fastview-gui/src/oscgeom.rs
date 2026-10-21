@@ -200,14 +200,44 @@ pub fn group_thousands(v: i64) -> String {
     }
 }
 
+/// The original's rounding (`0x411bf0` / `0x42df60`): `floor(x)` when it is
+/// less than ½ away, else `ceil(x)` — halves go up, also when negative.
+pub fn round_half_up(x: f64) -> i64 {
+    let f = x.floor();
+    if (f - x).abs() < 0.5 {
+        f as i64
+    } else {
+        x.ceil() as i64
+    }
+}
+
+/// Whole microseconds of `t` seconds (the original keeps sample times as
+/// integer µs, `0x454b40`).
+fn micros(t: f64) -> i64 {
+    (t * 1e6).round() as i64
+}
+
+/// A time of day `x` seconds as `%02d:%02d:%02d.%03d` (`0x464350`,
+/// `0x466170`): hours modulo 24, whole minutes and seconds, then the
+/// fraction in rounded milliseconds (which can print as 1000).
+pub fn time_of_day_text(x: f64) -> String {
+    let whole = x.floor() as i64;
+    let mins = whole.div_euclid(60);
+    let s = x - (mins * 60) as f64;
+    let ms = round_half_up((s - s.floor()) * 1000.0);
+    format!("{:02}:{:02}:{:02}.{:03}", mins.div_euclid(60).rem_euclid(24), mins.rem_euclid(60), s.floor() as i64, ms)
+}
+
 /// A ruler label: time `t` (seconds) and sample `k`, both relative to the
 /// trigger, in the ruler unit; the unit is appended only to the first label
-/// (templates 386–388).
-pub fn ruler_label(unit: TimeUnit, t: f64, k: i64, first_label: bool) -> String {
+/// (templates 386–388). `start_tod` = the record's start time of day for
+/// «Абсолютное время», which has no unit.
+pub fn ruler_label(unit: TimeUnit, t: f64, k: i64, first_label: bool, start_tod: f64) -> String {
     let (text, suffix) = match unit {
-        TimeUnit::Micro => (group_thousands((t * 1e6).round() as i64), " мкс"),
-        TimeUnit::Milli => (group_thousands((t * 1e6 / 1000.0).round() as i64), " мс"),
+        TimeUnit::Micro => (group_thousands(micros(t)), " мкс"),
+        TimeUnit::Milli => (group_thousands(round_half_up(micros(t) as f64 / 1000.0)), " мс"),
         TimeUnit::Sec => (if t.abs() < 0.0005 { "0.000".to_string() } else { format!("{t:.3}") }, " с"),
+        TimeUnit::Absolute => (time_of_day_text(start_tod + micros(t) as f64 / 1e6), ""),
         TimeUnit::Samples => (format!("{}", k + 1), ""),
     };
     if first_label {
@@ -215,6 +245,44 @@ pub fn ruler_label(unit: TimeUnit, t: f64, k: i64, first_label: bool) -> String 
     } else {
         text
     }
+}
+
+/// A marker's label in the difference band (`0x466170`, not a difference):
+/// plain numbers without unit or grouping — µs `%i`, ms rounded `%i`, s
+/// `%.3f`, the absolute time of day, samples `k + 1`.
+pub fn mark_label(unit: TimeUnit, t: f64, k: i64, start_tod: f64) -> String {
+    match unit {
+        TimeUnit::Micro => micros(t).to_string(),
+        TimeUnit::Milli => round_half_up(micros(t) as f64 / 1000.0).to_string(),
+        TimeUnit::Sec => format!("{:.3}", micros(t) as f64 / 1e6),
+        TimeUnit::Absolute => time_of_day_text(start_tod + micros(t) as f64 / 1e6),
+        TimeUnit::Samples => (k + 1).to_string(),
+    }
+}
+
+/// The |Δt| label between two band markers (`0x466170` with the difference
+/// flag): as [`mark_label`] but samples are the plain count and the
+/// absolute mode prints the span `h:mm:ss.mmm` from rounded milliseconds
+/// (hours not wrapped).
+pub fn diff_label(unit: TimeUnit, dt: f64, dk: i64) -> String {
+    match unit {
+        TimeUnit::Absolute => {
+            let ms = round_half_up(micros(dt) as f64 / 1000.0);
+            let s = ms.div_euclid(1000);
+            format!("{:02}:{:02}:{:02}.{:03}", s / 3600, (s / 60) % 60, s % 60, ms.rem_euclid(1000))
+        }
+        TimeUnit::Samples => dk.to_string(),
+        u => mark_label(u, dt, 0, 0.0),
+    }
+}
+
+/// The status-bar V difference in absolute mode (string 202,
+/// `0x4951a3`): `%02d.%03d` = seconds within the minute (the minutes are
+/// dropped, as in the original) and rounded milliseconds.
+pub fn status_abs_diff(dt: f64) -> String {
+    let mins = dt.floor() as i64 / 60;
+    let s = dt - (mins * 60) as f64;
+    format!("{:02}.{:03}", s.floor() as i64, round_half_up((s - s.floor()) * 1000.0))
 }
 
 #[cfg(test)]
@@ -287,10 +355,32 @@ mod tests {
         assert_eq!(lens, [10.0, 5.0, 7.0, 5.0, 10.0, 5.0, 7.0, 5.0, 10.0]);
         assert_eq!(t.iter().filter(|t| t.labelled).map(|t| t.x).collect::<Vec<_>>(), [125.0, 225.0, 325.0]);
         assert_eq!(tick_sample(10, 4, 0.25), 26);
-        assert_eq!(ruler_label(TimeUnit::Milli, 0.0123, 0, true), "12 мс");
-        assert_eq!(ruler_label(TimeUnit::Micro, 1.2345678, 0, false), "1 234 568");
-        assert_eq!(ruler_label(TimeUnit::Sec, 0.0004, 0, true), "0.000 с");
-        assert_eq!(ruler_label(TimeUnit::Samples, 0.0, 41, true), "42");
+        assert_eq!(ruler_label(TimeUnit::Milli, 0.0123, 0, true, 0.0), "12 мс");
+        assert_eq!(ruler_label(TimeUnit::Micro, 1.2345678, 0, false, 0.0), "1 234 568");
+        assert_eq!(ruler_label(TimeUnit::Sec, 0.0004, 0, true, 0.0), "0.000 с");
+        assert_eq!(ruler_label(TimeUnit::Samples, 0.0, 41, true, 0.0), "42");
+    }
+
+    #[test]
+    fn absolute_time_labels() {
+        // Start stamp 23:59:59.9995 → the ruler wraps the hours, rounds the
+        // milliseconds half up (to 1000, as the original prints) and has no unit.
+        let tod = fvb_core::comtrade::time_of_day("23:59:59.9995");
+        assert!((tod - 86_399.999_5).abs() < 1e-9);
+        assert_eq!(ruler_label(TimeUnit::Absolute, 0.0, 0, true, tod), "23:59:59.1000");
+        assert_eq!(ruler_label(TimeUnit::Absolute, 0.0105, 0, true, tod), "00:00:00.010");
+        assert_eq!(fvb_core::comtrade::time_of_day("10:05"), 36_300.0);
+        assert_eq!(fvb_core::comtrade::time_of_day("1:2:3.5x"), 3723.5);
+        assert_eq!(time_of_day_text(3723.25), "01:02:03.250");
+        // Band labels: no unit or grouping; differences in samples are counts.
+        assert_eq!(mark_label(TimeUnit::Micro, 1.234567, 9, 0.0), "1234567");
+        assert_eq!(mark_label(TimeUnit::Milli, -0.0025, 9, 0.0), "-2");
+        assert_eq!(mark_label(TimeUnit::Samples, 0.0, 9, 0.0), "10");
+        assert_eq!(diff_label(TimeUnit::Samples, 0.0, 9), "9");
+        assert_eq!(diff_label(TimeUnit::Absolute, 3725.0125, 0), "01:02:05.013");
+        assert_eq!(status_abs_diff(125.0125), "05.013");
+        assert_eq!(round_half_up(-2.5), -2);
+        assert_eq!(round_half_up(2.5), 3);
         assert_eq!(group_thousands(-1234), "-1 234");
     }
 }
