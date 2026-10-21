@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 83 pass)
+- `cargo test --workspace`   (currently 89 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 83 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 89 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -138,7 +138,7 @@ decompilation (pending, listed below).
 | Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ✅ L4 |
 | DFT / phasors / RMS | `FUN_00426fc0` & channel methods | `signal.rs` | ✅ L6 (freq-channel variant ❌) |
 | Symmetric components / impedances | Calculator `i1: i2: 3i0: zl: zf:` | `signal.rs`/`analysis.rs` | 🟡 L6 (view code not located) |
-| ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | ❌ L7 reversed, rewrite pending |
+| ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | 🟡 L7 engine core ✅, window/result/double-ended/GUI ❌ |
 | COMTRADE reader/writer | `ComtradeConverter` | `comtrade.rs` | ⏳ pending |
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
@@ -377,7 +377,7 @@ with exact arg counts, return 0x431 for now).
 
 ---
 
-## L7 — ОМП (fault location)  ·  ❌ reversed, Rust rewrite PENDING
+## L7 — ОМП (fault location)  ·  🟡 engine core ✅ (`omp::single_ended`), window/result/double-ended/GUI ❌
 
 Evidence (subagent decompile; main `0x4a00b0`). Our `omp.rs` (single
 cursor-instant phasor, plain reactance / textbook two-terminal formula) is
@@ -457,6 +457,15 @@ cursor-instant phasor, plain reactance / textbook two-terminal formula) is
 
 Full behavioural spec (detection, debounce, phase selection, loop choice,
 grounded/isolated section distance, θ, median) is kept in **`notes/OMP_SPEC.md`**.
+
+Implemented (`omp.rs`, new per-sample engine; the old single-instant
+functions remain only until the GUI moves over): `omp_phasors`, components,
+grounded detection with hysteresis + `debounce`, phase selection, loop choice
+(grounded/isolated), grounded and isolated per-sample distance with section
+walking, voltage drops, taps, parallel-line term, clamp and the over-count
+quirk, `median`. θ fixed at 0 (the tap re-estimation needs the unresolved
+`0x49bd40`). Pinned by `tests/omp_engine.rs` (6: 1-ph earth fault, 2-section
+walk, over-count, isolated 2-ph, debounce timing, median).
 
 Rust action: rewrite `omp.rs` as this engine (sections, per-sample distances,
 detection, window, median/σ) with tests; GUI dialog as a section tree.
