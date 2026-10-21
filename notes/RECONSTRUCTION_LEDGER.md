@@ -1633,13 +1633,11 @@ Ours were: rounded x, labels only for on-screen визиры centred at the line
 with padding, no merging, no clamping, no pen special case, ГВ labels always
 drawn mid-plot just above the line. Now `oscgeom::vizir_x` /
 `vizir_labels` (pure, tested), `OscView::vizirs` and `lanes::paint_hvizirs`
-(screen and print); the визир hit test uses the drawn x [I: the mouse code's
-own mapping not read]. Tests `vizir_x_is_the_drawn_column_with_the_
+(screen and print); (the hit test: L9.44). Tests `vizir_x_is_the_drawn_column_with_the_
 fallback_quirk`, `labels_clamp_sideways_and_merge_with_a_space`,
 `vizir_labels_follow_the_original`.
 Residual: the ГВ label font / background colour are the DC's (caller's)
-[ND] — ours the row font on white; the difference band's own визир
-positions still use the plain sample mapping.
+[ND] — ours the row font on white.
 
 ### L9.43 — Lane min / max computed once, not per frame  ·  ✅
 Measured (release, `frame_bench`): a 500 000-sample × 8 record took
@@ -1652,6 +1650,29 @@ are rebuilt (`Doc::recompute`, load); the primary/secondary scale applied
 on use. 7.0 ms per frame after; drawing every sample when zoomed out is
 next (the original draws columns — research running). `frame_bench`
 (`FV_FRAME_BENCH=<cfg>`) and test `range_cache_follows_value_changes`.
+
+### L9.44 — Визир hit test, cursor, press order and the difference band  ·  ✅
+Read (subagent, objdump): the shared hit routine `0x495800` (callers
+`0x45e37c` in button-down `0x45dc10`, `0x45f6bc` in WM_SETCURSOR
+`0x45f660`) tests V1 > V2 > V3 at **trunc(leftW + (s − first)·25·f)** —
+not the painter's column search, so a визир the painter drops (on
+`first`) is still grabbed at leftW..leftW+2 — with |Δ| < 3 on integer
+pixels, then ГВ1 > ГВ2 at their drawn y (`0x4944a0`), then the comment
+test `0x43fab0`, and only then the pending lane `0x45f3d0`; R-down forwards
+to L-down without MK_LBUTTON, so no drag. Cursor: no leftW / band gate;
+HAND for a merge drag / pending lane first, then SIZEWE (V, comment hit 9),
+SIZENS (ГВ, hit 10), UPARROW in rectangle zoom. Difference band
+`0x466630`: x = trunc((s − first)·25·f) + leftW; labels V1 V2 V3 then
+moments by sample, drawn when x > leftW, dropped when the cell ±3 px
+overlaps a placed one; dimension lines between consecutive samples of a
+map (moments + shown визиры), drawn when x_a > leftW and x_b − x_a > 16,
+no right-edge test.
+Ours were: hit against the drawn x (L9.42, inferred), float ±3, pending
+lane before comments, cursor gated to the plot with the resize cursor over
+the hand; band at rounded x sorted by x with a right-edge cut. Now as read.
+Test `a_vizir_on_the_first_sample_is_grabbed_at_the_plot_edge`.
+Residual: comment hit codes 9 vs 10 (which part gives SIZENS) NOT
+DETERMINED — ours SIZEWE for every comment hit.
 
 Next in L9 (HANDOFF 2026-10-22): after the four GUI bugs (L9.23–L9.25)
 and the render audit (L9.26–L9.29), copy's EMF (L9.30), loading progress

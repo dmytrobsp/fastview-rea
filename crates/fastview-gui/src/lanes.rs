@@ -329,28 +329,40 @@ impl OscView<'_> {
         let start_tod = fvb_core::comtrade::time_of_day(&doc.osc.stamps.start_time);
         let band_top = ruler_top - g::DIFF_BAND_H;
         painter.rect_filled(Rect::from_min_max(Pos2::new(self.x0, band_top), Pos2::new(plot_right, ruler_top)), 0.0, Color32::WHITE);
-        let mut marks: Vec<(f32, usize, Option<&str>)> = self.viz().iter().filter(|v| v.1).map(|v| (self.x_of(v.0 as f64), v.0, None)).collect();
-        marks.extend(doc.comments.iter().filter_map(|c| c.moment().map(|k| (self.x_of(k as f64), k, (!c.hidden).then_some(c.text.as_str())))));
-        marks.retain(|m| m.0 > left && m.0 <= plot_right);
-        marks.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let mut taken: Vec<Rect> = Vec::new();
-        for (x, k, text) in &marks {
-            let s = g::mark_label(self.unit, self.time_at(*k), *k as i64, start_tod);
-            let galley = painter.layout_no_wrap(s, FontId::proportional(11.0), text_col);
-            let r = Rect::from_center_size(Pos2::new(*x, ruler_top - 18.0), galley.size()).expand(3.0);
-            if taken.iter().any(|t| t.intersects(r)) {
+        // Positions (`0x4669d8`): leftW + trunc((s − first)·25·f).
+        let bx = |k: usize| left + ((k as f64 - self.first as f64) * g::PX_PER_SAMPLE * self.f).trunc() as f32;
+        // Labels: В1 В2 В3 first, then the comment moments by sample; one is
+        // dropped when its cell ±3 px overlaps a placed one; only x > leftW.
+        let mut moments: Vec<(usize, Option<&str>)> = doc.comments.iter().filter_map(|c| c.moment().map(|k| (k, (!c.hidden).then_some(c.text.as_str())))).collect();
+        moments.sort_by_key(|m| m.0);
+        let order = self.viz().iter().filter(|v| v.1).map(|v| (v.0, None)).chain(moments.iter().copied()).collect::<Vec<_>>();
+        let mut taken: Vec<(f32, f32)> = Vec::new();
+        for (k, text) in order {
+            let x = bx(k);
+            if x <= left {
                 continue;
             }
-            taken.push(r);
-            painter.galley(r.min + Vec2::splat(3.0), galley, text_col);
+            let s = g::mark_label(self.unit, self.time_at(k), k as i64, start_tod);
+            let galley = painter.layout_no_wrap(s, FontId::proportional(11.0), text_col);
+            let (l, r) = (x - (galley.size().x / 2.0).trunc(), x + (galley.size().x / 2.0).trunc() + 1.0);
+            if taken.iter().any(|&(a, b)| l - 3.0 <= b && a <= r + 3.0) {
+                continue;
+            }
+            taken.push((l, r));
+            painter.galley(Pos2::new(l, ruler_top - 18.0 - galley.size().y / 2.0), galley, text_col);
             if let Some(t) = text.filter(|t| !t.is_empty()) {
-                painter.text(Pos2::new(*x, ruler_top - 10.0), Align2::CENTER_TOP, t.lines().next().unwrap_or(""), FontId::proportional(9.0), COMMENT_COLOR);
+                painter.text(Pos2::new(x, ruler_top - 10.0), Align2::CENTER_TOP, t.lines().next().unwrap_or(""), FontId::proportional(9.0), COMMENT_COLOR);
             }
         }
+        // Dimension lines between consecutive marks of a map keyed by sample
+        // (moments and shown визиры, deduplicated): drawn when x_a > leftW and
+        // x_b − x_a > 16; no right-edge test.
+        let keys: std::collections::BTreeSet<usize> = self.viz().iter().filter(|v| v.1).map(|v| v.0).chain(moments.iter().map(|m| m.0)).collect();
+        let marks: Vec<(f32, usize)> = keys.into_iter().map(|k| (bx(k), k)).collect();
         let dim_y = ruler_top - 35.0;
         for w in marks.windows(2) {
             let (xa, xb) = (w[0].0, w[1].0);
-            if xb - xa <= 16.0 {
+            if xa <= left || xb - xa <= 16.0 {
                 continue;
             }
             let st = Stroke::new(1.0f32, text_col);
@@ -986,9 +998,15 @@ impl App {
         // ---- input (`0x45dc10`, `0x45ea70`, `0x45e6b0`, `0x45efa0`) ----
         let geo = RowGeo { left, axis_top: plot_bottom, tops: &tops, rows: &rows };
         let (shift, ctrl, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.command || i.modifiers.ctrl, i.modifiers.alt));
-        // Grabbed where it is drawn (`0x493110`'s x) [I].
-        let v_hit = |x: f32| (0..3).find(|&k| viz[k].1 && (ov.vizir_x(viz[k].0) - x).abs() < 3.0);
-        let h_hit = |y: f32| (0..2).find(|&j| doc.hviz[j].shown && hrows[j].is_some_and(|(hy, _)| (hy - y).abs() < 3.0));
+        // Hit tests (`0x495800`, on integer pixels): a визир at
+        // trunc(leftW + (s − first)·25·f) — not the painter's column search —
+        // within |Δ| < 3; a ГВ at its drawn y, likewise.
+        let x_rel_left = left - client.left();
+        let v_hit = |x: f32| {
+            let px = (x - client.left()).floor();
+            (0..3).find(|&k| viz[k].1 && (px - (x_rel_left as f64 + (viz[k].0 as f64 - first as f64) * g::PX_PER_SAMPLE * f).trunc() as f32).abs() < 3.0)
+        };
+        let h_hit = |y: f32| (0..2).find(|&j| doc.hviz[j].shown && hrows[j].is_some_and(|(hy, _)| (hy.floor() - y.floor()).abs() < 3.0));
         // Whether `y` is over a pending (pasted, not yet merged) lane.
         let pending_at = |y: f32| {
             rows.iter().zip(&tops).any(|(r, &t)| {
@@ -1026,15 +1044,16 @@ impl App {
                             actions.push(Act::Drag(VizDrag::V(v_hit(pos.x).unwrap())));
                         } else if pressed_l && h_hit(pos.y).is_some() {
                             actions.push(Act::Drag(VizDrag::H(h_hit(pos.y).unwrap())));
-                        } else if pressed_l && pending_at(pos.y) {
-                            // A pending pasted lane: drag it in time (mode 6).
-                            actions.push(Act::MergeDrag(Some((pos.x, doc.merge_offset))));
                         } else if let Some((ci, part)) = comment_at(pos) {
                             // LMB on a comment whose text is shown grabs it (the
-                            // menu comes on the right button's release).
+                            // menu comes on the right button's release); a
+                            // comment is tested before a pending lane.
                             if pressed_l && !doc.comments[ci].hidden {
                                 actions.push(Act::CommentDrag(ci, part));
                             }
+                        } else if pressed_l && pending_at(pos.y) {
+                            // A pending pasted lane: drag it in time (mode 6).
+                            actions.push(Act::MergeDrag(Some((pos.x, doc.merge_offset))));
                         } else if pressed_l && doc.comment_mode != 0 {
                             // Placement tools (`0x43eb40`): a moment in one click;
                             // a level line on an analog lane and an area on any
@@ -1227,21 +1246,23 @@ impl App {
                 }
             }
         }
-        // Cursor shapes (`0x45f660`).
-        if let Some(pos) = hover.filter(|p| p.x > left && p.y < plot_bottom) {
-            if self.rect_zoom != RectZoom::Off {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNorth);
-            } else if self.merge_drag.is_some() || pending_at(pos.y) {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-            }
-            match self.vizir_drag {
-                Some(VizDrag::V(_)) => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal),
-                Some(VizDrag::H(_)) => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical),
-                None if v_hit(pos.x).is_some() || comment_at(pos).is_some() || self.comment_drag.is_some() => {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal)
-                }
-                None if h_hit(pos.y).is_some() => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical),
-                None => {}
+        // Cursor shapes (WM_SETCURSOR `0x45f660`, anywhere on the view): the
+        // hand for a merge drag or a pending lane wins; then the визир /
+        // comment resize cursors; then the rectangle-zoom arrow.
+        if let Some(pos) = hover.filter(|p| client.contains(*p)) {
+            let icon = if self.merge_drag.is_some() || pending_at(pos.y) {
+                Some(egui::CursorIcon::Grab)
+            } else if matches!(self.vizir_drag, Some(VizDrag::V(_))) || self.comment_drag.is_some() || v_hit(pos.x).is_some() || comment_at(pos).is_some() {
+                Some(egui::CursorIcon::ResizeHorizontal)
+            } else if matches!(self.vizir_drag, Some(VizDrag::H(_))) || h_hit(pos.y).is_some() {
+                Some(egui::CursorIcon::ResizeVertical)
+            } else if self.rect_zoom != RectZoom::Off {
+                Some(egui::CursorIcon::ResizeNorth)
+            } else {
+                None
+            };
+            if let Some(i) = icon {
+                ui.ctx().set_cursor_icon(i);
             }
         }
         let row_keys: Vec<ChanKey> = rows.iter().map(|r| r.key).collect();
@@ -2211,6 +2232,22 @@ mod menu_tests {
         h.app.dispatch(Command::SetValueMode(ValueMode::Rms));
         let (lo3, _) = chan_range(h.doc(), 0, false);
         assert!(lo3 >= 0.0, "an RMS series is never negative: {lo3}");
+    }
+
+    /// The визир hit test (`0x495800`) uses trunc(leftW + (s − first)·25·f),
+    /// not the painter's column search: В1 on `first` is not drawn (the
+    /// painter's fallback quirk) yet is grabbed just right of the stats panel.
+    #[test]
+    fn a_vizir_on_the_first_sample_is_grabbed_at_the_plot_edge() {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        d.main_cursor = d.first;
+        d.v_shown[0] = true;
+        h.frame(vec![]);
+        let left = 8.0 + h.app.view_left;
+        let y = h.row(0).y;
+        drag(&mut h, Pos2::new(left + 1.0, y), Pos2::new(left + 200.0, y));
+        assert!(h.doc().main_cursor > h.doc().first, "В1 dragged from the plot edge: {}", h.doc().main_cursor);
     }
 
     #[test]
