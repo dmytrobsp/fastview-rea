@@ -171,11 +171,15 @@ impl App {
                 cmds.push(Command::Show(View::Oscillogram));
             }
             ui.vertical(|ui| {
-                if small_button(ui, p, Icon::ShowAll, "Показать все").clicked() {
-                    cmds.push(Command::ShowAllChannels(true));
+                // 32845 / 32846 / 32847: the discrete channels.
+                if small_button(ui, p, Icon::ShowAll, "Показать дискретные").clicked() {
+                    cmds.push(Command::Discrete(0));
                 }
-                if small_button(ui, p, Icon::HideAll, "Скрыть все").clicked() {
-                    cmds.push(Command::ShowAllChannels(false));
+                if small_button(ui, p, Icon::HideAll, "Скрыть дискретные").clicked() {
+                    cmds.push(Command::Discrete(1));
+                }
+                if small_button(ui, p, Icon::HideAll, "Скрыть неизменяющиеся").clicked() {
+                    cmds.push(Command::Discrete(2));
                 }
                 if small_button(ui, p, Icon::FitTime, "Вся осцил.").clicked() {
                     cmds.push(Command::FitTime);
@@ -196,19 +200,21 @@ impl App {
                     }
                 });
             });
-            // 32802 / 32803 / 32800 / 32801: time and lane-height zoom steps.
-            ui.vertical(|ui| {
-                for (label, c) in [
-                    ("Увеличить по гориз.", Command::ZoomX(true)),
-                    ("Уменьшить по гориз.", Command::ZoomX(false)),
-                    ("Увеличить по верт.", Command::ZoomY(true)),
-                    ("Уменьшить по верт.", Command::ZoomY(false)),
-                ] {
-                    if small_toggle(ui, p, label, false) {
-                        cmds.push(c);
+            // 32802 / 32803 / 138 and 32800 / 32801 / 141: zoom steps, the
+            // rectangle vertical zoom (checked while armed) and its reset.
+            let armed = self.rect_zoom != crate::app::RectZoom::Off;
+            for column in [
+                [("Увеличить по гориз.", Command::ZoomX(true), false), ("Уменьшить по гориз.", Command::ZoomX(false), false), ("Приблизить по верт.", Command::RectZoom, armed)],
+                [("Увеличить по верт.", Command::ZoomY(true), false), ("Уменьшить по верт.", Command::ZoomY(false), false), ("Вернуть к исх. размеру", Command::ResetZoom, false)],
+            ] {
+                ui.vertical(|ui| {
+                    for (label, c, on) in column {
+                        if small_toggle(ui, p, label, on) {
+                            cmds.push(c);
+                        }
                     }
-                }
-            });
+                });
+            }
             // 32813 / 32814 / 139 / 32815 / 32816: the визиры, checked while shown.
             ui.vertical(|ui| {
                 for (k, label) in ["В1", "В2", "В3", "ГВ1", "ГВ2"].into_iter().enumerate() {
@@ -248,11 +254,15 @@ impl App {
                 }
             });
             ui.vertical(|ui| {
-                if small_button(ui, p, Icon::Invert, "Инвертировать").clicked() {
-                    cmds.push(Command::InvertVisible);
-                }
-                if small_button(ui, p, Icon::RemoveDc, "Удал. постоянную").clicked() {
-                    cmds.push(Command::RemoveDcVisible);
+                // 32823 / 32824: toggle-all over the selection, checked when
+                // every selected channel has the flag.
+                use crate::chansel::ChanFlag;
+                let st = |f| self.active_doc().map(|d| d.flag_state(f)).unwrap_or(crate::chansel::ItemState { enabled: false, checked: false });
+                for (icon, label, f) in [(Icon::Invert, "Инвертировать", ChanFlag::Invert), (Icon::RemoveDc, "Удал. постоянную", ChanFlag::RemoveDc)] {
+                    let s = st(f);
+                    if ui.add_enabled_ui(s.enabled, |ui| small_button_sel(ui, p, icon, label, s.checked)).inner.clicked() {
+                        cmds.push(Command::ToggleFlag(f));
+                    }
                 }
                 if small_button_sel(ui, p, Icon::Primary, "Первичные знач.", self.primary_values).clicked() {
                     cmds.push(Command::SetPrimaryValues(!self.primary_values));

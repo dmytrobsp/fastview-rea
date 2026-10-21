@@ -8,7 +8,7 @@
 //! selected channels, 563 on a comment — ledger L9.1). Lanes have a minimum
 //! height and the view scrolls vertically when there are many channels.
 
-use crate::app::{App, ChanKey, Command, CommentEdit, TimeUnit, ValueMode};
+use crate::app::{App, ChanKey, Command, CommentEdit, RectZoom, TimeUnit, ValueMode};
 use crate::oscgeom as g;
 use crate::chansel::{select_click, ChanFlag, ItemState, SelClick};
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Shape, Stroke, Vec2};
@@ -128,7 +128,11 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
         };
         r.h = r.h.max(need);
     }
-    rows.extend((0..doc.osc.digital.len()).map(|i| Row { key: Lane::Digital(i), members: Vec::new(), h: g::DIGITAL_H }));
+    rows.extend(
+        (0..doc.osc.digital.len())
+            .filter(|&i| doc.dig_visible.get(i).copied().unwrap_or(true))
+            .map(|i| Row { key: Lane::Digital(i), members: Vec::new(), h: g::DIGITAL_H }),
+    );
     rows
 }
 
@@ -149,7 +153,7 @@ fn status_icons(doc: &crate::app::Doc, r: &Row, primary: bool) -> Vec<&'static s
     let (c, ch) = (&doc.chans[i], &doc.osc.analog[i]);
     let scaled = primary && !ch.is_primary && ch.secondary != 0.0 && ch.primary / ch.secondary != 1.0;
     [
-        (c.vzoom != 1.0, "↕"),
+        (c.window.is_some(), "↕"),
         (c.remove_dc, "DC"),
         (c.invert, "−"),
         (scaled, "П"),
@@ -205,9 +209,9 @@ fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, f64) {
     match r.key {
         Lane::Analog(_) => {
             for &m in &r.members {
-                for k in 0..doc.osc.sample_count() {
-                    take(mode_disp(doc, m, k, primary));
-                }
+                let (a, b) = chan_range(doc, m, primary);
+                take(a);
+                take(b);
             }
         }
         Lane::Computed(i) => doc.computed[i].samples.iter().for_each(|&v| take(v)),
@@ -218,6 +222,24 @@ fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, f64) {
     } else {
         (lo, hi)
     }
+}
+
+/// An analog channel's drawing range: min..max of its displayed series over
+/// the whole record, or its window zoom (`0x42b640`).
+pub fn chan_range(doc: &crate::app::Doc, i: usize, primary: bool) -> (f64, f64) {
+    let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+    for k in 0..doc.osc.sample_count() {
+        let v = mode_disp(doc, i, k, primary);
+        if v.is_finite() {
+            lo = lo.min(v);
+            hi = hi.max(v);
+        }
+    }
+    if lo > hi {
+        (lo, hi) = (0.0, 0.0);
+    }
+    let c = &doc.chans[i];
+    g::effective_range(lo, hi, c.window, c.mode == ValueMode::Instant)
 }
 
 /// Fill `rect` with a vertical gradient.
@@ -339,6 +361,8 @@ enum Act {
     CommentDrag(usize, crate::comments::Part),
     MoveComment(usize, crate::comments::Part, usize, Option<(ChanKey, Option<f64>)>),
     EndCommentDrag,
+    RectZoom(RectZoom),
+    WindowZoom(usize, f64, f64),
     EditComment(usize),
     Rename(usize),
     Select(ChanKey, SelClick),
@@ -709,6 +733,9 @@ impl App {
                 match hit_test(pos, &geo) {
                     Hit::Axis => actions.push(Act::ClearSelection),
                     Hit::Stats(row) => {
+                        if self.rect_zoom != RectZoom::Off {
+                            actions.push(Act::RectZoom(RectZoom::Off));
+                        }
                         let how = if pressed_r {
                             SelClick::Right
                         } else if shift {
@@ -760,10 +787,33 @@ impl App {
                             if let Some((ch, v)) = analog_at(pos.y, &geo, &ranges) {
                                 actions.push(Act::SetH(usize::from(pressed_r), ch, v));
                             }
+                        } else if pressed_l && self.rect_zoom == RectZoom::Armed {
+                            // 138 armed: the press on an analog lane starts the
+                            // rectangle (mode 8).
+                            if let Some((chan, _)) = analog_at(pos.y, &geo, &ranges) {
+                                actions.push(Act::RectZoom(RectZoom::Dragging { chan, x: pos.x, y0: pos.y, y1: pos.y }));
+                            }
                         } else {
                             actions.push(Act::PlaceV(usize::from(pressed_r), k));
                         }
                     }
+                }
+            }
+        }
+        if let (RectZoom::Dragging { chan, x, y0, .. }, Some(pos)) = (self.rect_zoom, ui.input(|i| i.pointer.interact_pos())) {
+            if let Some(li) = rows.iter().position(|r| r.members.contains(&chan)) {
+                let (top, h) = (tops[li], rows[li].h);
+                let y1 = pos.y.clamp(top, top + h);
+                if ui.input(|i| i.pointer.primary_down()) {
+                    actions.push(Act::RectZoom(RectZoom::Dragging { chan, x, y0, y1 }));
+                    // The rubber line with ±5 px end ticks.
+                    let st = Stroke::new(1.0f32, Color32::BLACK);
+                    painter.vline(x, y0.min(y1)..=y0.max(y1), st);
+                    painter.hline(x - 5.0..=x + 5.0, y0, st);
+                    painter.hline(x - 5.0..=x + 5.0, y1, st);
+                } else {
+                    let (a, b) = (((y0.min(y1) - top) / h) as f64, ((y0.max(y1) - top) / h) as f64);
+                    actions.push(Act::WindowZoom(chan, a, b));
                 }
             }
         }
@@ -867,6 +917,9 @@ impl App {
         }
         // Cursor shapes (`0x45f660`).
         if let Some(pos) = hover.filter(|p| p.x > left && p.y < plot_bottom) {
+            if self.rect_zoom != RectZoom::Off {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNorth);
+            }
             match self.vizir_drag {
                 Some(VizDrag::V(_)) => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal),
                 Some(VizDrag::H(_)) => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical),
@@ -913,6 +966,13 @@ impl App {
                     }
                 }
                 Act::CommentDrag(i, part) => self.comment_drag = Some((i, part)),
+                Act::RectZoom(z) => self.rect_zoom = z,
+                Act::WindowZoom(chan, a, b) => {
+                    let dd: &crate::app::Doc = d;
+                    let cur: Vec<(f64, f64)> = (0..dd.chans.len()).map(|i| chan_range(dd, i, primary)).collect();
+                    d.apply_window_zoom(chan, a, b, &|i| cur[i]);
+                    self.rect_zoom = RectZoom::Off;
+                }
                 Act::MoveComment(i, part, k, under) => {
                     if let Some(c) = d.comments.get_mut(i) {
                         c.drag(part, k, under);
@@ -1096,7 +1156,12 @@ impl App {
             cmd => {
                 let Some(d) = self.docs.get_mut(ai) else { return };
                 match cmd {
-                    MenuCmd::Flag(f) => d.toggle_flag_selected(f),
+                    MenuCmd::Flag(f) => {
+                        d.toggle_flag_selected(f);
+                        if matches!(f, ChanFlag::Invert | ChanFlag::RemoveDc | ChanFlag::Adc) {
+                            self.recompute_active();
+                        }
+                    }
                     MenuCmd::Hide => d.hide_selected(),
                     MenuCmd::Mode(m) => d.set_mode_selected(m),
                     MenuCmd::ResetZoom => d.reset_zoom_selected(),
@@ -1309,28 +1374,21 @@ fn primary_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
 /// An analog channel's plotted / read-out value in the display mode
 /// (`0x461440`): instantaneous, one-period RMS or first harmonic.
 fn mode_disp(doc: &crate::app::Doc, i: usize, k: usize, primary: bool) -> f64 {
-    let ch = &doc.osc.analog[i];
-    let mode = doc.chans[i].mode;
-    let sdiv = if doc.chans[i].adc_counts && ch.a.abs() > 1e-12 { ch.a.abs() } else { 1.0 };
-    let scale = primary_scale(doc, i, primary) / sdiv;
-    match mode {
-        ValueMode::Instant => analog_disp(doc, i, k, primary),
+    let scale = value_scale(doc, i, primary);
+    match doc.chans[i].mode {
+        ValueMode::Instant => doc.sample(i, k) * scale,
         ValueMode::Rms => doc.rms_at(i, k) * scale,
         ValueMode::FirstHarmonic => doc.harmonic_at(i, k) * doc.osc.harmonic1_gain * scale,
     }
 }
 
-fn analog_disp(doc: &crate::app::Doc, i: usize, k: usize, primary: bool) -> f64 {
-    let ch = &doc.osc.analog[i];
+/// The primary/secondary ratio a channel's flagged values are shown with;
+/// an ADC code is shown as is (`0x426020`).
+fn value_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
     if doc.chans[i].adc_counts {
-        let raw = ch.samples.get(k).copied().unwrap_or(0.0);
-        if ch.a.abs() > 1e-12 {
-            (raw - ch.b) / ch.a
-        } else {
-            raw
-        }
+        1.0
     } else {
-        doc.sample(i, k) * primary_scale(doc, i, primary)
+        primary_scale(doc, i, primary)
     }
 }
 
@@ -1352,10 +1410,7 @@ fn lane_stats(
     match lane {
         Lane::Analog(i) => {
             let ch = &doc.osc.analog[*i];
-            let adc = doc.chans[*i].adc_counts;
-            // RMS/1st-harmonic are computed in scaled units; divide by |a| for ADC.
-            let sdiv = if adc && ch.a.abs() > 1e-12 { ch.a.abs() } else { 1.0 };
-            let scale = primary_scale(doc, *i, primary);
+            let scale = value_scale(doc, *i, primary);
             // Value at the cursor and Max/Min follow the display mode; СКЗ
             // and A1 are always the one-period RMS and first harmonic.
             let n = doc.osc.sample_count();
@@ -1366,8 +1421,8 @@ fn lane_stats(
                 mx = mx.max(v);
                 mn = mn.min(v);
             }
-            let rms = doc.rms_at(*i, k_main) * scale / sdiv;
-            let a1 = doc.harmonic_at(*i, k_main) * doc.osc.harmonic1_gain * scale / sdiv;
+            let rms = doc.rms_at(*i, k_main) * scale;
+            let a1 = doc.harmonic_at(*i, k_main) * doc.osc.harmonic1_gain * scale;
             let val = mode_disp(doc, *i, k_main, primary);
             (ch.id.clone(), analog_unit(doc, *i), doc.chans[*i].color, mx, mn, rms, a1, val)
         }
@@ -1631,6 +1686,26 @@ mod menu_tests {
         // The comment menu is relabelled by kind.
         h.button(Pos2::new(x, y1 + 20.0), egui::PointerButton::Secondary);
         assert_eq!(h.app.lane_menu.map(|m| m.kind), Some(LaneMenuKind::Comment(0)));
+    }
+
+    #[test]
+    fn rectangle_zoom_windows_the_lane_and_141_resets_it() {
+        let mut h = Harness::new();
+        let r0 = lane_layout(h.doc(), h.app.y_analog, false)[0].clone();
+        let top = 8.0;
+        h.app.dispatch(Command::RectZoom);
+        assert_eq!(h.app.rect_zoom, RectZoom::Armed);
+        let full = chan_range(h.doc(), 0, false);
+        // From a quarter of the lane down to its middle.
+        drag(&mut h, Pos2::new(600.0, top + r0.h * 0.25), Pos2::new(600.0, top + r0.h * 0.5));
+        assert_eq!(h.app.rect_zoom, RectZoom::Off, "one-shot");
+        let w = h.doc().chans[0].window.expect("window zoom applied");
+        let span = full.1 - full.0;
+        assert!((w.hi - (full.1 - 0.25 * span)).abs() < 1e-6 * span.abs().max(1.0));
+        assert!((w.lo - (full.0 + 0.5 * span)).abs() < 1e-6 * span.abs().max(1.0));
+        h.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        h.app.dispatch(Command::ResetZoom);
+        assert!(h.doc().chans[0].window.is_none());
     }
 
     #[test]

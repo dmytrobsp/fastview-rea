@@ -188,8 +188,9 @@ pub struct ChanView {
     pub remove_dc: bool,
     /// Отображать в отсчётах АЦП (show raw ADC counts instead of scaled units).
     pub adc_counts: bool,
-    /// Per-channel vertical zoom (Увеличить/Уменьшить/Вернуть к исходному размеру).
-    pub vzoom: f64,
+    /// Vertical window zoom «Приблизить по вертикали» (138), reset by «Вернуть
+    /// к исходному размеру» (141).
+    pub window: Option<crate::oscgeom::Window>,
     /// Совместить каналы: channels sharing a group are drawn in one lane (the
     /// lane of the group's first visible member), as the original's channel
     /// groups (33035 creates one from the selection, 33037 dissolves it).
@@ -281,6 +282,49 @@ pub struct ClipChan {
     pub color: egui::Color32,
 }
 
+/// State of the rectangle vertical zoom (138).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RectZoom {
+    Off,
+    /// Armed: the next press on an analog lane starts the rectangle.
+    Armed,
+    /// Dragging on analog channel `chan`'s lane from `y0` to `y1` at `x`.
+    Dragging { chan: usize, x: f32, y0: f32, y1: f32 },
+}
+
+/// ADC codes of a channel (`(raw − b) / a`, rounded).
+fn adc_codes(c: &fvb_core::comtrade::AnalogChannel) -> Vec<f64> {
+    c.samples.iter().map(|&v| if c.a.abs() > 1e-12 { ((v - c.b) / c.a).round() } else { v }).collect()
+}
+
+/// Mean over the largest whole number of periods from the start: the first
+/// `n − n mod p` samples.
+pub fn whole_period_mean(s: &[f64], p: usize) -> f64 {
+    let count = s.len() - s.len() % p.max(1);
+    if count == 0 {
+        return 0.0;
+    }
+    s[..count].iter().sum::<f64>() / count as f64
+}
+
+/// A channel's values as the channel math reads them (`0x426020`): the ADC
+/// code in ADC mode, minus its DC with «Удалить постоянную», negated with
+/// «Инвертировать».
+pub fn flag_series(c: &fvb_core::comtrade::AnalogChannel, v: &ChanView, (dc, dc_code): (f64, f64)) -> Vec<f64> {
+    let base = if v.adc_counts { adc_codes(c) } else { c.samples.clone() };
+    let dc = if v.adc_counts { dc_code } else { dc };
+    base.into_iter()
+        .map(|x| {
+            let x = if v.remove_dc { x - dc } else { x };
+            if v.invert {
+                -x
+            } else {
+                x
+            }
+        })
+        .collect()
+}
+
 /// A horizontal визир (`doc+0x2c8` / `+0x2e0`): shown, the analog channel
 /// whose scale it is on (`None` = never placed), and its value in that
 /// channel's units.
@@ -346,9 +390,17 @@ pub struct Doc {
     pub vscroll: f32,
     /// «Разница между визирами» band (`doc+0x870`, on for a new document).
     pub diff_band: bool,
-    /// Precomputed per-channel one-cycle RMS and DC series (for stats / remove-DC).
+    /// Per-channel one-cycle RMS of the flagged values.
     pub rms: Vec<Vec<f64>>,
-    pub dc: Vec<Vec<f64>>,
+    /// The record as the channel math sees it: each analog channel's samples
+    /// with its ADC / remove-DC / invert flags applied (`0x426020`).
+    pub flagged: Oscillogram,
+    /// Per channel the DC removed by «Удалить постоянную составляющую»: the
+    /// mean over the whole periods from the record start of the values and of
+    /// the ADC codes (`ch+0xf8`, `0x428490`).
+    pub dc_mean: Vec<(f64, f64)>,
+    /// Discrete channel visibility (32845 / 32846 / 32847).
+    pub dig_visible: Vec<bool>,
 }
 
 impl Doc {
@@ -360,11 +412,9 @@ impl Doc {
             .iter()
             .map(|c| fvb_core::signal::sliding_rms(&c.samples, n))
             .collect();
-        let dc: Vec<Vec<f64>> = osc
-            .analog
-            .iter()
-            .map(|c| fvb_core::signal::sliding_dc(&c.samples, n))
-            .collect();
+        let dc_mean = osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
+        let dig_visible = vec![true; osc.digital.len()];
+        let flagged = osc.clone();
         let chans = (0..osc.analog.len())
             .map(|i| ChanView {
                 visible: true,
@@ -372,7 +422,7 @@ impl Doc {
                 invert: false,
                 remove_dc: false,
                 adc_counts: false,
-                vzoom: 1.0,
+                window: None,
                 group: None,
                 mode: ValueMode::Instant,
                 stats: StatRows::default(),
@@ -405,25 +455,43 @@ impl Doc {
             vscroll: 0.0,
             diff_band: true,
             rms,
-            dc,
+            flagged,
+            dc_mean,
+            dig_visible,
+        }
+    }
+
+    /// Rebuild everything derived from the channel values after a flag
+    /// change (the original's full recompute, `FUN_00428490` per channel):
+    /// the flagged record, its RMS and phasors, and the formula channels.
+    pub fn recompute(&mut self, show_primary: bool) {
+        let n = self.osc.samples_per_cycle().max(2);
+        for i in 0..self.osc.analog.len() {
+            self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i]);
+            self.rms[i] = fvb_core::signal::sliding_rms(&self.flagged.analog[i].samples, n);
+        }
+        self.analysis = Analysis::compute(&self.flagged);
+        // Formula channels are evaluated again in order on the new values
+        // (merged and ОМП channels carry no formula to re-evaluate).
+        let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
+        for c in &mut self.computed {
+            if c.formula != "ОМП" && c.formula != "объединение" {
+                let batch = [(c.name.clone(), c.formula.clone(), c.unit.clone())];
+                if let Ok(mut out) = fvb_core::quick::evaluate_batch(&self.flagged, &done, &batch, show_primary) {
+                    if let Some(new) = out.pop() {
+                        c.samples = new.samples;
+                        c.phasors = new.phasors;
+                    }
+                }
+            }
+            done.push(c.as_core());
         }
     }
 
     /// The displayed sample value of analog channel `i` at index `k`, honouring
     /// invert / remove-DC.
     pub fn sample(&self, i: usize, k: usize) -> f64 {
-        let raw = self.osc.analog[i].samples.get(k).copied().unwrap_or(0.0);
-        let dc = if self.chans[i].remove_dc {
-            self.dc[i].get(k).copied().unwrap_or(0.0)
-        } else {
-            0.0
-        };
-        let v = raw - dc;
-        if self.chans[i].invert {
-            -v
-        } else {
-            v
-        }
+        self.flagged.analog[i].samples.get(k).copied().unwrap_or(0.0)
     }
 
     pub fn rms_at(&self, i: usize, k: usize) -> f64 {
@@ -574,8 +642,8 @@ pub enum Command {
     /// Bring a pane of the tab group to the front.
     ActivatePane(Pane),
     SetPrimaryValues(bool),
-    InvertVisible,
-    RemoveDcVisible,
+    /// 32823 / 32824 / 32852: toggle-all of a flag over the selection.
+    ToggleFlag(crate::chansel::ChanFlag),
     SetValueMode(ValueMode),
     /// 155..157: toggle a comment placement mode (radio group with toggle-off).
     CommentMode(u8),
@@ -585,11 +653,19 @@ pub enum Command {
     /// 32817 / 32818 / 32819: the Max/Min, СКЗ or A1 stats rows (0, 1, 2) on
     /// every analog channel, toggle-all.
     StatsRow(usize),
+    /// 138 «Приблизить по вертикали»: arm the rectangle zoom (pressing again
+    /// while armed keeps it armed).
+    RectZoom,
+    /// 141 «Вернуть к исходному размеру»: drop the selected channels' window
+    /// zoom (with their groups).
+    ResetZoom,
     /// 32802 / 32803: horizontal scale ×2 / ÷2 anchored on a визир.
     ZoomX(bool),
     /// 32800 / 32801: analog lane height ×1.3 / ÷1.3.
     ZoomY(bool),
-    ShowAllChannels(bool),
+    /// 32845 / 32846 / 32847: show all / hide all / hide unchanged discrete
+    /// channels (analog visibility is the Каналы dialog's).
+    Discrete(u8),
     SetSkin(Skin),
     FitTime,
     CloseDoc(usize),
@@ -695,6 +771,9 @@ pub struct App {
     pub undo_stack: Vec<(usize, DocSnapshot)>,
     pub redo_stack: Vec<(usize, DocSnapshot)>,
 
+    /// «Приблизить по вертикали» (138): armed (`view+0xe4` mode 7) or a
+    /// rectangle being dragged on an analog lane (mode 8).
+    pub rect_zoom: RectZoom,
     /// The comment being created or dragged and its part (`view+0xe4` mode 9).
     pub comment_drag: Option<(usize, crate::comments::Part)>,
     /// «Изменить уровень» (33042): the level line being edited in place.
@@ -794,6 +873,7 @@ impl App {
             channel_clip: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            rect_zoom: RectZoom::Off,
             comment_drag: None,
             level_edit: None,
             vizir_drag: None,
@@ -917,26 +997,19 @@ impl App {
             }
             Command::SetPrimaryValues(p) => {
                 self.primary_values = p;
+                self.recompute_active();
                 self.status = if p {
                     "Первичные значения".into()
                 } else {
                     "Вторичные значения".into()
                 };
             }
-            Command::InvertVisible => {
-                self.snapshot_undo();
+            Command::ToggleFlag(f) => {
                 if let Some(d) = self.active_doc_mut() {
-                    for c in d.chans.iter_mut().filter(|c| c.visible) {
-                        c.invert = !c.invert;
-                    }
+                    d.toggle_flag_selected(f);
                 }
-            }
-            Command::RemoveDcVisible => {
-                self.snapshot_undo();
-                if let Some(d) = self.active_doc_mut() {
-                    for c in d.chans.iter_mut().filter(|c| c.visible) {
-                        c.remove_dc = !c.remove_dc;
-                    }
+                if matches!(f, crate::chansel::ChanFlag::Invert | crate::chansel::ChanFlag::RemoveDc | crate::chansel::ChanFlag::Adc) {
+                    self.recompute_active();
                 }
             }
             Command::SetValueMode(m) => {
@@ -950,18 +1023,40 @@ impl App {
                     d.toggle_vizir(k, w, left);
                 }
             }
+            Command::RectZoom => {
+                if let Some(d) = self.active_doc_mut() {
+                    d.comment_mode = 0;
+                }
+                if self.rect_zoom == RectZoom::Off && self.active.is_some() {
+                    self.rect_zoom = RectZoom::Armed;
+                }
+            }
+            Command::ResetZoom => {
+                if let Some(d) = self.active_doc_mut() {
+                    d.reset_zoom_selected();
+                }
+            }
             Command::CommentMode(k) => {
+                self.rect_zoom = RectZoom::Off;
                 if let Some(d) = self.active_doc_mut() {
                     if d.comments_allowed() {
                         d.comment_mode = if d.comment_mode == k { 0 } else { k };
                     }
                 }
             }
-            Command::ShowAllChannels(on) => {
-                self.snapshot_undo();
+            Command::Discrete(k) => {
                 if let Some(d) = self.active_doc_mut() {
-                    for c in d.chans.iter_mut() {
-                        c.visible = on;
+                    for (i, ch) in d.osc.digital.iter().enumerate() {
+                        let unchanged = ch.samples.iter().all(|&v| v == ch.samples.first().copied().unwrap_or(false));
+                        match k {
+                            0 => d.dig_visible[i] = true,
+                            1 => d.dig_visible[i] = false,
+                            _ if unchanged => d.dig_visible[i] = false,
+                            _ => {}
+                        }
+                        if !d.dig_visible[i] {
+                            d.selection.remove(&ChanKey::Digital(i));
+                        }
                     }
                 }
             }
@@ -1120,6 +1215,17 @@ impl App {
         match dim {
             Dimension::Ohm => "Circle Chart",
             Dimension::Dif => "Diff Chart",
+        }
+    }
+
+    /// The full recompute after a value-changing command (`0x42f4b0` tail):
+    /// the active record's derived data and, when its result is shown, ОМП.
+    pub fn recompute_active(&mut self) {
+        let primary = self.primary_values;
+        let Some(ai) = self.active else { return };
+        self.docs[ai].recompute(primary);
+        if self.omp_run.as_ref().is_some_and(|r| r.doc == ai) {
+            self.run_omp();
         }
     }
 
@@ -1537,7 +1643,7 @@ impl App {
             return None;
         };
         let existing: Vec<_> = d.computed.iter().map(Computed::as_core).collect();
-        match fvb_core::quick::evaluate_batch(&d.osc, &existing, batch, show_primary) {
+        match fvb_core::quick::evaluate_batch(&d.flagged, &existing, batch, show_primary) {
             Ok(added) => {
                 let d = self.active_doc_mut()?;
                 let n0 = d.computed.len();
@@ -1614,7 +1720,7 @@ impl App {
         let d = &self.docs[di];
         let p = d.osc.samples_per_cycle().max(2);
         let chan = |doc: &Doc, idx: Option<usize>| -> Vec<f64> {
-            idx.and_then(|i| doc.osc.analog.get(i)).map(|c| c.samples.clone()).unwrap_or_default()
+            idx.and_then(|i| doc.flagged.analog.get(i)).map(|c| c.samples.clone()).unwrap_or_default()
         };
         let three = |doc: &Doc, roles: [Option<usize>; 3]| roles.map(|r| chan(doc, r));
         let (u, i) = (three(d, d.analysis.u_abc), three(d, d.analysis.i_abc));
@@ -1766,18 +1872,51 @@ mod tests {
     }
 
     #[test]
-    fn invert_and_remove_dc_affect_displayed_samples() {
+    fn invert_and_dc_reach_every_consumer_and_are_not_undoable() {
+        use crate::chansel::ChanFlag;
         let mut app = demo_app();
-        let (i, k) = (0usize, 50usize);
-        let base = app.active_doc().unwrap().sample(i, k);
-        app.dispatch(Command::InvertVisible);
-        let inv = app.active_doc().unwrap().sample(i, k);
-        assert!((inv + base).abs() < 1e-9, "invert should negate: {base} vs {inv}");
-        app.dispatch(Command::InvertVisible); // back
-        app.dispatch(Command::RemoveDcVisible);
-        // removing DC changes the value (demo has an emergency DC offset somewhere)
-        let nd = app.active_doc().unwrap().sample(i, k);
-        assert!(nd.is_finite());
+        let (i, k) = (0usize, 300usize);
+        let name = app.active_doc().unwrap().osc.analog[i].id.clone();
+        assert!(app.append_computed(&[("x2".into(), format!("2*\"{name}\""), String::new())]).is_some());
+        let d = app.active_doc().unwrap();
+        let (base, ph, comp) = (d.sample(i, k), d.analysis.phasors[i][k], d.computed[0].samples[k]);
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(i));
+        let undo = app.undo_stack.len();
+        app.dispatch(Command::ToggleFlag(ChanFlag::Invert));
+        let d = app.active_doc().unwrap();
+        assert!((d.sample(i, k) + base).abs() < 1e-9, "the displayed value is negated");
+        assert!((d.analysis.phasors[i][k] + ph).norm() < 1e-9, "so is the phasor the diagrams read");
+        assert!((d.computed[0].samples[k] + comp).abs() < 1e-9, "formula channels are re-evaluated");
+        assert_eq!(app.undo_stack.len(), undo, "invert is not undoable in the original");
+        app.dispatch(Command::ToggleFlag(ChanFlag::Invert));
+        app.dispatch(Command::ToggleFlag(ChanFlag::RemoveDc));
+        let d = app.active_doc().unwrap();
+        let p = d.osc.samples_per_cycle();
+        let mean = whole_period_mean(&d.osc.analog[i].samples, p);
+        assert!((d.sample(i, k) - (base - mean)).abs() < 1e-9, "one DC constant over whole periods");
+    }
+
+    #[test]
+    fn whole_period_mean_uses_only_complete_periods() {
+        assert_eq!(whole_period_mean(&[1.0, 3.0, 1.0, 3.0, 100.0], 2), 2.0);
+        assert_eq!(whole_period_mean(&[5.0], 2), 0.0);
+    }
+
+    #[test]
+    fn discrete_show_hide_and_hide_unchanged() {
+        let mut app = demo_app();
+        let n = app.active_doc().unwrap().osc.digital.len();
+        assert!(n > 0, "the demo record has discrete channels");
+        app.dispatch(Command::Discrete(1));
+        assert!(app.active_doc().unwrap().dig_visible.iter().all(|v| !v));
+        app.dispatch(Command::Discrete(0));
+        assert!(app.active_doc().unwrap().dig_visible.iter().all(|&v| v));
+        app.dispatch(Command::Discrete(2));
+        let d = app.active_doc().unwrap();
+        for (ch, vis) in d.osc.digital.iter().zip(&d.dig_visible) {
+            let changes = ch.samples.iter().any(|&v| v != ch.samples[0]);
+            assert_eq!(*vis, changes, "{}", ch.id);
+        }
     }
 
     #[test]

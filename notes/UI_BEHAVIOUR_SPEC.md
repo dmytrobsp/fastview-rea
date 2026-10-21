@@ -1246,7 +1246,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     settings dialog 353 — `views.rs`, `dialogs.rs` — M
 22. Vector: locked plot, 4/5/10 circle rule, arrowheads, no radians toggle,
     options via toolbar/menu — `views.rs` — S
-23. Rectangle vertical zoom 138 (mode 7/8, up-arrow cursor, lane fractions,
+23. ✅ (L9.7) Rectangle vertical zoom 138 (mode 7/8, up-arrow cursor, lane fractions,
     group) and 141 reset; drop the ×1.25/×0.8 submenu — `lanes.rs`, `chansel.rs`
     — M
 24. ✅ (L9.4) Keyboard: ←/→ V1 (Ctrl V2), ↑/↓ H1 (Ctrl H2) — `app.rs`, `lanes.rs` — S
@@ -1261,7 +1261,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 29. File parameters 392: title, editable sample-rate combo with 50/60 Hz lists
     (re-time + recompute), correction combo, start/trigger, `%g c.`, live
     code-page combo, Закрыть applies — `dialogs.rs`, `app.rs` — M
-30. Invert/DC/visibility semantics: toggle-all over the selection, **no undo**,
+30. ✅ (L9.7; undo greying pending) Invert/DC/visibility semantics: toggle-all over the selection, **no undo**,
     full recompute incl. computed channels and ОМП; undo only for paste/merge,
     Отмена/Возврат greyed by counts — `app.rs`, `chansel.rs` — S
 31. App menu: original order, Сохранить vs Сохранить как, Комментарии,

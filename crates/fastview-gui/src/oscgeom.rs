@@ -117,6 +117,40 @@ pub fn y_value(y: f32, top: f32, h: f32, min: f64, max: f64) -> f64 {
     min + f64::from(top + h - 5.0 - y) * (max - min) / f64::from(h - 10.0)
 }
 
+/// A channel's vertical window zoom (`ch+0x114` on, window `+0x128` /
+/// `+0x130`, kind `+0x138` = the display mode when it was made: 0
+/// instantaneous, 1 RMS, 2 first harmonic).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Window {
+    pub lo: f64,
+    pub hi: f64,
+    pub kind: u8,
+}
+
+/// The window for the lane fractions `a < b` (from the lane top) of the
+/// range `[lo, hi]` (`0x42afb0`); `None` unless `0 ≤ a < 1`, `0 < b ≤ 1`.
+pub fn window_from_fractions(lo: f64, hi: f64, a: f64, b: f64, kind: u8) -> Option<Window> {
+    ((0.0..1.0).contains(&a) && b > 0.0 && b <= 1.0 && a < b).then_some(Window {
+        lo: (1.0 - b) * (hi - lo) + lo,
+        hi: hi - (hi - lo) * a,
+        kind,
+    })
+}
+
+/// The range a channel is drawn in (`0x42b640`): its whole-record
+/// `[min, max]`, or its window — adapted when the display mode changed
+/// since: an instantaneous window shown as RMS/harmonic is `[0, max |·|]`,
+/// an RMS/harmonic window shown instantaneous is `±1.5·hi`.
+pub fn effective_range(min: f64, max: f64, window: Option<Window>, instantaneous: bool) -> (f64, f64) {
+    match window {
+        None => (min, max),
+        Some(w) if w.kind == 0 && !instantaneous => (0.0, w.lo.abs().max(w.hi.abs())),
+        Some(w) if (w.kind == 1 || w.kind == 2) && instantaneous => (-1.5 * w.hi, 1.5 * w.hi),
+        Some(w) if w.kind <= 2 => (w.lo, w.hi),
+        Some(_) => (min, max),
+    }
+}
+
 /// One ruler tick: x, length, and whether it carries a label (every 4th).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tick {
@@ -231,6 +265,19 @@ mod tests {
         assert_eq!(value_y(6.0, 100.0, 93.0, -2.0, 6.0), 105.0);
         assert_eq!(value_y(3.0, 100.0, 93.0, 3.0, 3.0), 146.5, "flat channel: lane middle");
         assert!((y_value(188.0, 100.0, 93.0, -2.0, 6.0) + 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn window_zoom_from_lane_fractions() {
+        // Top quarter to the middle of [-10, 10]: [0, 5].
+        let w = window_from_fractions(-10.0, 10.0, 0.25, 0.5, 0).unwrap();
+        assert_eq!((w.lo, w.hi), (0.0, 5.0));
+        assert!(window_from_fractions(-10.0, 10.0, 0.5, 0.5, 0).is_none());
+        assert_eq!(effective_range(-10.0, 10.0, Some(w), true), (0.0, 5.0));
+        assert_eq!(effective_range(-10.0, 10.0, Some(w), false), (0.0, 5.0), "now RMS: [0, max |·|]");
+        let r = Window { lo: 1.0, hi: 4.0, kind: 1 };
+        assert_eq!(effective_range(-10.0, 10.0, Some(r), true), (-6.0, 6.0), "RMS window shown instantaneous");
+        assert_eq!(effective_range(-10.0, 10.0, None, true), (-10.0, 10.0));
     }
 
     #[test]

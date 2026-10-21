@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 144 pass)
+- `cargo test --workspace`   (currently 148 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 144 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 148 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.6** below.
+temporary). Reconciled so far: **L9.1**–**L9.7** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -797,11 +797,47 @@ shows the time from the record start (no absolute date); bubble marks are
 our own drawing; digital level-line snapping not modelled (levels are
 analog-only).
 
+### L9.7 — Channel value flags reach every consumer; window zoom; discrete visibility  ·  ✅
+
+Read: **`0x426020`** (assembly; the decompiler lost the x87/SSE flow) — a
+channel's value is `x·k`; with ADC the integer code; with remove-DC minus
+`k·ch+0xf8`; with invert negated — and it is what the phasor DFT
+(`FUN_00426fc0` calls it), RMS, harmonics, Calculator channels and ОМП
+read. **`ch+0xf8` is ONE constant** (`0x428795`): the mean of the first
+`N − N mod P` samples (whole periods from the start; of the ADC codes in ADC
+mode). The original therefore flips an inverted channel's phasor on the
+vector/circle diagrams and re-evaluates formula channels and ОМП (full
+recompute after 32823/32824/32852 and primary/secondary; no undo).
+Window zoom 138: `0x45e6b0` mode 8 turns the rectangle's y-span into lane
+fractions a < b and applies `0x42afb0` to the channel and its group from the
+current range (nested): window `[lo + (1−b)(hi−lo), hi − a(hi−lo)]`, kind =
+display mode at zoom time; `0x42b640` draws in the window, adapted when the
+mode changed (instantaneous window shown as RMS/harmonic → `[0, max|·|]`;
+RMS/harmonic window shown instantaneous → `±1.5·hi`); equal ends reset; 141
+resets the selected channels and groups. 32845/32846/32847 act on discrete
+channels only (show / hide + deselect / hide unchanged).
+Ours (were wrong: sliding DC per sample; diagrams/ОМП/computed read raw
+samples; per-channel ×1.25/0.8 vzoom; «Показать/Скрыть все» on analog
+channels with undo): `Doc::flagged` (record with flags applied,
+`flag_series`, `whole_period_mean`), `Doc::recompute` (RMS, phasors, formula
+channels re-evaluated in order) + `App::recompute_active` (re-runs ОМП when
+shown); ОМП reads the flagged values; `oscgeom::{Window,
+window_from_fractions, effective_range}`, `ChanView::window`, `RectZoom`
+armed/dragging with the rubber line and up-arrow cursor, `Doc::apply_window_zoom`;
+ribbon 138/141 and selection-based invert/DC toggles (`Command::ToggleFlag`,
+checked iff all selected agree); `Doc::dig_visible` + `Command::Discrete`.
+Tests: invert negates value, phasor and formula channel without undo; DC =
+whole-period mean; discrete show/hide/unchanged; rectangle zoom window + 141.
+Residual: the frequency diagram still reads raw samples (track D rewrites it
+— switch it to `Doc::flagged` after the merge); ADC + primary scaling edge
+(the original subtracts `k·dc` from an unscaled code) not modelled; undo for
+merge operations only (paste) is now the only snapshotting command but the
+Отмена/Возврат enable-by-count rule is pending (ribbon item 11).
+
 Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — tracks D (diagrams 19–22, 27,
 40), O (ОМП 6, 12, 38) and F (dialogs 16, 18, 28, 29, 34, 39) were
 dispatched to parallel worktree agents on 2026-10-21 (merge their branches);
-main tree: rectangle zoom 23, invert/DC/undo semantics 30, then
-ribbon contents 11 after merging F (ОМП banner/
+main tree: ribbon contents 11 after merging F, then 31–37, 45–48 (ОМП banner/
 toggle, ribbon contents 11, ОМП run semantics 12, stats panel 13, comments
 14, …) (panes, визир
 mouse model, power-of-two time zoom, amplitude mapping, lane geometry, …).

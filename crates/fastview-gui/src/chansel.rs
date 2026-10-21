@@ -205,11 +205,32 @@ impl Doc {
         }
     }
 
-    /// 141 «Вернуть к исходному размеру»: un-zoom the selected channels and
-    /// their groups.
+    /// 141 «Вернуть к исходному размеру» (`0x4654f0`): drop the window zoom
+    /// of the selected analog channels and their groups.
     pub fn reset_zoom_selected(&mut self) {
         for i in self.with_groups(&self.selected_analog()) {
-            self.chans[i].vzoom = 1.0;
+            self.chans[i].window = None;
+        }
+    }
+
+    /// Mode 8 release (`0x45e6b0`, `0x42afb0`): the rectangle's y-span as
+    /// fractions `a < b` of the lane applied to channel `chan` and its group,
+    /// each from its current range; equal ends reset their zoom.
+    pub fn apply_window_zoom(&mut self, chan: usize, a: f64, b: f64, ranges: &dyn Fn(usize) -> (f64, f64)) {
+        for i in self.with_groups(&[chan]) {
+            if a == b {
+                self.chans[i].window = None;
+                continue;
+            }
+            let kind = match self.chans[i].mode {
+                ValueMode::Instant => 0,
+                ValueMode::Rms => 1,
+                ValueMode::FirstHarmonic => 2,
+            };
+            let (lo, hi) = ranges(i);
+            if let Some(w) = crate::oscgeom::window_from_fractions(lo, hi, a, b, kind) {
+                self.chans[i].window = Some(w);
+            }
         }
     }
 
@@ -248,7 +269,7 @@ impl Doc {
         self.next_group += 1;
         for &i in &members {
             self.chans[i].group = Some(g);
-            self.chans[i].vzoom = 1.0;
+            self.chans[i].window = None;
         }
         self.set_mode_selected(ValueMode::Instant);
     }
