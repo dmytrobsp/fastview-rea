@@ -284,6 +284,7 @@ impl App {
     fn alert_window(&mut self, ctx: &egui::Context) {
         let Some(msg) = self.dlg.alert.clone() else { return };
         let mut ok = false;
+        crate::dialogs::modal_backdrop(ctx, "fv_alert_block", egui::Order::Middle);
         egui::Window::new("FastView")
             .id(egui::Id::new("fv_alert"))
             .collapsible(false)

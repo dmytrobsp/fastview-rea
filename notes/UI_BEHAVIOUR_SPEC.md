@@ -1187,7 +1187,8 @@ iff all selected agree (`app.rs`, `ribbon.rs`).
 selection; colour dialog 33030; selected rows on a gold background (flat).
 ✅ User-reported GUI bugs (L9.23): no panic at any window size (whole-window
 headless sweep); the view's H/V window scroll bars with arrows, H along the
-whole bottom.
+whole bottom; no input reaches the main window while a (modal) dialog is
+up (L9.24).
 
 1. 🟡 (L9.3: right column with tab group + frequency below, toggles with
    check, grid-above-plot; no floating/re-dock/auto-hide)

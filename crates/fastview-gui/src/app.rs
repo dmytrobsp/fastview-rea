@@ -904,6 +904,9 @@ pub struct App {
     /// «Цвет канала» (33030) colour dialog, initialised from the first
     /// selected channel and applied to every selected channel on OK.
     pub color_dialog: Option<egui::Color32>,
+    /// A dialog window was up last frame: the original's dialogs are all
+    /// modal, so the main window takes no pointer or key input.
+    pub modal_up: bool,
     /// Dialogs and bars of `chandlg` / `recdlg` (backlog 16, 18, 28, 29, 34, 39).
     pub dlg: crate::recdlg::DialogState,
 
@@ -1001,6 +1004,7 @@ impl App {
             lane_menu_serial: 0,
             lane_menu_eat: false,
             color_dialog: None,
+            modal_up: false,
             dlg: Default::default(),
             status: "Готово".to_string(),
             toast: ("Готово".to_string(), f64::NEG_INFINITY),

@@ -194,6 +194,7 @@ impl App {
         let Some(mut dlg) = self.print.setup_dlg.take() else { return };
         let (mut ok, mut cancel) = (false, false);
         let mut open = true;
+        crate::dialogs::modal_backdrop(ctx, "fv_page_setup_block", egui::Order::Middle);
         egui::Window::new("Параметры страницы").collapsible(false).resizable(false).open(&mut open).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).order(egui::Order::Foreground).show(ctx, |ui| {
             // The sample page (bitmaps 345 / 346 in the original).
             let (w, h) = if dlg.portrait { (84.0, 119.0) } else { (119.0, 84.0) };

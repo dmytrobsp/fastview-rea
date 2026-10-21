@@ -160,6 +160,7 @@ impl App {
             });
         if let Some(msg) = st.alert {
             let mut close = false;
+            crate::dialogs::modal_backdrop(ctx, "fv_add_formula_alert_block", egui::Order::Middle);
             egui::Window::new("FastView")
                 .id(egui::Id::new("fv_add_formula_alert"))
                 .collapsible(false)

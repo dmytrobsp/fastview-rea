@@ -1054,7 +1054,7 @@ impl App {
         let ctx = ui.ctx().clone();
         let (l_down, r_down, origin, now, released) =
             ui.input(|i| (i.pointer.primary_down(), i.pointer.secondary_down(), i.pointer.press_origin(), i.pointer.latest_pos(), i.pointer.primary_released()));
-        if l_down && !r_down && !ctrl && !menu_busy && self.rename_edit.is_none() && !egui::DragAndDrop::has_any_payload(&ctx) {
+        if l_down && !r_down && !ctrl && !menu_busy && self.rename_edit.is_none() && resp.is_pointer_button_down_on() && !egui::DragAndDrop::has_any_payload(&ctx) {
             if let (Some(o), Some(p)) = (origin, now) {
                 let sel = doc.selected_analog();
                 if in_view(o) && o.x < left && p.x < left && (p - o).length() >= 2.0 && !sel.is_empty() {
@@ -1067,7 +1067,7 @@ impl App {
         }
         // Drop on a lane (`0x4415b0`, kind 1): x is ignored; the analog lane
         // under y, unless it is one of the dragged channels, joins them.
-        if released {
+        if released && !self.modal_up {
             if let Some(p) = now.filter(|p| in_view(*p) && p.y < plot_bottom) {
                 let lane = rows.iter().zip(&tops).find(|(r, &t)| p.y >= t && p.y < t + r.h).map(|(r, _)| r.key);
                 if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
@@ -1102,7 +1102,7 @@ impl App {
         }
         // Keys (`0x45f490`): ←/→ move В1 (Ctrl: В2) a sample, ↑/↓ move ГВ1
         // (Ctrl: ГВ2) a pixel.
-        if !ui.ctx().wants_keyboard_input() && self.rename_edit.is_none() {
+        if !ui.ctx().wants_keyboard_input() && self.rename_edit.is_none() && !self.modal_up {
             let (l, r, u, d) = ui.input(|i| {
                 (i.key_pressed(egui::Key::ArrowLeft), i.key_pressed(egui::Key::ArrowRight), i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown))
             });

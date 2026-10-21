@@ -3,6 +3,21 @@
 use crate::app::App;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
+/// A transparent full-screen layer at `order` that swallows the pointer
+/// below a modal window (the windows of a higher order stay live).
+pub fn modal_backdrop(ctx: &egui::Context, id: &str, order: egui::Order) {
+    let screen = ctx.screen_rect();
+    egui::Area::new(egui::Id::new(id)).order(order).fixed_pos(screen.min).show(ctx, |ui| {
+        ui.allocate_exact_size(screen.size(), egui::Sense::click_and_drag());
+    });
+}
+
+/// Whether a dialog window (egui's `Order::Middle` layer, where every
+/// `egui::Window` of ours lives or puts its backdrop) was shown last frame.
+pub fn window_up(ctx: &egui::Context) -> bool {
+    ctx.memory(|m| m.areas().visible_layer_ids().iter().any(|l| l.order == egui::Order::Middle))
+}
+
 impl App {
     pub fn dialogs_ui(&mut self, ctx: &egui::Context) {
         self.about_window(ctx);

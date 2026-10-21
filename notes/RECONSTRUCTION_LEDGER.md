@@ -1263,6 +1263,33 @@ keeps an existing bar; the view's creation style was not read) — ours hides
 it as before; the original's thumb-position quirk (pos max 10001) not
 modelled (we map first ∈ [0, N−visible] linearly).
 
+### L9.24 — User-reported: input fell through dialogs to the view  ·  ✅
+Our bug: while the colour dialog (33030) or any other window was up, the
+oscillogram underneath still took presses, RMB, drags, the wheel and the
+arrow keys — beside the window, and for the stats-panel drag (raw pointer
+state, no hover check) even through it; Ctrl shortcuts ran too.
+Read (spec §7, `UI_BEHAVIOUR_SPEC` lines on 57664 / 32880 / 129 / 32807 /
+32861 / 32862 / 32866): every dialog of the original is **modal**
+(`DoModal`, incl. Проводник), so the main window gets no input at all while
+one is up.
+Ours: our dialogs are `egui::Window`s at `Order::Middle` (nested message
+boxes / page setup at Foreground over a Middle backdrop of their own);
+`dialogs::window_up` = a Middle layer was visible last frame →
+`App::modal_up`; then `frame_ui` lays a transparent full-screen
+`modal_backdrop` at `Order::PanelResizeLine` (above the panels, below the
+windows) and skips `handle_keys`; the view's arrow keys and drops check
+`modal_up`, the stats-panel drag needs the press on the view
+(`is_pointer_button_down_on`). The ОМП dialog's own dimmed blocker became
+the shared transparent backdrop (the original does not dim). Tests:
+`the_view_ignores_input_while_a_dialog_is_up` (colour dialog: LMB / RMB /
+drag / wheel / → beside it, on its colour plane and margin; the same input
+reaches the view once it is closed), `the_view_ignores_input_beside_any_
+dialog` (print, print+page setup, settings, Каналы, Коэффициенты, ОМП,
+Параметры файла).
+Residual: one frame of lag (the backdrop follows last frame's windows, as
+egui's own hit test does); the original's beep / title flash on a click
+outside a modal dialog is not modelled.
+
 Next in L9 (HANDOFF 2026-10-21, master clean at 4a83adc): §9 items 36 and
 48 are done (L9.21, L9.22). **FIRST — four GUI bugs the user found running
 the release build (ours, not original behaviour; reproduce headless with the
@@ -1279,7 +1306,7 @@ with the Печать ▸ and «Дополнительно» submenus and the MR
 likely the other dialogs/windows (print, page setup, ОМП, formula …) — the
 oscillogram view underneath still receives presses/drags/wheel; the view
 must ignore input while a modal is open or the pointer is over a window
-(`ctx.is_pointer_over_area()` / a modal layer); (4) the **bottom
+(`ctx.is_pointer_over_area()` / a modal layer); ✅ L9.24; (4) the **bottom
 horizontal scroll bar is drawn wrongly** (`lanes.rs` `scrollbar(..)` for
 `hbar` under the plot: geometry relative to `client.bottom()` /
 `HSCROLL_H`) — ✅ L9.23. Then: the EMF picture on copy (L9.20), print residuals

@@ -285,7 +285,14 @@ impl App {
             self.load_comtrade_path(&f);
         }
         theme::apply(ctx, self.skin);
-        self.handle_keys(ctx);
+        // Every dialog is modal: while one is up, a backdrop between the
+        // panels and the windows takes the pointer, and no shortcuts run.
+        self.modal_up = dialogs::window_up(ctx);
+        if self.modal_up {
+            dialogs::modal_backdrop(ctx, "fv_modal_backdrop", egui::Order::PanelResizeLine);
+        } else {
+            self.handle_keys(ctx);
+        }
 
         let pal = self.skin.palette();
         egui::TopBottomPanel::top("top")
@@ -439,6 +446,118 @@ mod window_tests {
         sweep(&mut demo(&[C::StatsRow(0), C::StatsRow(1), C::StatsRow(2)]));
         for dlg in [C::Settings, C::ChannelsDialog, C::Coefficients, C::Print, C::PageSetup, C::OmpParams, C::FileParams, C::ChannelMap, C::HdrComment] {
             sweep(&mut demo(&[dlg]));
+        }
+    }
+
+    /// A whole window at the default size with the demo document.
+    struct Win {
+        ctx: egui::Context,
+        app: App,
+    }
+
+    impl Win {
+        fn new() -> Win {
+            let mut w = Win { ctx: egui::Context::default(), app: demo(&[]) };
+            w.idle(3);
+            w
+        }
+
+        fn run(&mut self, events: Vec<egui::Event>) {
+            frames(&mut self.app, &self.ctx, Vec2::new(1320.0, 860.0), vec![events]);
+        }
+
+        fn idle(&mut self, n: usize) {
+            for _ in 0..n {
+                self.run(vec![]);
+            }
+        }
+
+        fn press(&mut self, button: egui::PointerButton, from: Pos2, to: Pos2) {
+            let ev = |pos, pressed| egui::Event::PointerButton { pos, button, pressed, modifiers: Default::default() };
+            self.run(vec![egui::Event::PointerMoved(from)]);
+            self.run(vec![ev(from, true)]);
+            self.run(vec![egui::Event::PointerMoved(to)]);
+            self.run(vec![ev(to, false)]);
+            self.idle(2);
+        }
+
+        fn wheel(&mut self, at: Pos2) {
+            self.run(vec![egui::Event::PointerMoved(at), egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: Vec2::new(0.0, -1.0), modifiers: Default::default() }]);
+            self.idle(1);
+        }
+
+        fn key(&mut self, key: egui::Key) {
+            self.run(vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+            self.idle(1);
+        }
+
+        /// The view state that pointer and key input can change.
+        fn view_state(&self) -> String {
+            let d = self.app.active_doc().unwrap();
+            format!("{} {} {:?} {} {} {:?} {} {:?}", d.main_cursor, d.aux_cursor, d.v_shown, d.first, d.vscroll, d.selection, d.comments.len(), d.xscale)
+        }
+
+        /// Every kind of pointer and key input the view reacts to, at `at`.
+        fn poke(&mut self, at: Pos2) {
+            use egui::PointerButton::{Primary, Secondary};
+            self.press(Primary, at, at);
+            self.press(Secondary, at, at);
+            self.press(Primary, at, at + Vec2::new(60.0, 30.0));
+            self.wheel(at);
+            self.key(egui::Key::ArrowRight);
+        }
+    }
+
+    /// The original's dialogs are all modal: while one is up the view
+    /// (and the rest of the main window) gets no pointer or key input,
+    /// whether the pointer is over the dialog or beside it.
+    #[test]
+    fn the_view_ignores_input_while_a_dialog_is_up() {
+        let at = Pos2::new(420.0, 470.0);
+        let mut w = Win::new();
+        w.app.color_dialog = Some(egui::Color32::RED);
+        w.idle(3);
+        let win = w.ctx.memory(|m| m.area_rect(egui::Id::new("Цвет"))).expect("the colour dialog");
+        assert!(!win.contains(at));
+        let before = w.view_state();
+        // Beside the dialog, on its colour plane, on its right margin.
+        for p in [at, win.center(), Pos2::new(win.right() - 3.0, win.center().y)] {
+            w.poke(p);
+            assert!(w.app.color_dialog.is_some());
+        }
+        assert_eq!(w.view_state(), before, "input reached the view under the dialog");
+        assert!(w.app.color_dialog.is_some());
+        // Sanity: without the dialog the same input does reach the view.
+        w.app.color_dialog = None;
+        w.idle(3);
+        w.poke(at);
+        assert_ne!(w.view_state(), before);
+    }
+
+    /// The same for the other dialogs: input beside them never reaches the
+    /// view, also with a page setup nested over the print dialog.
+    #[test]
+    fn the_view_ignores_input_beside_any_dialog() {
+        use app::Command as C;
+        for cmds in [vec![C::Print], vec![C::Print, C::PageSetup], vec![C::Settings], vec![C::ChannelsDialog], vec![C::Coefficients], vec![C::OmpParams], vec![C::FileParams]] {
+            let mut w = Win::new();
+            let before = w.view_state();
+            for c in &cmds {
+                w.app.dispatch(c.clone());
+                w.idle(3);
+            }
+            assert!(w.app.modal_up, "{cmds:?}: a dialog is up");
+            let windows: Vec<Rect> = w.ctx.memory(|m| {
+                let ids = m.areas().visible_layer_ids();
+                ids.iter().filter(|l| l.order >= egui::Order::Middle).filter_map(|l| m.area_rect(l.id)).filter(|r| r.width() < 1300.0).collect()
+            });
+            let free = [Pos2::new(420.0, 470.0), Pos2::new(300.0, 780.0), Pos2::new(560.0, 330.0), Pos2::new(250.0, 600.0)]
+                .into_iter()
+                .find(|p| !windows.iter().any(|r| r.expand(4.0).contains(*p)))
+                .expect("a point of the view beside the dialogs");
+            w.poke(free);
+            assert_eq!(w.view_state(), before, "{cmds:?}: input reached the view");
+            assert!(w.app.modal_up, "{cmds:?}: the dialog stays up");
         }
     }
 }

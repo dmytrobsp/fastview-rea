@@ -379,7 +379,7 @@ impl App {
                 .get(dlg.doc)
                 .map(|d| d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect())
                 .unwrap_or_default();
-            modal_blocker(ctx, "omp_dialog_block", egui::Order::Middle);
+            crate::dialogs::modal_backdrop(ctx, "omp_dialog_block", egui::Order::Middle);
             let mut outcome = None;
             egui::Window::new("Параметры ОМП")
                 .id(egui::Id::new("omp_params_dialog"))
@@ -419,7 +419,7 @@ impl App {
             }
         }
         if let Some(msg) = self.omp_ui.message.clone() {
-            modal_blocker(ctx, "omp_message_block", egui::Order::Foreground);
+            crate::dialogs::modal_backdrop(ctx, "omp_message_block", egui::Order::Foreground);
             let mut ok = false;
             egui::Window::new(APP_TITLE)
                 .id(egui::Id::new("omp_message"))
@@ -443,15 +443,6 @@ impl App {
 
 fn omp_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("Установки ОМП (*.omp)", &["omp"]).add_filter("Все файлы (*.*)", &["*"])
-}
-
-/// A full-screen layer that swallows input below a modal window.
-fn modal_blocker(ctx: &egui::Context, id: &str, order: egui::Order) {
-    let screen = ctx.screen_rect();
-    egui::Area::new(egui::Id::new(id)).order(order).fixed_pos(screen.min).show(ctx, |ui| {
-        let (rect, _) = ui.allocate_exact_size(screen.size(), egui::Sense::click_and_drag());
-        ui.painter().rect_filled(rect, 0.0, Color32::from_black_alpha(24));
-    });
 }
 
 // ------------------------------------------------------------------ dialog

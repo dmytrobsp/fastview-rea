@@ -761,6 +761,7 @@ impl App {
         };
         let title = d.path.as_ref().and_then(|p| p.file_name()).map_or_else(|| d.name.clone(), |s| s.to_string_lossy().into_owned());
         let mut answer: Option<Option<bool>> = None;
+        crate::dialogs::modal_backdrop(ctx, "fv_save_prompt_block", egui::Order::Middle);
         egui::Window::new("Механотроника FastView")
             .id(egui::Id::new("fv_save_prompt"))
             .collapsible(false)
