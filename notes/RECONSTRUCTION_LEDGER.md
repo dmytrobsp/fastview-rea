@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 257 pass)
+- `cargo test --workspace`   (currently 259 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 257 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 259 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.20** below.
+temporary). Reconciled so far: **L9.1**–**L9.21** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -1154,6 +1154,29 @@ DETERMINED); `duration_milli_sec`
 text and `time_multiplier` are inferred (0x44c1d0 / `doc+0x230` not read);
 the clip's start date is read with the target record's revision rule; CR LF
 placement inside the merged comment inferred from the concatenation count.
+
+### L9.21 — Stats-panel drag of channels (backlog 48)  ·  ✅ (in-process)
+
+Read (research report): the drag (`0x45ea70`) starts with LMB held in the
+stats panel (no Ctrl / RMB) through `COleServerItem::DoDragDrop`, MFC's
+2 px / 200 ms start rule; its payload (`0x42be30`) is a u32 count + the
+selected analog-block indices — **no channel data; the backlog wording
+"between views" was wrong**. Drop targets `0x4414c0` (kind = the diagram
+flag bit): the view (1), frequency (2), vector (4), circle (8); the
+differential diagram has none; drag-over always "move", no insertion mark.
+OnDrop `0x4415b0` acts on the active document: on the view the analog lane
+under y (x ignored), unless it is a dragged channel, is selected with them
+(other selections stay) and 33035 runs, else message **1086**; on the
+frequency / vector pane each channel not on it gets 35000+i (toggle → on,
+recompute, SetModifiedFlag); the circle pane only non-pending Ohm / VA
+channels (CompareNoCase).
+Ours: `lanes::ChanDrag` via egui's `DragAndDrop` payload (2 px), move
+cursor, `Act::DropCombine`, `App::pane_drop` / `drop_channels` on the
+three panes. Tests `dragging_a_channel_onto_another_lane_combines_them`,
+`dropping_on_diagram_panes_adds_the_channels`. Residual: a drag cannot
+leave our window (no OLE "Embed Source" / cross-instance index drop — the
+original's foreign drops are inert or misapplied anyway); the 200 ms
+delay start not modelled.
 
 Next in L9: all dispatched tracks are merged (master clean). Remaining:
 `notes/UI_BEHAVIOUR_SPEC.md` §9 — print 36, OLE drag 48, and the residuals

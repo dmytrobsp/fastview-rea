@@ -39,6 +39,7 @@ impl App {
                             app.dispatch(Command::TogglePane(Pane::Frequency));
                         }
                         app.frequency_ui(ui);
+                        app.pane_drop(ui, Pane::Frequency);
                     };
                     if tab.is_some() {
                         egui::TopBottomPanel::bottom("pane_frequency")
@@ -71,18 +72,61 @@ impl App {
                         match active {
                             Pane::Vector => {
                                 self.pane_toolbar(ui, Window::Vector);
-                                egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| self.vector_ui(ui));
+                                egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
+                                    self.vector_ui(ui);
+                                    self.pane_drop(ui, Pane::Vector);
+                                });
                             }
                             Pane::Circle | Pane::Differential => {
                                 let w = if active == Pane::Circle { Window::Circle } else { Window::Diff };
                                 self.pane_toolbar(ui, w);
                                 self.char_ui(ui);
+                                // The differential diagram has no drop target.
+                                if active == Pane::Circle {
+                                    self.pane_drop(ui, Pane::Circle);
+                                }
                             }
                             Pane::Frequency => {}
                         }
                     });
                 }
             });
+    }
+
+    /// A stats-panel drag released over a diagram pane (`0x4415b0`, kinds
+    /// 2 / 4 / 8): each dragged channel not on the diagram is put on it
+    /// (35000+i; the circle diagram only takes Ohm / VA channels,
+    /// CompareNoCase) and the document is marked modified.
+    pub fn pane_drop(&mut self, ui: &egui::Ui, pane: Pane) {
+        let ctx = ui.ctx();
+        let (released, pos) = ctx.input(|i| (i.pointer.primary_released(), i.pointer.latest_pos()));
+        if !released || !pos.is_some_and(|p| ui.max_rect().contains(p)) || !egui::DragAndDrop::has_payload_of_type::<crate::lanes::ChanDrag>(ctx) {
+            return;
+        }
+        let Some(drag) = egui::DragAndDrop::take_payload::<crate::lanes::ChanDrag>(ctx) else { return };
+        self.drop_channels(&drag.chans, pane);
+    }
+
+    pub fn drop_channels(&mut self, chans: &[usize], pane: Pane) {
+        let Some(d) = self.active_doc_mut() else { return };
+        let (mut changed, n) = (false, d.chans.len());
+        for &i in chans.iter().filter(|&&i| i < n) {
+            let unit = d.osc.analog[i].unit.trim().to_lowercase();
+            let c = &mut d.chans[i];
+            let flag = match pane {
+                Pane::Frequency => &mut c.on_freq,
+                Pane::Vector => &mut c.on_vector,
+                Pane::Circle if unit == "ohm" || unit == "va" => &mut c.on_circle,
+                _ => continue,
+            };
+            if !*flag {
+                *flag = true;
+                changed = true;
+            }
+        }
+        if changed {
+            d.set.modified = true;
+        }
     }
 
     fn view_oscillogram(&mut self, ctx: &egui::Context) {

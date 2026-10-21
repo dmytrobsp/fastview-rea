@@ -1314,7 +1314,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     `quick_ui.rs` — M (validation S)
 47. ✅ (merged L9.17) Document-modified tracking from the commands that call SetModifiedFlag
     (save prompt depends on an unknown) — `app.rs` — S
-48. Stats-panel OLE drag of channels between views (low) — `lanes.rs` — M
+48. ✅ (L9.21) Stats-panel drag of the selected channels: drop on a lane = 33035 (or 1086), on the frequency / vector / circle pane = add them (not a copy between documents) — `lanes.rs`, `views.rs` — M
 
 ---
 
@@ -1349,7 +1349,6 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
   text boxes; merged визир label separator; the pen used when В2 = В1; ruler
   tick pen; Tahoma "Ay" heights (≈ 16/18 px assumed).
 - H1/H2 first-placement coordinates (assumed content y 10/20 on the top lane).
-- Drop-target handler of the view (what dropping channels does).
 - Circle grid pen assignment (frame vs axes), edge-label rects, `cells` basis
   (half of the smaller side assumed); BlockPropertyGrid content/editing; meaning
   of characteristic field +0x68.

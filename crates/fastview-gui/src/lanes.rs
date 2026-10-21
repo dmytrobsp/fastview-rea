@@ -377,8 +377,19 @@ enum Act {
     Select(ChanKey, SelClick),
     ClearSelection,
     OpenMenu(Pos2, LaneMenuKind),
+    DropCombine(Vec<usize>, usize),
     Cmd(Command),
 }
+
+/// The drag payload of the stats panel (`0x42be30`): channel indices of the
+/// active document, ascending.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChanDrag {
+    pub chans: Vec<usize>,
+}
+
+/// Message 1086.
+pub const MSG_COMBINE_UNITS: &str = "Совмещение невозможно.\nУ каналов разные единицы измерения.";
 
 /// A command chosen in one of the context menus.
 enum MenuCmd {
@@ -910,6 +921,37 @@ impl App {
                 }
             }
         }
+        // Stats-panel drag (`0x45ea70`): LMB held in the panel, no Ctrl or
+        // RMB, once the pointer leaves the 2 px square; the payload is the
+        // selected file analog channels.
+        let ctx = ui.ctx().clone();
+        let (l_down, r_down, origin, now, released) =
+            ui.input(|i| (i.pointer.primary_down(), i.pointer.secondary_down(), i.pointer.press_origin(), i.pointer.latest_pos(), i.pointer.primary_released()));
+        if l_down && !r_down && !ctrl && !menu_busy && self.rename_edit.is_none() && !egui::DragAndDrop::has_any_payload(&ctx) {
+            if let (Some(o), Some(p)) = (origin, now) {
+                let sel = doc.selected_analog();
+                if in_view(o) && o.x < left && p.x < left && (p - o).length() >= 2.0 && !sel.is_empty() {
+                    egui::DragAndDrop::set_payload(&ctx, ChanDrag { chans: sel });
+                }
+            }
+        }
+        if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
+            ctx.set_cursor_icon(egui::CursorIcon::Move);
+        }
+        // Drop on a lane (`0x4415b0`, kind 1): x is ignored; the analog lane
+        // under y, unless it is one of the dragged channels, joins them.
+        if released {
+            if let Some(p) = now.filter(|p| in_view(*p) && p.y < plot_bottom) {
+                let lane = rows.iter().zip(&tops).find(|(r, &t)| p.y >= t && p.y < t + r.h).map(|(r, _)| r.key);
+                if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
+                    if let Some(drag) = egui::DragAndDrop::take_payload::<ChanDrag>(&ctx) {
+                        if let Some(Lane::Analog(i)) = lane.filter(|k| matches!(k, Lane::Analog(i) if !drag.chans.contains(i))) {
+                            actions.push(Act::DropCombine(drag.chans.clone(), i));
+                        }
+                    }
+                }
+            }
+        }
         // Wheel (`0x45d990`): Alt = lane height, exactly Ctrl = time zoom,
         // exactly Shift = one screen sideways, else scroll the lanes.
         if resp.hovered() && !menu_busy {
@@ -1036,6 +1078,16 @@ impl App {
                     d.sel_anchor = anchor;
                 }
                 Act::ClearSelection => d.selection.clear(),
+                Act::DropCombine(chans, target) => {
+                    // The dragged channels and the target are selected (other
+                    // selections stay), then 33035 or message 1086.
+                    d.selection.extend(chans.iter().chain([&target]).map(|&i| Lane::Analog(i)));
+                    if d.can_combine() {
+                        d.combine_selected();
+                    } else {
+                        self.dlg.alert = Some(MSG_COMBINE_UNITS.to_string());
+                    }
+                }
                 Act::OpenMenu(pos, kind) => {
                     self.lane_menu_serial += 1;
                     self.lane_menu = Some(LaneMenu { serial: self.lane_menu_serial, pos, kind });
@@ -1637,6 +1689,65 @@ mod menu_tests {
         assert!(h.doc().main_cursor > v1, "В1 followed the drag");
         assert_eq!(h.doc().first, first, "the plot never pans on drag");
         assert!(h.app.vizir_drag.is_none());
+    }
+
+    /// Press on stats row `from`, move in 5 px steps to row `to`, release.
+    fn drag_rows(h: &mut Harness, from: usize, to: usize) {
+        let (a, b) = (h.row(from), h.row(to));
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(a), ev(a, true)]);
+        let steps = ((b.y - a.y).abs() / 5.0).ceil().max(1.0) as usize;
+        for k in 1..=steps {
+            h.frame(vec![egui::Event::PointerMoved(a + (b - a) * (k as f32 / steps as f32))]);
+        }
+        h.frame(vec![ev(b, false)]);
+        h.frame(vec![]);
+    }
+
+    #[test]
+    fn dragging_a_channel_onto_another_lane_combines_them() {
+        let mut h = Harness::new();
+        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let unit = |li: usize| match rows[li].key {
+            Lane::Analog(i) => Some(h.doc().osc.analog[i].unit.clone()),
+            _ => None,
+        };
+        let n = h.rows();
+        let same = (1..n).find(|&li| unit(li).is_some() && unit(li) == unit(0)).expect("a lane with the same unit");
+        let other = (1..n).find(|&li| unit(li).is_some() && unit(li) != unit(0)).expect("a lane with another unit");
+        let (Lane::Analog(c0), Lane::Analog(cs)) = (rows[0].key, rows[same].key) else { unreachable!() };
+        let co = match rows[other].key {
+            Lane::Analog(i) => i,
+            _ => unreachable!(),
+        };
+        drag_rows(&mut h, 0, other);
+        assert_eq!(h.app.dlg.alert.as_deref(), Some(MSG_COMBINE_UNITS), "different units: message 1086");
+        assert!(h.doc().chans[c0].group.is_none() && h.doc().chans[co].group.is_none());
+        h.app.dlg.alert = None;
+        h.app.active_doc_mut().unwrap().selection.clear();
+        drag_rows(&mut h, 0, same);
+        let d = h.doc();
+        assert!(d.chans[c0].group.is_some() && d.chans[c0].group == d.chans[cs].group, "one lane now");
+        assert!(!egui::DragAndDrop::has_any_payload(&h.ctx));
+    }
+
+    #[test]
+    fn dropping_on_diagram_panes_adds_the_channels() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        for c in &mut d.chans {
+            (c.on_freq, c.on_vector, c.on_circle) = (false, false, false);
+        }
+        let ohm = d.osc.analog.iter().position(|a| a.unit.eq_ignore_ascii_case("ohm"));
+        app.drop_channels(&[0, 1], crate::app::Pane::Frequency);
+        app.drop_channels(&[0], crate::app::Pane::Vector);
+        app.drop_channels(&[0], crate::app::Pane::Circle);
+        app.drop_channels(&[0], crate::app::Pane::Differential);
+        let d = app.active_doc().unwrap();
+        assert!(d.chans[0].on_freq && d.chans[1].on_freq && d.chans[0].on_vector);
+        assert_eq!(d.chans[0].on_circle, ohm == Some(0) || d.osc.analog[0].unit.eq_ignore_ascii_case("va"), "the circle diagram takes Ohm / VA only");
+        assert!(d.set.modified);
     }
 
     #[test]
