@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 94 pass)
+- `cargo test --workspace`   (currently 92 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 94 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 92 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -53,14 +53,13 @@ memory (Flatpak overlay + CLI wrapper `~/projects/slack-rea/tools/rea-ghidra.sh`
 6. **Update this ledger**: the entry's evidence (address), what you verified, and
    the verdict. Append new entries as `L<n>`.
 
-**NEXT TASK (start here).** L6 — reconcile `signal.rs` with the reversed
-channel methods (N = rate / trunc(f_nom); phasor sine-referenced at the newest
-sample, window ending at idx inclusive; `fault` = lag-N second difference with
-the 2N zero rule; rms/a0 windows), then the Calculator channel mode (CHANNEL
-tokens: scalar = sample, complex = phasor) and the channel accessors `rms:
-fourie: a0: fault: frequency: 3i0: i1: i2: zl: zf:`. Then L7 — rewrite `omp.rs`
-as the reversed per-sample, multi-section engine. Then COMTRADE `.cff`/`.osc`.
-Done: L2 evaluator ✅, L4 geometry ✅, L5 loader/evaluation ✅ (persistence ❌).
+**NEXT TASK (start here).** COMTRADE `.cff` (single-file 2013) reader/writer
+and the `.osc` reader (L3) — a spec agent was dispatched for the original's
+`--- file type: … ---` handling; re-run it if its report isn't in the ledger.
+Then the remaining Calculator channel accessors (`zl: zf: zk: ib: ulf: ull: ua:
+ub: uc: u1f: u2f: u1l: u2l: uncn: pk: pf: pf3wm: pf2wm: coeff* grs* torm*
+chan: uniik:`, L6) and the channel-name resolution rule. Done: L2 ✅, L4 ✅, L5 ✅
+(persistence ❌), L6 core ✅, L7 ✅ (θ tap refinement ❌).
 
 **Scope reality.** "Every byte" literally = 9129 funcs of mostly MFC boilerplate;
 the *provable* target is the behavioural engines (this ledger's table). `.sto`
@@ -138,7 +137,7 @@ decompilation (pending, listed below).
 | Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ✅ L4 |
 | DFT / phasors / RMS | `FUN_00426fc0` & channel methods | `signal.rs` | ✅ L6 (freq-channel variant ❌) |
 | Symmetric components / impedances | Calculator `i1: i2: 3i0: zl: zf:` | `signal.rs`/`analysis.rs` | 🟡 L6 (view code not located) |
-| ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | 🟡 L7 engine ✅ (θ-tap refinement ❌), GUI ❌ |
+| ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | ✅ L7 (θ-tap refinement, parallel-line UI ❌) |
 | COMTRADE reader/writer | `ComtradeConverter` | `comtrade.rs` | ⏳ pending |
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
@@ -377,7 +376,7 @@ with exact arg counts, return 0x431 for now).
 
 ---
 
-## L7 — ОМП (fault location)  ·  🟡 engine ✅ (single/double-ended, window, result, text), GUI ❌
+## L7 — ОМП (fault location)  ·  ✅ engine + GUI (θ tap refinement, parallel-line UI ❌)
 
 Evidence (subagent decompile; main `0x4a00b0`). Our `omp.rs` (single
 cursor-instant phasor, plain reactance / textbook two-terminal formula) is
@@ -474,8 +473,16 @@ from both ends with taps and mutual coupling, |U| matching search) +
 `locate_double` (direction check zeroes all distances). Pinned by
 `tests/omp_engine.rs` (11). Residual: θ tap re-estimation (`0x49adc0`/
 `0x49bd40`) not reproduced; SI prefixes assume the Russian UI (Cyrillic);
-which signal feeds a parallel line's current NOT DETERMINED; GUI still on the
-old single-instant functions (next).
+which signal feeds a parallel line's current NOT DETERMINED.
+GUI (done): method 1/2/4, Inom per substation, editable sections with taps,
+"Рассчитать" runs the engine on the role-mapped channels (isolated uses line
+voltages derived as Ua−Ub etc. — the original reads Uab/Ubc/Uca channels by
+name), writes the window to the cursors, adds "Lкз" (m) and "КЗ фазы A/B/C"
+channels, shows the original's text; moving the cursors recomputes the result
+(double-ended re-applies the direction check). The old single-instant API and
+its 4 tests were removed. GUI tests: message 349, window/cursors/channels.
+Not done: parallel-line (mutual coupling) entry in the UI, the .omp settings
+file and .txt result save, the tree-editor layout of DIALOG 336.
 
 Rust action: rewrite `omp.rs` as this engine (sections, per-sample distances,
 detection, window, median/σ) with tests; GUI dialog as a section tree.

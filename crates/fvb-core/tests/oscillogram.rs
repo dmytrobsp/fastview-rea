@@ -1,6 +1,5 @@
 use approx::assert_relative_eq;
 use fvb_core::comtrade;
-use fvb_core::omp::{single_ended_distance, LineParams};
 use fvb_core::signal::*;
 use num_complex::Complex64;
 use std::f64::consts::PI;
@@ -69,20 +68,6 @@ fn impedance_angle_equals_voltage_current_phase_difference() {
 }
 
 #[test]
-fn single_ended_omp_recovers_fault_distance() {
-    // Fault loop: U/I reactance = 4 Ω; line x1 = 0.4 Ω/km -> 10 km.
-    // Build U = Z*I with Z = 1 + j4 (some arc resistance + reactance).
-    let i_loop = sliding_phasors(&sine(5.0, -80.0, 12), N);
-    let idx = i_loop.len() - 1;
-    let z_true = Complex64::new(1.0, 4.0);
-    // Construct a matching U phasor directly for the measured point.
-    let u_meas = z_true * i_loop[idx];
-    let line = LineParams { r1_per_km: 0.1, x1_per_km: 0.4, r0_per_km: 0.3, x0_per_km: 1.2, length_km: 50.0 };
-    let d = single_ended_distance(u_meas, i_loop[idx], &line).unwrap();
-    assert_relative_eq!(d, 10.0, epsilon = 1e-6);
-}
-
-#[test]
 fn comtrade_ascii_round_trip() {
     // Minimal 1-analog, 1-digital ASCII record, 1999 revision.
     let cfg = "Station,Dev,1999\n\
@@ -146,21 +131,6 @@ fn line_voltages_from_phase() {
 }
 
 #[test]
-fn double_ended_midline_fault() {
-    use fvb_core::omp::{double_ended_distance, LineParams};
-    // Symmetric infeed, fault at the midpoint: distance ~= half the line.
-    let line = LineParams { r1_per_km: 0.0, x1_per_km: 0.4, r0_per_km: 0.0, x0_per_km: 1.2, length_km: 100.0 };
-    let z = Complex64::new(0.0, 0.4 * 100.0);
-    let i_m = Complex64::new(1.0, 0.0);
-    let i_n = Complex64::new(1.0, 0.0);
-    // U_m = m*Z*I_m (to fault); U_n = (1-m)*Z*I_n; with m=0.5 both = 0.5*Z*I
-    let u_m = Complex64::new(0.5, 0.0) * z * i_m;
-    let u_n = Complex64::new(0.5, 0.0) * z * i_n;
-    let d = double_ended_distance(u_m, i_m, u_n, i_n, &line).unwrap();
-    assert!((d - 50.0).abs() < 5.0, "expected ~50 km, got {d}");
-}
-
-#[test]
 fn analysis_detects_phases_and_computes_symmetric() {
     use fvb_core::analysis::Analysis;
     let rec = comtrade::parse(
@@ -183,30 +153,6 @@ fn analysis_detects_phases_and_computes_symmetric() {
     let locus = an.phase_a_locus(0, rec.sample_count() - 1);
     let min_r = locus.iter().map(|p| (p[0] * p[0] + p[1] * p[1]).sqrt()).fold(f64::MAX, f64::min);
     assert!(min_r < 10.0, "fault impedance should approach the zone, min |Z|={min_r}");
-}
-
-#[test]
-fn k0_factor_is_correct() {
-    use fvb_core::omp::LineParams;
-    // z0 = 3·z1 -> k0 = (z0-z1)/(3z1) = 2/3 (real).
-    let line = LineParams { r1_per_km: 0.1, x1_per_km: 0.4, r0_per_km: 0.3, x0_per_km: 1.2, length_km: 50.0 };
-    let k0 = line.k0();
-    assert_relative_eq!(k0.re, 2.0 / 3.0, epsilon = 1e-9);
-    assert_relative_eq!(k0.im, 0.0, epsilon = 1e-9);
-}
-
-#[test]
-fn grounded_omp_recovers_distance_with_compensation() {
-    use fvb_core::omp::{single_ended_grounded, LineParams};
-    let line = LineParams { r1_per_km: 0.1, x1_per_km: 0.4, r0_per_km: 0.3, x0_per_km: 1.2, length_km: 50.0 };
-    let i_a = Complex64::from_polar(5.0, (-80f64).to_radians());
-    let i3i0 = Complex64::from_polar(3.0, (-75f64).to_radians());
-    let denom = i_a + line.k0() * i3i0;
-    // fault reactance x = 4.8 -> distance 12 km at x1 = 0.4
-    let zf = Complex64::new(0.5, 4.8);
-    let u_a = zf * denom;
-    let d = single_ended_grounded(u_a, i_a, i3i0, &line).unwrap();
-    assert_relative_eq!(d, 12.0, epsilon = 1e-6);
 }
 
 #[test]

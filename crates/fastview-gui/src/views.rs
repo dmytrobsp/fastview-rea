@@ -4,7 +4,6 @@
 
 use crate::app::{AnalysisTab, App, OmpMethod, View};
 use eframe::egui;
-use fvb_core::omp::NeutralMode;
 use egui_plot::{Bar, BarChart, Line, LineStyle, Plot, PlotBounds, PlotPoints, Points, Polygon};
 use fvb_core::geom::Shape;
 use fvb_core::model::Dimension;
@@ -486,37 +485,25 @@ impl App {
     }
 
     // ---- ОМП ----
+    /// ОМП: parameters (method, substation currents, line sections with
+    /// taps), the calculation, and the result text over the cursor interval.
     fn view_omp(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Определение места повреждения (ОМП)");
             ui.horizontal_wrapped(|ui| {
                 ui.label("Метод:");
-                ui.selectable_value(&mut self.omp_method, OmpMethod::SingleEnded, "Односторонний замер");
+                ui.selectable_value(&mut self.omp_method, OmpMethod::Isolated, "Изолированная нейтраль");
+                ui.selectable_value(&mut self.omp_method, OmpMethod::Grounded, "Глухозаземлённая нейтраль");
                 ui.selectable_value(&mut self.omp_method, OmpMethod::DoubleEnded, "Двусторонний замер");
-                ui.separator();
-                ui.label("Нейтраль:");
-                ui.selectable_value(&mut self.neutral, NeutralMode::Grounded, "Глухозаземлённая");
-                ui.selectable_value(&mut self.neutral, NeutralMode::Isolated, "Изолированная");
             });
-            ui.separator();
-            egui::Grid::new("ompinputs").num_columns(4).spacing([12.0, 6.0]).show(ui, |ui| {
-                ui.label("R1 уд., Ом/км");
-                ui.add(egui::DragValue::new(&mut self.line.r1_per_km).speed(0.001));
-                ui.label("X1 уд., Ом/км");
-                ui.add(egui::DragValue::new(&mut self.line.x1_per_km).speed(0.001));
-                ui.end_row();
-                if self.neutral == NeutralMode::Grounded {
-                    ui.label("R0 уд., Ом/км");
-                    ui.add(egui::DragValue::new(&mut self.line.r0_per_km).speed(0.001));
-                    ui.label("X0 уд., Ом/км");
-                    ui.add(egui::DragValue::new(&mut self.line.x0_per_km).speed(0.001));
-                    ui.end_row();
+            ui.horizontal(|ui| {
+                ui.label("Номинальный ток прямой последовательности, A:");
+                ui.add(egui::DragValue::new(&mut self.omp_inom[0]).speed(1.0));
+                if self.omp_method == OmpMethod::DoubleEnded {
+                    ui.label("подстанция №2:");
+                    ui.add(egui::DragValue::new(&mut self.omp_inom[1]).speed(1.0));
                 }
-                ui.label("Длина линии, км");
-                ui.add(egui::DragValue::new(&mut self.line.length_km).speed(0.1));
-                ui.end_row();
             });
-            // Remote-end selection for the double-ended method.
             if self.omp_method == OmpMethod::DoubleEnded {
                 let names: Vec<(usize, String)> = self
                     .docs
@@ -526,8 +513,12 @@ impl App {
                     .map(|(i, d)| (i, d.name.clone()))
                     .collect();
                 ui.horizontal(|ui| {
-                    ui.label("Дальний конец (вторая осциллограмма):");
-                    let cur = self.omp_remote.and_then(|i| self.docs.get(i)).map(|d| d.name.clone()).unwrap_or_else(|| "— не выбрано —".into());
+                    ui.label("Осциллограмма 2 (подстанция №2):");
+                    let cur = self
+                        .omp_remote
+                        .and_then(|i| self.docs.get(i))
+                        .map(|d| d.name.clone())
+                        .unwrap_or_else(|| "— не выбрано —".into());
                     egui::ComboBox::from_id_salt("ompremote").selected_text(cur).show_ui(ui, |ui| {
                         for (i, name) in &names {
                             ui.selectable_value(&mut self.omp_remote, Some(*i), name);
@@ -536,76 +527,85 @@ impl App {
                 });
             }
             ui.separator();
-
-            let line = self.line;
-            let neutral = self.neutral;
-            let method = self.omp_method;
-            let remote = self.omp_remote;
-            let Some(d) = self.active_doc() else {
-                ui.label("Загрузите осциллограмму и установите основной визир в аварийный режим.");
-                return;
-            };
-            let k = d.main_cursor;
-            let ua = phase_ph(d, d.analysis.u_abc[0], k);
-            let ub = phase_ph(d, d.analysis.u_abc[1], k);
-            let ia = phase_ph(d, d.analysis.i_abc[0], k);
-            let ib = phase_ph(d, d.analysis.i_abc[1], k);
-            if d.analysis.u_abc[0].is_none() || d.analysis.i_abc[0].is_none() {
-                ui.label("Не удалось определить фазные каналы Ua/Ia в осциллограмме.");
-                return;
-            }
-            let (pa, pb, pc) = d.analysis.i_phase(k);
-            let i3i0 = pa + pb + pc;
-
-            let result = match method {
-                OmpMethod::SingleEnded => match neutral {
-                    NeutralMode::Grounded => {
-                        fvb_core::omp::single_ended_grounded(ua, ia, i3i0, &line).map(|dist| (dist, format!("Zпетли ф.A = {:.3}{:+.3}j Ом", (ua / ia).re, (ua / ia).im)))
+            ui.label("Участки линии:");
+            let isolated = self.omp_method == OmpMethod::Isolated;
+            let mut remove = None;
+            egui::Grid::new("ompsections").striped(true).spacing([8.0, 4.0]).show(ui, |ui| {
+                ui.label("№");
+                ui.label("Длина, км");
+                if isolated {
+                    ui.label("R уд., Ом/км");
+                    ui.label("X уд., Ом/км");
+                } else {
+                    ui.label("R1 уд.");
+                    ui.label("X1 уд.");
+                    ui.label("R0 уд.");
+                    ui.label("X0 уд.");
+                }
+                ui.label("Число опор");
+                ui.label("Отпайки (R0, X0, Ом)");
+                ui.end_row();
+                for (n, s) in self.omp_sections.iter_mut().enumerate() {
+                    ui.label(format!("{}", n + 1));
+                    ui.add(egui::DragValue::new(&mut s.length_km).speed(0.1));
+                    if isolated {
+                        ui.add(egui::DragValue::new(&mut s.r_per_km).speed(0.001));
+                        ui.add(egui::DragValue::new(&mut s.x_per_km).speed(0.001));
+                    } else {
+                        ui.add(egui::DragValue::new(&mut s.r1_per_km).speed(0.001));
+                        ui.add(egui::DragValue::new(&mut s.x1_per_km).speed(0.001));
+                        ui.add(egui::DragValue::new(&mut s.r0_per_km).speed(0.001));
+                        ui.add(egui::DragValue::new(&mut s.x0_per_km).speed(0.001));
                     }
-                    NeutralMode::Isolated => {
-                        let uab = ua - ub;
-                        let iab = ia - ib;
-                        fvb_core::omp::single_ended_distance(uab, iab, &line).map(|dist| (dist, format!("Zпетли AB = {:.3}{:+.3}j Ом", (uab / iab).re, (uab / iab).im)))
-                    }
-                },
-                OmpMethod::DoubleEnded => {
-                    match remote.and_then(|i| self.docs.get(i)) {
-                        Some(r) => {
-                            let rk = r.main_cursor;
-                            let un = phase_ph(r, r.analysis.u_abc[0], rk);
-                            let in_ = phase_ph(r, r.analysis.i_abc[0], rk);
-                            if r.analysis.u_abc[0].is_none() || r.analysis.i_abc[0].is_none() {
-                                None
-                            } else {
-                                fvb_core::omp::double_ended_distance(ua, ia, un, in_, &line).map(|dist| (dist, format!("дальний конец: {}", r.name)))
+                    ui.add(egui::DragValue::new(&mut s.supports));
+                    ui.horizontal(|ui| {
+                        let mut drop_tap = None;
+                        for (ti, t) in s.taps.iter_mut().enumerate() {
+                            ui.add(egui::DragValue::new(&mut t.r0).speed(0.1));
+                            ui.add(egui::DragValue::new(&mut t.x0).speed(0.1));
+                            if ui.small_button("×").clicked() {
+                                drop_tap = Some(ti);
                             }
                         }
-                        None => {
-                            ui.label("Выберите вторую осциллограмму (дальний конец) для двустороннего замера.");
-                            return;
+                        if let Some(ti) = drop_tap {
+                            s.taps.remove(ti);
                         }
+                        if ui.small_button("+").clicked() {
+                            s.taps.push(fvb_core::omp::Tap::default());
+                        }
+                    });
+                    if ui.small_button("Удалить").clicked() {
+                        remove = Some(n);
                     }
+                    ui.end_row();
                 }
-            };
-            match result {
-                Some((dist, detail)) => {
-                    ui.label(egui::RichText::new(format!("Расстояние до места повреждения: {dist:.2} км")).strong().size(18.0));
-                    if line.length_km > 0.0 {
-                        ui.label(format!("({:.1}% длины линии)", 100.0 * dist / line.length_km));
-                    }
-                    ui.label(egui::RichText::new(detail).weak());
+            });
+            if let Some(n) = remove {
+                self.omp_sections.remove(n);
+            }
+            ui.horizontal(|ui| {
+                if ui.button("Добавить участок").clicked() {
+                    self.omp_sections.push(fvb_core::omp::Section::default());
+                }
+                if ui.button("Рассчитать").clicked() {
+                    self.run_omp();
+                }
+            });
+            ui.separator();
+            match self.omp_result() {
+                Some(r) => {
+                    ui.label(egui::RichText::new(r.text.trim()).strong().size(16.0));
+                    ui.label(
+                        egui::RichText::new(format!("Окно расчёта: отсчёты {} – {}", r.window.0.min(r.window.1), r.window.0.max(r.window.1)))
+                            .weak(),
+                    );
                 }
                 None => {
-                    ui.label("Недостаточно данных для расчёта (проверьте каналы/ток/дальний конец).");
+                    ui.label("Введите параметры линии и нажмите «Рассчитать».");
                 }
             }
         });
     }
-}
-
-/// Phasor of an optional channel index at sample `k`.
-fn phase_ph(d: &crate::app::Doc, idx: Option<usize>, k: usize) -> Complex64 {
-    idx.and_then(|i| d.analysis.phasors.get(i)).and_then(|p| p.get(k)).copied().unwrap_or(Complex64::new(0.0, 0.0))
 }
 
 fn phasor_table(ui: &mut egui::Ui, id: &str, first_col: &str, rows: &[(&str, Complex64)]) {
