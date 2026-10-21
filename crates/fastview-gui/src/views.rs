@@ -115,7 +115,8 @@ impl App {
         let Some(d) = self.active_doc_mut() else { return };
         let (mut changed, n) = (false, d.chans.len());
         for &i in chans.iter().filter(|&&i| i < n) {
-            let unit = d.osc.analog[i].unit.trim().to_lowercase();
+            // The canonical unit, none in ADC mode (`0x414c30`).
+            let unit = if d.chans[i].adc_counts { String::new() } else { d.osc.analog[i].unit.to_lowercase() };
             let c = &mut d.chans[i];
             let flag = match pane {
                 Pane::Frequency => &mut c.on_freq,
