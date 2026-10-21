@@ -138,6 +138,9 @@ pub enum AnalysisTab {
     Formula,
 }
 
+/// (channel, mode) → (generation, [finite min, finite max, min, max]).
+pub type MinMaxCache = std::cell::RefCell<std::collections::HashMap<(usize, ValueMode), (u64, [f64; 4])>>;
+
 /// The per-channel value the stats panel and vector/circle views read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValueMode {
@@ -456,7 +459,7 @@ pub struct Doc {
     /// Per channel and display mode: the unscaled series' finite min / max
     /// and its plain min / max (the original keeps them at `+0xa8` /
     /// `+0xb0`, recomputed when the values change, not per paint).
-    pub minmax_cache: std::cell::RefCell<std::collections::HashMap<(usize, ValueMode), (u64, [f64; 4])>>,
+    pub minmax_cache: MinMaxCache,
     /// Per channel the DC removed by «Удалить постоянную составляющую»: the
     /// mean over the whole periods from the record start of the values and of
     /// the ADC codes (`ch+0xf8`, `0x428490`).
