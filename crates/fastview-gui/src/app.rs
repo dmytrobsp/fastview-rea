@@ -455,6 +455,8 @@ pub struct Doc {
     /// The record comment (`.hdr` text, 32805) and its code page.
     pub hdr: Option<String>,
     pub hdr_cp: Encoding,
+    /// The record settings tree and the modified flag (`setfile`).
+    pub set: crate::setfile::DocSet,
 }
 
 impl Doc {
@@ -504,6 +506,7 @@ impl Doc {
             omp: Default::default(),
             pending: Vec::new(),
             merge_offset: 0.0,
+            set: Default::default(),
         }
     }
 
@@ -667,7 +670,11 @@ pub struct DocSnapshot {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     Open,          // Ctrl+O / QAT
-    Save,          // Ctrl+S  (save as COMTRADE)
+    Save,          // Ctrl+S  (57603: onto the document's file, else Save As)
+    /// 57604 «Сохранить как...».
+    SaveAs,
+    /// 32860 «Загрузка настроек...».
+    LoadSettings,
     Print,         // Ctrl+P  (export image)
     Copy,          // Ctrl+C
     Paste,         // Ctrl+V
@@ -800,6 +807,8 @@ pub struct App {
     pub quick: crate::quick_ui::QuickForms,
     /// ОМП result bar, parameters dialog and message box.
     pub omp_ui: crate::omp_ui::OmpUi,
+    /// The settings-file prompts and sync (`setfile`).
+    pub setfile: crate::setfile::SetUi,
     /// Persisted characteristic settings (only when enabled by `main`).
     pub store: crate::persist::Store,
     pub persist: bool,
@@ -922,6 +931,7 @@ impl App {
             analysis_tab: AnalysisTab::Symmetric,
             quick: Default::default(),
             omp_ui: Default::default(),
+            setfile: Default::default(),
             store: Default::default(),
             persist: false,
             show_about: false,
@@ -1016,8 +1026,32 @@ impl App {
         self.status = format!("Загружена осциллограмма: {name} ({n} отсчётов)");
     }
 
+    /// Close document `i` without asking.
+    pub fn close_doc_now(&mut self, i: usize) {
+        if i < self.docs.len() {
+            self.docs.remove(i);
+            // Indices shift: re-bind the ОМП bar and the settings sync on
+            // the next frame.
+            self.omp_ui.bar_doc = None;
+            self.setfile.sync = None;
+            self.active = if self.docs.is_empty() {
+                None
+            } else {
+                Some(i.min(self.docs.len() - 1))
+            };
+        }
+    }
+
     // ---------- command dispatch ----------
     pub fn dispatch(&mut self, cmd: Command) {
+        let mark = crate::setfile::marks_modified(&cmd).then_some(self.active).flatten();
+        self.dispatch_inner(cmd);
+        if let Some(d) = mark.and_then(|i| self.docs.get_mut(i)) {
+            d.set.modified = true;
+        }
+    }
+
+    fn dispatch_inner(&mut self, cmd: Command) {
         match cmd {
             Command::Open => self.open_comtrade(),
             Command::Demo => match fvb_core::comtrade::parse(DEMO_CFG, DEMO_DAT) {
@@ -1032,7 +1066,13 @@ impl App {
             Command::Archive => self.archive_record(),
             Command::ToggleExplorer => self.open_finder(),
             Command::ToggleRibbonMin => self.ribbon_minimized = !self.ribbon_minimized,
-            Command::Save => self.save_comtrade(),
+            Command::Save => {
+                self.save_active();
+            }
+            Command::SaveAs => {
+                self.save_active_as();
+            }
+            Command::LoadSettings => self.load_settings_command(),
             Command::Print => self.request_image_export(),
             Command::Copy => self.copy_channels_for_merge(),
             Command::Paste => {
@@ -1144,25 +1184,13 @@ impl App {
                 if let Some(d) = self.active_doc_mut() {
                     d.zoom_x(zin, w, left);
                 }
-                self.xscale_pref = self.active_doc().and_then(|d| d.xscale);
                 self.persist_view();
             }
             Command::ZoomY(grow) => {
+                // `View/YAnalogSize` follows through `track_settings`.
                 self.y_analog = crate::oscgeom::lane_zoom(self.y_analog, grow);
-                self.persist_view();
             }
-            Command::CloseDoc(i) => {
-                if i < self.docs.len() {
-                    self.docs.remove(i);
-                    // Indices shift: re-bind the ОМП bar on the next frame.
-                    self.omp_ui.bar_doc = None;
-                    self.active = if self.docs.is_empty() {
-                        None
-                    } else {
-                        Some(i.min(self.docs.len() - 1))
-                    };
-                }
-            }
+            Command::CloseDoc(i) => self.request_close(i),
             Command::ActivateDoc(i) => {
                 if i < self.docs.len() {
                     self.active = Some(i);
@@ -1286,35 +1314,24 @@ impl App {
 
     /// Save the view preferences (`View`: XScale, YAnalogSize, RulerState,
     /// Sells), as the original does after every zoom / ruler / grid change.
+    /// `View/XScale` of the active document (`0x45c4f0` writes it into the
+    /// settings tree); the other `View` keys follow through
+    /// `track_settings`.
     pub fn persist_view(&mut self) {
-        if !self.persist {
-            return;
+        if let Some(d) = self.active_doc_mut() {
+            if let Some(f) = d.xscale {
+                d.set.tree.section_mut("View").set_dbl("XScale", f);
+            }
         }
-        let v = &mut self.store.view;
-        if let Some(f) = self.xscale_pref {
-            v.insert("XScale".into(), format!("{f}"));
-        }
-        v.insert("YAnalogSize".into(), format!("{}", self.y_analog));
-        v.insert("RulerState".into(), crate::persist::ruler_state(self.time_unit).to_string());
-        v.insert("Sells".into(), u8::from(self.show_grid).to_string());
-        self.store.save();
     }
 
     /// Load persisted characteristic settings and apply them (called by `main`).
     pub fn with_persistence(mut self) -> Self {
         self.store = crate::persist::Store::load();
         self.persist = true;
+        // `View` (XScale, YAnalogSize, RulerState, Sells) is per document,
+        // in its settings file (`setfile`).
         let v = &self.store.view;
-        self.xscale_pref = v.get("XScale").and_then(|x| x.parse().ok()).filter(|f: &f64| *f > 0.0 && *f <= 1.0);
-        if let Some(y) = v.get("YAnalogSize").and_then(|x| x.parse::<f32>().ok()) {
-            self.y_analog = y;
-        }
-        if let Some(u) = v.get("RulerState").and_then(|x| x.parse::<u8>().ok()).and_then(crate::persist::time_unit) {
-            self.time_unit = u;
-        }
-        if let Some(g) = v.get("Sells") {
-            self.show_grid = g != "0";
-        }
         if let Some(i) = v.get("ApplicationLook").and_then(|x| x.parse::<usize>().ok()).and_then(|c| c.checked_sub(215)) {
             if let Some(&s) = Skin::ALL.get(i) {
                 self.skin = s;
@@ -1475,6 +1492,9 @@ impl App {
                     // Names may have been re-decoded; no flag is set yet.
                     d.flagged = d.osc.clone();
                 }
+                if let Some(di) = self.active {
+                    self.load_record_settings(di);
+                }
                 self.remember_recent(path);
             }
             // The original shows "<file> - <message>".
@@ -1536,40 +1556,6 @@ impl App {
         match std::fs::write(&path, out) {
             Ok(()) => self.status = format!("Экспортировано в {}", path.display()),
             Err(e) => self.status = format!("Ошибка экспорта: {e}"),
-        }
-    }
-
-    /// Save the active document as a COMTRADE `.cfg`/`.dat` pair.
-    pub fn save_comtrade(&mut self) {
-        let Some(d) = self.active_doc() else {
-            self.status = "Нет осциллограммы для сохранения.".into();
-            return;
-        };
-        let Some(path) = rfd::FileDialog::new()
-            .add_filter("COMTRADE", &["cfg"])
-            .add_filter("COMTRADE'13", &["cff"])
-            .set_file_name(format!("{}.cfg", d.name))
-            .save_file()
-        else {
-            return;
-        };
-        if path.to_string_lossy().to_lowercase().ends_with(".cff") {
-            self.status = match fvb_core::comtrade::write_cff(&d.osc, &d.cff_sections()) {
-                Ok(bytes) => match std::fs::write(&path, bytes) {
-                    Ok(()) => format!("Сохранено: {}", path.display()),
-                    Err(e) => format!("Ошибка сохранения: {e}"),
-                },
-                Err(e) => e.to_string(),
-            };
-            return;
-        }
-        let (cfg, dat) = fvb_core::comtrade::write(&d.osc);
-        let dat_path = path.with_extension("dat");
-        let hdr = d.hdr_file_bytes();
-        let wrote = std::fs::write(&path, cfg).and_then(|_| std::fs::write(&dat_path, dat));
-        match wrote.and_then(|_| hdr.map_or(Ok(()), |b| std::fs::write(path.with_extension("hdr"), b))) {
-            Ok(()) => self.status = format!("Сохранено: {} (+ .dat)", path.display()),
-            Err(e) => self.status = format!("Ошибка сохранения: {e}"),
         }
     }
 

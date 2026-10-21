@@ -14,6 +14,7 @@ impl App {
         self.loading_window(ctx);
         self.omp_windows(ctx);
         self.record_dialogs_ui(ctx);
+        self.save_prompt_window(ctx);
     }
 
     /// «Загрузка» (DIALOG 492): an indeterminate progress bar per large file
