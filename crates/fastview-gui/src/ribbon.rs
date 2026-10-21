@@ -1,7 +1,8 @@
 //! The Office-2007-style ribbon: quick-access toolbar, tab strip and command
 //! groups. Layout mirrors the original (QAT: open/save/print/undo/redo; tabs
 //! Главная / ОМП; groups Объединение · Диаграммы · Видимость · Вычисления ·
-//! Осциллограмма; ОМП tab: Параметры · Анализ). See `notes/UI_SPEC.md`.
+//! Осциллограмма; ОМП tab: Параметры · Анализ — a toggle with the result bar,
+//! `omp_ui.rs`). See `notes/UI_SPEC.md`.
 
 use crate::app::{App, Command, Pane, RibbonTab, ValueMode, View};
 use crate::icons::{self, Icon};
@@ -256,15 +257,27 @@ impl App {
         });
     }
 
+    /// Category «ОМП», panel ОМП: 32807 Параметры (always enabled with a
+    /// document) and 32806 Анализ (a toggle, checked while the result is
+    /// shown, disabled while pasted channels are pending); both greyed with
+    /// no document. Neither switches the view.
     fn ribbon_omp(&mut self, ui: &mut egui::Ui, cmds: &mut Vec<Command>) {
         let p = self.skin.palette();
+        let doc = self.active_doc();
+        let has_doc = doc.is_some();
+        let can_run = doc.is_some_and(|d| !crate::omp_ui::has_pending_paste(d));
+        let shown = doc.is_some_and(|d| d.omp.shown);
         ribbon_group(ui, p, "ОМП", |ui| {
-            if big_button(ui, p, Icon::Params, "Параметры").clicked() {
-                cmds.push(Command::Show(View::Omp));
-            }
-            if big_button_sel(ui, p, Icon::OmpRun, "Анализ", self.view == View::Omp).clicked() {
-                cmds.push(Command::Show(View::Omp));
-            }
+            ui.add_enabled_ui(has_doc, |ui| {
+                if big_button(ui, p, Icon::Params, "Параметры").on_hover_text("Параметры определения места повреждения").clicked() {
+                    cmds.push(Command::OmpParams);
+                }
+            });
+            ui.add_enabled_ui(can_run, |ui| {
+                if big_button_sel(ui, p, Icon::OmpRun, "Анализ", shown).on_hover_text("Произвести определение места повреждения").clicked() {
+                    cmds.push(Command::OmpAnalysis);
+                }
+            });
         });
     }
 }

@@ -12,6 +12,7 @@ impl App {
         self.channel_map_window(ctx);
         self.settings_window(ctx);
         self.color_window(ctx);
+        self.omp_windows(ctx);
     }
 
     /// «Цвет канала» (33030): a colour dialog started from the first selected

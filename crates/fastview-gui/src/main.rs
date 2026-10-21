@@ -10,6 +10,7 @@ mod chansel;
 mod dialogs;
 mod icons;
 mod lanes;
+mod omp_ui;
 mod oscgeom;
 mod persist;
 mod quick_ui;
@@ -135,6 +136,8 @@ impl eframe::App for App {
             .frame(egui::Frame::none().fill(pal.tab_active))
             .show(ctx, |ui| {
                 self.ribbon_ui(ui);
+                // Caption bars docked under the ribbon: the ОМП result.
+                self.omp_banner(ui);
                 if !self.docs.is_empty() {
                     self.doc_tabs(ui);
                 }
