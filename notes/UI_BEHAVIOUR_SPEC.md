@@ -1331,8 +1331,8 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
   **Resolved (read, CMergeBar create):** `0x479b6d` loads string 0xd7f (3455
   «Синхронизация») for the button pushed with id 0x443 (1091) at `0x479b7b`;
   `0x479bc3` loads 0xcf7 (3319 «Объединить») for id 0x444 (1092) at `0x479bd1`.
-- After «Объединить»: scope F reads "hide the bar", scope G "show the bar";
-  whether it re-runs ОМП unconditionally — not determined.
+- After «Объединить»: **resolved (L9.19)** — the bar is hidden (`0x47e8fc`
+  SW_HIDE) and ОМП re-runs unconditionally (silent `0x4a00b0(1)`).
 - **Circle eligibility** differs by site: CMDUI 32851 accepts Ohm/W/VA/var;
   the circle pane's menu and attach accept Ohm/VA; the Каналы dialog column 4
   rejects W/VA/var. Vector: A/V/«ном»/empty (CMDUI), A/V/""/one more string
