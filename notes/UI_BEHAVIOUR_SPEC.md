@@ -1217,7 +1217,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 13. ✅ (L9.5) Stats panel: framed coloured name (25-char cut), value `%-6g` heavy blue,
     rows only per bits 4/5/6 with the 32817–19 toggles, fonts/colours, status
     icons, auto-fitted leftW (replace LEFT_W 158) — `lanes.rs` — M
-14. 🟡 (L9.6: all but .set persistence) Comments: level (156) and area (157) kinds with create-drag, drag editing
+14. ✅ (L9.6 + L9.17) Comments: level (156) and area (157) kinds with create-drag, drag editing
     by part, lock respected, 33042 inline level edit, double-click edit,
     hover info box, per-kind drawing, one-shot tools enabled for .cfg/.osc,
     `.set` persistence — `app.rs`, `lanes.rs`, `dialogs.rs`, `persist.rs`/
@@ -1301,7 +1301,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     optional single instance and splash — `main.rs` — M
 46. ✅ (merged L9.16) AddFormula template tree (at least name validation 396) — `views.rs` /
     `quick_ui.rs` — M (validation S)
-47. Document-modified tracking from the commands that call SetModifiedFlag
+47. ✅ (merged L9.17) Document-modified tracking from the commands that call SetModifiedFlag
     (save prompt depends on an unknown) — `app.rs` — S
 48. Stats-panel OLE drag of channels between views (low) — `lanes.rs` — M
 

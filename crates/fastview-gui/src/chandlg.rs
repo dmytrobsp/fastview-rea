@@ -91,6 +91,8 @@ pub fn set_cell(doc: &mut Doc, key: ChanKey, col: usize, v: bool) {
     if cell(doc, key, col).is_none() {
         return;
     }
+    // Every click marks the document modified (`0x4349c0`).
+    doc.set.modified = true;
     match (key, col) {
         (ChanKey::Analog(i), 1) => {
             doc.chans[i].visible = v;
@@ -169,6 +171,7 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
         ChanKey::Digital(k) => doc.osc.digital[k].id = name.to_string(),
         ChanKey::Computed(_) => {}
     }
+    doc.set.modified = true;
     Ok(())
 }
 

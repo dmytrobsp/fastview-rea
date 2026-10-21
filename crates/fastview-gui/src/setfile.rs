@@ -1,0 +1,1000 @@
+//! The record settings file (`<base>.set`) and the document-modified flag
+//! (track S; `fvb_core::recset` holds the file format).
+//!
+//! Read (`0x44f5b0`, from the `.cfg` / `.osc` loaders): the tree replaces
+//! the document's, then comments (unless loading settings by 32860),
+//! `Oscillogram` (rate, code page — a stored one wins over the guess), every
+//! channel's section, the formula channels, ОМП, the diagram pairs; the
+//! diagram windows and the view read their own sections (`Circle Chart`,
+//! `Diff Chart`, `Vector Chart`, `Frequency Chart`, `View`) when they attach,
+//! and their toggles write straight into the tree.
+//!
+//! Written only by `OnSaveDocument` (`0x44c940` → `0x44cbc0`): Save onto the
+//! document's own path rewrites only the `.set`, Save As writes the record
+//! and its `.set`; success clears the modified flag. Nothing is written on a
+//! change or on close: closing a modified document asks MFC's «save changes»
+//! question (`SaveModified`, not overridden except for `.sto`), and so does
+//! leaving the program, once per modified document.
+
+use crate::app::{App, ChanKey, Command, Doc, TimeUnit, ValueMode};
+use crate::comments::{Comment, CommentKind};
+use eframe::egui;
+use fvb_core::comtrade::{self, Encoding};
+use fvb_core::recset::{self, flag, ChannelRec, CommentKindRec, CommentRec, PairRec, SetNode, SetTree};
+
+/// Per document: the settings tree (`doc+0x300`), the modified flag
+/// (`doc+0x48`) and our change detector.
+#[derive(Debug, Default, Clone)]
+pub struct DocSet {
+    pub tree: SetTree,
+    pub modified: bool,
+    /// The settings as last saved / loaded / seen (see `App::track_settings`).
+    pub print: String,
+    /// Section keys of the file channels (analog, then digital): the file's
+    /// name bytes read in the ANSI code page (`CStringW(ch+0x64)`).
+    pub keys: Vec<String>,
+}
+
+/// The answer pending in the «save changes» question.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SavePrompt {
+    pub doc: usize,
+    /// Asked while leaving the program.
+    pub exit: bool,
+}
+
+/// Frame-level state of this module.
+#[derive(Debug, Default)]
+pub struct SetUi {
+    pub prompt: Option<SavePrompt>,
+    /// Documents still to ask about while leaving the program.
+    pub exit_queue: Option<Vec<usize>>,
+    /// Every question answered: let the window close.
+    pub exit_ok: bool,
+    /// The document whose diagram / view sections the app fields hold, and
+    /// those values as last synchronised.
+    pub sync: Option<(usize, ViewSnap)>,
+}
+
+/// The settings the diagram windows and the view keep in the tree.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewSnap {
+    pub circle: recset::PlaneChart,
+    pub diff: recset::PlaneChart,
+    pub vector: recset::VectorChart,
+    pub freq: recset::FrequencyChart,
+    pub y_analog: i32,
+    pub ruler: i32,
+    pub grid: bool,
+}
+
+/// `Codepage`: 0 = the ANSI code page (1251 here), 1 = the OEM one (866);
+/// other values are code page numbers (`0x4543e0`).
+pub fn cp_code(e: Encoding) -> i32 {
+    i32::from(e == Encoding::Cp866)
+}
+
+pub fn cp_of(code: i32) -> Encoding {
+    match code {
+        1 | 866 => Encoding::Cp866,
+        20866 => Encoding::Koi8r,
+        65001 => Encoding::Utf8,
+        _ => Encoding::Cp1251,
+    }
+}
+
+/// COLORREF ↔ colour.
+fn colorref(c: egui::Color32) -> u32 {
+    u32::from(c.r()) | u32::from(c.g()) << 8 | u32::from(c.b()) << 16
+}
+
+fn from_colorref(v: u32) -> egui::Color32 {
+    egui::Color32::from_rgb(v as u8, (v >> 8) as u8, (v >> 16) as u8)
+}
+
+/// Formula channels (the calculation manager `doc+0x190` holds only these;
+/// merged, pending and ОМП channels carry no formula).
+fn is_formula(c: &crate::app::Computed) -> bool {
+    c.formula != "ОМП" && c.formula != crate::merge_ui::PENDING
+}
+
+/// The commands whose handlers call `SetModifiedFlag` even when the state
+/// ends up as it was (toggles; spec §4.6, §4.10, zoom `0x45c4f0`, 32860).
+/// Everything else that changes saved state is caught by the change
+/// detector.
+pub fn marks_modified(cmd: &Command) -> bool {
+    matches!(
+        cmd,
+        Command::ToggleFlag(_)
+            | Command::SetValueMode(_)
+            | Command::StatsRow(_)
+            | Command::ZoomX(_)
+            | Command::ZoomY(_)
+            | Command::SetPrimaryValues(_)
+    )
+}
+
+/// `SaveModified` (`0x454fa0`): a `.sto` record closes without a question;
+/// otherwise MFC asks when the document is modified.
+pub fn needs_save_prompt(d: &Doc) -> bool {
+    let sto = d.path.as_ref().is_some_and(|p| p.to_string_lossy().to_lowercase().ends_with(".sto"));
+    d.set.modified && !sto
+}
+
+/// The format `OnSaveDocument` dispatches on (last four characters
+/// lowercased); anything else is refused.
+fn save_kind(p: &std::path::Path) -> Option<&'static str> {
+    let s = p.to_string_lossy().to_lowercase();
+    [".cfg", ".osc", ".cff"].into_iter().find(|e| s.ends_with(e))
+}
+
+impl Doc {
+    /// The section key of file channel `i` (analog, then digital).
+    fn file_key(&self, i: usize) -> String {
+        if let Some(k) = self.set.keys.get(i) {
+            return k.clone();
+        }
+        let id = if i < self.osc.analog.len() { &self.osc.analog[i].id } else { &self.osc.digital[i - self.osc.analog.len()].id };
+        comtrade::recode(id, self.codepage, Encoding::Cp1251)
+    }
+
+    /// Remember the channels' file names (after the names were decoded).
+    pub fn init_set_keys(&mut self) {
+        self.set.keys.clear();
+        let keys: Vec<String> = (0..self.osc.analog.len() + self.osc.digital.len()).map(|i| self.file_key(i)).collect();
+        self.set.keys = keys;
+    }
+
+    /// The displayed name of a channel for the comment records.
+    fn key_name(&self, k: ChanKey) -> String {
+        crate::chandlg::row_name(self, k)
+    }
+
+    fn key_by_name(&self, n: &str) -> Option<ChanKey> {
+        crate::chandlg::rows(self).into_iter().find(|&k| self.key_name(k) == n)
+    }
+
+    /// `AliasName`: the displayed name when it differs from the file's.
+    fn alias(&self, i: usize, id: &str) -> String {
+        let file = comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.codepage);
+        if id == file {
+            String::new()
+        } else {
+            id.to_string()
+        }
+    }
+
+    fn analog_flags(&self, i: usize) -> u32 {
+        let c = &self.chans[i];
+        let bit = |on: bool, b: u32| if on { b } else { 0 };
+        bit(c.visible, flag::VISIBLE)
+            | bit(c.on_freq, flag::FREQUENCY)
+            | bit(c.on_vector, flag::VECTOR)
+            | bit(c.on_circle, flag::CIRCLE)
+            | bit(c.stats.minmax, flag::MINMAX)
+            | bit(c.stats.a1, flag::A1)
+            | bit(c.stats.rms, flag::RMS_ROW)
+            | match c.mode {
+                ValueMode::Instant => flag::MODE_INSTANT,
+                ValueMode::Rms => flag::MODE_RMS,
+                ValueMode::FirstHarmonic => flag::MODE_HARMONIC,
+            }
+            | bit(c.remove_dc, flag::REMOVE_DC)
+            | bit(c.invert, flag::INVERT)
+            | bit(c.adc_counts, flag::ADC)
+    }
+
+    fn set_analog_flags(&mut self, i: usize, f: u32) {
+        let c = &mut self.chans[i];
+        c.visible = f & flag::VISIBLE != 0;
+        c.on_freq = f & flag::FREQUENCY != 0;
+        c.on_vector = f & flag::VECTOR != 0;
+        c.on_circle = f & flag::CIRCLE != 0;
+        c.stats.minmax = f & flag::MINMAX != 0;
+        c.stats.a1 = f & flag::A1 != 0;
+        c.stats.rms = f & flag::RMS_ROW != 0;
+        c.mode = if f & flag::MODE_RMS != 0 {
+            ValueMode::Rms
+        } else if f & flag::MODE_HARMONIC != 0 {
+            ValueMode::FirstHarmonic
+        } else {
+            ValueMode::Instant
+        };
+        c.remove_dc = f & flag::REMOVE_DC != 0;
+        c.invert = f & flag::INVERT != 0;
+        c.adc_counts = f & flag::ADC != 0;
+    }
+
+    fn computed_flags(&self, j: usize) -> u32 {
+        let c = &self.computed[j];
+        let bit = |on: bool, b: u32| if on { b } else { 0 };
+        bit(c.visible, flag::VISIBLE)
+            | bit(c.on_vector, flag::VECTOR)
+            | bit(c.on_circle, flag::CIRCLE)
+            | bit(c.stats.minmax, flag::MINMAX)
+            | bit(c.stats.a1, flag::A1)
+            | bit(c.stats.rms, flag::RMS_ROW)
+            | flag::COMPUTED
+    }
+
+    /// The modelled bits replace their stored values; the others (bits we
+    /// do not model, a stored `NetFreq`, …) are kept.
+    fn merged_flags(t: &SetTree, key: &str, ours: u32, known: u32) -> u32 {
+        let old = t.section(key).map_or(0, |s| s.get_int("ShowFlags", 0) as u32);
+        ours | (old & !known)
+    }
+
+    /// `0x44cbc0` minus the serialisation: update the tree in place from the
+    /// document. `print` = the change detector's variant (visibility, which
+    /// 32845–32848 change without marking the document, and ОМП / pending
+    /// channels left out).
+    pub fn store_settings(&self, t: &mut SetTree, print: bool) {
+        let calc: Vec<(String, String)> = self.computed.iter().filter(|c| is_formula(c)).map(|c| (c.name.clone(), c.formula.clone())).collect();
+        recset::write_calculated(t.section_mut("CalculatedChannels"), &calc);
+        recset::write_omp(t.section_mut("WrongPlaceFinding"), &self.omp.params);
+        let mask = if print { !flag::VISIBLE } else { u32::MAX };
+        let known_a = (1 << 13) - 1;
+        for i in 0..self.osc.analog.len() {
+            let key = self.file_key(i);
+            let a = &self.osc.analog[i];
+            let def = crate::app::default_channel_color(a, i);
+            let rec = ChannelRec {
+                show_flags: Self::merged_flags(t, &key, self.analog_flags(i), known_a) & mask,
+                primary_mul: a.primary,
+                secondary_mul: a.secondary,
+                alias: self.alias(i, &a.id),
+                custom_color: (self.chans[i].color != def).then(|| colorref(self.chans[i].color)),
+            };
+            recset::write_channel(t.section_mut(&key), &rec);
+        }
+        let na = self.osc.analog.len();
+        for k in 0..self.osc.digital.len() {
+            let key = self.file_key(na + k);
+            let vis = if self.digital_visible.get(k).copied().unwrap_or(true) { flag::VISIBLE } else { 0 };
+            let rec = ChannelRec {
+                show_flags: Self::merged_flags(t, &key, vis, flag::VISIBLE) & mask,
+                primary_mul: 1.0,
+                secondary_mul: 1.0,
+                alias: self.alias(na + k, &self.osc.digital[k].id),
+                custom_color: None,
+            };
+            recset::write_channel(t.section_mut(&key), &rec);
+        }
+        for (j, c) in self.computed.iter().enumerate() {
+            if print && !is_formula(c) {
+                continue;
+            }
+            let known_c = flag::VISIBLE | flag::VECTOR | flag::CIRCLE | flag::MINMAX | flag::A1 | flag::RMS_ROW | flag::COMPUTED;
+            let rec = ChannelRec {
+                show_flags: Self::merged_flags(t, &c.name, self.computed_flags(j), known_c) & mask,
+                primary_mul: 1.0,
+                secondary_mul: 1.0,
+                alias: String::new(),
+                custom_color: Some(colorref(c.color)),
+            };
+            recset::write_channel(t.section_mut(&c.name), &rec);
+        }
+        let o = t.section_mut("Oscillogram");
+        o.set_int("Codepage", cp_code(self.codepage));
+        o.set_int("DiscretisationFrequensy", self.osc.sample_rate.round() as i32);
+        let pairs = |v: &[crate::diagram::ChanPair]| -> Vec<PairRec> { v.iter().map(|p| PairRec { a: p.a.clone(), b: p.b.clone(), visible: p.on }).collect() };
+        recset::write_pairs(t.section_mut("Diff Chart"), recset::DIFF_KEYS, &pairs(&self.dif_pairs));
+        recset::write_pairs(t.section_mut("Circle Chart"), recset::CIRCLE_KEYS, &pairs(&self.rx_pairs));
+        let items: Vec<CommentRec> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
+        recset::write_comments(t.section_mut("Comments"), &items);
+    }
+
+    fn comment_rec(&self, c: &Comment) -> CommentRec {
+        let kind = match &c.kind {
+            CommentKind::Moment { pos } => CommentKindRec::Moment { position: *pos as i32 },
+            CommentKind::Level { chan, value, from, to } => CommentKindRec::Level {
+                channel: self.key_name(ChanKey::Analog(*chan)),
+                y: *value,
+                from: *from as i32,
+                to: *to as i32,
+            },
+            CommentKind::Area { chan_from, chan_to, from, to } => CommentKindRec::Area {
+                channel_from: self.key_name(*chan_from),
+                channel_to: self.key_name(*chan_to),
+                from: *from as i32,
+                to: *to as i32,
+            },
+        };
+        CommentRec { kind, text: c.text.clone(), locked: c.locked, visible: !c.hidden }
+    }
+
+    fn comment_of(&self, r: &CommentRec) -> Option<Comment> {
+        let s = |v: i32| v.max(0) as usize;
+        let kind = match &r.kind {
+            CommentKindRec::Moment { position } => CommentKind::Moment { pos: s(*position) },
+            CommentKindRec::Level { channel, y, from, to } => match self.key_by_name(channel)? {
+                ChanKey::Analog(chan) => CommentKind::Level { chan, value: *y, from: s(*from), to: s(*to) },
+                _ => return None,
+            },
+            CommentKindRec::Area { channel_from, channel_to, from, to } => CommentKind::Area {
+                chan_from: self.key_by_name(channel_from)?,
+                chan_to: self.key_by_name(channel_to)?,
+                from: s(*from),
+                to: s(*to),
+            },
+        };
+        Some(Comment { kind, text: r.text.clone(), locked: r.locked, hidden: !r.visible })
+    }
+
+    /// The change detector's view of the saved state.
+    pub fn settings_print(&self) -> String {
+        let mut t = self.set.tree.clone();
+        self.store_settings(&mut t, true);
+        t.to_xml()
+    }
+
+    /// 32805 OK (`0x44c2e0`): the text without CR into `Comments/UserData`.
+    pub fn store_user_data(&mut self) {
+        let text = self.hdr.clone().unwrap_or_default().replace('\r', "");
+        let c = self.set.tree.section_mut("Comments");
+        c.set_str("UserData", &text);
+        c.set_int("Codepage", cp_code(self.hdr_cp));
+        self.set.modified = true;
+    }
+}
+
+impl App {
+    /// Read the settings for document `di` (`0x44f5b0`); `from_command` =
+    /// 32860 (comments are not re-read).
+    pub fn apply_record_settings(&mut self, di: usize, from_command: bool) {
+        let Some(d) = self.docs.get_mut(di) else { return };
+        if !from_command {
+            if let Some(c) = d.set.tree.section("Comments") {
+                let recs = recset::read_comments(c);
+                d.comments = recs.iter().filter_map(|r| d.comment_of(r)).collect();
+                // The record comment edited by 32805.
+                if let Some(u) = c.attrs.get("UserData") {
+                    d.hdr = Some(u.clone());
+                }
+            }
+        }
+        // Oscillogram: the rate, then the formula channels are dropped, then
+        // the stored code page wins over the guess.
+        let osc = d.set.tree.section("Oscillogram").cloned().unwrap_or_default();
+        let rate = osc.get_int("DiscretisationFrequensy", d.osc.sample_rate.round() as i32);
+        if rate > 0 && f64::from(rate) != d.osc.sample_rate.round() {
+            d.osc.retime(f64::from(rate));
+        }
+        if d.computed.iter().any(is_formula) {
+            d.computed.retain(|c| !is_formula(c));
+            d.selection.retain(|k| !matches!(k, ChanKey::Computed(_)));
+        }
+        if matches!(d.codepage, Encoding::Cp1251 | Encoding::Cp866) {
+            if let Some(cp) = osc.attrs.get("Codepage").map(|v| recset::wtoi(v)) {
+                d.set_codepage(cp_of(cp));
+            }
+        }
+        // File channels.
+        let na = d.osc.analog.len();
+        for i in 0..na + d.osc.digital.len() {
+            let key = d.file_key(i);
+            let Some(sec) = d.set.tree.section(&key).cloned() else { continue };
+            if i < na {
+                let a = &d.osc.analog[i];
+                let cur = ChannelRec {
+                    show_flags: d.analog_flags(i),
+                    primary_mul: a.primary,
+                    secondary_mul: a.secondary,
+                    alias: String::new(),
+                    custom_color: None,
+                };
+                let r = recset::read_channel(&sec, &cur);
+                d.set_analog_flags(i, r.show_flags);
+                let a = &mut d.osc.analog[i];
+                a.primary = r.primary_mul;
+                a.secondary = r.secondary_mul;
+                if !r.alias.is_empty() {
+                    a.id = r.alias;
+                }
+                if let Some(c) = r.custom_color {
+                    d.chans[i].color = from_colorref(c);
+                }
+            } else {
+                let k = i - na;
+                let cur = ChannelRec {
+                    show_flags: if d.digital_visible[k] { flag::VISIBLE } else { 0 },
+                    primary_mul: 1.0,
+                    secondary_mul: 1.0,
+                    alias: String::new(),
+                    custom_color: None,
+                };
+                let r = recset::read_channel(&sec, &cur);
+                d.digital_visible[k] = r.show_flags & flag::VISIBLE != 0;
+                if !r.alias.is_empty() {
+                    d.osc.digital[k].id = r.alias;
+                }
+            }
+        }
+        // The formula channels, ОМП, then the new channels' own sections.
+        let calc = d.set.tree.section("CalculatedChannels").map(recset::read_calculated).unwrap_or_default();
+        if let Some(p) = d.set.tree.section("WrongPlaceFinding").and_then(recset::read_omp) {
+            d.omp.params = p;
+        }
+        let pairs = |c: Option<&SetNode>, keys| -> Vec<crate::diagram::ChanPair> {
+            c.map(|c| recset::read_pairs(c, keys)).unwrap_or_default().into_iter().map(|p| crate::diagram::ChanPair { a: p.a, b: p.b, on: p.visible }).collect()
+        };
+        d.dif_pairs = pairs(d.set.tree.section("Diff Chart"), recset::DIFF_KEYS);
+        d.rx_pairs = pairs(d.set.tree.section("Circle Chart"), recset::CIRCLE_KEYS);
+        if let Some(x) = recset::read_view(d.set.tree.section("View")).xscale.filter(|f| *f > 0.0 && *f <= 1.0) {
+            d.xscale = Some(x);
+        }
+        self.recompute_doc(di);
+        if !calc.is_empty() {
+            let (active, status) = (self.active, self.status.clone());
+            self.active = Some(di);
+            let batch: Vec<(String, String, String)> = calc.into_iter().map(|(n, f)| (n, f, String::new())).collect();
+            self.append_computed(&batch);
+            self.active = active;
+            self.status = status;
+        }
+        let d = &mut self.docs[di];
+        for j in 0..d.computed.len() {
+            let Some(sec) = d.set.tree.section(&d.computed[j].name).cloned() else { continue };
+            let cur = ChannelRec { show_flags: d.computed_flags(j), primary_mul: 1.0, secondary_mul: 1.0, alias: String::new(), custom_color: None };
+            let r = recset::read_channel(&sec, &cur);
+            let c = &mut d.computed[j];
+            c.visible = r.show_flags & flag::VISIBLE != 0;
+            c.on_vector = r.show_flags & flag::VECTOR != 0;
+            c.on_circle = r.show_flags & flag::CIRCLE != 0;
+            c.stats.minmax = r.show_flags & flag::MINMAX != 0;
+            c.stats.a1 = r.show_flags & flag::A1 != 0;
+            c.stats.rms = r.show_flags & flag::RMS_ROW != 0;
+            if let Some(v) = r.custom_color {
+                c.color = from_colorref(v);
+            }
+        }
+        // The diagram windows and the view re-read their sections.
+        self.setfile.sync = None;
+        let d = &mut self.docs[di];
+        d.set.print = d.settings_print();
+    }
+
+    /// After a record was opened: read `<base>.set` (or the legacy `ini`).
+    pub fn load_record_settings(&mut self, di: usize) {
+        let Some(d) = self.docs.get_mut(di) else { return };
+        d.init_set_keys();
+        if let Some(p) = d.path.clone() {
+            d.set.tree.load_path(&recset::set_path(&p));
+        }
+        self.apply_record_settings(di, false);
+        self.docs[di].set.modified = false;
+    }
+
+    /// 32860 «Загрузка настроек...» (`0x44fd10`): pick a `.set`, read it
+    /// without the comments, mark modified, refresh.
+    pub fn load_settings_command(&mut self) {
+        let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Настройки осциллограммы FastView (*.set)", &["set"])
+            .add_filter("Все файлы (*.*)", &["*"])
+            .pick_file()
+        else {
+            return;
+        };
+        self.load_settings_from(ai, &path);
+    }
+
+    pub fn load_settings_from(&mut self, di: usize, path: &std::path::Path) {
+        self.docs[di].set.tree.load_path(path);
+        self.apply_record_settings(di, true);
+        self.docs[di].set.modified = true;
+    }
+
+    /// `OnSaveDocument` (`0x44c940`): write the record when the target is not
+    /// the document's own file, then its `.set`; clear the modified flag.
+    pub fn save_doc_to(&mut self, di: usize, target: &std::path::Path) -> Result<(), String> {
+        let d = self.docs.get(di).ok_or("Нет осциллограммы для сохранения.")?;
+        let kind = save_kind(target).ok_or_else(|| format!("{} - неизвестный формат", target.display()))?;
+        let same = d.path.as_deref() == Some(target);
+        if !same {
+            match kind {
+                ".cff" => {
+                    let bytes = comtrade::write_cff(&d.osc, &d.cff_sections()).map_err(|e| e.to_string())?;
+                    std::fs::write(target, bytes).map_err(|e| e.to_string())?;
+                }
+                ".osc" => {
+                    // `0x44ca80` writes the record's own bytes to the new name.
+                    let src = d.path.clone().filter(|p| save_kind(p) == Some(".osc")).ok_or("Нет исходного файла .osc")?;
+                    std::fs::copy(src, target).map_err(|e| e.to_string())?;
+                }
+                _ => {
+                    let (cfg, dat) = comtrade::write(&d.osc);
+                    std::fs::write(target, cfg).map_err(|e| e.to_string())?;
+                    std::fs::write(target.with_extension("dat"), dat).map_err(|e| e.to_string())?;
+                    if let Some(b) = d.hdr_file_bytes() {
+                        std::fs::write(target.with_extension("hdr"), b).map_err(|e| e.to_string())?;
+                    }
+                }
+            }
+        }
+        let d = &mut self.docs[di];
+        let mut t = std::mem::take(&mut d.set.tree);
+        d.store_settings(&mut t, false);
+        d.set.tree = t;
+        // `_wfopen_s` failing is silent in the original.
+        let _ = std::fs::write(recset::set_path(target), d.set.tree.to_file_bytes());
+        if !same {
+            d.path = Some(target.to_path_buf());
+            d.name = target.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        }
+        d.set.modified = false;
+        d.set.print = d.settings_print();
+        Ok(())
+    }
+
+    /// Сохранить (57603, `DoFileSave`): onto the document's own file when it
+    /// has one the save dispatcher knows, else Save As.
+    pub fn save_active(&mut self) -> bool {
+        let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return false };
+        match self.docs[ai].path.clone().filter(|p| save_kind(p).is_some()) {
+            Some(p) => self.report_save(ai, &p),
+            None => self.save_active_as(),
+        }
+    }
+
+    /// Сохранить как (57604): the file dialog, then `OnSaveDocument`.
+    pub fn save_active_as(&mut self) -> bool {
+        let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else {
+            self.status = "Нет осциллограммы для сохранения.".into();
+            return false;
+        };
+        let d = &self.docs[ai];
+        let mut dlg = rfd::FileDialog::new().add_filter("COMTRADE", &["cfg"]).add_filter("COMTRADE'13", &["cff"]);
+        if d.path.as_ref().is_some_and(|p| save_kind(p) == Some(".osc")) {
+            dlg = dlg.add_filter("OSC", &["osc"]);
+        }
+        let Some(path) = dlg.set_file_name(format!("{}.cfg", d.name)).save_file() else { return false };
+        self.report_save(ai, &path)
+    }
+
+    fn report_save(&mut self, di: usize, path: &std::path::Path) -> bool {
+        match self.save_doc_to(di, path) {
+            Ok(()) => {
+                self.status = format!("Сохранено: {}", path.display());
+                true
+            }
+            Err(e) => {
+                self.status = format!("Ошибка сохранения: {e}");
+                false
+            }
+        }
+    }
+
+    fn view_snap(&self) -> ViewSnap {
+        let circle_sel = self.setfile.sync.as_ref().map(|s| s.1.circle.selected_block.clone()).unwrap_or_default();
+        let diff_sel = self.setfile.sync.as_ref().map(|s| s.1.diff.selected_block.clone()).unwrap_or_default();
+        ViewSnap {
+            circle: recset::PlaneChart {
+                sights_only: self.circle_between_cursors,
+                show_off: self.show_reset,
+                view_type: i32::from(self.circle_readout),
+                selected_block: circle_sel,
+            },
+            diff: recset::PlaneChart {
+                sights_only: self.diag.diff_between,
+                show_off: self.diag.diff_show_reset,
+                view_type: i32::from(self.diag.diff_values),
+                selected_block: diff_sel,
+            },
+            vector: recset::VectorChart {
+                angle_in_radians: self.vec_radians,
+                only_direction: self.vec_direction_only,
+                show_angles_value: self.vec_show_values,
+                angle_channel: self.vec_angle_ref.clone().unwrap_or_default(),
+            },
+            freq: recset::FrequencyChart {
+                num_periods: self.freq_periods as i32,
+                num_harmonics: self.freq_harmonics as i32,
+                show_persents: i32::from(!self.freq_percent),
+                use_rms: self.freq_use_rms,
+            },
+            y_analog: self.y_analog.round() as i32,
+            ruler: i32::from(crate::persist::ruler_state(self.time_unit)),
+            grid: self.show_grid,
+        }
+    }
+
+    fn apply_view_snap(&mut self, s: &ViewSnap) {
+        self.circle_between_cursors = s.circle.sights_only;
+        self.show_reset = s.circle.show_off;
+        self.circle_readout = s.circle.view_type.clamp(0, 2) as u8;
+        self.diag.diff_between = s.diff.sights_only;
+        self.diag.diff_show_reset = s.diff.show_off;
+        self.diag.diff_values = s.diff.view_type != 0;
+        self.vec_radians = s.vector.angle_in_radians;
+        self.vec_direction_only = s.vector.only_direction;
+        self.vec_show_values = s.vector.show_angles_value;
+        self.vec_angle_ref = Some(s.vector.angle_channel.clone()).filter(|n| !n.is_empty());
+        self.freq_periods = s.freq.num_periods.max(1) as usize;
+        self.freq_harmonics = s.freq.num_harmonics.max(1) as usize;
+        self.freq_percent = s.freq.show_persents == 0;
+        self.freq_use_rms = s.freq.use_rms;
+        self.y_analog = s.y_analog as f32;
+        self.time_unit = crate::persist::time_unit(s.ruler.clamp(0, 255) as u8).unwrap_or(TimeUnit::Milli);
+        self.show_grid = s.grid;
+    }
+
+    fn read_view_snap(d: &Doc) -> ViewSnap {
+        let t = &d.set.tree;
+        let v = recset::read_view(t.section("View"));
+        ViewSnap {
+            circle: recset::read_plane_chart(t.section("Circle Chart"), false),
+            diff: recset::read_plane_chart(t.section("Diff Chart"), true),
+            vector: recset::read_vector_chart(t.section("Vector Chart")),
+            freq: recset::read_frequency_chart(t.section("Frequency Chart"), d.osc.sample_rate, d.osc.line_freq),
+            y_analog: v.y_analog,
+            ruler: v.ruler_state,
+            grid: v.sells,
+        }
+    }
+
+    /// Every frame: the diagram / view settings follow the active document
+    /// (read from its tree when it becomes active, written into it — and the
+    /// document marked modified — when a toggle changes them); any other
+    /// change of the saved state marks its document modified.
+    pub fn track_settings(&mut self) {
+        let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else {
+            self.setfile.sync = None;
+            return;
+        };
+        match self.setfile.sync.clone() {
+            Some((di, old)) if di == ai => {
+                let now = self.view_snap();
+                if now != old {
+                    let t = &mut self.docs[ai].set.tree;
+                    if now.circle != old.circle {
+                        recset::write_plane_chart(t.section_mut("Circle Chart"), &now.circle);
+                    }
+                    if now.diff != old.diff {
+                        recset::write_plane_chart(t.section_mut("Diff Chart"), &now.diff);
+                    }
+                    if now.vector != old.vector {
+                        recset::write_vector_chart(t.section_mut("Vector Chart"), &now.vector);
+                    }
+                    if now.freq != old.freq {
+                        recset::write_frequency_chart(t.section_mut("Frequency Chart"), &now.freq);
+                    }
+                    let v = t.section_mut("View");
+                    if now.y_analog != old.y_analog {
+                        v.set_int("YAnalogSize", now.y_analog);
+                    }
+                    if now.ruler != old.ruler {
+                        v.set_int("RulerState", now.ruler);
+                    }
+                    if now.grid != old.grid {
+                        v.set_bool("Sells", now.grid);
+                    }
+                    self.docs[ai].set.modified = true;
+                    self.setfile.sync = Some((ai, now));
+                }
+            }
+            _ => {
+                let s = Self::read_view_snap(&self.docs[ai]);
+                self.apply_view_snap(&s);
+                self.setfile.sync = Some((ai, s));
+            }
+        }
+        let d = &mut self.docs[ai];
+        let print = d.settings_print();
+        if print != d.set.print {
+            // A document never read from a file (demo, tests) starts clean.
+            d.set.modified |= !d.set.print.is_empty();
+            d.set.print = print;
+        }
+    }
+
+    /// Закрыть / the tab's ✕ (`OnCloseDocument` after `SaveModified`).
+    pub fn request_close(&mut self, i: usize) {
+        if self.docs.get(i).is_some_and(needs_save_prompt) {
+            self.setfile.prompt = Some(SavePrompt { doc: i, exit: false });
+        } else {
+            self.close_doc_now(i);
+        }
+    }
+
+    /// The window's close button: one question per modified document
+    /// (`SaveAllModified`); «Отмена» keeps the program open.
+    pub fn handle_exit_request(&mut self, ctx: &egui::Context) {
+        if !ctx.input(|i| i.viewport().close_requested()) || self.setfile.exit_ok {
+            return;
+        }
+        let queue: Vec<usize> = (0..self.docs.len()).filter(|&i| needs_save_prompt(&self.docs[i])).collect();
+        if queue.is_empty() {
+            return;
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        if self.setfile.prompt.is_none() {
+            self.setfile.exit_queue = Some(queue);
+            self.next_exit_prompt(ctx);
+        }
+    }
+
+    fn next_exit_prompt(&mut self, ctx: &egui::Context) {
+        let Some(q) = self.setfile.exit_queue.as_mut() else { return };
+        if q.is_empty() {
+            self.setfile.exit_queue = None;
+            self.setfile.exit_ok = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+        let doc = q.remove(0);
+        self.setfile.prompt = Some(SavePrompt { doc, exit: true });
+    }
+
+    /// The answer to the question: Some(true) Да, Some(false) Нет, None
+    /// Отмена.
+    pub fn answer_save_prompt(&mut self, ctx: &egui::Context, answer: Option<bool>) {
+        let Some(p) = self.setfile.prompt.take() else { return };
+        let go_on = match answer {
+            None => false,
+            Some(false) => true,
+            Some(true) => {
+                let prev = self.active;
+                self.active = Some(p.doc);
+                let ok = self.save_active();
+                self.active = prev;
+                ok
+            }
+        };
+        if !go_on {
+            self.setfile.exit_queue = None;
+            return;
+        }
+        if p.exit {
+            self.next_exit_prompt(ctx);
+        } else {
+            self.close_doc_now(p.doc);
+        }
+    }
+
+    /// MFC's question (`AFX_IDP_ASK_TO_SAVE`, Да / Нет / Отмена).
+    pub fn save_prompt_window(&mut self, ctx: &egui::Context) {
+        let Some(p) = self.setfile.prompt else { return };
+        let Some(d) = self.docs.get(p.doc) else {
+            self.setfile.prompt = None;
+            return;
+        };
+        let title = d.path.as_ref().and_then(|p| p.file_name()).map_or_else(|| d.name.clone(), |s| s.to_string_lossy().into_owned());
+        let mut answer: Option<Option<bool>> = None;
+        egui::Window::new("Механотроника FastView")
+            .id(egui::Id::new("fv_save_prompt"))
+            .collapsible(false)
+            .resizable(false)
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label(format!("Сохранить изменения в {title}?"));
+                ui.horizontal(|ui| {
+                    if ui.button("   Да   ").clicked() {
+                        answer = Some(Some(true));
+                    }
+                    if ui.button("   Нет   ").clicked() {
+                        answer = Some(Some(false));
+                    }
+                    if ui.button(" Отмена ").clicked() {
+                        answer = Some(None);
+                    }
+                });
+            });
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            answer = Some(None);
+        }
+        if let Some(a) = answer {
+            self.answer_save_prompt(ctx, a);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::{DEMO_CFG, DEMO_DAT};
+    use std::path::{Path, PathBuf};
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("fv_setfile_{tag}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn write_record(dir: &Path) -> PathBuf {
+        let cfg = dir.join("rec.cfg");
+        std::fs::write(&cfg, DEMO_CFG).unwrap();
+        std::fs::write(dir.join("rec.dat"), DEMO_DAT).unwrap();
+        cfg
+    }
+
+    fn open(app: &mut App, path: &Path) -> usize {
+        app.load_comtrade_path(path);
+        for _ in 0..1000 {
+            app.poll_loading();
+            if app.loading.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let ai = app.active.expect("document opened");
+        // First frame: the view / diagram sections are read.
+        app.track_settings();
+        ai
+    }
+
+    #[test]
+    fn settings_survive_save_and_reopen() {
+        let dir = temp_dir("roundtrip");
+        let cfg = write_record(&dir);
+        let mut app = App::new();
+        let di = open(&mut app, &cfg);
+        assert!(!app.docs[di].set.modified);
+        {
+            let d = &mut app.docs[di];
+            d.chans[0].invert = true;
+            d.chans[1].color = egui::Color32::from_rgb(1, 2, 3);
+            d.chans[4].stats.minmax = true;
+            d.comments.push(Comment::new(CommentKind::Moment { pos: 100 }));
+            let mut lvl = Comment::new(CommentKind::Level { chan: 3, value: 2.5, from: 10, to: 20 });
+            lvl.text = "уровень\r\nвторая".into();
+            lvl.locked = true;
+            d.comments.push(lvl);
+            crate::chandlg::rename(d, ChanKey::Analog(2), "Uc'").unwrap();
+            d.dif_pairs.push(crate::diagram::ChanPair::new("Ia", "Ib"));
+            d.omp.params.method = fvb_core::omp_params::GROUNDED;
+            d.omp.params.stations[0].ia = "Ia".into();
+        }
+        app.recompute_doc(di);
+        app.append_computed(&[("X".into(), "Ua+Ub".into(), String::new())]).unwrap();
+        app.vec_show_values = !app.vec_show_values;
+        app.track_settings();
+        assert!(app.docs[di].set.modified);
+        let cfg_before = std::fs::read(&cfg).unwrap();
+        assert!(app.save_active());
+        // Save onto the document's own file rewrites only the .set.
+        assert_eq!(std::fs::read(&cfg).unwrap(), cfg_before);
+        assert!(!app.docs[di].set.modified);
+        let set = std::fs::read(dir.join("rec.set")).unwrap();
+        assert_eq!(&set[..2], &[0xFF, 0xFE]);
+        let text = fvb_core::decode_fvb(&set);
+        assert!(text.starts_with("<?xml version=\"1.0\" encoding=\"utf-16\"?>\r\n<settings>\r\n"), "{text}");
+        assert!(text.contains("<category Channel0=\"X,Ua+Ub\" name=\"CalculatedChannels\"/>"), "{text}");
+        assert!(text.contains("name=\"Uc\"") && text.contains("AliasName=\"Uc'\""), "{text}");
+        let vec_shown = app.vec_show_values;
+
+        let mut back = App::new();
+        let bi = open(&mut back, &cfg);
+        let d = &back.docs[bi];
+        assert!(d.chans[0].invert && !d.chans[1].invert);
+        assert_eq!(d.chans[1].color, egui::Color32::from_rgb(1, 2, 3));
+        assert!(d.chans[4].stats.minmax);
+        assert_eq!(d.osc.analog[2].id, "Uc'");
+        assert_eq!(d.dif_pairs, vec![crate::diagram::ChanPair::new("Ia", "Ib")]);
+        assert_eq!(d.omp.params.method, fvb_core::omp_params::GROUNDED);
+        assert_eq!(d.omp.params.stations[0].ia, "Ia");
+        assert_eq!(d.computed.len(), 1);
+        assert_eq!((d.computed[0].name.as_str(), d.computed[0].formula.as_str()), ("X", "Ua+Ub"));
+        // Levels are read before moments; the text comes back with CR LF.
+        assert_eq!(d.comments.len(), 2);
+        assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: 3, value, from: 10, to: 20 } if value == 2.5));
+        assert_eq!(d.comments[0].text, "уровень\r\nвторая");
+        assert!(d.comments[0].locked);
+        assert_eq!(d.comments[1].kind, CommentKind::Moment { pos: 100 });
+        assert_eq!(back.vec_show_values, vec_shown);
+        assert!(!d.set.modified);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn modified_flag_rules() {
+        let dir = temp_dir("modified");
+        let cfg = write_record(&dir);
+        let mut app = App::new();
+        let di = open(&mut app, &cfg);
+        // Discrete visibility (32845–32848) does not mark the document.
+        app.dispatch(Command::Discrete(1));
+        app.track_settings();
+        assert!(!app.docs[di].set.modified);
+        // A toggle marks it even when toggled back.
+        app.dispatch(Command::StatsRow(0));
+        app.dispatch(Command::StatsRow(0));
+        app.track_settings();
+        assert!(app.docs[di].set.modified);
+        assert!(app.save_active());
+        assert!(!app.docs[di].set.modified && dir.join("rec.set").exists());
+        // Any saved state changed through the UI marks it.
+        app.docs[di].comments.push(Comment::new(CommentKind::Moment { pos: 5 }));
+        app.track_settings();
+        assert!(app.docs[di].set.modified);
+        // Closing a modified document asks; «Нет» closes without writing.
+        let ctx = egui::Context::default();
+        app.dispatch(Command::CloseDoc(di));
+        assert_eq!(app.setfile.prompt, Some(SavePrompt { doc: di, exit: false }));
+        assert_eq!(app.docs.len(), 1);
+        app.answer_save_prompt(&ctx, None);
+        assert_eq!(app.docs.len(), 1, "Отмена keeps it open");
+        app.dispatch(Command::CloseDoc(di));
+        app.answer_save_prompt(&ctx, Some(false));
+        assert!(app.docs.is_empty());
+        let saved = fvb_core::decode_fvb(&std::fs::read(dir.join("rec.set")).unwrap());
+        assert!(!saved.contains("Moment1"), "Нет writes nothing");
+        // A document not read from a file starts clean and closes at once.
+        let osc = fvb_core::comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
+        app.add_doc(Doc::new(osc, "demo".into()));
+        app.track_settings();
+        assert!(!app.docs[0].set.modified);
+        app.dispatch(Command::CloseDoc(0));
+        assert!(app.docs.is_empty() && app.setfile.prompt.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reads_a_file_in_the_original_layout_and_the_legacy_ini() {
+        let dir = temp_dir("original");
+        let cfg = write_record(&dir);
+        let xml = "<?xml version=\"1.0\" encoding=\"utf-16\"?>\n<settings>\n\
+            \t<category name=\"Oscillogram\" DiscretisationFrequensy=\"1000\" Codepage=\"0\"/>\n\
+            \t<category name=\"Ua\" ShowFlags=\"2181\" AliasName=\"Фаза A\" CustomColorSet=\"1\" colorCustom=\"16711680\"/>\n\
+            \t<category name=\"CalculatedChannels\" Channel0=\"U0,Ub+Uc\"/>\n\
+            \t<category name=\"View\" XScale=\"0.125000\" YAnalogSize=\"121\" RulerState=\"4\" Sells=\"0\"/>\n\
+            \t<category name=\"Comments\">\n\t\t<category name=\"Moments\">\n\
+            \t\t\t<category name=\"Moment1\" position=\"42\" text=\"пуск\" visible=\"0\"/>\n\
+            \t\t</category>\n\t</category>\n</settings>\n";
+        std::fs::write(dir.join("rec.set"), fvb_core::settree::utf16le_crlf(xml)).unwrap();
+        let mut app = App::new();
+        let di = open(&mut app, &cfg);
+        let d = &app.docs[di];
+        assert_eq!(d.osc.sample_rate, 1000.0);
+        // 2181 = visible | vector | instantaneous | invert.
+        assert!(d.chans[0].invert && d.chans[0].visible && d.chans[0].on_vector && !d.chans[0].on_freq);
+        assert_eq!(d.osc.analog[0].id, "Фаза A");
+        assert_eq!(d.chans[0].color, egui::Color32::from_rgb(0, 0, 255));
+        assert_eq!(d.computed.len(), 1);
+        assert_eq!(d.computed[0].name, "U0");
+        assert_eq!(d.xscale, Some(0.125));
+        assert_eq!((app.y_analog, app.time_unit, app.show_grid), (121.0, TimeUnit::Samples, false));
+        assert_eq!(d.comments, vec![Comment { kind: CommentKind::Moment { pos: 42 }, text: "пуск".into(), locked: false, hidden: true }]);
+        assert!(!d.set.modified);
+
+        // 32860 reads another file without its comments and marks the
+        // document; the formula channels are replaced.
+        let other = dir.join("other.set");
+        let xml2 = "<settings><category name=\"CalculatedChannels\" Channel0=\"I0,Ia+Ib+Ic\"/>\
+            <category name=\"Comments\"><category name=\"Moments\"><category name=\"Moment1\" position=\"1\"/></category></category></settings>";
+        std::fs::write(&other, fvb_core::settree::utf16le_crlf(xml2)).unwrap();
+        app.load_settings_from(di, &other);
+        let d = &app.docs[di];
+        assert_eq!(d.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["I0"]);
+        assert_eq!(d.comments.len(), 1);
+        assert_eq!(d.comments[0].kind, CommentKind::Moment { pos: 42 });
+        assert!(d.set.modified);
+
+        // No .set: the legacy `<base>.ini` is read instead.
+        let dir2 = temp_dir("ini");
+        let cfg2 = write_record(&dir2);
+        std::fs::write(dir2.join("rec.ini"), b"[Ub]\r\nAliasName=Phase B\r\n").unwrap();
+        let mut app2 = App::new();
+        let d2 = open(&mut app2, &cfg2);
+        assert_eq!(app2.docs[d2].osc.analog[1].id, "Phase B");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir2);
+    }
+
+    #[test]
+    fn save_prompt_needed_only_when_modified_and_not_sto() {
+        let osc = fvb_core::comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
+        let mut d = Doc::new(osc, "x".into());
+        assert!(!needs_save_prompt(&d));
+        d.set.modified = true;
+        assert!(needs_save_prompt(&d));
+        d.path = Some("/a/b.STO".into());
+        assert!(!needs_save_prompt(&d));
+        assert_eq!(save_kind(Path::new("/a/b.CFG")), Some(".cfg"));
+        assert_eq!(save_kind(Path::new("/a/b.dat")), None);
+        assert_eq!((cp_code(Encoding::Cp866), cp_code(Encoding::Cp1251)), (1, 0));
+        assert_eq!((cp_of(1), cp_of(0)), (Encoding::Cp866, Encoding::Cp1251));
+    }
+}

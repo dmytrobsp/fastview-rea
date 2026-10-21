@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 238 pass)
+- `cargo test --workspace`   (currently 249 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 238 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 249 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.16** below.
+temporary). Reconciled so far: **L9.1**–**L9.17** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -1023,19 +1023,40 @@ Residual: channel unit from a trailing `[W]/[var]/[VA]` is inferred; what
 the formula-editor page itself (list, Загрузить/Сохранить/↑/↓) not rebuilt;
 396 shows once (the original shows it twice).
 
-Next in L9 (HANDOFF 2026-10-21; A2 merged, Track S pending): two worktree agents were
-still running at the handoff, both branched from `f07450a`:
-- **Track S** — `.set` per-record settings (comments, channel options, ОМП
-  `WrongPlaceFinding`, diagram sections, computed formulas), the
-  document-modified flag / save prompt, 32860 «Загрузка настроек...»: branch
-  `worktree-agent-a51dde577cd78f28c`.
-Check `git log master..<branch>`; if a branch has commits, merge it `--no-ff`
-(resolve against L9.7 `Doc::flagged`, L9.13 `digital_visible`, L9.15
-`pending`), run the four gates, add its ledger paragraph (the agent's report
-may be lost — rebuild it from its commits), then `git worktree remove` +
-`git branch -d`. If a branch has no commits the agent died: re-dispatch that
-track. Then the rest of `notes/UI_BEHAVIOUR_SPEC.md` §9: print 36, OLE drag 48,
-and the residuals listed in L9.1–L9.15.
+### L9.17 — Record settings file `.set` and the modified flag (track S, merged)  ·  ✅ (residuals)
+
+Read: settings-tree library `0x48dc80`/`0x48dea0` (get-or-create), getters
+`0x48da40`/`0x48db10`/`0x48dbb0` (string/`_wtoi`/`_wtof`, default only when
+absent), setters `%i`/`%f`; loader `0x48e470` (skip BOM, UTF-16LE via
+`0x4aa220`, errors swallowed; empty root → INI fallback, merges); writer
+`0x48e1c0` (`"w, ccs=UTF-16LE"`, `<?xml version="1.0" encoding="utf-16"?>`,
+`<settings>`, `<category name=…>`, sorted by name); path `0x44c710` (strip
+.cfg/.osc/.sto/.zip/.cff, append .set; reader `0x44f5b0` falls back to path
+minus 3 chars + `ini`). Sections: `Comments` (`0x43fcf0`: Areas/Levels/
+Moments, text, locked 0, visible 1, kind fields, channels by name),
+`Oscillogram/DiscretisationFrequensy`, `Codepage` (0 ANSI / 1 OEM, wins over
+the guess), per-channel sections (`0x427d20`: ShowFlags = `ch+0x60`,
+PrimaryMul, SecondaryMul, AliasName, NetFreq, CustomColorSet, colorCustom),
+`CalculatedChannels` (`Channel<i>` = `name,formula`), `WrongPlaceFinding`
+(`0x4a3050`), `Diff/Circle/Vector/Frequency Chart`, and **`View` per document**
+(XScale 2×fit, RulerState 1, YAnalogSize 93, Sells 1 — not the registry;
+`Properties Height` is). Written only by OnSaveDocument `0x44c940`; Save onto
+the record's own path writes only the `.set`, Save As writes record + `.set`;
+SaveModified `0x454fa0` = MFC Yes/No/Cancel (TRUE for .sto); 32860 `0x44fd10`
+loads a settings file (no comments); 32805 OK always marks modified (spec §7.10
+was wrong). Ours: `fvb_core::settree` (shared with `.omp`), `fvb_core::recset`,
+GUI `setfile.rs` (read at open, write on save, 32860 enabled, modified flag via
+explicit marks + a per-frame change detector, close/exit prompts); «Сохранить»
+vs «Сохранить как» now differ. 11 tests. Residual: the prompt wording is
+assumed (MFC resource); `Selected Block` subtree still in our program store;
+`NetFreq`, `.cff` SET, `.zip`, `.sto` not modelled; comments store file name
+vs alias NOT DETERMINED; whether paste / an ОМП run mark modified NOT
+DETERMINED (ours: no).
+
+Next in L9: all dispatched tracks are merged (master clean). Remaining:
+`notes/UI_BEHAVIOUR_SPEC.md` §9 — print 36, OLE drag 48, and the residuals
+listed in L9.1–L9.17 (e.g. system-clipboard merge format, undoable
+«Объединить», non-2007 looks, pane re-docking).
 
 ---
 

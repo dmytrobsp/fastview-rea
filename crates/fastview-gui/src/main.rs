@@ -24,6 +24,7 @@ mod popmenu;
 mod quick_ui;
 mod recdlg;
 mod ribbon;
+mod setfile;
 mod theme;
 mod util;
 mod views;
@@ -272,6 +273,10 @@ impl eframe::App for App {
         self.diagram_panes(ctx);
         self.render_tab(ctx);
         self.dialogs_ui(ctx);
+        // The record settings follow the active document; leaving asks
+        // about modified documents.
+        self.track_settings();
+        self.handle_exit_request(ctx);
 
         // Image export (Печать): request a screenshot while pending, save it when
         // the frame is delivered.

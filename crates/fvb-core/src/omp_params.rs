@@ -8,8 +8,7 @@
 
 use crate::omp::{OmpResult, ParallelLine, Section, Tap};
 use num_complex::Complex64;
-use quick_xml::events::{BytesStart, Event};
-use quick_xml::Reader;
+use crate::settree::Node;
 
 /// Method code `obj+0x64`: 1 isolated neutral, 2 grounded neutral, 4
 /// double-ended. A new document starts with 1.
@@ -254,56 +253,6 @@ impl OmpParams {
 
 // ---------------------------------------------------------------- .omp file
 
-/// An element of the original's in-house XML tree: attributes in a map
-/// (written sorted by name), children in order.
-#[derive(Debug, Default)]
-struct Node {
-    tag: String,
-    attrs: std::collections::BTreeMap<String, String>,
-    children: Vec<Node>,
-}
-
-impl Node {
-    fn new(tag: &str) -> Node {
-        Node { tag: tag.into(), ..Default::default() }
-    }
-
-    fn set(&mut self, k: &str, v: &str) {
-        self.attrs.insert(k.into(), v.into());
-    }
-
-    /// The attribute, or `default` when absent (`0x48da40`).
-    fn get(&self, k: &str, default: &str) -> String {
-        self.attrs.get(k).cloned().unwrap_or_else(|| default.into())
-    }
-
-    fn child(&self, tag: &str) -> Option<&Node> {
-        self.children.iter().find(|c| c.tag == tag)
-    }
-
-    /// `0x4aa750`: `<tag a="v" …/>` or `>` + children one tab deeper +
-    /// `</tag>`; `& " < >` escaped in values.
-    fn write(&self, indent: &str, out: &mut String) {
-        out.push_str(indent);
-        out.push('<');
-        out.push_str(&self.tag);
-        for (k, v) in &self.attrs {
-            let v = v.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;").replace('>', "&gt;");
-            out.push_str(&format!(" {k}=\"{v}\""));
-        }
-        if self.children.is_empty() {
-            out.push_str("/>\n");
-            return;
-        }
-        out.push_str(">\n");
-        let deeper = format!("{indent}\t");
-        for c in &self.children {
-            c.write(&deeper, out);
-        }
-        out.push_str(&format!("{indent}</{}>\n", self.tag));
-    }
-}
-
 fn station_node(tag: &str, st: &StationParams) -> Node {
     let mut n = Node::new(tag);
     n.set("obj_name", &st.name);
@@ -417,23 +366,34 @@ impl OmpParams {
     /// The `.omp` document text (`\n` line ends): the declaration, then
     /// `<omp type ver="2">` with both stations always written.
     pub fn to_omp_xml(&self) -> String {
-        let mut root = Node::new("omp");
+        self.to_node("omp").to_document()
+    }
+
+    /// The settings as one tree element `<tag type ver="2">` with both
+    /// stations: the `.omp` root, or `WrongPlaceFinding` inside the record
+    /// settings file (the same writer serves both).
+    pub fn to_node(&self, tag: &str) -> Node {
+        let mut root = Node::new(tag);
         root.set("ver", "2");
         root.set("type", &self.method.to_string());
         root.children.push(station_node("Station1", &self.stations[0]));
         root.children.push(station_node("Station2", &self.stations[1]));
-        let mut out = String::from("<?xml version=\"1.0\" encoding=\"utf-16\"?>\n");
-        root.write("", &mut out);
-        out
+        root
     }
 
     /// Parse an `.omp` document (version 2 only; the legacy layouts are not
     /// reproduced).
     pub fn from_omp_xml(xml: &str) -> Result<OmpParams, String> {
-        let root = read_tree(xml)?;
+        let root = Node::parse(xml)?;
         if root.tag != "omp" {
             return Err("not an .omp document".into());
         }
+        OmpParams::from_node(&root)
+    }
+
+    /// Read an element written by [`OmpParams::to_node`] (version 2 only;
+    /// the legacy layouts are not reproduced).
+    pub fn from_node(root: &Node) -> Result<OmpParams, String> {
         if root.get("ver", "") != "2" {
             return Err("unsupported .omp version".into());
         }
@@ -448,51 +408,8 @@ impl OmpParams {
     }
 }
 
-fn read_tree(xml: &str) -> Result<Node, String> {
-    fn from_start(e: &BytesStart) -> Result<Node, String> {
-        let mut n = Node::new(std::str::from_utf8(e.name().as_ref()).map_err(|e| e.to_string())?);
-        for a in e.attributes() {
-            let a = a.map_err(|e| e.to_string())?;
-            let k = std::str::from_utf8(a.key.as_ref()).map_err(|e| e.to_string())?.to_string();
-            let v = a.unescape_value().map_err(|e| e.to_string())?.into_owned();
-            n.attrs.insert(k, v);
-        }
-        Ok(n)
-    }
-    let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
-    let mut stack = vec![Node::default()];
-    loop {
-        match reader.read_event().map_err(|e| e.to_string())? {
-            Event::Eof => break,
-            Event::Start(e) => stack.push(from_start(&e)?),
-            Event::Empty(e) => {
-                let n = from_start(&e)?;
-                stack.last_mut().expect("document node").children.push(n);
-            }
-            Event::End(_) if stack.len() > 1 => {
-                let n = stack.pop().expect("open element");
-                stack.last_mut().expect("parent").children.push(n);
-            }
-            _ => {}
-        }
-    }
-    while stack.len() > 1 {
-        let n = stack.pop().expect("open element");
-        stack.last_mut().expect("parent").children.push(n);
-    }
-    stack.pop().and_then(|d| d.children.into_iter().next()).ok_or_else(|| "empty document".into())
-}
-
-/// A wide text file as the original's `_wfopen(…, "w, ccs=UTF-16LE")` writes
-/// it: a BOM, then UTF-16LE with every `\n` written as CR LF.
-pub fn utf16le_crlf(text: &str) -> Vec<u8> {
-    let mut out = vec![0xFF, 0xFE];
-    for u in text.replace('\n', "\r\n").encode_utf16() {
-        out.extend_from_slice(&u.to_le_bytes());
-    }
-    out
-}
+/// A wide text file as the original writes it (see [`crate::settree::utf16le_crlf`]).
+pub use crate::settree::utf16le_crlf;
 
 // ---------------------------------------------------------------- report
 

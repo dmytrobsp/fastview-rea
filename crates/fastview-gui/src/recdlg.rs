@@ -529,6 +529,7 @@ impl App {
                 if let Some(d) = self.active_doc_mut() {
                     d.hdr = Some(st.text.replace('\r', ""));
                     d.hdr_cp = st.cp;
+                    d.store_user_data();
                 }
             }
             Some(false) => {}

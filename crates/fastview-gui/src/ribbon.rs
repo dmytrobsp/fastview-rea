@@ -36,7 +36,7 @@ impl App {
                         ui.set_min_width(220.0);
                         menu_cmd(ui, &mut cmds, "Открыть...", true, Command::Open);
                         menu_cmd(ui, &mut cmds, "Сохранить", has_doc, Command::Save);
-                        menu_cmd(ui, &mut cmds, "Сохранить как...", has_doc, Command::Save);
+                        menu_cmd(ui, &mut cmds, "Сохранить как...", has_doc, Command::SaveAs);
                         menu_cmd(ui, &mut cmds, "Проводник", true, Command::ToggleExplorer);
                         ui.menu_button("Печать", |ui| {
                             ui.label(RichText::new("Предварительный просмотр и печать документа").weak());
@@ -49,7 +49,7 @@ impl App {
                         });
                         menu_cmd(ui, &mut cmds, "Параметры файла...", has_doc, Command::FileParams);
                         menu_cmd(ui, &mut cmds, "Комментарии", self.hdr_comment_enabled(), Command::HdrComment);
-                        ui.add_enabled(false, egui::Button::new("Загрузка настроек..."));
+                        menu_cmd(ui, &mut cmds, "Загрузка настроек...", has_doc, Command::LoadSettings);
                         menu_cmd(ui, &mut cmds, "Настройки", true, Command::Settings);
                         if let Some(i) = self.active {
                             menu_cmd(ui, &mut cmds, "Закрыть", true, Command::CloseDoc(i));
