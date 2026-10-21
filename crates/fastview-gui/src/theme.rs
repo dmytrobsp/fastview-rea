@@ -201,8 +201,11 @@ pub fn apply(ctx: &egui::Context, skin: Skin) {
     v.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0f32, p.text);
     v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0f32, p.frame);
     v.faint_bg_color = p.work_bg.gamma_multiply(0.4f32);
-    v.widgets.inactive.bg_fill = p.group_bg;
-    v.widgets.inactive.weak_bg_fill = p.group_bg;
+    // Idle controls must stand out from the panel they sit on: a white
+    // check / radio / edit interior, a lighter button face and a frame.
+    v.widgets.inactive.bg_fill = v.extreme_bg_color;
+    v.widgets.inactive.weak_bg_fill = p.tab_active;
+    v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0f32, p.frame);
     v.widgets.hovered.bg_fill = p.accent_soft;
     v.widgets.hovered.weak_bg_fill = p.accent_soft;
     v.widgets.active.bg_fill = p.accent_soft.gamma_multiply(0.85f32);
@@ -213,4 +216,23 @@ pub fn apply(ctx: &egui::Context, skin: Skin) {
         s.spacing.item_spacing = egui::vec2(6.0, 5.0);
         s.spacing.button_padding = egui::vec2(6.0, 3.0);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Check boxes, radio buttons, combo boxes and buttons are visible on
+    /// the panels in every look (they used to be panel-coloured, unframed).
+    #[test]
+    fn idle_controls_stand_out_from_the_panel() {
+        for skin in Skin::ALL {
+            let ctx = egui::Context::default();
+            apply(&ctx, skin);
+            let v = ctx.style().visuals.clone();
+            let w = &v.widgets.inactive;
+            assert_ne!(w.bg_fill, v.panel_fill, "{skin:?}");
+            assert!(w.bg_stroke.width > 0.0 && w.bg_stroke.color != v.panel_fill, "{skin:?}");
+        }
+    }
 }

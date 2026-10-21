@@ -1343,6 +1343,14 @@ collapsing) and its exact collapse order are framework internals not
 read; collapsed buttons show no panel icon (0x1C/0x22/0x20/0x26); glyphs
 are ours, not the original bitmaps.
 
+### L9.28 — Idle controls were invisible on panels  ·  ✅
+Our bug (headless render of «Быстрый анализ» and the dialogs): the theme
+gave idle widgets the panel colour and no outline, so check boxes, radio
+buttons, combo boxes and plain buttons showed only their labels in every
+look. Ours: idle controls get a white interior, the lighter tab face for
+buttons and a frame-coloured outline (as Windows controls). Test:
+`theme::idle_controls_stand_out_from_the_panel` (all nine looks).
+
 Next in L9 (HANDOFF 2026-10-21, master clean at 4a83adc): §9 items 36 and
 48 are done (L9.21, L9.22). **FIRST — four GUI bugs the user found running
 the release build (ours, not original behaviour; reproduce headless with the
