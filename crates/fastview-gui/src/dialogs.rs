@@ -41,17 +41,26 @@ impl App {
             return;
         }
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        let now = ctx.input(|i| i.time);
         let mut cancel = None;
-        for (i, l) in self.loading.iter().enumerate().filter(|(_, l)| l.big) {
-            egui::Window::new("Загрузка").id(egui::Id::new(("fv_loading", i))).collapsible(false).resizable(false).show(ctx, |ui| {
-                ui.label(l.path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
-                ui.add(egui::ProgressBar::new(0.0).animate(true).desired_width(260.0));
-                if ui.button("Отмена").clicked() {
-                    cancel = Some(i);
-                }
+        // DIALOG 492: a progress bar 0..100 and «Отмена», no close box, no
+        // text; the bar is set every 500 ms (`0x4717d0`, `0x471870`).
+        for (i, l) in self.loading.iter_mut().enumerate().filter(|(_, l)| l.big) {
+            if now - l.shown.1 >= 0.5 {
+                l.shown = (l.progress.percent(), now);
+            }
+            egui::Window::new("Загрузка осциллограммы").id(egui::Id::new(("fv_loading", i))).collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(egui::ProgressBar::new(l.shown.0 as f32 / 100.0).desired_width(240.0));
+                    if ui.button("Отмена").clicked() {
+                        cancel = Some(i);
+                    }
+                });
             });
         }
+        // «Отмена» sets the flag the readers poll; the open is abandoned.
         if let Some(i) = cancel {
+            self.loading[i].progress.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
             self.loading.remove(i);
         }
     }

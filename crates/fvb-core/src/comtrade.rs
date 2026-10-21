@@ -7,6 +7,7 @@
 //! `notes/FORMATS_SPEC.md`).
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ComtradeError {
@@ -112,6 +113,67 @@ impl Oscillogram {
     }
 }
 
+/// Loading progress shared with the «Загрузка» dialog (DIALOG 492): the
+/// document's position `+0x82c`, total `+0x830` and cancel flag `+0x838`,
+/// plain 32-bit counters as in the original (ledger L9.31).
+#[derive(Debug, Default)]
+pub struct Progress {
+    pub pos: AtomicU32,
+    pub total: AtomicU32,
+    pub cancel: AtomicBool,
+}
+
+impl Progress {
+    /// What the dialog's 500 ms timer shows (`0x471870`):
+    /// `((pos·100) mod 2³²) / total`, 0 with no total, clamped to 100 by the
+    /// progress control.
+    pub fn percent(&self) -> u32 {
+        let t = self.total.load(Ordering::Relaxed);
+        if t == 0 {
+            return 0;
+        }
+        (self.pos.load(Ordering::Relaxed).wrapping_mul(100) / t).min(100)
+    }
+
+    pub fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed)
+    }
+
+    fn set_total(&self, bytes: usize) {
+        self.total.store((bytes as u64 * 5) as u32, Ordering::Relaxed);
+    }
+
+    /// `T − remaining` (BINARY / binary32 records, `.osc` blocks).
+    fn set_remaining(&self, remaining: usize) {
+        self.pos.store(self.total.load(Ordering::Relaxed).wrapping_sub(remaining as u32), Ordering::Relaxed);
+    }
+
+    /// The recompute phase (`0x428490`, `0x428809`): `step` added per sample
+    /// of every analog channel, cancel polled per sample. `step` =
+    /// ⌊T / (N·C)⌋ (`0x450c17`; `.osc` ×5, `0x4525d3`), N the first
+    /// channel's samples, C all analog + digital channels.
+    fn recompute_phase(&self, rec: &Oscillogram, osc: bool) {
+        let n = rec.analog.first().map(|c| c.samples.len()).or_else(|| rec.digital.first().map(|c| c.samples.len())).unwrap_or(0);
+        let c = rec.analog.len() + rec.digital.len();
+        let nc = (n as u64 * c as u64) as u32;
+        if nc == 0 {
+            return;
+        }
+        let mut step = self.total.load(Ordering::Relaxed) / nc;
+        if osc {
+            step = step.wrapping_mul(5);
+        }
+        for ch in &rec.analog {
+            for chunk in ch.samples.chunks(1024) {
+                if self.cancelled() {
+                    return;
+                }
+                self.pos.fetch_add(step.wrapping_mul(chunk.len() as u32), Ordering::Relaxed);
+            }
+        }
+    }
+}
+
 /// Load a COMTRADE record given the path to either the `.cfg` or `.dat` file
 /// (the sibling is located by extension, case-insensitively).
 pub fn load(path: impl AsRef<Path>) -> Result<Oscillogram, ComtradeError> {
@@ -121,24 +183,33 @@ pub fn load(path: impl AsRef<Path>) -> Result<Oscillogram, ComtradeError> {
 /// Load a COMTRADE record, decoding the `.cfg` with a specific text encoding
 /// (the original's program-settings dialog lets the user choose it).
 pub fn load_with(path: impl AsRef<Path>, enc: Encoding) -> Result<Oscillogram, ComtradeError> {
+    load_progress(path, enc, None)
+}
+
+/// [`load_with`] reporting to the «Загрузка» dialog; a cancel stops the
+/// readers at their next poll (the result is then to be discarded).
+pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progress>) -> Result<Oscillogram, ComtradeError> {
     let path = path.as_ref();
     // 0x44ee70: the last four characters, lowercased, choose the reader.
     let name = path.to_string_lossy();
     let ext: String = name.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect::<String>().to_lowercase();
     if ext == ".osc" {
         let bytes = std::fs::read(path).map_err(|e| ComtradeError::Io(e.to_string()))?;
-        return parse_osc(&bytes, enc);
+        return parse_osc_progress(&bytes, enc, prog);
     }
     if ext == ".cff" {
         let bytes = std::fs::read(path).map_err(|e| ComtradeError::Io(e.to_string()))?;
-        return parse_cff(&bytes, enc).map(|(rec, _)| rec);
+        return parse_cff_progress(&bytes, enc, prog).map(|(rec, _)| rec);
     }
     let (cfg_path, dat_path) = sibling_paths(path)?;
     let cfg_bytes = std::fs::read(&cfg_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
     let cfg_text = decode_text_enc(&cfg_bytes, enc);
     let (mut rec, fmt) = parse_cfg(&cfg_text)?;
     let dat = std::fs::read(&dat_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
-    parse_dat(&mut rec, fmt, &dat)?;
+    parse_dat(&mut rec, fmt, &dat, prog)?;
+    if let Some(p) = prog {
+        p.recompute_phase(&rec, false);
+    }
     Ok(rec)
 }
 
@@ -205,8 +276,15 @@ pub fn write(osc: &Oscillogram) -> (String, String) {
 
 /// Parse from in-memory cfg text + dat bytes (used by tests and the `.cff` path).
 pub fn parse(cfg_text: &str, dat: &[u8]) -> Result<Oscillogram, ComtradeError> {
+    parse_progress(cfg_text, dat, None)
+}
+
+fn parse_progress(cfg_text: &str, dat: &[u8], prog: Option<&Progress>) -> Result<Oscillogram, ComtradeError> {
     let (mut rec, fmt) = parse_cfg(cfg_text)?;
-    parse_dat(&mut rec, fmt, dat)?;
+    parse_dat(&mut rec, fmt, dat, prog)?;
+    if let Some(p) = prog {
+        p.recompute_phase(&rec, false);
+    }
     Ok(rec)
 }
 
@@ -244,6 +322,12 @@ fn cff_section(text: &str, kind: &str) -> Option<String> {
 /// line's terminator (the LF of a CRLF pair: a one-byte shift, harmless for
 /// ASCII data and reproduced as is). Missing CFG or DAT → error 330.
 pub fn parse_cff(bytes: &[u8], enc: Encoding) -> Result<(Oscillogram, CffSections), ComtradeError> {
+    parse_cff_progress(bytes, enc, None)
+}
+
+/// [`parse_cff`] reporting progress: none while the container is split
+/// (`0x44fe30`), then the inner `.cfg` rule over the DAT part.
+pub fn parse_cff_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Result<(Oscillogram, CffSections), ComtradeError> {
     let nul = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
     let text = decode_text_enc(&bytes[..nul], enc);
     let cfg = cff_section(&text, "CFG").ok_or(ComtradeError::Format)?;
@@ -281,7 +365,10 @@ pub fn parse_cff(bytes: &[u8], enc: Encoding) -> Result<(Oscillogram, CffSection
     }
     let dat = dat.ok_or(ComtradeError::Format)?;
     let (mut rec, fmt) = parse_cfg(&cfg)?;
-    parse_dat(&mut rec, fmt, dat)?;
+    parse_dat(&mut rec, fmt, dat, prog)?;
+    if let Some(p) = prog {
+        p.recompute_phase(&rec, false);
+    }
     Ok((rec, sections))
 }
 
@@ -391,6 +478,22 @@ fn snap_rate(fs: f64, fnom: f64) -> f64 {
 /// channel-table text, info, then fixed-size data blocks with a per-block
 /// sample-rate code.
 pub fn parse_osc(bytes: &[u8], enc: Encoding) -> Result<Oscillogram, ComtradeError> {
+    parse_osc_progress(bytes, enc, None)
+}
+
+/// [`parse_osc`] reporting progress: total 5 × the bytes after the header,
+/// position `T − remaining` after each data block (`0x453080`, `0x45342d`;
+/// no cancel poll in the block loop), then the recompute phase with the
+/// ×5 step.
+pub fn parse_osc_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Result<Oscillogram, ComtradeError> {
+    let rec = parse_osc_blocks(bytes, enc, prog)?;
+    if let Some(p) = prog {
+        p.recompute_phase(&rec, true);
+    }
+    Ok(rec)
+}
+
+fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Result<Oscillogram, ComtradeError> {
     const B: usize = 128;
     let block = |i: usize| bytes.get(i * B..(i + 1) * B).ok_or(ComtradeError::Format);
     let b0 = block(0)?;
@@ -498,6 +601,10 @@ pub fn parse_osc(bytes: &[u8], enc: Encoding) -> Result<Oscillogram, ComtradeErr
     let mut time = Vec::new();
     let mut t_us: i64 = 0;
     let mut bi = 0;
+    if let Some(p) = prog {
+        p.set_total(bytes.len().saturating_sub((h + 1) * B));
+        p.pos.store(0, Ordering::Relaxed);
+    }
     while (max_blocks == 0 || bi < max_blocks) && (h + 1 + bi + 1) * B <= bytes.len() {
         let blk = block(h + 1 + bi)?;
         let code = f64::from(be_i16(blk, 0x7C));
@@ -530,6 +637,9 @@ pub fn parse_osc(bytes: &[u8], enc: Encoding) -> Result<Oscillogram, ComtradeErr
             t_us += (1e6 / rate).floor() as i64;
         }
         bi += 1;
+        if let Some(p) = prog {
+            p.set_remaining(bytes.len().saturating_sub((h + 1 + bi) * B));
+        }
     }
     for d in digital.iter_mut().skip(16 * words) {
         d.samples = vec![false; time.len()];
@@ -1063,7 +1173,17 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
     Ok((rec, fmt))
 }
 
-fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8]) -> Result<(), ComtradeError> {
+/// The data file. Progress (`0x451800` / `0x451be0` / `0x4520f0`): ASCII
+/// total 5·S, position = bytes consumed after each line; BINARY total 5·S,
+/// position `T − remaining` after each record; binary32 never sets the
+/// total (the bar stays at 0). Cancel is polled before each line / record.
+fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&Progress>) -> Result<(), ComtradeError> {
+    if let Some(p) = prog {
+        if fmt != DataFormat::Int32 {
+            p.set_total(dat.len());
+        }
+    }
+    let cancelled = || prog.is_some_and(Progress::cancelled);
     let n = rec.time.len();
     let na = rec.analog.len();
     let nd = rec.digital.len();
@@ -1078,7 +1198,15 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8]) -> Result<(), C
         DataFormat::Ascii => {
             let text = decode_text(dat);
             let mut rows = 0usize;
-            for line in text.lines() {
+            let mut consumed = 0usize;
+            for line in text.split_inclusive('\n') {
+                if cancelled() {
+                    break;
+                }
+                consumed += line.len();
+                if let Some(p) = prog {
+                    p.pos.store(consumed.min(dat.len()) as u32, Ordering::Relaxed);
+                }
                 let line = line.trim();
                 if line.is_empty() {
                     continue;
@@ -1118,6 +1246,9 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8]) -> Result<(), C
             }
             let count = dat.len() / rec_len;
             for r in 0..count {
+                if cancelled() {
+                    break;
+                }
                 let base = r * rec_len;
                 let mut off = base + 8; // skip sample# + timestamp
                 for ch in rec.analog.iter_mut() {
@@ -1144,6 +1275,9 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8]) -> Result<(), C
                             rec.digital[di].samples.push((word >> bit) & 1 == 1);
                         }
                     }
+                }
+                if let Some(p) = prog {
+                    p.set_remaining(dat.len() - (base + rec_len));
                 }
             }
             if count > rec.time.len() {

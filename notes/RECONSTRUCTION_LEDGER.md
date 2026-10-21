@@ -1398,6 +1398,40 @@ clipboard image); the record is EMR_STRETCHDIBITS rather than EMR_BITBLT
 pane (the original's third case, XML only) is not modelled — a click there
 leaves the focus unchanged; our status-bar messages are ours.
 
+### L9.31 — «Загрузка» progress and cancel polling  ·  🟡
+Read (subagent report): the counters live in the document — position
+`+0x82c`, total `+0x830`, per-sample step `+0x834`, cancel `+0x838`; the
+dialog's 500 ms WM_TIMER `0x471870` sets PBM_SETPOS to
+`((pos·100) mod 2³²)/T` (0 when T = 0; the control clamps at 100).
+Phase 1 (data file memory-mapped, S bytes): `.cfg` ASCII `0x451800` T = 5·S,
+pos = bytes consumed after each line (the parse fills 20 %); BINARY
+`0x451be0` T = 5·S, pos = **T − remaining** after each record (≈80 % at the
+first record — a slip, reproduced); binary32 `0x4520f0` never sets T (0 %
+throughout); `.cff` nothing during the split, then the inner `.cfg` rule;
+`.osc` `0x453010` T = 5 × the bytes after the header, pos = T − remaining
+per 128-byte block. Phase 2 (`0x428490`, pos += step at `0x428809` per
+sample of every analog channel, via the `.set` apply `0x44f5b0`): step =
+⌊T/(N·C)⌋ (`.osc` ×5), N the first channel's samples, C all analog +
+digital records — so the bar seldom ends at exactly 100 %. Cancel
+(OnCancel `0x471850`: EndDialog, then flag = 1) is polled per line /
+record, per channel in `0x44f5b0` and per sample in phase 2 (not in the
+`.cff` split nor the `.osc` block loop); readers return normally and the
+open fails silently (`0x44f391`). DIALOG 492 «Загрузка осциллограммы»:
+progress bar 1095 (0..100) and «Отмена», no close box, no text.
+Ours: `fvb_core::comtrade::Progress` (pos / total / cancel atomics,
+`percent()` with the 32-bit wrap) threaded through `load_progress`,
+`parse_cff_progress`, `parse_osc_progress` with the per-reader rules and the
+phase-2 steps (cancel polled per 1024 samples); the GUI worker holds an
+`Arc<Progress>`, the dialog (renamed, file label dropped) samples
+`percent()` every 500 ms, «Отмена» sets the flag and drops the load. Tests:
+`loading_progress_follows_the_original_counters`, `osc_loading_progress`.
+Residual: our phase 2 only advances the counter (our derived arrays are
+built on the UI thread when the document is added) and leaves out the
+calculated channels F of the `.set` (applied later on the UI thread); the
+original's UI freeze after «Отмена» until the next poll, its two step-0
+`.osc` recompute passes and the «Неправильный формат файла» box for a
+`.cff` cancelled during its split are not reproduced.
+
 Next in L9 (HANDOFF 2026-10-21, master clean at 4a83adc): §9 items 36 and
 48 are done (L9.21, L9.22). **FIRST — four GUI bugs the user found running
 the release build (ours, not original behaviour; reproduce headless with the

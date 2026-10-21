@@ -310,16 +310,20 @@ pub struct Loading {
     /// Large enough for the progress dialog.
     pub big: bool,
     rx: std::sync::mpsc::Receiver<LoadResult>,
+    /// The worker's counters and the cancel flag.
+    pub progress: std::sync::Arc<fvb_core::comtrade::Progress>,
+    /// The bar's value and when the 500 ms timer last set it (`0x471870`).
+    pub shown: (u32, f64),
 }
 
 /// Parse a `.cfg` / `.cff` / `.osc` record.
-fn parse_file(path: &std::path::Path, enc: Encoding) -> LoadResult {
+fn parse_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::comtrade::Progress>) -> LoadResult {
     if path.to_string_lossy().to_lowercase().ends_with(".cff") {
         std::fs::read(path)
             .map_err(|e| fvb_core::comtrade::ComtradeError::Io(e.to_string()))
-            .and_then(|b| fvb_core::comtrade::parse_cff(&b, enc))
+            .and_then(|b| fvb_core::comtrade::parse_cff_progress(&b, enc, prog))
     } else {
-        fvb_core::comtrade::load_with(path, enc).map(|o| (o, Default::default()))
+        fvb_core::comtrade::load_progress(path, enc, prog).map(|o| (o, Default::default()))
     }
 }
 
@@ -1513,10 +1517,16 @@ impl App {
     pub fn load_comtrade_path(&mut self, path: &std::path::Path) {
         let (tx, rx) = std::sync::mpsc::channel();
         let (p, enc) = (path.to_path_buf(), self.encoding);
+        let progress = std::sync::Arc::new(fvb_core::comtrade::Progress::default());
+        let prog = progress.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(parse_file(&p, enc));
+            let r = parse_file(&p, enc, Some(&prog));
+            // A cancelled open is abandoned silently (`0x44f391`).
+            if !prog.cancelled() {
+                let _ = tx.send(r);
+            }
         });
-        self.loading.push(Loading { path: path.to_path_buf(), big: loading_shown(path), rx });
+        self.loading.push(Loading { path: path.to_path_buf(), big: loading_shown(path), rx, progress, shown: (0, f64::NEG_INFINITY) });
     }
 
     /// Collect finished loads (called every frame).

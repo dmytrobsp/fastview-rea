@@ -139,3 +139,73 @@ fn osc2_reader() {
     let bad = osc_file("01A,01\r\n1,Ia,A,A\r\n", &[(16000, vec![[1, 1]; 4])]);
     assert!(matches!(comtrade::parse_osc(&bad, Encoding::Cp1251), Err(ComtradeError::Format)));
 }
+
+/// Writes `rec.cfg` + `rec.dat` into a fresh temp folder; the `.cfg` path.
+fn temp_record(tag: &str, cfg: &str, dat: &[u8]) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("fv_progress_{tag}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("rec.cfg"), cfg).unwrap();
+    std::fs::write(dir.join("rec.dat"), dat).unwrap();
+    dir.join("rec.cfg")
+}
+
+/// The «Загрузка» counters (DIALOG 492, `0x471870`; ledger L9.31): total
+/// 5·S; ASCII position = bytes consumed (the parse fills 20 %), BINARY
+/// `T − remaining` (100 % already), binary32 no total (0 % throughout);
+/// then ⌊T/(N·C)⌋ per sample of every analog channel; the bar shows
+/// `((pos·100) mod 2³²)/T`, clamped to 100. A cancel stops the reader.
+#[test]
+fn loading_progress_follows_the_original_counters() {
+    use comtrade::Progress;
+    use std::sync::atomic::Ordering::Relaxed;
+    let (n, a, c) = (480u32, 6u32, 7u32);
+    let run = |tag: &str, cfg: &str, dat: &[u8]| {
+        let p = Progress::default();
+        let rec = comtrade::load_progress(temp_record(tag, cfg, dat), Encoding::Auto, Some(&p)).unwrap();
+        (p, rec)
+    };
+    // ASCII.
+    let s = DAT.len() as u32;
+    let (p, rec) = run("ascii", CFG, DAT);
+    assert_eq!((rec.analog.len() as u32, rec.analog[0].samples.len() as u32), (a, n));
+    let t = 5 * s;
+    assert_eq!(p.total.load(Relaxed), t);
+    assert_eq!(p.pos.load(Relaxed), s + a * n * (t / (n * c)), "S after the parse, then the steps");
+    assert_eq!(p.percent(), ((s + a * n * (t / (n * c))) * 100 / t).min(100));
+    // BINARY: 8 + 6·2 + 2 bytes a record.
+    let bin = vec![0u8; (n * 22) as usize];
+    let (p, _) = run("binary", &CFG.replacen("\nASCII", "\nBINARY", 1), &bin);
+    let t = 5 * bin.len() as u32;
+    assert_eq!(p.pos.load(Relaxed), t + a * n * (t / (n * c)), "T − 0 after the last record");
+    assert_eq!(p.percent(), 100);
+    // binary32: the total is never set.
+    let bin32 = vec![0u8; (n * 34) as usize];
+    let (p, rec) = run("binary32", &CFG.replacen("\nASCII", "\nbinary32", 1), &bin32);
+    assert_eq!(rec.analog[0].samples.len() as u32, n);
+    assert_eq!((p.total.load(Relaxed), p.percent()), (0, 0));
+    // Cancelled before the first line: nothing is read.
+    let p = Progress::default();
+    p.cancel.store(true, Relaxed);
+    let rec = comtrade::load_progress(temp_record("cancel", CFG, DAT), Encoding::Auto, Some(&p));
+    assert!(rec.map_or(true, |r| r.analog[0].samples.is_empty()));
+    // The display wraps like the original's 32-bit multiply.
+    let p = Progress::default();
+    p.total.store(1000, Relaxed);
+    p.pos.store(42_949_673, Relaxed);
+    assert_eq!(p.percent(), 0, "(42 949 673·100) mod 2³² = 4");
+}
+
+/// `.osc` (`0x453080`, `0x45342d`, `0x4525d3`): total 5 × the bytes after
+/// the header, `T − remaining` after each block, then a ×5 step.
+#[test]
+fn osc_loading_progress() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let text = "01A,02\r\n1,Ia,A,A\r\n2,,B,V\r\n01F,4\r\n";
+    let bytes = osc_file(text, &[(16000, vec![[10, 1]; 4]), (8000, vec![[20, 2]; 4])]);
+    let p = comtrade::Progress::default();
+    let rec = comtrade::parse_osc_progress(&bytes, Encoding::Cp1251, Some(&p)).unwrap();
+    let t = 5 * (bytes.len() as u32 - 4 * 128);
+    let (n, c) = (rec.analog[0].samples.len() as u32, rec.analog.len() as u32 + rec.digital.len() as u32);
+    assert_eq!(p.total.load(Relaxed), t);
+    assert_eq!(p.pos.load(Relaxed), t + rec.analog.len() as u32 * n * 5 * (t / (n * c)));
+}

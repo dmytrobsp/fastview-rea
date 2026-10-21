@@ -941,8 +941,8 @@ correction selection → store and recompute.
 ### 7.6 Загрузка — LoadingDlg, DIALOG 492
 Parsing always runs on a worker thread; the modal dialog appears only when the
 `.dat` (for .cfg) or the `.cff` is > 200 000 bytes, or the `.osc` > 20 000
-bytes. Progress 0..100 refreshed every 500 ms; no close box; «Отмена» sets a
-flag the parsers poll → the open is silently abandoned. The worker closes the
+bytes. Progress 0..100 refreshed every 500 ms (counters and quirks: ledger L9.31);
+no close box; «Отмена» sets a flag the parsers poll → the open is silently abandoned. The worker closes the
 dialog with IDOK on completion (original race when it finishes first — avoid).
 
 ### 7.7 Pair dialog — DIALOG 554 (ChanPairDlg, command 33027)
@@ -1300,7 +1300,7 @@ icon-only small buttons and panel collapse when narrow (L9.27).
     delete with companions, persistence) — `main.rs` → new module — L
 36. 🟡 (L9.22: all but logo, paper/printer properties, diagram print branches) Print: dialog with five checkboxes, page setup, paged output (oscillogram
     sliced, diagrams one page each) and preview — new module — L
-37. 🟡 (L9.10: worker + thresholds + cancel; no percent) Loading progress dialog with worker thread and cancel (thresholds
+37. 🟡 (L9.10: worker + thresholds + cancel; L9.31: the original's counters and percent) Loading progress dialog with worker thread and cancel (thresholds
     200 kB/20 kB) — `app.rs`, `crates/fvb-core` parsers — M
 38. ✅ (merged L9.11/L9.12) ОМП parameters dialog: toolbar + tree + property grid, enable rules,
     validation messages, `.omp` XML load/save, embed in `.set` — `views.rs` →
