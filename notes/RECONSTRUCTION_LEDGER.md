@@ -53,7 +53,16 @@ memory (Flatpak overlay + CLI wrapper `~/projects/slack-rea/tools/rea-ghidra.sh`
 6. **Update this ledger**: the entry's evidence (address), what you verified, and
    the verdict. Append new entries as `L<n>`.
 
-**NEXT TASK (start here).** Remaining, lower-impact gaps: the `.osc` writer
+**NEXT TASK (start here) — L9 UI-layer program (2026-10-21).** The user (a
+proficient user of the original) reports the UI still *behaves and presents*
+functionally differently — not pixel issues — and directed that the code
+earlier dismissed as "MFC boilerplate" be reversed. The UI layer is now an
+engine like any other: see **L9** below for the inventory method (every MFC
+message map → handler addresses, `tools/msgmaps.py`), the scope split, the
+spec file `notes/UI_BEHAVIOUR_SPEC.md` and the per-item reconciliation status.
+Work L9 before the older residuals below.
+
+Older residuals (lower impact): the `.osc` writer
 (`0x44ca80`) and OSC time stamps; the frequency-channel DFT variant
 (`FUN_004267e0`); R/X channel pairs on the circle diagram (DIALOG 554); the
 parallel-line (mutual coupling) entry in the ОМП UI; dialog-behaviour mapping
@@ -82,9 +91,11 @@ behaviour, verdicts).
 
 Scope note: we reverse the **behaviourally-significant engines** (formula
 evaluator, `.fvb` parser, geometry/region engine, signal/analysis math, ОМП,
-COMTRADE). The MFC ribbon/dialog message-map plumbing is boilerplate and not
-where correctness lives; dialog *behaviour* (what each form does) is mapped, its
-pixel layout is not.
+COMTRADE) **and — since L9 — the UI layer** (message-map handlers, view input
+and painting, ribbon construction, panes, dialogs). The earlier stance that the
+MFC message-map plumbing was boilerplate was wrong: the handlers behind it are
+where the UI's behaviour lives. Pixel-exact layout remains out of scope;
+behaviour and presentation semantics are in scope.
 
 Status legend: ✅ MATCH · 🟡 PARTIAL · ❌ GAP · ⛔ INFEASIBLE (needs absent input).
 
@@ -144,6 +155,7 @@ decompilation (pending, listed below).
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
 | Analysis views | CQAnPropSheet `0x48b970`, vector `0x490360`, freq `0x46f5a0`, readout `0x461440` | `quick.rs`, `views.rs`, GUI | ✅ L8 |
+| UI layer (message maps → handlers) | 34 maps, CFastViewView `0x45a970`, CMainFrame `0x4720a0`/`0x4728d0` | `fastview-gui` | 🔄 L9 |
 
 Next: `.fvb` parser re-verify (attribute defaults, missing attributes, parameter
 /var evaluation order), DFT/signal (incl. the Calculator channel mode + `rms:
@@ -558,6 +570,49 @@ computed channels read out like any channel; text = `views::readout_text`
 (`" %-8g %s"` + SI prefix, `fmt_g` emulating C `%g`). Residual: the default of
 the percent switch and the stat-visibility controls (NOT DETERMINED); MSVC
 printf tie rounding not modelled.
+
+---
+
+## L9 — UI layer (message maps, view input/paint, ribbon, panes, dialogs)  ·  🔄 IN PROGRESS
+
+**Why.** The UI had been reconstructed from help screenshots + PE resources
+(menus, dialogs, strings, accelerators) while the handlers that give it its
+behaviour were never decompiled. A proficient user of the original found
+functional differences in behaviour and presentation.
+
+**Inventory method (deterministic, repeatable).** `tools/msgmaps.py <exe>
+<out.json>` (pure-stdlib PE parse): RTTI type descriptors → complete object
+locators → vtables; `mov eax, imm32; ret` getters whose target is an
+`AFX_MSGMAP {pfnGetBaseMap, lpEntries}` → the 24-byte `AFX_MSGMAP_ENTRY` tables;
+getter ↔ class via the vtables that contain it. Result over FastView.exe: 165
+RTTI classes, 106 vtables, **34 message maps / ~350 handlers**.
+`tools/show.py [Class…]` prints a map with ids resolved via the local
+`notes/ui/` dumps; `tools/vt.py` lists vtables (for OnDraw/OnUpdate etc. diff a
+class's vtable against its MFC base). Key maps: CFastViewView 50 entries
+(getter 0x45a970, vtable 0x4c9774), CMainFrame 25 (0x4720a0, ribbon built in
+WM_CREATE 0x4728d0), CFastViewDoc 15 (0x44ade0), CircleDiagramWnd 25 /
+CircleDiagPane 18, DiffDiagramWnd 23 / DiffDiagPane 16, VectorDiagramWnd 15 /
+VectorDiagPane 10, FourieDiagramWnd 8, the CQAn* pages, ChannelsDlg,
+FileFinder22Dlg. Classes with no getter found by the pattern (handlers to be
+found via vtable/DDX): CCommentDlg, FileInfoDlg, CParamOscBar, CMsgCaptionBar,
+the three diagram toolbars, WrongPlaceLocatorDlg (likely the unattributed map
+at getter 0x4a7a41).
+
+**First observation (read, 0x45d990 WM_MOUSEWHEEL).** Alt held → command
+32800/32801 (vertical zoom in/out); MK_CONTROL → 32802/32803; MK_SHIFT →
+horizontal scroll (position in 1/10000 of the record); plain wheel → vertical
+scroll of the lane stack. Structural divergence noted before reversing: the
+original shows diagrams as **docking panes** (CircleDiagPane, DiffDiagPane,
+VectorDiagPane, CFramePane<FourieDiagramWnd>, each with its own toolbar) next
+to the oscillogram; ours shows them as full-window tabs.
+
+**Scopes (research pass, reports in the session scratchpad, distilled into
+`notes/UI_BEHAVIOUR_SPEC.md`):** A view input (mouse/keys/scroll/cursor/hit
+geometry) · B view painting (lanes, stats panel, axis, визиры, comments) ·
+C view/doc COMMAND + CMDUI rules · D main frame: ribbon construction, panes,
+status bar, app · E diagram windows/panes/toolbars UI · F dialogs and bars.
+
+Status: research running; reconciliation not started.
 
 ---
 
