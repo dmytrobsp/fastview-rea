@@ -1432,28 +1432,22 @@ original's UI freeze after «Отмена» until the next poll, its two step-0
 `.osc` recompute passes and the «Неправильный формат файла» box for a
 `.cff` cancelled during its split are not reproduced.
 
-Next in L9 (HANDOFF 2026-10-21, master clean at 4a83adc): §9 items 36 and
-48 are done (L9.21, L9.22). **FIRST — four GUI bugs the user found running
-the release build (ours, not original behaviour; reproduce headless with the
-`lanes::menu_tests` Harness pattern or `window_tests` (whole window via
-`App::frame_ui`) before fixing, add a regression test each):** (1) ✅ L9.23
-— the program **crashes when the window is made too small**
-(suspects: `lanes_ui` geometry / `g::visible_count` / slicing with a
-negative or zero plot size, `Canvas`/diagram sizes, `rotate_right`
-ranges; the minimum window size 866×500 does not stop panels from
-shrinking); (2) ✅ L9.25 — the **«Файл ▾» application menu does not render
-properly** (`ribbon.rs` app menu: the two-column `horizontal_top` layout
-with the Печать ▸ and «Дополнительно» submenus and the MRU list); (3)
-**mouse events fall through the colour picker** (33030 `color_dialog`) and
-likely the other dialogs/windows (print, page setup, ОМП, formula …) — the
-oscillogram view underneath still receives presses/drags/wheel; the view
-must ignore input while a modal is open or the pointer is over a window
-(`ctx.is_pointer_over_area()` / a modal layer); ✅ L9.24; (4) the **bottom
-horizontal scroll bar is drawn wrongly** (`lanes.rs` `scrollbar(..)` for
-`hbar` under the plot: geometry relative to `client.bottom()` /
-`HSCROLL_H`) — ✅ L9.23. Then: the EMF picture on copy (L9.20), print residuals
-(L9.22), pane re-docking (egui limit), and the smaller residuals listed in
-L9.1–L9.22.
+Next in L9 (HANDOFF 2026-10-21, second session): the four user-reported GUI
+bugs are fixed (L9.23 tiny-window crash + bottom scroll bar, L9.24 modal
+dialogs, L9.25 «Файл» main panel); a headless visual audit followed
+(L9.26 pane over its tabs, L9.27 ribbon icon-only buttons + panel
+collapse, L9.28 invisible idle controls, L9.29 preview centring), then
+L9.30 copy's EMF picture and L9.31 the loading progress. **How to look at
+the GUI without running it:** `FV_WINDOW_DUMP=<png> [FV_WINDOW_STATE=
+analysis|circle|diff|omp|ompparams|preview|print|pagesetup|settings|
+channels|coef|fileparams|explorer|parambar|skin<k>] [FV_WINDOW_SIZE=w,h]
+[FV_WINDOW_CLICK=x,y] [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then
+Read the PNG (crop with `convert`); `window_tests` in `main.rs` drive the
+whole window (`App::frame_ui`). Open next: the dark look's low-contrast
+ribbon labels (disabled small buttons vanish), the preview as the stock
+ribbon category with panes hidden (L9.29 residual), print residuals
+(L9.22), pane re-docking (egui limit), splash (bitmap proprietary), and
+the smaller residuals in L9.1–L9.31.
 
 ---
 
