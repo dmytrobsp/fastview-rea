@@ -176,6 +176,8 @@ pub struct Trace {
     pub inst: Vec<f64>,
     /// Distance from the line start, km, per sample.
     pub dist: Vec<f64>,
+    /// Double-ended: `arg(U/I)` at end 1 minus end 2, radians, per sample.
+    pub angle: Vec<f64>,
 }
 
 /// The ОМП phasor (`0x477280`): peak-scaled one-period DFT over the `p`
@@ -289,6 +291,7 @@ pub fn single_ended(inp: &SingleEnded) -> Trace {
         iref: vec![Complex64::default(); nk],
         inst: vec![0.0; nk],
         dist: vec![0.0; nk],
+        angle: vec![0.0; nk],
     };
     let raw = |c: usize, k: usize| inp.i[c][k];
 
@@ -493,4 +496,454 @@ pub fn median(v: &[f64]) -> f64 {
     s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mid = (s.len() - 1) as f64 / 2.0;
     (s[mid.floor() as usize] + s[mid.ceil() as usize]) / 2.0
+}
+
+/// The fault interval the window is chosen in (`0x499b50`, isolated
+/// `0x499aa0`): the **first** run of one phase code (grounded/double-ended) or
+/// of F2 ∨ F3 (isolated) at least one period long; `(P, M−1)` if none.
+pub fn fault_interval(t: &Trace, neutral: NeutralMode, p: usize) -> (usize, usize) {
+    let m = t.dist.len();
+    if m < 2 || p == 0 {
+        return (p, m.saturating_sub(1));
+    }
+    let code = |k: usize| u8::from(t.pa[k]) + 2 * u8::from(t.pb[k]) + 4 * u8::from(t.pc[k]);
+    let fault = |k: usize| match neutral {
+        NeutralMode::Isolated => t.f2[k] || t.f3[k],
+        NeutralMode::Grounded => t.e[k] || t.f2[k] || t.f3[k],
+    };
+    let mut e = p - 1;
+    let mut s;
+    loop {
+        s = (e + 1..=m - 2).find(|&k| fault(k)).unwrap_or(m - 1);
+        e = match neutral {
+            NeutralMode::Isolated => (s + 1..m).find(|&k| !fault(k)).unwrap_or(m),
+            NeutralMode::Grounded => (s + 1..m).find(|&k| code(k) != code(s)).unwrap_or(m),
+        };
+        if s + p >= m - 1 || e - s >= p {
+            break;
+        }
+    }
+    if e - s >= p {
+        (s, e)
+    } else {
+        (p, m - 1)
+    }
+}
+
+fn window_sigma(x: &[f64], t: usize, p: usize) -> f64 {
+    let w = &x[t..t + p];
+    let mean = w.iter().sum::<f64>() / p as f64;
+    (w.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / p as f64).sqrt()
+}
+
+fn window_mean_abs(x: &[f64], t: usize, p: usize) -> f64 {
+    (x[t..t + p].iter().sum::<f64>() / p as f64).abs()
+}
+
+/// The one-period window inside `[lo, hi]` (`0x477db0`): alternate a
+/// minimum-σ-of-distance search and a minimum-|mean loop current| search, each
+/// restricted to scores above the previous pick's raw value, until the two
+/// picks are within half a period; then shift the σ pick half-way away from
+/// the current pick. Returns `(cursor1, cursor2)`.
+pub fn choose_window(dist: &[f64], inst: &[f64], lo: usize, hi: usize, p: usize) -> (usize, usize) {
+    let fits = p > 0 && hi >= lo + p && hi < dist.len().min(inst.len());
+    let search = |score: &dyn Fn(usize) -> f64, tau: f64| -> usize {
+        if !fits {
+            return lo;
+        }
+        let (mut best, mut bt) = (1e6, lo);
+        for t in lo..=hi - p {
+            let sc = score(t);
+            if sc > tau && sc < best {
+                best = sc;
+                bt = t;
+            }
+        }
+        bt
+    };
+    let bias = |t: usize, eps: f64| eps - (t - lo) as f64 * eps / (10.0 * p as f64);
+    let sigma_score = |t: usize| window_sigma(dist, t, p) + bias(t, 0.001);
+    let mean_score = |t: usize| window_mean_abs(inst, t, p) + bias(t, 1e-6);
+    let (mut ta, mut tb) = (0.0, 0.0);
+    for i in 0..1000 {
+        let a = search(&sigma_score, ta);
+        let b = search(&mean_score, tb);
+        if (a as f64 - b as f64).abs() <= 0.5 * p as f64 {
+            if i == 999 {
+                break;
+            }
+            let c1 = (a as f64 + ((a as f64 - b as f64) / 2.0).ceil()).trunc() as usize;
+            return (c1, c1 + p.saturating_sub(1));
+        }
+        if fits {
+            ta = window_sigma(dist, a, p);
+            tb = window_mean_abs(inst, b, p);
+        }
+    }
+    let a = search(&sigma_score, -1.0);
+    (a, a + p.saturating_sub(1))
+}
+
+/// The outcome shown to the user (`0x49d330`, `0x49d200`, `0x49d700`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct OmpResult {
+    pub window: (usize, usize),
+    /// Median distance from the line start, km.
+    pub distance: f64,
+    /// 2σ/mean·100 over the window, %.
+    pub error: f64,
+    pub e: bool,
+    pub f2: bool,
+    pub f3: bool,
+    pub phases: [bool; 3],
+    /// Section index (0-based) and the distance into it, km.
+    pub section: usize,
+    pub in_section_km: f64,
+    pub support: u32,
+    pub text: String,
+}
+
+/// Upper median of 0/1 flags: set when at least half of them are.
+fn flag_median(v: &[bool]) -> bool {
+    let ones = v.iter().filter(|b| **b).count();
+    let n = v.len();
+    n > 0 && ones >= n - n / 2
+}
+
+/// SI-prefixed value (`0x43d960`) with the Cyrillic prefixes of the Russian UI.
+pub fn si(v: f64) -> (f64, &'static str) {
+    let a = v.abs();
+    if v == 0.0 {
+        (v, "")
+    } else if a < 1e-6 {
+        (v * 1e9, "н")
+    } else if a < 1e-3 {
+        (v * 1e6, "мк")
+    } else if a < 1.0 {
+        (v * 1e3, "м")
+    } else if a > 1e15 {
+        (v / 1e15, "П")
+    } else if a > 1e12 {
+        (v / 1e12, "Т")
+    } else if a > 1e9 {
+        (v / 1e9, "Г")
+    } else if a > 1e6 {
+        (v / 1e6, "М")
+    } else if a > 1e3 {
+        (v / 1e3, "к")
+    } else {
+        (v, "")
+    }
+}
+
+/// Statistics, location and text for the window `(c1, c2)`.
+pub fn result_for_window(t: &Trace, sections: &[Section], c1: usize, c2: usize) -> OmpResult {
+    let last = t.dist.len().saturating_sub(1);
+    let lo = c1.min(c2);
+    let hi = c1.max(c2).min(last);
+    let w = if lo <= hi && !t.dist.is_empty() { lo..=hi } else { 0..=0 };
+    let d_win: Vec<f64> = t.dist.get(w.clone()).map(|s| s.to_vec()).unwrap_or_default();
+    let distance = median(&d_win);
+    let n = d_win.len().max(1) as f64;
+    let mean = d_win.iter().sum::<f64>() / n;
+    let sigma = (d_win.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n).sqrt();
+    let error = 2.0 * sigma / mean * 100.0;
+    let fm = |v: &Vec<bool>| flag_median(v.get(w.clone()).unwrap_or(&[]));
+    let (e, f2, f3) = (fm(&t.e), fm(&t.f2), fm(&t.f3));
+    let phases = [fm(&t.pa), fm(&t.pb), fm(&t.pc)];
+    // Section and support (0x49d200).
+    let mut r = distance;
+    let mut j = 0;
+    while j < sections.len() && r > sections[j].length_km {
+        r -= sections[j].length_km;
+        j += 1;
+    }
+    let support = if j >= sections.len() {
+        1
+    } else {
+        (f64::from(sections[j].supports) * r / sections[j].length_km).trunc() as u32 + 1
+    };
+    // Text (0x49d700).
+    let total: f64 = sections.iter().map(|s| s.length_km).sum();
+    let mut text = "    КЗ отсутствует.".to_string();
+    if e || f2 || f3 {
+        text = if f3 {
+            "    3-х фазное КЗ: фазы "
+        } else if f2 {
+            "    2-х фазное КЗ: фазы "
+        } else {
+            "    1-х фазное КЗ: фазы "
+        }
+        .to_string();
+        for (on, name) in phases.iter().zip(["A", "B", "C"]) {
+            if *on {
+                text.push_str(name);
+            }
+        }
+        if distance > total || distance <= 0.0 {
+            text.push_str(" на смежной линии.");
+        } else {
+            let (v1, p1) = si(distance * 1000.0);
+            let (v2, p2) = si(r * 1000.0);
+            text.push_str(&format!(
+                " на участке № {}, опоры {} - {}.    Расстояние = {v1:.2} {p1}m.     Расстояние от нач. участка = {v2:.2} {p2}m.    Погрешность расчета = {error:.2} %.",
+                j + 1,
+                support as i64 - 1,
+                support
+            ));
+        }
+    }
+    OmpResult {
+        window: (c1, c2),
+        distance,
+        error,
+        e,
+        f2,
+        f3,
+        phases,
+        section: j,
+        in_section_km: r,
+        support,
+        text,
+    }
+}
+
+/// Interval, window and result for a finished single-ended trace.
+pub fn locate(t: &Trace, neutral: NeutralMode, sections: &[Section], p: usize) -> OmpResult {
+    let (lo, hi) = fault_interval(t, neutral, p);
+    let (c1, c2) = choose_window(&t.dist, &t.inst, lo, hi, p);
+    result_for_window(t, sections, c1, c2)
+}
+
+/// Inputs of a double-ended analysis: phase voltages and currents at both
+/// ends (end 2 from the second oscillogram), and each end's nominal current.
+pub struct DoubleEnded<'a> {
+    pub u1: [&'a [f64]; 3],
+    pub i1: [&'a [f64]; 3],
+    pub u2: [&'a [f64]; 3],
+    pub i2: [&'a [f64]; 3],
+    pub p: usize,
+    pub inom1: f64,
+    pub inom2: f64,
+    pub sections: &'a [Section],
+}
+
+/// Negative-sequence component `(A + a²B + aC)/3`.
+fn negative(a: Complex64, b: Complex64, c: Complex64) -> Complex64 {
+    components(a, b, c).1
+}
+
+fn taps_zeq(sec: &Section) -> Option<Complex64> {
+    if sec.taps.is_empty() {
+        return None;
+    }
+    let y = sec.taps.iter().fold(Complex64::default(), |s, tp| s + cdiv(ONE, Complex64::new(tp.r0, tp.x0)));
+    let z = cdiv(ONE, y);
+    (z.re != 0.0 || z.im != 0.0).then_some(z)
+}
+
+fn mutual(sec: &Section, k: usize) -> Complex64 {
+    let za = Complex64::new(sec.r0_per_km, sec.x0_per_km);
+    sec.parallel
+        .iter()
+        .filter(|pl| pl.rm_per_km != 0.0 || pl.xm_per_km != 0.0)
+        .fold(Complex64::default(), |s, pl| {
+            let im = pl.current.get(k).copied().unwrap_or_default();
+            s + cdiv(Complex64::new(pl.rm_per_km, pl.xm_per_km) * im, za)
+        })
+}
+
+/// Fault-point voltage seen from end 1 at distance `x` (`0x49b210`).
+fn from_end1(secs: &[Section], mut u: Complex64, mut i: Complex64, x: f64, earth: bool, k: usize) -> Complex64 {
+    let mut covered = 0.0;
+    for sec in secs {
+        if covered >= x {
+            break;
+        }
+        let l = sec.length_km.min(x - covered);
+        if earth {
+            let za = Complex64::new(sec.r0_per_km, sec.x0_per_km) * l;
+            u -= za * (i + mutual(sec, k));
+            if sec.length_km < x - covered {
+                if let Some(zeq) = taps_zeq(sec) {
+                    i -= cdiv(u, zeq);
+                }
+            }
+        } else {
+            u -= Complex64::new(sec.r1_per_km, sec.x1_per_km) * l * i;
+        }
+        covered += l;
+    }
+    u
+}
+
+/// Fault-point voltage seen from end 2 at distance `y` from it (`0x49b600`).
+fn from_end2(secs: &[Section], mut u: Complex64, mut i: Complex64, y: f64, earth: bool, k: usize) -> Complex64 {
+    let mut covered = 0.0;
+    for sec in secs.iter().rev() {
+        if covered >= y {
+            break;
+        }
+        let l = sec.length_km.min(y - covered);
+        if earth {
+            if let Some(zeq) = taps_zeq(sec) {
+                i += cdiv(u, zeq);
+            }
+            let za = Complex64::new(sec.r0_per_km, sec.x0_per_km) * l;
+            u += za * (i + mutual(sec, k));
+        } else {
+            u += Complex64::new(sec.r1_per_km, sec.x1_per_km) * l * i;
+        }
+        covered += l;
+    }
+    u
+}
+
+/// Double-ended analysis (`0x499000`, `0x49a2f0`, `0x49cf00`).
+// Sample-index loops over several parallel per-sample arrays, as in the original.
+#[allow(clippy::needless_range_loop)]
+pub fn double_ended(inp: &DoubleEnded) -> Trace {
+    let all = inp.i1.iter().chain(inp.i2.iter()).chain(inp.u1.iter()).chain(inp.u2.iter());
+    let nk = all.map(|s| s.len()).min().unwrap_or(0);
+    let p = inp.p;
+    let ph = |s: &[&[f64]; 3]| -> Vec<Vec<Complex64>> { s.iter().map(|x| omp_phasors(&x[..nk], p)).collect() };
+    let (i1, i2, u1, u2) = (ph(&inp.i1), ph(&inp.i2), ph(&inp.u1), ph(&inp.u2));
+    let c1: Vec<_> = (0..nk).map(|k| components(i1[0][k], i1[1][k], i1[2][k])).collect();
+    let c2: Vec<_> = (0..nk).map(|k| components(i2[0][k], i2[1][k], i2[2][k])).collect();
+    let m = |z: Complex64| z.norm();
+    let rt2 = 2f64.sqrt();
+    let (in1, in2) = (inp.inom1, inp.inom2.abs());
+    let mut t = Trace {
+        e: vec![false; nk],
+        f2: vec![false; nk],
+        f3: vec![false; nk],
+        pa: vec![false; nk],
+        pb: vec![false; nk],
+        pc: vec![false; nk],
+        uloop: vec![Complex64::default(); nk],
+        iloop: vec![Complex64::default(); nk],
+        iref: vec![Complex64::default(); nk],
+        inst: vec![0.0; nk],
+        dist: vec![0.0; nk],
+        angle: vec![0.0; nk],
+    };
+    // Detection (0x499000).
+    let (mut a1, mut a2, mut n1, mut n2) = (false, false, false, false);
+    let (mut e, mut f2, mut f3) = (vec![false; nk], vec![false; nk], vec![false; nk]);
+    for k in 1..nk {
+        let ((p1, q1, z1), (p2, q2, z2)) = (c1[k], c2[k]);
+        a1 = hyst(a1, 4.0 * m(q1) > m(p1), 0.9 * m(p1) > 4.0 * m(q1));
+        a2 = hyst(a2, 4.0 * m(q2) > m(p2), 0.9 * m(p2) > 4.0 * m(q2));
+        if a1 && a2 {
+            if m(p1) <= 0.1 * rt2 * in1 || m(p2) <= 0.1 * rt2 * in2 {
+                continue;
+            }
+            n1 = hyst(n1, m(q1) > 6.0 * m(z1), 5.4 * m(z1) > m(q1));
+            n2 = hyst(n2, m(q2) > 6.0 * m(z2), 5.4 * m(z2) > m(q2));
+            if n1 && n2 {
+                f2[k] = true;
+            } else {
+                e[k] = true;
+            }
+        } else {
+            f3[k] = m(p1) > 1.1 * rt2 * in1 && m(p2) > 1.1 * rt2 * in2;
+        }
+    }
+    t.e = debounce(&e, p);
+    t.f2 = debounce(&f2, p);
+    t.f3 = debounce(&f3, p);
+    // Phase selection on end-1 currents (as 0x498580).
+    let (mut ab, mut ac, mut bc) = (false, false, false);
+    for k in 1..nk {
+        let (x, y, z) = (m(i1[0][k]), m(i1[1][k]), m(i1[2][k]));
+        ab = hyst(ab, x > y, 0.9 * y > x);
+        ac = hyst(ac, x > z, 0.9 * z > x);
+        bc = hyst(bc, y > z, 0.9 * z > y);
+        let (e, f2, f3) = (t.e[k], t.f2[k], t.f3[k]);
+        t.pa[k] = f3 || f2 && (ab || ac) || e && ab && ac;
+        t.pb[k] = f3 || f2 && (!ab || bc) || e && !ab && bc;
+        t.pc[k] = f3 || f2 && (!ac || !bc) || e && !ac && !bc;
+    }
+    // Loop current (0x49a2f0).
+    let raw = |c: usize, k: usize| inp.i1[c][k];
+    for k in p..nk {
+        if t.f2[k] || t.f3[k] {
+            t.inst[k] = if t.pa[k] && t.pb[k] {
+                raw(0, k) - raw(1, k)
+            } else if t.pb[k] && t.pc[k] {
+                raw(1, k) - raw(2, k)
+            } else if t.pa[k] && t.pc[k] {
+                raw(2, k) - raw(0, k)
+            } else {
+                1.0
+            };
+        } else if t.e[k] {
+            t.inst[k] = if t.pa[k] {
+                raw(0, k)
+            } else if t.pb[k] && t.pc[k] {
+                raw(1, k) - raw(2, k)
+            } else {
+                1.0
+            };
+        }
+    }
+    // Distance search (0x49cf00).
+    let total: f64 = inp.sections.iter().map(|s| s.length_km).sum();
+    for k in 0..nk {
+        let earth_only = t.e[k] && !(t.f2[k] || t.f3[k]);
+        if !(t.e[k] || t.f2[k] || t.f3[k]) {
+            continue;
+        }
+        let (ua, ia, ub, ib) = if earth_only {
+            (
+                (u1[0][k] + u1[1][k] + u1[2][k]) / 3.0,
+                c1[k].2,
+                (u2[0][k] + u2[1][k] + u2[2][k]) / 3.0,
+                c2[k].2,
+            )
+        } else {
+            (negative(u1[0][k], u1[1][k], u1[2][k]), c1[k].1, negative(u2[0][k], u2[1][k], u2[2][k]), c2[k].1)
+        };
+        let f = |x: f64| {
+            (from_end1(inp.sections, ua, ia, x, earth_only, k).norm()
+                - from_end2(inp.sections, ub, ib, total - x, earth_only, k).norm())
+            .abs()
+        };
+        let (mut x, mut h) = (0.0, total / 2.0);
+        t.dist[k] = if h <= 0.01 {
+            0.0
+        } else {
+            loop {
+                let sgn = if f(x) > f(x + 0.01) { 1.0 } else { -1.0 };
+                let xn = x + sgn * h;
+                h = (xn - x).abs() / 2.0;
+                if xn < 0.0 {
+                    break 0.0;
+                }
+                if h > 0.01 {
+                    x = xn;
+                } else {
+                    break xn;
+                }
+            }
+        };
+        let arg = |u: Complex64, i: Complex64| cdiv(u, i).im.atan2(cdiv(u, i).re);
+        t.angle[k] = arg(ua, ia) - arg(ub, ib);
+    }
+    t
+}
+
+/// Interval, window, direction check and result for a double-ended trace.
+pub fn locate_double(t: &Trace, sections: &[Section], p: usize) -> OmpResult {
+    let (lo, hi) = fault_interval(t, NeutralMode::Grounded, p);
+    let (c1, c2) = choose_window(&t.dist, &t.inst, lo, hi, p);
+    let (a, b) = (c1.min(c2), c1.max(c2).min(t.angle.len().saturating_sub(1)));
+    let ang = median(t.angle.get(a..=b).unwrap_or(&[]));
+    let half_pi = std::f64::consts::FRAC_PI_2;
+    if -half_pi < ang && ang < half_pi {
+        let mut zeroed = t.clone();
+        zeroed.dist.iter_mut().for_each(|d| *d = 0.0);
+        return result_for_window(&zeroed, sections, c1, c2);
+    }
+    result_for_window(t, sections, c1, c2)
 }
