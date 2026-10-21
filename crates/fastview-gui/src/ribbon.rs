@@ -663,22 +663,19 @@ fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label
     let text_w = label.split('\n').map(|l| ui.fonts(|f| f.layout_no_wrap(l.to_owned(), font.clone(), p.text).size().x)).fold(0.0, f32::max);
     let size = egui::vec2((text_w + 6.0).max(50.0), 64.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
-    let painter = ui.painter();
-    let hovered = resp.hovered();
+    let painter = &plain_painter(ui);
+    let (ink, accent) = inks(ui, p);
+    // The checked fill is light in every look: dark ink on it.
+    let ink = if selected && ui.is_enabled() { CHECKED_INK } else { ink };
+    let hovered = resp.hovered() && ui.is_enabled();
     if selected || hovered {
         let fill = if selected { p.accent_soft } else { p.accent_soft.gamma_multiply(0.5f32) };
         painter.rect(rect, 3.0f32, fill, egui::Stroke::new(1.0f32, p.accent_border));
     }
     let box_ = egui::Rect::from_center_size(egui::pos2(rect.center().x, rect.top() + 20.0), egui::vec2(28.0, 28.0));
-    icons::paint(painter, box_, icon, p.accent);
+    icons::paint(painter, box_, icon, accent);
     for (i, line) in label.split('\n').enumerate() {
-        painter.text(
-            egui::pos2(rect.center().x, rect.top() + 40.0 + i as f32 * 11.0),
-            egui::Align2::CENTER_CENTER,
-            line,
-            font.clone(),
-            p.text,
-        );
+        painter.text(egui::pos2(rect.center().x, rect.top() + 40.0 + i as f32 * 11.0), egui::Align2::CENTER_CENTER, line, font.clone(), ink);
     }
     resp
 }
@@ -718,15 +715,17 @@ fn small_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, lab
     let font = egui::FontId::proportional(11.0);
     let text_w = ui.fonts(|f| f.layout_no_wrap(label.to_owned(), font.clone(), p.text).size().x);
     let (rect, resp) = ui.allocate_exact_size(egui::vec2((22.0 + text_w + 6.0).max(90.0), 19.0), egui::Sense::click());
-    let painter = ui.painter();
+    let painter = &plain_painter(ui);
+    let (ink, accent) = inks(ui, p);
+    let ink = if selected && ui.is_enabled() { CHECKED_INK } else { ink };
     if selected {
         painter.rect(rect, 2.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
-    } else if resp.hovered() {
+    } else if resp.hovered() && ui.is_enabled() {
         painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
     }
     let box_ = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.top() + 2.5), egui::vec2(14.0, 14.0));
-    icons::paint(painter, box_, icon, p.accent);
-    painter.text(egui::pos2(rect.left() + 22.0, rect.center().y), egui::Align2::LEFT_CENTER, label, font, p.text);
+    icons::paint(painter, box_, icon, accent);
+    painter.text(egui::pos2(rect.left() + 22.0, rect.center().y), egui::Align2::LEFT_CENTER, label, font, ink);
     resp
 }
 
@@ -739,6 +738,31 @@ fn group_separator(ui: &mut egui::Ui, p: crate::theme::Palette) {
 
 /// An icon-only button: glyph, tooltip, enabled, checked, command.
 type MiniCmd<'a> = (Mini, &'a str, bool, bool, Command);
+
+/// A painter without egui's disabled fade: a disabled widget's painter fades
+/// towards the panel colour, which makes light labels vanish on the dark
+/// look; the ribbon's buttons pick their disabled colour themselves.
+fn plain_painter(ui: &egui::Ui) -> egui::Painter {
+    egui::Painter::new(ui.ctx().clone(), ui.layer_id(), ui.clip_rect())
+}
+
+/// Labels on the (light) checked fill.
+const CHECKED_INK: Color32 = Color32::from_rgb(0x20, 0x20, 0x20);
+
+/// A disabled label: the text colour at half strength (readable on every
+/// look's body).
+fn disabled_ink(p: crate::theme::Palette) -> Color32 {
+    p.text.gamma_multiply(0.5f32)
+}
+
+/// The label and icon colours for the button's enabled state.
+fn inks(ui: &egui::Ui, p: crate::theme::Palette) -> (Color32, Color32) {
+    if ui.is_enabled() {
+        (p.text, p.accent)
+    } else {
+        (disabled_ink(p), disabled_ink(p))
+    }
+}
 
 /// The glyphs of the ribbon's small icon-only buttons (our drawings; the
 /// original's image list is not reproduced).
@@ -767,13 +791,14 @@ enum Mini {
 /// while `on`. Returns whether it was clicked.
 fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, tip: &str, enabled: bool, on: bool) -> bool {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    let painter = ui.painter();
+    let painter = &plain_painter(ui);
+    let enabled = enabled && ui.is_enabled();
     if on {
         painter.rect(rect, 2.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
     } else if enabled && resp.hovered() {
         painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
     }
-    let col = if enabled { p.accent } else { p.text.gamma_multiply(0.35f32) };
+    let col = if enabled { p.accent } else { disabled_ink(p) };
     paint_mini(painter, rect.shrink(4.0), glyph, col);
     resp.on_hover_text(tip).clicked() && enabled
 }
@@ -886,6 +911,26 @@ fn paint_mini(painter: &egui::Painter, r: egui::Rect, glyph: Mini, col: Color32)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Ribbon labels stay legible in every look: enabled, disabled and on
+    /// the checked fill (the dark look's disabled labels used to fade into
+    /// its body).
+    #[test]
+    fn ribbon_labels_contrast_with_their_background_in_every_look() {
+        let lum = |c: Color32| 0.299 * f32::from(c.r()) + 0.587 * f32::from(c.g()) + 0.114 * f32::from(c.b());
+        let over = |fg: Color32, bg: Color32| {
+            let a = f32::from(fg.a()) / 255.0;
+            let mix = |f: u8, b: u8| (f32::from(f) + f32::from(b) * (1.0 - a)) as u8;
+            Color32::from_rgb(mix(fg.r(), bg.r()), mix(fg.g(), bg.g()), mix(fg.b(), bg.b()))
+        };
+        for skin in Skin::ALL {
+            let p = skin.palette();
+            let body = p.tab_active;
+            assert!((lum(p.text) - lum(body)).abs() > 60.0, "{skin:?}: enabled");
+            assert!((lum(over(disabled_ink(p), body)) - lum(body)).abs() > 25.0, "{skin:?}: disabled");
+            assert!((lum(CHECKED_INK) - lum(p.accent_soft)).abs() > 100.0, "{skin:?}: checked");
+        }
+    }
 
     #[test]
     fn panels_collapse_from_the_right_until_the_category_fits() {

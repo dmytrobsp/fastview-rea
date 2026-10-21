@@ -1574,6 +1574,16 @@ Residual: the panel/button layout is read from mfc120u's call sequence but
 the large/small sizing and images (proprietary, not reproduced) are not;
 the QAT and app button stay as in MFC [I]; MDI tabs stay visible [I].
 
+### L9.38 — Ribbon labels legible in the dark look  ·  ✅
+Our bug (headless render of «Черный стиль»): egui fades a disabled
+widget's painter towards the panel colour, so the dark look's light labels
+vanished on its mid-grey body (Копировать / Отмена / Возврат), and checked
+big buttons put white labels on the light-yellow checked fill. Ours: the
+ribbon's own buttons paint without the fade, disabled = the text colour at
+half strength, checked labels dark. Test `ribbon_labels_contrast_with_
+their_background_in_every_look`. (The looks' palettes remain our
+approximations of the MFC visual managers.)
+
 Next in L9 (HANDOFF 2026-10-21, second session): the four user-reported GUI
 bugs are fixed (L9.23 tiny-window crash + bottom scroll bar, L9.24 modal
 dialogs, L9.25 «Файл» main panel); a headless visual audit followed
@@ -1585,8 +1595,7 @@ analysis|circle|diff|omp|ompparams|preview|print|pagesetup|settings|
 channels|coef|fileparams|explorer|parambar|skin<k>] [FV_WINDOW_SIZE=w,h]
 [FV_WINDOW_CLICK=x,y] [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then
 Read the PNG (crop with `convert`); `window_tests` in `main.rs` drive the
-whole window (`App::frame_ui`). Open next: the dark look's low-contrast
-ribbon labels (disabled small buttons vanish), print residuals
+whole window (`App::frame_ui`). Open next: print residuals
 (L9.22), pane re-docking (egui limit), splash (bitmap proprietary), and
 the smaller residuals in L9.1–L9.31.
 
