@@ -1249,9 +1249,9 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 23. Rectangle vertical zoom 138 (mode 7/8, up-arrow cursor, lane fractions,
     group) and 141 reset; drop the ×1.25/×0.8 submenu — `lanes.rs`, `chansel.rs`
     — M
-24. Keyboard: ←/→ V1 (Ctrl V2), ↑/↓ H1 (Ctrl H2) — `app.rs`, `lanes.rs` — S
-25. Cursor shapes (W–E, N–S, up-arrow, hand) — `lanes.rs` — S
-26. Inline rename on name-badge double-click (397), not properties —
+24. ✅ (L9.4) Keyboard: ←/→ V1 (Ctrl V2), ↑/↓ H1 (Ctrl H2) — `app.rs`, `lanes.rs` — S
+25. ✅ (L9.4) Cursor shapes (W–E, N–S, up-arrow, hand) — `lanes.rs` — S
+26. ✅ (L9.4) Inline rename on name-badge double-click (397), not properties —
     `lanes.rs` — S
 27. Diagram eligibility by unit (vector A/V/«ном»/empty, circle Ohm/W/VA/var;
     circle pane Ohm/VA; clear on attach) in 561 and the dialogs — `chansel.rs`,
@@ -1288,10 +1288,10 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     `dialogs.rs`, `crates/fvb-core` — S
 40. Pair dialog 554 + R/X pair loci on the circle diagram — `dialogs.rs`,
     `views.rs` — M
-41. Digital lanes look (base bar, red-outlined runs, selected fill) and
+41. ✅ (L9.4) Digital lanes look (base bar, red-outlined runs, selected fill) and
     full-width alternating gradient backgrounds, selected gradient — `lanes.rs`
     — S
-42. Grid vertical only every 50 px; ruler units incl. «Абсолютное время»
+42. 🟡 (L9.4: grid, persistence; absolute time pending) Grid vertical only every 50 px; ruler units incl. «Абсолютное время»
     (33007) with the date; persist RulerState/Sells — `lanes.rs`, `persist.rs`
     — S
 43. SI prefix only for the listed units; "none" → empty — `crates/fvb-core/src/
