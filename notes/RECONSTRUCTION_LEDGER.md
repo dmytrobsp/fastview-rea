@@ -1674,6 +1674,24 @@ Test `a_vizir_on_the_first_sample_is_grabbed_at_the_plot_edge`.
 Residual: comment hit codes 9 vs 10 (which part gives SIZENS) NOT
 DETERMINED — ours SIZEWE for every comment hit.
 
+### L9.45 — Waveform drawing: sample count, mark order; digital decimation pending  ·  🟡
+Read (subagent): the analog painters `0x429490` / `0x429c30` never
+decimate — one aliased Polyline over offsets 0..min(⌈W/k⌉, len − first) at
+x = L + rhu(25·i·f), Ellipse marks (4×4) **after** the line when f > 0.16
+(fill = the DC's brush, ND); only the digital painter `0x42a0f0`
+decimates: k ≥ 0.5 one Rectangle per run at truncated x (right edge
+trunc(i·k) + 1, +4 at the data end; a run starting at the last visible
+offset is not drawn), k < 0.5 1-px columns j = 1..P−1 (P = min(rhu(M·k),
+W − 4), r = count / P) OR-ed into runs plus red ticks for mixed columns;
+mid = top + h/2; pen RGB(200,0,0), fill RGB(253,219,102) when selected.
+Ours: analog count `oscgeom::drawn_last` (was ⌊W/k⌋ + 1, one point at R),
+marks after the line; with no marks each pixel column's vertices collapse
+to first / min / max / last (`collapse_columns` — the same image, our
+rendering economy for long records). `oscgeom::digital_shapes` implements
+the digital rules (tested) but is **not yet wired** into the digital lanes
+(next step: replace `digital_runs` in `OscView::row` and the print copy).
+Tests in `oscgeom::draw_tests`.
+
 Next in L9 (HANDOFF 2026-10-22): after the four GUI bugs (L9.23–L9.25)
 and the render audit (L9.26–L9.29), copy's EMF (L9.30), loading progress
 (L9.31), a second user report was worked (L9.32 scroll thumb, L9.33 lane
@@ -1690,7 +1708,7 @@ pagesetup|settings|channels|coef|fileparams|explorer|parambar|skin<k>]
 [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y] [FV_WINDOW_HOVER=x,y] cargo
 test window_dump`, then Read the PNG (crop with `convert`); `window_tests`
 in `main.rs` drive the whole window (`App::frame_ui`); the user's sample
-records live outside the repo (never commit them). Open next: print residuals (L9.22: logo proprietary, A4 only),
+records live outside the repo (never commit them). Open next: wire `oscgeom::digital_shapes` into the digital lanes (L9.45), print residuals (L9.22: logo proprietary, A4 only),
 pane re-docking (egui limit), splash (bitmap proprietary), and the smaller
 residuals in L9.1–L9.41 (several older "residuals" were already done —
 check the code before starting one).

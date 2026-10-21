@@ -547,3 +547,171 @@ mod vizir_tests {
         assert!(vizir_labels([(false, 500.0), (false, 0.0), (false, 0.0)], 150.0, 1000.0, &w).is_empty());
     }
 }
+
+/// The last sample the analog painter draws (`0x4295fc`): offsets
+/// 0..min(⌈W/k⌉, len − first) from `first`, W the plot width, k = 25·f.
+pub fn drawn_last(len: usize, first: usize, f: f64, plot_w: f32) -> Option<usize> {
+    let k = PX_PER_SAMPLE * f;
+    let count = ((f64::from(plot_w.max(0.0)) / k).ceil() as usize).min(len.saturating_sub(first));
+    (count > 0).then(|| first + count - 1)
+}
+
+/// The same image with fewer vertices: points sharing a pixel column keep
+/// only their first, lowest, highest and last (in sample order) — the
+/// original overdraws every sample into the column (our rendering economy).
+pub fn collapse_columns(pts: &[eframe::egui::Pos2]) -> Vec<eframe::egui::Pos2> {
+    let mut out: Vec<eframe::egui::Pos2> = Vec::with_capacity(pts.len().min(4096));
+    let mut i = 0;
+    while i < pts.len() {
+        let col = pts[i].x.round();
+        let mut j = i;
+        let (mut lo, mut hi) = (i, i);
+        while j < pts.len() && pts[j].x.round() == col {
+            if pts[j].y < pts[lo].y {
+                lo = j;
+            }
+            if pts[j].y > pts[hi].y {
+                hi = j;
+            }
+            j += 1;
+        }
+        let mut keep = [i, lo, hi, j - 1];
+        keep.sort_unstable();
+        let mut prev = usize::MAX;
+        for k in keep {
+            if k != prev {
+                out.push(pts[k]);
+                prev = k;
+            }
+        }
+        i = j;
+    }
+    out
+}
+
+/// What the digital painter draws (`0x42a0f0`), x relative to leftW: the
+/// filled runs (left, right) and, zoomed out, the transition ticks.
+#[derive(Debug, Default, PartialEq)]
+pub struct DigitalShapes {
+    pub runs: Vec<(f32, f32)>,
+    pub ticks: Vec<f32>,
+}
+
+/// `on(i)` is sample i's state (false past the end). k = 25·f ≥ 0.5: one
+/// rectangle per run at truncated x, a run ending at an off sample reaching
+/// trunc(i·k) + 1, one at the data end + 4; k < 0.5: 1-px columns
+/// j = 1..P−1 (P = min(rhu(M·k), W − 4), r = count / P) OR-ed into runs, a
+/// red tick where a column mixes on and off. A run that only starts at the
+/// last visible offset is not drawn (as in the original).
+#[allow(dead_code)] // wired into the digital lanes next
+pub fn digital_shapes(on: &dyn Fn(usize) -> bool, len: usize, first: usize, f: f64, plot_w: f32) -> DigitalShapes {
+    let mut out = DigitalShapes::default();
+    if len == 0 || first >= len {
+        return out;
+    }
+    let k = PX_PER_SAMPLE * f;
+    let m = len as i64 - first as i64 - 1;
+    let n0 = (f64::from(plot_w) / k).ceil() as i64 + 1;
+    let count = n0.min(m).max(0);
+    let tx = |i: i64| (i as f64 * k).trunc() as f32;
+    if k >= 0.5 {
+        let (mut state, mut start) = (on(first), 0i64);
+        for i in 1..=count {
+            let idx = first + i as usize;
+            let at_end = idx + 1 >= len;
+            let v = on(idx);
+            if !state && v {
+                start = i;
+                if at_end {
+                    out.runs.push((tx(i), tx(i) + 4.0));
+                }
+            } else if state && (!v || i == count) {
+                out.runs.push((tx(start), tx(i) + if at_end { 4.0 } else { 1.0 }));
+            }
+            state = v;
+        }
+        return out;
+    }
+    let p = ((m as f64 * k + 0.5).floor() as i64).min((plot_w - 4.0) as i64);
+    if p <= 1 {
+        return out;
+    }
+    let r = count as f64 / p as f64;
+    let tail = m <= n0;
+    let column = |j: i64, extend: bool| {
+        let lo = (j as f64 * r).trunc() as i64;
+        let hi = ((j + 1) as f64 * r).trunc() as i64 + i64::from(extend && j == p - 1 && tail);
+        let (mut any, mut all) = (false, true);
+        for o in lo.max(0)..hi {
+            let idx = first + o as usize;
+            if idx >= len {
+                continue;
+            }
+            let v = on(idx);
+            any |= v;
+            all &= v;
+        }
+        (any, all)
+    };
+    let (mut state, mut start) = (on(first), 0i64);
+    for j in 1..p {
+        let flag = j == p - 1 && tail;
+        let (any, _) = column(j, true);
+        if !state && any {
+            start = j;
+            if flag {
+                out.runs.push((j as f32, j as f32 + 4.0));
+            }
+        } else if state && (!any || j == p - 1) {
+            out.runs.push((start as f32, j as f32 + if flag { 4.0 } else { 0.0 }));
+        }
+        state = any;
+    }
+    for j in 1..p {
+        let (any, all) = column(j, false);
+        if any && !all {
+            out.ticks.push(j as f32);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod draw_tests {
+    use super::*;
+    use eframe::egui::Pos2;
+
+    #[test]
+    fn analog_draws_ceil_w_over_k_samples() {
+        // 25 px per sample, 100 px plot: offsets 0..3 (no point at R).
+        assert_eq!(drawn_last(480, 10, 1.0, 100.0), Some(13));
+        assert_eq!(drawn_last(12, 10, 1.0, 100.0), Some(11), "the data end");
+        assert_eq!(drawn_last(10, 10, 1.0, 100.0), None);
+    }
+
+    #[test]
+    fn column_collapse_keeps_the_envelope_in_order() {
+        let pts: Vec<Pos2> = [(0.0, 5.0), (0.2, 1.0), (0.3, 9.0), (0.4, 4.0), (1.0, 3.0)].iter().map(|&(x, y)| Pos2::new(x, y)).collect();
+        let c = collapse_columns(&pts);
+        assert_eq!(c.iter().map(|p| p.y).collect::<Vec<_>>(), [5.0, 1.0, 9.0, 4.0, 3.0]);
+        let dense: Vec<Pos2> = (0..1000).map(|i| Pos2::new(i as f32 * 0.01, (i % 7) as f32)).collect();
+        assert!(collapse_columns(&dense).len() <= 4 * 11);
+    }
+
+    #[test]
+    fn digital_runs_and_columns() {
+        let s = [false, true, true, false, false, true, true, true];
+        let on = |i: usize| s.get(i).copied().unwrap_or(false);
+        // k = 25: run 1..2 ends at the off sample 3 → trunc(3·25) + 1;
+        // run 5..7 reaches the data end → +4.
+        let d = digital_shapes(&on, s.len(), 0, 1.0, 1000.0);
+        assert_eq!(d.runs, vec![(25.0, 76.0), (125.0, 179.0)]);
+        assert!(d.ticks.is_empty());
+        // Zoomed out (k = 0.25): 1-px columns, mixed columns get a tick.
+        let big: Vec<bool> = (0..4000).map(|i| (i / 3) % 2 == 0).collect();
+        let on2 = |i: usize| big.get(i).copied().unwrap_or(false);
+        let d = digital_shapes(&on2, big.len(), 0, 0.01, 2000.0);
+        assert!(!d.ticks.is_empty());
+        assert!(d.runs.iter().all(|r| r.1 >= r.0));
+    }
+}

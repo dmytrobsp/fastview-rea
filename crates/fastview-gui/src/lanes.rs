@@ -269,6 +269,8 @@ impl OscView<'_> {
                     let zy = g::value_y(0.0, top, h, lo, hi);
                     painter_for(r.members.first().copied()).hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
                 }
+                // Offsets 0..min(⌈W/k⌉, len − first) (`0x4295fc`).
+                let last = g::drawn_last(n, first, f, plot_right - left).unwrap_or(first.saturating_sub(1));
                 for &m in &r.members {
                     let c = doc.chans[m].color;
                     draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, m, k, primary), &x_of, top, h, (lo, hi), c, f);
@@ -621,12 +623,16 @@ fn draw_series(
         return;
     }
     let pts: Vec<Pos2> = (first..=last).map(|k| Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi))).collect();
+    // The marks come after the line (`0x429b52`); without marks, columns
+    // are collapsed to the same image with fewer vertices.
     if f > 0.16 {
+        p.add(Shape::line(pts.clone(), Stroke::new(1.0f32, color)));
         for q in &pts {
             p.circle_stroke(*q, 2.0f32, Stroke::new(1.0f32, color));
         }
+    } else {
+        p.add(Shape::line(g::collapse_columns(&pts), Stroke::new(1.0f32, color)));
     }
-    p.add(Shape::line(pts, Stroke::new(1.0f32, color)));
 }
 
 /// Row geometry for hit-testing.
