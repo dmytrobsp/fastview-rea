@@ -1432,6 +1432,17 @@ original's UI freeze after «Отмена» until the next poll, its two step-0
 `.osc` recompute passes and the «Неправильный формат файла» box for a
 `.cff` cancelled during its split are not reproduced.
 
+### L9.32 — User-reported: the scroll thumb lost the pointer  ·  ✅
+Our bug (L9.23 code): the thumb drag only continued while the press point
+lay inside the thumb, which it leaves as soon as the thumb moves — so a
+drag stopped unless it happened to stay put. Ours now tracks like a window
+scroll bar: the grab offset inside the thumb is kept for the whole drag and
+the thumb follows the pointer's position along the bar wherever the
+pointer goes. Test: `scroll_thumb_drag_survives_leaving_the_bar` (a drag
+wandering 40 px above and below the bar). Residual: Windows' snap-back of
+the thumb when the pointer strays far from the bar (system behaviour, not
+the program's) is not modelled.
+
 Next in L9 (HANDOFF 2026-10-21, second session): the four user-reported GUI
 bugs are fixed (L9.23 tiny-window crash + bottom scroll bar, L9.24 modal
 dialogs, L9.25 «Файл» main panel); a headless visual audit followed

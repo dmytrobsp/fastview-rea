@@ -616,10 +616,22 @@ fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f
     }
     let id = ui.id().with(("fv_scroll", horizontal));
     let r = ui.interact(rect, id, Sense::click_and_drag());
-    let origin = ui.input(|i| i.pointer.press_origin());
-    if r.dragged() && travel > 0.0 && origin.is_some_and(|o| thumb.contains(o)) {
-        let d = if horizontal { r.drag_delta().x } else { r.drag_delta().y };
-        return Some((value + d / travel * max).clamp(0.0, max));
+    let along_of = |p: Pos2| if horizontal { p.x - rect.left() } else { p.y - rect.top() };
+    // Thumb tracking: where the thumb was grabbed, kept for the whole drag;
+    // the thumb then follows the pointer's position along the bar wherever
+    // the pointer goes (a press on the track does not grab it).
+    let grab_id = id.with("grab");
+    if r.drag_started() {
+        let origin = ui.input(|i| i.pointer.press_origin());
+        let grab = origin.filter(|o| thumb.contains(*o)).map(|o| along_of(o) - at);
+        ui.data_mut(|d| d.insert_temp(grab_id, grab));
+    }
+    let grab = ui.data(|d| d.get_temp::<Option<f32>>(grab_id)).flatten();
+    if r.drag_stopped() {
+        ui.data_mut(|d| d.remove::<Option<f32>>(grab_id));
+    }
+    if let (true, Some(g), Some(p)) = (r.dragged() && travel > 0.0, grab, r.interact_pointer_pos()) {
+        return Some(((along_of(p) - g - arrow) / travel * max).clamp(0.0, max));
     }
     if r.clicked() {
         let pos = r.interact_pointer_pos()?;
@@ -1936,6 +1948,34 @@ mod menu_tests {
         assert_eq!(h.doc().first, 0);
         h.button(Pos2::new(plot_right - 3.0 * HSCROLL_H, y), egui::PointerButton::Primary);
         assert_eq!(h.doc().first, visible, "a track click right of the thumb pages right");
+    }
+
+    /// Dragging the thumb follows the pointer along the bar wherever it
+    /// wanders above or below it (the drag used to stop once the thumb had
+    /// moved away from the press point).
+    #[test]
+    fn scroll_thumb_drag_survives_leaving_the_bar() {
+        let mut h = Harness::new();
+        let at = Pos2::new(600.0, h.row(0).y);
+        for _ in 0..3 {
+            h.wheel(at, 1.0, egui::Modifiers::CTRL);
+        }
+        let y = SCREEN.y - 8.0 - HSCROLL_H / 2.0;
+        // The thumb sits just right of the left arrow at first = 0.
+        let grab = Pos2::new(8.0 + HSCROLL_H + 3.0, y);
+        let press = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(grab)]);
+        h.frame(vec![press(grab, true)]);
+        let mut last = 0;
+        for k in 1..=20 {
+            // Rightwards, wandering 40 px above and below the bar.
+            let p = Pos2::new(grab.x + 15.0 * k as f32, y + if k % 2 == 0 { -40.0 } else { 40.0 });
+            h.frame(vec![egui::Event::PointerMoved(p)]);
+            let first = h.doc().first;
+            assert!(first > last, "step {k}: first {first} did not follow the pointer");
+            last = first;
+        }
+        h.frame(vec![press(Pos2::new(grab.x + 300.0, y), false)]);
     }
 
     #[test]
