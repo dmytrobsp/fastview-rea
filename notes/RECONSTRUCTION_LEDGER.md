@@ -896,7 +896,7 @@ result bar under the ribbon following the active document with live text and
 grid with toolbar and enable rules, channels by name per station, message
 354, «Lкз» in m + digital «КЗ фазы А/B/C»); `View::Omp` removed. Merge fix: ОМП
 reads `Doc::flagged` (L9.7); `recompute_active` re-runs it when shown.
-Residual: report start/trigger times empty (loader keeps no timestamps), no
+Residual: (report times: L9.41), no
 legacy `.omp` reader / `.set` embedding.
 
 ### L9.12 — Diagram panes (track D, merged)  ·  🟡
@@ -1603,6 +1603,21 @@ step on the press, then repeats after 0.4 s every 0.05 s — delays assumed
 [I] (the system's are set by the double-click time); the track repeat
 checks the pointer is still beyond the thumb. Test
 `held_scroll_arrow_and_track_repeat`. (L9.23 residual closed.)
+
+### L9.41 — ОМП report: start / trigger times and the document line  ·  🟡
+Read (subagent, `0x49dbf0` disassembly): the header literals match ours
+exactly (strings 128, 3102, 3112–3114, 3480, 3103, 3298 «Начало записи:  »,
+3279 «Момент запуска: »); «Начало записи» = `doc+0x24c + ", " + doc+0x250`
+(`0x4048c0`), «Момент запуска» = `doc+0x254 + ", " + doc+0x258`
+(`0x496360`) — the record's raw date and time tokens, no re-ordering, no
+UTC / local conversion (empty tokens still give ", "); station `doc+0x244`
+(`0x404860`), recorder `doc+0x248` (`0x404890`); «Осциллограмма:» is
+`doc+0x24`, by MFC 12's CDocument layout `m_strPathName` [I] (`0x454fa0`
+also tests its last four characters for ".sto").
+Ours were empty times and the file name; now the stamp tokens joined by
+", " and the full path (the name for an unsaved record). Test in
+`omp_ui` (the demo's start / trigger lines). (L9.11 residual closed.)
+Residual: the path-vs-title reading of `doc+0x24` is inferred.
 
 Next in L9 (HANDOFF 2026-10-21, second session): the four user-reported GUI
 bugs are fixed (L9.23 tiny-window crash + bottom scroll bar, L9.24 modal

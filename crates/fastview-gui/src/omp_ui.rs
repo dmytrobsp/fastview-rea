@@ -321,14 +321,18 @@ impl App {
             return None;
         }
         let r = self.omp_result()?;
-        let title = d
-            .path
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| d.name.clone());
-        // The record start / trigger time stamps are not kept by our loader.
-        let info = params::ReportInfo { title, station: d.osc.station.clone(), recorder: d.osc.device.clone(), ..Default::default() };
+        // «Осциллограмма:» is `doc+0x24` (`m_strPathName` on MFC 12's layout
+        // [I]: the full path); the times are the record's raw date and time
+        // tokens joined by ", " (`0x4048c0` / `0x496360`), not reformatted.
+        let title = d.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| d.name.clone());
+        let st = &d.osc.stamps;
+        let info = params::ReportInfo {
+            title,
+            station: d.osc.station.clone(),
+            recorder: d.osc.device.clone(),
+            start: format!("{}, {}", st.start_date, st.start_time),
+            trigger: format!("{}, {}", st.trigger_date, st.trigger_time),
+        };
         let ktr = |n: &str| d.osc.analog.iter().find(|c| c.id == n).map(|c| (c.primary, c.secondary));
         Some(params::report(&d.omp.params, &r, &info, ktr))
     }
@@ -1215,6 +1219,8 @@ mod tests {
         app.run_omp();
         let t = app.omp_report().unwrap();
         assert!(t.starts_with("Механотроника FastView\n\nОсциллограмма: demo_fault\n\nАлгоритм: ОМП для сетей с заземленной нейтралью\n\n"));
+        // The record's raw stamp tokens joined by ", " (`0x4048c0`).
+        assert!(t.contains("\nНачало записи:  01/01/2024, 00:00:00.000000\nМомент запуска: 01/01/2024, 00:00:00.030000\n\n"), "{t}");
         let d = app.active_doc().unwrap();
         let ia = d.osc.analog.iter().find(|c| c.id == "Ia").unwrap();
         assert!(t.contains(&format!("Канал Ia:  Ia         Ктр = {}/", fvb_core::views::fmt_g(ia.primary).replace("e+0", "e+00"))), "{t}");
