@@ -1,9 +1,10 @@
 //! COMTRADE (IEEE C37.111) oscillogram reader — the open interchange format the
 //! original's `OscillHelper::ComtradeConverter` produces from the native `.sto`.
 //!
-//! Supports the 1991 and 1999 revisions (and the common 2013 layout) with ASCII
-//! and BINARY (int16) / BINARY32 / FLOAT32 data files. A single-file `.cff`
-//! container is not parsed; pass the `.cfg`/`.dat` pair.
+//! Supports the 1991 and 1999 revisions (and the common 2013 layout) with the
+//! data-file types the original accepts — exactly `ASCII`, `BINARY` (int16) and
+//! `binary32` — plus the single-file `.cff` container (ledger L3,
+//! `notes/FORMATS_SPEC.md`).
 
 use std::path::Path;
 
@@ -15,6 +16,10 @@ pub enum ComtradeError {
     Cfg(usize, String),
     #[error("malformed .dat: {0}")]
     Dat(String),
+    /// String 330 — the original's "invalid file format" (unknown data file
+    /// type, a `.cff` without CFG or DAT section, a bad `.osc`).
+    #[error("Неправильный формат файла")]
+    Format,
 }
 
 /// One analog channel definition and its samples (already scaled to primary
@@ -98,6 +103,13 @@ pub fn load(path: impl AsRef<Path>) -> Result<Oscillogram, ComtradeError> {
 /// (the original's program-settings dialog lets the user choose it).
 pub fn load_with(path: impl AsRef<Path>, enc: Encoding) -> Result<Oscillogram, ComtradeError> {
     let path = path.as_ref();
+    // 0x44ee70: the last four characters, lowercased, choose the reader.
+    let name = path.to_string_lossy();
+    let ext: String = name.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect::<String>().to_lowercase();
+    if ext == ".cff" {
+        let bytes = std::fs::read(path).map_err(|e| ComtradeError::Io(e.to_string()))?;
+        return parse_cff(&bytes, enc).map(|(rec, _)| rec);
+    }
     let (cfg_path, dat_path) = sibling_paths(path)?;
     let cfg_bytes = std::fs::read(&cfg_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
     let cfg_text = decode_text_enc(&cfg_bytes, enc);
@@ -163,6 +175,120 @@ pub fn parse(cfg_text: &str, dat: &[u8]) -> Result<Oscillogram, ComtradeError> {
     let (mut rec, fmt) = parse_cfg(cfg_text)?;
     parse_dat(&mut rec, fmt, dat)?;
     Ok(rec)
+}
+
+/// The non-CFG/DAT text sections of a `.cff` (re-emitted when saving).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CffSections {
+    pub inf: Option<String>,
+    pub hdr: Option<String>,
+    pub set: Option<String>,
+}
+
+/// Find `needle` in `hay` at or after `from` (MFC `CString::Find`).
+fn find_from(hay: &str, needle: &str, from: usize) -> Option<usize> {
+    hay.get(from..).and_then(|h| h.find(needle)).map(|i| i + from)
+}
+
+/// One text section of a `.cff` as the original extracts it (`0x44fe30`):
+/// content starts two characters after the first CRLF following the marker
+/// (index 1 if there is none) and runs to the next `--- file type:`; with no
+/// later marker it is empty. `None` if the marker is absent.
+fn cff_section(text: &str, kind: &str) -> Option<String> {
+    let p = text.find(&format!("--- file type: {kind}"))?;
+    let start = find_from(text, "\r\n", p).map_or(1, |q| q + 2);
+    Some(match find_from(text, "--- file type:", start) {
+        Some(e) => text[start..e].to_string(),
+        None => String::new(),
+    })
+}
+
+/// Read a single-file COMTRADE (`.cff`) the way the original does
+/// (`0x44fe30`, ledger L3): text sections from the file decoded up to its
+/// first NUL byte; the DAT payload located on the raw bytes — the byte count
+/// is the first run of digits on the first line containing
+/// `--- file type: DAT`, and the payload starts **one byte after** that
+/// line's terminator (the LF of a CRLF pair: a one-byte shift, harmless for
+/// ASCII data and reproduced as is). Missing CFG or DAT → error 330.
+pub fn parse_cff(bytes: &[u8], enc: Encoding) -> Result<(Oscillogram, CffSections), ComtradeError> {
+    let nul = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
+    let text = decode_text_enc(&bytes[..nul], enc);
+    let cfg = cff_section(&text, "CFG").ok_or(ComtradeError::Format)?;
+    let sections = CffSections {
+        inf: cff_section(&text, "INF"),
+        hdr: cff_section(&text, "HDR"),
+        set: cff_section(&text, "SET"),
+    };
+    // DAT: scan lines of the raw bytes (leading tab/LF/CR/space skipped, a
+    // line ends at CR or LF).
+    let marker = b"--- file type: DAT";
+    let mut pos = 0;
+    let mut dat: Option<&[u8]> = None;
+    while pos < bytes.len() {
+        while pos < bytes.len() && matches!(bytes[pos], b'\t' | b'\n' | b'\r' | b' ') {
+            pos += 1;
+        }
+        let start = pos;
+        while pos < bytes.len() && !matches!(bytes[pos], b'\r' | b'\n') {
+            pos += 1;
+        }
+        let line = &bytes[start..pos];
+        if line.windows(marker.len()).any(|w| w == marker) {
+            let digits: Vec<u8> = line
+                .iter()
+                .skip_while(|b| !b.is_ascii_digit())
+                .take_while(|b| b.is_ascii_digit())
+                .copied()
+                .collect();
+            let n: usize = std::str::from_utf8(&digits).ok().and_then(|d| d.parse().ok()).unwrap_or(0);
+            let from = (pos + 1).min(bytes.len());
+            dat = Some(&bytes[from..(from + n).min(bytes.len())]);
+            break;
+        }
+    }
+    let dat = dat.ok_or(ComtradeError::Format)?;
+    let (mut rec, fmt) = parse_cfg(&cfg)?;
+    parse_dat(&mut rec, fmt, dat)?;
+    Ok((rec, sections))
+}
+
+/// Encode text as CP1251 (the original writes every text section in it).
+fn to_cp1251(text: &str) -> Vec<u8> {
+    text.chars()
+        .map(|c| {
+            if (c as u32) < 0x80 {
+                c as u8
+            } else {
+                (0x80..=0xFFu8).find(|b| cp1251_to_char(*b) == c).unwrap_or(b'?')
+            }
+        })
+        .collect()
+}
+
+/// Error 187 of the `.cff` writer.
+#[derive(Debug, thiserror::Error)]
+#[error("В формате .cff можно сохранять только осциллограммы стандарта comtrade'13 и новее")]
+pub struct CffRevisionError;
+
+/// Write a single-file COMTRADE (`0x44d0f0`): only records of revision ≥ 2013;
+/// `--- file type: CFG ---` + the cfg (CRLF lines), then the HDR, INF, SET
+/// sections that came with the record, then `--- file type: DAT BINARY: n---`
+/// and the data bytes. Text in CP1251.
+pub fn write_cff(osc: &Oscillogram, sections: &CffSections) -> Result<Vec<u8>, CffRevisionError> {
+    if osc.rev_year < 2013 {
+        return Err(CffRevisionError);
+    }
+    let (cfg, dat) = write(osc);
+    let cfg = cfg.replacen(",1999\n", &format!(",{}\n", osc.rev_year), 1).replace('\n', "\r\n");
+    let mut out = to_cp1251(&format!("--- file type: CFG ---\r\n{cfg}"));
+    for (kind, body) in [("HDR", &sections.hdr), ("INF", &sections.inf), ("SET", &sections.set)] {
+        if let Some(b) = body {
+            out.extend(to_cp1251(&format!("--- file type: {kind} ---\r\n{b}")));
+        }
+    }
+    out.extend(to_cp1251(&format!("--- file type: DAT BINARY: {}---\r\n", dat.len())));
+    out.extend(dat.as_bytes());
+    Ok(out)
 }
 
 fn sibling_paths(path: &Path) -> Result<(std::path::PathBuf, std::path::PathBuf), ComtradeError> {
@@ -264,7 +390,6 @@ enum DataFormat {
     Ascii,
     Int16,
     Int32,
-    Float32,
 }
 
 struct RateSection {
@@ -361,7 +486,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
     let _trigger_ts = next(&mut li).ok();
 
     // file type
-    let ft = next(&mut li).map(|s| s.trim().to_lowercase()).unwrap_or_default();
+    let ft = next(&mut li).map(|s| s.trim().to_string()).unwrap_or_default();
 
     // 1999+: timemult (optional)
     let timemult = next(&mut li)
@@ -386,11 +511,12 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
     let sample_rate = rates.first().map(|r| r.rate).unwrap_or(0.0);
 
     let fmt = match ft.as_str() {
-        "ascii" => DataFormat::Ascii,
-        "binary" => DataFormat::Int16,
+        // 0x45158a: exactly these three spellings; anything else (FLOAT32,
+        // BINARY32, lowercase ascii…) is error 330.
+        "ASCII" => DataFormat::Ascii,
+        "BINARY" => DataFormat::Int16,
         "binary32" => DataFormat::Int32,
-        "float32" => DataFormat::Float32,
-        _ => DataFormat::Ascii,
+        _ => return Err(ComtradeError::Format),
     };
     let _ = timemult; // already folded into `time`
     let rec = Oscillogram {
@@ -448,11 +574,11 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8]) -> Result<(), C
                 }
             }
         }
-        DataFormat::Int16 | DataFormat::Int32 | DataFormat::Float32 => {
+        DataFormat::Int16 | DataFormat::Int32 => {
             let (abytes, dwords) = match fmt {
                 DataFormat::Int16 => (2usize, nd.div_ceil(16)),
-                DataFormat::Int32 | DataFormat::Float32 => (4usize, nd.div_ceil(16)),
-                _ => unreachable!(),
+                DataFormat::Int32 => (4usize, nd.div_ceil(16)),
+                DataFormat::Ascii => unreachable!(),
             };
             // record = 4 (sample#) + 4 (timestamp) + na*abytes + dwords*2
             let rec_len = 8 + na * abytes + dwords * 2;
@@ -473,11 +599,7 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8]) -> Result<(), C
                             let v = i32::from_le_bytes([dat[off], dat[off + 1], dat[off + 2], dat[off + 3]]);
                             v as f64
                         }
-                        DataFormat::Float32 => {
-                            let v = f32::from_le_bytes([dat[off], dat[off + 1], dat[off + 2], dat[off + 3]]);
-                            v as f64
-                        }
-                        _ => 0.0,
+                        DataFormat::Ascii => 0.0,
                     };
                     ch.samples.push(ch.a * raw + ch.b);
                     off += abytes;

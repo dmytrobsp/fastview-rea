@@ -213,6 +213,9 @@ pub struct Doc {
     pub aux_cursor: usize,
     pub chans: Vec<ChanView>,
     pub computed: Vec<Computed>,
+    /// Text sections (HDR/INF/SET) of a record opened from a `.cff`, written
+    /// back when it is saved as `.cff`.
+    pub cff: fvb_core::comtrade::CffSections,
     pub comments: Vec<Comment>,
     /// Time-axis view window in seconds `[t0, t1]` (shared across lanes).
     pub view_t0: f64,
@@ -265,6 +268,7 @@ impl Doc {
             aux_cursor: count / 4,
             chans,
             computed: Vec::new(),
+            cff: Default::default(),
             comments: Vec::new(),
             view_t0: 0.0,
             view_t1: if t_last > 0.0 { t_last } else { 1.0 },
@@ -837,7 +841,7 @@ impl App {
 
     pub fn open_comtrade(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("COMTRADE", &["cfg", "dat", "CFG", "DAT"])
+            .add_filter("COMTRADE", &["cfg", "cff", "dat", "CFG", "CFF", "DAT"])
             .pick_file()
         {
             self.load_comtrade_path(&path);
@@ -845,8 +849,16 @@ impl App {
     }
 
     pub fn load_comtrade_path(&mut self, path: &std::path::Path) {
-        match fvb_core::comtrade::load_with(path, self.encoding) {
-            Ok(osc) => {
+        let is_cff = path.to_string_lossy().to_lowercase().ends_with(".cff");
+        let loaded = if is_cff {
+            std::fs::read(path)
+                .map_err(|e| fvb_core::comtrade::ComtradeError::Io(e.to_string()))
+                .and_then(|b| fvb_core::comtrade::parse_cff(&b, self.encoding))
+        } else {
+            fvb_core::comtrade::load_with(path, self.encoding).map(|o| (o, Default::default()))
+        };
+        match loaded {
+            Ok((osc, cff)) => {
                 let name = path
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
@@ -854,9 +866,11 @@ impl App {
                 self.add_doc(Doc::new(osc, name));
                 if let Some(d) = self.active_doc_mut() {
                     d.path = Some(path.to_path_buf());
+                    d.cff = cff;
                 }
             }
-            Err(e) => self.status = format!("Ошибка загрузки осциллограммы: {e}"),
+            // The original shows "<file> - <message>".
+            Err(e) => self.status = format!("{} - {e}", path.display()),
         }
     }
 
@@ -923,11 +937,22 @@ impl App {
         };
         let Some(path) = rfd::FileDialog::new()
             .add_filter("COMTRADE", &["cfg"])
+            .add_filter("COMTRADE'13", &["cff"])
             .set_file_name(format!("{}.cfg", d.name))
             .save_file()
         else {
             return;
         };
+        if path.to_string_lossy().to_lowercase().ends_with(".cff") {
+            self.status = match fvb_core::comtrade::write_cff(&d.osc, &d.cff) {
+                Ok(bytes) => match std::fs::write(&path, bytes) {
+                    Ok(()) => format!("Сохранено: {}", path.display()),
+                    Err(e) => format!("Ошибка сохранения: {e}"),
+                },
+                Err(e) => e.to_string(),
+            };
+            return;
+        }
         let (cfg, dat) = fvb_core::comtrade::write(&d.osc);
         let dat_path = path.with_extension("dat");
         match std::fs::write(&path, cfg).and_then(|_| std::fs::write(&dat_path, dat)) {

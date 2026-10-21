@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 97 pass)
+- `cargo test --workspace`   (currently 102 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 97 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 102 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -136,7 +136,7 @@ decompilation (pending, listed below).
 | DFT / phasors / RMS | `FUN_00426fc0` & channel methods | `signal.rs` | ✅ L6 (freq-channel variant ❌) |
 | Symmetric components / impedances | Calculator `i1: i2: 3i0: zl: zf:` | `signal.rs`/`analysis.rs` | 🟡 L6 (view code not located) |
 | ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | ✅ L7 (θ-tap refinement, parallel-line UI ❌) |
-| COMTRADE reader/writer | `ComtradeConverter` | `comtrade.rs` | ⏳ pending |
+| COMTRADE reader/writer | `0x450a30`, `.cff` `0x44fe30`/`0x44d0f0`, `.osc` `0x4524b0` | `comtrade.rs` | 🟡 L3 (`.cfg` ✅ `.cff` ✅ `.osc` ❌) |
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
 
@@ -575,13 +575,26 @@ The file-open filter (`0x905218`) proves the original opens **four input formats
 `*.cfg` (COMTRADE), `*.cff` (COMTRADE'13 single-file), `*.osc` (OSC2),
 `*.sto` (Configurator-MT native).
 
-Our impl (`comtrade.rs`): `.cfg`/`.dat` only (ASCII + binary), plus a 1999-ASCII
-writer. Verdict: 🟡 **PARTIAL**.
-- ✅ `.cfg`/`.dat` reading.
-- ❌ `.cff` (single-file COMTRADE 2013 — straightforward: header+data concatenated).
-- ❌ `.osc` (OSC2 format — needs RE of its layout).
-- ⛔ `.sto` (native Configurator-MT — no sample ships; `GetInfoFromStoHeader`/
-  `ConvertSto2Comtrade` can be read but not byte-verified without a file).
+Full behavioural spec: **`notes/FORMATS_SPEC.md`** (open/save dispatch,
+`.cff` reader `0x44fe30` / writer `0x44d0f0`, OSC2 reader `0x4524b0`).
 
-Action: implement `.cff`; decompile the `.osc` reader; document `.sto` as
-infeasible-to-verify with the decompiled header layout as the best available map.
+Our impl (`comtrade.rs`): `.cfg`/`.dat` with the original's strict data-file
+types (exactly `ASCII`/`BINARY`/`binary32`; FLOAT32 etc. → error 330
+"Неправильный формат файла", as the original); `.cff` reader with the
+original's rules — text decoded up to the first NUL, CRLF-based section
+split, DAT byte count = first digit run on the marker line, payload starting
+one byte after the line terminator (the original's LF offset bug, reproduced:
+harmless for ASCII, corrupts binary .cff) — and `.cff` writer (rev ≥ 2013 else
+error 187; CFG, HDR/INF/SET, `DAT BINARY: n---`; CP1251). GUI opens `.cff`,
+keeps its HDR/INF/SET and offers `.cff` in Save-As; load errors read
+"<file> - <message>". Pinned by `tests/formats.rs` (5). A test fixture that
+only loaded because unknown file types used to fall back to ASCII was fixed.
+
+Verdict: 🟡 **PARTIAL**.
+- ✅ `.cfg`/`.dat` file-type rule, ✅ `.cff` read/write.
+- ❌ `.osc` (OSC2) reader — specified, implementation next.
+- ⛔ `.sto` — needs the native ConvertSto2Comtrade and a sample file.
+- Not modelled: the temp-folder mechanics, `<base>.set` files, the
+  save-onto-own-path rule, the `.dat` → `.cfg` open redirect is native already.
+
+

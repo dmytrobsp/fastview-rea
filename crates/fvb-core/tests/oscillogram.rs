@@ -220,7 +220,7 @@ fn calc_ib_from_ia_ic_when_isolated() {
 fn cfg_encoding_decoders() {
     // "Ua" + Cyrillic "фаза" in three single-byte code pages must decode right.
     // CP1251 'фаза' = F4 E0 E7 E0 ; CP866 'фаза' = A4 A0 A7 A0 ; KOI8-R = C6 C1 DA C1
-    let cfg_tail = ",A,,V,1.0,0.0,0.0,-32768,32767,1.0,1.0,S\n50\n1\n1000,2\n\
+    let cfg_tail = ",A,,V,1.0,0.0,0.0,-32768,32767,1.0,1.0,S\n2,B,,V,1.0,0.0,0.0,-32768,32767,1.0,1.0,S\n50\n1\n1000,2\n\
         01/01/2024,00:00:00.000000\n01/01/2024,00:00:00.001000\nASCII\n1\n";
     let dat = b"1,0,1,1\n2,500,2,2\n";
     for (bytes, enc) in [
