@@ -1188,7 +1188,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 5. ✅ (L9.4) Lane geometry: YAnalogSize (93, ×/÷1.3 within 70–500, Alt+wheel, 32800/01),
    digital 20 px, rows/icons growth, no stretch, fixed non-scrolling bottom
    band 30/75, plain wheel 120 px/notch — `lanes.rs` — M
-6. ОМП: Анализ toggle + result banner under the ribbon (live text, Сохранить
+6. ✅ (merged L9.11/L9.12) ОМП: Анализ toggle + result banner under the ribbon (live text, Сохранить
    .txt UTF-16LE, close clears) instead of the ОМП tab; buttons greyed with no
    doc / bit14 — `main.rs`, `ribbon.rs`, `views.rs`, `app.rs` — M
 7. ✅ (L9.4) Waveform: every sample, 1 px, sample circles when > 4 px/sample (keep
@@ -1207,7 +1207,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     32845–47, zoom 32800–03, 138, 141, визиры, 155/157/156, stats rows
     32817–19, Коэффициенты, separate Вторичные, filler), unnamed panel for 142,
     and CMDUI enable/check on every button — `ribbon.rs`, `app.rs` — M
-12. ОМП run semantics: channels by name per station; isolated reads
+12. ✅ (merged L9.11/L9.12) ОМП run semantics: channels by name per station; isolated reads
     Uab/Ubc/Uca; double-ended from the same document (Station 2 current
     negation ✅ done in the engine, ledger L9.2) and Station 2 Inom negated; parallel lines with I0 phasor; Lкз
     unit "m"; КЗ фазы as digital channels with Cyrillic «А»; V1 = start,
@@ -1234,17 +1234,17 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     RulerState formats, trigger-relative, H-diff only on the same channel;
     drop the free-text status (toast instead) — `main.rs`, `lanes.rs` — S
 18. Parameters bar (142, visible by default, 75 px) — `main.rs`, `ribbon.rs` — S
-19. Circle/diff diagrams: (z, ox, oy) model with wheel/Ctrl/Shift, limits,
+19. ✅ (merged L9.11/L9.12) Circle/diff diagrams: (z, ox, oy) model with wheel/Ctrl/Shift, limits,
     scrollbars, toolbar; origin-centred equal-scale autoscale incl. loci;
     two scales + edge labels/scale box; property grid on top with splitter;
     9-colour palette, alpha-50 fill, reverse order; bottom legend / readout
     table; diff lower-left initial view; disable egui interactions — `views.rs`
     — L
-20. Diagram context menus 387/388/355/351 and toolbars 550/552/553 —
+20. ✅ (merged L9.11/L9.12) Diagram context menus 387/388/355/351 and toolbars 550/552/553 —
     `views.rs` — M
-21. Frequency: one panel per channel, rotated labels, percent default,
+21. ✅ (merged L9.11/L9.12) Frequency: one panel per channel, rotated labels, percent default,
     settings dialog 353 — `views.rs`, `dialogs.rs` — M
-22. Vector: locked plot, 4/5/10 circle rule, arrowheads, no radians toggle,
+22. ✅ (merged L9.11/L9.12) Vector: locked plot, 4/5/10 circle rule, arrowheads, no radians toggle,
     options via toolbar/menu — `views.rs` — S
 23. ✅ (L9.7) Rectangle vertical zoom 138 (mode 7/8, up-arrow cursor, lane fractions,
     group) and 141 reset; drop the ×1.25/×0.8 submenu — `lanes.rs`, `chansel.rs`
@@ -1253,7 +1253,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 25. ✅ (L9.4) Cursor shapes (W–E, N–S, up-arrow, hand) — `lanes.rs` — S
 26. ✅ (L9.4) Inline rename on name-badge double-click (397), not properties —
     `lanes.rs` — S
-27. Diagram eligibility by unit (vector A/V/«ном»/empty, circle Ohm/W/VA/var;
+27. ✅ (merged L9.11/L9.12) Diagram eligibility by unit (vector A/V/«ном»/empty, circle Ohm/W/VA/var;
     circle pane Ohm/VA; clear on attach) in 561 and the dialogs — `chansel.rs`,
     `views.rs` — S
 28. Coefficients dialog 477 (bulk Shift-select entry) + Первичные/Вторичные as
@@ -1281,12 +1281,12 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     sliced, diagrams one page each) and preview — new module — L
 37. 🟡 (L9.10: worker + thresholds + cancel; no percent) Loading progress dialog with worker thread and cancel (thresholds
     200 kB/20 kB) — `app.rs`, `crates/fvb-core` parsers — M
-38. ОМП parameters dialog: toolbar + tree + property grid, enable rules,
+38. ✅ (merged L9.11/L9.12) ОМП parameters dialog: toolbar + tree + property grid, enable rules,
     validation messages, `.omp` XML load/save, embed in `.set` — `views.rs` →
     new `omp_ui` module, `crates/fvb-core` — L
 39. Record comment (.hdr) editor 32805 for .cfg/.cff with 866/1251 re-encode —
     `dialogs.rs`, `crates/fvb-core` — S
-40. Pair dialog 554 + R/X pair loci on the circle diagram — `dialogs.rs`,
+40. ✅ (merged L9.11/L9.12) Pair dialog 554 + R/X pair loci on the circle diagram — `dialogs.rs`,
     `views.rs` — M
 41. ✅ (L9.4) Digital lanes look (base bar, red-outlined runs, selected fill) and
     full-width alternating gradient backgrounds, selected gradient — `lanes.rs`

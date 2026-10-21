@@ -301,8 +301,9 @@ impl App {
                         ui.label("На диаграммах:");
                         ui.horizontal(|ui| {
                             ui.checkbox(&mut cv.on_freq, "частотн.");
-                            ui.checkbox(&mut cv.on_vector, "вект.");
-                            ui.checkbox(&mut cv.on_circle, "круг.");
+                            // Eligibility by unit as CMDUI 32850 / 32851 (`0x430650`).
+                            ui.add_enabled(crate::diagram::vector_unit_ok(unit.trim()), egui::Checkbox::new(&mut cv.on_vector, "вект."));
+                            ui.add_enabled(crate::diagram::circle_flag_unit_ok(unit.trim()), egui::Checkbox::new(&mut cv.on_circle, "круг."));
                         });
                         ui.end_row();
                     }

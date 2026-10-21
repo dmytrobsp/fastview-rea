@@ -8,6 +8,8 @@
 mod app;
 mod chansel;
 mod comments;
+mod diagram;
+mod diagram_ui;
 mod dialogs;
 mod finder;
 mod icons;
@@ -15,6 +17,7 @@ mod lanes;
 mod omp_ui;
 mod oscgeom;
 mod persist;
+mod popmenu;
 mod quick_ui;
 mod ribbon;
 mod theme;

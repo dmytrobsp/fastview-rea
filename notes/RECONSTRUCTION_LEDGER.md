@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 171 pass)
+- `cargo test --workspace`   (currently 189 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 171 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 189 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.10** below.
+temporary). Reconciled so far: **L9.1**–**L9.12** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -897,15 +897,26 @@ reads `Doc::flagged` (L9.7); `recompute_active` re-runs it when shown.
 Residual: report start/trigger times empty (loader keeps no timestamps), no
 legacy `.omp` reader / `.set` embedding.
 
-**HANDOFF (2026-10-21, usage limit):** track D (diagrams 19–22, 27, 40) is
-finished on branch `worktree-agent-a7526b4faa28680ce` (`cafd051`) but NOT yet
-merged — merge it next (expect conflicts in `app.rs`/`views.rs`/`dialogs.rs`;
-it replaces egui_plot views with `diagram.rs`/`diagram_ui.rs`/`popmenu.rs`;
-afterwards switch the frequency diagram to `Doc::flagged`). Track F (dialogs
-16, 18, 28, 29, 34, 39 + comtrade timestamps) was still running in its
-worktree — check `git branch` for `worktree-agent-a7cb4acef380f64fb`, merge,
-then do ribbon contents 11/31/33, merge workflow 15 (needs F's start times),
-and the rest of §9.
+### L9.12 — Diagram panes (track D, merged)  ·  🟡
+
+Merged from `worktree-agent-a7526b4faa28680ce` (`cafd051`): `diagram.rs`
+(pure: extent `0x438b50`, grid cell LOGPIXELSX·scale/5 with integer-divided
+cells and 1-digit-ceil units per cell, wheel `0x437ae0` exactly-Ctrl zoom /
+exactly-Shift pan x / else pan y, pan limit `0x437b90`, toolbar steps ±2,
+zoom reset past 800 px / refused at 400 px `0x43b570`, scrollbars
+`0x437ca0`/`0x437f00` incl. the original's ×2 mismatch, vector 4/5/10 circles,
+unit rules), `diagram_ui.rs` (painting on egui's painter: even-odd fill at
+alpha 50, reverse order, two-scale edge labels, loci-only legend, readout
+table, diff lower-left initial view, vertical toolbars 550/552/553, menus
+387/388/355/351 via `popmenu.rs`, dialogs 554 (R/X and diff pairs) and 353,
+frequency panels per channel with rotated labels and percent default, vector
+arrowheads with «Углы в радианах» removed), unit eligibility in MENU 561 /
+pane menus / attach (CMDUI `0x430650`: vector A/V/«ном»/none, circle
+Ohm/W/VA/var). Merge fix: the frequency panels read `Doc::flagged` (L9.7).
+Residual: frame/axes pens, edge-label/scale-box rects, dialog 554 combo
+contents, frequency margins NOT DETERMINED; per-document «* Chart»
+persistence, the themed splitter, bit 14 pending merge not modelled;
+`egui_plot` dependency now unused.
 
 Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — tracks D (diagrams 19–22, 27,
 40), O (ОМП 6, 12, 38) and F (dialogs 16, 18, 28, 29, 34, 39) were
