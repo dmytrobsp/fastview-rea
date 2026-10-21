@@ -1203,7 +1203,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
    `app.rs`, `ribbon.rs` — M
 10. ✅ (L9.4) Difference band (33033, default on): 45 px band, marker labels, Δt
     dimension arrows; «Разница между визирами» enabled in 560 — `lanes.rs` — M
-11. Ribbon Видимость / Вычисления contents in original order (discrete-only
+11. ✅ (L9.14) Ribbon Видимость / Вычисления contents in original order (discrete-only
     32845–47, zoom 32800–03, 138, 141, визиры, 155/157/156, stats rows
     32817–19, Коэффициенты, separate Вторичные, filler), unnamed panel for 142,
     and CMDUI enable/check on every button — `ribbon.rs`, `app.rs` — M
@@ -1264,13 +1264,13 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 30. ✅ (L9.7; undo greying pending) Invert/DC/visibility semantics: toggle-all over the selection, **no undo**,
     full recompute incl. computed channels and ОМП; undo only for paste/merge,
     Отмена/Возврат greyed by counts — `app.rs`, `chansel.rs` — S
-31. App menu: original order, Сохранить vs Сохранить как, Комментарии,
+31. 🟡 (L9.14; print/preview/.set disabled) App menu: original order, Сохранить vs Сохранить как, Комментарии,
     Загрузка настроек, Закрыть, Печать submenu, 10-entry MRU; dev extras
     (Демо, CSV, Archive, .fvb) marked as extensions; QAT = Open/Save/Print,
     Save greyed for .sto — `ribbon.rs`, `persist.rs` — M
 32. ✅ (L9.8; tab colour order beyond the first NOT DETERMINED) Document tabs: auto colour, close on the active tab only, ▾ list, window
     title «Механотроника FastView - <doc>» — `main.rs` — S
-33. Стиль menu (9 entries, radio, persisted, default 215), help split button,
+33. 🟡 (L9.14; non-2007 looks disabled) Стиль menu (9 entries, radio, persisted, default 215), help split button,
     ribbon minimise via ribbon right-click — `ribbon.rs`, `theme.rs`,
     `persist.rs` — S
 34. ✅ (merged L9.13) Program settings 510: no auto encoding, default 1251, .dst folder, UTC/

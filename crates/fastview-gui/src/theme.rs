@@ -20,14 +20,6 @@ pub enum Skin {
 impl Skin {
     pub const ALL: [Skin; 4] = [Skin::Blue, Skin::Black, Skin::Silver, Skin::Aqua];
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Skin::Blue => "Office 2007 — Голубой",
-            Skin::Black => "Office 2007 — Чёрный",
-            Skin::Silver => "Office 2007 — Серебристый",
-            Skin::Aqua => "Office 2007 — Зеленовато-голубой",
-        }
-    }
 
     pub fn palette(self) -> Palette {
         match self {

@@ -26,11 +26,9 @@ pub enum Icon {
     RemoveDc,
     ShowAll,
     HideAll,
-    FitTime,
     Primary,
     Params,
     OmpRun,
-    Help,
 }
 
 /// Paint `icon` centred in `rect`, scaled to it, using `color` as the primary
@@ -159,13 +157,6 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
             path(painter, pts);
             painter.line_segment([p(0.08, 0.74), p(0.92, 0.74)], Stroke::new(w, Color32::from_rgb(0xCC, 0x22, 0x22)));
         }
-        Icon::FitTime => {
-            line(painter, p(0.10, 0.5), p(0.90, 0.5));
-            line(painter, p(0.10, 0.5), p(0.24, 0.36));
-            line(painter, p(0.10, 0.5), p(0.24, 0.64));
-            line(painter, p(0.90, 0.5), p(0.76, 0.36));
-            line(painter, p(0.90, 0.5), p(0.76, 0.64));
-        }
         Icon::Primary => {
             // "1°/2°" primary-vs-secondary: a transformer-ish double circle
             painter.circle_stroke(p(0.36, 0.5), s * 0.24, stroke);
@@ -187,10 +178,6 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                 vec![p(0.56, 0.20), p(0.42, 0.52), p(0.54, 0.52), p(0.44, 0.80)],
                 bolt,
             ));
-        }
-        Icon::Help => {
-            painter.circle_stroke(p(0.5, 0.5), s * 0.42, stroke);
-            painter.text(p(0.5, 0.5), egui::Align2::CENTER_CENTER, "?", egui::FontId::proportional(s * 0.6), color);
         }
     }
 }

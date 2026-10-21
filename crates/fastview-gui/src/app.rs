@@ -630,11 +630,6 @@ impl Doc {
         self.computed.iter_mut().for_each(|c| set(&mut c.stats));
     }
 
-    /// Show the whole record: the fit scale from the first sample.
-    pub fn fit_time(&mut self, width: f32) {
-        self.first = 0;
-        self.xscale = Some(crate::oscgeom::fit_scale(width, self.osc.sample_count()));
-    }
 }
 
 /// Default channel colour: the original cycles yellow/green/red/blue/… and tints
@@ -727,7 +722,8 @@ pub enum Command {
     /// channels (analog visibility is the Каналы dialog's).
     Discrete(u8),
     SetSkin(Skin),
-    FitTime,
+    /// Open a recent document («Последние документы»).
+    OpenPath(std::path::PathBuf),
     CloseDoc(usize),
     ActivateDoc(usize),
 }
@@ -843,6 +839,8 @@ pub struct App {
     pub view_width: f32,
     /// Stats-panel width at the last layout (fitted to the text).
     pub view_left: f32,
+    /// «Последние документы»: up to 10 files, most recent first.
+    pub mru: Vec<std::path::PathBuf>,
     /// Records being parsed.
     pub loading: Vec<Loading>,
     /// «Проводник» (32880), the modal finder.
@@ -943,6 +941,7 @@ impl App {
             window_title: String::new(),
             finder: None,
             loading: Vec::new(),
+            mru: Vec::new(),
             dst_dir: None,
             lane_menu: None,
             lane_menu_serial: 0,
@@ -1116,7 +1115,16 @@ impl App {
                     }
                 }
             }
-            Command::SetSkin(s) => self.skin = s,
+            Command::SetSkin(s) => {
+                self.skin = s;
+                // `ApplicationLook`: 215..218 for the Office 2007 looks.
+                let code = 215 + Skin::ALL.iter().position(|&k| k == s).unwrap_or(0);
+                self.store.view.insert("ApplicationLook".into(), code.to_string());
+                if self.persist {
+                    self.store.save();
+                }
+            }
+            Command::OpenPath(p) => self.load_comtrade_path(&p),
             Command::StatsRow(k) => {
                 if let Some(d) = self.active_doc_mut() {
                     d.toggle_stats_row(k);
@@ -1133,12 +1141,6 @@ impl App {
             Command::ZoomY(grow) => {
                 self.y_analog = crate::oscgeom::lane_zoom(self.y_analog, grow);
                 self.persist_view();
-            }
-            Command::FitTime => {
-                let w = self.view_width;
-                if let Some(d) = self.active_doc_mut() {
-                    d.fit_time(w);
-                }
             }
             Command::CloseDoc(i) => {
                 if i < self.docs.len() {
@@ -1304,6 +1306,12 @@ impl App {
         if let Some(g) = v.get("Sells") {
             self.show_grid = g != "0";
         }
+        if let Some(i) = v.get("ApplicationLook").and_then(|x| x.parse::<usize>().ok()).and_then(|c| c.checked_sub(215)) {
+            if let Some(&s) = Skin::ALL.get(i) {
+                self.skin = s;
+            }
+        }
+        self.mru = (0..10).filter_map(|k| v.get(&format!("MRU/{k}")).map(std::path::PathBuf::from)).collect();
         self.load_program_settings();
         let dim = self.diagram_dim;
         if let Some(name) = self.store.selected.get(Self::diagram_key(dim)).cloned() {
@@ -1454,12 +1462,27 @@ impl App {
                     d.path = Some(path.to_path_buf());
                     d.cff = cff;
                     d.init_record_text(enc);
+
                     // Names may have been re-decoded; no flag is set yet.
                     d.flagged = d.osc.clone();
                 }
+                self.remember_recent(path);
             }
             // The original shows "<file> - <message>".
             Err(e) => self.status = format!("{} - {e}", path.display()),
+        }
+    }
+
+    /// Put `path` first in «Последние документы» (10 entries) and save it.
+    fn remember_recent(&mut self, path: &std::path::Path) {
+        self.mru.retain(|p| p != path);
+        self.mru.insert(0, path.to_path_buf());
+        self.mru.truncate(10);
+        for (k, p) in self.mru.iter().enumerate() {
+            self.store.view.insert(format!("MRU/{k}"), p.to_string_lossy().into_owned());
+        }
+        if self.persist {
+            self.store.save();
         }
     }
 

@@ -25,96 +25,125 @@ impl App {
             ui.add_space(4.0);
             draw_logo(ui, 18.0, p.accent);
             ui.add_space(2.0);
+            // Application menu (0x472f30): the original's ten items, the
+            // «Последние документы» list, and our own extras in a labelled
+            // submenu.
+            let has_doc = self.active_doc().is_some();
+            let mru = self.mru.clone();
             egui::menu::menu_button(ui, RichText::new("Файл ▾").color(p.text).strong(), |ui| {
-                for (label, cmd) in [
-                    ("Открыть COMTRADE (.cfg/.dat)…   Ctrl+O", Command::Open),
-                    ("Демо-осциллограмма (авария A-0)", Command::Demo),
-                    ("Проводник", Command::ToggleExplorer),
-                ] {
-                    if ui.button(label).clicked() {
-                        cmds.push(cmd);
-                        ui.close_menu();
-                    }
-                }
-                ui.separator();
-                for (label, cmd) in [
-                    ("Сохранить как COMTRADE…   Ctrl+S", Command::Save),
-                    ("Экспорт каналов в CSV…", Command::ExportCsv),
-                    ("Отправка и архивирование (.zip)…", Command::Archive),
-                    ("Печать — экспорт изображения…   Ctrl+P", Command::Print),
-                    ("Параметры файла…", Command::FileParams),
-                    ("Установка настроек программы…", Command::Settings),
-                ] {
-                    if ui.button(label).clicked() {
-                        cmds.push(cmd);
-                        ui.close_menu();
-                    }
-                }
-                // 32805: the record comment, enabled for .cfg / .cff only.
-                if ui.add_enabled(self.hdr_comment_enabled(), egui::Button::new("Комментарии…")).clicked() {
-                    cmds.push(Command::HdrComment);
-                    ui.close_menu();
-                }
-                ui.separator();
-                if ui.button("Открыть библиотеку характеристик .fvb…").clicked() {
-                    cmds.push(Command::OpenFvb);
-                    ui.close_menu();
-                }
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_min_width(220.0);
+                        menu_cmd(ui, &mut cmds, "Открыть...", true, Command::Open);
+                        menu_cmd(ui, &mut cmds, "Сохранить", has_doc, Command::Save);
+                        menu_cmd(ui, &mut cmds, "Сохранить как...", has_doc, Command::Save);
+                        menu_cmd(ui, &mut cmds, "Проводник", true, Command::ToggleExplorer);
+                        ui.menu_button("Печать", |ui| {
+                            ui.label(RichText::new("Предварительный просмотр и печать документа").weak());
+                            ui.add_enabled(false, egui::Button::new("Параметры страницы"));
+                            ui.add_enabled(false, egui::Button::new("Предварительный просмотр"));
+                            if ui.add_enabled(has_doc, egui::Button::new("Печать (изображение)")).clicked() {
+                                cmds.push(Command::Print);
+                                ui.close_menu();
+                            }
+                        });
+                        menu_cmd(ui, &mut cmds, "Параметры файла...", has_doc, Command::FileParams);
+                        menu_cmd(ui, &mut cmds, "Комментарии", self.hdr_comment_enabled(), Command::HdrComment);
+                        ui.add_enabled(false, egui::Button::new("Загрузка настроек..."));
+                        menu_cmd(ui, &mut cmds, "Настройки", true, Command::Settings);
+                        if let Some(i) = self.active {
+                            menu_cmd(ui, &mut cmds, "Закрыть", true, Command::CloseDoc(i));
+                        } else {
+                            ui.add_enabled(false, egui::Button::new("Закрыть"));
+                        }
+                        ui.separator();
+                        ui.menu_button("Дополнительно (FastView-REA)", |ui| {
+                            for (label, cmd) in [
+                                ("Демо-осциллограмма", Command::Demo),
+                                ("Экспорт каналов в CSV…", Command::ExportCsv),
+                                ("Архив осциллограммы (.zip)…", Command::Archive),
+                                ("Библиотека характеристик .fvb…", Command::OpenFvb),
+                                ("Роли каналов Ua…Ic…", Command::ChannelMap),
+                            ] {
+                                if ui.button(label).clicked() {
+                                    cmds.push(cmd);
+                                    ui.close_menu();
+                                }
+                            }
+                        });
+                    });
+                    ui.separator();
+                    ui.vertical(|ui| {
+                        ui.set_min_width(300.0);
+                        ui.label(RichText::new("Последние документы").strong());
+                        for (k, path) in mru.iter().enumerate() {
+                            let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                            if ui.button(format!("{} {name}", k + 1)).on_hover_text(path.display().to_string()).clicked() {
+                                cmds.push(Command::OpenPath(path.clone()));
+                                ui.close_menu();
+                            }
+                        }
+                    });
+                });
             });
             ui.add_space(4.0);
+            // Quick-access toolbar: Open, Save, Print only.
             for (icon, tip, cmd) in [
                 (Icon::Open, "Открыть  (Ctrl+O)", Command::Open),
                 (Icon::Save, "Сохранить  (Ctrl+S)", Command::Save),
                 (Icon::Print, "Печать  (Ctrl+P)", Command::Print),
-                (Icon::Undo, "Отмена  (Ctrl+Z)", Command::Undo),
-                (Icon::Redo, "Возврат  (Ctrl+Y)", Command::Redo),
             ] {
                 if qat_button(ui, p, icon).on_hover_text(tip).clicked() {
                     cmds.push(cmd);
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Help / About
-                if qat_button(ui, p, Icon::Help)
-                    .on_hover_text("О программе Fast View 5")
-                    .clicked()
-                {
-                    self.show_about = true;
-                }
-                // Minimise / restore the ribbon (Настройка панели инструментов).
-                let min = self.ribbon_minimized;
-                if ui
-                    .add(egui::Button::new(RichText::new(if min { "▾" } else { "▴" }).color(p.text)).frame(false))
-                    .on_hover_text("Свернуть/развернуть ленту")
-                    .clicked()
-                {
-                    cmds.push(Command::ToggleRibbonMin);
-                }
-                // Style switcher (MENU 200)
-                egui::ComboBox::from_id_salt("skincombo")
-                    .selected_text(RichText::new(format!("Стиль: {}", skin_short(self.skin))))
-                    .show_ui(ui, |ui| {
-                        for s in Skin::ALL {
-                            if ui
-                                .selectable_label(self.skin == s, s.label())
-                                .clicked()
-                            {
+                // Help split button (57667): the arrow opens {Помощь, О программе...}.
+                ui.menu_button(RichText::new("?").color(p.text).strong(), |ui| {
+                    ui.add_enabled(false, egui::Button::new("Помощь"));
+                    ui.separator();
+                    if ui.button("О программе...").clicked() {
+                        self.show_about = true;
+                        ui.close_menu();
+                    }
+                });
+                // «Стиль» (menu 200): the radio entry of the current look,
+                // persisted as `ApplicationLook`. Only the Office 2007 looks
+                // are drawn by this reconstruction.
+                ui.menu_button(RichText::new("Стиль ▾").color(p.text), |ui| {
+                    for name in ["Windows 2000", "Office XP", "Windows XP", "Office 2003", "Visual Studio.NET 2005"] {
+                        ui.add_enabled(false, egui::RadioButton::new(false, name));
+                    }
+                    ui.menu_button("Office 2007", |ui| {
+                        for (s, name) in Skin::ALL.into_iter().zip(["Голубой стиль", "Черный стиль", "Серебристый стиль", "Зеленовато-голубой стиль"]) {
+                            if ui.radio(self.skin == s, name).clicked() {
                                 cmds.push(Command::SetSkin(s));
+                                ui.close_menu();
                             }
                         }
                     });
-                ui.label(RichText::new("Fast View 5 — Механотроника").color(p.text).weak());
+                });
             });
         });
 
         // ---- Row 2: tab strip ----
         ui.horizontal(|ui| {
             ui.add_space(6.0);
-            if ribbon_tab(ui, "Главная", self.tab == RibbonTab::Home, p.tab_active, p.text).clicked() {
-                self.tab = RibbonTab::Home;
-            }
-            if ribbon_tab(ui, "ОМП", self.tab == RibbonTab::Omp, p.tab_active, p.text).clicked() {
-                self.tab = RibbonTab::Omp;
+            for (label, tab) in [("Главная", RibbonTab::Home), ("ОМП", RibbonTab::Omp)] {
+                let r = ribbon_tab(ui, label, self.tab == tab, p.tab_active, p.text);
+                if r.double_clicked() {
+                    cmds.push(Command::ToggleRibbonMin);
+                } else if r.clicked() {
+                    self.tab = tab;
+                }
+                // Right-click on the ribbon: one item, minimise (checked when minimised).
+                let min = self.ribbon_minimized;
+                r.context_menu(|ui| {
+                    if ui.checkbox(&mut { min }, "Свернуть ленту").clicked() {
+                        cmds.push(Command::ToggleRibbonMin);
+                        ui.close_menu();
+                    }
+                });
             }
         });
 
@@ -142,18 +171,23 @@ impl App {
         let p = self.skin.palette();
         // Объединение
         ribbon_group(ui, p, "Объединение", |ui| {
-            if big_button(ui, p, Icon::Paste, "Вставить").clicked() {
+            // 57637 needs the clipboard and no pending paste; 57634 a selected
+            // file channel; 57643 / 57644 the undo / redo counts.
+            let can_paste = !self.channel_clip.is_empty() && !self.active_doc().is_some_and(crate::omp_ui::has_pending_paste);
+            let can_copy = self.active_doc().is_some_and(|d| !d.selected_analog().is_empty());
+            let (undo, redo) = (!self.undo_stack.is_empty(), !self.redo_stack.is_empty());
+            if ui.add_enabled_ui(can_paste, |ui| big_button(ui, p, Icon::Paste, "Вставить")).inner.clicked() {
                 cmds.push(Command::Paste);
             }
             ui.vertical(|ui| {
-                if small_button(ui, p, Icon::Copy, "Копировать").clicked() {
-                    cmds.push(Command::Copy);
-                }
-                if small_button(ui, p, Icon::Undo, "Отмена").clicked() {
-                    cmds.push(Command::Undo);
-                }
-                if small_button(ui, p, Icon::Redo, "Возврат").clicked() {
-                    cmds.push(Command::Redo);
+                for (icon, label, on, cmd) in [
+                    (Icon::Copy, "Копировать", can_copy, Command::Copy),
+                    (Icon::Undo, "Отмена", undo, Command::Undo),
+                    (Icon::Redo, "Возврат", redo, Command::Redo),
+                ] {
+                    if ui.add_enabled_ui(on, |ui| small_button(ui, p, icon, label)).inner.clicked() {
+                        cmds.push(cmd);
+                    }
                 }
             });
         });
@@ -177,25 +211,39 @@ impl App {
             if big_button(ui, p, Icon::Channels, "Каналы").clicked() {
                 cmds.push(Command::ChannelsDialog);
             }
+            // Columns as the original: [32845/46/47] [32802/03/138]
+            // [32800/01/141] [32813/14/139] [32815/16] [155/157/156].
             ui.vertical(|ui| {
-                // 32845 / 32846 / 32847: the discrete channels.
-                if small_button(ui, p, Icon::ShowAll, "Показать дискретные").clicked() {
-                    cmds.push(Command::Discrete(0));
-                }
-                if small_button(ui, p, Icon::HideAll, "Скрыть дискретные").clicked() {
-                    cmds.push(Command::Discrete(1));
-                }
-                if small_button(ui, p, Icon::HideAll, "Скрыть неизменяющиеся").clicked() {
-                    cmds.push(Command::Discrete(2));
-                }
-                if small_button(ui, p, Icon::FitTime, "Вся осцил.").clicked() {
-                    cmds.push(Command::FitTime);
-                }
-                // Our extension (not in the original): channel roles Ua…Ic.
-                if small_button(ui, p, Icon::Channels, "Роли Ua…Ic*").on_hover_text("Назначение ролей каналов — дополнение FastView-REA").clicked() {
-                    cmds.push(Command::ChannelMap);
+                for (k, icon, label) in [(0u8, Icon::ShowAll, "Показать дискретные"), (1, Icon::HideAll, "Скрыть дискретные"), (2, Icon::HideAll, "Скрыть неизменяющиеся")] {
+                    if small_button(ui, p, icon, label).clicked() {
+                        cmds.push(Command::Discrete(k));
+                    }
                 }
             });
+            let armed = self.rect_zoom != crate::app::RectZoom::Off;
+            for column in [
+                vec![("Увел. по гор.", Command::ZoomX(true), false), ("Уменьш. по гор.", Command::ZoomX(false), false), ("Приблизить по вертикали", Command::RectZoom, armed)],
+                vec![("Увел. по верт.", Command::ZoomY(true), false), ("Уменьш. по верт.", Command::ZoomY(false), false), ("Вернуть к исходному размеру", Command::ResetZoom, false)],
+            ] {
+                ui.vertical(|ui| {
+                    for (label, c, on) in column {
+                        if small_toggle(ui, p, label, on) {
+                            cmds.push(c);
+                        }
+                    }
+                });
+            }
+            let shown = |k: usize| self.active_doc().is_some_and(|d| if k < 3 { d.v_shown[k] } else { d.hviz[k - 3].shown });
+            for ks in [[0usize, 1, 2].as_slice(), [3, 4].as_slice()] {
+                ui.vertical(|ui| {
+                    for &k in ks {
+                        let label = ["Верт. визир 1", "Верт. визир 2", "Верт. визир 3", "Гор. визир 1", "Гор. визир 2"][k];
+                        if small_toggle(ui, p, label, shown(k)) {
+                            cmds.push(Command::ToggleVizir(k));
+                        }
+                    }
+                });
+            }
             ui.vertical(|ui| {
                 // 155 / 157 / 156: one-shot comment tools (a radio group with
                 // toggle-off), enabled for records from .cfg / .osc files.
@@ -208,37 +256,13 @@ impl App {
                     }
                 });
             });
-            // 32802 / 32803 / 138 and 32800 / 32801 / 141: zoom steps, the
-            // rectangle vertical zoom (checked while armed) and its reset.
-            let armed = self.rect_zoom != crate::app::RectZoom::Off;
-            for column in [
-                [("Увеличить по гориз.", Command::ZoomX(true), false), ("Уменьшить по гориз.", Command::ZoomX(false), false), ("Приблизить по верт.", Command::RectZoom, armed)],
-                [("Увеличить по верт.", Command::ZoomY(true), false), ("Уменьшить по верт.", Command::ZoomY(false), false), ("Вернуть к исх. размеру", Command::ResetZoom, false)],
-            ] {
-                ui.vertical(|ui| {
-                    for (label, c, on) in column {
-                        if small_toggle(ui, p, label, on) {
-                            cmds.push(c);
-                        }
-                    }
-                });
-            }
-            // 32813 / 32814 / 139 / 32815 / 32816: the визиры, checked while shown.
-            ui.vertical(|ui| {
-                for (k, label) in ["В1", "В2", "В3", "ГВ1", "ГВ2"].into_iter().enumerate() {
-                    let on = self.active_doc().is_some_and(|d| if k < 3 { d.v_shown[k] } else { d.hviz[k - 3].shown });
-                    if small_toggle(ui, p, label, on) {
-                        cmds.push(Command::ToggleVizir(k));
-                    }
-                }
-            });
         });
         // Вычисления
         ribbon_group(ui, p, "Вычисления", |ui| {
             // 32817 / 32818 / 32819: stats rows on every analog channel,
             // checked when all channels show the row.
             ui.vertical(|ui| {
-                for (k, label) in ["Мин./Макс.", "СКЗ", "Первая гарм."].into_iter().enumerate() {
+                for (k, label) in ["Мин/макс", "СКЗ", "Оценка 1-й гарм."].into_iter().enumerate() {
                     let on = self.active_doc().is_some_and(|d| {
                         !d.chans.is_empty() && d.chans.iter().all(|c| [c.stats.minmax, c.stats.rms, c.stats.a1][k])
                     });
@@ -251,13 +275,13 @@ impl App {
                 // 32820..32822 act on the selected channels; a button is checked
                 // only when every selected channel is in that mode.
                 let checked = |m| self.active_doc().is_some_and(|d| d.mode_state(m).checked);
-                if small_toggle(ui, p, "Мгновенные знач.", checked(ValueMode::Instant)) {
+                if small_toggle(ui, p, "Мгновенные", checked(ValueMode::Instant)) {
                     cmds.push(Command::SetValueMode(ValueMode::Instant));
                 }
-                if small_toggle(ui, p, "Среднеквадр. (СКЗ)", checked(ValueMode::Rms)) {
+                if small_toggle(ui, p, "Среднеквадр.", checked(ValueMode::Rms)) {
                     cmds.push(Command::SetValueMode(ValueMode::Rms));
                 }
-                if small_toggle(ui, p, "Первая гармоника", checked(ValueMode::FirstHarmonic)) {
+                if small_toggle(ui, p, "1-я гармоника", checked(ValueMode::FirstHarmonic)) {
                     cmds.push(Command::SetValueMode(ValueMode::FirstHarmonic));
                 }
             });
@@ -292,7 +316,8 @@ impl App {
             }
         });
         // Осциллограмма
-        ribbon_group(ui, p, "Осциллограмма", |ui| {
+        // The unnamed panel (title " ", «Информация» in the help).
+        ribbon_group(ui, p, " ", |ui| {
             // 142: toggles the parameters bar, checked while it is shown.
             if big_button_sel(ui, p, Icon::Wave, "Осцилло-\nграмма", self.dlg.param_bar)
                 .on_hover_text("Показать или скрыть панель параметров осциллограммы")
@@ -330,14 +355,6 @@ impl App {
 
 // ---------------- drawing helpers ----------------
 
-fn skin_short(s: Skin) -> &'static str {
-    match s {
-        Skin::Blue => "Голубой",
-        Skin::Black => "Чёрный",
-        Skin::Silver => "Серебристый",
-        Skin::Aqua => "Зелёно-голубой",
-    }
-}
 
 fn paint_v_gradient(ui: &egui::Ui, rect: egui::Rect, top: Color32, bottom: Color32) {
     let painter = ui.painter();
@@ -460,6 +477,14 @@ fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label
         );
     }
     resp
+}
+
+/// An app-menu item that queues `cmd` and closes the menu.
+fn menu_cmd(ui: &mut egui::Ui, cmds: &mut Vec<Command>, label: &str, enabled: bool, cmd: Command) {
+    if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
+        cmds.push(cmd);
+        ui.close_menu();
+    }
 }
 
 fn small_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str) -> egui::Response {

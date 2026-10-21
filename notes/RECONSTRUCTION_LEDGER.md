@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.13** below.
+temporary). Reconciled so far: **L9.1**–**L9.14** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -947,8 +947,30 @@ disabled); digital groups `doc+0x878/+0x884`; bitmap 464 icons (ours);
 whether 463 has OK; `ch+0x89` default (secondary); `.set` persistence and the
 document-modified flag are still not modelled.
 
-Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — remaining: ribbon contents 11 /
-app menu 31 / Стиль 33, merge workflow 15 (start times now kept), print 36,
+### L9.14 — Ribbon contents, application menu, QAT, Стиль, help  ·  🟡
+
+Read (spec §2, builder `0x472f30`..`0x474c76`, `0x475250`, `0x475800`): app
+menu Открыть / Сохранить / Сохранить как / Проводник / Печать ▸ (Параметры
+страницы, Предварительный просмотр, Печать) / Параметры файла / Комментарии /
+Загрузка настроек / Настройки / Закрыть + «Последние документы» (10); QAT
+Open/Save/Print only; Видимость columns [32845/46/47] [32802/03/138]
+[32800/01/141] [32813/14/139] [32815/16] [155/157/156]; Вычисления
+[32817/18/19] [32820/21/22] | [32823, 32824, filler] [32866, 32867, 32868] |
+137; the unnamed " " panel for 142; Стиль menu 200 radio, persisted
+`ApplicationLook` (default 215); help split button {Помощь, О программе...};
+ribbon right-click = one «minimise» item, double-click on a tab minimises.
+Ours: `ribbon.rs` rewritten to that order (our invented «Вся осцил.» removed;
+demo / CSV / zip / .fvb / roles moved to «Дополнительно (FastView-REA)»),
+Undo/Redo greyed by stack counts, Copy by a selected file channel, Paste by
+the clipboard and no pending paste; `App::mru` + `Command::OpenPath`
+(persisted `MRU/k`), `ApplicationLook` 215–218.
+Residual: Сохранить and Сохранить как both open the save dialog (the
+original's in-place save rule not modelled); page setup, print preview and
+«Загрузка настроек» (.set) shown disabled; the five non-2007 looks shown
+disabled (not drawn); Помощь disabled (no CHM viewer); icon-only buttons
+carry text labels; keytips not modelled.
+
+Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — remaining: merge workflow 15 (start times now kept), print 36,
 AddFormula 46, modified flag 47, OLE drag 48, plus residuals above. (Former
 note:) tracks D (diagrams 19–22, 27,
 40), O (ОМП 6, 12, 38) and F (dialogs 16, 18, 28, 29, 34, 39) were
