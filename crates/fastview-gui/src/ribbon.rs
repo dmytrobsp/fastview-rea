@@ -30,59 +30,102 @@ impl App {
             // submenu.
             let has_doc = self.active_doc().is_some();
             let mru = self.mru.clone();
+            let sub_id = app_sub_id();
             egui::menu::menu_button(ui, RichText::new("Файл ▾").color(p.text).strong(), |ui| {
+                // Main panel (Office 2007): hovering an item with sub-items
+                // shows them in the right column in place of the recent
+                // documents. Fixed column widths: a separator takes all the
+                // width it is offered, which would stretch the menu.
+                // Kept only while the menu stays open (stamped each pass;
+                // egui returns no inner result while a menu stays open).
+                let frame = ui.ctx().cumulative_pass_nr();
+                let mut sub = ui.data(|d| d.get_temp::<(Option<AppSub>, u64)>(sub_id)).filter(|s| s.1 + 1 == frame).and_then(|s| s.0);
                 ui.horizontal_top(|ui| {
                     ui.vertical(|ui| {
-                        ui.set_min_width(220.0);
-                        menu_cmd(ui, &mut cmds, "Открыть...", true, Command::Open);
-                        menu_cmd(ui, &mut cmds, "Сохранить", has_doc, Command::Save);
-                        menu_cmd(ui, &mut cmds, "Сохранить как...", has_doc, Command::SaveAs);
-                        menu_cmd(ui, &mut cmds, "Проводник", true, Command::ToggleExplorer);
-                        ui.menu_button("Печать", |ui| {
-                            ui.label(RichText::new("Предварительный просмотр и печать документа").weak());
-                            menu_cmd(ui, &mut cmds, "Параметры страницы", true, Command::PageSetup);
-                            menu_cmd(ui, &mut cmds, "Предварительный просмотр", has_doc, Command::PrintPreview);
-                            menu_cmd(ui, &mut cmds, "Печать", has_doc, Command::Print);
-                        });
-                        menu_cmd(ui, &mut cmds, "Параметры файла...", has_doc, Command::FileParams);
-                        menu_cmd(ui, &mut cmds, "Комментарии", self.hdr_comment_enabled(), Command::HdrComment);
-                        menu_cmd(ui, &mut cmds, "Загрузка настроек...", has_doc, Command::LoadSettings);
-                        menu_cmd(ui, &mut cmds, "Настройки", true, Command::Settings);
-                        if let Some(i) = self.active {
-                            menu_cmd(ui, &mut cmds, "Закрыть", true, Command::CloseDoc(i));
-                        } else {
-                            ui.add_enabled(false, egui::Button::new("Закрыть"));
-                        }
-                        ui.separator();
-                        ui.menu_button("Дополнительно (FastView-REA)", |ui| {
-                            for (label, cmd) in [
-                                ("Демо-осциллограмма", Command::Demo),
-                                ("Экспорт каналов в CSV…", Command::ExportCsv),
-                                ("Архив осциллограммы (.zip)…", Command::Archive),
-                                ("Библиотека характеристик .fvb…", Command::OpenFvb),
-                                ("Роли каналов Ua…Ic…", Command::ChannelMap),
-                                ("Экспорт изображения окна (PNG)…", Command::ExportImage),
-                            ] {
-                                if ui.button(label).clicked() {
+                        ui.set_width(220.0);
+                        let close_cmd = self.active.map(Command::CloseDoc);
+                        let items: [(&str, bool, Option<Command>, Option<AppSub>); 10] = [
+                            ("Открыть...", true, Some(Command::Open), None),
+                            ("Сохранить", has_doc, Some(Command::Save), None),
+                            ("Сохранить как...", has_doc, Some(Command::SaveAs), None),
+                            ("Проводник", true, Some(Command::ToggleExplorer), None),
+                            // The main part prints (57607).
+                            ("Печать  ▸", has_doc, Some(Command::Print), Some(AppSub::Print)),
+                            ("Параметры файла...", has_doc, Some(Command::FileParams), None),
+                            ("Комментарии", self.hdr_comment_enabled(), Some(Command::HdrComment), None),
+                            ("Загрузка настроек...", has_doc, Some(Command::LoadSettings), None),
+                            ("Настройки", true, Some(Command::Settings), None),
+                            ("Закрыть", close_cmd.is_some(), close_cmd, None),
+                        ];
+                        // A separator between every item (each is its own
+                        // group in the original's main panel).
+                        for (k, (label, enabled, cmd, opens)) in items.into_iter().chain([("Дополнительно  ▸", true, None, Some(AppSub::Extras))]).enumerate() {
+                            if k > 0 {
+                                ui.separator();
+                            }
+                            let r = ui.add_enabled(enabled || opens.is_some(), egui::Button::new(label).frame(false).selected(opens.is_some() && sub == opens));
+                            if r.hovered() {
+                                sub = opens;
+                            }
+                            if r.clicked() && enabled {
+                                if let Some(cmd) = cmd {
                                     cmds.push(cmd);
                                     ui.close_menu();
                                 }
                             }
-                        });
+                        }
                     });
                     ui.separator();
                     ui.vertical(|ui| {
-                        ui.set_min_width(300.0);
-                        ui.label(RichText::new("Последние документы").strong());
-                        for (k, path) in mru.iter().enumerate() {
-                            let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-                            if ui.button(format!("{} {name}", k + 1)).on_hover_text(path.display().to_string()).clicked() {
-                                cmds.push(Command::OpenPath(path.clone()));
-                                ui.close_menu();
+                        ui.set_width(300.0);
+                        match sub {
+                            Some(AppSub::Print) => {
+                                ui.label(RichText::new("Предварительный просмотр и печать документа").strong());
+                                ui.separator();
+                                for (label, desc, enabled, cmd) in [
+                                    ("Параметры страницы", "Изменение параметров страницы", true, Command::PageSetup),
+                                    ("Предварительный просмотр", "Просмотр документа в полностраничном режиме", has_doc, Command::PrintPreview),
+                                    ("Печать", "Печать активного документа", has_doc, Command::Print),
+                                ] {
+                                    if sub_entry(ui, label, desc, enabled).clicked() {
+                                        cmds.push(cmd);
+                                        ui.close_menu();
+                                    }
+                                }
+                            }
+                            Some(AppSub::Extras) => {
+                                ui.label(RichText::new("Дополнительно (FastView-REA)").strong());
+                                ui.separator();
+                                for (label, cmd) in [
+                                    ("Демо-осциллограмма", Command::Demo),
+                                    ("Экспорт каналов в CSV…", Command::ExportCsv),
+                                    ("Архив осциллограммы (.zip)…", Command::Archive),
+                                    ("Библиотека характеристик .fvb…", Command::OpenFvb),
+                                    ("Роли каналов Ua…Ic…", Command::ChannelMap),
+                                    ("Экспорт изображения окна (PNG)…", Command::ExportImage),
+                                ] {
+                                    if ui.add(egui::Button::new(label).frame(false)).clicked() {
+                                        cmds.push(cmd);
+                                        ui.close_menu();
+                                    }
+                                }
+                            }
+                            None => {
+                                ui.label(RichText::new("Последние документы").strong());
+                                ui.separator();
+                                for (k, path) in mru.iter().enumerate() {
+                                    let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                                    let b = egui::Button::new(format!("{} {name}", k + 1)).frame(false).truncate();
+                                    if ui.add(b).on_hover_text(path.display().to_string()).clicked() {
+                                        cmds.push(Command::OpenPath(path.clone()));
+                                        ui.close_menu();
+                                    }
+                                }
                             }
                         }
                     });
                 });
+                ui.data_mut(|d| d.insert_temp(sub_id, (sub, frame)));
             });
             ui.add_space(4.0);
             // Quick-access toolbar: Open, Save, Print only.
@@ -480,11 +523,31 @@ fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label
 }
 
 /// An app-menu item that queues `cmd` and closes the menu.
-fn menu_cmd(ui: &mut egui::Ui, cmds: &mut Vec<Command>, label: &str, enabled: bool, cmd: Command) {
-    if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
-        cmds.push(cmd);
-        ui.close_menu();
+/// Where the application menu keeps what its right column shows, with the
+/// pass number it was last drawn in.
+pub fn app_sub_id() -> egui::Id {
+    egui::Id::new("fv_app_menu_sub")
+}
+
+/// The application menu's right column contents besides the recent files.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AppSub {
+    Print,
+    Extras,
+}
+
+/// A main-panel sub-item: the label in bold over its description (the
+/// first part of the command's string).
+fn sub_entry(ui: &mut egui::Ui, label: &str, desc: &str, enabled: bool) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 38.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let v = ui.visuals();
+    if enabled && resp.hovered() {
+        ui.painter().rect_filled(rect, 2.0f32, v.widgets.hovered.weak_bg_fill);
     }
+    let (strong, weak) = if enabled { (v.strong_text_color(), v.text_color()) } else { (v.weak_text_color(), v.weak_text_color()) };
+    ui.painter().text(rect.left_top() + egui::vec2(6.0, 3.0), egui::Align2::LEFT_TOP, label, egui::FontId::proportional(13.0), strong);
+    ui.painter().text(rect.left_top() + egui::vec2(6.0, 20.0), egui::Align2::LEFT_TOP, desc, egui::FontId::proportional(11.0), weak);
+    resp
 }
 
 fn small_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str) -> egui::Response {

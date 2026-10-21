@@ -1290,6 +1290,24 @@ Residual: one frame of lag (the backdrop follows last frame's windows, as
 egui's own hit test does); the original's beep / title flash on a click
 outside a modal dialog is not modelled.
 
+### L9.25 — User-reported: the «Файл ▾» application menu rendered wrongly  ·  ✅
+Our bug: the two-column menu stretched across the whole window (a
+separator in the unbounded left column took all offered width), pushing
+«Последние документы» off-screen; «Печать ▸» popped out beyond the menu
+with a wrapped, clipped header. Seen headlessly via the new
+`window_dump` test (`FV_WINDOW_DUMP=<png> [FV_WINDOW_CLICK=x,y]
+[FV_WINDOW_HOVER=x,y] cargo test window_dump`, `raster::render_input`).
+Read (spec §2.1, strings 57605/57609/57607): main panel, separator between
+every item, right column 300 px; «Печать» main part prints (57607), its
+sub-items (header «Предварительный просмотр и печать документа», each
+label + description) show in the right column (Office-2007 main panel).
+Ours: fixed 220 / 300 px columns, separators between items, hovering
+«Печать» (or our «Дополнительно») swaps the right column for its items,
+any other item restores the MRU list; state stamped per pass because egui
+0.29 returns no inner result while a menu stays open. Test:
+`app_menu_is_two_columns_and_shows_print_items_on_the_right`.
+Residual: item icons (32×32 images) not drawn; keytips not modelled.
+
 Next in L9 (HANDOFF 2026-10-21, master clean at 4a83adc): §9 items 36 and
 48 are done (L9.21, L9.22). **FIRST — four GUI bugs the user found running
 the release build (ours, not original behaviour; reproduce headless with the
@@ -1299,7 +1317,7 @@ the release build (ours, not original behaviour; reproduce headless with the
 (suspects: `lanes_ui` geometry / `g::visible_count` / slicing with a
 negative or zero plot size, `Canvas`/diagram sizes, `rotate_right`
 ranges; the minimum window size 866×500 does not stop panels from
-shrinking); (2) the **«Файл ▾» application menu does not render
+shrinking); (2) ✅ L9.25 — the **«Файл ▾» application menu does not render
 properly** (`ribbon.rs` app menu: the two-column `horizontal_top` layout
 with the Печать ▸ and «Дополнительно» submenus and the MRU list); (3)
 **mouse events fall through the colour picker** (33030 `color_dialog`) and

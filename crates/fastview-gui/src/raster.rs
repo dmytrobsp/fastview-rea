@@ -97,7 +97,13 @@ fn apply(textures: &mut HashMap<egui::TextureId, Tex>, delta: &egui::TexturesDel
 /// Run `paint` headless on a `size` (points) screen at `ppp` pixels per
 /// point and rasterise the result onto a white canvas. The pass runs twice
 /// so widgets that size themselves on their first frame draw on the second.
-pub fn render(size: Vec2, ppp: f32, fonts: Option<&egui::FontDefinitions>, mut paint: impl FnMut(&egui::Context)) -> Canvas {
+pub fn render(size: Vec2, ppp: f32, fonts: Option<&egui::FontDefinitions>, paint: impl FnMut(&egui::Context)) -> Canvas {
+    render_input(size, ppp, fonts, vec![vec![]; 3], paint)
+}
+
+/// [`render`] with one pass per batch of input events (the last pass is
+/// the one rasterised).
+pub fn render_input(size: Vec2, ppp: f32, fonts: Option<&egui::FontDefinitions>, passes: Vec<Vec<egui::Event>>, mut paint: impl FnMut(&egui::Context)) -> Canvas {
     let ctx = egui::Context::default();
     if let Some(f) = fonts {
         ctx.set_fonts(f.clone());
@@ -105,11 +111,12 @@ pub fn render(size: Vec2, ppp: f32, fonts: Option<&egui::FontDefinitions>, mut p
     ctx.set_pixels_per_point(ppp);
     let mut textures = HashMap::new();
     let mut out = None;
-    for pass in 0..3 {
+    for (pass, events) in passes.into_iter().enumerate() {
         let raw = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
             max_texture_side: Some(16384),
             time: Some(pass as f64 * 0.1),
+            events,
             ..Default::default()
         };
         let full = ctx.run(raw, &mut paint);

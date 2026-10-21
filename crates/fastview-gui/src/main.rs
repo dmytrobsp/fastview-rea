@@ -560,4 +560,60 @@ mod window_tests {
             assert!(w.app.modal_up, "{cmds:?}: the dialog stays up");
         }
     }
+
+    /// The «Файл» menu is two columns wide, not the window's width; hovering
+    /// «Печать» puts its sub-items in the right column.
+    #[test]
+    fn app_menu_is_two_columns_and_shows_print_items_on_the_right() {
+        use ribbon::{app_sub_id, AppSub};
+        let mut w = Win::new();
+        w.app.mru = vec!["/data/a.cfg".into()];
+        w.press(egui::PointerButton::Primary, Pos2::new(48.0, 12.0), Pos2::new(48.0, 12.0));
+        let menu = w.ctx.memory(|m| {
+            let ids = m.areas().visible_layer_ids();
+            ids.iter().filter(|l| l.order == egui::Order::Foreground).filter_map(|l| m.area_rect(l.id)).max_by(|a, b| a.area().total_cmp(&b.area()))
+        });
+        let menu = menu.expect("the menu is open");
+        assert!(menu.width() > 500.0 && menu.width() < 600.0, "{menu:?}");
+        let sub = |w: &Win| w.ctx.data(|d| d.get_temp::<(Option<AppSub>, u64)>(app_sub_id())).and_then(|s| s.0);
+        assert_eq!(sub(&w), None);
+        let print = (0..(menu.height() as i32 / 4))
+            .map(|k| Pos2::new(menu.left() + 40.0, menu.top() + 4.0 * k as f32))
+            .find(|&p| {
+                w.run(vec![egui::Event::PointerMoved(p)]);
+                w.idle(1);
+                sub(&w) == Some(AppSub::Print)
+            })
+            .expect("a «Печать» item");
+        // Across to the first sub-item, «Параметры страницы».
+        let target = Pos2::new(menu.left() + 300.0, menu.top() + 45.0);
+        w.run(vec![egui::Event::PointerMoved(Pos2::new(menu.left() + 230.0, print.y))]);
+        w.press(egui::PointerButton::Primary, target, target);
+        assert!(w.app.print.setup_dlg.is_some(), "page setup opened from the right column");
+    }
+
+    /// `FV_WINDOW_DUMP=<file.png> cargo test window_dump` renders the window
+    /// (demo document, a few recent files) after a click at
+    /// `FV_WINDOW_CLICK=x,y` (default: the «Файл ▾» menu button), the
+    /// pointer then resting at `FV_WINDOW_HOVER=x,y`.
+    #[test]
+    fn window_dump() {
+        let Ok(path) = std::env::var("FV_WINDOW_DUMP") else { return };
+        let pos = |var: &str| {
+            let s = std::env::var(var).ok()?;
+            let (x, y) = s.split_once(',')?;
+            Some(Pos2::new(x.trim().parse().ok()?, y.trim().parse().ok()?))
+        };
+        let at = pos("FV_WINDOW_CLICK").unwrap_or(Pos2::new(48.0, 12.0));
+        let hover = pos("FV_WINDOW_HOVER").unwrap_or(at);
+        let mut app = demo(&[]);
+        app.mru = vec!["/data/osc/2024-05-01 Подстанция 110 кВ.cfg".into(), "/data/osc/short.cff".into()];
+        let size = Vec2::new(1320.0, 860.0);
+        let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let passes = vec![vec![], vec![], vec![egui::Event::PointerMoved(at), ev(true)], vec![ev(false)], vec![egui::Event::PointerMoved(hover)], vec![], vec![], vec![]];
+        let fonts = app_fonts();
+        let c = raster::render_input(size, 1.0, Some(&fonts), passes, |ctx| app.frame_ui(ctx));
+        let rgba: Vec<u8> = c.px.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
+        std::fs::write(path, util::png_rgba(c.w as u32, c.h as u32, &rgba)).unwrap();
+    }
 }
