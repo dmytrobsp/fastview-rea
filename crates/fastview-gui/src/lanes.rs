@@ -143,6 +143,246 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
     rows
 }
 
+/// The geometry and settings one paint of the oscillogram view needs; the
+/// screen (`lanes_ui`) and the printout (`printout`) paint through it.
+pub struct OscView<'a> {
+    pub doc: &'a crate::app::Doc,
+    pub primary: bool,
+    pub unit: TimeUnit,
+    /// Horizontal scale, first and last drawn sample, sample count.
+    pub f: f64,
+    pub first: usize,
+    pub last: usize,
+    pub n: usize,
+    /// Plot left edge (the stats panel's right edge), plot right edge, the
+    /// view's left edge and the stats label column width.
+    pub left: f32,
+    pub right: f32,
+    pub x0: f32,
+    pub label_col: f32,
+}
+
+impl OscView<'_> {
+    pub fn x_of(&self, k: f64) -> f32 {
+        g::x_of(k, self.first, self.f, self.left)
+    }
+
+    fn time_at(&self, k: usize) -> f64 {
+        let t = &self.doc.osc.time;
+        t.get(k).copied().unwrap_or(0.0) - t.first().copied().unwrap_or(0.0)
+    }
+
+    /// One lane's stats text (`0x461440`) and waveforms (`0x45fbe0`);
+    /// returns the name badge rectangle.
+    pub fn row(&self, lp: &egui::Painter, pp: &egui::Painter, r: &Row, top: f32, (lo, hi): (f64, f64)) -> Rect {
+        let (doc, primary, left, plot_right) = (self.doc, self.primary, self.left, self.right);
+        let (first, last, n, f) = (self.first, self.last, self.n, self.f);
+        let h = r.h;
+        let k_main = doc.main_cursor;
+        let x_of = |k: f64| self.x_of(k);
+        let lane = &r.key;
+        let (name, unit, color, maxv, minv, rms, a1, val) = lane_stats(doc, lane, k_main, primary);
+        // Stats text: the name (cut to 25 characters) framed in its colour,
+        // the value at В1 after the label column, then the enabled rows;
+        // digital lanes show the name only.
+        let short: String = name.chars().take(NAME_CHARS).collect();
+        let name_pos = Pos2::new(self.x0 + 5.0, top + if matches!(lane, Lane::Digital(_)) { 2.0 } else { 5.0 });
+        let name_rect = bold_text(lp, name_pos, &short, NAME_FONT, color);
+        let col_x = self.x0 + self.label_col + 5.0;
+        if !matches!(lane, Lane::Digital(_)) {
+            lp.rect_stroke(
+                Rect::from_min_max(Pos2::new(self.x0 + 3.0, top + 5.0), Pos2::new(name_rect.right() + 2.0, name_rect.bottom())),
+                0.0,
+                Stroke::new(1.0f32, Color32::from_gray(128)),
+            );
+            if let Some(t) = fvb_core::views::stats_value_text(val, &unit) {
+                bold_text(lp, Pos2::new(col_x, top + 5.0), &t, NAME_FONT, Color32::from_rgb(69, 85, 199));
+            }
+        }
+        let row_col = Color32::from_rgb(0, 0, 127);
+        let mut yy = top + 5.0 + ROW_H + 3.0;
+        if r.members.len() > 1 {
+            // A channel group: its other members listed under the first.
+            for &oi in &r.members[1..] {
+                let (on, ou, oc, .., ov) = lane_stats(doc, &Lane::Analog(oi), k_main, primary);
+                let on: String = on.chars().take(NAME_CHARS).collect();
+                bold_text(lp, Pos2::new(self.x0 + 5.0, yy), &on, NAME_FONT, oc);
+                if let Some(t) = fvb_core::views::stats_value_text(ov, &ou) {
+                    bold_text(lp, Pos2::new(col_x, yy), &t, NAME_FONT, Color32::from_rgb(69, 85, 199));
+                }
+                yy += ROW_H + 4.0;
+            }
+        } else if let Some(st) = stat_rows(doc, lane) {
+            let mut rows_txt: Vec<(&str, f64)> = Vec::new();
+            if st.minmax {
+                rows_txt.extend([("Max:", maxv), ("Min:", minv)]);
+            }
+            if st.rms {
+                rows_txt.push(("СКЗ:", rms));
+            }
+            if st.a1 {
+                rows_txt.push(("A1:", a1));
+            }
+            for (lbl, v) in rows_txt {
+                lp.text(Pos2::new(self.x0 + 5.0, yy), Align2::LEFT_TOP, lbl, ROW_FONT, row_col);
+                lp.text(Pos2::new(col_x, yy), Align2::LEFT_TOP, fvb_core::views::readout_text(v, &unit), ROW_FONT, row_col);
+                yy += ROW_H;
+            }
+        }
+        // Status icons, right to left from the panel edge at the lane bottom.
+        for (j, glyph) in status_icons(doc, r, primary).into_iter().enumerate() {
+            let at = Rect::from_min_size(Pos2::new(left - 21.0 - 21.0 * j as f32, top + h - 21.0), Vec2::splat(16.0));
+            lp.rect_filled(at, 2.0, Color32::from_rgb(232, 236, 248));
+            lp.rect_stroke(at, 2.0, Stroke::new(1.0f32, Color32::from_rgb(120, 130, 170)));
+            lp.text(at.center(), Align2::CENTER_CENTER, glyph, FontId::proportional(9.0), Color32::from_rgb(40, 50, 110));
+        }
+
+        // Waveforms: every visible sample, 1 px, sample marks above 4 px per
+        // sample.
+        match lane {
+            Lane::Digital(i) => {
+                let s = &doc.osc.digital[*i].samples;
+                let mid = top + 10.0;
+                let end_x = x_of(n.saturating_sub(1) as f64).min(plot_right);
+                pp.rect_filled(Rect::from_min_max(Pos2::new(left, mid - 2.0), Pos2::new(end_x, mid + 2.0)), 0.0, Color32::from_rgb(150, 150, 255));
+                let fill = if r.selected(doc) { Color32::from_rgb(253, 219, 102) } else { color };
+                for (a, b) in digital_runs(s, first, last) {
+                    let x0 = x_of(a as f64);
+                    let x1 = if b + 1 >= n { x_of(b as f64) + 4.0 } else { x_of((b + 1) as f64) };
+                    let rr = Rect::from_min_max(Pos2::new(x0, mid - 6.0), Pos2::new(x1.max(x0 + 1.0), mid + 6.0));
+                    pp.rect_filled(rr, 0.0, fill);
+                    pp.rect_stroke(rr, 0.0, Stroke::new(1.0f32, Color32::from_rgb(200, 0, 0)));
+                }
+            }
+            _ => {
+                if lo <= 0.0 && 0.0 <= hi {
+                    let zy = g::value_y(0.0, top, h, lo, hi);
+                    pp.hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
+                }
+                for &m in &r.members {
+                    let c = doc.chans[m].color;
+                    draw_series(pp, (first, last), &|k| mode_disp(doc, m, k, primary), &x_of, top, h, (lo, hi), c, f);
+                }
+                if let Lane::Computed(i) = lane {
+                    let s = &doc.computed[*i].samples;
+                    draw_series(pp, (first, last.min(s.len().saturating_sub(1))), &|k| s.get(k).copied().unwrap_or(0.0), &x_of, top, h, (lo, hi), color, f);
+                }
+            }
+        }
+        name_rect
+    }
+
+    /// The time ruler (`0x464350`) with its bottom at `bottom`: a white band
+    /// 30 px high with a black top line, ticks every 25 px, labels every
+    /// 100 px; in absolute mode the start date under the stats panel.
+    pub fn ruler(&self, painter: &egui::Painter, bottom: f32, client_right: f32) {
+        let (doc, left, plot_right, first, f, n) = (self.doc, self.left, self.right, self.first, self.f, self.n);
+        let ruler_top = bottom - g::RULER_H;
+        painter.rect_filled(Rect::from_min_max(Pos2::new(self.x0, ruler_top), Pos2::new(client_right, bottom)), 0.0, Color32::WHITE);
+        painter.hline(self.x0..=client_right, ruler_top, Stroke::new(1.0f32, Color32::BLACK));
+        let text_col = Color32::from_rgb(0, 0, 127);
+        let start_tod = fvb_core::comtrade::time_of_day(&doc.osc.stamps.start_time);
+        if self.unit == TimeUnit::Absolute {
+            // The start date at (5, H − 20) under the stats panel.
+            if let Some(date) = fvb_core::comtrade::stamp_date_text(&doc.osc.stamps.start_date, doc.osc.rev_year) {
+                painter.text(Pos2::new(self.x0 + 5.0, bottom - 20.0), Align2::LEFT_TOP, date, FontId::proportional(11.0), text_col);
+            }
+        }
+        let mut first_label = true;
+        for t in g::ruler_ticks(left, plot_right) {
+            painter.vline(t.x, ruler_top..=ruler_top + t.len, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
+            if t.labelled {
+                let k = g::tick_sample(first, t.i, f);
+                if k < n {
+                    let s = g::ruler_label(self.unit, self.time_at(k), k as i64, first_label, start_tod);
+                    painter.text(Pos2::new(t.x, bottom - 20.0), Align2::CENTER_TOP, s, FontId::proportional(11.0), text_col);
+                    first_label = false;
+                }
+            }
+        }
+    }
+
+    fn viz(&self) -> [(usize, bool, Color32, &'static str); 3] {
+        let doc = self.doc;
+        [
+            (doc.main_cursor, doc.v_shown[0], Color32::from_rgb(255, 100, 100), "В1"),
+            (doc.aux_cursor, doc.v_shown[1], Color32::from_rgb(100, 100, 255), "В2"),
+            (doc.v3_cursor, doc.v_shown[2], Color32::from_rgb(0, 160, 0), "В3"),
+        ]
+    }
+
+    /// The difference band (`0x466630`) above a ruler whose top is
+    /// `ruler_top`: marker labels and Δt dimension lines.
+    pub fn band(&self, painter: &egui::Painter, ruler_top: f32) {
+        let (doc, left, plot_right) = (self.doc, self.left, self.right);
+        let text_col = Color32::from_rgb(0, 0, 127);
+        let start_tod = fvb_core::comtrade::time_of_day(&doc.osc.stamps.start_time);
+        let band_top = ruler_top - g::DIFF_BAND_H;
+        painter.rect_filled(Rect::from_min_max(Pos2::new(self.x0, band_top), Pos2::new(plot_right, ruler_top)), 0.0, Color32::WHITE);
+        let mut marks: Vec<(f32, usize, Option<&str>)> = self.viz().iter().filter(|v| v.1).map(|v| (self.x_of(v.0 as f64), v.0, None)).collect();
+        marks.extend(doc.comments.iter().filter_map(|c| c.moment().map(|k| (self.x_of(k as f64), k, (!c.hidden).then_some(c.text.as_str())))));
+        marks.retain(|m| m.0 > left && m.0 <= plot_right);
+        marks.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut taken: Vec<Rect> = Vec::new();
+        for (x, k, text) in &marks {
+            let s = g::mark_label(self.unit, self.time_at(*k), *k as i64, start_tod);
+            let galley = painter.layout_no_wrap(s, FontId::proportional(11.0), text_col);
+            let r = Rect::from_center_size(Pos2::new(*x, ruler_top - 18.0), galley.size()).expand(3.0);
+            if taken.iter().any(|t| t.intersects(r)) {
+                continue;
+            }
+            taken.push(r);
+            painter.galley(r.min + Vec2::splat(3.0), galley, text_col);
+            if let Some(t) = text.filter(|t| !t.is_empty()) {
+                painter.text(Pos2::new(*x, ruler_top - 10.0), Align2::CENTER_TOP, t.lines().next().unwrap_or(""), FontId::proportional(9.0), COMMENT_COLOR);
+            }
+        }
+        let dim_y = ruler_top - 35.0;
+        for w in marks.windows(2) {
+            let (xa, xb) = (w[0].0, w[1].0);
+            if xb - xa <= 16.0 {
+                continue;
+            }
+            let st = Stroke::new(1.0f32, text_col);
+            painter.hline(xa..=xb, dim_y, st);
+            painter.vline(xa, dim_y - 4.0..=dim_y + 4.0, st);
+            painter.vline(xb, dim_y - 4.0..=dim_y + 4.0, st);
+            for (tip, dir) in [(xa, 1.0f32), (xb, -1.0)] {
+                painter.add(Shape::convex_polygon(
+                    vec![Pos2::new(tip, dim_y), Pos2::new(tip + 8.0 * dir, dim_y - 2.0), Pos2::new(tip + 8.0 * dir, dim_y + 2.0)],
+                    text_col,
+                    Stroke::NONE,
+                ));
+            }
+            let dt = (self.time_at(w[1].1) - self.time_at(w[0].1)).abs();
+            let s = g::diff_label(self.unit, dt, (w[1].1 as i64 - w[0].1 as i64).abs());
+            let galley = painter.layout_no_wrap(s, FontId::proportional(10.0), text_col);
+            if galley.size().x + 4.0 < xb - xa && xb - xa > 20.0 {
+                let pos = Pos2::new((xa + xb) / 2.0 - galley.size().x / 2.0, dim_y - galley.size().y - 1.0);
+                painter.galley(pos, galley, text_col);
+            }
+        }
+    }
+
+    /// The vertical визиры (`0x493110`) from `top` to `v_bottom`, 1 px, no
+    /// shading between В1 and В2; `labels` = the В1/В2/В3 badges at the top.
+    pub fn vizirs(&self, painter: &egui::Painter, top: f32, v_bottom: f32, labels: bool) {
+        for (k, shown, col, label) in self.viz() {
+            let x = self.x_of(k as f64);
+            if !shown || x <= self.left || x > self.right {
+                continue;
+            }
+            painter.vline(x, top..=v_bottom, Stroke::new(1.0f32, col));
+            if labels {
+                let galley = painter.layout_no_wrap(label.to_string(), FontId::proportional(11.0), col);
+                let r = Rect::from_center_size(Pos2::new(x, top + 8.0), galley.size() + Vec2::new(4.0, 0.0));
+                painter.rect_filled(r, 0.0, Color32::WHITE);
+                painter.galley(r.min + Vec2::new(2.0, 0.0), galley, col);
+            }
+        }
+    }
+}
+
 /// The stat rows a lane shows (none for digital lanes).
 fn stat_rows(doc: &crate::app::Doc, key: &ChanKey) -> Option<crate::app::StatRows> {
     match key {
@@ -176,7 +416,7 @@ fn status_icons(doc: &crate::app::Doc, r: &Row, primary: bool) -> Vec<&'static s
 /// Stats-panel columns (`0x4606d0`): the label column is the widest
 /// (cut) name + 10 (at least «Max:»); the panel adds a value template —
 /// `": -0.00000000 A"` for SI units, `": -0.0000000E-000 "` otherwise.
-fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], primary: bool) -> (f32, f32) {
+pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], primary: bool) -> (f32, f32) {
     let w = |s: &str, f: &FontId| fonts.layout_no_wrap(s.to_string(), f.clone(), Color32::BLACK).size().x;
     let mut label = w("Max:", &ROW_FONT);
     let mut template: f32 = 0.0;
@@ -198,14 +438,14 @@ fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row],
 
 /// Text in a heavier weight (egui's default font has no bold face: the
 /// glyphs are drawn twice, half a pixel apart).
-fn bold_text(p: &egui::Painter, pos: Pos2, text: &str, font: FontId, color: Color32) -> Rect {
+pub(crate) fn bold_text(p: &egui::Painter, pos: Pos2, text: &str, font: FontId, color: Color32) -> Rect {
     p.text(pos + Vec2::new(0.5, 0.0), Align2::LEFT_TOP, text, font.clone(), color);
     p.text(pos, Align2::LEFT_TOP, text, font, color)
 }
 
 /// The amplitude range of a lane: min..max of the displayed series over the
 /// whole record (a group: min of mins, max of maxes).
-fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, f64) {
+pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, f64) {
     let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
     let mut take = |v: f64| {
         if v.is_finite() {
@@ -250,7 +490,7 @@ pub fn chan_range(doc: &crate::app::Doc, i: usize, primary: bool) -> (f64, f64) 
 }
 
 /// Fill `rect` with a vertical gradient.
-fn gradient(p: &egui::Painter, rect: Rect, top: Color32, bottom: Color32) {
+pub(crate) fn gradient(p: &egui::Painter, rect: Rect, top: Color32, bottom: Color32) {
     let mut mesh = egui::Mesh::default();
     mesh.colored_vertex(rect.left_top(), top);
     mesh.colored_vertex(rect.right_top(), top);
@@ -494,20 +734,16 @@ impl App {
         let mut rename_rect = None;
         let mut cut_hover: Option<String> = None;
         let hover = resp.hover_pos();
+        let ov = OscView { doc, primary, unit: time_unit, f, first, last, n, left, right: plot_right, x0: client.left(), label_col };
         for (li, r) in rows.iter().enumerate() {
             let (top, h) = (tops[li], r.h);
             if top > plot_bottom || top + h < client.top() {
                 continue;
             }
+            let name_rect = ov.row(&lp, &pp, r, top, ranges[li]);
             let lane = &r.key;
-            let (name, unit, color, maxv, minv, rms, a1, val) = lane_stats(doc, lane, k_main, primary);
-            // Stats text (`0x461440`): the name (cut to 25 characters) framed
-            // in its colour, the value at В1 after the label column, then
-            // the enabled rows; digital lanes show the name only.
-            let short: String = name.chars().take(NAME_CHARS).collect();
-            let name_pos = Pos2::new(client.left() + 5.0, top + if matches!(lane, Lane::Digital(_)) { 2.0 } else { 5.0 });
-            let name_rect = bold_text(&lp, name_pos, &short, NAME_FONT, color);
-            if short.len() < name.len() && hover.is_some_and(|p| name_rect.contains(p)) {
+            let name = lane_stats(doc, lane, k_main, primary).0;
+            if name.chars().count() > NAME_CHARS && hover.is_some_and(|p| name_rect.contains(p)) {
                 cut_hover = Some(name.clone());
             }
             if let (Lane::Analog(i), Some((ri, _))) = (lane, &self.rename_edit) {
@@ -515,183 +751,26 @@ impl App {
                     rename_rect = Some(name_rect.expand2(Vec2::new(2.0, 1.0)));
                 }
             }
-            let col_x = client.left() + label_col + 5.0;
-            if !matches!(lane, Lane::Digital(_)) {
-                lp.rect_stroke(
-                    Rect::from_min_max(Pos2::new(client.left() + 3.0, top + 5.0), Pos2::new(name_rect.right() + 2.0, name_rect.bottom())),
-                    0.0,
-                    Stroke::new(1.0f32, Color32::from_gray(128)),
-                );
-                if let Some(t) = fvb_core::views::stats_value_text(val, &unit) {
-                    bold_text(&lp, Pos2::new(col_x, top + 5.0), &t, NAME_FONT, Color32::from_rgb(69, 85, 199));
-                }
-            }
-            let row_col = Color32::from_rgb(0, 0, 127);
-            let mut yy = top + 5.0 + ROW_H + 3.0;
-            if r.members.len() > 1 {
-                // A channel group: its other members listed under the first.
-                for &oi in &r.members[1..] {
-                    let (on, ou, oc, .., ov) = lane_stats(doc, &Lane::Analog(oi), k_main, primary);
-                    let on: String = on.chars().take(NAME_CHARS).collect();
-                    bold_text(&lp, Pos2::new(client.left() + 5.0, yy), &on, NAME_FONT, oc);
-                    if let Some(t) = fvb_core::views::stats_value_text(ov, &ou) {
-                        bold_text(&lp, Pos2::new(col_x, yy), &t, NAME_FONT, Color32::from_rgb(69, 85, 199));
-                    }
-                    yy += ROW_H + 4.0;
-                }
-            } else if let Some(st) = stat_rows(doc, lane) {
-                let mut rows_txt: Vec<(&str, f64)> = Vec::new();
-                if st.minmax {
-                    rows_txt.extend([("Max:", maxv), ("Min:", minv)]);
-                }
-                if st.rms {
-                    rows_txt.push(("СКЗ:", rms));
-                }
-                if st.a1 {
-                    rows_txt.push(("A1:", a1));
-                }
-                for (lbl, v) in rows_txt {
-                    lp.text(Pos2::new(client.left() + 5.0, yy), Align2::LEFT_TOP, lbl, ROW_FONT, row_col);
-                    lp.text(Pos2::new(col_x, yy), Align2::LEFT_TOP, fvb_core::views::readout_text(v, &unit), ROW_FONT, row_col);
-                    yy += ROW_H;
-                }
-            }
-            // Status icons, right to left from the panel edge at the lane bottom.
-            for (j, glyph) in status_icons(doc, r, primary).into_iter().enumerate() {
-                let at = Rect::from_min_size(Pos2::new(left - 21.0 - 21.0 * j as f32, top + h - 21.0), Vec2::splat(16.0));
-                lp.rect_filled(at, 2.0, Color32::from_rgb(232, 236, 248));
-                lp.rect_stroke(at, 2.0, Stroke::new(1.0f32, Color32::from_rgb(120, 130, 170)));
-                lp.text(at.center(), Align2::CENTER_CENTER, glyph, FontId::proportional(9.0), Color32::from_rgb(40, 50, 110));
-            }
-
-            // Waveforms (`0x45fbe0`): every visible sample, 1 px, sample marks
-            // above 4 px per sample.
-            let (lo, hi) = ranges[li];
-            match lane {
-                Lane::Digital(i) => {
-                    let s = &doc.osc.digital[*i].samples;
-                    let mid = top + 10.0;
-                    let end_x = x_of(n.saturating_sub(1) as f64).min(plot_right);
-                    pp.rect_filled(Rect::from_min_max(Pos2::new(left, mid - 2.0), Pos2::new(end_x, mid + 2.0)), 0.0, Color32::from_rgb(150, 150, 255));
-                    let fill = if r.selected(doc) { Color32::from_rgb(253, 219, 102) } else { color };
-                    for (a, b) in digital_runs(s, first, last) {
-                        let x0 = x_of(a as f64);
-                        let x1 = if b + 1 >= n { x_of(b as f64) + 4.0 } else { x_of((b + 1) as f64) };
-                        let rr = Rect::from_min_max(Pos2::new(x0, mid - 6.0), Pos2::new(x1.max(x0 + 1.0), mid + 6.0));
-                        pp.rect_filled(rr, 0.0, fill);
-                        pp.rect_stroke(rr, 0.0, Stroke::new(1.0f32, Color32::from_rgb(200, 0, 0)));
-                    }
-                }
-                _ => {
-                    if lo <= 0.0 && 0.0 <= hi {
-                        let zy = g::value_y(0.0, top, h, lo, hi);
-                        pp.hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
-                    }
-                    for &m in &r.members {
-                        let c = doc.chans[m].color;
-                        draw_series(&pp, (first, last), &|k| mode_disp(doc, m, k, primary), &x_of, top, h, (lo, hi), c, f);
-                    }
-                    if let Lane::Computed(i) = lane {
-                        let s = &doc.computed[*i].samples;
-                        draw_series(&pp, (first, last.min(s.len().saturating_sub(1))), &|k| s.get(k).copied().unwrap_or(0.0), &x_of, top, h, (lo, hi), color, f);
-                    }
-                }
-            }
         }
 
         // ---- time ruler (`0x464350`) and difference band (`0x466630`) ----
         let ruler_top = client.bottom() - g::RULER_H;
-        painter.rect_filled(Rect::from_min_max(Pos2::new(client.left(), ruler_top), client.max), 0.0, Color32::WHITE);
-        painter.hline(client.left()..=client.right(), ruler_top, Stroke::new(1.0f32, Color32::BLACK));
+        ov.ruler(&painter, client.bottom(), client.right());
         let t0 = doc.osc.time.first().copied().unwrap_or(0.0);
         let time_at = |k: usize| doc.osc.time.get(k).copied().unwrap_or(0.0) - t0;
-        let text_col = Color32::from_rgb(0, 0, 127);
-        let start_tod = fvb_core::comtrade::time_of_day(&doc.osc.stamps.start_time);
-        if time_unit == TimeUnit::Absolute {
-            // The start date at (5, H − 20) under the stats panel.
-            if let Some(date) = fvb_core::comtrade::stamp_date_text(&doc.osc.stamps.start_date, doc.osc.rev_year) {
-                painter.text(Pos2::new(client.left() + 5.0, client.bottom() - 20.0), Align2::LEFT_TOP, date, FontId::proportional(11.0), text_col);
-            }
-        }
-        let mut first_label = true;
-        for t in g::ruler_ticks(left, plot_right) {
-            painter.vline(t.x, ruler_top..=ruler_top + t.len, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
-            if t.labelled {
-                let k = g::tick_sample(first, t.i, f);
-                if k < n {
-                    let s = g::ruler_label(time_unit, time_at(k), k as i64, first_label, start_tod);
-                    painter.text(Pos2::new(t.x, client.bottom() - 20.0), Align2::CENTER_TOP, s, FontId::proportional(11.0), text_col);
-                    first_label = false;
-                }
-            }
-        }
         let viz = [
             (doc.main_cursor, doc.v_shown[0], Color32::from_rgb(255, 100, 100), "В1"),
             (doc.aux_cursor, doc.v_shown[1], Color32::from_rgb(100, 100, 255), "В2"),
             (doc.v3_cursor, doc.v_shown[2], Color32::from_rgb(0, 160, 0), "В3"),
         ];
         if doc.diff_band {
-            let band_top = ruler_top - g::DIFF_BAND_H;
-            painter.rect_filled(Rect::from_min_max(Pos2::new(client.left(), band_top), Pos2::new(plot_right, ruler_top)), 0.0, Color32::WHITE);
-            let mut marks: Vec<(f32, usize, Option<&str>)> = viz.iter().filter(|v| v.1).map(|v| (x_of(v.0 as f64), v.0, None)).collect();
-            marks.extend(doc.comments.iter().filter_map(|c| c.moment().map(|k| (x_of(k as f64), k, (!c.hidden).then_some(c.text.as_str())))));
-            marks.retain(|m| m.0 > left && m.0 <= plot_right);
-            marks.sort_by(|a, b| a.0.total_cmp(&b.0));
-            let mut taken: Vec<Rect> = Vec::new();
-            for (x, k, text) in &marks {
-                let s = g::mark_label(time_unit, time_at(*k), *k as i64, start_tod);
-                let galley = painter.layout_no_wrap(s, FontId::proportional(11.0), text_col);
-                let r = Rect::from_center_size(Pos2::new(*x, ruler_top - 18.0), galley.size()).expand(3.0);
-                if taken.iter().any(|t| t.intersects(r)) {
-                    continue;
-                }
-                taken.push(r);
-                painter.galley(r.min + Vec2::splat(3.0), galley, text_col);
-                if let Some(t) = text.filter(|t| !t.is_empty()) {
-                    painter.text(Pos2::new(*x, ruler_top - 10.0), Align2::CENTER_TOP, t.lines().next().unwrap_or(""), FontId::proportional(9.0), COMMENT_COLOR);
-                }
-            }
-            let dim_y = ruler_top - 35.0;
-            for w in marks.windows(2) {
-                let (xa, xb) = (w[0].0, w[1].0);
-                if xb - xa <= 16.0 {
-                    continue;
-                }
-                let st = Stroke::new(1.0f32, text_col);
-                painter.hline(xa..=xb, dim_y, st);
-                painter.vline(xa, dim_y - 4.0..=dim_y + 4.0, st);
-                painter.vline(xb, dim_y - 4.0..=dim_y + 4.0, st);
-                for (tip, dir) in [(xa, 1.0f32), (xb, -1.0)] {
-                    painter.add(Shape::convex_polygon(
-                        vec![Pos2::new(tip, dim_y), Pos2::new(tip + 8.0 * dir, dim_y - 2.0), Pos2::new(tip + 8.0 * dir, dim_y + 2.0)],
-                        text_col,
-                        Stroke::NONE,
-                    ));
-                }
-                let dt = (time_at(w[1].1) - time_at(w[0].1)).abs();
-                let s = g::diff_label(time_unit, dt, (w[1].1 as i64 - w[0].1 as i64).abs());
-                let galley = painter.layout_no_wrap(s, FontId::proportional(10.0), text_col);
-                if galley.size().x + 4.0 < xb - xa && xb - xa > 20.0 {
-                    let pos = Pos2::new((xa + xb) / 2.0 - galley.size().x / 2.0, dim_y - galley.size().y - 1.0);
-                    painter.galley(pos, galley, text_col);
-                }
-            }
+            ov.band(&painter, ruler_top);
         }
 
         // ---- визиры (`0x493110`): no shading between В1 and В2 ----
         let v_bottom = if doc.diff_band { ruler_top - 25.0 } else { ruler_top };
         let mut level_rect: Option<Rect> = None;
-        for (k, shown, col, label) in viz {
-            let x = x_of(k as f64);
-            if !shown || x <= left || x > plot_right {
-                continue;
-            }
-            painter.vline(x, client.top()..=v_bottom, Stroke::new(1.0f32, col));
-            let galley = painter.layout_no_wrap(label.to_string(), FontId::proportional(11.0), col);
-            let r = Rect::from_center_size(Pos2::new(x, client.top() + 8.0), galley.size() + Vec2::new(4.0, 0.0));
-            painter.rect_filled(r, 0.0, Color32::WHITE);
-            painter.galley(r.min + Vec2::new(2.0, 0.0), galley, col);
-        }
+        ov.vizirs(&painter, client.top(), v_bottom, true);
         let mut hrows: [Option<(f32, usize)>; 2] = [None, None];
         for (j, h) in doc.hviz.iter().enumerate() {
             let Some(ch) = h.chan else { continue };

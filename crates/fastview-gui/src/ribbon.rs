@@ -40,12 +40,9 @@ impl App {
                         menu_cmd(ui, &mut cmds, "Проводник", true, Command::ToggleExplorer);
                         ui.menu_button("Печать", |ui| {
                             ui.label(RichText::new("Предварительный просмотр и печать документа").weak());
-                            ui.add_enabled(false, egui::Button::new("Параметры страницы"));
-                            ui.add_enabled(false, egui::Button::new("Предварительный просмотр"));
-                            if ui.add_enabled(has_doc, egui::Button::new("Печать (изображение)")).clicked() {
-                                cmds.push(Command::Print);
-                                ui.close_menu();
-                            }
+                            menu_cmd(ui, &mut cmds, "Параметры страницы", true, Command::PageSetup);
+                            menu_cmd(ui, &mut cmds, "Предварительный просмотр", has_doc, Command::PrintPreview);
+                            menu_cmd(ui, &mut cmds, "Печать", has_doc, Command::Print);
                         });
                         menu_cmd(ui, &mut cmds, "Параметры файла...", has_doc, Command::FileParams);
                         menu_cmd(ui, &mut cmds, "Комментарии", self.hdr_comment_enabled(), Command::HdrComment);
@@ -64,6 +61,7 @@ impl App {
                                 ("Архив осциллограммы (.zip)…", Command::Archive),
                                 ("Библиотека характеристик .fvb…", Command::OpenFvb),
                                 ("Роли каналов Ua…Ic…", Command::ChannelMap),
+                                ("Экспорт изображения окна (PNG)…", Command::ExportImage),
                             ] {
                                 if ui.button(label).clicked() {
                                     cmds.push(cmd);

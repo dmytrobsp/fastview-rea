@@ -21,12 +21,17 @@ mod lanes;
 mod merge_ui;
 mod omp_ui;
 mod oscgeom;
+mod pdf;
 mod persist;
 mod popmenu;
+mod print_ui;
+mod printout;
 mod quick_ui;
+mod raster;
 mod recdlg;
 mod ribbon;
 mod setfile;
+mod spool;
 mod theme;
 mod util;
 mod views;
@@ -55,8 +60,10 @@ fn main() -> eframe::Result<()> {
         "FastView",
         options,
         Box::new(|cc| {
-            install_fonts(&cc.egui_ctx);
+            let fonts = app_fonts();
+            cc.egui_ctx.set_fonts(fonts.clone());
             let mut app = App::new().with_persistence();
+            app.print.fonts = fonts;
             let ctx = cc.egui_ctx.clone();
             app.instance = inst_dir.as_deref().and_then(|d| instance::serve(d, move || ctx.request_repaint()));
             if let Some(dir) = &args.dst {
@@ -73,7 +80,9 @@ fn main() -> eframe::Result<()> {
     )
 }
 
-fn install_fonts(ctx: &egui::Context) {
+/// The window's fonts: the first system font found that covers Cyrillic,
+/// in front of egui's own.
+fn app_fonts() -> egui::FontDefinitions {
     const CANDIDATES: &[&str] = &[
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
@@ -85,23 +94,14 @@ fn install_fonts(ctx: &egui::Context) {
         "/System/Library/Fonts/Supplemental/Arial.ttf",
         "/Library/Fonts/Arial.ttf",
     ];
-    for path in CANDIDATES {
-        if let Ok(bytes) = std::fs::read(path) {
-            let mut fonts = egui::FontDefinitions::default();
-            fonts
-                .font_data
-                .insert("cyr".to_owned(), egui::FontData::from_owned(bytes));
-            for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-                fonts
-                    .families
-                    .entry(family)
-                    .or_default()
-                    .insert(0, "cyr".to_owned());
-            }
-            ctx.set_fonts(fonts);
-            return;
+    let mut fonts = egui::FontDefinitions::default();
+    if let Some(bytes) = CANDIDATES.iter().find_map(|p| std::fs::read(p).ok()) {
+        fonts.font_data.insert("cyr".to_owned(), egui::FontData::from_owned(bytes));
+        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            fonts.families.entry(family).or_default().insert(0, "cyr".to_owned());
         }
     }
+    fonts
 }
 
 impl App {
@@ -311,9 +311,15 @@ impl eframe::App for App {
             .show(ctx, |ui| self.status_bar(ui));
 
 
-        self.diagram_panes(ctx);
-        self.render_tab(ctx);
+        // The print preview takes the place of the views.
+        if self.print.preview.is_some() {
+            self.preview_ui(ctx);
+        } else {
+            self.diagram_panes(ctx);
+            self.render_tab(ctx);
+        }
         self.dialogs_ui(ctx);
+        self.print_windows(ctx);
         // The record settings follow the active document; leaving asks
         // about modified documents.
         self.track_settings();

@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 259 pass)
+- `cargo test --workspace`   (currently 266 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 259 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 266 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.21** below.
+temporary). Reconciled so far: **L9.1**–**L9.22** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -1178,10 +1178,58 @@ leave our window (no OLE "Embed Source" / cross-instance index drop — the
 original's foreign drops are inert or misapplied anyway); the 200 ms
 delay start not modelled.
 
-Next in L9: all dispatched tracks are merged (master clean). Remaining:
-`notes/UI_BEHAVIOUR_SPEC.md` §9 — print 36, OLE drag 48, and the residuals
-listed in L9.1–L9.17 (e.g. system-clipboard merge format, undoable
-«Объединить», non-2007 looks, pane re-docking).
+### L9.22 — Printing: dialog, page setup, paged output, preview (backlog 36)  ·  🟡
+
+Read (research report; MFC ordinals resolved against the local
+mfc120u.dll): 57607 → OnPreparePrinting `0x4053f0` (CPrintDialog with
+template 347, the view's BOOL[5] — Осциллограмма on — kept also on Отмена);
+57609 → `AFXPrintPreview` (stock preview, no dialog, opens on min(count, 2)
+pages); OnBeginPrinting `0x4054b0`: margins 0.01 mm inside the printable
+area, fit-to-width `r` = printable width (screen px) / view client width,
+page height `P` = printable height / r, pages from packing the visible
+lanes (`0x4600b0`: acc ≥ P − band → next page; band 30 / 75), then one page
+each for the ticked Частотная / Векторная / Круговая / Дифференциальная;
+slice `0x405970`: the screen painter in print mode — current horizontal
+window, all lanes from the top, a lane that would reach the band moves to
+the next page top − 1 after a ruler is drawn there (never split), the lane
+background post-check leaves the moved lane's background behind (quirk),
+no selected-lane highlight, визиры through all pages with labels on page 1,
+the difference band on the last page only; HALFTONE stretch into R and a
+1 px black frame. Header `0x405c20` above R: band (243,246,250), logo 341
+50×42, three lines (strings 148–152: name in quotes, raw start date/time +
+«Длительность: %g c.», station / recorder in quotes); footer `0x406590`:
+page number only for jobs of ≥ 2 pages, «Отчет сформирован программой
+FastView» + bold «ООО «НТЦ «Механотроника»» + underlined blue «www.mtrele.ru»
+30 px apart (no bold/underline in preview). Diagram pages `0x441fe0`: the
+pane's own painter into R at the printer/screen scale. Page setup
+`0x448a90`: paper disabled, orientation + margins, «Print Parameters»
+(Left/Right/Top/Bottom Margin 2000, Page Orientation 1).
+Ours: `raster.rs` (headless egui pass → CPU raster of egui's own
+tessellation), `pdf.rs`, `printout.rs` (`PageSetup` persisted under the
+same keys, `Device`, `page_queue`, `osc_page_count`, `paged_tops`,
+`Job`, slice painting through the shared `lanes::OscView` painters
+extracted from `lanes_ui`, header/footer, diagram pages), `print_ui.rs`
+(«Печать» with printer list + five checkboxes + «Параметры страницы» +
+«Предварительный просмотр», page setup with a sample sheet, the preview in
+place of the views with Печать / Увеличить / Уменьшить / Две страницы /
+Следующая / Предыдущая / Закрыть), `spool.rs` (Windows: GDI printer DC with
+the orientation in the DEVMODE, StretchDIBits per page; elsewhere a PDF to
+CUPS `lp`), app menu Печать ▸ enabled, QAT/Ctrl+P = 57607; the old window
+PNG export moved to «Дополнительно». Tests: pagination rules, queue and
+setup persistence, a rendered page (frame, header, lanes), the dialog/
+preview flow.
+Residual: logo bitmap 341 not reproduced (slot left empty); A4 only (the
+printer's paper and hardware margins only via GDI caps on Windows; CUPS
+gets the full sheet); «Свойства...» and printer status fields empty; our
+«Файл PDF…» entry is an extension; diagram print-only branches (pen widths
+×scale, frequency tiling for the page aspect) not modelled; horizontal
+визиры and the comment hover not drawn in print; header/footer line pitch
+T assumed 12 screen px.
+
+Next in L9 (HANDOFF 2026-10-21, master clean): §9 items 36 and 48 are
+done (L9.21, L9.22). Remaining: the EMF picture on copy (L9.20), print
+residuals (L9.22), pane re-docking (egui limit), and the smaller residuals
+listed in L9.1–L9.22.
 
 ---
 

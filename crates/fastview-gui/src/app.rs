@@ -468,6 +468,10 @@ pub struct Doc {
     /// no depth limit).
     pub undo: Vec<DocSnapshot>,
     pub redo: Vec<DocSnapshot>,
+    /// The print dialog's checkboxes (`view+0xd0`): Осциллограмма,
+    /// Частотная, Векторная, Круговая, Дифференциальная; kept per document,
+    /// also on Отмена, not persisted.
+    pub print_ticks: [bool; 5],
 }
 
 impl Doc {
@@ -520,6 +524,7 @@ impl Doc {
             set: Default::default(),
             undo: Vec::new(),
             redo: Vec::new(),
+            print_ticks: [true, false, false, false, false],
         }
     }
 
@@ -695,7 +700,10 @@ pub enum Command {
     SaveAs,        // Ctrl+S (57604)
     /// 32860 «Загрузка настроек...».
     LoadSettings,
-    Print,         // Ctrl+P  (export image)
+    Print,         // 57607 Ctrl+P: the print dialog
+    PrintPreview,  // 57609
+    PageSetup,     // 57605
+    ExportImage,   // our extension: a PNG of the window
     Copy,          // Ctrl+C
     Paste,         // Ctrl+V
     Undo,          // Ctrl+Z
@@ -904,6 +912,8 @@ pub struct App {
     pub toast: (String, f64),
     /// The single-instance listener (files handed over by later starts).
     pub instance: Option<crate::instance::Server>,
+    /// Printing: page setup, the dialogs and the preview.
+    pub print: crate::print_ui::PrintUi,
 }
 
 /// Per-characteristic UI state (circle diagram).
@@ -995,6 +1005,7 @@ impl App {
             status: "Готово".to_string(),
             toast: ("Готово".to_string(), f64::NEG_INFINITY),
             instance: None,
+            print: Default::default(),
         };
         app.ensure_block_state();
 
@@ -1099,7 +1110,10 @@ impl App {
                 self.save_active_as();
             }
             Command::LoadSettings => self.load_settings_command(),
-            Command::Print => self.request_image_export(),
+            Command::Print => self.print_open(),
+            Command::PrintPreview => self.print_preview_open(),
+            Command::PageSetup => self.page_setup_open(),
+            Command::ExportImage => self.request_image_export(),
             Command::Copy => self.copy_channels_for_merge(),
             Command::Paste => {
                 self.paste_channels_for_merge();
@@ -1356,6 +1370,7 @@ impl App {
         self.store = crate::persist::Store::load();
         self.persist = true;
         self.clip = crate::sysclip::SysClip::system();
+        self.print.setup = crate::printout::PageSetup::load(&self.store.view);
         // `View` (XScale, YAnalogSize, RulerState, Sells) is per document,
         // in its settings file (`setfile`).
         let v = &self.store.view;

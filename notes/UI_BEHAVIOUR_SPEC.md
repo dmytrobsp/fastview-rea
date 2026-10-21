@@ -1275,7 +1275,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 30. ✅ (L9.7 + L9.19) Invert/DC/visibility semantics: toggle-all over the selection, **no undo**,
     full recompute incl. computed channels and ОМП; undo only for paste/merge,
     Отмена/Возврат greyed by counts — `app.rs`, `chansel.rs` — S
-31. 🟡 (L9.14; print/preview/.set disabled) App menu: original order, Сохранить vs Сохранить как, Комментарии,
+31. ✅ (L9.14 + L9.17 .set + L9.22 print/preview) App menu: original order, Сохранить vs Сохранить как, Комментарии,
     Загрузка настроек, Закрыть, Печать submenu, 10-entry MRU; dev extras
     (Демо, CSV, Archive, .fvb) marked as extensions; QAT = Open/Save/Print,
     Save greyed for .sto — `ribbon.rs`, `persist.rs` — M
@@ -1288,7 +1288,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     local radios, persistence (+ print margins) — `dialogs.rs`, `persist.rs` — S
 35. 🟡 (L9.9: all but the shell tree, .sto and recycle bin) Проводник as the modal finder (worker scan, filters, sort, multi-open,
     delete with companions, persistence) — `main.rs` → new module — L
-36. Print: dialog with five checkboxes, page setup, paged output (oscillogram
+36. 🟡 (L9.22: all but logo, paper/printer properties, diagram print branches) Print: dialog with five checkboxes, page setup, paged output (oscillogram
     sliced, diagrams one page each) and preview — new module — L
 37. 🟡 (L9.10: worker + thresholds + cancel; no percent) Loading progress dialog with worker thread and cancel (thresholds
     200 kB/20 kB) — `app.rs`, `crates/fvb-core` parsers — M
