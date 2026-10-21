@@ -1534,6 +1534,24 @@ separator, differential pairs one slot early; no modified mark; the
 frequency diagram also required lane visibility. Now as read. Test
 (above) hides and restores through «Показать все» and a tick.
 
+### L9.36 — User questions answered from the binary (no change)  ·  ✅
+- «Осциллограмма» (142) toggles only the parameters bar: CMainFrame COMMAND
+  142 → `0x4751d0` calls `ShowPane(!IsVisible())` on the pane at frame
+  `+0x79c0` and `RecalcLayout`; that object is constructed with vtable
+  `0x4cb3f4` = RTTI **CParamOscBar** (`0x4721e6`); CMDUI `0x475180` checks
+  it while that bar's window exists and is visible. The view is never touched.
+- Undo / Redo are disabled until something is undoable: CMDUI `0x45bf60`
+  (CFastViewView range 57632–57644, byte table `0x45c10c`) enables 57643
+  iff the undo deque size `doc+0x6fc` ≠ 0 (`0x45c0bd`) and 57644 iff the
+  redo size `doc+0x710` ≠ 0 (`0x45c0da`); the push `0x454530` has exactly
+  three callers (paste `0x45ad50`, «Параметры файла» with a changed rate
+  `0x44a24a`, «Объединить» `0x47e834`) — zooms, visibility, flags, comments
+  are not undoable in the original.
+- Circle-diagram eligibility for current / voltage channels: none (L9.34)
+  — the original requires an Ohm / W / VA / var unit; the differential
+  diagram takes Iдиф | Iторм pairs from its own «Каналы ▸ Создать», not
+  per-channel flags, so the «Каналы» dialog has no column for it.
+
 Next in L9 (HANDOFF 2026-10-21, second session): the four user-reported GUI
 bugs are fixed (L9.23 tiny-window crash + bottom scroll bar, L9.24 modal
 dialogs, L9.25 «Файл» main panel); a headless visual audit followed
