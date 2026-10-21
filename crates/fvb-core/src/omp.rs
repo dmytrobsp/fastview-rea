@@ -884,7 +884,11 @@ pub fn double_ended(inp: &DoubleEnded) -> Trace {
     let nk = all.map(|s| s.len()).min().unwrap_or(0);
     let p = inp.p;
     let ph = |s: &[&[f64]; 3]| -> Vec<Vec<Complex64>> { s.iter().map(|x| omp_phasors(&x[..nk], p)).collect() };
-    let (i1, i2, u1, u2) = (ph(&inp.i1), ph(&inp.i2), ph(&inp.u1), ph(&inp.u2));
+    // Station 2's Ia/Ib/Ic samples are negated before anything else
+    // (`0x4a13b0`..`0x4a1409`, ×(−1.0)): both recorders measure into the line.
+    let neg2: Vec<Vec<f64>> = inp.i2.iter().map(|s| s.iter().map(|x| -x).collect()).collect();
+    let i2_samples = [&neg2[0][..], &neg2[1][..], &neg2[2][..]];
+    let (i1, i2, u1, u2) = (ph(&inp.i1), ph(&i2_samples), ph(&inp.u1), ph(&inp.u2));
     let c1: Vec<_> = (0..nk).map(|k| components(i1[0][k], i1[1][k], i1[2][k])).collect();
     let c2: Vec<_> = (0..nk).map(|k| components(i2[0][k], i2[1][k], i2[2][k])).collect();
     let m = |z: Complex64| z.norm();

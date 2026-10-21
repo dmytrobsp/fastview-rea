@@ -144,6 +144,12 @@ No-data abort: message 349 "Данные для определения мест�
 
 ## 13. Double-ended
 
+Inputs (`0x4a0ec0`..`0x4a1409`, read): station 1's Ua, Ub, Uc, Ia, Ib, Ic and
+station 2's are looked up by channel name per station; then **station 2's
+Ia, Ib, Ic sample vectors are negated in place** (×(−1.0), each only if
+non-empty) before the components (`0x497090`) and detection (`0x499000`).
+Both recorders are thus expected to measure current into the line.
+
 Detection (`0x499000`), k = 1..M−1, both ends' components:
 `a1`, `a2` = H(4|I2| > |I1|, 0.9|I1| > 4|I2|) per end (every sample). If
 `a1 ∧ a2`: if `|I1₁| ≤ 0.1√2·In1` or `|I1₂| ≤ 0.1√2·In2` → no fault (n1/n2 not

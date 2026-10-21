@@ -230,7 +230,9 @@ fn phases_of(p1: Complex64, p2: Complex64) -> [Vec<f64>; 3] {
 }
 
 /// Two-phase fault 18 km out on a 50 km line, sources behind both ends
-/// (Zs1, Zs2). The search matches |U2| at the fault from both ends.
+/// (Zs1, Zs2). The search matches |U2| at the fault from both ends. Both
+/// recorders measure current into the line; the original negates end 2's
+/// Ia/Ib/Ic before the analysis (`0x4a13b0`..`0x4a1409`).
 #[test]
 fn double_ended_internal_fault() {
     let sec = [section(50.0, 0.1, 0.4, 0.3, 1.2)];
@@ -238,12 +240,13 @@ fn double_ended_internal_fault() {
     let (zs1, zs2) = (Complex64::new(1.0, 6.0), Complex64::new(2.0, 9.0));
     let x = 18.0;
     let i2a = Complex64::from_polar(700.0, -1.2);
-    // −(Zs1 + Z1·x)·I2₁ = (Zs2 + Z1·(L−x))·I2₂  (end-2 current measured out of the line)
+    // −(Zs1 + Z1·x)·I2₁ = (Zs2 + Z1·(L−x))·I2₂ with I2₂ out of the line at end 2.
     let i2b = -(zs1 + z1 * x) * i2a / (zs2 + z1 * (50.0 - x));
     let (u2a, u2b) = (-zs1 * i2a, zs2 * i2b);
     let u1 = Complex64::from_polar(60_000.0, 0.0);
     let (ua, ia) = (phases_of(u1, u2a), phases_of(i2a, i2a));
-    let (ub, ib) = (phases_of(u1, u2b), phases_of(i2b, i2b));
+    // End 2's recorder measures into the line: −I2₂.
+    let (ub, ib) = (phases_of(u1, u2b), phases_of(-i2b, -i2b));
     let t = double_ended(&DoubleEnded {
         u1: [&ua[0], &ua[1], &ua[2]],
         i1: [&ia[0], &ia[1], &ia[2]],
@@ -262,7 +265,7 @@ fn double_ended_internal_fault() {
 
     // Same magnitudes but end 2's current reversed: the angle difference is
     // within ±90°, so every distance is zeroed (adjacent-line fault).
-    let (ub2, ib2) = (phases_of(u1, -u2b), phases_of(i2b, i2b));
+    let (ub2, ib2) = (phases_of(u1, -u2b), phases_of(-i2b, -i2b));
     let t = double_ended(&DoubleEnded {
         u1: [&ua[0], &ua[1], &ua[2]],
         i1: [&ia[0], &ia[1], &ia[2]],

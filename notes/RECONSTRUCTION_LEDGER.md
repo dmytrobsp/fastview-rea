@@ -667,6 +667,18 @@ in-place level edit not done (33042 opens the editor); undo still snapshots
 some view edits the original does not undo; per-channel display mode default =
 instantaneous is **inferred** (not read); horizontal визиры get one ribbon
 toggle instead of 32815/32816; the selected-row gradient is drawn flat.
+### L9.2 — ОМП double-ended: end-2 currents negated  ·  ✅ (engine)
+
+Found by the ОМП-UI reversing (scope G), verified by hand: after loading the
+two stations' channels by name (station 1 via `esi+0xc` → Ua/Ub/Uc/Ia/Ib/Ic at
+`+0x100/+0x10c/+0x118/+0x88/+0x94/+0xa0`; station 2 via `esi+0x38` → Ia/Ib/Ic
+at `+0xb8/+0xc4/+0xd0`), `0x4a13a6`..`0x4a1409` passes station 2's three
+current vectors to `0x4a2200`, which multiplies every element by −1.0
+(`0x4d1890`; SSE pair `0x4d1a60` = (−1,−1)). `fvb_core::omp::double_ended`
+now negates end-2 current samples first; `tests/omp_engine.rs` records end 2
+in the standard into-the-line convention (the unfixed engine located an 18 km
+fault at 1.18 km). Spec: `notes/OMP_SPEC.md` §13.
+
 Next in L9: the rest of agent A/B (wheel, power-of-two time zoom, fixed lane
 heights, визир mouse model, ruler), then D (panes), E, F, G.
 
