@@ -455,6 +455,9 @@ cursor-instant phasor, plain reactance / textbook two-terminal formula) is
   double-ended detection 0x499000. Calculator channel accessors (L6) also
   pending — their agent was stopped too.
 
+Full behavioural spec (detection, debounce, phase selection, loop choice,
+grounded/isolated section distance, θ, median) is kept in **`notes/OMP_SPEC.md`**.
+
 Rust action: rewrite `omp.rs` as this engine (sections, per-sample distances,
 detection, window, median/σ) with tests; GUI dialog as a section tree.
 
