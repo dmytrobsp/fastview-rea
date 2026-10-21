@@ -90,7 +90,7 @@ impl App {
             // Quick-access toolbar: Open, Save, Print only.
             for (icon, tip, cmd) in [
                 (Icon::Open, "Открыть  (Ctrl+O)", Command::Open),
-                (Icon::Save, "Сохранить  (Ctrl+S)", Command::Save),
+                (Icon::Save, "Сохранить", Command::Save),
                 (Icon::Print, "Печать  (Ctrl+P)", Command::Print),
             ] {
                 if qat_button(ui, p, icon).on_hover_text(tip).clicked() {
@@ -177,7 +177,7 @@ impl App {
             // file channel; 57643 / 57644 the undo / redo counts.
             let can_paste = !self.channel_clip.is_empty() && !self.active_doc().is_some_and(crate::omp_ui::has_pending_paste);
             let can_copy = self.active_doc().is_some_and(|d| !d.selected_analog().is_empty());
-            let (undo, redo) = (!self.undo_stack.is_empty(), !self.redo_stack.is_empty());
+            let (undo, redo) = self.active_doc().map_or((false, false), |d| (!d.undo.is_empty(), !d.redo.is_empty()));
             if ui.add_enabled_ui(can_paste, |ui| big_button(ui, p, Icon::Paste, "Вставить")).inner.clicked() {
                 cmds.push(Command::Paste);
             }

@@ -409,8 +409,16 @@ impl App {
                     return;
                 }
                 Some(r) if r != self.docs[ai].osc.sample_rate => {
-                    self.docs[ai].osc.retime(r);
-                    self.recompute_doc(ai);
+                    // `0x44a24a`: undo snapshot, the new rate, the full
+                    // recompute, the silent ОМП run (always) and the
+                    // modified mark.
+                    let d = &mut self.docs[ai];
+                    let snap = App::snapshot_of_doc(d);
+                    App::push_undo(d, snap);
+                    d.osc.retime(r);
+                    d.recompute_signals();
+                    d.set.modified = true;
+                    self.run_omp_silent(ai);
                 }
                 Some(_) => {}
             }

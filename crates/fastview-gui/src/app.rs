@@ -459,6 +459,10 @@ pub struct Doc {
     pub hdr_cp: Encoding,
     /// The record settings tree and the modified flag (`setfile`).
     pub set: crate::setfile::DocSet,
+    /// This document's history (`doc+0x6ec` undo / `doc+0x700` redo deques,
+    /// no depth limit).
+    pub undo: Vec<DocSnapshot>,
+    pub redo: Vec<DocSnapshot>,
 }
 
 impl Doc {
@@ -509,6 +513,8 @@ impl Doc {
             pending: Vec::new(),
             merge_offset: 0.0,
             set: Default::default(),
+            undo: Vec::new(),
+            redo: Vec::new(),
         }
     }
 
@@ -659,12 +665,19 @@ pub fn default_channel_color(ch: &fvb_core::comtrade::AnalogChannel, i: usize) -
     egui::Color32::from_rgb(r, g, b)
 }
 
-/// A snapshot of a document's editable view-state for undo/redo.
+/// An undo/redo entry: the record's data model (`doc+0x180 … 0x27f`,
+/// assignment `0x4546d0`) — the channels with their samples, flags,
+/// selection and pending state, the computed channels, times, rate and
+/// header. Визиры, comments, the ОМП state, the merge offset and the
+/// modified flag live outside it and are never restored.
 #[derive(Clone)]
 pub struct DocSnapshot {
+    pub osc: Oscillogram,
     pub chans: Vec<ChanView>,
-    pub comments: Vec<Comment>,
     pub computed: Vec<Computed>,
+    pub pending: Vec<crate::merge_ui::ClipChan>,
+    pub selection: BTreeSet<ChanKey>,
+    pub digital_visible: Vec<bool>,
 }
 
 /// Commands dispatched from the ribbon, QAT, keybinds and context menus. The
@@ -672,9 +685,9 @@ pub struct DocSnapshot {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     Open,          // Ctrl+O / QAT
-    Save,          // Ctrl+S  (57603: onto the document's file, else Save As)
+    Save,          // 57603: onto the document's file, else Save As
     /// 57604 «Сохранить как...».
-    SaveAs,
+    SaveAs,        // Ctrl+S (57604)
     /// 32860 «Загрузка настроек...».
     LoadSettings,
     Print,         // Ctrl+P  (export image)
@@ -834,8 +847,6 @@ pub struct App {
     pub channel_clip: Vec<ClipChan>,
 
     // undo / redo of per-document view edits
-    pub undo_stack: Vec<(usize, DocSnapshot)>,
-    pub redo_stack: Vec<(usize, DocSnapshot)>,
 
     /// «Приблизить по вертикали» (138): armed (`view+0xe4` mode 7) or a
     /// rectangle being dragged on an analog lane (mode 8).
@@ -954,8 +965,6 @@ impl App {
             comment_edit: None,
             want_screenshot: None,
             channel_clip: Vec::new(),
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
             rect_zoom: RectZoom::Off,
             comment_drag: None,
             level_edit: None,
@@ -1214,7 +1223,8 @@ impl App {
     pub fn keymap() -> [(egui::Key, Command); 7] {
         [
             (egui::Key::O, Command::Open),
-            (egui::Key::S, Command::Save),
+            // Ctrl+S is 57604 «Сохранить как» in the original's table.
+            (egui::Key::S, Command::SaveAs),
             (egui::Key::P, Command::Print),
             (egui::Key::C, Command::Copy),
             (egui::Key::V, Command::Paste),
@@ -1611,50 +1621,67 @@ impl App {
     }
 
     // ---- undo / redo ----
-    fn snapshot_of(d: &Doc) -> DocSnapshot {
-        DocSnapshot { chans: d.chans.clone(), comments: d.comments.clone(), computed: d.computed.clone() }
+    pub fn snapshot_of_doc(d: &Doc) -> DocSnapshot {
+        DocSnapshot {
+            osc: d.osc.clone(),
+            chans: d.chans.clone(),
+            computed: d.computed.clone(),
+            pending: d.pending.clone(),
+            selection: d.selection.clone(),
+            digital_visible: d.digital_visible.clone(),
+        }
     }
+
+    /// Assign a snapshot over the live record. The original then only
+    /// repaints (`0x45bf0f`); our derived caches (flagged values, RMS,
+    /// phasors, pending lanes) are rebuilt from the restored record.
     fn restore(d: &mut Doc, s: DocSnapshot) {
+        d.osc = s.osc;
         d.chans = s.chans;
-        d.comments = s.comments;
         d.computed = s.computed;
+        d.pending = s.pending;
+        d.selection = s.selection;
+        d.digital_visible = s.digital_visible;
+        d.sel_anchor = None;
+        let last = d.osc.time.len().saturating_sub(1);
+        for k in [&mut d.main_cursor, &mut d.aux_cursor, &mut d.v3_cursor, &mut d.first] {
+            *k = (*k).min(last);
+        }
+        d.recompute_signals();
+        d.refresh_pending();
     }
 
-    /// Record the active document's state for undo, clearing the redo stack.
+    /// Push the document's record (`0x454530`), clearing its redo history.
+    pub fn push_undo(d: &mut Doc, snap: DocSnapshot) {
+        d.undo.push(snap);
+        d.redo.clear();
+    }
+
+    /// Record the active document's state for undo, clearing its redo stack.
     pub fn snapshot_undo(&mut self) {
-        if let Some(ai) = self.active {
-            if let Some(d) = self.docs.get(ai) {
-                self.undo_stack.push((ai, Self::snapshot_of(d)));
-                if self.undo_stack.len() > 100 {
-                    self.undo_stack.remove(0);
-                }
-                self.redo_stack.clear();
-            }
+        if let Some(d) = self.active_doc_mut() {
+            let snap = Self::snapshot_of_doc(d);
+            Self::push_undo(d, snap);
         }
     }
 
+    /// 57643 (`0x454640`): the current record goes to redo, the top of undo
+    /// is restored. No modified mark, recompute of formulas or ОМП run.
     pub fn undo(&mut self) {
-        let Some((ai, snap)) = self.undo_stack.pop() else {
-            self.status = "Нечего отменять.".into();
-            return;
-        };
-        if let Some(d) = self.docs.get_mut(ai) {
-            self.redo_stack.push((ai, Self::snapshot_of(d)));
-            Self::restore(d, snap);
-            self.status = "Отменено.".into();
-        }
+        let Some(d) = self.active_doc_mut() else { return };
+        let Some(snap) = d.undo.pop() else { return };
+        let cur = Self::snapshot_of_doc(d);
+        d.redo.push(cur);
+        Self::restore(d, snap);
     }
 
+    /// 57644 (`0x4548d0`), the mirror of [`App::undo`].
     pub fn redo(&mut self) {
-        let Some((ai, snap)) = self.redo_stack.pop() else {
-            self.status = "Нечего возвращать.".into();
-            return;
-        };
-        if let Some(d) = self.docs.get_mut(ai) {
-            self.undo_stack.push((ai, Self::snapshot_of(d)));
-            Self::restore(d, snap);
-            self.status = "Возвращено.".into();
-        }
+        let Some(d) = self.active_doc_mut() else { return };
+        let Some(snap) = d.redo.pop() else { return };
+        let cur = Self::snapshot_of_doc(d);
+        d.undo.push(cur);
+        Self::restore(d, snap);
     }
 
 
@@ -1755,7 +1782,7 @@ mod tests {
         assert_eq!(km.len(), 7);
         let has = |k: egui::Key, c: Command| km.iter().any(|(kk, cc)| *kk == k && *cc == c);
         assert!(has(egui::Key::O, Command::Open));
-        assert!(has(egui::Key::S, Command::Save));
+        assert!(has(egui::Key::S, Command::SaveAs));
         assert!(has(egui::Key::P, Command::Print));
         assert!(has(egui::Key::C, Command::Copy));
         assert!(has(egui::Key::V, Command::Paste));
@@ -1810,13 +1837,13 @@ mod tests {
         let d = app.active_doc().unwrap();
         let (base, ph, comp) = (d.sample(i, k), d.analysis.phasors[i][k], d.computed[0].samples[k]);
         app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(i));
-        let undo = app.undo_stack.len();
+        let undo = app.active_doc().unwrap().undo.len();
         app.dispatch(Command::ToggleFlag(ChanFlag::Invert));
         let d = app.active_doc().unwrap();
         assert!((d.sample(i, k) + base).abs() < 1e-9, "the displayed value is negated");
         assert!((d.analysis.phasors[i][k] + ph).norm() < 1e-9, "so is the phasor the diagrams read");
         assert!((d.computed[0].samples[k] + comp).abs() < 1e-9, "formula channels are re-evaluated");
-        assert_eq!(app.undo_stack.len(), undo, "invert is not undoable in the original");
+        assert_eq!(app.active_doc().unwrap().undo.len(), undo, "invert is not undoable in the original");
         app.dispatch(Command::ToggleFlag(ChanFlag::Invert));
         app.dispatch(Command::ToggleFlag(ChanFlag::RemoveDc));
         let d = app.active_doc().unwrap();

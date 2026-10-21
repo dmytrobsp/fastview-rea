@@ -491,9 +491,18 @@ every channel (0x428490), re-evaluate computed channels (0x415780), re-run ОМ�
 if its result is shown (`doc+0x690` → 0x4a00b0(0)), SetModifiedFlag,
 UpdateAllViews, refresh the diagram panes; visible H визиры are re-placed at
 their previous **pixel** y. CCmdUI calls: Enable / SetCheck / SetRadio (bullet).
-**Undo snapshots** are pushed only by paste, «Объединить» and three
-unidentified callers (0x42e554, 0x450c36, 0x452f15); invert, DC, visibility,
-colour, zoom, comments are **not undoable** [R handlers never snapshot].
+**Undo snapshots** (push `0x454530`, exhaustive call scan) are pushed only by
+paste (`0x45ad50`, first), Параметры файла OK with a changed sample rate
+(`0x44a24a`, then recompute, silent ОМП run always, SetModifiedFlag) and
+«Объединить» (`0x47e834`, after the resampling, before the rate is set).
+0x42e554 / 0x450c36 / 0x452f15 (earlier listed as callers) call `0x454960`,
+the per-sample nominal-frequency table rebuild. History per document: deques
+`doc+0x6ec` / `doc+0x700` (counts `+0x6fc` / `+0x710`), no depth limit, a
+push clears redo; Undo `0x454640` / Redo `0x4548d0` swap the record
+`doc+0x180…0x27f` (channels with samples, flags, selection, bit14; computed
+channels; times; rates; header) and only repaint — визиры, comments, ОМП
+state, merge offset and the modified flag are outside it. Invert, DC,
+visibility, colour, zoom, comments are **not undoable** [R].
 
 ### 4.1 Edit / merge (view 0x45acb0, CMDUI 0x45bf60)
 | id | effect | CMDUI |
@@ -1263,7 +1272,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 29. ✅ (merged L9.13) File parameters 392: title, editable sample-rate combo with 50/60 Hz lists
     (re-time + recompute), correction combo, start/trigger, `%g c.`, live
     code-page combo, Закрыть applies — `dialogs.rs`, `app.rs` — M
-30. ✅ (L9.7; undo greying pending) Invert/DC/visibility semantics: toggle-all over the selection, **no undo**,
+30. ✅ (L9.7 + L9.19) Invert/DC/visibility semantics: toggle-all over the selection, **no undo**,
     full recompute incl. computed channels and ОМП; undo only for paste/merge,
     Отмена/Возврат greyed by counts — `app.rs`, `chansel.rs` — S
 31. 🟡 (L9.14; print/preview/.set disabled) App menu: original order, Сохранить vs Сохранить как, Комментарии,
@@ -1355,7 +1364,6 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
   selecting one does.
 - CCommentDlg: how the item/record mode flag is set and how `UserData` maps to
   the `.hdr` file; settings sidecar name (`.set` per help; legacy `ini`).
-- Undo snapshot callers 0x42e554, 0x450c36, 0x452f15 and the snapshot contents.
 - Merge: per-period amplitude 0x427670, spread metric 0x4776f0, divisor
   `ch+0xf0`, fractional-sample residual, drag pixel→time constant 0x4d1710,
   insertion position of pasted channels, how combos 1089/1090 are filled.

@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 252 pass)
+- `cargo test --workspace`   (currently 253 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 252 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 253 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.18** below.
+temporary). Reconciled so far: **L9.1**–**L9.19** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -998,8 +998,7 @@ offset, bar, «Объединить» in place keeping view state and remapping 
 / визиры by time; 2 tests), lanes drag. Replaces our sample-index paste.
 Residual: in-process clipboard only (no system-clipboard format
 «Mechanotronica FastView Clipboard Data», no cross-instance merge); method 2's
-details beyond the spec summary not re-read; «Объединить» is not undoable
-(our snapshot does not hold the record); values ÷ `ch+0xf0` on merge not
+details beyond the spec summary not re-read; «Объединить» undo fixed in L9.19; values ÷ `ch+0xf0` on merge not
 modelled; pasted discrete channels show as 0/1 lanes until merged.
 
 ### L9.16 — Formula dialog «Добавить новую формулу» (DIALOG 359, track A2, merged)  ·  ✅ (residuals)
@@ -1086,6 +1085,38 @@ Also: the status bar's free-text pane is gone (the original has none,
 corner (our extension). Residual: a start time without `:` makes the original read uninitialised
 stack (ours: missing fields count 0); the ruler's `iStack_a0` label
 condition in mode 3 not decoded.
+
+### L9.19 — Undo/Redo: per-document record snapshots; «Объединить» side effects; Ctrl+S  ·  ✅
+
+Read (research report, exhaustive scan of `call 0x454530`): three pushes —
+paste `0x45ad50` (first), file-parameters OK with a changed rate `0x44a24a`
+(then recompute, **silent ОМП run regardless of the banner**, SetModifiedFlag),
+«Объединить» `0x47e834` (after the per-channel resampling, bit14 cleared and
+the new time array; **before** `doc+0x228` := R and the nominal table, so the
+first Отмена only reverts the rate and a second one the paste — inferred
+from the read order). The earlier "callers" 0x42e554/0x450c36/0x452f15 call
+`0x454960` (nominal-frequency table), not the push. Deques per document
+(`doc+0x6ec` / `+0x700`), no limit, push clears redo, CMDUI by counts; the
+snapshot is the record `doc+0x180…0x27f` (assignment `0x4546d0`); restore
+only repaints (`0x45bf0f`). After «Объединить» (`0x47d990`): silent ОМП run
+`0x4a00b0(1)`, SetModifiedFlag, bar hidden, MessageBeep; визиры, comments
+and the view untouched. Accelerator table 128: **Ctrl+S = 57604 «Сохранить
+как»**.
+Ours were wrong: one global stack keyed by document index (Ctrl+Z undid
+another tab; stale after a close), capped at 100, snapshotting chans +
+comments + computed but not the record — **Undo after «Объединить» restored
+pre-paste channel views over the merged record** (index mismatch); merge
+remapped визиры/comments by time, reset the view, no modified mark / ОМП;
+the rate change pushed nothing. Now: `Doc::undo` / `Doc::redo`,
+`DocSnapshot` = record + chans + computed + pending + selection + digital
+visibility; `push_undo` at the three sites in the original's positions;
+`run_omp_silent`; merge marks modified and keeps indices (clamped to the new
+length); ribbon greying from the active document; Ctrl+S → SaveAs. Test
+`merge_ui::merge_is_undone_in_two_steps_and_history_is_per_document`.
+Deliberate: restore also rebuilds our derived caches (flagged values,
+RMS, phasors, pending lanes) and clamps визиры to the record; no beep; a
+manual Ctrl+Z while the bar is up still hides our bar (the original leaves
+it up, stale).
 
 Next in L9: all dispatched tracks are merged (master clean). Remaining:
 `notes/UI_BEHAVIOUR_SPEC.md` §9 — print 36, OLE drag 48, and the residuals

@@ -227,8 +227,11 @@ impl App {
     }
 
     /// 1092 «Объединить» (`0x47d990`): the record and the pending channels
-    /// resampled onto one grid; view state kept, comments and визиры moved by
-    /// time; the bar is hidden.
+    /// resampled onto one grid. The undo snapshot is taken after the
+    /// resampling but before the record's rate is set (`0x47e834`), so the
+    /// first Отмена only reverts the rate and a second one the paste. Визиры,
+    /// comments and the view keep their sample indices; then the silent ОМП
+    /// run, the modified mark and the bar hidden.
     fn merge_records(&mut self) {
         let Some(ai) = self.active else { return };
         let d = &mut self.docs[ai];
@@ -237,25 +240,7 @@ impl App {
         }
         let pasted: Vec<Pasted> = d.pending.iter().map(|p| p.pasted.clone()).collect();
         let merged = merge::merge(&d.osc, &pasted, d.merge_offset);
-        let shift = (-d.merge_offset).max(0.0);
-        let rate = merged.sample_rate;
-        let old_t0 = d.osc.time.first().copied().unwrap_or(0.0);
-        let remap = |k: usize, d: &Doc| -> usize {
-            let t = d.osc.time.get(k).copied().unwrap_or(old_t0) - old_t0 + shift;
-            ((t * rate).round().max(0.0) as usize).min(merged.time.len().saturating_sub(1))
-        };
-        let (m, a, v3) = (remap(d.main_cursor, d), remap(d.aux_cursor, d), remap(d.v3_cursor, d));
-        let mut comments = d.comments.clone();
-        for c in &mut comments {
-            use crate::comments::CommentKind::*;
-            match &mut c.kind {
-                Moment { pos } => *pos = remap(*pos, d),
-                Level { from, to, .. } | Area { from, to, .. } => {
-                    *from = remap(*from, d);
-                    *to = remap(*to, d);
-                }
-            }
-        }
+        let old_rate = d.osc.sample_rate;
         let nb = d.osc.analog.len();
         d.osc = merged;
         for i in nb..d.osc.analog.len() {
@@ -269,13 +254,17 @@ impl App {
         d.computed.retain(|c| c.formula != PENDING);
         d.pending.clear();
         d.merge_offset = 0.0;
-        d.comments = comments;
-        (d.main_cursor, d.aux_cursor, d.v3_cursor) = (m, a, v3);
-        d.first = 0;
-        d.xscale = None;
+        let mut snap = Self::snapshot_of_doc(d);
+        snap.osc.sample_rate = old_rate;
+        Self::push_undo(d, snap);
+        let last = d.osc.time.len().saturating_sub(1);
+        for k in [&mut d.main_cursor, &mut d.aux_cursor, &mut d.v3_cursor, &mut d.first] {
+            *k = (*k).min(last);
+        }
         d.recompute_signals();
+        d.set.modified = true;
+        self.run_omp_silent(ai);
         self.merge = None;
-        self.status = "Осциллограммы объединены".into();
     }
 
     /// The merge bar (CMergeBar, 70 px): method, the two channels,
@@ -374,6 +363,44 @@ mod tests {
         assert_eq!(d.chans.len(), d.osc.analog.len());
         assert!(d.osc.analog.iter().all(|c| c.samples.len() == d.osc.time.len()));
         assert!(app.merge.is_none(), "the bar is hidden");
+    }
+
+    #[test]
+    fn merge_is_undone_in_two_steps_and_history_is_per_document() {
+        let mut app = demo_app();
+        let n0 = app.active_doc().unwrap().osc.analog.len();
+        let rate0 = app.active_doc().unwrap().osc.sample_rate;
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.active_doc_mut().unwrap().main_cursor = 123;
+        app.merge_records();
+        let d = app.active_doc().unwrap();
+        assert!(d.set.modified, "«Объединить» marks the document modified");
+        assert_eq!(d.main_cursor, 123, "визиры keep their sample index");
+        assert_eq!(d.undo.len(), 2);
+        assert_eq!(d.undo[1].osc.sample_rate, rate0, "the snapshot carries the old rate");
+        assert_eq!(d.undo[1].osc.analog.len(), n0 + 1, "… and the resampled channels");
+        // A comment made after the paste survives every undo.
+        app.active_doc_mut().unwrap().comments.push(crate::comments::Comment::new(crate::comments::CommentKind::Moment { pos: 5 }));
+        app.undo();
+        let d = app.active_doc().unwrap();
+        assert_eq!((d.osc.analog.len(), d.chans.len()), (n0 + 1, n0 + 1), "first Отмена: still merged");
+        app.undo();
+        let d = app.active_doc().unwrap();
+        assert_eq!((d.osc.analog.len(), d.chans.len()), (n0, n0), "second Отмена: before the paste");
+        assert!(d.pending.is_empty() && d.undo.is_empty() && d.redo.len() == 2);
+        assert_eq!(d.comments.len(), 1, "comments are not part of the record");
+        // Another document has its own (empty) history.
+        app.dispatch(Command::Demo);
+        assert!(app.active_doc().unwrap().redo.is_empty());
+        app.undo();
+        app.dispatch(Command::ActivateDoc(0));
+        app.redo();
+        app.redo();
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.osc.analog.len(), n0 + 1);
+        assert!(d.redo.is_empty() && d.undo.len() == 2);
     }
 
     #[test]

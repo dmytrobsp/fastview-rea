@@ -111,6 +111,25 @@ impl App {
         }
     }
 
+    /// The silent run (`0x4a00b0(1)`) that «Объединить» and a sample-rate
+    /// change make on document `di` whether or not a result is shown: on
+    /// success the banner shows, an error only clears the result flag.
+    pub fn run_omp_silent(&mut self, di: usize) {
+        if di >= self.docs.len() {
+            return;
+        }
+        match self.omp_compute(di) {
+            Ok(()) => {
+                self.omp_ui.bar_doc = Some(di);
+                let active = self.active;
+                self.active = Some(di);
+                self.omp_ui.bar = self.omp_result().map(|r| r.text);
+                self.active = active;
+            }
+            Err(_) => self.docs[di].omp.shown = false,
+        }
+    }
+
     /// The run (`0x4a00b0`): inputs by `_wtof` from the stored strings, the
     /// channels by the names in the station properties, the engine, the
     /// window written to В1 (start) / В2 (start + P − 1), and the result
