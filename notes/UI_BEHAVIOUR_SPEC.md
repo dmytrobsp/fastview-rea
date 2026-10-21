@@ -1279,7 +1279,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     delete with companions, persistence) — `main.rs` → new module — L
 36. Print: dialog with five checkboxes, page setup, paged output (oscillogram
     sliced, diagrams one page each) and preview — new module — L
-37. Loading progress dialog with worker thread and cancel (thresholds
+37. 🟡 (L9.10: worker + thresholds + cancel; no percent) Loading progress dialog with worker thread and cancel (thresholds
     200 kB/20 kB) — `app.rs`, `crates/fvb-core` parsers — M
 38. ОМП parameters dialog: toolbar + tree + property grid, enable rules,
     validation messages, `.omp` XML load/save, embed in `.set` — `views.rs` →

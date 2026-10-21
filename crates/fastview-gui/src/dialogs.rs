@@ -13,6 +13,30 @@ impl App {
         self.settings_window(ctx);
         self.color_window(ctx);
         self.finder_window(ctx);
+        self.loading_window(ctx);
+    }
+
+    /// «Загрузка» (DIALOG 492): an indeterminate progress bar per large file
+    /// being read, and «Отмена», which abandons that open.
+    fn loading_window(&mut self, ctx: &egui::Context) {
+        self.poll_loading();
+        if self.loading.is_empty() {
+            return;
+        }
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        let mut cancel = None;
+        for (i, l) in self.loading.iter().enumerate().filter(|(_, l)| l.big) {
+            egui::Window::new("Загрузка").id(egui::Id::new(("fv_loading", i))).collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.label(l.path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+                ui.add(egui::ProgressBar::new(0.0).animate(true).desired_width(260.0));
+                if ui.button("Отмена").clicked() {
+                    cancel = Some(i);
+                }
+            });
+        }
+        if let Some(i) = cancel {
+            self.loading.remove(i);
+        }
     }
 
     /// «Цвет канала» (33030): a colour dialog started from the first selected

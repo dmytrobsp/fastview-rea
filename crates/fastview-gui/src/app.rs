@@ -292,6 +292,43 @@ pub enum RectZoom {
     Dragging { chan: usize, x: f32, y0: f32, y1: f32 },
 }
 
+type LoadResult = Result<(Oscillogram, fvb_core::comtrade::CffSections), fvb_core::comtrade::ComtradeError>;
+
+/// A record being parsed on a worker thread.
+pub struct Loading {
+    pub path: std::path::PathBuf,
+    /// Large enough for the progress dialog.
+    pub big: bool,
+    rx: std::sync::mpsc::Receiver<LoadResult>,
+}
+
+/// Parse a `.cfg` / `.cff` / `.osc` record.
+fn parse_file(path: &std::path::Path, enc: Encoding) -> LoadResult {
+    if path.to_string_lossy().to_lowercase().ends_with(".cff") {
+        std::fs::read(path)
+            .map_err(|e| fvb_core::comtrade::ComtradeError::Io(e.to_string()))
+            .and_then(|b| fvb_core::comtrade::parse_cff(&b, enc))
+    } else {
+        fvb_core::comtrade::load_with(path, enc).map(|o| (o, Default::default()))
+    }
+}
+
+/// The progress dialog shows when the `.dat` of a `.cfg` or the `.cff` is
+/// over 200 000 bytes, or the `.osc` over 20 000.
+pub fn loading_shown(path: &std::path::Path) -> bool {
+    let size = |p: &std::path::Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+    let lower = path.to_string_lossy().to_lowercase();
+    if lower.ends_with(".cfg") {
+        size(&path.with_extension("dat")).max(size(&path.with_extension("DAT"))) > 200_000
+    } else if lower.ends_with(".cff") {
+        size(path) > 200_000
+    } else if lower.ends_with(".osc") {
+        size(path) > 20_000
+    } else {
+        false
+    }
+}
+
 /// ADC codes of a channel (`(raw − b) / a`, rounded).
 fn adc_codes(c: &fvb_core::comtrade::AnalogChannel) -> Vec<f64> {
     c.samples.iter().map(|&v| if c.a.abs() > 1e-12 { ((v - c.b) / c.a).round() } else { v }).collect()
@@ -789,6 +826,8 @@ pub struct App {
     pub view_width: f32,
     /// Stats-panel width at the last layout (fitted to the text).
     pub view_left: f32,
+    /// Records being parsed.
+    pub loading: Vec<Loading>,
     /// «Проводник» (32880), the modal finder.
     pub finder: Option<crate::finder::Finder>,
     /// The window title last sent to the viewport.
@@ -888,6 +927,7 @@ impl App {
             view_left: crate::lanes::LEFT_W_DEFAULT,
             window_title: String::new(),
             finder: None,
+            loading: Vec::new(),
             dst_dir: None,
             lane_menu: None,
             lane_menu_serial: 0,
@@ -1375,15 +1415,41 @@ impl App {
         }
     }
 
+    /// Open a record as a new document. Parsing runs on a worker thread
+    /// (`LoadingDlg`, DIALOG 492); the progress dialog shows only for large
+    /// files and «Отмена» abandons the open.
     pub fn load_comtrade_path(&mut self, path: &std::path::Path) {
-        let is_cff = path.to_string_lossy().to_lowercase().ends_with(".cff");
-        let loaded = if is_cff {
-            std::fs::read(path)
-                .map_err(|e| fvb_core::comtrade::ComtradeError::Io(e.to_string()))
-                .and_then(|b| fvb_core::comtrade::parse_cff(&b, self.encoding))
-        } else {
-            fvb_core::comtrade::load_with(path, self.encoding).map(|o| (o, Default::default()))
-        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (p, enc) = (path.to_path_buf(), self.encoding);
+        std::thread::spawn(move || {
+            let _ = tx.send(parse_file(&p, enc));
+        });
+        self.loading.push(Loading { path: path.to_path_buf(), big: loading_shown(path), rx });
+    }
+
+    /// Collect finished loads (called every frame).
+    pub fn poll_loading(&mut self) {
+        let mut done = Vec::new();
+        self.loading.retain(|l| match l.rx.try_recv() {
+            Ok(r) => {
+                done.push((l.path.clone(), r));
+                false
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => true,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => false,
+        });
+        for (path, r) in done {
+            self.finish_load(&path, r);
+        }
+    }
+
+    /// Load synchronously (re-opening with another encoding, tests).
+    pub fn load_comtrade_now(&mut self, path: &std::path::Path) {
+        let r = parse_file(path, self.encoding);
+        self.finish_load(path, r);
+    }
+
+    fn finish_load(&mut self, path: &std::path::Path, loaded: LoadResult) {
         match loaded {
             Ok((osc, cff)) => {
                 let name = path
@@ -1406,7 +1472,7 @@ impl App {
     pub fn reopen_active(&mut self) {
         let path = self.active_doc().and_then(|d| d.path.clone());
         if let Some(path) = path {
-            self.load_comtrade_path(&path);
+            self.load_comtrade_now(&path);
         } else {
             self.status = "Файл для переоткрытия неизвестен.".into();
         }

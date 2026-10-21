@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.9** below.
+temporary). Reconciled so far: **L9.1**–**L9.10** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -870,6 +870,18 @@ Residual: no shell folder tree (a folder list instead); `.sto` entries not
 read (no sample `.sto`; `0x46c960` reads its inner cfg); delete is permanent
 after our own confirmation (the original uses the shell prompt and the recycle
 bin with Shift); date pickers are day/month/year spinners.
+
+### L9.10 — Loading on a worker thread with the «Загрузка» dialog  ·  🟡
+
+Read (spec §7.6): parsing always on a worker thread; the modal dialog only
+when the `.dat` of a `.cfg` or the `.cff` exceeds 200 000 bytes, or the `.osc`
+20 000; «Отмена» silently abandons the open. Ours: `App::load_comtrade_path`
+spawns the parse, `poll_loading` adds the document when it arrives,
+`loading_shown` applies the thresholds, `loading_window` shows an
+indeterminate bar with «Отмена»; re-opening with another encoding stays
+synchronous (`load_comtrade_now`). Residual: no 0..100 progress (the parsers
+do not report it; the abandoned worker runs to completion and its result is
+dropped).
 
 Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — tracks D (diagrams 19–22, 27,
 40), O (ОМП 6, 12, 38) and F (dialogs 16, 18, 28, 29, 34, 39) were
