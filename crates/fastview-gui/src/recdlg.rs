@@ -124,9 +124,13 @@ impl Doc {
         self.chans.first().is_some_and(|c| c.primary)
     }
 
-    /// The raw bytes of the channel names, as the code-page guess reads them.
+    /// The raw bytes the code-page guess reads (`0x44f74d`: station and
+    /// recorder via `0x4573d0`, then every channel name appended).
     fn name_bytes(&self) -> Vec<u8> {
-        let names = self.osc.analog.iter().map(|c| c.id.as_str()).chain(self.osc.digital.iter().map(|c| c.id.as_str()));
+        let names = [self.osc.station.as_str(), self.osc.device.as_str()]
+            .into_iter()
+            .chain(self.osc.analog.iter().map(|c| c.id.as_str()))
+            .chain(self.osc.digital.iter().map(|c| c.id.as_str()));
         names.flat_map(|n| comtrade::encode_text(n, self.codepage)).collect()
     }
 
@@ -677,7 +681,6 @@ mod tests {
         d.osc.analog[0].id = comtrade::decode_bytes(&raw, Encoding::Cp1251);
         d.set_codepage(Encoding::Cp866);
         assert_eq!(d.osc.analog[0].id, "Ток");
-        assert!(d.osc.station.starts_with("НТЦ") || !d.osc.station.is_empty());
     }
 
     #[test]
@@ -685,11 +688,17 @@ mod tests {
         let osc = comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
         let mut d = Doc::new(osc, "x".into());
         // Names as an 866 file read with the 1251 default.
-        let raw = comtrade::encode_text("Напряжение", Encoding::Cp866);
-        d.osc.analog[0].id = comtrade::decode_bytes(&raw, Encoding::Cp1251);
+        let as_1251 = |s: &str| comtrade::decode_bytes(&comtrade::encode_text(s, Encoding::Cp866), Encoding::Cp1251);
+        let mut d866 = Doc::new(d.osc.clone(), "y".into());
+        d866.osc.station = as_1251("Подстанция");
+        d866.osc.analog[0].id = as_1251("Напряжение");
+        d866.init_record_text(Encoding::Cp1251);
+        assert_eq!(d866.codepage, Encoding::Cp866);
+        assert_eq!((d866.osc.station.as_str(), d866.osc.analog[0].id.as_str()), ("Подстанция", "Напряжение"));
+        // The demo: a 1251 station and Latin channel names stay 1251.
         d.init_record_text(Encoding::Cp1251);
-        assert_eq!(d.codepage, Encoding::Cp866);
-        assert_eq!(d.osc.analog[0].id, "Напряжение");
+        assert_eq!(d.codepage, Encoding::Cp1251);
+        assert!(d.osc.station.starts_with("НТЦ"));
     }
 
     #[test]
