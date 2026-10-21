@@ -50,6 +50,11 @@ impl App {
                         ui.close_menu();
                     }
                 }
+                // 32805: the record comment, enabled for .cfg / .cff only.
+                if ui.add_enabled(self.hdr_comment_enabled(), egui::Button::new("Комментарии…")).clicked() {
+                    cmds.push(Command::HdrComment);
+                    ui.close_menu();
+                }
                 ui.separator();
                 if ui.button("Открыть библиотеку характеристик .fvb…").clicked() {
                     cmds.push(Command::OpenFvb);
@@ -168,8 +173,9 @@ impl App {
         });
         // Видимость
         ribbon_group(ui, p, "Видимость", |ui| {
+            // 32862: DIALOG 463 «Отображение каналов».
             if big_button(ui, p, Icon::Channels, "Каналы").clicked() {
-                cmds.push(Command::Show(View::Oscillogram));
+                cmds.push(Command::ChannelsDialog);
             }
             ui.vertical(|ui| {
                 // 32845 / 32846 / 32847: the discrete channels.
@@ -185,7 +191,8 @@ impl App {
                 if small_button(ui, p, Icon::FitTime, "Вся осцил.").clicked() {
                     cmds.push(Command::FitTime);
                 }
-                if small_button(ui, p, Icon::Channels, "Назн. каналы…").clicked() {
+                // Our extension (not in the original): channel roles Ua…Ic.
+                if small_button(ui, p, Icon::Channels, "Роли Ua…Ic*").on_hover_text("Назначение ролей каналов — дополнение FastView-REA").clicked() {
                     cmds.push(Command::ChannelMap);
                 }
             });
@@ -265,8 +272,19 @@ impl App {
                         cmds.push(Command::ToggleFlag(f));
                     }
                 }
-                if small_button_sel(ui, p, Icon::Primary, "Первичные знач.", self.primary_values).clicked() {
-                    cmds.push(Command::SetPrimaryValues(!self.primary_values));
+            });
+            ui.vertical(|ui| {
+                // 32866 «Коэффициенты»; 32867 / 32868 a radio pair checked
+                // from channel 0 (CMDUI `0x42ffb0`).
+                if small_button(ui, p, Icon::Params, "Коэффициенты").clicked() {
+                    cmds.push(Command::Coefficients);
+                }
+                let prim = self.active_doc().map(|d| d.primary_values());
+                if small_button_sel(ui, p, Icon::Primary, "Первичные знач.", prim == Some(true)).clicked() {
+                    cmds.push(Command::SetPrimaryValues(true));
+                }
+                if small_button_sel(ui, p, Icon::Primary, "Вторичные знач.", prim == Some(false)).clicked() {
+                    cmds.push(Command::SetPrimaryValues(false));
                 }
             });
             if big_button_sel(ui, p, Icon::Analysis, "Быстрый\nанализ", self.view == View::Analysis).clicked() {
@@ -275,8 +293,12 @@ impl App {
         });
         // Осциллограмма
         ribbon_group(ui, p, "Осциллограмма", |ui| {
-            if big_button_sel(ui, p, Icon::Wave, "Осцилло-\nграмма", self.view == View::Oscillogram).clicked() {
-                cmds.push(Command::Show(View::Oscillogram));
+            // 142: toggles the parameters bar, checked while it is shown.
+            if big_button_sel(ui, p, Icon::Wave, "Осцилло-\nграмма", self.dlg.param_bar)
+                .on_hover_text("Показать или скрыть панель параметров осциллограммы")
+                .clicked()
+            {
+                cmds.push(Command::ToggleParamBar);
             }
         });
     }

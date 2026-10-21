@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 189 pass)
+- `cargo test --workspace`   (currently 216 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 189 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 216 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.12** below.
+temporary). Reconciled so far: **L9.1**–**L9.13** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -918,7 +918,39 @@ contents, frequency margins NOT DETERMINED; per-document «* Chart»
 persistence, the themed splitter, bit 14 pending merge not modelled;
 `egui_plot` dependency now unused.
 
-Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — tracks D (diagrams 19–22, 27,
+### L9.13 — Dialogs and the parameters bar (track F, merged)  ·  🟡
+
+Merged from `worktree-agent-a7cb4acef380f64fb` (`2818fb2`, `0fea977`,
+`bf752d4`, `60831ef`). Read: parameters bar `0x456e90` (raw stamp
+`dd/mm/yyyy, <time>` when local_code is empty; else `%d.%m.%Y, %H:%M:%S.` +
+`_itow(frac)` + « (UTC)»/« (Местное время)»; the first date field is the month
+unless rev is "2013", swapped when > 12, +2000 below 100); loader `0x450e70`
+keeps the four stamp tokens and the 2013 `time_code,local_code` line;
+code-page guess `0x459e60` (Cyrillic letter counts 1251 vs 866 over station +
+recorder + names, tie → 866) and re-decode `0x4543e0`; ChannelsDlg `0x4349c0`
+(vector column unit A/V/«ном»/"" case-sensitive; circle column CompareNoCase
+Ohm/W/VA/var, not bit14 — **the spec's §10 note was inverted**). **Parser bug
+fixed:** primary/secondary/PS are fields 11–13 of the analog line (we read
+10–12). Ours: `chandlg.rs` (DIALOG 463 grid with header column toggles and
+rename 397/398; DIALOG 477 coefficients with Shift fill), `recdlg.rs` (bar 142
+on by default, DIALOG 392 file parameters, DIALOG 510 settings with four
+encodings and default 1251, the record-mode .hdr editor 32805 with 866/1251
+re-encode, per-channel primary/secondary `ChanView::primary`); our role window
+relabelled as our extension. Merge reconciliation: F's
+`Doc::recompute_signals` now wraps L9.7's `Doc::recompute` (flagged record,
+whole-period DC) keeping the channel roles; `recompute_doc` re-runs ОМП via
+`omp.shown`; discrete visibility unified as `Doc::digital_visible`;
+`reopen_active` removed (a new encoding applies on the next open, as the
+original).
+Residual / NOT DETERMINED: the `doc+0x1e4` correction candidates (combo
+disabled); digital groups `doc+0x878/+0x884`; bitmap 464 icons (ours);
+whether 463 has OK; `ch+0x89` default (secondary); `.set` persistence and the
+document-modified flag are still not modelled.
+
+Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — remaining: ribbon contents 11 /
+app menu 31 / Стиль 33, merge workflow 15 (start times now kept), print 36,
+AddFormula 46, modified flag 47, OLE drag 48, plus residuals above. (Former
+note:) tracks D (diagrams 19–22, 27,
 40), O (ОМП 6, 12, 38) and F (dialogs 16, 18, 28, 29, 34, 39) were
 dispatched to parallel worktree agents on 2026-10-21 (merge their branches);
 main tree: ribbon contents 11 after merging F, then 31–37, 45–48 (ОМП banner/

@@ -8,13 +8,12 @@ impl App {
         self.about_window(ctx);
         self.channel_props_window(ctx);
         self.comment_window(ctx);
-        self.file_params_window(ctx);
         self.channel_map_window(ctx);
-        self.settings_window(ctx);
         self.color_window(ctx);
         self.finder_window(ctx);
         self.loading_window(ctx);
         self.omp_windows(ctx);
+        self.record_dialogs_ui(ctx);
     }
 
     /// «Загрузка» (DIALOG 492): an indeterminate progress bar per large file
@@ -73,64 +72,16 @@ impl App {
         };
     }
 
-    /// Program settings (DIALOG 510): the `.cfg` text encoding, re-opening the
-    /// active record when it changes.
-    fn settings_window(&mut self, ctx: &egui::Context) {
-        if !self.show_settings {
-            return;
-        }
-        use fvb_core::comtrade::Encoding;
-        let mut open = true;
-        let mut reopen = false;
-        let mut close_btn = false;
-        egui::Window::new("Установка настроек программы")
-            .collapsible(false)
-            .resizable(false)
-            .open(&mut open)
-            .show(ctx, |ui| {
-                ui.label("Кодировка текста файла описания (.cfg):");
-                for (enc, label) in [
-                    (Encoding::Auto, "Автоопределение (UTF-8 / Windows-1251)"),
-                    (Encoding::Utf8, "UTF-8"),
-                    (Encoding::Cp1251, "Windows-1251"),
-                    (Encoding::Cp866, "IBM866 (DOS)"),
-                    (Encoding::Koi8r, "KOI8-R"),
-                ] {
-                    ui.radio_value(&mut self.encoding, enc, label);
-                }
-                ui.label(
-                    egui::RichText::new(
-                        "Внимание! При смене кодировки изменения вступают в силу после \
-                         переоткрытия файла осциллограммы.",
-                    )
-                    .small()
-                    .weak(),
-                );
-                ui.separator();
-                ui.horizontal(|ui| {
-                    if ui.add_enabled(self.active_doc().and_then(|d| d.path.as_ref()).is_some(), egui::Button::new("Переоткрыть активную")).clicked() {
-                        reopen = true;
-                    }
-                    if ui.button("Закрыть").clicked() {
-                        close_btn = true;
-                    }
-                });
-            });
-        if reopen {
-            self.reopen_active();
-        }
-        self.show_settings = open && !close_btn;
-    }
-
-    /// Explicit channel-to-role assignment (the original's DIALOG 536 / «Отображение
-    /// каналов»): pick which analog channel plays Ua/Ub/Uc and Ia/Ib/Ic for every
-    /// analysis and diagram. Pre-filled from name-based auto-detection.
+    /// Channel-role assignment — **our extension**, not a dialog of the
+    /// original (whose «Отображение каналов» is the visibility grid, DIALOG
+    /// 463, `chandlg`): pick which analog channel plays Ua/Ub/Uc and Ia/Ib/Ic
+    /// for our analyses, diagrams and ОМП. Pre-filled from the names.
     fn channel_map_window(&mut self, ctx: &egui::Context) {
         if !self.show_channel_map {
             return;
         }
         let mut open = true;
-        egui::Window::new("Отображение каналов — назначение Ua/Ia…")
+        egui::Window::new("Роли каналов Ua…Ic (дополнение FastView-REA)")
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
@@ -178,44 +129,6 @@ impl App {
                 );
             });
         self.show_channel_map = open;
-    }
-
-    fn file_params_window(&mut self, ctx: &egui::Context) {
-        if !self.show_file_params {
-            return;
-        }
-        let mut open = true;
-        egui::Window::new("Параметры файла")
-            .collapsible(false)
-            .resizable(false)
-            .open(&mut open)
-            .show(ctx, |ui| {
-                let Some(d) = self.active_doc() else {
-                    ui.label("Нет активной осциллограммы.");
-                    return;
-                };
-                let o = &d.osc;
-                let dur = o.time.last().copied().unwrap_or(0.0) - o.time.first().copied().unwrap_or(0.0);
-                egui::Grid::new("fileparams").num_columns(2).spacing([12.0, 5.0]).show(ui, |ui| {
-                    let row = |ui: &mut egui::Ui, k: &str, v: String| {
-                        ui.label(k);
-                        ui.label(egui::RichText::new(v).strong());
-                        ui.end_row();
-                    };
-                    row(ui, "Имя:", d.name.clone());
-                    row(ui, "Станция:", if o.station.is_empty() { "—".into() } else { o.station.clone() });
-                    row(ui, "Устройство:", if o.device.is_empty() { "—".into() } else { o.device.clone() });
-                    row(ui, "Ревизия COMTRADE:", format!("{}", o.rev_year));
-                    row(ui, "Частота сети:", format!("{} Гц", o.line_freq));
-                    row(ui, "Частота дискретизации:", format!("{:.0} Гц", o.sample_rate));
-                    row(ui, "Отсчётов за период:", format!("{}", o.samples_per_cycle()));
-                    row(ui, "Аналоговых каналов:", format!("{}", o.analog.len()));
-                    row(ui, "Дискретных каналов:", format!("{}", o.digital.len()));
-                    row(ui, "Число отсчётов:", format!("{}", o.sample_count()));
-                    row(ui, "Длительность:", format!("{:.4} с", dur));
-                });
-            });
-        self.show_file_params = open;
     }
 
     fn about_window(&mut self, ctx: &egui::Context) {

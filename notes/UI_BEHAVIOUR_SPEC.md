@@ -1227,13 +1227,13 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     methods, drag time-shift (hand cursor), «Объединить» resampling, undo on
     bar close, paste disabled while pending; fix the test pinning index
     alignment — `app.rs`, new merge module, `crates/fvb-core` — L
-16. Каналы dialog 463 (icon grid, header toggles column, in-place rename with
+16. ✅ (merged L9.13) Каналы dialog 463 (icon grid, header toggles column, in-place rename with
     397/398) replacing the view switch; rename our role-assignment window —
     `dialogs.rs`, `ribbon.rs` — M
 17. 🟡 (L9.4: six complete strings; free-text pane kept) Status bar: six fixed-width panes with full original strings and
     RulerState formats, trigger-relative, H-diff only on the same channel;
     drop the free-text status (toast instead) — `main.rs`, `lanes.rs` — S
-18. Parameters bar (142, visible by default, 75 px) — `main.rs`, `ribbon.rs` — S
+18. ✅ (merged L9.13) Parameters bar (142, visible by default, 75 px) — `main.rs`, `ribbon.rs` — S
 19. ✅ (merged L9.11/L9.12) Circle/diff diagrams: (z, ox, oy) model with wheel/Ctrl/Shift, limits,
     scrollbars, toolbar; origin-centred equal-scale autoscale incl. loci;
     two scales + edge labels/scale box; property grid on top with splitter;
@@ -1256,9 +1256,9 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 27. ✅ (merged L9.11/L9.12) Diagram eligibility by unit (vector A/V/«ном»/empty, circle Ohm/W/VA/var;
     circle pane Ohm/VA; clear on attach) in 561 and the dialogs — `chansel.rs`,
     `views.rs` — S
-28. Coefficients dialog 477 (bulk Shift-select entry) + Первичные/Вторичные as
+28. ✅ (merged L9.13) Coefficients dialog 477 (bulk Shift-select entry) + Первичные/Вторичные as
     a per-channel radio pair with full recompute — `dialogs.rs`, `app.rs` — M
-29. File parameters 392: title, editable sample-rate combo with 50/60 Hz lists
+29. ✅ (merged L9.13) File parameters 392: title, editable sample-rate combo with 50/60 Hz lists
     (re-time + recompute), correction combo, start/trigger, `%g c.`, live
     code-page combo, Закрыть applies — `dialogs.rs`, `app.rs` — M
 30. ✅ (L9.7; undo greying pending) Invert/DC/visibility semantics: toggle-all over the selection, **no undo**,
@@ -1273,7 +1273,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 33. Стиль menu (9 entries, radio, persisted, default 215), help split button,
     ribbon minimise via ribbon right-click — `ribbon.rs`, `theme.rs`,
     `persist.rs` — S
-34. Program settings 510: no auto encoding, default 1251, .dst folder, UTC/
+34. ✅ (merged L9.13) Program settings 510: no auto encoding, default 1251, .dst folder, UTC/
     local radios, persistence (+ print margins) — `dialogs.rs`, `persist.rs` — S
 35. 🟡 (L9.9: all but the shell tree, .sto and recycle bin) Проводник as the modal finder (worker scan, filters, sort, multi-open,
     delete with companions, persistence) — `main.rs` → new module — L
@@ -1284,7 +1284,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 38. ✅ (merged L9.11/L9.12) ОМП parameters dialog: toolbar + tree + property grid, enable rules,
     validation messages, `.omp` XML load/save, embed in `.set` — `views.rs` →
     new `omp_ui` module, `crates/fvb-core` — L
-39. Record comment (.hdr) editor 32805 for .cfg/.cff with 866/1251 re-encode —
+39. ✅ (merged L9.13) Record comment (.hdr) editor 32805 for .cfg/.cff with 866/1251 re-encode —
     `dialogs.rs`, `crates/fvb-core` — S
 40. ✅ (merged L9.11/L9.12) Pair dialog 554 + R/X pair loci on the circle diagram — `dialogs.rs`,
     `views.rs` — M

@@ -63,6 +63,22 @@ pub struct Oscillogram {
     /// Gain applied to the fundamental by `fourie:` (`rec+0x278`): 1 for
     /// COMTRADE, set by the OSC2 version (1.0128 / 1.00259 / 1.014065).
     pub harmonic1_gain: f64,
+    /// The record's time stamps as the `.cfg` writes them (the loader
+    /// `0x450e70` keeps the four tokens: `doc+0x24c` start date, `+0x250`
+    /// start time, `+0x254` trigger date, `+0x258` trigger time).
+    pub stamps: Stamps,
+}
+
+/// The two `.cfg` time-stamp lines, token by token, and the COMTRADE 2013
+/// `time_code,local_code` line (`local_code` = `doc+0x264`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Stamps {
+    pub start_date: String,
+    pub start_time: String,
+    pub trigger_date: String,
+    pub trigger_time: String,
+    pub time_code: String,
+    pub local_code: String,
 }
 
 impl Oscillogram {
@@ -156,9 +172,19 @@ pub fn write(osc: &Oscillogram) -> (String, String) {
     cfg.push_str(&format!("{}\n", osc.line_freq));
     cfg.push_str("1\n");
     cfg.push_str(&format!("{},{}\n", rate, n));
-    cfg.push_str("01/01/2000,00:00:00.000000\n");
-    cfg.push_str("01/01/2000,00:00:00.000000\n");
+    // The record's own time stamps (a record without them gets 01/01/2000).
+    let st = &osc.stamps;
+    for (d, t) in [(&st.start_date, &st.start_time), (&st.trigger_date, &st.trigger_time)] {
+        if d.is_empty() {
+            cfg.push_str("01/01/2000,00:00:00.000000\n");
+        } else {
+            cfg.push_str(&format!("{d},{t}\n"));
+        }
+    }
     cfg.push_str("ASCII\n1\n");
+    if osc.rev_year == 2013 {
+        cfg.push_str(&format!("{},{}\n", st.time_code, st.local_code));
+    }
 
     let mut dat = String::new();
     for k in 0..n {
@@ -518,6 +544,7 @@ pub fn parse_osc(bytes: &[u8], enc: Encoding) -> Result<Oscillogram, ComtradeErr
         digital,
         sample_rate: first_rate.unwrap_or(rate),
         harmonic1_gain: gain,
+        stamps: Stamps::default(),
     })
 }
 
@@ -576,31 +603,87 @@ fn decode_text(bytes: &[u8]) -> String {
     decode_text_enc(bytes, Encoding::Auto)
 }
 
-fn cp1251_to_char(b: u8) -> char {
-    if b < 0x80 {
-        b as char
-    } else {
-        // CP1251 upper half maps onto Cyrillic U+0410.. with a well-known table;
-        // the regular А-я run is contiguous from 0xC0.
-        match b {
-            0xC0..=0xFF => char::from_u32(0x0410 + (b as u32 - 0xC0)).unwrap_or('?'),
-            0xA8 => 'Ё',
-            0xB8 => 'ё',
-            _ => '?',
-        }
+/// Decode bytes with an encoding (the public face of the loader's decoder).
+pub fn decode_bytes(bytes: &[u8], enc: Encoding) -> String {
+    decode_text_enc(bytes, enc)
+}
+
+/// Encode text back to the bytes `enc` decodes it from (`Auto` = UTF-8);
+/// characters the code page lacks become `?`.
+pub fn encode_text(text: &str, enc: Encoding) -> Vec<u8> {
+    let single = |f: fn(u8) -> char| -> Vec<u8> {
+        text.chars()
+            .map(|c| if (c as u32) < 0x80 { c as u8 } else { (0x80..=0xFFu8).find(|b| f(*b) == c).unwrap_or(b'?') })
+            .collect()
+    };
+    match enc {
+        Encoding::Auto | Encoding::Utf8 => text.as_bytes().to_vec(),
+        Encoding::Cp1251 => single(cp1251_to_char),
+        Encoding::Cp866 => single(cp866_to_char),
+        Encoding::Koi8r => single(koi8r_to_char),
     }
 }
 
-fn cp866_to_char(b: u8) -> char {
+/// Re-read text decoded with `from` as if its bytes were in `to` — the
+/// code-page switches of the original (file parameters `0x4543e0`, the
+/// comment dialog `0x43e410`) re-decode the record's raw bytes.
+pub fn recode(text: &str, from: Encoding, to: Encoding) -> String {
+    decode_text_enc(&encode_text(text, from), to)
+}
+
+/// The record code page guessed from the raw channel-name bytes
+/// (`0x459e60`, run by the settings loader `0x44f5b0` at every open): count
+/// the bytes that are Cyrillic letters read as Windows-1251 (0xC0..0xFF) and
+/// read as IBM866 (А–п 0x80..0xAF, р–я 0xE0..0xEF); 1251 wins only with
+/// strictly more letters, otherwise 866.
+pub fn detect_codepage(raw: &[u8]) -> Encoding {
+    let n1251 = raw.iter().filter(|b| **b >= 0xC0).count();
+    let n866 = raw.iter().filter(|b| matches!(**b, 0x80..=0xAF | 0xE0..=0xEF)).count();
+    if n866 < n1251 {
+        Encoding::Cp1251
+    } else {
+        Encoding::Cp866
+    }
+}
+
+/// Windows-1251 upper half (0x98 is unassigned; kept as U+0098 so the table
+/// is a bijection).
+const CP1251_HI: [u16; 64] = [
+    0x0402, 0x0403, 0x201A, 0x0453, 0x201E, 0x2026, 0x2020, 0x2021, 0x20AC, 0x2030, 0x0409, 0x2039, 0x040A, 0x040C, 0x040B, 0x040F,
+    0x0452, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x0098, 0x2122, 0x0459, 0x203A, 0x045A, 0x045C, 0x045B, 0x045F,
+    0x00A0, 0x040E, 0x045E, 0x0408, 0x00A4, 0x0490, 0x00A6, 0x00A7, 0x0401, 0x00A9, 0x0404, 0x00AB, 0x00AC, 0x00AD, 0x00AE, 0x0407,
+    0x00B0, 0x00B1, 0x0406, 0x0456, 0x0491, 0x00B5, 0x00B6, 0x00B7, 0x0451, 0x2116, 0x0454, 0x00BB, 0x0458, 0x0405, 0x0455, 0x0457,
+];
+
+fn cp1251_to_char(b: u8) -> char {
     match b {
         0x00..=0x7F => b as char,
-        0x80..=0x9F => char::from_u32(0x0410 + (b as u32 - 0x80)).unwrap_or('?'), // А..Я
-        0xA0..=0xAF => char::from_u32(0x0430 + (b as u32 - 0xA0)).unwrap_or('?'), // а..п
-        0xE0..=0xEF => char::from_u32(0x0440 + (b as u32 - 0xE0)).unwrap_or('?'), // р..я
-        0xF0 => 'Ё',
-        0xF1 => 'ё',
-        _ => '?', // box-drawing range
+        0x80..=0xBF => char::from_u32(u32::from(CP1251_HI[(b - 0x80) as usize])).unwrap_or('?'),
+        // А..я are contiguous from 0xC0.
+        _ => char::from_u32(0x0410 + (b as u32 - 0xC0)).unwrap_or('?'),
     }
+}
+
+/// IBM866 pseudo-graphics 0xB0..0xDF and the tail 0xF0..0xFF.
+const CP866_BOX: [u16; 48] = [
+    0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556, 0x2555, 0x2563, 0x2551, 0x2557, 0x255D, 0x255C, 0x255B, 0x2510,
+    0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C, 0x255E, 0x255F, 0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567,
+    0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B, 0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580,
+];
+const CP866_TAIL: [u16; 16] = [
+    0x0401, 0x0451, 0x0404, 0x0454, 0x0407, 0x0457, 0x040E, 0x045E, 0x00B0, 0x2219, 0x00B7, 0x221A, 0x2116, 0x00A4, 0x25A0, 0x00A0,
+];
+
+fn cp866_to_char(b: u8) -> char {
+    let u = match b {
+        0x00..=0x7F => return b as char,
+        0x80..=0x9F => 0x0410 + (b as u32 - 0x80), // А..Я
+        0xA0..=0xAF => 0x0430 + (b as u32 - 0xA0), // а..п
+        0xB0..=0xDF => u32::from(CP866_BOX[(b - 0xB0) as usize]),
+        0xE0..=0xEF => 0x0440 + (b as u32 - 0xE0), // р..я
+        _ => u32::from(CP866_TAIL[(b - 0xF0) as usize]),
+    };
+    char::from_u32(u).unwrap_or('?')
 }
 
 fn koi8r_to_char(b: u8) -> char {
@@ -612,6 +695,163 @@ fn koi8r_to_char(b: u8) -> char {
         0xB3 => 'Ё',
         0xC0..=0xFF => UPPER.chars().nth((b - 0xC0) as usize).unwrap_or('?'),
         _ => '?',
+    }
+}
+
+/// The leading integers of `s` in the shape of `swscanf` with `%d` fields
+/// separated by the literal characters `seps` (whitespace before a number is
+/// skipped, a field may carry a sign); returns the values read until the
+/// first mismatch.
+fn scan_ints(s: &str, seps: &[char]) -> Vec<i64> {
+    let mut out = Vec::new();
+    let mut it = s.chars().peekable();
+    for k in 0..=seps.len() {
+        while it.peek().is_some_and(|c| c.is_whitespace()) {
+            it.next();
+        }
+        let mut t = String::new();
+        if let Some(&c) = it.peek() {
+            if c == '-' || c == '+' {
+                t.push(c);
+                it.next();
+            }
+        }
+        while let Some(&c) = it.peek() {
+            if !c.is_ascii_digit() {
+                break;
+            }
+            t.push(c);
+            it.next();
+        }
+        match t.parse::<i64>() {
+            Ok(v) => out.push(v),
+            Err(_) => break,
+        }
+        if k < seps.len() {
+            if it.peek() != Some(&seps[k]) {
+                break;
+            }
+            it.next();
+        }
+    }
+    out
+}
+
+/// `_wtoi`: the leading (signed) integer of `s`, 0 if none.
+fn wtoi(s: &str) -> i64 {
+    scan_ints(s, &[]).first().copied().unwrap_or(0)
+}
+
+/// A `d/m/y` date field as the original orders it (`0x455800`, `0x456e90`):
+/// the first number is the month unless the revision is exactly 2013 (then
+/// the day); a "month" above 12 swaps the two; a year below 100 gets +2000.
+/// Returns (year, month, day).
+fn stamp_date(date: &str, rev_year: i32) -> Option<(i64, i64, i64)> {
+    let v = scan_ints(date, &['/', '/']);
+    if v.len() != 3 {
+        return None;
+    }
+    let (mut month, mut day) = (v[0], v[1]);
+    if rev_year == 2013 {
+        std::mem::swap(&mut month, &mut day);
+    }
+    if month > 12 {
+        std::mem::swap(&mut month, &mut day);
+    }
+    let year = if v[2] < 100 { v[2] + 2000 } else { v[2] };
+    Some((year, month, day))
+}
+
+/// Days from 1970-01-01 of a proleptic Gregorian date (month/day may be out
+/// of range and are normalised, as `mktime` does).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let (y, m) = (y + (m - 1).div_euclid(12), (m - 1).rem_euclid(12) + 1);
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
+}
+
+fn civil_from_days(z: i64) -> (i64, i64, i64) {
+    let z = z + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    (yoe + era * 400 + i64::from(m <= 2), m, d)
+}
+
+/// The raw form of a time stamp (`0x4495e0` / `0x449690`): the date
+/// re-ordered as `dd/mm/yyyy` (empty when it does not parse) + ", " + the
+/// time field as written.
+pub fn raw_stamp(date: &str, time: &str, rev_year: i32) -> String {
+    let d = stamp_date(date, rev_year).map(|(y, m, d)| format!("{d:02}/{m:02}/{y:04}")).unwrap_or_default();
+    format!("{d}, {time}")
+}
+
+/// A record time stamp as the parameters bar shows it (`0x456e90`).
+///
+/// Without a COMTRADE 2013 `local_code` (`doc+0x264`, trimmed) the raw form
+/// is shown. Otherwise `d/m/y` and `h:m:s.frac` are parsed (failure → raw
+/// form) and printed `dd.mm.YYYY, HH:MM:SS.` + the fraction as an integer
+/// (`_itow`: its leading zeros are lost, as in the original) + « (UTC)» or
+/// « (Местное время)». Local time adds the `local_code` offset — `+h`,
+/// `-h`, `+hhmm` written `±<h>h<m>` — to the stamp, unless the code is "0"
+/// or has no single sign.
+pub fn format_stamp(date: &str, time: &str, rev_year: i32, local_code: &str, utc: bool) -> String {
+    let code = local_code.trim();
+    if code.is_empty() {
+        return raw_stamp(date, time, rev_year);
+    }
+    let Some((y, mo, d)) = stamp_date(date, rev_year) else {
+        return raw_stamp(date, time, rev_year);
+    };
+    let t = scan_ints(time, &[':', ':', '.']);
+    if t.len() != 4 {
+        return raw_stamp(date, time, rev_year);
+    }
+    let mut secs = days_from_civil(y, mo, d) * 86400 + t[0] * 3600 + t[1] * 60 + t[2];
+    if !utc && code != "0" {
+        let (plus, minus) = (code.starts_with('+'), code.starts_with('-'));
+        if plus != minus {
+            let rest = &code[1..];
+            let (h, m) = match rest.find('h') {
+                Some(i) => (wtoi(&rest[..i]), wtoi(&rest[i + 1..])),
+                None => (wtoi(rest), 0),
+            };
+            let off = (h * 60 + m) * 60;
+            secs += if plus { off } else { -off };
+        }
+    }
+    let (yy, mm, dd) = civil_from_days(secs.div_euclid(86400));
+    let s = secs.rem_euclid(86400);
+    let suffix = if utc { " (UTC)" } else { " (Местное время)" };
+    format!("{dd:02}.{mm:02}.{yy:04}, {:02}:{:02}:{:02}.{}{suffix}", s / 3600, s / 60 % 60, s % 60, t[3])
+}
+
+impl Oscillogram {
+    /// Re-time the record at a new sample rate (file parameters, `0x449f40`):
+    /// a uniform grid from the first sample.
+    pub fn retime(&mut self, rate: f64) {
+        if rate <= 0.0 || !rate.is_finite() {
+            return;
+        }
+        let t0 = self.time.first().copied().unwrap_or(0.0);
+        for (k, t) in self.time.iter_mut().enumerate() {
+            *t = t0 + k as f64 / rate;
+        }
+        self.sample_rate = rate;
+    }
+
+    /// The record duration (`0x44c0b0`): last minus first sample time, s.
+    pub fn duration(&self) -> f64 {
+        self.time.last().copied().unwrap_or(0.0) - self.time.first().copied().unwrap_or(0.0)
     }
 }
 
@@ -676,9 +916,11 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
             unit: g(4).to_string(),
             a: g(5).parse().unwrap_or(1.0),
             b: g(6).parse().unwrap_or(0.0),
-            primary: g(9).parse().unwrap_or(1.0),
-            secondary: g(10).parse().unwrap_or(1.0),
-            is_primary: g(11).eq_ignore_ascii_case("p"),
+            // An,ch_id,ph,ccbm,uu,a,b,skew,min,max,primary,secondary,PS
+            // (fields 11–13 of the 1999 line; absent in 1991 → 1, 1, S).
+            primary: g(10).parse().unwrap_or(1.0),
+            secondary: g(11).parse().unwrap_or(1.0),
+            is_primary: g(12).eq_ignore_ascii_case("p"),
             samples: Vec::new(),
         });
     }
@@ -711,9 +953,16 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         rates.push(RateSection { rate, end_sample: end });
     }
 
-    // two timestamp lines (first sample, trigger) — kept only loosely
-    let _first_ts = next(&mut li).ok();
-    let _trigger_ts = next(&mut li).ok();
+    // Two time-stamp lines (first sample, trigger): `date,time` tokens kept
+    // as text, as the loader `0x450e70` stores them.
+    let mut stamps = Stamps::default();
+    let split2 = |l: Option<&str>| -> (String, String) {
+        let l = l.unwrap_or("");
+        let (a, b) = l.split_once(',').unwrap_or((l, ""));
+        (a.trim().to_string(), b.trim().to_string())
+    };
+    (stamps.start_date, stamps.start_time) = split2(next(&mut li).ok());
+    (stamps.trigger_date, stamps.trigger_time) = split2(next(&mut li).ok());
 
     // file type
     let ft = next(&mut li).map(|s| s.trim().to_string()).unwrap_or_default();
@@ -724,6 +973,10 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         .and_then(|s| s.trim().parse::<f64>().ok())
         .filter(|v| *v > 0.0)
         .unwrap_or(1.0);
+    // 2013: `time_code,local_code` (only read for revision "2013").
+    if rev_year == 2013 {
+        (stamps.time_code, stamps.local_code) = split2(next(&mut li).ok());
+    }
 
     // Build the per-sample time base from the rate sections.
     let total = rates.last().map(|r| r.end_sample).unwrap_or(0);
@@ -759,6 +1012,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         digital,
         sample_rate,
         harmonic1_gain: 1.0,
+        stamps,
     };
     Ok((rec, fmt))
 }

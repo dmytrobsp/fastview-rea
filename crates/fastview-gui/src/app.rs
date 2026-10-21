@@ -183,6 +183,9 @@ pub struct ChanView {
     pub on_freq: bool,
     pub on_vector: bool,
     pub on_circle: bool,
+    /// Values in primary units (`ch+0x89`, set on every file channel by
+    /// 32867 «Первичные» / 32868 «Вторичные»).
+    pub primary: bool,
 }
 
 /// Stats-panel rows of a channel (channel flag bits 4 Max/Min, 6 СКЗ, 5 A1):
@@ -224,6 +227,8 @@ pub struct Computed {
     pub on_vector: bool,
     pub on_circle: bool,
     pub stats: StatRows,
+    /// Shown on the oscillogram (bit 0; «Каналы» dialog column 1).
+    pub visible: bool,
 }
 
 impl Computed {
@@ -238,6 +243,7 @@ impl Computed {
             on_vector: false,
             on_circle: false,
             stats: StatRows::default(),
+            visible: true,
         }
     }
 
@@ -419,10 +425,16 @@ pub struct Doc {
     /// mean over the whole periods from the record start of the values and of
     /// the ADC codes (`ch+0xf8`, `0x428490`).
     pub dc_mean: Vec<(f64, f64)>,
-    /// Discrete channel visibility (32845 / 32846 / 32847).
-    pub dig_visible: Vec<bool>,
     /// The document's ОМП settings, last run and result flag (`doc+0x308`).
     pub omp: crate::omp_ui::OmpDoc,
+    /// Shown flag of each digital channel (bit 0; «Каналы» dialog column 1; 32845 / 32846 / 32847).
+    pub digital_visible: Vec<bool>,
+    /// The code page the record's names are currently decoded in (`doc+0x6e8`,
+    /// 866 / 1251: file parameters «Кодировка»; see `recdlg`).
+    pub codepage: Encoding,
+    /// The record comment (`.hdr` text, 32805) and its code page.
+    pub hdr: Option<String>,
+    pub hdr_cp: Encoding,
 }
 
 impl Doc {
@@ -435,7 +447,6 @@ impl Doc {
             .map(|c| fvb_core::signal::sliding_rms(&c.samples, n))
             .collect();
         let dc_mean = osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
-        let dig_visible = vec![true; osc.digital.len()];
         let flagged = osc.clone();
         let chans = (0..osc.analog.len())
             .map(|i| ChanView {
@@ -453,8 +464,10 @@ impl Doc {
                 // The circle flag is cleared on attach unless the unit is
                 // Ohm / VA (`0x436b30`).
                 on_circle: i == 0 && crate::diagram::circle_pane_unit_ok(&osc.analog[i].unit),
+                primary: false,
             })
             .collect();
+        let digital_visible = vec![true; osc.digital.len()];
         Doc {
             osc,
             analysis,
@@ -482,7 +495,10 @@ impl Doc {
             rms,
             flagged,
             dc_mean,
-            dig_visible,
+            digital_visible,
+            codepage: Encoding::Cp1251,
+            hdr: None,
+            hdr_cp: Encoding::Cp1251,
             omp: Default::default(),
         }
     }
@@ -492,6 +508,11 @@ impl Doc {
     /// the flagged record, its RMS and phasors, and the formula channels.
     pub fn recompute(&mut self, show_primary: bool) {
         let n = self.osc.samples_per_cycle().max(2);
+        // The record may have been re-timed or re-scaled (file parameters,
+        // coefficients): rebuild the copy and the whole-period DC from it.
+        self.flagged = self.osc.clone();
+        self.dc_mean = self.osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
+        self.rms.resize(self.osc.analog.len(), Vec::new());
         for i in 0..self.osc.analog.len() {
             self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i]);
             self.rms[i] = fvb_core::signal::sliding_rms(&self.flagged.analog[i].samples, n);
@@ -667,9 +688,18 @@ pub enum Command {
     TogglePane(Pane),
     /// Bring a pane of the tab group to the front.
     ActivatePane(Pane),
+    /// 32867 / 32868: every file channel to primary / secondary values.
     SetPrimaryValues(bool),
     /// 32823 / 32824 / 32852: toggle-all of a flag over the selection.
     ToggleFlag(crate::chansel::ChanFlag),
+    /// 142: show or hide the parameters bar.
+    ToggleParamBar,
+    /// 32862 «Каналы»: DIALOG 463.
+    ChannelsDialog,
+    /// 32866 «Коэффициенты»: DIALOG 477.
+    Coefficients,
+    /// 32805 «Комментарии»: the record comment (.hdr) editor.
+    HdrComment,
     SetValueMode(ValueMode),
     /// 155..157: toggle a comment placement mode (radio group with toggle-off).
     CommentMode(u8),
@@ -742,7 +772,6 @@ pub struct App {
     pub skin: Skin,
     pub time_unit: TimeUnit,
     pub show_grid: bool,
-    pub primary_values: bool,
 
     // formula editor
     pub formula_name: String,
@@ -831,6 +860,8 @@ pub struct App {
     /// «Цвет канала» (33030) colour dialog, initialised from the first
     /// selected channel and applied to every selected channel on OK.
     pub color_dialog: Option<egui::Color32>,
+    /// Dialogs and bars of `chandlg` / `recdlg` (backlog 16, 18, 28, 29, 34, 39).
+    pub dlg: crate::recdlg::DialogState,
 
     pub status: String,
 }
@@ -869,7 +900,6 @@ impl App {
             skin: Skin::Blue,
             time_unit: TimeUnit::Milli,
             show_grid: true,
-            primary_values: false,
             formula_name: "Uab".to_string(),
             formula_text: "Ua-Ub".to_string(),
             vec_radians: false,
@@ -892,7 +922,7 @@ impl App {
             show_file_params: false,
             show_channel_map: false,
             show_settings: false,
-            encoding: Encoding::Auto,
+            encoding: Encoding::Cp1251,
             explorer_dir: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
             ribbon_minimized: false,
             props_channel: None,
@@ -918,6 +948,7 @@ impl App {
             lane_menu_serial: 0,
             lane_menu_eat: false,
             color_dialog: None,
+            dlg: Default::default(),
             status: "Готово".to_string(),
         };
         app.ensure_block_state();
@@ -1024,15 +1055,11 @@ impl App {
                     _ => {}
                 }
             }
-            Command::SetPrimaryValues(p) => {
-                self.primary_values = p;
-                self.recompute_active();
-                self.status = if p {
-                    "Первичные значения".into()
-                } else {
-                    "Вторичные значения".into()
-                };
-            }
+            Command::SetPrimaryValues(p) => self.set_primary_values(p),
+            Command::ToggleParamBar => self.dlg.param_bar = !self.dlg.param_bar,
+            Command::ChannelsDialog => self.open_channels_dialog(),
+            Command::Coefficients => self.open_coef_dialog(),
+            Command::HdrComment => self.open_hdr_comment(),
             Command::ToggleFlag(f) => {
                 if let Some(d) = self.active_doc_mut() {
                     d.toggle_flag_selected(f);
@@ -1078,12 +1105,12 @@ impl App {
                     for (i, ch) in d.osc.digital.iter().enumerate() {
                         let unchanged = ch.samples.iter().all(|&v| v == ch.samples.first().copied().unwrap_or(false));
                         match k {
-                            0 => d.dig_visible[i] = true,
-                            1 => d.dig_visible[i] = false,
-                            _ if unchanged => d.dig_visible[i] = false,
+                            0 => d.digital_visible[i] = true,
+                            1 => d.digital_visible[i] = false,
+                            _ if unchanged => d.digital_visible[i] = false,
                             _ => {}
                         }
-                        if !d.dig_visible[i] {
+                        if !d.digital_visible[i] {
                             d.selection.remove(&ChanKey::Digital(i));
                         }
                     }
@@ -1241,11 +1268,8 @@ impl App {
     /// The full recompute after a value-changing command (`0x42f4b0` tail):
     /// the active record's derived data and, when its result is shown, ОМП.
     pub fn recompute_active(&mut self) {
-        let primary = self.primary_values;
-        let Some(ai) = self.active else { return };
-        self.docs[ai].recompute(primary);
-        if self.docs[ai].omp.shown {
-            self.run_omp();
+        if let Some(ai) = self.active {
+            self.recompute_doc(ai);
         }
     }
 
@@ -1280,6 +1304,7 @@ impl App {
         if let Some(g) = v.get("Sells") {
             self.show_grid = g != "0";
         }
+        self.load_program_settings();
         let dim = self.diagram_dim;
         if let Some(name) = self.store.selected.get(Self::diagram_key(dim)).cloned() {
             if let Some(i) = self.library.blocks.iter().position(|b| b.name == name) {
@@ -1416,12 +1441,6 @@ impl App {
         }
     }
 
-    /// Load synchronously (re-opening with another encoding, tests).
-    pub fn load_comtrade_now(&mut self, path: &std::path::Path) {
-        let r = parse_file(path, self.encoding);
-        self.finish_load(path, r);
-    }
-
     fn finish_load(&mut self, path: &std::path::Path, loaded: LoadResult) {
         match loaded {
             Ok((osc, cff)) => {
@@ -1430,24 +1449,17 @@ impl App {
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 self.add_doc(Doc::new(osc, name));
+                let enc = self.encoding;
                 if let Some(d) = self.active_doc_mut() {
                     d.path = Some(path.to_path_buf());
                     d.cff = cff;
+                    d.init_record_text(enc);
+                    // Names may have been re-decoded; no flag is set yet.
+                    d.flagged = d.osc.clone();
                 }
             }
             // The original shows "<file> - <message>".
             Err(e) => self.status = format!("{} - {e}", path.display()),
-        }
-    }
-
-    /// Re-open the active document's file with the current encoding (the original
-    /// re-reads on an encoding change).
-    pub fn reopen_active(&mut self) {
-        let path = self.active_doc().and_then(|d| d.path.clone());
-        if let Some(path) = path {
-            self.load_comtrade_now(&path);
-        } else {
-            self.status = "Файл для переоткрытия неизвестен.".into();
         }
     }
 
@@ -1510,7 +1522,7 @@ impl App {
             return;
         };
         if path.to_string_lossy().to_lowercase().ends_with(".cff") {
-            self.status = match fvb_core::comtrade::write_cff(&d.osc, &d.cff) {
+            self.status = match fvb_core::comtrade::write_cff(&d.osc, &d.cff_sections()) {
                 Ok(bytes) => match std::fs::write(&path, bytes) {
                     Ok(()) => format!("Сохранено: {}", path.display()),
                     Err(e) => format!("Ошибка сохранения: {e}"),
@@ -1521,7 +1533,9 @@ impl App {
         }
         let (cfg, dat) = fvb_core::comtrade::write(&d.osc);
         let dat_path = path.with_extension("dat");
-        match std::fs::write(&path, cfg).and_then(|_| std::fs::write(&dat_path, dat)) {
+        let hdr = d.hdr_file_bytes();
+        let wrote = std::fs::write(&path, cfg).and_then(|_| std::fs::write(&dat_path, dat));
+        match wrote.and_then(|_| hdr.map_or(Ok(()), |b| std::fs::write(path.with_extension("hdr"), b))) {
             Ok(()) => self.status = format!("Сохранено: {} (+ .dat)", path.display()),
             Err(e) => self.status = format!("Ошибка сохранения: {e}"),
         }
@@ -1686,7 +1700,7 @@ impl App {
     /// channel mode (`fvb_core::quick::evaluate_batch`); all or nothing.
     /// Returns the names given to them.
     pub fn append_computed(&mut self, batch: &[(String, String, String)]) -> Option<Vec<String>> {
-        let show_primary = self.primary_values;
+        let show_primary = self.active_doc().is_some_and(Doc::primary_values);
         let base = self.docs.len() + 7;
         let Some(d) = self.active_doc() else {
             self.status = "Сначала загрузите осциллограмму.".into();
@@ -1853,12 +1867,12 @@ mod tests {
         let n = app.active_doc().unwrap().osc.digital.len();
         assert!(n > 0, "the demo record has discrete channels");
         app.dispatch(Command::Discrete(1));
-        assert!(app.active_doc().unwrap().dig_visible.iter().all(|v| !v));
+        assert!(app.active_doc().unwrap().digital_visible.iter().all(|v| !v));
         app.dispatch(Command::Discrete(0));
-        assert!(app.active_doc().unwrap().dig_visible.iter().all(|&v| v));
+        assert!(app.active_doc().unwrap().digital_visible.iter().all(|&v| v));
         app.dispatch(Command::Discrete(2));
         let d = app.active_doc().unwrap();
-        for (ch, vis) in d.osc.digital.iter().zip(&d.dig_visible) {
+        for (ch, vis) in d.osc.digital.iter().zip(&d.digital_visible) {
             let changes = ch.samples.iter().any(|&v| v != ch.samples[0]);
             assert_eq!(*vis, changes, "{}", ch.id);
         }

@@ -116,7 +116,8 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
         }
         rows.push(Row { key: Lane::Analog(i), members: vec![i], h: y_analog });
     }
-    rows.extend((0..doc.computed.len()).map(|i| Row { key: Lane::Computed(i), members: Vec::new(), h: y_analog }));
+    let comp = (0..doc.computed.len()).filter(|&i| doc.computed[i].visible);
+    rows.extend(comp.map(|i| Row { key: Lane::Computed(i), members: Vec::new(), h: y_analog }));
     // need = name row + 10 + one row per enabled stat (Max/Min two) + 23
     // when any status icon shows; a group lane one name row (+33) per member.
     for r in &mut rows {
@@ -130,7 +131,7 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
     }
     rows.extend(
         (0..doc.osc.digital.len())
-            .filter(|&i| doc.dig_visible.get(i).copied().unwrap_or(true))
+            .filter(|&i| doc.digital_visible.get(i).copied().unwrap_or(true))
             .map(|i| Row { key: Lane::Digital(i), members: Vec::new(), h: g::DIGITAL_H }),
     );
     rows
@@ -399,7 +400,8 @@ impl App {
             });
             return;
         };
-        let (time_unit, show_grid, primary, y_analog) = (self.time_unit, self.show_grid, self.primary_values, self.y_analog);
+        let primary = self.docs[ai].primary_values();
+        let (time_unit, show_grid, y_analog) = (self.time_unit, self.show_grid, self.y_analog);
         let full = ui.available_rect_before_wrap();
         let resp = ui.allocate_rect(full, Sense::click_and_drag());
         self.view_width = full.width();
