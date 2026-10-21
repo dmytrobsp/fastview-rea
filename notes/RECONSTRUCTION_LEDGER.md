@@ -969,8 +969,9 @@ the clipboard and no pending paste; `App::mru` + `Command::OpenPath`
 (persisted `MRU/k`), `ApplicationLook` 215–218.
 Residual: Сохранить and Сохранить как both open the save dialog (the
 original's in-place save rule not modelled); page setup, print preview and
-«Загрузка настроек» (.set) shown disabled; the five non-2007 looks shown
-disabled (not drawn); Помощь disabled (no CHM viewer); icon-only buttons
+«Загрузка настроек» (.set) shown disabled; the five non-2007 looks (210–214) now
+selectable and persisted (L9.18) with era system-colour palettes that are
+inferred, not read from mfc120u.dll; Помощь disabled (no CHM viewer); icon-only buttons
 carry text labels; keytips not modelled.
 
 ### L9.15 — Merging oscillograms («Объединение»)  ·  🟡

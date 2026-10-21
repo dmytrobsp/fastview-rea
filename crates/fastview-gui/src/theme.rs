@@ -1,8 +1,8 @@
 //! Office-2007-style skins for the FastView reconstruction.
 //!
-//! The original is an MFC ribbon app whose *Стиль* menu offers Office 2007 in
-//! four colour variants (Голубой/Чёрный/Серебристый/Зеленовато-голубой — see
-//! `notes/ui/menus.txt`, MENU 200). We can't reproduce the native GDI ribbon
+//! The original is an MFC ribbon app whose *Стиль* menu (MENU 200) offers five
+//! classic visual managers (Windows 2000 … VS.NET 2005) and Office 2007 in
+//! four colour variants (Голубой/Чёрный/Серебристый/Зеленовато-голубой). We can't reproduce the native GDI ribbon
 //! byte-for-byte on a cross-platform stack, but we approximate its palette and
 //! chrome closely in egui. `Office2007Blue` matches the help screenshots and is
 //! the default.
@@ -11,6 +11,11 @@ use eframe::egui::{self, Color32};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Skin {
+    Win2000,
+    OfficeXp,
+    WinXp,
+    Office2003,
+    Vs2005,
     Blue,
     Black,
     Silver,
@@ -18,11 +23,90 @@ pub enum Skin {
 }
 
 impl Skin {
-    pub const ALL: [Skin; 4] = [Skin::Blue, Skin::Black, Skin::Silver, Skin::Aqua];
+    /// In `ApplicationLook` order: 210 Windows 2000 … 214 VS.NET 2005, then
+    /// the Office 2007 styles 215 … 218 (`0x475250`).
+    pub const ALL: [Skin; 9] =
+        [Skin::Win2000, Skin::OfficeXp, Skin::WinXp, Skin::Office2003, Skin::Vs2005, Skin::Blue, Skin::Black, Skin::Silver, Skin::Aqua];
 
+    /// The `ApplicationLook` / menu-200 command id.
+    pub fn code(self) -> u32 {
+        210 + Skin::ALL.iter().position(|&k| k == self).unwrap_or(5) as u32
+    }
+
+    pub fn from_code(code: u32) -> Option<Skin> {
+        Skin::ALL.get(code.checked_sub(210)? as usize).copied()
+    }
 
     pub fn palette(self) -> Palette {
         match self {
+            // The pre-2007 visual managers draw with the system colours of
+            // their era; these palettes are those defaults (inferred, not
+            // read from mfc120u.dll).
+            Skin::Win2000 => Palette {
+                ribbon_top: Color32::from_rgb(0xD4, 0xD0, 0xC8),
+                ribbon_bottom: Color32::from_rgb(0xD4, 0xD0, 0xC8),
+                frame: Color32::from_rgb(0x80, 0x80, 0x80),
+                accent: Color32::from_rgb(0x0A, 0x24, 0x6A),
+                accent_soft: Color32::from_rgb(0xB6, 0xBD, 0xD2),
+                accent_border: Color32::from_rgb(0x0A, 0x24, 0x6A),
+                group_bg: Color32::from_rgb(0xD4, 0xD0, 0xC8),
+                group_border: Color32::from_rgb(0x80, 0x80, 0x80),
+                tab_active: Color32::from_rgb(0xE4, 0xE1, 0xDC),
+                work_bg: Color32::from_rgb(0x80, 0x80, 0x80),
+                text: Color32::BLACK,
+            },
+            Skin::OfficeXp => Palette {
+                ribbon_top: Color32::from_rgb(0xF7, 0xF6, 0xF3),
+                ribbon_bottom: Color32::from_rgb(0xDB, 0xD8, 0xD1),
+                frame: Color32::from_rgb(0x84, 0x82, 0x7B),
+                accent: Color32::from_rgb(0x0A, 0x24, 0x6A),
+                accent_soft: Color32::from_rgb(0xB6, 0xBD, 0xD2),
+                accent_border: Color32::from_rgb(0x0A, 0x24, 0x6A),
+                group_bg: Color32::from_rgb(0xEC, 0xEA, 0xE5),
+                group_border: Color32::from_rgb(0xA6, 0xA6, 0xA6),
+                tab_active: Color32::from_rgb(0xFB, 0xFA, 0xF8),
+                work_bg: Color32::from_rgb(0x80, 0x80, 0x80),
+                text: Color32::BLACK,
+            },
+            Skin::WinXp => Palette {
+                ribbon_top: Color32::from_rgb(0xF6, 0xF5, 0xEE),
+                ribbon_bottom: Color32::from_rgb(0xE3, 0xE0, 0xD0),
+                frame: Color32::from_rgb(0x00, 0x3C, 0xA6),
+                accent: Color32::from_rgb(0x31, 0x6A, 0xC5),
+                accent_soft: Color32::from_rgb(0xC1, 0xD2, 0xEE),
+                accent_border: Color32::from_rgb(0x31, 0x6A, 0xC5),
+                group_bg: Color32::from_rgb(0xEC, 0xE9, 0xD8),
+                group_border: Color32::from_rgb(0xAC, 0xA8, 0x99),
+                tab_active: Color32::from_rgb(0xFC, 0xFC, 0xFE),
+                work_bg: Color32::from_rgb(0x80, 0x80, 0x80),
+                text: Color32::BLACK,
+            },
+            Skin::Office2003 => Palette {
+                ribbon_top: Color32::from_rgb(0xE3, 0xEF, 0xFF),
+                ribbon_bottom: Color32::from_rgb(0x9E, 0xBE, 0xF5),
+                frame: Color32::from_rgb(0x00, 0x2D, 0x96),
+                accent: Color32::from_rgb(0x00, 0x00, 0x80),
+                accent_soft: Color32::from_rgb(0xFF, 0xEE, 0xC2),
+                accent_border: Color32::from_rgb(0x00, 0x00, 0x80),
+                group_bg: Color32::from_rgb(0xC3, 0xDA, 0xF9),
+                group_border: Color32::from_rgb(0x7B, 0xA4, 0xE0),
+                tab_active: Color32::from_rgb(0xF6, 0xFA, 0xFF),
+                work_bg: Color32::from_rgb(0x90, 0x99, 0xAE),
+                text: Color32::BLACK,
+            },
+            Skin::Vs2005 => Palette {
+                ribbon_top: Color32::from_rgb(0xFA, 0xF9, 0xF5),
+                ribbon_bottom: Color32::from_rgb(0xE5, 0xE2, 0xD8),
+                frame: Color32::from_rgb(0x80, 0x80, 0x80),
+                accent: Color32::from_rgb(0x31, 0x6A, 0xC5),
+                accent_soft: Color32::from_rgb(0xC1, 0xD2, 0xEE),
+                accent_border: Color32::from_rgb(0x31, 0x6A, 0xC5),
+                group_bg: Color32::from_rgb(0xEE, 0xED, 0xE5),
+                group_border: Color32::from_rgb(0xB5, 0xB2, 0xA6),
+                tab_active: Color32::from_rgb(0xFF, 0xFF, 0xFF),
+                work_bg: Color32::from_rgb(0x80, 0x80, 0x80),
+                text: Color32::BLACK,
+            },
             Skin::Blue => Palette {
                 ribbon_top: Color32::from_rgb(0xC6, 0xD9, 0xF1),
                 ribbon_bottom: Color32::from_rgb(0xA6, 0xC2, 0xE3),

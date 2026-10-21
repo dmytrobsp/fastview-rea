@@ -1177,9 +1177,8 @@ impl App {
             }
             Command::SetSkin(s) => {
                 self.skin = s;
-                // `ApplicationLook`: 215..218 for the Office 2007 looks.
-                let code = 215 + Skin::ALL.iter().position(|&k| k == s).unwrap_or(0);
-                self.store.view.insert("ApplicationLook".into(), code.to_string());
+                // `ApplicationLook`: the menu-200 id, 210..218.
+                self.store.view.insert("ApplicationLook".into(), s.code().to_string());
                 if self.persist {
                     self.store.save();
                 }
@@ -1343,10 +1342,8 @@ impl App {
         // `View` (XScale, YAnalogSize, RulerState, Sells) is per document,
         // in its settings file (`setfile`).
         let v = &self.store.view;
-        if let Some(i) = v.get("ApplicationLook").and_then(|x| x.parse::<usize>().ok()).and_then(|c| c.checked_sub(215)) {
-            if let Some(&s) = Skin::ALL.get(i) {
-                self.skin = s;
-            }
+        if let Some(s) = v.get("ApplicationLook").and_then(|x| x.parse().ok()).and_then(Skin::from_code) {
+            self.skin = s;
         }
         self.mru = (0..10).filter_map(|k| v.get(&format!("MRU/{k}")).map(std::path::PathBuf::from)).collect();
         self.load_program_settings();

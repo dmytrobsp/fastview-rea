@@ -1272,7 +1272,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
     Save greyed for .sto — `ribbon.rs`, `persist.rs` — M
 32. ✅ (L9.8; tab colour order beyond the first NOT DETERMINED) Document tabs: auto colour, close on the active tab only, ▾ list, window
     title «Механотроника FastView - <doc>» — `main.rs` — S
-33. 🟡 (L9.14; non-2007 looks disabled) Стиль menu (9 entries, radio, persisted, default 215), help split button,
+33. ✅ (L9.14 + L9.18: non-2007 looks selectable, palettes inferred) Стиль menu (9 entries, radio, persisted, default 215), help split button,
     ribbon minimise via ribbon right-click — `ribbon.rs`, `theme.rs`,
     `persist.rs` — S
 34. ✅ (merged L9.13) Program settings 510: no auto encoding, default 1251, .dst folder, UTC/

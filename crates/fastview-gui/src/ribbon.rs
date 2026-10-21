@@ -108,14 +108,16 @@ impl App {
                     }
                 });
                 // «Стиль» (menu 200): the radio entry of the current look,
-                // persisted as `ApplicationLook`. Only the Office 2007 looks
-                // are drawn by this reconstruction.
+                // persisted as `ApplicationLook`.
                 ui.menu_button(RichText::new("Стиль ▾").color(p.text), |ui| {
-                    for name in ["Windows 2000", "Office XP", "Windows XP", "Office 2003", "Visual Studio.NET 2005"] {
-                        ui.add_enabled(false, egui::RadioButton::new(false, name));
+                    for (s, name) in Skin::ALL.into_iter().zip(["Windows 2000", "Office XP", "Windows XP", "Office 2003", "Visual Studio.NET 2005"]) {
+                        if ui.radio(self.skin == s, name).clicked() {
+                            cmds.push(Command::SetSkin(s));
+                            ui.close_menu();
+                        }
                     }
                     ui.menu_button("Office 2007", |ui| {
-                        for (s, name) in Skin::ALL.into_iter().zip(["Голубой стиль", "Черный стиль", "Серебристый стиль", "Зеленовато-голубой стиль"]) {
+                        for (s, name) in Skin::ALL[5..].iter().copied().zip(["Голубой стиль", "Черный стиль", "Серебристый стиль", "Зеленовато-голубой стиль"]) {
                             if ui.radio(self.skin == s, name).clicked() {
                                 cmds.push(Command::SetSkin(s));
                                 ui.close_menu();
