@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 102 pass)
+- `cargo test --workspace`   (currently 104 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 102 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 104 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -57,7 +57,7 @@ memory (Flatpak overlay + CLI wrapper `~/projects/slack-rea/tools/rea-ghidra.sh`
 the `.cfg` file-type strictness (only `ASCII`/`BINARY`/`binary32`, else error
 330), the `.cff` reader (incl. the original's one-byte DAT offset quirk) and
 writer (rev ≥ 2013, `DAT BINARY: n`), and the `.osc` (OSC2) reader. Done: L2 ✅,
-L4 ✅, L5 ✅ (persistence ❌), L6 ✅ (grspos* ❌), L7 ✅ (θ tap refinement ❌).
+L4 ✅, L5 ✅, L6 ✅ (grspos* ❌), L7 ✅ (θ tap refinement ❌).
 
 **Scope reality.** "Every byte" literally = 9129 funcs of mostly MFC boilerplate;
 the *provable* target is the behavioural engines (this ledger's table). `.sto`
@@ -131,7 +131,7 @@ decompilation (pending, listed below).
 |---|---|---|---|
 | Formula token table | `FUN_00401000` @0x401000 | `expr.rs` | ✅ L1/L6 (all but `grspos*`) |
 | Formula evaluator (tokenizer/grammar/values) | `FUN_00418c40`, `0x419950`..`0x41f960` | `expr.rs` | ✅ L2 (numeric) |
-| `.fvb` loader / evaluation / settings | `FUN_0040c7e0`, `FUN_00409260`, `FUN_00407750` | `parse.rs`/`model.rs`/`geom.rs` | ✅ L5 (persistence ❌) |
+| `.fvb` loader / evaluation / settings | `FUN_0040c7e0`, `FUN_00409260`, `FUN_00407750` | `parse.rs`/`model.rs`/`geom.rs` | ✅ L5 |
 | Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ✅ L4 |
 | DFT / phasors / RMS | `FUN_00426fc0` & channel methods | `signal.rs` | ✅ L6 (freq-channel variant ❌) |
 | Symmetric components / impedances | Calculator `i1: i2: 3i0: zl: zf:` | `signal.rs`/`analysis.rs` | 🟡 L6 (view code not located) |
@@ -229,7 +229,7 @@ Residual / not modelled (honest):
 
 ---
 
-## L5 — `.fvb` loader + characteristic evaluation + settings grid  ·  ✅ MATCH (persistence ❌)
+## L5 — `.fvb` loader + characteristic evaluation + settings grid  ·  ✅ MATCH
 
 Evidence (subagent decompile; MFC ordinals resolved against the bundled
 mfc120u.dll 12.0.40649 export table: Ordinal_2948 = `CString::Compare`
@@ -281,8 +281,12 @@ values, committing re-evaluates the whole block and shows the error text; all
 `tests/loader.rs` (7) + 2 GUI tests.
 
 Residual / honest:
-- ❌ Settings/visibility **persistence** across runs not implemented (original
-  saves them in its settings tree).
+- Persistence ✅ (behaviour): per diagram ("Circle Chart"/"Diff Chart") the
+  selected block, each characteristic's visibility and parameter texts are
+  saved on every change and restored (`persist.rs`, GUI test). Storage differs:
+  a TSV file in the platform config dir (the original's settings-tree file is
+  NOT DETERMINED), keyed by (diagram, block, characteristic) where the
+  original's exact key nesting is ambiguous.
 - Figure-granular staleness: the original updates a failing figure's fields up
   to the failing attribute; we keep the whole figure's previous values.
 - Never-evaluated figures: original's zero-initialised fields → we treat as

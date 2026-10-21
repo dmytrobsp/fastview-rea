@@ -436,6 +436,9 @@ pub struct App {
     /// Remote-end document for the double-ended ОМП method.
     pub omp_remote: Option<usize>,
     pub omp_run: Option<OmpRun>,
+    /// Persisted characteristic settings (only when enabled by `main`).
+    pub store: crate::persist::Store,
+    pub persist: bool,
 
     // dialogs / panels
     pub show_about: bool,
@@ -511,6 +514,8 @@ impl App {
             omp_inom: [0.0; 2],
             omp_remote: None,
             omp_run: None,
+            store: Default::default(),
+            persist: false,
             show_about: false,
             show_file_params: false,
             show_channel_map: false,
@@ -737,12 +742,24 @@ impl App {
             return;
         };
         for (ci, ch) in block.characteristics.iter().enumerate() {
-            self.chars.entry((b, ci)).or_insert_with(|| CharState {
-                visible: true,
-                settings: ch.default_settings(),
-                figs: Vec::new(),
-                geo: None,
-                color: Self::palette(ci),
+            let key = (Self::diagram_key(self.diagram_dim).to_string(), block.name.clone(), ch.name.clone());
+            let store = &self.store;
+            self.chars.entry((b, ci)).or_insert_with(|| {
+                let mut settings = ch.default_settings();
+                if let Some(saved) = store.values.get(&key) {
+                    for (p, v) in saved {
+                        if let Some(slot) = settings.get_mut(p) {
+                            *slot = v.clone();
+                        }
+                    }
+                }
+                CharState {
+                    visible: store.visible.get(&key).copied().unwrap_or(true),
+                    settings,
+                    figs: Vec::new(),
+                    geo: None,
+                    color: Self::palette(ci),
+                }
             });
         }
         if self.selected_char.is_none() && !block.characteristics.is_empty() {
@@ -775,6 +792,52 @@ impl App {
         if let Err(e) = result {
             self.status = e.to_string();
         }
+        self.persist_block();
+    }
+
+    /// The original's settings-tree section for a diagram.
+    pub fn diagram_key(dim: Dimension) -> &'static str {
+        match dim {
+            Dimension::Ohm => "Circle Chart",
+            Dimension::Dif => "Diff Chart",
+        }
+    }
+
+    /// Load persisted characteristic settings and apply them (called by `main`).
+    pub fn with_persistence(mut self) -> Self {
+        self.store = crate::persist::Store::load();
+        self.persist = true;
+        let dim = self.diagram_dim;
+        if let Some(name) = self.store.selected.get(Self::diagram_key(dim)).cloned() {
+            if let Some(i) = self.library.blocks.iter().position(|b| b.name == name) {
+                self.block_idx = i;
+            }
+        }
+        self.chars.clear();
+        self.selected_char = None;
+        self.ensure_block_state();
+        self
+    }
+
+    /// Record the selected block and its characteristics' visibility and
+    /// parameter texts, then save (the original saves on every property change).
+    pub fn persist_block(&mut self) {
+        if !self.persist {
+            return;
+        }
+        let Some(block) = self.library.blocks.get(self.block_idx) else {
+            return;
+        };
+        let d = Self::diagram_key(self.diagram_dim).to_string();
+        self.store.selected.insert(d.clone(), block.name.clone());
+        for (ci, ch) in block.characteristics.iter().enumerate() {
+            if let Some(st) = self.chars.get(&(self.block_idx, ci)) {
+                let key = (d.clone(), block.name.clone(), ch.name.clone());
+                self.store.visible.insert(key.clone(), st.visible);
+                self.store.values.insert(key, st.settings.clone().into_iter().collect());
+            }
+        }
+        self.store.save();
     }
 
     /// Switch the characteristic panel to the circle (`Ohm`) or differential
@@ -792,11 +855,15 @@ impl App {
         };
         let idx = |d: Dimension| usize::from(d == Dimension::Dif);
         self.diagrams[idx(self.diagram_dim)] = Some(current);
-        let next = self.diagrams[idx(dim)].take().unwrap_or_else(|| DiagramState {
-            library: self.full_library.for_dimension(dim),
-            block_idx: 0,
-            chars: HashMap::new(),
-            selected_char: None,
+        let next = self.diagrams[idx(dim)].take().unwrap_or_else(|| {
+            let library = self.full_library.for_dimension(dim);
+            let block_idx = self
+                .store
+                .selected
+                .get(Self::diagram_key(dim))
+                .and_then(|n| library.blocks.iter().position(|b| &b.name == n))
+                .unwrap_or(0);
+            DiagramState { library, block_idx, chars: HashMap::new(), selected_char: None }
         });
         self.library = next.library;
         self.block_idx = next.block_idx;
@@ -1377,6 +1444,24 @@ mod tests {
         }
         let r = app.omp_result().unwrap();
         assert_eq!(app.status, r.text.trim());
+    }
+
+    #[test]
+    fn stored_settings_apply_to_new_block_state() {
+        let mut app = demo_app();
+        let blk = app.library.blocks[app.block_idx].clone();
+        let ch = &blk.characteristics[0];
+        let p = ch.parameters[0].name.clone();
+        let key = (App::diagram_key(app.diagram_dim).to_string(), blk.name.clone(), ch.name.clone());
+        app.store.values.entry(key.clone()).or_default().insert(p.clone(), "1+1".into());
+        app.store.values.entry(key.clone()).or_default().insert("нет такого".into(), "5".into());
+        app.store.visible.insert(key, false);
+        app.chars.clear();
+        app.ensure_block_state();
+        let st = &app.chars[&(app.block_idx, 0)];
+        assert_eq!(st.settings[&p], "1+1");
+        assert!(!st.settings.contains_key("нет такого"));
+        assert!(!st.visible);
     }
 
     #[test]

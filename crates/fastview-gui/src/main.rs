@@ -9,6 +9,7 @@ mod app;
 mod dialogs;
 mod icons;
 mod lanes;
+mod persist;
 mod ribbon;
 mod theme;
 mod util;
@@ -30,7 +31,7 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|cc| {
             install_fonts(&cc.egui_ctx);
-            Ok(Box::new(App::new()))
+            Ok(Box::new(App::new().with_persistence()))
         }),
     )
 }

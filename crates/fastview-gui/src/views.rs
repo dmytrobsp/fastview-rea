@@ -67,6 +67,7 @@ impl App {
                     .collect()
             })
             .unwrap_or_default();
+        let mut vis_changed = false;
         egui::ScrollArea::vertical()
             .id_salt("charlist")
             .max_height(ui.available_height() * 0.4)
@@ -75,12 +76,17 @@ impl App {
                     ui.horizontal(|ui| {
                         if let Some(st) = self.chars.get_mut(&(b, *ci)) {
                             ui.label(egui::RichText::new("⬤").color(st.color));
-                            ui.checkbox(&mut st.visible, "");
+                            if ui.checkbox(&mut st.visible, "").changed() {
+                                vis_changed = true;
+                            }
                         }
                         if ui.selectable_label(self.selected_char == Some(*ci), name).clicked() {
                             self.selected_char = Some(*ci);
                         }
                     });
+        if vis_changed {
+            self.persist_block();
+        }
                 }
             });
         ui.separator();
