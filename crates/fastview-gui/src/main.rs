@@ -592,6 +592,22 @@ mod window_tests {
         assert!(w.app.print.setup_dlg.is_some(), "page setup opened from the right column");
     }
 
+    /// A short tab group keeps its pane inside: the toolbar stops at the
+    /// tab strip instead of growing over it (and the canvas with it).
+    #[test]
+    fn diagram_pane_toolbar_stays_above_the_tab_strip() {
+        use egui::containers::panel::PanelState;
+        for h in [860.0, 700.0, 560.0] {
+            let ctx = egui::Context::default();
+            let mut app = demo(&[]);
+            frames(&mut app, &ctx, Vec2::new(1320.0, h), vec![vec![]; 3]);
+            let bar = PanelState::load(&ctx, egui::Id::new(("pane_toolbar", diagram_ui::Window::Vector as u8))).expect("the vector toolbar").rect;
+            let tabs = PanelState::load(&ctx, egui::Id::new("pane_tabs")).expect("the tab strip").rect;
+            // Either it ends above the tabs or it is too short for a button.
+            assert!(bar.bottom() <= tabs.top() + 0.5 || bar.height() < 22.0, "h {h}: toolbar {bar:?} over tabs {tabs:?}");
+        }
+    }
+
     /// `FV_WINDOW_DUMP=<file.png> cargo test window_dump` renders the window
     /// (demo document, a few recent files) after a click at
     /// `FV_WINDOW_CLICK=x,y` (default: the «Файл ▾» menu button), the

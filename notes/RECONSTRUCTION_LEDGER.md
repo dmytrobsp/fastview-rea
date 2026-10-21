@@ -1308,6 +1308,16 @@ any other item restores the MRU list; state stamped per pass because egui
 `app_menu_is_two_columns_and_shows_print_items_on_the_right`.
 Residual: item icons (32×32 images) not drawn; keytips not modelled.
 
+### L9.26 — Diagram pane spilled over its tab strip  ·  ✅
+Our bug (found in a headless `window_dump` render): in a short tab group
+the pane's vertical toolbar (550 / 552 / 553) grew its side panel past the
+slot, the canvas sized itself to that taller rect, and with the panel's
+clip being the whole column both were painted over the Векторная /
+Круговая / Дифференциальная tabs. Ours: buttons that do not fit are cut
+off (a short toolbar), the tab group's content is clipped to its own rect.
+Test: `diagram_pane_toolbar_stays_above_the_tab_strip` (860 / 700 / 560 px
+windows). Residual: the original's toolbar overflow chevron not modelled.
+
 Next in L9 (HANDOFF 2026-10-21, master clean at 4a83adc): §9 items 36 and
 48 are done (L9.21, L9.22). **FIRST — four GUI bugs the user found running
 the release build (ours, not original behaviour; reproduce headless with the

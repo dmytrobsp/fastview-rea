@@ -489,7 +489,12 @@ impl App {
         let mut fire = None;
         egui::SidePanel::right(egui::Id::new(("pane_toolbar", w as u8))).resizable(false).exact_width(26.0).show_inside(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 1.0;
+            // Buttons that do not fit are cut off (a short toolbar), never
+            // grow the pane past its slot.
             for b in &buttons {
+                if ui.available_height() < 22.0 {
+                    break;
+                }
                 let Some((tool, tip, cmd, checked)) = b else {
                     ui.add_space(3.0);
                     ui.separator();

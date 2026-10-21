@@ -63,6 +63,7 @@ impl App {
                         });
                     });
                     egui::CentralPanel::default().show_inside(ui, |ui| {
+                        ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
                         if pane_caption(ui, pane_title(active)) {
                             self.dispatch(Command::TogglePane(active));
                             return;
