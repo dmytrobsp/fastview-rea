@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 141 pass)
+- `cargo test --workspace`   (currently 144 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 141 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 144 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.5** below.
+temporary). Reconciled so far: **L9.1**–**L9.6** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -773,10 +773,34 @@ Residual: egui has no Tahoma/bold (bold simulated by double drawing); group
 lanes list member names + values only (the original's per-member stat rows
 inside a group not modelled).
 
+### L9.6 — Comments: moments, level lines, areas  ·  🟡 (no .set persistence)
+
+Read (spec §5: `0x43eb40` placement, `0x43ef50` release, `0x43efa0` drag,
+`0x43f630` paint, `0x43df90` info box, `0x45efa0`/`0x45ce40` MENU 563):
+three kinds with text / locked / text-hidden; ±10 px hit tests (moment by x,
+level by its segment with parts left end / right end / body, area on its
+border band only with side edges draggable); one-shot tools 155/157/156
+(moment in one click; level on an analog lane and area on any lane dragged
+out from the press, normalised on release); LMB on an element whose text is
+shown grabs it, locked ones do not move; hover = selected (3 px (192,0,0),
+info box with «Время:» / «Уровень: %.2f» / «Длительность: %d.%03d с»);
+moment marks feed the difference band; MENU 563 labels per kind
+(визир / линию уровня / область), «Изменить уровень» only for levels as an
+in-place `%.2f` edit; double-click opens «Комментарии к диаграмме».
+Ours: `comments.rs` (`Comment`, `CommentKind`, `hit`, `drag`, `normalise`,
+`paint`, the item-mode dialog; 2 unit tests), `lanes.rs` placement / drag /
+hover / level edit, three ribbon tools. Headless test: one-shot tools,
+level/area drag-out, moment drag, lock, menu by kind.
+Residual: comments are not yet saved to / loaded from the oscillogram
+settings file (`.set`: `Comments/Moments|Levels|Areas`); the moment info box
+shows the time from the record start (no absolute date); bubble marks are
+our own drawing; digital level-line snapping not modelled (levels are
+analog-only).
+
 Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 — tracks D (diagrams 19–22, 27,
 40), O (ОМП 6, 12, 38) and F (dialogs 16, 18, 28, 29, 34, 39) were
 dispatched to parallel worktree agents on 2026-10-21 (merge their branches);
-main tree: comments 14, rectangle zoom 23, invert/DC/undo semantics 30, then
+main tree: rectangle zoom 23, invert/DC/undo semantics 30, then
 ribbon contents 11 after merging F (ОМП banner/
 toggle, ribbon contents 11, ОМП run semantics 12, stats panel 13, comments
 14, …) (panes, визир

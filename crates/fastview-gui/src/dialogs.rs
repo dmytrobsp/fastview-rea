@@ -1,6 +1,6 @@
 //! Modal-ish dialog windows: About, channel properties, and the comment editor.
 
-use crate::app::{App, Comment};
+use crate::app::App;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 impl App {
@@ -302,89 +302,6 @@ impl App {
             self.props_channel = None;
         }
     }
-
-    fn comment_window(&mut self, ctx: &egui::Context) {
-        let Some(mut ed) = self.comment_edit.take() else {
-            return;
-        };
-        let mut keep_open = true;
-        let mut action: Option<CommentAction> = None;
-        let t = self
-            .active_doc()
-            .and_then(|d| d.osc.time.get(ed.sample).copied())
-            .unwrap_or(0.0);
-        egui::Window::new("Комментарий")
-            .collapsible(false)
-            .resizable(false)
-            .open(&mut keep_open)
-            .show(ctx, |ui| {
-                ui.label(format!("От начала осциллограммы: {:.4} с (отсчёт {})", t, ed.sample));
-                ui.add(egui::TextEdit::multiline(&mut ed.text).desired_rows(3).desired_width(260.0));
-                ui.horizontal(|ui| {
-                    ui.label("Уровень:");
-                    ui.add(egui::TextEdit::singleline(&mut ed.level_str).desired_width(90.0).hint_text("нет"));
-                    ui.label(egui::RichText::new("(порог амплитуды, необязательно)").weak().small());
-                });
-                ui.horizontal(|ui| {
-                    if ui.button("Сохранить").clicked() {
-                        action = Some(CommentAction::Save);
-                    }
-                    if ed.idx.is_some() && ui.button("Удалить").clicked() {
-                        action = Some(CommentAction::Delete);
-                    }
-                    if ui.button("Отмена").clicked() {
-                        action = Some(CommentAction::Cancel);
-                    }
-                });
-            });
-        let level = ed.level_str.trim().replace(',', ".").parse::<f64>().ok();
-        if matches!(action, Some(CommentAction::Save) | Some(CommentAction::Delete)) {
-            self.snapshot_undo();
-        }
-        match action {
-            Some(CommentAction::Save) => {
-                if let Some(doc) = self.active.and_then(|a| self.docs.get_mut(a)) {
-                    match ed.idx {
-                        Some(idx) if idx < doc.comments.len() => {
-                            doc.comments[idx].text = ed.text.clone();
-                            doc.comments[idx].level = level;
-                        }
-                        _ => {
-                            if !ed.text.trim().is_empty() {
-                                doc.comments.push(Comment {
-                                    sample: ed.sample,
-                                    text: ed.text.clone(),
-                                    level,
-                                    hidden: false,
-                                    locked: false,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-            Some(CommentAction::Delete) => {
-                if let (Some(idx), Some(doc)) = (ed.idx, self.active.and_then(|a| self.docs.get_mut(a))) {
-                    if idx < doc.comments.len() {
-                        doc.comments.remove(idx);
-                    }
-                }
-            }
-            Some(CommentAction::Cancel) => {}
-            None => {
-                if keep_open {
-                    // still editing — keep the dialog state for next frame
-                    self.comment_edit = Some(ed);
-                }
-            }
-        }
-    }
-}
-
-enum CommentAction {
-    Save,
-    Delete,
-    Cancel,
 }
 
 /// A labelled channel-role combo bound to an `Option<usize>` slot.

@@ -1217,7 +1217,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 13. ✅ (L9.5) Stats panel: framed coloured name (25-char cut), value `%-6g` heavy blue,
     rows only per bits 4/5/6 with the 32817–19 toggles, fonts/colours, status
     icons, auto-fitted leftW (replace LEFT_W 158) — `lanes.rs` — M
-14. Comments: level (156) and area (157) kinds with create-drag, drag editing
+14. 🟡 (L9.6: all but .set persistence) Comments: level (156) and area (157) kinds with create-drag, drag editing
     by part, lock respected, 33042 inline level edit, double-click edit,
     hover info box, per-kind drawing, one-shot tools enabled for .cfg/.osc,
     `.set` persistence — `app.rs`, `lanes.rs`, `dialogs.rs`, `persist.rs`/

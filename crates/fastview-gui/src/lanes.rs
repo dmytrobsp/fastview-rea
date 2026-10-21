@@ -335,7 +335,10 @@ enum Act {
     EndDrag,
     SetFirst(usize),
     SetVScroll(f32),
-    PlaceMoment(usize),
+    PlaceComment(crate::comments::Comment, bool),
+    CommentDrag(usize, crate::comments::Part),
+    MoveComment(usize, crate::comments::Part, usize, Option<(ChanKey, Option<f64>)>),
+    EndCommentDrag,
     EditComment(usize),
     Rename(usize),
     Select(ChanKey, SelClick),
@@ -550,21 +553,6 @@ impl App {
             }
         }
 
-        // ---- comments (moment markers) ----
-        for (ci, c) in doc.comments.iter().enumerate() {
-            let x = x_of(c.sample as f64);
-            if x < left || x > plot_right {
-                continue;
-            }
-            pp.vline(x, client.top()..=plot_bottom, Stroke::new(1.2f32, COMMENT_COLOR));
-            pp.rect_filled(Rect::from_min_size(Pos2::new(x, client.top() + 1.0), Vec2::new(12.0, 12.0)), 0.0, COMMENT_COLOR);
-            pp.text(Pos2::new(x + 6.0, client.top() + 7.0), Align2::CENTER_CENTER, format!("{}", ci + 1), FontId::proportional(9.0), Color32::WHITE);
-            if !c.hidden && !c.text.is_empty() {
-                let label: String = c.text.lines().next().unwrap_or("").chars().take(24).collect();
-                pp.text(Pos2::new(x + 15.0, client.top() + 2.0), Align2::LEFT_TOP, label, FontId::proportional(10.0), COMMENT_COLOR);
-            }
-        }
-
         // ---- time ruler (`0x464350`) and difference band (`0x466630`) ----
         let ruler_top = client.bottom() - g::RULER_H;
         painter.rect_filled(Rect::from_min_max(Pos2::new(client.left(), ruler_top), client.max), 0.0, Color32::WHITE);
@@ -593,7 +581,7 @@ impl App {
             let band_top = ruler_top - g::DIFF_BAND_H;
             painter.rect_filled(Rect::from_min_max(Pos2::new(client.left(), band_top), Pos2::new(plot_right, ruler_top)), 0.0, Color32::WHITE);
             let mut marks: Vec<(f32, usize, Option<&str>)> = viz.iter().filter(|v| v.1).map(|v| (x_of(v.0 as f64), v.0, None)).collect();
-            marks.extend(doc.comments.iter().filter(|c| !c.hidden).map(|c| (x_of(c.sample as f64), c.sample, Some(c.text.as_str()))));
+            marks.extend(doc.comments.iter().filter_map(|c| c.moment().map(|k| (x_of(k as f64), k, (!c.hidden).then_some(c.text.as_str())))));
             marks.retain(|m| m.0 > left && m.0 <= plot_right);
             marks.sort_by(|a, b| a.0.total_cmp(&b.0));
             let mut taken: Vec<Rect> = Vec::new();
@@ -639,6 +627,7 @@ impl App {
 
         // ---- визиры (`0x493110`): no shading between В1 and В2 ----
         let v_bottom = if doc.diff_band { ruler_top - 25.0 } else { ruler_top };
+        let mut level_rect: Option<Rect> = None;
         for (k, shown, col, label) in viz {
             let x = x_of(k as f64);
             if !shown || x <= left || x > plot_right {
@@ -671,6 +660,30 @@ impl App {
             painter.text(Pos2::new((left + plot_right) / 2.0, yy - 1.0), Align2::CENTER_BOTTOM, if j == 0 { "ГВ1" } else { "ГВ2" }, FontId::proportional(11.0), col);
         }
 
+        // ---- comments (`0x43f630`), the one under the pointer selected ----
+        let lane_of = |k: ChanKey| {
+            rows.iter()
+                .position(|r| r.key == k || matches!(k, Lane::Analog(i) if r.members.contains(&i)))
+                .map(|li| (tops[li], rows[li].h))
+        };
+        let level_y = |ch: usize, v: f64| {
+            let li = rows.iter().position(|r| r.members.contains(&ch))?;
+            Some(g::value_y(v, tops[li], rows[li].h, ranges[li].0, ranges[li].1))
+        };
+        let cgeo = crate::comments::Geo { x_of: &x_of, lane: &lane_of, value_y: &level_y, top: client.top(), v_bottom };
+        let comment_at = |pos: Pos2| {
+            doc.comments.iter().enumerate().find_map(|(i, c)| crate::comments::hit(c, pos, &cgeo).map(|part| (i, part)))
+        };
+        let hovered = self.comment_drag.map(|(i, _)| i).or_else(|| hover.filter(|p| p.x > left && p.y < plot_bottom).and_then(|p| comment_at(p).map(|h| h.0)));
+        crate::comments::paint(&pp, &doc.comments, hovered, &cgeo, &time_at);
+        if let Some((i, _)) = &self.level_edit {
+            if let Some(crate::comments::CommentKind::Level { chan, value, from, .. }) = doc.comments.get(*i).map(|c| &c.kind) {
+                if let Some(y) = level_y(*chan, *value) {
+                    level_rect = Some(Rect::from_min_size(Pos2::new(x_of(*from as f64), y - 10.0), Vec2::new(80.0, 20.0)));
+                }
+            }
+        }
+
         // ---- scrollbars (line and page step: one screen / 100 px) ----
         let hbar = Rect::from_min_max(Pos2::new(left, client.bottom()), Pos2::new(plot_right, full.bottom()));
         let hmax = g::max_first(n, visible);
@@ -689,7 +702,6 @@ impl App {
         let (shift, ctrl, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.command || i.modifiers.ctrl, i.modifiers.alt));
         let v_hit = |x: f32| (0..3).find(|&k| viz[k].1 && (x_of(viz[k].0 as f64) - x).abs() < 3.0);
         let h_hit = |y: f32| (0..2).find(|&j| doc.hviz[j].shown && hrows[j].is_some_and(|(hy, _)| (hy - y).abs() < 3.0));
-        let comment_at = |pos: Pos2| doc.comments.iter().position(|c| (x_of(c.sample as f64) - pos.x).abs() < 5.0);
         let (pressed_l, pressed_r, press_pos) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.secondary_pressed(), i.pointer.press_origin()));
         let in_view = |p: Pos2| client.contains(p) && p.x < plot_right;
         if !menu_busy && (pressed_l || pressed_r) {
@@ -718,10 +730,32 @@ impl App {
                             actions.push(Act::Drag(VizDrag::V(v_hit(pos.x).unwrap())));
                         } else if pressed_l && h_hit(pos.y).is_some() {
                             actions.push(Act::Drag(VizDrag::H(h_hit(pos.y).unwrap())));
-                        } else if comment_at(pos).is_some() {
-                            // Comment drag / menu (on release).
-                        } else if pressed_l && doc.comment_mode == 1 {
-                            actions.push(Act::PlaceMoment(k));
+                        } else if let Some((ci, part)) = comment_at(pos) {
+                            // LMB on a comment whose text is shown grabs it (the
+                            // menu comes on the right button's release).
+                            if pressed_l && !doc.comments[ci].hidden {
+                                actions.push(Act::CommentDrag(ci, part));
+                            }
+                        } else if pressed_l && doc.comment_mode != 0 {
+                            // Placement tools (`0x43eb40`): a moment in one click;
+                            // a level line on an analog lane and an area on any
+                            // lane are dragged out from the press.
+                            use crate::comments::{Comment, CommentKind};
+                            let lane = rows.iter().zip(&tops).position(|(r, &t)| pos.y >= t && pos.y < t + r.h);
+                            match doc.comment_mode {
+                                1 => actions.push(Act::PlaceComment(Comment::new(CommentKind::Moment { pos: k }), false)),
+                                2 => {
+                                    if let Some((chan, value)) = analog_at(pos.y, &geo, &ranges) {
+                                        actions.push(Act::PlaceComment(Comment::new(CommentKind::Level { chan, value, from: k, to: k }), true));
+                                    }
+                                }
+                                _ => {
+                                    if let Some(li) = lane {
+                                        let key = rows[li].key;
+                                        actions.push(Act::PlaceComment(Comment::new(CommentKind::Area { chan_from: key, chan_to: key, from: k, to: k }), true));
+                                    }
+                                }
+                            }
                         } else if shift {
                             if let Some((ch, v)) = analog_at(pos.y, &geo, &ranges) {
                                 actions.push(Act::SetH(usize::from(pressed_r), ch, v));
@@ -731,6 +765,18 @@ impl App {
                         }
                     }
                 }
+            }
+        }
+        if let (Some((ci, part)), Some(pos)) = (self.comment_drag, ui.input(|i| i.pointer.interact_pos())) {
+            if ui.input(|i| i.pointer.primary_down()) {
+                let k = sample_at(pos.x.clamp(left, plot_right));
+                let under = rows.iter().zip(&tops).position(|(r, &t)| pos.y >= t && pos.y < t + r.h).map(|li| {
+                    let v = matches!(rows[li].key, Lane::Analog(_)).then(|| g::y_value(pos.y, tops[li], rows[li].h, ranges[li].0, ranges[li].1));
+                    (rows[li].key, v)
+                });
+                actions.push(Act::MoveComment(ci, part, k, under));
+            } else {
+                actions.push(Act::EndCommentDrag);
             }
         }
         if let (Some(drag), Some(pos)) = (self.vizir_drag, ui.input(|i| i.pointer.interact_pos())) {
@@ -751,7 +797,7 @@ impl App {
             if let Some(pos) = resp.interact_pointer_pos() {
                 match hit_test(pos, &geo) {
                     Hit::Plot => {
-                        if let Some(idx) = comment_at(pos) {
+                        if let Some((idx, _)) = comment_at(pos) {
                             actions.push(Act::EditComment(idx));
                         }
                     }
@@ -772,7 +818,7 @@ impl App {
                     Hit::Axis => actions.push(Act::OpenMenu(pos, LaneMenuKind::TimeAxis)),
                     Hit::Stats(_) => actions.push(Act::OpenMenu(pos, LaneMenuKind::Channels)),
                     Hit::Plot => {
-                        if let Some(idx) = comment_at(pos) {
+                        if let Some((idx, _)) = comment_at(pos) {
                             actions.push(Act::OpenMenu(pos, LaneMenuKind::Comment(idx)));
                         }
                     }
@@ -824,7 +870,9 @@ impl App {
             match self.vizir_drag {
                 Some(VizDrag::V(_)) => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal),
                 Some(VizDrag::H(_)) => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical),
-                None if v_hit(pos.x).is_some() || comment_at(pos).is_some() => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal),
+                None if v_hit(pos.x).is_some() || comment_at(pos).is_some() || self.comment_drag.is_some() => {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal)
+                }
                 None if h_hit(pos.y).is_some() => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical),
                 None => {}
             }
@@ -854,10 +902,31 @@ impl App {
                 Act::EndDrag => self.vizir_drag = None,
                 Act::SetFirst(v) => d.first = v.min(hmax_c),
                 Act::SetVScroll(v) => d.vscroll = v.clamp(vmin_c, 0.0),
-                Act::PlaceMoment(sample) => {
-                    // 155: one click places the moment; the mode switches off.
-                    d.comments.push(crate::app::Comment { sample, text: String::new(), level: None, hidden: false, locked: false });
-                    d.comment_mode = 0;
+                Act::PlaceComment(c, drag) => {
+                    // The tools are one-shot: a moment ends here, a level line or
+                    // an area when the button is released.
+                    d.comments.push(c);
+                    if drag {
+                        self.comment_drag = Some((d.comments.len() - 1, 1));
+                    } else {
+                        d.comment_mode = 0;
+                    }
+                }
+                Act::CommentDrag(i, part) => self.comment_drag = Some((i, part)),
+                Act::MoveComment(i, part, k, under) => {
+                    if let Some(c) = d.comments.get_mut(i) {
+                        c.drag(part, k, under);
+                    }
+                }
+                Act::EndCommentDrag => {
+                    if let Some((i, part)) = self.comment_drag.take() {
+                        if let Some(c) = d.comments.get_mut(i) {
+                            c.normalise();
+                        }
+                        if part == 1 {
+                            d.comment_mode = 0;
+                        }
+                    }
                 }
                 Act::EditComment(idx) => self.open_comment_editor(ai, idx),
                 Act::Rename(i) => self.rename_edit = Some((i, d.osc.analog[i].id.clone())),
@@ -885,6 +954,7 @@ impl App {
             egui::show_tooltip_at_pointer(ui.ctx(), ui.layer_id(), egui::Id::new("fv_cut_name"), |ui| ui.label(full));
         }
         self.rename_ui(ui, ai, rename_rect);
+        self.level_edit_ui(ui, ai, level_rect);
         self.lane_menu_ui(ui.ctx(), ai);
         if self.lane_menu_eat && !ui.input(|i| i.pointer.any_down()) {
             self.lane_menu_eat = false;
@@ -925,12 +995,35 @@ impl App {
 
     fn open_comment_editor(&mut self, ai: usize, idx: usize) {
         if let Some(c) = self.docs.get(ai).and_then(|d| d.comments.get(idx)) {
-            self.comment_edit = Some(CommentEdit {
-                sample: c.sample,
-                idx: Some(idx),
-                text: c.text.clone(),
-                level_str: c.level.map(|l| format!("{l}")).unwrap_or_default(),
-            });
+            self.comment_edit = Some(CommentEdit { idx, text: c.text.clone() });
+        }
+    }
+
+    /// «Изменить уровень» (33042): an edit over the level line pre-filled
+    /// with `%.2f`; Enter sets the level, Esc cancels.
+    fn level_edit_ui(&mut self, ui: &mut egui::Ui, ai: usize, at: Option<Rect>) {
+        let Some((i, mut text)) = self.level_edit.take() else { return };
+        let Some(at) = at else { return };
+        let mut done: Option<bool> = None;
+        egui::Area::new(egui::Id::new("fv_level_edit").with(i)).order(egui::Order::Foreground).fixed_pos(at.min).show(ui.ctx(), |ui| {
+            let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(at.width()));
+            r.request_focus();
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                done = Some(false);
+            } else if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                done = Some(true);
+            }
+        });
+        match done {
+            None => self.level_edit = Some((i, text)),
+            Some(false) => {}
+            Some(true) => {
+                if let (Ok(v), Some(c)) = (text.trim().replace(',', ".").parse::<f64>(), self.docs[ai].comments.get_mut(i)) {
+                    if let crate::comments::CommentKind::Level { value, .. } = &mut c.kind {
+                        *value = v;
+                    }
+                }
+            }
         }
     }
 
@@ -994,7 +1087,12 @@ impl App {
             MenuCmd::TimeUnit(u) => self.time_unit = u,
             MenuCmd::Grid => self.show_grid = !self.show_grid,
             MenuCmd::Color => self.color_dialog = self.docs.get(ai).and_then(|d| d.first_selected_color()),
-            MenuCmd::EditComment(i) | MenuCmd::EditLevel(i) => self.open_comment_editor(ai, i),
+            MenuCmd::EditComment(i) => self.open_comment_editor(ai, i),
+            MenuCmd::EditLevel(i) => {
+                if let Some(crate::comments::CommentKind::Level { value, .. }) = self.docs.get(ai).and_then(|d| d.comments.get(i)).map(|c| &c.kind) {
+                    self.level_edit = Some((i, format!("{value:.2}")));
+                }
+            }
             cmd => {
                 let Some(d) = self.docs.get_mut(ai) else { return };
                 match cmd {
@@ -1172,8 +1270,11 @@ fn time_axis_menu(ui: &mut egui::Ui, unit: TimeUnit, grid: bool, pick: &mut dyn 
 /// as `0x45efa0` does: a moment («визир», strings 206/229/236) or a level
 /// line (207/237/238); «Изменить уровень» exists only for a level line.
 fn comment_menu(ui: &mut egui::Ui, c: &crate::app::Comment, i: usize, pick: &mut dyn FnMut(MenuCmd)) {
-    let level = c.level.is_some();
-    let what = if level { "линию уровня" } else { "визир" };
+    let what = match c.kind_no() {
+        1 => "визир",
+        2 => "линию уровня",
+        _ => "область",
+    };
     if menu_item(ui, "Изменить комментарий", true) {
         pick(MenuCmd::EditComment(i));
     }
@@ -1188,7 +1289,7 @@ fn comment_menu(ui: &mut egui::Ui, c: &crate::app::Comment, i: usize, pick: &mut
     if menu_check(ui, hide, ItemState { enabled: true, checked: c.hidden }) {
         pick(MenuCmd::HideComment(i));
     }
-    if level && menu_item(ui, "Изменить уровень", true) {
+    if c.kind_no() == 2 && menu_item(ui, "Изменить уровень", true) {
         pick(MenuCmd::EditLevel(i));
     }
 }
@@ -1478,6 +1579,58 @@ mod menu_tests {
         h.app.active_doc_mut().unwrap().osc.analog[0].id = "Ш".repeat(40);
         h.frame(vec![]);
         assert_eq!(h.app.view_left, w25, "names are cut to 25 characters");
+    }
+
+    /// Press, move, release with the left button.
+    fn drag(h: &mut Harness, from: Pos2, to: Pos2) {
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(from), ev(from, true)]);
+        for t in [0.25f32, 0.5, 0.75, 1.0] {
+            h.frame(vec![egui::Event::PointerMoved(from + (to - from) * t)]);
+        }
+        h.frame(vec![ev(to, false)]);
+        h.frame(vec![]);
+    }
+
+    #[test]
+    fn comment_tools_are_one_shot_and_drag_out_levels_and_areas() {
+        use crate::comments::CommentKind;
+        let mut h = Harness::new();
+        let (y0, y1) = (h.row(0).y, h.row(1).y);
+        h.app.dispatch(Command::CommentMode(1));
+        h.button(Pos2::new(500.0, y0), egui::PointerButton::Primary);
+        assert!(matches!(h.doc().comments[0].kind, CommentKind::Moment { .. }));
+        assert_eq!(h.doc().comment_mode, 0, "the moment tool pops out");
+        assert!(!h.doc().v_shown[0], "placing a comment does not place В1");
+
+        h.app.dispatch(Command::CommentMode(2));
+        drag(&mut h, Pos2::new(700.0, y0), Pos2::new(600.0, y0));
+        match h.doc().comments[1].kind {
+            CommentKind::Level { chan, from, to, .. } => {
+                assert_eq!(chan, 0);
+                assert!(from < to, "normalised on release");
+            }
+            ref k => panic!("{k:?}"),
+        }
+        assert_eq!(h.doc().comment_mode, 0);
+
+        h.app.dispatch(Command::CommentMode(3));
+        drag(&mut h, Pos2::new(800.0, y0), Pos2::new(900.0, y1));
+        assert!(matches!(h.doc().comments[2].kind, CommentKind::Area { chan_from: ChanKey::Analog(0), chan_to: ChanKey::Analog(1), .. }));
+
+        // Grab the moment and move it; a locked one stays.
+        let before = h.doc().comments[0].moment().unwrap();
+        drag(&mut h, Pos2::new(500.0, y1 + 20.0), Pos2::new(560.0, y1 + 20.0));
+        let moved = h.doc().comments[0].moment().unwrap();
+        assert!(moved > before, "{moved} > {before}");
+        h.app.active_doc_mut().unwrap().comments[0].locked = true;
+        let x = 560.0;
+        drag(&mut h, Pos2::new(x, y1 + 20.0), Pos2::new(x + 60.0, y1 + 20.0));
+        assert_eq!(h.doc().comments[0].moment().unwrap(), moved, "locked");
+
+        // The comment menu is relabelled by kind.
+        h.button(Pos2::new(x, y1 + 20.0), egui::PointerButton::Secondary);
+        assert_eq!(h.app.lane_menu.map(|m| m.kind), Some(LaneMenuKind::Comment(0)));
     }
 
     #[test]

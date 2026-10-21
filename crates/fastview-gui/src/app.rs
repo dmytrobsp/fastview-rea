@@ -270,18 +270,7 @@ impl Computed {
     }
 }
 
-/// An on-waveform annotation anchored to a sample index.
-#[derive(Debug, Clone)]
-pub struct Comment {
-    pub sample: usize,
-    pub text: String,
-    /// Optional amplitude threshold shown as «Уровень: N».
-    pub level: Option<f64>,
-    /// «Скрыть комментарий» — keep the marker but hide the text label.
-    pub hidden: bool,
-    /// «Зафиксировать визир» (33039) — the comment is locked in place.
-    pub locked: bool,
-}
+pub use crate::comments::{Comment, CommentEdit};
 
 /// A channel copied for merging oscillograms (Объединение: «Копировать/Вставить
 /// каналы для объединения осциллограмм», MENU 358).
@@ -290,17 +279,6 @@ pub struct ClipChan {
     pub name: String,
     pub samples: Vec<f64>,
     pub color: egui::Color32,
-}
-
-/// State of the comment editor popup.
-#[derive(Debug, Clone)]
-pub struct CommentEdit {
-    pub sample: usize,
-    /// Index into the document's `comments` if editing an existing one.
-    pub idx: Option<usize>,
-    pub text: String,
-    /// Raw text of the optional level field (parsed on save).
-    pub level_str: String,
 }
 
 /// A horizontal визир (`doc+0x2c8` / `+0x2e0`): shown, the analog channel
@@ -355,7 +333,8 @@ pub struct Doc {
     pub sel_anchor: Option<ChanKey>,
     /// Next free channel-group id (Совместить каналы).
     pub next_group: u32,
-    /// Comment placement mode (`doc+0x858`): 0 off, 1 момент времени.
+    /// Comment placement tool (`doc+0x858`): 0 off, 1 момент времени,
+    /// 2 линия уровня, 3 область (one-shot).
     pub comment_mode: u8,
     /// First visible sample (`view+0xfc`).
     pub first: usize,
@@ -716,6 +695,10 @@ pub struct App {
     pub undo_stack: Vec<(usize, DocSnapshot)>,
     pub redo_stack: Vec<(usize, DocSnapshot)>,
 
+    /// The comment being created or dragged and its part (`view+0xe4` mode 9).
+    pub comment_drag: Option<(usize, crate::comments::Part)>,
+    /// «Изменить уровень» (33042): the level line being edited in place.
+    pub level_edit: Option<(usize, String)>,
     /// The визир being dragged (`view+0xe4` modes 1–5).
     pub vizir_drag: Option<crate::lanes::VizDrag>,
     /// Analog lane height `View/YAnalogSize` (global, persisted).
@@ -811,6 +794,8 @@ impl App {
             channel_clip: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            comment_drag: None,
+            level_edit: None,
             vizir_drag: None,
             y_analog: crate::oscgeom::Y_ANALOG_DEFAULT,
             xscale_pref: None,

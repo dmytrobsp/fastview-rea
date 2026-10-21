@@ -7,6 +7,7 @@
 
 mod app;
 mod chansel;
+mod comments;
 mod dialogs;
 mod icons;
 mod lanes;

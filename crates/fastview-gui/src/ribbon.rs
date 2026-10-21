@@ -185,12 +185,14 @@ impl App {
                 }
             });
             ui.vertical(|ui| {
-                // 155 «Момент времени»: arm comment placement — the next left
-                // click on the plot places a moment comment (156/157 pending).
-                let on = self.active_doc().is_some_and(|d| d.comment_mode == 1);
+                // 155 / 157 / 156: one-shot comment tools (a radio group with
+                // toggle-off), enabled for records from .cfg / .osc files.
                 ui.add_enabled_ui(self.active_doc().is_some_and(|d| d.comments_allowed()), |ui| {
-                    if small_toggle(ui, p, "Момент времени", on) {
-                        cmds.push(Command::CommentMode(1));
+                    for (k, label) in [(1, "Момент времени"), (3, "Область"), (2, "Линия уровня")] {
+                        let on = self.active_doc().is_some_and(|d| d.comment_mode == k);
+                        if small_toggle(ui, p, label, on) {
+                            cmds.push(Command::CommentMode(k));
+                        }
                     }
                 });
             });
