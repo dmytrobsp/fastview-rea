@@ -16,6 +16,8 @@ pub struct OscChannels {
     phasors: Vec<Phasors>,
     n: usize,
     freq: f64,
+    /// The record's harmonic-1 gain (`rec+0x278`, set by OSC2 files).
+    gain1: f64,
 }
 
 impl OscChannels {
@@ -63,6 +65,7 @@ impl OscChannels {
             phasors,
             n,
             freq: osc.line_freq,
+            gain1: osc.harmonic1_gain,
         }
     }
 
@@ -106,7 +109,12 @@ impl Channels for OscChannels {
         signal::a0_at(&self.samples[ch], idx, self.n)
     }
     fn fourie(&self, ch: usize, n: i32, idx: usize) -> f64 {
-        signal::harmonic_rms(&self.samples[ch], idx, self.n, n.unsigned_abs() as usize)
+        let h = signal::harmonic_rms(&self.samples[ch], idx, self.n, n.unsigned_abs() as usize);
+        if n == 1 {
+            h * self.gain1
+        } else {
+            h
+        }
     }
     fn fault(&self, ch: usize, idx: usize) -> f64 {
         signal::fault_at(&self.samples[ch], idx, self.n)

@@ -60,6 +60,9 @@ pub struct Oscillogram {
     pub digital: Vec<DigitalChannel>,
     /// Nominal samples-per-second of the first rate section (for DFT windowing).
     pub sample_rate: f64,
+    /// Gain applied to the fundamental by `fourie:` (`rec+0x278`): 1 for
+    /// COMTRADE, set by the OSC2 version (1.0128 / 1.00259 / 1.014065).
+    pub harmonic1_gain: f64,
 }
 
 impl Oscillogram {
@@ -106,6 +109,10 @@ pub fn load_with(path: impl AsRef<Path>, enc: Encoding) -> Result<Oscillogram, C
     // 0x44ee70: the last four characters, lowercased, choose the reader.
     let name = path.to_string_lossy();
     let ext: String = name.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect::<String>().to_lowercase();
+    if ext == ".osc" {
+        let bytes = std::fs::read(path).map_err(|e| ComtradeError::Io(e.to_string()))?;
+        return parse_osc(&bytes, enc);
+    }
     if ext == ".cff" {
         let bytes = std::fs::read(path).map_err(|e| ComtradeError::Io(e.to_string()))?;
         return parse_cff(&bytes, enc).map(|(rec, _)| rec);
@@ -289,6 +296,229 @@ pub fn write_cff(osc: &Oscillogram, sections: &CffSections) -> Result<Vec<u8>, C
     out.extend(to_cp1251(&format!("--- file type: DAT BINARY: {}---\r\n", dat.len())));
     out.extend(dat.as_bytes());
     Ok(out)
+}
+
+/// Big-endian readers over a block.
+fn be_i16(b: &[u8], o: usize) -> i16 {
+    i16::from_be_bytes([b[o], b[o + 1]])
+}
+fn be_u16(b: &[u8], o: usize) -> u16 {
+    u16::from_be_bytes([b[o], b[o + 1]])
+}
+fn be_f32(b: &[u8], o: usize) -> f64 {
+    f64::from(f32::from_be_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]))
+}
+
+/// The original's rounding (`FUN_00411bf0`): floor unless at least half-way.
+fn round_fv(x: f64) -> f64 {
+    let f = x.floor();
+    if (f - x).abs() >= 0.5 {
+        x.ceil()
+    } else {
+        f
+    }
+}
+
+/// Unit prefix multiplier (`0x422b10`; micro and milli verified, the rest of
+/// its table is not determined).
+fn unit_multiplier(unit: &str) -> f64 {
+    let u = unit.trim();
+    for p in ["мк", "mk", "µ", "u"] {
+        if u.len() > p.len() && u.starts_with(p) {
+            return 1e-6;
+        }
+    }
+    for p in ["м", "m"] {
+        if u.len() > p.len() && u.starts_with(p) {
+            return 1e-3;
+        }
+    }
+    1.0
+}
+
+/// The first block's sample rate snapped to the standard rates (`0x453db0`).
+fn snap_rate(fs: f64, fnom: f64) -> f64 {
+    let bands: &[(f64, f64, f64)] = if (fnom - 60.0).abs() < 0.5 {
+        &[
+            (17280.0, 26000.0, 23040.0), (9600.0, 17280.0, 11520.0), (6720.0, 9600.0, 7680.0),
+            (4550.0, 6720.0, 5760.0), (3110.0, 4550.0, 3340.0), (2400.0, 3110.0, 2880.0),
+            (1680.0, 2400.0, 1920.0), (1200.0, 1680.0, 1440.0), (840.0, 1200.0, 960.0),
+            (600.0, 840.0, 720.0), (420.0, 600.0, 480.0), (300.0, 420.0, 360.0), (200.0, 300.0, 240.0),
+        ]
+    } else {
+        &[
+            (14400.0, 22000.0, 19200.0), (8000.0, 14400.0, 9600.0), (5600.0, 8000.0, 6400.0),
+            (4000.0, 5600.0, 4800.0), (2800.0, 4000.0, 3200.0), (2000.0, 2800.0, 2400.0),
+            (1400.0, 2000.0, 1600.0), (1000.0, 1400.0, 1200.0), (700.0, 1000.0, 800.0),
+            (500.0, 700.0, 600.0), (350.0, 500.0, 400.0), (250.0, 350.0, 300.0), (160.0, 250.0, 200.0),
+        ]
+    };
+    bands
+        .iter()
+        .find(|(lo, hi, _)| *lo <= fs && fs <= *hi)
+        .map(|b| b.2)
+        .unwrap_or_else(|| round_fv(fs / fnom) * round_fv(fnom))
+}
+
+/// Read an OSC2 oscillogram (`.osc`, `0x4524b0`; layout in
+/// `notes/FORMATS_SPEC.md`): big-endian 128-byte blocks — header, calibration,
+/// channel-table text, info, then fixed-size data blocks with a per-block
+/// sample-rate code.
+pub fn parse_osc(bytes: &[u8], enc: Encoding) -> Result<Oscillogram, ComtradeError> {
+    const B: usize = 128;
+    let block = |i: usize| bytes.get(i * B..(i + 1) * B).ok_or(ComtradeError::Format);
+    let b0 = block(0)?;
+    let (major, minor, h) = (b0[0], b0[1], b0[2] as usize);
+    let k = if b0[0x7D] != 0 { 2 } else { 1 };
+    if h < k + 1 {
+        return Err(ComtradeError::Format);
+    }
+    let gain = match (major, minor) {
+        (2, 3 | 4 | 5 | 8) => 1.0128,
+        (2, 6 | 7) => 1.00259,
+        (2, 9) => 1.014065,
+        _ => 1.0,
+    };
+    // Channel table text.
+    let mut text = String::new();
+    for i in k + 1..h {
+        let raw: Vec<u8> = block(i)?.iter().copied().filter(|b| *b != 0).collect();
+        text.push_str(&decode_text_enc(&raw, enc));
+        text.push('\n');
+    }
+    let lines: Vec<&str> = text.split(['\r', '\n']).filter(|l| !l.trim().is_empty()).collect();
+    let (mut analog_defs, mut digital_defs, mut n_per_block) = (Vec::new(), Vec::new(), None);
+    let mut li = 0;
+    while li < lines.len() {
+        let line = lines[li];
+        let tag: String = line.chars().take(3).collect();
+        let count: usize = line.chars().skip(4).take(3).collect::<String>().trim().parse().unwrap_or(0);
+        li += 1;
+        match tag.chars().nth(2) {
+            Some('A') | Some('D') => {
+                for _ in 0..count {
+                    let Some(l) = lines.get(li) else { break };
+                    li += 1;
+                    let f: Vec<String> = l.split(',').map(|x| x.trim().to_string()).collect();
+                    let name = f.get(1).filter(|n| !n.is_empty()).cloned().unwrap_or_else(|| "Резерв.".into());
+                    let phase = f.get(2).cloned().unwrap_or_default();
+                    if tag.ends_with('A') {
+                        let unit = if f.len() >= 5 { f[4].clone() } else { f.get(3).cloned().unwrap_or_default() };
+                        analog_defs.push((name, phase, unit));
+                    } else {
+                        digital_defs.push((name, phase));
+                    }
+                }
+            }
+            Some('F') => {
+                n_per_block = line.split(',').nth(1).and_then(|n| n.trim().parse::<usize>().ok());
+            }
+            _ => return Err(ComtradeError::Format),
+        }
+    }
+    let n = n_per_block.filter(|n| *n > 0).ok_or(ComtradeError::Format)?;
+    let (na, nd) = (analog_defs.len(), digital_defs.len());
+    // Calibration (a, b) per analog channel.
+    let mut cal = vec![(1.0, 0.0); na];
+    for (i, c) in cal.iter_mut().enumerate() {
+        if i / 8 >= k {
+            break;
+        }
+        let blk = block(1 + i / 8)?;
+        let j = i % 8;
+        let (f1, s1, f2, s2) = (be_f32(blk, 4 * j), be_i16(blk, 0x20 + 2 * j), be_f32(blk, 0x30 + 4 * j), be_i16(blk, 0x50 + 2 * j));
+        let a = if f2 == 0.0 { 1.0 } else { f1 / (f2 * 3276.8) };
+        let b = -(f64::from(s1) + f64::from(s2)) * a;
+        *c = if a.is_finite() && b.is_finite() { (a, b) } else { (1.0, 0.0) };
+    }
+    // Info block.
+    let info = block(h)?;
+    let max_blocks = be_i16(info, 2).max(0) as usize;
+    let ratio = |i: usize| {
+        let r = if 0x40 + 4 * i + 4 <= B { be_f32(info, 0x40 + 4 * i) } else { 1.0 };
+        if r > 0.1 && r < 100000.0 {
+            r
+        } else {
+            1.0
+        }
+    };
+    let mut analog: Vec<AnalogChannel> = analog_defs
+        .iter()
+        .enumerate()
+        .map(|(i, (name, phase, unit))| AnalogChannel {
+            index: i as u32 + 1,
+            id: name.clone(),
+            phase: phase.clone(),
+            unit: unit.clone(),
+            a: cal[i].0,
+            b: cal[i].1,
+            primary: ratio(i),
+            secondary: 1.0,
+            is_primary: false,
+            samples: Vec::new(),
+        })
+        .collect();
+    let mut digital: Vec<DigitalChannel> = digital_defs
+        .iter()
+        .enumerate()
+        .map(|(i, (name, phase))| DigitalChannel { index: i as u32 + 1, id: name.clone(), phase: phase.clone(), samples: Vec::new() })
+        .collect();
+    let m = analog_defs.iter().filter(|(_, _, u)| matches!(u.trim(), "V" | "В" | "A" | "А" | "")).count() as f64;
+    let words = nd / 16;
+    let rec_len = (na + words) * 2;
+    let mul: Vec<f64> = analog_defs.iter().map(|(_, _, u)| unit_multiplier(u)).collect();
+    let fnom = 50.0;
+    let (mut rate, mut first_rate) = (2400.0, None);
+    let mut time = Vec::new();
+    let mut t_us: i64 = 0;
+    let mut bi = 0;
+    while (max_blocks == 0 || bi < max_blocks) && (h + 1 + bi + 1) * B <= bytes.len() {
+        let blk = block(h + 1 + bi)?;
+        let code = f64::from(be_i16(blk, 0x7C));
+        let fs = round_fv(1e6 / (code * 0.03125 * m));
+        if fs.is_finite() && fs >= 1.0 {
+            rate = if first_rate.is_none() { snap_rate(fs, fnom) } else { fs };
+        }
+        first_rate.get_or_insert(rate);
+        // N records from the block start; nothing checks that they end
+        // before the rate code at +0x7C or the block end.
+        let base = (h + 1 + bi) * B;
+        for s in 0..n {
+            let off = base + s * rec_len;
+            if off + rec_len > bytes.len() {
+                break;
+            }
+            for (ci, ch) in analog.iter_mut().enumerate() {
+                let raw = f64::from(be_i16(bytes, off + 2 * ci));
+                ch.samples.push(raw * mul[ci] * ch.a + ch.b);
+            }
+            for w in 0..words {
+                let word = be_u16(bytes, off + 2 * (na + w));
+                for bit in 0..16 {
+                    if let Some(d) = digital.get_mut(16 * w + bit) {
+                        d.samples.push((word >> bit) & 1 == 1);
+                    }
+                }
+            }
+            time.push(t_us as f64 / 1e6);
+            t_us += (1e6 / rate).floor() as i64;
+        }
+        bi += 1;
+    }
+    for d in digital.iter_mut().skip(16 * words) {
+        d.samples = vec![false; time.len()];
+    }
+    Ok(Oscillogram {
+        station: String::new(),
+        device: format!("OSC Осциллограф. Версия {major}.{minor}"),
+        rev_year: 0,
+        line_freq: fnom,
+        time,
+        analog,
+        digital,
+        sample_rate: first_rate.unwrap_or(rate),
+        harmonic1_gain: gain,
+    })
 }
 
 fn sibling_paths(path: &Path) -> Result<(std::path::PathBuf, std::path::PathBuf), ComtradeError> {
@@ -528,6 +758,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         analog,
         digital,
         sample_rate,
+        harmonic1_gain: 1.0,
     };
     Ok((rec, fmt))
 }

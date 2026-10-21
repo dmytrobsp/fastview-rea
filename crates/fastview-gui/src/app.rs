@@ -908,7 +908,7 @@ impl App {
 
     pub fn open_comtrade(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("COMTRADE", &["cfg", "cff", "dat", "CFG", "CFF", "DAT"])
+            .add_filter("Осциллограммы", &["cfg", "cff", "osc", "dat", "CFG", "CFF", "OSC", "DAT"])
             .pick_file()
         {
             self.load_comtrade_path(&path);

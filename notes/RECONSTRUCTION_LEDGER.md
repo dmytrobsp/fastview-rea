@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 104 pass)
+- `cargo test --workspace`   (currently 105 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 104 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 105 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -53,11 +53,14 @@ memory (Flatpak overlay + CLI wrapper `~/projects/slack-rea/tools/rea-ghidra.sh`
 6. **Update this ledger**: the entry's evidence (address), what you verified, and
    the verdict. Append new entries as `L<n>`.
 
-**NEXT TASK (start here).** L3 file formats per **`notes/FORMATS_SPEC.md`**:
-the `.cfg` file-type strictness (only `ASCII`/`BINARY`/`binary32`, else error
-330), the `.cff` reader (incl. the original's one-byte DAT offset quirk) and
-writer (rev ≥ 2013, `DAT BINARY: n`), and the `.osc` (OSC2) reader. Done: L2 ✅,
-L4 ✅, L5 ✅, L6 ✅ (grspos* ❌), L7 ✅ (θ tap refinement ❌).
+**NEXT TASK (start here).** Remaining gaps, in rough priority: (1) the
+"Быстрый анализ" view code (not yet located — the per-tab quantities should be
+mapped to the original's view routines, not only to the formula functions);
+(2) θ tap refinement in ОМП (`0x49adc0`/`0x49bd40`); (3) `grspos*`; (4) the
+`.osc` writer and OSC time stamps; (5) the frequency-channel DFT variant
+(`FUN_004267e0`); (6) dialog-behaviour mapping for channel-role dialogs
+(DIALOG 401–543). Done: L2 ✅, L3 🟡 (readers ✅), L4 ✅, L5 ✅, L6 ✅
+(grspos* ❌), L7 ✅ (θ tap refinement ❌).
 
 **Scope reality.** "Every byte" literally = 9129 funcs of mostly MFC boilerplate;
 the *provable* target is the behavioural engines (this ledger's table). `.sto`
@@ -136,7 +139,7 @@ decompilation (pending, listed below).
 | DFT / phasors / RMS | `FUN_00426fc0` & channel methods | `signal.rs` | ✅ L6 (freq-channel variant ❌) |
 | Symmetric components / impedances | Calculator `i1: i2: 3i0: zl: zf:` | `signal.rs`/`analysis.rs` | 🟡 L6 (view code not located) |
 | ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | ✅ L7 (θ-tap refinement, parallel-line UI ❌) |
-| COMTRADE reader/writer | `0x450a30`, `.cff` `0x44fe30`/`0x44d0f0`, `.osc` `0x4524b0` | `comtrade.rs` | 🟡 L3 (`.cfg` ✅ `.cff` ✅ `.osc` ❌) |
+| COMTRADE reader/writer | `0x450a30`, `.cff` `0x44fe30`/`0x44d0f0`, `.osc` `0x4524b0` | `comtrade.rs` | 🟡 L3 (`.cfg` ✅ `.cff` ✅ `.osc` read ✅, `.osc` write ❌) |
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
 
@@ -594,9 +597,19 @@ keeps its HDR/INF/SET and offers `.cff` in Save-As; load errors read
 "<file> - <message>". Pinned by `tests/formats.rs` (5). A test fixture that
 only loaded because unknown file types used to fall back to ASCII was fixed.
 
-Verdict: 🟡 **PARTIAL**.
-- ✅ `.cfg`/`.dat` file-type rule, ✅ `.cff` read/write.
-- ❌ `.osc` (OSC2) reader — specified, implementation next.
+OSC2 (`.osc`) reader implemented (`parse_osc`): header/calibration/text/info/
+data blocks, big-endian, calibration a/b, channel table (incl. "Резерв."),
+info ratio → primary rating, per-block rate codes with the first block snapped
+to the standard rates, integer-µs time, the version harmonic-1 gain (applied
+by `fourie:` n = 1 via `OscChannels`). Pinned by `tests/formats.rs::osc2_reader`
+(synthetic file built to the verified layout — no real `.osc` sample ships, so
+it is not byte-verified against a device file).
+
+Verdict: 🟡 **PARTIAL** (all readers present).
+- ✅ `.cfg`/`.dat` file-type rule, ✅ `.cff` read/write, ✅ `.osc` read.
+- ❌ `.osc` writer (`0x44ca80`, Save-As .osc) not reversed; OSC trigger/start
+  time stamps not kept (our record has no time-stamp fields); unit-prefix
+  table beyond micro/milli NOT DETERMINED.
 - ⛔ `.sto` — needs the native ConvertSto2Comtrade and a sample file.
 - Not modelled: the temp-folder mechanics, `<base>.set` files, the
   save-onto-own-path rule, the `.dat` → `.cfg` open redirect is native already.

@@ -80,3 +80,62 @@ fn cff_dat_line_quirks() {
     let r = parse_cff(file2.as_bytes(), Encoding::Auto);
     assert!(r.is_ok() || matches!(r, Err(ComtradeError::Dat(_))));
 }
+
+/// Build an OSC2 file per the verified layout: block 0, one calibration
+/// block, one text block, the info block, then data blocks.
+fn osc_file(text: &str, blocks: &[(i16, Vec<[i16; 2]>)]) -> Vec<u8> {
+    let mut b0 = [0u8; 128];
+    b0[0] = 2;
+    b0[1] = 6;
+    b0[2] = 3; // H = block 0 + 1 calibration + 1 text
+    let mut cal = [0u8; 128];
+    cal[0..4].copy_from_slice(&(2.0f32 * 3276.8).to_be_bytes()); // F1[0]
+    cal[0x20..0x22].copy_from_slice(&1i16.to_be_bytes()); // S1[0]
+    cal[0x30..0x34].copy_from_slice(&1.0f32.to_be_bytes()); // F2[0]
+    cal[0x50..0x52].copy_from_slice(&1i16.to_be_bytes()); // S2[0]
+    let mut txt = [0u8; 128];
+    txt[..text.len()].copy_from_slice(text.as_bytes());
+    let mut info = [0u8; 128];
+    info[2..4].copy_from_slice(&(blocks.len() as i16).to_be_bytes());
+    info[0x40..0x44].copy_from_slice(&100.0f32.to_be_bytes());
+    let mut out = [b0, cal, txt, info].concat();
+    for (code, samples) in blocks {
+        let mut blk = [0u8; 128];
+        for (s, [a, b]) in samples.iter().enumerate() {
+            blk[4 * s..4 * s + 2].copy_from_slice(&a.to_be_bytes());
+            blk[4 * s + 2..4 * s + 4].copy_from_slice(&b.to_be_bytes());
+        }
+        blk[0x7C..0x7E].copy_from_slice(&code.to_be_bytes());
+        out.extend(blk);
+    }
+    out
+}
+
+/// OSC2 reading (0x4526a0 / 0x453010): calibration a/b, channel table,
+/// version gain, first-block rate snapping, per-block rates and µs time.
+#[test]
+fn osc2_reader() {
+    let text = "01A,02\r\n1,Ia,A,A\r\n2,,B,V\r\n01F,4\r\n";
+    // M = 2 (units A and V): code = 1e6 / (Fs·0.0625).
+    let bytes = osc_file(text, &[(16000, vec![[10, 1]; 4]), (8000, vec![[20, 2]; 4])]);
+    let rec = comtrade::parse_osc(&bytes, Encoding::Cp1251).unwrap();
+    assert_eq!(rec.device, "OSC Осциллограф. Версия 2.6");
+    assert_eq!(rec.harmonic1_gain, 1.00259);
+    assert_eq!(rec.analog[0].id, "Ia");
+    assert_eq!(rec.analog[1].id, "Резерв.");
+    // Calibration floats are float32 in the file, as in the original.
+    assert!((rec.analog[0].a - 2.0).abs() < 1e-6 && (rec.analog[0].b + 4.0).abs() < 1e-6);
+    assert_eq!(rec.analog[0].primary, 100.0);
+    let want = [16.0, 16.0, 16.0, 16.0, 36.0, 36.0, 36.0, 36.0];
+    assert!(rec.analog[0].samples.iter().zip(want).all(|(g, w)| (g - w).abs() < 1e-5));
+    assert_eq!(rec.analog[0].samples.len(), 8);
+    assert_eq!(rec.analog[1].samples[0], 1.0);
+    // First block 1000 Hz snapped to 1200 (833 µs); second block 2000 Hz (500 µs).
+    assert_eq!(rec.sample_rate, 1200.0);
+    assert!((rec.time[1] - 0.000833).abs() < 1e-12);
+    assert!((rec.time[5] - rec.time[4] - 0.0005).abs() < 1e-12);
+    assert_eq!(rec.rev_year, 0, "an OSC record cannot be saved as .cff");
+    // No nnF line → error 330.
+    let bad = osc_file("01A,01\r\n1,Ia,A,A\r\n", &[(16000, vec![[1, 1]; 4])]);
+    assert!(matches!(comtrade::parse_osc(&bad, Encoding::Cp1251), Err(ComtradeError::Format)));
+}
