@@ -714,7 +714,22 @@ mod window_tests {
             s if s.starts_with("skin") => s[4..].parse::<usize>().ok().and_then(|k| theme::Skin::ALL.get(k).copied()).map(C::SetSkin).into_iter().collect(),
             _ => vec![],
         };
-        let mut app = demo(&cmds);
+        // `FV_WINDOW_RECORD=<file.cfg>`: that record instead of the demo.
+        let mut app = match std::env::var("FV_WINDOW_RECORD") {
+            Ok(rec) => {
+                let mut app = App::new();
+                app.load_comtrade_path(std::path::Path::new(&rec));
+                while !app.loading.is_empty() {
+                    app.poll_loading();
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                for c in &cmds {
+                    app.dispatch(c.clone());
+                }
+                app
+            }
+            Err(_) => demo(&cmds),
+        };
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "omp" || s == "ompparams") {
             app.tab = RibbonTab::Omp;
         }

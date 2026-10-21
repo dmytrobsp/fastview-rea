@@ -558,9 +558,10 @@ Then the full recompute.
   counts (bit12, computed channels skipped). Target: **selected analog**;
   toggle-all. 32852 adds the full recompute. All: modified, panes refreshed.
 - CMDUI: disabled when the record has no analog channel or any selected analog
-  channel is ineligible — vector needs unit A, V, «ном» (str 162) or the empty
-  unit [I]; circle needs Ohm (str 3060), W, VA or var; frequency and circle
-  reject bit14. Checked iff all selected analog have it (≥ 1). 32849–32851 use
+  channel is ineligible — tests on the **canonical unit** (`0x414c30`: the
+  `0x422b10`-normalised unit, "" in ADC mode; «кА» → "A"), CompareNoCase:
+  vector A, V, «ном» (str 162) or empty; circle Ohm (str 3060), W, VA or var;
+  frequency and circle reject bit14 (ledger L9.34). Checked iff all selected analog have it (≥ 1). 32849–32851 use
   **SetRadio**, 32852 SetCheck.
 
 ### 4.9 Ruler / grid / difference band
@@ -857,8 +858,8 @@ Panel height under `Circle Diagram` / `Diff Diagram`.
   | 0 | — | not computed (bit13), else message 398 «Переименование расчетных каналов запрещено» → **in-place rename** |
   | 1 | bit0 visible | always; hiding also dissolves the channel's group and deselects |
   | 2 | bit1 frequency | analog and not bit14 |
-  | 3 | bit2 vector | A/V-type unit (0x42deb0) |
-  | 4 | bit3 circle | unit **not** W, VA or var (as read; see §10) |
+  | 3 | bit2 vector | canonical unit A / V / «ном» / "" (click: case-sensitive `0x42deb0`; paint: no case) |
+  | 4 | bit3 circle | canonical unit Ohm / W / VA / var, no case (ledger L9.34) |
   | 4 / 5 | digital entry visible | digital rows: group B in col 4, group A in col 5 |
 
   Every click refreshes views and marks modified.

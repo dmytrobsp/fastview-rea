@@ -1466,6 +1466,74 @@ negative half values; the clip under print / EMF map modes NOT DETERMINED;
 the original's rect-zoom lane top sums preceding visible analog channels in
 channel order (differs for group members — quirk not modelled).
 
+### L9.34 — Units are normalised on load (`0x422b10`)  ·  🟡
+User report: with real records («кА», «кВ», Cyrillic «А»/«В») the vector
+diagram's «Каналы» list was empty, the «Каналы» dialog's vector column and
+the channel menu's «на векторную диаграмму» were disabled.
+Read (subagent reports): the channel constructor `0x422460` keeps the raw
+token (`ch+0x78`, not trimmed — `0x477050` cuts at TAB/CR/LF/comma) and
+`0x422b10` builds the canonical unit `ch+0x7c` and a multiplier `ch+0x98`:
+"" for an empty or "NONE" unit; SI prefix in order мк/mk/u/µ ×1e-6, м/m
+×1e-3, н/Н/n/N ×1e-9, к/К/k/K ×1e3, М/M ×1e6, Г/G ×1e9 (with the listed
+one-letter, «/с», «ном» and ГН/ГЦ/ГР exceptions), a trailing «/с»/"/s"
+stripped (per-second flag); then А/A→A, В/V→V, ВА/В·А/V·A/VA→VA, ВТ/W→W,
+ВАР/VAR→var, Ом/Ω/OHM→Ohm, Ф/F, ГН/H, гр…/DEG→DEG, н/ном…/NOM→nom,
+О.Е./P.U.…→p. u. (those three with the prefix undone), ГЦ/HZ→Hz, м/m→m,
+с/s→s, См/S→S; no match → the raw unit, ×1, unknown flag. Literals are CP1251,
+compared case-sensitively with the unit and an upper-cased copy. Samples are
+`mult·a·raw + b` in the ASCII (`0x451904`) and BINARY (`0x451de0`) readers;
+the writer inverts (`0x422250`). Every unit test reads `0x414c30` = the
+canonical unit, or "" in ADC mode: vector A / V / «ном» / "" (CompareNoCase
+in the CMDUI `0x430650` and the dialog paint/header; the dialog click
+compares case-sensitively), circle Ohm / W / VA / var (no case); the readout
+SI prefixes (`0x43d960`) are on the canonical units. On the sample records
+every current and voltage channel is vector-eligible; none is
+circle-eligible (no power / impedance unit) — **circle disabled is the
+original's behaviour**; BINARY's «Напряжение 3U0» has a Latin "B" unit and
+is ineligible in the original too.
+Ours: `fvb_core::units::normalize` (tests); `AnalogChannel::{unit
+(canonical), raw_unit, unit_mult}` set by the `.cfg` / `.osc` readers (the
+`.osc` reader's own micro/milli table replaced), samples scaled in ASCII and
+BINARY, the writer saves the raw unit and divides the multiplier out;
+pasted channels take the clip's unit as canonical (×1); vector / circle
+tests no-case on the canonical unit, "" in ADC mode (menu CMDUI, «Каналы»
+column, diagram lists). Test `prefixed_cyrillic_units_reach_the_vector_
+diagram` (the demo with «кВ»/«кА»/«B» units); `window_dump` takes
+`FV_WINDOW_RECORD=<cfg>`.
+Residual / NOT DETERMINED: whether `MakeUpper` folds Cyrillic (taken
+ASCII-only: «МВт» stays unrecognised, «МВТ» is W ×1e6); whether binary32
+applies the multiplier (its reader never reads `+0x98`; ours does not
+scale it); the second «гр» spelling (string 3105); whether «ном» maps to
+"nom" (then the vector test's string 162 is dead, as taken) or stays;
+the original's dependence on the 1251 code page (other program encodings
+break Cyrillic units there) is not modelled; what computed channels hold
+in `+0x7c`.
+
+### L9.35 — Diagram «Каналы» lists, «Показать все» / «Скрыть все»  ·  ✅
+User report: «Скрыть все» hid channels for good on some diagrams.
+Read (subagent report): one bit per channel and diagram (frequency bit1,
+vector bit2, circle bit3 of `ch+0x60`) is both membership and "shown"; the
+list, «Показать все» / «Скрыть все», 32849–32851 and the «Каналы» dialog
+all write it. Vector MENU 355 (`0x48fc80`, list `0x492a00`): channels
+0..`doc+0x1d8` passing the vector unit test, at position **3 + i** after
+the separator, id 35000 + i, always enabled, check = bit2; «Показать все»
+(`0x48f600`) sets bit2 on those, «Скрыть все» (`0x48f820`) clears all; on
+attach (`0x48fda0`) bit2 is cleared on every ineligible channel, so a drawn
+phasor is always listed. Circle MENU 387 (`0x43d220`): Ohm / VA channels,
+not pending, at i + 3 before the separator; R|X pairs at n + 4 + j.
+Differential MENU 388 (`0x446d70`): pairs only, at **4 + j** after the
+separator. Frequency MENU 351 (`0x46f2e0`): analog, not pending, no unit
+test, at 3 + i; the frequency painter tests **only bit1**, not the
+oscillogram visibility. Every list click and both «…все» mark the document
+modified and repaint.
+Ours were wrong: raw-unit tests made the vector list empty while the
+channels were drawn (flags defaulted on), so after «Скрыть все» nothing
+could bring them back (L9.34 fixes the test; the vector flag is now cleared
+on attach for ineligible units); vector / frequency items sat before the
+separator, differential pairs one slot early; no modified mark; the
+frequency diagram also required lane visibility. Now as read. Test
+(above) hides and restores through «Показать все» and a tick.
+
 Next in L9 (HANDOFF 2026-10-21, second session): the four user-reported GUI
 bugs are fixed (L9.23 tiny-window crash + bottom scroll bar, L9.24 modal
 dialogs, L9.25 «Файл» main panel); a headless visual audit followed

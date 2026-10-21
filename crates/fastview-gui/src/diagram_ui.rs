@@ -151,7 +151,8 @@ fn doc_chans(d: &Doc) -> Vec<DChan> {
         .analog
         .iter()
         .enumerate()
-        .map(|(i, c)| DChan { name: c.id.clone(), unit: c.unit.trim().to_string(), color: d.chans[i].color, analog: Some(i), computed: None })
+        // The canonical unit, none in ADC mode (`0x414c30`).
+        .map(|(i, c)| DChan { name: c.id.clone(), unit: if d.chans[i].adc_counts { String::new() } else { c.unit.clone() }, color: d.chans[i].color, analog: Some(i), computed: None })
         .collect();
     v.extend(d.computed.iter().enumerate().map(|(j, c)| DChan {
         name: c.name.clone(),
@@ -612,6 +613,8 @@ impl App {
                         }
                     }
                 }
+                // Every list command marks the document modified.
+                d.set.modified = true;
             }
             DiagCmd::ToggleChan(idx) => {
                 let Some(d) = self.active_doc_mut() else { return };
@@ -619,6 +622,7 @@ impl App {
                 if let Some(c) = chans.get(idx) {
                     let v = !chan_flag(d, w, c);
                     set_chan_flag(d, w, idx, v);
+                    d.set.modified = true;
                 }
             }
             DiagCmd::TogglePair(j) => {
@@ -626,6 +630,7 @@ impl App {
                 let list = if diff { &mut d.dif_pairs } else { &mut d.rx_pairs };
                 if let Some(p) = list.get_mut(j) {
                     p.on = !p.on;
+                    d.set.modified = true;
                 }
             }
             DiagCmd::ShowReset => {
@@ -1072,7 +1077,9 @@ impl App {
         // NumHarmonics is capped at the Nyquist bin of the window.
         let k_max = self.freq_harmonics.min(n * periods / 2);
         let f = d.osc.line_freq;
-        let chans: Vec<usize> = (0..d.osc.analog.len()).filter(|i| d.chans[*i].on_freq && d.chans[*i].visible).collect();
+        // Only the diagram's own flag counts (`0x46fb1c`), not the lane's
+        // visibility on the oscillogram.
+        let chans: Vec<usize> = (0..d.osc.analog.len()).filter(|i| d.chans[*i].on_freq).collect();
         if chans.is_empty() {
             return;
         }
@@ -1521,5 +1528,51 @@ mod tests {
         h.app.apply_freq_dialog(FreqDialog { periods: 0, ..dlg });
         assert!(!h.app.freq_percent);
         assert_eq!(h.app.freq_periods, 1, "at least one period");
+    }
+
+    /// Records whose units carry SI prefixes and Cyrillic letters («кВ»,
+    /// «кА») — as the user's: units are normalised on load (`0x422b10`), so
+    /// these channels are listed on the vector diagram, «Скрыть все» can be
+    /// undone with «Показать все» or a tick, the menu command 32850 and the
+    /// «Каналы» column are enabled; a Latin «B» stays ineligible.
+    #[test]
+    fn prefixed_cyrillic_units_reach_the_vector_diagram() {
+        use crate::app::{ChanKey, Doc};
+        use crate::chansel::ChanFlag;
+        let cfg = include_str!("../../../assets/demo/demo_fault.cfg")
+            .replacen(",,V,", ",,кВ,", 2)
+            .replacen(",,V,", ",,B,", 1)
+            .replace(",,A,", ",,кА,");
+        let osc = fvb_core::comtrade::parse(&cfg, include_bytes!("../../../assets/demo/demo_fault.dat")).unwrap();
+        assert_eq!((osc.analog[0].unit.as_str(), osc.analog[0].unit_mult), ("V", 1000.0));
+        assert_eq!(osc.analog[3].raw_unit, "кА");
+        assert_eq!(osc.analog[2].unit, "B", "a Latin B is no volt");
+        let mut app = App::new();
+        app.add_doc(Doc::new(osc, "units".into()));
+        let names = |app: &App| -> Vec<String> {
+            app.menu_chans(Window::Vector).into_iter().map(|c| c.name).collect()
+        };
+        assert_eq!(names(&app), ["Ua", "Ub", "Ia", "Ib", "Ic"]);
+        let on = |app: &App| app.active_doc().unwrap().chans.iter().map(|c| c.on_vector).collect::<Vec<_>>();
+        assert_eq!(on(&app), [true, true, false, true, true, true], "the ineligible channel is cleared on attach");
+        let at = Pos2::ZERO;
+        app.diag_cmd(Window::Vector, DiagCmd::ShowAll(false), at);
+        assert!(on(&app).iter().all(|v| !v));
+        assert!(app.active_doc().unwrap().set.modified);
+        app.diag_cmd(Window::Vector, DiagCmd::ShowAll(true), at);
+        assert_eq!(on(&app), [true, true, false, true, true, true], "«Показать все» brings them back");
+        app.diag_cmd(Window::Vector, DiagCmd::ToggleChan(3), at);
+        app.diag_cmd(Window::Vector, DiagCmd::ToggleChan(3), at);
+        assert!(on(&app)[3], "a tick in the list brings one back");
+        // 32850 on a «кА» channel, the «Каналы» vector column.
+        let d = app.active_doc_mut().unwrap();
+        d.selection = [ChanKey::Analog(3)].into_iter().collect();
+        assert!(d.flag_state(ChanFlag::OnVector).enabled);
+        assert!(!d.flag_state(ChanFlag::OnCircle).enabled, "no power or impedance unit");
+        assert!(crate::chandlg::cell(d, ChanKey::Analog(3), 3).is_some());
+        assert!(crate::chandlg::cell(d, ChanKey::Analog(2), 3).is_none());
+        // Values are in base units: kV scaled by 1000.
+        let raw = fvb_core::comtrade::parse(include_str!("../../../assets/demo/demo_fault.cfg"), include_bytes!("../../../assets/demo/demo_fault.dat")).unwrap();
+        assert!((d.osc.analog[1].samples[1] - 1000.0 * raw.analog[1].samples[1]).abs() < 1e-6);
     }
 }

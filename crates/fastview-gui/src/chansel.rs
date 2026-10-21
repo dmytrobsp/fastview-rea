@@ -174,7 +174,8 @@ impl Doc {
         if matches!(f, ChanFlag::OnFreq | ChanFlag::OnVector | ChanFlag::OnCircle) {
             // Our computed channels carry a unit only when the generator
             // sets one (S0 = VA); an empty unit is not held against them.
-            let bad = self.selected_analog().into_iter().any(|i| !unit_ok(self.osc.analog[i].unit.trim()))
+            // The canonical unit, none in ADC mode (`0x414c30`).
+            let bad = self.selected_analog().into_iter().any(|i| !unit_ok(if self.chans[i].adc_counts { "" } else { &self.osc.analog[i].unit }))
                 || comp.iter().any(|&j| {
                     let u = self.computed[j].unit.trim();
                     !u.is_empty() && !unit_ok(u)

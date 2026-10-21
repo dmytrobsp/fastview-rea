@@ -228,7 +228,9 @@ impl ChanView {
             mode: ValueMode::Instant,
             stats: StatRows::default(),
             on_freq: true,
-            on_vector: true,
+            // Cleared on attach unless the unit passes the vector test
+            // (`0x48fda0`), so a drawn phasor is always listed.
+            on_vector: crate::diagram::vector_unit_ok(&ch.unit),
             // The circle flag is cleared on attach unless the unit is
             // Ohm / VA (`0x436b30`).
             on_circle: i == 0 && crate::diagram::circle_pane_unit_ok(&ch.unit),

@@ -30,7 +30,13 @@ pub struct AnalogChannel {
     pub index: u32,
     pub id: String,
     pub phase: String,
+    /// The canonical unit (`ch+0x7c`, [`crate::units::normalize`]): "A" for
+    /// a file's «кА»; what every unit test and readout uses.
     pub unit: String,
+    /// The unit as written in the file (`ch+0x78`), saved back as is.
+    pub raw_unit: String,
+    /// The unit's SI-prefix multiplier, folded into `samples` (`ch+0x98`).
+    pub unit_mult: f64,
     pub a: f64,
     pub b: f64,
     pub primary: f64,
@@ -38,6 +44,17 @@ pub struct AnalogChannel {
     /// `true` if the stored channel is already a primary value (`PS` = 'P').
     pub is_primary: bool,
     pub samples: Vec<f64>,
+}
+
+impl AnalogChannel {
+    /// The unit to write to a file: as read, else the canonical one.
+    pub fn file_unit(&self) -> &str {
+        if self.raw_unit.is_empty() {
+            &self.unit
+        } else {
+            &self.raw_unit
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -233,7 +250,7 @@ pub fn write(osc: &Oscillogram) -> (String, String) {
     for (i, ch) in osc.analog.iter().enumerate() {
         cfg.push_str(&format!(
             "{},{},{},,{},{},{},0,-32768,32767,{},{},{}\n",
-            i + 1, ch.id, ch.phase, ch.unit, ch.a, ch.b, ch.primary, ch.secondary,
+            i + 1, ch.id, ch.phase, ch.file_unit(), ch.a, ch.b, ch.primary, ch.secondary,
             if ch.is_primary { "P" } else { "S" },
         ));
     }
@@ -263,7 +280,9 @@ pub fn write(osc: &Oscillogram) -> (String, String) {
         dat.push_str(&format!("{},{}", k + 1, ts));
         for ch in &osc.analog {
             let v = ch.samples.get(k).copied().unwrap_or(0.0);
-            let raw = if ch.a.abs() > 1e-12 { (v - ch.b) / ch.a } else { v };
+            // The inverse of the reader's mult·a·raw + b (`0x422250`).
+            let k = ch.a * ch.unit_mult;
+            let raw = if k.abs() > 1e-12 { (v - ch.b) / k } else { v };
             dat.push_str(&format!(",{}", raw.round() as i64));
         }
         for ch in &osc.digital {
@@ -432,23 +451,6 @@ fn round_fv(x: f64) -> f64 {
     }
 }
 
-/// Unit prefix multiplier (`0x422b10`; micro and milli verified, the rest of
-/// its table is not determined).
-fn unit_multiplier(unit: &str) -> f64 {
-    let u = unit.trim();
-    for p in ["мк", "mk", "µ", "u"] {
-        if u.len() > p.len() && u.starts_with(p) {
-            return 1e-6;
-        }
-    }
-    for p in ["м", "m"] {
-        if u.len() > p.len() && u.starts_with(p) {
-            return 1e-3;
-        }
-    }
-    1.0
-}
-
 /// The first block's sample rate snapped to the standard rates (`0x453db0`).
 fn snap_rate(fs: f64, fnom: f64) -> f64 {
     let bands: &[(f64, f64, f64)] = if (fnom - 60.0).abs() < 0.5 {
@@ -578,7 +580,9 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
             index: i as u32 + 1,
             id: name.clone(),
             phase: phase.clone(),
-            unit: unit.clone(),
+            unit: crate::units::normalize(unit).unit,
+            raw_unit: unit.clone(),
+            unit_mult: crate::units::normalize(unit).mult,
             a: cal[i].0,
             b: cal[i].1,
             primary: ratio(i),
@@ -595,7 +599,7 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
     let m = analog_defs.iter().filter(|(_, _, u)| matches!(u.trim(), "V" | "В" | "A" | "А" | "")).count() as f64;
     let words = nd / 16;
     let rec_len = (na + words) * 2;
-    let mul: Vec<f64> = analog_defs.iter().map(|(_, _, u)| unit_multiplier(u)).collect();
+    let mul: Vec<f64> = analog.iter().map(|c| c.unit_mult).collect();
     let fnom = 50.0;
     let (mut rate, mut first_rate) = (2400.0, None);
     let mut time = Vec::new();
@@ -1065,11 +1069,17 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         let l = next(&mut li)?;
         let f: Vec<&str> = l.split(',').collect();
         let g = |i: usize| f.get(i).map(|s| s.trim()).unwrap_or("");
+        // The unit token is not trimmed (`0x477050` cuts at TAB, CR, LF or
+        // a comma only).
+        let raw_unit = f.get(4).copied().unwrap_or("").to_string();
+        let norm = crate::units::normalize(&raw_unit);
         analog.push(AnalogChannel {
             index: g(0).parse().unwrap_or(0),
             id: g(1).to_string(),
             phase: g(2).to_string(),
-            unit: g(4).to_string(),
+            unit: norm.unit,
+            raw_unit,
+            unit_mult: norm.mult,
             a: g(5).parse().unwrap_or(1.0),
             b: g(6).parse().unwrap_or(0.0),
             // An,ch_id,ph,ccbm,uu,a,b,skew,min,max,primary,secondary,PS
@@ -1213,9 +1223,10 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
                 }
                 let f: Vec<&str> = line.split(',').collect();
                 // columns: sample#, timestamp, A1..Ana, D1..Dnd
+                // value = mult·a·raw + b (`0x451904`).
                 for (ai, ch) in rec.analog.iter_mut().enumerate() {
                     let raw: f64 = f.get(2 + ai).and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
-                    ch.samples.push(ch.a * raw + ch.b);
+                    ch.samples.push(ch.unit_mult * ch.a * raw + ch.b);
                 }
                 for (di, ch) in rec.digital.iter_mut().enumerate() {
                     let v: i64 = f.get(2 + na + di).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
@@ -1263,7 +1274,11 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
                         }
                         DataFormat::Ascii => 0.0,
                     };
-                    ch.samples.push(ch.a * raw + ch.b);
+                    // BINARY folds in the unit multiplier (`0x451de0`); the
+                    // binary32 reader does not read it (`0x4520f0`; whether a
+                    // helper applies it is NOT DETERMINED).
+                    let mult = if fmt == DataFormat::Int16 { ch.unit_mult } else { 1.0 };
+                    ch.samples.push(mult * ch.a * raw + ch.b);
                     off += abytes;
                 }
                 for w in 0..dwords {

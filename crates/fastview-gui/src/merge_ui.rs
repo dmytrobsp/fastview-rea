@@ -132,7 +132,10 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
                     index: 0,
                     id: c.name.clone(),
                     phase: c.desc2.clone(),
-                    unit: c.dimension.clone(),
+                    // The clip's values are already in base units.
+                    unit: fvb_core::units::normalize(&c.dimension).unit,
+                    raw_unit: c.dimension.clone(),
+                    unit_mult: 1.0,
                     a: c.mul,
                     b: c.offset,
                     primary: c.primary_value,

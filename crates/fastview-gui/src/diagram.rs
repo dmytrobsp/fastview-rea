@@ -66,19 +66,19 @@ impl ChanPair {
 /// Vector diagram (CMDUI 32850 in `0x430650`, pane list `0x492a00`): units
 /// "A", "V", «ном» (string 162) or none.
 pub fn vector_unit_ok(unit: &str) -> bool {
-    matches!(unit, "A" | "V" | "ном") || unit.trim().is_empty()
+    ["A", "V"].iter().any(|u| unit.eq_ignore_ascii_case(u)) || unit.to_lowercase() == "ном" || unit.is_empty()
 }
 
 /// Circle-diagram flag of the oscillogram's channel menu (CMDUI 32851 in
 /// `0x430650`): "Ohm" (string 3060), "W", "VA" or "var".
 pub fn circle_flag_unit_ok(unit: &str) -> bool {
-    matches!(unit, "Ohm" | "W" | "VA" | "var")
+    ["Ohm", "W", "VA", "var"].iter().any(|u| unit.eq_ignore_ascii_case(u))
 }
 
 /// The circle pane's channel list, «Показать все» and the attach-time clear
 /// (`0x43d220`, `0x437150`, `0x436b30`): "Ohm" or "VA" only.
 pub fn circle_pane_unit_ok(unit: &str) -> bool {
-    matches!(unit, "Ohm" | "VA")
+    ["Ohm", "VA"].iter().any(|u| unit.eq_ignore_ascii_case(u))
 }
 
 /// A circle-diagram locus is on the impedance scale when its unit is "Ohm"
@@ -390,7 +390,7 @@ pub fn circle_channels_menu(doc_open: bool, chans: &[MenuChan], n_ch: usize, pai
 }
 
 /// The Каналы submenu of MENU 388: the Iдиф | Iторм pairs (35000 + j)
-/// inserted before the separator [I: position j + 3, as the circle's].
+/// inserted at position 4 + j, after the separator (`0x446d70`).
 pub fn diff_channels_menu(doc_open: bool, pairs: &[ChanPair]) -> Vec<Entry<DiagCmd>> {
     let mut m = vec![
         Entry::item("Создать", doc_open, Mark::None, DiagCmd::CreatePairs),
@@ -399,7 +399,7 @@ pub fn diff_channels_menu(doc_open: bool, pairs: &[ChanPair]) -> Vec<Entry<DiagC
         Entry::Sep,
     ];
     for (j, p) in pairs.iter().enumerate() {
-        insert_at(&mut m, j + 3, check(p.menu_label(), p.on, DiagCmd::TogglePair(j)));
+        insert_at(&mut m, j + 4, check(p.menu_label(), p.on, DiagCmd::TogglePair(j)));
     }
     m
 }
@@ -425,7 +425,8 @@ pub fn plane_menu(diff: bool, channels: Vec<Entry<DiagCmd>>, show_reset: bool, b
 }
 
 /// The Каналы submenu of MENU 355 / 351: Показать все, Скрыть все, ─ and the
-/// listed channels inserted at `i + 2` [I: the circle's insertion rule].
+/// listed channels inserted at position `3 + i`, after the separator
+/// (`0x492a00`, `0x46f2e0`; a skipped channel leaves no hole).
 pub fn simple_channels_menu(chans: &[MenuChan]) -> Vec<Entry<DiagCmd>> {
     let mut m = vec![
         Entry::item("Показать все", true, Mark::None, DiagCmd::ShowAll(true)),
@@ -433,7 +434,7 @@ pub fn simple_channels_menu(chans: &[MenuChan]) -> Vec<Entry<DiagCmd>> {
         Entry::Sep,
     ];
     for c in chans {
-        insert_at(&mut m, c.idx + 2, check(c.name.clone(), c.on, DiagCmd::ToggleChan(c.idx)));
+        insert_at(&mut m, c.idx + 3, check(c.name.clone(), c.on, DiagCmd::ToggleChan(c.idx)));
     }
     m
 }

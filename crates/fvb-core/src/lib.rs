@@ -24,6 +24,7 @@ pub mod quick;
 pub mod recset;
 pub mod settree;
 pub mod signal;
+pub mod units;
 pub mod views;
 
 pub use comtrade::{AnalogChannel, DigitalChannel, Oscillogram};

@@ -55,10 +55,12 @@ fn unit_of(doc: &Doc, key: ChanKey) -> Option<String> {
     }
 }
 
-/// Column 3 (vector, bit 2; `0x434d0a`): an analog channel whose unit is
-/// exactly "A", "V", «ном» (string 162) or empty.
+/// Column 3 (vector, bit 2; `0x434d0a`): an analog channel whose
+/// canonical unit is "A", "V", «ном» (string 162) or empty — the same test
+/// as the menu's (the click compares case-sensitively, the paint does not;
+/// canonical units make that moot).
 pub fn vector_unit_ok(unit: &str) -> bool {
-    matches!(unit, "A" | "V" | "ном" | "")
+    crate::diagram::vector_unit_ok(unit)
 }
 
 /// Column 4 (circle, bit 3; `0x434e81`): an analog channel, not pending a
