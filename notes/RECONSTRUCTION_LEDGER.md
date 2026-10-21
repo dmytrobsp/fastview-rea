@@ -58,7 +58,9 @@ memory (Flatpak overlay + CLI wrapper `~/projects/slack-rea/tools/rea-ghidra.sh`
 (`FUN_004267e0`); R/X channel pairs on the circle diagram (DIALOG 554); the
 parallel-line (mutual coupling) entry in the ОМП UI; dialog-behaviour mapping
 of the channel-role dialogs (DIALOG 401–543); a GUI screenshot pass (Wayland
-capture) to sanity-check the reworked views. Done: L2 ✅, L3 🟡 (readers ✅),
+capture is NOT usable unasked on this Hyprland desktop — new windows map
+on another workspace and grim captures the user's own screen; ask the user
+for a screenshot of the reworked views instead). Done: L2 ✅, L3 🟡 (readers ✅),
 L4 ✅, L5 ✅, L6 ✅, L7 ✅, L8 ✅.
 
 **Scope reality.** "Every byte" literally = 9129 funcs of mostly MFC boilerplate;
