@@ -1299,7 +1299,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 44. ✅ (L9.5; names only) Hover popup for truncated stats text — `lanes.rs` — S
 45. 🟡 (L9.8: file argument, -Dst, -Find, dropped files, 866×500; no single instance / splash) Start-up: file argument, `-Dst`, `-Find`, dropped files, min size 866×500,
     optional single instance and splash — `main.rs` — M
-46. AddFormula template tree (at least name validation 396) — `views.rs` /
+46. ✅ (merged L9.16) AddFormula template tree (at least name validation 396) — `views.rs` /
     `quick_ui.rs` — M (validation S)
 47. Document-modified tracking from the commands that call SetModifiedFlag
     (save prompt depends on an unknown) — `app.rs` — S

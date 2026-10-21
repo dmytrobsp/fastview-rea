@@ -776,6 +776,8 @@ pub struct App {
     // formula editor
     pub formula_name: String,
     pub formula_text: String,
+    /// «Добавить новую формулу» (DIALOG 359) while open.
+    pub formula_dlg: Option<crate::formula_dlg::AddFormulaDlg>,
 
     // vector diagram options (MENU 355)
     pub vec_radians: bool,
@@ -908,6 +910,7 @@ impl App {
             show_grid: true,
             formula_name: "Uab".to_string(),
             formula_text: "Ua-Ub".to_string(),
+            formula_dlg: None,
             vec_radians: false,
             vec_direction_only: false,
             vec_show_values: true,

@@ -8,6 +8,7 @@
 //! The crate is pure Rust with no platform dependencies, so it builds and runs
 //! identically on Linux, Windows and macOS.
 
+pub mod addformula;
 pub mod analysis;
 pub mod channels;
 pub mod comtrade;

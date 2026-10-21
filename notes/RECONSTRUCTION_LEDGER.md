@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 223 pass)
+- `cargo test --workspace`   (currently 238 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 223 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 238 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.15** below.
+temporary). Reconciled so far: **L9.1**–**L9.16** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -998,15 +998,37 @@ details beyond the spec summary not re-read; «Объединить» is not und
 (our snapshot does not hold the record); values ÷ `ch+0xf0` on merge not
 modelled; pasted discrete channels show as 0/1 lanes until merged.
 
-Next in L9 (HANDOFF 2026-10-21, master `4f6e530`): two worktree agents were
+### L9.16 — Formula dialog «Добавить новую формулу» (DIALOG 359, track A2, merged)  ·  ✅ (residuals)
+
+Read: tree built in `0x401c70` (string-table labels; each item's lParam = its
+form's dialog id; groups expanded; «Формула»/400 selected at open `0x401c10`);
+TVN_SELCHANGED `0x403260` → `0x403280` swaps the child form in placeholder
+0x40b, a group (lParam 0) has no form and greys OK; form OnInitDialog
+`0x411f40`/`0x411c70` fills channel lists with analog ids then computed
+channels (3Io/3Ion lists start «Не учитывать», the 24 current lists «Не
+использ.»; missing defaults → «Канал отсутствует» on top); edit defaults
+«Ia + Ib», «1.», «0.», «0.25», groups 0–11 / 0/1/11, Kторм 1/0.5. OK
+`0x403530`: DDX `0x403180` 396 for empty / leading digit, `0x4033a0` 396 for a
+leading non-letter and 473 for a name equal (Compare) to a record channel or
+formula; `0x4129e0` builds the formula (`0x412700` quotes non-identifier
+names; numeric commas → dots; «Не учитывать»/«Не использ.»/"" → 0); the page
+proposes «Канал%i» (max trailing number + 1, `0x486df0`). Ours:
+`fvb_core::addformula` (57 leaves, `build`, `check_name`, `default_name`, …;
+9 unit + 1 integration test evaluating all 57 on the demo record),
+`formula_dlg.rs` (dialog, OK → `append_computed`; 5 headless tests), a
+«Добавить…» button in the formula editor; `expr`: `frequency:` accepts no
+argument. Deliberate: Im:(Zk) passes Km twice as the original (`0x413f69`).
+Residual: channel unit from a trailing `[W]/[var]/[VA]` is inferred; what
+`Frequency: ()` returns was not reversed (ours: line frequency); no tree icons;
+the formula-editor page itself (list, Загрузить/Сохранить/↑/↓) not rebuilt;
+396 shows once (the original shows it twice).
+
+Next in L9 (HANDOFF 2026-10-21; A2 merged, Track S pending): two worktree agents were
 still running at the handoff, both branched from `f07450a`:
 - **Track S** — `.set` per-record settings (comments, channel options, ОМП
   `WrongPlaceFinding`, diagram sections, computed formulas), the
   document-modified flag / save prompt, 32860 «Загрузка настроек...»: branch
   `worktree-agent-a51dde577cd78f28c`.
-- **Track A2** — formula dialog DIALOG 359 «Добавить новую формулу» (template
-  tree, per-template forms, name rule 396): branch
-  `worktree-agent-a96d24074275c69d5`.
 Check `git log master..<branch>`; if a branch has commits, merge it `--no-ff`
 (resolve against L9.7 `Doc::flagged`, L9.13 `digital_visible`, L9.15
 `pending`), run the four gates, add its ledger paragraph (the agent's report
