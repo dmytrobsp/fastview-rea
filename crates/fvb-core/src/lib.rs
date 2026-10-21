@@ -19,6 +19,8 @@ pub mod omp;
 pub mod omp_params;
 pub mod parse;
 pub mod quick;
+pub mod recset;
+pub mod settree;
 pub mod signal;
 pub mod views;
 
