@@ -200,6 +200,9 @@ pub struct ChanView {
     pub on_freq: bool,
     pub on_vector: bool,
     pub on_circle: bool,
+    /// Values in primary units (`ch+0x89`, set on every file channel by
+    /// 32867 «Первичные» / 32868 «Вторичные»).
+    pub primary: bool,
 }
 
 /// A user-defined computed channel (formula editor), evaluated per sample.
@@ -216,11 +219,13 @@ pub struct Computed {
     /// Shown on the vector / circle diagrams (flags 0x4 / 0x8).
     pub on_vector: bool,
     pub on_circle: bool,
+    /// Shown on the oscillogram (bit 0; «Каналы» dialog column 1).
+    pub visible: bool,
 }
 
 impl Computed {
     pub fn new(name: String, formula: String, samples: Vec<f64>, color: egui::Color32) -> Computed {
-        Computed { name, formula, samples, color, unit: String::new(), phasors: None, on_vector: false, on_circle: false }
+        Computed { name, formula, samples, color, unit: String::new(), phasors: None, on_vector: false, on_circle: false, visible: true }
     }
 
     pub fn as_core(&self) -> fvb_core::quick::ComputedChannel {
@@ -334,6 +339,14 @@ pub struct Doc {
     /// Precomputed per-channel one-cycle RMS and DC series (for stats / remove-DC).
     pub rms: Vec<Vec<f64>>,
     pub dc: Vec<Vec<f64>>,
+    /// Shown flag of each digital channel (bit 0; «Каналы» dialog column 1).
+    pub digital_visible: Vec<bool>,
+    /// The code page the record's names are currently decoded in (`doc+0x6e8`,
+    /// 866 / 1251: file parameters «Кодировка»; see `recdlg`).
+    pub codepage: Encoding,
+    /// The record comment (`.hdr` text, 32805) and its code page.
+    pub hdr: Option<String>,
+    pub hdr_cp: Encoding,
 }
 
 impl Doc {
@@ -363,8 +376,10 @@ impl Doc {
                 on_freq: true,
                 on_vector: true,
                 on_circle: i == 0,
+                primary: false,
             })
             .collect();
+        let digital_visible = vec![true; osc.digital.len()];
         Doc {
             osc,
             analysis,
@@ -390,6 +405,10 @@ impl Doc {
             diff_band: true,
             rms,
             dc,
+            digital_visible,
+            codepage: Encoding::Cp1251,
+            hdr: None,
+            hdr_cp: Encoding::Cp1251,
         }
     }
 
@@ -544,7 +563,16 @@ pub enum Command {
     TogglePane(Pane),
     /// Bring a pane of the tab group to the front.
     ActivatePane(Pane),
+    /// 32867 / 32868: every file channel to primary / secondary values.
     SetPrimaryValues(bool),
+    /// 142: show or hide the parameters bar.
+    ToggleParamBar,
+    /// 32862 «Каналы»: DIALOG 463.
+    ChannelsDialog,
+    /// 32866 «Коэффициенты»: DIALOG 477.
+    Coefficients,
+    /// 32805 «Комментарии»: the record comment (.hdr) editor.
+    HdrComment,
     InvertVisible,
     RemoveDcVisible,
     SetValueMode(ValueMode),
@@ -603,7 +631,6 @@ pub struct App {
     pub skin: Skin,
     pub time_unit: TimeUnit,
     pub show_grid: bool,
-    pub primary_values: bool,
 
     // formula editor
     pub formula_name: String,
@@ -682,6 +709,8 @@ pub struct App {
     /// «Цвет канала» (33030) colour dialog, initialised from the first
     /// selected channel and applied to every selected channel on OK.
     pub color_dialog: Option<egui::Color32>,
+    /// Dialogs and bars of `chandlg` / `recdlg` (backlog 16, 18, 28, 29, 34, 39).
+    pub dlg: crate::recdlg::DialogState,
 
     pub status: String,
 }
@@ -720,7 +749,6 @@ impl App {
             skin: Skin::Blue,
             time_unit: TimeUnit::Milli,
             show_grid: true,
-            primary_values: false,
             formula_name: "Uab".to_string(),
             formula_text: "Ua-Ub".to_string(),
             vec_radians: false,
@@ -746,7 +774,7 @@ impl App {
             show_file_params: false,
             show_channel_map: false,
             show_settings: false,
-            encoding: Encoding::Auto,
+            encoding: Encoding::Cp1251,
             show_explorer: false,
             explorer_dir: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
             ribbon_minimized: false,
@@ -765,6 +793,7 @@ impl App {
             lane_menu_serial: 0,
             lane_menu_eat: false,
             color_dialog: None,
+            dlg: Default::default(),
             status: "Готово".to_string(),
         };
         app.ensure_block_state();
@@ -874,14 +903,11 @@ impl App {
                     _ => {}
                 }
             }
-            Command::SetPrimaryValues(p) => {
-                self.primary_values = p;
-                self.status = if p {
-                    "Первичные значения".into()
-                } else {
-                    "Вторичные значения".into()
-                };
-            }
+            Command::SetPrimaryValues(p) => self.set_primary_values(p),
+            Command::ToggleParamBar => self.dlg.param_bar = !self.dlg.param_bar,
+            Command::ChannelsDialog => self.open_channels_dialog(),
+            Command::Coefficients => self.open_coef_dialog(),
+            Command::HdrComment => self.open_hdr_comment(),
             Command::InvertVisible => {
                 self.snapshot_undo();
                 if let Some(d) = self.active_doc_mut() {
@@ -1108,6 +1134,7 @@ impl App {
         if let Some(g) = v.get("Sells") {
             self.show_grid = g != "0";
         }
+        self.load_program_settings();
         let dim = self.diagram_dim;
         if let Some(name) = self.store.selected.get(Self::diagram_key(dim)).cloned() {
             if let Some(i) = self.library.blocks.iter().position(|b| b.name == name) {
@@ -1232,24 +1259,15 @@ impl App {
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 self.add_doc(Doc::new(osc, name));
+                let enc = self.encoding;
                 if let Some(d) = self.active_doc_mut() {
                     d.path = Some(path.to_path_buf());
                     d.cff = cff;
+                    d.init_record_text(enc);
                 }
             }
             // The original shows "<file> - <message>".
             Err(e) => self.status = format!("{} - {e}", path.display()),
-        }
-    }
-
-    /// Re-open the active document's file with the current encoding (the original
-    /// re-reads on an encoding change).
-    pub fn reopen_active(&mut self) {
-        let path = self.active_doc().and_then(|d| d.path.clone());
-        if let Some(path) = path {
-            self.load_comtrade_path(&path);
-        } else {
-            self.status = "Файл для переоткрытия неизвестен.".into();
         }
     }
 
@@ -1312,7 +1330,7 @@ impl App {
             return;
         };
         if path.to_string_lossy().to_lowercase().ends_with(".cff") {
-            self.status = match fvb_core::comtrade::write_cff(&d.osc, &d.cff) {
+            self.status = match fvb_core::comtrade::write_cff(&d.osc, &d.cff_sections()) {
                 Ok(bytes) => match std::fs::write(&path, bytes) {
                     Ok(()) => format!("Сохранено: {}", path.display()),
                     Err(e) => format!("Ошибка сохранения: {e}"),
@@ -1323,7 +1341,9 @@ impl App {
         }
         let (cfg, dat) = fvb_core::comtrade::write(&d.osc);
         let dat_path = path.with_extension("dat");
-        match std::fs::write(&path, cfg).and_then(|_| std::fs::write(&dat_path, dat)) {
+        let hdr = d.hdr_file_bytes();
+        let wrote = std::fs::write(&path, cfg).and_then(|_| std::fs::write(&dat_path, dat));
+        match wrote.and_then(|_| hdr.map_or(Ok(()), |b| std::fs::write(path.with_extension("hdr"), b))) {
             Ok(()) => self.status = format!("Сохранено: {} (+ .dat)", path.display()),
             Err(e) => self.status = format!("Ошибка сохранения: {e}"),
         }
@@ -1484,7 +1504,7 @@ impl App {
     /// channel mode (`fvb_core::quick::evaluate_batch`); all or nothing.
     /// Returns the names given to them.
     pub fn append_computed(&mut self, batch: &[(String, String, String)]) -> Option<Vec<String>> {
-        let show_primary = self.primary_values;
+        let show_primary = self.active_doc().is_some_and(Doc::primary_values);
         let base = self.docs.len() + 7;
         let Some(d) = self.active_doc() else {
             self.status = "Сначала загрузите осциллограмму.".into();

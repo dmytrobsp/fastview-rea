@@ -6,6 +6,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod chandlg;
 mod chansel;
 mod dialogs;
 mod icons;
@@ -13,6 +14,7 @@ mod lanes;
 mod oscgeom;
 mod persist;
 mod quick_ui;
+mod recdlg;
 mod ribbon;
 mod theme;
 mod util;
@@ -139,6 +141,13 @@ impl eframe::App for App {
                     self.doc_tabs(ui);
                 }
             });
+        // 142: the parameters bar, a 75 px strip under the ribbon.
+        if self.dlg.param_bar {
+            egui::TopBottomPanel::top("parambar")
+                .exact_height(75.0)
+                .frame(egui::Frame::none().fill(pal.group_bg))
+                .show(ctx, |ui| self.param_bar_ui(ui));
+        }
 
         egui::TopBottomPanel::bottom("status")
             .frame(egui::Frame::none().fill(pal.group_bg).inner_margin(egui::Margin::symmetric(6.0, 3.0)))

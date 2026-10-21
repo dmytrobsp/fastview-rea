@@ -20,6 +20,9 @@ pub struct Store {
     pub values: HashMap<CharKey, HashMap<String, String>>,
     /// The original's `View` settings: XScale, YAnalogSize, RulerState, Sells.
     pub view: HashMap<String, String>,
+    /// `Settings Parameters` (`0x448c00` / `0x448da0`): Dst folder,
+    /// UTC for Comtrade2013, Display Encoding.
+    pub settings: HashMap<String, String>,
 }
 
 /// `View/RulerState` codes (`view+0xe8`): 0 µs, 1 ms, 2 s, 3 absolute, 4 samples.
@@ -72,6 +75,9 @@ impl Store {
                 ["view", k, v] => {
                     st.view.insert(k.to_string(), v.to_string());
                 }
+                ["settings", k, v] => {
+                    st.settings.insert(k.to_string(), v.to_string());
+                }
                 ["value", d, b, c, p, v] => {
                     st.values
                         .entry((d.to_string(), b.to_string(), c.to_string()))
@@ -99,6 +105,9 @@ impl Store {
         }
         for (k, v) in &self.view {
             lines.push(format!("view\t{}\t{}", clean(k), clean(v)));
+        }
+        for (k, v) in &self.settings {
+            lines.push(format!("settings\t{}\t{}", clean(k), clean(v)));
         }
         lines.sort();
         lines.join("\n") + "\n"
@@ -133,6 +142,7 @@ mod tests {
         st.visible.insert(key.clone(), false);
         st.values.entry(key).or_default().insert("Zy".into(), "2*3".into());
         st.view.insert("YAnalogSize".into(), "121".into());
+        st.settings.insert("Dst folder".into(), "/data/dst".into());
         assert_eq!(Store::parse(&st.serialize()), st);
     }
 }
