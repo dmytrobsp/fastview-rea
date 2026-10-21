@@ -1318,6 +1318,31 @@ off (a short toolbar), the tab group's content is clipped to its own rect.
 Test: `diagram_pane_toolbar_stays_above_the_tab_strip` (860 / 700 / 560 px
 windows). Residual: the original's toolbar overflow chevron not modelled.
 
+### L9.27 — Ribbon: icon-only small buttons; panels collapse when narrow  ·  🟡
+Our bug (headless `window_dump` render at the default 1320 px): the
+«Видимость» group drew 140 px text buttons in six columns, so «Главная» was
+~1400 px wide; past the window edge egui wrapped labels almost per
+character and the ribbon body grew to ~300 px, while «Вычисления» and the
+«Осциллограмма» panel were off-screen and unreachable; labels overlapped.
+Read (spec §2.3): every «Видимость» command but Каналы, and 32817–32822 in
+«Вычисления», are **small icon-only buttons** (label empty, the string is
+the tooltip), three to a column, separators where listed; MFC ribbon
+behaviour (framework): panels that do not fit collapse to one button that
+drops the panel down; the body height is constant.
+Ours: `mini_button` (24×24, tooltip = label, framed while checked) with
+our own vector glyphs (`paint_mini`; the original's image list is
+proprietary and not reproduced); fixed-height in-panel separators; small
+text buttons sized to their label; no text wrapping in the ribbon; panel
+widths measured when drawn expanded and `collapse_plan` collapses from the
+right until the category fits — a collapsed panel is a button with its
+name + ▾ opening the panel in a popup (closes on a click); body height
+fixed at 102 px. Tests: `panels_collapse_from_the_right_until_the_
+category_fits`, `narrow_ribbon_collapses_panels_and_keeps_its_height`.
+Residual: MFC's intermediate reductions (large → small → icon-only before
+collapsing) and its exact collapse order are framework internals not
+read; collapsed buttons show no panel icon (0x1C/0x22/0x20/0x26); glyphs
+are ours, not the original bitmaps.
+
 Next in L9 (HANDOFF 2026-10-21, master clean at 4a83adc): §9 items 36 and
 48 are done (L9.21, L9.22). **FIRST — four GUI bugs the user found running
 the release build (ours, not original behaviour; reproduce headless with the

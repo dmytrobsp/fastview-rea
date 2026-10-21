@@ -24,7 +24,6 @@ pub enum Icon {
     Wave,
     Invert,
     RemoveDc,
-    ShowAll,
     HideAll,
     Primary,
     Params,
@@ -121,7 +120,7 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
             path(painter, vec![p(0.10, 0.80), p(0.30, 0.78), p(0.45, 0.40), p(0.55, 0.38), p(0.70, 0.74), p(0.90, 0.72)]);
             line(painter, p(0.08, 0.88), p(0.92, 0.88));
         }
-        Icon::Channels | Icon::ShowAll | Icon::HideAll => {
+        Icon::Channels | Icon::HideAll => {
             for (i, on) in [true, true, icon != Icon::HideAll].iter().enumerate() {
                 let y = 0.24 + i as f32 * 0.26;
                 // checkbox

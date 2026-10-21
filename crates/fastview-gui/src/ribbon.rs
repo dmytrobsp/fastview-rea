@@ -197,7 +197,22 @@ impl App {
                 .stroke(egui::Stroke::new(1.0f32, p.group_border))
                 .inner_margin(egui::Margin::symmetric(6.0, 4.0))
                 .show(ui, |ui| {
-                    ui.set_min_height(86.0);
+                    // A constant height: expanded panels (buttons + title).
+                    ui.set_min_height(102.0);
+                    // Never wrap a label: a group that does not fit is
+                    // collapsed (below), not squeezed.
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    let titles: &[&str] = match self.tab {
+                        RibbonTab::Home => &HOME_GROUPS,
+                        RibbonTab::Omp => &OMP_GROUPS,
+                    };
+                    let widths: Vec<f32> = titles.iter().map(|t| ui.data(|d| d.get_temp::<f32>(group_width_id(t))).unwrap_or(0.0)).collect();
+                    let plan = collapse_plan(&widths, ui.available_width(), COLLAPSED_W);
+                    ui.data_mut(|d| {
+                        for (t, c) in titles.iter().zip(&plan) {
+                            d.insert_temp(group_collapsed_id(t), *c);
+                        }
+                    });
                     ui.horizontal_top(|ui| match self.tab {
                         RibbonTab::Home => self.ribbon_home(ui, &mut cmds),
                         RibbonTab::Omp => self.ribbon_omp(ui, &mut cmds),
@@ -254,80 +269,89 @@ impl App {
             if big_button(ui, p, Icon::Channels, "Каналы").clicked() {
                 cmds.push(Command::ChannelsDialog);
             }
-            // Columns as the original: [32845/46/47] [32802/03/138]
-            // [32800/01/141] [32813/14/139] [32815/16] [155/157/156].
-            ui.vertical(|ui| {
-                for (k, icon, label) in [(0u8, Icon::ShowAll, "Показать дискретные"), (1, Icon::HideAll, "Скрыть дискретные"), (2, Icon::HideAll, "Скрыть неизменяющиеся")] {
-                    if small_button(ui, p, icon, label).clicked() {
-                        cmds.push(Command::Discrete(k));
-                    }
-                }
-            });
+            // Small icon-only buttons (the label is the tooltip), three to a
+            // column as the original: [32845/46/47] | [32802/03/138]
+            // [32800/01/141] [32813/14/139] [32815/16] | [155/157/156].
             let armed = self.rect_zoom != crate::app::RectZoom::Off;
-            for column in [
-                vec![("Увел. по гор.", Command::ZoomX(true), false), ("Уменьш. по гор.", Command::ZoomX(false), false), ("Приблизить по вертикали", Command::RectZoom, armed)],
-                vec![("Увел. по верт.", Command::ZoomY(true), false), ("Уменьш. по верт.", Command::ZoomY(false), false), ("Вернуть к исходному размеру", Command::ResetZoom, false)],
-            ] {
-                ui.vertical(|ui| {
-                    for (label, c, on) in column {
-                        if small_toggle(ui, p, label, on) {
-                            cmds.push(c);
-                        }
-                    }
-                });
-            }
             let shown = |k: usize| self.active_doc().is_some_and(|d| if k < 3 { d.v_shown[k] } else { d.hviz[k - 3].shown });
-            for ks in [[0usize, 1, 2].as_slice(), [3, 4].as_slice()] {
-                ui.vertical(|ui| {
-                    for &k in ks {
-                        let label = ["Верт. визир 1", "Верт. визир 2", "Верт. визир 3", "Гор. визир 1", "Гор. визир 2"][k];
-                        if small_toggle(ui, p, label, shown(k)) {
-                            cmds.push(Command::ToggleVizir(k));
-                        }
-                    }
-                });
-            }
-            ui.vertical(|ui| {
+            let comments_ok = self.active_doc().is_some_and(|d| d.comments_allowed());
+            let mode = |k: u8| self.active_doc().is_some_and(|d| d.comment_mode == k);
+            let columns: [&[MiniCmd]; 6] = [
+                &[
+                    (Mini::ShowDigital, "Показать дискретные", true, false, Command::Discrete(0)),
+                    (Mini::HideDigital, "Скрыть дискретные", true, false, Command::Discrete(1)),
+                    (Mini::HideUnchanged, "Скрыть неизменяющиеся", true, false, Command::Discrete(2)),
+                ],
+                &[
+                    (Mini::ZoomH(true), "Увел. по гор.", true, false, Command::ZoomX(true)),
+                    (Mini::ZoomH(false), "Уменьш. по гор.", true, false, Command::ZoomX(false)),
+                    (Mini::RectZoom, "Приблизить по вертикали", true, armed, Command::RectZoom),
+                ],
+                &[
+                    (Mini::ZoomV(true), "Увел. по верт.", true, false, Command::ZoomY(true)),
+                    (Mini::ZoomV(false), "Уменьш. по верт.", true, false, Command::ZoomY(false)),
+                    (Mini::Reset, "Вернуть к исходному размеру", true, false, Command::ResetZoom),
+                ],
+                &[
+                    (Mini::Vizir(0), "Верт. визир 1", true, shown(0), Command::ToggleVizir(0)),
+                    (Mini::Vizir(1), "Верт. визир 2", true, shown(1), Command::ToggleVizir(1)),
+                    (Mini::Vizir(2), "Верт. визир 3", true, shown(2), Command::ToggleVizir(2)),
+                ],
+                &[
+                    (Mini::Vizir(3), "Гор. визир 1", true, shown(3), Command::ToggleVizir(3)),
+                    (Mini::Vizir(4), "Гор. визир 2", true, shown(4), Command::ToggleVizir(4)),
+                ],
                 // 155 / 157 / 156: one-shot comment tools (a radio group with
                 // toggle-off), enabled for records from .cfg / .osc files.
-                ui.add_enabled_ui(self.active_doc().is_some_and(|d| d.comments_allowed()), |ui| {
-                    for (k, label) in [(1, "Момент времени"), (3, "Область"), (2, "Линия уровня")] {
-                        let on = self.active_doc().is_some_and(|d| d.comment_mode == k);
-                        if small_toggle(ui, p, label, on) {
-                            cmds.push(Command::CommentMode(k));
+                &[
+                    (Mini::Moment, "Момент времени", comments_ok, mode(1), Command::CommentMode(1)),
+                    (Mini::Area, "Область", comments_ok, mode(3), Command::CommentMode(3)),
+                    (Mini::Level, "Линия уровня", comments_ok, mode(2), Command::CommentMode(2)),
+                ],
+            ];
+            for (k, column) in columns.into_iter().enumerate() {
+                if k == 1 || k == 5 {
+                    group_separator(ui, p);
+                }
+                ui.vertical(|ui| {
+                    for (glyph, tip, enabled, on, cmd) in column {
+                        if mini_button(ui, p, *glyph, tip, *enabled, *on) {
+                            cmds.push(cmd.clone());
                         }
                     }
                 });
-            });
+            }
         });
         // Вычисления
         ribbon_group(ui, p, "Вычисления", |ui| {
             // 32817 / 32818 / 32819: stats rows on every analog channel,
-            // checked when all channels show the row.
-            ui.vertical(|ui| {
-                for (k, label) in ["Мин/макс", "СКЗ", "Оценка 1-й гарм."].into_iter().enumerate() {
-                    let on = self.active_doc().is_some_and(|d| {
-                        !d.chans.is_empty() && d.chans.iter().all(|c| [c.stats.minmax, c.stats.rms, c.stats.a1][k])
-                    });
-                    if small_toggle(ui, p, label, on) {
-                        cmds.push(Command::StatsRow(k));
+            // checked when all channels show the row; 32820..32822 act on the
+            // selected channels, checked only when every selected channel is
+            // in that mode. Icon-only, as in the original.
+            let stat_on = |k: usize| self.active_doc().is_some_and(|d| !d.chans.is_empty() && d.chans.iter().all(|c| [c.stats.minmax, c.stats.rms, c.stats.a1][k]));
+            let mode_on = |m| self.active_doc().is_some_and(|d| d.mode_state(m).checked);
+            let columns: [[(Mini, &str, bool, Command); 3]; 2] = [
+                [
+                    (Mini::MinMax, "Мин/макс", stat_on(0), Command::StatsRow(0)),
+                    (Mini::Rms, "СКЗ", stat_on(1), Command::StatsRow(1)),
+                    (Mini::A1, "Оценка 1-й гарм.", stat_on(2), Command::StatsRow(2)),
+                ],
+                [
+                    (Mini::Instant, "Мгновенные", mode_on(ValueMode::Instant), Command::SetValueMode(ValueMode::Instant)),
+                    (Mini::RmsMode, "Среднеквадр.", mode_on(ValueMode::Rms), Command::SetValueMode(ValueMode::Rms)),
+                    (Mini::Harm1, "1-я гармоника", mode_on(ValueMode::FirstHarmonic), Command::SetValueMode(ValueMode::FirstHarmonic)),
+                ],
+            ];
+            for column in columns {
+                ui.vertical(|ui| {
+                    for (glyph, tip, on, cmd) in column {
+                        if mini_button(ui, p, glyph, tip, true, on) {
+                            cmds.push(cmd);
+                        }
                     }
-                }
-            });
-            ui.vertical(|ui| {
-                // 32820..32822 act on the selected channels; a button is checked
-                // only when every selected channel is in that mode.
-                let checked = |m| self.active_doc().is_some_and(|d| d.mode_state(m).checked);
-                if small_toggle(ui, p, "Мгновенные", checked(ValueMode::Instant)) {
-                    cmds.push(Command::SetValueMode(ValueMode::Instant));
-                }
-                if small_toggle(ui, p, "Среднеквадр.", checked(ValueMode::Rms)) {
-                    cmds.push(Command::SetValueMode(ValueMode::Rms));
-                }
-                if small_toggle(ui, p, "1-я гармоника", checked(ValueMode::FirstHarmonic)) {
-                    cmds.push(Command::SetValueMode(ValueMode::FirstHarmonic));
-                }
-            });
+                });
+            }
+            group_separator(ui, p);
             ui.vertical(|ui| {
                 // 32823 / 32824: toggle-all over the selection, checked when
                 // every selected channel has the flag.
@@ -466,7 +490,74 @@ fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, active_bg: Color32, 
 }
 
 /// A ribbon group: content row/area + centered caption + right divider.
+/// The panels of each category, left to right.
+const HOME_GROUPS: [&str; 5] = ["Объединение", "Диаграммы", "Видимость", "Вычисления", " "];
+const OMP_GROUPS: [&str; 1] = ["ОМП"];
+/// Width a collapsed panel takes (its button, divider and gap).
+const COLLAPSED_W: f32 = 82.0;
+
+fn group_width_id(title: &str) -> egui::Id {
+    egui::Id::new(("fv_ribbon_group_w", title))
+}
+
+fn group_collapsed_id(title: &str) -> egui::Id {
+    egui::Id::new(("fv_ribbon_group_collapsed", title))
+}
+
+/// Which panels collapse to a single button so the category fits `avail`
+/// (MFC ribbon: panels collapse from the right). A width of 0 = not measured
+/// yet (drawn expanded once to measure it).
+pub fn collapse_plan(widths: &[f32], avail: f32, collapsed_w: f32) -> Vec<bool> {
+    let mut plan = vec![false; widths.len()];
+    let mut total: f32 = widths.iter().sum();
+    for i in (0..widths.len()).rev() {
+        if total <= avail {
+            break;
+        }
+        if widths[i] > collapsed_w {
+            plan[i] = true;
+            total += collapsed_w - widths[i];
+        }
+    }
+    plan
+}
+
 fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, content: impl FnOnce(&mut egui::Ui) -> R) {
+    let collapsed = ui.data(|d| d.get_temp::<bool>(group_collapsed_id(title))).unwrap_or(false);
+    if collapsed {
+        // One button with the panel's name; the panel opens below it.
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(COLLAPSED_W - 12.0, 84.0), egui::Sense::click());
+        let painter = ui.painter();
+        if resp.hovered() {
+            painter.rect(rect, 3.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
+        }
+        painter.text(rect.center() - egui::vec2(0.0, 8.0), egui::Align2::CENTER_CENTER, title, egui::FontId::proportional(11.0), p.text);
+        painter.text(rect.center() + egui::vec2(0.0, 10.0), egui::Align2::CENTER_CENTER, "▾", egui::FontId::proportional(11.0), p.text);
+        let popup = egui::Id::new(("fv_ribbon_group_popup", title));
+        if resp.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup));
+        }
+        egui::popup_below_widget(ui, popup, &resp, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            ui.horizontal_top(|ui| {
+                content(ui);
+            });
+        });
+        let r = ui.min_rect();
+        ui.painter().line_segment(
+            [egui::pos2(rect.right() + 2.0, r.top() + 4.0), egui::pos2(rect.right() + 2.0, r.bottom() - 2.0)],
+            egui::Stroke::new(1.0f32, p.group_border),
+        );
+        ui.add_space(6.0);
+        return;
+    }
+    let start = ui.cursor().left();
+    ribbon_group_expanded(ui, p, title, content);
+    let w = ui.cursor().left() - start + ui.spacing().item_spacing.x;
+    ui.data_mut(|d| d.insert_temp(group_width_id(title), w));
+}
+
+fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, content: impl FnOnce(&mut egui::Ui) -> R) {
     ui.scope(|ui| {
         ui.vertical(|ui| {
             egui::Frame::none()
@@ -555,7 +646,9 @@ fn small_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: 
 }
 
 fn small_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str, selected: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(126.0, 19.0), egui::Sense::click());
+    let font = egui::FontId::proportional(11.0);
+    let text_w = ui.fonts(|f| f.layout_no_wrap(label.to_owned(), font.clone(), p.text).size().x);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2((22.0 + text_w + 6.0).max(90.0), 19.0), egui::Sense::click());
     let painter = ui.painter();
     if selected {
         painter.rect(rect, 2.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
@@ -564,28 +657,176 @@ fn small_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, lab
     }
     let box_ = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.top() + 2.5), egui::vec2(14.0, 14.0));
     icons::paint(painter, box_, icon, p.accent);
-    painter.text(
-        egui::pos2(rect.left() + 22.0, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        label,
-        egui::FontId::proportional(11.0),
-        p.text,
-    );
+    painter.text(egui::pos2(rect.left() + 22.0, rect.center().y), egui::Align2::LEFT_CENTER, label, font, p.text);
     resp
 }
 
-/// A small latching toggle (shows a check when on).
-fn small_toggle(ui: &mut egui::Ui, p: crate::theme::Palette, label: &str, on: bool) -> bool {
-    let txt = if on {
-        format!("✓ {label}")
-    } else {
-        format!("   {label}")
+/// A separator inside a panel, as tall as the button rows (an egui
+/// separator would take the whole height and push the panel title out).
+fn group_separator(ui: &mut egui::Ui, p: crate::theme::Palette) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(7.0, 72.0), egui::Sense::hover());
+    ui.painter().vline(rect.center().x, rect.y_range(), egui::Stroke::new(1.0f32, p.group_border));
+}
+
+/// An icon-only button: glyph, tooltip, enabled, checked, command.
+type MiniCmd<'a> = (Mini, &'a str, bool, bool, Command);
+
+/// The glyphs of the ribbon's small icon-only buttons (our drawings; the
+/// original's image list is not reproduced).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mini {
+    ShowDigital,
+    HideDigital,
+    HideUnchanged,
+    ZoomH(bool),
+    ZoomV(bool),
+    RectZoom,
+    Reset,
+    Vizir(usize),
+    Moment,
+    Area,
+    Level,
+    MinMax,
+    Rms,
+    A1,
+    Instant,
+    RmsMode,
+    Harm1,
+}
+
+/// A small icon-only button (24×24) with its label as the tooltip; framed
+/// while `on`. Returns whether it was clicked.
+fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, tip: &str, enabled: bool, on: bool) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let painter = ui.painter();
+    if on {
+        painter.rect(rect, 2.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
+    } else if enabled && resp.hovered() {
+        painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
+    }
+    let col = if enabled { p.accent } else { p.text.gamma_multiply(0.35f32) };
+    paint_mini(painter, rect.shrink(4.0), glyph, col);
+    resp.on_hover_text(tip).clicked() && enabled
+}
+
+fn paint_mini(painter: &egui::Painter, r: egui::Rect, glyph: Mini, col: Color32) {
+    use egui::{pos2, Stroke};
+    let s = Stroke::new(1.5f32, col);
+    let at = |x: f32, y: f32| pos2(r.left() + x * r.width(), r.top() + y * r.height());
+    let line = |a: egui::Pos2, b: egui::Pos2| {
+        painter.line_segment([a, b], s);
     };
-    let fill = if on { p.accent_soft } else { Color32::TRANSPARENT };
-    ui.add(
-        egui::Button::new(RichText::new(txt).size(11.0).color(p.text))
-            .fill(fill)
-            .min_size(egui::vec2(140.0, 19.0)),
-    )
-    .clicked()
+    let arrow = |a: egui::Pos2, b: egui::Pos2| {
+        line(a, b);
+        let d = (b - a).normalized() * 3.5;
+        let n = egui::vec2(-d.y, d.x);
+        line(b, b - d + n);
+        line(b, b - d - n);
+    };
+    let text = |t: &str, size: f32| {
+        painter.text(r.center(), egui::Align2::CENTER_CENTER, t, egui::FontId::proportional(size), col);
+    };
+    let wave = |amp: f32| {
+        let pts: Vec<egui::Pos2> = (0..=16).map(|i| {
+            let x = i as f32 / 16.0;
+            at(x, 0.5 - amp * (x * std::f32::consts::TAU).sin())
+        }).collect();
+        painter.add(egui::Shape::line(pts, s));
+    };
+    match glyph {
+        Mini::ShowDigital | Mini::HideDigital | Mini::HideUnchanged => {
+            // Three digital traces; hidden ones dashed.
+            for (i, y) in [0.2f32, 0.5, 0.8].into_iter().enumerate() {
+                let hidden = match glyph {
+                    Mini::ShowDigital => false,
+                    Mini::HideDigital => true,
+                    _ => i == 1,
+                };
+                if hidden {
+                    painter.add(egui::Shape::dashed_line(&[at(0.0, y), at(1.0, y)], Stroke::new(1.0f32, col), 2.0, 2.0));
+                } else {
+                    painter.add(egui::Shape::line(vec![at(0.0, y), at(0.3, y), at(0.3, y - 0.12), at(0.7, y - 0.12), at(0.7, y), at(1.0, y)], s));
+                }
+            }
+        }
+        Mini::ZoomH(grow) | Mini::ZoomV(grow) => {
+            let h = matches!(glyph, Mini::ZoomH(_));
+            let (a, b) = if h { (at(0.0, 0.7), at(1.0, 0.7)) } else { (at(0.7, 1.0), at(0.7, 0.0)) };
+            let c = a + (b - a) * 0.5;
+            if grow {
+                arrow(c, a);
+                arrow(c, b);
+            } else {
+                arrow(a, c - (b - a) * 0.08);
+                arrow(b, c + (b - a) * 0.08);
+            }
+            let sign = if grow { "+" } else { "−" };
+            let pos = if h { at(0.5, 0.18) } else { at(0.22, 0.5) };
+            painter.text(pos, egui::Align2::CENTER_CENTER, sign, egui::FontId::proportional(12.0), col);
+        }
+        Mini::RectZoom => {
+            painter.add(egui::Shape::dashed_line(&[at(0.1, 0.1), at(0.9, 0.1), at(0.9, 0.9), at(0.1, 0.9), at(0.1, 0.1)], Stroke::new(1.0f32, col), 2.0, 2.0));
+            arrow(at(0.5, 0.75), at(0.5, 0.25));
+        }
+        Mini::Reset => text("1:1", 11.0),
+        Mini::Vizir(k) => {
+            let colors = [Color32::from_rgb(255, 100, 100), Color32::from_rgb(100, 100, 255), Color32::from_rgb(0, 160, 0), Color32::from_rgb(255, 100, 100), Color32::from_rgb(100, 100, 255)];
+            let vs = Stroke::new(1.5f32, colors[k]);
+            if k < 3 {
+                painter.line_segment([at(0.35, 0.0), at(0.35, 1.0)], vs);
+            } else {
+                painter.line_segment([at(0.0, 0.35), at(1.0, 0.35)], vs);
+            }
+            painter.text(at(0.72, 0.72), egui::Align2::CENTER_CENTER, format!("{}", if k < 3 { k + 1 } else { k - 2 }), egui::FontId::proportional(10.0), col);
+        }
+        Mini::Moment => {
+            line(at(0.5, 0.3), at(0.5, 1.0));
+            painter.rect_stroke(egui::Rect::from_min_max(at(0.1, 0.0), at(0.9, 0.3)), 1.0f32, Stroke::new(1.0f32, col));
+        }
+        Mini::Area => {
+            painter.rect_filled(egui::Rect::from_min_max(at(0.2, 0.3), at(0.8, 1.0)), 0.0, col.gamma_multiply(0.35f32));
+            painter.rect_stroke(egui::Rect::from_min_max(at(0.2, 0.3), at(0.8, 1.0)), 0.0, Stroke::new(1.0f32, col));
+        }
+        Mini::Level => {
+            line(at(0.0, 0.6), at(1.0, 0.6));
+            painter.rect_stroke(egui::Rect::from_min_max(at(0.1, 0.0), at(0.7, 0.35)), 1.0f32, Stroke::new(1.0f32, col));
+        }
+        Mini::MinMax => {
+            line(at(0.0, 0.05), at(1.0, 0.05));
+            line(at(0.0, 0.95), at(1.0, 0.95));
+            wave(0.4);
+        }
+        Mini::Rms => {
+            wave(0.4);
+            line(at(0.0, 0.25), at(1.0, 0.25));
+        }
+        Mini::A1 => text("A1", 11.0),
+        Mini::Instant => wave(0.4),
+        Mini::RmsMode => {
+            line(at(0.0, 0.3), at(0.4, 0.3));
+            line(at(0.4, 0.3), at(0.6, 0.6));
+            line(at(0.6, 0.6), at(1.0, 0.6));
+        }
+        Mini::Harm1 => {
+            wave(0.25);
+            painter.text(at(0.85, 0.15), egui::Align2::CENTER_CENTER, "1", egui::FontId::proportional(9.0), col);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panels_collapse_from_the_right_until_the_category_fits() {
+        let w = [190.0, 270.0, 300.0, 400.0, 80.0];
+        assert_eq!(collapse_plan(&w, 1300.0, 82.0), vec![false; 5]);
+        // 1240 > 1000: the last panel is no wider than its button, so the
+        // next one in collapses (−318), then fits.
+        assert_eq!(collapse_plan(&w, 1000.0, 82.0), vec![false, false, false, true, false]);
+        assert_eq!(collapse_plan(&w, 600.0, 82.0), vec![false, true, true, true, false]);
+        // Unmeasured panels (0) never collapse.
+        assert_eq!(collapse_plan(&[0.0, 0.0], 10.0, 82.0), vec![false, false]);
+    }
 }

@@ -1189,7 +1189,8 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 headless sweep); the view's H/V window scroll bars with arrows, H along the
 whole bottom; no input reaches the main window while a (modal) dialog is
 up (L9.24); «Файл» main panel two columns, sub-items in the right column
-(L9.25).
+(L9.25); diagram panes stay above their tab strip (L9.26); ribbon
+icon-only small buttons and panel collapse when narrow (L9.27).
 
 1. 🟡 (L9.3: right column with tab group + frequency below, toggles with
    check, grid-above-plot; no floating/re-dock/auto-hide)

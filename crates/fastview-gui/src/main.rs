@@ -608,6 +608,41 @@ mod window_tests {
         }
     }
 
+    /// A narrow window collapses ribbon panels from the right instead of
+    /// wrapping their labels; the ribbon keeps its height and a collapsed
+    /// panel opens below its button.
+    #[test]
+    fn narrow_ribbon_collapses_panels_and_keeps_its_height() {
+        use egui::containers::panel::PanelState;
+        let height = |w: f32| {
+            let ctx = egui::Context::default();
+            let mut app = demo(&[]);
+            frames(&mut app, &ctx, Vec2::new(w, 860.0), vec![vec![]; 3]);
+            let collapsed: Vec<bool> = ["Объединение", "Диаграммы", "Видимость", "Вычисления", " "]
+                .iter()
+                .map(|t| ctx.data(|d| d.get_temp::<bool>(egui::Id::new(("fv_ribbon_group_collapsed", *t)))).unwrap_or(false))
+                .collect();
+            (PanelState::load(&ctx, egui::Id::new("top")).unwrap().rect.height(), collapsed, ctx, app)
+        };
+        let (h_wide, c_wide, ..) = height(1320.0);
+        assert_eq!(c_wide, vec![false; 5], "everything fits at the default size");
+        let (h_narrow, c_narrow, ctx, mut app) = height(700.0);
+        assert!((h_narrow - h_wide).abs() < 1.0, "ribbon height {h_narrow} vs {h_wide}");
+        assert!(c_narrow[3] && !c_narrow[0], "collapsed from the right: {c_narrow:?}");
+        // «Вычисления»'s button opens the panel as a popup.
+        let popup = egui::Id::new(("fv_ribbon_group_popup", "Вычисления"));
+        for x in (300..700).step_by(10) {
+            let at = Pos2::new(x as f32, 100.0);
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            frames(&mut app, &ctx, Vec2::new(700.0, 860.0), vec![vec![egui::Event::PointerMoved(at)], vec![ev(true)], vec![ev(false)], vec![]]);
+            if ctx.memory(|m| m.is_popup_open(popup)) {
+                return;
+            }
+            frames(&mut app, &ctx, Vec2::new(700.0, 860.0), vec![vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }], vec![]]);
+        }
+        panic!("no collapsed «Вычисления» button opened its panel");
+    }
+
     /// `FV_WINDOW_DUMP=<file.png> cargo test window_dump` renders the window
     /// (demo document, a few recent files) after a click at
     /// `FV_WINDOW_CLICK=x,y` (default: the «Файл ▾» menu button), the
@@ -622,9 +657,31 @@ mod window_tests {
         };
         let at = pos("FV_WINDOW_CLICK").unwrap_or(Pos2::new(48.0, 12.0));
         let hover = pos("FV_WINDOW_HOVER").unwrap_or(at);
-        let mut app = demo(&[]);
+        // `FV_WINDOW_STATE=<name>` dispatches commands first.
+        use app::{Command as C, Pane, RibbonTab, View};
+        let cmds = match std::env::var("FV_WINDOW_STATE").unwrap_or_default().as_str() {
+            "analysis" => vec![C::Show(View::Analysis)],
+            "circle" => vec![C::ActivatePane(Pane::Circle)],
+            "diff" => vec![C::ActivatePane(Pane::Differential)],
+            "omp" => vec![C::OmpAnalysis],
+            "ompparams" => vec![C::OmpParams],
+            "preview" => vec![C::PrintPreview],
+            "print" => vec![C::Print],
+            "pagesetup" => vec![C::PageSetup],
+            "settings" => vec![C::Settings],
+            "channels" => vec![C::ChannelsDialog],
+            "coef" => vec![C::Coefficients],
+            "fileparams" => vec![C::FileParams],
+            "explorer" => vec![C::ToggleExplorer],
+            "parambar" => vec![C::ToggleParamBar],
+            _ => vec![],
+        };
+        let mut app = demo(&cmds);
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "omp" || s == "ompparams") {
+            app.tab = RibbonTab::Omp;
+        }
         app.mru = vec!["/data/osc/2024-05-01 Подстанция 110 кВ.cfg".into(), "/data/osc/short.cff".into()];
-        let size = Vec2::new(1320.0, 860.0);
+        let size = pos("FV_WINDOW_SIZE").map_or(Vec2::new(1320.0, 860.0), |p| p.to_vec2());
         let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         let passes = vec![vec![], vec![], vec![egui::Event::PointerMoved(at), ev(true)], vec![ev(false)], vec![egui::Event::PointerMoved(hover)], vec![], vec![], vec![]];
         let fonts = app_fonts();
