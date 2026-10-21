@@ -193,9 +193,27 @@ impl App {
                         cmds.push(Command::CommentMode(1));
                     }
                 });
-                let hcur = self.active_doc().is_some_and(|d| d.hcur_on);
-                if small_toggle(ui, p, "Гор. визиры", hcur) {
-                    cmds.push(Command::ToggleHcur);
+            });
+            // 32802 / 32803 / 32800 / 32801: time and lane-height zoom steps.
+            ui.vertical(|ui| {
+                for (label, c) in [
+                    ("Увеличить по гориз.", Command::ZoomX(true)),
+                    ("Уменьшить по гориз.", Command::ZoomX(false)),
+                    ("Увеличить по верт.", Command::ZoomY(true)),
+                    ("Уменьшить по верт.", Command::ZoomY(false)),
+                ] {
+                    if small_toggle(ui, p, label, false) {
+                        cmds.push(c);
+                    }
+                }
+            });
+            // 32813 / 32814 / 139 / 32815 / 32816: the визиры, checked while shown.
+            ui.vertical(|ui| {
+                for (k, label) in ["В1", "В2", "В3", "ГВ1", "ГВ2"].into_iter().enumerate() {
+                    let on = self.active_doc().is_some_and(|d| if k < 3 { d.v_shown[k] } else { d.hviz[k - 3].shown });
+                    if small_toggle(ui, p, label, on) {
+                        cmds.push(Command::ToggleVizir(k));
+                    }
                 }
             });
         });

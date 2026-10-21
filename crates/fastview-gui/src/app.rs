@@ -177,26 +177,6 @@ pub enum TimeUnit {
     Samples,
 }
 
-impl TimeUnit {
-    pub fn label(self) -> &'static str {
-        match self {
-            TimeUnit::Micro => "мкс",
-            TimeUnit::Milli => "мс",
-            TimeUnit::Sec => "с",
-            TimeUnit::Samples => "отсч.",
-        }
-    }
-    /// Convert seconds to this unit (samples handled separately by index).
-    pub fn scale_secs(self, t: f64) -> f64 {
-        match self {
-            TimeUnit::Micro => t * 1e6,
-            TimeUnit::Milli => t * 1e3,
-            TimeUnit::Sec => t,
-            TimeUnit::Samples => t,
-        }
-    }
-}
-
 /// Per-channel display state for a document.
 #[derive(Debug, Clone)]
 pub struct ChanView {
@@ -287,6 +267,16 @@ pub struct CommentEdit {
     pub level_str: String,
 }
 
+/// A horizontal визир (`doc+0x2c8` / `+0x2e0`): shown, the analog channel
+/// whose scale it is on (`None` = never placed), and its value in that
+/// channel's units.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct HVizir {
+    pub shown: bool,
+    pub chan: Option<usize>,
+    pub value: f64,
+}
+
 /// A channel row of the oscillogram view. The original keeps one channel
 /// vector (analog, then discrete); our record splits analog / computed /
 /// digital, so a row is named by its kind and index.
@@ -304,8 +294,16 @@ pub struct Doc {
     pub name: String,
     /// Source file path (for re-opening with a different encoding).
     pub path: Option<std::path::PathBuf>,
+    /// Vertical визир 1 (`doc+0x284`) — "cursor 1" of the diagrams and ОМП.
     pub main_cursor: usize,
+    /// Vertical визир 2 (`doc+0x29c`) — "cursor 2".
     pub aux_cursor: usize,
+    /// Vertical визир 3 (`doc+0x2b4`).
+    pub v3_cursor: usize,
+    /// Shown flags of В1 / В2 / В3; a new document shows none (`0x449170`).
+    pub v_shown: [bool; 3],
+    /// Horizontal визиры ГВ1 / ГВ2, each on one analog channel's scale.
+    pub hviz: [HVizir; 2],
     pub chans: Vec<ChanView>,
     pub computed: Vec<Computed>,
     /// Text sections (HDR/INF/SET) of a record opened from a `.cff`, written
@@ -323,13 +321,16 @@ pub struct Doc {
     pub next_group: u32,
     /// Comment placement mode (`doc+0x858`): 0 off, 1 момент времени.
     pub comment_mode: u8,
-    /// Time-axis view window in seconds `[t0, t1]` (shared across lanes).
-    pub view_t0: f64,
-    pub view_t1: f64,
-    /// Horizontal (amplitude) визиры, measured in the first lane's units.
-    pub hcur_on: bool,
-    pub hcur1: f64,
-    pub hcur2: f64,
+    /// First visible sample (`view+0xfc`).
+    pub first: usize,
+    /// Horizontal scale `f` (`view+0xf0`, a power of two ≤ 1, 25·f px per
+    /// sample); `None` until the view first lays out (initial = stored
+    /// `View/XScale`, else twice the fit scale).
+    pub xscale: Option<f64>,
+    /// Vertical scroll offset of the lanes (`view+0xf8`, ≤ 0).
+    pub vscroll: f32,
+    /// «Разница между визирами» band (`doc+0x870`, on for a new document).
+    pub diff_band: bool,
     /// Precomputed per-channel one-cycle RMS and DC series (for stats / remove-DC).
     pub rms: Vec<Vec<f64>>,
     pub dc: Vec<Vec<f64>>,
@@ -349,7 +350,6 @@ impl Doc {
             .iter()
             .map(|c| fvb_core::signal::sliding_dc(&c.samples, n))
             .collect();
-        let count = osc.sample_count();
         let chans = (0..osc.analog.len())
             .map(|i| ChanView {
                 visible: true,
@@ -365,14 +365,16 @@ impl Doc {
                 on_circle: i == 0,
             })
             .collect();
-        let t_last = osc.time.last().copied().unwrap_or(1.0);
         Doc {
             osc,
             analysis,
             name,
             path: None,
-            main_cursor: count / 2,
-            aux_cursor: count / 4,
+            main_cursor: 0,
+            aux_cursor: 0,
+            v3_cursor: 0,
+            v_shown: [false; 3],
+            hviz: [HVizir::default(); 2],
             chans,
             computed: Vec::new(),
             cff: Default::default(),
@@ -382,11 +384,10 @@ impl Doc {
             sel_anchor: None,
             next_group: 1,
             comment_mode: 0,
-            view_t0: 0.0,
-            view_t1: if t_last > 0.0 { t_last } else { 1.0 },
-            hcur_on: false,
-            hcur1: 0.0,
-            hcur2: 0.0,
+            first: 0,
+            xscale: None,
+            vscroll: 0.0,
+            diff_band: true,
             rms,
             dc,
         }
@@ -435,9 +436,60 @@ impl Doc {
         }
     }
 
-    pub fn fit_time(&mut self) {
-        self.view_t0 = 0.0;
-        self.view_t1 = self.osc.time.last().copied().unwrap_or(1.0).max(1e-9);
+    /// 32813 / 32814 / 139 (`0x45c120`): a never-placed vertical визир is
+    /// placed at ¼ / ½ / ¾ of the plot width and shown, else its visibility
+    /// flips. 32815 / 32816: a never-placed horizontal визир goes on the first
+    /// analog lane (10 / 20 px from its top, resolved at the next layout),
+    /// else it flips.
+    pub fn toggle_vizir(&mut self, k: usize, width: f32) {
+        if k < 3 {
+            let s = match k {
+                0 => &mut self.main_cursor,
+                1 => &mut self.aux_cursor,
+                _ => &mut self.v3_cursor,
+            };
+            if !self.v_shown[k] && *s == 0 {
+                let left = crate::lanes::LEFT_W;
+                let f = self.xscale.unwrap_or(1.0);
+                let x = left + (width - left) * (k as f32 + 1.0) / 4.0;
+                let n = self.osc.sample_count().max(1);
+                *s = crate::oscgeom::sample_at(x, self.first, f, left).clamp(0, n as i64 - 1) as usize;
+            }
+            self.v_shown[k] = !self.v_shown[k];
+        } else if k < 5 {
+            let h = &mut self.hviz[k - 3];
+            if h.chan.is_none() {
+                h.chan = self.chans.iter().position(|c| c.visible);
+                h.value = f64::NAN;
+                h.shown = h.chan.is_some();
+            } else {
+                h.shown = !h.shown;
+            }
+        }
+    }
+
+    /// 32802 / 32803 (`0x45c4f0`): `f` ×2 (below 1.0) / ÷2 (not below the
+    /// fit scale), anchored on В1 if shown, else В2, else В3; `first` is then
+    /// clamped to the record.
+    pub fn zoom_x(&mut self, zoom_in: bool, width: f32) {
+        use crate::oscgeom as g;
+        let n = self.osc.sample_count();
+        let fit = g::fit_scale(width, n);
+        let f = self.xscale.unwrap_or(fit);
+        let anchor = [self.main_cursor, self.aux_cursor, self.v3_cursor]
+            .into_iter()
+            .zip(self.v_shown)
+            .find_map(|(s, on)| on.then_some(s));
+        let (f, first) = if zoom_in { g::zoom_in(f, self.first, anchor) } else { g::zoom_out(f, fit, self.first, anchor) };
+        let vis = g::visible_count(width, crate::lanes::LEFT_W, f);
+        self.xscale = Some(f);
+        self.first = first.min(g::max_first(n, vis));
+    }
+
+    /// Show the whole record: the fit scale from the first sample.
+    pub fn fit_time(&mut self, width: f32) {
+        self.first = 0;
+        self.xscale = Some(crate::oscgeom::fit_scale(width, self.osc.sample_count()));
     }
 }
 
@@ -498,8 +550,13 @@ pub enum Command {
     SetValueMode(ValueMode),
     /// 155..157: toggle a comment placement mode (radio group with toggle-off).
     CommentMode(u8),
-    /// Horizontal визиры on/off (the original's 32815/32816, one each).
-    ToggleHcur,
+    /// 32813 / 32814 / 139 / 32815 / 32816: show or hide В1 / В2 / В3 /
+    /// ГВ1 / ГВ2 (index 0..5).
+    ToggleVizir(usize),
+    /// 32802 / 32803: horizontal scale ×2 / ÷2 anchored on a визир.
+    ZoomX(bool),
+    /// 32800 / 32801: analog lane height ×1.3 / ÷1.3.
+    ZoomY(bool),
     ShowAllChannels(bool),
     SetSkin(Skin),
     FitTime,
@@ -606,8 +663,16 @@ pub struct App {
     pub undo_stack: Vec<(usize, DocSnapshot)>,
     pub redo_stack: Vec<(usize, DocSnapshot)>,
 
-    /// Which horizontal визир (0/1) is being dragged, if any.
-    pub dragging_hcur: Option<u8>,
+    /// The визир being dragged (`view+0xe4` modes 1–5).
+    pub vizir_drag: Option<crate::lanes::VizDrag>,
+    /// Analog lane height `View/YAnalogSize` (global, persisted).
+    pub y_analog: f32,
+    /// Last horizontal scale set by a zoom, `View/XScale` (persisted).
+    pub xscale_pref: Option<f64>,
+    /// Inline rename of an analog channel (double-click on its name badge).
+    pub rename_edit: Option<(usize, String)>,
+    /// Width of the oscillogram view at the last layout (for «вся осциллограмма»).
+    pub view_width: f32,
     /// The open oscillogram context menu, latched at the right-click.
     pub lane_menu: Option<crate::lanes::LaneMenu>,
     /// Bumped on every right-click so each menu gets a fresh popup area.
@@ -691,7 +756,11 @@ impl App {
             channel_clip: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
-            dragging_hcur: None,
+            vizir_drag: None,
+            y_analog: crate::oscgeom::Y_ANALOG_DEFAULT,
+            xscale_pref: None,
+            rename_edit: None,
+            view_width: 1000.0,
             lane_menu: None,
             lane_menu_serial: 0,
             lane_menu_eat: false,
@@ -834,9 +903,10 @@ impl App {
                     d.set_mode_selected(m);
                 }
             }
-            Command::ToggleHcur => {
+            Command::ToggleVizir(k) => {
+                let w = self.view_width;
                 if let Some(d) = self.active_doc_mut() {
-                    d.hcur_on = !d.hcur_on;
+                    d.toggle_vizir(k, w);
                 }
             }
             Command::CommentMode(k) => {
@@ -855,9 +925,22 @@ impl App {
                 }
             }
             Command::SetSkin(s) => self.skin = s,
-            Command::FitTime => {
+            Command::ZoomX(zin) => {
+                let w = self.view_width;
                 if let Some(d) = self.active_doc_mut() {
-                    d.fit_time();
+                    d.zoom_x(zin, w);
+                }
+                self.xscale_pref = self.active_doc().and_then(|d| d.xscale);
+                self.persist_view();
+            }
+            Command::ZoomY(grow) => {
+                self.y_analog = crate::oscgeom::lane_zoom(self.y_analog, grow);
+                self.persist_view();
+            }
+            Command::FitTime => {
+                let w = self.view_width;
+                if let Some(d) = self.active_doc_mut() {
+                    d.fit_time(w);
                 }
             }
             Command::CloseDoc(i) => {
@@ -994,10 +1077,37 @@ impl App {
         }
     }
 
+    /// Save the view preferences (`View`: XScale, YAnalogSize, RulerState,
+    /// Sells), as the original does after every zoom / ruler / grid change.
+    pub fn persist_view(&mut self) {
+        if !self.persist {
+            return;
+        }
+        let v = &mut self.store.view;
+        if let Some(f) = self.xscale_pref {
+            v.insert("XScale".into(), format!("{f}"));
+        }
+        v.insert("YAnalogSize".into(), format!("{}", self.y_analog));
+        v.insert("RulerState".into(), crate::persist::ruler_state(self.time_unit).to_string());
+        v.insert("Sells".into(), u8::from(self.show_grid).to_string());
+        self.store.save();
+    }
+
     /// Load persisted characteristic settings and apply them (called by `main`).
     pub fn with_persistence(mut self) -> Self {
         self.store = crate::persist::Store::load();
         self.persist = true;
+        let v = &self.store.view;
+        self.xscale_pref = v.get("XScale").and_then(|x| x.parse().ok()).filter(|f: &f64| *f > 0.0 && *f <= 1.0);
+        if let Some(y) = v.get("YAnalogSize").and_then(|x| x.parse::<f32>().ok()) {
+            self.y_analog = y;
+        }
+        if let Some(u) = v.get("RulerState").and_then(|x| x.parse::<u8>().ok()).and_then(crate::persist::time_unit) {
+            self.time_unit = u;
+        }
+        if let Some(g) = v.get("Sells") {
+            self.show_grid = g != "0";
+        }
         let dim = self.diagram_dim;
         if let Some(name) = self.store.selected.get(Self::diagram_key(dim)).cloned() {
             if let Some(i) = self.library.blocks.iter().position(|b| b.name == name) {
@@ -1512,8 +1622,11 @@ impl App {
         };
         let idx0 = self.docs.len() + 3;
         let d = &mut self.docs[di];
-        d.aux_cursor = result.window.0;
-        d.main_cursor = result.window.1;
+        // В1 at the window start, В2 one period later, both shown.
+        d.main_cursor = result.window.0;
+        d.aux_cursor = result.window.1;
+        d.v_shown[0] = true;
+        d.v_shown[1] = true;
         let flag = |v: &[bool]| v.iter().map(|b| f64::from(u8::from(*b))).collect::<Vec<f64>>();
         let extra = [
             ("Lкз".to_string(), trace.dist.iter().map(|x| x * 1000.0).collect::<Vec<f64>>()),
@@ -1536,7 +1649,7 @@ impl App {
     pub fn omp_result(&self) -> Option<OmpResult> {
         let run = self.omp_run.as_ref()?;
         let d = self.docs.get(run.doc)?;
-        let (c1, c2) = (d.aux_cursor, d.main_cursor);
+        let (c1, c2) = (d.main_cursor.min(d.aux_cursor), d.main_cursor.max(d.aux_cursor));
         Some(match run.method {
             OmpMethod::DoubleEnded => fvb_core::omp::result_double_for_window(&run.trace, &self.omp_sections, c1, c2),
             _ => fvb_core::omp::result_for_window(&run.trace, &self.omp_sections, c1, c2),
@@ -1672,7 +1785,8 @@ mod tests {
         app.run_omp();
         let d = app.active_doc().unwrap();
         let p = d.osc.samples_per_cycle();
-        assert_eq!(d.main_cursor, d.aux_cursor + p - 1, "a one-period window");
+        assert_eq!(d.aux_cursor, d.main_cursor + p - 1, "В1 at the start, В2 one period later");
+        assert!(d.v_shown[0] && d.v_shown[1]);
         for name in ["Lкз", "КЗ фазы A", "КЗ фазы B", "КЗ фазы C"] {
             assert!(d.computed.iter().any(|c| c.name == name), "{name}");
         }

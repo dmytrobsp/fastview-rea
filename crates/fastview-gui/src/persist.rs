@@ -18,6 +18,30 @@ pub struct Store {
     pub visible: HashMap<CharKey, bool>,
     /// (diagram, block, characteristic) → parameter → value text.
     pub values: HashMap<CharKey, HashMap<String, String>>,
+    /// The original's `View` settings: XScale, YAnalogSize, RulerState, Sells.
+    pub view: HashMap<String, String>,
+}
+
+/// `View/RulerState` codes (`view+0xe8`): 0 µs, 1 ms, 2 s, 3 absolute, 4 samples.
+pub fn ruler_state(u: crate::app::TimeUnit) -> u8 {
+    use crate::app::TimeUnit::*;
+    match u {
+        Micro => 0,
+        Milli => 1,
+        Sec => 2,
+        Samples => 4,
+    }
+}
+
+pub fn time_unit(code: u8) -> Option<crate::app::TimeUnit> {
+    use crate::app::TimeUnit::*;
+    match code {
+        0 => Some(Micro),
+        1 => Some(Milli),
+        2 => Some(Sec),
+        4 => Some(Samples),
+        _ => None,
+    }
 }
 
 fn config_file() -> Option<PathBuf> {
@@ -45,6 +69,9 @@ impl Store {
                 ["visible", d, b, c, v] => {
                     st.visible.insert((d.to_string(), b.to_string(), c.to_string()), *v == "1");
                 }
+                ["view", k, v] => {
+                    st.view.insert(k.to_string(), v.to_string());
+                }
                 ["value", d, b, c, p, v] => {
                     st.values
                         .entry((d.to_string(), b.to_string(), c.to_string()))
@@ -69,6 +96,9 @@ impl Store {
             for (p, v) in params {
                 lines.push(format!("value\t{}\t{}\t{}\t{}\t{}", clean(d), clean(b), clean(c), clean(p), clean(v)));
             }
+        }
+        for (k, v) in &self.view {
+            lines.push(format!("view\t{}\t{}", clean(k), clean(v)));
         }
         lines.sort();
         lines.join("\n") + "\n"
@@ -102,6 +132,7 @@ mod tests {
         let key = ("Circle Chart".to_string(), "Блок 1".to_string(), "ДЗ 1".to_string());
         st.visible.insert(key.clone(), false);
         st.values.entry(key).or_default().insert("Zy".into(), "2*3".into());
+        st.view.insert("YAnalogSize".into(), "121".into());
         assert_eq!(Store::parse(&st.serialize()), st);
     }
 }

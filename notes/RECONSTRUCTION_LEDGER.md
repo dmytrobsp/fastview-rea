@@ -12,11 +12,11 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 131 pass)
+- `cargo test --workspace`   (currently 139 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 131 tests pass, 0 build warnings, clippy
+**State at handoff.** Working tree clean; 139 tests pass, 0 build warnings, clippy
 clean, Windows cross-compiles. The latest commits are this ledger + the engine
 work — run `git log --oneline -12` to see them (most recent ledger commit added
 this section). Current direction = the **reverse-ALL-behavioural-engines** program
@@ -616,7 +616,7 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`notes/UI_BEHAVIOUR_SPEC.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**, **L9.2**, **L9.3** below.
+temporary). Reconciled so far: **L9.1**–**L9.4** below.
 
 ### L9.1 — Oscillogram context menu + channel selection  ·  ✅
 
@@ -702,7 +702,54 @@ DETERMINED) — we follow the screenshot's single tab group; the vertical pane
 toolbars (550/552/553) and pane contents are item 19/20+ of the backlog;
 Быстрый анализ and ОМП still replace the central view (backlog 6, dialogs).
 
-Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 from item 2 down (panes, визир
+### L9.4 — Oscillogram view geometry, визиры, wheel, ruler, status  ·  🟡
+
+Read (spec §3; checked by hand: `0x45c4f0` zoom steps, `0x45c430` fit,
+`0x45ab70` initial update, `0x449170` визир block, `0x45d990` wheel,
+`0x45dc10` press regions): sample-indexed horizontal scale (first sample,
+power-of-two f ≤ 1, 25·f px/sample; initial f = stored `View/XScale`, else
+**2 × fit**); fixed lanes (analog `YAnalogSize` 93, ×/÷1.3 within 70–500;
+digital 20; no stretch) under a fixed bottom band (ruler 30 + difference band
+45, on by default); per-lane min..max amplitude with 5 px margins; every
+sample drawn, circles above 4 px/sample; full-width lane backgrounds (white /
+cyan gradient / gold gradient when selected), 50 px vertical grid, panel
+divider; визиры hidden at document open (all zero, lane −1), В1/В2/В3 1 px in
+(255,100,100)/(100,100,255)/(0,160,0) with labels and **no shading**; ГВ1/ГВ2
+per channel; press (not click) semantics: LMB places В1, RMB В2, Shift+LMB/RMB
+ГВ1/ГВ2 in the analog lane under y, a shown визир within 3 px is grabbed and
+dragged, **the plot never pans on drag**; wheel Alt = lane height, exactly
+Ctrl = f ×2/÷2 anchored on В1>В2>В3, exactly Shift = one screen, else lanes
+scroll 120 px/notch; ←/→ В1 (Ctrl В2), ↑/↓ ГВ1 (Ctrl ГВ2); cursor shapes; ruler
+ticks every 25 px (10/5/7/5), labels every 100 px relative to the record start,
+unit on the first label only, space-grouped µs/ms, `%.3f` s, samples k+1;
+difference band labels and Δt dimension lines; status bar = six complete
+strings (caption only while hidden); 32813/32814/139/32815/32816 toggles
+(first show at ¼/½/¾); 32800–32803 ribbon zoom; `View` settings persisted;
+ОМП puts В1 at the window start and В2 one period later (shown); inline rename
+by double-clicking the name badge (message 397 on a duplicate).
+
+Ours: `oscgeom.rs` (pure: fit/initial scale, x↔sample with ties up, visible
+count, zoom steps, lane zoom, value↔y, ruler ticks/labels; 6 tests), `lanes.rs`
+rewritten on it (own scrollbars, `lane_layout`, `Row` groups), `Doc`
+(`first`, `xscale`, `vscroll`, `diff_band`, `v_shown`, `v3_cursor`, `hviz`,
+`toggle_vizir`, `zoom_x`), `App` (`y_analog`, `xscale_pref`, `vizir_drag`,
+`rename_edit`, `persist_view`), `persist::Store::view`. Headless egui tests:
+fixed lane heights, place В1 + grab-drag without panning, wheel modifiers,
+arrow keys, plus the L9.1 menu tests rebased on the new layout.
+
+Residual (honest): stats panel content/width still ours (backlog 13:
+LEFT_W 158, rows always shown, our fonts); trigger sample = record start
+(COMTRADE has no `doc+0x214` writer); absolute-time ruler not implemented;
+визир label merge/clamping and the В2=В1 pen not modelled; comment drag,
+level/area kinds and the hover popup pending (backlog 14); digital
+pixel-OR quirk approximated by drawing overlapping run rects; window zoom
+(138/`ch+0x114`) not implemented (vzoom ignored); min..max and every-sample
+drawing recomputed each frame (no cache); the free-text status message is
+still shown at the right of the status bar (the original has none).
+
+Next in L9: `notes/UI_BEHAVIOUR_SPEC.md` §9 from item 6 down (ОМП banner/
+toggle, ribbon contents 11, ОМП run semantics 12, stats panel 13, comments
+14, …) (panes, визир
 mouse model, power-of-two time zoom, amplitude mapping, lane geometry, …).
 
 ---

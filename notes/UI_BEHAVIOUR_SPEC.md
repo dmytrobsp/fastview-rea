@@ -1177,31 +1177,31 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
    circle tabbed right, diff right, frequency bottom; visible by default;
    ribbon buttons toggle with check; panes follow the active document) —
    `main.rs`, `views.rs`, `app.rs` (`View` enum → pane visibility) — L
-2. Визир mouse model: grab ±3 px and drag V1–V3/H1/H2 with live status;
+2. ✅ (L9.4) Визир mouse model: grab ±3 px and drag V1–V3/H1/H2 with live status;
    **remove drag-to-pan**; Shift+LMB/RMB place H1/H2 in the lane under y —
    `lanes.rs` — M
-3. Horizontal model: (first sample, power-of-two f, 25 px/sample) + H
+3. ✅ (L9.4) Horizontal model: (first sample, power-of-two f, 25 px/sample) + H
    scrollbar; Ctrl+wheel ×2/÷2 anchored on V1>V2>V3; Shift+wheel one screen;
    persist XScale — `lanes.rs`, `app.rs`, `persist.rs` — L
-4. Amplitude mapping min..max with 5 px margins, zero line only when in range,
+4. ✅ (L9.4) Amplitude mapping min..max with 5 px margins, zero line only when in range,
    group common range, window-zoom range model — `lanes.rs` — M
-5. Lane geometry: YAnalogSize (93, ×/÷1.3 within 70–500, Alt+wheel, 32800/01),
+5. ✅ (L9.4) Lane geometry: YAnalogSize (93, ×/÷1.3 within 70–500, Alt+wheel, 32800/01),
    digital 20 px, rows/icons growth, no stretch, fixed non-scrolling bottom
    band 30/75, plain wheel 120 px/notch — `lanes.rs` — M
 6. ОМП: Анализ toggle + result banner under the ribbon (live text, Сохранить
    .txt UTF-16LE, close clears) instead of the ОМП tab; buttons greyed with no
    doc / bit14 — `main.rs`, `ribbon.rs`, `views.rs`, `app.rs` — M
-7. Waveform: every sample, 1 px, sample circles when > 4 px/sample (keep
+7. ✅ (L9.4) Waveform: every sample, 1 px, sample circles when > 4 px/sample (keep
    extrema if a perf fallback is needed) — `lanes.rs` — S
-8. Time ruler: 25 px ticks (10/5/7/5), labels every 100 px trigger-relative,
+8. ✅ (L9.4) Time ruler: 25 px ticks (10/5/7/5), labels every 100 px trigger-relative,
    unit on first label, space grouping, `%.3f` s, samples k−trig+1, trigger
    dotted line; carry the trigger sample from the loader — `lanes.rs`,
    `crates/fvb-core` loader — M
-9. Визиры presentation and toggles: three V colours + labels, V3 (139),
+9. ✅ (L9.4) Визиры presentation and toggles: three V colours + labels, V3 (139),
    independent 32813–32816 with first-show ¼/½/¾ placement, no shading
    between В1/В2, H визиры per channel (`{shown, lane, value}`) — `lanes.rs`,
    `app.rs`, `ribbon.rs` — M
-10. Difference band (33033, default on): 45 px band, marker labels, Δt
+10. ✅ (L9.4) Difference band (33033, default on): 45 px band, marker labels, Δt
     dimension arrows; «Разница между визирами» enabled in 560 — `lanes.rs` — M
 11. Ribbon Видимость / Вычисления contents in original order (discrete-only
     32845–47, zoom 32800–03, 138, 141, визиры, 155/157/156, stats rows
@@ -1230,7 +1230,7 @@ selection; colour dialog 33030; selected rows on a gold background (flat).
 16. Каналы dialog 463 (icon grid, header toggles column, in-place rename with
     397/398) replacing the view switch; rename our role-assignment window —
     `dialogs.rs`, `ribbon.rs` — M
-17. Status bar: six fixed-width panes with full original strings and
+17. 🟡 (L9.4: six complete strings; free-text pane kept) Status bar: six fixed-width panes with full original strings and
     RulerState formats, trigger-relative, H-diff only on the same channel;
     drop the free-text status (toast instead) — `main.rs`, `lanes.rs` — S
 18. Parameters bar (142, visible by default, 75 px) — `main.rs`, `ribbon.rs` — S

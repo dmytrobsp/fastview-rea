@@ -1,0 +1,249 @@
+//! Geometry of the oscillogram view, as the original computes it (ledger
+//! L9.4, `notes/UI_BEHAVIOUR_SPEC.md` §3): a sample-indexed horizontal scale
+//! (first visible sample, power-of-two `f`, 25 px per sample at `f = 1`),
+//! fixed lane heights, the per-channel min..max amplitude mapping, the time
+//! ruler and the wheel zoom steps.
+
+use crate::app::TimeUnit;
+
+/// Pixels per sample at `f = 1.0`.
+pub const PX_PER_SAMPLE: f64 = 25.0;
+/// Height of a digital lane (`0x460290`).
+pub const DIGITAL_H: f32 = 20.0;
+/// Default analog lane height `View/YAnalogSize`.
+pub const Y_ANALOG_DEFAULT: f32 = 93.0;
+/// Time ruler height at the bottom of the view.
+pub const RULER_H: f32 = 30.0;
+/// Extra height of the difference band (`doc+0x870`, 33033) above the ruler.
+pub const DIFF_BAND_H: f32 = 45.0;
+/// Vertical scroll per wheel notch.
+pub const WHEEL_NOTCH_PX: f32 = 120.0;
+
+/// The fit scale (`0x45c430`): start at 1.0 and halve while
+/// `width / (n·25) < f` — the largest power of two that shows the whole record.
+pub fn fit_scale(width: f32, n: usize) -> f64 {
+    let ratio = f64::from(width) / (n.max(1) as f64 * PX_PER_SAMPLE);
+    let mut f = 1.0f64;
+    while ratio < f && f > 1e-12 {
+        f *= 0.5;
+    }
+    f
+}
+
+/// Initial scale of a new view (`0x45ab70`): the stored `View/XScale`, by
+/// default twice the fit scale.
+pub fn initial_scale(stored: Option<f64>, width: f32, n: usize) -> f64 {
+    stored.unwrap_or_else(|| 2.0 * fit_scale(width, n))
+}
+
+/// Samples in view: `(width − left)/25/f − 1`.
+pub fn visible_count(width: f32, left: f32, f: f64) -> usize {
+    let v = (f64::from(width - left) / PX_PER_SAMPLE / f).floor() - 1.0;
+    if v > 0.0 {
+        v as usize
+    } else {
+        0
+    }
+}
+
+/// Largest valid first sample: `n − visible − 1` (0 when it all fits).
+pub fn max_first(n: usize, visible: usize) -> usize {
+    n.saturating_sub(visible + 1)
+}
+
+/// x of sample `k`: `left + round((k − first)·25·f)`.
+pub fn x_of(k: f64, first: usize, f: f64, left: f32) -> f32 {
+    left + ((k - first as f64) * PX_PER_SAMPLE * f).round() as f32
+}
+
+/// Sample under `x`, rounded to the nearest (ties up) (`0x495980`).
+pub fn sample_at(x: f32, first: usize, f: f64, left: f32) -> i64 {
+    (f64::from(x - left) / (PX_PER_SAMPLE * f) + first as f64 + 0.5).floor() as i64
+}
+
+/// Ctrl+wheel up (32802): `f ×2` while below 1.0, anchored on a визир:
+/// `first' = c − (c − first)/2`.
+pub fn zoom_in(f: f64, first: usize, anchor: Option<usize>) -> (f64, usize) {
+    if f >= 1.0 {
+        return (f, first);
+    }
+    let first = match anchor {
+        // Signed int arithmetic as in the original (the anchor may be left of `first`).
+        Some(c) => (c as i64 - (c as i64 - first as i64) / 2).max(0) as usize,
+        None => first,
+    };
+    (f * 2.0, first)
+}
+
+/// Ctrl+wheel down (32803): `f ÷2`, not below the fit scale:
+/// `first' = 2·first − c`.
+pub fn zoom_out(f: f64, fit: f64, first: usize, anchor: Option<usize>) -> (f64, usize) {
+    if f / 2.0 < fit {
+        return (f, first);
+    }
+    let first = match anchor {
+        Some(c) => (2 * first).saturating_sub(c),
+        None => first,
+    };
+    (f / 2.0, first)
+}
+
+/// Alt+wheel (32800 / 32801): the analog lane height ×1.3 (below 500) or
+/// ÷1.3 (above 70), rounded.
+pub fn lane_zoom(y: f32, grow: bool) -> f32 {
+    if grow && y < 500.0 {
+        (y * 1.3).round()
+    } else if !grow && y > 70.0 {
+        (y / 1.3).round()
+    } else {
+        y
+    }
+}
+
+/// Value → y in a lane (`0x4944a0`): `top + h − 5 − round((v − min)(h − 10)/(max − min))`,
+/// the lane middle when the range is empty.
+pub fn value_y(v: f64, top: f32, h: f32, min: f64, max: f64) -> f32 {
+    if max <= min || !v.is_finite() {
+        return top + h / 2.0;
+    }
+    top + h - 5.0 - ((v - min) * f64::from(h - 10.0) / (max - min)).round() as f32
+}
+
+/// Inverse of [`value_y`] (`0x495b40`).
+pub fn y_value(y: f32, top: f32, h: f32, min: f64, max: f64) -> f64 {
+    if max <= min || h <= 10.0 {
+        return min;
+    }
+    min + f64::from(top + h - 5.0 - y) * (max - min) / f64::from(h - 10.0)
+}
+
+/// One ruler tick: x, length, and whether it carries a label (every 4th).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Tick {
+    pub i: usize,
+    pub x: f32,
+    pub len: f32,
+    pub labelled: bool,
+}
+
+/// Ticks every 25 px from the stats panel edge: length 10 / 5 / 7 / 5, a
+/// label on every 4th (`0x464350`).
+pub fn ruler_ticks(left: f32, width: f32) -> Vec<Tick> {
+    let n = ((width - left).max(0.0) / 25.0) as usize;
+    (0..=n)
+        .map(|i| Tick {
+            i,
+            x: left + 25.0 * i as f32,
+            len: match i % 4 {
+                0 => 10.0,
+                2 => 7.0,
+                _ => 5.0,
+            },
+            labelled: i % 4 == 0,
+        })
+        .collect()
+}
+
+/// The sample a ruler tick stands for: `first + i·⌊1/f⌋`.
+pub fn tick_sample(first: usize, i: usize, f: f64) -> usize {
+    first + i * (1.0 / f).floor().max(1.0) as usize
+}
+
+/// An integer with spaces between thousands groups (`-12 345`).
+pub fn group_thousands(v: i64) -> String {
+    let digits = v.unsigned_abs().to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(' ');
+        }
+        out.push(c);
+    }
+    if v < 0 {
+        format!("-{out}")
+    } else {
+        out
+    }
+}
+
+/// A ruler label: time `t` (seconds) and sample `k`, both relative to the
+/// trigger, in the ruler unit; the unit is appended only to the first label
+/// (templates 386–388).
+pub fn ruler_label(unit: TimeUnit, t: f64, k: i64, first_label: bool) -> String {
+    let (text, suffix) = match unit {
+        TimeUnit::Micro => (group_thousands((t * 1e6).round() as i64), " мкс"),
+        TimeUnit::Milli => (group_thousands((t * 1e6 / 1000.0).round() as i64), " мс"),
+        TimeUnit::Sec => (if t.abs() < 0.0005 { "0.000".to_string() } else { format!("{t:.3}") }, " с"),
+        TimeUnit::Samples => (format!("{}", k + 1), ""),
+    };
+    if first_label {
+        format!("{text}{suffix}")
+    } else {
+        text
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fit_is_the_largest_power_of_two_showing_the_record() {
+        // 1000 px for 400 samples: 1000/(400·25) = 0.1 → f = 1/16.
+        assert_eq!(fit_scale(1000.0, 400), 0.0625);
+        assert_eq!(fit_scale(1000.0, 10), 1.0);
+        assert_eq!(initial_scale(None, 1000.0, 400), 0.125);
+        assert_eq!(initial_scale(Some(0.5), 1000.0, 400), 0.5);
+    }
+
+    #[test]
+    fn sample_x_round_trip_and_visible_count() {
+        let (first, f, left) = (100, 0.25, 125.0);
+        assert_eq!(x_of(104.0, first, f, left), 150.0);
+        assert_eq!(sample_at(150.0, first, f, left), 104);
+        assert_eq!(sample_at(156.0, first, f, left), 105, "6.25 px = half a sample: ties up");
+        assert_eq!(visible_count(1125.0, 125.0, 0.25), 159);
+        assert_eq!(max_first(1000, 159), 840);
+        assert_eq!(max_first(100, 159), 0);
+    }
+
+    #[test]
+    fn ctrl_wheel_zoom_is_anchored_on_the_vizir() {
+        assert_eq!(zoom_in(0.25, 100, Some(300)), (0.5, 200));
+        assert_eq!(zoom_out(0.5, 0.0625, 200, Some(300)), (0.25, 100));
+        assert_eq!(zoom_in(1.0, 100, Some(300)), (1.0, 100), "never above 25 px/sample");
+        assert_eq!(zoom_out(0.0625, 0.0625, 100, Some(300)), (0.0625, 100), "never below fit");
+        assert_eq!(zoom_in(0.25, 100, None), (0.5, 100), "no визир: left edge stays");
+    }
+
+    #[test]
+    fn lane_zoom_steps_by_1_3_within_70_500() {
+        assert_eq!(lane_zoom(93.0, true), 121.0);
+        assert_eq!(lane_zoom(93.0, false), 72.0);
+        assert_eq!(lane_zoom(72.0, false), 55.0, "applied while above 70");
+        assert_eq!(lane_zoom(55.0, false), 55.0);
+        assert_eq!(lane_zoom(510.0, true), 510.0);
+    }
+
+    #[test]
+    fn amplitude_maps_min_max_with_5px_margins() {
+        assert_eq!(value_y(-2.0, 100.0, 93.0, -2.0, 6.0), 188.0);
+        assert_eq!(value_y(6.0, 100.0, 93.0, -2.0, 6.0), 105.0);
+        assert_eq!(value_y(3.0, 100.0, 93.0, 3.0, 3.0), 146.5, "flat channel: lane middle");
+        assert!((y_value(188.0, 100.0, 93.0, -2.0, 6.0) + 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ruler_ticks_and_labels() {
+        let t = ruler_ticks(125.0, 330.0);
+        let lens: Vec<f32> = t.iter().map(|t| t.len).collect();
+        assert_eq!(lens, [10.0, 5.0, 7.0, 5.0, 10.0, 5.0, 7.0, 5.0, 10.0]);
+        assert_eq!(t.iter().filter(|t| t.labelled).map(|t| t.x).collect::<Vec<_>>(), [125.0, 225.0, 325.0]);
+        assert_eq!(tick_sample(10, 4, 0.25), 26);
+        assert_eq!(ruler_label(TimeUnit::Milli, 0.0123, 0, true), "12 мс");
+        assert_eq!(ruler_label(TimeUnit::Micro, 1.2345678, 0, false), "1 234 568");
+        assert_eq!(ruler_label(TimeUnit::Sec, 0.0004, 0, true), "0.000 с");
+        assert_eq!(ruler_label(TimeUnit::Samples, 0.0, 41, true), "42");
+        assert_eq!(group_thousands(-1234), "-1 234");
+    }
+}

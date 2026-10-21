@@ -10,6 +10,7 @@ mod chansel;
 mod dialogs;
 mod icons;
 mod lanes;
+mod oscgeom;
 mod persist;
 mod quick_ui;
 mod ribbon;
@@ -108,17 +109,13 @@ impl App {
         let p = self.skin.palette();
         let s = self.cursor_status();
         ui.horizontal(|ui| {
-            let sep = |ui: &mut egui::Ui, label: &str, val: &str| {
-                ui.label(egui::RichText::new(label).small().weak());
-                ui.label(egui::RichText::new(val).small().color(p.text));
+            // Six fixed-width panes (27 / 40-character templates, `0x4729b0`).
+            let char_w = 6.2;
+            for (i, text) in s.iter().enumerate() {
+                let w = if i == 2 || i == 5 { 40.0 } else { 27.0 } * char_w;
+                ui.add_sized([w, 16.0], egui::Label::new(egui::RichText::new(text).small().color(p.text)).truncate());
                 ui.separator();
-            };
-            sep(ui, "Верт. визир 1:", &s[0]);
-            sep(ui, "Верт. визир 2:", &s[1]);
-            sep(ui, "Разница:", &s[2]);
-            sep(ui, "Гор. визир 1:", &s[3]);
-            sep(ui, "Гор. визир 2:", &s[4]);
-            sep(ui, "Разница г.:", &s[5]);
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(egui::RichText::new("НТЦ Механотроника").small().weak());
                 ui.separator();
