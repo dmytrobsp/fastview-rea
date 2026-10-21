@@ -175,11 +175,14 @@ impl Doc {
                     if ts.is_empty() || t < ts[0] || t > ts[ts.len() - 1] {
                         return f64::NAN;
                     }
-                    let i = ts.partition_point(|&s| s <= t).clamp(1, ts.len() - 1);
                     let v = |k: usize| match &p.pasted.channel {
                         Ok(a) => a.samples[k],
                         Err(d) => f64::from(u8::from(d.samples[k])),
                     };
+                    if ts.len() == 1 {
+                        return v(0);
+                    }
+                    let i = ts.partition_point(|&s| s <= t).clamp(1, ts.len() - 1);
                     let w = (t - ts[i - 1]) / (ts[i] - ts[i - 1]).max(1e-12);
                     v(i - 1) + (v(i) - v(i - 1)) * w.clamp(0.0, 1.0)
                 })

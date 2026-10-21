@@ -1226,11 +1226,49 @@ gets the full sheet); «Свойства...» and printer status fields empty; o
 визиры and the comment hover not drawn in print; header/footer line pitch
 T assumed 12 screen px.
 
+### L9.23 — User-reported: crash at small window sizes; the bottom scroll bar  ·  ✅
+Our bugs (not original behaviour), from the user's run of the release build.
+(1) **Crash when the window is made too small**: a tiling window manager
+ignores the 866×500 minimum, and `lanes::scrollbar` computed the thumb with
+`clamp(16, len)` — `f32::clamp` panics when the bar is shorter than 16 px.
+Further inverted clamps that a drag in a squeezed view reached (визир /
+level drag `clamp(left, plot_right)` with the stats column wider than the
+plot, `clamp(top, plot_bottom − 1)`), a one-sample pasted channel
+(`merge_ui` resample `clamp(1, len − 1)`), and the diagram scroll bar
+(`m < 0`) are guarded too. (4) **The bottom scroll bar was drawn wrongly**:
+it was painted through the view painter clipped to the client above it, so
+only its (invisible) hit area existed, it started under the plot instead of
+the view's left edge, and it had no arrow buttons.
+Read (`0x45d4a0`, `0x45d6d0`): the view uses its **window scroll bars**
+(`CWnd::SetScrollInfo` / `GetScrollPos(SB_HORZ=0 / SB_VERT=1)`); H mask
+`0x17` = RANGE|PAGE|POS|**DISABLENOSCROLL** (always present, disabled when
+the whole record is visible), range 0..page+10000, page
+`visible·10000/(N−visible)`, pos `first·10000/(N−visible)+1`; V mask `0x13`
+= RANGE|PAGE|DISABLENOSCROLL, max = Σ lane heights, page = client H − A + 2,
+both 0 when the lanes fit. Line steps: H one screen, V 100 px.
+Ours: `frame_ui(ctx)` split out of `eframe::App::update` so the whole window
+runs headless; `scrollbar` redrawn as a window scroll bar (own painter,
+arrow buttons = line step, track = page, thumb drag only from the thumb,
+disabled look with no thumb, squeezed arrows when short); H bar along the
+whole view bottom (corner box blank when V is shown), V bar down the whole
+client height beside the bottom band; the ruler ends at the plot's right;
+thickness 17 px (default system metric — inferred, not read). Tests:
+`window_tests::tiny_window_sizes_do_not_panic` (whole window, 21 layouts —
+panes, preview, ОМП, nine dialogs — × sizes down to 1×1, hover + LMB/RMB
+drags + Esc each), `the_horizontal_scroll_bar_is_painted_along_the_bottom_
+and_steps_by_a_screen` (painted inside its clip, arrows/track step).
+Residual: arrow auto-repeat while held not modelled; whether the V bar is
+present (disabled) when the lanes fit is NOT DETERMINED (DISABLENOSCROLL
+keeps an existing bar; the view's creation style was not read) — ours hides
+it as before; the original's thumb-position quirk (pos max 10001) not
+modelled (we map first ∈ [0, N−visible] linearly).
+
 Next in L9 (HANDOFF 2026-10-21, master clean at 4a83adc): §9 items 36 and
 48 are done (L9.21, L9.22). **FIRST — four GUI bugs the user found running
 the release build (ours, not original behaviour; reproduce headless with the
-`lanes::menu_tests` Harness pattern before fixing, add a regression test
-each):** (1) the program **crashes when the window is made too small**
+`lanes::menu_tests` Harness pattern or `window_tests` (whole window via
+`App::frame_ui`) before fixing, add a regression test each):** (1) ✅ L9.23
+— the program **crashes when the window is made too small**
 (suspects: `lanes_ui` geometry / `g::visible_count` / slicing with a
 negative or zero plot size, `Canvas`/diagram sizes, `rotate_right`
 ranges; the minimum window size 866×500 does not stop panels from
@@ -1244,7 +1282,7 @@ must ignore input while a modal is open or the pointer is over a window
 (`ctx.is_pointer_over_area()` / a modal layer); (4) the **bottom
 horizontal scroll bar is drawn wrongly** (`lanes.rs` `scrollbar(..)` for
 `hbar` under the plot: geometry relative to `client.bottom()` /
-`HSCROLL_H`). Then: the EMF picture on copy (L9.20), print residuals
+`HSCROLL_H`) — ✅ L9.23. Then: the EMF picture on copy (L9.20), print residuals
 (L9.22), pane re-docking (egui limit), and the smaller residuals listed in
 L9.1–L9.22.
 

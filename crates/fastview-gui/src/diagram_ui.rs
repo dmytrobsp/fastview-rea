@@ -1345,7 +1345,7 @@ fn scrollbar(ui: &mut egui::Ui, track: Rect, horizontal: bool, pos: i32, page: i
     if resp.dragged() {
         let q = resp.interact_pointer_pos()?;
         let v = ((at(q) - thumb_len / 2.0) / free * m as f32).round() as i32;
-        return Some(v.clamp(0, m));
+        return Some(v.clamp(0, m.max(0)));
     }
     if resp.clicked() {
         let q = resp.interact_pointer_pos()?;

@@ -22,9 +22,12 @@ const NAME_CHARS: usize = 25;
 const NAME_FONT: FontId = FontId::proportional(13.0);
 const ROW_FONT: FontId = FontId::proportional(11.0);
 const ROW_H: f32 = 15.0;
-/// Horizontal scrollbar height below the view and vertical scrollbar width.
-const HSCROLL_H: f32 = 14.0;
-const VSCROLL_W: f32 = 12.0;
+/// Horizontal scrollbar height below the view and vertical scrollbar width:
+/// the view's window scroll bars, at the default system metric (96 dpi).
+const HSCROLL_H: f32 = 17.0;
+const VSCROLL_W: f32 = 17.0;
+/// The V scroll bar's line step (`0x45d6d0`: SB_LINEUP/DOWN = 100 px).
+const VSCROLL_LINE: f32 = 100.0;
 /// Height of one member row of a channel group lane (name row + 33).
 const GROUP_ROW_H: f32 = 49.0;
 const COMMENT_COLOR: Color32 = Color32::from_rgb(0x00, 0x80, 0x80);
@@ -565,33 +568,74 @@ fn analog_at(y: f32, geo: &RowGeo, ranges: &[(f64, f64)]) -> Option<(usize, f64)
     Some((ch, g::y_value(y, geo.tops[li], r.h, lo, hi)))
 }
 
-/// A scrollbar over `[0, max]` with a page of `page`; returns the new value
-/// when the thumb is dragged or the track clicked (one page per click).
-fn scrollbar(ui: &mut egui::Ui, p: &egui::Painter, rect: Rect, horizontal: bool, value: f32, max: f32, page: f32) -> Option<f32> {
+/// A window scroll bar (the view's own `SB_HORZ` / `SB_VERT`, `0x45d4a0`)
+/// over `[0, max]` with a page of `page`: arrow buttons step by `line`, the
+/// track by one page, the thumb drags. Shown disabled (no thumb, inert) when
+/// there is nothing to scroll (`SIF_DISABLENOSCROLL`). Returns the new value.
+fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f32, page: f32, line: f32) -> Option<f32> {
+    let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, Color32::from_gray(236));
-    if max <= 0.0 {
+    let len = if horizontal { rect.width() } else { rect.height() };
+    let thick = if horizontal { rect.height() } else { rect.width() };
+    if len <= 0.0 || thick <= 0.0 {
         return None;
     }
-    let len = if horizontal { rect.width() } else { rect.height() };
-    let thumb_len = (len * page / (max + page)).clamp(16.0, len);
-    let travel = (len - thumb_len).max(1.0);
-    let at = travel * (value / max).clamp(0.0, 1.0);
-    let thumb = if horizontal {
-        Rect::from_min_size(Pos2::new(rect.left() + at, rect.top() + 2.0), Vec2::new(thumb_len, rect.height() - 4.0))
-    } else {
-        Rect::from_min_size(Pos2::new(rect.left() + 2.0, rect.top() + at), Vec2::new(rect.width() - 4.0, thumb_len))
+    let enabled = max > 0.0;
+    // Arrow buttons, squeezed when the bar is shorter than two of them.
+    let arrow = thick.min(len / 2.0);
+    let along = |a: f32, b: f32| {
+        if horizontal {
+            Rect::from_min_max(Pos2::new(rect.left() + a, rect.top()), Pos2::new(rect.left() + b, rect.bottom()))
+        } else {
+            Rect::from_min_max(Pos2::new(rect.left(), rect.top() + a), Pos2::new(rect.right(), rect.top() + b))
+        }
     };
-    p.rect_filled(thumb, 2.0, Color32::from_gray(176));
+    let (dec, inc) = (along(0.0, arrow), along(len - arrow, len));
+    let glyph = Color32::from_gray(if enabled { 96 } else { 180 });
+    for (r, back) in [(dec, true), (inc, false)] {
+        p.rect_filled(r.shrink(1.0), 0.0, Color32::from_gray(222));
+        let (c, s) = (r.center(), (arrow / 4.0).min(4.0));
+        let tri = match (horizontal, back) {
+            (true, true) => [c + Vec2::new(-s, 0.0), c + Vec2::new(s, -s), c + Vec2::new(s, s)],
+            (true, false) => [c + Vec2::new(s, 0.0), c + Vec2::new(-s, -s), c + Vec2::new(-s, s)],
+            (false, true) => [c + Vec2::new(0.0, -s), c + Vec2::new(-s, s), c + Vec2::new(s, s)],
+            (false, false) => [c + Vec2::new(0.0, s), c + Vec2::new(-s, -s), c + Vec2::new(s, -s)],
+        };
+        p.add(Shape::convex_polygon(tri.to_vec(), glyph, Stroke::NONE));
+    }
+    if !enabled {
+        return None;
+    }
+    let track = len - 2.0 * arrow;
+    let thumb_len = (track * page / (max + page)).max(8.0_f32.min(track)).min(track).max(0.0);
+    let travel = track - thumb_len;
+    let at = arrow + travel * (value / max).clamp(0.0, 1.0);
+    let thumb = along(at, at + thumb_len).shrink2(if horizontal { Vec2::new(0.0, 2.0) } else { Vec2::new(2.0, 0.0) });
+    if thumb_len > 0.0 {
+        p.rect_filled(thumb, 2.0, Color32::from_gray(176));
+    }
     let id = ui.id().with(("fv_scroll", horizontal));
     let r = ui.interact(rect, id, Sense::click_and_drag());
-    if r.dragged() {
+    let origin = ui.input(|i| i.pointer.press_origin());
+    if r.dragged() && travel > 0.0 && origin.is_some_and(|o| thumb.contains(o)) {
         let d = if horizontal { r.drag_delta().x } else { r.drag_delta().y };
         return Some((value + d / travel * max).clamp(0.0, max));
     }
     if r.clicked() {
         let pos = r.interact_pointer_pos()?;
-        let before = if horizontal { pos.x < thumb.left() } else { pos.y < thumb.top() };
-        return Some((value + if before { -page } else { page }).clamp(0.0, max));
+        let before_thumb = |q: Pos2| if horizontal { q.x < thumb.left() } else { q.y < thumb.top() };
+        let step = if dec.contains(pos) {
+            -line
+        } else if inc.contains(pos) {
+            line
+        } else if thumb.contains(pos) {
+            return None;
+        } else if before_thumb(pos) {
+            -page
+        } else {
+            page
+        };
+        return Some((value + step).clamp(0.0, max));
     }
     None
 }
@@ -755,7 +799,7 @@ impl App {
 
         // ---- time ruler (`0x464350`) and difference band (`0x466630`) ----
         let ruler_top = client.bottom() - g::RULER_H;
-        ov.ruler(&painter, client.bottom(), client.right());
+        ov.ruler(&painter, client.bottom(), plot_right);
         let t0 = doc.osc.time.first().copied().unwrap_or(0.0);
         let time_at = |k: usize| doc.osc.time.get(k).copied().unwrap_or(0.0) - t0;
         let viz = [
@@ -817,14 +861,18 @@ impl App {
         }
 
         // ---- scrollbars (line and page step: one screen / 100 px) ----
-        let hbar = Rect::from_min_max(Pos2::new(left, client.bottom()), Pos2::new(plot_right, full.bottom()));
+        // Window scroll bars: H along the whole bottom (always there), V down
+        // the whole right side, the corner between them blank.
+        let hbar = Rect::from_min_max(Pos2::new(full.left(), client.bottom()), Pos2::new(plot_right, full.bottom()));
         let hmax = g::max_first(n, visible);
-        if let Some(v) = scrollbar(ui, &painter, hbar, true, first as f32, hmax as f32, visible as f32) {
+        if let Some(v) = scrollbar(ui, hbar, true, first as f32, hmax as f32, visible as f32, visible as f32) {
             actions.push(Act::SetFirst(v.round().max(0.0) as usize));
         }
         if vbar {
-            let vrect = Rect::from_min_max(Pos2::new(plot_right, client.top()), Pos2::new(client.right(), plot_bottom));
-            if let Some(v) = scrollbar(ui, &painter, vrect, false, -vscroll, -vmin, client.height() - band) {
+            ui.painter().rect_filled(Rect::from_min_max(Pos2::new(plot_right, client.bottom()), full.max), 0.0, Color32::from_gray(236));
+            let vrect = Rect::from_min_max(Pos2::new(plot_right, client.top()), Pos2::new(client.right(), client.bottom()));
+            let page = (client.height() - band).max(0.0);
+            if let Some(v) = scrollbar(ui, vrect, false, -vscroll, -vmin, page, VSCROLL_LINE) {
                 actions.push(Act::SetVScroll(-v));
             }
         }
@@ -944,7 +992,7 @@ impl App {
         }
         if let (Some((ci, part)), Some(pos)) = (self.comment_drag, ui.input(|i| i.pointer.interact_pos())) {
             if ui.input(|i| i.pointer.primary_down()) {
-                let k = sample_at(pos.x.clamp(left, plot_right));
+                let k = sample_at(pos.x.clamp(left, plot_right.max(left)));
                 let under = rows.iter().zip(&tops).position(|(r, &t)| pos.y >= t && pos.y < t + r.h).map(|li| {
                     let v = matches!(rows[li].key, Lane::Analog(_)).then(|| g::y_value(pos.y, tops[li], rows[li].h, ranges[li].0, ranges[li].1));
                     (rows[li].key, v)
@@ -957,9 +1005,9 @@ impl App {
         if let (Some(drag), Some(pos)) = (self.vizir_drag, ui.input(|i| i.pointer.interact_pos())) {
             if ui.input(|i| i.pointer.primary_down()) {
                 match drag {
-                    VizDrag::V(k) => actions.push(Act::MoveV(k, sample_at(pos.x.clamp(left, plot_right)))),
+                    VizDrag::V(k) => actions.push(Act::MoveV(k, sample_at(pos.x.clamp(left, plot_right.max(left))))),
                     VizDrag::H(j) => {
-                        if let Some((ch, v)) = analog_at(pos.y.clamp(client.top(), plot_bottom - 1.0), &geo, &ranges) {
+                        if let Some((ch, v)) = analog_at(pos.y.clamp(client.top(), (plot_bottom - 1.0).max(client.top())), &geo, &ranges) {
                             actions.push(Act::SetH(j, ch, v));
                         }
                     }
@@ -1647,13 +1695,15 @@ mod menu_tests {
         ctx: egui::Context,
         app: App,
         t: f64,
+        /// The last frame's painted shapes.
+        shapes: Vec<egui::epaint::ClippedShape>,
     }
 
     impl Harness {
         fn new() -> Harness {
             let mut app = App::new();
             app.dispatch(Command::Demo);
-            let mut h = Harness { ctx: egui::Context::default(), app, t: 0.0 };
+            let mut h = Harness { ctx: egui::Context::default(), app, t: 0.0, shapes: vec![] };
             h.frame(vec![]);
             h.frame(vec![]);
             h
@@ -1673,9 +1723,9 @@ mod menu_tests {
                 ..Default::default()
             };
             let app = &mut self.app;
-            let _ = self.ctx.run(raw, |ctx| {
+            self.shapes = self.ctx.run(raw, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| app.lanes_ui(ui));
-            });
+            }).shapes;
         }
 
         fn button(&mut self, pos: Pos2, button: egui::PointerButton) {
@@ -1849,6 +1899,42 @@ mod menu_tests {
         let first = h.doc().first;
         h.wheel(at, -1.0, egui::Modifiers::SHIFT);
         assert!(h.doc().first > first, "Shift+wheel scrolls right");
+    }
+
+    #[test]
+    fn the_horizontal_scroll_bar_is_painted_along_the_bottom_and_steps_by_a_screen() {
+        let mut h = Harness::new();
+        let at = Pos2::new(600.0, h.row(0).y);
+        for _ in 0..3 {
+            h.wheel(at, 1.0, egui::Modifiers::CTRL);
+        }
+        let doc = h.doc();
+        let rows = lane_layout(doc, h.app.y_analog, false);
+        let band = g::RULER_H + if doc.diff_band { g::DIFF_BAND_H } else { 0.0 };
+        let client_h = SCREEN.y - 16.0 - HSCROLL_H;
+        let vbar = rows.iter().map(|r| r.h).sum::<f32>() + band + 2.0 > client_h;
+        let plot_right = SCREEN.x - 8.0 - if vbar { VSCROLL_W } else { 0.0 };
+        let visible = g::visible_count(plot_right - 8.0, h.app.view_left, doc.xscale.unwrap());
+        assert!(g::max_first(doc.osc.sample_count(), visible) > 2 * visible, "zoomed in far enough");
+        assert_eq!(doc.first, 0);
+        // Visible: the track is painted inside its clip rect, also under the
+        // stats panel.
+        let y = SCREEN.y - 8.0 - HSCROLL_H / 2.0;
+        let painted = |p: Pos2| {
+            h.shapes.iter().any(|c| {
+                c.clip_rect.contains(p) && matches!(&c.shape, Shape::Rect(r) if r.rect.contains(p) && r.fill == Color32::from_gray(236))
+            })
+        };
+        assert!(painted(Pos2::new(400.0, y)));
+        assert!(painted(Pos2::new(8.0 + HSCROLL_H + 4.0, y)), "the bar starts at the view's left edge");
+        // The arrows step one screen, the track one page (also one screen).
+        let right_arrow = Pos2::new(plot_right - HSCROLL_H / 2.0, y);
+        h.button(right_arrow, egui::PointerButton::Primary);
+        assert_eq!(h.doc().first, visible);
+        h.button(Pos2::new(8.0 + HSCROLL_H / 2.0, y), egui::PointerButton::Primary);
+        assert_eq!(h.doc().first, 0);
+        h.button(Pos2::new(plot_right - 3.0 * HSCROLL_H, y), egui::PointerButton::Primary);
+        assert_eq!(h.doc().first, visible, "a track click right of the thumb pages right");
     }
 
     #[test]

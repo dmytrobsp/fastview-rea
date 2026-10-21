@@ -255,6 +255,14 @@ fn tab_color(i: usize) -> egui::Color32 {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.frame_ui(ctx);
+    }
+}
+
+impl App {
+    /// One frame of the whole window (kept apart from `eframe::App::update`
+    /// so headless tests can drive it).
+    pub fn frame_ui(&mut self, ctx: &egui::Context) {
         // Window title «Механотроника FastView - <document>» (0x45f7d0) and
         // files dropped on the window (DragAcceptFiles).
         let title = match self.active_doc() {
@@ -352,9 +360,6 @@ impl eframe::App for App {
     }
 }
 
-impl App {
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,5 +368,77 @@ mod tests {
     fn command_line_switches() {
         let a = startup_args(["-Dst", "/d", "-FIND", "x.cfg"].into_iter().map(String::from));
         assert_eq!(a, StartupArgs { dst: Some("/d".into()), find: true, files: vec!["x.cfg".into()] });
+    }
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::*;
+    use eframe::egui::{Pos2, Rect, Vec2};
+
+    /// Runs whole-window frames at `size`, one per event batch.
+    fn frames(app: &mut App, ctx: &egui::Context, size: Vec2, batches: Vec<Vec<egui::Event>>) {
+        for events in batches {
+            let t = ctx.input(|i| i.time) + 0.05;
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), time: Some(t), events, ..Default::default() };
+            let _ = ctx.run(raw, |ctx| app.frame_ui(ctx));
+        }
+    }
+
+    /// At `size`: the pointer rests at the centre, then drags from a third
+    /// to two thirds of the window with each button.
+    fn exercise(app: &mut App, ctx: &egui::Context, size: Vec2) {
+        let (a, b) = ((size / 3.0).to_pos2(), (size * 2.0 / 3.0).to_pos2());
+        let mut batches = vec![vec![egui::Event::PointerMoved((size / 2.0).to_pos2())], vec![]];
+        for button in [egui::PointerButton::Primary, egui::PointerButton::Secondary] {
+            let ev = |pos, pressed| egui::Event::PointerButton { pos, button, pressed, modifiers: Default::default() };
+            batches.push(vec![egui::Event::PointerMoved(a), ev(a, true)]);
+            batches.push(vec![egui::Event::PointerMoved(b)]);
+            batches.push(vec![ev(b, false)]);
+            batches.push(vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+        }
+        frames(app, ctx, size, batches);
+    }
+
+    fn sweep(app: &mut App) {
+        let ctx = egui::Context::default();
+        frames(app, &ctx, Vec2::new(1320.0, 860.0), vec![vec![], vec![]]);
+        for &w in &[866.0, 400.0, 120.0, 20.0, 1.0] {
+            for &h in &[500.0, 200.0, 60.0, 1.0] {
+                exercise(app, &ctx, Vec2::new(w, h));
+            }
+        }
+        exercise(app, &ctx, Vec2::new(1320.0, 860.0));
+    }
+
+    fn demo(cmds: &[app::Command]) -> App {
+        let mut app = App::new();
+        app.dispatch(app::Command::Demo);
+        for c in cmds {
+            app.dispatch(c.clone());
+        }
+        app
+    }
+
+    /// A tiling window manager ignores the minimum size: every window size
+    /// down to a sliver must lay out without a panic, in every layout.
+    #[test]
+    fn tiny_window_sizes_do_not_panic() {
+        use app::{Command as C, Pane, View};
+        sweep(&mut App::new());
+        sweep(&mut demo(&[]));
+        sweep(&mut demo(&[C::Show(View::Analysis)]));
+        sweep(&mut demo(&[C::ToggleExplorer, C::ToggleParamBar]));
+        sweep(&mut demo(&[C::ToggleRibbonMin]));
+        sweep(&mut demo(&[C::TogglePane(Pane::Vector), C::TogglePane(Pane::Circle), C::TogglePane(Pane::Differential), C::TogglePane(Pane::Frequency)]));
+        sweep(&mut demo(&[C::ActivatePane(Pane::Circle)]));
+        sweep(&mut demo(&[C::ActivatePane(Pane::Differential)]));
+        sweep(&mut demo(&[C::OmpAnalysis]));
+        sweep(&mut demo(&[C::PrintPreview]));
+        sweep(&mut demo(&[C::ZoomX(true), C::ZoomX(true), C::ZoomY(true)]));
+        sweep(&mut demo(&[C::StatsRow(0), C::StatsRow(1), C::StatsRow(2)]));
+        for dlg in [C::Settings, C::ChannelsDialog, C::Coefficients, C::Print, C::PageSetup, C::OmpParams, C::FileParams, C::ChannelMap, C::HdrComment] {
+            sweep(&mut demo(&[dlg]));
+        }
     }
 }

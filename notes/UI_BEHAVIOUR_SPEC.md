@@ -258,10 +258,14 @@ MFC one.
   rate are scaled by `docRate/chRate`; pending pasted channels are drawn
   shifted by the merge offset `doc+0x6d8`. Pixel→sample rounds to nearest
   (tie up): `(x − leftW)/(25f) + first` (0x495980).
-- Scrollbars (0x45d4a0): H range 0..10000, page = `visible·10000/(N−visible)`,
-  **line and page step both one screen**, thumb → `first = pos·(N−visible)/
-  10000`. V exists only when content exceeds the client; line and page step
-  both 100 px. Document width = `N·25·f + leftW`; height = Σ lane heights + A
+- Scrollbars (0x45d4a0): the view's own **window scroll bars** (SB_HORZ /
+  SB_VERT). H: mask RANGE|PAGE|POS|DISABLENOSCROLL — always present, disabled
+  when everything is visible; range 0..page+10000, page =
+  `visible·10000/(N−visible)`, **line and page step both one screen**, thumb
+  → `first = pos·(N−visible)/10000`. V: mask RANGE|PAGE|DISABLENOSCROLL,
+  max Σ lane heights, page client H − A + 2 (both 0 when the lanes fit);
+  line and page step both 100 px. Standard layout: H along the whole client
+  bottom (under the stats column too), V down the whole right side. Document width = `N·25·f + leftW`; height = Σ lane heights + A
   (+2).
 - **Lane heights** (0x460290): hidden 0; **digital 20 px**; analog
   `max(YAnalogSize, need)` with `need = hB + 10 + (bit4 ? 2hB) + (bit6 ? hB) +
@@ -1181,6 +1185,9 @@ iff all selected agree (`app.rs`, `ribbon.rs`).
 ✅ Channel groups 33035 / 33037 with the CMDUI rules (`ChanView::group`).
 ✅ Comment lock flag (33039); 155 moment placement mode; copy takes the
 selection; colour dialog 33030; selected rows on a gold background (flat).
+✅ User-reported GUI bugs (L9.23): no panic at any window size (whole-window
+headless sweep); the view's H/V window scroll bars with arrows, H along the
+whole bottom.
 
 1. 🟡 (L9.3: right column with tab group + frequency below, toggles with
    check, grid-above-plot; no floating/re-dock/auto-hide)
