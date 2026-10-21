@@ -390,6 +390,45 @@ impl App {
 
     /// A diagram page (`0x441fe0`): the pane's own painter into R, at the
     /// printer/screen scale.
+    /// Copy's picture of the oscillogram view (`0x405160`): the screen
+    /// painter over the view's client rect (no scroll bars, no popups) at
+    /// the screen's resolution — what the original blits into its EMF.
+    pub fn view_picture(&mut self) -> Option<Canvas> {
+        let (full, client) = self.view_rects?;
+        let fonts = self.print.fonts.clone();
+        let saved = (self.lane_menu.take(), self.rename_edit.take(), self.level_edit.take());
+        let ppp = self.ppp;
+        let img = raster::render(full.size(), ppp, Some(&fonts), |ctx| {
+            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| self.lanes_ui(ui));
+        });
+        (self.lane_menu, self.rename_edit, self.level_edit) = saved;
+        self.view_rects = Some((full, client));
+        Some(crop(&img, (client.width() * ppp).round() as usize, (client.height() * ppp).round() as usize))
+    }
+
+    /// Copy's picture of a diagram (`0x441e60`): its window (the canvas,
+    /// no toolbar or property grid) as last drawn, at the screen's
+    /// resolution.
+    pub fn diagram_picture(&mut self, pane: Pane) -> Option<Canvas> {
+        let rect = self.pane_canvas.iter().find(|(p, _)| *p == pane)?.1;
+        let (di, fonts, ppp) = (self.active?, self.print.fonts.clone(), self.ppp);
+        Some(self.render_diagram(&fonts, di, pane, rect.size(), ppp))
+    }
+
+    /// A press in a diagram window gives its pane the focus, a press in the
+    /// oscillogram view takes it back (copy follows the focus).
+    pub fn track_copy_focus(&mut self, ctx: &egui::Context) {
+        if self.modal_up {
+            return;
+        }
+        let Some(p) = ctx.input(|i| if i.pointer.any_pressed() { i.pointer.press_origin() } else { None }) else { return };
+        if let Some((pane, _)) = self.pane_canvas.iter().find(|(_, r)| r.contains(p)) {
+            self.copy_focus = Some(*pane);
+        } else if self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
+            self.copy_focus = None;
+        }
+    }
+
     fn render_diagram(&mut self, fonts: &egui::FontDefinitions, di: usize, pane: Pane, size: Vec2, k: f32) -> Canvas {
         let active = self.active;
         let dim = self.diagram_dim;

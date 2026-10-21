@@ -881,6 +881,18 @@ pub struct App {
     pub view_width: f32,
     /// Stats-panel width at the last layout (fitted to the text).
     pub view_left: f32,
+    /// The oscillogram view's rect and its client part (without the scroll
+    /// bars) as last drawn — the size of copy's picture.
+    pub view_rects: Option<(egui::Rect, egui::Rect)>,
+    /// The diagram windows (the canvas, without toolbar or property grid)
+    /// as last drawn.
+    pub pane_canvas: Vec<(Pane, egui::Rect)>,
+    /// The diagram pane that has the focus (a click in it), `None` while
+    /// the oscillogram view has it: copy (`0x405160`) pictures the focused
+    /// one.
+    pub copy_focus: Option<Pane>,
+    /// Screen pixels per point, for pictures at the screen's resolution.
+    pub ppp: f32,
     /// The merge bar (shown after a paste).
     pub merge: Option<crate::merge_ui::MergeBar>,
     /// A pending lane being dragged in time: start x and start offset.
@@ -993,6 +1005,10 @@ impl App {
             rename_edit: None,
             view_width: 1000.0,
             view_left: crate::lanes::LEFT_W_DEFAULT,
+            view_rects: None,
+            pane_canvas: Vec::new(),
+            copy_focus: None,
+            ppp: 1.0,
             window_title: String::new(),
             finder: None,
             loading: Vec::new(),

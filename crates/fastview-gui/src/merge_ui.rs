@@ -252,8 +252,23 @@ pub const PENDING: &str = "объединение";
 impl App {
     /// 57634 (`0x45be28` → `0x430af0`): the selected file channels, analog
     /// then discrete, with the record's times, rate and header, as the
-    /// clipboard document on the system clipboard.
+    /// clipboard document on the system clipboard, after a picture of the
+    /// view (`0x405160`). With a diagram pane focused only that diagram's
+    /// picture lands (the original sets the document after its diagram copy
+    /// has closed the clipboard, so the document is lost).
     pub fn copy_channels_for_merge(&mut self) {
+        if self.active_doc().is_none() {
+            return;
+        }
+        if let Some(pane) = self.copy_focus.filter(|p| self.pane_canvas.iter().any(|(q, _)| q == p)) {
+            let picture = self.diagram_picture(pane);
+            self.status = if self.clip.put(None, picture.as_ref()) {
+                "Диаграмма скопирована в буфер обмена.".into()
+            } else {
+                "Не удалось записать в буфер обмена.".into()
+            };
+            return;
+        }
         let Some(d) = self.active_doc() else { return };
         let rec = clip_record(d);
         if rec.channels.is_empty() {
@@ -261,7 +276,8 @@ impl App {
             return;
         }
         let n = rec.channels.len();
-        self.status = if self.clip.put(&rec.to_text()) {
+        let picture = self.view_picture();
+        self.status = if self.clip.put(Some(&rec.to_text()), picture.as_ref()) {
             format!("Скопировано каналов для объединения: {n}")
         } else {
             "Не удалось записать в буфер обмена.".into()

@@ -3,12 +3,18 @@
 //! registered format (`0x404f5e`, UTF-16 text with a trailing NUL, no other
 //! format); elsewhere a file in our settings folder stands in for it, so two
 //! instances on one machine can still merge. Tests use the in-memory kind.
+//! Copy also puts a picture (`CF_ENHMETAFILE`, a raster of the view or of
+//! the focused diagram) first — on Windows only.
 
+use crate::raster::Canvas;
 use std::cell::RefCell;
 use std::path::PathBuf;
 
+/// The in-memory clipboard: the text, and the picture's size.
+type MemoryClip = RefCell<(Option<String>, Option<(usize, usize)>)>;
+
 pub enum SysClip {
-    Memory(RefCell<Option<String>>),
+    Memory(MemoryClip),
     #[cfg_attr(windows, allow(dead_code))]
     File(PathBuf),
     #[cfg(windows)]
@@ -17,7 +23,7 @@ pub enum SysClip {
 
 impl Default for SysClip {
     fn default() -> Self {
-        SysClip::Memory(RefCell::new(None))
+        SysClip::Memory(RefCell::new((None, None)))
     }
 }
 
@@ -34,21 +40,35 @@ impl SysClip {
         }
     }
 
-    pub fn put(&self, text: &str) -> bool {
+    /// Empty the clipboard, then set the picture and the text, either of
+    /// which may be absent (`0x45be28`: CF_ENHMETAFILE first, then the XML).
+    pub fn put(&self, text: Option<&str>, picture: Option<&Canvas>) -> bool {
         match self {
             SysClip::Memory(m) => {
-                *m.borrow_mut() = Some(text.to_string());
+                *m.borrow_mut() = (text.map(str::to_string), picture.map(|c| (c.w, c.h)));
                 true
             }
-            SysClip::File(p) => p.parent().is_some_and(|d| std::fs::create_dir_all(d).is_ok()) && std::fs::write(p, text).is_ok(),
+            SysClip::File(p) => match text {
+                Some(t) => p.parent().is_some_and(|d| std::fs::create_dir_all(d).is_ok()) && std::fs::write(p, t).is_ok(),
+                None => !p.exists() || std::fs::remove_file(p).is_ok(),
+            },
             #[cfg(windows)]
-            SysClip::System => win::put(text),
+            SysClip::System => win::put(text, picture),
+        }
+    }
+
+    /// The picture's size on the in-memory clipboard (tests).
+    #[cfg(test)]
+    pub fn picture(&self) -> Option<(usize, usize)> {
+        match self {
+            SysClip::Memory(m) => m.borrow().1,
+            _ => None,
         }
     }
 
     pub fn get(&self) -> Option<String> {
         match self {
-            SysClip::Memory(m) => m.borrow().clone(),
+            SysClip::Memory(m) => m.borrow().0.clone(),
             SysClip::File(p) => std::fs::read_to_string(p).ok(),
             #[cfg(windows)]
             SysClip::System => win::get(),
@@ -58,7 +78,7 @@ impl SysClip {
     /// `IsClipboardFormatAvailable` (Paste CMDUI `0x45bf60`).
     pub fn available(&self) -> bool {
         match self {
-            SysClip::Memory(m) => m.borrow().is_some(),
+            SysClip::Memory(m) => m.borrow().0.is_some(),
             SysClip::File(p) => p.is_file(),
             #[cfg(windows)]
             SysClip::System => win::available(),
@@ -71,6 +91,8 @@ mod win {
     use windows_sys::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::Graphics::Gdi::{CloseEnhMetaFile, CreateEnhMetaFileW, StretchDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, SRCCOPY};
     use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
 
     fn format() -> u32 {
@@ -84,28 +106,60 @@ mod win {
         unsafe { IsClipboardFormatAvailable(format()) != 0 }
     }
 
-    pub fn put(text: &str) -> bool {
-        let wide: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
-        // SAFETY: the block is allocated with the text's size and only
-        // written while locked; ownership passes to the clipboard on success.
+    pub fn put(text: Option<&str>, picture: Option<&super::Canvas>) -> bool {
+        // SAFETY: the clipboard is opened and closed here; the global block
+        // is allocated with the text's size and only written while locked;
+        // the metafile and the block pass to the clipboard on success.
         unsafe {
             if OpenClipboard(std::ptr::null_mut()) == 0 {
                 return false;
             }
             EmptyClipboard();
-            let h = GlobalAlloc(GMEM_MOVEABLE, wide.len() * 2);
-            let mut ok = false;
-            if !h.is_null() {
-                let p = GlobalLock(h) as *mut u16;
-                if !p.is_null() {
-                    std::ptr::copy_nonoverlapping(wide.as_ptr(), p, wide.len());
-                    GlobalUnlock(h);
-                    ok = !SetClipboardData(format(), h).is_null();
+            let mut ok = true;
+            if let Some(c) = picture {
+                let emf = metafile(c);
+                ok &= !emf.is_null() && !SetClipboardData(14, emf).is_null();
+            }
+            if let Some(text) = text {
+                let wide: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
+                let h = GlobalAlloc(GMEM_MOVEABLE, wide.len() * 2);
+                let mut set = false;
+                if !h.is_null() {
+                    let p = GlobalLock(h) as *mut u16;
+                    if !p.is_null() {
+                        std::ptr::copy_nonoverlapping(wide.as_ptr(), p, wide.len());
+                        GlobalUnlock(h);
+                        set = !SetClipboardData(format(), h).is_null();
+                    }
                 }
+                ok &= set;
             }
             CloseClipboard();
             ok
         }
+    }
+
+    /// An enhanced metafile holding the picture as one bitmap record at
+    /// (0, 0) — `CreateEnhMetaFileW(NULL, NULL, NULL, NULL)` (screen
+    /// reference, frame from the content) and one blit, as the original.
+    ///
+    /// # Safety
+    /// Calls GDI; the returned handle is owned by the caller.
+    unsafe fn metafile(c: &super::Canvas) -> HANDLE {
+        let dc = CreateEnhMetaFileW(std::ptr::null_mut(), std::ptr::null(), std::ptr::null(), std::ptr::null());
+        if dc.is_null() {
+            return std::ptr::null_mut();
+        }
+        let bgra: Vec<u8> = c.px.iter().flat_map(|p| [p[2], p[1], p[0], 0]).collect();
+        let mut info: BITMAPINFO = std::mem::zeroed();
+        info.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+        info.bmiHeader.biWidth = c.w as i32;
+        info.bmiHeader.biHeight = -(c.h as i32);
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+        StretchDIBits(dc, 0, 0, c.w as i32, c.h as i32, 0, 0, c.w as i32, c.h as i32, bgra.as_ptr().cast(), &info, DIB_RGB_COLORS, SRCCOPY);
+        CloseEnhMetaFile(dc) as HANDLE
     }
 
     pub fn get() -> Option<String> {

@@ -19,6 +19,7 @@ impl App {
     /// bottom) and Частотная below it, each with a caption and a close
     /// button that hides it. Call before the central view.
     pub fn diagram_panes(&mut self, ctx: &egui::Context) {
+        self.pane_canvas.clear();
         let tab = self.panes.shown_tab();
         if tab.is_some() || self.panes.frequency {
             self.diagram_column(ctx, tab);
@@ -38,6 +39,7 @@ impl App {
                         if pane_caption(ui, "Частотная диаграмма") {
                             app.dispatch(Command::TogglePane(Pane::Frequency));
                         }
+                        app.pane_canvas.push((Pane::Frequency, ui.available_rect_before_wrap()));
                         app.frequency_ui(ui);
                         app.pane_drop(ui, Pane::Frequency);
                     };
@@ -74,6 +76,7 @@ impl App {
                             Pane::Vector => {
                                 self.pane_toolbar(ui, Window::Vector);
                                 egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
+                                    self.pane_canvas.push((Pane::Vector, ui.available_rect_before_wrap()));
                                     self.vector_ui(ui);
                                     self.pane_drop(ui, Pane::Vector);
                                 });
@@ -147,7 +150,11 @@ impl App {
             .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| self.char_side_panel(ui));
             });
-        egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| self.plane_ui(ui));
+        egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
+            let pane = if self.panes.active == Pane::Differential { Pane::Differential } else { Pane::Circle };
+            self.pane_canvas.push((pane, ui.available_rect_before_wrap()));
+            self.plane_ui(ui);
+        });
     }
 
     fn char_side_panel(&mut self, ui: &mut egui::Ui) {

@@ -731,6 +731,7 @@ impl App {
         let content_h: f32 = rows.iter().map(|r| r.h).sum();
         let vbar = content_h + band + 2.0 > client.height();
         let plot_right = client.right() - if vbar { VSCROLL_W } else { 0.0 };
+        self.view_rects = Some((full, Rect::from_min_max(client.min, Pos2::new(plot_right, client.bottom()))));
         let left = client.left() + left_w;
         let plot_bottom = client.bottom() - band;
         let vmin = -(content_h + band + 2.0 - client.height()).max(0.0);

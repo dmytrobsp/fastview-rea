@@ -285,6 +285,7 @@ impl App {
             self.load_comtrade_path(&f);
         }
         theme::apply(ctx, self.skin);
+        self.ppp = ctx.pixels_per_point();
         // Every dialog is modal: while one is up, a backdrop between the
         // panels and the windows takes the pointer, and no shortcuts run.
         self.modal_up = dialogs::window_up(ctx);
@@ -333,6 +334,7 @@ impl App {
             self.diagram_panes(ctx);
             self.render_tab(ctx);
         }
+        self.track_copy_focus(ctx);
         self.dialogs_ui(ctx);
         self.print_windows(ctx);
         // The record settings follow the active document; leaving asks
@@ -643,6 +645,40 @@ mod window_tests {
         panic!("no collapsed «Вычисления» button opened its panel");
     }
 
+    /// Copy (`0x45be28` / `0x405160`): a picture of the view's client area
+    /// then the clipboard document; with a diagram focused (a click in it),
+    /// that diagram's picture alone.
+    #[test]
+    fn copy_pictures_the_view_or_the_focused_diagram() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        let (full, client) = w.app.view_rects.expect("the view was drawn");
+        let stats = full.min + Vec2::new(40.0, 30.0);
+        w.press(Primary, stats, stats);
+        assert!(!w.app.active_doc().unwrap().selection.is_empty(), "a channel is selected");
+        w.app.dispatch(app::Command::Copy);
+        assert_eq!(w.app.clip.picture(), Some((client.width().round() as usize, client.height().round() as usize)));
+        // `FV_COPY_DUMP=<file.png>` saves the view's picture for a look.
+        if let Ok(path) = std::env::var("FV_COPY_DUMP") {
+            let c = w.app.view_picture().unwrap();
+            let rgba: Vec<u8> = c.px.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
+            std::fs::write(path, util::png_rgba(c.w as u32, c.h as u32, &rgba)).unwrap();
+        }
+        assert!(w.app.clip.get().is_some_and(|t| t.contains("<channels")), "the document follows the picture");
+        // Focus the vector diagram.
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Vector).expect("the vector pane").1;
+        w.press(Primary, canvas.center(), canvas.center());
+        assert_eq!(w.app.copy_focus, Some(app::Pane::Vector));
+        w.app.dispatch(app::Command::Copy);
+        assert_eq!(w.app.clip.picture(), Some((canvas.width().round() as usize, canvas.height().round() as usize)));
+        assert_eq!(w.app.clip.get(), None, "a diagram copy leaves no document");
+        // Back to the view.
+        w.press(Primary, stats, stats);
+        assert_eq!(w.app.copy_focus, None);
+        w.app.dispatch(app::Command::Copy);
+        assert!(w.app.clip.get().is_some());
+    }
+
     /// `FV_WINDOW_DUMP=<file.png> cargo test window_dump` renders the window
     /// (demo document, a few recent files) after a click at
     /// `FV_WINDOW_CLICK=x,y` (default: the «Файл ▾» menu button), the
@@ -674,6 +710,8 @@ mod window_tests {
             "fileparams" => vec![C::FileParams],
             "explorer" => vec![C::ToggleExplorer],
             "parambar" => vec![C::ToggleParamBar],
+            // `skin<k>`: the k-th look of `Skin::ALL`.
+            s if s.starts_with("skin") => s[4..].parse::<usize>().ok().and_then(|k| theme::Skin::ALL.get(k).copied()).map(C::SetSkin).into_iter().collect(),
             _ => vec![],
         };
         let mut app = demo(&cmds);

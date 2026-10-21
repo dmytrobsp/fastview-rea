@@ -1147,8 +1147,8 @@ copy enabled by digital channels; the insertion point — pending lanes
 shown in front of the first selected analog / digital channel
 (`Computed::before`, `lane_layout`) and «Объединить» moving the merged
 channels there with every stored index shifted (`Doc::move_appended`;
-test `pasted_channels_go_before_the_first_selected_channel`). Residual: no
-EMF picture; an analog paste with no selected analog channel goes to our
+test `pasted_channels_go_before_the_first_selected_channel`). Residual: (EMF
+picture: L9.30); an analog paste with no selected analog channel goes to our
 computed section (whether `doc+0x1d8` counts computed channels is NOT
 DETERMINED); `duration_milli_sec`
 text and `time_multiplier` are inferred (0x44c1d0 / `doc+0x230` not read);
@@ -1359,6 +1359,44 @@ Residual (not read in detail, framework behaviour): the original's
 preview commands live in the ribbon's stock print-preview category and
 MFC hides the docking panes during preview; ours shows a button bar under
 the ribbon in place of the views.
+
+### L9.30 — Copy's picture: the view's or the focused diagram's EMF  ·  🟡
+Read (subagent report, `fv.asm` + Ghidra): copy 57634 (`0x45acb0` case
+`0x45be28`) calls `0x405160`, which picks by keyboard focus: GetFocus, its
+first untitled child (FindWindowExW, title ""); focus on the view or no such
+child → the oscillogram picture; a DiagramWnd among the first two untitled
+children (the focused pane's toolbar / diagram) → `0x441e60` (DiagramWnd
+slot +0x170) reopens and empties the clipboard, sets only CF_ENHMETAFILE
+and closes it, so the view's later SetClipboardData of the XML fails — **a
+diagram copy leaves the picture alone**; other cases: XML only. Oscillogram
+order: OpenClipboard(view), EmptyClipboard, SetClipboardData(14, EMF), the
+registered XML, CloseClipboard; no other formats. The EMF:
+`CreateEnhMetaFileW(NULL×4)` (screen reference, GDI-computed frame, no
+description), MM_TEXT, **one BitBlt** of a memory DC = a raster. Content:
+GetClientRect(view) w×h drawn by the **screen** Draw `0x45f950` (not the
+print painter 0x405970): white background, all visible lanes at the
+current scroll, selection highlight, stats panel, ruler, difference band,
+визиры, comments; no scroll bars. Diagram: its window's client rect (no
+toolbar / property grid) by the class Draw at scale 1 (circle / diff include
+the 5 px splitter strip). DeleteEnhMetaFile right after SetClipboardData;
+results unchecked; no messages.
+Ours: `App::view_rects` (view rect + client without the bars) and
+`pane_canvas` (each diagram window) recorded while drawing; a press in a
+diagram window focuses its pane, a press in the view takes it back
+(`track_copy_focus`, not while a dialog is up); `view_picture` runs
+`lanes_ui` headless at the screen's pixels per point and crops off the bars
+(menus / inline editors left out); `diagram_picture` reuses the print
+diagram renderer at the canvas size; `SysClip::put(text, picture)` empties,
+then sets the picture (Windows: an EMF with one StretchDIBits record via
+`CreateEnhMetaFileW(NULL…)`, handed to the clipboard), then the XML; a
+diagram copy sets the picture only (our file / memory clipboards drop the
+document too). Test: `copy_pictures_the_view_or_the_focused_diagram`
+(`FV_COPY_DUMP=<png>` saves the view picture).
+Residual: off Windows the picture is not placed anywhere (no system
+clipboard image); the record is EMR_STRETCHDIBITS rather than EMR_BITBLT
+(same picture); focus on the property grid of the circle / differential
+pane (the original's third case, XML only) is not modelled — a click there
+leaves the focus unchanged; our status-bar messages are ours.
 
 Next in L9 (HANDOFF 2026-10-21, master clean at 4a83adc): §9 items 36 and
 48 are done (L9.21, L9.22). **FIRST — four GUI bugs the user found running
