@@ -90,16 +90,18 @@ mod tests {
     #[test]
     fn a_second_start_hands_its_file_over() {
         let dir = std::env::temp_dir().join(format!("fv-instance-{}", std::process::id()));
-        assert!(!hand_off(&dir, &[PathBuf::from("/x/a.cfg")]), "no instance yet");
+        // Absolute on every platform (a bare "/x" has no drive on Windows).
+        let (a, b, c) = (dir.join("a.cfg"), dir.join("b.cff"), dir.join("c.cfg"));
+        assert!(!hand_off(&dir, std::slice::from_ref(&a)), "no instance yet");
         let server = serve(&dir, || {}).unwrap();
-        assert!(hand_off(&dir, &[PathBuf::from("/x/a.cfg"), PathBuf::from("/x/b.cff")]));
+        assert!(hand_off(&dir, &[a.clone(), b.clone()]));
         let got: Vec<PathBuf> = server.rx.try_iter().collect();
-        assert_eq!(got, [PathBuf::from("/x/a.cfg"), PathBuf::from("/x/b.cff")]);
+        assert_eq!(got, [a, b]);
         // A wrong token is ignored.
         let text = std::fs::read_to_string(dir.join(FILE)).unwrap();
         let port = text.split_whitespace().next().unwrap();
         std::fs::write(dir.join(FILE), format!("{port} 0\n")).unwrap();
-        assert!(!hand_off(&dir, &[PathBuf::from("/x/c.cfg")]));
+        assert!(!hand_off(&dir, &[c]));
         assert!(server.rx.try_recv().is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }

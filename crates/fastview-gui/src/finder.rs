@@ -179,14 +179,23 @@ pub fn companions(path: &Path) -> Vec<PathBuf> {
         ".sto" => &["dst"],
         _ => &[],
     };
+    // The files that are actually there (by directory entry, so a
+    // case-insensitive file system does not list one file twice), with the
+    // same stem and a companion extension in either case.
     let mut out = vec![path.to_path_buf()];
-    for e in exts {
-        for cand in [path.with_extension(e), path.with_extension(e.to_uppercase())] {
-            if cand.exists() && !out.contains(&cand) {
-                out.push(cand);
-            }
-        }
-    }
+    let (Some(dir), Some(stem)) = (path.parent(), path.file_stem()) else { return out };
+    let Ok(entries) = std::fs::read_dir(if dir.as_os_str().is_empty() { Path::new(".") } else { dir }) else { return out };
+    let mut found: Vec<(usize, PathBuf)> = entries
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.file_stem() == Some(stem) && p.is_file())
+        .filter_map(|p| {
+            let ext = p.extension()?.to_string_lossy().to_lowercase();
+            exts.iter().position(|e| *e == ext).map(|i| (i, p))
+        })
+        .collect();
+    found.sort();
+    out.extend(found.into_iter().map(|(_, p)| p));
     out
 }
 
