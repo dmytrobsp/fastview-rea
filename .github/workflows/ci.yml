@@ -14,6 +14,17 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  guard:
+    name: Publish guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # No original binaries, raw decompilation / disassembly output or
+      # non-approved identities anywhere in the history.
+      - run: python3 -I tools/publish_guard.py --all
+
   check:
     name: Check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -40,7 +51,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.name }}
-    needs: check
+    needs: [guard, check]
     if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:

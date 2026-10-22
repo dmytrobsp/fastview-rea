@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Refuse a push whose new commits break the publish rules
+# (tools/publish_guard.py). stdin: <local ref> <local sha> <remote ref> <remote sha>
+set -euo pipefail
+guard="$(git rev-parse --show-toplevel)/tools/publish_guard.py"
+zero=0000000000000000000000000000000000000000
+while read -r _lref lsha _rref rsha; do
+  [ "$lsha" = "$zero" ] && continue
+  if [ "$rsha" = "$zero" ]; then
+    range="$lsha"
+  else
+    range="$rsha..$lsha"
+  fi
+  python3 -I "$guard" --range "$range"
+done

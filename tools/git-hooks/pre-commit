@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Refuse a commit that would add the original program, raw decompilation /
+# disassembly output or a non-approved identity (tools/publish_guard.py).
+set -euo pipefail
+exec python3 -I "$(git rev-parse --show-toplevel)/tools/publish_guard.py" --staged

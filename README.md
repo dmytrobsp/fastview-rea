@@ -188,6 +188,15 @@ warning-free and `cargo test --workspace` green (290+ tests, including
 headless tests of the whole window); CI runs them on Linux, Windows and
 macOS.
 
+## Contributing
+
+Enable the repository's hooks once per clone: `git config core.hooksPath
+tools/git-hooks`. They run `tools/publish_guard.py`, which keeps the original
+program and raw decompilation / disassembly output out of the history; CI
+runs the same check. Analysis is published as specs in our own words
+(`notes/`) and as tools that regenerate the raw data from your own copy
+(`tools/README.md`).
+
 ## License
 
 The reconstruction's code is dual-licensed under
