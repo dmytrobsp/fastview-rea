@@ -5,9 +5,9 @@ members = ["crates/fvb-core", "crates/fastview-gui"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
-authors = ["FastView-REA reconstruction"]
-repository = "https://example.invalid/fastview-rea"
+license = "MIT OR Apache-2.0"
+authors = ["Dmytro <dmytrobsp@gmail.com>"]
+repository = "https://github.com/dmytrobsp/fastview-rea"
 
 [profile.release]
 opt-level = 3

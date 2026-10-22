@@ -18,3 +18,8 @@ Cargo.lock.bak
 # Claude Code worktrees and Python caches
 /.claude/
 __pycache__/
+
+# Locally regenerated analysis dumps (tools/regen-dumps.sh) and carved
+# redistributable payloads — derived from the original, never committed.
+/dumps/
+/vcr/

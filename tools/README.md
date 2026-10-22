@@ -1,0 +1,70 @@
+# Reverse-engineering tools
+
+Everything here is our own code. None of it ships any part of the original
+program: you supply your own copy of the Fast View 5 installer, and the
+scripts regenerate the analysis inputs locally. The findings drawn from them
+are written up in our own words in [`../notes/`](../notes/): the
+reconstruction ledger (`RECONSTRUCTION_LEDGER.md`, item by item with the
+original's addresses) and the behavioural specs (`UI_BEHAVIOUR_SPEC.md`,
+`VIEWS_SPEC.md`, `OMP_SPEC.md`, `FORMATS_SPEC.md`, `CALC_CHANNELS_SPEC.md`).
+Any address cited there can be checked against your own copy.
+
+## 1. Get the original program
+
+The installer `Setup_FastView.exe` (НТЦ «Механотроника», www.mtrele.ru) is a
+custom installer with an MSZip cabinet in its PE resources
+(`.rsrc/1049/BIN/137`). 7-Zip extracts both layers:
+
+```bash
+7z x -oextracted Setup_FastView.exe          # the PE resources
+7z x -oextracted/stage1 extracted/.rsrc/1049/BIN/137
+```
+
+`extracted/stage1/` then holds `FastView.exe` (MFC 12, MSVC 2013, x86; the
+notes cite sha256 `6c503790…d046`, image base `0x400000`), its DLLs, the
+help `FastView.chm` and `vcredist_vs13_x86.exe`. `extracted/` is git-ignored.
+
+## 2. Regenerate the dumps
+
+```bash
+tools/regen-dumps.sh extracted/stage1/FastView.exe dumps
+```
+
+| file | tool | content |
+|---|---|---|
+| `fv.asm` | `objdump -d -M intel` | the full disassembly the notes' addresses refer to |
+| `imports.txt` | `peimports.py` | IAT slot → DLL and function / MFC ordinal |
+| `strings.txt` | `pestr.py` | the string table (`id<TAB>text`) |
+| `msgmaps.json` | `msgmaps.py` | every MFC message map: class, entries (WM_* / COMMAND / CMDUI, id range, handler address) |
+| `vtables.txt` | `vt.py` | RTTI classes, primary vtables, slot counts |
+
+`python3 -I tools/show.py --dumps dumps CFastViewView` prints a class's
+message map with command ids resolved to their strings. `dumps/` is
+git-ignored.
+
+MFC's own resources (e.g. the Russian labels of the print-preview ribbon
+category) live in the redistributable: `tools/carve_cabs.py
+extracted/stage1/vcredist_vs13_x86.exe vcr/` carves its cabinets, `7z x` them,
+then `pestr.py` on `F_CENTRAL_mfc120rus_x86` / `objdump` on
+`F_CENTRAL_mfc120u_x86`.
+
+## 3. Decompile
+
+Decompilation was done with [REA](https://www.npmjs.com/package/rea-agents)
+(`npx rea-agents mcp`, an MCP server) driving Ghidra 12.1: `open_binary` on
+`FastView.exe`, then `procedure_pseudo_code`, `xrefs`, `procedure_callers`,
+`read_bytes`, `search_strings`. `ghidra_dump.py` is an older Ghidra headless
+post-script that decompiles the formula-engine and `.fvb` parser functions.
+
+## 4. Method
+
+Each behaviour was reversed from the handler that implements it (message map
+→ handler → callees), distilled into prose with addresses, implemented in
+Rust, pinned by a test, and recorded in the ledger with what was **read**,
+what is **inferred** and what is **not determined**. Research questions were
+handed to sub-agents with a brief per question (scope, the addresses already
+known, the questions, and the rule to report behaviour in prose rather than
+code listings).
+
+Other helpers: `pngcrop.py` (crop help screenshots), `msgmaps.py` (used by
+`vt.py` and `regen-dumps.sh`).

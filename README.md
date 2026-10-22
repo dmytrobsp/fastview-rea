@@ -1,5 +1,7 @@
 # FastView-REA
 
+[![CI](https://github.com/dmytrobsp/fastview-rea/actions/workflows/ci.yml/badge.svg)](https://github.com/dmytrobsp/fastview-rea/actions/workflows/ci.yml)
+
 A clean-room, cross-platform (Linux **and** Windows) reconstruction in Rust of
 **Механотроника Fast View 5** — the relay-protection oscillogram & characteristic
 analysis tool shipped by НТЦ «Механотроника» (www.mtrele.ru) for their БМРЗ
@@ -9,6 +11,8 @@ The original is a 32-bit Windows MFC application with an Office-2007 ribbon UI.
 This project reverse-engineers both its analysis engine **and its user
 interface** and reimplements them as portable Rust that builds and runs the same
 on Linux, Windows and macOS.
+
+![FastView-REA: the demo record with three визиры, the ribbon and the diagram panes](docs/screenshot.png)
 
 
 ## Behaviour proven by decompilation
@@ -55,11 +59,22 @@ plane. The full characteristic library (17 blocks, 62 characteristics) ships wit
 the app and is the real `FastView.fvb` from the original, so it is useful out of
 the box. A different/updated `FastView.fvb` can be loaded via **Открыть .fvb…**.
 
+## Download
+
+Prebuilt binaries for Linux (x86_64), Windows (x86_64) and macOS (Apple
+Silicon and Intel) are attached to each
+[release](https://github.com/dmytrobsp/fastview-rea/releases); every push to
+`main` also leaves them as CI artifacts. On Linux the app needs GTK 3 (file
+dialogs) and a Wayland or X11 session.
+
 ## How it was reverse-engineered
 
 Tooling: **REA** (Reverse Engineer Anything) driving **Ghidra 12.1.3** for native
 decompilation, plus `7z`/`iconv` for the installer. Full notes:
-[`notes/FINDINGS.md`](notes/FINDINGS.md).
+[`notes/FINDINGS.md`](notes/FINDINGS.md). The scripts that regenerate every
+analysis input from your own copy of the program (disassembly, imports,
+string table, MFC message maps, RTTI vtables) and the method are in
+[`tools/README.md`](tools/README.md).
 
 1. **Installer** — the `Setup_FastView.exe` is a custom installer with an MSZip
    CAB embedded in its PE resources (`.rsrc/1049/BIN/137`). Extracted with `7z`
@@ -163,11 +178,17 @@ cargo build -p fastview-gui --release --target x86_64-pc-windows-gnu
 What is done, what is approximate and what is not determined is tracked item
 by item in the ledger (`notes/RECONSTRUCTION_LEDGER.md`, L1–L9.x) and the
 ranked backlog in `notes/UI_BEHAVIOUR_SPEC.md` §9. Known gaps include: native
-`.sto` reading (no sample file ships), printing (replaced by image export),
-the system-clipboard format for cross-instance merging, the non-Office-2007
-looks, and floating/re-docking of panes. Builds and tests: `cargo test
---workspace` (200+ tests, incl. headless egui tests of the UI behaviour),
-`cargo clippy`, and the Windows cross-build are kept green.
+`.sto` reading (no sample file ships), the original's bitmaps (logo, icons —
+replaced by our own drawings), the non-Office-2007 looks, and floating /
+re-docking of panes. Every change keeps `cargo build` and `cargo clippy`
+warning-free and `cargo test --workspace` green (290+ tests, including
+headless tests of the whole window); CI runs them on Linux, Windows and
+macOS.
+
+## License
+
+The reconstruction's code is dual-licensed under
+[MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
 
 ## Legal
 
