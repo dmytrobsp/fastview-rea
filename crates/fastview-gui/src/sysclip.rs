@@ -218,3 +218,29 @@ mod image {
         });
     }
 }
+
+/// On real Windows (run explicitly: `--ignored system_clipboard_round_trip`):
+/// copy puts an EMF picture and the registered document on the system
+/// clipboard, both readable afterwards.
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    use windows_sys::Win32::System::DataExchange::IsClipboardFormatAvailable;
+
+    #[test]
+    #[ignore = "touches the system clipboard"]
+    fn system_clipboard_round_trip() {
+        let clip = SysClip::System;
+        let mut picture = Canvas::white(4, 3);
+        picture.px[0] = [255, 0, 0];
+        assert!(clip.put(Some("<channels/>"), Some(&picture)), "put");
+        // SAFETY: a plain query of the clipboard's formats.
+        assert!(unsafe { IsClipboardFormatAvailable(14) } != 0, "CF_ENHMETAFILE present");
+        assert!(clip.available(), "the registered format is present");
+        assert_eq!(clip.get().as_deref(), Some("<channels/>"));
+        // A picture-only put (a diagram copy) leaves no document.
+        assert!(clip.put(None, Some(&picture)));
+        assert!(!clip.available());
+        assert!(unsafe { IsClipboardFormatAvailable(14) } != 0);
+    }
+}

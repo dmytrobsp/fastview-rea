@@ -1394,7 +1394,9 @@ document too). Test: `copy_pictures_the_view_or_the_focused_diagram`
 Residual: off Windows the picture goes to the desktop clipboard as an image
 (`arboard`, X11 / Wayland data-control / macOS; our extension, the handle
 kept for the process — compile-checked only, not exercised: running it
-would touch the user's real clipboard); the record is EMR_STRETCHDIBITS rather than EMR_BITBLT
+would touch the user's real clipboard); on Windows the EMF + registered-format path is
+now verified on a real Windows 11 machine (`sysclip::windows_tests::
+system_clipboard_round_trip`, `--ignored`, cross-built and run over ssh); the record is EMR_STRETCHDIBITS rather than EMR_BITBLT
 (same picture); focus on the property grid of the circle / differential
 pane (the original's third case, XML only) is not modelled — a click there
 leaves the focus unchanged; our status-bar messages are ours.
