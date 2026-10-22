@@ -77,26 +77,20 @@ jobs:
         with:
           key: ${{ matrix.target }}
       - run: cargo build --release -p fastview-gui --target ${{ matrix.target }}
-      - name: Package
+      # The artifact holds the files themselves, flat: upload-artifact zips
+      # them once with the binary at the zip's root (no nested archive).
+      - name: Stage
         shell: bash
         run: |
           set -euo pipefail
-          name="fastview-${{ matrix.name }}"
-          mkdir -p "dist/$name"
-          cp "target/${{ matrix.target }}/release/${{ matrix.exe }}" "dist/$name/"
-          cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
-          cd dist
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a "$name.zip" "$name" > /dev/null
-          else
-            tar czf "$name.tar.gz" "$name"
-          fi
+          mkdir -p stage
+          cp "target/${{ matrix.target }}/release/${{ matrix.exe }}" README.md LICENSE-MIT LICENSE-APACHE stage/
+          test -z "$(find stage -mindepth 1 -type d)"
+          ls -la stage
       - uses: actions/upload-artifact@v4
         with:
           name: fastview-${{ matrix.name }}
-          path: |
-            dist/*.zip
-            dist/*.tar.gz
+          path: stage/
           if-no-files-found: error
 
   release:
@@ -109,11 +103,30 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: dist
-          merge-multiple: true
+          path: artifacts
+      # One archive per platform with the binary and docs directly at its
+      # root: no directory inside, no archive inside.
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          for dir in artifacts/fastview-*; do
+            name="$(basename "$dir")"
+            files=$(cd "$dir" && ls)
+            if [ -f "$dir/fastview.exe" ]; then
+              (cd "$dir" && zip -9 -q "../../out/$name.zip" $files)
+              entries=$(unzip -Z1 "out/$name.zip")
+            else
+              chmod +x "$dir/fastview"
+              tar czf "out/$name.tar.gz" -C "$dir" $files
+              entries=$(tar tzf "out/$name.tar.gz")
+            fi
+            echo "$name:"; echo "$entries"
+            if echo "$entries" | grep -qE '/|\.(zip|tar|gz|tgz|7z)$'; then
+              echo "::error::$name contains a directory or a nested archive"; exit 1
+            fi
+          done
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*.zip
-            dist/*.tar.gz
+          files: out/*
           generate_release_notes: true

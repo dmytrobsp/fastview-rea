@@ -64,8 +64,11 @@ the box. A different/updated `FastView.fvb` can be loaded via **Открыть .
 Prebuilt binaries for Linux (x86_64), Windows (x86_64) and macOS (Apple
 Silicon and Intel) are attached to each
 [release](https://github.com/dmytrobsp/fastview-rea/releases); every push to
-`main` also leaves them as CI artifacts. On Linux the app needs GTK 3 (file
-dialogs) and a Wayland or X11 session.
+`main` also leaves them as CI artifacts. Each download is one archive with
+the program, this README and the licences directly inside (no folders). CI
+artifacts are zips made by GitHub, which drop the executable bit: on Linux /
+macOS run `chmod +x fastview` after unpacking one (release archives keep it).
+On Linux the app needs GTK 3 (file dialogs) and a Wayland or X11 session.
 
 ## How it was reverse-engineered
 
