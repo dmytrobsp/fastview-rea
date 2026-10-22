@@ -44,7 +44,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # Every run restores main's cache; only main writes one (a cache saved
+      # by a tag or PR run is scoped to that ref and would only crowd out
+      # main's under the 10 GB limit).
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --workspace --all-targets
       - run: cargo clippy --workspace --all-targets
       - run: cargo test --workspace
@@ -87,6 +92,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --release -p fastview-gui --target ${{ matrix.target }}
       # The artifact holds the files themselves, flat: upload-artifact zips
       # them once with the binary at the zip's root (no nested archive).
