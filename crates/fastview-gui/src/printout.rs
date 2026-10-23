@@ -106,6 +106,12 @@ impl Device {
     }
 }
 
+/// The diagram pages' scale (`0x441fe0`): ⌊LOGPIXELSY(printer) /
+/// LOGPIXELSY(screen)⌋, an integer — 6 at 600 dpi, 1 at 150 dpi.
+pub fn diagram_scale(dpi: f32) -> f32 {
+    (dpi / SCREEN_DPI).floor().max(1.0)
+}
+
 /// What one page shows.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PageKind {
@@ -393,7 +399,11 @@ impl App {
                 frame(&mut canvas, rdev);
             }
             PageKind::Diagram(pane) => {
-                let img = self.render_diagram(fonts, job.di, pane, Vec2::new(rw as f32 / k, rh as f32 / k), k);
+                // `0x441fe0`: the painter at the integer scale ⌊printer dpi /
+                // screen dpi⌋ into all of R, with its print branches.
+                let s = diagram_scale(dev.dpi);
+                let page = (!preview).then(|| rdev.min.to_vec2() / s);
+                let img = crate::diagram_ui::with_print_scale(Some(s), page, || self.render_diagram(fonts, job.di, pane, Vec2::new(rw as f32 / s, rh as f32 / s), s));
                 canvas.blit(&img, rdev.min.x as i64, rdev.min.y as i64);
             }
         }
@@ -581,6 +591,14 @@ mod hviz_tests {
 mod dump {
     use super::*;
     use crate::app::Command;
+
+    #[test]
+    fn diagram_pages_use_the_integer_scale() {
+        assert_eq!([150.0, 300.0, 600.0, 1200.0].map(diagram_scale), [1.0, 3.0, 6.0, 12.0]);
+        // The vector diagram counts circles from R in printer pixels.
+        assert_eq!(crate::diagram::vector_circles(150.0), 4);
+        assert_eq!(crate::diagram::vector_circles(150.0 * diagram_scale(600.0)), 10);
+    }
 
     /// `FV_PRINT_DUMP=<file.pdf> cargo test print_dump` renders the demo job.
     #[test]

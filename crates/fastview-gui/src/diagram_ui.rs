@@ -120,12 +120,44 @@ fn stroke(w: f32, c: Color32) -> Stroke {
     Stroke::new(w, c)
 }
 
+thread_local! {
+    /// While a diagram page prints (`0x441fe0`): the integer scale
+    /// `s = ⌊LOGPIXELSY(printer) / LOGPIXELSY(screen)⌋`; `None` on screen.
+    static PRINT_S: std::cell::Cell<Option<f32>> = const { std::cell::Cell::new(None) };
+    /// On a real print (`m_bPrinting`; not the preview's memory DC): the
+    /// page origin relative to the diagram rect, in points.
+    static PRINT_PAGE: std::cell::Cell<Option<Vec2>> = const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` with the print scale `s` set (the diagram painters' print
+/// branches) and, on a real print, R's offset on the page in points.
+pub fn with_print_scale<R>(s: Option<f32>, page: Option<Vec2>, f: impl FnOnce() -> R) -> R {
+    let old = (PRINT_S.with(|c| c.replace(s)), PRINT_PAGE.with(|c| c.replace(page)));
+    let r = f();
+    PRINT_S.with(|c| c.set(old.0));
+    PRINT_PAGE.with(|c| c.set(old.1));
+    r
+}
+
+fn print_s() -> Option<f32> {
+    PRINT_S.with(std::cell::Cell::get)
+}
+
+/// A print pen `dev` printer pixels wide (truncated; 0 draws one pixel), in
+/// points.
+fn dev_pen(dev: f32, c: Color32) -> Stroke {
+    let s = print_s().unwrap_or(1.0);
+    Stroke::new(dev.floor().max(1.0) / s, c)
+}
+
 fn rgb((r, g, b): (u8, u8, u8)) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
+/// Tahoma 13 on screen; printing passes Arial `⌊52·s/5⌋` (`0x441fe0`),
+/// 0.8 of the screen size.
 fn font() -> FontId {
-    FontId::proportional(12.0)
+    FontId::proportional(if print_s().is_some() { 12.0 * 0.8 } else { 12.0 })
 }
 
 /// `%g` with an SI prefix: (text, prefix).
@@ -806,7 +838,12 @@ impl App {
         // frame at a whole number of cells, axes through the origin.
         let (fx, fy) = (nx as f32 * cell, ny as f32 * cell);
         let frame = Rect::from_min_max(c - Vec2::new(fx, fy), c + Vec2::new(fx, fy));
-        let gs = stroke(1.0, GRID);
+        // Printed pens (`0x439486`): grid (150,150,150) ⌊s/2⌋, frame
+        // (50,50,50) and axes black ⌊2s/3⌋.
+        let (gs, fs, axs) = match print_s() {
+            Some(s) => (dev_pen(s / 2.0, AXES), dev_pen(2.0 * s / 3.0, Color32::from_rgb(50, 50, 50)), dev_pen(2.0 * s / 3.0, Color32::BLACK)),
+            None => (stroke(1.0, GRID), stroke(1.0, FRAME), stroke(1.0, AXES)),
+        };
         for k in 0..ny {
             for y in [c.y + k as f32 * cell, c.y - k as f32 * cell] {
                 painter.line_segment([Pos2::new(frame.left(), y), Pos2::new(frame.right(), y)], gs);
@@ -817,12 +854,12 @@ impl App {
                 painter.line_segment([Pos2::new(x, frame.top()), Pos2::new(x, frame.bottom())], gs);
             }
         }
-        painter.rect_stroke(frame, 0.0, stroke(1.0, FRAME));
+        painter.rect_stroke(frame, 0.0, fs);
         if (rect.left()..=rect.right()).contains(&origin.x) {
-            painter.line_segment([Pos2::new(origin.x, frame.top()), Pos2::new(origin.x, frame.bottom())], stroke(1.0, AXES));
+            painter.line_segment([Pos2::new(origin.x, frame.top()), Pos2::new(origin.x, frame.bottom())], axs);
         }
         if (rect.top()..=rect.bottom()).contains(&origin.y) {
-            painter.line_segment([Pos2::new(frame.left(), origin.y), Pos2::new(frame.right(), origin.y)], stroke(1.0, AXES));
+            painter.line_segment([Pos2::new(frame.left(), origin.y), Pos2::new(frame.right(), origin.y)], axs);
         }
         // Edge labels: the coordinate at each frame edge (pan included).
         let edge = |n: i32, o: i32, s: usize, sign: f64| (sign * f64::from(n) - f64::from(o)) * sc.upc[s];
@@ -911,9 +948,24 @@ impl App {
                 if p[0].is_finite() && p[1].is_finite() {
                     let q = to_px(p[0], p[1], ppu);
                     let q = Pos2::new(q[0], q[1]);
-                    clip.line_segment([q - Vec2::new(5.0, 0.0), q + Vec2::new(5.0, 0.0)], stroke(1.0, col));
-                    clip.line_segment([q - Vec2::new(0.0, 5.0), q + Vec2::new(0.0, 5.0)], stroke(1.0, col));
+                    // Arms ±4·s; the pens are function-static (made at the
+                    // first, screen, call), so a print keeps them 1 px.
+                    let w = 1.0 / print_s().unwrap_or(1.0);
+                    clip.line_segment([q - Vec2::new(4.0, 0.0), q + Vec2::new(4.0, 0.0)], stroke(w, col));
+                    clip.line_segment([q - Vec2::new(0.0, 4.0), q + Vec2::new(0.0, 4.0)], stroke(w, col));
                 }
+            }
+        }
+        // Real print only (`0x43b832` / `0x446078`): four white
+        // FillSolidRect(x, y, width, height) measured from the PAGE origin
+        // around the frame inflated by ⌊2s/3⌋ + 1 — (0, 0, R, T),
+        // (0, 0, L, B), (R, 0, L, B), (0, B, L + R, T) in page terms — crop
+        // what overflows it, oddly sized.
+        if let (Some(s), Some(o)) = (print_s(), PRINT_PAGE.with(std::cell::Cell::get)) {
+            let f = frame.expand(((2.0 * s / 3.0).floor() + 1.0) / s);
+            let (l, t, r, b) = (f.left() + o.x, f.top() + o.y, f.right() + o.x, f.bottom() + o.y);
+            for (x, y, w, h) in [(0.0, 0.0, r, t), (0.0, 0.0, l, b), (r, 0.0, l, b), (0.0, b, l + r, t)] {
+                painter.rect_filled(Rect::from_min_size(Pos2::new(x - o.x, y - o.y), Vec2::new(w, h)), 0.0, Color32::WHITE);
             }
         }
         if table {
@@ -1015,10 +1067,17 @@ impl App {
         let area = Rect::from_min_max(full.min + Vec2::new(0.0, 22.0), full.max);
         let r = (area.width().min(area.height()) / 2.0 - 10.0).max(10.0);
         let c = area.center();
-        let nc = dg::vector_circles(r);
+        // The circle count takes R in device pixels (`⌊R/50⌋`, unscaled), so
+        // a printed page nearly always has 10; printed pens are solid
+        // (100,100,100) and (50,50,50), ⌊s/3⌋ wide (`0x490360`).
+        let ps = print_s();
+        let nc = dg::vector_circles(r * ps.unwrap_or(1.0));
         for j in 1..=nc {
             let rr = r * j as f32 / nc as f32;
-            if j == nc {
+            if let Some(s) = ps {
+                let col = if j == nc { Color32::from_rgb(50, 50, 50) } else { Color32::from_rgb(100, 100, 100) };
+                painter.circle_stroke(c, rr, dev_pen(s / 3.0, col));
+            } else if j == nc {
                 painter.circle_stroke(c, rr, stroke(1.0, AXES));
             } else {
                 let pts: Vec<Pos2> = (0..=120).map(|t| c + Vec2::angled(t as f32 / 120.0 * std::f32::consts::TAU) * rr).collect();
@@ -1027,7 +1086,13 @@ impl App {
         }
         for j in 0..12 {
             let a = j as f32 * std::f32::consts::PI / 6.0;
-            dotted(&painter, c, c + Vec2::new(a.cos(), -a.sin()) * r, FRAME, 1.0);
+            let end = c + Vec2::new(a.cos(), -a.sin()) * r;
+            match ps {
+                Some(s) => {
+                    painter.line_segment([c, end], dev_pen(s / 3.0, Color32::from_rgb(100, 100, 100)));
+                }
+                None => dotted(&painter, c, end, FRAME, 1.0),
+            }
         }
         let mut lines = Vec::new();
         for (name, unit, z, color) in &shown {
@@ -1036,16 +1101,20 @@ impl App {
             let len = if dir_only { r } else { (z.norm() / scale) as f32 * r };
             let dir = Vec2::new(ang.cos() as f32, -(ang.sin() as f32));
             let tip = c + dir * len;
-            let stroke = stroke(1.5, *color);
-            if unit == "V" {
+            // A pen s wide: solid for V, PS_DOT otherwise — which GDI draws
+            // solid once wider than 1, i.e. on paper.
+            let stroke = stroke(1.0, *color);
+            if unit == "V" || ps.is_some_and(|s| s > 1.0) {
                 painter.line_segment([c, tip], stroke);
             } else {
                 painter.extend(egui::Shape::dashed_line(&[c, tip], stroke, 3.0, 2.0));
             }
-            // Filled triangular arrowhead.
+            // Filled triangular arrowhead: min(18·s, L/2) long, a fifth of
+            // that to each side.
             if len > 1.0 {
-                let back = tip - dir * 10.0;
-                let nrm = Vec2::new(-dir.y, dir.x) * 4.0;
+                let head = (len / 2.0).min(18.0);
+                let back = tip - dir * head;
+                let nrm = Vec2::new(-dir.y, dir.x) * (head / 5.0);
                 painter.add(egui::Shape::convex_polygon(vec![tip, back + nrm, back - nrm], *color, Stroke::NONE));
             }
             if show_values {

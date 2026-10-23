@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 320 pass)
+- `cargo test --workspace`   (currently 321 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2280,6 +2280,42 @@ end take 50 (the original reads out of bounds); our guard returns 0 for a
 window under one sample or a non-finite f (the original computes on);
 the meaning of mfc #4434 on the dialog member `+0x110` when the
 selection is 1 not resolved.
+
+### L9.66 — Diagram pages: the integer scale and the painters' print branches  ·  🟡
+Read (subagent report; the scale and font re-checked by hand at
+`0x442012`…`0x4420b1`): a diagram page (`0x405820` → slot 0x16c =
+`0x441fe0`) is painted first, into the whole margin rect R, then the
+header and footer. Scale `s = ⌊LOGPIXELSY(printer) / LOGPIXELSY(screen)⌋`
+(two GetDeviceCaps(90), integer division — 6 at 600 dpi, 1 at 150), font
+Arial `⌊52·s/5⌋` (screen Tahoma 13). The preview draws into a memory DC
+whose `m_bPrinting` is off. Painters (slot +0x188, (dc, rect, s, font,
+doc)): **vector** `0x490360` — circles and radials solid (100,100,100),
+outer (50,50,50), width ⌊s/3⌋; circle count `⌊R/50⌋` with R in device
+pixels (so a page nearly always has 10); phasor pen s wide (PS_DOT for
+non-V, which GDI draws solid when wider than 1); arrowhead min(18·s, L/2)
+long, a fifth of that each side (screen too). **Circle / differential**
+`0x43b570` / `0x445e00` — grid (150,150,150) ⌊s/2⌋, frame (50,50,50) and
+axes black ⌊2s/3⌋; locus pen s; cursor "+" arms ±4·s (screen too) with
+function-static pens, so 1 px on paper; on a real print (not the preview)
+four white FillSolidRect(x, y, w, h) from the PAGE origin around the frame
+inflated by ⌊2s/3⌋ + 1 — (0,0,R,T), (0,0,L,B), (R,0,L,B), (0,B,L+R,T) —
+crop overflowing characteristics / loci before the legend. The cell is
+`⌊96·s/5⌋` device px (≈ 19.2 points, ours keeps 19).
+Ours: `printout::diagram_scale`, the page rendered at R/s points with s
+pixels per point; `diagram_ui::with_print_scale` (thread-local s and, on a
+real print, R's page offset) read by the painters: `font()` 0.8× in print,
+`dev_pen` widths, the vector print pens / circle count / solid phasors, the
+plane print pens and the masks; screen: arrowhead min(18, L/2) / L/5,
+phasor pen 1 px, "+" arms 4. Test `diagram_pages_use_the_integer_scale`;
+rendered the job (`FV_PRINT_DUMP`): 5 solid circles at 150 dpi, the
+differential page's overflow cropped at the frame.
+Residual: the frequency diagram's print tiling and its screen layout (next
+entry); the cell's print size (≤ 1 %); unscaled print leftovers (angle
+label offsets, the header box offsets, the 5 px top allowance, the 120 px
+thresholds) and the vector header box itself (its fill (254,250,220)) not
+modelled; the circle zoom reset under print updating the live window;
+the differential's first-paint "push to quadrant I" during a print; the
+GDI+ fill's offset band on paper.
 
 Next in L9 (HANDOFF 2026-10-23, evening): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
