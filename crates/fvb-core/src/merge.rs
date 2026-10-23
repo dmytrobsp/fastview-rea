@@ -49,6 +49,10 @@ pub struct SyncChan<'a> {
     pub times: &'a [f64],
     pub x: &'a [f64],
     pub n: usize,
+    /// The frequency correction when its gate is on (`0x427670`, the
+    /// cache `0x428490`): the base record's — for a pasted channel with its
+    /// own rate and the base frequency read at its own index.
+    pub corr: Option<crate::freqcorr::FreqCorr<'a>>,
 }
 
 /// Method 0 (`0x47ce10`): the offset of the pasted record is the difference
@@ -65,7 +69,11 @@ pub fn sync_by_start(base_start: f64, base_len: f64, pasted_start: f64, pasted_l
 /// The normalised second difference of `0x47bc00`:
 /// `|x[k] − 2x[k−N] + x[k−2N]| / A(k−1)`, `A` the fault component.
 fn jump(c: &SyncChan, k: usize) -> f64 {
-    let a = fault_at(c.x, k - 1, c.n);
+    // A: the `fault:` dispatcher — corrected (signed) under the gate.
+    let a = match c.corr {
+        Some(fc) => fc.fault(c.x, k - 1),
+        None => fault_at(c.x, k - 1, c.n),
+    };
     if a == 0.0 || k < 2 * c.n + 1 {
         return 0.0;
     }
@@ -161,7 +169,10 @@ pub fn sync_by_prefault(c1: &SyncChan, c2: &SyncChan, cur1: usize, cur2: i64, f_
     }
     let cur2 = cur2 as usize;
     let p = |c: &SyncChan, k: usize| {
-        let z = phasor_at(c.x, k, c.n);
+        let z = match c.corr {
+            Some(fc) => fc.phasor(c.x, k),
+            None => phasor_at(c.x, k, c.n),
+        };
         if z.re.is_nan() || z.im.is_nan() {
             Default::default()
         } else {
@@ -450,8 +461,8 @@ mod tests {
         let (per, n) = (20, 400);
         let t: Vec<f64> = (0..n).map(|k| k as f64 * 0.001).collect();
         let (x1, x2) = (sine(n, per, 0.0, Some(200)), sine(n, per, 0.0, Some(180)));
-        let c1 = SyncChan { times: &t, x: &x1, n: per };
-        let c2 = SyncChan { times: &t, x: &x2, n: per };
+        let c1 = SyncChan { times: &t, x: &x1, n: per, corr: None };
+        let c2 = SyncChan { times: &t, x: &x2, n: per, corr: None };
         let (off, msg) = sync_by_fault(&c1, &c2, 205, 185).unwrap();
         assert_eq!(msg, SyncMsg::Done);
         assert!((off - 0.020).abs() < 1e-9, "{off}");
@@ -464,8 +475,8 @@ mod tests {
         let t: Vec<f64> = (0..n).map(|k| k as f64 * 0.001).collect();
         // The pasted record lags by 18° = 1 ms at 50 Hz.
         let (x1, x2) = (sine(n, per, 0.0, None), sine(n, per, -std::f64::consts::PI / 10.0, None));
-        let c1 = SyncChan { times: &t, x: &x1, n: per };
-        let c2 = SyncChan { times: &t, x: &x2, n: per };
+        let c1 = SyncChan { times: &t, x: &x1, n: per, corr: None };
+        let c2 = SyncChan { times: &t, x: &x2, n: per, corr: None };
         let (off, msg) = sync_by_prefault(&c1, &c2, 100, 100, 50.0).unwrap();
         assert_eq!(msg, SyncMsg::Done);
         assert!((off + 0.001).abs() < 1e-6, "{off}");
@@ -478,10 +489,26 @@ mod tests {
         // A fault after the cursor's window: the least-spread window lies
         // in the steady part, the result stays clean.
         let x3 = sine(n, per, -std::f64::consts::PI / 10.0, Some(118));
-        let c3 = SyncChan { times: &t, x: &x3, n: per };
+        let c3 = SyncChan { times: &t, x: &x3, n: per, corr: None };
         let (off, msg) = sync_by_prefault(&c1, &c3, 100, 100, 50.0).unwrap();
         assert_eq!(msg, SyncMsg::Done);
         assert!((off + 0.001).abs() < 1e-6, "{off}");
+    }
+
+    /// Under the frequency correction (L9.126) the phasors are the
+    /// corrected ones; at the nominal frequency they agree with the DFT.
+    #[test]
+    fn prefault_sync_under_the_correction() {
+        let (per, n) = (20, 400);
+        let t: Vec<f64> = (0..n).map(|k| k as f64 * 0.001).collect();
+        let (x1, x2) = (sine(n, per, 0.0, None), sine(n, per, -std::f64::consts::PI / 10.0, None));
+        let freq = vec![50.0; n];
+        let fc = crate::freqcorr::FreqCorr { chan: crate::freqcorr::OTHER, freq: &freq, fs: 1000.0 };
+        let c1 = SyncChan { times: &t, x: &x1, n: per, corr: Some(fc) };
+        let c2 = SyncChan { times: &t, x: &x2, n: per, corr: Some(fc) };
+        let (off, msg) = sync_by_prefault(&c1, &c2, 100, 100, 50.0).unwrap();
+        assert_eq!(msg, SyncMsg::Done);
+        assert!((off + 0.001).abs() < 1e-5, "{off}");
     }
 
     /// `0x47bd43` / `0x47c573`, `0x47c555`.

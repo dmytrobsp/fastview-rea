@@ -3923,6 +3923,25 @@ trigger not traced). `FV_WINDOW_STATE=trigger`. Test
 Residual: the absolute mode with a trigger (above); COMTRADE has none
 (always 0, as read).
 
+### L9.126 — Merge synchronisation under the frequency correction  ·  ✅
+Read (subagent report; L9.65 for the gate): the `fault:` dispatcher
+`0x427670` takes the corrected path for an analog channel when its record
+has one rate segment, a candidate list, `rec+0x874` > 0 and the candidate
+is not the channel itself — a pasted channel sits in the base document,
+so its gate and frequency channel are the base record's; the corrected
+fault `0x427830` uses fs = the channel's own rate and f = the frequency
+channel's sample at the channel's own index (50 when 0). Method 1's
+second difference stays plain (`0x426020`) while its denominator A =
+`0x427670(k − 1)` is corrected; method 2's phasors come from the cache
+`0x428490` fills, corrected under the gate, for both channels.
+Ours fed the plain fault component and DFT to both methods. Now
+`merge::SyncChan::corr` — the base channel `freqcorr::of(..).for_chan`,
+the pasted one the same frequency channel with its own rate — used by
+`jump` (A) and `sync_by_prefault` (the phasors). Test
+`prefault_sync_under_the_correction` (agrees with the DFT at 50 Hz).
+Residual: whether our pasted samples equal what `0x426020` returns for a
+pasted channel (its flags / k) NOT DETERMINED.
+
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -3979,11 +3998,12 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-(the .osc stamps and trigger: L9.124 / L9.125); the merge sync under the frequency correction
-(fault denominator and phasors corrected, the pasted channel with its own
-rate and the base frequency at its own index). Then: the docking marker
-bitmaps (ours drawn); L9.64 MDI arrangements under tabs (ND, likely
-no-ops); (Свойства...: L9.122, not exercised on the VM);
+(the .osc stamps and trigger: L9.124 / L9.125; the merge sync under the
+correction: L9.126). Then: «Абсолютное время» with a trigger (L9.125
+residual: trace `0x464553`); the docking marker bitmaps (ours drawn);
+L9.64 MDI arrangements under tabs (MFC's MDI client has no map entry for
+WM_MDICASCADE / TILE — they reach the stock MDI client; the visible
+effect under MDI tabs still ND); (Свойства...: L9.122, not exercised on the VM);
 the merged record's frequency track; (header T on page 1: L9.121); the application button's orb / caption bar
 from the style images; backlog §9 #36 / #37 / #45 leftovers (logo and
 splash are proprietary assets — not reproduced). Good recurring pass:

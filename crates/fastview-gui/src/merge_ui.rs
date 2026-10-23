@@ -409,8 +409,13 @@ impl App {
                 let n1 = merge::period_samples(0.0, rate, d.osc.line_freq);
                 let n2 = merge::period_samples(p.pasted.rate, rate, d.osc.line_freq);
                 let x1 = &d.flagged.analog[c1].samples;
-                let s1 = SyncChan { times: &t1, x: x1, n: n1 };
-                let s2 = SyncChan { times: &p.pasted.times, x: &a2.samples, n: n2 };
+                // Under the frequency correction both read corrected values
+                // (L9.126): the pasted channel at its own rate, the base
+                // frequency at its own index.
+                let corr = fvb_core::freqcorr::of(&d.osc);
+                let s1 = SyncChan { times: &t1, x: x1, n: n1, corr: corr.and_then(|c| c.for_chan(c1)) };
+                let corr2 = corr.map(|c| fvb_core::freqcorr::FreqCorr { chan: fvb_core::freqcorr::OTHER, fs: if p.pasted.rate > 0.0 { p.pasted.rate } else { c.fs }, ..c });
+                let s2 = SyncChan { times: &p.pasted.times, x: &a2.samples, n: n2, corr: corr2 };
                 let k1 = d.main_cursor;
                 let k2 = merge::cursor_in(k1, rate, p.pasted.rate, d.merge_offset);
                 if m == 1 {
