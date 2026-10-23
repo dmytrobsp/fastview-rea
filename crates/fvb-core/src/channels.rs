@@ -18,6 +18,11 @@ pub struct OscChannels {
     samples: Vec<Vec<f64>>,
     phasors: Vec<Phasors>,
     n: usize,
+    /// Channels from here on are digital (appended after the computed
+    /// ones, the original's vector order): their RMS / a0 / harmonics /
+    /// fault / phasor are 0 (`0x4272ae`, `0x426c9b`, `0x426274`, `0x42767e`,
+    /// `0x428ac4`).
+    digital_from: usize,
     /// The record's nominal-frequency track (`rec+0x1fc`).
     freq: Vec<f64>,
     /// The record's harmonic-1 gain (`rec+0x278`, set by OSC2 files).
@@ -73,8 +78,18 @@ impl OscChannels {
             samples.push(c.samples.clone());
             ratios.push((1.0, 1.0, 1.0));
         }
-        let units = osc.analog.iter().map(|c| c.unit.clone()).chain(extra.iter().map(|c| c.unit.clone())).collect();
+        // Digital channels, 1 / 0 as the accessor reads them (`0x4260db`;
+        // an inverted one comes inverted in `osc`).
+        let digital_from = names.len();
+        for d in &osc.digital {
+            names.push(d.id.trim_end_matches(' ').to_string());
+            samples.push(d.samples.iter().map(|&b| f64::from(u8::from(b))).collect());
+            phasors.push(Vec::new());
+            ratios.push((1.0, 1.0, 1.0));
+        }
+        let units = osc.analog.iter().map(|c| c.unit.clone()).chain(extra.iter().map(|c| c.unit.clone())).chain(osc.digital.iter().map(|_| String::new())).collect();
         OscChannels {
+            digital_from,
             names,
             units,
             ratios,
@@ -129,18 +144,27 @@ impl Channels for OscChannels {
         self.phasors[ch].get(idx).copied().unwrap_or_default()
     }
     fn rms(&self, ch: usize, idx: usize) -> f64 {
+        if ch >= self.digital_from {
+            return 0.0;
+        }
         match self.fc(ch) {
             Some(c) => c.rms(&self.samples[ch], idx, 1.0),
             None => signal::rms_at(&self.samples[ch], idx, self.n),
         }
     }
     fn a0(&self, ch: usize, idx: usize) -> f64 {
+        if ch >= self.digital_from {
+            return 0.0;
+        }
         match self.fc(ch) {
             Some(c) => c.a0(&self.samples[ch], idx, 1.0),
             None => signal::a0_at(&self.samples[ch], idx, self.n),
         }
     }
     fn fourie(&self, ch: usize, n: i32, idx: usize) -> f64 {
+        if ch >= self.digital_from {
+            return 0.0;
+        }
         // Corrected: the gate comes before the n = 0 case and there is no
         // harmonic-1 gain (`0x4262ac`).
         if let Some(c) = self.fc(ch) {
@@ -154,6 +178,9 @@ impl Channels for OscChannels {
         }
     }
     fn fault(&self, ch: usize, idx: usize) -> f64 {
+        if ch >= self.digital_from {
+            return 0.0;
+        }
         match self.fc(ch) {
             Some(c) => c.fault(&self.samples[ch], idx),
             None => signal::fault_at(&self.samples[ch], idx, self.n),

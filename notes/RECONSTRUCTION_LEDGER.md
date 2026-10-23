@@ -4152,8 +4152,8 @@ invert icon at (leftW − 18, y + 2), the merge baking it. Test
 `digital_channels_carry_the_value_flags`.
 Residual: (the merge's padding of an inverted digital channel: L9.140); a
 formula naming a digital channel (the original's lookup has no kind test
-— INFERRED) is not resolved by ours; computed and pending channels' flags
-— next.
+— INFERRED; L9.145); computed and pending channels' flags (L9.135 /
+L9.136).
 
 ### L9.135 — Computed channels carry invert, remove-DC and the display mode  ·  ✅
 Read (subagent report on `0x428490`, `0x429490`, `0x461440`, `0x41faa0`,
@@ -4374,6 +4374,20 @@ Residual: no keyboard navigation in our popups; the inline rename edit
 has no system edit menu; the submenu arrow drawn as text; whether
 computed channels block 33035's combine in the original ND.
 
+### L9.145 — Formulas may name digital channels  ·  ✅
+Read (by hand: the lookup `0x42edf0` walks the whole channel vector with
+no kind test — analog, then computed, then digital; the accessors'
+digital branches: the value `0x4260db` (x·k, inverted 1 where 0), RMS
+`0x4272ae`, a0 `0x426c9b`, harmonic `0x426274`, fault `0x42767e` return
+early, the phasor `0x428ac4` gives 0 + 0j): a formula naming a digital
+channel reads its 1 / 0 state (inverted with the flag) and 0 from every
+period function.
+Ours did not resolve digital names (the identifier was dropped). Now
+`OscChannels` appends the digital channels after the computed ones
+(`digital_from`), their period functions and phasor 0, and `Doc::flagged`
+carries the digital invert. Test `formulas_read_digital_channels`.
+Residual: k (ch+0xf0) of a digital channel taken as 1.
+
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -4446,8 +4460,8 @@ the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
 33035's message 239 on channels of different rates
-(needs per-channel rates, L9.131); formulas naming
-digital channels (L9.134); the docking marker
+(needs per-channel rates, L9.131 — unreachable in practice: only pending
+channels carry another rate and they are excluded); the docking marker
 bitmaps (ours drawn); L9.64 MDI arrangements under tabs (WM_MDICASCADE /
 TILE — visible effect ND); the caption bar from the style images (ours
 the OS title bar — a frameless window with our own caption, risky on

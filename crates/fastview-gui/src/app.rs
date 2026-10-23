@@ -739,6 +739,12 @@ impl Doc {
             self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i], k);
             self.rms[i] = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&self.osc), i, &self.flagged.analog[i].samples, n);
         }
+        // Digital channels as the accessor reads them: inverted with the flag.
+        for (i, dch) in self.flagged.digital.iter_mut().enumerate() {
+            if self.dig_flags.get(i).is_some_and(|f| f.invert) {
+                dch.samples.iter_mut().for_each(|v| *v = !*v);
+            }
+        }
         // The correction reads the frequency channel as stored (L9.65).
         self.analysis = Analysis::compute_with(&self.flagged, fvb_core::freqcorr::of(&self.osc));
         self.reevaluate_formulas(show_primary);
@@ -2560,6 +2566,25 @@ mod tests {
         let p = d.osc.samples_per_cycle();
         let mean = whole_period_mean(&d.osc.analog[i].samples, p);
         assert!((d.sample(i, k) - (base - mean)).abs() < 1e-9, "one DC constant over whole periods");
+    }
+
+    /// A formula may name a digital channel (`0x42edf0` has no kind test):
+    /// its value is 1 / 0 through the accessor, inverted with the flag; its
+    /// RMS is 0 (`0x4272ae`).
+    #[test]
+    fn formulas_read_digital_channels() {
+        let mut app = demo_app();
+        let d = app.active_doc().unwrap();
+        let name = d.osc.digital[0].id.clone();
+        let raw: Vec<f64> = d.osc.digital[0].samples.iter().map(|&b| f64::from(u8::from(b))).collect();
+        assert!(app.append_computed(&[("D2".into(), format!("2*\"{name}\"")), ("DR".into(), format!("rms:(\"{name}\")"))]).is_some());
+        let d = app.active_doc().unwrap();
+        assert!(d.computed[0].samples.iter().zip(&raw).all(|(v, r)| *v == 2.0 * r), "2 × the state");
+        assert!(d.computed[1].samples.iter().all(|v| *v == 0.0), "no RMS for a digital channel");
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Digital(0));
+        app.dispatch(Command::ToggleFlag(crate::chansel::ChanFlag::Invert));
+        let d = app.active_doc().unwrap();
+        assert!(d.computed[0].samples.iter().zip(&raw).all(|(v, r)| *v == 2.0 * (1.0 - r)), "inverted");
     }
 
     /// A computed channel carries invert / DC / the display mode like a file
