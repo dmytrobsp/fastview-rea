@@ -11,6 +11,8 @@ use num_complex::Complex64;
 /// name, with the per-channel methods of ledger L6.
 pub struct OscChannels {
     names: Vec<String>,
+    /// Canonical units (`+0x7c`): the record's, then the computed channels'.
+    units: Vec<String>,
     /// Per channel (k, r, s) ratios; 1 for computed channels.
     ratios: Vec<(f64, f64, f64)>,
     samples: Vec<Vec<f64>>,
@@ -70,8 +72,10 @@ impl OscChannels {
             samples.push(c.samples.clone());
             ratios.push((1.0, 1.0, 1.0));
         }
+        let units = osc.analog.iter().map(|c| c.unit.clone()).chain(extra.iter().map(|c| c.unit.clone())).collect();
         OscChannels {
             names,
+            units,
             ratios,
             samples,
             phasors,
@@ -107,6 +111,9 @@ impl Channels for OscChannels {
     }
     fn ratio_k(&self, ch: usize) -> f64 {
         self.ratios[ch].0
+    }
+    fn unit(&self, ch: usize) -> String {
+        self.units.get(ch).cloned().unwrap_or_default()
     }
     fn ratio_r(&self, ch: usize) -> f64 {
         self.ratios[ch].1

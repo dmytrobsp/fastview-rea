@@ -677,7 +677,7 @@ mod tests {
     #[test]
     fn recompute_reevaluates_formula_channels_and_keeps_roles() {
         let mut app = demo_app();
-        app.append_computed(&[("X".into(), "Ua*2".into(), String::new())]);
+        app.append_computed(&[("X".into(), "Ua*2".into())]);
         let before = app.active_doc().unwrap().computed[0].samples[10];
         let d = app.active_doc_mut().unwrap();
         d.analysis.u_abc = [Some(2), Some(1), Some(0)];

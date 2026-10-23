@@ -13,8 +13,8 @@
 /// What one tab produces.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Generated {
-    /// (name, formula, unit) in evaluation order.
-    pub channels: Vec<(String, String, String)>,
+    /// (name, formula) in evaluation order; units come from the formulas.
+    pub channels: Vec<(String, String)>,
     /// Names whose vector-diagram flag is toggled (XOR).
     pub vector: Vec<String>,
     /// Names whose circle-diagram flag is toggled (XOR).
@@ -31,7 +31,7 @@ pub struct Generated {
 
 impl Generated {
     fn add(&mut self, name: &str, formula: String) {
-        self.channels.push((name.to_string(), formula, String::new()));
+        self.channels.push((name.to_string(), formula));
     }
 }
 
@@ -143,7 +143,8 @@ pub fn zero(i: Option<&ZeroCurrent>, u: Option<&ZeroVoltage>) -> Generated {
         g.angle_ref = Some("3U0".into());
     }
     if i.is_some() && u.is_some() {
-        g.channels.push(("S0".into(), format!("Mod:(Pf:({},{}))", q("3I0"), q("3U0")), "VA".into()));
+        // Built from form 414 (`0x4129e0`): the unit is its `[VA]`.
+        g.add("S0", format!("Mod:(Pf: ({}, {}))[VA]", q("3I0"), q("3U0")));
         g.circle.push("S0".into());
         g.circle_readout = Some(1);
     }
@@ -343,7 +344,7 @@ pub struct ComputedChannel {
     pub phasors: Option<Vec<num_complex::Complex64>>,
 }
 
-/// Evaluate `(name, formula, unit)` channels in order on `osc` plus the
+/// Evaluate `(name, formula)` channels in order on `osc` plus the
 /// already-existing computed channels (`0x415780`): each formula sees the
 /// channels added before it; names are made unique ("_2", …); a channel keeps
 /// its scalar if valid at every sample, else Re(complex) if that is, else
@@ -352,7 +353,7 @@ pub struct ComputedChannel {
 pub fn evaluate_batch(
     osc: &crate::comtrade::Oscillogram,
     existing: &[ComputedChannel],
-    batch: &[(String, String, String)],
+    batch: &[(String, String)],
     show_primary: bool,
 ) -> Result<Vec<ComputedChannel>, crate::expr::FormulaError> {
     evaluate_batch_with(osc, crate::freqcorr::of(osc), existing, batch, show_primary)
@@ -364,13 +365,13 @@ pub fn evaluate_batch_with(
     osc: &crate::comtrade::Oscillogram,
     corr: Option<crate::freqcorr::FreqCorr<'_>>,
     existing: &[ComputedChannel],
-    batch: &[(String, String, String)],
+    batch: &[(String, String)],
     show_primary: bool,
 ) -> Result<Vec<ComputedChannel>, crate::expr::FormulaError> {
     use crate::expr::{Context, Expr, ExprError, FormulaError};
     let mut all: Vec<ComputedChannel> = existing.to_vec();
     let mut added = Vec::new();
-    for (name, formula, unit) in batch {
+    for (name, formula) in batch {
         let fail = |error: ExprError| FormulaError { formula: formula.clone(), error };
         let chans = crate::channels::OscChannels::new_with(osc, &all, show_primary, corr);
         let expr = Expr::parse_channels(formula, &chans).map_err(fail)?;
@@ -395,7 +396,7 @@ pub fn evaluate_batch_with(
         let taken: Vec<String> = osc.analog.iter().map(|c| c.id.clone()).chain(all.iter().map(|c| c.name.clone())).collect();
         let ch = ComputedChannel {
             name: unique_name(name, &taken),
-            unit: unit.clone(),
+            unit: crate::expr::formula_unit(formula, &chans),
             formula: formula.clone(),
             samples,
             phasors: all_c.then_some(cplx),

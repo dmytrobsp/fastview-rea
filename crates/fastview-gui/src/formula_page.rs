@@ -165,7 +165,7 @@ impl App {
                 d.computed.iter().position(|c| c.name.to_lowercase() == l)
             });
             let existing: Vec<_> = d.computed.iter().enumerate().filter(|(i, _)| Some(*i) != found).map(|(_, c)| c.as_core()).collect();
-            let batch = [(name.clone(), formula.clone(), af::unit_of(formula))];
+            let batch = [(name.clone(), formula.clone())];
             match fvb_core::quick::evaluate_batch_with(&d.flagged, fvb_core::freqcorr::of(&d.osc), &existing, &batch, show_primary) {
                 Ok(mut added) => {
                     let c = added.remove(0);

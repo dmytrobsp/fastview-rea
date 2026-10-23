@@ -15,7 +15,7 @@ fn phase_u() -> Voltages {
 }
 
 fn names(g: &Generated) -> Vec<&str> {
-    g.channels.iter().map(|(n, _, _)| n.as_str()).collect()
+    g.channels.iter().map(|(n, _)| n.as_str()).collect()
 }
 
 /// Every generated formula evaluates on a real record, in order.
@@ -44,7 +44,7 @@ fn zero_sequence_flags() {
     let u = ZeroVoltage::FromPhases { ua: "Ua".into(), ub: "Ub".into(), uc: "Uc".into() };
     let g = zero(Some(&i), Some(&u));
     assert_eq!(names(&g), ["3I0", "3U0", "S0"]);
-    assert_eq!(g.channels[2], ("S0".into(), r#"Mod:(Pf:("3I0","3U0"))"#.into(), "VA".into()));
+    assert_eq!(g.channels[2], ("S0".into(), r#"Mod:(Pf: ("3I0", "3U0"))[VA]"#.into()));
     assert_eq!((g.vector.clone(), g.circle.clone()), (vec!["3I0".into(), "3U0".into()], vec!["S0".into()]));
     assert_eq!((g.angle_ref.as_deref(), g.show_values, g.circle_readout), (Some("3U0"), true, Some(1)));
     let out = evaluates(&g);

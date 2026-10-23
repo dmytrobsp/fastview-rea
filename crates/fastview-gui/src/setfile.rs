@@ -433,7 +433,7 @@ impl App {
         if !calc.is_empty() {
             let (active, status) = (self.active, self.status.clone());
             self.active = Some(di);
-            let batch: Vec<(String, String, String)> = calc.into_iter().map(|(n, f)| (n, f, String::new())).collect();
+            let batch: Vec<(String, String)> = calc;
             self.append_computed(&batch);
             self.active = active;
             self.status = status;
@@ -855,7 +855,7 @@ mod tests {
             d.omp.params.stations[0].ia = "Ia".into();
         }
         app.recompute_doc(di);
-        app.append_computed(&[("X".into(), "Ua+Ub".into(), String::new())]).unwrap();
+        app.append_computed(&[("X".into(), "Ua+Ub".into())]).unwrap();
         app.vec_show_values = !app.vec_show_values;
         app.track_settings();
         assert!(app.docs[di].set.modified);

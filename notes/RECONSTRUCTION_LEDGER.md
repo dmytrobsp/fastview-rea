@@ -2412,6 +2412,42 @@ Residual: the circle's placement under the header and the «Показывать
 lengths cannot occur (ours draws no length; the original divides 0/0);
 the computed channels' own k (INFERRED 1).
 
+### L9.70 — The unit of a formula channel: the dimension walk  ·  ✅
+Read (subagent report; by hand: the two DIMENSION (id 0x44) tests in
+`0x415bd0` around the walk call `0x415d10`, the literals `0x4c4d84`…
+`0x4c4d90` «ном» / W / V / Hz and `0x4c3498` A, and that quick analysis
+builds its formulas through `0x4129e0`, e.g. form 414's
+`Mod:(Pf: (%s, %s))[VA]` reached from the page at `0x4889de`): the unit is
+computed once per formula after the samples — the `[...]` where the
+evaluation stopped, else the dimension walk (rules in
+`CALC_CHANNELS_SPEC.md` «The unit of a formula channel»), else the unit it
+carried. Quick analysis has no unit of its own.
+Ours took the unit only from a trailing `[...]` (`addformula::unit_of`),
+quick analysis passed its own (S0 = "VA" with a formula without `[VA]`),
+so «Ua−Ub» had no unit (no SI prefix in the readouts, no vector group),
+`Rms:(Ia)` none, `Frequency: ()` none. Now `expr::formula_unit` (tokens keep
+the bracket text; `Walk` mirrors the levels; `unit_rule` is the table),
+`Channels::unit` (`OscChannels`: canonical units of the record and of the
+earlier computed channels), and the batch is `(name, formula)` — every unit
+comes from the walk; S0's text is the builder's. Tests
+`tests/formula_units.rs` (4: operators, brackets where the walk stops,
+the function table, an earlier formula channel's unit).
+Residual: the «В» → V / «А» → A display substitution is not split from the
+canonical (ours keeps one string: an explicit `[В]` reads raw); the ADC-mode
+"" of a channel atom (ours: the record's unit); the other quick-analysis
+formulas are still our texts (spacing, quoting) rather than the builder's
+— same values and units, different editor text; zero samples (step 1
+position) NOT DETERMINED. **Frequency candidates (L9.65 residual, read):**
+a formula channel is analog with empty ph / ccbm, so it is a candidate
+exactly when its unit is one of the eight Hz spellings (`Frequency: ()`,
+`[Гц]`, `fch*2`…); inserting one runs the rebuild, which turns a selection
+of 0 into 1 — not modelled (our candidates are file channels only). Merge
+sync under correction (read): method 1 «по аварийной составляющей» calls
+the `fault:` dispatcher `0x427670`, which under the gate returns the
+corrected signed value; method 2 reads the corrected phasor cache; pasted
+channels use the base record's `rec+0x874` (not modelled; ours keep the
+normal path).
+
 Next in L9 (HANDOFF 2026-10-23, evening): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2463,7 +2499,7 @@ level-line snap (reachable only through a `.set`); keytips (MFC's ribbon
 keytip machinery — the program sets only Печать «p» / «w»); L9.27 MFC's
 intermediate ribbon reductions; L9.64's slot +0x1f0 and the MDI
 arrangements; L9.46's bit-14 pasted digital lanes; pane re-docking (egui limit).
-(Done this session: L9.68 — paste / an ОМП run do not mark modified; L9.69 — diagrams in shown values, the vector header.)
+(Done this session: L9.68 — paste / an ОМП run do not mark modified; L9.69 — diagrams in shown values, the vector header; L9.70 — formula units by the dimension walk.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH

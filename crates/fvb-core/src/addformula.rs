@@ -493,15 +493,6 @@ pub fn build(dialog: u16, values: &Values) -> Option<String> {
     Some(f)
 }
 
-/// The unit of a built formula: the text of a trailing `[...]` (Pf → W,
-/// var, VA), else "".
-pub fn unit_of(formula: &str) -> String {
-    formula
-        .strip_suffix(']')
-        .and_then(|s| s.rfind('[').map(|i| s[i + 1..].to_string()))
-        .unwrap_or_default()
-}
-
 /// Why OK keeps the dialog open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NameError {
@@ -722,9 +713,6 @@ mod tests {
         assert_eq!(build(456, &v).unwrap(), "Re: (Pf2WM: (Ua, Ia, Uc, Ic))[W]");
         assert_eq!(build(457, &v).unwrap(), "Im: (Pf2WM: (Ua, Ia, Uc, Ic))[var]");
         assert_eq!(build(458, &v).unwrap(), "Mod:(Pf2WM: (Ua, Ia, Uc, Ic))[VA]");
-        assert_eq!(unit_of(&built(413)), "W");
-        assert_eq!(unit_of(&built(454)), "VA");
-        assert_eq!(unit_of(&built(402)), "");
     }
 
     #[test]

@@ -664,7 +664,7 @@ impl Doc {
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
         for c in &mut self.computed {
             if c.formula != "ОМП" && c.formula != "объединение" {
-                let batch = [(c.name.clone(), c.formula.clone(), c.unit.clone())];
+                let batch = [(c.name.clone(), c.formula.clone())];
                 if let Ok(mut out) = fvb_core::quick::evaluate_batch_with(&self.flagged, fvb_core::freqcorr::of(&self.osc), &done, &batch, show_primary) {
                     if let Some(new) = out.pop() {
                         c.samples = new.samples;
@@ -1896,7 +1896,7 @@ impl App {
     /// Append computed channels to the active record, evaluated in order in
     /// channel mode (`fvb_core::quick::evaluate_batch`); all or nothing.
     /// Returns the names given to them.
-    pub fn append_computed(&mut self, batch: &[(String, String, String)]) -> Option<Vec<String>> {
+    pub fn append_computed(&mut self, batch: &[(String, String)]) -> Option<Vec<String>> {
         let show_primary = self.active_doc().is_some_and(Doc::primary_values);
         let base = self.docs.len() + 7;
         let Some(d) = self.active_doc() else {
@@ -1935,7 +1935,7 @@ impl App {
         };
         // Map generated names to the names actually given.
         let given: HashMap<&str, &str> =
-            g.channels.iter().map(|(n, _, _)| n.as_str()).zip(names.iter().map(String::as_str)).collect();
+            g.channels.iter().map(|(n, _)| n.as_str()).zip(names.iter().map(String::as_str)).collect();
         let real = |n: &String| given.get(n.as_str()).map_or(n.clone(), |r| r.to_string());
         if let Some(d) = self.active_doc_mut() {
             for n in &g.vector {
@@ -2093,7 +2093,7 @@ mod tests {
         let mut app = demo_app();
         let (i, k) = (0usize, 300usize);
         let name = app.active_doc().unwrap().osc.analog[i].id.clone();
-        assert!(app.append_computed(&[("x2".into(), format!("2*\"{name}\""), String::new())]).is_some());
+        assert!(app.append_computed(&[("x2".into(), format!("2*\"{name}\""))]).is_some());
         let d = app.active_doc().unwrap();
         let (base, ph, comp) = (d.sample(i, k), d.analysis.phasors[i][k], d.computed[0].samples[k]);
         app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(i));
@@ -2250,7 +2250,7 @@ mod tests {
     #[test]
     fn formula_page_edits_the_record_list() {
         let mut app = demo_app();
-        app.append_computed(&[("X".into(), "Ua*2".into(), String::new()), ("Y".into(), "Ub*2".into(), String::new())]);
+        app.append_computed(&[("X".into(), "Ua*2".into()), ("Y".into(), "Ub*2".into())]);
         let names = |app: &App| app.active_doc().unwrap().computed.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
         app.dispatch(Command::QuickAnalysis);
         assert_eq!(app.formula_page.rows.len(), 2);

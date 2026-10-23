@@ -81,6 +81,10 @@ pub trait Channels {
     fn ratio_s(&self, _ch: usize) -> f64 {
         1.0
     }
+    /// The channel's canonical unit `+0x7c` ("" for ADC codes, `0x414c30`).
+    fn unit(&self, _ch: usize) -> String {
+        String::new()
+    }
 }
 
 /// Evaluation environment: the variable map, and in channel mode the channel
@@ -306,7 +310,8 @@ enum Tok {
     Num(f64),
     Ident(String),
     Chan(usize),
-    Dimension,
+    /// `[...]`: the text between the brackets, case kept.
+    Dimension(String),
     End,
 }
 
@@ -437,6 +442,29 @@ impl Expr {
     }
 }
 
+/// The unit of a channel-mode formula (`0x415bd0`, run after the samples):
+/// the text of a `[...]` where the evaluation stopped (the grammar stops at
+/// the same token for every sample); else the dimension walk from the start
+/// (`0x415d10`…`0x4166b0`) — the text of the `[...]` where the walk stops,
+/// or the unit it carried. A formula that does not parse has none.
+pub fn formula_unit(src: &str, chans: &dyn Channels) -> String {
+    let Ok((toks, _)) = tokenize(src, Some(chans)) else { return String::new() };
+    let mut p = Parser { toks, pos: 0 };
+    if p.list().is_err() {
+        return String::new();
+    }
+    if let Tok::Dimension(t) = p.peek() {
+        return t.clone();
+    }
+    let mut w = Walk { toks: &p.toks, pos: 0, chans };
+    let mut out = vec![String::new()];
+    w.list(&mut out);
+    match w.toks.get(w.pos) {
+        Some(Tok::Dimension(t)) => t.clone(),
+        _ => out.swap_remove(0),
+    }
+}
+
 /// Convenience: parse and evaluate in one step.
 pub fn eval_str(src: &str, ctx: &Context) -> Result<f64, ExprError> {
     Expr::parse(src)?.eval(ctx)
@@ -508,7 +536,7 @@ fn tokenize(src: &str, chans: Option<&dyn Channels>) -> Result<(Vec<Tok>, Vec<St
         }
         if c == '[' {
             let len = rest.find(']').map(|i| i + 1).unwrap_or(rest.len());
-            toks.push(Tok::Dimension);
+            toks.push(Tok::Dimension(rest[1..len].trim_end_matches(']').to_string()));
             pos += len;
             continue;
         }
@@ -661,10 +689,153 @@ impl Parser {
             _ => return Err(ExprError::Expected("operand")),
         };
         self.advance();
-        if *self.peek() == Tok::Dimension {
+        if matches!(self.peek(), Tok::Dimension(_)) {
             self.advance();
         }
         Ok(n)
+    }
+}
+
+/// The dimension walk (`0x415d10`…`0x4166b0`): the evaluator's levels over
+/// the same tokens, each filling element 0 of the list it is given. The
+/// left operand's unit wins; `^` and the functions in `unit_rule` set it;
+/// no level loops on a `[...]`, so the walk ends at the first one met
+/// outside a group.
+struct Walk<'a> {
+    toks: &'a [Tok],
+    pos: usize,
+    chans: &'a dyn Channels,
+}
+
+impl Walk<'_> {
+    fn peek(&self) -> &Tok {
+        self.toks.get(self.pos).unwrap_or(&Tok::End)
+    }
+
+    fn advance(&mut self) {
+        if self.pos + 1 < self.toks.len() {
+            self.pos += 1;
+        }
+    }
+
+    fn op(&self, ops: &[u8]) -> bool {
+        matches!(self.peek(), Tok::Op(o) if ops.contains(o))
+    }
+
+    /// `0x415d10`: further items each walked into a fresh list and appended.
+    fn list(&mut self, out: &mut Vec<String>) {
+        self.add(out);
+        while self.op(&[0x00]) {
+            self.advance();
+            let mut item = vec![String::new()];
+            self.add(&mut item);
+            out.push(item.swap_remove(0));
+        }
+    }
+
+    /// `0x415fa0` / `0x4160d0`: right operands are walked and dropped.
+    fn add(&mut self, out: &mut Vec<String>) {
+        self.mul(out);
+        while self.op(&[0x01, 0x02]) {
+            self.advance();
+            self.mul(&mut vec![String::new()]);
+        }
+    }
+
+    fn mul(&mut self, out: &mut Vec<String>) {
+        self.pow(out);
+        while self.op(&[0x03, 0x04]) {
+            self.advance();
+            self.pow(&mut vec![String::new()]);
+        }
+    }
+
+    /// `0x416200`: one `^`, the exponent dropped, the unit cleared.
+    fn pow(&mut self, out: &mut Vec<String>) {
+        self.unary(out);
+        if self.op(&[0x05]) {
+            self.advance();
+            self.unary(&mut vec![String::new()]);
+            out[0].clear();
+        }
+    }
+
+    fn unary(&mut self, out: &mut Vec<String>) {
+        if self.op(&[0x01, 0x02]) {
+            self.advance();
+        }
+        self.func(out);
+    }
+
+    /// `0x416360`: most function tokens are consumed here; absig, frequency,
+    /// uncn, pk and the two power / amplitude reductions are left to the
+    /// leaf, so their argument group is never walked.
+    fn func(&mut self, out: &mut Vec<String>) {
+        let id = match *self.peek() {
+            Tok::Func(id) => Some(id),
+            _ => None,
+        };
+        if id.is_some_and(|id| !matches!(id, 0x14 | 0x19 | 0x28 | 0x29 | 0x32 | 0x33)) {
+            self.advance();
+        }
+        self.primary(out);
+        if let Some(id) = id {
+            unit_rule(id, out);
+        }
+    }
+
+    /// `0x4165f0`: a group walks its list into the same list, then one
+    /// token is consumed unchecked as the `)`.
+    fn primary(&mut self, out: &mut Vec<String>) {
+        if self.op(&[0x06]) {
+            self.advance();
+            self.list(out);
+            self.advance();
+        } else {
+            self.leaf(out);
+        }
+    }
+
+    /// `0x4166b0`: pi, null and numbers have no unit; a channel its own;
+    /// anything else leaves it. One token is always consumed.
+    fn leaf(&mut self, out: &mut [String]) {
+        match self.peek() {
+            Tok::Pi | Tok::Null | Tok::Num(_) => out[0].clear(),
+            Tok::Chan(c) => out[0] = self.chans.unit(*c),
+            _ => {}
+        }
+        self.advance();
+    }
+}
+
+/// The unit a function token gives (`0x416360`'s table; "cut" = the list
+/// truncated to one element): trigonometric, sqrt, exp, arg, fault → "";
+/// cosui, fourie → "" cut; frequency → "Hz"; ib, 3i0, i1, i2 → "A"; the
+/// voltage functions and uniik → "V"; pf* → "W"; zf / zk / zl → "Ohm"
+/// (string 3060); the power / amplitude reductions → «ном»; tormsumcur →
+/// its second argument's; chan → cut; the rest keep the first argument's.
+fn unit_rule(id: u8, out: &mut Vec<String>) {
+    let set = |out: &mut Vec<String>, u: &str| {
+        out.truncate(1);
+        out[0] = u.to_string();
+    };
+    match id {
+        0x08..=0x0b | 0x0d | 0x0e | 0x12 | 0x18 => out[0].clear(),
+        0x13 | 0x16 => set(out, ""),
+        0x19 => set(out, "Hz"),
+        0x1a..=0x1d => set(out, "A"),
+        0x1e..=0x28 | 0x3f => set(out, "V"),
+        0x2a..=0x2c => set(out, "W"),
+        0x2d..=0x2f => set(out, "Ohm"),
+        0x32 | 0x33 => set(out, "ном"),
+        0x3b => {
+            if out.len() >= 2 {
+                out[0] = out[1].clone();
+            }
+            out.truncate(1);
+        }
+        0x3e => out.truncate(1),
+        _ => {}
     }
 }
 

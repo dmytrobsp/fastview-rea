@@ -83,7 +83,7 @@ impl AddFormulaDlg {
     /// was — but its result is ignored: the member is checked (`0x4033a0`,
     /// 396 / 473 stop here), and only then `CDialog::OnOK` runs `UpdateData`
     /// again, which repeats the 396 and keeps the dialog open.
-    pub fn accept(&mut self) -> Option<(String, String, String)> {
+    pub fn accept(&mut self) -> Option<(String, String)> {
         let form = self.form?;
         let taken: Vec<&str> = self.taken.iter().map(String::as_str).collect();
         let ddx_ok = af::ddx_name_ok(&self.name);
@@ -101,8 +101,7 @@ impl AddFormulaDlg {
             return None;
         }
         let f = af::build(form, &self.values)?;
-        let unit = af::unit_of(&f);
-        Some((self.member.clone(), f, unit))
+        Some((self.member.clone(), f))
     }
 }
 
@@ -210,7 +209,7 @@ impl App {
         }
         match done {
             Some(true) => {
-                if let Some((name, formula, _unit)) = st.accept() {
+                if let Some((name, formula)) = st.accept() {
                     // The row is appended to the formula page (`0x486df0`).
                     self.fp_add_row(name, formula);
                     return;

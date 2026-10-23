@@ -23,6 +23,30 @@ s(e) = k if e has a channel and ¬(+0x88 ∧ ¬+0x89), else 1.
 - 0x30–0x39 retag every later CHANNEL token to 0x46 (scalar from `0x426120`:
   same as the sample unless the data is primary).
 
+## The unit of a formula channel (`0x415bd0`, ledger L9.70)
+Run once after the samples. If the token where the evaluation stopped is a
+`[...]`, its text (case kept) is the unit. Otherwise a dimension walk
+re-reads the formula from the start, mirroring the evaluator's levels, and
+the unit is the text of the `[...]` where it stops, else the unit it carried:
+- `+ − * /`: the left operand's unit, even when empty; `^`: none; a unary
+  sign and groups pass it through; numbers, `pi`, `null`: none; a channel:
+  its canonical unit ("" in ADC mode; an earlier formula channel's own).
+- No level loops on a `[...]`, so the walk ends at the first one met outside
+  a group (`a[кВ]+b` → кВ); inside a group the unchecked `)` step swallows
+  it (`(a[кВ])*b` → unit of a).
+- Functions: sin cos tg ctg sqrt exp arg fault cosui fourie → none;
+  `frequency:` → Hz; ib 3i0 i1 i2 → A; ulf ull ua ub uc 3u0 u1f u2f u1l u2l
+  uncn uniik → V; pf pf3wm pf2wm → W; zf zk zl → Ohm (string 3060);
+  coeffpowerpriv coeffamppriv → «ном»; tormsumcur → its second argument's;
+  the rest (re im mod rms a0 chan coeffpriv coefftt grs* tormsubcur
+  tormmaxcur absig pk) keep the first argument's. absig, frequency, uncn,
+  pk and the two reductions are not consumed by the function level, so the
+  walk stops at their `(`.
+- Quick analysis takes its units the same way (its formulas come from the
+  «Добавить…» builder `0x4129e0`, e.g. S0 = `Mod:(Pf: (…))[VA]`).
+- Display (`+0x78`) replaces an exact «В» by V and «А» by A; the canonical
+  (`+0x7c`) keeps the text.
+
 ## Functions
 - `ib:(a,b,c)` = c − (a + b) (Z and s), F = AND. `ulf:(a,b)` = a − b.
   `ull:(a,b)` = −(a + b).

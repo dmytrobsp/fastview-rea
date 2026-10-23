@@ -1028,9 +1028,9 @@ mod tests {
         assert_eq!(app.omp_ui.message.as_deref(), Some("Имя канала задано неправильно."));
         app.omp_ui.message = None;
         app.append_computed(&[
-            ("Uab".into(), "Ua-Ub".into(), String::new()),
-            ("Ubc".into(), "Ub-Uc".into(), String::new()),
-            ("Uca".into(), "Uc-Ua".into(), String::new()),
+            ("Uab".into(), "Ua-Ub".into()),
+            ("Ubc".into(), "Ub-Uc".into()),
+            ("Uca".into(), "Uc-Ua".into()),
         ])
         .unwrap();
         let st = &mut app.active_doc_mut().unwrap().omp.params.stations[0];
