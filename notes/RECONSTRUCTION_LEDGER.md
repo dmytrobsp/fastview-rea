@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 379 pass)
+- `cargo test --workspace`   (currently 391 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -4254,11 +4254,27 @@ WindowsAndMessaging). Test
 Residual: the beep not run on the VM (no audio check possible); other
 platforms silent.
 
-Next in L9 (HANDOFF 2026-10-23, night 5): **public at
+Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
-each one flat archive). `main` = HEAD, 379 tests.
-**This session (L9.107–L9.127), worked continuously with parallel
+each one flat archive). `main` = HEAD, 391 tests.
+**Night 6 (L9.128–L9.138)**, the three audits re-run as background agents
+and acted on, plus four follow-up research agents (frequency track,
+flags on non-file channels, the ОМП tracked phasor): L9.128 Ctrl held
+→ no docking; L9.129 the CMDUI rules (zoom limits, no-document greying,
+stats / modes / Save on .sto / copy / the comment check inverted);
+L9.130 **Ctrl+C / Ctrl+V never fired in the real app** (egui-winit sends
+`Event::Copy` / `Event::Paste`, not keys) + MDI keys, preview PgUp / PgDn,
+визир keys showing, per-message wheel, Ctrl+Shift+click; L9.131 posted
+exceptions as boxes, the 219 box, int DDX, an alert queue; L9.132 the
+nominal-frequency track rec+0x1fc and rate segments; L9.133 DIALOG 353's
+DDV; L9.134 / L9.135 / L9.136 invert / DC / modes on digital, computed
+and pending channels (the merge bakes and keeps them); L9.137 channels'
+own frequency vectors and the ОМП's tracked phasor; L9.138 the ОМП's
+case-insensitive lookup, the merge's beep. Lesson: tests that inject
+`Key::C` passed while the real app never saw a key — when input goes
+through egui-winit, check what it actually emits.
+**Night 5 (L9.107–L9.127), worked continuously with parallel
 background research agents (MFC docking / tabs, merge, print, ribbon,
 finder, style data, the 401–543 dialogs, engine residuals):** L9.107 the
 four diagram panes as docking units of their own and MFC's tab show /
@@ -4309,27 +4325,22 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-**RECOMMENDED FIRST — three audits, stopped unfinished at the pause
-(re-run as parallel background research agents; brief each with the
-CLAUDE.md publishing rules and the bash rules, prose + addresses + READ /
-INFERRED marks, compare with our Rust and rank the differences):**
-(1) every message box (AfxMessageBox both overloads, CWnd::MessageBox,
-MessageBoxW): call site, trigger, condition, string id, buttons, outcome
-vs ours (dialogs.rs alerts, status strings); (2) every
-ON_UPDATE_COMMAND_UI enable / check rule (index/msgmaps.json, MFC's
-auto-disable of handler-less commands) vs ours (ribbon.rs states, context
-menus); (3) keyboard / accelerators (RT_ACCELERATOR 128) / mouse wheel and
-modifier-dependent mouse actions in the view and diagram windows vs ours
-(`handle_keys`, lanes.rs, diagram_ui.rs). Then: pending channels' own
-flags baked by the merge (ours has no flags on pending lanes, L9.111);
-the merged record's frequency track; the docking marker bitmaps (ours
-drawn); L9.64 MDI arrangements under tabs (WM_MDICASCADE / TILE reach the
-stock MDI client — visible effect ND); the caption bar from the style
-images (ours the OS title bar); backlog §9 #36 / #37 / #45 leftovers
-(logo, splash: proprietary assets). Good recurring pass: render the
-user's real records (`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`,
-`WIN_1999.cfg`) after big changes — it caught a regression this session.
-(Done in this session: L9.107–L9.127, see the summary above.)
+the `.set` NetFreq round trip (`0x427bc0` / `0x427af0`, channels' own
+frequency, L9.137); 33035's message 239 on channels of different rates
+(needs per-channel rates, L9.131); our `sample_rate` vs rec+0x228 where
+the signal code uses the latter (multi-rate `.cfg`, rates not a multiple
+of f, L9.132); a rate-0 `.cfg`'s `.dat` timestamps; ↑ / ↓ on a never
+placed ГВ (L9.130); the merge's padding of an inverted digital channel
+(L9.134); formulas naming digital channels (L9.134); the docking marker
+bitmaps (ours drawn); L9.64 MDI arrangements under tabs (WM_MDICASCADE /
+TILE — visible effect ND); the caption bar from the style images (ours
+the OS title bar — a frameless window with our own caption, risky on
+tiling WMs); backlog §9 #36 / #37 / #45 leftovers (logo, splash:
+proprietary assets). Good recurring pass: render the user's real records
+(`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`, `WIN_1999.cfg`) after big
+changes. A fresh audit worth running: every context menu (351, 355,
+387, 388, 560, 561, 563) item by item vs ours.
+(Done: night 6 L9.128–L9.138, night 5 L9.107–L9.127.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
