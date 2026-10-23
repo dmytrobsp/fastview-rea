@@ -350,12 +350,25 @@ pub fn differential(phases: usize, arms: &[Arm], group: &GroupComp, braking: &Br
 }
 
 /// The name an appended channel gets (`0x48bff0`): unchanged if free, else
-/// the first free "name_2", "name_3", …
+/// the first free "name_2", "name_3", … A name is taken (`0x48bed0`) when
+/// it equals a channel's or a formula definition's name ignoring case —
+/// `_wcsicmp` under the program's `Russian_Russia.1251` locale
+/// (`0x4484e5`), so Cyrillic folds too.
 pub fn unique_name(name: &str, taken: &[String]) -> String {
-    if !taken.iter().any(|t| t == name) {
+    let lower: Vec<String> = taken.iter().map(|t| t.to_lowercase()).collect();
+    let free = |n: &str| !lower.contains(&n.to_lowercase());
+    if free(name) {
         return name.to_string();
     }
-    (2..).map(|i| format!("{name}_{i}")).find(|n| !taken.contains(n)).expect("free name")
+    (2..).map(|i| format!("{name}_{i}")).find(|n| free(n)).expect("free name")
+}
+
+/// The names a new channel must not take: every channel of the record's
+/// vector (analog and digital, `doc+0x184`) and every formula definition
+/// (`doc+0x194`).
+pub fn taken_names<'a>(osc: &crate::comtrade::Oscillogram, computed: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let rec = osc.analog.iter().map(|c| c.id.clone()).chain(osc.digital.iter().map(|c| c.id.clone()));
+    rec.chain(computed.into_iter().map(String::from)).collect()
 }
 
 /// A computed channel: its samples and, when the formula's complex value was
@@ -418,7 +431,7 @@ pub fn evaluate_batch_with(
         } else {
             return Err(fail(ExprError::InvalidResult));
         };
-        let taken: Vec<String> = osc.analog.iter().map(|c| c.id.clone()).chain(all.iter().map(|c| c.name.clone())).collect();
+        let taken: Vec<String> = taken_names(osc, all.iter().map(|c| c.name.as_str()));
         let ch = ComputedChannel {
             name: unique_name(name, &taken),
             unit: crate::expr::formula_unit(formula, &chans),

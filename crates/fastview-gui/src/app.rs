@@ -1963,9 +1963,13 @@ impl App {
         let Some(names) = self.append_computed(&g.channels) else {
             return;
         };
-        // Map generated names to the names actually given.
-        let given: HashMap<&str, &str> =
-            g.channels.iter().map(|(n, _)| n.as_str()).zip(names.iter().map(String::as_str)).collect();
+        // Map generated names to the names actually given; a name generated
+        // twice is its first line's (the original uniq's the flag and pair
+        // names against the state before the batch, `0x41699d`).
+        let mut given: HashMap<&str, &str> = HashMap::new();
+        for (n, r) in g.channels.iter().map(|(n, _)| n.as_str()).zip(names.iter().map(String::as_str)) {
+            given.entry(n).or_insert(r);
+        }
         let real = |n: &String| given.get(n.as_str()).map_or(n.clone(), |r| r.to_string());
         if let Some(d) = self.active_doc_mut() {
             for n in &g.vector {

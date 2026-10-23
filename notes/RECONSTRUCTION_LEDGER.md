@@ -2885,10 +2885,10 @@ ordered, selected_extra}`, `Doc::channels_changed` adds pasted analog
 candidates at their insertion point, `Doc::computed_corr` (the stats
 panel and the diagrams' computed phasors). Test
 `candidates_in_vector_order`.
-Residual: ours recomputes every channel when the selection changes; the
-original keeps the cached series of existing channels (INFERRED, deeper
-callees of `0x42e5c0` not read); a pasted channel's ph / ccbm from the
-copy side (desc2 / desc3) INFERRED.
+Residual: an implicit selection change (insert / paste moving the
+candidate list) — ours recomputes everything, the original keeps stale
+caches (read in L9.95); a pasted channel's ph / ccbm from the copy side
+(desc2 / desc3) INFERRED.
 
 
 ### L9.87 — Page 539: each stored method key checks its radio; 1 phase shows the sequence combo  ·  ✅
@@ -2907,9 +2907,8 @@ phase with its radio stored. Now `QuickForms::{dif_also, dif_methods,
 dif_edit_method}`, `quick::Arm::reductions` (a list, methods in the
 generation's order), the load / save per key, a radio click clearing the
 others. Test `two_stored_methods_both_reduce`.
-Residual: two methods give two «… прив.» lines per name (they do not pass
-the uniq rule `0x48bff0`); how the appender resolves the duplicate names
-NOT DETERMINED (ours not checked either).
+Residual: two methods give two «… прив.» lines per name — resolved by the
+appender with «_2» (L9.95).
 
 
 ### L9.88 — Circle scales: characteristics split by an exact «Ohm»; no Ω locus, no characteristics  ·  ✅
@@ -3120,6 +3119,42 @@ sheet; the dialog's OK does not write our orientation into the printer's
 own defaults (ours keeps it in the page setup); the standard dialog's
 «Принтер...» button not modelled.
 
+### L9.95 — Appended names: «_2» ignoring case; what a frequency change refreshes  ·  🟡
+Read (subagent report; by hand: the format `"_%d"` at `0x4d040c`;
+`0x48bed0` walks the channel vector `doc+0x184` (stride 0x160) and then
+the definition names `doc+0x194`, comparing with #2954 = `_wcsicmp`
+(mfc120u `0x1005f756`; #2948 Compare is `wcscmp`); InitInstance sets
+`Russian_Russia.1251` at `0x4484e5`): a new formula channel's name is
+free unless it equals any record channel's (analog or digital) or any
+formula definition's name ignoring case (Cyrillic folds under that
+locale — CRT INFERRED); else the first free «name_2», «name_3», …. The
+command `0x4167f0` uniq's the vector / circle flag names and the pairs
+against the state before the batch (`0x41699d`, `0x416baa`, `0x416bd3`)
+and then each generated line in order, each name joining the list before
+the next (`0x416c9d`–`0x416ead`): page 539's second «Ia плечо 1 прив.»
+becomes «Ia плечо 1 прив._2»; no skip, no message; every later reference
+is the first line's. `0x415780` then re-evaluates the whole definition
+list.
+Ours compared case-sensitively, did not count digital channels, and
+mapped a repeated generated name to its last line. Now
+`quick::taken_names`, `unique_name` ignoring case, `apply_quick` maps a
+repeated name to its first line. Test `unique_names` (within a batch,
+case, a digital name).
+Also read (same report): the frequency-channel choice in «Параметры
+файла» (`0x44a2c9`) ends in `0x42e540`, which refreshes every channel's
+cache (`0x428490`) and re-evaluates every formula — as ours. Its only two
+callers are that dialog's; insert / paste (`0x42e5c0` → the candidate
+rebuild `0x42ebd0`) refresh nothing else, so when they move the selection
+the stats panel's СКЗ / A1 (`0x4272a0`, `0x426240` read `rec+0x874`
+live) and the frequency diagram show the new correction at once, while
+the vector phasors, RMS / harmonic lane series and formula channels'
+samples keep the old one until the dialog, a «Рассчитать» (formulas
+only) or a flag toggle (that channel only) refreshes them.
+Residual: that staleness after an implicit change is not modelled (ours
+recomputes everything, and our analog statistics read caches where the
+original's are live); «Рассчитать» re-evaluating the older formula
+channels is therefore invisible in ours.
+
 Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -3233,10 +3268,11 @@ pure arithmetic of variables, `^` only `x^2`, no exponent literals / leading dot
 Not verified / residual (honest):
 - CRT `sin/cos/tan/exp/_wtof` last-ulp differences between MSVC 2013 and Rust's
   libm are not modelled.
-- Cyrillic case folding: the original uses MakeLower (likely ASCII-only in the C
-  locale) — we fold Unicode, which the shipped library needs (`ДЗМф2_Rср` vs
-  `ДЗМФ2_Rср`); how the original resolves that pair (map comparator?) is NOT
-  DETERMINED.
+- Cyrillic case folding: the original uses MakeLower; the program sets
+  `setlocale(LC_ALL, "Russian_Russia.1251")` then LC_NUMERIC "C"
+  (`0x4484e5`, read 2026-10-23, L9.95), under which the CRT's lower-casing
+  folds Cyrillic (CRT behaviour INFERRED) — as ours, which the shipped
+  library needs (`ДЗМф2_Rср` vs `ДЗМФ2_Rср`).
 - `arg:` warm-up count in the `.fvb` context (vtable[2] of that Calculator
   subclass) not determined; we assume no warm-up.
 - ❌ Channel mode (computed channels): identifiers resolve via vtable[0] to

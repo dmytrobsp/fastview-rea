@@ -137,10 +137,21 @@ fn unique_names() {
     let names_taken = vec!["I1".to_string(), "I1_2".to_string()];
     assert_eq!(unique_name("I1", &names_taken), "I1_3");
     assert_eq!(unique_name("I2", &names_taken), "I2");
+    // Case is ignored (`_wcsicmp`, Russian locale): Cyrillic folds too.
+    assert_eq!(unique_name("i1", &names_taken), "i1_3");
+    let cyr = vec!["Ia плечо 1 прив.".to_string()];
+    assert_eq!(unique_name("IA ПЛЕЧО 1 ПРИВ.", &cyr), "IA ПЛЕЧО 1 ПРИВ._2");
     // Evaluating a batch twice renames the second set.
     let osc = comtrade::parse(CFG, DAT).unwrap();
     let g = symmetric(Some(&cur(false)), None, &taken());
     let first = evaluate_batch(&osc, &[], &g.channels, false).unwrap();
     let second = evaluate_batch(&osc, &first, &g.channels, false).unwrap();
     assert_eq!(second[0].name, "I1_2");
+    // Within one batch a repeated name (two reduction methods) takes the
+    // next suffix; a record channel's name — analog or digital — is taken
+    // ignoring case.
+    let batch: Vec<(String, String)> = [("X", "1"), ("x", "2"), ("ia", "3"), ("TRIP", "4")].iter().map(|(n, f)| (n.to_string(), f.to_string())).collect();
+    let out = evaluate_batch(&osc, &[], &batch, false).unwrap();
+    let names: Vec<&str> = out.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["X", "x_2", "ia_2", "TRIP_2"]);
 }

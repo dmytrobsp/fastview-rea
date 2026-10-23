@@ -9,7 +9,7 @@ Z, 539 differential, 340 formula). On OK only the active tab is used
 to toggle (XOR) on the vector diagram (flag 0x4) and the circle diagram (flag
 0x8), a vector-diagram angle reference + flags, and (Iдиф, Iторм) pairs for the
 differential diagram. They are appended as ordinary computed channels
-(`0x4167f0`; a taken name gets "_2", "_3"…, format "_%d"; validated by
+(`0x4167f0`; a taken name — any record channel or formula definition, ignoring case (L9.95) — gets "_2", "_3"…, format "_%d"; validated by
 `0x415780`, all removed on failure). Channel names in formulas are quoted;
 "," in numeric fields becomes "."; an empty 3Io argument becomes "0";
 "Отключить" checkboxes drop the current / voltage group.
