@@ -156,7 +156,6 @@ impl App {
     pub fn fp_apply(&mut self) {
         let rows = self.formula_page.rows.clone();
         let show_primary = self.active_doc().is_some_and(crate::app::Doc::primary_values);
-        let base = self.docs.len() + 7;
         let Some(d) = self.active_doc_mut() else { return };
         let before = d.computed.clone();
         for (name, formula) in &rows {
@@ -178,7 +177,9 @@ impl App {
                             d.reflag_computed(i);
                         }
                         None => {
-                            let mut cc = crate::app::Computed::new(c.name, c.formula, Vec::new(), Self::palette(base + d.computed.len()));
+                            // Inserted first among the computed channels.
+                            let color = crate::app::channel_color(&c.name, "", d.osc.analog.len());
+                            let mut cc = crate::app::Computed::new(c.name, c.formula, Vec::new(), color);
                             cc.unit = c.unit;
                             cc.set_values(c.samples, c.phasors);
                             d.computed.insert(0, cc);

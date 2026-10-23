@@ -337,7 +337,6 @@ impl App {
         let rec = ClipRecord::parse(&text).unwrap_or_default();
         self.snapshot_undo();
         self.omp_clear(ai);
-        let base = self.docs.len() + 11;
         let rev = self.docs[ai].osc.rev_year;
         let clip = clip_chans(&rec, rev);
         let d = &mut self.docs[ai];
@@ -349,7 +348,7 @@ impl App {
         });
         let at_digital = d.selection.iter().find_map(|k| matches!(k, ChanKey::Digital(_)).then_some(*k)).unwrap_or(ChanKey::Digital(d.osc.digital.len()));
         d.selection.clear();
-        for (j, mut c) in clip.into_iter().enumerate() {
+        for mut c in clip {
             let taken = |n: &str, d: &Doc| {
                 d.osc.analog.iter().any(|a| a.id == n) || d.osc.digital.iter().any(|x| x.id == n) || d.computed.iter().any(|x| x.name == n)
             };
@@ -363,7 +362,13 @@ impl App {
                 Ok(a) => a.id = name.clone(),
                 Err(x) => x.id = name.clone(),
             }
-            let mut lane = Computed::new(name, PENDING.into(), Vec::new(), if c.color == egui::Color32::TRANSPARENT { Self::palette(base + j) } else { c.color });
+            let color = if c.color == egui::Color32::TRANSPARENT {
+                let phase = c.pasted.channel.as_ref().map(|a| a.phase.clone()).unwrap_or_default();
+                crate::app::channel_color(&name, &phase, d.osc.analog.len() + d.computed.len())
+            } else {
+                c.color
+            };
+            let mut lane = Computed::new(name, PENDING.into(), Vec::new(), color);
             if let Ok(a) = &c.pasted.channel {
                 lane.unit = a.unit.clone();
             }

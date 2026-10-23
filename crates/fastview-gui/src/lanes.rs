@@ -2264,7 +2264,9 @@ fn lane_stats(
         Lane::Digital(i) => {
             let d = &doc.osc.digital[*i];
             let val = if doc.dig_on(*i, k_main) { 1.0 } else { 0.0 };
-            (d.id.clone(), Default::default(), Color32::from_rgb(0x44, 0x44, 0xAA), 1.0, 0.0, 0.0, 0.0, val)
+            // After the analog and computed channels in the vector (`0x42b5f0`).
+            let color = crate::app::table_color(doc.osc.analog.len() + doc.computed.len() + *i);
+            (d.id.clone(), Default::default(), color, 1.0, 0.0, 0.0, 0.0, val)
         }
     }
 }

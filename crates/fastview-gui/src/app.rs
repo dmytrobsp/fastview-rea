@@ -1024,19 +1024,65 @@ impl Doc {
 /// Default channel colour: the original cycles yellow/green/red/blue/… and tints
 /// by quantity. Colours match the context-menu palette (33000–33004).
 pub fn default_channel_color(ch: &fvb_core::comtrade::AnalogChannel, i: usize) -> egui::Color32 {
-    const C: &[(u8, u8, u8)] = &[
-        (0xD4, 0xA0, 0x17), // yellow (Жёлтый)
-        (0x18, 0x8A, 0x42), // green  (Зелёный)
-        (0xCC, 0x22, 0x22), // red    (Красный)
-        (0x20, 0x4A, 0xA0), // blue   (Синий)
-        (0xB0, 0x6A, 0x12), // orange
-        (0x18, 0x8A, 0x8A), // teal
-        (0x7A, 0x3A, 0x9A), // violet
-        (0x55, 0x55, 0x55), // grey
+    channel_color(&ch.id, &ch.phase, i)
+}
+
+/// A channel's colour without a custom one (`0x42b520`): the phase class
+/// (`0x42b0c0`) — 1 (192,192,0), 2 (0,114,41), 3 (255,0,0), 4 (0,0,255) —,
+/// else the 10-entry table `0x4c2fe0` by the channel's place in the record's
+/// channel vector (analog, computed, digital) mod 10.
+pub fn channel_color(name: &str, phase: &str, index: usize) -> egui::Color32 {
+    match phase_class(name, phase) {
+        1 => egui::Color32::from_rgb(192, 192, 0),
+        2 => egui::Color32::from_rgb(0, 114, 41),
+        3 => egui::Color32::from_rgb(255, 0, 0),
+        4 => egui::Color32::from_rgb(0, 0, 255),
+        _ => table_color(index),
+    }
+}
+
+/// The table `0x4c2fe0` (the first of each pair) by vector place mod 10 —
+/// a digital channel's colour (never classed).
+pub fn table_color(index: usize) -> egui::Color32 {
+    const TABLE: [(u8, u8, u8); 10] = [
+        (54, 6, 186),
+        (194, 2, 116),
+        (193, 52, 52),
+        (0, 111, 122),
+        (0, 114, 41),
+        (183, 39, 191),
+        (34, 2, 121),
+        (217, 92, 5),
+        (167, 3, 48),
+        (79, 3, 169),
     ];
-    let _ = ch;
-    let (r, g, b) = C[i % C.len()];
+    let (r, g, b) = TABLE[index % 10];
     egui::Color32::from_rgb(r, g, b)
+}
+
+/// `0x42b0c0`: the phase field (lowered, exact: a / а → 1, b / б → 2,
+/// c / с → 3, ab / аб → 5, bc / бс → 6, ca / са → 7), else the first of these
+/// in the lowered name: uab → 5, ubc → 6, uca → 7, ua / ia → 1, ub / ib → 2,
+/// uc / ic → 3, uo / un / u0 / io / in / i0 → 4 — the letters after `u` /
+/// `i` also in their Cyrillic look-alikes (а б с о п); 0 for none.
+pub fn phase_class(name: &str, phase: &str) -> u8 {
+    let ph = phase.to_lowercase();
+    for (c, list) in [(1, ["a", "а"]), (2, ["b", "б"]), (3, ["c", "с"]), (5, ["ab", "аб"]), (6, ["bc", "бс"]), (7, ["ca", "са"])] {
+        if list.contains(&ph.as_str()) {
+            return c;
+        }
+    }
+    let n = name.to_lowercase();
+    let rules: [(u8, &[&str]); 7] = [
+        (5, &["uab", "uаб"]),
+        (6, &["ubc", "uбс"]),
+        (7, &["uca", "uса"]),
+        (1, &["ua", "uа", "ia", "iа"]),
+        (2, &["ub", "uб", "ib", "iб"]),
+        (3, &["uc", "uс", "ic", "iс"]),
+        (4, &["uo", "uо", "un", "uп", "u0", "io", "iо", "in", "iп", "i0"]),
+    ];
+    rules.iter().find(|(_, subs)| subs.iter().any(|s| n.contains(s))).map_or(0, |(c, _)| *c)
 }
 
 /// A digital channel's value flags (ch+0x60): invert (0x800) makes the
@@ -2412,7 +2458,6 @@ impl App {
     /// Returns the names given to them.
     pub fn append_computed(&mut self, batch: &[(String, String)]) -> Option<Vec<String>> {
         let show_primary = self.active_doc().is_some_and(Doc::primary_values);
-        let base = self.docs.len() + 7;
         let Some(d) = self.active_doc_mut() else {
             self.status = "Сначала загрузите осциллограмму.".into();
             return None;
@@ -2428,7 +2473,8 @@ impl App {
                 let n0 = d.computed.len();
                 let names = added.iter().map(|c| c.name.clone()).collect();
                 for (k, c) in added.into_iter().enumerate() {
-                    let mut cc = Computed::new(c.name, c.formula, Vec::new(), Self::palette(base + n0 + k));
+                    let color = channel_color(&c.name, "", d.osc.analog.len() + n0 + k);
+                    let mut cc = Computed::new(c.name, c.formula, Vec::new(), color);
                     cc.unit = c.unit;
                     cc.set_values(c.samples, c.phasors);
                     d.computed.push(cc);
@@ -2934,6 +2980,23 @@ mod tests {
         }
         let r = app.omp_result().unwrap();
         assert_eq!(app.omp_ui.bar.as_deref(), Some(r.text.as_str()));
+    }
+
+    /// `0x42b520` / `0x42b0c0`: phase field first, then name substrings in
+    /// order, then the 10-colour table by vector place.
+    #[test]
+    fn channel_colours_by_phase_name_and_place() {
+        assert_eq!(phase_class("X", "A"), 1);
+        assert_eq!(phase_class("X", "б"), 2);
+        assert_eq!(phase_class("X", "CA"), 7);
+        assert_eq!(phase_class("Uab", ""), 5, "uab before ua");
+        assert_eq!(phase_class("IC БЛОКА", ""), 3);
+        assert_eq!(phase_class("3I0", ""), 4);
+        assert_eq!(phase_class("Uп", ""), 4, "Cyrillic п for n");
+        assert_eq!(phase_class("Pin 7", ""), 4, "any «in» left over");
+        assert_eq!(phase_class("F", ""), 0);
+        assert_eq!(channel_color("F", "", 13), egui::Color32::from_rgb(0, 111, 122), "table entry 3");
+        assert_eq!(channel_color("Ia", "", 13), egui::Color32::from_rgb(192, 192, 0));
     }
 
     /// The block state lives in the document's `.set` tree (`0x408cf0` /

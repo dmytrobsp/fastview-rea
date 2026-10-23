@@ -5028,6 +5028,43 @@ Residual: the tree icons (bitmap 476) and the dialog's geometry; reader
 gaps (an all-empty section for a missing `Section{k}`); the legacy
 readers; the grid's "modified" marking and the initial selection.
 
+### L9.170 — Channel colours by phase, name and place  ·  ✅
+Read (COMPLETION_PLAN W1.3; by hand `0x42b520`, the literals of
+`0x42b0c0`, the table `0x4c2fe0`): the colour getter `0x42b520` (22 call
+sites in the lanes, the four diagrams, legends and tables) returns the
+custom colour (ch+0x144) when its flag (ch+0x140) is set; else, for an
+analog channel, `0x42b0c0` classes it — the phase field lowered and
+compared exactly (a / а → 1, b / б → 2, c / с → 3, ab / аб, bc / бс, ca / са
+→ 5 / 6 / 7), else the first of the narrow cp1251 substrings in the
+lowered name: uab / uаб, ubc / uбс, uca / uса → 5 / 6 / 7; ua, uа, ia, iа →
+1; ub, uб, ib, iб → 2; uc, uс, ic, iс → 3; uo, uо, un, uп, u0, io, iо, in,
+iп, i0 → 4 (so a name with "in" left over is class 4); classes 1–4 are
+(192,192,0), (0,114,41), (255,0,0), (0,0,255); everything else — classes
+5–7, unclassed, digital — takes the first colour of pair (place in the
+channel vector `doc+0x184`, `0x42b5f0`) mod 10 of the table `0x4c2fe0`;
+recomputed on every call. Seen on the VM: WIN_1999's IA / UA yellow, IB /
+UB green, IC red. Also cited (W1.3, already described under their
+callers): the differential grid / labels / scale box `0x444630` (L9.75),
+its scale `0x4441b0` (as the circle's `0x438b50`, L9.88; the cursor range
+from min(c1, c2), not raised to N), its characteristics `0x4453e0` (as
+`0x43a4a0`), its scroll bars `0x443720` (DISABLENOSCROLL), its pan limit
+`0x443620` (client −6, +5, −20 always). Explained away: `0x410140`,
+`0x4103a0`, `0x42d220`, `0x42d460`, `0x48e910`, `0x48ebe0` (settings-tree
+map inserts / erases), `0x43d750` (pair vector assignment), `0x4094c0` (a
+characteristic's copy constructor).
+Ours cycled a guessed 8-colour list by analog index, coloured computed
+channels with the characteristic palette and every digital lane one grey
+blue. Now `channel_color` / `phase_class` / `table_color`: file channels at
+load, computed and pending ones at creation (by their place after the
+analog channels), digital lanes by their place after both. Test
+`channel_colours_by_phase_name_and_place`.
+Residual: ours stores a computed channel's colour at creation (the
+original recomputes it from the current place); the second colour of
+each pair is unused here; the scroll bars kept disabled after zooming
+back out, the pan limit with the table on, the differential scale over a
+cursor range inside the first period and the print scale box's pen
+(W1.3's list) are not yet changed.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

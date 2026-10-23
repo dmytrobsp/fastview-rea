@@ -230,8 +230,8 @@ impl App {
         };
         let lkz: Vec<f64> = trace.dist.iter().map(|x| x * 1000.0).collect();
         let flags = [&trace.pa, &trace.pb, &trace.pc];
-        let color = Self::palette(self.docs.len() + 3);
         let d = &mut self.docs[di];
+        let color = crate::app::channel_color(L_KZ, "", d.osc.analog.len() + d.computed.len());
         d.main_cursor = result.window.0;
         d.aux_cursor = result.window.1;
         d.v_shown[0] = true;
