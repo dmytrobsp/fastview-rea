@@ -190,7 +190,7 @@ below are (small, large) indices; "L" large button, "S" small with text,
 "description\ntooltip" names it). Small buttons stack **3 per column**.
 
 ### 2.1 Application button and menu
-Button image 0x23A, empty label, keytip **F**, tooltip «Файл», 45×45. Left
+Button image 0x23A, empty label, keytip **F** (box at left + 10, centred on its middle, L9.97), tooltip «Файл», 45×45. Left
 column in order (separators between every numbered group):
 
 | # | id | label | img | notes |

@@ -68,12 +68,18 @@ impl App {
                             ("Закрыть", close_cmd.is_some(), close_cmd, None),
                         ];
                         // A separator between every item (each is its own
-                        // group in the original's main panel).
+                        // group in the original's main panel); tight, so the
+                        // column fits the 500 px minimum window.
+                        ui.spacing_mut().item_spacing.y = 0.0;
                         for (k, (label, enabled, cmd, opens)) in items.into_iter().chain([("Дополнительно  ▸", true, None, Some(AppSub::Extras))]).enumerate() {
                             if k > 0 {
-                                ui.separator();
+                                ui.add(egui::Separator::default().spacing(2.0));
                             }
-                            let r = ui.add_enabled(enabled || opens.is_some(), egui::Button::new(label).frame(false).selected(opens.is_some() && sub == opens));
+                            // Every item is a large-image button with its text
+                            // on the right (the main panel's Repos); the
+                            // drawings are ours.
+                            let icon = [Some(Icon::Open), Some(Icon::Save), Some(Icon::Save), None, Some(Icon::Print), Some(Icon::Params)].get(k).copied().flatten();
+                            let r = main_entry(ui, p, icon, label, enabled || opens.is_some(), opens.is_some() && sub == opens);
                             if k == 4 {
                                 menu_rects.extend([(crate::keytips::Target::PrintMain, r.rect, enabled), (crate::keytips::Target::PrintMenu, r.rect, true)]);
                             } else if k < 10 {
@@ -792,6 +798,24 @@ pub enum AppSub {
 
 /// A main-panel sub-item: the label in bold over its description (the
 /// first part of the command's string).
+/// An application-menu item: FastView gives each its large image
+/// (`0x473079`: small and large index n), so the row carries a 32 px image
+/// with the text on its right.
+fn main_entry(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Option<Icon>, label: &str, enabled: bool, selected: bool) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 36.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let v = ui.visuals();
+    if selected || (enabled && resp.hovered()) {
+        ui.painter().rect_filled(rect, 2.0f32, v.widgets.hovered.weak_bg_fill);
+    }
+    let ink = if enabled { v.text_color() } else { v.weak_text_color() };
+    if let Some(icon) = icon {
+        let img = egui::Rect::from_min_size(rect.left_top() + egui::vec2(2.0, 2.0), egui::vec2(32.0, 32.0));
+        crate::icons::paint(ui.painter(), img.shrink(4.0), icon, if enabled { p.text } else { v.weak_text_color() });
+    }
+    ui.painter().text(egui::pos2(rect.left() + 40.0, rect.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(13.0), ink);
+    resp
+}
+
 fn sub_entry(ui: &mut egui::Ui, label: &str, desc: &str, enabled: bool) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 38.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let v = ui.visuals();
@@ -1085,27 +1109,46 @@ impl App {
     }
 
     /// Draw the shown level's keytips on their elements: the keys upper-
-    /// cased in a box the size of the larger of them and «O» plus 10 × 2,
-    /// a disabled element's greyed (`0x1017b177`, `0x10194ae0`).
+    /// cased in a box the size of the larger of them and «O» plus 10 × 2
+    /// (`0x10064ea3`), placed per element (`keytips::tip_origin`) and kept on
+    /// the screen; the Office 2007 looks draw the style's gradient box, a
+    /// disabled element's at alpha 128 (`0x10182927`); the others the
+    /// tooltip colours (`0x1017b177`).
     pub fn keytips_paint(&self, ctx: &egui::Context) {
         let Some(level) = self.keytips.level else { return };
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("fv_keytips")));
         let font = egui::FontId::proportional(11.0);
         let o = painter.layout_no_wrap("O".into(), font.clone(), Color32::BLACK).size();
+        let look = crate::keytips::office2007_box(self.skin);
         for (keys, target) in crate::keytips::tips(level) {
             let Some(&(_, r, enabled)) = self.kt_rects.iter().find(|(t, ..)| *t == target) else { continue };
-            let ink = if enabled { Color32::BLACK } else { Color32::from_gray(150) };
-            let g = painter.layout_no_wrap(crate::keytips::Keytips::label(keys), font.clone(), ink);
-            let size = egui::vec2(g.size().x.max(o.x) + 10.0, g.size().y.max(o.y) + 2.0);
-            // Menu rows carry theirs at the left (the menu part's at the
-            // right); buttons at the middle of their bottom edge.
-            let at = match target {
-                crate::keytips::Target::AppItem(_) | crate::keytips::Target::PrintMain => egui::pos2(r.left() + 4.0 + size.x / 2.0, r.center().y),
-                crate::keytips::Target::PrintMenu => egui::pos2(r.right() - 4.0 - size.x / 2.0, r.center().y),
-                _ => r.center_bottom(),
+            // The text: the style's tooltip ink (76,76,76), disabled blended
+            // half-way (the blend colour INFERRED white); COLOR_INFOTEXT else.
+            let ink = match (look.is_some(), enabled) {
+                (true, true) => Color32::from_gray(76),
+                (true, false) => Color32::from_gray(165),
+                (false, true) => Color32::BLACK,
+                (false, false) => Color32::from_gray(150),
             };
-            let bx = egui::Rect::from_center_size(at, size);
-            painter.rect(bx, 1.0, Color32::from_rgb(255, 255, 225), egui::Stroke::new(1.0f32, Color32::from_gray(118)));
+            let g = painter.layout_no_wrap(crate::keytips::Keytips::label(keys), font.clone(), ink);
+            let size = egui::vec2(g.size().x.max(o.x) + 10.0, g.size().y.max(o.y) + 2.0).round();
+            let at = crate::keytips::tip_origin(target, r, size);
+            let bx = crate::keytips::into_screen(egui::Rect::from_min_size(at, size), ctx.screen_rect());
+            match look {
+                Some((top, bottom, border)) => {
+                    let a = if enabled { 1.0 } else { 0.5 };
+                    crate::lanes::gradient(&painter, bx.shrink(1.0), top.gamma_multiply(a), bottom.gamma_multiply(a));
+                    // The border with its corner pixels clipped.
+                    let s = egui::Stroke::new(1.0f32, border.gamma_multiply(a));
+                    painter.hline(bx.left() + 1.0..=bx.right() - 1.0, bx.top() + 0.5, s);
+                    painter.hline(bx.left() + 1.0..=bx.right() - 1.0, bx.bottom() - 0.5, s);
+                    painter.vline(bx.left() + 0.5, bx.top() + 1.0..=bx.bottom() - 1.0, s);
+                    painter.vline(bx.right() - 0.5, bx.top() + 1.0..=bx.bottom() - 1.0, s);
+                }
+                None => {
+                    painter.rect(bx, 0.0, Color32::from_rgb(255, 255, 225), egui::Stroke::new(1.0f32, Color32::BLACK));
+                }
+            }
             painter.galley(bx.center() - g.size() / 2.0, g, ink);
         }
     }

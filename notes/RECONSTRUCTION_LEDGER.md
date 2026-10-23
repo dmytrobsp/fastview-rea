@@ -2996,10 +2996,8 @@ state (`kt_menu`; a root shows for its button's response id).
 `FV_WINDOW_STATE=keytips` / `keytipsmenu` render them. Tests
 `alt_tap_hold_and_f10`, `typing_activates_descends_and_backs_out`,
 `keytips_open_the_application_menu`.
-Residual: keytip placement per element type not read (ours: buttons at
-their bottom centre, menu rows at the left, the menu part at the right);
-Alt+key while Alt is held, the Recent Documents' keys, the colours of the
-box (ours a tooltip-like box), «A» activates nothing (our Помощь is
+Residual: (placement and the box: L9.97); Alt+key while Alt is held,
+the Recent Documents' keys, «A» activates nothing (our Помощь is
 disabled).
 
 
@@ -3184,6 +3182,40 @@ Residual: levels on formula channels draw on their lane's range but cannot
 be placed or re-homed there (our placement takes the record's analog lanes
 only; the original's any analog-kind channel); whether `0x4040c0` draws an
 area on an unknown channel NOT DETERMINED (ours: not drawn).
+
+### L9.97 — Keytips placed per element; the Office 2007 box; menu rows with large images  ·  🟡
+Read (subagent report on mfc120u; by hand: `CMFCRibbonButton::GetKeyTipRect`
+`0x101033e0` — the element rect at `+0x74`, left = R.left + 10 or, for
+the menu part's key, R.right − w/2; top = R.bottom − h/2 before the
+per-kind cases; FastView's application-menu buttons are built with small
+and large image index n (`0x473079`: Открыть 1 / 1, Сохранить 2 / 2, …);
+the four styles' `RIBBON_KEYTIP_BACK` sampled): the application button's
+box at its left + 10, centred on its middle; a QAT button's centred
+across it with its top at the button's middle; a tab-row button (Help) at
+left + 10, centred on its bottom edge; the main panel's items — large
+image, text always on the right (`0x1011cf6f`) — end their box 4 px right
+of the 32 px image and 4 px above the row's bottom, the menu part's key
+centred on the row's right edge; the keytip window is moved into the work
+area (`0x1011bbcb`). The Office 2007 manager (`0x10194ae0`) draws a 15 × 15
+bitmap stretched with 2 px corners: a 1 px border (118, 118, 118; Aqua
+134) with clipped corners round a vertical gradient — Blue (251, 252,
+253) → (208, 222, 241), Black / Silver (253, 253, 254) → (231, 231, 242),
+Aqua (254, 254, 254) → (208, 214, 226) — the text the style's tooltip ink
+(76, 76, 76), a disabled element's window at alpha 128 (`0x10182927`); the
+other looks the tooltip colours (COLOR_INFOBK, COLOR_INFOTEXT border).
+Ours placed every button's box at its bottom centre, menu rows' at their
+left middle, in a tooltip-like box; our menu rows had no image column.
+Now `keytips::{tip_origin, into_screen, office2007_box}`, `keytips_paint`
+per look, and the application menu's rows (`main_entry`) a 36 px row with
+a 32 px image (our drawings where we have one) and the text on its right
+— the column kept tight so it fits the 500 px minimum window. Test
+`keytip_boxes_sit_per_element_type`; rendered `keytips` / `keytipsmenu`
+and the menu at 866 × 500.
+Residual: the main panel's row height and image margins (ours 36 / 2 px)
+not read; the disabled text's blend colour (ours: half-way to white)
+NOT DETERMINED; tab and collapsed-panel keytip rules not needed (no
+level reaches them); the original's 32 px images are its own (ours drawn,
+four rows without one).
 
 Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

@@ -8,6 +8,8 @@
 //! Печать «P» / «W»; typed keys are Latin whatever the layout (`0x100add31`),
 //! so only P / W can be activated there.
 
+use eframe::egui::{Color32, Pos2, Rect, Vec2};
+
 /// A keytip level (`SetKeyboardNavigationLevel` `0x100fe087`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
@@ -29,6 +31,61 @@ pub enum Target {
     /// Печать's main part «P» and its menu part «W».
     PrintMain,
     PrintMenu,
+}
+
+/// The top-left of a keytip box of `size` on its element `r`
+/// (`CMFCRibbonButton::GetKeyTipRect` `0x101033e0`; halves truncate):
+/// the application button at its left + 10, centred on its middle; a QAT
+/// button's box centred across it with its top at the button's middle; a
+/// tab-row button (Help) at its left + 10, centred on its bottom edge; the
+/// application menu's rows — large image, text always on the right — end
+/// 4 px right of the 32 px icon and 4 px above the row's bottom, the menu
+/// part's key centred on the row's right edge.
+pub fn tip_origin(target: Target, r: Rect, size: Vec2) -> Pos2 {
+    let half = |v: f32| (v / 2.0).trunc();
+    let (cx, cy) = ((r.left() + r.right()) / 2.0, (r.top() + r.bottom()) / 2.0);
+    let (cx, cy) = (cx.trunc(), cy.trunc());
+    match target {
+        Target::AppButton => Pos2::new(r.left() + 10.0, cy - half(size.y)),
+        Target::Qat(_) => Pos2::new(cx - half(size.x), cy),
+        Target::Help => Pos2::new(r.left() + 10.0, r.bottom() - half(size.y)),
+        Target::AppItem(_) | Target::PrintMain => Pos2::new(r.left() + 32.0 + 4.0 - size.x, r.bottom() - size.y - 4.0),
+        Target::PrintMenu => Pos2::new(r.right() - half(size.x), r.bottom() - size.y - 4.0),
+    }
+}
+
+/// The keytip window is moved into the work area (`0x1011bbcb`: left /
+/// right, then top / bottom).
+pub fn into_screen(b: Rect, screen: Rect) -> Rect {
+    let mut d = Vec2::ZERO;
+    if b.right() > screen.right() {
+        d.x = screen.right() - b.right();
+    }
+    if b.left() + d.x < screen.left() {
+        d.x = screen.left() - b.left();
+    }
+    if b.bottom() > screen.bottom() {
+        d.y = screen.bottom() - b.bottom();
+    }
+    if b.top() + d.y < screen.top() {
+        d.y = screen.top() - b.top();
+    }
+    b.translate(d)
+}
+
+/// The Office 2007 visual manager's keytip box (`0x10194ae0`): the style's
+/// `RIBBON_KEYTIP_BACK` bitmap — a 1 px border with clipped corners round
+/// a vertical gradient — as (top, bottom, border); the text is the style's
+/// tooltip text colour (76, 76, 76).
+pub fn office2007_box(skin: crate::theme::Skin) -> Option<(Color32, Color32, Color32)> {
+    use crate::theme::Skin;
+    let c = Color32::from_rgb;
+    Some(match skin {
+        Skin::Blue => (c(251, 252, 253), c(208, 222, 241), c(118, 118, 118)),
+        Skin::Black | Skin::Silver => (c(253, 253, 254), c(231, 231, 242), c(118, 118, 118)),
+        Skin::Aqua => (c(254, 254, 254), c(208, 214, 226), c(134, 134, 134)),
+        _ => return None,
+    })
 }
 
 /// The keytips of a level, in the order they are scanned.
@@ -207,6 +264,22 @@ impl Keytips {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `0x101033e0` per element, `0x1011bbcb` into the work area.
+    #[test]
+    fn keytip_boxes_sit_per_element_type() {
+        let size = Vec2::new(18.0, 17.0);
+        let r = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(60.0, 22.0));
+        assert_eq!(tip_origin(Target::AppButton, r, size), Pos2::new(10.0, 3.0));
+        assert_eq!(tip_origin(Target::Qat(0), r, size), Pos2::new(21.0, 11.0));
+        assert_eq!(tip_origin(Target::Help, r, size), Pos2::new(10.0, 14.0));
+        let row = Rect::from_min_max(Pos2::new(100.0, 50.0), Pos2::new(300.0, 90.0));
+        assert_eq!(tip_origin(Target::AppItem(0), row, size), Pos2::new(118.0, 69.0), "ends 4 px right of the 32 px icon");
+        assert_eq!(tip_origin(Target::PrintMenu, row, size), Pos2::new(291.0, 69.0));
+        let screen = Rect::from_min_max(Pos2::ZERO, Pos2::new(800.0, 600.0));
+        let b = Rect::from_min_size(Pos2::new(790.0, -5.0), size);
+        assert_eq!(into_screen(b, screen).min, Pos2::new(782.0, 0.0));
+    }
 
     #[test]
     fn alt_tap_hold_and_f10() {
