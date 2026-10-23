@@ -3393,36 +3393,40 @@ spectrum not re-read; the per-channel flag commands that refresh one
 channel's cache (`0x428490`'s other callers) follow our full per-channel
 recompute (INFERRED equivalent).
 
-Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
+Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
-each one flat archive). `main` = HEAD, 351 tests; CI green on 3 OSes
-through L9.92 at this handoff.
-**This session (L9.76–L9.92):** L9.76 the unit text `0x42bc50` («/с»,
-computed units translated); L9.77 / **L9.85** a pending (pasted) lane's
-readout and statistics from its own samples (the scan from own index 1 —
-L9.77's "first value" was a misread); L9.78 / L9.86 frequency candidates:
-formula and pasted channels, in vector order, no self-correction; **L9.79
-/ L9.87 page 539** methods page-wide, values per arm, stored keys checked
-independently; L9.80 / **L9.81** the circle and differential planes' loci
-and tables as read — **the differential pairs were stored swapped** (a
-`.set` pair drew with exchanged axes); L9.82 the plane legends; L9.83
-unitless formula channels not circle channels; L9.84 CUPS paper; **L9.88
-circle scales: characteristics by an exact «Ohm» dimension — the shipped
-library's «OHM» go to the power scale, so they show only with an Ω locus
-that holds them** (user-visible); L9.89 level lines re-home on a body
-drag, unshown ones kept; **L9.90 ribbon keytips**; L9.91 MFC's panel
-reduction steps; **L9.92 diagram panes float / re-dock / auto-hide**.
-New `window_dump` states: `circletable`, `circlelegend`, `difftable`,
-`keytips`, `keytipsmenu`, `floating`, `autohide`.
-**Earlier sessions:** L9.68–L9.75 (paste / ОМП don't mark modified, the
-display factor k on every diagram, the vector diagram as read, formula
-units by the dimension walk, pasted lanes from own samples, quick
-analysis through the builder, Russian units, plane labels) and the
-entries above. «P» records are shown SECONDARY by default (L9.57: values
-"2000× too small" are intended); the measured-frequency correction is on
-by default for records with a Гц / Hz channel (L9.65). The carved MFC
-DLLs live in `extracted/mfc/`. No user questions pending.
+each one flat archive). `main` = HEAD, 358 tests.
+**This session (L9.93–L9.103):** L9.93 the vector legend starts in its
+window (a real-records bug: BINARY's long names); L9.94 page setup /
+preview on the application printer's paper (Windows path run on the VM);
+L9.95 appended names «_2» ignoring case (Russian locale `0x4484e5` —
+also settles L2's Cyrillic folding), digital names taken; **L9.96 levels
+on digital lanes drawn snapped / hit unsnapped, unshown `.set` items kept
+in place (`CommentKind::Kept`), level y truncated whole (1 px)**; L9.97
+keytips per element + the Office 2007 box, application-menu rows with a
+32 px image column; **L9.98 the workspace (pane places, floating rects,
+visibility, window placement) saved on exit, restored at start**; L9.99
+characteristic extents per figure as folded integer regions (circles
+outward); L9.100 ribbon small-button sizes and the fit test (the generic
+Repos run by hand matches L9.91's steps); **L9.101 smart docking (edge
+markers, five-way group, drops on any edge, beside, into the tabs)**;
+L9.102 a tab dragged out floats; **L9.103 an insert / paste that moves the
+frequency selection refreshes no cache — the statistics read it live;
+«Рассчитать» re-evaluates every formula**. User-visible: the vector
+legend on long names, the printer's paper in preview, digital-lane levels
+from `.set` files, keytip look, menu rows taller with icons, **the pane
+layout remembered between runs**, smart-dock markers when dragging a pane,
+Частотная as a tab. New `window_dump` states: `dockleft`, `dockbottom`,
+`docktab`, `dockmarkers` (the default click hits «Файл» — pass
+`FV_WINDOW_CLICK` elsewhere for a plain window).
+**Earlier sessions:** L9.76–L9.92 (unit text, pending lanes, frequency
+candidates, page 539, the circle / differential planes as read — the
+swapped differential pairs —, the Ohm split, keytips, ribbon reduction,
+docking) and L9.68–L9.75; «P» records SECONDARY by default (L9.57); the
+measured-frequency correction on by default with a Гц / Hz channel
+(L9.65). The carved MFC DLLs live in `extracted/mfc/`. No user questions
+pending.
 **How to look at the GUI without running it:** `FV_WINDOW_DUMP=<png>
 [FV_WINDOW_RECORD=<cfg>] [FV_WINDOW_STATE=analysis (the sheet, two formula
 channels)|comments|group|circle|circletable|circlelegend|diff|difftable|keytips|keytipsmenu|floating|autohide|dockleft|dockbottom|docktab|dockmarkers|omp|ompparams|preview|print|pagesetup|
@@ -3441,18 +3445,17 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-L9.92's docking residuals (other edges and the five-way markers, tab
-drag-out, saving the layout); L9.88's per-figure extent rounding (circles
-outward) and loci at an infinite scale; L9.89's kept levels drawn snapped
-on digital lanes (`0x42b640` not read); L9.91's generic Repos and the
-ribbon scroll arrows; L9.90's keytip placement per element type; L9.64's
-MDI arrangements under tabs; L9.22 / L9.84 print residuals (CUPS hardware
-margins, the preview's paper; the logo bitmap stays out — the original's
-asset); L9.87's duplicate reduction names; L9.86's recompute on a
-selection change (the original keeps cached series). Good recurring pass:
-render the user's real records (`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`)
-after big changes.
-(Done in this session: L9.76–L9.92, see the summary above.)
+tab reordering in the strip and several panes in one dock row (L9.101 /
+L9.102); the group's three panes as separate units (a group tab pulled
+out); the marker bitmaps (ours drawn); L9.97 the main panel's row height
+/ image margins; L9.100 large / collapsed button sizes; L9.96 levels
+placed on formula channels; L9.64 MDI arrangements under tabs (likely
+leave as no-ops); L9.22 / L9.84 CUPS hardware margins; L9.90 Alt+key
+while held and the Recent Documents' keys; the backlog §9 items 15 / 35 /
+37 / 45 residuals. Good recurring pass: render the user's real records
+(`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`, `WIN_1999.cfg`) after big
+changes.
+(Done in this session: L9.93–L9.103, see the summary above.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
