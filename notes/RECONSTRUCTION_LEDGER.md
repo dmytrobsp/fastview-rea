@@ -3590,10 +3590,8 @@ samples read 0, `App::merge_records` feeds `flagged / k`. Tests
 `prefault_sync_corrects_by_the_phase` (limits, a fault outside the
 quiet window), `period_samples_and_the_pasted_cursor`,
 `merge_rate_and_resampling`.
-Residual: the sub-sample alignment with the zero padding (`0x47e021`,
-`merge+0x10`) NOT DETERMINED; the read digital rule measures the found
-sample's time without the shift (`ct(j) − ct(0)`), ours with it — equal
-for the base channels; pasted channels' own flags not baked (ours keeps
+Residual: (the padding, the sub-sample shift and the pick's d without
+the shift: L9.120); pasted channels' own flags not baked (ours keeps
 them on the pending views); whether the paste deselects the pasted
 channels NOT DETERMINED; (pasted discrete lanes before the merge: L9.71).
 
@@ -3802,6 +3800,34 @@ band and inner line painted behind their content. Rendered all four.
 Residual: the band's rounded corners and the panel's outer edge image
 (our divider line) are approximations; the application button's orb and
 the caption bar still ours.
+
+### L9.120 — «Объединить»: the zero padding and the sub-sample shift as read  ·  ✅
+Read (subagent follow-up on `0x47d990`, `0x428c20`): with the pasted
+record `offset` after the document, the later side — the pasted channels
+when the offset is positive, the base ones when negative — gets
+ceil(r·|offset|) real zero samples at its own rate r in front (times
+round to µs, `0x47dd20`–`0x47ddd9`), and those channels are shifted by
+−(1/R − |fmod(offset, 1/R)|) (`0x47e014`–`0x47e066`, `0x47e29c`; a whole
+grid step early when the offset is a multiple of 1/R, up to 1/r off when
+r ≠ R — the original's arithmetic); every channel shorter than the
+longest padded span gets zeros at its back; the grid starts at the padded
+common start, round(R·span) − 4 samples, stored as whole µs; the zeros
+take part in the fit and the pick and are read through the accessor
+(a DC-removed channel's padding reads −mean); the fit's and the pick's j
+is the first sample from index 1 whose time plus the shift reaches t (no
+cap for the fit — a sample past the end reads 0 at an extrapolated time;
+the pick capped at the grid count), the fit evaluated at t − shift over
+the unshifted times, the pick measuring d without the shift.
+Ours placed the pasted channel exactly at t + offset with 0 outside, the
+fit clamped to the channel's ends, and the pick measured with the shift
+(L9.111). Now `merge::merge` pads, shifts and spans as read (`Lane`,
+`pad`, `fit_at`, `pick_at`; `base_pads` the accessor's reading of zero
+per base channel from `merge_records`). Tests `merge_rate_and_resampling`
+(the fit past the end, the pick with a shift),
+`merge_pads_and_shifts_the_later_record`.
+Residual: the frequency track (+0x50 / doc+0x1fc) of the merged record not
+modelled; `0x478410` assumed an exact 3 × 3 solve; pasted channels' own
+flags still not baked (L9.111).
 
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

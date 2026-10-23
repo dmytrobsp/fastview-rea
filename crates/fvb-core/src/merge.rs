@@ -224,37 +224,90 @@ pub fn merged_rate(rates: &[f64], f_net: f64) -> f64 {
     }
 }
 
-/// The value at time `t` by a local three-point quadratic fit; 0 outside
-/// the record (the zero padding).
-pub fn quad_at(times: &[f64], x: &[f64], t: f64) -> f64 {
-    let n = times.len().min(x.len());
-    if n == 0 || t < times[0] || t > times[n - 1] {
-        return 0.0;
-    }
-    if n < 3 {
-        return x[0];
-    }
-    let i = times.partition_point(|&s| s <= t).clamp(1, n - 1);
-    let k = i.clamp(1, n - 2);
-    let (t0, t1, t2) = (times[k - 1], times[k], times[k + 1]);
-    let l0 = (t - t1) * (t - t2) / ((t0 - t1) * (t0 - t2));
-    let l1 = (t - t0) * (t - t2) / ((t1 - t0) * (t1 - t2));
-    let l2 = (t - t0) * (t - t1) / ((t2 - t0) * (t2 - t1));
-    x[k - 1] * l0 + x[k] * l1 + x[k + 1] * l2
+/// A channel prepared for the resampling (`0x47dd20`–`0x47e0d8`): its
+/// sample times relative to its first (padded) sample, its own step, and
+/// its sub-sample shift (padded at the front only).
+struct Lane {
+    t: Vec<f64>,
+    step: f64,
+    shift: f64,
 }
 
-/// A discrete value at grid time `t` (`0x47e5b8`–`0x47e6a9`): the first
-/// sample from index 1 at or after `t`, or the one after it when that one
-/// is half a grid `step` or more away; false outside the record (the zero
-/// padding) and past its end.
-pub fn hold_at(times: &[f64], x: &[bool], t: f64, step: f64) -> bool {
-    let n = times.len().min(x.len());
-    if n == 0 || t < times[0] || t > times[n - 1] {
-        return false;
+impl Lane {
+    /// The time of sample `k`, extrapolated past the end at the own step.
+    fn at(&self, k: usize) -> f64 {
+        match self.t.get(k) {
+            Some(&v) => v,
+            None => self.t.last().copied().unwrap_or(0.0) + (k + 1 - self.t.len()) as f64 * self.step,
+        }
     }
-    let j = times[1.min(n - 1)..].partition_point(|&s| s < t) + 1.min(n - 1);
-    let j = j.min(n - 1);
-    let k = if times[j] - t < step / 2.0 { j } else { j + 1 };
+
+    /// The first sample from index 1 whose time plus the shift reaches `t`
+    /// (`0x47e61e`; no cap — past the end the samples read 0).
+    fn after(&self, t: f64) -> usize {
+        let n = self.t.len();
+        if n < 2 {
+            return 1;
+        }
+        1 + self.t[1..].partition_point(|&s| s + self.shift < t)
+    }
+}
+
+/// Times in whole µs, as `0x428c20` stores the padding's.
+fn us(t: f64) -> f64 {
+    (t * 1e6).round() / 1e6
+}
+
+/// `0x428c20`: `n` zero samples before (`front`) or after the channel at
+/// its own step; the times relative to the new first sample.
+fn pad<T: Copy>(t: &mut Vec<f64>, x: &mut Vec<T>, zero: T, n: usize, step: f64, front: bool) {
+    if n == 0 {
+        return;
+    }
+    if front {
+        let first = t.first().copied().unwrap_or(0.0);
+        let mut nt: Vec<f64> = (0..n).map(|i| us(first - (n - i) as f64 * step)).collect();
+        nt.extend_from_slice(t);
+        let t0 = nt[0];
+        *t = nt.into_iter().map(|v| v - t0).collect();
+        let mut nx = vec![zero; n];
+        nx.extend_from_slice(x);
+        *x = nx;
+    } else {
+        let last = t.last().copied().unwrap_or(0.0);
+        t.extend((1..=n).map(|i| us(last + i as f64 * step)));
+        x.extend(std::iter::repeat_n(zero, n));
+    }
+}
+
+/// The analog value at grid time `t` (`0x47e3fb`): the quadratic through
+/// samples j − 1, j, j + 1 — j the first from index 1 at or after `t` with
+/// the shift — over the times without the shift, evaluated at t − shift; a
+/// sample past the end reads 0 at an extrapolated time.
+fn fit_at(l: &Lane, x: &[f64], t: f64) -> f64 {
+    let j = l.after(t);
+    let p = |k: usize| (l.at(k), x.get(k).copied().unwrap_or(0.0));
+    let ((t0, y0), (t1, y1), (t2, y2)) = (p(j - 1), p(j), p(j + 1));
+    let u = t - l.shift;
+    let l0 = (u - t1) * (u - t2) / ((t0 - t1) * (t0 - t2));
+    let l1 = (u - t0) * (u - t2) / ((t1 - t0) * (t1 - t2));
+    let l2 = (u - t0) * (u - t1) / ((t2 - t0) * (t2 - t1));
+    let v = y0 * l0 + y1 * l1 + y2 * l2;
+    if v.is_finite() {
+        v
+    } else {
+        y1
+    }
+}
+
+/// The discrete value at grid time `t` (`0x47e5b8`–`0x47e6a9`): j as for
+/// the fit, capped at the grid count; it is taken when its time without
+/// the shift is less than half a grid step past `t`, else the next one;
+/// past the end false.
+fn pick_at(l: &Lane, x: &[bool], t: f64, step: f64, count: usize) -> bool {
+    let j = l.after(t).min(count);
+    let d = l.at(j) - t;
+    let k = if d < step / 2.0 { j } else { j + 1 };
     x.get(k).copied().unwrap_or(false)
 }
 
@@ -266,44 +319,106 @@ pub struct Pasted {
     pub rate: f64,
 }
 
-/// «Объединить» (`0x47d990`): the document and the pasted channels (shifted
-/// by `offset` seconds) on one uniform grid at the merged rate, spanning both
-/// with zero padding, `round(R·duration) − 4` samples.
-pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64) -> Oscillogram {
+/// «Объединить» (`0x47d990`): every channel on one uniform grid at the
+/// merged rate R. With the pasted record `offset` seconds after the
+/// document, the later side is padded at its front with ceil(r·|offset|)
+/// zero samples at its own rate r and shifted by −(1/R − |fmod(offset,
+/// 1/R)|) — the base channels when the offset is negative, the pasted
+/// ones when positive (exact only when r = R and the offset is not a
+/// multiple of 1/R, as in the original); every channel shorter than the
+/// longest padded span is padded at its back; the grid has
+/// round(R·span) − 4 samples, its times stored in whole µs. `base_pads`
+/// are the base analog channels' padding as read through the accessor
+/// (the zero minus the DC, inverted…).
+pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f64]) -> Oscillogram {
     let t0 = base.time.first().copied().unwrap_or(0.0);
     let base_t: Vec<f64> = base.time.iter().map(|t| t - t0).collect();
-    let base_len = base_t.last().copied().unwrap_or(0.0);
     let mut rates = vec![base.sample_rate];
     rates.extend(pasted.iter().map(|p| p.rate));
     let r = merged_rate(&rates, base.line_freq);
-    let start = pasted.iter().map(|_| offset).fold(0.0f64, f64::min);
-    let end = pasted.iter().map(|p| offset + p.times.last().copied().unwrap_or(0.0)).fold(base_len, f64::max);
-    let count = ((r * (end - start)).round() as i64 - 4).max(0) as usize;
-    let grid: Vec<f64> = (0..count).map(|i| start + i as f64 / r).collect();
-    let step = 1.0 / r;
-    let mut out = base.clone();
-    out.time = grid.iter().map(|t| t - start).collect();
-    out.sample_rate = r;
-    out.segments = 1;
-    for (dst, src) in out.analog.iter_mut().zip(&base.analog) {
-        dst.samples = grid.iter().map(|&t| quad_at(&base_t, &src.samples, t)).collect();
+    let g = 1.0 / r;
+    let shift = -(g - (offset % g).abs());
+    let own = |rate: f64| if rate > 0.0 { rate } else { base.sample_rate };
+    // The lanes with their values, base analog / digital, then pasted.
+    enum Vals {
+        A(Vec<f64>),
+        D(Vec<bool>),
     }
-    for (dst, src) in out.digital.iter_mut().zip(&base.digital) {
-        dst.samples = grid.iter().map(|&t| hold_at(&base_t, &src.samples, t, step)).collect();
+    let mut lanes: Vec<(Lane, Vals)> = Vec::new();
+    let front = |rate: f64, base_side: bool| if (base_side && offset < 0.0) || (!base_side && offset > 0.0) { (own(rate) * offset.abs()).ceil() as usize } else { 0 };
+    let base_step = 1.0 / own(base.sample_rate);
+    let nb = front(base.sample_rate, true);
+    for (i, c) in base.analog.iter().enumerate() {
+        let (mut t, mut x) = (base_t.clone(), c.samples.clone());
+        pad(&mut t, &mut x, base_pads.get(i).copied().unwrap_or(0.0), nb, base_step, true);
+        lanes.push((Lane { t, step: base_step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::A(x)));
+    }
+    for c in &base.digital {
+        let (mut t, mut x) = (base_t.clone(), c.samples.clone());
+        pad(&mut t, &mut x, false, nb, base_step, true);
+        lanes.push((Lane { t, step: base_step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::D(x)));
     }
     for p in pasted {
-        let shifted: Vec<f64> = p.times.iter().map(|t| t + offset).collect();
+        let step = 1.0 / own(p.rate);
+        let n = front(p.rate, false);
+        let t0 = p.times.first().copied().unwrap_or(0.0);
+        let mut t: Vec<f64> = p.times.iter().map(|v| v - t0).collect();
+        let sh = if n > 0 { shift } else { 0.0 };
+        match &p.channel {
+            Ok(a) => {
+                let mut x: Vec<f64> = a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v }).collect();
+                pad(&mut t, &mut x, 0.0, n, step, true);
+                lanes.push((Lane { t, step, shift: sh }, Vals::A(x)));
+            }
+            Err(d) => {
+                let mut x = d.samples.clone();
+                pad(&mut t, &mut x, false, n, step, true);
+                lanes.push((Lane { t, step, shift: sh }, Vals::D(x)));
+            }
+        }
+    }
+    // The trailing pads up to the longest padded span.
+    let span = |l: &Lane| l.t.last().copied().unwrap_or(0.0);
+    let maxdur = lanes.iter().map(|(l, _)| span(l)).fold(0.0, f64::max);
+    for (l, v) in &mut lanes {
+        let n = ((maxdur - span(l)) / l.step).abs().ceil() as usize;
+        match v {
+            Vals::A(x) => pad(&mut l.t, x, 0.0, n, l.step, false),
+            Vals::D(x) => pad(&mut l.t, x, false, n, l.step, false),
+        }
+    }
+    let count = ((r * maxdur).round() as i64 - 4).max(0) as usize;
+    let grid: Vec<f64> = (0..count).map(|i| i as f64 / r).collect();
+    let mut out = base.clone();
+    out.time = grid.iter().map(|&t| us(t)).collect();
+    out.sample_rate = r;
+    out.segments = 1;
+    let (na, nd) = (base.analog.len(), base.digital.len());
+    let mut it = lanes.into_iter();
+    let analog = |(l, v): (Lane, Vals)| match v {
+        Vals::A(x) => grid.iter().map(|&t| fit_at(&l, &x, t)).collect(),
+        Vals::D(_) => Vec::new(),
+    };
+    let digital = |(l, v): (Lane, Vals)| match v {
+        Vals::D(x) => grid.iter().map(|&t| pick_at(&l, &x, t, g, count)).collect(),
+        Vals::A(_) => Vec::new(),
+    };
+    for dst in out.analog.iter_mut().take(na) {
+        dst.samples = it.next().map(analog).unwrap_or_default();
+    }
+    for dst in out.digital.iter_mut().take(nd) {
+        dst.samples = it.next().map(digital).unwrap_or_default();
+    }
+    for (p, lane) in pasted.iter().zip(it) {
         match &p.channel {
             Ok(a) => {
                 let mut c = a.clone();
-                // Read through the accessor: a NaN reads 0 (`0x426020`).
-                let x: Vec<f64> = a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v }).collect();
-                c.samples = grid.iter().map(|&t| quad_at(&shifted, &x, t)).collect();
+                c.samples = analog(lane);
                 out.analog.push(c);
             }
             Err(d) => {
                 let mut c = d.clone();
-                c.samples = grid.iter().map(|&t| hold_at(&shifted, &d.samples, t, step)).collect();
+                c.samples = digital(lane);
                 out.digital.push(c);
             }
         }
@@ -384,15 +499,44 @@ mod tests {
     fn merge_rate_and_resampling() {
         assert_eq!(merged_rate(&[1000.0, 1200.0], 50.0), 1200.0);
         assert_eq!(merged_rate(&[1210.0], 50.0), 1200.0);
-        let t = [0.0, 1.0, 2.0, 3.0];
+        // The fit is exact on a parabola; past the end the samples read 0.
+        let l = Lane { t: vec![0.0, 1.0, 2.0, 3.0], step: 1.0, shift: 0.0 };
         let x = [0.0, 1.0, 4.0, 9.0];
-        assert!((quad_at(&t, &x, 1.5) - 2.25).abs() < 1e-12, "exact on a parabola");
-        assert_eq!(quad_at(&t, &x, 3.5), 0.0, "zero padding outside");
-        // The first sample at or after t, the next one when ≥ half a step away.
+        assert!((fit_at(&l, &x, 1.5) - 2.25).abs() < 1e-12);
+        // 2.5: j = 3, so samples 2, 3 and a zero past the end at 4 — not
+        // the parabola (no clamp at the end).
+        assert!((fit_at(&l, &x, 2.5) - 8.25).abs() < 1e-12);
+        // The pick: the first sample at or after t (from 1), the next
+        // when it is half a step or more away.
         let d = [false, true, false, true];
-        assert!(!hold_at(&t, &d, 1.9, 0.5), "sample 2 is 0.1 away");
-        assert!(hold_at(&t, &d, 1.6, 0.5), "sample 2 is 0.4 away: sample 3");
-        assert!(!hold_at(&t, &d, 0.0, 0.5), "from index 1: sample 1 is 1.0 away, so sample 2");
-        assert!(!hold_at(&t, &[true; 4], -0.1, 0.5));
+        assert!(!pick_at(&l, &d, 1.9, 0.5, 10), "sample 2 is 0.1 away");
+        assert!(pick_at(&l, &d, 1.6, 0.5, 10), "sample 2 is 0.4 away: sample 3");
+        assert!(!pick_at(&l, &d, 0.0, 0.5, 10), "from index 1: sample 1 is 1.0 away, so sample 2");
+        // The shift moves the search, not the measure (`0x47e696`).
+        let sh = Lane { t: vec![0.0, 1.0, 2.0, 3.0], step: 1.0, shift: -0.5 };
+        assert!(pick_at(&sh, &d, 1.0, 0.5, 10), "j = 2 (1.5 ≥ 1.0) is 1.0 away: sample 3");
+    }
+
+    /// `0x47dd20`–`0x47e0d8`: the later record padded at its front at its
+    /// own rate and shifted by −(1/R − |fmod(offset, 1/R)|); the span the
+    /// longest padded one; the count round(R·span) − 4; µs times.
+    #[test]
+    fn merge_pads_and_shifts_the_later_record() {
+        let mut cfg = String::from("S,D,1999\n1,1A,0D\n1,A,,,V,1,0,0,-32768,32767,1,1,S\n50\n1\n1000,100\n01/01/2024,00:00:00.000000\n01/01/2024,00:00:00.000000\nASCII\n1\n");
+        cfg.push('\n');
+        let dat: String = (0..100).map(|k| format!("{},{},{k}\n", k + 1, k * 1000)).collect();
+        let base = crate::comtrade::parse(&cfg, dat.as_bytes()).unwrap();
+        let mut b_ch = base.analog[0].clone();
+        b_ch.samples = vec![5.0; 100];
+        let pasted = [Pasted { channel: Ok(b_ch), times: (0..100).map(|k| k as f64 / 1000.0).collect(), rate: 1000.0 }];
+        // 2.5 ms later: 3 zero samples in front, shift −0.5 ms; the span
+        // 0.102 s, so round(102) − 4 samples.
+        let m = merge(&base, &pasted, 0.0025, &[0.0]);
+        assert_eq!(m.time.len(), 98);
+        assert!((m.analog[0].samples[10] - 10.0).abs() < 1e-9, "the base on the grid");
+        let b = &m.analog[1].samples;
+        assert_eq!(b[0], 0.0, "the padding");
+        assert!(b[1] < 0.0, "the fit runs across the zeros into the values (as the original)");
+        assert!((b[4] - 5.0).abs() < 1e-9, "the pasted values from 3.5 ms");
     }
 }

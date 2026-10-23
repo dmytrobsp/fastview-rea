@@ -459,7 +459,21 @@ impl App {
             let k = if k != 0.0 { k } else { 1.0 };
             a.samples = d.flagged.analog[i].samples.iter().map(|v| if v.is_nan() { 0.0 } else { v / k }).collect();
         }
-        let merged = merge::merge(&src, &pasted, d.merge_offset);
+        // The padding's zeros are read through the accessor too.
+        let pads: Vec<f64> = (0..d.osc.analog.len())
+            .map(|i| {
+                let k = crate::app::display_k(&d.osc.analog[i], d.chans[i].primary);
+                let mut z = d.osc.analog[i].clone();
+                z.samples = vec![0.0];
+                let v = crate::app::flag_series(&z, &d.chans[i], d.dc_mean[i], k)[0];
+                if k != 0.0 && v.is_finite() {
+                    v / k
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let merged = merge::merge(&src, &pasted, d.merge_offset, &pads);
         let old_rate = d.osc.sample_rate;
         let (nb, nd) = (d.osc.analog.len(), d.osc.digital.len());
         let anchor = |digital: bool| {
