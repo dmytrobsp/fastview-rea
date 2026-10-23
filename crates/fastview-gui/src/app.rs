@@ -1990,6 +1990,30 @@ mod tests {
         assert_eq!((d.analysis.phasors[3][k], d.rms_at(3, k)), on);
     }
 
+    /// A formula channel in Hz is a frequency candidate after the file's
+    /// (`0x42ea36`, `0x42ebd0`): adding one to a record without any turns
+    /// the correction on with it.
+    #[test]
+    fn a_formula_channel_in_hz_is_a_frequency_candidate() {
+        let osc = fvb_core::comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
+        let mut d = Doc::new(osc, "f".into());
+        assert_eq!(d.osc.freq_sel, 0);
+        let n = d.osc.sample_count();
+        let mut c = Computed::new("F".into(), "Frequency: ()".into(), vec![49.0; n], egui::Color32::RED);
+        c.unit = fvb_core::expr::formula_unit("Frequency: ()", &fvb_core::channels::OscChannels::new(&d.osc, &[], false));
+        assert_eq!(c.unit, "Hz");
+        d.computed.push(c);
+        d.channels_changed();
+        assert_eq!(d.osc.freq_sel, 1);
+        assert_eq!(fvb_core::freqcorr::candidate_names(&d.osc), ["F"]);
+        let corr = fvb_core::freqcorr::of(&d.osc).expect("corrected by the formula channel");
+        assert!(corr.for_chan(0).is_some(), "no file channel is the frequency channel");
+        // Removing it leaves the selection past the list: no correction.
+        d.computed.clear();
+        d.channels_changed();
+        assert!(fvb_core::freqcorr::of(&d.osc).is_none());
+    }
+
     /// `0x1006a29c` with both statics at 0: the first tab is the yellow
     /// (index 1, as the help screenshots), the next ones step on; a tab
     /// opened after a close takes its position's colour unless the last

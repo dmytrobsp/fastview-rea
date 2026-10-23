@@ -98,8 +98,13 @@ pub struct Oscillogram {
     /// lines).
     pub segments: usize,
     /// «Частота для коррекции расчётных значений» (`rec+0x874`): 0 none,
-    /// k the k-th [`crate::freqcorr::candidates`] entry.
+    /// k the k-th entry of [`crate::freqcorr::candidate_names`].
     pub freq_sel: i32,
+    /// Formula channels that are frequency candidates, by name with their
+    /// samples, in creation order — the original inserts a formula channel
+    /// after the analog ones (`0x42ea36`), so they follow the file's
+    /// candidates. Kept by whoever holds the formula channels.
+    pub extra_freq: Vec<(String, Vec<f64>)>,
 }
 
 /// The two `.cfg` time-stamp lines, token by token, and the COMTRADE 2013
@@ -684,6 +689,7 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
         stamps: Stamps::default(),
         segments: segments.max(1),
         freq_sel: 0,
+        extra_freq: Vec::new(),
     })
 }
 
@@ -1266,6 +1272,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         stamps,
         segments: rates.len(),
         freq_sel: 0,
+        extra_freq: Vec::new(),
     };
     // The loader rebuilds the frequency candidates (`0x45127d`), which
     // selects the first one.

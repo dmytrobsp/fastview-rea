@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 337 pass)
+- `cargo test --workspace`   (currently 338 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2272,7 +2272,7 @@ and the 50 Hz fallbacks, candidates / load selection / rebuild / gate)
 and `frequency_correction_on_load_off_and_back`; rendered the dialog on a
 record with a «Гц» channel (selected by default).
 Residual: computed channels are not candidates (the original's vector
-holds them, so a formula channel in Гц would be one); (`frequency:` is
+holds them, so a formula channel in Гц would be one — done L9.78); (`frequency:` is
 `rec+0x1fc[idx]`, the nominal frequency, and does not read `rec+0x874` —
 unchanged, as ours); merge synchronisation (`0x427670` / phasors in
 `merge.rs`) keeps the normal path; a0 / fault past the frequency channel's
@@ -2675,6 +2675,26 @@ paste, and rounded the own extrapolation. Now
 it. Test `pasted_value_at_the_cursor`.
 Residual: Max / Min / СКЗ / A1 of a pending lane (ours over the
 resampled series) not read; T(0) as L9.71.
+
+### L9.78 — A formula channel in Hz is a frequency candidate  ·  ✅
+Read by hand: a formula channel is inserted into the channel vector at
+index `rec+0x58` (the count after the analog channels, `0x42ea36`; the
+counter incremented after, `0x42eabf`) and the candidates are rebuilt at
+once (`0x42eaba` → `0x42ebd0`). Its ph / ccbm are empty, so its canonical
+unit decides (L9.70: `Frequency: ()` → Hz, `[Гц]` as typed). So the list
+is the file's candidates, then formula channels in creation order; adding
+one to a record without candidates turns the correction on with it
+(selection 0 → 1); the stored samples are read as the frequency.
+Ours had file channels only. Now `Oscillogram::extra_freq` (name +
+samples), kept by `Doc::channels_changed` from the formula channels with a
+frequency unit; `freqcorr::{candidate_names, is_freq_unit}`, `of` reaches
+past the file's candidates; the «Параметры файла» combo lists them. Test
+`a_formula_channel_in_hz_is_a_frequency_candidate`.
+Residual: pasted (bit 14) channels are inserted before the first selected
+channel of their kind, so a pasted Hz channel's place in the list is not
+modelled (ours: not a candidate); the formula frequency channel's own
+readouts are not excluded from the correction (the original's gate skips
+the frequency channel itself).
 
 Next in L9 (HANDOFF 2026-10-23, night): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

@@ -198,6 +198,14 @@ impl Doc {
     /// first candidate whenever there is one (L9.65).
     pub fn channels_changed(&mut self) {
         let before = self.osc.freq_sel;
+        // Formula channels in a frequency unit are candidates after the
+        // file's (pasted ones are not modelled).
+        self.osc.extra_freq = self
+            .computed
+            .iter()
+            .filter(|c| c.formula != crate::merge_ui::PENDING && fvb_core::freqcorr::is_freq_unit(&c.unit))
+            .map(|c| (c.name.clone(), c.samples.clone()))
+            .collect();
         fvb_core::freqcorr::refresh_selection(&mut self.osc);
         if self.osc.freq_sel != before {
             self.recompute_signals();
@@ -326,7 +334,7 @@ impl App {
         let mut st = self.dlg.file_params.take().unwrap_or_else(|| FileParamsDlg {
             rate_text: format!("{}", self.docs[ai].osc.sample_rate),
             // CB_SETCURSEL `rec+0x874` (0 with no candidate, `0x449efd`).
-            correction: if fvb_core::freqcorr::candidates(&self.docs[ai].osc).is_empty() { 0 } else { self.docs[ai].osc.freq_sel.max(0) as usize },
+            correction: if fvb_core::freqcorr::candidate_names(&self.docs[ai].osc).is_empty() { 0 } else { self.docs[ai].osc.freq_sel.max(0) as usize },
         });
         let mut open = true;
         let mut apply = false;
@@ -376,7 +384,7 @@ impl App {
                     // «Не корректировать», then each frequency candidate by
                     // name (`0x4499e0`); disabled when there is none.
                     let items: Vec<String> = std::iter::once("Не корректировать".to_string())
-                        .chain(fvb_core::freqcorr::candidates(o).into_iter().map(|c| o.analog[c].id.clone()))
+                        .chain(fvb_core::freqcorr::candidate_names(o))
                         .collect();
                     ui.add_enabled_ui(items.len() > 1, |ui| {
                         let shown = items.get(st.correction).cloned().unwrap_or_default();

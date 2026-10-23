@@ -31,24 +31,38 @@ pub struct FreqCorr<'a> {
     pub fs: f64,
 }
 
-/// The candidates (`0x42ebd0` with `0x42aee0`): analog channels whose ph or
-/// ccbm is exactly «system», or whose unit is one of the frequency units
-/// (exact compares).
+/// The frequency units of the candidate test (exact compares).
+const UNITS: [&str; 8] = ["Гц", "ГЦ", "Герц", "ГЕРЦ", "Hz", "HZ", "Herz", "HERZ"];
+
+/// The candidates (`0x42ebd0` with `0x42aee0`) among the file's analog
+/// channels: ph or ccbm exactly «system», or one of the frequency units.
+/// The formula channels' ([`Oscillogram::extra_freq`]) follow them.
 pub fn candidates(osc: &Oscillogram) -> Vec<usize> {
-    const UNITS: [&str; 8] = ["Гц", "ГЦ", "Герц", "ГЕРЦ", "Hz", "HZ", "Herz", "HERZ"];
     osc.analog
         .iter()
         .enumerate()
-        .filter(|(_, c)| c.phase == "system" || c.ccbm == "system" || UNITS.contains(&c.unit.as_str()))
+        .filter(|(_, c)| c.phase == "system" || c.ccbm == "system" || is_freq_unit(&c.unit))
         .map(|(i, _)| i)
         .collect()
+}
+
+/// Is `unit` a frequency unit for the candidate test? (A formula channel
+/// has empty ph / ccbm, so its unit alone decides.)
+pub fn is_freq_unit(unit: &str) -> bool {
+    UNITS.contains(&unit)
+}
+
+/// Every candidate's name in list order: the file's, then the formula
+/// channels'.
+pub fn candidate_names(osc: &Oscillogram) -> Vec<String> {
+    candidates(osc).into_iter().map(|c| osc.analog[c].id.clone()).chain(osc.extra_freq.iter().map(|(n, _)| n.clone())).collect()
 }
 
 /// The tail of `0x42ebd0`: a selection of 0 or past the list becomes 1 when
 /// there is a candidate (so «Не корректировать» does not survive a
 /// rebuild); a negative one is kept.
 pub fn refresh_selection(osc: &mut Oscillogram) {
-    let n = candidates(osc).len() as i32;
+    let n = (candidates(osc).len() + osc.extra_freq.len()) as i32;
     if (osc.freq_sel == 0 || osc.freq_sel > n) && n > 0 {
         osc.freq_sel = 1;
     }
@@ -61,8 +75,14 @@ pub fn of(osc: &Oscillogram) -> Option<FreqCorr<'_>> {
     if osc.segments != 1 || osc.freq_sel <= 0 {
         return None;
     }
-    let chan = *candidates(osc).get(osc.freq_sel as usize - 1)?;
-    Some(FreqCorr { chan, freq: &osc.analog[chan].samples, fs: osc.sample_rate.trunc() })
+    let k = osc.freq_sel as usize - 1;
+    let file = candidates(osc);
+    let fs = osc.sample_rate.trunc();
+    match file.get(k) {
+        Some(&chan) => Some(FreqCorr { chan, freq: &osc.analog[chan].samples, fs }),
+        // A formula channel: no file channel is the frequency channel.
+        None => Some(FreqCorr { chan: usize::MAX, freq: &osc.extra_freq.get(k - file.len())?.1, fs }),
+    }
 }
 
 impl<'a> FreqCorr<'a> {
