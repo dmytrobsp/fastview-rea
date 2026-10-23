@@ -2627,8 +2627,8 @@ edge pixels.
 Next in L9 (HANDOFF 2026-10-23, night): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
-(lipo), each one flat archive). `main` = HEAD, 335 tests; CI green on 3 OSes
-through L9.69 at this handoff (check `gh run list` for the later runs).
+(lipo), each one flat archive). `main` = HEAD (`2d7b709` + this handoff), 335 tests; CI green on 3 OSes
+through L9.75 at this handoff.
 **Night session (L9.68–L9.75):** L9.68 paste / an ОМП run never mark the
 record modified (ours marked a run through its phase lanes); **L9.69 every
 diagram shows the values as displayed (k)** — a «P» record shown
@@ -2671,7 +2671,7 @@ pending.
 [FV_WINDOW_RECORD=<cfg>] [FV_WINDOW_STATE=analysis (the sheet, two formula
 channels)|comments|group|circle|diff|omp|ompparams|preview|print|pagesetup|
 settings|channels|coef|fileparams|explorer|parambar|vizirs|alert|windows|
-skin<k>] [FV_WINDOW_XSCALE=f] [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y]
+paste|vecvalues|skin<k>] [FV_WINDOW_XSCALE=f] [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y]
 [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then Read the PNG (crop with
 ImageMagick `convert`); `FV_FRAME_BENCH=<cfg> cargo test --release
 frame_bench` times a frame. The user's sample records live outside the
@@ -2685,15 +2685,24 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-L9.65's residuals (computed channels as frequency candidates; merge
-sync under correction);
+display units — the per-second «/с» suffix and computed channels' bracket
+units through `0x42b740` (L9.74); the circle / differential legend's
+unclamped start and swatch pen, the Ω / power split of characteristic
+extents (L9.75); a pending lane's stats readout `0x461a24` and cursor
+mapping `0x463e9d`, and whether paste deselects (L9.71 vs L9.20); our
+differential page's per-arm method radios (page-wide in the original,
+L9.73); the circle diagram's locus painter `0x43a880` / readout table
+`0x43bbf0` were not re-read in the L9.75 comparison;
+L9.65's residuals (computed channels as frequency candidates — a
+`Frequency: ()` formula channel now has the unit Hz (L9.70), so it would
+be one; merge sync under correction);
 L9.22 print residuals (logo, paper; diagram print branches ✅ L9.66 /
 L9.67); L9.6 digital
 level-line snap (reachable only through a `.set`); keytips (MFC's ribbon
 keytip machinery — the program sets only Печать «p» / «w»); L9.27 MFC's
 intermediate ribbon reductions; L9.64's slot +0x1f0 and the MDI
 arrangements; pane re-docking (egui limit).
-(Done this session: L9.68 — paste / an ОМП run do not mark modified; L9.69 — diagrams in shown values, the vector header; L9.70 — formula units by the dimension walk; L9.71 — pasted lanes, the digital base bar; L9.72 — the vector diagram as read.)
+(Done in the night session: L9.68–L9.75, see the summary above.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
