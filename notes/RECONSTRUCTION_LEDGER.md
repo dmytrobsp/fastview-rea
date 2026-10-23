@@ -4835,10 +4835,22 @@ diagram is first shown), `char_side_panel` saving on the three edits;
 `persist::Store` lost `selected` / `visible` / `values`. Test
 `block_state_is_the_documents`.
 Residual: «Тип блока» showing a saved name the library lacks (ours shows
-«Нет»); the circle refresh also clears ShowFlags bit 3 on channels whose
-unit is neither Ohm nor VA (`0x436d77`–`0x436e64`, not checked against
-L9.34); the refresh's other callers (open / close, ~25 sites) not all
+«Нет»); (the circle refresh's ShowFlags sweep: L9.163); the refresh's other callers (open / close, ~25 sites) not all
 identified — ours refreshes on activation and 32860.
+
+### L9.163 — The circle refresh takes W / var channels off the circle diagram  ·  ✅
+Read (by hand `0x436d77`–`0x436e64`, string 3060 «Ohm», the literal
+"VA" at `0x4c5e38`, import #2954 = CompareNoCase `0x1005f756` →
+`_wcsicmp`; the rebind's one caller `0x434a9f`): every circle refresh
+walks the record's channels and, for each with ShowFlags bit 3 (on the
+circle diagram) whose canonical unit compares unequal, ignoring case, to
+both "Ohm" and "VA", clears bit 3. The «Каналы» column 4 lets Ohm, W, VA
+and var be ticked (`0x434e81`), so a W / var tick lasts only until the
+next refresh-all (`0x475420`: a view's activation, 32860, a differential
+pair's flag in «Каналы» — `0x434a9f` → `0x44c090`, …). Ours kept them.
+Now `chandlg::circle_refresh_flags`, run by `refresh_blocks` (the
+activation and 32860) and after a differential pair's cell in «Каналы».
+Test `the_circle_refresh_keeps_ohm_and_va_only`.
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

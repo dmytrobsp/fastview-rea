@@ -135,6 +135,21 @@ pub fn circle_unit_ok(unit: &str) -> bool {
     ["Ohm", "W", "VA", "var"].iter().any(|u| unit.eq_ignore_ascii_case(u))
 }
 
+/// The circle window's refresh (`0x436d77`–`0x436e64`, every refresh-all
+/// `0x475420`): a channel on the circle diagram whose canonical unit is
+/// neither "Ohm" (string 3060) nor "VA" (CompareNoCase) leaves it — so a W
+/// or var channel ticked in column 4 keeps the tick only until then.
+pub fn circle_refresh_flags(doc: &mut Doc) {
+    for key in rows(doc) {
+        let ok = unit_of(doc, key).is_some_and(|u| ["Ohm", "VA"].iter().any(|x| u.eq_ignore_ascii_case(x)));
+        match key {
+            ChanKey::Analog(i) if !ok => doc.chans[i].on_circle = false,
+            ChanKey::Computed(j) if !ok => doc.computed[j].on_circle = false,
+            _ => {}
+        }
+    }
+}
+
 /// The flag a cell shows, or `None` where it does not apply (drawn grey).
 pub fn cell(doc: &Doc, key: ChanKey, col: usize) -> Option<bool> {
     let unit = unit_of(doc, key);
@@ -527,6 +542,12 @@ impl App {
                                         cell_mark(ui.painter(), r, pair_cell(doc, pr, c), pal.accent);
                                         if resp.clicked() {
                                             toggle_pair_cell(doc, pr, c);
+                                            // A differential pair's flag rebinds the
+                                            // diagrams (`0x434a9f` → `0x44c090` →
+                                            // the refresh-all `0x475420`).
+                                            if matches!(pr, PairRow::Dif(_)) {
+                                                circle_refresh_flags(doc);
+                                            }
                                         }
                                     }
                                 }
@@ -754,6 +775,22 @@ mod tests {
         assert!(d.selection.is_empty());
         toggle_cell(&mut d, ChanKey::Digital(0), 1);
         assert!(!d.digital_visible[0]);
+    }
+
+    /// `0x436d77`–`0x436e64`: the refresh keeps only Ohm / VA channels on
+    /// the circle diagram (no case), W / var ones ticked in column 4 leave.
+    #[test]
+    fn the_circle_refresh_keeps_ohm_and_va_only() {
+        let mut d = demo_doc();
+        for (name, unit) in [("P", "W"), ("Q", "var"), ("Z", "OHM"), ("S", "VA")] {
+            let mut c = crate::app::Computed::new(name.into(), "Ua".into(), vec![], Color32::RED);
+            c.unit = unit.into();
+            c.on_circle = true;
+            d.computed.push(c);
+        }
+        assert!(d.computed.iter().all(|c| cell(&d, ChanKey::Computed(d.computed.iter().position(|x| x.name == c.name).unwrap()), 4).is_some()), "all four tickable");
+        circle_refresh_flags(&mut d);
+        assert_eq!(d.computed.iter().map(|c| c.on_circle).collect::<Vec<_>>(), [false, false, true, true]);
     }
 
     #[test]

@@ -2021,6 +2021,9 @@ impl App {
     /// block's values from it only when the document is not the one it
     /// last loaded from. No document: nothing changes.
     pub fn refresh_blocks(&mut self) {
+        if let Some(d) = self.active_doc_mut() {
+            crate::chandlg::circle_refresh_flags(d);
+        }
         self.refresh_live_block();
         let (here, other) = (self.diagram_dim, if self.diagram_dim == Dimension::Ohm { Dimension::Dif } else { Dimension::Ohm });
         if self.diagrams[usize::from(other == Dimension::Dif)].is_some() {
