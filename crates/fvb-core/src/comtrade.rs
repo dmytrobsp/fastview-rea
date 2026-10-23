@@ -104,6 +104,8 @@ pub struct Oscillogram {
     pub rate_segs: Vec<(f64, usize)>,
     /// The record's integer rate (`rec+0x228`, `0x453db0`).
     pub rate_r: f64,
+    /// The `.cfg`'s time multiplier (`rec+0x230`; 1 elsewhere).
+    pub time_mult: f64,
     /// The per-sample nominal frequency (`rec+0x1fc`, built by
     /// [`nominal_track`]): what `frequency:` and the clipboard's
     /// `net_frequency` read.
@@ -779,6 +781,7 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
         stamps: osc_stamps(info, n, first_rate.unwrap_or(rate)),
         rate_segs,
         rate_r: r,
+        time_mult: 1.0,
         freq_track: Vec::new(),
         trigger_sample: (be_i16(info, 0xE).max(0) as usize) * n,
         freq_sel: 0,
@@ -1408,7 +1411,6 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         "binary32" => DataFormat::Int32,
         _ => return Err(ComtradeError::Format),
     };
-    let _ = timemult; // already folded into `time`
     let rec = Oscillogram {
         station,
         device,
@@ -1422,6 +1424,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         stamps,
         rate_segs: rates.iter().map(|r| (r.rate, r.end_sample)).collect(),
         rate_r: comtrade_rate(&rates, line_freq),
+        time_mult: timemult,
         freq_track: Vec::new(),
         trigger_sample: 0,
         freq_sel: 0,
@@ -1459,6 +1462,7 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
         DataFormat::Ascii => {
             let text = decode_text(dat);
             let mut rows = 0usize;
+            let mut stamps_us: Vec<f64> = Vec::new();
             let mut consumed = 0usize;
             for line in text.split_inclusive('\n') {
                 if cancelled() {
@@ -1473,7 +1477,15 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
                     continue;
                 }
                 let f: Vec<&str> = line.split(',').collect();
-                // columns: sample#, timestamp, A1..Ana, D1..Dnd
+                // Nothing after the sample number and the timestamp — the
+                // reader is at the buffer's end (`0x45189b`): no row (a
+                // trailing ^Z line).
+                if f.len() < 3 {
+                    break;
+                }
+                // columns: sample#, timestamp, A1..Ana, D1..Dnd; the
+                // timestamp read as an integer (`0x477130`).
+                stamps_us.push(crate::clipdata::wtoi(f.get(1).copied().unwrap_or("")) as f64);
                 // value = mult·a·raw + b (`0x451904`).
                 for (ai, ch) in rec.analog.iter_mut().enumerate() {
                     let raw: f64 = f.get(2 + ai).and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
@@ -1485,15 +1497,10 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
                 }
                 rows += 1;
             }
-            // If the cfg under-counted samples, extend the time base.
-            if rows > rec.time.len() {
-                let dt = rec.time.get(1).copied().unwrap_or(0.0) - rec.time.first().copied().unwrap_or(0.0);
-                let mut t = rec.time.last().copied().unwrap_or(0.0);
-                while rec.time.len() < rows {
-                    t += dt;
-                    rec.time.push(t);
-                }
-            }
+            // Every row's time is its timestamp × the multiplier, rounded
+            // to whole µs (`0x4518a7`–`0x4518cd`) — whatever the rates say.
+            let _ = rows;
+            rec.time = stamps_us.iter().map(|t| round_fv(t * rec.time_mult) / 1e6).collect();
         }
         DataFormat::Int16 | DataFormat::Int32 => {
             let (abytes, dwords) = match fmt {
@@ -1507,6 +1514,19 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
                 return Err(ComtradeError::Dat("zero record length".into()));
             }
             let count = dat.len() / rec_len;
+            // Each record's time (`0x451d4d`–`0x451dad`): k · 1e6 / R × the
+            // multiplier with an integer rate R (rec+0x228), else its
+            // timestamp × the multiplier; whole µs.
+            let mut times = Vec::with_capacity(count);
+            for r in 0..count {
+                let base = r * rec_len;
+                let us = if rec.rate_r != 0.0 {
+                    r as f64 * 1e6 / rec.rate_r * rec.time_mult
+                } else {
+                    f64::from(i32::from_le_bytes([dat[base + 4], dat[base + 5], dat[base + 6], dat[base + 7]])) * rec.time_mult
+                };
+                times.push(round_fv(us) / 1e6);
+            }
             for r in 0..count {
                 if cancelled() {
                     break;
@@ -1546,14 +1566,7 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
                     p.set_remaining(dat.len() - (base + rec_len));
                 }
             }
-            if count > rec.time.len() {
-                let dt = rec.time.get(1).copied().unwrap_or(0.0) - rec.time.first().copied().unwrap_or(0.0);
-                let mut t = rec.time.last().copied().unwrap_or(0.0);
-                while rec.time.len() < count {
-                    t += dt;
-                    rec.time.push(t);
-                }
-            }
+            rec.time = times;
         }
     }
     // Truncate the time base to the number of rows actually read.
@@ -1647,5 +1660,28 @@ mod freq_track_tests {
         // The snap tables only at exactly 50 / 60 Hz.
         assert_eq!(snap_rate(2500.0, 50.0), 2400.0);
         assert_eq!(snap_rate(2500.0, 55.0), int_rate(2500.0, 55.0));
+    }
+
+    /// The readers' times (`0x451800`, `0x451be0`): ASCII rows take their
+    /// own timestamps × the multiplier; BINARY records k·1e6 / R × the
+    /// multiplier with the integer rate — a two-rate file is timed
+    /// uniformly at the snapped mean.
+    #[test]
+    fn record_times_as_the_readers_build_them() {
+        let head = |rates: &str, ft: &str, mult: &str| format!("S,D,1999\n1,1A,0D\n1,A,,,V,1,0,0,-32768,32767,1,1,S\n50\n{rates}01/01/2024,00:00:00.000000\n01/01/2024,00:00:00.000000\n{ft}\n{mult}\n");
+        let cfg = head("1\n1000,3\n", "ASCII", "2");
+        let rec = parse(&cfg, b"1,0,5\r\n2,1500,6\r\n3,4000,7\r\n\x1a\r\n").unwrap();
+        assert_eq!(rec.time, vec![0.0, 0.003, 0.008], "the timestamps × 2, not the rate; a trailing ^Z line is no row");
+        assert_eq!(rec.analog[0].samples.len(), 3);
+        let cfg = head("2\n1000,2\n2000,4\n", "BINARY", "1");
+        let mut dat = Vec::new();
+        for k in 0..4i32 {
+            dat.extend((k + 1).to_le_bytes());
+            dat.extend((k * 777).to_le_bytes());
+            dat.extend(100i16.to_le_bytes());
+        }
+        let rec = parse(&cfg, &dat).unwrap();
+        assert_eq!(rec.rate_r, 1600.0, "snap(1500)");
+        assert_eq!(rec.time, vec![0.0, 0.000625, 0.00125, 0.001875], "k·1e6/1600 µs");
     }
 }

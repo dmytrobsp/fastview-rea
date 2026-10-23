@@ -4275,6 +4275,31 @@ Ours padded base digital and all pasted channels with a raw 0 / off
 flags in `merge_records`), used for the front and the trailing pads.
 Test `merge_pads_and_shifts_the_later_record`.
 
+### L9.141 — A `.cfg` record's times as the readers build them; a trailing ^Z line  ·  ✅
+Read (by hand: the ASCII reader `0x451800`, BINARY `0x451be0`, binary32
+`0x4520f0`, the tokenizer `0x476d60` / `0x4771f0` / `0x477050`, the
+duration `0x44c0b0`): the `.dat` is memory-mapped; the ASCII reader
+takes each row's second token (the timestamp, as an integer) × the
+`.cfg`'s multiplier rec+0x230, rounded to whole µs, as that row's time —
+whatever the rate lines say; BINARY / binary32 give record k the time
+round(k · 1e6 / R × multiplier) with the integer rate R = rec+0x228, the
+record's timestamp × multiplier only when R is 0 (then R from the
+second time, L9.132). The tokenizer skips tab / LF / CR / space and ends
+a token at tab / LF / CR / comma; after the two leading tokens a row
+whose cursor reached the end is dropped (`0x45189b`) — a trailing DOS
+EOF (^Z) line adds no row. The duration is the first non-pasted
+channel's last time minus its first.
+Ours built every `.cfg` record's times from the rate lines (piecewise for
+several), and read a trailing ^Z line as an extra row of zeros (DOC_1999:
+11001 samples, «Длительность 11 с.»; now 11000 and 10.999 с, as
+WIN_1999 already showed). Now `Oscillogram::time_mult`, the ASCII times
+from the timestamps, the binary times from R (timestamps at R = 0), a
+row needing something after its timestamp. Test
+`record_times_as_the_readers_build_them`; real-records render pass
+(BINARY / WIN_1999 unchanged, DOC_1999 as above).
+Residual: a mid-file short row shifts the original's stream of tokens
+(ours drops just that row's values — ND which rows such files have).
+
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -4350,7 +4375,7 @@ the `.set` NetFreq round trip (`0x427bc0` / `0x427af0`, channels' own
 frequency, L9.137); 33035's message 239 on channels of different rates
 (needs per-channel rates, L9.131); our `sample_rate` vs rec+0x228 where
 the signal code uses the latter (multi-rate `.cfg`, rates not a multiple
-of f, L9.132); a rate-0 `.cfg`'s `.dat` timestamps; formulas naming
+of f, L9.132); formulas naming
 digital channels (L9.134); the docking marker
 bitmaps (ours drawn); L9.64 MDI arrangements under tabs (WM_MDICASCADE /
 TILE — visible effect ND); the caption bar from the style images (ours
