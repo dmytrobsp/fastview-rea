@@ -4320,8 +4320,31 @@ the rounded first rate and retimed the record on load. Now
 dialog; the `.set` writes / reads `rate_r` only. Tests
 `record_times_as_the_readers_build_them` (N 32 / 25 / 17),
 `reads_a_file_in_the_original_layout_and_the_legacy_ini`.
-Residual: the per-channel `.set` keys (computed / digital flags, NetFreq,
-colours of every kind) — next.
+Residual: (the per-channel `.set` keys: L9.143).
+
+### L9.143 — The `.set` per channel: every channel's whole ShowFlags, NetFreq, computed flags after the evaluation  ·  ✅
+Read (subagent report on the save `0x44cbc0`, the writer `0x427bc0`, the
+reader `0x427d20` / `0x427af0`, the load `0x44f5b0`): every channel of
+the vector — analog, computed (inserted after the analog ones) and
+digital — gets a section with `ShowFlags` = the whole ch+0x60 (no mask),
+the multipliers, `AliasName`, the colour keys and, for an analog channel
+with an own frequency vector, `NetFreq` (`%g` joined by ","); on load the
+file channels' sections are read first, then `CalculatedChannels` is
+evaluated, then the new computed channels' sections are read — their
+invert / DC / mode applied after every formula ran, the caches rebuilt
+without re-evaluating; `NetFreq`, when not empty, resizes the vector to
+the channel's count and fills it from the `_wtof` pieces.
+Ours stored a computed channel's visibility / diagrams / stats rows only
+and a digital channel's visibility only (their invert / DC / mode were
+lost), and no `NetFreq`. Now `computed_flags` / `digital_flags` carry the
+mode bits (0x80 by default), DC and invert, read back into `Computed` /
+`DigFlags` (`reflag_computed` after the evaluation, not re-evaluating);
+`recset::{write_net_freq, read_net_freq}` for analog channels. Tests
+`settings_survive_save_and_reopen`, `net_freq_round_trip`.
+Residual: the multipliers / alias / colour of digital and computed
+channels written as ours (1, "", the computed colour) — the original
+writes their fields (ND what they hold); `colorCustom` written as 0 when
+not custom (the original writes ch+0x144 always).
 
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
@@ -4394,8 +4417,7 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-the `.set` NetFreq round trip (`0x427bc0` / `0x427af0`, channels' own
-frequency, L9.137); 33035's message 239 on channels of different rates
+33035's message 239 on channels of different rates
 (needs per-channel rates, L9.131); formulas naming
 digital channels (L9.134); the docking marker
 bitmaps (ours drawn); L9.64 MDI arrangements under tabs (WM_MDICASCADE /

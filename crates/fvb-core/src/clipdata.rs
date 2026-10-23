@@ -91,7 +91,7 @@ pub fn wtoi(s: &str) -> i64 {
 }
 
 /// `_wtof`: the longest leading decimal number (with an exponent), 0 if none.
-fn wtof(s: &str) -> f64 {
+pub(crate) fn wtof(s: &str) -> f64 {
     let s = s.trim_start();
     (1..=s.len()).rev().filter(|&e| s.is_char_boundary(e)).find_map(|e| s[..e].parse::<f64>().ok().filter(|v| v.is_finite())).unwrap_or(0.0)
 }

@@ -376,6 +376,33 @@ pub fn write_channel(sec: &mut SetNode, c: &ChannelRec) {
     sec.set_int("colorCustom", c.custom_color.unwrap_or(0) as i32);
 }
 
+/// `NetFreq` (`0x427bc0` via `0x427a00`): an analog channel's own
+/// frequency vector, every element `%g`, joined by "," — written only when
+/// it is not empty.
+pub fn write_net_freq(sec: &mut SetNode, v: &[f64]) {
+    if !v.is_empty() {
+        let s: Vec<String> = v.iter().map(|&x| crate::views::fmt_g(x)).collect();
+        sec.set_str("NetFreq", &s.join(","));
+    }
+}
+
+/// `0x427af0`: a non-empty `NetFreq` resizes the vector to the channel's
+/// `count` values (old ones kept, new ones 0) and fills it from the
+/// comma-separated `_wtof` pieces, stopping at `count` or the string's end;
+/// none or an empty one leaves `cur`.
+pub fn read_net_freq(sec: &SetNode, count: usize, cur: &[f64]) -> Vec<f64> {
+    let s = sec.get_str("NetFreq", "");
+    if s.is_empty() {
+        return cur.to_vec();
+    }
+    let mut v = cur.to_vec();
+    v.resize(count, 0.0);
+    for (slot, piece) in v.iter_mut().zip(s.split(',')) {
+        *slot = crate::clipdata::wtof(piece);
+    }
+    v
+}
+
 // ---------------------------------------------------------------- formulas
 
 /// `0x415500` over `CalculatedChannels`: `Channel<i>` for i from 0 to the
@@ -654,6 +681,20 @@ mod tests {
         assert_eq!(&b[..4], &[0xFF, 0xFE, b'<', 0]);
         let back = crate::decode_fvb(&b);
         assert!(back.contains("text=\"a\r\nb\""));
+    }
+
+    /// `NetFreq` (`0x427bc0` / `0x427af0`): `%g` joined by ","; read back
+    /// into the channel's count, old values past the string kept.
+    #[test]
+    fn net_freq_round_trip() {
+        let mut sec = SetNode::default();
+        write_net_freq(&mut sec, &[]);
+        assert!(!sec.attrs.contains_key("NetFreq"), "nothing for an empty vector");
+        write_net_freq(&mut sec, &[50.0, 49.5]);
+        assert_eq!(sec.get_str("NetFreq", ""), "50,49.5");
+        assert_eq!(read_net_freq(&sec, 3, &[1.0, 2.0, 3.0]), vec![50.0, 49.5, 3.0]);
+        assert_eq!(read_net_freq(&sec, 1, &[]), vec![50.0]);
+        assert_eq!(read_net_freq(&SetNode::default(), 3, &[7.0]), vec![7.0], "none: unchanged");
     }
 
     #[test]

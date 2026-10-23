@@ -174,11 +174,7 @@ impl Doc {
             | bit(c.stats.minmax, flag::MINMAX)
             | bit(c.stats.a1, flag::A1)
             | bit(c.stats.rms, flag::RMS_ROW)
-            | match c.mode {
-                ValueMode::Instant => flag::MODE_INSTANT,
-                ValueMode::Rms => flag::MODE_RMS,
-                ValueMode::FirstHarmonic => flag::MODE_HARMONIC,
-            }
+            | mode_bits(c.mode)
             | bit(c.remove_dc, flag::REMOVE_DC)
             | bit(c.invert, flag::INVERT)
             | bit(c.adc_counts, flag::ADC)
@@ -193,13 +189,7 @@ impl Doc {
         c.stats.minmax = f & flag::MINMAX != 0;
         c.stats.a1 = f & flag::A1 != 0;
         c.stats.rms = f & flag::RMS_ROW != 0;
-        c.mode = if f & flag::MODE_RMS != 0 {
-            ValueMode::Rms
-        } else if f & flag::MODE_HARMONIC != 0 {
-            ValueMode::FirstHarmonic
-        } else {
-            ValueMode::Instant
-        };
+        c.mode = mode_of(f);
         c.remove_dc = f & flag::REMOVE_DC != 0;
         c.invert = f & flag::INVERT != 0;
         c.adc_counts = f & flag::ADC != 0;
@@ -214,7 +204,18 @@ impl Doc {
             | bit(c.stats.minmax, flag::MINMAX)
             | bit(c.stats.a1, flag::A1)
             | bit(c.stats.rms, flag::RMS_ROW)
+            | mode_bits(c.mode)
+            | bit(c.remove_dc, flag::REMOVE_DC)
+            | bit(c.invert, flag::INVERT)
             | flag::COMPUTED
+    }
+
+    /// A digital channel's ShowFlags (the whole ch+0x60: visibility, its
+    /// mode bits — 0x80 by default —, DC, invert).
+    fn digital_flags(&self, k: usize) -> u32 {
+        let f = self.dig(k);
+        let bit = |on: bool, b: u32| if on { b } else { 0 };
+        bit(self.digital_visible.get(k).copied().unwrap_or(true), flag::VISIBLE) | mode_bits(f.mode) | bit(f.remove_dc, flag::REMOVE_DC) | bit(f.invert, flag::INVERT)
     }
 
     /// The modelled bits replace their stored values; the others (bits we
@@ -246,6 +247,7 @@ impl Doc {
                 custom_color: (self.chans[i].color != def).then(|| colorref(self.chans[i].color)),
             };
             recset::write_channel(t.section_mut(&key), &rec);
+            recset::write_net_freq(t.section_mut(&key), &a.own_freq);
         }
         let na = self.osc.analog.len();
         for k in 0..self.osc.digital.len() {
@@ -255,9 +257,9 @@ impl Doc {
                 continue;
             }
             let key = self.file_key(na + k);
-            let vis = if self.digital_visible.get(k).copied().unwrap_or(true) { flag::VISIBLE } else { 0 };
+            let known_d = flag::VISIBLE | flag::MODE_INSTANT | flag::MODE_RMS | flag::MODE_HARMONIC | flag::REMOVE_DC | flag::INVERT;
             let rec = ChannelRec {
-                show_flags: Self::merged_flags(t, &key, vis, flag::VISIBLE) & mask,
+                show_flags: Self::merged_flags(t, &key, self.digital_flags(k), known_d) & mask,
                 primary_mul: 1.0,
                 secondary_mul: 1.0,
                 alias: self.alias(na + k, &self.osc.digital[k].id),
@@ -269,7 +271,7 @@ impl Doc {
             if print && !is_formula(c) {
                 continue;
             }
-            let known_c = flag::VISIBLE | flag::VECTOR | flag::CIRCLE | flag::MINMAX | flag::A1 | flag::RMS_ROW | flag::COMPUTED;
+            let known_c = flag::VISIBLE | flag::VECTOR | flag::CIRCLE | flag::MINMAX | flag::A1 | flag::RMS_ROW | flag::MODE_INSTANT | flag::MODE_RMS | flag::MODE_HARMONIC | flag::REMOVE_DC | flag::INVERT | flag::COMPUTED;
             let rec = ChannelRec {
                 show_flags: Self::merged_flags(t, &c.name, self.computed_flags(j), known_c) & mask,
                 primary_mul: 1.0,
@@ -345,6 +347,25 @@ impl Doc {
     }
 }
 
+/// The display-mode bits 7–9.
+fn mode_bits(m: ValueMode) -> u32 {
+    match m {
+        ValueMode::Instant => flag::MODE_INSTANT,
+        ValueMode::Rms => flag::MODE_RMS,
+        ValueMode::FirstHarmonic => flag::MODE_HARMONIC,
+    }
+}
+
+fn mode_of(f: u32) -> ValueMode {
+    if f & flag::MODE_RMS != 0 {
+        ValueMode::Rms
+    } else if f & flag::MODE_HARMONIC != 0 {
+        ValueMode::FirstHarmonic
+    } else {
+        ValueMode::Instant
+    }
+}
+
 impl App {
     /// Read the settings for document `di` (`0x44f5b0`); `from_command` =
     /// 32860 (comments are not re-read).
@@ -392,6 +413,7 @@ impl App {
                 let r = recset::read_channel(&sec, &cur);
                 d.set_analog_flags(i, r.show_flags);
                 let a = &mut d.osc.analog[i];
+                a.own_freq = recset::read_net_freq(&sec, a.samples.len(), &a.own_freq);
                 a.primary = r.primary_mul;
                 a.secondary = r.secondary_mul;
                 if !r.alias.is_empty() {
@@ -403,7 +425,7 @@ impl App {
             } else {
                 let k = i - na;
                 let cur = ChannelRec {
-                    show_flags: if d.digital_visible[k] { flag::VISIBLE } else { 0 },
+                    show_flags: d.digital_flags(k),
                     primary_mul: 1.0,
                     secondary_mul: 1.0,
                     alias: String::new(),
@@ -411,6 +433,7 @@ impl App {
                 };
                 let r = recset::read_channel(&sec, &cur);
                 d.digital_visible[k] = r.show_flags & flag::VISIBLE != 0;
+                *d.dig_mut(k) = crate::app::DigFlags { invert: r.show_flags & flag::INVERT != 0, remove_dc: r.show_flags & flag::REMOVE_DC != 0, mode: mode_of(r.show_flags) };
                 if !r.alias.is_empty() {
                     d.osc.digital[k].id = r.alias;
                 }
@@ -451,9 +474,15 @@ impl App {
             c.stats.minmax = r.show_flags & flag::MINMAX != 0;
             c.stats.a1 = r.show_flags & flag::A1 != 0;
             c.stats.rms = r.show_flags & flag::RMS_ROW != 0;
+            // Restored after every formula was evaluated, the cache rebuilt
+            // without re-evaluating (`0x44f5b0` loop 2, `0x428490`).
+            c.invert = r.show_flags & flag::INVERT != 0;
+            c.remove_dc = r.show_flags & flag::REMOVE_DC != 0;
+            c.mode = mode_of(r.show_flags);
             if let Some(v) = r.custom_color {
                 c.color = from_colorref(v);
             }
+            d.reflag_computed(j);
         }
         // The diagram windows and the view re-read their sections.
         self.setfile.sync = None;
@@ -873,6 +902,17 @@ mod tests {
         }
         app.recompute_doc(di);
         app.append_computed(&[("X".into(), "Ua+Ub".into())]).unwrap();
+        {
+            // A digital channel's invert, a computed one's invert and mode,
+            // an analog one's own frequency (`ShowFlags`, `NetFreq`).
+            let d = &mut app.docs[di];
+            d.dig_mut(0).invert = true;
+            let n = d.osc.analog[0].samples.len();
+            d.osc.analog[0].own_freq = vec![50.5; n];
+            d.computed[0].invert = true;
+            d.computed[0].mode = crate::app::ValueMode::Rms;
+            d.reflag_computed(0);
+        }
         app.vec_show_values = !app.vec_show_values;
         app.track_settings();
         assert!(app.docs[di].set.modified);
@@ -904,6 +944,11 @@ mod tests {
         assert_eq!(d.omp.params.stations[0].ia, "Ia");
         assert_eq!(d.computed.len(), 1);
         assert_eq!((d.computed[0].name.as_str(), d.computed[0].formula.as_str()), ("X", "Ua+Ub"));
+        assert!(d.dig(0).invert, "a digital channel's ShowFlags carry its invert");
+        assert_eq!((d.osc.analog[0].own_freq.len(), d.osc.analog[0].own_freq.first().copied()), (d.osc.analog[0].samples.len(), Some(50.5)), "NetFreq");
+        let x = &d.computed[0];
+        assert!(x.invert && x.mode == crate::app::ValueMode::Rms, "restored after the evaluation");
+        assert!(x.samples.iter().zip(&x.raw).all(|(s, r)| (s + r).abs() < 1e-9), "and applied");
         // Levels are read before moments; the text comes back with CR LF.
         assert_eq!(d.comments.len(), 2);
         assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(3), value, from: 10, to: 20 } if value == 2.5));
