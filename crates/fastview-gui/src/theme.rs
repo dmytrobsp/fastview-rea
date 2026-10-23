@@ -54,6 +54,7 @@ impl Skin {
                 tab_active: Color32::from_rgb(0xE4, 0xE1, 0xDC),
                 work_bg: Color32::from_rgb(0x80, 0x80, 0x80),
                 text: Color32::BLACK,
+                disabled: None,
             },
             Skin::OfficeXp => Palette {
                 ribbon_top: Color32::from_rgb(0xF7, 0xF6, 0xF3),
@@ -67,6 +68,7 @@ impl Skin {
                 tab_active: Color32::from_rgb(0xFB, 0xFA, 0xF8),
                 work_bg: Color32::from_rgb(0x80, 0x80, 0x80),
                 text: Color32::BLACK,
+                disabled: None,
             },
             Skin::WinXp => Palette {
                 ribbon_top: Color32::from_rgb(0xF6, 0xF5, 0xEE),
@@ -80,6 +82,7 @@ impl Skin {
                 tab_active: Color32::from_rgb(0xFC, 0xFC, 0xFE),
                 work_bg: Color32::from_rgb(0x80, 0x80, 0x80),
                 text: Color32::BLACK,
+                disabled: None,
             },
             Skin::Office2003 => Palette {
                 ribbon_top: Color32::from_rgb(0xE3, 0xEF, 0xFF),
@@ -93,6 +96,7 @@ impl Skin {
                 tab_active: Color32::from_rgb(0xF6, 0xFA, 0xFF),
                 work_bg: Color32::from_rgb(0x90, 0x99, 0xAE),
                 text: Color32::BLACK,
+                disabled: None,
             },
             Skin::Vs2005 => Palette {
                 ribbon_top: Color32::from_rgb(0xFA, 0xF9, 0xF5),
@@ -106,6 +110,7 @@ impl Skin {
                 tab_active: Color32::from_rgb(0xFF, 0xFF, 0xFF),
                 work_bg: Color32::from_rgb(0x80, 0x80, 0x80),
                 text: Color32::BLACK,
+                disabled: None,
             },
             Skin::Blue => Palette {
                 ribbon_top: Color32::from_rgb(0xC6, 0xD9, 0xF1),
@@ -119,6 +124,7 @@ impl Skin {
                 tab_active: Color32::from_rgb(0xF4, 0xF8, 0xFD),
                 work_bg: Color32::from_rgb(0x9C, 0xB6, 0xD6),
                 text: Color32::from_rgb(0x21, 0x37, 0x55),
+                disabled: Some(Color32::from_rgb(141, 141, 141)),
             },
             Skin::Black => Palette {
                 ribbon_top: Color32::from_rgb(0x74, 0x78, 0x7D),
@@ -132,6 +138,9 @@ impl Skin {
                 tab_active: Color32::from_rgb(0x83, 0x87, 0x8C),
                 work_bg: Color32::from_rgb(0x58, 0x5B, 0x5F),
                 text: Color32::from_rgb(0xF0, 0xF0, 0xF0),
+                // The read (141, 141, 141) needs the style's light panel body;
+                // ours is dark (the Black palette not yet read).
+                disabled: None,
             },
             Skin::Silver => Palette {
                 ribbon_top: Color32::from_rgb(0xEE, 0xEF, 0xF2),
@@ -145,6 +154,7 @@ impl Skin {
                 tab_active: Color32::from_rgb(0xFA, 0xFB, 0xFC),
                 work_bg: Color32::from_rgb(0xBD, 0xC0, 0xC7),
                 text: Color32::from_rgb(0x2C, 0x30, 0x36),
+                disabled: Some(Color32::from_rgb(141, 141, 141)),
             },
             Skin::Aqua => Palette {
                 ribbon_top: Color32::from_rgb(0xC4, 0xE4, 0xE4),
@@ -158,6 +168,7 @@ impl Skin {
                 tab_active: Color32::from_rgb(0xF0, 0xFA, 0xFA),
                 work_bg: Color32::from_rgb(0x8F, 0xBF, 0xC2),
                 text: Color32::from_rgb(0x14, 0x3B, 0x3D),
+                disabled: Some(Color32::from_rgb(159, 141, 154)),
             },
         }
     }
@@ -177,6 +188,10 @@ pub struct Palette {
     pub tab_active: Color32,
     pub work_bg: Color32,
     pub text: Color32,
+    /// Disabled labels: the Office 2007 styles' fixed BARS/TOOLBAR
+    /// TextDisabled (`0x10186ca0`); the older looks use the text at half
+    /// strength.
+    pub disabled: Option<Color32>,
 }
 
 /// Apply a skin to the egui context (base widget visuals; the ribbon paints its

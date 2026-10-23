@@ -699,11 +699,14 @@ mod window_tests {
         let (h_narrow, c_narrow, ctx, mut app) = height(700.0);
         assert!((h_narrow - h_wide).abs() < 1.0, "ribbon height {h_narrow} vs {h_wide}");
         // MFC's order (L9.91): Вычисления and Диаграммы step through their
-        // layouts first, «Вычисления» collapses (step 3), the single-button
-        // " " panel never does.
-        assert!(c_narrow[3] == 3 && c_narrow[1] > 0 && c_narrow[4] == 0, "steps: {c_narrow:?}");
-        let (.., c_1200, _, _) = height(1200.0);
-        assert_eq!(c_1200, vec![0, 0, 0, 1, 0], "first step: the panel with the most steps left, rightmost");
+        // layouts first, «Вычисления» collapses (step 3); with the read
+        // collapsed-button width (~30 px for the untitled panel, L9.114)
+        // the single-button " " panel is past 1.5 × it and collapses too.
+        assert!(c_narrow[3] == 3 && c_narrow[1] > 0, "steps: {c_narrow:?}");
+        // The first width that needs a step: the panel with the most steps
+        // left takes it (ties: the rightmost).
+        let first = (0..30).map(|k| height(1300.0 - 20.0 * k as f32).1).find(|c| c.iter().any(|&s| s > 0)).expect("a step before 700 px");
+        assert_eq!(first, vec![0, 0, 0, 1, 0], "first step: the panel with the most steps left, rightmost");
         // «Вычисления»'s button opens the panel as a popup.
         let popup = egui::Id::new(("fv_ribbon_group_popup", "Вычисления"));
         for x in (300..700).step_by(10) {

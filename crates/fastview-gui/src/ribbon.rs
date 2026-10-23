@@ -73,7 +73,9 @@ impl App {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         for (k, (label, enabled, cmd, opens)) in items.into_iter().chain([("Дополнительно  ▸", true, None, Some(AppSub::Extras))]).enumerate() {
                             if k > 0 {
-                                ui.add(egui::Separator::default().spacing(2.0));
+                                // From after the image column (4 + 32 px).
+                                let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 3.0), egui::Sense::hover());
+                                ui.painter().hline((r.left() + 36.0)..=r.right(), r.center().y, ui.visuals().widgets.noninteractive.bg_stroke);
                             }
                             // Every item is a large-image button with its text
                             // on the right (the main panel's Repos); the
@@ -349,7 +351,7 @@ impl App {
                 (Icon::Freq, "Частотная", Pane::Frequency),
                 (Icon::Vector, "Векторная", Pane::Vector),
                 (Icon::Circle, "Круговая", Pane::Circle),
-                (Icon::Diff, "Диффе-\nренциальная", Pane::Differential),
+                (Icon::Diff, "Дифферен циальная", Pane::Differential),
             ];
             for (k, (icon, label, pane)) in buttons.into_iter().enumerate() {
                 if k > 0 && step > 0 {
@@ -487,7 +489,7 @@ impl App {
                 }
             });
             let analog = self.active_doc().is_some_and(|d| !d.osc.analog.is_empty());
-            if ui.add_enabled_ui(analog, |ui| big_button(ui, p, Icon::Analysis, "Быстрый\nанализ")).inner.clicked() {
+            if ui.add_enabled_ui(analog, |ui| big_button(ui, p, Icon::Analysis, "Быстрый анализ")).inner.clicked() {
                 cmds.push(Command::QuickAnalysis);
             }
         });
@@ -495,7 +497,7 @@ impl App {
         // The unnamed panel (title " ", «Информация» in the help).
         ribbon_group(ui, p, " ", 1, |ui, _| {
             // 142: toggles the parameters bar, checked while it is shown.
-            if big_button_sel(ui, p, Icon::Wave, "Осцилло-\nграмма", self.dlg.param_bar)
+            if big_button_sel(ui, p, Icon::Wave, "Осцилло грамма", self.dlg.param_bar)
                 .on_hover_text("Показать или скрыть панель параметров осциллограммы")
                 .clicked()
             {
@@ -650,11 +652,13 @@ fn measure_id() -> egui::Id {
     egui::Id::new("fv_ribbon_measure")
 }
 
-/// A collapsed panel's button width: its title's (INFERRED: MFC's own
-/// button sizes to its text and image) plus the divider.
+/// A collapsed panel's button width plus the divider: the default panel
+/// button (`0x10120c93`: a 16 px image, the 9 px arrow always counted) is
+/// max(16 + 2 + 10, T + 5) + 2, T its balanced bottom text.
 fn collapsed_width(ui: &egui::Ui, title: &str) -> f32 {
-    let w = ui.fonts(|f| f.layout_no_wrap(title.to_owned(), egui::FontId::proportional(11.0), Color32::BLACK).size().x);
-    (w + 16.0).max(48.0) + 6.0
+    let font = egui::FontId::proportional(10.5);
+    let (_, t) = bottom_text(title, 9.0, |s| ui.fonts(|f| f.layout_no_wrap(s.to_owned(), font.clone(), Color32::BLACK).size().x));
+    large_width(18.0, t) + 2.0 + 6.0
 }
 
 /// The category's reduction (`CMFCRibbonCategory::RecalcLayout`
@@ -689,14 +693,28 @@ fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, lay
         None => ui.data(|d| d.get_temp::<usize>(group_step_id(title))).unwrap_or(0),
     };
     if step >= layouts {
-        // One button with the panel's name; the panel opens below it.
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(collapsed_width(ui, title) - 12.0, 84.0), egui::Sense::click());
+        // One button with the panel's name, the panel's whole height
+        // (`0x10124eab`); the panel opens below it. Office 2007 draws a
+        // 38 × 38 frame from the top + 3, the 16 px image at + 10 and the
+        // text from + 40 with the arrow (`0x10193c7b`).
+        let font = egui::FontId::proportional(10.5);
+        let (lines, _) = bottom_text(title, 9.0, |s| ui.fonts(|f| f.layout_no_wrap(s.to_owned(), font.clone(), p.text).size().x));
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(collapsed_width(ui, title) - 6.0, 84.0), egui::Sense::click());
         let painter = ui.painter();
         if resp.hovered() {
             painter.rect(rect, 3.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
         }
-        painter.text(rect.center() - egui::vec2(0.0, 8.0), egui::Align2::CENTER_CENTER, title, egui::FontId::proportional(11.0), p.text);
-        painter.text(rect.center() + egui::vec2(0.0, 10.0), egui::Align2::CENTER_CENTER, "▾", egui::FontId::proportional(11.0), p.text);
+        let cx = rect.center().x.round();
+        let frame = egui::Rect::from_min_size(egui::pos2(cx - 19.0, rect.top() + 3.0), egui::vec2(38.0, 38.0));
+        painter.rect(frame, 3.0f32, p.group_bg, egui::Stroke::new(1.0f32, p.group_border));
+        painter.rect_stroke(egui::Rect::from_min_size(egui::pos2(cx - 8.0, rect.top() + 10.0), egui::vec2(16.0, 16.0)).shrink(2.0), 1.0f32, egui::Stroke::new(1.0f32, p.accent));
+        for (i, line) in lines.iter().enumerate() {
+            painter.text(egui::pos2(cx, rect.top() + 40.0 + i as f32 * LINE_H), egui::Align2::CENTER_TOP, line, font.clone(), p.text);
+        }
+        // The arrow after the last line (on line 2 when the text is one line).
+        let last = lines.last().map(|l| ui.fonts(|f| f.layout_no_wrap(l.clone(), font.clone(), p.text).size().x)).unwrap_or(0.0);
+        let (ax, ay) = if lines.len() > 1 { (cx + last / 2.0 + 5.0, rect.top() + 40.0 + LINE_H + 2.0) } else { (cx, rect.top() + 40.0 + LINE_H + 2.0) };
+        painter.text(egui::pos2(ax, ay), egui::Align2::CENTER_TOP, "▾", egui::FontId::proportional(9.0), p.text);
         let popup = egui::Id::new(("fv_ribbon_group_popup", title));
         if resp.clicked() {
             ui.memory_mut(|m| m.toggle_popup(popup));
@@ -757,17 +775,10 @@ fn big_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &s
 }
 
 fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str, selected: bool) -> egui::Response {
-    // A large button's two-word label wraps at the space.
-    let wrapped;
-    let label = if !label.contains('\n') && label.contains(' ') {
-        wrapped = label.replacen(' ', "\n", 1);
-        wrapped.as_str()
-    } else {
-        label
-    };
     let font = egui::FontId::proportional(10.5);
-    let text_w = label.split('\n').map(|l| ui.fonts(|f| f.layout_no_wrap(l.to_owned(), font.clone(), p.text).size().x)).fold(0.0, f32::max);
-    let size = egui::vec2((text_w + 6.0).max(50.0), 64.0);
+    let measure = |t: &str| ui.fonts(|f| f.layout_no_wrap(t.to_owned(), font.clone(), p.text).size().x);
+    let (lines, text_w) = bottom_text(label, 0.0, measure);
+    let size = egui::vec2(large_width(32.0, text_w), LARGE_H);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     let painter = &plain_painter(ui);
     let (ink, accent) = inks(ui, p);
@@ -778,12 +789,39 @@ fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label
         let fill = if selected { p.accent_soft } else { p.accent_soft.gamma_multiply(0.5f32) };
         painter.rect(rect, 3.0f32, fill, egui::Stroke::new(1.0f32, p.accent_border));
     }
-    let box_ = egui::Rect::from_center_size(egui::pos2(rect.center().x, rect.top() + 20.0), egui::vec2(28.0, 28.0));
-    icons::paint(painter, box_, icon, accent);
-    for (i, line) in label.split('\n').enumerate() {
-        painter.text(egui::pos2(rect.center().x, rect.top() + 40.0 + i as f32 * 11.0), egui::Align2::CENTER_CENTER, line, font.clone(), ink);
+    // The 32 px image centred from the top + 3, the lines from + 38
+    // (`OnDraw` `0x10100cae`); our drawings fill 28 px of it.
+    let img = egui::Rect::from_min_size(egui::pos2((rect.center().x - 16.0).round(), rect.top() + 3.0), egui::vec2(32.0, 32.0));
+    icons::paint(painter, img.shrink(2.0), icon, accent);
+    for (i, line) in lines.iter().enumerate() {
+        painter.text(egui::pos2(rect.center().x, rect.top() + 38.0 + i as f32 * LINE_H), egui::Align2::CENTER_TOP, line, font.clone(), ink);
     }
     resp
+}
+
+/// A large button's height: the 32 px image + 1 + max(two text lines,
+/// 33) (`GetRegularSize` `0x10101ab9`), 66 at our line height.
+const LARGE_H: f32 = 66.0;
+/// The bottom text's line height.
+const LINE_H: f32 = 12.0;
+
+/// A large button's width (`0x10101ab9`, margin (5, 1) in large mode):
+/// max(image + 2 × 5, text + 5).
+pub fn large_width(image: f32, text_w: f32) -> f32 {
+    (image + 10.0).max(text_w + 5.0)
+}
+
+/// A large button's bottom text (`OnCalcTextSize` `0x10100a07`): one line
+/// without a space (its width, the arrow not counted); else the break at
+/// the space that minimises max(line 1, line 2 + arrow), the width rounded
+/// down to even. `arrow` the menu arrow (9 px) when the button has one.
+pub fn bottom_text(text: &str, arrow: f32, measure: impl Fn(&str) -> f32) -> (Vec<String>, f32) {
+    let spaces: Vec<usize> = text.match_indices(' ').map(|(i, _)| i).collect();
+    if spaces.is_empty() {
+        return (vec![text.to_string()], measure(text));
+    }
+    let (w, at) = spaces.iter().map(|&i| (measure(&text[..i]).max(measure(&text[i + 1..]) + arrow), i)).fold((f32::MAX, 0), |b, c| if c.0 < b.0 { c } else { b });
+    (vec![text[..at].to_string(), text[at + 1..].to_string()], ((w as i32) & !1) as f32)
 }
 
 /// Where the application menu keeps what its right column shows, with the
@@ -804,18 +842,28 @@ pub enum AppSub {
 /// An application-menu item: FastView gives each its large image
 /// (`0x473079`: small and large index n), so the row carries a 32 px image
 /// with the text on its right.
+/// Rows 44 px (max(text, 34) + 2 × 5, `0x1011cea4`), the image at the
+/// left + 3 centred, the text from + 38 on one line with an end ellipsis
+/// (`0x101012f1`).
 fn main_entry(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Option<Icon>, label: &str, enabled: bool, selected: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 36.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 44.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let v = ui.visuals();
     if selected || (enabled && resp.hovered()) {
         ui.painter().rect_filled(rect, 2.0f32, v.widgets.hovered.weak_bg_fill);
     }
-    let ink = if enabled { v.text_color() } else { v.weak_text_color() };
+    let ink = if enabled { v.text_color() } else { disabled_ink(p) };
     if let Some(icon) = icon {
-        let img = egui::Rect::from_min_size(rect.left_top() + egui::vec2(2.0, 2.0), egui::vec2(32.0, 32.0));
-        crate::icons::paint(ui.painter(), img.shrink(4.0), icon, if enabled { p.text } else { v.weak_text_color() });
+        let img = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.center().y - 16.0), egui::vec2(32.0, 32.0));
+        crate::icons::paint(ui.painter(), img.shrink(4.0), icon, if enabled { p.text } else { disabled_ink(p) });
     }
-    ui.painter().text(egui::pos2(rect.left() + 40.0, rect.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(13.0), ink);
+    let font = egui::FontId::proportional(13.0);
+    let room = rect.right() - rect.left() - 38.0 - 4.0;
+    let galley = ui.fonts(|f| {
+        let mut job = egui::text::LayoutJob::simple_singleline(label.to_owned(), font.clone(), ink);
+        job.wrap = egui::text::TextWrapping::truncate_at_width(room);
+        f.layout_job(job)
+    });
+    ui.painter().galley(egui::pos2(rect.left() + 38.0, rect.center().y - galley.size().y / 2.0), galley, ink);
     resp
 }
 
@@ -877,10 +925,11 @@ fn plain_painter(ui: &egui::Ui) -> egui::Painter {
 /// Labels on the (light) checked fill.
 const CHECKED_INK: Color32 = Color32::from_rgb(0x20, 0x20, 0x20);
 
-/// A disabled label: the text colour at half strength (readable on every
-/// look's body).
+/// A disabled label: the Office 2007 looks' fixed TextDisabled (141, 141,
+/// 141; Aqua 159, 141, 154 — `0x10193a84`), the older looks the text
+/// colour at half strength.
 fn disabled_ink(p: crate::theme::Palette) -> Color32 {
-    p.text.gamma_multiply(0.5f32)
+    p.disabled.unwrap_or(p.text.gamma_multiply(0.5f32))
 }
 
 /// The label and icon colours for the button's enabled state.
@@ -1185,6 +1234,20 @@ mod tests {
             assert!((lum(over(disabled_ink(p), body)) - lum(body)).abs() > 25.0, "{skin:?}: disabled");
             assert!((lum(CHECKED_INK) - lum(p.accent_soft)).abs() > 100.0, "{skin:?}: checked");
         }
+    }
+
+    /// `OnCalcTextSize` `0x10100a07`: the balanced break, rounded to even.
+    #[test]
+    fn large_button_text_breaks_at_the_balanced_space() {
+        let m = |s: &str| s.chars().count() as f32 * 7.0;
+        assert_eq!(bottom_text("Каналы", 0.0, m), (vec!["Каналы".to_string()], 42.0));
+        assert_eq!(bottom_text("Дифферен циальная", 0.0, m), (vec!["Дифферен".to_string(), "циальная".to_string()], 56.0));
+        // Two spaces: the break that keeps the longer line shortest.
+        assert_eq!(bottom_text("Две страницы рядом", 0.0, m).0, ["Две страницы", "рядом"]);
+        // The arrow counts on line 2; the width rounds down to even.
+        assert_eq!(bottom_text("Ab cde", 9.0, m), (vec!["Ab".to_string(), "cde".to_string()], 30.0));
+        assert_eq!(large_width(32.0, 20.0), 42.0, "at least the image + 2 × 5");
+        assert_eq!(large_width(32.0, 56.0), 61.0);
     }
 
     #[test]

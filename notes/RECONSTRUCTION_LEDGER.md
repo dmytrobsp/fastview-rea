@@ -3645,6 +3645,41 @@ Residual: «Свойства...» stays disabled (the driver dialog and a job
 DEVMODE kept across it not modelled); comdlg's queued-jobs count in the
 status not shown.
 
+### L9.114 — Ribbon sizes as MFC lays them out: large and collapsed buttons, menu rows, disabled ink  ·  ✅
+Read (subagent report on mfc120u; by hand: the original's labels, string
+158 «Дифферен циальная», 565 «Осцилло грамма», 159 «Быстрый анализ»): a
+large button (`GetRegularSize` `0x10101ab9`, margin (5, 1)) is max(image
++ 10, text + 5) wide and image + 1 + max(two lines, image + 1) tall (66
+with 32 px images); its bottom text (`OnCalcTextSize` `0x10100a07`) is one
+line without a space, else broken at the space minimising max(line 1,
+line 2 + arrow), the width rounded down to even; the image at the top + 3,
+the lines from + 38. A collapsed panel's button (`0x10120c93`, MFC's own)
+has a 16 px image, always counts the 9 px arrow, is max(28, T + 5) + 2
+wide and the panel's whole height; Office 2007 draws a 38 × 38 frame from
+the top + 3, the icon at + 10, the text from + 40 (`0x10193c7b`). The
+application menu's rows (`Repos` `0x1011cea4`) are max(text, 34) + 10 =
+44 px with the 32 px image at the left + 3 and the text from + 38 with an
+end ellipsis (`0x101012f1`), separators from 4 + 32 px. Disabled text in
+the Office 2007 looks is the style's fixed TextDisabled (141, 141, 141;
+Aqua 159, 141, 154 — `0x10193a84`), not a blend.
+Ours wrapped labels at the first space and hyphenated two by hand («Диффе-
+ренциальная», «Осцилло-грамма»), drew 64 px buttons with a 28 px icon,
+collapsed buttons sized to their title with a «▾» and no image, 36 px menu
+rows, and half-strength disabled ink. Now `ribbon::{bottom_text,
+large_width}` and the original's labels, `LARGE_H` 66, the collapsed
+button and `collapsed_width` as read (so the untitled single-button panel
+can now collapse in a very narrow window — L9.91's «never» was ours),
+`main_entry` 44 px rows, `Palette::disabled`. Tests
+`large_button_text_breaks_at_the_balanced_space`,
+`narrow_ribbon_collapses_panels_and_keeps_its_height` (the first step
+found by width); rendered at 1320 / 866 and the menu.
+Residual: the Black look keeps half-strength disabled ink — its palette
+(a dark body, light text) is ours and contradicts the style's black panel
+text (RIBBON/PANEL/TextNormal, INFERRED from the style data) — the Black
+palette needs reading; the line height is ours (12 px; MFC's from the
+font); whether Repos stretches large buttons to the column NOT
+DETERMINED; the collapsed button's 16 px image is ours (a framed square).
+
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
