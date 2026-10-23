@@ -172,6 +172,18 @@ impl Doc {
         self.set.keys = keys;
     }
 
+    /// A renamed file channel's original name (`+0x64`, decoded,
+    /// `0x4292e0`) — `None` while the name is the file's.
+    pub fn original_name(&self, k: ChanKey) -> Option<String> {
+        let (i, id) = match k {
+            ChanKey::Analog(i) => (i, &self.osc.analog.get(i)?.id),
+            ChanKey::Digital(d) => (self.osc.analog.len() + d, &self.osc.digital.get(d)?.id),
+            ChanKey::Computed(_) => return None,
+        };
+        let file = comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.codepage);
+        (file != *id).then_some(file)
+    }
+
     /// The displayed name of a channel for the comment records.
     fn key_name(&self, k: ChanKey) -> String {
         crate::chandlg::row_name(self, k)

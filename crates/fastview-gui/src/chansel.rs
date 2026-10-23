@@ -125,6 +125,21 @@ impl Doc {
     }
 
     /// `chans` plus every member of the groups they belong to.
+    /// Dissolve the groups of `chans` (`0x455df0`): a horizontal визир on a
+    /// member goes back to "never placed" (hidden, value 0, no channel),
+    /// then the members are ungrouped.
+    pub fn dissolve_groups(&mut self, chans: &[usize]) {
+        let members: Vec<usize> = self.with_groups(chans).into_iter().filter(|&i| self.chans[i].group.is_some()).collect();
+        for h in &mut self.hviz {
+            if h.chan.is_some_and(|c| members.contains(&c)) {
+                *h = crate::app::HVizir::default();
+            }
+        }
+        for i in members {
+            self.chans[i].group = None;
+        }
+    }
+
     pub fn with_groups(&self, chans: &[usize]) -> Vec<usize> {
         let groups: BTreeSet<u32> = chans.iter().filter_map(|&i| self.chans[i].group).collect();
         let mut out: BTreeSet<usize> = chans.iter().copied().collect();
@@ -268,9 +283,10 @@ impl Doc {
     /// 32848 «Скрыть»: hide the selected channels and their groups, dissolve
     /// those groups and deselect them.
     pub fn hide_selected(&mut self) {
-        for i in self.with_groups(&self.selected_analog()) {
+        let members = self.with_groups(&self.selected_analog());
+        self.dissolve_groups(&members);
+        for i in members {
             self.chans[i].visible = false;
-            self.chans[i].group = None;
             self.selection.remove(&ChanKey::Analog(i));
         }
     }
@@ -335,6 +351,8 @@ impl Doc {
             return;
         }
         let members = self.with_groups(&self.selected_visible_analog());
+        // The old groups are dissolved first (`0x467796`).
+        self.dissolve_groups(&members);
         let g = self.next_group;
         self.next_group += 1;
         for &i in &members {
@@ -352,9 +370,8 @@ impl Doc {
     /// 33037 «Разъединить каналы»: dissolve every group a selected visible
     /// channel belongs to.
     pub fn split_selected(&mut self) {
-        for i in self.with_groups(&self.selected_visible_analog()) {
-            self.chans[i].group = None;
-        }
+        let sel = self.selected_visible_analog();
+        self.dissolve_groups(&sel);
     }
 
     /// The colour «Цвет канала» starts from: the first selected channel's.

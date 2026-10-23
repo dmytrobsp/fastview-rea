@@ -928,8 +928,9 @@ Panel height under `Circle Diagram` / `Diff Diagram`.
 - Rows: the analog channels (file, then computed), one row per
   differential pair (`doc+0x878`, «Iторм | Iдиф»), one per R/X pair
   (`doc+0x884`, «R | X»), then channels with kind 1 (L9.152: column 5
-  toggles a differential pair, column 4 an R/X pair). Text colour (150,150,150) for
-  "not applicable" cells [I].
+  toggles a differential pair, column 4 an R/X pair). Not-applicable cells
+  show bitmap 464's greyed box (image 7); every name is black, a renamed
+  channel's original file name follows in (150,150,150) (L9.166).
 - Cell click toggles:
 
   | col | flag | allowed when |
@@ -938,7 +939,7 @@ Panel height under `Circle Diagram` / `Diff Diagram`.
   | 1 | bit0 visible | always; hiding also dissolves the channel's group and deselects |
   | 2 | bit1 frequency | analog and not bit14 |
   | 3 | bit2 vector | canonical unit A / V / «ном» / "" (click: case-sensitive `0x42deb0`; paint: no case) |
-  | 4 | bit3 circle | canonical unit Ohm / W / VA / var, no case (ledger L9.34) |
+  | 4 | bit3 circle | canonical unit Ohm / W / VA / var, no case (ledger L9.34), not pending a merge (bit14); the click's refresh-all then clears W / var again (L9.166) |
   | 4 / 5 | digital entry visible | digital rows: group B in col 4, group A in col 5 |
 
   Every click refreshes views and marks modified.

@@ -163,7 +163,8 @@ pub fn cell(doc: &Doc, key: ChanKey, col: usize) -> Option<bool> {
         (ChanKey::Analog(i), 3) if vector_unit_ok(unit.as_deref().unwrap_or("")) => Some(doc.chans[i].on_vector),
         (ChanKey::Computed(j), 3) if vector_unit_ok(unit.as_deref().unwrap_or("")) => Some(doc.computed[j].on_vector),
         (ChanKey::Analog(i), 4) if circle_unit_ok(unit.as_deref().unwrap_or("")) => Some(doc.chans[i].on_circle),
-        (ChanKey::Computed(j), 4) if circle_unit_ok(unit.as_deref().unwrap_or("")) => Some(doc.computed[j].on_circle),
+        // Not for a channel pending a merge (bit 14; click `0x434e81`, paint).
+        (ChanKey::Computed(j), 4) if circle_unit_ok(unit.as_deref().unwrap_or("")) && !pending(doc, j) => Some(doc.computed[j].on_circle),
         _ => None,
     }
 }
@@ -177,17 +178,17 @@ pub fn set_cell(doc: &mut Doc, key: ChanKey, col: usize, v: bool) {
     // Every click marks the document modified (`0x4349c0`).
     doc.set.modified = true;
     match (key, col) {
-        (ChanKey::Analog(i), 1) => {
-            doc.chans[i].visible = v;
-            if !v {
-                if let Some(g) = doc.chans[i].group {
-                    for c in doc.chans.iter_mut().filter(|c| c.group == Some(g)) {
-                        c.group = None;
-                    }
-                }
-                doc.selection.remove(&key);
+        // Hiding takes the whole group: every member hidden and deselected,
+        // the group dissolved (`0x434b1c`–`0x434c71`, `0x455df0`).
+        (ChanKey::Analog(i), 1) if !v => {
+            let members = doc.with_groups(&[i]);
+            doc.dissolve_groups(&members);
+            for m in members {
+                doc.chans[m].visible = false;
+                doc.selection.remove(&ChanKey::Analog(m));
             }
         }
+        (ChanKey::Analog(i), 1) => doc.chans[i].visible = true,
         (ChanKey::Computed(j), 1) => {
             doc.computed[j].visible = v;
             if !v {
@@ -218,23 +219,93 @@ pub fn toggle_cell(doc: &mut Doc, key: ChanKey, col: usize) {
     }
 }
 
-/// A header click (HDN_ITEMCLICK `0x435080`): when every applicable row has
-/// the flag it is cleared on all of them, otherwise set on all of them.
+fn pending(doc: &Doc, j: usize) -> bool {
+    doc.computed[j].formula == crate::merge_ui::PENDING
+}
+
+/// A header click (HDN_ITEMCLICK `0x435080`): the flag is set everywhere it
+/// can be when fewer rows have it than the column counts as applicable,
+/// else cleared — with the original's counts, which are not the cells':
+/// column 2 counts every analog row (computed and pending ones included)
+/// but writes the file channels only, column 3 counts the flag on any row,
+/// column 4 counts the eligible rows pending or not (and the R/X pairs) but
+/// writes the non-pending ones; column 5 is the differential pairs alone.
+/// No group is dissolved; the document is marked and the diagrams
+/// refreshed even when nothing applies.
 pub fn toggle_column(doc: &mut Doc, col: usize) {
-    let at = |doc: &Doc, r: DlgRow| match r {
-        DlgRow::Chan(k) => cell(doc, k, col),
-        DlgRow::Pair(p) => pair_cell(doc, p, col),
-    };
-    let rows: Vec<DlgRow> = dlg_rows(doc).into_iter().filter(|&r| at(doc, r).is_some()).collect();
-    if rows.is_empty() {
-        return;
-    }
-    let all = rows.iter().all(|&r| at(doc, r) == Some(true));
-    for r in rows {
-        match r {
-            DlgRow::Chan(k) => set_cell(doc, k, col, !all),
-            DlgRow::Pair(p) => set_pair_cell(doc, p, col, !all),
+    let keys = rows(doc);
+    let analog: Vec<ChanKey> = keys.iter().copied().filter(|k| !matches!(k, ChanKey::Digital(_))).collect();
+    let unit_ok = |doc: &Doc, k: ChanKey, f: fn(&str) -> bool| unit_of(doc, k).is_some_and(|u| f(&u));
+    match col {
+        1 => {
+            let set = keys.iter().filter(|&&k| cell(doc, k, 1) == Some(true)).count();
+            let v = set < keys.len();
+            for &k in &keys {
+                match k {
+                    ChanKey::Analog(i) => doc.chans[i].visible = v,
+                    ChanKey::Computed(j) => doc.computed[j].visible = v,
+                    ChanKey::Digital(d) => {
+                        if let Some(f) = doc.digital_visible.get_mut(d) {
+                            *f = v;
+                        }
+                    }
+                }
+                if !v {
+                    doc.selection.remove(&k);
+                }
+            }
         }
+        2 => {
+            let set = doc.chans.iter().filter(|c| c.on_freq).count();
+            let v = set < analog.len();
+            for c in &mut doc.chans {
+                c.on_freq = v;
+            }
+        }
+        3 => {
+            let eligible: Vec<ChanKey> = analog.iter().copied().filter(|&k| unit_ok(doc, k, vector_unit_ok)).collect();
+            let set = doc.chans.iter().filter(|c| c.on_vector).count() + doc.computed.iter().filter(|c| c.on_vector).count();
+            let v = set < eligible.len();
+            for k in eligible {
+                set_flag(doc, k, 3, v);
+            }
+        }
+        4 => {
+            let eligible: Vec<ChanKey> = analog.iter().copied().filter(|&k| unit_ok(doc, k, circle_unit_ok)).collect();
+            let set = eligible.iter().filter(|&&k| match k {
+                ChanKey::Computed(j) => doc.computed[j].on_circle && !pending(doc, j),
+                ChanKey::Analog(i) => doc.chans[i].on_circle,
+                ChanKey::Digital(_) => false,
+            }).count() + doc.rx_pairs.iter().filter(|p| p.on).count();
+            let v = set < eligible.len() + doc.rx_pairs.len();
+            for k in eligible {
+                if !matches!(k, ChanKey::Computed(j) if pending(doc, j)) {
+                    set_flag(doc, k, 4, v);
+                }
+            }
+            for p in &mut doc.rx_pairs {
+                p.on = v;
+            }
+        }
+        5 => {
+            let v = doc.dif_pairs.iter().filter(|p| p.on).count() < doc.dif_pairs.len();
+            for p in &mut doc.dif_pairs {
+                p.on = v;
+            }
+        }
+        _ => {}
+    }
+    doc.set.modified = true;
+    circle_refresh_flags(doc);
+}
+
+fn set_flag(doc: &mut Doc, k: ChanKey, col: usize, v: bool) {
+    match (k, col) {
+        (ChanKey::Analog(i), 3) => doc.chans[i].on_vector = v,
+        (ChanKey::Computed(j), 3) => doc.computed[j].on_vector = v,
+        (ChanKey::Analog(i), 4) => doc.chans[i].on_circle = v,
+        (ChanKey::Computed(j), 4) => doc.computed[j].on_circle = v,
+        _ => {}
     }
 }
 
@@ -448,9 +519,13 @@ fn header_glyph(p: &egui::Painter, r: Rect, col: usize, c: Color32) {
             p.circle_stroke(m, 6.0, s);
         }
         _ => {
-            let pts = [(-7.0, 4.0), (-3.0, 4.0), (-3.0, -4.0), (3.0, -4.0), (3.0, 4.0), (7.0, 4.0)];
-            let v: Vec<Pos2> = pts.iter().map(|&(x, y)| m + Vec2::new(x, y)).collect();
-            p.add(egui::Shape::line(v, s));
+            // Column 5 is the differential pairs': a differential
+            // characteristic (bitmap 464's image 4) — axes, a flat start
+            // and a rising slope.
+            p.line_segment([m + Vec2::new(-7.0, 6.0), m + Vec2::new(7.0, 6.0)], s);
+            p.line_segment([m + Vec2::new(-7.0, 6.0), m + Vec2::new(-7.0, -6.0)], s);
+            let pts = [(-7.0, 2.0), (-2.0, 2.0), (7.0, -6.0)];
+            p.add(egui::Shape::line(pts.iter().map(|&(x, y)| m + Vec2::new(x, y)).collect(), s));
         }
     }
 }
@@ -458,8 +533,9 @@ fn header_glyph(p: &egui::Painter, r: Rect, col: usize, c: Color32) {
 fn cell_mark(p: &egui::Painter, r: Rect, v: Option<bool>, accent: Color32) {
     let b = Rect::from_center_size(r.center(), Vec2::splat(11.0));
     match v {
+        // Not applicable: a greyed-out box (bitmap 464's image 7).
         None => {
-            p.line_segment([b.left_center(), b.right_center()], Stroke::new(1.0f32, GREY));
+            p.rect(b, 1.0f32, Color32::from_gray(236), Stroke::new(1.0f32, Color32::from_gray(190)));
         }
         Some(on) => {
             p.rect_stroke(b, 1.0f32, Stroke::new(1.0f32, accent));
@@ -542,12 +618,9 @@ impl App {
                                         cell_mark(ui.painter(), r, pair_cell(doc, pr, c), pal.accent);
                                         if resp.clicked() {
                                             toggle_pair_cell(doc, pr, c);
-                                            // A differential pair's flag rebinds the
-                                            // diagrams (`0x434a9f` → `0x44c090` →
-                                            // the refresh-all `0x475420`).
-                                            if matches!(pr, PairRow::Dif(_)) {
-                                                circle_refresh_flags(doc);
-                                            }
+                                            // Every click ends in the refresh-all
+                                            // (`0x43502b` → `0x475420`).
+                                            circle_refresh_flags(doc);
                                         }
                                     }
                                 }
@@ -575,14 +648,14 @@ impl App {
                                     continue;
                                 }
                                 let resp = ui.interact(r, ui.id().with(("fv_ch_name", key)), Sense::click());
-                                let col = if matches!(key, ChanKey::Computed(_)) { GREY } else { pal.text };
-                                ui.painter().with_clip_rect(r).text(
-                                    r.left_center() + Vec2::new(4.0, 0.0),
-                                    egui::Align2::LEFT_CENTER,
-                                    row_name(doc, key),
-                                    egui::FontId::proportional(12.0),
-                                    col,
-                                );
+                                // Every name in black; a renamed channel's original
+                                // name follows in (150, 150, 150) (`0x4342e3`–`0x434416`).
+                                let p = ui.painter().with_clip_rect(r);
+                                let at = r.left_center() + Vec2::new(4.0, 0.0);
+                                let name = p.text(at, egui::Align2::LEFT_CENTER, row_name(doc, key), egui::FontId::proportional(12.0), pal.text);
+                                if let Some(orig) = doc.original_name(key) {
+                                    p.text(Pos2::new(name.right() + 5.0, at.y), egui::Align2::LEFT_CENTER, format!("({orig})"), egui::FontId::proportional(12.0), GREY);
+                                }
                                 if resp.clicked() {
                                     match can_rename(key) {
                                         Ok(()) => st.rename = Some((key, row_name(doc, key))),
@@ -594,6 +667,7 @@ impl App {
                                 cell_mark(ui.painter(), r, cell(doc, key, c), pal.accent);
                                 if resp.clicked() {
                                     toggle_cell(doc, key, c);
+                                    circle_refresh_flags(doc);
                                 }
                             }
                         }
@@ -769,12 +843,46 @@ mod tests {
         d.chans[0].group = Some(7);
         d.chans[1].group = Some(7);
         d.selection.insert(ChanKey::Analog(0));
+        d.selection.insert(ChanKey::Analog(1));
+        d.hviz[0] = crate::app::HVizir { shown: true, chan: Some(1), value: 5.0 };
+        d.hviz[1] = crate::app::HVizir { shown: true, chan: Some(2), value: 5.0 };
         toggle_cell(&mut d, ChanKey::Analog(0), 1);
-        assert!(!d.chans[0].visible);
+        assert!(!d.chans[0].visible && !d.chans[1].visible, "the whole group hides (`0x434b1c`)");
         assert_eq!((d.chans[0].group, d.chans[1].group), (None, None));
         assert!(d.selection.is_empty());
+        assert_eq!(d.hviz[0], crate::app::HVizir::default(), "a ГВ on a member: never placed (`0x455df0`)");
+        assert!(d.hviz[1].shown, "a ГВ on another channel stays");
         toggle_cell(&mut d, ChanKey::Digital(0), 1);
         assert!(!d.digital_visible[0]);
+    }
+
+    /// The header's counts (`0x435080`): column 2 counts the computed rows
+    /// as applicable but writes the file channels only, so with a computed
+    /// channel it can only set; column 1 hides without dissolving groups.
+    #[test]
+    fn header_clicks_use_the_originals_counts() {
+        let mut d = demo_doc();
+        d.computed.push(crate::app::Computed::new("X".into(), "Ua".into(), vec![], Color32::RED));
+        toggle_column(&mut d, 2);
+        assert!(d.chans.iter().all(|c| c.on_freq));
+        toggle_column(&mut d, 2);
+        assert!(d.chans.iter().all(|c| c.on_freq), "set < applicable: set again");
+        d.chans[0].group = Some(3);
+        d.chans[1].group = Some(3);
+        toggle_column(&mut d, 1);
+        assert!(d.chans.iter().all(|c| !c.visible));
+        assert_eq!(d.chans[0].group, Some(3), "no dissolve from the header");
+    }
+
+    /// A renamed channel shows its file name after the new one (`0x4342e3`).
+    #[test]
+    fn a_renamed_channel_keeps_its_original_name() {
+        let mut d = demo_doc();
+        d.init_set_keys();
+        assert_eq!(d.original_name(ChanKey::Analog(0)), None);
+        let old = d.osc.analog[0].id.clone();
+        assert_eq!(rename(&mut d, ChanKey::Analog(0), "Новое"), Ok(()));
+        assert_eq!(d.original_name(ChanKey::Analog(0)), Some(old));
     }
 
     /// `0x436d77`–`0x436e64`: the refresh keeps only Ohm / VA channels on

@@ -81,7 +81,7 @@ class; `?` = no labelled caller within four levels), from
 
 Batches, in this order (the size of the unread code, user visibility):
 
-- [ ] **W1.1** ChannelsDlg area — 11 functions (`0x433db0`, `0x435080`, …).
+- [x] **W1.1** ChannelsDlg area — 11 functions: 4 with behaviour, 7 library code explained away (L9.166).
 - [ ] **W1.2** Quick-analysis pages — CQAnDiffCursPg (7), CQAnSymmSostPg (3), CQAnPhaseSoprotPg (2), CQAnMezphaseSoedPg (2), CQAnFormulaEditorPg (2).
 - [ ] **W1.3** Circle / differential diagrams — CircleDiagramWnd (8), DiffDiagramWnd (4), DiffDiagPane (1).
 - [ ] **W1.4** ОМП — `map_0x4d1434` (3), WrongPlaceLocatorDlg (2), the locator data classes (3).

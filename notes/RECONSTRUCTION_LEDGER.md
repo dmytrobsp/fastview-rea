@@ -4845,11 +4845,12 @@ Read (by hand `0x436d77`–`0x436e64`, string 3060 «Ohm», the literal
 walks the record's channels and, for each with ShowFlags bit 3 (on the
 circle diagram) whose canonical unit compares unequal, ignoring case, to
 both "Ohm" and "VA", clears bit 3. The «Каналы» column 4 lets Ohm, W, VA
-and var be ticked (`0x434e81`), so a W / var tick lasts only until the
-next refresh-all (`0x475420`: a view's activation, 32860, a differential
-pair's flag in «Каналы» — `0x434a9f` → `0x44c090`, …). Ours kept them.
-Now `chandlg::circle_refresh_flags`, run by `refresh_blocks` (the
-activation and 32860) and after a differential pair's cell in «Каналы».
+and var be ticked (`0x434e81`), but every «Каналы» click ends in the
+refresh-all (`0x43502b`, the header's `0x435a60`; L9.166), so such a tick
+is cleared by the same click; other refresh-alls (a view's activation,
+32860) clear one set elsewhere (a `.set`). Ours kept them. Now
+`chandlg::circle_refresh_flags`, run by `refresh_blocks` (the activation
+and 32860) and after every «Каналы» click.
 Test `the_circle_refresh_keeps_ohm_and_va_only`.
 
 ### L9.164 — A channel drag scrolls the view at its top and bottom edges  ·  ✅ (left / right ND)
@@ -4890,6 +4891,57 @@ Ours started from that screenshot. Now `Docks::default` is the start-up
 docking (Векторная order 0, its tab Круговая, Дифференциальная order 1,
 Частотная bottom order 2); the docking tests start from
 `Docks::one_group()`. Test `the_start_up_layout`.
+
+### L9.166 — «Каналы» as read to the last function: group hides, визиры on dissolve, the header's counts, names  ·  ✅
+Read (COMPLETION_PLAN W1.1, the eleven uncited functions of the area; by
+hand `0x434b1c`–`0x434c71`, `0x43502b`, `0x435a60`):
+- WM_DRAWITEM `0x433db0`: rows filled white from x 25, the selection never
+  drawn; every name black at x + 26 (top-aligned); a channel whose display
+  name differs from its decoded file name (`+0x68` vs `+0x64`, `0x4292e0`)
+  gets " (original)" after it in (150,150,150); bitmap 464's images (0
+  waveform, 1 spectrum, 2 vector, 3 circle, 4 differential characteristic,
+  5 ticked, 6 empty, 7 greyed box, 8 analog, 9 discrete) — row icon at
+  x + 5, cells at the column's left + 8; not-applicable cells are image 7;
+  column 4 also needs "not bit14"; discrete rows are image 7 in columns
+  2–5; the column-5 header is image 4.
+- A column-1 hide (`0x434b1c`–`0x434c71`) collects the clicked channel's
+  group members by original name (`0x455930`, `0x42f020`), dissolves the
+  group and clears visible and selected on every member.
+- Dissolving a group `0x455df0` (the hide, 32845–32848 `0x4301ff`,
+  Совместить `0x467796`, Разъединить `0x467e30`) resets a horizontal визир
+  on a member to "never placed" (hidden, value 0, channel −1).
+- `0x42f020` finds a channel by its original file name (exact, else first
+  match ignoring case; error 354 otherwise) — groups follow file names.
+- The header `0x435080`: column 5 only the differential pairs (all on
+  unless all are); columns 1–4 "set < applicable" with the original's
+  counts — 2: set = bit1 and not bit14, applicable = every kind-0 row
+  (computed and pending included), writes the non-pending ones; 3: set =
+  bit2 on any row, applicable = rows passing the vector test; 4: set =
+  bit3 and not bit14 plus the R/X pairs on, applicable = Ohm / W / VA / var
+  rows regardless of bit14 plus the R/X pairs, writes the non-pending ones
+  and every R/X pair; column 1 writes every row, deselects on hide, no
+  dissolve. Its tail — and every cell click's (`0x43502b`) — always runs:
+  views updated, the refresh-all `0x475420`, the document modified.
+- Explained away (library code, no behaviour of their own): `0x431970`
+  (a channel record's copy constructor), `0x4588c0` (map insert with a
+  hint), `0x4593e0` / `0x458a60` / `0x4330d0` (tree node inserts, "map/set
+  too long"), `0x432020` / `0x432270` (tree erase with rebalancing).
+Ours hid only the clicked member, never touched the ГВ on a dissolve,
+toggled headers by the cells' all-or-nothing rule through the cell path
+(dissolving groups), refreshed the circle flags only after a pair click,
+greyed computed names, showed no original name and drew a dash and a step
+wave. Now `Doc::dissolve_groups` (used by the column-1 hide,
+`hide_selected`, `combine_selected`, `split_selected`), `toggle_column`
+with the original's counts, `circle_refresh_flags` after every click,
+column 4 not for pending channels, `Doc::original_name` drawn grey after
+the name, the greyed box and the differential-characteristic glyph.
+Tests `hiding_dissolves_the_group_and_deselects` (extended),
+`header_clicks_use_the_originals_counts`,
+`a_renamed_channel_keeps_its_original_name`.
+Residual: row icons and the text's exact places; live column widths;
+column 2 for non-pending computed channels (ours has no such flag); the
+circle refresh's channel range (the report says file analog channels only,
+doc+0x1d8 — the same open count as L9.151; ours also clears computed ones).
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
