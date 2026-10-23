@@ -18,7 +18,8 @@ pub struct OscChannels {
     samples: Vec<Vec<f64>>,
     phasors: Vec<Phasors>,
     n: usize,
-    freq: f64,
+    /// The record's nominal-frequency track (`rec+0x1fc`).
+    freq: Vec<f64>,
     /// The record's harmonic-1 gain (`rec+0x278`, set by OSC2 files).
     gain1: f64,
     /// The frequency correction: the frequency channel, its stored samples
@@ -80,7 +81,7 @@ impl OscChannels {
             samples,
             phasors,
             n,
-            freq: osc.line_freq,
+            freq: osc.freq_track.clone(),
             gain1: osc.harmonic1_gain,
             corr: corr.map(|c| (c.chan, c.freq.to_vec(), c.fs)),
         }
@@ -158,8 +159,9 @@ impl Channels for OscChannels {
             None => signal::fault_at(&self.samples[ch], idx, self.n),
         }
     }
-    fn frequency(&self, _idx: usize) -> f64 {
-        self.freq
+    /// `0x414e90`: the track at the sample, 0 past its end.
+    fn frequency(&self, idx: usize) -> f64 {
+        self.freq.get(idx).copied().unwrap_or(0.0)
     }
     fn warmup(&self) -> usize {
         self.n

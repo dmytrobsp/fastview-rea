@@ -116,7 +116,7 @@ pub fn refresh_selection(osc: &mut Oscillogram) {
 /// positive selection. The per-channel part (not the frequency channel
 /// itself, analog only) is [`FreqCorr::for_chan`].
 pub fn of(osc: &Oscillogram) -> Option<FreqCorr<'_>> {
-    if osc.segments != 1 || osc.freq_sel <= 0 {
+    if osc.segments() != 1 || osc.freq_sel <= 0 {
         return None;
     }
     let fs = osc.sample_rate.trunc();

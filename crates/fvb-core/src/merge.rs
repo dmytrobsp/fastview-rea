@@ -403,7 +403,10 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
     let mut out = base.clone();
     out.time = grid.iter().map(|&t| us(t)).collect();
     out.sample_rate = r;
-    out.segments = 1;
+    // The base's segments stay; R as an integer (`0x47e7d0`–`0x47e83f`),
+    // then the track over the grid (`0x47e84b`).
+    out.rate_r = f64::from(crate::comtrade::round_fv(r) as i32);
+    out.rebuild_freq_track();
     let (na, nd) = (base.analog.len(), base.digital.len());
     let mut it = lanes.into_iter();
     let analog = |(l, v): (Lane, Vals)| match v {
@@ -565,5 +568,11 @@ mod tests {
         assert_eq!(b[0], 0.0, "the padding");
         assert!(b[1] < 0.0, "the fit runs across the zeros into the values (as the original)");
         assert!((b[4] - 5.0).abs() < 1e-9, "the pasted values from 3.5 ms");
+        // The base's segment stays; the nominal track over a longer grid
+        // reaches its `end` and stops: 0 after it (`0x47e84b`, `0x454960`).
+        let m = merge(&base, &pasted, 0.05, &[0.0]);
+        assert_eq!(m.rate_segs, base.rate_segs);
+        assert!(m.time.len() > 101);
+        assert_eq!((m.freq_track[100], m.freq_track[101], m.freq_track.len()), (50.0, 0.0, m.time.len()));
     }
 }

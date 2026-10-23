@@ -94,9 +94,16 @@ pub struct Oscillogram {
     /// `0x450e70` keeps the four tokens: `doc+0x24c` start date, `+0x250`
     /// start time, `+0x254` trigger date, `+0x258` trigger time).
     pub stamps: Stamps,
-    /// The number of sample-rate segments (`rec+0x1f0`; the `.cfg`'s rate
-    /// lines).
-    pub segments: usize,
+    /// The sample-rate segments (`rec+0x1f0`): the rate and `end`, the
+    /// 0-based index of the next run's first sample (COMTRADE's endsamp,
+    /// OSC's block × samples per block).
+    pub rate_segs: Vec<(f64, usize)>,
+    /// The record's integer rate (`rec+0x228`, `0x453db0`).
+    pub rate_r: f64,
+    /// The per-sample nominal frequency (`rec+0x1fc`, built by
+    /// [`nominal_track`]): what `frequency:` and the clipboard's
+    /// `net_frequency` read.
+    pub freq_track: Vec<f64>,
     /// The trigger's sample (`doc+0x214`): pre-trigger blocks × samples per
     /// block for `.osc` (`0x452d89`), 0 for COMTRADE and after a `.cfg` /
     /// `.cff` Save-As (`0x44d6c5`, `0x44daaa`).
@@ -479,7 +486,7 @@ fn be_f32(b: &[u8], o: usize) -> f64 {
 }
 
 /// The original's rounding (`FUN_00411bf0`): floor unless at least half-way.
-fn round_fv(x: f64) -> f64 {
+pub(crate) fn round_fv(x: f64) -> f64 {
     let f = x.floor();
     if (f - x).abs() >= 0.5 {
         x.ceil()
@@ -488,9 +495,61 @@ fn round_fv(x: f64) -> f64 {
     }
 }
 
-/// The first block's sample rate snapped to the standard rates (`0x453db0`).
+/// `0x453db0` without the snap: round(R/f)·round(f), both truncated to
+/// integers.
+pub fn int_rate(fs: f64, fnom: f64) -> f64 {
+    ((round_fv(fs / fnom) as i32).wrapping_mul(round_fv(fnom) as i32)) as f64
+}
+
+/// The record's nominal-frequency track (`0x454960`): `old` resized to `n`
+/// (old values kept, new ones 0); then from sample 0 each sample gets its
+/// segment's rate ÷ X · f, X = [`int_rate`](R, f), moving to the next
+/// segment after the sample whose index is the segment's `end` and
+/// stopping when the segments run out (the rest keep what they had). A
+/// record with no samples keeps `old`.
+pub fn nominal_track(segs: &[(f64, usize)], n: usize, r: f64, f: f64, old: &[f64]) -> Vec<f64> {
+    let mut v = old.to_vec();
+    if n == 0 {
+        return v;
+    }
+    v.resize(n, 0.0);
+    let x = int_rate(r, f);
+    let mut k = 0;
+    for (i, slot) in v.iter_mut().enumerate() {
+        let Some(&(rate, end)) = segs.get(k) else { break };
+        *slot = rate / x * f;
+        if end == i {
+            k += 1;
+            if k == segs.len() {
+                break;
+            }
+        }
+    }
+    v
+}
+
+impl Oscillogram {
+    /// The number of rate segments (`rec+0x1f0`).
+    pub fn segments(&self) -> usize {
+        self.rate_segs.len()
+    }
+
+    /// Rebuild [`Oscillogram::freq_track`] over the current samples
+    /// (`0x454960`; after a load, a rate change in «Параметры
+    /// осциллограммы» `0x42e540`, «Объединить»).
+    pub fn rebuild_freq_track(&mut self) {
+        self.freq_track = nominal_track(&self.rate_segs, self.time.len(), self.rate_r, self.line_freq, &self.freq_track);
+    }
+}
+
+/// The first block's sample rate snapped to the standard rates (`0x453db0`
+/// with its flag set: the tables only for a network frequency of exactly
+/// 50 or 60).
 fn snap_rate(fs: f64, fnom: f64) -> f64 {
-    let bands: &[(f64, f64, f64)] = if (fnom - 60.0).abs() < 0.5 {
+    if fnom != 50.0 && fnom != 60.0 {
+        return int_rate(fs, fnom);
+    }
+    let bands: &[(f64, f64, f64)] = if fnom == 60.0 {
         &[
             (17280.0, 26000.0, 23040.0), (9600.0, 17280.0, 11520.0), (6720.0, 9600.0, 7680.0),
             (4550.0, 6720.0, 5760.0), (3110.0, 4550.0, 3340.0), (2400.0, 3110.0, 2880.0),
@@ -509,7 +568,7 @@ fn snap_rate(fs: f64, fnom: f64) -> f64 {
         .iter()
         .find(|(lo, hi, _)| *lo <= fs && fs <= *hi)
         .map(|b| b.2)
-        .unwrap_or_else(|| round_fv(fs / fnom) * round_fv(fnom))
+        .unwrap_or_else(|| int_rate(fs, fnom))
 }
 
 /// Read an OSC2 oscillogram (`.osc`, `0x4524b0`; layout in
@@ -641,8 +700,9 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
     let mul: Vec<f64> = analog.iter().map(|c| c.unit_mult).collect();
     let fnom = 50.0;
     let (mut rate, mut first_rate) = (2400.0, None);
-    // Rate changes between blocks start a new segment (inferred).
-    let (mut segments, mut seg_rate) = (0usize, f64::NAN);
+    // Segments (`0x453010`): block 0 sets R (snapped) as the current rate;
+    // a later block whose rate differs pushes {current, its first sample}.
+    let (mut rate_segs, mut cur) = (Vec::new(), f64::NAN);
     let mut time = Vec::new();
     let mut t_us: i64 = 0;
     let mut bi = 0;
@@ -658,9 +718,11 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
             rate = if first_rate.is_none() { snap_rate(fs, fnom) } else { fs };
         }
         first_rate.get_or_insert(rate);
-        if rate != seg_rate {
-            segments += 1;
-            seg_rate = rate;
+        if bi == 0 {
+            cur = rate;
+        } else if rate != cur {
+            rate_segs.push((cur, bi * n));
+            cur = rate;
         }
         // N records from the block start; nothing checks that they end
         // before the rate code at +0x7C or the block end.
@@ -693,7 +755,13 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
     for d in digital.iter_mut().skip(16 * words) {
         d.samples = vec![false; time.len()];
     }
-    Ok(Oscillogram {
+    // Then {R, total} unless the last run already is R up to the end — the
+    // final run always carries R (`0x453bdb`–`0x453d13`).
+    let r = first_rate.unwrap_or(rate);
+    if !(cur == r && rate_segs.last().is_some_and(|s: &(f64, usize)| s.1 == time.len())) {
+        rate_segs.push((r, time.len()));
+    }
+    let mut rec = Oscillogram {
         station: String::new(),
         device: format!("OSC Осциллограф. Версия {major}.{minor}"),
         rev_year: 0,
@@ -704,11 +772,26 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
         sample_rate: first_rate.unwrap_or(rate),
         harmonic1_gain: gain,
         stamps: osc_stamps(info, n, first_rate.unwrap_or(rate)),
-        segments: segments.max(1),
+        rate_segs,
+        rate_r: r,
+        freq_track: Vec::new(),
         trigger_sample: (be_i16(info, 0xE).max(0) as usize) * n,
         freq_sel: 0,
         extra_freq: Vec::new(),
-    })
+    };
+    rec.rebuild_freq_track();
+    Ok(rec)
+}
+
+/// A `.cfg`'s `rec+0x228` (`0x45146a`): `0x453db0` of the mean of the
+/// rates, snapped only with several rate lines.
+fn comtrade_rate(rates: &[RateSection], f: f64) -> f64 {
+    let mean = rates.iter().map(|r| r.rate).sum::<f64>() / rates.len().max(1) as f64;
+    if rates.len() > 1 {
+        snap_rate(mean, f)
+    } else {
+        int_rate(mean, f)
+    }
 }
 
 /// A BCD byte (`0x44a570`).
@@ -1154,6 +1237,9 @@ impl Oscillogram {
             *t = t0 + k as f64 / rate;
         }
         self.sample_rate = rate;
+        // `rec+0x228`, then the track over the old segments (`0x42e540`).
+        self.rate_r = rate;
+        self.rebuild_freq_track();
     }
 
     /// The record duration (`0x44c0b0`): last minus first sample time, s.
@@ -1328,7 +1414,9 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         sample_rate,
         harmonic1_gain: 1.0,
         stamps,
-        segments: rates.len(),
+        rate_segs: rates.iter().map(|r| (r.rate, r.end_sample)).collect(),
+        rate_r: comtrade_rate(&rates, line_freq),
+        freq_track: Vec::new(),
         trigger_sample: 0,
         freq_sel: 0,
         extra_freq: Vec::new(),
@@ -1468,6 +1556,12 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
         rec.time.truncate(rows);
     }
     let _ = na;
+    // A rate of 0 takes R from the second sample's time (`0x451b49`); then
+    // the nominal track (`0x450c36`).
+    if rec.rate_r == 0.0 && rec.time.get(1).is_some_and(|&t| t > 0.0) {
+        rec.rate_r = int_rate(1.0 / rec.time[1], rec.line_freq);
+    }
+    rec.rebuild_freq_track();
     Ok(())
 }
 
@@ -1517,5 +1611,35 @@ mod osc_stamp_tests {
         // Not a date: no stamps.
         info[10] = 0x13;
         assert_eq!(osc_stamps(&info, 8, 1000.0).trigger_date, "");
+    }
+}
+
+#[cfg(test)]
+mod freq_track_tests {
+    use super::*;
+
+    /// `0x454960` on the shapes it meets (`0x453db0` for X).
+    #[test]
+    fn nominal_track_as_read() {
+        // One segment at a rate that is not a multiple of 50: X = 25·50.
+        let t = nominal_track(&[(1234.0, 10)], 10, int_rate(1234.0, 50.0), 50.0, &[]);
+        assert!(t.iter().all(|&v| (v - 1234.0 / 1250.0 * 50.0).abs() < 1e-12), "{t:?}");
+        // Two .cfg rate lines: R = the mean snapped (2500 → 2400); the
+        // sample at a segment's `end` still has that segment's value.
+        let segs = [(4000.0, 1000), (1000.0, 3000)];
+        let r = comtrade_rate(&[RateSection { rate: 4000.0, end_sample: 1000 }, RateSection { rate: 1000.0, end_sample: 3000 }], 50.0);
+        assert_eq!(r, 2400.0);
+        let t = nominal_track(&segs, 3000, r, 50.0, &[]);
+        assert!((t[1000] - 4000.0 / 2400.0 * 50.0).abs() < 1e-12 && (t[1001] - 1000.0 / 2400.0 * 50.0).abs() < 1e-12);
+        // A longer grid over the same segments: the old values stay below
+        // the old length, the new samples past the last `end` are 0.
+        let old = vec![50.0; 100];
+        let t = nominal_track(&[(1000.0, 100)], 150, 1000.0, 50.0, &old);
+        assert_eq!((t[100], t[101], t[149]), (50.0, 0.0, 0.0));
+        // No samples: nothing changes.
+        assert_eq!(nominal_track(&[(1000.0, 1)], 0, 1000.0, 50.0, &old), old);
+        // The snap tables only at exactly 50 / 60 Hz.
+        assert_eq!(snap_rate(2500.0, 50.0), 2400.0);
+        assert_eq!(snap_rate(2500.0, 55.0), int_rate(2500.0, 55.0));
     }
 }

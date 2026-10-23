@@ -394,7 +394,7 @@ impl App {
         };
         let utc = self.dlg.utc_2013;
         let mut st = self.dlg.file_params.take().unwrap_or_else(|| FileParamsDlg {
-            rate_text: format!("{}", self.docs[ai].osc.sample_rate),
+            rate_text: format!("{}", self.docs[ai].osc.rate_r),
             // CB_SETCURSEL `rec+0x874` (0 with no candidate, `0x449efd`).
             correction: if fvb_core::freqcorr::candidate_names(&self.docs[ai].osc).is_empty() { 0 } else { self.docs[ai].osc.freq_sel.max(0) as usize },
         });
@@ -501,7 +501,7 @@ impl App {
                     self.dlg.file_params = Some(st);
                     return;
                 }
-                Some(r) if r != self.docs[ai].osc.sample_rate => {
+                Some(r) if r != self.docs[ai].osc.rate_r => {
                     // `0x44a24a`: undo snapshot, the new rate, the full
                     // recompute, the silent ОМП run (always) and the
                     // modified mark.

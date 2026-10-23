@@ -106,7 +106,7 @@ fn candidates_selection_and_gate() {
     assert_eq!(off.freq_sel, 1);
 
     let mut two = rec.clone();
-    two.segments = 2;
+    two.rate_segs.push((1000.0, two.time.len() + 1));
     assert!(freqcorr::of(&two).is_none(), "one rate segment only");
 
     // The record's phasors: the frequency channel normal, the others not.

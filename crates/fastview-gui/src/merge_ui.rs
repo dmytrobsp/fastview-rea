@@ -55,10 +55,11 @@ pub fn clip_record(d: &Doc) -> ClipRecord {
     let n = d.osc.time.len();
     let dur_ms = (duration(&d.osc.time) * 1000.0).round().to_string();
     let mut rec = ClipRecord {
-        rate: d.osc.sample_rate,
+        rate: d.osc.rate_r,
         time_multiplier: 1.0,
         times_us: d.osc.time.iter().map(|t| (t * 1e6).round() as i64).collect(),
-        net_frequency: vec![d.osc.line_freq; n],
+        // `0x430bc4`: the record's track, 0 past its end.
+        net_frequency: (0..n).map(|i| d.osc.freq_track.get(i).copied().unwrap_or(0.0)).collect(),
         num_values: fvb_core::views::fmt_g(n as f64),
         station_id: d.osc.station.clone(),
         block_id: d.osc.device.clone(),

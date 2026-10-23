@@ -3825,8 +3825,8 @@ fit clamped to the channel's ends, and the pick measured with the shift
 per base channel from `merge_records`). Tests `merge_rate_and_resampling`
 (the fit past the end, the pick with a shift),
 `merge_pads_and_shifts_the_later_record`.
-Residual: the frequency track (+0x50 / doc+0x1fc) of the merged record not
-modelled; `0x478410` assumed an exact 3 × 3 solve; pasted channels' own
+Residual: (the merged record's track rec+0x1fc: L9.132; channels' own +0x50 not
+modelled); `0x478410` assumed an exact 3 × 3 solve; pasted channels' own
 flags still not baked (L9.111).
 
 ### L9.121 — The header's line pitch on the first page: the printer's stock font  ·  ✅
@@ -4075,6 +4075,45 @@ failure's wording (ours «Ошибка печати: …»; MFC's 61702 INFERRED
 .sto close warning 190 (.sto ⛔); MessageBeep after «Объединить»; the
 exception types each catch takes ND; 0 / negative rates in DIALOG 392 ND
 (ours refuses them).
+
+### L9.132 — The record's nominal-frequency track and rate segments as read  ·  ✅
+Read (subagent report; by hand `0x454960`, `0x453db0`, the merge's
+`0x47e4b5`–`0x47e84b`, the reader `0x414e90`): rec+0x1fc holds a value per
+sample built by `0x454960` — resized to the sample count (old values
+kept, new ones 0), then from sample 0 each sample gets its segment's rate
+÷ X · f with X = round(R/f)·round(f) truncated (R = rec+0x228), moving to
+the next segment after the sample whose index is the segment's `end` (so
+the first sample of a new run still has the old value) and stopping when
+the segments run out. Segments rec+0x1f0 = {rate, end}: a `.cfg`'s rate
+lines verbatim; for OSC block 0 sets R (snapped), a block with another
+rate pushes {current, its first sample}, then {R, total} unless the last
+run already ends there with R (the final run carries R). rec+0x228: a
+`.cfg`'s `0x453db0` of the mean rate, snapped to the standard table only
+with several rate lines and only at exactly 50 / 60 Hz (else the
+round·round fallback), from the second sample's time when the rate is 0;
+OSC the snapped first rate; «Параметры осциллограммы» sets it and rebuilds
+the track over the old segments (`0x42e540`); «Объединить» keeps the
+base's segments, sets R rounded to an integer and rebuilds the track over
+the grid (0 past the base's last `end`). Readers: `frequency:` (0 past the
+end), the clipboard's `net_frequency` and `discr_frequency` (= rec+0x228).
+Ours: `frequency:` = the line frequency everywhere, the segment count
+only (the merge reset it to 1, so a merged two-rate record lost the
+correction gate's refusal), the snap tables at any f near 50 / 60, the
+clipboard wrote the line frequency and the first rate. Now
+`Oscillogram::{rate_segs, rate_r, freq_track, segments(),
+rebuild_freq_track}`, `comtrade::{int_rate, nominal_track,
+comtrade_rate}`, built by both loaders, `retime` and `merge`;
+`OscChannels::frequency` reads the track; `clip_record` writes it and
+rate_r; DIALOG 392 shows / compares rec+0x228. Tests
+`nominal_track_as_read`, `merge_pads_and_shifts_the_later_record`.
+Residual: channels' own frequency vectors (ch+0x50: the paste's
+`net_frequency`, the merge's per-channel resampling, `.set` NetFreq) and
+their one consumer, the ОМП frequency-tracked phasor `0x477280` — being
+read; our `sample_rate` stays the first rate where the original's
+signal code uses rec+0x228 (they differ only for rates that are not
+multiples of f and multi-rate `.cfg`s); a rate-0 `.cfg`'s .dat
+timestamps are not read (R stays 0, the track NaN); the `.set`
+DiscretisationFrequency (rec+0x228 without a rebuild) not modelled.
 
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
