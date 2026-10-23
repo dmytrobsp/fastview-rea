@@ -152,10 +152,9 @@ pub struct OscView<'a> {
     pub doc: &'a crate::app::Doc,
     pub primary: bool,
     pub unit: TimeUnit,
-    /// Horizontal scale, first and last drawn sample, sample count.
+    /// Horizontal scale, first drawn sample, sample count.
     pub f: f64,
     pub first: usize,
-    pub last: usize,
     pub n: usize,
     /// Plot left edge (the stats panel's right edge), plot right edge, the
     /// view's left edge and the stats label column width.
@@ -179,7 +178,7 @@ impl OscView<'_> {
     /// returns the name badge rectangle.
     pub fn row(&self, lp: &egui::Painter, pp: &egui::Painter, r: &Row, top: f32, (lo, hi): (f64, f64)) -> Rect {
         let (doc, primary, left, plot_right) = (self.doc, self.primary, self.left, self.right);
-        let (first, last, n, f) = (self.first, self.last, self.n, self.f);
+        let (first, n, f) = (self.first, self.n, self.f);
         let h = r.h;
         let k_main = doc.main_cursor;
         let x_of = |k: f64| self.x_of(k);
@@ -249,12 +248,18 @@ impl OscView<'_> {
                 let end_x = x_of(n.saturating_sub(1) as f64).min(plot_right);
                 pp.rect_filled(Rect::from_min_max(Pos2::new(left, mid - 2.0), Pos2::new(end_x, mid + 2.0)), 0.0, Color32::from_rgb(150, 150, 255));
                 let fill = if r.selected(doc) { Color32::from_rgb(253, 219, 102) } else { color };
-                for (a, b) in digital_runs(s, first, last) {
-                    let x0 = x_of(a as f64);
-                    let x1 = if b + 1 >= n { x_of(b as f64) + 4.0 } else { x_of((b + 1) as f64) };
-                    let rr = Rect::from_min_max(Pos2::new(x0, mid - 6.0), Pos2::new(x1.max(x0 + 1.0), mid + 6.0));
+                let red = Color32::from_rgb(200, 0, 0);
+                // The painter's runs and transition ticks (`0x42a0f0`), x
+                // from leftW, GDI rectangles mid−6..mid+6.
+                let on = |k: usize| s.get(k).copied().unwrap_or(false);
+                let shapes = g::digital_shapes(&on, s.len(), first, f, plot_right - left);
+                for (a, b) in shapes.runs {
+                    let rr = Rect::from_min_max(Pos2::new(left + a, mid - 6.0), Pos2::new(left + b.max(a + 1.0), mid + 6.0));
                     pp.rect_filled(rr, 0.0, fill);
-                    pp.rect_stroke(rr, 0.0, Stroke::new(1.0f32, Color32::from_rgb(200, 0, 0)));
+                    pp.rect_stroke(rr, 0.0, Stroke::new(1.0f32, red));
+                }
+                for t in shapes.ticks {
+                    pp.rect_filled(Rect::from_min_max(Pos2::new(left + t, mid - 6.0), Pos2::new(left + t + 1.0, mid + 6.0)), 0.0, red);
                 }
             }
             _ => {
@@ -584,27 +589,6 @@ pub(crate) fn gradient(p: &egui::Painter, rect: Rect, top: Color32, bottom: Colo
     p.add(Shape::mesh(mesh));
 }
 
-/// Runs of "1" samples within `first..=last`.
-fn digital_runs(s: &[bool], first: usize, last: usize) -> Vec<(usize, usize)> {
-    let mut runs = Vec::new();
-    let mut start = None;
-    let last = last.min(s.len().saturating_sub(1));
-    for (k, &on) in s.iter().enumerate().take(last + 1).skip(first) {
-        match (on, start) {
-            (true, None) => start = Some(k),
-            (false, Some(a)) => {
-                runs.push((a, k - 1));
-                start = None;
-            }
-            _ => {}
-        }
-    }
-    if let Some(a) = start {
-        runs.push((a, last));
-    }
-    runs
-}
-
 /// A waveform: every sample of `first..=last` as a 1 px polyline, with 4×4
 /// circles at the samples above 4 px per sample (`f > 0.16`).
 #[allow(clippy::too_many_arguments)]
@@ -863,7 +847,6 @@ impl App {
         let vscroll = doc.vscroll.clamp(vmin, 0.0);
         let visible = g::visible_count(plot_right - client.left(), left_w, f);
         let first = doc.first.min(g::max_first(n, visible));
-        let last = (first + visible + 1).min(n.saturating_sub(1));
         let x_of = |k: f64| g::x_of(k, first, f, left);
         let sample_at = |x: f32| g::sample_at(x, first, f, left).clamp(0, n.max(1) as i64 - 1) as usize;
         let mut tops = Vec::with_capacity(rows.len());
@@ -904,7 +887,7 @@ impl App {
         let mut rename_rect = None;
         let mut cut_hover: Option<String> = None;
         let hover = resp.hover_pos();
-        let ov = OscView { doc, primary, unit: time_unit, f, first, last, n, left, right: plot_right, x0: client.left(), label_col };
+        let ov = OscView { doc, primary, unit: time_unit, f, first, n, left, right: plot_right, x0: client.left(), label_col };
         for (li, r) in rows.iter().enumerate() {
             let (top, h) = (tops[li], r.h);
             if top > plot_bottom || top + h < client.top() {

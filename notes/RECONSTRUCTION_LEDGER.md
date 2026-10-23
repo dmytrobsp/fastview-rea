@@ -1675,7 +1675,7 @@ Test `a_vizir_on_the_first_sample_is_grabbed_at_the_plot_edge`.
 Residual: comment hit codes 9 vs 10 (which part gives SIZENS) NOT
 DETERMINED — ours SIZEWE for every comment hit.
 
-### L9.45 — Waveform drawing: sample count, mark order; digital decimation pending  ·  🟡
+### L9.45 — Waveform drawing: sample count, mark order, digital decimation rules  ·  ✅ (wired L9.46)
 Read (subagent): the analog painters `0x429490` / `0x429c30` never
 decimate — one aliased Polyline over offsets 0..min(⌈W/k⌉, len − first) at
 x = L + rhu(25·i·f), Ellipse marks (4×4) **after** the line when f > 0.16
@@ -1689,9 +1689,34 @@ Ours: analog count `oscgeom::drawn_last` (was ⌊W/k⌋ + 1, one point at R),
 marks after the line; with no marks each pixel column's vertices collapse
 to first / min / max / last (`collapse_columns` — the same image, our
 rendering economy for long records). `oscgeom::digital_shapes` implements
-the digital rules (tested) but is **not yet wired** into the digital lanes
-(next step: replace `digital_runs` in `OscView::row` and the print copy).
+the digital rules (tested); wired into the lanes in L9.46.
 Tests in `oscgeom::draw_tests`.
+
+### L9.46 — Digital lanes drawn by the decimating painter  ·  ✅ (bit14 branch ❌)
+Read (`0x42a0f0`, re-checked by hand): lane mid = top + h/2 (h = 20 →
+top + 10); a 1-px pen RGB(200,0,0) and the fill brush (channel `+0x110`,
+RGB(253,219,102) when selected) are selected once; runs are GDI
+`Rectangle`s mid−6..mid+6; the zoomed-out (25f < 0.5) transition ticks
+are `MoveTo(x, mid−6)` / `LineTo(x, mid+6)` with the same red pen at
+x = leftW + j for every column j = 1..P−1 that mixes on and off samples.
+Columns are visited with a column counter that starts at ⌈25f⌉ = 1 and
+steps by 1, so run edges are leftW + j exactly.
+Ours: `OscView::row` (screen and print slices — both paint through it)
+now draws `oscgeom::digital_shapes` (runs + 1-px red ticks) instead of
+the old per-sample run list, which drew every sample at x_of (rounded,
+not truncated), had no column OR-ing and no ticks; `digital_runs` and
+the unused `OscView::last` removed. New exact test (401 samples,
+k = 0.25: one run columns 2..6, ticks at 2 and 5). `window_dump` gains
+`FV_WINDOW_XSCALE=f` to look at zoomed-out lanes; rendered the demo at
+f = 0.01 / 1 and a real 18-channel record, and a print page.
+Residual: the painter's **bit14 branch** (a pasted, not yet merged
+digital channel drawn against its own time array — x from the time
+interpolation, count ⌈W/(25f·R/r)⌉ + 5 scaled 11/10, icon 1 at
+(leftW−3, top+h−19)) is not modelled — our pasted channels become
+pending computed lanes (see the merge entries); the icon 0 drawn at
+(leftW+1, top+h−19) for bit14 with kind 0 likewise. Our run outline is
+egui's centred stroke on the rectangle edge (GDI draws it inside the
+right / bottom exclusive edge): ≤ 1 px difference.
 
 Next in L9 (HANDOFF 2026-10-23): **public at
 github.com/dmytrobsp/fastview-rea, release v0.1.0** (Linux / Windows / macOS
@@ -1715,10 +1740,9 @@ fileparams|explorer|parambar|vizirs|skin<k>] [FV_WINDOW_SIZE=w,h]
 [FV_WINDOW_CLICK=x,y] [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then
 Read the PNG; `FV_FRAME_BENCH=<cfg> cargo test --release frame_bench`
 times a frame. The user's sample records live outside the repo (never
-commit them). **Open next:** wire `oscgeom::digital_shapes` into the
-digital lanes and the print slice (L9.45 — the rules are implemented and
-tested, replace `digital_runs` in `OscView::row`); then the smaller
-residuals in L9.1–L9.45 (several older ones were already done — check the
+commit them). **Done since:** L9.46 digital lanes drawn by the
+decimating painter (`FV_WINDOW_XSCALE=f` for `window_dump`). **Open
+next:** the smaller residuals in L9.1–L9.45 (several older ones were already done — check the
 code first), print residuals (L9.22), pane re-docking (egui limit).
 Pending user answers: publishing factual indexes (msgmaps / vtables /
 imports) + a symbol-map import script; building macOS as one universal

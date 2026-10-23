@@ -1321,7 +1321,7 @@ icon-only small buttons and panel collapse when narrow (L9.27).
     `dialogs.rs`, `crates/fvb-core` — S
 40. ✅ (merged L9.11/L9.12) Pair dialog 554 + R/X pair loci on the circle diagram — `dialogs.rs`,
     `views.rs` — M
-41. ✅ (L9.4) Digital lanes look (base bar, red-outlined runs, selected fill) and
+41. ✅ (L9.4; decimation + ticks L9.46) Digital lanes look (base bar, red-outlined runs, selected fill) and
     full-width alternating gradient backgrounds, selected gradient — `lanes.rs`
     — S
 42. ✅ (L9.4 + L9.18) Grid vertical only every 50 px; ruler units incl. «Абсолютное время»

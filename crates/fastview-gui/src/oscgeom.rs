@@ -603,7 +603,6 @@ pub struct DigitalShapes {
 /// j = 1..P−1 (P = min(rhu(M·k), W − 4), r = count / P) OR-ed into runs, a
 /// red tick where a column mixes on and off. A run that only starts at the
 /// last visible offset is not drawn (as in the original).
-#[allow(dead_code)] // wired into the digital lanes next
 pub fn digital_shapes(on: &dyn Fn(usize) -> bool, len: usize, first: usize, f: f64, plot_w: f32) -> DigitalShapes {
     let mut out = DigitalShapes::default();
     if len == 0 || first >= len {
@@ -713,5 +712,12 @@ mod draw_tests {
         let d = digital_shapes(&on2, big.len(), 0, 0.01, 2000.0);
         assert!(!d.ticks.is_empty());
         assert!(d.runs.iter().all(|r| r.1 >= r.0));
+        // k = 0.25, 401 samples: P = 100 columns of r = 4 samples; on at
+        // 10..=21 → columns 2..5 OR to one run ending at column 6, columns
+        // 2 (8..11) and 5 (20..23) mix on and off.
+        let on3 = |i: usize| (10..=21).contains(&i) && i < 401;
+        let d = digital_shapes(&on3, 401, 0, 0.01, 2000.0);
+        assert_eq!(d.runs, vec![(2.0, 6.0)]);
+        assert_eq!(d.ticks, vec![2.0, 5.0]);
     }
 }

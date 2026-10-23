@@ -254,7 +254,6 @@ impl App {
         let left = x0 + left_w;
         let visible = g::visible_count(right - x0, left_w, f);
         let first = doc.first.min(g::max_first(n, visible));
-        let last = (first + visible + 1).min(n.saturating_sub(1));
         let band = g::RULER_H + if doc.diff_band { g::DIFF_BAND_H } else { 0.0 };
         let heights: Vec<f32> = rows.iter().map(|r| r.h).collect();
         let paged = paged_tops(&heights, band, plan.page_h);
@@ -279,7 +278,7 @@ impl App {
             }
         }
         painter.vline(left, dy..=grid_bottom, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
-        let ov = OscView { doc, primary, unit: self.time_unit, f, first, last, n, left, right, x0, label_col };
+        let ov = OscView { doc, primary, unit: self.time_unit, f, first, n, left, right, x0, label_col };
         for (li, r) in rows.iter().enumerate() {
             if let Some(bottom) = paged.ruler_before[li] {
                 ov.ruler(&painter, dy + bottom, right);
