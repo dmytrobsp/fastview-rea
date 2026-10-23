@@ -4874,6 +4874,23 @@ not run.
 
 **Status and what is left: `notes/COMPLETION_PLAN.md`** (workstreams W1–W6, the progress log, `tools/coverage.py`).
 
+### L9.165 — The start-up pane layout, seen running on the VM  ·  ✅
+Run (the original on the Windows VM with no saved workspace, COMPLETION_PLAN
+W4.1) and read (by hand `0x474e10`): the panes are created with alignment
+styles 0x56004140 (right) / 0x56008240 (Частотная, bottom) and docked in
+this order: Векторная (DockPane), Круговая attached to it as a tab
+(`+0x350`), Дифференциальная (DockPane), Частотная (DockPane). In the
+docking manager's order (L9.109) each later block sits inside the space
+the earlier ones left: Векторная | Круговая the outermost right column,
+Дифференциальная the column inside it (both 500 wide), Частотная 200 tall
+under the oscillogram only — what the capture shows (the differential
+diagram on «Нет», L9.162). L9.3's one right-hand group of three with
+Частотная beneath was a saved workspace in the user's screenshot.
+Ours started from that screenshot. Now `Docks::default` is the start-up
+docking (Векторная order 0, its tab Круговая, Дифференциальная order 1,
+Частотная bottom order 2); the docking tests start from
+`Docks::one_group()`. Test `the_start_up_layout`.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

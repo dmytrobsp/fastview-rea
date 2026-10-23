@@ -585,6 +585,9 @@ mod window_tests {
     impl Win {
         fn new() -> Win {
             let mut w = Win { ctx: egui::Context::default(), app: demo(&[]), held: egui::Modifiers::NONE };
+            // The docking tests start from one tabbed group (not the
+            // start-up layout, which `docking::tests` pins).
+            w.app.docks = docking::Docks::one_group();
             w.idle(3);
             w
         }

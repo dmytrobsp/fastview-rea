@@ -2650,6 +2650,7 @@ mod tests {
     #[test]
     fn diagram_panes_start_visible_and_toggle_beside_the_oscillogram() {
         let mut app = demo_app();
+        app.docks = crate::docking::Docks::one_group();
         assert!(Panes::GROUP.iter().all(|&p| app.panes.visible(p)) && app.panes.frequency);
         assert_eq!(app.panes.shown_tab(), Some(Pane::Vector), "the vector pane is the active tab");
         app.dispatch(Command::TogglePane(Pane::Vector));

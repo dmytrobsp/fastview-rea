@@ -180,8 +180,8 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 - [ ] W4.4 Each W3 runtime unknown as a scenario.
 - [ ] W4.5 Visual comparison of the main window and the dialogs
   (layout, sizes, colours per skin) — differences either fixed or W6.
-  Seen in the first capture, to check against ours: the default pane
-  layout with no saved workspace; the record-header strip's close button.
+  Seen in the first capture: the start-up pane layout (fixed, L9.165);
+  the record-header strip's close button (to check).
 
 ## W5 — Windows-only paths
 

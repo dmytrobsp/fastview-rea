@@ -318,13 +318,28 @@ impl std::ops::IndexMut<Unit> for Docks {
 }
 
 impl Default for Docks {
-    /// The user's screenshot (L9.3): Векторная | Круговая |
-    /// Дифференциальная one tabbed group on the right edge, Частотная below
-    /// it. (The original's creates, `0x474e10`: 500 wide on the right,
-    /// Круговая attached to Векторная, Дифференциальная and Частотная
-    /// (200 tall) docked on their own — the screenshot is likely a saved
-    /// workspace.)
+    /// The start-up docking (`0x474e10`, seen running on the VM with no
+    /// saved workspace, L9.165): Векторная docked on the right first,
+    /// Круговая attached to it as a tab, Дифференциальная docked on the right
+    /// next (so inside it), Частотная (200 tall) on the bottom last —
+    /// spanning only what the two right blocks leave.
     fn default() -> Docks {
+        let big = Vec2::splat(500.0);
+        let edge = |e: Edge, size: Vec2, order: i32| Dockable { order, ..Dockable::new(size, Spot::Edge { edge: e, outer: true }) };
+        Docks([
+            edge(Edge::Right, big, 0),
+            Dockable::new(big, Spot::Tab(Unit::Vector)),
+            edge(Edge::Right, big, 1),
+            edge(Edge::Bottom, Vec2::splat(200.0), 2),
+        ])
+    }
+}
+
+impl Docks {
+    /// One tabbed group of three on the right and Частотная below it — the
+    /// layout the docking tests start from.
+    #[cfg(test)]
+    pub fn one_group() -> Docks {
         let big = Vec2::splat(500.0);
         Docks([
             Dockable::new(big, Spot::Edge { edge: Edge::Right, outer: true }),
@@ -333,9 +348,7 @@ impl Default for Docks {
             Dockable::new(Vec2::splat(200.0), Spot::Beside(Unit::Vector, Edge::Bottom)),
         ])
     }
-}
 
-impl Docks {
     /// The unit whose tabbed group `u` shows in: a docked tab follows its
     /// host wherever that is (a tab pulled out floats alone).
     pub fn host(&self, u: Unit) -> Unit {
@@ -648,7 +661,7 @@ mod tests {
         // Частотная beside the group; the group floats: Частотная takes
         // its column.
         let all = |_: Unit| true;
-        let mut d = Docks::default();
+        let mut d = Docks::one_group();
         d[Unit::Vector].place = Place::Floating;
         d.leave(Unit::Vector, all);
         assert_eq!(d[Unit::Frequency].spot, Spot::Edge { edge: Edge::Right, outer: true });
@@ -731,7 +744,7 @@ mod tests {
     #[test]
     fn a_tab_pulled_out_floats_alone() {
         let r = Rect::from_min_size(Pos2::new(50.0, 60.0), Vec2::splat(300.0));
-        let mut d = Docks::default();
+        let mut d = Docks::one_group();
         d.float_tab(Unit::Circle, Unit::Vector, Unit::Circle, r);
         assert_eq!((d[Unit::Circle].place, d[Unit::Circle].spot, d.host(Unit::Circle)), (Place::Floating, Spot::Tab(Unit::Vector), Unit::Circle));
         assert_eq!(d.members(Unit::Vector).collect::<Vec<_>>(), [Unit::Vector, Unit::Differential]);
@@ -751,7 +764,7 @@ mod tests {
     /// parent; a slot's parent hidden, it is a container of its own.
     #[test]
     fn beside_slots_nest_and_collapse() {
-        let mut d = Docks::default();
+        let mut d = Docks::one_group();
         d.drop_on(Unit::Differential, Drop::Beside(Edge::Left), Some(Unit::Frequency), 200.0);
         let all = |_: Unit| true;
         assert_eq!(d.parent(Unit::Differential, all), Some(Unit::Frequency));
@@ -773,15 +786,28 @@ mod tests {
         for (k, x) in [("Group/Place", "docked"), ("Group/Spot", "tab"), ("Freq/Place", "docked"), ("Freq/Spot", "edge left outer")] {
             v.insert(format!("Workspace/{k}"), x.to_string());
         }
-        let mut d = Docks::default();
+        let mut d = Docks::one_group();
         d.restore_all(&v);
         assert_eq!((d[Unit::Vector].spot, d[Unit::Frequency].spot), (Spot::Tab(Unit::Frequency), Spot::Edge { edge: Edge::Left, outer: true }));
         assert_eq!(d.members(Unit::Frequency).count(), 4);
         let mut w = std::collections::HashMap::new();
         d.store_all(&mut w);
-        let mut back = Docks::default();
+        let mut back = Docks::one_group();
         back.restore_all(&w);
         assert_eq!(back, d);
+    }
+
+    /// The start-up docking (`0x474e10`, L9.165): Векторная right first,
+    /// Круговая its tab, Дифференциальная right inside it, Частотная bottom.
+    #[test]
+    fn the_start_up_layout() {
+        let d = Docks::default();
+        let right = Spot::Edge { edge: Edge::Right, outer: true };
+        assert_eq!((d[Unit::Vector].spot, d[Unit::Vector].order), (right, 0));
+        assert_eq!(d[Unit::Circle].spot, Spot::Tab(Unit::Vector));
+        assert_eq!((d[Unit::Differential].spot, d[Unit::Differential].order), (right, 1));
+        assert_eq!((d[Unit::Frequency].spot, d[Unit::Frequency].order), (Spot::Edge { edge: Edge::Bottom, outer: true }, 2));
+        assert_eq!(d[Unit::Frequency].create, Vec2::splat(200.0));
     }
 
     /// Edge drops (`0x1008bc77`, `AddPane` `0x1008b521`): an outer one
@@ -789,7 +815,7 @@ mod tests {
     /// taking a container takes its place in the list.
     #[test]
     fn edge_blocks_in_docking_order() {
-        let mut d = Docks::default();
+        let mut d = Docks::one_group();
         d.drop_on(Unit::Frequency, Drop::Edge(Edge::Bottom, true), None, 200.0);
         d.drop_on(Unit::Circle, Drop::Edge(Edge::Left, false), None, 300.0);
         d.drop_on(Unit::Differential, Drop::Edge(Edge::Top, true), None, 150.0);
@@ -798,7 +824,7 @@ mod tests {
         assert_eq!(by, [Unit::Differential, Unit::Frequency, Unit::Vector, Unit::Circle], "newest outer outermost, inner innermost");
         let mut v = std::collections::HashMap::new();
         d.store_all(&mut v);
-        let mut back = Docks::default();
+        let mut back = Docks::one_group();
         back.restore_all(&v);
         assert!(UNITS.iter().all(|&u| back[u].order == d[u].order));
     }
