@@ -115,3 +115,22 @@ fn candidates_selection_and_gate() {
     assert_eq!(a.phasors[1][k], b.phasors[1][k]);
     assert_ne!(a.phasors[3][k], b.phasors[3][k]);
 }
+
+/// The list follows the vector (`0x42ec10`): an extra candidate (a pasted
+/// channel) in front of a file one comes first, a formula one after them;
+/// the selection is a number, so it now names another channel.
+#[test]
+fn candidates_in_vector_order() {
+    let mut rec = with_unit("Гц");
+    let ex = |name: &str, pos: usize, id: usize| comtrade::ExtraFreq { name: name.into(), samples: vec![50.0; 10], pos, id };
+    rec.extra_freq = vec![ex("F", rec.analog.len(), 7), ex("P", 0, 3)];
+    let ub = rec.analog[1].id.clone();
+    assert_eq!(freqcorr::candidate_names(&rec), ["P".to_string(), ub, "F".into()]);
+    assert_eq!(rec.freq_sel, 1);
+    assert_eq!(freqcorr::selected_extra(&rec), Some(3), "the pasted channel is now the frequency channel");
+    assert_eq!(freqcorr::of(&rec).unwrap().chan, usize::MAX);
+    rec.freq_sel = 2;
+    assert_eq!(freqcorr::selected_extra(&rec), None);
+    rec.freq_sel = 3;
+    assert_eq!(freqcorr::selected_extra(&rec), Some(7));
+}

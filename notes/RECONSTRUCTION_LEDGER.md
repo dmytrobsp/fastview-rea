@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 342 pass)
+- `cargo test --workspace`   (currently 343 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2660,7 +2660,7 @@ ct(j)) / (ct(i) − ct(j)) with v(m) = 0 for m past the values
 time + (i − len + 1)·10⁶/rate **unrounded** (`0x428bb0`–`0x428bf6`; the
 32-bit count wraps, so j = −1 is 2³² − len samples on), own rate `+0x108`
 else `rec+0x228`; with no own times the record's `0x454b40`, which rounds.
-So the readout is the first value (×(1 − ε)) before the paste, falls to 0
+So the readout is the first value (×(1 − ε)) before the paste — WRONG, the scan starts at own index 1, see L9.85 — falls to 0
 within one own period after its last sample, then 0. Paste `0x45ad02`
 clears `+0x100` of every channel (loop `0x45ae90`–`0x45aec1`, after the
 insertion points are found, before inserting); a pasted channel is created
@@ -2841,6 +2841,56 @@ whole sheet is the printable area); the preview and the PDF-file entry
 stay A4; the «Параметры страницы» paper field still reads «A4».
 
 
+### L9.85 — A pending lane's statistics; the readout scan starts at own index 1  ·  ✅
+Read (subagent report; by hand: `0x461a41` pushes 1 and sets the counter
+to 1 before the first `0x428b40` call — so i ≥ 1 and j = i − 1 ≥ 0, and
+L9.77's "j = −1 wraps" was a misread of the stack offsets; the СКЗ block
+`0x4623d7`–`0x46244d` computes R(j) + (R(j) − R(i))·frac): for a bit-14
+channel the value is v(j) + (v(i) − v(j))·frac, so before the paste the
+line through own samples 0 and 1 extended backwards; СКЗ (`0x4272a0(idx,
+1)`) and A1 (`0x426240(1, idx)`) are taken at own indices j and i and
+combined with the **mirrored** sign; their window is round(own rate / 50)
+own samples (50 fixed, `0x4d1718`; the record's P without an own rate),
+samples past the values or NaN read 0 (`0x426020`), 0 before a full
+window, A1 × `rec+0x278` uncorrected; under correction fs = the own rate,
+f at the own index; Max / Min are the cached extremes over every finite
+own sample of the display series (`0x428490`, filled by the paste
+constructor `0x4254b9`), cursor-independent.
+Ours started the scan at 0 (the first value before the paste), read СКЗ /
+A1 / Max / Min from the record-grid resampling at the raw cursor with the
+record's window, and left the harmonic-1 gain off computed lanes' A1. Now
+`PastedTimes::{bracket, stat_at, own_period}`, `value_at` on `bracket`,
+`lane_stats` for pending analog lanes; computed lanes' uncorrected A1 ×
+`harmonic1_gain`. Test `pasted_value_at_the_cursor` (backward line,
+mirrored statistic, own period).
+Residual: the display mode of a pasted channel (ours none — whether the
+UI can set one is NOT DETERMINED).
+
+### L9.86 — Frequency candidates in vector order; pasted ones; no self-correction  ·  ✅
+Read (subagent report; by hand as cited): `0x42aee0` has no bit-14 test,
+so a pasted analog channel whose ph / ccbm (from the clipboard's desc2 /
+desc3, `0x424f8b`–`0x424fe1`) is «system» or whose unit is a frequency
+unit is a candidate; paste inserts before the first selected analog
+channel, else at the end of the analog block (`0x45ad77`–`0x45ae64`),
+and the insert `0x42e5c0` rebuilds the list at once; the list follows the
+vector (`0x42ec10`–`0x42eca6`) and the selection stays a number — an
+earlier insertion silently changes the frequency channel; the gate
+compares the list entry's element address with the channel
+(`0x4262b6`–`0x4262c6`, `0x4272ec`–`0x4272fc`), so a formula / pasted
+frequency channel reads itself uncorrected.
+Ours listed the file's candidates, then formula channels, no pasted ones,
+and corrected a formula frequency channel by itself. Now
+`comtrade::ExtraFreq { name, samples, pos, id }`, `freqcorr::{Cand,
+ordered, selected_extra}`, `Doc::channels_changed` adds pasted analog
+candidates at their insertion point, `Doc::computed_corr` (the stats
+panel and the diagrams' computed phasors). Test
+`candidates_in_vector_order`.
+Residual: ours recomputes every channel when the selection changes; the
+original keeps the cached series of existing channels (INFERRED, deeper
+callees of `0x42e5c0` not read); a pasted channel's ph / ccbm from the
+copy side (desc2 / desc3) INFERRED.
+
+
 Next in L9 (HANDOFF 2026-10-23, evening 2): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -2888,10 +2938,7 @@ the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
 the Ω / power split of
-characteristic extents (L9.75); a pending lane's Max / Min / СКЗ / A1
-(L9.77, not read); a pasted Hz channel's place among the frequency
-candidates and the formula frequency channel excluded from its own
-correction (L9.78); 539's two-method-keys `.set` edge and which «Группа:»
+characteristic extents (L9.75); 539's two-method-keys `.set` edge and which «Группа:»
 combo shows under «Не учитывать» (`0x4831b0`, L9.79); L9.22 / L9.84 print residuals (CUPS hardware margins, the preview's
 paper; the logo bitmap stays out — it is the original's asset); L9.6 digital level-line snap (reachable only through a `.set`);
 keytips (MFC's ribbon keytip machinery — the program sets only Печать «p»

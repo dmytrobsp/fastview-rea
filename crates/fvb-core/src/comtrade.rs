@@ -100,11 +100,24 @@ pub struct Oscillogram {
     /// «Частота для коррекции расчётных значений» (`rec+0x874`): 0 none,
     /// k the k-th entry of [`crate::freqcorr::candidate_names`].
     pub freq_sel: i32,
-    /// Formula channels that are frequency candidates, by name with their
-    /// samples, in creation order — the original inserts a formula channel
-    /// after the analog ones (`0x42ea36`), so they follow the file's
-    /// candidates. Kept by whoever holds the formula channels.
-    pub extra_freq: Vec<(String, Vec<f64>)>,
+    /// Frequency candidates that are not file channels (formula and pasted
+    /// channels), in vector order. Kept by whoever holds them.
+    pub extra_freq: Vec<ExtraFreq>,
+}
+
+/// A frequency candidate outside the file's channels: a formula channel
+/// (inserted after the analog channels, `0x42ea36`) or a pasted one
+/// (before the first selected analog channel, else after them, `0x45ad77`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtraFreq {
+    pub name: String,
+    /// Its stored samples (read at the corrected channel's index).
+    pub samples: Vec<f64>,
+    /// Its place among the file's analog channels: in front of analog
+    /// channel `pos` (the analog count = after them).
+    pub pos: usize,
+    /// The holder's own key for it (ours: the computed channel's index).
+    pub id: usize,
 }
 
 /// The two `.cfg` time-stamp lines, token by token, and the COMTRADE 2013

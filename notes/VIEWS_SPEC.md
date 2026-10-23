@@ -119,10 +119,13 @@ Display mode: instantaneous `0x426020` / RMS `0x4272a0(idx,1)` / first harmonic
 Max/Min over the record follow the mode; СКЗ = one-period RMS at the cursor,
 A1 = first-harmonic RMS at the cursor. Format " %-8g %s" with SI prefix.
 A pasted, not yet merged channel (bit 14, `0x461a24`) reads its own
-samples at t = T(В1) − offset·10⁶ µs: the first own sample i with
+samples at t = T(В1) − offset·10⁶ µs: the first own sample i ≥ 1 with
 ct(i) ≥ t, j = i − 1, linear interpolation, a sample past the values
-reading 0 (so the first value before the paste, a fall to 0 within one own
-period after it, then 0; ledger L9.77).
+reading 0 (so the line through samples 0 and 1 extended backwards before
+the paste, a fall to 0 within one own period after it, then 0); СКЗ / A1
+at own indices j and i over round(own rate / 50) own samples, combined
+R(j) + (R(j) − R(i))·frac; Max / Min over every finite own sample (ledger
+L9.77, L9.85).
 
 ## Circle diagram locus (`0x43a880`)
 Channels with flag 0x8: per-sample cached complex phasor (Re, Im) ("Ohm" —

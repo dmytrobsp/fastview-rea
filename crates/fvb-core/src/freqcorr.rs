@@ -52,17 +52,61 @@ pub fn is_freq_unit(unit: &str) -> bool {
     UNITS.contains(&unit)
 }
 
-/// Every candidate's name in list order: the file's, then the formula
-/// channels'.
+/// A frequency candidate: a file analog channel or an [`Oscillogram::extra_freq`]
+/// entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cand {
+    File(usize),
+    Extra(usize),
+}
+
+/// The candidate list in vector order (`0x42ec10`–`0x42eca6`): the file's
+/// candidates with the extra ones at their places.
+pub fn ordered(osc: &Oscillogram) -> Vec<Cand> {
+    let file = candidates(osc);
+    let mut extra: Vec<usize> = (0..osc.extra_freq.len()).collect();
+    extra.sort_by_key(|&j| osc.extra_freq[j].pos);
+    let mut out = Vec::new();
+    let mut e = extra.into_iter().peekable();
+    for i in 0..osc.analog.len() {
+        while let Some(j) = e.next_if(|&j| osc.extra_freq[j].pos <= i) {
+            out.push(Cand::Extra(j));
+        }
+        if file.contains(&i) {
+            out.push(Cand::File(i));
+        }
+    }
+    out.extend(e.map(Cand::Extra));
+    out
+}
+
+/// Every candidate's name in list order.
 pub fn candidate_names(osc: &Oscillogram) -> Vec<String> {
-    candidates(osc).into_iter().map(|c| osc.analog[c].id.clone()).chain(osc.extra_freq.iter().map(|(n, _)| n.clone())).collect()
+    ordered(osc)
+        .into_iter()
+        .map(|c| match c {
+            Cand::File(i) => osc.analog[i].id.clone(),
+            Cand::Extra(j) => osc.extra_freq[j].name.clone(),
+        })
+        .collect()
+}
+
+/// The selected candidate, when it is an extra one: its holder's id. The
+/// gate compares the channel itself (`0x4262b6`), so that channel is not
+/// corrected by its own samples.
+pub fn selected_extra(osc: &Oscillogram) -> Option<usize> {
+    let k = usize::try_from(osc.freq_sel).ok()?.checked_sub(1)?;
+    match ordered(osc).get(k)? {
+        Cand::Extra(j) => Some(osc.extra_freq[*j].id),
+        Cand::File(_) => None,
+    }
 }
 
 /// The tail of `0x42ebd0`: a selection of 0 or past the list becomes 1 when
 /// there is a candidate (so «Не корректировать» does not survive a
 /// rebuild); a negative one is kept.
 pub fn refresh_selection(osc: &mut Oscillogram) {
-    let n = (candidates(osc).len() + osc.extra_freq.len()) as i32;
+    let n = ordered(osc).len() as i32;
     if (osc.freq_sel == 0 || osc.freq_sel > n) && n > 0 {
         osc.freq_sel = 1;
     }
@@ -75,13 +119,11 @@ pub fn of(osc: &Oscillogram) -> Option<FreqCorr<'_>> {
     if osc.segments != 1 || osc.freq_sel <= 0 {
         return None;
     }
-    let k = osc.freq_sel as usize - 1;
-    let file = candidates(osc);
     let fs = osc.sample_rate.trunc();
-    match file.get(k) {
-        Some(&chan) => Some(FreqCorr { chan, freq: &osc.analog[chan].samples, fs }),
-        // A formula channel: no file channel is the frequency channel.
-        None => Some(FreqCorr { chan: usize::MAX, freq: &osc.extra_freq.get(k - file.len())?.1, fs }),
+    match *ordered(osc).get(osc.freq_sel as usize - 1)? {
+        Cand::File(chan) => Some(FreqCorr { chan, freq: &osc.analog[chan].samples, fs }),
+        // Not a file channel: no file channel is the frequency channel.
+        Cand::Extra(j) => Some(FreqCorr { chan: usize::MAX, freq: &osc.extra_freq[j].samples, fs }),
     }
 }
 

@@ -722,28 +722,68 @@ impl PastedTimes<'_> {
         own_time_us(self.own, rate, i)
     }
 
-    /// The value at record sample `k` the stats panel reads out (`0x461a24`):
-    /// t = T(k) − offset·10⁶; i = the first own sample with ct(i) ≥ t, j =
-    /// i − 1 (−1 wraps to a time 2³² − len samples past the end); v(j) +
-    /// (v(i) − v(j))·(t − ct(j)) / (ct(i) − ct(j)), a sample past the
-    /// values reading 0. So before the first sample the first value (to a
-    /// factor 1 − ε), past the last a fall to 0 within one own period, then
-    /// 0.
-    pub fn value_at(&self, k: usize, n: usize, v: &dyn Fn(usize) -> f64) -> f64 {
+    /// The own samples around record sample `k` as the stats panel scans
+    /// them (`0x461a24`–`0x461b06`): t = T(k) − offset·10⁶; i = the first own
+    /// index **from 1** with ct(i) ≥ t (past the values the times run on at
+    /// the own rate), j = i − 1, and frac = (t − ct(j)) / (ct(i) − ct(j)) —
+    /// negative before the paste, so the line through samples 0 and 1
+    /// extends backwards.
+    pub fn bracket(&self, k: usize, n: usize) -> (usize, usize, f64) {
         let t = time_us(self.rec, self.rec_rate, k) - self.offset * 1e6;
-        let i = if n == 0 || t > self.ct(n.saturating_sub(1)) {
-            if n > 0 && t <= self.ct(n) {
-                n
-            } else {
-                return 0.0;
-            }
+        let last = n.max(2) - 1;
+        let mut i = if t <= self.ct(last) {
+            (1..=last).find(|&i| self.ct(i) >= t).unwrap_or(last)
         } else {
-            (0..n).find(|&i| self.ct(i) >= t).unwrap_or(n)
+            // Past the values: jump by the own period, then settle.
+            let rate = if self.own_rate == 0.0 { self.rec_rate } else { self.own_rate };
+            let step = 1e6 / rate;
+            last + (((t - self.ct(last)) / step).floor().max(0.0) as usize)
         };
-        let j = i.checked_sub(1).unwrap_or(u32::MAX as usize);
+        while i > 1 && self.ct(i - 1) >= t {
+            i -= 1;
+        }
+        while self.ct(i) < t {
+            i += 1;
+        }
+        let (cj, ci) = (self.ct(i - 1), self.ct(i));
+        (i - 1, i, (t - cj) / (ci - cj))
+    }
+
+    /// The value at record sample `k` the stats panel reads out (`0x461a24`):
+    /// v(j) + (v(i) − v(j))·frac over [`Self::bracket`], a sample past the
+    /// values reading 0 — so past the last one it falls to 0 within one own
+    /// period, then stays 0.
+    pub fn value_at(&self, k: usize, n: usize, v: &dyn Fn(usize) -> f64) -> f64 {
+        if n == 0 {
+            return 0.0;
+        }
+        let (j, i, frac) = self.bracket(k, n);
         let val = |m: usize| if m < n { v(m) } else { 0.0 };
-        let (cj, ci) = (self.ct(j), self.ct(i));
-        val(j) + (val(i) - val(j)) * ((t - cj) / (ci - cj))
+        val(j) + (val(i) - val(j)) * frac
+    }
+
+    /// A per-index statistic (СКЗ `0x4272a0`, A1 `0x426240`) of a pasted
+    /// channel at record sample `k` (`0x4623d7`–`0x46244d`,
+    /// `0x462624`–`0x46269a`): R(j) + (R(j) − R(i))·frac — the
+    /// interpolation mirrored, as the original computes it.
+    pub fn stat_at(&self, k: usize, n: usize, r: &dyn Fn(usize) -> f64) -> f64 {
+        if n == 0 {
+            return 0.0;
+        }
+        let (j, i, frac) = self.bracket(k, n);
+        let rj = r(j);
+        rj + (rj - r(i)) * frac
+    }
+
+    /// The window of a pasted channel's own statistics (`0x427315`):
+    /// round(own rate / 50) — 50 Hz fixed (`0x4d1718`) — or `rec_n` without
+    /// an own rate.
+    pub fn own_period(&self, rec_n: usize) -> usize {
+        if self.own_rate == 0.0 {
+            rec_n
+        } else {
+            (self.own_rate / 50.0).round().max(1.0) as usize
+        }
     }
 
     /// R/r (`0x4295dc`, `0x42ab37`): 1 when the channel has no rate.
@@ -866,8 +906,14 @@ mod draw_tests {
         assert_eq!(at(2), 1.0, "on the first sample");
         assert_eq!(at(4), 2.0);
         assert_eq!(at(5), 2.5, "linear between own samples");
-        // Before the paste: the first value to a factor 1 − ε.
-        assert!((at(0) - 1.0).abs() < 1e-6 && at(0) != 1.0);
+        // Before the paste: the line through own samples 0 and 1 extended
+        // backwards (the scan starts at own index 1).
+        assert_eq!((at(0), at(1)), (0.0, 0.5));
+        // СКЗ / A1: R(j) + (R(j) − R(i))·frac, the mirrored interpolation.
+        let r = |m: usize| [10.0, 20.0, 30.0, 40.0, 50.0][m.min(4)];
+        // k = 5: t = 1500 µs between own samples 1 and 2.
+        assert_eq!(p.stat_at(5, 5, &r), 20.0 + (20.0 - 30.0) * 0.5);
+        assert_eq!(p.own_period(40), 20, "round(own rate / 50)");
         // Past the last own sample (5 ms): falls to 0 within one period.
         assert_eq!(at(10), 5.0);
         assert_eq!(at(11), 2.5);

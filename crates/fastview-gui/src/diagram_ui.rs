@@ -341,14 +341,14 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
             push(ch.id.clone(), unit, d.chans[i].color, !dg::is_ohm(canon), true, &|k| ph.get(k).map_or([0.0, 0.0], |z| [z.re * kf, z.im * kf]));
         }
     }
-    for c in d.computed.iter().filter(|c| c.on_circle) {
+    for (j, c) in d.computed.iter().enumerate().filter(|(_, c)| c.on_circle) {
         let series = |k: usize| {
             if k >= len {
                 return [0.0, 0.0];
             }
             let z = match &c.phasors {
                 Some(p) => p.get(k).copied().unwrap_or_default(),
-                None => fvb_core::freqcorr::phasor_at(fvb_core::freqcorr::of(&d.osc), fvb_core::freqcorr::OTHER, &c.samples, k, n),
+                None => fvb_core::freqcorr::phasor_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, &c.samples, k, n),
             };
             [z.re, z.im]
         };
@@ -1104,9 +1104,9 @@ impl App {
             if let Some(i) = d.osc.analog.iter().position(|c| c.id == name) {
                 return d.analysis.phasors.get(i).and_then(|p| p.get(k)).map(|z| z * d.shown_k(i));
             }
-            d.computed.iter().find(|c| c.name == name).map(|c| match &c.phasors {
+            d.computed.iter().enumerate().find(|(_, c)| c.name == name).map(|(j, c)| match &c.phasors {
                 Some(p) => p.get(k).copied().unwrap_or_default(),
-                None => fvb_core::freqcorr::phasor_at(fvb_core::freqcorr::of(&d.osc), fvb_core::freqcorr::OTHER, &c.samples, k, n),
+                None => fvb_core::freqcorr::phasor_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, &c.samples, k, n),
             })
         };
         let shown: Vec<(String, String, Complex64, Color32, fvb_core::units::Shown)> = doc_chans(d)

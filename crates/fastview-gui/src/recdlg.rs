@@ -198,18 +198,38 @@ impl Doc {
     /// first candidate whenever there is one (L9.65).
     pub fn channels_changed(&mut self) {
         let before = self.osc.freq_sel;
-        // Formula channels in a frequency unit are candidates after the
-        // file's (pasted ones are not modelled).
-        self.osc.extra_freq = self
-            .computed
-            .iter()
-            .filter(|c| c.formula != crate::merge_ui::PENDING && fvb_core::freqcorr::is_freq_unit(&c.unit))
-            .map(|c| (c.name.clone(), c.samples.clone()))
-            .collect();
+        // Formula channels (after the analog ones) and pasted analog ones
+        // (at their insertion point) are candidates too, by the same test
+        // (`0x42aee0`: ph / ccbm «system» or a frequency unit — no bit-14
+        // test); they keep their vector places.
+        let n_analog = self.osc.analog.len();
+        let mut extra = Vec::new();
+        for (j, c) in self.computed.iter().enumerate() {
+            let pos = match c.before {
+                Some(crate::app::ChanKey::Analog(a)) => a,
+                _ => n_analog,
+            };
+            if c.formula == crate::merge_ui::PENDING {
+                if let Some(Ok(a)) = self.pending_of(j).map(|p| &p.pasted.channel) {
+                    if a.phase == "system" || a.ccbm == "system" || fvb_core::freqcorr::is_freq_unit(&a.unit) {
+                        extra.push(fvb_core::comtrade::ExtraFreq { name: c.name.clone(), samples: a.samples.clone(), pos, id: j });
+                    }
+                }
+            } else if fvb_core::freqcorr::is_freq_unit(&c.unit) {
+                extra.push(fvb_core::comtrade::ExtraFreq { name: c.name.clone(), samples: c.samples.clone(), pos: n_analog, id: j });
+            }
+        }
+        self.osc.extra_freq = extra;
         fvb_core::freqcorr::refresh_selection(&mut self.osc);
         if self.osc.freq_sel != before {
             self.recompute_signals();
         }
+    }
+
+    /// The correction for computed channel `j`: none for the frequency
+    /// channel itself (the gate compares the channel, `0x4262b6`).
+    pub fn computed_corr(&self, j: usize) -> Option<fvb_core::freqcorr::FreqCorr<'_>> {
+        fvb_core::freqcorr::of(&self.osc).filter(|_| fvb_core::freqcorr::selected_extra(&self.osc) != Some(j))
     }
 
     pub fn recompute_signals(&mut self) {

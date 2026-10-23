@@ -1985,19 +1985,32 @@ fn lane_stats(
                 mx = mx.max(v);
                 mn = mn.min(v);
             }
-            let corr = fvb_core::freqcorr::of(&doc.osc);
+            let corr = doc.computed_corr(*i);
+            // The uncorrected A1 carries the record's harmonic-1 gain
+            // (`0x426240`, `rec+0x278`).
+            let gain = if corr.is_some() { 1.0 } else { doc.osc.harmonic1_gain };
+            if let Some((t, Ok(a))) = doc.pasted_times(*i).map(|(t, p)| (t, &p.pasted.channel)) {
+                // A pasted analog channel (`0x461440` with bit 14): its own
+                // samples — the value interpolated at T(В1) − offset, СКЗ /
+                // A1 over its own window at the bracketing own indices,
+                // Max / Min over every finite own sample.
+                let len = a.samples.len();
+                let (_, i_hi, _) = t.bracket(k_main, len);
+                let p = t.own_period(n);
+                // `0x426020`: NaN and samples past the values read 0.
+                let mut x: Vec<f64> = a.samples.iter().map(|v| if v.is_finite() { *v } else { 0.0 }).collect();
+                x.resize(x.len().max(i_hi + 1), 0.0);
+                let own_corr = corr.map(|c| fvb_core::freqcorr::FreqCorr { fs: if t.own_rate == 0.0 { c.fs } else { t.own_rate }, ..c });
+                let rms = t.stat_at(k_main, len, &|m| fvb_core::freqcorr::rms_at(own_corr, fvb_core::freqcorr::OTHER, &x, m, p, 1));
+                let a1 = t.stat_at(k_main, len, &|m| fvb_core::freqcorr::fundamental_at(own_corr, fvb_core::freqcorr::OTHER, &x, m, p) * gain);
+                let val = t.value_at(k_main, len, &|m| a.samples[m]);
+                let finite = a.samples.iter().copied().filter(|v| v.is_finite());
+                let (mx, mn) = finite.fold((f64::MIN, f64::MAX), |(hi, lo), v| (hi.max(v), lo.min(v)));
+                return (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, val);
+            }
             let rms = fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n, 1);
-            let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n);
-            // A pasted analog channel reads its own samples at the record
-            // time less the offset (`0x461a24`).
-            let val = match doc.pasted_times(*i) {
-                Some((t, p)) => match &p.pasted.channel {
-                    Ok(a) => t.value_at(k_main, a.samples.len(), &|m| a.samples[m]),
-                    Err(_) => series(k_main),
-                },
-                None => series(k_main),
-            };
-            (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, val)
+            let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n) * gain;
+            (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, series(k_main))
         }
         Lane::Digital(i) => {
             let d = &doc.osc.digital[*i];
