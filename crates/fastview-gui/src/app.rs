@@ -2070,8 +2070,15 @@ impl App {
     }
 
     pub fn open_comtrade(&mut self) {
+        // String 328 (`0x447e30` when opening); patterns in both cases for
+        // the case-sensitive dialogs off Windows.
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Осциллограммы", &["cfg", "cff", "osc", "dat", "CFG", "CFF", "OSC", "DAT"])
+            .add_filter("Осциллограммы (*.cfg, *.cff, *.osc, *.sto)", &["cfg", "cff", "osc", "sto", "CFG", "CFF", "OSC", "STO"])
+            .add_filter("Осциллограммы COMTRADE (*.cfg)", &["cfg", "CFG"])
+            .add_filter("Осциллограммы COMTRADE'13 (*.cff)", &["cff", "CFF"])
+            .add_filter("Осциллограммы OSC2 (*.osc)", &["osc", "OSC"])
+            .add_filter("Осциллограммы Configurator-MT (*.sto)", &["sto", "STO"])
+            .add_filter("Все файлы (*.*)", &["*"])
             .pick_file()
         {
             self.load_comtrade_path(&path);

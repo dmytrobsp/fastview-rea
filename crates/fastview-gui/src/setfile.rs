@@ -128,6 +128,33 @@ fn save_kind(p: &std::path::Path) -> Option<&'static str> {
     [".cfg", ".osc", ".cff"].into_iter().find(|e| s.ends_with(e))
 }
 
+/// Save As's filter (`CDocManagerEx::DoPromptFileName` `0x447e30`, by the
+/// record path's last four characters): string 394 for an `.osc` record,
+/// 569 for the rest (`.cfg`, `.cff`, `.sto`; 399 for a `.zip`, which
+/// cannot be opened).
+pub fn save_filters(record: Option<&std::path::Path>) -> [(&'static str, &'static str); 2] {
+    let osc = record.is_some_and(|p| p.to_string_lossy().to_lowercase().ends_with(".osc"));
+    if osc {
+        [("Осциллограммы COMTRADE (*.cfg)", "cfg"), ("Осциллограммы OSC2 (*.osc)", "osc")]
+    } else {
+        [("Осциллограммы COMTRADE (*.cfg)", "cfg"), ("Осциллограммы COMTRADE'13 (*.cff)", "cff")]
+    }
+}
+
+/// The name after OK: an extension of the filter list is kept, any other
+/// name gets one appended ("x.txt" → "x.txt.cfg"). The original appends
+/// the chosen filter's; the file dialog here does not report the choice,
+/// so the first filter's is used.
+pub fn save_target(p: std::path::PathBuf, exts: &[&str]) -> std::path::PathBuf {
+    let s = p.to_string_lossy().to_lowercase();
+    if exts.iter().any(|e| s.ends_with(&format!(".{e}"))) {
+        return p;
+    }
+    let mut o = p.into_os_string();
+    o.push(format!(".{}", exts[0]));
+    o.into()
+}
+
 impl Doc {
     /// The section key of file channel `i` (analog, then digital).
     fn file_key(&self, i: usize) -> String {
@@ -629,11 +656,18 @@ impl App {
             return false;
         };
         let d = &self.docs[ai];
-        let mut dlg = rfd::FileDialog::new().add_filter("COMTRADE", &["cfg"]).add_filter("COMTRADE'13", &["cff"]);
-        if d.path.as_ref().is_some_and(|p| save_kind(p) == Some(".osc")) {
-            dlg = dlg.add_filter("OSC", &["osc"]);
+        let filters = save_filters(d.path.as_deref());
+        let mut dlg = rfd::FileDialog::new();
+        for (name, ext) in filters {
+            dlg = dlg.add_filter(name, &[ext]);
         }
-        let Some(path) = dlg.set_file_name(format!("{}.cfg", d.name)).save_file() else { return false };
+        // Proposed: the record's folder and its title without extension.
+        let stem = d.path.as_ref().and_then(|p| p.file_stem()).map_or_else(|| d.name.clone(), |s| s.to_string_lossy().into_owned());
+        if let Some(dir) = d.path.as_ref().and_then(|p| p.parent()).filter(|p| !p.as_os_str().is_empty()) {
+            dlg = dlg.set_directory(dir);
+        }
+        let Some(path) = dlg.set_file_name(stem).save_file() else { return false };
+        let path = save_target(path, &filters.map(|f| f.1));
         self.report_save(ai, &path)
     }
 
@@ -892,6 +926,18 @@ mod tests {
     use super::*;
     use crate::app::{DEMO_CFG, DEMO_DAT};
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn save_as_filters_and_extension() {
+        let f = save_filters(Some(Path::new("/r/a.OSC")));
+        assert_eq!(f.map(|x| x.1), ["cfg", "osc"]);
+        assert_eq!(save_filters(Some(Path::new("/r/a.sto"))).map(|x| x.1), ["cfg", "cff"]);
+        assert_eq!(save_filters(None).map(|x| x.1), ["cfg", "cff"]);
+        let exts = ["cfg", "cff"];
+        assert_eq!(save_target(PathBuf::from("/r/x.CFF"), &exts), PathBuf::from("/r/x.CFF"));
+        assert_eq!(save_target(PathBuf::from("/r/x.txt"), &exts), PathBuf::from("/r/x.txt.cfg"));
+        assert_eq!(save_target(PathBuf::from("/r/x.osc"), &exts), PathBuf::from("/r/x.osc.cfg"));
+    }
 
     /// `0x42ecf0` → `0x440800`: deleting a channel drops the levels / areas
     /// on it and the kept ones, re-binds the rest by name, keeps moments.

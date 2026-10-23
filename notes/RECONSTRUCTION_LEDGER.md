@@ -4707,6 +4707,36 @@ every element kept from a `.set` naming a missing channel, dropped;
 Residual: the quick analysis's rollback of its new channels when the
 recompute fails (`0x416ed6`–`0x416f2b`) is not modelled.
 
+### L9.158 — The open and Save As dialogs as `CDocManagerEx::DoPromptFileName`  ·  ✅
+Read (vtable sweep: CDocManagerEx overrides only DoPromptFileName, slot
+15; by hand `0x447e30`, strings 328 / 394 / 399 / 569): opening always
+uses string 328 — six rows: «Осциллограммы (*.cfg, *.cff, *.osc,
+*.sto)», COMTRADE (*.cfg), COMTRADE'13 (*.cff), OSC2 (*.osc),
+Configurator-MT (*.sto), «Все файлы (*.*)» (no `.dat`). Save As picks by
+the record path's last four characters: `.osc` → 394 (COMTRADE *.cfg +
+OSC2 *.osc), `.zip` → 399 (ZIP only), anything else — `.cfg`, `.cff`,
+`.sto` — → 569 (COMTRADE *.cfg + COMTRADE'13 *.cff). The proposed name
+is the record's folder and its title without extension (`.osc` / `.sto`
+swapped for `.cfg` first, then stripped — the strip INFERRED from the
+title helper's last-dot search); overwrite prompt, read-only hidden, the
+title argument ignored (the system's default title, INFERRED). After OK
+the chosen filter's extension is applied: one of the list typed but not
+the filter's is replaced, any other name gets it appended ("x.txt" →
+"x.txt.cfg"). ZIP: OnOpenDocument `0x44ee70` never compares `.zip` and
+ZipArchive is imported for create / add / close only — a `.zip` cannot
+be opened, so 399 and the archive writer `0x44db10` (`<base>.osc` +
+`<base>.set`, or a temporary «<zip>.files» folder with `<base>.cfg`) are
+unreachable from the UI (INFERRED).
+Ours offered one «Осциллограммы» row with `.dat` and no `.sto` when
+opening, and in Save As «COMTRADE» + «COMTRADE'13» (+ OSC for an `.osc`),
+"name.cfg" with no folder, and refused a name without a known extension.
+Now `open_comtrade` lists 328's rows (`.sto` opens to our reader's error,
+⛔ as before); `save_filters` (394 / 569), the record's folder and title,
+`save_target` (a listed extension kept, else appended). The dialog here
+does not report the chosen filter: a listed extension is kept as typed
+and the first filter's is appended otherwise. Test
+`save_as_filters_and_extension`.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
