@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 312 pass)
+- `cargo test --workspace`   (currently 313 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -840,9 +840,8 @@ name without extension, ✕ on the active tab only, ▾ list); window title
 «Механотроника FastView - <doc>» (`0x45f7d0`); command line `-Dst <dir>`,
 `-Find`, the file argument; DragAcceptFiles; minimum size 866×500
 (`0x4728a0`). Ours: `main.rs` `doc_tabs`, `tab_color`, `startup_args`
-(tested), dropped files, viewport title. Residual: auto-colour order after
-the first NOT DETERMINED (MFC OneNote palette assumed; the bundled vcredist's
-mfc120u.dll sits in an attached burn container we did not unpack); the 2 s
+(tested), dropped files, viewport title. Residual: (the auto-colour order:
+read from mfc120u in L9.63 — the assumed OneNote palette was wrong); the 2 s
 splash not implemented (its bitmap 0x1CE is a proprietary asset); single
 instance done in L9.18 (`instance.rs`: loopback port + token file instead of
 the stored HWND / WM_COPYDATA, the newest plain start wins, a file argument
@@ -2135,6 +2134,30 @@ the text-variant boxes other than those above are not mapped to ours one
 by one (ours default to the exclamation); on a non-Russian Windows MFC's
 prompt would come from mfc120enu / the English base.
 
+### L9.63 — Document tab colours: mfc120u's list and pick rule  ·  ✅
+Read by hand in the carved mfc120u (local only): no colour of the assumed
+"OneNote" palette occurs in the DLL at all. The tab control's auto-colour
+list (`0x1006a975`, array at `this+0x1bc`, only when auto colour is on):
+with more than 8 bits per pixel 16 colours in order — (197,212,242),
+(255,220,120), (190,206,161), (240,160,161), (188,168,225), (156,193,182),
+(247,184,134), (217,173,194), (165,194,215), (179,166,190), (234,214,163),
+(246,250,125), (181,233,157), (95,195,207), (193,131,131), (202,202,213)
+(a different list at ≤ 8 bpp, not read). The pick (`0x1006a29c(iTab)`,
+for a tab whose colour is still −1): idx = iTab mod 16; if idx equals the
+static "last" (`0x102b0588`) → idx = (++counter `0x102b0584`) mod 16; if
+the tab left of it has colours[idx] → again ++counter; then last = idx and
+the tab keeps that colour. Both statics are zero-initialised (.bss) and
+shared by every tab control of the process. So the first document gets
+index 1 — (255,220,120), exactly the bottom colour sampled from the help
+screenshot (L9.8) — and the next ones 2, 3, … while tabs are appended.
+Ours: `app::TAB_COLORS`, `TabAuto::assign` (the rule, the statics in
+`App::tab_auto`), `Doc::tab_color` given when the tab is first laid out,
+in tab order. Test `tab_auto_colours_follow_mfc`; rendered (first tab
+yellow).
+Residual: the ≤ 8 bpp list not modelled; when MFC calls the pick (at
+insert vs at layout) was not traced — ours at first layout, in order,
+which gives the same colours for tabs appended one by one or together.
+
 Next in L9 (HANDOFF 2026-10-23, late): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2172,8 +2195,8 @@ copy-focus case ✅ L9.58; L9.22 print residuals (comment hover ✅ L9.59; left:
 diagram print branches); L9.21 hold-to-drag ✅ L9.61 (a self-drop is
 silent); L9.6 digital level-line snap;
 L9.44 the comment cursor codes ✅ L9.60; MFC
-framework items readable from the carved mfc120u / mfc120rus (tab colour
-order, «Окна...», keytips, save-prompt wording ✅ L9.62 — L9.8 / L9.14 /
+framework items readable from the carved mfc120u / mfc120rus (now in
+`extracted/mfc/`, local) (tab colour order ✅ L9.63, «Окна...», keytips, save-prompt wording ✅ L9.62 — L9.8 / L9.14 /
 L9.27); the sheet's residuals (L9.51–L9.56); pane re-docking (egui limit).
 
 ---

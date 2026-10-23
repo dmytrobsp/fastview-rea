@@ -114,13 +114,18 @@ impl App {
         ui.horizontal(|ui| {
             ui.add_space(6.0);
             for i in 0..self.docs.len() {
+                if self.docs[i].tab_color.is_none() {
+                    let prev = i.checked_sub(1).and_then(|j| self.docs[j].tab_color);
+                    self.docs[i].tab_color = Some(self.tab_auto.assign(i, prev));
+                }
                 let active = self.active == Some(i);
                 let title = self.docs[i].name.clone();
                 let font = egui::FontId::proportional(13.0);
                 let text_w = ui.fonts(|f| f.layout_no_wrap(title.clone(), font.clone(), egui::Color32::BLACK).size().x);
                 let w = text_w + 34.0 + if active { 20.0 } else { 0.0 };
                 let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 22.0), egui::Sense::click());
-                let base = tab_color(i);
+                let (r, g, b) = app::TAB_COLORS[self.docs[i].tab_color.unwrap_or(0)];
+                let base = egui::Color32::from_rgb(r, g, b);
                 let top = base.lerp_to_gamma(egui::Color32::WHITE, if active { 0.45 } else { 0.25 });
                 // Slanted left edge, square right edge (OneNote style).
                 let pts = [rect.left_bottom(), rect.left_top() + egui::vec2(16.0, 0.0), rect.right_top(), rect.right_bottom()];
@@ -239,24 +244,6 @@ fn startup_args(args: impl Iterator<Item = String>) -> StartupArgs {
         }
     }
     out
-}
-
-/// Tab colours of the documents, in order (MFC OneNote auto colours; the
-/// first one is the yellow of the help screenshots, the order of the rest is
-/// not determined).
-fn tab_color(i: usize) -> egui::Color32 {
-    const C: [(u8, u8, u8); 8] = [
-        (255, 219, 117),
-        (148, 175, 230),
-        (189, 205, 159),
-        (240, 158, 159),
-        (186, 166, 225),
-        (154, 191, 180),
-        (247, 182, 131),
-        (216, 171, 192),
-    ];
-    let (r, g, b) = C[i % C.len()];
-    egui::Color32::from_rgb(r, g, b)
 }
 
 impl eframe::App for App {

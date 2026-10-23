@@ -74,6 +74,57 @@ pub enum Pane {
 /// and every message box's caption (`AfxMessageBox` uses `m_pszAppName`).
 pub const APP_TITLE: &str = "Механотроника FastView";
 
+/// The tab auto colours of mfc120u's `CMFCBaseTabCtrl` (more than 256
+/// colours on screen; `0x1006a9a7`), in order.
+pub const TAB_COLORS: [(u8, u8, u8); 16] = [
+    (197, 212, 242),
+    (255, 220, 120),
+    (190, 206, 161),
+    (240, 160, 161),
+    (188, 168, 225),
+    (156, 193, 182),
+    (247, 184, 134),
+    (217, 173, 194),
+    (165, 194, 215),
+    (179, 166, 190),
+    (234, 214, 163),
+    (246, 250, 125),
+    (181, 233, 157),
+    (95, 195, 207),
+    (193, 131, 131),
+    (202, 202, 213),
+];
+
+/// The two statics behind the tab colours (`0x102b0588` the last index
+/// given, `0x102b0584` a counter; both start at 0 and are shared by every
+/// tab control of the process).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TabAuto {
+    pub last: usize,
+    pub counter: usize,
+}
+
+impl TabAuto {
+    /// The colour of a tab without one at position `pos`, whose left
+    /// neighbour has colour `prev` (`0x1006a29c`): `pos` mod 16, unless that
+    /// is the last index given or the neighbour's colour — then the next
+    /// counter value mod 16, each time.
+    pub fn assign(&mut self, pos: usize, prev: Option<usize>) -> usize {
+        let n = TAB_COLORS.len();
+        let mut idx = pos % n;
+        if idx == self.last {
+            self.counter += 1;
+            idx = self.counter % n;
+        }
+        if prev.is_some_and(|p| TAB_COLORS[p] == TAB_COLORS[idx]) {
+            self.counter += 1;
+            idx = self.counter % n;
+        }
+        self.last = idx;
+        idx
+    }
+}
+
 /// The keyboard focus as copy's picture (`0x405160`) sees it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CopyFocus {
@@ -462,6 +513,9 @@ pub struct Doc {
     /// The element under the pointer (`doc+0x854`), drawn selected: set by
     /// a pointer move over the plot, kept when the pointer leaves it.
     pub comment_hot: Option<usize>,
+    /// Its tab's colour, an index into [`TAB_COLORS`], given when the tab
+    /// is first laid out (`0x1006a29c`).
+    pub tab_color: Option<usize>,
     /// Selected channels (the original's per-channel `+0x100` flag): the
     /// target of the channel context menu and the per-channel commands.
     pub selection: BTreeSet<ChanKey>,
@@ -554,6 +608,7 @@ impl Doc {
             rx_pairs: Vec::new(),
             comments: Vec::new(),
             comment_hot: None,
+            tab_color: None,
             selection: BTreeSet::new(),
             sel_anchor: None,
             next_group: 1,
@@ -954,6 +1009,8 @@ pub struct App {
     /// The pointer over the view's client area at the last frame it was
     /// there: a change is the original's WM_MOUSEMOVE.
     pub view_pointer: Option<egui::Pos2>,
+    /// MFC's process-wide auto-colour state of the tabs.
+    pub tab_auto: TabAuto,
     /// The circle / differential property grids as last drawn.
     pub pane_grid: Vec<egui::Rect>,
     /// Where the keyboard focus is, as far as copy (`0x405160`) cares.
@@ -1078,6 +1135,7 @@ impl App {
             pane_canvas: Vec::new(),
             pane_grid: Vec::new(),
             view_pointer: None,
+            tab_auto: TabAuto::default(),
             copy_focus: CopyFocus::View,
             ppp: 1.0,
             window_title: String::new(),
@@ -1884,6 +1942,25 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `0x1006a29c` with both statics at 0: the first tab is the yellow
+    /// (index 1, as the help screenshots), the next ones step on; a tab
+    /// opened after a close takes its position's colour unless the last
+    /// one given or its neighbour has it.
+    #[test]
+    fn tab_auto_colours_follow_mfc() {
+        let mut t = TabAuto::default();
+        assert_eq!([t.assign(0, None), t.assign(1, Some(1)), t.assign(2, Some(2))], [1, 2, 3]);
+        assert_eq!(TAB_COLORS[1], (255, 220, 120));
+        // Tabs [1, 3] after closing the middle one: position 2 is free.
+        assert_eq!(t.assign(2, Some(3)), 2);
+        // Tabs [1] alone: position 1 clashes with its neighbour → counter.
+        let mut t = TabAuto { last: 2, counter: 3 };
+        assert_eq!(t.assign(1, Some(1)), 4);
+        // Wraps after sixteen.
+        let mut t = TabAuto { last: 0, counter: 15 };
+        assert_eq!(t.assign(16, None), 0);
+    }
 
     fn demo_app() -> App {
         let mut app = App::new();
