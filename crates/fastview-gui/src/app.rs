@@ -451,6 +451,20 @@ pub enum RectZoom {
 
 type LoadResult = Result<(Oscillogram, fvb_core::comtrade::CffSections), fvb_core::comtrade::ComtradeError>;
 
+/// AfxComparePath: the same file (both paths made absolute where they
+/// exist; case ignored where the file system ignores it).
+pub fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    let full = |p: &std::path::Path| {
+        let s = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()).to_string_lossy().into_owned();
+        if cfg!(windows) {
+            s.to_lowercase()
+        } else {
+            s
+        }
+    };
+    full(a) == full(b)
+}
+
 /// A record being parsed on a worker thread.
 pub struct Loading {
     pub path: std::path::PathBuf,
@@ -2089,6 +2103,18 @@ impl App {
     /// (`LoadingDlg`, DIALOG 492); the progress dialog shows only for large
     /// files and «Отмена» abandons the open.
     pub fn load_comtrade_path(&mut self, path: &std::path::Path) {
+        // MFC's OpenDocumentFile (the stock document manager — CDocManagerEx
+        // overrides only the file dialog): a file already open just brings
+        // its document forward (AfxComparePath, case-insensitive), for the
+        // dialog, the MRU, a drop and the hand-over alike.
+        let same = |p: &std::path::Path| same_file(p, path);
+        if let Some(i) = self.docs.iter().position(|d| d.path.as_deref().is_some_and(same)) {
+            self.active = Some(i);
+            return;
+        }
+        if self.loading.iter().any(|l| same(&l.path)) {
+            return;
+        }
         let (tx, rx) = std::sync::mpsc::channel();
         let (p, enc) = (path.to_path_buf(), self.encoding);
         let progress = std::sync::Arc::new(fvb_core::comtrade::Progress::default());

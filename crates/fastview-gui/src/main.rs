@@ -175,8 +175,11 @@ impl App {
                         close = Some(i);
                     }
                 }
-                // A press (or a drag) brings the tab to the front.
-                if (resp.clicked() || resp.drag_started()) && close.is_none() {
+                // A press (or a drag) brings the tab to the front; so does a
+                // right-click — the frame's OnContextMenu activates the tab
+                // under the point, and OnShowMDITabContextMenu (not
+                // overridden, `0x100bc637`) shows no menu for these tabs.
+                if (resp.clicked() || resp.drag_started() || resp.secondary_clicked()) && close.is_none() {
                     activate = Some(i);
                 }
                 if resp.dragged() {
@@ -1074,6 +1077,20 @@ mod window_tests {
         let a = w.app.doc_tab_rects[0];
         drag(&mut w, a.center(), a.center() + Vec2::new(0.0, 300.0));
         assert_eq!(serials(&w), [before[1], before[0]], "out of the strip: no change");
+    }
+
+    /// A right-click on a document tab activates it and shows no menu (the
+    /// frame's OnContextMenu, MFC's OnShowMDITabContextMenu).
+    #[test]
+    fn a_right_click_on_a_document_tab_activates_it() {
+        use egui::PointerButton::Secondary;
+        let mut w = Win { ctx: egui::Context::default(), app: demo(&[app::Command::Demo]), held: egui::Modifiers::NONE };
+        w.idle(3);
+        let other = 1 - w.app.active.unwrap();
+        let at = w.app.doc_tab_rects[other].center();
+        w.press(Secondary, at, at);
+        assert_eq!(w.app.active, Some(other));
+        assert!(!w.ctx.memory(|m| m.any_popup_open()), "no menu");
     }
 
     /// `0x100690b4`: a tab dragged along its strip over another swaps with

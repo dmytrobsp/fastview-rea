@@ -4737,6 +4737,34 @@ does not report the chosen filter: a listed extension is kept as typed
 and the first filter's is appended otherwise. Test
 `save_as_filters_and_extension`.
 
+### L9.159 — A file already open is brought forward; a right-click on a document tab activates it; dropped files  ·  ✅ (drop position residual)
+Read (vtable sweep of CFastViewApp / CMainFrame / CDocManagerEx /
+COleDropTargetEx): no own document template and CDocManagerEx overrides
+only DoPromptFileName, so every open (dialog, MRU, a drop, the shell /
+WM_COPYDATA hand-over) is MFC's OpenDocumentFile — a file already open
+(AfxComparePath) just activates its frame, nothing reloads (INFERRED from
+MFC, the stock path). CMainFrame keeps OnShowMDITabContextMenu (slot 117,
+`0x100bc637`) and has no WM_CONTEXTMENU entry: the frame's OnContextMenu
+(mfc `0x100bc085`–`0x100bc1b0`) activates the tab under the point, then
+the default shows no menu (it offers «&В закладке» only with the can-dock
+bit, not set here); a right-click on the strip's empty part does nothing.
+COleDropTargetEx accepts only FastView's private clipboard format
+(registered at `0x404f59`): OnDragEnter `0x441ad0` = OnDragOver `0x441b00`
+(always "move"), OnDrop returns FALSE without that format
+(`0x441620`–`0x441652`) — so a file dragged from the shell over the view
+or the frequency / vector / circle panes shows "move" and does nothing;
+elsewhere on the frame OLE falls back to WM_DROPFILES (DragAcceptFiles)
+→ CFrameWnd::OnDropFiles opens each file (INFERRED).
+Ours loaded a second copy of an open file and ignored a right-click on a
+tab. Now `load_comtrade_path` activates a document whose path is the same
+file (`same_file`: absolute, case ignored on Windows) or ignores one
+still loading; a tab's `secondary_clicked` activates it. Tests
+`opening_an_open_file_activates_it`,
+`a_right_click_on_a_document_tab_activates_it`.
+Residual: the drop position — egui reports dropped files without where
+they landed, so ours opens a file dropped anywhere (the original ignores
+drops over the view and those three panes).
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

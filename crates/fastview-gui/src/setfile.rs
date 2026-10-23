@@ -927,6 +927,26 @@ mod tests {
     use crate::app::{DEMO_CFG, DEMO_DAT};
     use std::path::{Path, PathBuf};
 
+    /// MFC's OpenDocumentFile: a file already open is brought forward, not
+    /// loaded again.
+    #[test]
+    fn opening_an_open_file_activates_it() {
+        let dir = temp_dir("reopen");
+        let cfg = write_record(&dir);
+        let other = dir.join("other.cfg");
+        std::fs::write(&other, DEMO_CFG).unwrap();
+        std::fs::write(dir.join("other.dat"), DEMO_DAT).unwrap();
+        let mut app = App::new();
+        app.persist = false;
+        let first = open(&mut app, &cfg);
+        let second = open(&mut app, &other);
+        assert_ne!(first, second);
+        app.load_comtrade_path(&cfg);
+        assert!(app.loading.is_empty(), "nothing loads");
+        assert_eq!((app.docs.len(), app.active), (2, Some(first)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn save_as_filters_and_extension() {
         let f = save_filters(Some(Path::new("/r/a.OSC")));
