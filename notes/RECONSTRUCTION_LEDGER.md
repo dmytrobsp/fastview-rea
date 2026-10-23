@@ -967,7 +967,10 @@ original's in-place save rule not modelled); page setup, print preview and
 «Загрузка настроек» (.set) shown disabled; the five non-2007 looks (210–214) now
 selectable and persisted (L9.18) with era system-colour palettes that are
 inferred, not read from mfc120u.dll; Помощь disabled (no CHM viewer); icon-only buttons
-carry text labels; keytips not modelled.
+carry text labels; keytips not modelled (read 2026-10-23: the program
+sets keys on one element only — `SetKeys("p", "w")` at `0x473307` on
+the application menu's Печать (57607); every other keytip would come from
+MFC's ribbon keytip machinery in mfc120u, not read).
 
 ### L9.15 — Merging oscillograms («Объединение»)  ·  🟡
 
@@ -1879,8 +1882,13 @@ sequences); «<<» «Текущее плечо:» «>>» over one arm group «П
 «Расчет тока торможения» with «Полуразность токов» only for 2 arms (else
 reset to Полусумма) and the «Kторм:» {1, 0.5} combo for Полусумма /
 2-arm Полуразность. One phase generates no group compensation. Rendered.
-Residual: the per-arm default radios and the reduction edits' defaults
-NOT DETERMINED (ours: Kприв, «1.»); grouping not dialog units.
+Residual: (defaults read 2026-10-23: the pages' shared OnInitDialog
+`0x48b690` calls `0x411f40`, which sets every one of ids 1050–1058 a page
+has to «1.» (GetDlgItem guarded) — all of 539's reduction edits; the
+first radio of the group in template order is «По коэффициенту
+приведения», which the load forces when none is set (L9.55) — both as
+ours); what a newly added arm stores before it is first shown is still
+inferred («1.», Kприв); grouping not dialog units.
 
 ### L9.55 — Sheet pages keep their own fields and persist in the `.set`  ·  ✅ (stage B4)
 Read (subagent; DIALOG 539's edit ids mapped by hand from the template:
