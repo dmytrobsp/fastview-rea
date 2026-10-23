@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 302 pass)
+- `cargo test --workspace`   (currently 303 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -1835,6 +1835,24 @@ formula page as the original's list editor (DIALOG 340: list + Загрузит�
 «Рассчитать» applies (ours edits the record's list live); Enter as the
 default button.
 
+### L9.52 — Sheet pages 536 / 538, OK greying, the page defaults  ·  ✅ (stage B1)
+Read: VIEWS_SPEC «The sheet» (subagent; `0x487d70`, `0x487de0`,
+`0x48c870`, `0x48cb60`, `0x48d5a0`, `0x488550`, defaults `0x411f40`).
+Ours: `symmetric_page` draws 536 and 538 as the templates group them —
+«Токи» (Ia / Ib / Ic, «Рассчитать Ib по Ia и Iс *» greying Ib, the
+footnote; 538 «Iтр, А:» «- ток точной работы») and «Напряжения» (both
+radios, Ua–Uc and Uab / Ubc always shown, the other set greyed); on 536
+each «Отключить» greys its block and the other group's check;
+`QuickForms::ok_enabled` greys «Рассчитать» (536: each live group's combos,
+Ib unless calculated, voltages by the radio; 538: Iтр + all). Defaults
+now as `0x411f40` (Iтр 0.25, R/X/K «1.», Ф / Rm / Xm / Km / Фm «0.»).
+Test `calculate_needs_the_pages_channels`; rendered both pages.
+Residual: pixel placement follows the template's grouping, not its dialog
+units; «нет канала» / an empty combo counts as not chosen (how CB state
+maps to the check NOT DETERMINED); our pages share one set of fields
+(the original keeps each page's own); the other pages, persistence and
+the formula list editor remain (L9.51).
+
 Next in L9 (HANDOFF 2026-10-23): **public at
 github.com/dmytrobsp/fastview-rea, release v0.1.0** (Linux / Windows / macOS
 x86_64 + arm64, flat archives). This session: the four GUI bugs (L9.23–
@@ -1862,8 +1880,8 @@ decimating painter (`FV_WINDOW_XSCALE=f` for `window_dump`); L9.47
 comment texts / moment absolute time (`FV_WINDOW_STATE=comments`); L9.48
 the formula dialog's 396 sequence; L9.49 the finder's delete (recycle bin);
 L9.50 group lanes (`FV_WINDOW_STATE=group`); L9.51 «Быстрый анализ» as a
-modal sheet (stage A; stage B = page layouts / greying / persistence,
-all read in VIEWS_SPEC — next). A
+modal sheet; L9.52 its pages 536 / 538 + OK greying (next: 537, 543,
+539, persistence, the formula list editor — all read in VIEWS_SPEC). A
 residual triage (2026-10-23) found many L9.1–L9.14 residuals already done
 (ledger text stale) — next candidates: L9.9 delete → recycle bin, L9.3
 Быстрый анализ as a modal sheet, L9.30 / L9.22 small ones. **Open

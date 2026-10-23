@@ -99,19 +99,20 @@ impl Default for QuickForms {
             u3o: s(),
             uni: s(),
             uik: s(),
-            itr: "0".into(),
+            // `0x411f40`: Iтр «0.25», R / X / K «1.», Ф / Rm / Xm / Km / Фm «0.».
+            itr: "0.25".into(),
             i0_parallel: s(),
             per_unit: true,
-            r0: "0".into(),
-            r1: "0".into(),
-            rm: "0".into(),
-            x0: "0".into(),
-            x1: "0".into(),
-            xm: "0".into(),
-            k0: "0".into(),
-            km: "0".into(),
-            f0: "0".into(),
-            fm: "0".into(),
+            r0: "1.".into(),
+            r1: "1.".into(),
+            rm: "0.".into(),
+            x0: "1.".into(),
+            x1: "1.".into(),
+            xm: "0.".into(),
+            k0: "1.".into(),
+            km: "0.".into(),
+            f0: "0.".into(),
+            fm: "0.".into(),
             dif_phases: 3,
             arms: vec![ArmForm::default(), ArmForm::default()],
             braking: 0,
@@ -134,7 +135,61 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String) {
     ui.add(egui::TextEdit::singleline(value).desired_width(70.0));
 }
 
+/// A group box: its caption and, at the top right, an «Отключить» check
+/// (`enabled` — each group's check greys the other's, so never both).
+fn group(ui: &mut egui::Ui, title: &str, off: Option<(&mut bool, bool)>, body: impl FnOnce(&mut egui::Ui)) {
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.set_width(470.0);
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(title).strong());
+            if let Some((v, enabled)) = off {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_enabled(enabled, egui::Checkbox::new(v, "Отключить"));
+                });
+            }
+        });
+        body(ui);
+    });
+}
+
+/// A labelled channel combo as one grid cell, greyed unless `enabled`.
+fn cell_combo(ui: &mut egui::Ui, enabled: bool, id: &str, label: &str, value: &mut String, names: &[String]) {
+    ui.add_enabled_ui(enabled, |ui| {
+        ui.horizontal(|ui| {
+            ui.add_sized([30.0, 18.0], egui::Label::new(label));
+            egui::ComboBox::from_id_salt(id).selected_text(value.as_str()).width(140.0).show_ui(ui, |ui| {
+                for n in names {
+                    ui.selectable_value(value, n.clone(), n);
+                }
+            });
+        });
+    });
+}
+
+/// A combo's channel counts as chosen (not empty, not «нет канала»).
+fn chosen(s: &str) -> bool {
+    !s.is_empty() && s != fvb_core::addformula::NO_CHANNEL
+}
+
 impl QuickForms {
+    /// Whether «Рассчитать» is enabled on `tab` (the page's check, slot
+    /// 0x1d0): 536 `0x48d5a0` — each group not switched off needs its
+    /// combos (Ib unless calculated; Ua–Uc or Uab / Ubc by the radio); 538
+    /// `0x488550` — Iтр, the currents and the voltages. Other pages: always.
+    pub fn ok_enabled(&self, tab: AnalysisTab) -> bool {
+        let currents = chosen(&self.ia) && (self.calc_ib || chosen(&self.ib)) && chosen(&self.ic);
+        let voltages = if self.line_voltages {
+            chosen(&self.uab) && chosen(&self.ubc)
+        } else {
+            chosen(&self.ua) && chosen(&self.ub) && chosen(&self.uc)
+        };
+        match tab {
+            AnalysisTab::Symmetric => (self.currents_off || currents) && (self.voltages_off || voltages),
+            AnalysisTab::PhasePhase => !self.itr.trim().is_empty() && currents && voltages,
+            _ => true,
+        }
+    }
+
     fn currents(&self) -> Currents {
         Currents { ia: self.ia.clone(), ib: self.ib.clone(), ic: self.ic.clone(), calc_ib: self.calc_ib }
     }
@@ -286,7 +341,8 @@ impl App {
                     ui.separator();
                     ui.allocate_ui_with_layout(egui::Vec2::new(ui.available_width(), 26.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         cancel = ui.add_sized([80.0, 22.0], egui::Button::new("Отмена")).clicked();
-                        calc = ui.add_sized([80.0, 22.0], egui::Button::new("Рассчитать")).clicked();
+                        let ok = self.quick.ok_enabled(self.analysis_tab);
+                        calc = ui.add_enabled(ok, egui::Button::new("Рассчитать").min_size(egui::Vec2::new(80.0, 22.0))).clicked();
                     });
                 });
             });
@@ -318,6 +374,10 @@ impl App {
             d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect();
         let tab = self.analysis_tab;
         let f = &mut self.quick;
+        if matches!(tab, AnalysisTab::Symmetric | AnalysisTab::PhasePhase) {
+            symmetric_page(ui, f, &names, tab == AnalysisTab::PhasePhase);
+            return;
+        }
         egui::Grid::new("quickform").num_columns(6).spacing([8.0, 6.0]).show(ui, |ui| {
             let currents = |ui: &mut egui::Ui, f: &mut QuickForms| {
                 combo(ui, "q_ia", "Ia", &mut f.ia, &names);
@@ -327,33 +387,7 @@ impl App {
                 ui.checkbox(&mut f.calc_ib, "Рассчитать Ib по Ia и Iс");
                 ui.end_row();
             };
-            let voltages = |ui: &mut egui::Ui, f: &mut QuickForms| {
-                ui.radio_value(&mut f.line_voltages, false, "Фазные");
-                ui.radio_value(&mut f.line_voltages, true, "Линейные");
-                ui.end_row();
-                if f.line_voltages {
-                    combo(ui, "q_uab", "Uab", &mut f.uab, &names);
-                    combo(ui, "q_ubc", "Ubc", &mut f.ubc, &names);
-                } else {
-                    combo(ui, "q_ua", "Ua", &mut f.ua, &names);
-                    combo(ui, "q_ub", "Ub", &mut f.ub, &names);
-                    combo(ui, "q_uc", "Uc", &mut f.uc, &names);
-                }
-                ui.end_row();
-            };
             match tab {
-                AnalysisTab::Symmetric => {
-                    ui.checkbox(&mut f.currents_off, "Отключить токи");
-                    ui.end_row();
-                    if !f.currents_off {
-                        currents(ui, f);
-                    }
-                    ui.checkbox(&mut f.voltages_off, "Отключить напряжения");
-                    ui.end_row();
-                    if !f.voltages_off {
-                        voltages(ui, f);
-                    }
-                }
                 AnalysisTab::Zero => {
                     ui.label("Ток 3I0:");
                     ui.radio_value(&mut f.zero_i, 0, "Отключить");
@@ -387,12 +421,6 @@ impl App {
                         3 => combo(ui, "q_3uo", "3Uo", &mut f.u3o, &names),
                         _ => {}
                     }
-                    ui.end_row();
-                }
-                AnalysisTab::PhasePhase => {
-                    currents(ui, f);
-                    voltages(ui, f);
-                    field(ui, "Iтр", &mut f.itr);
                     ui.end_row();
                 }
                 AnalysisTab::Phase => {
@@ -478,10 +506,65 @@ impl App {
                     }
                     ui.end_row();
                 }
-                AnalysisTab::Formula => {}
+                AnalysisTab::Formula | AnalysisTab::Symmetric | AnalysisTab::PhasePhase => {}
             }
         });
     }
+}
+
+/// Pages 536 «Симметричные составляющие» and (`interphase`) 538
+/// «Междуфазные сопротивления»: «Токи» (Ia / Ib / Ic, «Рассчитать Ib по Ia
+/// и Iс *» greying Ib `0x487d70`; 538: «Iтр, А:») and «Напряжения» (Фазные /
+/// Линейные radios enabling Ua–Uc or Uab / Ubc `0x487de0`); on 536 each
+/// group's «Отключить» greys its block and the other group's check
+/// (`0x48c870`, `0x48cb60`).
+fn symmetric_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String], interphase: bool) {
+    let (i_off, u_off) = if interphase { (false, false) } else { (f.currents_off, f.voltages_off) };
+    let off_i = (!interphase).then_some((&mut f.currents_off, !u_off));
+    group(ui, "Токи", off_i, |ui| {
+        ui.add_enabled_ui(!i_off, |ui| {
+            egui::Grid::new("q_currents").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                cell_combo(ui, true, "q_ia", "Ia", &mut f.ia, names);
+                ui.end_row();
+                cell_combo(ui, !f.calc_ib, "q_ib", "Ib", &mut f.ib, names);
+                ui.checkbox(&mut f.calc_ib, "Рассчитать Ib по Ia и Iс *");
+                ui.end_row();
+                cell_combo(ui, true, "q_ic", "Ic", &mut f.ic, names);
+                ui.end_row();
+                if interphase {
+                    ui.horizontal(|ui| {
+                        ui.label("Iтр, А:");
+                        ui.add(egui::TextEdit::singleline(&mut f.itr).desired_width(140.0));
+                    });
+                    ui.label("- ток точной работы");
+                    ui.end_row();
+                }
+            });
+            ui.label("* - только в сетях с изолированной нейтралью");
+        });
+    });
+    ui.add_space(6.0);
+    let off_u = (!interphase).then_some((&mut f.voltages_off, !i_off));
+    group(ui, "Напряжения", off_u, |ui| {
+        ui.add_enabled_ui(!u_off, |ui| {
+            egui::Grid::new("q_voltages").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                ui.radio_value(&mut f.line_voltages, false, "Фазные напряжения");
+                ui.radio_value(&mut f.line_voltages, true, "Линейные напряжения");
+                ui.end_row();
+                let line = f.line_voltages;
+                let (ua, ub, uc, uab, ubc) = (&mut f.ua, &mut f.ub, &mut f.uc, &mut f.uab, &mut f.ubc);
+                for (k, (u, l)) in [(ua, "Ua"), (ub, "Ub"), (uc, "Uc")].into_iter().enumerate() {
+                    cell_combo(ui, !line, &format!("q_u{k}"), l, u, names);
+                    match k {
+                        0 => cell_combo(ui, line, "q_uab", "Uab", uab, names),
+                        1 => cell_combo(ui, line, "q_ubc", "Ubc", ubc, names),
+                        _ => {}
+                    }
+                    ui.end_row();
+                }
+            });
+        });
+    });
 }
 
 /// The sheet's pages in the original's order (AddPage ×6, `0x48b970`):
@@ -494,3 +577,31 @@ const PAGES: [(AnalysisTab, &str, &str); 6] = [
     (AnalysisTab::Differential, "Iдиф", "Дифференциальные токи"),
     (AnalysisTab::Formula, "f(x)", "Редактор формул"),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// «Рассчитать» greying of 536 / 538 (`0x48d5a0`, `0x488550`).
+    #[test]
+    fn calculate_needs_the_pages_channels() {
+        let mut f = QuickForms::default();
+        assert!(!f.ok_enabled(AnalysisTab::Symmetric), "no channels chosen");
+        assert!(f.ok_enabled(AnalysisTab::Differential), "539 has no check");
+        for (slot, v) in [(&mut f.ia, "Ia"), (&mut f.ic, "Ic"), (&mut f.ua, "Ua"), (&mut f.ub, "Ub"), (&mut f.uc, "Uc")] {
+            *slot = v.into();
+        }
+        assert!(!f.ok_enabled(AnalysisTab::Symmetric), "Ib missing");
+        f.calc_ib = true;
+        assert!(f.ok_enabled(AnalysisTab::Symmetric), "Ib calculated");
+        f.line_voltages = true;
+        assert!(!f.ok_enabled(AnalysisTab::Symmetric), "line voltages not chosen");
+        f.voltages_off = true;
+        assert!(f.ok_enabled(AnalysisTab::Symmetric), "voltages switched off");
+        assert!(!f.ok_enabled(AnalysisTab::PhasePhase), "538 has no «Отключить»");
+        f.line_voltages = false;
+        assert!(f.ok_enabled(AnalysisTab::PhasePhase));
+        f.itr.clear();
+        assert!(!f.ok_enabled(AnalysisTab::PhasePhase), "Iтр empty");
+    }
+}
