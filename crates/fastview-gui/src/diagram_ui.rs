@@ -791,8 +791,8 @@ impl App {
                     continue;
                 }
                 let Some(geo) = &st.geo else { continue };
-                if let Some((x0, y0, x1, y1)) = geo.bounds {
-                    char_ext = char_ext.max(x0.abs()).max(x1.abs()).max(y0.abs()).max(y1.abs());
+                if let Some(b) = geo.bounds {
+                    char_ext = char_ext.max(dg::region_extent(b));
                 }
                 // Open polypoints are closed against the visible area.
                 let in_view = match self.char_view {
@@ -865,20 +865,23 @@ impl App {
         // Edge labels: the coordinate at each frame edge (pan included).
         let edge = |n: i32, o: i32, s: usize, sign: f64| (sign * f64::from(n) - f64::from(o)) * sc.upc[s];
         let edge_y = |n: i32, s: usize, sign: f64| (f64::from(view.oy) + sign * f64::from(n)) * sc.upc[s];
+        // `" R: %g %s%s, %g %s%s"`: the Ω value goes to `0x43d960` with the
+        // unit «Ω», which it never prefixes; the power one with "W"; the
+        // unit texts are "Ohm" / "W" / "var" as shown (`0x42b740`).
         let fmt2 = |axis: &str, a: f64, b: f64, ub: &str| {
-            let ((ta, pa), (tb, pb)) = (g_si(a), g_si(b));
-            format!(" {axis}: {ta} {pa}Ω, {tb} {pb}{ub}")
+            let (tb, pb) = g_si(b);
+            format!(" {axis}: {} {}, {tb} {pb}{}", fvb_core::views::fmt_g(a), fvb_core::units::ru("Ohm"), fvb_core::units::ru(ub))
         };
-        let fmt1 = |a: f64| {
-            let (t, p) = g_si(a);
-            format!(" {t} {p}")
-        };
+        // The differential plane: strings 163 « Iторм: %g %s%s» (left /
+        // right) and 161 « Iдиф: %g %s%s» (top / bottom), unit string 162
+        // «ном», never prefixed.
+        let fmt1 = |axis: &str, a: f64| format!(" {axis}: {} ном", fvb_core::views::fmt_g(a));
         let labels: [(String, Pos2, egui::Align2); 4] = if diff {
             [
-                (fmt1(edge(nx, view.ox, 0, 1.0)), Pos2::new(frame.right() - 3.0, c.y - 3.0), egui::Align2::RIGHT_BOTTOM),
-                (fmt1(edge(nx, view.ox, 0, -1.0)), Pos2::new(frame.left() + 3.0, c.y - 3.0), egui::Align2::LEFT_BOTTOM),
-                (fmt1(edge_y(ny, 0, 1.0)), Pos2::new(c.x + 3.0, frame.top() + 3.0), egui::Align2::LEFT_TOP),
-                (fmt1(edge_y(ny, 0, -1.0)), Pos2::new(c.x + 3.0, frame.bottom() - 3.0), egui::Align2::LEFT_BOTTOM),
+                (fmt1("Iторм", edge(nx, view.ox, 0, 1.0)), Pos2::new(frame.right() - 3.0, c.y - 3.0), egui::Align2::RIGHT_BOTTOM),
+                (fmt1("Iторм", edge(nx, view.ox, 0, -1.0)), Pos2::new(frame.left() + 3.0, c.y - 3.0), egui::Align2::LEFT_BOTTOM),
+                (fmt1("Iдиф", edge_y(ny, 0, 1.0)), Pos2::new(c.x + 3.0, frame.top() + 3.0), egui::Align2::LEFT_TOP),
+                (fmt1("Iдиф", edge_y(ny, 0, -1.0)), Pos2::new(c.x + 3.0, frame.bottom() - 3.0), egui::Align2::LEFT_BOTTOM),
             ]
         } else {
             [
@@ -888,19 +891,29 @@ impl App {
                 (fmt2("X", edge_y(ny, 0, -1.0), edge_y(ny, 1, -1.0), "var"), Pos2::new(c.x + 3.0, frame.bottom() - 3.0), egui::Align2::LEFT_BOTTOM),
             ]
         };
+        // The DC keeps its default OPAQUE mode here: each text cell is
+        // painted white first, hiding the grid under it.
+        let opaque = |at: Pos2, align: egui::Align2, t: &str| {
+            let gal = painter.layout_no_wrap(t.to_string(), font(), TEXT);
+            let r = align.anchor_size(at, gal.size());
+            painter.rect_filled(r, 0.0, Color32::WHITE);
+            painter.galley(r.min, gal, TEXT);
+        };
         for (t, at, align) in &labels {
-            painter.text(*at, *align, t, font(), TEXT);
+            opaque(*at, *align, t);
         }
         // Scale box: one cell filled (240,240,240) and the value of a cell.
         let bx = Rect::from_min_size(Pos2::new(frame.left() + cell, frame.bottom() - 2.0 * cell), Vec2::splat(cell));
         painter.rect(bx, 0.0, Color32::from_gray(240), stroke(1.0, AXES));
+        // `" %g %s%s, %g %s%s"` (Ω never prefixed); the differential plane
+        // `" %g %S%s"` with «ном».
         let scale_text = if diff {
-            fmt1(sc.upc[0])
+            format!(" {} ном", fvb_core::views::fmt_g(sc.upc[0]))
         } else {
-            let ((ta, pa), (tb, pb)) = (g_si(sc.upc[0]), g_si(sc.upc[1]));
-            format!(" {ta} {pa}Ω, {tb} {pb}W")
+            let (tb, pb) = g_si(sc.upc[1]);
+            format!(" {} {}, {tb} {pb}{}", fvb_core::views::fmt_g(sc.upc[0]), fvb_core::units::ru("Ohm"), fvb_core::units::ru("W"))
         };
-        painter.text(Pos2::new(bx.right() + 3.0, bx.center().y), egui::Align2::LEFT_CENTER, scale_text, font(), TEXT);
+        opaque(Pos2::new(bx.right() + 3.0, bx.center().y), egui::Align2::LEFT_CENTER, &scale_text);
         let to_px = |x: f64, y: f64, ppu: f64| [origin.x + (x * ppu) as f32, origin.y - (y * ppu) as f32];
         let clip = painter.with_clip_rect(client);
         // Characteristics (`0x43a4a0`), last first so the first ends on top,
@@ -1471,14 +1484,14 @@ fn readout_table(p: &egui::Painter, ui: &egui::Ui, rect: Rect, text_h: f32, loci
                 return vec![l.name.clone(), format!("{re:.3}; {im:.3}")];
             }
             let z = Complex64::new(re, im);
-            let (_, pre) = fvb_core::omp::si(z.norm());
-            let k = fvb_core::omp::si(z.norm()).0 / z.norm().max(1e-300);
-            let k = if z.norm() == 0.0 { 1.0 } else { k };
+            // `0x43d960` on |z| and the unit as shown (`0x42bc50`).
+            let (scaled, unit) = fvb_core::views::si_scaled(z.norm(), &l.unit);
+            let k = if z.norm() == 0.0 { 1.0 } else { scaled / z.norm() };
             if mode == 1 {
                 let sign = if im < 0.0 { "-" } else { "+" };
-                vec![l.name.clone(), format!("{:.3}{sign}j{:.3} {pre}{}", re * k, (im * k).abs(), l.unit)]
+                vec![l.name.clone(), format!("{:.3}{sign}j{:.3} {unit}", re * k, (im * k).abs())]
             } else {
-                vec![l.name.clone(), format!("{:.3} {pre}{}", z.norm() * k, l.unit), format!("{:.2}º", im.atan2(re).to_degrees())]
+                vec![l.name.clone(), format!("{:.3} {unit}", z.norm() * k), format!("{:.2}º", im.atan2(re).to_degrees())]
             }
         })
         .collect();

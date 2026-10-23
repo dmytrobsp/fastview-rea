@@ -131,13 +131,15 @@ pub fn si_unit(unit: &str) -> bool {
 }
 
 /// `v` scaled for display and its unit with the SI prefix, when the unit
-/// takes one.
+/// takes one; a recognised unit is shown in Russian («В», «мА», «Ом»).
 pub fn si_scaled(v: f64, unit: &str) -> (f64, String) {
+    // The text is the unit as the Russian UI shows it (`0x42bc50`).
+    let shown = if crate::units::is_canonical(unit) { crate::units::ru(unit) } else { unit.to_string() };
     if si_unit(unit) {
         let (s, p) = crate::omp::si(v);
-        (s, format!("{p}{unit}"))
+        (s, format!("{p}{shown}"))
     } else {
-        (v, unit.to_string())
+        (v, shown)
     }
 }
 
@@ -186,7 +188,7 @@ mod tests {
 
     #[test]
     fn group_line() {
-        assert_eq!(group_stats_line(Some((1500.0, -0.125)), None, Some(10.004), "A"), "Max:1.5кA|Min:-125мA|A1:10.A", "a bare dot can stay");
+        assert_eq!(group_stats_line(Some((1500.0, -0.125)), None, Some(10.004), "A"), "Max:1.5кА|Min:-125мА|A1:10.А", "a bare dot can stay");
         assert_eq!(group_stats_line(None, Some(0.10), None, "x"), "СКЗ:0.1x");
         assert_eq!(group_stats_line(None, None, None, "A"), "");
     }
@@ -204,9 +206,9 @@ mod tests {
         assert_eq!(vector_header_value(0.4), "0.40");
         assert_eq!(vector_header_value(0.05), "0.050");
         assert_eq!(vector_header_value(1.0), "1.0", "w = 3: %3.1f");
-        assert_eq!(vector_value_text(57.9232, "V"), "57.92 V");
-        assert_eq!(vector_value_text(0.354, "A"), "354.00 мA");
-        assert_eq!(vector_value_text(0.0, "A"), "0.00 A");
+        assert_eq!(vector_value_text(57.9232, "V"), "57.92 В");
+        assert_eq!(vector_value_text(0.354, "A"), "354.00 мА");
+        assert_eq!(vector_value_text(0.0, "A"), "0.00 А");
     }
 
     #[test]
@@ -226,13 +228,13 @@ mod tests {
         assert_eq!(fmt_g(0.00001234), "1.234e-05");
         assert_eq!(fmt_g(1234567.0), "1.23457e+06");
         assert_eq!(fmt_g(100.0), "100");
-        assert_eq!(readout_text(57_100.0, "V"), " 57.1     кV");
-        assert_eq!(readout_text(-57_100.0, "V"), "-57.1    кV");
+        assert_eq!(readout_text(57_100.0, "V"), " 57.1     кВ");
+        assert_eq!(readout_text(-57_100.0, "V"), "-57.1    кВ");
         assert_eq!(readout_text(57_100.0, "kV"), " 57100    kV", "only listed units get a prefix");
         assert_eq!(readout_text(0.012, "ОM"), " 12       мОM");
-        assert_eq!(stats_value_text(-23.4375, "A").unwrap(), "-23.4375 A");
+        assert_eq!(stats_value_text(-23.4375, "A").unwrap(), "-23.4375 А");
         assert_eq!(stats_value_text(1.5, "none").unwrap(), " 1.5    ");
-        assert_eq!(stats_value_text(2.0e5, "VA").unwrap(), " 200    кVA");
+        assert_eq!(stats_value_text(2.0e5, "VA").unwrap(), " 200    кВА");
         assert!(stats_value_text(f64::NAN, "A").is_none());
     }
 

@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 333 pass)
+- `cargo test --workspace`   (currently 335 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2572,12 +2572,64 @@ Residual: our page UI still keeps the reduction / group radios per arm
 taken as "free → as is, else _2, _3…" (VIEWS_SPEC), not re-read; missing
 page controls' edge cases NOT DETERMINED.
 
+### L9.74 — Units are shown in Russian («В», «мА», «Ом», «Гц»)  ·  ✅
+Read by hand: the unit text every readout uses is `0x42bc50` (callers:
+the per-channel readout `0x461ba7`, the group line `0x4695c5`, the vector
+table `0x4926ca`, the status bar `0x49557b` …, the circle / differential
+readouts): the canonical unit (`0x414c30`), returned as is when the
+normaliser kept a raw unknown unit (`ch+0x155`, set at `0x423f7c`), else
+`0x42b740(unit)` + the per-second suffix (`ch+0x154`). `0x42b740`:
+Replace("DEG", «°» string 3105); when the language global `0x4ed17c` is 0
+— it is never written (only compared), so always — Replace over 23
+ordered pairs built once at `0x4ed280`: OHM→Ом, var→вар, VAr→ВАр, Ohm→Ом,
+nom→ном, VA→ВА, Hz→Гц, mk→мк, A→А, V→В, W→Вт, F→Ф, H→Гн, m→м, n→н, K→К,
+k→к, M→М, G→Г, s→с, S→См, «p. u.»→«o. e.», µ→мк (loop `0x42bbc1`–
+`0x42bc0e`); then Replace("Ohm", «Ω» string 3546). The SI prefix comes
+from `0x43d960` on the canonical unit (Cyrillic prefixes). So a readout
+reads «57.92 В», «354.15 мА», «1.5 кВА», «50 Гц». The vector header is
+not one of these (its format has a literal V / A, L9.69).
+Ours printed the canonical Latin unit after a Cyrillic prefix («мA»,
+«кV»). Now `units::ru` (the table) and `units::is_canonical`;
+`views::si_scaled` shows recognised units in Russian, so every readout,
+the status bar, the vector table and the plane readouts follow. Tests
+`russian_display_units`, the views tests' expectations.
+Residual: the per-second suffix («/с») is not kept on our channels;
+computed channels' bracket units (e.g. `[kV]`) are not translated (the
+original translates every unit without `+0x155`; ours only the canonical
+ones).
+
+### L9.75 — Circle / differential planes: labels, opaque text, whole-unit extents  ·  ✅
+Read (subagent report; by hand: the formats `" R: %g %s%s, %g %s%s"`,
+`" X: …"`, `" %g %s%s, %g %s%s"` at `0x4c68e8`…`0x4c6940`, `" %g %S%s"`
+`0x4c76d4`, strings 161 « Iдиф: %g %s%s», 162 «ном», 163 « Iторм: %g
+%s%s», «Ω» `0x4c69cc` and the translator above): the circle plane's edge
+labels pass the Ω value to `0x43d960` with the unit «Ω» — never prefixed —
+and the power value with "W" (prefixed); units "Ohm" / "W" / "var" through
+`0x42b740` → «Ом» / «Вт» / «вар»; the differential plane's are « Iторм: %g
+ном» left / right and « Iдиф: %g ном» top / bottom (never prefixed); the
+scale texts likewise. Nothing sets a transparent background before them
+(only the legends do, undone by RestoreDC), so labels paint opaque white
+(INFERRED from the DC default). Characteristic extents come from integer
+regions built at scale 1 (`0x4387d0`): whole units outward, a sub-unit
+figure a 1×1 box. Confirmed as ours: the draw order, cell = LOGPIXELSX·s/5,
+cells = half the smaller side / cell, pens grid (230,230,230) / frame
+(200,200,200) / axes (150,150,150), label anchors, the scale box.
+Ours printed «R: 1.5 кΩ, 300 W» (Ω prefixed, Latin units), bare numbers
+on the differential plane, transparent labels and real-valued extents.
+Now `diagram_ui::plane_ui` labels / scale text / opaque cells,
+`diagram::region_extent` (test `characteristic_extent_in_whole_units`);
+rendered both planes.
+Residual: the extent's exclusive-edge +1 (taken as +0) and the Ω / power
+split of characteristic extents (ours: one plane dimension per block);
+the legend's unclamped start x and swatch pen; GDI's frame / scale-box
+edge pixels.
+
 Next in L9 (HANDOFF 2026-10-23, night): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
-(lipo), each one flat archive). `main` = HEAD, 333 tests; CI green on 3 OSes
+(lipo), each one flat archive). `main` = HEAD, 335 tests; CI green on 3 OSes
 through L9.69 at this handoff (check `gh run list` for the later runs).
-**Night session (L9.68–L9.73):** L9.68 paste / an ОМП run never mark the
+**Night session (L9.68–L9.75):** L9.68 paste / an ОМП run never mark the
 record modified (ours marked a run through its phase lanes); **L9.69 every
 diagram shows the values as displayed (k)** — a «P» record shown
 «Вторичные» is drawn in secondary units on the vector / circle /
@@ -2592,7 +2644,9 @@ the vector diagram as read** (0° up, counter-clockwise; labels inside the
 circle; legend row or values table at the bottom). New `window_dump`
 states: `paste`, `vecvalues`. L9.73 quick analysis builds the builder's
 exact formula texts (fixes group compensation, which failed, and the
-computed-Ib references).
+computed-Ib references); **L9.74 every readout shows units in Russian**
+(«В», «мА», «Ом» — `0x42b740`); L9.75 the circle / differential planes'
+labels («R: 130 Ом, 0 Вт», «Iторм: 46 ном»), opaque, whole-unit extents.
 **Earlier (2026-10-23, evening):** L9.58 copy with a property grid
 focused (XML only); L9.59 the comment under the pointer is sticky, prints
 and is drawn twice; L9.60 comment cursor codes (level body N–S), locked

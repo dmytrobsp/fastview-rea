@@ -290,6 +290,21 @@ pub fn scanline_spans(rings: &[Vec<[f32; 2]>], y0: i32, y1: i32) -> Vec<(i32, f3
 
 // ---- vector and frequency layout ------------------------------------------
 
+/// A characteristic's extent for the plane scale (`0x4387d0`): its regions
+/// are built at scale 1 as integer GDI regions, so the box is the reach
+/// rounded outward to whole units; a figure under one unit is an empty
+/// region and falls back to a 1×1 box at (⌈cx⌉, ⌈cy⌉). (The exact +0 / +1
+/// of the exclusive edge is INFERRED as +0.)
+pub fn region_extent((x0, y0, x1, y1): (f64, f64, f64, f64)) -> f64 {
+    let (l, t, r, b) = if x1 - x0 < 1.0 && y1 - y0 < 1.0 {
+        let (cx, cy) = (((x0 + x1) / 2.0).ceil(), ((y0 + y1) / 2.0).ceil());
+        (cx, cy, cx + 1.0, cy + 1.0)
+    } else {
+        (x0.floor(), y0.floor(), x1.ceil(), y1.ceil())
+    };
+    l.abs().max(r.abs()).max(t.abs()).max(b.abs())
+}
+
 /// The vector window's layout (`0x4917fc`–`0x4918da`), in device units:
 /// the bottom band's top `b` (the values table: 2m + count·(m + cy) high,
 /// else the one-row legend m + cy), and the circle — radius the smallest
@@ -655,6 +670,12 @@ mod tests {
                 Entry::Sep => "─".into(),
             })
             .collect()
+    }
+
+    #[test]
+    fn characteristic_extent_in_whole_units() {
+        assert_eq!(region_extent((-1.5, -0.2, 4.2, 3.1)), 5.0);
+        assert_eq!(region_extent((0.1, 0.1, 0.4, 0.3)), 2.0, "under a unit: the 1×1 box at ⌈centre⌉");
     }
 
     #[test]

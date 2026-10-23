@@ -107,9 +107,69 @@ pub fn normalize(raw: &str) -> Unit {
     }
 }
 
+/// The unit as the Russian UI shows it (`0x42b740`; the language global
+/// `0x4ed17c` is never written, so always Russian): "DEG" → «°» (string
+/// 3105), then each Latin spelling replaced in this order wherever it
+/// occurs (`CString::Replace`), then "Ohm" → «Ω» (string 3546, a no-op by
+/// then). Applied to recognised units only (`0x42bc50` skips `ch+0x155`).
+pub fn ru(unit: &str) -> String {
+    const PAIRS: [(&str, &str); 23] = [
+        ("OHM", "Ом"),
+        ("var", "вар"),
+        ("VAr", "ВАр"),
+        ("Ohm", "Ом"),
+        ("nom", "ном"),
+        ("VA", "ВА"),
+        ("Hz", "Гц"),
+        ("mk", "мк"),
+        ("A", "А"),
+        ("V", "В"),
+        ("W", "Вт"),
+        ("F", "Ф"),
+        ("H", "Гн"),
+        ("m", "м"),
+        ("n", "н"),
+        ("K", "К"),
+        ("k", "к"),
+        ("M", "М"),
+        ("G", "Г"),
+        ("s", "с"),
+        ("S", "См"),
+        ("p. u.", "o. e."),
+        ("µ", "мк"),
+    ];
+    let mut u = unit.replace("DEG", "°");
+    for (from, to) in PAIRS {
+        u = u.replace(from, to);
+    }
+    u.replace("Ohm", "Ω")
+}
+
+/// Is `unit` one of the normaliser's canonical outputs (a recognised unit,
+/// `ch+0x155` clear)?
+pub fn is_canonical(unit: &str) -> bool {
+    matches!(unit, "A" | "V" | "VA" | "W" | "var" | "Ohm" | "F" | "H" | "DEG" | "nom" | "p. u." | "Hz" | "m" | "s" | "S")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn russian_display_units() {
+        assert_eq!(ru("V"), "В");
+        assert_eq!(ru("A"), "А");
+        assert_eq!(ru("VA"), "ВА");
+        assert_eq!(ru("var"), "вар");
+        assert_eq!(ru("Ohm"), "Ом");
+        assert_eq!(ru("Hz"), "Гц");
+        assert_eq!(ru("W"), "Вт");
+        assert_eq!(ru("nom"), "ном");
+        assert_eq!(ru("DEG"), "°");
+        assert_eq!(ru("S"), "См");
+        // Plain substring replacement in table order.
+        assert_eq!(ru("p. u."), "o. e.");
+    }
 
     #[test]
     fn prefixes_and_cyrillic_map_to_latin_base_units() {

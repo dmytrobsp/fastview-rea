@@ -772,11 +772,13 @@ State: zoom z (default 1.0), pan ox, oy in grid cells.
   (splitter), bottom −20 (legend) or − readout height; nothing drawn below
   121×121.
 - Grid: white background; lines every cell outward from the centre (230,230,230);
-  frame at ±cells·cell; axes through the origin when inside, darker
-  ((200,200,200)/(150,150,150) — assignment [I]). Edge labels (50,50,50):
-  coordinate at each frame edge in both scales — « R: a Ω, b W» left/right,
-  « X: a Ω, b var» top/bottom; scale box = one cell filled (240,240,240) with
-  the one-cell value in Ω and W to its right. SI prefixes per §3.2.
+  frame (200,200,200) at ±cells·cell; axes (150,150,150) through the origin
+  when inside (L9.75). Edge labels (50,50,50), on the DC's default opaque
+  white: « R: %g Ом, %g %sВт» left/right, « X: %g Ом, %g %sвар» top/bottom —
+  the Ω value never SI-prefixed, the power one is; the differential plane
+  « Iторм: %g ном» left/right, « Iдиф: %g ном» top/bottom; scale box = one
+  cell filled (240,240,240) with « %g Ом, %g %sВт» (« %g ном») to its right.
+  Characteristic extents are whole units (L9.75).
 - Characteristics (0x43a4a0) drawn **in reverse order** (first on top), only
   when `charMaxAbs·pxPerUnit < 800·scale`: reset region (only with «Отображать
   характеристики возврата») = 1 px frame in its reset colour; operate region =
@@ -1397,8 +1399,8 @@ icon-only small buttons and panel collapse when narrow (L9.27).
   text boxes; merged визир label separator; the pen used when В2 = В1; ruler
   tick pen; Tahoma "Ay" heights (≈ 16/18 px assumed).
 - H1/H2 first-placement coordinates (assumed content y 10/20 on the top lane).
-- Circle grid pen assignment (frame vs axes), edge-label rects, `cells` basis
-  (half of the smaller side assumed); BlockPropertyGrid content/editing; meaning
+- (Circle grid pens, edge-label rects and the `cells` basis: read, L9.75.)
+  BlockPropertyGrid content/editing; meaning
   of characteristic field +0x68.
 - (Vector header and layout: read in L9.69 / L9.72; frequency layout: L9.67.)
 - Docking: exact first-run placement of the diff pane; stacking order of the
