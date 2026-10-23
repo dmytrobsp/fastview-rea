@@ -925,8 +925,10 @@ Panel height under `Circle Diagram` / `Diff Diagram`.
 - One owner-drawn report list (full-row select, grid lines), images bitmap 464
   (16×16, white mask). Columns: 0 «Каналы» (width = list − 185), 1–5
   image-only, 32 px, centred.
-- Rows: file analog channels, digital group A (`doc+0x878`), digital group B
-  (`doc+0x884`), then channels with kind 1. Text colour (150,150,150) for
+- Rows: the analog channels (file, then computed), one row per
+  differential pair (`doc+0x878`, «Iторм | Iдиф»), one per R/X pair
+  (`doc+0x884`, «R | X»), then channels with kind 1 (L9.152: column 5
+  toggles a differential pair, column 4 an R/X pair). Text colour (150,150,150) for
   "not applicable" cells [I].
 - Cell click toggles:
 
@@ -1460,8 +1462,7 @@ icon-only small buttons and panel collapse when narrow (L9.27).
   three caption bars; whether the parameters bar visibility persists; text of
   MFC string 17086; registry layout of ApplicationLook / Workspace.
 - CParamOscBar font; fractional-second digits and time-zone logic in 0x456e90.
-- Channels dialog: meaning of kind +0x5c = 1 vs the two digital groups
-  (`doc+0x878`, `doc+0x884`); bitmap 464 image indices.
+- Channels dialog: bitmap 464 image indices (the pair lists: L9.152).
 - (File params: the correction candidates and their effect — read in
   L9.65.)
 - CCommentDlg: how the item/record mode flag is set and how `UserData` maps to

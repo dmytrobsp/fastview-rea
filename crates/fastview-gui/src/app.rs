@@ -864,6 +864,17 @@ impl Doc {
     /// Reset the time view to the full record.
     /// CMDUI 155..157: comments can be placed only on records opened from a
     /// `.cfg` or `.osc` file (our bundled demo record, with no file, too).
+    /// Pairs naming a channel the record no longer has go (`0x4554e0` R/X,
+    /// `0x455210` differential — the circle / differential painters and
+    /// 33027 call them): the analog and computed channels' names, compared
+    /// case-sensitively (Compare, mfc #2948).
+    pub fn purge_pairs(&mut self) {
+        let names: std::collections::HashSet<&str> = self.osc.analog.iter().map(|c| c.id.as_str()).chain(self.computed.iter().map(|c| c.name.as_str())).collect();
+        let keep = |p: &crate::diagram::ChanPair| names.contains(p.a.as_str()) && names.contains(p.b.as_str());
+        let (rx, dif): (Vec<_>, Vec<_>) = (self.rx_pairs.iter().filter(|p| keep(p)).cloned().collect(), self.dif_pairs.iter().filter(|p| keep(p)).cloned().collect());
+        (self.rx_pairs, self.dif_pairs) = (rx, dif);
+    }
+
     /// Digital channel `i`'s flags (the defaults past the stored ones).
     pub fn dig(&self, i: usize) -> DigFlags {
         self.dig_flags.get(i).copied().unwrap_or_default()
@@ -2581,6 +2592,19 @@ mod tests {
         let p = d.osc.samples_per_cycle();
         let mean = whole_period_mean(&d.osc.analog[i].samples, p);
         assert!((d.sample(i, k) - (base - mean)).abs() < 1e-9, "one DC constant over whole periods");
+    }
+
+    /// `0x4554e0` / `0x455210`: a pair naming a channel the record lacks
+    /// goes; names compare case-sensitively.
+    #[test]
+    fn stale_pairs_are_purged() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.rx_pairs = vec![crate::diagram::ChanPair::new("Ua", "Ia"), crate::diagram::ChanPair::new("Ua", "нет")];
+        d.dif_pairs = vec![crate::diagram::ChanPair::new("ia", "Ib")];
+        d.purge_pairs();
+        assert_eq!(d.rx_pairs, vec![crate::diagram::ChanPair::new("Ua", "Ia")]);
+        assert!(d.dif_pairs.is_empty(), "«ia» is not «Ia»");
     }
 
     /// «Быстрый анализ» starts from the defaults on every open (`0x48b690`

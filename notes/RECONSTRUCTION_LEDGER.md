@@ -4548,6 +4548,33 @@ Residual: the combo lists also hold formula-editor rows without a
 channel in the original (ours file and computed channels); whether
 doc+0x1d8 counts computed channels ND.
 
+### L9.152 — The pair lists: rows in «Каналы», stale pairs purged; the hand-over restores a minimised window  ·  ✅
+Read (subagent gap sweep over every message-map handler — 192 uncited,
+~183 already covered in prose; by hand `0x4554e0`): DIALOG 463 lists,
+between the analog and the discrete channels, one row per differential
+pair (`doc+0x878`, «Iторм | Iдиф», " | " `0x4c65d0`) and one per R/X pair
+(`doc+0x884`, «R | X») (`0x433b00`–`0x433d6a`); column 5 flips a
+differential pair's enabled byte, column 4 an R/X pair's (`0x4349c0`),
+the header toggles them with the channels, then the diagrams are rebound
+(`0x44c090`) and the document marked modified; the circle / differential
+painters and 33027 purge every pair naming a channel the record no
+longer has (analog and computed names, Compare — case-sensitive;
+`0x4554e0` R/X, `0x455210` differential); WM_COPYDATA `0x475530` restores
+an iconic frame before bringing it forward.
+Ours had no pair rows (the spec mislabelled the two lists «digital
+groups»), kept stale pairs in the menus and the `.set`, and only focused
+the window. Now `chandlg::{PairRow, DlgRow, dlg_rows, pair_name,
+pair_cell, toggle_pair_cell}` (the header toggle over them),
+`Doc::purge_pairs` (the plane paint and 33027), `Minimized(false)` before
+`Focus`. Tests `channels_dialog_lists_the_pairs`, `stale_pairs_are_purged`.
+Spec §7.1 corrected.
+Residual (from the sweep): the circle / differential parameter grid is
+ours (the original: one MFC property grid — «Тип блока» row, a group row
+per characteristic with a framed colour box ticked when visible and
+toggled by a click, `0x407dc0` / `0x4075c0`); the grid's splitter height
+(`Properties Height`) not persisted; 32806 with no document stays
+enabled-looking in the original (INFERRED; ours greys it).
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

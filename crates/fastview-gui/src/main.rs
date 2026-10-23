@@ -358,6 +358,8 @@ impl App {
         }
         let handed: Vec<std::path::PathBuf> = self.instance.as_ref().map(|s| s.rx.try_iter().collect()).unwrap_or_default();
         if !handed.is_empty() {
+            // WM_COPYDATA `0x475530`: restored if iconic, then to the front.
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
         for f in handed {

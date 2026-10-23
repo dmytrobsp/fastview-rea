@@ -711,6 +711,9 @@ impl App {
             DiagCmd::ChannelsMenu => self.open_diag_menu(w, MenuKind::Channels, at),
             DiagCmd::AngleMenu => self.open_diag_menu(w, MenuKind::Angles, at),
             DiagCmd::CreatePairs => {
+                if let Some(d) = self.active_doc_mut() {
+                    d.purge_pairs();
+                }
                 if let Some(d) = self.active_doc() {
                     let pairs = if diff { d.dif_pairs.clone() } else { d.rx_pairs.clone() };
                     self.diag.pair_dlg = Some(PairDialog { diff, pairs, a: None, b: None, sel: None });
@@ -858,6 +861,9 @@ impl App {
 
     /// The circle (`Ohm`) or differential (`Dif`) plane below the grid.
     pub fn plane_ui(&mut self, ui: &mut egui::Ui) {
+        if let Some(d) = self.active_doc_mut() {
+            d.purge_pairs();
+        }
         let diff = self.current_dimension() == fvb_core::model::Dimension::Dif;
         let win = if diff { Window::Diff } else { Window::Circle };
         let gi = usize::from(diff);

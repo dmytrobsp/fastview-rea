@@ -26,16 +26,82 @@ pub struct ChannelsDlg {
     pub origin: Option<Pos2>,
 }
 
-/// Rows in the original's order: the analog channels (file channels, then
-/// the computed ones, which the original keeps in the same vector with bit
-/// 13), then the discrete channels (kind 1). The two digital-entry groups
-/// (`doc+0x878` / `+0x884`, columns 4/5) have no counterpart in our record.
+/// The channel rows: the analog channels (file channels, then the computed
+/// ones, which the original keeps in the same vector with bit 13), then the
+/// discrete channels (kind 1); the pair rows go between them ([`dlg_rows`]).
 pub fn rows(doc: &Doc) -> Vec<ChanKey> {
     (0..doc.osc.analog.len())
         .map(ChanKey::Analog)
         .chain((0..doc.computed.len()).map(ChanKey::Computed))
         .chain((0..doc.osc.digital.len()).map(ChanKey::Digital))
         .collect()
+}
+
+/// A pair row (`0x433b00`–`0x433d6a`): a differential pair (`doc+0x878`)
+/// or an R/X pair (`doc+0x884`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PairRow {
+    Dif(usize),
+    Rx(usize),
+}
+
+/// A row of the grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DlgRow {
+    Chan(ChanKey),
+    Pair(PairRow),
+}
+
+/// Every row in the original's order: the analog channels, one row per
+/// differential pair, one per R/X pair, then the discrete channels.
+pub fn dlg_rows(doc: &Doc) -> Vec<DlgRow> {
+    let (chan, dig): (Vec<ChanKey>, Vec<ChanKey>) = rows(doc).into_iter().partition(|k| !matches!(k, ChanKey::Digital(_)));
+    chan.into_iter()
+        .map(DlgRow::Chan)
+        .chain((0..doc.dif_pairs.len()).map(|i| DlgRow::Pair(PairRow::Dif(i))))
+        .chain((0..doc.rx_pairs.len()).map(|i| DlgRow::Pair(PairRow::Rx(i))))
+        .chain(dig.into_iter().map(DlgRow::Chan))
+        .collect()
+}
+
+/// A pair row's text: the stored first name « | » the second (" | ",
+/// `0x4c65d0`) — for a differential pair Iторм | Iдиф (`doc+0x878`'s order;
+/// ours stores (Iдиф, Iторм), L9.81).
+pub fn pair_name(doc: &Doc, p: PairRow) -> String {
+    match p {
+        PairRow::Dif(i) => doc.dif_pairs.get(i).map(|q| format!("{} | {}", q.b, q.a)),
+        PairRow::Rx(i) => doc.rx_pairs.get(i).map(|q| format!("{} | {}", q.a, q.b)),
+    }
+    .unwrap_or_default()
+}
+
+/// A pair row's cell (`0x4349c0`): column 5 on a differential pair, column
+/// 4 on an R/X pair — its enabled flag; nothing elsewhere.
+pub fn pair_cell(doc: &Doc, p: PairRow, col: usize) -> Option<bool> {
+    match (p, col) {
+        (PairRow::Dif(i), 5) => doc.dif_pairs.get(i).map(|q| q.on),
+        (PairRow::Rx(i), 4) => doc.rx_pairs.get(i).map(|q| q.on),
+        _ => None,
+    }
+}
+
+fn set_pair_cell(doc: &mut Doc, p: PairRow, col: usize, v: bool) {
+    if pair_cell(doc, p, col).is_none() {
+        return;
+    }
+    doc.set.modified = true;
+    match p {
+        PairRow::Dif(i) => doc.dif_pairs[i].on = v,
+        PairRow::Rx(i) => doc.rx_pairs[i].on = v,
+    }
+}
+
+/// A click on a pair's cell flips it (then the diagrams are rebound,
+/// `0x44c090`, and the document marked modified).
+pub fn toggle_pair_cell(doc: &mut Doc, p: PairRow, col: usize) {
+    if let Some(v) = pair_cell(doc, p, col) {
+        set_pair_cell(doc, p, col, !v);
+    }
 }
 
 pub fn row_name(doc: &Doc, key: ChanKey) -> String {
@@ -140,13 +206,20 @@ pub fn toggle_cell(doc: &mut Doc, key: ChanKey, col: usize) {
 /// A header click (HDN_ITEMCLICK `0x435080`): when every applicable row has
 /// the flag it is cleared on all of them, otherwise set on all of them.
 pub fn toggle_column(doc: &mut Doc, col: usize) {
-    let keys: Vec<ChanKey> = rows(doc).into_iter().filter(|&k| cell(doc, k, col).is_some()).collect();
-    if keys.is_empty() {
+    let at = |doc: &Doc, r: DlgRow| match r {
+        DlgRow::Chan(k) => cell(doc, k, col),
+        DlgRow::Pair(p) => pair_cell(doc, p, col),
+    };
+    let rows: Vec<DlgRow> = dlg_rows(doc).into_iter().filter(|&r| at(doc, r).is_some()).collect();
+    if rows.is_empty() {
         return;
     }
-    let all = keys.iter().all(|&k| cell(doc, k, col) == Some(true));
-    for k in keys {
-        set_cell(doc, k, col, !all);
+    let all = rows.iter().all(|&r| at(doc, r) == Some(true));
+    for r in rows {
+        match r {
+            DlgRow::Chan(k) => set_cell(doc, k, col, !all),
+            DlgRow::Pair(p) => set_pair_cell(doc, p, col, !all),
+        }
     }
 }
 
@@ -417,7 +490,6 @@ impl App {
                 let row_h = 20.0;
                 let col_x = |c: usize| if c == 0 { 0.0 } else { name_w + 32.0 * (c - 1) as f32 };
                 let col_w = |c: usize| if c == 0 { name_w } else { 32.0 };
-                let keys = rows(doc);
                 ui.spacing_mut().item_spacing.y = 0.0;
                 // Header.
                 let (hr, _) = ui.allocate_exact_size(Vec2::new(LIST_W - 25.0, row_h + 2.0), Sense::hover());
@@ -437,7 +509,27 @@ impl App {
                     }
                 }
                 egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
-                    for key in keys {
+                    for row in dlg_rows(doc) {
+                        let key = match row {
+                            DlgRow::Chan(k) => k,
+                            DlgRow::Pair(pr) => {
+                                let (rr, _) = ui.allocate_exact_size(Vec2::new(LIST_W - 25.0, row_h), Sense::hover());
+                                for c in 0..COLS {
+                                    let r = Rect::from_min_size(rr.min + Vec2::new(col_x(c), 0.0), Vec2::new(col_w(c), row_h));
+                                    ui.painter().rect_stroke(r, 0.0f32, Stroke::new(1.0f32, pal.group_border));
+                                    if c == 0 {
+                                        ui.painter().with_clip_rect(r).text(r.left_center() + Vec2::new(4.0, 0.0), egui::Align2::LEFT_CENTER, pair_name(doc, pr), egui::FontId::proportional(12.0), pal.text);
+                                    } else {
+                                        let resp = ui.interact(r, ui.id().with(("fv_ch_pair", pr, c)), Sense::click());
+                                        cell_mark(ui.painter(), r, pair_cell(doc, pr, c), pal.accent);
+                                        if resp.clicked() {
+                                            toggle_pair_cell(doc, pr, c);
+                                        }
+                                    }
+                                }
+                                continue;
+                            }
+                        };
                         let (rr, _) = ui.allocate_exact_size(Vec2::new(LIST_W - 25.0, row_h), Sense::hover());
                         for c in 0..COLS {
                             let r = Rect::from_min_size(rr.min + Vec2::new(col_x(c), 0.0), Vec2::new(col_w(c), row_h));
@@ -727,6 +819,26 @@ mod tests {
         assert_eq!(d.osc.analog[1].primary, 110000.0);
         // No validation: bad text is 0.
         assert_eq!(d.osc.analog[4].secondary, 0.0);
+    }
+
+    /// DIALOG 463's pair rows (`0x433b00`): differential then R/X pairs
+    /// between the analog and the discrete channels, «b | a» / «a | b»;
+    /// column 5 toggles a differential pair, column 4 an R/X one.
+    #[test]
+    fn channels_dialog_lists_the_pairs() {
+        let mut d = demo_doc();
+        d.dif_pairs = vec![crate::diagram::ChanPair::new("Ia", "Ib")];
+        d.rx_pairs = vec![crate::diagram::ChanPair::new("Ua", "Ia")];
+        let r = dlg_rows(&d);
+        let na = d.osc.analog.len();
+        assert_eq!((r[na], r[na + 1]), (DlgRow::Pair(PairRow::Dif(0)), DlgRow::Pair(PairRow::Rx(0))));
+        assert!(matches!(r[na + 2], DlgRow::Chan(ChanKey::Digital(0))));
+        assert_eq!((pair_name(&d, PairRow::Dif(0)), pair_name(&d, PairRow::Rx(0))), ("Ib | Ia".to_string(), "Ua | Ia".to_string()));
+        assert_eq!((pair_cell(&d, PairRow::Dif(0), 4), pair_cell(&d, PairRow::Rx(0), 5)), (None, None));
+        let on = d.dif_pairs[0].on;
+        toggle_pair_cell(&mut d, PairRow::Dif(0), 5);
+        assert_eq!(d.dif_pairs[0].on, !on);
+        assert!(d.set.modified);
     }
 
     #[test]
