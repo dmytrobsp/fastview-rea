@@ -650,7 +650,7 @@ mod window_tests {
             let mut app = demo(&[]);
             frames(&mut app, &ctx, Vec2::new(1320.0, h), vec![vec![]; 3]);
             let bar = PanelState::load(&ctx, egui::Id::new(("pane_toolbar", diagram_ui::Window::Vector as u8))).expect("the vector toolbar").rect;
-            let tabs = PanelState::load(&ctx, egui::Id::new("pane_tabs")).expect("the tab strip").rect;
+            let tabs = PanelState::load(&ctx, egui::Id::new(("pane_tabs", docking::Unit::Group))).expect("the tab strip").rect;
             // Either it ends above the tabs or it is too short for a button.
             assert!(bar.bottom() <= tabs.top() + 0.5 || bar.height() < 22.0, "h {h}: toolbar {bar:?} over tabs {tabs:?}");
         }
@@ -728,6 +728,47 @@ mod window_tests {
         assert!(w.app.dock_group.out, "the hover slid it out");
         w.idle(14);
         assert!(canvas(&w).is_some(), "drawn over the content");
+    }
+
+    /// Smart docking (L9.101): Частотная's caption dragged out of its pane
+    /// detaches; released on the group's five-way centre it becomes a tab
+    /// of the group; dragged out again (the group floats with it) and
+    /// released on the frame's left edge marker the group docks there.
+    #[test]
+    fn smart_docking_drops_on_the_markers() {
+        use docking::{Edge, Place, Spot, Unit};
+        let mut w = Win::new();
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let canvas = |w: &Win, p: app::Pane| w.app.pane_canvas.iter().find(|(q, _)| *q == p).map(|(_, r)| *r);
+        // Press on a caption, pull it out over the lanes (it detaches),
+        // then over the marker `target` picks from the layout, release.
+        let drag = |w: &mut Win, from: Pos2, target: &dyn Fn(&App) -> Pos2| {
+            let out = Pos2::new(300.0, 450.0);
+            w.run(vec![egui::Event::PointerMoved(from)]);
+            w.run(vec![ev(from, true)]);
+            for k in 1..=4 {
+                w.run(vec![egui::Event::PointerMoved(from + (out - from) * (k as f32 / 4.0))]);
+            }
+            w.idle(2);
+            let to = target(&w.app);
+            w.run(vec![egui::Event::PointerMoved(to)]);
+            w.idle(2);
+            w.run(vec![ev(to, false)]);
+            w.idle(3);
+        };
+        let f = canvas(&w, app::Pane::Frequency).expect("Частотная drawn");
+        let centre = |a: &App| docking::five_way(a.dock_rects[Unit::Group as usize].expect("the group's pane"), true)[4].0.center();
+        drag(&mut w, Pos2::new(f.left() + 80.0, f.top() - 22.0), &centre);
+        assert_eq!((w.app.dock_freq.place, w.app.dock_freq.spot), (Place::Docked, Spot::Tab));
+        assert_eq!(w.app.dock_views_shown(), 1, "one tabbed group");
+        // The group's caption out to the left edge marker.
+        let v = canvas(&w, app::Pane::Vector).or_else(|| canvas(&w, app::Pane::Frequency)).expect("the group's pane");
+        let left = |a: &App| docking::edge_markers(a.dock_client)[0].0.center();
+        drag(&mut w, Pos2::new(v.left() + 80.0, v.top() - 22.0), &left);
+        assert_eq!((w.app.dock_group.place, w.app.dock_group.spot), (Place::Docked, Spot::Edge { edge: Edge::Left, outer: true }));
+        assert_eq!(w.app.dock_freq.spot, Spot::Tab, "the tab went along");
+        let g = w.app.dock_rects[Unit::Group as usize].unwrap();
+        assert!(g.left() < 20.0, "on the left edge: {g:?}");
     }
 
     /// Copy (`0x45be28` / `0x405160`): a picture of the view's client area
@@ -886,12 +927,29 @@ mod window_tests {
         }
         // `FV_WINDOW_STATE=vecvalues`: the vector diagram's values table.
         // `FV_WINDOW_STATE=floating`: the diagram tab group in its own
-        // window; `autohide`: pinned to the right strip and slid out.
+        // window; `autohide`: pinned to the right strip and slid out;
+        // `dockleft` / `dockbottom` / `docktab` / `dockmarkers` below.
         match std::env::var("FV_WINDOW_STATE").unwrap_or_default().as_str() {
-            "floating" => app.dock_group.double_click(egui::pos2(60.0, 220.0)),
+            "floating" => {
+                docking::leave(&mut app.dock_group, &mut app.dock_freq);
+                app.dock_group.double_click(egui::pos2(60.0, 220.0));
+            }
             "autohide" => {
+                docking::leave(&mut app.dock_group, &mut app.dock_freq);
                 app.dock_group.pin();
                 (app.dock_group.out, app.dock_group.slide) = (true, 1.0);
+            }
+            // Smart-docking arrangements (L9.101): the group on the left
+            // edge; Частотная on the frame's bottom edge; Частотная tabbed
+            // into the group (in front); Частотная dragged over the group
+            // (the markers, the hot centre's preview — hover the pane).
+            "dockleft" => app.dock_group.spot = docking::Spot::Edge { edge: docking::Edge::Left, outer: true },
+            "dockbottom" => app.dock_freq.spot = docking::Spot::Edge { edge: docking::Edge::Bottom, outer: true },
+            "docktab" => (app.dock_freq.spot, app.freq_in_front) = (docking::Spot::Tab, true),
+            "dockmarkers" => {
+                app.dock_freq.double_click(egui::pos2(80.0, 300.0));
+                app.dock_drag = Some((docking::Unit::Freq, egui::vec2(40.0, 10.0)));
+                app.dock_drag_hold = true;
             }
             _ => {}
         }

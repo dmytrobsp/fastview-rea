@@ -111,7 +111,9 @@ Feature-Pack workspace [I].
   pane a 110 × 110 five-way group centred on it (sides at the square's
   edges, the centre 31 × 30 in the middle); the first marker hit is hot
   and only then the drop preview shows; tab-into preview = the target
-  less a bottom tab strip with a 40 px tab 10 px in.
+  less a bottom tab strip with a 40 px tab 10 px in. Drops (L9.101): an
+  edge at the floating size ≤ half the area; beside a pane min(size, half
+  the pane); the centre as the active tab; elsewhere it stays floating.
 - Pane content: a vertical toolbar on the right edge (resource 550 vector,
   552 circle, 553 diff; Frequency has none) and the diagram window (§6).
 - Toggles (0x475040/0x4750b0): 32809 vector, 32808 circle, 140 diff, 32811

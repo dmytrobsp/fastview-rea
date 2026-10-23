@@ -3068,9 +3068,8 @@ time). `FV_WINDOW_STATE=floating` / `autohide`. Tests
 `a_drag_detaches_past_the_threshold_outside_the_pane`,
 `auto_hide_hover_slide_and_check`,
 `diagram_panes_float_redock_and_auto_hide`.
-Residual: drops dock only at the unit's own place (no other edges, no
-five-way markers, no tabbing a dragged pane into another); a tab cannot be
-dragged out of the group; Частотная stays in the right column (the
+Residual: (smart-docking drops on every edge, beside and into the other
+unit: L9.101); a tab cannot be dragged out of the group; Частотная stays in the right column (the
 original's create docks it at the frame's bottom — ours follows the
 user's screenshot, L9.3); the layout saved between runs: L9.98; Ctrl+pin
 and the animation-off switch not modelled.
@@ -3310,6 +3309,47 @@ arrows never show at our 866 px minimum (all-collapsed «Главная» is far
 narrower) — not modelled; the 16 px skip of near-equal states not
 modelled (our measured states differ by more).
 
+### L9.101 — Smart docking: edge markers, the five-way group, drops beside and into a pane  ·  🟡
+Read (two subagent reports on mfc120u; by hand: SaveState's gate only):
+FastView's frame sets DT_SMART (`0x1008fad2`, immediate) and the VS2008
+look (Office 2007 manager, `0x101950e0`); dragging a floating pane shows
+four edge markers 16 px in from the frame client's edges, centred along
+them (36 × 35 / 35 × 36, `0x101347e0`), and over a docked pane — or the
+document area — a 110 × 110 five-way group centred on it (`0x101350f5`,
+`0x1013598a`; no centre over the documents). The first marker hit (centre
+first) is hot (`0x10136b50`); only then the preview shows and the floating
+window stops following the pointer. Preview (`CalcExpectedDockedRect`
+`0x1008c45d`): an edge strip as thick as the floating window (outer: the
+frame's dock area, inner: next to the documents); beside a pane
+min(the floating size, half the pane) (`0x100d35e8`); into a pane the pane
+less a bottom tab strip with a 40 px tab 10 px in (`0x100962d3`). Drop
+(`0x100d6794` → `0x1008a27f`): an edge docks the pane at its floating size
+capped at half the area (`0x10088f61`, `AdjustRectToClientArea`
+`0x1008c750`, 50 %); a side arrow splits the target (`DockToWindow`
+`0x100891c3`, the same share, a 4 px divider); the centre attaches it as
+the active tab (`AttachToTabWnd` `0x1008a390`); no hot marker — it stays
+floating where it was. FastView's creates: the right panes 500 wide,
+Частотная 200 tall (on the bottom edge in the original).
+Ours docked only back at a unit's home marker. Now `docking::{Edge, Spot,
+Drop, edge_markers, five_way, hit_marker, drop_on, dock_extent, leave}`
+(a unit beside another takes its container — keeping its size — when that
+one leaves, which keeps the mirrored place for a redock; a tabbed-in unit
+goes along), `Dockable::{spot, extent, gen}` (saved in the workspace:
+`Spot`, `RecentDockedSize`), and `views.rs`: containers on any edge
+(edge-marker docks outermost), the beside split, the combined tab group
+(Частотная as a tab, in front after its drop), auto-hide strips and
+slide-outs on the unit's edge, the markers / preview during a caption
+drag of a docked (after detaching) or floating unit. `FV_WINDOW_STATE=
+dockleft|dockbottom|docktab|dockmarkers`. Tests
+`smart_dock_markers_and_drops`, `smart_docking_drops_on_the_markers`
+(Частотная into the group's tabs, the group with it to the left edge),
+`workspace_round_trip`; rendered all four.
+Residual: the marker bitmaps are ours (drawn boxes and arrows, MFC's
+17117…17127 are its own); a tab cannot be dragged out (`FloatTab`
+`0x1013a259`) nor reordered; the dock rows of several panes on one edge
+are separate containers; Ctrl (no docking while held) not modelled;
+Частотная's default stays below the group (the user's screenshot).
+
 Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -3342,7 +3382,7 @@ by default for records with a Гц / Hz channel (L9.65). The carved MFC
 DLLs live in `extracted/mfc/`. No user questions pending.
 **How to look at the GUI without running it:** `FV_WINDOW_DUMP=<png>
 [FV_WINDOW_RECORD=<cfg>] [FV_WINDOW_STATE=analysis (the sheet, two formula
-channels)|comments|group|circle|circletable|circlelegend|diff|difftable|keytips|keytipsmenu|floating|autohide|omp|ompparams|preview|print|pagesetup|
+channels)|comments|group|circle|circletable|circlelegend|diff|difftable|keytips|keytipsmenu|floating|autohide|dockleft|dockbottom|docktab|dockmarkers|omp|ompparams|preview|print|pagesetup|
 settings|channels|coef|fileparams|explorer|parambar|vizirs|alert|windows|
 paste|vecvalues|skin<k>] [FV_WINDOW_XSCALE=f] [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y]
 [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then Read the PNG (crop with

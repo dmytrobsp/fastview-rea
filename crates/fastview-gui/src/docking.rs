@@ -14,6 +14,202 @@ pub enum Unit {
     Freq,
 }
 
+impl Unit {
+    pub fn other(self) -> Unit {
+        match self {
+            Unit::Group => Unit::Freq,
+            Unit::Freq => Unit::Group,
+        }
+    }
+}
+
+/// A frame edge, or a side of a pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Edge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+impl Edge {
+    pub const ALL: [Edge; 4] = [Edge::Left, Edge::Right, Edge::Top, Edge::Bottom];
+
+    /// Left / right edges hold a column (their extent is a width).
+    pub fn vertical(self) -> bool {
+        matches!(self, Edge::Left | Edge::Right)
+    }
+
+    pub fn opposite(self) -> Edge {
+        match self {
+            Edge::Left => Edge::Right,
+            Edge::Right => Edge::Left,
+            Edge::Top => Edge::Bottom,
+            Edge::Bottom => Edge::Top,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Edge::Left => "left",
+            Edge::Right => "right",
+            Edge::Top => "top",
+            Edge::Bottom => "bottom",
+        }
+    }
+
+    fn from_name(s: &str) -> Option<Edge> {
+        Edge::ALL.into_iter().find(|e| e.name() == s)
+    }
+}
+
+/// Where a docked unit sits (smart docking's drops, L9.101).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Spot {
+    /// Its own container on a frame edge — `outer` when an edge marker put
+    /// it there (outermost), else the document area's group (innermost).
+    Edge { edge: Edge, outer: bool },
+    /// Beside the other unit, inside its container, on that side of it.
+    Beside(Edge),
+    /// A tab of the other unit's tabbed group.
+    Tab,
+}
+
+/// What a smart-docking marker does on the drop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Drop {
+    /// A frame-edge marker (outer) or a side arrow over the document area.
+    Edge(Edge, bool),
+    /// A side arrow of the five-way group over the other unit.
+    Beside(Edge),
+    /// The five-way group's centre: tab into the other unit.
+    Tab,
+}
+
+/// The VS2008 smart-docking markers (`0x1013444f`; bitmaps 17117…17126):
+/// side markers 36 × 35 (left / right) and 35 × 36 (top / bottom), the
+/// centre 31 × 30, the five-way group 110 × 110.
+pub const MARKER_LR: Vec2 = Vec2::new(36.0, 35.0);
+pub const MARKER_TB: Vec2 = Vec2::new(35.0, 36.0);
+pub const MARKER_CENTRE: Vec2 = Vec2::new(31.0, 30.0);
+pub const GROUP_SIDE: f32 = 110.0;
+
+fn marker_size(e: Edge) -> Vec2 {
+    if e.vertical() {
+        MARKER_LR
+    } else {
+        MARKER_TB
+    }
+}
+
+/// The four edge markers (`AdjustPos` `0x101347e0`): 16 px in from the
+/// frame client's edges, centred along them; FastView allows all four
+/// (`EnableAutoHidePanes(0xF000)`).
+pub fn edge_markers(client: Rect) -> [(Rect, Drop); 4] {
+    let (cx, cy) = ((client.left() + client.right()) / 2.0, (client.top() + client.bottom()) / 2.0);
+    Edge::ALL.map(|e| {
+        let s = marker_size(e);
+        let (hw, hh) = ((s.x / 2.0).trunc(), (s.y / 2.0).trunc());
+        let min = match e {
+            Edge::Left => Pos2::new(client.left() + 16.0, cy - hh),
+            Edge::Right => Pos2::new(client.right() - s.x - 16.0, cy - hh),
+            Edge::Top => Pos2::new(cx - hw, client.top() + 16.0),
+            Edge::Bottom => Pos2::new(cx - hw, client.bottom() - s.y - 16.0),
+        };
+        (Rect::from_min_size(min, s), Drop::Edge(e, true))
+    })
+}
+
+/// The five-way group centred on `host` (`0x101350f5`, `0x1013598a`):
+/// side markers at the 110 px square's edges, the centre in its middle.
+/// Over the other unit the sides dock beside it and the centre tabs into
+/// it; over the document area the sides dock on that
+/// frame edge innermost and there is no centre (`over_pane` false).
+pub fn five_way(host: Rect, over_pane: bool) -> Vec<(Rect, Drop)> {
+    let t = GROUP_SIDE;
+    let o = Pos2::new(((host.left() + host.right() - t) / 2.0).trunc(), ((host.top() + host.bottom() - t) / 2.0).trunc());
+    let mut v: Vec<(Rect, Drop)> = Edge::ALL
+        .iter()
+        .map(|&e| {
+            let s = marker_size(e);
+            let at = match e {
+                Edge::Left => Vec2::new(0.0, ((t - s.y) / 2.0).trunc()),
+                Edge::Right => Vec2::new(t - s.x, ((t - s.y) / 2.0).trunc()),
+                Edge::Top => Vec2::new(((t - s.x) / 2.0).trunc(), 0.0),
+                Edge::Bottom => Vec2::new(((t - s.x) / 2.0).trunc(), t - s.y),
+            };
+            (Rect::from_min_size(o + at, s), if over_pane { Drop::Beside(e) } else { Drop::Edge(e, false) })
+        })
+        .collect();
+    if over_pane {
+        let c = MARKER_CENTRE;
+        v.push((Rect::from_min_size(o + Vec2::new(((t - c.x) / 2.0).trunc(), ((t - c.y) / 2.0).trunc()), c), Drop::Tab));
+    }
+    v
+}
+
+/// The marker under the pointer: the centre first, then the sides, then
+/// the edges (`0x10136b50` tests from the centre down).
+pub fn hit_marker(markers: &[(Rect, Drop)], p: Pos2) -> Option<Drop> {
+    let rank = |d: &Drop| match d {
+        Drop::Tab => 0,
+        Drop::Beside(_) | Drop::Edge(_, false) => 1,
+        Drop::Edge(_, true) => 2,
+    };
+    let mut hit: Vec<&(Rect, Drop)> = markers.iter().filter(|(r, _)| r.contains(p)).collect();
+    hit.sort_by_key(|(_, d)| rank(d));
+    hit.first().map(|(_, d)| *d)
+}
+
+/// Dock `unit` by `drop` relative to `other` (beside / into it only while
+/// it is docked in its own container), `extent` its docked size
+/// ([`dock_extent`]).
+pub fn drop_on(unit: &mut Dockable, other: &Dockable, drop: Drop, extent: f32) {
+    let in_container = other.place == Place::Docked && matches!(other.spot, Spot::Edge { .. });
+    unit.spot = match drop {
+        Drop::Edge(edge, outer) => Spot::Edge { edge, outer },
+        Drop::Beside(e) if in_container => Spot::Beside(e),
+        Drop::Tab if in_container => Spot::Tab,
+        _ => return,
+    };
+    unit.place = Place::Docked;
+    if drop != Drop::Tab {
+        (unit.extent, unit.gen) = (Some(extent), unit.gen + 1);
+    }
+}
+
+/// The docked size a drop gives, along the drop's axis
+/// (`CalcExpectedDockedRect` `0x1008c45d`, `DockToFrameWindow`
+/// `0x10088f61`, the split `0x100d35e8`): on a frame edge the floating
+/// size capped at half the area (`AdjustRectToClientArea` `0x1008c750`,
+/// 50 %); beside a pane min(the floating size, half the pane). `size` the
+/// floating pane's, `area` the frame client's or the target pane's.
+pub fn dock_extent(drop: Drop, size: Vec2, area: Rect) -> f32 {
+    match drop {
+        Drop::Edge(e, _) | Drop::Beside(e) => {
+            let (s, a) = (if e.vertical() { size.x } else { size.y }, if e.vertical() { area.width() } else { area.height() });
+            s.min(a / 2.0)
+        }
+        Drop::Tab => 0.0,
+    }
+}
+
+/// `unit` leaves its container (floats or is pinned off): a unit beside it
+/// takes the container, and `unit` keeps the mirrored place beside that
+/// one, so a redock rebuilds the same container (MFC's recent dock info).
+/// A unit tabbed into it goes along (the tabbed pane moves whole).
+pub fn leave(unit: &mut Dockable, other: &mut Dockable) {
+    if let (Spot::Edge { edge, .. }, Spot::Beside(side)) = (unit.spot, other.spot) {
+        // The container keeps its size; `unit` keeps the share `other` had.
+        let size = |d: &Dockable, vertical: bool| d.extent.unwrap_or(if vertical { d.create.x } else { d.create.y });
+        let (container, share) = (size(unit, edge.vertical()), size(other, side.vertical()));
+        other.spot = unit.spot;
+        unit.spot = Spot::Beside(side.opposite());
+        (other.extent, other.gen) = (Some(container), other.gen + 1);
+        (unit.extent, unit.gen) = (Some(share), unit.gen + 1);
+    }
+}
+
 /// Where a unit is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Place {
@@ -38,6 +234,13 @@ pub const SLIDE_STEPS: f32 = 12.0;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Dockable {
     pub place: Place,
+    /// Where it sits while docked.
+    pub spot: Spot,
+    /// Its docked size across its edge (or its share beside the other)
+    /// from the last drop; `None` the create size. `gen` counts the drops
+    /// (a new panel takes the new size).
+    pub extent: Option<f32>,
+    pub gen: u32,
     /// `RectRecentFloat` (`+0x1d8`): where it floats; None until it first
     /// floats — then the create rect at the frame's client top-left.
     pub float_rect: Option<Rect>,
@@ -52,8 +255,8 @@ pub struct Dockable {
 }
 
 impl Dockable {
-    pub fn new(create: Vec2) -> Dockable {
-        Dockable { place: Place::Docked, float_rect: None, create, out: false, slide: 0.0, hover_since: None, next_check: 0.0 }
+    pub fn new(create: Vec2, spot: Spot) -> Dockable {
+        Dockable { place: Place::Docked, spot, extent: None, gen: 0, float_rect: None, create, out: false, slide: 0.0, hover_since: None, next_check: 0.0 }
     }
 
     /// The recent floating rect, or the create rect at `origin`.
@@ -139,6 +342,16 @@ pub fn store(unit: &str, d: &Dockable, v: &mut std::collections::HashMap<String,
         Place::AutoHide => "autohide",
     };
     v.insert(format!("Workspace/{unit}/Place"), place.into());
+    let spot = match d.spot {
+        Spot::Edge { edge, outer } => format!("edge {} {}", edge.name(), if outer { "outer" } else { "inner" }),
+        Spot::Beside(e) => format!("beside {}", e.name()),
+        Spot::Tab => "tab".into(),
+    };
+    v.insert(format!("Workspace/{unit}/Spot"), spot);
+    match d.extent {
+        Some(e) => v.insert(format!("Workspace/{unit}/RecentDockedSize"), e.to_string()),
+        None => v.remove(&format!("Workspace/{unit}/RecentDockedSize")),
+    };
     match d.float_rect {
         Some(r) => v.insert(format!("Workspace/{unit}/RectRecentFloat"), format!("{} {} {} {}", r.left(), r.top(), r.right(), r.bottom())),
         None => v.remove(&format!("Workspace/{unit}/RectRecentFloat")),
@@ -153,6 +366,22 @@ pub fn restore(unit: &str, d: &mut Dockable, v: &std::collections::HashMap<Strin
         _ => Place::Docked,
     };
     d.float_rect = v.get(&format!("Workspace/{unit}/RectRecentFloat")).and_then(|s| parse_rect(s));
+    d.extent = v.get(&format!("Workspace/{unit}/RecentDockedSize")).and_then(|s| s.parse().ok());
+    let words: Vec<&str> = v.get(&format!("Workspace/{unit}/Spot")).map_or(Vec::new(), |s| s.split_whitespace().collect());
+    match words[..] {
+        ["edge", e, o] => {
+            if let Some(edge) = Edge::from_name(e) {
+                d.spot = Spot::Edge { edge, outer: o == "outer" };
+            }
+        }
+        ["beside", e] => {
+            if let Some(e) = Edge::from_name(e) {
+                d.spot = Spot::Beside(e);
+            }
+        }
+        ["tab"] => d.spot = Spot::Tab,
+        _ => {}
+    }
     if d.place == Place::Floating && d.float_rect.is_none() {
         d.place = Place::Docked;
     }
@@ -189,7 +418,49 @@ mod tests {
     }
 
     fn unit() -> Dockable {
-        Dockable::new(Vec2::new(500.0, 500.0))
+        Dockable::new(Vec2::new(500.0, 500.0), Spot::Edge { edge: Edge::Right, outer: true })
+    }
+
+    /// `0x101347e0` / `0x101350f5`: the markers' places; the hot one.
+    #[test]
+    fn smart_dock_markers_and_drops() {
+        let client = Rect::from_min_max(Pos2::new(0.0, 100.0), Pos2::new(1000.0, 700.0));
+        let e = edge_markers(client);
+        assert_eq!(e[0].0, Rect::from_min_size(Pos2::new(16.0, 383.0), MARKER_LR), "left: 16 px in, centred");
+        assert_eq!(e[1].0.min, Pos2::new(1000.0 - 36.0 - 16.0, 383.0));
+        assert_eq!(e[2].0.min, Pos2::new(483.0, 116.0));
+        assert_eq!(e[3].0.min, Pos2::new(483.0, 700.0 - 36.0 - 16.0));
+        let host = Rect::from_min_max(Pos2::new(600.0, 100.0), Pos2::new(1000.0, 500.0));
+        let g = five_way(host, true);
+        // The square at (745, 245): left (0, 37), top (37, 0), centre (39, 40).
+        assert_eq!(g[0].0.min, Pos2::new(745.0, 282.0));
+        assert_eq!(g[2].0.min, Pos2::new(782.0, 245.0));
+        assert_eq!(g[4], (Rect::from_min_size(Pos2::new(784.0, 285.0), MARKER_CENTRE), Drop::Tab));
+        assert_eq!(hit_marker(&g, Pos2::new(800.0, 300.0)), Some(Drop::Tab));
+        assert_eq!(hit_marker(&g, Pos2::new(750.0, 300.0)), Some(Drop::Beside(Edge::Left)));
+        assert_eq!(five_way(host, false).len(), 4, "over the documents: no centre");
+        assert_eq!(five_way(host, false)[1].1, Drop::Edge(Edge::Right, false));
+
+        // Freq beside the group; the group floats: Freq takes its column.
+        let mut group = unit();
+        let mut freq = Dockable::new(Vec2::new(200.0, 200.0), Spot::Beside(Edge::Bottom));
+        group.place = Place::Floating;
+        leave(&mut group, &mut freq);
+        assert_eq!(freq.spot, Spot::Edge { edge: Edge::Right, outer: true });
+        assert_eq!(group.spot, Spot::Beside(Edge::Top), "a redock goes back above it");
+        assert_eq!((freq.extent, group.extent), (Some(500.0), Some(200.0)), "the column keeps its width");
+        // Dropped into Freq's tabs.
+        drop_on(&mut group, &freq, Drop::Tab, 0.0);
+        assert_eq!((group.place, group.spot), (Place::Docked, Spot::Tab));
+        drop_on(&mut group, &freq, Drop::Edge(Edge::Left, true), 400.0);
+        assert_eq!((group.spot, group.extent, group.gen), (Spot::Edge { edge: Edge::Left, outer: true }, Some(400.0), 2));
+        // Sizes: the floating width, at most half the frame; beside, at
+        // most half the pane.
+        let frame = Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 600.0));
+        assert_eq!(dock_extent(Drop::Edge(Edge::Left, true), Vec2::new(420.0, 300.0), frame), 420.0);
+        assert_eq!(dock_extent(Drop::Edge(Edge::Right, true), Vec2::new(700.0, 300.0), frame), 500.0);
+        assert_eq!(dock_extent(Drop::Edge(Edge::Bottom, false), Vec2::new(700.0, 200.0), frame), 200.0);
+        assert_eq!(dock_extent(Drop::Beside(Edge::Top), Vec2::new(300.0, 400.0), frame), 300.0);
     }
 
     #[test]

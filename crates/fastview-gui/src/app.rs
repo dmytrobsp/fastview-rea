@@ -943,6 +943,14 @@ pub struct App {
     pub dock_group: crate::docking::Dockable,
     pub dock_freq: crate::docking::Dockable,
     pub dock_drag: Option<(crate::docking::Unit, egui::Vec2)>,
+    /// The frame client (the edge markers' rect), each docked unit's pane
+    /// rect this frame, and Частотная in front of a group it is tabbed in.
+    pub dock_client: egui::Rect,
+    pub dock_rects: [Option<egui::Rect>; 2],
+    pub freq_in_front: bool,
+    /// Keeps a smart-docking drag going without a held button (the
+    /// `window_dump` state `dockmarkers`).
+    pub dock_drag_hold: bool,
     pub dock_areas: [Option<egui::Rect>; 2],
     pub dock_strips: [Option<egui::Rect>; 2],
     pub skin: Skin,
@@ -1129,9 +1137,16 @@ impl App {
             tab: RibbonTab::Home,
             view: View::Oscillogram,
             panes: Panes::default(),
-            dock_group: crate::docking::Dockable::new(egui::vec2(500.0, 500.0)),
-            dock_freq: crate::docking::Dockable::new(egui::vec2(200.0, 200.0)),
+            // The group on the right edge; Частотная below it in the same
+            // column (the user's screenshot, L9.3 — the original's create
+            // docks it on the frame's bottom edge).
+            dock_group: crate::docking::Dockable::new(egui::vec2(500.0, 500.0), crate::docking::Spot::Edge { edge: crate::docking::Edge::Right, outer: true }),
+            dock_freq: crate::docking::Dockable::new(egui::vec2(200.0, 200.0), crate::docking::Spot::Beside(crate::docking::Edge::Bottom)),
             dock_drag: None,
+            dock_client: egui::Rect::NOTHING,
+            dock_rects: [None, None],
+            freq_in_front: false,
+            dock_drag_hold: false,
             dock_areas: [None, None],
             dock_strips: [None, None],
             skin: Skin::Blue,
