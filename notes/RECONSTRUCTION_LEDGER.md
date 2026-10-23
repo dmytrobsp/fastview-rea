@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 375 pass)
+- `cargo test --workspace`   (currently 379 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -3964,34 +3964,33 @@ Residual: the orb's look is drawn (the style's bitmap not reproduced).
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
-each one flat archive). `main` = HEAD, 375 tests.
-**This session (L9.107–L9.120), worked with parallel background research
-agents (MFC docking / tabs, merge, print, ribbon, finder, style data):**
-L9.107 the four diagram panes as docking units of their own (tabs pulled
-out of any group, beside-splits nested) and MFC's tab show / hide rules
-(a re-shown tab stays behind — our old test had guessed otherwise);
-L9.108 document tabs reorder by dragging, no MDI tab groups (as read);
-L9.109 edge-docked blocks in the docking manager's order; L9.110 CUPS /
-preview printing inside the printer's hardware margins (PPD
-ImageableArea); L9.111 merge method 2 as read (median / std over the
-least-spread window), N = own rate ÷ 50 or R div trunc(f), flags baked
-into merged data, the discrete pick; L9.112 print details (device-px
-offsets, the header name cut by 4 chars, the preview at the printer's
-scale); L9.113 the print dialog's printer fields from the spooler (run on
-the VM); L9.114 ribbon sizes (66 px large buttons, balanced label break —
-«Дифферен циальная» / «Осцилло грамма» as the original's strings —,
-collapsed buttons, 44 px menu rows, fixed disabled grey); L9.115 keytips
-(recent documents 1…0, disabled inert, «A» opens Help, Alt-held letters
-ignored); L9.116 the finder's shell folder tree, «Выбрать» as read, My
-Documents, date pickers; L9.117 / L9.119 the Office 2007 palettes and
-ribbon body / panel caption bands from MFC's style data (Black is a light
-ribbon in a dark frame; Aqua blue-grey) — then a real-records pass caught
-unreadable selected text (fixed); L9.118 the print look keyed to s ≠ 1;
-L9.120 the merge's zero padding and sub-sample shift as read.
-User-visible: drag any diagram tab out / dock it anywhere; document tabs
-reorder; ribbon labels and sizes; the four Office 2007 looks' colours;
-the finder's tree and calendars; recent-document keytips; printing
-margins on Linux; merge results.
+each one flat archive). `main` = HEAD, 379 tests.
+**This session (L9.107–L9.127), worked continuously with parallel
+background research agents (MFC docking / tabs, merge, print, ribbon,
+finder, style data, the 401–543 dialogs, engine residuals):** L9.107 the
+four diagram panes as docking units of their own and MFC's tab show /
+hide rules; L9.108 document tabs reorder, no MDI tab groups (as read);
+L9.109 edge blocks in the docking manager's order; L9.110 printing in the
+printer's hardware margins (CUPS PPD, preview); L9.111 merge method 2 as
+read, N = own rate ÷ 50 / R div trunc(f), flags baked in; L9.112 print
+details (device-px offsets, header name −4 chars, preview at the
+printer's scale); L9.113 print dialog fields from the spooler (VM-run);
+L9.114 ribbon sizes and the original's labels («Дифферен циальная»,
+«Осцилло грамма»); L9.115 keytips (recent docs, disabled inert, «A»
+Help, Alt-held); L9.116 the finder's shell folder tree / «Выбрать» / My
+Documents / date pickers; L9.117 / L9.119 Office 2007 palettes and ribbon
+body / panel bands from MFC's style data (Black = light ribbon in a dark
+frame); L9.118 the print look keyed to s ≠ 1; L9.120 the merge's zero
+padding and sub-sample shift; L9.121 header T from the printer's stock
+font (VM: 16 px); L9.122 «Свойства...» on Windows (not exercised);
+L9.123 DIALOG 401–543 all mapped + formula tree icons; L9.124 / L9.125
+`.osc` stamps, the trigger sample, the dotted trigger line, labels /
+readouts / «Абсолютное время» from the trigger; L9.126 merge sync under
+the frequency correction; L9.127 the round 45 × 45 application button.
+User-visible: diagram tabs dock anywhere; document tabs reorder; ribbon
+labels / sizes / colours / application button; finder tree and
+calendars; `.osc` dates and trigger line; Linux print margins; merge
+results.
 **Earlier sessions:** L9.76–L9.92 (unit text, pending lanes, frequency
 candidates, page 539, the circle / differential planes as read — the
 swapped differential pairs —, the Ohm split, keytips, ribbon reduction,
@@ -4017,18 +4016,27 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-(the .osc stamps and trigger: L9.124 / L9.125; the merge sync under the
-correction: L9.126). Then: the docking marker bitmaps (ours drawn);
-L9.64 MDI arrangements under tabs (MFC's MDI client has no map entry for
-WM_MDICASCADE / TILE — they reach the stock MDI client; the visible
-effect under MDI tabs still ND); (Свойства...: L9.122, not exercised on the VM);
-the merged record's frequency track; (header T on page 1: L9.121); (the application button: L9.127); the caption bar from the style
-images; backlog §9 #36 / #37 / #45 leftovers (logo and
-splash are proprietary assets — not reproduced). Good recurring pass:
-render the user's real records (`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`,
-`WIN_1999.cfg`) after big changes — it found a regression again this
-session.
-(Done in this session: L9.107–L9.120, see the summary above.)
+**RECOMMENDED FIRST — three audits, stopped unfinished at the pause
+(re-run as parallel background research agents; brief each with the
+CLAUDE.md publishing rules and the bash rules, prose + addresses + READ /
+INFERRED marks, compare with our Rust and rank the differences):**
+(1) every message box (AfxMessageBox both overloads, CWnd::MessageBox,
+MessageBoxW): call site, trigger, condition, string id, buttons, outcome
+vs ours (dialogs.rs alerts, status strings); (2) every
+ON_UPDATE_COMMAND_UI enable / check rule (index/msgmaps.json, MFC's
+auto-disable of handler-less commands) vs ours (ribbon.rs states, context
+menus); (3) keyboard / accelerators (RT_ACCELERATOR 128) / mouse wheel and
+modifier-dependent mouse actions in the view and diagram windows vs ours
+(`handle_keys`, lanes.rs, diagram_ui.rs). Then: pending channels' own
+flags baked by the merge (ours has no flags on pending lanes, L9.111);
+the merged record's frequency track; the docking marker bitmaps (ours
+drawn); L9.64 MDI arrangements under tabs (WM_MDICASCADE / TILE reach the
+stock MDI client — visible effect ND); the caption bar from the style
+images (ours the OS title bar); backlog §9 #36 / #37 / #45 leftovers
+(logo, splash: proprietary assets). Good recurring pass: render the
+user's real records (`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`,
+`WIN_1999.cfg`) after big changes — it caught a regression this session.
+(Done in this session: L9.107–L9.127, see the summary above.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
