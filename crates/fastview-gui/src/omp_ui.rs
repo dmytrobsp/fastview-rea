@@ -447,10 +447,11 @@ impl App {
                 }
                 Some(DialogAction::Cancel) => {}
                 Some(DialogAction::Load) => {
+                    // The original reports nothing: an unreadable or legacy
+                    // file leaves the dialog as it was (`0x4a9010`).
                     if let Some(path) = omp_file_dialog().pick_file() {
-                        match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| OmpParams::from_omp_xml(&fvb_core::decode_fvb(&b))) {
-                            Ok(p) => dlg.load(p),
-                            Err(e) => self.omp_ui.message = Some(e),
+                        if let Some(p) = std::fs::read(&path).ok().and_then(|b| fvb_core::recset::omp_from_file_bytes(&b)) {
+                            dlg.load(p);
                         }
                     }
                     self.omp_ui.dialog = Some(dlg);
@@ -460,7 +461,7 @@ impl App {
                         if path.extension().is_none() {
                             path.set_extension("omp");
                         }
-                        if let Err(e) = std::fs::write(&path, params::utf16le_crlf(&dlg.work.to_omp_xml())) {
+                        if let Err(e) = std::fs::write(&path, fvb_core::recset::omp_file_bytes(&dlg.work)) {
                             self.omp_ui.message = Some(e.to_string());
                         }
                     }
@@ -842,31 +843,33 @@ impl ParamsDialog {
             if idx != cur {
                 self.set_method(METHODS[idx].0);
             }
-            ui.separator();
-            if ui.add_enabled(self.can_add_section(), egui::Button::new("＋ Участок")).clicked() {
+            // TOOLBAR 475 (`0x4a7e40`): no separator after the combo; text
+            // only on the three add buttons, the rest icons; the tooltips
+            // are the command strings 32870–32878.
+            if ui.add_enabled(self.can_add_section(), egui::Button::new("Участок")).on_hover_text("Добавить участок к линии").clicked() {
                 self.add_section();
             }
-            if ui.add_enabled(self.can_add_child(), egui::Button::new("＋ Параллельная линия")).clicked() {
+            if ui.add_enabled(self.can_add_child(), egui::Button::new("Параллельная линия")).on_hover_text("Добавить параллельную линию к участку").clicked() {
                 self.add_child(false);
             }
-            if ui.add_enabled(self.can_add_child(), egui::Button::new("＋ Отпайка")).clicked() {
+            if ui.add_enabled(self.can_add_child(), egui::Button::new("Отпайка")).on_hover_text("Добавить отпайку от линии к участку").clicked() {
                 self.add_child(true);
             }
-            if ui.add_enabled(self.can_delete(), egui::Button::new("✖")).on_hover_text("Удалить").clicked() {
+            if ui.add_enabled(self.can_delete(), egui::Button::new("✖")).on_hover_text("Удалить выделенный элемент").clicked() {
                 self.delete();
             }
             ui.separator();
-            if ui.add_enabled(self.can_move(false), egui::Button::new("↓")).on_hover_text("Вниз").clicked() {
+            if ui.add_enabled(self.can_move(false), egui::Button::new("⬇")).on_hover_text("Переместить выделенный элемент вниз").clicked() {
                 self.move_sel(false);
             }
-            if ui.add_enabled(self.can_move(true), egui::Button::new("↑")).on_hover_text("Вверх").clicked() {
+            if ui.add_enabled(self.can_move(true), egui::Button::new("⬆")).on_hover_text("Переместить выделенный элемент вверх").clicked() {
                 self.move_sel(true);
             }
             ui.separator();
-            if ui.button("Загрузить").clicked() {
+            if ui.button("📂").on_hover_text("Загрузить настройки в отдельном файле").clicked() {
                 action = Some(DialogAction::Load);
             }
-            if ui.button("Сохранить").clicked() {
+            if ui.button("💾").on_hover_text("Сохранить настройки в отдельном файле").clicked() {
                 action = Some(DialogAction::Save);
             }
         });

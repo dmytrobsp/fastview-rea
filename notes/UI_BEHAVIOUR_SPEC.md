@@ -1201,10 +1201,13 @@ line Rm, Xm, I0, comment; per tap R0, X0, comment. Values are the raw strings.
   list, no groups/descriptions, modified values marked); OK / Отмена.
 - Toolbar 475: method combo (id 1075, 280 px): 0 «ОМП для сетей с
   изолированной нейтралью» → 1 · 1 «…с заземленной нейтралью» → 2 · 2 «ОМП
-  двухстороннего замера» → 4 | Участок (32871, icon+text) · Параллельная линия
+  двухстороннего замера» → 4 · Участок (32871, icon+text) · Параллельная линия
   (32872, icon+text) · Отпайка (32873, icon+text) · Удалить (32874) | Вниз
   (32876) · Вверх (32875) | Загрузить (32878) · Сохранить (32877). Method change
-  rebuilds tree and grid; data of hidden kinds kept.
+  rebuilds tree and grid; data of hidden kinds kept. No separator after the
+  combo (TOOLBAR 475: combo, 32871–32874, sep, 32876, 32875, sep, 32878,
+  32877); text only on the three add buttons; tooltips = strings
+  32870–32878 [I] (L9.169).
 - Tree (icons station / section / parallel line / tap): methods 1/2 one root
   «Подстанция»; method 4 «Подстанция №1», «Подстанция №2». Under a station
   «Участок №k»; under a section, **methods 2/4 only**, «Параллельная линия №k»
@@ -1246,13 +1249,15 @@ line Rm, Xm, I0, comment; per tap R0, X0, comment. Values are the raw strings.
   here. Success copies the working copy back.
 
 ### 8.5 Settings files [R]
-`.omp` (filter 3511, default ext omp, no overwrite prompt) is XML:
-`<omp ver="2" type="1|2|4">` with `<Station1 obj_name In Ia Ib Ic Uab Ubc Uca
-Ua Ub Uc>` containing `<Section{k} lenght sup_number r x r1 x1 r0 x0 comment>`
-(k from 1; "lenght" is the original spelling) with `<child{n} type="parLine"
-rm xm I0 comment/>` and `<child{n} type="connection" r0 x0 comment/>` (n from 1,
-lines first); `<Station2 …/>` likewise; both stations always written; values
-raw strings. Reader accepts legacy ver ≠ 2 (`SectionsNum`, `I1n`,
+`.omp` (filter 3511, default ext omp, no overwrite prompt) is a settings
+document (the `.set` writer `0x48e1c0`, L9.169): `<settings>` →
+`<category name="omp" ver="2" type="1|2|4">` → `<category name="Station1"
+obj_name In Ia Ib Ic Uab Ubc Uca Ua Ub Uc>` → `<category name="Section{k}"
+lenght sup_number r x r1 x1 r0 x0 comment>` (k from 1; "lenght" is the
+original spelling) → `<category name="child{n}" type="parLine" rm xm I0
+comment/>` / `type="connection" r0 x0 comment` (n from 1, lines first);
+Station2 likewise; both stations always written; values raw strings;
+children sorted by key. Loading never reports anything. Reader accepts legacy ver ≠ 2 (`SectionsNum`, `I1n`,
 comma-separated section values) and falls back to a non-XML legacy reader
 [format unknown]. The same writer/reader is embedded in the `.set` settings
 (`WrongPlaceFinding`; 32860 loads it).

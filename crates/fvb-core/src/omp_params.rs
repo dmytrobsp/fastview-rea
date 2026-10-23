@@ -363,15 +363,10 @@ fn read_station(n: &Node) -> StationParams {
 }
 
 impl OmpParams {
-    /// The `.omp` document text (`\n` line ends): the declaration, then
-    /// `<omp type ver="2">` with both stations always written.
-    pub fn to_omp_xml(&self) -> String {
-        self.to_node("omp").to_document()
-    }
-
     /// The settings as one tree element `<tag type ver="2">` with both
-    /// stations: the `.omp` root, or `WrongPlaceFinding` inside the record
-    /// settings file (the same writer serves both).
+    /// stations (`0x4a2620`): the `omp` category of an `.omp` file
+    /// (`recset::omp_file_bytes`) or `WrongPlaceFinding` in the record's
+    /// settings file — the same writer serves both.
     pub fn to_node(&self, tag: &str) -> Node {
         let mut root = Node::new(tag);
         root.set("ver", "2");
@@ -379,16 +374,6 @@ impl OmpParams {
         root.children.push(station_node("Station1", &self.stations[0]));
         root.children.push(station_node("Station2", &self.stations[1]));
         root
-    }
-
-    /// Parse an `.omp` document (version 2 only; the legacy layouts are not
-    /// reproduced).
-    pub fn from_omp_xml(xml: &str) -> Result<OmpParams, String> {
-        let root = Node::parse(xml)?;
-        if root.tag != "omp" {
-            return Err("not an .omp document".into());
-        }
-        OmpParams::from_node(&root)
     }
 
     /// Read an element written by [`OmpParams::to_node`] (version 2 only;
@@ -591,34 +576,34 @@ mod tests {
         assert_eq!(wtof("0,5"), 0.0);
     }
 
+    /// «Сохранить» `0x4a91c0`: a settings document, the category `omp`
+    /// (type, ver) holding Station1 / Station2 → Section{k} → child{n}, every
+    /// node a `category` with its key as `name`, children sorted by key.
     #[test]
-    fn omp_xml_layout_matches_the_original_writer() {
-        let x = sample().to_omp_xml();
-        let lines: Vec<&str> = x.lines().collect();
+    fn omp_file_layout_matches_the_original_writer() {
+        let x = crate::decode_fvb(&crate::recset::omp_file_bytes(&sample()));
+        let lines: Vec<&str> = x.lines().map(|l| l.trim_end_matches('\r')).collect();
         assert_eq!(lines[0], "<?xml version=\"1.0\" encoding=\"utf-16\"?>");
-        assert_eq!(lines[1], "<omp type=\"2\" ver=\"2\">");
-        assert!(lines[2].starts_with("\t<Station1 Ia=\"Ia\" Ib=\"\" Ic=\"\" In=\"100\" Ua=\"\""), "{}", lines[2]);
-        assert!(lines[2].ends_with(" obj_name=\"Подстанция\">"));
-        assert_eq!(
-            lines[3],
-            "\t\t<Section1 comment=\"\" lenght=\"1\" r=\"0\" r0=\"0.3\" r1=\"0.1\" sup_number=\"1\" x=\"0\" x0=\"1.2\" x1=\"0.4\">"
-        );
-        assert_eq!(lines[4], "\t\t\t<child1 I0=\"3I0 &quot;пар&quot;\" comment=\"a&lt;b\" rm=\"0.1\" type=\"parLine\" xm=\"0.2\"/>");
-        assert_eq!(lines[5], "\t\t\t<child2 comment=\"\" r0=\"5\" type=\"connection\" x0=\"7\"/>");
-        assert_eq!(lines[6], "\t\t</Section1>");
-        assert_eq!(lines[7], "\t</Station1>");
-        assert!(lines[8].starts_with("\t<Station2 ") && lines[8].ends_with("/>"));
-        assert_eq!(lines[9], "</omp>");
+        assert_eq!(lines[1], "<settings>");
+        assert!(lines[2].starts_with("\t<category ") && lines[2].contains(" name=\"omp\"") && lines[2].contains("ver=\"2\""), "{}", lines[2]);
+        assert!(lines[3].starts_with("\t\t<category ") && lines[3].contains("name=\"Station1\"") && lines[3].contains("obj_name=\"Подстанция\""), "{}", lines[3]);
+        assert!(lines[4].contains("name=\"Section1\"") && lines[4].contains("lenght=\"1\""), "{}", lines[4]);
+        assert!(lines[5].contains("name=\"child1\"") && lines[5].contains("type=\"parLine\""), "{}", lines[5]);
+        assert!(lines[6].contains("name=\"child2\"") && lines[6].contains("type=\"connection\""), "{}", lines[6]);
+        assert_eq!(*lines.last().unwrap(), "</settings>");
     }
 
+    /// «Загрузить» `0x4a9010`: the file back; one without any category
+    /// (the legacy layouts) or of another version gives nothing, silently.
     #[test]
-    fn omp_xml_round_trips() {
+    fn omp_file_round_trips() {
         let p = sample();
-        let back = OmpParams::from_omp_xml(&p.to_omp_xml()).unwrap();
-        assert_eq!(back, p);
-        let bytes = utf16le_crlf(&p.to_omp_xml());
+        let bytes = crate::recset::omp_file_bytes(&p);
         assert_eq!(&bytes[..4], &[0xFF, 0xFE, b'<', 0]);
-        assert_eq!(OmpParams::from_omp_xml(&crate::decode_fvb(&bytes)).unwrap(), p);
+        assert_eq!(crate::recset::omp_from_file_bytes(&bytes), Some(p));
+        assert_eq!(crate::recset::omp_from_file_bytes(b"\xff\xfe"), None);
+        let old = utf16le_crlf("<settings><category name=\"omp\" ver=\"1\"/></settings>");
+        assert_eq!(crate::recset::omp_from_file_bytes(&old), None);
     }
 
     #[test]

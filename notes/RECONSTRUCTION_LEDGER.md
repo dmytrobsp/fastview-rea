@@ -4995,6 +4995,39 @@ the bar. Test `the_parameters_bar_closes_from_its_button`.
 Residual: the message bar's own frame / margins as the visual manager
 draws them (W4.5).
 
+### L9.169 — The `.omp` file is a settings document; the ОМП toolbar as TOOLBAR 475  ·  ✅
+Read (COMPLETION_PLAN W1.4; by hand `0x4a91c0`, the category name at
+`0x4d1298` "omp"): «Сохранить» (32877, `0x4a91c0`) builds a fresh settings
+tree, get-or-creates the category `omp` (`0x48dc80`), fills it with the
+writer `0x4a2620` (clears the node, `ver` "2", `type`, then each station
+through `0x4a2740`: `obj_name In Ia … Uc`, `Section{k}`, `child{n}` lines
+first) and writes it with the `.set` serializer `0x48e1c0` — `<settings>`,
+every node a `category` named by its key. «Загрузить» (32878, `0x4a9010`)
+reads with `0x48e470`; with a category it takes `omp` and runs the reader
+`0x4a3050` (each station through `0x4a38c0`: `Section{k}` for k up to the
+child count, get-or-create — a gap gives an all-empty section, `child{j}`
+likewise, a type other than "parLine" a tap); with none, the legacy reader
+`0x4a45f0`; never a message. The same reader / writer serve
+`WrongPlaceFinding` (the `.set`). The dialog: OnInitDialog `0x4a7c50`
+(toolbar 10 px in, tree W/3 − 22 wide, the grid at W/3 with a border, tree
+icons from bitmap 476 with magenta transparent, the stored item re-selected),
+the toolbar `0x4a7e40` (TOOLBAR 475: combo 1075 for 32870, 32871–32874,
+separator, 32876, 32875, separator, 32878, 32877; text only on Участок /
+Параллельная линия / Отпайка). The element classes: Station's constructor
+`0x4a5880`, Section's `0x4a5330` (defaults and masks as spec §8.4), Section's
+"move down" `0x4a57f0` (swap within the same kind's list). Explained away:
+`0x411360` (map node erase), `0x4a6350` (vector copy-assignment).
+Ours wrote and expected an `<omp>` root with element tags — neither side
+could read the other's files — reported load errors, and had a separator
+after the combo, «＋ » prefixes and text Загрузить / Сохранить. Now
+`recset::omp_file_bytes` / `omp_from_file_bytes` (the settings document,
+silent), the toolbar as TOOLBAR 475 with the command strings as tooltips
+(egui glyphs for the icons). Tests `omp_file_layout_matches_the_original_writer`,
+`omp_file_round_trips`.
+Residual: the tree icons (bitmap 476) and the dialog's geometry; reader
+gaps (an all-empty section for a missing `Section{k}`); the legacy
+readers; the grid's "modified" marking and the initial selection.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

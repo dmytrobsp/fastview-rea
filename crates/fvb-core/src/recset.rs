@@ -443,6 +443,28 @@ pub fn write_omp(sec: &mut SetNode, p: &crate::omp_params::OmpParams) {
     *sec = conv(&p.to_node("WrongPlaceFinding"));
 }
 
+/// The `.omp` file of «Сохранить» (32877, `0x4a91c0`): a fresh settings
+/// document whose one category `omp` holds what `0x4a2620` writes (as
+/// `WrongPlaceFinding`), through the settings writer `0x48e1c0`.
+pub fn omp_file_bytes(p: &crate::omp_params::OmpParams) -> Vec<u8> {
+    let mut t = SetTree::default();
+    write_omp(t.section_mut("omp"), p);
+    t.to_file_bytes()
+}
+
+/// «Загрузить» (32878, `0x4a9010`): the file read as a settings document
+/// (`0x48e470`); with a category, `omp` (got or created) through the
+/// version-2 reader `0x4a3050`; with none, the legacy reader `0x4a45f0`
+/// (not reproduced: `None`). Nothing is ever reported.
+pub fn omp_from_file_bytes(bytes: &[u8]) -> Option<crate::omp_params::OmpParams> {
+    let mut t = SetTree::default();
+    t.load_bytes(bytes);
+    if t.sections.is_empty() {
+        return None;
+    }
+    read_omp(t.section_mut("omp"))
+}
+
 /// The ОМП settings of a `WrongPlaceFinding` section (None when it holds no
 /// version-2 settings).
 pub fn read_omp(sec: &SetNode) -> Option<crate::omp_params::OmpParams> {

@@ -87,7 +87,7 @@ Batches, in this order (the size of the unread code, user visibility):
 - [x] **W1.2** Quick-analysis pages — the sixteen functions cited (L9.167); ↑ / ↓ icons fixed.
 - [ ] **W1.2b** The rest of the quick-analysis pages: 537 `0x4897f0` / `0x489de0`, getters `0x488aa0`, `0x488530`, `0x48b810`, `0x48b840` (and confirm `0x487a20`, `0x48a6e0`, `0x487c30`, `0x48a800`).
 - [ ] **W1.3** Circle / differential diagrams — CircleDiagramWnd (8), DiffDiagramWnd (4), DiffDiagPane (1).
-- [ ] **W1.4** ОМП — `map_0x4d1434` (3), WrongPlaceLocatorDlg (2), the locator data classes (3).
+- [x] **W1.4** ОМП — the eight functions (L9.169): the `.omp` format fixed, the toolbar.
 - [ ] **W1.5** Document and view — CFastViewDoc (2), CFastViewView (4), AreaItem (1).
 - [ ] **W1.6** Small windows — AboutWnd, FileInfoDlg, ChanPairDlg, FileFinder22Dlg (2), CParamOscBar.
 - [ ] **W1.7** The unlabelled (`?`, 45) — label them first (callers further up, data references), then fold them into the batches above or new ones.
