@@ -778,6 +778,26 @@ mod window_tests {
         assert_eq!((w.app.dock_group.place, w.app.dock_views_shown()), (Place::Docked, 2));
     }
 
+    /// `0x100690b4`: a tab dragged along its strip over another swaps with
+    /// it (the dragged one in front).
+    #[test]
+    fn a_tab_dragged_over_another_swaps_with_it() {
+        let mut w = Win::new();
+        let tab = |w: &Win, p: app::Pane| w.app.pane_tab_rects.iter().find(|(q, _)| *q == p).map(|(_, r)| *r).unwrap();
+        let (circle, vector) = (tab(&w, app::Pane::Circle), tab(&w, app::Pane::Vector));
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let (from, to) = (circle.center(), Pos2::new(vector.left() + 6.0, vector.center().y));
+        w.run(vec![egui::Event::PointerMoved(from), ev(from, true)]);
+        for k in 1..=6 {
+            w.run(vec![egui::Event::PointerMoved(from + (to - from) * (k as f32 / 6.0))]);
+        }
+        w.run(vec![ev(to, false)]);
+        w.idle(2);
+        assert_eq!(w.app.tab_order[..2], [app::Pane::Circle, app::Pane::Vector]);
+        assert_eq!(w.app.panes.active, app::Pane::Circle, "the dragged tab in front");
+        assert_eq!(w.app.dock_group.place, docking::Place::Docked, "inside the strip: no float");
+    }
+
     /// Copy (`0x45be28` / `0x405160`): a picture of the view's client area
     /// then the clipboard document; with a diagram focused (a click in it),
     /// that diagram's picture alone.

@@ -194,34 +194,45 @@ impl App {
         let front_freq = v.freq && self.freq_in_front;
         // A tab pulled out of the strip (`0x10068d0b` / `0x100690b4`).
         let mut pulled: Option<bool> = None;
+        let mut dragged: Option<Pane> = None;
+        let mut tabs: Vec<(Pane, egui::Rect)> = Vec::new();
         let strip = egui::TopBottomPanel::bottom(egui::Id::new(("pane_tabs", v.unit))).show_inside(ui, |ui| {
             ui.horizontal(|ui| {
                 let panes = self.panes;
-                for p in Panes::GROUP.into_iter().filter(|&p| panes.visible(p)) {
-                    let r = ui.selectable_label(p == active && !front_freq, pane_title(p)).interact(egui::Sense::click_and_drag());
-                    self.pane_tab_rects.push((p, r.rect));
-                    if r.clicked() {
-                        self.freq_in_front = false;
-                        if p != active {
+                let order = self.tab_order;
+                let shown = |p: Pane| if p == Pane::Frequency { v.freq } else { v.tab.is_some() && panes.visible(p) };
+                for p in order.into_iter().filter(|&p| shown(p)) {
+                    let on = if p == Pane::Frequency { front_freq } else { p == active && !front_freq };
+                    // An id per pane: the drag follows the tab when it moves.
+                    let r = ui.push_id(("fv_pane_tab", p as u8), |ui| ui.selectable_label(on, pane_title(p)).interact(egui::Sense::click_and_drag())).inner;
+                    tabs.push((p, r.rect));
+                    // A press (or a drag) brings the tab to the front.
+                    if (r.clicked() || r.drag_started()) && !on {
+                        self.freq_in_front = p == Pane::Frequency;
+                        if p != Pane::Frequency && p != active {
                             self.dispatch(Command::ActivatePane(p));
                         }
                     }
                     if r.dragged() {
-                        pulled = Some(false);
-                    }
-                }
-                if v.freq {
-                    let r = ui.selectable_label(front_freq, pane_title(Pane::Frequency)).interact(egui::Sense::click_and_drag());
-                    self.pane_tab_rects.push((Pane::Frequency, r.rect));
-                    if r.clicked() {
-                        self.freq_in_front = true;
-                    }
-                    if r.dragged() {
-                        pulled = Some(true);
+                        pulled = Some(p == Pane::Frequency);
+                        dragged = Some(p);
                     }
                 }
             });
         });
+        self.pane_tab_rects.extend(&tabs);
+        // Inside the strip a dragged tab passing over another swaps with it
+        // (`0x100690b4`, tab swapping on, more than one tab).
+        if let (Some(p), Some(at)) = (dragged, ui.ctx().input(|i| i.pointer.latest_pos())) {
+            if strip.response.rect.contains(at) {
+                // Past the other tab's middle, so tabs of unequal widths do
+                // not swap back and forth.
+                let own = tabs.iter().find(|(q, _)| *q == p).map(|(_, r)| r.center().x);
+                if let Some(&(q, _)) = tabs.iter().find(|(q, r)| *q != p && r.contains(at) && own.is_some_and(|x| (r.center().x > x) == (at.x > r.center().x))) {
+                    crate::docking::swap_tabs(&mut self.tab_order, p, q);
+                }
+            }
+        }
         if let (Some(freq_tab), true) = (pulled, v.freq && v.tab.is_some()) {
             let ctx = ui.ctx().clone();
             self.tab_drag_out(&ctx, v.unit, freq_tab, strip.response.rect);

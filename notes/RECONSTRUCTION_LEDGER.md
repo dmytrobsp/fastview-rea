@@ -3341,7 +3341,7 @@ dockleft|dockbottom|docktab|dockmarkers`. Tests
 (Частотная into the group's tabs, the group with it to the left edge),
 `workspace_round_trip`; rendered all four.
 Residual: the marker bitmaps are ours (drawn boxes and arrows, MFC's
-17117…17127 are its own); (a tab dragged out: L9.102) tabs not reordered; the dock rows of several panes on one edge
+17117…17127 are its own); (a tab dragged out: L9.102; reordered: L9.105); the dock rows of several panes on one edge
 are separate containers; Ctrl (no docking while held) not modelled;
 Частотная's default stays below the group, and Дифференциальная in the
 group's tabs (the user's screenshot, L9.3 — the original's creates dock
@@ -3366,7 +3366,7 @@ to the other unit. `App::pane_tab_rects`. Test
 nothing: floating, the group still docked).
 Residual: our group's three panes are one unit — a group tab pulled out
 of a group without Частотная does nothing, and one pulled out of a
-combined group takes the whole group; tab reordering not modelled; the
+combined group takes the whole group; (tab reordering: L9.105); the
 float lands under the pointer rather than at the recent floating rect.
 
 ### L9.103 — A frequency change by insert / paste refreshes no cache; statistics live  ·  ✅
@@ -3403,6 +3403,19 @@ sit in the same vector with kind 0. Ours placed and re-homed levels on the
 record's analog lanes only. Now `lanes::{analog_kind, level_lane_at}`; the
 drag passes a value over every analog-kind lane; `Comment::drag` part 4
 re-homes onto any lane with a value. Test `a_level_line_on_a_formula_channel`.
+
+### L9.105 — Diagram tabs reorder by dragging along the strip  ·  ✅
+Read (L9.101's report): a press on a tab activates it and arms detach mode
+(`0x10068d0b`); moving inside the strip over another tab — with more than
+one tab and tab swapping on — swaps it with the active (dragged) one and
+moves the cursor to keep the grab offset (`0x100690b4`); the tabbed pane's
+order is part of the saved workspace (INFERRED from the docking state).
+Ours had a fixed order. Now `App::tab_order` (saved as
+`Workspace/TabOrder`), `docking::swap_tabs`; the strip draws in that order
+with an id per pane (so the drag follows the moved tab), a press or drag
+brings the tab to the front, and a swap needs the pointer past the other
+tab's middle (no back-and-forth between unequal widths; MFC moves the
+cursor instead). Test `a_tab_dragged_over_another_swaps_with_it`.
 
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
@@ -3456,8 +3469,7 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-tab reordering in the strip and several panes in one dock row (L9.101 /
-L9.102); the group's three panes as separate units (a group tab pulled
+several panes in one dock row (L9.101); the group's three panes as separate units (a group tab pulled
 out); the marker bitmaps (ours drawn); L9.97 the main panel's row height
 / image margins; L9.100 large / collapsed button sizes; L9.64 MDI arrangements under tabs (likely
 leave as no-ops); L9.22 / L9.84 CUPS hardware margins; L9.90 Alt+key

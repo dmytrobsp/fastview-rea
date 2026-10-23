@@ -210,6 +210,13 @@ pub fn leave(unit: &mut Dockable, other: &mut Dockable) {
     }
 }
 
+/// Swap two tabs of a strip's order (`0x100690b4`).
+pub fn swap_tabs<T: PartialEq + Copy>(order: &mut [T], a: T, b: T) {
+    if let (Some(i), Some(j)) = (order.iter().position(|&x| x == a), order.iter().position(|&x| x == b)) {
+        order.swap(i, j);
+    }
+}
+
 /// Where a unit is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Place {

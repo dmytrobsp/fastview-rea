@@ -967,6 +967,8 @@ pub struct App {
     pub dock_client: egui::Rect,
     pub dock_rects: [Option<egui::Rect>; 2],
     pub freq_in_front: bool,
+    /// The diagram tabs' order (a tab dragged over another swaps with it).
+    pub tab_order: [Pane; 4],
     /// Keeps a smart-docking drag going without a held button (the
     /// `window_dump` state `dockmarkers`).
     pub dock_drag_hold: bool,
@@ -1167,6 +1169,7 @@ impl App {
             dock_client: egui::Rect::NOTHING,
             dock_rects: [None, None],
             freq_in_front: false,
+            tab_order: [Pane::Vector, Pane::Circle, Pane::Differential, Pane::Frequency],
             dock_drag_hold: false,
             dock_areas: [None, None],
             dock_strips: [None, None],
@@ -1661,6 +1664,8 @@ impl App {
         }
         // Maximised, the normal rect stays the one saved before (GDI's
         // `rcNormalPosition`; egui reports only the maximised one).
+        let names = self.tab_order.map(|p| format!("{p:?}"));
+        v.insert("Workspace/TabOrder".into(), names.join(" "));
         if let Some((r, max)) = placement {
             let normal = v.get("Workspace/WindowPlacement").and_then(|s| s.rsplit_once(' ')).map(|(r, _)| r.to_string());
             let rect = match normal {
@@ -1675,6 +1680,13 @@ impl App {
     /// `LoadState` (`0x101a8eea`) for the panes.
     pub fn restore_workspace(&mut self) {
         let v = &self.store.view;
+        if let Some(o) = v.get("Workspace/TabOrder") {
+            let all = [Pane::Vector, Pane::Circle, Pane::Differential, Pane::Frequency];
+            let read: Vec<Pane> = o.split_whitespace().filter_map(|w| all.into_iter().find(|p| format!("{p:?}") == w)).collect();
+            if read.len() == 4 && all.iter().all(|p| read.contains(p)) {
+                self.tab_order.copy_from_slice(&read);
+            }
+        }
         crate::docking::restore("Group", &mut self.dock_group, v);
         crate::docking::restore("Freq", &mut self.dock_freq, v);
         for (k, p) in [("Vector", Pane::Vector), ("Circle", Pane::Circle), ("Differential", Pane::Differential), ("Frequency", Pane::Frequency)] {
