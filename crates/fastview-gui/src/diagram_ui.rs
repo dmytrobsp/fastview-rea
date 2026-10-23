@@ -143,6 +143,13 @@ fn print_s() -> Option<f32> {
     PRINT_S.with(std::cell::Cell::get)
 }
 
+/// `v` device pixels in points: the painters keep a few offsets in device
+/// pixels unscaled on paper (the angle labels, the legend swatch, the
+/// plane's top and its 120 px thresholds).
+fn dpx(v: f32) -> f32 {
+    v / print_s().unwrap_or(1.0)
+}
+
 /// A print pen `dev` printer pixels wide (truncated; 0 draws one pixel), in
 /// points.
 fn dev_pen(dev: f32, c: Color32) -> Stroke {
@@ -826,7 +833,7 @@ impl App {
         let painter = ui.painter_at(full);
         painter.rect_filled(full, 0.0, Color32::WHITE);
         self.window_menu_click(&resp, win);
-        if client.width() < 121.0 || client.height() < 121.0 {
+        if client.width() < dpx(121.0) || client.height() < dpx(121.0) {
             return;
         }
         // Characteristics: extent of every visible one (operate and reset).
@@ -869,13 +876,15 @@ impl App {
             }
         }
         // Layout: client − 6 px, top + 5 (splitter), bottom − legend (20)
-        // or − the readout table when there is room for a 120 px plot.
+        // or − the readout table when there is room for a 120 px plot (the
+        // 5 and the 120 in device pixels on paper too, `0x43b679` /
+        // `0x43b6b2`).
         let text_h = 14.0f32;
         let mut rect = client.shrink(6.0);
-        rect.min.y += 5.0;
+        rect.min.y += dpx(5.0);
         let rows = loci.len() as f32;
         let table_h = (text_h + 6.0) * rows + 12.0;
-        let table = readout != 0 && rect.height() - table_h >= 120.0;
+        let table = readout != 0 && rect.height() - table_h >= dpx(120.0);
         rect.max.y -= if table { table_h } else { 20.0 };
         let (w, h) = (rect.width() as i32, rect.height() as i32);
         let mut view = view;
@@ -1179,7 +1188,7 @@ impl App {
             let total: f32 = shown.iter().map(|c| measure(&c.0).x + 2.0 * m + sq).sum();
             let mut x = dg::vector_legend_x(full.left(), full.width(), total, m);
             for c in &shown {
-                swatch(Rect::from_min_size(Pos2::new(x, lay.b + 2.0), Vec2::splat(sq)), c.3);
+                swatch(Rect::from_min_size(Pos2::new(x, lay.b + dpx(2.0)), Vec2::splat(sq)), c.3);
                 painter.text(Pos2::new(x + sq + m, lay.b), egui::Align2::LEFT_TOP, &c.0, font(), ink);
                 x += measure(&c.0).x + 2.0 * m + sq;
             }
@@ -1216,12 +1225,13 @@ impl App {
             let a = j as f32 * std::f32::consts::PI / 6.0;
             inner(c, Pos2::new(rhu(c.x + r * a.cos()), rhu(c.y + r * a.sin())));
         }
-        // 0° up, 180° down, 90° left, −90° right — inside the circle.
+        // 0° up, 180° down, 90° left, −90° right — inside the circle (the
+        // offsets in device pixels on paper too, `0x491bfc`–`0x491c55`).
         let lbl = |deg: &str, rad: &str| if radians { rad.to_string() } else { deg.to_string() };
-        painter.text(Pos2::new(c.x + 2.0, c.y - r), egui::Align2::LEFT_TOP, lbl("0º", "0"), font(), ink);
-        painter.text(Pos2::new(c.x, c.y + r - 2.0), egui::Align2::LEFT_BOTTOM, lbl("180º", "π"), font(), ink);
-        painter.text(Pos2::new(c.x - r + 7.0, c.y), egui::Align2::LEFT_BOTTOM, lbl("90º", "π/2"), font(), ink);
-        painter.text(Pos2::new(c.x + r - 2.0, c.y), egui::Align2::RIGHT_BOTTOM, lbl("-90º", "-π/2"), font(), ink);
+        painter.text(Pos2::new(c.x + dpx(2.0), c.y - r), egui::Align2::LEFT_TOP, lbl("0º", "0"), font(), ink);
+        painter.text(Pos2::new(c.x, c.y + r - dpx(2.0)), egui::Align2::LEFT_BOTTOM, lbl("180º", "π"), font(), ink);
+        painter.text(Pos2::new(c.x - r + dpx(7.0), c.y), egui::Align2::LEFT_BOTTOM, lbl("90º", "π/2"), font(), ink);
+        painter.text(Pos2::new(c.x + r - dpx(2.0), c.y), egui::Align2::RIGHT_BOTTOM, lbl("-90º", "-π/2"), font(), ink);
         for (row, (name, unit, z, color, unit_text)) in shown.iter().enumerate() {
             let is_ref = angle_ref.as_deref() == Some(name.as_str());
             let ang = if is_ref { 0.0 } else { fvb_core::views::vector_angle(*z, reference) };

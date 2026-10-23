@@ -232,9 +232,21 @@ pub struct OscPlan {
 pub struct Job {
     pub di: usize,
     pub dev: Device,
+    /// The resolution the diagram pages take their scale from — the
+    /// printer's (`m_hAttribDC`, `0x442012`), also in the preview.
+    pub attrib_dpi: f32,
     pub setup: PageSetup,
     pub pages: Vec<PageKind>,
     pub plan: OscPlan,
+}
+
+/// The header's record name (`0x405c20`): the path after its last
+/// separator with exactly four characters cut off the end (the extension
+/// with its dot, whatever its length); empty without a path.
+pub fn header_name(path: Option<&std::path::Path>) -> String {
+    let Some(name) = path.and_then(|p| p.file_name()) else { return String::new() };
+    let chars: Vec<char> = name.to_string_lossy().chars().collect();
+    chars[..chars.len().saturating_sub(4)].iter().collect()
 }
 
 /// Header and footer strings (148–152, 145–147).
@@ -271,7 +283,7 @@ impl App {
     /// The job of document `di` for its print ticks.
     pub fn print_job(&self, di: usize, dev: Device, setup: PageSetup) -> Job {
         let plan = self.osc_plan(di, &dev, &setup);
-        Job { di, dev, setup, pages: page_queue(self.docs[di].print_ticks, plan.pages), plan }
+        Job { di, dev, attrib_dpi: dev.dpi, setup, pages: page_queue(self.docs[di].print_ticks, plan.pages), plan }
     }
 
     /// Paint oscillogram slice `slice` of the stacked print image (`0x405970`
@@ -370,16 +382,17 @@ impl App {
         let logo_top = r.top() - logo_h - 0.5;
         p.rect_filled(Rect::from_min_max(Pos2::new(r.left(), logo_top), Pos2::new(r.right(), logo_top + logo_h - 1.0 / k)), 0.0, Color32::from_rgb(243, 246, 250));
         let x = r.left() + logo_w + 100.0 / k;
-        let stem = d.path.as_ref().and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| d.name.clone());
+        let stem = header_name(d.path.as_deref());
         let t = &d.osc.time;
         let dur = t.last().copied().unwrap_or(0.0) - t.first().copied().unwrap_or(0.0);
         let s = &d.osc.stamps;
-        let clip = p.with_clip_rect(Rect::from_min_max(Pos2::new(x, logo_top), Pos2::new(r.right(), r.top())));
-        lanes::bold_text(&clip, Pos2::new(x, logo_top), &format!("{S_NAME}\"{stem}\""), DECOR_FONT, black);
+        // Three single-line DrawTexts, each clipped to its own 0.9T rect.
+        let line = |i: f32| p.with_clip_rect(Rect::from_min_max(Pos2::new(x, logo_top + i * 0.9 * T), Pos2::new(r.right(), logo_top + (i + 1.0) * 0.9 * T)));
+        lanes::bold_text(&line(0.0), Pos2::new(x, logo_top), &format!("{S_NAME}\"{stem}\""), DECOR_FONT, black);
         let line2 = format!("{S_START}{}, {}   {S_DURATION}{} c.", s.start_date, s.start_time, fvb_core::views::fmt_g(dur));
-        clip.text(Pos2::new(x, logo_top + 0.9 * T), Align2::LEFT_TOP, line2, DECOR_FONT, black);
+        line(1.0).text(Pos2::new(x, logo_top + 0.9 * T), Align2::LEFT_TOP, line2, DECOR_FONT, black);
         let line3 = format!("{S_STATION}\"{}\"   {S_BLOCK}\"{}\"", d.osc.station.trim_end(), d.osc.device);
-        clip.text(Pos2::new(x, logo_top + 1.8 * T), Align2::LEFT_TOP, line3, DECOR_FONT, black);
+        line(2.0).text(Pos2::new(x, logo_top + 1.8 * T), Align2::LEFT_TOP, line3, DECOR_FONT, black);
         // Footer: the page number only in jobs of two or more pages, then
         // the three-piece company line centred, 30 device px apart.
         if count > 1 {
@@ -427,9 +440,14 @@ impl App {
             PageKind::Diagram(pane) => {
                 // `0x441fe0`: the painter at the integer scale ⌊printer dpi /
                 // screen dpi⌋ into all of R, with its print branches.
-                let s = diagram_scale(dev.dpi);
-                let page = (!preview).then(|| rdev.min.to_vec2() / s);
-                let img = crate::diagram_ui::with_print_scale(Some(s), page, || self.render_diagram(fonts, job.di, pane, Vec2::new(rw as f32 / s, rh as f32 / s), s));
+                // The preview takes the printer's scale too (its attribute DC
+                // is the printer): the page laid out as on paper, then shown
+                // at the preview's resolution.
+                let s = diagram_scale(job.attrib_dpi);
+                let to_printer = job.attrib_dpi / dev.dpi;
+                let page = (!preview).then(|| rdev.min.to_vec2() * to_printer / s);
+                let size = Vec2::new(rw as f32, rh as f32) * to_printer / s;
+                let img = crate::diagram_ui::with_print_scale(Some(s), page, || self.render_diagram(fonts, job.di, pane, size, s / to_printer));
                 canvas.blit(&img, rdev.min.x as i64, rdev.min.y as i64);
             }
         }
@@ -618,6 +636,15 @@ mod hviz_tests {
 mod dump {
     use super::*;
     use crate::app::Command;
+
+    #[test]
+    fn header_name_cuts_four_characters() {
+        use std::path::Path;
+        assert_eq!(header_name(Some(Path::new("/data/DOC_1999.cfg"))), "DOC_1999");
+        assert_eq!(header_name(Some(Path::new("/data/rec.osc2"))), "rec.", "four characters, not the extension");
+        assert_eq!(header_name(Some(Path::new("/data/a.b"))), "");
+        assert_eq!(header_name(None), "", "an unsaved document");
+    }
 
     #[test]
     fn diagram_pages_use_the_integer_scale() {

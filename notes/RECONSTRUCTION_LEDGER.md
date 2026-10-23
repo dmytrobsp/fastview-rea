@@ -3598,6 +3598,34 @@ for the base channels; pasted channels' own flags not baked (ours keeps
 them on the pending views); whether the paste deselects the pasted
 channels NOT DETERMINED; (pasted discrete lanes before the merge: L9.71).
 
+### L9.112 — Print details: device-pixel offsets on paper, the header name, the preview's diagram scale  ·  ✅
+Read (subagent report on the diagram painters and `0x405c20` /
+`0x406590`; the earlier L9.66 / L9.67 / L9.93 print branches confirmed):
+the scale s comes from the attribute DC — the printer, in the preview
+too (`0x442012`…`0x44204a`); a few offsets stay in device pixels on paper
+— the vector angle labels +2 / −2 / +7 / −2 (`0x491bfc`–`0x491c55`), its
+legend swatch +2 (`0x490e13`), the plane's top +5 (`0x43b679`) and the
+120 px plot / table thresholds (`0x43b61f`, `0x43b62e`, `0x43b6b2`); the
+header's first line names the path after its last '\' with exactly four
+characters cut off ("" with no path), each of the three lines a
+single-line DrawText clipped to its own 0.9T rect.
+Ours scaled those offsets by s on paper (6× at 600 dpi), named the file
+by its stem (or the document's name), clipped the header as one block,
+and drew preview diagrams at s = 1 (110 dpi). Now `diagram_ui::dpx`,
+`printout::header_name`, per-line clips, `Job::attrib_dpi` (the preview
+renders diagram pages at the application printer's s — 300 dpi PDF / CUPS
+→ 3 — and shows them at the preview's resolution). Test
+`header_name_cuts_four_characters`.
+Residual: the print look keyed to s ≠ 1 rather than to printing (a
+printer under 192 dpi gets the screen pens, layout and the 5 px splitter
+strip — ours prints the print look at s = 1); header T on page 1 / in the
+preview is the printer's stock font's «A» height (device-dependent, ours
+12); the company name measured in the heavy font on paper; the print
+dialog's status / type / place / comment fields and «Свойства...» (the
+common print dialog fills them from the spooler — ours empty); a print
+resetting the live circle zoom / consuming the differential's first-paint
+push not reproduced.
+
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
