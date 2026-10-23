@@ -27,6 +27,9 @@ pub struct DialogState {
     /// shown one after another as the original's modal boxes and posted
     /// exceptions come.
     pub alerts: std::collections::VecDeque<(String, crate::dialogs::MsgIcon)>,
+    /// Frames the front box has been up (a box takes keys from its second
+    /// frame: the key that raised it is not also its answer).
+    pub alert_frames: u32,
 }
 
 impl DialogState {
@@ -59,6 +62,7 @@ impl Default for DialogState {
             channels: None,
             coef: None,
             alerts: Default::default(),
+            alert_frames: 0,
         }
     }
 }
@@ -341,6 +345,15 @@ impl App {
         [y < 500, y > 70, grow_x, shrink_x]
     }
 
+    /// A dialog's default button and Cancel (IsDialogMessage): Enter = OK,
+    /// Esc = Cancel — not while a message box is up (it takes them).
+    pub fn dialog_keys(&self, ctx: &egui::Context) -> Option<bool> {
+        if !self.dlg.alerts.is_empty() {
+            return None;
+        }
+        ctx.input(|i| if i.key_pressed(egui::Key::Enter) { Some(true) } else if i.key_pressed(egui::Key::Escape) { Some(false) } else { None })
+    }
+
     pub fn open_hdr_comment(&mut self) {
         if !self.hdr_comment_enabled() {
             return;
@@ -376,8 +389,14 @@ impl App {
                 crate::dialogs::message_body(ui, icon, &msg);
                 ui.vertical_centered(|ui| ok = ui.button("    OK    ").clicked());
             });
-        if ok || ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
+        // The box takes Enter / Esc: consumed, so the dialog under it does
+        // not see them too.
+        let key = self.dlg.alert_frames > 0 && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter) | i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+        if ok || key {
             self.dlg.alerts.pop_front();
+            self.dlg.alert_frames = 0;
+        } else {
+            self.dlg.alert_frames += 1;
         }
     }
 
@@ -427,7 +446,8 @@ impl App {
                     ro(ui, o.sample_count().to_string());
                     ui.end_row();
                     ui.label("Частота сети:");
-                    ro(ui, format!("{}", o.line_freq));
+                    // DDX_Text of a double shows `%.*g` at 15 digits.
+                    ro(ui, fvb_core::views::fmt_gp(o.line_freq, 15));
                     ui.end_row();
                     ui.label("Частота дискретизации:");
                     ui.horizontal(|ui| {
@@ -488,12 +508,15 @@ impl App {
         if let Some(cp) = cp_pick {
             self.docs[ai].set_codepage(cp);
         }
-        let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        // «Закрыть» is IDOK: Enter applies, Esc cancels.
+        let keys = self.dialog_keys(ctx);
+        let esc = keys == Some(false);
+        let apply = apply || keys == Some(true);
         if apply {
-            // 0x415 goes through DDX_Text of an int (mfc #3761, `0x44a230`):
-            // whitespace and a sign around the digits, nothing else (ours
-            // also refuses 0 and negatives — the original's handling ND).
-            let rate = st.rate_text.trim().parse::<i32>().ok().filter(|r| *r > 0).map(f64::from);
+            // 0x415 goes through DDX_Text of an int (mfc #3761, `0x44a230`:
+            // scanf "%d", L9.148); no DDV — ours refuses 0 and negatives
+            // (deliberately: what follows such a rate is ND).
+            let rate = crate::dialogs::ddx_int(&st.rate_text).filter(|r| *r > 0).map(f64::from);
             match rate {
                 None => {
                     // AFX_IDP_PARSE_INT; the dialog stays.
@@ -580,6 +603,7 @@ impl App {
                     }
                 });
             });
+        let result = result.or_else(|| self.dialog_keys(ctx));
         match result {
             Some(true) => {
                 self.dlg.dst_folder = st.dst_folder;

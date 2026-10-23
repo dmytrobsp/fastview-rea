@@ -81,7 +81,7 @@ pub struct FreqDialog {
 /// the network frequency; the first failure is MFC's message and the
 /// dialog stays (AFX_IDP_PARSE_INT / AFX_IDP_PARSE_INT_RANGE).
 pub fn freq_dialog_exchange(periods: &str, harmonics: &str, n: usize, r: f64, f: f64) -> Result<(usize, usize), String> {
-    let int = |s: &str| s.trim().parse::<i32>().map_err(|_| "Введите целое число.".to_string());
+    let int = |s: &str| crate::dialogs::ddx_int(s).ok_or_else(|| "Введите целое число.".to_string());
     let range = |v: i32, max: i64| {
         if v < 1 || i64::from(v) > max {
             Err(format!("Введите целое число от 1 до {max}."))
@@ -1485,9 +1485,12 @@ impl App {
                 }
             });
         });
+        let done = done.or_else(|| self.dialog_keys(ctx));
         match done {
             None => self.diag.pair_dlg = Some(dlg),
             Some(false) => {}
+            // The callers (`0x447041`, `0x43d6f1`) copy the list and mark the
+            // document modified on every IDOK.
             Some(true) => {
                 if let Some(d) = self.active_doc_mut() {
                     if dlg.diff {
@@ -1495,6 +1498,7 @@ impl App {
                     } else {
                         d.rx_pairs = dlg.pairs;
                     }
+                    d.set.modified = true;
                 }
             }
         }
@@ -1538,6 +1542,7 @@ impl App {
                 }
             });
         });
+        let done = done.or_else(|| self.dialog_keys(ctx));
         match done {
             None => self.diag.freq_dlg = Some(dlg),
             Some(false) => {}
@@ -2003,7 +2008,8 @@ mod tests {
     #[test]
     fn frequency_dialog_exchange_as_read() {
         assert_eq!(freq_dialog_exchange(" 3 ", "+30", 1000, 1000.0, 50.0), Ok((3, 30)));
-        assert_eq!(freq_dialog_exchange("2.5", "1", 1000, 1000.0, 50.0), Err("Введите целое число.".into()));
+        assert_eq!(freq_dialog_exchange("2.5", "1", 1000, 1000.0, 50.0), Ok((2, 1)), "scanf %d stops at the point");
+        assert_eq!(freq_dialog_exchange(".5", "1", 1000, 1000.0, 50.0), Err("Введите целое число.".into()));
         assert_eq!(freq_dialog_exchange("51", "1", 1000, 1000.0, 50.0), Err("Введите целое число от 1 до 50.".into()));
         assert_eq!(freq_dialog_exchange("2", "21", 1000, 1000.0, 50.0), Err("Введите целое число от 1 до 20.".into()), "trunc(10) × 2 periods");
         assert_eq!(freq_dialog_exchange("x", "x", 1000, 1000.0, 50.0), Err("Введите целое число.".into()), "the first failure");

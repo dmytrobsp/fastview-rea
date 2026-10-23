@@ -280,15 +280,17 @@ impl CoefDlg {
         self.edit = Some((at, self.cells[at.0][at.1].clone()));
     }
 
-    /// Commit the edit (`0x47b3d0`): the text goes into the edited cell and
-    /// every selected cell of the same column.
+    /// Commit the edit (`0x47b3d0`): only a text that differs from the
+    /// cell's makes the grid dirty and goes into the edited cell and every
+    /// selected cell of either column (the rows' item-data bits).
     pub fn commit(&mut self) {
         let Some(((r, c), text)) = self.edit.take() else { return };
+        if text == self.cells[r][c] {
+            return;
+        }
         self.cells[r][c] = text.clone();
         for &(sr, sc) in &self.sel {
-            if sc == c {
-                self.cells[sr][sc] = text.clone();
-            }
+            self.cells[sr][sc] = text.clone();
         }
         self.dirty = true;
     }
@@ -297,13 +299,14 @@ impl CoefDlg {
         self.edit = None;
     }
 
-    /// OK (`0x47b610`): nothing dirty → nothing; otherwise every cell is read
-    /// with `_wtof` and the changed values stored. Returns the channels whose
-    /// coefficients changed.
-    pub fn apply(&mut self, doc: &mut Doc) -> Vec<usize> {
+    /// OK (`0x47b610`): nothing dirty → OnCancel (`None`); otherwise every
+    /// cell is read with `_wtof` and the changed values stored — the caller
+    /// marks the document modified on IDOK (`0x42fea7`). Returns the
+    /// channels whose coefficients changed.
+    pub fn apply(&mut self, doc: &mut Doc) -> Option<Vec<usize>> {
         self.commit();
         if !self.dirty {
-            return Vec::new();
+            return None;
         }
         let mut changed = Vec::new();
         for (i, [p, s]) in self.cells.iter().enumerate() {
@@ -315,7 +318,7 @@ impl CoefDlg {
                 changed.push(i);
             }
         }
-        changed
+        Some(changed)
     }
 }
 
@@ -542,8 +545,13 @@ impl App {
                             if let Some((_, text)) = st.edit.as_mut().filter(|(at, _)| *at == (row, col)) {
                                 let te = ui.put(r.shrink(1.0), egui::TextEdit::singleline(text).id(egui::Id::new(("fv_coef_edit", row, col))).desired_width(r.width() - 4.0));
                                 te.request_focus();
+                                // The edit is a plain CEdit: Enter reaches IDOK
+                                // (commit, apply, close), Esc IDCANCEL.
                                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                                     st.cancel_edit();
+                                    result = Some(false);
+                                } else if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                                    result = Some(true);
                                 } else if te.lost_focus() {
                                     // A press elsewhere: the pressed cell decides
                                     // the Shift range, then the text is committed.
@@ -586,12 +594,18 @@ impl App {
                         result = Some(false);
                     }
                 });
+                // OK is the default button, Esc cancels.
+                if st.edit.is_none() && result.is_none() {
+                    result = ui.input(|i| if i.key_pressed(egui::Key::Enter) { Some(true) } else if i.key_pressed(egui::Key::Escape) { Some(false) } else { None });
+                }
             });
         match result {
             Some(true) => {
-                let changed = st.apply(&mut self.docs[ai]);
-                if !changed.is_empty() {
-                    self.recompute_doc(ai);
+                if let Some(changed) = st.apply(&mut self.docs[ai]) {
+                    self.docs[ai].set.modified = true;
+                    if !changed.is_empty() {
+                        self.recompute_doc(ai);
+                    }
                 }
             }
             Some(false) => {}
@@ -687,7 +701,7 @@ mod tests {
     }
 
     #[test]
-    fn coefficient_bulk_entry_fills_the_shift_range_of_one_column() {
+    fn coefficient_bulk_entry_fills_the_shift_range() {
         let mut d = demo_doc();
         let mut g = CoefDlg::new(&d);
         assert_eq!(g.cells[0], ["1".to_string(), "1".to_string()]);
@@ -697,9 +711,9 @@ mod tests {
         g.edit.as_mut().unwrap().1 = "110000".into();
         g.press((2, 1), true);
         assert_eq!(g.sel.len(), 6);
+        // Every selected cell of either column (`0x47b3d0`'s item-data bits).
         for r in 0..3 {
-            assert_eq!(g.cells[r][0], "110000");
-            assert_eq!(g.cells[r][1], "1");
+            assert_eq!(g.cells[r], ["110000".to_string(), "110000".to_string()]);
         }
         assert_eq!(g.cells[3][0], "1");
         // Without Shift only the edited cell, and the selection clears.
@@ -709,7 +723,7 @@ mod tests {
         assert!(g.sel.is_empty());
         assert_eq!(g.cells[4][1], "bad");
         let changed = g.apply(&mut d);
-        assert_eq!(changed, vec![0, 1, 2, 4]);
+        assert_eq!(changed, Some(vec![0, 1, 2, 4]));
         assert_eq!(d.osc.analog[1].primary, 110000.0);
         // No validation: bad text is 0.
         assert_eq!(d.osc.analog[4].secondary, 0.0);
@@ -720,7 +734,10 @@ mod tests {
         let mut d = demo_doc();
         let mut g = CoefDlg::new(&d);
         g.press((1, 1), false);
-        assert!(g.apply(&mut d).is_empty());
+        // An edit that keeps the text is no change either.
+        g.open_edit((1, 1));
+        g.press((2, 1), false);
+        assert!(g.apply(&mut d).is_none(), "nothing dirty: OnCancel");
     }
 }
 

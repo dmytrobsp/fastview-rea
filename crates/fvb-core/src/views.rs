@@ -89,13 +89,19 @@ pub fn freq_label(v: f64) -> String {
 /// C's `%g` (precision 6): exponent form when the decimal exponent is below
 /// −4 or at least 6, trailing zeros removed.
 pub fn fmt_g(v: f64) -> String {
+    fmt_gp(v, 6)
+}
+
+/// C's `%.*g` with precision `p` (≥ 1).
+pub fn fmt_gp(v: f64, p: usize) -> String {
+    let p = p.max(1);
     if v == 0.0 {
         return "0".into();
     }
     if !v.is_finite() {
         return if v.is_nan() { "nan".into() } else if v > 0.0 { "inf".into() } else { "-inf".into() };
     }
-    let e = format!("{v:.5e}");
+    let e = format!("{v:.*e}", p - 1);
     let (mant, exp) = e.split_once('e').expect("exponent");
     let x: i32 = exp.parse().expect("exponent digits");
     let trim = |t: &str| -> String {
@@ -105,8 +111,8 @@ pub fn fmt_g(v: f64) -> String {
             t.to_string()
         }
     };
-    if (-4..6).contains(&x) {
-        trim(&format!("{v:.*}", (5 - x) as usize))
+    if (-4..p as i32).contains(&x) {
+        trim(&format!("{v:.*}", (p as i32 - 1 - x) as usize))
     } else {
         format!("{}e{}{:02}", trim(mant), if x < 0 { '-' } else { '+' }, x.abs())
     }

@@ -4055,7 +4055,8 @@ frame (`0x475680`, message 0x40a), whose handler calls its ReportError(0,
 no overlap shows 219 with MB_ICONHAND and leaves the bar's text; DIALOG
 392's sample rate goes through DDX_Text of an **int** (mfc #3761 — the
 ordinal order of the int& / double& overloads, #3766 being 0x414's
-double), so a non-integer gives «Введите целое число.»; modal boxes and
+double): text that does not start with a number gives «Введите целое
+число.» (scanf's rule: L9.148); modal boxes and
 posted exceptions come one after another. The other boxes (396, 473, 398,
 397, 1086, the ОМП checks, SaveModified) already matched.
 Ours: open / save errors and block / computed-channel evaluation errors
@@ -4428,6 +4429,36 @@ preview's page text is no longer shown. Tests
 `cursor_status_horizontal_panes`, `cursor_status_absolute_time`.
 Residual: the pane widths and the extended element's colour ND; the
 setter's "no lane at y" path (value 0, empty unit) ND whether reached.
+
+### L9.148 — Dialog data exchange as MFC 12 does it; DIALOG 477 / 554's OK; Enter and Esc  ·  ✅
+Read (subagent audit of every DoDataExchange — slot 66, 14 overriding
+classes — and the DDX / DDV exports; by hand MFC's int helper
+`0x101e0e79`: GetWindowTextW of 64 characters, then `_snwscanf_s` "%d"):
+an int field takes leading blanks, a sign and digits and ignores the rest
+("50.5" → 50, "12 Гц" → 12); only text with no leading number fails
+(61712); a double shows `%.*g` at 15 digits; DIALOG 392 has no DDV;
+DIALOG 477 (coefficients): a commit dirties only a text that differs and
+writes it into every selected cell of both columns, OK with nothing
+dirty is Cancel, otherwise the values are stored and the caller marks
+the document modified; the cell edit is a plain CEdit (Enter = IDOK,
+Esc = IDCANCEL of the whole dialog); DIALOG 554 (pairs): every OK marks
+the document modified; the dialogs' default buttons (Enter) and Cancel
+(Esc) as IsDialogMessage gives them.
+Ours parsed ints strictly, showed «Частота сети» with `{}`, made 477
+dirty on any commit, filled only the edited column, marked modified only
+when values changed, cancelled just the cell on Esc, did not mark
+modified on 554's OK, and had no Enter / Esc in 353 / 554 / 510 / 392.
+Now `dialogs::ddx_int` (392, 353), `views::fmt_gp` (`%.15g`), the 477 and
+554 rules, `App::dialog_keys` (not while a message box is up; a box takes
+its keys from its second frame, consuming them, so the key that raised
+it is not also its answer). Tests `ddx_int_as_scanf`,
+`frequency_dialog_exchange_as_read`, `coefficient_bulk_entry_fills_the_shift_range`,
+`coefficients_ok_without_edits_changes_nothing`,
+`dialogs_take_enter_and_escape`.
+Residual: ours still refuses a 0 / negative rate in 392 (deliberate —
+what follows such a rate is ND); the failing field's focus and select-all
+after a DDX failure not reproduced; whether the edited cell of 477 is
+always selected ND.
 
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

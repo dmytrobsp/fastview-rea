@@ -341,3 +341,37 @@ fn chevron(painter: &egui::Painter, rect: Rect) {
         painter.line_segment([b, c], Stroke::new(w, col));
     }
 }
+
+/// MFC 12's DDX_Text of an int (`0x101e0e79`): up to 64 characters of the
+/// window text through `_snwscanf_s` "%d" — leading blanks and a sign,
+/// then at least one digit; anything after the number is ignored ("50.5"
+/// → 50, "12 Гц" → 12); `None` = «Введите целое число.» (61712).
+pub fn ddx_int(s: &str) -> Option<i32> {
+    let s: String = s.chars().take(63).collect();
+    let t = s.trim_start();
+    let (neg, rest) = match t.as_bytes().first() {
+        Some(b'-') => (true, &t[1..]),
+        Some(b'+') => (false, &t[1..]),
+        _ => (false, t),
+    };
+    let digits: Vec<u32> = rest.chars().map_while(|c| c.to_digit(10)).collect();
+    if digits.is_empty() {
+        return None;
+    }
+    // Overflow wraps (INFERRED from the CRT's conversion).
+    let v = digits.iter().fold(0i32, |a, &d| a.wrapping_mul(10).wrapping_add(d as i32));
+    Some(if neg { v.wrapping_neg() } else { v })
+}
+
+#[cfg(test)]
+mod ddx_tests {
+    #[test]
+    fn ddx_int_as_scanf() {
+        use super::ddx_int;
+        assert_eq!(ddx_int(" 50.5"), Some(50));
+        assert_eq!(ddx_int("12 Гц"), Some(12));
+        assert_eq!(ddx_int("-7x"), Some(-7));
+        assert_eq!(ddx_int("0x10"), Some(0));
+        assert_eq!((ddx_int(""), ddx_int("-"), ddx_int("abc")), (None, None, None));
+    }
+}

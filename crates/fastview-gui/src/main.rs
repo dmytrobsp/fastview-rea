@@ -886,6 +886,21 @@ mod window_tests {
         assert_eq!(w.app.docs.len(), 1, "Ctrl+F4 closes the active document");
     }
 
+    /// IsDialogMessage: Enter is the default button, Esc cancels; Enter on a
+    /// message box over the dialog closes only the box.
+    #[test]
+    fn dialogs_take_enter_and_escape() {
+        let mut w = Win::new();
+        w.app.diag_cmd(diagram_ui::Window::Freq, diagram::DiagCmd::FreqSettings, Pos2::ZERO);
+        w.app.diag.freq_dlg.as_mut().unwrap().periods = "0".into();
+        w.key(egui::Key::Enter);
+        assert!(w.app.diag.freq_dlg.is_some() && w.app.dlg.alerts.len() == 1, "OK refused with a message");
+        w.key(egui::Key::Enter);
+        assert!(w.app.dlg.alerts.is_empty() && w.app.diag.freq_dlg.is_some(), "the box closes, the dialog stays");
+        w.key(egui::Key::Escape);
+        assert!(w.app.diag.freq_dlg.is_none() && w.app.dlg.alerts.is_empty(), "Esc cancels");
+    }
+
     /// The group's panes are units of their own (`0x474e10` creates four
     /// panes): Круговая's tab pulled out of the strip floats alone and
     /// docks beside the group on the five-way's left arrow; the
