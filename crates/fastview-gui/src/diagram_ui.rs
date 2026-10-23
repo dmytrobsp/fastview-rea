@@ -822,15 +822,14 @@ impl App {
     }
 
     /// 32864 «Перезагрузить базы характеристик» (`0x436080` → `0x40c7e0`):
-    /// load the `*.fvb` bases again, keeping the selected block by name.
+    /// load the `*.fvb` bases again; the loader ends on «Нет».
     pub fn reload_bases(&mut self) {
-        let block = self.library.blocks.get(self.block_idx).map(|b| b.name.clone());
         let (lib, name) = crate::app::load_libraries();
         self.full_library = lib;
         self.source_name = name;
         self.diagrams = [None, None];
-        self.library = self.full_library.for_dimension(self.diagram_dim);
-        self.block_idx = block.and_then(|n| self.library.blocks.iter().position(|b| b.name == n)).unwrap_or(0);
+        self.library = crate::app::plane_library(&self.full_library, self.diagram_dim);
+        self.block_idx = 0;
         self.chars.clear();
         self.selected_char = None;
         self.ensure_block_state();

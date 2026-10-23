@@ -1056,7 +1056,7 @@ was wrong). Ours: `fvb_core::settree` (shared with `.omp`), `fvb_core::recset`,
 GUI `setfile.rs` (read at open, write on save, 32860 enabled, modified flag via
 explicit marks + a per-frame change detector, close/exit prompts); «Сохранить»
 vs «Сохранить как» now differ. 11 tests. Residual: (the prompt wording:
-read in L9.62); `Selected Block` subtree still in our program store;
+read in L9.62); (`Selected Block`: the document's since L9.162);
 `NetFreq`, `.cff` SET, `.zip`, `.sto` not modelled; comments store file name
 vs alias NOT DETERMINED; (paste / an ОМП run do not mark modified: read
 in L9.68).
@@ -4664,7 +4664,7 @@ Read (vtable sweep of BlockPropertyGrid / BlockProperty; by hand
 `0x407c40`, which flips the row's characteristic (when it has one), then
 SetModifiedFlag(TRUE) on the active frame's document — also for «Тип
 блока»'s value, which has no characteristic — repaints the plane and
-saves the block state (DiagramWnd slot 94; where: being read). A
+saves the block state (DiagramWnd slot 94; into the document's `.set`: L9.162). A
 committed parameter edit (`0x407580`) recomputes and saves without the
 modified mark. The grid's WM_LBUTTONDBLCLK handler `0x407640` drops a
 double-click on any BlockProperty row (every group and «Тип блока»: no
@@ -4798,6 +4798,47 @@ Ours took the wheel only over the plane. Now `pane_toolbar` records the
 circle / differential toolbars' rects (`DiagState::toolbar`) and the
 plane takes the wheel over them as well. Test
 `a_wheel_over_the_pane_toolbar_reaches_the_plane`.
+
+### L9.162 — The circle / differential block state is the record's (`.set`), «Нет» first  ·  ✅
+Read (background report; by hand `0x408cf0`, `0x436b30`, strings at
+`0x4c3ba4` / `0x4c3bc0`, string 3306): save `0x408cf0` and load
+`0x409030` reach the active document through the main frame and work on
+`doc+0x300` — the tree the `.set` reader `0x44f5b0` loads — and do
+nothing with no document. The save get-or-creates `Circle Chart` (flag 1)
+/ `Diff Chart` (0), **empties it** (keys and subtrees, `0x40f7e0` /
+`0x40f830` — SightsOnly / ShowOffCharacteristics / ViewChannelType go
+until their toggles write them again), writes `SelectedBlock` = the
+block's name and under `Selected Block` one child per characteristic
+(`visible` `%i`) with one child per parameter (`value`, the grid's text);
+only the current block; then SetModifiedFlag(TRUE) (`+0x6c`). Saved after
+a visibility click (`0x407c40`), a parameter commit (`0x407580`, after
+the evaluation) and a block change (`0x407cc0` → rebuild → evaluate →
+save); a refresh never saves. The refresh (`0x436b30` / `0x442a10`, slot
+90, called from the frame's refresh-all `0x475420` on a view's
+activation, 32860, the pair rebind, …): no document → nothing; reads
+`SelectedBlock` (empty → «Нет», string 3306); a different name than the
+current block's rebuilds by that name (an unknown one → block 0); only a
+document other than the one last bound (`this+0x98`, never cleared)
+loads the block's values (`visible` default 1, `value` default the
+library's text) and evaluates. The library loader `0x40c7e0` puts an
+empty «Нет» block first and ends on it, so the diagrams start on «Нет»;
+32864 ends on «Нет» too. The registry keeps only `Properties Height`.
+Ours kept the block state program-wide (`characteristics.tsv`: the
+selected block, every characteristic's visibility and values, saved on
+every evaluation), never read `SelectedBlock`, had no «Нет» and started on
+the stored or first block. Now `plane_library` (+ «Нет» first),
+`App::save_block` (`recset::write_block`: the section emptied, then the
+block; the document marked modified; no document — nothing), the
+refresh `refresh_blocks` / `refresh_live_block` with `diag_bound` (from
+`track_settings` on a document's activation, after 32860, and when a
+diagram is first shown), `char_side_panel` saving on the three edits;
+`persist::Store` lost `selected` / `visible` / `values`. Test
+`block_state_is_the_documents`.
+Residual: «Тип блока» showing a saved name the library lacks (ours shows
+«Нет»); the circle refresh also clears ShowFlags bit 3 on channels whose
+unit is neither Ohm nor VA (`0x436d77`–`0x436e64`, not checked against
+L9.34); the refresh's other callers (open / close, ~25 sites) not all
+identified — ours refreshes on activation and 32860.
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

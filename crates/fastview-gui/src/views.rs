@@ -733,7 +733,9 @@ impl App {
         let mut touched = combo.clicked();
         if self.block_idx != prev {
             self.selected_char = None;
+            // The rebuild evaluates, then saves (`0x407cc0` → `0x407750`).
             self.ensure_block_state();
+            self.save_block();
             // The rebuild (`0x407750`) ends with ExpandAll: every group open.
             if let Some(blk) = self.library.blocks.get(self.block_idx) {
                 let b = self.block_idx;
@@ -790,16 +792,18 @@ impl App {
                 }
             }
         }
-        if vis_changed {
-            self.persist_block();
-        }
         if touched {
             if let Some(d) = self.active_doc_mut() {
                 d.set.modified = true;
             }
         }
+        // A parameter commit (`0x407580`) re-evaluates, then the block is
+        // saved into the document (`0x408cf0`), as after a visibility click.
         if changed {
             self.recompute_block();
+        }
+        if changed || vis_changed {
+            self.save_block();
         }
     }
 

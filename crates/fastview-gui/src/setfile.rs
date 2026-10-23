@@ -590,6 +590,11 @@ impl App {
         self.docs[di].set.tree.load_path(path);
         self.apply_record_settings(di, true);
         self.docs[di].set.modified = true;
+        // Then the diagrams' refresh: the block re-picked by name (the
+        // values stay — the same document, `this+0x98`).
+        if self.active == Some(di) {
+            self.refresh_blocks();
+        }
     }
 
     /// `OnSaveDocument` (`0x44c940`): write the record when the target is not
@@ -798,6 +803,9 @@ impl App {
                 let s = Self::read_view_snap(&self.docs[ai]);
                 self.apply_view_snap(&s);
                 self.setfile.sync = Some((ai, s));
+                // The view's activation refreshes the diagrams (`0x45f7d0` →
+                // `0x475420`): the document's block.
+                self.refresh_blocks();
             }
         }
         let d = &mut self.docs[ai];

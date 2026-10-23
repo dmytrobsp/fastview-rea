@@ -451,6 +451,18 @@ pub enum RectZoom {
 
 type LoadResult = Result<(Oscillogram, fvb_core::comtrade::CffSections), fvb_core::comtrade::ComtradeError>;
 
+/// «Нет» (string 3306): the empty block the library loader `0x40c7e0` puts
+/// first in each diagram's «Тип блока» list.
+pub const NO_BLOCK: &str = "Нет";
+
+/// A diagram's blocks: «Нет», then the library's blocks with
+/// characteristics of that plane.
+pub fn plane_library(full: &Library, dim: Dimension) -> Library {
+    let mut l = full.for_dimension(dim);
+    l.blocks.insert(0, fvb_core::model::Block { name: NO_BLOCK.into(), characteristics: Vec::new() });
+    l
+}
+
 /// AfxComparePath: the same file (both paths made absolute where they
 /// exist; case ignored where the file system ignores it).
 pub fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
@@ -1150,6 +1162,9 @@ pub struct App {
     /// each diagram (`[Ohm, Dif]`) while it is not active.
     pub diagram_dim: Dimension,
     pub diagrams: [Option<DiagramState>; 2],
+    /// The document each diagram last loaded its block values from
+    /// (`this+0x98` of the circle / differential window; its serial).
+    pub diag_bound: [Option<u64>; 2],
     // active diagram state
     pub library: Library,
     pub source_name: String,
@@ -1371,10 +1386,11 @@ impl App {
     pub fn new() -> Self {
         let (full_library, source_name) = load_libraries();
         let mut app = App {
-            library: full_library.for_dimension(Dimension::Ohm),
+            library: plane_library(&full_library, Dimension::Ohm),
             full_library,
             diagram_dim: Dimension::Ohm,
             diagrams: [None, None],
+            diag_bound: [None, None],
             source_name,
             block_idx: 0,
             chars: HashMap::new(),
@@ -1823,25 +1839,13 @@ impl App {
             return;
         };
         for (ci, ch) in block.characteristics.iter().enumerate() {
-            let key = (Self::diagram_key(self.diagram_dim).to_string(), block.name.clone(), ch.name.clone());
-            let store = &self.store;
-            self.chars.entry((b, ci)).or_insert_with(|| {
-                let mut settings = ch.default_settings();
-                if let Some(saved) = store.values.get(&key) {
-                    for (p, v) in saved {
-                        if let Some(slot) = settings.get_mut(p) {
-                            *slot = v.clone();
-                        }
-                    }
-                }
-                CharState {
-                    visible: store.visible.get(&key).copied().unwrap_or(true),
-                    settings,
-                    figs: Vec::new(),
-                    geo: None,
-                    extent: 0.0,
-                    color: Self::palette(ci),
-                }
+            self.chars.entry((b, ci)).or_insert_with(|| CharState {
+                visible: true,
+                settings: ch.default_settings(),
+                figs: Vec::new(),
+                geo: None,
+                extent: 0.0,
+                color: Self::palette(ci),
             });
         }
         if self.selected_char.is_none() && !block.characteristics.is_empty() {
@@ -1877,7 +1881,6 @@ impl App {
         if let Err(e) = result {
             self.dlg.push_alert(e.to_string());
         }
-        self.persist_block();
     }
 
     /// The original's settings-tree section for a diagram.
@@ -1924,12 +1927,6 @@ impl App {
         self.mru = (0..10).filter_map(|k| v.get(&format!("MRU/{k}")).map(std::path::PathBuf::from)).collect();
         self.load_program_settings();
         self.restore_workspace();
-        let dim = self.diagram_dim;
-        if let Some(name) = self.store.selected.get(Self::diagram_key(dim)).cloned() {
-            if let Some(i) = self.library.blocks.iter().position(|b| b.name == name) {
-                self.block_idx = i;
-            }
-        }
         self.chars.clear();
         self.selected_char = None;
         self.ensure_block_state();
@@ -1996,25 +1993,84 @@ impl App {
         }
     }
 
-    /// Record the selected block and its characteristics' visibility and
-    /// parameter texts, then save (the original saves on every property change).
-    pub fn persist_block(&mut self) {
-        if !self.persist {
-            return;
+    /// `0x408cf0` (DiagramWnd slot 94, after a visibility click, a
+    /// parameter commit or a block change): the block into the active
+    /// document's settings tree, the document marked modified; with no
+    /// document nothing is kept.
+    pub fn save_block(&mut self) {
+        let Some(block) = self.library.blocks.get(self.block_idx) else { return };
+        let chars: Vec<fvb_core::recset::SavedChar> = block
+            .characteristics
+            .iter()
+            .enumerate()
+            .filter_map(|(ci, ch)| {
+                let st = self.chars.get(&(self.block_idx, ci))?;
+                let params = ch.parameters.iter().map(|p| (p.name.clone(), st.settings.get(&p.name).cloned().unwrap_or_default())).collect();
+                Some((ch.name.clone(), st.visible, params))
+            })
+            .collect();
+        let (key, name) = (Self::diagram_key(self.diagram_dim), block.name.clone());
+        let Some(d) = self.active_doc_mut() else { return };
+        fvb_core::recset::write_block(d.set.tree.section_mut(key), &name, &chars);
+        d.set.modified = true;
+    }
+
+    /// The diagrams' refresh (`0x436b30` / `0x442a10`, slot 90 — on a
+    /// document's activation, 32860, …): each picks its block by the active
+    /// document's `SelectedBlock` (empty or unknown: «Нет»), and loads the
+    /// block's values from it only when the document is not the one it
+    /// last loaded from. No document: nothing changes.
+    pub fn refresh_blocks(&mut self) {
+        self.refresh_live_block();
+        let (here, other) = (self.diagram_dim, if self.diagram_dim == Dimension::Ohm { Dimension::Dif } else { Dimension::Ohm });
+        if self.diagrams[usize::from(other == Dimension::Dif)].is_some() {
+            self.switch_diagram(other);
+            self.refresh_live_block();
+            self.switch_diagram(here);
         }
-        let Some(block) = self.library.blocks.get(self.block_idx) else {
-            return;
-        };
-        let d = Self::diagram_key(self.diagram_dim).to_string();
-        self.store.selected.insert(d.clone(), block.name.clone());
-        for (ci, ch) in block.characteristics.iter().enumerate() {
-            if let Some(st) = self.chars.get(&(self.block_idx, ci)) {
-                let key = (d.clone(), block.name.clone(), ch.name.clone());
-                self.store.visible.insert(key.clone(), st.visible);
-                self.store.values.insert(key, st.settings.clone().into_iter().collect());
+    }
+
+    fn refresh_live_block(&mut self) {
+        let gi = usize::from(self.diagram_dim == Dimension::Dif);
+        let Some(d) = self.active_doc() else { return };
+        let sec = d.set.tree.section(Self::diagram_key(self.diagram_dim)).cloned();
+        let sec = sec.as_ref();
+        let name = sec.map(|s| s.get_str("SelectedBlock", "")).filter(|n| !n.is_empty()).unwrap_or_else(|| NO_BLOCK.to_string());
+        let serial = d.serial;
+        let mut changed = false;
+        if self.library.blocks.get(self.block_idx).map(|b| b.name.as_str()) != Some(name.as_str()) {
+            self.block_idx = self.library.blocks.iter().position(|b| b.name == name).unwrap_or(0);
+            self.selected_char = None;
+            changed = true;
+        }
+        if self.diag_bound[gi] != Some(serial) {
+            self.diag_bound[gi] = Some(serial);
+            if let Some(block) = self.library.blocks.get(self.block_idx) {
+                for (ci, ch) in block.characteristics.iter().enumerate() {
+                    let saved = fvb_core::recset::saved_char(sec, &ch.name);
+                    let mut settings = ch.default_settings();
+                    for p in &ch.parameters {
+                        if let Some(v) = saved.and_then(|c| c.child(&p.name)).and_then(|n| n.attrs.get("value")) {
+                            settings.insert(p.name.clone(), v.clone());
+                        }
+                    }
+                    let st = self.chars.entry((self.block_idx, ci)).or_insert_with(|| CharState {
+                        visible: true,
+                        settings: Default::default(),
+                        figs: Vec::new(),
+                        geo: None,
+                        extent: 0.0,
+                        color: Self::palette(ci),
+                    });
+                    st.visible = saved.is_none_or(|c| c.get_bool("visible", true));
+                    st.settings = settings;
+                }
             }
+            changed = true;
         }
-        self.store.save();
+        if changed {
+            self.ensure_block_state();
+        }
     }
 
     /// Switch the characteristic panel to the circle (`Ohm`) or differential
@@ -2032,15 +2088,14 @@ impl App {
         };
         let idx = |d: Dimension| usize::from(d == Dimension::Dif);
         self.diagrams[idx(self.diagram_dim)] = Some(current);
-        let next = self.diagrams[idx(dim)].take().unwrap_or_else(|| {
-            let library = self.full_library.for_dimension(dim);
-            let block_idx = self
-                .store
-                .selected
-                .get(Self::diagram_key(dim))
-                .and_then(|n| library.blocks.iter().position(|b| &b.name == n))
-                .unwrap_or(0);
-            DiagramState { library, block_idx, chars: HashMap::new(), selected_char: None }
+        // A diagram first shown starts on «Нет», then refreshes from the
+        // active document (the original's windows exist from the start).
+        let fresh = self.diagrams[idx(dim)].is_none();
+        let next = self.diagrams[idx(dim)].take().unwrap_or_else(|| DiagramState {
+            library: plane_library(&self.full_library, dim),
+            block_idx: 0,
+            chars: HashMap::new(),
+            selected_char: None,
         });
         self.library = next.library;
         self.block_idx = next.block_idx;
@@ -2048,6 +2103,10 @@ impl App {
         self.selected_char = next.selected_char;
         self.diagram_dim = dim;
         self.ensure_block_state();
+        if fresh {
+            self.diag_bound[idx(dim)] = None;
+            self.refresh_live_block();
+        }
     }
 
     pub fn current_dimension(&self) -> Dimension {
@@ -2065,7 +2124,7 @@ impl App {
                 .and_then(|b| fvb_core::load_fvb_bytes(&b).map_err(|e| e.to_string()))
             {
                 Ok(lib) => {
-                    self.library = lib.for_dimension(self.diagram_dim);
+                    self.library = plane_library(&lib, self.diagram_dim);
                     self.full_library = lib;
                     self.diagrams = [None, None];
                     self.source_name = path
@@ -2869,21 +2928,38 @@ mod tests {
         assert_eq!(app.omp_ui.bar.as_deref(), Some(r.text.as_str()));
     }
 
+    /// The block state lives in the document's `.set` tree (`0x408cf0` /
+    /// `0x409030`): saved on an edit, picked and loaded on a refresh.
     #[test]
-    fn stored_settings_apply_to_new_block_state() {
+    fn block_state_is_the_documents() {
         let mut app = demo_app();
-        let blk = app.library.blocks[app.block_idx].clone();
+        assert_eq!(app.library.blocks[app.block_idx].name, NO_BLOCK, "no section: «Нет»");
+        app.block_idx = 1;
+        app.ensure_block_state();
+        let blk = app.library.blocks[1].clone();
         let ch = &blk.characteristics[0];
         let p = ch.parameters[0].name.clone();
-        let key = (App::diagram_key(app.diagram_dim).to_string(), blk.name.clone(), ch.name.clone());
-        app.store.values.entry(key.clone()).or_default().insert(p.clone(), "1+1".into());
-        app.store.values.entry(key.clone()).or_default().insert("нет такого".into(), "5".into());
-        app.store.visible.insert(key, false);
+        let st = app.chars.get_mut(&(1, 0)).unwrap();
+        st.settings.insert(p.clone(), "1+1".into());
+        st.visible = false;
+        app.active_doc_mut().unwrap().set.modified = false;
+        app.save_block();
+        let d = app.active_doc().unwrap();
+        assert!(d.set.modified);
+        let sec = d.set.tree.section("Circle Chart").unwrap();
+        assert_eq!(sec.get_str("SelectedBlock", ""), blk.name);
+        assert!(!sec.attrs.contains_key("SightsOnly"), "the section emptied first");
+        // A second document with no section: «Нет»; back: the block and its values.
+        let osc = fvb_core::comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
+        app.add_doc(Doc::new(osc, "b".into()));
+        app.refresh_blocks();
+        assert_eq!(app.block_idx, 0);
         app.chars.clear();
-        app.ensure_block_state();
-        let st = &app.chars[&(app.block_idx, 0)];
+        app.active = Some(0);
+        app.refresh_blocks();
+        assert_eq!(app.block_idx, 1);
+        let st = &app.chars[&(1, 0)];
         assert_eq!(st.settings[&p], "1+1");
-        assert!(!st.settings.contains_key("нет такого"));
         assert!(!st.visible);
     }
 
@@ -2986,6 +3062,8 @@ mod tests {
     fn bad_setting_reports_the_formula_and_keeps_old_geometry() {
         let mut app = demo_app();
         app.dispatch(Command::ActivatePane(Pane::Circle));
+        app.block_idx = 1;
+        app.ensure_block_state();
         let key = (app.block_idx, 0);
         let before = app.chars[&key].figs.clone();
         let name = app.library.blocks[app.block_idx].characteristics[0].parameters[0].name.clone();

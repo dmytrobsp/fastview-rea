@@ -644,6 +644,10 @@ mod window_tests {
         let mut w = Win::new();
         w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
         w.idle(2);
+        // A block with characteristics (the record's `.set` has none: «Нет»).
+        w.app.block_idx = 1;
+        w.app.ensure_block_state();
+        w.idle(2);
         w.app.active_doc_mut().unwrap().set.modified = false;
         let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
         let at = Pos2::new(grid.right() - 60.0, grid.top() + 8.0 + 30.0);

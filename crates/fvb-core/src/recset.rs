@@ -525,6 +525,37 @@ pub fn write_plane_chart(sec: &mut SetNode, c: &PlaneChart) {
     sec.set_int("ViewChannelType", c.view_type);
 }
 
+/// One characteristic's saved state: name, visible, (parameter, value text).
+pub type SavedChar = (String, bool, Vec<(String, String)>);
+
+/// The block state of a plane, as `0x408cf0` saves it into `Circle Chart` /
+/// `Diff Chart`: the section emptied first (its keys and subtrees — so
+/// SightsOnly, ShowOffCharacteristics and ViewChannelType go too until
+/// their toggles write them again), then `SelectedBlock` = the block's
+/// name and, under `Selected Block`, one child per characteristic with
+/// `visible` (`%i`) and one child per parameter with `value` (the grid's
+/// text). Only the current block is written.
+pub fn write_block(sec: &mut SetNode, name: &str, chars: &[SavedChar]) {
+    sec.attrs.clear();
+    sec.children.clear();
+    sec.set_str("SelectedBlock", name);
+    let sel = sec.child_mut("Selected Block");
+    for (ch, visible, params) in chars {
+        let c = sel.child_mut(ch);
+        c.set_int("visible", i32::from(*visible));
+        for (p, v) in params {
+            c.child_mut(p).set_str("value", v);
+        }
+    }
+}
+
+/// `0x409030`: a characteristic's saved state under `Selected Block` —
+/// `visible` (default 1) and a parameter's `value` (default: the
+/// library's text).
+pub fn saved_char<'a>(sec: Option<&'a SetNode>, ch: &str) -> Option<&'a SetNode> {
+    sec?.child("Selected Block")?.child(ch)
+}
+
 /// `Vector Chart` (`0x48fc80`): flags true only when stored as exactly 1.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct VectorChart {
