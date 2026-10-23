@@ -2288,7 +2288,7 @@ mod tests {
         q.ua = "Ua".into();
         q.ub = "Ub".into();
         q.uc = "Uc".into();
-        let g = q.generate(AnalysisTab::Zero);
+        let g = q.generate(AnalysisTab::Zero, &[]);
         app.apply_quick(&g);
         let d = app.active_doc().unwrap();
         let get = |n: &str| d.computed.iter().find(|c| c.name == n).unwrap();
@@ -2297,7 +2297,7 @@ mod tests {
         assert_eq!(app.vec_angle_ref.as_deref(), Some("3U0"));
         assert_eq!(app.circle_readout, 1);
         // Applying again renames and toggles the new channels' flags.
-        let g = app.quick[crate::quick_ui::page_index(AnalysisTab::Zero).unwrap()].generate(AnalysisTab::Zero);
+        let g = app.quick[crate::quick_ui::page_index(AnalysisTab::Zero).unwrap()].generate(AnalysisTab::Zero, &[]);
         app.apply_quick(&g);
         let d = app.active_doc().unwrap();
         assert!(d.computed.iter().any(|c| c.name == "3I0_2"));

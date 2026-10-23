@@ -2529,12 +2529,55 @@ one; the magnitude format chooses w from the unscaled value (INFERRED);
 the per-second «/с» unit suffix (`0x42bc50`) not modelled; GDI pixel
 rules (PS_DOT pattern, Ellipse) approximated.
 
+### L9.73 — Quick analysis builds its formulas through the «Добавить…» builder  ·  ✅
+Read (subagent report; by hand: the templates `Mod:(GrsSumCur: (`,
+`Ulf: (%s, %s)`, `TormSumCur: (%s, `, `I1: (%s, %s, %s)`, `Chan: (%s)`,
+`Uniik: (%s, %s)`, `CoeffPriv: (%s, %s)` and `Mod:(Pf: (%s, %s))[VA]` in
+the binary, the latter used by both `0x4129e0` sites): every page of the
+sheet builds each channel with `0x4129e0` in a quick mode (helper byte set
+for pages 536–539 / 543), reading its own controls and hidden statics the
+page fills first — among them `0x48bff0(name)`, the name a channel of the
+batch will be appended under. Texts are therefore `Fn: (a, b)`, channel
+fields quoted unless a letter and alphanumerics, other fields as typed
+(an empty one stays empty), 3Io / 3Uo / 3Ion «Не учитывать» (and 3Io
+absent) → 0. Per page: 536 calc Ib → Ib 401 `Ib: (Ia, Ic, 0)`, I1 / I2
+800 / 801 naming uniq(Ib), no 3I0; else I1, I2, 3I0 = 403 / 404 / 402;
+U1, U2, 3U0 = 410 / 411 / 407 or U1, U2 = 408 / 409. 537 3I0 = 402 or 515
+`Chan: (…)`, 3U0 = 407, 517 `Uniik: (…)` or 516 `Chan: (…)`, S0 = 518
+`Mod:(Pf: (uniq 3I0, uniq 3U0))[VA]`. 538 Ib 401 when computed; phase
+voltages Uab / Ubc / Uca = 449 / 511 / 512 (`Ulf: (Ua, Ub)`, `(Ub, Uc)`,
+`(Uc, Ua)`), Z = `Mod:(Zl: (U, I1, I2, Iтр))` with U = uniq(Uab…) written
+into non-channel fields (never quoted); line voltages Uca = 450 and Zab /
+Zbc on the line channels. 543 3I0 = 402, Za–Zc = `Mod:(Zf: …)` /
+`Mod:(Zk: …)` with uniq(3I0); no calc-Ib. 539 the reduction and group
+methods are the page's radios as shown, applied to every arm; order:
+every arm's reductions (501–504), then every arm's turned currents
+(`Mod:(GrsPoslI?: (a, b, c, group, 0|1))` / `Mod:(GrsTriangleI?: (a, b,
+c, group))`), then each phase's `Mod:(GrsSumCur: (24 slots))`, then each
+phase's braking (523 `TormSubCur: (s1, s2, K)`, 524 `TormMaxCur`, 525
+`TormSumCur: (K, 24 slots)`), slots = uniq(arm names), unused 0; one phase
+is named «Ia».
+Ours wrote `Fn:("a","b")` everywhere, referenced same-batch channels by
+their plain names (with «Рассчитать Ib» on a record that has an «Ib», I1 /
+I2 / Z used the **measured** Ib instead of the computed «Ib_2»), wrote
+`GrsPosla:` / `GrsTrianglea:` — not functions of the language, so **group
+compensation failed** — and `GrsSumCur` without `Mod:`, interleaved the
+differential channels per arm, emitted Ib on the phase page and passed an
+empty field as 0. Now `quick.rs` builds the builder's texts (`c`, `num`,
+`call`, `uniq`) with the record's names passed in; the differential page
+takes the shown arm's methods. Tests `tests/quick.rs` (6, exact texts,
+uniq, group compensation evaluating).
+Residual: our page UI still keeps the reduction / group radios per arm
+(the original's are page-wide; we take the shown arm's); `0x48bff0`'s rule
+taken as "free → as is, else _2, _3…" (VIEWS_SPEC), not re-read; missing
+page controls' edge cases NOT DETERMINED.
+
 Next in L9 (HANDOFF 2026-10-23, night): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
 (lipo), each one flat archive). `main` = HEAD, 333 tests; CI green on 3 OSes
 through L9.69 at this handoff (check `gh run list` for the later runs).
-**Night session (L9.68–L9.72):** L9.68 paste / an ОМП run never mark the
+**Night session (L9.68–L9.73):** L9.68 paste / an ОМП run never mark the
 record modified (ours marked a run through its phase lanes); **L9.69 every
 diagram shows the values as displayed (k)** — a «P» record shown
 «Вторичные» is drawn in secondary units on the vector / circle /
@@ -2547,10 +2590,9 @@ drawn from their own samples at their own times with the paste marks; the
 digital base bar is N·25f from the plot left whatever the scroll; **L9.72
 the vector diagram as read** (0° up, counter-clockwise; labels inside the
 circle; legend row or values table at the bottom). New `window_dump`
-states: `paste`, `vecvalues`. A research subagent was reading which
-«Добавить…» builder forms (`0x4129e0`) quick analysis uses — our
-`quick.rs` formula texts are hand-written (same values, different editor
-text); if its report is not in L9.73, redo that read.
+states: `paste`, `vecvalues`. L9.73 quick analysis builds the builder's
+exact formula texts (fixes group compensation, which failed, and the
+computed-Ib references).
 **Earlier (2026-10-23, evening):** L9.58 copy with a property grid
 focused (XML only); L9.59 the comment under the pointer is sticky, prints
 and is drawn twice; L9.60 comment cursor codes (level body N–S), locked

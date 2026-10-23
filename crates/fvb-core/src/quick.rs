@@ -6,9 +6,12 @@
 //! and (Iдиф, Iторм) pairs for the differential diagram. The channels are then
 //! appended and evaluated like any computed channel.
 //!
-//! Formulas reference channels by quoted name. Like the original, a formula
-//! names the channels of the same batch by their plain names ("3I0"), even
-//! when appending gives the new channel a "_2" suffix.
+//! Every formula comes from the «Добавить…» builder (`0x4129e0`) in its
+//! quick mode (ledger L9.73): `Fn: (a, b)`, a channel name quoted unless it
+//! is a letter and alphanumerics, a numeric field passed as typed ("," →
+//! "."; empty stays empty), and a channel of the same batch named as it
+//! will be appended (`uniq`, `0x48bff0`: "3I0", or "3I0_2" when the record
+//! has one).
 
 /// What one tab produces.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -35,18 +38,25 @@ impl Generated {
     }
 }
 
-fn q(name: &str) -> String {
-    format!("\"{name}\"")
+/// A channel field's text (`0x412700` quoting).
+fn c(name: &str) -> String {
+    crate::addformula::arg(crate::addformula::id::IA, name)
 }
 
-/// A numeric edit field as the original passes it: "," becomes ".".
+/// A numeric field's text: digits, spaces, "." and "," with "," as "."; any
+/// other text as typed; an empty field stays empty.
 pub fn num(field: &str) -> String {
-    let t = field.trim().replace(',', ".");
-    if t.is_empty() {
-        "0".into()
-    } else {
-        t
-    }
+    crate::addformula::arg(crate::addformula::id::R0, field)
+}
+
+/// `Fn: (a, b, …)`.
+fn call(f: &str, args: &[String]) -> String {
+    format!("{f}: ({})", args.join(", "))
+}
+
+/// The name a channel of this batch will be appended under, as a field.
+fn uniq(name: &str, taken: &[String]) -> String {
+    c(&unique_name(name, taken))
 }
 
 /// Voltage inputs: phase voltages or line voltages.
@@ -65,41 +75,37 @@ pub struct Currents {
     pub calc_ib: bool,
 }
 
-impl Currents {
-    /// Emit "Ib" if computed; return the name to use for phase B.
-    fn ib(&self, g: &mut Generated) -> String {
-        if self.calc_ib {
-            g.add("Ib", format!("Ib:({},{},0)", q(&self.ia), q(&self.ic)));
-            "Ib".into()
-        } else {
-            self.ib.clone()
-        }
-    }
-}
-
-/// Симметричные составляющие (`0x48c2b0`).
-pub fn symmetric(i: Option<&Currents>, u: Option<&Voltages>) -> Generated {
+/// Симметричные составляющие (`0x48c2b0`): with «Рассчитать Ib» Ib =
+/// form 401 (3Io absent → 0) and I1 / I2 = forms 800 / 801 naming it,
+/// no 3I0; else I1, I2, 3I0 = 403, 404, 402. Phase voltages U1, U2, 3U0 =
+/// 410, 411, 407; line voltages U1, U2 = 408, 409.
+pub fn symmetric(i: Option<&Currents>, u: Option<&Voltages>, taken: &[String]) -> Generated {
     let mut g = Generated::default();
-    if let Some(c) = i {
-        let ib = c.ib(&mut g);
-        let args = format!("{},{},{}", q(&c.ia), q(&ib), q(&c.ic));
-        g.add("I1", format!("I1:({args})"));
-        g.add("I2", format!("I2:({args})"));
-        if !c.calc_ib {
-            g.add("3I0", format!("3I0:({args})"));
+    if let Some(i) = i {
+        let (ia, ic) = (c(&i.ia), c(&i.ic));
+        if i.calc_ib {
+            g.add("Ib", call("Ib", &[ia.clone(), ic.clone(), "0".into()]));
+            let ib = uniq("Ib", taken);
+            g.add("I1", call("I1", &[ia.clone(), ib.clone(), ic.clone()]));
+            g.add("I2", call("I2", &[ia, ib, ic]));
+        } else {
+            let args = [ia, c(&i.ib), ic];
+            g.add("I1", call("I1", &args));
+            g.add("I2", call("I2", &args));
+            g.add("3I0", call("3I0", &args));
         }
     }
     match u {
         Some(Voltages::Phase { ua, ub, uc }) => {
-            let args = format!("{},{},{}", q(ua), q(ub), q(uc));
-            g.add("U1", format!("U1f:({args})"));
-            g.add("U2", format!("U2f:({args})"));
-            g.add("3U0", format!("3U0:({args})"));
+            let args = [c(ua), c(ub), c(uc)];
+            g.add("U1", call("U1f", &args));
+            g.add("U2", call("U2f", &args));
+            g.add("3U0", call("3U0", &args));
         }
         Some(Voltages::Line { uab, ubc }) => {
-            let args = format!("{},{}", q(uab), q(ubc));
-            g.add("U1", format!("U1l:({args})"));
-            g.add("U2", format!("U2l:({args})"));
+            let args = [c(uab), c(ubc)];
+            g.add("U1", call("U1l", &args));
+            g.add("U2", call("U2l", &args));
         }
         None => {}
     }
@@ -121,18 +127,20 @@ pub enum ZeroVoltage {
     Measured(String),
 }
 
-/// Нулевая последовательность (`0x4887c0`).
-pub fn zero(i: Option<&ZeroCurrent>, u: Option<&ZeroVoltage>) -> Generated {
+/// Нулевая последовательность (`0x4887c0`): 3I0 = form 402 or 515
+/// `Chan: (…)`; 3U0 = 407, 517 `Uniik: (…)` or 516 `Chan: (…)`; with both,
+/// S0 = 518 `Mod:(Pf: (3I0, 3U0))[VA]` naming them as appended.
+pub fn zero(i: Option<&ZeroCurrent>, u: Option<&ZeroVoltage>, taken: &[String]) -> Generated {
     let mut g = Generated::default();
     match i {
-        Some(ZeroCurrent::Calculated { ia, ib, ic }) => g.add("3I0", format!("3I0:({},{},{})", q(ia), q(ib), q(ic))),
-        Some(ZeroCurrent::Measured(ch)) => g.add("3I0", format!("Chan:({})", q(ch))),
+        Some(ZeroCurrent::Calculated { ia, ib, ic }) => g.add("3I0", call("3I0", &[c(ia), c(ib), c(ic)])),
+        Some(ZeroCurrent::Measured(ch)) => g.add("3I0", call("Chan", &[c(ch)])),
         None => {}
     }
     match u {
-        Some(ZeroVoltage::FromPhases { ua, ub, uc }) => g.add("3U0", format!("3U0:({},{},{})", q(ua), q(ub), q(uc))),
-        Some(ZeroVoltage::FromUniUik { uni, uik }) => g.add("3U0", format!("Uniik:({},{})", q(uni), q(uik))),
-        Some(ZeroVoltage::Measured(ch)) => g.add("3U0", format!("Chan:({})", q(ch))),
+        Some(ZeroVoltage::FromPhases { ua, ub, uc }) => g.add("3U0", call("3U0", &[c(ua), c(ub), c(uc)])),
+        Some(ZeroVoltage::FromUniUik { uni, uik }) => g.add("3U0", call("Uniik", &[c(uni), c(uik)])),
+        Some(ZeroVoltage::Measured(ch)) => g.add("3U0", call("Chan", &[c(ch)])),
         None => {}
     }
     if i.is_some() {
@@ -143,8 +151,7 @@ pub fn zero(i: Option<&ZeroCurrent>, u: Option<&ZeroVoltage>) -> Generated {
         g.angle_ref = Some("3U0".into());
     }
     if i.is_some() && u.is_some() {
-        // Built from form 414 (`0x4129e0`): the unit is its `[VA]`.
-        g.add("S0", format!("Mod:(Pf: ({}, {}))[VA]", q("3I0"), q("3U0")));
+        g.add("S0", format!("Mod:(Pf: ({}, {}))[VA]", uniq("3I0", taken), uniq("3U0", taken)));
         g.circle.push("S0".into());
         g.circle_readout = Some(1);
     }
@@ -152,26 +159,37 @@ pub fn zero(i: Option<&ZeroCurrent>, u: Option<&ZeroVoltage>) -> Generated {
     g
 }
 
-/// Междуфазные сопротивления (`0x487640`).
-pub fn phase_phase(i: &Currents, u: &Voltages, itr: &str) -> Generated {
+/// Междуфазные сопротивления (`0x487640`): Ib = 401 when computed; phase
+/// voltages: Uab, Ubc, Uca = 449, 511, 512 and Z = 802 / 804, 803 / 513,
+/// 514 naming them as appended (never quoted: those fields are not channel
+/// fields); line voltages: Uca = 450 and Z = 806 / 805, 808 / 807, 514.
+pub fn phase_phase(i: &Currents, u: &Voltages, itr: &str, taken: &[String]) -> Generated {
     let mut g = Generated::default();
-    let ib = i.ib(&mut g);
-    let (uab, ubc, uca) = match u {
+    let (ia, ic) = (c(&i.ia), c(&i.ic));
+    let ib = if i.calc_ib {
+        g.add("Ib", call("Ib", &[ia.clone(), ic.clone(), "0".into()]));
+        uniq("Ib", taken)
+    } else {
+        c(&i.ib)
+    };
+    let raw = |n: &str| unique_name(n, taken);
+    let (uab, ubc) = match u {
         Voltages::Phase { ua, ub, uc } => {
-            g.add("Uab", format!("Ulf:({},{})", q(ua), q(ub)));
-            g.add("Ubc", format!("Ulf:({},{})", q(ub), q(uc)));
-            g.add("Uca", format!("Ulf:({},{})", q(uc), q(ua)));
-            ("Uab".to_string(), "Ubc".to_string(), "Uca".to_string())
+            g.add("Uab", call("Ulf", &[c(ua), c(ub)]));
+            g.add("Ubc", call("Ulf", &[c(ub), c(uc)]));
+            g.add("Uca", call("Ulf", &[c(uc), c(ua)]));
+            (raw("Uab"), raw("Ubc"))
         }
         Voltages::Line { uab, ubc } => {
-            g.add("Uca", format!("Ull:({},{})", q(uab), q(ubc)));
-            (uab.clone(), ubc.clone(), "Uca".to_string())
+            g.add("Uca", call("Ull", &[c(uab), c(ubc)]));
+            (c(uab), c(ubc))
         }
     };
     let itr = num(itr);
-    for (name, uu, i1, i2) in [("Zab", &uab, &i.ia, &ib), ("Zbc", &ubc, &ib, &i.ic), ("Zca", &uca, &i.ic, &i.ia)] {
-        g.add(name, format!("Mod:(Zl:({},{},{},{itr}))", q(uu), q(i1), q(i2)));
-    }
+    let zl = |a: String, b: String, d: String| format!("Mod:(Zl: ({a}, {b}, {d}, {itr}))");
+    g.add("Zab", zl(uab, ia.clone(), ib.clone()));
+    g.add("Zbc", zl(ubc, ib, ic.clone()));
+    g.add("Zca", zl(raw("Uca"), ic, ia));
     if matches!(u, Voltages::Phase { .. }) {
         g.circle = vec!["Zab".into(), "Zbc".into(), "Zca".into()];
     }
@@ -188,39 +206,31 @@ pub enum PhaseComp {
     Coefficients { k0: String, km: String, f0: String, fm: String },
 }
 
-/// Фазные сопротивления (`0x48a4c0`).
-pub fn phase_z(i: &Currents, u: [&str; 3], i0_parallel: &str, comp: &PhaseComp, itr: &str) -> Generated {
+/// Фазные сопротивления (`0x48a4c0`): 3I0 = 402, then Za, Zb, Zc = 519 /
+/// 544 / 545 `Mod:(Zf: (U, I, 3I0, 3Ion, R0, R1, Rm, X0, X1, Xm, Iтр))` or
+/// 546–548 `Mod:(Zk: (U, I, 3I0, 3Ion, K0, Km, Ф0, Фm, Iтр))`; 3Ion
+/// «Не учитывать» (empty here) → 0. The page has no «Рассчитать Ib».
+pub fn phase_z(i: &Currents, u: [&str; 3], i0_parallel: &str, comp: &PhaseComp, itr: &str, taken: &[String]) -> Generated {
     let mut g = Generated::default();
-    let ib = i.ib(&mut g);
-    g.add("3I0", format!("3I0:({},{},{})", q(&i.ia), q(&ib), q(&i.ic)));
-    let i0n = if i0_parallel.trim().is_empty() { "0".to_string() } else { q(i0_parallel) };
+    let ii = [c(&i.ia), c(&i.ib), c(&i.ic)];
+    g.add("3I0", call("3I0", &ii));
+    let i0 = uniq("3I0", taken);
+    let i0n = if i0_parallel.trim().is_empty() { "0".to_string() } else { c(i0_parallel) };
     let itr = num(itr);
-    for (name, uu, ii) in [("Za", u[0], &i.ia), ("Zb", u[1], &ib), ("Zc", u[2], &i.ic)] {
+    for (k, name) in ["Za", "Zb", "Zc"].into_iter().enumerate() {
+        let mut args = vec![c(u[k]), ii[k].clone(), i0.clone(), i0n.clone()];
         let f = match comp {
-            PhaseComp::PerUnit { r0, r1, rm, x0, x1, xm } => format!(
-                "Mod:(Zf:({},{},{},{i0n},{},{},{},{},{},{},{itr}))",
-                q(uu),
-                q(ii),
-                q("3I0"),
-                num(r0),
-                num(r1),
-                num(rm),
-                num(x0),
-                num(x1),
-                num(xm)
-            ),
-            PhaseComp::Coefficients { k0, km, f0, fm } => format!(
-                "Mod:(Zk:({},{},{},{i0n},{},{},{},{},{itr}))",
-                q(uu),
-                q(ii),
-                q("3I0"),
-                num(k0),
-                num(km),
-                num(f0),
-                num(fm)
-            ),
+            PhaseComp::PerUnit { r0, r1, rm, x0, x1, xm } => {
+                args.extend([r0, r1, rm, x0, x1, xm].map(|v| num(v)));
+                "Zf"
+            }
+            PhaseComp::Coefficients { k0, km, f0, fm } => {
+                args.extend([k0, km, f0, fm].map(|v| num(v)));
+                "Zk"
+            }
         };
-        g.add(name, f);
+        args.push(itr.clone());
+        g.add(name, format!("Mod:({})", call(f, &args)));
     }
     g.circle = vec!["Za".into(), "Zb".into(), "Zc".into()];
     g.circle_readout = Some(2);
@@ -236,12 +246,13 @@ pub enum Reduction {
     AmpPriv { ktt: String, inom: String },
 }
 
-/// Winding-group compensation (three-phase only).
+/// Winding-group compensation (three-phase only): the page's method; the
+/// group numbers are per arm.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GroupComp {
     None,
-    Posl { group: String, remove_i0: bool },
-    Triangle { group: String },
+    Posl,
+    Triangle,
 }
 
 /// Braking-current method.
@@ -254,72 +265,79 @@ pub enum Braking {
     Max,
 }
 
-/// One arm (плечо): its phase current channels and reduction.
+/// One arm (плечо): its phase current channels, the reduction
+/// coefficients (the method is the page's), its group number and «Удалить
+/// I0».
 #[derive(Debug, Clone, PartialEq)]
 pub struct Arm {
     pub currents: Vec<String>,
     pub reduction: Reduction,
-    pub group: GroupComp,
+    pub group: String,
+    pub remove_i0: bool,
 }
 
-/// Дифференциальные токи (`0x47ff60`): reduced arm currents, optional group
-/// compensation, then per phase the differential (vector sum, 24 arm slots)
-/// and braking current; pairs go to the differential diagram. The exact
-/// channel naming and the order of `CoeffTT`'s arguments are not determined.
-pub fn differential(phases: usize, arms: &[Arm], braking: &Braking) -> Generated {
+/// Дифференциальные токи (`0x47ff60`), in the original's order: every arm's
+/// reduced phase currents (forms 501–504, «Ia плечо k прив.»), then with
+/// three phases and a group method every arm's turned currents (505–507
+/// `Mod:(GrsPoslI?: …)` / 508, 520, 521 `Mod:(GrsTriangleI?: …)`,
+/// «Ia плечо k прив. пов.»), then per phase «Ia диф.» (522
+/// `Mod:(GrsSumCur: …)`), then per phase «Ia торм.» (523 / 524 / 525) over
+/// the 24 arm slots, unused ones 0. One phase is named «Ia».
+pub fn differential(phases: usize, arms: &[Arm], group: &GroupComp, braking: &Braking, taken: &[String]) -> Generated {
     let mut g = Generated::default();
-    let letters: Vec<&str> = if phases == 3 { vec!["a", "b", "c"] } else { vec![""] };
-    // reduced[arm][phase] = channel name to use downstream.
-    let mut reduced: Vec<Vec<String>> = Vec::new();
+    let letters: Vec<&str> = if phases == 3 { vec!["a", "b", "c"] } else { vec!["a"] };
+    let reduced = |k: usize, l: &str| format!("I{l} плечо {} прив.", k + 1);
+    let turned = |k: usize, l: &str| format!("I{l} плечо {} прив. пов.", k + 1);
     for (k, arm) in arms.iter().enumerate() {
-        let mut names = Vec::new();
-        for (p, letter) in letters.iter().enumerate() {
-            let src = arm.currents.get(p).cloned().unwrap_or_default();
-            let name = format!("I{letter} плечо {} прив.", k + 1);
-            let f = match &arm.reduction {
-                Reduction::Priv { k } => format!("CoeffPriv:({},{})", q(&src), num(k)),
-                Reduction::Tt { ktt, ktt_base } => format!("CoeffTT:({},{},{})", q(&src), num(ktt), num(ktt_base)),
-                Reduction::PowerPriv { ktt, snom, unom } => {
-                    format!("CoeffPowerPriv:({},{},{},{})", q(&src), num(ktt), num(snom), num(unom))
-                }
-                Reduction::AmpPriv { ktt, inom } => format!("CoeffAmpPriv:({},{},{})", q(&src), num(ktt), num(inom)),
+        for (p, l) in letters.iter().enumerate() {
+            let src = c(arm.currents.get(p).map_or("", String::as_str));
+            let (f, args) = match &arm.reduction {
+                Reduction::Priv { k } => ("CoeffPriv", vec![src, num(k)]),
+                Reduction::Tt { ktt, ktt_base } => ("CoeffTT", vec![src, num(ktt), num(ktt_base)]),
+                Reduction::PowerPriv { ktt, snom, unom } => ("CoeffPowerPriv", vec![src, num(ktt), num(snom), num(unom)]),
+                Reduction::AmpPriv { ktt, inom } => ("CoeffAmpPriv", vec![src, num(ktt), num(inom)]),
             };
-            g.add(&name, f);
-            names.push(name);
+            g.add(&reduced(k, l), call(f, &args));
         }
-        if phases == 3 && arm.group != GroupComp::None {
-            let args = format!("{},{},{}", q(&names[0]), q(&names[1]), q(&names[2]));
-            let mut turned = Vec::new();
-            for letter in &letters {
-                let name = format!("I{letter} плечо {} прив. пов.", k + 1);
-                let f = match &arm.group {
-                    GroupComp::Posl { group, remove_i0 } => {
-                        format!("GrsPosl{letter}:({args},{},{})", num(group), if *remove_i0 { 0 } else { 1 })
-                    }
-                    GroupComp::Triangle { group } => format!("GrsTriangle{letter}:({args},{})", num(group)),
-                    GroupComp::None => unreachable!(),
-                };
-                g.add(&name, f);
-                turned.push(name);
-            }
-            names = turned;
-        }
-        reduced.push(names);
     }
-    for (p, letter) in letters.iter().enumerate() {
-        let slots: Vec<String> = (0..24)
-            .map(|k| reduced.get(k).map(|r| q(&r[p])).unwrap_or_else(|| "0".into()))
-            .collect();
-        let dif = format!("I{letter} диф.");
-        let tor = format!("I{letter} торм.");
-        g.add(&dif, format!("GrsSumCur:({})", slots.join(",")));
+    let grouped = phases == 3 && *group != GroupComp::None;
+    if grouped {
+        for (k, arm) in arms.iter().enumerate() {
+            let three = ["a", "b", "c"].map(|l| uniq(&reduced(k, l), taken));
+            for l in ["a", "b", "c"] {
+                let mut args = three.to_vec();
+                args.push(num(&arm.group));
+                let f = if *group == GroupComp::Posl {
+                    args.push(if arm.remove_i0 { "0" } else { "1" }.into());
+                    call(&format!("GrsPoslI{l}"), &args)
+                } else {
+                    call(&format!("GrsTriangleI{l}"), &args)
+                };
+                g.add(&turned(k, l), format!("Mod:({f})"));
+            }
+        }
+    }
+    let slots = |l: &str| -> Vec<String> {
+        (0..24)
+            .map(|k| if k < arms.len() { uniq(&if grouped { turned(k, l) } else { reduced(k, l) }, taken) } else { "0".into() })
+            .collect()
+    };
+    for l in &letters {
+        g.add(&format!("I{l} диф."), format!("Mod:({})", call("GrsSumCur", &slots(l))));
+    }
+    for l in &letters {
+        let s = slots(l);
         let f = match braking {
-            Braking::Sum { k } => format!("TormSumCur:({},{})", num(k), slots.join(",")),
-            Braking::Sub { k } => format!("TormSubCur:({},{},{})", slots[0], slots[1], num(k)),
-            Braking::Max => format!("TormMaxCur:({})", slots.join(",")),
+            Braking::Sub { k } => call("TormSubCur", &[s[0].clone(), s[1].clone(), num(k)]),
+            Braking::Max => call("TormMaxCur", &s),
+            Braking::Sum { k } => {
+                let mut args = vec![num(k)];
+                args.extend(s);
+                call("TormSumCur", &args)
+            }
         };
-        g.add(&tor, f);
-        g.dif_pairs.push((dif, tor));
+        g.add(&format!("I{l} торм."), f);
+        g.dif_pairs.push((format!("I{l} диф."), format!("I{l} торм.")));
     }
     g
 }

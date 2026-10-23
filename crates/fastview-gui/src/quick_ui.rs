@@ -248,12 +248,13 @@ impl QuickForms {
         }
     }
 
-    /// The active tab's channels.
-    pub fn generate(&self, tab: AnalysisTab) -> quick::Generated {
+    /// The active tab's channels; `taken` = the record's channel names (the
+    /// batch names its own channels as they will be appended).
+    pub fn generate(&self, tab: AnalysisTab, taken: &[String]) -> quick::Generated {
         let i = (!self.currents_off).then(|| self.currents());
         let u = (!self.voltages_off).then(|| self.voltages());
         match tab {
-            AnalysisTab::Symmetric => quick::symmetric(i.as_ref(), u.as_ref()),
+            AnalysisTab::Symmetric => quick::symmetric(i.as_ref(), u.as_ref(), taken),
             AnalysisTab::Zero => {
                 let zi = match self.zero_i {
                     _ if self.zero_i_off => None,
@@ -266,9 +267,9 @@ impl QuickForms {
                     3 => Some(ZeroVoltage::Measured(self.u3o.clone())),
                     _ => Some(ZeroVoltage::FromPhases { ua: self.ua.clone(), ub: self.ub.clone(), uc: self.uc.clone() }),
                 };
-                quick::zero(zi.as_ref(), zu.as_ref())
+                quick::zero(zi.as_ref(), zu.as_ref(), taken)
             }
-            AnalysisTab::PhasePhase => quick::phase_phase(&self.currents(), &self.voltages(), &self.itr),
+            AnalysisTab::PhasePhase => quick::phase_phase(&self.currents(), &self.voltages(), &self.itr, taken),
             AnalysisTab::Phase => {
                 let comp = if self.per_unit {
                     PhaseComp::PerUnit {
@@ -283,34 +284,39 @@ impl QuickForms {
                     PhaseComp::Coefficients { k0: self.k0.clone(), km: self.km.clone(), f0: self.f0.clone(), fm: self.fm.clone() }
                 };
                 let i0n = if self.parallel_used() { self.i0_parallel.as_str() } else { "" };
-                quick::phase_z(&self.currents(), [&self.ua, &self.ub, &self.uc], i0n, &comp, &self.itr)
+                quick::phase_z(&self.currents(), [&self.ua, &self.ub, &self.uc], i0n, &comp, &self.itr, taken)
             }
             AnalysisTab::Differential => {
+                // The methods are the page's radios as now shown (the
+                // current arm's), applied to every arm (`0x47ff60`).
+                let shown = &self.arms[self.cur_arm.min(self.arms.len().saturating_sub(1))];
                 let arms: Vec<Arm> = self
                     .arms
                     .iter()
                     .map(|a| Arm {
                         currents: a.currents[..self.dif_phases].to_vec(),
-                        reduction: match a.reduction {
+                        reduction: match shown.reduction {
                             0 => Reduction::Priv { k: a.kpriv.clone() },
                             1 => Reduction::Tt { ktt: a.tt_ktt.clone(), ktt_base: a.tt_base.clone() },
                             2 => Reduction::PowerPriv { ktt: a.pw_ktt.clone(), snom: a.snom.clone(), unom: a.unom.clone() },
                             _ => Reduction::AmpPriv { ktt: a.amp_ktt.clone(), inom: a.inom.clone() },
                         },
-                        group: match a.group {
-                            _ if self.dif_phases == 1 => GroupComp::None,
-                            1 => GroupComp::Posl { group: a.group_n.clone(), remove_i0: a.remove_i0 },
-                            2 => GroupComp::Triangle { group: a.group_n.clone() },
-                            _ => GroupComp::None,
-                        },
+                        group: a.group_n.clone(),
+                        remove_i0: a.remove_i0,
                     })
                     .collect();
+                let group = match shown.group {
+                    _ if self.dif_phases == 1 => GroupComp::None,
+                    1 => GroupComp::Posl,
+                    2 => GroupComp::Triangle,
+                    _ => GroupComp::None,
+                };
                 let braking = match self.braking {
                     1 => Braking::Sub { k: self.k_torm.clone() },
                     2 => Braking::Max,
                     _ => Braking::Sum { k: self.k_torm.clone() },
                 };
-                quick::differential(self.dif_phases, &arms, &braking)
+                quick::differential(self.dif_phases, &arms, &group, &braking, taken)
             }
             AnalysisTab::Formula => quick::Generated::default(),
         }
@@ -466,7 +472,8 @@ impl App {
     /// every created page saves and the sheet closes.
     pub fn quick_calc(&mut self) {
         if let Some(i) = page_index(self.analysis_tab) {
-            let g = self.quick[i].generate(self.analysis_tab);
+            let taken: Vec<String> = self.active_doc().map(|d| d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect()).unwrap_or_default();
+            let g = self.quick[i].generate(self.analysis_tab, &taken);
             self.apply_quick(&g);
         } else {
             self.fp_kill_active();
