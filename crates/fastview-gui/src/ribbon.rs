@@ -253,15 +253,47 @@ impl App {
                     // Never wrap a label: a group that does not fit is
                     // collapsed (below), not squeezed.
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                    let titles: &[&str] = match self.tab {
+                    // MFC's reduction (L9.91): every panel's layouts measured
+                    // in an invisible pass, then the category plan.
+                    let groups: &[(&str, usize, bool)] = match self.tab {
                         RibbonTab::Home => &HOME_GROUPS,
                         RibbonTab::Omp => &OMP_GROUPS,
                     };
-                    let widths: Vec<f32> = titles.iter().map(|t| ui.data(|d| d.get_temp::<f32>(group_width_id(t))).unwrap_or(0.0)).collect();
-                    let plan = collapse_plan(&widths, ui.available_width(), COLLAPSED_W);
+                    let avail = ui.available_width();
+                    let most = groups.iter().map(|g| g.1).max().unwrap_or(1);
+                    // Once per tab: the layouts' widths do not change.
+                    let measured = groups.iter().all(|&(t, n, _)| (0..n).all(|k| ui.data(|d| d.get_temp::<f32>(group_width_id(t, k)).is_some())));
+                    for step in (0..most).filter(|_| !measured) {
+                        ui.data_mut(|d| d.insert_temp(measure_id(), step));
+                        let far = egui::Rect::from_min_size(egui::pos2(-30000.0, 0.0), egui::vec2(10000.0, 200.0));
+                        let mut child = ui.new_child(egui::UiBuilder::new().id_salt(("fv_ribbon_measure", step)).max_rect(far).layout(egui::Layout::left_to_right(egui::Align::TOP)).invisible());
+                        child.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                        let mut sink = Vec::new();
+                        match self.tab {
+                            RibbonTab::Home => self.ribbon_home(&mut child, &mut sink),
+                            RibbonTab::Omp => self.ribbon_omp(&mut child, &mut sink),
+                        }
+                    }
+                    ui.data_mut(|d| d.remove::<usize>(measure_id()));
+                    let widths: Vec<Vec<f32>> = groups
+                        .iter()
+                        .map(|&(t, n, single)| {
+                            let mut v: Vec<f32> = (0..n).map(|k| ui.data(|d| d.get_temp::<f32>(group_width_id(t, k))).unwrap_or(0.0)).collect();
+                            let cw = collapsed_width(ui, t);
+                            // No collapse step when the panel is no wider
+                            // than its button, or a single element under
+                            // 1.5 × it (`RecalcWidths` `0x10125189`).
+                            if !(v[0] <= cw || (single && v[0] <= 1.5 * cw)) {
+                                v.push(cw);
+                            }
+                            v
+                        })
+                        .collect();
+                    let plan = reduction_plan(&widths, avail);
                     ui.data_mut(|d| {
-                        for (t, c) in titles.iter().zip(&plan) {
-                            d.insert_temp(group_collapsed_id(t), *c);
+                        for ((t, n, _), (step, w)) in groups.iter().zip(plan.iter().zip(&widths)) {
+                            // The collapsed layout is index n.
+                            d.insert_temp(group_step_id(t), if *step >= *n && w.len() > *n { *n } else { (*step).min(n - 1) });
                         }
                     });
                     ui.horizontal_top(|ui| match self.tab {
@@ -280,7 +312,8 @@ impl App {
     fn ribbon_home(&mut self, ui: &mut egui::Ui, cmds: &mut Vec<Command>) {
         let p = self.skin.palette();
         // Объединение
-        ribbon_group(ui, p, "Объединение", |ui| {
+        // Steps (`Repos` `0x101227d5`): the small column goes icon-only.
+        ribbon_group(ui, p, "Объединение", 2, |ui, step| {
             // 57637 needs the clipboard and no pending paste; 57634 a selected
             // file channel; 57643 / 57644 the undo / redo counts.
             let can_paste = self.clip.available() && !self.active_doc().is_some_and(crate::omp_ui::has_pending_paste);
@@ -295,28 +328,44 @@ impl App {
                     (Icon::Undo, "Отмена", undo, Command::Undo),
                     (Icon::Redo, "Возврат", redo, Command::Redo),
                 ] {
-                    if ui.add_enabled_ui(on, |ui| small_button(ui, p, icon, label)).inner.clicked() {
+                    if ui.add_enabled_ui(on, |ui| small_button_mode(ui, p, icon, label, false, step >= 1)).inner.clicked() {
                         cmds.push(cmd);
                     }
                 }
             });
         });
         // Диаграммы
-        ribbon_group(ui, p, "Диаграммы", |ui| {
+        // Steps: the three right large buttons become small with text,
+        // then icon-only.
+        ribbon_group(ui, p, "Диаграммы", 3, |ui, step| {
             // 32811 / 32809 / 32808 / 140 toggle the panes; checked while shown.
-            for (icon, label, pane) in [
+            let buttons = [
                 (Icon::Freq, "Частотная", Pane::Frequency),
                 (Icon::Vector, "Векторная", Pane::Vector),
                 (Icon::Circle, "Круговая", Pane::Circle),
                 (Icon::Diff, "Диффе-\nренциальная", Pane::Differential),
-            ] {
+            ];
+            for (k, (icon, label, pane)) in buttons.into_iter().enumerate() {
+                if k > 0 && step > 0 {
+                    continue;
+                }
                 if big_button_sel(ui, p, icon, label, self.panes.visible(pane)).clicked() {
                     cmds.push(Command::TogglePane(pane));
                 }
             }
+            if step > 0 {
+                ui.vertical(|ui| {
+                    for (icon, label, pane) in buttons.into_iter().skip(1) {
+                        let label = label.replace("-\n", "");
+                        if small_button_mode(ui, p, icon, &label, self.panes.visible(pane), step >= 2).clicked() {
+                            cmds.push(Command::TogglePane(pane));
+                        }
+                    }
+                });
+            }
         });
         // Видимость
-        ribbon_group(ui, p, "Видимость", |ui| {
+        ribbon_group(ui, p, "Видимость", 1, |ui, _| {
             // 32862: DIALOG 463 «Отображение каналов».
             if big_button(ui, p, Icon::Channels, "Каналы").clicked() {
                 cmds.push(Command::ChannelsDialog);
@@ -375,7 +424,8 @@ impl App {
             }
         });
         // Вычисления
-        ribbon_group(ui, p, "Вычисления", |ui| {
+        // Steps: the right small column icon-only, then every small one.
+        ribbon_group(ui, p, "Вычисления", 3, |ui, step| {
             // 32817 / 32818 / 32819: stats rows on every analog channel,
             // checked when all channels show the row; 32820..32822 act on the
             // selected channels, checked only when every selected channel is
@@ -411,7 +461,7 @@ impl App {
                 let st = |f| self.active_doc().map(|d| d.flag_state(f)).unwrap_or(crate::chansel::ItemState { enabled: false, checked: false });
                 for (icon, label, f) in [(Icon::Invert, "Инвертировать", ChanFlag::Invert), (Icon::RemoveDc, "Удал. постоянную", ChanFlag::RemoveDc)] {
                     let s = st(f);
-                    if ui.add_enabled_ui(s.enabled, |ui| small_button_sel(ui, p, icon, label, s.checked)).inner.clicked() {
+                    if ui.add_enabled_ui(s.enabled, |ui| small_button_mode(ui, p, icon, label, s.checked, step >= 2)).inner.clicked() {
                         cmds.push(Command::ToggleFlag(f));
                     }
                 }
@@ -419,14 +469,14 @@ impl App {
             ui.vertical(|ui| {
                 // 32866 «Коэффициенты»; 32867 / 32868 a radio pair checked
                 // from channel 0 (CMDUI `0x42ffb0`).
-                if small_button(ui, p, Icon::Params, "Коэффициенты").clicked() {
+                if small_button_mode(ui, p, Icon::Params, "Коэффициенты", false, step >= 1).clicked() {
                     cmds.push(Command::Coefficients);
                 }
                 let prim = self.active_doc().map(|d| d.primary_values());
-                if small_button_sel(ui, p, Icon::Primary, "Первичные знач.", prim == Some(true)).clicked() {
+                if small_button_mode(ui, p, Icon::Primary, "Первичные знач.", prim == Some(true), step >= 1).clicked() {
                     cmds.push(Command::SetPrimaryValues(true));
                 }
-                if small_button_sel(ui, p, Icon::Primary, "Вторичные знач.", prim == Some(false)).clicked() {
+                if small_button_mode(ui, p, Icon::Primary, "Вторичные знач.", prim == Some(false), step >= 1).clicked() {
                     cmds.push(Command::SetPrimaryValues(false));
                 }
             });
@@ -437,7 +487,7 @@ impl App {
         });
         // Осциллограмма
         // The unnamed panel (title " ", «Информация» in the help).
-        ribbon_group(ui, p, " ", |ui| {
+        ribbon_group(ui, p, " ", 1, |ui, _| {
             // 142: toggles the parameters bar, checked while it is shown.
             if big_button_sel(ui, p, Icon::Wave, "Осцилло-\nграмма", self.dlg.param_bar)
                 .on_hover_text("Показать или скрыть панель параметров осциллограммы")
@@ -465,13 +515,13 @@ impl App {
                 fire = Some(c);
             }
         };
-        ribbon_group(ui, p, "Печать", |ui| button(ui, Icon::Print, "Печать", P::Print));
-        ribbon_group(ui, p, "Масштаб", |ui| {
+        ribbon_group(ui, p, "Печать", 1, |ui, _| button(ui, Icon::Print, "Печать", P::Print));
+        ribbon_group(ui, p, "Масштаб", 1, |ui, _| {
             button(ui, Icon::ZoomIn, "Увеличить", P::ZoomIn);
             button(ui, Icon::ZoomOut, "Уменьшить", P::ZoomOut);
             button(ui, Icon::Pages, numpage, P::NumPage);
         });
-        ribbon_group(ui, p, "Просмотр", |ui| {
+        ribbon_group(ui, p, "Просмотр", 1, |ui, _| {
             button(ui, Icon::NextPage, "Следующая страница", P::Next);
             button(ui, Icon::PrevPage, "Предыдущая страница", P::Prev);
             group_separator(ui, p);
@@ -492,7 +542,7 @@ impl App {
         let has_doc = doc.is_some();
         let can_run = doc.is_some_and(|d| !crate::omp_ui::has_pending_paste(d));
         let shown = doc.is_some_and(|d| d.omp.shown);
-        ribbon_group(ui, p, "ОМП", |ui| {
+        ribbon_group(ui, p, "ОМП", 1, |ui, _| {
             ui.add_enabled_ui(has_doc, |ui| {
                 if big_button(ui, p, Icon::Params, "Параметры").on_hover_text("Параметры определения места повреждения").clicked() {
                     cmds.push(Command::OmpParams);
@@ -578,42 +628,60 @@ fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, active_bg: Color32, 
 
 /// A ribbon group: content row/area + centered caption + right divider.
 /// The panels of each category, left to right.
-const HOME_GROUPS: [&str; 5] = ["Объединение", "Диаграммы", "Видимость", "Вычисления", " "];
-const OMP_GROUPS: [&str; 1] = ["ОМП"];
-/// Width a collapsed panel takes (its button, divider and gap).
-const COLLAPSED_W: f32 = 82.0;
-
-fn group_width_id(title: &str) -> egui::Id {
-    egui::Id::new(("fv_ribbon_group_w", title))
+/// Each panel: title, its layouts before collapsing, a single element.
+const HOME_GROUPS: [(&str, usize, bool); 5] = [("Объединение", 2, false), ("Диаграммы", 3, false), ("Видимость", 1, false), ("Вычисления", 3, false), (" ", 1, true)];
+const OMP_GROUPS: [(&str, usize, bool); 1] = [("ОМП", 1, false)];
+fn group_width_id(title: &str, step: usize) -> egui::Id {
+    egui::Id::new(("fv_ribbon_group_w", title, step))
 }
 
-fn group_collapsed_id(title: &str) -> egui::Id {
-    egui::Id::new(("fv_ribbon_group_collapsed", title))
+fn group_step_id(title: &str) -> egui::Id {
+    egui::Id::new(("fv_ribbon_group_step", title))
 }
 
-/// Which panels collapse to a single button so the category fits `avail`
-/// (MFC ribbon: panels collapse from the right). A width of 0 = not measured
-/// yet (drawn expanded once to measure it).
-pub fn collapse_plan(widths: &[f32], avail: f32, collapsed_w: f32) -> Vec<bool> {
-    let mut plan = vec![false; widths.len()];
-    let mut total: f32 = widths.iter().sum();
-    for i in (0..widths.len()).rev() {
-        if total <= avail {
-            break;
-        }
-        if widths[i] > collapsed_w {
-            plan[i] = true;
-            total += collapsed_w - widths[i];
-        }
+/// While set, panels draw this layout step and record their widths.
+fn measure_id() -> egui::Id {
+    egui::Id::new("fv_ribbon_measure")
+}
+
+/// A collapsed panel's button width: its title's (INFERRED: MFC's own
+/// button sizes to its text and image) plus the divider.
+fn collapsed_width(ui: &egui::Ui, title: &str) -> f32 {
+    let w = ui.fonts(|f| f.layout_no_wrap(title.to_owned(), egui::FontId::proportional(11.0), Color32::BLACK).size().x);
+    (w + 16.0).max(48.0) + 6.0
+}
+
+/// The category's reduction (`CMFCRibbonCategory::RecalcLayout`
+/// `0x10106b37`): `widths[i]` are panel i's layouts, its collapsed button
+/// last when it can collapse. Every panel starts at its first layout; when
+/// even all the last layouts do not fit, all take them at once; otherwise,
+/// while the panels overflow, the one with the most steps left takes one
+/// (ties: the rightmost). Returns each panel's layout index.
+pub fn reduction_plan(widths: &[Vec<f32>], avail: f32) -> Vec<usize> {
+    let last = |w: &Vec<f32>| w.len().saturating_sub(1);
+    let total = |plan: &[usize]| 2.0 + widths.iter().zip(plan).map(|(w, &k)| w.get(k).copied().unwrap_or(0.0) + 2.0).sum::<f32>();
+    let mut plan = vec![0; widths.len()];
+    if avail <= 2.0 + widths.iter().map(|w| w.last().copied().unwrap_or(0.0) + 2.0).sum::<f32>() {
+        return widths.iter().map(last).collect();
+    }
+    while total(&plan) > avail {
+        let left = |i: usize| last(&widths[i]) - plan[i];
+        let Some(i) = (0..widths.len()).filter(|&i| left(i) > 0).max_by_key(|&i| (left(i), i)) else { break };
+        plan[i] += 1;
     }
     plan
 }
 
-fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, content: impl FnOnce(&mut egui::Ui) -> R) {
-    let collapsed = ui.data(|d| d.get_temp::<bool>(group_collapsed_id(title))).unwrap_or(false);
-    if collapsed {
+/// A panel with `layouts` reduction steps; `content` draws step k.
+fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, layouts: usize, content: impl FnOnce(&mut egui::Ui, usize) -> R) {
+    let measuring = ui.data(|d| d.get_temp::<usize>(measure_id()));
+    let step = match measuring {
+        Some(k) => k.min(layouts - 1),
+        None => ui.data(|d| d.get_temp::<usize>(group_step_id(title))).unwrap_or(0),
+    };
+    if step >= layouts {
         // One button with the panel's name; the panel opens below it.
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(COLLAPSED_W - 12.0, 84.0), egui::Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(collapsed_width(ui, title) - 12.0, 84.0), egui::Sense::click());
         let painter = ui.painter();
         if resp.hovered() {
             painter.rect(rect, 3.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
@@ -627,7 +695,7 @@ fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, con
         egui::popup_below_widget(ui, popup, &resp, egui::PopupCloseBehavior::CloseOnClick, |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             ui.horizontal_top(|ui| {
-                content(ui);
+                content(ui, 0);
             });
         });
         let r = ui.min_rect();
@@ -639,9 +707,11 @@ fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, con
         return;
     }
     let start = ui.cursor().left();
-    ribbon_group_expanded(ui, p, title, content);
+    ribbon_group_expanded(ui, p, title, |ui| content(ui, step));
     let w = ui.cursor().left() - start + ui.spacing().item_spacing.x;
-    ui.data_mut(|d| d.insert_temp(group_width_id(title), w));
+    if measuring.is_some() {
+        ui.data_mut(|d| d.insert_temp(group_width_id(title, step), w));
+    }
 }
 
 fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, content: impl FnOnce(&mut egui::Ui) -> R) {
@@ -734,14 +804,14 @@ fn sub_entry(ui: &mut egui::Ui, label: &str, desc: &str, enabled: bool) -> egui:
     resp
 }
 
-fn small_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str) -> egui::Response {
-    small_button_sel(ui, p, icon, label, false)
-}
-
-fn small_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str, selected: bool) -> egui::Response {
+/// A small button with its text, or icon-only (a reduced panel; the text
+/// becomes the tooltip).
+fn small_button_mode(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str, selected: bool, icon_only: bool) -> egui::Response {
     let font = egui::FontId::proportional(11.0);
     let text_w = ui.fonts(|f| f.layout_no_wrap(label.to_owned(), font.clone(), p.text).size().x);
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2((22.0 + text_w + 6.0).max(90.0), 19.0), egui::Sense::click());
+    let w = if icon_only { 22.0 } else { (22.0 + text_w + 6.0).max(90.0) };
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 19.0), egui::Sense::click());
+    let resp = if icon_only { resp.on_hover_text(label) } else { resp };
     let painter = &plain_painter(ui);
     let (ink, accent) = inks(ui, p);
     let ink = if selected && ui.is_enabled() { CHECKED_INK } else { ink };
@@ -752,7 +822,9 @@ fn small_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, lab
     }
     let box_ = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.top() + 2.5), egui::vec2(14.0, 14.0));
     icons::paint(painter, box_, icon, accent);
-    painter.text(egui::pos2(rect.left() + 22.0, rect.center().y), egui::Align2::LEFT_CENTER, label, font, ink);
+    if !icon_only {
+        painter.text(egui::pos2(rect.left() + 22.0, rect.center().y), egui::Align2::LEFT_CENTER, label, font, ink);
+    }
     resp
 }
 
@@ -1067,14 +1139,17 @@ mod tests {
     }
 
     #[test]
-    fn panels_collapse_from_the_right_until_the_category_fits() {
-        let w = [190.0, 270.0, 300.0, 400.0, 80.0];
-        assert_eq!(collapse_plan(&w, 1300.0, 82.0), vec![false; 5]);
-        // 1240 > 1000: the last panel is no wider than its button, so the
-        // next one in collapses (−318), then fits.
-        assert_eq!(collapse_plan(&w, 1000.0, 82.0), vec![false, false, false, true, false]);
-        assert_eq!(collapse_plan(&w, 600.0, 82.0), vec![false, true, true, true, false]);
-        // Unmeasured panels (0) never collapse.
-        assert_eq!(collapse_plan(&[0.0, 0.0], 10.0, 82.0), vec![false, false]);
+    fn panels_reduce_by_most_steps_left_rightmost_first() {
+        // Layout widths per panel, the collapsed button last.
+        let w = vec![vec![190.0, 150.0, 60.0], vec![270.0, 200.0, 150.0, 60.0], vec![300.0, 60.0], vec![80.0]];
+        let full: f32 = 2.0 + [190.0, 270.0, 300.0, 80.0].iter().map(|x| x + 2.0).sum::<f32>();
+        assert_eq!(reduction_plan(&w, full), vec![0, 0, 0, 0], "fits");
+        // One step short: the panel with the most steps left (1) reduces.
+        assert_eq!(reduction_plan(&w, full - 10.0), vec![0, 1, 0, 0]);
+        // Then 0 and 1 tie at two steps left: the rightmost (1) again.
+        assert_eq!(reduction_plan(&w, full - 80.0), vec![0, 2, 0, 0]);
+        assert_eq!(reduction_plan(&w, full - 150.0), vec![1, 2, 0, 0]);
+        // Below every last layout: all at once.
+        assert_eq!(reduction_plan(&w, 200.0), vec![2, 3, 1, 0]);
     }
 }

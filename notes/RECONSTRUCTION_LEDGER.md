@@ -3007,6 +3007,46 @@ box (ours a tooltip-like box), «A» activates nothing (our Помощь is
 disabled).
 
 
+### L9.91 — Ribbon panels reduce in MFC's steps  ·  🟡
+Read (subagent report on mfc120u): `CMFCRibbonCategory::RecalcLayout`
+(`0x10106b37`) resets every panel to its first layout when the width
+changes; when even the sum of 2 + (collapsed width + 2) does not fit, all
+panels collapse at once; otherwise, while the panels overflow, the panel
+with the most steps left takes one step (ties: the rightmost); FastView
+sets no collapse order; still overflowing, 50 px scroll arrows. A panel's
+layouts (`RecalcWidths` `0x10125189`, `Repos` `0x101227d5`): galleries
+shrink; from the right the first run of min(3, n) large elements goes to
+small-with-text; three small-with-text in one column with a small image go
+icon-only; a large element joins a short small column to its right; every
+remaining small-with-text goes icon-only; last, the collapsed button — no
+collapse step when the first width is at most the collapsed button's, or
+1.5 × it with a single element. Applied to «Главная» (INFERRED from the
+elements, widths ours): Объединение full → Вставить + three icons →
+collapsed; Диаграммы four large → Частотная + three small → three icons →
+collapsed; Видимость full → collapsed; Вычисления full → its right small
+column icon-only → all icon-only → collapsed; " " (one button) usually no
+collapse.
+Ours collapsed whole panels from the right at a fixed 82 px. Now
+`ribbon_group` takes its layout count and draws the step, an invisible
+measuring pass (once per tab) records every layout's width,
+`reduction_plan` is the category rule, `small_button_mode` the icon-only
+small button, the collapsed button sized to its title. Tests
+`panels_reduce_by_most_steps_left_rightmost_first`,
+`narrow_ribbon_collapses_panels_and_keeps_its_height` (the order).
+Residual: the layouts come from the Repos rules applied by hand, not run
+generically; the collapsed button's width is ours (title + 16, ≥ 48); no
+scroll arrows; the «ОМП» / preview panels have one layout.
+
+(L9.64 residual resolved by the same report: FastView uses the stock
+`CMDIChildWndEx`, whose slot `+0x1f0` returns FALSE (`0x1005eafa`) and
+`+0x1ec` TRUE (`0x1005eb63`) — every window listed and savable, as ours.
+The arrangement buttons: Каскадом / Горизонтально / Вертикально minimise
+every unselected child, restore the selected ones and send WM_MDICASCADE /
+WM_MDITILE (MDITILE_HORIZONTAL / VERTICAL); Свернуть minimises the
+selected ones; under MDI tabs their visible effect is NOT DETERMINED, ours
+still does nothing.)
+
+
 Next in L9 (HANDOFF 2026-10-23, evening 2): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -3055,8 +3095,8 @@ strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
 L9.22 / L9.84 print residuals (CUPS hardware margins, the preview's
 paper; the logo bitmap stays out — it is the original's asset); L9.89's kept levels drawn snapped on digital lanes (`0x42b640` not read);
-L9.27 MFC's intermediate ribbon reductions; L9.64's slot +0x1f0
-and the MDI arrangements; pane re-docking (egui limit). Good recurring
+L9.91's generic Repos (layouts by hand) and the ribbon scroll arrows; L9.64's
+MDI arrangements under tabs; pane re-docking (egui limit). Good recurring
 pass: render the user's real records (`~/Downloads/DOC_1999.cfg`,
 `BINARY.cfg`) after big changes.
 (Done in this session: L9.76–L9.82, see the summary above; L9.82 the plane legends as read.)

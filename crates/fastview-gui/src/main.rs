@@ -647,7 +647,7 @@ mod window_tests {
     }
 
     /// A narrow window collapses ribbon panels from the right instead of
-    /// wrapping their labels; the ribbon keeps its height and a collapsed
+    /// wrapping their labels (MFC's reduction steps, L9.91); the ribbon keeps its height and a collapsed
     /// panel opens below its button.
     #[test]
     fn narrow_ribbon_collapses_panels_and_keeps_its_height() {
@@ -656,17 +656,22 @@ mod window_tests {
             let ctx = egui::Context::default();
             let mut app = demo(&[]);
             frames(&mut app, &ctx, Vec2::new(w, 860.0), vec![vec![]; 3]);
-            let collapsed: Vec<bool> = ["Объединение", "Диаграммы", "Видимость", "Вычисления", " "]
+            let collapsed: Vec<usize> = ["Объединение", "Диаграммы", "Видимость", "Вычисления", " "]
                 .iter()
-                .map(|t| ctx.data(|d| d.get_temp::<bool>(egui::Id::new(("fv_ribbon_group_collapsed", *t)))).unwrap_or(false))
+                .map(|t| ctx.data(|d| d.get_temp::<usize>(egui::Id::new(("fv_ribbon_group_step", *t)))).unwrap_or(0))
                 .collect();
             (PanelState::load(&ctx, egui::Id::new("top")).unwrap().rect.height(), collapsed, ctx, app)
         };
         let (h_wide, c_wide, ..) = height(1320.0);
-        assert_eq!(c_wide, vec![false; 5], "everything fits at the default size");
+        assert_eq!(c_wide, vec![0; 5], "everything fits at the default size");
         let (h_narrow, c_narrow, ctx, mut app) = height(700.0);
         assert!((h_narrow - h_wide).abs() < 1.0, "ribbon height {h_narrow} vs {h_wide}");
-        assert!(c_narrow[3] && !c_narrow[0], "collapsed from the right: {c_narrow:?}");
+        // MFC's order (L9.91): Вычисления and Диаграммы step through their
+        // layouts first, «Вычисления» collapses (step 3), the single-button
+        // " " panel never does.
+        assert!(c_narrow[3] == 3 && c_narrow[1] > 0 && c_narrow[4] == 0, "steps: {c_narrow:?}");
+        let (.., c_1200, _, _) = height(1200.0);
+        assert_eq!(c_1200, vec![0, 0, 0, 1, 0], "first step: the panel with the most steps left, rightmost");
         // «Вычисления»'s button opens the panel as a popup.
         let popup = egui::Id::new(("fv_ribbon_group_popup", "Вычисления"));
         for x in (300..700).step_by(10) {
