@@ -62,22 +62,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # `targets`: comma-separated; more than one (macOS) are joined into
+        # one universal binary with lipo — one macOS runner instead of two.
         include:
           - name: linux-x86_64
             os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+            targets: x86_64-unknown-linux-gnu
             exe: fastview
           - name: windows-x86_64
             os: windows-latest
-            target: x86_64-pc-windows-msvc
+            targets: x86_64-pc-windows-msvc
             exe: fastview.exe
-          - name: macos-aarch64
+          - name: macos-universal
             os: macos-latest
-            target: aarch64-apple-darwin
-            exe: fastview
-          - name: macos-x86_64
-            os: macos-latest
-            target: x86_64-apple-darwin
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
             exe: fastview
     steps:
       - uses: actions/checkout@v4
@@ -88,12 +86,28 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.targets }}
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: ${{ matrix.name }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo build --release -p fastview-gui --target ${{ matrix.target }}
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra targets <<< "${{ matrix.targets }}"
+          bins=()
+          for t in "${targets[@]}"; do
+            cargo build --release -p fastview-gui --target "$t"
+            bins+=("target/$t/release/${{ matrix.exe }}")
+          done
+          mkdir -p dist
+          if [ "${#bins[@]}" -gt 1 ]; then
+            lipo -create -output "dist/${{ matrix.exe }}" "${bins[@]}"
+            lipo -info "dist/${{ matrix.exe }}"
+          else
+            cp "${bins[0]}" dist/
+          fi
       # The artifact holds the files themselves, flat: upload-artifact zips
       # them once with the binary at the zip's root (no nested archive).
       - name: Stage
@@ -101,7 +115,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p stage
-          cp "target/${{ matrix.target }}/release/${{ matrix.exe }}" README.md LICENSE-MIT LICENSE-APACHE stage/
+          cp "dist/${{ matrix.exe }}" README.md LICENSE-MIT LICENSE-APACHE stage/
           test -z "$(find stage -mindepth 1 -type d)"
           ls -la stage
       - uses: actions/upload-artifact@v4

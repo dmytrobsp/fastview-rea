@@ -61,8 +61,8 @@ the box. A different/updated `FastView.fvb` can be loaded via **Открыть .
 
 ## Download
 
-Prebuilt binaries for Linux (x86_64), Windows (x86_64) and macOS (Apple
-Silicon and Intel) are attached to each
+Prebuilt binaries for Linux (x86_64), Windows (x86_64) and macOS (one
+universal binary for Apple Silicon and Intel) are attached to each
 [release](https://github.com/dmytrobsp/fastview-rea/releases); every push to
 `main` also leaves them as CI artifacts. Each download is one archive with
 the program, this README and the licences directly inside (no folders). CI
