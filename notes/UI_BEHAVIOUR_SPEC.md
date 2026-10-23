@@ -947,9 +947,13 @@ correction selection → store and recompute.
   checkbox → immediate rescan.
 - Open: double-click or «Открыть файлы» opens **every selected file** as its
   own document through the normal open path, then closes.
-- «Удалить файлы»: the file plus existing companions — cfg → dat, hdr, ini,
-  inf, set; cff → set; osc → set; sto → dst — through the shell delete (its own
-  confirmation; permanent unless Shift is held → recycle bin); then rescan.
+- «Удалить файлы» (`0x46d4b0`): every selected file plus its openable
+  companions — cfg → dat, hdr, ini, inf, set; cff → set; osc → set; sto → dst
+  (extension matched case-insensitively on the last 4 characters) — in ONE
+  `SHFileOperationW` FO_DELETE, no owner window, `FOF_ALLOWUNDO` (recycle
+  bin) unless Shift is held (`GetKeyboardState`; then permanent). No program
+  prompt: the shell's own confirmation / progress / errors. Return 0 → full
+  rescan; otherwise nothing (ledger L9.49).
 - Persisted `FileFinder`: Path (default My Documents), StationName, StationID,
   IncludeSubdirs (SortMode written but overridden); saved on every close.
 

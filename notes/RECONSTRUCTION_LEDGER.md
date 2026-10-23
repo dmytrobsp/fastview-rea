@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 299 pass)
+- `cargo test --workspace`   (currently 300 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -868,9 +868,8 @@ delete with confirmation), replacing our docked folder panel; `-Find` opens
 it. Tests: header dates (cfg/cff order, swap, +2000, «-»), OSC header,
 filters incl. the inclusive По day, scan depth + companions.
 Residual: no shell folder tree (a folder list instead); `.sto` entries not
-read (no sample `.sto`; `0x46c960` reads its inner cfg); delete is permanent
-after our own confirmation (the original uses the shell prompt and the recycle
-bin with Shift); date pickers are day/month/year spinners.
+read (no sample `.sto`; `0x46c960` reads its inner cfg); (delete through the
+shell / recycle bin: done in L9.49); date pickers are day/month/year spinners.
 
 ### L9.10 — Loading on a worker thread with the «Загрузка» dialog  ·  🟡
 
@@ -1767,6 +1766,31 @@ cases incl. 396 → 473 over a taken member).
 Residual: the message box icons (exclamation vs error) are not drawn;
 `iswdigit` taken as ASCII digits.
 
+### L9.49 — The finder's delete: one shell delete, recycle bin unless Shift  ·  ✅ (Windows compile-checked)
+Read (subagent report, Shift / flags re-checked by hand at `0x46df84`):
+`0x46d4b0` does nothing with no selection (LVM_GETSELECTEDCOUNT); walks
+the selection (LVM_GETNEXTITEM, LVNI_SELECTED); for a name ending
+(case-insensitively) in .osc / .cfg / .cff / .sto adds the file itself
+unconditionally and each companion that **opens** (CreateFileW
+GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING — a companion locked for
+writing elsewhere is skipped) — base = path minus its last 3 characters;
+the list is double-NUL terminated; then ONE `SHFileOperationW`: hwnd
+NULL, FO_DELETE, fFlags `FOF_ALLOWUNDO` (0x40) unless the Shift byte of
+`GetKeyboardState` is ≥ 2 (then 0 = permanent); no FOF_NOCONFIRMATION /
+SILENT / NOERRORUI — **the program asks nothing, the shell does**. Non-zero
+return → nothing; zero (aborted flag unchecked) → erase the rows' records
+and a full rescan (`0x46b9c0`). Inferred latent bug: the record erases use
+unadjusted indices (several selected rows can run past the shrunk vector);
+the files are gone by then. (The spec had Shift backwards — fixed.)
+Ours: `finder::shell_delete` — Windows: that exact `SHFileOperationW`
+call; elsewhere a stand-in prompt (there is no shell prompt), then
+`trash::delete_all` or, with Shift, `remove_file`; rescan on success.
+Test `shift_delete_removes_the_companions` (permanent path; the trash
+path is not exercised in tests). Residual: the Windows call is only
+compile-checked (its shell dialogs cannot run over ssh); our companion
+test is "exists as a file" (any case of the extension), not "opens for
+shared reading"; the record-erase bug is not reproduced.
+
 Next in L9 (HANDOFF 2026-10-23): **public at
 github.com/dmytrobsp/fastview-rea, release v0.1.0** (Linux / Windows / macOS
 x86_64 + arm64, flat archives). This session: the four GUI bugs (L9.23–
@@ -1792,7 +1816,7 @@ times a frame. The user's sample records live outside the repo (never
 commit them). **Done since:** L9.46 digital lanes drawn by the
 decimating painter (`FV_WINDOW_XSCALE=f` for `window_dump`); L9.47
 comment texts / moment absolute time (`FV_WINDOW_STATE=comments`); L9.48
-the formula dialog's 396 sequence. A
+the formula dialog's 396 sequence; L9.49 the finder's delete (recycle bin). A
 residual triage (2026-10-23) found many L9.1–L9.14 residuals already done
 (ledger text stale) — next candidates: L9.9 delete → recycle bin, L9.3
 Быстрый анализ as a modal sheet, L9.30 / L9.22 small ones. **Open

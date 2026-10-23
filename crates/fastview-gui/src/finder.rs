@@ -199,6 +199,46 @@ pub fn companions(path: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// The shell delete of `0x46d4b0`: one `SHFileOperationW` FO_DELETE over
+/// all `paths` (double-NUL list, no owner window), `FOF_ALLOWUNDO` (the
+/// recycle bin) unless `permanent` (Shift held) — the shell shows its own
+/// confirmation, progress and errors. True when it returns 0 (then the
+/// finder rescans; `fAnyOperationsAborted` is not looked at).
+#[cfg(windows)]
+pub fn shell_delete(paths: &[PathBuf], permanent: bool) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FO_DELETE, SHFILEOPSTRUCTW};
+    let mut from: Vec<u16> = Vec::new();
+    for p in paths {
+        from.extend(p.as_os_str().encode_wide());
+        from.push(0);
+    }
+    from.push(0);
+    let mut op = SHFILEOPSTRUCTW {
+        hwnd: std::ptr::null_mut(),
+        wFunc: FO_DELETE,
+        pFrom: from.as_ptr(),
+        pTo: std::ptr::null(),
+        fFlags: if permanent { 0 } else { FOF_ALLOWUNDO as u16 },
+        fAnyOperationsAborted: 0,
+        hNameMappings: std::ptr::null_mut(),
+        lpszProgressTitle: std::ptr::null(),
+    };
+    // SAFETY: `from` is a double-NUL-terminated UTF-16 list that outlives
+    // the call; the other pointers are null as the API allows.
+    unsafe { SHFileOperationW(&mut op) == 0 }
+}
+
+/// Elsewhere: to the desktop's trash, or removed when `permanent`.
+#[cfg(not(windows))]
+pub fn shell_delete(paths: &[PathBuf], permanent: bool) -> bool {
+    if permanent {
+        paths.iter().filter(|p| std::fs::remove_file(p).is_err()).count() == 0
+    } else {
+        trash::delete_all(paths).is_ok()
+    }
+}
+
 /// Sortable columns (the original's header click: ascending, again descending).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Column {
@@ -231,7 +271,9 @@ pub struct Finder {
     pub files: Vec<Found>,
     pub selected: Vec<usize>,
     pub sort: (Column, bool),
-    pub confirm_delete: bool,
+    /// Off Windows: the files awaiting our stand-in for the shell's delete
+    /// prompt, and whether Shift was held (permanent).
+    pub confirm_delete: Option<(Vec<PathBuf>, bool)>,
     scanning: Option<Scan>,
 }
 
@@ -247,7 +289,7 @@ impl Finder {
             files: Vec::new(),
             selected: Vec::new(),
             sort: (Column::Date, false),
-            confirm_delete: false,
+            confirm_delete: None,
             scanning: None,
         };
         f.rescan();
@@ -467,7 +509,16 @@ impl App {
                 });
                 ui.horizontal(|ui| {
                     if ui.add_enabled(!f.selected.is_empty(), egui::Button::new("Удалить файлы")).clicked() {
-                        f.confirm_delete = true;
+                        // `0x46d4b0`: every selected file and its companions
+                        // in one shell delete — to the recycle bin unless
+                        // Shift is held; the shell asks, not the program.
+                        let paths: Vec<PathBuf> = f.selected.iter().flat_map(|&i| companions(&f.files[i].path)).collect();
+                        let permanent = ui.input(|i| i.modifiers.shift);
+                        if cfg!(windows) {
+                            rescan = shell_delete(&paths, permanent);
+                        } else {
+                            f.confirm_delete = Some((paths, permanent));
+                        }
                     }
                     if ui.add_enabled(!f.selected.is_empty(), egui::Button::new("Открыть файлы")).clicked() {
                         open_files = f.selected.iter().map(|&i| f.files[i].path.clone()).collect();
@@ -476,20 +527,21 @@ impl App {
                         close = true;
                     }
                 });
-                if f.confirm_delete {
-                    let paths: Vec<PathBuf> = f.selected.iter().flat_map(|&i| companions(&f.files[i].path)).collect();
+                if let Some((paths, permanent)) = f.confirm_delete.clone() {
+                    // Off Windows there is no shell prompt: ours stands in.
                     ui.separator();
-                    ui.label(format!("Удалить без возможности восстановления файлов: {}?", paths.len()));
+                    ui.label(if permanent {
+                        format!("Удалить безвозвратно файлы ({})?", paths.len())
+                    } else {
+                        format!("Переместить файлы в корзину ({})?", paths.len())
+                    });
                     ui.horizontal(|ui| {
                         if ui.button("Да").clicked() {
-                            for p in &paths {
-                                let _ = std::fs::remove_file(p);
-                            }
-                            f.confirm_delete = false;
-                            rescan = true;
+                            rescan = shell_delete(&paths, permanent);
+                            f.confirm_delete = None;
                         }
                         if ui.button("Нет").clicked() {
-                            f.confirm_delete = false;
+                            f.confirm_delete = None;
                         }
                     });
                 }
@@ -560,6 +612,22 @@ mod tests {
         assert_eq!(all.len(), 2, "subfolders only when asked; .txt ignored");
         let c = companions(&dir.join("a.cfg"));
         assert_eq!(c.len(), 3, "{c:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Shift+delete removes the file and its companions for good (the
+    /// recycle-bin path goes through the desktop's trash, not tested here).
+    #[cfg(not(windows))]
+    #[test]
+    fn shift_delete_removes_the_companions() {
+        let dir = std::env::temp_dir().join(format!("fv_finder_del_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.cfg"), CFG).unwrap();
+        std::fs::write(dir.join("a.dat"), "1,0,0,0\n").unwrap();
+        std::fs::write(dir.join("b.cfg"), CFG).unwrap();
+        assert!(shell_delete(&companions(&dir.join("a.cfg")), true));
+        let left: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(left, ["b.cfg"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
