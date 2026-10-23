@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 347 pass)
+- `cargo test --workspace`   (currently 351 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -3047,37 +3047,74 @@ selected ones; under MDI tabs their visible effect is NOT DETERMINED, ours
 still does nothing.)
 
 
-Next in L9 (HANDOFF 2026-10-23, evening 2): **public at
+### L9.92 — Diagram panes float, re-dock and auto-hide  ·  🟡
+Read (subagent report on mfc120u and FastView; by hand: the four
+`CreateEx` calls at `0x474e81` / `0x474ef8` / `0x474f7b` / `0x474fea`
+push pane style 0xF (float, close, resize, auto-hide), tabs 0x20, window
+styles 0x56004140 (right) / 0x56008240 (Частотная, bottom), ids −2 / −3 /
+−5 / −4): a caption double-click (`0x100886dd`) floats a docked pane — a
+grouped one with its whole group — at its recent floating rect
+(`RectRecentFloat`, first the create rect, 500 × 500 / 200 × 200, at the
+frame client's top-left) and redocks a floating one; a caption drag
+detaches past SM_CXDRAG (4 px) once the pointer has left the pane
+(`0x10086f3a`), the mini-frame following the pointer, smart docking
+(DT_SMART) offering the edges and the panes' sides; the pin toggles
+auto-hide (`0x100871c7`): a strip button per pane on its edge, a 400 ms
+hover (timer 0xec00) or a click slides it out in 12 steps (`0x10088459`),
+a 700 ms check (`0x10087a4a`) slides it back when the pointer is outside
+it and its button (not with a menu up); close hides (the ribbon toggle
+shows it where it was); the Feature Pack saves the layout (Workspace).
+Ours had one fixed column. Now `docking.rs` (`Unit` group / Частотная,
+`Place` docked / floating / auto-hide, `Dockable` with the recent float
+rect, `double_click`, `drag_detach`, `pin`, `auto_hide_frame`),
+`views.rs` (`diagram_panes` with the strips, the column, floating
+windows, slid-out areas and the drag back onto the unit's home marker;
+captions with pin and close; the double-click by the 500 ms system
+time). `FV_WINDOW_STATE=floating` / `autohide`. Tests
+`double_click_floats_and_redocks`,
+`a_drag_detaches_past_the_threshold_outside_the_pane`,
+`auto_hide_hover_slide_and_check`,
+`diagram_panes_float_redock_and_auto_hide`.
+Residual: drops dock only at the unit's own place (no other edges, no
+five-way markers, no tabbing a dragged pane into another); a tab cannot be
+dragged out of the group; Частотная stays in the right column (the
+original's create docks it at the frame's bottom — ours follows the
+user's screenshot, L9.3); the layout is not saved between runs; Ctrl+pin
+and the animation-off switch not modelled.
+
+Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
-each one flat archive). `main` = HEAD, 340 tests; CI green on 3 OSes
-through L9.82 at this handoff.
-**This session (L9.76–L9.81):** L9.76 the unit text `0x42bc50` as read —
-«/с» kept for per-second file units, a formula channel's unit always
-translated (`[kV]` → «кВ»), `units::Shown`; L9.77 a pending (pasted) lane's
-stats value interpolates its own samples at T(В1) − offset (`0x461a24`),
-the own-time step unrounded; paste deselects first and selects the pasted
-channels (L9.20 confirmed); L9.78 a formula channel in Hz is a frequency
-candidate after the file's (`Oscillogram::extra_freq`); **L9.79 page 539:
-methods page-wide, values per arm** (24 slots, two group numbers per arm,
-missing legs = the initial arm, the last arm shown); L9.80 the circle
-diagram's loci (N..=len, the end at the origin, NaN → origin, marks with
-the original's pens, R/X pairs unmarked in the R unit) and its readout
-table's layout; **L9.81 the differential plane's pairs were stored
-swapped** (a `.set` pair drew with exchanged axes) — fixed, and its loci /
-table as read. New `window_dump` states `circletable`, `difftable`.
-**Earlier sessions:** see L9.68–L9.75 (night: paste / ОМП don't mark
-modified, the display factor k on every diagram, the vector diagram as
-read, formula units by the dimension walk, pasted lanes from own samples,
-quick analysis through the builder, Russian units, plane labels) and the
-entries above them. «P» records are shown SECONDARY by default (L9.57: if
-the user reports values "2000× too small", that is intended); the
-measured-frequency correction is on by default for records with a Гц / Hz
-channel (L9.65). The carved MFC DLLs live in `extracted/mfc/`. No user
-questions pending.
+each one flat archive). `main` = HEAD, 351 tests; CI green through L9.89
+at this handoff (later runs in progress — check `gh run list`).
+**This session (L9.76–L9.92):** L9.76 the unit text `0x42bc50` («/с»,
+computed units translated); L9.77 / **L9.85** a pending (pasted) lane's
+readout and statistics from its own samples (the scan from own index 1 —
+L9.77's "first value" was a misread); L9.78 / L9.86 frequency candidates:
+formula and pasted channels, in vector order, no self-correction; **L9.79
+/ L9.87 page 539** methods page-wide, values per arm, stored keys checked
+independently; L9.80 / **L9.81** the circle and differential planes' loci
+and tables as read — **the differential pairs were stored swapped** (a
+`.set` pair drew with exchanged axes); L9.82 the plane legends; L9.83
+unitless formula channels not circle channels; L9.84 CUPS paper; **L9.88
+circle scales: characteristics by an exact «Ohm» dimension — the shipped
+library's «OHM» go to the power scale, so they show only with an Ω locus
+that holds them** (user-visible); L9.89 level lines re-home on a body
+drag, unshown ones kept; **L9.90 ribbon keytips**; L9.91 MFC's panel
+reduction steps; **L9.92 diagram panes float / re-dock / auto-hide**.
+New `window_dump` states: `circletable`, `circlelegend`, `difftable`,
+`keytips`, `keytipsmenu`, `floating`, `autohide`.
+**Earlier sessions:** L9.68–L9.75 (paste / ОМП don't mark modified, the
+display factor k on every diagram, the vector diagram as read, formula
+units by the dimension walk, pasted lanes from own samples, quick
+analysis through the builder, Russian units, plane labels) and the
+entries above. «P» records are shown SECONDARY by default (L9.57: values
+"2000× too small" are intended); the measured-frequency correction is on
+by default for records with a Гц / Hz channel (L9.65). The carved MFC
+DLLs live in `extracted/mfc/`. No user questions pending.
 **How to look at the GUI without running it:** `FV_WINDOW_DUMP=<png>
 [FV_WINDOW_RECORD=<cfg>] [FV_WINDOW_STATE=analysis (the sheet, two formula
-channels)|comments|group|circle|circletable|circlelegend|diff|difftable|keytips|keytipsmenu|omp|ompparams|preview|print|pagesetup|
+channels)|comments|group|circle|circletable|circlelegend|diff|difftable|keytips|keytipsmenu|floating|autohide|omp|ompparams|preview|print|pagesetup|
 settings|channels|coef|fileparams|explorer|parambar|vizirs|alert|windows|
 paste|vecvalues|skin<k>] [FV_WINDOW_XSCALE=f] [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y]
 [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then Read the PNG (crop with
@@ -3093,13 +3130,18 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-L9.22 / L9.84 print residuals (CUPS hardware margins, the preview's
-paper; the logo bitmap stays out — it is the original's asset); L9.89's kept levels drawn snapped on digital lanes (`0x42b640` not read);
-L9.91's generic Repos (layouts by hand) and the ribbon scroll arrows; L9.64's
-MDI arrangements under tabs; pane re-docking (egui limit). Good recurring
-pass: render the user's real records (`~/Downloads/DOC_1999.cfg`,
-`BINARY.cfg`) after big changes.
-(Done in this session: L9.76–L9.82, see the summary above; L9.82 the plane legends as read.)
+L9.92's docking residuals (other edges and the five-way markers, tab
+drag-out, saving the layout); L9.88's per-figure extent rounding (circles
+outward) and loci at an infinite scale; L9.89's kept levels drawn snapped
+on digital lanes (`0x42b640` not read); L9.91's generic Repos and the
+ribbon scroll arrows; L9.90's keytip placement per element type; L9.64's
+MDI arrangements under tabs; L9.22 / L9.84 print residuals (CUPS hardware
+margins, the preview's paper; the logo bitmap stays out — the original's
+asset); L9.87's duplicate reduction names; L9.86's recompute on a
+selection change (the original keeps cached series). Good recurring pass:
+render the user's real records (`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`)
+after big changes.
+(Done in this session: L9.76–L9.92, see the summary above.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH

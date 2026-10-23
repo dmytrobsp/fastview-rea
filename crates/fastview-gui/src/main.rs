@@ -12,6 +12,7 @@ mod comments;
 mod diagram;
 mod diagram_ui;
 mod dialogs;
+mod docking;
 mod finder;
 mod formula_dlg;
 mod formula_page;
@@ -686,6 +687,40 @@ mod window_tests {
         panic!("no collapsed «Вычисления» button opened its panel");
     }
 
+    /// The diagram panes dock, float and auto-hide (L9.92): a caption
+    /// double-click floats the tab group in its own window and back; the
+    /// pin puts it on the right strip, from which a 400 ms hover slides it
+    /// out.
+    #[test]
+    fn diagram_panes_float_redock_and_auto_hide() {
+        use docking::Place;
+        let mut w = Win::new();
+        let canvas = |w: &Win| w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r);
+        let double = |w: &mut Win, at: Pos2| {
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(true), ev(false)]);
+            w.run(vec![ev(true), ev(false)]);
+            w.idle(2);
+        };
+        let docked = canvas(&w).expect("the vector pane is drawn");
+        double(&mut w, Pos2::new(docked.left() + 60.0, docked.top() - 22.0));
+        assert_eq!(w.app.dock_group.place, Place::Floating);
+        let floating = canvas(&w).expect("drawn in its window");
+        double(&mut w, Pos2::new(floating.left() + 60.0, floating.top() - 22.0));
+        assert_eq!(w.app.dock_group.place, Place::Docked, "a double-click on the floating caption redocks");
+        // Pin: the strip on the right; hover its first button 400 ms.
+        w.app.dock_group.pin();
+        w.idle(2);
+        assert!(canvas(&w).is_none(), "pinned away");
+        let strip = Pos2::new(1320.0 - 12.0, w.app.view_rects.unwrap().0.top() + 40.0);
+        w.run(vec![egui::Event::PointerMoved(strip)]);
+        w.idle(10);
+        assert!(w.app.dock_group.out, "the hover slid it out");
+        w.idle(14);
+        assert!(canvas(&w).is_some(), "drawn over the content");
+    }
+
     /// Copy (`0x45be28` / `0x405160`): a picture of the view's client area
     /// then the clipboard document; with a diagram focused (a click in it),
     /// that diagram's picture alone.
@@ -839,6 +874,16 @@ mod window_tests {
             app.formula_page.selected = Some(1);
         }
         // `FV_WINDOW_STATE=vecvalues`: the vector diagram's values table.
+        // `FV_WINDOW_STATE=floating`: the diagram tab group in its own
+        // window; `autohide`: pinned to the right strip and slid out.
+        match std::env::var("FV_WINDOW_STATE").unwrap_or_default().as_str() {
+            "floating" => app.dock_group.double_click(egui::pos2(60.0, 220.0)),
+            "autohide" => {
+                app.dock_group.pin();
+                (app.dock_group.out, app.dock_group.slide) = (true, 1.0);
+            }
+            _ => {}
+        }
         // `FV_WINDOW_STATE=keytips` / `keytipsmenu`: the tab-level keytips,
         // or the application menu opened by «F».
         // (Sent as keys after the click passes; a click ends keytip mode.)

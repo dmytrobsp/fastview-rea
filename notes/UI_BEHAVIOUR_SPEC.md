@@ -95,7 +95,12 @@ Feature-Pack workspace [I].
 | Frequency `+0x2e34` | Частотная диаграмма (3527) | −4 | 200×200, **bottom** | DockPane |
 
 - Pane chrome: caption with pin (auto-hide) and close; float by drag with
-  smart-dock markers; close only hides [I, MFC]. A user screenshot (clip0014)
+  smart-dock markers; close only hides. Read (L9.92): pane style 0xF;
+  caption double-click floats (a grouped pane with its group) at the
+  recent floating rect / redocks; a drag detaches past 4 px once outside
+  the pane; the pin puts it on its edge's strip — 400 ms hover or a click
+  slides it out in 12 steps, a 700 ms check slides it back when the
+  pointer is outside it and its button. A user screenshot (clip0014)
   shows Vector | Circle | Differential as one tab group with tabs at the
   bottom and Frequency below it.
 - Pane content: a vertical toolbar on the right edge (resource 550 vector,
