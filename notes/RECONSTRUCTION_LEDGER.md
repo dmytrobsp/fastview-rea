@@ -2975,9 +2975,9 @@ button's `"\na"` at `0x4cacb8` (`0x474a97`), strings 276 «Вставить» + 
 a label — only keys after a `\n` in the element's text (SetText
 `0x10063ee1`), the QAT numbered 1…9 (RebuildKeys `0x1012bc08`), and in
 popup menus the letter after `&`; the text is upper-cased in a box of the
-larger of the keys and «O» plus 10 × 2. Alt held 200 ms (timer 0xec1a)
+larger of the keys and «O» plus 10 × 2. ~~Alt held 200 ms (timer 0xec1a)
 shows the tab level; Alt released focuses the ribbon (showing them) or,
-focused, hands the focus back; F10 toggles (not with Shift / Ctrl); losing
+focused, hands the focus back~~ (MFC's, never reached: L9.155); F10 toggles (not with Shift / Ctrl); losing
 the focus removes them; typing compares upper-cased Latin keys (A–Z give
 the Latin letter whatever the layout, `0x100add31`) in list order — a
 one-key match activates, a longer keytip's first letter narrows; Esc goes
@@ -4642,6 +4642,23 @@ closes). Tests `channels_enter_commits_esc_closes`,
 Residual: whether doc+0x1d8 counts computed channels for the pair
 combos (as L9.151); the sheet's OnActivatePage `0x48c210` skips the base
 (the side bar would not follow a keyboard page switch — ours has none).
+
+### L9.155 — Alt alone never reaches the ribbon: keytips by F10 only  ·  ✅
+Read (vtable sweep of CFastViewApp; by hand `0x448e80`): the
+application's PreTranslateMessage override discards every WM_SYSKEYDOWN
+and WM_SYSKEYUP whose key is VK_MENU (returns TRUE) and passes the rest
+to the base. MFC's ribbon Alt handling (the 200 ms hold timer 0xec1a, the
+tap that focuses the ribbon, the release that hands the focus back) sits
+in CMDIFrameWndEx::PreTranslateMessage (`0x100baa9b` → `0x100ff240` /
+`0x100ff383`), which runs only after the application's filter — so an
+Alt tap or hold shows nothing; F10 (another key) still toggles the
+keytips; Alt+letter / Alt+F4 pass (other keys); the Alt state seen by
+the wheel (L1, `0x45d990`) is the key state, unaffected.
+Ours showed the keytips on an Alt hold and toggled them on a tap (L9.90
+read MFC's code without the app's filter). Now `Keytips` has no Alt path
+(`alt`, the hold timer and `by_hold` gone; `f10` toggles);
+`keytips_input` no longer looks at Alt. Test `f10_toggles` replaces
+`alt_tap_hold_and_f10`.
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

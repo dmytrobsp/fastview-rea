@@ -137,23 +137,18 @@ pub enum Outcome {
     Exit,
 }
 
-/// The keytip state machine (OnSysKeyDown / Up `0x100ff240` /
-/// `0x100ff383`, the 200 ms timer `0x100fcc2b`, ProcessKey `0x100fee05`).
+/// The keytip state machine (OnSysKeyDown `0x100ff240`, ProcessKey
+/// `0x100fee05`). The ribbon's Alt handling (a tap focuses the ribbon, a
+/// 200 ms hold shows the keytips) never runs: the application's
+/// PreTranslateMessage `0x448e80` discards every WM_SYSKEYDOWN / UP of
+/// VK_MENU first, so only F10 shows them.
 #[derive(Debug, Clone, Default)]
 pub struct Keytips {
     /// The shown level, if any.
     pub level: Option<Level>,
-    /// Shown by holding Alt, before the ribbon took the focus.
-    by_hold: bool,
-    /// When Alt went down, and whether another key came since.
-    alt_since: Option<f64>,
-    alt_clean: bool,
     /// The first letter of a longer keytip typed so far.
     prefix: Option<char>,
 }
-
-/// Alt held this long shows the tab-level keytips (timer 0xec1a).
-pub const ALT_HOLD_S: f64 = 0.2;
 
 impl Keytips {
     pub fn shown(&self) -> bool {
@@ -162,54 +157,21 @@ impl Keytips {
 
     pub fn exit(&mut self) {
         self.level = None;
-        self.by_hold = false;
         self.prefix = None;
     }
 
-    fn show_tabs(&mut self, by_hold: bool) {
+    fn show_tabs(&mut self) {
         self.level = Some(Level::Tabs);
-        self.by_hold = by_hold;
         self.prefix = None;
     }
 
-    /// One frame of the Alt key: `down` its state, `other` whether any
-    /// other key was pressed this frame.
-    pub fn alt(&mut self, down: bool, other: bool, now: f64) {
-        match (self.alt_since, down) {
-            (None, true) => {
-                self.alt_since = Some(now);
-                self.alt_clean = !other;
-            }
-            (Some(t), true) => {
-                self.alt_clean &= !other;
-                if self.alt_clean && self.level.is_none() && now - t >= ALT_HOLD_S {
-                    self.show_tabs(true);
-                }
-            }
-            (Some(_), false) => {
-                self.alt_since = None;
-                if self.alt_clean && !other {
-                    // The release focuses the ribbon, which shows the
-                    // keytips; already focused, it hands the focus back.
-                    if self.level.is_some() && !self.by_hold {
-                        self.exit();
-                    } else {
-                        self.show_tabs(false);
-                    }
-                } else if self.by_hold {
-                    self.exit();
-                }
-            }
-            (None, false) => {}
-        }
-    }
-
-    /// F10 (without Shift or Ctrl) toggles the same way.
+    /// F10 (without Shift or Ctrl) focuses the ribbon, showing the
+    /// tab-level keytips; focused, it hands the focus back.
     pub fn f10(&mut self) {
-        if self.level.is_some() && !self.by_hold {
+        if self.level.is_some() {
             self.exit();
         } else {
-            self.show_tabs(false);
+            self.show_tabs();
         }
     }
 
@@ -302,29 +264,12 @@ mod tests {
     }
 
     #[test]
-    fn alt_tap_hold_and_f10() {
+    fn f10_toggles() {
         let mut k = Keytips::default();
-        k.alt(true, false, 0.0);
-        k.alt(false, false, 0.05);
-        assert_eq!(k.level, Some(Level::Tabs), "a tap focuses the ribbon");
-        k.alt(true, false, 1.0);
-        k.alt(false, false, 1.05);
-        assert!(!k.shown(), "a second tap hands the focus back");
-        k.alt(true, false, 2.0);
-        k.alt(true, false, 2.1);
-        assert!(!k.shown());
-        k.alt(true, false, 2.25);
-        assert!(k.shown(), "held 200 ms");
-        k.alt(false, false, 2.3);
-        assert!(k.shown(), "the release keeps them, focused");
-        k.alt(true, false, 3.0);
-        k.alt(true, true, 3.1);
-        k.alt(false, false, 3.2);
-        assert!(k.shown(), "Alt with another key: no toggle");
+        k.f10();
+        assert_eq!(k.level, Some(Level::Tabs));
         k.f10();
         assert!(!k.shown());
-        k.f10();
-        assert!(k.shown());
     }
 
     #[test]

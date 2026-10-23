@@ -1229,20 +1229,16 @@ fn paint_mini(painter: &egui::Painter, r: egui::Rect, glyph: Mini, col: Color32)
 // ---------------- keytips (L9.90) ----------------
 
 impl App {
-    /// This frame's keytip keys (`crate::keytips`): Alt held / tapped, F10,
-    /// then — while shown — Esc, Space and typed letters or digits. True
+    /// This frame's keytip keys (`crate::keytips`): F10 (Alt alone never
+    /// reaches the ribbon, `0x448e80`), then — while shown — Esc, Space and typed letters or digits. True
     /// when the keytips took the keyboard (no shortcuts then).
     pub fn keytips_input(&mut self, ctx: &egui::Context) -> bool {
         use crate::keytips::{Outcome, Target};
         let was = self.keytips.shown();
-        let (mods, now, keys, pressed) = ctx.input(|i| {
+        let (mods, keys, pressed) = ctx.input(|i| {
             let keys: Vec<egui::Key> = i.events.iter().filter_map(|e| if let egui::Event::Key { key, pressed: true, .. } = e { Some(*key) } else { None }).collect();
-            (i.modifiers, i.time, keys, i.pointer.any_pressed())
+            (i.modifiers, keys, i.pointer.any_pressed())
         });
-        self.keytips.alt(mods.alt, !keys.is_empty(), now);
-        if mods.alt && !self.keytips.shown() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(50));
-        }
         let f10 = keys.contains(&egui::Key::F10) && !mods.shift && !mods.ctrl;
         if f10 {
             self.keytips.f10();
