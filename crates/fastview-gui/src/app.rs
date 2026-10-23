@@ -1306,6 +1306,10 @@ pub struct App {
     pub modal_up: bool,
     /// An `Event::Paste` came since Ctrl+V was last let go.
     pub paste_announced: bool,
+    /// The status bar's six panes as last written (`0x472e10`'s cache):
+    /// the creation texts (3130, 3134, 3426, 3170, 3172, 3428) until a
+    /// document is active, then whatever the last one showed.
+    pub status_panes: [String; 6],
     /// Dialogs and bars of `chandlg` / `recdlg` (backlog 16, 18, 28, 29, 34, 39).
     pub dlg: crate::recdlg::DialogState,
 
@@ -1436,6 +1440,7 @@ impl App {
             color_dialog: None,
             modal_up: false,
             paste_announced: false,
+            status_panes: ["Верт. визир 1:", "Верт. визир 2:", "Разница в. визиров:", "Гор. визир 1:", "Гор. визир 2:", "Разница г. визиров:"].map(String::from),
             dlg: Default::default(),
             status: "Готово".to_string(),
             toast: ("Готово".to_string(), f64::NEG_INFINITY),
@@ -2914,7 +2919,7 @@ mod tests {
     #[test]
     fn cursor_status_has_six_fields() {
         let app = demo_app();
-        let s = app.cursor_status();
+        let s = app.cursor_status().unwrap();
         assert_eq!(s.len(), 6);
         assert!(s.iter().all(|x| !x.is_empty()));
     }
@@ -2928,9 +2933,9 @@ mod tests {
         d.osc.trigger_sample = 20;
         (d.main_cursor, d.aux_cursor, d.v_shown) = (20, 30, [true, true, false]);
         app.time_unit = TimeUnit::Milli;
-        assert_eq!(app.cursor_status()[0], "Верт. визир 1: 0 мс");
+        assert_eq!(app.cursor_status().unwrap()[0], "Верт. визир 1: 0 мс");
         app.time_unit = TimeUnit::Samples;
-        let s = app.cursor_status();
+        let s = app.cursor_status().unwrap();
         assert_eq!((s[0].as_str(), s[1].as_str()), ("Верт. визир 1: 1", "Верт. визир 2: 11"));
     }
 
@@ -2945,9 +2950,34 @@ mod tests {
         d.main_cursor = k;
         d.aux_cursor = 0;
         d.v_shown = [true, true, false];
-        let s = app.cursor_status();
+        let s = app.cursor_status().unwrap();
         assert_eq!(s[0], format!("Верт. визир 1: {}", crate::oscgeom::time_of_day_text(46_799.5 + dt)));
         assert_eq!(s[1], "Верт. визир 2: 12:59:59.500");
         assert_eq!(s[2], format!("Разница. верт. визиров: {}", crate::oscgeom::status_abs_diff(dt)));
+        // A start time without ':' (`0x494c31`): the shown V panes stay empty.
+        app.active_doc_mut().unwrap().osc.stamps.start_time = "125959".into();
+        let s = app.cursor_status().unwrap();
+        assert!(s[0].is_empty() && s[1].is_empty() && s[2].is_empty());
+    }
+
+    /// The H panes (3171 / 3173 «… %4g %s», 3429 «… %g %s%s», `0x4960f0`):
+    /// the stored value unscaled, padded to 4, the plain unit; the
+    /// difference SI-prefixed; nothing of the unit in ADC mode.
+    #[test]
+    fn cursor_status_horizontal_panes() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        let unit = d.osc.analog[0].shown_unit().text;
+        d.hviz[0] = HVizir { shown: true, chan: Some(0), value: 5.0 };
+        d.hviz[1] = HVizir { shown: true, chan: Some(0), value: 2005.0 };
+        let s = app.cursor_status().unwrap();
+        assert_eq!(s[3], format!("Гор. визир 1:    5 {unit}"));
+        assert_eq!(s[4], format!("Гор. визир 2: 2005 {unit}"));
+        assert_eq!(s[5], format!("Разница г. визиров: 2 к{unit}"));
+        app.active_doc_mut().unwrap().chans[0].adc_counts = true;
+        let s = app.cursor_status().unwrap();
+        assert_eq!((s[3].as_str(), s[5].as_str()), ("Гор. визир 1:    5 ", "Разница г. визиров: 2000 "));
+        // No document: the panes keep what they showed.
+        assert!(App::new().cursor_status().is_none());
     }
 }

@@ -219,12 +219,13 @@ impl App {
 
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         let p = self.skin.palette();
-        let mut s = self.cursor_status();
-        // In print preview the page goes to the first pane (MFC's
-        // OnDisplayPageNumber writes the message bar's pane 0).
-        if let Some(pv) = &self.print.preview {
-            s[0] = pv.page_text();
+        // The panes keep their last texts with no document (L9.147). The
+        // preview's page text goes to the message bar — the ribbon status
+        // bar's window title, never shown (INFERRED).
+        if let Some(s) = self.cursor_status() {
+            self.status_panes = s;
         }
+        let s = self.status_panes.clone();
         ui.horizontal(|ui| {
             // Six fixed-width panes (27 / 40-character templates, `0x4729b0`).
             let char_w = 6.2;

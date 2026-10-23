@@ -97,7 +97,9 @@ impl Preview {
     }
 
     /// The status text (`OnDisplayPageNumber`, 61507 / 61508): «Стр. %u»
-    /// or «Страницы %u-%u».
+    /// or «Страницы %u-%u» — sent to the message bar, which under the
+    /// ribbon status bar is never shown (L9.147); kept for the tests.
+    #[cfg(test)]
     pub fn page_text(&self) -> String {
         let shown = if self.two && self.zoom == 0 { (self.cur + 2).min(self.pages()) - self.cur } else { 1 };
         if shown == 1 {

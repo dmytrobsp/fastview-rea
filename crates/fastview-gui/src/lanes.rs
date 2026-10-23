@@ -1844,10 +1844,12 @@ impl App {
     /// relative to the trigger sample (0 for COMTRADE, L9.125) in
     /// the ruler unit; the V difference needs both V визиры shown, the H
     /// difference both H визиры on the same channel.
-    pub fn cursor_status(&self) -> [String; 6] {
+    /// `None` with no active document: the bar keeps what it last showed
+    /// (nothing resets it, `0x472e10`).
+    pub fn cursor_status(&self) -> Option<[String; 6]> {
         let captions = ["Верт. визир 1:", "Верт. визир 2:", "Разница. верт. визиров:", "Гор. визир 1:", "Гор. визир 2:", "Разница г. визиров:"];
         let mut out = captions.map(String::from);
-        let Some(d) = self.active_doc() else { return out };
+        let d = self.active_doc()?;
         // Relative to the trigger sample (`0x49484d`; 0 for COMTRADE), the
         // absolute mode too (the start's time of day plus it).
         let trig = d.osc.trigger_sample;
@@ -1857,9 +1859,11 @@ impl App {
         let start_tod = fvb_core::comtrade::time_of_day(&d.osc.stamps.start_time);
         // Absolute mode (strings 240/241/202): V1/V2 as the time of day, the
         // difference as `ss.mmm` within the minute.
+        // Whole µs (`0x454b40`); ms rounded half up (`0x411bf0`).
+        let us = |dt: f64| (dt * 1e6).round();
         let time = |dt: f64, k: i64, diff: bool| match self.time_unit {
-            TimeUnit::Micro => format!("{} мкс", (dt * 1e6).round() as i64),
-            TimeUnit::Milli => format!("{} мс", (dt * 1e3).round() as i64),
+            TimeUnit::Micro => format!("{} мкс", us(dt) as i64),
+            TimeUnit::Milli => format!("{} мс", (us(dt) / 1000.0 + 0.5).floor() as i64),
             TimeUnit::Sec => format!("{dt:.3} сек."),
             TimeUnit::Absolute if diff => g::status_abs_diff(dt),
             TimeUnit::Absolute => g::time_of_day_text(start_tod + dt),
@@ -1875,23 +1879,43 @@ impl App {
         if d.v_shown[0] && d.v_shown[1] {
             out[2] = format!("{} {}", captions[2], time((t(v1) - t(v2)).abs(), (v1 as i64 - v2 as i64).abs(), true));
         }
+        // Absolute time with a start time that has no ':' (`0x494c31`):
+        // the shown V panes stay empty.
+        if self.time_unit == TimeUnit::Absolute && !d.osc.stamps.start_time.contains(':') {
+            for (k, on) in [d.v_shown[0], d.v_shown[1], d.v_shown[0] && d.v_shown[1]].into_iter().enumerate() {
+                if on {
+                    out[k].clear();
+                }
+            }
+        }
         let hval = |j: usize| -> Option<(usize, f64)> {
             let h = &d.hviz[j];
             (h.shown && h.value.is_finite()).then_some(())?;
             Some((h.chan?, h.value))
         };
-        let unit_of = |ch: usize| analog_unit(d, ch);
+        // «Гор. визир N: %4g %s» (3171 / 3173): the value as stored, the
+        // plain unit (`0x42bc50`), none in ADC mode.
+        let adc = |ch: usize| d.chans.get(ch).is_some_and(|c| c.adc_counts);
+        let plain = |ch: usize| if adc(ch) { String::new() } else { d.osc.analog[ch].shown_unit().text };
         for j in 0..2 {
             if let Some((ch, v)) = hval(j) {
-                out[3 + j] = format!("{} {}", captions[3 + j], fvb_core::views::readout_text(v, unit_of(ch)).trim());
+                out[3 + j] = format!("{} {:>4} {}", captions[3 + j], fvb_core::views::fmt_g(v), plain(ch));
             }
         }
+        // «Разница г. визиров: %g %s%s» (3429, `0x4960f0`): SI-prefixed; in
+        // ADC mode rounded half up with neither prefix nor unit.
         if let (Some((c1, a)), Some((c2, b))) = (hval(0), hval(1)) {
             if c1 == c2 {
-                out[5] = format!("{} {}", captions[5], fvb_core::views::readout_text((a - b).abs(), unit_of(c1)).trim());
+                let dv = (a - b).abs();
+                out[5] = if adc(c1) {
+                    format!("{} {} ", captions[5], fvb_core::views::fmt_g((dv + 0.5).floor()))
+                } else {
+                    let (v, unit) = fvb_core::views::si_scaled(dv, d.osc.analog[c1].shown_unit());
+                    format!("{} {} {unit}", captions[5], fvb_core::views::fmt_g(v))
+                };
             }
         }
-        out
+        Some(out)
     }
 }
 

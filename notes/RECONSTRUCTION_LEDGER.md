@@ -4403,6 +4403,32 @@ the rows each frame (`menu_row`), ↓ / ↑ / Enter as above, the view's
 визир keys held off while a menu is open. Test
 `view_menus_follow_the_keyboard`.
 
+### L9.147 — The status bar as read: the H panes' formats, the panes without a document, no preview page text  ·  ✅
+Read (subagent report; by hand the strings 3171 / 3173 «Гор. визир N: %4g
+%s», 3429 «Разница г. визиров: %g %s%s», 3426 / 3430): a
+CMFCRibbonStatusBar (`0x4729b0`) with six static panes and the extended
+«НТЦ Механотроника», nothing else (no message pane); the setter
+`0x472e10` caches the six texts and nothing ever resets them — before
+the first document they read the creation texts (pane 2 «Разница в.
+визиров:», 3426), after the last one closes the last document's; the H
+panes print the stored value as `%4g` (unscaled, padded to 4) and the
+plain Russian unit (none in ADC mode); the H difference is SI-prefixed
+`%g` + " " + prefix + unit, in ADC mode rounded half up with no unit; ms
+values are whole µs rounded half up (`0x411bf0`); in absolute mode a
+start time without ':' leaves the shown V panes empty; prompts and the
+preview's page number go to the frame's message bar = the ribbon status
+bar's window text, which nothing shows (no WM_SETTEXT handler in its
+maps, SetInformation never called — INFERRED from that).
+Ours SI-scaled and padded the H panes («57.92    кВ»), showed «отсч.»,
+reset to the captions (pane 2 3430) with no document, rounded ms away
+from zero, printed the preview's page in pane 0 (L9.37's guess). Now
+`cursor_status` → `Option`, `App::status_panes` kept across documents,
+the H formats as read, the ms rounding, the blank absolute panes; the
+preview's page text is no longer shown. Tests
+`cursor_status_horizontal_panes`, `cursor_status_absolute_time`.
+Residual: the pane widths and the extended element's colour ND; the
+setter's "no lane at y" path (value 0, empty unit) ND whether reached.
+
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
