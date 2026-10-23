@@ -154,14 +154,18 @@ item here, or move it to W6.
 
 The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 (the files of `extracted/stage1/`, the English resource DLL moved to
-`eng\` so the UI is Russian), VC++ 2013 x86 runtime installed. It starts
-from ssh but in no desktop.
+`eng\` so the UI is Russian), VC++ 2013 x86 runtime installed. It runs in devuser's desktop session through `tools/vm/insession.ps1`.
 
-- [ ] W4.1 A desktop session on the VM (the user logs in at the console
-  once, or approves auto-logon) and a harness: start the original and ours
-  in that session (a scheduled task with `/it`), drive them (UI Automation
-  / SendInput from PowerShell), capture their windows (PrintWindow) — kept
-  in the VM folder and the local scratch, never committed.
+- [x] W4.1 A desktop session and a capture harness (2026-10-24): automatic
+  sign-in of devuser (approved by the user), `tools/vm/` (`insession.ps1`
+  runs a program in the desktop session, `capture.ps1` / `shot.ps1` grab
+  the screen). Captures stay on the VM / local scratch, never committed.
+  First capture: the original with no saved workspace — its default pane
+  layout (frequency under the view, the differential diagram in the middle,
+  vector / circle tabbed at the right), the differential diagram on «Нет»,
+  a close button on the record-header strip.
+- [ ] W4.1a Input driving (UI Automation / SendInput from the session) to
+  open records and press commands in the original.
 - [ ] W4.2 File-level comparisons — the strongest checks, no pixels: the
   same record saved by both (Save As `.cfg` / `.cff` / `.osc`, the `.set`
   after the same edits, the clipboard document, the quick-analysis and ОМП
@@ -176,6 +180,8 @@ from ssh but in no desktop.
 - [ ] W4.4 Each W3 runtime unknown as a scenario.
 - [ ] W4.5 Visual comparison of the main window and the dialogs
   (layout, sizes, colours per skin) — differences either fixed or W6.
+  Seen in the first capture, to check against ours: the default pane
+  layout with no saved workspace; the record-header strip's close button.
 
 ## W5 — Windows-only paths
 
