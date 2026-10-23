@@ -1575,6 +1575,8 @@ impl App {
                     self.analysis_tab = AnalysisTab::Formula;
                     self.quick_open = true;
                     self.quick_shown = [false; 6];
+                    // New pages on every DoModal: defaults, then the `.set`.
+                    self.quick = Default::default();
                     self.formula_page_open();
                     self.quick_defaults();
                     self.quick_show_page();
@@ -2579,6 +2581,25 @@ mod tests {
         let p = d.osc.samples_per_cycle();
         let mean = whole_period_mean(&d.osc.analog[i].samples, p);
         assert!((d.sample(i, k) - (base - mean)).abs() < 1e-9, "one DC constant over whole periods");
+    }
+
+    /// «Быстрый анализ» starts from the defaults on every open (`0x48b690`
+    /// → `0x411f40`, then the `.set`): combos by name (missing → «Канал
+    /// отсутствует»), Uни the first channel, K0 «0.».
+    #[test]
+    fn quick_analysis_pages_start_from_defaults() {
+        use fvb_core::addformula::NO_CHANNEL;
+        let mut app = demo_app();
+        app.dispatch(Command::QuickAnalysis);
+        let f = &app.quick[0];
+        assert_eq!((f.ia.as_str(), f.k0.as_str()), ("Ia", "0."));
+        assert_eq!(f.uab, NO_CHANNEL, "no «Uab» in the record");
+        let first = app.active_doc().unwrap().osc.analog[0].id.clone();
+        assert_eq!(f.uni, first);
+        app.quick[0].ia = "Ib".into();
+        app.quick_open = false;
+        app.dispatch(Command::QuickAnalysis);
+        assert_eq!(app.quick[0].ia, "Ia", "not the previous session's value");
     }
 
     /// A formula may name a digital channel (`0x42edf0` has no kind test):

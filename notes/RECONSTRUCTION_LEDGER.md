@@ -4523,6 +4523,31 @@ title's glow on glass; on a tiling window manager the buttons may do
 nothing (the WM owns the window) — `FV_SYSTEM_TITLEBAR` restores the
 system frame.
 
+### L9.151 — «Быстрый анализ»: fresh pages on every open, defaults by name, K0 «0.», Enter  ·  ✅
+Read (subagent audit of the sheet `0x48b970` and every CQAn* page — the
+slots 110–119 are output getters, «Рассчитать» `0x4167f0` already matched
+(L9.51–L9.56, L9.69 / L9.70); by hand the defaults `0x412688`–`0x4126e2`):
+the pages are created on every DoModal — defaults first (`0x411f40`),
+then the `.set`; each combo is filled with the record's channels and
+preselected by its channel's name ignoring case (CB_FINDSTRINGEXACT:
+Ia…Uc, Uab / Ubc, 3I0 / 3U0), a name the record lacks inserting «Канал
+отсутствует» at the top (3Ion «Не учитывать»), the unnamed Uни / Uик on
+the first channel; K0 / Ф0 / Km «0.» (`0x4c3e98`), R / X «1.»; an edit
+counts by its text's length (blanks fill it, `0x48b360`); the combo's
+selected text is what the `.set` stores, the placeholder too; Enter is
+IDOK = «Рассчитать» (INFERRED from the dialog manager).
+Ours kept the pages across opens (even across records — a stale name
+kept «Рассчитать» enabled), picked the phases by our detection with blank
+combos when missing, left Uab / Ubc / Uни / Uик empty, defaulted K0 to
+«1.», trimmed blanks, and had no Enter. Now `Command::QuickAnalysis`
+resets `App::quick`, `quick_defaults` as read (the placeholder listed in
+the combo while selected), K0 «0.», the length rule, Enter. Test
+`quick_analysis_pages_start_from_defaults`; VIEWS_SPEC's defaults line
+corrected.
+Residual: the combo lists also hold formula-editor rows without a
+channel in the original (ours file and computed channels); whether
+doc+0x1d8 counts computed channels ND.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

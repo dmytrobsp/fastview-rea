@@ -135,7 +135,8 @@ impl Default for QuickForms {
             u3o: s(),
             uni: s(),
             uik: s(),
-            // `0x411f40`: Iтр «0.25», R / X / K «1.», Ф / Rm / Xm / Km / Фm «0.».
+            // `0x411f40`: Iтр «0.25», R / X «1.», K0 / Ф0 / Rm / Xm / Km / Фm
+            // «0.» (`0x412688`–`0x4126e2`).
             itr: "0.25".into(),
             i0_parallel: s(),
             per_unit: true,
@@ -145,7 +146,7 @@ impl Default for QuickForms {
             x0: "1.".into(),
             x1: "1.".into(),
             xm: "0.".into(),
-            k0: "1.".into(),
+            k0: "0.".into(),
             km: "0.".into(),
             f0: "0.".into(),
             fm: "0.".into(),
@@ -185,6 +186,11 @@ fn cell_combo(ui: &mut egui::Ui, enabled: bool, id: &str, label: &str, value: &m
         ui.horizontal(|ui| {
             ui.add_sized([30.0, 18.0], egui::Label::new(label));
             egui::ComboBox::from_id_salt(id).selected_text(value.as_str()).width(140.0).show_ui(ui, |ui| {
+                // The placeholder inserted at the top (`0x411c70`).
+                if value == fvb_core::addformula::NO_CHANNEL || value == fvb_core::addformula::NOT_COUNTED {
+                    let v = value.clone();
+                    ui.selectable_value(value, v.clone(), v);
+                }
                 for n in names {
                     ui.selectable_value(value, n.clone(), n);
                 }
@@ -240,13 +246,14 @@ impl QuickForms {
         };
         match tab {
             AnalysisTab::Symmetric => (self.currents_off || currents) && (self.voltages_off || voltages),
-            AnalysisTab::PhasePhase => !self.itr.trim().is_empty() && currents && voltages,
+            // An edit counts by its text's length: blanks fill it (`0x48b360`).
+            AnalysisTab::PhasePhase => !self.itr.is_empty() && currents && voltages,
             AnalysisTab::Phase => {
-                let filled = |v: &[&String]| v.iter().all(|s| !s.trim().is_empty());
+                let filled = |v: &[&String]| v.iter().all(|s| !s.is_empty());
                 let comp = if self.per_unit { filled(&[&self.x1, &self.r1, &self.x0, &self.r0]) } else { filled(&[&self.k0, &self.f0]) };
                 let parallel = !self.parallel_used() || if self.per_unit { filled(&[&self.xm, &self.rm]) } else { filled(&[&self.km, &self.fm]) };
                 let u = chosen(&self.ua) && chosen(&self.ub) && chosen(&self.uc);
-                chosen(&self.ia) && chosen(&self.ib) && chosen(&self.ic) && u && !self.itr.trim().is_empty() && comp && parallel
+                chosen(&self.ia) && chosen(&self.ib) && chosen(&self.ic) && u && !self.itr.is_empty() && comp && parallel
             }
             AnalysisTab::Zero => {
                 let i = match self.zero_i {
@@ -361,22 +368,25 @@ impl QuickForms {
 impl App {
     /// Fill empty channel fields from the channel-role map.
     pub(crate) fn quick_defaults(&mut self) {
+        use fvb_core::addformula::{NOT_COUNTED, NO_CHANNEL};
         let Some(d) = self.active_doc() else { return };
-        let name = |idx: Option<usize>| idx.and_then(|i| d.osc.analog.get(i)).map(|c| c.id.clone()).unwrap_or_default();
-        let (ua, ub, uc) = (name(d.analysis.u_abc[0]), name(d.analysis.u_abc[1]), name(d.analysis.u_abc[2]));
-        let (ia, ib, ic) = (name(d.analysis.i_abc[0]), name(d.analysis.i_abc[1]), name(d.analysis.i_abc[2]));
-        // The measured-channel combos preselect 3I0 / 3U0 / 3I0n by name,
-        // case-insensitively (`0x411c70`), when the record has them.
-        let named = |want: &str| {
-            d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).find(|n| n.to_lowercase() == want).unwrap_or_default()
-        };
-        let (i3o, u3o, i0n) = (named("3i0"), named("3u0"), named("3i0n"));
-        // 539's arm combos are preselected «Ia» / «Ib» / «Ic» by name the
-        // same way.
-        let arm = [named("ia"), named("ib"), named("ic")];
+        // Every combo is preselected by its channel's name, ignoring case
+        // (`0x411c70`, CB_FINDSTRINGEXACT): Ia… Uc, Uab / Ubc, 3I0 / 3U0;
+        // a name the record lacks shows «Канал отсутствует» at the top
+        // (3Ion «Не учитывать»); Uни / Uик take the first channel.
+        let all: Vec<String> = d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect();
+        let found = |want: &str| all.iter().find(|n| n.to_lowercase() == want).cloned();
+        let named = |want: &str| found(want).unwrap_or_else(|| NO_CHANNEL.to_string());
+        let (ua, ub, uc) = (named("ua"), named("ub"), named("uc"));
+        let (ia, ib, ic) = (named("ia"), named("ib"), named("ic"));
+        let (uab, ubc) = (named("uab"), named("ubc"));
+        let (i3o, u3o) = (named("3i0"), named("3u0"));
+        let i0n = found("3i0n").unwrap_or_else(|| NOT_COUNTED.to_string());
+        let first = all.first().cloned().unwrap_or_default();
+        let arm = [ia.clone(), ib.clone(), ic.clone()];
         for f in &mut self.quick {
-            let vals = [&ua, &ub, &uc, &ia, &ib, &ic, &i3o, &u3o, &i0n];
-            for (slot, v) in [&mut f.ua, &mut f.ub, &mut f.uc, &mut f.ia, &mut f.ib, &mut f.ic, &mut f.i3o, &mut f.u3o, &mut f.i0_parallel].into_iter().zip(vals) {
+            let vals = [&ua, &ub, &uc, &ia, &ib, &ic, &i3o, &u3o, &i0n, &uab, &ubc, &first, &first];
+            for (slot, v) in [&mut f.ua, &mut f.ub, &mut f.uc, &mut f.ia, &mut f.ib, &mut f.ic, &mut f.i3o, &mut f.u3o, &mut f.i0_parallel, &mut f.uab, &mut f.ubc, &mut f.uni, &mut f.uik].into_iter().zip(vals) {
                 if slot.is_empty() {
                     slot.clone_from(v);
                 }
@@ -405,7 +415,7 @@ impl App {
             self.quick_open = false;
             return;
         }
-        let (mut calc, mut cancel, mut open) = (false, false, true);
+        let (mut calc, mut cancel, mut open, mut ok_now) = (false, false, true, false);
         let editing = self.formula_page.edit.is_some();
         let enabled = self.formula_dlg.is_none() && self.formula_page.alert.is_none();
         egui::Window::new("Быстрый анализ")
@@ -454,6 +464,7 @@ impl App {
                     ui.allocate_ui_with_layout(egui::Vec2::new(ui.available_width(), 26.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         cancel = ui.add_sized([80.0, 22.0], egui::Button::new("Отмена")).clicked();
                         let ok = page_index(self.analysis_tab).is_none_or(|i| self.quick[i].ok_enabled(self.analysis_tab));
+                        ok_now = ok;
                         calc = ui.add_enabled(ok, egui::Button::new("Рассчитать").min_size(egui::Vec2::new(80.0, 22.0))).clicked();
                     });
                 });
@@ -476,6 +487,9 @@ impl App {
             }
         } else if enabled && !editing && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             cancel = true;
+        } else if enabled && !editing && ok_now && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
+            // IDOK, the sheet's default button «Рассчитать».
+            calc = true;
         }
         if calc {
             self.quick_calc();
