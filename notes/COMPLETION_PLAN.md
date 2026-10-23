@@ -184,7 +184,7 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 - [ ] W4.5 Visual comparison of the main window and the dialogs
   (layout, sizes, colours per skin) — differences either fixed or W6.
   Seen in the first capture: the start-up pane layout (fixed, L9.165);
-  the record-header strip's close button (to check).
+  the record-header strip's close button (fixed, L9.168).
 
 ## W5 — Windows-only paths
 

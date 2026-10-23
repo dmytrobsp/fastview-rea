@@ -4982,6 +4982,19 @@ paints the filled triangles. The L9.87 residual is corrected (above).
 Residual: page 537's loader / saver and eight more slot 111–114 getters
 are unread (four skimmed match VIEWS_SPEC) — plan W1.2b lists them.
 
+### L9.168 — The parameters bar's close button  ·  ✅
+Run (the first VM capture shows a ✕ at the bar's top right) and read (by
+hand `0x474db2`–`0x474dea`): CMainFrame creates CParamOscBar (id 810) with
+style 0x54000000 and the last Create argument TRUE — MFC's caption bar in
+message-bar mode, which draws a close button at the right; a click on it
+hides the bar (MFC's caption-bar close, INFERRED), the same state 142
+toggles. The other caption bar created just before (`0x474d8d`, hidden
+style 0x44000000) is the merge bar (L9.15). Ours had no close button. Now
+`param_bar_ui` draws the 16 × 16 ✕ (a frame on hover) and a click hides
+the bar. Test `the_parameters_bar_closes_from_its_button`.
+Residual: the message bar's own frame / margins as the visual manager
+draws them (W4.5).
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

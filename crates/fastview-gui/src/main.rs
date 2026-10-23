@@ -668,6 +668,23 @@ mod window_tests {
         assert_eq!(vis(&w), before, "a double-click flips once");
     }
 
+    /// The parameters bar is a message-mode caption bar (`0x474dc5`): its
+    /// close button at the top right hides it.
+    #[test]
+    fn the_parameters_bar_closes_from_its_button() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        assert!(w.app.dlg.param_bar);
+        w.press(Primary, Pos2::new(400.0, 220.0), Pos2::new(400.0, 220.0));
+        assert!(w.app.dlg.param_bar, "a click on the bar's text does nothing");
+        let mut y = 186.0;
+        while w.app.dlg.param_bar && y < 240.0 {
+            w.press(Primary, Pos2::new(1320.0 - 12.0, y), Pos2::new(1320.0 - 12.0, y));
+            y += 4.0;
+        }
+        assert!(!w.app.dlg.param_bar, "closed by its ✕");
+    }
+
     /// The original's dialogs are all modal: while one is up the view
     /// (and the rest of the main window) gets no pointer or key input,
     /// whether the pointer is over the dialog or beside it.

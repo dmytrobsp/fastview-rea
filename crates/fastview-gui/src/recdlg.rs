@@ -704,6 +704,21 @@ impl App {
         label(lab[2], w + w2 + 465.0, 0);
         label(lab[3], w + w2 + 465.0, 1);
         label(lab[4], w + w2 + 465.0, 2);
+        // Created in MFC's message-bar mode (`0x474dc5`: Create(…, 810, −1,
+        // TRUE)): a close button at the top right hides the bar, as 142 does.
+        let close = Rect::from_min_size(egui::pos2(rect.right() - 20.0, rect.top() + 4.0), egui::vec2(16.0, 16.0));
+        let resp = ui.interact(close, ui.id().with("fv_param_close"), egui::Sense::click());
+        if resp.hovered() {
+            painter.rect(close, 0.0, pal.group_bg, egui::Stroke::new(1.0f32, pal.group_border));
+        }
+        let (c, k) = (close.center(), 3.5);
+        let x = egui::Stroke::new(1.5f32, pal.text);
+        painter.line_segment([c + egui::vec2(-k, -k), c + egui::vec2(k, k)], x);
+        painter.line_segment([c + egui::vec2(-k, k), c + egui::vec2(k, -k)], x);
+        if resp.clicked() {
+            self.dlg.param_bar = false;
+            return;
+        }
         let Some(d) = self.active_doc() else { return };
         let (start, trig) = stamp_texts(&d.osc, self.dlg.utc_2013);
         let value = |text: String, xa: f32, xb: f32, k: usize, ellipsis: bool| {
