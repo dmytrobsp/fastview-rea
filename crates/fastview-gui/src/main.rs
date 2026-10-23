@@ -1114,7 +1114,7 @@ mod window_tests {
         }
         // `FV_WINDOW_STATE=alert`: message 1086 over the window.
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "alert") {
-            app.dlg.alert = Some(lanes::MSG_COMBINE_UNITS.to_string());
+            app.dlg.push_alert(lanes::MSG_COMBINE_UNITS.to_string());
         }
         // `FV_WINDOW_STATE=comments`: a moment, a level line and an area —
         // and a level on the first digital lane (as a `.set` may hold).

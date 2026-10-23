@@ -570,8 +570,10 @@ impl App {
                 self.status = format!("Сохранено: {}", path.display());
                 true
             }
+            // The writer's exception is reported in an MB_OK box (`0x475680`
+            // → `0x4756e0`).
             Err(e) => {
-                self.status = format!("Ошибка сохранения: {e}");
+                self.dlg.push_alert(format!("{} - {e}", path.display()));
                 false
             }
         }

@@ -187,7 +187,7 @@ impl App {
                 }
                 Err(e) => {
                     d.computed = before;
-                    self.dlg.alert = Some(e.to_string());
+                    self.dlg.push_alert(e.to_string());
                     return;
                 }
             }

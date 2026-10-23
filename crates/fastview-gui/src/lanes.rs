@@ -1556,7 +1556,7 @@ impl App {
                     if d.can_combine() {
                         d.combine_selected();
                     } else {
-                        self.dlg.alert = Some(MSG_COMBINE_UNITS.to_string());
+                        self.dlg.push_alert(MSG_COMBINE_UNITS.to_string());
                     }
                 }
                 Act::OpenMenu(pos, kind) => {
@@ -1629,7 +1629,7 @@ impl App {
                 let d = &mut self.docs[ai];
                 let taken = d.osc.analog.iter().enumerate().any(|(j, c)| j != i && c.id == text) || d.computed.iter().any(|c| c.name == text);
                 if taken {
-                    self.dlg.alert = Some(crate::chandlg::MSG_NAME_TAKEN.to_string());
+                    self.dlg.push_alert(crate::chandlg::MSG_NAME_TAKEN.to_string());
                 } else {
                     d.osc.analog[i].id = text;
                 }
@@ -2314,9 +2314,9 @@ mod menu_tests {
             _ => unreachable!(),
         };
         drag_rows(&mut h, 0, other);
-        assert_eq!(h.app.dlg.alert.as_deref(), Some(MSG_COMBINE_UNITS), "different units: message 1086");
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "different units: message 1086");
         assert!(h.doc().chans[c0].group.is_none() && h.doc().chans[co].group.is_none());
-        h.app.dlg.alert = None;
+        h.app.dlg.alerts.clear();
         h.app.active_doc_mut().unwrap().selection.clear();
         drag_rows(&mut h, 0, same);
         let d = h.doc();
@@ -2705,7 +2705,7 @@ mod menu_tests {
         h.frame(vec![ev(o, false)]);
         h.frame(vec![]);
         assert!(!started(&h), "dropped on its own lane: nothing");
-        assert!(h.app.dlg.alert.is_none(), "no message");
+        assert!(h.app.dlg.alert().is_none(), "no message");
         // Released early: no drag.
         press(&mut h);
         h.frame(vec![ev(o, false)]);
@@ -2745,12 +2745,12 @@ mod menu_tests {
         let own = h.doc().osc.analog[0].id.clone();
         h.app.active_doc_mut().unwrap().set.modified = false;
         commit(&mut h, &other);
-        assert_eq!(h.app.dlg.alert.as_deref(), Some(crate::chandlg::MSG_NAME_TAKEN));
+        assert_eq!(h.app.dlg.alert(), Some(crate::chandlg::MSG_NAME_TAKEN));
         assert_eq!(h.doc().osc.analog[0].id, own, "refused");
         assert!(h.doc().set.modified, "modified even when refused");
-        h.app.dlg.alert = None;
+        h.app.dlg.alerts.clear();
         commit(&mut h, &other.to_lowercase());
-        assert!(h.app.dlg.alert.is_none(), "the comparison is case-sensitive");
+        assert!(h.app.dlg.alert().is_none(), "the comparison is case-sensitive");
         commit(&mut h, " Ia 2 ");
         assert_eq!(h.doc().osc.analog[0].id, " Ia 2 ", "no trim");
         // A press elsewhere in the view commits too (`0x466100`); idle

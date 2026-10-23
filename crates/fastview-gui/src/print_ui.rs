@@ -179,7 +179,7 @@ impl App {
         match printer {
             Some(p) => match spool::print(&p, &title, &imgs, &dev, &setup) {
                 Ok(()) => self.status = format!("Отправлено на печать: {} стр.", imgs.len()),
-                Err(e) => self.dlg.alert = Some(format!("Ошибка печати: {e}")),
+                Err(e) => self.dlg.push_alert(format!("Ошибка печати: {e}")),
             },
             None => {
                 if let Some(path) = rfd::FileDialog::new().add_filter("PDF", &["pdf"]).set_file_name(format!("{title}.pdf")).save_file() {

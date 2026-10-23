@@ -434,6 +434,12 @@ impl App {
                 self.docs[ai].set_merge_offset(offset);
                 msg.text()
             }
+            // By start time the failure is a box (219, MB_ICONHAND,
+            // `0x47d915`) and the bar's text stays.
+            Err(SyncMsg::NoOverlap) if bar.method == 0 => {
+                self.dlg.push_alert_icon(SyncMsg::NoOverlap.text(), crate::dialogs::MsgIcon::Error);
+                return;
+            }
             Err(msg) => msg.text(),
         };
         if let Some(b) = self.merge.as_mut() {
@@ -631,6 +637,49 @@ mod tests {
         assert_eq!(d.chans.len(), d.osc.analog.len());
         assert!(d.osc.analog.iter().all(|c| c.samples.len() == d.osc.time.len()));
         assert!(app.merge.is_none(), "the bar is hidden");
+    }
+
+    /// «Синхронизация» by start time with records that do not overlap:
+    /// message 219 in a box with the stop icon (`0x47d915`), the bar's text
+    /// unchanged; a second box queues behind it.
+    #[test]
+    fn no_overlap_is_a_box_and_boxes_queue() {
+        let mut app = demo_app();
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.active_doc_mut().unwrap().pending[0].start = Some(1e12);
+        let before = app.merge.as_ref().unwrap().status.clone();
+        app.synchronise();
+        assert_eq!(app.dlg.alerts.front(), Some(&(SyncMsg::NoOverlap.text().to_string(), crate::dialogs::MsgIcon::Error)));
+        assert_eq!(app.merge.as_ref().unwrap().status, before, "the bar's text stays");
+        app.dlg.push_alert("второе");
+        assert_eq!(app.dlg.alerts.len(), 2, "queued, not overwritten");
+    }
+
+    /// A file that does not load: "<file> - <message>" in an MB_OK box
+    /// (the posted exception, `0x475680` → `0x4756e0`).
+    #[test]
+    fn a_failed_open_is_reported_in_a_box() {
+        let dir = std::env::temp_dir().join(format!("fv_badopen_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("bad.cfg");
+        std::fs::write(&path, "not a comtrade header").unwrap();
+        let mut app = App::new();
+        app.load_comtrade_path(&path);
+        for _ in 0..200 {
+            app.poll_loading();
+            if app.loading.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+        assert!(app.docs.is_empty());
+        let (msg, icon) = app.dlg.alerts.front().expect("a box");
+        assert!(msg.starts_with(&format!("{} - ", path.display())), "{msg}");
+        assert_eq!(*icon, crate::dialogs::MsgIcon::Exclamation);
     }
 
     #[test]

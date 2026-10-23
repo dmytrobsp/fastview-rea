@@ -23,8 +23,28 @@ pub struct DialogState {
     pub hdr_edit: Option<HdrEdit>,
     pub channels: Option<crate::chandlg::ChannelsDlg>,
     pub coef: Option<crate::chandlg::CoefDlg>,
-    /// A message box (the original's AfxMessageBox) waiting for OK.
-    pub alert: Option<String>,
+    /// Message boxes (the original's AfxMessageBox, MB_OK) waiting for OK,
+    /// shown one after another as the original's modal boxes and posted
+    /// exceptions come.
+    pub alerts: std::collections::VecDeque<(String, crate::dialogs::MsgIcon)>,
+}
+
+impl DialogState {
+    /// Queue an MB_OK box with the exclamation icon (MFC's default for a
+    /// box with no icon).
+    pub fn push_alert(&mut self, msg: impl Into<String>) {
+        self.push_alert_icon(msg, crate::dialogs::MsgIcon::Exclamation);
+    }
+
+    pub fn push_alert_icon(&mut self, msg: impl Into<String>, icon: crate::dialogs::MsgIcon) {
+        self.alerts.push_back((msg.into(), icon));
+    }
+
+    /// The box shown now.
+    #[cfg(test)]
+    pub fn alert(&self) -> Option<&str> {
+        self.alerts.front().map(|(m, _)| m.as_str())
+    }
 }
 
 impl Default for DialogState {
@@ -38,7 +58,7 @@ impl Default for DialogState {
             hdr_edit: None,
             channels: None,
             coef: None,
-            alert: None,
+            alerts: Default::default(),
         }
     }
 }
@@ -343,7 +363,7 @@ impl App {
     }
 
     fn alert_window(&mut self, ctx: &egui::Context) {
-        let Some(msg) = self.dlg.alert.clone() else { return };
+        let Some((msg, icon)) = self.dlg.alerts.front().cloned() else { return };
         let mut ok = false;
         crate::dialogs::modal_backdrop(ctx, "fv_alert_block", egui::Order::Middle);
         egui::Window::new(crate::app::APP_TITLE)
@@ -353,11 +373,11 @@ impl App {
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                crate::dialogs::message_body(ui, crate::dialogs::MsgIcon::Exclamation, &msg);
+                crate::dialogs::message_body(ui, icon, &msg);
                 ui.vertical_centered(|ui| ok = ui.button("    OK    ").clicked());
             });
         if ok || ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
-            self.dlg.alert = None;
+            self.dlg.alerts.pop_front();
         }
     }
 
@@ -470,11 +490,14 @@ impl App {
         }
         let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
         if apply {
-            let rate = st.rate_text.trim().parse::<f64>().ok().filter(|r| r.is_finite() && *r > 0.0);
+            // 0x415 goes through DDX_Text of an int (mfc #3761, `0x44a230`):
+            // whitespace and a sign around the digits, nothing else (ours
+            // also refuses 0 and negatives — the original's handling ND).
+            let rate = st.rate_text.trim().parse::<i32>().ok().filter(|r| *r > 0).map(f64::from);
             match rate {
                 None => {
-                    // DDX of a double refuses non-numbers and keeps the dialog.
-                    self.dlg.alert = Some("Введите число.".into());
+                    // AFX_IDP_PARSE_INT; the dialog stays.
+                    self.dlg.push_alert("Введите целое число.");
                     self.dlg.file_params = Some(st);
                     return;
                 }

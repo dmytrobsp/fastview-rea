@@ -1681,8 +1681,10 @@ impl App {
             st.extent = fvb_core::geom::integer_extent(ch, &st.figs);
             self.chars.insert((b, ci), st);
         }
+        // The block evaluation's exception is posted and reported in an
+        // MB_OK box (`0x409260` → `0x475680`).
         if let Err(e) = result {
-            self.status = e.to_string();
+            self.dlg.push_alert(e.to_string());
         }
         self.persist_block();
     }
@@ -1956,8 +1958,10 @@ impl App {
                 }
                 self.remember_recent(path);
             }
-            // The original shows "<file> - <message>".
-            Err(e) => self.status = format!("{} - {e}", path.display()),
+            // The reader's exception is posted to the frame (`0x475680`,
+            // message 0x40a) and reported in an MB_OK box (`0x4756e0`):
+            // "<file> - <message>".
+            Err(e) => self.dlg.push_alert(format!("{} - {e}", path.display())),
         }
     }
 
@@ -2154,8 +2158,10 @@ impl App {
                 d.channels_changed();
                 Some(names)
             }
+            // A computed channel's evaluation failure is a box (`0x415780`
+            // → `0x475680`).
             Err(e) => {
-                self.status = e.to_string();
+                self.dlg.push_alert(e.to_string());
                 None
             }
         }
@@ -2654,7 +2660,7 @@ mod tests {
         let name = app.library.blocks[app.block_idx].characteristics[0].parameters[0].name.clone();
         app.chars.get_mut(&key).unwrap().settings.insert(name, "1+".into());
         app.recompute_block();
-        assert_eq!(app.status, "1+: Синтаксическая ошибка в формуле");
+        assert_eq!(app.dlg.alert(), Some("1+: Синтаксическая ошибка в формуле"), "an MB_OK box (`0x409260` posts it)");
         assert_eq!(app.chars[&key].figs, before);
     }
 

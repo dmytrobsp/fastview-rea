@@ -4045,6 +4045,37 @@ never placed does nothing (the original places it at the top — INFERRED);
 MDI next / previous in tab order (WM_MDINEXT's order under MDI tabs ND);
 the Shift page not quantised to the 1/10000 scroll grid.
 
+### L9.131 — Message boxes as read: posted exceptions, the 219 box, the int rate field, a queue  ·  ✅
+Read (subagent audit of every AfxMessageBox call — the only two message-box
+imports, mfc #2261 / #2262; by hand `0x475680`, `0x4756e0`, `0x47d915`,
+`0x44a230`): the readers / writers / block and computed-channel
+evaluation / ОМП / .set load catch their exception and post it to the
+frame (`0x475680`, message 0x40a), whose handler calls its ReportError(0,
+0) — an MB_OK box (MFC adds the exclamation) with the exception's text,
+"<file> - <message>" for file errors; «Синхронизация» by start time with
+no overlap shows 219 with MB_ICONHAND and leaves the bar's text; DIALOG
+392's sample rate goes through DDX_Text of an **int** (mfc #3761 — the
+ordinal order of the int& / double& overloads, #3766 being 0x414's
+double), so a non-integer gives «Введите целое число.»; modal boxes and
+posted exceptions come one after another. The other boxes (396, 473, 398,
+397, 1086, the ОМП checks, SaveModified) already matched.
+Ours: open / save errors and block / computed-channel evaluation errors
+in the status bar, 219 as the bar's text, «Введите число.» with
+fractions accepted, one alert slot that a second message overwrote. Now
+`DialogState::{alerts (a queue of text + icon), push_alert,
+push_alert_icon}` drawn one at a time; `finish_load`, `report_save`,
+`recompute_block`, the quick batch push boxes; `synchronise` method 0's
+NoOverlap is an error box; the rate field parses an i32. Tests
+`a_failed_open_is_reported_in_a_box`, `no_overlap_is_a_box_and_boxes_queue`,
+`bad_setting_reports_the_formula_and_keeps_old_geometry`.
+Residual: 239 «Выбранные каналы имеют разную частоту» on 33035 (needs a
+per-channel rate; reachable only after a paste); DIALOG 353's DDV ranges
+(«Введите целое число от 1 до N.», ours clamps silently); the print
+failure's wording (ours «Ошибка печати: …»; MFC's 61702 INFERRED); the
+.sto close warning 190 (.sto ⛔); MessageBeep after «Объединить»; the
+exception types each catch takes ND; 0 / negative rates in DIALOG 392 ND
+(ours refuses them).
+
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

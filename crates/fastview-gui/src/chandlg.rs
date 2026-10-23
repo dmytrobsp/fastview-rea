@@ -488,13 +488,13 @@ impl App {
                 });
             });
         if let Some(m) = alert {
-            self.dlg.alert = Some(m.to_string());
+            self.dlg.push_alert(m.to_string());
         }
         // OK commits a running rename.
         if ok {
             if let Some((k, text)) = st.rename.take() {
                 if let Err(m) = rename(&mut self.docs[ai], k, &text) {
-                    self.dlg.alert = Some(m.to_string());
+                    self.dlg.push_alert(m.to_string());
                     self.dlg.channels = Some(st);
                     return;
                 }
@@ -822,7 +822,7 @@ mod ui_tests {
         let enter = egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
         h.frame(vec![enter]);
         h.frame(vec![]);
-        assert_eq!(h.app.dlg.alert.as_deref(), Some(MSG_NAME_TAKEN));
+        assert_eq!(h.app.dlg.alert(), Some(MSG_NAME_TAKEN));
         assert_eq!(h.app.docs[0].osc.analog[0].id, "Ua");
     }
 
