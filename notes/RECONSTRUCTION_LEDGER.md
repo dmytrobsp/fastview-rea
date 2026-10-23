@@ -2375,6 +2375,43 @@ the calls in these handlers is a document-vtable call other than the
 ones listed); whether the original's saved `.set` holds sections for the
 phase lanes after a run (ours writes them) NOT DETERMINED.
 
+### L9.69 — Diagrams in shown values (k); the vector header as read  ·  ✅
+Read (subagent report; by hand: the header strings, the format choice
+`0x491331`–`0x4913b6`, the `− 1` before the pow at `0x4910fc` /
+`0x491141`): no diagram painter reads the display factor k (`ch+0xf0`);
+it is already in what they read — the phasor cache filled by `0x428490`
+(stored complex × k; the DFT `0x426fc0` / the corrected `0x4267e0` over
+`0x426020`, which returns x·k) and every instantaneous read through
+`0x426020` (circle R/X pairs, differential pairs, the frequency spectrum
+`0x426510`). So a «P» record shown «Вторичные» is drawn in secondary
+values on every diagram, like its readouts. Vector header
+(`0x4910c3`–`0x4917fc`): per group (unit exactly "A" → I, the rest → U)
+the largest |phasor| rounded with `p = 10^(⌊log10 max⌋ − 1)`,
+`⌈⌈max/p⌉/5⌉·5p` (not > 0 → 0); text `"%.1f %sV"` / `"%.1f %sA"` when the
+value is > 1 or 0, else `"%w.(w−2)f"` with `w = |⌊log10 v⌋| + 3`; the
+prefix comes from `0x43d960` called with the unit "U" / "I", which it
+never prefixes, so the header always reads plain V / A. Layout: a box
+(254,250,220) under the window pen (screen (150,150,150) 1 px, print
+s/2 (100,100,100)) at the top right, `off = max(0, W − L − Wv − m − 10)`,
+m = 6·s, h = ⌊3·cy/2⌋ (cy = height of "Ay"), label column L = width
+"U max" + 2m, value column Wv = the widest of "0.0000" and both texts +
+2m; a vertical divider after L and a horizontal one at h; «U max» /
+«I max» and the values at (+m, cy/4) in each cell, colour (20,20,20);
+both rows always drawn ("0.0 V" for an empty group).
+Ours had all three wrong: the diagrams read the stored phasors / samples
+without k (a user «P» record: I max 1000 A over readouts of 354 mA),
+`p` one decade too large (1234 → 5000, now 1500) and the header
+«U max = 500 кV    I max = 1000 A» at the top left (prefixed, invented
+text). Now `Doc::shown_k` multiplies the vector / circle phasors, the
+R/X and differential samples and the frequency spectrum;
+`views::nice_scale` / `vector_header_value`; `diagram_ui::vector_header`.
+Tests `diagrams_carry_the_display_factor`, `nice_scales`; rendered the
+user's «P» record (U max 60.0 V, I max 0.40 A).
+Residual: the circle's placement under the header and the «Показывать
+значения» table layout are still ours [I]; a zero scale with non-zero
+lengths cannot occur (ours draws no length; the original divides 0/0);
+the computed channels' own k (INFERRED 1).
+
 Next in L9 (HANDOFF 2026-10-23, evening): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2426,7 +2463,7 @@ level-line snap (reachable only through a `.set`); keytips (MFC's ribbon
 keytip machinery — the program sets only Печать «p» / «w»); L9.27 MFC's
 intermediate ribbon reductions; L9.64's slot +0x1f0 and the MDI
 arrangements; L9.46's bit-14 pasted digital lanes; pane re-docking (egui limit).
-(Done this session: L9.68 — paste / an ОМП run do not mark modified.)
+(Done this session: L9.68 — paste / an ОМП run do not mark modified; L9.69 — diagrams in shown values, the vector header.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH

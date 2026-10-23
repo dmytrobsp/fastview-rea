@@ -202,7 +202,8 @@ type Series<'a> = Box<dyn Fn(usize) -> f64 + 'a>;
 
 fn inst_by_name<'a>(d: &'a Doc, name: &str) -> Option<(Series<'a>, Color32)> {
     if let Some(i) = d.osc.analog.iter().position(|c| c.id == name) {
-        return Some((Box::new(move |k| d.sample(i, k)), d.chans[i].color));
+        let kf = d.shown_k(i);
+        return Some((Box::new(move |k| d.sample(i, k) * kf), d.chans[i].color));
     }
     let c = d.computed.iter().find(|c| c.name == name)?;
     Some((Box::new(move |k| c.samples.get(k).copied().unwrap_or(f64::NAN)), c.color))
@@ -296,10 +297,10 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
     }
     for (i, ch) in d.osc.analog.iter().enumerate() {
         if d.chans[i].on_circle {
-            let ph = &d.analysis.phasors[i];
+            let (ph, kf) = (&d.analysis.phasors[i], d.shown_k(i));
             let unit = ch.unit.trim().to_string();
             let power = !dg::is_ohm(&unit);
-            push(ch.id.clone(), unit, d.chans[i].color, power, &|k| ph.get(k).map_or([0.0, 0.0], |z| [z.re, z.im]));
+            push(ch.id.clone(), unit, d.chans[i].color, power, &|k| ph.get(k).map_or([0.0, 0.0], |z| [z.re * kf, z.im * kf]));
         }
     }
     for c in d.computed.iter().filter(|c| c.on_circle) {
@@ -1040,7 +1041,7 @@ impl App {
         let n = d.osc.samples_per_cycle().max(2);
         let phasor_of = |name: &str| -> Option<Complex64> {
             if let Some(i) = d.osc.analog.iter().position(|c| c.id == name) {
-                return d.analysis.phasors.get(i).and_then(|p| p.get(k)).copied();
+                return d.analysis.phasors.get(i).and_then(|p| p.get(k)).map(|z| z * d.shown_k(i));
             }
             d.computed.iter().find(|c| c.name == name).map(|c| match &c.phasors {
                 Some(p) => p.get(k).copied().unwrap_or_default(),
@@ -1059,11 +1060,6 @@ impl App {
         let is_current = |unit: &str| unit == "A";
         let group_max = |current: bool| shown.iter().filter(|s| is_current(&s.1) == current).map(|s| s.2.norm()).fold(0.0, f64::max);
         let (i_scale, u_scale) = (fvb_core::views::nice_scale(group_max(true)), fvb_core::views::nice_scale(group_max(false)));
-        // Header «U max» / «I max» [I: placement].
-        let (us, up) = g_si(u_scale);
-        let (is, ip) = g_si(i_scale);
-        let header = format!("U max = {us} {up}V    I max = {is} {ip}A");
-        painter.text(full.left_top() + Vec2::new(6.0, 4.0), egui::Align2::LEFT_TOP, header, font(), TEXT);
         let area = Rect::from_min_max(full.min + Vec2::new(0.0, 22.0), full.max);
         let r = (area.width().min(area.height()) / 2.0 - 10.0).max(10.0);
         let c = area.center();
@@ -1098,7 +1094,8 @@ impl App {
         for (name, unit, z, color) in &shown {
             let ang = fvb_core::views::vector_angle(*z, reference);
             let scale = if is_current(unit) { i_scale } else { u_scale };
-            let len = if dir_only { r } else { (z.norm() / scale) as f32 * r };
+            // A zero group scale (all its phasors 0) draws no length.
+            let len = if dir_only { r } else if scale > 0.0 { (z.norm() / scale) as f32 * r } else { 0.0 };
             let dir = Vec2::new(ang.cos() as f32, -(ang.sin() as f32));
             let tip = c + dir * len;
             // A pen s wide: solid for V, PS_DOT otherwise — which GDI draws
@@ -1122,6 +1119,7 @@ impl App {
                 lines.push((format!("{name}  {v} {p}{unit}{}", fvb_core::views::angle_text(ang, radians)), *color));
             }
         }
+        vector_header(&painter, full, [u_scale, i_scale]);
         // «Показывать значения»: magnitude and angle per phasor [I: layout].
         for (i, (t, col)) in lines.iter().enumerate() {
             painter.text(area.left_top() + Vec2::new(6.0, 4.0 + 15.0 * i as f32), egui::Align2::LEFT_TOP, t, font(), *col);
@@ -1192,10 +1190,12 @@ impl App {
             let (row_top, yb) = (g.top + r * tl.row_h, tl.row_bottom(&g, r));
             let samples = &d.flagged.analog[i].samples;
             let mine = corr.and_then(|cr| cr.for_chan(i));
-            let sp = fvb_core::freqcorr::spectrum(mine, samples, pos, n, periods, k_max.max(periods), d.osc.harmonic1_gain);
+            // The spectrum reads the samples through `0x426020`: times k.
+            let kf = d.shown_k(i);
+            let sp: Vec<f64> = fvb_core::freqcorr::spectrum(mine, samples, pos, n, periods, k_max.max(periods), d.osc.harmonic1_gain).into_iter().map(|v| v * kf).collect();
             let max = sp[..=k_max].iter().copied().fold(0.0, f64::max);
             let max = if max == 0.0 { 1.0 } else { max };
-            let norm = if use_rms { fvb_core::freqcorr::rms_at(corr, i, samples, pos, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
+            let norm = if use_rms { fvb_core::freqcorr::rms_at(corr, i, samples, pos, n, periods) * kf } else { sp.get(periods).copied().unwrap_or(0.0) };
             let color = d.chans[i].color;
             if g.plot_h() - 30 * si - g.h <= 0 {
                 continue;
@@ -1483,6 +1483,41 @@ fn scrollbar(ui: &mut egui::Ui, track: Rect, horizontal: bool, pos: i32, page: i
     None
 }
 
+/// The vector diagram's header (`0x4910c3`–`0x4917fc`): a box at the top
+/// right, (254,250,220) under the window pen, split into two rows and two
+/// columns — «U max» / «I max» and the group scales `"%.1f V"` / `"%.1f A"`
+/// (`vector_header_value`). Both rows are always drawn. Device offsets 10
+/// and m = 6·s, h = ⌊3·cy/2⌋ with cy the height of "Ay"; the label column
+/// fits "U max" only, the value column the wider of "0.0000" and both texts.
+fn vector_header(painter: &egui::Painter, full: Rect, [u, i]: [f64; 2]) {
+    let s = print_s().unwrap_or(1.0);
+    let ink = Color32::from_rgb(20, 20, 20);
+    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), font(), ink).size();
+    let (ut, it) = (format!("{} V", fvb_core::views::vector_header_value(u)), format!("{} A", fvb_core::views::vector_header_value(i)));
+    let (m, ten) = (6.0, 10.0 / s);
+    let cy = measure("Ay").y;
+    let h = (3.0 * cy * s / 2.0).floor() / s;
+    let l = measure("U max").x + 2.0 * m;
+    let w = measure("0.0000").x.max(measure(&ut).x).max(measure(&it).x) + 2.0 * m;
+    let off = (full.width() - l - w - m - ten).max(0.0);
+    let x0 = full.left() + off;
+    let top = full.top() + ten;
+    let pen = match print_s() {
+        Some(s) => dev_pen(s / 2.0, Color32::from_rgb(100, 100, 100)),
+        None => stroke(1.0, Color32::from_rgb(150, 150, 150)),
+    };
+    let rect = Rect::from_min_max(Pos2::new(x0, top), Pos2::new(x0 + l + w + m, top + 2.0 * h));
+    painter.rect_filled(rect, 0.0, Color32::from_rgb(254, 250, 220));
+    painter.rect_stroke(rect, 0.0, pen);
+    painter.vline(x0 + l, top..=top + 2.0 * h, pen);
+    painter.hline(rect.x_range(), top + h, pen);
+    for (row, (label, value)) in [("U max", ut), ("I max", it)].into_iter().enumerate() {
+        let y = top + cy / 4.0 + row as f32 * h;
+        painter.text(Pos2::new(x0 + m, y), egui::Align2::LEFT_TOP, label, font(), ink);
+        painter.text(Pos2::new(x0 + l + m, y), egui::Align2::LEFT_TOP, value, font(), ink);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1628,6 +1663,28 @@ mod tests {
         h.app.diag_cmd(Window::Circle, DiagCmd::TogglePair(0), Pos2::ZERO);
         let label = format!("{} {}", names[0], names[1]);
         assert!(plane_loci(h.app.active_doc().unwrap(), false, false).iter().all(|l| l.name != label));
+    }
+
+    /// A «P» record shown «Вторичные» is drawn in secondary values on the
+    /// diagrams too: the phasor cache and `0x426020` carry k (L9.69).
+    #[test]
+    fn diagrams_carry_the_display_factor() {
+        let mut h = H::new(Pane::Circle);
+        let d = h.app.active_doc_mut().unwrap();
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (2000.0, 1.0, true);
+        d.chans[0].on_circle = true;
+        d.recompute(false);
+        let k = d.osc.sample_count() - 1;
+        let raw = d.analysis.phasors[0][k];
+        assert_eq!(d.shown_k(0), 1.0 / 2000.0);
+        let id = d.osc.analog[0].id.clone();
+        let at = |d: &Doc| plane_loci(d, false, false).into_iter().find(|l| l.name == id).unwrap().pts.last().copied().unwrap();
+        assert_eq!(at(d), [raw.re / 2000.0, raw.im / 2000.0]);
+        d.chans[0].primary = true;
+        d.recompute(true);
+        assert_eq!(at(d), [raw.re, raw.im], "shown primary: the stored values");
+        d.chans[0].adc_counts = true;
+        assert_eq!(d.shown_k(0), 1.0, "ADC codes are taken as is");
     }
 
     #[test]

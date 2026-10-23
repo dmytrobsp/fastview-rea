@@ -682,6 +682,17 @@ impl Doc {
         self.flagged.analog[i].samples.get(k).copied().unwrap_or(0.0)
     }
 
+    /// The factor `ch+0xf0` every value the diagrams read carries: the
+    /// sample accessor `0x426020` and the phasor cache `0x428490` apply it
+    /// before any painter runs (an ADC code is taken as is).
+    pub fn shown_k(&self, i: usize) -> f64 {
+        if self.chans[i].adc_counts {
+            1.0
+        } else {
+            display_k(&self.osc.analog[i], self.chans[i].primary)
+        }
+    }
+
     pub fn rms_at(&self, i: usize, k: usize) -> f64 {
         self.rms[i].get(k).copied().unwrap_or(0.0)
     }

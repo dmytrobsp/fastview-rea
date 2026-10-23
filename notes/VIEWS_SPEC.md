@@ -83,9 +83,11 @@ differential diagram. They are appended as ordinary computed channels
 ## Vector diagram (`0x490360`)
 Channels with flag 0x4; RMS phasor at cursor 1 (`doc+0x284`); NaN → 0. Angle:
 absolute (raw sine-referenced) or relative to a chosen channel, wrapped to
-(−π, π]; degrees " %8.2fº" or "radians" = value/π " %8.2fπ". Lengths: two
-groups (unit exactly "A" vs the rest), scale = ⌈⌈max/p⌉/5⌉·5p with p =
-10^⌊log10 max⌋, length = R·|z|/scale; legend "U max"/"I max". "Только
+(−π, π]; degrees " %8.2fº" or "radians" = value/π " %8.2fπ". Values are the
+shown ones (the cache carries k, L9.69). Lengths: two groups (unit exactly
+"A" vs the rest), scale = ⌈⌈max/p⌉/5⌉·5p with p = 10^(⌊log10 max⌋ − 1)
+(not > 0 → 0), length = R·|z|/scale; header: a two-row box at the top right,
+«U max» / «I max» and "%.1f V" / "%.1f A" (never an SI prefix; L9.69). "Только
 направление": full radius. "Показывать значения": table of magnitude/angle.
 
 ## Frequency diagram (`0x46f5a0`)

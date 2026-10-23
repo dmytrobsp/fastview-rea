@@ -4,14 +4,29 @@
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
-/// Vector-diagram group scale (`0x490360`): `p = 10^⌊log10 max⌋`,
-/// `scale = ⌈⌈max/p⌉/5⌉·5p`.
+/// Vector-diagram group scale (`0x4910c3`): `p = 10^(⌊log10 max⌋ − 1)`,
+/// `scale = ⌈⌈max/p⌉/5⌉·5p`; a result that is not > 0 (an empty group's
+/// 0 gives NaN) is 0 (`0x49123f`).
 pub fn nice_scale(max: f64) -> f64 {
-    if max.is_nan() || max <= 0.0 || !max.is_finite() {
-        return 1.0;
+    let p = 10f64.powf(max.log10().floor() - 1.0);
+    let v = ((max / p).ceil() / 5.0).ceil() * 5.0 * p;
+    if v > 0.0 && v.is_finite() {
+        v
+    } else {
+        0.0
     }
-    let p = 10f64.powf(max.log10().floor());
-    ((max / p).ceil() / 5.0).ceil() * 5.0 * p
+}
+
+/// The header value (`0x491331`): `%.1f` above 1 or at 0, else
+/// `%w.(w−2)f` with `w = |⌊log10 v⌋| + 3`. `0x43d960` is passed the unit
+/// "U" / "I", which it never prefixes, so the value stays in V / A.
+pub fn vector_header_value(v: f64) -> String {
+    if v > 1.0 || v == 0.0 {
+        format!("{v:.1}")
+    } else {
+        let w = (v.log10().floor().abs() + 3.0) as usize;
+        format!("{v:w$.p$}", p = w - 2)
+    }
 }
 
 /// Angle of `z` relative to `reference`, wrapped to (−π, π]; absolute
@@ -165,10 +180,17 @@ mod tests {
 
     #[test]
     fn nice_scales() {
-        assert_eq!(nice_scale(37.0), 50.0);
-        assert_eq!(nice_scale(57_000.0), 100_000.0);
-        assert_eq!(nice_scale(4.2), 5.0);
-        assert_eq!(nice_scale(0.0), 1.0);
+        assert_eq!(nice_scale(37.0), 40.0);
+        assert_eq!(nice_scale(57_000.0), 60_000.0);
+        assert_eq!(nice_scale(1234.0), 1500.0);
+        assert_eq!(nice_scale(4.2), 4.5);
+        assert!((nice_scale(0.37) - 0.4).abs() < 1e-12);
+        assert_eq!(nice_scale(0.0), 0.0);
+        assert_eq!(vector_header_value(1500.0), "1500.0");
+        assert_eq!(vector_header_value(0.0), "0.0");
+        assert_eq!(vector_header_value(0.4), "0.40");
+        assert_eq!(vector_header_value(0.05), "0.050");
+        assert_eq!(vector_header_value(1.0), "1.0", "w = 3: %3.1f");
     }
 
     #[test]
