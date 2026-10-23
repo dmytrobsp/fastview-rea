@@ -47,15 +47,13 @@ pub fn load_libraries() -> (Library, String) {
 pub const DEMO_CFG: &str = include_str!("../../../assets/demo/demo_fault.cfg");
 pub const DEMO_DAT: &[u8] = include_bytes!("../../../assets/demo/demo_fault.dat");
 
-/// Which document view fills the work area. The diagrams are docking panes
-/// and ОМП is a result bar plus a dialog (`omp_ui`), so only the quick
-/// analysis still replaces the oscillogram.
+/// Which document view fills the work area: always the oscillogram — the
+/// diagrams are docking panes, ОМП a result bar plus a dialog (`omp_ui`)
+/// and «Быстрый анализ» a modal sheet (`quick_ui`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     /// Осциллограмма — the stacked per-channel lanes (the main document view).
     Oscillogram,
-    /// Быстрый анализ — symmetric components, impedances, formula editor.
-    Analysis,
 }
 
 /// A diagram docking pane (`0x474e10`). The diagrams are panes beside the
@@ -736,7 +734,9 @@ pub enum Command {
     ToggleRibbonMin,
     ChannelMap,
     Settings,
-    Show(View),
+    /// 137 «Быстрый анализ»: the modal sheet (`0x4167f0`), opened on the
+    /// formula editor; enabled iff the record has analog channels.
+    QuickAnalysis,
     /// 32809 / 32808 / 140 / 32811: show or hide a diagram pane.
     TogglePane(Pane),
     /// Bring a pane of the tab group to the front.
@@ -852,6 +852,8 @@ pub struct App {
 
     // analysis / omp
     pub analysis_tab: AnalysisTab,
+    /// The «Быстрый анализ» sheet is up.
+    pub quick_open: bool,
     /// Quick-analysis forms (one per tab).
     pub quick: crate::quick_ui::QuickForms,
     /// ОМП result bar, parameters dialog and message box.
@@ -998,7 +1000,8 @@ impl App {
             // `Frequency Chart/ShowPersents` 0 = percent (`0x46f470`).
             freq_percent: true,
             freq_use_rms: false,
-            analysis_tab: AnalysisTab::Symmetric,
+            analysis_tab: AnalysisTab::Formula,
+            quick_open: false,
             quick: Default::default(),
             omp_ui: Default::default(),
             setfile: Default::default(),
@@ -1054,10 +1057,10 @@ impl App {
                 app.add_doc(Doc::new(osc, "demo_fault".into()));
             }
         }
-        app.view = match std::env::var("FV_VIEW").as_deref() {
-            Ok("analysis") => View::Analysis,
-            _ => View::Oscillogram,
-        };
+        app.view = View::Oscillogram;
+        if std::env::var("FV_VIEW").as_deref() == Ok("analysis") {
+            app.dispatch(Command::QuickAnalysis);
+        }
         if std::env::var("FV_VIEW").as_deref() == Ok("omp") {
             app.tab = RibbonTab::Omp;
         }
@@ -1159,9 +1162,12 @@ impl App {
             }
             Command::Undo => self.undo(),
             Command::Redo => self.redo(),
-            Command::Show(v) => {
-                self.view = v;
-                self.tab = RibbonTab::Home;
+            Command::QuickAnalysis => {
+                if self.active_doc().is_some_and(|d| !d.osc.analog.is_empty()) {
+                    self.analysis_tab = AnalysisTab::Formula;
+                    self.quick_open = true;
+                    self.quick_defaults();
+                }
             }
             Command::OmpAnalysis => self.omp_toggle(),
             Command::OmpParams => self.omp_open_params(),
@@ -1868,15 +1874,27 @@ mod tests {
     }
 
     #[test]
-    fn show_view_switches_view_and_tab() {
+    fn quick_analysis_opens_the_sheet_on_the_formula_editor() {
         let mut app = demo_app();
         app.tab = RibbonTab::Omp;
-        app.dispatch(Command::Show(View::Analysis));
-        assert_eq!(app.view, View::Analysis);
-        assert_eq!(app.tab, RibbonTab::Home);
-        app.dispatch(Command::Show(View::Oscillogram));
-        assert_eq!(app.view, View::Oscillogram);
-        assert_eq!(app.tab, RibbonTab::Home);
+        app.analysis_tab = AnalysisTab::Zero;
+        app.dispatch(Command::QuickAnalysis);
+        assert!(app.quick_open);
+        assert_eq!(app.analysis_tab, AnalysisTab::Formula, "always the formula editor first");
+        assert_eq!(app.view, View::Oscillogram, "the view stays");
+        assert_eq!(app.tab, RibbonTab::Omp);
+        let mut empty = App::new();
+        empty.dispatch(Command::QuickAnalysis);
+        assert!(!empty.quick_open, "no record, no sheet");
+        // «Рассчитать» on a page generates its channels only; on the formula
+        // editor nothing.
+        app.quick_calc();
+        assert!(!app.quick_open);
+        assert!(app.active_doc().unwrap().computed.is_empty());
+        app.dispatch(Command::QuickAnalysis);
+        app.analysis_tab = AnalysisTab::Symmetric;
+        app.quick_calc();
+        assert!(!app.active_doc().unwrap().computed.is_empty());
     }
 
     #[test]

@@ -440,10 +440,10 @@ mod window_tests {
     /// down to a sliver must lay out without a panic, in every layout.
     #[test]
     fn tiny_window_sizes_do_not_panic() {
-        use app::{Command as C, Pane, View};
+        use app::{Command as C, Pane};
         sweep(&mut App::new());
         sweep(&mut demo(&[]));
-        sweep(&mut demo(&[C::Show(View::Analysis)]));
+        sweep(&mut demo(&[C::QuickAnalysis]));
         sweep(&mut demo(&[C::ToggleExplorer, C::ToggleParamBar]));
         sweep(&mut demo(&[C::ToggleRibbonMin]));
         sweep(&mut demo(&[C::TogglePane(Pane::Vector), C::TogglePane(Pane::Circle), C::TogglePane(Pane::Differential), C::TogglePane(Pane::Frequency)]));
@@ -720,9 +720,9 @@ mod window_tests {
         let at = pos("FV_WINDOW_CLICK").unwrap_or(Pos2::new(48.0, 12.0));
         let hover = pos("FV_WINDOW_HOVER").unwrap_or(at);
         // `FV_WINDOW_STATE=<name>` dispatches commands first.
-        use app::{Command as C, Pane, RibbonTab, View};
+        use app::{Command as C, Pane, RibbonTab};
         let cmds = match std::env::var("FV_WINDOW_STATE").unwrap_or_default().as_str() {
-            "analysis" => vec![C::Show(View::Analysis)],
+            "analysis" => vec![C::QuickAnalysis],
             "circle" => vec![C::ActivatePane(Pane::Circle)],
             "diff" => vec![C::ActivatePane(Pane::Differential)],
             "omp" => vec![C::OmpAnalysis],

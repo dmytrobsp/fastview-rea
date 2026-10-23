@@ -1814,6 +1814,27 @@ Residual: hS scaled like our fonts (13 px); whether "none" units are
 blanked in the line NOT DETERMINED (kept); СКЗ / A1 read at В1 without
 the bit-14 interpolation (as the original; ours has none either).
 
+### L9.51 — «Быстрый анализ» is a modal sheet, not a view  ·  🟡 (stage A)
+Read (subagent report; the sheet in VIEWS_SPEC «The sheet»): 137 shows a
+modal `CMFCPropertySheet` with a 150 px Outlook bar, caption 159, only
+«Рассчитать» / «Отмена», always opened on «Редактор формул»; only the
+active page generates; Cancel generates nothing.
+Ours (stage A): `Command::QuickAnalysis` (enabled iff analog channels;
+the ribbon button is a plain command now) opens `quick_sheet_window`:
+the six pages in a 150 px left bar (our glyphs, not bitmap 549), the page,
+«Рассчитать» (`quick_calc`: the active page's channels, nothing for the
+formula editor) and «Отмена» / Esc / ×; `View::Analysis`, the central
+tab strip, our «Каналы…» button and `Command::Show` removed; the form is
+filled with the role defaults on opening. Test
+`quick_analysis_opens_the_sheet_on_the_formula_editor`; rendered.
+Residual (stage B, all read — VIEWS_SPEC): the six page layouts and their
+enable / disable dependencies; OK greying per page; per-record
+persistence in the `.set` (load on open, save on both buttons); the
+formula page as the original's list editor (DIALOG 340: list + Загрузить /
+Сохранить / ↑ / ↓ / Добавить / Удалить / Удалить все) working on a copy that
+«Рассчитать» applies (ours edits the record's list live); Enter as the
+default button.
+
 Next in L9 (HANDOFF 2026-10-23): **public at
 github.com/dmytrobsp/fastview-rea, release v0.1.0** (Linux / Windows / macOS
 x86_64 + arm64, flat archives). This session: the four GUI bugs (L9.23–
@@ -1840,7 +1861,9 @@ commit them). **Done since:** L9.46 digital lanes drawn by the
 decimating painter (`FV_WINDOW_XSCALE=f` for `window_dump`); L9.47
 comment texts / moment absolute time (`FV_WINDOW_STATE=comments`); L9.48
 the formula dialog's 396 sequence; L9.49 the finder's delete (recycle bin);
-L9.50 group lanes (`FV_WINDOW_STATE=group`). A
+L9.50 group lanes (`FV_WINDOW_STATE=group`); L9.51 «Быстрый анализ» as a
+modal sheet (stage A; stage B = page layouts / greying / persistence,
+all read in VIEWS_SPEC — next). A
 residual triage (2026-10-23) found many L9.1–L9.14 residuals already done
 (ledger text stale) — next candidates: L9.9 delete → recycle bin, L9.3
 Быстрый анализ as a modal sheet, L9.30 / L9.22 small ones. **Open

@@ -216,7 +216,7 @@ impl QuickForms {
 
 impl App {
     /// Fill empty channel fields from the channel-role map.
-    fn quick_defaults(&mut self) {
+    pub(crate) fn quick_defaults(&mut self) {
         let Some(d) = self.active_doc() else { return };
         let name = |idx: Option<usize>| idx.and_then(|i| d.osc.analog.get(i)).map(|c| c.id.clone()).unwrap_or_default();
         let (ua, ub, uc) = (name(d.analysis.u_abc[0]), name(d.analysis.u_abc[1]), name(d.analysis.u_abc[2]));
@@ -229,13 +229,91 @@ impl App {
         }
     }
 
-    /// The form of the active quick-analysis tab and its OK button.
+    /// «Быстрый анализ» (CQAnPropSheet `0x48b970`, a `CMFCPropertySheet`
+    /// with the Outlook-bar look, 150 px): modal, caption string 159, the
+    /// six pages in a left-hand bar (our glyphs — bitmap 549 is the
+    /// original's), opened on «Редактор формул»; only «Рассчитать» (OK,
+    /// string 164) and «Отмена» (3328). «Рассчитать» generates from the
+    /// active page alone (`0x48c0e0`); «Отмена» generates nothing.
+    pub fn quick_sheet_window(&mut self, ctx: &egui::Context) {
+        if !self.quick_open {
+            return;
+        }
+        if self.active_doc().is_none() {
+            self.quick_open = false;
+            return;
+        }
+        let (mut calc, mut cancel, mut open) = (false, false, true);
+        let enabled = self.formula_dlg.is_none();
+        egui::Window::new("Быстрый анализ")
+            .id(egui::Id::new("fv_quick_sheet"))
+            .collapsible(false)
+            .resizable(false)
+            .fixed_size(egui::Vec2::new(700.0, 510.0))
+            .open(&mut open)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.add_enabled_ui(enabled, |ui| {
+                    ui.horizontal_top(|ui| {
+                        // The separator spans the row: keep it to the page.
+                        ui.set_max_height(470.0);
+                        ui.vertical(|ui| {
+                            ui.set_width(150.0);
+                            for (tab, glyph, title) in PAGES {
+                                let sel = self.analysis_tab == tab;
+                                let text = egui::RichText::new(format!("{glyph}\n{title}")).size(11.5);
+                                let r = ui.add_sized([150.0, 58.0], egui::SelectableLabel::new(sel, text));
+                                if r.clicked() {
+                                    self.analysis_tab = tab;
+                                }
+                            }
+                        });
+                        ui.separator();
+                        ui.vertical(|ui| {
+                            ui.set_width(530.0);
+                            ui.label(egui::RichText::new(PAGES.iter().find(|p| p.0 == self.analysis_tab).map_or("", |p| p.2)).strong());
+                            ui.separator();
+                            egui::ScrollArea::both().id_salt("quick_page").max_height(420.0).show(ui, |ui| {
+                                ui.set_min_height(420.0);
+                                if self.analysis_tab == AnalysisTab::Formula {
+                                    self.formula_editor_ui(ui);
+                                } else {
+                                    self.quick_tab_ui(ui);
+                                }
+                            });
+                        });
+                    });
+                    ui.separator();
+                    ui.allocate_ui_with_layout(egui::Vec2::new(ui.available_width(), 26.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        cancel = ui.add_sized([80.0, 22.0], egui::Button::new("Отмена")).clicked();
+                        calc = ui.add_sized([80.0, 22.0], egui::Button::new("Рассчитать")).clicked();
+                    });
+                });
+            });
+        if enabled && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            cancel = true;
+        }
+        if calc {
+            self.quick_calc();
+        } else if cancel || !open {
+            self.quick_open = false;
+        }
+    }
+
+    /// «Рассчитать» (`0x48b710` → `0x48c0e0`): the active page's channels
+    /// (the formula editor's list is already the record's), then close.
+    pub fn quick_calc(&mut self) {
+        if self.analysis_tab != AnalysisTab::Formula {
+            let g = self.quick.generate(self.analysis_tab);
+            self.apply_quick(&g);
+        }
+        self.quick_open = false;
+    }
+
+    /// The form of the active quick-analysis page.
     pub fn quick_tab_ui(&mut self, ui: &mut egui::Ui) {
         self.quick_defaults();
-        let Some(d) = self.active_doc() else {
-            ui.label("Загрузите осциллограмму для анализа.");
-            return;
-        };
+        let Some(d) = self.active_doc() else { return };
         let names: Vec<String> =
             d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect();
         let tab = self.analysis_tab;
@@ -403,10 +481,16 @@ impl App {
                 AnalysisTab::Formula => {}
             }
         });
-        ui.separator();
-        if ui.button("ОК — добавить каналы").clicked() {
-            let g = self.quick.generate(tab);
-            self.apply_quick(&g);
-        }
     }
 }
+
+/// The sheet's pages in the original's order (AddPage ×6, `0x48b970`):
+/// tab, our glyph, the page dialog's caption.
+const PAGES: [(AnalysisTab, &str, &str); 6] = [
+    (AnalysisTab::Symmetric, "I₁ I₂", "Симметричные составляющие"),
+    (AnalysisTab::Zero, "3I₀", "Нулевая последовательность"),
+    (AnalysisTab::PhasePhase, "Zab", "Междуфазные сопротивления"),
+    (AnalysisTab::Phase, "Za", "Фазные сопротивления"),
+    (AnalysisTab::Differential, "Iдиф", "Дифференциальные токи"),
+    (AnalysisTab::Formula, "f(x)", "Редактор формул"),
+];

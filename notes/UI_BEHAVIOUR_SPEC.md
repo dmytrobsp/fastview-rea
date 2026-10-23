@@ -619,7 +619,7 @@ every selected channel gets the custom colour; modified; repaint.
 | id | effect | CMDUI |
 |---|---|---|
 | 32805 Комментарии (app menu) | CCommentDlg on the record's HDR text (§7.10) | **enabled only for .cfg / .cff** (note: tools 155–157 use .cfg/.osc) |
-| 137 Быстрый анализ | CQAnPropSheet (VIEWS_SPEC); true → modified, UpdateAllViews, panes | enabled iff analog count ≠ 0 |
+| 137 Быстрый анализ | modal CQAnPropSheet (VIEWS_SPEC «The sheet»; L9.51); «Рассчитать» → modified, UpdateAllViews, panes | enabled iff analog count ≠ 0 |
 | 32806 Анализ (ОМП) | toggle: result shown → clear it; else run (§8) | disabled while any bit14 channel; checked = result shown |
 | 32807 Параметры (ОМП) | modal ОМП dialog; OK → modified, run unless bit14 channels | always enabled (with a document) |
 | 32860 Загрузка настроек... | open dialog; load a record-settings file (computed channels + ОМП params, 0x44f5b0); modified, refresh | — |

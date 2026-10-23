@@ -4,7 +4,7 @@
 //! Осциллограмма; ОМП tab: Параметры · Анализ — a toggle with the result bar,
 //! `omp_ui.rs`). See `notes/UI_SPEC.md`.
 
-use crate::app::{App, Command, Pane, RibbonTab, ValueMode, View};
+use crate::app::{App, Command, Pane, RibbonTab, ValueMode};
 use crate::icons::{self, Icon};
 use crate::theme::Skin;
 use eframe::egui::{self, Color32, RichText};
@@ -404,8 +404,9 @@ impl App {
                     cmds.push(Command::SetPrimaryValues(false));
                 }
             });
-            if big_button_sel(ui, p, Icon::Analysis, "Быстрый\nанализ", self.view == View::Analysis).clicked() {
-                cmds.push(Command::Show(View::Analysis));
+            let analog = self.active_doc().is_some_and(|d| !d.osc.analog.is_empty());
+            if ui.add_enabled_ui(analog, |ui| big_button(ui, p, Icon::Analysis, "Быстрый\nанализ")).inner.clicked() {
+                cmds.push(Command::QuickAnalysis);
             }
         });
         // Осциллограмма

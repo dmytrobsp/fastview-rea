@@ -40,6 +40,46 @@ differential diagram. They are appended as ordinary computed channels
 - Формула: the whole computed-channel list editor (flag byte 7: replace the
   list, restore on failure).
 
+### The sheet (ledger L9.51)
+- 137 (`0x4167f0`): a stack `CMFCPropertySheet` (`0x48b970`) shown with
+  DoModal; IDOK → generate (`0x414da0`, `0x415780`), anything else → nothing.
+  Look = Outlook bar, 150 px, on the left (`SetLook(1,150)`), icons BITMAP 549
+  (11 × 32 px, magenta key); caption string 159 «Быстрый анализ»;
+  PSH_NOAPPLYNOW, no help: only OK renamed «Рассчитать» (164) and Cancel
+  «Отмена» (3328) (`0x48be10`). Opens on «Редактор формул» every time.
+- «Рассчитать»: every page's OnOK `0x48b710` → `0x48c0e0` once, asking only
+  the ACTIVE page; then each page saves its fields. «Отмена» `0x48b770`
+  also saves the fields (no generation).
+- OK greying: OnActivatePage `0x48c210` enables OK, then the page's check
+  (slot 0x1d0, also on every combo / edit change `0x476230`): 536 `0x48d5a0`
+  (each group not switched off needs its combos: Ib unless calculated; Ua–Uc
+  or Uab/Ubc by the radio), 537 `0x48a1f0`, 538 `0x488550` (Iтр non-empty +
+  combos), 543 `0x48b360` (combos, Iтр, the active group's edits, the
+  parallel-line edits when 3Ion is used); 539 and 340 always enabled. No
+  page blocks switching; no messages of their own.
+- Page dependencies: 536 «Рассчитать Ib» greys Ib (`0x487d70`); Фазные /
+  Линейные swap Ua–Uc / Uab,Ubc (`0x487de0`); each group's «Отключить» greys
+  its block and the OTHER group's «Отключить» (never both, `0x48c870` /
+  `0x48cb60`). 537 Расчетный / Измеренный (`0x488f50`), the 3Uo radio
+  (`0x4890b0`), «Отключить» pair as 536. 543 удельные / компенсации
+  (`0x48a910`); parallel-line edits only when 3Ion ≠ «Не учитывать»
+  (`0x48ab80`). 539: the «Приведение» radio enables its edit block
+  (`0x4835b0`…); 1 phase greys Ib/Ic and the group radios (`0x482c10`);
+  3 phases: «По последовательностям» shows 0…11 + «Удалить I0», «Цифровой
+  треугольник» {0,1,11}, «Не учитывать» 0…11 greyed (`0x483ab0`);
+  «Полуразность» only with 2 arms, else forced to «Полусумма» (`0x482b60`);
+  Kторм enabled for Полусумма or Полуразность with 2 arms (`0x483da0`);
+  «<<» / «>>» greyed at the ends (`0x4831b0`); radios kept per arm.
+- Defaults (`0x411f40`): R/X/K «1.», Ф/Rm/Xm/Km/Фm «0.», Iтр «0.25», Kторм
+  {1, 0.5} = 0.5, arms 2…24 = 2, phases {1,3} = 3, «Удалить I0» on; 536 / 538
+  Фазные, 537 Расчетный + «из Ua, Ub, Uc», 543 удельные.
+- Persistence per record: the shared OnInitDialog `0x48b690` loads each page
+  from the document's settings tree (doc+0x300, written to the `.set`,
+  L9.17) — categories SymmetricItemsPage, NullSequencePage,
+  InterPhaseResistPage, PhaseResistPage, DiffCurrentsPage (current arm reset
+  to 1); FormulaEditorPage has stubs (its list is the computed channels). A
+  missing key keeps the default.
+
 ## Vector diagram (`0x490360`)
 Channels with flag 0x4; RMS phasor at cursor 1 (`doc+0x284`); NaN → 0. Angle:
 absolute (raw sine-referenced) or relative to a chosen channel, wrapped to

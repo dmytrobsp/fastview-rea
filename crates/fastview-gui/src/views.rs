@@ -2,7 +2,7 @@
 //! over the active document (ОМП lives in `omp_ui.rs`). The oscillogram (lane) view lives in
 //! `lanes.rs`.
 
-use crate::app::{AnalysisTab, App, Command, Pane, Panes, View};
+use crate::app::{App, Command, Pane, Panes, View};
 use crate::diagram_ui::Window;
 use eframe::egui;
 
@@ -10,7 +10,6 @@ impl App {
     pub fn render_tab(&mut self, ctx: &egui::Context) {
         match self.view {
             View::Oscillogram => self.view_oscillogram(ctx),
-            View::Analysis => self.view_analysis(ctx),
         }
     }
 
@@ -273,36 +272,7 @@ impl App {
     }
 
     // ---- Быстрый анализ ----
-    fn view_analysis(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                for (tab, label) in [
-                    (AnalysisTab::Symmetric, "Симметричные составляющие"),
-                    (AnalysisTab::Zero, "Нулевая последовательность"),
-                    (AnalysisTab::PhasePhase, "Междуфазные сопротивления"),
-                    (AnalysisTab::Phase, "Фазные сопротивления"),
-                    (AnalysisTab::Differential, "Дифференциальные токи"),
-                    (AnalysisTab::Formula, "Редактор формул"),
-                ] {
-                    ui.selectable_value(&mut self.analysis_tab, tab, label);
-                }
-                ui.separator();
-                if ui.button("Каналы…").on_hover_text("Назначить Ua/Ia… каналам").clicked() {
-                    self.show_channel_map = true;
-                }
-            });
-            ui.separator();
-            if self.analysis_tab == AnalysisTab::Formula {
-                self.formula_editor_ui(ui);
-                return;
-            }
-            // Like the original's property sheet, a tab generates computed
-            // channels; their values are read on the oscillogram and diagrams.
-            self.quick_tab_ui(ui);
-        });
-    }
-
-    fn formula_editor_ui(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn formula_editor_ui(&mut self, ui: &mut egui::Ui) {
         ui.label("Расчётный канал по отсчётам (добавляется на осциллограмму):");
         // «Добавить» of the original's page (`0x486df0`): DIALOG 359.
         if ui.button("Добавить…").on_hover_text("Добавить новую формулу по шаблону").clicked() {

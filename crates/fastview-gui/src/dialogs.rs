@@ -29,6 +29,7 @@ impl App {
         self.loading_window(ctx);
         self.omp_windows(ctx);
         self.record_dialogs_ui(ctx);
+        self.quick_sheet_window(ctx);
         self.formula_dlg_window(ctx);
         self.save_prompt_window(ctx);
     }
