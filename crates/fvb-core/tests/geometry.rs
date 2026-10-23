@@ -45,6 +45,35 @@ fn square(x0: f64, y0: f64, x1: f64, y1: f64, extra: &str) -> String {
     )
 }
 
+/// `0x4387d0`: integer regions per figure at scale 1 — vertices to the
+/// nearest unit (ties up), circles outward, a degenerate figure a 1 × 1
+/// box at its first point — folded by their ops, then the box's largest
+/// |edge|.
+#[test]
+fn characteristic_extent_in_whole_units() {
+    let ext = |body: &str| {
+        let ch = one_char(body);
+        let cx = ch.context(&HashMap::new()).unwrap();
+        let mut figs = Vec::new();
+        fvb_core::geom::evaluate_figures(&ch, &cx, &mut figs).unwrap();
+        fvb_core::geom::integer_extent(&ch, &figs)
+    };
+    // (−1.5, −0.2)…(4.2, 3.1): x −1…4, y 0…3 → 4.
+    assert_eq!(ext(&square(-1.5, -0.2, 4.2, 3.1, "")), 4.0);
+    // A circle r 2.3 at the origin: ⌈2.3⌉ = 3 (nearest would give 2).
+    assert_eq!(ext(r#"<circle mode="on" radius="2.3" xcenter="0" ycenter="0"/>"#), 3.0);
+    // A sub-unit square rounds to nothing: 1 × 1 at (⌈0.1⌉, −⌈0.1⌉) =
+    // (1, −1) → 2.
+    assert_eq!(ext(&square(0.1, 0.1, 0.4, 0.3, "")), 2.0);
+    // Zero height alone is empty too: at (⌈0.6⌉, −⌈0.2⌉) = (1, −1) → its
+    // box reaches 2 in x.
+    assert_eq!(ext(&square(0.6, 0.2, 3.2, 0.4, "")), 2.0);
+    // The fold: a big square cut by a bigger `not` leaves nothing → 0.
+    assert_eq!(ext(&format!("{}{}", square(0.0, 0.0, 2.0, 2.0, ""), square(-5.0, -5.0, 5.0, 5.0, r#"type="not""#))), 0.0);
+    // An ellipse 5 × 3 at (1, 0): x ⌊−2.5⌋…⌈2.5⌉ + 1 → 4.
+    assert_eq!(ext(r#"<ellipse mode="on" xcenter="1" ycenter="0" width="5" height="3" angle="0"/>"#), 4.0);
+}
+
 /// Figures fold in document order: A, then `not` B, then `or` C gives
 /// (A − B) ∪ C — C survives inside the cut-out. Grouping all unions before
 /// the differences would erase it.

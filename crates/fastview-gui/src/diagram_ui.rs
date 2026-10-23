@@ -834,9 +834,9 @@ impl App {
                     continue;
                 }
                 let Some(geo) = &st.geo else { continue };
-                if let Some(b) = geo.bounds {
+                if geo.bounds.is_some() {
                     let s = usize::from(!diff && ch.dimension_text != "Ohm");
-                    char_ext[s] = char_ext[s].max(dg::region_extent(b));
+                    char_ext[s] = char_ext[s].max(st.extent);
                 }
                 // Open polypoints are closed against the visible area.
                 let in_view = match self.char_view {

@@ -1103,6 +1103,9 @@ pub struct CharState {
     /// Last evaluated figure values (kept when an evaluation fails).
     pub figs: Vec<Option<fvb_core::FigureValues>>,
     pub geo: Option<CharGeometry>,
+    /// The plane-scale extent of the figures (`geom::integer_extent`),
+    /// kept with the geometry.
+    pub extent: f64,
     pub color: egui::Color32,
 }
 
@@ -1507,6 +1510,7 @@ impl App {
                     settings,
                     figs: Vec::new(),
                     geo: None,
+                    extent: 0.0,
                     color: Self::palette(ci),
                 }
             });
@@ -1536,6 +1540,7 @@ impl App {
         for (ci, mut st) in states {
             let ch = &block.characteristics[ci];
             st.geo = Some(fvb_core::geom::build_geometry(ch, &st.figs, None));
+            st.extent = fvb_core::geom::integer_extent(ch, &st.figs);
             self.chars.insert((b, ci), st);
         }
         if let Err(e) = result {

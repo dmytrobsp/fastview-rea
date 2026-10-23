@@ -254,6 +254,97 @@ fn figure_region(p: &Primitive, v: &FigureValues, view: Option<View>) -> IShapes
     }
 }
 
+/// GDI's world → device rounding at scale 1: nearest, ties up.
+fn rnd(v: f64) -> f64 {
+    (v + 0.5).floor()
+}
+
+/// The bounding box of a set of shapes.
+fn shapes_box(s: &IShapes) -> Option<(f64, f64, f64, f64)> {
+    let mut b: Option<(f64, f64, f64, f64)> = None;
+    for p in s.iter().flatten().flatten() {
+        b = Some(match b {
+            None => (p[0], p[1], p[0], p[1]),
+            Some((l, t, r, bt)) => (l.min(p[0]), t.min(p[1]), r.max(p[0]), bt.max(p[1])),
+        });
+    }
+    b
+}
+
+/// A 1 × 1 rectangle region at a device point.
+fn unit_rect(x: f64, y: f64) -> IShapes {
+    vec![vec![vec![[x, y], [x + 1.0, y], [x + 1.0, y + 1.0], [x, y + 1.0]]]]
+}
+
+/// A characteristic's extent for the plane scale (`0x4387d0`): for each
+/// mode every figure builds its own integer region at scale 1, origin 0
+/// (device y = −world y), the regions fold by their ops as when painting,
+/// and the extent is the largest |edge| of the fold's box (`GetRgnBox`).
+/// Per figure: polygon / polypoint vertices round to the nearest unit,
+/// ties up (`0x409c00`, `0x40ae40`); a circle is the ellipse of its box
+/// rounded outward (`0x40a170`); an ellipse is the axis-aligned one of
+/// ⌊−a/2⌋…⌈a/2⌉ × ⌊−b/2⌋…⌈b/2⌉ turned, rounded and moved to (R(cx),
+/// R(−cy)) (`0x40a5d0`). A figure whose region is empty — or whose box
+/// has no width or no height — is a 1 × 1 rectangle instead: a polygon's
+/// at its first point (⌈x⌉, −⌈y⌉), (0, 0) without one; a circle's at
+/// (⌈cx⌉, ⌈cy⌉) and an ellipse's at (R(cx), R(cy)), neither flipped.
+pub fn integer_extent(ch: &Characteristic, figs: &[Option<FigureValues>]) -> f64 {
+    let mut ext = 0.0f64;
+    for mode in [Mode::On, Mode::Off] {
+        let mut region: Option<IShapes> = None;
+        for (i, p) in ch.primitives.iter().enumerate().filter(|(_, p)| p.mode() == mode) {
+            let fig = match figs.get(i) {
+                Some(Some(v)) => device_region(v),
+                _ => unit_rect(0.0, 0.0),
+            };
+            region = Some(match region {
+                None => fig,
+                Some(r) => combine(r, &fig, p.combine()),
+            });
+        }
+        if let Some((l, t, r, b)) = region.as_ref().and_then(shapes_box) {
+            ext = ext.max(l.abs()).max(t.abs()).max(r.abs()).max(b.abs());
+        }
+    }
+    ext
+}
+
+/// One figure's integer region at scale 1 (see [`integer_extent`]).
+fn device_region(v: &FigureValues) -> IShapes {
+    let dev = |p: &Pt| [rnd(p[0]), -rnd(p[1])];
+    let (ring, fallback): (Contour, Pt) = match v {
+        FigureValues::PolyPoint(pts) => (pts.iter().map(dev).collect(), pts.first().map_or([0.0, 0.0], |p| [p[0].ceil(), -p[1].ceil()])),
+        FigureValues::Polygon(lines) => {
+            let first = lines.last().zip(lines.first()).and_then(|(a, b)| line_intersection(a, b));
+            let ring = polygon_from_lines(lines).map(|pts| pts.iter().map(dev).collect()).unwrap_or_default();
+            (ring, first.map_or([0.0, 0.0], |p| [p[0].ceil(), -p[1].ceil()]))
+        }
+        FigureValues::Circle { center: [cx, cy], radius } => {
+            let r = radius.abs();
+            let (l, t, rt, b) = ((cx - r).floor(), (-(cy + r)).floor(), (cx + r).ceil(), (r - cy).ceil());
+            let ring = ellipse_points([(l + rt) / 2.0, (t + b) / 2.0], (rt - l) / 2.0, (b - t) / 2.0, 0.0);
+            (ring, [cx.ceil(), cy.ceil()])
+        }
+        FigureValues::Ellipse { center: [cx, cy], width, height, angle } => {
+            let (a, b) = (width.abs(), height.abs());
+            let (l, t, r, bt) = ((-a / 2.0).floor(), (-b / 2.0).floor(), (a / 2.0).ceil(), (b / 2.0).ceil());
+            let (ox, oy) = (rnd(*cx), rnd(-cy));
+            // Device y points down: the turn is mirrored (the box is the
+            // same either way).
+            let ring = ellipse_points([(l + r) / 2.0, (t + bt) / 2.0], (r - l) / 2.0, (bt - t) / 2.0, -angle)
+                .iter()
+                .map(|p| [rnd(p[0]) + ox, rnd(p[1]) + oy])
+                .collect();
+            (ring, [rnd(*cx), rnd(*cy)])
+        }
+    };
+    let region = simplify_ring(ring);
+    match shapes_box(&region) {
+        Some((l, t, r, b)) if r > l && b > t => region,
+        _ => unit_rect(fallback[0], fallback[1]),
+    }
+}
+
 /// Close an open polypoint the way `0x40ae40` does while painting.
 ///
 /// 1. If the lines of the first segment (p1→p0) and the last segment

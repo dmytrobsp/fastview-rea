@@ -292,26 +292,6 @@ pub fn scanline_spans(rings: &[Vec<[f32; 2]>], y0: i32, y1: i32) -> Vec<(i32, f3
 
 // ---- vector and frequency layout ------------------------------------------
 
-/// A characteristic's extent for the plane scale (`0x4387d0`): its regions
-/// are built at scale 1 as integer GDI regions, so the box is the reach
-/// rounded outward to whole units; a figure under one unit is an empty
-/// region and falls back to a 1×1 box at (⌈cx⌉, ⌈cy⌉). (The exact +0 / +1
-/// of the exclusive edge is INFERRED as +0.)
-pub fn region_extent((x0, y0, x1, y1): (f64, f64, f64, f64)) -> f64 {
-    // Polygon / polypoint vertices round to the nearest unit, ties up
-    // (`0x409c00`, `0x40ae40`); an empty box — width or height 0 — is a
-    // 1×1 one at the rounded-up start (`0x409eeb`).
-    let near = |v: f64| (v + 0.5).floor();
-    let (l, t, r, b) = (near(x0), near(y0), near(x1), near(y1));
-    let (l, t, r, b) = if r - l == 0.0 || b - t == 0.0 {
-        let (cx, cy) = (x0.ceil(), y0.ceil());
-        (cx, cy, cx + 1.0, cy + 1.0)
-    } else {
-        (l, t, r, b)
-    };
-    l.abs().max(r.abs()).max(t.abs()).max(b.abs())
-}
-
 /// Does the plane's zoom snap back to 1 (`0x43b72f`–`0x43b78e`)? The larger
 /// characteristic extent × the Ω pixels per unit over 800 — an Ω scale
 /// with no extent is +∞ (a positive extent resets, none gives NaN: no).
@@ -699,14 +679,6 @@ mod tests {
                 Entry::Sep => "─".into(),
             })
             .collect()
-    }
-
-    #[test]
-    fn characteristic_extent_in_whole_units() {
-        // Rounded to the nearest unit, ties up: (−1, 0, 4, 3).
-        assert_eq!(region_extent((-1.5, -0.2, 4.2, 3.1)), 4.0);
-        assert_eq!(region_extent((0.1, 0.1, 0.4, 0.3)), 2.0, "an empty box: the 1×1 one at the rounded-up start");
-        assert_eq!(region_extent((0.6, 0.2, 3.2, 0.4)), 2.0, "zero height alone is empty: the 1×1 box at (1, 1)");
     }
 
     #[test]

@@ -2942,10 +2942,8 @@ the differential plane keeps one maximum, `0x443f20`), `zoom_resets`,
 **User-visible:** the circle diagram shows its characteristics only with
 an impedance (Ohm) locus or R/X pair large enough to hold them — as the
 original.
-Residual: per-figure rounding (circles outward, ellipses) is applied to
-our combined world bounds with the polygon rule; the empty-box fallback
-uses the box's start, not the first vertex; loci drawn at an infinite
-scale (NOT DETERMINED; ours skip them).
+Residual: (per-figure extents: L9.99); loci at an infinite scale land at
+INT_MIN in GDI — nothing visible, as ours skipping them (L9.99).
 
 
 ### L9.89 — Level lines: a body drag re-homes; unshown levels are kept  ·  🟡
@@ -3245,6 +3243,33 @@ column) and the docked order are not saved; the original keeps them in
 the registry, ours in our settings file (`persist`); a floating rect is
 taken as saved even if the screen changed (egui keeps windows on the
 screen).
+
+### L9.99 — Characteristic extents per figure, folded as integer regions  ·  ✅
+Read (subagent report; the L9.88 / L9.75 reads by hand): `0x4387d0` makes,
+per visible characteristic and per mode, one integer HRGN per figure at
+scale 1, origin 0 (x → R(x), y → −R(y), R nearest with ties up), folds
+them with CombineRgn by each figure's op like the painter, and takes
+max |·| of `GetRgnBox`. Polygon `0x409c00` / polypoint `0x40ae40`: the
+rounded vertices; circle `0x40a170`: Ellipse(⌊cx − r⌋, ⌊−(cy + r)⌋,
+⌈cx + r⌉, ⌈r − cy⌉) — outward; ellipse `0x40a5d0`: the axis-aligned
+Ellipse(⌊−a/2⌋, ⌊−b/2⌋, ⌈a/2⌉, ⌈b/2⌉) path turned, rounded and moved to
+(R(cx), R(−cy)). A figure whose region is NULL or whose box has no width
+or no height becomes a 1 × 1 CreateRectRgn that takes part in the fold:
+a polygon's at its first point (⌈x⌉, −⌈y⌉) — vertex 0 is the last line ∩
+the first — or (0, 0) with none; a circle's at (⌈cx⌉, ⌈cy⌉), an ellipse's
+at (R(cx), R(cy)), neither scaled nor flipped. Loci at an infinite scale
+(`0x43a880` has no guard): every vertex becomes INT_MIN — nothing visible.
+Ours rounded the combined world box of both modes with the polygon rule
+(circles could come out a unit short, r 2.3 → 2 instead of 3), applied
+the fallback to that box at its start, and never let an AND / DIFF fold
+shrink the box. Now `geom::integer_extent` (per figure, folded with the
+same `combine`, cached in `CharState::extent`); `diagram::region_extent`
+removed. Test `characteristic_extent_in_whole_units` (fvb-core: polygon,
+outward circle, sub-unit and zero-height fallbacks, an emptying DIFF, an
+ellipse).
+Residual: whether GDI's box of an Ellipse path includes its right /
+bottom edge NOT DETERMINED (ours: the inscribed polygon's box); our
+ellipse ring is sampled (180 points) where GDI flattens the Bézier path.
 
 Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
