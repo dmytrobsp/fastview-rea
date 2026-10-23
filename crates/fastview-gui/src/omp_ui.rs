@@ -196,8 +196,11 @@ impl App {
         d.v_shown[0] = true;
         d.v_shown[1] = true;
         // Same-named channels are replaced in place, others appended.
-        match d.computed.iter_mut().find(|c| c.name == L_KZ) {
-            Some(c) => c.samples = lkz,
+        match d.computed.iter().position(|c| c.name == L_KZ) {
+            Some(j) => {
+                d.computed[j].set_values(lkz, None);
+                d.reflag_computed(j);
+            }
             None => {
                 let mut c = Computed::new(L_KZ.into(), "ОМП".into(), lkz, color);
                 c.unit = "m".into();

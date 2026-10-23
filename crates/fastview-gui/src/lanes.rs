@@ -332,8 +332,9 @@ impl OscView<'_> {
                     if doc.pending_of(*i).is_some() {
                         self.pasted_analog(pp, *i, top, h, (lo, hi), color);
                     } else {
-                        let s = &doc.computed[*i].samples;
-                        draw_series(pp, (first, last.min(s.len().saturating_sub(1))), &|k| s.get(k).copied().unwrap_or(0.0), &x_of, top, h, (lo, hi), color, f);
+                        // The display cache (`0x429490` reads ch+0x2c).
+                        let c = &doc.computed[*i];
+                        draw_series(pp, (first, last.min(c.samples.len().saturating_sub(1))), &|k| c.shown(k), &x_of, top, h, (lo, hi), color, f);
                     }
                 }
             }
@@ -614,8 +615,19 @@ fn stat_rows(doc: &crate::app::Doc, key: &ChanKey) -> Option<crate::app::StatRow
 /// window zoom, remove DC, invert, primary/secondary scaling, RMS mode,
 /// harmonic mode, ADC counts.
 fn status_icons(doc: &crate::app::Doc, r: &Row, primary: bool) -> Vec<&'static str> {
-    let Lane::Analog(i) = r.key else { return Vec::new() };
-    chan_icons(doc, i, primary)
+    match r.key {
+        Lane::Analog(i) => chan_icons(doc, i, primary),
+        // A computed channel's icons with no bit-13 gate but the ratio's
+        // (`0x462b15`).
+        Lane::Computed(j) if doc.pending_of(j).is_none() => {
+            let c = &doc.computed[j];
+            [(c.remove_dc, "DC"), (c.invert, "−"), (c.mode == ValueMode::Rms, "~"), (c.mode == ValueMode::FirstHarmonic, "1")]
+                .into_iter()
+                .filter_map(|(on, g)| on.then_some(g))
+                .collect()
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// The status icons of analog channel `i`.
@@ -688,7 +700,7 @@ pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, 
         Lane::Computed(i) => match doc.pending_of(i).map(|p| &p.pasted.channel) {
             Some(Ok(a)) => a.samples.iter().for_each(|&v| take(v)),
             Some(Err(_)) => return (0.0, 1.0),
-            None => doc.computed[i].samples.iter().for_each(|&v| take(v)),
+            None => doc.computed[i].shown_series().iter().for_each(|&v| take(v)),
         },
         Lane::Digital(_) => return (0.0, 1.0),
     }
@@ -2094,11 +2106,10 @@ fn lane_stats(
             // A computed channel is read out like any other channel.
             let c = &doc.computed[*i];
             let n = doc.osc.samples_per_cycle().max(2);
-            // Our computed channels carry no display mode: instantaneous.
-            let series = |k: usize| c.samples.get(k).copied().unwrap_or(0.0);
+            // Value and Max / Min from the display cache (mode, invert, DC).
+            let series = |k: usize| c.shown(k);
             let (mut mx, mut mn) = (f64::MIN, f64::MAX);
-            for k in 0..c.samples.len() {
-                let v = series(k);
+            for &v in c.shown_series() {
                 mx = mx.max(v);
                 mn = mn.min(v);
             }

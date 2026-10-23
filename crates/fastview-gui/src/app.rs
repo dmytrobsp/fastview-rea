@@ -343,10 +343,23 @@ pub struct Computed {
     pub before: Option<ChanKey>,
     /// Shown on the oscillogram (bit 0; «Каналы» dialog column 1).
     pub visible: bool,
+    /// The evaluation's values and complex series; `samples` / `phasors`
+    /// are them as the accessor reads them (`0x426020`, `0x428490`'s
+    /// bit-13 phasor): minus the whole-period mean with remove-DC (0x400),
+    /// negated with invert (0x800, the phasor too).
+    pub raw: Vec<f64>,
+    pub raw_phasors: Option<Vec<Complex64>>,
+    pub invert: bool,
+    pub remove_dc: bool,
+    /// The display mode (bits 7–9): the lane, its value and Max / Min read
+    /// `display` (`ch+0x2c`), the RMS / first-harmonic series of `samples`.
+    pub mode: ValueMode,
+    pub display: Vec<f64>,
 }
 
 impl Computed {
     pub fn new(name: String, formula: String, samples: Vec<f64>, color: egui::Color32) -> Computed {
+        let samples_raw = samples.clone();
         Computed {
             name,
             formula,
@@ -359,6 +372,36 @@ impl Computed {
             stats: StatRows::default(),
             visible: true,
             before: None,
+            raw: samples_raw,
+            raw_phasors: None,
+            invert: false,
+            remove_dc: false,
+            mode: ValueMode::Instant,
+            display: Vec::new(),
+        }
+    }
+
+    /// New evaluation results; the flags apply at the next
+    /// [`Doc::reflag_computed`].
+    pub fn set_values(&mut self, samples: Vec<f64>, phasors: Option<Vec<Complex64>>) {
+        self.raw = samples.clone();
+        self.raw_phasors = phasors.clone();
+        self.samples = samples;
+        self.phasors = phasors;
+        self.display.clear();
+    }
+
+    /// The display cache at `k` (`ch+0x2c`).
+    pub fn shown(&self, k: usize) -> f64 {
+        if self.mode == ValueMode::Instant { self.samples.get(k) } else { self.display.get(k) }.copied().unwrap_or(0.0)
+    }
+
+    /// The whole display series.
+    pub fn shown_series(&self) -> &[f64] {
+        if self.mode == ValueMode::Instant {
+            &self.samples
+        } else {
+            &self.display
         }
     }
 
@@ -687,18 +730,45 @@ impl Doc {
     /// ОМП channels carry no formula to re-evaluate).
     pub fn reevaluate_formulas(&mut self, show_primary: bool) {
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
-        for c in &mut self.computed {
+        for j in 0..self.computed.len() {
+            let c = &mut self.computed[j];
             if c.formula != "ОМП" && c.formula != "объединение" {
                 let batch = [(c.name.clone(), c.formula.clone())];
                 if let Ok(mut out) = fvb_core::quick::evaluate_batch_with(&self.flagged, fvb_core::freqcorr::of(&self.osc), &done, &batch, show_primary) {
                     if let Some(new) = out.pop() {
-                        c.samples = new.samples;
-                        c.phasors = new.phasors;
+                        c.set_values(new.samples, new.phasors);
                     }
                 }
             }
-            done.push(c.as_core());
+            // A later formula reads this one through the accessor and the
+            // phasor cache: flagged.
+            self.reflag_computed(j);
+            done.push(self.computed[j].as_core());
         }
+    }
+
+    /// Computed channel `j`'s flags over its evaluation (`0x428490` for a
+    /// bit-13 channel): the DC is the mean of the whole periods from the
+    /// start, the phasor negated by invert only; then the display cache
+    /// per mode — RMS `0x4272a0`, first harmonic `0x426240` (× the
+    /// record's gain when uncorrected), over the flagged values.
+    pub fn reflag_computed(&mut self, j: usize) {
+        let n = self.osc.samples_per_cycle().max(2);
+        let corr = fvb_core::freqcorr::of(&self.osc).filter(|_| fvb_core::freqcorr::selected_extra(&self.osc) != Some(j));
+        let gain = if corr.is_some() { 1.0 } else { self.osc.harmonic1_gain };
+        let Some(c) = self.computed.get_mut(j) else { return };
+        if c.formula == crate::merge_ui::PENDING {
+            return;
+        }
+        let dc = if c.remove_dc { whole_period_mean(&c.raw, n) } else { 0.0 };
+        let sign = if c.invert { -1.0 } else { 1.0 };
+        c.samples = c.raw.iter().map(|x| sign * (x - dc)).collect();
+        c.phasors = c.raw_phasors.as_ref().map(|p| p.iter().map(|z| z * sign).collect());
+        c.display = match c.mode {
+            ValueMode::Instant => Vec::new(),
+            ValueMode::Rms => (0..c.samples.len()).map(|k| fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k, n, 1)).collect(),
+            ValueMode::FirstHarmonic => (0..c.samples.len()).map(|k| fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k, n) * gain).collect(),
+        };
     }
 
     /// The displayed sample value of analog channel `i` at index `k`, honouring
@@ -2187,9 +2257,9 @@ impl App {
                 let n0 = d.computed.len();
                 let names = added.iter().map(|c| c.name.clone()).collect();
                 for (k, c) in added.into_iter().enumerate() {
-                    let mut cc = Computed::new(c.name, c.formula, c.samples, Self::palette(base + n0 + k));
+                    let mut cc = Computed::new(c.name, c.formula, Vec::new(), Self::palette(base + n0 + k));
                     cc.unit = c.unit;
-                    cc.phasors = c.phasors;
+                    cc.set_values(c.samples, c.phasors);
                     d.computed.push(cc);
                 }
                 d.channels_changed();
@@ -2450,6 +2520,44 @@ mod tests {
         let p = d.osc.samples_per_cycle();
         let mean = whole_period_mean(&d.osc.analog[i].samples, p);
         assert!((d.sample(i, k) - (base - mean)).abs() < 1e-9, "one DC constant over whole periods");
+    }
+
+    /// A computed channel carries invert / DC / the display mode like a file
+    /// channel (`0x428490` with bit 13): its values negated / DC-removed,
+    /// its stored phasor negated by invert, a later formula reading it
+    /// flagged, the flags kept across re-evaluation; RMS mode draws the
+    /// one-period RMS.
+    #[test]
+    fn computed_channels_carry_the_value_flags() {
+        use crate::chansel::ChanFlag;
+        let mut app = demo_app();
+        let k = 300usize;
+        let name = app.active_doc().unwrap().osc.analog[0].id.clone();
+        assert!(app.append_computed(&[("x2".into(), format!("2*\"{name}\""))]).is_some());
+        assert!(app.append_computed(&[("x4".into(), "2*\"x2\"".into())]).is_some());
+        let d = app.active_doc().unwrap();
+        let (v, z, v4) = (d.computed[0].samples[k], d.computed[0].phasors.as_ref().map(|p| p[k]), d.computed[1].samples[k]);
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Computed(0));
+        assert!(app.active_doc().unwrap().flag_state(ChanFlag::Invert).enabled);
+        app.dispatch(Command::ToggleFlag(ChanFlag::Invert));
+        let d = app.active_doc().unwrap();
+        assert!((d.computed[0].samples[k] + v).abs() < 1e-9, "negated");
+        if let (Some(z), Some(p)) = (z, d.computed[0].phasors.as_ref()) {
+            assert!((p[k] + z).norm() < 1e-9, "the stored phasor too");
+        }
+        assert!((d.computed[1].samples[k] + v4).abs() < 1e-9, "a later formula reads it flagged");
+        app.dispatch(Command::ToggleFlag(ChanFlag::Invert));
+        app.dispatch(Command::ToggleFlag(ChanFlag::RemoveDc));
+        let d = app.active_doc().unwrap();
+        let mean = whole_period_mean(&d.computed[0].raw, d.osc.samples_per_cycle().max(2));
+        assert!((d.computed[0].samples[k] - (v - mean)).abs() < 1e-9, "minus the whole-period mean");
+        app.dispatch(Command::SetValueMode(ValueMode::Rms));
+        let d = app.active_doc().unwrap();
+        assert!(d.mode_state(ValueMode::Rms).checked);
+        let n = d.osc.samples_per_cycle().max(2);
+        let want = fvb_core::freqcorr::rms_at(fvb_core::freqcorr::of(&d.osc), fvb_core::freqcorr::OTHER, &d.computed[0].samples, k, n, 1);
+        assert!((d.computed[0].shown(k) - want).abs() < 1e-9, "RMS mode shows the one-period RMS");
+        assert!(d.computed[0].remove_dc, "kept across the re-evaluation");
     }
 
     #[test]

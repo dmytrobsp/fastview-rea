@@ -173,14 +173,14 @@ impl App {
                         Some(i) => {
                             let cc = &mut d.computed[i];
                             cc.formula = c.formula;
-                            cc.samples = c.samples;
                             cc.unit = c.unit;
-                            cc.phasors = c.phasors;
+                            cc.set_values(c.samples, c.phasors);
+                            d.reflag_computed(i);
                         }
                         None => {
-                            let mut cc = crate::app::Computed::new(c.name, c.formula, c.samples, Self::palette(base + d.computed.len()));
+                            let mut cc = crate::app::Computed::new(c.name, c.formula, Vec::new(), Self::palette(base + d.computed.len()));
                             cc.unit = c.unit;
-                            cc.phasors = c.phasors;
+                            cc.set_values(c.samples, c.phasors);
                             d.computed.insert(0, cc);
                         }
                     }

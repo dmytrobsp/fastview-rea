@@ -4159,6 +4159,33 @@ formula naming a digital channel (the original's lookup has no kind test
 — INFERRED) is not resolved by ours; computed and pending channels' flags
 — next.
 
+### L9.135 — Computed channels carry invert, remove-DC and the display mode  ·  ✅
+Read (subagent report on `0x428490`, `0x429490`, `0x461440`, `0x41faa0`,
+`0x426240`, `0x4272a0`; the toggle `0x42f4b0` / CMDUI `0x42fc60` by hand,
+L9.129): a computed channel (bit 13) goes through the same cache as a file
+channel — its DC is the whole-period mean of its values from the start,
+the accessor subtracts it and negates with invert, the display cache
+ch+0x2c follows the mode (RMS `0x4272a0`, first harmonic `0x426240` over
+the flagged values), the lane, the value at В1 and Max / Min read that
+cache, СКЗ / A1 the flagged values; its stored complex series is
+multiplied by −1 with invert (`0x42896f`; DC does not touch it), and the
+vector / circle diagrams and later formulas (CHANNEL atom through
+`0x426020`, its complex through the cache) read them so; the status icons
+(DC, invert, RMS, harmonic) have no bit-13 gate, only the ratio icon
+(`0x462b15`).
+Ours: computed channels had no flags and were always instantaneous.
+Now `Computed::{raw, raw_phasors, invert, remove_dc, mode, display,
+set_values, shown, shown_series}` and `Doc::reflag_computed` (run after
+every evaluation, in order, so later formulas read flagged values; the
+evaluation sites store raw values through `set_values`), the toggles /
+checks / mode set include computed channels, the lane / value / Max / Min
+/ range read the display cache, the status icons. Test
+`computed_channels_carry_the_value_flags`.
+Residual: pending (pasted) lanes' flags — next; ADC (0x1000) on computed
+channels ND (32852 skips them); whether the `.set` keeps a computed
+channel's flags ND (ours does not save them); k (ch+0xf0) of a computed
+channel taken as 1.
+
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
