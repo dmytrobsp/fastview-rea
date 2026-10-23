@@ -1473,10 +1473,15 @@ impl App {
                 actions.push(Act::MoveV(vk, cur.clamp(0, n.max(1) as i64 - 1) as usize));
             }
             if u || d {
-                if let Some((hy, _)) = hrows[vk] {
-                    if let Some((ch, v)) = analog_at(hy + if d { 1.0 } else { -1.0 }, &geo, &ranges) {
-                        actions.push(Act::SetH(vk, ch, v));
-                    }
+                // y ∓ 1, ↑ clamped at the view's top; a ГВ never placed has
+                // y = −1 (`0x4944a0`), so either key puts it at the top.
+                let y = match hrows[vk] {
+                    Some((hy, _)) if d => hy + 1.0,
+                    Some((hy, _)) => (hy - 1.0).max(client.top()),
+                    None => client.top(),
+                };
+                if let Some((ch, v)) = analog_at(y, &geo, &ranges) {
+                    actions.push(Act::SetH(vk, ch, v));
                 }
             }
         }
@@ -2894,6 +2899,13 @@ mod menu_tests {
         h.app.copy_focus = crate::app::CopyFocus::Diagram(crate::app::Pane::Vector);
         h.frame_mod(vec![key(egui::Key::ArrowRight, egui::Modifiers::NONE)], egui::Modifiers::NONE);
         assert_eq!(h.doc().main_cursor, v1, "not the view's key");
+        // ↑ on a ГВ never placed puts it at the view's top (`0x4944a0` → −1,
+        // clamped to 0): on the top lane, shown.
+        h.app.copy_focus = crate::app::CopyFocus::View;
+        h.app.active_doc_mut().unwrap().hviz[0] = crate::app::HVizir::default();
+        h.frame_mod(vec![key(egui::Key::ArrowUp, egui::Modifiers::NONE)], egui::Modifiers::NONE);
+        let hv = h.doc().hviz[0];
+        assert!(hv.shown && hv.chan == Some(0), "{hv:?}");
     }
 
     /// User report: the menu was never about the top row, and its subject

@@ -4039,8 +4039,8 @@ come) for the view and the planes, `SelClick::CtrlShift`. Tests
 Residual: Ctrl+V with an empty OS clipboard fires on the key-up (and not
 at all if Ctrl is let go first); Ctrl+Insert / Shift+Insert copy / paste
 on Windows through egui-winit (the original has no such entries); → caps
-at N − 1 (the original at N, a sample past the data); ↑ / ↓ on a ГВ
-never placed does nothing (the original places it at the top — INFERRED);
+at N − 1 (the original at N, a sample past the data); (↑ / ↓ on a ГВ
+never placed: L9.139);
 MDI next / previous in tab order (WM_MDINEXT's order under MDI tabs ND);
 the Shift page not quantised to the 1/10000 scroll grid.
 
@@ -4254,6 +4254,16 @@ WindowsAndMessaging). Test
 Residual: the beep not run on the VM (no audio check possible); other
 platforms silent.
 
+### L9.139 — ↑ / ↓ on a horizontal визир never placed  ·  ✅
+Read (by hand, the view's WM_KEYDOWN `0x45f55e`–`0x45f5ed`): ↑ takes the
+ГВ's y from `0x4944a0` minus 1 and clamps it at 0 (`cmovs`), ↓ plus 1;
+`0x495b40` then sets the ГВ (shown) from that y. A ГВ never placed is on
+lane −1, for which `0x4944a0` gives −1 — so either key puts it at y = 0,
+the view's top, on the lane there.
+Ours: nothing happened for a ГВ never placed, and ↑ was not clamped.
+Now the key block takes y ∓ 1 (↑ clamped at the view's top) or the top
+for one never placed. Test `arrow_keys_move_v1_and_ctrl_v2_by_one_sample`.
+
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -4329,8 +4339,7 @@ the `.set` NetFreq round trip (`0x427bc0` / `0x427af0`, channels' own
 frequency, L9.137); 33035's message 239 on channels of different rates
 (needs per-channel rates, L9.131); our `sample_rate` vs rec+0x228 where
 the signal code uses the latter (multi-rate `.cfg`, rates not a multiple
-of f, L9.132); a rate-0 `.cfg`'s `.dat` timestamps; ↑ / ↓ on a never
-placed ГВ (L9.130); the merge's padding of an inverted digital channel
+of f, L9.132); a rate-0 `.cfg`'s `.dat` timestamps; the merge's padding of an inverted digital channel
 (L9.134); formulas naming digital channels (L9.134); the docking marker
 bitmaps (ours drawn); L9.64 MDI arrangements under tabs (WM_MDICASCADE /
 TILE — visible effect ND); the caption bar from the style images (ours
