@@ -3829,6 +3829,21 @@ Residual: the frequency track (+0x50 / doc+0x1fc) of the merged record not
 modelled; `0x478410` assumed an exact 3 × 3 solve; pasted channels' own
 flags still not baked (L9.111).
 
+### L9.121 — The header's line pitch on the first page: the printer's stock font  ·  ✅
+Read (L9.112's report, `0x405c20`): the header measures «A» with
+GetTextExtentPoint32 in whatever font the DC holds (`0x405ce1`) before it
+creates its own Arial and never restores the old one; so T is the
+printer DC's stock font's «A» height on the first printed page (and on
+every preview page, the preview DC restoring per page — INFERRED), the
+header's Arial 12 cell on later pages.
+Ours used 12 screen px always. Now `Device::stock_t` (Windows: the «A»
+height of a fresh printer DC ÷ k; run on the VM — Microsoft Print to PDF
+gives 16 screen px; CUPS: none → 12), the header's T taken from it on
+page 1 and in the preview (`print_preview_open` copies the application
+printer's).
+Residual: the footer keeps 12 (as read); a driver resetting DC
+attributes at StartPage NOT DETERMINED.
+
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -3892,8 +3907,7 @@ sync under the frequency correction for pasted channels, the symmetric-
 component view code «not located» in L6). Then: the docking marker
 bitmaps (ours drawn); L9.64 MDI arrangements under tabs (ND, likely
 no-ops); Свойства... in the print dialog (driver dialog + job DEVMODE);
-the merged record's frequency track; header T on the first printed page
-(Windows printer stock font); the application button's orb / caption bar
+the merged record's frequency track; (header T on page 1: L9.121); the application button's orb / caption bar
 from the style images; backlog §9 #36 / #37 / #45 leftovers (logo and
 splash are proprietary assets — not reproduced). Good recurring pass:
 render the user's real records (`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`,

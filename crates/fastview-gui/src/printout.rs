@@ -98,6 +98,10 @@ pub struct Device {
     pub dpi: f32,
     pub sheet_mm: (f32, f32),
     pub offset: (usize, usize),
+    /// The height of «A» in the printer DC's stock font, in screen px:
+    /// the header's T on the first printed page and in the preview
+    /// (`0x405ce1` measures before selecting its own font). `None`: 12.
+    pub stock_t: Option<f32>,
 }
 
 impl Device {
@@ -109,7 +113,7 @@ impl Device {
 
     /// A whole sheet of `(w, h)` mm, already oriented, as the printable area.
     pub fn paper((w, h): (f32, f32), dpi: f32) -> Device {
-        Device { w: (w / 25.4 * dpi).round() as usize, h: (h / 25.4 * dpi).round() as usize, dpi, sheet_mm: (w, h), offset: (0, 0) }
+        Device { w: (w / 25.4 * dpi).round() as usize, h: (h / 25.4 * dpi).round() as usize, dpi, sheet_mm: (w, h), offset: (0, 0), stock_t: None }
     }
 
     /// A sheet of `sheet` mm (oriented) whose printable area is inside the
@@ -119,7 +123,7 @@ impl Device {
         let px = |mm: f32| (mm / 25.4 * dpi).round() as usize;
         let (l, t) = (px(m[0]), px(m[1]));
         let (w, h) = (px(sheet.0).saturating_sub(l + px(m[2])).max(1), px(sheet.1).saturating_sub(t + px(m[3])).max(1));
-        Device { w, h, dpi, sheet_mm: sheet, offset: (l, t) }
+        Device { w, h, dpi, sheet_mm: sheet, offset: (l, t), stock_t: None }
     }
 
     /// The margin rectangle R in device pixels (`0x405820`: margins in
@@ -387,12 +391,16 @@ impl App {
         let dur = t.last().copied().unwrap_or(0.0) - t.first().copied().unwrap_or(0.0);
         let s = &d.osc.stamps;
         // Three single-line DrawTexts, each clipped to its own 0.9T rect.
-        let line = |i: f32| p.with_clip_rect(Rect::from_min_max(Pos2::new(x, logo_top + i * 0.9 * T), Pos2::new(r.right(), logo_top + (i + 1.0) * 0.9 * T)));
+        // T: on the first printed page and in the preview the «A» of the
+        // printer DC's stock font (the header measures before selecting its
+        // Arial and never restores the font); later pages 12.
+        let th = if idx == 0 || preview { job.dev.stock_t.unwrap_or(T) } else { T };
+        let line = |i: f32| p.with_clip_rect(Rect::from_min_max(Pos2::new(x, logo_top + i * 0.9 * th), Pos2::new(r.right(), logo_top + (i + 1.0) * 0.9 * th)));
         lanes::bold_text(&line(0.0), Pos2::new(x, logo_top), &format!("{S_NAME}\"{stem}\""), DECOR_FONT, black);
         let line2 = format!("{S_START}{}, {}   {S_DURATION}{} c.", s.start_date, s.start_time, fvb_core::views::fmt_g(dur));
-        line(1.0).text(Pos2::new(x, logo_top + 0.9 * T), Align2::LEFT_TOP, line2, DECOR_FONT, black);
+        line(1.0).text(Pos2::new(x, logo_top + 0.9 * th), Align2::LEFT_TOP, line2, DECOR_FONT, black);
         let line3 = format!("{S_STATION}\"{}\"   {S_BLOCK}\"{}\"", d.osc.station.trim_end(), d.osc.device);
-        line(2.0).text(Pos2::new(x, logo_top + 1.8 * T), Align2::LEFT_TOP, line3, DECOR_FONT, black);
+        line(2.0).text(Pos2::new(x, logo_top + 1.8 * th), Align2::LEFT_TOP, line3, DECOR_FONT, black);
         // Footer: the page number only in jobs of two or more pages, then
         // the three-piece company line centred, 30 device px apart.
         if count > 1 {

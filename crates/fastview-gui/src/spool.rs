@@ -217,9 +217,9 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     use super::*;
-    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::Foundation::{HANDLE, SIZE};
     use windows_sys::Win32::Graphics::Gdi::{
-        CreateDCW, DeleteDC, GetDeviceCaps, StretchDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DEVMODEW, DIB_RGB_COLORS, DMORIENT_LANDSCAPE,
+        CreateDCW, DeleteDC, GetDeviceCaps, GetTextExtentPoint32W, StretchDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DEVMODEW, DIB_RGB_COLORS, DMORIENT_LANDSCAPE,
         DMORIENT_PORTRAIT, DM_IN_BUFFER, DM_ORIENTATION, DM_OUT_BUFFER, HDC, HORZRES, LOGPIXELSX, LOGPIXELSY, PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH, SRCCOPY,
         VERTRES,
     };
@@ -364,8 +364,11 @@ mod imp {
     pub fn device(printer: &str, setup: &PageSetup) -> Option<Device> {
         let hdc = dc(printer, setup)?;
         // SAFETY: a valid DC, deleted after use.
-        let (w, h, dpi) = unsafe {
-            let caps = (GetDeviceCaps(hdc, HORZRES as i32), GetDeviceCaps(hdc, VERTRES as i32), GetDeviceCaps(hdc, LOGPIXELSX as i32));
+        let (w, h, dpi, a_h) = unsafe {
+            let mut sz = SIZE { cx: 0, cy: 0 };
+            let a: [u16; 1] = [u16::from(b'A')];
+            GetTextExtentPoint32W(hdc, a.as_ptr(), 1, &mut sz);
+            let caps = (GetDeviceCaps(hdc, HORZRES as i32), GetDeviceCaps(hdc, VERTRES as i32), GetDeviceCaps(hdc, LOGPIXELSX as i32), sz.cy);
             DeleteDC(hdc);
             caps
         };
@@ -375,6 +378,7 @@ mod imp {
             dpi: dpi as f32,
             sheet_mm: (w as f32 / dpi as f32 * 25.4, h as f32 / dpi as f32 * 25.4),
             offset: (0, 0),
+            stock_t: (a_h > 0).then(|| a_h as f32 * crate::printout::SCREEN_DPI / dpi as f32),
         })
     }
 
@@ -471,7 +475,7 @@ mod tests {
         let (list, default) = printers();
         eprintln!("default: {default:?}");
         for p in list {
-            eprintln!("{p}: {:?} {:?}", paper(&p), details(&p));
+            eprintln!("{p}: {:?} {:?} {:?}", paper(&p), details(&p), device(&p, &PageSetup::default()).stock_t);
         }
     }
 }

@@ -146,10 +146,9 @@ impl App {
         let paper = self.app_paper();
         let mut job = self.print_job(di, Device::printable(setup.oriented(paper.mm), setup.oriented_margins(paper.margins), PREVIEW_DPI), setup);
         // The diagram pages at the application printer's scale.
-        job.attrib_dpi = match self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY) {
-            Some(p) => spool::device(p, &setup).dpi,
-            None => spool::PDF_DPI,
-        };
+        let printer = self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).map(|p| spool::device(p, &setup));
+        job.attrib_dpi = printer.map_or(spool::PDF_DPI, |d| d.dpi);
+        job.dev.stock_t = printer.and_then(|d| d.stock_t);
         let two = job.pages.len() >= 2;
         self.print.preview = Some(Preview { tex: vec![None; job.pages.len()], job, cur: 0, two, zoom: 0, cmd: None });
     }
