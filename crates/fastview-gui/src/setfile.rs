@@ -947,6 +947,19 @@ mod tests {
     use crate::app::{DEMO_CFG, DEMO_DAT};
     use std::path::{Path, PathBuf};
 
+    /// `FV_SAVE_AS=<record>,<target> cargo test save_as_dump`: open a record
+    /// and save it to `target` as Save As does (for comparing the writers
+    /// with the original's output, COMPLETION_PLAN W4.2).
+    #[test]
+    fn save_as_dump() {
+        let Ok(v) = std::env::var("FV_SAVE_AS") else { return };
+        let (rec, target) = v.split_once(',').expect("FV_SAVE_AS=<record>,<target>");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, Path::new(rec));
+        app.save_doc_to(di, Path::new(target)).expect("saved");
+    }
+
     /// MFC's OpenDocumentFile: a file already open is brought forward, not
     /// loaded again.
     #[test]

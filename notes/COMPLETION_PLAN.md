@@ -167,9 +167,17 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   layout (frequency under the view, the differential diagram in the middle,
   vector / circle tabbed at the right), the differential diagram on «Нет»,
   a close button on the record-header strip.
-- [ ] W4.1a Input driving (UI Automation / SendInput from the session) to
-  open records and press commands in the original.
-- [ ] W4.2 File-level comparisons — the strongest checks, no pixels: the
+- [x] W4.1a Input driving: `tools/vm/drive.ps1` (SendKeys groups in the
+  session) opens records and presses commands in the original.
+- [ ] W4.1b The VM's "Language for non-Unicode programs" Russian (code page
+  1251) — on the English locale the original's ANSI conversions turn
+  Cyrillic names and units into «?», which also changes unit-driven flags;
+  needs the user's approval (a system setting and a restart).
+- [ ] W4.2 File-level comparisons (started 2026-10-24: WIN_1999 saved by
+  both through Save As — `FV_SAVE_AS` makes ours; differences found: Ctrl+S
+  always asks with a lowercase name, the same-name save rewrites the
+  record, and the `.cfg` / `.dat` / `.set` formats, see the save-path read
+  in progress) — the strongest checks, no pixels: the
   same record saved by both (Save As `.cfg` / `.cff` / `.osc`, the `.set`
   after the same edits, the clipboard document, the quick-analysis and ОМП
   channels) compared byte for byte or value for value.
