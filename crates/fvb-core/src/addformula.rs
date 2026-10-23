@@ -520,6 +520,12 @@ impl NameError {
     }
 }
 
+/// The DDX rule of the name control (`0x403180`): an empty text or one
+/// starting with a digit fails (396, then `CDataExchange::Fail`).
+pub fn ddx_name_ok(text: &str) -> bool {
+    !text.chars().next().is_none_or(|c| c.is_ascii_digit())
+}
+
 /// The OK-time name check: the DDX rule (`0x403180`: empty or a leading
 /// digit → 396), then `0x4033a0` (leading non-letter → 396; equal, case
 /// sensitively, to a record channel or another formula → 473).

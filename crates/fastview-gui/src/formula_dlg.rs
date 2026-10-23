@@ -3,8 +3,8 @@
 //! the template tree on the left, «Название канала:» and the selected
 //! template's form on the right. Selecting a tree item re-creates the form
 //! with its initial values (`0x403280`); a group shows no form and greys OK.
-//! OK checks the name (396 / 473, the dialog stays) and appends the formula
-//! the form builds (`fvb_core::addformula::build`) as a computed channel.
+//! OK checks the name as the original's sequence does (396 / 473, the
+//! dialog stays) and appends the formula the form builds (`fvb_core::addformula::build`) as a computed channel.
 
 use crate::app::App;
 use eframe::egui::{self, Rect, Vec2};
@@ -17,8 +17,11 @@ pub type Path = Vec<&'static str>;
 /// The dialog while open.
 #[derive(Debug, Clone)]
 pub struct AddFormulaDlg {
-    /// «Название канала:» (`+0x1c4`).
+    /// «Название канала:», the edit control's text.
     pub name: String,
+    /// The name member `+0x1c4`: the last text that passed the DDX rule
+    /// (initially the proposed name).
+    pub member: String,
     /// The selected tree item.
     pub selected: Path,
     /// The hosted form: the selected leaf's dialog id (`+0x1cc`); `None` for
@@ -28,8 +31,8 @@ pub struct AddFormulaDlg {
     pub values: Values,
     /// Groups the user folded (the original inserts every group expanded).
     pub collapsed: BTreeSet<Path>,
-    /// A message box over the dialog (396 or 473).
-    pub alert: Option<&'static str>,
+    /// Message boxes over the dialog (396 / 473), shown one after another.
+    pub alerts: Vec<&'static str>,
     /// Items of the channel lists: the record's analog channels, then the
     /// computed channels (`0x411c70`).
     pub channels: Vec<String>,
@@ -47,12 +50,13 @@ impl AddFormulaDlg {
     /// The dialog as `0x401c10` opens it: «Формула» selected, its form shown.
     pub fn new(name: String, channels: Vec<String>, taken: Vec<String>, sample_rate: f64, line_freq: f64) -> Self {
         let mut d = AddFormulaDlg {
+            member: name.clone(),
             name,
             selected: Vec::new(),
             form: None,
             values: Values::new(),
             collapsed: BTreeSet::new(),
-            alert: None,
+            alerts: Vec::new(),
             channels,
             taken,
             sample_rate,
@@ -71,17 +75,31 @@ impl AddFormulaDlg {
         self.values = form.map_or_else(Values::new, |d| af::initial_values(d, &self.channels, self.sample_rate, self.line_freq));
     }
 
-    /// OK (`0x403530`): the name check, then (name, formula, unit).
+    /// OK (`0x403530`), then (name, formula, unit). `UpdateData(TRUE)`
+    /// runs the DDX rule — a failure shows 396 and leaves the member as it
+    /// was — but its result is ignored: the member is checked (`0x4033a0`,
+    /// 396 / 473 stop here), and only then `CDialog::OnOK` runs `UpdateData`
+    /// again, which repeats the 396 and keeps the dialog open.
     pub fn accept(&mut self) -> Option<(String, String, String)> {
         let form = self.form?;
         let taken: Vec<&str> = self.taken.iter().map(String::as_str).collect();
-        if let Err(e) = af::check_name(&self.name, &taken) {
-            self.alert = Some(e.message());
+        let ddx_ok = af::ddx_name_ok(&self.name);
+        if ddx_ok {
+            self.member = self.name.clone();
+        } else {
+            self.alerts.push(af::MSG_BAD_NAME);
+        }
+        if let Err(e) = af::check_name(&self.member, &taken) {
+            self.alerts.push(e.message());
+            return None;
+        }
+        if !ddx_ok {
+            self.alerts.push(af::MSG_BAD_NAME);
             return None;
         }
         let f = af::build(form, &self.values)?;
         let unit = af::unit_of(&f);
-        Some((self.name.clone(), f, unit))
+        Some((self.member.clone(), f, unit))
     }
 }
 
@@ -105,7 +123,7 @@ impl App {
         let Some(mut st) = self.formula_dlg.take() else { return };
         let mut done: Option<bool> = None;
         let mut open = true;
-        let modal = st.alert.is_none();
+        let modal = st.alerts.is_empty();
         st.item_rects.clear();
         egui::Window::new("Добавить новую формулу")
             .id(egui::Id::new("fv_add_formula"))
@@ -158,7 +176,7 @@ impl App {
                     });
                 });
             });
-        if let Some(msg) = st.alert {
+        if let Some(&msg) = st.alerts.first() {
             let mut close = false;
             crate::dialogs::modal_backdrop(ctx, "fv_add_formula_alert_block", egui::Order::Middle);
             egui::Window::new("FastView")
@@ -172,7 +190,7 @@ impl App {
                     ui.vertical_centered(|ui| close = ui.button("    OK    ").clicked());
                 });
             if close || ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
-                st.alert = None;
+                st.alerts.remove(0);
             }
         } else if modal {
             // Enter in the form is the parent's OK (`0x401c40`); Esc cancels.
@@ -396,23 +414,31 @@ mod tests {
         assert!(h.app.active_doc().unwrap().computed.is_empty());
     }
 
-    /// An empty name or one starting with a digit → 396, the dialog stays;
-    /// a record channel's name → 473.
+    /// An empty name or one starting with a digit → 396 twice (DDX, then
+    /// `CDialog::OnOK`'s second DDX) while the stale member passes; a record
+    /// channel's name → 473; a bad text over a taken member → 396 then 473.
+    /// The dialog stays every time.
     #[test]
     fn name_is_checked() {
+        let (bad, taken) = (af::MSG_BAD_NAME, af::MSG_NAME_TAKEN);
         let mut h = Harness::new();
-        for (name, msg) in [("", af::MSG_BAD_NAME), ("2x", af::MSG_BAD_NAME), ("Ua", af::MSG_NAME_TAKEN)] {
+        for (name, msgs) in [("", vec![bad, bad]), ("2x", vec![bad, bad]), ("Ua", vec![taken]), ("", vec![bad, taken])] {
             h.app.formula_dlg.as_mut().unwrap().name = name.into();
             h.ok();
-            assert_eq!(h.dlg().alert, Some(msg), "{name:?}");
-            h.frame(vec![egui::Event::Key {
-                key: egui::Key::Enter,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: Default::default(),
-            }]);
-            assert_eq!(h.dlg().alert, None);
+            assert_eq!(h.dlg().alerts, msgs, "{name:?}");
+            for _ in &msgs {
+                h.frame(vec![egui::Event::Key {
+                    key: egui::Key::Enter,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: Default::default(),
+                }]);
+                for _ in 0..3 {
+                    h.frame(vec![]);
+                }
+            }
+            assert!(h.dlg().alerts.is_empty());
             for _ in 0..7 {
                 h.frame(vec![]);
             }

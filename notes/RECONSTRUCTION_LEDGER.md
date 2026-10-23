@@ -1021,7 +1021,7 @@ argument. Deliberate: Im:(Zk) passes Km twice as the original (`0x413f69`).
 Residual: channel unit from a trailing `[W]/[var]/[VA]` is inferred; what
 `Frequency: ()` returns was not reversed (ours: line frequency); no tree icons;
 the formula-editor page itself (list, Загрузить/Сохранить/↑/↓) not rebuilt;
-396 shows once (the original shows it twice).
+(the 396 sequence: done in L9.48).
 
 ### L9.17 — Record settings file `.set` and the modified flag (track S, merged)  ·  ✅ (residuals)
 
@@ -1748,6 +1748,25 @@ parse, `dd.MM.yyyy H:mm:ss`); other locales and OLE's lenient spellings
 are not modelled; the ±3615897-day span check and the date-0 / time-0
 edge (`0:00:00`) not exercised.
 
+### L9.48 — «Добавить новую формулу» OK: the 396 sequence  ·  ✅
+Read: OnOK `0x403530` calls `UpdateData(TRUE)` and **ignores its result**;
+the DDX `0x403180` reads the name control (0x40a) and, for an empty text
+or a leading `iswdigit`, shows 396 (`AfxMessageBox`, MB_OK) and calls
+ordinal 4567 = `CDataExchange::Fail` (identified in the carved mfc120u:
+SetFocus + EM_SETSEL, then the user exception) **before** its DDX_Text
+updates the member `+0x1c4` — so the member keeps the last name that
+passed. OnOK then checks that member with `0x4033a0` (leading non-letter
+→ 396, a record / formula name → 473, both MB_ICONERROR; either stops
+here), builds the formula, and calls `CDialog::OnOK` (ordinal 10896),
+whose second `UpdateData` repeats the DDX 396 and keeps the dialog open.
+So an empty / digit-led name gives 396 twice (or 396 then 473 / 396
+when the stale member is bad); a valid name over a taken one gives 473.
+Ours: `af::ddx_name_ok`, `AddFormulaDlg::{member, alerts}` (a queue of
+message boxes), `accept` in that order. Test `name_is_checked` (four
+cases incl. 396 → 473 over a taken member).
+Residual: the message box icons (exclamation vs error) are not drawn;
+`iswdigit` taken as ASCII digits.
+
 Next in L9 (HANDOFF 2026-10-23): **public at
 github.com/dmytrobsp/fastview-rea, release v0.1.0** (Linux / Windows / macOS
 x86_64 + arm64, flat archives). This session: the four GUI bugs (L9.23–
@@ -1772,7 +1791,8 @@ Read the PNG; `FV_FRAME_BENCH=<cfg> cargo test --release frame_bench`
 times a frame. The user's sample records live outside the repo (never
 commit them). **Done since:** L9.46 digital lanes drawn by the
 decimating painter (`FV_WINDOW_XSCALE=f` for `window_dump`); L9.47
-comment texts / moment absolute time (`FV_WINDOW_STATE=comments`). A
+comment texts / moment absolute time (`FV_WINDOW_STATE=comments`); L9.48
+the formula dialog's 396 sequence. A
 residual triage (2026-10-23) found many L9.1–L9.14 residuals already done
 (ledger text stale) — next candidates: L9.9 delete → recycle bin, L9.3
 Быстрый анализ as a modal sheet, L9.30 / L9.22 small ones. **Open
