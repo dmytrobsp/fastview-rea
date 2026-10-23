@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 364 pass)
+- `cargo test --workspace`   (currently 375 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -3829,39 +3829,37 @@ Residual: the frequency track (+0x50 / doc+0x1fc) of the merged record not
 modelled; `0x478410` assumed an exact 3 × 3 solve; pasted channels' own
 flags still not baked (L9.111).
 
-Next in L9 (HANDOFF 2026-10-23, night 4): **public at
+Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
-each one flat archive). `main` = HEAD, 364 tests.
-**This session (L9.93–L9.106):** L9.93 the vector legend starts in its
-window (a real-records bug: BINARY's long names); L9.94 page setup /
-preview on the application printer's paper (Windows path run on the VM);
-L9.95 appended names «_2» ignoring case (Russian locale `0x4484e5` —
-also settles L2's Cyrillic folding), digital names taken; **L9.96 levels
-on digital lanes drawn snapped / hit unsnapped, unshown `.set` items kept
-in place (`CommentKind::Kept`), level y truncated whole (1 px)**; L9.97
-keytips per element + the Office 2007 box, application-menu rows with a
-32 px image column; **L9.98 the workspace (pane places, floating rects,
-visibility, window placement) saved on exit, restored at start**; L9.99
-characteristic extents per figure as folded integer regions (circles
-outward); L9.100 ribbon small-button sizes and the fit test (the generic
-Repos run by hand matches L9.91's steps); **L9.101 smart docking (edge
-markers, five-way group, drops on any edge, beside, into the tabs)**;
-L9.102 a tab dragged out floats; **L9.103 an insert / paste that moves the
-frequency selection refreshes no cache — the statistics read it live;
-«Рассчитать» re-evaluates every formula**; L9.104 levels on formula /
-pasted analog lanes; L9.105 tabs reorder by dragging; L9.106 a gap audit
-of all 354 message-map entries (94 uncited, nearly all already in the
-spec's prose) and its fixes — the finder's double-click opens the whole
-selection, the rename edit commits on a press in the view (not on focus
-loss), pending channels unchecked in the circle menu, the vector checks
-need a document. User-visible: the vector
-legend on long names, the printer's paper in preview, digital-lane levels
-from `.set` files, keytip look, menu rows taller with icons, **the pane
-layout remembered between runs**, smart-dock markers when dragging a pane,
-Частотная as a tab. New `window_dump` states: `dockleft`, `dockbottom`,
-`docktab`, `dockmarkers` (the default click hits «Файл» — pass
-`FV_WINDOW_CLICK` elsewhere for a plain window).
+each one flat archive). `main` = HEAD, 375 tests.
+**This session (L9.107–L9.120), worked with parallel background research
+agents (MFC docking / tabs, merge, print, ribbon, finder, style data):**
+L9.107 the four diagram panes as docking units of their own (tabs pulled
+out of any group, beside-splits nested) and MFC's tab show / hide rules
+(a re-shown tab stays behind — our old test had guessed otherwise);
+L9.108 document tabs reorder by dragging, no MDI tab groups (as read);
+L9.109 edge-docked blocks in the docking manager's order; L9.110 CUPS /
+preview printing inside the printer's hardware margins (PPD
+ImageableArea); L9.111 merge method 2 as read (median / std over the
+least-spread window), N = own rate ÷ 50 or R div trunc(f), flags baked
+into merged data, the discrete pick; L9.112 print details (device-px
+offsets, the header name cut by 4 chars, the preview at the printer's
+scale); L9.113 the print dialog's printer fields from the spooler (run on
+the VM); L9.114 ribbon sizes (66 px large buttons, balanced label break —
+«Дифферен циальная» / «Осцилло грамма» as the original's strings —,
+collapsed buttons, 44 px menu rows, fixed disabled grey); L9.115 keytips
+(recent documents 1…0, disabled inert, «A» opens Help, Alt-held letters
+ignored); L9.116 the finder's shell folder tree, «Выбрать» as read, My
+Documents, date pickers; L9.117 / L9.119 the Office 2007 palettes and
+ribbon body / panel caption bands from MFC's style data (Black is a light
+ribbon in a dark frame; Aqua blue-grey) — then a real-records pass caught
+unreadable selected text (fixed); L9.118 the print look keyed to s ≠ 1;
+L9.120 the merge's zero padding and sub-sample shift as read.
+User-visible: drag any diagram tab out / dock it anywhere; document tabs
+reorder; ribbon labels and sizes; the four Office 2007 looks' colours;
+the finder's tree and calendars; recent-document keytips; printing
+margins on Linux; merge results.
 **Earlier sessions:** L9.76–L9.92 (unit text, pending lanes, frequency
 candidates, page 539, the circle / differential planes as read — the
 swapped differential pairs —, the Ohm split, keytips, ribbon reduction,
@@ -3871,7 +3869,7 @@ measured-frequency correction on by default with a Гц / Hz channel
 pending.
 **How to look at the GUI without running it:** `FV_WINDOW_DUMP=<png>
 [FV_WINDOW_RECORD=<cfg>] [FV_WINDOW_STATE=analysis (the sheet, two formula
-channels)|comments|group|circle|circletable|circlelegend|diff|difftable|keytips|keytipsmenu|floating|autohide|dockleft|dockbottom|docktab|dockmarkers|omp|ompparams|preview|print|pagesetup|
+channels)|comments|group|circle|circletable|circlelegend|diff|difftable|keytips|keytipsmenu|floating|autohide|dockleft|dockbottom|docktab|docksplit|dockmarkers|omp|ompparams|preview|print|pagesetup|
 settings|channels|coef|fileparams|explorer|parambar|vizirs|alert|windows|
 paste|vecvalues|skin<k>] [FV_WINDOW_XSCALE=f] [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y]
 [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then Read the PNG (crop with
@@ -3887,18 +3885,21 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-(Done 2026-10-23 late: the four panes as units of their own and the tab
-show / hide rules — L9.107; document tabs reorder, no tab groups as read —
-L9.108; edge blocks in the docking manager's order — L9.109, which
-settles "several panes in one dock row": MFC makes a block per edge drop
-too.) Then: the marker bitmaps (ours drawn); L9.97 the main panel's row height
-/ image margins; L9.100 large / collapsed button sizes; L9.64 MDI arrangements under tabs (likely
-leave as no-ops); L9.22 / L9.84 CUPS hardware margins; L9.90 Alt+key
-while held and the Recent Documents' keys; the backlog §9 items 15 / 35 /
-37 / 45 residuals. Good recurring pass: render the user's real records
-(`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`, `WIN_1999.cfg`) after big
-changes.
-(Done in this session: L9.93–L9.106, see the summary above.)
+pending research results to act on (if a fresh session: re-run them) —
+the channel-role dialogs DIALOG 401–543 behaviour map vs ours (§0 older
+residual), the engine residuals (OSC trigger / start stamps, the merge
+sync under the frequency correction for pasted channels, the symmetric-
+component view code «not located» in L6). Then: the docking marker
+bitmaps (ours drawn); L9.64 MDI arrangements under tabs (ND, likely
+no-ops); Свойства... in the print dialog (driver dialog + job DEVMODE);
+the merged record's frequency track; header T on the first printed page
+(Windows printer stock font); the application button's orb / caption bar
+from the style images; backlog §9 #36 / #37 / #45 leftovers (logo and
+splash are proprietary assets — not reproduced). Good recurring pass:
+render the user's real records (`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`,
+`WIN_1999.cfg`) after big changes — it found a regression again this
+session.
+(Done in this session: L9.107–L9.120, see the summary above.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
