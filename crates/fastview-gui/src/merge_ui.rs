@@ -567,6 +567,12 @@ impl App {
         d.set.modified = true;
         self.run_omp_silent(ai);
         self.merge = None;
+        // MessageBeep(MB_OK) when done (`0x47e910`).
+        #[cfg(windows)]
+        // SAFETY: a plain user32 call with a constant argument.
+        unsafe {
+            windows_sys::Win32::System::Diagnostics::Debug::MessageBeep(0);
+        }
     }
 
     /// The merge bar (CMergeBar, 70 px): method, the two channels,

@@ -69,18 +69,34 @@ fn refs(v: &[Vec<f64>; 3]) -> [&[f64]; 3] {
     [v[0].as_slice(), v[1].as_slice(), v[2].as_slice()]
 }
 
-fn chan_samples(d: &Doc, name: &str) -> Option<Vec<f64>> {
+/// The channel the engine takes for `name` (`0x42edf0`): every channel
+/// whose name matches ignoring case (CompareNoCase, mfc #2954), the one
+/// matching exactly (Compare, #2948) preferred, else the first — file
+/// channels, then computed ones; `Err(j)` a computed channel.
+fn find_chan(d: &Doc, name: &str) -> Option<Result<usize, usize>> {
     if name.is_empty() {
         return None;
     }
-    // The flagged values (`0x426020`: ADC / remove-DC / invert), as the
-    // engine reads its channels (ledger L9.7).
-    d.flagged
+    let low = name.to_lowercase();
+    let cands: Vec<(Result<usize, usize>, &str)> = d
+        .osc
         .analog
         .iter()
-        .find(|c| c.id == name)
-        .map(|c| c.samples.clone())
-        .or_else(|| d.computed.iter().find(|c| c.name == name).map(|c| c.samples.clone()))
+        .enumerate()
+        .map(|(i, c)| (Ok(i), c.id.as_str()))
+        .chain(d.computed.iter().enumerate().map(|(j, c)| (Err(j), c.name.as_str())))
+        .filter(|(_, n)| n.to_lowercase() == low)
+        .collect();
+    cands.iter().find(|(_, n)| *n == name).or(cands.first()).map(|(k, _)| *k)
+}
+
+fn chan_samples(d: &Doc, name: &str) -> Option<Vec<f64>> {
+    // The flagged values (`0x426020`: ADC / remove-DC / invert; the cache
+    // ch+0x20 the engine copies), ledger L9.7 / L9.134.
+    match find_chan(d, name)? {
+        Ok(i) => d.flagged.analog.get(i).map(|c| c.samples.clone()),
+        Err(j) => Some(d.computed[j].samples.clone()),
+    }
 }
 
 impl App {
@@ -160,7 +176,11 @@ impl App {
         };
         let phasor = |s: fvb_core::omp::Slot, x: &[f64]| -> Vec<num_complex::Complex64> {
             let name = slot_name(s);
-            match d.osc.analog.iter().find(|c| c.id == name).filter(|c| !c.own_freq.is_empty()) {
+            let own = match find_chan(d, name) {
+                Some(Ok(i)) => Some(&d.osc.analog[i]),
+                _ => None,
+            };
+            match own.filter(|c| !c.own_freq.is_empty()) {
                 Some(c) => fvb_core::omp::omp_phasors_tracked(x, p, &t_us, &c.own_freq, &d.osc.freq_track),
                 None => fvb_core::omp::omp_phasors(x, p),
             }
@@ -937,6 +957,22 @@ impl ParamsDialog {
 mod tests {
     use super::*;
     use crate::app::{ChanKey, Command};
+
+    /// `0x42edf0`: ignoring case, the exact spelling preferred, else the
+    /// first; nothing for an empty or unknown name.
+    #[test]
+    fn channel_lookup_ignores_case_and_prefers_the_exact_name() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.osc.analog[0].id = "Ia".into();
+        d.osc.analog[1].id = "IA".into();
+        assert_eq!(find_chan(d, "IA"), Some(Ok(1)), "exact");
+        assert_eq!(find_chan(d, "ia"), Some(Ok(0)), "the first ignoring case");
+        d.osc.analog[0].id = "Ток А".into();
+        assert_eq!(find_chan(d, "ТОК а"), Some(Ok(0)), "Cyrillic folds too");
+        assert_eq!(find_chan(d, ""), None);
+        assert_eq!(find_chan(d, "нет"), None);
+    }
 
     fn demo_app() -> App {
         let mut app = App::new();

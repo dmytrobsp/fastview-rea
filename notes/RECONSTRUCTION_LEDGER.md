@@ -4070,7 +4070,7 @@ NoOverlap is an error box; the rate field parses an i32. Tests
 Residual: 239 «Выбранные каналы имеют разную частоту» on 33035 (needs a
 per-channel rate; reachable only after a paste); (DIALOG 353: L9.133); the print
 failure's wording (ours «Ошибка печати: …»; MFC's 61702 INFERRED); the
-.sto close warning 190 (.sto ⛔); MessageBeep after «Объединить»; the
+.sto close warning 190 (.sto ⛔); (MessageBeep: L9.138); the
 exception types each catch takes ND; 0 / negative rates in DIALOG 392 ND
 (ours refuses them).
 
@@ -4233,11 +4233,26 @@ choosing tracked per slot by its channel's vector. Tests
 the same magnitude as the fixed window ending at i, 2π/N behind — the
 rotation cancels in the ОМП's ratios when every channel is tracked),
 `merge_pads_and_shifts_the_later_record`.
-Residual: the ОМП's name lookup is case-insensitive with an exact-case
-preference in the original (ours exact); the record's µs times taken as
+Residual: (the ОМП's name lookup: L9.138); the record's µs times taken as
 round(t·1e6) (the loaders' rounding of rec+0x208 ND); whether the merge
 pads ch+0x50 with the values (ours indexes the padded lane) ND; the
 `.set` NetFreq round trip (`0x427bc0` / `0x427af0`) not modelled.
+
+### L9.138 — The ОМП's channel lookup ignores case; the merge's beep  ·  ✅
+Read (by hand `0x42edf0`, the ОМП engine's lookup; `0x42f250` per the
+L9.137 report; `0x47e910`): every channel whose name matches by
+CompareNoCase (mfc #2954) is a candidate, one matching by Compare (#2948)
+is preferred, else the first; none → the engine's error 354 (0x162); the
+ОМП's tracked-mode choice looks the same way. «Объединить» ends with
+MessageBeep(MB_OK).
+Ours: exact names only; no beep. Now `omp_ui::find_chan` (file channels,
+then computed ones; Unicode case folding — the app runs in the Russian
+locale, L9.68) for the samples and the own-frequency choice;
+`merge_records` beeps on Windows (`windows-sys` Diagnostics_Debug /
+WindowsAndMessaging). Test
+`channel_lookup_ignores_case_and_prefers_the_exact_name`.
+Residual: the beep not run on the VM (no audio check possible); other
+platforms silent.
 
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
