@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 323 pass)
+- `cargo test --workspace`   (currently 333 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2529,12 +2529,29 @@ one; the magnitude format chooses w from the unscaled value (INFERRED);
 the per-second «/с» unit suffix (`0x42bc50`) not modelled; GDI pixel
 rules (PS_DOT pattern, Ellipse) approximated.
 
-Next in L9 (HANDOFF 2026-10-23, evening): **public at
+Next in L9 (HANDOFF 2026-10-23, night): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
-(lipo), each one flat archive). `main` = HEAD, 323 tests; CI green on 3 OSes through L9.66 (the L9.67 run was
-still in progress at this handoff — check `gh run list`).
-**Latest work (2026-10-23, evening):** L9.58 copy with a property grid
+(lipo), each one flat archive). `main` = HEAD, 333 tests; CI green on 3 OSes
+through L9.69 at this handoff (check `gh run list` for the later runs).
+**Night session (L9.68–L9.72):** L9.68 paste / an ОМП run never mark the
+record modified (ours marked a run through its phase lanes); **L9.69 every
+diagram shows the values as displayed (k)** — a «P» record shown
+«Вторичные» is drawn in secondary units on the vector / circle /
+differential / frequency diagrams, and the vector header is the original's
+box «U max / I max» "%.1f V" (no prefix; p = 10^(⌊log10 max⌋ − 1)); **L9.70
+formula channels get the original's unit** (the dimension walk: «Ua−Ub» →
+V, `Rms:(Ia)` → A, `Frequency: ()` → Hz; quick analysis the same way, S0 =
+`Mod:(Pf: (…))[VA]`); L9.71 pasted (bit 14) lanes keep their kind and are
+drawn from their own samples at their own times with the paste marks; the
+digital base bar is N·25f from the plot left whatever the scroll; **L9.72
+the vector diagram as read** (0° up, counter-clockwise; labels inside the
+circle; legend row or values table at the bottom). New `window_dump`
+states: `paste`, `vecvalues`. A research subagent was reading which
+«Добавить…» builder forms (`0x4129e0`) quick analysis uses — our
+`quick.rs` formula texts are hand-written (same values, different editor
+text); if its report is not in L9.73, redo that read.
+**Earlier (2026-10-23, evening):** L9.58 copy with a property grid
 focused (XML only); L9.59 the comment under the pointer is sticky, prints
 and is drawn twice; L9.60 comment cursor codes (level body N–S), locked
 comments select but don't drag, a hidden text still drags, no визир under
