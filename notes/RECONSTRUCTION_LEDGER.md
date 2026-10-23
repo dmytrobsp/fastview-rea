@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 309 pass)
+- `cargo test --workspace`   (currently 310 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -779,8 +779,8 @@ three kinds with text / locked / text-hidden; ±10 px hit tests (moment by x,
 level by its segment with parts left end / right end / body, area on its
 border band only with side edges draggable); one-shot tools 155/157/156
 (moment in one click; level on an analog lane and area on any lane dragged
-out from the press, normalised on release); LMB on an element whose text is
-shown grabs it, locked ones do not move; hover = selected (3 px (192,0,0),
+out from the press, normalised on release); LMB on an element grabs it
+(corrected in L9.60: the text flag plays no part), locked ones do not move; hover = selected (3 px (192,0,0),
 info box with «Время:» / «Уровень: %.2f» / «Длительность: %d.%03d с»);
 moment marks feed the difference band; MENU 563 labels per kind
 (визир / линию уровня / область), «Изменить уровень» only for levels as an
@@ -1669,8 +1669,8 @@ Ours were: hit against the drawn x (L9.42, inferred), float ±3, pending
 lane before comments, cursor gated to the plot with the resize cursor over
 the hand; band at rounded x sorted by x with a right-edge cut. Now as read.
 Test `a_vizir_on_the_first_sample_is_grabbed_at_the_plot_edge`.
-Residual: comment hit codes 9 vs 10 (which part gives SIZENS) NOT
-DETERMINED — ours SIZEWE for every comment hit.
+Residual: comment hit codes 9 vs 10 — done in L9.60 (10 = a level line's
+body → SIZENS).
 
 ### L9.45 — Waveform drawing: sample count, mark order, digital decimation rules  ·  ✅ (wired L9.46)
 Read (subagent): the analog painters `0x429490` / `0x429c30` never
@@ -2031,6 +2031,40 @@ Residual: the cursor shape over a comment still uses a live hit test
 still pointer keeps the old selection (as the original, which only
 re-picks on WM_MOUSEMOVE) — not separately tested.
 
+### L9.60 — Comment cursor codes, the lock, and what a press does under a selection  ·  ✅
+Read by hand (asm): `0x43fab0` (called by WM_SETCURSOR `0x45f703` and
+button-down `0x45e3bf`) walks the elements; for each whose ±10 px test
+(slot +0x8) hits **and that is not locked** (`+8`) it asks the part test
+(slot +0xc: x only, the pointer ±10 px turned into a sample range, rounded
+to the nearer of floor / ceil): moment 2 if its sample is in range;
+level (`0x4715c0`) none outside from..to, 2 at `from`, 3 at `to`, else 4;
+area (`0x404460`) 2 at `from`, 3 at `to`, else **none** (the top / bottom
+border band has no part). The first part found is stored at `doc+0x85c`
+and returned as **10 for part 4, else 9**. Cursor (`0x45f660`): codes
+1–3 / 9 or modes 1–3 → IDC_SIZEWE, 4–5 / 10 or modes 4–5 → IDC_SIZENS,
+modes 7 / 8 → IDC_UPARROW, a pending lane or mode 6 → IDC_HAND first
+(no cursor from the comment drag mode itself — the live code decides).
+Button-down: LMB with code 9 / 10 → that mode; the drag `0x43efa0` moves
+the **selected** element (`+0x854`) — nothing when none, x < leftW or it
+is locked; no test of the text flag (+9; the L9.6 claim "an element
+whose text is shown" was wrong). Then the pending lane; then, with a
+tool armed, LMB only and `0x43eb40` places only when nothing is selected
+(`0x43ec35`) — any other press does nothing; then Shift → H визир; mode 7
+→ rectangle; and the визир placement only when **nothing is selected**
+(`0x45e65d`). The selection is the hover pick (L9.59), which takes locked
+elements too: a locked element highlights, opens MENU 563, takes a
+double-click (`0x465890`: x ≥ leftW and a selection) and blocks V
+placement, but gives no resize cursor and does not move.
+Ours: `part_at` in `lanes_ui` (first unlocked hit with a part ≠ 0); the
+press chain in the original's order with the drag on `comment_hot`, the
+armed-tool branch swallowing other presses, V placement gated on no
+selection; the cursor N–S for part 4; the context menu and double-click
+on `comment_hot`. Test `comment_cursor_codes_lock_and_visir_suppression`
+(and the harness keeps the cursor).
+Residual: our part test is in pixels (|Δx| ≤ 10) rather than the sample
+range rounded to floor / ceil — the same at ordinary zoom, may differ by a
+sample when samples are wider than 10 px.
+
 Next in L9 (HANDOFF 2026-10-23, late): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2067,7 +2101,7 @@ the ledger text was stale for many L9.1–L9.14 items): L9.30 the third
 copy-focus case ✅ L9.58; L9.22 print residuals (comment hover ✅ L9.59; left: logo, paper,
 diagram print branches); L9.21 MFC's 200 ms hold-to-drag (a self-drop
 shows 1086 — read the LMB-down path first); L9.6 digital level-line snap;
-L9.44 the comment cursor codes (reverse `0x43fab0` / `0x45f660`); MFC
+L9.44 the comment cursor codes ✅ L9.60; MFC
 framework items readable from the carved mfc120u / mfc120rus (tab colour
 order, «Окна...», keytips, save-prompt wording — L9.8 / L9.14 / L9.17 /
 L9.27); the sheet's residuals (L9.51–L9.56); pane re-docking (egui limit).

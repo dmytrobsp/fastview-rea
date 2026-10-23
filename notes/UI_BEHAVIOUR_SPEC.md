@@ -484,8 +484,8 @@ Then status update and repaint. No Home/End/PgUp/PgDn/Delete. Accelerators
 
 | condition | cursor |
 |---|---|
-| over a V-визир (±3 px), dragging V1–V3, or over a comment | size W–E |
-| over an H-визир or dragging H1/H2 | size N–S |
+| over a V-визир (±3 px), dragging V1–V3, or over an unlocked comment's part other than a level line's body (code 9) | size W–E |
+| over an H-визир, dragging H1/H2, or over an unlocked level line's body (code 10) | size N–S |
 | mode 7 or 8 | up-arrow |
 | over a pending pasted lane, or mode 6 | hand |
 | else | arrow |
@@ -644,7 +644,7 @@ is shown; the marker is always drawn). Kinds (type() slot 1):
 |---|---|---|---|
 | 1 Moment (визир) | `position` sample | sample range of x ± 10 px contains position | 2 = whole |
 | 2 Level line | channel name, `positionY` (value in channel units), `positionFrom`, `positionTo` (samples) | rect from−10..to+10 px, ±10 px around the line | 2 left end, 3 right end, 4 body (vertical move) |
-| 3 Area | `channelFrom`, `channelTo` (lane names), `positionFrom`, `positionTo` | **border band only**: inside rect+10, outside rect−10 | 2 left edge, 3 right edge (only side edges drag) |
+| 3 Area | `channelFrom`, `channelTo` (lane names), `positionFrom`, `positionTo` | **border band only**: inside rect+10, outside rect−10 | 2 left edge, 3 right edge; the top / bottom band has no part (selects only, arrow cursor, no drag) |
 
 Validity: Level needs its channel to exist; Area both channels. Manager in the
 doc at `+0x840` (vector), `+0x854` = item under the pointer (= end → none),
@@ -691,7 +691,7 @@ Only when the tool mode is set and no item is under the pointer:
   **Tools are one-shot** (the ribbon button pops out after one element).
 
 ### 5.4 Editing [R, 0x43efa0]
-LMB on an unlocked, visible item → drag: Moment moves `position`; Area part 2
+LMB → `0x43fab0`: the first **unlocked** element whose ±10 px test hits and whose part test (x only, the pointer ±10 px as a sample range) gives a part → mode 9 (10 for a level body); the drag `0x43efa0` then moves the **selected** element (`+0x854`) by that part unless it is locked — the text flag (+9) plays no part (L9.60). Moment moves `position`; Area part 2
 moves from, 3 (or 1) moves to; Level part 2 from, part 3 to, part 4 moves the
 line vertically (value recomputed only while over the same channel's lane).
 Locked items do not move. Double-click → text dialog (CCommentDlg, item mode).

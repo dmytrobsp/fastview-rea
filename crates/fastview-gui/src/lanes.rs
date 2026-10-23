@@ -994,6 +994,11 @@ impl App {
         let comment_at = |pos: Pos2| {
             doc.comments.iter().enumerate().find_map(|(i, c)| crate::comments::hit(c, pos, &cgeo).map(|part| (i, part)))
         };
+        // The drag / cursor test (`0x43fab0`): the first unlocked element
+        // with a grabbable part (an area's top and bottom border have none).
+        let part_at = |pos: Pos2| {
+            doc.comments.iter().filter(|c| !c.locked).find_map(|c| crate::comments::hit(c, pos, &cgeo).filter(|&part| part != 0))
+        };
         // A pointer move over the client right of the stats panel with no
         // drag under way re-picks the element under it (`0x45ef09`); it is
         // kept while the pointer is elsewhere (no mouse-leave handler).
@@ -1085,20 +1090,23 @@ impl App {
                             actions.push(Act::Drag(VizDrag::V(v_hit(pos.x).unwrap())));
                         } else if pressed_l && h_hit(pos.y).is_some() {
                             actions.push(Act::Drag(VizDrag::H(h_hit(pos.y).unwrap())));
-                        } else if let Some((ci, part)) = comment_at(pos) {
-                            // LMB on a comment whose text is shown grabs it (the
-                            // menu comes on the right button's release); a
-                            // comment is tested before a pending lane.
-                            if pressed_l && !doc.comments[ci].hidden {
+                        } else if let Some(part) = part_at(pos).filter(|_| pressed_l) {
+                            // An unlocked element's part under the pointer: drag
+                            // the selected element (`0x43efa0` moves `+0x854`,
+                            // whatever the text flag); before a pending lane.
+                            if let Some(ci) = hot {
                                 actions.push(Act::CommentDrag(ci, part));
                             }
                         } else if pressed_l && pending_at(pos.y) {
                             // A pending pasted lane: drag it in time (mode 6).
                             actions.push(Act::MergeDrag(Some((pos.x, doc.merge_offset))));
-                        } else if pressed_l && doc.comment_mode != 0 {
-                            // Placement tools (`0x43eb40`): a moment in one click;
-                            // a level line on an analog lane and an area on any
-                            // lane are dragged out from the press.
+                        } else if doc.comment_mode != 0 && (!pressed_l || hot.is_some()) {
+                            // A tool is armed: any other press does nothing.
+                        } else if doc.comment_mode != 0 {
+                            // Placement tools (`0x43eb40`, LMB, nothing selected):
+                            // a moment in one click; a level line on an analog
+                            // lane and an area on any lane are dragged out from
+                            // the press.
                             use crate::comments::{Comment, CommentKind};
                             let lane = rows.iter().zip(&tops).position(|(r, &t)| pos.y >= t && pos.y < t + r.h);
                             match doc.comment_mode {
@@ -1125,7 +1133,8 @@ impl App {
                             if let Some((chan, _)) = analog_at(pos.y, &geo, &ranges) {
                                 actions.push(Act::RectZoom(RectZoom::Dragging { chan, x: pos.x, y0: pos.y, y1: pos.y }));
                             }
-                        } else {
+                        } else if hot.is_none() {
+                            // `0x45e65d`: no визир under a selected element.
                             actions.push(Act::PlaceV(usize::from(pressed_r), k));
                         }
                     }
@@ -1187,11 +1196,8 @@ impl App {
         if !menu_busy && resp.double_clicked() {
             if let Some(pos) = resp.interact_pointer_pos() {
                 match hit_test(pos, &geo) {
-                    Hit::Plot => {
-                        if let Some((idx, _)) = comment_at(pos) {
-                            actions.push(Act::EditComment(idx));
-                        }
-                    }
+                    // `0x465890`: the selected element, right of the stats.
+                    Hit::Plot | Hit::Axis if pos.x >= left && hot.is_some() => actions.push(Act::EditComment(hot.unwrap_or_default())),
                     // Double-click on an analog name badge: inline rename.
                     Hit::Stats(Some(Lane::Analog(i))) => {
                         let li = rows.iter().position(|r| r.key == Lane::Analog(i)).unwrap_or(0);
@@ -1209,7 +1215,7 @@ impl App {
                     Hit::Axis => actions.push(Act::OpenMenu(pos, LaneMenuKind::TimeAxis)),
                     Hit::Stats(_) => actions.push(Act::OpenMenu(pos, LaneMenuKind::Channels)),
                     Hit::Plot => {
-                        if let Some((idx, _)) = comment_at(pos) {
+                        if let Some(idx) = hot {
                             actions.push(Act::OpenMenu(pos, LaneMenuKind::Comment(idx)));
                         }
                     }
@@ -1293,9 +1299,9 @@ impl App {
         if let Some(pos) = hover.filter(|p| client.contains(*p)) {
             let icon = if self.merge_drag.is_some() || pending_at(pos.y) {
                 Some(egui::CursorIcon::Grab)
-            } else if matches!(self.vizir_drag, Some(VizDrag::V(_))) || self.comment_drag.is_some() || v_hit(pos.x).is_some() || comment_at(pos).is_some() {
+            } else if matches!(self.vizir_drag, Some(VizDrag::V(_))) || v_hit(pos.x).is_some() || part_at(pos).is_some_and(|p| p != 4) {
                 Some(egui::CursorIcon::ResizeHorizontal)
-            } else if matches!(self.vizir_drag, Some(VizDrag::H(_))) || h_hit(pos.y).is_some() {
+            } else if matches!(self.vizir_drag, Some(VizDrag::H(_))) || h_hit(pos.y).is_some() || part_at(pos) == Some(4) {
                 Some(egui::CursorIcon::ResizeVertical)
             } else if self.rect_zoom != RectZoom::Off {
                 Some(egui::CursorIcon::ResizeNorth)
@@ -1896,13 +1902,15 @@ mod menu_tests {
         t: f64,
         /// The last frame's painted shapes.
         shapes: Vec<egui::epaint::ClippedShape>,
+        /// The last frame's cursor.
+        cursor: egui::CursorIcon,
     }
 
     impl Harness {
         fn new() -> Harness {
             let mut app = App::new();
             app.dispatch(Command::Demo);
-            let mut h = Harness { ctx: egui::Context::default(), app, t: 0.0, shapes: vec![] };
+            let mut h = Harness { ctx: egui::Context::default(), app, t: 0.0, shapes: vec![], cursor: egui::CursorIcon::Default };
             h.frame(vec![]);
             h.frame(vec![]);
             h
@@ -1922,9 +1930,11 @@ mod menu_tests {
                 ..Default::default()
             };
             let app = &mut self.app;
-            self.shapes = self.ctx.run(raw, |ctx| {
+            let out = self.ctx.run(raw, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| app.lanes_ui(ui));
-            }).shapes;
+            });
+            self.cursor = out.platform_output.cursor_icon;
+            self.shapes = out.shapes;
         }
 
         fn button(&mut self, pos: Pos2, button: egui::PointerButton) {
@@ -2382,6 +2392,43 @@ mod menu_tests {
         h.app.active_doc_mut().unwrap().comments.push(Comment::new(CommentKind::Moment { pos: 0 }));
         h.frame(vec![]);
         assert_eq!(h.doc().comment_hot, None);
+    }
+
+    /// `0x43fab0` / `0x45f660` / `0x45dc10`: the first unlocked element's
+    /// part sets the cursor (a level line's body N–S, an end W–E) and the
+    /// drag; a locked one is selected but neither grabbed nor passed
+    /// through to a визир; a hidden text does not stop a drag.
+    #[test]
+    fn comment_cursor_codes_lock_and_visir_suppression() {
+        use egui::CursorIcon::{ResizeHorizontal, ResizeVertical};
+        let mut h = Harness::new();
+        let y0 = h.row(0).y;
+        h.app.dispatch(Command::CommentMode(2));
+        drag(&mut h, Pos2::new(600.0, y0), Pos2::new(700.0, y0));
+        let at = |x: f32| Pos2::new(x, y0);
+        let hover = |h: &mut Harness, p: Pos2| {
+            h.frame(vec![egui::Event::PointerMoved(p)]);
+            h.cursor
+        };
+        hover(&mut h, at(900.0));
+        assert_eq!(hover(&mut h, at(650.0)), ResizeVertical, "the body moves the line vertically");
+        assert_eq!(hover(&mut h, at(600.0)), ResizeHorizontal, "an end");
+        // Locked: selected, but an arrow, no drag and no В1 under it.
+        h.app.active_doc_mut().unwrap().comments[0].locked = true;
+        hover(&mut h, at(900.0));
+        assert_ne!(hover(&mut h, at(650.0)), ResizeVertical);
+        assert_eq!(h.doc().comment_hot, Some(0));
+        let before = h.doc().comments[0].kind.clone();
+        drag(&mut h, at(600.0), at(500.0));
+        assert_eq!(h.doc().comments[0].kind, before, "a locked line stays");
+        assert!(!h.doc().v_shown[0], "no визир under a selected element");
+        // Unlocked with its text hidden: the end still drags.
+        let d = h.app.active_doc_mut().unwrap();
+        d.comments[0].locked = false;
+        d.comments[0].hidden = true;
+        hover(&mut h, at(600.0));
+        drag(&mut h, at(600.0), at(500.0));
+        assert_ne!(h.doc().comments[0].kind, before, "a hidden text does not stop the drag");
     }
 
     #[test]
