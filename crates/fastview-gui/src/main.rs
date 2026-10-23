@@ -801,6 +801,11 @@ mod window_tests {
             app.dispatch(app::Command::QuickAnalysis);
             app.formula_page.selected = Some(1);
         }
+        // `FV_WINDOW_STATE=vecvalues`: the vector diagram's values table.
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "vecvalues") {
+            app.track_settings();
+            app.vec_show_values = true;
+        }
         // `FV_WINDOW_STATE=paste`: the first analog and digital channels
         // copied and pasted back, 3 ms later (pending, bit 14).
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "paste") {

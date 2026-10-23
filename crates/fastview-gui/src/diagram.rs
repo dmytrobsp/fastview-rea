@@ -290,6 +290,37 @@ pub fn scanline_spans(rings: &[Vec<[f32; 2]>], y0: i32, y1: i32) -> Vec<(i32, f3
 
 // ---- vector and frequency layout ------------------------------------------
 
+/// The vector window's layout (`0x4917fc`–`0x4918da`), in device units:
+/// the bottom band's top `b` (the values table: 2m + count·(m + cy) high,
+/// else the one-row legend m + cy), and the circle — radius the smallest
+/// of the circle sitting on `b − m` that clears the header box's lower
+/// left corner (m beyond it), half the width less m and half the band's
+/// top less 2m; centre x the middle, y `min(Y − R, (b − top)/2 + m + cy)`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VectorLayout {
+    pub b: f32,
+    pub table: bool,
+    pub r: f32,
+    pub cx: f32,
+    pub cy: f32,
+}
+
+/// `rect` = (left, top, right, bottom); `m` = 6·s, `cy` the font's "Ay"
+/// height, `h` = ⌊3·cy/2⌋, `off` the header box's x offset, `count` the
+/// shown phasors.
+pub fn vector_layout((left, top, right, bottom): (f32, f32, f32, f32), m: f32, cy: f32, h: f32, off: f32, count: usize, values: bool) -> VectorLayout {
+    let table = values && (count as f32 + 6.0) * h < bottom - top;
+    let b = if table { bottom - 2.0 * m - count as f32 * (m + cy) } else { bottom - (m + cy) };
+    let w = right - left;
+    let y = b - top - m;
+    let hb = m + 2.0 * h + 10.0;
+    let dx = off - m - w / 2.0;
+    let r1 = (dx * dx + (hb - y) * (hb - y)) / (2.0 * (y - hb));
+    let r1 = if r1.is_nan() { f32::INFINITY } else { r1 };
+    let r = r1.min(w / 2.0 - m).min((b - top - 2.0 * m) / 2.0).max(0.0).floor();
+    VectorLayout { b, table, r, cx: (left + w / 2.0).floor(), cy: (top + (y - r).min((b - top) / 2.0 + m + cy)).floor() }
+}
+
 /// Number of concentric circles of the vector grid (`0x490360`):
 /// `n = ⌊R/50⌋` → 4 when n < 4, 5 when 4..9, 10 from 10.
 pub fn vector_circles(radius: f32) -> usize {
@@ -624,6 +655,18 @@ mod tests {
                 Entry::Sep => "─".into(),
             })
             .collect()
+    }
+
+    #[test]
+    fn vector_layout_clears_the_header() {
+        // 400 × 300, legend band: b = 300 − (6 + 14); the header corner
+        // (250 − 6, 58) bounds R to 112; centre y min(274 − 112, 140 + 20).
+        let l = vector_layout((0.0, 0.0, 400.0, 300.0), 6.0, 14.0, 21.0, 250.0, 3, false);
+        assert_eq!((l.b, l.table, l.r, l.cx, l.cy), (280.0, false, 112.0, 200.0, 160.0));
+        // The values table: 2m + 3·(m + cy) high while (3 + 6)·h fits.
+        let t = vector_layout((0.0, 0.0, 400.0, 300.0), 6.0, 14.0, 21.0, 250.0, 3, true);
+        assert_eq!((t.b, t.table), (228.0, true));
+        assert!(!vector_layout((0.0, 0.0, 400.0, 150.0), 6.0, 14.0, 21.0, 250.0, 3, true).table, "no room: the legend");
     }
 
     #[test]

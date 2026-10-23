@@ -1060,16 +1060,74 @@ impl App {
         let is_current = |unit: &str| unit == "A";
         let group_max = |current: bool| shown.iter().filter(|s| is_current(&s.1) == current).map(|s| s.2.norm()).fold(0.0, f64::max);
         let (i_scale, u_scale) = (fvb_core::views::nice_scale(group_max(true)), fvb_core::views::nice_scale(group_max(false)));
-        let area = Rect::from_min_max(full.min + Vec2::new(0.0, 22.0), full.max);
-        let r = (area.width().min(area.height()) / 2.0 - 10.0).max(10.0);
-        let c = area.center();
-        // The circle count takes R in device pixels (`⌊R/50⌋`, unscaled), so
-        // a printed page nearly always has 10; printed pens are solid
-        // (100,100,100) and (50,50,50), ⌊s/3⌋ wide (`0x490360`).
+        // Paint order (`0x490360`): the bottom band, the header, circles,
+        // radials and angle labels, then each phasor with its table row.
         let ps = print_s();
-        let nc = dg::vector_circles(r * ps.unwrap_or(1.0));
-        for j in 1..=nc {
-            let rr = r * j as f32 / nc as f32;
+        let s = ps.unwrap_or(1.0);
+        let ink = Color32::from_rgb(20, 20, 20);
+        let measure = |t: &str| painter.layout_no_wrap(t.to_string(), font(), ink).size();
+        let m = 6.0;
+        let cy = measure("Ay").y;
+        let h = (3.0 * cy * s / 2.0).floor() / s;
+        let sq = (4.0 * cy * s / 5.0).floor() / s;
+        let rect = (full.left(), full.top(), full.right(), full.bottom());
+        let off = vector_header_off(&painter, full, [u_scale, i_scale]);
+        let lay = dg::vector_layout(rect, m, cy, h, off, shown.len(), show_values);
+        let black = dev_pen(s, Color32::BLACK);
+        let swatch = |r: Rect, col: Color32| {
+            painter.rect_filled(r, 0.0, col);
+            painter.rect_stroke(r, 0.0, black);
+        };
+        let grid = match ps {
+            Some(s) => dev_pen(s / 2.0, Color32::from_rgb(100, 100, 100)),
+            None => stroke(1.0, Color32::from_rgb(150, 150, 150)),
+        };
+        // The table's columns: names, magnitudes, angles.
+        let name_w = shown.iter().map(|c| measure(&c.0).x).fold(0.0, f32::max) + sq + 5.0 * m;
+        let val_w = measure("-0.0000000").x + 4.0 * m;
+        let tw = name_w + 2.0 * val_w;
+        let xoff = if tw <= full.width() { ((full.width() - tw) / 2.0).floor() } else { m };
+        if lay.table {
+            let (x0, x1) = (full.left() + xoff, full.left() + xoff + tw);
+            let y1 = lay.b + shown.len() as f32 * h;
+            painter.hline(x0..=x1, lay.b, grid);
+            for (row, c) in shown.iter().enumerate() {
+                let y = lay.b + row as f32 * h;
+                painter.hline(x0..=x1, y + h, grid);
+                let third = (cy / 3.0).floor();
+                swatch(Rect::from_min_max(Pos2::new(x0 + third, y + third), Pos2::new(x0 + third + cy - 1.0, y + h - third)), c.3);
+                painter.text(Pos2::new(x0 + cy + (cy / 2.0).floor(), y + cy / 4.0), egui::Align2::LEFT_TOP, &c.0, font(), ink);
+            }
+            for x in [x0, x0 + name_w, x1 - val_w, x1] {
+                painter.vline(x, lay.b..=y1, grid);
+            }
+        } else {
+            // The legend: one centred row (from x = m when it does not fit).
+            let total: f32 = shown.iter().map(|c| measure(&c.0).x + 2.0 * m + sq).sum();
+            let mut x = if total <= full.width() { full.left() + ((full.width() - total) / 2.0).floor() } else { m };
+            for c in &shown {
+                swatch(Rect::from_min_size(Pos2::new(x, lay.b + 2.0), Vec2::splat(sq)), c.3);
+                painter.text(Pos2::new(x + sq + m, lay.b), egui::Align2::LEFT_TOP, &c.0, font(), ink);
+                x += measure(&c.0).x + 2.0 * m + sq;
+            }
+        }
+        vector_header(&painter, full, [u_scale, i_scale]);
+        if lay.r <= 0.0 {
+            return;
+        }
+        let (r, c) = (lay.r, Pos2::new(lay.cx, lay.cy));
+        // Circles k·R/n from the outer one in; printed pens are solid
+        // (100,100,100) and (50,50,50), ⌊s/3⌋ wide; the count takes R in
+        // device pixels.
+        let nc = dg::vector_circles(r * s);
+        let inner = |a: Pos2, b: Pos2| match ps {
+            Some(s) => {
+                painter.line_segment([a, b], dev_pen(s / 3.0, Color32::from_rgb(100, 100, 100)));
+            }
+            None => dotted(&painter, a, b, FRAME, 1.0),
+        };
+        for j in (1..=nc).rev() {
+            let rr = ((r * s) as usize * j / nc) as f32 / s;
             if let Some(s) = ps {
                 let col = if j == nc { Color32::from_rgb(50, 50, 50) } else { Color32::from_rgb(100, 100, 100) };
                 painter.circle_stroke(c, rr, dev_pen(s / 3.0, col));
@@ -1080,49 +1138,48 @@ impl App {
                 painter.extend(egui::Shape::dashed_line(&pts, stroke(1.0, FRAME), 2.0, 2.0));
             }
         }
+        let rhu = |v: f32| crate::oscgeom::round_half_up(f64::from(v)) as f32;
         for j in 0..12 {
             let a = j as f32 * std::f32::consts::PI / 6.0;
-            let end = c + Vec2::new(a.cos(), -a.sin()) * r;
-            match ps {
-                Some(s) => {
-                    painter.line_segment([c, end], dev_pen(s / 3.0, Color32::from_rgb(100, 100, 100)));
-                }
-                None => dotted(&painter, c, end, FRAME, 1.0),
-            }
+            inner(c, Pos2::new(rhu(c.x + r * a.cos()), rhu(c.y + r * a.sin())));
         }
-        let mut lines = Vec::new();
-        for (name, unit, z, color) in &shown {
-            let ang = fvb_core::views::vector_angle(*z, reference);
+        // 0° up, 180° down, 90° left, −90° right — inside the circle.
+        let lbl = |deg: &str, rad: &str| if radians { rad.to_string() } else { deg.to_string() };
+        painter.text(Pos2::new(c.x + 2.0, c.y - r), egui::Align2::LEFT_TOP, lbl("0º", "0"), font(), ink);
+        painter.text(Pos2::new(c.x, c.y + r - 2.0), egui::Align2::LEFT_BOTTOM, lbl("180º", "π"), font(), ink);
+        painter.text(Pos2::new(c.x - r + 7.0, c.y), egui::Align2::LEFT_BOTTOM, lbl("90º", "π/2"), font(), ink);
+        painter.text(Pos2::new(c.x + r - 2.0, c.y), egui::Align2::RIGHT_BOTTOM, lbl("-90º", "-π/2"), font(), ink);
+        for (row, (name, unit, z, color)) in shown.iter().enumerate() {
+            let is_ref = angle_ref.as_deref() == Some(name.as_str());
+            let ang = if is_ref { 0.0 } else { fvb_core::views::vector_angle(*z, reference) };
             let scale = if is_current(unit) { i_scale } else { u_scale };
-            // A zero group scale (all its phasors 0) draws no length.
-            let len = if dir_only { r } else if scale > 0.0 { (z.norm() / scale) as f32 * r } else { 0.0 };
-            let dir = Vec2::new(ang.cos() as f32, -(ang.sin() as f32));
-            let tip = c + dir * len;
+            let len = if scale <= 0.0 {
+                0.0
+            } else if dir_only {
+                r
+            } else {
+                rhu((f64::from(r) * z.norm() / scale) as f32)
+            };
+            // The arrow in the up-pointing frame, turned by θ = −angle.
+            let hl = (18.0f32).min((len * s / 2.0).floor() / s);
+            let w = ((hl * s) as i32 / 5) as f32 / s;
+            let (sin, cos) = ((-ang) as f32).sin_cos();
+            let rot = |x: f32, y: f32| Pos2::new(rhu(x * cos - y * sin + c.x), rhu(x * sin + y * cos + c.y));
+            let (p0, p1, p2, p3) = (rot(0.0, 0.0), rot(0.0, -len), rot(w, hl - len), rot(-w, hl - len));
             // A pen s wide: solid for V, PS_DOT otherwise — which GDI draws
             // solid once wider than 1, i.e. on paper.
-            let stroke = stroke(1.0, *color);
-            if unit == "V" || ps.is_some_and(|s| s > 1.0) {
-                painter.line_segment([c, tip], stroke);
+            let pen = dev_pen(s, *color);
+            if unit == "V" || s > 1.0 {
+                painter.line_segment([p0, p1], pen);
             } else {
-                painter.extend(egui::Shape::dashed_line(&[c, tip], stroke, 3.0, 2.0));
+                painter.extend(egui::Shape::dashed_line(&[p0, p1], pen, 3.0, 2.0));
             }
-            // Filled triangular arrowhead: min(18·s, L/2) long, a fifth of
-            // that to each side.
-            if len > 1.0 {
-                let head = (len / 2.0).min(18.0);
-                let back = tip - dir * head;
-                let nrm = Vec2::new(-dir.y, dir.x) * (head / 5.0);
-                painter.add(egui::Shape::convex_polygon(vec![tip, back + nrm, back - nrm], *color, Stroke::NONE));
+            painter.add(egui::Shape::convex_polygon(vec![p1, p2, p3], *color, pen));
+            if lay.table {
+                let y = lay.b + row as f32 * h + cy / 4.0;
+                painter.text(Pos2::new(full.left() + xoff + name_w + m, y), egui::Align2::LEFT_TOP, fvb_core::views::vector_value_text(z.norm(), unit), font(), ink);
+                painter.text(Pos2::new(full.right() - xoff - val_w + m, y), egui::Align2::LEFT_TOP, fvb_core::views::angle_text(ang, radians), font(), ink);
             }
-            if show_values {
-                let (v, p) = g_si(z.norm());
-                lines.push((format!("{name}  {v} {p}{unit}{}", fvb_core::views::angle_text(ang, radians)), *color));
-            }
-        }
-        vector_header(&painter, full, [u_scale, i_scale]);
-        // «Показывать значения»: magnitude and angle per phasor [I: layout].
-        for (i, (t, col)) in lines.iter().enumerate() {
-            painter.text(area.left_top() + Vec2::new(6.0, 4.0 + 15.0 * i as f32), egui::Align2::LEFT_TOP, t, font(), *col);
         }
     }
 
@@ -1483,6 +1540,22 @@ fn scrollbar(ui: &mut egui::Ui, track: Rect, horizontal: bool, pos: i32, page: i
     None
 }
 
+fn header_texts([u, i]: [f64; 2]) -> (String, String) {
+    (format!("{} V", fvb_core::views::vector_header_value(u)), format!("{} A", fvb_core::views::vector_header_value(i)))
+}
+
+/// The header box's x offset from the window's left:
+/// `max(0, W − L − Wv − m − 10)`.
+fn vector_header_off(painter: &egui::Painter, full: Rect, scales: [f64; 2]) -> f32 {
+    let s = print_s().unwrap_or(1.0);
+    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), font(), Color32::BLACK).size().x;
+    let (ut, it) = header_texts(scales);
+    let m = 6.0;
+    let l = measure("U max") + 2.0 * m;
+    let w = measure("0.0000").max(measure(&ut)).max(measure(&it)) + 2.0 * m;
+    (full.width() - l - w - m - 10.0 / s).max(0.0)
+}
+
 /// The vector diagram's header (`0x4910c3`–`0x4917fc`): a box at the top
 /// right, (254,250,220) under the window pen, split into two rows and two
 /// columns — «U max» / «I max» and the group scales `"%.1f V"` / `"%.1f A"`
@@ -1493,13 +1566,13 @@ fn vector_header(painter: &egui::Painter, full: Rect, [u, i]: [f64; 2]) {
     let s = print_s().unwrap_or(1.0);
     let ink = Color32::from_rgb(20, 20, 20);
     let measure = |t: &str| painter.layout_no_wrap(t.to_string(), font(), ink).size();
-    let (ut, it) = (format!("{} V", fvb_core::views::vector_header_value(u)), format!("{} A", fvb_core::views::vector_header_value(i)));
+    let (ut, it) = header_texts([u, i]);
     let (m, ten) = (6.0, 10.0 / s);
     let cy = measure("Ay").y;
     let h = (3.0 * cy * s / 2.0).floor() / s;
     let l = measure("U max").x + 2.0 * m;
     let w = measure("0.0000").x.max(measure(&ut).x).max(measure(&it).x) + 2.0 * m;
-    let off = (full.width() - l - w - m - ten).max(0.0);
+    let off = vector_header_off(painter, full, [u, i]);
     let x0 = full.left() + off;
     let top = full.top() + ten;
     let pen = match print_s() {

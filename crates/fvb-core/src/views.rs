@@ -29,6 +29,19 @@ pub fn vector_header_value(v: f64) -> String {
     }
 }
 
+/// The values table's magnitude (`0x4925c5`): `"%.2f %s%s"` above 1 or at
+/// 0, else `"%w.(w−2)f"` with `w = |⌊log10 |z|⌋| + 3` (of the unscaled
+/// value — INFERRED); value and prefix from `0x43d960` on the canonical unit.
+pub fn vector_value_text(v: f64, unit: &str) -> String {
+    let (scaled, u) = si_scaled(v, unit);
+    if v > 1.0 || v == 0.0 {
+        format!("{scaled:.2} {u}")
+    } else {
+        let w = (v.log10().floor().abs() + 3.0) as usize;
+        format!("{scaled:w$.p$} {u}", p = w - 2)
+    }
+}
+
 /// Angle of `z` relative to `reference`, wrapped to (−π, π]; absolute
 /// (raw sine-referenced) when there is no reference.
 pub fn vector_angle(z: Complex64, reference: Option<Complex64>) -> f64 {
@@ -191,6 +204,9 @@ mod tests {
         assert_eq!(vector_header_value(0.4), "0.40");
         assert_eq!(vector_header_value(0.05), "0.050");
         assert_eq!(vector_header_value(1.0), "1.0", "w = 3: %3.1f");
+        assert_eq!(vector_value_text(57.9232, "V"), "57.92 V");
+        assert_eq!(vector_value_text(0.354, "A"), "354.00 мA");
+        assert_eq!(vector_value_text(0.0, "A"), "0.00 A");
     }
 
     #[test]

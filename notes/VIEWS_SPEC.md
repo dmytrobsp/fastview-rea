@@ -87,7 +87,10 @@ absolute (raw sine-referenced) or relative to a chosen channel, wrapped to
 shown ones (the cache carries k, L9.69). Lengths: two groups (unit exactly
 "A" vs the rest), scale = ⌈⌈max/p⌉/5⌉·5p with p = 10^(⌊log10 max⌋ − 1)
 (not > 0 → 0), length = R·|z|/scale; header: a two-row box at the top right,
-«U max» / «I max» and "%.1f V" / "%.1f A" (never an SI prefix; L9.69). "Только
+«U max» / «I max» and "%.1f V" / "%.1f A" (never an SI prefix; L9.69). 0° points up, positive angles counter-clockwise; angle labels
+inside the circle; a legend row or (ShowAnglesValue) a values table at the
+bottom; the circle is the largest that clears the header and the band
+(L9.72). "Только
 направление": full radius. "Показывать значения": table of magnitude/angle.
 
 ## Frequency diagram (`0x46f5a0`)

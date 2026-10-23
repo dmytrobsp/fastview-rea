@@ -2490,6 +2490,45 @@ ours; a subagent claimed the paste handler clears every channel's
 selection after inserting, against L9.20's "pasted lanes selected" — not
 re-checked.
 
+### L9.72 — The vector diagram as read: circle, labels, arrows, legend / values table  ·  ✅
+Read (subagent report; by hand: the four angle labels' strings and
+DrawText flags — 0x120 for «0º», 0x128 (DT_BOTTOM) for «180º» — so 0° is
+at the top; the reference phasor's atan2 at `0x491ec5`; the circle loop
+over the channel vector with flag 0x4): paint order white, bottom band,
+header (L9.69), circles, radials, labels, then per phasor its arrow and
+its table row. Bottom band: the values table when «Показывать значения»
+is on and (count + 6)·h < height — b = bottom − 2m − count·(m + cy),
+columns name (max name + ⌊4cy/5⌋ + 5m) / magnitude / angle (each
+width("-0.0000000") + 4m), centred (else from m), a (150,150,150) grid,
+a swatch (cy/3 inset, black s pen) and the name per row h apart, the
+magnitude `"%.2f %s%s"` (or `%w.(w−2)f` at or below 1) with `0x43d960`'s
+prefix on the canonical unit, the angle `" %8.2fº"` / `" %8.2fπ"`;
+otherwise a one-row legend at b = bottom − (m + cy) (squares ⌊4cy/5⌋ at
+b + 2, names after m). Circle: centre x the middle; R = the smallest of
+the circle sitting on b − m that clears the header box's lower-left
+corner by m, W/2 − m and (b − top − 2m)/2; centre y min(Y − R,
+(b − top)/2 + m + cy); n circles k·R/n (outer solid (150,150,150), inner
+PS_DOT (200,200,200)); 12 radials every 30° in the inner pen, ends
+rounded half up; labels inside the circle: «0º» at (cx + 2, cy − R)
+top-left, «180º» bottom-anchored at (cx, cy + R − 2), «90º» at
+(cx − R + 7, cy), «−90º» right-aligned at (cx + R − 2, cy) (radians: 0, π,
+π/2, −π/2). A phasor: 0° up, positive angles counter-clockwise; length
+R·|z|/scale rounded half up (R with «Только направление», 0 with a zero
+scale); head hl = min(18·s, ⌊L/2⌋), half-width ⌊hl/5⌋, the four points
+turned and rounded half up; shaft s wide (solid for V, PS_DOT else); the
+head filled and outlined in the channel colour.
+Ours put 0° to the right, the circle in the middle of a box under a 22 px
+strip, no angle labels, no legend, the values as text lines at the top
+left and an unoutlined head. Now `diagram::vector_layout` (pure, tested),
+`views::vector_value_text`, `diagram_ui::vector_header_off`; the painter
+rewritten in that order; `FV_WINDOW_STATE=vecvalues` shows the table.
+Tests `vector_layout_clears_the_header`, `nice_scales` (value texts);
+rendered the user's «P» record with and without the table.
+Residual: nothing drawn without cursor 1 (`doc+0x280`) — ours always has
+one; the magnitude format chooses w from the unscaled value (INFERRED);
+the per-second «/с» unit suffix (`0x42bc50`) not modelled; GDI pixel
+rules (PS_DOT pattern, Ellipse) approximated.
+
 Next in L9 (HANDOFF 2026-10-23, evening): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2541,7 +2580,7 @@ level-line snap (reachable only through a `.set`); keytips (MFC's ribbon
 keytip machinery — the program sets only Печать «p» / «w»); L9.27 MFC's
 intermediate ribbon reductions; L9.64's slot +0x1f0 and the MDI
 arrangements; pane re-docking (egui limit).
-(Done this session: L9.68 — paste / an ОМП run do not mark modified; L9.69 — diagrams in shown values, the vector header; L9.70 — formula units by the dimension walk; L9.71 — pasted lanes, the digital base bar.)
+(Done this session: L9.68 — paste / an ОМП run do not mark modified; L9.69 — diagrams in shown values, the vector header; L9.70 — formula units by the dimension walk; L9.71 — pasted lanes, the digital base bar; L9.72 — the vector diagram as read.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
