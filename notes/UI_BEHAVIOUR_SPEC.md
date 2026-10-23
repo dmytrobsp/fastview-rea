@@ -1400,7 +1400,7 @@ icon-only small buttons and panel collapse when narrow (L9.27).
 - Circle grid pen assignment (frame vs axes), edge-label rects, `cells` basis
   (half of the smaller side assumed); BlockPropertyGrid content/editing; meaning
   of characteristic field +0x68.
-- Vector header placement; frequency margins and bar-label placement.
+- (Vector header and layout: read in L9.69 / L9.72; frequency layout: L9.67.)
 - Docking: exact first-run placement of the diff pane; stacking order of the
   three caption bars; whether the parameters bar visibility persists; text of
   MFC string 17086; registry layout of ApplicationLook / Workspace.
