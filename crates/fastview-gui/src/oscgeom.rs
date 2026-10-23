@@ -675,10 +675,185 @@ pub fn digital_shapes(on: &dyn Fn(usize) -> bool, len: usize, first: usize, f: f
     out
 }
 
+/// Time of sample `i` in µs from a times array in seconds (`0x454b40` for
+/// the record, `0x428b40` for a channel's own): past the end the last time
+/// plus ⌊(i − len + 1)·10⁶/rate⌉ (half up).
+pub fn time_us(t: &[f64], rate: f64, i: usize) -> f64 {
+    let t0 = t.first().copied().unwrap_or(0.0);
+    match t.get(i) {
+        Some(&v) => ((v - t0) * 1e6).round(),
+        None => {
+            let last = t.last().map_or(0.0, |&v| ((v - t0) * 1e6).round());
+            let n = (i + 1) as f64 - t.len() as f64;
+            last + round_half_up(n * 1e6 / rate) as f64
+        }
+    }
+}
+
+/// A pasted, not yet merged (bit 14) channel against the record: its own
+/// times and rate, the record's, and the merge offset (`doc+0x6d8`).
+pub struct PastedTimes<'a> {
+    pub own: &'a [f64],
+    pub own_rate: f64,
+    pub rec: &'a [f64],
+    pub rec_rate: f64,
+    pub offset: f64,
+}
+
+impl PastedTimes<'_> {
+    /// `0x428b40`: the channel's own time; the record's without own times;
+    /// the record's rate when its own is 0.
+    fn ct(&self, i: usize) -> f64 {
+        let rate = if self.own_rate == 0.0 { self.rec_rate } else { self.own_rate };
+        if self.own.is_empty() {
+            time_us(self.rec, rate, i)
+        } else {
+            time_us(self.own, rate, i)
+        }
+    }
+
+    /// R/r (`0x4295dc`, `0x42ab37`): 1 when the channel has no rate.
+    pub fn ratio(&self) -> f64 {
+        if self.own_rate == 0.0 {
+            1.0
+        } else {
+            self.rec_rate / self.own_rate
+        }
+    }
+
+    /// The first drawn sample (`0x4293a0`): d = offset − (T(s) − T(0)); when
+    /// d < 0 the first one whose own time reaches −d, else 0.
+    pub fn first(&self, s: usize) -> usize {
+        let d = self.offset * 1e6 - time_us(self.rec, self.rec_rate, s);
+        if d >= 0.0 {
+            return 0;
+        }
+        (0..).find(|&i| self.ct(i) >= -d).unwrap_or(0)
+    }
+
+    /// The x offsets from the plot left of samples `from..to`
+    /// (`0x42ac42`, `0x429930`): x_t = own time + offset; a forward scan
+    /// keeps T(j) ≤ x_t ≤ T(j+1) (skipped while x_t < T(j));
+    /// ((x_t − T(j)) / (T(j+1) − T(j)) + j − s)·25f rounded half up.
+    pub fn xs(&self, from: usize, to: usize, s: usize, f: f64) -> Vec<f32> {
+        let t = |j: usize| time_us(self.rec, self.rec_rate, j);
+        let (mut j, mut tj, mut tj1) = (0usize, t(0), t(1));
+        (from..to)
+            .map(|i| {
+                let x = self.ct(i) + self.offset * 1e6;
+                if x >= tj {
+                    while tj1 < x {
+                        j += 1;
+                        (tj, tj1) = (tj1, t(j + 1));
+                    }
+                }
+                let px = ((x - tj) / (tj1 - tj) + j as f64 - s as f64) * PX_PER_SAMPLE * f;
+                round_half_up(px) as f32
+            })
+            .collect()
+    }
+
+    /// Samples visited by the analog painter: k..min(N, ⌈W/(25f·R/r)⌉ + k)
+    /// (`0x42960f`).
+    pub fn analog_end(&self, n: usize, k: usize, f: f64, plot_w: f32) -> usize {
+        let c = (f64::from(plot_w) / (PX_PER_SAMPLE * f * self.ratio())).ceil() as usize + k;
+        c.min(n)
+    }
+
+    /// Samples visited by the digital painter: count = min(⌈W/(25f·R/r)⌉ +
+    /// 5, N − s) — the record index taken from the channel's count, an
+    /// unsigned compare (N < s: no clamp) — then k..k + ⌊11·count/10⌋
+    /// (`0x42ab69`).
+    pub fn digital_end(&self, n: usize, s: usize, k: usize, f: f64, plot_w: f32) -> usize {
+        let c = (f64::from(plot_w) / (PX_PER_SAMPLE * f * self.ratio())).ceil() as usize + 5;
+        let c = match n.checked_sub(s) {
+            Some(m) => c.min(m),
+            None => c,
+        };
+        k + 11 * c / 10
+    }
+
+    /// The offset in px the base bar of a pasted digital lane moves by
+    /// (`0x4653b0`): R·offset·25f rounded half up.
+    pub fn offset_px(&self, f: f64) -> f32 {
+        round_half_up(self.rec_rate * self.offset * PX_PER_SAMPLE * f) as f32
+    }
+}
+
+/// A pasted digital lane's rectangles (`0x42ac42`…`0x42ae27`), x offsets
+/// from the plot left: a run opens at an on sample (a lone last sample
+/// gives x..x+4); it closes at the next off sample, or at the last
+/// visited one, reaching that sample's x (+4 at the channel's last
+/// sample). Past the values a sample is off; NaN is on.
+pub fn pasted_digital_runs(on: &dyn Fn(usize) -> bool, n: usize, from: usize, xs: &[f32]) -> Vec<(f32, f32)> {
+    let mut out = Vec::new();
+    let (mut open, mut start) = (false, 0.0f32);
+    let end = from + xs.len();
+    for (o, &x) in xs.iter().enumerate() {
+        let i = from + o;
+        let v = on(i);
+        let last = i + 1 >= n;
+        if !open {
+            if v {
+                open = true;
+                start = x;
+                if last {
+                    out.push((x, x + 4.0));
+                }
+            }
+        } else if !v || i + 1 == end {
+            out.push((start, x + if last { 4.0 } else { 0.0 }));
+            open = v;
+        }
+    }
+    out
+}
+
+/// The right end of a digital lane's base bar (`0x463e9a`), from the plot
+/// left: trunc(25·N·f·R/r) — the channel's sample count, whatever the
+/// scroll position — plus the paste offset for a bit-14 channel.
+pub fn base_bar_len(n: usize, f: f64, ratio: f64) -> f32 {
+    (PX_PER_SAMPLE * n as f64 * f * ratio).trunc() as f32
+}
+
 #[cfg(test)]
 mod draw_tests {
     use super::*;
     use eframe::egui::Pos2;
+
+    #[test]
+    fn pasted_times_and_positions() {
+        // Record at 1 kHz (1000 µs), a paste at 2 kHz shifted by 2.5 ms.
+        let rec: Vec<f64> = (0..10).map(|i| f64::from(i) / 1000.0).collect();
+        let own: Vec<f64> = (0..8).map(|i| f64::from(i) / 2000.0).collect();
+        assert_eq!(time_us(&rec, 1000.0, 9), 9000.0);
+        assert_eq!(time_us(&rec, 1000.0, 11), 11000.0, "extrapolated");
+        let p = PastedTimes { own: &own, own_rate: 2000.0, rec: &rec, rec_rate: 1000.0, offset: 0.0025 };
+        assert_eq!(p.ratio(), 0.5);
+        assert_eq!(p.first(0), 0, "the paste starts after the view's left edge");
+        // View from sample 4 (4 ms): the first pasted sample at ≥ 1.5 ms own.
+        assert_eq!(p.first(4), 3);
+        // f = 1: 25 px per record sample. Own 0 → 2.5 ms → 62.5 px → 63.
+        assert_eq!(p.xs(0, 3, 0, 1.0), [63.0, 75.0, 88.0]);
+        assert_eq!(p.xs(3, 4, 4, 1.0), [0.0]);
+        // ⌈100 / (25·1·0.5)⌉ = 8 → min(8, 8 + 0); digital ⌊11·min(13, 8)/10⌋.
+        assert_eq!(p.analog_end(8, 0, 1.0, 100.0), 8);
+        assert_eq!(p.digital_end(8, 0, 0, 1.0, 100.0), 8);
+        assert_eq!(p.digital_end(8, 10, 0, 1.0, 100.0), 14, "N < s: no clamp");
+        assert_eq!(p.offset_px(1.0), 63.0);
+        assert_eq!(base_bar_len(8, 1.0, 0.5), 100.0);
+    }
+
+    #[test]
+    fn pasted_digital_rectangles() {
+        let v = [false, true, true, false, true, true];
+        let on = |i: usize| v.get(i).copied().unwrap_or(false);
+        let xs = [0.0, 10.0, 20.0, 30.0, 40.0, 50.0];
+        // A run closes at the off sample's x; the last sample of the channel adds 4.
+        assert_eq!(pasted_digital_runs(&on, 6, 0, &xs), [(10.0, 30.0), (40.0, 54.0)]);
+        // The last visited sample closes an open run.
+        assert_eq!(pasted_digital_runs(&on, 6, 0, &xs[..3]), [(10.0, 20.0)]);
+    }
 
     #[test]
     fn analog_draws_ceil_w_over_k_samples() {

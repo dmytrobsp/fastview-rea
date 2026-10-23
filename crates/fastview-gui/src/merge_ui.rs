@@ -194,6 +194,18 @@ impl Doc {
         }
     }
 
+    /// The pasted channel behind computed lane `j`, if it is pending.
+    pub fn pending_of(&self, j: usize) -> Option<&ClipChan> {
+        let c = self.computed.get(j).filter(|c| c.formula == PENDING)?;
+        self.pending.iter().find(|p| p.name() == c.name)
+    }
+
+    /// Is computed lane `j` a pasted digital channel (drawn as a digital
+    /// lane, 20 px)?
+    pub fn pending_digital(&self, j: usize) -> bool {
+        self.pending_of(j).is_some_and(|p| p.pasted.channel.is_err())
+    }
+
     /// Keep only pending channels that still have their lane (an undo of the
     /// paste removes the lanes).
     pub fn prune_pending(&mut self) {
@@ -528,6 +540,25 @@ mod tests {
         let mut app = App::new();
         app.dispatch(Command::Demo);
         app
+    }
+
+    /// Pending lanes keep their kind (`0x429380` dispatches on `+0x5c`): a
+    /// pasted digital channel is a 20 px digital row; the analog one's
+    /// range is its own samples'.
+    #[test]
+    fn pasted_lanes_keep_their_kind() {
+        let mut app = demo_app();
+        app.active_doc_mut().unwrap().selection.extend([ChanKey::Analog(0), ChanKey::Digital(0)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc().unwrap();
+        let rows = crate::lanes::lane_layout(d, 93.0, false);
+        let lane = |digital: bool| rows.iter().find(|r| matches!(r.key, ChanKey::Computed(j) if d.pending_of(j).is_some_and(|p| p.pasted.channel.is_err() == digital))).unwrap();
+        assert_eq!(lane(true).h, crate::oscgeom::DIGITAL_H);
+        assert!(lane(false).h >= 93.0);
+        let Ok(a) = &d.pending_of(match lane(false).key { ChanKey::Computed(j) => j, _ => unreachable!() }).unwrap().pasted.channel else { unreachable!() };
+        let own = a.samples.iter().copied().fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), v| (l.min(v), h.max(v)));
+        assert_eq!(crate::lanes::row_range(d, lane(false), false), own);
     }
 
     #[test]

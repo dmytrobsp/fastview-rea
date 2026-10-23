@@ -1697,7 +1697,7 @@ rendering economy for long records). `oscgeom::digital_shapes` implements
 the digital rules (tested); wired into the lanes in L9.46.
 Tests in `oscgeom::draw_tests`.
 
-### L9.46 — Digital lanes drawn by the decimating painter  ·  ✅ (bit14 branch ❌)
+### L9.46 — Digital lanes drawn by the decimating painter  ·  ✅ (bit14 branch ✅ L9.71)
 Read (`0x42a0f0`, re-checked by hand): lane mid = top + h/2 (h = 20 →
 top + 10); a 1-px pen RGB(200,0,0) and the fill brush (channel `+0x110`,
 RGB(253,219,102) when selected) are selected once; runs are GDI
@@ -2448,6 +2448,48 @@ corrected signed value; method 2 reads the corrected phasor cache; pasted
 channels use the base record's `rec+0x874` (not modelled; ours keep the
 normal path).
 
+### L9.71 — Pasted (bit 14) lanes drawn from their own samples; the digital base bar  ·  ✅
+Read (subagent report; by hand: the analog icon `0x429501`–`0x429532`,
+the analog count `0x42960f`–`0x429692`, the digital count and the 11/10
+`0x42ab69`–`0x42abdf`, the whole digital run loop `0x42ac42`–`0x42ae32`
+incl. its "on" test (value ≠ 0, NaN on, **past the values off** — the
+report said on), the icon 1 draw `0x42ae4a`, the time getters `0x454b40` /
+`0x428b40` and the base bar `0x463e9a` with `0x4653b0`): the lane loop
+dispatches on the kind (`0x429380`: `+0x5c` 0 → analog `0x429490`, else
+digital `0x42a0f0`), so a pasted channel keeps its kind and row height
+(digital 20). For bit 14 the first drawn sample k is the first own sample
+at or after the view's left edge (d = offset − (T(s) − T(0)) < 0 → first i
+with ct(i) ≥ −d, else 0); x of a sample = its own time + offset placed in
+the record's times by a forward scan, ((x − T(j))/(T(j+1) − T(j)) + j − s)
+·25f rounded half up; times past an array's end extrapolate by
+⌊(i − len + 1)·10⁶/rate⌉. Analog: samples k..min(N, ⌈W/(25f·R/r)⌉ + k),
+one polyline, marks above 4 px per sample, icon 0 at (leftW + 2,
+top + h − 21) under the trace. Digital: count = min(⌈W/(25f·R/r)⌉ + 5,
+N − s) (unsigned: N < s no clamp), samples k..k + ⌊11·count/10⌋, no column
+OR-ing; a run opens at an on sample (a lone last sample: x..x+4) and closes
+at the next off sample's x or at the last visited one (+4 at the channel's
+last sample); icon 1 at (leftW − 3, top + h − 19) on top. The digital base
+bar of every digital lane (`0x463e9a`, the lane background pass) runs from
+leftW to leftW + trunc(25·N·f·R/r) — the channel's count, **not** the
+scroll position (zoomed in it spans the whole plot) — plus the paste
+offset in px (R·offset·25f half up) for bit 14.
+Ours drew a pending channel resampled onto the record grid as an analog
+lane (a digital one as a 0/1 analog lane of y_analog height), no icons,
+and the base bar to the last visible sample. Now `oscgeom::{time_us,
+PastedTimes (first, xs, analog_end, digital_end, offset_px),
+pasted_digital_runs, base_bar_len}`, `Doc::{pending_of, pending_digital}`,
+`OscView::{pasted_analog, pasted_digital}`, `paste_icon` (our drawing of
+image list 489's two marks), pending lanes' range from their own samples;
+`FV_WINDOW_STATE=paste` renders a paste. Tests `pasted_times_and_positions`,
+`pasted_digital_rectangles`, `pasted_lanes_keep_their_kind`; rendered.
+Residual: T(0) — the original compares an offset time with absolute record
+times (ours relative; equal for records starting at 0); the stats
+readout of a pending lane (`0x461a24` with the offset) and the cursor
+mapping `0x463e9d` not read (ours: the resampled series); the icon art is
+ours; a subagent claimed the paste handler clears every channel's
+selection after inserting, against L9.20's "pasted lanes selected" — not
+re-checked.
+
 Next in L9 (HANDOFF 2026-10-23, evening): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2498,8 +2540,8 @@ L9.67); L9.6 digital
 level-line snap (reachable only through a `.set`); keytips (MFC's ribbon
 keytip machinery — the program sets only Печать «p» / «w»); L9.27 MFC's
 intermediate ribbon reductions; L9.64's slot +0x1f0 and the MDI
-arrangements; L9.46's bit-14 pasted digital lanes; pane re-docking (egui limit).
-(Done this session: L9.68 — paste / an ОМП run do not mark modified; L9.69 — diagrams in shown values, the vector header; L9.70 — formula units by the dimension walk.)
+arrangements; pane re-docking (egui limit).
+(Done this session: L9.68 — paste / an ОМП run do not mark modified; L9.69 — diagrams in shown values, the vector header; L9.70 — formula units by the dimension walk; L9.71 — pasted lanes, the digital base bar.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH

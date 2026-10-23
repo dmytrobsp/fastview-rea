@@ -110,7 +110,7 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
     let mut group_row: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
     let pending_at = |key: Option<ChanKey>, rows: &mut Vec<Row>| {
         let at = (0..doc.computed.len()).filter(|&j| doc.computed[j].visible && doc.computed[j].before == key);
-        rows.extend(at.map(|j| Row { key: Lane::Computed(j), members: Vec::new(), h: y_analog }));
+        rows.extend(at.map(|j| Row { key: Lane::Computed(j), members: Vec::new(), h: if doc.pending_digital(j) { g::DIGITAL_H } else { y_analog } }));
     };
     for (i, c) in doc.chans.iter().enumerate() {
         pending_at(Some(Lane::Analog(i)), &mut rows);
@@ -135,7 +135,7 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
     }
     // need = name row + 10 + one row per enabled stat (Max/Min two) + 23
     // when any status icon shows; a group lane one name row (+33) per member.
-    for r in rows.iter_mut().filter(|r| !matches!(r.key, Lane::Digital(_))) {
+    for r in rows.iter_mut().filter(|r| !matches!(r.key, Lane::Digital(_)) && !matches!(r.key, Lane::Computed(j) if doc.pending_digital(j))) {
         let icons = if status_icons(doc, r, primary).is_empty() { 0.0 } else { 23.0 };
         let need = if r.members.len() > 1 {
             // `0x460290`: N × the owner's stride (each member is painted
@@ -214,7 +214,8 @@ impl OscView<'_> {
             }
         };
         let row_col = Color32::from_rgb(0, 0, 127);
-        let name_rect = if let Lane::Digital(_) = lane {
+        let digital_row = matches!(lane, Lane::Digital(_)) || matches!(lane, Lane::Computed(j) if doc.pending_digital(*j));
+        let name_rect = if digital_row {
             let short: String = name.chars().take(NAME_CHARS).collect();
             bold_text(lp, Pos2::new(self.x0 + 5.0, top + 2.0), &short, NAME_FONT, color)
         } else if r.members.len() > 1 {
@@ -268,7 +269,9 @@ impl OscView<'_> {
             Lane::Digital(i) => {
                 let s = &doc.osc.digital[*i].samples;
                 let mid = top + 10.0;
-                let end_x = x_of(n.saturating_sub(1) as f64).min(plot_right);
+                // The base bar (`0x463e9a`): N·25f from the plot left,
+                // whatever the scroll position.
+                let end_x = (left + g::base_bar_len(s.len(), f, 1.0)).min(plot_right);
                 pp.rect_filled(Rect::from_min_max(Pos2::new(left, mid - 2.0), Pos2::new(end_x, mid + 2.0)), 0.0, Color32::from_rgb(150, 150, 255));
                 let fill = if r.selected(doc) { Color32::from_rgb(253, 219, 102) } else { color };
                 let red = Color32::from_rgb(200, 0, 0);
@@ -285,6 +288,7 @@ impl OscView<'_> {
                     pp.rect_filled(Rect::from_min_max(Pos2::new(left + t, mid - 6.0), Pos2::new(left + t + 1.0, mid + 6.0)), 0.0, red);
                 }
             }
+            Lane::Computed(j) if doc.pending_digital(*j) => self.pasted_digital(pp, *j, top, color, r.selected(doc)),
             _ => {
                 // A window-zoomed channel is drawn through a clip region of
                 // its lane, (0, top + 5)–(W, top + h) (`0x4295a5`,
@@ -304,12 +308,72 @@ impl OscView<'_> {
                     draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, m, k, primary), &x_of, top, h, (lo, hi), c, f);
                 }
                 if let Lane::Computed(i) = lane {
-                    let s = &doc.computed[*i].samples;
-                    draw_series(pp, (first, last.min(s.len().saturating_sub(1))), &|k| s.get(k).copied().unwrap_or(0.0), &x_of, top, h, (lo, hi), color, f);
+                    if doc.pending_of(*i).is_some() {
+                        self.pasted_analog(pp, *i, top, h, (lo, hi), color);
+                    } else {
+                        let s = &doc.computed[*i].samples;
+                        draw_series(pp, (first, last.min(s.len().saturating_sub(1))), &|k| s.get(k).copied().unwrap_or(0.0), &x_of, top, h, (lo, hi), color, f);
+                    }
                 }
             }
         }
         name_rect
+    }
+
+    /// The times of pending lane `j` against the record.
+    fn pasted_times(&self, j: usize) -> Option<(g::PastedTimes<'_>, &crate::merge_ui::ClipChan)> {
+        let doc = self.doc;
+        let p = doc.pending_of(j)?;
+        let t = g::PastedTimes { own: &p.pasted.times, own_rate: p.pasted.rate, rec: &doc.osc.time, rec_rate: doc.osc.sample_rate, offset: doc.merge_offset };
+        Some((t, p))
+    }
+
+    /// A pasted analog channel (`0x429490`, bit 14): icon 0 at (leftW + 2,
+    /// top + h − 21) first, then its own samples k..min(N, ⌈W/(25f·R/r)⌉ + k)
+    /// at their times (`PastedTimes::xs`), marks above 4 px per sample.
+    fn pasted_analog(&self, pp: &egui::Painter, j: usize, top: f32, h: f32, range: (f64, f64), color: Color32) {
+        let Some((t, p)) = self.pasted_times(j) else { return };
+        let Ok(a) = &p.pasted.channel else { return };
+        paste_icon(pp, Pos2::new(self.left + 2.0, top + h - 21.0), true);
+        let n = a.samples.len();
+        let k = t.first(self.first);
+        let end = t.analog_end(n, k, self.f, self.right - self.left);
+        if end <= k {
+            return;
+        }
+        let xs = t.xs(k, end, self.first, self.f);
+        let pts: Vec<Pos2> = xs.iter().zip(k..end).map(|(&x, i)| Pos2::new(self.left + x, g::value_y(a.samples[i], top, h, range.0, range.1))).collect();
+        pp.add(Shape::line(pts.clone(), Stroke::new(1.0f32, color)));
+        if self.f > 0.16 {
+            for q in &pts {
+                pp.circle_stroke(*q, 2.0f32, Stroke::new(1.0f32, color));
+            }
+        }
+    }
+
+    /// A pasted digital channel (`0x42a0f0`, bit 14): the base bar moved by
+    /// the paste offset, the runs of its own samples at their times
+    /// (`pasted_digital_runs`, no column OR-ing), then icon 1 at
+    /// (leftW − 3, top + h − 19).
+    fn pasted_digital(&self, pp: &egui::Painter, j: usize, top: f32, color: Color32, selected: bool) {
+        let Some((t, p)) = self.pasted_times(j) else { return };
+        let Err(d) = &p.pasted.channel else { return };
+        let (left, mid) = (self.left, top + 10.0);
+        let n = d.samples.len();
+        let bar = g::base_bar_len(n, self.f, t.ratio()) + t.offset_px(self.f);
+        pp.rect_filled(Rect::from_min_max(Pos2::new(left, mid - 2.0), Pos2::new((left + bar).min(self.right), mid + 2.0)), 0.0, Color32::from_rgb(150, 150, 255));
+        let fill = if selected { Color32::from_rgb(253, 219, 102) } else { color };
+        let red = Color32::from_rgb(200, 0, 0);
+        let k = t.first(self.first);
+        let end = t.digital_end(n, self.first, k, self.f, self.right - self.left);
+        let xs = t.xs(k, end, self.first, self.f);
+        let on = |i: usize| d.samples.get(i).copied().unwrap_or(false);
+        for (a, b) in g::pasted_digital_runs(&on, n, k, &xs) {
+            let rr = Rect::from_min_max(Pos2::new(left + a, mid - 6.0), Pos2::new(left + b.max(a + 1.0), mid + 6.0));
+            pp.rect_filled(rr, 0.0, fill);
+            pp.rect_stroke(rr, 0.0, Stroke::new(1.0f32, red));
+        }
+        paste_icon(pp, Pos2::new(left - 3.0, top + g::DIGITAL_H - 19.0), false);
     }
 
     /// The time ruler (`0x464350`) with its bottom at `bottom`: a white band
@@ -590,7 +654,12 @@ pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, 
                 take(b);
             }
         }
-        Lane::Computed(i) => doc.computed[i].samples.iter().for_each(|&v| take(v)),
+        // A pasted channel's own samples (its `+0xa8` / `+0xb0`).
+        Lane::Computed(i) => match doc.pending_of(i).map(|p| &p.pasted.channel) {
+            Some(Ok(a)) => a.samples.iter().for_each(|&v| take(v)),
+            Some(Err(_)) => return (0.0, 1.0),
+            None => doc.computed[i].samples.iter().for_each(|&v| take(v)),
+        },
         Lane::Digital(_) => return (0.0, 1.0),
     }
     if lo > hi {
@@ -621,6 +690,23 @@ pub(crate) fn gradient(p: &egui::Painter, rect: Rect, top: Color32, bottom: Colo
     mesh.add_triangle(0, 1, 2);
     mesh.add_triangle(0, 2, 3);
     p.add(Shape::mesh(mesh));
+}
+
+/// The paste mark of a pending lane (image list 489, 30×18: icon 0 a
+/// large ◀|•|▶, icon 1 a small ◀|▶, magenta) — our own drawing of it.
+fn paste_icon(p: &egui::Painter, at: Pos2, large: bool) {
+    let c = Color32::from_rgb(230, 20, 140);
+    let pt = |x: f32, y: f32| at + Vec2::new(x, y);
+    let (l, r, top, bot) = if large { (2.0, 28.0, 2.0, 16.0) } else { (6.0, 24.0, 5.0, 13.0) };
+    let mid = 9.0;
+    let (bl, br) = if large { (12.0, 18.0) } else { (13.0, 17.0) };
+    p.add(Shape::convex_polygon(vec![pt(l, mid), pt(bl, top), pt(bl, bot)], c, Stroke::NONE));
+    p.add(Shape::convex_polygon(vec![pt(r, mid), pt(br, bot), pt(br, top)], c, Stroke::NONE));
+    p.vline(at.x + bl + 1.5, (at.y + top)..=(at.y + bot), Stroke::new(1.0f32, c));
+    p.vline(at.x + br - 1.5, (at.y + top)..=(at.y + bot), Stroke::new(1.0f32, c));
+    if large {
+        p.rect_filled(Rect::from_min_size(pt(14.0, mid - 1.0), Vec2::splat(2.0)), 0.0, c);
+    }
 }
 
 /// A waveform: every sample of `first..=last` as a 1 px polyline, with 4×4

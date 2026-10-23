@@ -315,14 +315,14 @@ Colours and fonts (all Tahoma):
 | trigger line | if trigger `doc+0x214` ≠ 0: PS_DOT (35,194,87) at its x, 0..H−A |
 | zero line | 1 px (200,200,200) leftW..W, only when min ≤ 0 ≤ max |
 | waveform | 1 px solid in channel colour, **every sample** from `first` to the right edge, no decimation; 4×4 circles at each sample when f > 0.16 (> 4 px/sample) |
-| digital base bar | (150,150,255) fill, leftW → end-of-record x, mid−2..mid+2 |
+| digital base bar | (150,150,255) fill, leftW → leftW + trunc(25·N·f·R/r) (the channel's count, not the scroll position; + the paste offset for bit 14), mid−2..mid+2 (L9.71) |
 | digital "1" runs | rect mid−6..mid+6, outline 1 px (200,0,0), fill `ch+0x110` or (253,219,102) when selected; a run ending at the record end +4 px; < 0.5 px/sample → OR per pixel with 1 px marks for mixed pixels. Lane mid = top+10 |
 | stats name (analog) | channel colour, bold 15, at (5, top+5), framed (128,128,128) rect (3, top+5)–(nameW+7, top+5+h) |
 | stats value at В1 | heavy 15, (69,85,199), x = labelCol+5; `"-%-6g %s"` / `" %-6g %s"` on \|v\|; unit SI-prefixed, cut to 5 chars, "none" → empty; NaN not drawn. Read at В1 even when hidden |
 | stat rows | normal 13, (0,0,127), label at x=5, value at labelCol+5, `" %-8g %s"` (`"%-8g %s"` if negative): bit4 → Max:, Min:; bit6 → СКЗ: (RMS at В1); bit5 → A1: (harmonic 1 at В1) — **only when the bit is set** |
 | group lane (L9.50) | each visible member in channel order at top+5+k·S, S = rowH+33 (+hS with any stat row, its own flags): the name / value header above, then (with stat rows) one line `Max:v u|Min:v u|СКЗ:v u|A1:v u` (13 regular, (0,0,127), at top+8+k·S+hS), its icons at top−21+(k+1)·S; lane = N × the owner's S, no +10/+23 |
 | digital name | heavy 15, channel colour, DrawText in (5, y, leftW, y+20), no frame; invert icon at (leftW−18, y+2) |
-| status icons | bitmap 0x136 16×16, magenta key, right-to-left from x = leftW−21, step 21, at y = top+h−21: window zoom active, remove DC, invert, primary/secondary scaling (coefficient ≠ 1, not computed), RMS mode, harmonic mode, ADC counts. Resampled (bit14) channels: icon at (leftW+2, top+h−21) |
+| status icons | bitmap 0x136 16×16, magenta key, right-to-left from x = leftW−21, step 21, at y = top+h−21: window zoom active, remove DC, invert, primary/secondary scaling (coefficient ≠ 1, not computed), RMS mode, harmonic mode, ADC counts. Pasted (bit14) channels: icon 0 at (leftW+2, top+h−21) under an analog trace, icon 1 at (leftW−3, top+h−19) over a digital one; their own samples at their own times (L9.71) |
 
 SI prefix (0x43d960) [R]: only for units V, A, VA, W, Ohm/OHM/ОМ, var, F, H,
 GN, Hz, m; |v| < 1e-6 → ×1e9 н; < 1e-3 → мк; < 1 → м; > 1e15 П; > 1e12 Т;

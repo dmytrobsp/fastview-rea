@@ -801,6 +801,19 @@ mod window_tests {
             app.dispatch(app::Command::QuickAnalysis);
             app.formula_page.selected = Some(1);
         }
+        // `FV_WINDOW_STATE=paste`: the first analog and digital channels
+        // copied and pasted back, 3 ms later (pending, bit 14).
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "paste") {
+            use app::ChanKey;
+            if let Some(d) = app.active_doc_mut() {
+                d.selection.extend([ChanKey::Analog(0), ChanKey::Digital(0)]);
+            }
+            app.dispatch(app::Command::Copy);
+            app.dispatch(app::Command::Paste);
+            if let Some(d) = app.active_doc_mut() {
+                d.set_merge_offset(0.003);
+            }
+        }
         // `FV_WINDOW_STATE=group`: the first three channels grouped, the
         // second with Max/Min too.
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "group") {
