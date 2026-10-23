@@ -527,7 +527,7 @@ visibility, colour, zoom, comments are **not undoable** [R].
 | id | effect | CMDUI |
 |---|---|---|
 | 57634 Копировать (Ctrl+C, ribbon, 561) | serialise the **selected** channels (analog and digital) with times, rates and header to the system clipboard, format «Mechanotronica FastView Clipboard Data» (keys `times`, `net_frequency`, `num_values`, `channels`/`discr_frequency`, `hdrFile`, `startTime`, `blockID`, `stationID`, `title`, `Comments`, `Codepage`) | enabled iff some selected channel is not computed (bit13) |
-| 57637 Вставить (Ctrl+V) | undo snapshot; clear the ОМП result; deselect all; append the channels with their own time array and rate, flags 0x40e1 (bit14 pending); name collisions get "(2)", "(3)"… (no space; pasted channels come in selected, inserted before the first selected channel of their kind; the record comment is rewritten, L9.20); UpdateAllViews; fill and show the merge bar | enabled iff the clipboard holds the format **and** no channel has bit14 |
+| 57637 Вставить (Ctrl+V) | undo snapshot; clear the ОМП result; deselect all; append the channels with their own time array and rate, flags 0x40e1 (bit14 pending); name collisions get "(2)", "(3)"… (no space; pasted channels come in selected, inserted before the first selected channel of their kind; the record comment is rewritten, L9.20); UpdateAllViews; fill and show the merge bar; no modified mark (L9.68) | enabled iff the clipboard holds the format **and** no channel has bit14 |
 | 57643 Отмена (Ctrl+Z) | restore the last snapshot | enabled iff undo count `doc+0x6fc` ≠ 0 |
 | 57644 Возврат (Ctrl+Y) | symmetric | enabled iff redo count `doc+0x710` ≠ 0 |
 
@@ -623,7 +623,7 @@ every selected channel gets the custom colour; modified; repaint.
 |---|---|---|
 | 32805 Комментарии (app menu) | CCommentDlg on the record's HDR text (§7.10) | **enabled only for .cfg / .cff** (note: tools 155–157 use .cfg/.osc) |
 | 137 Быстрый анализ | modal CQAnPropSheet (VIEWS_SPEC «The sheet»; L9.51); «Рассчитать» → modified, UpdateAllViews, panes | enabled iff analog count ≠ 0 |
-| 32806 Анализ (ОМП) | toggle: result shown → clear it; else run (§8) | disabled while any bit14 channel; checked = result shown |
+| 32806 Анализ (ОМП) | toggle: result shown → clear it; else run (§8); neither marks modified (L9.68) | disabled while any bit14 channel; checked = result shown |
 | 32807 Параметры (ОМП) | modal ОМП dialog; OK → modified, run unless bit14 channels | always enabled (with a document) |
 | 32860 Загрузка настроек... | open dialog; load a record-settings file (computed channels + ОМП params, 0x44f5b0); modified, refresh | — |
 | 32861 Параметры файла... | modal DIALOG 392 (§7.3) | — |

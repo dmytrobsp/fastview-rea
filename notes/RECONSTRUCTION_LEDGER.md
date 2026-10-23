@@ -1056,8 +1056,8 @@ explicit marks + a per-frame change detector, close/exit prompts); «Сохра�
 vs «Сохранить как» now differ. 11 tests. Residual: (the prompt wording:
 read in L9.62); `Selected Block` subtree still in our program store;
 `NetFreq`, `.cff` SET, `.zip`, `.sto` not modelled; comments store file name
-vs alias NOT DETERMINED; whether paste / an ОМП run mark modified NOT
-DETERMINED (ours: no).
+vs alias NOT DETERMINED; (paste / an ОМП run do not mark modified: read
+in L9.68).
 
 ### L9.18 — «Абсолютное время» (33007), band labels, 33033 toggle  ·  ✅
 
@@ -2352,6 +2352,29 @@ labels' clipping on a real print (our page image is clipped to R); a hidden
 pane's division by zero (ours: one row, slots from the page); GDI's
 outline / gradient pixel rules approximated.
 
+### L9.68 — Paste and an ОМП run do not mark the record modified  ·  ✅
+Read (by hand): the document's SetModifiedFlag is vtable slot `+0x6c` of
+CFastViewDoc (`0x4c8a20` → `0x45a540`: stores the argument at
+`doc+0x48`; no direct call of it anywhere). The edit-command range handler
+`0x45acb0` (57632–57644, switch on id − 57634: 57634 copy `0x45be28`,
+57637 paste `0x45ad02`, 57643 / 57644 undo / redo `0x45befd` /
+`0x45bf07`) contains no `+0x6c` call, and none of the functions it calls
+directly reaches one (a direct-call walk to depth 5 over the listing,
+functions split at call targets and int3 padding; the walk does find the
+known marks of «Объединить» `0x47e8d6` and ОМП «Параметры» OK
+`0x4543b6`). Likewise the ОМП run `0x4a00b0` and its toggle 32806
+`0x449890` (clear `0x4a17a0`) reach none. So paste, copy, undo / redo
+and an ОМП run or clear leave the modified flag as it was.
+Ours: paste already left it (pending channels are outside the change
+print), but the run's phase lanes «КЗ фазы А/B/C» (digital channels) were
+in the per-frame change print, so a run marked the record modified — now
+skipped in the print (they are still written on save). Test
+`omp_ui::paste_and_a_run_leave_the_document_unmodified`.
+Residual: virtual / indirect calls on the walk are not followed (none of
+the calls in these handlers is a document-vtable call other than the
+ones listed); whether the original's saved `.set` holds sections for the
+phase lanes after a run (ours writes them) NOT DETERMINED.
+
 Next in L9 (HANDOFF 2026-10-23, evening): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2402,8 +2425,8 @@ L9.67); L9.6 digital
 level-line snap (reachable only through a `.set`); keytips (MFC's ribbon
 keytip machinery — the program sets only Печать «p» / «w»); L9.27 MFC's
 intermediate ribbon reductions; L9.64's slot +0x1f0 and the MDI
-arrangements; L9.46's bit-14 pasted digital lanes; whether paste / an ОМП
-run mark the record modified (L9.17); pane re-docking (egui limit).
+arrangements; L9.46's bit-14 pasted digital lanes; pane re-docking (egui limit).
+(Done this session: L9.68 — paste / an ОМП run do not mark modified.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH

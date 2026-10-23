@@ -1098,6 +1098,27 @@ mod tests {
         assert!(!app.active_doc().unwrap().omp.shown, "Анализ is disabled while pasted channels are pending");
     }
 
+    /// Neither the ОМП run (`0x4a00b0`) nor paste (57637, `0x45ad02`)
+    /// reaches SetModifiedFlag; «Объединить» does (L9.19).
+    #[test]
+    fn paste_and_a_run_leave_the_document_unmodified() {
+        let mut app = demo_app();
+        grounded(&mut app);
+        app.track_settings();
+        app.active_doc_mut().unwrap().set.modified = false;
+        app.run_omp();
+        app.track_settings();
+        assert!(app.active_doc().unwrap().omp.shown);
+        assert!(!app.active_doc().unwrap().set.modified, "a run does not mark");
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app.dispatch(Command::Copy);
+        app.dispatch(Command::Paste);
+        app.track_settings();
+        let d = app.active_doc().unwrap();
+        assert!(has_pending_paste(d));
+        assert!(!d.set.modified, "paste does not mark");
+    }
+
     #[test]
     fn dialog_ok_validates_then_stores_and_runs() {
         let mut app = demo_app();

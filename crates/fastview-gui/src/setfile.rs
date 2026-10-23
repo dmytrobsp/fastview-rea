@@ -249,6 +249,11 @@ impl Doc {
         }
         let na = self.osc.analog.len();
         for k in 0..self.osc.digital.len() {
+            // The ОМП run's phase lanes are not a change (it never marks
+            // the document, `0x4a00b0`).
+            if print && crate::omp_ui::KZ_PHASES.contains(&self.osc.digital[k].id.as_str()) {
+                continue;
+            }
             let key = self.file_key(na + k);
             let vis = if self.digital_visible.get(k).copied().unwrap_or(true) { flag::VISIBLE } else { 0 };
             let rec = ChannelRec {
