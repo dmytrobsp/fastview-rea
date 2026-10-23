@@ -1243,6 +1243,10 @@ mod window_tests {
             app.add_doc(app::Doc::new(osc, "Подстанция 2".into()));
             app.open_windows_dialog();
         }
+        // `FV_WINDOW_STATE=freqdlg`: the frequency diagram's settings.
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "freqdlg") {
+            app.diag_cmd(diagram_ui::Window::Freq, diagram::DiagCmd::FreqSettings, Pos2::ZERO);
+        }
         // `FV_WINDOW_STATE=alert`: message 1086 over the window.
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "alert") {
             app.dlg.push_alert(lanes::MSG_COMBINE_UNITS.to_string());

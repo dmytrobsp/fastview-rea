@@ -1537,36 +1537,43 @@ impl App {
             dlg.fail = None;
         }
         let mut done: Option<bool> = None;
+        // DIALOG 353's order, top to bottom: «Расчет значений» (periods,
+        // then harmonics), «Значения величин» (absolute, then percent),
+        // «Нормализация», OK / Отмена at the bottom right.
+        const W: f32 = 330.0;
         egui::Window::new("Настройки частотной диаграммы").collapsible(false).resizable(false).show(ctx, |ui| {
             ui.group(|ui| {
+                ui.set_width(W);
+                ui.label("Расчет значений");
+                egui::Grid::new("freq_calc").num_columns(2).show(ui, |ui| {
+                    ui.label("Число обрабатываемых периодов:");
+                    crate::dialogs::ddx_edit(ui, &mut dlg.periods, 60.0, focus == Some(0));
+                    ui.end_row();
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ui.label("Число гармоник:"));
+                    crate::dialogs::ddx_edit(ui, &mut dlg.harmonics, 60.0, focus == Some(1));
+                    ui.end_row();
+                });
+            });
+            ui.group(|ui| {
+                ui.set_width(W);
                 ui.label("Значения величин");
-                ui.radio_value(&mut dlg.percent, true, "В процентах (нормализовано)");
                 ui.radio_value(&mut dlg.percent, false, "Абсолютные величины");
+                ui.radio_value(&mut dlg.percent, true, "В процентах (нормализовано)");
             });
             ui.add_enabled_ui(dlg.percent, |ui| {
                 ui.group(|ui| {
+                    ui.set_width(W);
                     ui.label("Нормализация");
                     ui.radio_value(&mut dlg.use_rms, false, "По основной гармонике");
                     ui.radio_value(&mut dlg.use_rms, true, "По среднеквадратичному значению");
                 });
             });
-            ui.group(|ui| {
-                ui.label("Расчет значений");
-                egui::Grid::new("freq_calc").num_columns(2).show(ui, |ui| {
-                    ui.label("Число гармоник:");
-                    crate::dialogs::ddx_edit(ui, &mut dlg.harmonics, 60.0, focus == Some(1));
-                    ui.end_row();
-                    ui.label("Число обрабатываемых периодов:");
-                    crate::dialogs::ddx_edit(ui, &mut dlg.periods, 60.0, focus == Some(0));
-                    ui.end_row();
-                });
-            });
-            ui.horizontal(|ui| {
-                if ui.button("OK").clicked() {
-                    done = Some(true);
-                }
+            ui.allocate_ui_with_layout(Vec2::new(W + 12.0, 24.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("Отмена").clicked() {
                     done = Some(false);
+                }
+                if ui.button("OK").clicked() {
+                    done = Some(true);
                 }
             });
         });

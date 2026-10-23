@@ -4765,6 +4765,24 @@ Residual: the drop position — egui reports dropped files without where
 they landed, so ours opens a file dropped anywhere (the original ignores
 drops over the view and those three panes).
 
+### L9.160 — DIALOG 353 laid out as its template  ·  ✅
+Read (the DIALOG 353 template, 226 × 222 DLU; vtable sweep of
+FourieDiagramSettingsDlg): top to bottom «Расчет значений» (12,12 204×54)
+with «Число обрабатываемых периодов:» / edit 1025 (y 30) above «Число
+гармоник:» (right-aligned at x 84) / edit 1022 (y 48); «Значения
+величин» (12,72) with «Абсолютные величины» 1024 (y 88) above «В
+процентах (нормализовано)» 1023 (y 106); «Нормализация» 1061 (12,132)
+with «По основной гармонике» 1026 and «По среднеквадратичному значению»
+1027; OK (114,200) / Отмена (168,200) at the bottom right. The
+command-routing override `0x46f070` re-enables 1026 / 1027 / 1061 on any
+click while 1023 is checked; OnInitDialog `0x46ee20` disables only 1026 /
+1027 (the frame stays enabled until the first click — ours greys the
+whole group at once, a cosmetic residual).
+Ours had «Значения величин» first (percent above absolute), then
+«Нормализация», then «Расчет значений» (harmonics above periods), OK /
+Отмена at the left. Now `freq_dialog_ui` follows the template.
+`FV_WINDOW_STATE=freqdlg` renders it.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
