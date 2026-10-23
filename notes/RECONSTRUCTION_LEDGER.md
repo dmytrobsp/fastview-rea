@@ -12,17 +12,16 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 266 pass)
+- `cargo test --workspace`   (currently 297 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
-**State at handoff.** Working tree clean; 266 tests pass, 0 build warnings, clippy
-clean, Windows cross-compiles. The latest commits are this ledger + the engine
-work — run `git log --oneline -12` to see them (most recent ledger commit added
-this section). Current direction = the **reverse-ALL-behavioural-engines** program
-the user approved (not just adding features). Work commits straight to the current
-branch (no SDD/feature-branch flow); keep the tree green and the ledger updated at
-every commit.
+**State at handoff.** See the "Next in L9 (HANDOFF …)" paragraph at the end
+of L9 for the current state. Work commits straight to `main` (no feature
+branches), every commit keeps the gates green, and the publish guard
+(`tools/publish_guard.py`, pre-commit / pre-push hooks, CI job) must pass —
+see `CLAUDE.md`: never commit the original program or raw decompilation /
+disassembly / resource dumps; only the repo's configured email.
 
 **Read these first (context you won't have):**
 - Memory notes (in `~/.claude/projects/-home-poniraq-projects-fastview-rea/memory/`):
@@ -1694,26 +1693,36 @@ the digital rules (tested) but is **not yet wired** into the digital lanes
 (next step: replace `digital_runs` in `OscView::row` and the print copy).
 Tests in `oscgeom::draw_tests`.
 
-Next in L9 (HANDOFF 2026-10-22): after the four GUI bugs (L9.23–L9.25)
-and the render audit (L9.26–L9.29), copy's EMF (L9.30), loading progress
-(L9.31), a second user report was worked (L9.32 scroll thumb, L9.33 lane
-clip under vertical zoom, **L9.34 units normalised on load — «кА» is "A"
-×1000, canonical unit + raw unit + multiplier on `AnalogChannel`**, L9.35
-diagram channel lists / Показать-Скрыть все, L9.36 «Осциллограмма» / Undo /
-circle eligibility answered from the binary), then L9.37 the preview as
-MFC's ribbon category (labels read from the redistributable's `mfc120rus`;
-`vcredist` cabinets carved locally), L9.38 dark-look contrast, L9.39 ГВ in
-print, L9.40 scroll repeat, L9.41 ОМП report times. **How to look at the
-GUI without running it:** `FV_WINDOW_DUMP=<png> [FV_WINDOW_RECORD=<cfg>]
-[FV_WINDOW_STATE=analysis|circle|diff|omp|ompparams|preview|print|
-pagesetup|settings|channels|coef|fileparams|explorer|parambar|skin<k>]
-[FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y] [FV_WINDOW_HOVER=x,y] cargo
-test window_dump`, then Read the PNG (crop with `convert`); `window_tests`
-in `main.rs` drive the whole window (`App::frame_ui`); the user's sample
-records live outside the repo (never commit them). Open next: wire `oscgeom::digital_shapes` into the digital lanes (L9.45), print residuals (L9.22: logo proprietary, A4 only),
-pane re-docking (egui limit), splash (bitmap proprietary), and the smaller
-residuals in L9.1–L9.41 (several older "residuals" were already done —
-check the code before starting one).
+Next in L9 (HANDOFF 2026-10-23): **public at
+github.com/dmytrobsp/fastview-rea, release v0.1.0** (Linux / Windows / macOS
+x86_64 + arm64, flat archives). This session: the four GUI bugs (L9.23–
+L9.25), a render audit (L9.26–L9.29), copy's EMF (L9.30), loading progress
+(L9.31), the second user report (L9.32–L9.36, incl. **L9.34 units
+normalised on load — «кА» is "A" ×1000; canonical unit + raw unit +
+multiplier on `AnalogChannel`**), the preview as MFC's ribbon category
+(L9.37, labels from the redistributable's `mfc120rus`), dark-look contrast
+(L9.38), ГВ in print (L9.39), scroll repeat (L9.40), ОМП report times
+(L9.41), визир lines / labels / hit test / band as read (L9.42, L9.44),
+lane min / max cache (L9.43), analog drawing count + column collapse
+(L9.45). Publishing: the local history was rewritten (original binaries +
+raw dumps purged, author → the repo email; pre-rewrite backup bundle is
+local only, never push it); CI = publish guard + strict build / clippy /
+tests on 3 OSes + flat artifacts + releases on `v*` tags; only `main`
+writes the Rust cache. **How to look at the GUI without running it:**
+`FV_WINDOW_DUMP=<png> [FV_WINDOW_RECORD=<cfg>] [FV_WINDOW_STATE=analysis|
+circle|diff|omp|ompparams|preview|print|pagesetup|settings|channels|coef|
+fileparams|explorer|parambar|vizirs|skin<k>] [FV_WINDOW_SIZE=w,h]
+[FV_WINDOW_CLICK=x,y] [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then
+Read the PNG; `FV_FRAME_BENCH=<cfg> cargo test --release frame_bench`
+times a frame. The user's sample records live outside the repo (never
+commit them). **Open next:** wire `oscgeom::digital_shapes` into the
+digital lanes and the print slice (L9.45 — the rules are implemented and
+tested, replace `digital_runs` in `OscView::row`); then the smaller
+residuals in L9.1–L9.45 (several older ones were already done — check the
+code first), print residuals (L9.22), pane re-docking (egui limit).
+Pending user answers: publishing factual indexes (msgmaps / vtables /
+imports) + a symbol-map import script; building macOS as one universal
+binary (halves macOS runner demand — runners were capacity-starved once).
 
 ---
 
