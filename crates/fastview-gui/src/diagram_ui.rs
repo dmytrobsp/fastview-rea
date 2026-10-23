@@ -143,6 +143,14 @@ fn print_s() -> Option<f32> {
     PRINT_S.with(std::cell::Cell::get)
 }
 
+/// The print look's scale: the painters pick their print pens and the
+/// frequency page layout by s ≠ 1, not by printing (`0x490495`,
+/// `0x439486`, `0x46f63b` test `s == 1`) — a printer under 192 dpi gets
+/// the screen look (L9.118).
+fn print_look() -> Option<f32> {
+    print_s().filter(|&s| s != 1.0)
+}
+
 /// `v` device pixels in points: the painters keep a few offsets in device
 /// pixels unscaled on paper (the angle labels, the legend swatch, the
 /// plane's top and its 120 px thresholds).
@@ -903,7 +911,7 @@ impl App {
         let frame = Rect::from_min_max(c - Vec2::new(fx, fy), c + Vec2::new(fx, fy));
         // Printed pens (`0x439486`): grid (150,150,150) ⌊s/2⌋, frame
         // (50,50,50) and axes black ⌊2s/3⌋.
-        let (gs, fs, axs) = match print_s() {
+        let (gs, fs, axs) = match print_look() {
             Some(s) => (dev_pen(s / 2.0, AXES), dev_pen(2.0 * s / 3.0, Color32::from_rgb(50, 50, 50)), dev_pen(2.0 * s / 3.0, Color32::BLACK)),
             None => (stroke(1.0, GRID), stroke(1.0, FRAME), stroke(1.0, AXES)),
         };
@@ -1144,8 +1152,8 @@ impl App {
         let (i_scale, u_scale) = (fvb_core::views::nice_scale(group_max(true)), fvb_core::views::nice_scale(group_max(false)));
         // Paint order (`0x490360`): the bottom band, the header, circles,
         // radials and angle labels, then each phasor with its table row.
-        let ps = print_s();
-        let s = ps.unwrap_or(1.0);
+        let s = print_s().unwrap_or(1.0);
+        let ps = print_look();
         let ink = Color32::from_rgb(20, 20, 20);
         let measure = |t: &str| painter.layout_no_wrap(t.to_string(), font(), ink).size();
         let m = 6.0;
@@ -1301,7 +1309,7 @@ impl App {
         let corr = fvb_core::freqcorr::of(&d.osc);
         // In print the panels tile the page by the screen pane's aspect.
         let screen = self.pane_canvas.iter().find(|(p, _)| *p == crate::app::Pane::Frequency).map_or((0, 0), |(_, r)| (r.width() as i32, r.height() as i32));
-        let tl = if print_s().is_some() { g.print_tiling(chans.len(), k_max, screen) } else { g.screen_tiling(chans.len()) };
+        let tl = if print_look().is_some() { g.print_tiling(chans.len(), k_max, screen) } else { g.screen_tiling(chans.len()) };
         // Pass 1: swatch and name under each panel's row; the x labels
         // (with several rows their rects are inverted: none).
         for (pi, &i) in chans.iter().enumerate() {
@@ -1377,7 +1385,7 @@ impl App {
         // The axis pen: n separators down the whole height (in print past
         // the columns, too) and one baseline per row, `rem` below the bars
         // when the rows do not divide H.
-        let axis = match print_s() {
+        let axis = match print_look() {
             Some(s) => dev_pen(s / 2.0, Color32::from_rgb(50, 50, 50)),
             None => stroke(1.0, AXES),
         };

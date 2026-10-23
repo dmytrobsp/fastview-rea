@@ -449,6 +449,16 @@ impl App {
                 let size = Vec2::new(rw as f32, rh as f32) * to_printer / s;
                 let img = crate::diagram_ui::with_print_scale(Some(s), page, || self.render_diagram(fonts, job.di, pane, size, s / to_printer));
                 canvas.blit(&img, rdev.min.x as i64, rdev.min.y as i64);
+                // At s = 1 the circle / differential painter's screen branch
+                // also paints its 5 px splitter strip after RestoreDC: a
+                // PatBlt at the DC's (0, 0), as wide as the live window
+                // (`0x438110`, colour INFERRED the panel fill).
+                if s == 1.0 && matches!(pane, Pane::Circle | Pane::Differential) {
+                    let live = self.pane_canvas.iter().find(|(p, _)| *p == pane).map_or(0.0, |(_, r)| r.width());
+                    let (r, g, b, _) = self.skin.palette().group_bg.to_tuple();
+                    let w = ((live / to_printer) as usize).clamp(1, canvas.w.max(1));
+                    canvas.blit(&Canvas { w, h: 5, px: vec![[r, g, b]; w * 5] }, 0, 0);
+                }
             }
         }
         canvas
@@ -574,6 +584,24 @@ mod tests {
         let dev = Device::sheet(&PageSetup::default(), 96.0);
         assert_eq!((dev.w, dev.h), (794, 1123));
         assert_eq!(dev.margin_rect(&PageSetup::default()), Rect::from_min_max(Pos2::new(76.0, 76.0), Pos2::new(718.0, 1047.0)));
+    }
+
+    /// `0x438110`: a circle page printed at s = 1 carries the live
+    /// window's 5 px splitter strip at the page origin; at s ≥ 2 none.
+    #[test]
+    fn a_circle_page_at_scale_one_carries_the_splitter_strip() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        app.docs[0].print_ticks = [false, false, false, true, false];
+        app.pane_canvas.push((crate::app::Pane::Circle, Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 300.0))));
+        let fonts = egui::FontDefinitions::default();
+        let (r, g, b, _) = app.skin.palette().group_bg.to_tuple();
+        for (dpi, strip) in [(150.0, true), (300.0, false)] {
+            let setup = PageSetup::default();
+            let job = app.print_job(0, Device::sheet(&setup, dpi), setup);
+            let c = app.render_page(&fonts, &job, 0, false);
+            assert_eq!(c.get(3, 2) == [r, g, b], strip, "{dpi} dpi");
+        }
     }
 
     #[test]

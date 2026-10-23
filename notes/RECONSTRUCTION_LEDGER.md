@@ -3764,6 +3764,24 @@ category body's gradient (ours flat), the application button's orb, the
 caption bar and the main frame border are not drawn from the style
 images; the pre-2007 looks' palettes stay ours (INFERRED system colours).
 
+### L9.118 — The print look keyed to s ≠ 1; the splitter strip at s = 1  ·  ✅
+Read (L9.112's report): the vector pens (`0x490495`) and the plane grid
+pens (`0x439486`) test `s == 1` and make the screen pens then; the
+frequency painter's print layout flag (`0x46f63b`) is s ≠ 1 and is the
+only flag behind its tiling, names per row and missing x labels; the
+masks alone test `m_bPrinting`; and at s == 1 the circle / differential
+painters, after RestoreDC, paint the 5 px splitter strip (`0x438110`:
+PatBlt at the DC's (0, 0), as wide as the live diagram window).
+Ours chose the print look whenever printing. Now `diagram_ui::print_look`
+(the scale when s ≠ 1) for those pens and the frequency tiling / axis
+(fonts and masks still by printing), and `render_page` paints the strip
+on circle / differential pages at s = 1 (colour INFERRED the panel fill).
+Test `a_circle_page_at_scale_one_carries_the_splitter_strip`.
+Residual: the readout table's and the vector header's pens left on
+printing (not named by the report); the company name's heavy-font width
+on paper (ours measures the regular one); the header's T on page 1 / in
+the preview (the printer's stock «A», device-dependent).
+
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
