@@ -561,7 +561,7 @@ visibility, colour, zoom, comments are **not undoable** [R].
 
 ### 4.2 Zoom 32800–32803 (0x45c4f0, CMDUI 0x45c8c0) — whole view
 See §3.6 wheel. CMDUI: 32800 iff YAnalogSize < 500; 32801 iff > 70; 32802 iff
-f < 1.0; 32803 iff f > fit. No check state.
+f < 1.0; 32803 iff f > fit. No check state. Greyed with no document (L9.129).
 
 ### 4.3 138 / 141
 - **138 Приблизить по вертикали** (0x465460): leave comment mode; if mode is 0
@@ -740,7 +740,7 @@ Locked items do not move. Double-click → text dialog (CCommentDlg, item mode).
 | 33038 | Изменить комментарий | — | CCommentDlg with the text; OK → modified |
 | 33039 | Зафиксировать / Разблокировать | визир 236/229 · линию уровня 238/237 · область 209/208 | toggles `locked`; checked = locked; modified |
 | 33040 | Удалить | визир 206 · линию уровня 207 · область 205 | removes immediately, no confirmation; modified |
-| 33041 | Скрыть комментарий / Отображать комментарий (203/204) | — | toggles `visible`; checked = hidden |
+| 33041 | Скрыть комментарий / Отображать комментарий (203/204) | — | toggles `visible`; checked = **shown** (`0x45d160`: SetCheck(+9) with str 203 «Скрыть…»; L9.129) |
 | 33042 | Изменить уровень | Level only (deleted from the menu otherwise) | inline edit at the line pre-filled `%.2f`; Enter commits `positionY`, Esc cancels |
 
 ### 5.6 Persistence [R, 0x4402d0 / 0x43fcf0]

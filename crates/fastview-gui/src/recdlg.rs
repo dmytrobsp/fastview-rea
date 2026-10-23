@@ -124,6 +124,12 @@ impl Doc {
         self.chans.first().is_some_and(|c| c.primary)
     }
 
+    /// 32867 / 32868's check (`0x42ffb0`): from the first analog channel;
+    /// `None` (neither checked) with no analog channel.
+    pub fn primary_shown(&self) -> Option<bool> {
+        self.chans.first().map(|c| c.primary)
+    }
+
     /// The raw bytes the code-page guess reads (`0x44f74d`: station and
     /// recorder via `0x4573d0`, then every channel name appended).
     fn name_bytes(&self) -> Vec<u8> {
@@ -297,6 +303,22 @@ impl App {
         self.active_doc().and_then(|d| d.path.as_ref()).and_then(|p| p.extension()).and_then(|e| e.to_str()).is_some_and(|e| {
             e.eq_ignore_ascii_case("cfg") || e.eq_ignore_ascii_case("cff")
         })
+    }
+
+    /// 57603 «Сохранить» (`0x475750`): greyed for a `.sto` record (its path
+    /// lowercased ends in ".sto") and with no document.
+    pub fn can_save(&self) -> bool {
+        self.active_doc().is_some_and(|d| !d.path.as_ref().is_some_and(|p| p.to_string_lossy().to_lowercase().ends_with(".sto")))
+    }
+
+    /// 32800 / 32801 / 32802 / 32803's states (`0x45c8c0`): YAnalogSize
+    /// below 500 / above 70, `f` below 1.0 / above the fit scale; all
+    /// greyed with no document.
+    pub fn zoom_enabled(&self) -> [bool; 4] {
+        let Some(d) = self.active_doc() else { return [false; 4] };
+        let y = self.y_analog.round() as i32;
+        let [grow_x, shrink_x] = d.zoom_x_enabled(self.view_width);
+        [y < 500, y > 70, grow_x, shrink_x]
     }
 
     pub fn open_hdr_comment(&mut self) {

@@ -1883,7 +1883,7 @@ fn channel_menu(ui: &mut egui::Ui, doc: &crate::app::Doc, can_paste: bool, pick:
         pick(MenuCmd::ResetZoom);
     }
     ui.separator();
-    if menu_item(ui, "Копировать каналы для объединения осциллограмм", !doc.selected_analog().is_empty()) {
+    if menu_item(ui, "Копировать каналы для объединения осциллограмм", doc.can_copy()) {
         pick(MenuCmd::CopyMerge);
     }
     if menu_item(ui, "Вставить каналы для объединения осциллограмм", can_paste) {
@@ -1947,8 +1947,10 @@ fn comment_menu(ui: &mut egui::Ui, c: &crate::app::Comment, i: usize, pick: &mut
     if menu_item(ui, &format!("Удалить {what}"), true) {
         pick(MenuCmd::DeleteComment(i));
     }
+    // 33041 (`0x45d160`): checked while the comment is shown, «Скрыть…»
+    // (str 203) then, «Отображать…» (204) when hidden.
     let hide = if c.hidden { "Отображать комментарий" } else { "Скрыть комментарий" };
-    if menu_check(ui, hide, ItemState { enabled: true, checked: c.hidden }) {
+    if menu_check(ui, hide, ItemState { enabled: true, checked: !c.hidden }) {
         pick(MenuCmd::HideComment(i));
     }
     if c.kind_no() == 2 && menu_item(ui, "Изменить уровень", true) {

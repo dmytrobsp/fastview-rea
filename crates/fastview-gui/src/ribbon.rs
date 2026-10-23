@@ -68,7 +68,7 @@ impl App {
                         let close_cmd = self.active.map(Command::CloseDoc);
                         let items: [(&str, bool, Option<Command>, Option<AppSub>); 10] = [
                             ("Открыть...", true, Some(Command::Open), None),
-                            ("Сохранить", has_doc, Some(Command::Save), None),
+                            ("Сохранить", self.can_save(), Some(Command::Save), None),
                             ("Сохранить как...", has_doc, Some(Command::SaveAs), None),
                             ("Проводник", true, Some(Command::ToggleExplorer), None),
                             // The main part prints (57607).
@@ -183,8 +183,13 @@ impl App {
             .enumerate()
             {
                 // Сохранить / Печать have no handler without a document
-                // (MFC disables them).
-                let enabled = n == 0 || has_doc;
+                // (MFC disables them); Сохранить is greyed for a .sto record
+                // (`0x475750`).
+                let enabled = match n {
+                    0 => true,
+                    1 => self.can_save(),
+                    _ => has_doc,
+                };
                 let r = ui.add_enabled_ui(enabled, |ui| qat_button(ui, p, icon)).inner.on_hover_text(tip);
                 self.kt_rects.push((crate::keytips::Target::Qat(n), r.rect, enabled));
                 if r.clicked() {
@@ -373,8 +378,8 @@ impl App {
         ribbon_group(ui, p, "Объединение", 2, |ui, step| {
             // 57637 needs the clipboard and no pending paste; 57634 a selected
             // file channel; 57643 / 57644 the undo / redo counts.
-            let can_paste = self.clip.available() && !self.active_doc().is_some_and(crate::omp_ui::has_pending_paste);
-            let can_copy = self.active_doc().is_some_and(|d| d.selection.iter().any(|k| !matches!(k, crate::app::ChanKey::Computed(_))));
+            let can_paste = self.active_doc().is_some_and(|d| self.clip.available() && !crate::omp_ui::has_pending_paste(d));
+            let can_copy = self.active_doc().is_some_and(|d| d.can_copy());
             let (undo, redo) = self.active_doc().map_or((false, false), |d| (!d.undo.is_empty(), !d.redo.is_empty()));
             if ui.add_enabled_ui(can_paste, |ui| big_button(ui, p, Icon::Paste, "Вставить")).inner.clicked() {
                 cmds.push(Command::Paste);
@@ -423,8 +428,11 @@ impl App {
         });
         // Видимость
         ribbon_group(ui, p, "Видимость", 1, |ui, _| {
+            // Every command here is the view's or the document's: greyed
+            // with no document (MFC's auto-disable).
+            let has_doc = self.active_doc().is_some();
             // 32862: DIALOG 463 «Отображение каналов».
-            if big_button(ui, p, Icon::Channels, "Каналы").clicked() {
+            if ui.add_enabled_ui(has_doc, |ui| big_button(ui, p, Icon::Channels, "Каналы")).inner.clicked() {
                 cmds.push(Command::ChannelsDialog);
             }
             // Small icon-only buttons (the label is the tooltip), three to a
@@ -434,30 +442,31 @@ impl App {
             let shown = |k: usize| self.active_doc().is_some_and(|d| if k < 3 { d.v_shown[k] } else { d.hviz[k - 3].shown });
             let comments_ok = self.active_doc().is_some_and(|d| d.comments_allowed());
             let mode = |k: u8| self.active_doc().is_some_and(|d| d.comment_mode == k);
+            let [grow_y, shrink_y, grow_x, shrink_x] = self.zoom_enabled();
             let columns: [&[MiniCmd]; 6] = [
                 &[
-                    (Mini::ShowDigital, "Показать дискретные", true, false, Command::Discrete(0)),
-                    (Mini::HideDigital, "Скрыть дискретные", true, false, Command::Discrete(1)),
-                    (Mini::HideUnchanged, "Скрыть неизменяющиеся", true, false, Command::Discrete(2)),
+                    (Mini::ShowDigital, "Показать дискретные", has_doc, false, Command::Discrete(0)),
+                    (Mini::HideDigital, "Скрыть дискретные", has_doc, false, Command::Discrete(1)),
+                    (Mini::HideUnchanged, "Скрыть неизменяющиеся", has_doc, false, Command::Discrete(2)),
                 ],
                 &[
-                    (Mini::ZoomH(true), "Увел. по гор.", true, false, Command::ZoomX(true)),
-                    (Mini::ZoomH(false), "Уменьш. по гор.", true, false, Command::ZoomX(false)),
-                    (Mini::RectZoom, "Приблизить по вертикали", true, armed, Command::RectZoom),
+                    (Mini::ZoomH(true), "Увел. по гор.", grow_x, false, Command::ZoomX(true)),
+                    (Mini::ZoomH(false), "Уменьш. по гор.", shrink_x, false, Command::ZoomX(false)),
+                    (Mini::RectZoom, "Приблизить по вертикали", has_doc, armed, Command::RectZoom),
                 ],
                 &[
-                    (Mini::ZoomV(true), "Увел. по верт.", true, false, Command::ZoomY(true)),
-                    (Mini::ZoomV(false), "Уменьш. по верт.", true, false, Command::ZoomY(false)),
-                    (Mini::Reset, "Вернуть к исходному размеру", true, false, Command::ResetZoom),
+                    (Mini::ZoomV(true), "Увел. по верт.", grow_y, false, Command::ZoomY(true)),
+                    (Mini::ZoomV(false), "Уменьш. по верт.", shrink_y, false, Command::ZoomY(false)),
+                    (Mini::Reset, "Вернуть к исходному размеру", has_doc, false, Command::ResetZoom),
                 ],
                 &[
-                    (Mini::Vizir(0), "Верт. визир 1", true, shown(0), Command::ToggleVizir(0)),
-                    (Mini::Vizir(1), "Верт. визир 2", true, shown(1), Command::ToggleVizir(1)),
-                    (Mini::Vizir(2), "Верт. визир 3", true, shown(2), Command::ToggleVizir(2)),
+                    (Mini::Vizir(0), "Верт. визир 1", has_doc, shown(0), Command::ToggleVizir(0)),
+                    (Mini::Vizir(1), "Верт. визир 2", has_doc, shown(1), Command::ToggleVizir(1)),
+                    (Mini::Vizir(2), "Верт. визир 3", has_doc, shown(2), Command::ToggleVizir(2)),
                 ],
                 &[
-                    (Mini::Vizir(3), "Гор. визир 1", true, shown(3), Command::ToggleVizir(3)),
-                    (Mini::Vizir(4), "Гор. визир 2", true, shown(4), Command::ToggleVizir(4)),
+                    (Mini::Vizir(3), "Гор. визир 1", has_doc, shown(3), Command::ToggleVizir(3)),
+                    (Mini::Vizir(4), "Гор. визир 2", has_doc, shown(4), Command::ToggleVizir(4)),
                 ],
                 // 155 / 157 / 156: one-shot comment tools (a radio group with
                 // toggle-off), enabled for records from .cfg / .osc files.
@@ -483,28 +492,31 @@ impl App {
         // Вычисления
         // Steps: the right small column icon-only, then every small one.
         ribbon_group(ui, p, "Вычисления", 3, |ui, step| {
-            // 32817 / 32818 / 32819: stats rows on every analog channel,
-            // checked when all channels show the row; 32820..32822 act on the
-            // selected channels, checked only when every selected channel is
-            // in that mode. Icon-only, as in the original.
-            let stat_on = |k: usize| self.active_doc().is_some_and(|d| !d.chans.is_empty() && d.chans.iter().all(|c| [c.stats.minmax, c.stats.rms, c.stats.a1][k]));
-            let mode_on = |m| self.active_doc().is_some_and(|d| d.mode_state(m).checked);
-            let columns: [[(Mini, &str, bool, Command); 3]; 2] = [
+            // 32817 / 32818 / 32819 (CMDUI `0x42fc60`): stats rows on every
+            // analog channel — computed and pasted ones too —, disabled with
+            // none, checked when all of them show the row; 32820..32822 act
+            // on the selected channels, disabled with no selection, checked
+            // only when every selected channel is in that mode. Icon-only,
+            // as in the original.
+            let off = crate::chansel::ItemState { enabled: false, checked: false };
+            let stat = |k: usize| self.active_doc().map_or(off, |d| d.stats_row_state(k));
+            let mode = |m| self.active_doc().map_or(off, |d| d.mode_state(m));
+            let columns: [[(Mini, &str, crate::chansel::ItemState, Command); 3]; 2] = [
                 [
-                    (Mini::MinMax, "Мин/макс", stat_on(0), Command::StatsRow(0)),
-                    (Mini::Rms, "СКЗ", stat_on(1), Command::StatsRow(1)),
-                    (Mini::A1, "Оценка 1-й гарм.", stat_on(2), Command::StatsRow(2)),
+                    (Mini::MinMax, "Мин/макс", stat(0), Command::StatsRow(0)),
+                    (Mini::Rms, "СКЗ", stat(1), Command::StatsRow(1)),
+                    (Mini::A1, "Оценка 1-й гарм.", stat(2), Command::StatsRow(2)),
                 ],
                 [
-                    (Mini::Instant, "Мгновенные", mode_on(ValueMode::Instant), Command::SetValueMode(ValueMode::Instant)),
-                    (Mini::RmsMode, "Среднеквадр.", mode_on(ValueMode::Rms), Command::SetValueMode(ValueMode::Rms)),
-                    (Mini::Harm1, "1-я гармоника", mode_on(ValueMode::FirstHarmonic), Command::SetValueMode(ValueMode::FirstHarmonic)),
+                    (Mini::Instant, "Мгновенные", mode(ValueMode::Instant), Command::SetValueMode(ValueMode::Instant)),
+                    (Mini::RmsMode, "Среднеквадр.", mode(ValueMode::Rms), Command::SetValueMode(ValueMode::Rms)),
+                    (Mini::Harm1, "1-я гармоника", mode(ValueMode::FirstHarmonic), Command::SetValueMode(ValueMode::FirstHarmonic)),
                 ],
             ];
             for column in columns {
                 ui.vertical(|ui| {
-                    for (glyph, tip, on, cmd) in column {
-                        if mini_button(ui, p, glyph, tip, true, on) {
+                    for (glyph, tip, st, cmd) in column {
+                        if mini_button(ui, p, glyph, tip, st.enabled, st.checked) {
                             cmds.push(cmd);
                         }
                     }
@@ -525,15 +537,17 @@ impl App {
             });
             ui.vertical(|ui| {
                 // 32866 «Коэффициенты»; 32867 / 32868 a radio pair checked
-                // from channel 0 (CMDUI `0x42ffb0`).
-                if small_button_mode(ui, p, Icon::Params, "Коэффициенты", false, step >= 1).clicked() {
+                // from channel 0 (CMDUI `0x42ffb0`; neither with no analog
+                // channel); all three the view's — greyed with no document.
+                let has_doc = self.active_doc().is_some();
+                if ui.add_enabled_ui(has_doc, |ui| small_button_mode(ui, p, Icon::Params, "Коэффициенты", false, step >= 1)).inner.clicked() {
                     cmds.push(Command::Coefficients);
                 }
-                let prim = self.active_doc().map(|d| d.primary_values());
-                if small_button_mode(ui, p, Icon::Primary, "Первичные знач.", prim == Some(true), step >= 1).clicked() {
+                let prim = self.active_doc().and_then(|d| d.primary_shown());
+                if ui.add_enabled_ui(has_doc, |ui| small_button_mode(ui, p, Icon::Primary, "Первичные знач.", prim == Some(true), step >= 1)).inner.clicked() {
                     cmds.push(Command::SetPrimaryValues(true));
                 }
-                if small_button_mode(ui, p, Icon::Primary, "Вторичные знач.", prim == Some(false), step >= 1).clicked() {
+                if ui.add_enabled_ui(has_doc, |ui| small_button_mode(ui, p, Icon::Primary, "Вторичные знач.", prim == Some(false), step >= 1)).inner.clicked() {
                     cmds.push(Command::SetPrimaryValues(false));
                 }
             });

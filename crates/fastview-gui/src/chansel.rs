@@ -204,9 +204,15 @@ impl Doc {
         }
     }
 
-    /// 32820..32822: the display mode of the selected channels and their groups.
+    /// 32820..32822's state (`0x42fc60`): the selected channels of every
+    /// kind, no group expansion — enabled with any selection, checked when
+    /// every selected channel is in the mode (ours: computed channels are
+    /// instantaneous; digital ones are not counted — their mode bits NOT
+    /// DETERMINED).
     pub fn mode_state(&self, m: ValueMode) -> ItemState {
-        state_of(self.with_groups(&self.selected_analog()).into_iter().map(|i| self.chans[i].mode == m))
+        let modes = self.selected_analog().into_iter().map(|i| self.chans[i].mode == m).chain(self.selected_computed().into_iter().map(|_| m == ValueMode::Instant));
+        let st = state_of(modes);
+        ItemState { enabled: !self.selection.is_empty(), checked: st.checked }
     }
 
     pub fn set_mode_selected(&mut self, m: ValueMode) {

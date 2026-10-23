@@ -3977,6 +3977,36 @@ centre stays floating, moved).
 Residual: the marker that was hot when Ctrl went down stays lit in MFC
 (markers not updated — INFERRED from the early return); ours unlights it.
 
+### L9.129 — The update (CMDUI) rules as read: zoom limits, no-document greying, stats / modes, Save on .sto, the comment check  ·  ✅
+Read (subagent audit of every ON_UPDATE_COMMAND_UI entry in
+`index/msgmaps.json`; by hand `0x45c8c0`, `0x45d160`, `0x42f4b0`):
+32800 / 32801 enabled while YAnalogSize < 500 / > 70, 32802 / 32803 while
+f < 1.0 / f > the fit scale (`0x45c430`); MFC's auto-disable greys every
+view / document command with no document (`m_bAutoMenuEnable` stays 1 —
+frame+0x74, never written); `0x42fc60` serves 32817–32824: the stats rows
+count every analog channel (computed and pasted too; disabled with none),
+32820–32824 every selected channel of any kind with no group expansion
+(disabled with no selection, checked iff all have the bit); 57603 greyed
+when the path ends in ".sto" (`0x475750`); copy 57634 needs a selected
+non-computed channel (digital and pasted count, `0x45bf60`); 32867 /
+32868 checked from the first analog channel, neither with none
+(`0x42ffb0`); 33041 checks while the comment is SHOWN (SetCheck(+9),
+text 203 «Скрыть комментарий» when set — the spec had it inverted).
+Ours: zoom always enabled, «Видимость» / «Вычисления» enabled with no
+document (and Вставить), stats rows always enabled and checked over file
+channels only, modes always enabled and counted with groups, Save on
+.sto enabled, menu 561's copy analog-only, «Вторичные» checked with no
+analog channel, 33041 checked while hidden. Now `App::{zoom_enabled,
+can_save}`, `Doc::{zoom_x_enabled, stats_row_state, can_copy,
+primary_shown}`, `mode_state` as read, the ribbon / QAT / app menu /
+menus 561 and 563 use them. Test `update_rules_as_read`.
+Residual: computed channels have no display mode of their own (the
+original's 32820–32822 set bits 7–9 on them too — ours counts them as
+instantaneous); digital channels' mode bits NOT DETERMINED (not counted);
+invert / DC on digital, computed and pasted channels (32823 / 32824 count
+them) — next; a path-less document (only our demo) keeps the comment
+tools.
+
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

@@ -785,6 +785,14 @@ impl Doc {
         }
     }
 
+    /// 32802 / 32803's state (`0x45c8c0`): `f` below 1.0 / above the fit
+    /// scale.
+    pub fn zoom_x_enabled(&self, width: f32) -> [bool; 2] {
+        let fit = crate::oscgeom::fit_scale(width, self.osc.sample_count());
+        let f = self.xscale.unwrap_or(fit);
+        [f < 1.0, f > fit]
+    }
+
     /// 32802 / 32803 (`0x45c4f0`): `f` ×2 (below 1.0) / ÷2 (not below the
     /// fit scale), anchored on В1 if shown, else В2, else В3; `first` is then
     /// clamped to the record.
@@ -801,6 +809,25 @@ impl Doc {
         let vis = g::visible_count(width, left, f);
         self.xscale = Some(f);
         self.first = first.min(g::max_first(n, vis));
+    }
+
+    /// 32817..32819's state (`0x42fc60`): every analog channel counts —
+    /// computed and pasted ones too; disabled with none, checked when all
+    /// of them have the row.
+    pub fn stats_row_state(&self, k: usize) -> crate::chansel::ItemState {
+        let get = |s: &StatRows| [s.minmax, s.rms, s.a1][k.min(2)];
+        let all = self.chans.iter().map(|c| &c.stats).chain(self.computed.iter().map(|c| &c.stats)).all(get);
+        let any = !self.chans.is_empty() || !self.computed.is_empty();
+        crate::chansel::ItemState { enabled: any, checked: any && all }
+    }
+
+    /// 57634 / menu 561's copy (`0x45bf60`): a selected channel that is not
+    /// computed (digital and pasted ones count).
+    pub fn can_copy(&self) -> bool {
+        self.selection.iter().any(|k| match k {
+            ChanKey::Computed(j) => self.computed.get(*j).is_some_and(|c| c.formula == crate::merge_ui::PENDING),
+            _ => true,
+        })
     }
 
     /// 32817..32819 (`FUN_0042f4b0`): when not every analog channel has the
@@ -2369,6 +2396,39 @@ mod tests {
         assert!(d.computed.len() > before, "paste should add merged channels");
         let n = d.osc.sample_count();
         assert!(d.computed.iter().all(|c| c.samples.len() == n), "merged channels align to length");
+    }
+
+    /// The ribbon's update rules (`0x45c8c0`, `0x42fc60`, `0x475750`,
+    /// `0x45bf60`, `0x42ffb0`).
+    #[test]
+    fn update_rules_as_read() {
+        let empty = App::new();
+        assert_eq!(empty.zoom_enabled(), [false; 4], "no document: zoom greyed");
+        assert!(!empty.can_save());
+        let mut app = demo_app();
+        app.view_width = 1000.0;
+        app.y_analog = 500.0;
+        let d = app.active_doc_mut().unwrap();
+        d.xscale = Some(1.0);
+        assert_eq!(app.zoom_enabled(), [false, true, false, true], "at the limits: YAnalogSize 500, f = 1");
+        app.y_analog = 70.0;
+        let fit = crate::oscgeom::fit_scale(1000.0, app.active_doc().unwrap().osc.sample_count());
+        app.active_doc_mut().unwrap().xscale = Some(fit);
+        assert_eq!(app.zoom_enabled(), [true, false, true, false], "70 px and the fit scale");
+        let d = app.active_doc_mut().unwrap();
+        assert!(!d.mode_state(ValueMode::Instant).enabled, "no selection: modes greyed");
+        assert!(d.stats_row_state(0).enabled);
+        assert!(!d.can_copy());
+        d.selection.insert(ChanKey::Digital(0));
+        assert!(d.can_copy(), "a digital channel is copied");
+        assert!(d.mode_state(ValueMode::Instant).enabled);
+        assert_eq!(d.primary_shown(), Some(false));
+        d.chans.clear();
+        assert_eq!(d.primary_shown(), None, "no analog channel: neither checked");
+        app.active_doc_mut().unwrap().path = Some("x/REC.STO".into());
+        assert!(!app.can_save(), ".sto: Save greyed");
+        app.active_doc_mut().unwrap().path = Some("x/rec.cfg".into());
+        assert!(app.can_save());
     }
 
     #[test]
