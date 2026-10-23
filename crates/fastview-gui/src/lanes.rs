@@ -527,7 +527,7 @@ fn status_icons(doc: &crate::app::Doc, r: &Row, primary: bool) -> Vec<&'static s
 /// The status icons of analog channel `i`.
 fn chan_icons(doc: &crate::app::Doc, i: usize, primary: bool) -> Vec<&'static str> {
     let (c, ch) = (&doc.chans[i], &doc.osc.analog[i]);
-    let scaled = primary && !ch.is_primary && ch.secondary != 0.0 && ch.primary / ch.secondary != 1.0;
+    let scaled = crate::app::display_k(ch, primary) != 1.0;
     [
         (c.window.is_some(), "↕"),
         (c.remove_dc, "DC"),
@@ -1748,12 +1748,7 @@ fn comment_menu(ui: &mut egui::Ui, c: &crate::app::Comment, i: usize, pick: &mut
 }
 
 fn primary_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
-    let ch = &doc.osc.analog[i];
-    if primary && !ch.is_primary && ch.secondary != 0.0 {
-        ch.primary / ch.secondary
-    } else {
-        1.0
-    }
+    crate::app::display_k(&doc.osc.analog[i], primary)
 }
 
 /// Displayed sample of analog channel `i` at `k`: raw ADC counts when the channel

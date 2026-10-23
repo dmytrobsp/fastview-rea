@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 307 pass)
+- `cargo test --workspace`   (currently 308 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -827,7 +827,7 @@ Tests: invert negates value, phasor and formula channel without undo; DC =
 whole-period mean; discrete show/hide/unchanged; rectangle zoom window + 141.
 Residual: the frequency diagram still reads raw samples (track D rewrites it
 — switch it to `Doc::flagged` after the merge); ADC + primary scaling edge
-(the original subtracts `k·dc` from an unscaled code) not modelled; undo for
+(the original subtracts `k·dc` from an unscaled code: done in L9.57); undo for
 merge operations only (paste) is now the only snapshotting command but the
 Отмена/Возврат enable-by-count rule is pending (ribbon item 11).
 
@@ -943,7 +943,7 @@ whole-period DC) keeping the channel roles; `recompute_doc` re-runs ОМП via
 original).
 Residual / NOT DETERMINED: the `doc+0x1e4` correction candidates (combo
 disabled); digital groups `doc+0x878/+0x884`; bitmap 464 icons (ours);
-whether 463 has OK; `ch+0x89` default (secondary); `.set` persistence and the
+whether 463 has OK; (`ch+0x89` default secondary: read in L9.57); `.set` persistence and the
 document-modified flag are still not modelled.
 
 ### L9.14 — Ribbon contents, application menu, QAT, Стиль, help  ·  🟡
@@ -1956,6 +1956,28 @@ and leaves created channels); `.frm` read in the program encoding,
 written CP1251; column hit by pointer x without the scroll offset not
 reproduced; ↑ / ↓ show arrows, not BITMAP 475's icons.
 
+### L9.57 — The display factor k both ways: «P» records shown secondary  ·  ✅
+Read by hand: the per-channel recompute `0x428490` sets k = `ch+0xf0`:
+`+0x89` (show primary, set by 32867) with `+0x88` clear (the file stores
+secondary) → `+0xd0 / +0xd8` (primary / secondary); `+0x89` clear with
+`+0x88` set → `+0xd8 / +0xd0`; else 1. The COMTRADE channel constructor
+`0x422460` clears both bytes (`0x4225a6`) and sets `+0x88` from the P/S
+token (compare with "P", `0x4228b4`) — so `+0x89` starts clear and a «P»
+record is shown in SECONDARY values, divided by its ratio. The value
+accessor `0x426020` (asm): x·k; with ADC the integer code instead; with
+remove-DC minus k·`ch+0xf8`, where `0x428795` stores the mean of the ADC
+codes in ADC mode (of the raw values otherwise); invert ×(−1).
+Ours: `app::display_k` (both cases; the oscillogram's `primary_scale` and
+the «П» status icon use it — they only handled «S» shown primary, so the
+user's «P» records (e.g. ratio 2000 : 1) were shown in primary values
+under «Вторичные знач.», disagreeing with the original and with our own
+diagrams, whose `fvb_core::channels` already had both cases);
+`flag_series` subtracts k·mean code in ADC mode. Test
+`display_factor_both_ways_and_adc_dc`; rendered a user «P» record (IA
+454 mA secondary with «П», was ≈ 908 A).
+Residual: a zero coefficient (division) is guarded to 1 (the original
+divides); the `.set`'s per-channel show flags restore `+0x89` as before.
+
 Next in L9 (HANDOFF 2026-10-23): **public at
 github.com/dmytrobsp/fastview-rea, release v0.1.0** (Linux / Windows / macOS
 x86_64 + arm64, flat archives). This session: the four GUI bugs (L9.23–
@@ -1985,10 +2007,12 @@ the formula dialog's 396 sequence; L9.49 the finder's delete (recycle bin);
 L9.50 group lanes (`FV_WINDOW_STATE=group`); L9.51 «Быстрый анализ» as a
 modal sheet; L9.52–L9.56 its five generator pages, OK greying,
 per-record persistence and the formula list page — the sheet is done
-(residuals in those entries). A
-residual triage (2026-10-23) found many L9.1–L9.14 residuals already done
-(ledger text stale) — next candidates: L9.9 delete → recycle bin, L9.3
-Быстрый анализ as a modal sheet, L9.30 / L9.22 small ones. **Open
+(residuals in those entries); L9.57 «P» records shown in secondary
+values by default (k both ways — user-visible). A residual triage
+(2026-10-23) found many L9.1–L9.14 residuals already done (ledger text
+stale); remaining small ones: L9.30 third copy-focus case, L9.22 print,
+L9.21 200 ms drag start, L9.6 digital level snap, L9.44 comment cursor
+codes (reverse), MFC framework items (L9.8 / L9.14 / L9.27). **Open
 next:** the smaller residuals in L9.1–L9.45 (several older ones were already done — check the
 code first), print residuals (L9.22), pane re-docking (egui limit).
 Pending user answers: publishing factual indexes (msgmaps / vtables /

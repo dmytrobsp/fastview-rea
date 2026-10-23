@@ -364,9 +364,11 @@ pub fn whole_period_mean(s: &[f64], p: usize) -> f64 {
 /// A channel's values as the channel math reads them (`0x426020`): the ADC
 /// code in ADC mode, minus its DC with «Удалить постоянную», negated with
 /// «Инвертировать».
-pub fn flag_series(c: &fvb_core::comtrade::AnalogChannel, v: &ChanView, (dc, dc_code): (f64, f64)) -> Vec<f64> {
+pub fn flag_series(c: &fvb_core::comtrade::AnalogChannel, v: &ChanView, (dc, dc_code): (f64, f64), k: f64) -> Vec<f64> {
     let base = if v.adc_counts { adc_codes(c) } else { c.samples.clone() };
-    let dc = if v.adc_counts { dc_code } else { dc };
+    // `0x426020` subtracts k·`ch+0xf8` — in ADC mode too, where the mean is
+    // of the codes and the code itself is not scaled (the units mix).
+    let dc = if v.adc_counts { k * dc_code } else { dc };
     base.into_iter()
         .map(|x| {
             let x = if v.remove_dc { x - dc } else { x };
@@ -377,6 +379,19 @@ pub fn flag_series(c: &fvb_core::comtrade::AnalogChannel, v: &ChanView, (dc, dc_
             }
         })
         .collect()
+}
+
+/// `ch+0xf0` (`0x428490`): the factor a channel's stored values are shown
+/// with — primary / secondary when primary values are shown of a file
+/// stored in secondary ones (`+0x89` set, `+0x88` clear), secondary /
+/// primary in the converse case (a «P» record shown «Вторичные», the
+/// default: `0x422460` clears `+0x89`), else 1.
+pub fn display_k(ch: &fvb_core::comtrade::AnalogChannel, show_primary: bool) -> f64 {
+    match (show_primary, ch.is_primary) {
+        (true, false) if ch.secondary != 0.0 => ch.primary / ch.secondary,
+        (false, true) if ch.primary != 0.0 => ch.secondary / ch.primary,
+        _ => 1.0,
+    }
 }
 
 /// A horizontal визир (`doc+0x2c8` / `+0x2e0`): shown, the analog channel
@@ -556,7 +571,8 @@ impl Doc {
         self.dc_mean = self.osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
         self.rms.resize(self.osc.analog.len(), Vec::new());
         for i in 0..self.osc.analog.len() {
-            self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i]);
+            let k = display_k(&self.osc.analog[i], self.chans[i].primary);
+            self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i], k);
             self.rms[i] = fvb_core::signal::sliding_rms(&self.flagged.analog[i].samples, n);
         }
         self.analysis = Analysis::compute(&self.flagged);
@@ -2047,6 +2063,30 @@ mod tests {
         assert_eq!(st.settings[&p], "1+1");
         assert!(!st.settings.contains_key("нет такого"));
         assert!(!st.visible);
+    }
+
+    /// `ch+0xf0` (`0x428490`, L9.57): a «P» record shown «Вторичные» (the
+    /// default) is scaled by secondary / primary, an «S» record shown
+    /// «Первичные» by primary / secondary; ADC + remove-DC subtracts k·mean
+    /// of the codes from the unscaled code (`0x426020`).
+    #[test]
+    fn display_factor_both_ways_and_adc_dc() {
+        let app = demo_app();
+        let d = app.active_doc().unwrap();
+        let mut ch = d.osc.analog[0].clone();
+        let view = d.chans[0].clone();
+        (ch.primary, ch.secondary, ch.is_primary) = (2000.0, 1.0, true);
+        assert_eq!(display_k(&ch, false), 1.0 / 2000.0);
+        assert_eq!(display_k(&ch, true), 1.0);
+        ch.is_primary = false;
+        assert_eq!(display_k(&ch, true), 2000.0);
+        assert_eq!(display_k(&ch, false), 1.0);
+        ch.samples = vec![1.0, 3.0];
+        let v = ChanView { adc_counts: false, remove_dc: true, invert: false, ..view.clone() };
+        assert_eq!(flag_series(&ch, &v, (2.0, 7.0), 4.0), [-1.0, 1.0], "the k of the raw values is applied later");
+        let v = ChanView { adc_counts: true, remove_dc: true, invert: false, ..view };
+        let codes = adc_codes(&ch);
+        assert_eq!(flag_series(&ch, &v, (2.0, 7.0), 4.0), [codes[0] - 28.0, codes[1] - 28.0], "code − k·mean code");
     }
 
     /// «Редактор формул» (L9.56): deleting a row removes the channel at
