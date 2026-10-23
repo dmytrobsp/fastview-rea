@@ -4604,8 +4604,8 @@ NOT DETERMINED whether it starts expanded — ours does).
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
-each one flat archive). `main` = HEAD, 402 tests.
-**Night 6 (L9.128–L9.150)**, audits as background agents (message boxes,
+each one flat archive). `main` = HEAD, 405 tests.
+**Night 6 (L9.128–L9.153)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -4625,7 +4625,12 @@ column, keyboard); L9.145 formulas name digital channels; L9.147 status
 bar formats / persistence; L9.148 DDX as MFC 12 (scanf "%d"), Enter /
 Esc in dialogs; L9.149 MFC's pane menu on captions; L9.150 **the caption
 row: frameless window, our own caption (FV_SYSTEM_TITLEBAR restores the
-system frame)**. Lessons: tests that inject `Key::C` passed while the
+system frame)**; L9.151 quick-analysis pages fresh on every open, defaults
+by name; L9.152 pair rows in «Каналы», stale pairs purged, `Properties
+Height` per diagram; L9.153 **the circle / differential parameter grid as
+the original's property grid** (tick box per characteristic). In flight:
+vtable-override sweeps over every own class (app / doc / frame / drop
+target / OLE server; panes / diagrams / toolbars / bars). Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped
 through once, fixed at once); a message box raised by a key must not
