@@ -3451,8 +3451,8 @@ added.
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
-each one flat archive). `main` = HEAD, 358 tests.
-**This session (L9.93–L9.103):** L9.93 the vector legend starts in its
+each one flat archive). `main` = HEAD, 361 tests.
+**This session (L9.93–L9.106):** L9.93 the vector legend starts in its
 window (a real-records bug: BINARY's long names); L9.94 page setup /
 preview on the application printer's paper (Windows path run on the VM);
 L9.95 appended names «_2» ignoring case (Russian locale `0x4484e5` —
@@ -3468,7 +3468,13 @@ Repos run by hand matches L9.91's steps); **L9.101 smart docking (edge
 markers, five-way group, drops on any edge, beside, into the tabs)**;
 L9.102 a tab dragged out floats; **L9.103 an insert / paste that moves the
 frequency selection refreshes no cache — the statistics read it live;
-«Рассчитать» re-evaluates every formula**. User-visible: the vector
+«Рассчитать» re-evaluates every formula**; L9.104 levels on formula /
+pasted analog lanes; L9.105 tabs reorder by dragging; L9.106 a gap audit
+of all 354 message-map entries (94 uncited, nearly all already in the
+spec's prose) and its fixes — the finder's double-click opens the whole
+selection, the rename edit commits on a press in the view (not on focus
+loss), pending channels unchecked in the circle menu, the vector checks
+need a document. User-visible: the vector
 legend on long names, the printer's paper in preview, digital-lane levels
 from `.set` files, keytip look, menu rows taller with icons, **the pane
 layout remembered between runs**, smart-dock markers when dragging a pane,
@@ -3508,7 +3514,7 @@ while held and the Recent Documents' keys; the backlog §9 items 15 / 35 /
 37 / 45 residuals. Good recurring pass: render the user's real records
 (`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`, `WIN_1999.cfg`) after big
 changes.
-(Done in this session: L9.93–L9.103, see the summary above.)
+(Done in this session: L9.93–L9.106, see the summary above.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
