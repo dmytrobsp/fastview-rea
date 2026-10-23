@@ -468,7 +468,9 @@ Menus 358/385/386/556/557 are never loaded by the view (the five-colour submenu
 Otherwise the normal button-down runs, then if the click is on an analog
 lane's **name badge** (x ∈ [4, nameW+7), y ∈ (top+5, top+5+textH)) an **inline
 rename edit** opens over it (one CEdit, style 0x50800080, id 0x65); Enter or a
-press outside commits, Esc cancels; the commit (`0x465df0`) takes the text
+press in the view outside it commits (key-up `0x470ae0`, the view's
+PreTranslateMessage `0x466100` for left / right / middle presses), Esc
+cancels; losing the focus does nothing (`0x470ac0`, L9.106); the commit (`0x465df0`) takes the text
 as typed (no trim, empty allowed); a name equal (case-sensitive, `wcscmp`)
 to another channel's (file or computed) → message box 397 «Данное имя
 канала уже используется.» (MB_OK) and the edit closes; every commit marks
@@ -1014,7 +1016,10 @@ Diff mode: title «Задать соответствие между диффер
 str 200, columns Активное / Реактивное сопротивление. Two channel combos;
 «Добавить» needs both selected, appends a row and selects it; «Удалить»
 deletes the selected row and selects the next (or last); list of pairs (two
-half-width columns). The caller reads the pairs after OK [I].
+half-width columns). The caller reads the pairs after OK [I]. Handlers
+(L9.106): Добавить `0x421aa0` (diff mode stores (second combo, first
+combo) — Iторм, Iдиф as `doc+0x878` — in `+0xa8`, R/X mode (first,
+second) in `+0x9c`), list notify `0x421e10`, Удалить `0x421e40`.
 
 ### 7.8 Merge bar (CMergeBar, id 223, 70 px)
 - Shown automatically after a paste; no command opens it.

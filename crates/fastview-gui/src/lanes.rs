@@ -1552,21 +1552,40 @@ impl App {
     }
 
     /// The inline channel-rename edit over the name badge (`0x465890`):
-    /// Enter or a click elsewhere commits, Esc cancels; a name in use is
-    /// refused with message 397.
+    /// Enter commits and Esc cancels (`0x470ae0`); a left, right or middle
+    /// press anywhere in the view outside the edit commits (the view's
+    /// PreTranslateMessage `0x466100`) — losing the focus otherwise (the
+    /// ribbon, another window) leaves it open (`0x470ac0` does nothing); a
+    /// name in use is refused with message 397.
     fn rename_ui(&mut self, ui: &mut egui::Ui, ai: usize, at: Option<Rect>) {
         let Some((i, mut text)) = self.rename_edit.take() else { return };
         let Some(at) = at else { return };
         let mut done: Option<bool> = None;
+        let view = ui.max_rect();
+        let opened = egui::Id::new(("fv_rename_opened", i));
+        let mut edit_rect = at;
         egui::Area::new(egui::Id::new("fv_rename").with(i)).order(egui::Order::Foreground).fixed_pos(at.min).show(ui.ctx(), |ui| {
             let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(at.width().max(120.0)));
-            r.request_focus();
-            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            edit_rect = r.rect;
+            // The edit takes the focus when it opens, not again.
+            if ui.data(|d| d.get_temp::<bool>(opened).is_none()) {
+                r.request_focus();
+                ui.data_mut(|d| d.insert_temp(opened, true));
+            }
+            let keys = r.has_focus() || r.lost_focus();
+            if keys && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 done = Some(false);
-            } else if r.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            } else if keys && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 done = Some(true);
             }
         });
+        let press = ui.input(|i| i.pointer.any_pressed().then(|| i.pointer.interact_pos()).flatten());
+        if done.is_none() && press.is_some_and(|p| view.contains(p) && !edit_rect.contains(p)) {
+            done = Some(true);
+        }
+        if done.is_some() {
+            ui.data_mut(|d| d.remove::<bool>(opened));
+        }
         match done {
             None => self.rename_edit = Some((i, text)),
             Some(false) => {}
@@ -2663,6 +2682,17 @@ mod menu_tests {
         assert!(h.app.dlg.alert.is_none(), "the comparison is case-sensitive");
         commit(&mut h, " Ia 2 ");
         assert_eq!(h.doc().osc.analog[0].id, " Ia 2 ", "no trim");
+        // A press elsewhere in the view commits too (`0x466100`); idle
+        // frames (the focus anywhere) leave the edit open.
+        h.app.rename_edit = Some((0, "Ia 3".to_string()));
+        for _ in 0..3 {
+            h.frame(vec![]);
+        }
+        assert!(h.app.rename_edit.is_some(), "still open");
+        let at = Pos2::new(600.0, h.row(1).y);
+        h.frame(vec![egui::Event::PointerMoved(at), egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed: true, modifiers: Default::default() }]);
+        h.frame(vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed: false, modifiers: Default::default() }]);
+        assert_eq!(h.doc().osc.analog[0].id, "Ia 3", "committed by the press");
         commit(&mut h, "");
         assert_eq!(h.doc().osc.analog[0].id, "", "an empty name is taken");
     }

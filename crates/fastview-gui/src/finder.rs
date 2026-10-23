@@ -482,8 +482,14 @@ impl App {
                             let x = &f.files[i];
                             let sel = f.selected.contains(&i);
                             let r = ui.selectable_label(sel, format!("{} {}", if x.osc { "〰" } else { "📄" }, x.name));
+                            // NM_DBLCLK (`0x46e330`): with a selection, OnOK —
+                            // every selected file opens (the first click of
+                            // the double-click has set the selection).
                             if r.double_clicked() {
-                                open_files = vec![x.path.clone()];
+                                if !f.selected.contains(&i) {
+                                    f.selected = vec![i];
+                                }
+                                open_files = f.selected.iter().map(|&j| f.files[j].path.clone()).collect();
                             } else if r.clicked() {
                                 if ctrl {
                                     if sel {

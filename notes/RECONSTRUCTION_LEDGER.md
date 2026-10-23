@@ -3417,6 +3417,37 @@ brings the tab to the front, and a swap needs the pointer past the other
 tab's middle (no back-and-forth between unequal widths; MFC moves the
 cursor instead). Test `a_tab_dragged_over_another_swaps_with_it`.
 
+### L9.106 — A gap audit of the message maps; four small fixes  ·  ✅
+Read (subagent audit of all 354 entries of `index/msgmaps.json` against
+the ledger and specs: 79 cited by address, 122 by id, 59 in the other
+notes, 94 nowhere — almost all of those already described in the spec's
+prose without their address; by hand the four below): the finder's
+NM_DBLCLK `0x46e330` runs OnOK when LVM_GETSELECTEDCOUNT > 0 — every
+selected file opens; the rename edit commits on Enter and cancels on Esc
+at key-up (`0x470ae0`, `0x465df0(1 / 0)`), its WM_KILLFOCUS `0x470ac0`
+does nothing, and the view's PreTranslateMessage `0x466100` commits it on
+a left / right / middle press aimed elsewhere (MFC walks only the target's
+ancestors, so a press on the ribbon or a diagram pane leaves it open);
+the circle menu's channel items `0x437080` are checked when the flag is
+set **and** the channel is not pending (bit 14); the vector toolbar's
+33012 / 33013 (`0x48f490` / `0x48f4f0`) are enabled with a document and
+checked only with one and the flag. The pair dialog's Добавить
+`0x421aa0` stores (second, first) in diff mode — as ours after the L9.81
+boundary swap (no change).
+Ours opened only the double-clicked row, committed the rename on any
+focus loss (and took the focus back every frame), checked pending
+channels in the circle menu and showed the vector checks without a
+document. Now `finder` (the selection on a double-click), `rename_ui`
+(focus once, the press-in-view commit), `menu_chans`, the vector toolbar.
+Test `inline_rename_commits_as_typed_or_refuses_with_397` (a press in the
+view commits; idle frames keep it open).
+Residual: Enter / Esc act at key-down in ours (egui's single-line edit
+drops the focus on the press); the splitter's cursor is resource 30981
+(AFX_IDC_VSPLITBAR, INFERRED; ours egui's vertical resize); F1 / 57667 /
+57669–57671 (MFC's help handlers) not modelled — the CHM is not shipped;
+the audit's address citations for §6 / §7 / VIEWS_SPEC beyond §7.7 not
+added.
+
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

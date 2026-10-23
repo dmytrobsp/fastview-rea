@@ -516,14 +516,19 @@ impl App {
     fn toolbar_buttons(&self, w: Window) -> Vec<Option<ToolButton>> {
         let diff = w == Window::Diff;
         match w {
-            Window::Vector => vec![
-                Some((Tool::Channels, "Каналы", DiagCmd::ChannelsMenu, None)),
-                None,
-                Some((Tool::Angles, "Отсчет углов", DiagCmd::AngleMenu, None)),
-                None,
-                Some((Tool::Values, "Показывавать действующее значение и угол", DiagCmd::ShowValues, Some(self.vec_show_values))),
-                Some((Tool::Direction, "Только направление", DiagCmd::DirectionOnly, Some(self.vec_direction_only))),
-            ],
+            // 33012 / 33013 (`0x48f490` / `0x48f4f0`): enabled with a
+            // document, checked only with one and the flag.
+            Window::Vector => {
+                let doc = self.active_doc().is_some();
+                vec![
+                    Some((Tool::Channels, "Каналы", DiagCmd::ChannelsMenu, None)),
+                    None,
+                    Some((Tool::Angles, "Отсчет углов", DiagCmd::AngleMenu, None)),
+                    None,
+                    Some((Tool::Values, "Показывавать действующее значение и угол", DiagCmd::ShowValues, Some(doc && self.vec_show_values))),
+                    Some((Tool::Direction, "Только направление", DiagCmd::DirectionOnly, Some(doc && self.vec_direction_only))),
+                ]
+            }
             Window::Circle | Window::Diff => {
                 let (between, reset, readout) = self.plane_opts(diff);
                 let mut v = vec![
@@ -613,7 +618,10 @@ impl App {
             .filter(|(_, c)| w == Window::Circle || listed(w, c))
             .map(|(idx, c)| {
                 let unit = c.unit.clone();
-                MenuChan { idx, name: c.name.clone(), unit, on: chan_flag(d, w, c) }
+                // The circle's items (`0x437080`): checked = the flag and
+                // not a pending pasted channel (bit 14).
+                let pending = w == Window::Circle && c.computed.is_some_and(|j| d.computed[j].formula == crate::merge_ui::PENDING);
+                MenuChan { idx, name: c.name.clone(), unit, on: chan_flag(d, w, c) && !pending }
             })
             .collect()
     }
