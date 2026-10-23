@@ -311,8 +311,9 @@ Residual / honest:
   to the failing attribute; we keep the whole figure's previous values.
 - Never-evaluated figures: original's zero-initialised fields → we treat as
   degenerate.
-- Our extra "Сбросить уставки" button and per-characteristic visibility list
-  are conveniences (the original's visible flag exists; its UI not mapped).
+- ~~Our extra "Сбросить уставки" button and per-characteristic visibility list
+  are conveniences~~ — superseded by L9.153 (the original's property grid
+  with a tick box per characteristic; the button is gone).
 - GUI change not screenshot-verified this session (Wayland capture missed).
 
 ---
@@ -4575,6 +4576,30 @@ toggled by a click, `0x407dc0` / `0x4075c0`); (the grid's splitter
 height `Properties Height` is now kept per diagram in our settings — read
 as the panel's default, written when it changes); 32806 with no document stays
 enabled-looking in the original (INFERRED; ours greys it).
+
+### L9.153 — The circle / differential parameter grid as the original's property grid  ·  ✅
+Read (gap sweep, by hand `0x4076fd`): the panel under the circle and the
+differential planes is one MFC property grid (`BlockPropertyGrid`) with
+no header, text colour (40, 40, 40) and the name column a third of the
+width. Property 0 is «Тип блока» (string 3483, loaded at `0x4076fd` in
+`0x407640`), a combo of the library's blocks (`0x407cc0` rebuilds the
+grid on a change); then one group per characteristic (`0x407750`), its
+parameters as text properties under it. The group row's draw override
+(`0x407dc0`) paints a 12 × 12 box near the right edge, framed with the
+characteristic's palette colour, with a blue tick while the
+characteristic is shown; a click in that row's value area (`0x4075c0`)
+flips the visibility and repaints the plane.
+Ours was an egui list (colour dot + checkbox per characteristic), a
+separate collapsible settings grid with «Характеристики» / «Уставки»
+headings and a «Сбросить уставки» button the original does not have.
+Now `char_side_panel` draws the one grid: the «Тип блока» row with the
+block combo, a banded bold group row per characteristic with its expand
+box and the framed tick box (a value-area click toggles and persists the
+visibility), the parameter rows as frameless edits; leaving an edit
+re-evaluates the block. The reset button is gone.
+Residual: the expand / collapse state of the groups is per session in
+ours (the original's is the grid's own and is rebuilt with the block,
+NOT DETERMINED whether it starts expanded — ours does).
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

@@ -679,115 +679,108 @@ impl App {
         });
     }
 
+    /// The block property grid (`BlockPropertyGrid`, an MFC property grid
+    /// with no header, text (40, 40, 40), the name column a third of the
+    /// width): «Тип блока» (string 3483) choosing the block (`0x407cc0`),
+    /// then one group per characteristic — its row carries, at the right, a
+    /// 12 × 12 box framed in the characteristic's colour with a tick while
+    /// it is shown (`0x407dc0`; a click there toggles it, `0x4075c0`) — and
+    /// its parameters as text rows; an edit re-evaluates the whole block.
     fn char_side_panel(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.label("Блок:");
-            let prev = self.block_idx;
-            let names: Vec<String> = self.library.blocks.iter().map(|b| b.name.clone()).collect();
+        const TEXT: egui::Color32 = egui::Color32::from_rgb(40, 40, 40);
+        let w = ui.available_width();
+        let name_w = (w / 3.0).max(60.0);
+        let row_h = 20.0;
+        let line = egui::Stroke::new(1.0f32, egui::Color32::from_gray(220));
+        // One grid row: the name cell and the rect left for the value.
+        let row = |ui: &mut egui::Ui, name: &str, bold: bool, band: bool| -> (egui::Rect, egui::Rect) {
+            let (r, _) = ui.allocate_exact_size(egui::vec2(w, row_h), egui::Sense::hover());
+            if band {
+                ui.painter().rect_filled(r, 0.0, egui::Color32::from_gray(232));
+            }
+            ui.painter().hline(r.x_range(), r.bottom(), line);
+            let nr = egui::Rect::from_min_max(r.min, egui::pos2(r.left() + name_w, r.bottom()));
+            let font = if bold { egui::FontId::new(12.0, egui::FontFamily::Proportional) } else { egui::FontId::proportional(12.0) };
+            let g = ui.painter().layout_no_wrap(name.to_string(), font, TEXT);
+            let at = egui::pos2(nr.left() + 14.0, nr.center().y - g.size().y / 2.0);
+            ui.painter().with_clip_rect(nr).galley(at, g.clone(), TEXT);
+            if bold {
+                ui.painter().with_clip_rect(nr).galley(at + egui::vec2(0.5, 0.0), g, TEXT);
+            }
+            if !band {
+                ui.painter().vline(nr.right(), r.y_range(), line);
+            }
+            (r, egui::Rect::from_min_max(egui::pos2(nr.right() + 2.0, r.top() + 1.0), egui::pos2(r.right() - 2.0, r.bottom() - 1.0)))
+        };
+        ui.spacing_mut().item_spacing.y = 0.0;
+        // «Тип блока».
+        let (_, vr) = row(ui, "Тип блока", false, false);
+        let prev = self.block_idx;
+        let names: Vec<String> = self.library.blocks.iter().map(|b| b.name.clone()).collect();
+        ui.put(vr, |ui: &mut egui::Ui| {
             egui::ComboBox::from_id_salt("blockcombo")
-                .width(230.0)
+                .width(vr.width())
                 .selected_text(names.get(self.block_idx).cloned().unwrap_or_default())
                 .show_ui(ui, |ui| {
                     for (i, name) in names.iter().enumerate() {
                         ui.selectable_value(&mut self.block_idx, i, name);
                     }
-                });
-            if self.block_idx != prev {
-                self.selected_char = None;
-                self.ensure_block_state();
-            }
+                })
+                .response
         });
-        ui.separator();
-        ui.heading("Характеристики");
-        let b = self.block_idx;
-        let names: Vec<(usize, String)> = self
-            .library
-            .blocks
-            .get(b)
-            .map(|blk| {
-                blk.characteristics
-                    .iter()
-                    .enumerate()
-                    .map(|(i, c)| (i, c.name.clone()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let mut vis_changed = false;
-        egui::ScrollArea::vertical()
-            .id_salt("charlist")
-            .max_height(ui.available_height() * 0.4)
-            .show(ui, |ui| {
-                for (ci, name) in &names {
-                    ui.horizontal(|ui| {
-                        if let Some(st) = self.chars.get_mut(&(b, *ci)) {
-                            ui.label(egui::RichText::new("⬤").color(st.color));
-                            if ui.checkbox(&mut st.visible, "").changed() {
-                                vis_changed = true;
-                            }
-                        }
-                        if ui.selectable_label(self.selected_char == Some(*ci), name).clicked() {
-                            self.selected_char = Some(*ci);
-                        }
-                    });
-        if vis_changed {
-            self.persist_block();
+        if self.block_idx != prev {
+            self.selected_char = None;
+            self.ensure_block_state();
         }
-                }
-            });
-        ui.separator();
-        ui.heading("Уставки");
-        self.settings_editor(ui);
-    }
-
-    /// The settings grid (`BlockPropertyGrid`): one group per characteristic of
-    /// the block with its parameters in document order. Values are plain text,
-    /// evaluated as formulas; committing an edit re-evaluates the whole block.
-    fn settings_editor(&mut self, ui: &mut egui::Ui) {
         let b = self.block_idx;
         let groups: Vec<(usize, String, Vec<String>)> = self
             .library
             .blocks
             .get(b)
-            .map(|blk| {
-                blk.characteristics
-                    .iter()
-                    .enumerate()
-                    .map(|(ci, ch)| (ci, ch.name.clone(), ch.parameters.iter().map(|p| p.name.clone()).collect()))
-                    .collect()
-            })
+            .map(|blk| blk.characteristics.iter().enumerate().map(|(ci, ch)| (ci, ch.name.clone(), ch.parameters.iter().map(|p| p.name.clone()).collect())).collect())
             .unwrap_or_default();
-        let mut changed = false;
-        egui::ScrollArea::vertical().id_salt("paramscroll").show(ui, |ui| {
-            for (ci, name, params) in &groups {
-                egui::CollapsingHeader::new(name)
-                    .id_salt(("paramgroup", b, *ci))
-                    .default_open(self.selected_char == Some(*ci))
-                    .show(ui, |ui| {
-                        egui::Grid::new(("paramgrid", b, *ci)).num_columns(2).striped(true).show(ui, |ui| {
-                            for p in params {
-                                ui.label(p);
-                                if let Some(st) = self.chars.get_mut(&(b, *ci)) {
-                                    let text = st.settings.entry(p.clone()).or_default();
-                                    let r = ui.add(egui::TextEdit::singleline(text).desired_width(140.0));
-                                    changed |= r.lost_focus();
-                                }
-                                ui.end_row();
-                            }
-                        });
-                    });
+        let (mut changed, mut vis_changed) = (false, false);
+        for (ci, name, params) in &groups {
+            let open_id = ui.id().with(("fv_grid_open", b, *ci));
+            let open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(true);
+            let (r, _) = row(ui, name, true, true);
+            // The expand box and the visibility box.
+            let toggle = egui::Rect::from_min_size(egui::pos2(r.left() + 2.0, r.center().y - 5.0), egui::vec2(10.0, 10.0));
+            ui.painter().rect_stroke(toggle, 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_gray(128)));
+            ui.painter().text(toggle.center(), egui::Align2::CENTER_CENTER, if open { "−" } else { "+" }, egui::FontId::proportional(10.0), TEXT);
+            if ui.interact(toggle.expand(2.0), ui.id().with(("fv_grid_tg", b, *ci)), egui::Sense::click()).clicked() {
+                ui.data_mut(|d| d.insert_temp(open_id, !open));
             }
-            if let Some(ci) = self.selected_char {
-                if ui.button("Сбросить уставки").clicked() {
-                    if let (Some(blk), Some(st)) = (self.library.blocks.get(b), self.chars.get_mut(&(b, ci))) {
-                        if let Some(ch) = blk.characteristics.get(ci) {
-                            st.settings = ch.default_settings();
-                            changed = true;
-                        }
-                    }
+            if ui.interact(egui::Rect::from_min_max(egui::pos2(toggle.right() + 2.0, r.top()), egui::pos2(r.left() + name_w, r.bottom())), ui.id().with(("fv_grid_name", b, *ci)), egui::Sense::click()).clicked() {
+                self.selected_char = Some(*ci);
+            }
+            if let Some(st) = self.chars.get_mut(&(b, *ci)) {
+                let bx = egui::Rect::from_min_max(egui::pos2(r.right() - 14.0, r.top() + 3.0), egui::pos2(r.right() - 2.0, r.top() + 15.0));
+                ui.painter().rect(bx, 0.0, egui::Color32::WHITE, egui::Stroke::new(1.0f32, st.color));
+                if st.visible {
+                    ui.painter().text(bx.center(), egui::Align2::CENTER_CENTER, "✓", egui::FontId::proportional(11.0), egui::Color32::from_rgb(0, 0, 200));
+                }
+                let value_area = egui::Rect::from_min_max(egui::pos2(r.left() + name_w, r.top()), r.max);
+                if ui.interact(value_area, ui.id().with(("fv_grid_vis", b, *ci)), egui::Sense::click()).clicked() {
+                    st.visible = !st.visible;
+                    vis_changed = true;
                 }
             }
-        });
+            if !open {
+                continue;
+            }
+            for p in params {
+                let (_, vr) = row(ui, p, false, false);
+                if let Some(st) = self.chars.get_mut(&(b, *ci)) {
+                    let text = st.settings.entry(p.clone()).or_default();
+                    let resp = ui.put(vr, egui::TextEdit::singleline(text).frame(false).text_color(TEXT));
+                    changed |= resp.lost_focus();
+                }
+            }
+        }
+        if vis_changed {
+            self.persist_block();
+        }
         if changed {
             self.recompute_block();
         }
