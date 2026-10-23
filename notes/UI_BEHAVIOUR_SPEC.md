@@ -851,12 +851,22 @@ readout items; Создать edits the Iдиф/Iторм pairs.
   абсолютные), «Нормализация» (◉ по основной гармонике / ○ по СКЗ — **disabled
   in absolute mode**), Число гармоник, Число обрабатываемых периодов. Persist
   `Frequency Chart`: NumPeriods 1, ShowPersents 0 (= **percent**), UseRMS 0,
-  NumHarmonics 10. Painting: bottom 10 px reserved; dotted (200,200,200) grid,
-  (150,150,150) axes, text (20,20,20); value labels Tahoma 13 **rotated 90°**;
-  **one panel per channel side by side** (width (W − 2·margin)/nCh, K+1 bar
-  slots), under each a colour square + name (+ ", %" in percent mode); x labels
-  `k·f/P` as `%-.1f` (`%-.0f` when integral), only if they fit. Printing tiles
-  panels in 1..10 rows for the page aspect.
+  NumHarmonics 10. Painting (`0x46f5a0`, L9.67): white; bottom band 20·s;
+  **no grid** (its dotted pen is created but never selected); text
+  (20,20,20); one panel per channel side by side, `panelW = (W − 12s)/n`,
+  K+1 slots of `panelW/(K+1)` stepping by slot − 1 from `c·panelW + 12s`;
+  bars = the slot or 10·s centred, from `top + 12s + h` (h = "A" height) to
+  `B − 18s`, normalised to the channel's largest bin (bin 0 included),
+  GradientFill colour→white with a channel-colour outline; value labels
+  (percent of bin P or of the RMS, or absolute; `freq_label`, trimmed)
+  6·s above the bar, horizontal centred on the slot when ⌊6w/5⌋ ≤ slot,
+  else Tahoma 13·s rotated 90° at the bar's left − 2; x labels `k·f/P`
+  (`%-.0f` / `%-.1f`) at `B − 18s` only if they fit the slot; under each
+  panel a 10·s swatch (black frame) and the name (+ ", %") at B; axis pen
+  (150,150,150): separators at `9s + c·panelW` from `12s + h` to `bottom −
+  6s`, baseline at `B − 18s − 1`. Printing tiles the panels in 1..10 rows
+  by the screen pane's aspect (see L9.67) — names per row, no x labels with
+  several rows.
 
 ### 6.7 Persistence
 Per document (the settings tree): `Circle Chart`, `Diff Chart`, `Vector

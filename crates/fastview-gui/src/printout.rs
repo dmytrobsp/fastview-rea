@@ -607,6 +607,9 @@ mod dump {
         let mut app = App::new();
         app.dispatch(Command::Demo);
         app.docs[0].print_ticks = [true, true, true, true, true];
+        app.docs[0].main_cursor = 300;
+        // A bottom-docked frequency pane as on screen (its aspect tiles the page).
+        app.pane_canvas.push((crate::app::Pane::Frequency, Rect::from_min_size(Pos2::ZERO, Vec2::new(1300.0, 200.0))));
         let setup = PageSetup::default();
         let dev = Device::sheet(&setup, 150.0);
         let job = app.print_job(0, dev, setup);

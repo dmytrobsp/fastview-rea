@@ -1130,9 +1130,11 @@ impl App {
 
     // ---- frequency diagram ----
 
-    /// Frequency diagram (`0x46f5a0`): one panel per frequency-flagged
-    /// channel side by side, K+1 bar slots each, bars normalised to the
-    /// channel's largest bin, value labels rotated 90°, no zoom or pan.
+    /// Frequency diagram (`0x46f5a0`, ledger L9.67): one panel per
+    /// frequency-flagged channel side by side, K + 1 bar slots each; bars
+    /// normalised to the channel's largest bin (bin 0 included), labels
+    /// in percent of the fundamental (or RMS) or absolute, no grid, no zoom
+    /// or pan. Geometry in device pixels at the print scale `s`.
     pub fn frequency_ui(&mut self, ui: &mut egui::Ui) {
         let full = ui.available_rect_before_wrap();
         let resp = ui.allocate_rect(full, egui::Sense::click());
@@ -1142,68 +1144,110 @@ impl App {
         let (periods, percent, use_rms) = (self.freq_periods.max(1), self.freq_percent, self.freq_use_rms);
         let Some(d) = self.active_doc() else { return };
         let n = d.osc.samples_per_cycle().max(2);
-        let k = d.main_cursor;
+        let pos = d.main_cursor;
         // NumHarmonics is capped at the Nyquist bin of the window.
         let k_max = self.freq_harmonics.min(n * periods / 2);
         let f = d.osc.line_freq;
         // Only the diagram's own flag counts (`0x46fb1c`), not the lane's
         // visibility on the oscillogram.
         let chans: Vec<usize> = (0..d.osc.analog.len()).filter(|i| d.chans[*i].on_freq).collect();
-        if chans.is_empty() {
-            return;
-        }
-        // Bottom 10 px reserved; margins [I].
-        let margin = 10.0;
-        let inner = Rect::from_min_max(full.min + Vec2::splat(margin), full.max - Vec2::new(margin, margin + 10.0));
-        let pw = inner.width() / chans.len() as f32;
-        let small = FontId::proportional(11.0);
+        let s = print_s().unwrap_or(1.0);
+        let si = s as i32;
         let ink = Color32::from_gray(20);
+        let h = (painter.layout_no_wrap("A".into(), font(), ink).size().y * s).round() as i32;
+        let dev = |v: f32| (v * s).round() as i32;
+        let pt = |x: i32, y: i32| Pos2::new(x as f32 / s, y as f32 / s);
+        let Some(g) = dg::freq_geom((dev(full.left()), dev(full.top()), dev(full.right()), dev(full.bottom())), si, chans.len(), k_max, h) else { return };
+        let width = |t: &str, fid: FontId| (painter.layout_no_wrap(t.into(), fid, ink).size().x * s).round() as i32;
+        let rot_font = FontId::proportional(12.0);
+        let corr = fvb_core::freqcorr::of(&d.osc);
+        // In print the panels tile the page by the screen pane's aspect.
+        let screen = self.pane_canvas.iter().find(|(p, _)| *p == crate::app::Pane::Frequency).map_or((0, 0), |(_, r)| (r.width() as i32, r.height() as i32));
+        let tl = if print_s().is_some() { g.print_tiling(chans.len(), k_max, screen) } else { g.screen_tiling(chans.len()) };
+        // Pass 1: swatch and name under each panel's row; the x labels
+        // (with several rows their rects are inverted: none).
         for (pi, &i) in chans.iter().enumerate() {
-            let panel = Rect::from_min_size(Pos2::new(inner.left() + pw * pi as f32, inner.top()), Vec2::new(pw, inner.height()));
-            let samples = &d.flagged.analog[i].samples;
-            let corr = fvb_core::freqcorr::of(&d.osc);
-            let sp = fvb_core::freqcorr::spectrum(corr.and_then(|c| c.for_chan(i)), samples, k, n, periods, k_max, d.osc.harmonic1_gain);
-            let peak = sp.iter().copied().fold(0.0, f64::max).max(1e-300);
-            let base = if use_rms { fvb_core::freqcorr::rms_at(corr, i, samples, k, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
-            // Name row and x labels under the bars.
-            let name_y = panel.bottom() - 7.0;
-            let base_y = panel.bottom() - 32.0;
-            let top_y = panel.top() + 44.0;
-            if base_y - top_y < 10.0 || pw < 20.0 {
+            let (c, r) = tl.cell(pi);
+            let yb = tl.row_bottom(&g, r);
+            let name = format!("{}{}", d.osc.analog[i].id, if percent { ", %" } else { "" });
+            let x0 = tl.swatch_x(&g, c, width(&name, font()));
+            let sw = Rect::from_min_max(pt(x0, yb + 3), pt(x0 + 10 * si, yb + 3 + 10 * si));
+            painter.rect_filled(sw, 0.0, d.chans[i].color);
+            painter.rect_stroke(sw.shrink(0.5), 0.0, Stroke::new(1.0f32, Color32::BLACK));
+            painter.text(pt(x0 + 16 * si, yb), egui::Align2::LEFT_TOP, name, font(), ink);
+            if tl.rows > 1 {
                 continue;
             }
-            let unit = if percent { ", %" } else { "" };
-            let name = format!("{}{unit}", d.osc.analog[i].id);
-            let gal = painter.layout_no_wrap(name, font(), ink);
-            let nx = panel.center().x - (gal.size().x + 16.0) / 2.0;
-            painter.rect_filled(Rect::from_min_size(Pos2::new(nx, name_y - 5.0), Vec2::splat(10.0)), 0.0, d.chans[i].color);
-            painter.galley(Pos2::new(nx + 16.0, name_y - gal.size().y / 2.0), gal, ink);
-            // Grid (dotted) and axes.
-            let bar_h = base_y - top_y;
-            for q in 1..=4 {
-                let y = base_y - bar_h * q as f32 / 4.0;
-                dotted(&painter, Pos2::new(panel.left() + 2.0, y), Pos2::new(panel.right() - 2.0, y), FRAME, 1.0);
-            }
-            painter.line_segment([Pos2::new(panel.left() + 2.0, base_y), Pos2::new(panel.right() - 2.0, base_y)], stroke(1.0, AXES));
-            painter.line_segment([Pos2::new(panel.left() + 2.0, base_y), Pos2::new(panel.left() + 2.0, top_y - 4.0)], stroke(1.0, AXES));
-            let slots = sp.len().max(1) as f32;
-            let sw = (panel.width() - 4.0) / slots;
-            for (h, v) in sp.iter().enumerate() {
-                let cx = panel.left() + 2.0 + sw * (h as f32 + 0.5);
-                let bh = (v / peak) as f32 * bar_h;
-                let bar = Rect::from_min_max(Pos2::new(cx - sw * 0.3, base_y - bh), Pos2::new(cx + sw * 0.3, base_y));
-                painter.rect_filled(bar, 0.0, d.chans[i].color);
-                // Value label rotated 90° above the bar.
-                let shown = if percent { 100.0 * v / base.max(1e-300) } else { *v };
-                let g = painter.layout_no_wrap(fvb_core::views::freq_label(shown).trim().to_string(), small.clone(), ink);
-                let at = Pos2::new(cx - g.size().y / 2.0, base_y - bh - 3.0);
-                painter.add(egui::epaint::TextShape::new(at, g, ink).with_angle(-std::f32::consts::FRAC_PI_2));
-                // x label k·f/P, only if it fits the slot.
-                let xl = painter.layout_no_wrap(dg::freq_x_label(h as f64 * f / periods as f64), small.clone(), ink);
-                if xl.size().x <= sw {
-                    painter.galley(Pos2::new(cx - xl.size().x / 2.0, base_y + 2.0), xl, ink);
+            for k in 0..=k_max {
+                let t = dg::freq_x_label(k as f64 * f / periods as f64);
+                if width(&t, font()) <= tl.slot1 {
+                    let l = g.left + tl.label_left(&g, c, k);
+                    painter.text(pt(l, g.b - 18 * si) + Vec2::new(tl.slot1 as f32 / s / 2.0, 0.0), egui::Align2::CENTER_TOP, t, font(), ink);
                 }
             }
+        }
+        // Pass 2: the bars and their value labels.
+        for (pi, &i) in chans.iter().enumerate() {
+            let (c, r) = tl.cell(pi);
+            let (row_top, yb) = (g.top + r * tl.row_h, tl.row_bottom(&g, r));
+            let samples = &d.flagged.analog[i].samples;
+            let mine = corr.and_then(|cr| cr.for_chan(i));
+            let sp = fvb_core::freqcorr::spectrum(mine, samples, pos, n, periods, k_max.max(periods), d.osc.harmonic1_gain);
+            let max = sp[..=k_max].iter().copied().fold(0.0, f64::max);
+            let max = if max == 0.0 { 1.0 } else { max };
+            let norm = if use_rms { fvb_core::freqcorr::rms_at(corr, i, samples, pos, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
+            let color = d.chans[i].color;
+            if g.plot_h() - 30 * si - g.h <= 0 {
+                continue;
+            }
+            for (k, &v) in sp[..=k_max].iter().enumerate() {
+                let t = tl.bar_offset(&g, v, max);
+                let sl = g.left + tl.slot_left(&g, c, k);
+                let bl = sl + tl.inset;
+                if v != 0.0 {
+                    let bar = Rect::from_min_max(pt(bl, row_top + 12 * si + g.h + t), pt(bl + tl.bar, yb - 18 * si));
+                    // GradientFill (channel colour at the top to white), then
+                    // the outline in the channel colour.
+                    let mut mesh = egui::Mesh::default();
+                    for (p, col) in [(bar.left_top(), color), (bar.right_top(), color), (bar.right_bottom(), Color32::WHITE), (bar.left_bottom(), Color32::WHITE)] {
+                        mesh.colored_vertex(p, col);
+                    }
+                    mesh.add_triangle(0, 1, 2);
+                    mesh.add_triangle(0, 2, 3);
+                    painter.add(egui::Shape::mesh(mesh));
+                    painter.rect_stroke(bar.shrink(0.5), 0.0, Stroke::new(1.0f32, color));
+                }
+                let val = if percent {
+                    if norm == 0.0 { 0.0 } else { 100.0 * v / norm }
+                } else {
+                    v
+                };
+                let label = fvb_core::views::freq_label(val).trim().to_string();
+                if 6 * width(&label, font()) / 5 <= tl.slot {
+                    let at = pt(sl, row_top + t + 6 * si) + Vec2::new(tl.slot as f32 / s / 2.0, 0.0);
+                    painter.text(at, egui::Align2::CENTER_TOP, label, font(), ink);
+                } else {
+                    let wr = width(&label, rot_font.clone());
+                    let at = pt(bl, row_top + 6 * si + (t + g.h).max(wr)) - Vec2::new(2.0 / s, 0.0);
+                    let gal = painter.layout_no_wrap(label, rot_font.clone(), ink);
+                    painter.add(egui::epaint::TextShape::new(at, gal, ink).with_angle(-std::f32::consts::FRAC_PI_2));
+                }
+            }
+        }
+        // The axis pen: n separators down the whole height (in print past
+        // the columns, too) and one baseline per row, `rem` below the bars
+        // when the rows do not divide H.
+        let axis = match print_s() {
+            Some(s) => dev_pen(s / 2.0, Color32::from_rgb(50, 50, 50)),
+            None => stroke(1.0, AXES),
+        };
+        for c in 0..chans.len() as i32 {
+            let x = g.left + 9 * si + c * tl.panel_w;
+            painter.line_segment([pt(x, g.top + 12 * si + g.h), pt(x, g.bottom - 6 * si - 1)], axis);
+        }
+        for idx in 0..tl.rows {
+            let y = g.b - 1 - 18 * si - idx * tl.row_h;
+            painter.line_segment([pt(g.left + 6 * si, y), pt(g.right - 6 * si, y)], axis);
         }
     }
 

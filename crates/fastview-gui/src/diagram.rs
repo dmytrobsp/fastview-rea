@@ -469,6 +469,149 @@ pub fn freq_menu(channels: Vec<Entry<DiagCmd>>) -> Vec<Entry<DiagCmd>> {
     vec![Entry::sub("Каналы", channels), Entry::Sep, Entry::item("Настройки", true, Mark::None, DiagCmd::FreqSettings)]
 }
 
+/// The frequency diagram's geometry (`0x46f5a0`) in device pixels for the
+/// rect `(left, top, right, bottom)`, scale `s`, `n` channels, bins
+/// `0..=k` and the passed font's height `h`; `None` with no channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FreqGeom {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+    pub s: i32,
+    pub h: i32,
+    /// `R.bottom − 20·s`: the name band's top.
+    pub b: i32,
+    pub panel_w: i32,
+    pub slot: i32,
+    /// The bar width and its inset in the slot: the slot, or 10·s centred.
+    pub bar: i32,
+    pub inset: i32,
+    /// The usable bar height `B − 30·s − h − R.top` (≤ 0: no bars).
+    pub u: i32,
+}
+
+pub fn freq_geom((left, top, right, bottom): (i32, i32, i32, i32), s: i32, n: usize, k: usize, h: i32) -> Option<FreqGeom> {
+    if n == 0 {
+        return None;
+    }
+    let b = bottom - 20 * s;
+    let panel_w = (right - 12 * s - left) / n as i32;
+    let slot = panel_w / (k as i32 + 1);
+    let (bar, inset) = if slot > 10 * s { (10 * s, (slot - 10 * s) / 2) } else { (slot, 0) };
+    Some(FreqGeom { left, top, right, bottom, s, h, b, panel_w, slot, bar, inset, u: b - 30 * s - h - top })
+}
+
+/// How the frequency panels are placed (`0x46f5a0`): one row on screen;
+/// in print the rows / columns search `0x46f8b5` (ledger L9.67).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FreqTiling {
+    pub rows: i32,
+    pub cols: i32,
+    pub panel_w: i32,
+    pub row_h: i32,
+    /// The plot height factor (< 1 for width-limited cells).
+    pub f: f64,
+    /// The horizontal inset of the bars in their panel.
+    pub e: i32,
+    pub slot: i32,
+    pub bar: i32,
+    pub inset: i32,
+    /// The x labels' slot (the uninset `panelW/(K+1)`).
+    pub slot1: i32,
+}
+
+impl FreqGeom {
+    /// `H = B − R.top`.
+    pub fn plot_h(&self) -> i32 {
+        self.b - self.top
+    }
+
+    pub fn screen_tiling(&self, n: usize) -> FreqTiling {
+        FreqTiling { rows: 1, cols: n as i32, panel_w: self.panel_w, row_h: self.plot_h(), f: 1.0, e: 0, slot: self.slot, bar: self.bar, inset: self.inset, slot1: self.slot }
+    }
+
+    /// The print search: for 1..10 rows, `cols = ⌈n/rows⌉`, the cell area
+    /// limited by width `⌊(⌊W/c⌋)²·a⌋` or height `⌊(⌊H/r⌋)²/a⌋` with `a`
+    /// the screen panel's height / width; the largest minimum wins (ties
+    /// keep fewer rows). Slot and bar widths are the screen ones (unscaled
+    /// 12 and 10) rescaled to the page panel less the inset `e`.
+    pub fn print_tiling(&self, n: usize, k: usize, (cw, ch): (i32, i32)) -> FreqTiling {
+        let (w, h) = (self.right - self.left, self.plot_h());
+        let a = f64::from(ch) / f64::from(cw / n as i32);
+        let (mut rows, mut cols, mut fac, mut best) = (1, n as i32, 1.0, 0i64);
+        for r in 1..=10i32 {
+            let c = (n as i32 + r - 1) / r;
+            let a1 = (f64::from(w / c).powi(2) * a).floor();
+            let a2 = (f64::from(h / r).powi(2) / a).floor();
+            let m = a1.min(a2);
+            if m.is_finite() && m as i64 > best {
+                best = m as i64;
+                (rows, cols) = (r, c);
+                fac = if m == a2 { 1.0 } else { (a1 / a2).sqrt() };
+            }
+        }
+        let s = self.s;
+        let panel_w = (self.right - 12 * s - self.left) / cols;
+        let row_h = h / rows;
+        let fit = f64::from(h) * f64::from(cw) / (f64::from(ch) * n as f64 * f64::from(rows));
+        let e = if fit.is_finite() { ((f64::from(panel_w) - fit).floor() as i32 / 2).max(0) } else { 0 };
+        let s_panel = (cw - 12) / n as i32;
+        let s_slot = s_panel / (k as i32 + 1);
+        let pp = f64::from(panel_w - 2 * e);
+        let (slot, bar) = if s_panel > 0 {
+            ((f64::from(s_slot) * pp / f64::from(s_panel)).floor() as i32, (f64::from(s_slot.min(10)) * pp / f64::from(s_panel)).floor() as i32)
+        } else {
+            // A hidden pane (the original divides by zero): our guard.
+            let sl = (panel_w - 2 * e) / (k as i32 + 1);
+            (sl, sl.min(10 * s))
+        };
+        FreqTiling { rows, cols, panel_w, row_h, f: fac, e, slot, bar, inset: (slot - bar) / 2, slot1: panel_w / (k as i32 + 1) }
+    }
+}
+
+impl FreqTiling {
+    /// Panel `i`'s (column, row); row 0 at the top.
+    pub fn cell(&self, i: usize) -> (i32, i32) {
+        (i as i32 % self.cols, i as i32 / self.cols)
+    }
+
+    /// Bar slot `k` of column `c`, from R.left.
+    pub fn slot_left(&self, g: &FreqGeom, c: i32, k: usize) -> i32 {
+        c * self.panel_w + 12 * g.s + self.e + k as i32 * (self.slot - 1)
+    }
+
+    /// X label `k` of column `c`, from R.left (no inset, the uninset slot).
+    pub fn label_left(&self, g: &FreqGeom, c: i32, k: usize) -> i32 {
+        c * self.panel_w + 12 * g.s + k as i32 * (self.slot1 - 1)
+    }
+
+    /// Row `r`'s bottom `R.top + (r+1)·rowH` (B on screen).
+    pub fn row_bottom(&self, g: &FreqGeom, r: i32) -> i32 {
+        g.top + (r + 1) * self.row_h
+    }
+
+    /// The usable bar height `H·f/rows − 30·s − h` (the skip test uses
+    /// the whole `H − 30·s − h`).
+    pub fn u(&self, g: &FreqGeom) -> f64 {
+        f64::from(g.plot_h()) * self.f / f64::from(self.rows) - f64::from(30 * g.s + g.h)
+    }
+
+    /// A bar's top offset in its cell: `round((1 − v/max)·U)` (half up)
+    /// plus `⌊(1 − f)·H/rows⌋`.
+    pub fn bar_offset(&self, g: &FreqGeom, v: f64, max: f64) -> i32 {
+        let y = (1.0 - v / max) * self.u(g);
+        let fl = y.floor();
+        let t = if y - fl >= 0.5 { fl + 1.0 } else { fl };
+        t as i32 + ((1.0 - self.f) * f64::from(g.plot_h()) / f64::from(self.rows)).floor() as i32
+    }
+
+    /// The swatch's left edge of column `c` for a name `w_name` wide.
+    pub fn swatch_x(&self, g: &FreqGeom, c: i32, w_name: i32) -> i32 {
+        g.left + c * self.panel_w + 6 * g.s + (self.panel_w - w_name - 10 * g.s) / 2
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -608,5 +751,34 @@ mod tests {
         let v = vector_menu(vec![], angle_menu(&["Ua".into()], Some("Ua")), true, false);
         assert_eq!(labels(&v), ["Каналы ▸", "─", "Отсчет углов ▸", "─", "Показывать значения", "Только направление"]);
         assert!(!labels(&v).iter().any(|l| l.contains("радиан")), "32841 removed");
+    }
+
+    /// `0x46f5a0` on screen: a 600×200 client, 3 channels, 10 harmonics.
+    #[test]
+    fn frequency_geometry() {
+        let g = freq_geom((0, 0, 600, 200), 1, 3, 10, 13).unwrap();
+        assert_eq!((g.b, g.panel_w, g.slot, g.bar, g.inset, g.u), (180, 196, 17, 10, 3, 137));
+        let t = g.screen_tiling(3);
+        assert_eq!((t.slot_left(&g, 0, 0), t.slot_left(&g, 1, 2)), (12, 12 + 196 + 32));
+        assert_eq!((t.bar_offset(&g, 1.0, 1.0), t.bar_offset(&g, 0.0, 1.0), t.bar_offset(&g, 0.5, 1.0)), (0, 137, 69));
+        assert_eq!(t.swatch_x(&g, 0, 40), (196 - 40 - 10) / 2 + 6);
+        // A narrow slot: the bar is the slot.
+        let n = freq_geom((0, 0, 200, 200), 1, 3, 10, 13).unwrap();
+        assert_eq!((n.slot, n.bar, n.inset), (5, 5, 0));
+        assert!(freq_geom((0, 0, 200, 200), 1, 0, 10, 13).is_none());
+    }
+
+    /// `0x46f8b5`: a short, wide screen pane (6 channels) tiles a portrait
+    /// page in 3 rows of 2; one row on screen equals the screen geometry.
+    #[test]
+    fn frequency_print_tiling() {
+        let g = freq_geom((0, 0, 1100, 1520), 1, 6, 10, 13).unwrap();
+        let t = g.print_tiling(6, 10, (1300, 200));
+        assert_eq!((t.rows, t.cols), (3, 2));
+        assert_eq!(t.cell(3), (1, 1));
+        assert_eq!(t.row_h, 1500 / 3);
+        assert_eq!(g.screen_tiling(6).row_bottom(&g, 0), g.b);
+        // A hidden pane: no aspect, one row.
+        assert_eq!(g.print_tiling(6, 10, (0, 0)).rows, 1);
     }
 }

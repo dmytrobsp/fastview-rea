@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 321 pass)
+- `cargo test --workspace`   (currently 323 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2309,13 +2309,48 @@ plane print pens and the masks; screen: arrowhead min(18, L/2) / L/5,
 phasor pen 1 px, "+" arms 4. Test `diagram_pages_use_the_integer_scale`;
 rendered the job (`FV_PRINT_DUMP`): 5 solid circles at 150 dpi, the
 differential page's overflow cropped at the frame.
-Residual: the frequency diagram's print tiling and its screen layout (next
-entry); the cell's print size (≤ 1 %); unscaled print leftovers (angle
+Residual: (the frequency diagram: L9.67); the cell's print size (≤ 1 %); unscaled print leftovers (angle
 label offsets, the header box offsets, the 5 px top allowance, the 120 px
 thresholds) and the vector header box itself (its fill (254,250,220)) not
 modelled; the circle zoom reset under print updating the live window;
 the differential's first-paint "push to quadrant I" during a print; the
 GDI+ fill's offset band on paper.
+
+### L9.67 — The frequency diagram as read: screen layout and print tiling  ·  ✅
+Read (subagent reports, the dead grid pen re-checked by hand: its handle
+is never pushed to SelectObject; only the axis pen and the per-bin bar
+pens are used): the painter `0x46f5a0` in drawing order — white fill; B =
+R.bottom − 20·s; `panelW = (W − 12s)/n`, `slot = panelW/(K+1)`; pass 1 per
+channel: swatch (10·s, black pen s, channel brush) at
+`c·panelW + 6s + (panelW − wName − 10s)/2`, `B + 3`, the name at +16·s, x
+labels `k·f/P` in `[c·panelW + 12s + k(slot−1), +slot]` at `B − 18s` when
+they fit; pass 2: v_k = `0x426510(k, pos, P)` k = 0..K, normalised to the
+largest (bin 0 included; 0 → 1), the label norm bin P or rms(P);
+`U = B − 30s − h − top` (≤ 0: nothing), `t = round½↑((1 − v/max)·U)`, bar
+(slot, or 10·s centred) from `top + 12s + h + t` to `B − 18s`, GradientFill
+colour→white then the outline; the value label 6·s above, horizontal when
+⌊6w/5⌋ ≤ slot else rotated Tahoma 13·s at `barLeft − 2`,
+`top + 6s + max(t + h, wr)`; then separators `9s + i·panelW` (top + 12s + h
+to bottom − 6s) and the baseline `B − 18s − 1`. Print (`0x46f8b5`): rows
+1..10, `cols = ⌈n/rows⌉`, cell areas `⌊(⌊W/c⌋)²·a⌋` / `⌊(⌊H/r⌋)²/a⌋` with
+`a` = the screen pane's height / panel width, max of the minimum (ties
+keep fewer rows), f = 1 or √(A1/A2); row-major from the top; inset e, the
+screen slot / bar (unscaled 12 and 10) rescaled to `panelW − 2e`; U =
+`H·f/rows − 30s − h`, offset `⌊(1 − f)·H/rows⌋`; names per row at the
+row's bottom; x labels' rects inverted with several rows (none drawn);
+n separators over the whole height; a baseline per row `rem` below the
+bars when rows do not divide H.
+Ours: `diagram::freq_geom`, `FreqTiling` (`screen_tiling`,
+`print_tiling`, `cell`, `slot_left`, `label_left`, `row_bottom`, `u`,
+`bar_offset`, `swatch_x`); `frequency_ui` rewritten in device pixels at
+the print scale (it drew a dotted grid, bars normalised differently, its
+own margins and slots). Tests `frequency_geometry`,
+`frequency_print_tiling`; rendered the screen pane and a 3 × 2 printed page.
+Residual: the font quirk (after a rotated label the next width test uses
+the rotated font — same metrics on screen); separators past R and the x
+labels' clipping on a real print (our page image is clipped to R); a hidden
+pane's division by zero (ours: one row, slots from the page); GDI's
+outline / gradient pixel rules approximated.
 
 Next in L9 (HANDOFF 2026-10-23, evening): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
@@ -2355,7 +2390,8 @@ strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
 L9.65's residuals (computed channels as frequency candidates; merge
 sync under correction);
-L9.22 print residuals (logo, paper, diagram print branches); L9.6 digital
+L9.22 print residuals (logo, paper; diagram print branches ✅ L9.66 /
+L9.67); L9.6 digital
 level-line snap (reachable only through a `.set`); keytips (MFC's ribbon
 keytip machinery — the program sets only Печать «p» / «w»); L9.27 MFC's
 intermediate ribbon reductions; L9.64's slot +0x1f0 and the MDI
