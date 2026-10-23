@@ -2272,9 +2272,9 @@ and the 50 Hz fallbacks, candidates / load selection / rebuild / gate)
 and `frequency_correction_on_load_off_and_back`; rendered the dialog on a
 record with a «Гц» channel (selected by default).
 Residual: computed channels are not candidates (the original's vector
-holds them, so a formula channel in Гц would be one); the `frequency:`
-token still returns the nominal frequency (what it returns under
-correction not read); merge synchronisation (`0x427670` / phasors in
+holds them, so a formula channel in Гц would be one); (`frequency:` is
+`rec+0x1fc[idx]`, the nominal frequency, and does not read `rec+0x874` —
+unchanged, as ours); merge synchronisation (`0x427670` / phasors in
 `merge.rs`) keeps the normal path; a0 / fault past the frequency channel's
 end take 50 (the original reads out of bounds); our guard returns 0 for a
 window under one sample or a non-finite f (the original computes on);
@@ -2317,8 +2317,8 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-L9.65's residuals (computed channels as frequency candidates; what
-`frequency:` returns under correction; merge sync under correction);
+L9.65's residuals (computed channels as frequency candidates; merge
+sync under correction);
 L9.22 print residuals (logo, paper, diagram print branches); L9.6 digital
 level-line snap (reachable only through a `.set`); keytips (MFC's ribbon
 keytip machinery — the program sets only Печать «p» / «w»); L9.27 MFC's
