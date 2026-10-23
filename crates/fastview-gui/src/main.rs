@@ -36,6 +36,7 @@ mod spool;
 mod theme;
 mod util;
 mod views;
+mod windows_dlg;
 
 use app::App;
 use eframe::egui;
@@ -111,6 +112,7 @@ impl App {
     fn doc_tabs(&mut self, ui: &mut egui::Ui) {
         let mut activate = None;
         let mut close = None;
+        let mut windows = false;
         ui.horizontal(|ui| {
             ui.add_space(6.0);
             for i in 0..self.docs.len() {
@@ -162,6 +164,12 @@ impl App {
                             ui.close_menu();
                         }
                     }
+                    // `EnableWindowsDialog(131, 132, always)`: «Окна...» last.
+                    ui.separator();
+                    if ui.button("Окна...").clicked() {
+                        windows = true;
+                        ui.close_menu();
+                    }
                 });
             });
         });
@@ -170,6 +178,9 @@ impl App {
         }
         if let Some(i) = close {
             self.dispatch(app::Command::CloseDoc(i));
+        }
+        if windows {
+            self.open_windows_dialog();
         }
     }
 
@@ -761,6 +772,12 @@ mod window_tests {
         };
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "omp" || s == "ompparams") {
             app.tab = RibbonTab::Omp;
+        }
+        // `FV_WINDOW_STATE=windows`: «Окна» over two documents.
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "windows") {
+            let osc = fvb_core::comtrade::parse(app::DEMO_CFG, app::DEMO_DAT).unwrap();
+            app.add_doc(app::Doc::new(osc, "Подстанция 2".into()));
+            app.open_windows_dialog();
         }
         // `FV_WINDOW_STATE=alert`: message 1086 over the window.
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "alert") {

@@ -59,6 +59,7 @@ pub fn window_up(ctx: &egui::Context) -> bool {
 impl App {
     pub fn dialogs_ui(&mut self, ctx: &egui::Context) {
         self.about_window(ctx);
+        self.windows_dialog(ctx);
         self.channel_props_window(ctx);
         self.comment_window(ctx);
         self.channel_map_window(ctx);

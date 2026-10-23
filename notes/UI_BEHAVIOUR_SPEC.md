@@ -57,7 +57,7 @@ value (channel units) / `+0x2d8` lane (−1 = never placed); H2 `+0x2e0/+0x2e8/
   caption bars (0x474c80) → docking panes (0x474e10) → 100 ms timer id 100.
 - **Tabbed MDI**: OneNote-style 3D tabs, no tab icons, **auto colour per
   document** (mfc120u's 16 colours, picked by position with two process-wide
-  statics — the first tab is the yellow (255,220,120); L9.63), document-menu button "▾" (open documents + «Окна...»), **close
+  statics — the first tab is the yellow (255,220,120); L9.63), document-menu button "▾" (open documents + «Окна...» = MFC's windows dialog, L9.64), **close
   button on the active tab only**. Tabs can be dragged into new horizontal or
   vertical tab groups [I, MFC]. Child frame is the stock CMDIChildWndEx;
   template IDR 130 (CFastViewDoc, CMDIChildWndEx, CFastViewView).

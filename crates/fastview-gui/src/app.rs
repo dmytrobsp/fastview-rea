@@ -516,6 +516,8 @@ pub struct Doc {
     /// Its tab's colour, an index into [`TAB_COLORS`], given when the tab
     /// is first laid out (`0x1006a29c`).
     pub tab_color: Option<usize>,
+    /// A number of its own (its MDI child window), kept while others close.
+    pub serial: u64,
     /// Selected channels (the original's per-channel `+0x100` flag): the
     /// target of the channel context menu and the per-channel commands.
     pub selection: BTreeSet<ChanKey>,
@@ -609,6 +611,7 @@ impl Doc {
             comments: Vec::new(),
             comment_hot: None,
             tab_color: None,
+            serial: 0,
             selection: BTreeSet::new(),
             sel_anchor: None,
             next_group: 1,
@@ -1011,6 +1014,10 @@ pub struct App {
     pub view_pointer: Option<egui::Pos2>,
     /// MFC's process-wide auto-colour state of the tabs.
     pub tab_auto: TabAuto,
+    /// «Окна» (MFC's windows dialog), when open.
+    pub windows_dlg: Option<crate::windows_dlg::WindowsDlg>,
+    /// The serial of the next document.
+    pub next_serial: u64,
     /// The circle / differential property grids as last drawn.
     pub pane_grid: Vec<egui::Rect>,
     /// Where the keyboard focus is, as far as copy (`0x405160`) cares.
@@ -1136,6 +1143,8 @@ impl App {
             pane_grid: Vec::new(),
             view_pointer: None,
             tab_auto: TabAuto::default(),
+            windows_dlg: None,
+            next_serial: 1,
             copy_focus: CopyFocus::View,
             ppp: 1.0,
             window_title: String::new(),
@@ -1203,7 +1212,9 @@ impl App {
         self.active.and_then(|i| self.docs.get_mut(i))
     }
 
-    pub fn add_doc(&mut self, doc: Doc) {
+    pub fn add_doc(&mut self, mut doc: Doc) {
+        doc.serial = self.next_serial;
+        self.next_serial += 1;
         let name = doc.name.clone();
         let n = doc.osc.sample_count();
         self.docs.push(doc);

@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 313 pass)
+- `cargo test --workspace`   (currently 315 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -846,7 +846,7 @@ splash not implemented (its bitmap 0x1CE is a proprietary asset); single
 instance done in L9.18 (`instance.rs`: loopback port + token file instead of
 the stored HWND / WM_COPYDATA, the newest plain start wins, a file argument
 is handed over and the start exits once accepted); tabs cannot be
-dragged into new tab groups; «Окна...» not in the ▾ list.
+dragged into new tab groups; («Окна...» in the ▾ list: done in L9.64).
 
 ### L9.9 — «Проводник» as the original's modal finder  ·  🟡
 
@@ -2158,6 +2158,53 @@ Residual: the ≤ 8 bpp list not modelled; when MFC calls the pick (at
 insert vs at layout) was not traced — ours at first layout, in order,
 which gives the same colours for tabs appended one by one or together.
 
+### L9.64 — «Окна...»: MFC's windows dialog  ·  🟡
+Read by hand: `OnCreate` (`0x47296b`) calls `EnableWindowsDialog(131,
+132 «&Окна...», always, no help button)`. The dialog is MFC's
+`CMFCWindowsManagerDialog` (mfc120u; template 16927 «Окна» of mfc120rus,
+316×169 DLU: «Выбрать о&кно:», a sorted owner-drawn extended-selection
+list, buttons Активировать (default) / ОК / Сохранить / Закрыть окна /
+Каскадом / Горизонтально / Вертикально / Свернуть / Справка). Constructor
+`0x101aa325` (template 0x421f, frame, help flag; "MDI actions" +0x114 = 1);
+OnInitDialog `0x101aa7c7`: fill, then hide the four arrangement buttons
+only when "MDI actions" was cleared, select, update, Справка shown only
+with the help flag (off here). Fill `0x101aaafc`: every MDI child the frame
+lists, its window text added (LB_ADDSTRING, so sorted); a child whose
+slot +0x1f0 holds goes on one list, a child without WS_SYSMENU (or without
+a system menu) clears "MDI actions", a child whose SC_CLOSE is disabled
+goes on the "cannot close" list. No code in mfc120u removes WS_SYSMENU
+from tabbed children (no such mask found), so "MDI actions" stays on.
+Selection `0x101aaa4e`: all deselected, the active child (WM_MDIGETACTIVE)
+selected. Buttons `0x101aa897` (n = selected count): Закрыть окна n > 0 and
+no selected window on the "cannot close" list (the walk stops at the
+first one), Сохранить when a selected window is off the slot-+0x1f0 list,
+Каскадом / Горизонтально / Вертикально "MDI actions" and n ≥ 2, Свернуть
+"MDI actions" and n > 0, Активировать n = 1. Message map: Активировать and
+LBN_DBLCLK `0x101aa495` (exactly one selected: restore if minimised,
+WM_MDIACTIVATE, EndDialog(IDOK)); Сохранить `0x101aa5aa` (each selected
+window's active document saved through its vtable +0xec, then refill /
+reselect / update); Закрыть окна `0x101aa666` (WM_CLOSE to each selected
+window from the last row up — each runs SaveModified — then refill);
+LBN_SELCHANGE → update; ОК is not in the map (the dialog's OnOK).
+Ours: `windows_dlg.rs` — «Окна...» after a separator at the end of the ▾
+list; the dialog with the list (titles sorted ignoring case, full-width
+rows, click / Ctrl / Shift selection, double-click activates), the
+button states, Активировать (activate + close), ОК (close), Сохранить
+(each selected document's Save in list order, then the active one
+selected), Закрыть окна (one document at a time, last row first, each
+through our close with its question — «Отмена» keeps that one and the
+next follows — then the active one selected); documents carry a serial
+so the queue survives the index shifts. Tests
+`extended_selection_and_button_states`, `close_windows_one_by_one`;
+rendered (`FV_WINDOW_STATE=windows`).
+Residual (honest): slot +0x1f0 of the child frame not identified — ours
+treats every document as savable; the four arrangement buttons are
+enabled as read but do nothing in our tabbed view (what WM_MDICASCADE /
+TILE / minimise do to tabbed children NOT DETERMINED); ОК assumed to be
+`CDialog::OnOK` (the vtable slot not checked); LBS_SORT's locale
+collation approximated by a lower-case compare; the dialog is our size in
+pixels, not converted from its DLUs exactly.
+
 Next in L9 (HANDOFF 2026-10-23, late): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2196,7 +2243,7 @@ diagram print branches); L9.21 hold-to-drag ✅ L9.61 (a self-drop is
 silent); L9.6 digital level-line snap;
 L9.44 the comment cursor codes ✅ L9.60; MFC
 framework items readable from the carved mfc120u / mfc120rus (now in
-`extracted/mfc/`, local) (tab colour order ✅ L9.63, «Окна...», keytips, save-prompt wording ✅ L9.62 — L9.8 / L9.14 /
+`extracted/mfc/`, local) (tab colour order ✅ L9.63, «Окна...» ✅ L9.64, keytips, save-prompt wording ✅ L9.62 — L9.8 / L9.14 /
 L9.27); the sheet's residuals (L9.51–L9.56); pane re-docking (egui limit).
 
 ---
