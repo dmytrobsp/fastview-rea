@@ -58,6 +58,9 @@ impl Skin {
                 tab_text: Color32::BLACK,
                 status_bg: Color32::from_rgb(0xD4, 0xD0, 0xC8),
                 status_text: Color32::BLACK,
+                body: None,
+                caption_band: None,
+                caption_text: Color32::BLACK.gamma_multiply(0.8),
             },
             Skin::OfficeXp => Palette {
                 ribbon_top: Color32::from_rgb(0xF7, 0xF6, 0xF3),
@@ -75,6 +78,9 @@ impl Skin {
                 tab_text: Color32::BLACK,
                 status_bg: Color32::from_rgb(0xEC, 0xEA, 0xE5),
                 status_text: Color32::BLACK,
+                body: None,
+                caption_band: None,
+                caption_text: Color32::BLACK.gamma_multiply(0.8),
             },
             Skin::WinXp => Palette {
                 ribbon_top: Color32::from_rgb(0xF6, 0xF5, 0xEE),
@@ -92,6 +98,9 @@ impl Skin {
                 tab_text: Color32::BLACK,
                 status_bg: Color32::from_rgb(0xEC, 0xE9, 0xD8),
                 status_text: Color32::BLACK,
+                body: None,
+                caption_band: None,
+                caption_text: Color32::BLACK.gamma_multiply(0.8),
             },
             Skin::Office2003 => Palette {
                 ribbon_top: Color32::from_rgb(0xE3, 0xEF, 0xFF),
@@ -109,6 +118,9 @@ impl Skin {
                 tab_text: Color32::BLACK,
                 status_bg: Color32::from_rgb(0xC3, 0xDA, 0xF9),
                 status_text: Color32::BLACK,
+                body: None,
+                caption_band: None,
+                caption_text: Color32::BLACK.gamma_multiply(0.8),
             },
             Skin::Vs2005 => Palette {
                 ribbon_top: Color32::from_rgb(0xFA, 0xF9, 0xF5),
@@ -126,6 +138,9 @@ impl Skin {
                 tab_text: Color32::BLACK,
                 status_bg: Color32::from_rgb(0xEE, 0xED, 0xE5),
                 status_text: Color32::BLACK,
+                body: None,
+                caption_band: None,
+                caption_text: Color32::BLACK.gamma_multiply(0.8),
             },
                         Skin::Blue => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -146,6 +161,9 @@ impl Skin {
                 tab_text: Color32::from_rgb(21, 66, 139),
                 status_bg: Color32::from_rgb(186, 212, 247),
                 status_text: Color32::from_rgb(21, 66, 139),
+                body: Some([Color32::from_rgb(229, 237, 248), Color32::from_rgb(199, 216, 237), Color32::from_rgb(231, 242, 255)]),
+                caption_band: Some([Color32::from_rgba_unmultiplied(152, 188, 232, 92), Color32::from_rgba_unmultiplied(133, 169, 216, 92)]),
+                caption_text: Color32::from_rgb(62, 106, 170),
             },
                         Skin::Black => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -166,6 +184,9 @@ impl Skin {
                 tab_text: Color32::from_rgb(255, 255, 255),
                 status_bg: Color32::from_rgb(47, 48, 48),
                 status_text: Color32::from_rgb(255, 255, 255),
+                body: Some([Color32::from_rgb(215, 219, 224), Color32::from_rgb(181, 188, 198), Color32::from_rgb(211, 211, 211)]),
+                caption_band: Some([Color32::from_rgba_unmultiplied(159, 159, 159, 186), Color32::from_rgba_unmultiplied(137, 137, 137, 186)]),
+                caption_text: Color32::from_rgb(255, 255, 255),
             },
                         Skin::Silver => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -186,6 +207,9 @@ impl Skin {
                 tab_text: Color32::from_rgb(76, 83, 92),
                 status_bg: Color32::from_rgb(199, 201, 206),
                 status_text: Color32::from_rgb(35, 38, 42),
+                body: Some([Color32::from_rgb(242, 244, 248), Color32::from_rgb(213, 220, 231), Color32::from_rgb(249, 249, 249)]),
+                caption_band: Some([Color32::from_rgba_unmultiplied(222, 226, 238, 186), Color32::from_rgba_unmultiplied(196, 201, 210, 186)]),
+                caption_text: Color32::from_rgb(83, 84, 89),
             },
                         Skin::Aqua => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -206,6 +230,9 @@ impl Skin {
                 tab_text: Color32::from_rgb(0, 21, 110),
                 status_bg: Color32::from_rgb(209, 215, 229),
                 status_text: Color32::from_rgb(0, 21, 110),
+                body: None,
+                caption_band: Some([Color32::from_rgb(106, 112, 128), Color32::from_rgb(163, 174, 199)]),
+                caption_text: Color32::from_rgb(255, 255, 255),
             },
         }
     }
@@ -234,6 +261,13 @@ pub struct Palette {
     /// The status bar's fill and text.
     pub status_bg: Color32,
     pub status_text: Color32,
+    /// The category body (RIBBON_CATEGORY_BACK): top, the dip 18 px down,
+    /// bottom; `None` a flat `tab_active`.
+    pub body: Option<[Color32; 3]>,
+    /// The panels' caption band (RIBBON_PANEL_BACK_B, 15 px, translucent)
+    /// and caption text (RIBBON/PANEL/CAPTION/TextNormal).
+    pub caption_band: Option<[Color32; 2]>,
+    pub caption_text: Color32,
 }
 
 /// Apply a skin to the egui context (base widget visuals; the ribbon paints its

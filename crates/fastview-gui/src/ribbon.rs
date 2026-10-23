@@ -263,8 +263,10 @@ impl App {
 
         // ---- Row 3: ribbon body (fixed height; hidden when minimised) ----
         if !self.ribbon_minimized {
-            egui::Frame::none()
-                .fill(p.tab_active)
+            // The category body's gradient behind it (set below).
+            let body_bg = ui.painter().add(egui::Shape::Noop);
+            let body = egui::Frame::none()
+                .fill(if p.body.is_some() { Color32::TRANSPARENT } else { p.tab_active })
                 .stroke(egui::Stroke::new(1.0f32, p.group_border))
                 .inner_margin(egui::Margin::symmetric(6.0, 4.0))
                 .show(ui, |ui| {
@@ -323,6 +325,10 @@ impl App {
                         RibbonTab::Omp => self.ribbon_omp(ui, &mut cmds),
                     });
                 });
+            if let Some([top, dip, bottom]) = p.body {
+                let r = body.response.rect;
+                ui.painter().set(body_bg, gradient_mesh(r, &[(0.0, top), (18.0, dip), (r.height(), bottom)]));
+            }
         }
 
         for c in cmds {
@@ -582,26 +588,30 @@ impl App {
 // ---------------- drawing helpers ----------------
 
 
-fn paint_v_gradient(ui: &egui::Ui, rect: egui::Rect, top: Color32, bottom: Color32) {
-    let painter = ui.painter();
-    let steps = 24;
-    for i in 0..steps {
-        let t0 = i as f32 / steps as f32;
-        let t1 = (i + 1) as f32 / steps as f32;
-        let y0 = rect.top() + rect.height() * t0;
-        let y1 = rect.top() + rect.height() * t1;
-        let c = lerp_color(top, bottom, (t0 + t1) * 0.5);
-        painter.rect_filled(
-            egui::Rect::from_min_max(egui::pos2(rect.left(), y0), egui::pos2(rect.right(), y1)),
-             0.0f32,
-            c,
-        );
+/// A vertical gradient through `stops` (y offsets from the top, colours) as
+/// one mesh, the last colour down to the bottom.
+fn gradient_mesh(rect: egui::Rect, stops: &[(f32, Color32)]) -> egui::Shape {
+    let mut mesh = egui::Mesh::default();
+    let mut pts: Vec<(f32, Color32)> = stops.iter().map(|&(y, c)| (rect.top() + y.min(rect.height()), c)).collect();
+    if let Some(&(_, c)) = pts.last() {
+        pts.push((rect.bottom(), c));
     }
+    for w in pts.windows(2) {
+        let ((y0, c0), (y1, c1)) = (w[0], w[1]);
+        let base = mesh.vertices.len() as u32;
+        mesh.colored_vertex(egui::pos2(rect.left(), y0), c0);
+        mesh.colored_vertex(egui::pos2(rect.right(), y0), c0);
+        mesh.colored_vertex(egui::pos2(rect.right(), y1), c1);
+        mesh.colored_vertex(egui::pos2(rect.left(), y1), c1);
+        mesh.add_triangle(base, base + 1, base + 2);
+        mesh.add_triangle(base, base + 2, base + 3);
+    }
+    egui::Shape::mesh(mesh)
 }
 
-fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
-    let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
-    Color32::from_rgb(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()))
+fn paint_v_gradient(ui: &egui::Ui, rect: egui::Rect, top: Color32, bottom: Color32) {
+    // One mesh: strips would leave anti-aliased seams.
+    ui.painter().add(gradient_mesh(rect, &[(0.0, top), (rect.height(), bottom)]));
 }
 
 /// The Механотроника chevron mark (two stacked carets).
@@ -764,7 +774,9 @@ fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, lay
 }
 
 fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, content: impl FnOnce(&mut egui::Ui) -> R) {
-    ui.scope(|ui| {
+    // The panel's caption band and frame, behind its content (set below).
+    let bg = ui.painter().add(egui::Shape::Noop);
+    let panel = ui.scope(|ui| {
         ui.vertical(|ui| {
             egui::Frame::none()
                 .inner_margin(egui::Margin::symmetric(4.0, 2.0))
@@ -778,11 +790,24 @@ fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: 
                 egui::vec2(ui.min_rect().width().max(40.0), 14.0),
                 egui::Layout::top_down(egui::Align::Center),
                 |ui| {
-                    ui.label(RichText::new(title).small().color(p.text.gamma_multiply(0.8f32)));
+                    ui.label(RichText::new(title).small().color(p.caption_text));
                 },
             );
         });
     });
+    // Office 2007 (RIBBON_PANEL_BACK_T / _B): a white inner line, the
+    // caption band 15 px at the bottom.
+    if let Some([top, bottom]) = p.caption_band {
+        let r = panel.response.rect;
+        let band = egui::Rect::from_min_max(egui::pos2(r.left(), r.bottom() - 15.0), r.max);
+        ui.painter().set(
+            bg,
+            egui::Shape::Vec(vec![
+                egui::Shape::rect_stroke(r.shrink(1.0), 2.0f32, egui::Stroke::new(1.0f32, Color32::from_rgba_unmultiplied(255, 255, 255, 130))),
+                gradient_mesh(band, &[(0.0, top), (15.0, bottom)]),
+            ]),
+        );
+    }
     // right divider
     let r = ui.min_rect();
     ui.painter().line_segment(

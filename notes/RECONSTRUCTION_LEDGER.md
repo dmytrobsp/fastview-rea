@@ -3782,6 +3782,27 @@ printing (not named by the report); the company name's heavy-font width
 on paper (ours measures the regular one); the header's T on page 1 / in
 the preview (the printer's stock «A», device-dependent).
 
+### L9.119 — Ribbon body and panels drawn as the Office 2007 styles do  ·  ✅
+Read (L9.117's report on the style images): the category body
+(RIBBON_CATEGORY_BACK) is a gradient — top, a dip 18 px down, a light
+bottom (Blue (229, 237, 248) → (199, 216, 237) → (231, 242, 255); Black
+(215, 219, 224) → (181, 188, 198) → (211, 211, 211); Silver (242, 244,
+248) → (213, 220, 231) → (249, 249, 249); Aqua flat); a panel's body is
+transparent with a white inner line at alpha ≈ 130 (RIBBON_PANEL_BACK_T)
+and a 15 px caption band (RIBBON_PANEL_BACK_B: Blue (152, 188, 232) →
+(133, 169, 216) at alpha 92, Black grey 159 → 137 and Silver (222, 226,
+238) → (196, 201, 210) at ≈ 186, Aqua opaque (106, 112, 128) → (163,
+174, 199)) under the caption in RIBBON/PANEL/CAPTION/TextNormal ((62,
+106, 170) | white | (83, 84, 89) | white).
+Ours filled the body flat, gave panels no band and the caption the label
+colour at 80 %. Now `Palette::{body, caption_band, caption_text}`,
+`ribbon::gradient_mesh` (one mesh — the old 24 strips left anti-aliased
+seams, visible on Black's dark band), the body gradient and each panel's
+band and inner line painted behind their content. Rendered all four.
+Residual: the band's rounded corners and the panel's outer edge image
+(our divider line) are approximations; the application button's orb and
+the caption bar still ours.
+
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
