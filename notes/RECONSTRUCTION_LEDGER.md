@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 391 pass)
+- `cargo test --workspace`   (currently 402 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -4521,26 +4521,35 @@ title's glow on glass; on a tiling window manager the buttons may do
 nothing (the WM owns the window) — `FV_SYSTEM_TITLEBAR` restores the
 system frame.
 
-Next in L9 (HANDOFF 2026-10-23, night 6): **public at
+Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
-each one flat archive). `main` = HEAD, 391 tests.
-**Night 6 (L9.128–L9.138)**, the three audits re-run as background agents
-and acted on, plus four follow-up research agents (frequency track,
-flags on non-file channels, the ОМП tracked phasor): L9.128 Ctrl held
-→ no docking; L9.129 the CMDUI rules (zoom limits, no-document greying,
-stats / modes / Save on .sto / copy / the comment check inverted);
-L9.130 **Ctrl+C / Ctrl+V never fired in the real app** (egui-winit sends
-`Event::Copy` / `Event::Paste`, not keys) + MDI keys, preview PgUp / PgDn,
-визир keys showing, per-message wheel, Ctrl+Shift+click; L9.131 posted
-exceptions as boxes, the 219 box, int DDX, an alert queue; L9.132 the
-nominal-frequency track rec+0x1fc and rate segments; L9.133 DIALOG 353's
-DDV; L9.134 / L9.135 / L9.136 invert / DC / modes on digital, computed
-and pending channels (the merge bakes and keeps them); L9.137 channels'
-own frequency vectors and the ОМП's tracked phasor; L9.138 the ОМП's
-case-insensitive lookup, the merge's beep. Lesson: tests that inject
-`Key::C` passed while the real app never saw a key — when input goes
-through egui-winit, check what it actually emits.
+each one flat archive). `main` = HEAD, 402 tests.
+**Night 6 (L9.128–L9.150)**, audits as background agents (message boxes,
+CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
+menus, the caption) and follow-up reads (frequency track, flags on
+non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
+Ctrl held → no docking; L9.129 CMDUI rules; L9.130 **Ctrl+C / Ctrl+V
+never fired in the real app** (egui-winit sends `Event::Copy` /
+`Event::Paste`) + MDI / preview / визир keys, per-message wheel; L9.131
+posted exceptions as boxes, an alert queue; L9.132 the nominal-frequency
+track; L9.133 DIALOG 353's DDV; L9.134–L9.136 invert / DC / modes on
+digital, computed and pending channels; L9.137 own frequency vectors and
+the ОМП tracked phasor; L9.138 ОМП lookup ignores case, the merge's beep;
+L9.139 ↑ / ↓ place a never-placed ГВ; L9.140 the merge's padding via the
+accessor; L9.141 **record times from the readers** (ASCII timestamps,
+binary k·1e6/R; a trailing ^Z line is no row — DOC_1999 is 11000
+samples); L9.142 **N from rec+0x228**; L9.143 `.set` per channel (whole
+ShowFlags, NetFreq); L9.144 / L9.146 context menus (MFC separators, check
+column, keyboard); L9.145 formulas name digital channels; L9.147 status
+bar formats / persistence; L9.148 DDX as MFC 12 (scanf "%d"), Enter /
+Esc in dialogs; L9.149 MFC's pane menu on captions; L9.150 **the caption
+row: frameless window, our own caption (FV_SYSTEM_TITLEBAR restores the
+system frame)**. Lessons: tests that inject `Key::C` passed while the
+real app never saw a key — check what egui-winit emits; never chain the
+gates and a commit in one command (a commit with clippy warnings slipped
+through once, fixed at once); a message box raised by a key must not
+take that same key (L9.148).
 **Night 5 (L9.107–L9.127), worked continuously with parallel
 background research agents (MFC docking / tabs, merge, print, ribbon,
 finder, style data, the 401–543 dialogs, engine residuals):** L9.107 the
@@ -4600,7 +4609,9 @@ TILE — visible effect ND); (the caption row: L9.150); backlog §9 #36 / #37 / 
 proprietary assets). Good recurring pass: render the user's real records
 (`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`, `WIN_1999.cfg`) after big
 changes.
-(Done: night 6 L9.128–L9.138, night 5 L9.107–L9.127.)
+Not yet run on the Windows VM this night (it was unreachable): the
+GUI test exe — run it when the VM is back (windows-vm memory).
+(Done: night 6 L9.128–L9.150, night 5 L9.107–L9.127.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
