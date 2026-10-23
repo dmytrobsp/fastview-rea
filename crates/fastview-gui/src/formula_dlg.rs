@@ -112,10 +112,12 @@ impl App {
             return;
         };
         let computed: Vec<&str> = d.computed.iter().map(|c| c.name.as_str()).collect();
+        // «Канал%i» over the page's rows (`0x486df0`).
+        let rows: Vec<&str> = self.formula_page.rows.iter().map(|r| r.0.as_str()).collect();
         let analog = d.osc.analog.iter().map(|c| c.id.clone());
         let channels: Vec<String> = analog.clone().chain(computed.iter().map(|s| s.to_string())).collect();
         let taken = channels.iter().cloned().chain(d.osc.digital.iter().map(|c| c.id.clone())).collect();
-        let name = af::default_name(&computed);
+        let name = af::default_name(&rows);
         self.formula_dlg = Some(AddFormulaDlg::new(name, channels, taken, d.osc.sample_rate, d.osc.line_freq));
     }
 
@@ -205,10 +207,9 @@ impl App {
         }
         match done {
             Some(true) => {
-                if let Some(batch) = st.accept() {
-                    if let Some(added) = self.append_computed(&[batch]) {
-                        self.status = format!("Добавлен расчётный канал «{}»", added[0]);
-                    }
+                if let Some((name, formula, _unit)) = st.accept() {
+                    // The row is appended to the formula page (`0x486df0`).
+                    self.fp_add_row(name, formula);
                     return;
                 }
                 self.formula_dlg = Some(st);
@@ -387,7 +388,8 @@ mod tests {
         assert_eq!(d.channels.len(), 6);
     }
 
-    /// Selecting «Токи ▸ Ток 3Io» hosts DIALOG 402; OK appends the channel.
+    /// Selecting «Токи ▸ Ток 3Io» hosts DIALOG 402; OK appends a row to the
+    /// formula page (no channel until «Рассчитать»).
     #[test]
     fn builds_a_template_channel() {
         let mut h = Harness::new();
@@ -397,9 +399,10 @@ mod tests {
         h.app.formula_dlg.as_mut().unwrap().name = "I0x3".into();
         h.ok();
         assert!(h.app.formula_dlg.is_none(), "closed");
-        let d = h.app.active_doc().unwrap();
-        let c = d.computed.last().expect("appended");
-        assert_eq!((c.name.as_str(), c.formula.as_str()), ("I0x3", "3I0: (Ia, Ib, Ic)"));
+        let p = &h.app.formula_page;
+        assert_eq!(p.rows.last().map(|r| (r.0.as_str(), r.1.as_str())), Some(("I0x3", "3I0: (Ia, Ib, Ic)")));
+        assert_eq!(p.selected, Some(p.rows.len() - 1), "the new row is selected");
+        assert!(h.app.active_doc().unwrap().computed.is_empty(), "nothing computed yet");
     }
 
     /// A group hosts no form and greys OK.

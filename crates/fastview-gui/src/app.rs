@@ -828,8 +828,6 @@ pub struct App {
     pub show_grid: bool,
 
     // formula editor
-    pub formula_name: String,
-    pub formula_text: String,
     /// «Добавить новую формулу» (DIALOG 359) while open.
     pub formula_dlg: Option<crate::formula_dlg::AddFormulaDlg>,
 
@@ -856,6 +854,8 @@ pub struct App {
     pub quick_open: bool,
     /// Pages created (shown) since the sheet opened ([`crate::quick_ui::PAGE_KEYS`] order).
     pub quick_shown: [bool; 6],
+    /// The sheet's «Редактор формул» page.
+    pub formula_page: crate::formula_page::FormulaPage,
     /// Quick-analysis forms (one per tab).
     pub quick: [crate::quick_ui::QuickForms; 5],
     /// ОМП result bar, parameters dialog and message box.
@@ -988,8 +988,6 @@ impl App {
             skin: Skin::Blue,
             time_unit: TimeUnit::Milli,
             show_grid: true,
-            formula_name: "Uab".to_string(),
-            formula_text: "Ua-Ub".to_string(),
             formula_dlg: None,
             vec_radians: false,
             vec_direction_only: false,
@@ -1005,6 +1003,7 @@ impl App {
             analysis_tab: AnalysisTab::Formula,
             quick_open: false,
             quick_shown: [false; 6],
+            formula_page: Default::default(),
             quick: Default::default(),
             omp_ui: Default::default(),
             setfile: Default::default(),
@@ -1170,6 +1169,7 @@ impl App {
                     self.analysis_tab = AnalysisTab::Formula;
                     self.quick_open = true;
                     self.quick_shown = [false; 6];
+                    self.formula_page_open();
                     self.quick_defaults();
                     self.quick_show_page();
                 }
@@ -1763,15 +1763,6 @@ impl App {
         Self::restore(d, snap);
     }
 
-
-
-    pub fn add_computed(&mut self) {
-        let batch = vec![(self.formula_name.clone(), self.formula_text.clone(), String::new())];
-        if let Some(added) = self.append_computed(&batch) {
-            self.status = format!("Добавлен расчётный канал «{}»", added[0]);
-        }
-    }
-
     /// Append computed channels to the active record, evaluated in order in
     /// channel mode (`fvb_core::quick::evaluate_batch`); all or nothing.
     /// Returns the names given to them.
@@ -2056,6 +2047,39 @@ mod tests {
         assert_eq!(st.settings[&p], "1+1");
         assert!(!st.settings.contains_key("нет такого"));
         assert!(!st.visible);
+    }
+
+    /// «Редактор формул» (L9.56): deleting a row removes the channel at
+    /// once, a computed channel's own name is refused (473), «Рассчитать»
+    /// updates in place and inserts new names first, «Отмена» undoes nothing.
+    #[test]
+    fn formula_page_edits_the_record_list() {
+        let mut app = demo_app();
+        app.append_computed(&[("X".into(), "Ua*2".into(), String::new()), ("Y".into(), "Ub*2".into(), String::new())]);
+        let names = |app: &App| app.active_doc().unwrap().computed.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        app.dispatch(Command::QuickAnalysis);
+        assert_eq!(app.formula_page.rows.len(), 2);
+        app.formula_page.selected = Some(0);
+        app.fp_delete();
+        assert_eq!(names(&app), ["Y"], "X goes at once");
+        app.formula_page.edit = Some((0, 0, "Y".into()));
+        app.fp_commit_edit();
+        assert_eq!(app.formula_page.alert, Some(fvb_core::addformula::MSG_NAME_TAKEN), "its own name is a record channel");
+        app.formula_page.alert = None;
+        app.formula_page.rows[0].1 = "Ub*3".into();
+        app.fp_add_row("Z".into(), "Uc*2".into());
+        let y_color = app.active_doc().unwrap().computed[0].color;
+        app.quick_calc();
+        let d = app.active_doc().unwrap();
+        assert_eq!(names(&app), ["Z", "Y"], "the new channel after the analog ones");
+        assert_eq!(d.computed[1].formula, "Ub*3");
+        assert_eq!(d.computed[1].color, y_color, "updated in place");
+        // «Отмена» keeps a deletion.
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.selected = Some(0);
+        app.fp_delete();
+        app.quick_open = false;
+        assert_eq!(names(&app), ["Y"]);
     }
 
     #[test]

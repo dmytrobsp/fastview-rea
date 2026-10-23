@@ -94,7 +94,7 @@ fn from_colorref(v: u32) -> egui::Color32 {
 
 /// Formula channels (the calculation manager `doc+0x190` holds only these;
 /// merged, pending and ОМП channels carry no formula).
-fn is_formula(c: &crate::app::Computed) -> bool {
+pub(crate) fn is_formula(c: &crate::app::Computed) -> bool {
     c.formula != "ОМП" && c.formula != crate::merge_ui::PENDING
 }
 

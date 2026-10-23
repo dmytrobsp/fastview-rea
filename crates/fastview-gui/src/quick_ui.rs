@@ -355,7 +355,8 @@ impl App {
             return;
         }
         let (mut calc, mut cancel, mut open) = (false, false, true);
-        let enabled = self.formula_dlg.is_none();
+        let editing = self.formula_page.edit.is_some();
+        let enabled = self.formula_dlg.is_none() && self.formula_page.alert.is_none();
         egui::Window::new("Быстрый анализ")
             .id(egui::Id::new("fv_quick_sheet"))
             .collapsible(false)
@@ -374,7 +375,10 @@ impl App {
                                 let sel = self.analysis_tab == tab;
                                 let text = egui::RichText::new(format!("{glyph}\n{title}")).size(11.5);
                                 let r = ui.add_sized([150.0, 58.0], egui::SelectableLabel::new(sel, text));
-                                if r.clicked() {
+                                if r.clicked() && self.analysis_tab != tab {
+                                    if self.analysis_tab == AnalysisTab::Formula {
+                                        self.fp_kill_active();
+                                    }
                                     self.analysis_tab = tab;
                                     self.quick_show_page();
                                 }
@@ -388,7 +392,7 @@ impl App {
                             egui::ScrollArea::both().id_salt("quick_page").max_height(420.0).show(ui, |ui| {
                                 ui.set_min_height(420.0);
                                 if self.analysis_tab == AnalysisTab::Formula {
-                                    self.formula_editor_ui(ui);
+                                    self.formula_page_ui(ui);
                                 } else {
                                     self.quick_tab_ui(ui);
                                 }
@@ -403,7 +407,22 @@ impl App {
                     });
                 });
             });
-        if enabled && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if let Some(msg) = self.formula_page.alert {
+            let mut close = false;
+            egui::Window::new("FastView")
+                .id(egui::Id::new("fv_formula_page_alert"))
+                .collapsible(false)
+                .resizable(false)
+                .order(egui::Order::Foreground)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label(msg);
+                    ui.vertical_centered(|ui| close = ui.button("    OK    ").clicked());
+                });
+            if close || ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
+                self.formula_page.alert = None;
+            }
+        } else if enabled && !editing && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             cancel = true;
         }
         if calc {
@@ -441,12 +460,16 @@ impl App {
         }
     }
 
-    /// «Рассчитать» (`0x48b710` → `0x48c0e0`): the active page's channels
-    /// (the formula editor's list is already the record's), then close.
+    /// «Рассчитать» (`0x48b710` → `0x48c0e0`): the active page's channels —
+    /// on the formula editor its kill-active, then its list applied — then
+    /// every created page saves and the sheet closes.
     pub fn quick_calc(&mut self) {
         if let Some(i) = page_index(self.analysis_tab) {
             let g = self.quick[i].generate(self.analysis_tab);
             self.apply_quick(&g);
+        } else {
+            self.fp_kill_active();
+            self.fp_apply();
         }
         self.quick_save_pages();
         self.quick_open = false;

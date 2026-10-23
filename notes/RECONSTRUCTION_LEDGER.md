@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 305 pass)
+- `cargo test --workspace`   (currently 307 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -1920,6 +1920,42 @@ which state the option nodes then hold is inferred); 539's seqGroup /
 triangleGroup share our one group field; the `I0State`-missing flag at
 page+0x5b0 not modelled.
 
+### L9.56 — «Редактор формул», the sheet's formula list page  ·  ✅ (stage B5)
+Read (subagent report): DIALOG 340 (`0x485e30`) copies the record's
+formula list; the list view shows name / formula (25 % / 70 %, full-row
+select, grid lines, no sorting). `UpdateData(TRUE)` with the list changed
+(after every button and kill-active) deletes at once each record channel
+of the list no longer among the rows; kill-active (`0x486d20`) also writes
+the copy into the record's definitions (no recompute). In-place edit only
+by a double click (`0x486850`) on the selection mark's row, the column
+under the pointer; Enter AND Esc commit (`0x486bf0`), as does a click
+elsewhere; column 0 is checked (`0x486a50`): a leading letter (396), not
+a record channel nor another row (473, case-sensitive — confirming a
+computed channel's own name is refused). Buttons never greyed:
+«Загрузить» (`0x414ee0`, *.frm, string 3165: the rows' channels deleted
+first, the file's `name,formula,` lines replace the list, record
+modified), «Сохранить» (`0x415230`, `name,formula,` CR LF, CP1251), ↑ / ↓
+(`0x487210` / `0x4873a0`), «Добавить» (`0x486df0`: DIALOG 359, «Канал%i»
+over the rows, the row appended and selected), «Удалить» (`0x487170`, no
+confirmation), «Удалить все» (`0x487530`). «Рассчитать» on this page:
+kill-active, then `0x415780` over the list — an existing channel of that
+name (exact, else case-insensitive) updated in place (flags, colour
+kept), a new one inserted after the analog channels; no diagram flags;
+on failure the backups are re-applied (created channels stay). «Отмена»
+drops the copy but undoes no deletion.
+Ours: `formula_page` (`FormulaPage`, `fp_*`), `fvb_core::quick::{parse_frm,
+write_frm}`; DIALOG 359's OK appends a row (no longer a channel); the old
+ad-hoc editor (`formula_editor_ui`, `add_computed`) removed. Tests
+`formula_page_edits_the_record_list`, `frm_round_trip`, the DIALOG 359
+test; rendered (`FV_WINDOW_STATE=analysis` adds two formula channels).
+Residual: kill-active does not rewrite our merged channel list (the
+original's definition list changes without a recompute — ours keeps the
+old channel until «Рассчитать»); on an evaluation error ours restores the
+record's formula channels as before (the original re-applies its backups
+and leaves created channels); `.frm` read in the program encoding,
+written CP1251; column hit by pointer x without the scroll offset not
+reproduced; ↑ / ↓ show arrows, not BITMAP 475's icons.
+
 Next in L9 (HANDOFF 2026-10-23): **public at
 github.com/dmytrobsp/fastview-rea, release v0.1.0** (Linux / Windows / macOS
 x86_64 + arm64, flat archives). This session: the four GUI bugs (L9.23–
@@ -1947,8 +1983,9 @@ decimating painter (`FV_WINDOW_XSCALE=f` for `window_dump`); L9.47
 comment texts / moment absolute time (`FV_WINDOW_STATE=comments`); L9.48
 the formula dialog's 396 sequence; L9.49 the finder's delete (recycle bin);
 L9.50 group lanes (`FV_WINDOW_STATE=group`); L9.51 «Быстрый анализ» as a
-modal sheet; L9.52–L9.55 its five generator pages, OK greying and
-per-record persistence (next: the formula list editor page). A
+modal sheet; L9.52–L9.56 its five generator pages, OK greying,
+per-record persistence and the formula list page — the sheet is done
+(residuals in those entries). A
 residual triage (2026-10-23) found many L9.1–L9.14 residuals already done
 (ledger text stale) — next candidates: L9.9 delete → recycle bin, L9.3
 Быстрый анализ as a modal sheet, L9.30 / L9.22 small ones. **Open

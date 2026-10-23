@@ -272,46 +272,6 @@ impl App {
     }
 
     // ---- Быстрый анализ ----
-    pub(crate) fn formula_editor_ui(&mut self, ui: &mut egui::Ui) {
-        ui.label("Расчётный канал по отсчётам (добавляется на осциллограмму):");
-        // «Добавить» of the original's page (`0x486df0`): DIALOG 359.
-        if ui.button("Добавить…").on_hover_text("Добавить новую формулу по шаблону").clicked() {
-            self.open_formula_dlg();
-        }
-        ui.horizontal(|ui| {
-            ui.label("имя");
-            ui.text_edit_singleline(&mut self.formula_name);
-            ui.label("формула");
-            ui.text_edit_singleline(&mut self.formula_text);
-            if ui.button("Добавить канал").clicked() {
-                self.add_computed();
-            }
-        });
-        ui.label(egui::RichText::new("Доступно: имена каналов, + - * / ^, mod:() sqrt:() sin:() cos:() tg:() ctg:()").weak());
-        ui.separator();
-        let mut remove = None;
-        if let Some(d) = self.active_doc() {
-            if d.computed.is_empty() {
-                ui.label("Нет расчётных каналов.");
-            } else {
-                ui.label("Расчётные каналы:");
-                for (i, c) in d.computed.iter().enumerate() {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("⬤").color(c.color));
-                        ui.label(format!("{} = {}", c.name, c.formula));
-                        if ui.small_button("✕").clicked() {
-                            remove = Some(i);
-                        }
-                    });
-                }
-            }
-        }
-        if let (Some(i), Some(d)) = (remove, self.active_doc_mut()) {
-            if i < d.computed.len() {
-                d.computed.remove(i);
-            }
-        }
-    }
 }
 
 fn pane_title(p: Pane) -> &'static str {

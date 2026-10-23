@@ -393,3 +393,52 @@ pub fn evaluate_batch(
     }
     Ok(added)
 }
+
+/// «Загрузить» of the formula editor (`0x414ee0`): the text (already
+/// decoded with the program's code page) as `name,formula,` lines — tab,
+/// space, CR and LF skipped before each line, a line ending at CR or LF,
+/// the name up to the first comma, the formula the rest minus the line's
+/// last character (the trailing comma «Сохранить» writes). No validation.
+pub fn parse_frm(text: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    loop {
+        rest = rest.trim_start_matches(['\t', ' ', '\r', '\n']);
+        if rest.is_empty() {
+            return out;
+        }
+        let end = rest.find(['\r', '\n']).unwrap_or(rest.len());
+        let line = &rest[..end];
+        rest = &rest[end..];
+        let (name, formula) = match line.split_once(',') {
+            Some((n, f)) => {
+                let mut f = f.to_string();
+                f.pop();
+                (n.to_string(), f)
+            }
+            None => (line.to_string(), String::new()),
+        };
+        out.push((name, formula));
+    }
+}
+
+/// «Сохранить» (`0x415230`): one `name,formula,` line per entry, CR LF
+/// (text mode; encoded CP1251 by the caller — the process locale).
+pub fn write_frm(rows: &[(String, String)]) -> String {
+    rows.iter().map(|(n, f)| format!("{n},{f},\r\n")).collect()
+}
+
+#[cfg(test)]
+mod frm_tests {
+    use super::*;
+
+    #[test]
+    fn frm_round_trip() {
+        let rows = vec![("Uab".to_string(), "Ua-Ub".to_string()), ("P".to_string(), "Ua*Ia [W]".to_string())];
+        let text = write_frm(&rows);
+        assert_eq!(text, "Uab,Ua-Ub,\r\nP,Ua*Ia [W],\r\n");
+        assert_eq!(parse_frm(&text), rows);
+        // Leading blanks and empty lines vanish; the last character goes.
+        assert_eq!(parse_frm("\r\n  X,a+b;\n\tY,c"), vec![("X".into(), "a+b".into()), ("Y".into(), "".into())]);
+    }
+}
