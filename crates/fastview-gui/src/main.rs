@@ -118,12 +118,17 @@ fn app_fonts() -> egui::FontDefinitions {
 }
 
 impl App {
-    /// The tabbed-MDI strip: OneNote-style tabs coloured per document, the
-    /// close button on the active tab only, and the ▾ document list.
+    /// The tabbed-MDI strip (`EnableMDITabbedGroups` `0x47293b` with
+    /// OneNote tabs, auto colour, the document menu, the close button on the
+    /// active tab, tab swap left on): tabs coloured per document, the ▾
+    /// document list; a tab dragged over another swaps with it
+    /// (`0x100690b4`).
     fn doc_tabs(&mut self, ui: &mut egui::Ui) {
         let mut activate = None;
         let mut close = None;
         let mut windows = false;
+        let mut dragged = None;
+        let mut tabs: Vec<egui::Rect> = Vec::new();
         ui.horizontal(|ui| {
             ui.add_space(6.0);
             for i in 0..self.docs.len() {
@@ -136,7 +141,10 @@ impl App {
                 let font = egui::FontId::proportional(13.0);
                 let text_w = ui.fonts(|f| f.layout_no_wrap(title.clone(), font.clone(), egui::Color32::BLACK).size().x);
                 let w = text_w + 34.0 + if active { 20.0 } else { 0.0 };
-                let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 22.0), egui::Sense::click());
+                // An id per document: the drag follows the tab when it moves.
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 22.0), egui::Sense::hover());
+                let resp = ui.interact(rect, egui::Id::new(("fv_doc_tab", self.docs[i].serial)), egui::Sense::click_and_drag());
+                tabs.push(rect);
                 let (r, g, b) = app::TAB_COLORS[self.docs[i].tab_color.unwrap_or(0)];
                 let base = egui::Color32::from_rgb(r, g, b);
                 let top = base.lerp_to_gamma(egui::Color32::WHITE, if active { 0.45 } else { 0.25 });
@@ -162,8 +170,12 @@ impl App {
                         close = Some(i);
                     }
                 }
-                if resp.clicked() && close.is_none() {
+                // A press (or a drag) brings the tab to the front.
+                if (resp.clicked() || resp.drag_started()) && close.is_none() {
                     activate = Some(i);
+                }
+                if resp.dragged() {
+                    dragged = Some(i);
                 }
                 ui.add_space(-6.0);
             }
@@ -184,8 +196,18 @@ impl App {
                 });
             });
         });
+        self.doc_tab_rects.clone_from(&tabs);
         if let Some(i) = activate {
             self.dispatch(app::Command::ActivateDoc(i));
+        }
+        // Past the other tab's middle, so tabs of unequal widths do not swap
+        // back and forth.
+        if let (Some(i), Some(at)) = (dragged, ui.ctx().input(|inp| inp.pointer.latest_pos())) {
+            let own = tabs[i].center().x;
+            if let Some(j) = tabs.iter().position(|r| r.contains(at) && (r.center().x > own) == (at.x > r.center().x)).filter(|&j| j != i) {
+                self.docs.swap(i, j);
+                self.active = Some(j);
+            }
         }
         if let Some(i) = close {
             self.dispatch(app::Command::CloseDoc(i));
@@ -824,6 +846,35 @@ mod window_tests {
         w.idle(2);
         assert_eq!(w.app.current_dimension(), fvb_core::model::Dimension::Ohm);
         assert!(drawn(&w, app::Pane::Circle));
+    }
+
+    /// Document tabs (`EnableMDITabbedGroups`, tab swap on): the second
+    /// tab dragged over the first swaps with it and is in front; dragged
+    /// out of the strip it stays where it is (no new tab group: FastView
+    /// keeps MFC's `OnShowMDITabContextMenu`, slot 117).
+    #[test]
+    fn a_document_tab_dragged_over_another_swaps_with_it() {
+        let mut w = Win { ctx: egui::Context::default(), app: demo(&[app::Command::Demo]) };
+        w.idle(3);
+        let serials = |w: &Win| w.app.docs.iter().map(|d| d.serial).collect::<Vec<_>>();
+        let before = serials(&w);
+        assert_eq!(w.app.doc_tab_rects.len(), 2);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let drag = |w: &mut Win, from: Pos2, to: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(from), ev(from, true)]);
+            for k in 1..=6 {
+                w.run(vec![egui::Event::PointerMoved(from + (to - from) * (k as f32 / 6.0))]);
+            }
+            w.run(vec![ev(to, false)]);
+            w.idle(2);
+        };
+        let (a, b) = (w.app.doc_tab_rects[0], w.app.doc_tab_rects[1]);
+        drag(&mut w, b.center(), Pos2::new(a.left() + 8.0, a.center().y));
+        assert_eq!(serials(&w), [before[1], before[0]]);
+        assert_eq!(w.app.active, Some(0), "the dragged tab in front");
+        let a = w.app.doc_tab_rects[0];
+        drag(&mut w, a.center(), a.center() + Vec2::new(0.0, 300.0));
+        assert_eq!(serials(&w), [before[1], before[0]], "out of the strip: no change");
     }
 
     /// `0x100690b4`: a tab dragged along its strip over another swaps with

@@ -1367,7 +1367,7 @@ icon-only small buttons and panel collapse when narrow (L9.27).
     Загрузка настроек, Закрыть, Печать submenu, 10-entry MRU; dev extras
     (Демо, CSV, Archive, .fvb) marked as extensions; QAT = Open/Save/Print,
     Save greyed for .sto — `ribbon.rs`, `persist.rs` — M
-32. ✅ (L9.8; tab colour order beyond the first NOT DETERMINED) Document tabs: auto colour, close on the active tab only, ▾ list, window
+32. ✅ (L9.8; tab colour order beyond the first NOT DETERMINED; L9.108 reorder by drag, no tab groups as read) Document tabs: auto colour, close on the active tab only, ▾ list, window
     title «Механотроника FastView - <doc>» — `main.rs` — S
 33. ✅ (L9.14 + L9.18: non-2007 looks selectable, palettes inferred) Стиль menu (9 entries, radio, persisted, default 215), help split button,
     ribbon minimise via ribbon right-click — `ribbon.rs`, `theme.rs`,

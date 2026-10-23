@@ -851,8 +851,9 @@ read from mfc120u in L9.63 — the assumed OneNote palette was wrong); the 2 s
 splash not implemented (its bitmap 0x1CE is a proprietary asset); single
 instance done in L9.18 (`instance.rs`: loopback port + token file instead of
 the stored HWND / WM_COPYDATA, the newest plain start wins, a file argument
-is handed over and the start exits once accepted); tabs cannot be
-dragged into new tab groups; («Окна...» in the ▾ list: done in L9.64).
+is handed over and the start exits once accepted); (new tab groups: none
+in the original either, tab reordering: L9.108); («Окна...» in the ▾
+list: done in L9.64).
 
 ### L9.9 — «Проводник» as the original's modal finder  ·  🟡
 
@@ -3488,6 +3489,31 @@ below it — L9.3); several containers on one edge are still separate rows;
 a slot's children split in pane order (MFC keeps the split tree it built);
 the caption double-click / pin / drag act on the whole group (as read in
 L9.92) — Ctrl and the animation switch still not modelled.
+
+### L9.108 — Document tabs: MDI tabbed groups as FastView sets them; tabs reorder by dragging  ·  ✅
+Read (by hand): the frame's OnCreate builds a `CMDITabInfo` (MFC
+constructor `0x100b29f6`: location top, style 3, close button, no icons,
+no tooltips, no auto colour, no document menu, tab swap on, flat frame,
+no active-tab close, the manager's border size) and changes style to 4
+(OneNote), no icons, auto colour, document menu and the close button on
+the active tab (`0x47290a`–`0x472933`), then calls ordinal #4367
+(`0x100bb6ad`, which forwards to the MDI client area's tabbed-groups
+enable — its neighbour `0x100bb6bc` is the plain `EnableMDITabs`) with
+TRUE: MDI tabbed groups, tab swap on. The frame's vtable (`0x4cbd00`)
+against `CMDIFrameWndEx`'s overrides slots 0–4, 12, 66, 69, 97, 120, 123,
+126–131, 134, 135 — not slot 117 (`0x100bc637`, `OnShowMDITabContextMenu`:
+returns FALSE unless the allowed items carry the can-be-docked bit 0x10,
+then offers only the «dockable» item −106): a tab dropped outside its
+strip or right-clicked offers no new tab group, so FastView never splits
+the document area into groups.
+Ours had fixed tab order. Now `doc_tabs`: an id per document (its
+serial), a press or drag brings the tab to the front, a drag over another
+tab past its middle swaps them (`0x100690b4`); out of the strip nothing
+happens. `App::doc_tab_rects`. Test
+`a_document_tab_dragged_over_another_swaps_with_it`.
+Residual: MFC moves the cursor to keep the grab offset after a swap
+(ours swaps past the middle instead, as the pane tabs, L9.105); the tab
+border size from the visual manager not compared.
 
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
