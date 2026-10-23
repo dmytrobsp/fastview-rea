@@ -342,6 +342,19 @@ fn chevron(painter: &egui::Painter, rect: Rect) {
     }
 }
 
+/// A DDX edit: single-line; with `focus` it takes the keyboard focus with
+/// its whole text selected (CDataExchange::Fail after a refused value).
+pub fn ddx_edit(ui: &mut egui::Ui, text: &mut String, width: f32, focus: bool) -> egui::Response {
+    let mut out = egui::TextEdit::singleline(text).desired_width(width).show(ui);
+    if focus {
+        out.response.request_focus();
+        let n = text.chars().count();
+        out.state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(n))));
+        out.state.store(ui.ctx(), out.response.id);
+    }
+    out.response
+}
+
 /// MFC 12's DDX_Text of an int (`0x101e0e79`): up to 64 characters of the
 /// window text through `_snwscanf_s` "%d" — leading blanks and a sign,
 /// then at least one digit; anything after the number is ignored ("50.5"

@@ -4456,9 +4456,11 @@ it is not also its answer). Tests `ddx_int_as_scanf`,
 `coefficients_ok_without_edits_changes_nothing`,
 `dialogs_take_enter_and_escape`.
 Residual: ours still refuses a 0 / negative rate in 392 (deliberate —
-what follows such a rate is ND); the failing field's focus and select-all
-after a DDX failure not reproduced; whether the edited cell of 477 is
-always selected ND.
+what follows such a rate is ND); whether the edited cell of 477 is
+always selected ND. Then CDataExchange::Fail's focus: after the message
+box the refused field (392's rate, 353's periods / harmonics) takes the
+focus with its text selected (`dialogs::ddx_edit`,
+`freq_exchange_field`); asserted in `dialogs_take_enter_and_escape`.
 
 ### L9.149 — MFC's pane menu on a diagram pane's caption  ·  ✅
 Read (subagent report on the frame's OnCreate `0x4728d0` — no

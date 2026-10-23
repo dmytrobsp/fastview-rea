@@ -73,6 +73,8 @@ pub struct FreqDialog {
     /// The two int edits as typed (0x3fe NumHarmonics, 0x401 NumPeriods).
     pub harmonics: String,
     pub periods: String,
+    /// The field a refused OK left the focus in (0 periods, 1 harmonics).
+    pub fail: Option<u8>,
 }
 
 /// DIALOG 353's exchange on OK (`0x46ee70`): 0x401 (periods) an int in
@@ -80,7 +82,13 @@ pub struct FreqDialog {
 /// trunc(R/f · 0.5) · periods] — N the record's samples, R rec+0x228, f
 /// the network frequency; the first failure is MFC's message and the
 /// dialog stays (AFX_IDP_PARSE_INT / AFX_IDP_PARSE_INT_RANGE).
+#[cfg(test)]
 pub fn freq_dialog_exchange(periods: &str, harmonics: &str, n: usize, r: f64, f: f64) -> Result<(usize, usize), String> {
+    freq_exchange_field(periods, harmonics, n, r, f).map_err(|e| e.1)
+}
+
+/// [`freq_dialog_exchange`] with the failing field (0 periods, 1 harmonics).
+pub fn freq_exchange_field(periods: &str, harmonics: &str, n: usize, r: f64, f: f64) -> Result<(usize, usize), (u8, String)> {
     let int = |s: &str| crate::dialogs::ddx_int(s).ok_or_else(|| "Введите целое число.".to_string());
     let range = |v: i32, max: i64| {
         if v < 1 || i64::from(v) > max {
@@ -90,8 +98,8 @@ pub fn freq_dialog_exchange(periods: &str, harmonics: &str, n: usize, r: f64, f:
         }
     };
     let spp = (r as u32).checked_div(f as u32).filter(|&s| s > 0).unwrap_or(1);
-    let p = range(int(periods)?, (n as u32 / spp) as i64)?;
-    let h = range(int(harmonics)?, i64::from((r / f * 0.5) as i32) * p as i64)?;
+    let p = int(periods).and_then(|v| range(v, (n as u32 / spp) as i64)).map_err(|m| (0u8, m))?;
+    let h = int(harmonics).and_then(|v| range(v, i64::from((r / f * 0.5) as i32) * p as i64)).map_err(|m| (1u8, m))?;
     Ok((p, h))
 }
 
@@ -790,6 +798,7 @@ impl App {
                     use_rms: self.freq_use_rms,
                     harmonics: self.freq_harmonics.to_string(),
                     periods: self.freq_periods.to_string(),
+                    fail: None,
                 })
             }
         }
@@ -1508,6 +1517,11 @@ impl App {
     /// normalisation radios are disabled with absolute values (`0x46ee20`).
     fn freq_dialog_ui(&mut self, ctx: &egui::Context) {
         let Some(mut dlg) = self.diag.freq_dlg.take() else { return };
+        // After the message box: the failing field, its text selected.
+        let focus = dlg.fail.filter(|_| self.dlg.alerts.is_empty());
+        if focus.is_some() {
+            dlg.fail = None;
+        }
         let mut done: Option<bool> = None;
         egui::Window::new("Настройки частотной диаграммы").collapsible(false).resizable(false).show(ctx, |ui| {
             ui.group(|ui| {
@@ -1526,10 +1540,10 @@ impl App {
                 ui.label("Расчет значений");
                 egui::Grid::new("freq_calc").num_columns(2).show(ui, |ui| {
                     ui.label("Число гармоник:");
-                    ui.add(egui::TextEdit::singleline(&mut dlg.harmonics).desired_width(60.0));
+                    crate::dialogs::ddx_edit(ui, &mut dlg.harmonics, 60.0, focus == Some(1));
                     ui.end_row();
                     ui.label("Число обрабатываемых периодов:");
-                    ui.add(egui::TextEdit::singleline(&mut dlg.periods).desired_width(60.0));
+                    crate::dialogs::ddx_edit(ui, &mut dlg.periods, 60.0, focus == Some(0));
                     ui.end_row();
                 });
             });
@@ -1552,17 +1566,18 @@ impl App {
 
     /// OK of DIALOG 353: the exchange as read, or the message with the
     /// dialog kept.
-    fn apply_freq_dialog(&mut self, dlg: FreqDialog) {
+    fn apply_freq_dialog(&mut self, mut dlg: FreqDialog) {
         let (n, r, f) = self.active_doc().map_or((usize::MAX, 0.0, 50.0), |d| (d.osc.sample_count(), d.osc.rate_r, d.osc.line_freq));
-        match freq_dialog_exchange(&dlg.periods, &dlg.harmonics, n, r, f) {
+        match freq_exchange_field(&dlg.periods, &dlg.harmonics, n, r, f) {
             Ok((p, h)) => {
                 self.freq_percent = dlg.percent;
                 self.freq_use_rms = dlg.use_rms;
                 self.freq_periods = p;
                 self.freq_harmonics = h;
             }
-            Err(m) => {
+            Err((field, m)) => {
                 self.dlg.push_alert(m);
+                dlg.fail = Some(field);
                 self.diag.freq_dlg = Some(dlg);
             }
         }

@@ -966,6 +966,7 @@ mod window_tests {
         assert!(w.app.diag.freq_dlg.is_some() && w.app.dlg.alerts.len() == 1, "OK refused with a message");
         w.key(egui::Key::Enter);
         assert!(w.app.dlg.alerts.is_empty() && w.app.diag.freq_dlg.is_some(), "the box closes, the dialog stays");
+        assert!(w.ctx.memory(|m| m.focused()).is_some(), "the refused field has the focus (CDataExchange::Fail)");
         w.key(egui::Key::Escape);
         assert!(w.app.diag.freq_dlg.is_none() && w.app.dlg.alerts.is_empty(), "Esc cancels");
     }

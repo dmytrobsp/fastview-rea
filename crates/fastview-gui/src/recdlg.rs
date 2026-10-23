@@ -72,6 +72,8 @@ impl Default for DialogState {
 pub struct FileParamsDlg {
     pub rate_text: String,
     pub correction: usize,
+    /// A refused rate: the field takes the focus again (CDataExchange::Fail).
+    pub fail: bool,
 }
 
 /// DIALOG 510 edits (applied on OK).
@@ -416,6 +418,7 @@ impl App {
             rate_text: format!("{}", self.docs[ai].osc.rate_r),
             // CB_SETCURSEL `rec+0x874` (0 with no candidate, `0x449efd`).
             correction: if fvb_core::freqcorr::candidate_names(&self.docs[ai].osc).is_empty() { 0 } else { self.docs[ai].osc.freq_sel.max(0) as usize },
+            fail: false,
         });
         let mut open = true;
         let mut apply = false;
@@ -451,7 +454,11 @@ impl App {
                     ui.end_row();
                     ui.label("Частота дискретизации:");
                     ui.horizontal(|ui| {
-                        ui.add(egui::TextEdit::singleline(&mut st.rate_text).desired_width(228.0));
+                        let focus = st.fail && self.dlg.alerts.is_empty();
+                        if focus {
+                            st.fail = false;
+                        }
+                        crate::dialogs::ddx_edit(ui, &mut st.rate_text, 228.0, focus);
                         ui.menu_button("▾", |ui| {
                             for r in rate_list(o.line_freq) {
                                 if ui.button(r.to_string()).clicked() {
@@ -521,6 +528,7 @@ impl App {
                 None => {
                     // AFX_IDP_PARSE_INT; the dialog stays.
                     self.dlg.push_alert("Введите целое число.");
+                    st.fail = true;
                     self.dlg.file_params = Some(st);
                     return;
                 }
