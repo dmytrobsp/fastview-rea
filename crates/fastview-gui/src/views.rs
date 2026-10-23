@@ -20,20 +20,21 @@ impl App {
     /// strip on its edge; captions carry the pin and a close button that
     /// hides. Call before the central view.
     pub fn diagram_panes(&mut self, ctx: &egui::Context) {
-        use crate::docking::{Place, Spot};
+        use crate::docking::Place;
         self.pane_canvas.clear();
         self.pane_tab_rects.clear();
         self.pane_grid.clear();
         self.dock_client = ctx.available_rect();
         let dim = self.current_dimension();
         let views = self.dock_views();
-        // The strips sit outermost, then the containers (edge-marker docks
-        // outside the document area's ones).
+        // The strips sit outermost, then the containers.
         self.auto_hide_strips(ctx, &views);
         self.dock_rects = [None; 4];
         let shown = self.groups_shown();
         let mut roots: Vec<DockView> = views.iter().copied().filter(|v| self.docks[v.unit].place == Place::Docked && self.docks.parent(v.unit, |u| shown[u as usize]).is_none()).collect();
-        roots.sort_by_key(|v| !matches!(self.docks[v.unit].spot, Spot::Edge { outer: true, .. }));
+        // In the docking manager's list order: each block spans the space
+        // the earlier ones left (`AdjustDockingLayout` `0x1008cd55`).
+        roots.sort_by_key(|v| self.docks[v.unit].order);
         for r in roots {
             self.dock_container(ctx, r, &views);
         }

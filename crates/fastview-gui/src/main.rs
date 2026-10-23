@@ -1072,7 +1072,7 @@ mod window_tests {
             // (the markers, the hot centre's preview — hover the pane);
             // Дифференциальная on its own beside the group (`docksplit`).
             "dockleft" => app.docks[docking::Unit::Vector].spot = docking::Spot::Edge { edge: docking::Edge::Left, outer: true },
-            "dockbottom" => app.docks[docking::Unit::Frequency].spot = docking::Spot::Edge { edge: docking::Edge::Bottom, outer: true },
+            "dockbottom" => app.docks.drop_on(docking::Unit::Frequency, docking::Drop::Edge(docking::Edge::Bottom, true), None, 200.0),
             "docktab" => {
                 app.docks[docking::Unit::Frequency].spot = docking::Spot::Tab(docking::Unit::Vector);
                 app.dispatch(app::Command::ActivatePane(app::Pane::Frequency));

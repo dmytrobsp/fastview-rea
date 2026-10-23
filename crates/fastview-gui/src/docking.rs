@@ -205,6 +205,11 @@ pub struct Dockable {
     /// (a new panel takes the new size).
     pub extent: Option<f32>,
     pub gen: u32,
+    /// Its block's place in the docking manager's list (L9.109): blocks
+    /// are laid out in ascending order, each spanning the space the
+    /// earlier ones left. An outer-edge drop goes before every pane block
+    /// (`AddPane` `0x1008b521`), an inner one after them (`0x10061335`).
+    pub order: i32,
     /// `RectRecentFloat` (`+0x1d8`): where it floats; None until it first
     /// floats — then the create rect at the frame's client top-left.
     pub float_rect: Option<Rect>,
@@ -220,7 +225,7 @@ pub struct Dockable {
 
 impl Dockable {
     pub fn new(create: Vec2, spot: Spot) -> Dockable {
-        Dockable { place: Place::Docked, spot, extent: None, gen: 0, float_rect: None, create, out: false, slide: 0.0, hover_since: None, next_check: 0.0 }
+        Dockable { place: Place::Docked, spot, extent: None, gen: 0, order: 0, float_rect: None, create, out: false, slide: 0.0, hover_since: None, next_check: 0.0 }
     }
 
     /// The recent floating rect, or the create rect at `origin`.
@@ -402,8 +407,19 @@ impl Docks {
                 }
             }
         }
+        let order = match spot {
+            Spot::Edge { outer, .. } => {
+                let (lo, hi) = (self.0.iter().map(|d| d.order).min().unwrap_or(0), self.0.iter().map(|d| d.order).max().unwrap_or(0));
+                if outer {
+                    lo - 1
+                } else {
+                    hi + 1
+                }
+            }
+            _ => self[u].order,
+        };
         let d = &mut self[u];
-        (d.spot, d.place) = (spot, Place::Docked);
+        (d.spot, d.place, d.order) = (spot, Place::Docked, order);
         if drop != Drop::Tab {
             (d.extent, d.gen) = (Some(extent), d.gen + 1);
         }
@@ -429,9 +445,9 @@ impl Docks {
                         self[c].spot = Spot::Beside(taker, s);
                     }
                 }
-                let spot = self[u].spot;
+                let (spot, order) = (self[u].spot, self[u].order);
                 let t = &mut self[taker];
-                (t.spot, t.extent, t.gen) = (spot, Some(container), t.gen + 1);
+                (t.spot, t.extent, t.gen, t.order) = (spot, Some(container), t.gen + 1, order);
                 let d = &mut self[u];
                 (d.spot, d.extent, d.gen) = (Spot::Beside(taker, side.opposite()), Some(share), d.gen + 1);
             }
@@ -461,7 +477,7 @@ impl Docks {
                 }
             }
             let n = &mut self[next];
-            (n.spot, n.extent, n.gen, n.place, n.out, n.slide) = (r.spot, r.extent, n.gen + 1, r.place, r.out, r.slide);
+            (n.spot, n.extent, n.gen, n.place, n.out, n.slide, n.order) = (r.spot, r.extent, n.gen + 1, r.place, r.out, r.slide, r.order);
             if r.place == Place::Floating {
                 n.float_rect = r.float_rect;
             }
@@ -513,6 +529,7 @@ pub fn store(unit: &str, d: &Dockable, v: &mut std::collections::HashMap<String,
         Some(e) => v.insert(format!("Workspace/{unit}/RecentDockedSize"), e.to_string()),
         None => v.remove(&format!("Workspace/{unit}/RecentDockedSize")),
     };
+    v.insert(format!("Workspace/{unit}/DockOrder"), d.order.to_string());
     match d.float_rect {
         Some(r) => v.insert(format!("Workspace/{unit}/RectRecentFloat"), format!("{} {} {} {}", r.left(), r.top(), r.right(), r.bottom())),
         None => v.remove(&format!("Workspace/{unit}/RectRecentFloat")),
@@ -529,6 +546,7 @@ pub fn restore(unit: &str, d: &mut Dockable, v: &std::collections::HashMap<Strin
     };
     d.float_rect = v.get(&format!("Workspace/{unit}/RectRecentFloat")).and_then(|s| parse_rect(s));
     d.extent = v.get(&format!("Workspace/{unit}/RecentDockedSize")).and_then(|s| s.parse().ok());
+    let order = v.get(&format!("Workspace/{unit}/DockOrder")).and_then(|s| s.parse().ok());
     let words: Vec<&str> = v.get(&format!("Workspace/{unit}/Spot")).map_or(Vec::new(), |s| s.split_whitespace().collect());
     match words[..] {
         ["edge", e, o] => {
@@ -558,6 +576,12 @@ pub fn restore(unit: &str, d: &mut Dockable, v: &std::collections::HashMap<Strin
         }
         _ => {}
     }
+    // Without an order (an L9.98 workspace): outer blocks first.
+    d.order = order.unwrap_or(match d.spot {
+        Spot::Edge { outer: true, .. } => -1,
+        Spot::Edge { outer: false, .. } => 1,
+        _ => 0,
+    });
     if d.place == Place::Floating && d.float_rect.is_none() {
         d.place = Place::Docked;
     }
@@ -758,5 +782,24 @@ mod tests {
         let mut back = Docks::default();
         back.restore_all(&w);
         assert_eq!(back, d);
+    }
+
+    /// Edge drops (`0x1008bc77`, `AddPane` `0x1008b521`): an outer one
+    /// goes before every pane block, an inner one after them; a group
+    /// taking a container takes its place in the list.
+    #[test]
+    fn edge_blocks_in_docking_order() {
+        let mut d = Docks::default();
+        d.drop_on(Unit::Frequency, Drop::Edge(Edge::Bottom, true), None, 200.0);
+        d.drop_on(Unit::Circle, Drop::Edge(Edge::Left, false), None, 300.0);
+        d.drop_on(Unit::Differential, Drop::Edge(Edge::Top, true), None, 150.0);
+        let mut by: Vec<Unit> = UNITS.to_vec();
+        by.sort_by_key(|&u| d[u].order);
+        assert_eq!(by, [Unit::Differential, Unit::Frequency, Unit::Vector, Unit::Circle], "newest outer outermost, inner innermost");
+        let mut v = std::collections::HashMap::new();
+        d.store_all(&mut v);
+        let mut back = Docks::default();
+        back.restore_all(&v);
+        assert!(UNITS.iter().all(|&u| back[u].order == d[u].order));
     }
 }

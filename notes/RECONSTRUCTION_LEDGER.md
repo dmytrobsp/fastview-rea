@@ -3515,6 +3515,33 @@ Residual: MFC moves the cursor to keep the grab offset after a swap
 (ours swaps past the middle instead, as the pane tabs, L9.105); the tab
 border size from the visual manager not compared.
 
+### L9.109 — Edge-docked blocks in the docking manager's order  ·  ✅
+Read (subagent report on mfc120u; the 4 px static by hand from its
+report's address): a drop on a frame-edge marker (`DockPane` `0x10088cdc`
+→ `0x1008bc77`, markers 0–3 outer, 4–7 the document area's arrows,
+`CheckAlignment` `0x100a8695`) calls `DockToFrameWindow` `0x10088f61`,
+which always makes a new block (a default pane divider with its
+container, `0x1008860c`) — never a row of a `CDockSite`, never an existing
+block; an outer drop inserts the block before every pane block of the
+manager's list (`AddPane` `0x1008b521`, just inside the toolbar rows,
+status bar and auto-hide sites), an inner one appends it (`0x10061335`;
+the start-up docking too, `0x1008be35`); `AdjustDockingLayout`
+`0x1008cd55` lays the list out in order, each block keeping its thickness
+along its edge and spanning the space the earlier ones left; the divider
+is 4 px on the block's inner side (`0x102a10a8`, ordinal 8529, not
+imported by FastView).
+Ours sorted the containers outer first, otherwise by pane. Now
+`Dockable::order` (an outer drop below every order, an inner one above;
+a group taking a container takes its order; saved as
+`Workspace/<Pane>/DockOrder`, an older workspace ordered by its outer
+flag); `diagram_panes` lays the containers out in that order.
+`FV_WINDOW_STATE=dockbottom` is now a real outer drop (Частотная spans
+the frame's width under the group's column). Test
+`edge_blocks_in_docking_order`.
+Residual: the divider is egui's resize grip (not a 4 px bar); its drag
+limits NOT DETERMINED; groups docked beside one another inside a block
+(`DockToWindow`) keep our nested split (L9.107).
+
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -3574,8 +3601,10 @@ the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
 (Done 2026-10-23 late: the four panes as units of their own and the tab
-show / hide rules — L9.107; 364 tests.) **RECOMMENDED NEXT:** several
-panes in one dock row (L9.101 / L9.107 residual); then: the marker bitmaps (ours drawn); L9.97 the main panel's row height
+show / hide rules — L9.107; document tabs reorder, no tab groups as read —
+L9.108; edge blocks in the docking manager's order — L9.109, which
+settles "several panes in one dock row": MFC makes a block per edge drop
+too.) Then: the marker bitmaps (ours drawn); L9.97 the main panel's row height
 / image margins; L9.100 large / collapsed button sizes; L9.64 MDI arrangements under tabs (likely
 leave as no-ops); L9.22 / L9.84 CUPS hardware margins; L9.90 Alt+key
 while held and the Recent Documents' keys; the backlog §9 items 15 / 35 /
