@@ -215,7 +215,8 @@ impl App {
                     let font = egui::FontId::proportional(13.0);
                     let g = ui.painter().layout_no_wrap(self.window_title.clone(), font, Color32::BLACK);
                     let w = g.size().x.min(free.width());
-                    let x = (free.center().x - w / 2.0).max(free.left());
+                    // The style's TextCenter: off for Aqua (left-aligned).
+                    let x = if self.skin == Skin::Aqua { free.left() + 4.0 } else { (free.center().x - w / 2.0).max(free.left()) };
                     ui.painter().with_clip_rect(free).galley(egui::pos2(x, free.center().y - g.size().y / 2.0), g, Color32::BLACK);
                 });
             }

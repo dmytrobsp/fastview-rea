@@ -4512,7 +4512,9 @@ corners) while not maximised; «Стиль» / «?» on the right of the tab row
 (spec §2.5). `App::own_caption`, `ribbon::caption_buttons`,
 `App::resize_edges`; `FV_WINDOW_CAPTION=1` renders it. Rendered Office
 2007 Blue and Windows 2000.
-Residual: the title's Aqua left alignment, the QAT's glass frame
+The Aqua look left-aligns the title (its TextCenter off — the glass path
+taking it too is INFERRED).
+Residual: the QAT's glass frame
 (RIBBON_CAPTION_QA_GLASS), the DWM drop shadow / Aero snap of a real
 frame, the maximised offset (SM_CYFRAME / 2 + 2) not reproduced; the
 title's glow on glass; on a tiling window manager the buttons may do
