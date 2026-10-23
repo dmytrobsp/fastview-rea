@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 303 pass)
+- `cargo test --workspace`   (currently 305 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -1883,6 +1883,43 @@ reset to Полусумма) and the «Kторм:» {1, 0.5} combo for Полу�
 Residual: the per-arm default radios and the reduction edits' defaults
 NOT DETERMINED (ours: Kприв, «1.»); grouping not dialog units.
 
+### L9.55 — Sheet pages keep their own fields and persist in the `.set`  ·  ✅ (stage B4)
+Read (subagent; DIALOG 539's edit ids mapped by hand from the template:
+R0 Kприв, R1 Kттбаз, R2 Kтт (ТТ), R3 Kтт (мощность), R4 Kтт (ном. ток),
+R5 Sном, R6 Iном, X0 Uном): a page created (first shown) gets-or-creates
+its category under doc+0x300 (`0x48dc80`) and loads it (`0x48b690` → vslot
+0x1d4); every created page saves (vslot 0x1d8) on BOTH «Рассчитать» and
+«Отмена»; no SetModifiedFlag (the tree reaches disk with the `.set`).
+Combos: a child `<KEY channelName="text"/>` (flag 1, created on load too)
+or a flat attribute (539's counts / Kторм / per-leg); load applies a
+non-empty name the list has (case-insensitive), selecting the FIRST item
+that starts with it; edits raw text, non-empty only; checks `%i`, missing
+→ untouched, forced first radio when none is set. Keys per page — 536
+SymmetricItemsPage IA…UBC + currOffState voltOffState calcIBState
+phaseVoltState lineVoltState; 537 NullSequencePage IA…UC 3I0_0 UNI UIK
+3U0 + calcCurrState measuredCurrState calcUABCState calcUniUicState
+measuredVoltState currOffState voltOffState; 538 InterPhaseResistPage
+itr (lowercase) + combos + phase/line/calcIB; 543 PhaseResistPage R0 R1
+X0 X1 K0 F0 RM XM KM FM ITR (uppercase) + combos + 3I0n + specificState
+compensateState; 539 DiffCurrentsPage legOption / groupConnOption /
+brakeCurrOption children, legCount phaseCount brakeCoeff (item texts),
+Leg_0… (IA IB IC seqGroup triangleGroup R0–R6 X0 I0State) loaded into
+the SAME controls one after another (a missing value keeps the previous
+arm's), higher Leg_ nodes never removed; FormulaEditorPage stubs (only
+the empty category).
+Ours: `App::quick` is one `QuickForms` per page (`page_index`); 
+`quick_show_page` / `quick_save_pages`, `load_page` / `save_page`
+(`PAGE_KEYS`); the formula page creates its empty category. Tests
+`symmetric_page_round_trips_through_the_set`,
+`differential_page_legs_inherit_missing_values`, the sheet test.
+Residual: our change detector compares the whole tree (L9.17), so page
+edits surface as modified at close like any tree change — whether the
+original's detector sees these categories NOT DETERMINED; per-arm option
+radios saved from arm 1 (the original saves after re-selecting arm 1 —
+which state the option nodes then hold is inferred); 539's seqGroup /
+triangleGroup share our one group field; the `I0State`-missing flag at
+page+0x5b0 not modelled.
+
 Next in L9 (HANDOFF 2026-10-23): **public at
 github.com/dmytrobsp/fastview-rea, release v0.1.0** (Linux / Windows / macOS
 x86_64 + arm64, flat archives). This session: the four GUI bugs (L9.23–
@@ -1910,9 +1947,8 @@ decimating painter (`FV_WINDOW_XSCALE=f` for `window_dump`); L9.47
 comment texts / moment absolute time (`FV_WINDOW_STATE=comments`); L9.48
 the formula dialog's 396 sequence; L9.49 the finder's delete (recycle bin);
 L9.50 group lanes (`FV_WINDOW_STATE=group`); L9.51 «Быстрый анализ» as a
-modal sheet; L9.52–L9.54 its five generator pages + OK greying (next:
-per-record persistence in the `.set`, the formula list editor — read in
-VIEWS_SPEC). A
+modal sheet; L9.52–L9.55 its five generator pages, OK greying and
+per-record persistence (next: the formula list editor page). A
 residual triage (2026-10-23) found many L9.1–L9.14 residuals already done
 (ledger text stale) — next candidates: L9.9 delete → recycle bin, L9.3
 Быстрый анализ as a modal sheet, L9.30 / L9.22 small ones. **Open

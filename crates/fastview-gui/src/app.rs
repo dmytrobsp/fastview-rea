@@ -854,8 +854,10 @@ pub struct App {
     pub analysis_tab: AnalysisTab,
     /// The «Быстрый анализ» sheet is up.
     pub quick_open: bool,
+    /// Pages created (shown) since the sheet opened ([`crate::quick_ui::PAGE_KEYS`] order).
+    pub quick_shown: [bool; 6],
     /// Quick-analysis forms (one per tab).
-    pub quick: crate::quick_ui::QuickForms,
+    pub quick: [crate::quick_ui::QuickForms; 5],
     /// ОМП result bar, parameters dialog and message box.
     pub omp_ui: crate::omp_ui::OmpUi,
     /// The settings-file prompts and sync (`setfile`).
@@ -1002,6 +1004,7 @@ impl App {
             freq_use_rms: false,
             analysis_tab: AnalysisTab::Formula,
             quick_open: false,
+            quick_shown: [false; 6],
             quick: Default::default(),
             omp_ui: Default::default(),
             setfile: Default::default(),
@@ -1166,7 +1169,9 @@ impl App {
                 if self.active_doc().is_some_and(|d| !d.osc.analog.is_empty()) {
                     self.analysis_tab = AnalysisTab::Formula;
                     self.quick_open = true;
+                    self.quick_shown = [false; 6];
                     self.quick_defaults();
+                    self.quick_show_page();
                 }
             }
             Command::OmpAnalysis => self.omp_toggle(),
@@ -1893,8 +1898,15 @@ mod tests {
         assert!(app.active_doc().unwrap().computed.is_empty());
         app.dispatch(Command::QuickAnalysis);
         app.analysis_tab = AnalysisTab::Symmetric;
+        app.quick_show_page();
         app.quick_calc();
-        assert!(!app.active_doc().unwrap().computed.is_empty());
+        let d = app.active_doc().unwrap();
+        assert!(!d.computed.is_empty());
+        // The pages shown got their `.set` categories; the shown generator
+        // page saved its fields.
+        assert!(d.set.tree.section("FormulaEditorPage").is_some());
+        assert!(d.set.tree.section("SymmetricItemsPage").unwrap().child("IA").is_some());
+        assert!(d.set.tree.section("NullSequencePage").is_none(), "never shown, never created");
     }
 
     #[test]
@@ -2050,13 +2062,14 @@ mod tests {
     fn quick_zero_tab_generates_flagged_channels() {
         let mut app = demo_app();
         app.analysis_tab = AnalysisTab::Zero;
-        app.quick.ia = "Ia".into();
-        app.quick.ib = "Ib".into();
-        app.quick.ic = "Ic".into();
-        app.quick.ua = "Ua".into();
-        app.quick.ub = "Ub".into();
-        app.quick.uc = "Uc".into();
-        let g = app.quick.generate(AnalysisTab::Zero);
+        let q = &mut app.quick[crate::quick_ui::page_index(AnalysisTab::Zero).unwrap()];
+        q.ia = "Ia".into();
+        q.ib = "Ib".into();
+        q.ic = "Ic".into();
+        q.ua = "Ua".into();
+        q.ub = "Ub".into();
+        q.uc = "Uc".into();
+        let g = q.generate(AnalysisTab::Zero);
         app.apply_quick(&g);
         let d = app.active_doc().unwrap();
         let get = |n: &str| d.computed.iter().find(|c| c.name == n).unwrap();
@@ -2065,7 +2078,7 @@ mod tests {
         assert_eq!(app.vec_angle_ref.as_deref(), Some("3U0"));
         assert_eq!(app.circle_readout, 1);
         // Applying again renames and toggles the new channels' flags.
-        let g = app.quick.generate(AnalysisTab::Zero);
+        let g = app.quick[crate::quick_ui::page_index(AnalysisTab::Zero).unwrap()].generate(AnalysisTab::Zero);
         app.apply_quick(&g);
         let d = app.active_doc().unwrap();
         assert!(d.computed.iter().any(|c| c.name == "3I0_2"));

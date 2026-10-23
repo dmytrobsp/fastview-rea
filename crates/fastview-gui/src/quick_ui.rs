@@ -3,6 +3,7 @@
 
 use crate::app::{AnalysisTab, App};
 use eframe::egui;
+use fvb_core::recset::SetNode;
 use fvb_core::quick::{self, Arm, Braking, Currents, GroupComp, PhaseComp, Reduction, Voltages, ZeroCurrent, ZeroVoltage};
 
 /// Form state of every tab.
@@ -329,10 +330,12 @@ impl App {
             d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).find(|n| n.to_lowercase() == want).unwrap_or_default()
         };
         let (i3o, u3o, i0n) = (named("3i0"), named("3u0"), named("3i0n"));
-        let f = &mut self.quick;
-        for (slot, v) in [(&mut f.ua, ua), (&mut f.ub, ub), (&mut f.uc, uc), (&mut f.ia, ia), (&mut f.ib, ib), (&mut f.ic, ic), (&mut f.i3o, i3o), (&mut f.u3o, u3o), (&mut f.i0_parallel, i0n)] {
-            if slot.is_empty() {
-                *slot = v;
+        for f in &mut self.quick {
+            let vals = [&ua, &ub, &uc, &ia, &ib, &ic, &i3o, &u3o, &i0n];
+            for (slot, v) in [&mut f.ua, &mut f.ub, &mut f.uc, &mut f.ia, &mut f.ib, &mut f.ic, &mut f.i3o, &mut f.u3o, &mut f.i0_parallel].into_iter().zip(vals) {
+                if slot.is_empty() {
+                    slot.clone_from(v);
+                }
             }
         }
     }
@@ -373,6 +376,7 @@ impl App {
                                 let r = ui.add_sized([150.0, 58.0], egui::SelectableLabel::new(sel, text));
                                 if r.clicked() {
                                     self.analysis_tab = tab;
+                                    self.quick_show_page();
                                 }
                             }
                         });
@@ -394,7 +398,7 @@ impl App {
                     ui.separator();
                     ui.allocate_ui_with_layout(egui::Vec2::new(ui.available_width(), 26.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         cancel = ui.add_sized([80.0, 22.0], egui::Button::new("Отмена")).clicked();
-                        let ok = self.quick.ok_enabled(self.analysis_tab);
+                        let ok = page_index(self.analysis_tab).is_none_or(|i| self.quick[i].ok_enabled(self.analysis_tab));
                         calc = ui.add_enabled(ok, egui::Button::new("Рассчитать").min_size(egui::Vec2::new(80.0, 22.0))).clicked();
                     });
                 });
@@ -405,17 +409,46 @@ impl App {
         if calc {
             self.quick_calc();
         } else if cancel || !open {
+            self.quick_save_pages();
             self.quick_open = false;
+        } else {
+            self.quick_show_page();
+        }
+    }
+
+    /// A page shown for the first time is created: its `.set` category is
+    /// got-or-created (`0x48dc80`) and loaded into it (`0x48b690`).
+    pub fn quick_show_page(&mut self) {
+        let k = page_index(self.analysis_tab).unwrap_or(5);
+        if self.quick_shown[k] {
+            return;
+        }
+        self.quick_shown[k] = true;
+        let Some(d) = self.active.and_then(|i| self.docs.get_mut(i)) else { return };
+        let items: Vec<String> = d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect();
+        let sec = d.set.tree.section_mut(PAGE_KEYS[k]);
+        if k < 5 {
+            load_page(k, &mut self.quick[k], sec, &items);
+        }
+    }
+
+    /// Every created page saves (OnOK `0x48b710` / OnCancel `0x48b770`);
+    /// the record is not marked modified.
+    fn quick_save_pages(&mut self) {
+        let Some(d) = self.active.and_then(|i| self.docs.get_mut(i)) else { return };
+        for k in (0..5).filter(|&k| self.quick_shown[k]) {
+            save_page(k, &self.quick[k], d.set.tree.section_mut(PAGE_KEYS[k]));
         }
     }
 
     /// «Рассчитать» (`0x48b710` → `0x48c0e0`): the active page's channels
     /// (the formula editor's list is already the record's), then close.
     pub fn quick_calc(&mut self) {
-        if self.analysis_tab != AnalysisTab::Formula {
-            let g = self.quick.generate(self.analysis_tab);
+        if let Some(i) = page_index(self.analysis_tab) {
+            let g = self.quick[i].generate(self.analysis_tab);
             self.apply_quick(&g);
         }
+        self.quick_save_pages();
         self.quick_open = false;
     }
 
@@ -426,7 +459,8 @@ impl App {
         let names: Vec<String> =
             d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect();
         let tab = self.analysis_tab;
-        let f = &mut self.quick;
+        let Some(i) = page_index(tab) else { return };
+        let f = &mut self.quick[i];
         match tab {
             AnalysisTab::Symmetric => symmetric_page(ui, f, &names, false),
             AnalysisTab::PhasePhase => symmetric_page(ui, f, &names, true),
@@ -752,6 +786,284 @@ fn differential_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
     });
 }
 
+/// The `.set` category of each page (`0x48b690` → vslot 0x1dc), in
+/// [`page_index`] order, then the formula editor's.
+pub const PAGE_KEYS: [&str; 6] = ["SymmetricItemsPage", "NullSequencePage", "InterPhaseResistPage", "PhaseResistPage", "DiffCurrentsPage", "FormulaEditorPage"];
+
+/// Combo load (`0x414780`): a non-empty stored text that the list has
+/// (case-insensitively) selects the first item STARTING with it (the
+/// combo's prefix search); anything else leaves the selection.
+fn load_text(stored: Option<&String>, items: &[String], slot: &mut String) {
+    let Some(v) = stored.filter(|v| !v.is_empty()) else { return };
+    let lv = v.to_lowercase();
+    if items.iter().any(|n| n.to_lowercase() == lv) {
+        if let Some(n) = items.iter().find(|n| n.to_lowercase().starts_with(&lv)) {
+            slot.clone_from(n);
+        }
+    }
+}
+
+/// A channel combo kept in a child node `key` as `channelName` (flag 1;
+/// the child is created on load too).
+fn load_chan(sec: &mut SetNode, key: &str, items: &[String], slot: &mut String) {
+    let c = sec.child_mut(key);
+    load_text(c.attrs.get("channelName"), items, slot);
+}
+
+fn save_chan(sec: &mut SetNode, key: &str, slot: &str) {
+    sec.child_mut(key).set_str("channelName", slot);
+}
+
+/// An edit (`0x4149f0`): only a non-empty stored text is applied.
+fn load_edit(sec: &SetNode, key: &str, slot: &mut String) {
+    if let Some(v) = sec.attrs.get(key).filter(|v| !v.is_empty()) {
+        slot.clone_from(v);
+    }
+}
+
+/// A check / radio: `%i`, missing → `None` (the control is left alone).
+fn load_check(sec: &SetNode, key: &str) -> Option<bool> {
+    sec.attrs.get(key).map(|v| fvb_core::recset::wtoi(v) != 0)
+}
+
+fn save_check(sec: &mut SetNode, key: &str, on: bool) {
+    sec.set_int(key, i32::from(on));
+}
+
+const CHAN_KEYS: [&str; 8] = ["IA", "IB", "IC", "UA", "UB", "UC", "UAB", "UBC"];
+
+fn chan_slots(f: &mut QuickForms) -> [&mut String; 8] {
+    [&mut f.ia, &mut f.ib, &mut f.ic, &mut f.ua, &mut f.ub, &mut f.uc, &mut f.uab, &mut f.ubc]
+}
+
+/// Page `i`'s load from its `.set` category (vslot 0x1d4: 536 `0x48ce30`,
+/// 537 `0x4897f0`, 538 `0x487f50`, 543 `0x48ac90`, 539 `0x4841c0`), with
+/// the forced radio defaults when none is stored.
+pub fn load_page(i: usize, f: &mut QuickForms, sec: &mut SetNode, items: &[String]) {
+    match i {
+        0 | 2 => {
+            if i == 2 {
+                load_edit(sec, "itr", &mut f.itr);
+            }
+            let keys = CHAN_KEYS;
+            for (k, slot) in keys.iter().zip(chan_slots(f)) {
+                load_chan(sec, k, items, slot);
+            }
+            if i == 0 {
+                if let Some(v) = load_check(sec, "currOffState") {
+                    f.currents_off = v;
+                }
+                if let Some(v) = load_check(sec, "voltOffState") {
+                    f.voltages_off = v;
+                }
+            }
+            if let Some(v) = load_check(sec, "calcIBState") {
+                f.calc_ib = v;
+            }
+            let phase = load_check(sec, "phaseVoltState") == Some(true);
+            let line = load_check(sec, "lineVoltState") == Some(true);
+            f.line_voltages = !phase && line;
+        }
+        1 => {
+            for (k, slot) in CHAN_KEYS[..6].iter().zip(chan_slots(f)) {
+                load_chan(sec, k, items, slot);
+            }
+            load_chan(sec, "3I0_0", items, &mut f.i3o);
+            load_chan(sec, "UNI", items, &mut f.uni);
+            load_chan(sec, "UIK", items, &mut f.uik);
+            load_chan(sec, "3U0", items, &mut f.u3o);
+            f.zero_i = if load_check(sec, "measuredCurrState") == Some(true) && load_check(sec, "calcCurrState") != Some(true) { 2 } else { 1 };
+            f.zero_u = if load_check(sec, "calcUABCState") == Some(true) {
+                1
+            } else if load_check(sec, "calcUniUicState") == Some(true) {
+                2
+            } else if load_check(sec, "measuredVoltState") == Some(true) {
+                3
+            } else {
+                1
+            };
+            if let Some(v) = load_check(sec, "currOffState") {
+                f.zero_i_off = v;
+            }
+            if let Some(v) = load_check(sec, "voltOffState") {
+                f.zero_u_off = v;
+            }
+        }
+        3 => {
+            for (k, slot) in [("R0", &mut f.r0), ("R1", &mut f.r1), ("X0", &mut f.x0), ("X1", &mut f.x1), ("K0", &mut f.k0), ("F0", &mut f.f0), ("RM", &mut f.rm), ("XM", &mut f.xm), ("KM", &mut f.km), ("FM", &mut f.fm), ("ITR", &mut f.itr)] {
+                load_edit(sec, k, slot);
+            }
+            for (k, slot) in CHAN_KEYS[..6].iter().zip(chan_slots(f)) {
+                load_chan(sec, k, items, slot);
+            }
+            let mut with_none = vec![fvb_core::addformula::NOT_COUNTED.to_string()];
+            with_none.extend(items.iter().cloned());
+            load_chan(sec, "3I0n", &with_none, &mut f.i0_parallel);
+            f.per_unit = !(load_check(sec, "compensateState") == Some(true) && load_check(sec, "specificState") != Some(true));
+        }
+        _ => load_diff(f, sec, items),
+    }
+}
+
+/// Page `i`'s save (vslot 0x1d8, on «Рассчитать» and «Отмена» alike; the
+/// record is not marked modified): every key, `""` for an empty combo.
+pub fn save_page(i: usize, f: &QuickForms, sec: &mut SetNode) {
+    let chans = [&f.ia, &f.ib, &f.ic, &f.ua, &f.ub, &f.uc, &f.uab, &f.ubc];
+    match i {
+        0 | 2 => {
+            if i == 2 {
+                sec.set_str("itr", &f.itr);
+            }
+            for (k, v) in CHAN_KEYS.iter().zip(chans) {
+                save_chan(sec, k, v);
+            }
+            if i == 0 {
+                save_check(sec, "currOffState", f.currents_off);
+                save_check(sec, "voltOffState", f.voltages_off);
+            }
+            save_check(sec, "calcIBState", f.calc_ib);
+            save_check(sec, "phaseVoltState", !f.line_voltages);
+            save_check(sec, "lineVoltState", f.line_voltages);
+        }
+        1 => {
+            for (k, v) in CHAN_KEYS[..6].iter().zip(chans) {
+                save_chan(sec, k, v);
+            }
+            for (k, v) in [("3I0_0", &f.i3o), ("UNI", &f.uni), ("UIK", &f.uik), ("3U0", &f.u3o)] {
+                save_chan(sec, k, v);
+            }
+            save_check(sec, "calcCurrState", f.zero_i != 2);
+            save_check(sec, "measuredCurrState", f.zero_i == 2);
+            save_check(sec, "calcUABCState", f.zero_u == 1);
+            save_check(sec, "calcUniUicState", f.zero_u == 2);
+            save_check(sec, "measuredVoltState", f.zero_u == 3);
+            save_check(sec, "currOffState", f.zero_i_off);
+            save_check(sec, "voltOffState", f.zero_u_off);
+        }
+        3 => {
+            for (k, v) in [("R0", &f.r0), ("R1", &f.r1), ("X0", &f.x0), ("X1", &f.x1), ("K0", &f.k0), ("F0", &f.f0), ("RM", &f.rm), ("XM", &f.xm), ("KM", &f.km), ("FM", &f.fm), ("ITR", &f.itr)] {
+                sec.set_str(k, v);
+            }
+            for (k, v) in CHAN_KEYS[..6].iter().zip(chans) {
+                save_chan(sec, k, v);
+            }
+            save_chan(sec, "3I0n", &f.i0_parallel);
+            save_check(sec, "specificState", f.per_unit);
+            save_check(sec, "compensateState", !f.per_unit);
+        }
+        _ => save_diff(f, sec),
+    }
+}
+
+/// An arm's edits in a `Leg_%d` node, by the controls the keys name
+/// (DIALOG 539: R0 Kприв, R1 Kттбаз, R2 Kтт (ТТ), R3 Kтт (мощность), R4 Kтт
+/// (ном. ток), R5 Sном, R6 Iном, X0 Uном).
+fn leg_edits(a: &mut ArmForm) -> [(&'static str, &mut String); 8] {
+    [
+        ("R0", &mut a.kpriv),
+        ("R1", &mut a.tt_base),
+        ("R2", &mut a.tt_ktt),
+        ("R3", &mut a.pw_ktt),
+        ("R4", &mut a.amp_ktt),
+        ("R5", &mut a.snom),
+        ("R6", &mut a.inom),
+        ("X0", &mut a.unom),
+    ]
+}
+
+const REDUCTION_KEYS: [(&str, u8); 4] = [("byPowerState", 2), ("byNomCurState", 3), ("byCastCoeffState", 0), ("byTransCoeffState", 1)];
+const GROUP_KEYS: [(&str, u8); 3] = [("doNotConsider", 0), ("bySequence", 1), ("byTriangle", 2)];
+const BRAKE_KEYS: [(&str, u8); 3] = [("bySumState", 0), ("bySubState", 1), ("byMaxState", 2)];
+
+/// The first stored-and-set radio of a group, else the forced first one.
+fn load_radio(sec: &mut SetNode, keys: &[(&str, u8)]) -> u8 {
+    keys.iter().find(|(k, _)| load_check(sec, k) == Some(true)).map_or(keys[0].1, |&(_, v)| v)
+}
+
+/// 539 (`0x4841c0`): the three option groups (`legOption`,
+/// `groupConnOption`, `brakeCurrOption`), the counts and Kторм as item
+/// texts, then `Leg_0`… loaded one after another into the SAME controls —
+/// a missing or empty value keeps the previous arm's — each copied into
+/// its arm, which also takes the loaded option radios.
+fn load_diff(f: &mut QuickForms, sec: &mut SetNode, items: &[String]) {
+    let red = load_radio(sec.child_mut("legOption"), &REDUCTION_KEYS);
+    let grp = load_radio(sec.child_mut("groupConnOption"), &GROUP_KEYS);
+    f.braking = load_radio(sec.child_mut("brakeCurrOption"), &BRAKE_KEYS);
+    let counts: Vec<String> = (2..=24).map(|k| k.to_string()).collect();
+    let mut n = f.arms.len().to_string();
+    load_text(sec.attrs.get("legCount"), &counts, &mut n);
+    let mut ph = f.dif_phases.to_string();
+    load_text(sec.attrs.get("phaseCount"), &["1".into(), "3".into()], &mut ph);
+    f.dif_phases = ph.parse().unwrap_or(3);
+    load_text(sec.attrs.get("brakeCoeff"), &["1".into(), "0.5".into()], &mut f.k_torm);
+    let n: usize = n.parse().unwrap_or(2);
+    f.arms.resize_with(n, Default::default);
+    let mut controls = f.arms[0].clone();
+    let groups: Vec<String> = (0..12).map(|k| k.to_string()).collect();
+    for i in 0..n {
+        let leg = sec.child_mut(&format!("Leg_{i}"));
+        let [ia, ib, ic] = &mut controls.currents;
+        for (k, slot) in [("IA", ia), ("IB", ib), ("IC", ic)] {
+            load_text(leg.attrs.get(k), items, slot);
+        }
+        for (k, slot) in leg_edits(&mut controls) {
+            load_edit(leg, k, slot);
+        }
+        let key = if grp == 2 { "triangleGroup" } else { "seqGroup" };
+        load_text(leg.attrs.get(key), &groups, &mut controls.group_n);
+        if let Some(v) = load_check(leg, "I0State") {
+            controls.remove_i0 = v;
+        }
+        controls.reduction = red;
+        controls.group = grp;
+        f.arms[i] = controls.clone();
+    }
+    f.cur_arm = 0;
+}
+
+/// 539's save (`0x484330`): from arm 1's options, the counts, then every
+/// arm's `Leg_%d` (higher `Leg_` nodes of a former, larger count stay).
+fn save_diff(f: &QuickForms, sec: &mut SetNode) {
+    let a0 = &f.arms[0];
+    for (node, keys, v) in [("legOption", &REDUCTION_KEYS[..], a0.reduction), ("groupConnOption", &GROUP_KEYS[..], a0.group), ("brakeCurrOption", &BRAKE_KEYS[..], f.braking)] {
+        let c = sec.child_mut(node);
+        for (k, kv) in keys {
+            save_check(c, k, *kv == v);
+        }
+    }
+    sec.set_str("legCount", &f.arms.len().to_string());
+    sec.set_str("phaseCount", &f.dif_phases.to_string());
+    sec.set_str("brakeCoeff", &f.k_torm);
+    for (i, arm) in f.arms.iter().enumerate() {
+        let mut a = arm.clone();
+        let leg = sec.child_mut(&format!("Leg_{i}"));
+        let [ia, ib, ic] = &a.currents;
+        for (k, v) in [("IA", ia), ("IB", ib), ("IC", ic)] {
+            leg.set_str(k, v);
+        }
+        let (seq, tri) = if a.group == 2 { ("0".to_string(), a.group_n.clone()) } else { (a.group_n.clone(), "0".to_string()) };
+        leg.set_str("seqGroup", &seq);
+        leg.set_str("triangleGroup", &tri);
+        save_check(leg, "I0State", a.remove_i0);
+        for (k, v) in leg_edits(&mut a) {
+            leg.set_str(k, v);
+        }
+    }
+}
+
+/// The form of a generator page: each page keeps its own fields, as the
+/// original's pages do (their own controls and `.set` categories).
+pub fn page_index(tab: AnalysisTab) -> Option<usize> {
+    match tab {
+        AnalysisTab::Symmetric => Some(0),
+        AnalysisTab::Zero => Some(1),
+        AnalysisTab::PhasePhase => Some(2),
+        AnalysisTab::Phase => Some(3),
+        AnalysisTab::Differential => Some(4),
+        AnalysisTab::Formula => None,
+    }
+}
+
 /// The sheet's pages in the original's order (AddPage ×6, `0x48b970`):
 /// tab, our glyph, the page dialog's caption.
 const PAGES: [(AnalysisTab, &str, &str); 6] = [
@@ -766,6 +1078,56 @@ const PAGES: [(AnalysisTab, &str, &str); 6] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `.set` contract of 536: channel combos as `<IA channelName=…>`
+    /// children, checks as `%i`; a stored name loads only when the list has
+    /// it, and then selects the first item starting with it.
+    #[test]
+    fn symmetric_page_round_trips_through_the_set() {
+        let items: Vec<String> = ["Ia1", "Ia", "Ib", "Ic", "Ua", "Ub", "Uc"].iter().map(|s| s.to_string()).collect();
+        let mut f = QuickForms { ia: "Ia".into(), ib: "Ib".into(), line_voltages: true, voltages_off: true, ..Default::default() };
+        let mut sec = SetNode::default();
+        save_page(0, &f, &mut sec);
+        assert_eq!(sec.child("IA").unwrap().attrs["channelName"], "Ia");
+        assert_eq!(sec.child("IC").unwrap().attrs["channelName"], "");
+        assert_eq!((sec.attrs["voltOffState"].as_str(), sec.attrs["lineVoltState"].as_str(), sec.attrs["phaseVoltState"].as_str()), ("1", "1", "0"));
+        let mut g = QuickForms::default();
+        load_page(0, &mut g, &mut sec, &items);
+        assert_eq!(g.ia, "Ia1", "the combo's prefix search picks the first item starting with «Ia»");
+        assert_eq!(g.ib, "Ib");
+        assert!(g.line_voltages && g.voltages_off && !g.currents_off);
+        // Nothing stored: the phase radio is forced, a name the record lacks is ignored.
+        let mut empty = SetNode::default();
+        empty.child_mut("UA").set_str("channelName", "Нет такого");
+        f = QuickForms { ua: "Ua".into(), line_voltages: true, ..Default::default() };
+        load_page(0, &mut f, &mut empty, &items);
+        assert!(!f.line_voltages);
+        assert_eq!(f.ua, "Ua");
+    }
+
+    /// 539: `Leg_%d` nodes into the same controls — a missing arm inherits
+    /// the previous arm's values; the edits by their control's key.
+    #[test]
+    fn differential_page_legs_inherit_missing_values() {
+        let items: Vec<String> = ["I1a", "I2a", "I3a"].iter().map(|s| s.to_string()).collect();
+        let mut f = QuickForms::default();
+        f.arms[0].currents[0] = "I1a".into();
+        f.arms[0].kpriv = "2.5".into();
+        f.arms[1].currents[0] = "I2a".into();
+        f.braking = 2;
+        let mut sec = SetNode::default();
+        save_page(4, &f, &mut sec);
+        assert_eq!(sec.child("Leg_0").unwrap().attrs["R0"], "2.5", "R0 = Kприв");
+        assert_eq!(sec.attrs["legCount"], "2");
+        sec.set_str("legCount", "3");
+        let mut g = QuickForms::default();
+        load_page(4, &mut g, &mut sec, &items);
+        assert_eq!(g.arms.len(), 3);
+        assert_eq!(g.arms[1].currents[0], "I2a");
+        assert_eq!(g.arms[2].currents[0], "I2a", "Leg_2 missing: arm 2's values");
+        assert_eq!(g.arms[0].kpriv, "2.5");
+        assert_eq!(g.braking, 2);
+    }
 
     /// «Рассчитать» greying of 536 / 538 (`0x48d5a0`, `0x488550`).
     #[test]
