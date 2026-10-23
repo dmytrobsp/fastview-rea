@@ -1506,17 +1506,23 @@ impl App {
     }
 }
 
-/// The legend strip (`0x438210`): bottom 20 px, a centred row of loci only —
-/// 10 px colour square, 6 px gap, name, 6 px gap.
+/// The legend strip (`0x438210` circle, `0x443b90` differential): below
+/// the plot's bottom b (raised by 20m by the caller), a row centred by a
+/// signed halving and never clamped (a wide row overflows both sides); per
+/// item a Rectangle with a black pen of width m in the item's colour from
+/// (x, b + 3) — 3 device px, not scaled in print — 10m square, the name at
+/// (x + 16m, b) in (50, 50, 50) on a transparent background, then x +=
+/// text width + 22m (L9.82).
 fn legend(p: &egui::Painter, ui: &egui::Ui, rect: Rect, loci: &[Locus]) {
     let gals: Vec<_> = loci.iter().map(|l| (ui.painter().layout_no_wrap(l.name.clone(), font(), TEXT), l.color)).collect();
     let total: f32 = gals.iter().map(|(g, _)| g.size().x + 22.0).sum();
-    let mut x = rect.left() + ((rect.width() - total) / 2.0).max(0.0);
+    let mut x = rect.left() + ((rect.width() - total) / 2.0).trunc();
+    let px = 1.0 / print_s().unwrap_or(1.0);
     for (g, col) in gals {
-        let sq = Rect::from_min_size(Pos2::new(x, rect.bottom() + 3.0), Vec2::splat(10.0));
-        p.rect(sq, 0.0, col, stroke(1.0, col));
+        let sq = Rect::from_min_size(Pos2::new(x, rect.bottom() + 3.0 * px), Vec2::splat(10.0));
+        p.rect(sq, 0.0, col, stroke(1.0, Color32::BLACK));
         let wdt = g.size().x;
-        p.galley(Pos2::new(x + 16.0, rect.bottom() + 1.0), g, TEXT);
+        p.galley(Pos2::new(x + 16.0, rect.bottom()), g, TEXT);
         x += wdt + 22.0;
     }
 }

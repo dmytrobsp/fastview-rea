@@ -737,7 +737,7 @@ mod window_tests {
         let cmds = match std::env::var("FV_WINDOW_STATE").unwrap_or_default().as_str() {
             "analysis" => vec![C::QuickAnalysis],
             "circle" => vec![C::ActivatePane(Pane::Circle)],
-            "circletable" => vec![C::ActivatePane(Pane::Circle)],
+            "circletable" | "circlelegend" => vec![C::ActivatePane(Pane::Circle)],
             "difftable" => vec![C::ActivatePane(Pane::Differential)],
             "diff" => vec![C::ActivatePane(Pane::Differential)],
             "omp" => vec![C::OmpAnalysis],
@@ -816,10 +816,12 @@ mod window_tests {
             }
         }
         // `FV_WINDOW_STATE=circletable`: the first channel and an R/X pair
-        // of the first two on the circle diagram, the values table (mode 2).
-        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "circletable") {
+        // of the first two on the circle diagram, the values table (mode 2);
+        // `circlelegend`: the same with the legend instead.
+        let circle_state = std::env::var("FV_WINDOW_STATE").unwrap_or_default();
+        if circle_state == "circletable" || circle_state == "circlelegend" {
             app.track_settings();
-            app.circle_readout = 2;
+            app.circle_readout = if circle_state == "circletable" { 2 } else { 0 };
             if let Some(d) = app.active_doc_mut() {
                 d.chans[0].on_circle = true;
                 let (a, b) = (d.osc.analog[0].id.clone(), d.osc.analog[1].id.clone());

@@ -2797,6 +2797,26 @@ Residual: the legend `0x443b90` (label order, swatch) not read; where
 the original's quick analysis puts its pair names NOT DETERMINED (ours
 Iдиф = "I? диф."); text colour / background mode from the caller's DC.
 
+### L9.82 — The plane legends as read  ·  ✅
+Read (subagent report on `0x438210` (circle) and `0x443b90`
+(differential), the same routine apart from the items; by hand: the pen
+`CreatePen(PS_SOLID, m, 0)` (`0x4384a5`–`0x4384b6`), the start as a signed
+halving with no clamp (`0x438432`–`0x43843a`), the text colour 0x323232
+(`0x438447`), and the circle pairs' reader `0x420f80` — `ActiveResist`
+into `+0`, `ReactiveResist` into `+4`, so the R/X pairs are not swapped
+as the differential ones were): items are the flagged channels then the
+enabled pairs with both channels found (circle: «R X» in R's colour;
+differential: «Iдиф Iторм» in Iдиф's); the strip below the plot's bottom
+b (raised by 20m by the caller); start = left + (W − total)/2 truncated,
+never clamped; per item a Rectangle with a black m pen and the colour's
+brush at (x, b + 3) — 3 device px — 10m square, the text at (x + 16m, b),
+transparent, (50, 50, 50); x += text width + 22m.
+Ours outlined the swatch in its own colour, clamped the start at the left
+edge, drew the text 1 px low and scaled the 3 px gap in print. Now
+`legend` as read; `FV_WINDOW_STATE=circlelegend` renders it (rendered on
+DOC_1999).
+Residual: the text alignment taken as the DC default (top-left).
+
 Next in L9 (HANDOFF 2026-10-23, evening 2): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -2828,7 +2848,7 @@ channel (L9.65). The carved MFC DLLs live in `extracted/mfc/`. No user
 questions pending.
 **How to look at the GUI without running it:** `FV_WINDOW_DUMP=<png>
 [FV_WINDOW_RECORD=<cfg>] [FV_WINDOW_STATE=analysis (the sheet, two formula
-channels)|comments|group|circle|circletable|diff|difftable|omp|ompparams|preview|print|pagesetup|
+channels)|comments|group|circle|circletable|circlelegend|diff|difftable|omp|ompparams|preview|print|pagesetup|
 settings|channels|coef|fileparams|explorer|parambar|vizirs|alert|windows|
 paste|vecvalues|skin<k>] [FV_WINDOW_XSCALE=f] [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y]
 [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then Read the PNG (crop with
@@ -2844,8 +2864,7 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-the circle / differential legends `0x438210` / `0x443b90` (label order,
-unclamped start x, swatch pen — L9.75 / L9.81); the Ω / power split of
+the Ω / power split of
 characteristic extents (L9.75); a pending lane's Max / Min / СКЗ / A1
 (L9.77, not read); a pasted Hz channel's place among the frequency
 candidates and the formula frequency channel excluded from its own
@@ -2859,7 +2878,7 @@ keytips (MFC's ribbon keytip machinery — the program sets only Печать «
 and the MDI arrangements; pane re-docking (egui limit). Good recurring
 pass: render the user's real records (`~/Downloads/DOC_1999.cfg`,
 `BINARY.cfg`) after big changes.
-(Done in this session: L9.76–L9.81, see the summary above.)
+(Done in this session: L9.76–L9.82, see the summary above; L9.82 the plane legends as read.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
