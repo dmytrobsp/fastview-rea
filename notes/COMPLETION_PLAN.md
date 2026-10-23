@@ -35,7 +35,9 @@ grep -o 'NOT DETERMINED' notes/RECONSTRUCTION_LEDGER.md | wc -l
 `coverage.py` counts call targets and vtable slots below the library code
 as functions and treats a function as covered when the notes cite any
 address inside it (`0x…` or `FUN_00…`). It is a floor, not a proof: a cited
-function can still hide an unread branch, which W2 and W4 catch.
+function can still hide an unread branch, which W2 and W4 catch. So the
+notes cite only what was read: addresses still unread are listed here (the
+tool skips this file), never in the ledger or the specs.
 
 ## Progress log
 
@@ -82,7 +84,8 @@ class; `?` = no labelled caller within four levels), from
 Batches, in this order (the size of the unread code, user visibility):
 
 - [x] **W1.1** ChannelsDlg area — 11 functions: 4 with behaviour, 7 library code explained away (L9.166).
-- [ ] **W1.2** Quick-analysis pages — CQAnDiffCursPg (7), CQAnSymmSostPg (3), CQAnPhaseSoprotPg (2), CQAnMezphaseSoedPg (2), CQAnFormulaEditorPg (2).
+- [x] **W1.2** Quick-analysis pages — the sixteen functions cited (L9.167); ↑ / ↓ icons fixed.
+- [ ] **W1.2b** The rest of the quick-analysis pages: 537 `0x4897f0` / `0x489de0`, getters `0x488aa0`, `0x488530`, `0x48b810`, `0x48b840` (and confirm `0x487a20`, `0x48a6e0`, `0x487c30`, `0x48a800`).
 - [ ] **W1.3** Circle / differential diagrams — CircleDiagramWnd (8), DiffDiagramWnd (4), DiffDiagPane (1).
 - [ ] **W1.4** ОМП — `map_0x4d1434` (3), WrongPlaceLocatorDlg (2), the locator data classes (3).
 - [ ] **W1.5** Document and view — CFastViewDoc (2), CFastViewView (4), AreaItem (1).

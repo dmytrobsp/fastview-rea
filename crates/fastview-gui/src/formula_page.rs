@@ -265,10 +265,10 @@ impl App {
                     let _ = std::fs::write(path, fvb_core::comtrade::encode_text(&text, fvb_core::comtrade::Encoding::Cp1251));
                 }
             }
-            if ui.button("↑").clicked() {
+            if tri_button(ui, true).clicked() {
                 self.fp_move(true);
             }
-            if ui.button("↓").clicked() {
+            if tri_button(ui, false).clicked() {
                 self.fp_move(false);
             }
             if ui.button("Добавить").clicked() {
@@ -299,5 +299,16 @@ fn cell(ui: &mut egui::Ui, width: f32, text: &str, selected: bool, header: bool)
     let font = if header { egui::FontId::proportional(13.0) } else { egui::FontId::proportional(12.5) };
     let galley = ui.painter().layout_no_wrap(text.to_string(), font, color);
     ui.painter().with_clip_rect(rect).galley(rect.left_center() + egui::Vec2::new(3.0, -galley.size().y / 2.0), galley, color);
+    r
+}
+
+/// ↑ 1018 / ↓ 1019 (`0x4860a0`): bitmap 475's icons 6 / 5 — a filled black
+/// triangle, 9 px at the base and 5 rows tall, centred in 16 × 16.
+fn tri_button(ui: &mut egui::Ui, up: bool) -> egui::Response {
+    let r = ui.add(egui::Button::new("").min_size(egui::vec2(24.0, 20.0)));
+    let c = r.rect.center();
+    let (tip, base) = if up { (c.y - 2.5, c.y + 2.5) } else { (c.y + 2.5, c.y - 2.5) };
+    let pts = vec![egui::pos2(c.x, tip), egui::pos2(c.x + 4.5, base), egui::pos2(c.x - 4.5, base)];
+    ui.painter().add(egui::Shape::convex_polygon(pts, egui::Color32::BLACK, egui::Stroke::NONE));
     r
 }

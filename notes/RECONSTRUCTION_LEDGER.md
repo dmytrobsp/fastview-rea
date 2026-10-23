@@ -2908,8 +2908,11 @@ phase with its radio stored. Now `QuickForms::{dif_also, dif_methods,
 dif_edit_method}`, `quick::Arm::reductions` (a list, methods in the
 generation's order), the load / save per key, a radio click clearing the
 others. Test `two_stored_methods_both_reduce`.
-Residual: two methods give two «… прив.» lines per name — resolved by the
-appender with «_2» (L9.95).
+Residual: ~~two methods give two «… прив.» lines per name — resolved by the
+appender with «_2» (L9.95)~~ corrected in L9.167: the name list has one
+«прив.» set per arm whatever the methods, the formulas one per checked
+method, and `0x4167f0` pairs them by index — names slide (the tail past
+the list NOT DETERMINED); ours names the extra lines «_2».
 
 
 ### L9.88 — Circle scales: characteristics split by an exact «Ohm»; no Ω locus, no characteristics  ·  ✅
@@ -4942,6 +4945,42 @@ Residual: row icons and the text's exact places; live column widths;
 column 2 for non-pending computed channels (ours has no such flag); the
 circle refresh's channel range (the report says file analog channels only,
 doc+0x1d8 — the same open count as L9.151; ours also clears computed ones).
+
+### L9.167 — The quick-analysis pages to the last function: the getters, loaders and savers cited; ↑ / ↓ icons  ·  ✅
+Read (COMPLETION_PLAN W1.2, sixteen uncited functions): every CQAn* page
+has the same virtual layout — slots 110–115 the outputs the generator
+`0x48c0e0` reads from the active page (110 formulas, 111 names, 112 / 113
+vector / circle flag names, 114 the angle reference, 115 the differential
+pairs), 116 the OK check, 117 the `.set` load (from the pages' OnInitDialog
+`0x48b690`, after the defaults `0x411f40`), 118 the save (OnOK `0x48b710`,
+OnCancel `0x48b770`) — none has a button of its own. `0x4167f0` pairs
+names and formulas by index (count = formulas, no bounds check,
+`0x416c61`–`0x416c9d`), uniques every name, pair and flag name against the
+record before the batch (`0x48bff0`, `0x416baa` / `0x416bd3`) and pushes
+pairs without a dedup (`0x417950`). Cited as already described:
+- names: 536 `0x48c590` (VIEWS_SPEC «Симметричные»), 539 `0x481d60` (L9.73:
+  per arm «Ia плечо k прив.» (+ Ib / Ic), then «… прив. пов.» with
+  «Не учитывать» off, «Ia диф.», «Ia торм.» — one «прив.» set whatever the
+  reduction radios), 539 pairs `0x483f40` (L9.152);
+- loaders / savers: 536 `0x48ce30` / `0x48d290`, 538 `0x487f50` /
+  `0x4882c0`, 543 `0x48ac90` / `0x48b060` (L9.55: checks applied as value
+  ≠ 0; a radio pair with no key forces its first radio; then the page's
+  dependency refreshers and the OK check); 539 `0x484920`
+  (groupConnOption), `0x484cb0` (brakeCurrOption), `0x484730`
+  (legOption), `0x485040` / `0x485550` (one `Leg_%d`) — L9.79 / L9.87;
+- the formula editor's OnInitDialog `0x4860a0` (L9.56): columns 25 % / 70 %
+  of the list's width, grid lines, full-row select, bitmap 475 cut into
+  16 × 16 icons (transparent C0C0C0) — icon 6 (a filled up-triangle) on ↑
+  1018, icon 5 on ↓ 1019; no defaults, no `.set` load (its slots 117 / 118
+  are the empty stub `0x403760`);
+- `0x432730` is not the editor's: it moves the channel records down one
+  when one is erased (the remove-by-name `0x42ecf0`, L9.157, and
+  `0x4574f0`).
+No message box in any of them. Ours matched names, orders, pairs, keys and
+forced radios; it drew «↑» / «↓» as text. Now `formula_page::tri_button`
+paints the filled triangles. The L9.87 residual is corrected (above).
+Residual: page 537's loader / saver and eight more slot 111–114 getters
+are unread (four skimmed match VIEWS_SPEC) — plan W1.2b lists them.
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
