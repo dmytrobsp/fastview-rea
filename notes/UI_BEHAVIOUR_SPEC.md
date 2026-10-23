@@ -507,9 +507,16 @@ scrollbar only visible ones — original quirk.)
 | ← / → | V1 −1 / +1 sample, clamped to [0, N]; **with Ctrl: V2** |
 | ↑ / ↓ | H1 1 px up/down (value recomputed, may change lane); **with Ctrl: H2** |
 
-Then status update and repaint. No Home/End/PgUp/PgDn/Delete. Accelerators
+Then status update and repaint. No Home/End/PgUp/PgDn/Delete. The setter
+`0x492f20` shows the визир (a hidden one appears). Only while the view has
+the focus; Alt+arrow is a WM_SYSKEYDOWN (nothing). Accelerators
 (table 128): Ctrl+O 57601, Ctrl+S 57604, Ctrl+P 57607, Ctrl+C 57634, Ctrl+V
-57637, Ctrl+Z 57643, Ctrl+Y 57644.
+57637, Ctrl+Z 57643, Ctrl+Y 57644 — Ctrl alone (no Shift / Alt), a disabled
+command's accelerator does nothing; then TranslateMDISysAccel: Ctrl+F4
+closes the document, Ctrl+F6 / Ctrl+Tab next, with Shift previous. Print
+preview swaps in MFC's table 30997: PgDn / PgUp page, Esc closes (L9.130).
+Every wheel action is per WM_MOUSEWHEEL (one step per message); "exactly"
+means no mouse button held either.
 
 **Cursor shapes** (0x45f660):
 

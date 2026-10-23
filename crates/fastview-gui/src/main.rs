@@ -329,7 +329,8 @@ impl App {
         if self.modal_up {
             dialogs::modal_backdrop(ctx, "fv_modal_backdrop", egui::Order::PanelResizeLine);
             self.keytips.exit();
-        } else if !self.keytips_input(ctx) {
+        } else if !self.keytips_input(ctx) && self.print.preview.is_none() {
+            // Print preview swaps table 128 for MFC's 30997 (`0x102474d9`).
             self.handle_keys(ctx);
         }
 
@@ -838,6 +839,50 @@ mod window_tests {
         assert_eq!(w.app.docks[Unit::Frequency].place, Place::Floating, "Ctrl held: no dock");
         let moved = w.app.docks[Unit::Frequency].float_rect.unwrap();
         assert!((moved.min - (fr.min + (to - from))).length() < 2.0, "it moved with the pointer: {fr:?} → {moved:?}");
+    }
+
+    /// Table 128 as egui-winit delivers it: Ctrl+C arrives as `Event::Copy`
+    /// and Ctrl+V as `Event::Paste` (only with text on the OS clipboard) or
+    /// nothing but its key-up; Ctrl+Shift does not match; a disabled
+    /// command's accelerator does nothing.
+    #[test]
+    fn shortcuts_as_egui_winit_sends_them() {
+        let mut w = Win::new();
+        let pending = |w: &Win| w.app.active_doc().unwrap().pending.len();
+        w.held = egui::Modifiers::CTRL;
+        w.run(vec![egui::Event::Copy]);
+        assert!(!w.app.clip.available(), "no channel selected: copy disabled");
+        w.app.active_doc_mut().unwrap().selection.insert(app::ChanKey::Analog(0));
+        w.held = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
+        w.run(vec![egui::Event::Copy]);
+        assert!(!w.app.clip.available(), "Ctrl+Shift+C is not in the table");
+        w.held = egui::Modifiers::CTRL;
+        w.run(vec![egui::Event::Copy]);
+        assert!(w.app.clip.available(), "Ctrl+C copies");
+        // No text on the OS clipboard: only the key-up comes.
+        let up = egui::Event::Key { key: egui::Key::V, physical_key: None, pressed: false, repeat: false, modifiers: egui::Modifiers::CTRL };
+        w.run(vec![up.clone()]);
+        assert_eq!(pending(&w), 1, "Ctrl+V's key-up pastes");
+        w.app.dispatch(app::Command::Undo);
+        assert_eq!(pending(&w), 0);
+        // With text there: the paste fires on the press, not again on the key-up.
+        w.run(vec![egui::Event::Paste("x".into())]);
+        w.run(vec![up]);
+        assert_eq!(pending(&w), 1, "pasted once");
+        // The MDI keys: Ctrl+Tab / Ctrl+Shift+Tab cycle, Ctrl+F4 closes.
+        w.app.dispatch(app::Command::Demo);
+        w.idle(2);
+        assert_eq!((w.app.docs.len(), w.app.active), (2, Some(1)));
+        w.key(egui::Key::Tab);
+        assert_eq!(w.app.active, Some(0), "Ctrl+Tab: the next, wrapping");
+        w.held = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
+        w.key(egui::Key::F6);
+        assert_eq!(w.app.active, Some(1), "Ctrl+Shift+F6: the previous");
+        w.held = egui::Modifiers::CTRL;
+        w.app.docs[1].set.modified = false;
+        w.key(egui::Key::F4);
+        w.idle(2);
+        assert_eq!(w.app.docs.len(), 1, "Ctrl+F4 closes the active document");
     }
 
     /// The group's panes are units of their own (`0x474e10` creates four

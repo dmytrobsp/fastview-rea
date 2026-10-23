@@ -351,7 +351,19 @@ impl App {
             return;
         }
         let n = pv.job.pages.len().max(1);
-        // Commands come from the ribbon's preview category.
+        // Commands come from the ribbon's preview category and MFC's
+        // accelerator table 30997: PgDn next page, PgUp previous, Esc close.
+        if pv.cmd.is_none() {
+            pv.cmd = ctx.input(|i| {
+                if i.key_pressed(egui::Key::PageDown) {
+                    Some(PreviewCmd::Next)
+                } else if i.key_pressed(egui::Key::PageUp) {
+                    Some(PreviewCmd::Prev)
+                } else {
+                    None
+                }
+            });
+        }
         let (mut close, mut print) = (false, false);
         if let Some(c) = pv.cmd.take().filter(|c| pv.enabled(*c)) {
             let step = pv.step();
@@ -484,6 +496,12 @@ mod tests {
         assert_eq!(app.print.preview.as_ref().unwrap().page_text(), "Стр. 1");
         run(&mut app, PreviewCmd::Next);
         assert_eq!(app.print.preview.as_ref().unwrap().cur, 1);
+        // MFC's table 30997: PgUp / PgDn page.
+        let key = |k| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        frame(&ctx, &mut app, vec![key(egui::Key::PageUp)]);
+        assert_eq!(app.print.preview.as_ref().unwrap().cur, 0, "PgUp");
+        frame(&ctx, &mut app, vec![key(egui::Key::PageDown)]);
+        assert_eq!(app.print.preview.as_ref().unwrap().cur, 1, "PgDn");
         run(&mut app, PreviewCmd::ZoomIn);
         assert!(!app.print.preview.as_ref().unwrap().enabled(PreviewCmd::NumPage), "no page count while zoomed in");
         run(&mut app, PreviewCmd::Close);

@@ -16,6 +16,9 @@ pub enum SelClick {
     Ctrl,
     /// Left button + Shift: select the range anchor..this in row order.
     Shift,
+    /// Left button + Ctrl + Shift: add that range, keeping the others
+    /// (`0x45dce3` skips the deselect-all for MK_CONTROL).
+    CtrlShift,
     /// Right button: select this channel unless it is already selected.
     Right,
 }
@@ -29,7 +32,7 @@ pub fn select_click(
     how: SelClick,
 ) {
     // Without the right button or Ctrl every channel is deselected first.
-    if !matches!(how, SelClick::Right | SelClick::Ctrl) {
+    if !matches!(how, SelClick::Right | SelClick::Ctrl | SelClick::CtrlShift) {
         sel.clear();
     }
     match how {
@@ -39,7 +42,7 @@ pub fn select_click(
                 sel.insert(hit);
             }
         }
-        SelClick::Shift => {
+        SelClick::Shift | SelClick::CtrlShift => {
             // No anchor yet: the cleared selection stays empty.
             let Some(a) = *anchor else { return };
             let (Some(ia), Some(ih)) = (order.iter().position(|k| *k == a), order.iter().position(|k| *k == hit)) else {
@@ -412,5 +415,15 @@ mod tests {
         let (mut sel, mut anchor) = (BTreeSet::from([Analog(0)]), None);
         click(&mut sel, &mut anchor, Analog(2), SelClick::Shift);
         assert!(sel.is_empty());
+    }
+
+    #[test]
+    fn ctrl_shift_click_adds_the_range() {
+        let (mut sel, mut anchor) = (BTreeSet::new(), None);
+        click(&mut sel, &mut anchor, Analog(0), SelClick::Plain);
+        click(&mut sel, &mut anchor, Digital(0), SelClick::Ctrl);
+        anchor = Some(Analog(0));
+        click(&mut sel, &mut anchor, Analog(2), SelClick::CtrlShift);
+        assert_eq!(sel, BTreeSet::from([Analog(0), Analog(1), Analog(2), Digital(0)]), "the range added, Digital(0) kept");
     }
 }

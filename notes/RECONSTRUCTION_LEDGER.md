@@ -4007,6 +4007,44 @@ invert / DC on digital, computed and pasted channels (32823 / 32824 count
 them) — next; a path-less document (only our demo) keeps the comment
 tools.
 
+### L9.130 — Keyboard and wheel as read: Ctrl+C / Ctrl+V through egui-winit, MDI keys, preview keys, визир keys, per-message wheel  ·  ✅
+Read (subagent audit of RT_ACCELERATOR 128 / 30997, every PreTranslate /
+WM_KEYDOWN / WM_MOUSEWHEEL / button handler; by hand `0x45f490`,
+`0x492f20`, the clamp at `0x45f52f`): table 128 is the only accelerator
+table (LoadFrame 128, `0x4722b6`); CMDIFrameWnd::PreTranslateMessage
+(mfc120u `0x1024c143` / `0x1024c16b`) translates it, then
+TranslateMDISysAccel (Ctrl+F4 / Ctrl+F6 / Ctrl+Tab — the key set
+INFERRED from Win32); print preview loads MFC's 30997 instead (PgDn
+58114, PgUp 58115, Esc 58112, `0x102474d9`); the view's WM_KEYDOWN moves
+визиры with the setter that also SHOWS them; no other window handles keys;
+the wheel handlers act once per WM_MOUSEWHEEL, "exactly Ctrl / Shift" =
+wParam with no button; Ctrl+Shift+LMB in the stats panel skips the
+deselect-all (`0x45dce3`) and adds the range.
+Ours: **Ctrl+C / Ctrl+V never fired in the real app** — egui-winit 0.29
+turns them into `Event::Copy` / `Event::Paste` (the latter only with text
+on the OS clipboard) and sends no key event; the headless tests injected
+Key::C. Also no MDI keys, preview PgUp / PgDn, Ctrl+Shift matched the
+table, disabled commands ran by shortcut, an arrow key moved a hidden
+визир without showing it and acted with a diagram focused or Alt held,
+the wheel coalesced a frame's notches and forced ≥ 120 px, Ctrl+Shift+LMB
+cleared. Now `App::handle_keys` (`Event::Copy` / `Event::Paste`, Ctrl+V's
+key-up when no paste was announced, Ctrl alone, `shortcut_enabled`, the
+MDI keys), `handle_keys` skipped in preview, `preview_ui` PgUp / PgDn,
+lanes' key block gated on `CopyFocus::View` and !Alt with `MoveV` showing,
+`lanes::wheel_deltas` (per event: Line ×120, Page ×360, points as they
+come) for the view and the planes, `SelClick::CtrlShift`. Tests
+`shortcuts_as_egui_winit_sends_them`, `preview_category_commands_and_page_text`,
+`arrow_keys_move_v1_and_ctrl_v2_by_one_sample`,
+`wheel_modifiers_zoom_time_resize_lanes_and_scroll`,
+`ctrl_shift_click_adds_the_range`.
+Residual: Ctrl+V with an empty OS clipboard fires on the key-up (and not
+at all if Ctrl is let go first); Ctrl+Insert / Shift+Insert copy / paste
+on Windows through egui-winit (the original has no such entries); → caps
+at N − 1 (the original at N, a sample past the data); ↑ / ↓ on a ГВ
+never placed does nothing (the original places it at the top — INFERRED);
+MDI next / previous in tab order (WM_MDINEXT's order under MDI tabs ND);
+the Shift page not quantised to the 1/10000 scroll grid.
+
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

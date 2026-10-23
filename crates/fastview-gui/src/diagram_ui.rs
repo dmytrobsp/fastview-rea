@@ -1086,13 +1086,13 @@ impl App {
                 view.oy = if view.z <= 1.0 { 0 } else { dg::pan_from_scroll(pos, lim.1, m) };
             }
         }
-        // Wheel (`0x437ae0`).
+        // Wheel (`0x437ae0`): one step per WM_MOUSEWHEEL; wParam is
+        // exactly MK_CONTROL / MK_SHIFT only with no mouse button held.
         if resp.hovered() && self.diag.menu.is_none() {
-            let (raw, mods) = ui.input(|i| (i.raw_scroll_delta, i.modifiers));
-            let delta = raw.x + raw.y;
-            if delta != 0.0 {
+            let (wheels, mods, buttons) = ui.input(|i| (crate::lanes::wheel_deltas(&i.events), i.modifiers, i.pointer.any_down()));
+            for delta in wheels {
                 let g = PlaneGeom { w, h, max, char_max: char_ext };
-                match dg::wheel_action(delta > 0.0, mods.ctrl || mods.command, mods.shift) {
+                match dg::wheel_action(delta > 0.0, (mods.ctrl || mods.command) && !buttons, mods.shift && !buttons) {
                     WheelAct::Zoom(zin) => {
                         view.zoom(zin, char_ext, |z| g.ppu_at(z));
                     }

@@ -1153,6 +1153,8 @@ pub struct App {
     /// A dialog window was up last frame: the original's dialogs are all
     /// modal, so the main window takes no pointer or key input.
     pub modal_up: bool,
+    /// An `Event::Paste` came since Ctrl+V was last let go.
+    pub paste_announced: bool,
     /// Dialogs and bars of `chandlg` / `recdlg` (backlog 16, 18, 28, 29, 34, 39).
     pub dlg: crate::recdlg::DialogState,
 
@@ -1282,6 +1284,7 @@ impl App {
             lane_menu_eat: false,
             color_dialog: None,
             modal_up: false,
+            paste_announced: false,
             dlg: Default::default(),
             status: "Готово".to_string(),
             toast: ("Готово".to_string(), f64::NEG_INFINITY),
@@ -1551,20 +1554,68 @@ impl App {
         ]
     }
 
-    /// Dispatch any Ctrl-shortcut pressed this frame.
+    /// Dispatch any Ctrl-shortcut pressed this frame. TranslateAccelerator
+    /// matches Ctrl alone (no Shift / Alt, the entries are VIRTKEY|CONTROL)
+    /// and MFC drops an accelerator whose command is disabled (CN_UPDATE_
+    /// COMMAND_UI first). egui-winit turns Ctrl+C into `Event::Copy` and
+    /// Ctrl+V into `Event::Paste` — the latter only while the OS clipboard
+    /// holds text —, with no key event; Ctrl+V's key-up still comes, so a
+    /// paste no `Event::Paste` announced fires there.
     pub fn handle_keys(&mut self, ctx: &egui::Context) {
-        let mut cmd = None;
+        let mut cmds = Vec::new();
         ctx.input(|i| {
-            if i.modifiers.command || i.modifiers.ctrl {
-                for (key, c) in Self::keymap() {
-                    if i.key_pressed(key) {
-                        cmd = Some(c);
+            let m = i.modifiers;
+            // TranslateMDISysAccel after the table (`0x1024c16b`): Ctrl+F4
+            // closes the active document, Ctrl+F6 / Ctrl+Tab go to the next
+            // one, with Shift the previous (in tab order — INFERRED).
+            if m.ctrl && !m.alt {
+                let n = self.docs.len();
+                if let (Some(a), true) = (self.active, n > 0) {
+                    if i.key_pressed(egui::Key::F4) && !m.shift {
+                        cmds.push(Command::CloseDoc(a));
+                    } else if i.key_pressed(egui::Key::F6) || i.key_pressed(egui::Key::Tab) {
+                        cmds.push(Command::ActivateDoc(if m.shift { (a + n - 1) % n } else { (a + 1) % n }));
                     }
                 }
             }
+            if !(m.command || m.ctrl) || m.shift || m.alt {
+                return;
+            }
+            for e in &i.events {
+                match e {
+                    egui::Event::Key { key, pressed: true, .. } => {
+                        if let Some((_, c)) = Self::keymap().into_iter().find(|(k, _)| k == key) {
+                            cmds.push(c);
+                        }
+                    }
+                    egui::Event::Copy => cmds.push(Command::Copy),
+                    egui::Event::Paste(_) => {
+                        self.paste_announced = true;
+                        cmds.push(Command::Paste);
+                    }
+                    // The key-up also clears the announcement.
+                    egui::Event::Key { key: egui::Key::V, pressed: false, .. } if !std::mem::take(&mut self.paste_announced) => cmds.push(Command::Paste),
+                    _ => {}
+                }
+            }
         });
-        if let Some(c) = cmd {
-            self.dispatch(c);
+        for c in cmds {
+            if self.shortcut_enabled(&c) {
+                self.dispatch(c);
+            }
+        }
+    }
+
+    /// The table-128 commands' update rules (`0x45bf60`; Open is the
+    /// app's, always enabled; Save As / Print need a document).
+    fn shortcut_enabled(&self, c: &Command) -> bool {
+        let Some(d) = self.active_doc() else { return matches!(c, Command::Open) };
+        match c {
+            Command::Copy => d.can_copy(),
+            Command::Paste => self.clip.available() && !crate::omp_ui::has_pending_paste(d),
+            Command::Undo => !d.undo.is_empty(),
+            Command::Redo => !d.redo.is_empty(),
+            _ => true,
         }
     }
 

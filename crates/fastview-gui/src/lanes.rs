@@ -1207,6 +1207,8 @@ impl App {
                         }
                         let how = if pressed_r {
                             SelClick::Right
+                        } else if shift && ctrl {
+                            SelClick::CtrlShift
                         } else if shift {
                             SelClick::Shift
                         } else if ctrl {
@@ -1407,30 +1409,35 @@ impl App {
                 }
             }
         }
-        // Wheel (`0x45d990`): Alt = lane height, exactly Ctrl = time zoom,
-        // exactly Shift = one screen sideways, else scroll the lanes.
+        // Wheel (`0x45d990`), per WM_MOUSEWHEEL (one per wheel event): Alt
+        // = lane height, exactly Ctrl (no button held) = time zoom, exactly
+        // Shift = one screen sideways — one step each, whatever the delta —,
+        // else the lanes scroll by the raw delta in pixels (120 a notch).
         if resp.hovered() && !menu_busy {
-            let raw = ui.input(|i| i.raw_scroll_delta);
-            let line = ui.ctx().options(|o| o.line_scroll_speed);
-            let delta = raw.x + raw.y;
-            if delta != 0.0 {
-                let mag = ((delta.abs() / line).round() as i32).clamp(1, 10);
-                let notches = if delta > 0.0 { mag } else { -mag };
+            let (wheels, buttons) = ui.input(|i| (wheel_deltas(&i.events), i.pointer.any_down()));
+            let (mut first_w, mut vscroll_w) = (first as i64, vscroll);
+            for delta in wheels {
+                let up = delta > 0.0;
                 if alt {
-                    actions.push(Act::Cmd(Command::ZoomY(notches > 0)));
-                } else if ctrl && !shift {
-                    actions.push(Act::Cmd(Command::ZoomX(notches > 0)));
-                } else if shift && !ctrl {
-                    let v = first as i64 - i64::from(notches) * visible.max(1) as i64;
-                    actions.push(Act::SetFirst(v.clamp(0, hmax as i64) as usize));
+                    actions.push(Act::Cmd(Command::ZoomY(up)));
+                } else if ctrl && !shift && !buttons {
+                    actions.push(Act::Cmd(Command::ZoomX(up)));
+                } else if shift && !ctrl && !buttons {
+                    first_w = (first_w - if up { 1 } else { -1 } * visible.max(1) as i64).clamp(0, hmax as i64);
+                    actions.push(Act::SetFirst(first_w as usize));
                 } else {
-                    actions.push(Act::SetVScroll(vscroll + notches as f32 * g::WHEEL_NOTCH_PX));
+                    vscroll_w += delta;
+                    actions.push(Act::SetVScroll(vscroll_w));
                 }
             }
         }
-        // Keys (`0x45f490`): ←/→ move В1 (Ctrl: В2) a sample, ↑/↓ move ГВ1
-        // (Ctrl: ГВ2) a pixel.
-        if !ui.ctx().wants_keyboard_input() && self.rename_edit.is_none() && !self.modal_up {
+        // Keys (`0x45f490`, the view's WM_KEYDOWN — so only while the view
+        // has the focus, and never with Alt, a WM_SYSKEYDOWN): ←/→ move В1
+        // (Ctrl: В2) a sample, ↑/↓ move ГВ1 (Ctrl: ГВ2) a pixel; the setter
+        // (`0x492f20`) shows the визир. Ours caps → at N − 1 (the original
+        // at N, `0x45f52f`, a sample past the data).
+        let view_keys = self.copy_focus == crate::app::CopyFocus::View && !alt;
+        if view_keys && !ui.ctx().wants_keyboard_input() && self.rename_edit.is_none() && !self.modal_up {
             let (l, r, u, d) = ui.input(|i| {
                 (i.key_pressed(egui::Key::ArrowLeft), i.key_pressed(egui::Key::ArrowRight), i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown))
             });
@@ -1482,11 +1489,14 @@ impl App {
                     }
                     d.v_shown[k] = true;
                 }
-                Act::MoveV(k, s) => match k {
-                    0 => d.main_cursor = s,
-                    1 => d.aux_cursor = s,
-                    _ => d.v3_cursor = s,
-                },
+                Act::MoveV(k, s) => {
+                    match k {
+                        0 => d.main_cursor = s,
+                        1 => d.aux_cursor = s,
+                        _ => d.v3_cursor = s,
+                    }
+                    d.v_shown[k] = true;
+                }
                 Act::SetH(j, ch, v) => {
                     d.hviz[j] = crate::app::HVizir { shown: true, chan: Some(ch), value: v };
                 }
@@ -1931,6 +1941,27 @@ fn time_axis_menu(ui: &mut egui::Ui, unit: TimeUnit, grid: bool, band: bool, pic
 /// MENU 563 (a comment under the pointer), relabelled by the comment's kind
 /// as `0x45efa0` does: a moment («визир», strings 206/229/236) or a level
 /// line (207/237/238); «Изменить уровень» exists only for a level line.
+/// The wheel events of a frame as WM_MOUSEWHEEL deltas in the view's
+/// pixels: a notch (a line) is 120, a page three notches, points as they
+/// come.
+pub fn wheel_deltas(events: &[egui::Event]) -> Vec<f32> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            egui::Event::MouseWheel { unit, delta, .. } => {
+                let d = delta.x + delta.y;
+                let px = match unit {
+                    egui::MouseWheelUnit::Line => d * g::WHEEL_NOTCH_PX,
+                    egui::MouseWheelUnit::Page => d * 3.0 * g::WHEEL_NOTCH_PX,
+                    egui::MouseWheelUnit::Point => d,
+                };
+                (px != 0.0).then_some(px)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 fn comment_menu(ui: &mut egui::Ui, c: &crate::app::Comment, i: usize, pick: &mut dyn FnMut(MenuCmd)) {
     let what = match c.kind_no() {
         1 => "визир",
@@ -2332,6 +2363,18 @@ mod menu_tests {
         let first = h.doc().first;
         h.wheel(at, -1.0, egui::Modifiers::SHIFT);
         assert!(h.doc().first > first, "Shift+wheel scrolls right");
+        // One step per WM_MOUSEWHEEL: two notches in one frame zoom twice;
+        // a touchpad's 30 points scroll the lanes 30 px, not a notch.
+        let f = h.doc().xscale.unwrap();
+        let notch = egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: Vec2::new(0.0, -1.0), modifiers: egui::Modifiers::CTRL };
+        h.frame_mod(vec![egui::Event::PointerMoved(at), notch.clone(), notch], egui::Modifiers::CTRL);
+        let fit = g::fit_scale(h.app.view_width, h.doc().osc.sample_count());
+        assert_eq!(h.doc().xscale.unwrap(), (f / 4.0).max(fit), "two steps");
+        let v = h.doc().vscroll;
+        assert!(v <= -30.0, "scrolled down before: {v}");
+        let touch = egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: Vec2::new(0.0, 30.0), modifiers: egui::Modifiers::NONE };
+        h.frame_mod(vec![egui::Event::PointerMoved(at), touch], egui::Modifiers::NONE);
+        assert_eq!(h.doc().vscroll, v + 30.0, "raw pixels");
     }
 
     #[test]
@@ -2815,6 +2858,16 @@ mod menu_tests {
         assert_eq!(h.doc().main_cursor, v1 + 1);
         h.frame_mod(vec![key(egui::Key::ArrowLeft, egui::Modifiers::CTRL)], egui::Modifiers::CTRL);
         assert_eq!(h.doc().aux_cursor, v2 - 1);
+        // A hidden визир is shown by the key (`0x492f20`); Alt does nothing.
+        h.app.active_doc_mut().unwrap().v_shown[0] = false;
+        h.frame_mod(vec![key(egui::Key::ArrowLeft, egui::Modifiers::ALT)], egui::Modifiers::ALT);
+        assert!(!h.doc().v_shown[0], "Alt+← is a WM_SYSKEYDOWN");
+        h.frame_mod(vec![key(egui::Key::ArrowLeft, egui::Modifiers::NONE)], egui::Modifiers::NONE);
+        assert!(h.doc().v_shown[0] && h.doc().main_cursor == v1, "shown, moved back");
+        // With a diagram focused the keys are the pane's.
+        h.app.copy_focus = crate::app::CopyFocus::Diagram(crate::app::Pane::Vector);
+        h.frame_mod(vec![key(egui::Key::ArrowRight, egui::Modifiers::NONE)], egui::Modifiers::NONE);
+        assert_eq!(h.doc().main_cursor, v1, "not the view's key");
     }
 
     /// User report: the menu was never about the top row, and its subject
