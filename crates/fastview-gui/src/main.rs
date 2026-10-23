@@ -230,11 +230,11 @@ impl App {
             let char_w = 6.2;
             for (i, text) in s.iter().enumerate() {
                 let w = if i == 2 || i == 5 { 40.0 } else { 27.0 } * char_w;
-                ui.add_sized([w, 16.0], egui::Label::new(egui::RichText::new(text).small().color(p.text)).truncate());
+                ui.add_sized([w, 16.0], egui::Label::new(egui::RichText::new(text).small().color(p.status_text)).truncate());
                 ui.separator();
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(egui::RichText::new("НТЦ Механотроника").small().weak());
+                ui.label(egui::RichText::new("НТЦ Механотроника").small().color(p.status_text.gamma_multiply(0.6f32)));
             });
         });
         self.status_toast(ui.ctx());
@@ -363,7 +363,7 @@ impl App {
         }
 
         egui::TopBottomPanel::bottom("status")
-            .frame(egui::Frame::none().fill(pal.group_bg).inner_margin(egui::Margin::symmetric(6.0, 3.0)))
+            .frame(egui::Frame::none().fill(pal.status_bg).inner_margin(egui::Margin::symmetric(6.0, 3.0)))
             .show(ctx, |ui| self.status_bar(ui));
 
 

@@ -55,6 +55,9 @@ impl Skin {
                 work_bg: Color32::from_rgb(0x80, 0x80, 0x80),
                 text: Color32::BLACK,
                 disabled: None,
+                tab_text: Color32::BLACK,
+                status_bg: Color32::from_rgb(0xD4, 0xD0, 0xC8),
+                status_text: Color32::BLACK,
             },
             Skin::OfficeXp => Palette {
                 ribbon_top: Color32::from_rgb(0xF7, 0xF6, 0xF3),
@@ -69,6 +72,9 @@ impl Skin {
                 work_bg: Color32::from_rgb(0x80, 0x80, 0x80),
                 text: Color32::BLACK,
                 disabled: None,
+                tab_text: Color32::BLACK,
+                status_bg: Color32::from_rgb(0xEC, 0xEA, 0xE5),
+                status_text: Color32::BLACK,
             },
             Skin::WinXp => Palette {
                 ribbon_top: Color32::from_rgb(0xF6, 0xF5, 0xEE),
@@ -83,6 +89,9 @@ impl Skin {
                 work_bg: Color32::from_rgb(0x80, 0x80, 0x80),
                 text: Color32::BLACK,
                 disabled: None,
+                tab_text: Color32::BLACK,
+                status_bg: Color32::from_rgb(0xEC, 0xE9, 0xD8),
+                status_text: Color32::BLACK,
             },
             Skin::Office2003 => Palette {
                 ribbon_top: Color32::from_rgb(0xE3, 0xEF, 0xFF),
@@ -97,6 +106,9 @@ impl Skin {
                 work_bg: Color32::from_rgb(0x90, 0x99, 0xAE),
                 text: Color32::BLACK,
                 disabled: None,
+                tab_text: Color32::BLACK,
+                status_bg: Color32::from_rgb(0xC3, 0xDA, 0xF9),
+                status_text: Color32::BLACK,
             },
             Skin::Vs2005 => Palette {
                 ribbon_top: Color32::from_rgb(0xFA, 0xF9, 0xF5),
@@ -111,64 +123,89 @@ impl Skin {
                 work_bg: Color32::from_rgb(0x80, 0x80, 0x80),
                 text: Color32::BLACK,
                 disabled: None,
+                tab_text: Color32::BLACK,
+                status_bg: Color32::from_rgb(0xEE, 0xED, 0xE5),
+                status_text: Color32::BLACK,
             },
-            Skin::Blue => Palette {
-                ribbon_top: Color32::from_rgb(0xC6, 0xD9, 0xF1),
-                ribbon_bottom: Color32::from_rgb(0xA6, 0xC2, 0xE3),
-                frame: Color32::from_rgb(0x3A, 0x5D, 0x8F),
-                accent: Color32::from_rgb(0x2E, 0x5B, 0x9E),
-                accent_soft: Color32::from_rgb(0xFF, 0xE4, 0x9B),
-                accent_border: Color32::from_rgb(0xE0, 0xA8, 0x1E),
-                group_bg: Color32::from_rgb(0xDF, 0xE9, 0xF6),
-                group_border: Color32::from_rgb(0xB4, 0xC9, 0xE3),
-                tab_active: Color32::from_rgb(0xF4, 0xF8, 0xFD),
-                work_bg: Color32::from_rgb(0x9C, 0xB6, 0xD6),
-                text: Color32::from_rgb(0x21, 0x37, 0x55),
+                        Skin::Blue => Palette {
+                // The Office 2007 style data (L9.117): BARS/DEFAULT for the
+                // band, the category body's top, RIBBON/PANEL/TextNormal, the
+                // tab and status-bar texts, MAINWND/MainClientArea.
+                ribbon_top: Color32::from_rgb(191, 219, 255),
+                ribbon_bottom: Color32::from_rgb(191, 219, 255),
+                frame: Color32::from_rgb(58, 93, 143),
+                accent: Color32::from_rgb(46, 91, 158),
+                accent_soft: Color32::from_rgb(255, 228, 150),
+                accent_border: Color32::from_rgb(219, 206, 153),
+                group_bg: Color32::from_rgb(223, 233, 246),
+                group_border: Color32::from_rgb(174, 197, 214),
+                tab_active: Color32::from_rgb(229, 237, 248),
+                work_bg: Color32::from_rgb(164, 195, 235),
+                text: Color32::from_rgb(21, 66, 139),
                 disabled: Some(Color32::from_rgb(141, 141, 141)),
+                tab_text: Color32::from_rgb(21, 66, 139),
+                status_bg: Color32::from_rgb(186, 212, 247),
+                status_text: Color32::from_rgb(21, 66, 139),
             },
-            Skin::Black => Palette {
-                ribbon_top: Color32::from_rgb(0x74, 0x78, 0x7D),
-                ribbon_bottom: Color32::from_rgb(0x50, 0x53, 0x57),
-                frame: Color32::from_rgb(0x2B, 0x2C, 0x2E),
-                accent: Color32::from_rgb(0x3A, 0x6E, 0xA5),
-                accent_soft: Color32::from_rgb(0xF5, 0xD6, 0x7A),
-                accent_border: Color32::from_rgb(0xC8, 0x95, 0x1A),
-                group_bg: Color32::from_rgb(0x6A, 0x6D, 0x72),
-                group_border: Color32::from_rgb(0x44, 0x46, 0x49),
-                tab_active: Color32::from_rgb(0x83, 0x87, 0x8C),
-                work_bg: Color32::from_rgb(0x58, 0x5B, 0x5F),
-                text: Color32::from_rgb(0xF0, 0xF0, 0xF0),
-                // The read (141, 141, 141) needs the style's light panel body;
-                // ours is dark (the Black palette not yet read).
-                disabled: None,
-            },
-            Skin::Silver => Palette {
-                ribbon_top: Color32::from_rgb(0xEE, 0xEF, 0xF2),
-                ribbon_bottom: Color32::from_rgb(0xCE, 0xD1, 0xD8),
-                frame: Color32::from_rgb(0x8A, 0x8D, 0x94),
-                accent: Color32::from_rgb(0x55, 0x6A, 0x86),
-                accent_soft: Color32::from_rgb(0xFF, 0xE4, 0x9B),
-                accent_border: Color32::from_rgb(0xD9, 0xA8, 0x3A),
-                group_bg: Color32::from_rgb(0xE6, 0xE8, 0xEC),
-                group_border: Color32::from_rgb(0xC2, 0xC5, 0xCC),
-                tab_active: Color32::from_rgb(0xFA, 0xFB, 0xFC),
-                work_bg: Color32::from_rgb(0xBD, 0xC0, 0xC7),
-                text: Color32::from_rgb(0x2C, 0x30, 0x36),
+                        Skin::Black => Palette {
+                // The Office 2007 style data (L9.117): BARS/DEFAULT for the
+                // band, the category body's top, RIBBON/PANEL/TextNormal, the
+                // tab and status-bar texts, MAINWND/MainClientArea.
+                ribbon_top: Color32::from_rgb(83, 83, 83),
+                ribbon_bottom: Color32::from_rgb(83, 83, 83),
+                frame: Color32::from_rgb(43, 44, 46),
+                accent: Color32::from_rgb(58, 110, 165),
+                accent_soft: Color32::from_rgb(255, 228, 150),
+                accent_border: Color32::from_rgb(219, 206, 153),
+                group_bg: Color32::from_rgb(225, 227, 231),
+                group_border: Color32::from_rgb(146, 148, 152),
+                tab_active: Color32::from_rgb(215, 219, 224),
+                work_bg: Color32::from_rgb(70, 70, 70),
+                text: Color32::from_rgb(0, 0, 0),
                 disabled: Some(Color32::from_rgb(141, 141, 141)),
+                tab_text: Color32::from_rgb(255, 255, 255),
+                status_bg: Color32::from_rgb(47, 48, 48),
+                status_text: Color32::from_rgb(255, 255, 255),
             },
-            Skin::Aqua => Palette {
-                ribbon_top: Color32::from_rgb(0xC4, 0xE4, 0xE4),
-                ribbon_bottom: Color32::from_rgb(0x9C, 0xCB, 0xCE),
-                frame: Color32::from_rgb(0x36, 0x75, 0x79),
-                accent: Color32::from_rgb(0x1F, 0x79, 0x7E),
-                accent_soft: Color32::from_rgb(0xFF, 0xE4, 0x9B),
-                accent_border: Color32::from_rgb(0xD9, 0xA8, 0x3A),
-                group_bg: Color32::from_rgb(0xD5, 0xEA, 0xEA),
-                group_border: Color32::from_rgb(0xAC, 0xCE, 0xD0),
-                tab_active: Color32::from_rgb(0xF0, 0xFA, 0xFA),
-                work_bg: Color32::from_rgb(0x8F, 0xBF, 0xC2),
-                text: Color32::from_rgb(0x14, 0x3B, 0x3D),
+                        Skin::Silver => Palette {
+                // The Office 2007 style data (L9.117): BARS/DEFAULT for the
+                // band, the category body's top, RIBBON/PANEL/TextNormal, the
+                // tab and status-bar texts, MAINWND/MainClientArea.
+                ribbon_top: Color32::from_rgb(208, 212, 221),
+                ribbon_bottom: Color32::from_rgb(208, 212, 221),
+                frame: Color32::from_rgb(138, 141, 148),
+                accent: Color32::from_rgb(85, 106, 134),
+                accent_soft: Color32::from_rgb(255, 228, 150),
+                accent_border: Color32::from_rgb(219, 206, 153),
+                group_bg: Color32::from_rgb(230, 232, 236),
+                group_border: Color32::from_rgb(152, 154, 157),
+                tab_active: Color32::from_rgb(242, 244, 248),
+                work_bg: Color32::from_rgb(186, 193, 202),
+                text: Color32::from_rgb(76, 83, 92),
+                disabled: Some(Color32::from_rgb(141, 141, 141)),
+                tab_text: Color32::from_rgb(76, 83, 92),
+                status_bg: Color32::from_rgb(199, 201, 206),
+                status_text: Color32::from_rgb(35, 38, 42),
+            },
+                        Skin::Aqua => Palette {
+                // The Office 2007 style data (L9.117): BARS/DEFAULT for the
+                // band, the category body's top, RIBBON/PANEL/TextNormal, the
+                // tab and status-bar texts, MAINWND/MainClientArea.
+                ribbon_top: Color32::from_rgb(196, 202, 217),
+                ribbon_bottom: Color32::from_rgb(196, 202, 217),
+                frame: Color32::from_rgb(96, 106, 128),
+                accent: Color32::from_rgb(46, 74, 138),
+                accent_soft: Color32::from_rgb(190, 201, 222),
+                accent_border: Color32::from_rgb(143, 153, 181),
+                group_bg: Color32::from_rgb(210, 215, 227),
+                group_border: Color32::from_rgb(176, 184, 202),
+                tab_active: Color32::from_rgb(195, 202, 217),
+                work_bg: Color32::from_rgb(181, 189, 211),
+                text: Color32::from_rgb(0, 21, 110),
                 disabled: Some(Color32::from_rgb(159, 141, 154)),
+                tab_text: Color32::from_rgb(0, 21, 110),
+                status_bg: Color32::from_rgb(209, 215, 229),
+                status_text: Color32::from_rgb(0, 21, 110),
             },
         }
     }
@@ -192,13 +229,19 @@ pub struct Palette {
     /// TextDisabled (`0x10186ca0`); the older looks use the text at half
     /// strength.
     pub disabled: Option<Color32>,
+    /// Inactive category-tab labels (RIBBON/CATEGORY/TAB/TextNormal).
+    pub tab_text: Color32,
+    /// The status bar's fill and text.
+    pub status_bg: Color32,
+    pub status_text: Color32,
 }
 
 /// Apply a skin to the egui context (base widget visuals; the ribbon paints its
 /// own gradients on top).
 pub fn apply(ctx: &egui::Context, skin: Skin) {
     let p = skin.palette();
-    let dark = matches!(skin, Skin::Black);
+    // Office 2007 Black has a light ribbon and dialogs inside a dark frame.
+    let dark = false;
     let mut v = if dark {
         egui::Visuals::dark()
     } else {

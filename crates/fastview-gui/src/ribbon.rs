@@ -222,7 +222,7 @@ impl App {
         if self.print.preview.is_some() {
             ui.horizontal(|ui| {
                 ui.add_space(6.0);
-                ribbon_tab(ui, "Просмотр для печати", true, p.tab_active, p.text);
+                ribbon_tab(ui, "Просмотр для печати", true, p);
             });
             if !self.ribbon_minimized {
                 egui::Frame::none()
@@ -244,7 +244,7 @@ impl App {
         ui.horizontal(|ui| {
             ui.add_space(6.0);
             for (label, tab) in [("Главная", RibbonTab::Home), ("ОМП", RibbonTab::Omp)] {
-                let r = ribbon_tab(ui, label, self.tab == tab, p.tab_active, p.text);
+                let r = ribbon_tab(ui, label, self.tab == tab, p);
                 if r.double_clicked() {
                     cmds.push(Command::ToggleRibbonMin);
                 } else if r.clicked() {
@@ -634,7 +634,10 @@ fn help_menu_id() -> egui::Id {
     egui::Id::new("fv_help_menu")
 }
 
-fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, active_bg: Color32, text: Color32) -> egui::Response {
+/// A category tab: the active one on its light fill in `text`
+/// (TextHighlighted), the others on the band in the inactive colour.
+fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, p: crate::theme::Palette) -> egui::Response {
+    let (active_bg, text) = (p.tab_active, if active { p.text } else { p.tab_text });
     let fill = if active { active_bg } else { Color32::TRANSPARENT };
     let btn = egui::Button::new(RichText::new(label).color(text).strong())
         .fill(fill)

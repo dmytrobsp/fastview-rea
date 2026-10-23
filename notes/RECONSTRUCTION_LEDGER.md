@@ -3672,10 +3672,7 @@ can now collapse in a very narrow window — L9.91's «never» was ours),
 `large_button_text_breaks_at_the_balanced_space`,
 `narrow_ribbon_collapses_panels_and_keeps_its_height` (the first step
 found by width); rendered at 1320 / 866 and the menu.
-Residual: the Black look keeps half-strength disabled ink — its palette
-(a dark body, light text) is ours and contradicts the style's black panel
-text (RIBBON/PANEL/TextNormal, INFERRED from the style data) — the Black
-palette needs reading; the line height is ours (12 px; MFC's from the
+Residual: (the Black palette: L9.117); the line height is ours (12 px; MFC's from the
 font); whether Repos stretches large buttons to the column NOT
 DETERMINED; the collapsed button's 16 px image is ours (a framed square).
 
@@ -3734,6 +3731,34 @@ Residual: the shell namespace is ours (no Libraries / Network / Recycle
 bin, no shell icons or context menu); the local time offset of «today»
 not taken; the spec's `<` corrected to `≤` (L9.9's ≤ was right); `.sto`
 entries stay ⛔ (the converter).
+
+### L9.117 — The Office 2007 looks' colours from MFC's style data  ·  ✅
+Read (subagent report on the four `*_IDX_OFFICE2007_STYLE` XMLs and style
+PNGs in mfc120u; the values READ, their mapping to our fields INFERRED
+unless named): RIBBON/PANEL/TextNormal (labels) Blue (21, 66, 139), Black
+(0, 0, 0), Silver (76, 83, 92), Aqua (0, 21, 110); RIBBON/CATEGORY/TAB
+TextNormal (inactive tabs) the same but Black white; BARS/DEFAULT (the
+band) (191, 219, 255) | (83, 83, 83) | (208, 212, 221) | (196, 202, 217);
+the category body's top (229, 237, 248) | (215, 219, 224) | (242, 244,
+248) | (195, 202, 217); MAINWND/MainClientArea (164, 195, 235) | (70, 70,
+70) | (186, 193, 202) | (181, 189, 211); the status bar (STATUSBAR_BACK,
+BARS/STATUSBAR/TextNormal) Blue (186, 212, 247) / (21, 66, 139), Black
+(47, 48, 48) / white, Silver (199, 201, 206) / (35, 38, 42), Aqua (209,
+215, 229) / (0, 21, 110); the hot button (255, 237, 186) → (255, 218,
+115), border (219, 206, 153) — Aqua's blue-grey (198, 210, 231) →
+(183, 193, 213), border (143, 153, 181). So Black is a light ribbon with
+black labels in a dark frame, tab row and status bar, and Aqua is
+blue-grey, not teal.
+Ours had a dark Black ribbon with light labels (dark egui visuals) and a
+teal Aqua, among smaller shifts. Now the four palettes as read (panel
+separators blended from their alpha over the body — INFERRED),
+`Palette::{tab_text, status_bg, status_text}`, `ribbon_tab` with the
+inactive colour, the status bar's own fill and text, light visuals for
+every look, the read disabled grey for Black too. Rendered all four.
+Residual: the panels' translucent caption band and inner white line, the
+category body's gradient (ours flat), the application button's orb, the
+caption bar and the main frame border are not drawn from the style
+images; the pre-2007 looks' palettes stay ours (INFERRED system colours).
 
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
