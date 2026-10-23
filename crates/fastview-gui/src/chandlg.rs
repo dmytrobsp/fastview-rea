@@ -476,8 +476,11 @@ impl App {
         let Some(mut st) = self.dlg.channels.take() else { return };
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
         let pal = self.skin.palette();
+        // The template holds only the list: no OK button. Enter is IDOK, whose
+        // handler (`0x436030`) only commits a running rename; Esc is MFC's
+        // OnCancel and closes the dialog, a running rename dropped.
+        let esc = self.dialog_keys(ctx) == Some(false);
         let mut open = true;
-        let mut ok = false;
         let mut alert: Option<&'static str> = None;
         egui::Window::new("Отображение каналов")
             .collapsible(false)
@@ -575,27 +578,11 @@ impl App {
                         }
                     }
                 });
-                ui.add_space(4.0);
-                ui.vertical_centered(|ui| {
-                    if ui.button("    OK    ").clicked() {
-                        ok = true;
-                    }
-                });
             });
         if let Some(m) = alert {
             self.dlg.push_alert(m.to_string());
         }
-        // OK commits a running rename.
-        if ok {
-            if let Some((k, text)) = st.rename.take() {
-                if let Err(m) = rename(&mut self.docs[ai], k, &text) {
-                    self.dlg.push_alert(m.to_string());
-                    self.dlg.channels = Some(st);
-                    return;
-                }
-            }
-        }
-        if open && !ok {
+        if open && !esc {
             self.dlg.channels = Some(st);
         }
     }
@@ -953,6 +940,29 @@ mod ui_tests {
         h.frame(vec![]);
         assert_eq!(h.app.dlg.alert(), Some(MSG_NAME_TAKEN));
         assert_eq!(h.app.docs[0].osc.analog[0].id, "Ua");
+    }
+
+    /// DIALOG 463 has no OK: Enter only commits a rename, Esc closes the
+    /// dialog and drops a running one.
+    #[test]
+    fn channels_enter_commits_esc_closes() {
+        let key = |key| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        let mut h = Harness::new();
+        h.app.dispatch(Command::ChannelsDialog);
+        h.frame(vec![]);
+        h.frame(vec![]);
+        h.click(ch_cell(h.ch_origin(), Some(0), 0));
+        h.app.dlg.channels.as_mut().unwrap().rename.as_mut().unwrap().1 = "Ua1".into();
+        h.frame(vec![key(egui::Key::Enter)]);
+        h.frame(vec![]);
+        assert_eq!(h.app.docs[0].osc.analog[0].id, "Ua1");
+        assert!(h.app.dlg.channels.is_some(), "Enter keeps the dialog");
+        h.click(ch_cell(h.ch_origin(), Some(0), 0));
+        h.app.dlg.channels.as_mut().unwrap().rename.as_mut().unwrap().1 = "Ux".into();
+        h.frame(vec![key(egui::Key::Escape)]);
+        h.frame(vec![]);
+        assert!(h.app.dlg.channels.is_none(), "Esc closes");
+        assert_eq!(h.app.docs[0].osc.analog[0].id, "Ua1", "the rename is dropped");
     }
 
     #[test]

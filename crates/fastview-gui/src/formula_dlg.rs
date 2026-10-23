@@ -36,6 +36,11 @@ pub struct AddFormulaDlg {
     /// the DDX's 396 is MB_OK (`0x403213`), the member check's 396 / 473
     /// MB_ICONHAND (`0x4033ed` / `0x403519`).
     pub alerts: Vec<(&'static str, MsgIcon)>,
+    /// The formula member `+0x1c8`: empty until an OK passes the name check.
+    pub formula: String,
+    /// A field of the hosted form had the focus this frame (its Enter / Esc
+    /// go to the form, `0x401c40` / `0x485d10`).
+    pub form_focus: bool,
     /// Items of the channel lists: the record's analog channels, then the
     /// computed channels (`0x411c70`).
     pub channels: Vec<String>,
@@ -60,6 +65,8 @@ impl AddFormulaDlg {
             values: Values::new(),
             collapsed: BTreeSet::new(),
             alerts: Vec::new(),
+            formula: String::new(),
+            form_focus: false,
             channels,
             taken,
             sample_rate,
@@ -84,7 +91,22 @@ impl AddFormulaDlg {
     /// 396 / 473 stop here), and only then `CDialog::OnOK` runs `UpdateData`
     /// again, which repeats the 396 and keeps the dialog open.
     pub fn accept(&mut self) -> Option<(String, String)> {
-        let form = self.form?;
+        self.on_ok().then(|| (self.member.clone(), self.formula.clone()))
+    }
+
+    /// Enter / OK in the hosted form (`0x401c40`): the parent's OnOK, then
+    /// EndDialog(IDOK) whatever it did — the caller appends a row from the
+    /// two members as they stand (a refused name: the member and the
+    /// formula of the last OK that got that far, empty at first).
+    pub fn accept_from_form(&mut self) -> (String, String) {
+        self.on_ok();
+        (self.member.clone(), self.formula.clone())
+    }
+
+    /// `0x403530`: true when `CDialog::OnOK` ends the dialog. The formula
+    /// is built once the member passes, before the second DDX.
+    fn on_ok(&mut self) -> bool {
+        let Some(form) = self.form else { return false };
         let taken: Vec<&str> = self.taken.iter().map(String::as_str).collect();
         let ddx_ok = af::ddx_name_ok(&self.name);
         if ddx_ok {
@@ -94,14 +116,15 @@ impl AddFormulaDlg {
         }
         if let Err(e) = af::check_name(&self.member, &taken) {
             self.alerts.push((e.message(), MsgIcon::Error));
-            return None;
+            return false;
         }
+        let Some(f) = af::build(form, &self.values) else { return false };
+        self.formula = f;
         if !ddx_ok {
             self.alerts.push((af::MSG_BAD_NAME, MsgIcon::Exclamation));
-            return None;
+            return false;
         }
-        let f = af::build(form, &self.values)?;
-        Some((self.member.clone(), f))
+        true
     }
 }
 
@@ -129,6 +152,7 @@ impl App {
         let mut open = true;
         let modal = st.alerts.is_empty();
         st.item_rects.clear();
+        st.form_focus = false;
         egui::Window::new("Добавить новую формулу")
             .id(egui::Id::new("fv_add_formula"))
             .collapsible(false)
@@ -197,8 +221,19 @@ impl App {
                 st.alerts.remove(0);
             }
         } else if modal {
-            // Enter in the form is the parent's OK (`0x401c40`); Esc cancels.
+            // Enter / Esc in the dialog's own controls are its IDOK / IDCANCEL.
+            // The form templates lack DS_CONTROL, so in a form field they go
+            // to the form: `0x401c40` runs the parent's OnOK and closes it
+            // with IDOK whatever happened, `0x485d10` closes it with IDCANCEL.
             if ctx.input(|i| i.key_pressed(egui::Key::Enter)) && st.form.is_some() {
+                if st.form_focus {
+                    let (name, formula) = st.accept_from_form();
+                    for (msg, icon) in st.alerts.drain(..) {
+                        self.dlg.push_alert_icon(msg, icon);
+                    }
+                    self.fp_add_row(name, formula);
+                    return;
+                }
                 done = Some(true);
             } else if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
                 done = Some(false);
@@ -300,7 +335,9 @@ fn form_ui(ui: &mut egui::Ui, dialog: u16, st: &mut AddFormulaDlg) {
             if kind == Kind::Check {
                 let mut on = st.values.get(&id).is_some_and(|v| v == "1");
                 ui.label("");
-                if ui.checkbox(&mut on, label).changed() {
+                let r = ui.checkbox(&mut on, label);
+                st.form_focus |= r.has_focus() || r.lost_focus();
+                if r.changed() {
                     st.values.insert(id, if on { "1" } else { "0" }.into());
                 }
             } else {
@@ -323,17 +360,19 @@ fn field_ui(ui: &mut egui::Ui, id: u16, kind: Kind, st: &mut AddFormulaDlg, widt
         Kind::Harmonic => af::harmonics(st.sample_rate, st.line_freq),
         Kind::Edit(_) => {
             let text = st.values.entry(id).or_default();
-            ui.add(egui::TextEdit::singleline(text).desired_width(width));
+            let r = ui.add(egui::TextEdit::singleline(text).desired_width(width));
+            st.form_focus |= r.has_focus() || r.lost_focus();
             return;
         }
         Kind::Check => return,
     };
     let cur = st.values.entry(id).or_default();
-    egui::ComboBox::from_id_salt(("af_field", id)).selected_text(cur.as_str()).width(width).show_ui(ui, |ui| {
+    let r = egui::ComboBox::from_id_salt(("af_field", id)).selected_text(cur.as_str()).width(width).show_ui(ui, |ui| {
         for it in &items {
             ui.selectable_value(cur, it.clone(), it);
         }
     });
+    st.form_focus |= r.response.has_focus() || r.response.lost_focus();
 }
 
 #[cfg(test)]
@@ -470,6 +509,25 @@ mod tests {
             }
         }
         assert!(h.app.active_doc().unwrap().computed.is_empty());
+    }
+
+    /// Enter in a form field (`0x401c40`): the parent's OnOK, then the
+    /// dialog ends with IDOK anyway — a taken name leaves the formula
+    /// member empty, a bad name keeps the proposal and builds the formula.
+    #[test]
+    fn enter_in_the_form_always_closes() {
+        let mut h = Harness::new();
+        let d = h.app.formula_dlg.as_mut().unwrap();
+        d.name = "Ua".into();
+        let (name, formula) = d.accept_from_form();
+        assert_eq!((name.as_str(), formula.as_str()), ("Ua", ""));
+        assert_eq!(d.alerts, vec![(af::MSG_NAME_TAKEN, MsgIcon::Error)]);
+        let mut d = AddFormulaDlg::new("Канал1".into(), vec!["Ua".into()], vec!["Ua".into()], 1000.0, 50.0);
+        d.name = "2x".into();
+        let (name, formula) = d.accept_from_form();
+        assert_eq!(name, "Канал1");
+        assert!(!formula.is_empty());
+        assert_eq!(d.alerts.len(), 2);
     }
 
     #[test]

@@ -4601,6 +4601,48 @@ Residual: the expand / collapse state of the groups is per session in
 ours (the original's is the grid's own and is rebuilt with the block,
 NOT DETERMINED whether it starts expanded — ours does).
 
+### L9.154 — Dialog keys and defaults from the vtable sweep: «Каналы» has no OK, pairs open on the first channel, the finder's default button, Enter in a formula form  ·  ✅
+Read (vtable-override sweep over the dialog / quick-analysis classes; by
+hand `0x436030`, `0x4216b0`, `0x401c40`, `0x403530`, the DIALOG 463 / 554
+templates): DIALOG 463 holds only the list (id 1013) — no OK; its OnOK
+`0x436030` is a bare jump to the rename commit `0x435c80` (nothing
+without a running rename), OnCancel is MFC's, so Enter only commits a
+rename and Esc closes the dialog, a running rename dropped (only a click
+elsewhere commits). DIALOG 554: both combos are filled (kind-0 channels,
+unsorted) and set to their first item (`0x4216b0`, CB_SETCURSEL 0), so
+«Добавить» is usable at once; «Добавить» sits at the right under the
+combos, «Удалить» at the right under the list, OK / Отмена at the bottom
+right. The finder (DIALOG 558): «Открыть файлы» is IDOK and never greyed
+— OnOK `0x46e120` stops the scan, opens every selected file and closes
+(nothing selected: just closes); OnCancel `0x46e2b0`; the finder only
+enables / disables its list, so «Удалить файлы» is never greyed either
+(an empty delete: NOT DETERMINED, ours does nothing). «Добавить новую
+формулу»: the form templates lack DS_CONTROL, so Enter / Esc in a form
+field reach the form — FormulaWnd::OnOK `0x401c40` calls the parent's
+OnOK and then EndDialog(IDOK) whatever it did, OnCancel `0x485d10` ends
+it with IDCANCEL; the parent's OnOK `0x403530` returns after a refused
+member check before the formula member (`+0x1c8`) is built, and builds it
+before `CDialog::OnOK`'s second DDX; the caller `0x486df0` appends a row
+from the two members on any IDOK. So a taken name → 473, the dialog
+closes, a row with that name and an empty formula; an empty or digit-led
+name → 396 twice, a row with the proposal and the built formula.
+Already covered (no change): the quick-analysis sheet and pages (no
+OnSetActive / OnApply / timers; nothing recalculates while the modal
+sheet is up), the coefficient, print, ОМП and converter overrides.
+Ours had an OK in «Каналы» (Esc cancelled only a rename), empty pair
+combos, both finder buttons greyed until a selection and no Enter / Esc,
+and Enter in a form field stayed open on a refusal. Now
+`channels_window` (no OK; Esc via `dialog_keys` closes), `CreatePairs`
+seeds both combos with the first channel and the template's button
+places, `finder_window` (Enter = open the selection and close, Esc =
+close, neither button greyed), `AddFormulaDlg::{formula, form_focus,
+accept_from_form}` (the alerts move to the app queue as the dialog
+closes). Tests `channels_enter_commits_esc_closes`,
+`pair_dialog_opens_on_the_first_channel`, `enter_in_the_form_always_closes`.
+Residual: whether doc+0x1d8 counts computed channels for the pair
+combos (as L9.151); the sheet's OnActivatePage `0x48c210` skips the base
+(the side bar would not follow a keyboard page switch — ours has none).
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

@@ -716,7 +716,10 @@ impl App {
                 }
                 if let Some(d) = self.active_doc() {
                     let pairs = if diff { d.dif_pairs.clone() } else { d.rx_pairs.clone() };
-                    self.diag.pair_dlg = Some(PairDialog { diff, pairs, a: None, b: None, sel: None });
+                    // Both combos open on their first channel (`0x4216b0`,
+                    // CB_SETCURSEL 0), so «Добавить» is usable at once.
+                    let first = doc_chans(d).into_iter().next().map(|c| c.name);
+                    self.diag.pair_dlg = Some(PairDialog { diff, pairs, a: first.clone(), b: first, sel: None });
                 }
             }
             DiagCmd::ShowAll(on) => {
@@ -1462,18 +1465,14 @@ impl App {
                 }
                 ui.end_row();
             });
-            ui.horizontal(|ui| {
+            // The template's layout: «Добавить» at the right under the
+            // combos, the list, «Удалить» at the right under it, then OK /
+            // Отмена at the bottom right.
+            ui.allocate_ui_with_layout(Vec2::new(380.0, 22.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // «Добавить» needs both channels; the new row is selected.
                 if ui.add_enabled(dlg.a.is_some() && dlg.b.is_some(), egui::Button::new("Добавить")).clicked() {
                     dlg.pairs.push(ChanPair::new(dlg.a.clone().unwrap_or_default(), dlg.b.clone().unwrap_or_default()));
                     dlg.sel = Some(dlg.pairs.len() - 1);
-                }
-                // «Удалить» removes the selected row and selects the next (or last).
-                if ui.add_enabled(dlg.sel.is_some(), egui::Button::new("Удалить")).clicked() {
-                    if let Some(s) = dlg.sel {
-                        dlg.pairs.remove(s);
-                        dlg.sel = if dlg.pairs.is_empty() { None } else { Some(s.min(dlg.pairs.len() - 1)) };
-                    }
                 }
             });
             egui::Frame::none().stroke(ui.visuals().widgets.noninteractive.bg_stroke).show(ui, |ui| {
@@ -1491,12 +1490,21 @@ impl App {
                     }
                 });
             });
-            ui.horizontal(|ui| {
-                if ui.button("OK").clicked() {
-                    done = Some(true);
+            ui.allocate_ui_with_layout(Vec2::new(380.0, 22.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // «Удалить» removes the selected row and selects the next (or last).
+                if ui.add_enabled(dlg.sel.is_some(), egui::Button::new("Удалить")).clicked() {
+                    if let Some(s) = dlg.sel {
+                        dlg.pairs.remove(s);
+                        dlg.sel = if dlg.pairs.is_empty() { None } else { Some(s.min(dlg.pairs.len() - 1)) };
+                    }
                 }
+            });
+            ui.allocate_ui_with_layout(Vec2::new(380.0, 22.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("Отмена").clicked() {
                     done = Some(false);
+                }
+                if ui.button("OK").clicked() {
+                    done = Some(true);
                 }
             });
         });
@@ -1875,6 +1883,16 @@ mod tests {
         assert_eq!(h.app.diag.circle.z, 1.5, "Ctrl+wheel up: ×1.5");
         h.wheel(-1.0, egui::Modifiers::CTRL);
         assert_eq!((h.app.diag.circle.z, h.app.diag.circle.ox, h.app.diag.circle.oy), (1.0, 0, 0), "back to z = 1 resets the pans");
+    }
+
+    #[test]
+    fn pair_dialog_opens_on_the_first_channel() {
+        let mut h = H::new(Pane::Circle);
+        h.app.diag_cmd(Window::Circle, DiagCmd::CreatePairs, Pos2::ZERO);
+        let first = doc_chans(h.app.active_doc().unwrap()).into_iter().next().map(|c| c.name);
+        let dlg = h.app.diag.pair_dlg.as_ref().unwrap();
+        assert!(first.is_some());
+        assert_eq!((&dlg.a, &dlg.b), (&first, &first));
     }
 
     #[test]

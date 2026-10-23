@@ -666,13 +666,20 @@ impl App {
     }
 
     pub fn finder_window(&mut self, ctx: &egui::Context) {
+        // «Открыть файлы» is the default button: Enter is IDOK (`0x46e120`),
+        // Esc IDCANCEL (`0x46e2b0`).
+        let keys = self.dialog_keys(ctx);
         let Some(f) = self.finder.as_mut() else { return };
+        let keys = keys.filter(|_| f.confirm_delete.is_none());
         f.poll();
         if f.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
         let mut open_files: Vec<PathBuf> = Vec::new();
-        let mut close = false;
+        let mut close = keys.is_some();
+        if keys == Some(true) {
+            open_files = f.selected.iter().map(|&i| f.files[i].path.clone()).collect();
+        }
         let mut rescan = false;
         let mut open = true;
         egui::Window::new("Проводник")
@@ -813,7 +820,9 @@ impl App {
                     });
                 });
                 ui.horizontal(|ui| {
-                    if ui.add_enabled(!f.selected.is_empty(), egui::Button::new("Удалить файлы")).clicked() {
+                    // Neither button is ever greyed (the finder only enables
+                    // and disables its list).
+                    if ui.button("Удалить файлы").clicked() && !f.selected.is_empty() {
                         // `0x46d4b0`: every selected file and its companions
                         // in one shell delete — to the recycle bin unless
                         // Shift is held; the shell asks, not the program.
@@ -825,8 +834,11 @@ impl App {
                             f.confirm_delete = Some((paths, permanent));
                         }
                     }
-                    if ui.add_enabled(!f.selected.is_empty(), egui::Button::new("Открыть файлы")).clicked() {
+                    // OnOK: stop the scan, open every selected file, close —
+                    // with nothing selected it only closes.
+                    if ui.button("Открыть файлы").clicked() {
                         open_files = f.selected.iter().map(|&i| f.files[i].path.clone()).collect();
+                        close = true;
                     }
                     if ui.button("Закрыть").clicked() {
                         close = true;
