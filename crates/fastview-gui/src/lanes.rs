@@ -1977,8 +1977,8 @@ fn lane_stats(
             // Value at the cursor and Max/Min follow the display mode; СКЗ
             // and A1 are always the one-period RMS and first harmonic.
             let [.., mn, mx] = scaled_minmax(doc, *i, primary);
-            let rms = doc.rms_at(*i, k_main) * scale;
-            let a1 = doc.harmonic_at(*i, k_main) * doc.osc.harmonic1_gain * scale;
+            let rms = doc.stat_rms(*i, k_main) * scale;
+            let a1 = doc.stat_a1(*i, k_main) * doc.osc.harmonic1_gain * scale;
             let val = mode_disp(doc, *i, k_main, primary);
             (ch.id.clone(), analog_unit(doc, *i), doc.chans[*i].color, mx, mn, rms, a1, val)
         }

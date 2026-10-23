@@ -197,7 +197,6 @@ impl Doc {
     /// candidates (`0x42ebd0`), which turns «Не корректировать» back into the
     /// first candidate whenever there is one (L9.65).
     pub fn channels_changed(&mut self) {
-        let before = self.osc.freq_sel;
         // Formula channels (after the analog ones) and pasted analog ones
         // (at their insertion point) are candidates too, by the same test
         // (`0x42aee0`: ph / ccbm «system» or a frequency unit — no bit-14
@@ -220,10 +219,11 @@ impl Doc {
             }
         }
         self.osc.extra_freq = extra;
+        // The rebuild (`0x42ebd0`) refreshes no cache (L9.103): a changed
+        // selection reaches the statistics panel and the frequency diagram
+        // at once (they read it live) but the cached series — phasors, RMS
+        // lanes, formula channels — only at the next full recompute.
         fvb_core::freqcorr::refresh_selection(&mut self.osc);
-        if self.osc.freq_sel != before {
-            self.recompute_signals();
-        }
     }
 
     /// The correction for computed channel `j`: none for the frequency

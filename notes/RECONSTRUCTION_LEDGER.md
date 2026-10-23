@@ -3143,10 +3143,8 @@ live) and the frequency diagram show the new correction at once, while
 the vector phasors, RMS / harmonic lane series and formula channels'
 samples keep the old one until the dialog, a «Рассчитать» (formulas
 only) or a flag toggle (that channel only) refreshes them.
-Residual: that staleness after an implicit change is not modelled (ours
-recomputes everything, and our analog statistics read caches where the
-original's are live); «Рассчитать» re-evaluating the older formula
-channels is therefore invisible in ours.
+Residual: (the staleness after an implicit change, the live statistics
+and «Рассчитать» re-evaluating every formula: L9.103).
 
 ### L9.96 — Levels on digital lanes; unshown items kept in place; y truncated whole  ·  ✅
 Read (subagent report; by hand: `0x471210`–`0x471232` truncates
@@ -3368,6 +3366,32 @@ Residual: our group's three panes are one unit — a group tab pulled out
 of a group without Частотная does nothing, and one pulled out of a
 combined group takes the whole group; tab reordering not modelled; the
 float lands under the pointer rather than at the recent floating rect.
+
+### L9.103 — A frequency change by insert / paste refreshes no cache; statistics live  ·  ✅
+Read (L9.95's report; by hand: `0x42e540` is called only at `0x44a25d` /
+`0x44a30d` in «Параметры файла»; none of the six callers of the
+candidate rebuild `0x42ebd0` — insert `0x42e5c0`, `0x42e810`, `0x42e940`,
+`0x42ead0`, `0x42ecf0`, `0x450e70` — refreshes the channel caches; only
+`0x42e810` / `0x42e940` update their own channel): when an inserted or
+pasted channel moves the frequency selection, the statistics panel's
+СКЗ / A1 (`0x4272a0`, `0x426240`, reading `rec+0x874` when painted) and
+the frequency diagram take the new correction at once; the vector
+phasors, RMS / harmonic lane series and formula channels keep the old
+one until the dialog's full recompute; a «Рассчитать» re-evaluates the
+whole formula list (`0x415780`).
+Ours recomputed everything whenever the rebuild changed the selection,
+read the statistics from the caches and evaluated only the new formula
+lines. Now `channels_changed` only rebuilds the candidates;
+`Doc::{stat_rms, stat_a1}` (live, current correction) feed the
+statistics panel; `Doc::reevaluate_formulas` runs before each appended
+batch (and in the full recompute). Tests
+`frequency_correction_on_load_off_and_back` (stale phasors, live
+statistics after the rebuild; fresh after the recompute),
+`a_stale_formula_channel_is_refreshed_by_the_next_calculation`.
+Residual: the frequency diagram's own cache behaviour beyond its live
+spectrum not re-read; the per-channel flag commands that refresh one
+channel's cache (`0x428490`'s other callers) follow our full per-channel
+recompute (INFERRED equivalent).
 
 Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

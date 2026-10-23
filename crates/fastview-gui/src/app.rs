@@ -663,8 +663,13 @@ impl Doc {
         }
         // The correction reads the frequency channel as stored (L9.65).
         self.analysis = Analysis::compute_with(&self.flagged, fvb_core::freqcorr::of(&self.osc));
-        // Formula channels are evaluated again in order on the new values
-        // (merged and ОМП channels carry no formula to re-evaluate).
+        self.reevaluate_formulas(show_primary);
+    }
+
+    /// Formula channels are evaluated again in order on the current values
+    /// and correction (`0x415780` over the whole definition list; merged and
+    /// ОМП channels carry no formula to re-evaluate).
+    pub fn reevaluate_formulas(&mut self, show_primary: bool) {
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
         for c in &mut self.computed {
             if c.formula != "ОМП" && c.formula != "объединение" {
@@ -699,6 +704,20 @@ impl Doc {
 
     pub fn rms_at(&self, i: usize, k: usize) -> f64 {
         self.rms[i].get(k).copied().unwrap_or(0.0)
+    }
+
+    /// The statistics panel's СКЗ and A1 (without the record gain) at `k`,
+    /// computed when painted with the current correction (`0x4272a0`,
+    /// `0x426240` read `rec+0x874` live) — unlike the cached series, which
+    /// keep the correction they were built with until a full recompute.
+    pub fn stat_rms(&self, i: usize, k: usize) -> f64 {
+        let n = self.osc.samples_per_cycle().max(2);
+        self.flagged.analog.get(i).map_or(0.0, |c| fvb_core::freqcorr::rms_at(fvb_core::freqcorr::of(&self.osc), i, &c.samples, k, n, 1))
+    }
+
+    pub fn stat_a1(&self, i: usize, k: usize) -> f64 {
+        let n = self.osc.samples_per_cycle().max(2);
+        self.flagged.analog.get(i).map_or(0.0, |c| fvb_core::freqcorr::fundamental_at(fvb_core::freqcorr::of(&self.osc), i, &c.samples, k, n))
     }
 
     pub fn harmonic_at(&self, i: usize, k: usize) -> f64 {
@@ -1996,10 +2015,14 @@ impl App {
     pub fn append_computed(&mut self, batch: &[(String, String)]) -> Option<Vec<String>> {
         let show_primary = self.active_doc().is_some_and(Doc::primary_values);
         let base = self.docs.len() + 7;
-        let Some(d) = self.active_doc() else {
+        let Some(d) = self.active_doc_mut() else {
             self.status = "Сначала загрузите осциллограмму.".into();
             return None;
         };
+        // The new definitions join the list and `0x415780` evaluates the
+        // whole list: the older formula channels take the current values
+        // and correction too (L9.103).
+        d.reevaluate_formulas(show_primary);
         let existing: Vec<_> = d.computed.iter().map(Computed::as_core).collect();
         match fvb_core::quick::evaluate_batch_with(&d.flagged, fvb_core::freqcorr::of(&d.osc), &existing, batch, show_primary) {
             Ok(added) => {
@@ -2086,9 +2109,37 @@ mod tests {
         let n = d.osc.samples_per_cycle();
         assert_eq!(d.analysis.phasors[3][k], fvb_core::signal::phasor_at(&d.flagged.analog[3].samples, k, n));
         assert_ne!(d.analysis.phasors[3][k], on.0);
+        // The rebuild turns it back on without refreshing the caches
+        // (L9.103): the statistics read it live, the phasors keep theirs.
+        let stale = d.analysis.phasors[3][k];
         d.channels_changed();
         assert_eq!(d.osc.freq_sel, 1);
+        assert_eq!(d.analysis.phasors[3][k], stale);
+        assert_eq!(d.stat_rms(3, k), on.1);
+        d.recompute_signals();
         assert_eq!((d.analysis.phasors[3][k], d.rms_at(3, k)), on);
+    }
+
+    /// L9.103: an implicit selection change leaves a formula channel's
+    /// samples as they were; the next «Рассчитать» (`0x415780` over the whole
+    /// list) re-evaluates it with the current correction.
+    #[test]
+    fn a_stale_formula_channel_is_refreshed_by_the_next_calculation() {
+        let cfg = DEMO_CFG.replacen("2,Ub,B,,V,", "2,Ub,B,,Гц,", 1);
+        let osc = fvb_core::comtrade::parse(&cfg, DEMO_DAT).unwrap();
+        let mut app = App::new();
+        app.docs.push(Doc::new(osc, "f".into()));
+        app.active = Some(0);
+        app.docs[0].osc.freq_sel = 0;
+        app.docs[0].recompute_signals();
+        app.append_computed(&[("X".into(), "rms:(Ua)".into())]).unwrap();
+        let k = 300;
+        let uncorrected = app.docs[0].computed[0].samples[k];
+        app.docs[0].channels_changed();
+        assert_eq!(app.docs[0].osc.freq_sel, 1);
+        assert_eq!(app.docs[0].computed[0].samples[k], uncorrected, "stale until recalculated");
+        app.append_computed(&[("Y".into(), "Ua*2".into())]).unwrap();
+        assert_ne!(app.docs[0].computed[0].samples[k], uncorrected, "re-evaluated with the correction");
     }
 
     /// A formula channel in Hz is a frequency candidate after the file's

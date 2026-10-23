@@ -1256,7 +1256,9 @@ up (L9.24); «Файл» main panel two columns, sub-items in the right column
 icon-only small buttons and panel collapse when narrow (L9.27).
 
 1. 🟡 (L9.3: right column with tab group + frequency below, toggles with
-   check, grid-above-plot; no floating/re-dock/auto-hide)
+   check, grid-above-plot; L9.92 float / re-dock / auto-hide; L9.98 the
+   workspace saved; L9.101 smart docking; L9.102 a tab dragged out; no tab
+   reordering)
    Diagrams as docked panes beside the always-visible oscillogram (vector +
    circle tabbed right, diff right, frequency bottom; visible by default;
    ribbon buttons toggle with check; panes follow the active document) —
