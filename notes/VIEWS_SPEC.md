@@ -73,15 +73,23 @@ ledger L9.73.
   треугольник» {0,1,11}, «Не учитывать» 0…11 greyed (`0x483ab0`);
   «Полуразность» only with 2 arms, else forced to «Полусумма» (`0x482b60`);
   Kторм enabled for Полусумма or Полуразность with 2 arms (`0x483da0`);
-  «<<» / «>>» greyed at the ends (`0x4831b0`); radios kept per arm.
+  «<<» / «>>» greyed at the ends (`0x4831b0`). The method radios
+  (reduction, group compensation, braking) are page-wide; each of the 24
+  arm slots (`0x47fb40`) keeps Ia/Ib/Ic, the eight edits, two group numbers
+  («По последовательностям» 2127 and «Цифровой треугольник» 2129, two
+  combos at one place) and «Удалить I0», written by each control's change
+  handler and restored on «<<» / «>>» (`0x482ca0`); a changed arm count
+  keeps every slot (ledger L9.79).
 - Defaults (`0x411f40`): R/X/K «1.», Ф/Rm/Xm/Km/Фm «0.», Iтр «0.25», Kторм
   {1, 0.5} = 0.5, arms 2…24 = 2, phases {1,3} = 3, «Удалить I0» on; 536 / 538
   Фазные, 537 Расчетный + «из Ua, Ub, Uc», 543 удельные.
 - Persistence per record: the shared OnInitDialog `0x48b690` loads each page
   from the document's settings tree (doc+0x300, written to the `.set`,
   L9.17) — categories SymmetricItemsPage, NullSequencePage,
-  InterPhaseResistPage, PhaseResistPage, DiffCurrentsPage (current arm reset
-  to 1); FormulaEditorPage has stubs (its list is the computed channels). A
+  InterPhaseResistPage, PhaseResistPage, DiffCurrentsPage (no method key
+  → «По мощности» / «Не учитывать»; all 24 slots set to the initial arm,
+  then each `Leg_%d` over its own slot, a missing value keeping the
+  initial one; the last arm is shown); FormulaEditorPage has stubs (its list is the computed channels). A
   missing key keeps the default.
 
 ## Vector diagram (`0x490360`)

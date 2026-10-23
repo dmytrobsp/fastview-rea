@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 338 pass)
+- `cargo test --workspace`   (currently 339 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -1892,7 +1892,7 @@ Residual: (defaults read 2026-10-23: the pages' shared OnInitDialog
 `0x48b690` calls `0x411f40`, which sets every one of ids 1050–1058 a page
 has to «1.» (GetDlgItem guarded) — all of 539's reduction edits; the
 first radio of the group in template order is «По коэффициенту
-приведения», which the load forces when none is set (L9.55) — both as
+приведения» (the load forces «По мощности» when none is set — L9.79) — both as
 ours); what a newly added arm stores before it is first shown is still
 inferred («1.», Kприв); grouping not dialog units.
 
@@ -1918,7 +1918,8 @@ compensateState; 539 DiffCurrentsPage legOption / groupConnOption /
 brakeCurrOption children, legCount phaseCount brakeCoeff (item texts),
 Leg_0… (IA IB IC seqGroup triangleGroup R0–R6 X0 I0State) loaded into
 the SAME controls one after another (a missing value keeps the previous
-arm's), higher Leg_ nodes never removed; FormulaEditorPage stubs (only
+arm's — WRONG, see L9.79: each leg loads over its own initial slot),
+higher Leg_ nodes never removed; FormulaEditorPage stubs (only
 the empty category).
 Ours: `App::quick` is one `QuickForms` per page (`page_index`); 
 `quick_show_page` / `quick_save_pages`, `load_page` / `save_page`
@@ -2568,7 +2569,7 @@ empty field as 0. Now `quick.rs` builds the builder's texts (`c`, `num`,
 takes the shown arm's methods. Tests `tests/quick.rs` (6, exact texts,
 uniq, group compensation evaluating).
 Residual: our page UI still keeps the reduction / group radios per arm
-(the original's are page-wide; we take the shown arm's); `0x48bff0`'s rule
+(the original's are page-wide; we take the shown arm's — done L9.79); `0x48bff0`'s rule
 taken as "free → as is, else _2, _3…" (VIEWS_SPEC), not re-read; missing
 page controls' edge cases NOT DETERMINED.
 
@@ -2695,6 +2696,39 @@ channel of their kind, so a pasted Hz channel's place in the list is not
 modelled (ours: not a candidate); the formula frequency channel's own
 readouts are not excluded from the correction (the original's gate skips
 the frequency channel itself).
+
+### L9.79 — Page 539: methods page-wide, values per arm  ·  ✅
+Read (subagent report; by hand: the restore `0x482ca0` sets the caption
+2086, the eight edits, the combos and the «Удалить I0» check from the
+arm's byte `+0x5b0` (`0x482f31`) and never a radio (2088 is fetched and
+dropped); the load forces 2082 «По мощности» with no key set
+(`0x4846e5`); the generation `0x47ff60` reads radios 2080–2083 and
+2087 / 2088 once): the page keeps 24 slots per arm field (`0x47fb40`:
+channels `+0xd0/+0x130/+0x190`, edits `+0x1f0`…`+0x490`, the sequence
+group `+0x4f0` (2127), the triangle group `+0x550` (2129), I0 bytes
+`+0x5b0`), written by each control's change handler; the reduction /
+group / braking radios and Kторм are page-wide. Generation: per arm its
+own values, the group number of the chosen method, I0 from the arm's byte.
+Load `0x4841c0`: options, counts, `0x4857a0` copies the controls' initial
+state (edits «1.», groups «0», channels preselected «Ia» / «Ib» / «Ic» by
+`0x411c70`) into all 24 slots, then each `Leg_%d` over its own slot (a
+missing value keeps the initial one); the last arm ends up shown. Save
+`0x484330`: the options from the radios, both group keys per leg. A
+changed arm count (`0x482b60` → `0x482a40`) keeps every slot.
+Ours kept the methods per arm (a newly shown arm silently switched every
+arm to Kприв, no group compensation), one group number per arm (a «5»
+carried into the triangle), dropped arms on a lower count, inherited the
+previous leg's values on load, showed arm 1 and left new arms' channels
+empty. Now `QuickForms::{dif_arms, dif_reduction, dif_group}`, 24
+`arms`, `ArmForm::{seq_group, tri_group}`, `initial_arm`, `load_diff` /
+`save_diff` as read, `quick_defaults` preselects the arm channels. Tests
+`differential_page_legs_load_over_initial_arms`,
+`differential_methods_are_page_wide`.
+Residual: `0x411c70`'s match rule taken as the case-insensitive exact
+name used for 3I0 (not re-read for «Ia»); a hand-edited `.set` with two
+method keys set (two radios checked → two reductions, INFERRED) not
+modelled; which «Группа:» combo shows under «Не учитывать» (`0x4831b0`
+not re-read; ours the sequence one, greyed).
 
 Next in L9 (HANDOFF 2026-10-23, night): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

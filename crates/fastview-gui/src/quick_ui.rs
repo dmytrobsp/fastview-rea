@@ -46,7 +46,18 @@ pub struct QuickForms {
     pub f0: String,
     pub fm: String,
     pub dif_phases: usize,
+    /// «Количество плеч» (2…24).
+    pub dif_arms: usize,
+    /// The page's 24 arm slots (`0x47fb40`): lowering the count keeps the
+    /// slots past it.
     pub arms: Vec<ArmForm>,
+    /// «Приведение плеч», page-wide (radios 2080–2083 are never stored per
+    /// arm, `0x482ca0`): 0 CoeffPriv, 1 CoeffTT, 2 CoeffPowerPriv, 3
+    /// CoeffAmpPriv.
+    pub dif_reduction: u8,
+    /// «Учет группы соединений», page-wide: 0 none, 1 GrsPosl, 2
+    /// GrsTriangle.
+    pub dif_group: u8,
     /// 0 sum (полусумма модулей), 1 arms 1–2, 2 maximum.
     pub braking: u8,
     pub k_torm: String,
@@ -57,8 +68,6 @@ pub struct QuickForms {
 #[derive(Debug, Clone)]
 pub struct ArmForm {
     pub currents: [String; 3],
-    /// 0 CoeffPriv, 1 CoeffTT, 2 CoeffPowerPriv, 3 CoeffAmpPriv.
-    pub reduction: u8,
     /// Each reduction block's own edits: «По мощности:» Kтт / Sном / Uном,
     /// «По номинальному току:» Kтт / Iном, «По коэффициенту приведения:»
     /// Kприв, «По коэффициенту трансформации ТТ:» Kтт / Kттбаз.
@@ -70,17 +79,20 @@ pub struct ArmForm {
     pub kpriv: String,
     pub tt_ktt: String,
     pub tt_base: String,
-    /// 0 none, 1 GrsPosl, 2 GrsTriangle.
-    pub group: u8,
-    pub group_n: String,
+    /// The «Группа:» combos of «По последовательностям» (2127, `+0x4f0`)
+    /// and «Цифровой треугольник» (2129, `+0x550`): two numbers per arm.
+    pub seq_group: String,
+    pub tri_group: String,
     pub remove_i0: bool,
 }
+
+/// The number of arm slots of page 539.
+pub const ARM_SLOTS: usize = 24;
 
 impl Default for ArmForm {
     fn default() -> Self {
         ArmForm {
             currents: Default::default(),
-            reduction: 0,
             pw_ktt: "1.".into(),
             snom: "1.".into(),
             unom: "1.".into(),
@@ -89,8 +101,8 @@ impl Default for ArmForm {
             kpriv: "1.".into(),
             tt_ktt: "1.".into(),
             tt_base: "1.".into(),
-            group: 0,
-            group_n: "0".into(),
+            seq_group: "0".into(),
+            tri_group: "0".into(),
             remove_i0: true,
         }
     }
@@ -135,7 +147,10 @@ impl Default for QuickForms {
             f0: "0.".into(),
             fm: "0.".into(),
             dif_phases: 3,
-            arms: vec![ArmForm::default(), ArmForm::default()],
+            dif_arms: 2,
+            arms: vec![ArmForm::default(); ARM_SLOTS],
+            dif_reduction: 2,
+            dif_group: 0,
             braking: 0,
             k_torm: "0.5".into(),
             cur_arm: 0,
@@ -287,25 +302,23 @@ impl QuickForms {
                 quick::phase_z(&self.currents(), [&self.ua, &self.ub, &self.uc], i0n, &comp, &self.itr, taken)
             }
             AnalysisTab::Differential => {
-                // The methods are the page's radios as now shown (the
-                // current arm's), applied to every arm (`0x47ff60`).
-                let shown = &self.arms[self.cur_arm.min(self.arms.len().saturating_sub(1))];
-                let arms: Vec<Arm> = self
-                    .arms
+                // The methods are the page's radios, the values each
+                // arm's own (`0x47ff60`).
+                let arms: Vec<Arm> = self.arms[..self.dif_arms]
                     .iter()
                     .map(|a| Arm {
                         currents: a.currents[..self.dif_phases].to_vec(),
-                        reduction: match shown.reduction {
+                        reduction: match self.dif_reduction {
                             0 => Reduction::Priv { k: a.kpriv.clone() },
                             1 => Reduction::Tt { ktt: a.tt_ktt.clone(), ktt_base: a.tt_base.clone() },
                             2 => Reduction::PowerPriv { ktt: a.pw_ktt.clone(), snom: a.snom.clone(), unom: a.unom.clone() },
                             _ => Reduction::AmpPriv { ktt: a.amp_ktt.clone(), inom: a.inom.clone() },
                         },
-                        group: a.group_n.clone(),
+                        group: if self.dif_group == 2 { a.tri_group.clone() } else { a.seq_group.clone() },
                         remove_i0: a.remove_i0,
                     })
                     .collect();
-                let group = match shown.group {
+                let group = match self.dif_group {
                     _ if self.dif_phases == 1 => GroupComp::None,
                     1 => GroupComp::Posl,
                     2 => GroupComp::Triangle,
@@ -336,11 +349,21 @@ impl App {
             d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).find(|n| n.to_lowercase() == want).unwrap_or_default()
         };
         let (i3o, u3o, i0n) = (named("3i0"), named("3u0"), named("3i0n"));
+        // 539's arm combos are preselected «Ia» / «Ib» / «Ic» by name the
+        // same way.
+        let arm = [named("ia"), named("ib"), named("ic")];
         for f in &mut self.quick {
             let vals = [&ua, &ub, &uc, &ia, &ib, &ic, &i3o, &u3o, &i0n];
             for (slot, v) in [&mut f.ua, &mut f.ub, &mut f.uc, &mut f.ia, &mut f.ib, &mut f.ic, &mut f.i3o, &mut f.u3o, &mut f.i0_parallel].into_iter().zip(vals) {
                 if slot.is_empty() {
                     slot.clone_from(v);
+                }
+            }
+            for a in &mut f.arms {
+                for (slot, v) in a.currents.iter_mut().zip(&arm) {
+                    if slot.is_empty() {
+                        slot.clone_from(v);
+                    }
                 }
             }
         }
@@ -689,18 +712,14 @@ fn phase_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
 /// only with 2 arms (else forced to «Полусумма», `0x482b60`), «Kторм:» {1, 0.5}
 /// for Полусумма or Полуразность with 2 arms (`0x483da0`).
 fn differential_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
-    let n = f.arms.len();
     ui.horizontal(|ui| {
         ui.label("Количество плеч:");
-        let mut m = n;
-        egui::ComboBox::from_id_salt("q_dif_n").selected_text(m.to_string()).width(50.0).show_ui(ui, |ui| {
-            for k in 2..=24 {
-                ui.selectable_value(&mut m, k, k.to_string());
+        // A changed count keeps every slot (`0x482b60` → `0x482a40`).
+        egui::ComboBox::from_id_salt("q_dif_n").selected_text(f.dif_arms.to_string()).width(50.0).show_ui(ui, |ui| {
+            for k in 2..=ARM_SLOTS {
+                ui.selectable_value(&mut f.dif_arms, k, k.to_string());
             }
         });
-        if m != n {
-            f.arms.resize_with(m, Default::default);
-        }
         ui.add_space(30.0);
         ui.label("Количество фаз:");
         egui::ComboBox::from_id_salt("q_dif_ph").selected_text(f.dif_phases.to_string()).width(50.0).show_ui(ui, |ui| {
@@ -709,33 +728,33 @@ fn differential_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
             }
         });
     });
-    let n = f.arms.len();
+    let n = f.dif_arms;
     if n > 2 && f.braking == 1 {
         f.braking = 0;
     }
     f.cur_arm = f.cur_arm.min(n - 1);
     let three = f.dif_phases == 3;
     let cur = f.cur_arm;
-    let arm = &mut f.arms[cur];
     group(ui, "Приведение плеч", None, |ui| {
         egui::Grid::new("q_dif_red").num_columns(2).show(ui, |ui| {
-            ui.radio_value(&mut arm.reduction, 2, "По мощности");
-            ui.radio_value(&mut arm.reduction, 0, "По коэффициенту приведения");
+            ui.radio_value(&mut f.dif_reduction, 2, "По мощности");
+            ui.radio_value(&mut f.dif_reduction, 0, "По коэффициенту приведения");
             ui.end_row();
-            ui.radio_value(&mut arm.reduction, 3, "По номинальному току");
-            ui.radio_value(&mut arm.reduction, 1, "По коэффициенту трансформации ТТ");
+            ui.radio_value(&mut f.dif_reduction, 3, "По номинальному току");
+            ui.radio_value(&mut f.dif_reduction, 1, "По коэффициенту трансформации ТТ");
             ui.end_row();
         });
     });
     group(ui, "Учет группы соединений", None, |ui| {
         ui.add_enabled_ui(three, |ui| {
             ui.horizontal(|ui| {
-                ui.radio_value(&mut arm.group, 0, "Не учитывать");
-                ui.radio_value(&mut arm.group, 1, "По последовательностям");
-                ui.radio_value(&mut arm.group, 2, "Цифровой треугольник");
+                ui.radio_value(&mut f.dif_group, 0, "Не учитывать");
+                ui.radio_value(&mut f.dif_group, 1, "По последовательностям");
+                ui.radio_value(&mut f.dif_group, 2, "Цифровой треугольник");
             });
         });
     });
+    let (r, grp) = (f.dif_reduction, f.dif_group);
     ui.horizontal(|ui| {
         if ui.add_enabled(cur > 0, egui::Button::new("<<")).clicked() {
             f.cur_arm -= 1;
@@ -760,7 +779,6 @@ fn differential_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
             ui.end_row();
             cell_combo(ui, three, "q_dic", "Ic", ic, names);
             ui.end_row();
-            let r = arm.reduction;
             ui.label("По мощности:");
             ui.end_row();
             cell_edit(ui, r == 2, "Kтт", &mut arm.pw_ktt);
@@ -782,18 +800,23 @@ fn differential_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
             cell_edit(ui, r == 1, "Kтт", &mut arm.tt_ktt);
             cell_edit(ui, r == 1, "Kттбаз", &mut arm.tt_base);
             ui.end_row();
-            let groups: &[&str] = if arm.group == 2 { &["0", "1", "11"] } else { &["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"] };
-            ui.add_enabled_ui(three && arm.group != 0, |ui| {
+            // Two «Группа:» combos at one place, one per method.
+            let (groups, value): (&[&str], &mut String) = if grp == 2 {
+                (&["0", "1", "11"], &mut arm.tri_group)
+            } else {
+                (&["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"], &mut arm.seq_group)
+            };
+            ui.add_enabled_ui(three && grp != 0, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Группа:");
-                    egui::ComboBox::from_id_salt("q_dif_grp").selected_text(arm.group_n.as_str()).width(50.0).show_ui(ui, |ui| {
+                    egui::ComboBox::from_id_salt(("q_dif_grp", grp)).selected_text(value.as_str()).width(50.0).show_ui(ui, |ui| {
                         for g in groups {
-                            ui.selectable_value(&mut arm.group_n, g.to_string(), *g);
+                            ui.selectable_value(value, g.to_string(), *g);
                         }
                     });
                 });
             });
-            ui.add_enabled(three && arm.group == 1, egui::Checkbox::new(&mut arm.remove_i0, "Удалить I0"));
+            ui.add_enabled(three && grp == 1, egui::Checkbox::new(&mut arm.remove_i0, "Удалить I0"));
             ui.end_row();
         });
     });
@@ -1011,70 +1034,76 @@ fn load_radio(sec: &mut SetNode, keys: &[(&str, u8)]) -> u8 {
     keys.iter().find(|(k, _)| load_check(sec, k) == Some(true)).map_or(keys[0].1, |&(_, v)| v)
 }
 
+/// An arm slot as the page's load fills all 24 (`0x4857a0`) from the
+/// controls' initial state: the edits «1.» (`0x411f40`), groups «0», «Удалить
+/// I0» on, the current combos preselected by name, case-insensitively
+/// («Ia», «Ib», «Ic», `0x411c70`).
+fn initial_arm(items: &[String]) -> ArmForm {
+    let named = |want: &str| items.iter().find(|n| n.to_lowercase() == want).cloned().unwrap_or_default();
+    ArmForm { currents: [named("ia"), named("ib"), named("ic")], ..Default::default() }
+}
+
 /// 539 (`0x4841c0`): the three option groups (`legOption`,
-/// `groupConnOption`, `brakeCurrOption`), the counts and Kторм as item
-/// texts, then `Leg_0`… loaded one after another into the SAME controls —
-/// a missing or empty value keeps the previous arm's — each copied into
-/// its arm, which also takes the loaded option radios.
+/// `groupConnOption`, `brakeCurrOption`; none set → «По мощности», «Не
+/// учитывать»), the counts and Kторм as item texts, every slot set to the
+/// initial arm, then each `Leg_%d` over its own slot — a missing value
+/// keeps the initial one; the last arm is the one shown.
 fn load_diff(f: &mut QuickForms, sec: &mut SetNode, items: &[String]) {
-    let red = load_radio(sec.child_mut("legOption"), &REDUCTION_KEYS);
-    let grp = load_radio(sec.child_mut("groupConnOption"), &GROUP_KEYS);
+    f.dif_reduction = load_radio(sec.child_mut("legOption"), &REDUCTION_KEYS);
+    f.dif_group = load_radio(sec.child_mut("groupConnOption"), &GROUP_KEYS);
     f.braking = load_radio(sec.child_mut("brakeCurrOption"), &BRAKE_KEYS);
     let counts: Vec<String> = (2..=24).map(|k| k.to_string()).collect();
-    let mut n = f.arms.len().to_string();
+    let mut n = f.dif_arms.to_string();
     load_text(sec.attrs.get("legCount"), &counts, &mut n);
     let mut ph = f.dif_phases.to_string();
     load_text(sec.attrs.get("phaseCount"), &["1".into(), "3".into()], &mut ph);
     f.dif_phases = ph.parse().unwrap_or(3);
     load_text(sec.attrs.get("brakeCoeff"), &["1".into(), "0.5".into()], &mut f.k_torm);
-    let n: usize = n.parse().unwrap_or(2);
-    f.arms.resize_with(n, Default::default);
-    let mut controls = f.arms[0].clone();
-    let groups: Vec<String> = (0..12).map(|k| k.to_string()).collect();
-    for i in 0..n {
+    f.dif_arms = n.parse().unwrap_or(2);
+    f.arms = vec![initial_arm(items); ARM_SLOTS];
+    let seq: Vec<String> = (0..12).map(|k| k.to_string()).collect();
+    let tri: Vec<String> = ["0", "1", "11"].iter().map(|s| s.to_string()).collect();
+    for i in 0..f.dif_arms {
         let leg = sec.child_mut(&format!("Leg_{i}"));
-        let [ia, ib, ic] = &mut controls.currents;
+        let arm = &mut f.arms[i];
+        let [ia, ib, ic] = &mut arm.currents;
         for (k, slot) in [("IA", ia), ("IB", ib), ("IC", ic)] {
             load_text(leg.attrs.get(k), items, slot);
         }
-        for (k, slot) in leg_edits(&mut controls) {
+        for (k, slot) in leg_edits(arm) {
             load_edit(leg, k, slot);
         }
-        let key = if grp == 2 { "triangleGroup" } else { "seqGroup" };
-        load_text(leg.attrs.get(key), &groups, &mut controls.group_n);
+        load_text(leg.attrs.get("seqGroup"), &seq, &mut arm.seq_group);
+        load_text(leg.attrs.get("triangleGroup"), &tri, &mut arm.tri_group);
         if let Some(v) = load_check(leg, "I0State") {
-            controls.remove_i0 = v;
+            arm.remove_i0 = v;
         }
-        controls.reduction = red;
-        controls.group = grp;
-        f.arms[i] = controls.clone();
     }
-    f.cur_arm = 0;
+    f.cur_arm = f.dif_arms - 1;
 }
 
-/// 539's save (`0x484330`): from arm 1's options, the counts, then every
-/// arm's `Leg_%d` (higher `Leg_` nodes of a former, larger count stay).
+/// 539's save (`0x484330`): the page's options, the counts, then every
+/// arm's `Leg_%d` with both group numbers (higher `Leg_` nodes of a former,
+/// larger count stay).
 fn save_diff(f: &QuickForms, sec: &mut SetNode) {
-    let a0 = &f.arms[0];
-    for (node, keys, v) in [("legOption", &REDUCTION_KEYS[..], a0.reduction), ("groupConnOption", &GROUP_KEYS[..], a0.group), ("brakeCurrOption", &BRAKE_KEYS[..], f.braking)] {
+    for (node, keys, v) in [("legOption", &REDUCTION_KEYS[..], f.dif_reduction), ("groupConnOption", &GROUP_KEYS[..], f.dif_group), ("brakeCurrOption", &BRAKE_KEYS[..], f.braking)] {
         let c = sec.child_mut(node);
         for (k, kv) in keys {
             save_check(c, k, *kv == v);
         }
     }
-    sec.set_str("legCount", &f.arms.len().to_string());
+    sec.set_str("legCount", &f.dif_arms.to_string());
     sec.set_str("phaseCount", &f.dif_phases.to_string());
     sec.set_str("brakeCoeff", &f.k_torm);
-    for (i, arm) in f.arms.iter().enumerate() {
+    for (i, arm) in f.arms[..f.dif_arms].iter().enumerate() {
         let mut a = arm.clone();
         let leg = sec.child_mut(&format!("Leg_{i}"));
         let [ia, ib, ic] = &a.currents;
         for (k, v) in [("IA", ia), ("IB", ib), ("IC", ic)] {
             leg.set_str(k, v);
         }
-        let (seq, tri) = if a.group == 2 { ("0".to_string(), a.group_n.clone()) } else { (a.group_n.clone(), "0".to_string()) };
-        leg.set_str("seqGroup", &seq);
-        leg.set_str("triangleGroup", &tri);
+        leg.set_str("seqGroup", &a.seq_group);
+        leg.set_str("triangleGroup", &a.tri_group);
         save_check(leg, "I0State", a.remove_i0);
         for (k, v) in leg_edits(&mut a) {
             leg.set_str(k, v);
@@ -1136,28 +1165,58 @@ mod tests {
         assert_eq!(f.ua, "Ua");
     }
 
-    /// 539: `Leg_%d` nodes into the same controls — a missing arm inherits
-    /// the previous arm's values; the edits by their control's key.
+    /// 539: each `Leg_%d` over its own slot — a missing leg keeps the
+    /// initial arm (`0x4857a0`); the edits by their control's key; the
+    /// methods page-wide, two group numbers per arm; the last arm shown.
     #[test]
-    fn differential_page_legs_inherit_missing_values() {
-        let items: Vec<String> = ["I1a", "I2a", "I3a"].iter().map(|s| s.to_string()).collect();
+    fn differential_page_legs_load_over_initial_arms() {
+        let items: Vec<String> = ["I1a", "I2a", "IA", "ib"].iter().map(|s| s.to_string()).collect();
         let mut f = QuickForms::default();
         f.arms[0].currents[0] = "I1a".into();
         f.arms[0].kpriv = "2.5".into();
+        f.arms[0].seq_group = "5".into();
+        f.arms[0].tri_group = "11".into();
         f.arms[1].currents[0] = "I2a".into();
         f.braking = 2;
+        f.dif_group = 2;
         let mut sec = SetNode::default();
         save_page(4, &f, &mut sec);
-        assert_eq!(sec.child("Leg_0").unwrap().attrs["R0"], "2.5", "R0 = Kприв");
+        let leg0 = sec.child("Leg_0").unwrap();
+        assert_eq!(leg0.attrs["R0"], "2.5", "R0 = Kприв");
+        assert_eq!((leg0.attrs["seqGroup"].as_str(), leg0.attrs["triangleGroup"].as_str()), ("5", "11"));
         assert_eq!(sec.attrs["legCount"], "2");
+        assert!(sec.child("Leg_2").is_none());
         sec.set_str("legCount", "3");
         let mut g = QuickForms::default();
         load_page(4, &mut g, &mut sec, &items);
-        assert_eq!(g.arms.len(), 3);
+        assert_eq!((g.dif_arms, g.arms.len(), g.cur_arm), (3, ARM_SLOTS, 2));
         assert_eq!(g.arms[1].currents[0], "I2a");
-        assert_eq!(g.arms[2].currents[0], "I2a", "Leg_2 missing: arm 2's values");
-        assert_eq!(g.arms[0].kpriv, "2.5");
-        assert_eq!(g.braking, 2);
+        assert_eq!(g.arms[2].currents, ["IA".to_string(), "ib".into(), String::new()], "Leg_2 missing: the initial arm");
+        assert_eq!(g.arms[2].kpriv, "1.");
+        assert_eq!((g.arms[0].kpriv.as_str(), g.arms[0].seq_group.as_str(), g.arms[0].tri_group.as_str()), ("2.5", "5", "11"));
+        assert_eq!((g.braking, g.dif_group, g.dif_reduction), (2, 2, 2), "no reduction key: «По мощности»");
+    }
+
+    /// 539's generation: the page's methods for every arm, each arm's own
+    /// values and the group number of the chosen method (`0x47ff60`).
+    #[test]
+    fn differential_methods_are_page_wide() {
+        let mut f = QuickForms { dif_reduction: 0, dif_group: 2, ..Default::default() };
+        for (a, ch) in f.arms.iter_mut().zip(["A", "B"]) {
+            a.currents = [format!("{ch}a"), format!("{ch}b"), format!("{ch}c")];
+        }
+        f.arms[0].kpriv = "2".into();
+        f.arms[1].kpriv = "3".into();
+        f.arms[1].tri_group = "11".into();
+        f.arms[1].seq_group = "7".into();
+        f.cur_arm = 1;
+        let mut q = f.clone();
+        q.cur_arm = 0;
+        let (a, b) = (f.generate(AnalysisTab::Differential, &[]), q.generate(AnalysisTab::Differential, &[]));
+        assert_eq!(a.channels, b.channels, "the shown arm does not matter");
+        let all = a.channels.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n");
+        assert!(all.contains("CoeffPriv") && all.contains('3') && all.contains("11"), "{all}");
+        assert!(!all.contains("GrsPosl"), "{all}");
     }
 
     /// «Рассчитать» greying of 536 / 538 (`0x48d5a0`, `0x488550`).
