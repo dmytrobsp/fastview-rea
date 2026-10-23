@@ -1292,6 +1292,9 @@ pub struct App {
     /// A stats-panel drag waiting to start (MFC's OnBeginDrag loop): where
     /// the pointer was, when, and the channels.
     pub stats_drag_arm: Option<(egui::Pos2, f64, Vec<usize>)>,
+    /// A channel drag resting in the view's top / bottom scroll inset: when
+    /// it entered and when it last scrolled.
+    pub drag_scroll: Option<(f64, f64)>,
     /// Width of the oscillogram view at the last layout (for «вся осциллограмма»).
     pub view_width: f32,
     /// Stats-panel width at the last layout (fitted to the text).
@@ -1462,6 +1465,7 @@ impl App {
             xscale_pref: None,
             rename_edit: None,
             stats_drag_arm: None,
+            drag_scroll: None,
             view_width: 1000.0,
             view_left: crate::lanes::LEFT_W_DEFAULT,
             view_rects: None,

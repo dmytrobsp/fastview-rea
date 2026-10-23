@@ -4852,6 +4852,26 @@ Now `chandlg::circle_refresh_flags`, run by `refresh_blocks` (the
 activation and 32860) and after a differential pair's cell in «Каналы».
 Test `the_circle_refresh_keeps_ohm_and_va_only`.
 
+### L9.164 — A channel drag scrolls the view at its top and bottom edges  ·  ✅ (left / right ND)
+Read (vtable sweep of CFastViewView, CView slots 91 / 92; by hand
+`0x468e40`, `0x468f00`): the view overrides OnScroll and OnScrollBy.
+OnScroll always allows the scroll; of the vertical code only a line-up
+becomes SB_LINEUP — every other code, "no vertical scroll" (0xFF)
+included, becomes SB_LINEDOWN —; OnScrollBy sends that as WM_VSCROLL
+(the 100 px line of `0x45d6d0`), updates all views, runs the frame's
+refresh-all `0x475420` and repaints. MFC calls OnScroll from
+CView::OnDragScroll during an OLE drag over the view (the stats panel's
+channel drag, L9.21): an 11 px inset of the client rect
+(DD_DEFSCROLLINSET), a 50 ms delay, then a step every 50 ms; moving from
+one inset to another keeps the timer (INFERRED from MFC). Ours did not
+scroll. Now `lanes_ui` steps `vscroll` by a line while a `ChanDrag` rests
+in the top (up) or bottom (down) 11 px (`App::drag_scroll`). Test
+`a_channel_drag_scrolls_at_the_top_and_bottom_edges`.
+Residual: the left / right insets (they would scroll down, by the
+mapping) depend on whether the view window has scroll-bar styles — not
+determined, ours does not scroll there; the refresh-all at each step is
+not run.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

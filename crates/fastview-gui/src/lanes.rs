@@ -980,6 +980,10 @@ pub struct ChanDrag {
 
 /// MFC's drag delay (`DD_DEFDRAGDELAY`, ms → s).
 const DRAG_DELAY: f64 = 0.2;
+/// MFC's drag-scroll inset (DD_DEFSCROLLINSET) and its delay / interval
+/// (DD_DEFSCROLLDELAY / DD_DEFSCROLLINTERVAL, 50 ms).
+const DRAG_INSET: f32 = 11.0;
+const DRAG_SCROLL_S: f64 = 0.05;
 
 /// Message 1086.
 pub const MSG_COMBINE_UNITS: &str = "Совмещение невозможно.\nУ каналов разные единицы измерения.";
@@ -1420,6 +1424,26 @@ impl App {
         }
         if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
             ctx.set_cursor_icon(egui::CursorIcon::Move);
+        }
+        // Drag auto-scroll (MFC's CView::OnDragScroll over the client rect:
+        // an 11 px inset, 50 ms before the first step, then one every
+        // 50 ms). The view's OnScroll `0x468e40` maps only a vertical line-up
+        // to SB_LINEUP — anything else is SB_LINEDOWN — and OnScrollBy
+        // `0x468f00` sends it as WM_VSCROLL: 100 px a step. (Whether the
+        // left / right edges scroll too — down, by that mapping — depends on
+        // the view's scroll-bar styles: not determined; ours does not.)
+        match now.filter(|p| client.contains(*p) && egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx)) {
+            Some(p) if p.y < client.top() + DRAG_INSET || p.y >= client.bottom() - DRAG_INSET => {
+                let (t0, last) = self.drag_scroll.get_or_insert((t, t));
+                let due = |since: f64| t - since >= DRAG_SCROLL_S - 1e-6;
+                if due(*t0) && due(*last) {
+                    *last = t;
+                    let step = if p.y < client.top() + DRAG_INSET { VSCROLL_LINE } else { -VSCROLL_LINE };
+                    actions.push(Act::SetVScroll(vscroll + step));
+                }
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(DRAG_SCROLL_S));
+            }
+            _ => self.drag_scroll = None,
         }
         // Drop on a lane (`0x4415b0`, kind 1): x is ignored; the analog lane
         // under y, unless it is one of the dragged channels, joins them.
@@ -2797,6 +2821,36 @@ mod menu_tests {
         hover(&mut h, at(600.0));
         drag(&mut h, at(600.0), at(500.0));
         assert_ne!(h.doc().comments[0].kind, before, "a hidden text does not stop the drag");
+    }
+
+    /// A channel drag resting in the view's bottom 11 px scrolls a 100 px
+    /// line down every 50 ms after the first 50 ms; in the top 11 px, up.
+    #[test]
+    fn a_channel_drag_scrolls_at_the_top_and_bottom_edges() {
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let mut h = Harness::new();
+        h.app.y_analog = 400.0;
+        h.frame(vec![]);
+        let o = h.row(0);
+        h.frame(vec![egui::Event::PointerMoved(o), ev(o, true)]);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(1.0, 0.0))]);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(5.0, 0.0))]);
+        assert!(egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&h.ctx));
+        let client = h.app.view_rects.unwrap().1;
+        let bottom = Pos2::new(o.x + 5.0, client.bottom() - 5.0);
+        h.frame(vec![egui::Event::PointerMoved(bottom)]);
+        assert_eq!(h.doc().vscroll, 0.0, "not before 50 ms");
+        h.frame(vec![]);
+        assert_eq!(h.doc().vscroll, -100.0);
+        h.frame(vec![]);
+        assert_eq!(h.doc().vscroll, -200.0);
+        let top = Pos2::new(o.x + 5.0, client.top() + 5.0);
+        // Into the other inset the timer runs on (MFC keeps its last tick).
+        h.frame(vec![egui::Event::PointerMoved(top)]);
+        assert_eq!(h.doc().vscroll, -100.0, "the top inset scrolls up");
+        h.frame(vec![]);
+        assert_eq!(h.doc().vscroll, 0.0);
+        h.frame(vec![ev(top, false)]);
     }
 
     /// MFC's OnBeginDrag after the stats panel's DoDragDrop (`0x45ee88`):
