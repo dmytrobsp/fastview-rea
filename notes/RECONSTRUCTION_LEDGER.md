@@ -3506,8 +3506,18 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-several panes in one dock row (L9.101); the group's three panes as separate units (a group tab pulled
-out); the marker bitmaps (ours drawn); L9.97 the main panel's row height
+**RECOMMENDED FIRST — the group's three panes as separate dockable units**
+(L9.101 / L9.102 residual): today `docking::Unit` is {Group, Freq} with
+`Spot::{Edge, Beside, Tab}` relative to *the other* unit; the original has
+four `CDockablePane`s (`0x474e10`: Векторная with Круговая as its tab,
+Дифференциальная docked on their inner side, Частотная on the bottom
+edge — ours keeps the user's screenshot defaults) and `FloatTab` takes one
+pane out of a tabbed group. Needs: N units, tab groups as sets of units,
+Beside relative to a named unit, the views / strips / workspace keys per
+unit, `tab_order` per group; keep the existing tests green
+(`smart_docking_drops_on_the_markers`, `a_tab_dragged_over_another_swaps_with_it`,
+`workspace_round_trip`, `diagram_panes_float_redock_and_auto_hide`).
+Then: several panes in one dock row (L9.101); the marker bitmaps (ours drawn); L9.97 the main panel's row height
 / image margins; L9.100 large / collapsed button sizes; L9.64 MDI arrangements under tabs (likely
 leave as no-ops); L9.22 / L9.84 CUPS hardware margins; L9.90 Alt+key
 while held and the Recent Documents' keys; the backlog §9 items 15 / 35 /
