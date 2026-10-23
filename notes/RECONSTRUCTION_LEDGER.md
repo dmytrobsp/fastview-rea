@@ -3005,7 +3005,7 @@ Read (subagent report on mfc120u): `CMFCRibbonCategory::RecalcLayout`
 changes; when even the sum of 2 + (collapsed width + 2) does not fit, all
 panels collapse at once; otherwise, while the panels overflow, the panel
 with the most steps left takes one step (ties: the rightmost); FastView
-sets no collapse order; still overflowing, 50 px scroll arrows. A panel's
+sets no collapse order; still overflowing, scroll arrows (13 px wide, 50 px a click — L9.100). A panel's
 layouts (`RecalcWidths` `0x10125189`, `Repos` `0x101227d5`): galleries
 shrink; from the right the first run of min(3, n) large elements goes to
 small-with-text; three small-with-text in one column with a small image go
@@ -3025,9 +3025,10 @@ measuring pass (once per tab) records every layout's width,
 small button, the collapsed button sized to its title. Tests
 `panels_reduce_by_most_steps_left_rightmost_first`,
 `narrow_ribbon_collapses_panels_and_keeps_its_height` (the order).
-Residual: the layouts come from the Repos rules applied by hand, not run
-generically; the collapsed button's width is ours (title + 16, ≥ 48); no
-scroll arrows; the «ОМП» / preview panels have one layout.
+Residual: (the hand-applied steps checked against the generic Repos, the
+small sizes and the fit test: L9.100); the collapsed button's width is
+ours (title + 16, ≥ 48); no scroll arrows; the «ОМП» / preview panels
+have one layout.
 
 (L9.64 residual resolved by the same report: FastView uses the stock
 `CMDIChildWndEx`, whose slot `+0x1f0` returns FALSE (`0x1005eafa`) and
@@ -3270,6 +3271,44 @@ ellipse).
 Residual: whether GDI's box of an Ellipse path includes its right /
 bottom edge NOT DETERMINED (ours: the inscribed polygon's box); our
 ellipse ring is sampled (180 points) where GDI flattens the Bézier path.
+
+### L9.100 — Ribbon: Repos generically checked; small button sizes; the fit test  ·  🟡
+Read (subagent report on mfc120u; by hand the keytip rect start `0x101033e0`
+only): FastView adds no button groups (ordinals 669 / 670 / 1259 not
+imported), so every panel keeps align-by-column. An element starts large
+when it has a large image, else small with text when it has text
+(`0x10062cd9`); a step goes large → small-with-text → icon-only (needs a
+small image, `0x10062bb0`); always-large or no-small-image elements never
+compact. Repos (`0x101227d5`, margins 4 / 2, columns of height H = panel −
+caption − 2) applies, until the flow fits, the first of: a gallery
+shrinks; right to left the first run of min(3, N) large compactable
+elements goes small-with-text; right to left the first column of three
+small-with-text goes icon-only; from index 1 (N ≥ 3) the first large
+element whose right neighbour is small-with-text in a short column goes
+small; every small-with-text from that index goes icon-only; else the
+panel collapses. RecalcWidths (`0x10125189`) tries widths 16 px apart,
+recording each narrower state, and stops at the collapsed width (1.5 × it
+with one element), then appends the collapsed button. Sizes: icon-only
+(image + 6)² = 22 × 22 (`0x10101d6a`); small with text text + image + 10
+wide, max(16, image, text) + 6 tall (`0x10101f92`). The category
+(`0x10106fcb`): panels from left + 4, each its width + 8, 2 px apart; they
+fit while Σ(width + 8 + 2) ≤ the category − 8; all collapse when the
+category − 8 ≤ 2 + Σ(collapsed + 2); only then 13 px scroll arrows
+(13 × DPI, not 50 — 50 px is one click's scroll, auto-repeating) at the
+ends.
+The rules run by hand over «Главная»'s elements give exactly L9.91's
+sequences (Объединение full → icons → collapsed; Диаграммы three to small
+→ icons → collapsed; Видимость full → collapsed; Вычисления the right
+column → all icons → collapsed; « » no collapse), so the hand-coded steps
+stay. Ours sized small buttons 19 px tall, at least 90 px wide with text
+and icon-only 24 px, and tested Σ(w + 2) + 2 against the whole width. Now
+22 × 22 icon-only, text + 26 × 22 with text, the fit and collapse tests
+as read. Test `panels_reduce_by_most_steps_left_rightmost_first`;
+rendered at 1320 / 1000 / 866 px.
+Residual: large-button and collapsed-button sizes not read; the scroll
+arrows never show at our 866 px minimum (all-collapsed «Главная» is far
+narrower) — not modelled; the 16 px skip of near-equal states not
+modelled (our measured states differ by more).
 
 Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

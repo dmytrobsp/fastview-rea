@@ -662,15 +662,18 @@ fn collapsed_width(ui: &egui::Ui, title: &str) -> f32 {
 /// last when it can collapse. Every panel starts at its first layout; when
 /// even all the last layouts do not fit, all take them at once; otherwise,
 /// while the panels overflow, the one with the most steps left takes one
-/// (ties: the rightmost). Returns each panel's layout index.
+/// (ties: the rightmost). Returns each panel's layout index. The fit test
+/// (`0x10106fcb`): Σ(panel + 2) ≤ the category − 8 (a panel's width here
+/// already holds its 2 × 4 margins); all collapse when the category − 8 ≤
+/// 2 + Σ(collapsed + 2).
 pub fn reduction_plan(widths: &[Vec<f32>], avail: f32) -> Vec<usize> {
     let last = |w: &Vec<f32>| w.len().saturating_sub(1);
-    let total = |plan: &[usize]| 2.0 + widths.iter().zip(plan).map(|(w, &k)| w.get(k).copied().unwrap_or(0.0) + 2.0).sum::<f32>();
+    let total = |plan: &[usize]| widths.iter().zip(plan).map(|(w, &k)| w.get(k).copied().unwrap_or(0.0) + 2.0).sum::<f32>();
     let mut plan = vec![0; widths.len()];
-    if avail <= 2.0 + widths.iter().map(|w| w.last().copied().unwrap_or(0.0) + 2.0).sum::<f32>() {
+    if avail - 8.0 <= 2.0 + widths.iter().map(|w| w.last().copied().unwrap_or(0.0) + 2.0).sum::<f32>() {
         return widths.iter().map(last).collect();
     }
-    while total(&plan) > avail {
+    while total(&plan) > avail - 8.0 {
         let left = |i: usize| last(&widths[i]) - plan[i];
         let Some(i) = (0..widths.len()).filter(|&i| left(i) > 0).max_by_key(|&i| (left(i), i)) else { break };
         plan[i] += 1;
@@ -833,8 +836,10 @@ fn sub_entry(ui: &mut egui::Ui, label: &str, desc: &str, enabled: bool) -> egui:
 fn small_button_mode(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str, selected: bool, icon_only: bool) -> egui::Response {
     let font = egui::FontId::proportional(11.0);
     let text_w = ui.fonts(|f| f.layout_no_wrap(label.to_owned(), font.clone(), p.text).size().x);
-    let w = if icon_only { 22.0 } else { (22.0 + text_w + 6.0).max(90.0) };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 19.0), egui::Sense::click());
+    // `0x10101d6a` / `0x10101f92`: icon-only (image + 6)², with text the
+    // text + image + 10 wide, max(16, image, text) + 6 tall.
+    let w = if icon_only { 22.0 } else { text_w + 16.0 + 10.0 };
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 22.0), egui::Sense::click());
     let resp = if icon_only { resp.on_hover_text(label) } else { resp };
     let painter = &plain_painter(ui);
     let (ink, accent) = inks(ui, p);
@@ -844,7 +849,7 @@ fn small_button_mode(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, la
     } else if resp.hovered() && ui.is_enabled() {
         painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
     }
-    let box_ = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.top() + 2.5), egui::vec2(14.0, 14.0));
+    let box_ = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.top() + 3.0), egui::vec2(16.0, 16.0)).shrink(1.0);
     icons::paint(painter, box_, icon, accent);
     if !icon_only {
         painter.text(egui::pos2(rect.left() + 22.0, rect.center().y), egui::Align2::LEFT_CENTER, label, font, ink);
@@ -913,7 +918,8 @@ enum Mini {
 /// A small icon-only button (24×24) with its label as the tooltip; framed
 /// while `on`. Returns whether it was clicked.
 fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, tip: &str, enabled: bool, on: bool) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    // Icon-only: (small image + 6)² (`0x10101d6a`).
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let painter = &plain_painter(ui);
     let enabled = enabled && ui.is_enabled();
     if on {
@@ -1185,7 +1191,7 @@ mod tests {
     fn panels_reduce_by_most_steps_left_rightmost_first() {
         // Layout widths per panel, the collapsed button last.
         let w = vec![vec![190.0, 150.0, 60.0], vec![270.0, 200.0, 150.0, 60.0], vec![300.0, 60.0], vec![80.0]];
-        let full: f32 = 2.0 + [190.0, 270.0, 300.0, 80.0].iter().map(|x| x + 2.0).sum::<f32>();
+        let full: f32 = 8.0 + [190.0, 270.0, 300.0, 80.0].iter().map(|x| x + 2.0).sum::<f32>();
         assert_eq!(reduction_plan(&w, full), vec![0, 0, 0, 0], "fits");
         // One step short: the panel with the most steps left (1) reduces.
         assert_eq!(reduction_plan(&w, full - 10.0), vec![0, 1, 0, 0]);
