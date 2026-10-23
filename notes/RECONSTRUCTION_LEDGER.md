@@ -3915,13 +3915,14 @@ difference band (`0x466792`) and the status bar (`0x49484d`) count from it
 — times relative to the trigger's, samples k − trigger + 1.
 Ours counted from the record start (no trigger existed before L9.124).
 Now `OscView::label_at` (ruler and band labels), `cursor_status` from the
-trigger, the dotted line in `vizirs`; «Абсолютное время» still counts
-from the record start (how the trigger enters there NOT DETERMINED —
-`0x464553`'s branch parses the start time; its use of the stored
-trigger not traced). `FV_WINDOW_STATE=trigger`. Test
-`cursor_status_counts_from_the_trigger`; rendered.
-Residual: the absolute mode with a trigger (above); COMTRADE has none
-(always 0, as read).
+trigger, the dotted line in `vizirs`. By hand afterwards: the ruler's
+tick value is t(k) − t(trigger) in µs for every unit
+(`0x4649cf`–`0x464a0d`) and the absolute label adds it to the start's
+time of day (`0x464dc0`–`0x464e26`) — «Абсолютное время» is
+trigger-relative too (a quirk with an `.osc` trigger); ours the same.
+`FV_WINDOW_STATE=trigger`. Test `cursor_status_counts_from_the_trigger`;
+rendered.
+Residual: COMTRADE has no trigger (always 0, as read).
 
 ### L9.126 — Merge synchronisation under the frequency correction  ·  ✅
 Read (subagent report; L9.65 for the gate): the `fault:` dispatcher
@@ -3999,8 +4000,7 @@ the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
 (the .osc stamps and trigger: L9.124 / L9.125; the merge sync under the
-correction: L9.126). Then: «Абсолютное время» with a trigger (L9.125
-residual: trace `0x464553`); the docking marker bitmaps (ours drawn);
+correction: L9.126). Then: the docking marker bitmaps (ours drawn);
 L9.64 MDI arrangements under tabs (MFC's MDI client has no map entry for
 WM_MDICASCADE / TILE — they reach the stock MDI client; the visible
 effect under MDI tabs still ND); (Свойства...: L9.122, not exercised on the VM);

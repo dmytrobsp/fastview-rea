@@ -178,14 +178,12 @@ impl OscView<'_> {
     }
 
     /// A ruler / band label's time and sample: relative to the trigger
-    /// sample (`doc+0x214`, `0x46453b`; 0 for COMTRADE) — samples print
-    /// k − trigger + 1; «Абсолютное время» counts from the record start
-    /// (how the trigger enters there NOT DETERMINED).
+    /// sample (`doc+0x214`; 0 for COMTRADE) — the tick's µs is
+    /// t(k) − t(trigger) for every unit (`0x4649cf`–`0x464a0d`), so
+    /// «Абсолютное время» is the start's time of day plus it (a quirk with
+    /// an `.osc` trigger); samples print k − trigger + 1.
     fn label_at(&self, k: usize) -> (f64, i64) {
         let trig = self.doc.osc.trigger_sample;
-        if self.unit == TimeUnit::Absolute {
-            return (self.time_at(k), k as i64 - trig as i64);
-        }
         (self.time_at(k) - self.time_at(trig), k as i64 - trig as i64)
     }
 
@@ -1773,10 +1771,10 @@ impl App {
         let mut out = captions.map(String::from);
         let Some(d) = self.active_doc() else { return out };
         // Relative to the trigger sample (`0x49484d`; 0 for COMTRADE), the
-        // absolute mode from the record start.
+        // absolute mode too (the start's time of day plus it).
         let trig = d.osc.trigger_sample;
         let t0 = d.osc.time.first().copied().unwrap_or(0.0);
-        let tz = if self.time_unit == TimeUnit::Absolute { t0 } else { d.osc.time.get(trig).copied().unwrap_or(t0) };
+        let tz = d.osc.time.get(trig).copied().unwrap_or(t0);
         let t = |k: usize| d.osc.time.get(k).copied().unwrap_or(0.0) - tz;
         let start_tod = fvb_core::comtrade::time_of_day(&d.osc.stamps.start_time);
         // Absolute mode (strings 240/241/202): V1/V2 as the time of day, the
