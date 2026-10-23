@@ -2281,47 +2281,50 @@ window under one sample or a non-finite f (the original computes on);
 the meaning of mfc #4434 on the dialog member `+0x110` when the
 selection is 1 not resolved.
 
-Next in L9 (HANDOFF 2026-10-23, late): **public at
+Next in L9 (HANDOFF 2026-10-23, evening): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
-(lipo), each one flat archive). `main` = HEAD, 308 tests, CI green on 3 OSes.
-**Latest work (2026-10-23):** L9.46 digital lanes by the decimating painter;
-L9.47 comment texts as slot 9 + the moment's absolute time; L9.48 the
-formula dialog's 396 sequence; L9.49 the finder's delete (one shell delete,
-recycle bin unless Shift); L9.50 group lanes (a full block per member);
-L9.51–L9.56 «Быстрый анализ» as the original's modal sheet (Outlook bar,
-«Рассчитать» / «Отмена», all five generator pages with OK greying, per-page
-fields persisted in the `.set`, the formula list page — VIEWS_SPEC «The
-sheet»); **L9.57 «P» records are shown in SECONDARY values by default**
-(k = secondary / primary under «Вторичные знач.», read from `0x428490` /
-`0x422460` — user-visible: e.g. 908 A → 454 mA on a 2000 : 1 record; if
-the user reports values "2000× too small", this is intended). Published on
-the user's go-ahead: `index/` (message maps, vtables, imports, our curated
-`names.tsv`, merged `symbols.tsv`; `tools/index.py`, importer
-`tools/symbols_export.py` — syntax-checked, not run in Ghidra / IDA /
-rizin). No user questions pending.
+(lipo), each one flat archive). `main` = HEAD, 320 tests, CI green on 3 OSes.
+**Latest work (2026-10-23, evening):** L9.58 copy with a property grid
+focused (XML only); L9.59 the comment under the pointer is sticky, prints
+and is drawn twice; L9.60 comment cursor codes (level body N–S), locked
+comments select but don't drag, a hidden text still drags, no визир under
+a selected comment; L9.61 the stats drag starts by MFC's 2 px / 200 ms
+rule (a self-drop is silent — not 1086); L9.62 every message box is
+«Механотроника FastView» with MFC's icons, the inline rename's commit
+(397 as a box, text as typed, modified on every commit); L9.63 tab colours
+= mfc120u's 16 colours and pick rule; L9.64 «Окна...» = MFC's windows
+dialog; **L9.65 the measured-frequency correction** (user-visible for any
+record with a Гц / Hz channel: it is ON by default and every computed
+value — phasors, RMS, a0, fault, the frequency diagram — integrates over
+the measured period; values of such records now differ from before by
+design). Earlier: L9.57 «P» records in SECONDARY values by default (if the
+user reports values "2000× too small", that is intended). The carved MFC
+DLLs now live in `extracted/mfc/` (local, git-ignored). No user questions
+pending.
 **How to look at the GUI without running it:** `FV_WINDOW_DUMP=<png>
 [FV_WINDOW_RECORD=<cfg>] [FV_WINDOW_STATE=analysis (the sheet, two formula
 channels)|comments|group|circle|diff|omp|ompparams|preview|print|pagesetup|
-settings|channels|coef|fileparams|explorer|parambar|vizirs|skin<k>]
-[FV_WINDOW_XSCALE=f] [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y]
+settings|channels|coef|fileparams|explorer|parambar|vizirs|alert|windows|
+skin<k>] [FV_WINDOW_XSCALE=f] [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y]
 [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then Read the PNG (crop with
 ImageMagick `convert`); `FV_FRAME_BENCH=<cfg> cargo test --release
 frame_bench` times a frame. The user's sample records live outside the
 repo (`~/Downloads/*.cfg`; never commit them). Dialog control ids: parse
 the PE's RT_DIALOG template locally (python), `notes/ui/dialogs.txt` has
 texts only; a class's virtuals: RTTI `.?AV<Name>@@` → COL → vtable; MFC
-ordinals: disassemble them in the carved mfc120u (L9.37).
-**Open next** (verify a residual is not already done before starting —
-the ledger text was stale for many L9.1–L9.14 items): L9.30 the third
-copy-focus case ✅ L9.58; L9.22 print residuals (comment hover ✅ L9.59; left: logo, paper,
-diagram print branches); L9.21 hold-to-drag ✅ L9.61 (a self-drop is
-silent); L9.6 digital level-line snap;
-L9.44 the comment cursor codes ✅ L9.60; MFC
-framework items readable from the carved mfc120u / mfc120rus (now in
-`extracted/mfc/`, local) (tab colour order ✅ L9.63, «Окна...» ✅ L9.64, keytips, save-prompt wording ✅ L9.62 — L9.8 / L9.14 /
-L9.27); the sheet's residuals (L9.51–L9.56); pane re-docking (egui limit).
-
+ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
+the address (an old listing may still sit in a /tmp scratchpad); MFC
+strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
+**Open next** (verify a residual is not already done before starting):
+L9.65's residuals (computed channels as frequency candidates; what
+`frequency:` returns under correction; merge sync under correction);
+L9.22 print residuals (logo, paper, diagram print branches); L9.6 digital
+level-line snap (reachable only through a `.set`); keytips (MFC's ribbon
+keytip machinery — the program sets only Печать «p» / «w»); L9.27 MFC's
+intermediate ribbon reductions; L9.64's slot +0x1f0 and the MDI
+arrangements; L9.46's bit-14 pasted digital lanes; whether paste / an ОМП
+run mark the record modified (L9.17); pane re-docking (egui limit).
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
