@@ -2355,7 +2355,8 @@ outline / gradient pixel rules approximated.
 Next in L9 (HANDOFF 2026-10-23, evening): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
-(lipo), each one flat archive). `main` = HEAD, 323 tests, CI green on 3 OSes.
+(lipo), each one flat archive). `main` = HEAD, 323 tests; CI green on 3 OSes through L9.66 (the L9.67 run was
+still in progress at this handoff — check `gh run list`).
 **Latest work (2026-10-23, evening):** L9.58 copy with a property grid
 focused (XML only); L9.59 the comment under the pointer is sticky, prints
 and is drawn twice; L9.60 comment cursor codes (level body N–S), locked
@@ -2386,7 +2387,10 @@ ImageMagick `convert`); `FV_FRAME_BENCH=<cfg> cargo test --release
 frame_bench` times a frame. The user's sample records live outside the
 repo (`~/Downloads/*.cfg`; never commit them). Dialog control ids: parse
 the PE's RT_DIALOG template locally (python), `notes/ui/dialogs.txt` has
-texts only; a class's virtuals: RTTI `.?AV<Name>@@` → COL → vtable; MFC
+texts only. Local disassembly (git-ignored, never commit): `dumps/fv.asm`
+(`tools/regen-dumps.sh`) and `dumps/fv-plain.asm` (`objdump -d -M intel
+--no-show-raw-insn`, the form the grep recipes assume: `grep -n "^  <addr>:"`);
+a class's virtuals: RTTI `.?AV<Name>@@` → COL → vtable; MFC
 ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
