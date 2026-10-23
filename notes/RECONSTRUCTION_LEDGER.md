@@ -872,9 +872,9 @@ cancel + join, `passes`, `companions`, the dialog with folder list,
 delete with confirmation), replacing our docked folder panel; `-Find` opens
 it. Tests: header dates (cfg/cff order, swap, +2000, «-»), OSC header,
 filters incl. the inclusive По day, scan depth + companions.
-Residual: no shell folder tree (a folder list instead); `.sto` entries not
-read (no sample `.sto`; `0x46c960` reads its inner cfg); (delete through the
-shell / recycle bin: done in L9.49); date pickers are day/month/year spinners.
+Residual: `.sto` entries not read (no sample `.sto`; `0x46c960` converts
+it like the open does); (delete through the shell / recycle bin: L9.49;
+the folder tree, «Выбрать», the date pickers: L9.116).
 
 ### L9.10 — Loading on a worker thread with the «Загрузка» dialog  ·  🟡
 
@@ -3703,6 +3703,37 @@ Residual: the Home highlight in the opened Help menu not shown; our
 Помощь stays disabled (no CHM shipped — the original's opens the help
 file); the recent rows' keytip place is ours; what removes hold-shown
 keytips after an Alt+key combination NOT DETERMINED.
+
+### L9.116 — «Проводник»: the shell folder tree, «Выбрать», My Documents, date pickers  ·  ✅
+Read (subagent report on FileFinder22Dlg; marks there): the folder pane
+is MFC's `CMFCShellTreeCtrl` (control 2167; constructor #747 at
+`0x46b071`), left at its defaults — folders only (SHCONTF_FOLDERS
+`0x10132ec6`, hidden ones out), one Desktop root expanded (`0x10132fa6`),
+children read on expanding; OnInitDialog selects the scanned folder
+(`SelectPath` `0x46b7de`); the dialog handles no tree notification —
+a click only moves the tree's selection; «Выбрать» (`0x46b8f0`) takes
+GetItemPath of the selection (nothing on a virtual node), compares it
+case-sensitively with Path and only when it differs sets Path, refreshes
+«Папка:» and rescans; the scan always uses Path; the default Path is My
+Documents (`0x46b0c0`, CSIDL_PERSONAL) before the profile's; «Папка:» is
+a static with a static edge; the date pickers (1077 / 1078) are long-date
+drop-down calendars without a «none» check.
+Ours listed one level of the current folder (read every frame, hidden
+ones included, with «..»), changed the scanned folder on every click,
+started in the current directory, showed «Папка: …» as one label and
+three day / month / year spinners. Now `finder::{Node, FolderTree,
+fs_children, documents_dir}` (the Desktop root with the computer — drives
+on Windows, `/` elsewhere —, the user's folder and the desktop's folders;
+children read once on expanding; opened to Path, all or nothing),
+«Выбрать» as read, the framed «Папка:» field, `date_picker` (the long
+date «23 октября 2026 г.», a month calendar, Monday first; a day click
+keeps the time of day; the pickers start at today, UTC). Tests
+`folder_tree_opens_to_the_start_folder`, `long_dates_and_weekdays`;
+rendered.
+Residual: the shell namespace is ours (no Libraries / Network / Recycle
+bin, no shell icons or context menu); the local time offset of «today»
+not taken; the spec's `<` corrected to `≤` (L9.9's ≤ was right); `.sto`
+entries stay ⛔ (the converter).
 
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
