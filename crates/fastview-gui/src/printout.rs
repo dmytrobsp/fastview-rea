@@ -63,12 +63,17 @@ impl PageSetup {
         v.insert("Print Parameters/Page Orientation".into(), if self.portrait { "1" } else { "2" }.into());
     }
 
-    /// The sheet in mm, oriented.
+    /// The A4 sheet in mm, oriented.
     pub fn sheet_mm(&self) -> (f32, f32) {
+        self.oriented(A4_MM)
+    }
+
+    /// A portrait paper size turned by the orientation.
+    pub fn oriented(&self, (w, h): (f32, f32)) -> (f32, f32) {
         if self.portrait {
-            A4_MM
+            (w, h)
         } else {
-            (A4_MM.1, A4_MM.0)
+            (h, w)
         }
     }
 }

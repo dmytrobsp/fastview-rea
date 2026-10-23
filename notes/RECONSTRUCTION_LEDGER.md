@@ -2837,8 +2837,8 @@ starred `PageSize` of `lpoptions -p <printer> -l` (A3, A4, A5, B5, Letter,
 Legal; others and a missing `lpoptions` → A4) and the job is laid out on
 that sheet, oriented by the page setup. Test `cups_paper_from_lpoptions`.
 Residual: CUPS hardware margins (the PPD's ImageableArea) not taken (the
-whole sheet is the printable area); the preview and the PDF-file entry
-stay A4; the «Параметры страницы» paper field still reads «A4».
+whole sheet is the printable area); the PDF-file entry stays A4 (the
+preview and the page-setup paper: L9.94).
 
 
 ### L9.85 — A pending lane's statistics; the readout scan starts at own index 1  ·  ✅
@@ -3095,6 +3095,30 @@ the BINARY record. (Found by the real-records render pass.)
 Residual: in print the original's m is in the page DC's coordinates
 (whether the printed cell has its own origin NOT DETERMINED; ours m from
 the cell).
+
+### L9.94 — Page setup and preview on the application printer's paper  ·  🟡
+Read by hand: «Параметры страницы» `0x448a90` builds a CPageSetupDialog
+(#886) with flags 0x260a — margins, in 0.01 mm, paper greyed, the
+RETURNDEFAULT pass first, then the paint hook `0x4488a0` — so its first
+DoModal (#4062) fetches the default printer's DEVMODE, writes the stored
+orientation into it (`dmFields |= DM_ORIENTATION`, `+0x4c`), shows the
+dialog with the stored margins; on OK it keeps orientation and margins
+and hands the DEVNAMES / DEVMODE to the application (#12964, INFERRED to
+be `CWinApp::SelectPrinter`); the greyed «Размер» is that printer's
+form. MFC's preview renders on the application printer's DC (INFERRED
+from the stock `AFXPrintPreview`, L9.22).
+Ours showed «A4» and laid the preview out on A4 whatever the printer.
+Now `spool::{Paper, paper}` (CUPS: the starred `PageSize` choice;
+Windows: the DEVMODE form name and the DC's PHYSICALWIDTH / HEIGHT),
+`PageSetup::oriented`; the preview and the page-setup sample / «Размер»
+use the application printer's paper (the last «Печать» choice, else the
+default; A4 for none or the PDF entry). Test `cups_paper_from_lpoptions`
+(names); rendered the page setup; the Windows path run on the VM
+(ignored `system_printers_paper`: Microsoft Print to PDF → «A4», 210 × 297).
+Residual: the preview's printable area (hardware margins) is the whole
+sheet; the dialog's OK does not write our orientation into the printer's
+own defaults (ours keeps it in the page setup); the standard dialog's
+«Принтер...» button not modelled.
 
 Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

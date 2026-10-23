@@ -40,6 +40,8 @@ pub struct SetupDlg {
     /// Left, top, right, bottom in mm.
     pub mm: [f32; 4],
     pub portrait: bool,
+    /// The application printer's paper (greyed «Размер»).
+    pub paper: spool::Paper,
 }
 
 /// A command of MFC's print-preview ribbon category (`0xE300`–`0xE306`).
@@ -127,11 +129,20 @@ impl App {
         self.print.dialog = Some(PrintDlg { doc: di, ticks: self.docs[di].print_ticks, printer });
     }
 
-    /// 57609 Предварительный просмотр: no dialog, the stored checkboxes.
+    /// The application printer's paper (the last choice of «Печать», at
+    /// start the system default); A4 without one or for the PDF entry.
+    fn app_paper(&mut self) -> spool::Paper {
+        self.printers_refresh();
+        self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).and_then(spool::paper).unwrap_or(spool::Paper { name: "A4".into(), mm: crate::printout::A4_MM })
+    }
+
+    /// 57609 Предварительный просмотр: no dialog, the stored checkboxes;
+    /// the pages on the application printer's paper (MFC's preview DC).
     pub fn print_preview_open(&mut self) {
         let Some(di) = self.active else { return };
         let setup = self.print.setup;
-        let job = self.print_job(di, Device::sheet(&setup, PREVIEW_DPI), setup);
+        let paper = self.app_paper();
+        let job = self.print_job(di, Device::paper(setup.oriented(paper.mm), PREVIEW_DPI), setup);
         let two = job.pages.len() >= 2;
         self.print.preview = Some(Preview { tex: vec![None; job.pages.len()], job, cur: 0, two, zoom: 0, cmd: None });
     }
@@ -139,7 +150,8 @@ impl App {
     /// 57605 Параметры страницы.
     pub fn page_setup_open(&mut self) {
         let s = self.print.setup;
-        self.print.setup_dlg = Some(SetupDlg { mm: s.margins.map(|m| m as f32 / 100.0), portrait: s.portrait });
+        let paper = self.app_paper();
+        self.print.setup_dlg = Some(SetupDlg { mm: s.margins.map(|m| m as f32 / 100.0), portrait: s.portrait, paper });
     }
 
     /// Render and send a job for document `di` (`printer` None = PDF file).
@@ -257,7 +269,7 @@ impl App {
                 p.rect_filled(r.translate(Vec2::splat(3.0)), 0.0, Color32::GRAY);
                 p.rect_filled(r, 0.0, Color32::WHITE);
                 p.rect_stroke(r, 0.0, egui::Stroke::new(1.0f32, Color32::BLACK));
-                let (sw, sh) = if dlg.portrait { (210.0, 297.0) } else { (297.0, 210.0) };
+                let (sw, sh) = if dlg.portrait { dlg.paper.mm } else { (dlg.paper.mm.1, dlg.paper.mm.0) };
                 let m = egui::Rect::from_min_max(
                     r.min + Vec2::new(dlg.mm[0] / sw * w, dlg.mm[1] / sh * h),
                     r.max - Vec2::new(dlg.mm[2] / sw * w, dlg.mm[3] / sh * h),
@@ -269,7 +281,7 @@ impl App {
                     ui.label(RichText::new("Бумага").strong());
                     ui.horizontal(|ui| {
                         ui.label("Размер:");
-                        ui.label("A4");
+                        ui.label(&dlg.paper.name);
                     });
                 });
             });

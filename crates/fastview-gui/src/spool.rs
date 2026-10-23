@@ -14,6 +14,21 @@ pub fn printers() -> (Vec<String>, Option<String>) {
     imp::printers()
 }
 
+/// A printer's paper: its form name and its portrait size in mm.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Paper {
+    pub name: String,
+    pub mm: (f32, f32),
+}
+
+/// The paper of `printer`. The original's page setup and preview work on
+/// the application's printer (`0x448a90` takes the default DEVMODE and
+/// hands the result to the application's printer; the greyed «Размер»
+/// shows its form).
+pub fn paper(printer: &str) -> Option<Paper> {
+    imp::paper(printer)
+}
+
 /// The device to render for `printer` with the page setup's orientation.
 pub fn device(printer: &str, setup: &PageSetup) -> Device {
     imp::device(printer, setup).unwrap_or_else(|| Device::sheet(setup, PDF_DPI))
@@ -29,11 +44,11 @@ pub fn print(printer: &str, title: &str, pages: &[Canvas], dev: &Device, setup: 
 /// The original lays pages out on the printer DC's own paper (GDI caps,
 /// L9.22); unknown names give `None` (A4).
 #[cfg(any(not(windows), test))]
-pub fn cups_paper(lpoptions: &str) -> Option<(f32, f32)> {
+pub fn cups_paper(lpoptions: &str) -> Option<Paper> {
     let line = lpoptions.lines().find(|l| l.starts_with("PageSize/") || l.starts_with("PageSize:"))?;
     let choice = line.split_once(':')?.1.split_whitespace().find_map(|c| c.strip_prefix('*'))?;
-    let name = choice.split('.').next().unwrap_or(choice).to_ascii_lowercase();
-    Some(match name.as_str() {
+    let name = choice.split('.').next().unwrap_or(choice);
+    let mm = match name.to_ascii_lowercase().as_str() {
         "a3" => (297.0, 420.0),
         "a4" => (210.0, 297.0),
         "a5" => (148.0, 210.0),
@@ -41,7 +56,8 @@ pub fn cups_paper(lpoptions: &str) -> Option<(f32, f32)> {
         "letter" => (215.9, 279.4),
         "legal" => (215.9, 355.6),
         _ => return None,
-    })
+    };
+    Some(Paper { name: name.to_string(), mm })
 }
 
 /// The pages as a PDF (sheet size from the device).
@@ -67,11 +83,15 @@ mod imp {
         (list, default)
     }
 
-    /// The printer's default paper from CUPS, oriented by the page setup.
-    pub fn device(printer: &str, setup: &PageSetup) -> Option<Device> {
+    /// The printer's default paper from CUPS.
+    pub fn paper(printer: &str) -> Option<Paper> {
         let out = Command::new("lpoptions").args(["-p", printer, "-l"]).env("LC_ALL", "C").output().ok()?;
-        let (w, h) = cups_paper(&String::from_utf8_lossy(&out.stdout))?;
-        Some(Device::paper(if setup.portrait { (w, h) } else { (h, w) }, PDF_DPI))
+        cups_paper(&String::from_utf8_lossy(&out.stdout))
+    }
+
+    /// The printer's default paper, oriented by the page setup.
+    pub fn device(printer: &str, setup: &PageSetup) -> Option<Device> {
+        Some(Device::paper(setup.oriented(paper(printer)?.mm), PDF_DPI))
     }
 
     pub fn print(printer: &str, title: &str, pages: &[Canvas], dev: &Device, _setup: &PageSetup) -> Result<(), String> {
@@ -93,7 +113,8 @@ mod imp {
     use windows_sys::Win32::Foundation::HANDLE;
     use windows_sys::Win32::Graphics::Gdi::{
         CreateDCW, DeleteDC, GetDeviceCaps, StretchDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DEVMODEW, DIB_RGB_COLORS, DMORIENT_LANDSCAPE,
-        DMORIENT_PORTRAIT, DM_IN_BUFFER, DM_ORIENTATION, DM_OUT_BUFFER, HDC, HORZRES, LOGPIXELSX, SRCCOPY, VERTRES,
+        DMORIENT_PORTRAIT, DM_IN_BUFFER, DM_ORIENTATION, DM_OUT_BUFFER, HDC, HORZRES, LOGPIXELSX, LOGPIXELSY, PHYSICALHEIGHT, PHYSICALWIDTH, SRCCOPY,
+        VERTRES,
     };
     use windows_sys::Win32::Graphics::Printing::{
         ClosePrinter, DocumentPropertiesW, EnumPrintersW, GetDefaultPrinterW, OpenPrinterW, PRINTER_ENUM_CONNECTIONS, PRINTER_ENUM_LOCAL, PRINTER_INFO_4W,
@@ -175,6 +196,28 @@ mod imp {
         (!hdc.is_null()).then_some(hdc)
     }
 
+    /// The DEVMODE's form name and the DC's physical page, portrait.
+    pub fn paper(printer: &str) -> Option<Paper> {
+        let portrait = PageSetup { portrait: true, ..PageSetup::default() };
+        let dm = devmode(printer, &portrait)?;
+        // SAFETY: the buffer holds the DEVMODEW DocumentPropertiesW wrote.
+        let form = unsafe { (*(dm.as_ptr() as *const DEVMODEW)).dmFormName };
+        let name = String::from_utf16_lossy(&form[..form.iter().position(|&c| c == 0).unwrap_or(form.len())]);
+        let hdc = dc(printer, &portrait)?;
+        // SAFETY: a valid DC, deleted after use.
+        let (w, h, dx, dy) = unsafe {
+            let caps = (
+                GetDeviceCaps(hdc, PHYSICALWIDTH as i32),
+                GetDeviceCaps(hdc, PHYSICALHEIGHT as i32),
+                GetDeviceCaps(hdc, LOGPIXELSX as i32),
+                GetDeviceCaps(hdc, LOGPIXELSY as i32),
+            );
+            DeleteDC(hdc);
+            caps
+        };
+        (w > 0 && h > 0 && dx > 0 && dy > 0).then(|| Paper { name, mm: (w as f32 / dx as f32 * 25.4, h as f32 / dy as f32 * 25.4) })
+    }
+
     pub fn device(printer: &str, setup: &PageSetup) -> Option<Device> {
         let hdc = dc(printer, setup)?;
         // SAFETY: a valid DC, deleted after use.
@@ -245,9 +288,21 @@ mod tests {
     #[test]
     fn cups_paper_from_lpoptions() {
         let out = "PageSize/Media Size: Letter Legal *A4 A5 Env10\nDuplex/2-Sided Printing: *None DuplexNoTumble\n";
-        assert_eq!(cups_paper(out), Some((210.0, 297.0)));
-        assert_eq!(cups_paper("PageSize/Media Size: *Letter A4"), Some((215.9, 279.4)));
+        assert_eq!(cups_paper(out), Some(Paper { name: "A4".into(), mm: (210.0, 297.0) }));
+        assert_eq!(cups_paper("PageSize/Media Size: *Letter A4"), Some(Paper { name: "Letter".into(), mm: (215.9, 279.4) }));
+        assert_eq!(cups_paper("PageSize/Media Size: *A5.Fullbleed"), Some(Paper { name: "A5".into(), mm: (148.0, 210.0) }));
         assert_eq!(cups_paper("PageSize/Media Size: *Custom.100x200mm"), None);
         assert_eq!(cups_paper("Duplex/2-Sided: *None"), None);
+    }
+
+    /// The system printers' papers (run by hand: `--ignored`).
+    #[test]
+    #[ignore]
+    fn system_printers_paper() {
+        let (list, default) = printers();
+        eprintln!("default: {default:?}");
+        for p in list {
+            eprintln!("{p}: {:?}", paper(&p));
+        }
     }
 }

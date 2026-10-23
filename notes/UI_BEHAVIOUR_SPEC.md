@@ -1346,7 +1346,7 @@ icon-only small buttons and panel collapse when narrow (L9.27).
     local radios, persistence (+ print margins) — `dialogs.rs`, `persist.rs` — S
 35. 🟡 (L9.9: all but the shell tree, .sto and recycle bin) Проводник as the modal finder (worker scan, filters, sort, multi-open,
     delete with companions, persistence) — `main.rs` → new module — L
-36. 🟡 (L9.22: all but logo, paper/printer properties, diagram print branches; L9.59 selected comment printed) Print: dialog with five checkboxes, page setup, paged output (oscillogram
+36. 🟡 (L9.22: all but logo, printer properties, hardware margins; L9.59 selected comment printed; L9.84 / L9.94 the printer's paper in print, preview and page setup) Print: dialog with five checkboxes, page setup, paged output (oscillogram
     sliced, diagrams one page each) and preview — new module — L
 37. 🟡 (L9.10: worker + thresholds + cancel; L9.31: the original's counters and percent) Loading progress dialog with worker thread and cancel (thresholds
     200 kB/20 kB) — `app.rs`, `crates/fvb-core` parsers — M
