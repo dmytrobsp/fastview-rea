@@ -177,6 +177,18 @@ impl OscView<'_> {
         t.get(k).copied().unwrap_or(0.0) - t.first().copied().unwrap_or(0.0)
     }
 
+    /// A ruler / band label's time and sample: relative to the trigger
+    /// sample (`doc+0x214`, `0x46453b`; 0 for COMTRADE) — samples print
+    /// k − trigger + 1; «Абсолютное время» counts from the record start
+    /// (how the trigger enters there NOT DETERMINED).
+    fn label_at(&self, k: usize) -> (f64, i64) {
+        let trig = self.doc.osc.trigger_sample;
+        if self.unit == TimeUnit::Absolute {
+            return (self.time_at(k), k as i64 - trig as i64);
+        }
+        (self.time_at(k) - self.time_at(trig), k as i64 - trig as i64)
+    }
+
     /// One lane's stats text (`0x461440`) and waveforms (`0x45fbe0`);
     /// returns the name badge rectangle.
     pub fn row(&self, lp: &egui::Painter, pp: &egui::Painter, r: &Row, top: f32, (lo, hi): (f64, f64)) -> Rect {
@@ -395,7 +407,8 @@ impl OscView<'_> {
             if t.labelled {
                 let k = g::tick_sample(first, t.i, f);
                 if k < n {
-                    let s = g::ruler_label(self.unit, self.time_at(k), k as i64, first_label, start_tod);
+                    let (tk, kr) = self.label_at(k);
+                    let s = g::ruler_label(self.unit, tk, kr, first_label, start_tod);
                     painter.text(Pos2::new(t.x, bottom - 20.0), Align2::CENTER_TOP, s, FontId::proportional(11.0), text_col);
                     first_label = false;
                 }
@@ -433,7 +446,8 @@ impl OscView<'_> {
             if x <= left {
                 continue;
             }
-            let s = g::mark_label(self.unit, self.time_at(k), k as i64, start_tod);
+            let (t, kr) = self.label_at(k);
+            let s = g::mark_label(self.unit, t, kr, start_tod);
             let galley = painter.layout_no_wrap(s, FontId::proportional(11.0), text_col);
             let (l, r) = (x - (galley.size().x / 2.0).trunc(), x + (galley.size().x / 2.0).trunc() + 1.0);
             if taken.iter().any(|&(a, b)| l - 3.0 <= b && a <= r + 3.0) {
@@ -489,6 +503,16 @@ impl OscView<'_> {
     /// with В1, shown or not), then the label row at `top` — clamped,
     /// merged (`g::vizir_labels`), each on an opaque white text cell.
     pub fn vizirs(&self, painter: &egui::Painter, top: f32, v_bottom: f32, labels: bool) {
+        // The trigger moment (`0x464219`): a dotted line when the record
+        // has one (`.osc` with pre-trigger blocks).
+        let trig = self.doc.osc.trigger_sample;
+        if trig != 0 {
+            let x = self.vizir_x(trig);
+            if x > self.left {
+                let pts = [Pos2::new(x, top), Pos2::new(x, v_bottom)];
+                painter.extend(egui::Shape::dashed_line(&pts, Stroke::new(1.0f32, Color32::from_rgb(35, 194, 87)), 1.0, 1.0));
+            }
+        }
         let viz = self.viz();
         let xs: Vec<f32> = viz.iter().map(|v| self.vizir_x(v.0)).collect();
         for (i, (_, shown, col, _)) in viz.iter().enumerate() {
@@ -1741,15 +1765,19 @@ impl App {
 
     /// The six status-bar panes (`0x4947d0`), each one complete string:
     /// the caption alone while its визир(s) are hidden, else the value
-    /// relative to the record start (COMTRADE carries no trigger sample) in
+    /// relative to the trigger sample (0 for COMTRADE, L9.125) in
     /// the ruler unit; the V difference needs both V визиры shown, the H
     /// difference both H визиры on the same channel.
     pub fn cursor_status(&self) -> [String; 6] {
         let captions = ["Верт. визир 1:", "Верт. визир 2:", "Разница. верт. визиров:", "Гор. визир 1:", "Гор. визир 2:", "Разница г. визиров:"];
         let mut out = captions.map(String::from);
         let Some(d) = self.active_doc() else { return out };
+        // Relative to the trigger sample (`0x49484d`; 0 for COMTRADE), the
+        // absolute mode from the record start.
+        let trig = d.osc.trigger_sample;
         let t0 = d.osc.time.first().copied().unwrap_or(0.0);
-        let t = |k: usize| d.osc.time.get(k).copied().unwrap_or(0.0) - t0;
+        let tz = if self.time_unit == TimeUnit::Absolute { t0 } else { d.osc.time.get(trig).copied().unwrap_or(t0) };
+        let t = |k: usize| d.osc.time.get(k).copied().unwrap_or(0.0) - tz;
         let start_tod = fvb_core::comtrade::time_of_day(&d.osc.stamps.start_time);
         // Absolute mode (strings 240/241/202): V1/V2 as the time of day, the
         // difference as `ss.mmm` within the minute.
@@ -1763,10 +1791,10 @@ impl App {
         };
         let (v1, v2) = (d.main_cursor, d.aux_cursor);
         if d.v_shown[0] {
-            out[0] = format!("{} {}", captions[0], time(t(v1), v1 as i64 + 1, false));
+            out[0] = format!("{} {}", captions[0], time(t(v1), v1 as i64 - trig as i64 + 1, false));
         }
         if d.v_shown[1] {
-            out[1] = format!("{} {}", captions[1], time(t(v2), v2 as i64 + 1, false));
+            out[1] = format!("{} {}", captions[1], time(t(v2), v2 as i64 - trig as i64 + 1, false));
         }
         if d.v_shown[0] && d.v_shown[1] {
             out[2] = format!("{} {}", captions[2], time((t(v1) - t(v2)).abs(), (v1 as i64 - v2 as i64).abs(), true));

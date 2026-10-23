@@ -2562,6 +2562,21 @@ mod tests {
         assert!(s.iter().all(|x| !x.is_empty()));
     }
 
+    /// `0x49484d`: with a trigger sample (`.osc`) the readouts count from
+    /// it — a визир on it reads 0 and sample 1.
+    #[test]
+    fn cursor_status_counts_from_the_trigger() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.osc.trigger_sample = 20;
+        (d.main_cursor, d.aux_cursor, d.v_shown) = (20, 30, [true, true, false]);
+        app.time_unit = TimeUnit::Milli;
+        assert_eq!(app.cursor_status()[0], "Верт. визир 1: 0 мс");
+        app.time_unit = TimeUnit::Samples;
+        let s = app.cursor_status();
+        assert_eq!((s[0].as_str(), s[1].as_str()), ("Верт. визир 1: 1", "Верт. визир 2: 11"));
+    }
+
     #[test]
     fn cursor_status_absolute_time() {
         let mut app = demo_app();

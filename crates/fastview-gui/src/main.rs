@@ -1080,6 +1080,13 @@ mod window_tests {
                 app.docks[docking::Unit::Frequency].spot = docking::Spot::Tab(docking::Unit::Vector);
                 app.dispatch(app::Command::ActivatePane(app::Pane::Frequency));
             }
+            // An `.osc`-like trigger at sample 60 (the dotted line, the
+            // ruler from it).
+            "trigger" => {
+                if let Some(d) = app.active_doc_mut() {
+                    d.osc.trigger_sample = 60;
+                }
+            }
             "docksplit" => app.docks[docking::Unit::Differential].spot = docking::Spot::Beside(docking::Unit::Vector, docking::Edge::Left),
             "dockmarkers" => {
                 app.docks[docking::Unit::Frequency].double_click(egui::pos2(80.0, 300.0));

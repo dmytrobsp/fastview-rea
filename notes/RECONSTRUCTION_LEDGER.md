@@ -3908,6 +3908,21 @@ empty (the original reads an uninitialised value); the trigger sample's
 uses — the dotted trigger line, ruler / readouts / samples mode relative
 to it, the difference band — in L9.125.
 
+### L9.125 — The trigger sample in the view: the dotted line, labels and readouts from it  ·  ✅
+Read (L9.123's report pass): `doc+0x214` ≠ 0 draws a dotted trigger line
+(`0x464219`, (35, 194, 87)); the ruler (`0x46453b` / `0x464e44`), the
+difference band (`0x466792`) and the status bar (`0x49484d`) count from it
+— times relative to the trigger's, samples k − trigger + 1.
+Ours counted from the record start (no trigger existed before L9.124).
+Now `OscView::label_at` (ruler and band labels), `cursor_status` from the
+trigger, the dotted line in `vizirs`; «Абсолютное время» still counts
+from the record start (how the trigger enters there NOT DETERMINED —
+`0x464553`'s branch parses the start time; its use of the stored
+trigger not traced). `FV_WINDOW_STATE=trigger`. Test
+`cursor_status_counts_from_the_trigger`; rendered.
+Residual: the absolute mode with a trigger (above); COMTRADE has none
+(always 0, as read).
+
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -3948,7 +3963,7 @@ measured-frequency correction on by default with a Гц / Hz channel
 pending.
 **How to look at the GUI without running it:** `FV_WINDOW_DUMP=<png>
 [FV_WINDOW_RECORD=<cfg>] [FV_WINDOW_STATE=analysis (the sheet, two formula
-channels)|comments|group|circle|circletable|circlelegend|diff|difftable|keytips|keytipsmenu|floating|autohide|dockleft|dockbottom|docktab|docksplit|dockmarkers|omp|ompparams|preview|print|pagesetup|
+channels)|comments|group|circle|circletable|circlelegend|diff|difftable|keytips|keytipsmenu|trigger|floating|autohide|dockleft|dockbottom|docktab|docksplit|dockmarkers|omp|ompparams|preview|print|pagesetup|
 settings|channels|coef|fileparams|explorer|parambar|vizirs|alert|windows|
 paste|vecvalues|skin<k>] [FV_WINDOW_XSCALE=f] [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y]
 [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then Read the PNG (crop with
@@ -3964,8 +3979,7 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-the .osc trigger sample / stamps / finder dates (L9.124, read in
-L9.123's report pass), the merge sync under the frequency correction
+(the .osc stamps and trigger: L9.124 / L9.125); the merge sync under the frequency correction
 (fault denominator and phasors corrected, the pasted channel with its own
 rate and the base frequency at its own index). Then: the docking marker
 bitmaps (ours drawn); L9.64 MDI arrangements under tabs (ND, likely
