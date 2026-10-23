@@ -2821,8 +2821,7 @@ Next in L9 (HANDOFF 2026-10-23, evening 2): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 340 tests; CI green on 3 OSes
-through L9.78 at this handoff (later runs were in progress — check
-`gh run list`).
+through L9.82 at this handoff.
 **This session (L9.76–L9.81):** L9.76 the unit text `0x42bc50` as read —
 «/с» kept for per-second file units, a formula channel's unit always
 translated (`[kV]` → «кВ»), `units::Shown`; L9.77 a pending (pasted) lane's
