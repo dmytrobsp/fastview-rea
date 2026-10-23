@@ -228,7 +228,15 @@ impl App {
                         ui.end_row();
                     }
                 });
-                ui.add_enabled(false, egui::Button::new("Свойства..."));
+                // The driver's dialog (Windows); the chosen settings
+                // apply to this printer's jobs.
+                let real = self.print.printers.get(dlg.printer).cloned();
+                if ui.add_enabled(cfg!(windows) && real.is_some(), egui::Button::new("Свойства...")).clicked() {
+                    if let Some(p) = real {
+                        spool::properties(&p);
+                        dlg.details = None;
+                    }
+                }
             });
             setup = ui.button("Параметры страницы").clicked();
             ui.group(|ui| {

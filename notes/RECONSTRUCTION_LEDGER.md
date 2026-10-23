@@ -3844,6 +3844,20 @@ printer's).
 Residual: the footer keeps 12 (as read); a driver resetting DC
 attributes at StartPage NOT DETERMINED.
 
+### L9.122 — «Свойства...» in the print dialog (Windows)  ·  🟡
+Read (L9.113): the dialog is the common print dialog, whose psh2
+«Свойства...» opens the driver's document properties; the DEVMODE edited
+there is the one the job prints with (INFERRED from comdlg32's
+behaviour).
+Ours had the button disabled. Now `spool::properties` — Windows:
+DocumentPropertiesW with DM_IN_PROMPT (seeded with the last choice) and,
+on OK, the DEVMODE kept per printer and used as is for that printer's
+DC (`devmode`); elsewhere none (the button disabled off Windows).
+Residual: the driver dialog itself not exercised (the VM is reached
+over ssh only; the code path compiles and the stored DEVMODE path is the
+existing one); the dialog has no owner window (ours passes none); the
+page setup's orientation is not merged into a DEVMODE chosen there.
+
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -3906,7 +3920,7 @@ residual), the engine residuals (OSC trigger / start stamps, the merge
 sync under the frequency correction for pasted channels, the symmetric-
 component view code «not located» in L6). Then: the docking marker
 bitmaps (ours drawn); L9.64 MDI arrangements under tabs (ND, likely
-no-ops); Свойства... in the print dialog (driver dialog + job DEVMODE);
+no-ops); (Свойства...: L9.122, not exercised on the VM);
 the merged record's frequency track; (header T on page 1: L9.121); the application button's orb / caption bar
 from the style images; backlog §9 #36 / #37 / #45 leftovers (logo and
 splash are proprietary assets — not reproduced). Good recurring pass:

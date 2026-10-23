@@ -51,6 +51,14 @@ pub fn details(printer: &str) -> [String; 4] {
     imp::details(printer)
 }
 
+/// «Свойства...» (psh2 of the common print dialog): the driver's own
+/// document-properties dialog; the settings chosen there apply to this
+/// printer's jobs from then on (the dialog's DEVMODE). Windows only —
+/// false where there is none (CUPS).
+pub fn properties(printer: &str) -> bool {
+    imp::properties(printer)
+}
+
 /// The fields from `lpstat -p <printer>` and `lpoptions -p <printer>`.
 #[cfg(any(not(windows), test))]
 pub fn cups_details(lpstat: &str, lpoptions: &str) -> [String; 4] {
@@ -158,6 +166,10 @@ mod imp {
         (list, default)
     }
 
+    pub fn properties(_printer: &str) -> bool {
+        false
+    }
+
     pub fn details(printer: &str) -> [String; 4] {
         let run = |cmd: &str, args: &[&str]| Command::new(cmd).args(args).env("LC_ALL", "C").output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
         cups_details(&run("lpstat", &["-p", printer]), &run("lpoptions", &["-p", printer]))
@@ -220,7 +232,7 @@ mod imp {
     use windows_sys::Win32::Foundation::{HANDLE, SIZE};
     use windows_sys::Win32::Graphics::Gdi::{
         CreateDCW, DeleteDC, GetDeviceCaps, GetTextExtentPoint32W, StretchDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DEVMODEW, DIB_RGB_COLORS, DMORIENT_LANDSCAPE,
-        DMORIENT_PORTRAIT, DM_IN_BUFFER, DM_ORIENTATION, DM_OUT_BUFFER, HDC, HORZRES, LOGPIXELSX, LOGPIXELSY, PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH, SRCCOPY,
+        DMORIENT_PORTRAIT, DM_IN_BUFFER, DM_IN_PROMPT, DM_ORIENTATION, DM_OUT_BUFFER, HDC, HORZRES, LOGPIXELSX, LOGPIXELSY, PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH, SRCCOPY,
         VERTRES,
     };
     use windows_sys::Win32::Graphics::Printing::{
@@ -302,7 +314,51 @@ mod imp {
 
     /// The printer's DEVMODE with the orientation set (the original writes
     /// the stored orientation into the default DEVMODE, `0x448c00`).
+    /// The DEVMODEs chosen in «Свойства...», per printer.
+    static JOB_DM: std::sync::Mutex<Vec<(String, Vec<u64>)>> = std::sync::Mutex::new(Vec::new());
+
+    fn chosen(printer: &str) -> Option<Vec<u64>> {
+        JOB_DM.lock().ok()?.iter().find(|(p, _)| p == printer).map(|(_, b)| b.clone())
+    }
+
+    pub fn properties(printer: &str) -> bool {
+        let name = wide(printer);
+        // SAFETY: the buffers are sized by DocumentPropertiesW; the printer
+        // handle is closed on every path.
+        unsafe {
+            let mut h: HANDLE = std::ptr::null_mut();
+            if OpenPrinterW(name.as_ptr(), &mut h, std::ptr::null()) == 0 {
+                return false;
+            }
+            let size = DocumentPropertiesW(std::ptr::null_mut(), h, name.as_ptr(), std::ptr::null_mut(), std::ptr::null(), 0);
+            let mut out = vec![0u64; (size.max(0) as usize).div_ceil(8).max(1)];
+            let input = chosen(printer);
+            let flags = DM_IN_PROMPT | DM_OUT_BUFFER | if input.is_some() { DM_IN_BUFFER } else { 0 };
+            let r = DocumentPropertiesW(
+                std::ptr::null_mut(),
+                h,
+                name.as_ptr(),
+                out.as_mut_ptr() as *mut DEVMODEW,
+                input.as_ref().map_or(std::ptr::null(), |b| b.as_ptr() as *const DEVMODEW),
+                flags,
+            );
+            ClosePrinter(h);
+            if size > 0 && r == 1 {
+                if let Ok(mut v) = JOB_DM.lock() {
+                    v.retain(|(p, _)| p != printer);
+                    v.push((printer.to_string(), out));
+                }
+                return true;
+            }
+            false
+        }
+    }
+
     fn devmode(printer: &str, setup: &PageSetup) -> Option<Vec<u64>> {
+        // What «Свойства...» chose stands for the job as it is.
+        if let Some(b) = chosen(printer) {
+            return Some(b);
+        }
         let name = wide(printer);
         // SAFETY: the DEVMODE buffer is sized by DocumentPropertiesW and
         // the printer handle is closed on every path.
