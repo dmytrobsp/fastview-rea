@@ -138,8 +138,14 @@ impl App {
                                 ui.separator();
                                 for (k, path) in mru.iter().enumerate() {
                                     let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-                                    let b = egui::Button::new(format!("{} {name}", k + 1)).frame(false).truncate();
-                                    if ui.add(b).on_hover_text(path.display().to_string()).clicked() {
+                                    // «&1 name» … «1&0 name», then the plain name.
+                                    let text = if k < 10 { format!("{} {name}", k + 1) } else { name };
+                                    let b = egui::Button::new(text).frame(false).truncate();
+                                    let r = ui.add(b);
+                                    if k < 10 {
+                                        menu_rects.push((crate::keytips::Target::Recent(k), r.rect, true));
+                                    }
+                                    if r.on_hover_text(path.display().to_string()).clicked() {
                                         cmds.push(Command::OpenPath(path.clone()));
                                         ui.close_menu();
                                     }
@@ -164,23 +170,31 @@ impl App {
             .into_iter()
             .enumerate()
             {
-                let r = qat_button(ui, p, icon).on_hover_text(tip);
-                self.kt_rects.push((crate::keytips::Target::Qat(n), r.rect, true));
+                // Сохранить / Печать have no handler without a document
+                // (MFC disables them).
+                let enabled = n == 0 || has_doc;
+                let r = ui.add_enabled_ui(enabled, |ui| qat_button(ui, p, icon)).inner.on_hover_text(tip);
+                self.kt_rects.push((crate::keytips::Target::Qat(n), r.rect, enabled));
                 if r.clicked() {
                     cmds.push(cmd);
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Help split button (57667): the arrow opens {Помощь, О программе...}.
-                let help = ui.menu_button(RichText::new("?").color(p.text).strong(), |ui| {
-                    ui.add_enabled(false, egui::Button::new("Помощь"));
+                let help = ui.button(RichText::new("?").color(p.text).strong());
+                if help.clicked() {
+                    ui.memory_mut(|m| m.toggle_popup(help_menu_id()));
+                }
+                egui::popup_below_widget(ui, help_menu_id(), &help, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                    ui.set_min_width(140.0);
+                    ui.add_enabled(false, egui::Button::new("Помощь").frame(false));
                     ui.separator();
-                    if ui.button("О программе...").clicked() {
+                    if ui.add(egui::Button::new("О программе...").frame(false)).clicked() {
                         self.show_about = true;
-                        ui.close_menu();
+                        ui.memory_mut(|m| m.close_popup());
                     }
                 });
-                self.kt_rects.push((crate::keytips::Target::Help, help.response.rect, true));
+                self.kt_rects.push((crate::keytips::Target::Help, help.rect, true));
                 // «Стиль» (menu 200): the radio entry of the current look,
                 // persisted as `ApplicationLook`.
                 ui.menu_button(RichText::new("Стиль ▾").color(p.text), |ui| {
@@ -607,12 +621,17 @@ fn draw_logo(ui: &mut egui::Ui, h: f32, color: Color32) {
 fn qat_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(24.0, 22.0), egui::Sense::click());
     let painter = ui.painter();
-    if resp.hovered() {
+    if resp.hovered() && ui.is_enabled() {
         painter.rect(rect, 3.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
     }
     let box_ = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0));
-    icons::paint(painter, box_, icon, p.accent);
+    icons::paint(painter, box_, icon, if ui.is_enabled() { p.accent } else { disabled_ink(p) });
     resp
+}
+
+/// The Help split button's drop-down (Помощь, О программе...).
+fn help_menu_id() -> egui::Id {
+    egui::Id::new("fv_help_menu")
 }
 
 fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, active_bg: Color32, text: Color32) -> egui::Response {
@@ -1111,7 +1130,9 @@ impl App {
         if pressed {
             self.keytips.exit();
         }
-        if was && self.keytips.shown() && !f10 {
+        // A letter with Alt held is a system key: MFC passes it on and
+        // never fires a keytip (`0x100ff240`).
+        if was && self.keytips.shown() && !f10 && !mods.alt {
             for key in keys {
                 let out = match key {
                     egui::Key::Escape => self.keytips.escape(),
@@ -1120,7 +1141,10 @@ impl App {
                         Outcome::Exit
                     }
                     k => match k.name().chars().next().filter(|c| k.name().len() == 1 && c.is_ascii_alphanumeric()) {
-                        Some(c) => self.keytips.key(c),
+                        Some(c) => {
+                            let rects = &self.kt_rects;
+                            self.keytips.key(c, |t| rects.iter().find(|(x, ..)| *x == t).map(|r| r.2))
+                        }
                         None => Outcome::None,
                     },
                 };
@@ -1138,9 +1162,18 @@ impl App {
                                 let frame = ctx.cumulative_pass_nr();
                                 ctx.data_mut(|d| d.insert_temp(app_sub_id(), (Some(AppSub::Print), frame.saturating_sub(1))));
                             }
-                            // Помощь is disabled in ours; the Cyrillic menu
-                            // keys cannot be typed.
-                            Target::Help | Target::AppItem(_) => {}
+                            // The Help button has a menu and no separate menu
+                            // key: its keytip opens the drop-down (`OnKey`
+                            // `0x101036b6`); the menu's own keys are Cyrillic.
+                            Target::Help => ctx.memory_mut(|m| m.open_popup(help_menu_id())),
+                            Target::Recent(n) => {
+                                if let Some(path) = self.mru.get(n).cloned() {
+                                    self.kt_menu(ctx, false);
+                                    self.dispatch(Command::OpenPath(path));
+                                }
+                            }
+                            // The Cyrillic menu keys cannot be typed.
+                            Target::AppItem(_) => {}
                         }
                         break;
                     }

@@ -31,6 +31,8 @@ pub enum Target {
     /// Печать's main part «P» and its menu part «W».
     PrintMain,
     PrintMenu,
+    /// Recent document `n` (0-based): «&1»…«&9», «1&0» (`0x1011cb1e`).
+    Recent(usize),
 }
 
 /// The top-left of a keytip box of `size` on its element `r`
@@ -51,6 +53,8 @@ pub fn tip_origin(target: Target, r: Rect, size: Vec2) -> Pos2 {
         Target::Help => Pos2::new(r.left() + 10.0, r.bottom() - half(size.y)),
         Target::AppItem(_) | Target::PrintMain => Pos2::new(r.left() + 32.0 + 4.0 - size.x, r.bottom() - size.y - 4.0),
         Target::PrintMenu => Pos2::new(r.right() - half(size.x), r.bottom() - size.y - 4.0),
+        // A text-only menu row: at its left, centred on its middle (ours).
+        Target::Recent(_) => Pos2::new(r.left() + 4.0, cy - half(size.y)),
     }
 }
 
@@ -105,6 +109,18 @@ pub fn tips(level: Level) -> Vec<(&'static str, Target)> {
             ("Н", Target::AppItem(7)),
             ("А", Target::AppItem(8)),
             ("З", Target::AppItem(9)),
+            // The recent documents take the letter after their «&»
+            // (`GetKeyTipSize` `0x10064ea3`).
+            ("1", Target::Recent(0)),
+            ("2", Target::Recent(1)),
+            ("3", Target::Recent(2)),
+            ("4", Target::Recent(3)),
+            ("5", Target::Recent(4)),
+            ("6", Target::Recent(5)),
+            ("7", Target::Recent(6)),
+            ("8", Target::Recent(7)),
+            ("9", Target::Recent(8)),
+            ("0", Target::Recent(9)),
         ],
     }
 }
@@ -214,18 +230,22 @@ impl Keytips {
 
     /// A typed character (upper-cased Latin): the first one-key keytip that
     /// matches activates; the first letter of a longer one narrows, the
-    /// next key must be its second; anything else ends keytip mode.
-    pub fn key(&mut self, c: char) -> Outcome {
+    /// next key must be its second; anything else ends keytip mode. `avail`
+    /// says whether a target is there (`Some`) and enabled: a disabled
+    /// element's key does nothing and the keytips stay (`OnKey`
+    /// `0x101036b6` returns FALSE, ProcessKey `0x100fef15` stays).
+    pub fn key(&mut self, c: char, avail: impl Fn(Target) -> Option<bool>) -> Outcome {
         let Some(level) = self.level else { return Outcome::None };
         let c = c.to_uppercase().next().unwrap_or(c);
-        let list = tips(level);
+        let list: Vec<(&str, Target)> = tips(level).into_iter().filter(|&(_, t)| avail(t).is_some()).collect();
+        let activate = |k: &mut Keytips, t: Target| if avail(t) == Some(true) { k.activate(t) } else { Outcome::None };
         if let Some(p) = self.prefix.take() {
             let hit = list.iter().find(|(k, _)| {
                 let mut ch = k.chars().flat_map(char::to_uppercase);
                 ch.next() == Some(p) && ch.next() == Some(c)
             });
             return match hit {
-                Some(&(_, t)) => self.activate(t),
+                Some(&(_, t)) => activate(self, t),
                 None => {
                     self.exit();
                     Outcome::Exit
@@ -234,7 +254,7 @@ impl Keytips {
         }
         let up = |k: &str| k.to_uppercase();
         if let Some(&(_, t)) = list.iter().find(|(k, _)| up(k).chars().count() == 1 && up(k).starts_with(c)) {
-            return self.activate(t);
+            return activate(self, t);
         }
         if list.iter().any(|(k, _)| up(k).chars().count() > 1 && up(k).starts_with(c)) {
             self.prefix = Some(c);
@@ -310,22 +330,36 @@ mod tests {
     #[test]
     fn typing_activates_descends_and_backs_out() {
         let mut k = Keytips::default();
+        let all = |_: Target| Some(true);
         k.f10();
-        assert_eq!(k.key('2'), Outcome::Activate(Target::Qat(1)));
+        assert_eq!(k.key('2', |t| Some(t != Target::Qat(1))), Outcome::None, "disabled: nothing, the keytips stay");
+        assert!(k.shown());
+        assert_eq!(k.key('2', all), Outcome::Activate(Target::Qat(1)));
         assert!(!k.shown(), "an activated button ends keytip mode");
         k.f10();
-        assert_eq!(k.key('f'), Outcome::Activate(Target::AppButton));
+        assert_eq!(k.key('f', all), Outcome::Activate(Target::AppButton));
         assert_eq!(k.level, Some(Level::AppMenu));
-        assert_eq!(k.key('O'), Outcome::Exit, "Latin O is not the Cyrillic «О»");
+        assert_eq!(k.key('O', all), Outcome::Exit, "Latin O is not the Cyrillic «О»");
         k.f10();
-        k.key('F');
-        assert_eq!(k.key('w'), Outcome::Activate(Target::PrintMenu));
+        k.key('F', all);
+        assert_eq!(k.key('w', all), Outcome::Activate(Target::PrintMenu));
         assert_eq!(k.level, Some(Level::AppMenu));
         assert_eq!(k.escape(), Outcome::Back);
         assert_eq!(k.level, Some(Level::Tabs));
         assert_eq!(k.escape(), Outcome::Exit);
         assert!(!k.shown());
         k.f10();
-        assert_eq!(k.key('Q'), Outcome::Exit, "an unmatched key ends it");
+        assert_eq!(k.key('Q', all), Outcome::Exit, "an unmatched key ends it");
+        // The recent documents: 1…9, 0 for the tenth; absent ones unmatched.
+        k.f10();
+        k.key('F', all);
+        let two = |t: Target| match t {
+            Target::Recent(n) => (n < 2).then_some(true),
+            _ => Some(true),
+        };
+        assert_eq!(k.key('2', two), Outcome::Activate(Target::Recent(1)));
+        k.f10();
+        k.key('F', all);
+        assert_eq!(k.key('5', two), Outcome::Exit);
     }
 }

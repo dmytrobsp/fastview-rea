@@ -2994,9 +2994,8 @@ state (`kt_menu`; a root shows for its button's response id).
 `FV_WINDOW_STATE=keytips` / `keytipsmenu` render them. Tests
 `alt_tap_hold_and_f10`, `typing_activates_descends_and_backs_out`,
 `keytips_open_the_application_menu`.
-Residual: (placement and the box: L9.97); Alt+key while Alt is held,
-the Recent Documents' keys, «A» activates nothing (our Помощь is
-disabled).
+Residual: (placement and the box: L9.97; Alt+key held, the Recent
+Documents' keys, «A»: L9.115).
 
 
 ### L9.91 — Ribbon panels reduce in MFC's steps  ·  🟡
@@ -3679,6 +3678,31 @@ text (RIBBON/PANEL/TextNormal, INFERRED from the style data) — the Black
 palette needs reading; the line height is ours (12 px; MFC's from the
 font); whether Repos stretches large buttons to the column NOT
 DETERMINED; the collapsed button's 16 px image is ours (a framed square).
+
+### L9.115 — Keytips: recent documents, disabled elements, Help's drop-down, Alt held  ·  ✅
+Read (subagent report on mfc120u): the recent documents are created as
+«&N name» for 1–9, «1&0 name» for the tenth, the plain name beyond
+(`0x1011cb1e`–`0x1011cb5f`), and a menu element whose keys are shorter
+than 2 takes the letter after its first «&» (`GetKeyTipSize`
+`0x10064ea3`) — keys 1…9, 0; `OnKey` (`0x101036b6`) returns FALSE for a
+disabled element and ProcessKey leaves keytip mode only on TRUE
+(`0x100fef15`) — its key does nothing and the keytips stay; the Help
+split button has a menu and no separate menu key, so «A» opens its
+drop-down (Помощь / О программе…) and posts Home (CMainFrame handles 57667
+with MFC's help finder, so it is enabled); a letter with Alt held arrives
+as WM_SYSKEYDOWN, which the ribbon passes on — no keytip fires.
+Ours had no recent-document keys, activated (and left) on a disabled
+element, did nothing on «A», and fired letters typed with Alt held. Now
+`keytips::Target::Recent`, `Keytips::key(c, avail)` (absent targets
+unmatched, disabled ones inert), the Help button's own popup opened by
+«A», letters ignored while Alt is down; the QAT's Сохранить / Печать are
+disabled without a document (no handler then — MFC's auto-disable).
+Test `typing_activates_descends_and_backs_out` (disabled, recent);
+rendered `keytipsmenu`.
+Residual: the Home highlight in the opened Help menu not shown; our
+Помощь stays disabled (no CHM shipped — the original's opens the help
+file); the recent rows' keytip place is ours; what removes hold-shown
+keytips after an Alt+key combination NOT DETERMINED.
 
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
