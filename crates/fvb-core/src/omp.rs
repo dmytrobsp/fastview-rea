@@ -102,6 +102,61 @@ pub fn omp_phasors(x: &[f64], p: usize) -> Vec<Complex64> {
     out
 }
 
+/// The ОМП phasor's tracked mode (`0x477280` with a mode ≠ −1, for a
+/// channel with its own frequency vector): from sample i backwards while
+/// the phase is under one period and s > 0 — Δt = (t(s) − t(s−1))·1e-6 from
+/// the record's µs times, the term (−sin θ·x(s)·Δt, cos θ·x(s)·Δt) at θ =
+/// 2π·phase before the step, then phase += Δt·f(s − 1) and 1/f summed; the
+/// last sample's weight replaced by (1 − its phase before) / f(s_L); the
+/// sum × 2 / mean(1/f). f(k) = the channel's own value, else the record's
+/// track, else 0. 0 for i < n.
+pub fn omp_phasors_tracked(x: &[f64], n: usize, t_us: &[i64], own: &[f64], track: &[f64]) -> Vec<Complex64> {
+    let freq = |k: usize| own.get(k).or(track.get(k)).copied().unwrap_or(0.0);
+    let t = |k: usize| t_us.get(k).copied().unwrap_or(0) as f64;
+    let tau = 2.0 * std::f64::consts::PI;
+    let mut out = vec![Complex64::default(); x.len()];
+    for (i, slot) in out.iter_mut().enumerate() {
+        if i < n {
+            continue;
+        }
+        let (mut sum, mut inv, mut count) = (Complex64::default(), 0.0, 0usize);
+        let (mut s, mut phase) = (i, 0.0f64);
+        let mut last = None;
+        while phase < 1.0 && s > 0 {
+            let dt = (t(s) - t(s - 1)) * 1e-6;
+            let th = tau * phase;
+            let xs = x.get(s).copied().unwrap_or(0.0);
+            sum += Complex64::new(-th.sin() * xs, th.cos() * xs) * dt;
+            let f = freq(s - 1);
+            last = Some((s, th, phase, dt));
+            phase += dt * f;
+            inv += 1.0 / f;
+            count += 1;
+            s -= 1;
+        }
+        if let Some((sl, th, before, dt)) = last {
+            let xs = x.get(sl).copied().unwrap_or(0.0);
+            let unit = Complex64::new(-th.sin() * xs, th.cos() * xs);
+            sum += unit * ((1.0 - before) / freq(sl) - dt);
+        }
+        *slot = if count == 0 { Complex64::default() } else { sum * (2.0 / (inv / count as f64)) };
+    }
+    out
+}
+
+/// Which engine input a phasor is for: the station (0 / 1), a current or
+/// a voltage, the phase (0..3).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Slot {
+    pub station: usize,
+    pub current: bool,
+    pub phase: usize,
+}
+
+/// A slot's phasors from its samples: the ОМП chooses the tracked mode per
+/// channel (`0x42f250`: the channel's own frequency vector non-empty).
+pub type PhasorFn<'a> = &'a dyn Fn(Slot, &[f64]) -> Vec<Complex64>;
+
 /// Hysteresis `H(set, reset, prev)`: set → true, then reset → false (reset
 /// wins), else hold.
 fn hyst(prev: bool, set: bool, reset: bool) -> bool {
@@ -164,6 +219,8 @@ pub struct SingleEnded<'a> {
     pub p: usize,
     pub inom: f64,
     pub sections: &'a [Section],
+    /// The phasor per slot; `None` = the fixed path everywhere.
+    pub phasor: Option<PhasorFn<'a>>,
 }
 
 /// Run detection, phase selection, loop choice and the per-sample distance
@@ -173,8 +230,12 @@ pub struct SingleEnded<'a> {
 pub fn single_ended(inp: &SingleEnded) -> Trace {
     let nk = inp.i.iter().map(|s| s.len()).min().unwrap_or(0);
     let p = inp.p;
-    let ip: Vec<Vec<Complex64>> = inp.i.iter().map(|s| omp_phasors(&s[..nk], p)).collect();
-    let up: Vec<Vec<Complex64>> = inp.u.iter().map(|s| omp_phasors(&s[..nk.min(s.len())], p)).collect();
+    let ph = |current: bool, phase: usize, x: &[f64]| match inp.phasor {
+        Some(f) => f(Slot { station: 0, current, phase }, x),
+        None => omp_phasors(x, p),
+    };
+    let ip: Vec<Vec<Complex64>> = inp.i.iter().enumerate().map(|(c, s)| ph(true, c, &s[..nk])).collect();
+    let up: Vec<Vec<Complex64>> = inp.u.iter().enumerate().map(|(c, s)| ph(false, c, &s[..nk.min(s.len())])).collect();
     let uph = |c: usize, k: usize| up[c].get(k).copied().unwrap_or_default();
     let comps: Vec<_> = (0..nk).map(|k| components(ip[0][k], ip[1][k], ip[2][k])).collect();
     let m = |z: Complex64| z.norm();
@@ -803,6 +864,8 @@ pub struct DoubleEnded<'a> {
     pub inom1: f64,
     pub inom2: f64,
     pub sections: &'a [Section],
+    /// The phasor per slot; `None` = the fixed path everywhere.
+    pub phasor: Option<PhasorFn<'a>>,
 }
 
 /// Negative-sequence component `(A + a²B + aC)/3`.
@@ -883,12 +946,20 @@ pub fn double_ended(inp: &DoubleEnded) -> Trace {
     let all = inp.i1.iter().chain(inp.i2.iter()).chain(inp.u1.iter()).chain(inp.u2.iter());
     let nk = all.map(|s| s.len()).min().unwrap_or(0);
     let p = inp.p;
-    let ph = |s: &[&[f64]; 3]| -> Vec<Vec<Complex64>> { s.iter().map(|x| omp_phasors(&x[..nk], p)).collect() };
+    let ph = |s: &[&[f64]; 3], station: usize, current: bool| -> Vec<Vec<Complex64>> {
+        s.iter()
+            .enumerate()
+            .map(|(phase, x)| match inp.phasor {
+                Some(f) => f(Slot { station, current, phase }, &x[..nk]),
+                None => omp_phasors(&x[..nk], p),
+            })
+            .collect()
+    };
     // Station 2's Ia/Ib/Ic samples are negated before anything else
     // (`0x4a13b0`..`0x4a1409`, ×(−1.0)): both recorders measure into the line.
     let neg2: Vec<Vec<f64>> = inp.i2.iter().map(|s| s.iter().map(|x| -x).collect()).collect();
     let i2_samples = [&neg2[0][..], &neg2[1][..], &neg2[2][..]];
-    let (i1, i2, u1, u2) = (ph(&inp.i1), ph(&i2_samples), ph(&inp.u1), ph(&inp.u2));
+    let (i1, i2, u1, u2) = (ph(&inp.i1, 0, true), ph(&i2_samples, 1, true), ph(&inp.u1, 0, false), ph(&inp.u2, 1, false));
     let c1: Vec<_> = (0..nk).map(|k| components(i1[0][k], i1[1][k], i1[2][k])).collect();
     let c2: Vec<_> = (0..nk).map(|k| components(i2[0][k], i2[1][k], i2[2][k])).collect();
     let m = |z: Complex64| z.norm();
@@ -1059,5 +1130,34 @@ mod tests {
         let want = ud / (zm + Complex64::new(40.0, 80.0));
         let got = current_beyond(std::slice::from_ref(&sec), 0, u0, i0, d).unwrap();
         assert!((got - want).norm() < 1e-9, "{got} vs {want}");
+    }
+}
+
+#[cfg(test)]
+mod tracked_tests {
+    use super::*;
+
+    /// `0x477280`'s tracked mode at a constant 50 Hz with exact 1 ms steps
+    /// (N = 20): one period back from i, the same magnitude as the fixed
+    /// path's window ending at i, its angle 2π/N behind; the last sample's
+    /// weight is then exactly Δt.
+    #[test]
+    fn tracked_phasor_at_a_constant_frequency() {
+        let n = 20;
+        let x: Vec<f64> = (0..200).map(|k| (2.0 * std::f64::consts::PI * k as f64 / 20.0 + 0.3).sin() * 7.0).collect();
+        let t_us: Vec<i64> = (0..200).map(|k| k * 1000).collect();
+        let tr = omp_phasors_tracked(&x, n, &t_us, &[50.0; 200], &[]);
+        let fx = omp_phasors(&x, n);
+        assert_eq!(tr[n - 1], Complex64::default(), "0 below N");
+        let rot = Complex64::from_polar(1.0, 2.0 * std::f64::consts::PI / n as f64);
+        for i in [n, 57, 150] {
+            assert!((tr[i] * rot - fx[i + 1]).norm() < 1e-9, "{i}: {} vs {}", tr[i] * rot, fx[i + 1]);
+        }
+        // The track stands in past the own vector; with no frequency the
+        // phase never advances, the last weight divides by 0: NaN (the
+        // same arithmetic as the original's).
+        let by_track = omp_phasors_tracked(&x, n, &t_us, &[], &[50.0; 200]);
+        assert!((by_track[100] - tr[100]).norm() < 1e-12);
+        assert!(omp_phasors_tracked(&x, n, &t_us, &[], &[])[100].re.is_nan());
     }
 }

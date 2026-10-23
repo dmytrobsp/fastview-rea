@@ -146,6 +146,25 @@ impl App {
         let get = |name: &str| chan_samples(d, name).ok_or(354u32);
         let three = |a: &str, b: &str, c: &str| -> Result<[Vec<f64>; 3], u32> { Ok([get(a)?, get(b)?, get(c)?]) };
         let method = pr.method;
+        // Each slot's phasors (`0x497090` → `0x477280`): the tracked mode
+        // for a channel with its own frequency vector (`0x42f250`, set by a
+        // paste / «Объединить»), else the fixed path.
+        let t_us: Vec<i64> = d.osc.time.iter().map(|t| (t * 1e6).round() as i64).collect();
+        let slot_name = |s: fvb_core::omp::Slot| -> &str {
+            let st = &pr.stations[s.station.min(1)];
+            match (s.current, s.station == 0 && method == ISOLATED) {
+                (true, _) => [&st.ia, &st.ib, &st.ic][s.phase.min(2)].as_str(),
+                (false, true) => [&st.uab, &st.ubc, &st.uca][s.phase.min(2)].as_str(),
+                (false, false) => [&st.ua, &st.ub, &st.uc][s.phase.min(2)].as_str(),
+            }
+        };
+        let phasor = |s: fvb_core::omp::Slot, x: &[f64]| -> Vec<num_complex::Complex64> {
+            let name = slot_name(s);
+            match d.osc.analog.iter().find(|c| c.id == name).filter(|c| !c.own_freq.is_empty()) {
+                Some(c) => fvb_core::omp::omp_phasors_tracked(x, p, &t_us, &c.own_freq, &d.osc.freq_track),
+                None => fvb_core::omp::omp_phasors(x, p),
+            }
+        };
         let (trace, sections, result) = match method {
             ISOLATED | GROUNDED => {
                 let i = three(&st1.ia, &st1.ib, &st1.ic)?;
@@ -160,6 +179,7 @@ impl App {
                     p,
                     inom: inom1,
                     sections: &sections,
+                    phasor: Some(&phasor),
                 });
                 let r = fvb_core::omp::locate(&mut t, neutral, &sections, p);
                 (t, sections, r)
@@ -181,6 +201,7 @@ impl App {
                     // engine reads its magnitude.
                     inom2: -params::wtof(&st2.inom),
                     sections: &sections,
+                    phasor: Some(&phasor),
                 });
                 let r = fvb_core::omp::locate_double(&t, &sections, p);
                 (t, sections, r)

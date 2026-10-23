@@ -355,19 +355,20 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
         A(Vec<f64>),
         D(Vec<bool>),
     }
-    let mut lanes: Vec<(Lane, Vals)> = Vec::new();
+    // Each lane with its source's own frequency vector (ch+0x50).
+    let mut lanes: Vec<(Lane, Vals, Vec<f64>)> = Vec::new();
     let front = |rate: f64, base_side: bool| if (base_side && offset < 0.0) || (!base_side && offset > 0.0) { (own(rate) * offset.abs()).ceil() as usize } else { 0 };
     let base_step = 1.0 / own(base.sample_rate);
     let nb = front(base.sample_rate, true);
     for (i, c) in base.analog.iter().enumerate() {
         let (mut t, mut x) = (base_t.clone(), c.samples.clone());
         pad(&mut t, &mut x, base_pads.get(i).copied().unwrap_or(0.0), nb, base_step, true);
-        lanes.push((Lane { t, step: base_step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::A(x)));
+        lanes.push((Lane { t, step: base_step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::A(x), c.own_freq.clone()));
     }
     for c in &base.digital {
         let (mut t, mut x) = (base_t.clone(), c.samples.clone());
         pad(&mut t, &mut x, false, nb, base_step, true);
-        lanes.push((Lane { t, step: base_step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::D(x)));
+        lanes.push((Lane { t, step: base_step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::D(x), Vec::new()));
     }
     for p in pasted {
         let step = 1.0 / own(p.rate);
@@ -379,19 +380,19 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
             Ok(a) => {
                 let mut x: Vec<f64> = a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v }).collect();
                 pad(&mut t, &mut x, 0.0, n, step, true);
-                lanes.push((Lane { t, step, shift: sh }, Vals::A(x)));
+                lanes.push((Lane { t, step, shift: sh }, Vals::A(x), a.own_freq.clone()));
             }
             Err(d) => {
                 let mut x = d.samples.clone();
                 pad(&mut t, &mut x, false, n, step, true);
-                lanes.push((Lane { t, step, shift: sh }, Vals::D(x)));
+                lanes.push((Lane { t, step, shift: sh }, Vals::D(x), Vec::new()));
             }
         }
     }
     // The trailing pads up to the longest padded span.
     let span = |l: &Lane| l.t.last().copied().unwrap_or(0.0);
-    let maxdur = lanes.iter().map(|(l, _)| span(l)).fold(0.0, f64::max);
-    for (l, v) in &mut lanes {
+    let maxdur = lanes.iter().map(|(l, _, _)| span(l)).fold(0.0, f64::max);
+    for (l, v, _) in &mut lanes {
         let n = ((maxdur - span(l)) / l.step).abs().ceil() as usize;
         match v {
             Vals::A(x) => pad(&mut l.t, x, 0.0, n, l.step, false),
@@ -400,6 +401,7 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
     }
     let count = ((r * maxdur).round() as i64 - 4).max(0) as usize;
     let grid: Vec<f64> = (0..count).map(|i| i as f64 / r).collect();
+    let base_track = base.freq_track.clone();
     let mut out = base.clone();
     out.time = grid.iter().map(|&t| us(t)).collect();
     out.sample_rate = r;
@@ -409,16 +411,27 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
     out.rebuild_freq_track();
     let (na, nd) = (base.analog.len(), base.digital.len());
     let mut it = lanes.into_iter();
-    let analog = |(l, v): (Lane, Vals)| match v {
-        Vals::A(x) => grid.iter().map(|&t| fit_at(&l, &x, t)).collect(),
-        Vals::D(_) => Vec::new(),
+    // An analog channel's values and its own frequency at the fit's source
+    // sample j: its own vector, else the record's track, else 0
+    // (`0x47e4b5`–`0x47e4f2`).
+    let analog = |(l, v, own): (Lane, Vals, Vec<f64>)| -> (Vec<f64>, Vec<f64>) {
+        match v {
+            Vals::A(x) => (
+                grid.iter().map(|&t| fit_at(&l, &x, t)).collect(),
+                grid.iter().map(|&t| {
+                    let j = l.after(t);
+                    own.get(j).or(base_track.get(j)).copied().unwrap_or(0.0)
+                }).collect(),
+            ),
+            Vals::D(_) => (Vec::new(), Vec::new()),
+        }
     };
-    let digital = |(l, v): (Lane, Vals)| match v {
+    let digital = |(l, v, _): (Lane, Vals, Vec<f64>)| match v {
         Vals::D(x) => grid.iter().map(|&t| pick_at(&l, &x, t, g, count)).collect(),
         Vals::A(_) => Vec::new(),
     };
     for dst in out.analog.iter_mut().take(na) {
-        dst.samples = it.next().map(analog).unwrap_or_default();
+        (dst.samples, dst.own_freq) = it.next().map(analog).unwrap_or_default();
     }
     for dst in out.digital.iter_mut().take(nd) {
         dst.samples = it.next().map(digital).unwrap_or_default();
@@ -427,7 +440,7 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
         match &p.channel {
             Ok(a) => {
                 let mut c = a.clone();
-                c.samples = analog(lane);
+                (c.samples, c.own_freq) = analog(lane);
                 out.analog.push(c);
             }
             Err(d) => {
@@ -574,5 +587,15 @@ mod tests {
         assert_eq!(m.rate_segs, base.rate_segs);
         assert!(m.time.len() > 101);
         assert_eq!((m.freq_track[100], m.freq_track[101], m.freq_track.len()), (50.0, 0.0, m.time.len()));
+        // Every merged analog channel gets its own frequency at the fit's
+        // source sample: its own vector, else the base record's track
+        // (`0x47e4b5`).
+        let mut own = pasted[0].clone();
+        if let Ok(a) = &mut own.channel {
+            a.own_freq = vec![50.5; 100];
+        }
+        let m = merge(&base, &[own], 0.0025, &[0.0]);
+        assert_eq!(m.analog[0].own_freq[50], 50.0, "the base channel: the record's track");
+        assert_eq!(m.analog[1].own_freq[50], 50.5, "the pasted one: its own");
     }
 }

@@ -53,6 +53,7 @@ fn grounded_single_phase_fault() {
         p: P,
         inom: 600.0,
         sections: &sec,
+        phasor: None,
     });
     let k = LEN - 1;
     assert!(t.e[k] && !t.f2[k] && !t.f3[k]);
@@ -83,6 +84,7 @@ fn grounded_two_phase_fault_walks_sections() {
         p: P,
         inom: 600.0,
         sections: &sec,
+        phasor: None,
     });
     let k = LEN - 1;
     assert!(t.f2[k] && t.pa[k] && t.pb[k] && !t.pc[k]);
@@ -108,6 +110,7 @@ fn fault_beyond_last_section_over_counts() {
         p: P,
         inom: 600.0,
         sections: &sec,
+        phasor: None,
     });
     // d measured on the only section = 25, plus acc = 10.
     assert!((settled(&t) - 35.0).abs() < 1e-6, "{}", settled(&t));
@@ -130,6 +133,7 @@ fn isolated_two_phase_fault() {
         p: P,
         inom: 300.0,
         sections: &sec,
+        phasor: None,
     });
     let k = LEN - 1;
     assert!(t.f2[k] && t.pa[k] && t.pb[k] && !t.pc[k]);
@@ -167,6 +171,7 @@ fn grounded_trace(sec: &[Section], ia: Complex64, d: f64) -> Trace {
         p: P,
         inom: 600.0,
         sections: sec,
+        phasor: None,
     })
 }
 
@@ -256,6 +261,7 @@ fn double_ended_internal_fault() {
         inom1: 300.0,
         inom2: 300.0,
         sections: &sec,
+        phasor: None,
     });
     let k = LEN - 1;
     assert!(t.f2[k]);
@@ -275,6 +281,7 @@ fn double_ended_internal_fault() {
         inom1: 300.0,
         inom2: 300.0,
         sections: &sec,
+        phasor: None,
     });
     let r = locate_double(&t, &sec, P);
     assert_eq!(r.distance, 0.0);

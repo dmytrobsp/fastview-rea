@@ -4104,10 +4104,8 @@ comtrade_rate}`, built by both loaders, `retime` and `merge`;
 `OscChannels::frequency` reads the track; `clip_record` writes it and
 rate_r; DIALOG 392 shows / compares rec+0x228. Tests
 `nominal_track_as_read`, `merge_pads_and_shifts_the_later_record`.
-Residual: channels' own frequency vectors (ch+0x50: the paste's
-`net_frequency`, the merge's per-channel resampling, `.set` NetFreq) and
-their one consumer, the ОМП frequency-tracked phasor `0x477280` — being
-read; our `sample_rate` stays the first rate where the original's
+Residual: (channels' own frequency vectors and the ОМП tracked phasor:
+L9.137); our `sample_rate` stays the first rate where the original's
 signal code uses rec+0x228 (they differ only for rates that are not
 multiples of f and multi-rate `.cfg`s); a rate-0 `.cfg`'s .dat
 timestamps are not read (R stays 0, the track NaN); the `.set`
@@ -4209,6 +4207,37 @@ show the status icons. Test `pending_lanes_carry_their_flags_into_the_merge`.
 Residual: a pasted channel's k (ch+0xf0) taken as 1; the DC of NaN own
 samples taken over them as 0 (the mean `0x428795` over raw values with
 NaN ND).
+
+### L9.137 — Channels' own frequency vectors and the ОМП's frequency-tracked phasor  ·  ✅
+Read (subagent reports; by hand the merge's `0x47e4b5`–`0x47e4f2` and
+`0x428490`'s ch+0x20 fill): a pasted channel's ch+0x50 is its record's
+`net_frequency` (`0x424cb0` at `0x425002`, as many as `num_values` by
+`_wtoi`, zero-filled); «Объединить» gives every merged analog channel one
+— at the fit's source sample j its own value, else the record's track
+rec+0x1fc[j], else 0. The ОМП phasor `0x477280` (called per slot per
+sample by `0x497090`): the fixed path (ours, window [i−N, i−1]) unless the
+slot's channel has a non-empty ch+0x50 (`0x42f250`, per slot, by the name
+in the station's properties) — then it integrates backwards from i over
+one measured period: Δt from the record's µs times (`0x454b40`), the term
+(−sin θ·x·Δt, cos θ·x·Δt) at the phase before the step, phase += Δt·f(s −
+1) with f its own value / the track / 0, the last sample re-weighted by
+(1 − phase before) / f(s_L), the sum × 2 / mean(1/f). So after a merge
+(every channel then has one) — the double-ended method's normal case —
+the ОМП runs tracked. The parallel-line I0 looks up the station's own
+"I0" key (never set): fixed, as ours.
+Ours: no own frequency anywhere, the fixed phasor always. Now
+`AnalogChannel::own_freq` (the paste, `merge`), `omp::{omp_phasors_tracked,
+Slot, PhasorFn}`, `SingleEnded` / `DoubleEnded::phasor`, and the ОМП run
+choosing tracked per slot by its channel's vector. Tests
+`tracked_phasor_at_a_constant_frequency` (at a constant f with exact steps
+the same magnitude as the fixed window ending at i, 2π/N behind — the
+rotation cancels in the ОМП's ratios when every channel is tracked),
+`merge_pads_and_shifts_the_later_record`.
+Residual: the ОМП's name lookup is case-insensitive with an exact-case
+preference in the original (ours exact); the record's µs times taken as
+round(t·1e6) (the loaders' rounding of rec+0x208 ND); whether the merge
+pads ch+0x50 with the values (ours indexes the padded lane) ND; the
+`.set` NetFreq round trip (`0x427bc0` / `0x427af0`) not modelled.
 
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

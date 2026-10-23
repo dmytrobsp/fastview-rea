@@ -79,7 +79,7 @@ fn flag(b: bool) -> &'static str {
 }
 
 /// `_wtoi` / `_wtoi64`: the leading signed integer, 0 if none.
-fn wtoi(s: &str) -> i64 {
+pub fn wtoi(s: &str) -> i64 {
     let s = s.trim_start();
     let (sign, rest) = match s.as_bytes().first() {
         Some(b'-') => (-1, &s[1..]),

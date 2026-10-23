@@ -118,6 +118,9 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
     let t0 = rec.times_us.first().copied().unwrap_or(0);
     let start = rec.start_time.split_once(", ").and_then(|(dt, tm)| fvb_core::comtrade::stamp_seconds(dt, tm, rev_year));
     let step = if rec.rate > 0.0 { 1.0 / rec.rate } else { 0.0 };
+    // `net_frequency` as many as `num_values` says (`_wtoi`), zero-filled.
+    let mut net_freq = rec.net_frequency.clone();
+    net_freq.resize(fvb_core::clipdata::wtoi(&rec.num_values).max(0) as usize, 0.0);
     rec.channels
         .iter()
         .map(|c| {
@@ -145,6 +148,8 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
                     secondary: c.secondary_value,
                     is_primary: c.primary_values,
                     samples: c.data.clone(),
+                    // `0x45ad02` → `0x424cb0` (`0x425002`): net_frequency to ch+0x50.
+                    own_freq: net_freq.clone(),
                 })
             };
             ClipChan { pasted: Pasted { channel, times, rate: rec.rate }, color: c.color.map_or(egui::Color32::TRANSPARENT, from_colorref), start }

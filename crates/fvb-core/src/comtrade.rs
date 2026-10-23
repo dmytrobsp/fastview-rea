@@ -48,6 +48,10 @@ pub struct AnalogChannel {
     /// `true` if the stored channel is already a primary value (`PS` = 'P').
     pub is_primary: bool,
     pub samples: Vec<f64>,
+    /// The channel's own frequency per sample (ch+0x50): empty for a
+    /// file's channel; a pasted one's `net_frequency`, a merged one's
+    /// resampled (`0x47e4b5`) — what the ОМП's tracked phasor reads.
+    pub own_freq: Vec<f64>,
 }
 
 impl AnalogChannel {
@@ -687,6 +691,7 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
             secondary: 1.0,
             is_primary: false,
             samples: Vec::new(),
+            own_freq: Vec::new(),
         })
         .collect();
     let mut digital: Vec<DigitalChannel> = digital_defs
@@ -1323,6 +1328,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
             secondary: g(11).parse().unwrap_or(1.0),
             is_primary: g(12).eq_ignore_ascii_case("p"),
             samples: Vec::new(),
+            own_freq: Vec::new(),
         });
     }
 
