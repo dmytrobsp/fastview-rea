@@ -650,7 +650,7 @@ mod window_tests {
             let mut app = demo(&[]);
             frames(&mut app, &ctx, Vec2::new(1320.0, h), vec![vec![]; 3]);
             let bar = PanelState::load(&ctx, egui::Id::new(("pane_toolbar", diagram_ui::Window::Vector as u8))).expect("the vector toolbar").rect;
-            let tabs = PanelState::load(&ctx, egui::Id::new(("pane_tabs", docking::Unit::Group))).expect("the tab strip").rect;
+            let tabs = PanelState::load(&ctx, egui::Id::new(("pane_tabs", docking::Unit::Vector))).expect("the tab strip").rect;
             // Either it ends above the tabs or it is too short for a button.
             assert!(bar.bottom() <= tabs.top() + 0.5 || bar.height() < 22.0, "h {h}: toolbar {bar:?} over tabs {tabs:?}");
         }
@@ -702,7 +702,7 @@ mod window_tests {
     /// out.
     #[test]
     fn diagram_panes_float_redock_and_auto_hide() {
-        use docking::Place;
+        use docking::{Place, Unit};
         let mut w = Win::new();
         let canvas = |w: &Win| w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r);
         let double = |w: &mut Win, at: Pos2| {
@@ -714,18 +714,18 @@ mod window_tests {
         };
         let docked = canvas(&w).expect("the vector pane is drawn");
         double(&mut w, Pos2::new(docked.left() + 60.0, docked.top() - 22.0));
-        assert_eq!(w.app.dock_group.place, Place::Floating);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
         let floating = canvas(&w).expect("drawn in its window");
         double(&mut w, Pos2::new(floating.left() + 60.0, floating.top() - 22.0));
-        assert_eq!(w.app.dock_group.place, Place::Docked, "a double-click on the floating caption redocks");
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "a double-click on the floating caption redocks");
         // Pin: the strip on the right; hover its first button 400 ms.
-        w.app.dock_group.pin();
+        w.app.docks[Unit::Vector].pin();
         w.idle(2);
         assert!(canvas(&w).is_none(), "pinned away");
         let strip = Pos2::new(1320.0 - 12.0, w.app.view_rects.unwrap().0.top() + 40.0);
         w.run(vec![egui::Event::PointerMoved(strip)]);
         w.idle(10);
-        assert!(w.app.dock_group.out, "the hover slid it out");
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
         w.idle(14);
         assert!(canvas(&w).is_some(), "drawn over the content");
     }
@@ -757,25 +757,73 @@ mod window_tests {
             w.idle(3);
         };
         let f = canvas(&w, app::Pane::Frequency).expect("Частотная drawn");
-        let centre = |a: &App| docking::five_way(a.dock_rects[Unit::Group as usize].expect("the group's pane"), true)[4].0.center();
+        let centre = |a: &App| docking::five_way(a.dock_rects[Unit::Vector as usize].expect("the group's pane"), true)[4].0.center();
         drag(&mut w, Pos2::new(f.left() + 80.0, f.top() - 22.0), &centre);
-        assert_eq!((w.app.dock_freq.place, w.app.dock_freq.spot), (Place::Docked, Spot::Tab));
+        assert_eq!((w.app.docks[Unit::Frequency].place, w.app.docks[Unit::Frequency].spot), (Place::Docked, Spot::Tab(Unit::Vector)));
         assert_eq!(w.app.dock_views_shown(), 1, "one tabbed group");
         // The group's caption out to the left edge marker.
         let v = canvas(&w, app::Pane::Vector).or_else(|| canvas(&w, app::Pane::Frequency)).expect("the group's pane");
         let left = |a: &App| docking::edge_markers(a.dock_client)[0].0.center();
         drag(&mut w, Pos2::new(v.left() + 80.0, v.top() - 22.0), &left);
-        assert_eq!((w.app.dock_group.place, w.app.dock_group.spot), (Place::Docked, Spot::Edge { edge: Edge::Left, outer: true }));
-        assert_eq!(w.app.dock_freq.spot, Spot::Tab, "the tab went along");
-        let g = w.app.dock_rects[Unit::Group as usize].unwrap();
+        assert_eq!((w.app.docks[Unit::Vector].place, w.app.docks[Unit::Vector].spot), (Place::Docked, Spot::Edge { edge: Edge::Left, outer: true }));
+        assert_eq!(w.app.docks[Unit::Frequency].spot, Spot::Tab(Unit::Vector), "the tab went along");
+        let g = w.app.dock_rects[Unit::Vector as usize].unwrap();
         assert!(g.left() < 20.0, "on the left edge: {g:?}");
         // The Частотная tab pulled out of the strip floats it alone (it
         // remembers its tab place); released over nothing it stays.
         let tab = w.app.pane_tab_rects.iter().find(|(p, _)| *p == app::Pane::Frequency).map(|(_, r)| r.center()).expect("the Частотная tab");
         let nowhere = |_: &App| Pos2::new(600.0, 600.0);
         drag(&mut w, tab, &nowhere);
-        assert_eq!((w.app.dock_freq.place, w.app.dock_freq.spot), (Place::Floating, Spot::Tab));
-        assert_eq!((w.app.dock_group.place, w.app.dock_views_shown()), (Place::Docked, 2));
+        assert_eq!((w.app.docks[Unit::Frequency].place, w.app.docks[Unit::Frequency].spot), (Place::Floating, Spot::Tab(Unit::Vector)));
+        assert_eq!((w.app.docks[Unit::Vector].place, w.app.dock_views_shown()), (Place::Docked, 2));
+    }
+
+    /// The group's panes are units of their own (`0x474e10` creates four
+    /// panes): Круговая's tab pulled out of the strip floats alone and
+    /// docks beside the group on the five-way's left arrow; the
+    /// differential tab dropped on its centre joins it — the vector,
+    /// circle (behind) and differential planes then show at once.
+    #[test]
+    fn group_tabs_dock_as_panes_of_their_own() {
+        use docking::{Edge, Place, Spot, Unit};
+        let mut w = Win::new();
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let drag = |w: &mut Win, from: Pos2, target: &dyn Fn(&App) -> Pos2| {
+            let out = Pos2::new(300.0, 450.0);
+            w.run(vec![egui::Event::PointerMoved(from)]);
+            w.run(vec![ev(from, true)]);
+            for k in 1..=4 {
+                w.run(vec![egui::Event::PointerMoved(from + (out - from) * (k as f32 / 4.0))]);
+            }
+            w.idle(2);
+            let to = target(&w.app);
+            w.run(vec![egui::Event::PointerMoved(to)]);
+            w.idle(2);
+            w.run(vec![ev(to, false)]);
+            w.idle(3);
+        };
+        let tab = |w: &Win, p: app::Pane| w.app.pane_tab_rects.iter().find(|(q, _)| *q == p).map(|(_, r)| r.center()).expect("the tab");
+        let side = |u: Unit, k: usize| move |a: &App| docking::five_way(a.dock_rects[u as usize].expect("the docked group"), true)[k].0.center();
+        let from = tab(&w, app::Pane::Circle);
+        drag(&mut w, from, &side(Unit::Vector, 0));
+        assert_eq!((w.app.docks[Unit::Circle].place, w.app.docks[Unit::Circle].spot), (Place::Docked, Spot::Beside(Unit::Vector, Edge::Left)));
+        assert_eq!(w.app.dock_views_shown(), 3, "Векторная | Дифференциальная, Круговая, Частотная");
+        let rects = w.app.dock_rects;
+        w.idle(4);
+        assert_eq!(w.app.dock_rects, rects, "the slots keep their sizes");
+        let drawn = |w: &Win, p: app::Pane| w.app.pane_canvas.iter().any(|(q, _)| *q == p);
+        assert!(drawn(&w, app::Pane::Vector) && drawn(&w, app::Pane::Circle));
+        let from = tab(&w, app::Pane::Differential);
+        drag(&mut w, from, &side(Unit::Circle, 4));
+        assert_eq!(w.app.docks[Unit::Differential].spot, Spot::Tab(Unit::Circle));
+        assert_eq!(w.app.panes.active, app::Pane::Differential, "dropped in front");
+        assert!(drawn(&w, app::Pane::Vector) && drawn(&w, app::Pane::Differential) && !drawn(&w, app::Pane::Circle));
+        assert!(w.app.pane_tab_rects.iter().all(|(p, _)| *p != app::Pane::Vector), "Векторная alone: no strip");
+        // Back to the circle tab: both planes keep their own state.
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.idle(2);
+        assert_eq!(w.app.current_dimension(), fvb_core::model::Dimension::Ohm);
+        assert!(drawn(&w, app::Pane::Circle));
     }
 
     /// `0x100690b4`: a tab dragged along its strip over another swaps with
@@ -795,7 +843,7 @@ mod window_tests {
         w.idle(2);
         assert_eq!(w.app.tab_order[..2], [app::Pane::Circle, app::Pane::Vector]);
         assert_eq!(w.app.panes.active, app::Pane::Circle, "the dragged tab in front");
-        assert_eq!(w.app.dock_group.place, docking::Place::Docked, "inside the strip: no float");
+        assert_eq!(w.app.docks[docking::Unit::Vector].place, docking::Place::Docked, "inside the strip: no float");
     }
 
     /// Copy (`0x45be28` / `0x405160`): a picture of the view's client area
@@ -831,7 +879,7 @@ mod window_tests {
         w.app.dispatch(app::Command::Copy);
         assert!(w.app.clip.get().is_some());
         // The circle diagram's property grid: the document, no picture.
-        w.app.panes.active = app::Pane::Circle;
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
         w.idle(2);
         let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
         let at = grid.center();
@@ -958,24 +1006,30 @@ mod window_tests {
         // `dockleft` / `dockbottom` / `docktab` / `dockmarkers` below.
         match std::env::var("FV_WINDOW_STATE").unwrap_or_default().as_str() {
             "floating" => {
-                docking::leave(&mut app.dock_group, &mut app.dock_freq);
-                app.dock_group.double_click(egui::pos2(60.0, 220.0));
+                app.docks.leave(docking::Unit::Vector, |_| true);
+                app.docks[docking::Unit::Vector].double_click(egui::pos2(60.0, 220.0));
             }
             "autohide" => {
-                docking::leave(&mut app.dock_group, &mut app.dock_freq);
-                app.dock_group.pin();
-                (app.dock_group.out, app.dock_group.slide) = (true, 1.0);
+                app.docks.leave(docking::Unit::Vector, |_| true);
+                let d = &mut app.docks[docking::Unit::Vector];
+                d.pin();
+                (d.out, d.slide) = (true, 1.0);
             }
             // Smart-docking arrangements (L9.101): the group on the left
             // edge; Частотная on the frame's bottom edge; Частотная tabbed
             // into the group (in front); Частотная dragged over the group
-            // (the markers, the hot centre's preview — hover the pane).
-            "dockleft" => app.dock_group.spot = docking::Spot::Edge { edge: docking::Edge::Left, outer: true },
-            "dockbottom" => app.dock_freq.spot = docking::Spot::Edge { edge: docking::Edge::Bottom, outer: true },
-            "docktab" => (app.dock_freq.spot, app.freq_in_front) = (docking::Spot::Tab, true),
+            // (the markers, the hot centre's preview — hover the pane);
+            // Дифференциальная on its own beside the group (`docksplit`).
+            "dockleft" => app.docks[docking::Unit::Vector].spot = docking::Spot::Edge { edge: docking::Edge::Left, outer: true },
+            "dockbottom" => app.docks[docking::Unit::Frequency].spot = docking::Spot::Edge { edge: docking::Edge::Bottom, outer: true },
+            "docktab" => {
+                app.docks[docking::Unit::Frequency].spot = docking::Spot::Tab(docking::Unit::Vector);
+                app.dispatch(app::Command::ActivatePane(app::Pane::Frequency));
+            }
+            "docksplit" => app.docks[docking::Unit::Differential].spot = docking::Spot::Beside(docking::Unit::Vector, docking::Edge::Left),
             "dockmarkers" => {
-                app.dock_freq.double_click(egui::pos2(80.0, 300.0));
-                app.dock_drag = Some((docking::Unit::Freq, egui::vec2(40.0, 10.0)));
+                app.docks[docking::Unit::Frequency].double_click(egui::pos2(80.0, 300.0));
+                app.dock_drag = Some((docking::Unit::Frequency, egui::vec2(40.0, 10.0)));
                 app.dock_drag_hold = true;
             }
             _ => {}

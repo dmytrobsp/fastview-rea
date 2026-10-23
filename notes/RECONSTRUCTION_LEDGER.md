@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 351 pass)
+- `cargo test --workspace`   (currently 364 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -3448,10 +3448,51 @@ drops the focus on the press); the splitter's cursor is resource 30981
 the audit's address citations for §6 / §7 / VIEWS_SPEC beyond §7.7 not
 added.
 
+### L9.107 — The four diagram panes dock as units of their own; tab show / hide  ·  ✅
+Read (by hand: `0x474e10` creates four `CDockablePane`s — Векторная,
+Круговая attached to it as a tab (vtable +0x350), Дифференциальная and
+Частотная docked on their own; `0x475040` toggles with `ShowPane(!visible,
+FALSE, FALSE)`; subagent report on mfc120u: `CDockablePane::ShowPane`
+`0x1008977d` → `CBasePane::ShowPane` `0x100619d3` →
+`CBaseTabbedPane::ShowTab` `0x100661f7` → `CMFCBaseTabCtrl::ShowTab`
+`0x10067f1f`): a re-shown tab becomes the front one only when no tab of
+its group was visible (only bActivate, which FastView never passes, brings
+it forward otherwise, `0x10089968`); hiding the front tab activates the
+nearest visible tab on its right, else on its left (`0x10067fae`); hiding
+the last hides the tabbed pane; the tab control hides its strip with one
+visible tab (`HideSingleTab(TRUE)` `0x1013a212`); the tabbed pane's
+caption follows the active tab (`0x10066b00`).
+Ours had two docking units (the three-pane group, Частотная), a re-shown
+pane brought to the front, a strip over a single visible tab, and the
+circle / differential planes sharing one state (only one could show).
+Now `docking::{Unit = Pane, Docks, Spot::{Beside(unit, side), Tab(unit)}}`
+— `host` (a docked tab follows its host), `members`, `parent` (a group
+beside another splits its slot, nested; loops and hidden parents make a
+container of its own), `drop_on` (tabbing in brings the group's tabs),
+`leave` (a beside group takes the container), `float_tab` (the group's
+own pane hands the group to the next tab); `Panes::{stamp, activate,
+front}` (each group shows its most recently activated visible tab);
+`TogglePane` as read; `views.rs` renders each group (strip only with two
+visible tabs), containers as nested slots, the five-way over any docked
+group; each circle / differential pane brings its plane's state in
+(`switch_diagram`, also for the printout's picture, which used the wrong
+plane's characteristics); workspace keys per pane (`Workspace/<Pane>/…`,
+`Activated`), an L9.98 two-unit workspace read into the four.
+`FV_WINDOW_STATE=docksplit`. Tests `a_tab_pulled_out_floats_alone`,
+`beside_slots_nest_and_collapse`, `a_two_unit_workspace_reads_into_four`,
+`group_tabs_dock_as_panes_of_their_own`,
+`diagram_panes_start_visible_and_toggle_beside_the_oscillogram` (now as
+read); the L9.92–L9.105 docking tests unchanged in intent.
+Residual: the default stays the user's screenshot (one group, Частотная
+below it — L9.3); several containers on one edge are still separate rows;
+a slot's children split in pane order (MFC keeps the split tree it built);
+the caption double-click / pin / drag act on the whole group (as read in
+L9.92) — Ctrl and the animation switch still not modelled.
+
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
-each one flat archive). `main` = HEAD, 360 tests.
+each one flat archive). `main` = HEAD, 364 tests.
 **This session (L9.93–L9.106):** L9.93 the vector legend starts in its
 window (a real-records bug: BINARY's long names); L9.94 page setup /
 preview on the application printer's paper (Windows path run on the VM);
@@ -3506,18 +3547,9 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-**RECOMMENDED FIRST — the group's three panes as separate dockable units**
-(L9.101 / L9.102 residual): today `docking::Unit` is {Group, Freq} with
-`Spot::{Edge, Beside, Tab}` relative to *the other* unit; the original has
-four `CDockablePane`s (`0x474e10`: Векторная with Круговая as its tab,
-Дифференциальная docked on their inner side, Частотная on the bottom
-edge — ours keeps the user's screenshot defaults) and `FloatTab` takes one
-pane out of a tabbed group. Needs: N units, tab groups as sets of units,
-Beside relative to a named unit, the views / strips / workspace keys per
-unit, `tab_order` per group; keep the existing tests green
-(`smart_docking_drops_on_the_markers`, `a_tab_dragged_over_another_swaps_with_it`,
-`workspace_round_trip`, `diagram_panes_float_redock_and_auto_hide`).
-Then: several panes in one dock row (L9.101); the marker bitmaps (ours drawn); L9.97 the main panel's row height
+(Done 2026-10-23 late: the four panes as units of their own and the tab
+show / hide rules — L9.107; 364 tests.) **RECOMMENDED NEXT:** several
+panes in one dock row (L9.101 / L9.107 residual); then: the marker bitmaps (ours drawn); L9.97 the main panel's row height
 / image margins; L9.100 large / collapsed button sizes; L9.64 MDI arrangements under tabs (likely
 leave as no-ops); L9.22 / L9.84 CUPS hardware margins; L9.90 Alt+key
 while held and the Recent Documents' keys; the backlog §9 items 15 / 35 /

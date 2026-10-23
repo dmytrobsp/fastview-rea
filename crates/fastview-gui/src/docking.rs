@@ -1,27 +1,16 @@
 //! The diagram panes as MFC docking panes (`CDockablePane`, ledger L9.92):
 //! FastView creates all four with pane style 0xF — float, close, resize and
-//! auto-hide allowed (`0x474e10`). Ours has two dockable units, the
-//! Векторная | Круговая | Дифференциальная tab group (a double-click on a
-//! grouped pane acts on the whole group) and Частотная.
+//! auto-hide allowed (`0x474e10`). Each pane is a dockable unit; a unit
+//! docks on a frame edge, beside another (splitting its slot) or as a tab
+//! of another's tabbed group (a caption acts on the whole group, a tab
+//! pulled out of the strip floats that pane alone).
 
 use eframe::egui::{Pos2, Rect, Vec2};
 
-/// The two dockable units.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Unit {
-    /// Векторная | Круговая | Дифференциальная.
-    Group,
-    Freq,
-}
+/// A dockable unit: one diagram pane.
+pub use crate::app::Pane as Unit;
 
-impl Unit {
-    pub fn other(self) -> Unit {
-        match self {
-            Unit::Group => Unit::Freq,
-            Unit::Freq => Unit::Group,
-        }
-    }
-}
+pub const UNITS: [Unit; 4] = [Unit::Vector, Unit::Circle, Unit::Differential, Unit::Frequency];
 
 /// A frame edge, or a side of a pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -69,10 +58,11 @@ pub enum Spot {
     /// Its own container on a frame edge — `outer` when an edge marker put
     /// it there (outermost), else the document area's group (innermost).
     Edge { edge: Edge, outer: bool },
-    /// Beside the other unit, inside its container, on that side of it.
-    Beside(Edge),
-    /// A tab of the other unit's tabbed group.
-    Tab,
+    /// Beside that unit, splitting its slot in its container, on that side
+    /// of it (`DockToWindow` `0x100891c3`).
+    Beside(Unit, Edge),
+    /// A tab of that unit's tabbed group (`AttachToTabWnd` `0x1008a390`).
+    Tab(Unit),
 }
 
 /// What a smart-docking marker does on the drop.
@@ -80,9 +70,9 @@ pub enum Spot {
 pub enum Drop {
     /// A frame-edge marker (outer) or a side arrow over the document area.
     Edge(Edge, bool),
-    /// A side arrow of the five-way group over the other unit.
+    /// A side arrow of the five-way group over a docked pane.
     Beside(Edge),
-    /// The five-way group's centre: tab into the other unit.
+    /// The five-way group's centre: tab into that pane.
     Tab,
 }
 
@@ -122,7 +112,7 @@ pub fn edge_markers(client: Rect) -> [(Rect, Drop); 4] {
 
 /// The five-way group centred on `host` (`0x101350f5`, `0x1013598a`):
 /// side markers at the 110 px square's edges, the centre in its middle.
-/// Over the other unit the sides dock beside it and the centre tabs into
+/// Over a docked pane the sides dock beside it and the centre tabs into
 /// it; over the document area the sides dock on that
 /// frame edge innermost and there is no centre (`over_pane` false).
 pub fn five_way(host: Rect, over_pane: bool) -> Vec<(Rect, Drop)> {
@@ -161,23 +151,6 @@ pub fn hit_marker(markers: &[(Rect, Drop)], p: Pos2) -> Option<Drop> {
     hit.first().map(|(_, d)| *d)
 }
 
-/// Dock `unit` by `drop` relative to `other` (beside / into it only while
-/// it is docked in its own container), `extent` its docked size
-/// ([`dock_extent`]).
-pub fn drop_on(unit: &mut Dockable, other: &Dockable, drop: Drop, extent: f32) {
-    let in_container = other.place == Place::Docked && matches!(other.spot, Spot::Edge { .. });
-    unit.spot = match drop {
-        Drop::Edge(edge, outer) => Spot::Edge { edge, outer },
-        Drop::Beside(e) if in_container => Spot::Beside(e),
-        Drop::Tab if in_container => Spot::Tab,
-        _ => return,
-    };
-    unit.place = Place::Docked;
-    if drop != Drop::Tab {
-        (unit.extent, unit.gen) = (Some(extent), unit.gen + 1);
-    }
-}
-
 /// The docked size a drop gives, along the drop's axis
 /// (`CalcExpectedDockedRect` `0x1008c45d`, `DockToFrameWindow`
 /// `0x10088f61`, the split `0x100d35e8`): on a frame edge the floating
@@ -191,22 +164,6 @@ pub fn dock_extent(drop: Drop, size: Vec2, area: Rect) -> f32 {
             s.min(a / 2.0)
         }
         Drop::Tab => 0.0,
-    }
-}
-
-/// `unit` leaves its container (floats or is pinned off): a unit beside it
-/// takes the container, and `unit` keeps the mirrored place beside that
-/// one, so a redock rebuilds the same container (MFC's recent dock info).
-/// A unit tabbed into it goes along (the tabbed pane moves whole).
-pub fn leave(unit: &mut Dockable, other: &mut Dockable) {
-    if let (Spot::Edge { edge, .. }, Spot::Beside(side)) = (unit.spot, other.spot) {
-        // The container keeps its size; `unit` keeps the share `other` had.
-        let size = |d: &Dockable, vertical: bool| d.extent.unwrap_or(if vertical { d.create.x } else { d.create.y });
-        let (container, share) = (size(unit, edge.vertical()), size(other, side.vertical()));
-        other.spot = unit.spot;
-        unit.spot = Spot::Beside(side.opposite());
-        (other.extent, other.gen) = (Some(container), other.gen + 1);
-        (unit.extent, unit.gen) = (Some(share), unit.gen + 1);
     }
 }
 
@@ -338,6 +295,203 @@ impl Dockable {
     }
 }
 
+/// The four units' docking state, indexed by pane.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Docks(pub [Dockable; 4]);
+
+impl std::ops::Index<Unit> for Docks {
+    type Output = Dockable;
+    fn index(&self, u: Unit) -> &Dockable {
+        &self.0[u as usize]
+    }
+}
+
+impl std::ops::IndexMut<Unit> for Docks {
+    fn index_mut(&mut self, u: Unit) -> &mut Dockable {
+        &mut self.0[u as usize]
+    }
+}
+
+impl Default for Docks {
+    /// The user's screenshot (L9.3): Векторная | Круговая |
+    /// Дифференциальная one tabbed group on the right edge, Частотная below
+    /// it. (The original's creates, `0x474e10`: 500 wide on the right,
+    /// Круговая attached to Векторная, Дифференциальная and Частотная
+    /// (200 tall) docked on their own — the screenshot is likely a saved
+    /// workspace.)
+    fn default() -> Docks {
+        let big = Vec2::splat(500.0);
+        Docks([
+            Dockable::new(big, Spot::Edge { edge: Edge::Right, outer: true }),
+            Dockable::new(big, Spot::Tab(Unit::Vector)),
+            Dockable::new(big, Spot::Tab(Unit::Vector)),
+            Dockable::new(Vec2::splat(200.0), Spot::Beside(Unit::Vector, Edge::Bottom)),
+        ])
+    }
+}
+
+impl Docks {
+    /// The unit whose tabbed group `u` shows in: a docked tab follows its
+    /// host wherever that is (a tab pulled out floats alone).
+    pub fn host(&self, u: Unit) -> Unit {
+        let mut x = u;
+        for _ in 0..UNITS.len() {
+            match self[x] {
+                Dockable { place: Place::Docked, spot: Spot::Tab(h), .. } if h != u => x = h,
+                _ => return x,
+            }
+        }
+        u
+    }
+
+    /// `root`'s tabbed group, `root` among them.
+    pub fn members(&self, root: Unit) -> impl Iterator<Item = Unit> + '_ {
+        UNITS.into_iter().filter(move |&u| self.host(u) == root)
+    }
+
+    /// The frame edge `u`'s container is on (its own, or the unit's it
+    /// sits beside / in).
+    pub fn edge(&self, u: Unit) -> Edge {
+        let mut x = u;
+        for _ in 0..UNITS.len() {
+            match self[x].spot {
+                Spot::Edge { edge, .. } => return edge,
+                Spot::Beside(t, _) | Spot::Tab(t) => x = t,
+            }
+        }
+        Edge::Right
+    }
+
+    /// The group whose slot the docked group `u` splits, when that one
+    /// shows docked (`shown`: its group has a visible pane); none — `u` is
+    /// a container of its own — otherwise, or on a loop.
+    pub fn parent(&self, u: Unit, shown: impl Fn(Unit) -> bool) -> Option<Unit> {
+        let step = |x: Unit| match self[x] {
+            Dockable { place: Place::Docked, spot: Spot::Beside(t, _), .. } => {
+                let p = self.host(t);
+                (p != x && self[p].place == Place::Docked && shown(p)).then_some(p)
+            }
+            _ => None,
+        };
+        let p = step(u)?;
+        let mut q = Some(p);
+        for _ in 0..UNITS.len() {
+            match q {
+                Some(x) if x == u => return None,
+                Some(x) => q = step(x),
+                None => return Some(p),
+            }
+        }
+        None
+    }
+
+    /// Dock `u` by `drop` on `target` (a docked group; beside / into it),
+    /// `extent` its docked size ([`dock_extent`]). A group tabbed in brings
+    /// its tabs along (`AttachToTabWnd` moves every tab).
+    pub fn drop_on(&mut self, u: Unit, drop: Drop, target: Option<Unit>, extent: f32) {
+        let spot = match (drop, target) {
+            (Drop::Edge(edge, outer), _) => Spot::Edge { edge, outer },
+            (Drop::Beside(e), Some(t)) if t != u => Spot::Beside(t, e),
+            (Drop::Tab, Some(t)) if t != u => Spot::Tab(t),
+            _ => return,
+        };
+        if let Spot::Tab(t) = spot {
+            for x in UNITS {
+                if x != u && self[x].spot == Spot::Tab(u) {
+                    self[x].spot = Spot::Tab(t);
+                }
+            }
+        }
+        let d = &mut self[u];
+        (d.spot, d.place) = (spot, Place::Docked);
+        if drop != Drop::Tab {
+            (d.extent, d.gen) = (Some(extent), d.gen + 1);
+        }
+    }
+
+    /// The group `u` leaves its slot (floats or is pinned off). When it is
+    /// its container's own, a group beside it (`shown` first) takes the
+    /// container, keeping its size, and `u` keeps the mirrored place beside
+    /// that one, so a redock rebuilds the same container (MFC's recent dock
+    /// info); groups beside a split slot go to the slot's parent. Its tabs
+    /// go along (the tabbed pane moves whole).
+    pub fn leave(&mut self, u: Unit, shown: impl Fn(Unit) -> bool) {
+        let beside: Vec<Unit> = UNITS.into_iter().filter(|&c| c != u && matches!(self[c].spot, Spot::Beside(t, _) if self.host(t) == u)).collect();
+        match self[u].spot {
+            Spot::Edge { edge, .. } => {
+                let docked = |c: &&Unit| self[**c].place == Place::Docked;
+                let Some(&taker) = beside.iter().filter(docked).find(|&&c| shown(c)).or_else(|| beside.iter().find(docked)) else { return };
+                let Spot::Beside(_, side) = self[taker].spot else { return };
+                let size = |d: &Dockable, vertical: bool| d.extent.unwrap_or(if vertical { d.create.x } else { d.create.y });
+                let (container, share) = (size(&self[u], edge.vertical()), size(&self[taker], side.vertical()));
+                for c in beside.iter().copied().filter(|&c| c != taker) {
+                    if let Spot::Beside(_, s) = self[c].spot {
+                        self[c].spot = Spot::Beside(taker, s);
+                    }
+                }
+                let spot = self[u].spot;
+                let t = &mut self[taker];
+                (t.spot, t.extent, t.gen) = (spot, Some(container), t.gen + 1);
+                let d = &mut self[u];
+                (d.spot, d.extent, d.gen) = (Spot::Beside(taker, side.opposite()), Some(share), d.gen + 1);
+            }
+            Spot::Beside(p, _) => {
+                for c in beside {
+                    if let Spot::Beside(_, s) = self[c].spot {
+                        self[c].spot = Spot::Beside(p, s);
+                    }
+                }
+            }
+            Spot::Tab(_) => {}
+        }
+    }
+
+    /// `CTabbedPane::FloatTab` (`0x1013a259`): tab `m` of `root`'s group
+    /// floats alone at `rect`, remembering its tab place. The group's own
+    /// unit pulled out hands the group — its place, size and the units
+    /// beside it — to `next`, another of its tabs.
+    pub fn float_tab(&mut self, m: Unit, root: Unit, next: Unit, rect: Rect) {
+        if m == root && next != root {
+            let r = self[root];
+            for x in UNITS.into_iter().filter(|&x| x != next) {
+                match self[x].spot {
+                    Spot::Tab(h) if h == root => self[x].spot = Spot::Tab(next),
+                    Spot::Beside(t, s) if t == root => self[x].spot = Spot::Beside(next, s),
+                    _ => {}
+                }
+            }
+            let n = &mut self[next];
+            (n.spot, n.extent, n.gen, n.place, n.out, n.slide) = (r.spot, r.extent, n.gen + 1, r.place, r.out, r.slide);
+            if r.place == Place::Floating {
+                n.float_rect = r.float_rect;
+            }
+            self[root].spot = Spot::Tab(next);
+        }
+        let d = &mut self[m];
+        (d.place, d.float_rect, d.out, d.slide) = (Place::Floating, Some(rect), false, 0.0);
+    }
+
+    /// Every unit's workspace entries ([`store`]).
+    pub fn store_all(&self, v: &mut std::collections::HashMap<String, String>) {
+        for u in UNITS {
+            store(&format!("{u:?}"), &self[u], v);
+        }
+    }
+
+    /// Read back [`Docks::store_all`] — or an L9.98 workspace's two units
+    /// (`Group` → Векторная with its tabs, `Freq` → Частотная).
+    pub fn restore_all(&mut self, v: &std::collections::HashMap<String, String>) {
+        if v.contains_key("Workspace/Vector/Place") || !v.contains_key("Workspace/Group/Place") {
+            for u in UNITS {
+                restore(&format!("{u:?}"), &mut self[u], v, None);
+            }
+        } else {
+            restore("Group", &mut self[Unit::Vector], v, Some(Unit::Frequency));
+            restore("Freq", &mut self[Unit::Frequency], v, Some(Unit::Vector));
+        }
+    }
+}
+
 /// The Feature Pack's workspace (`CWinAppEx::SaveState` `0x101a9425` when
 /// the main frame closes, `LoadState` `0x101a8eea` when it loads —
 /// `m_bSaveState` is on and FastView never clears it): each pane's place
@@ -351,8 +505,8 @@ pub fn store(unit: &str, d: &Dockable, v: &mut std::collections::HashMap<String,
     v.insert(format!("Workspace/{unit}/Place"), place.into());
     let spot = match d.spot {
         Spot::Edge { edge, outer } => format!("edge {} {}", edge.name(), if outer { "outer" } else { "inner" }),
-        Spot::Beside(e) => format!("beside {}", e.name()),
-        Spot::Tab => "tab".into(),
+        Spot::Beside(u, e) => format!("beside {u:?} {}", e.name()),
+        Spot::Tab(u) => format!("tab {u:?}"),
     };
     v.insert(format!("Workspace/{unit}/Spot"), spot);
     match d.extent {
@@ -365,8 +519,9 @@ pub fn store(unit: &str, d: &Dockable, v: &mut std::collections::HashMap<String,
     };
 }
 
-/// Read back what [`store`] wrote (an auto-hidden pane comes back slid in).
-pub fn restore(unit: &str, d: &mut Dockable, v: &std::collections::HashMap<String, String>) {
+/// Read back what [`store`] wrote (an auto-hidden pane comes back slid in);
+/// `legacy` the other unit of an L9.98 workspace's "beside <edge>" / "tab".
+pub fn restore(unit: &str, d: &mut Dockable, v: &std::collections::HashMap<String, String>, legacy: Option<Unit>) {
     d.place = match v.get(&format!("Workspace/{unit}/Place")).map(String::as_str) {
         Some("floating") => Place::Floating,
         Some("autohide") => Place::AutoHide,
@@ -381,17 +536,35 @@ pub fn restore(unit: &str, d: &mut Dockable, v: &std::collections::HashMap<Strin
                 d.spot = Spot::Edge { edge, outer: o == "outer" };
             }
         }
-        ["beside", e] => {
-            if let Some(e) = Edge::from_name(e) {
-                d.spot = Spot::Beside(e);
+        ["beside", u, e] => {
+            if let (Some(u), Some(e)) = (unit_named(u), Edge::from_name(e)) {
+                d.spot = Spot::Beside(u, e);
             }
         }
-        ["tab"] => d.spot = Spot::Tab,
+        ["tab", u] => {
+            if let Some(u) = unit_named(u) {
+                d.spot = Spot::Tab(u);
+            }
+        }
+        ["beside", e] => {
+            if let (Some(u), Some(e)) = (legacy, Edge::from_name(e)) {
+                d.spot = Spot::Beside(u, e);
+            }
+        }
+        ["tab"] => {
+            if let Some(u) = legacy {
+                d.spot = Spot::Tab(u);
+            }
+        }
         _ => {}
     }
     if d.place == Place::Floating && d.float_rect.is_none() {
         d.place = Place::Docked;
     }
+}
+
+fn unit_named(s: &str) -> Option<Unit> {
+    UNITS.into_iter().find(|u| format!("{u:?}") == s)
 }
 
 /// "l t r b".
@@ -412,15 +585,15 @@ mod tests {
         d.double_click(Pos2::new(40.0, 60.0));
         store("Group", &d, &mut v);
         let mut back = unit();
-        restore("Group", &mut back, &v);
+        restore("Group", &mut back, &v, None);
         assert_eq!((back.place, back.float_rect), (Place::Floating, d.float_rect));
         d.double_click(Pos2::ZERO);
         d.pin();
         store("Group", &d, &mut v);
-        restore("Group", &mut back, &v);
+        restore("Group", &mut back, &v, None);
         assert_eq!((back.place, back.out), (Place::AutoHide, false));
         assert_eq!(back.float_rect, d.float_rect, "the recent floating rect is kept docked too");
-        restore("Freq", &mut back, &v);
+        restore("Freq", &mut back, &v, None);
         assert_eq!((back.place, back.float_rect), (Place::Docked, None), "nothing stored: the defaults");
     }
 
@@ -448,19 +621,24 @@ mod tests {
         assert_eq!(five_way(host, false).len(), 4, "over the documents: no centre");
         assert_eq!(five_way(host, false)[1].1, Drop::Edge(Edge::Right, false));
 
-        // Freq beside the group; the group floats: Freq takes its column.
-        let mut group = unit();
-        let mut freq = Dockable::new(Vec2::new(200.0, 200.0), Spot::Beside(Edge::Bottom));
-        group.place = Place::Floating;
-        leave(&mut group, &mut freq);
-        assert_eq!(freq.spot, Spot::Edge { edge: Edge::Right, outer: true });
-        assert_eq!(group.spot, Spot::Beside(Edge::Top), "a redock goes back above it");
-        assert_eq!((freq.extent, group.extent), (Some(500.0), Some(200.0)), "the column keeps its width");
-        // Dropped into Freq's tabs.
-        drop_on(&mut group, &freq, Drop::Tab, 0.0);
-        assert_eq!((group.place, group.spot), (Place::Docked, Spot::Tab));
-        drop_on(&mut group, &freq, Drop::Edge(Edge::Left, true), 400.0);
-        assert_eq!((group.spot, group.extent, group.gen), (Spot::Edge { edge: Edge::Left, outer: true }, Some(400.0), 2));
+        // Частотная beside the group; the group floats: Частотная takes
+        // its column.
+        let all = |_: Unit| true;
+        let mut d = Docks::default();
+        d[Unit::Vector].place = Place::Floating;
+        d.leave(Unit::Vector, all);
+        assert_eq!(d[Unit::Frequency].spot, Spot::Edge { edge: Edge::Right, outer: true });
+        assert_eq!(d[Unit::Vector].spot, Spot::Beside(Unit::Frequency, Edge::Top), "a redock goes back above it");
+        assert_eq!((d[Unit::Frequency].extent, d[Unit::Vector].extent), (Some(500.0), Some(200.0)), "the column keeps its width");
+        assert_eq!(d.members(Unit::Vector).collect::<Vec<_>>(), [Unit::Vector, Unit::Circle, Unit::Differential], "its tabs went along");
+        // Dropped into Частотная's tabs: its tabs come too.
+        d.drop_on(Unit::Vector, Drop::Tab, Some(Unit::Frequency), 0.0);
+        assert_eq!((d[Unit::Vector].place, d[Unit::Vector].spot), (Place::Docked, Spot::Tab(Unit::Frequency)));
+        assert_eq!(d[Unit::Circle].spot, Spot::Tab(Unit::Frequency));
+        assert_eq!(d.members(Unit::Frequency).count(), 4);
+        d.drop_on(Unit::Frequency, Drop::Edge(Edge::Left, true), None, 400.0);
+        assert_eq!((d[Unit::Frequency].spot, d[Unit::Frequency].extent, d[Unit::Frequency].gen), (Spot::Edge { edge: Edge::Left, outer: true }, Some(400.0), 2));
+        assert_eq!(d.edge(Unit::Circle), Edge::Left);
         // Sizes: the floating width, at most half the frame; beside, at
         // most half the pane.
         let frame = Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 600.0));
@@ -522,5 +700,63 @@ mod tests {
         assert!(!d.out);
         d.pin();
         assert_eq!((d.place, d.slide), (Place::Docked, 0.0));
+    }
+
+    /// `FloatTab` (`0x1013a259`): a tab pulled out floats alone; the
+    /// group's own unit pulled out hands the group to another tab.
+    #[test]
+    fn a_tab_pulled_out_floats_alone() {
+        let r = Rect::from_min_size(Pos2::new(50.0, 60.0), Vec2::splat(300.0));
+        let mut d = Docks::default();
+        d.float_tab(Unit::Circle, Unit::Vector, Unit::Circle, r);
+        assert_eq!((d[Unit::Circle].place, d[Unit::Circle].spot, d.host(Unit::Circle)), (Place::Floating, Spot::Tab(Unit::Vector), Unit::Circle));
+        assert_eq!(d.members(Unit::Vector).collect::<Vec<_>>(), [Unit::Vector, Unit::Differential]);
+        // Векторная's own tab: Дифференциальная takes the column and
+        // Частотная below it.
+        d.float_tab(Unit::Vector, Unit::Vector, Unit::Differential, r);
+        assert_eq!(d[Unit::Differential].spot, Spot::Edge { edge: Edge::Right, outer: true });
+        assert_eq!(d[Unit::Frequency].spot, Spot::Beside(Unit::Differential, Edge::Bottom));
+        assert_eq!(d[Unit::Circle].spot, Spot::Tab(Unit::Differential), "the floating tab's place follows");
+        assert_eq!((d[Unit::Vector].place, d[Unit::Vector].spot), (Place::Floating, Spot::Tab(Unit::Differential)));
+        // Redocked (a double-click), Векторная is a tab of that group.
+        d[Unit::Vector].double_click(Pos2::ZERO);
+        assert_eq!(d.host(Unit::Vector), Unit::Differential);
+    }
+
+    /// Slots split beside one another; a loop of beside places is no
+    /// parent; a slot's parent hidden, it is a container of its own.
+    #[test]
+    fn beside_slots_nest_and_collapse() {
+        let mut d = Docks::default();
+        d.drop_on(Unit::Differential, Drop::Beside(Edge::Left), Some(Unit::Frequency), 200.0);
+        let all = |_: Unit| true;
+        assert_eq!(d.parent(Unit::Differential, all), Some(Unit::Frequency));
+        assert_eq!(d.parent(Unit::Frequency, all), Some(Unit::Vector));
+        assert_eq!(d.parent(Unit::Vector, all), None);
+        assert_eq!(d.parent(Unit::Frequency, |u| u != Unit::Vector), None, "the group hidden");
+        // Частотная leaves: Дифференциальная goes beside the group.
+        d[Unit::Frequency].place = Place::Floating;
+        d.leave(Unit::Frequency, all);
+        assert_eq!(d[Unit::Differential].spot, Spot::Beside(Unit::Vector, Edge::Left));
+        d[Unit::Vector].spot = Spot::Beside(Unit::Differential, Edge::Top);
+        assert_eq!((d.parent(Unit::Vector, all), d.parent(Unit::Differential, all)), (None, None), "a loop");
+    }
+
+    /// An L9.98 workspace (two units) reads into the four.
+    #[test]
+    fn a_two_unit_workspace_reads_into_four() {
+        let mut v = std::collections::HashMap::new();
+        for (k, x) in [("Group/Place", "docked"), ("Group/Spot", "tab"), ("Freq/Place", "docked"), ("Freq/Spot", "edge left outer")] {
+            v.insert(format!("Workspace/{k}"), x.to_string());
+        }
+        let mut d = Docks::default();
+        d.restore_all(&v);
+        assert_eq!((d[Unit::Vector].spot, d[Unit::Frequency].spot), (Spot::Tab(Unit::Frequency), Spot::Edge { edge: Edge::Left, outer: true }));
+        assert_eq!(d.members(Unit::Frequency).count(), 4);
+        let mut w = std::collections::HashMap::new();
+        d.store_all(&mut w);
+        let mut back = Docks::default();
+        back.restore_all(&w);
+        assert_eq!(back, d);
     }
 }

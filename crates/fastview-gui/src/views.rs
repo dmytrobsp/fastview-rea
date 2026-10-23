@@ -2,7 +2,7 @@
 //! over the active document (ОМП lives in `omp_ui.rs`). The oscillogram (lane) view lives in
 //! `lanes.rs`.
 
-use crate::app::{App, Command, Pane, Panes, View};
+use crate::app::{App, Command, Pane, View};
 use crate::diagram_ui::Window;
 use eframe::egui;
 
@@ -13,114 +13,79 @@ impl App {
         }
     }
 
-    /// The diagram docking panes (`0x474e10`, L9.92 / L9.101): the
-    /// Векторная | Круговая | Дифференциальная tab group (tabs at the
-    /// bottom) and Частотная — each docked in a container on a frame edge
-    /// (or beside / tabbed into the other), floating in its own window or
-    /// pinned to an auto-hide strip on its edge; captions carry the pin
-    /// and a close button that hides. Call before the central view.
+    /// The diagram docking panes (`0x474e10`, L9.92 / L9.101): each pane a
+    /// unit — docked in a container on a frame edge, beside another
+    /// (splitting its slot) or as a tab of another's tabbed group (tabs at
+    /// the bottom), floating in its own window or pinned to an auto-hide
+    /// strip on its edge; captions carry the pin and a close button that
+    /// hides. Call before the central view.
     pub fn diagram_panes(&mut self, ctx: &egui::Context) {
         use crate::docking::{Place, Spot};
         self.pane_canvas.clear();
         self.pane_tab_rects.clear();
         self.pane_grid.clear();
         self.dock_client = ctx.available_rect();
+        let dim = self.current_dimension();
         let views = self.dock_views();
         // The strips sit outermost, then the containers (edge-marker docks
         // outside the document area's ones).
         self.auto_hide_strips(ctx, &views);
-        self.dock_rects = [None, None];
-        let mut hosts: Vec<DockView> = views
-            .iter()
-            .copied()
-            .filter(|v| self.dock_ref(v.unit).place == Place::Docked)
-            .filter(|v| match self.dock_ref(v.unit).spot {
-                Spot::Edge { .. } => true,
-                // Beside a unit that does not show as a docked container:
-                // alone on that unit's edge.
-                _ => !views.iter().any(|w| w.unit == v.unit.other() && self.dock_ref(w.unit).place == Place::Docked),
-            })
-            .collect();
-        hosts.sort_by_key(|v| !matches!(self.dock_ref(v.unit).spot, Spot::Edge { outer: true, .. }));
-        for h in hosts {
-            let beside = views.iter().copied().find(|w| w.unit == h.unit.other() && self.dock_ref(w.unit).place == Place::Docked && matches!(self.dock_ref(w.unit).spot, Spot::Beside(_)) && matches!(self.dock_ref(h.unit).spot, Spot::Edge { .. }));
-            self.dock_container(ctx, h, beside);
+        self.dock_rects = [None; 4];
+        let shown = self.groups_shown();
+        let mut roots: Vec<DockView> = views.iter().copied().filter(|v| self.docks[v.unit].place == Place::Docked && self.docks.parent(v.unit, |u| shown[u as usize]).is_none()).collect();
+        roots.sort_by_key(|v| !matches!(self.docks[v.unit].spot, Spot::Edge { outer: true, .. }));
+        for r in roots {
+            self.dock_container(ctx, r, &views);
         }
-        let floating: Vec<DockView> = views.iter().copied().filter(|v| self.dock_ref(v.unit).place == Place::Floating).collect();
+        let floating: Vec<DockView> = views.iter().copied().filter(|v| self.docks[v.unit].place == Place::Floating).collect();
         for v in floating {
             self.floating_unit(ctx, v);
         }
         self.slid_out_units(ctx, &views);
         self.dock_drag_frame(ctx);
         self.diagram_overlays(ctx);
+        // The circle / differential state stays the last activated one's.
+        self.switch_diagram(match self.panes.active {
+            Pane::Circle | Pane::Differential => pane_dim(self.panes.active),
+            _ => dim,
+        });
     }
 
-    /// How many units show on their own (a tabbed-in one shows in its host).
+    /// How many groups show on their own (a tabbed-in pane shows in its
+    /// host's group).
     #[cfg(test)]
     pub fn dock_views_shown(&self) -> usize {
         self.dock_views().len()
     }
 
-    /// What shows, per governing unit: a unit tabbed into the other shows
-    /// in that one's group, wherever it is.
+    /// What shows: per group (its own unit and the panes tabbed into it,
+    /// wherever it is) the visible tabs and the front one.
     fn dock_views(&self) -> Vec<DockView> {
-        use crate::docking::{Place, Spot, Unit};
-        let tab = self.panes.shown_tab();
-        let freq = self.panes.frequency;
-        let tabbed = |u: Unit| {
-            let d = self.dock_ref(u);
-            d.place == Place::Docked && d.spot == Spot::Tab
-        };
-        let mut v = Vec::new();
-        if !tabbed(Unit::Group) {
-            let with_freq = freq && tabbed(Unit::Freq);
-            if tab.is_some() || with_freq {
-                v.push(DockView { unit: Unit::Group, tab, freq: with_freq });
-            }
-        }
-        if !tabbed(Unit::Freq) {
-            let group = if tabbed(Unit::Group) { tab } else { None };
-            if freq || group.is_some() {
-                v.push(DockView { unit: Unit::Freq, tab: group, freq });
-            }
-        }
-        v
+        crate::docking::UNITS
+            .into_iter()
+            .filter(|&u| self.docks.host(u) == u)
+            .filter_map(|u| {
+                let mut mask = [false; 4];
+                for m in self.docks.members(u) {
+                    mask[m as usize] = self.panes.visible(m);
+                }
+                let front = self.panes.front(self.docks.members(u))?;
+                // One visible tab: no strip (the tab control's HideSingleTab,
+                // `0x1013a212`).
+                Some(DockView { unit: u, mask, front, strip: mask.iter().filter(|&&m| m).count() > 1 })
+            })
+            .collect()
     }
 
-    fn dock(&mut self, unit: crate::docking::Unit) -> &mut crate::docking::Dockable {
-        match unit {
-            crate::docking::Unit::Group => &mut self.dock_group,
-            crate::docking::Unit::Freq => &mut self.dock_freq,
-        }
+    /// Which units head a group with a visible pane.
+    fn groups_shown(&self) -> [bool; 4] {
+        crate::docking::UNITS.map(|u| self.docks.host(u) == u && self.panes.front(self.docks.members(u)).is_some())
     }
 
-    pub fn dock_ref(&self, unit: crate::docking::Unit) -> &crate::docking::Dockable {
-        match unit {
-            crate::docking::Unit::Group => &self.dock_group,
-            crate::docking::Unit::Freq => &self.dock_freq,
-        }
-    }
-
-    /// The frame edge a unit's container is on (its own, or the unit it
-    /// sits beside / in).
-    pub fn dock_edge(&self, unit: crate::docking::Unit) -> crate::docking::Edge {
-        use crate::docking::Spot;
-        match self.dock_ref(unit).spot {
-            Spot::Edge { edge, .. } => edge,
-            _ => match self.dock_ref(unit.other()).spot {
-                Spot::Edge { edge, .. } => edge,
-                _ => crate::docking::Edge::Right,
-            },
-        }
-    }
-
-    /// `unit` leaves its container: a unit beside it takes the container.
+    /// The group `unit` leaves its slot: a group beside it takes it.
     fn dock_leave(&mut self, unit: crate::docking::Unit) {
-        let (a, b) = match unit {
-            crate::docking::Unit::Group => (&mut self.dock_group, &mut self.dock_freq),
-            crate::docking::Unit::Freq => (&mut self.dock_freq, &mut self.dock_group),
-        };
-        crate::docking::leave(a, b);
+        let shown = self.groups_shown();
+        self.docks.leave(unit, |u| shown[u as usize]);
     }
 
     /// The frame client's top-left, where a first float opens.
@@ -128,9 +93,10 @@ impl App {
         ctx.available_rect().min
     }
 
-    /// A caption's actions on `unit` whose pane spans `pane`: close hides
-    /// the shown pane, the pin toggles auto-hide, a double-click floats /
-    /// redocks, a drag detaches a docked unit (or moves a floating one).
+    /// A caption's actions on the group of `unit` whose pane spans `pane`:
+    /// close hides the shown pane, the pin toggles auto-hide, a
+    /// double-click floats / redocks, a drag detaches a docked group (or
+    /// moves a floating one).
     fn caption_acts(&mut self, ctx: &egui::Context, unit: crate::docking::Unit, shown: Pane, act: CaptionAct, pane: egui::Rect) {
         use crate::docking::Place;
         if act.close {
@@ -139,36 +105,36 @@ impl App {
         }
         let origin = Self::float_origin(ctx);
         if act.pin {
-            if self.dock(unit).place == Place::Docked {
+            if self.docks[unit].place == Place::Docked {
                 self.dock_leave(unit);
             }
-            self.dock(unit).pin();
+            self.docks[unit].pin();
         }
         if act.double {
-            if self.dock(unit).place == Place::Docked {
+            if self.docks[unit].place == Place::Docked {
                 self.dock_leave(unit);
             }
-            self.dock(unit).double_click(origin);
+            self.docks[unit].double_click(origin);
             return;
         }
         if act.dragging {
             let (press, now, delta) = ctx.input(|i| (i.pointer.press_origin(), i.pointer.latest_pos(), i.pointer.delta()));
             let (Some(press), Some(now)) = (press, now) else { return };
             let dragging = self.dock_drag.is_some();
-            match self.dock(unit).place {
+            match self.docks[unit].place {
                 Place::Docked => {
-                    if self.dock(unit).drag_detach(press, now, pane, origin) {
-                        // A unit beside it takes its container.
+                    if self.docks[unit].drag_detach(press, now, pane, origin) {
+                        // A group beside it takes its slot.
                         self.dock_leave(unit);
-                        let r = self.dock(unit).float_at(origin);
+                        let r = self.docks[unit].float_at(origin);
                         self.dock_drag = Some((unit, now - r.min));
                     }
                 }
                 // A floating pane's drag shows the markers too.
                 Place::Floating if !dragging => {
-                    let d = self.dock(unit);
+                    let d = &mut self.docks[unit];
                     d.float_rect = d.float_rect.map(|r| r.translate(delta));
-                    let r = self.dock(unit).float_at(origin);
+                    let r = self.docks[unit].float_at(origin);
                     self.dock_drag = Some((unit, now - r.min));
                 }
                 _ => {}
@@ -176,45 +142,35 @@ impl App {
         }
     }
 
-    /// A unit's body: the group's tabs (with Частотная among them when it
-    /// is tabbed in) or Частотная alone.
+    /// A group's body: with several tabs the tab strip at the bottom, then
+    /// the front pane with its caption, toolbar and window.
     fn unit_body(&mut self, ui: &mut egui::Ui, v: DockView) {
-        match v.tab {
-            Some(active) => self.group_body(ui, v, active),
-            None if v.freq => self.freq_body(ui, v.unit),
-            None => {}
+        if !v.strip {
+            // In a panel of its own: the content cannot widen a dock slot.
+            let outer = ui.max_rect();
+            egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
+                ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
+                self.pane_body(ui, v, v.front, outer);
+            });
+            return;
         }
-    }
-
-    /// The tab group's body: the tab strip at the bottom, then the shown
-    /// pane with its caption, toolbar and window.
-    fn group_body(&mut self, ui: &mut egui::Ui, v: DockView, active: Pane) {
-        let pinned = self.dock_ref(v.unit).place != crate::docking::Place::Floating;
         let outer = ui.max_rect();
-        let front_freq = v.freq && self.freq_in_front;
         // A tab pulled out of the strip (`0x10068d0b` / `0x100690b4`).
-        let mut pulled: Option<bool> = None;
         let mut dragged: Option<Pane> = None;
         let mut tabs: Vec<(Pane, egui::Rect)> = Vec::new();
         let strip = egui::TopBottomPanel::bottom(egui::Id::new(("pane_tabs", v.unit))).show_inside(ui, |ui| {
             ui.horizontal(|ui| {
-                let panes = self.panes;
                 let order = self.tab_order;
-                let shown = |p: Pane| if p == Pane::Frequency { v.freq } else { v.tab.is_some() && panes.visible(p) };
-                for p in order.into_iter().filter(|&p| shown(p)) {
-                    let on = if p == Pane::Frequency { front_freq } else { p == active && !front_freq };
+                for p in order.into_iter().filter(|&p| v.mask[p as usize]) {
+                    let on = p == v.front;
                     // An id per pane: the drag follows the tab when it moves.
                     let r = ui.push_id(("fv_pane_tab", p as u8), |ui| ui.selectable_label(on, pane_title(p)).interact(egui::Sense::click_and_drag())).inner;
                     tabs.push((p, r.rect));
                     // A press (or a drag) brings the tab to the front.
                     if (r.clicked() || r.drag_started()) && !on {
-                        self.freq_in_front = p == Pane::Frequency;
-                        if p != Pane::Frequency && p != active {
-                            self.dispatch(Command::ActivatePane(p));
-                        }
+                        self.dispatch(Command::ActivatePane(p));
                     }
                     if r.dragged() {
-                        pulled = Some(p == Pane::Frequency);
                         dragged = Some(p);
                     }
                 }
@@ -233,131 +189,98 @@ impl App {
                 }
             }
         }
-        if let (Some(freq_tab), true) = (pulled, v.freq && v.tab.is_some()) {
+        if let (Some(p), true) = (dragged, tabs.len() > 1) {
             let ctx = ui.ctx().clone();
-            self.tab_drag_out(&ctx, v.unit, freq_tab, strip.response.rect);
+            self.tab_drag_out(&ctx, v, p, strip.response.rect);
         }
         egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
-            if front_freq {
-                self.freq_body(ui, v.unit);
-                return;
-            }
-            let act = pane_caption(ui, pane_title(active), pinned.then_some(self.dock_ref(v.unit).place == crate::docking::Place::AutoHide));
-            let ctx = ui.ctx().clone();
-            self.caption_acts(&ctx, v.unit, active, act, outer);
-            if act.close {
-                return;
-            }
-            // Each pane: its vertical toolbar on the right edge
-            // (550 / 552 / 553), then the window.
-            match active {
-                Pane::Vector => {
-                    self.pane_toolbar(ui, Window::Vector);
-                    egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
-                        self.pane_canvas.push((Pane::Vector, ui.available_rect_before_wrap()));
-                        self.vector_ui(ui);
-                        self.pane_drop(ui, Pane::Vector);
-                    });
-                }
-                Pane::Circle | Pane::Differential => {
-                    let w = if active == Pane::Circle { Window::Circle } else { Window::Diff };
-                    self.pane_toolbar(ui, w);
-                    self.char_ui(ui);
-                    // The differential diagram has no drop target.
-                    if active == Pane::Circle {
-                        self.pane_drop(ui, Pane::Circle);
-                    }
-                }
-                Pane::Frequency => {}
-            }
+            self.pane_body(ui, v, v.front, outer);
         });
     }
 
-    /// A tab dragged out of a combined group's strip: past the system drag
-    /// distance (SM_CXDRAG / SM_CYDRAG, 4 px, `0x10068657`) and outside the
-    /// strip, `CTabbedPane::FloatTab` (`0x1013a259`) floats that pane under
-    /// the pointer, the other unit keeping the container; the drag then
-    /// goes on as a floating caption drag (the markers). Our group's three
-    /// panes are one unit: a group tab pulled out floats the group.
-    fn tab_drag_out(&mut self, ctx: &egui::Context, host: crate::docking::Unit, freq_tab: bool, strip: egui::Rect) {
-        use crate::docking::{Place, Spot, Unit};
+    /// One pane of group `v`: its caption (acting on the group), then the
+    /// pane's vertical toolbar on the right edge (550 / 552 / 553;
+    /// Частотная has none) and its window.
+    fn pane_body(&mut self, ui: &mut egui::Ui, v: DockView, p: Pane, outer: egui::Rect) {
+        use crate::docking::Place;
+        let place = self.docks[v.unit].place;
+        let act = pane_caption(ui, pane_title(p), (place != Place::Floating).then_some(place == Place::AutoHide));
+        let ctx = ui.ctx().clone();
+        self.caption_acts(&ctx, v.unit, p, act, outer);
+        if act.close {
+            return;
+        }
+        match p {
+            Pane::Vector => {
+                self.pane_toolbar(ui, Window::Vector);
+                egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
+                    self.pane_canvas.push((Pane::Vector, ui.available_rect_before_wrap()));
+                    self.vector_ui(ui);
+                    self.pane_drop(ui, Pane::Vector);
+                });
+            }
+            Pane::Circle | Pane::Differential => {
+                // The two planes share the characteristics state: this
+                // pane's is brought in.
+                self.switch_diagram(pane_dim(p));
+                self.pane_toolbar(ui, if p == Pane::Circle { Window::Circle } else { Window::Diff });
+                self.char_ui(ui, p);
+                // The differential diagram has no drop target.
+                if p == Pane::Circle {
+                    self.pane_drop(ui, Pane::Circle);
+                }
+            }
+            Pane::Frequency => {
+                self.pane_canvas.push((Pane::Frequency, ui.available_rect_before_wrap()));
+                self.frequency_ui(ui);
+                self.pane_drop(ui, Pane::Frequency);
+            }
+        }
+    }
+
+    /// A tab dragged out of a group's strip: past the system drag distance
+    /// (SM_CXDRAG / SM_CYDRAG, 4 px, `0x10068657`) and outside the strip,
+    /// `CTabbedPane::FloatTab` (`0x1013a259`) floats that pane alone under
+    /// the pointer (the group's own pane hands the group to the next tab);
+    /// the drag then goes on as a floating caption drag (the markers).
+    fn tab_drag_out(&mut self, ctx: &egui::Context, v: DockView, pulled: Pane, strip: egui::Rect) {
         let (press, now) = ctx.input(|i| (i.pointer.press_origin(), i.pointer.latest_pos()));
         let (Some(press), Some(now)) = (press, now) else { return };
         let d = now - press;
         if (d.x.abs() < crate::docking::DRAG_PX && d.y.abs() < crate::docking::DRAG_PX) || strip.contains(now) || self.dock_drag.is_some() {
             return;
         }
-        let pulled = if freq_tab { Unit::Freq } else { Unit::Group };
-        if pulled == host {
-            // The host's own tab: the other unit takes the container.
-            let h = *self.dock_ref(host);
-            let o = self.dock(host.other());
-            (o.spot, o.extent, o.gen, o.place) = (h.spot, h.extent, o.gen + 1, Place::Docked);
-            self.dock(host).spot = Spot::Tab;
-        }
+        let next = self.tab_order.into_iter().find(|&q| q != pulled && v.mask[q as usize]).unwrap_or(v.unit);
         let origin = Self::float_origin(ctx);
         let grab = egui::vec2(40.0, 10.0);
-        let size = self.dock(pulled).float_at(origin).size();
-        let u = self.dock(pulled);
-        u.place = Place::Floating;
-        u.float_rect = Some(egui::Rect::from_min_size(now - grab, size));
-        self.freq_in_front = false;
+        let size = self.docks[pulled].float_at(origin).size();
+        self.docks.float_tab(pulled, v.unit, next, egui::Rect::from_min_size(now - grab, size));
         self.dock_drag = Some((pulled, grab));
     }
 
-    /// Частотная's body: caption and window; its caption acts on `unit`
-    /// (the group it is tabbed into, or itself).
-    fn freq_body(&mut self, ui: &mut egui::Ui, unit: crate::docking::Unit) {
-        let pinned = self.dock_ref(unit).place != crate::docking::Place::Floating;
-        let outer = ui.max_rect();
-        let act = pane_caption(ui, pane_title(Pane::Frequency), pinned.then_some(self.dock_ref(unit).place == crate::docking::Place::AutoHide));
-        let ctx = ui.ctx().clone();
-        self.caption_acts(&ctx, unit, Pane::Frequency, act, outer);
-        if act.close {
-            return;
+    /// A docked container on its frame edge holding the group `h` and the
+    /// groups beside it.
+    fn dock_container(&mut self, ctx: &egui::Context, h: DockView, views: &[DockView]) {
+        use crate::docking::Edge;
+        let edge = self.docks.edge(h.unit);
+        let hd = self.docks[h.unit];
+        let shown = self.groups_shown();
+        // Each shown docked group's parent slot, once.
+        let parents: Vec<(DockView, Option<crate::docking::Unit>)> = views.iter().map(|&v| (v, (self.docks[v.unit].place == crate::docking::Place::Docked).then(|| self.docks.parent(v.unit, |u| shown[u as usize])).flatten())).collect();
+        let mut inside = vec![h];
+        let mut k = 0;
+        while k < inside.len() {
+            let u = inside[k].unit;
+            inside.extend(parents.iter().filter(|(_, p)| *p == Some(u)).map(|(v, _)| *v));
+            k += 1;
         }
-        self.pane_canvas.push((Pane::Frequency, ui.available_rect_before_wrap()));
-        self.frequency_ui(ui);
-        self.pane_drop(ui, Pane::Frequency);
-    }
-
-    /// A docked container on its frame edge holding `h` — and `beside`, the
-    /// other unit on its side of it.
-    fn dock_container(&mut self, ctx: &egui::Context, h: DockView, beside: Option<DockView>) {
-        use crate::docking::{Edge, Spot};
-        let edge = self.dock_edge(h.unit);
-        let hd = *self.dock_ref(h.unit);
         // The create sizes (500 wide on the right, Частотная 200 tall) or
         // the last drop's; a new drop is a new panel.
         let id = egui::Id::new(("fv_dock", edge as u8, h.unit, hd.gen));
-        let extent = |v: DockView| -> f32 { if v.tab.is_some() { 500.0 } else { 200.0 } };
-        let beside_dock = beside.map(|w| *self.dock_ref(w.unit));
-        let body = |app: &mut App, ui: &mut egui::Ui| {
-            if let Some(w) = beside {
-                let Spot::Beside(side) = app.dock_ref(w.unit).spot else { return };
-                let full = ui.available_size();
-                let wd = beside_dock.unwrap_or(hd);
-                let inner = egui::Id::new(("fv_dock_beside", edge as u8, h.unit, wd.gen));
-                let r = match side {
-                    Edge::Top | Edge::Bottom => {
-                        let p = if side == Edge::Top { egui::TopBottomPanel::top(inner) } else { egui::TopBottomPanel::bottom(inner) };
-                        let d = wd.extent.unwrap_or(extent(w)).min(full.y / 2.0);
-                        p.resizable(true).default_height(d).height_range(80.0..=(full.y - 120.0).max(80.0)).show_inside(ui, |ui| app.unit_body(ui, w)).response.rect
-                    }
-                    Edge::Left | Edge::Right => {
-                        let p = if side == Edge::Left { egui::SidePanel::left(inner) } else { egui::SidePanel::right(inner) };
-                        let d = wd.extent.unwrap_or(full.x / 2.0).min(full.x / 2.0);
-                        p.resizable(true).default_width(d).width_range(120.0..=(full.x - 120.0).max(120.0)).show_inside(ui, |ui| app.unit_body(ui, w)).response.rect
-                    }
-                };
-                app.dock_rects[w.unit as usize] = Some(r);
-            }
-            let r = ui.available_rect_before_wrap();
-            app.dock_rects[h.unit as usize] = Some(r);
-            app.unit_body(ui, h);
-        };
-        let ext = hd.extent.unwrap_or_else(|| extent(h).max(beside.map_or(0.0, extent)));
+        let natural = inside.iter().map(|v| v.natural()).fold(0.0, f32::max);
+        let ext = hd.extent.unwrap_or(natural);
+        let body = |app: &mut App, ui: &mut egui::Ui| app.dock_slot(ui, h, edge, &parents);
         match edge {
             Edge::Left | Edge::Right => {
                 let p = if edge == Edge::Left { egui::SidePanel::left(id) } else { egui::SidePanel::right(id) };
@@ -365,20 +288,51 @@ impl App {
             }
             Edge::Top | Edge::Bottom => {
                 let p = if edge == Edge::Top { egui::TopBottomPanel::top(id) } else { egui::TopBottomPanel::bottom(id) };
-                let ext = if hd.extent.is_none() && (beside.is_some() || h.tab.is_some()) { 300.0 } else { ext };
+                let ext = if hd.extent.is_none() && (inside.len() > 1 || natural > 200.0) { 300.0 } else { ext };
                 p.resizable(true).default_height(ext).height_range(80.0..=900.0).show(ctx, |ui| body(self, ui));
             }
         }
     }
 
-    /// A floating unit: its own window at its recent floating rect; the
+    /// A group's slot in its container: the groups beside it split it
+    /// (each a panel on its side, holding its own slot), the rest holds the
+    /// group.
+    fn dock_slot(&mut self, ui: &mut egui::Ui, v: DockView, edge: crate::docking::Edge, parents: &[(DockView, Option<crate::docking::Unit>)]) {
+        use crate::docking::{Edge, Spot};
+        for w in parents.iter().filter(|(_, p)| *p == Some(v.unit)).map(|(w, _)| *w) {
+            let wd = self.docks[w.unit];
+            let Spot::Beside(_, side) = wd.spot else { continue };
+            let full = ui.available_size();
+            let inner = egui::Id::new(("fv_dock_beside", edge as u8, w.unit, wd.gen));
+            match side {
+                Edge::Top | Edge::Bottom => {
+                    let p = if side == Edge::Top { egui::TopBottomPanel::top(inner) } else { egui::TopBottomPanel::bottom(inner) };
+                    let d = wd.extent.unwrap_or(w.natural()).min(full.y / 2.0);
+                    p.resizable(true).default_height(d).height_range(80.0..=(full.y - 120.0).max(80.0)).show_inside(ui, |ui| self.dock_slot(ui, w, edge, parents));
+                }
+                Edge::Left | Edge::Right => {
+                    let p = if side == Edge::Left { egui::SidePanel::left(inner) } else { egui::SidePanel::right(inner) };
+                    let d = wd.extent.unwrap_or(full.x / 2.0).min(full.x / 2.0);
+                    p.resizable(true).default_width(d).width_range(120.0..=(full.x - 120.0).max(120.0)).show_inside(ui, |ui| self.dock_slot(ui, w, edge, parents));
+                }
+            }
+        }
+        let rect = ui.available_rect_before_wrap();
+        self.dock_rects[v.unit as usize] = Some(rect);
+        self.unit_body(ui, v);
+        // The slot keeps its whole rect (a central panel inside claims
+        // nothing of its parent, so the side panel would shrink to its
+        // minimum).
+        ui.expand_to_include_rect(rect);
+    }
+
+    /// A floating group: its own window at its recent floating rect; the
     /// caption moves it, a double-click redocks it.
     fn floating_unit(&mut self, ctx: &egui::Context, v: DockView) {
         let origin = Self::float_origin(ctx);
         let unit = v.unit;
-        let r = self.dock(unit).float_at(origin);
-        let title = v.tab.unwrap_or(Pane::Frequency);
-        let resp = egui::Window::new(pane_title(title))
+        let r = self.docks[unit].float_at(origin);
+        let resp = egui::Window::new(pane_title(v.front))
             .id(egui::Id::new(("fv_floating_pane", unit)))
             .title_bar(false)
             .resizable(true)
@@ -392,7 +346,7 @@ impl App {
             });
         if let Some(resp) = resp {
             // Its size as the user leaves it; the position the caption sets.
-            let d = self.dock(unit);
+            let d = &mut self.docks[unit];
             if d.place == crate::docking::Place::Floating {
                 let min = d.float_rect.map_or(r.min, |f| f.min);
                 d.float_rect = Some(egui::Rect::from_min_size(min, resp.response.rect.size()));
@@ -400,33 +354,27 @@ impl App {
         }
     }
 
-    /// The auto-hide strips: a button per pinned pane on its unit's edge;
-    /// hovering 400 ms or a click slides the unit out.
+    /// The auto-hide strips: a button per visible pane of each pinned
+    /// group on its edge; hovering 400 ms or a click slides the group out
+    /// with that pane in front.
     fn auto_hide_strips(&mut self, ctx: &egui::Context, views: &[DockView]) {
         use crate::docking::{Edge, Place};
         let now = ctx.input(|i| i.time);
         let pointer = ctx.input(|i| i.pointer.latest_pos());
         let menu_up = ctx.memory(|m| m.any_popup_open());
         let mut moving = false;
-        self.dock_strips = [None, None];
-        let pinned: Vec<DockView> = views.iter().copied().filter(|v| self.dock_ref(v.unit).place == Place::AutoHide).collect();
+        self.dock_strips = [None; 4];
+        let pinned: Vec<DockView> = views.iter().copied().filter(|v| self.docks[v.unit].place == Place::AutoHide).collect();
         for v in pinned {
-            let edge = self.dock_edge(v.unit);
-            let panes = self.panes;
-            let mut titles: Vec<Option<Pane>> = Vec::new();
-            if v.tab.is_some() {
-                titles.extend(Panes::GROUP.into_iter().filter(|&p| panes.visible(p)).map(Some));
-            }
-            if v.freq {
-                titles.push(None);
-            }
+            let edge = self.docks.edge(v.unit);
+            let titles: Vec<Pane> = self.tab_order.into_iter().filter(|&p| v.mask[p as usize]).collect();
             let mut hit = (false, false, None);
             let id = egui::Id::new(("fv_strip", edge as u8, v.unit));
             let mut draw = |ui: &mut egui::Ui| {
-                for t in &titles {
-                    let r = strip_button(ui, pane_title(t.unwrap_or(Pane::Frequency)), edge.vertical());
+                for &t in &titles {
+                    let r = strip_button(ui, pane_title(t), edge.vertical());
                     if r.hovered() || r.clicked() {
-                        hit = (true, hit.1 || r.clicked(), Some(*t));
+                        hit = (true, hit.1 || r.clicked(), Some(t));
                     }
                 }
             };
@@ -437,37 +385,30 @@ impl App {
                 Edge::Bottom => egui::TopBottomPanel::bottom(id).resizable(false).exact_height(24.0).show(ctx, |ui| ui.horizontal(|ui| draw(ui)).inner),
             };
             self.dock_strips[v.unit as usize] = Some(strip.response.rect);
-            match hit.2 {
-                Some(Some(p)) => {
-                    self.freq_in_front = false;
-                    if p != self.panes.active {
-                        self.dispatch(Command::ActivatePane(p));
-                    }
-                }
-                Some(None) => self.freq_in_front = true,
-                None => {}
+            if let Some(p) = hit.2.filter(|&p| p != v.front) {
+                self.dispatch(Command::ActivatePane(p));
             }
             let in_pane = pointer.is_some_and(|q| self.dock_areas[v.unit as usize].is_some_and(|a| a.contains(q)));
-            moving |= self.dock(v.unit).auto_hide_frame(now, hit.0, hit.1, in_pane, menu_up);
+            moving |= self.docks[v.unit].auto_hide_frame(now, hit.0, hit.1, in_pane, menu_up);
         }
-        if moving || [&self.dock_group, &self.dock_freq].iter().any(|d| d.out) {
+        if moving || self.docks.0.iter().any(|d| d.out) {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
     }
 
-    /// Slid-out auto-hide units, over the content beside their strip.
+    /// Slid-out auto-hide groups, over the content beside their strip.
     fn slid_out_units(&mut self, ctx: &egui::Context, views: &[DockView]) {
         use crate::docking::{Edge, Place};
         // They slide out of their strip over everything else.
         let content = ctx.available_rect();
-        self.dock_areas = [None, None];
+        self.dock_areas = [None; 4];
         for v in views.iter().copied() {
-            let d = self.dock_ref(v.unit);
+            let d = self.docks[v.unit];
             if d.place != Place::AutoHide || d.slide <= 0.0 {
                 continue;
             }
-            let edge = self.dock_edge(v.unit);
-            let ext: f32 = if v.tab.is_some() { 500.0 } else { 200.0 };
+            let edge = self.docks.edge(v.unit);
+            let ext = v.natural();
             let s = self.dock_strips[v.unit as usize];
             let k = d.slide;
             let rect = match edge {
@@ -493,13 +434,13 @@ impl App {
                 }
             };
             self.dock_areas[v.unit as usize] = Some(rect);
-            self.slide_area(ctx, if v.unit == crate::docking::Unit::Group { "fv_slide_group" } else { "fv_slide_freq" }, rect, |app, ui| app.unit_body(ui, v));
+            self.slide_area(ctx, egui::Id::new(("fv_slide", v.unit)), rect, |app, ui| app.unit_body(ui, v));
         }
     }
 
     /// A slid-out pane: drawn over the content in `rect`, clipped to it.
-    fn slide_area(&mut self, ctx: &egui::Context, id: &str, rect: egui::Rect, body: impl FnOnce(&mut App, &mut egui::Ui)) {
-        egui::Area::new(egui::Id::new(id)).order(egui::Order::Foreground).fixed_pos(rect.min).show(ctx, |ui| {
+    fn slide_area(&mut self, ctx: &egui::Context, id: egui::Id, rect: egui::Rect, body: impl FnOnce(&mut App, &mut egui::Ui)) {
+        egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(rect.min).show(ctx, |ui| {
             ui.set_clip_rect(rect);
             let v = ui.visuals();
             ui.painter().rect(rect, 0.0, v.panel_fill, v.window_stroke());
@@ -507,24 +448,25 @@ impl App {
         });
     }
 
-    /// A dragged floating unit follows the pointer while smart docking
+    /// A dragged floating group follows the pointer while smart docking
     /// (DT_SMART, VS2008 look) shows the four frame-edge markers and, over
-    /// the other unit's docked pane or the document area, the five-way
+    /// another docked group's pane or the document area, the five-way
     /// group; the marker under the pointer is hot and shows the drop
-    /// preview; released on it the unit docks there, elsewhere it stays
+    /// preview; released on it the group docks there, elsewhere it stays
     /// floating (`0x100d7313`–`0x100d7445`, `0x10136b50`).
     fn dock_drag_frame(&mut self, ctx: &egui::Context) {
-        use crate::docking::{Drop, Edge, Place};
+        use crate::docking::{Drop, Edge, Place, UNITS};
         let Some((unit, grab)) = self.dock_drag else { return };
         let (down, pos) = ctx.input(|i| (i.pointer.primary_down(), i.pointer.latest_pos()));
         let down = down || self.dock_drag_hold;
         let client = self.dock_client;
         let docs = ctx.available_rect();
         let mut markers: Vec<(egui::Rect, Drop)> = crate::docking::edge_markers(client).to_vec();
-        let other = unit.other();
-        let host = self.dock_rects[other as usize].filter(|_| self.dock_ref(other).place == Place::Docked && matches!(self.dock_ref(other).spot, crate::docking::Spot::Edge { .. }));
+        // The docked group under the pointer (its slot's pane rect).
+        let target = pos.and_then(|p| UNITS.into_iter().filter(|&t| t != unit && self.docks[t].place == Place::Docked).find_map(|t| self.dock_rects[t as usize].filter(|r| r.contains(p)).map(|r| (t, r))));
+        let host = target.map(|(_, r)| r);
         match (host, pos) {
-            (Some(h), Some(p)) if h.contains(p) => markers.extend(crate::docking::five_way(h, true)),
+            (Some(h), _) => markers.extend(crate::docking::five_way(h, true)),
             (_, Some(p)) if docs.contains(p) => markers.extend(crate::docking::five_way(docs, false)),
             _ => {}
         }
@@ -534,7 +476,7 @@ impl App {
         // frame edge (outer) or the document area (inner) as thick as the
         // floating window, beside a pane min(that, half the pane), into a
         // pane the pane less a tab strip.
-        let fsize = self.dock_ref(unit).float_rect.map_or(egui::vec2(200.0, 200.0), |r| r.size());
+        let fsize = self.docks[unit].float_rect.map_or(egui::vec2(200.0, 200.0), |r| r.size());
         if let Some(d) = hot {
             let along = |r: egui::Rect, e: Edge, x: f32| match e {
                 Edge::Left => egui::Rect::from_min_max(r.min, egui::pos2(r.left() + x, r.bottom())),
@@ -579,23 +521,23 @@ impl App {
         if down {
             // While a marker is hot only the preview moves.
             if let (Some(p), None) = (pos, hot) {
-                let d = self.dock(unit);
+                let d = &mut self.docks[unit];
                 d.float_rect = d.float_rect.map(|r| egui::Rect::from_min_size(p - grab, r.size()));
             }
             ctx.request_repaint();
         } else {
             if let Some(d) = hot {
-                let other_dock = *self.dock_ref(other);
                 let area = match (d, host) {
                     (Drop::Edge(_, true), _) => client,
                     (Drop::Beside(_), Some(h)) => h,
                     _ => docs,
                 };
-                crate::docking::drop_on(self.dock(unit), &other_dock, d, crate::docking::dock_extent(d, fsize, area));
+                let front = self.panes.front(self.docks.members(unit));
+                self.docks.drop_on(unit, d, target.map(|(t, _)| t), crate::docking::dock_extent(d, fsize, area));
                 // A tab dropped in comes to the front (`AttachToTabWnd`,
                 // bSetActive).
-                if d == Drop::Tab {
-                    self.freq_in_front = unit == crate::docking::Unit::Freq;
+                if let (Drop::Tab, Some(p)) = (d, front) {
+                    self.dispatch(Command::ActivatePane(p));
                 }
             }
             self.dock_drag = None;
@@ -647,9 +589,9 @@ impl App {
     /// Circle / differential pane: the block and settings grid above the
     /// plot behind a splitter (200 px, 50 px .. height − 150), as the
     /// original's pane.
-    fn char_ui(&mut self, ui: &mut egui::Ui) {
+    fn char_ui(&mut self, ui: &mut egui::Ui, pane: Pane) {
         let h = ui.available_height();
-        let grid = egui::TopBottomPanel::top("char_grid")
+        let grid = egui::TopBottomPanel::top(egui::Id::new(("char_grid", pane)))
             .resizable(true)
             .default_height(200.0)
             .height_range(50.0..=(h - 150.0).max(50.0))
@@ -658,7 +600,6 @@ impl App {
             });
         self.pane_grid.push(grid.response.rect);
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
-            let pane = if self.panes.active == Pane::Differential { Pane::Differential } else { Pane::Circle };
             self.pane_canvas.push((pane, ui.available_rect_before_wrap()));
             self.plane_ui(ui);
         });
@@ -781,13 +722,33 @@ impl App {
     // ---- Быстрый анализ ----
 }
 
-/// A unit as it shows: its group's shown tab (if the group shows in it)
-/// and whether Частотная shows in it.
+/// A group as it shows: its own unit, its visible tabs (by pane), the
+/// front one, and whether it has a tab strip (more than one visible).
 #[derive(Debug, Clone, Copy)]
 struct DockView {
     unit: crate::docking::Unit,
-    tab: Option<Pane>,
-    freq: bool,
+    mask: [bool; 4],
+    front: Pane,
+    strip: bool,
+}
+
+impl DockView {
+    /// Its create size across its edge: 500, Частотная alone 200.
+    fn natural(&self) -> f32 {
+        if self.mask == [false, false, false, true] {
+            200.0
+        } else {
+            500.0
+        }
+    }
+}
+
+fn pane_dim(p: Pane) -> fvb_core::model::Dimension {
+    if p == Pane::Differential {
+        fvb_core::model::Dimension::Dif
+    } else {
+        fvb_core::model::Dimension::Ohm
+    }
 }
 
 fn pane_title(p: Pane) -> &'static str {
@@ -882,7 +843,7 @@ mod pane_tests {
             });
         };
         for size in [egui::vec2(1320.0, 860.0), egui::vec2(866.0, 500.0)] {
-            for active in Panes::GROUP {
+            for active in crate::app::Panes::GROUP {
                 app.dispatch(Command::ActivatePane(active));
                 for _ in 0..3 {
                     frame(&mut app, size);

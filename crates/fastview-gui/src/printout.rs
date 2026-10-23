@@ -469,12 +469,13 @@ impl App {
                 Pane::Frequency => self.frequency_ui(ui),
                 Pane::Vector => self.vector_ui(ui),
                 Pane::Circle | Pane::Differential => {
-                    self.diagram_dim = if pane == Pane::Circle { fvb_core::model::Dimension::Ohm } else { fvb_core::model::Dimension::Dif };
+                    // That plane's characteristics with its dimension.
+                    self.switch_diagram(if pane == Pane::Circle { fvb_core::model::Dimension::Ohm } else { fvb_core::model::Dimension::Dif });
                     self.plane_ui(ui);
                 }
             });
         });
-        self.diagram_dim = dim;
+        self.switch_diagram(dim);
         self.active = active;
         img
     }

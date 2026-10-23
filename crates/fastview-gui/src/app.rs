@@ -58,7 +58,7 @@ pub enum View {
 
 /// A diagram docking pane (`0x474e10`). The diagrams are panes beside the
 /// oscillogram, not views replacing it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Pane {
     /// Векторная диаграмма (32809).
     Vector,
@@ -147,16 +147,21 @@ pub struct Panes {
     pub circle: bool,
     pub differential: bool,
     pub frequency: bool,
+    /// The pane last activated (a tab clicked, a pane shown).
     pub active: Pane,
+    /// When each pane was last activated: a tabbed group shows the most
+    /// recent of its visible tabs.
+    pub stamp: [u32; 4],
 }
 
 impl Default for Panes {
     fn default() -> Self {
-        Panes { vector: true, circle: true, differential: true, frequency: true, active: Pane::Vector }
+        Panes { vector: true, circle: true, differential: true, frequency: true, active: Pane::Vector, stamp: [4, 3, 2, 1] }
     }
 }
 
 impl Panes {
+    #[cfg(test)]
     pub const GROUP: [Pane; 3] = [Pane::Vector, Pane::Circle, Pane::Differential];
 
     pub fn visible(&self, p: Pane) -> bool {
@@ -177,13 +182,20 @@ impl Panes {
         }
     }
 
-    /// The tab shown in the right-hand group, if any of its panes is visible.
+    pub fn activate(&mut self, p: Pane) {
+        self.active = p;
+        self.stamp[p as usize] = self.stamp.iter().max().copied().unwrap_or(0) + 1;
+    }
+
+    /// The front tab among `members`: the most recently activated visible one.
+    pub fn front(&self, members: impl IntoIterator<Item = Pane>) -> Option<Pane> {
+        members.into_iter().filter(|&p| self.visible(p)).max_by_key(|&p| self.stamp[p as usize])
+    }
+
+    /// The front tab of the Векторная | Круговая | Дифференциальная panes.
+    #[cfg(test)]
     pub fn shown_tab(&self) -> Option<Pane> {
-        if self.visible(self.active) && self.active != Pane::Frequency {
-            Some(self.active)
-        } else {
-            Self::GROUP.into_iter().find(|&p| self.visible(p))
-        }
+        self.front(Self::GROUP)
     }
 }
 
@@ -956,24 +968,22 @@ pub struct App {
     pub tab: RibbonTab,
     pub view: View,
     pub panes: Panes,
-    /// The diagram panes' docking (L9.92): the tab group and Частотная,
-    /// a unit being dragged after it detached (with the pointer's grab
-    /// offset in its rect), and the slid-out auto-hide areas.
-    pub dock_group: crate::docking::Dockable,
-    pub dock_freq: crate::docking::Dockable,
+    /// The diagram panes' docking (L9.92): each pane's unit, a group
+    /// being dragged after it detached (with the pointer's grab offset in
+    /// its rect), and the slid-out auto-hide areas.
+    pub docks: crate::docking::Docks,
     pub dock_drag: Option<(crate::docking::Unit, egui::Vec2)>,
-    /// The frame client (the edge markers' rect), each docked unit's pane
-    /// rect this frame, and Частотная in front of a group it is tabbed in.
+    /// The frame client (the edge markers' rect) and each docked group's
+    /// pane rect this frame (by the group's own unit).
     pub dock_client: egui::Rect,
-    pub dock_rects: [Option<egui::Rect>; 2],
-    pub freq_in_front: bool,
+    pub dock_rects: [Option<egui::Rect>; 4],
     /// The diagram tabs' order (a tab dragged over another swaps with it).
     pub tab_order: [Pane; 4],
     /// Keeps a smart-docking drag going without a held button (the
     /// `window_dump` state `dockmarkers`).
     pub dock_drag_hold: bool,
-    pub dock_areas: [Option<egui::Rect>; 2],
-    pub dock_strips: [Option<egui::Rect>; 2],
+    pub dock_areas: [Option<egui::Rect>; 4],
+    pub dock_strips: [Option<egui::Rect>; 4],
     pub skin: Skin,
     pub time_unit: TimeUnit,
     pub show_grid: bool,
@@ -1163,16 +1173,14 @@ impl App {
             // The group on the right edge; Частотная below it in the same
             // column (the user's screenshot, L9.3 — the original's create
             // docks it on the frame's bottom edge).
-            dock_group: crate::docking::Dockable::new(egui::vec2(500.0, 500.0), crate::docking::Spot::Edge { edge: crate::docking::Edge::Right, outer: true }),
-            dock_freq: crate::docking::Dockable::new(egui::vec2(200.0, 200.0), crate::docking::Spot::Beside(crate::docking::Edge::Bottom)),
+            docks: crate::docking::Docks::default(),
             dock_drag: None,
             dock_client: egui::Rect::NOTHING,
-            dock_rects: [None, None],
-            freq_in_front: false,
+            dock_rects: [None; 4],
             tab_order: [Pane::Vector, Pane::Circle, Pane::Differential, Pane::Frequency],
             dock_drag_hold: false,
-            dock_areas: [None, None],
-            dock_strips: [None, None],
+            dock_areas: [None; 4],
+            dock_strips: [None; 4],
             skin: Skin::Blue,
             time_unit: TimeUnit::Milli,
             show_grid: true,
@@ -1377,17 +1385,26 @@ impl App {
             }
             Command::OmpAnalysis => self.omp_toggle(),
             Command::OmpParams => self.omp_open_params(),
+            // `ShowPane(!visible, FALSE, FALSE)` (`0x475040`): a re-shown
+            // tab comes to the front only when no other tab of its group
+            // shows; hiding the front tab brings the nearest visible one on
+            // its right in the strip, else on its left (`0x10067f1f`).
             Command::TogglePane(p) => {
                 let on = !self.panes.visible(p);
+                let host = self.docks.host(p);
+                let strip: Vec<Pane> = self.tab_order.into_iter().filter(|&q| self.docks.host(q) == host).collect();
+                let was_front = self.panes.front(strip.iter().copied()) == Some(p);
                 self.panes.set(p, on);
-                if on && p != Pane::Frequency {
-                    self.dispatch(Command::ActivatePane(p));
-                } else if let Some(t) = self.panes.shown_tab() {
-                    self.dispatch(Command::ActivatePane(t));
+                if !on && was_front {
+                    let i = strip.iter().position(|&q| q == p).unwrap_or(0);
+                    let next = strip[i + 1..].iter().find(|&&q| self.panes.visible(q)).or_else(|| strip[..i].iter().rev().find(|&&q| self.panes.visible(q)));
+                    if let Some(&q) = next {
+                        self.dispatch(Command::ActivatePane(q));
+                    }
                 }
             }
             Command::ActivatePane(p) => {
-                self.panes.active = p;
+                self.panes.activate(p);
                 match p {
                     Pane::Circle => self.switch_diagram(Dimension::Ohm),
                     Pane::Differential => self.switch_diagram(Dimension::Dif),
@@ -1654,10 +1671,10 @@ impl App {
             return;
         }
         let v = &mut self.store.view;
-        crate::docking::store("Group", &self.dock_group, v);
-        crate::docking::store("Freq", &self.dock_freq, v);
+        self.docks.store_all(v);
         for (k, p) in [("Vector", Pane::Vector), ("Circle", Pane::Circle), ("Differential", Pane::Differential), ("Frequency", Pane::Frequency)] {
             v.insert(format!("Workspace/{k}/IsVisible"), u8::from(self.panes.visible(p)).to_string());
+            v.insert(format!("Workspace/{k}/Activated"), self.panes.stamp[p as usize].to_string());
             if self.panes.active == p {
                 v.insert("Workspace/ActiveTab".into(), k.into());
             }
@@ -1687,14 +1704,20 @@ impl App {
                 self.tab_order.copy_from_slice(&read);
             }
         }
-        crate::docking::restore("Group", &mut self.dock_group, v);
-        crate::docking::restore("Freq", &mut self.dock_freq, v);
+        self.docks.restore_all(v);
         for (k, p) in [("Vector", Pane::Vector), ("Circle", Pane::Circle), ("Differential", Pane::Differential), ("Frequency", Pane::Frequency)] {
             if let Some(on) = v.get(&format!("Workspace/{k}/IsVisible")) {
                 self.panes.set(p, on == "1");
             }
-            if v.get("Workspace/ActiveTab").is_some_and(|a| a == k) {
-                self.panes.active = p;
+            if let Some(n) = v.get(&format!("Workspace/{k}/Activated")).and_then(|n| n.parse().ok()) {
+                self.panes.stamp[p as usize] = n;
+            }
+        }
+        if let Some(p) = v.get("Workspace/ActiveTab").and_then(|a| [Pane::Vector, Pane::Circle, Pane::Differential, Pane::Frequency].into_iter().find(|p| format!("{p:?}") == *a)) {
+            self.panes.active = p;
+            // A workspace from before the stamps: the active tab in front.
+            if !v.contains_key("Workspace/Vector/Activated") {
+                self.panes.activate(p);
             }
         }
     }
@@ -2270,8 +2293,13 @@ mod tests {
         assert_eq!(app.current_dimension(), Dimension::Ohm);
         app.dispatch(Command::TogglePane(Pane::Differential));
         app.dispatch(Command::TogglePane(Pane::Differential));
-        assert_eq!(app.panes.shown_tab(), Some(Pane::Differential), "a re-shown pane comes to the front");
+        assert_eq!(app.panes.shown_tab(), Some(Pane::Circle), "a re-shown tab stays behind the front one");
+        app.dispatch(Command::TogglePane(Pane::Circle));
+        assert_eq!(app.panes.shown_tab(), Some(Pane::Differential), "the nearest visible tab on the right");
         assert_eq!(app.current_dimension(), Dimension::Dif);
+        app.dispatch(Command::TogglePane(Pane::Differential));
+        app.dispatch(Command::TogglePane(Pane::Vector));
+        assert_eq!(app.panes.shown_tab(), Some(Pane::Vector), "the only one shown comes to the front");
         assert_eq!(app.view, View::Oscillogram, "the oscillogram never goes away");
     }
 

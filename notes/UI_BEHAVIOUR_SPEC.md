@@ -117,8 +117,16 @@ Feature-Pack workspace [I].
 - Pane content: a vertical toolbar on the right edge (resource 550 vector,
   552 circle, 553 diff; Frequency has none) and the diagram window (§6).
 - Toggles (0x475040/0x4750b0): 32809 vector, 32808 circle, 140 diff, 32811
-  frequency → `ShowPane(!visible)` + RecalcLayout; 32810 does nothing. CMDUI
-  (0x4750f0): checked = pane exists and is visible.
+  frequency → `ShowPane(!visible, FALSE, FALSE)` + RecalcLayout; 32810 does
+  nothing. CMDUI (0x4750f0): checked = pane exists and is visible. For a
+  tab (L9.107, mfc120u `0x10067f1f`): re-shown it stays behind the front
+  tab unless no other tab of its group shows; hiding the front tab brings
+  the nearest visible tab on its right, else on its left; the last one
+  hidden hides the tabbed pane; one visible tab shows no strip
+  (HideSingleTab); the tabbed pane's caption is the front tab's text.
+- Each of the four panes docks on its own (L9.107): a tab pulled out of
+  any group floats alone (the group's own pane hands the group to the next
+  tab), and drops beside or into any docked pane.
 - Diagrams are independent of the oscillogram, which never disappears; they
   show the active document's cursor 1.
 
