@@ -4131,6 +4131,34 @@ Residual: MFC moves the focus to the failing edit (ours does not); a
 record whose R div trunc(f) is 0 (the original divides by zero) takes
 1 in ours.
 
+### L9.134 — Digital channels carry the value flags: invert drawn, baked by the merge  ·  ✅
+Read (subagent report on `0x428490`, `0x42a0f0`, `0x426020`, `0x47e6a9`;
+by hand the toggle `0x42f4b0` — every selected row, no kind test — and
+`0x428490`'s ch+0x20 fill): the digital painter draws the display cache
+ch+0x2c, not the raw samples; `0x428490`'s digital branch fills it with a
+copy of the samples, or with invert 1 where the sample is 0 and 0
+elsewhere; remove-DC and the mode bits (0x80 by default from the
+constructors' 0xe1) are set by 32820–32824 on digital channels too but
+read by nothing else (only the menus' checks); the stats panel draws the
+invert icon beside the name (`0x462e88`); «Объединить» picks digital
+values through `0x426020` (inverted baked in) and keeps the flag, so the
+merged channel shows the raw record again. Also confirmed (L9.7 stands):
+`0x428490` fills ch+0x20 with `0x426020(i)`, the vector the ОМП engine
+copies — ОМП reads flagged values.
+Ours: digital channels had no flags; 32823 / 32824 / 32820–32822 ignored
+a digital selection. Now `DigFlags {invert, remove_dc, mode}` per digital
+channel (`Doc::{dig_flags, dig, dig_mut, dig_on}`, in the undo snapshot,
+shifted by `move_appended`), counted and set by `flag_state` /
+`toggle_flag_selected` / `mode_state` / `set_mode_selected`
+(`selected_digital`), the lane and its value drawn through `dig_on`, the
+invert icon at (leftW − 18, y + 2), the merge baking it. Test
+`digital_channels_carry_the_value_flags`.
+Residual: the merge's zero padding of an inverted digital channel reads 1
+through the accessor in the original (ours pads raw 0 after baking); a
+formula naming a digital channel (the original's lookup has no kind test
+— INFERRED) is not resolved by ours; computed and pending channels' flags
+— next.
+
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

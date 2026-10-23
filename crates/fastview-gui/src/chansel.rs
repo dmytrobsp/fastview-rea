@@ -102,6 +102,17 @@ impl Doc {
             .collect()
     }
 
+    /// Selected digital channels, in index order.
+    pub fn selected_digital(&self) -> Vec<usize> {
+        self.selection
+            .iter()
+            .filter_map(|k| match k {
+                ChanKey::Digital(i) if *i < self.osc.digital.len() => Some(*i),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Selected computed channels, in index order.
     pub fn selected_computed(&self) -> Vec<usize> {
         self.selection
@@ -165,7 +176,13 @@ impl Doc {
             ChanFlag::OnVector => self.computed[j].on_vector,
             _ => self.computed[j].on_circle,
         };
-        let mut st = state_of(self.selected_analog().into_iter().map(|i| self.flag(i, f)).chain(comp.iter().map(|&j| cflag(j))));
+        // 32823 / 32824 count selected digital channels too (`0x42fc60`).
+        let dig: Vec<bool> = match f {
+            ChanFlag::Invert => self.selected_digital().into_iter().map(|i| self.dig(i).invert).collect(),
+            ChanFlag::RemoveDc => self.selected_digital().into_iter().map(|i| self.dig(i).remove_dc).collect(),
+            _ => Vec::new(),
+        };
+        let mut st = state_of(self.selected_analog().into_iter().map(|i| self.flag(i, f)).chain(comp.iter().map(|&j| cflag(j))).chain(dig));
         // CMDUI 32849..32851 (`0x430650`): enabled while the record has an
         // analog channel and no selected channel is ineligible by unit
         // (vector A / V / «ном» / none, circle Ohm / W / VA / var).
@@ -199,6 +216,13 @@ impl Doc {
         for i in self.selected_analog() {
             self.set_flag(i, f, v);
         }
+        for i in self.selected_digital() {
+            match f {
+                ChanFlag::Invert => self.dig_mut(i).invert = v,
+                ChanFlag::RemoveDc => self.dig_mut(i).remove_dc = v,
+                _ => {}
+            }
+        }
         for j in self.computed_flag_targets(f) {
             match f {
                 ChanFlag::OnVector => self.computed[j].on_vector = v,
@@ -210,10 +234,14 @@ impl Doc {
     /// 32820..32822's state (`0x42fc60`): the selected channels of every
     /// kind, no group expansion — enabled with any selection, checked when
     /// every selected channel is in the mode (ours: computed channels are
-    /// instantaneous; digital ones are not counted — their mode bits NOT
-    /// DETERMINED).
+    /// instantaneous; digital ones carry the bits — 0x80 by default, set
+    /// by 32820–32822 and read by nothing else).
     pub fn mode_state(&self, m: ValueMode) -> ItemState {
-        let modes = self.selected_analog().into_iter().map(|i| self.chans[i].mode == m).chain(self.selected_computed().into_iter().map(|_| m == ValueMode::Instant));
+        let modes = self.selected_analog()
+            .into_iter()
+            .map(|i| self.chans[i].mode == m)
+            .chain(self.selected_computed().into_iter().map(|_| m == ValueMode::Instant))
+            .chain(self.selected_digital().into_iter().map(|i| self.dig(i).mode == m));
         let st = state_of(modes);
         ItemState { enabled: !self.selection.is_empty(), checked: st.checked }
     }
@@ -221,6 +249,9 @@ impl Doc {
     pub fn set_mode_selected(&mut self, m: ValueMode) {
         for i in self.with_groups(&self.selected_analog()) {
             self.chans[i].mode = m;
+        }
+        for i in self.selected_digital() {
+            self.dig_mut(i).mode = m;
         }
     }
 

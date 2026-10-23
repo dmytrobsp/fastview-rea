@@ -227,6 +227,16 @@ impl OscView<'_> {
         let digital_row = matches!(lane, Lane::Digital(_)) || matches!(lane, Lane::Computed(j) if doc.pending_digital(*j));
         let name_rect = if digital_row {
             let short: String = name.chars().take(NAME_CHARS).collect();
+            // An inverted digital channel's icon at (leftW − 18, y + 2)
+            // (`0x462e88`).
+            if let Lane::Digital(i) = lane {
+                if doc.dig(*i).invert {
+                    let at = Rect::from_min_size(Pos2::new(left - 18.0, top + 2.0), Vec2::splat(16.0));
+                    lp.rect_filled(at, 2.0, Color32::from_rgb(232, 236, 248));
+                    lp.rect_stroke(at, 2.0, Stroke::new(1.0f32, Color32::from_rgb(120, 130, 170)));
+                    lp.text(at.center(), Align2::CENTER_CENTER, "−", FontId::proportional(9.0), Color32::from_rgb(40, 50, 110));
+                }
+            }
             bold_text(lp, Pos2::new(self.x0 + 5.0, top + 2.0), &short, NAME_FONT, color)
         } else if r.members.len() > 1 {
             // A channel group (`0x461440`): every member in channel order
@@ -287,7 +297,8 @@ impl OscView<'_> {
                 let red = Color32::from_rgb(200, 0, 0);
                 // The painter's runs and transition ticks (`0x42a0f0`), x
                 // from leftW, GDI rectangles mid−6..mid+6.
-                let on = |k: usize| s.get(k).copied().unwrap_or(false);
+                // The display cache: inverted with the flag (`0x428490`).
+                let on = |k: usize| doc.dig_on(*i, k);
                 let shapes = g::digital_shapes(&on, s.len(), first, f, plot_right - left);
                 for (a, b) in shapes.runs {
                     let rr = Rect::from_min_max(Pos2::new(left + a, mid - 6.0), Pos2::new(left + b.max(a + 1.0), mid + 6.0));
@@ -2120,7 +2131,7 @@ fn lane_stats(
         }
         Lane::Digital(i) => {
             let d = &doc.osc.digital[*i];
-            let val = if d.samples.get(k_main).copied().unwrap_or(false) { 1.0 } else { 0.0 };
+            let val = if doc.dig_on(*i, k_main) { 1.0 } else { 0.0 };
             (d.id.clone(), Default::default(), Color32::from_rgb(0x44, 0x44, 0xAA), 1.0, 0.0, 0.0, 0.0, val)
         }
     }

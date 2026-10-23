@@ -221,9 +221,10 @@ pub enum AnalysisTab {
 pub type MinMaxCache = std::cell::RefCell<std::collections::HashMap<(usize, ValueMode), (u64, [f64; 4])>>;
 
 /// The per-channel value the stats panel and vector/circle views read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ValueMode {
     /// Мгновенные значения — the raw sample at the cursor.
+    #[default]
     Instant,
     /// Среднеквадратичные значения — true one-cycle RMS at the cursor.
     Rms,
@@ -578,6 +579,8 @@ pub struct Doc {
     pub merge_offset: f64,
     /// Shown flag of each digital channel (bit 0; «Каналы» dialog column 1; 32845 / 32846 / 32847).
     pub digital_visible: Vec<bool>,
+    /// Each digital channel's value flags (ch+0x60; see [`DigFlags`]).
+    pub dig_flags: Vec<DigFlags>,
     /// The code page the record's names are currently decoded in (`doc+0x6e8`,
     /// 866 / 1251: file parameters «Кодировка»; see `recdlg`).
     pub codepage: Encoding,
@@ -644,6 +647,7 @@ impl Doc {
             minmax_cache: Default::default(),
             dc_mean,
             digital_visible,
+            dig_flags: Vec::new(),
             codepage: Encoding::Cp1251,
             hdr: None,
             hdr_cp: Encoding::Cp1251,
@@ -744,6 +748,24 @@ impl Doc {
     /// Reset the time view to the full record.
     /// CMDUI 155..157: comments can be placed only on records opened from a
     /// `.cfg` or `.osc` file (our bundled demo record, with no file, too).
+    /// Digital channel `i`'s flags (the defaults past the stored ones).
+    pub fn dig(&self, i: usize) -> DigFlags {
+        self.dig_flags.get(i).copied().unwrap_or_default()
+    }
+
+    pub fn dig_mut(&mut self, i: usize) -> &mut DigFlags {
+        if self.dig_flags.len() <= i {
+            self.dig_flags.resize(i + 1, DigFlags::default());
+        }
+        &mut self.dig_flags[i]
+    }
+
+    /// Digital channel `i`'s displayed state at sample `k` (the display
+    /// cache: inverted when the flag is set).
+    pub fn dig_on(&self, i: usize, k: usize) -> bool {
+        self.osc.digital.get(i).and_then(|d| d.samples.get(k)).copied().unwrap_or(false) != self.dig(i).invert
+    }
+
     pub fn comments_allowed(&self) -> bool {
         match &self.path {
             None => true,
@@ -864,6 +886,18 @@ pub fn default_channel_color(ch: &fvb_core::comtrade::AnalogChannel, i: usize) -
     egui::Color32::from_rgb(r, g, b)
 }
 
+/// A digital channel's value flags (ch+0x60): invert (0x800) makes the
+/// display cache 1 where the sample is 0 and 0 elsewhere (`0x428490`'s
+/// digital branch, `0x426020`), so the lane and the merge see it; remove-DC
+/// (0x400) and the display mode (0x80 / 0x100 / 0x200, 0x80 by default)
+/// change nothing but the menus' checks (L9.134).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct DigFlags {
+    pub invert: bool,
+    pub remove_dc: bool,
+    pub mode: ValueMode,
+}
+
 /// An undo/redo entry: the record's data model (`doc+0x180 … 0x27f`,
 /// assignment `0x4546d0`) — the channels with their samples, flags,
 /// selection and pending state, the computed channels, times, rate and
@@ -877,6 +911,7 @@ pub struct DocSnapshot {
     pub pending: Vec<crate::merge_ui::ClipChan>,
     pub selection: BTreeSet<ChanKey>,
     pub digital_visible: Vec<bool>,
+    pub dig_flags: Vec<DigFlags>,
 }
 
 /// Commands dispatched from the ribbon, QAT, keybinds and context menus. The
@@ -2074,6 +2109,7 @@ impl App {
             pending: d.pending.clone(),
             selection: d.selection.clone(),
             digital_visible: d.digital_visible.clone(),
+            dig_flags: d.dig_flags.clone(),
         }
     }
 
@@ -2087,6 +2123,7 @@ impl App {
         d.pending = s.pending;
         d.selection = s.selection;
         d.digital_visible = s.digital_visible;
+        d.dig_flags = s.dig_flags;
         d.sel_anchor = None;
         let last = d.osc.time.len().saturating_sub(1);
         for k in [&mut d.main_cursor, &mut d.aux_cursor, &mut d.v3_cursor, &mut d.first] {
@@ -2486,6 +2523,36 @@ mod tests {
         assert!(!app.can_save(), ".sto: Save greyed");
         app.active_doc_mut().unwrap().path = Some("x/rec.cfg".into());
         assert!(app.can_save());
+    }
+
+    /// Invert / DC / modes on a digital channel (`0x42f4b0`, `0x42fc60`,
+    /// `0x428490`): enabled by a digital selection alone; invert flips the
+    /// displayed state; the merge bakes it and keeps the flag.
+    #[test]
+    fn digital_channels_carry_the_value_flags() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        let raw: Vec<bool> = d.osc.digital[0].samples.clone();
+        d.selection.insert(ChanKey::Digital(0));
+        let st = d.flag_state(crate::chansel::ChanFlag::Invert);
+        assert!(st.enabled && !st.checked, "a digital selection enables 32823");
+        app.dispatch(Command::ToggleFlag(crate::chansel::ChanFlag::Invert));
+        let d = app.active_doc().unwrap();
+        assert!(d.dig(0).invert && d.flag_state(crate::chansel::ChanFlag::Invert).checked);
+        assert!((0..raw.len()).all(|k| d.dig_on(0, k) != raw[k]), "drawn inverted");
+        app.dispatch(Command::SetValueMode(ValueMode::Rms));
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.dig(0).mode, ValueMode::Rms);
+        assert!(d.mode_state(ValueMode::Rms).checked, "the bits are kept for the check");
+        // «Объединить»: the inverted values baked, the flag kept — shown
+        // as the raw record again.
+        app.active_doc_mut().unwrap().selection = BTreeSet::from([ChanKey::Analog(0)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = app.active_doc().unwrap();
+        assert!(d.dig(0).invert);
+        assert!(d.osc.digital[0].samples.iter().zip(&raw).take(10).all(|(m, r)| *m != *r), "baked");
     }
 
     #[test]

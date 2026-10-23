@@ -235,6 +235,8 @@ impl Doc {
         self.chans[at_a..].rotate_right(ka);
         self.osc.digital[at_d..].rotate_right(kd);
         self.digital_visible[at_d..].rotate_right(kd);
+        self.dig_flags.resize(self.osc.digital.len(), Default::default());
+        self.dig_flags[at_d..].rotate_right(kd);
         let key = |k: ChanKey| match k {
             ChanKey::Analog(i) if i >= at_a => ChanKey::Analog(i + ka),
             ChanKey::Digital(i) if i >= at_d => ChanKey::Digital(i + kd),
@@ -454,7 +456,7 @@ impl App {
     /// first Отмена only reverts the rate and a second one the paste. Визиры,
     /// comments and the view keep their sample indices; then the silent ОМП
     /// run, the modified mark and the bar hidden.
-    fn merge_records(&mut self) {
+    pub(crate) fn merge_records(&mut self) {
         let Some(ai) = self.active else { return };
         let d = &mut self.docs[ai];
         if d.pending.is_empty() {
@@ -470,6 +472,13 @@ impl App {
             let k = crate::app::display_k(&d.osc.analog[i], d.chans[i].primary);
             let k = if k != 0.0 { k } else { 1.0 };
             a.samples = d.flagged.analog[i].samples.iter().map(|v| if v.is_nan() { 0.0 } else { v / k }).collect();
+        }
+        // Digital channels are picked through the accessor too (`0x47e6a9`):
+        // an inverted one is baked in, its flag stays.
+        for (i, dch) in src.digital.iter_mut().enumerate() {
+            if d.dig(i).invert {
+                dch.samples.iter_mut().for_each(|v| *v = !*v);
+            }
         }
         // The padding's zeros are read through the accessor too.
         let pads: Vec<f64> = (0..d.osc.analog.len())
