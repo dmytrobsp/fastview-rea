@@ -3085,8 +3085,8 @@ and the animation-off switch not modelled.
 Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
-each one flat archive). `main` = HEAD, 351 tests; CI green through L9.89
-at this handoff (later runs in progress — check `gh run list`).
+each one flat archive). `main` = HEAD, 351 tests; CI green on 3 OSes
+through L9.92 at this handoff.
 **This session (L9.76–L9.92):** L9.76 the unit text `0x42bc50` («/с»,
 computed units translated); L9.77 / **L9.85** a pending (pasted) lane's
 readout and statistics from its own samples (the scan from own index 1 —
