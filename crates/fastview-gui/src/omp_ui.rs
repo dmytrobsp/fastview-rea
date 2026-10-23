@@ -270,10 +270,11 @@ impl App {
         let Some(d) = self.docs.get_mut(di) else { return };
         d.omp.shown = false;
         d.omp.run = None;
-        let (nc, nd) = (d.computed.len(), d.osc.digital.len());
-        d.computed.retain(|c| c.name != L_KZ);
-        d.osc.digital.retain(|c| !KZ_PHASES.contains(&c.id.as_str()));
-        if d.computed.len() != nc || d.osc.digital.len() != nd {
+        let removed = d.removing_channels(|d| {
+            d.computed.retain(|c| c.name != L_KZ);
+            d.osc.digital.retain(|c| !KZ_PHASES.contains(&c.id.as_str()));
+        });
+        if removed {
             d.channels_changed();
             // Rows were renumbered: drop them from the selection.
             d.selection.retain(|k| matches!(k, crate::app::ChanKey::Analog(_)));

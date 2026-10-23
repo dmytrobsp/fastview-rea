@@ -154,6 +154,48 @@ impl Doc {
         crate::chandlg::rows(self).into_iter().find(|&k| self.key_name(k) == n)
     }
 
+    /// Delete channels (`remove`), as the remove-by-name routine `0x42ecf0`
+    /// does: when anything went, the review list is swept (`0x440800`) —
+    /// a level or an area stays while its channel(s) still resolve by name
+    /// (`0x42edf0`), re-bound to their new places; a moment always stays;
+    /// an element already naming a missing channel goes; the hot element
+    /// is cleared. Returns whether any channel went.
+    pub fn removing_channels(&mut self, remove: impl FnOnce(&mut Doc)) -> bool {
+        let before = (self.computed.len(), self.osc.digital.len());
+        let names: Vec<Vec<String>> = self
+            .comments
+            .iter()
+            .map(|c| match c.kind {
+                CommentKind::Level { chan, .. } => vec![self.key_name(chan)],
+                CommentKind::Area { chan_from, chan_to, .. } => vec![self.key_name(chan_from), self.key_name(chan_to)],
+                _ => Vec::new(),
+            })
+            .collect();
+        remove(self);
+        if (self.computed.len(), self.osc.digital.len()) == before {
+            return false;
+        }
+        let comments = std::mem::take(&mut self.comments);
+        self.comments = comments
+            .into_iter()
+            .zip(names)
+            .filter_map(|(mut c, n)| {
+                match &mut c.kind {
+                    CommentKind::Moment { .. } => {}
+                    CommentKind::Level { chan, .. } => *chan = self.key_by_name(&n[0])?,
+                    CommentKind::Area { chan_from, chan_to, .. } => {
+                        *chan_from = self.key_by_name(&n[0])?;
+                        *chan_to = self.key_by_name(&n[1])?;
+                    }
+                    CommentKind::Kept(_) => return None,
+                }
+                Some(c)
+            })
+            .collect();
+        self.comment_hot = None;
+        true
+    }
+
     /// `AliasName`: the displayed name when it differs from the file's.
     fn alias(&self, i: usize, id: &str) -> String {
         let file = comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.codepage);
@@ -386,8 +428,10 @@ impl App {
         // Into rec+0x228 only (`0x44f72c`): nothing retimed, the
         // frequency track not rebuilt (L9.142).
         d.osc.rate_r = f64::from(osc.get_int("DiscretisationFrequensy", d.osc.rate_r as i32));
+        // `0x4156e0` deletes them one by one through `0x42ecf0`, which
+        // sweeps the review list (32860; at an open there are none yet).
         if d.computed.iter().any(is_formula) {
-            d.computed.retain(|c| !is_formula(c));
+            d.removing_channels(|d| d.computed.retain(|c| !is_formula(c)));
             d.selection.retain(|k| !matches!(k, ChanKey::Computed(_)));
             d.channels_changed();
         }
@@ -848,6 +892,49 @@ mod tests {
     use super::*;
     use crate::app::{DEMO_CFG, DEMO_DAT};
     use std::path::{Path, PathBuf};
+
+    /// `0x42ecf0` → `0x440800`: deleting a channel drops the levels / areas
+    /// on it and the kept ones, re-binds the rest by name, keeps moments.
+    #[test]
+    fn removing_a_channel_sweeps_the_review_list() {
+        use crate::app::Computed;
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        let d = &mut app.docs[0];
+        let n = d.osc.sample_count();
+        for name in ["X", "Y"] {
+            d.computed.push(Computed::new(name.into(), "Ua".into(), vec![0.0; n], egui::Color32::RED));
+        }
+        d.channels_changed();
+        let c = |kind| Comment { kind, text: String::new(), locked: false, hidden: false };
+        let kept = CommentRec {
+            kind: CommentKindRec::Level { channel: "Нет".into(), y: 0.0, from: 0, to: 1 },
+            text: String::new(),
+            locked: false,
+            visible: true,
+        };
+        d.comments = vec![
+            c(CommentKind::Level { chan: ChanKey::Computed(1), value: 1.0, from: 0, to: 5 }),
+            c(CommentKind::Level { chan: ChanKey::Computed(0), value: 2.0, from: 0, to: 5 }),
+            c(CommentKind::Area { chan_from: ChanKey::Analog(0), chan_to: ChanKey::Analog(1), from: 0, to: 5 }),
+            c(CommentKind::Moment { pos: 3 }),
+            c(CommentKind::Kept(Box::new(kept))),
+        ];
+        d.comment_hot = Some(1);
+        assert!(!d.removing_channels(|_| {}), "nothing removed: no sweep");
+        assert_eq!(d.comments.len(), 5);
+        assert!(d.removing_channels(|d| d.computed.retain(|c| c.name != "X")));
+        let kinds: Vec<_> = d.comments.iter().map(|c| c.kind.clone()).collect();
+        assert_eq!(
+            kinds,
+            [
+                CommentKind::Level { chan: ChanKey::Computed(0), value: 1.0, from: 0, to: 5 },
+                CommentKind::Area { chan_from: ChanKey::Analog(0), chan_to: ChanKey::Analog(1), from: 0, to: 5 },
+                CommentKind::Moment { pos: 3 },
+            ]
+        );
+        assert_eq!(d.comment_hot, None);
+    }
 
     fn temp_dir(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("fv_setfile_{tag}_{}", std::process::id()));

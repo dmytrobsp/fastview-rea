@@ -45,7 +45,7 @@ impl App {
         }
         let names: Vec<String> = self.formula_page.rows.iter().map(|r| r.0.clone()).collect();
         if let Some(d) = self.active_doc_mut() {
-            d.computed.retain(|c| !crate::setfile::is_formula(c) || names.contains(&c.name));
+            d.removing_channels(|d| d.computed.retain(|c| !crate::setfile::is_formula(c) || names.contains(&c.name)));
             d.channels_changed();
         }
     }
@@ -137,7 +137,7 @@ impl App {
     pub fn fp_load_rows(&mut self, rows: Vec<(String, String)>) {
         let names: Vec<String> = self.formula_page.rows.iter().map(|r| r.0.clone()).collect();
         if let Some(d) = self.active_doc_mut() {
-            d.computed.retain(|c| !crate::setfile::is_formula(c) || !names.contains(&c.name));
+            d.removing_channels(|d| d.computed.retain(|c| !crate::setfile::is_formula(c) || !names.contains(&c.name)));
             d.set.modified = true;
             d.channels_changed();
         }

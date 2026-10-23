@@ -4664,7 +4664,7 @@ Read (vtable sweep of BlockPropertyGrid / BlockProperty; by hand
 `0x407c40`, which flips the row's characteristic (when it has one), then
 SetModifiedFlag(TRUE) on the active frame's document — also for «Тип
 блока»'s value, which has no characteristic — repaints the plane and
-saves the block state (DiagramWnd slot 94; where: L9.157 pending). A
+saves the block state (DiagramWnd slot 94; where: being read). A
 committed parameter edit (`0x407580`) recomputes and saves without the
 modified mark. The grid's WM_LBUTTONDBLCLK handler `0x407640` drops a
 double-click on any BlockProperty row (every group and «Тип блока»: no
@@ -4681,6 +4681,31 @@ reports both clicks) and kept a collapse across block changes. Now
 sets `set.modified`; group-row clicks act only when not the second of a
 double-click; a block change clears the groups' open state. Test
 `grid_group_click_toggles_once_and_marks_modified`.
+
+### L9.157 — Deleting channels sweeps the review list  ·  ✅
+Read (vtable sweep: AreaItem `0x4044c0` / LevelItem `0x471740` validity
+slots, MomentItem `0x43dd60`; by hand `0x42ecf0`, `0x440800`, `0x4044c0`,
+the callers): the remove-channel-by-name routine `0x42ecf0` ends by
+sweeping the review list at `doc+0x840` (`0x440800`): every element whose
+validity slot answers false is erased and the hot element (`doc+0x854`)
+reset. A level is valid while its channel resolves by name, an area while
+both of its channels do (the lookup `0x42edf0` throws otherwise); a moment
+always. Callers: the ОМП clear `0x4a17a0` (four calls), the formula
+page's DDX `0x4863a0`, `0x4156e0` — every formula channel, called by the
+`.set` reader at `0x44f732` (32860; at an open there are none yet) and by
+«Загрузить» at `0x414fb5` —, and the quick analysis's «Рассчитать»
+`0x4167f0` at `0x416f1b`, which deletes the channels it has just added
+when the recompute `0x415780` fails.
+Ours kept every element, and ours binds them by row index — so a deleted
+computed or digital channel left the levels / areas after it pointing at
+the wrong channel. Now `Doc::removing_channels` (names before, the
+removal, re-bound by name after; a level / area whose channel went, and
+every element kept from a `.set` naming a missing channel, dropped;
+`comment_hot` cleared; nothing when no channel went) wraps `fp_update`,
+`fp_load_rows`, `omp_clear` and the 32860 formula drop. Test
+`removing_a_channel_sweeps_the_review_list`.
+Residual: the quick analysis's rollback of its new channels when the
+recompute fails (`0x416ed6`–`0x416f2b`) is not modelled.
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
