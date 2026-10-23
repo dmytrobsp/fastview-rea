@@ -322,10 +322,7 @@ impl OscView<'_> {
 
     /// The times of pending lane `j` against the record.
     fn pasted_times(&self, j: usize) -> Option<(g::PastedTimes<'_>, &crate::merge_ui::ClipChan)> {
-        let doc = self.doc;
-        let p = doc.pending_of(j)?;
-        let t = g::PastedTimes { own: &p.pasted.times, own_rate: p.pasted.rate, rec: &doc.osc.time, rec_rate: doc.osc.sample_rate, offset: doc.merge_offset };
-        Some((t, p))
+        self.doc.pasted_times(j)
     }
 
     /// A pasted analog channel (`0x429490`, bit 14): icon 0 at (leftW + 2,
@@ -1991,7 +1988,16 @@ fn lane_stats(
             let corr = fvb_core::freqcorr::of(&doc.osc);
             let rms = fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n, 1);
             let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n);
-            (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, series(k_main))
+            // A pasted analog channel reads its own samples at the record
+            // time less the offset (`0x461a24`).
+            let val = match doc.pasted_times(*i) {
+                Some((t, p)) => match &p.pasted.channel {
+                    Ok(a) => t.value_at(k_main, a.samples.len(), &|m| a.samples[m]),
+                    Err(_) => series(k_main),
+                },
+                None => series(k_main),
+            };
+            (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, val)
         }
         Lane::Digital(i) => {
             let d = &doc.osc.digital[*i];

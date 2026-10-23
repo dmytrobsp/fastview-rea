@@ -201,6 +201,14 @@ impl Doc {
         self.pending.iter().find(|p| p.name() == c.name)
     }
 
+    /// The time mapping of pending lane `j` against the record and its
+    /// pasted channel.
+    pub fn pasted_times(&self, j: usize) -> Option<(crate::oscgeom::PastedTimes<'_>, &ClipChan)> {
+        let p = self.pending_of(j)?;
+        let t = crate::oscgeom::PastedTimes { own: &p.pasted.times, own_rate: p.pasted.rate, rec: &self.osc.time, rec_rate: self.osc.sample_rate, offset: self.merge_offset };
+        Some((t, p))
+    }
+
     /// Is computed lane `j` a pasted digital channel (drawn as a digital
     /// lane, 20 px)?
     pub fn pending_digital(&self, j: usize) -> bool {

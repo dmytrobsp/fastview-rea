@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 336 pass)
+- `cargo test --workspace`   (currently 337 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2649,6 +2649,32 @@ views readout test.
 Residual: the ADC-mode stats text (ours «отсч.», the original's ""
 through this path — the stats panel's own ADC branch not re-read); the
 «Каналы» dialog's unit column not checked against `0x42bc50`.
+
+### L9.77 — A pending lane's readout; paste deselects first  ·  ✅
+Read by hand: the stats readout `0x461440` at `0x461a24` — for a bit-14
+channel t = `0x454b40`(В1) − `doc+0x6d8`·10⁶; i from 0 while the own time
+`0x428b40`(i) < t; j = i − 1; the value v(j) + (v(i) − v(j))·(t −
+ct(j)) / (ct(i) − ct(j)) with v(m) = 0 for m past the values
+(`0x461b13`–`0x461b5d`). `0x428b40` past its own times returns the last
+time + (i − len + 1)·10⁶/rate **unrounded** (`0x428bb0`–`0x428bf6`; the
+32-bit count wraps, so j = −1 is 2³² − len samples on), own rate `+0x108`
+else `rec+0x228`; with no own times the record's `0x454b40`, which rounds.
+So the readout is the first value (×(1 − ε)) before the paste, falls to 0
+within one own period after its last sample, then 0. Paste `0x45ad02`
+clears `+0x100` of every channel (loop `0x45ae90`–`0x45aec1`, after the
+insertion points are found, before inserting); a pasted channel is created
+selected (`0x424e02` in `0x424cb0`); nothing in the handler (depth 3)
+clears a selection afterwards — L9.20 stands, the L9.71 doubt was wrong.
+`0x463e9d` (named "cursor mapping" in L9.71) is the digital base bar's
+paste shift, done in L9.71.
+Ours read the record-grid resampling, NaN (nothing shown) outside the
+paste, and rounded the own extrapolation. Now
+`oscgeom::PastedTimes::value_at`, `own_time_us` (the record's
+`time_us` keeps rounding; no own times → the record's rate), and
+`Doc::pasted_times`; the stats panel's value of a pending analog lane uses
+it. Test `pasted_value_at_the_cursor`.
+Residual: Max / Min / СКЗ / A1 of a pending lane (ours over the
+resampled series) not read; T(0) as L9.71.
 
 Next in L9 (HANDOFF 2026-10-23, night): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

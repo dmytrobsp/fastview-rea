@@ -675,17 +675,28 @@ pub fn digital_shapes(on: &dyn Fn(usize) -> bool, len: usize, first: usize, f: f
     out
 }
 
-/// Time of sample `i` in µs from a times array in seconds (`0x454b40` for
-/// the record, `0x428b40` for a channel's own): past the end the last time
-/// plus ⌊(i − len + 1)·10⁶/rate⌉ (half up).
+/// Time of record sample `i` in µs from a times array in seconds
+/// (`0x454b40`): past the end the last time plus ⌊(i − len + 1)·10⁶/rate⌉
+/// (half up).
 pub fn time_us(t: &[f64], rate: f64, i: usize) -> f64 {
+    extrapolated_us(t, i, |n| round_half_up(n * 1e6 / rate) as f64)
+}
+
+/// A channel's own sample time (`0x428b40` with own times): the same, but
+/// the step past the end, (i − len + 1)·10⁶/rate, is not rounded.
+pub fn own_time_us(t: &[f64], rate: f64, i: usize) -> f64 {
+    extrapolated_us(t, i, |n| n * 1e6 / rate)
+}
+
+fn extrapolated_us(t: &[f64], i: usize, step: impl Fn(f64) -> f64) -> f64 {
     let t0 = t.first().copied().unwrap_or(0.0);
     match t.get(i) {
         Some(&v) => ((v - t0) * 1e6).round(),
         None => {
             let last = t.last().map_or(0.0, |&v| ((v - t0) * 1e6).round());
-            let n = (i + 1) as f64 - t.len() as f64;
-            last + round_half_up(n * 1e6 / rate) as f64
+            // The index is a 32-bit unsigned count (−1 wraps).
+            let n = (i as u32).wrapping_sub(t.len() as u32).wrapping_add(1);
+            last + step(f64::from(n))
         }
     }
 }
@@ -701,15 +712,38 @@ pub struct PastedTimes<'a> {
 }
 
 impl PastedTimes<'_> {
-    /// `0x428b40`: the channel's own time; the record's without own times;
-    /// the record's rate when its own is 0.
+    /// `0x428b40`: the channel's own time (the record's rate when its own
+    /// is 0); the record's time (`0x454b40`) without own times.
     fn ct(&self, i: usize) -> f64 {
-        let rate = if self.own_rate == 0.0 { self.rec_rate } else { self.own_rate };
         if self.own.is_empty() {
-            time_us(self.rec, rate, i)
-        } else {
-            time_us(self.own, rate, i)
+            return time_us(self.rec, self.rec_rate, i);
         }
+        let rate = if self.own_rate == 0.0 { self.rec_rate } else { self.own_rate };
+        own_time_us(self.own, rate, i)
+    }
+
+    /// The value at record sample `k` the stats panel reads out (`0x461a24`):
+    /// t = T(k) − offset·10⁶; i = the first own sample with ct(i) ≥ t, j =
+    /// i − 1 (−1 wraps to a time 2³² − len samples past the end); v(j) +
+    /// (v(i) − v(j))·(t − ct(j)) / (ct(i) − ct(j)), a sample past the
+    /// values reading 0. So before the first sample the first value (to a
+    /// factor 1 − ε), past the last a fall to 0 within one own period, then
+    /// 0.
+    pub fn value_at(&self, k: usize, n: usize, v: &dyn Fn(usize) -> f64) -> f64 {
+        let t = time_us(self.rec, self.rec_rate, k) - self.offset * 1e6;
+        let i = if n == 0 || t > self.ct(n.saturating_sub(1)) {
+            if n > 0 && t <= self.ct(n) {
+                n
+            } else {
+                return 0.0;
+            }
+        } else {
+            (0..n).find(|&i| self.ct(i) >= t).unwrap_or(n)
+        };
+        let j = i.checked_sub(1).unwrap_or(u32::MAX as usize);
+        let val = |m: usize| if m < n { v(m) } else { 0.0 };
+        let (cj, ci) = (self.ct(j), self.ct(i));
+        val(j) + (val(i) - val(j)) * ((t - cj) / (ci - cj))
     }
 
     /// R/r (`0x4295dc`, `0x42ab37`): 1 when the channel has no rate.
@@ -820,6 +854,29 @@ pub fn base_bar_len(n: usize, f: f64, ratio: f64) -> f32 {
 mod draw_tests {
     use super::*;
     use eframe::egui::Pos2;
+
+    #[test]
+    fn pasted_value_at_the_cursor() {
+        // Record every 0.5 ms; a paste of 1, 2, 3, 4, 5 at 1 kHz from 1 ms.
+        let rec: Vec<f64> = (0..20).map(|i| f64::from(i) / 2000.0).collect();
+        let own: Vec<f64> = (0..5).map(|i| f64::from(i) / 1000.0).collect();
+        let vals = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let p = PastedTimes { own: &own, own_rate: 1000.0, rec: &rec, rec_rate: 2000.0, offset: 0.001 };
+        let at = |k: usize| p.value_at(k, 5, &|m| vals[m]);
+        assert_eq!(at(2), 1.0, "on the first sample");
+        assert_eq!(at(4), 2.0);
+        assert_eq!(at(5), 2.5, "linear between own samples");
+        // Before the paste: the first value to a factor 1 − ε.
+        assert!((at(0) - 1.0).abs() < 1e-6 && at(0) != 1.0);
+        // Past the last own sample (5 ms): falls to 0 within one period.
+        assert_eq!(at(10), 5.0);
+        assert_eq!(at(11), 2.5);
+        assert_eq!(at(12), 0.0);
+        assert_eq!(at(19), 0.0);
+        // The own step past the end is not rounded (`0x428b40`).
+        assert_eq!(own_time_us(&own, 3000.0, 5), 4000.0 + 1e6 / 3000.0);
+        assert_eq!(time_us(&own, 3000.0, 5), 4333.0);
+    }
 
     #[test]
     fn pasted_times_and_positions() {
