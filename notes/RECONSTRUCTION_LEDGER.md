@@ -3880,6 +3880,34 @@ glyphs, one per branch). The spec's form range corrected.
 Residual: the images are ours (bitmap 395 is the original's artwork);
 DIALOG 509 stays with the ⛔ `.sto` reader (the original never shows it).
 
+### L9.124 — `.osc` start and trigger stamps, the trigger sample, the finder's dates  ·  ✅
+Read (subagent report; by hand: `0x44a690` builds the trigger SYSTEMTIME —
+year byte 0x0B + 2000, month 0x0A, day 9, hour 8, minute 7, second 6,
+milliseconds 10 × byte 5 — after `0x44a570` byte-swaps the info block's
+i16s at 2 / 0x0C / 0x0E and BCD-decodes bytes 5..0x0B): the OSC reader
+(`0x452d42`–`0x452e57`) fills the same four stamp fields the `.cfg`
+loader does — the trigger from the info block, the start (pretrig × N − 1)
+periods of ⌊10⁷ / R⌋ × 100 ns before it (pretrig the i16 at 0x0E, N the
+samples per block — with no pre-trigger blocks the start lands a period
+after the trigger), formatted `%i/%02i/%4i` month first and
+`%i:%02i:%02i.%03i`; `doc+0x214` (the trigger sample) = pretrig × N
+(`0x452d89`), 0 from the document constructor and set back to 0 by the
+`.cfg` / `.cff` writers (`0x44d6c5`, `0x44daaa`); the finder (`0x46c730`)
+takes the version from block 0 and its date / time from the info block
+at 128 · H, BCD-decoded, without milliseconds.
+Ours left `.osc` stamps empty (the parameters bar, the print header,
+«Абсолютное время», the clipboard header, merge method 0 and a `.cfg`
+Save-As all saw defaults) and the finder read block 0's raw bytes. Now
+`comtrade::{osc_trigger, osc_stamps}`, `Oscillogram::trigger_sample`
+(reset by a COMTRADE Save-As in `save_doc_to`), `finder::read_osc_header`
+on the info block. Tests `osc_stamps_from_the_info_block`,
+`osc_header_and_filters` (the layout corrected).
+Residual: R is our first block's rate (the original's `rec+0x228` after
+all blocks — equal unless the rate changes); invalid BCD leaves stamps
+empty (the original reads an uninitialised value); the trigger sample's
+uses — the dotted trigger line, ruler / readouts / samples mode relative
+to it, the difference band — in L9.125.
+
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -4057,8 +4085,8 @@ it is not byte-verified against a device file).
 Verdict: 🟡 **PARTIAL** (all readers present).
 - ✅ `.cfg`/`.dat` file-type rule, ✅ `.cff` read/write, ✅ `.osc` read.
 - ✅ `.osc` Save-As (`0x44ca80` writes the record's own bytes under the new
-  name; ours copies the file — triaged 2026-10-23); OSC trigger/start
-  time stamps not kept (our record has no time-stamp fields); unit-prefix
+  name; ours copies the file — triaged 2026-10-23); (OSC stamps and the
+  trigger sample: L9.124 / L9.125); unit-prefix
   table beyond micro/milli NOT DETERMINED.
 - ⛔ `.sto` — needs the native ConvertSto2Comtrade and a sample file.
 - Not modelled: the temp-folder mechanics, `<base>.set` files, the
