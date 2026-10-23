@@ -88,7 +88,11 @@ impl Device {
     /// The whole sheet as the printable area (PDF, the CUPS spooler and the
     /// preview).
     pub fn sheet(setup: &PageSetup, dpi: f32) -> Device {
-        let (w, h) = setup.sheet_mm();
+        Device::paper(setup.sheet_mm(), dpi)
+    }
+
+    /// A whole sheet of `(w, h)` mm, already oriented, as the printable area.
+    pub fn paper((w, h): (f32, f32), dpi: f32) -> Device {
         Device { w: (w / 25.4 * dpi).round() as usize, h: (h / 25.4 * dpi).round() as usize, dpi, sheet_mm: (w, h), offset: (0, 0) }
     }
 

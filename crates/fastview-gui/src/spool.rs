@@ -24,6 +24,26 @@ pub fn print(printer: &str, title: &str, pages: &[Canvas], dev: &Device, setup: 
     imp::print(printer, title, pages, dev, setup)
 }
 
+/// The paper of a CUPS printer: the starred choice of the `PageSize` line of
+/// `lpoptions -l` («PageSize/Media Size: Letter *A4 …»), in mm portrait.
+/// The original lays pages out on the printer DC's own paper (GDI caps,
+/// L9.22); unknown names give `None` (A4).
+#[cfg(any(not(windows), test))]
+pub fn cups_paper(lpoptions: &str) -> Option<(f32, f32)> {
+    let line = lpoptions.lines().find(|l| l.starts_with("PageSize/") || l.starts_with("PageSize:"))?;
+    let choice = line.split_once(':')?.1.split_whitespace().find_map(|c| c.strip_prefix('*'))?;
+    let name = choice.split('.').next().unwrap_or(choice).to_ascii_lowercase();
+    Some(match name.as_str() {
+        "a3" => (297.0, 420.0),
+        "a4" => (210.0, 297.0),
+        "a5" => (148.0, 210.0),
+        "b5" => (176.0, 250.0),
+        "letter" => (215.9, 279.4),
+        "legal" => (215.9, 355.6),
+        _ => return None,
+    })
+}
+
 /// The pages as a PDF (sheet size from the device).
 pub fn pdf_bytes(pages: &[Canvas], dev: &Device) -> Vec<u8> {
     let (w, h) = (dev.sheet_mm.0 / 25.4 * 72.0, dev.sheet_mm.1 / 25.4 * 72.0);
@@ -47,8 +67,11 @@ mod imp {
         (list, default)
     }
 
-    pub fn device(_printer: &str, _setup: &PageSetup) -> Option<Device> {
-        None
+    /// The printer's default paper from CUPS, oriented by the page setup.
+    pub fn device(printer: &str, setup: &PageSetup) -> Option<Device> {
+        let out = Command::new("lpoptions").args(["-p", printer, "-l"]).env("LC_ALL", "C").output().ok()?;
+        let (w, h) = cups_paper(&String::from_utf8_lossy(&out.stdout))?;
+        Some(Device::paper(if setup.portrait { (w, h) } else { (h, w) }, PDF_DPI))
     }
 
     pub fn print(printer: &str, title: &str, pages: &[Canvas], dev: &Device, _setup: &PageSetup) -> Result<(), String> {
@@ -212,5 +235,19 @@ mod imp {
             DeleteDC(hdc);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cups_paper_from_lpoptions() {
+        let out = "PageSize/Media Size: Letter Legal *A4 A5 Env10\nDuplex/2-Sided Printing: *None DuplexNoTumble\n";
+        assert_eq!(cups_paper(out), Some((210.0, 297.0)));
+        assert_eq!(cups_paper("PageSize/Media Size: *Letter A4"), Some((215.9, 279.4)));
+        assert_eq!(cups_paper("PageSize/Media Size: *Custom.100x200mm"), None);
+        assert_eq!(cups_paper("Duplex/2-Sided: *None"), None);
     }
 }

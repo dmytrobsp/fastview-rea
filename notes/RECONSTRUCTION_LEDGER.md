@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 341 pass)
+- `cargo test --workspace`   (currently 342 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2829,6 +2829,18 @@ channels had no units). Now the same unit rules for every channel. Test
 `unitless_formula_channels_are_not_circle_channels`.
 
 
+### L9.84 — Printing on the CUPS printer's paper  ·  🟡
+Read (L9.22): the original lays its pages out on the printer DC's paper —
+its size and printable area from GDI caps (our Windows path does the
+same). Ours sent every CUPS job as A4. Now `spool::cups_paper` takes the
+starred `PageSize` of `lpoptions -p <printer> -l` (A3, A4, A5, B5, Letter,
+Legal; others and a missing `lpoptions` → A4) and the job is laid out on
+that sheet, oriented by the page setup. Test `cups_paper_from_lpoptions`.
+Residual: CUPS hardware margins (the PPD's ImageableArea) not taken (the
+whole sheet is the printable area); the preview and the PDF-file entry
+stay A4; the «Параметры страницы» paper field still reads «A4».
+
+
 Next in L9 (HANDOFF 2026-10-23, evening 2): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -2880,9 +2892,8 @@ characteristic extents (L9.75); a pending lane's Max / Min / СКЗ / A1
 (L9.77, not read); a pasted Hz channel's place among the frequency
 candidates and the formula frequency channel excluded from its own
 correction (L9.78); 539's two-method-keys `.set` edge and which «Группа:»
-combo shows under «Не учитывать» (`0x4831b0`, L9.79); L9.22 print
-residuals (paper; the logo bitmap stays out — it is the original's
-asset); L9.6 digital level-line snap (reachable only through a `.set`);
+combo shows under «Не учитывать» (`0x4831b0`, L9.79); L9.22 / L9.84 print residuals (CUPS hardware margins, the preview's
+paper; the logo bitmap stays out — it is the original's asset); L9.6 digital level-line snap (reachable only through a `.set`);
 keytips (MFC's ribbon keytip machinery — the program sets only Печать «p»
 / «w»); L9.27 MFC's intermediate ribbon reductions; L9.64's slot +0x1f0
 and the MDI arrangements; pane re-docking (egui limit). Good recurring
