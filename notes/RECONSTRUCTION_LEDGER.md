@@ -3341,7 +3341,7 @@ dockleft|dockbottom|docktab|dockmarkers`. Tests
 `workspace_round_trip`; rendered all four.
 Residual: the marker bitmaps are ours (drawn boxes and arrows, MFC's
 17117…17127 are its own); (a tab dragged out: L9.102; reordered: L9.105); the dock rows of several panes on one edge
-are separate containers; Ctrl (no docking while held) not modelled;
+are separate containers; (Ctrl held: L9.128);
 Частотная's default stays below the group, and Дифференциальная in the
 group's tabs (the user's screenshot, L9.3 — the original's creates dock
 Частотная on the bottom edge and Дифференциальная on the inner side of
@@ -3486,7 +3486,7 @@ Residual: the default stays the user's screenshot (one group, Частотная
 below it — L9.3); several containers on one edge are still separate rows;
 a slot's children split in pane order (MFC keeps the split tree it built);
 the caption double-click / pin / drag act on the whole group (as read in
-L9.92) — Ctrl and the animation switch still not modelled.
+L9.92) — the animation switch still not modelled (Ctrl: L9.128).
 
 ### L9.108 — Document tabs: MDI tabbed groups as FastView sets them; tabs reorder by dragging  ·  ✅
 Read (by hand): the frame's OnCreate builds a `CMDITabInfo` (MFC
@@ -3960,6 +3960,22 @@ menu, a click on its lower part opens it (`kt_menu`); the older looks
 keep the text button (their visual managers' button NOT DETERMINED).
 Test `the_round_application_button_opens_from_its_lower_half`; rendered.
 Residual: the orb's look is drawn (the style's bitmap not reproduced).
+
+### L9.128 — Smart docking: nothing docks while Ctrl is held  ·  ✅
+Read (by hand, mfc120u): CDockingManager's vtable slot 17
+(`0x1008c83e`, OnMoveMiniFrame) returns TRUE at once when
+GetKeyState(VK_CONTROL) is negative (`0x1008c860`) — no marker update;
+the expected-rect calculation skips its work under the same test
+(`0x1008c49b`, no preview); the drop (`0x1008a27f`) skips docking when
+GetAsyncKeyState(VK_CONTROL) is negative (`0x1008a2cd`). So a pane
+dragged with Ctrl held just moves and stays floating where it is let go.
+Ours docked on whatever marker was under the pointer. Now
+`dock_drag_frame` takes no hot marker while Ctrl is down (no preview, no
+drop; the window follows the pointer). Test
+`smart_docking_drops_on_the_markers` (a Ctrl-held drag onto the group's
+centre stays floating, moved).
+Residual: the marker that was hot when Ctrl went down stays lit in MFC
+(markers not updated — INFERRED from the early return); ours unlights it.
 
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

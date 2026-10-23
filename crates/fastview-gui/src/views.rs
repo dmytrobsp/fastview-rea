@@ -471,7 +471,11 @@ impl App {
             (_, Some(p)) if docs.contains(p) => markers.extend(crate::docking::five_way(docs, false)),
             _ => {}
         }
-        let hot = pos.and_then(|p| crate::docking::hit_marker(&markers, p));
+        // With Ctrl held nothing docks: the move handler returns at once
+        // (`OnMoveMiniFrame` `0x1008c860`), no expected rect (`0x1008c49b`),
+        // no drop (`0x1008a2cd`) — the window just moves.
+        let ctrl = ctx.input(|i| i.modifiers.ctrl);
+        let hot = pos.filter(|_| !ctrl).and_then(|p| crate::docking::hit_marker(&markers, p));
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("fv_dock_markers")));
         // The drop preview (`CalcExpectedDockedRect` `0x1008c45d`): along a
         // frame edge (outer) or the document area (inner) as thick as the

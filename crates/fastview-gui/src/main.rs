@@ -427,9 +427,14 @@ mod window_tests {
 
     /// Runs whole-window frames at `size`, one per event batch.
     fn frames(app: &mut App, ctx: &egui::Context, size: Vec2, batches: Vec<Vec<egui::Event>>) {
+        frames_held(app, ctx, size, batches, egui::Modifiers::NONE);
+    }
+
+    /// [`frames`] with `modifiers` held throughout.
+    fn frames_held(app: &mut App, ctx: &egui::Context, size: Vec2, batches: Vec<Vec<egui::Event>>, modifiers: egui::Modifiers) {
         for events in batches {
             let t = ctx.input(|i| i.time) + 0.05;
-            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), time: Some(t), events, ..Default::default() };
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), time: Some(t), events, modifiers, ..Default::default() };
             let _ = ctx.run(raw, |ctx| app.frame_ui(ctx));
         }
     }
@@ -523,17 +528,19 @@ mod window_tests {
     struct Win {
         ctx: egui::Context,
         app: App,
+        /// The modifier keys held.
+        held: egui::Modifiers,
     }
 
     impl Win {
         fn new() -> Win {
-            let mut w = Win { ctx: egui::Context::default(), app: demo(&[]) };
+            let mut w = Win { ctx: egui::Context::default(), app: demo(&[]), held: egui::Modifiers::NONE };
             w.idle(3);
             w
         }
 
         fn run(&mut self, events: Vec<egui::Event>) {
-            frames(&mut self.app, &self.ctx, Vec2::new(1320.0, 860.0), vec![events]);
+            frames_held(&mut self.app, &self.ctx, Vec2::new(1320.0, 860.0), vec![events], self.held);
         }
 
         fn idle(&mut self, n: usize) {
@@ -812,6 +819,25 @@ mod window_tests {
         drag(&mut w, tab, &nowhere);
         assert_eq!((w.app.docks[Unit::Frequency].place, w.app.docks[Unit::Frequency].spot), (Place::Floating, Spot::Tab(Unit::Vector)));
         assert_eq!((w.app.docks[Unit::Vector].place, w.app.dock_views_shown()), (Place::Docked, 2));
+        // With Ctrl held nothing docks (`0x1008c860`, `0x1008a2cd`): the
+        // floating Частотная released on the group's centre marker stays
+        // floating where it was let go.
+        let fr = w.app.docks[Unit::Frequency].float_rect.expect("floating");
+        let from = Pos2::new(fr.left() + 40.0, fr.top() + 8.0);
+        w.held = egui::Modifiers::CTRL;
+        w.run(vec![egui::Event::PointerMoved(from)]);
+        w.run(vec![ev(from, true)]);
+        w.idle(2);
+        let to = centre(&w.app);
+        for k in 1..=4 {
+            w.run(vec![egui::Event::PointerMoved(from + (to - from) * (k as f32 / 4.0))]);
+        }
+        w.run(vec![ev(to, false)]);
+        w.idle(3);
+        w.held = egui::Modifiers::NONE;
+        assert_eq!(w.app.docks[Unit::Frequency].place, Place::Floating, "Ctrl held: no dock");
+        let moved = w.app.docks[Unit::Frequency].float_rect.unwrap();
+        assert!((moved.min - (fr.min + (to - from))).length() < 2.0, "it moved with the pointer: {fr:?} → {moved:?}");
     }
 
     /// The group's panes are units of their own (`0x474e10` creates four
@@ -868,7 +894,7 @@ mod window_tests {
     /// keeps MFC's `OnShowMDITabContextMenu`, slot 117).
     #[test]
     fn a_document_tab_dragged_over_another_swaps_with_it() {
-        let mut w = Win { ctx: egui::Context::default(), app: demo(&[app::Command::Demo]) };
+        let mut w = Win { ctx: egui::Context::default(), app: demo(&[app::Command::Demo]), held: egui::Modifiers::NONE };
         w.idle(3);
         let serials = |w: &Win| w.app.docs.iter().map(|d| d.serial).collect::<Vec<_>>();
         let before = serials(&w);
