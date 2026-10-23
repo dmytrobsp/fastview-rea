@@ -66,12 +66,33 @@ pub struct PairDialog {
 }
 
 /// DIALOG 353 «Настройки частотной диаграммы».
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FreqDialog {
     pub percent: bool,
     pub use_rms: bool,
-    pub harmonics: usize,
-    pub periods: usize,
+    /// The two int edits as typed (0x3fe NumHarmonics, 0x401 NumPeriods).
+    pub harmonics: String,
+    pub periods: String,
+}
+
+/// DIALOG 353's exchange on OK (`0x46ee70`): 0x401 (periods) an int in
+/// [1, N div (R div trunc f)], then 0x3fe (harmonics) an int in [1,
+/// trunc(R/f · 0.5) · periods] — N the record's samples, R rec+0x228, f
+/// the network frequency; the first failure is MFC's message and the
+/// dialog stays (AFX_IDP_PARSE_INT / AFX_IDP_PARSE_INT_RANGE).
+pub fn freq_dialog_exchange(periods: &str, harmonics: &str, n: usize, r: f64, f: f64) -> Result<(usize, usize), String> {
+    let int = |s: &str| s.trim().parse::<i32>().map_err(|_| "Введите целое число.".to_string());
+    let range = |v: i32, max: i64| {
+        if v < 1 || i64::from(v) > max {
+            Err(format!("Введите целое число от 1 до {max}."))
+        } else {
+            Ok(v as usize)
+        }
+    };
+    let spp = (r as u32).checked_div(f as u32).filter(|&s| s > 0).unwrap_or(1);
+    let p = range(int(periods)?, (n as u32 / spp) as i64)?;
+    let h = range(int(harmonics)?, i64::from((r / f * 0.5) as i32) * p as i64)?;
+    Ok((p, h))
 }
 
 pub struct DiagState {
@@ -772,8 +793,8 @@ impl App {
                 self.diag.freq_dlg = Some(FreqDialog {
                     percent: self.freq_percent,
                     use_rms: self.freq_use_rms,
-                    harmonics: self.freq_harmonics,
-                    periods: self.freq_periods,
+                    harmonics: self.freq_harmonics.to_string(),
+                    periods: self.freq_periods.to_string(),
                 })
             }
         }
@@ -1501,10 +1522,10 @@ impl App {
                 ui.label("Расчет значений");
                 egui::Grid::new("freq_calc").num_columns(2).show(ui, |ui| {
                     ui.label("Число гармоник:");
-                    ui.add(egui::DragValue::new(&mut dlg.harmonics).range(1..=200));
+                    ui.add(egui::TextEdit::singleline(&mut dlg.harmonics).desired_width(60.0));
                     ui.end_row();
                     ui.label("Число обрабатываемых периодов:");
-                    ui.add(egui::DragValue::new(&mut dlg.periods).range(1..=50));
+                    ui.add(egui::TextEdit::singleline(&mut dlg.periods).desired_width(60.0));
                     ui.end_row();
                 });
             });
@@ -1524,12 +1545,22 @@ impl App {
         }
     }
 
-    /// OK of DIALOG 353.
+    /// OK of DIALOG 353: the exchange as read, or the message with the
+    /// dialog kept.
     fn apply_freq_dialog(&mut self, dlg: FreqDialog) {
-        self.freq_percent = dlg.percent;
-        self.freq_use_rms = dlg.use_rms;
-        self.freq_harmonics = dlg.harmonics.max(1);
-        self.freq_periods = dlg.periods.max(1);
+        let (n, r, f) = self.active_doc().map_or((usize::MAX, 0.0, 50.0), |d| (d.osc.sample_count(), d.osc.rate_r, d.osc.line_freq));
+        match freq_dialog_exchange(&dlg.periods, &dlg.harmonics, n, r, f) {
+            Ok((p, h)) => {
+                self.freq_percent = dlg.percent;
+                self.freq_use_rms = dlg.use_rms;
+                self.freq_periods = p;
+                self.freq_harmonics = h;
+            }
+            Err(m) => {
+                self.dlg.push_alert(m);
+                self.diag.freq_dlg = Some(dlg);
+            }
+        }
     }
 }
 
@@ -1957,9 +1988,25 @@ mod tests {
         h.frame(vec![], Default::default());
         assert!(h.app.diag.freq_dlg.is_some() && h.app.freq_percent, "not applied before OK");
         let dlg = h.app.diag.freq_dlg.take().unwrap();
-        h.app.apply_freq_dialog(FreqDialog { periods: 0, ..dlg });
+        h.app.apply_freq_dialog(FreqDialog { periods: "0".into(), ..dlg });
+        let o = &h.app.active_doc().unwrap().osc;
+        let max = o.sample_count() / (o.rate_r as usize / o.line_freq as usize);
+        assert_eq!(h.app.dlg.alerts.front().map(|a| a.0.as_str()), Some(format!("Введите целое число от 1 до {max}.").as_str()), "the record's whole periods");
+        assert!(h.app.diag.freq_dlg.is_some() && h.app.freq_percent, "kept, nothing applied");
+        let dlg = h.app.diag.freq_dlg.take().unwrap();
+        h.app.apply_freq_dialog(FreqDialog { periods: "2".into(), harmonics: "20".into(), ..dlg });
         assert!(!h.app.freq_percent);
-        assert_eq!(h.app.freq_periods, 1, "at least one period");
+        assert_eq!((h.app.freq_periods, h.app.freq_harmonics), (2, 20));
+    }
+
+    /// `0x46ee70`'s checks: MFC's int parse, then the two ranges.
+    #[test]
+    fn frequency_dialog_exchange_as_read() {
+        assert_eq!(freq_dialog_exchange(" 3 ", "+30", 1000, 1000.0, 50.0), Ok((3, 30)));
+        assert_eq!(freq_dialog_exchange("2.5", "1", 1000, 1000.0, 50.0), Err("Введите целое число.".into()));
+        assert_eq!(freq_dialog_exchange("51", "1", 1000, 1000.0, 50.0), Err("Введите целое число от 1 до 50.".into()));
+        assert_eq!(freq_dialog_exchange("2", "21", 1000, 1000.0, 50.0), Err("Введите целое число от 1 до 20.".into()), "trunc(10) × 2 periods");
+        assert_eq!(freq_dialog_exchange("x", "x", 1000, 1000.0, 50.0), Err("Введите целое число.".into()), "the first failure");
     }
 
     /// Records whose units carry SI prefixes and Cyrillic letters («кВ»,

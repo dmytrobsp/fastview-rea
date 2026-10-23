@@ -4069,8 +4069,7 @@ NoOverlap is an error box; the rate field parses an i32. Tests
 `a_failed_open_is_reported_in_a_box`, `no_overlap_is_a_box_and_boxes_queue`,
 `bad_setting_reports_the_formula_and_keeps_old_geometry`.
 Residual: 239 «Выбранные каналы имеют разную частоту» on 33035 (needs a
-per-channel rate; reachable only after a paste); DIALOG 353's DDV ranges
-(«Введите целое число от 1 до N.», ours clamps silently); the print
+per-channel rate; reachable only after a paste); (DIALOG 353: L9.133); the print
 failure's wording (ours «Ошибка печати: …»; MFC's 61702 INFERRED); the
 .sto close warning 190 (.sto ⛔); MessageBeep after «Объединить»; the
 exception types each catch takes ND; 0 / negative rates in DIALOG 392 ND
@@ -4114,6 +4113,23 @@ signal code uses rec+0x228 (they differ only for rates that are not
 multiples of f and multi-rate `.cfg`s); a rate-0 `.cfg`'s .dat
 timestamps are not read (R stays 0, the track NaN); the `.set`
 DiscretisationFrequency (rec+0x228 without a rebuild) not modelled.
+
+### L9.133 — «Настройки частотной диаграммы»: the int exchange and its ranges  ·  ✅
+Read (by hand, DoDataExchange `0x46ee70`; the profile keys at `0x4ca468`
+/ `0x4ca480`): 0x401 → NumPeriods through DDX_Text of an int (mfc #3761)
+and DDV_MinMaxInt (#3641) [1, N div (R div trunc f)] — N the samples of
+the first analog channel (`0x431020`), R rec+0x228; then 0x3fe →
+NumHarmonics, an int in [1, trunc(R / f · 0.5) · the periods just read];
+the two checkboxes; on save pane+0x98 / +0x9c and the `Frequency Chart`
+profile. MFC's messages: «Введите целое число.» / «Введите целое число
+от 1 до N.», the first failure only, the dialog stays.
+Ours: two DragValues clamped to 1..=50 / 1..=200 silently. Now text edits
+and `diagram_ui::freq_dialog_exchange`; a failure queues the message and
+keeps the dialog. Tests `frequency_dialog_exchange_as_read`,
+`frequency_settings_dialog_edits_a_copy_until_ok`.
+Residual: MFC moves the focus to the failing edit (ours does not); a
+record whose R div trunc(f) is 0 (the original divides by zero) takes
+1 in ours.
 
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
