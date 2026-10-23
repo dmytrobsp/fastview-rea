@@ -41,6 +41,10 @@ differential diagram. They are appended as ordinary computed channels
   list, restore on failure).
 
 ### The sheet (ledger L9.51)
+Every generated formula is built by the «Добавить…» builder `0x4129e0` in
+its quick mode (`Fn: (a, b)`, the builder's quoting, same-batch channels
+named as they will be appended); the forms, names and order per page are in
+ledger L9.73.
 - 137 (`0x4167f0`): a stack `CMFCPropertySheet` (`0x48b970`) shown with
   DoModal; IDOK → generate (`0x414da0`, `0x415780`), anything else → nothing.
   Look = Outlook bar, 150 px, on the left (`SetLook(1,150)`), icons BITMAP 549
