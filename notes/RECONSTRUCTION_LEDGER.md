@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 340 pass)
+- `cargo test --workspace`   (currently 341 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2817,6 +2817,18 @@ edge, drew the text 1 px low and scaled the 3 px gap in print. Now
 DOC_1999).
 Residual: the text alignment taken as the DC default (top-left).
 
+### L9.83 — Formula channels on the circle diagram by their unit  ·  ✅
+Read (L9.80 / L9.70 together): the circle pane lists, attaches and
+«Показать все»s channels by the canonical unit "Ohm" / "VA" (`0x43d220`,
+`0x436b30`, `0x437150`) and scales a locus by "Ohm" vs anything else
+(`0x43a880`); a formula channel's canonical unit is its walked unit
+(`0x425d70`), "" when the walk finds none — not listed, power scale.
+Ours still treated a unitless computed channel as an Ohm one in the list,
+the Каналы menu and the scale (from before L9.70, when our formula
+channels had no units). Now the same unit rules for every channel. Test
+`unitless_formula_channels_are_not_circle_channels`.
+
+
 Next in L9 (HANDOFF 2026-10-23, evening 2): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -2868,8 +2880,7 @@ characteristic extents (L9.75); a pending lane's Max / Min / СКЗ / A1
 (L9.77, not read); a pasted Hz channel's place among the frequency
 candidates and the formula frequency channel excluded from its own
 correction (L9.78); 539's two-method-keys `.set` edge and which «Группа:»
-combo shows under «Не учитывать» (`0x4831b0`, L9.79); a computed channel
-without a unit on the circle diagram's scale (L9.80); L9.22 print
+combo shows under «Не учитывать» (`0x4831b0`, L9.79); L9.22 print
 residuals (paper; the logo bitmap stays out — it is the original's
 asset); L9.6 digital level-line snap (reachable only through a `.set`);
 keytips (MFC's ribbon keytip machinery — the program sets only Печать «p»

@@ -250,9 +250,8 @@ fn set_chan_flag(d: &mut Doc, w: Window, idx: usize, v: bool) {
 fn listed(w: Window, c: &DChan) -> bool {
     match w {
         Window::Vector => dg::vector_unit_ok(&c.unit),
-        // Our computed channels without a unit (the generator sets only
-        // S0 = VA) are kept on the circle list.
-        Window::Circle => dg::circle_pane_unit_ok(&c.unit) || (c.computed.is_some() && c.unit.is_empty()),
+        // Formula channels by their walked unit like any other (L9.83).
+        Window::Circle => dg::circle_pane_unit_ok(&c.unit),
         Window::Freq => c.analog.is_some(),
         Window::Diff => false,
     }
@@ -353,9 +352,9 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
             };
             [z.re, z.im]
         };
-        // An empty unit (not modelled by our generator) is taken as Ohm.
+        // The canonical unit decides the scale, "" → power (`0x43a880`).
         let unit = c.unit.trim();
-        let power = !unit.is_empty() && !dg::is_ohm(unit);
+        let power = !dg::is_ohm(unit);
         push(c.name.clone(), fvb_core::units::Shown::computed(unit), c.color, power, true, &series);
     }
     // R/X pairs: instantaneous values (`0x426020`: 0 past the values or
@@ -613,9 +612,7 @@ impl App {
             .enumerate()
             .filter(|(_, c)| w == Window::Circle || listed(w, c))
             .map(|(idx, c)| {
-                // A computed channel without a unit is listed as an Ohm one
-                // (see `listed`).
-                let unit = if w == Window::Circle && c.computed.is_some() && c.unit.is_empty() { "Ohm".into() } else { c.unit.clone() };
+                let unit = c.unit.clone();
                 MenuChan { idx, name: c.name.clone(), unit, on: chan_flag(d, w, c) }
             })
             .collect()
@@ -1850,6 +1847,15 @@ mod tests {
         h.app.diag_cmd(Window::Circle, DiagCmd::TogglePair(0), Pos2::ZERO);
         let label = format!("{} {}", names[0], names[1]);
         assert!(plane_loci(h.app.active_doc().unwrap(), false, false).iter().all(|l| l.name != label));
+    }
+
+    /// A formula channel is listed on the circle pane by its unit like any
+    /// other (`0x43d220`): none → not listed (L9.83).
+    #[test]
+    fn unitless_formula_channels_are_not_circle_channels() {
+        let mk = |unit: &str| DChan { name: "Z".into(), unit: unit.into(), shown: Default::default(), color: Color32::RED, analog: None, computed: Some(0) };
+        assert!(!listed(Window::Circle, &mk("")));
+        assert!(listed(Window::Circle, &mk("Ohm")) && listed(Window::Circle, &mk("VA")));
     }
 
     /// The circle range (`0x43a9ed`–`0x43aa41`): N..=len, both bounds
