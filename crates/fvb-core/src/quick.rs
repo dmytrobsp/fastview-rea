@@ -271,7 +271,10 @@ pub enum Braking {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Arm {
     pub currents: Vec<String>,
-    pub reduction: Reduction,
+    /// The checked reduction methods with this arm's values, in the
+    /// generation's order (cast, TT, power, nominal current) — one from the
+    /// page, more only from a hand-edited `.set` (L9.87).
+    pub reductions: Vec<Reduction>,
     pub group: String,
     pub remove_i0: bool,
 }
@@ -288,10 +291,14 @@ pub fn differential(phases: usize, arms: &[Arm], group: &GroupComp, braking: &Br
     let letters: Vec<&str> = if phases == 3 { vec!["a", "b", "c"] } else { vec!["a"] };
     let reduced = |k: usize, l: &str| format!("I{l} плечо {} прив.", k + 1);
     let turned = |k: usize, l: &str| format!("I{l} плечо {} прив. пов.", k + 1);
-    for (k, arm) in arms.iter().enumerate() {
+    // Each checked method emits its lines for every arm (`0x47ff60`: four
+    // independent tests).
+    let methods = arms.iter().map(|a| a.reductions.len()).max().unwrap_or(0);
+    for (m, (k, arm)) in (0..methods).flat_map(|m| arms.iter().enumerate().map(move |ka| (m, ka))) {
+        let Some(reduction) = arm.reductions.get(m) else { continue };
         for (p, l) in letters.iter().enumerate() {
             let src = c(arm.currents.get(p).map_or("", String::as_str));
-            let (f, args) = match &arm.reduction {
+            let (f, args) = match reduction {
                 Reduction::Priv { k } => ("CoeffPriv", vec![src, num(k)]),
                 Reduction::Tt { ktt, ktt_base } => ("CoeffTT", vec![src, num(ktt), num(ktt_base)]),
                 Reduction::PowerPriv { ktt, snom, unom } => ("CoeffPowerPriv", vec![src, num(ktt), num(snom), num(unom)]),

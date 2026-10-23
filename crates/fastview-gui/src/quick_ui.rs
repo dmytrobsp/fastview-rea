@@ -53,8 +53,11 @@ pub struct QuickForms {
     pub arms: Vec<ArmForm>,
     /// «Приведение плеч», page-wide (radios 2080–2083 are never stored per
     /// arm, `0x482ca0`): 0 CoeffPriv, 1 CoeffTT, 2 CoeffPowerPriv, 3
-    /// CoeffAmpPriv.
+    /// CoeffAmpPriv — the one the page's radios set.
     pub dif_reduction: u8,
+    /// Further radios checked by a `.set` with more than one method key
+    /// (the load checks each independently, `0x4844a0`); cleared by a click.
+    pub dif_also: Vec<u8>,
     /// «Учет группы соединений», page-wide: 0 none, 1 GrsPosl, 2
     /// GrsTriangle.
     pub dif_group: u8,
@@ -150,6 +153,7 @@ impl Default for QuickForms {
             dif_arms: 2,
             arms: vec![ArmForm::default(); ARM_SLOTS],
             dif_reduction: 2,
+            dif_also: Vec::new(),
             dif_group: 0,
             braking: 0,
             k_torm: "0.5".into(),
@@ -205,6 +209,20 @@ fn chosen(s: &str) -> bool {
 }
 
 impl QuickForms {
+    /// 539's checked reduction methods in the generation's order (cast 0,
+    /// TT 1, power 2, nominal current 3 — `0x47ff60`).
+    pub fn dif_methods(&self) -> Vec<u8> {
+        (0..4).filter(|m| *m == self.dif_reduction || self.dif_also.contains(m)).collect()
+    }
+
+    /// The method whose edit block is enabled: the enablers run per checked
+    /// radio in the order power, nominal current, cast, TT (`0x4844a0`), so
+    /// the last checked one in that order.
+    pub fn dif_edit_method(&self) -> u8 {
+        let m = self.dif_methods();
+        [2, 3, 0, 1].into_iter().rev().find(|x| m.contains(x)).unwrap_or(self.dif_reduction)
+    }
+
     /// Whether «Рассчитать» is enabled on `tab` (the page's check, slot
     /// 0x1d0): 536 `0x48d5a0` — each group not switched off needs its
     /// combos (Ib unless calculated; Ua–Uc or Uab / Ubc by the radio); 538
@@ -304,16 +322,20 @@ impl QuickForms {
             AnalysisTab::Differential => {
                 // The methods are the page's radios, the values each
                 // arm's own (`0x47ff60`).
+                let methods = self.dif_methods();
                 let arms: Vec<Arm> = self.arms[..self.dif_arms]
                     .iter()
                     .map(|a| Arm {
                         currents: a.currents[..self.dif_phases].to_vec(),
-                        reduction: match self.dif_reduction {
-                            0 => Reduction::Priv { k: a.kpriv.clone() },
-                            1 => Reduction::Tt { ktt: a.tt_ktt.clone(), ktt_base: a.tt_base.clone() },
-                            2 => Reduction::PowerPriv { ktt: a.pw_ktt.clone(), snom: a.snom.clone(), unom: a.unom.clone() },
-                            _ => Reduction::AmpPriv { ktt: a.amp_ktt.clone(), inom: a.inom.clone() },
-                        },
+                        reductions: methods
+                            .iter()
+                            .map(|m| match m {
+                                0 => Reduction::Priv { k: a.kpriv.clone() },
+                                1 => Reduction::Tt { ktt: a.tt_ktt.clone(), ktt_base: a.tt_base.clone() },
+                                2 => Reduction::PowerPriv { ktt: a.pw_ktt.clone(), snom: a.snom.clone(), unom: a.unom.clone() },
+                                _ => Reduction::AmpPriv { ktt: a.amp_ktt.clone(), inom: a.inom.clone() },
+                            })
+                            .collect(),
                         group: if self.dif_group == 2 { a.tri_group.clone() } else { a.seq_group.clone() },
                         remove_i0: a.remove_i0,
                     })
@@ -737,11 +759,18 @@ fn differential_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
     let cur = f.cur_arm;
     group(ui, "Приведение плеч", None, |ui| {
         egui::Grid::new("q_dif_red").num_columns(2).show(ui, |ui| {
-            ui.radio_value(&mut f.dif_reduction, 2, "По мощности");
-            ui.radio_value(&mut f.dif_reduction, 0, "По коэффициенту приведения");
+            let checked = f.dif_methods();
+            let mut radio = |ui: &mut egui::Ui, m: u8, text: &str| {
+                if ui.radio(checked.contains(&m), text).clicked() {
+                    f.dif_reduction = m;
+                    f.dif_also.clear();
+                }
+            };
+            radio(ui, 2, "По мощности");
+            radio(ui, 0, "По коэффициенту приведения");
             ui.end_row();
-            ui.radio_value(&mut f.dif_reduction, 3, "По номинальному току");
-            ui.radio_value(&mut f.dif_reduction, 1, "По коэффициенту трансформации ТТ");
+            radio(ui, 3, "По номинальному току");
+            radio(ui, 1, "По коэффициенту трансформации ТТ");
             ui.end_row();
         });
     });
@@ -754,7 +783,7 @@ fn differential_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
             });
         });
     });
-    let (r, grp) = (f.dif_reduction, f.dif_group);
+    let (r, grp) = (f.dif_edit_method(), f.dif_group);
     ui.horizontal(|ui| {
         if ui.add_enabled(cur > 0, egui::Button::new("<<")).clicked() {
             f.cur_arm -= 1;
@@ -801,7 +830,9 @@ fn differential_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
             cell_edit(ui, r == 1, "Kттбаз", &mut arm.tt_base);
             ui.end_row();
             // Two «Группа:» combos at one place, one per method.
-            let (groups, value): (&[&str], &mut String) = if grp == 2 {
+            // With one phase the sequence combo shows, whatever the radio
+            // (`0x483ab0`).
+            let (groups, value): (&[&str], &mut String) = if three && grp == 2 {
                 (&["0", "1", "11"], &mut arm.tri_group)
             } else {
                 (&["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"], &mut arm.seq_group)
@@ -1049,7 +1080,12 @@ fn initial_arm(items: &[String]) -> ArmForm {
 /// initial arm, then each `Leg_%d` over its own slot — a missing value
 /// keeps the initial one; the last arm is the one shown.
 fn load_diff(f: &mut QuickForms, sec: &mut SetNode, items: &[String]) {
-    f.dif_reduction = load_radio(sec.child_mut("legOption"), &REDUCTION_KEYS);
+    // Each stored key checks its radio on its own (`0x4844a0`); none
+    // checked → «По мощности».
+    let opt = sec.child_mut("legOption");
+    let on: Vec<u8> = REDUCTION_KEYS.iter().filter(|(k, _)| load_check(opt, k) == Some(true)).map(|&(_, v)| v).collect();
+    f.dif_reduction = on.first().copied().unwrap_or(REDUCTION_KEYS[0].1);
+    f.dif_also = on.iter().skip(1).copied().collect();
     f.dif_group = load_radio(sec.child_mut("groupConnOption"), &GROUP_KEYS);
     f.braking = load_radio(sec.child_mut("brakeCurrOption"), &BRAKE_KEYS);
     let counts: Vec<String> = (2..=24).map(|k| k.to_string()).collect();
@@ -1086,7 +1122,12 @@ fn load_diff(f: &mut QuickForms, sec: &mut SetNode, items: &[String]) {
 /// arm's `Leg_%d` with both group numbers (higher `Leg_` nodes of a former,
 /// larger count stay).
 fn save_diff(f: &QuickForms, sec: &mut SetNode) {
-    for (node, keys, v) in [("legOption", &REDUCTION_KEYS[..], f.dif_reduction), ("groupConnOption", &GROUP_KEYS[..], f.dif_group), ("brakeCurrOption", &BRAKE_KEYS[..], f.braking)] {
+    let methods = f.dif_methods();
+    let c = sec.child_mut("legOption");
+    for (k, kv) in REDUCTION_KEYS {
+        save_check(c, k, methods.contains(&kv));
+    }
+    for (node, keys, v) in [("groupConnOption", &GROUP_KEYS[..], f.dif_group), ("brakeCurrOption", &BRAKE_KEYS[..], f.braking)] {
         let c = sec.child_mut(node);
         for (k, kv) in keys {
             save_check(c, k, *kv == v);
@@ -1195,6 +1236,29 @@ mod tests {
         assert_eq!(g.arms[2].kpriv, "1.");
         assert_eq!((g.arms[0].kpriv.as_str(), g.arms[0].seq_group.as_str(), g.arms[0].tri_group.as_str()), ("2.5", "5", "11"));
         assert_eq!((g.braking, g.dif_group, g.dif_reduction), (2, 2, 2), "no reduction key: «По мощности»");
+    }
+
+    /// A `.set` with two method keys (`0x4844a0`): both radios checked,
+    /// the last enabler's block (power, nominal, cast, TT order) editable,
+    /// both reductions emitted in the generation's order (`0x47ff60`).
+    #[test]
+    fn two_stored_methods_both_reduce() {
+        let mut sec = SetNode::default();
+        let opt = sec.child_mut("legOption");
+        opt.set_int("byPowerState", 1);
+        opt.set_int("byCastCoeffState", 1);
+        let mut f = QuickForms::default();
+        load_page(4, &mut f, &mut sec, &[]);
+        assert_eq!((f.dif_methods(), f.dif_edit_method()), (vec![0, 2], 0));
+        let g = f.generate(AnalysisTab::Differential, &[]);
+        let firsts: Vec<&str> = g.channels.iter().map(|(_, t)| t.as_str()).take(6).collect();
+        assert!(firsts[0].starts_with("CoeffPriv") && firsts[2].starts_with("CoeffPriv"), "{firsts:?}");
+        let n_power = g.channels.iter().filter(|(_, t)| t.starts_with("CoeffPowerPriv")).count();
+        assert_eq!(n_power, 2 * 3, "every arm and phase");
+        let mut back = SetNode::default();
+        save_page(4, &f, &mut back);
+        let o = back.child("legOption").unwrap();
+        assert_eq!((o.attrs["byPowerState"].as_str(), o.attrs["byCastCoeffState"].as_str(), o.attrs["byTransCoeffState"].as_str()), ("1", "1", "0"));
     }
 
     /// 539's generation: the page's methods for every arm, each arm's own

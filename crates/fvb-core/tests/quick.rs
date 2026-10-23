@@ -99,7 +99,7 @@ fn phase_impedances_use_k0() {
 fn differential_currents() {
     let arm = |a: &str, b: &str, c: &str| Arm {
         currents: vec![a.into(), b.into(), c.into()],
-        reduction: Reduction::Priv { k: "1".into() },
+        reductions: vec![Reduction::Priv { k: "1".into() }],
         group: "11".into(),
         remove_i0: false,
     };

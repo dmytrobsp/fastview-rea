@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 343 pass)
+- `cargo test --workspace`   (currently 344 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2891,6 +2891,28 @@ callees of `0x42e5c0` not read); a pasted channel's ph / ccbm from the
 copy side (desc2 / desc3) INFERRED.
 
 
+### L9.87 — Page 539: each stored method key checks its radio; 1 phase shows the sequence combo  ·  ✅
+Read (subagent report): the load `0x4844a0` calls CheckDlgButton for each
+`legOption` key present (value ≠ 0) on its own, «По мощности» only when
+none reads non-zero, and runs each checked radio's edit enabler in the
+order power `0x483830`, nominal current `0x483970`, cast `0x4835b0`, TT
+`0x4836f0` — the last one's edits stay enabled; the generation `0x47ff60`
+tests 2080…2083 as four independent ifs (cast, TT, power, nominal), each
+emitting its reduction lines for every arm. `0x483ab0`: with 1 phase the
+sequence combo 2127 shows (greyed) whatever the radio; the triangle combo
+2129 only with 3 phases and its radio. (`0x4831b0` only greys «<<» / «>>»
+— as ours.)
+Ours kept the first stored key and showed the triangle combo greyed in 1
+phase with its radio stored. Now `QuickForms::{dif_also, dif_methods,
+dif_edit_method}`, `quick::Arm::reductions` (a list, methods in the
+generation's order), the load / save per key, a radio click clearing the
+others. Test `two_stored_methods_both_reduce`.
+Residual: two methods give two «… прив.» lines per name (they do not pass
+the uniq rule `0x48bff0`); how the appender resolves the duplicate names
+NOT DETERMINED (ours: the batch's later line overrides by name as our
+appender does).
+
+
 Next in L9 (HANDOFF 2026-10-23, evening 2): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -2938,8 +2960,7 @@ the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
 the Ω / power split of
-characteristic extents (L9.75); 539's two-method-keys `.set` edge and which «Группа:»
-combo shows under «Не учитывать» (`0x4831b0`, L9.79); L9.22 / L9.84 print residuals (CUPS hardware margins, the preview's
+characteristic extents (L9.75); L9.22 / L9.84 print residuals (CUPS hardware margins, the preview's
 paper; the logo bitmap stays out — it is the original's asset); L9.6 digital level-line snap (reachable only through a `.set`);
 keytips (MFC's ribbon keytip machinery — the program sets only Печать «p»
 / «w»); L9.27 MFC's intermediate ribbon reductions; L9.64's slot +0x1f0
