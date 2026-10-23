@@ -42,6 +42,11 @@ tools/regen-dumps.sh extracted/stage1/FastView.exe dumps
 message map with command ids resolved to their strings. `dumps/` is
 git-ignored.
 
+`python3 -I tools/coverage.py` measures how much of the program's own code
+the notes cite (functions, instructions, the uncited ones by class) — the
+measure of [`../notes/COMPLETION_PLAN.md`](../notes/COMPLETION_PLAN.md). It
+prints counts and addresses only.
+
 MFC's own resources (e.g. the Russian labels of the print-preview ribbon
 category) live in the redistributable: `tools/carve_cabs.py
 extracted/stage1/vcredist_vs13_x86.exe vcr/` carves its cabinets, `7z x` them,
