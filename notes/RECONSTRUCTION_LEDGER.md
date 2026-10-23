@@ -917,7 +917,7 @@ Ohm/W/VA/var). Merge fix: the frequency panels read `Doc::flagged` (L9.7).
 Residual: frame/axes pens, edge-label/scale-box rects, dialog 554 combo
 contents, frequency margins NOT DETERMINED; (per-document «* Chart»
 persistence: done in L9.17), the themed splitter, bit 14 pending merge not modelled;
-`egui_plot` dependency now unused.
+`egui_plot` dependency now unused (removed 2026-10-23).
 
 ### L9.13 — Dialogs and the parameters bar (track F, merged)  ·  🟡
 
