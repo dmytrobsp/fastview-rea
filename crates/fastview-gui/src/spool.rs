@@ -44,6 +44,46 @@ pub fn device(printer: &str, setup: &PageSetup) -> Device {
     imp::device(printer, setup).unwrap_or_else(|| Device::sheet(setup, PDF_DPI))
 }
 
+/// The print dialog's «Состояние», «Тип», «Место», «Комментарий» (the
+/// common print dialog fills them from the spooler, L9.113): CUPS's state,
+/// make and model, location and description; Windows' PRINTER_INFO_2.
+pub fn details(printer: &str) -> [String; 4] {
+    imp::details(printer)
+}
+
+/// The fields from `lpstat -p <printer>` and `lpoptions -p <printer>`.
+#[cfg(any(not(windows), test))]
+pub fn cups_details(lpstat: &str, lpoptions: &str) -> [String; 4] {
+    let state = if lpstat.contains("disabled") {
+        "Приостановлен"
+    } else if lpstat.contains("now printing") {
+        "Печать"
+    } else if lpstat.contains("idle") {
+        "Готов"
+    } else {
+        ""
+    };
+    let opt = |key: &str| cups_option(lpoptions, key).unwrap_or_default();
+    [state.into(), opt("printer-make-and-model"), opt("printer-location"), opt("printer-info")]
+}
+
+/// One `key=value` of an `lpoptions` line (values may be quoted with ' or ").
+#[cfg(any(not(windows), test))]
+fn cups_option(line: &str, key: &str) -> Option<String> {
+    let mut rest = line;
+    while let Some(i) = rest.find(&format!("{key}=")) {
+        if i == 0 || rest.as_bytes()[i - 1] == b' ' {
+            let v = &rest[i + key.len() + 1..];
+            return Some(match v.chars().next() {
+                Some(q @ ('\'' | '"')) => v[1..].split(q).next().unwrap_or("").to_string(),
+                _ => v.split(' ').next().unwrap_or("").to_string(),
+            });
+        }
+        rest = &rest[i + key.len()..];
+    }
+    None
+}
+
 /// Print rendered pages on `printer` as a job named `title`.
 pub fn print(printer: &str, title: &str, pages: &[Canvas], dev: &Device, setup: &PageSetup) -> Result<(), String> {
     imp::print(printer, title, pages, dev, setup)
@@ -118,6 +158,11 @@ mod imp {
         (list, default)
     }
 
+    pub fn details(printer: &str) -> [String; 4] {
+        let run = |cmd: &str, args: &[&str]| Command::new(cmd).args(args).env("LC_ALL", "C").output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+        cups_details(&run("lpstat", &["-p", printer]), &run("lpoptions", &["-p", printer]))
+    }
+
     /// The printer's default paper from CUPS, with the PPD's printable
     /// area (the scheduler's copy, else its public `/printers/<name>.ppd`).
     pub fn paper(printer: &str) -> Option<Paper> {
@@ -179,9 +224,39 @@ mod imp {
         VERTRES,
     };
     use windows_sys::Win32::Graphics::Printing::{
-        ClosePrinter, DocumentPropertiesW, EnumPrintersW, GetDefaultPrinterW, OpenPrinterW, PRINTER_ENUM_CONNECTIONS, PRINTER_ENUM_LOCAL, PRINTER_INFO_4W,
+        ClosePrinter, DocumentPropertiesW, EnumPrintersW, GetDefaultPrinterW, GetPrinterW, OpenPrinterW, PRINTER_ENUM_CONNECTIONS, PRINTER_ENUM_LOCAL, PRINTER_INFO_2W,
+        PRINTER_INFO_4W,
     };
     use windows_sys::Win32::Storage::Xps::{EndDoc, EndPage, StartDocW, StartPage, DOCINFOW};
+
+    /// PRINTER_INFO_2: the status (0 «Готов»; paused, error — INFERRED
+    /// wording), the driver, the port, the comment.
+    pub fn details(printer: &str) -> [String; 4] {
+        let name = wide(printer);
+        let mut h: HANDLE = std::ptr::null_mut();
+        // SAFETY: OpenPrinterW / GetPrinterW with a sized buffer, closed after.
+        unsafe {
+            if OpenPrinterW(name.as_ptr(), &mut h, std::ptr::null()) == 0 {
+                return Default::default();
+            }
+            let mut need = 0u32;
+            GetPrinterW(h, 2, std::ptr::null_mut(), 0, &mut need);
+            let mut buf = vec![0u64; (need as usize).div_ceil(8).max(1)];
+            let ok = GetPrinterW(h, 2, buf.as_mut_ptr() as *mut u8, need, &mut need) != 0;
+            ClosePrinter(h);
+            if !ok {
+                return Default::default();
+            }
+            let i = &*(buf.as_ptr() as *const PRINTER_INFO_2W);
+            let status = match i.Status {
+                0 => "Готов",
+                s if s & 1 != 0 => "Приостановлен",
+                s if s & 2 != 0 => "Ошибка",
+                _ => "",
+            };
+            [status.into(), from_wide(i.pDriverName), from_wide(i.pPortName), from_wide(i.pComment)]
+        }
+    }
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(Some(0)).collect()
@@ -381,6 +456,14 @@ mod tests {
         assert!(pdf.contains("q 559.00 0 0 770.00 18.00 35.89 cm /Im0 Do Q"), "the page on the printable area");
     }
 
+    #[test]
+    fn cups_printer_details() {
+        let st = "printer Office_HP is idle.  enabled since Thu 23 Oct 2026\n";
+        let op = "copies=1 device-uri=ipp://10.0.0.5/ipp printer-info='HP LaserJet 4' printer-location=\"Room 12\" printer-make-and-model='HP LaserJet 4 Postscript' printer-state=3";
+        assert_eq!(cups_details(st, op), ["Готов".to_string(), "HP LaserJet 4 Postscript".into(), "Room 12".into(), "HP LaserJet 4".into()]);
+        assert_eq!(cups_details("printer x disabled since …", "")[0], "Приостановлен");
+    }
+
     /// The system printers' papers (run by hand: `--ignored`).
     #[test]
     #[ignore]
@@ -388,7 +471,7 @@ mod tests {
         let (list, default) = printers();
         eprintln!("default: {default:?}");
         for p in list {
-            eprintln!("{p}: {:?}", paper(&p));
+            eprintln!("{p}: {:?} {:?}", paper(&p), details(&p));
         }
     }
 }

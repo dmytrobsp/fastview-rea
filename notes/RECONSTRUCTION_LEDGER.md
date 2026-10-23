@@ -3557,8 +3557,8 @@ HORZRES / VERTRES; `Device::printable` (the job on the printable area,
 preview pages on the whole sheet. Test `cups_margins_from_the_ppd`.
 Residual: the landscape turn of the margins is INFERRED (GDI's own
 landscape caps on Windows printing are taken from the DC as before); the
-Windows preview margins not run on the VM yet; the PDF-file entry stays
-the whole A4 sheet (no printer).
+Windows margins path run on the VM in L9.113 (Print to PDF: none); the
+PDF-file entry stays the whole A4 sheet (no printer).
 
 ### L9.111 — Merge: method 2 as read, the period and cursor rules, flags baked in, the discrete resampling  ·  ✅
 Read (subagent report on `0x47c440`…`0x47ce0f`, `0x47d990`, `0x426020`;
@@ -3625,6 +3625,25 @@ dialog's status / type / place / comment fields and «Свойства...» (the
 common print dialog fills them from the spooler — ours empty); a print
 resetting the live circle zoom / consuming the differential's first-paint
 push not reproduced.
+
+### L9.113 — The print dialog's printer fields from the spooler  ·  ✅
+Read (subagent report): DIALOG 347 is the common print dialog's template
+(cmb4 the printer list, psh2 «Свойства...», stc12 / 11 / 14 / 13 the
+values of Состояние / Тип / Место / Комментарий; «Печать в файл» present
+but hidden); CFastViewPrintDialog handles only 2173 / 2174. comdlg32 fills
+the fields from the printer's spooler data (INFERRED: status, driver,
+port, comment) and «Свойства...» opens the driver's document properties.
+Ours left the four fields empty. Now `spool::details` — Windows:
+PRINTER_INFO_2 (status 0 «Готов», paused «Приостановлен», error «Ошибка» —
+the wording INFERRED, comdlg's own strings not read), the driver, the
+port, the comment (run on the VM: «Microsoft Print to PDF» → «Готов»,
+«Microsoft Print To PDF», «PORTPROMPT:», ""); CUPS (`cups_details`):
+`lpstat -p` idle / now printing / disabled, `lpoptions -p`'s
+printer-make-and-model, printer-location, printer-info; read once per
+printer chosen. Test `cups_printer_details`.
+Residual: «Свойства...» stays disabled (the driver dialog and a job
+DEVMODE kept across it not modelled); comdlg's queued-jobs count in the
+status not shown.
 
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

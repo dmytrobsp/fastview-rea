@@ -34,6 +34,8 @@ pub struct PrintDlg {
     pub ticks: [bool; 5],
     /// Index into the printers, `printers.len()` = the PDF file.
     pub printer: usize,
+    /// The shown printer's spooler fields, read when it is chosen.
+    pub details: Option<(usize, [String; 4])>,
 }
 
 pub struct SetupDlg {
@@ -126,7 +128,7 @@ impl App {
         self.printers_refresh();
         let n = self.print.printers.len();
         let printer = self.print.printer.as_ref().and_then(|p| self.print.printers.iter().position(|x| x == p)).unwrap_or(n);
-        self.print.dialog = Some(PrintDlg { doc: di, ticks: self.docs[di].print_ticks, printer });
+        self.print.dialog = Some(PrintDlg { doc: di, ticks: self.docs[di].print_ticks, printer, details: None });
     }
 
     /// The application printer's paper (the last choice of «Печать», at
@@ -203,6 +205,10 @@ impl App {
             return;
         }
         let names: Vec<String> = self.print.printers.iter().cloned().chain(Some(PDF_ENTRY.to_string())).collect();
+        if dlg.details.as_ref().is_none_or(|(i, _)| *i != dlg.printer) {
+            let d = self.print.printers.get(dlg.printer).map(|p| spool::details(p)).unwrap_or_default();
+            dlg.details = Some((dlg.printer, d));
+        }
         let (mut ok, mut cancel, mut preview, mut setup) = (false, false, false, false);
         let mut open = true;
         egui::Window::new("Печать").collapsible(false).resizable(false).open(&mut open).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
@@ -216,9 +222,10 @@ impl App {
                         }
                     });
                     ui.end_row();
-                    for l in ["Состояние:", "Тип:", "Место:", "Комментарий:"] {
+                    let details = dlg.details.as_ref().map(|d| d.1.clone()).unwrap_or_default();
+                    for (l, v) in ["Состояние:", "Тип:", "Место:", "Комментарий:"].into_iter().zip(details) {
                         ui.label(l);
-                        ui.label("");
+                        ui.label(v);
                         ui.end_row();
                     }
                 });
