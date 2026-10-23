@@ -309,7 +309,7 @@ mod tests {
         assert_eq!(step(&e, Some(3), true), Some(1), "wraps past the disabled item");
         let ctx = egui::Context::default();
         let mut m = PopMenu::new(1, Pos2::new(10.0, 10.0));
-        let mut frame = |m: &mut PopMenu, keys: &[egui::Key]| {
+        let frame = |m: &mut PopMenu, keys: &[egui::Key]| {
             let events = keys.iter().map(|&key| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }).collect();
             let mut out = None;
             let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |ctx| out = Some(show(ctx, "t", m, &e)));
