@@ -288,7 +288,7 @@ impl Doc {
         let swapped = |v: &[crate::diagram::ChanPair]| -> Vec<PairRec> { v.iter().map(|p| PairRec { a: p.b.clone(), b: p.a.clone(), visible: p.on }).collect() };
         recset::write_pairs(t.section_mut("Diff Chart"), recset::DIFF_KEYS, &swapped(&self.dif_pairs));
         recset::write_pairs(t.section_mut("Circle Chart"), recset::CIRCLE_KEYS, &pairs(&self.rx_pairs));
-        let items: Vec<CommentRec> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
+        let items: Vec<CommentRec> = self.comments.iter().map(|c| self.comment_rec(c)).chain(self.kept_levels.iter().cloned()).collect();
         recset::write_comments(t.section_mut("Comments"), &items);
     }
 
@@ -354,7 +354,15 @@ impl App {
         if !from_command {
             if let Some(c) = d.set.tree.section("Comments") {
                 let recs = recset::read_comments(c);
-                d.comments = recs.iter().filter_map(|r| d.comment_of(r)).collect();
+                let (mut comments, mut kept) = (Vec::new(), Vec::new());
+                for r in &recs {
+                    match d.comment_of(r) {
+                        Some(c) => comments.push(c),
+                        None if matches!(r.kind, CommentKindRec::Level { .. }) => kept.push(r.clone()),
+                        None => {}
+                    }
+                }
+                (d.comments, d.kept_levels) = (comments, kept);
                 // The record comment edited by 32805.
                 if let Some(u) = c.attrs.get("UserData") {
                     d.hdr = Some(u.clone());
@@ -900,6 +908,17 @@ mod tests {
         assert_eq!(back.vec_show_values, vec_shown);
         assert!(!d.set.modified);
         let _ = std::fs::remove_dir_all(&dir);
+        // A level on a channel we cannot draw it on is kept and saved back.
+        let lost = fvb_core::recset::CommentRec {
+            kind: fvb_core::recset::CommentKindRec::Level { channel: "нет такого".into(), y: 1.0, from: 1, to: 2 },
+            text: String::new(),
+            locked: false,
+            visible: true,
+        };
+        back.docs[bi].kept_levels.push(lost.clone());
+        let mut t = back.docs[bi].set.tree.clone();
+        back.docs[bi].store_settings(&mut t, true);
+        assert!(fvb_core::recset::read_comments(t.section("Comments").unwrap()).contains(&lost));
     }
 
     #[test]

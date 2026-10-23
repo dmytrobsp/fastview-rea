@@ -2949,6 +2949,29 @@ uses the box's start, not the first vertex; loci drawn at an infinite
 scale (NOT DETERMINED; ours skip them).
 
 
+### L9.89 — Level lines: a body drag re-homes; unshown levels are kept  ·  🟡
+Read (subagent report): placement `0x43eb40` needs a visible analog lane
+(kind `+0x5c` == 0), so no level is placed on a digital lane — as ours;
+the body drag `0x43efa0` (mode 4) reassigns the level's channel name to
+the analog lane under the pointer (`0x43f46e`) and takes its value there
+(`0x4716d0`), over a digital lane nothing; the `.set` reader appends every
+`Level_%d` without a kind or existence check (`0x43ff8a`–`0x440004`) and
+the saver writes it back (`0x470b20`); the paint `0x471020` finds the
+channel by name (visible only), takes the fraction of the value in the
+display window, snaps it to 1 / 0 at 0.5 for a digital channel, y = top +
+h − 5 − (h − 10)·fraction; the hit test `0x470d20` and the info anchor
+`0x471430` use the unsnapped fraction.
+Ours kept the value when the body was dragged over another lane and
+dropped levels on digital / unknown channels on load (lost on re-save).
+Now `Comment::drag` part 4 re-homes; `Doc::kept_levels` holds the levels
+we cannot show and `store_settings` writes them back. Tests `drag_and_lock`,
+the `.set` round trip (a kept level saved back).
+Residual: kept levels are not drawn (the digital snap and `0x42b640`'s
+window for a digital channel not modelled), not hit, and are written after
+the others (the original keeps its list order); an area on an unknown
+channel is still dropped (not read).
+
+
 Next in L9 (HANDOFF 2026-10-23, evening 2): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -2996,7 +3019,7 @@ the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
 L9.22 / L9.84 print residuals (CUPS hardware margins, the preview's
-paper; the logo bitmap stays out — it is the original's asset); L9.6 digital level-line snap (reachable only through a `.set`);
+paper; the logo bitmap stays out — it is the original's asset); L9.89's kept levels drawn snapped on digital lanes (`0x42b640` not read);
 keytips (MFC's ribbon keytip machinery — the program sets only Печать «p»
 / «w»); L9.27 MFC's intermediate ribbon reductions; L9.64's slot +0x1f0
 and the MDI arrangements; pane re-docking (egui limit). Good recurring

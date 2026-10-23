@@ -670,7 +670,10 @@ selected item prints selected (L9.59).
   channel's lane ((192,0,0) when selected); filled red circles of radius 5 at
   both ends (1 px pen); bubble icon at (x2+10, y − icon/2); label at
   (x1+5, y+5) in (128,0,0): text + «Уровень: %.2f» (only when visible).
-  Digital channels snap y to 0/1 (value > 0.5).
+  On a digital channel (only from a `.set` — placement needs an analog
+  lane) the paint `0x471020` snaps the window fraction to 1 above 0.5, else
+  0; the hit test `0x470d20` and the info box use the unsnapped one; a body
+  drag moves a level onto the analog lane under the pointer (L9.89).
 - Area: rect = sample range × lane span; red fill AlphaBlend **64/255**; then a
   3 px border (normal or selected colour), hollow; text lines bottom-left
   (5 px inset) in (128,0,0) incl. «Длительность: %d.%03d с».

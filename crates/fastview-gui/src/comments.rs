@@ -83,11 +83,12 @@ impl Comment {
             CommentKind::Level { chan, value, from, to } => match part {
                 1 | 3 => *to = sample,
                 2 => *from = sample,
+                // The body moves onto the analog lane under the pointer,
+                // taking its value there (`0x43f46e`, `0x4716d0`); over a
+                // digital lane or none nothing changes.
                 4 => {
                     if let Some((ChanKey::Analog(c), Some(v))) = lane {
-                        if c == *chan {
-                            *value = v;
-                        }
+                        (*chan, *value) = (c, v);
                     }
                 }
                 _ => {}
@@ -342,9 +343,11 @@ mod tests {
         l.normalise();
         assert_eq!(l.kind, CommentKind::Level { chan: 0, value: 1.0, from: 5, to: 10 });
         l.drag(4, 0, Some((ChanKey::Analog(1), Some(9.0))));
-        assert_eq!(l.kind, CommentKind::Level { chan: 0, value: 1.0, from: 5, to: 10 }, "another channel's lane: value kept");
+        assert_eq!(l.kind, CommentKind::Level { chan: 1, value: 9.0, from: 5, to: 10 }, "another analog lane: the level moves onto it");
+        l.drag(4, 0, Some((ChanKey::Digital(0), None)));
+        assert_eq!(l.kind, CommentKind::Level { chan: 1, value: 9.0, from: 5, to: 10 }, "a digital lane: nothing");
         l.drag(4, 0, Some((ChanKey::Analog(0), Some(2.5))));
-        assert!(matches!(l.kind, CommentKind::Level { value, .. } if value == 2.5));
+        assert!(matches!(l.kind, CommentKind::Level { chan: 0, value, .. } if value == 2.5));
         l.locked = true;
         l.drag(2, 0, None);
         assert!(matches!(l.kind, CommentKind::Level { from: 5, .. }), "locked elements do not move");
