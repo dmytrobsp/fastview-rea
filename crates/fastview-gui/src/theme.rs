@@ -255,7 +255,10 @@ pub fn apply(ctx: &egui::Context, skin: Skin) {
         Color32::WHITE
     };
     v.selection.bg_fill = p.accent_soft.gamma_multiply(0.9f32);
-    v.selection.stroke = egui::Stroke::new(1.0f32, p.accent_border);
+    // egui draws selected text in the selection stroke's colour: the
+    // label colour on the light highlight (the style's own hot border is
+    // too light for text).
+    v.selection.stroke = egui::Stroke::new(1.0f32, p.text);
     v.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0f32, p.text);
     v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0f32, p.frame);
     v.faint_bg_color = p.work_bg.gamma_multiply(0.4f32);

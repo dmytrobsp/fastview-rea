@@ -3754,7 +3754,11 @@ teal Aqua, among smaller shifts. Now the four palettes as read (panel
 separators blended from their alpha over the body — INFERRED),
 `Palette::{tab_text, status_bg, status_text}`, `ribbon_tab` with the
 inactive colour, the status bar's own fill and text, light visuals for
-every look, the read disabled grey for Black too. Rendered all four.
+every look, the read disabled grey for Black too. Rendered all four;
+the real-records pass then showed the selected pane tab's text nearly
+invisible (egui draws selected text in the selection stroke, now the
+style's light hover border) — the selection stroke is the label colour,
+pinned by `ribbon_labels_contrast_with_their_background_in_every_look`.
 Residual: the panels' translucent caption band and inner white line, the
 category body's gradient (ours flat), the application button's orb, the
 caption bar and the main frame border are not drawn from the style

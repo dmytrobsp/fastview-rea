@@ -1269,6 +1269,9 @@ mod tests {
             assert!((lum(p.text) - lum(body)).abs() > 60.0, "{skin:?}: enabled");
             assert!((lum(over(disabled_ink(p), body)) - lum(body)).abs() > 25.0, "{skin:?}: disabled");
             assert!((lum(CHECKED_INK) - lum(p.accent_soft)).abs() > 100.0, "{skin:?}: checked");
+            // Selected text (a pane tab, a list row) on the selection fill.
+            let sel = p.accent_soft.gamma_multiply(0.9f32);
+            assert!((lum(p.text) - lum(over(sel, body))).abs() > 60.0, "{skin:?}: selected");
         }
     }
 
