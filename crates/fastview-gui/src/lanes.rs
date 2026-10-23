@@ -28,8 +28,9 @@ const HSCROLL_H: f32 = 17.0;
 const VSCROLL_W: f32 = 17.0;
 /// The V scroll bar's line step (`0x45d6d0`: SB_LINEUP/DOWN = 100 px).
 const VSCROLL_LINE: f32 = 100.0;
-/// Height of one member row of a channel group lane (name row + 33).
-const GROUP_ROW_H: f32 = 49.0;
+/// A group member's stats line height (`view+0x88`: "Ay" in the row font,
+/// Tahoma 13 — ours scaled like `ROW_H`).
+const GROUP_STATS_H: f32 = 13.0;
 const COMMENT_COLOR: Color32 = Color32::from_rgb(0x00, 0x80, 0x80);
 
 type Lane = ChanKey;
@@ -137,7 +138,9 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
     for r in rows.iter_mut().filter(|r| !matches!(r.key, Lane::Digital(_))) {
         let icons = if status_icons(doc, r, primary).is_empty() { 0.0 } else { 23.0 };
         let need = if r.members.len() > 1 {
-            r.members.len() as f32 * GROUP_ROW_H
+            // `0x460290`: N × the owner's stride (each member is painted
+            // with its own — the original's mismatch, kept).
+            r.members.len() as f32 * group_stride(doc, r.members[0])
         } else {
             ROW_H + 10.0 + stat_rows(doc, &r.key).map_or(0, |s| s.count()) as f32 * ROW_H + icons
         };
@@ -187,57 +190,77 @@ impl OscView<'_> {
         // Stats text: the name (cut to 25 characters) framed in its colour,
         // the value at В1 after the label column, then the enabled rows;
         // digital lanes show the name only.
-        let short: String = name.chars().take(NAME_CHARS).collect();
-        let name_pos = Pos2::new(self.x0 + 5.0, top + if matches!(lane, Lane::Digital(_)) { 2.0 } else { 5.0 });
-        let name_rect = bold_text(lp, name_pos, &short, NAME_FONT, color);
         let col_x = self.x0 + self.label_col + 5.0;
-        if !matches!(lane, Lane::Digital(_)) {
+        let header = |y: f32, name: &str, unit: &str, color: Color32, val: f64| {
+            let short: String = name.chars().take(NAME_CHARS).collect();
+            let name_rect = bold_text(lp, Pos2::new(self.x0 + 5.0, y), &short, NAME_FONT, color);
             lp.rect_stroke(
-                Rect::from_min_max(Pos2::new(self.x0 + 3.0, top + 5.0), Pos2::new(name_rect.right() + 2.0, name_rect.bottom())),
+                Rect::from_min_max(Pos2::new(self.x0 + 3.0, y), Pos2::new(name_rect.right() + 2.0, name_rect.bottom())),
                 0.0,
                 Stroke::new(1.0f32, Color32::from_gray(128)),
             );
-            if let Some(t) = fvb_core::views::stats_value_text(val, &unit) {
-                bold_text(lp, Pos2::new(col_x, top + 5.0), &t, NAME_FONT, Color32::from_rgb(69, 85, 199));
+            if let Some(t) = fvb_core::views::stats_value_text(val, unit) {
+                bold_text(lp, Pos2::new(col_x, y), &t, NAME_FONT, Color32::from_rgb(69, 85, 199));
             }
-        }
+            name_rect
+        };
+        // Status icons, right to left from the panel edge, tops at `y`.
+        let icons = |glyphs: Vec<&str>, y: f32| {
+            for (j, glyph) in glyphs.into_iter().enumerate() {
+                let at = Rect::from_min_size(Pos2::new(left - 21.0 - 21.0 * j as f32, y), Vec2::splat(16.0));
+                lp.rect_filled(at, 2.0, Color32::from_rgb(232, 236, 248));
+                lp.rect_stroke(at, 2.0, Stroke::new(1.0f32, Color32::from_rgb(120, 130, 170)));
+                lp.text(at.center(), Align2::CENTER_CENTER, glyph, FontId::proportional(9.0), Color32::from_rgb(40, 50, 110));
+            }
+        };
         let row_col = Color32::from_rgb(0, 0, 127);
-        let mut yy = top + 5.0 + ROW_H + 3.0;
-        if r.members.len() > 1 {
-            // A channel group: its other members listed under the first.
-            for &oi in &r.members[1..] {
-                let (on, ou, oc, .., ov) = lane_stats(doc, &Lane::Analog(oi), k_main, primary);
-                let on: String = on.chars().take(NAME_CHARS).collect();
-                bold_text(lp, Pos2::new(self.x0 + 5.0, yy), &on, NAME_FONT, oc);
-                if let Some(t) = fvb_core::views::stats_value_text(ov, &ou) {
-                    bold_text(lp, Pos2::new(col_x, yy), &t, NAME_FONT, Color32::from_rgb(69, 85, 199));
+        let name_rect = if let Lane::Digital(_) = lane {
+            let short: String = name.chars().take(NAME_CHARS).collect();
+            bold_text(lp, Pos2::new(self.x0 + 5.0, top + 2.0), &short, NAME_FONT, color)
+        } else if r.members.len() > 1 {
+            // A channel group (`0x461440`): every member in channel order
+            // gets the full header at top + 5 + k·S (S of that member, not
+            // a running sum), one `|`-joined stats line under it when it
+            // has stat rows, and its own icons ending at top + (k+1)·S.
+            let mut first = None;
+            for (k, &m) in r.members.iter().enumerate() {
+                let (mn, mu, mc, mmax, mmin, mrms, ma1, mv) = lane_stats(doc, &Lane::Analog(m), k_main, primary);
+                let stride = group_stride(doc, m);
+                let y = top + 5.0 + k as f32 * stride;
+                let nr = header(y, &mn, &mu, mc, mv);
+                first.get_or_insert(nr);
+                let st = doc.chans[m].stats;
+                if st.count() > 0 {
+                    let line = fvb_core::views::group_stats_line(st.minmax.then_some((mmax, mmin)), st.rms.then_some(mrms), st.a1.then_some(ma1), &mu);
+                    let band = Rect::from_min_size(Pos2::new(self.x0 + 5.0, top + 8.0 + k as f32 * stride + GROUP_STATS_H), Vec2::new(left - self.x0 - 5.0, GROUP_STATS_H));
+                    lp.with_clip_rect(band.intersect(lp.clip_rect())).text(band.left_center(), Align2::LEFT_CENTER, line, ROW_FONT, row_col);
                 }
-                yy += ROW_H + 4.0;
+                icons(chan_icons(doc, m, primary), top - 21.0 + (k + 1) as f32 * stride);
             }
-        } else if let Some(st) = stat_rows(doc, lane) {
-            let mut rows_txt: Vec<(&str, f64)> = Vec::new();
-            if st.minmax {
-                rows_txt.extend([("Max:", maxv), ("Min:", minv)]);
+            first.expect("a group has members")
+        } else {
+            let name_rect = header(top + 5.0, &name, &unit, color, val);
+            let mut yy = top + 5.0 + ROW_H + 3.0;
+            if let Some(st) = stat_rows(doc, lane) {
+                let mut rows_txt: Vec<(&str, f64)> = Vec::new();
+                if st.minmax {
+                    rows_txt.extend([("Max:", maxv), ("Min:", minv)]);
+                }
+                if st.rms {
+                    rows_txt.push(("СКЗ:", rms));
+                }
+                if st.a1 {
+                    rows_txt.push(("A1:", a1));
+                }
+                for (lbl, v) in rows_txt {
+                    lp.text(Pos2::new(self.x0 + 5.0, yy), Align2::LEFT_TOP, lbl, ROW_FONT, row_col);
+                    lp.text(Pos2::new(col_x, yy), Align2::LEFT_TOP, fvb_core::views::readout_text(v, &unit), ROW_FONT, row_col);
+                    yy += ROW_H;
+                }
             }
-            if st.rms {
-                rows_txt.push(("СКЗ:", rms));
-            }
-            if st.a1 {
-                rows_txt.push(("A1:", a1));
-            }
-            for (lbl, v) in rows_txt {
-                lp.text(Pos2::new(self.x0 + 5.0, yy), Align2::LEFT_TOP, lbl, ROW_FONT, row_col);
-                lp.text(Pos2::new(col_x, yy), Align2::LEFT_TOP, fvb_core::views::readout_text(v, &unit), ROW_FONT, row_col);
-                yy += ROW_H;
-            }
-        }
-        // Status icons, right to left from the panel edge at the lane bottom.
-        for (j, glyph) in status_icons(doc, r, primary).into_iter().enumerate() {
-            let at = Rect::from_min_size(Pos2::new(left - 21.0 - 21.0 * j as f32, top + h - 21.0), Vec2::splat(16.0));
-            lp.rect_filled(at, 2.0, Color32::from_rgb(232, 236, 248));
-            lp.rect_stroke(at, 2.0, Stroke::new(1.0f32, Color32::from_rgb(120, 130, 170)));
-            lp.text(at.center(), Align2::CENTER_CENTER, glyph, FontId::proportional(9.0), Color32::from_rgb(40, 50, 110));
-        }
+            icons(status_icons(doc, r, primary), top + h - 21.0);
+            name_rect
+        };
 
         // Waveforms: every visible sample, 1 px, sample marks above 4 px per
         // sample.
@@ -478,6 +501,12 @@ pub fn paint_hvizirs(painter: &egui::Painter, (x0, left, right): (f32, f32, f32)
     }
 }
 
+/// A group member's block height (`0x461440`, `0x460290`): the name row
+/// + 33, + the stats line when the member has stat rows.
+fn group_stride(doc: &crate::app::Doc, m: usize) -> f32 {
+    ROW_H + 33.0 + if doc.chans[m].stats.count() > 0 { GROUP_STATS_H } else { 0.0 }
+}
+
 /// The stat rows a lane shows (none for digital lanes).
 fn stat_rows(doc: &crate::app::Doc, key: &ChanKey) -> Option<crate::app::StatRows> {
     match key {
@@ -492,6 +521,11 @@ fn stat_rows(doc: &crate::app::Doc, key: &ChanKey) -> Option<crate::app::StatRow
 /// harmonic mode, ADC counts.
 fn status_icons(doc: &crate::app::Doc, r: &Row, primary: bool) -> Vec<&'static str> {
     let Lane::Analog(i) = r.key else { return Vec::new() };
+    chan_icons(doc, i, primary)
+}
+
+/// The status icons of analog channel `i`.
+fn chan_icons(doc: &crate::app::Doc, i: usize, primary: bool) -> Vec<&'static str> {
     let (c, ch) = (&doc.chans[i], &doc.osc.analog[i]);
     let scaled = primary && !ch.is_primary && ch.secondary != 0.0 && ch.primary / ch.secondary != 1.0;
     [
@@ -1942,6 +1976,24 @@ mod menu_tests {
             let want = if matches!(r.key, ChanKey::Digital(_)) { 20.0 } else { 93.0 };
             assert_eq!(r.h, want, "{:?}", r.key);
         }
+    }
+
+    /// A group lane (`0x460290`): N × the owner's stride — name row + 33,
+    /// + the stats line when the owner has stat rows; the members merge.
+    #[test]
+    fn group_lane_height_is_members_times_the_owners_stride() {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        d.chans[0].group = Some(7);
+        d.chans[1].group = Some(7);
+        let n = lane_layout(h.doc(), h.app.y_analog, false).len();
+        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        assert_eq!(rows[0].members, [0, 1]);
+        assert_eq!(rows[0].h, 2.0 * (ROW_H + 33.0 + GROUP_STATS_H), "default СКЗ + A1 rows");
+        h.app.active_doc_mut().unwrap().chans[0].stats = crate::app::StatRows { minmax: false, rms: false, a1: false };
+        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        assert_eq!(rows[0].h, h.app.y_analog.max(2.0 * (ROW_H + 33.0)), "the owner's flags decide");
+        assert_eq!(rows.len(), n);
     }
 
     /// The left button places В1 (shown) and a drag does not pan the plot;

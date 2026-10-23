@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 300 pass)
+- `cargo test --workspace`   (currently 302 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -768,9 +768,8 @@ Ours: `fvb_core::views::{si_unit, si_scaled, stats_value_text}`, readout
 `view_left` (replaces the fixed 158 px), lane need, status-icon row (our own
 glyphs, not bitmap 0x136), hover popup. Tests: SI/format cases, toggle-all +
 lane growth, width fits the cut name.
-Residual: egui has no Tahoma/bold (bold simulated by double drawing); group
-lanes list member names + values only (the original's per-member stat rows
-inside a group not modelled).
+Residual: egui has no Tahoma/bold (bold simulated by double drawing); (group
+lanes' per-member blocks: done in L9.50).
 
 ### L9.6 — Comments: moments, level lines, areas  ·  🟡 (no .set persistence)
 
@@ -1791,6 +1790,30 @@ compile-checked (its shell dialogs cannot run over ssh); our companion
 test is "exists as a file" (any case of the extension), not "opens for
 shared reading"; the record-erase bug is not reproduced.
 
+### L9.50 — Group lanes: a full block per member, one-line stats  ·  ✅
+Read (subagent report; the height re-checked by hand at `0x46045f`, the
+line builder `0x4683c0` and label 3449 «СКЗ:» by hand): a group's visible
+members (`0x455930`, doc+0x174 name → member set) are painted in channel
+order, member k at top + 5 + k·S with **its own** S = rowH + 33 (+ hS when
+it has any of bits 4/5/6): the full header (grey frame, cut name in its
+colour, value at В1); no Max/Min/СКЗ/A1 rows but one DrawText line (font
+`view+0xbc`, RGB(0,0,127), x 5 → leftW, top + 8 + k·S + hS, height hS,
+single-line centred) built by `0x4683c0`: `Max:` `Min:` `СКЗ:` `A1:`
+items joined by `|`, each the SI-scaled value `%-8g` trimmed, cut to 2
+decimals with trailing zeros stripped when it has a `.` and no `e`, then
+the prefixed unit cut to 5; its status icons at top − 21 + (k+1)·S. The
+lane height `0x460290`: non-owners 0; the owner N × (rowH + 33 + (owner
+has bits 4/5/6 ? hS : 0)), at least `view+0x104` — no +10 / per-row / +23
+terms (the owner's flags size it, each member's flags paint it).
+Ours: `views::group_stats_line`, `lanes::{group_stride, chan_icons,
+GROUP_STATS_H}`, the group branch of `OscView::row`, `lane_layout`'s
+group need (was members × 49 and a name + value line per member). Tests
+`group_line`, `group_lane_height_is_members_times_the_owners_stride`;
+`window_dump` gains `FV_WINDOW_STATE=group` (rendered with a real record).
+Residual: hS scaled like our fonts (13 px); whether "none" units are
+blanked in the line NOT DETERMINED (kept); СКЗ / A1 read at В1 without
+the bit-14 interpolation (as the original; ours has none either).
+
 Next in L9 (HANDOFF 2026-10-23): **public at
 github.com/dmytrobsp/fastview-rea, release v0.1.0** (Linux / Windows / macOS
 x86_64 + arm64, flat archives). This session: the four GUI bugs (L9.23–
@@ -1816,7 +1839,8 @@ times a frame. The user's sample records live outside the repo (never
 commit them). **Done since:** L9.46 digital lanes drawn by the
 decimating painter (`FV_WINDOW_XSCALE=f` for `window_dump`); L9.47
 comment texts / moment absolute time (`FV_WINDOW_STATE=comments`); L9.48
-the formula dialog's 396 sequence; L9.49 the finder's delete (recycle bin). A
+the formula dialog's 396 sequence; L9.49 the finder's delete (recycle bin);
+L9.50 group lanes (`FV_WINDOW_STATE=group`). A
 residual triage (2026-10-23) found many L9.1–L9.14 residuals already done
 (ledger text stale) — next candidates: L9.9 delete → recycle bin, L9.3
 Быстрый анализ as a modal sheet, L9.30 / L9.22 small ones. **Open

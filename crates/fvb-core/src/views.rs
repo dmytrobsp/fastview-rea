@@ -126,9 +126,42 @@ pub fn stats_value_text(v: f64, unit: &str) -> Option<String> {
     Some(format!("{}{:<6} {u}", if v < 0.0 { "-" } else { " " }, fmt_g(s)))
 }
 
+/// A grouped channel's one-line stats (`0x4683c0`): the enabled items
+/// `Max:` / `Min:` (both with min/max), `СКЗ:` (string 3449), `A1:`, each
+/// the SI-scaled value as `%-8g` trimmed — cut to two decimals and its
+/// trailing zeros stripped when it has a `.` and no exponent (a bare `.` can
+/// stay) — and the prefixed unit cut to 5 characters, joined by `|`.
+pub fn group_stats_line(minmax: Option<(f64, f64)>, rms: Option<f64>, a1: Option<f64>, unit: &str) -> String {
+    let item = |label: &str, v: f64| {
+        let (s, u) = si_scaled(v, unit);
+        let mut t = fmt_g(s);
+        if let (Some(dot), false) = (t.find('.'), t.contains('e')) {
+            t.truncate((dot + 3).min(t.len()));
+            while t.len() > 1 && t.ends_with('0') {
+                t.pop();
+            }
+        }
+        format!("{label}{t}{}", u.chars().take(5).collect::<String>())
+    };
+    let mut items = Vec::new();
+    if let Some((max, min)) = minmax {
+        items.extend([item("Max:", max), item("Min:", min)]);
+    }
+    items.extend(rms.map(|v| item("СКЗ:", v)));
+    items.extend(a1.map(|v| item("A1:", v)));
+    items.join("|")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn group_line() {
+        assert_eq!(group_stats_line(Some((1500.0, -0.125)), None, Some(10.004), "A"), "Max:1.5кA|Min:-125мA|A1:10.A", "a bare dot can stay");
+        assert_eq!(group_stats_line(None, Some(0.10), None, "x"), "СКЗ:0.1x");
+        assert_eq!(group_stats_line(None, None, None, "A"), "");
+    }
 
     #[test]
     fn nice_scales() {

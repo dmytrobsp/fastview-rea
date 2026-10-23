@@ -772,6 +772,18 @@ mod window_tests {
                 d.comments.push(Comment::new(CommentKind::Area { chan_from: ChanKey::Analog(1), chan_to: ChanKey::Analog(2), from: 100, to: 160 }));
             }
         }
+        // `FV_WINDOW_STATE=group`: the first three channels grouped, the
+        // second with Max/Min too.
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "group") {
+            if let Some(d) = app.active_doc_mut() {
+                for c in d.chans.iter_mut().take(3) {
+                    c.group = Some(1);
+                }
+                if let Some(c) = d.chans.get_mut(1) {
+                    c.stats.minmax = true;
+                }
+            }
+        }
         // `FV_WINDOW_XSCALE=f`: the horizontal scale (25·f px per sample).
         if let Some(f) = std::env::var("FV_WINDOW_XSCALE").ok().and_then(|s| s.parse().ok()) {
             if let Some(d) = app.active_doc_mut() {

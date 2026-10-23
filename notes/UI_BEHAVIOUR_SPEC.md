@@ -319,6 +319,7 @@ Colours and fonts (all Tahoma):
 | stats name (analog) | channel colour, bold 15, at (5, top+5), framed (128,128,128) rect (3, top+5)–(nameW+7, top+5+h) |
 | stats value at В1 | heavy 15, (69,85,199), x = labelCol+5; `"-%-6g %s"` / `" %-6g %s"` on \|v\|; unit SI-prefixed, cut to 5 chars, "none" → empty; NaN not drawn. Read at В1 even when hidden |
 | stat rows | normal 13, (0,0,127), label at x=5, value at labelCol+5, `" %-8g %s"` (`"%-8g %s"` if negative): bit4 → Max:, Min:; bit6 → СКЗ: (RMS at В1); bit5 → A1: (harmonic 1 at В1) — **only when the bit is set** |
+| group lane (L9.50) | each visible member in channel order at top+5+k·S, S = rowH+33 (+hS with any stat row, its own flags): the name / value header above, then (with stat rows) one line `Max:v u|Min:v u|СКЗ:v u|A1:v u` (13 regular, (0,0,127), at top+8+k·S+hS), its icons at top−21+(k+1)·S; lane = N × the owner's S, no +10/+23 |
 | digital name | heavy 15, channel colour, DrawText in (5, y, leftW, y+20), no frame; invert icon at (leftW−18, y+2) |
 | status icons | bitmap 0x136 16×16, magenta key, right-to-left from x = leftW−21, step 21, at y = top+h−21: window zoom active, remove DC, invert, primary/secondary scaling (coefficient ≠ 1, not computed), RMS mode, harmonic mode, ADC counts. Resampled (bit14) channels: icon at (leftW+2, top+h−21) |
 
