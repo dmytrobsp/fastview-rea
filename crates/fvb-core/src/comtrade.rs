@@ -97,6 +97,10 @@ pub struct Oscillogram {
     /// The number of sample-rate segments (`rec+0x1f0`; the `.cfg`'s rate
     /// lines).
     pub segments: usize,
+    /// The trigger's sample (`doc+0x214`): pre-trigger blocks × samples per
+    /// block for `.osc` (`0x452d89`), 0 for COMTRADE and after a `.cfg` /
+    /// `.cff` Save-As (`0x44d6c5`, `0x44daaa`).
+    pub trigger_sample: usize,
     /// «Частота для коррекции расчётных значений» (`rec+0x874`): 0 none,
     /// k the k-th entry of [`crate::freqcorr::candidate_names`].
     pub freq_sel: i32,
@@ -699,11 +703,52 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
         digital,
         sample_rate: first_rate.unwrap_or(rate),
         harmonic1_gain: gain,
-        stamps: Stamps::default(),
+        stamps: osc_stamps(info, n, first_rate.unwrap_or(rate)),
         segments: segments.max(1),
+        trigger_sample: (be_i16(info, 0xE).max(0) as usize) * n,
         freq_sel: 0,
         extra_freq: Vec::new(),
     })
+}
+
+/// A BCD byte (`0x44a570`).
+fn bcd(b: u8) -> u32 {
+    u32::from(b >> 4) * 10 + u32::from(b & 15)
+}
+
+/// The OSC info block's trigger moment, BCD-decoded (`0x44a570`,
+/// `0x44a690`): year = byte 0x0B + 2000, month 0x0A, day 9, hour 8,
+/// minute 7, second 6, milliseconds 10 × byte 5.
+pub fn osc_trigger(info: &[u8]) -> Option<[u32; 7]> {
+    let b = |i: usize| info.get(i).copied().map(bcd);
+    Some([2000 + b(0xB)?, b(0xA)?, b(9)?, b(8)?, b(7)?, b(6)?, 10 * b(5)?])
+}
+
+/// The `.osc` record's stamps (`0x452d42`–`0x452e57`): the trigger from
+/// the info block; the start (pretrig × N − 1) sample periods of
+/// ⌊10⁷ / R⌋ × 100 ns before it (pretrig the i16 at 0x0E — so with no
+/// pre-trigger blocks the start is a period after the trigger); dates as
+/// `%i/%02i/%4i` month first, times `%i:%02i:%02i.%03i`.
+fn osc_stamps(info: &[u8], n: usize, rate: f64) -> Stamps {
+    let Some([y, mo, d, h, mi, s, ms]) = osc_trigger(info) else { return Stamps::default() };
+    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || s > 59 {
+        return Stamps::default();
+    }
+    let ticks = |y: u32, mo: u32, d: u32, h: u32, mi: u32, s: u32, ms: u32| {
+        days_from_civil(i64::from(y), i64::from(mo), i64::from(d)) * 864_000_000_000 + ((i64::from(h) * 3600 + i64::from(mi) * 60 + i64::from(s)) * 1000 + i64::from(ms)) * 10_000
+    };
+    let trig = ticks(y, mo, d, h, mi, s, ms);
+    let period = if rate.round() >= 1.0 { 10_000_000 / rate.round() as i64 } else { 0 };
+    let pretrig = i64::from(be_i16(info, 0xE));
+    let start = trig - (pretrig * n as i64 - 1) * period;
+    let fmt = |t: i64| {
+        let (days, rem) = (t.div_euclid(864_000_000_000), t.rem_euclid(864_000_000_000));
+        let (y, m, d) = civil_from_days(days);
+        let ms = rem / 10_000;
+        (format!("{m}/{d:02}/{y:4}"), format!("{}:{:02}:{:02}.{:03}", ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000))
+    };
+    let ((sd, st), (td, tt)) = (fmt(start), fmt(trig));
+    Stamps { start_date: sd, start_time: st, trigger_date: td, trigger_time: tt, ..Stamps::default() }
 }
 
 fn sibling_paths(path: &Path) -> Result<(std::path::PathBuf, std::path::PathBuf), ComtradeError> {
@@ -1284,6 +1329,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         harmonic1_gain: 1.0,
         stamps,
         segments: rates.len(),
+        trigger_sample: 0,
         freq_sel: 0,
         extra_freq: Vec::new(),
     };
@@ -1448,5 +1494,28 @@ mod stamp_seconds_tests {
         assert_eq!(t(&st("", "09:05:03.5"), 0).as_deref(), Some("9:05:03.000"));
         assert_eq!(t(&st("06/27/2023", "25:00:00.0"), 0), None);
         assert_eq!(t(&st("", ""), 0), None);
+    }
+}
+
+#[cfg(test)]
+mod osc_stamp_tests {
+    use super::*;
+
+    /// `0x452d42`–`0x452e57`: the trigger from the BCD info block, the start
+    /// (pretrig × N − 1) periods before it; month-first, unpadded hour.
+    #[test]
+    fn osc_stamps_from_the_info_block() {
+        let mut info = vec![0u8; 128];
+        info[5..12].copy_from_slice(&[0x45, 0x30, 0x20, 0x09, 0x07, 0x03, 0x24]);
+        info[0xE..0x10].copy_from_slice(&2i16.to_be_bytes());
+        let st = osc_stamps(&info, 8, 1000.0);
+        assert_eq!((st.trigger_date.as_str(), st.trigger_time.as_str()), ("3/07/2024", "9:20:30.450"));
+        assert_eq!((st.start_date.as_str(), st.start_time.as_str()), ("3/07/2024", "9:20:30.435"), "15 periods of 1 ms before");
+        // No pre-trigger blocks: the start a period after the trigger.
+        info[0xE..0x10].copy_from_slice(&0i16.to_be_bytes());
+        assert_eq!(osc_stamps(&info, 8, 1000.0).start_time, "9:20:30.451");
+        // Not a date: no stamps.
+        info[10] = 0x13;
+        assert_eq!(osc_stamps(&info, 8, 1000.0).trigger_date, "");
     }
 }

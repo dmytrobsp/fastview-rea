@@ -520,6 +520,11 @@ impl App {
             }
         }
         let d = &mut self.docs[di];
+        // The `.cfg` / `.cff` writers set the trigger sample to 0
+        // (`0x44d6c5`, `0x44daaa`): a record saved so loses its trigger.
+        if !same && kind != ".osc" {
+            d.osc.trigger_sample = 0;
+        }
         let mut t = std::mem::take(&mut d.set.tree);
         d.store_settings(&mut t, false);
         d.set.tree = t;

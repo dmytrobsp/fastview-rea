@@ -197,11 +197,14 @@ pub fn read_comtrade_header(text: &str, cff: bool) -> Option<(String, String, St
 /// The OSC2 header reader (`0x46c730`): «OSC Осциллограф. Версия a.b»,
 /// block «-», the time from header bytes 6..11 (s, min, h, day, month,
 /// year − 2000).
+/// `0x46c730`: the version from block 0's bytes 0 / 1, the time from the
+/// info block (128 · H, H = byte 2) BCD-decoded — the trigger moment
+/// without its milliseconds.
 pub fn read_osc_header(b: &[u8]) -> Option<(String, String, Stamp)> {
-    if b.len() < 12 {
-        return None;
-    }
-    let t = Stamp { y: 2000 + i32::from(b[11]), mo: u32::from(b[10]), d: u32::from(b[9]), h: u32::from(b[8]), mi: u32::from(b[7]), s: u32::from(b[6]) };
+    let h = usize::from(*b.get(2)?);
+    let info = b.get(128 * h..128 * h + 12)?;
+    let [y, mo, d, hh, mi, s, _] = fvb_core::comtrade::osc_trigger(info)?;
+    let t = Stamp { y: y as i32, mo, d, h: hh, mi, s };
     Some((format!("OSC Осциллограф. Версия {}.{}", b[0], b[1]), "-".into(), t))
 }
 
@@ -919,8 +922,12 @@ mod tests {
 
     #[test]
     fn osc_header_and_filters() {
-        let mut b = vec![2, 6, 0, 0, 0, 0, 30, 15, 9, 1, 2, 21];
-        b.resize(64, 0);
+        // H = 1: the info block at 128, its time in BCD (0x30 s, 0x15 min,
+        // 0x09 h, 0x01 day, 0x02 month, 0x21 year).
+        let mut b = vec![2, 6, 1];
+        b.resize(128, 0);
+        b.extend([0, 0, 0, 0, 0, 0x45, 0x30, 0x15, 0x09, 0x01, 0x02, 0x21]);
+        b.resize(256, 0);
         let (st, bl, t) = read_osc_header(&b).unwrap();
         assert_eq!(st, "OSC Осциллограф. Версия 2.6");
         assert_eq!(bl, "-");
