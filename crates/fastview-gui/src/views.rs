@@ -19,6 +19,7 @@ impl App {
     /// button that hides it. Call before the central view.
     pub fn diagram_panes(&mut self, ctx: &egui::Context) {
         self.pane_canvas.clear();
+        self.pane_grid.clear();
         let tab = self.panes.shown_tab();
         if tab.is_some() || self.panes.frequency {
             self.diagram_column(ctx, tab);
@@ -143,13 +144,14 @@ impl App {
     /// original's pane.
     fn char_ui(&mut self, ui: &mut egui::Ui) {
         let h = ui.available_height();
-        egui::TopBottomPanel::top("char_grid")
+        let grid = egui::TopBottomPanel::top("char_grid")
             .resizable(true)
             .default_height(200.0)
             .height_range(50.0..=(h - 150.0).max(50.0))
             .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| self.char_side_panel(ui));
             });
+        self.pane_grid.push(grid.response.rect);
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
             let pane = if self.panes.active == Pane::Differential { Pane::Differential } else { Pane::Circle };
             self.pane_canvas.push((pane, ui.available_rect_before_wrap()));

@@ -676,15 +676,29 @@ mod window_tests {
         // Focus the vector diagram.
         let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Vector).expect("the vector pane").1;
         w.press(Primary, canvas.center(), canvas.center());
-        assert_eq!(w.app.copy_focus, Some(app::Pane::Vector));
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector));
         w.app.dispatch(app::Command::Copy);
         assert_eq!(w.app.clip.picture(), Some((canvas.width().round() as usize, canvas.height().round() as usize)));
         assert_eq!(w.app.clip.get(), None, "a diagram copy leaves no document");
         // Back to the view.
         w.press(Primary, stats, stats);
-        assert_eq!(w.app.copy_focus, None);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::View);
         w.app.dispatch(app::Command::Copy);
         assert!(w.app.clip.get().is_some());
+        // The circle diagram's property grid: the document, no picture.
+        w.app.panes.active = app::Pane::Circle;
+        w.idle(2);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let at = grid.center();
+        w.press(Primary, at, at);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Grid);
+        w.app.dispatch(app::Command::Copy);
+        assert_eq!(w.app.clip.picture(), None, "no picture with the grid focused");
+        assert!(w.app.clip.get().is_some_and(|t| t.contains("<channels")), "the document alone");
+        // A press in the diagram below the grid gives the pane the focus.
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Circle).expect("the circle canvas").1;
+        w.press(Primary, canvas.center(), canvas.center());
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Circle));
     }
 
     /// `FV_FRAME_BENCH=<file.cfg> cargo test --release frame_bench -- --nocapture`

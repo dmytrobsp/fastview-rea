@@ -13,7 +13,7 @@
 //! below its margin rectangle. Pages are painted off screen with egui and
 //! rasterised (`raster`).
 
-use crate::app::{App, Pane};
+use crate::app::{App, CopyFocus, Pane};
 use crate::lanes::{self, OscView, Row};
 use crate::oscgeom as g;
 use crate::raster::{self, Canvas};
@@ -424,17 +424,21 @@ impl App {
         Some(self.render_diagram(&fonts, di, pane, rect.size(), ppp))
     }
 
-    /// A press in a diagram window gives its pane the focus, a press in the
-    /// oscillogram view takes it back (copy follows the focus).
+    /// A press in a diagram window gives its pane the focus, a press in a
+    /// circle / differential property grid gives the grid the focus, a
+    /// press in the oscillogram view takes it back (copy follows the
+    /// focus).
     pub fn track_copy_focus(&mut self, ctx: &egui::Context) {
         if self.modal_up {
             return;
         }
         let Some(p) = ctx.input(|i| if i.pointer.any_pressed() { i.pointer.press_origin() } else { None }) else { return };
         if let Some((pane, _)) = self.pane_canvas.iter().find(|(_, r)| r.contains(p)) {
-            self.copy_focus = Some(*pane);
+            self.copy_focus = CopyFocus::Diagram(*pane);
+        } else if self.pane_grid.iter().any(|r| r.contains(p)) {
+            self.copy_focus = CopyFocus::Grid;
         } else if self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
-            self.copy_focus = None;
+            self.copy_focus = CopyFocus::View;
         }
     }
 

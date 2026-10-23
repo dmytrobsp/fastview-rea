@@ -1396,7 +1396,7 @@ now verified on a real Windows 11 machine (`sysclip::windows_tests::
 system_clipboard_round_trip`, `--ignored`, cross-built and run over ssh); the record is EMR_STRETCHDIBITS rather than EMR_BITBLT
 (same picture); focus on the property grid of the circle / differential
 pane (the original's third case, XML only) is not modelled — a click there
-leaves the focus unchanged; our status-bar messages are ours.
+leaves the focus unchanged (done in L9.58); our status-bar messages are ours.
 
 ### L9.31 — «Загрузка» progress and cancel polling  ·  🟡
 Read (subagent report): the counters live in the document — position
@@ -1978,6 +1978,30 @@ diagrams, whose `fvb_core::channels` already had both cases);
 Residual: a zero coefficient (division) is guarded to 1 (the original
 divides); the `.set`'s per-channel show flags restore `+0x89` as before.
 
+### L9.58 — Copy with a property grid focused: the document, no picture  ·  ✅
+Read by hand (asm): the copy case `0x45be28` opens (OpenClipboard(view))
+and empties the clipboard, then calls `0x405160`, then writes the XML.
+`0x405160`: focus = FromHandle(GetFocus()); child = the focus window's
+first untitled child (FindWindowExW(focus, NULL, NULL, "")). Focus = the
+view, or no such child → the view's picture. Else the child is
+dynamic-cast to DiagramWnd (`0x4ae484`); if not one, the next untitled
+child after it is tried; a DiagramWnd → EmptyClipboard, CloseClipboard,
+its slot +0x170 (the diagram picture, §L9.30); **neither → return with
+nothing set**, so the caller's XML lands alone. The circle / differential
+property grid takes the focus on a click (MFC property grid) and its
+untitled children are its scroll bar / header, never a DiagramWnd → the
+third case. A window with no untitled child (e.g. a plain edit) gets the
+view's picture.
+Ours: `app::CopyFocus { View, Diagram(pane), Grid }`; the grids' rects
+are recorded while drawing (`pane_grid`), a press there sets `Grid`
+(`track_copy_focus`), and copy then puts the document with no picture
+(a focus on a hidden pane / grid falls back to the view). Test
+`copy_pictures_the_view_or_the_focused_diagram` (grid case added).
+Residual: other focus targets with untitled children (e.g. the merge
+bar's combo boxes, if a drop-down style one has the focus) are not
+modelled — only the view, the diagram windows and the grids move our
+copy focus.
+
 Next in L9 (HANDOFF 2026-10-23, late): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2011,7 +2035,7 @@ texts only; a class's virtuals: RTTI `.?AV<Name>@@` → COL → vtable; MFC
 ordinals: disassemble them in the carved mfc120u (L9.37).
 **Open next** (verify a residual is not already done before starting —
 the ledger text was stale for many L9.1–L9.14 items): L9.30 the third
-copy-focus case (focus elsewhere → XML only); L9.22 print residuals (e.g.
+copy-focus case ✅ L9.58; L9.22 print residuals (e.g.
 no comment hover in print); L9.21 MFC's 200 ms hold-to-drag (a self-drop
 shows 1086 — read the LMB-down path first); L9.6 digital level-line snap;
 L9.44 the comment cursor codes (reverse `0x43fab0` / `0x45f660`); MFC

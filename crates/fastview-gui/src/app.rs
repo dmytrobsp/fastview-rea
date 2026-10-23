@@ -70,6 +70,20 @@ pub enum Pane {
     Frequency,
 }
 
+/// The keyboard focus as copy's picture (`0x405160`) sees it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CopyFocus {
+    /// The oscillogram view (or a window without untitled children): the
+    /// view's picture, then the document.
+    #[default]
+    View,
+    /// A diagram pane (a click in its window): that diagram's picture only.
+    Diagram(Pane),
+    /// A circle / differential property grid (its untitled children are a
+    /// scroll bar and a header, no diagram window): the document only.
+    Grid,
+}
+
 /// Visibility of the four diagram panes (all created visible) and the active
 /// tab of the Vector | Circle | Differential group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -926,10 +940,10 @@ pub struct App {
     /// The diagram windows (the canvas, without toolbar or property grid)
     /// as last drawn.
     pub pane_canvas: Vec<(Pane, egui::Rect)>,
-    /// The diagram pane that has the focus (a click in it), `None` while
-    /// the oscillogram view has it: copy (`0x405160`) pictures the focused
-    /// one.
-    pub copy_focus: Option<Pane>,
+    /// The circle / differential property grids as last drawn.
+    pub pane_grid: Vec<egui::Rect>,
+    /// Where the keyboard focus is, as far as copy (`0x405160`) cares.
+    pub copy_focus: CopyFocus,
     /// Screen pixels per point, for pictures at the screen's resolution.
     pub ppp: f32,
     /// The merge bar (shown after a paste).
@@ -1047,7 +1061,8 @@ impl App {
             view_left: crate::lanes::LEFT_W_DEFAULT,
             view_rects: None,
             pane_canvas: Vec::new(),
-            copy_focus: None,
+            pane_grid: Vec::new(),
+            copy_focus: CopyFocus::View,
             ppp: 1.0,
             window_title: String::new(),
             finder: None,

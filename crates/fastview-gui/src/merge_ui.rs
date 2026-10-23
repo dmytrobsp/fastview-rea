@@ -5,7 +5,7 @@
 //! component or pre-fault mode, a pending lane can be dragged in time, and
 //! «Объединить» resamples everything onto one grid.
 
-use crate::app::{App, ChanKey, ChanView, Computed, Doc};
+use crate::app::{App, ChanKey, ChanView, Computed, CopyFocus, Doc};
 use eframe::egui;
 use fvb_core::clipdata::{merged_header, ClipChannel, ClipRecord, HeaderSide};
 use fvb_core::merge::{self, Pasted, SyncChan, SyncMsg};
@@ -258,12 +258,18 @@ impl App {
     /// clipboard document on the system clipboard, after a picture of the
     /// view (`0x405160`). With a diagram pane focused only that diagram's
     /// picture lands (the original sets the document after its diagram copy
-    /// has closed the clipboard, so the document is lost).
+    /// has closed the clipboard, so the document is lost); with a property
+    /// grid focused there is no picture, only the document.
     pub fn copy_channels_for_merge(&mut self) {
         if self.active_doc().is_none() {
             return;
         }
-        if let Some(pane) = self.copy_focus.filter(|p| self.pane_canvas.iter().any(|(q, _)| q == p)) {
+        let focus = match self.copy_focus {
+            CopyFocus::Diagram(p) if !self.pane_canvas.iter().any(|(q, _)| *q == p) => CopyFocus::View,
+            CopyFocus::Grid if self.pane_grid.is_empty() => CopyFocus::View,
+            f => f,
+        };
+        if let CopyFocus::Diagram(pane) = focus {
             let picture = self.diagram_picture(pane);
             self.status = if self.clip.put(None, picture.as_ref()) {
                 "Диаграмма скопирована в буфер обмена.".into()
@@ -279,7 +285,7 @@ impl App {
             return;
         }
         let n = rec.channels.len();
-        let picture = self.view_picture();
+        let picture = if focus == CopyFocus::View { self.view_picture() } else { None };
         self.status = if self.clip.put(Some(&rec.to_text()), picture.as_ref()) {
             format!("Скопировано каналов для объединения: {n}")
         } else {
