@@ -112,6 +112,11 @@ pub struct DiagState {
     pub diff_show_reset: bool,
     pub diff_values: bool,
     pub geom: [Option<PlaneGeom>; 2],
+    /// The circle / differential panes' toolbars: a wheel over one reaches
+    /// the plane (the pane's window procedure `0x436220` posts every
+    /// WM_MOUSEWHEEL on to its diagram window; the toolbar has no wheel
+    /// handler, so Windows hands its wheel to the pane).
+    pub toolbar: [Option<Rect>; 2],
     pub menu: Option<OpenMenu>,
     pub serial: u64,
     /// A press that dismissed a menu is swallowed until the buttons are up.
@@ -129,6 +134,7 @@ impl Default for DiagState {
             diff_show_reset: true,
             diff_values: false,
             geom: [None, None],
+            toolbar: [None, None],
             menu: None,
             serial: 0,
             menu_eat: false,
@@ -613,7 +619,7 @@ impl App {
         let buttons = self.toolbar_buttons(w);
         let doc = self.active_doc().is_some();
         let mut fire = None;
-        egui::SidePanel::right(egui::Id::new(("pane_toolbar", w as u8))).resizable(false).exact_width(26.0).show_inside(ui, |ui| {
+        let bar = egui::SidePanel::right(egui::Id::new(("pane_toolbar", w as u8))).resizable(false).exact_width(26.0).show_inside(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 1.0;
             // Buttons that do not fit are cut off (a short toolbar), never
             // grow the pane past its slot.
@@ -643,6 +649,11 @@ impl App {
                 }
             }
         });
+        match w {
+            Window::Circle => self.diag.toolbar[0] = Some(bar.response.rect),
+            Window::Diff => self.diag.toolbar[1] = Some(bar.response.rect),
+            _ => {}
+        }
         if let Some(c) = fire {
             let at = ui.ctx().pointer_latest_pos().unwrap_or_default();
             self.diag_cmd(w, c, at);
@@ -1127,7 +1138,10 @@ impl App {
         }
         // Wheel (`0x437ae0`): one step per WM_MOUSEWHEEL; wParam is
         // exactly MK_CONTROL / MK_SHIFT only with no mouse button held.
-        if resp.hovered() && self.diag.menu.is_none() {
+        let over_bar = ui.ctx().pointer_hover_pos().is_some_and(|p| {
+            self.diag.toolbar[gi].is_some_and(|r| r.contains(p)) && ui.ctx().layer_id_at(p) == Some(ui.layer_id())
+        });
+        if (resp.hovered() || over_bar) && self.diag.menu.is_none() {
             let (wheels, mods, buttons) = ui.input(|i| (crate::lanes::wheel_deltas(&i.events), i.modifiers, i.pointer.any_down()));
             for delta in wheels {
                 let g = PlaneGeom { w, h, max, char_max: char_ext };
@@ -1890,6 +1904,16 @@ mod tests {
         assert_eq!(h.app.diag.circle.z, 1.5, "Ctrl+wheel up: ×1.5");
         h.wheel(-1.0, egui::Modifiers::CTRL);
         assert_eq!((h.app.diag.circle.z, h.app.diag.circle.ox, h.app.diag.circle.oy), (1.0, 0, 0), "back to z = 1 resets the pans");
+    }
+
+    #[test]
+    fn a_wheel_over_the_pane_toolbar_reaches_the_plane() {
+        let mut h = H::new(Pane::Circle);
+        let at = h.app.diag.toolbar[0].expect("the circle toolbar drawn").center();
+        let ev = egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: Vec2::new(0.0, 1.0), modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(at), ev], Default::default());
+        h.frame(vec![], Default::default());
+        assert_eq!(h.app.diag.circle.oy, 2, "posted on to the plane (`0x436220`)");
     }
 
     #[test]

@@ -4783,6 +4783,22 @@ Ours had «Значения величин» first (percent above absolute), the
 Отмена at the left. Now `freq_dialog_ui` follows the template.
 `FV_WINDOW_STATE=freqdlg` renders it.
 
+### L9.161 — A wheel over the circle / differential pane's toolbar reaches the plane  ·  ✅
+Read (vtable sweep, slot 72 of CircleDiagPane / DiffDiagPane /
+VectorDiagPane; by hand `0x436220`): the pane's window procedure runs the
+base, then posts every WM_MOUSEWHEEL (same wParam / lParam) on to its
+diagram window (`pane+0x370`). The pane toolbars (C*DiagToolBar) have no
+wheel handler (their only overrides: OnUpdateCmdUI routed to the pane,
+`0x471a00`, and AllowShowOnList FALSE, `0x404ba0`), so Windows hands a
+wheel over a toolbar to the pane, which forwards it (INFERRED for the
+system's parent hand-off) — the plane pans / zooms as if the pointer were
+on it; the property grid scrolls itself. (The frequency pane's `0x475b30`
+is the frame pane's own procedure, L9.107.)
+Ours took the wheel only over the plane. Now `pane_toolbar` records the
+circle / differential toolbars' rects (`DiagState::toolbar`) and the
+plane takes the wheel over them as well. Test
+`a_wheel_over_the_pane_toolbar_reaches_the_plane`.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
