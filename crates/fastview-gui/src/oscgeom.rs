@@ -118,7 +118,7 @@ pub fn value_y(v: f64, top: f32, h: f32, min: f64, max: f64) -> f32 {
     if max <= min || !v.is_finite() {
         return top + h / 2.0;
     }
-    top + h - 5.0 - ((v - min) * f64::from(h - 10.0) / (max - min)).round() as f32
+    top + h - 5.0 - round_half_up((v - min) * f64::from(h - 10.0) / (max - min)) as f32
 }
 
 /// Inverse of [`value_y`] (`0x495b40`).
@@ -225,7 +225,7 @@ pub fn round_half_up(x: f64) -> i64 {
 
 /// Whole microseconds of `t` seconds (the original keeps sample times as
 /// integer µs, `0x454b40`).
-fn micros(t: f64) -> i64 {
+pub fn micros(t: f64) -> i64 {
     (t * 1e6).round() as i64
 }
 

@@ -316,8 +316,10 @@ impl App {
         };
         let t0 = doc.osc.time.first().copied().unwrap_or(0.0);
         let time_at = |k: usize| doc.osc.time.get(k).copied().unwrap_or(0.0) - t0;
-        let cgeo = crate::comments::Geo { x_of: &x_of, lane: &lane_of, value_y: &level_y, top: dy, v_bottom };
-        crate::comments::paint(&pp, &doc.comments, None, &cgeo, &time_at);
+        let us_at = |k: usize| crate::oscgeom::micros(time_at(k));
+        let abs_at = |dt: i64| fvb_core::comtrade::moment_time_text(&doc.osc.stamps, doc.osc.rev_year, dt);
+        let cgeo = crate::comments::Geo { x_of: &x_of, lane: &lane_of, value_y: &level_y, top: dy, v_bottom, us: &us_at, abs: &abs_at };
+        crate::comments::paint(&pp, &doc.comments, None, &cgeo);
     }
 
     /// The header (`0x405c20`) and footer (`0x406590`) of page `idx` of the

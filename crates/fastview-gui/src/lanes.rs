@@ -953,12 +953,14 @@ impl App {
             let (lo, hi) = if rows[li].members.len() == 1 { ranges[li] } else { chan_range(doc, ch, primary) };
             g::level_y(v, tops[li], rows[li].h, lo, hi)
         };
-        let cgeo = crate::comments::Geo { x_of: &x_of, lane: &lane_of, value_y: &level_y, top: client.top(), v_bottom };
+        let us_at = |k: usize| g::micros(time_at(k));
+        let abs_at = |dt: i64| fvb_core::comtrade::moment_time_text(&doc.osc.stamps, doc.osc.rev_year, dt);
+        let cgeo = crate::comments::Geo { x_of: &x_of, lane: &lane_of, value_y: &level_y, top: client.top(), v_bottom, us: &us_at, abs: &abs_at };
         let comment_at = |pos: Pos2| {
             doc.comments.iter().enumerate().find_map(|(i, c)| crate::comments::hit(c, pos, &cgeo).map(|part| (i, part)))
         };
         let hovered = self.comment_drag.map(|(i, _)| i).or_else(|| hover.filter(|p| p.x > left && p.y < plot_bottom).and_then(|p| comment_at(p).map(|h| h.0)));
-        crate::comments::paint(&pp, &doc.comments, hovered, &cgeo, &time_at);
+        crate::comments::paint(&pp, &doc.comments, hovered, &cgeo);
         if let Some((i, _)) = &self.level_edit {
             if let Some(crate::comments::CommentKind::Level { chan, value, from, .. }) = doc.comments.get(*i).map(|c| &c.kind) {
                 if let Some(y) = level_y(*chan, *value) {

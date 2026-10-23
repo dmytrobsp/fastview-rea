@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 297 pass)
+- `cargo test --workspace`   (currently 299 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -790,8 +790,8 @@ Ours: `comments.rs` (`Comment`, `CommentKind`, `hit`, `drag`, `normalise`,
 `paint`, the item-mode dialog; 2 unit tests), `lanes.rs` placement / drag /
 hover / level edit, three ribbon tools. Headless test: one-shot tools,
 level/area drag-out, moment drag, lock, menu by kind.
-Residual: (saving / loading comments in the `.set`: done in L9.17); the moment info box
-shows the time from the record start (no absolute date); bubble marks are
+Residual: (saving / loading comments in the `.set`: done in L9.17); (the moment info
+box's absolute time: done in L9.47); bubble marks are
 our own drawing; digital level-line snapping not modelled (levels are
 analog-only).
 
@@ -1463,8 +1463,7 @@ Ours: the per-member lane clip when `ChanView::window` is set; level lines
 via `oscgeom::level_y` (range check + truncation; a group lane uses the
 channel's own range); the rubber band end clamp. Tests:
 `a_rect_zoomed_curve_is_clipped_to_its_lane`, `level_lines_stay_in_their_
-lane`. Residual: round-half-up vs our round-half-away differs only for
-negative half values; the clip under print / EMF map modes NOT DETERMINED;
+lane`. Residual: (round-half-up for value→y: done in L9.47); the clip under print / EMF map modes NOT DETERMINED;
 the original's rect-zoom lane top sums preceding visible analog channels in
 channel order (differs for group members — quirk not modelled).
 
@@ -1718,6 +1717,37 @@ pending computed lanes (see the merge entries); the icon 0 drawn at
 egui's centred stroke on the rectangle edge (GDI draws it inside the
 right / bottom exclusive edge): ≤ 1 px difference.
 
+### L9.47 — Comment texts as slot 9; the moment's absolute time; value→y rounding  ·  ✅
+Read (RTTI `MomentItem` / `LevelItem` / `AreaItem`, vtables `0x4c7100` /
+`0x4c70d4` / `0x4c70a8`; slot 9 = `0x47a4e0` / `0x470f30` / `0x403fa0`):
+slot 9 is both the info box text (`0x43df90`) and the level / area label
+(their painters `0x471020` / `0x4040c0` call it; the moment painter does
+not) — the comment text, then a **blank line** and the kind line:
+«Уровень: %.2f» (text alone when the level's channel is gone,
+`0x42edf0`); «Длительность: %d.%03d с» of |Δµs| with **truncated** s and
+ms; for a moment «Время: » + absolute + «\nОт начала ОСЦ: %d.%03d с».
+The absolute time: start date via `0x455800` (`dd/mm/yyyy`, "" when it
+does not scan) + " " + the raw start time (`doc+0x250`), cut at the first
+`.`; the left part through `VarDateFromStr` (user locale); `_wtoi` of the
+first three characters after the `.` is **added to the µs offset** (the
+start's milliseconds count as µs — they effectively vanish); whole seconds
+move the COleDateTime (`0x47abb0`), `Format()` with no pattern
+(`0x47aa50`, `VarBstrFromDate`: date alone at midnight, time alone on day
+0, «Invalid DateTime» on failure) + "." + `%03d` of the sum's ms. When
+`VarDateFromStr` fails the **whole text is empty** (the box shrinks to its
+padding). Value→y in the analog painters rounds half up (L9.33's read).
+Ours: `fvb_core::comtrade::moment_time_text` (+ `ole_date`), `Comment::
+info(us, abs)` for the box and both labels (`comments::Geo` carries the µs
+and absolute providers; µs = `oscgeom::micros` of the time from the first
+sample), `seconds_ms` on whole µs truncated; `oscgeom::value_y` uses
+`round_half_up`. Tests `moment_time`, `info_texts_as_slot_9`;
+`window_dump` gains `FV_WINDOW_STATE=comments` (rendered the hovered
+moment and the labels).
+Residual / ASSUMED: the user locale is taken as ru-RU / uk-UA (day-first
+parse, `dd.MM.yyyy H:mm:ss`); other locales and OLE's lenient spellings
+are not modelled; the ±3615897-day span check and the date-0 / time-0
+edge (`0:00:00`) not exercised.
+
 Next in L9 (HANDOFF 2026-10-23): **public at
 github.com/dmytrobsp/fastview-rea, release v0.1.0** (Linux / Windows / macOS
 x86_64 + arm64, flat archives). This session: the four GUI bugs (L9.23–
@@ -1741,7 +1771,11 @@ fileparams|explorer|parambar|vizirs|skin<k>] [FV_WINDOW_SIZE=w,h]
 Read the PNG; `FV_FRAME_BENCH=<cfg> cargo test --release frame_bench`
 times a frame. The user's sample records live outside the repo (never
 commit them). **Done since:** L9.46 digital lanes drawn by the
-decimating painter (`FV_WINDOW_XSCALE=f` for `window_dump`). **Open
+decimating painter (`FV_WINDOW_XSCALE=f` for `window_dump`); L9.47
+comment texts / moment absolute time (`FV_WINDOW_STATE=comments`). A
+residual triage (2026-10-23) found many L9.1–L9.14 residuals already done
+(ledger text stale) — next candidates: L9.9 delete → recycle bin, L9.3
+Быстрый анализ as a modal sheet, L9.30 / L9.22 small ones. **Open
 next:** the smaller residuals in L9.1–L9.45 (several older ones were already done — check the
 code first), print residuals (L9.22), pane re-docking (egui limit).
 Pending user answers: publishing factual indexes (msgmaps / vtables /

@@ -931,6 +931,64 @@ pub fn stamp_date_text(date: &str, rev_year: i32) -> Option<String> {
     stamp_date(date, rev_year).map(|(y, m, d)| format!("{d:02}/{m:02}/{y:04}"))
 }
 
+/// The «Время:» value of a moment comment (`0x47a4e0`), `dt_us` after the
+/// first sample. The start date (as [`stamp_date_text`], "" when it does
+/// not parse) + " " + the raw start time is cut at its first `.`; the left
+/// part is parsed as an OLE date (`VarDateFromStr`, user locale — taken as
+/// ru-RU / uk-UA: day first) and the first three characters after the `.`
+/// are `_wtoi`-ed and **added to the µs offset** (the original's slip: the
+/// start's milliseconds count as microseconds). Whole seconds of that sum
+/// move the date; it is printed as `VarBstrFromDate` does (`dd.MM.yyyy
+/// H:mm:ss`, the date alone at midnight, the time alone on day 0) + "." +
+/// `%03d` of the sum's milliseconds (truncated). `None` when the date does
+/// not parse (the info text is then empty).
+pub fn moment_time_text(stamps: &Stamps, rev_year: i32, dt_us: i64) -> Option<String> {
+    let s = format!("{} {}", stamp_date_text(&stamps.start_date, rev_year).unwrap_or_default(), stamps.start_time);
+    let (left, right) = s.split_once('.').unwrap_or((&s, ""));
+    let (mut day, tod) = ole_date(left)?;
+    let total = wtoi(&right.chars().take(3).collect::<String>()) + dt_us;
+    let mut secs = tod + total / 1_000_000;
+    day += secs.div_euclid(86400);
+    secs = secs.rem_euclid(86400);
+    let (y, m, d) = civil_from_days(day + days_from_civil(1899, 12, 30));
+    let time = format!("{}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60);
+    let shown = match (day, secs) {
+        (_, 0) => format!("{d:02}.{m:02}.{y:04}"),
+        (0, _) => time,
+        _ => format!("{d:02}.{m:02}.{y:04} {time}"),
+    };
+    Some(format!("{shown}.{:03}", total % 1_000_000 / 1000))
+}
+
+/// The day number from 1899-12-30 and the second of the day of a
+/// `d/m/y h:m:s` string, either part optional (`VarDateFromStr` for the
+/// shapes [`moment_time_text`] builds; other OLE spellings not modelled).
+fn ole_date(s: &str) -> Option<(i64, i64)> {
+    let (mut day, mut tod, mut any) = (0, 0, false);
+    for tok in s.split_whitespace() {
+        if tok.contains('/') {
+            let v = scan_ints(tok, &['/', '/']);
+            let [d, m, y] = v[..] else { return None };
+            let dim = days_from_civil(y + m / 12, m % 12 + 1, 1) - days_from_civil(y, m, 1);
+            if !(1..=12).contains(&m) || d < 1 || d > dim {
+                return None;
+            }
+            day = days_from_civil(y, m, d) - days_from_civil(1899, 12, 30);
+        } else if tok.contains(':') {
+            let v = scan_ints(tok, &[':', ':']);
+            let (h, mi, se) = (*v.first()?, *v.get(1)?, v.get(2).copied().unwrap_or(0));
+            if !(0..24).contains(&h) || !(0..60).contains(&mi) || !(0..60).contains(&se) {
+                return None;
+            }
+            tod = h * 3600 + mi * 60 + se;
+        } else {
+            return None;
+        }
+        any = true;
+    }
+    any.then_some((day, tod))
+}
+
 /// A stamp's time of day in seconds as the absolute-time labels read it
 /// (`0x464350`, `0x466170`): `_wtoi` of the hours and of the minutes after
 /// the first `:`, `_wtof` of the seconds after the second; a missing field
@@ -1321,5 +1379,21 @@ mod stamp_seconds_tests {
         assert_eq!(super::stamp_seconds("01/01/1970", "00:00:00.0", 1999), Some(0.0));
         assert_eq!(super::stamp_seconds("02/01/1970", "00:00:01.5", 2013), Some(86_401.5), "2013: day first");
         assert_eq!(super::stamp_seconds("03/01/2000", "00:00:00", 1999), Some(951_868_800.0), "1999: month first");
+    }
+
+    #[test]
+    fn moment_time() {
+        let st = |date: &str, time: &str| super::Stamps { start_date: date.into(), start_time: time.into(), ..Default::default() };
+        let t = |s: &super::Stamps, us| super::moment_time_text(s, 1999, us);
+        let s = st("06/27/2023", "13:29:11.933000");
+        // The start's 933 ms are added as 933 µs: they vanish.
+        assert_eq!(t(&s, 0).as_deref(), Some("27.06.2023 13:29:11.000"));
+        assert_eq!(t(&s, 200_500).as_deref(), Some("27.06.2023 13:29:11.201"));
+        assert_eq!(t(&s, 49_000_000).as_deref(), Some("27.06.2023 13:30:00.000"));
+        // Midnight prints the date alone; no date prints the time alone.
+        assert_eq!(t(&st("01/01/2024", "00:00:00.000000"), 30_000).as_deref(), Some("01.01.2024.030"));
+        assert_eq!(t(&st("", "09:05:03.5"), 0).as_deref(), Some("9:05:03.000"));
+        assert_eq!(t(&st("06/27/2023", "25:00:00.0"), 0), None);
+        assert_eq!(t(&st("", ""), 0), None);
     }
 }

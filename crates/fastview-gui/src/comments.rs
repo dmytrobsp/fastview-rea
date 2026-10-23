@@ -106,25 +106,28 @@ impl Comment {
         }
     }
 
-    /// Text of the info box (slot 9): the text and a kind line.
-    pub fn info(&self, time: &dyn Fn(usize) -> f64) -> String {
-        let line = match self.kind {
-            CommentKind::Moment { pos } => format!("Время: {}", seconds_ms(time(pos))),
-            CommentKind::Level { value, .. } => format!("Уровень: {value:.2}"),
-            CommentKind::Area { from, to, .. } => format!("Длительность: {}", seconds_ms((time(to) - time(from)).abs())),
-        };
-        if self.text.is_empty() {
-            line
-        } else {
-            format!("{}\n{line}", self.text)
+    /// Slot 9 — the info box text and the level / area label: the text,
+    /// a blank line, then «Уровень: %.2f» (`0x470f30`), «Длительность:» of
+    /// |Δt| (`0x403fa0`) or, for a moment (`0x47a4e0`), «Время:» with the
+    /// absolute time and «От начала ОСЦ:» — the whole text empty when the
+    /// record's start stamp does not parse. `us(k)`: sample k's time in µs
+    /// from the first sample; `abs`: [`fvb_core::comtrade::moment_time_text`].
+    pub fn info(&self, us: &dyn Fn(usize) -> i64, abs: &dyn Fn(i64) -> Option<String>) -> String {
+        let text = &self.text;
+        match self.kind {
+            CommentKind::Moment { pos } => {
+                let dt = us(pos);
+                abs(dt).map_or_else(String::new, |a| format!("{text}\n\nВремя: {a}\nОт начала ОСЦ: {}", seconds_ms(dt)))
+            }
+            CommentKind::Level { value, .. } => format!("{text}\n\nУровень: {value:.2}"),
+            CommentKind::Area { from, to, .. } => format!("{text}\n\nДлительность: {}", seconds_ms((us(to) - us(from)).abs())),
         }
     }
 }
 
-/// `%d.%03d с`.
-pub fn seconds_ms(t: f64) -> String {
-    let ms = (t.abs() * 1000.0).round() as i64;
-    format!("{}{}.{:03} с", if t < 0.0 { "-" } else { "" }, ms / 1000, ms % 1000)
+/// `%d.%03d с` of whole µs: seconds and milliseconds truncated.
+pub fn seconds_ms(us: i64) -> String {
+    format!("{}.{:03} с", us / 1_000_000, us % 1_000_000 / 1000)
 }
 
 /// What painting and hit-testing need from the view.
@@ -137,6 +140,10 @@ pub struct Geo<'a> {
     /// Top of the plot and the bottom of the визир lines.
     pub top: f32,
     pub v_bottom: f32,
+    /// Sample k's time in µs from the first sample and a moment's absolute
+    /// time (see [`Comment::info`]).
+    pub us: &'a dyn Fn(usize) -> i64,
+    pub abs: &'a dyn Fn(i64) -> Option<String>,
 }
 
 /// An area's rectangle: its sample range × the span of its two lanes.
@@ -196,7 +203,7 @@ fn bubble(p: &egui::Painter, at: Pos2, color: Color32) {
 
 /// Paint every element; `hover` is the element under the pointer (drawn
 /// selected, with its info box).
-pub fn paint(p: &egui::Painter, comments: &[Comment], hover: Option<usize>, geo: &Geo, time: &dyn Fn(usize) -> f64) {
+pub fn paint(p: &egui::Painter, comments: &[Comment], hover: Option<usize>, geo: &Geo) {
     let font = FontId::proportional(11.0);
     for (i, c) in comments.iter().enumerate() {
         let sel = hover == Some(i);
@@ -217,12 +224,7 @@ pub fn paint(p: &egui::Painter, comments: &[Comment], hover: Option<usize>, geo:
                 }
                 bubble(p, Pos2::new(x2 + 10.0, y - 7.0), col);
                 if !c.hidden {
-                    let mut t = c.text.clone();
-                    if !t.is_empty() {
-                        t.push('\n');
-                    }
-                    t.push_str(&format!("Уровень: {value:.2}"));
-                    p.text(Pos2::new(x1 + 5.0, y + 5.0), Align2::LEFT_TOP, t, font.clone(), TEXT);
+                    p.text(Pos2::new(x1 + 5.0, y + 5.0), Align2::LEFT_TOP, c.info(geo.us, geo.abs), font.clone(), TEXT);
                 }
                 Pos2::new(x2 + 3.0, y)
             }
@@ -231,19 +233,14 @@ pub fn paint(p: &egui::Painter, comments: &[Comment], hover: Option<usize>, geo:
                 p.rect_filled(r, 0.0, Color32::from_rgba_unmultiplied(255, 0, 0, 64));
                 p.rect_stroke(r, 0.0, Stroke::new(3.0f32, col));
                 if !c.hidden {
-                    let mut t = c.text.clone();
-                    if !t.is_empty() {
-                        t.push('\n');
-                    }
-                    t.push_str(&format!("Длительность: {}", seconds_ms((time(to) - time(from)).abs())));
-                    p.text(Pos2::new(r.left() + 5.0, r.bottom() - 5.0), Align2::LEFT_BOTTOM, t, font.clone(), TEXT);
+                    p.text(Pos2::new(r.left() + 5.0, r.bottom() - 5.0), Align2::LEFT_BOTTOM, c.info(geo.us, geo.abs), font.clone(), TEXT);
                 }
                 r.right_top() + Vec2::new(3.0, 0.0)
             }
         };
         if sel {
             let at = right_top;
-            let galley = p.layout_no_wrap(c.info(time), font.clone(), Color32::from_rgb(0, 0, 192));
+            let galley = p.layout_no_wrap(c.info(geo.us, geo.abs), font.clone(), Color32::from_rgb(0, 0, 192));
             let r = Rect::from_min_size(at, galley.size() + Vec2::splat(10.0));
             p.rect_filled(r, 10.0, Color32::from_rgb(255, 230, 230));
             p.rect_stroke(r, 10.0, Stroke::new(1.0f32, Color32::from_rgb(192, 175, 175)));
@@ -298,7 +295,13 @@ mod tests {
     use super::*;
 
     fn geo_test<'a>(x_of: &'a dyn Fn(f64) -> f32, lane: &'a dyn Fn(ChanKey) -> Option<(f32, f32)>, vy: &'a dyn Fn(usize, f64) -> Option<f32>) -> Geo<'a> {
-        Geo { x_of, lane, value_y: vy, top: 0.0, v_bottom: 400.0 }
+        fn us(k: usize) -> i64 {
+            k as i64 * 1000
+        }
+        fn abs(_: i64) -> Option<String> {
+            None
+        }
+        Geo { x_of, lane, value_y: vy, top: 0.0, v_bottom: 400.0, us: &us, abs: &abs }
     }
 
     #[test]
@@ -339,6 +342,22 @@ mod tests {
         l.locked = true;
         l.drag(2, 0, None);
         assert!(matches!(l.kind, CommentKind::Level { from: 5, .. }), "locked elements do not move");
-        assert_eq!(seconds_ms(1.2345), "1.235 с");
+        assert_eq!(seconds_ms(1_234_999), "1.234 с", "truncated");
+    }
+
+    #[test]
+    fn info_texts_as_slot_9() {
+        let us = |k: usize| k as i64 * 250_500;
+        let abs = |dt: i64| Some(format!("T+{dt}"));
+        let none = |_: i64| None;
+        let mut m = Comment::new(CommentKind::Moment { pos: 4 });
+        assert_eq!(m.info(&us, &abs), "\n\nВремя: T+1002000\nОт начала ОСЦ: 1.002 с");
+        m.text = "КЗ".into();
+        assert_eq!(m.info(&us, &abs), "КЗ\n\nВремя: T+1002000\nОт начала ОСЦ: 1.002 с");
+        assert_eq!(m.info(&us, &none), "", "an unparsable start stamp empties the text");
+        let l = Comment::new(CommentKind::Level { chan: 0, value: 2.345, from: 0, to: 1 });
+        assert_eq!(l.info(&us, &none), "\n\nУровень: 2.35");
+        let a = Comment::new(CommentKind::Area { chan_from: ChanKey::Analog(0), chan_to: ChanKey::Analog(0), from: 7, to: 3 });
+        assert_eq!(a.info(&us, &none), "\n\nДлительность: 1.002 с");
     }
 }

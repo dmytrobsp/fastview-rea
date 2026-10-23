@@ -667,9 +667,12 @@ Clip (leftW, 0)–(W, H−A). Shared pens: 1 px (255,100,100), 3 px
   (5 px inset) in (128,0,0) incl. «Длительность: %d.%03d с».
 - Info box for the selected item (0x43df90): RoundRect radius 10, pen
   (192,175,175), fill (255,230,230), text (0,0,192), padding 5, at the item's
-  right edge + 3. Text (slot 9): `text` + a kind line — Moment «Время:»
-  absolute date/time with `%03d` ms and the relative «%d.%03d с»; Level
-  «Уровень: %.2f»; Area «Длительность: %d.%03d с» of |t_to − t_from|.
+  right edge + 3. Text (slot 9, also the level / area labels): `text` +
+  "\n\n" + a kind line — Moment «Время: » absolute date/time (locale
+  `Format()`) + `.%03d` ms + «\nОт начала ОСЦ: %d.%03d с» (empty text when
+  the start stamp does not parse); Level «Уровень: %.2f»; Area
+  «Длительность: %d.%03d с» of |t_to − t_from| — s and ms truncated
+  (ledger L9.47).
 
 ### 5.3 Placement [R, 0x43eb40]
 Only when the tool mode is set and no item is under the pointer:

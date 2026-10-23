@@ -760,6 +760,18 @@ mod window_tests {
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "omp" || s == "ompparams") {
             app.tab = RibbonTab::Omp;
         }
+        // `FV_WINDOW_STATE=comments`: a moment, a level line and an area.
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "comments") {
+            use comments::{Comment, CommentKind};
+            use app::ChanKey;
+            if let Some(d) = app.active_doc_mut() {
+                let mut m = Comment::new(CommentKind::Moment { pos: 60 });
+                m.text = "Пуск".into();
+                d.comments.push(m);
+                d.comments.push(Comment::new(CommentKind::Level { chan: 0, value: 0.0, from: 20, to: 50 }));
+                d.comments.push(Comment::new(CommentKind::Area { chan_from: ChanKey::Analog(1), chan_to: ChanKey::Analog(2), from: 100, to: 160 }));
+            }
+        }
         // `FV_WINDOW_XSCALE=f`: the horizontal scale (25·f px per sample).
         if let Some(f) = std::env::var("FV_WINDOW_XSCALE").ok().and_then(|s| s.parse().ok()) {
             if let Some(d) = app.active_doc_mut() {
