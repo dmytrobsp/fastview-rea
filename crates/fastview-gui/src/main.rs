@@ -45,7 +45,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1320.0, 860.0])
             .with_min_inner_size([866.0, 500.0])
-            .with_title("Механотроника FastView")
+            .with_title(app::APP_TITLE)
             .with_drag_and_drop(true),
         ..Default::default()
     };
@@ -273,7 +273,7 @@ impl App {
         // files dropped on the window (DragAcceptFiles).
         let title = match self.active_doc() {
             Some(d) => format!("Механотроника FastView - {}", d.name),
-            None => "Механотроника FastView".to_string(),
+            None => app::APP_TITLE.to_string(),
         };
         if self.window_title != title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
@@ -774,6 +774,10 @@ mod window_tests {
         };
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "omp" || s == "ompparams") {
             app.tab = RibbonTab::Omp;
+        }
+        // `FV_WINDOW_STATE=alert`: message 1086 over the window.
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "alert") {
+            app.dlg.alert = Some(lanes::MSG_COMBINE_UNITS.to_string());
         }
         // `FV_WINDOW_STATE=comments`: a moment, a level line and an area.
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "comments") {

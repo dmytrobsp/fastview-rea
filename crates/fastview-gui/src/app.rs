@@ -70,6 +70,10 @@ pub enum Pane {
     Frequency,
 }
 
+/// The application title (`AFX_IDS_APP_TITLE` 57344): the main window's
+/// and every message box's caption (`AfxMessageBox` uses `m_pszAppName`).
+pub const APP_TITLE: &str = "Механотроника FastView";
+
 /// The keyboard focus as copy's picture (`0x405160`) sees it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CopyFocus {

@@ -451,8 +451,11 @@ Menus 358/385/386/556/557 are never loaded by the view (the five-colour submenu
 Otherwise the normal button-down runs, then if the click is on an analog
 lane's **name badge** (x ∈ [4, nameW+7), y ∈ (top+5, top+5+textH)) an **inline
 rename edit** opens over it (one CEdit, style 0x50800080, id 0x65); Enter or a
-press outside commits, Esc cancels; a duplicate name → message 397 «Данное
-имя канала уже используется.» and the edit closes. Double-click never opens
+press outside commits, Esc cancels; the commit (`0x465df0`) takes the text
+as typed (no trim, empty allowed); a name equal (case-sensitive, `wcscmp`)
+to another channel's (file or computed) → message box 397 «Данное имя
+канала уже используется.» (MB_OK) and the edit closes; every commit marks
+the document modified, even a refused one (L9.62). Double-click never opens
 channel properties.
 
 **Wheel** (0x45d990):

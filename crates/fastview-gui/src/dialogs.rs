@@ -12,6 +12,44 @@ pub fn modal_backdrop(ctx: &egui::Context, id: &str, order: egui::Order) {
     });
 }
 
+/// The icon of a message box: `AfxMessageBox` adds the exclamation to
+/// MB_OK / MB_OKCANCEL and the question to MB_YESNO(CANCEL) when the call
+/// gives none; MB_ICONHAND (0x10) is the error mark.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MsgIcon {
+    #[default]
+    Exclamation,
+    Error,
+    Question,
+}
+
+/// A message box's body: its icon left of the text (our drawing of the
+/// system icons).
+pub fn message_body(ui: &mut egui::Ui, icon: MsgIcon, text: &str) {
+    ui.horizontal(|ui| {
+        let (r, _) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
+        let p = ui.painter();
+        let c = r.center();
+        let (mark, bg) = match icon {
+            MsgIcon::Exclamation => {
+                let tri = vec![Pos2::new(c.x, r.top() + 2.0), Pos2::new(r.right() - 1.0, r.bottom() - 3.0), Pos2::new(r.left() + 1.0, r.bottom() - 3.0)];
+                p.add(egui::Shape::convex_polygon(tri, Color32::from_rgb(252, 204, 34), Stroke::new(1.0f32, Color32::from_rgb(190, 140, 0))));
+                ("!", None)
+            }
+            MsgIcon::Error => ("✕", Some(Color32::from_rgb(214, 40, 40))),
+            MsgIcon::Question => ("?", Some(Color32::from_rgb(40, 100, 200))),
+        };
+        if let Some(bg) = bg {
+            p.circle_filled(c, 15.0, bg);
+        }
+        let color = if bg.is_some() { Color32::WHITE } else { Color32::BLACK };
+        let at = if bg.is_some() { c } else { c + Vec2::new(0.0, 4.0) };
+        p.text(at, egui::Align2::CENTER_CENTER, mark, egui::FontId::proportional(20.0), color);
+        ui.add_space(8.0);
+        ui.label(text);
+    });
+}
+
 /// Whether a dialog window (egui's `Order::Middle` layer, where every
 /// `egui::Window` of ours lives or puts its backdrop) was shown last frame.
 pub fn window_up(ctx: &egui::Context) -> bool {

@@ -6,6 +6,7 @@
 //! OK checks the name as the original's sequence does (396 / 473, the
 //! dialog stays) and appends the formula the form builds (`fvb_core::addformula::build`) as a computed channel.
 
+use crate::dialogs::MsgIcon;
 use crate::app::App;
 use eframe::egui::{self, Rect, Vec2};
 use fvb_core::addformula::{self as af, Kind, Node, Values};
@@ -31,8 +32,10 @@ pub struct AddFormulaDlg {
     pub values: Values,
     /// Groups the user folded (the original inserts every group expanded).
     pub collapsed: BTreeSet<Path>,
-    /// Message boxes over the dialog (396 / 473), shown one after another.
-    pub alerts: Vec<&'static str>,
+    /// Message boxes over the dialog (396 / 473), shown one after another:
+    /// the DDX's 396 is MB_OK (`0x403213`), the member check's 396 / 473
+    /// MB_ICONHAND (`0x4033ed` / `0x403519`).
+    pub alerts: Vec<(&'static str, MsgIcon)>,
     /// Items of the channel lists: the record's analog channels, then the
     /// computed channels (`0x411c70`).
     pub channels: Vec<String>,
@@ -87,14 +90,14 @@ impl AddFormulaDlg {
         if ddx_ok {
             self.member = self.name.clone();
         } else {
-            self.alerts.push(af::MSG_BAD_NAME);
+            self.alerts.push((af::MSG_BAD_NAME, MsgIcon::Exclamation));
         }
         if let Err(e) = af::check_name(&self.member, &taken) {
-            self.alerts.push(e.message());
+            self.alerts.push((e.message(), MsgIcon::Error));
             return None;
         }
         if !ddx_ok {
-            self.alerts.push(af::MSG_BAD_NAME);
+            self.alerts.push((af::MSG_BAD_NAME, MsgIcon::Exclamation));
             return None;
         }
         let f = af::build(form, &self.values)?;
@@ -178,17 +181,17 @@ impl App {
                     });
                 });
             });
-        if let Some(&msg) = st.alerts.first() {
+        if let Some(&(msg, icon)) = st.alerts.first() {
             let mut close = false;
             crate::dialogs::modal_backdrop(ctx, "fv_add_formula_alert_block", egui::Order::Middle);
-            egui::Window::new("FastView")
+            egui::Window::new(crate::app::APP_TITLE)
                 .id(egui::Id::new("fv_add_formula_alert"))
                 .collapsible(false)
                 .resizable(false)
                 .order(egui::Order::Foreground)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
-                    ui.label(msg);
+                    crate::dialogs::message_body(ui, icon, msg);
                     ui.vertical_centered(|ui| close = ui.button("    OK    ").clicked());
                 });
             if close || ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
@@ -423,7 +426,7 @@ mod tests {
     /// The dialog stays every time.
     #[test]
     fn name_is_checked() {
-        let (bad, taken) = (af::MSG_BAD_NAME, af::MSG_NAME_TAKEN);
+        let (bad, taken) = ((af::MSG_BAD_NAME, MsgIcon::Exclamation), (af::MSG_NAME_TAKEN, MsgIcon::Error));
         let mut h = Harness::new();
         for (name, msgs) in [("", vec![bad, bad]), ("2x", vec![bad, bad]), ("Ua", vec![taken]), ("", vec![bad, taken])] {
             h.app.formula_dlg.as_mut().unwrap().name = name.into();

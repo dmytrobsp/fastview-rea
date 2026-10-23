@@ -22,7 +22,7 @@ pub const L_KZ: &str = "Lкз";
 pub const KZ_PHASES: [&str; 3] = ["КЗ фазы А", "КЗ фазы B", "КЗ фазы C"];
 
 /// Title of the application's message boxes (string 128).
-const APP_TITLE: &str = "Механотроника FastView";
+use crate::app::APP_TITLE;
 
 /// The ОМП object of a document (`doc+0x308`): its settings, the last run and
 /// the «result shown» flag (`doc+0x690`, `obj+0x388`).
@@ -432,10 +432,7 @@ impl App {
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("⚠").size(22.0).color(Color32::from_rgb(200, 140, 0)));
-                        ui.label(&msg);
-                    });
+                    crate::dialogs::message_body(ui, crate::dialogs::MsgIcon::Exclamation, &msg);
                     ui.vertical_centered(|ui| ok = ui.button("   OK   ").clicked());
                 });
             if ok || ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {

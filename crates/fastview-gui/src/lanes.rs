@@ -1460,14 +1460,18 @@ impl App {
             None => self.rename_edit = Some((i, text)),
             Some(false) => {}
             Some(true) => {
-                let name = text.trim().to_string();
+                // `0x465df0`: the text as typed (no trim, empty allowed),
+                // refused when another channel has it (case-sensitive) with
+                // message box 397 (MB_OK, `0x4660ab`); the document is marked
+                // modified either way (`0x466062`).
                 let d = &mut self.docs[ai];
-                let taken = d.osc.analog.iter().enumerate().any(|(j, c)| j != i && c.id == name) || d.computed.iter().any(|c| c.name == name);
+                let taken = d.osc.analog.iter().enumerate().any(|(j, c)| j != i && c.id == text) || d.computed.iter().any(|c| c.name == text);
                 if taken {
-                    self.status = "Данное имя канала уже используется.".into();
-                } else if !name.is_empty() {
-                    d.osc.analog[i].id = name;
+                    self.dlg.alert = Some(crate::chandlg::MSG_NAME_TAKEN.to_string());
+                } else {
+                    d.osc.analog[i].id = text;
                 }
+                d.set.modified = true;
             }
         }
     }
@@ -2498,6 +2502,35 @@ mod menu_tests {
         assert!(started(&h));
         h.frame(vec![ev(o, false)]);
         h.frame(vec![]);
+    }
+
+    /// `0x465df0`: the inline rename takes the text as typed, refuses a
+    /// name another channel has with message box 397, and marks the record
+    /// modified on every commit.
+    #[test]
+    fn inline_rename_commits_as_typed_or_refuses_with_397() {
+        let enter = || egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        let mut h = Harness::new();
+        let commit = |h: &mut Harness, text: &str| {
+            h.app.rename_edit = Some((0, text.to_string()));
+            h.frame(vec![]);
+            h.frame(vec![enter()]);
+            h.frame(vec![]);
+        };
+        let other = h.doc().osc.analog[1].id.clone();
+        let own = h.doc().osc.analog[0].id.clone();
+        h.app.active_doc_mut().unwrap().set.modified = false;
+        commit(&mut h, &other);
+        assert_eq!(h.app.dlg.alert.as_deref(), Some(crate::chandlg::MSG_NAME_TAKEN));
+        assert_eq!(h.doc().osc.analog[0].id, own, "refused");
+        assert!(h.doc().set.modified, "modified even when refused");
+        h.app.dlg.alert = None;
+        commit(&mut h, &other.to_lowercase());
+        assert!(h.app.dlg.alert.is_none(), "the comparison is case-sensitive");
+        commit(&mut h, " Ia 2 ");
+        assert_eq!(h.doc().osc.analog[0].id, " Ia 2 ", "no trim");
+        commit(&mut h, "");
+        assert_eq!(h.doc().osc.analog[0].id, "", "an empty name is taken");
     }
 
     #[test]

@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 311 pass)
+- `cargo test --workspace`   (currently 312 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -1045,8 +1045,8 @@ loads a settings file (no comments); 32805 OK always marks modified (spec §7.10
 was wrong). Ours: `fvb_core::settree` (shared with `.omp`), `fvb_core::recset`,
 GUI `setfile.rs` (read at open, write on save, 32860 enabled, modified flag via
 explicit marks + a per-frame change detector, close/exit prompts); «Сохранить»
-vs «Сохранить как» now differ. 11 tests. Residual: the prompt wording is
-assumed (MFC resource); `Selected Block` subtree still in our program store;
+vs «Сохранить как» now differ. 11 tests. Residual: (the prompt wording:
+read in L9.62); `Selected Block` subtree still in our program store;
 `NetFreq`, `.cff` SET, `.zip`, `.sto` not modelled; comments store file name
 vs alias NOT DETERMINED; whether paste / an ОМП run mark modified NOT
 DETERMINED (ours: no).
@@ -2095,6 +2095,46 @@ DragDelay can be changed in WIN.INI's [windows]); while the original
 waits it swallows the view's mouse messages (no hover pick meanwhile) —
 ours keeps tracking.
 
+### L9.62 — Message boxes: MFC's prompt, caption and icons; the inline rename's commit  ·  ✅
+Read (local only: `extracted/mfc/mfc120u.dll` / `mfc120rus.dll`, copied
+from the vcredist carve so they outlive /tmp; string tables with
+`tools/pestr.py`, ordinals from the export table, disassembly by hand):
+FastView.exe has no string in MFC's AFX range except a few window-menu
+prompts, so `AFX_IDP_ASK_TO_SAVE` 61699 comes from mfc120rus: «Сохранить
+изменения в %1?» (ours already). No `0xf103` anywhere in the EXE: the
+question is `CDocument::SaveModified`'s (the override `0x454fa0` only
+skips it for `.sto`) — `%1` = `AfxGetFileTitle(path)`, MB_YESNOCANCEL, and
+`CWinApp::DoMessageBox` adds MB_ICONQUESTION. Every message box is
+`AfxMessageBox` (no MessageBoxW import; `#2261` by id, `#2262` by text) →
+caption `m_pszAppName` = `AFX_IDS_APP_TITLE` 57344 «Механотроника
+FastView»; with no icon flag MFC adds the exclamation to MB_OK. Call sites:
+by id 396 MB_OK `0x403213` (the formula dialog's DDX), 396 / 473
+MB_ICONHAND `0x4033ed` / `0x403519` (its member check) and `0x486a9d` /
+`0x486bd3` (the formula page), 397 MB_OK `0x435f2f` / `0x4660ab`, 1086
+MB_OK `0x441843`; by text MB_OK ×5, MB_ICONHAND ×2 (`0x4677dc`,
+`0x47d915`), OK-Cancel + information once (`0x44c03f`). The inline rename's
+commit `0x465df0`: GetWindowText as is; for every other channel of the
+vector (file and computed, bit 13) compares with `#2948` =
+`CString::Compare` (`wcscmp`, case-sensitive) against its name (+0x68)
+and its encoded name decoded (`0x4292e0`: +0x64 through `#8758`
+OemToAnsi for the default code page) → 397 and close; else `0x425a30`
+sets it (no trim, no empty test); then SetModifiedFlag on **every**
+commit (`0x466062`), UpdateAllViews and the panes.
+Ours: `app::APP_TITLE` on every message box (three said «FastView»);
+`dialogs::MsgIcon` + `message_body` (our drawing of the exclamation /
+error / question icons) on the alert, the ОМП message, the save prompt
+(question), the formula dialog (per message: DDX exclamation, member
+check error) and the formula page (error); the inline rename: message
+box 397 instead of a status-bar text, the text as typed, modified on
+every commit. Test `inline_rename_commits_as_typed_or_refuses_with_397`
+(+ the formula dialog's icons in `name_is_checked`); rendered the alert
+(`FV_WINDOW_STATE=alert`).
+Residual: `%1` keeps the extension (GetFileTitle drops it when Explorer
+hides known extensions and `.cfg` is registered — machine-dependent);
+the text-variant boxes other than those above are not mapped to ours one
+by one (ours default to the exclamation); on a non-Russian Windows MFC's
+prompt would come from mfc120enu / the English base.
+
 Next in L9 (HANDOFF 2026-10-23, late): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2133,7 +2173,7 @@ diagram print branches); L9.21 hold-to-drag ✅ L9.61 (a self-drop is
 silent); L9.6 digital level-line snap;
 L9.44 the comment cursor codes ✅ L9.60; MFC
 framework items readable from the carved mfc120u / mfc120rus (tab colour
-order, «Окна...», keytips, save-prompt wording — L9.8 / L9.14 / L9.17 /
+order, «Окна...», keytips, save-prompt wording ✅ L9.62 — L9.8 / L9.14 /
 L9.27); the sheet's residuals (L9.51–L9.56); pane re-docking (egui limit).
 
 ---

@@ -409,14 +409,15 @@ impl App {
             });
         if let Some(msg) = self.formula_page.alert {
             let mut close = false;
-            egui::Window::new("FastView")
+            egui::Window::new(crate::app::APP_TITLE)
                 .id(egui::Id::new("fv_formula_page_alert"))
                 .collapsible(false)
                 .resizable(false)
                 .order(egui::Order::Foreground)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
-                    ui.label(msg);
+                    // `0x486a9d` / `0x486bd3`: MB_ICONHAND.
+                    crate::dialogs::message_body(ui, crate::dialogs::MsgIcon::Error, msg);
                     ui.vertical_centered(|ui| close = ui.button("    OK    ").clicked());
                 });
             if close || ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
