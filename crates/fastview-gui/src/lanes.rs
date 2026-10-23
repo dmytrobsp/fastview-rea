@@ -1463,7 +1463,8 @@ impl App {
         // (`0x492f20`) shows the визир. Ours caps → at N − 1 (the original
         // at N, `0x45f52f`, a sample past the data).
         let view_keys = self.copy_focus == crate::app::CopyFocus::View && !alt;
-        if view_keys && !menu_busy && !ui.ctx().wants_keyboard_input() && self.rename_edit.is_none() && !self.modal_up {
+        let popup_up = self.pane_menu.is_some() || self.diag.menu.is_some();
+        if view_keys && !menu_busy && !popup_up && !ui.ctx().wants_keyboard_input() && self.rename_edit.is_none() && !self.modal_up {
             let (l, r, u, d) = ui.input(|i| {
                 (i.key_pressed(egui::Key::ArrowLeft), i.key_pressed(egui::Key::ArrowRight), i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown))
             });

@@ -886,6 +886,32 @@ mod window_tests {
         assert_eq!(w.app.docs.len(), 1, "Ctrl+F4 closes the active document");
     }
 
+    /// MFC's pane menu on a caption right-click (`0x100ce72c`): Плавающее
+    /// floats the pane, Закрепленное docks it back; В закладке is greyed.
+    #[test]
+    fn the_pane_menu_floats_and_docks() {
+        use docking::{Place, Unit};
+        let mut w = Win::new();
+        let f = w.app.pane_canvas.iter().find(|(q, _)| *q == app::Pane::Frequency).map(|(_, r)| *r).expect("Частотная drawn");
+        w.press(egui::PointerButton::Secondary, Pos2::new(f.left() + 80.0, f.top() - 22.0), Pos2::new(f.left() + 80.0, f.top() - 22.0));
+        assert!(w.app.pane_menu.is_some(), "the pane menu opens");
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::Enter);
+        w.idle(2);
+        assert!(w.app.pane_menu.is_none());
+        assert_eq!(w.app.docks[Unit::Frequency].place, Place::Floating, "Плавающее");
+        // On the floating mini-frame: ↓ ↓ = Закрепленное.
+        let fr = w.app.docks[Unit::Frequency].float_rect.unwrap();
+        let at = Pos2::new(fr.left() + 40.0, fr.top() + 8.0);
+        w.press(egui::PointerButton::Secondary, at, at);
+        assert!(w.app.pane_menu.is_some());
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::Enter);
+        w.idle(2);
+        assert_eq!(w.app.docks[Unit::Frequency].place, Place::Docked, "Закрепленное");
+    }
+
     /// IsDialogMessage: Enter is the default button, Esc cancels; Enter on a
     /// message box over the dialog closes only the box.
     #[test]

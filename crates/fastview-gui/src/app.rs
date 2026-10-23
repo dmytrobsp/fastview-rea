@@ -1151,6 +1151,9 @@ pub struct App {
     /// its rect), and the slid-out auto-hide areas.
     pub docks: crate::docking::Docks,
     pub dock_drag: Option<(crate::docking::Unit, egui::Vec2)>,
+    /// MFC's pane menu open on a caption (`0x100ce72c`): the unit, the
+    /// pane shown in it, another shown tab of its group, the popup.
+    pub pane_menu: Option<(crate::docking::Unit, Pane, Option<Pane>, crate::popmenu::PopMenu)>,
     /// The frame client (the edge markers' rect) and each docked group's
     /// pane rect this frame (by the group's own unit).
     pub dock_client: egui::Rect,
@@ -1361,6 +1364,7 @@ impl App {
             // docks it on the frame's bottom edge).
             docks: crate::docking::Docks::default(),
             dock_drag: None,
+            pane_menu: None,
             dock_client: egui::Rect::NOTHING,
             dock_rects: [None; 4],
             tab_order: [Pane::Vector, Pane::Circle, Pane::Differential, Pane::Frequency],

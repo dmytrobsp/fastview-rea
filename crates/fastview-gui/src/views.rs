@@ -44,6 +44,7 @@ impl App {
         }
         self.slid_out_units(ctx, &views);
         self.dock_drag_frame(ctx);
+        self.pane_menu_frame(ctx);
         self.diagram_overlays(ctx);
         // The circle / differential state stays the last activated one's.
         self.switch_diagram(match self.panes.active {
@@ -98,6 +99,60 @@ impl App {
     /// close hides the shown pane, the pin toggles auto-hide, a
     /// double-click floats / redocks, a drag detaches a docked group (or
     /// moves a floating one).
+    /// MFC's pane menu (`0x100ce72c`; the strings 17039 / 17040 / 17088 /
+    /// 17041 / 17042): Плавающее (greyed auto-hidden), Закрепленное
+    /// (greyed auto-hidden), В закладке (always greyed: CanBeTabbedDocument
+    /// is never set), Автоматически скрывать (greyed floating), Скрыть
+    /// (greyed auto-hidden); the checks follow the place.
+    fn pane_menu_frame(&mut self, ctx: &egui::Context) {
+        use crate::docking::Place;
+        use crate::popmenu::{Entry, Mark};
+        #[derive(Clone, Copy)]
+        enum Cmd {
+            Float,
+            Dock,
+            Tab,
+            AutoHide,
+            Hide,
+        }
+        let Some((unit, pane, next, mut pm)) = self.pane_menu else { return };
+        let place = self.docks[unit].place;
+        let ah = place == Place::AutoHide;
+        let entries = vec![
+            Entry::item("Плавающее", !ah, Mark::Check(place == Place::Floating), Cmd::Float),
+            Entry::item("Закрепленное", !ah, Mark::Check(place == Place::Docked), Cmd::Dock),
+            Entry::item("В закладке", false, Mark::None, Cmd::Tab),
+            Entry::item("Автоматически скрывать", place != Place::Floating, Mark::Check(ah), Cmd::AutoHide),
+            Entry::item("Скрыть", !ah, Mark::None, Cmd::Hide),
+        ];
+        let out = crate::popmenu::show(ctx, "fv_pane_menu", &mut pm, &entries);
+        self.pane_menu = (!out.close).then_some((unit, pane, next, pm));
+        let origin = Self::float_origin(ctx);
+        match out.chosen {
+            // Docked: a group's active tab floats alone at its recent rect
+            // (`0x100ceb39`–`0x100cec00`), a single pane floats.
+            Some(Cmd::Float) if place == Place::Docked => match next {
+                Some(n) => {
+                    let rect = self.docks[pane].float_at(origin);
+                    self.docks.float_tab(pane, unit, n, rect);
+                }
+                None => {
+                    self.dock_leave(unit);
+                    self.docks[unit].double_click(origin);
+                }
+            },
+            Some(Cmd::Dock) if place == Place::Floating => self.docks[unit].double_click(origin),
+            Some(Cmd::AutoHide) => {
+                if place == Place::Docked {
+                    self.dock_leave(unit);
+                }
+                self.docks[unit].pin();
+            }
+            Some(Cmd::Hide) => self.dispatch(Command::TogglePane(pane)),
+            _ => {}
+        }
+    }
+
     fn caption_acts(&mut self, ctx: &egui::Context, unit: crate::docking::Unit, shown: Pane, act: CaptionAct, pane: egui::Rect) {
         use crate::docking::Place;
         if act.close {
@@ -208,6 +263,10 @@ impl App {
         let place = self.docks[v.unit].place;
         let act = pane_caption(ui, pane_title(p), (place != Place::Floating).then_some(place == Place::AutoHide));
         let ctx = ui.ctx().clone();
+        if let Some(at) = act.menu {
+            let next = self.tab_order.into_iter().find(|&q| q != p && v.mask[q as usize]);
+            self.pane_menu = Some((v.unit, p, next, crate::popmenu::PopMenu::new(ctx.cumulative_pass_nr(), at)));
+        }
         self.caption_acts(&ctx, v.unit, p, act, outer);
         if act.close {
             return;
@@ -362,7 +421,7 @@ impl App {
         use crate::docking::{Edge, Place};
         let now = ctx.input(|i| i.time);
         let pointer = ctx.input(|i| i.pointer.latest_pos());
-        let menu_up = ctx.memory(|m| m.any_popup_open());
+        let menu_up = ctx.memory(|m| m.any_popup_open()) || self.pane_menu.is_some();
         let mut moving = false;
         self.dock_strips = [None; 4];
         let pinned: Vec<DockView> = views.iter().copied().filter(|v| self.docks[v.unit].place == Place::AutoHide).collect();
@@ -772,6 +831,8 @@ struct CaptionAct {
     pin: bool,
     double: bool,
     dragging: bool,
+    /// A right-click: the pane menu at that point.
+    menu: Option<egui::Pos2>,
 }
 
 /// A docking-pane caption: the title, the pin (`pinned` None when the pane
@@ -793,6 +854,9 @@ fn pane_caption(ui: &mut egui::Ui, title: &str, pinned: Option<bool>) -> Caption
         ui.data_mut(|d| if act.double { d.remove::<f64>(id) } else { d.insert_temp(id, now) });
     }
     act.dragging = resp.dragged();
+    if resp.secondary_clicked() {
+        act.menu = resp.interact_pointer_pos();
+    }
     ui.horizontal(|ui| {
         ui.add(egui::Label::new(egui::RichText::new(title).strong()).selectable(false));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

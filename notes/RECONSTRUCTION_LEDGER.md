@@ -4460,6 +4460,32 @@ what follows such a rate is ND); the failing field's focus and select-all
 after a DDX failure not reproduced; whether the edited cell of 477 is
 always selected ND.
 
+### L9.149 — MFC's pane menu on a diagram pane's caption  ·  ✅
+Read (subagent report on the frame's OnCreate `0x4728d0` — no
+EnablePaneMenu, the dock-site menu flag `0x102abeb0` left 0 by the Office
+2007 managers, so no caption menu button and no pane-list menu —, and on
+CDockablePane / CPane::OnContextMenu → OnShowControlBarMenu `0x100ce72c`):
+a right-click on a pane's caption — docked, a floating mini-frame's, a
+slid-out auto-hidden one's — opens MFC's pane menu at the point:
+«Плавающее» (17039), «Закрепленное» (17040), «В закладке» (17088),
+«Автоматически скрывать» (17041), «Скрыть» (17042); with FastView's pane
+style 0xF: auto-hidden greys Плавающее / Закрепленное / Скрыть and checks
+Автоматически скрывать, floating greys Автоматически скрывать and
+checks Плавающее, docked checks Закрепленное; В закладке is always
+greyed (CanBeTabbedDocument is never set). Плавающее on a docked group
+floats its active tab alone at its recent rect (`0x100ceb39`–
+`0x100cec00`), unlike the caption double-click; Закрепленное docks a
+floating one back; Автоматически скрывать toggles auto-hide; Скрыть is
+the close button. No menu anywhere else (strips, the parameters bar,
+empty dock areas, document tabs; the diagram windows' own menus inside).
+Ours had no caption menu. Now `CaptionAct::menu`, `App::pane_menu` and
+`pane_menu_frame` (a `PopMenu`, the slide-out held while it is up, the
+view's визир keys held off while any popup is up). Test
+`the_pane_menu_floats_and_docks`.
+Residual: a right-click on a group's tab strip (INFERRED to reach the
+group's menu — not wired); Shift+F10 / the Menu key; the `&` mnemonics
+of the MFC strings not drawn.
+
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
