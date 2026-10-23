@@ -4486,6 +4486,39 @@ Residual: a right-click on a group's tab strip (INFERRED to reach the
 group's menu — not wired); Shift+F10 / the Menu key; the `&` mnemonics
 of the MFC strings not drawn.
 
+### L9.150 — The caption row: the ribbon's, inside the window's frame  ·  ✅
+Read (subagent report; FastView `0x4721f0` constructs its
+CMFCRibbonBarEx with bReplaceFrameCaption = 1; mfc120u
+`CFrameImpl::IsOwnerDrawCaption` `0x100a05aa`, FastView's Office 2007
+manager's slot 127 `0x475d80` = CanDrawImage() && !DwmIsCompositionEnabled;
+`CMFCRibbonBar::RecalcLayout` `0x100f98be` extends the DWM frame by the
+caption height when composition is on, for every look; FastView's only
+caption override, slot 181 `0x471f30`, forces the glass title text
+black): on Windows with composition (always on since 8) the caption is
+DWM's frame with the system's minimise / maximise / close, and the
+ribbon paints its own caption row in it — the application button, the
+quick-access toolbar and the window title («Механотроника FastView -
+<doc>», `0x45f7d0`) centred on its width in the free space between the
+toolbar and the buttons (Aqua: left), black, one line with an ellipsis;
+the style's owner-drawn caption, border and button images appear only
+without composition (XP, or Vista / 7 Basic).
+Ours kept the OS title bar above our own quick-access row (two rows),
+with «Стиль» and «?» in that row. Now the window has no system
+decorations (unless `FV_SYSTEM_TITLEBAR` is set) and row 1 is the
+caption row: the title centred in the free space, which drags the window
+(double-click maximises / restores), the three system buttons drawn as
+Windows 10 / 11 draw them (close red when hot), 5 px resize edges (12 px
+corners) while not maximised; «Стиль» / «?» on the right of the tab row
+(spec §2.5). `App::own_caption`, `ribbon::caption_buttons`,
+`App::resize_edges`; `FV_WINDOW_CAPTION=1` renders it. Rendered Office
+2007 Blue and Windows 2000.
+Residual: the title's Aqua left alignment, the QAT's glass frame
+(RIBBON_CAPTION_QA_GLASS), the DWM drop shadow / Aero snap of a real
+frame, the maximised offset (SM_CYFRAME / 2 + 2) not reproduced; the
+title's glow on glass; on a tiling window manager the buttons may do
+nothing (the WM owns the window) — `FV_SYSTEM_TITLEBAR` restores the
+system frame.
+
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -4561,9 +4594,7 @@ strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 (needs per-channel rates, L9.131 — unreachable in practice: only pending
 channels carry another rate and they are excluded); the docking marker
 bitmaps (ours drawn); L9.64 MDI arrangements under tabs (WM_MDICASCADE /
-TILE — visible effect ND); the caption bar from the style images (ours
-the OS title bar — a frameless window with our own caption, risky on
-tiling WMs); backlog §9 #36 / #37 / #45 leftovers (logo, splash:
+TILE — visible effect ND); (the caption row: L9.150); backlog §9 #36 / #37 / #45 leftovers (logo, splash:
 proprietary assets). Good recurring pass: render the user's real records
 (`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`, `WIN_1999.cfg`) after big
 changes.

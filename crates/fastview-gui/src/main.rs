@@ -49,6 +49,10 @@ fn main() -> eframe::Result<()> {
         .with_min_inner_size([866.0, 500.0])
         .with_title(app::APP_TITLE)
         .with_drag_and_drop(true);
+    // The ribbon draws the caption row (L9.150): no system decorations,
+    // unless `FV_SYSTEM_TITLEBAR` asks for them.
+    let own_caption = std::env::var_os("FV_SYSTEM_TITLEBAR").is_none();
+    viewport = viewport.with_decorations(!own_caption);
     // `LoadState` restores the frame's saved window placement.
     if let Some((r, max)) = window_placement(&persist::Store::load()) {
         viewport = viewport.with_inner_size(r.size()).with_position(r.min).with_maximized(max);
@@ -69,6 +73,7 @@ fn main() -> eframe::Result<()> {
             let fonts = app_fonts();
             cc.egui_ctx.set_fonts(fonts.clone());
             let mut app = App::new().with_persistence();
+            app.own_caption = own_caption;
             app.print.fonts = fonts;
             let ctx = cc.egui_ctx.clone();
             app.instance = inst_dir.as_deref().and_then(|d| instance::serve(d, move || ctx.request_repaint()));
@@ -239,6 +244,42 @@ impl App {
             });
         });
         self.status_toast(ui.ctx());
+        self.resize_edges(ui.ctx());
+    }
+
+    /// A frameless window's edges resize it (the DWM frame's sizing border):
+    /// 5 px, corners 12 px along each edge; not while maximised.
+    fn resize_edges(&mut self, ctx: &egui::Context) {
+        use egui::viewport::ResizeDirection as D;
+        if !self.own_caption || ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
+            return;
+        }
+        let screen = ctx.screen_rect();
+        let Some(p) = ctx.input(|i| i.pointer.hover_pos()) else { return };
+        let (b, c) = (5.0, 12.0);
+        let (l, r, t, bt) = (p.x - screen.left() < b, screen.right() - p.x < b, p.y - screen.top() < b, screen.bottom() - p.y < b);
+        let (lc, rc, tc, bc) = (p.x - screen.left() < c, screen.right() - p.x < c, p.y - screen.top() < c, screen.bottom() - p.y < c);
+        let dir = match () {
+            _ if (t && lc) || (l && tc) => Some(D::NorthWest),
+            _ if (t && rc) || (r && tc) => Some(D::NorthEast),
+            _ if (bt && lc) || (l && bc) => Some(D::SouthWest),
+            _ if (bt && rc) || (r && bc) => Some(D::SouthEast),
+            _ if t => Some(D::North),
+            _ if bt => Some(D::South),
+            _ if l => Some(D::West),
+            _ if r => Some(D::East),
+            _ => None,
+        };
+        let Some(dir) = dir else { return };
+        ctx.set_cursor_icon(match dir {
+            D::North | D::South => egui::CursorIcon::ResizeVertical,
+            D::East | D::West => egui::CursorIcon::ResizeHorizontal,
+            D::NorthWest | D::SouthEast => egui::CursorIcon::ResizeNwSe,
+            D::NorthEast | D::SouthWest => egui::CursorIcon::ResizeNeSw,
+        });
+        if ctx.input(|i| i.pointer.primary_pressed()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(dir));
+        }
     }
 
     /// The original's status bar has no free-text pane (`0x4729b0`); our own
@@ -469,6 +510,8 @@ mod window_tests {
 
     fn demo(cmds: &[app::Command]) -> App {
         let mut app = App::new();
+        // `FV_WINDOW_CAPTION=1`: the frameless window's caption row.
+        app.own_caption = std::env::var_os("FV_WINDOW_CAPTION").is_some();
         app.dispatch(app::Command::Demo);
         for c in cmds {
             app.dispatch(c.clone());

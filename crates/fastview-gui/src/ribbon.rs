@@ -196,41 +196,29 @@ impl App {
                     cmds.push(cmd);
                 }
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Help split button (57667): the arrow opens {Помощь, О программе...}.
-                let help = ui.button(RichText::new("?").color(p.text).strong());
-                if help.clicked() {
-                    ui.memory_mut(|m| m.toggle_popup(help_menu_id()));
-                }
-                egui::popup_below_widget(ui, help_menu_id(), &help, egui::PopupCloseBehavior::CloseOnClick, |ui| {
-                    ui.set_min_width(140.0);
-                    ui.add_enabled(false, egui::Button::new("Помощь").frame(false));
-                    ui.separator();
-                    if ui.add(egui::Button::new("О программе...").frame(false)).clicked() {
-                        self.show_about = true;
-                        ui.memory_mut(|m| m.close_popup());
+            // The caption row (the ribbon's own, `bReplaceFrameCaption`,
+            // over DWM's frame — L9.150): the title centred in the free
+            // space between the quick-access toolbar and the system
+            // buttons; the free space drags the window, a double-click
+            // maximises / restores.
+            if self.own_caption {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    caption_buttons(ui);
+                    let free = ui.available_rect_before_wrap();
+                    let hit = ui.interact(free, ui.id().with("fv_caption_drag"), egui::Sense::click_and_drag());
+                    if hit.double_clicked() {
+                        let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
+                    } else if hit.drag_started() {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
                     }
+                    let font = egui::FontId::proportional(13.0);
+                    let g = ui.painter().layout_no_wrap(self.window_title.clone(), font, Color32::BLACK);
+                    let w = g.size().x.min(free.width());
+                    let x = (free.center().x - w / 2.0).max(free.left());
+                    ui.painter().with_clip_rect(free).galley(egui::pos2(x, free.center().y - g.size().y / 2.0), g, Color32::BLACK);
                 });
-                self.kt_rects.push((crate::keytips::Target::Help, help.rect, true));
-                // «Стиль» (menu 200): the radio entry of the current look,
-                // persisted as `ApplicationLook`.
-                ui.menu_button(RichText::new("Стиль ▾").color(p.text), |ui| {
-                    for (s, name) in Skin::ALL.into_iter().zip(["Windows 2000", "Office XP", "Windows XP", "Office 2003", "Visual Studio.NET 2005"]) {
-                        if ui.radio(self.skin == s, name).clicked() {
-                            cmds.push(Command::SetSkin(s));
-                            ui.close_menu();
-                        }
-                    }
-                    ui.menu_button("Office 2007", |ui| {
-                        for (s, name) in Skin::ALL[5..].iter().copied().zip(["Голубой стиль", "Черный стиль", "Серебристый стиль", "Зеленовато-голубой стиль"]) {
-                            if ui.radio(self.skin == s, name).clicked() {
-                                cmds.push(Command::SetSkin(s));
-                                ui.close_menu();
-                            }
-                        }
-                    });
-                });
-            });
+            }
         });
 
         // ---- Row 2: tab strip ----
@@ -293,6 +281,42 @@ impl App {
                     }
                 });
             }
+            // §2.5: «Стиль» and Help on the right of the tab row.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // Help split button (57667): the arrow opens {Помощь, О программе...}.
+                let help = ui.button(RichText::new("?").color(p.text).strong());
+                if help.clicked() {
+                    ui.memory_mut(|m| m.toggle_popup(help_menu_id()));
+                }
+                egui::popup_below_widget(ui, help_menu_id(), &help, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                    ui.set_min_width(140.0);
+                    ui.add_enabled(false, egui::Button::new("Помощь").frame(false));
+                    ui.separator();
+                    if ui.add(egui::Button::new("О программе...").frame(false)).clicked() {
+                        self.show_about = true;
+                        ui.memory_mut(|m| m.close_popup());
+                    }
+                });
+                self.kt_rects.push((crate::keytips::Target::Help, help.rect, true));
+                // «Стиль» (menu 200): the radio entry of the current look,
+                // persisted as `ApplicationLook`.
+                ui.menu_button(RichText::new("Стиль ▾").color(p.text), |ui| {
+                    for (s, name) in Skin::ALL.into_iter().zip(["Windows 2000", "Office XP", "Windows XP", "Office 2003", "Visual Studio.NET 2005"]) {
+                        if ui.radio(self.skin == s, name).clicked() {
+                            cmds.push(Command::SetSkin(s));
+                            ui.close_menu();
+                        }
+                    }
+                    ui.menu_button("Office 2007", |ui| {
+                        for (s, name) in Skin::ALL[5..].iter().copied().zip(["Голубой стиль", "Черный стиль", "Серебристый стиль", "Зеленовато-голубой стиль"]) {
+                            if ui.radio(self.skin == s, name).clicked() {
+                                cmds.push(Command::SetSkin(s));
+                                ui.close_menu();
+                            }
+                        }
+                    });
+                });
+            });
         });
 
         // ---- Row 3: ribbon body (fixed height; hidden when minimised) ----
@@ -1340,6 +1364,31 @@ impl App {
 
 /// The application button's title (the menu id is derived from it).
 pub const APP_MENU_TITLE: &str = "Файл ▾";
+
+/// The system's caption buttons as Windows 10 / 11 draw them on the DWM
+/// frame (FastView's caption is DWM's with composition on, L9.150):
+/// minimise, maximise / restore, close (red when hot), 46 px wide each.
+fn caption_buttons(ui: &mut egui::Ui) {
+    let h = ui.available_height().max(22.0);
+    let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+    for (k, glyph) in [(0, "✕"), (1, if max { "❐" } else { "☐" }), (2, "—")] {
+        let (r, resp) = ui.allocate_exact_size(egui::vec2(46.0, h), egui::Sense::click());
+        let close = k == 0;
+        let hot = resp.hovered();
+        if hot {
+            ui.painter().rect_filled(r, 0.0, if close { Color32::from_rgb(232, 17, 35) } else { Color32::from_black_alpha(26) });
+        }
+        let col = if close && hot { Color32::WHITE } else { Color32::BLACK };
+        ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(12.0), col);
+        if resp.clicked() {
+            ui.ctx().send_viewport_cmd(match k {
+                0 => egui::ViewportCommand::Close,
+                1 => egui::ViewportCommand::Maximized(!max),
+                _ => egui::ViewportCommand::Minimized(true),
+            });
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

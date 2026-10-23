@@ -1309,6 +1309,9 @@ pub struct App {
     pub modal_up: bool,
     /// An `Event::Paste` came since Ctrl+V was last let go.
     pub paste_announced: bool,
+    /// The window has no system decorations and draws its own caption row
+    /// (the ribbon's, L9.150); off in tests and with `FV_SYSTEM_TITLEBAR`.
+    pub own_caption: bool,
     /// The status bar's six panes as last written (`0x472e10`'s cache):
     /// the creation texts (3130, 3134, 3426, 3170, 3172, 3428) until a
     /// document is active, then whatever the last one showed.
@@ -1444,6 +1447,7 @@ impl App {
             color_dialog: None,
             modal_up: false,
             paste_announced: false,
+            own_caption: false,
             status_panes: ["Верт. визир 1:", "Верт. визир 2:", "Разница в. визиров:", "Гор. визир 1:", "Гор. визир 2:", "Разница г. визиров:"].map(String::from),
             dlg: Default::default(),
             status: "Готово".to_string(),
