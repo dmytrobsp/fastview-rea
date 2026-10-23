@@ -824,7 +824,9 @@ impl App {
         // Characteristics: extent of every visible one (operate and reset).
         let b = self.block_idx;
         let mut draws = Vec::new();
-        let mut char_ext = 0.0f64;
+        // The circle splits them by an exact «Ohm» dimension (`0x4387d0`,
+        // CString::Compare): the shipped «OHM» ones go to the power extent.
+        let mut char_ext = [0.0f64; 2];
         if let Some(block) = self.library.blocks.get(b) {
             for (ci, ch) in block.characteristics.iter().enumerate() {
                 let Some(st) = self.chars.get(&(b, ci)) else { continue };
@@ -833,7 +835,8 @@ impl App {
                 }
                 let Some(geo) = &st.geo else { continue };
                 if let Some(b) = geo.bounds {
-                    char_ext = char_ext.max(dg::region_extent(b));
+                    let s = usize::from(!diff && ch.dimension_text != "Ohm");
+                    char_ext[s] = char_ext[s].max(dg::region_extent(b));
                 }
                 // Open polypoints are closed against the visible area.
                 let in_view = match self.char_view {
@@ -845,7 +848,8 @@ impl App {
             }
         }
         let loci = self.active_doc().map(|d| plane_loci(d, diff, between)).unwrap_or_default();
-        let mut max = [char_ext, 0.0];
+        let mut max = char_ext;
+        let char_ext = char_ext[0].max(char_ext[1]);
         for l in &loci {
             let s = usize::from(l.power && !diff);
             for p in &l.pts {
@@ -868,7 +872,7 @@ impl App {
         let (w, h) = (rect.width() as i32, rect.height() as i32);
         let mut view = view;
         let mut sc = dg::plane_scale(w, h, view.z, max);
-        if sc.ppu[0].is_some_and(|ppu| char_ext * ppu > dg::ZOOM_RESET_PX) {
+        if dg::zoom_resets(char_ext, sc.ppu[0]) {
             view.z = 1.0;
             sc = dg::plane_scale(w, h, 1.0, max);
         }
@@ -1772,6 +1776,18 @@ mod tests {
         assert_eq!(h.app.diag.circle.oy, 2, "plain wheel up: oy + 2");
         h.wheel(-1.0, egui::Modifiers::SHIFT);
         assert_eq!(h.app.diag.circle.ox, -2, "Shift+wheel down: ox − 2");
+        // The shipped characteristics are «OHM» — the power extent — so with
+        // no Ω locus the Ω scale is infinite: no zoom (`0x438b50`).
+        h.wheel(1.0, egui::Modifiers::CTRL);
+        assert_eq!(h.app.diag.circle.z, 1.0, "no Ω locus: Ctrl+wheel cannot zoom");
+        let d = h.app.active_doc_mut().unwrap();
+        let n = d.osc.sample_count();
+        // Large enough that the characteristics fit the zoomed Ω scale.
+        let wave: Vec<f64> = (0..n).map(|k| 1e6 * (k as f64 * 0.3).sin()).collect();
+        let mut z = crate::app::Computed::new("Z".into(), "Zf: ()".into(), wave, Color32::RED);
+        (z.unit, z.on_circle) = ("Ohm".into(), true);
+        d.computed.push(z);
+        h.frame(vec![], Default::default());
         h.wheel(1.0, egui::Modifiers::CTRL);
         assert_eq!(h.app.diag.circle.z, 1.5, "Ctrl+wheel up: ×1.5");
         h.wheel(-1.0, egui::Modifiers::CTRL);

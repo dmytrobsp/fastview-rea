@@ -2909,8 +2909,44 @@ generation's order), the load / save per key, a radio click clearing the
 others. Test `two_stored_methods_both_reduce`.
 Residual: two methods give two «… прив.» lines per name (they do not pass
 the uniq rule `0x48bff0`); how the appender resolves the duplicate names
-NOT DETERMINED (ours: the batch's later line overrides by name as our
-appender does).
+NOT DETERMINED (ours not checked either).
+
+
+### L9.88 — Circle scales: characteristics split by an exact «Ohm»; no Ω locus, no characteristics  ·  ✅
+Read (subagent reports; by hand: the dimension compare `0x438987` is
+`#2948` = CString::Compare → MSVCR120 `wcscmp`, case-sensitive, against
+string 3060 «Ohm»; the shipped FastView.fvb writes `dimension="OHM"` 33
+times; the draw guard `0x43a564`–`0x43a5a0` (draw only if 800·m >
+max(Ω, power characteristic maxima) × the passed ppu, a NaN skipping);
+the pane passes the same Ω ppu to the reset `0x43b72f` and the painter
+`0x43b7d9`): `0x4387d0` puts a characteristic's extent into the Ω maximum
+only when its dimension text is exactly «Ohm», else into the power
+maximum; `0x438b50` adds the loci (Ω / other by unit) and computes
+upc = nice(max / (z·cells)) and ppu = z·cells·cell / (z·cells·upc) with
+no guard — a zero extent gives ppu = +∞; the zoom resets to 1 when the
+larger characteristic maximum × ppu_Ω > 800·m (every paint while it
+holds); characteristics are always drawn at the Ω ppu. So with the
+shipped library they are drawn only when an Ω locus (or R/X pair) sets a
+scale they fit (< 800 px); with only VA / W loci or none they are not
+drawn and the zoom snaps to 1; the «Вт» upc (labels, scale box) includes
+the characteristic extent. Extents (`0x4389a2`–`0x438a44`): max |·| of the
+integer box, no +1; polygons / polypoints round vertices to the nearest
+unit (ties up), circles outward; an empty box (width **or** height 0) is
+1×1 at the first vertex rounded up.
+Ours put every characteristic into the Ω scale (so they set the Ω scale
+themselves and were always drawn), rounded the extent box outward and
+took an empty box only when both spans were under 1. Now
+`Characteristic::dimension_text`, the split in `plane_ui` (circle only;
+the differential plane keeps one maximum, `0x443f20`), `zoom_resets`,
+`region_extent` to the nearest unit. Tests `characteristic_extent_in_whole_units`,
+`circle_wheel_pans_and_zooms_without_egui_plot` (no Ω locus: no zoom).
+**User-visible:** the circle diagram shows its characteristics only with
+an impedance (Ohm) locus or R/X pair large enough to hold them — as the
+original.
+Residual: per-figure rounding (circles outward, ellipses) is applied to
+our combined world bounds with the polygon rule; the empty-box fallback
+uses the box's start, not the first vertex; loci drawn at an infinite
+scale (NOT DETERMINED; ours skip them).
 
 
 Next in L9 (HANDOFF 2026-10-23, evening 2): **public at
@@ -2959,8 +2995,7 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-the Ω / power split of
-characteristic extents (L9.75); L9.22 / L9.84 print residuals (CUPS hardware margins, the preview's
+L9.22 / L9.84 print residuals (CUPS hardware margins, the preview's
 paper; the logo bitmap stays out — it is the original's asset); L9.6 digital level-line snap (reachable only through a `.set`);
 keytips (MFC's ribbon keytip machinery — the program sets only Печать «p»
 / «w»); L9.27 MFC's intermediate ribbon reductions; L9.64's slot +0x1f0

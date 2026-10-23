@@ -298,13 +298,28 @@ pub fn scanline_spans(rings: &[Vec<[f32; 2]>], y0: i32, y1: i32) -> Vec<(i32, f3
 /// region and falls back to a 1×1 box at (⌈cx⌉, ⌈cy⌉). (The exact +0 / +1
 /// of the exclusive edge is INFERRED as +0.)
 pub fn region_extent((x0, y0, x1, y1): (f64, f64, f64, f64)) -> f64 {
-    let (l, t, r, b) = if x1 - x0 < 1.0 && y1 - y0 < 1.0 {
-        let (cx, cy) = (((x0 + x1) / 2.0).ceil(), ((y0 + y1) / 2.0).ceil());
+    // Polygon / polypoint vertices round to the nearest unit, ties up
+    // (`0x409c00`, `0x40ae40`); an empty box — width or height 0 — is a
+    // 1×1 one at the rounded-up start (`0x409eeb`).
+    let near = |v: f64| (v + 0.5).floor();
+    let (l, t, r, b) = (near(x0), near(y0), near(x1), near(y1));
+    let (l, t, r, b) = if r - l == 0.0 || b - t == 0.0 {
+        let (cx, cy) = (x0.ceil(), y0.ceil());
         (cx, cy, cx + 1.0, cy + 1.0)
     } else {
-        (x0.floor(), y0.floor(), x1.ceil(), y1.ceil())
+        (l, t, r, b)
     };
     l.abs().max(r.abs()).max(t.abs()).max(b.abs())
+}
+
+/// Does the plane's zoom snap back to 1 (`0x43b72f`–`0x43b78e`)? The larger
+/// characteristic extent × the Ω pixels per unit over 800 — an Ω scale
+/// with no extent is +∞ (a positive extent resets, none gives NaN: no).
+pub fn zoom_resets(char_max: f64, ppu: Option<f64>) -> bool {
+    match ppu {
+        Some(p) => char_max * p > ZOOM_RESET_PX,
+        None => char_max > 0.0,
+    }
 }
 
 /// The vector window's layout (`0x4917fc`–`0x4918da`), in device units:
@@ -676,8 +691,10 @@ mod tests {
 
     #[test]
     fn characteristic_extent_in_whole_units() {
-        assert_eq!(region_extent((-1.5, -0.2, 4.2, 3.1)), 5.0);
-        assert_eq!(region_extent((0.1, 0.1, 0.4, 0.3)), 2.0, "under a unit: the 1×1 box at ⌈centre⌉");
+        // Rounded to the nearest unit, ties up: (−1, 0, 4, 3).
+        assert_eq!(region_extent((-1.5, -0.2, 4.2, 3.1)), 4.0);
+        assert_eq!(region_extent((0.1, 0.1, 0.4, 0.3)), 2.0, "an empty box: the 1×1 one at the rounded-up start");
+        assert_eq!(region_extent((0.6, 0.2, 3.2, 0.4)), 2.0, "zero height alone is empty: the 1×1 box at (1, 1)");
     }
 
     #[test]

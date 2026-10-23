@@ -205,6 +205,9 @@ pub struct Var {
 pub struct Characteristic {
     pub name: String,
     pub dimension: Dimension,
+    /// The `dimension` attribute as written (`char+0x28`): the circle
+    /// diagram's scale test compares it with «Ohm» exactly (`0x4387d0`).
+    pub dimension_text: String,
     pub parameters: Vec<Parameter>,
     pub vars: Vec<Var>,
     pub primitives: Vec<Primitive>,

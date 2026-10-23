@@ -104,6 +104,7 @@ fn characteristic(node: &Node) -> Characteristic {
     let mut ch = Characteristic {
         name: node.attr("name").to_string(),
         dimension: Dimension::parse(node.attr("dimension")),
+        dimension_text: node.attr("dimension").to_string(),
         parameters: Vec::new(),
         vars: Vec::new(),
         primitives: Vec::new(),
