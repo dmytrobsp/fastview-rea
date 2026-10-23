@@ -20,10 +20,13 @@ pub struct QuickForms {
     pub uc: String,
     pub uab: String,
     pub ubc: String,
-    /// Zero sequence: 0 off, 1 calculated, 2 measured (current);
-    /// 0 off, 1 from Ua,Ub,Uc, 2 from Uни,Uик, 3 measured (voltage).
+    /// Zero sequence (537): 1 calculated, 2 measured (current); 1 from
+    /// Ua,Ub,Uc, 2 from Uни,Uик, 3 measured (voltage); each group's own
+    /// «Отключить».
     pub zero_i: u8,
     pub zero_u: u8,
+    pub zero_i_off: bool,
+    pub zero_u_off: bool,
     pub i3o: String,
     pub u3o: String,
     pub uni: String,
@@ -95,6 +98,8 @@ impl Default for QuickForms {
             ubc: s(),
             zero_i: 1,
             zero_u: 1,
+            zero_i_off: false,
+            zero_u_off: false,
             i3o: s(),
             u3o: s(),
             uni: s(),
@@ -166,6 +171,16 @@ fn cell_combo(ui: &mut egui::Ui, enabled: bool, id: &str, label: &str, value: &m
     });
 }
 
+/// A labelled edit as one grid cell, greyed unless `enabled`.
+fn cell_edit(ui: &mut egui::Ui, enabled: bool, label: &str, value: &mut String) {
+    ui.add_enabled_ui(enabled, |ui| {
+        ui.horizontal(|ui| {
+            ui.add_sized([80.0, 18.0], egui::Label::new(label));
+            ui.add(egui::TextEdit::singleline(value).desired_width(90.0));
+        });
+    });
+}
+
 /// A combo's channel counts as chosen (not empty, not «нет канала»).
 fn chosen(s: &str) -> bool {
     !s.is_empty() && s != fvb_core::addformula::NO_CHANNEL
@@ -175,7 +190,11 @@ impl QuickForms {
     /// Whether «Рассчитать» is enabled on `tab` (the page's check, slot
     /// 0x1d0): 536 `0x48d5a0` — each group not switched off needs its
     /// combos (Ib unless calculated; Ua–Uc or Uab / Ubc by the radio); 538
-    /// `0x488550` — Iтр, the currents and the voltages. Other pages: always.
+    /// `0x488550` — Iтр, the currents and the voltages; 543 `0x48b360` — the
+    /// combos, Iтр, the active group's edits and, with a parallel line,
+    /// its matching edits; 537 `0x48a1f0` — each
+    /// live group the combos of its radio (Ia–Ic or 3Io; Ua–Uc, Uни / Uик or
+    /// 3Uo). Other pages: always.
     pub fn ok_enabled(&self, tab: AnalysisTab) -> bool {
         let currents = chosen(&self.ia) && (self.calc_ib || chosen(&self.ib)) && chosen(&self.ic);
         let voltages = if self.line_voltages {
@@ -186,8 +205,32 @@ impl QuickForms {
         match tab {
             AnalysisTab::Symmetric => (self.currents_off || currents) && (self.voltages_off || voltages),
             AnalysisTab::PhasePhase => !self.itr.trim().is_empty() && currents && voltages,
+            AnalysisTab::Phase => {
+                let filled = |v: &[&String]| v.iter().all(|s| !s.trim().is_empty());
+                let comp = if self.per_unit { filled(&[&self.x1, &self.r1, &self.x0, &self.r0]) } else { filled(&[&self.k0, &self.f0]) };
+                let parallel = !self.parallel_used() || if self.per_unit { filled(&[&self.xm, &self.rm]) } else { filled(&[&self.km, &self.fm]) };
+                let u = chosen(&self.ua) && chosen(&self.ub) && chosen(&self.uc);
+                chosen(&self.ia) && chosen(&self.ib) && chosen(&self.ic) && u && !self.itr.trim().is_empty() && comp && parallel
+            }
+            AnalysisTab::Zero => {
+                let i = match self.zero_i {
+                    2 => chosen(&self.i3o),
+                    _ => chosen(&self.ia) && chosen(&self.ib) && chosen(&self.ic),
+                };
+                let u = match self.zero_u {
+                    2 => chosen(&self.uni) && chosen(&self.uik),
+                    3 => chosen(&self.u3o),
+                    _ => chosen(&self.ua) && chosen(&self.ub) && chosen(&self.uc),
+                };
+                (self.zero_i_off || i) && (self.zero_u_off || u)
+            }
             _ => true,
         }
+    }
+
+    /// 543's «3Ion:» is a channel, not «Не учитывать» (string 3299).
+    fn parallel_used(&self) -> bool {
+        chosen(&self.i0_parallel) && self.i0_parallel != fvb_core::addformula::NOT_COUNTED
     }
 
     fn currents(&self) -> Currents {
@@ -210,15 +253,15 @@ impl QuickForms {
             AnalysisTab::Symmetric => quick::symmetric(i.as_ref(), u.as_ref()),
             AnalysisTab::Zero => {
                 let zi = match self.zero_i {
-                    1 => Some(ZeroCurrent::Calculated { ia: self.ia.clone(), ib: self.ib.clone(), ic: self.ic.clone() }),
+                    _ if self.zero_i_off => None,
                     2 => Some(ZeroCurrent::Measured(self.i3o.clone())),
-                    _ => None,
+                    _ => Some(ZeroCurrent::Calculated { ia: self.ia.clone(), ib: self.ib.clone(), ic: self.ic.clone() }),
                 };
                 let zu = match self.zero_u {
-                    1 => Some(ZeroVoltage::FromPhases { ua: self.ua.clone(), ub: self.ub.clone(), uc: self.uc.clone() }),
+                    _ if self.zero_u_off => None,
                     2 => Some(ZeroVoltage::FromUniUik { uni: self.uni.clone(), uik: self.uik.clone() }),
                     3 => Some(ZeroVoltage::Measured(self.u3o.clone())),
-                    _ => None,
+                    _ => Some(ZeroVoltage::FromPhases { ua: self.ua.clone(), ub: self.ub.clone(), uc: self.uc.clone() }),
                 };
                 quick::zero(zi.as_ref(), zu.as_ref())
             }
@@ -236,7 +279,8 @@ impl QuickForms {
                 } else {
                     PhaseComp::Coefficients { k0: self.k0.clone(), km: self.km.clone(), f0: self.f0.clone(), fm: self.fm.clone() }
                 };
-                quick::phase_z(&self.currents(), [&self.ua, &self.ub, &self.uc], &self.i0_parallel, &comp, &self.itr)
+                let i0n = if self.parallel_used() { self.i0_parallel.as_str() } else { "" };
+                quick::phase_z(&self.currents(), [&self.ua, &self.ub, &self.uc], i0n, &comp, &self.itr)
             }
             AnalysisTab::Differential => {
                 let arms: Vec<Arm> = self
@@ -276,8 +320,14 @@ impl App {
         let name = |idx: Option<usize>| idx.and_then(|i| d.osc.analog.get(i)).map(|c| c.id.clone()).unwrap_or_default();
         let (ua, ub, uc) = (name(d.analysis.u_abc[0]), name(d.analysis.u_abc[1]), name(d.analysis.u_abc[2]));
         let (ia, ib, ic) = (name(d.analysis.i_abc[0]), name(d.analysis.i_abc[1]), name(d.analysis.i_abc[2]));
+        // The measured-channel combos preselect 3I0 / 3U0 / 3I0n by name,
+        // case-insensitively (`0x411c70`), when the record has them.
+        let named = |want: &str| {
+            d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).find(|n| n.to_lowercase() == want).unwrap_or_default()
+        };
+        let (i3o, u3o, i0n) = (named("3i0"), named("3u0"), named("3i0n"));
         let f = &mut self.quick;
-        for (slot, v) in [(&mut f.ua, ua), (&mut f.ub, ub), (&mut f.uc, uc), (&mut f.ia, ia), (&mut f.ib, ib), (&mut f.ic, ic)] {
+        for (slot, v) in [(&mut f.ua, ua), (&mut f.ub, ub), (&mut f.uc, uc), (&mut f.ia, ia), (&mut f.ib, ib), (&mut f.ic, ic), (&mut f.i3o, i3o), (&mut f.u3o, u3o), (&mut f.i0_parallel, i0n)] {
             if slot.is_empty() {
                 *slot = v;
             }
@@ -378,82 +428,16 @@ impl App {
             symmetric_page(ui, f, &names, tab == AnalysisTab::PhasePhase);
             return;
         }
+        if tab == AnalysisTab::Zero {
+            zero_page(ui, f, &names);
+            return;
+        }
+        if tab == AnalysisTab::Phase {
+            phase_page(ui, f, &names);
+            return;
+        }
         egui::Grid::new("quickform").num_columns(6).spacing([8.0, 6.0]).show(ui, |ui| {
-            let currents = |ui: &mut egui::Ui, f: &mut QuickForms| {
-                combo(ui, "q_ia", "Ia", &mut f.ia, &names);
-                combo(ui, "q_ib", "Ib", &mut f.ib, &names);
-                combo(ui, "q_ic", "Ic", &mut f.ic, &names);
-                ui.end_row();
-                ui.checkbox(&mut f.calc_ib, "Рассчитать Ib по Ia и Iс");
-                ui.end_row();
-            };
             match tab {
-                AnalysisTab::Zero => {
-                    ui.label("Ток 3I0:");
-                    ui.radio_value(&mut f.zero_i, 0, "Отключить");
-                    ui.radio_value(&mut f.zero_i, 1, "Расчетный");
-                    ui.radio_value(&mut f.zero_i, 2, "Измеренный");
-                    ui.end_row();
-                    match f.zero_i {
-                        1 => currents(ui, f),
-                        2 => {
-                            combo(ui, "q_3io", "3Io", &mut f.i3o, &names);
-                            ui.end_row();
-                        }
-                        _ => {}
-                    }
-                    ui.label("Напряжение 3U0:");
-                    ui.radio_value(&mut f.zero_u, 0, "Отключить");
-                    ui.radio_value(&mut f.zero_u, 1, "из Ua,Ub,Uc");
-                    ui.radio_value(&mut f.zero_u, 2, "из Uни,Uик");
-                    ui.radio_value(&mut f.zero_u, 3, "Измеренный");
-                    ui.end_row();
-                    match f.zero_u {
-                        1 => {
-                            combo(ui, "q_ua", "Ua", &mut f.ua, &names);
-                            combo(ui, "q_ub", "Ub", &mut f.ub, &names);
-                            combo(ui, "q_uc", "Uc", &mut f.uc, &names);
-                        }
-                        2 => {
-                            combo(ui, "q_uni", "Uни", &mut f.uni, &names);
-                            combo(ui, "q_uik", "Uик", &mut f.uik, &names);
-                        }
-                        3 => combo(ui, "q_3uo", "3Uo", &mut f.u3o, &names),
-                        _ => {}
-                    }
-                    ui.end_row();
-                }
-                AnalysisTab::Phase => {
-                    currents(ui, f);
-                    combo(ui, "q_ua", "Ua", &mut f.ua, &names);
-                    combo(ui, "q_ub", "Ub", &mut f.ub, &names);
-                    combo(ui, "q_uc", "Uc", &mut f.uc, &names);
-                    ui.end_row();
-                    let mut with_none = vec![String::new()];
-                    with_none.extend(names.iter().cloned());
-                    combo(ui, "q_3i0n", "3I0 параллельной линии", &mut f.i0_parallel, &with_none);
-                    field(ui, "Iтр", &mut f.itr);
-                    ui.end_row();
-                    ui.radio_value(&mut f.per_unit, true, "По удельным параметрам");
-                    ui.radio_value(&mut f.per_unit, false, "По коэффициентам компенсации");
-                    ui.end_row();
-                    if f.per_unit {
-                        field(ui, "R0", &mut f.r0);
-                        field(ui, "R1", &mut f.r1);
-                        field(ui, "Rm", &mut f.rm);
-                        ui.end_row();
-                        field(ui, "X0", &mut f.x0);
-                        field(ui, "X1", &mut f.x1);
-                        field(ui, "Xm", &mut f.xm);
-                    } else {
-                        field(ui, "K0", &mut f.k0);
-                        field(ui, "Km", &mut f.km);
-                        ui.end_row();
-                        field(ui, "Ф0", &mut f.f0);
-                        field(ui, "Фm", &mut f.fm);
-                    }
-                    ui.end_row();
-                }
                 AnalysisTab::Differential => {
                     ui.label("Фаз:");
                     ui.radio_value(&mut f.dif_phases, 1, "1");
@@ -506,7 +490,7 @@ impl App {
                     }
                     ui.end_row();
                 }
-                AnalysisTab::Formula | AnalysisTab::Symmetric | AnalysisTab::PhasePhase => {}
+                AnalysisTab::Formula | AnalysisTab::Symmetric | AnalysisTab::PhasePhase | AnalysisTab::Zero | AnalysisTab::Phase => {}
             }
         });
     }
@@ -567,6 +551,127 @@ fn symmetric_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String], inter
     });
 }
 
+/// Page 537 «Нулевая последовательность»: «Ток 3Io» (Расчетный → Ia–Ic,
+/// Измеренный → «3Io:», `0x488f50`) and «Напряжение 3Uo» (из Ua, Ub, Uc /
+/// из Uни, Uик / Измеренный, each enabling its own combos, `0x4890b0`); the
+/// «Отключить» pair as on 536 (`0x489270`, `0x489510`).
+fn zero_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
+    let (i_off, u_off) = (f.zero_i_off, f.zero_u_off);
+    group(ui, "Ток 3Io", Some((&mut f.zero_i_off, !u_off)), |ui| {
+        ui.add_enabled_ui(!i_off, |ui| {
+            egui::Grid::new("q_zero_i").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                ui.radio_value(&mut f.zero_i, 1, "Расчетный");
+                ui.radio_value(&mut f.zero_i, 2, "Измеренный");
+                ui.end_row();
+                let calc = f.zero_i != 2;
+                cell_combo(ui, calc, "q_zia", "Ia", &mut f.ia, names);
+                cell_combo(ui, !calc, "q_z3io", "3Io:", &mut f.i3o, names);
+                ui.end_row();
+                cell_combo(ui, calc, "q_zib", "Ib", &mut f.ib, names);
+                ui.end_row();
+                cell_combo(ui, calc, "q_zic", "Ic", &mut f.ic, names);
+                ui.end_row();
+            });
+        });
+    });
+    ui.add_space(6.0);
+    group(ui, "Напряжение 3Uo", Some((&mut f.zero_u_off, !i_off)), |ui| {
+        ui.add_enabled_ui(!u_off, |ui| {
+            egui::Grid::new("q_zero_u").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+                ui.radio_value(&mut f.zero_u, 1, "Расчитанный из Ua, Ub, Uc");
+                ui.radio_value(&mut f.zero_u, 2, "Расчитанный из Uни, Uик");
+                ui.end_row();
+                let m = f.zero_u;
+                cell_combo(ui, m == 1, "q_zua", "Ua", &mut f.ua, names);
+                cell_combo(ui, m == 2, "q_zuni", "Uни", &mut f.uni, names);
+                ui.end_row();
+                cell_combo(ui, m == 1, "q_zub", "Ub", &mut f.ub, names);
+                cell_combo(ui, m == 2, "q_zuik", "Uик", &mut f.uik, names);
+                ui.end_row();
+                cell_combo(ui, m == 1, "q_zuc", "Uc", &mut f.uc, names);
+                ui.radio_value(&mut f.zero_u, 3, "Измеренный");
+                ui.end_row();
+                ui.label("");
+                cell_combo(ui, m == 3, "q_z3uo", "3Uo:", &mut f.u3o, names);
+                ui.end_row();
+            });
+        });
+    });
+}
+
+/// Page 543 «Фазные сопротивления»: «Токи» (Ia–Ic, «Iтр, А:»), «Ток 3Io*»
+/// (По удельным параметрам → X1 / R1 / X0 / R0; По коэффициентам компенсации
+/// → K0 / Ф0, `0x48a910`), «Ток 3Io параллельной линии» («3Ion:» with
+/// «Не учитывать» first; its edits — Xm / Rm or Km / Фm by the radio — only
+/// with a channel, `0x48ab80`) and «Напряжения» (Ua–Uc).
+fn phase_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
+    use fvb_core::addformula::NOT_COUNTED;
+    group(ui, "Токи", None, |ui| {
+        egui::Grid::new("q_ph_i").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+            cell_combo(ui, true, "q_pia", "Ia", &mut f.ia, names);
+            ui.end_row();
+            cell_combo(ui, true, "q_pib", "Ib", &mut f.ib, names);
+            ui.end_row();
+            cell_combo(ui, true, "q_pic", "Ic", &mut f.ic, names);
+            ui.end_row();
+            cell_edit(ui, true, "Iтр, А:", &mut f.itr);
+            ui.end_row();
+        });
+    });
+    ui.add_space(6.0);
+    group(ui, "Ток 3Io*", None, |ui| {
+        ui.label("Расчет коэффициента компенсации тока 3Io");
+        egui::Grid::new("q_ph_c").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+            ui.radio_value(&mut f.per_unit, true, "По удельным параметрам");
+            ui.radio_value(&mut f.per_unit, false, "По коэффициентам компенсации");
+            ui.end_row();
+            let pu = f.per_unit;
+            cell_edit(ui, pu, "X1, Ом/км", &mut f.x1);
+            cell_edit(ui, !pu, "K0", &mut f.k0);
+            ui.end_row();
+            cell_edit(ui, pu, "R1, Ом/км", &mut f.r1);
+            cell_edit(ui, !pu, "Ф0, град", &mut f.f0);
+            ui.end_row();
+            cell_edit(ui, pu, "X0, Ом/км", &mut f.x0);
+            ui.end_row();
+            cell_edit(ui, pu, "R0, Ом/км", &mut f.r0);
+            ui.end_row();
+        });
+        ui.label("* Ток нулевой последовательности рассчитывается из фазных токов");
+    });
+    ui.add_space(6.0);
+    group(ui, "Ток 3Io параллельной линии", None, |ui| {
+        let mut items = vec![NOT_COUNTED.to_string()];
+        items.extend(names.iter().cloned());
+        if f.i0_parallel.is_empty() {
+            f.i0_parallel = NOT_COUNTED.into();
+        }
+        let used = f.parallel_used();
+        let pu = f.per_unit;
+        egui::Grid::new("q_ph_m").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+            cell_combo(ui, true, "q_p3ion", "3Ion:", &mut f.i0_parallel, &items);
+            ui.end_row();
+            cell_edit(ui, used && pu, "Xm, Ом/км", &mut f.xm);
+            cell_edit(ui, used && !pu, "Km", &mut f.km);
+            ui.end_row();
+            cell_edit(ui, used && pu, "Rm, Ом/км", &mut f.rm);
+            cell_edit(ui, used && !pu, "Фm, град", &mut f.fm);
+            ui.end_row();
+        });
+    });
+    ui.add_space(6.0);
+    group(ui, "Напряжения", None, |ui| {
+        egui::Grid::new("q_ph_u").num_columns(1).spacing([8.0, 6.0]).show(ui, |ui| {
+            cell_combo(ui, true, "q_pua", "Ua", &mut f.ua, names);
+            ui.end_row();
+            cell_combo(ui, true, "q_pub", "Ub", &mut f.ub, names);
+            ui.end_row();
+            cell_combo(ui, true, "q_puc", "Uc", &mut f.uc, names);
+            ui.end_row();
+        });
+    });
+}
+
 /// The sheet's pages in the original's order (AddPage ×6, `0x48b970`):
 /// tab, our glyph, the page dialog's caption.
 const PAGES: [(AnalysisTab, &str, &str); 6] = [
@@ -603,5 +708,29 @@ mod tests {
         assert!(f.ok_enabled(AnalysisTab::PhasePhase));
         f.itr.clear();
         assert!(!f.ok_enabled(AnalysisTab::PhasePhase), "Iтр empty");
+        // 537 (`0x48a1f0`): the radio's combos of each live group.
+        let mut z = QuickForms::default();
+        for (slot, v) in [(&mut z.ia, "Ia"), (&mut z.ib, "Ib"), (&mut z.ic, "Ic"), (&mut z.ua, "Ua"), (&mut z.ub, "Ub"), (&mut z.uc, "Uc")] {
+            *slot = v.into();
+        }
+        assert!(z.ok_enabled(AnalysisTab::Zero));
+        z.zero_i = 2;
+        assert!(!z.ok_enabled(AnalysisTab::Zero), "3Io not chosen");
+        z.zero_i_off = true;
+        z.zero_u = 3;
+        assert!(!z.ok_enabled(AnalysisTab::Zero), "3Uo not chosen");
+        z.u3o = "3U0".into();
+        assert!(z.ok_enabled(AnalysisTab::Zero));
+        // 543 (`0x48b360`): the active group's edits; a parallel line's own.
+        assert!(z.ok_enabled(AnalysisTab::Phase), "defaults fill every edit");
+        z.x1.clear();
+        assert!(!z.ok_enabled(AnalysisTab::Phase));
+        z.per_unit = false;
+        assert!(z.ok_enabled(AnalysisTab::Phase), "X1 is not needed by the coefficients");
+        z.i0_parallel = "3I0n".into();
+        z.km.clear();
+        assert!(!z.ok_enabled(AnalysisTab::Phase), "Km needed with a parallel line");
+        z.i0_parallel = fvb_core::addformula::NOT_COUNTED.into();
+        assert!(z.ok_enabled(AnalysisTab::Phase));
     }
 }
