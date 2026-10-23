@@ -3082,6 +3082,20 @@ original's create docks it at the frame's bottom — ours follows the
 user's screenshot, L9.3); the layout is not saved between runs; Ctrl+pin
 and the animation-off switch not modelled.
 
+### L9.93 — The vector legend starts in its window when it does not fit  ·  ✅
+Read by hand: `0x490d2f`–`0x490d4f` centres the one-row legend by a
+truncating halving only while the window is strictly wider than the row
+(each item text width + 2m + the square), else starts it at m = 6·s
+(`[esp+0x3c]`, set at `0x49062c`) in the window's own coordinates.
+Ours took that m as an absolute screen x, so on the user's BINARY record
+(long names) the row began under the lanes and only «…е фазы С» showed
+in the pane; equal widths centred. Now `diagram::vector_legend_x`. Test
+`vector_legend_starts_m_from_the_window_when_it_does_not_fit`; rendered
+the BINARY record. (Found by the real-records render pass.)
+Residual: in print the original's m is in the page DC's coordinates
+(whether the printed cell has its own origin NOT DETERMINED; ours m from
+the cell).
+
 Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

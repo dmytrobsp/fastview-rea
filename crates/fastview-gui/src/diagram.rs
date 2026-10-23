@@ -353,6 +353,18 @@ pub fn vector_layout((left, top, right, bottom): (f32, f32, f32, f32), m: f32, c
     VectorLayout { b, table, r, cx: (left + w / 2.0).floor(), cy: (top + (y - r).min((b - top) / 2.0 + m + cy)).floor() }
 }
 
+/// The one-row legend's start x (`0x490d2f`–`0x490d4f`): centred by a
+/// truncating halving while the window is strictly wider than the row,
+/// else m from the window's left edge (a row that does not fit overflows
+/// to the right only).
+pub fn vector_legend_x(left: f32, width: f32, total: f32, m: f32) -> f32 {
+    if width > total {
+        left + ((width - total) / 2.0).trunc()
+    } else {
+        left + m
+    }
+}
+
 /// Number of concentric circles of the vector grid (`0x490360`):
 /// `n = ⌊R/50⌋` → 4 when n < 4, 5 when 4..9, 10 from 10.
 pub fn vector_circles(radius: f32) -> usize {
@@ -707,6 +719,14 @@ mod tests {
         let t = vector_layout((0.0, 0.0, 400.0, 300.0), 6.0, 14.0, 21.0, 250.0, 3, true);
         assert_eq!((t.b, t.table), (228.0, true));
         assert!(!vector_layout((0.0, 0.0, 400.0, 150.0), 6.0, 14.0, 21.0, 250.0, 3, true).table, "no room: the legend");
+    }
+
+    #[test]
+    fn vector_legend_starts_m_from_the_window_when_it_does_not_fit() {
+        assert_eq!(vector_legend_x(740.0, 400.0, 301.0, 6.0), 789.0);
+        // Equal widths do not centre; a wider row starts at left + m.
+        assert_eq!(vector_legend_x(740.0, 400.0, 400.0, 6.0), 746.0);
+        assert_eq!(vector_legend_x(740.0, 400.0, 900.0, 6.0), 746.0);
     }
 
     #[test]

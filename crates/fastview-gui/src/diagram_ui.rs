@@ -1169,7 +1169,7 @@ impl App {
         } else {
             // The legend: one centred row (from x = m when it does not fit).
             let total: f32 = shown.iter().map(|c| measure(&c.0).x + 2.0 * m + sq).sum();
-            let mut x = if total <= full.width() { full.left() + ((full.width() - total) / 2.0).floor() } else { m };
+            let mut x = dg::vector_legend_x(full.left(), full.width(), total, m);
             for c in &shown {
                 swatch(Rect::from_min_size(Pos2::new(x, lay.b + 2.0), Vec2::splat(sq)), c.3);
                 painter.text(Pos2::new(x + sq + m, lay.b), egui::Align2::LEFT_TOP, &c.0, font(), ink);
