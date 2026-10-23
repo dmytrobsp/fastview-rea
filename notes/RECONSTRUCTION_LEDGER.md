@@ -3174,9 +3174,7 @@ removed. Tests `level_lines_stay_in_their_lane`,
 `digital_windows_from_raw_samples`, the `.set` round trip (a kept level and
 area in place); `FV_WINDOW_STATE=comments` now also shows a level on the
 first digital lane (rendered: drawn at the lane's bottom).
-Residual: levels on formula channels draw on their lane's range but cannot
-be placed or re-homed there (our placement takes the record's analog lanes
-only; the original's any analog-kind channel); whether `0x4040c0` draws an
+Residual: (levels placed / re-homed on formula channels: L9.104); whether `0x4040c0` draws an
 area on an unknown channel NOT DETERMINED (ours: not drawn).
 
 ### L9.97 — Keytips placed per element; the Office 2007 box; menu rows with large images  ·  🟡
@@ -3393,6 +3391,15 @@ spectrum not re-read; the per-channel flag commands that refresh one
 channel's cache (`0x428490`'s other callers) follow our full per-channel
 recompute (INFERRED equivalent).
 
+### L9.104 — Level lines on formula and pasted analog lanes  ·  ✅
+Read (L9.89's report): the placement `0x43eb40` and the body drag's re-home
+(`0x43f46e`) test the lane's channel kind (`ch+0x5c` == 0, analog), not
+whether it came from the file — formula channels and pasted analog ones
+sit in the same vector with kind 0. Ours placed and re-homed levels on the
+record's analog lanes only. Now `lanes::{analog_kind, level_lane_at}`; the
+drag passes a value over every analog-kind lane; `Comment::drag` part 4
+re-homes onto any lane with a value. Test `a_level_line_on_a_formula_channel`.
+
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -3448,8 +3455,7 @@ strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 tab reordering in the strip and several panes in one dock row (L9.101 /
 L9.102); the group's three panes as separate units (a group tab pulled
 out); the marker bitmaps (ours drawn); L9.97 the main panel's row height
-/ image margins; L9.100 large / collapsed button sizes; L9.96 levels
-placed on formula channels; L9.64 MDI arrangements under tabs (likely
+/ image margins; L9.100 large / collapsed button sizes; L9.64 MDI arrangements under tabs (likely
 leave as no-ops); L9.22 / L9.84 CUPS hardware margins; L9.90 Alt+key
 while held and the Recent Documents' keys; the backlog §9 items 15 / 35 /
 37 / 45 residuals. Good recurring pass: render the user's real records

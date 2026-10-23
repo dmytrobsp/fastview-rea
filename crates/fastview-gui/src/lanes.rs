@@ -757,6 +757,25 @@ pub fn level_place(doc: &crate::app::Doc, (rows, tops, ranges): (&[Row], &[f32],
     g::level_y(v, tops[li], rows[li].h, lo, hi, digital)
 }
 
+/// An analog-kind channel (`ch+0x5c` == 0): the record's analog channels,
+/// formula channels and pasted analog ones — not a digital or pasted
+/// digital one.
+fn analog_kind(doc: &crate::app::Doc, k: Lane) -> bool {
+    match k {
+        Lane::Analog(_) => true,
+        Lane::Computed(j) => !doc.pending_digital(j),
+        Lane::Digital(_) => false,
+    }
+}
+
+/// The lane a level line is placed on (`0x43eb40`: a visible analog-kind
+/// lane) and the value under `y`.
+fn level_lane_at(doc: &crate::app::Doc, y: f32, geo: &RowGeo, ranges: &[(f64, f64)]) -> Option<(Lane, f64)> {
+    let li = geo.tops.iter().zip(geo.rows).position(|(&t, r)| y >= t && y < t + r.h)?;
+    let r = &geo.rows[li];
+    analog_kind(doc, r.key).then(|| (r.key, g::y_value(y, geo.tops[li], r.h, ranges[li].0, ranges[li].1)))
+}
+
 fn analog_at(y: f32, geo: &RowGeo, ranges: &[(f64, f64)]) -> Option<(usize, f64)> {
     let li = geo.tops.iter().zip(geo.rows).position(|(&t, r)| y >= t && y < t + r.h)?;
     let r = &geo.rows[li];
@@ -1207,8 +1226,8 @@ impl App {
                             match doc.comment_mode {
                                 1 => actions.push(Act::PlaceComment(Comment::new(CommentKind::Moment { pos: k }), false)),
                                 2 => {
-                                    if let Some((chan, value)) = analog_at(pos.y, &geo, &ranges) {
-                                        actions.push(Act::PlaceComment(Comment::new(CommentKind::Level { chan: ChanKey::Analog(chan), value, from: k, to: k }), true));
+                                    if let Some((chan, value)) = level_lane_at(doc, pos.y, &geo, &ranges) {
+                                        actions.push(Act::PlaceComment(Comment::new(CommentKind::Level { chan, value, from: k, to: k }), true));
                                     }
                                 }
                                 _ => {
@@ -1266,7 +1285,7 @@ impl App {
             if ui.input(|i| i.pointer.primary_down()) {
                 let k = sample_at(pos.x.clamp(left, plot_right.max(left)));
                 let under = rows.iter().zip(&tops).position(|(r, &t)| pos.y >= t && pos.y < t + r.h).map(|li| {
-                    let v = matches!(rows[li].key, Lane::Analog(_)).then(|| g::y_value(pos.y, tops[li], rows[li].h, ranges[li].0, ranges[li].1));
+                    let v = analog_kind(doc, rows[li].key).then(|| g::y_value(pos.y, tops[li], rows[li].h, ranges[li].0, ranges[li].1));
                     (rows[li].key, v)
                 });
                 actions.push(Act::MoveComment(ci, part, k, under));
@@ -2646,6 +2665,23 @@ mod menu_tests {
         assert_eq!(h.doc().osc.analog[0].id, " Ia 2 ", "no trim");
         commit(&mut h, "");
         assert_eq!(h.doc().osc.analog[0].id, "", "an empty name is taken");
+    }
+
+    /// `0x43eb40`: a level line goes on any analog-kind lane — a formula
+    /// channel's too — and is saved by that channel's name.
+    #[test]
+    fn a_level_line_on_a_formula_channel() {
+        use crate::comments::CommentKind;
+        let mut h = Harness::new();
+        h.app.append_computed(&[("X".into(), "Ua*2".into())]).unwrap();
+        for c in h.app.active_doc_mut().unwrap().chans.iter_mut().skip(1) {
+            c.visible = false;
+        }
+        h.frame(vec![]);
+        let y = h.row(1).y;
+        h.app.dispatch(Command::CommentMode(2));
+        drag(&mut h, Pos2::new(600.0, y), Pos2::new(700.0, y));
+        assert!(matches!(h.doc().comments.last().map(|c| &c.kind), Some(CommentKind::Level { chan: ChanKey::Computed(0), .. })), "{:?}", h.doc().comments);
     }
 
     #[test]

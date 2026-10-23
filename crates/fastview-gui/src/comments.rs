@@ -93,11 +93,12 @@ impl Comment {
             CommentKind::Level { chan, value, from, to } => match part {
                 1 | 3 => *to = sample,
                 2 => *from = sample,
-                // The body moves onto the analog lane under the pointer,
-                // taking its value there (`0x43f46e`, `0x4716d0`); over a
-                // digital lane or none nothing changes.
+                // The body moves onto the analog-kind lane under the pointer
+                // (a value is given only there), taking its value there
+                // (`0x43f46e`, `0x4716d0`); over a digital lane or none
+                // nothing changes.
                 4 => {
-                    if let Some((k @ ChanKey::Analog(_), Some(v))) = lane {
+                    if let Some((k, Some(v))) = lane {
                         (*chan, *value) = (k, v);
                     }
                 }
