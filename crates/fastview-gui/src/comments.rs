@@ -201,52 +201,58 @@ fn bubble(p: &egui::Painter, at: Pos2, color: Color32) {
     ));
 }
 
-/// Paint every element; `hover` is the element under the pointer (drawn
-/// selected, with its info box).
+/// Paint every element, then the selected one (`hover`, the element under
+/// the pointer) once more on top with its info box — as `0x43f630` does, so
+/// a selected area's translucent fill is laid twice.
 pub fn paint(p: &egui::Painter, comments: &[Comment], hover: Option<usize>, geo: &Geo) {
     let font = FontId::proportional(11.0);
     for (i, c) in comments.iter().enumerate() {
-        let sel = hover == Some(i);
-        let col = if sel { SELECTED } else { NORMAL };
-        let right_top = match c.kind {
-            CommentKind::Moment { pos } => {
-                let x = (geo.x_of)(pos as f64);
-                bubble(p, Pos2::new(x - 3.0, geo.top + 16.0), col);
-                p.vline(x, geo.top + 30.0..=geo.v_bottom, Stroke::new(if sel { 3.0f32 } else { 1.0 }, col));
-                Pos2::new(x + 3.0, geo.top + 30.0)
-            }
-            CommentKind::Level { chan, value, from, to } => {
-                let Some(y) = (geo.value_y)(chan, value) else { continue };
-                let (x1, x2) = ((geo.x_of)(from.min(to) as f64), (geo.x_of)(from.max(to) as f64));
-                p.hline(x1..=x2, y, Stroke::new(3.0f32, col));
-                for x in [x1, x2] {
-                    p.circle(Pos2::new(x, y), 5.0, Color32::from_rgb(255, 0, 0), Stroke::new(1.0f32, col));
-                }
-                bubble(p, Pos2::new(x2 + 10.0, y - 7.0), col);
-                if !c.hidden {
-                    p.text(Pos2::new(x1 + 5.0, y + 5.0), Align2::LEFT_TOP, c.info(geo.us, geo.abs), font.clone(), TEXT);
-                }
-                Pos2::new(x2 + 3.0, y)
-            }
-            CommentKind::Area { chan_from, chan_to, from, to } => {
-                let Some(r) = area_rect(from, to, chan_from, chan_to, geo) else { continue };
-                p.rect_filled(r, 0.0, Color32::from_rgba_unmultiplied(255, 0, 0, 64));
-                p.rect_stroke(r, 0.0, Stroke::new(3.0f32, col));
-                if !c.hidden {
-                    p.text(Pos2::new(r.left() + 5.0, r.bottom() - 5.0), Align2::LEFT_BOTTOM, c.info(geo.us, geo.abs), font.clone(), TEXT);
-                }
-                r.right_top() + Vec2::new(3.0, 0.0)
-            }
-        };
-        if sel {
-            let at = right_top;
-            let galley = p.layout_no_wrap(c.info(geo.us, geo.abs), font.clone(), Color32::from_rgb(0, 0, 192));
-            let r = Rect::from_min_size(at, galley.size() + Vec2::splat(10.0));
-            p.rect_filled(r, 10.0, Color32::from_rgb(255, 230, 230));
-            p.rect_stroke(r, 10.0, Stroke::new(1.0f32, Color32::from_rgb(192, 175, 175)));
-            p.galley(r.min + Vec2::splat(5.0), galley, Color32::from_rgb(0, 0, 192));
-        }
+        draw(p, c, hover == Some(i), geo, &font);
     }
+    let Some(c) = hover.and_then(|i| comments.get(i)) else { return };
+    let Some(at) = draw(p, c, true, geo, &font) else { return };
+    let galley = p.layout_no_wrap(c.info(geo.us, geo.abs), font, Color32::from_rgb(0, 0, 192));
+    let r = Rect::from_min_size(at, galley.size() + Vec2::splat(10.0));
+    p.rect_filled(r, 10.0, Color32::from_rgb(255, 230, 230));
+    p.rect_stroke(r, 10.0, Stroke::new(1.0f32, Color32::from_rgb(192, 175, 175)));
+    p.galley(r.min + Vec2::splat(5.0), galley, Color32::from_rgb(0, 0, 192));
+}
+
+/// One element (its slot +0x18); the info box's top-left, or `None` when it
+/// has no place in the view.
+fn draw(p: &egui::Painter, c: &Comment, sel: bool, geo: &Geo, font: &FontId) -> Option<Pos2> {
+    let col = if sel { SELECTED } else { NORMAL };
+    let right_top = match c.kind {
+        CommentKind::Moment { pos } => {
+            let x = (geo.x_of)(pos as f64);
+            bubble(p, Pos2::new(x - 3.0, geo.top + 16.0), col);
+            p.vline(x, geo.top + 30.0..=geo.v_bottom, Stroke::new(if sel { 3.0f32 } else { 1.0 }, col));
+            Pos2::new(x + 3.0, geo.top + 30.0)
+        }
+        CommentKind::Level { chan, value, from, to } => {
+            let y = (geo.value_y)(chan, value)?;
+            let (x1, x2) = ((geo.x_of)(from.min(to) as f64), (geo.x_of)(from.max(to) as f64));
+            p.hline(x1..=x2, y, Stroke::new(3.0f32, col));
+            for x in [x1, x2] {
+                p.circle(Pos2::new(x, y), 5.0, Color32::from_rgb(255, 0, 0), Stroke::new(1.0f32, col));
+            }
+            bubble(p, Pos2::new(x2 + 10.0, y - 7.0), col);
+            if !c.hidden {
+                p.text(Pos2::new(x1 + 5.0, y + 5.0), Align2::LEFT_TOP, c.info(geo.us, geo.abs), font.clone(), TEXT);
+            }
+            Pos2::new(x2 + 3.0, y)
+        }
+        CommentKind::Area { chan_from, chan_to, from, to } => {
+            let r = area_rect(from, to, chan_from, chan_to, geo)?;
+            p.rect_filled(r, 0.0, Color32::from_rgba_unmultiplied(255, 0, 0, 64));
+            p.rect_stroke(r, 0.0, Stroke::new(3.0f32, col));
+            if !c.hidden {
+                p.text(Pos2::new(r.left() + 5.0, r.bottom() - 5.0), Align2::LEFT_BOTTOM, c.info(geo.us, geo.abs), font.clone(), TEXT);
+            }
+            r.right_top() + Vec2::new(3.0, 0.0)
+        }
+    };
+    Some(right_top)
 }
 
 /// State of the comment text dialog (DIALOG 332 in item mode).

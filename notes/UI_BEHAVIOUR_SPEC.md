@@ -653,7 +653,12 @@ doc at `+0x840` (vector), `+0x854` = item under the pointer (= end → none),
 ### 5.2 Painting [R, 0x43f630]
 Clip (leftW, 0)–(W, H−A). Shared pens: 1 px (255,100,100), 3 px
 (255,100,100), 3 px (192,0,0) (selected), red brush (255,0,0), normal 13 font.
-"Selected" = the item under the pointer [I: `+0x854` is recomputed on hover].
+"Selected" = the item under the pointer: `+0x854`, re-picked only by a mouse
+move over the plot (x ≥ leftW, no drag) and kept while the pointer is over
+the stats panel or outside the view (no mouse-leave handler); the painter
+draws all items, then the selected one again on top (a selected area's fill
+is laid twice) and its info box; print and copy use the same Draw, so the
+selected item prints selected (L9.59).
 - Moment: bubble icon at the top (x − iconW/2 + 4); vertical line below it to
   H−30 (H−55 with the band), 1 px (255,100,100), 3 px (192,0,0) when selected;
   its text appears in the difference band (§3.4); text box y offset 30 (75 and
@@ -1318,7 +1323,7 @@ icon-only small buttons and panel collapse when narrow (L9.27).
     local radios, persistence (+ print margins) — `dialogs.rs`, `persist.rs` — S
 35. 🟡 (L9.9: all but the shell tree, .sto and recycle bin) Проводник as the modal finder (worker scan, filters, sort, multi-open,
     delete with companions, persistence) — `main.rs` → new module — L
-36. 🟡 (L9.22: all but logo, paper/printer properties, diagram print branches) Print: dialog with five checkboxes, page setup, paged output (oscillogram
+36. 🟡 (L9.22: all but logo, paper/printer properties, diagram print branches; L9.59 selected comment printed) Print: dialog with five checkboxes, page setup, paged output (oscillogram
     sliced, diagrams one page each) and preview — new module — L
 37. 🟡 (L9.10: worker + thresholds + cancel; L9.31: the original's counters and percent) Loading progress dialog with worker thread and cancel (thresholds
     200 kB/20 kB) — `app.rs`, `crates/fvb-core` parsers — M

@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 308 pass)
+- `cargo test --workspace`   (currently 309 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -1219,7 +1219,7 @@ printer's paper and hardware margins only via GDI caps on Windows; CUPS
 gets the full sheet); «Свойства...» and printer status fields empty; our
 «Файл PDF…» entry is an extension; diagram print-only branches (pen widths
 ×scale, frequency tiling for the page aspect) not modelled; horizontal
-визиры (now L9.39) and the comment hover not drawn in print; header/footer line pitch
+визиры printed since L9.39, the comment under the pointer since L9.59; header/footer line pitch
 T assumed 12 screen px.
 
 ### L9.23 — User-reported: crash at small window sizes; the bottom scroll bar  ·  ✅
@@ -2002,6 +2002,35 @@ bar's combo boxes, if a drop-down style one has the focus) are not
 modelled — only the view, the diagram windows and the grids move our
 copy focus.
 
+### L9.59 — The comment under the pointer: sticky, printed, drawn twice  ·  ✅
+Read by hand (asm): the print slice `0x405970` calls the view's Draw
+through its vtable (+0x1b8 = `0x45f950`), which calls the comment painter
+`0x43f630` unconditionally — no print test. The painter draws every
+element through slot +0x18 (each one flags itself selected when it is the
+manager's selected element, `0x404110` for the area), then the selected
+one (`doc+0x854`) **once more** through +0x18 and its info box through
++0x14 — so a selected area's AlphaBlend fill (unconditional, `0x404332`)
+is laid twice. `doc+0x854` is written by the mouse move `0x45ea70`
+(`0x45ef09`): with no drag mode, and only when x ≥ the stats-panel width,
+the hit test `0x43ea60` re-picks it (repaint on change); there is no y
+test and the view's map has no WM_MOUSELEAVE (only WM_MOUSEHOVER for the
+stats popup), so the selection **stays** while the pointer is over the
+stats panel or outside the view — on screen, in print and in copy's
+picture. Delete (`0x43f5f0`) erases the element and resets the selection.
+Ours: `Doc::comment_hot`, re-picked in `lanes_ui` only when the pointer
+moves to a new spot of the client area right of the stats panel with no
+drag (`App::view_pointer` stands in for WM_MOUSEMOVE), kept otherwise;
+`comments::paint` draws all, then the selected one again plus its info
+box; the printout passes `comment_hot` and now places level lines as the
+screen does (`g::level_y` on the line's own channel range, nothing
+outside it — it used the lane's range unchecked); delete clears it. Test
+`the_comment_under_the_pointer_sticks_until_the_next_plot_move`; rendered
+(an area selected: dark border, denser fill, info box).
+Residual: the cursor shape over a comment still uses a live hit test
+(WM_SETCURSOR `0x45f660`, L9.44's open item); a scroll / zoom under a
+still pointer keeps the old selection (as the original, which only
+re-picks on WM_MOUSEMOVE) — not separately tested.
+
 Next in L9 (HANDOFF 2026-10-23, late): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2035,8 +2064,8 @@ texts only; a class's virtuals: RTTI `.?AV<Name>@@` → COL → vtable; MFC
 ordinals: disassemble them in the carved mfc120u (L9.37).
 **Open next** (verify a residual is not already done before starting —
 the ledger text was stale for many L9.1–L9.14 items): L9.30 the third
-copy-focus case ✅ L9.58; L9.22 print residuals (e.g.
-no comment hover in print); L9.21 MFC's 200 ms hold-to-drag (a self-drop
+copy-focus case ✅ L9.58; L9.22 print residuals (comment hover ✅ L9.59; left: logo, paper,
+diagram print branches); L9.21 MFC's 200 ms hold-to-drag (a self-drop
 shows 1086 — read the LMB-down path first); L9.6 digital level-line snap;
 L9.44 the comment cursor codes (reverse `0x43fab0` / `0x45f660`); MFC
 framework items readable from the carved mfc120u / mfc120rus (tab colour

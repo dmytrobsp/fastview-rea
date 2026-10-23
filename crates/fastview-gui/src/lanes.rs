@@ -800,6 +800,7 @@ enum Act {
     MergeOffset(f64),
     WindowZoom(usize, f64, f64),
     EditComment(usize),
+    Hot(Option<usize>),
     Rename(usize),
     Select(ChanKey, SelClick),
     ClearSelection,
@@ -993,7 +994,22 @@ impl App {
         let comment_at = |pos: Pos2| {
             doc.comments.iter().enumerate().find_map(|(i, c)| crate::comments::hit(c, pos, &cgeo).map(|part| (i, part)))
         };
-        let hovered = self.comment_drag.map(|(i, _)| i).or_else(|| hover.filter(|p| p.x > left && p.y < plot_bottom).and_then(|p| comment_at(p).map(|h| h.0)));
+        // A pointer move over the client right of the stats panel with no
+        // drag under way re-picks the element under it (`0x45ef09`); it is
+        // kept while the pointer is elsewhere (no mouse-leave handler).
+        let pointer_now = hover.filter(|p| client.contains(*p));
+        let idle = self.vizir_drag.is_none() && self.comment_drag.is_none() && self.merge_drag.is_none() && !matches!(self.rect_zoom, RectZoom::Dragging { .. });
+        let hot = match pointer_now.filter(|p| idle && p.x >= left && self.view_pointer != Some(*p)) {
+            Some(p) => {
+                let h = comment_at(p).map(|h| h.0);
+                if h != doc.comment_hot {
+                    actions.push(Act::Hot(h));
+                }
+                h
+            }
+            None => doc.comment_hot,
+        };
+        let hovered = self.comment_drag.map(|(i, _)| i).or(hot);
         crate::comments::paint(&pp, &doc.comments, hovered, &cgeo);
         if let Some((i, _)) = &self.level_edit {
             if let Some(crate::comments::CommentKind::Level { chan, value, from, .. }) = doc.comments.get(*i).map(|c| &c.kind) {
@@ -1293,6 +1309,9 @@ impl App {
         let row_keys: Vec<ChanKey> = rows.iter().map(|r| r.key).collect();
         let (vmin_c, hmax_c) = (vmin, hmax);
 
+        if pointer_now.is_some() {
+            self.view_pointer = pointer_now;
+        }
         for a in actions {
             let d = &mut self.docs[ai];
             match a {
@@ -1359,6 +1378,7 @@ impl App {
                     d.sel_anchor = anchor;
                 }
                 Act::ClearSelection => d.selection.clear(),
+                Act::Hot(h) => d.comment_hot = h,
                 Act::DropCombine(chans, target) => {
                     // The dragged channels and the target are selected (other
                     // selections stay), then 33035 or message 1086.
@@ -1547,7 +1567,9 @@ impl App {
                     MenuCmd::Split => d.split_selected(),
                     MenuCmd::LockComment(i) => d.comments[i].locked = !d.comments[i].locked,
                     MenuCmd::DeleteComment(i) => {
+                        // `0x43f5f0`: the selection goes with it.
                         d.comments.remove(i);
+                        d.comment_hot = None;
                     }
                     MenuCmd::HideComment(i) => d.comments[i].hidden = !d.comments[i].hidden,
                     _ => {}
@@ -2327,6 +2349,39 @@ mod menu_tests {
         }
         h.frame(vec![ev(to, false)]);
         h.frame(vec![]);
+    }
+
+    /// `0x45ef09`: a pointer move over the plot picks the element under
+    /// it; moves over the stats panel or leaving the view keep it (drawn
+    /// selected with its info box); a move off it in the plot drops it.
+    #[test]
+    fn the_comment_under_the_pointer_sticks_until_the_next_plot_move() {
+        use crate::comments::{Comment, CommentKind};
+        let mut h = Harness::new();
+        let y0 = h.row(0).y;
+        h.app.dispatch(Command::CommentMode(1));
+        h.button(Pos2::new(500.0, y0), egui::PointerButton::Primary);
+        let x = 500.0;
+        assert!(matches!(h.doc().comments[0].kind, CommentKind::Moment { .. }));
+        let info_boxes = |h: &Harness| {
+            h.shapes.iter().filter(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == Color32::from_rgb(255, 230, 230))).count()
+        };
+        h.frame(vec![egui::Event::PointerMoved(Pos2::new(x + 2.0, y0))]);
+        assert_eq!(h.doc().comment_hot, Some(0));
+        h.frame(vec![egui::Event::PointerMoved(h.row(0))]);
+        assert_eq!(h.doc().comment_hot, Some(0), "the stats panel keeps it");
+        h.frame(vec![egui::Event::PointerGone]);
+        h.frame(vec![]);
+        assert_eq!(h.doc().comment_hot, Some(0), "leaving the view keeps it");
+        assert_eq!(info_boxes(&h), 1, "still drawn selected");
+        h.frame(vec![egui::Event::PointerMoved(Pos2::new(x + 200.0, y0))]);
+        assert_eq!(h.doc().comment_hot, None, "a plot move off it drops it");
+        h.frame(vec![]);
+        assert_eq!(info_boxes(&h), 0);
+        // A second element: still none until the pointer moves onto it.
+        h.app.active_doc_mut().unwrap().comments.push(Comment::new(CommentKind::Moment { pos: 0 }));
+        h.frame(vec![]);
+        assert_eq!(h.doc().comment_hot, None);
     }
 
     #[test]

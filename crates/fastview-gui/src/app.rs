@@ -455,6 +455,9 @@ pub struct Doc {
     /// (R, X) channel pairs of the circle diagram (DIALOG 554, `doc+0x884`).
     pub rx_pairs: Vec<crate::diagram::ChanPair>,
     pub comments: Vec<Comment>,
+    /// The element under the pointer (`doc+0x854`), drawn selected: set by
+    /// a pointer move over the plot, kept when the pointer leaves it.
+    pub comment_hot: Option<usize>,
     /// Selected channels (the original's per-channel `+0x100` flag): the
     /// target of the channel context menu and the per-channel commands.
     pub selection: BTreeSet<ChanKey>,
@@ -546,6 +549,7 @@ impl Doc {
             dif_pairs: Vec::new(),
             rx_pairs: Vec::new(),
             comments: Vec::new(),
+            comment_hot: None,
             selection: BTreeSet::new(),
             sel_anchor: None,
             next_group: 1,
@@ -940,6 +944,9 @@ pub struct App {
     /// The diagram windows (the canvas, without toolbar or property grid)
     /// as last drawn.
     pub pane_canvas: Vec<(Pane, egui::Rect)>,
+    /// The pointer over the view's client area at the last frame it was
+    /// there: a change is the original's WM_MOUSEMOVE.
+    pub view_pointer: Option<egui::Pos2>,
     /// The circle / differential property grids as last drawn.
     pub pane_grid: Vec<egui::Rect>,
     /// Where the keyboard focus is, as far as copy (`0x405160`) cares.
@@ -1062,6 +1069,7 @@ impl App {
             view_rects: None,
             pane_canvas: Vec::new(),
             pane_grid: Vec::new(),
+            view_pointer: None,
             copy_focus: CopyFocus::View,
             ppp: 1.0,
             window_title: String::new(),
