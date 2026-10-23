@@ -3069,7 +3069,7 @@ time). `FV_WINDOW_STATE=floating` / `autohide`. Tests
 `auto_hide_hover_slide_and_check`,
 `diagram_panes_float_redock_and_auto_hide`.
 Residual: (smart-docking drops on every edge, beside and into the other
-unit: L9.101); a tab cannot be dragged out of the group; Частотная stays in the right column (the
+unit: L9.101; a tab dragged out: L9.102); Частотная stays in the right column (the
 original's create docks it at the frame's bottom — ours follows the
 user's screenshot, L9.3); the layout saved between runs: L9.98; Ctrl+pin
 and the animation-off switch not modelled.
@@ -3345,10 +3345,29 @@ dockleft|dockbottom|docktab|dockmarkers`. Tests
 (Частотная into the group's tabs, the group with it to the left edge),
 `workspace_round_trip`; rendered all four.
 Residual: the marker bitmaps are ours (drawn boxes and arrows, MFC's
-17117…17127 are its own); a tab cannot be dragged out (`FloatTab`
-`0x1013a259`) nor reordered; the dock rows of several panes on one edge
+17117…17127 are its own); (a tab dragged out: L9.102) tabs not reordered; the dock rows of several panes on one edge
 are separate containers; Ctrl (no docking while held) not modelled;
 Частотная's default stays below the group (the user's screenshot).
+
+### L9.102 — A tab dragged out of a tabbed group floats  ·  🟡
+Read (subagent report on mfc120u): a press on a tab arms detach mode and
+captures the mouse with the grab offset (`0x10068d0b`); moving inside the
+strip over another tab swaps them (reordering, `0x100690b4`); moving out
+of the strip calls DetachTab (`0x10068657`), which needs SM_CXDRAG /
+SM_CYDRAG (4 px) from the press; `CTabbedPane::FloatTab` (`0x1013a259`,
+more than one tab only) removes the tab and floats that pane at its
+recent floating rect, the drag going on as a mini-frame drag.
+Ours could not take a tab out. Now the combined group's strip
+(`group_body`): pulling the Частотная tab out past 4 px floats Частотная
+under the pointer (keeping its tab place for a redock) and the smart-
+docking drag goes on; pulling the host's own tab out hands the container
+to the other unit. `App::pane_tab_rects`. Test
+`smart_docking_drops_on_the_markers` (the tab pulled out, released over
+nothing: floating, the group still docked).
+Residual: our group's three panes are one unit — a group tab pulled out
+of a group without Частотная does nothing, and one pulled out of a
+combined group takes the whole group; tab reordering not modelled; the
+float lands under the pointer rather than at the recent floating rect.
 
 Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

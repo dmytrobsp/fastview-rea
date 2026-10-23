@@ -1050,6 +1050,8 @@ pub struct App {
     /// The diagram windows (the canvas, without toolbar or property grid)
     /// as last drawn.
     pub pane_canvas: Vec<(Pane, egui::Rect)>,
+    /// The diagram tab strips' tabs this frame.
+    pub pane_tab_rects: Vec<(Pane, egui::Rect)>,
     /// The pointer over the view's client area at the last frame it was
     /// there: a change is the original's WM_MOUSEMOVE.
     pub view_pointer: Option<egui::Pos2>,
@@ -1200,6 +1202,7 @@ impl App {
             view_left: crate::lanes::LEFT_W_DEFAULT,
             view_rects: None,
             pane_canvas: Vec::new(),
+            pane_tab_rects: Vec::new(),
             pane_grid: Vec::new(),
             view_pointer: None,
             tab_auto: TabAuto::default(),

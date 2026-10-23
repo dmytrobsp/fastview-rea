@@ -22,6 +22,7 @@ impl App {
     pub fn diagram_panes(&mut self, ctx: &egui::Context) {
         use crate::docking::{Place, Spot};
         self.pane_canvas.clear();
+        self.pane_tab_rects.clear();
         self.pane_grid.clear();
         self.dock_client = ctx.available_rect();
         let views = self.dock_views();
@@ -191,22 +192,40 @@ impl App {
         let pinned = self.dock_ref(v.unit).place != crate::docking::Place::Floating;
         let outer = ui.max_rect();
         let front_freq = v.freq && self.freq_in_front;
-        egui::TopBottomPanel::bottom(egui::Id::new(("pane_tabs", v.unit))).show_inside(ui, |ui| {
+        // A tab pulled out of the strip (`0x10068d0b` / `0x100690b4`).
+        let mut pulled: Option<bool> = None;
+        let strip = egui::TopBottomPanel::bottom(egui::Id::new(("pane_tabs", v.unit))).show_inside(ui, |ui| {
             ui.horizontal(|ui| {
                 let panes = self.panes;
                 for p in Panes::GROUP.into_iter().filter(|&p| panes.visible(p)) {
-                    if ui.selectable_label(p == active && !front_freq, pane_title(p)).clicked() {
+                    let r = ui.selectable_label(p == active && !front_freq, pane_title(p)).interact(egui::Sense::click_and_drag());
+                    self.pane_tab_rects.push((p, r.rect));
+                    if r.clicked() {
                         self.freq_in_front = false;
                         if p != active {
                             self.dispatch(Command::ActivatePane(p));
                         }
                     }
+                    if r.dragged() {
+                        pulled = Some(false);
+                    }
                 }
-                if v.freq && ui.selectable_label(front_freq, pane_title(Pane::Frequency)).clicked() {
-                    self.freq_in_front = true;
+                if v.freq {
+                    let r = ui.selectable_label(front_freq, pane_title(Pane::Frequency)).interact(egui::Sense::click_and_drag());
+                    self.pane_tab_rects.push((Pane::Frequency, r.rect));
+                    if r.clicked() {
+                        self.freq_in_front = true;
+                    }
+                    if r.dragged() {
+                        pulled = Some(true);
+                    }
                 }
             });
         });
+        if let (Some(freq_tab), true) = (pulled, v.freq && v.tab.is_some()) {
+            let ctx = ui.ctx().clone();
+            self.tab_drag_out(&ctx, v.unit, freq_tab, strip.response.rect);
+        }
         egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
             if front_freq {
@@ -242,6 +261,38 @@ impl App {
                 Pane::Frequency => {}
             }
         });
+    }
+
+    /// A tab dragged out of a combined group's strip: past the system drag
+    /// distance (SM_CXDRAG / SM_CYDRAG, 4 px, `0x10068657`) and outside the
+    /// strip, `CTabbedPane::FloatTab` (`0x1013a259`) floats that pane under
+    /// the pointer, the other unit keeping the container; the drag then
+    /// goes on as a floating caption drag (the markers). Our group's three
+    /// panes are one unit: a group tab pulled out floats the group.
+    fn tab_drag_out(&mut self, ctx: &egui::Context, host: crate::docking::Unit, freq_tab: bool, strip: egui::Rect) {
+        use crate::docking::{Place, Spot, Unit};
+        let (press, now) = ctx.input(|i| (i.pointer.press_origin(), i.pointer.latest_pos()));
+        let (Some(press), Some(now)) = (press, now) else { return };
+        let d = now - press;
+        if (d.x.abs() < crate::docking::DRAG_PX && d.y.abs() < crate::docking::DRAG_PX) || strip.contains(now) || self.dock_drag.is_some() {
+            return;
+        }
+        let pulled = if freq_tab { Unit::Freq } else { Unit::Group };
+        if pulled == host {
+            // The host's own tab: the other unit takes the container.
+            let h = *self.dock_ref(host);
+            let o = self.dock(host.other());
+            (o.spot, o.extent, o.gen, o.place) = (h.spot, h.extent, o.gen + 1, Place::Docked);
+            self.dock(host).spot = Spot::Tab;
+        }
+        let origin = Self::float_origin(ctx);
+        let grab = egui::vec2(40.0, 10.0);
+        let size = self.dock(pulled).float_at(origin).size();
+        let u = self.dock(pulled);
+        u.place = Place::Floating;
+        u.float_rect = Some(egui::Rect::from_min_size(now - grab, size));
+        self.freq_in_front = false;
+        self.dock_drag = Some((pulled, grab));
     }
 
     /// Частотная's body: caption and window; its caption acts on `unit`

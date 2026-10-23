@@ -769,6 +769,13 @@ mod window_tests {
         assert_eq!(w.app.dock_freq.spot, Spot::Tab, "the tab went along");
         let g = w.app.dock_rects[Unit::Group as usize].unwrap();
         assert!(g.left() < 20.0, "on the left edge: {g:?}");
+        // The Частотная tab pulled out of the strip floats it alone (it
+        // remembers its tab place); released over nothing it stays.
+        let tab = w.app.pane_tab_rects.iter().find(|(p, _)| *p == app::Pane::Frequency).map(|(_, r)| r.center()).expect("the Частотная tab");
+        let nowhere = |_: &App| Pos2::new(600.0, 600.0);
+        drag(&mut w, tab, &nowhere);
+        assert_eq!((w.app.dock_freq.place, w.app.dock_freq.spot), (Place::Floating, Spot::Tab));
+        assert_eq!((w.app.dock_group.place, w.app.dock_views_shown()), (Place::Docked, 2));
     }
 
     /// Copy (`0x45be28` / `0x405160`): a picture of the view's client area
