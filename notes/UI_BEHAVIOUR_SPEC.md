@@ -993,7 +993,7 @@ correction selection → store and recompute.
   values; saved values re-selected by prefix match.
 - **Filters live** (no Apply): station/block exact case-sensitive or «Все»,
   independent; after a scan С:/По: = earliest/latest file date; a file passes
-  when `С ≤ t < По + 1 day` at 00:00.
+  when `С ≤ t ≤ По + 1 day` at 00:00 (inclusive, `0x46cb20`).
 - Sorting: header click ascending, again descending (header arrows); Время
   sorts by time of day only; text compares case-sensitive; **every open forces
   Дата ascending**.
@@ -1057,17 +1057,23 @@ second) in `+0x9c`), list notify `0x421e10`, Удалить `0x421e40`.
     difference `|x[k] − 2x[k−N] + x[k−2N]|/A(k)` in a ±1 period window around
     the cursor per channel; success needs peak ≥ 4× window mean in both, else
     3507; offset = t1[peak1] − t2[peak2] either way.
-  - 2 by pre-fault mode (0x47c440): cursor > 1.5 periods in (3259), inside
-    (3162); coarse offset t1(c) − t2(c); per-sample fundamental phase
-    difference over ±1 period, mean and spread; spread > 1° → 3305
-    «Нестационарный участок…», else 3456; offset = coarse − mean°·1e6/(f_net·360)
-    µs either way.
+  - 2 by pre-fault mode (0x47c440, L9.111): 1.5·N + 1 ≤ the cursor in both
+    channels (3259), cursors not past the last sample (3162); N = a pasted
+    channel's own rate ÷ 50, the record's R div trunc(f) (both methods);
+    the cursor in channel 2 = round-half-up(r₂·(c/R − offset)); coarse Δ =
+    t1(c) − t2(c₂); in [c − N, c + N) the one-period window of least
+    non-zero spread of |P1|·|P2|; over it P1's phase minus P2's
+    (interpolated at t1 − Δ), wrapped into ±180°; median and population
+    spread; spread > 1° → 3305 «Нестационарный участок…», else 3456;
+    offset = Δ − median°/(f_net·360) either way.
 - **1092 Объединить** (doc 0x449960 → 0x47d990): target rate R = max channel
   rate rounded to a multiple of f_net; zero-pad leading (by the offset sign)
   and trailing so all channels align; uniform grid of `round(R·dur) − 4`
   samples; analog by local 3-point quadratic fit, frequency track nearest,
-  digital previous-sample hold; per channel rate := R, **bit14 cleared**,
-  values ÷ `ch+0xf0` [unknown], recompute; offset 0; undo snapshot; doc rate :=
+  digital: the first sample from index 1 at or after t, the next one when
+  ≥ half a step away (L9.111); every channel read through the accessor
+  (flags, ×k, NaN 0); per channel rate := R, **bit14 cleared**, analog
+  values ÷ k `ch+0xf0` (the flags' transforms baked in), recompute; offset 0; undo snapshot; doc rate :=
   R; recompute all, ОМП; modified; **hide the bar**, beep. Names keep "(2)"
   suffixes; result is the current document (dirty).
 

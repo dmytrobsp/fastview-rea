@@ -402,16 +402,23 @@ impl App {
                 let Ok(a2) = &p.pasted.channel else { return };
                 let t0 = d.osc.time.first().copied().unwrap_or(0.0);
                 let t1: Vec<f64> = d.osc.time.iter().map(|t| t - t0).collect();
-                let n1 = d.osc.samples_per_cycle().max(2);
-                let n2 = ((p.pasted.rate / d.osc.line_freq.max(1.0)).round() as usize).max(2);
+                // Samples per period and the cursor in the pasted channel
+                // (`0x47bd43` / `0x47c555`): a pasted channel by its own
+                // rate ÷ 50, the record's by R div trunc(f).
+                let rate = d.osc.sample_rate;
+                let n1 = merge::period_samples(0.0, rate, d.osc.line_freq);
+                let n2 = merge::period_samples(p.pasted.rate, rate, d.osc.line_freq);
                 let x1 = &d.flagged.analog[c1].samples;
                 let s1 = SyncChan { times: &t1, x: x1, n: n1 };
                 let s2 = SyncChan { times: &p.pasted.times, x: &a2.samples, n: n2 };
                 let k1 = d.main_cursor;
-                let tc = t1.get(k1).copied().unwrap_or(0.0) - d.merge_offset;
-                let k2 = p.pasted.times.partition_point(|&t| t < tc).min(p.pasted.times.len().saturating_sub(1));
+                let k2 = merge::cursor_in(k1, rate, p.pasted.rate, d.merge_offset);
                 if m == 1 {
-                    merge::sync_by_fault(&s1, &s2, k1, k2)
+                    if n1 < 2 || n2 < 2 || k2 < 0 {
+                        Err(SyncMsg::CursorBefore3Periods)
+                    } else {
+                        merge::sync_by_fault(&s1, &s2, k1, k2 as usize)
+                    }
                 } else {
                     merge::sync_by_prefault(&s1, &s2, k1, k2, d.osc.line_freq)
                 }
@@ -442,7 +449,17 @@ impl App {
             return;
         }
         let pasted: Vec<Pasted> = d.pending.iter().map(|p| p.pasted.clone()).collect();
-        let merged = merge::merge(&d.osc, &pasted, d.merge_offset);
+        // Every channel is resampled as the accessor reads it (`0x426020`:
+        // ADC code, minus the DC, inverted, ×k, NaN as 0), then divided by
+        // k (`0x47e598`): the flags' transforms are baked into the data
+        // while the flags stay set.
+        let mut src = d.osc.clone();
+        for (i, a) in src.analog.iter_mut().enumerate() {
+            let k = crate::app::display_k(&d.osc.analog[i], d.chans[i].primary);
+            let k = if k != 0.0 { k } else { 1.0 };
+            a.samples = d.flagged.analog[i].samples.iter().map(|v| if v.is_nan() { 0.0 } else { v / k }).collect();
+        }
+        let merged = merge::merge(&src, &pasted, d.merge_offset);
         let old_rate = d.osc.sample_rate;
         let (nb, nd) = (d.osc.analog.len(), d.osc.digital.len());
         let anchor = |digital: bool| {

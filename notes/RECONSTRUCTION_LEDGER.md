@@ -1001,9 +1001,9 @@ period of overlap). Ours: `fvb_core::merge` (sync methods, `merged_rate`,
 `merge_ui.rs` (clipboard with times/rate/start, pending lanes refreshed at the
 offset, bar, «Объединить» in place keeping view state and remapping comments
 / визиры by time; 2 tests), lanes drag. Replaces our sample-index paste.
-Residual: system-clipboard format done in L9.20; method 2's
-details beyond the spec summary not re-read; «Объединить» undo fixed in L9.19; values ÷ `ch+0xf0` on merge not
-modelled; pasted discrete channels show as 0/1 lanes until merged.
+Residual: system-clipboard format done in L9.20; «Объединить» undo
+fixed in L9.19; (method 2, the ÷ `ch+0xf0` on merge: L9.111; pasted
+discrete lanes: L9.71).
 
 ### L9.16 — Formula dialog «Добавить новую формулу» (DIALOG 359, track A2, merged)  ·  ✅ (residuals)
 
@@ -3559,6 +3559,44 @@ Residual: the landscape turn of the margins is INFERRED (GDI's own
 landscape caps on Windows printing are taken from the DC as before); the
 Windows preview margins not run on the VM yet; the PDF-file entry stays
 the whole A4 sheet (no printer).
+
+### L9.111 — Merge: method 2 as read, the period and cursor rules, flags baked in, the discrete resampling  ·  ✅
+Read (subagent report on `0x47c440`…`0x47ce0f`, `0x47d990`, `0x426020`;
+by hand: the fixed 50.0 at `0x4d1718` and the rate test in both methods
+(`0x47bd43`, `0x47c562`–`0x47c5ad`), the cursor's rounding `0x47c555`,
+the median helper `0x477810` (0.5 at `0x4d1648`, sort, floor / ceil)):
+a channel's samples per period are its own rate ÷ 50 (rounded) when it
+has one (pasted), else the record's integer rate div trunc(f) — in both
+methods; the cursor in channel 2 is round-half-up(r₂·(c/R − offset)).
+Method 2: refused when 1.5·N + 1 exceeds either cursor (3259) or a cursor
+is past the last sample (3162 — no period after it needed); Δ = t₁(c) −
+t₂(c₂); in [c − N₁, c + N₁) (to the last sample near the end) the
+one-period window whose |P₁|·|P₂| (P₂ at the first sample with t₂ + Δ ≥
+t₁, at most the last but one) has the least non-zero population spread
+(`0x4789a0`); over it the phase differences to P₂ interpolated linearly
+at t₁ − Δ, wrapped once into ±180°; offset = Δ − median/(f·360); the
+population spread > 1° → 3305, else 3456. «Объединить» resamples every
+channel as the accessor reads it (ADC code, minus the DC, inverted, ×k,
+NaN as 0) and divides analog by k (`0x47e598` / `0x47e748`) — the flags
+stay set, so their transforms are baked in (an inverted channel shows
+un-inverted after the merge); a discrete channel takes, at grid time t,
+the first sample from index 1 at or after t, or the next one when that is
+half a grid step or more away (`0x47e5b8`–`0x47e6a9`; not a
+previous-sample hold).
+Ours took the mean / max−min over c ± N with channel 2 by scaled index,
+N from f, a full period required after the cursor, raw samples merged
+under the kept flags, discrete channels held. Now `merge::{period_samples,
+cursor_in, sync_by_prefault (as read), hold_at (the rule)}`, NaN pasted
+samples read 0, `App::merge_records` feeds `flagged / k`. Tests
+`prefault_sync_corrects_by_the_phase` (limits, a fault outside the
+quiet window), `period_samples_and_the_pasted_cursor`,
+`merge_rate_and_resampling`.
+Residual: the sub-sample alignment with the zero padding (`0x47e021`,
+`merge+0x10`) NOT DETERMINED; the read digital rule measures the found
+sample's time without the shift (`ct(j) − ct(0)`), ours with it — equal
+for the base channels; pasted channels' own flags not baked (ours keeps
+them on the pending views); whether the paste deselects the pasted
+channels NOT DETERMINED; (pasted discrete lanes before the merge: L9.71).
 
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

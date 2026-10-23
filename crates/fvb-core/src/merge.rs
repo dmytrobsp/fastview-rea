@@ -105,30 +105,112 @@ pub fn sync_by_fault(c1: &SyncChan, c2: &SyncChan, cur1: usize, cur2: usize) -> 
     Ok((c1.times[p1] - c2.times[p2], msg))
 }
 
-/// Method 2 (`0x47c440`): align the fundamental's phase in the pre-fault
-/// state around the cursor: coarse `t1(c) − t2(c)`, corrected by the mean
-/// phase difference over ±1 period (`mean° / (f·360)`); a spread above 1°
-/// is reported as unstable (the offset is set either way).
-pub fn sync_by_prefault(c1: &SyncChan, c2: &SyncChan, cur1: usize, cur2: usize, f_net: f64) -> Result<(f64, SyncMsg), SyncMsg> {
-    if 2 * cur1 <= 3 * c1.n || 2 * cur2 <= 3 * c2.n {
+/// A synchronised channel's samples per period (`0x47bd43`, `0x47c573`):
+/// its own rate ÷ 50 (a fixed 50, rounded) when it has one — a pasted
+/// channel —, else the record's integer rate divided as an integer by the
+/// truncated network frequency.
+pub fn period_samples(own_rate: f64, record_rate: f64, f_net: f64) -> usize {
+    if own_rate != 0.0 {
+        (own_rate / 50.0).round() as usize
+    } else {
+        (record_rate as u32).checked_div(f_net.trunc() as u32).unwrap_or(0) as usize
+    }
+}
+
+/// The cursor's sample in the pasted channel (`0x47bd24`, `0x47c555`):
+/// `round(r₂·(c/R − offset))`, `c` the cursor's record sample, `R` the
+/// record rate, `r₂` the channel's own rate, the offset in seconds.
+pub fn cursor_in(c: usize, record_rate: f64, own_rate: f64, offset: f64) -> i64 {
+    let r2 = if own_rate != 0.0 { own_rate } else { record_rate };
+    let v = r2 * c as f64 / record_rate - r2 * offset;
+    (v + 0.5).floor() as i64
+}
+
+/// The population standard deviation (`0x4776f0`).
+fn std_dev(v: &[f64]) -> f64 {
+    let m = v.iter().sum::<f64>() / v.len().max(1) as f64;
+    (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / v.len().max(1) as f64).sqrt()
+}
+
+/// The median (`0x477810`): sorted, the mean of the middle one or two.
+fn median(v: &[f64]) -> f64 {
+    let mut s = v.to_vec();
+    s.sort_by(f64::total_cmp);
+    let m = (s.len().saturating_sub(1)) as f64 / 2.0;
+    let (lo, hi) = (m.floor() as usize, m.ceil() as usize);
+    s[lo..=hi].iter().sum::<f64>() / (hi - lo + 1) as f64
+}
+
+/// Method 2 «По доаварийному режиму» (`0x47c440`): align the
+/// fundamental's phase in the pre-fault state around the cursor. Coarse
+/// Δ = t₁(c) − t₂(c₂); in [c − N₁, c + N₁) (to the last sample near the
+/// end) the one-period window whose amplitude product |P₁|·|P₂| (P₂ at the
+/// first sample with t₂ + Δ ≥ t₁) has the least non-zero spread
+/// (`0x4789a0`); over it the phase differences to P₂ interpolated at
+/// t₁ − Δ, wrapped once into ±180°; the offset is Δ − median°/(f·360), the
+/// population spread above 1° reported as unstable (the offset set either
+/// way).
+pub fn sync_by_prefault(c1: &SyncChan, c2: &SyncChan, cur1: usize, cur2: i64, f_net: f64) -> Result<(f64, SyncMsg), SyncMsg> {
+    let (n1, n2) = (c1.n, c2.n);
+    if 1.5 * n1 as f64 + 1.0 > cur1 as f64 || 1.5 * n2 as f64 + 1.0 > cur2 as f64 {
         return Err(SyncMsg::CursorBefore15Periods);
     }
-    if cur1 + c1.n >= c1.x.len() || cur2 + c2.n >= c2.x.len() {
+    let (len1, len2) = (c1.x.len().min(c1.times.len()), c2.x.len().min(c2.times.len()));
+    if n1 == 0 || len2 < 2 || cur1 + 1 > len1 || cur2 as usize + 1 > len2 {
         return Err(SyncMsg::CursorOutside);
     }
-    let coarse = c1.times[cur1] - c2.times[cur2];
-    let diffs: Vec<f64> = (-(c1.n as i64)..=c1.n as i64)
-        .map(|j| {
-            let k1 = (cur1 as i64 + j) as usize;
-            let k2 = (cur2 as i64 + (j as f64 * c2.n as f64 / c1.n as f64).round() as i64) as usize;
-            let d = (phasor_at(c1.x, k1, c1.n).arg() - phasor_at(c2.x, k2, c2.n).arg()).to_degrees();
-            (d + 180.0).rem_euclid(360.0) - 180.0
+    let cur2 = cur2 as usize;
+    let p = |c: &SyncChan, k: usize| {
+        let z = phasor_at(c.x, k, c.n);
+        if z.re.is_nan() || z.im.is_nan() {
+            Default::default()
+        } else {
+            z
+        }
+    };
+    let delta = c1.times[cur1] - c2.times[cur2];
+    let lo = cur1 - n1;
+    let hi = if cur1 + n1 < len1 - 1 { cur1 + n1 } else { len1 - 1 };
+    // The first channel-2 sample at or after each channel-1 time, scanned
+    // forward, at most the last but one.
+    let mut j = 1usize;
+    let mut after = |t1: f64| {
+        while j < len2 - 2 && c2.times[j] + delta < t1 {
+            j += 1;
+        }
+        j
+    };
+    let js: Vec<usize> = (lo..hi).map(|i| after(c1.times[i])).collect();
+    let prod: Vec<f64> = (lo..hi).zip(&js).map(|(i, &j)| p(c1, i).norm() * p(c2, j).norm()).collect();
+    let mut best = (f64::MAX, 0usize);
+    for s in 0..prod.len().saturating_sub(n1 - 1) {
+        let sd = std_dev(&prod[s..s + n1]);
+        if sd > 0.0 && sd < best.0 {
+            best = (sd, s);
+        }
+    }
+    let s = best.1;
+    let diffs: Vec<f64> = (s..(s + n1).min(js.len()))
+        .map(|w| {
+            let (k, j) = (lo + w, js[w].max(1));
+            let t = c1.times[k] - delta;
+            let (ta, tb) = (c2.times[j - 1], c2.times[j]);
+            let (a, b) = (p(c2, j - 1), p(c2, j));
+            let z2 = if tb > ta { a + (b - a) * ((t - ta) / (tb - ta)) } else { b };
+            let mut d = (p(c1, k).arg() - z2.arg()).to_degrees();
+            if d < -180.0 {
+                d += 360.0;
+            } else if d > 180.0 {
+                d -= 360.0;
+            }
+            d
         })
         .collect();
-    let mean = diffs.iter().sum::<f64>() / diffs.len() as f64;
-    let spread = diffs.iter().cloned().fold(f64::MIN, f64::max) - diffs.iter().cloned().fold(f64::MAX, f64::min);
-    let msg = if spread > 1.0 { SyncMsg::Unstable } else { SyncMsg::Done };
-    Ok((coarse - mean / (f_net * 360.0), msg))
+    if diffs.is_empty() {
+        return Err(SyncMsg::CursorOutside);
+    }
+    let msg = if std_dev(&diffs) > 1.0 { SyncMsg::Unstable } else { SyncMsg::Done };
+    Ok((delta - median(&diffs) / (f_net * 360.0), msg))
 }
 
 /// «Объединить»: the common rate, the highest one rounded to a multiple of
@@ -161,13 +243,19 @@ pub fn quad_at(times: &[f64], x: &[f64], t: f64) -> f64 {
     x[k - 1] * l0 + x[k] * l1 + x[k + 1] * l2
 }
 
-/// A discrete value at `t`: the previous sample, false outside the record.
-pub fn hold_at(times: &[f64], x: &[bool], t: f64) -> bool {
+/// A discrete value at grid time `t` (`0x47e5b8`–`0x47e6a9`): the first
+/// sample from index 1 at or after `t`, or the one after it when that one
+/// is half a grid `step` or more away; false outside the record (the zero
+/// padding) and past its end.
+pub fn hold_at(times: &[f64], x: &[bool], t: f64, step: f64) -> bool {
     let n = times.len().min(x.len());
     if n == 0 || t < times[0] || t > times[n - 1] {
         return false;
     }
-    x[times.partition_point(|&s| s <= t).saturating_sub(1)]
+    let j = times[1.min(n - 1)..].partition_point(|&s| s < t) + 1.min(n - 1);
+    let j = j.min(n - 1);
+    let k = if times[j] - t < step / 2.0 { j } else { j + 1 };
+    x.get(k).copied().unwrap_or(false)
 }
 
 /// A pasted channel: its own times (from its record start) and values.
@@ -192,6 +280,7 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64) -> Oscillogram 
     let end = pasted.iter().map(|p| offset + p.times.last().copied().unwrap_or(0.0)).fold(base_len, f64::max);
     let count = ((r * (end - start)).round() as i64 - 4).max(0) as usize;
     let grid: Vec<f64> = (0..count).map(|i| start + i as f64 / r).collect();
+    let step = 1.0 / r;
     let mut out = base.clone();
     out.time = grid.iter().map(|t| t - start).collect();
     out.sample_rate = r;
@@ -200,19 +289,21 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64) -> Oscillogram 
         dst.samples = grid.iter().map(|&t| quad_at(&base_t, &src.samples, t)).collect();
     }
     for (dst, src) in out.digital.iter_mut().zip(&base.digital) {
-        dst.samples = grid.iter().map(|&t| hold_at(&base_t, &src.samples, t)).collect();
+        dst.samples = grid.iter().map(|&t| hold_at(&base_t, &src.samples, t, step)).collect();
     }
     for p in pasted {
         let shifted: Vec<f64> = p.times.iter().map(|t| t + offset).collect();
         match &p.channel {
             Ok(a) => {
                 let mut c = a.clone();
-                c.samples = grid.iter().map(|&t| quad_at(&shifted, &a.samples, t)).collect();
+                // Read through the accessor: a NaN reads 0 (`0x426020`).
+                let x: Vec<f64> = a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v }).collect();
+                c.samples = grid.iter().map(|&t| quad_at(&shifted, &x, t)).collect();
                 out.analog.push(c);
             }
             Err(d) => {
                 let mut c = d.clone();
-                c.samples = grid.iter().map(|&t| hold_at(&shifted, &d.samples, t)).collect();
+                c.samples = grid.iter().map(|&t| hold_at(&shifted, &d.samples, t, step)).collect();
                 out.digital.push(c);
             }
         }
@@ -263,7 +354,30 @@ mod tests {
         let (off, msg) = sync_by_prefault(&c1, &c2, 100, 100, 50.0).unwrap();
         assert_eq!(msg, SyncMsg::Done);
         assert!((off + 0.001).abs() < 1e-6, "{off}");
-        assert_eq!(sync_by_prefault(&c1, &c2, 20, 100, 50.0), Err(SyncMsg::CursorBefore15Periods));
+        // 1.5·N + 1 = 31 must not exceed the cursor; past the end only the
+        // last sample itself is refused (no period after it needed).
+        assert_eq!(sync_by_prefault(&c1, &c2, 30, 100, 50.0), Err(SyncMsg::CursorBefore15Periods));
+        assert!(sync_by_prefault(&c1, &c2, 31, 100, 50.0).is_ok());
+        assert!(sync_by_prefault(&c1, &c2, 399, 100, 50.0).is_ok());
+        assert_eq!(sync_by_prefault(&c1, &c2, 400, 100, 50.0), Err(SyncMsg::CursorOutside));
+        // A fault after the cursor's window: the least-spread window lies
+        // in the steady part, the result stays clean.
+        let x3 = sine(n, per, -std::f64::consts::PI / 10.0, Some(118));
+        let c3 = SyncChan { times: &t, x: &x3, n: per };
+        let (off, msg) = sync_by_prefault(&c1, &c3, 100, 100, 50.0).unwrap();
+        assert_eq!(msg, SyncMsg::Done);
+        assert!((off + 0.001).abs() < 1e-6, "{off}");
+    }
+
+    /// `0x47bd43` / `0x47c573`, `0x47c555`.
+    #[test]
+    fn period_samples_and_the_pasted_cursor() {
+        assert_eq!(period_samples(0.0, 1000.0, 50.0), 20, "the record's: R div trunc(f)");
+        assert_eq!(period_samples(0.0, 1000.0, 49.9), 20, "1000 div 49");
+        assert_eq!(period_samples(0.0, 1000.0, 60.0), 16, "1000 div 60 truncates");
+        assert_eq!(period_samples(1200.0, 1000.0, 60.0), 24, "a pasted channel: its rate ÷ 50");
+        assert_eq!(cursor_in(100, 1000.0, 2000.0, 0.01), 180);
+        assert_eq!(cursor_in(101, 1000.0, 500.0, 0.0), 51, "half up");
     }
 
     #[test]
@@ -274,7 +388,11 @@ mod tests {
         let x = [0.0, 1.0, 4.0, 9.0];
         assert!((quad_at(&t, &x, 1.5) - 2.25).abs() < 1e-12, "exact on a parabola");
         assert_eq!(quad_at(&t, &x, 3.5), 0.0, "zero padding outside");
-        assert!(hold_at(&t, &[false, true, false, true], 1.9));
-        assert!(!hold_at(&t, &[true; 4], -0.1));
+        // The first sample at or after t, the next one when ≥ half a step away.
+        let d = [false, true, false, true];
+        assert!(!hold_at(&t, &d, 1.9, 0.5), "sample 2 is 0.1 away");
+        assert!(hold_at(&t, &d, 1.6, 0.5), "sample 2 is 0.4 away: sample 3");
+        assert!(!hold_at(&t, &d, 0.0, 0.5), "from index 1: sample 1 is 1.0 away, so sample 2");
+        assert!(!hold_at(&t, &[true; 4], -0.1, 0.5));
     }
 }
