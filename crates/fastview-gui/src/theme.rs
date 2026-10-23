@@ -61,6 +61,7 @@ impl Skin {
                 body: None,
                 caption_band: None,
                 caption_text: Color32::BLACK.gamma_multiply(0.8),
+                app_orb: None,
             },
             Skin::OfficeXp => Palette {
                 ribbon_top: Color32::from_rgb(0xF7, 0xF6, 0xF3),
@@ -81,6 +82,7 @@ impl Skin {
                 body: None,
                 caption_band: None,
                 caption_text: Color32::BLACK.gamma_multiply(0.8),
+                app_orb: None,
             },
             Skin::WinXp => Palette {
                 ribbon_top: Color32::from_rgb(0xF6, 0xF5, 0xEE),
@@ -101,6 +103,7 @@ impl Skin {
                 body: None,
                 caption_band: None,
                 caption_text: Color32::BLACK.gamma_multiply(0.8),
+                app_orb: None,
             },
             Skin::Office2003 => Palette {
                 ribbon_top: Color32::from_rgb(0xE3, 0xEF, 0xFF),
@@ -121,6 +124,7 @@ impl Skin {
                 body: None,
                 caption_band: None,
                 caption_text: Color32::BLACK.gamma_multiply(0.8),
+                app_orb: None,
             },
             Skin::Vs2005 => Palette {
                 ribbon_top: Color32::from_rgb(0xFA, 0xF9, 0xF5),
@@ -141,6 +145,7 @@ impl Skin {
                 body: None,
                 caption_band: None,
                 caption_text: Color32::BLACK.gamma_multiply(0.8),
+                app_orb: None,
             },
                         Skin::Blue => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -164,6 +169,7 @@ impl Skin {
                 body: Some([Color32::from_rgb(229, 237, 248), Color32::from_rgb(199, 216, 237), Color32::from_rgb(231, 242, 255)]),
                 caption_band: Some([Color32::from_rgba_unmultiplied(152, 188, 232, 92), Color32::from_rgba_unmultiplied(133, 169, 216, 92)]),
                 caption_text: Color32::from_rgb(62, 106, 170),
+                app_orb: Some([Color32::from_rgb(215, 221, 229), Color32::from_rgb(247, 222, 89), Color32::from_rgb(205, 126, 14)]),
             },
                         Skin::Black => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -187,6 +193,7 @@ impl Skin {
                 body: Some([Color32::from_rgb(215, 219, 224), Color32::from_rgb(181, 188, 198), Color32::from_rgb(211, 211, 211)]),
                 caption_band: Some([Color32::from_rgba_unmultiplied(159, 159, 159, 186), Color32::from_rgba_unmultiplied(137, 137, 137, 186)]),
                 caption_text: Color32::from_rgb(255, 255, 255),
+                app_orb: Some([Color32::from_rgb(223, 223, 223), Color32::from_rgb(247, 222, 89), Color32::from_rgb(205, 126, 14)]),
             },
                         Skin::Silver => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -210,6 +217,7 @@ impl Skin {
                 body: Some([Color32::from_rgb(242, 244, 248), Color32::from_rgb(213, 220, 231), Color32::from_rgb(249, 249, 249)]),
                 caption_band: Some([Color32::from_rgba_unmultiplied(222, 226, 238, 186), Color32::from_rgba_unmultiplied(196, 201, 210, 186)]),
                 caption_text: Color32::from_rgb(83, 84, 89),
+                app_orb: Some([Color32::from_rgb(223, 223, 223), Color32::from_rgb(247, 222, 89), Color32::from_rgb(205, 126, 14)]),
             },
                         Skin::Aqua => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -233,6 +241,7 @@ impl Skin {
                 body: None,
                 caption_band: Some([Color32::from_rgb(106, 112, 128), Color32::from_rgb(163, 174, 199)]),
                 caption_text: Color32::from_rgb(255, 255, 255),
+                app_orb: Some([Color32::from_rgb(209, 217, 232), Color32::from_rgb(146, 200, 248), Color32::from_rgb(215, 229, 250)]),
             },
         }
     }
@@ -268,6 +277,9 @@ pub struct Palette {
     /// and caption text (RIBBON/PANEL/CAPTION/TextNormal).
     pub caption_band: Option<[Color32; 2]>,
     pub caption_text: Color32,
+    /// The round application button's centre, normal / hot / pressed
+    /// (RIBBON_BTN_MAIN); `None`: a text button (the older looks).
+    pub app_orb: Option<[Color32; 3]>,
 }
 
 /// Apply a skin to the egui context (base widget visuals; the ribbon paints its

@@ -631,6 +631,17 @@ mod window_tests {
         }
     }
 
+    /// The Office 2007 round application button (45 × 45 over both rows):
+    /// its lower half, in the tab row, opens the menu too.
+    #[test]
+    fn the_round_application_button_opens_from_its_lower_half() {
+        let mut w = Win::new();
+        let open = |w: &Win| w.ctx.memory(|m| m.areas().visible_layer_ids().iter().any(|l| l.order == egui::Order::Foreground && m.area_rect(l.id).is_some_and(|r| r.width() > 400.0)));
+        assert!(!open(&w));
+        w.press(egui::PointerButton::Primary, Pos2::new(25.0, 40.0), Pos2::new(25.0, 40.0));
+        assert!(open(&w), "the menu opened from the orb's lower half");
+    }
+
     /// The «Файл» menu is two columns wide, not the window's width; hovering
     /// «Печать» puts its sub-items in the right column.
     #[test]

@@ -3943,6 +3943,24 @@ the pasted one the same frequency channel with its own rate — used by
 Residual: whether our pasted samples equal what `0x426020` returns for a
 pasted channel (its flags / k) NOT DETERMINED.
 
+### L9.127 — The Office 2007 looks' round application button  ·  ✅
+Read (by hand, the ribbon set-up `0x472f30`): the application button
+gets image 570 (`0x472fa7`), the keys «f» (`0x472fb8`) and is installed
+with `SetApplicationButton(…, (45, 45))` (`0x472fef`) — the Office 2007
+round button, 45 × 45 at the top left over the quick-access row and the
+tab row; L9.117's report gives its centre per style (RIBBON_BTN_MAIN:
+Blue (215, 221, 229) / hot (247, 222, 89) / pressed (205, 126, 14);
+Black and Silver (223, 223, 223) with the same hot / pressed; Aqua
+(209, 217, 232) / (146, 200, 248) / (215, 229, 250)).
+Ours showed a logo and a «Файл ▾» text button in the quick-access row.
+Now, for the Office 2007 looks, `Palette::app_orb` and `paint_orb` (a
+round button with a darker rim and a gloss, our logo inside — image 570
+is the original's artwork) over both rows; its upper part anchors the
+menu, a click on its lower part opens it (`kt_menu`); the older looks
+keep the text button (their visual managers' button NOT DETERMINED).
+Test `the_round_application_button_opens_from_its_lower_half`; rendered.
+Residual: the orb's look is drawn (the style's bitmap not reproduced).
+
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -4004,8 +4022,8 @@ correction: L9.126). Then: the docking marker bitmaps (ours drawn);
 L9.64 MDI arrangements under tabs (MFC's MDI client has no map entry for
 WM_MDICASCADE / TILE — they reach the stock MDI client; the visible
 effect under MDI tabs still ND); (Свойства...: L9.122, not exercised on the VM);
-the merged record's frequency track; (header T on page 1: L9.121); the application button's orb / caption bar
-from the style images; backlog §9 #36 / #37 / #45 leftovers (logo and
+the merged record's frequency track; (header T on page 1: L9.121); (the application button: L9.127); the caption bar from the style
+images; backlog §9 #36 / #37 / #45 leftovers (logo and
 splash are proprietary assets — not reproduced). Good recurring pass:
 render the user's real records (`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`,
 `WIN_1999.cfg`) after big changes — it found a regression again this

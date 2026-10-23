@@ -21,11 +21,17 @@ impl App {
         let band = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), 52.0));
         paint_v_gradient(ui, band, p.ribbon_top, p.ribbon_bottom);
 
+        // The Office 2007 looks' round application button, 45 × 45 at the
+        // top left over both rows (`SetApplicationButton` with (45, 45),
+        // `0x472fef`; its image 570 is the original's — ours the logo).
+        let orb = p.app_orb.map(|c| (egui::Rect::from_min_size(full.min + egui::vec2(3.0, 2.0), egui::vec2(45.0, 45.0)), c));
         // ---- Row 1: quick-access toolbar + title + style/help ----
         ui.horizontal(|ui| {
             ui.add_space(4.0);
-            draw_logo(ui, 18.0, p.accent);
-            ui.add_space(2.0);
+            if orb.is_none() {
+                draw_logo(ui, 18.0, p.accent);
+                ui.add_space(2.0);
+            }
             // Application menu (0x472f30): the original's ten items, the
             // «Последние документы» list, and our own extras in a labelled
             // submenu.
@@ -41,7 +47,13 @@ impl App {
                 self.kt_menu(ui.ctx(), true);
             }
             let mut menu_rects: Vec<(crate::keytips::Target, egui::Rect, bool)> = Vec::new();
-            let app_button = egui::menu::menu_button(ui, RichText::new(APP_MENU_TITLE).color(p.text).strong(), |ui| {
+            let anchor = match orb {
+                // The orb's upper part anchors the menu (its lower part is
+                // in the tab row, below).
+                Some((r, _)) => egui::Button::new("").frame(false).min_size(egui::vec2(r.width() - 4.0, 20.0)),
+                None => egui::Button::new(RichText::new(APP_MENU_TITLE).color(p.text).strong()),
+            };
+            let app_button = egui::menu::menu_custom_button(ui, anchor, |ui| {
                 // Main panel (Office 2007): hovering an item with sub-items
                 // shows them in the right column in place of the recent
                 // documents. Fixed column widths: a separator takes all the
@@ -243,6 +255,23 @@ impl App {
         }
         ui.horizontal(|ui| {
             ui.add_space(6.0);
+            if let Some((r, colors)) = orb {
+                // The orb's lower part opens the menu too; then it is drawn
+                // over both rows.
+                ui.add_space(r.right() - ui.cursor().left() + 4.0);
+                let ctx = ui.ctx().clone();
+                let hit = ui.interact(r, ui.id().with("fv_app_orb"), egui::Sense::click());
+                if hit.clicked() {
+                    self.kt_menu(&ctx, true);
+                }
+                let open = self.kt_bar.is_some_and(|b| {
+                    let st = egui::menu::BarState::load(&ctx, b.0);
+                    let root: &Option<egui::menu::MenuRoot> = &st;
+                    root.is_some()
+                });
+                let hot = ctx.input(|i| i.pointer.hover_pos()).is_some_and(|q| q.distance(r.center()) <= r.width() / 2.0);
+                paint_orb(&ui.painter().clone().with_layer_id(egui::LayerId::new(egui::Order::Middle, egui::Id::new("fv_app_orb_layer"))), r, colors, if open { 2 } else if hot { 1 } else { 0 });
+            }
             for (label, tab) in [("Главная", RibbonTab::Home), ("ОМП", RibbonTab::Omp)] {
                 let r = ribbon_tab(ui, label, self.tab == tab, p);
                 if r.double_clicked() {
@@ -615,6 +644,31 @@ fn paint_v_gradient(ui: &egui::Ui, rect: egui::Rect, top: Color32, bottom: Color
 }
 
 /// The Механотроника chevron mark (two stacked carets).
+/// The Office 2007 application button (RIBBON_BTN_MAIN, its centre in the
+/// normal / hot / pressed states): a round button with a darker rim and a
+/// glossy upper half, our logo inside.
+fn paint_orb(painter: &egui::Painter, r: egui::Rect, colors: [Color32; 3], state: usize) {
+    let c = colors[state.min(2)];
+    let rad = r.width() / 2.0;
+    let rim = c.lerp_to_gamma(Color32::BLACK, 0.35);
+    painter.circle(r.center(), rad, c, egui::Stroke::new(1.5f32, rim));
+    // The gloss: a lighter ellipse over the upper half.
+    let gloss = Color32::from_rgba_unmultiplied(255, 255, 255, 90);
+    let top = egui::Rect::from_center_size(r.center() - egui::vec2(0.0, rad * 0.38), egui::vec2(rad * 1.5, rad * 0.9));
+    painter.add(egui::Shape::ellipse_filled(top.center(), top.size() / 2.0, gloss));
+    // The logo (two chevrons), as `draw_logo`.
+    let h = rad * 0.9;
+    let lr = egui::Rect::from_center_size(r.center(), egui::vec2(h * 1.2, h));
+    let green = Color32::from_rgb(0x4C, 0xAF, 0x50);
+    for (yoff, col) in [(0.0_f32, Color32::from_rgb(0x2E, 0x5B, 0x9E)), (h * 0.36, green)] {
+        let a = egui::pos2(lr.left(), lr.bottom() - yoff - h * 0.1);
+        let b = egui::pos2(lr.center().x, lr.top() + yoff + h * 0.05);
+        let cc = egui::pos2(lr.right(), lr.bottom() - yoff - h * 0.1);
+        painter.line_segment([a, b], egui::Stroke::new(3.0f32, col));
+        painter.line_segment([b, cc], egui::Stroke::new(3.0f32, col));
+    }
+}
+
 fn draw_logo(ui: &mut egui::Ui, h: f32, color: Color32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(h * 1.2, h), egui::Sense::hover());
     let painter = ui.painter();
