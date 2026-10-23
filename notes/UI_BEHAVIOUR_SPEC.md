@@ -1122,7 +1122,7 @@ stores text and code page; modified only when the code page changed.
 ### 7.12 Formula dialog — DIALOG 359 «Добавить новую формулу» (AddFormulaDlg)
 From the formula-editor page. Template tree (left, ~60 leaves in groups) +
 «Название канала:» edit + a placeholder hosting a child form from the chosen
-template (DIALOG 400 free «Формула:», 401–461, 501–543, 1069: Ia/Ib/Ic,
+template (DIALOG 400 free «Формула:», the 57 ids `0x401c70` pushes (401–534, 540–542 with gaps; 536–539 / 543 are sheet pages, 535 unused — L9.123), 1069: Ia/Ib/Ic,
 Uab/Ubc…); selecting a tree item swaps the form. Name validation: **empty or
 starting with a digit → message 396 «Неправильное имя канала.»**, the dialog
 stays. OK builds the formula text from the form.

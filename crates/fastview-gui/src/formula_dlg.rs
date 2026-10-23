@@ -247,6 +247,9 @@ fn tree_ui(ui: &mut egui::Ui, nodes: &[Node], path: &mut Path, st: &mut AddFormu
                 }
                 None => ui.add_space(18.0),
             }
+            // The branch's image (bitmap 395, one index per top-level
+            // branch, `0x401c9d`): our own glyphs.
+            branch_icon(ui, path[0]);
             let r = ui.selectable_label(st.selected == *path, label);
             if r.clicked() {
                 *pick = Some((path.clone(), form));
@@ -259,6 +262,24 @@ fn tree_ui(ui: &mut egui::Ui, nodes: &[Node], path: &mut Path, st: &mut AddFormu
         }
         path.pop();
     }
+}
+
+/// A 16 × 16 glyph per top-level branch (the original's image indices 0,
+/// 5, 2, 4, 3, 1, 6 for Формула, Анализ сигналов, Токи, Напряжения,
+/// Мощности, Сопротивления, Дифференциальная защита — the images ours).
+fn branch_icon(ui: &mut egui::Ui, branch: &str) {
+    let (glyph, color) = match branch {
+        "Формула" => ("ƒ", egui::Color32::from_rgb(90, 90, 160)),
+        "Анализ сигналов" => ("∿", egui::Color32::from_rgb(40, 120, 60)),
+        "Токи" => ("I", egui::Color32::from_rgb(190, 60, 40)),
+        "Напряжения" => ("U", egui::Color32::from_rgb(40, 80, 180)),
+        "Мощности" => ("P", egui::Color32::from_rgb(160, 110, 20)),
+        "Сопротивления" => ("Z", egui::Color32::from_rgb(110, 50, 140)),
+        _ => ("Δ", egui::Color32::from_rgb(20, 120, 130)),
+    };
+    let (r, _) = ui.allocate_exact_size(Vec2::splat(16.0), egui::Sense::hover());
+    ui.painter().rect(r.shrink(1.0), 2.0f32, color.gamma_multiply(0.15f32), egui::Stroke::new(1.0f32, color));
+    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(11.0), color);
 }
 
 /// The hosted form: one row per control as in its dialog template.
@@ -456,7 +477,9 @@ mod tests {
         let mut h = Harness::new();
         assert!(h.dlg().item_rects.iter().any(|(p, _)| p == &["Токи", "Ток Ib"]));
         let row = h.dlg().item_rects.iter().find(|(p, _)| p == &["Токи"]).unwrap().1;
-        h.click(row.left_center() - Vec2::new(12.0, 0.0));
+        // The ± button sits left of the branch icon (16 px) and the label.
+        let gap = h.ctx.style().spacing.item_spacing.x;
+        h.click(row.left_center() - Vec2::new(16.0 + 2.0 * gap + 7.0, 0.0));
         assert!(!h.dlg().item_rects.iter().any(|(p, _)| p == &["Токи", "Ток Ib"]));
     }
 }

@@ -65,9 +65,9 @@ Older residuals (lower impact; triaged 2026-10-23 — the `.osc` Save-As
 (`0x44ca80` writes the record's own bytes, ours copies the file), R/X pairs
 on the circle diagram (DIALOG 554, `Doc::rx_pairs`) and the parallel-line
 entry in the ОМП UI (L9.11 / L9.12, `omp_params`) are done): OSC time
-stamps; the frequency-correction variant (`FUN_004267e0`, `rec+0x874` — see
-the L9 handoff); dialog-behaviour mapping of the channel-role dialogs
-(DIALOG 401–543); a GUI screenshot pass (Wayland
+stamps (read in L9.123's report: L9.124); the frequency-correction variant
+(`FUN_004267e0`, `rec+0x874` — see the L9 handoff); (the 401–543 dialogs:
+L9.123); a GUI screenshot pass (Wayland
 capture is NOT usable unasked on this Hyprland desktop — new windows map
 on another workspace and grim captures the user's own screen; ask the user
 for a screenshot of the reworked views instead). Done: L2 ✅, L3 🟡 (readers ✅),
@@ -152,11 +152,11 @@ decompilation (pending, listed below).
 | `.fvb` loader / evaluation / settings | `FUN_0040c7e0`, `FUN_00409260`, `FUN_00407750` | `parse.rs`/`model.rs`/`geom.rs` | ✅ L5 |
 | Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ✅ L4 |
 | DFT / phasors / RMS | `FUN_00426fc0` & channel methods | `signal.rs`, `freqcorr.rs` | ✅ L6 (freq-channel variant ✅ L9.65) |
-| Symmetric components / impedances | Calculator `i1: i2: 3i0: zl: zf:` | `signal.rs`/`analysis.rs` | 🟡 L6 (view code not located) |
+| Symmetric components / impedances | Calculator `i1: i2: 3i0: zl: zf:` | `signal.rs`/`analysis.rs` | ✅ L6 + L8 (no dedicated view: the quick-analysis sheet makes formula channels, L9.123) |
 | ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | ✅ L7 (parallel-line UI ✅ L9.11/L9.12) |
 | COMTRADE reader/writer | `0x450a30`, `.cff` `0x44fe30`/`0x44d0f0`, `.osc` `0x4524b0` | `comtrade.rs` | 🟡 L3 (`.cfg` ✅ `.cff` ✅ `.osc` read ✅, `.osc` Save-As ✅ copies the record's bytes) |
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
-| Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
+| Formula forms, sheet pages, misc dialogs | DIALOG 401–543 | `addformula`, `formula_dlg`, `chandlg`, `quick_ui`, `recdlg` | ✅ L9.123 (every used template mapped) |
 | Analysis views | CQAnPropSheet `0x48b970`, vector `0x490360`, freq `0x46f5a0`, readout `0x461440` | `quick.rs`, `views.rs`, GUI | ✅ L8 |
 | UI layer (message maps → handlers) | 34 maps, CFastViewView `0x45a970`, CMainFrame `0x4720a0`/`0x4728d0` | `fastview-gui` | 🔄 L9 (L9.1 context menu ✅) |
 
@@ -3858,6 +3858,28 @@ over ssh only; the code path compiles and the stored DEVMODE path is the
 existing one); the dialog has no owner window (ours passes none); the
 page setup's orientation is not merged into a DEVMODE chosen there.
 
+### L9.123 — DIALOG 401–543 mapped: formula forms, sheet pages, dialogs; the tree's icons  ·  ✅
+Read (subagent report; an immediate-operand scan of `.text` for 400–559):
+the range is not "channel-role dialogs" — the tree builder `0x401c70`
+pushes exactly the 57 AddFormula form ids (equal to
+`addformula::TREE` / `form()`); 463 ChannelsDlg, 477 СMultiplierDlg, 492
+LoadingDlg, 510 CProgSettingdDlg, 536–539 / 543 the quick-analysis pages,
+509 CProgrBarDlg (the `.sto` conversion's modeless bar — created hidden
+and, by an inverted null check in its callback `0x4709e0`, never shown);
+412, 416–421, 427–430, 433–435, 451, 455, 459–461 (older form variants),
+480 (the old finder) and 535 have no code reference. Every used template
+has its reconstruction. The tree's image list (`0x401c9d`–`0x401d1a`:
+bitmap 395, 16 × 16) gives each top-level branch one image for its groups
+and leaves — Формула 0, Анализ сигналов 5, Токи 2, Напряжения 4,
+Мощности 3, Сопротивления 1, Дифференциальная защита 6. Also settled by
+the same pass of reports: the symmetric components have no view of their
+own — the quick-analysis sheet makes formula channels read out like any
+other (L8), so the L6 row is closed.
+Ours drew the tree without icons. Now `formula_dlg::branch_icon` (our own
+glyphs, one per branch). The spec's form range corrected.
+Residual: the images are ours (bitmap 395 is the original's artwork);
+DIALOG 509 stays with the ⛔ `.sto` reader (the original never shows it).
+
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -3914,11 +3936,10 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-pending research results to act on (if a fresh session: re-run them) —
-the channel-role dialogs DIALOG 401–543 behaviour map vs ours (§0 older
-residual), the engine residuals (OSC trigger / start stamps, the merge
-sync under the frequency correction for pasted channels, the symmetric-
-component view code «not located» in L6). Then: the docking marker
+the .osc trigger sample / stamps / finder dates (L9.124, read in
+L9.123's report pass), the merge sync under the frequency correction
+(fault denominator and phasors corrected, the pasted channel with its own
+rate and the base frequency at its own index). Then: the docking marker
 bitmaps (ours drawn); L9.64 MDI arrangements under tabs (ND, likely
 no-ops); (Свойства...: L9.122, not exercised on the VM);
 the merged record's frequency track; (header T on page 1: L9.121); the application button's orb / caption bar
