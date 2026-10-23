@@ -3343,7 +3343,11 @@ dockleft|dockbottom|docktab|dockmarkers`. Tests
 Residual: the marker bitmaps are ours (drawn boxes and arrows, MFC's
 17117…17127 are its own); (a tab dragged out: L9.102) tabs not reordered; the dock rows of several panes on one edge
 are separate containers; Ctrl (no docking while held) not modelled;
-Частотная's default stays below the group (the user's screenshot).
+Частотная's default stays below the group, and Дифференциальная in the
+group's tabs (the user's screenshot, L9.3 — the original's creates dock
+Частотная on the bottom edge and Дифференциальная on the inner side of
+the Векторная | Круговая group, `0x474e10`; the screenshot is likely a
+saved workspace).
 
 ### L9.102 — A tab dragged out of a tabbed group floats  ·  🟡
 Read (subagent report on mfc120u): a press on a tab arms detach mode and
