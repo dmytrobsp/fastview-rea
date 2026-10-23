@@ -68,6 +68,17 @@ impl PageSetup {
         self.oriented(A4_MM)
     }
 
+    /// Portrait hardware margins (l, t, r, b) as the oriented page sees
+    /// them: landscape turns the sheet a quarter counter-clockwise, its
+    /// left the portrait bottom (INFERRED: GDI's landscape PHYSICALOFFSET).
+    pub fn oriented_margins(&self, [l, t, r, b]: [f32; 4]) -> [f32; 4] {
+        if self.portrait {
+            [l, t, r, b]
+        } else {
+            [b, l, t, r]
+        }
+    }
+
     /// A portrait paper size turned by the orientation.
     pub fn oriented(&self, (w, h): (f32, f32)) -> (f32, f32) {
         if self.portrait {
@@ -99,6 +110,16 @@ impl Device {
     /// A whole sheet of `(w, h)` mm, already oriented, as the printable area.
     pub fn paper((w, h): (f32, f32), dpi: f32) -> Device {
         Device { w: (w / 25.4 * dpi).round() as usize, h: (h / 25.4 * dpi).round() as usize, dpi, sheet_mm: (w, h), offset: (0, 0) }
+    }
+
+    /// A sheet of `sheet` mm (oriented) whose printable area is inside the
+    /// hardware margins `m` (l, t, r, b mm, oriented): the page is laid out
+    /// on that area (the printer DC's origin, GDI's HORZRES / VERTRES).
+    pub fn printable(sheet: (f32, f32), m: [f32; 4], dpi: f32) -> Device {
+        let px = |mm: f32| (mm / 25.4 * dpi).round() as usize;
+        let (l, t) = (px(m[0]), px(m[1]));
+        let (w, h) = (px(sheet.0).saturating_sub(l + px(m[2])).max(1), px(sheet.1).saturating_sub(t + px(m[3])).max(1));
+        Device { w, h, dpi, sheet_mm: sheet, offset: (l, t) }
     }
 
     /// The margin rectangle R in device pixels (`0x405820`: margins in
@@ -625,8 +646,6 @@ mod dump {
             fonts.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "cyr".into());
         }
         let imgs: Vec<Canvas> = (0..job.pages.len()).map(|i| app.render_page(&fonts, &job, i, false)).collect();
-        let (w, h) = (dev.sheet_mm.0 / 25.4 * 72.0, dev.sheet_mm.1 / 25.4 * 72.0);
-        let sheets: Vec<crate::pdf::Sheet> = imgs.iter().map(|c| crate::pdf::Sheet { image: c, w_pt: w, h_pt: h }).collect();
-        std::fs::write(path, crate::pdf::write(&sheets)).unwrap();
+        std::fs::write(path, crate::spool::pdf_bytes(&imgs, &dev)).unwrap();
     }
 }

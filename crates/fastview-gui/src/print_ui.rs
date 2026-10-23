@@ -133,7 +133,7 @@ impl App {
     /// start the system default); A4 without one or for the PDF entry.
     fn app_paper(&mut self) -> spool::Paper {
         self.printers_refresh();
-        self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).and_then(spool::paper).unwrap_or(spool::Paper { name: "A4".into(), mm: crate::printout::A4_MM })
+        self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).and_then(spool::paper).unwrap_or(spool::Paper::whole("A4", crate::printout::A4_MM))
     }
 
     /// 57609 Предварительный просмотр: no dialog, the stored checkboxes;
@@ -142,7 +142,7 @@ impl App {
         let Some(di) = self.active else { return };
         let setup = self.print.setup;
         let paper = self.app_paper();
-        let job = self.print_job(di, Device::paper(setup.oriented(paper.mm), PREVIEW_DPI), setup);
+        let job = self.print_job(di, Device::printable(setup.oriented(paper.mm), setup.oriented_margins(paper.margins), PREVIEW_DPI), setup);
         let two = job.pages.len() >= 2;
         self.print.preview = Some(Preview { tex: vec![None; job.pages.len()], job, cur: 0, two, zoom: 0, cmd: None });
     }
@@ -355,6 +355,8 @@ impl App {
                 } else {
                     self.render_page(&fonts, &pv.job, i, true)
                 };
+                // The page on its printable area of the sheet.
+                let c = c.on_sheet(&pv.job.dev);
                 let img = egui::ColorImage::from_rgb([c.w, c.h], &c.px.concat());
                 pv.tex[i] = Some(ctx.load_texture(format!("print_preview_{i}"), img, egui::TextureOptions::LINEAR));
             }
@@ -362,7 +364,8 @@ impl App {
         egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::from_gray(128))).show(ctx, |ui| {
             egui::ScrollArea::both().show(ui, |ui| {
                 let avail = ui.available_size();
-                let page = Vec2::new(pv.job.dev.w as f32, pv.job.dev.h as f32);
+                let d = &pv.job.dev;
+                let page = Vec2::new(d.sheet_mm.0 / 25.4 * d.dpi, d.sheet_mm.1 / 25.4 * d.dpi).round();
                 let fit = ((avail.y - 20.0) / page.y).min((avail.x - 20.0) / (page.x * shown.len() as f32 + 10.0)).max(0.05);
                 let scale = fit * [1.0, 1.6, 2.6][pv.zoom as usize];
                 // The pages centred in the grey area (stock MFC preview).

@@ -6,11 +6,13 @@ use crate::raster::Canvas;
 use flate2::write::ZlibEncoder;
 use std::io::Write;
 
-/// One sheet: its image and its size in PDF points (1/72 inch).
+/// One sheet: its image, its size in PDF points (1/72 inch) and where the
+/// image goes on it (left, top, width, height in points).
 pub struct Sheet<'a> {
     pub image: &'a Canvas,
     pub w_pt: f32,
     pub h_pt: f32,
+    pub at: [f32; 4],
 }
 
 pub fn write(sheets: &[Sheet]) -> Vec<u8> {
@@ -39,7 +41,8 @@ pub fn write(sheets: &[Sheet]) -> Vec<u8> {
             )
             .as_bytes(),
         );
-        let ops = format!("q {:.2} 0 0 {:.2} 0 0 cm /Im0 Do Q", s.w_pt, s.h_pt);
+        let [x, y, w, h] = s.at;
+        let ops = format!("q {w:.2} 0 0 {h:.2} {x:.2} {:.2} cm /Im0 Do Q", s.h_pt - y - h);
         obj(&mut out, &mut offsets, format!("<< /Length {} >>\nstream\n{ops}\nendstream", ops.len()).as_bytes());
         let mut z = ZlibEncoder::new(Vec::new(), flate2::Compression::default());
         for p in &s.image.px {
@@ -73,7 +76,7 @@ mod tests {
     #[test]
     fn two_pages_with_a_valid_xref() {
         let img = Canvas::white(20, 30);
-        let pdf = write(&[Sheet { image: &img, w_pt: 595.28, h_pt: 841.89 }, Sheet { image: &img, w_pt: 841.89, h_pt: 595.28 }]);
+        let pdf = write(&[Sheet { image: &img, w_pt: 595.28, h_pt: 841.89, at: [0.0, 0.0, 595.28, 841.89] }, Sheet { image: &img, w_pt: 841.89, h_pt: 595.28, at: [0.0, 0.0, 841.89, 595.28] }]);
         let text = String::from_utf8_lossy(&pdf);
         assert!(text.starts_with("%PDF-1.4"));
         assert!(text.contains("/Count 2") && text.contains("/MediaBox [0 0 841.89 595.28]"));

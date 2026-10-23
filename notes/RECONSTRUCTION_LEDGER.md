@@ -2837,9 +2837,8 @@ same). Ours sent every CUPS job as A4. Now `spool::cups_paper` takes the
 starred `PageSize` of `lpoptions -p <printer> -l` (A3, A4, A5, B5, Letter,
 Legal; others and a missing `lpoptions` → A4) and the job is laid out on
 that sheet, oriented by the page setup. Test `cups_paper_from_lpoptions`.
-Residual: CUPS hardware margins (the PPD's ImageableArea) not taken (the
-whole sheet is the printable area); the PDF-file entry stays A4 (the
-preview and the page-setup paper: L9.94).
+Residual: (CUPS hardware margins: L9.110); the PDF-file entry stays A4
+(the preview and the page-setup paper: L9.94).
 
 
 ### L9.85 — A pending lane's statistics; the readout scan starts at own index 1  ·  ✅
@@ -3541,6 +3540,25 @@ the frame's width under the group's column). Test
 Residual: the divider is egui's resize grip (not a 4 px bar); its drag
 limits NOT DETERMINED; groups docked beside one another inside a block
 (`DockToWindow`) keep our nested split (L9.107).
+
+### L9.110 — Printing inside the printer's hardware margins (CUPS PPD, GDI caps in preview)  ·  ✅
+Read (L9.22 / L9.94): the original lays every page out on the printer
+DC, whose origin and extent are the printable area (HORZRES / VERTRES at
+PHYSICALOFFSET); MFC's preview shows the pages on that DC.
+Ours laid CUPS jobs and the preview out on the whole sheet. Now
+`spool::Paper::margins` (portrait l, t, r, b mm): on CUPS the PPD's
+`*ImageableArea` of the starred `PageSize` (`ppd_margins`, the PPD from
+`/etc/cups/ppd/<printer>.ppd`, else the scheduler's public
+`/printers/<name>.ppd` on 127.0.0.1:631), on Windows PHYSICALOFFSET and
+HORZRES / VERTRES; `Device::printable` (the job on the printable area,
+`offset` its place on the sheet), `PageSetup::oriented_margins`
+(landscape turns them a quarter counter-clockwise — INFERRED);
+`pdf::Sheet::at` places each page there, `Canvas::on_sheet` shows the
+preview pages on the whole sheet. Test `cups_margins_from_the_ppd`.
+Residual: the landscape turn of the margins is INFERRED (GDI's own
+landscape caps on Windows printing are taken from the DC as before); the
+Windows preview margins not run on the VM yet; the PDF-file entry stays
+the whole A4 sheet (no printer).
 
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

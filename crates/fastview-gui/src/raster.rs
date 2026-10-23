@@ -20,6 +20,21 @@ impl Canvas {
         Canvas { w, h, px: vec![[255; 3]; w * h] }
     }
 
+    /// The page placed on the device's whole sheet at its printable area.
+    pub fn on_sheet(self, dev: &crate::printout::Device) -> Canvas {
+        let (sw, sh) = ((dev.sheet_mm.0 / 25.4 * dev.dpi).round() as usize, (dev.sheet_mm.1 / 25.4 * dev.dpi).round() as usize);
+        if dev.offset == (0, 0) && (sw, sh) == (self.w, self.h) {
+            return self;
+        }
+        let mut out = Canvas::white(sw.max(1), sh.max(1));
+        for y in 0..self.h.min(sh.saturating_sub(dev.offset.1)) {
+            let w = self.w.min(sw.saturating_sub(dev.offset.0));
+            let at = (y + dev.offset.1) * out.w + dev.offset.0;
+            out.px[at..at + w].copy_from_slice(&self.px[y * self.w..y * self.w + w]);
+        }
+        out
+    }
+
     #[cfg(test)]
     pub fn get(&self, x: usize, y: usize) -> [u8; 3] {
         self.px[y * self.w + x]
