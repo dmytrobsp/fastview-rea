@@ -643,7 +643,7 @@ impl App {
 
     fn open_diag_menu(&mut self, win: Window, kind: MenuKind, pos: Pos2) {
         self.diag.serial += 1;
-        self.diag.menu = Some(OpenMenu { win, kind, pm: PopMenu { serial: self.diag.serial, pos, sub: None } });
+        self.diag.menu = Some(OpenMenu { win, kind, pm: PopMenu::new(self.diag.serial, pos) });
     }
 
     fn menu_chans(&self, w: Window) -> Vec<MenuChan> {

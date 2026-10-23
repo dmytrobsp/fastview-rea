@@ -4370,7 +4370,8 @@ mark_item, glyph}` used by the popups and by the view's menus
 `FV_WINDOW_BUTTON=right` added to `window_dump` (a synthetic right click
 there does not open the menus yet — the tests do). Tests
 `separators_as_mfc_copies_them`, `menu_rows_tick_only_checked_items`.
-Residual: no keyboard navigation in our popups; the inline rename edit
+Residual: (keyboard in the diagram popups: L9.146; the view's own menus
+561 / 563 / 560 still mouse-only); the inline rename edit
 has no system edit menu; the submenu arrow drawn as text; whether
 computed channels block 33035's combine in the original ND.
 
@@ -4387,6 +4388,19 @@ Ours did not resolve digital names (the identifier was dropped). Now
 (`digital_from`), their period functions and phasor 0, and `Doc::flagged`
 carries the digital invert. Test `formulas_read_digital_channels`.
 Residual: k (ch+0xf0) of a digital channel taken as 1.
+
+### L9.146 — Keyboard in the diagram windows' popup menus  ·  ✅
+Read (INFERRED from the stock Win32 / CMFCPopupMenu behaviour — FastView
+shows every context menu through the context-menu manager's
+ShowPopupMenu, L9.144): a popup opened by the mouse has no item
+highlighted; ↓ / ↑ move over the enabled items and submenus (separators
+and disabled items skipped, wrapping), → or Enter opens a submenu on its
+first item, ← or Esc leaves it, Enter picks, Esc closes.
+Ours: the diagram popups were mouse-only. Now `PopMenu::{hot, sub_hot,
+in_sub}`, `popmenu::step`, `mark_item_hot`. Test
+`popups_follow_the_keyboard`.
+Residual: the view's own menus (561 / 563 / 560, drawn by ui calls) are
+still mouse-only.
 
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

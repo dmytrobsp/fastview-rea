@@ -37,6 +37,39 @@ pub struct PopMenu {
     pub serial: u64,
     pub pos: Pos2,
     pub sub: Option<usize>,
+    /// The keyboard's item in the menu and in its open submenu (none until
+    /// an arrow key is pressed, as a popup opened by the mouse); `in_sub`
+    /// = the keys act on the submenu.
+    pub hot: Option<usize>,
+    pub sub_hot: Option<usize>,
+    pub in_sub: bool,
+}
+
+impl PopMenu {
+    pub fn new(serial: u64, pos: Pos2) -> Self {
+        PopMenu { serial, pos, sub: None, hot: None, sub_hot: None, in_sub: false }
+    }
+}
+
+/// An item the keyboard can land on: an enabled item or a submenu.
+fn selectable<C>(e: &Entry<C>) -> bool {
+    matches!(e, Entry::Item { enabled: true, .. } | Entry::Sub { .. })
+}
+
+/// The next (or previous) selectable entry from `from`, wrapping.
+pub fn step<C>(entries: &[Entry<C>], from: Option<usize>, down: bool) -> Option<usize> {
+    let n = entries.len();
+    if n == 0 {
+        return None;
+    }
+    let mut i = from.unwrap_or(if down { n - 1 } else { 0 });
+    for _ in 0..n {
+        i = if down { (i + 1) % n } else { (i + n - 1) % n };
+        if selectable(&entries[i]) {
+            return Some(i);
+        }
+    }
+    None
 }
 
 /// What one frame of an open menu produced.
@@ -67,13 +100,18 @@ fn menu_style(style: &mut egui::Style) {
 /// checked SetCheck item, a bullet for a SetRadio one, nothing otherwise),
 /// then the label.
 pub fn mark_item(ui: &mut egui::Ui, label: &str, enabled: bool, mark: Option<&str>) -> egui::Response {
+    mark_item_hot(ui, label, enabled, mark, false)
+}
+
+/// [`mark_item`], highlighted as the keyboard's item when `hot`.
+pub fn mark_item_hot(ui: &mut egui::Ui, label: &str, enabled: bool, mark: Option<&str>, hot: bool) -> egui::Response {
     const COL: f32 = 18.0;
     let font = egui::TextStyle::Button.resolve(ui.style());
     let galley = ui.painter().layout_no_wrap(label.to_string(), font.clone(), Color32::PLACEHOLDER);
     let size = Vec2::new(COL + galley.size().x + 10.0, (galley.size().y + 4.0).max(ui.spacing().interact_size.y));
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let row = Rect::from_x_y_ranges(ui.max_rect().x_range(), rect.y_range());
-    if enabled && resp.hovered() {
+    if enabled && (resp.hovered() || hot) {
         ui.painter().rect_filled(row, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
     }
     let col = if enabled { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
@@ -116,7 +154,7 @@ pub fn shown_seps<C>(entries: &[Entry<C>]) -> Vec<bool> {
 
 /// Lay out `entries`; returns the picked command and, for submenu rows, their
 /// index and rect (hovered or clicked → `open`).
-fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<usize>, sub_rect: &mut Option<Rect>, root: bool) -> Option<C> {
+fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<usize>, sub_rect: &mut Option<Rect>, root: bool, hot: Option<usize>) -> Option<C> {
     let mut chosen = None;
     let shown = shown_seps(entries);
     for (i, e) in entries.iter().enumerate() {
@@ -127,7 +165,7 @@ fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<us
                 }
             }
             Entry::Item { label, enabled, check, cmd } => {
-                let r = mark_item(ui, label, *enabled, glyph(*check));
+                let r = mark_item_hot(ui, label, *enabled, glyph(*check), hot == Some(i));
                 if root && r.hovered() {
                     *open = None;
                 }
@@ -136,7 +174,7 @@ fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<us
                 }
             }
             Entry::Sub { label, .. } => {
-                let r = ui.add(egui::Button::new(format!("{label}    ▸")).selected(*open == Some(i)));
+                let r = ui.add(egui::Button::new(format!("{label}    ▸")).selected(*open == Some(i) || hot == Some(i)));
                 if r.hovered() || r.clicked() {
                     *open = Some(i);
                 }
@@ -151,9 +189,51 @@ fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<us
 
 /// Show an open menu for one frame.
 pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entries: &[Entry<C>]) -> Outcome<C> {
+    let mut chosen = None;
+    // The keys of a Win32 popup: ↑ / ↓ over the selectable items, → into a
+    // submenu, ← back out, Enter picks, Esc leaves a submenu first.
+    let (up, down, right, left, enter, esc_key) = ctx.input(|i| {
+        let k = |key| i.key_pressed(key);
+        (k(egui::Key::ArrowUp), k(egui::Key::ArrowDown), k(egui::Key::ArrowRight), k(egui::Key::ArrowLeft), k(egui::Key::Enter), k(egui::Key::Escape))
+    });
+    let sub_entries = |i: Option<usize>| match i.and_then(|i| entries.get(i)) {
+        Some(Entry::Sub { entries, .. }) => Some(entries.as_slice()),
+        _ => None,
+    };
+    let mut esc_close = esc_key;
+    if menu.in_sub {
+        let sub = sub_entries(menu.sub).unwrap_or(&[]);
+        if up || down {
+            menu.sub_hot = step(sub, menu.sub_hot, down);
+        }
+        if left || esc_key {
+            (menu.in_sub, menu.sub_hot) = (false, None);
+            if left {
+                menu.sub = None;
+            }
+            esc_close = false;
+        } else if enter {
+            if let Some(Entry::Item { cmd, enabled: true, .. }) = menu.sub_hot.and_then(|h| sub.get(h)) {
+                chosen = Some(cmd.clone());
+            }
+        }
+    } else {
+        if up || down {
+            menu.hot = step(entries, menu.hot, down);
+        }
+        let into_sub = (right || enter) && sub_entries(menu.hot).is_some();
+        if into_sub {
+            menu.sub = menu.hot;
+            menu.in_sub = true;
+            menu.sub_hot = step(sub_entries(menu.hot).unwrap_or(&[]), None, true);
+        } else if enter {
+            if let Some(Entry::Item { cmd, enabled: true, .. }) = menu.hot.and_then(|h| entries.get(h)) {
+                chosen = Some(cmd.clone());
+            }
+        }
+    }
     let mut open = menu.sub;
     let mut sub_rect = None;
-    let mut chosen = None;
     let frame_ui = |ui: &mut egui::Ui, f: &mut dyn FnMut(&mut egui::Ui)| {
         egui::Frame::menu(ui.style()).show(ui, |ui| {
             menu_style(ui.style_mut());
@@ -167,7 +247,7 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
         .constrain(true)
         .show(ctx, |ui| {
             frame_ui(ui, &mut |ui| {
-                if let Some(c) = items(ui, entries, &mut open, &mut sub_rect, true) {
+                if let Some(c) = items(ui, entries, &mut open, &mut sub_rect, true, menu.hot) {
                     chosen = Some(c);
                 }
             })
@@ -183,7 +263,7 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
                 .show(ctx, |ui| {
                     frame_ui(ui, &mut |ui| {
                         let (mut none, mut r) = (None, None);
-                        if let Some(c) = items(ui, sub, &mut none, &mut r, false) {
+                        if let Some(c) = items(ui, sub, &mut none, &mut r, false, if menu.in_sub { menu.sub_hot } else { None }) {
                             chosen = Some(c);
                         }
                     })
@@ -192,13 +272,8 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
         }
     }
     menu.sub = open;
-    let (esc, outside) = ctx.input(|i| {
-        (
-            i.key_pressed(egui::Key::Escape),
-            i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !rects.iter().any(|r| r.contains(p))),
-        )
-    });
-    Outcome { close: chosen.is_some() || esc || outside, chosen, eat: outside }
+    let outside = ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !rects.iter().any(|r| r.contains(p))));
+    Outcome { close: chosen.is_some() || esc_close || outside, chosen, eat: outside }
 }
 
 #[cfg(test)]
@@ -216,5 +291,40 @@ mod tests {
         assert_eq!(shown_seps(&only), vec![true, false], "a list that ends in a separator");
         assert_eq!(glyph(Mark::Check(true)), Some("✓"));
         assert_eq!((glyph(Mark::Check(false)), glyph(Mark::Radio(true))), (None, Some("•")));
+    }
+
+    /// A Win32 popup's keys: ↓ lands on the first selectable item (a
+    /// disabled one and separators skipped), → opens a submenu on its first
+    /// item, Esc leaves the submenu only, Enter picks.
+    #[test]
+    fn popups_follow_the_keyboard() {
+        let e = vec![
+            Entry::item("off", false, Mark::None, 0u8),
+            Entry::item("a", true, Mark::None, 1),
+            Entry::Sep,
+            Entry::sub("sub", vec![Entry::item("x", true, Mark::None, 7), Entry::item("y", true, Mark::None, 8)]),
+        ];
+        assert_eq!(step(&e, None, true), Some(1));
+        assert_eq!(step(&e, Some(1), true), Some(3), "the separator skipped");
+        assert_eq!(step(&e, Some(3), true), Some(1), "wraps past the disabled item");
+        let ctx = egui::Context::default();
+        let mut m = PopMenu::new(1, Pos2::new(10.0, 10.0));
+        let mut frame = |m: &mut PopMenu, keys: &[egui::Key]| {
+            let events = keys.iter().map(|&key| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }).collect();
+            let mut out = None;
+            let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |ctx| out = Some(show(ctx, "t", m, &e)));
+            out.unwrap()
+        };
+        frame(&mut m, &[egui::Key::ArrowDown]);
+        frame(&mut m, &[egui::Key::ArrowDown]);
+        assert_eq!(m.hot, Some(3));
+        frame(&mut m, &[egui::Key::ArrowRight]);
+        assert!(m.in_sub && m.sub == Some(3) && m.sub_hot == Some(0));
+        let o = frame(&mut m, &[egui::Key::Escape]);
+        assert!(!o.close && !m.in_sub, "Esc leaves the submenu only");
+        frame(&mut m, &[egui::Key::Enter]);
+        frame(&mut m, &[egui::Key::ArrowDown]);
+        let o = frame(&mut m, &[egui::Key::Enter]);
+        assert_eq!(o.chosen, Some(8), "Enter on the submenu's second item");
     }
 }
