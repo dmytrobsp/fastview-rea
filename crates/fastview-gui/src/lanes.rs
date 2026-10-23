@@ -1717,7 +1717,9 @@ impl App {
                 return;
             }
         }
-        let (time_unit, grid, can_paste, band) = (self.time_unit, self.show_grid, self.clip.available(), doc.diff_band);
+        // 57637 (`0x45bf88`): the clipboard format and no pending channel.
+        let can_paste = self.clip.available() && !crate::omp_ui::has_pending_paste(doc);
+        let (time_unit, grid, band) = (self.time_unit, self.show_grid, doc.diff_band);
         let mut chosen: Option<MenuCmd> = None;
         let area = egui::Area::new(egui::Id::new("fv_lane_menu").with(menu.serial))
             .kind(egui::UiKind::Menu)
@@ -1768,7 +1770,9 @@ impl App {
                     d.diff_band = !d.diff_band;
                 }
             }
-            MenuCmd::Color => self.color_dialog = self.docs.get(ai).and_then(|d| d.first_selected_color()),
+            // `0x4310b0`: always the dialog, from the first selected
+            // channel's colour or black (OK then changes nothing).
+            MenuCmd::Color => self.color_dialog = self.docs.get(ai).map(|d| d.first_selected_color().unwrap_or(egui::Color32::BLACK)),
             MenuCmd::EditComment(i) => self.open_comment_editor(ai, i),
             MenuCmd::EditLevel(i) => {
                 if let Some(crate::comments::CommentKind::Level { value, .. }) = self.docs.get(ai).and_then(|d| d.comments.get(i)).map(|c| &c.kind) {
@@ -1870,16 +1874,15 @@ fn menu_style(style: &mut egui::Style) {
 }
 
 fn menu_item(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
-    ui.add_enabled(enabled, egui::Button::new(label)).clicked()
+    crate::popmenu::mark_item(ui, label, enabled, None).clicked()
 }
 
 fn menu_check(ui: &mut egui::Ui, label: &str, st: ItemState) -> bool {
-    let mut c = st.checked;
-    ui.add_enabled(st.enabled, egui::Checkbox::new(&mut c, label)).clicked()
+    crate::popmenu::mark_item(ui, label, st.enabled, st.checked.then_some("✓")).clicked()
 }
 
 fn menu_radio(ui: &mut egui::Ui, label: &str, st: ItemState) -> bool {
-    ui.add_enabled(st.enabled, egui::RadioButton::new(st.checked, label)).clicked()
+    crate::popmenu::mark_item(ui, label, st.enabled, st.checked.then_some("•")).clicked()
 }
 
 /// MENU 561 (stats panel), in resource order; every item acts on the
@@ -2906,6 +2909,23 @@ mod menu_tests {
         h.frame_mod(vec![key(egui::Key::ArrowUp, egui::Modifiers::NONE)], egui::Modifiers::NONE);
         let hv = h.doc().hviz[0];
         assert!(hv.shown && hv.chan == Some(0), "{hv:?}");
+    }
+
+    /// MFC's menu rows: a tick in the left column only for a checked item,
+    /// no box for an unchecked one.
+    #[test]
+    fn menu_rows_tick_only_checked_items() {
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().chans[0].invert = true;
+        let top = h.row(0);
+        h.button(top, egui::PointerButton::Secondary);
+        assert!(h.app.lane_menu.is_some());
+        let texts: Vec<String> = h.shapes.iter().filter_map(|c| if let Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
+        assert!(texts.iter().any(|t| t == "Инвертировать"));
+        let before = |mark: &str, label: &str| texts.windows(2).any(|w| w[0] == mark && w[1] == label);
+        assert!(before("✓", "Инвертировать") && before("✓", "Мгновенные значения"), "{texts:?}");
+        assert!(before("•", "Отображать на векторной диаграмме"), "SetRadio: a bullet");
+        assert_eq!(texts.iter().filter(|t| *t == "✓").count(), 2, "unchecked items carry no mark");
     }
 
     /// User report: the menu was never about the top row, and its subject

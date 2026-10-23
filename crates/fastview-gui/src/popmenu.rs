@@ -63,24 +63,71 @@ fn menu_style(style: &mut egui::Style) {
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
 }
 
+/// A menu row as Win32 draws it: a check-mark column (a tick for a
+/// checked SetCheck item, a bullet for a SetRadio one, nothing otherwise),
+/// then the label.
+pub fn mark_item(ui: &mut egui::Ui, label: &str, enabled: bool, mark: Option<&str>) -> egui::Response {
+    const COL: f32 = 18.0;
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font.clone(), Color32::PLACEHOLDER);
+    let size = Vec2::new(COL + galley.size().x + 10.0, (galley.size().y + 4.0).max(ui.spacing().interact_size.y));
+    let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let row = Rect::from_x_y_ranges(ui.max_rect().x_range(), rect.y_range());
+    if enabled && resp.hovered() {
+        ui.painter().rect_filled(row, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
+    }
+    let col = if enabled { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
+    if let Some(m) = mark {
+        ui.painter().text(Pos2::new(rect.left() + COL / 2.0, rect.center().y), egui::Align2::CENTER_CENTER, m, font, col);
+    }
+    ui.painter().galley(Pos2::new(rect.left() + COL, rect.center().y - galley.size().y / 2.0), galley, col);
+    resp
+}
+
+/// The glyph of a mark (none when unchecked).
+pub fn glyph(mark: Mark) -> Option<&'static str> {
+    match mark {
+        Mark::Check(true) => Some("✓"),
+        Mark::Radio(true) => Some("•"),
+        _ => None,
+    }
+}
+
+/// MFC copies a menu into its popup dropping a separator that comes first,
+/// follows another one or comes last (`0x100e2fdd`–`0x100e3010`).
+pub fn shown_seps<C>(entries: &[Entry<C>]) -> Vec<bool> {
+    let mut prev_sep = true;
+    entries
+        .iter()
+        .enumerate()
+        .map(|(i, e)| match e {
+            Entry::Sep => {
+                let show = !prev_sep && i + 1 < entries.len();
+                prev_sep |= show;
+                show
+            }
+            _ => {
+                prev_sep = false;
+                true
+            }
+        })
+        .collect()
+}
+
 /// Lay out `entries`; returns the picked command and, for submenu rows, their
 /// index and rect (hovered or clicked → `open`).
 fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<usize>, sub_rect: &mut Option<Rect>, root: bool) -> Option<C> {
     let mut chosen = None;
+    let shown = shown_seps(entries);
     for (i, e) in entries.iter().enumerate() {
         match e {
             Entry::Sep => {
-                ui.separator();
+                if shown[i] {
+                    ui.separator();
+                }
             }
             Entry::Item { label, enabled, check, cmd } => {
-                let r = match *check {
-                    Mark::None => ui.add_enabled(*enabled, egui::Button::new(label.as_str())),
-                    Mark::Check(c) => {
-                        let mut c = c;
-                        ui.add_enabled(*enabled, egui::Checkbox::new(&mut c, label.as_str()))
-                    }
-                    Mark::Radio(c) => ui.add_enabled(*enabled, egui::RadioButton::new(c, label.as_str())),
-                };
+                let r = mark_item(ui, label, *enabled, glyph(*check));
                 if root && r.hovered() {
                     *open = None;
                 }
@@ -152,4 +199,22 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
         )
     });
     Outcome { close: chosen.is_some() || esc || outside, chosen, eat: outside }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `0x100e2fdd`–`0x100e3010`: no separator first, after another one,
+    /// or last.
+    #[test]
+    fn separators_as_mfc_copies_them() {
+        let i = |n: u8| Entry::item(n.to_string(), true, Mark::None, n);
+        let e = vec![Entry::Sep, i(1), Entry::Sep, Entry::Sep, i(2), Entry::Sep];
+        assert_eq!(shown_seps(&e), vec![false, true, true, false, true, false]);
+        let only: Vec<Entry<u8>> = vec![i(1), Entry::Sep];
+        assert_eq!(shown_seps(&only), vec![true, false], "a list that ends in a separator");
+        assert_eq!(glyph(Mark::Check(true)), Some("✓"));
+        assert_eq!((glyph(Mark::Check(false)), glyph(Mark::Radio(true))), (None, Some("•")));
+    }
 }

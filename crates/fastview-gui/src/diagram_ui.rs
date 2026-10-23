@@ -651,14 +651,9 @@ impl App {
         doc_chans(d)
             .iter()
             .enumerate()
-            .filter(|(_, c)| w == Window::Circle || listed(w, c))
-            .map(|(idx, c)| {
-                let unit = c.unit.clone();
-                // The circle's items (`0x437080`): checked = the flag and
-                // not a pending pasted channel (bit 14).
-                let pending = w == Window::Circle && c.computed.is_some_and(|j| d.computed[j].formula == crate::merge_ui::PENDING);
-                MenuChan { idx, name: c.name.clone(), unit, on: chan_flag(d, w, c) && !pending }
-            })
+            // The circle's list (`0x43d2a5`) skips pending (bit 14) channels.
+            .filter(|(_, c)| if w == Window::Circle { !c.computed.is_some_and(|j| d.computed[j].formula == crate::merge_ui::PENDING) } else { listed(w, c) })
+            .map(|(idx, c)| MenuChan { idx, name: c.name.clone(), unit: c.unit.clone(), on: chan_flag(d, w, c) })
             .collect()
     }
 
@@ -838,6 +833,11 @@ impl App {
     /// Right-click / wheel bookkeeping shared by the windows: opens the
     /// whole menu on a right click unless a press is being swallowed.
     fn window_menu_click(&mut self, resp: &egui::Response, w: Window) {
+        // The vector (`0x48fc80`) and frequency (`0x46f2e0`) windows show
+        // no menu without a document.
+        if matches!(w, Window::Vector | Window::Freq) && self.active_doc().is_none() {
+            return;
+        }
         if resp.secondary_clicked() && !self.diag.menu_eat {
             if let Some(p) = resp.interact_pointer_pos() {
                 self.open_diag_menu(w, MenuKind::Full, p);

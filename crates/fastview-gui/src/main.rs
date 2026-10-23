@@ -1242,7 +1242,9 @@ mod window_tests {
         }
         app.mru = vec!["/data/osc/2024-05-01 Подстанция 110 кВ.cfg".into(), "/data/osc/short.cff".into()];
         let size = pos("FV_WINDOW_SIZE").map_or(Vec2::new(1320.0, 860.0), |p| p.to_vec2());
-        let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        // `FV_WINDOW_BUTTON=right`: a right click (context menus).
+        let button = if std::env::var("FV_WINDOW_BUTTON").is_ok_and(|b| b == "right") { egui::PointerButton::Secondary } else { egui::PointerButton::Primary };
+        let ev = |pressed| egui::Event::PointerButton { pos: at, button, pressed, modifiers: Default::default() };
         let mut passes = vec![vec![], vec![], vec![egui::Event::PointerMoved(at), ev(true)], vec![ev(false)], vec![egui::Event::PointerMoved(hover)], vec![], vec![], vec![]];
         let key = |key| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }];
         if kt_state == "keytips" || kt_state == "keytipsmenu" {

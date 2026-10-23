@@ -4346,6 +4346,34 @@ channels written as ours (1, "", the computed colour) — the original
 writes their fields (ND what they hold); `colorCustom` written as 0 when
 not custom (the original writes ch+0x144 always).
 
+### L9.144 — Context menus: MFC's separators and check column, Paste with pending channels, no vector / frequency menu without a document, «Цвет канала» from black, the circle list without pending channels  ·  ✅
+Read (subagent audit of every popup — LoadMenuW for 387 / 388 / 561 / 563
+/ 351 / 355, 560 by the same handler, the context-menu manager's
+ShowPopupMenu; by hand MFC's copy into the popup `0x100e2fdd`–
+`0x100e3010`): a separator is dropped when it comes first, follows
+another one or comes last (per submenu); 561's Paste (`0x45bf88`) is
+disabled while any channel is pending; the vector (`0x48fc80`) and
+frequency (`0x46f2e0`) windows show no menu without a document; «Цвет
+канала» (`0x4310b0`) always opens the colour dialog, from the first
+selected channel's colour or black; the circle's «Каналы» (`0x43d2a5`)
+leaves pending channels out. Every label, order, id and check rule of the
+seven menus otherwise matched ours.
+Ours drew every separator (typical records: the circle / differential /
+«Отсчет углов» lists ended in one), egui check boxes and radio buttons
+(an empty box for an unchecked item — MFC draws a tick / bullet in a left
+column only when checked, INFERRED from the stock drawing), enabled 561's
+Paste with pending channels, opened the vector / frequency menus without
+a document, did nothing for «Цвет канала» with no selection, listed
+pending channels (unchecked) on the circle. Now `popmenu::{shown_seps,
+mark_item, glyph}` used by the popups and by the view's menus
+(`menu_item` / `menu_check` / `menu_radio`), and the four behaviours.
+`FV_WINDOW_BUTTON=right` added to `window_dump` (a synthetic right click
+there does not open the menus yet — the tests do). Tests
+`separators_as_mfc_copies_them`, `menu_rows_tick_only_checked_items`.
+Residual: no keyboard navigation in our popups; the inline rename edit
+has no system edit menu; the submenu arrow drawn as text; whether
+computed channels block 33035's combine in the original ND.
+
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -4426,8 +4454,7 @@ the OS title bar — a frameless window with our own caption, risky on
 tiling WMs); backlog §9 #36 / #37 / #45 leftovers (logo, splash:
 proprietary assets). Good recurring pass: render the user's real records
 (`~/Downloads/DOC_1999.cfg`, `BINARY.cfg`, `WIN_1999.cfg`) after big
-changes. A fresh audit worth running: every context menu (351, 355,
-387, 388, 560, 561, 563) item by item vs ours.
+changes.
 (Done: night 6 L9.128–L9.138, night 5 L9.107–L9.127.)
 ---
 
