@@ -271,20 +271,17 @@ struct Locus {
     c2: [f64; 2],
     /// Gets the cursor "+" marks (not an R/X pair, `0x43a880`).
     markers: bool,
+    /// A differential pair's units, (Iдиф, Iторм): its table shows each
+    /// value in its own channel's unit (`0x446460`).
+    pair_units: Option<[fvb_core::units::Shown; 2]>,
 }
 
-/// Sample range of the loci (`0x438b50`): N..end, or [min(c1,c2),
-/// max(c1,c2)] with «Диапазон между визирами» (which replaces the N start),
-/// both clamped to the record.
-fn locus_range(d: &Doc, between: bool) -> std::ops::RangeInclusive<usize> {
-    let len = d.osc.sample_count();
-    let last = len.saturating_sub(1);
-    let (mut a, mut b) = (d.osc.samples_per_cycle().max(1), last);
-    if between {
-        a = d.main_cursor.min(d.aux_cursor);
-        b = d.main_cursor.max(d.aux_cursor);
+/// The unit a channel's readout shows (`0x42bc50`), by name.
+fn shown_by_name(d: &Doc, name: &str) -> fvb_core::units::Shown {
+    if let Some(c) = d.osc.analog.iter().find(|c| c.id == name) {
+        return c.shown_unit();
     }
-    a.min(last)..=b.min(last)
+    d.computed.iter().find(|c| c.name == name).map(|c| fvb_core::units::Shown::computed(&c.unit)).unwrap_or_default()
 }
 
 /// The circle diagram's range (`0x43a880`, `0x43a9ed`–`0x43aa41`): N..len,
@@ -310,27 +307,31 @@ fn finite_or_origin(p: [f64; 2]) -> [f64; 2] {
 
 fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
     let mut out = Vec::new();
-    if diff {
-        let range = locus_range(d, between);
-        let last = d.osc.sample_count().saturating_sub(1);
-        let (k1, k2) = (d.main_cursor.min(last), d.aux_cursor.min(last));
-        // (Iторм, Iдиф) of every enabled pair, instantaneous.
-        for p in d.dif_pairs.iter().filter(|p| p.on) {
-            if let (Some((dif, col)), Some((tor, _))) = (inst_by_name(d, &p.a), inst_by_name(d, &p.b)) {
-                let f = |k| [tor(k), dif(k)];
-                out.push(Locus { name: p.legend_label(), unit: Default::default(), color: col, power: false, pts: range.clone().map(f).collect(), c1: f(k1), c2: f(k2), markers: true });
-            }
-        }
-        return out;
-    }
     let range = circle_range(d, between);
     // The marks use the cursors as they are: past the values, the origin.
     let (k1, k2) = (d.main_cursor, d.aux_cursor);
     let len = d.osc.sample_count();
+    // `0x426020`: 0 past the values or for NaN.
+    let inst = |s: &dyn Fn(usize) -> f64, k: usize| if k < len { Some(s(k)).filter(|v| v.is_finite()).unwrap_or(0.0) } else { 0.0 };
+    if diff {
+        // `0x4457a0`: (Iторм, Iдиф) of every enabled pair, the same range
+        // as the circle's, the Iдиф channel's colour, one scale.
+        for p in d.dif_pairs.iter().filter(|p| p.on) {
+            if let (Some((dif, col)), Some((tor, _))) = (inst_by_name(d, &p.a), inst_by_name(d, &p.b)) {
+                let f = |k| [inst(&tor, k), inst(&dif, k)];
+                let pair_units = Some([shown_by_name(d, &p.a), shown_by_name(d, &p.b)]);
+                // The table reads the raw values (a non-finite one empties
+                // the cells).
+                let raw = |k: usize| if k < len { [tor(k), dif(k)] } else { [0.0, 0.0] };
+                out.push(Locus { name: p.legend_label(), unit: Default::default(), color: col, power: false, pts: range.clone().map(f).collect(), c1: raw(k1), c2: raw(k2), markers: true, pair_units });
+            }
+        }
+        return out;
+    }
     let n = d.osc.samples_per_cycle().max(2);
     let mut push = |name: String, unit: fvb_core::units::Shown, color: Color32, power: bool, markers: bool, f: &dyn Fn(usize) -> [f64; 2]| {
         let g = |k| finite_or_origin(f(k));
-        out.push(Locus { name, unit, color, power, pts: range.clone().map(g).collect(), c1: f(k1), c2: f(k2), markers });
+        out.push(Locus { name, unit, color, power, pts: range.clone().map(g).collect(), c1: f(k1), c2: f(k2), markers, pair_units: None });
     };
     for (i, ch) in d.osc.analog.iter().enumerate() {
         if d.chans[i].on_circle {
@@ -361,9 +362,7 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
     // NaN, per coordinate), the Ω scale, the R channel's unit, no marks.
     for p in d.rx_pairs.iter().filter(|p| p.on) {
         if let (Some((r, col)), Some((x, _))) = (inst_by_name(d, &p.a), inst_by_name(d, &p.b)) {
-            let unit = d.osc.analog.iter().find(|c| c.id == p.a).map(|c| c.shown_unit()).or_else(|| d.computed.iter().find(|c| c.name == p.a).map(|c| fvb_core::units::Shown::computed(&c.unit))).unwrap_or_default();
-            let v = |s: &dyn Fn(usize) -> f64, k: usize| if k < len { Some(s(k)).filter(|v| v.is_finite()).unwrap_or(0.0) } else { 0.0 };
-            push(p.legend_label(), unit, col, false, false, &|k| [v(&r, k), v(&x, k)]);
+            push(p.legend_label(), shown_by_name(d, &p.a), col, false, false, &|k| [inst(&r, k), inst(&x, k)]);
         }
     }
     out
@@ -986,7 +985,8 @@ impl App {
         // Loci (`0x43a880`): the channels' polylines, then their "+" at
         // cursor 1 (200, 0, 0) and cursor 2 (0, 0, 200), then the R/X
         // pairs' polylines.
-        let (red, blue) = if diff { (Color32::RED, Color32::BLUE) } else { (Color32::from_rgb(200, 0, 0), Color32::from_rgb(0, 0, 200)) };
+        // (`0x4457ea` / `0x445831` for the differential plane: the same.)
+        let (red, blue) = (Color32::from_rgb(200, 0, 0), Color32::from_rgb(0, 0, 200));
         let ordered = loci.iter().filter(|l| l.markers).map(|l| (l, false)).chain(loci.iter().filter(|l| l.markers).map(|l| (l, true))).chain(loci.iter().filter(|l| !l.markers).map(|l| (l, false)));
         for (l, marks) in ordered {
             let Some(ppu) = sc.ppu[usize::from(l.power && !diff)] else { continue };
@@ -1530,6 +1530,19 @@ fn circle_cells(l: &Locus, mode: u8) -> [String; 2] {
     if !(re.is_finite() && im.is_finite()) {
         return Default::default();
     }
+    // A differential pair (`0x446460`): Iдиф then Iторм, each `"%.3f %s%s"`
+    // in its own channel's prefix and unit, an exact 0 as «0.0».
+    if let Some([ud, ut]) = &l.pair_units {
+        let cell = |v: f64, u: &fvb_core::units::Shown| {
+            let (s, unit) = fvb_core::views::si_scaled(v, u);
+            if v == 0.0 {
+                format!("0.0 {unit}")
+            } else {
+                format!("{s:.3} {unit}")
+            }
+        };
+        return [cell(im, ud), cell(re, ut)];
+    }
     let z = Complex64::new(re, im);
     let (scaled, unit) = fvb_core::views::si_scaled(z.norm(), &l.unit);
     let k = if z.norm() == 0.0 { 1.0 } else { scaled / z.norm() };
@@ -1594,44 +1607,12 @@ fn circle_table(p: &egui::Painter, ui: &egui::Ui, rect: Rect, cy: f32, loci: &[L
     }
 }
 
-/// The readout table (`0x43bbf0` for the circle diagram, [`circle_table`]).
-/// The differential diagram's readout (its painter not read) shows
-/// (Iторм; Iдиф) [I] in one ruled row per locus.
+/// The readout table: the circle diagram's (`0x43bbf0`) and the
+/// differential diagram's (`0x446460`, rows «Iдиф Iторм», a value column
+/// each) share the layout, [`circle_table`].
 fn readout_table(p: &egui::Painter, ui: &egui::Ui, rect: Rect, text_h: f32, loci: &[Locus], mode: u8, diff: bool) {
-    if !diff {
-        return circle_table(p, ui, rect, text_h, loci, mode);
-    }
-    let row_h = text_h * 1.5;
-    let cells: Vec<Vec<String>> = loci
-        .iter()
-        .map(|l| {
-            let [re, im] = l.c1;
-            vec![l.name.clone(), format!("{re:.3}; {im:.3}")]
-        })
-        .collect();
-    let ncol = cells.first().map_or(2, |r| r.len());
-    let mut widths = vec![0.0f32; ncol];
-    for r in &cells {
-        for (c, t) in r.iter().enumerate() {
-            widths[c] = widths[c].max(ui.painter().layout_no_wrap(t.clone(), font(), TEXT).size().x + 12.0);
-        }
-    }
-    let total = text_h + 12.0 + widths.iter().sum::<f32>();
-    let left = if total < rect.width() { rect.center().x - total / 2.0 } else { rect.left() };
-    let top = rect.bottom() + 6.0;
-    let ruled = stroke(1.0, AXES);
-    for (ri, (r, l)) in cells.iter().zip(loci).enumerate() {
-        let y = top + row_h * ri as f32;
-        p.line_segment([Pos2::new(left, y), Pos2::new(left + total, y)], ruled);
-        let sq = Rect::from_min_size(Pos2::new(left + 6.0, y + (row_h - text_h) / 2.0), Vec2::splat(text_h));
-        p.rect_filled(sq, 0.0, l.color);
-        let mut x = left + text_h + 12.0;
-        for (c, t) in r.iter().enumerate() {
-            p.text(Pos2::new(x + 6.0, y + row_h / 2.0), egui::Align2::LEFT_CENTER, t, font(), TEXT);
-            x += widths[c];
-        }
-    }
-    p.line_segment([Pos2::new(left, top + row_h * cells.len() as f32), Pos2::new(left + total, top + row_h * cells.len() as f32)], ruled);
+    // The differential one is on / off with both value columns ruled.
+    circle_table(p, ui, rect, text_h, loci, if diff { 2 } else { mode });
 }
 
 /// A plane scroll bar (range 0..10000, page `round(10000/z)`): a click on

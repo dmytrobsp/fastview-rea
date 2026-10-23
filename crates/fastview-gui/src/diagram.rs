@@ -36,8 +36,10 @@ pub const CHAR_PALETTE: [[(u8, u8, u8); 3]; 9] = [
 pub const FILL_ALPHA: u8 = 50;
 
 /// A channel pair of the circle diagram (R | X, `doc+0x884`) or of the
-/// differential diagram (Iдиф | Iторм, `doc+0x878`): two channel names and
-/// the «enabled» byte (`+8`) toggled from the Каналы submenu.
+/// differential diagram (Iдиф | Iторм — `doc+0x878` stores them the other
+/// way round, Iторм at `+0`, and builds its texts from `+4` first, so ours
+/// are in text order): two channel names and the «enabled» byte (`+8`)
+/// toggled from the Каналы submenu.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChanPair {
     pub a: String,

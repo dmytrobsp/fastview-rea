@@ -283,7 +283,10 @@ impl Doc {
         o.set_int("Codepage", cp_code(self.codepage));
         o.set_int("DiscretisationFrequensy", self.osc.sample_rate.round() as i32);
         let pairs = |v: &[crate::diagram::ChanPair]| -> Vec<PairRec> { v.iter().map(|p| PairRec { a: p.a.clone(), b: p.b.clone(), visible: p.on }).collect() };
-        recset::write_pairs(t.section_mut("Diff Chart"), recset::DIFF_KEYS, &pairs(&self.dif_pairs));
+        // `doc+0x878` holds (Iторм `BrakeCurr`, Iдиф `DiffCurr`); our
+        // differential pairs are (Iдиф, Iторм) (L9.81).
+        let swapped = |v: &[crate::diagram::ChanPair]| -> Vec<PairRec> { v.iter().map(|p| PairRec { a: p.b.clone(), b: p.a.clone(), visible: p.on }).collect() };
+        recset::write_pairs(t.section_mut("Diff Chart"), recset::DIFF_KEYS, &swapped(&self.dif_pairs));
         recset::write_pairs(t.section_mut("Circle Chart"), recset::CIRCLE_KEYS, &pairs(&self.rx_pairs));
         let items: Vec<CommentRec> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
         recset::write_comments(t.section_mut("Comments"), &items);
@@ -424,7 +427,8 @@ impl App {
         let pairs = |c: Option<&SetNode>, keys| -> Vec<crate::diagram::ChanPair> {
             c.map(|c| recset::read_pairs(c, keys)).unwrap_or_default().into_iter().map(|p| crate::diagram::ChanPair { a: p.a, b: p.b, on: p.visible }).collect()
         };
-        d.dif_pairs = pairs(d.set.tree.section("Diff Chart"), recset::DIFF_KEYS);
+        // (Iторм, Iдиф) in the file → our (Iдиф, Iторм) (L9.81).
+        d.dif_pairs = pairs(d.set.tree.section("Diff Chart"), recset::DIFF_KEYS).into_iter().map(|p| crate::diagram::ChanPair { a: p.b, b: p.a, on: p.on }).collect();
         d.rx_pairs = pairs(d.set.tree.section("Circle Chart"), recset::CIRCLE_KEYS);
         if let Some(x) = recset::read_view(d.set.tree.section("View")).xscale.filter(|f| *f > 0.0 && *f <= 1.0) {
             d.xscale = Some(x);
@@ -870,6 +874,9 @@ mod tests {
         assert!(text.starts_with("<?xml version=\"1.0\" encoding=\"utf-16\"?>\r\n<settings>\r\n"), "{text}");
         assert!(text.contains("<category Channel0=\"X,Ua+Ub\" name=\"CalculatedChannels\"/>"), "{text}");
         assert!(text.contains("name=\"Uc\"") && text.contains("AliasName=\"Uc'\""), "{text}");
+        // A differential pair (Iдиф Ia, Iторм Ib) is stored as `doc+0x878`
+        // holds it: BrakeCurr = Iторм, DiffCurr = Iдиф (L9.81).
+        assert!(text.contains("BrakeCurr=\"Ib\" DiffCurr=\"Ia\""), "{text}");
         let vec_shown = app.vec_show_values;
 
         let mut back = App::new();

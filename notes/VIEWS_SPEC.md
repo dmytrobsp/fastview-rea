@@ -138,3 +138,11 @@ then the pairs' polylines (no marks). Readout table `0x43bbf0` at c1:
 Re ± jIm "%.3f" (both «0.0» at |z| = 0) or |·| "%.3f" ∠ "%.2fº", an empty
 cell for a non-finite value, a pair in its R channel's unit; layout in
 ledger L9.80.
+
+## Differential plane (`0x445e00`, loci `0x4457a0`, table `0x446460`)
+Pairs at `doc+0x878` are (Iторм `BrakeCurr`, Iдиф `DiffCurr`); texts put
+Iдиф first («Iдиф | Iторм»). Each enabled pair: x = Iторм, y = Iдиф
+through `0x426020` (0 past the values or NaN), the Iдиф channel's
+colour, the circle's range rule and marks (ledger L9.81). Table (on / off):
+rows «Iдиф Iторм», cells Iдиф then Iторм `"%.3f %s%s"` each in its own
+channel's unit, the circle table's layout.

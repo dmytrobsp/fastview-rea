@@ -2766,52 +2766,69 @@ height, not GetTextExtent("Ay"); the table's text colour / background
 mode come from the caller's DC (not traced); NaN cursor marks are skipped
 (not read).
 
-Next in L9 (HANDOFF 2026-10-23, night): **public at
+### L9.81 — The differential plane as read; its pairs were stored swapped  ·  ✅
+Read (subagent report on the pane painter `0x445e00`, loci `0x4457a0`,
+table `0x446460`, reserve `0x446320`; by hand: the `.set` reader
+`0x4211b6`–`0x42123f` — `BrakeCurr` into `+0`, `DiffCurr` into `+4` of
+the 12-byte pairs at `doc+0x878`; the loci take x from the `+0` channel
+and y from `+4`, both through `0x426020`, the pen in the `+4` channel's
+colour (`0x445a55`–`0x445ac4`); the Каналы submenu `0x446d70` builds
+«`+4` | `+0`»): the plane uses the circle's range (N..=len, bounds ≥ N,
+capped at the count — the end point at the origin), 0 for a NaN or
+past-the-values coordinate (the line never breaks), all polylines then
+the marks (static (200,0,0) / (0,0,200), raw cursors), one scale. Table:
+on / off (`+0x48a`), rows «Iдиф Iторм» (`+4` then `+0`, INFERRED from the
+join order), the circle table's geometry and rules with both value
+columns ruled, cells Iдиф then Iторм `"%.3f %s%s"` each in its own
+channel's prefix and unit (`0x43d960`, `0x42bc50`), an exact 0 «0.0», a
+non-finite value empties both cells; nothing with no rows.
+Ours read `BrakeCurr` into the pair's first name, which we use as Iдиф —
+a `.set` pair was drawn with its axes exchanged, coloured by Iторм, and
+quick analysis's pairs were written back swapped; the table was one
+"%.3f; %.3f" cell without units; the line broke at NaN; the range and
+marks were the old ones. Now `setfile` swaps at the boundary (our
+`ChanPair` stays in text order Iдиф, Iторм; `recset::PairRec` keeps the
+file's), `plane_loci` shares `circle_range` and the 0-for-bad rule,
+`Locus::pair_units`, `circle_cells` / `circle_table` for both planes,
+`shown_by_name`; `FV_WINDOW_STATE=difftable` renders it (rendered on
+BINARY). Test: the `.set` round trip asserts `BrakeCurr="Ib"
+DiffCurr="Ia"` for (Iдиф Ia, Iторм Ib).
+Residual: the legend `0x443b90` (label order, swatch) not read; where
+the original's quick analysis puts its pair names NOT DETERMINED (ours
+Iдиф = "I? диф."); text colour / background mode from the caller's DC.
+
+Next in L9 (HANDOFF 2026-10-23, evening 2): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
-CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
-(lipo), each one flat archive). `main` = HEAD (`2d7b709` + this handoff), 335 tests; CI green on 3 OSes
-through L9.75 at this handoff.
-**Night session (L9.68–L9.75):** L9.68 paste / an ОМП run never mark the
-record modified (ours marked a run through its phase lanes); **L9.69 every
-diagram shows the values as displayed (k)** — a «P» record shown
-«Вторичные» is drawn in secondary units on the vector / circle /
-differential / frequency diagrams, and the vector header is the original's
-box «U max / I max» "%.1f V" (no prefix; p = 10^(⌊log10 max⌋ − 1)); **L9.70
-formula channels get the original's unit** (the dimension walk: «Ua−Ub» →
-V, `Rms:(Ia)` → A, `Frequency: ()` → Hz; quick analysis the same way, S0 =
-`Mod:(Pf: (…))[VA]`); L9.71 pasted (bit 14) lanes keep their kind and are
-drawn from their own samples at their own times with the paste marks; the
-digital base bar is N·25f from the plot left whatever the scroll; **L9.72
-the vector diagram as read** (0° up, counter-clockwise; labels inside the
-circle; legend row or values table at the bottom). New `window_dump`
-states: `paste`, `vecvalues`. L9.73 quick analysis builds the builder's
-exact formula texts (fixes group compensation, which failed, and the
-computed-Ib references); **L9.74 every readout shows units in Russian**
-(«В», «мА», «Ом» — `0x42b740`); L9.75 the circle / differential planes'
-labels («R: 130 Ом, 0 Вт», «Iторм: 46 ном»), opaque, whole-unit extents.
-**Earlier (2026-10-23, evening):** L9.58 copy with a property grid
-focused (XML only); L9.59 the comment under the pointer is sticky, prints
-and is drawn twice; L9.60 comment cursor codes (level body N–S), locked
-comments select but don't drag, a hidden text still drags, no визир under
-a selected comment; L9.61 the stats drag starts by MFC's 2 px / 200 ms
-rule (a self-drop is silent — not 1086); L9.62 every message box is
-«Механотроника FastView» with MFC's icons, the inline rename's commit
-(397 as a box, text as typed, modified on every commit); L9.63 tab colours
-= mfc120u's 16 colours and pick rule; L9.64 «Окна...» = MFC's windows
-dialog; **L9.65 the measured-frequency correction** (user-visible for any
-record with a Гц / Hz channel: it is ON by default and every computed
-value — phasors, RMS, a0, fault, the frequency diagram — integrates over
-the measured period; values of such records now differ from before by
-design); L9.66 diagram pages at the integer print scale with the
-painters' print branches (darker pens, 10 vector circles, the circle /
-differential masks); L9.67 the frequency diagram as read (no grid, exact
-layout, print tiling in rows). Earlier: L9.57 «P» records in SECONDARY values by default (if the
-user reports values "2000× too small", that is intended). The carved MFC
-DLLs now live in `extracted/mfc/` (local, git-ignored). No user questions
-pending.
+CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
+each one flat archive). `main` = HEAD, 340 tests; CI green on 3 OSes
+through L9.78 at this handoff (later runs were in progress — check
+`gh run list`).
+**This session (L9.76–L9.81):** L9.76 the unit text `0x42bc50` as read —
+«/с» kept for per-second file units, a formula channel's unit always
+translated (`[kV]` → «кВ»), `units::Shown`; L9.77 a pending (pasted) lane's
+stats value interpolates its own samples at T(В1) − offset (`0x461a24`),
+the own-time step unrounded; paste deselects first and selects the pasted
+channels (L9.20 confirmed); L9.78 a formula channel in Hz is a frequency
+candidate after the file's (`Oscillogram::extra_freq`); **L9.79 page 539:
+methods page-wide, values per arm** (24 slots, two group numbers per arm,
+missing legs = the initial arm, the last arm shown); L9.80 the circle
+diagram's loci (N..=len, the end at the origin, NaN → origin, marks with
+the original's pens, R/X pairs unmarked in the R unit) and its readout
+table's layout; **L9.81 the differential plane's pairs were stored
+swapped** (a `.set` pair drew with exchanged axes) — fixed, and its loci /
+table as read. New `window_dump` states `circletable`, `difftable`.
+**Earlier sessions:** see L9.68–L9.75 (night: paste / ОМП don't mark
+modified, the display factor k on every diagram, the vector diagram as
+read, formula units by the dimension walk, pasted lanes from own samples,
+quick analysis through the builder, Russian units, plane labels) and the
+entries above them. «P» records are shown SECONDARY by default (L9.57: if
+the user reports values "2000× too small", that is intended); the
+measured-frequency correction is on by default for records with a Гц / Hz
+channel (L9.65). The carved MFC DLLs live in `extracted/mfc/`. No user
+questions pending.
 **How to look at the GUI without running it:** `FV_WINDOW_DUMP=<png>
 [FV_WINDOW_RECORD=<cfg>] [FV_WINDOW_STATE=analysis (the sheet, two formula
-channels)|comments|group|circle|circletable|diff|omp|ompparams|preview|print|pagesetup|
+channels)|comments|group|circle|circletable|diff|difftable|omp|ompparams|preview|print|pagesetup|
 settings|channels|coef|fileparams|explorer|parambar|vizirs|alert|windows|
 paste|vecvalues|skin<k>] [FV_WINDOW_XSCALE=f] [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y]
 [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then Read the PNG (crop with
@@ -2827,24 +2844,22 @@ ordinals: the export table of `extracted/mfc/mfc120u.dll`, disassemble at
 the address (an old listing may still sit in a /tmp scratchpad); MFC
 strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
-display units — the per-second «/с» suffix and computed channels' bracket
-units through `0x42b740` (L9.74); the circle / differential legend's
-unclamped start and swatch pen, the Ω / power split of characteristic
-extents (L9.75); a pending lane's stats readout `0x461a24` and cursor
-mapping `0x463e9d`, and whether paste deselects (L9.71 vs L9.20); our
-differential page's per-arm method radios (page-wide in the original,
-L9.73); the circle diagram's locus painter `0x43a880` / readout table
-`0x43bbf0` were not re-read in the L9.75 comparison;
-L9.65's residuals (computed channels as frequency candidates — a
-`Frequency: ()` formula channel now has the unit Hz (L9.70), so it would
-be one; merge sync under correction);
-L9.22 print residuals (logo, paper; diagram print branches ✅ L9.66 /
-L9.67); L9.6 digital
-level-line snap (reachable only through a `.set`); keytips (MFC's ribbon
-keytip machinery — the program sets only Печать «p» / «w»); L9.27 MFC's
-intermediate ribbon reductions; L9.64's slot +0x1f0 and the MDI
-arrangements; pane re-docking (egui limit).
-(Done in the night session: L9.68–L9.75, see the summary above.)
+the circle / differential legends `0x438210` / `0x443b90` (label order,
+unclamped start x, swatch pen — L9.75 / L9.81); the Ω / power split of
+characteristic extents (L9.75); a pending lane's Max / Min / СКЗ / A1
+(L9.77, not read); a pasted Hz channel's place among the frequency
+candidates and the formula frequency channel excluded from its own
+correction (L9.78); 539's two-method-keys `.set` edge and which «Группа:»
+combo shows under «Не учитывать» (`0x4831b0`, L9.79); a computed channel
+without a unit on the circle diagram's scale (L9.80); L9.22 print
+residuals (paper; the logo bitmap stays out — it is the original's
+asset); L9.6 digital level-line snap (reachable only through a `.set`);
+keytips (MFC's ribbon keytip machinery — the program sets only Печать «p»
+/ «w»); L9.27 MFC's intermediate ribbon reductions; L9.64's slot +0x1f0
+and the MDI arrangements; pane re-docking (egui limit). Good recurring
+pass: render the user's real records (`~/Downloads/DOC_1999.cfg`,
+`BINARY.cfg`) after big changes.
+(Done in this session: L9.76–L9.81, see the summary above.)
 ---
 
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
