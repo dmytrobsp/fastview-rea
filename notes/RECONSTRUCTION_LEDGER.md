@@ -1868,6 +1868,21 @@ by name. Test `calculate_needs_the_pages_channels` extended; rendered.
 Residual: as L9.52 (grouping not dialog units; shared fields across
 pages); 539, persistence and the formula list editor remain.
 
+### L9.54 — Sheet page 539 «Дифференциальные токи»  ·  ✅ (stage B3)
+Read: VIEWS_SPEC «The sheet» (subagent; `0x4835b0`…, `0x482c10`,
+`0x483ab0`, `0x482b60`, `0x483da0`, `0x4831b0`).
+Ours: `differential_page` — «Количество плеч:» 2…24 and «Количество фаз:»
+{1, 3} combos; per arm «Приведение плеч» (4 radios; each block's own edits,
+only the chosen block enabled — `ArmForm` now keeps every block's values
+instead of three shared p1–p3) and «Учет группы соединений» (greyed with
+1 phase; «Группа:» 0…11 / {0, 1, 11} / greyed, «Удалить I0» only By
+sequences); «<<» «Текущее плечо:» «>>» over one arm group «Плечо %d»;
+«Расчет тока торможения» with «Полуразность токов» only for 2 arms (else
+reset to Полусумма) and the «Kторм:» {1, 0.5} combo for Полусумма /
+2-arm Полуразность. One phase generates no group compensation. Rendered.
+Residual: the per-arm default radios and the reduction edits' defaults
+NOT DETERMINED (ours: Kприв, «1.»); grouping not dialog units.
+
 Next in L9 (HANDOFF 2026-10-23): **public at
 github.com/dmytrobsp/fastview-rea, release v0.1.0** (Linux / Windows / macOS
 x86_64 + arm64, flat archives). This session: the four GUI bugs (L9.23–
@@ -1895,8 +1910,9 @@ decimating painter (`FV_WINDOW_XSCALE=f` for `window_dump`); L9.47
 comment texts / moment absolute time (`FV_WINDOW_STATE=comments`); L9.48
 the formula dialog's 396 sequence; L9.49 the finder's delete (recycle bin);
 L9.50 group lanes (`FV_WINDOW_STATE=group`); L9.51 «Быстрый анализ» as a
-modal sheet; L9.52–L9.53 its pages 536 / 538 / 537 / 543 + OK greying
-(next: 539, persistence, the formula list editor — all read in VIEWS_SPEC). A
+modal sheet; L9.52–L9.54 its five generator pages + OK greying (next:
+per-record persistence in the `.set`, the formula list editor — read in
+VIEWS_SPEC). A
 residual triage (2026-10-23) found many L9.1–L9.14 residuals already done
 (ledger text stale) — next candidates: L9.9 delete → recycle bin, L9.3
 Быстрый анализ as a modal sheet, L9.30 / L9.22 small ones. **Open

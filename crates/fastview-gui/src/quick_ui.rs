@@ -49,6 +49,8 @@ pub struct QuickForms {
     /// 0 sum (полусумма модулей), 1 arms 1–2, 2 maximum.
     pub braking: u8,
     pub k_torm: String,
+    /// 539's «Текущее плечо» (0-based).
+    pub cur_arm: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -56,9 +58,17 @@ pub struct ArmForm {
     pub currents: [String; 3],
     /// 0 CoeffPriv, 1 CoeffTT, 2 CoeffPowerPriv, 3 CoeffAmpPriv.
     pub reduction: u8,
-    pub p1: String,
-    pub p2: String,
-    pub p3: String,
+    /// Each reduction block's own edits: «По мощности:» Kтт / Sном / Uном,
+    /// «По номинальному току:» Kтт / Iном, «По коэффициенту приведения:»
+    /// Kприв, «По коэффициенту трансформации ТТ:» Kтт / Kттбаз.
+    pub pw_ktt: String,
+    pub snom: String,
+    pub unom: String,
+    pub amp_ktt: String,
+    pub inom: String,
+    pub kpriv: String,
+    pub tt_ktt: String,
+    pub tt_base: String,
     /// 0 none, 1 GrsPosl, 2 GrsTriangle.
     pub group: u8,
     pub group_n: String,
@@ -70,9 +80,14 @@ impl Default for ArmForm {
         ArmForm {
             currents: Default::default(),
             reduction: 0,
-            p1: "1".into(),
-            p2: "1".into(),
-            p3: "1".into(),
+            pw_ktt: "1.".into(),
+            snom: "1.".into(),
+            unom: "1.".into(),
+            amp_ktt: "1.".into(),
+            inom: "1.".into(),
+            kpriv: "1.".into(),
+            tt_ktt: "1.".into(),
+            tt_base: "1.".into(),
             group: 0,
             group_n: "0".into(),
             remove_i0: true,
@@ -122,22 +137,9 @@ impl Default for QuickForms {
             arms: vec![ArmForm::default(), ArmForm::default()],
             braking: 0,
             k_torm: "0.5".into(),
+            cur_arm: 0,
         }
     }
-}
-
-fn combo(ui: &mut egui::Ui, id: &str, label: &str, value: &mut String, names: &[String]) {
-    ui.label(label);
-    egui::ComboBox::from_id_salt(id).selected_text(value.as_str()).width(140.0).show_ui(ui, |ui| {
-        for n in names {
-            ui.selectable_value(value, n.clone(), n);
-        }
-    });
-}
-
-fn field(ui: &mut egui::Ui, label: &str, value: &mut String) {
-    ui.label(label);
-    ui.add(egui::TextEdit::singleline(value).desired_width(70.0));
 }
 
 /// A group box: its caption and, at the top right, an «Отключить» check
@@ -289,12 +291,13 @@ impl QuickForms {
                     .map(|a| Arm {
                         currents: a.currents[..self.dif_phases].to_vec(),
                         reduction: match a.reduction {
-                            0 => Reduction::Priv { k: a.p1.clone() },
-                            1 => Reduction::Tt { ktt: a.p1.clone(), ktt_base: a.p2.clone() },
-                            2 => Reduction::PowerPriv { ktt: a.p1.clone(), snom: a.p2.clone(), unom: a.p3.clone() },
-                            _ => Reduction::AmpPriv { ktt: a.p1.clone(), inom: a.p2.clone() },
+                            0 => Reduction::Priv { k: a.kpriv.clone() },
+                            1 => Reduction::Tt { ktt: a.tt_ktt.clone(), ktt_base: a.tt_base.clone() },
+                            2 => Reduction::PowerPriv { ktt: a.pw_ktt.clone(), snom: a.snom.clone(), unom: a.unom.clone() },
+                            _ => Reduction::AmpPriv { ktt: a.amp_ktt.clone(), inom: a.inom.clone() },
                         },
                         group: match a.group {
+                            _ if self.dif_phases == 1 => GroupComp::None,
                             1 => GroupComp::Posl { group: a.group_n.clone(), remove_i0: a.remove_i0 },
                             2 => GroupComp::Triangle { group: a.group_n.clone() },
                             _ => GroupComp::None,
@@ -424,75 +427,14 @@ impl App {
             d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect();
         let tab = self.analysis_tab;
         let f = &mut self.quick;
-        if matches!(tab, AnalysisTab::Symmetric | AnalysisTab::PhasePhase) {
-            symmetric_page(ui, f, &names, tab == AnalysisTab::PhasePhase);
-            return;
+        match tab {
+            AnalysisTab::Symmetric => symmetric_page(ui, f, &names, false),
+            AnalysisTab::PhasePhase => symmetric_page(ui, f, &names, true),
+            AnalysisTab::Zero => zero_page(ui, f, &names),
+            AnalysisTab::Phase => phase_page(ui, f, &names),
+            AnalysisTab::Differential => differential_page(ui, f, &names),
+            AnalysisTab::Formula => {}
         }
-        if tab == AnalysisTab::Zero {
-            zero_page(ui, f, &names);
-            return;
-        }
-        if tab == AnalysisTab::Phase {
-            phase_page(ui, f, &names);
-            return;
-        }
-        egui::Grid::new("quickform").num_columns(6).spacing([8.0, 6.0]).show(ui, |ui| {
-            match tab {
-                AnalysisTab::Differential => {
-                    ui.label("Фаз:");
-                    ui.radio_value(&mut f.dif_phases, 1, "1");
-                    ui.radio_value(&mut f.dif_phases, 3, "3");
-                    let mut n = f.arms.len();
-                    ui.label("Плеч:");
-                    ui.add(egui::DragValue::new(&mut n).range(2..=24));
-                    f.arms.resize_with(n, Default::default);
-                    ui.end_row();
-                    for (k, arm) in f.arms.iter_mut().enumerate() {
-                        ui.label(format!("Плечо {}", k + 1));
-                        for (p, letter) in ["a", "b", "c"].iter().enumerate().take(f.dif_phases) {
-                            combo(ui, &format!("q_arm{k}_{p}"), &format!("I{letter}"), &mut arm.currents[p], &names);
-                        }
-                        ui.end_row();
-                        egui::ComboBox::from_id_salt(format!("q_red{k}"))
-                            .selected_text(["Kприв", "Kтт / Kтт баз", "Kтт, Sном, Uном", "Kтт, Iном"][arm.reduction as usize])
-                            .show_ui(ui, |ui| {
-                                for (i, t) in ["Kприв", "Kтт / Kтт баз", "Kтт, Sном, Uном", "Kтт, Iном"].iter().enumerate() {
-                                    ui.selectable_value(&mut arm.reduction, i as u8, *t);
-                                }
-                            });
-                        ui.add(egui::TextEdit::singleline(&mut arm.p1).desired_width(60.0));
-                        if arm.reduction >= 1 {
-                            ui.add(egui::TextEdit::singleline(&mut arm.p2).desired_width(60.0));
-                        }
-                        if arm.reduction == 2 {
-                            ui.add(egui::TextEdit::singleline(&mut arm.p3).desired_width(60.0));
-                        }
-                        ui.end_row();
-                        if f.dif_phases == 3 {
-                            ui.radio_value(&mut arm.group, 0, "Без поворота");
-                            ui.radio_value(&mut arm.group, 1, "Через симм. составляющие");
-                            ui.radio_value(&mut arm.group, 2, "Треугольник");
-                            if arm.group != 0 {
-                                field(ui, "Группа", &mut arm.group_n);
-                            }
-                            if arm.group == 1 {
-                                ui.checkbox(&mut arm.remove_i0, "Удалить I0");
-                            }
-                            ui.end_row();
-                        }
-                    }
-                    ui.label("Торможение:");
-                    ui.radio_value(&mut f.braking, 0, "Полусумма модулей");
-                    ui.radio_value(&mut f.braking, 1, "Плечи 1 и 2");
-                    ui.radio_value(&mut f.braking, 2, "Максимум");
-                    if f.braking != 2 {
-                        field(ui, "Kторм", &mut f.k_torm);
-                    }
-                    ui.end_row();
-                }
-                AnalysisTab::Formula | AnalysisTab::Symmetric | AnalysisTab::PhasePhase | AnalysisTab::Zero | AnalysisTab::Phase => {}
-            }
-        });
     }
 }
 
@@ -668,6 +610,144 @@ fn phase_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
             ui.end_row();
             cell_combo(ui, true, "q_puc", "Uc", &mut f.uc, names);
             ui.end_row();
+        });
+    });
+}
+
+/// Page 539 «Дифференциальные токи»: arm and phase counts; per arm (kept
+/// per arm) «Приведение плеч» (its radio enables only its edit block,
+/// `0x4835b0`…) and «Учет группы соединений» (3 phases only, `0x482c10`:
+/// По последовательностям → «Группа» 0…11 + «Удалить I0», Цифровой
+/// треугольник → {0, 1, 11}, Не учитывать → 0…11 greyed, `0x483ab0`); «<<» /
+/// «Текущее плечо:» / «>>» (greyed at the ends, `0x4831b0`); the arm's group
+/// «Плечо %d» (string 198); «Расчет тока торможения» — «Полуразность токов»
+/// only with 2 arms (else forced to «Полусумма», `0x482b60`), «Kторм:» {1, 0.5}
+/// for Полусумма or Полуразность with 2 arms (`0x483da0`).
+fn differential_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
+    let n = f.arms.len();
+    ui.horizontal(|ui| {
+        ui.label("Количество плеч:");
+        let mut m = n;
+        egui::ComboBox::from_id_salt("q_dif_n").selected_text(m.to_string()).width(50.0).show_ui(ui, |ui| {
+            for k in 2..=24 {
+                ui.selectable_value(&mut m, k, k.to_string());
+            }
+        });
+        if m != n {
+            f.arms.resize_with(m, Default::default);
+        }
+        ui.add_space(30.0);
+        ui.label("Количество фаз:");
+        egui::ComboBox::from_id_salt("q_dif_ph").selected_text(f.dif_phases.to_string()).width(50.0).show_ui(ui, |ui| {
+            for k in [1, 3] {
+                ui.selectable_value(&mut f.dif_phases, k, k.to_string());
+            }
+        });
+    });
+    let n = f.arms.len();
+    if n > 2 && f.braking == 1 {
+        f.braking = 0;
+    }
+    f.cur_arm = f.cur_arm.min(n - 1);
+    let three = f.dif_phases == 3;
+    let cur = f.cur_arm;
+    let arm = &mut f.arms[cur];
+    group(ui, "Приведение плеч", None, |ui| {
+        egui::Grid::new("q_dif_red").num_columns(2).show(ui, |ui| {
+            ui.radio_value(&mut arm.reduction, 2, "По мощности");
+            ui.radio_value(&mut arm.reduction, 0, "По коэффициенту приведения");
+            ui.end_row();
+            ui.radio_value(&mut arm.reduction, 3, "По номинальному току");
+            ui.radio_value(&mut arm.reduction, 1, "По коэффициенту трансформации ТТ");
+            ui.end_row();
+        });
+    });
+    group(ui, "Учет группы соединений", None, |ui| {
+        ui.add_enabled_ui(three, |ui| {
+            ui.horizontal(|ui| {
+                ui.radio_value(&mut arm.group, 0, "Не учитывать");
+                ui.radio_value(&mut arm.group, 1, "По последовательностям");
+                ui.radio_value(&mut arm.group, 2, "Цифровой треугольник");
+            });
+        });
+    });
+    ui.horizontal(|ui| {
+        if ui.add_enabled(cur > 0, egui::Button::new("<<")).clicked() {
+            f.cur_arm -= 1;
+        }
+        ui.label("Текущее плечо:");
+        egui::ComboBox::from_id_salt("q_dif_cur").selected_text((cur + 1).to_string()).width(50.0).show_ui(ui, |ui| {
+            for k in 0..n {
+                ui.selectable_value(&mut f.cur_arm, k, (k + 1).to_string());
+            }
+        });
+        if ui.add_enabled(cur + 1 < n, egui::Button::new(">>")).clicked() {
+            f.cur_arm += 1;
+        }
+    });
+    let arm = &mut f.arms[cur];
+    group(ui, &format!("Плечо {}", cur + 1), None, |ui| {
+        egui::Grid::new("q_dif_arm").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            let [ia, ib, ic] = &mut arm.currents;
+            cell_combo(ui, true, "q_dia", "Ia", ia, names);
+            ui.end_row();
+            cell_combo(ui, three, "q_dib", "Ib", ib, names);
+            ui.end_row();
+            cell_combo(ui, three, "q_dic", "Ic", ic, names);
+            ui.end_row();
+            let r = arm.reduction;
+            ui.label("По мощности:");
+            ui.end_row();
+            cell_edit(ui, r == 2, "Kтт", &mut arm.pw_ktt);
+            cell_edit(ui, r == 2, "Sном, кВА", &mut arm.snom);
+            ui.end_row();
+            cell_edit(ui, r == 2, "Uном, кВ", &mut arm.unom);
+            ui.end_row();
+            ui.label("По номинальному току:");
+            ui.end_row();
+            cell_edit(ui, r == 3, "Kтт", &mut arm.amp_ktt);
+            cell_edit(ui, r == 3, "Iном, А", &mut arm.inom);
+            ui.end_row();
+            ui.label("По коэффициенту приведения:");
+            ui.end_row();
+            cell_edit(ui, r == 0, "Kприв", &mut arm.kpriv);
+            ui.end_row();
+            ui.label("По коэффициенту трансформации ТТ:");
+            ui.end_row();
+            cell_edit(ui, r == 1, "Kтт", &mut arm.tt_ktt);
+            cell_edit(ui, r == 1, "Kттбаз", &mut arm.tt_base);
+            ui.end_row();
+            let groups: &[&str] = if arm.group == 2 { &["0", "1", "11"] } else { &["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"] };
+            ui.add_enabled_ui(three && arm.group != 0, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Группа:");
+                    egui::ComboBox::from_id_salt("q_dif_grp").selected_text(arm.group_n.as_str()).width(50.0).show_ui(ui, |ui| {
+                        for g in groups {
+                            ui.selectable_value(&mut arm.group_n, g.to_string(), *g);
+                        }
+                    });
+                });
+            });
+            ui.add_enabled(three && arm.group == 1, egui::Checkbox::new(&mut arm.remove_i0, "Удалить I0"));
+            ui.end_row();
+        });
+    });
+    group(ui, "Расчет тока торможения", None, |ui| {
+        ui.horizontal(|ui| {
+            ui.radio_value(&mut f.braking, 0, "Полусумма модулей токов");
+            ui.add_enabled_ui(n == 2, |ui| ui.radio_value(&mut f.braking, 1, "Полуразность токов"));
+            ui.radio_value(&mut f.braking, 2, "Максимальный из токов");
+        });
+        let kt = f.braking == 0 || (f.braking == 1 && n == 2);
+        ui.add_enabled_ui(kt, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Kторм:");
+                egui::ComboBox::from_id_salt("q_dif_kt").selected_text(f.k_torm.as_str()).width(50.0).show_ui(ui, |ui| {
+                    for k in ["1", "0.5"] {
+                        ui.selectable_value(&mut f.k_torm, k.to_string(), k);
+                    }
+                });
+            });
         });
     });
 }
