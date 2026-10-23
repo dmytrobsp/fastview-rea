@@ -355,6 +355,10 @@ pub struct Computed {
     /// `display` (`ch+0x2c`), the RMS / first-harmonic series of `samples`.
     pub mode: ValueMode,
     pub display: Vec<f64>,
+    /// A pending lane's own samples as the accessor reads them (NaN as 0,
+    /// minus its DC over its own period, negated; a digital one 1 / 0,
+    /// inverted with the flag); `display` is then its cache per mode.
+    pub pending_own: Vec<f64>,
 }
 
 impl Computed {
@@ -378,6 +382,7 @@ impl Computed {
             remove_dc: false,
             mode: ValueMode::Instant,
             display: Vec::new(),
+            pending_own: Vec::new(),
         }
     }
 
@@ -389,6 +394,20 @@ impl Computed {
         self.samples = samples;
         self.phasors = phasors;
         self.display.clear();
+    }
+
+    /// A pending lane's display cache at own sample `k`.
+    pub fn own_shown(&self, k: usize) -> f64 {
+        if self.mode == ValueMode::Instant { self.pending_own.get(k) } else { self.display.get(k) }.copied().unwrap_or(0.0)
+    }
+
+    /// A pending lane's whole own display series.
+    pub fn own_series(&self) -> &[f64] {
+        if self.mode == ValueMode::Instant {
+            &self.pending_own
+        } else {
+            &self.display
+        }
     }
 
     /// The display cache at `k` (`ch+0x2c`).
@@ -757,11 +776,32 @@ impl Doc {
         let corr = fvb_core::freqcorr::of(&self.osc).filter(|_| fvb_core::freqcorr::selected_extra(&self.osc) != Some(j));
         let gain = if corr.is_some() { 1.0 } else { self.osc.harmonic1_gain };
         let Some(c) = self.computed.get_mut(j) else { return };
+        let sign = if c.invert { -1.0 } else { 1.0 };
         if c.formula == crate::merge_ui::PENDING {
+            // A pasted channel (bit 14) over its own samples: N from its own
+            // rate ÷ 50 (`0x427315`), its own rate for the correction.
+            let Some(p) = self.pending.iter().find(|p| p.name() == c.name) else { return };
+            match &p.pasted.channel {
+                Ok(a) => {
+                    let pn = if p.pasted.rate == 0.0 { n } else { (p.pasted.rate / 50.0).round().max(1.0) as usize };
+                    let own_corr = corr.map(|q| fvb_core::freqcorr::FreqCorr { fs: if p.pasted.rate == 0.0 { q.fs } else { p.pasted.rate }, ..q });
+                    let x: Vec<f64> = a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v }).collect();
+                    let dc = if c.remove_dc { whole_period_mean(&x, pn) } else { 0.0 };
+                    c.pending_own = x.iter().map(|v| sign * (v - dc)).collect();
+                    c.display = match c.mode {
+                        ValueMode::Instant => Vec::new(),
+                        ValueMode::Rms => (0..x.len()).map(|k| fvb_core::freqcorr::rms_at(own_corr, fvb_core::freqcorr::OTHER, &c.pending_own, k, pn, 1)).collect(),
+                        ValueMode::FirstHarmonic => (0..x.len()).map(|k| fvb_core::freqcorr::fundamental_at(own_corr, fvb_core::freqcorr::OTHER, &c.pending_own, k, pn) * gain).collect(),
+                    };
+                }
+                Err(dch) => {
+                    c.pending_own = dch.samples.iter().map(|&b| if b != c.invert { 1.0 } else { 0.0 }).collect();
+                    c.display = Vec::new();
+                }
+            }
             return;
         }
         let dc = if c.remove_dc { whole_period_mean(&c.raw, n) } else { 0.0 };
-        let sign = if c.invert { -1.0 } else { 1.0 };
         c.samples = c.raw.iter().map(|x| sign * (x - dc)).collect();
         c.phasors = c.raw_phasors.as_ref().map(|p| p.iter().map(|z| z * sign).collect());
         c.display = match c.mode {

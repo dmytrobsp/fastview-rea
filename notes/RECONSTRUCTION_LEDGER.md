@@ -3591,8 +3591,7 @@ samples read 0, `App::merge_records` feeds `flagged / k`. Tests
 quiet window), `period_samples_and_the_pasted_cursor`,
 `merge_rate_and_resampling`.
 Residual: (the padding, the sub-sample shift and the pick's d without
-the shift: L9.120); pasted channels' own flags not baked (ours keeps
-them on the pending views); whether the paste deselects the pasted
+the shift: L9.120); (pasted channels' own flags: L9.136); whether the paste deselects the pasted
 channels NOT DETERMINED; (pasted discrete lanes before the merge: L9.71).
 
 ### L9.112 — Print details: device-pixel offsets on paper, the header name, the preview's diagram scale  ·  ✅
@@ -3826,8 +3825,8 @@ per base channel from `merge_records`). Tests `merge_rate_and_resampling`
 (the fit past the end, the pick with a shift),
 `merge_pads_and_shifts_the_later_record`.
 Residual: (the merged record's track rec+0x1fc: L9.132; channels' own +0x50 not
-modelled); `0x478410` assumed an exact 3 × 3 solve; pasted channels' own
-flags still not baked (L9.111).
+modelled); `0x478410` assumed an exact 3 × 3 solve; (pasted channels'
+own flags: L9.136).
 
 ### L9.121 — The header's line pitch on the first page: the printer's stock font  ·  ✅
 Read (L9.112's report, `0x405c20`): the header measures «A» with
@@ -4185,6 +4184,31 @@ Residual: pending (pasted) lanes' flags — next; ADC (0x1000) on computed
 channels ND (32852 skips them); whether the `.set` keeps a computed
 channel's flags ND (ours does not save them); k (ch+0xf0) of a computed
 channel taken as 1.
+
+### L9.136 — Pending (pasted) lanes carry their flags; «Объединить» bakes them and keeps them  ·  ✅
+Read (subagent report on the paste constructor `0x424cb0`, `0x428490`,
+the painters, the stats bit-14 branch `0x461a24`, the merge `0x47d990`):
+a pasted channel gets flags 0x40e1 (instantaneous, СКЗ / A1 rows, no
+invert / DC) and its cache built (`0x4254b9`); 32820–32824 act on it like
+any channel and rebuild its cache, so invert / DC / the mode show on the
+pending lane before the merge — the lane and the value at В1 from the
+display cache over its own samples, Max / Min of that cache, СКЗ / A1 over
+its flagged own samples, the DC over its own period round(own rate / 50);
+«Объединить» reads every pending channel through `0x426020` (`0x47e3fb`;
+digital `0x47e6a9`), divides by k, clears only bit 14 (`0x47e55e`) — so
+the flags stay on the merged channel and apply a second time (an inverted
+pasted channel shows un-inverted after the merge, like a base channel).
+Ours: pending lanes had no flags (the toggles skipped them), drew and
+read their raw own samples, and the merge took them raw. Now
+`Computed::{pending_own, own_shown, own_series}` built by
+`reflag_computed` for pending lanes (at the paste and on every toggle),
+the pasted painters / readout / range read them, the toggles and mode
+include pending lanes, `merge_records` feeds the flagged own samples and
+gives the merged `ChanView` / `DigFlags` the lane's flags; pending lanes
+show the status icons. Test `pending_lanes_carry_their_flags_into_the_merge`.
+Residual: a pasted channel's k (ch+0xf0) taken as 1; the DC of NaN own
+samples taken over them as 0 (the mean `0x428795` over raw values with
+NaN ND).
 
 Next in L9 (HANDOFF 2026-10-23, night 5): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

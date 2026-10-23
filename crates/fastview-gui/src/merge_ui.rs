@@ -5,7 +5,7 @@
 //! component or pre-fault mode, a pending lane can be dragged in time, and
 //! «Объединить» resamples everything onto one grid.
 
-use crate::app::{App, ChanKey, ChanView, Computed, CopyFocus, Doc};
+use crate::app::{App, ChanKey, ChanView, Computed, CopyFocus, Doc, ValueMode};
 use eframe::egui;
 use fvb_core::clipdata::{merged_header, ClipChannel, ClipRecord, HeaderSide};
 use fvb_core::merge::{self, Pasted, SyncChan, SyncMsg};
@@ -379,6 +379,12 @@ impl App {
         d.hdr_cp = crate::setfile::cp_of(1);
         d.merge_offset = 0.0;
         d.refresh_pending();
+        // The new channels' caches (`0x4254b9`), flags 0x40e1.
+        for j in 0..d.computed.len() {
+            if d.computed[j].formula == PENDING {
+                d.reflag_computed(j);
+            }
+        }
         self.merge = Some(MergeBar::default());
     }
 
@@ -462,7 +468,25 @@ impl App {
         if d.pending.is_empty() {
             return;
         }
-        let pasted: Vec<Pasted> = d.pending.iter().map(|p| p.pasted.clone()).collect();
+        // Pending channels are read through the accessor too (`0x47e3fb`,
+        // `0x47e6a9`): their flags baked in (k = 1), and kept on the merged
+        // channels below — applied a second time, as in the original.
+        let lane_of = |p: &ClipChan| d.computed.iter().find(|c| c.formula == PENDING && c.name == p.name());
+        let pasted: Vec<Pasted> = d
+            .pending
+            .iter()
+            .map(|p| {
+                let mut q = p.pasted.clone();
+                if let Some(c) = lane_of(p).filter(|c| !c.pending_own.is_empty()) {
+                    match &mut q.channel {
+                        Ok(a) => a.samples = c.pending_own.clone(),
+                        Err(dch) => dch.samples = c.pending_own.iter().map(|v| *v != 0.0).collect(),
+                    }
+                }
+                q
+            })
+            .collect();
+        let flags: Vec<(String, bool, bool, ValueMode)> = d.pending.iter().filter_map(|p| lane_of(p).map(|c| (c.name.clone(), c.invert, c.remove_dc, c.mode))).collect();
         // Every channel is resampled as the accessor reads it (`0x426020`:
         // ADC code, minus the DC, inverted, ×k, NaN as 0), then divided by
         // k (`0x47e598`): the flags' transforms are baked into the data
@@ -511,9 +535,17 @@ impl App {
             if let Some(p) = d.pending.iter().find(|p| p.name() == d.osc.analog[i].id) {
                 v.color = p.color;
             }
+            if let Some(&(_, inv, dc, mode)) = flags.iter().find(|f| f.0 == d.osc.analog[i].id) {
+                (v.invert, v.remove_dc, v.mode) = (inv, dc, mode);
+            }
             d.chans.push(v);
         }
         d.digital_visible.resize(d.osc.digital.len(), true);
+        for i in nd..d.osc.digital.len() {
+            if let Some(&(_, invert, remove_dc, mode)) = flags.iter().find(|f| f.0 == d.osc.digital[i].id) {
+                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode };
+            }
+        }
         d.move_appended(at_a, nb, at_d, nd);
         d.computed.retain(|c| c.formula != PENDING);
         d.pending.clear();
@@ -647,6 +679,36 @@ mod tests {
         assert_eq!(d.chans.len(), d.osc.analog.len());
         assert!(d.osc.analog.iter().all(|c| c.samples.len() == d.osc.time.len()));
         assert!(app.merge.is_none(), "the bar is hidden");
+    }
+
+    /// A pending lane's flags (L9.111's residual; `0x428490` with bit 14):
+    /// invert / DC over its own samples, shown before the merge; the merge
+    /// reads it through the accessor (baked) and the merged channel keeps
+    /// the flag — so it shows un-inverted again.
+    #[test]
+    fn pending_lanes_carry_their_flags_into_the_merge() {
+        use crate::chansel::ChanFlag;
+        let mut app = demo_app();
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
+        let own: Vec<f64> = d.computed[j].pending_own.clone();
+        assert!(!own.is_empty(), "built at the paste");
+        app.active_doc_mut().unwrap().selection = std::collections::BTreeSet::from([ChanKey::Computed(j)]);
+        assert!(app.active_doc().unwrap().flag_state(ChanFlag::Invert).enabled, "a pending lane counts");
+        app.dispatch(Command::ToggleFlag(ChanFlag::Invert));
+        let d = app.active_doc().unwrap();
+        assert!(d.computed[j].pending_own.iter().zip(&own).all(|(a, b)| (a + b).abs() < 1e-12), "negated before the merge");
+        let raw0 = d.osc.analog[0].samples.clone();
+        let n0 = d.osc.analog.len();
+        app.merge_records();
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.osc.analog.len(), n0 + 1);
+        let m = d.chans.iter().position(|c| c.invert).expect("the merged channel keeps the flag");
+        let dot: f64 = d.osc.analog[m].samples.iter().zip(&raw0).map(|(a, b)| a * b).sum();
+        assert!(dot < 0.0, "the data baked inverted");
     }
 
     /// «Синхронизация» by start time with records that do not overlap:

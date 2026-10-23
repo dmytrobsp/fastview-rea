@@ -162,19 +162,15 @@ impl Doc {
 
     /// Selected computed channels a flag also applies to (the original's
     /// computed channels are analog channels with bit 13; ADC counts skip
-    /// them; pending lanes not yet).
+    /// them).
     fn computed_flag_targets(&self, f: ChanFlag) -> Vec<usize> {
         match f {
             ChanFlag::OnVector | ChanFlag::OnCircle => self.selected_computed(),
-            ChanFlag::Invert | ChanFlag::RemoveDc => self.selected_formula(),
+            ChanFlag::Invert | ChanFlag::RemoveDc => self.selected_computed(),
             _ => Vec::new(),
         }
     }
 
-    /// Selected computed channels that are not pending lanes.
-    fn selected_formula(&self) -> Vec<usize> {
-        self.selected_computed().into_iter().filter(|&j| self.computed[j].formula != crate::merge_ui::PENDING).collect()
-    }
 
     pub fn flag_state(&self, f: ChanFlag) -> ItemState {
         let comp = self.computed_flag_targets(f);
@@ -245,8 +241,7 @@ impl Doc {
     /// 32820..32822's state (`0x42fc60`): the selected channels of every
     /// kind, no group expansion — enabled with any selection, checked when
     /// every selected channel is in the mode (digital ones carry the bits —
-    /// 0x80 by default, set by 32820–32822 and read by nothing else;
-    /// pending lanes count as instantaneous for now).
+    /// 0x80 by default, set by 32820–32822 and read by nothing else).
     pub fn mode_state(&self, m: ValueMode) -> ItemState {
         let modes = self.selected_analog()
             .into_iter()
@@ -264,7 +259,7 @@ impl Doc {
         for i in self.selected_digital() {
             self.dig_mut(i).mode = m;
         }
-        for j in self.selected_formula() {
+        for j in self.selected_computed() {
             self.computed[j].mode = m;
             self.reflag_computed(j);
         }

@@ -361,7 +361,9 @@ impl OscView<'_> {
             return;
         }
         let xs = t.xs(k, end, self.first, self.f);
-        let pts: Vec<Pos2> = xs.iter().zip(k..end).map(|(&x, i)| Pos2::new(self.left + x, g::value_y(a.samples[i], top, h, range.0, range.1))).collect();
+        // The display cache (flags and mode over its own samples).
+        let c = &self.doc.computed[j];
+        let pts: Vec<Pos2> = xs.iter().zip(k..end).map(|(&x, i)| Pos2::new(self.left + x, g::value_y(c.own_shown(i), top, h, range.0, range.1))).collect();
         pp.add(Shape::line(pts.clone(), Stroke::new(1.0f32, color)));
         if self.f > 0.16 {
             for q in &pts {
@@ -386,7 +388,8 @@ impl OscView<'_> {
         let k = t.first(self.first);
         let end = t.digital_end(n, self.first, k, self.f, self.right - self.left);
         let xs = t.xs(k, end, self.first, self.f);
-        let on = |i: usize| d.samples.get(i).copied().unwrap_or(false);
+        let own = &self.doc.computed[j].pending_own;
+        let on = |i: usize| own.get(i).map_or(d.samples.get(i).copied().unwrap_or(false), |v| *v != 0.0);
         for (a, b) in g::pasted_digital_runs(&on, n, k, &xs) {
             let rr = Rect::from_min_max(Pos2::new(left + a, mid - 6.0), Pos2::new(left + b.max(a + 1.0), mid + 6.0));
             pp.rect_filled(rr, 0.0, fill);
@@ -617,9 +620,9 @@ fn stat_rows(doc: &crate::app::Doc, key: &ChanKey) -> Option<crate::app::StatRow
 fn status_icons(doc: &crate::app::Doc, r: &Row, primary: bool) -> Vec<&'static str> {
     match r.key {
         Lane::Analog(i) => chan_icons(doc, i, primary),
-        // A computed channel's icons with no bit-13 gate but the ratio's
-        // (`0x462b15`).
-        Lane::Computed(j) if doc.pending_of(j).is_none() => {
+        // A computed or pasted channel's icons: no bit-13 / 14 gate but the
+        // ratio's (`0x462b15`).
+        Lane::Computed(j) if !doc.pending_digital(j) => {
             let c = &doc.computed[j];
             [(c.remove_dc, "DC"), (c.invert, "−"), (c.mode == ValueMode::Rms, "~"), (c.mode == ValueMode::FirstHarmonic, "1")]
                 .into_iter()
@@ -698,7 +701,7 @@ pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, 
         }
         // A pasted channel's own samples (its `+0xa8` / `+0xb0`).
         Lane::Computed(i) => match doc.pending_of(i).map(|p| &p.pasted.channel) {
-            Some(Ok(a)) => a.samples.iter().for_each(|&v| take(v)),
+            Some(Ok(_)) => doc.computed[i].own_series().iter().for_each(|&v| take(v)),
             Some(Err(_)) => return (0.0, 1.0),
             None => doc.computed[i].shown_series().iter().for_each(|&v| take(v)),
         },
@@ -2125,14 +2128,15 @@ fn lane_stats(
                 let len = a.samples.len();
                 let (_, i_hi, _) = t.bracket(k_main, len);
                 let p = t.own_period(n);
-                // `0x426020`: NaN and samples past the values read 0.
-                let mut x: Vec<f64> = a.samples.iter().map(|v| if v.is_finite() { *v } else { 0.0 }).collect();
-                x.resize(x.len().max(i_hi + 1), 0.0);
+                // `0x426020`: NaN and samples past the values read 0; the
+                // flags applied (`Computed::pending_own`).
+                let mut x: Vec<f64> = c.pending_own.clone();
+                x.resize(x.len().max(i_hi + 1).max(len), 0.0);
                 let own_corr = corr.map(|c| fvb_core::freqcorr::FreqCorr { fs: if t.own_rate == 0.0 { c.fs } else { t.own_rate }, ..c });
                 let rms = t.stat_at(k_main, len, &|m| fvb_core::freqcorr::rms_at(own_corr, fvb_core::freqcorr::OTHER, &x, m, p, 1));
                 let a1 = t.stat_at(k_main, len, &|m| fvb_core::freqcorr::fundamental_at(own_corr, fvb_core::freqcorr::OTHER, &x, m, p) * gain);
-                let val = t.value_at(k_main, len, &|m| a.samples[m]);
-                let finite = a.samples.iter().copied().filter(|v| v.is_finite());
+                let val = t.value_at(k_main, len, &|m| c.own_shown(m));
+                let finite = c.own_series().iter().copied().filter(|v| v.is_finite());
                 let (mx, mn) = finite.fold((f64::MIN, f64::MAX), |(hi, lo), v| (hi.max(v), lo.min(v)));
                 return (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, val);
             }
