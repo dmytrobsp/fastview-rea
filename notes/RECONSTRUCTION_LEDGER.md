@@ -3451,7 +3451,7 @@ added.
 Next in L9 (HANDOFF 2026-10-23, night 4): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
-each one flat archive). `main` = HEAD, 361 tests.
+each one flat archive). `main` = HEAD, 360 tests.
 **This session (L9.93–L9.106):** L9.93 the vector legend starts in its
 window (a real-records bug: BINARY's long names); L9.94 page setup /
 preview on the application printer's paper (Windows path run on the VM);
