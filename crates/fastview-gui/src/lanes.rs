@@ -816,6 +816,9 @@ pub struct ChanDrag {
     pub chans: Vec<usize>,
 }
 
+/// MFC's drag delay (`DD_DEFDRAGDELAY`, ms → s).
+const DRAG_DELAY: f64 = 0.2;
+
 /// Message 1086.
 pub const MSG_COMBINE_UNITS: &str = "Совмещение невозможно.\nУ каналов разные единицы измерения.";
 
@@ -1222,17 +1225,35 @@ impl App {
                 }
             }
         }
-        // Stats-panel drag (`0x45ea70`): LMB held in the panel, no Ctrl or
-        // RMB, once the pointer leaves the 2 px square; the payload is the
-        // selected file analog channels.
+        // Stats-panel drag (`0x45ea70`): a pointer move over the panel with
+        // LMB held, no Ctrl / RMB, no drag mode and selected file analog
+        // channels calls DoDragDrop, whose wait loop (MFC's
+        // `COleDropSource::OnBeginDrag`) starts the drag once the pointer
+        // leaves the 2 px rectangle around where it was, or after 200 ms with
+        // the button held; a release, another press or Esc cancels it (a
+        // later move arms it again). The payload is taken at the move.
         let ctx = ui.ctx().clone();
-        let (l_down, r_down, origin, now, released) =
-            ui.input(|i| (i.pointer.primary_down(), i.pointer.secondary_down(), i.pointer.press_origin(), i.pointer.latest_pos(), i.pointer.primary_released()));
-        if l_down && !r_down && !ctrl && !menu_busy && self.rename_edit.is_none() && resp.is_pointer_button_down_on() && !egui::DragAndDrop::has_any_payload(&ctx) {
+        let (l_down, r_down, origin, now, released, t, moved, esc) = ui.input(|i| {
+            let p = &i.pointer;
+            (p.primary_down(), p.secondary_down(), p.press_origin(), p.latest_pos(), p.primary_released(), i.time, p.delta() != Vec2::ZERO, i.key_pressed(egui::Key::Escape))
+        });
+        if !l_down || r_down || esc || egui::DragAndDrop::has_any_payload(&ctx) {
+            self.stats_drag_arm = None;
+        } else if let Some((a, t0, chans)) = self.stats_drag_arm.take() {
+            let p = now.unwrap_or(a);
+            let (dx, dy) = ((p.x - a.x).floor(), (p.y - a.y).floor());
+            if !(-2.0..2.0).contains(&dx) || !(-2.0..2.0).contains(&dy) || t - t0 > DRAG_DELAY {
+                egui::DragAndDrop::set_payload(&ctx, ChanDrag { chans });
+            } else {
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(DRAG_DELAY - (t - t0) + 0.001));
+                self.stats_drag_arm = Some((a, t0, chans));
+            }
+        } else if moved && !ctrl && !menu_busy && self.rename_edit.is_none() && resp.is_pointer_button_down_on() {
+            let mode0 = self.vizir_drag.is_none() && self.comment_drag.is_none() && self.merge_drag.is_none() && !matches!(self.rect_zoom, RectZoom::Dragging { .. });
             if let (Some(o), Some(p)) = (origin, now) {
                 let sel = doc.selected_analog();
-                if in_view(o) && o.x < left && p.x < left && (p - o).length() >= 2.0 && !sel.is_empty() {
-                    egui::DragAndDrop::set_payload(&ctx, ChanDrag { chans: sel });
+                if mode0 && in_view(o) && p.x < left && !sel.is_empty() {
+                    self.stats_drag_arm = Some((p, t, sel));
                 }
             }
         }
@@ -2429,6 +2450,54 @@ mod menu_tests {
         hover(&mut h, at(600.0));
         drag(&mut h, at(600.0), at(500.0));
         assert_ne!(h.doc().comments[0].kind, before, "a hidden text does not stop the drag");
+    }
+
+    /// MFC's OnBeginDrag after the stats panel's DoDragDrop (`0x45ee88`):
+    /// the drag starts once the pointer leaves [x − 2, x + 2) around where
+    /// the first move was, or after 200 ms held; a release first cancels.
+    #[test]
+    fn a_stats_drag_starts_after_2_px_or_200_ms() {
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let started = |h: &Harness| egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&h.ctx);
+        let mut h = Harness::new();
+        let o = h.row(0);
+        let press = |h: &mut Harness| {
+            h.frame(vec![egui::Event::PointerMoved(o), ev(o, true)]);
+            h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(1.0, 0.0))]);
+        };
+        // Held still: 0.05 s a frame, so the fifth frame is past 200 ms.
+        press(&mut h);
+        for _ in 0..3 {
+            h.frame(vec![]);
+            assert!(!started(&h));
+        }
+        h.frame(vec![]);
+        h.frame(vec![]);
+        assert!(started(&h), "200 ms held");
+        h.frame(vec![ev(o, false)]);
+        h.frame(vec![]);
+        assert!(!started(&h), "dropped on its own lane: nothing");
+        assert!(h.app.dlg.alert.is_none(), "no message");
+        // Released early: no drag.
+        press(&mut h);
+        h.frame(vec![ev(o, false)]);
+        for _ in 0..5 {
+            h.frame(vec![]);
+        }
+        assert!(!started(&h));
+        // Two left of the anchor stays inside, three leaves; two right leaves.
+        press(&mut h);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(-1.0, 0.0))]);
+        assert!(!started(&h));
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(-2.0, 0.0))]);
+        assert!(started(&h));
+        h.frame(vec![ev(o, false)]);
+        h.frame(vec![]);
+        press(&mut h);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(3.0, 0.0))]);
+        assert!(started(&h));
+        h.frame(vec![ev(o, false)]);
+        h.frame(vec![]);
     }
 
     #[test]

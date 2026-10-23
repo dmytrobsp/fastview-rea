@@ -426,8 +426,7 @@ inline edit is not up; destroy it when the pointer leaves it. Modes 1/2: V1/V2
 follow (sample-rounded) with live status and panes; 3: V3; 4/5: H follows y,
 re-picking the lane (it may change lane) and recomputing the value; 6: time
 shift (clamped, live redraw); 8: rectangle end clamped to the lane; 9:
-comment drag (§5.4). Mode 0/7: LMB held in the stats panel starts an OLE
-drag of the selected analog channels (copy|move); in the plot, recompute the
+comment drag (§5.4). Mode 0/7: LMB held with the pointer over the stats panel (no Ctrl / RMB) calls DoDragDrop for the selected analog channels (copy|move) — MFC then starts the drag once the pointer leaves [x−2, x+2) × [y−2, y+2) around that move or after 200 ms held, a release / press / Esc first cancels (L9.61); in the plot, recompute the
 comment under the pointer (`doc+0x854`) and repaint on change. **The plot
 never pans on drag.**
 
@@ -1349,7 +1348,7 @@ icon-only small buttons and panel collapse when narrow (L9.27).
     `quick_ui.rs` — M (validation S)
 47. ✅ (merged L9.17) Document-modified tracking from the commands that call SetModifiedFlag
     (save prompt depends on an unknown) — `app.rs` — S
-48. ✅ (L9.21) Stats-panel drag of the selected channels: drop on a lane = 33035 (or 1086), on the frequency / vector / circle pane = add them (not a copy between documents) — `lanes.rs`, `views.rs` — M
+48. ✅ (L9.21; L9.61 the 2 px / 200 ms start, self-drop inert) Stats-panel drag of the selected channels: drop on a lane = 33035 (or 1086), on the frequency / vector / circle pane = add them (not a copy between documents) — `lanes.rs`, `views.rs` — M
 
 ---
 

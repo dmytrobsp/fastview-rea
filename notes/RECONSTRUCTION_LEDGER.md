@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 310 pass)
+- `cargo test --workspace`   (currently 311 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -1172,7 +1172,7 @@ three panes. Tests `dragging_a_channel_onto_another_lane_combines_them`,
 `dropping_on_diagram_panes_adds_the_channels`. Residual: a drag cannot
 leave our window (no OLE "Embed Source" / cross-instance index drop — the
 original's foreign drops are inert or misapplied anyway); the 200 ms
-delay start not modelled.
+delay start: done in L9.61.
 
 ### L9.22 — Printing: dialog, page setup, paged output, preview (backlog 36)  ·  🟡
 
@@ -2065,6 +2065,36 @@ Residual: our part test is in pixels (|Δx| ≤ 10) rather than the sample
 range rounded to floor / ceil — the same at ordinary zoom, may differ by a
 sample when samples are wider than 10 px.
 
+### L9.61 — The stats-panel drag starts by MFC's rule; a self-drop is inert  ·  ✅
+Read by hand (asm): the mouse move `0x45ea70` in mode 0 / 7 (`0x45ed4c`):
+no inline edit, MK_LBUTTON, x < leftW (the current point — the press may
+have been anywhere in the view), and neither MK_RBUTTON nor MK_CONTROL →
+the selected (`+0x100`) analog channels are collected; if any,
+`COleServerItem::DoDragDrop(client rect, point, no link, copy|move, start
+rect NULL)` (`0x45ee88`). MFC (`COleDataSource::DoDragDrop` +
+`COleDropSource::OnBeginDrag`, known library behaviour, not re-read from
+mfc120u): a NULL start rect → the empty rect at the cursor inflated by
+DragMinDist 2 → [x−2, x+2) × [y−2, y+2); with capture it waits until a
+mouse message's point is outside it, or DragDelay 200 ms pass with the
+button held; a button up / down or Esc cancels (no drag; a later move
+calls DoDragDrop again). OnDrop on the view (`0x441709`): the analog lane
+under y (heights `0x460290` over the shown channels, scroll subtracted);
+**if it is one of the dragged channels nothing happens** (`0x4417b7`), else
+the dragged ones and it are selected and 33035 is sent, or message 1086
+when `0x468c80` refuses — so the handoff's "a self-drop shows 1086" was
+wrong: a slow click that turns into a drag and lands on its own lane is
+silent.
+Ours: `App::stats_drag_arm` (anchor, time, channels) set by a pointer
+move over the panel with LMB held, no Ctrl / RMB / drag mode / inline
+edit; the payload is set when the pointer leaves the floored [−2, 2)
+box or 200 ms pass (a repaint is requested for the timeout); release,
+RMB or Esc disarm. Test `a_stats_drag_starts_after_2_px_or_200_ms`
+(timeout, early release, the asymmetric box, a silent self-drop).
+Residual: the MFC values come from the library defaults (DragMinDist /
+DragDelay can be changed in WIN.INI's [windows]); while the original
+waits it swallows the view's mouse messages (no hover pick meanwhile) —
+ours keeps tracking.
+
 Next in L9 (HANDOFF 2026-10-23, late): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2099,8 +2129,8 @@ ordinals: disassemble them in the carved mfc120u (L9.37).
 **Open next** (verify a residual is not already done before starting —
 the ledger text was stale for many L9.1–L9.14 items): L9.30 the third
 copy-focus case ✅ L9.58; L9.22 print residuals (comment hover ✅ L9.59; left: logo, paper,
-diagram print branches); L9.21 MFC's 200 ms hold-to-drag (a self-drop
-shows 1086 — read the LMB-down path first); L9.6 digital level-line snap;
+diagram print branches); L9.21 hold-to-drag ✅ L9.61 (a self-drop is
+silent); L9.6 digital level-line snap;
 L9.44 the comment cursor codes ✅ L9.60; MFC
 framework items readable from the carved mfc120u / mfc120rus (tab colour
 order, «Окна...», keytips, save-prompt wording — L9.8 / L9.14 / L9.17 /

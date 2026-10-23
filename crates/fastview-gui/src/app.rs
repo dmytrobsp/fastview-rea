@@ -934,6 +934,9 @@ pub struct App {
     pub xscale_pref: Option<f64>,
     /// Inline rename of an analog channel (double-click on its name badge).
     pub rename_edit: Option<(usize, String)>,
+    /// A stats-panel drag waiting to start (MFC's OnBeginDrag loop): where
+    /// the pointer was, when, and the channels.
+    pub stats_drag_arm: Option<(egui::Pos2, f64, Vec<usize>)>,
     /// Width of the oscillogram view at the last layout (for «вся осциллограмма»).
     pub view_width: f32,
     /// Stats-panel width at the last layout (fitted to the text).
@@ -1064,6 +1067,7 @@ impl App {
             y_analog: crate::oscgeom::Y_ANALOG_DEFAULT,
             xscale_pref: None,
             rename_edit: None,
+            stats_drag_arm: None,
             view_width: 1000.0,
             view_left: crate::lanes::LEFT_W_DEFAULT,
             view_rects: None,
