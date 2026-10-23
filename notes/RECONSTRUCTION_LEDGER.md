@@ -4597,9 +4597,7 @@ block combo, a banded bold group row per characteristic with its expand
 box and the framed tick box (a value-area click toggles and persists the
 visibility), the parameter rows as frameless edits; leaving an edit
 re-evaluates the block. The reset button is gone.
-Residual: the expand / collapse state of the groups is per session in
-ours (the original's is the grid's own and is rebuilt with the block,
-NOT DETERMINED whether it starts expanded — ours does).
+Residual: (the expand state and the clicks: L9.156).
 
 ### L9.154 — Dialog keys and defaults from the vtable sweep: «Каналы» has no OK, pairs open on the first channel, the finder's default button, Enter in a formula form  ·  ✅
 Read (vtable-override sweep over the dialog / quick-analysis classes; by
@@ -4659,6 +4657,30 @@ read MFC's code without the app's filter). Now `Keytips` has no Alt path
 (`alt`, the hold timer and `by_hold` gone; `f10` toggles);
 `keytips_input` no longer looks at Alt. Test `f10_toggles` replaces
 `alt_tap_hold_and_f10`.
+
+### L9.156 — The parameter grid's clicks: the document marked modified, double-clicks dropped, groups re-expanded on a rebuild  ·  ✅
+Read (vtable sweep of BlockPropertyGrid / BlockProperty; by hand
+`0x407c40`, `0x4075c0`): a click whose hit-test is the value area calls
+`0x407c40`, which flips the row's characteristic (when it has one), then
+SetModifiedFlag(TRUE) on the active frame's document — also for «Тип
+блока»'s value, which has no characteristic — repaints the plane and
+saves the block state (DiagramWnd slot 94; where: L9.157 pending). A
+committed parameter edit (`0x407580`) recomputes and saves without the
+modified mark. The grid's WM_LBUTTONDBLCLK handler `0x407640` drops a
+double-click on any BlockProperty row (every group and «Тип блока»: no
+expand / collapse, no second toggle) and passes one elsewhere on as a
+plain button-down (no MFC double-click edit). The rebuild `0x407750`
+(at init and on a block change, `0x407cc0`) selects «Тип блока», deletes
+the other rows, adds each characteristic as a plain group and ends with
+ExpandAll(TRUE) (`0x407aaa`) — every group starts expanded, nothing
+keeps a collapse. Keys are MFC's (Enter on a group toggles it, ± / arrows
+navigate; F4 or typing edits) — ours has no row selection (residual).
+Ours did not mark the document, toggled twice on a double-click (egui
+reports both clicks) and kept a collapse across block changes. Now
+`char_side_panel`: a value-area click (and a click on the block combo)
+sets `set.modified`; group-row clicks act only when not the second of a
+double-click; a block change clears the groups' open state. Test
+`grid_group_click_toggles_once_and_marks_modified`.
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

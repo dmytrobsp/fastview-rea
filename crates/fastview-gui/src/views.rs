@@ -717,7 +717,7 @@ impl App {
         let (_, vr) = row(ui, "Тип блока", false, false);
         let prev = self.block_idx;
         let names: Vec<String> = self.library.blocks.iter().map(|b| b.name.clone()).collect();
-        ui.put(vr, |ui: &mut egui::Ui| {
+        let combo = ui.put(vr, |ui: &mut egui::Ui| {
             egui::ComboBox::from_id_salt("blockcombo")
                 .width(vr.width())
                 .selected_text(names.get(self.block_idx).cloned().unwrap_or_default())
@@ -728,9 +728,17 @@ impl App {
                 })
                 .response
         });
+        // A click in any value area marks the document modified, «Тип
+        // блока»'s included (`0x4075c0` → `0x407c40`).
+        let mut touched = combo.clicked();
         if self.block_idx != prev {
             self.selected_char = None;
             self.ensure_block_state();
+            // The rebuild (`0x407750`) ends with ExpandAll: every group open.
+            if let Some(blk) = self.library.blocks.get(self.block_idx) {
+                let b = self.block_idx;
+                ui.data_mut(|d| (0..blk.characteristics.len()).for_each(|ci| d.remove::<bool>(ui.id().with(("fv_grid_open", b, ci)))));
+            }
         }
         let b = self.block_idx;
         let groups: Vec<(usize, String, Vec<String>)> = self
@@ -748,7 +756,10 @@ impl App {
             let toggle = egui::Rect::from_min_size(egui::pos2(r.left() + 2.0, r.center().y - 5.0), egui::vec2(10.0, 10.0));
             ui.painter().rect_stroke(toggle, 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_gray(128)));
             ui.painter().text(toggle.center(), egui::Align2::CENTER_CENTER, if open { "−" } else { "+" }, egui::FontId::proportional(10.0), TEXT);
-            if ui.interact(toggle.expand(2.0), ui.id().with(("fv_grid_tg", b, *ci)), egui::Sense::click()).clicked() {
+            // The grid drops a double-click on a group row (`0x407640`): the
+            // second click of a pair does nothing.
+            let once = |r: egui::Response| r.clicked() && !r.double_clicked();
+            if once(ui.interact(toggle.expand(2.0), ui.id().with(("fv_grid_tg", b, *ci)), egui::Sense::click())) {
                 ui.data_mut(|d| d.insert_temp(open_id, !open));
             }
             if ui.interact(egui::Rect::from_min_max(egui::pos2(toggle.right() + 2.0, r.top()), egui::pos2(r.left() + name_w, r.bottom())), ui.id().with(("fv_grid_name", b, *ci)), egui::Sense::click()).clicked() {
@@ -761,9 +772,10 @@ impl App {
                     ui.painter().text(bx.center(), egui::Align2::CENTER_CENTER, "✓", egui::FontId::proportional(11.0), egui::Color32::from_rgb(0, 0, 200));
                 }
                 let value_area = egui::Rect::from_min_max(egui::pos2(r.left() + name_w, r.top()), r.max);
-                if ui.interact(value_area, ui.id().with(("fv_grid_vis", b, *ci)), egui::Sense::click()).clicked() {
+                if once(ui.interact(value_area, ui.id().with(("fv_grid_vis", b, *ci)), egui::Sense::click())) {
                     st.visible = !st.visible;
                     vis_changed = true;
+                    touched = true;
                 }
             }
             if !open {
@@ -780,6 +792,11 @@ impl App {
         }
         if vis_changed {
             self.persist_block();
+        }
+        if touched {
+            if let Some(d) = self.active_doc_mut() {
+                d.set.modified = true;
+            }
         }
         if changed {
             self.recompute_block();

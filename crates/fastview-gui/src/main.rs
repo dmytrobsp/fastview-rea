@@ -632,6 +632,32 @@ mod window_tests {
         }
     }
 
+    /// The parameter grid's group row (`0x4075c0` → `0x407c40`): a click in
+    /// its value area flips the characteristic and marks the document
+    /// modified; the second click of a double-click is dropped (`0x407640`).
+    #[test]
+    fn grid_group_click_toggles_once_and_marks_modified() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.idle(2);
+        w.app.active_doc_mut().unwrap().set.modified = false;
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let at = Pos2::new(grid.right() - 60.0, grid.top() + 8.0 + 30.0);
+        let vis = |w: &Win| w.app.chars.get(&(w.app.block_idx, 0)).map(|c| c.visible);
+        let before = vis(&w);
+        w.press(Primary, at, at);
+        assert_eq!(vis(&w), before.map(|v| !v), "one click flips");
+        assert!(w.app.active_doc().unwrap().set.modified);
+        let ev = |pressed| egui::Event::PointerButton { pos: at, button: Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(at), ev(true)]);
+        w.run(vec![ev(false)]);
+        w.run(vec![ev(true)]);
+        w.run(vec![ev(false)]);
+        w.idle(2);
+        assert_eq!(vis(&w), before, "a double-click flips once");
+    }
+
     /// The original's dialogs are all modal: while one is up the view
     /// (and the rest of the main window) gets no pointer or key input,
     /// whether the pointer is over the dialog or beside it.
