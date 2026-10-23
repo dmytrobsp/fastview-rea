@@ -120,7 +120,7 @@ impl App {
         let channels: Vec<String> = analog.clone().chain(computed.iter().map(|s| s.to_string())).collect();
         let taken = channels.iter().cloned().chain(d.osc.digital.iter().map(|c| c.id.clone())).collect();
         let name = af::default_name(&rows);
-        self.formula_dlg = Some(AddFormulaDlg::new(name, channels, taken, d.osc.sample_rate, d.osc.line_freq));
+        self.formula_dlg = Some(AddFormulaDlg::new(name, channels, taken, d.osc.int_rate_hz(), d.osc.line_freq));
     }
 
     pub fn formula_dlg_window(&mut self, ctx: &egui::Context) {

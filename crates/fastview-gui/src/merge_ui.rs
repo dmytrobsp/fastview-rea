@@ -419,7 +419,8 @@ impl App {
                 // Samples per period and the cursor in the pasted channel
                 // (`0x47bd43` / `0x47c555`): a pasted channel by its own
                 // rate ÷ 50, the record's by R div trunc(f).
-                let rate = d.osc.sample_rate;
+                // R = rec+0x228 (L9.142).
+                let rate = d.osc.int_rate_hz();
                 let n1 = merge::period_samples(0.0, rate, d.osc.line_freq);
                 let n2 = merge::period_samples(p.pasted.rate, rate, d.osc.line_freq);
                 let x1 = &d.flagged.analog[c1].samples;

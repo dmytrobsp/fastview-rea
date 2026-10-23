@@ -119,7 +119,8 @@ pub fn of(osc: &Oscillogram) -> Option<FreqCorr<'_>> {
     if osc.segments() != 1 || osc.freq_sel <= 0 {
         return None;
     }
-    let fs = osc.sample_rate.trunc();
+    // P = rec+0x228 (`0x4267e0`).
+    let fs = osc.int_rate_hz().trunc();
     match *ordered(osc).get(osc.freq_sel as usize - 1)? {
         Cand::File(chan) => Some(FreqCorr { chan, freq: &osc.analog[chan].samples, fs }),
         // Not a file channel: no file channel is the frequency channel.

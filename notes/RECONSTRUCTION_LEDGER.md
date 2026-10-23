@@ -4300,6 +4300,29 @@ row needing something after its timestamp. Test
 Residual: a mid-file short row shifts the original's stream of tokens
 (ours drops just that row's values — ND which rows such files have).
 
+### L9.142 — N and the correction's rate from rec+0x228; the `.set`'s DiscretisationFrequensy  ·  ✅
+Read (subagent report; by hand the RMS's N at `0x427315`–`0x427351`):
+every signal function (a0 `0x426c90`, fault `0x427670`, DFT `0x426fc0`,
+RMS `0x4272a0`, harmonic `0x426240`, the cache / DC mean `0x428490`)
+takes N = round(own rate / 50) for a channel with an own rate (ch+0x108),
+else rec+0x228 div trunc(f) — the integer rate, never the first rate line
+(rec+0x218 is not read); the correction's P is rec+0x228 too
+(`0x4267e0`). The `.set` writes `DiscretisationFrequensy` = rec+0x228
+(`%i`) and on load stores it into rec+0x228 only (`0x44f72c`): nothing
+retimed, the track not rebuilt.
+Ours took N and the correction's rate from the first rate line (1234 Hz
+at 50 Hz: 24 instead of 25; 1000 Hz at 60 Hz: 16 instead of 17; a
+two-rate `.cfg`: the first line instead of the snapped mean), the merge
+sync and the formula dialog's harmonic list likewise; the `.set` wrote
+the rounded first rate and retimed the record on load. Now
+`Oscillogram::int_rate_hz` (rec+0x228, the first rate when 0) behind
+`samples_per_cycle`, `freqcorr::of`, the merge sync's R and the formula
+dialog; the `.set` writes / reads `rate_r` only. Tests
+`record_times_as_the_readers_build_them` (N 32 / 25 / 17),
+`reads_a_file_in_the_original_layout_and_the_legacy_ini`.
+Residual: the per-channel `.set` keys (computed / digital flags, NetFreq,
+colours of every kind) — next.
+
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -4373,9 +4396,7 @@ strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
 the `.set` NetFreq round trip (`0x427bc0` / `0x427af0`, channels' own
 frequency, L9.137); 33035's message 239 on channels of different rates
-(needs per-channel rates, L9.131); our `sample_rate` vs rec+0x228 where
-the signal code uses the latter (multi-rate `.cfg`, rates not a multiple
-of f, L9.132); formulas naming
+(needs per-channel rates, L9.131); formulas naming
 digital channels (L9.134); the docking marker
 bitmaps (ours drawn); L9.64 MDI arrangements under tabs (WM_MDICASCADE /
 TILE — visible effect ND); the caption bar from the style images (ours

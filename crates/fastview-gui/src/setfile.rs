@@ -281,7 +281,8 @@ impl Doc {
         }
         let o = t.section_mut("Oscillogram");
         o.set_int("Codepage", cp_code(self.codepage));
-        o.set_int("DiscretisationFrequensy", self.osc.sample_rate.round() as i32);
+        // rec+0x228, `%i` (`0x44cbc0`).
+        o.set_int("DiscretisationFrequensy", self.osc.rate_r as i32);
         let pairs = |v: &[crate::diagram::ChanPair]| -> Vec<PairRec> { v.iter().map(|p| PairRec { a: p.a.clone(), b: p.b.clone(), visible: p.on }).collect() };
         // `doc+0x878` holds (Iторм `BrakeCurr`, Iдиф `DiffCurr`); our
         // differential pairs are (Iдиф, Iторм) (L9.81).
@@ -361,10 +362,9 @@ impl App {
         // Oscillogram: the rate, then the formula channels are dropped, then
         // the stored code page wins over the guess.
         let osc = d.set.tree.section("Oscillogram").cloned().unwrap_or_default();
-        let rate = osc.get_int("DiscretisationFrequensy", d.osc.sample_rate.round() as i32);
-        if rate > 0 && f64::from(rate) != d.osc.sample_rate.round() {
-            d.osc.retime(f64::from(rate));
-        }
+        // Into rec+0x228 only (`0x44f72c`): nothing retimed, the
+        // frequency track not rebuilt (L9.142).
+        d.osc.rate_r = f64::from(osc.get_int("DiscretisationFrequensy", d.osc.rate_r as i32));
         if d.computed.iter().any(is_formula) {
             d.computed.retain(|c| !is_formula(c));
             d.selection.retain(|k| !matches!(k, ChanKey::Computed(_)));
@@ -988,7 +988,9 @@ mod tests {
         let mut app = App::new();
         let di = open(&mut app, &cfg);
         let d = &app.docs[di];
-        assert_eq!(d.osc.sample_rate, 1000.0);
+        // Into rec+0x228 only: the time axis stays (`0x44f72c`, L9.142).
+        assert_eq!(d.osc.rate_r, 1000.0);
+        assert!(d.osc.time.len() < 2 || d.osc.time[1] - d.osc.time[0] > 0.0);
         // 2181 = visible | vector | instantaneous | invert.
         assert!(d.chans[0].invert && d.chans[0].visible && d.chans[0].on_vector && !d.chans[0].on_freq);
         assert_eq!(d.osc.analog[0].id, "Фаза A");

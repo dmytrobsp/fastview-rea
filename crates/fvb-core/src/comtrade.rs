@@ -154,10 +154,19 @@ impl Oscillogram {
         self.time.len()
     }
 
-    /// Samples per nominal period for DFT windows (the original's
-    /// `rate / trunc(f)`; estimated from the time axis if the rate is unknown).
+    /// Samples per nominal period for DFT windows: rec+0x228 div trunc(f)
+    /// (`0x42734b` and every signal function, L9.142 — the integer rate,
+    /// not the first rate line); estimated from the time axis if unknown.
+    pub fn int_rate_hz(&self) -> f64 {
+        if self.rate_r > 0.0 {
+            self.rate_r
+        } else {
+            self.sample_rate
+        }
+    }
+
     pub fn samples_per_cycle(&self) -> usize {
-        if let Some(n) = crate::signal::samples_per_period(self.sample_rate, self.line_freq) {
+        if let Some(n) = crate::signal::samples_per_period(self.int_rate_hz(), self.line_freq) {
             n
         } else if self.time.len() > 1 {
             let dt = self.time[1] - self.time[0];
@@ -1682,6 +1691,14 @@ mod freq_track_tests {
         }
         let rec = parse(&cfg, &dat).unwrap();
         assert_eq!(rec.rate_r, 1600.0, "snap(1500)");
+        assert_eq!(rec.samples_per_cycle(), 32, "N from rec+0x228, not the first rate line");
+        // A single rate not a multiple of f: N = round(r/f)·round(f) div f.
+        let one = |rate: &str, f: &str| {
+            let cfg = format!("S,D,1999\n1,1A,0D\n1,A,,,V,1,0,0,-32768,32767,1,1,S\n{f}\n1\n{rate},2\n01/01/2024,00:00:00.000000\n01/01/2024,00:00:00.000000\nASCII\n1\n");
+            parse(&cfg, b"1,0,1\n2,1000,2\n").unwrap().samples_per_cycle()
+        };
+        assert_eq!(one("1234", "50"), 25);
+        assert_eq!(one("1000", "60"), 17);
         assert_eq!(rec.time, vec![0.0, 0.000625, 0.00125, 0.001875], "k·1e6/1600 µs");
     }
 }
