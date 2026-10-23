@@ -2355,7 +2355,7 @@ outline / gradient pixel rules approximated.
 Next in L9 (HANDOFF 2026-10-23, evening): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
-(lipo), each one flat archive). `main` = HEAD, 320 tests, CI green on 3 OSes.
+(lipo), each one flat archive). `main` = HEAD, 323 tests, CI green on 3 OSes.
 **Latest work (2026-10-23, evening):** L9.58 copy with a property grid
 focused (XML only); L9.59 the comment under the pointer is sticky, prints
 and is drawn twice; L9.60 comment cursor codes (level body N–S), locked
@@ -2369,7 +2369,10 @@ dialog; **L9.65 the measured-frequency correction** (user-visible for any
 record with a Гц / Hz channel: it is ON by default and every computed
 value — phasors, RMS, a0, fault, the frequency diagram — integrates over
 the measured period; values of such records now differ from before by
-design). Earlier: L9.57 «P» records in SECONDARY values by default (if the
+design); L9.66 diagram pages at the integer print scale with the
+painters' print branches (darker pens, 10 vector circles, the circle /
+differential masks); L9.67 the frequency diagram as read (no grid, exact
+layout, print tiling in rows). Earlier: L9.57 «P» records in SECONDARY values by default (if the
 user reports values "2000× too small", that is intended). The carved MFC
 DLLs now live in `extracted/mfc/` (local, git-ignored). No user questions
 pending.
