@@ -3073,7 +3073,7 @@ Residual: drops dock only at the unit's own place (no other edges, no
 five-way markers, no tabbing a dragged pane into another); a tab cannot be
 dragged out of the group; Частотная stays in the right column (the
 original's create docks it at the frame's bottom — ours follows the
-user's screenshot, L9.3); the layout is not saved between runs; Ctrl+pin
+user's screenshot, L9.3); the layout saved between runs: L9.98; Ctrl+pin
 and the animation-off switch not modelled.
 
 ### L9.93 — The vector legend starts in its window when it does not fit  ·  ✅
@@ -3216,6 +3216,35 @@ not read; the disabled text's blend colour (ours: half-way to white)
 NOT DETERMINED; tab and collapsed-panel keytip rules not needed (no
 level reaches them); the original's 32 px images are its own (ours drawn,
 four rows without one).
+
+### L9.98 — The workspace: pane layout and window placement saved on exit  ·  🟡
+Read (subagent report on mfc120u and FastView; by hand: `SaveState`
+`0x101a9425` returns at once unless `+0xfc`, which the CWinAppEx
+constructor sets to 1 (`0x101a8a64`); nothing in FastView writes the app
+object's `+0xfc` (`0x4ed074`)): the frame's load (`CFrameImpl::OnLoadFrame`
+`0x100a0a80` → `LoadState` `0x101a8eea`) restores the window placement
+and, when the saved version keys are there, the docking state; its close
+(`0x100a079f` → `OnClosingMainFrame` `0x101a9717` → `SaveState`) writes
+every pane through the docking manager (`DockingPaneAndPaneDividers`,
+`IsVisible`, `RectRecentFloat`, `RectRecentDocked`, `IsFloating`, …), the
+`WindowPlacement` and FastView's `SaveCustomState` (`0x448da0`) under
+HKCU\Software\НТЦ Механотроника\Механотроника FastView\Workspace;
+documents and MDI tab groups are not saved (no SaveMDIState import).
+FastView's frame (`0x4728d0`): `SetDockingMode(DT_SMART)` (immediate),
+`EnableAutoHidePanes(0xF000)` (all four edges dockable), each pane
+`EnableDocking(0xF000)`.
+Ours saved no pane state and no window placement. Now
+`docking::{store, restore, parse_rect}` (`Workspace/<unit>/Place`,
+`RectRecentFloat`), `App::{save_workspace, restore_workspace}` (each
+pane's `IsVisible`, the group's shown tab, `WindowPlacement` "l t r b
+maximised" — the normal rect kept while maximised), saved when the window
+close is accepted (`handle_exit_request`), the placement applied by
+`main` before the window is built. Test `workspace_round_trip`.
+Residual: docked sizes (`RectRecentDocked`, MRUWidth — ours has a fixed
+column) and the docked order are not saved; the original keeps them in
+the registry, ours in our settings file (`persist`); a floating rect is
+taken as saved even if the screen changed (egui keeps windows on the
+screen).
 
 Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

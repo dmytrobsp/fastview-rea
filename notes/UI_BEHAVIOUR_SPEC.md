@@ -102,7 +102,16 @@ Feature-Pack workspace [I].
   slides it out in 12 steps, a 700 ms check slides it back when the
   pointer is outside it and its button. A user screenshot (clip0014)
   shows Vector | Circle | Differential as one tab group with tabs at the
-  bottom and Frequency below it.
+  bottom and Frequency below it (the original creates Частотная on the
+  frame's bottom edge — the screenshot is likely a saved workspace).
+  The workspace (places, floating rects, visibility, window placement) is
+  saved on exit and restored at start (L9.98). Smart docking (DT_SMART,
+  VS2008 look, read in L9.98's report): edge markers 16 px in from the
+  frame client's edges, centred along them (36 × 35 / 35 × 36); over a
+  pane a 110 × 110 five-way group centred on it (sides at the square's
+  edges, the centre 31 × 30 in the middle); the first marker hit is hot
+  and only then the drop preview shows; tab-into preview = the target
+  less a bottom tab strip with a 40 px tab 10 px in.
 - Pane content: a vertical toolbar on the right edge (resource 550 vector,
   552 circle, 553 diff; Frequency has none) and the diagram window (§6).
 - Toggles (0x475040/0x4750b0): 32809 vector, 32808 circle, 140 diff, 32811

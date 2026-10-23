@@ -707,11 +707,20 @@ impl App {
     /// The window's close button: one question per modified document
     /// (`SaveAllModified`); «Отмена» keeps the program open.
     pub fn handle_exit_request(&mut self, ctx: &egui::Context) {
-        if !ctx.input(|i| i.viewport().close_requested()) || self.setfile.exit_ok {
+        if !ctx.input(|i| i.viewport().close_requested()) {
             return;
         }
-        let queue: Vec<usize> = (0..self.docs.len()).filter(|&i| needs_save_prompt(&self.docs[i])).collect();
+        let queue: Vec<usize> = if self.setfile.exit_ok { Vec::new() } else { (0..self.docs.len()).filter(|&i| needs_save_prompt(&self.docs[i])).collect() };
         if queue.is_empty() {
+            // The frame closes: the workspace is saved (`0x100a079f`).
+            // The inner size at the outer position (egui's `with_position`).
+            let placement = ctx.input(|i| {
+                let v = i.viewport();
+                let inner = v.inner_rect?;
+                let at = v.outer_rect.map_or(inner.min, |o| o.min);
+                Some((egui::Rect::from_min_size(at, inner.size()), v.maximized.unwrap_or(false)))
+            });
+            self.save_workspace(placement);
             return;
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);

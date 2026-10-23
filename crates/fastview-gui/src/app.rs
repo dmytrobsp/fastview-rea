@@ -168,7 +168,7 @@ impl Panes {
         }
     }
 
-    fn set(&mut self, p: Pane, v: bool) {
+    pub fn set(&mut self, p: Pane, v: bool) {
         match p {
             Pane::Vector => self.vector = v,
             Pane::Circle => self.circle = v,
@@ -1587,6 +1587,7 @@ impl App {
         }
         self.mru = (0..10).filter_map(|k| v.get(&format!("MRU/{k}")).map(std::path::PathBuf::from)).collect();
         self.load_program_settings();
+        self.restore_workspace();
         let dim = self.diagram_dim;
         if let Some(name) = self.store.selected.get(Self::diagram_key(dim)).cloned() {
             if let Some(i) = self.library.blocks.iter().position(|b| b.name == name) {
@@ -1597,6 +1598,51 @@ impl App {
         self.selected_char = None;
         self.ensure_block_state();
         self
+    }
+
+    /// The workspace on closing the main frame (`OnClosingMainFrame`
+    /// `0x101a9717` → `SaveState`): the panes' places, recent floating
+    /// rects and visibility, the group's shown tab and the window's
+    /// placement; read back by [`App::restore_workspace`] and `main`.
+    pub fn save_workspace(&mut self, placement: Option<(egui::Rect, bool)>) {
+        if !self.persist {
+            return;
+        }
+        let v = &mut self.store.view;
+        crate::docking::store("Group", &self.dock_group, v);
+        crate::docking::store("Freq", &self.dock_freq, v);
+        for (k, p) in [("Vector", Pane::Vector), ("Circle", Pane::Circle), ("Differential", Pane::Differential), ("Frequency", Pane::Frequency)] {
+            v.insert(format!("Workspace/{k}/IsVisible"), u8::from(self.panes.visible(p)).to_string());
+            if self.panes.active == p {
+                v.insert("Workspace/ActiveTab".into(), k.into());
+            }
+        }
+        // Maximised, the normal rect stays the one saved before (GDI's
+        // `rcNormalPosition`; egui reports only the maximised one).
+        if let Some((r, max)) = placement {
+            let normal = v.get("Workspace/WindowPlacement").and_then(|s| s.rsplit_once(' ')).map(|(r, _)| r.to_string());
+            let rect = match normal {
+                Some(n) if max => n,
+                _ => format!("{} {} {} {}", r.left(), r.top(), r.right(), r.bottom()),
+            };
+            v.insert("Workspace/WindowPlacement".into(), format!("{rect} {}", u8::from(max)));
+        }
+        self.store.save();
+    }
+
+    /// `LoadState` (`0x101a8eea`) for the panes.
+    pub fn restore_workspace(&mut self) {
+        let v = &self.store.view;
+        crate::docking::restore("Group", &mut self.dock_group, v);
+        crate::docking::restore("Freq", &mut self.dock_freq, v);
+        for (k, p) in [("Vector", Pane::Vector), ("Circle", Pane::Circle), ("Differential", Pane::Differential), ("Frequency", Pane::Frequency)] {
+            if let Some(on) = v.get(&format!("Workspace/{k}/IsVisible")) {
+                self.panes.set(p, on == "1");
+            }
+            if v.get("Workspace/ActiveTab").is_some_and(|a| a == k) {
+                self.panes.active = p;
+            }
+        }
     }
 
     /// Record the selected block and its characteristics' visibility and

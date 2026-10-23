@@ -128,9 +128,65 @@ impl Dockable {
     }
 }
 
+/// The Feature Pack's workspace (`CWinAppEx::SaveState` `0x101a9425` when
+/// the main frame closes, `LoadState` `0x101a8eea` when it loads —
+/// `m_bSaveState` is on and FastView never clears it): each pane's place
+/// and recent floating rect under `Workspace/<unit>/…`.
+pub fn store(unit: &str, d: &Dockable, v: &mut std::collections::HashMap<String, String>) {
+    let place = match d.place {
+        Place::Docked => "docked",
+        Place::Floating => "floating",
+        Place::AutoHide => "autohide",
+    };
+    v.insert(format!("Workspace/{unit}/Place"), place.into());
+    match d.float_rect {
+        Some(r) => v.insert(format!("Workspace/{unit}/RectRecentFloat"), format!("{} {} {} {}", r.left(), r.top(), r.right(), r.bottom())),
+        None => v.remove(&format!("Workspace/{unit}/RectRecentFloat")),
+    };
+}
+
+/// Read back what [`store`] wrote (an auto-hidden pane comes back slid in).
+pub fn restore(unit: &str, d: &mut Dockable, v: &std::collections::HashMap<String, String>) {
+    d.place = match v.get(&format!("Workspace/{unit}/Place")).map(String::as_str) {
+        Some("floating") => Place::Floating,
+        Some("autohide") => Place::AutoHide,
+        _ => Place::Docked,
+    };
+    d.float_rect = v.get(&format!("Workspace/{unit}/RectRecentFloat")).and_then(|s| parse_rect(s));
+    if d.place == Place::Floating && d.float_rect.is_none() {
+        d.place = Place::Docked;
+    }
+}
+
+/// "l t r b".
+pub fn parse_rect(s: &str) -> Option<Rect> {
+    let n: Vec<f32> = s.split_whitespace().map(str::parse).collect::<Result<_, _>>().ok()?;
+    let [l, t, r, b] = n[..] else { return None };
+    (r > l && b > t).then(|| Rect::from_min_max(Pos2::new(l, t), Pos2::new(r, b)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workspace_round_trip() {
+        let mut v = std::collections::HashMap::new();
+        let mut d = unit();
+        d.double_click(Pos2::new(40.0, 60.0));
+        store("Group", &d, &mut v);
+        let mut back = unit();
+        restore("Group", &mut back, &v);
+        assert_eq!((back.place, back.float_rect), (Place::Floating, d.float_rect));
+        d.double_click(Pos2::ZERO);
+        d.pin();
+        store("Group", &d, &mut v);
+        restore("Group", &mut back, &v);
+        assert_eq!((back.place, back.out), (Place::AutoHide, false));
+        assert_eq!(back.float_rect, d.float_rect, "the recent floating rect is kept docked too");
+        restore("Freq", &mut back, &v);
+        assert_eq!((back.place, back.float_rect), (Place::Docked, None), "nothing stored: the defaults");
+    }
 
     fn unit() -> Dockable {
         Dockable::new(Vec2::new(500.0, 500.0))

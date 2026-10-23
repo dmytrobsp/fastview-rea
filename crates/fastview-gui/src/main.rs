@@ -44,14 +44,16 @@ use app::App;
 use eframe::egui;
 
 fn main() -> eframe::Result<()> {
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1320.0, 860.0])
-            .with_min_inner_size([866.0, 500.0])
-            .with_title(app::APP_TITLE)
-            .with_drag_and_drop(true),
-        ..Default::default()
-    };
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([1320.0, 860.0])
+        .with_min_inner_size([866.0, 500.0])
+        .with_title(app::APP_TITLE)
+        .with_drag_and_drop(true);
+    // `LoadState` restores the frame's saved window placement.
+    if let Some((r, max)) = window_placement(&persist::Store::load()) {
+        viewport = viewport.with_inner_size(r.size()).with_position(r.min).with_maximized(max);
+    }
+    let options = eframe::NativeOptions { viewport, ..Default::default() };
     // Command line (`InitInstance` 0x4483f0): `-Dst <dir>`, `-Find` (open
     // Проводник at start-up) and the file to open.
     let args = startup_args(std::env::args().skip(1));
@@ -82,6 +84,13 @@ fn main() -> eframe::Result<()> {
             Ok(Box::new(app))
         }),
     )
+}
+
+/// `Workspace/WindowPlacement` ("l t r b maximised") as saved on exit.
+fn window_placement(st: &persist::Store) -> Option<(egui::Rect, bool)> {
+    let s = st.view.get("Workspace/WindowPlacement")?;
+    let (rect, max) = s.rsplit_once(' ')?;
+    Some((docking::parse_rect(rect)?, max == "1"))
 }
 
 /// The window's fonts: the first system font found that covers Cyrillic,
