@@ -4150,8 +4150,7 @@ shifted by `move_appended`), counted and set by `flag_state` /
 (`selected_digital`), the lane and its value drawn through `dig_on`, the
 invert icon at (leftW − 18, y + 2), the merge baking it. Test
 `digital_channels_carry_the_value_flags`.
-Residual: the merge's zero padding of an inverted digital channel reads 1
-through the accessor in the original (ours pads raw 0 after baking); a
+Residual: (the merge's padding of an inverted digital channel: L9.140); a
 formula naming a digital channel (the original's lookup has no kind test
 — INFERRED) is not resolved by ours; computed and pending channels' flags
 — next.
@@ -4264,6 +4263,18 @@ Ours: nothing happened for a ГВ never placed, and ↑ was not clamped.
 Now the key block takes y ∓ 1 (↑ clamped at the view's top) or the top
 for one never placed. Test `arrow_keys_move_v1_and_ctrl_v2_by_one_sample`.
 
+### L9.140 — The merge's padding read through the accessor for every channel  ·  ✅
+Read (L9.120: the zeros are real samples of each channel and the fit /
+pick read them through `0x426020`; L9.134 / L9.136: digital and pending
+channels' flags go through the accessor too): an inverted digital
+channel's padding reads 1, a pending analog channel's −(0 − DC) negated
+— front and back padding alike.
+Ours padded base digital and all pasted channels with a raw 0 / off
+(only base analog channels had their accessor value, L9.120). Now
+`merge::merge(.., dig_pads)` and `Pasted::pad` (from the pending lane's
+flags in `merge_records`), used for the front and the trailing pads.
+Test `merge_pads_and_shifts_the_later_record`.
+
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -4339,8 +4350,8 @@ the `.set` NetFreq round trip (`0x427bc0` / `0x427af0`, channels' own
 frequency, L9.137); 33035's message 239 on channels of different rates
 (needs per-channel rates, L9.131); our `sample_rate` vs rec+0x228 where
 the signal code uses the latter (multi-rate `.cfg`, rates not a multiple
-of f, L9.132); a rate-0 `.cfg`'s `.dat` timestamps; the merge's padding of an inverted digital channel
-(L9.134); formulas naming digital channels (L9.134); the docking marker
+of f, L9.132); a rate-0 `.cfg`'s `.dat` timestamps; formulas naming
+digital channels (L9.134); the docking marker
 bitmaps (ours drawn); L9.64 MDI arrangements under tabs (WM_MDICASCADE /
 TILE — visible effect ND); the caption bar from the style images (ours
 the OS title bar — a frameless window with our own caption, risky on

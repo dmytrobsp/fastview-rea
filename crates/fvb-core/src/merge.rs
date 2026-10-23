@@ -328,6 +328,9 @@ pub struct Pasted {
     pub channel: Result<AnalogChannel, DigitalChannel>,
     pub times: Vec<f64>,
     pub rate: f64,
+    /// Its padding as the accessor reads a zero sample (minus the DC,
+    /// negated; a digital one non-zero when inverted).
+    pub pad: f64,
 }
 
 /// «Объединить» (`0x47d990`): every channel on one uniform grid at the
@@ -340,8 +343,9 @@ pub struct Pasted {
 /// longest padded span is padded at its back; the grid has
 /// round(R·span) − 4 samples, its times stored in whole µs. `base_pads`
 /// are the base analog channels' padding as read through the accessor
-/// (the zero minus the DC, inverted…).
-pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f64]) -> Oscillogram {
+/// (the zero minus the DC, inverted…), `dig_pads` the base digital ones'
+/// (an inverted channel's zero reads 1).
+pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f64], dig_pads: &[bool]) -> Oscillogram {
     let t0 = base.time.first().copied().unwrap_or(0.0);
     let base_t: Vec<f64> = base.time.iter().map(|t| t - t0).collect();
     let mut rates = vec![base.sample_rate];
@@ -357,6 +361,8 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
     }
     // Each lane with its source's own frequency vector (ch+0x50).
     let mut lanes: Vec<(Lane, Vals, Vec<f64>)> = Vec::new();
+    // Each lane's padding value, for the trailing pads too.
+    let mut pads: Vec<f64> = Vec::new();
     let front = |rate: f64, base_side: bool| if (base_side && offset < 0.0) || (!base_side && offset > 0.0) { (own(rate) * offset.abs()).ceil() as usize } else { 0 };
     let base_step = 1.0 / own(base.sample_rate);
     let nb = front(base.sample_rate, true);
@@ -364,11 +370,13 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
         let (mut t, mut x) = (base_t.clone(), c.samples.clone());
         pad(&mut t, &mut x, base_pads.get(i).copied().unwrap_or(0.0), nb, base_step, true);
         lanes.push((Lane { t, step: base_step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::A(x), c.own_freq.clone()));
+        pads.push(base_pads.get(i).copied().unwrap_or(0.0));
     }
-    for c in &base.digital {
+    for (i, c) in base.digital.iter().enumerate() {
         let (mut t, mut x) = (base_t.clone(), c.samples.clone());
-        pad(&mut t, &mut x, false, nb, base_step, true);
+        pad(&mut t, &mut x, dig_pads.get(i).copied().unwrap_or(false), nb, base_step, true);
         lanes.push((Lane { t, step: base_step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::D(x), Vec::new()));
+        pads.push(f64::from(u8::from(dig_pads.get(i).copied().unwrap_or(false))));
     }
     for p in pasted {
         let step = 1.0 / own(p.rate);
@@ -379,24 +387,26 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
         match &p.channel {
             Ok(a) => {
                 let mut x: Vec<f64> = a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v }).collect();
-                pad(&mut t, &mut x, 0.0, n, step, true);
+                pad(&mut t, &mut x, p.pad, n, step, true);
                 lanes.push((Lane { t, step, shift: sh }, Vals::A(x), a.own_freq.clone()));
+                pads.push(p.pad);
             }
             Err(d) => {
                 let mut x = d.samples.clone();
-                pad(&mut t, &mut x, false, n, step, true);
+                pad(&mut t, &mut x, p.pad != 0.0, n, step, true);
                 lanes.push((Lane { t, step, shift: sh }, Vals::D(x), Vec::new()));
+                pads.push(p.pad);
             }
         }
     }
     // The trailing pads up to the longest padded span.
     let span = |l: &Lane| l.t.last().copied().unwrap_or(0.0);
     let maxdur = lanes.iter().map(|(l, _, _)| span(l)).fold(0.0, f64::max);
-    for (l, v, _) in &mut lanes {
+    for ((l, v, _), &z) in lanes.iter_mut().zip(&pads) {
         let n = ((maxdur - span(l)) / l.step).abs().ceil() as usize;
         match v {
-            Vals::A(x) => pad(&mut l.t, x, 0.0, n, l.step, false),
-            Vals::D(x) => pad(&mut l.t, x, false, n, l.step, false),
+            Vals::A(x) => pad(&mut l.t, x, z, n, l.step, false),
+            Vals::D(x) => pad(&mut l.t, x, z != 0.0, n, l.step, false),
         }
     }
     let count = ((r * maxdur).round() as i64 - 4).max(0) as usize;
@@ -571,10 +581,10 @@ mod tests {
         let base = crate::comtrade::parse(&cfg, dat.as_bytes()).unwrap();
         let mut b_ch = base.analog[0].clone();
         b_ch.samples = vec![5.0; 100];
-        let pasted = [Pasted { channel: Ok(b_ch), times: (0..100).map(|k| k as f64 / 1000.0).collect(), rate: 1000.0 }];
+        let pasted = [Pasted { channel: Ok(b_ch), times: (0..100).map(|k| k as f64 / 1000.0).collect(), rate: 1000.0, pad: 0.0 }];
         // 2.5 ms later: 3 zero samples in front, shift −0.5 ms; the span
         // 0.102 s, so round(102) − 4 samples.
-        let m = merge(&base, &pasted, 0.0025, &[0.0]);
+        let m = merge(&base, &pasted, 0.0025, &[0.0], &[]);
         assert_eq!(m.time.len(), 98);
         assert!((m.analog[0].samples[10] - 10.0).abs() < 1e-9, "the base on the grid");
         let b = &m.analog[1].samples;
@@ -583,7 +593,7 @@ mod tests {
         assert!((b[4] - 5.0).abs() < 1e-9, "the pasted values from 3.5 ms");
         // The base's segment stays; the nominal track over a longer grid
         // reaches its `end` and stops: 0 after it (`0x47e84b`, `0x454960`).
-        let m = merge(&base, &pasted, 0.05, &[0.0]);
+        let m = merge(&base, &pasted, 0.05, &[0.0], &[]);
         assert_eq!(m.rate_segs, base.rate_segs);
         assert!(m.time.len() > 101);
         assert_eq!((m.freq_track[100], m.freq_track[101], m.freq_track.len()), (50.0, 0.0, m.time.len()));
@@ -594,8 +604,18 @@ mod tests {
         if let Ok(a) = &mut own.channel {
             a.own_freq = vec![50.5; 100];
         }
-        let m = merge(&base, &[own], 0.0025, &[0.0]);
+        let m = merge(&base, &[own], 0.0025, &[0.0], &[]);
         assert_eq!(m.analog[0].own_freq[50], 50.0, "the base channel: the record's track");
         assert_eq!(m.analog[1].own_freq[50], 50.5, "the pasted one: its own");
+        // An inverted digital channel's padding reads 1 through the accessor.
+        let dig = Pasted {
+            channel: Err(crate::comtrade::DigitalChannel { index: 1, id: "D".into(), phase: String::new(), samples: vec![false; 100] }),
+            times: (0..100).map(|k| k as f64 / 1000.0).collect(),
+            rate: 1000.0,
+            pad: 1.0,
+        };
+        let m = merge(&base, &[dig], 0.0025, &[0.0], &[]);
+        let d = &m.digital.last().unwrap().samples;
+        assert!(d[0] && !d[10], "the front padding on, the samples off");
     }
 }
