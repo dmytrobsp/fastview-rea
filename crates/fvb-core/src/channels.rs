@@ -3,6 +3,7 @@
 
 use crate::comtrade::Oscillogram;
 use crate::expr::Channels;
+use crate::freqcorr::{self, FreqCorr};
 use crate::signal::{self, Phasors};
 use num_complex::Complex64;
 
@@ -18,6 +19,9 @@ pub struct OscChannels {
     freq: f64,
     /// The record's harmonic-1 gain (`rec+0x278`, set by OSC2 files).
     gain1: f64,
+    /// The frequency correction: the frequency channel, its stored samples
+    /// and the rate (ledger L9.65).
+    corr: Option<(usize, Vec<f64>, f64)>,
 }
 
 impl OscChannels {
@@ -25,6 +29,12 @@ impl OscChannels {
     /// earlier (their stored complex series, if any, is their phasor).
     /// `show_primary` is the display-in-primary-units switch (`+0x89`).
     pub fn new(osc: &Oscillogram, extra: &[crate::quick::ComputedChannel], show_primary: bool) -> OscChannels {
+        OscChannels::new_with(osc, extra, show_primary, crate::freqcorr::of(osc))
+    }
+
+    /// [`OscChannels::new`] with the frequency correction `corr`; every
+    /// channel but the frequency one, computed ones included, is corrected.
+    pub fn new_with(osc: &Oscillogram, extra: &[crate::quick::ComputedChannel], show_primary: bool, corr: Option<FreqCorr<'_>>) -> OscChannels {
         let n = osc.samples_per_cycle().max(2);
         // Channel names are the COMTRADE ids with trailing spaces trimmed (+0x68).
         let mut names: Vec<String> = osc.analog.iter().map(|c| c.id.trim_end_matches(' ').to_string()).collect();
@@ -52,10 +62,11 @@ impl OscChannels {
             .zip(&ratios)
             .map(|(c, (k, _, _))| c.samples.iter().map(|v| v * k).collect())
             .collect();
-        let mut phasors: Vec<Phasors> = samples.iter().map(|s| signal::sliding_phasors(s, n)).collect();
+        let mut phasors: Vec<Phasors> = samples.iter().enumerate().map(|(i, s)| freqcorr::sliding_phasors(corr, i, s, n)).collect();
         for c in extra {
             names.push(c.name.clone());
-            phasors.push(c.phasors.clone().unwrap_or_else(|| signal::sliding_phasors(&c.samples, n)));
+            let ch = phasors.len();
+            phasors.push(c.phasors.clone().unwrap_or_else(|| freqcorr::sliding_phasors(corr, ch, &c.samples, n)));
             samples.push(c.samples.clone());
             ratios.push((1.0, 1.0, 1.0));
         }
@@ -67,7 +78,13 @@ impl OscChannels {
             n,
             freq: osc.line_freq,
             gain1: osc.harmonic1_gain,
+            corr: corr.map(|c| (c.chan, c.freq.to_vec(), c.fs)),
         }
+    }
+
+    /// The correction for channel `ch`, if any.
+    fn fc(&self, ch: usize) -> Option<FreqCorr<'_>> {
+        self.corr.as_ref().and_then(|(chan, freq, fs)| FreqCorr { chan: *chan, freq, fs: *fs }.for_chan(ch))
     }
 
     pub fn len(&self) -> usize {
@@ -104,12 +121,23 @@ impl Channels for OscChannels {
         self.phasors[ch].get(idx).copied().unwrap_or_default()
     }
     fn rms(&self, ch: usize, idx: usize) -> f64 {
-        signal::rms_at(&self.samples[ch], idx, self.n)
+        match self.fc(ch) {
+            Some(c) => c.rms(&self.samples[ch], idx, 1.0),
+            None => signal::rms_at(&self.samples[ch], idx, self.n),
+        }
     }
     fn a0(&self, ch: usize, idx: usize) -> f64 {
-        signal::a0_at(&self.samples[ch], idx, self.n)
+        match self.fc(ch) {
+            Some(c) => c.a0(&self.samples[ch], idx, 1.0),
+            None => signal::a0_at(&self.samples[ch], idx, self.n),
+        }
     }
     fn fourie(&self, ch: usize, n: i32, idx: usize) -> f64 {
+        // Corrected: the gate comes before the n = 0 case and there is no
+        // harmonic-1 gain (`0x4262ac`).
+        if let Some(c) = self.fc(ch) {
+            return c.harmonic(&self.samples[ch], idx, f64::from(n), false, 1.0).norm();
+        }
         let h = signal::harmonic_rms(&self.samples[ch], idx, self.n, n.unsigned_abs() as usize);
         if n == 1 {
             h * self.gain1
@@ -118,7 +146,10 @@ impl Channels for OscChannels {
         }
     }
     fn fault(&self, ch: usize, idx: usize) -> f64 {
-        signal::fault_at(&self.samples[ch], idx, self.n)
+        match self.fc(ch) {
+            Some(c) => c.fault(&self.samples[ch], idx),
+            None => signal::fault_at(&self.samples[ch], idx, self.n),
+        }
     }
     fn frequency(&self, _idx: usize) -> f64 {
         self.freq

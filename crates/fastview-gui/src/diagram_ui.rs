@@ -274,7 +274,7 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
         let series = |k: usize| {
             let z = match &c.phasors {
                 Some(p) => p.get(k).copied().unwrap_or_default(),
-                None => fvb_core::signal::phasor_at(&c.samples, k, n),
+                None => fvb_core::freqcorr::phasor_at(fvb_core::freqcorr::of(&d.osc), fvb_core::freqcorr::OTHER, &c.samples, k, n),
             };
             [z.re, z.im]
         };
@@ -992,7 +992,7 @@ impl App {
             }
             d.computed.iter().find(|c| c.name == name).map(|c| match &c.phasors {
                 Some(p) => p.get(k).copied().unwrap_or_default(),
-                None => fvb_core::signal::phasor_at(&c.samples, k, n),
+                None => fvb_core::freqcorr::phasor_at(fvb_core::freqcorr::of(&d.osc), fvb_core::freqcorr::OTHER, &c.samples, k, n),
             })
         };
         let shown: Vec<(String, String, Complex64, Color32)> = doc_chans(d)
@@ -1092,9 +1092,10 @@ impl App {
         for (pi, &i) in chans.iter().enumerate() {
             let panel = Rect::from_min_size(Pos2::new(inner.left() + pw * pi as f32, inner.top()), Vec2::new(pw, inner.height()));
             let samples = &d.flagged.analog[i].samples;
-            let sp = fvb_core::signal::spectrum(samples, k, n, periods, k_max, d.osc.harmonic1_gain);
+            let corr = fvb_core::freqcorr::of(&d.osc);
+            let sp = fvb_core::freqcorr::spectrum(corr.and_then(|c| c.for_chan(i)), samples, k, n, periods, k_max, d.osc.harmonic1_gain);
             let peak = sp.iter().copied().fold(0.0, f64::max).max(1e-300);
-            let base = if use_rms { fvb_core::signal::rms_at(samples, k, n * periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
+            let base = if use_rms { fvb_core::freqcorr::rms_at(corr, i, samples, k, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
             // Name row and x labels under the bars.
             let name_y = panel.bottom() - 7.0;
             let base_y = panel.bottom() - 32.0;

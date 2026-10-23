@@ -1902,8 +1902,9 @@ fn lane_stats(
                 mx = mx.max(v);
                 mn = mn.min(v);
             }
-            let rms = fvb_core::signal::rms_at(&c.samples, k_main, n);
-            let a1 = fvb_core::signal::harmonic_rms(&c.samples, k_main, n, 1);
+            let corr = fvb_core::freqcorr::of(&doc.osc);
+            let rms = fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n, 1);
+            let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n);
             (c.name.clone(), c.unit.clone(), c.color, mx, mn, rms, a1, series(k_main))
         }
         Lane::Digital(i) => {

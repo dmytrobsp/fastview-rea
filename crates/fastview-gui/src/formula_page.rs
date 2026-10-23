@@ -46,6 +46,7 @@ impl App {
         let names: Vec<String> = self.formula_page.rows.iter().map(|r| r.0.clone()).collect();
         if let Some(d) = self.active_doc_mut() {
             d.computed.retain(|c| !crate::setfile::is_formula(c) || names.contains(&c.name));
+            d.channels_changed();
         }
     }
 
@@ -138,6 +139,7 @@ impl App {
         if let Some(d) = self.active_doc_mut() {
             d.computed.retain(|c| !crate::setfile::is_formula(c) || !names.contains(&c.name));
             d.set.modified = true;
+            d.channels_changed();
         }
         let p = &mut self.formula_page;
         p.rows = rows;
@@ -164,7 +166,7 @@ impl App {
             });
             let existing: Vec<_> = d.computed.iter().enumerate().filter(|(i, _)| Some(*i) != found).map(|(_, c)| c.as_core()).collect();
             let batch = [(name.clone(), formula.clone(), af::unit_of(formula))];
-            match fvb_core::quick::evaluate_batch(&d.flagged, &existing, &batch, show_primary) {
+            match fvb_core::quick::evaluate_batch_with(&d.flagged, fvb_core::freqcorr::of(&d.osc), &existing, &batch, show_primary) {
                 Ok(mut added) => {
                     let c = added.remove(0);
                     match found {
@@ -190,6 +192,7 @@ impl App {
                 }
             }
         }
+        d.channels_changed();
     }
 
     /// The page (DIALOG 340): the two-column list (25 % / 70 %, full-row

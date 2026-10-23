@@ -911,7 +911,7 @@ Only a «Закрыть» button, which is IDOK (applies); Esc cancels.
 | Число измерений | N |
 | Частота сети | double |
 | **Частота дискретизации** | **editable drop-down**; list by line frequency — 50 Hz: 160000 80000 40000 32000 20000 19200 16000 10000 9600 8000 6400 5000 4800 4000 3200 2500 2400 2000 1600 1200 1000 800 600 500 400 300 200; 60 Hz: 192000 96000 48000 38400 24000 23040 19200 11520 9600 7680 6000 5760 4800 3840 3340 3000 2880 2400 1920 1440 1200 960 720 600 480 360 240; other → empty |
-| Частота для коррекции расчётных значений | drop-list «Не корректировать» + `doc+0x1e4` candidates; disabled when none; selection `doc+0x874` |
+| Частота для коррекции расчётных значений | drop-list «Не корректировать» + the frequency candidates by name (analog, unit Гц/Hz-like or ph/ccbm «system»); disabled when none; selection `doc+0x874`, 1 by default on `.cfg` load and after any channel change (L9.65) |
 | Станция / Номер регистратора / Начало записи / Момент запуска | text |
 | Длительность | `%g c.` of (t_last − t_first)·1e-6 of the first non-bit14 channel |
 | Кодировка | 866 MS-DOS / Windows-1251, **applies immediately on change**: station, recorder and every channel name re-decoded; persisted `Oscillogram/Codepage` |
@@ -1397,8 +1397,8 @@ icon-only small buttons and panel collapse when narrow (L9.27).
 - CParamOscBar font; fractional-second digits and time-zone logic in 0x456e90.
 - Channels dialog: meaning of kind +0x5c = 1 vs the two digital groups
   (`doc+0x878`, `doc+0x884`); bitmap 464 image indices.
-- File params: what the `doc+0x1e4` correction candidates are and what
-  selecting one does.
+- (File params: the correction candidates and their effect — read in
+  L9.65.)
 - CCommentDlg: how the item/record mode flag is set and how `UserData` maps to
   the `.hdr` file; settings sidecar name (`.set` per help; legacy `ini`).
 - Merge: per-period amplitude 0x427670, spread metric 0x4776f0, divisor

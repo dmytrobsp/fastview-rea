@@ -584,10 +584,12 @@ impl Doc {
     pub fn new(osc: Oscillogram, name: String) -> Self {
         let analysis = Analysis::compute(&osc);
         let n = osc.samples_per_cycle().max(2);
+        let corr = fvb_core::freqcorr::of(&osc);
         let rms: Vec<Vec<f64>> = osc
             .analog
             .iter()
-            .map(|c| fvb_core::signal::sliding_rms(&c.samples, n))
+            .enumerate()
+            .map(|(i, c)| fvb_core::freqcorr::sliding_rms(corr, i, &c.samples, n))
             .collect();
         let dc_mean = osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
         let flagged = osc.clone();
@@ -653,16 +655,17 @@ impl Doc {
         for i in 0..self.osc.analog.len() {
             let k = display_k(&self.osc.analog[i], self.chans[i].primary);
             self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i], k);
-            self.rms[i] = fvb_core::signal::sliding_rms(&self.flagged.analog[i].samples, n);
+            self.rms[i] = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&self.osc), i, &self.flagged.analog[i].samples, n);
         }
-        self.analysis = Analysis::compute(&self.flagged);
+        // The correction reads the frequency channel as stored (L9.65).
+        self.analysis = Analysis::compute_with(&self.flagged, fvb_core::freqcorr::of(&self.osc));
         // Formula channels are evaluated again in order on the new values
         // (merged and ОМП channels carry no formula to re-evaluate).
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
         for c in &mut self.computed {
             if c.formula != "ОМП" && c.formula != "объединение" {
                 let batch = [(c.name.clone(), c.formula.clone(), c.unit.clone())];
-                if let Ok(mut out) = fvb_core::quick::evaluate_batch(&self.flagged, &done, &batch, show_primary) {
+                if let Ok(mut out) = fvb_core::quick::evaluate_batch_with(&self.flagged, fvb_core::freqcorr::of(&self.osc), &done, &batch, show_primary) {
                     if let Some(new) = out.pop() {
                         c.samples = new.samples;
                         c.phasors = new.phasors;
@@ -1890,7 +1893,7 @@ impl App {
             return None;
         };
         let existing: Vec<_> = d.computed.iter().map(Computed::as_core).collect();
-        match fvb_core::quick::evaluate_batch(&d.flagged, &existing, batch, show_primary) {
+        match fvb_core::quick::evaluate_batch_with(&d.flagged, fvb_core::freqcorr::of(&d.osc), &existing, batch, show_primary) {
             Ok(added) => {
                 let d = self.active_doc_mut()?;
                 let n0 = d.computed.len();
@@ -1901,6 +1904,7 @@ impl App {
                     cc.phasors = c.phasors;
                     d.computed.push(cc);
                 }
+                d.channels_changed();
                 Some(names)
             }
             Err(e) => {
@@ -1953,6 +1957,27 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// L9.65: a record with a «Гц» channel opens corrected; «Не
+    /// корректировать» recomputes with the fixed window; the next channel
+    /// change turns the correction back on.
+    #[test]
+    fn frequency_correction_on_load_off_and_back() {
+        let cfg = DEMO_CFG.replacen("2,Ub,B,,V,", "2,Ub,B,,Гц,", 1);
+        let osc = fvb_core::comtrade::parse(&cfg, DEMO_DAT).unwrap();
+        let mut d = Doc::new(osc, "f".into());
+        assert_eq!(d.osc.freq_sel, 1);
+        let k = 300;
+        let on = (d.analysis.phasors[3][k], d.rms_at(3, k));
+        d.osc.freq_sel = 0;
+        d.recompute_signals();
+        let n = d.osc.samples_per_cycle();
+        assert_eq!(d.analysis.phasors[3][k], fvb_core::signal::phasor_at(&d.flagged.analog[3].samples, k, n));
+        assert_ne!(d.analysis.phasors[3][k], on.0);
+        d.channels_changed();
+        assert_eq!(d.osc.freq_sel, 1);
+        assert_eq!((d.analysis.phasors[3][k], d.rms_at(3, k)), on);
+    }
 
     /// `0x1006a29c` with both statics at 0: the first tab is the yellow
     /// (index 1, as the help screenshots), the next ones step on; a tab

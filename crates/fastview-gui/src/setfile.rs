@@ -363,6 +363,7 @@ impl App {
         if d.computed.iter().any(is_formula) {
             d.computed.retain(|c| !is_formula(c));
             d.selection.retain(|k| !matches!(k, ChanKey::Computed(_)));
+            d.channels_changed();
         }
         if matches!(d.codepage, Encoding::Cp1251 | Encoding::Cp866) {
             if let Some(cp) = osc.attrs.get("Codepage").map(|v| recset::wtoi(v)) {

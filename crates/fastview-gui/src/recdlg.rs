@@ -193,6 +193,17 @@ impl Doc {
     /// Recompute every derived series after a coefficient, primary/secondary
     /// or sample-rate change (`0x42e540`): phasors (keeping the channel
     /// roles), one-period RMS and DC, and the formula channels.
+    /// A channel was added or removed: the original rebuilds its frequency
+    /// candidates (`0x42ebd0`), which turns «Не корректировать» back into the
+    /// first candidate whenever there is one (L9.65).
+    pub fn channels_changed(&mut self) {
+        let before = self.osc.freq_sel;
+        fvb_core::freqcorr::refresh_selection(&mut self.osc);
+        if self.osc.freq_sel != before {
+            self.recompute_signals();
+        }
+    }
+
     pub fn recompute_signals(&mut self) {
         let roles = (self.analysis.u_abc, self.analysis.i_abc, self.analysis.calc_ib);
         let primary = self.primary_values();
@@ -314,7 +325,8 @@ impl App {
         let utc = self.dlg.utc_2013;
         let mut st = self.dlg.file_params.take().unwrap_or_else(|| FileParamsDlg {
             rate_text: format!("{}", self.docs[ai].osc.sample_rate),
-            correction: 0,
+            // CB_SETCURSEL `rec+0x874` (0 with no candidate, `0x449efd`).
+            correction: if fvb_core::freqcorr::candidates(&self.docs[ai].osc).is_empty() { 0 } else { self.docs[ai].osc.freq_sel.max(0) as usize },
         });
         let mut open = true;
         let mut apply = false;
@@ -361,10 +373,17 @@ impl App {
                     });
                     ui.end_row();
                     ui.label("Частота для коррекции\nрасчётных значений:");
-                    // No candidate list (`doc+0x1e4`) in our record: disabled.
-                    ui.add_enabled_ui(false, |ui| {
-                        egui::ComboBox::from_id_salt("fv_corr").selected_text("Не корректировать").width(260.0).show_ui(ui, |ui| {
-                            ui.selectable_value(&mut st.correction, 0, "Не корректировать");
+                    // «Не корректировать», then each frequency candidate by
+                    // name (`0x4499e0`); disabled when there is none.
+                    let items: Vec<String> = std::iter::once("Не корректировать".to_string())
+                        .chain(fvb_core::freqcorr::candidates(o).into_iter().map(|c| o.analog[c].id.clone()))
+                        .collect();
+                    ui.add_enabled_ui(items.len() > 1, |ui| {
+                        let shown = items.get(st.correction).cloned().unwrap_or_default();
+                        egui::ComboBox::from_id_salt("fv_corr").selected_text(shown).width(260.0).show_ui(ui, |ui| {
+                            for (k, t) in items.iter().enumerate() {
+                                ui.selectable_value(&mut st.correction, k, t);
+                            }
                         });
                     });
                     ui.end_row();
@@ -422,6 +441,14 @@ impl App {
                     self.run_omp_silent(ai);
                 }
                 Some(_) => {}
+            }
+            // `0x44a2c9`: a new correction choice is stored, the document
+            // marked modified and every channel recomputed.
+            let d = &mut self.docs[ai];
+            if st.correction as i32 != d.osc.freq_sel {
+                d.osc.freq_sel = st.correction as i32;
+                d.set.modified = true;
+                d.recompute_signals();
             }
             self.show_file_params = false;
         } else if !open || esc {

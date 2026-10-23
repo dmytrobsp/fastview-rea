@@ -54,11 +54,18 @@ pub struct Analysis {
 
 impl Analysis {
     pub fn compute(osc: &Oscillogram) -> Analysis {
+        Analysis::compute_with(osc, crate::freqcorr::of(osc))
+    }
+
+    /// [`Analysis::compute`] with the frequency correction `corr` (taken
+    /// from the record as stored when `osc` is a flagged copy).
+    pub fn compute_with(osc: &Oscillogram, corr: Option<crate::freqcorr::FreqCorr<'_>>) -> Analysis {
         let n = osc.samples_per_cycle().max(2);
         let phasors: Vec<Phasors> = osc
             .analog
             .iter()
-            .map(|c| sliding_phasors(&c.samples, n))
+            .enumerate()
+            .map(|(i, c)| crate::freqcorr::sliding_phasors(corr, i, &c.samples, n))
             .collect();
 
         let mut u_abc = [None, None, None];

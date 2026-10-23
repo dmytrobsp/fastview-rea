@@ -132,6 +132,7 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
                     index: 0,
                     id: c.name.clone(),
                     phase: c.desc2.clone(),
+                    ccbm: String::new(),
                     // The clip's values are already in base units.
                     unit: fvb_core::units::normalize(&c.dimension).unit,
                     raw_unit: c.dimension.clone(),
@@ -342,6 +343,7 @@ impl App {
             d.selection.insert(ChanKey::Computed(d.computed.len() - 1));
             d.pending.push(c);
         }
+        d.channels_changed();
         // The record comment becomes the two-record summary (`Comments/
         // Codepage` = 1).
         let s = &d.osc.stamps;
@@ -442,6 +444,7 @@ impl App {
         d.move_appended(at_a, nb, at_d, nd);
         d.computed.retain(|c| c.formula != PENDING);
         d.pending.clear();
+        d.channels_changed();
         d.merge_offset = 0.0;
         let mut snap = Self::snapshot_of_doc(d);
         snap.osc.sample_rate = old_rate;

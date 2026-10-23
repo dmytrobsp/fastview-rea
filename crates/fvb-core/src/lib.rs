@@ -14,6 +14,7 @@ pub mod channels;
 pub mod clipdata;
 pub mod comtrade;
 pub mod expr;
+pub mod freqcorr;
 pub mod geom;
 pub mod merge;
 pub mod model;

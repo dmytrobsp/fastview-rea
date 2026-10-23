@@ -355,12 +355,24 @@ pub fn evaluate_batch(
     batch: &[(String, String, String)],
     show_primary: bool,
 ) -> Result<Vec<ComputedChannel>, crate::expr::FormulaError> {
+    evaluate_batch_with(osc, crate::freqcorr::of(osc), existing, batch, show_primary)
+}
+
+/// [`evaluate_batch`] with the frequency correction `corr` (taken from the
+/// record as stored when `osc` is a flagged copy).
+pub fn evaluate_batch_with(
+    osc: &crate::comtrade::Oscillogram,
+    corr: Option<crate::freqcorr::FreqCorr<'_>>,
+    existing: &[ComputedChannel],
+    batch: &[(String, String, String)],
+    show_primary: bool,
+) -> Result<Vec<ComputedChannel>, crate::expr::FormulaError> {
     use crate::expr::{Context, Expr, ExprError, FormulaError};
     let mut all: Vec<ComputedChannel> = existing.to_vec();
     let mut added = Vec::new();
     for (name, formula, unit) in batch {
         let fail = |error: ExprError| FormulaError { formula: formula.clone(), error };
-        let chans = crate::channels::OscChannels::new(osc, &all, show_primary);
+        let chans = crate::channels::OscChannels::new_with(osc, &all, show_primary, corr);
         let expr = Expr::parse_channels(formula, &chans).map_err(fail)?;
         let ctx = Context::new();
         let n = chans.len();

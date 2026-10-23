@@ -195,6 +195,7 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64) -> Oscillogram 
     let mut out = base.clone();
     out.time = grid.iter().map(|t| t - start).collect();
     out.sample_rate = r;
+    out.segments = 1;
     for (dst, src) in out.analog.iter_mut().zip(&base.analog) {
         dst.samples = grid.iter().map(|&t| quad_at(&base_t, &src.samples, t)).collect();
     }

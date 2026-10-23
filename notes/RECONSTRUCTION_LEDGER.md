@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 315 pass)
+- `cargo test --workspace`   (currently 320 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -61,11 +61,13 @@ message map → handler addresses, `tools/msgmaps.py`), the scope split, the
 spec file `notes/UI_BEHAVIOUR_SPEC.md` and the per-item reconciliation status.
 Work L9 before the older residuals below.
 
-Older residuals (lower impact): the `.osc` writer
-(`0x44ca80`) and OSC time stamps; the frequency-channel DFT variant
-(`FUN_004267e0`); R/X channel pairs on the circle diagram (DIALOG 554); the
-parallel-line (mutual coupling) entry in the ОМП UI; dialog-behaviour mapping
-of the channel-role dialogs (DIALOG 401–543); a GUI screenshot pass (Wayland
+Older residuals (lower impact; triaged 2026-10-23 — the `.osc` Save-As
+(`0x44ca80` writes the record's own bytes, ours copies the file), R/X pairs
+on the circle diagram (DIALOG 554, `Doc::rx_pairs`) and the parallel-line
+entry in the ОМП UI (L9.11 / L9.12, `omp_params`) are done): OSC time
+stamps; the frequency-correction variant (`FUN_004267e0`, `rec+0x874` — see
+the L9 handoff); dialog-behaviour mapping of the channel-role dialogs
+(DIALOG 401–543); a GUI screenshot pass (Wayland
 capture is NOT usable unasked on this Hyprland desktop — new windows map
 on another workspace and grim captures the user's own screen; ask the user
 for a screenshot of the reworked views instead). Done: L2 ✅, L3 🟡 (readers ✅),
@@ -124,7 +126,9 @@ Verdict: 🟡 **PARTIAL** (math part ✅ — see L2).
   and evaluates identically under the decompiled evaluator semantics (L2).
 - ✅ `pi exp: re: im: arg: cosui: absig:` + `null` now implemented per L2.
 - Correction: id 0x1a is `ib:` (no `ia:` exists); 0x1e/0x1f are `ulf: ull:`.
-- ❌ The **Редактор формул / computed-channel** vocabulary is far larger. Missing:
+- ✅ (done in L6; triaged 2026-10-23: every name of the token table has an
+  evaluator case in `expr.rs`) The **Редактор формул / computed-channel**
+  vocabulary is far larger. Was missing:
   `pi exp: re: im: arg: cosui: absig: rms: fourie: a0: fault: frequency:` and the
   quantity/power/impedance accessors (`ua: ib: zf: pf: pf2wm:` …) and
   diff-protection currents (`grs*: torm*:`). A user formula using these fails in
@@ -147,10 +151,10 @@ decompilation (pending, listed below).
 | Formula evaluator (tokenizer/grammar/values) | `FUN_00418c40`, `0x419950`..`0x41f960` | `expr.rs` | ✅ L2 (numeric) |
 | `.fvb` loader / evaluation / settings | `FUN_0040c7e0`, `FUN_00409260`, `FUN_00407750` | `parse.rs`/`model.rs`/`geom.rs` | ✅ L5 |
 | Geometry / region engine | `Figure` vtables `0x4c3d90..0x4c3dcc`, paint `0x43a4a0` | `geom.rs` | ✅ L4 |
-| DFT / phasors / RMS | `FUN_00426fc0` & channel methods | `signal.rs` | ✅ L6 (freq-channel variant ❌) |
+| DFT / phasors / RMS | `FUN_00426fc0` & channel methods | `signal.rs`, `freqcorr.rs` | ✅ L6 (freq-channel variant ✅ L9.65) |
 | Symmetric components / impedances | Calculator `i1: i2: 3i0: zl: zf:` | `signal.rs`/`analysis.rs` | 🟡 L6 (view code not located) |
-| ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | ✅ L7 (parallel-line UI ❌) |
-| COMTRADE reader/writer | `0x450a30`, `.cff` `0x44fe30`/`0x44d0f0`, `.osc` `0x4524b0` | `comtrade.rs` | 🟡 L3 (`.cfg` ✅ `.cff` ✅ `.osc` read ✅, `.osc` write ❌) |
+| ОМП single/double/k0 | `0x4a00b0` engine | `omp.rs` | ✅ L7 (parallel-line UI ✅ L9.11/L9.12) |
+| COMTRADE reader/writer | `0x450a30`, `.cff` `0x44fe30`/`0x44d0f0`, `.osc` `0x4524b0` | `comtrade.rs` | 🟡 L3 (`.cfg` ✅ `.cff` ✅ `.osc` read ✅, `.osc` Save-As ✅ copies the record's bytes) |
 | `.sto` native reader | `GetInfoFromStoHeader` | — | ⛔ no sample ships |
 | Channel-role dialogs | DIALOG 401–543 | `dialogs.rs` map | 🟡 global map done |
 | Analysis views | CQAnPropSheet `0x48b970`, vector `0x490360`, freq `0x46f5a0`, readout `0x461440` | `quick.rs`, `views.rs`, GUI | ✅ L8 |
@@ -313,7 +317,7 @@ Residual / honest:
 
 ---
 
-## L6 — Signal engine (channel methods)  ·  ✅ (freq-channel DFT, 0x46 retag ❌)
+## L6 — Signal engine (channel methods)  ·  ✅ (freq-channel DFT ✅ L9.65; 0x46 retag ❌)
 
 Evidence (subagent objdump/decompile; all double constants read from bytes).
 OscillHelper.dll exports only `ComtradeConverter` — no signal code there.
@@ -366,10 +370,10 @@ are unaffected); `harmonic_rms` = `fourie:` (also drives the frequency diagram);
 difference, s < 2N terms 0, /sqrt(N)). rms/a0 already matched. Pinned by
 `tests/signal.rs` (4).
 
-Residual: frequency-channel DFT variant (`FUN_004267e0`, records with a
-selected "Гц" channel) not implemented; `rec+0x278` harmonic-1 gain assumed 1
-for COMTRADE (NOT DETERMINED); which method the frequency-diagram *view* calls
-NOT located (we use `fourie:`); primary/secondary/ADC/DC-removal flags of
+Residual: (frequency-channel variant `FUN_004267e0`: done in L9.65);
+`rec+0x278` harmonic-1 gain assumed 1 for COMTRADE (NOT DETERMINED); (which
+method the frequency-diagram view calls: `0x426510(n, idx, P)` from
+`0x46f5a0`, fundamental at bin n = P — read in L9.65); primary/secondary/ADC/DC-removal flags of
 `FUN_00426020` mapped to the GUI's existing options, not re-verified.
 Calculator channel mode (implemented): `Channels` trait (= `CalcChannels`),
 `Expr::parse_channels` (identifiers resolve to CHANNEL tokens; unresolved ones
@@ -406,7 +410,7 @@ the computed-channel name guard (error 0x1d4, text unknown); the 0x46 retag
 not kept (only its scalar samples).
 ---
 
-## L7 — ОМП (fault location)  ·  ✅ engine + GUI (parallel-line UI ❌)
+## L7 — ОМП (fault location)  ·  ✅ engine + GUI (parallel-line UI ✅ since L9.11/L9.12)
 
 Evidence (subagent decompile; main `0x4a00b0`). Our `omp.rs` (single
 cursor-instant phasor, plain reactance / textbook two-terminal formula) is
@@ -505,7 +509,8 @@ from both ends with taps and mutual coupling, |U| matching search) +
 nodal ladder `0x49bd40` solved with the original's zero-pivot elimination
 `0x477f70`, incl. the boundary bug using the whole remaining length; one
 repeat pass when the last section has taps). Residual: SI prefixes assume the Russian UI (Cyrillic);
-which signal feeds a parallel line's current NOT DETERMINED.
+(which signal feeds a parallel line's current: the channel its «I0» field
+names, message 354 when there is none — `omp_params::sections`, L9.12).
 GUI (done): method 1/2/4, Inom per substation, editable sections with taps,
 "Рассчитать" runs the engine on the role-mapped channels (isolated uses line
 voltages derived as Ua−Ub etc. — the original reads Uab/Ubc/Uca channels by
@@ -513,8 +518,9 @@ name), writes the window to the cursors, adds "Lкз" (m) and "КЗ фазы A/B
 channels, shows the original's text; moving the cursors recomputes the result
 (double-ended re-applies the direction check). The old single-instant API and
 its 4 tests were removed. GUI tests: message 349, window/cursors/channels.
-Not done: parallel-line (mutual coupling) entry in the UI, the .omp settings
-file and .txt result save, the tree-editor layout of DIALOG 336.
+(Not done at the time, all done since in L9.11 / L9.12: the parallel-line
+entry in the UI, the .omp settings file and .txt result save, the
+tree-editor layout of DIALOG 336.)
 
 Rust action: rewrite `omp.rs` as this engine (sections, per-sample distances,
 detection, window, median/σ) with tests; GUI dialog as a section tree.
@@ -940,8 +946,8 @@ whole-period DC) keeping the channel roles; `recompute_doc` re-runs ОМП via
 `omp.shown`; discrete visibility unified as `Doc::digital_visible`;
 `reopen_active` removed (a new encoding applies on the next open, as the
 original).
-Residual / NOT DETERMINED: the `doc+0x1e4` correction candidates (combo
-disabled); digital groups `doc+0x878/+0x884`; bitmap 464 icons (ours);
+Residual / NOT DETERMINED: (the `doc+0x1e4` correction candidates: read
+and implemented in L9.65); digital groups `doc+0x878/+0x884`; bitmap 464 icons (ours);
 whether 463 has OK; (`ch+0x89` default secondary: read in L9.57); `.set` persistence and the
 document-modified flag are still not modelled.
 
@@ -2213,6 +2219,68 @@ TILE / minimise do to tabbed children NOT DETERMINED); ОК assumed to be
 collation approximated by a lower-case compare; the dialog is our size in
 pixels, not converted from its DLUs exactly.
 
+### L9.65 — Correction of computed values by a measured frequency  ·  ✅
+Read (subagent report, key points re-checked by hand: the gate at
+`0x4262ac`, the constants and window in `0x4267e0`, the candidate test
+`0x42aee0` and the selection tail of `0x42ebd0`, the compares `#2949` =
+`CStringA::Compare` (`_mbscmp`) and `0x42deb0` → `wcscmp`). «Частота для
+коррекции расчётных значений» is `rec+0x874` (0 none, k the k-th
+candidate). Candidates (`0x42ebd0` over the channel vector, `0x42aee0`):
+analog channels whose ph (`+0x70`) or ccbm (`+0x74`) is exactly «system»
+or whose canonical unit is Гц / ГЦ / Герц / ГЕРЦ / Hz / HZ / Herz / HERZ.
+The rebuild ends with: selection 0 or past the list and a candidate
+exists → **1**. It runs at `.cfg` load (`0x45127d`, so such a record opens
+corrected), on every channel insert / remove (`0x42e653`, `0x42e92b`,
+`0x42eaba`, `0x42ebb7`, `0x42edba` — formula channels, ОМП results,
+paste) — so «Не корректировать» does not survive the next channel change —
+but not at `.osc` load. The gate in every method: analog channel, exactly
+one rate segment (`rec+0x1f0`), a candidate list, selection > 0, and the
+channel is not the frequency channel itself. Then f = the frequency
+channel's stored sample at the window's newest index (no ratio / flags),
+50.0 when 0; fs = the rate (`ch+0x108` or the record's); `M = P·fs/f`,
+`K = ⌊M⌋`, `τ = P/f − K/fs`; 0 while idx ≤ K; trapezoid weights `dt/2`,
+`dt`…, `dt/2 + τ − τ²/2dt`, `τ²/2dt` (exact over P/f for the linear
+interpolant). Phasor / harmonic `0x4267e0`: `(√2·f/P)·Σ w_j·x[idx−j]·
+(−sin jθ + i cos jθ)`, θ = 2π·n'·f·dt (n' = n, or n/P from the frequency
+diagram's `0x426510`) — the same sine reference at the newest sample as
+the normal DFT; no `rec+0x278` gain; fourie's n = 0 goes through it too
+(√2·|mean|). rms `0x427450`: `sqrt((f/P)·Σ w_j x²)` (0 past the frequency
+channel's end); a0 `0x426df0`: `(f/P)·Σ w_j x`; fault `0x427830`: the
+signed `x[idx] − 2·x̃(1/f) + x̃(2/f)` with linearly interpolated samples
+one and two measured periods back (no RMS). The per-channel cache
+`0x428490` fills the phasor cache with the corrected fundamental (stored
+phasors, flag 0x2000, win) and the display cache through rms / fourie.
+The file dialog (`0x4499e0`) lists «Не корректировать» + the candidates'
+names; a changed choice is stored, the document marked modified and every
+channel recomputed (`0x44a2c9`). The frequency diagram calls
+`0x426510(n = h·P, idx, P)` (`0x46f5a0`).
+Ours: `fvb_core::freqcorr` (`candidates`, `refresh_selection`, `of` (the
+gate), `FreqCorr::{harmonic, phasor, rms, a0, fault}`, dispatchers
+`sliding_phasors / sliding_rms / phasor_at / rms_at / fundamental_at /
+spectrum`); `Oscillogram::{segments, freq_sel}` and `AnalogChannel::ccbm`
+(the `.cfg` loader rebuilds; `.osc` counts rate changes between blocks as
+segments — inferred; a merged record has one); `Analysis::compute_with`,
+`OscChannels::new_with`, `quick::evaluate_batch_with` take the correction
+from the record as stored while working on the flagged copy; the RMS
+cache, the vector / circle phasors of computed channels, the frequency
+diagram and the stats panel use it; `Doc::channels_changed` after every
+channel add / remove (formula page, quick analysis, ОМП results and clear,
+paste and merge, `.set` load); the dialog's combo works. Tests
+`fvb-core/tests/freq_corr.rs` (4: a constant integrates exactly for any
+f and P, an off-nominal sine's magnitude / angle / RMS / fault, warm-up
+and the 50 Hz fallbacks, candidates / load selection / rebuild / gate)
+and `frequency_correction_on_load_off_and_back`; rendered the dialog on a
+record with a «Гц» channel (selected by default).
+Residual: computed channels are not candidates (the original's vector
+holds them, so a formula channel in Гц would be one); the `frequency:`
+token still returns the nominal frequency (what it returns under
+correction not read); merge synchronisation (`0x427670` / phasors in
+`merge.rs`) keeps the normal path; a0 / fault past the frequency channel's
+end take 50 (the original reads out of bounds); our guard returns 0 for a
+window under one sample or a non-finite f (the original computes on);
+the meaning of mfc #4434 on the dialog member `+0x110` when the
+selection is 1 not resolved.
+
 Next in L9 (HANDOFF 2026-10-23, late): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2360,7 +2428,8 @@ it is not byte-verified against a device file).
 
 Verdict: 🟡 **PARTIAL** (all readers present).
 - ✅ `.cfg`/`.dat` file-type rule, ✅ `.cff` read/write, ✅ `.osc` read.
-- ❌ `.osc` writer (`0x44ca80`, Save-As .osc) not reversed; OSC trigger/start
+- ✅ `.osc` Save-As (`0x44ca80` writes the record's own bytes under the new
+  name; ours copies the file — triaged 2026-10-23); OSC trigger/start
   time stamps not kept (our record has no time-stamp fields); unit-prefix
   table beyond micro/milli NOT DETERMINED.
 - ⛔ `.sto` — needs the native ConvertSto2Comtrade and a sample file.

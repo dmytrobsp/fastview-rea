@@ -30,6 +30,8 @@ pub struct AnalogChannel {
     pub index: u32,
     pub id: String,
     pub phase: String,
+    /// The COMTRADE `ccbm` field (`ch+0x74`).
+    pub ccbm: String,
     /// The canonical unit (`ch+0x7c`, [`crate::units::normalize`]): "A" for
     /// a file's «кА»; what every unit test and readout uses.
     pub unit: String,
@@ -85,6 +87,12 @@ pub struct Oscillogram {
     /// `0x450e70` keeps the four tokens: `doc+0x24c` start date, `+0x250`
     /// start time, `+0x254` trigger date, `+0x258` trigger time).
     pub stamps: Stamps,
+    /// The number of sample-rate segments (`rec+0x1f0`; the `.cfg`'s rate
+    /// lines).
+    pub segments: usize,
+    /// «Частота для коррекции расчётных значений» (`rec+0x874`): 0 none,
+    /// k the k-th [`crate::freqcorr::candidates`] entry.
+    pub freq_sel: i32,
 }
 
 /// The two `.cfg` time-stamp lines, token by token, and the COMTRADE 2013
@@ -580,6 +588,7 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
             index: i as u32 + 1,
             id: name.clone(),
             phase: phase.clone(),
+            ccbm: String::new(),
             unit: crate::units::normalize(unit).unit,
             raw_unit: unit.clone(),
             unit_mult: crate::units::normalize(unit).mult,
@@ -602,6 +611,8 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
     let mul: Vec<f64> = analog.iter().map(|c| c.unit_mult).collect();
     let fnom = 50.0;
     let (mut rate, mut first_rate) = (2400.0, None);
+    // Rate changes between blocks start a new segment (inferred).
+    let (mut segments, mut seg_rate) = (0usize, f64::NAN);
     let mut time = Vec::new();
     let mut t_us: i64 = 0;
     let mut bi = 0;
@@ -617,6 +628,10 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
             rate = if first_rate.is_none() { snap_rate(fs, fnom) } else { fs };
         }
         first_rate.get_or_insert(rate);
+        if rate != seg_rate {
+            segments += 1;
+            seg_rate = rate;
+        }
         // N records from the block start; nothing checks that they end
         // before the rate code at +0x7C or the block end.
         let base = (h + 1 + bi) * B;
@@ -659,6 +674,8 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
         sample_rate: first_rate.unwrap_or(rate),
         harmonic1_gain: gain,
         stamps: Stamps::default(),
+        segments: segments.max(1),
+        freq_sel: 0,
     })
 }
 
@@ -1135,6 +1152,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
             index: g(0).parse().unwrap_or(0),
             id: g(1).to_string(),
             phase: g(2).to_string(),
+            ccbm: g(3).to_string(),
             unit: norm.unit,
             raw_unit,
             unit_mult: norm.mult,
@@ -1237,7 +1255,13 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         sample_rate,
         harmonic1_gain: 1.0,
         stamps,
+        segments: rates.len(),
+        freq_sel: 0,
     };
+    // The loader rebuilds the frequency candidates (`0x45127d`), which
+    // selects the first one.
+    let mut rec = rec;
+    crate::freqcorr::refresh_selection(&mut rec);
     Ok((rec, fmt))
 }
 

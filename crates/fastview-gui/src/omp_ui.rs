@@ -214,6 +214,7 @@ impl App {
                 }
             }
         }
+        d.channels_changed();
         d.omp.run = Some(OmpRun { method, trace, sections });
         d.omp.shown = true;
         Ok(())
@@ -229,6 +230,7 @@ impl App {
         d.computed.retain(|c| c.name != L_KZ);
         d.osc.digital.retain(|c| !KZ_PHASES.contains(&c.id.as_str()));
         if d.computed.len() != nc || d.osc.digital.len() != nd {
+            d.channels_changed();
             // Rows were renumbered: drop them from the selection.
             d.selection.retain(|k| matches!(k, crate::app::ChanKey::Analog(_)));
             d.sel_anchor = None;
