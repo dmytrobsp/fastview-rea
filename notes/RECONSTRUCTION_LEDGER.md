@@ -4571,8 +4571,9 @@ Spec §7.1 corrected.
 Residual (from the sweep): the circle / differential parameter grid is
 ours (the original: one MFC property grid — «Тип блока» row, a group row
 per characteristic with a framed colour box ticked when visible and
-toggled by a click, `0x407dc0` / `0x4075c0`); the grid's splitter height
-(`Properties Height`) not persisted; 32806 with no document stays
+toggled by a click, `0x407dc0` / `0x4075c0`); (the grid's splitter
+height `Properties Height` is now kept per diagram in our settings — read
+as the panel's default, written when it changes); 32806 with no document stays
 enabled-looking in the original (INFERRED; ours greys it).
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at

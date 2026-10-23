@@ -655,13 +655,23 @@ impl App {
     /// original's pane.
     fn char_ui(&mut self, ui: &mut egui::Ui, pane: Pane) {
         let h = ui.available_height();
+        // `Properties Height` of «Circle Diagram» / «Diff Diagram»
+        // (default 200, clamped to [50, pane − 150], persisted on every
+        // re-layout — `0x437900` / `0x443390`).
+        let key = format!("{}\\Properties Height", if pane == Pane::Differential { "Diff Diagram" } else { "Circle Diagram" });
+        let stored = self.store.view.get(&key).and_then(|v| v.parse::<f32>().ok()).unwrap_or(200.0);
         let grid = egui::TopBottomPanel::top(egui::Id::new(("char_grid", pane)))
             .resizable(true)
-            .default_height(200.0)
+            .default_height(stored)
             .height_range(50.0..=(h - 150.0).max(50.0))
             .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| self.char_side_panel(ui));
             });
+        let now = grid.response.rect.height().round();
+        if (now - stored).abs() >= 1.0 && self.persist {
+            self.store.view.insert(key, format!("{now}"));
+            self.store.save();
+        }
         self.pane_grid.push(grid.response.rect);
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
             self.pane_canvas.push((pane, ui.available_rect_before_wrap()));
