@@ -269,6 +269,8 @@ struct Locus {
     pts: Vec<[f64; 2]>,
     c1: [f64; 2],
     c2: [f64; 2],
+    /// Gets the cursor "+" marks (not an R/X pair, `0x43a880`).
+    markers: bool,
 }
 
 /// Sample range of the loci (`0x438b50`): N..end, or [min(c1,c2),
@@ -285,33 +287,65 @@ fn locus_range(d: &Doc, between: bool) -> std::ops::RangeInclusive<usize> {
     a.min(last)..=b.min(last)
 }
 
+/// The circle diagram's range (`0x43a880`, `0x43a9ed`–`0x43aa41`): N..len,
+/// or [min(c1,c2), max(c1,c2)] with «Диапазон между визирами»; both bounds
+/// raised to N, then capped at the sample count itself — so the default
+/// range ends one past the samples, at a (0, 0) point.
+fn circle_range(d: &Doc, between: bool) -> std::ops::RangeInclusive<usize> {
+    let len = d.osc.sample_count();
+    let n = d.osc.samples_per_cycle().max(1);
+    let (a, b) = if between { (d.main_cursor.min(d.aux_cursor), d.main_cursor.max(d.aux_cursor)) } else { (n, len) };
+    a.max(n).min(len)..=b.max(n).min(len)
+}
+
+/// A point of the circle diagram: a non-finite part or a sample past the
+/// values gives the origin (`0x43ab37`–`0x43ab96`).
+fn finite_or_origin(p: [f64; 2]) -> [f64; 2] {
+    if p[0].is_finite() && p[1].is_finite() {
+        p
+    } else {
+        [0.0, 0.0]
+    }
+}
+
 fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
-    let range = locus_range(d, between);
-    let last = d.osc.sample_count().saturating_sub(1);
-    let (k1, k2) = (d.main_cursor.min(last), d.aux_cursor.min(last));
-    let n = d.osc.samples_per_cycle().max(2);
     let mut out = Vec::new();
-    let mut push = |name: String, unit: fvb_core::units::Shown, color: Color32, power: bool, f: &dyn Fn(usize) -> [f64; 2]| {
-        out.push(Locus { name, unit, color, power, pts: range.clone().map(f).collect(), c1: f(k1), c2: f(k2) });
-    };
     if diff {
+        let range = locus_range(d, between);
+        let last = d.osc.sample_count().saturating_sub(1);
+        let (k1, k2) = (d.main_cursor.min(last), d.aux_cursor.min(last));
         // (Iторм, Iдиф) of every enabled pair, instantaneous.
         for p in d.dif_pairs.iter().filter(|p| p.on) {
             if let (Some((dif, col)), Some((tor, _))) = (inst_by_name(d, &p.a), inst_by_name(d, &p.b)) {
-                push(p.legend_label(), Default::default(), col, false, &|k| [tor(k), dif(k)]);
+                let f = |k| [tor(k), dif(k)];
+                out.push(Locus { name: p.legend_label(), unit: Default::default(), color: col, power: false, pts: range.clone().map(f).collect(), c1: f(k1), c2: f(k2), markers: true });
             }
         }
         return out;
     }
+    let range = circle_range(d, between);
+    // The marks use the cursors as they are: past the values, the origin.
+    let (k1, k2) = (d.main_cursor, d.aux_cursor);
+    let len = d.osc.sample_count();
+    let n = d.osc.samples_per_cycle().max(2);
+    let mut push = |name: String, unit: fvb_core::units::Shown, color: Color32, power: bool, markers: bool, f: &dyn Fn(usize) -> [f64; 2]| {
+        let g = |k| finite_or_origin(f(k));
+        out.push(Locus { name, unit, color, power, pts: range.clone().map(g).collect(), c1: f(k1), c2: f(k2), markers });
+    };
     for (i, ch) in d.osc.analog.iter().enumerate() {
         if d.chans[i].on_circle {
             let (ph, kf) = (&d.analysis.phasors[i], d.shown_k(i));
-            let power = !dg::is_ohm(ch.unit.trim());
-            push(ch.id.clone(), ch.shown_unit(), d.chans[i].color, power, &|k| ph.get(k).map_or([0.0, 0.0], |z| [z.re * kf, z.im * kf]));
+            // The scale by the canonical unit, "" in ADC mode (→ power).
+            let canon = if d.chans[i].adc_counts { "" } else { ch.unit.trim() };
+            let unit = fvb_core::units::Shown::file(canon, ch.per_second);
+            push(ch.id.clone(), unit, d.chans[i].color, !dg::is_ohm(canon), true, &|k| ph.get(k).map_or([0.0, 0.0], |z| [z.re * kf, z.im * kf]));
         }
     }
     for c in d.computed.iter().filter(|c| c.on_circle) {
         let series = |k: usize| {
+            if k >= len {
+                return [0.0, 0.0];
+            }
             let z = match &c.phasors {
                 Some(p) => p.get(k).copied().unwrap_or_default(),
                 None => fvb_core::freqcorr::phasor_at(fvb_core::freqcorr::of(&d.osc), fvb_core::freqcorr::OTHER, &c.samples, k, n),
@@ -321,11 +355,15 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
         // An empty unit (not modelled by our generator) is taken as Ohm.
         let unit = c.unit.trim();
         let power = !unit.is_empty() && !dg::is_ohm(unit);
-        push(c.name.clone(), fvb_core::units::Shown::computed(unit), c.color, power, &series);
+        push(c.name.clone(), fvb_core::units::Shown::computed(unit), c.color, power, true, &series);
     }
+    // R/X pairs: instantaneous values (`0x426020`: 0 past the values or
+    // NaN, per coordinate), the Ω scale, the R channel's unit, no marks.
     for p in d.rx_pairs.iter().filter(|p| p.on) {
         if let (Some((r, col)), Some((x, _))) = (inst_by_name(d, &p.a), inst_by_name(d, &p.b)) {
-            push(p.legend_label(), "Ohm".into(), col, false, &|k| [r(k), x(k)]);
+            let unit = d.osc.analog.iter().find(|c| c.id == p.a).map(|c| c.shown_unit()).or_else(|| d.computed.iter().find(|c| c.name == p.a).map(|c| fvb_core::units::Shown::computed(&c.unit))).unwrap_or_default();
+            let v = |s: &dyn Fn(usize) -> f64, k: usize| if k < len { Some(s(k)).filter(|v| v.is_finite()).unwrap_or(0.0) } else { 0.0 };
+            push(p.legend_label(), unit, col, false, false, &|k| [v(&r, k), v(&x, k)]);
         }
     }
     out
@@ -945,9 +983,12 @@ impl App {
                 }
             }
         }
-        // Loci (`0x43a880`): a polyline per channel / pair, "+" at cursor 1
-        // (red) and cursor 2 (blue).
-        for l in &loci {
+        // Loci (`0x43a880`): the channels' polylines, then their "+" at
+        // cursor 1 (200, 0, 0) and cursor 2 (0, 0, 200), then the R/X
+        // pairs' polylines.
+        let (red, blue) = if diff { (Color32::RED, Color32::BLUE) } else { (Color32::from_rgb(200, 0, 0), Color32::from_rgb(0, 0, 200)) };
+        let ordered = loci.iter().filter(|l| l.markers).map(|l| (l, false)).chain(loci.iter().filter(|l| l.markers).map(|l| (l, true))).chain(loci.iter().filter(|l| !l.markers).map(|l| (l, false)));
+        for (l, marks) in ordered {
             let Some(ppu) = sc.ppu[usize::from(l.power && !diff)] else { continue };
             let mut run: Vec<Pos2> = Vec::new();
             let flush = |run: &mut Vec<Pos2>| {
@@ -956,16 +997,19 @@ impl App {
                 }
                 run.clear();
             };
-            for p in &l.pts {
-                if p[0].is_finite() && p[1].is_finite() {
-                    let q = to_px(p[0], p[1], ppu);
-                    run.push(Pos2::new(q[0], q[1]));
-                } else {
-                    flush(&mut run);
+            if !marks {
+                for p in &l.pts {
+                    if p[0].is_finite() && p[1].is_finite() {
+                        let q = to_px(p[0], p[1], ppu);
+                        run.push(Pos2::new(q[0], q[1]));
+                    } else {
+                        flush(&mut run);
+                    }
                 }
+                flush(&mut run);
+                continue;
             }
-            flush(&mut run);
-            for (p, col) in [(l.c1, Color32::RED), (l.c2, Color32::BLUE)] {
+            for (p, col) in [(l.c1, red), (l.c2, blue)] {
                 if p[0].is_finite() && p[1].is_finite() {
                     let q = to_px(p[0], p[1], ppu);
                     let q = Pos2::new(q[0], q[1]);
@@ -1477,29 +1521,92 @@ fn legend(p: &egui::Painter, ui: &egui::Ui, rect: Rect, loci: &[Locus]) {
     }
 }
 
-/// The readout table (`0x43bbf0`): one ruled row per locus — swatch, name,
-/// value at cursor 1 (mode 1 Re ± jIm `%.3f`, mode 2 `%.3f` and an angle
-/// column `%.2fº`); centred when narrower than the window. The differential
-/// diagram's boolean readout shows (Iторм; Iдиф) [I].
+/// The circle diagram's value cells at cursor 1 (`0x43bbf0`): mode 1
+/// `"%s%sj%s %s%s"` of Re and |Im| (`%.3f`, scaled by the prefix chosen on
+/// |z|; both «0.0» when |z| is 0), mode 2 `"%.3f %s%s"` of |z| and
+/// `"%.2fº"`; a non-finite part leaves the cells empty.
+fn circle_cells(l: &Locus, mode: u8) -> [String; 2] {
+    let [re, im] = l.c1;
+    if !(re.is_finite() && im.is_finite()) {
+        return Default::default();
+    }
+    let z = Complex64::new(re, im);
+    let (scaled, unit) = fvb_core::views::si_scaled(z.norm(), &l.unit);
+    let k = if z.norm() == 0.0 { 1.0 } else { scaled / z.norm() };
+    if mode == 1 {
+        let sign = if im < 0.0 { "-" } else { "+" };
+        let (a, b) = if z.norm() == 0.0 { ("0.0".to_string(), "0.0".to_string()) } else { (format!("{:.3}", re * k), format!("{:.3}", (im * k).abs())) };
+        [format!("{a}{sign}j{b} {unit}"), String::new()]
+    } else {
+        [format!("{:.3} {unit}", z.norm() * k), format!("{:.2}º", im.atan2(re).to_degrees())]
+    }
+}
+
+/// The circle diagram's readout table (`0x43bbf0`), in units of the
+/// print multiplier m: no header; the name column the widest name + 30 +
+/// ⌊4cy/5⌋, two value columns of the width of "-0.0000000" + 24 (both
+/// reserved in mode 1 too); centred when it fits, else 6 from the left; top
+/// at the plot's bottom; rows ⌊3cy/2⌋ with the swatch a Rectangle (black
+/// pen, the colour's fill) from (⌊cy/3⌋, ⌊cy/3⌋) to (⌊cy/3⌋ + cy − 1,
+/// ⌊3cy/2⌋ − ⌊cy/3⌋), the name at ⌊cy/2⌋ + cy, values 6 into their column,
+/// text ⌊cy/4⌋ down; rules at the top, under every row, at both edges,
+/// after the name column and (mode 2) between the values, pen (150, 150,
+/// 150) 1 px on screen, (100, 100, 100) ⌊m/2⌋ in print. No rows: nothing.
+fn circle_table(p: &egui::Painter, ui: &egui::Ui, rect: Rect, cy: f32, loci: &[Locus], mode: u8) {
+    if loci.is_empty() {
+        return;
+    }
+    let width = |t: &str| ui.painter().layout_no_wrap(t.to_string(), font(), TEXT).size().x;
+    let names = loci.iter().map(|l| width(&l.name)).fold(0.0, f32::max);
+    let name_col = names + 30.0 + (4.0 * cy / 5.0).floor();
+    let val_col = width("-0.0000000") + 24.0;
+    let total = name_col + 2.0 * val_col;
+    let left = if total < rect.width() { rect.left() + ((rect.width() - total) / 2.0).floor() } else { rect.left() + 6.0 };
+    let top = rect.bottom();
+    let row_h = (1.5 * cy).floor();
+    let rule = match print_s() {
+        Some(s) => stroke((s / 2.0).floor() / s, Color32::from_gray(100)),
+        None => stroke(1.0, Color32::from_gray(150)),
+    };
+    let third = (cy / 3.0).floor();
+    let px = 1.0 / print_s().unwrap_or(1.0);
+    for (ri, l) in loci.iter().enumerate() {
+        let y = top + row_h * ri as f32;
+        let sw = Rect::from_min_max(Pos2::new(left + third, y + third), Pos2::new(left + third + cy - 1.0, y + row_h - third));
+        p.rect(sw, 0.0, l.color, stroke(px, Color32::BLACK));
+        let ty = y + (cy / 4.0).floor();
+        p.text(Pos2::new(left + (cy / 2.0).floor() + cy, ty), egui::Align2::LEFT_TOP, &l.name, font(), TEXT);
+        for (c, t) in circle_cells(l, mode).iter().enumerate() {
+            p.text(Pos2::new(left + name_col + 6.0 + c as f32 * val_col, ty), egui::Align2::LEFT_TOP, t, font(), TEXT);
+        }
+    }
+    let bottom = top + row_h * loci.len() as f32;
+    for ri in 0..=loci.len() {
+        let y = top + row_h * ri as f32;
+        p.line_segment([Pos2::new(left, y), Pos2::new(left + total, y)], rule);
+    }
+    let mut xs = vec![left, left + name_col, left + total];
+    if mode == 2 {
+        xs.push(left + name_col + val_col);
+    }
+    for x in xs {
+        p.line_segment([Pos2::new(x, top), Pos2::new(x, bottom)], rule);
+    }
+}
+
+/// The readout table (`0x43bbf0` for the circle diagram, [`circle_table`]).
+/// The differential diagram's readout (its painter not read) shows
+/// (Iторм; Iдиф) [I] in one ruled row per locus.
 fn readout_table(p: &egui::Painter, ui: &egui::Ui, rect: Rect, text_h: f32, loci: &[Locus], mode: u8, diff: bool) {
+    if !diff {
+        return circle_table(p, ui, rect, text_h, loci, mode);
+    }
     let row_h = text_h * 1.5;
     let cells: Vec<Vec<String>> = loci
         .iter()
         .map(|l| {
             let [re, im] = l.c1;
-            if diff {
-                return vec![l.name.clone(), format!("{re:.3}; {im:.3}")];
-            }
-            let z = Complex64::new(re, im);
-            // `0x43d960` on |z| and the unit as shown (`0x42bc50`).
-            let (scaled, unit) = fvb_core::views::si_scaled(z.norm(), &l.unit);
-            let k = if z.norm() == 0.0 { 1.0 } else { scaled / z.norm() };
-            if mode == 1 {
-                let sign = if im < 0.0 { "-" } else { "+" };
-                vec![l.name.clone(), format!("{:.3}{sign}j{:.3} {unit}", re * k, (im * k).abs())]
-            } else {
-                vec![l.name.clone(), format!("{:.3} {unit}", z.norm() * k), format!("{:.2}º", im.atan2(re).to_degrees())]
-            }
+            vec![l.name.clone(), format!("{re:.3}; {im:.3}")]
         })
         .collect();
     let ncol = cells.first().map_or(2, |r| r.len());
@@ -1758,6 +1865,27 @@ mod tests {
         assert!(plane_loci(h.app.active_doc().unwrap(), false, false).iter().all(|l| l.name != label));
     }
 
+    /// The circle range (`0x43a9ed`–`0x43aa41`): N..=len, both bounds
+    /// raised to N and capped at the sample count; points past the values
+    /// or non-finite are the origin; R/X pairs get no cursor marks.
+    #[test]
+    fn circle_range_and_points_as_read() {
+        let mut h = H::new(Pane::Circle);
+        let d = h.app.active_doc_mut().unwrap();
+        let (len, n) = (d.osc.sample_count(), d.osc.samples_per_cycle());
+        assert_eq!(circle_range(d, false), n..=len);
+        (d.main_cursor, d.aux_cursor) = (len + 50, 1);
+        assert_eq!(circle_range(d, true), n..=len, "both bounds ≥ N, ≤ len");
+        assert_eq!(finite_or_origin([f64::NAN, 1.0]), [0.0, 0.0]);
+        let names: Vec<String> = d.osc.analog.iter().take(2).map(|c| c.id.clone()).collect();
+        d.rx_pairs.push(crate::diagram::ChanPair::new(names[0].clone(), names[1].clone()));
+        let loci = plane_loci(d, false, false);
+        let pair = loci.last().unwrap();
+        assert!(!pair.markers && !pair.power);
+        assert_eq!(pair.unit, d.osc.analog[0].shown_unit(), "the R channel's unit");
+        assert_eq!(pair.pts.last(), Some(&[0.0, 0.0]));
+    }
+
     /// A «P» record shown «Вторичные» is drawn in secondary values on the
     /// diagrams too: the phasor cache and `0x426020` carry k (L9.69).
     #[test]
@@ -1771,7 +1899,12 @@ mod tests {
         let raw = d.analysis.phasors[0][k];
         assert_eq!(d.shown_k(0), 1.0 / 2000.0);
         let id = d.osc.analog[0].id.clone();
-        let at = |d: &Doc| plane_loci(d, false, false).into_iter().find(|l| l.name == id).unwrap().pts.last().copied().unwrap();
+        // The point of sample k: the range's end is one past it (0x43a880).
+        let at = |d: &Doc| {
+            let pts = plane_loci(d, false, false).into_iter().find(|l| l.name == id).unwrap().pts;
+            assert_eq!(pts.last(), Some(&[0.0, 0.0]), "the locus ends at the origin");
+            pts[pts.len() - 2]
+        };
         assert_eq!(at(d), [raw.re / 2000.0, raw.im / 2000.0]);
         d.chans[0].primary = true;
         d.recompute(true);

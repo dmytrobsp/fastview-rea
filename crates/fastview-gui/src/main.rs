@@ -737,6 +737,7 @@ mod window_tests {
         let cmds = match std::env::var("FV_WINDOW_STATE").unwrap_or_default().as_str() {
             "analysis" => vec![C::QuickAnalysis],
             "circle" => vec![C::ActivatePane(Pane::Circle)],
+            "circletable" => vec![C::ActivatePane(Pane::Circle)],
             "diff" => vec![C::ActivatePane(Pane::Differential)],
             "omp" => vec![C::OmpAnalysis],
             "ompparams" => vec![C::OmpParams],
@@ -802,6 +803,17 @@ mod window_tests {
             app.formula_page.selected = Some(1);
         }
         // `FV_WINDOW_STATE=vecvalues`: the vector diagram's values table.
+        // `FV_WINDOW_STATE=circletable`: the first channel and an R/X pair
+        // of the first two on the circle diagram, the values table (mode 2).
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "circletable") {
+            app.track_settings();
+            app.circle_readout = 2;
+            if let Some(d) = app.active_doc_mut() {
+                d.chans[0].on_circle = true;
+                let (a, b) = (d.osc.analog[0].id.clone(), d.osc.analog[1].id.clone());
+                d.rx_pairs.push(diagram::ChanPair::new(a, b));
+            }
+        }
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "vecvalues") {
             app.track_settings();
             app.vec_show_values = true;

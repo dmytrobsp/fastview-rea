@@ -125,8 +125,16 @@ reading 0 (so the first value before the paste, a fall to 0 within one own
 period after it, then 0; ledger L9.77).
 
 ## Circle diagram locus (`0x43a880`)
-Channels with flag 0x8: per-sample cached complex phasor (Re, Im) ("Ohm" and
-other units on separate scales); R/X channel pairs (DIALOG 554): (R, X)
-instantaneous. Samples N..end, or [min(c1,c2), max(c1,c2)] (≥ N) with
-"Диапазон между визирами"; one polyline; "+" markers at c1 (red) and c2
-(blue); readout at c1: Re ± jIm "%.3f" or |·| "%.3f" ∠ "%.2fº".
+Channels with flag 0x8: per-sample cached complex phasor (Re, Im) ("Ohm" —
+the canonical unit, "" in ADC mode — on the Ω scale, other units on the
+power scale); R/X channel pairs (DIALOG 554): (R, X) instantaneous
+(`0x426020`, 0 past the values or NaN), always the Ω scale. Samples N..len
+inclusive, or [min(c1,c2), max(c1,c2)] with "Диапазон между визирами", both
+bounds raised to N and capped at the sample count — so the default locus
+ends at a (0, 0) point; a NaN or past-cache point is the origin, the
+polyline never breaks. Draw order: the channels' polylines, their "+"
+marks (±4) at c1 (200, 0, 0) and c2 (0, 0, 200) at the raw cursor index,
+then the pairs' polylines (no marks). Readout table `0x43bbf0` at c1:
+Re ± jIm "%.3f" (both «0.0» at |z| = 0) or |·| "%.3f" ∠ "%.2fº", an empty
+cell for a non-finite value, a pair in its R channel's unit; layout in
+ledger L9.80.

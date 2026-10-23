@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 339 pass)
+- `cargo test --workspace`   (currently 340 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2730,6 +2730,42 @@ method keys set (two radios checked → two reductions, INFERRED) not
 modelled; which «Группа:» combo shows under «Не учитывать» (`0x4831b0`
 not re-read; ours the sequence one, greyed).
 
+### L9.80 — The circle diagram's loci and readout table as read  ·  ✅
+Read (subagent report on `0x43a880` / `0x43bbf0` with `0x43b570`,
+`0x43ba80`; by hand: the static marker pens `0xc8` / `0xc80000`
+(`0x43a8cc`, `0x43a90b`), the bounds raised to N and capped at
+`0x431020` (the record's sample count) itself (`0x43a9ed`–`0x43aa41`,
+count = end − start + 1), the NaN / past-cache test giving (0, 0)
+(`0x43ab37`–`0x43ab96`), the phasor cache `+0x38` sized to the samples
+(`0x4287c1`)): the loci run N..=len, so the default range ends with a
+stroke back to the origin; a NaN never breaks the line; the cursor marks
+use the raw cursor; R/X pairs (instantaneous, 0 past the values / NaN,
+the Ω scale, the R channel's unit) get no marks and are drawn after the
+marks; the scale test is on the canonical unit ("" in ADC mode → power).
+Table: no header; name column = widest name + 30m + ⌊4cy/5⌋; two value
+columns of "-0.0000000" + 24m (both reserved in mode 1); centred when it
+fits, else 6m in; top at the plot's bottom; rows ⌊3cy/2⌋; swatch a
+Rectangle (black m pen, colour fill) (⌊cy/3⌋, ⌊cy/3⌋)–(⌊cy/3⌋ + cy − 1,
+⌊3cy/2⌋ − ⌊cy/3⌋); name at ⌊cy/2⌋ + cy, values col1 + 6m, text ⌊cy/4⌋
+down; rules top / under each row / both edges / after the names /
+(mode 2) between the values, pen (150,150,150) 1 px, print (100,100,100)
+⌊m/2⌋; no rows → nothing; mode 1 |z| = 0 → «0.0+j0.0», a non-finite part
+→ empty cells.
+Ours stopped at len − 1 and broke the line at NaN, clamped the cursors,
+marked R/X pairs, used pure red / blue, let the between-cursors start fall
+under N, showed pairs in "Ohm", and sized the table to its content
+without vertical rules. Now `circle_range`, `finite_or_origin`,
+`Locus::markers`, the three-pass draw, `circle_cells` / `circle_table`;
+`FV_WINDOW_STATE=circletable` renders it (rendered on DOC_1999). Tests
+`circle_range_and_points_as_read`, `diagrams_carry_the_display_factor`
+(the end point).
+Residual: the differential plane's painter and table (not `0x43a880` /
+`0x43bbf0`) keep ours; a computed channel without a unit stays on the Ω
+scale (ours; the original's "" → power, INFERRED); cy is our font's row
+height, not GetTextExtent("Ay"); the table's text colour / background
+mode come from the caller's DC (not traced); NaN cursor marks are skipped
+(not read).
+
 Next in L9 (HANDOFF 2026-10-23, night): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, **macos-universal**
@@ -2775,7 +2811,7 @@ DLLs now live in `extracted/mfc/` (local, git-ignored). No user questions
 pending.
 **How to look at the GUI without running it:** `FV_WINDOW_DUMP=<png>
 [FV_WINDOW_RECORD=<cfg>] [FV_WINDOW_STATE=analysis (the sheet, two formula
-channels)|comments|group|circle|diff|omp|ompparams|preview|print|pagesetup|
+channels)|comments|group|circle|circletable|diff|omp|ompparams|preview|print|pagesetup|
 settings|channels|coef|fileparams|explorer|parambar|vizirs|alert|windows|
 paste|vecvalues|skin<k>] [FV_WINDOW_XSCALE=f] [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y]
 [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then Read the PNG (crop with
