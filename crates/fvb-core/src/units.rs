@@ -151,6 +151,54 @@ pub fn is_canonical(unit: &str) -> bool {
     matches!(unit, "A" | "V" | "VA" | "W" | "var" | "Ohm" | "F" | "H" | "DEG" | "nom" | "p. u." | "Hz" | "m" | "s" | "S")
 }
 
+/// A channel's unit as the readouts show it (`0x42bc50`): the canonical
+/// unit (`0x414c30`), which picks the SI prefix (`0x43d960`), and the text
+/// printed after the prefix.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Shown {
+    pub canon: String,
+    pub text: String,
+}
+
+impl Shown {
+    /// A file channel's: an unrecognised unit (`ch+0x155`) as is, else the
+    /// unit with «/с» (string `0x4c5eac`) when per-second (`ch+0x154`),
+    /// through [`ru`].
+    pub fn file(unit: &str, per_second: bool) -> Shown {
+        let text = if is_canonical(unit) || unit.is_empty() {
+            ru(&format!("{unit}{}", if per_second { "/с" } else { "" }))
+        } else {
+            unit.to_string()
+        };
+        Shown { canon: unit.to_string(), text }
+    }
+
+    /// A computed channel's: its unit is stored as the formula gave it with
+    /// both flags clear (`0x424504`, `0x425db0`), so any text is translated
+    /// (`[kV]` → «кВ»).
+    pub fn computed(unit: &str) -> Shown {
+        Shown { canon: unit.to_string(), text: ru(unit) }
+    }
+}
+
+impl From<&str> for Shown {
+    fn from(unit: &str) -> Shown {
+        Shown::file(unit, false)
+    }
+}
+
+impl From<&String> for Shown {
+    fn from(unit: &String) -> Shown {
+        Shown::file(unit, false)
+    }
+}
+
+impl From<&Shown> for Shown {
+    fn from(s: &Shown) -> Shown {
+        s.clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,6 +217,19 @@ mod tests {
         assert_eq!(ru("S"), "См");
         // Plain substring replacement in table order.
         assert_eq!(ru("p. u."), "o. e.");
+    }
+
+    #[test]
+    fn shown_unit_texts() {
+        // A file channel: «кВ/с» is V per second, shown «В/с».
+        let n = normalize("кВ/с");
+        assert_eq!(Shown::file(&n.unit, n.per_second), Shown { canon: "V".into(), text: "В/с".into() });
+        // An unrecognised file unit is shown as written.
+        assert_eq!(Shown::file("kVs", false).text, "kVs");
+        // A computed channel's unit is always translated, but only the
+        // canonical one picks a prefix.
+        assert_eq!(Shown::computed("kV"), Shown { canon: "kV".into(), text: "кВ".into() });
+        assert_eq!(Shown::computed("В").text, "В");
     }
 
     #[test]

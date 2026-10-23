@@ -39,6 +39,8 @@ pub struct AnalogChannel {
     pub raw_unit: String,
     /// The unit's SI-prefix multiplier, folded into `samples` (`ch+0x98`).
     pub unit_mult: f64,
+    /// The unit ended in «/с» or "/s" (`ch+0x154`): shown with «/с».
+    pub per_second: bool,
     pub a: f64,
     pub b: f64,
     pub primary: f64,
@@ -49,6 +51,11 @@ pub struct AnalogChannel {
 }
 
 impl AnalogChannel {
+    /// The unit as the readouts show it (`0x42bc50`).
+    pub fn shown_unit(&self) -> crate::units::Shown {
+        crate::units::Shown::file(&self.unit, self.per_second)
+    }
+
     /// The unit to write to a file: as read, else the canonical one.
     pub fn file_unit(&self) -> &str {
         if self.raw_unit.is_empty() {
@@ -592,6 +599,7 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
             unit: crate::units::normalize(unit).unit,
             raw_unit: unit.clone(),
             unit_mult: crate::units::normalize(unit).mult,
+            per_second: crate::units::normalize(unit).per_second,
             a: cal[i].0,
             b: cal[i].1,
             primary: ratio(i),
@@ -1156,6 +1164,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
             unit: norm.unit,
             raw_unit,
             unit_mult: norm.mult,
+            per_second: norm.per_second,
             a: g(5).parse().unwrap_or(1.0),
             b: g(6).parse().unwrap_or(0.0),
             // An,ch_id,ph,ccbm,uu,a,b,skew,min,max,primary,secondary,PS

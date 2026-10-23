@@ -44,8 +44,13 @@ the unit is the text of the `[...]` where it stops, else the unit it carried:
   walk stops at their `(`.
 - Quick analysis takes its units the same way (its formulas come from the
   «Добавить…» builder `0x4129e0`, e.g. S0 = `Mod:(Pf: (…))[VA]`).
-- Display (`+0x78`) replaces an exact «В» by V and «А» by A; the canonical
-  (`+0x7c`) keeps the text.
+- Stored (`0x425d70`): the unit goes to `+0x78` and `+0x7c` alike, then
+  `+0x78` (the file-side unit) has a «В» (string 3122) replaced by V and
+  «А» (3106) by A; the canonical `+0x7c` keeps the text. Both unit flags
+  are cleared (`0x424504`), so a readout (`0x42bc50`) always shows the
+  canonical text through the Russian translator `0x42b740` (`[kV]` →
+  «кВ»), with an SI prefix only when it is one of the prefixable Latin
+  units (ledger L9.76).
 
 ## Functions
 - `ib:(a,b,c)` = c − (a + b) (Z and s), F = AND. `ulf:(a,b)` = a − b.

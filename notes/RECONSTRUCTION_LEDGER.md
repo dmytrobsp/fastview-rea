@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 335 pass)
+- `cargo test --workspace`   (currently 336 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2596,7 +2596,7 @@ the status bar, the vector table and the plane readouts follow. Tests
 Residual: the per-second suffix («/с») is not kept on our channels;
 computed channels' bracket units (e.g. `[kV]`) are not translated (the
 original translates every unit without `+0x155`; ours only the canonical
-ones).
+ones). — Both done in L9.76.
 
 ### L9.75 — Circle / differential planes: labels, opaque text, whole-unit extents  ·  ✅
 Read (subagent report; by hand: the formats `" R: %g %s%s, %g %s%s"`,
@@ -2623,6 +2623,32 @@ Residual: the extent's exclusive-edge +1 (taken as +0) and the Ω / power
 split of characteristic extents (ours: one plane dimension per block);
 the legend's unclamped start x and swatch pen; GDI's frame / scale-box
 edge pixels.
+
+### L9.76 — The unit text: «/с» kept, computed channels' units translated  ·  ✅
+Read by hand: `0x42bc50` — when `ch+0x155` (unrecognised) is set the
+canonical unit (`0x414c30`: `ch+0x7c`, "" in ADC mode `+0x60 & 0x1000`)
+as is; else the suffix «/с» (`0x4c5eac`; "/s" `0x4c5ea4` only for a
+non-zero language global) when `ch+0x154`, appended to the canonical unit,
+the whole through `0x42b740`. The flags are set only by the file
+normaliser (`0x422b10`, one caller: the `.cfg` channel line `0x422ad8`;
+«/с» found → `+0x154` at `0x422e90`, unrecognised → `+0x155` with `+0x154`
+cleared at `0x423f5f`/`0x423f7c`). A formula channel is made by
+`0x42e940` → `0x4242e0`, which clears both (`0x424504`, a word store) and
+stores the walk's unit (`0x425d70`) in `+0x78` and `+0x7c` alike, then
+replaces an exact «В» / «А» (strings 3122 / 3106) by V / A in `+0x78`
+only. So a computed channel's unit is always translated (`[kV]` → «кВ»,
+no prefix: the prefix test `0x43d960` is on the Latin list), and a file
+«кВ/с» reads «кВ/с».
+Ours dropped «/с» and showed computed channels' non-canonical units as
+typed. Now `units::Shown` (canonical unit + shown text; `file`,
+`computed`), `AnalogChannel::per_second` / `shown_unit`, and every readout
+formatter (`views::si_scaled`, `readout_text`, `stats_value_text`,
+`group_stats_line`, `vector_value_text`) takes it — stats panel, status
+bar, vector table, circle readout table. Tests `shown_unit_texts`, the
+views readout test.
+Residual: the ADC-mode stats text (ours «отсч.», the original's ""
+through this path — the stats panel's own ADC branch not re-read); the
+«Каналы» dialog's unit column not checked against `0x42bc50`.
 
 Next in L9 (HANDOFF 2026-10-23, night): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

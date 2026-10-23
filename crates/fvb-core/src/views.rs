@@ -32,7 +32,7 @@ pub fn vector_header_value(v: f64) -> String {
 /// The values table's magnitude (`0x4925c5`): `"%.2f %s%s"` above 1 or at
 /// 0, else `"%w.(w−2)f"` with `w = |⌊log10 |z|⌋| + 3` (of the unscaled
 /// value — INFERRED); value and prefix from `0x43d960` on the canonical unit.
-pub fn vector_value_text(v: f64, unit: &str) -> String {
+pub fn vector_value_text(v: f64, unit: impl Into<crate::units::Shown>) -> String {
     let (scaled, u) = si_scaled(v, unit);
     if v > 1.0 || v == 0.0 {
         format!("{scaled:.2} {u}")
@@ -114,7 +114,7 @@ pub fn fmt_g(v: f64) -> String {
 
 /// The per-channel readout text (`0x461440`): `" %-8g %s"` with an SI
 /// prefix on the unit.
-pub fn readout_text(v: f64, unit: &str) -> String {
+pub fn readout_text(v: f64, unit: impl Into<crate::units::Shown>) -> String {
     let (scaled, unit) = si_scaled(v, unit);
     if v < 0.0 {
         format!("{:<8} {unit}", fmt_g(scaled))
@@ -130,27 +130,28 @@ pub fn si_unit(unit: &str) -> bool {
     matches!(unit, "V" | "A" | "VA" | "W" | "ОM" | "Ohm" | "OHM" | "var" | "F" | "H" | "GN" | "Hz" | "m")
 }
 
-/// `v` scaled for display and its unit with the SI prefix, when the unit
-/// takes one; a recognised unit is shown in Russian («В», «мА», «Ом»).
-pub fn si_scaled(v: f64, unit: &str) -> (f64, String) {
-    // The text is the unit as the Russian UI shows it (`0x42bc50`).
-    let shown = if crate::units::is_canonical(unit) { crate::units::ru(unit) } else { unit.to_string() };
-    if si_unit(unit) {
+/// `v` scaled for display and its unit with the SI prefix, when the
+/// canonical unit takes one; the text is the unit as the Russian UI shows
+/// it (`0x42bc50`: «В», «мА», «Ом», «В/с»).
+pub fn si_scaled(v: f64, unit: impl Into<crate::units::Shown>) -> (f64, String) {
+    let unit = unit.into();
+    if si_unit(&unit.canon) {
         let (s, p) = crate::omp::si(v);
-        (s, format!("{p}{shown}"))
+        (s, format!("{p}{}", unit.text))
     } else {
-        (v, shown)
+        (v, unit.text)
     }
 }
 
 /// The stats-panel value at В1 (`0x461440`): the sign, then `%-6g %s` of
 /// |v|; the unit (prefixed) cut to 5 characters, "none" printed as nothing;
 /// NaN is not drawn.
-pub fn stats_value_text(v: f64, unit: &str) -> Option<String> {
+pub fn stats_value_text(v: f64, unit: impl Into<crate::units::Shown>) -> Option<String> {
     if v.is_nan() {
         return None;
     }
-    let unit = if unit == "none" { "" } else { unit };
+    let unit = unit.into();
+    let unit = if unit.canon == "none" { crate::units::Shown::default() } else { unit };
     let (s, u) = si_scaled(v.abs(), unit);
     let u: String = u.chars().take(5).collect();
     Some(format!("{}{:<6} {u}", if v < 0.0 { "-" } else { " " }, fmt_g(s)))
@@ -161,9 +162,10 @@ pub fn stats_value_text(v: f64, unit: &str) -> Option<String> {
 /// the SI-scaled value as `%-8g` trimmed — cut to two decimals and its
 /// trailing zeros stripped when it has a `.` and no exponent (a bare `.` can
 /// stay) — and the prefixed unit cut to 5 characters, joined by `|`.
-pub fn group_stats_line(minmax: Option<(f64, f64)>, rms: Option<f64>, a1: Option<f64>, unit: &str) -> String {
+pub fn group_stats_line(minmax: Option<(f64, f64)>, rms: Option<f64>, a1: Option<f64>, unit: impl Into<crate::units::Shown>) -> String {
+    let unit = unit.into();
     let item = |label: &str, v: f64| {
-        let (s, u) = si_scaled(v, unit);
+        let (s, u) = si_scaled(v, &unit);
         let mut t = fmt_g(s);
         if let (Some(dot), false) = (t.find('.'), t.contains('e')) {
             t.truncate((dot + 3).min(t.len()));
@@ -231,6 +233,10 @@ mod tests {
         assert_eq!(readout_text(57_100.0, "V"), " 57.1     кВ");
         assert_eq!(readout_text(-57_100.0, "V"), "-57.1    кВ");
         assert_eq!(readout_text(57_100.0, "kV"), " 57100    kV", "only listed units get a prefix");
+        // A computed channel's `[kV]` is translated but takes no prefix; a
+        // per-second file unit keeps its «/с» after the prefixed unit.
+        assert_eq!(readout_text(57_100.0, crate::units::Shown::computed("kV")), " 57100    кВ");
+        assert_eq!(readout_text(1500.0, crate::units::Shown::file("V", true)), " 1.5      кВ/с");
         assert_eq!(readout_text(0.012, "ОM"), " 12       мОM");
         assert_eq!(stats_value_text(-23.4375, "A").unwrap(), "-23.4375 А");
         assert_eq!(stats_value_text(1.5, "none").unwrap(), " 1.5    ");

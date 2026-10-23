@@ -137,6 +137,7 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
                     unit: fvb_core::units::normalize(&c.dimension).unit,
                     raw_unit: c.dimension.clone(),
                     unit_mult: 1.0,
+                    per_second: fvb_core::units::normalize(&c.dimension).per_second,
                     a: c.mul,
                     b: c.offset,
                     primary: c.primary_value,

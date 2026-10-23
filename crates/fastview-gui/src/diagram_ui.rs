@@ -172,6 +172,8 @@ fn g_si(v: f64) -> (String, &'static str) {
 struct DChan {
     name: String,
     unit: String,
+    /// The unit as the readouts show it (`0x42bc50`).
+    shown: fvb_core::units::Shown,
     color: Color32,
     analog: Option<usize>,
     computed: Option<usize>,
@@ -184,11 +186,16 @@ fn doc_chans(d: &Doc) -> Vec<DChan> {
         .iter()
         .enumerate()
         // The canonical unit, none in ADC mode (`0x414c30`).
-        .map(|(i, c)| DChan { name: c.id.clone(), unit: if d.chans[i].adc_counts { String::new() } else { c.unit.clone() }, color: d.chans[i].color, analog: Some(i), computed: None })
+        .map(|(i, c)| {
+            let unit = if d.chans[i].adc_counts { String::new() } else { c.unit.clone() };
+            let shown = fvb_core::units::Shown::file(&unit, c.per_second);
+            DChan { name: c.id.clone(), unit, shown, color: d.chans[i].color, analog: Some(i), computed: None }
+        })
         .collect();
     v.extend(d.computed.iter().enumerate().map(|(j, c)| DChan {
         name: c.name.clone(),
         unit: c.unit.trim().to_string(),
+        shown: fvb_core::units::Shown::computed(c.unit.trim()),
         color: c.color,
         analog: None,
         computed: Some(j),
@@ -255,7 +262,8 @@ fn listed(w: Window, c: &DChan) -> bool {
 /// the values at cursor 1 / cursor 2.
 struct Locus {
     name: String,
-    unit: String,
+    /// The unit as the readout table shows it (`0x42bc50`).
+    unit: fvb_core::units::Shown,
     color: Color32,
     power: bool,
     pts: Vec<[f64; 2]>,
@@ -283,14 +291,14 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
     let (k1, k2) = (d.main_cursor.min(last), d.aux_cursor.min(last));
     let n = d.osc.samples_per_cycle().max(2);
     let mut out = Vec::new();
-    let mut push = |name: String, unit: String, color: Color32, power: bool, f: &dyn Fn(usize) -> [f64; 2]| {
+    let mut push = |name: String, unit: fvb_core::units::Shown, color: Color32, power: bool, f: &dyn Fn(usize) -> [f64; 2]| {
         out.push(Locus { name, unit, color, power, pts: range.clone().map(f).collect(), c1: f(k1), c2: f(k2) });
     };
     if diff {
         // (Iторм, Iдиф) of every enabled pair, instantaneous.
         for p in d.dif_pairs.iter().filter(|p| p.on) {
             if let (Some((dif, col)), Some((tor, _))) = (inst_by_name(d, &p.a), inst_by_name(d, &p.b)) {
-                push(p.legend_label(), String::new(), col, false, &|k| [tor(k), dif(k)]);
+                push(p.legend_label(), Default::default(), col, false, &|k| [tor(k), dif(k)]);
             }
         }
         return out;
@@ -298,9 +306,8 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
     for (i, ch) in d.osc.analog.iter().enumerate() {
         if d.chans[i].on_circle {
             let (ph, kf) = (&d.analysis.phasors[i], d.shown_k(i));
-            let unit = ch.unit.trim().to_string();
-            let power = !dg::is_ohm(&unit);
-            push(ch.id.clone(), unit, d.chans[i].color, power, &|k| ph.get(k).map_or([0.0, 0.0], |z| [z.re * kf, z.im * kf]));
+            let power = !dg::is_ohm(ch.unit.trim());
+            push(ch.id.clone(), ch.shown_unit(), d.chans[i].color, power, &|k| ph.get(k).map_or([0.0, 0.0], |z| [z.re * kf, z.im * kf]));
         }
     }
     for c in d.computed.iter().filter(|c| c.on_circle) {
@@ -312,9 +319,9 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
             [z.re, z.im]
         };
         // An empty unit (not modelled by our generator) is taken as Ohm.
-        let unit = c.unit.trim().to_string();
-        let power = !unit.is_empty() && !dg::is_ohm(&unit);
-        push(c.name.clone(), unit, c.color, power, &series);
+        let unit = c.unit.trim();
+        let power = !unit.is_empty() && !dg::is_ohm(unit);
+        push(c.name.clone(), fvb_core::units::Shown::computed(unit), c.color, power, &series);
     }
     for p in d.rx_pairs.iter().filter(|p| p.on) {
         if let (Some((r, col)), Some((x, _))) = (inst_by_name(d, &p.a), inst_by_name(d, &p.b)) {
@@ -1061,12 +1068,12 @@ impl App {
                 None => fvb_core::freqcorr::phasor_at(fvb_core::freqcorr::of(&d.osc), fvb_core::freqcorr::OTHER, &c.samples, k, n),
             })
         };
-        let shown: Vec<(String, String, Complex64, Color32)> = doc_chans(d)
+        let shown: Vec<(String, String, Complex64, Color32, fvb_core::units::Shown)> = doc_chans(d)
             .into_iter()
             .filter(|c| chan_flag(d, Window::Vector, c))
             .map(|c| {
                 let z = fvb_core::views::finite_or_zero(phasor_of(&c.name).unwrap_or_default());
-                (c.name, c.unit, z, c.color)
+                (c.name, c.unit, z, c.color, c.shown)
             })
             .collect();
         let reference = angle_ref.as_deref().and_then(phasor_of).map(fvb_core::views::finite_or_zero);
@@ -1162,7 +1169,7 @@ impl App {
         painter.text(Pos2::new(c.x, c.y + r - 2.0), egui::Align2::LEFT_BOTTOM, lbl("180º", "π"), font(), ink);
         painter.text(Pos2::new(c.x - r + 7.0, c.y), egui::Align2::LEFT_BOTTOM, lbl("90º", "π/2"), font(), ink);
         painter.text(Pos2::new(c.x + r - 2.0, c.y), egui::Align2::RIGHT_BOTTOM, lbl("-90º", "-π/2"), font(), ink);
-        for (row, (name, unit, z, color)) in shown.iter().enumerate() {
+        for (row, (name, unit, z, color, unit_text)) in shown.iter().enumerate() {
             let is_ref = angle_ref.as_deref() == Some(name.as_str());
             let ang = if is_ref { 0.0 } else { fvb_core::views::vector_angle(*z, reference) };
             let scale = if is_current(unit) { i_scale } else { u_scale };
@@ -1190,7 +1197,7 @@ impl App {
             painter.add(egui::Shape::convex_polygon(vec![p1, p2, p3], *color, pen));
             if lay.table {
                 let y = lay.b + row as f32 * h + cy / 4.0;
-                painter.text(Pos2::new(full.left() + xoff + name_w + m, y), egui::Align2::LEFT_TOP, fvb_core::views::vector_value_text(z.norm(), unit), font(), ink);
+                painter.text(Pos2::new(full.left() + xoff + name_w + m, y), egui::Align2::LEFT_TOP, fvb_core::views::vector_value_text(z.norm(), unit_text), font(), ink);
                 painter.text(Pos2::new(full.right() - xoff - val_w + m, y), egui::Align2::LEFT_TOP, fvb_core::views::angle_text(ang, radians), font(), ink);
             }
         }

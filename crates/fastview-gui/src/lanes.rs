@@ -191,7 +191,7 @@ impl OscView<'_> {
         // the value at В1 after the label column, then the enabled rows;
         // digital lanes show the name only.
         let col_x = self.x0 + self.label_col + 5.0;
-        let header = |y: f32, name: &str, unit: &str, color: Color32, val: f64| {
+        let header = |y: f32, name: &str, unit: &fvb_core::units::Shown, color: Color32, val: f64| {
             let short: String = name.chars().take(NAME_CHARS).collect();
             let name_rect = bold_text(lp, Pos2::new(self.x0 + 5.0, y), &short, NAME_FONT, color);
             lp.rect_stroke(
@@ -620,7 +620,7 @@ pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, ro
             let short: String = n.chars().take(NAME_CHARS).collect();
             label = label.max(w(&short, &NAME_FONT) + 10.0);
         }
-        let t = if fvb_core::views::si_unit(&unit) { ": -0.00000000 A" } else { ": -0.0000000E-000 " };
+        let t = if fvb_core::views::si_unit(&unit.canon) { ": -0.00000000 A" } else { ": -0.0000000E-000 " };
         template = template.max(w(t, &ROW_FONT));
     }
     if rows.is_empty() {
@@ -1735,12 +1735,12 @@ impl App {
         let unit_of = |ch: usize| analog_unit(d, ch);
         for j in 0..2 {
             if let Some((ch, v)) = hval(j) {
-                out[3 + j] = format!("{} {}", captions[3 + j], fvb_core::views::readout_text(v, &unit_of(ch)).trim());
+                out[3 + j] = format!("{} {}", captions[3 + j], fvb_core::views::readout_text(v, unit_of(ch)).trim());
             }
         }
         if let (Some((c1, a)), Some((c2, b))) = (hval(0), hval(1)) {
             if c1 == c2 {
-                out[5] = format!("{} {}", captions[5], fvb_core::views::readout_text((a - b).abs(), &unit_of(c1)).trim());
+                out[5] = format!("{} {}", captions[5], fvb_core::views::readout_text((a - b).abs(), unit_of(c1)).trim());
             }
         }
         out
@@ -1949,11 +1949,11 @@ fn value_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
     }
 }
 
-fn analog_unit(doc: &crate::app::Doc, i: usize) -> String {
+fn analog_unit(doc: &crate::app::Doc, i: usize) -> fvb_core::units::Shown {
     if doc.chans[i].adc_counts {
-        "отсч.".to_string()
+        fvb_core::units::Shown { canon: "отсч.".into(), text: "отсч.".into() }
     } else {
-        doc.osc.analog[i].unit.clone()
+        doc.osc.analog[i].shown_unit()
     }
 }
 
@@ -1963,7 +1963,7 @@ fn lane_stats(
     lane: &Lane,
     k_main: usize,
     primary: bool,
-) -> (String, String, Color32, f64, f64, f64, f64, f64) {
+) -> (String, fvb_core::units::Shown, Color32, f64, f64, f64, f64, f64) {
     match lane {
         Lane::Analog(i) => {
             let ch = &doc.osc.analog[*i];
@@ -1991,12 +1991,12 @@ fn lane_stats(
             let corr = fvb_core::freqcorr::of(&doc.osc);
             let rms = fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n, 1);
             let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n);
-            (c.name.clone(), c.unit.clone(), c.color, mx, mn, rms, a1, series(k_main))
+            (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, series(k_main))
         }
         Lane::Digital(i) => {
             let d = &doc.osc.digital[*i];
             let val = if d.samples.get(k_main).copied().unwrap_or(false) { 1.0 } else { 0.0 };
-            (d.id.clone(), String::new(), Color32::from_rgb(0x44, 0x44, 0xAA), 1.0, 0.0, 0.0, 0.0, val)
+            (d.id.clone(), Default::default(), Color32::from_rgb(0x44, 0x44, 0xAA), 1.0, 0.0, 0.0, 0.0, val)
         }
     }
 }
