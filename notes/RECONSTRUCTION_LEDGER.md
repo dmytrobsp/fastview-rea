@@ -4370,8 +4370,7 @@ mark_item, glyph}` used by the popups and by the view's menus
 `FV_WINDOW_BUTTON=right` added to `window_dump` (a synthetic right click
 there does not open the menus yet — the tests do). Tests
 `separators_as_mfc_copies_them`, `menu_rows_tick_only_checked_items`.
-Residual: (keyboard in the diagram popups: L9.146; the view's own menus
-561 / 563 / 560 still mouse-only); the inline rename edit
+Residual: (keyboard in the popups: L9.146); the inline rename edit
 has no system edit menu; the submenu arrow drawn as text; whether
 computed channels block 33035's combine in the original ND.
 
@@ -4399,8 +4398,10 @@ first item, ← or Esc leaves it, Enter picks, Esc closes.
 Ours: the diagram popups were mouse-only. Now `PopMenu::{hot, sub_hot,
 in_sub}`, `popmenu::step`, `mark_item_hot`. Test
 `popups_follow_the_keyboard`.
-Residual: the view's own menus (561 / 563 / 560, drawn by ui calls) are
-still mouse-only.
+Then the view's own menus (561 / 563 / 560) too: `lanes::MenuKeys` counts
+the rows each frame (`menu_row`), ↓ / ↑ / Enter as above, the view's
+визир keys held off while a menu is open. Test
+`view_menus_follow_the_keyboard`.
 
 Next in L9 (HANDOFF 2026-10-23, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

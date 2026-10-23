@@ -99,11 +99,7 @@ fn menu_style(style: &mut egui::Style) {
 /// A menu row as Win32 draws it: a check-mark column (a tick for a
 /// checked SetCheck item, a bullet for a SetRadio one, nothing otherwise),
 /// then the label.
-pub fn mark_item(ui: &mut egui::Ui, label: &str, enabled: bool, mark: Option<&str>) -> egui::Response {
-    mark_item_hot(ui, label, enabled, mark, false)
-}
-
-/// [`mark_item`], highlighted as the keyboard's item when `hot`.
+/// Highlighted as the keyboard's item when `hot`.
 pub fn mark_item_hot(ui: &mut egui::Ui, label: &str, enabled: bool, mark: Option<&str>, hot: bool) -> egui::Response {
     const COL: f32 = 18.0;
     let font = egui::TextStyle::Button.resolve(ui.style());

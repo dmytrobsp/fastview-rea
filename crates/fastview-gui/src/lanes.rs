@@ -1463,7 +1463,7 @@ impl App {
         // (`0x492f20`) shows the визир. Ours caps → at N − 1 (the original
         // at N, `0x45f52f`, a sample past the data).
         let view_keys = self.copy_focus == crate::app::CopyFocus::View && !alt;
-        if view_keys && !ui.ctx().wants_keyboard_input() && self.rename_edit.is_none() && !self.modal_up {
+        if view_keys && !menu_busy && !ui.ctx().wants_keyboard_input() && self.rename_edit.is_none() && !self.modal_up {
             let (l, r, u, d) = ui.input(|i| {
                 (i.key_pressed(egui::Key::ArrowLeft), i.key_pressed(egui::Key::ArrowRight), i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown))
             });
@@ -1721,6 +1721,15 @@ impl App {
         let can_paste = self.clip.available() && !crate::omp_ui::has_pending_paste(doc);
         let (time_unit, grid, band) = (self.time_unit, self.show_grid, doc.diff_band);
         let mut chosen: Option<MenuCmd> = None;
+        // The keyboard state: reset for a new menu, rows counted afresh.
+        ctx.data_mut(|d| {
+            let k: &mut MenuKeys = d.get_temp_mut_or_default(menu_keys_id());
+            if k.serial != menu.serial {
+                *k = MenuKeys { serial: menu.serial, ..Default::default() };
+            }
+            k.count = 0;
+            k.enabled.clear();
+        });
         let area = egui::Area::new(egui::Id::new("fv_lane_menu").with(menu.serial))
             .kind(egui::UiKind::Menu)
             .order(egui::Order::Foreground)
@@ -1740,6 +1749,30 @@ impl App {
                 });
             });
         let rect = area.response.rect;
+        // ↑ / ↓ over the enabled rows (wrapping); Enter picks on the next
+        // pass.
+        let (up, down, enter) = ctx.input(|i| (i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown), i.key_pressed(egui::Key::Enter)));
+        ctx.data_mut(|d| {
+            let k: &mut MenuKeys = d.get_temp_mut_or_default(menu_keys_id());
+            k.activate = false;
+            let n = k.enabled.len();
+            if (up || down) && n > 0 {
+                let mut i = k.hot.unwrap_or(if down { n - 1 } else { 0 });
+                for _ in 0..n {
+                    i = if down { (i + 1) % n } else { (i + n - 1) % n };
+                    if k.enabled[i] {
+                        k.hot = Some(i);
+                        break;
+                    }
+                }
+            }
+            if enter && k.hot.is_some() {
+                k.activate = true;
+            }
+        });
+        if up || down || enter {
+            ctx.request_repaint();
+        }
         let (esc, pressed_outside) = ctx.input(|i| {
             (
                 i.key_pressed(egui::Key::Escape),
@@ -1873,16 +1906,43 @@ fn menu_style(style: &mut egui::Style) {
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
 }
 
+/// The view menus' keyboard state (a Win32 popup's ↑ / ↓ / Enter): the
+/// rows are counted as they are laid out each frame.
+#[derive(Debug, Clone, Default)]
+struct MenuKeys {
+    serial: u64,
+    hot: Option<usize>,
+    activate: bool,
+    count: usize,
+    enabled: Vec<bool>,
+}
+
+fn menu_keys_id() -> egui::Id {
+    egui::Id::new("fv_lane_menu_keys")
+}
+
+/// One row: laid out, counted, highlighted / picked by the keyboard.
+fn menu_row(ui: &mut egui::Ui, label: &str, enabled: bool, mark: Option<&str>) -> bool {
+    let mut k: MenuKeys = ui.ctx().data(|d| d.get_temp(menu_keys_id())).unwrap_or_default();
+    let idx = k.count;
+    k.count += 1;
+    k.enabled.push(enabled);
+    let hot = k.hot == Some(idx);
+    let picked = enabled && hot && k.activate;
+    ui.ctx().data_mut(|d| d.insert_temp(menu_keys_id(), k));
+    crate::popmenu::mark_item_hot(ui, label, enabled, mark, hot).clicked() || picked
+}
+
 fn menu_item(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
-    crate::popmenu::mark_item(ui, label, enabled, None).clicked()
+    menu_row(ui, label, enabled, None)
 }
 
 fn menu_check(ui: &mut egui::Ui, label: &str, st: ItemState) -> bool {
-    crate::popmenu::mark_item(ui, label, st.enabled, st.checked.then_some("✓")).clicked()
+    menu_row(ui, label, st.enabled, st.checked.then_some("✓"))
 }
 
 fn menu_radio(ui: &mut egui::Ui, label: &str, st: ItemState) -> bool {
-    crate::popmenu::mark_item(ui, label, st.enabled, st.checked.then_some("•")).clicked()
+    menu_row(ui, label, st.enabled, st.checked.then_some("•"))
 }
 
 /// MENU 561 (stats panel), in resource order; every item acts on the
@@ -2926,6 +2986,25 @@ mod menu_tests {
         assert!(before("✓", "Инвертировать") && before("✓", "Мгновенные значения"), "{texts:?}");
         assert!(before("•", "Отображать на векторной диаграмме"), "SetRadio: a bullet");
         assert_eq!(texts.iter().filter(|t| *t == "✓").count(), 2, "unchecked items carry no mark");
+    }
+
+    /// The view's menus follow the keyboard as a Win32 popup: ↓ lands on
+    /// the first enabled row, Enter picks it; the arrows do not move a
+    /// визир meanwhile.
+    #[test]
+    fn view_menus_follow_the_keyboard() {
+        let mut h = Harness::new();
+        let top = h.row(0);
+        h.button(top, egui::PointerButton::Secondary);
+        assert!(h.app.lane_menu.is_some());
+        let (before, v1) = (h.doc().chans[0].on_freq, h.doc().main_cursor);
+        let key = |k| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+        h.frame(vec![key(egui::Key::ArrowDown)]);
+        h.frame(vec![key(egui::Key::Enter)]);
+        h.frame(vec![]);
+        assert!(h.app.lane_menu.is_none(), "picked and closed");
+        assert_ne!(h.doc().chans[0].on_freq, before, "the first row: «Отображать на частотной диаграмме»");
+        assert_eq!(h.doc().main_cursor, v1);
     }
 
     /// User report: the menu was never about the top row, and its subject
