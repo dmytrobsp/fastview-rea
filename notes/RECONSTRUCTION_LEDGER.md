@@ -2965,10 +2965,7 @@ dropped levels on digital / unknown channels on load (lost on re-save).
 Now `Comment::drag` part 4 re-homes; `Doc::kept_levels` holds the levels
 we cannot show and `store_settings` writes them back. Tests `drag_and_lock`,
 the `.set` round trip (a kept level saved back).
-Residual: kept levels are not drawn (the digital snap and `0x42b640`'s
-window for a digital channel not modelled), not hit, and are written after
-the others (the original keeps its list order); an area on an unknown
-channel is still dropped (not read).
+Residual: (kept levels drawn, hit and kept in place, areas kept: L9.96).
 
 
 ### L9.90 — Ribbon keytips as MFC shows them for this ribbon  ·  🟡
@@ -3154,6 +3151,39 @@ Residual: that staleness after an implicit change is not modelled (ours
 recomputes everything, and our analog statistics read caches where the
 original's are live); «Рассчитать» re-evaluating the older formula
 channels is therefore invisible in ours.
+
+### L9.96 — Levels on digital lanes; unshown items kept in place; y truncated whole  ·  ✅
+Read (subagent report; by hand: `0x471210`–`0x471232` truncates
+(top + h − 5) − (h − 10)·f as one double; `0x47111e`–`0x47112e` snaps f to
+(t > 0.5) for kind 1; the t = −1 sentinel skips the paint): `0x42b640`
+returns the channel's cached window (`ch+0xb0` / `+0xa8`; the zoom branch
+needs an analog channel), and for a digital channel `0x428490` fills it
+from the raw samples — both ends the first sample, a later 0 sets the low
+end to 0, a later 1 the high end to 1 — so a mixed channel's window is
+[0, 1], a constant one [c, c]. The paint finds the level's channel by
+name among all visible channels; lo ≤ v ≤ hi or nothing; y =
+trunc(top + h − 5 − (h − 10)·f) with the digital snap (0.5 → 0); the hit
+test `0x470d20` and the info anchor `0x471430` use the unsnapped t (a 0.3
+level on a 0 / 1 lane is drawn at the bottom but grabbed at 30 %); a
+constant digital channel with v at its value gives t = NaN — drawn at the
+bottom, never hit. The `.set` reader `0x43fcf0` appends every Area, Level
+and Moment unconditionally (an area's channels are kept as names), so
+items on channels the record lacks stay in their list place and are
+saved back.
+Ours truncated only t·(h − 10) (1 px low whenever it was fractional, on
+every lane), left levels on digital lanes undrawn and unhit in a side
+list written after the others, and dropped areas naming an unknown
+channel. Now `CommentKind::Level { chan: ChanKey }`, `CommentKind::Kept`
+(an unshown `.set` item in its place), `oscgeom::{LevelY, level_y,
+digital_window}`, `lanes::level_place` (screen and print), `Doc::kept_levels`
+removed. Tests `level_lines_stay_in_their_lane`,
+`digital_windows_from_raw_samples`, the `.set` round trip (a kept level and
+area in place); `FV_WINDOW_STATE=comments` now also shows a level on the
+first digital lane (rendered: drawn at the lane's bottom).
+Residual: levels on formula channels draw on their lane's range but cannot
+be placed or re-homed there (our placement takes the record's analog lanes
+only; the original's any analog-kind channel); whether `0x4040c0` draws an
+area on an unknown channel NOT DETERMINED (ours: not drawn).
 
 Next in L9 (HANDOFF 2026-10-23, evening 3): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

@@ -248,9 +248,9 @@ impl Doc {
         for c in &mut self.comments {
             use crate::comments::CommentKind::*;
             match &mut c.kind {
-                Level { chan, .. } => *chan = analog(*chan),
+                Level { chan, .. } => *chan = key(*chan),
                 Area { chan_from, chan_to, .. } => (*chan_from, *chan_to) = (key(*chan_from), key(*chan_to)),
-                Moment { .. } => {}
+                Moment { .. } | Kept(_) => {}
             }
         }
     }

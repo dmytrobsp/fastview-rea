@@ -855,7 +855,8 @@ mod window_tests {
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "alert") {
             app.dlg.alert = Some(lanes::MSG_COMBINE_UNITS.to_string());
         }
-        // `FV_WINDOW_STATE=comments`: a moment, a level line and an area.
+        // `FV_WINDOW_STATE=comments`: a moment, a level line and an area —
+        // and a level on the first digital lane (as a `.set` may hold).
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "comments") {
             use comments::{Comment, CommentKind};
             use app::ChanKey;
@@ -863,8 +864,9 @@ mod window_tests {
                 let mut m = Comment::new(CommentKind::Moment { pos: 60 });
                 m.text = "Пуск".into();
                 d.comments.push(m);
-                d.comments.push(Comment::new(CommentKind::Level { chan: 0, value: 0.0, from: 20, to: 50 }));
+                d.comments.push(Comment::new(CommentKind::Level { chan: ChanKey::Analog(0), value: 0.0, from: 20, to: 50 }));
                 d.comments.push(Comment::new(CommentKind::Area { chan_from: ChanKey::Analog(1), chan_to: ChanKey::Analog(2), from: 100, to: 160 }));
+                d.comments.push(Comment::new(CommentKind::Level { chan: ChanKey::Digital(0), value: 0.3, from: 20, to: 120 }));
             }
         }
         // `FV_WINDOW_STATE=analysis`: two formula channels in the list.

@@ -288,15 +288,16 @@ impl Doc {
         let swapped = |v: &[crate::diagram::ChanPair]| -> Vec<PairRec> { v.iter().map(|p| PairRec { a: p.b.clone(), b: p.a.clone(), visible: p.on }).collect() };
         recset::write_pairs(t.section_mut("Diff Chart"), recset::DIFF_KEYS, &swapped(&self.dif_pairs));
         recset::write_pairs(t.section_mut("Circle Chart"), recset::CIRCLE_KEYS, &pairs(&self.rx_pairs));
-        let items: Vec<CommentRec> = self.comments.iter().map(|c| self.comment_rec(c)).chain(self.kept_levels.iter().cloned()).collect();
+        let items: Vec<CommentRec> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
         recset::write_comments(t.section_mut("Comments"), &items);
     }
 
     fn comment_rec(&self, c: &Comment) -> CommentRec {
         let kind = match &c.kind {
+            CommentKind::Kept(r) => return (**r).clone(),
             CommentKind::Moment { pos } => CommentKindRec::Moment { position: *pos as i32 },
             CommentKind::Level { chan, value, from, to } => CommentKindRec::Level {
-                channel: self.key_name(ChanKey::Analog(*chan)),
+                channel: self.key_name(*chan),
                 y: *value,
                 from: *from as i32,
                 to: *to as i32,
@@ -311,22 +312,19 @@ impl Doc {
         CommentRec { kind, text: c.text.clone(), locked: c.locked, visible: !c.hidden }
     }
 
-    fn comment_of(&self, r: &CommentRec) -> Option<Comment> {
+    /// An element read back; one naming a channel we do not have stays in
+    /// its place as [`CommentKind::Kept`] (`0x43fcf0` appends every item).
+    fn comment_of(&self, r: &CommentRec) -> Comment {
         let s = |v: i32| v.max(0) as usize;
         let kind = match &r.kind {
-            CommentKindRec::Moment { position } => CommentKind::Moment { pos: s(*position) },
-            CommentKindRec::Level { channel, y, from, to } => match self.key_by_name(channel)? {
-                ChanKey::Analog(chan) => CommentKind::Level { chan, value: *y, from: s(*from), to: s(*to) },
-                _ => return None,
-            },
-            CommentKindRec::Area { channel_from, channel_to, from, to } => CommentKind::Area {
-                chan_from: self.key_by_name(channel_from)?,
-                chan_to: self.key_by_name(channel_to)?,
-                from: s(*from),
-                to: s(*to),
-            },
+            CommentKindRec::Moment { position } => Some(CommentKind::Moment { pos: s(*position) }),
+            CommentKindRec::Level { channel, y, from, to } => self.key_by_name(channel).map(|chan| CommentKind::Level { chan, value: *y, from: s(*from), to: s(*to) }),
+            CommentKindRec::Area { channel_from, channel_to, from, to } => self.key_by_name(channel_from).zip(self.key_by_name(channel_to)).map(|(chan_from, chan_to)| {
+                CommentKind::Area { chan_from, chan_to, from: s(*from), to: s(*to) }
+            }),
         };
-        Some(Comment { kind, text: r.text.clone(), locked: r.locked, hidden: !r.visible })
+        let kind = kind.unwrap_or_else(|| CommentKind::Kept(Box::new(r.clone())));
+        Comment { kind, text: r.text.clone(), locked: r.locked, hidden: !r.visible }
     }
 
     /// The change detector's view of the saved state.
@@ -353,16 +351,7 @@ impl App {
         let Some(d) = self.docs.get_mut(di) else { return };
         if !from_command {
             if let Some(c) = d.set.tree.section("Comments") {
-                let recs = recset::read_comments(c);
-                let (mut comments, mut kept) = (Vec::new(), Vec::new());
-                for r in &recs {
-                    match d.comment_of(r) {
-                        Some(c) => comments.push(c),
-                        None if matches!(r.kind, CommentKindRec::Level { .. }) => kept.push(r.clone()),
-                        None => {}
-                    }
-                }
-                (d.comments, d.kept_levels) = (comments, kept);
+                d.comments = recset::read_comments(c).iter().map(|r| d.comment_of(r)).collect();
                 // The record comment edited by 32805.
                 if let Some(u) = c.attrs.get("UserData") {
                     d.hdr = Some(u.clone());
@@ -857,7 +846,7 @@ mod tests {
             d.chans[1].color = egui::Color32::from_rgb(1, 2, 3);
             d.chans[4].stats.minmax = true;
             d.comments.push(Comment::new(CommentKind::Moment { pos: 100 }));
-            let mut lvl = Comment::new(CommentKind::Level { chan: 3, value: 2.5, from: 10, to: 20 });
+            let mut lvl = Comment::new(CommentKind::Level { chan: ChanKey::Analog(3), value: 2.5, from: 10, to: 20 });
             lvl.text = "уровень\r\nвторая".into();
             lvl.locked = true;
             d.comments.push(lvl);
@@ -901,24 +890,27 @@ mod tests {
         assert_eq!((d.computed[0].name.as_str(), d.computed[0].formula.as_str()), ("X", "Ua+Ub"));
         // Levels are read before moments; the text comes back with CR LF.
         assert_eq!(d.comments.len(), 2);
-        assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: 3, value, from: 10, to: 20 } if value == 2.5));
+        assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(3), value, from: 10, to: 20 } if value == 2.5));
         assert_eq!(d.comments[0].text, "уровень\r\nвторая");
         assert!(d.comments[0].locked);
         assert_eq!(d.comments[1].kind, CommentKind::Moment { pos: 100 });
         assert_eq!(back.vec_show_values, vec_shown);
         assert!(!d.set.modified);
         let _ = std::fs::remove_dir_all(&dir);
-        // A level on a channel we cannot draw it on is kept and saved back.
-        let lost = fvb_core::recset::CommentRec {
-            kind: fvb_core::recset::CommentKindRec::Level { channel: "нет такого".into(), y: 1.0, from: 1, to: 2 },
-            text: String::new(),
-            locked: false,
-            visible: true,
-        };
-        back.docs[bi].kept_levels.push(lost.clone());
-        let mut t = back.docs[bi].set.tree.clone();
-        back.docs[bi].store_settings(&mut t, true);
-        assert!(fvb_core::recset::read_comments(t.section("Comments").unwrap()).contains(&lost));
+        // An element on a channel the record lacks stays in its place in the
+        // list and is saved back (a level and an area alike).
+        let rec = |kind| fvb_core::recset::CommentRec { kind, text: String::new(), locked: false, visible: true };
+        let lost = rec(fvb_core::recset::CommentKindRec::Level { channel: "нет такого".into(), y: 1.0, from: 1, to: 2 });
+        let lost_area = rec(fvb_core::recset::CommentKindRec::Area { channel_from: "Ia".into(), channel_to: "нет".into(), from: 1, to: 2 });
+        let d = &mut back.docs[bi];
+        let (a, b) = (d.comment_of(&lost), d.comment_of(&lost_area));
+        assert!(matches!(a.kind, CommentKind::Kept(_)) && matches!(b.kind, CommentKind::Kept(_)));
+        d.comments.insert(0, a);
+        d.comments.push(b);
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, true);
+        let saved = fvb_core::recset::read_comments(t.section("Comments").unwrap());
+        assert!(saved.contains(&lost) && saved.contains(&lost_area), "{saved:?}");
     }
 
     #[test]

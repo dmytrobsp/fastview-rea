@@ -654,7 +654,8 @@ is shown; the marker is always drawn). Kinds (type() slot 1):
 | 2 Level line | channel name, `positionY` (value in channel units), `positionFrom`, `positionTo` (samples) | rect from−10..to+10 px, ±10 px around the line | 2 left end, 3 right end, 4 body (vertical move) |
 | 3 Area | `channelFrom`, `channelTo` (lane names), `positionFrom`, `positionTo` | **border band only**: inside rect+10, outside rect−10 | 2 left edge, 3 right edge; the top / bottom band has no part (selects only, arrow cursor, no drag) |
 
-Validity: Level needs its channel to exist; Area both channels. Manager in the
+Validity: Level needs its channel to exist; Area both channels — to be
+drawn; the reader keeps every item in its list place either way (L9.96). Manager in the
 doc at `+0x840` (vector), `+0x854` = item under the pointer (= end → none),
 `+0x858` tool mode, `+0x85c` drag part.
 
@@ -678,7 +679,10 @@ selected item prints selected (L9.59).
   On a digital channel (only from a `.set` — placement needs an analog
   lane) the paint `0x471020` snaps the window fraction to 1 above 0.5, else
   0; the hit test `0x470d20` and the info box use the unsnapped one; a body
-  drag moves a level onto the analog lane under the pointer (L9.89).
+  drag moves a level onto the analog lane under the pointer (L9.89). A
+  digital window is [0, 1] from the raw samples (one value: that value).
+  y = trunc(top + h − 5 − (h − 10)·f), the whole expression truncated
+  (L9.96).
 - Area: rect = sample range × lane span; red fill AlphaBlend **64/255**; then a
   3 px border (normal or selected colour), hollow; text lines bottom-left
   (5 px inset) in (128,0,0) incl. «Длительность: %d.%03d с».

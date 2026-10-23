@@ -102,16 +102,47 @@ pub fn lane_zoom(y: f32, grow: bool) -> f32 {
 
 /// Value → y in a lane (`0x4944a0`): `top + h − 5 − round((v − min)(h − 10)/(max − min))`,
 /// the lane middle when the range is empty.
+/// Where a level line sits: `draw` for the painter, `hit` for the hit test
+/// and the info box (`None`: off-screen, never hit).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LevelY {
+    pub draw: f32,
+    pub hit: Option<f32>,
+}
+
 /// A level-line comment's y (`0x471020`): `t = (v − lo)/(hi − lo)` only for
-/// lo ≤ v ≤ hi (else not drawn nor hit-testable), `y = top + h − 5 −
-/// trunc(t·(h − 10))`.
-pub fn level_y(v: f64, top: f32, h: f32, lo: f64, hi: f64) -> Option<f32> {
-    // (hi = lo divides 0/0 in the original: the line lands off-screen.)
-    if !(lo <= v && v <= hi) || hi <= lo {
+/// lo ≤ v ≤ hi (else neither drawn nor hit); `y = trunc(top + h − 5 −
+/// (h − 10)·f)` — the whole expression truncated — with f = t, or on a
+/// digital lane 1 when t > 0.5 else 0. The hit test `0x470d20` and the info
+/// anchor `0x471430` take the unsnapped t. An empty window (hi = lo) makes
+/// t = 0/0: an analog line lands off-screen, a digital one is drawn at the
+/// bottom (NaN does not exceed 0.5) and cannot be hit.
+pub fn level_y(v: f64, top: f32, h: f32, lo: f64, hi: f64, digital: bool) -> Option<LevelY> {
+    if !(lo <= v && v <= hi) {
         return None;
     }
     let t = (v - lo) / (hi - lo);
-    Some(top + h - 5.0 - (t * f64::from(h - 10.0)).trunc() as f32)
+    let y = |f: f64| (!f.is_nan()).then(|| top + (f64::from(h) - 5.0 - f64::from(h - 10.0) * f).trunc() as f32);
+    let hit = y(t);
+    let draw = if digital { y(if t > 0.5 { 1.0 } else { 0.0 }) } else { hit };
+    Some(LevelY { draw: draw?, hit })
+}
+
+/// A digital channel's display window (`0x428490`, kind ≠ 0): both ends
+/// start at the first raw sample; a later 0 sets the low end to 0, a later
+/// 1 the high end to 1 (the invert flag does not enter).
+pub fn digital_window(raw: &[bool]) -> (f64, f64) {
+    let Some(&first) = raw.first() else { return (0.0, 0.0) };
+    let f = if first { 1.0 } else { 0.0 };
+    let (mut lo, mut hi) = (f, f);
+    for &b in &raw[1..] {
+        if b {
+            hi = 1.0;
+        } else {
+            lo = 0.0;
+        }
+    }
+    (lo, hi)
 }
 
 pub fn value_y(v: f64, top: f32, h: f32, min: f64, max: f64) -> f32 {
@@ -401,13 +432,31 @@ mod tests {
 mod level_tests {
     use super::*;
 
-    /// `0x471020`: inside the range y = top + h − 5 − trunc(t·(h − 10));
-    /// outside it (e.g. off a zoomed window) the level line is not drawn.
+    /// `0x471020`: inside the range y = trunc(top + h − 5 − (h − 10)·t)
+    /// (46.5 → 46, not 88 − trunc(41.5)); outside it (e.g. off a zoomed
+    /// window) the level line is not drawn.
     #[test]
     fn level_lines_stay_in_their_lane() {
-        assert_eq!(level_y(0.0, 100.0, 93.0, -1.0, 1.0), Some(100.0 + 93.0 - 5.0 - 41.0));
-        assert_eq!(level_y(2.0, 100.0, 93.0, -1.0, 1.0), None);
-        assert_eq!(level_y(0.0, 100.0, 93.0, 1.0, 1.0), None);
+        let at = |y: f32| Some(LevelY { draw: y, hit: Some(y) });
+        assert_eq!(level_y(0.0, 100.0, 93.0, -1.0, 1.0, false), at(146.0));
+        assert_eq!(level_y(2.0, 100.0, 93.0, -1.0, 1.0, false), None);
+        assert_eq!(level_y(1.0, 100.0, 93.0, 1.0, 1.0, false), None, "0/0 off-screen");
+        // A digital lane (h 20): drawn snapped, hit unsnapped; 0.5 snaps to 0.
+        assert_eq!(level_y(0.3, 100.0, 20.0, 0.0, 1.0, true), Some(LevelY { draw: 115.0, hit: Some(112.0) }));
+        assert_eq!(level_y(0.5, 100.0, 20.0, 0.0, 1.0, true).map(|l| l.draw), Some(115.0));
+        assert_eq!(level_y(0.51, 100.0, 20.0, 0.0, 1.0, true).map(|l| l.draw), Some(105.0));
+        assert_eq!(level_y(1.0, 100.0, 20.0, 1.0, 1.0, true), Some(LevelY { draw: 115.0, hit: None }), "constant: bottom, no hit");
+        assert_eq!(level_y(1.5, 100.0, 20.0, 0.0, 1.0, true), None);
+    }
+
+    /// `0x428490`'s digital branch.
+    #[test]
+    fn digital_windows_from_raw_samples() {
+        assert_eq!(digital_window(&[false, true, false]), (0.0, 1.0));
+        assert_eq!(digital_window(&[true, true]), (1.0, 1.0));
+        assert_eq!(digital_window(&[false, false]), (0.0, 0.0));
+        assert_eq!(digital_window(&[true, false]), (0.0, 1.0));
+        assert_eq!(digital_window(&[]), (0.0, 0.0));
     }
 }
 

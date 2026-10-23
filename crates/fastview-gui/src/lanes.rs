@@ -745,6 +745,18 @@ pub struct RowGeo<'a> {
 }
 
 /// The analog lane under `y` and the value there on its scale.
+/// A level line's place (`0x471020`): the lane of channel `k` and its
+/// current range — a digital channel its raw 0 / 1 window, drawn snapped.
+pub fn level_place(doc: &crate::app::Doc, (rows, tops, ranges): (&[Row], &[f32], &[(f64, f64)]), primary: bool, k: Lane, v: f64) -> Option<g::LevelY> {
+    let li = rows.iter().position(|r| r.key == k || matches!(k, Lane::Analog(i) if r.members.contains(&i)))?;
+    let ((lo, hi), digital) = match k {
+        Lane::Digital(j) => (g::digital_window(&doc.osc.digital.get(j)?.samples), true),
+        Lane::Analog(ch) if rows[li].members.len() != 1 => (chan_range(doc, ch, primary), false),
+        _ => (ranges[li], false),
+    };
+    g::level_y(v, tops[li], rows[li].h, lo, hi, digital)
+}
+
 fn analog_at(y: f32, geo: &RowGeo, ranges: &[(f64, f64)]) -> Option<(usize, f64)> {
     let li = geo.tops.iter().zip(geo.rows).position(|(&t, r)| y >= t && y < t + r.h)?;
     let r = &geo.rows[li];
@@ -1068,12 +1080,9 @@ impl App {
                 .map(|li| (tops[li], rows[li].h))
         };
         // A level line (`0x471020` / `0x470e4a`) uses its channel's current
-        // range; outside it the line is neither drawn nor hit.
-        let level_y = |ch: usize, v: f64| {
-            let li = rows.iter().position(|r| r.members.contains(&ch))?;
-            let (lo, hi) = if rows[li].members.len() == 1 { ranges[li] } else { chan_range(doc, ch, primary) };
-            g::level_y(v, tops[li], rows[li].h, lo, hi)
-        };
+        // range — a digital channel its raw 0 / 1 window, the line snapped —
+        // outside it the line is neither drawn nor hit.
+        let level_y = |k: ChanKey, v: f64| level_place(doc, (&rows, &tops, &ranges), primary, k, v);
         let us_at = |k: usize| g::micros(time_at(k));
         let abs_at = |dt: i64| fvb_core::comtrade::moment_time_text(&doc.osc.stamps, doc.osc.rev_year, dt);
         let cgeo = crate::comments::Geo { x_of: &x_of, lane: &lane_of, value_y: &level_y, top: client.top(), v_bottom, us: &us_at, abs: &abs_at };
@@ -1104,7 +1113,7 @@ impl App {
         crate::comments::paint(&pp, &doc.comments, hovered, &cgeo);
         if let Some((i, _)) = &self.level_edit {
             if let Some(crate::comments::CommentKind::Level { chan, value, from, .. }) = doc.comments.get(*i).map(|c| &c.kind) {
-                if let Some(y) = level_y(*chan, *value) {
+                if let Some(y) = level_y(*chan, *value).map(|l| l.draw) {
                     level_rect = Some(Rect::from_min_size(Pos2::new(x_of(*from as f64), y - 10.0), Vec2::new(80.0, 20.0)));
                 }
             }
@@ -1199,7 +1208,7 @@ impl App {
                                 1 => actions.push(Act::PlaceComment(Comment::new(CommentKind::Moment { pos: k }), false)),
                                 2 => {
                                     if let Some((chan, value)) = analog_at(pos.y, &geo, &ranges) {
-                                        actions.push(Act::PlaceComment(Comment::new(CommentKind::Level { chan, value, from: k, to: k }), true));
+                                        actions.push(Act::PlaceComment(Comment::new(CommentKind::Level { chan: ChanKey::Analog(chan), value, from: k, to: k }), true));
                                     }
                                 }
                                 _ => {
@@ -2654,7 +2663,7 @@ mod menu_tests {
         drag(&mut h, Pos2::new(700.0, y0), Pos2::new(600.0, y0));
         match h.doc().comments[1].kind {
             CommentKind::Level { chan, from, to, .. } => {
-                assert_eq!(chan, 0);
+                assert_eq!(chan, ChanKey::Analog(0));
                 assert!(from < to, "normalised on release");
             }
             ref k => panic!("{k:?}"),

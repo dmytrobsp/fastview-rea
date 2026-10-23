@@ -514,7 +514,6 @@ pub struct Doc {
     /// digital or a missing one): the original keeps every `Level_%d` it
     /// reads (`0x43ff8a`) and saves it back (`0x470b20`), so ours are kept
     /// and written after the others (L9.89).
-    pub kept_levels: Vec<fvb_core::recset::CommentRec>,
     /// The element under the pointer (`doc+0x854`), drawn selected: set by
     /// a pointer move over the plot, kept when the pointer leaves it.
     pub comment_hot: Option<usize>,
@@ -616,7 +615,6 @@ impl Doc {
             dif_pairs: Vec::new(),
             rx_pairs: Vec::new(),
             comments: Vec::new(),
-            kept_levels: Vec::new(),
             comment_hot: None,
             tab_color: None,
             serial: 0,

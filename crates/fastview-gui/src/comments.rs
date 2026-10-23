@@ -12,11 +12,15 @@ use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Shape, Stroke, Vec
 pub enum CommentKind {
     /// A moment of time (визир) at a sample.
     Moment { pos: usize },
-    /// A level line on an analog channel: a value in its units over a sample
-    /// range.
-    Level { chan: usize, value: f64, from: usize, to: usize },
+    /// A level line on a channel (placed on analog lanes; a `.set` may put
+    /// it on a digital one): a value in its units over a sample range.
+    Level { chan: ChanKey, value: f64, from: usize, to: usize },
     /// An area: a lane range × a sample range.
     Area { chan_from: ChanKey, chan_to: ChanKey, from: usize, to: usize },
+    /// A `.set` element naming a channel the record does not have: kept in
+    /// its place in the list and written back, never drawn nor hit (the
+    /// reader `0x43fcf0` appends every item; the painters find no channel).
+    Kept(Box<fvb_core::recset::CommentRec>),
 }
 
 /// One review element.
@@ -48,10 +52,16 @@ impl Comment {
 
     /// The kind number used for the menu labels (1 moment, 2 level, 3 area).
     pub fn kind_no(&self) -> u8 {
-        match self.kind {
+        use fvb_core::recset::CommentKindRec as K;
+        match &self.kind {
             CommentKind::Moment { .. } => 1,
             CommentKind::Level { .. } => 2,
             CommentKind::Area { .. } => 3,
+            CommentKind::Kept(r) => match r.kind {
+                K::Moment { .. } => 1,
+                K::Level { .. } => 2,
+                K::Area { .. } => 3,
+            },
         }
     }
 
@@ -87,8 +97,8 @@ impl Comment {
                 // taking its value there (`0x43f46e`, `0x4716d0`); over a
                 // digital lane or none nothing changes.
                 4 => {
-                    if let Some((ChanKey::Analog(c), Some(v))) = lane {
-                        (*chan, *value) = (c, v);
+                    if let Some((k @ ChanKey::Analog(_), Some(v))) = lane {
+                        (*chan, *value) = (k, v);
                     }
                 }
                 _ => {}
@@ -104,6 +114,7 @@ impl Comment {
                 3 => *to = sample,
                 _ => {}
             },
+            CommentKind::Kept(_) => {}
         }
     }
 
@@ -122,6 +133,7 @@ impl Comment {
             }
             CommentKind::Level { value, .. } => format!("{text}\n\nУровень: {value:.2}"),
             CommentKind::Area { from, to, .. } => format!("{text}\n\nДлительность: {}", seconds_ms((us(to) - us(from)).abs())),
+            CommentKind::Kept(_) => String::new(),
         }
     }
 }
@@ -136,8 +148,8 @@ pub struct Geo<'a> {
     pub x_of: &'a dyn Fn(f64) -> f32,
     /// Top and height of a channel's lane, when it is laid out.
     pub lane: &'a dyn Fn(ChanKey) -> Option<(f32, f32)>,
-    /// y of a value on an analog channel's scale.
-    pub value_y: &'a dyn Fn(usize, f64) -> Option<f32>,
+    /// A level line's place on its channel's lane.
+    pub value_y: &'a dyn Fn(ChanKey, f64) -> Option<crate::oscgeom::LevelY>,
     /// Top of the plot and the bottom of the визир lines.
     pub top: f32,
     pub v_bottom: f32,
@@ -159,9 +171,10 @@ fn area_rect(from: usize, to: usize, a: ChanKey, b: ChanKey, geo: &Geo) -> Optio
 /// its border band).
 pub fn hit(c: &Comment, pos: Pos2, geo: &Geo) -> Option<Part> {
     match c.kind {
+        CommentKind::Kept(_) => None,
         CommentKind::Moment { pos: k } => (((geo.x_of)(k as f64) - pos.x).abs() <= REACH).then_some(2),
         CommentKind::Level { chan, value, from, to } => {
-            let y = (geo.value_y)(chan, value)?;
+            let y = (geo.value_y)(chan, value)?.hit?;
             let (x1, x2) = ((geo.x_of)(from.min(to) as f64), (geo.x_of)(from.max(to) as f64));
             if pos.x < x1 - REACH || pos.x > x2 + REACH || (pos.y - y).abs() > REACH {
                 return None;
@@ -224,6 +237,7 @@ pub fn paint(p: &egui::Painter, comments: &[Comment], hover: Option<usize>, geo:
 fn draw(p: &egui::Painter, c: &Comment, sel: bool, geo: &Geo, font: &FontId) -> Option<Pos2> {
     let col = if sel { SELECTED } else { NORMAL };
     let right_top = match c.kind {
+        CommentKind::Kept(_) => return None,
         CommentKind::Moment { pos } => {
             let x = (geo.x_of)(pos as f64);
             bubble(p, Pos2::new(x - 3.0, geo.top + 16.0), col);
@@ -231,7 +245,8 @@ fn draw(p: &egui::Painter, c: &Comment, sel: bool, geo: &Geo, font: &FontId) -> 
             Pos2::new(x + 3.0, geo.top + 30.0)
         }
         CommentKind::Level { chan, value, from, to } => {
-            let y = (geo.value_y)(chan, value)?;
+            let ly = (geo.value_y)(chan, value)?;
+            let y = ly.draw;
             let (x1, x2) = ((geo.x_of)(from.min(to) as f64), (geo.x_of)(from.max(to) as f64));
             p.hline(x1..=x2, y, Stroke::new(3.0f32, col));
             for x in [x1, x2] {
@@ -241,7 +256,8 @@ fn draw(p: &egui::Painter, c: &Comment, sel: bool, geo: &Geo, font: &FontId) -> 
             if !c.hidden {
                 p.text(Pos2::new(x1 + 5.0, y + 5.0), Align2::LEFT_TOP, c.info(geo.us, geo.abs), font.clone(), TEXT);
             }
-            Pos2::new(x2 + 3.0, y)
+            // The info box hangs at the unsnapped y (`0x471430`).
+            Pos2::new(x2 + 3.0, ly.hit?)
         }
         CommentKind::Area { chan_from, chan_to, from, to } => {
             let r = area_rect(from, to, chan_from, chan_to, geo)?;
@@ -301,7 +317,7 @@ impl App {
 mod tests {
     use super::*;
 
-    fn geo_test<'a>(x_of: &'a dyn Fn(f64) -> f32, lane: &'a dyn Fn(ChanKey) -> Option<(f32, f32)>, vy: &'a dyn Fn(usize, f64) -> Option<f32>) -> Geo<'a> {
+    fn geo_test<'a>(x_of: &'a dyn Fn(f64) -> f32, lane: &'a dyn Fn(ChanKey) -> Option<(f32, f32)>, vy: &'a dyn Fn(ChanKey, f64) -> Option<crate::oscgeom::LevelY>) -> Geo<'a> {
         fn us(k: usize) -> i64 {
             k as i64 * 1000
         }
@@ -319,12 +335,12 @@ mod tests {
             ChanKey::Analog(1) => Some((100.0, 100.0)),
             _ => None,
         };
-        let vy = |_: usize, v: f64| Some(100.0 - v as f32);
+        let vy = |_: ChanKey, v: f64| Some(crate::oscgeom::LevelY { draw: 100.0 - v as f32, hit: Some(100.0 - v as f32) });
         let g = geo_test(&x_of, &lane, &vy);
         let m = Comment::new(CommentKind::Moment { pos: 20 });
         assert_eq!(hit(&m, Pos2::new(208.0, 50.0), &g), Some(2));
         assert_eq!(hit(&m, Pos2::new(215.0, 50.0), &g), None);
-        let l = Comment::new(CommentKind::Level { chan: 0, value: 40.0, from: 10, to: 30 });
+        let l = Comment::new(CommentKind::Level { chan: ChanKey::Analog(0), value: 40.0, from: 10, to: 30 });
         assert_eq!(hit(&l, Pos2::new(101.0, 62.0), &g), Some(2), "left end");
         assert_eq!(hit(&l, Pos2::new(298.0, 58.0), &g), Some(3), "right end");
         assert_eq!(hit(&l, Pos2::new(200.0, 55.0), &g), Some(4), "body");
@@ -338,16 +354,16 @@ mod tests {
 
     #[test]
     fn drag_and_lock() {
-        let mut l = Comment::new(CommentKind::Level { chan: 0, value: 1.0, from: 10, to: 10 });
+        let mut l = Comment::new(CommentKind::Level { chan: ChanKey::Analog(0), value: 1.0, from: 10, to: 10 });
         l.drag(1, 5, None);
         l.normalise();
-        assert_eq!(l.kind, CommentKind::Level { chan: 0, value: 1.0, from: 5, to: 10 });
+        assert_eq!(l.kind, CommentKind::Level { chan: ChanKey::Analog(0), value: 1.0, from: 5, to: 10 });
         l.drag(4, 0, Some((ChanKey::Analog(1), Some(9.0))));
-        assert_eq!(l.kind, CommentKind::Level { chan: 1, value: 9.0, from: 5, to: 10 }, "another analog lane: the level moves onto it");
+        assert_eq!(l.kind, CommentKind::Level { chan: ChanKey::Analog(1), value: 9.0, from: 5, to: 10 }, "another analog lane: the level moves onto it");
         l.drag(4, 0, Some((ChanKey::Digital(0), None)));
-        assert_eq!(l.kind, CommentKind::Level { chan: 1, value: 9.0, from: 5, to: 10 }, "a digital lane: nothing");
+        assert_eq!(l.kind, CommentKind::Level { chan: ChanKey::Analog(1), value: 9.0, from: 5, to: 10 }, "a digital lane: nothing");
         l.drag(4, 0, Some((ChanKey::Analog(0), Some(2.5))));
-        assert!(matches!(l.kind, CommentKind::Level { chan: 0, value, .. } if value == 2.5));
+        assert!(matches!(l.kind, CommentKind::Level { chan: ChanKey::Analog(0), value, .. } if value == 2.5));
         l.locked = true;
         l.drag(2, 0, None);
         assert!(matches!(l.kind, CommentKind::Level { from: 5, .. }), "locked elements do not move");
@@ -364,7 +380,7 @@ mod tests {
         m.text = "КЗ".into();
         assert_eq!(m.info(&us, &abs), "КЗ\n\nВремя: T+1002000\nОт начала ОСЦ: 1.002 с");
         assert_eq!(m.info(&us, &none), "", "an unparsable start stamp empties the text");
-        let l = Comment::new(CommentKind::Level { chan: 0, value: 2.345, from: 0, to: 1 });
+        let l = Comment::new(CommentKind::Level { chan: ChanKey::Analog(0), value: 2.345, from: 0, to: 1 });
         assert_eq!(l.info(&us, &none), "\n\nУровень: 2.35");
         let a = Comment::new(CommentKind::Area { chan_from: ChanKey::Analog(0), chan_to: ChanKey::Analog(0), from: 7, to: 3 });
         assert_eq!(a.info(&us, &none), "\n\nДлительность: 1.002 с");

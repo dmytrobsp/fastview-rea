@@ -326,11 +326,7 @@ impl App {
                 .map(|li| (tops[li], rows[li].h))
         };
         // As on screen: the line's own channel range, nothing outside it.
-        let level_y = |ch: usize, v: f64| {
-            let li = rows.iter().position(|r| r.members.contains(&ch))?;
-            let (lo, hi) = if rows[li].members.len() == 1 { ranges[li] } else { lanes::chan_range(doc, ch, primary) };
-            g::level_y(v, tops[li], rows[li].h, lo, hi)
-        };
+        let level_y = |k: crate::app::ChanKey, v: f64| lanes::level_place(doc, (&rows, &tops, &ranges), primary, k, v);
         let t0 = doc.osc.time.first().copied().unwrap_or(0.0);
         let time_at = |k: usize| doc.osc.time.get(k).copied().unwrap_or(0.0) - t0;
         let us_at = |k: usize| crate::oscgeom::micros(time_at(k));
