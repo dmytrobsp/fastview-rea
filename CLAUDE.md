@@ -9,9 +9,12 @@
   renaming), resource / string-table / dialog dumps (`dumps/`, `notes/ui/`,
   `notes/*.txt|json|log`). They stay local and git-ignored.
 - What is published is our own work: the Rust code, the distilled specs and
-  the ledger (behaviour in our own words, addresses as references), and the
+  the ledger (behaviour in our own words, addresses as references), the
   tools that regenerate the dumps from a copy the reader supplies
-  (`tools/regen-dumps.sh`).
+  (`tools/regen-dumps.sh`), and the factual indexes in `index/` (addresses,
+  ids, class / import names and our own symbol names — `tools/index.py`;
+  never disassembly, pseudocode or resource text). The user approved
+  publishing these indexes on 2026-10-23.
 - When briefing sub-agents, include these rules and ask for behaviour in
   prose, never code listings.
 

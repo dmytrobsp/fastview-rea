@@ -77,7 +77,10 @@ decompilation, plus `7z`/`iconv` for the installer. Full notes:
 [`notes/FINDINGS.md`](notes/FINDINGS.md). The scripts that regenerate every
 analysis input from your own copy of the program (disassembly, imports,
 string table, MFC message maps, RTTI vtables) and the method are in
-[`tools/README.md`](tools/README.md).
+[`tools/README.md`](tools/README.md). [`index/`](index/README.md) publishes
+the factual indexes (message maps, vtables, imports) and a symbol list
+naming the functions the notes describe, with a script that loads it into
+Ghidra, IDA or rizin / radare2.
 
 1. **Installer** — the `Setup_FastView.exe` is a custom installer with an MSZip
    CAB embedded in its PE resources (`.rsrc/1049/BIN/137`). Extracted with `7z`
@@ -136,7 +139,8 @@ crates/
     views.rs diagram.rs diagram_ui.rs popmenu.rs  diagram panes
     dialogs.rs chandlg.rs recdlg.rs finder.rs quick_ui.rs omp_ui.rs merge_ui.rs
     persist.rs     settings (characteristics, View, MRU, look)
-tools/           msgmaps.py (message-map inventory), pngcrop.py, …
+tools/           msgmaps.py (message-map inventory), index.py, symbols_export.py, …
+index/           factual indexes + symbol list (addresses, ids, names)
 ```
 
 ## Build & run
@@ -194,7 +198,8 @@ Enable the repository's hooks once per clone: `git config core.hooksPath
 tools/git-hooks`. They run `tools/publish_guard.py`, which keeps the original
 program and raw decompilation / disassembly output out of the history; CI
 runs the same check. Analysis is published as specs in our own words
-(`notes/`) and as tools that regenerate the raw data from your own copy
+(`notes/`), as factual indexes (`index/`: addresses, ids and names, no code)
+and as tools that regenerate the raw data from your own copy
 (`tools/README.md`).
 
 ## License

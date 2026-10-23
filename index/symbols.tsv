@@ -1,0 +1,3699 @@
+address	kind	name	source
+0x400000	data	pe_image_base	ledger §0
+0x401000	func	formula_token_table_init	ledger L1
+0x401c00	func	AddFormulaDlg__GetMessageMap	msgmaps
+0x401c10	func	addformula_select_initial	ledger L9.16
+0x401c40	func	FormulaWnd_AddFormulaDlg__vf97	vtables
+0x401c70	func	addformula_build_tree	ledger L9.16
+0x403180	func	addformula_ddx_name	ledger L9.48
+0x403260	func	addformula_on_tree_selchanged	ledger L9.16
+0x403280	func	addformula_show_form	ledger L9.16
+0x403380	func	FormulaWnd_AddFormulaDlg__vf95	vtables
+0x4033a0	func	addformula_check_name	ledger L9.48
+0x403530	func	addformula_on_ok	ledger L9.48
+0x403820	func	AreaItem__vf7	vtables
+0x403930	func	AreaItem__vf8	vtables
+0x403aa0	func	AreaItem__vf2	vtables
+0x403fa0	func	area_info_text	ledger L9.47
+0x4040c0	func	area_item_paint	ledger L9.47
+0x4043e0	func	AreaItem__vf5	vtables
+0x404460	func	AreaItem__vf3	vtables
+0x4044c0	func	AreaItem__vf4	vtables
+0x4046d0	func	CGdiObject__vf1	vtables
+0x404810	func	CBitmap__vf1	vtables
+0x404860	func	doc_station_name	ledger L9.41
+0x404890	func	doc_recorder_name	ledger L9.41
+0x4048c0	func	doc_start_date_time_text	ledger L9.41
+0x404960	func	CFastViewPrintDialog__OnCommand_2173	msgmaps
+0x4049b0	func	CFastViewPrintDialog__OnCommand_2174	msgmaps
+0x404aa0	func	CFastViewPrintDialog__vf95	vtables
+0x404ac0	func	CFastViewPrintDialog__vf66	vtables
+0x404b30	func	CFastViewPrintDialog__vf98	vtables
+0x404ba0	func	fvb_ctx_warmup	ledger L6
+0x404c30	func	CBaseView__vf0	vtables
+0x404c40	func	CFastViewView__GetMessageMap	msgmaps
+0x404c50	func	CFastViewPrintDialog__GetMessageMap	msgmaps
+0x404f5e	code	app_init__register_clip_format	ledger L9.20
+0x404fa0	func	CBaseView__vf1	vtables
+0x405160	func	copy_picture_by_focus	ledger L9.30
+0x4053e0	func	CFastViewView__OnCommand_57609	msgmaps
+0x4053f0	func	view_on_prepare_printing	ledger L9.22
+0x4054b0	func	view_on_begin_printing	ledger L9.22
+0x405970	func	print_slice	ledger L9.22
+0x405b56	code	print_slice__draw_call	ledger L9.39
+0x405c20	func	print_header	ledger L9.22
+0x406590	func	print_footer	ledger L9.22
+0x407150	func	CPen__vf1	vtables
+0x407330	func	CImage_ATL__vf0	vtables
+0x4074e0	func	CBrush__vf1	vtables
+0x407520	func	CFont__vf1	vtables
+0x407570	func	BlockPropertyGrid__GetMessageMap	msgmaps
+0x407580	func	block_grid_on_property_changed	ledger L5
+0x4075c0	func	BlockPropertyGrid__OnWM_LBUTTONDOWN	msgmaps
+0x407640	func	BlockPropertyGrid__OnWM_LBUTTONDBLCLK	msgmaps
+0x407750	func	block_grid_populate	ledger L5
+0x407ab8	code	block_grid__block_selected_eval	ledger L5
+0x407b30	func	BlockProperty_BlockPropertyGrid__vf1	vtables
+0x407cc0	func	BlockProperty_BlockPropertyGrid__vf21	vtables
+0x407dc0	func	BlockProperty_BlockPropertyGrid__vf6	vtables
+0x408010	func	FourieDiagramWnd__OnWM_ERASEBKGND	msgmaps
+0x408020	func	BlockProperty_BlockPropertyGrid__vf29	vtables
+0x408070	func	BlockProperty_BlockPropertyGrid__vf46	vtables
+0x4083b0	func	fvb_set_variable	ledger L5
+0x4084d0	func	Calculator__vf0	vtables
+0x4084f0	func	fvb_ctx_frequency	ledger L6
+0x408540	func	Figure__vf0	vtables
+0x408570	func	PolygonF__vf1	vtables
+0x408610	func	PolygonF__vf0	vtables
+0x408670	func	Circle__vf1	vtables
+0x408790	func	Circle__vf0	vtables
+0x4087d0	func	EllipseF__vf1	vtables
+0x408930	func	EllipseF__vf0	vtables
+0x408980	func	PolypointF__vf1	vtables
+0x408a30	func	PolypointF__vf0	vtables
+0x408ab0	func	xml_node_attr_lookup	ledger L5
+0x408cf0	func	block_grid_save_settings	ledger L5
+0x409030	func	block_grid_load_settings	ledger L5
+0x409260	func	fvb_evaluate_block	ledger L5
+0x40948c	func	fvb_evaluate_block_catch_handler	ledger L5
+0x409860	func	figure_polygon_eval	ledger L4
+0x409c00	func	figure_polygon_region	ledger L4
+0x40a010	func	figure_circle_eval	ledger L4
+0x40a170	func	figure_circle_region	ledger L4
+0x40a3a0	func	figure_ellipse_eval	ledger L4
+0x40a5d0	func	figure_ellipse_region	ledger L4
+0x40acb0	func	figure_polypoint_eval	ledger L4
+0x40ae40	func	figure_polypoint_region_close	ledger L4
+0x40c7e0	func	fvb_load_all	ledger L5
+0x411bf0	func	round_nearest_half_up	ledger L9.18
+0x411c70	func	formula_form_on_init_lists	ledger L9.16
+0x411f40	func	formula_form_on_init_defaults	VIEWS_SPEC sheet
+0x412700	func	formula_quote_name	ledger L9.16
+0x4129e0	func	addformula_build_formula	ledger L9.16
+0x413f69	code	addformula_build__zk_km_twice	ledger L9.16
+0x414c30	func	channel_canonical_unit	ledger L9.34
+0x414da0	func	qan_generate_channels	VIEWS_SPEC sheet
+0x414e00	func	CalcChannels__vf0	vtables
+0x414e70	func	CalcChannels__vf2	vtables
+0x414e90	func	CalcChannels__vf1	vtables
+0x414ee0	func	formula_list_load_file	ledger L9.56
+0x415230	func	formula_list_save_file	ledger L9.56
+0x415780	func	calc_eval_computed_channels	CALC_CHANNELS_SPEC
+0x4167f0	func	cmd_quick_analysis	VIEWS_SPEC sheet
+0x418670	func	CFastViewException__vf1	vtables
+0x4186a0	func	CFastViewException__vf6	vtables
+0x418b70	func	calc_divisor_zero_guard	CALC_CHANNELS_SPEC
+0x418c40	func	expr_tokenize	ledger L2
+0x419126	code	expr_tokenize__drop_unresolved_ident	ledger L6
+0x419950	func	expr_parse_top	ledger L2
+0x419af0	func	expr_parse_list	ledger L2
+0x419c50	func	expr_parse_add_sub	ledger L2
+0x419d80	func	expr_parse_mul_div	ledger L2
+0x419f20	func	expr_parse_pow	ledger L2
+0x419fc0	func	expr_parse_unary	ledger L2
+0x41a110	func	expr_parse_primary	ledger L2
+0x41a23d	code	expr_fn__math_cases_begin	ledger L2
+0x41a431	code	expr_fn__math_cases_end	ledger L2
+0x41aa4b	code	expr_seq_comp__div6_shared_tail	ledger L6
+0x41d7a7	code	expr_fn__grspos	ledger L6
+0x41f1f7	code	expr_fn__grspos_exit_flags3	ledger L6
+0x41f227	code	expr_fn__exit_force_flags3	CALC_CHANNELS_SPEC
+0x41f390	func	expr_parse_group	ledger L2
+0x41f55f	code	expr_binop__case_sub	ledger L2
+0x41f5f8	code	expr_binop__case_add	ledger L2
+0x41f657	code	expr_binop__case_mul	ledger L2
+0x41f6e7	code	expr_binop__case_div	ledger L2
+0x41f7cb	code	expr_binop__case_pow	ledger L2
+0x41f944	data	expr_binop_jump_table	ledger L2
+0x41f960	func	expr_parse_atom	ledger L2
+0x41fd00	func	expr_check_arg_count	ledger L2
+0x420610	func	value_complex_modulus	ledger L2
+0x420840	func	complex_abs_scaled_hypot	OMP_SPEC notation
+0x420ca0	func	complex_div	OMP_SPEC notation
+0x421270	func	ChanPairDlg__vf0	vtables
+0x4213c0	func	ChanPairDlg__vf1	vtables
+0x421610	func	ChanPairDlg__vf66	vtables
+0x4216a0	func	ChanPairDlg__GetMessageMap	msgmaps
+0x4217d0	func	ChanPairDlg__vf95	vtables
+0x421aa0	func	ChanPairDlg__OnCommand_2161	msgmaps
+0x421e10	func	ChanPairDlg__OnNotify_0xff9b_2164	msgmaps
+0x421e40	func	ChanPairDlg__OnCommand_2166	msgmaps
+0x4220c0	func	CButton__vf1	vtables
+0x4220f0	func	CComboBox__vf1	vtables
+0x422120	func	CStatic__vf1	vtables
+0x422250	func	channel_value_to_raw	ledger L9.34
+0x4222a0	func	doc_start_date_token	ledger L9.18
+0x4222d0	func	doc_start_time_parse	ledger L9.18
+0x422460	func	channel_ctor_comtrade	ledger L9.34
+0x4225a6	code	channel_ctor__clear_primary_flags	ledger L9.57
+0x4228b4	code	channel_ctor__primary_token_check	ledger L9.57
+0x422b10	func	channel_normalise_unit	ledger L9.34
+0x426020	func	channel_value_at	ledger L9.57
+0x426120	func	channel_scalar_sample	CALC_CHANNELS_SPEC
+0x426240	func	channel_harmonic_rms	ledger L6
+0x426510	func	channel_spectrum	VIEWS_SPEC frequency
+0x4267e0	func	channel_phasor_measured_freq	ledger L6
+0x426c90	func	channel_mean_a0	ledger L6
+0x426fc0	func	channel_dft_phasors	ledger L6
+0x4272a0	func	channel_rms_at	ledger L6
+0x427670	func	channel_fault_component	ledger L6
+0x427d20	func	channel_settings_section	ledger L9.17
+0x427f20	func	channel_clip_xml_write	ledger L9.20
+0x428490	func	channel_recompute	ledger L9.57
+0x428795	code	channel_recompute__store_dc_mean	ledger L9.7
+0x428809	code	channel_recompute__progress_step	ledger L9.31
+0x428ac0	func	channel_phasor_at	ledger L6
+0x429490	func	paint_analog_lane	ledger L9.45
+0x4295a5	code	paint_analog_lane__create_clip_rgn	ledger L9.33
+0x4295be	code	paint_analog_lane__select_clip_rgn	ledger L9.33
+0x429bb4	code	paint_analog_lane__remove_clip_rgn	ledger L9.33
+0x429c30	func	paint_group_member_lane	ledger L9.45
+0x42a0f0	func	paint_digital_lane	ledger L9.46
+0x42afb0	func	channel_apply_window_zoom	ledger L9.7
+0x42b640	func	channel_windowed_range	ledger L9.7
+0x42bd50	func	CServerItem__vf30	vtables
+0x42be30	func	drag_payload_build	ledger L9.21
+0x42c580	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf3	vtables
+0x42c750	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf4	vtables
+0x42c7b0	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf6	vtables
+0x42c810	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf10	vtables
+0x42c9e0	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf11	vtables
+0x42cb80	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf0	vtables
+0x42d930	func	_Generic_error_category_std__vf1	vtables
+0x42d940	func	_Iostream_error_category_std__vf1	vtables
+0x42dd50	func	_Generic_error_category_std__vf2	vtables
+0x42ddd0	func	_Iostream_error_category_std__vf2	vtables
+0x42deb0	func	channels_dlg_vector_unit_check	UI_BEHAVIOUR_SPEC §7.1
+0x42df30	func	CRgn__vf1	vtables
+0x42e390	func	__MultiplierDlg__vf1	vtables
+0x42e554	code	nominal_freq_rebuild_caller__site_a	UI_BEHAVIOUR_SPEC §4
+0x42edf0	func	doc_find_channel_by_name	CALC_CHANNELS_SPEC
+0x42f4b0	func	doc_cmd_channel_flags	UI_BEHAVIOUR_SPEC §4.6
+0x42fc60	func	doc_cmdui_channel_flags	UI_BEHAVIOUR_SPEC §4.6
+0x42fdb0	func	doc_cmd_coefficients	UI_BEHAVIOUR_SPEC §4.10
+0x42ffb0	func	doc_cmdui_coefficients	UI_BEHAVIOUR_SPEC §4.10
+0x430030	func	doc_cmd_discrete_visibility	UI_BEHAVIOUR_SPEC §4.7
+0x430340	func	doc_cmd_diagram_membership	UI_BEHAVIOUR_SPEC §4.8
+0x430650	func	doc_cmdui_diagram_membership	UI_BEHAVIOUR_SPEC §4.8
+0x430af0	func	doc_clip_xml_build	ledger L9.20
+0x4310b0	func	doc_cmd_colour	UI_BEHAVIOUR_SPEC §4.12
+0x433890	func	CEdit__vf1	vtables
+0x4338c0	func	CListCtrl__vf1	vtables
+0x4338f0	func	ChannelsDlg__GetMessageMap	msgmaps
+0x433900	func	ChannelsDlg__vf66	vtables
+0x433920	func	ChannelsDlg__vf69	vtables
+0x433970	func	ChannelsDlg__vf95	vtables
+0x433db0	func	ChannelsDlg__OnWM_DRAWITEM	msgmaps
+0x4349c0	func	ChannelsDlg__OnNotify_0xfffe_1013	msgmaps
+0x435080	func	ChannelsDlg__OnNotify_0xfebe_0	msgmaps
+0x436030	func	ChannelsDlg__vf97	vtables
+0x436080	func	CircleDiagramWnd__OnCommand_32864	msgmaps
+0x43608f	code	circle_wnd__lib_filter_site_a	ledger L5
+0x4360a0	func	CircleDiagPane__GetMessageMap	msgmaps
+0x4360b0	func	diagram_pane_layout_a	UI_BEHAVIOUR_SPEC §6.1
+0x4361d0	func	CircleDiagPane__OnWM_SIZE	msgmaps
+0x436270	func	diagram_pane_layout_b	UI_BEHAVIOUR_SPEC §6.1
+0x436340	func	CircleDiagPane__OnCommand_33014	msgmaps
+0x436350	func	CircleDiagPane__OnUpdate_33015	msgmaps
+0x436370	func	CircleDiagPane__OnCommand_33015	msgmaps
+0x436380	func	CircleDiagPane__OnUpdate_33016	msgmaps
+0x4363a0	func	CircleDiagPane__OnCommand_33016	msgmaps
+0x4363b0	func	CircleDiagPane__OnUpdate_33017	msgmaps
+0x4363d0	func	CircleDiagPane__OnCommand_33017	msgmaps
+0x4363e0	func	CircleDiagPane__OnUpdate_33018	msgmaps
+0x436400	func	CircleDiagPane__OnCommand_33018	msgmaps
+0x436410	func	CircleDiagPane__OnCommand_33019	msgmaps
+0x43641e	code	circle_wnd__lib_filter_site_b	ledger L5
+0x436430	func	CircleDiagPane__OnCommand_33020	msgmaps
+0x4364b0	func	CircleDiagPane__OnCommand_33021	msgmaps
+0x436530	func	CircleDiagPane__OnCommand_33022	msgmaps
+0x436580	func	CircleDiagPane__OnCommand_33023	msgmaps
+0x4365d0	func	CircleDiagPane__OnCommand_33024	msgmaps
+0x436620	func	CircleDiagPane__OnCommand_33025	msgmaps
+0x436680	func	BlockPropertyGrid__vf1	vtables
+0x436760	func	CircleDiagramWnd__vf94	vtables
+0x436990	func	CircleDiagramWnd__GetMessageMap	msgmaps
+0x436b00	func	CircleDiagramWnd__vf1	vtables
+0x436b30	func	circle_diagram_init_eval	ledger L5
+0x436f10	func	CircleDiagramWnd__OnCommand_32843	msgmaps
+0x436f90	func	CircleDiagramWnd__OnUpdate_32843	msgmaps
+0x436fb0	func	CircleDiagramWnd__OnCommand_35000_35100	msgmaps
+0x437080	func	CircleDiagramWnd__OnUpdate_35000_35100	msgmaps
+0x437150	func	CircleDiagramWnd__OnCommand_32845	msgmaps
+0x437310	func	CircleDiagramWnd__OnCommand_32846	msgmaps
+0x437390	func	CircleDiagramWnd__OnCommand_32865	msgmaps
+0x437420	func	CircleDiagramWnd__OnUpdate_32865	msgmaps
+0x437440	func	circle_on_context_menu	UI_BEHAVIOUR_SPEC §6.4
+0x437520	func	diagram_reevaluate_and_invalidate	ledger L5
+0x437560	func	CircleDiagramWnd__OnWM_CREATE	msgmaps
+0x437691	code	circle_wnd__lib_filter_site_c	ledger L5
+0x4376c0	func	CircleDiagramWnd__OnWM_SIZE	msgmaps
+0x4376e0	func	circle_wnd_layout_with_grid	UI_BEHAVIOUR_SPEC §6.1
+0x437820	func	CircleDiagramWnd__OnWM_SETCURSOR	msgmaps
+0x437890	func	CircleDiagramWnd__OnWM_LBUTTONDOWN	msgmaps
+0x4378e0	func	CircleDiagramWnd__OnWM_LBUTTONUP	msgmaps
+0x437900	func	CircleDiagramWnd__OnWM_MOUSEMOVE	msgmaps
+0x437ae0	func	circle_on_mouse_wheel	UI_BEHAVIOUR_SPEC §6.2
+0x437b90	func	circle_pan_limit	ledger L9.12
+0x437ca0	func	circle_update_scrollbars	UI_BEHAVIOUR_SPEC §6.2
+0x437f00	func	circle_scrollbar_input	ledger L9.12
+0x437ff0	func	CircleDiagramWnd__OnWM_HSCROLL	msgmaps
+0x438b50	func	circle_diagram_extent	ledger L9.12
+0x43a4a0	func	diagram_paint_characteristics	UI_BEHAVIOUR_SPEC §6.3
+0x43a880	func	circle_diagram_paint_locus	VIEWS_SPEC circle locus
+0x43b570	func	circle_zoom_limit	ledger L9.12
+0x43b910	func	CircleDiagramWnd__OnUpdate_33008	msgmaps
+0x43b930	func	CircleDiagramWnd__OnCommand_33008	msgmaps
+0x43b9c0	func	CircleDiagramWnd__OnUpdate_33009	msgmaps
+0x43b9e0	func	CircleDiagramWnd__OnCommand_33009	msgmaps
+0x43d220	func	circle_menu_channels	ledger L9.35
+0x43d670	func	CircleDiagramWnd__OnUpdate_33027	msgmaps
+0x43d6a0	func	CircleDiagramWnd__OnCommand_33027	msgmaps
+0x43d950	func	BlockPropertyGrid__vf90	vtables
+0x43d960	func	si_prefix_scale	UI_BEHAVIOUR_SPEC §3.2
+0x43dcf0	func	CMenu__vf1	vtables
+0x43dd70	func	CommentItem__vf9	vtables
+0x43ddd0	func	CommentItem__vf7	vtables
+0x43deb0	func	CommentItem__vf8	vtables
+0x43df90	func	comment_info_box	UI_BEHAVIOUR_SPEC §5.2
+0x43e380	func	CCommentDlg__vf95	vtables
+0x43e3d0	func	CCommentDlg__vf66	vtables
+0x43e410	func	CCommentDlg__vf5	vtables
+0x43e540	func	CCommentDlg__vf1	vtables
+0x43e750	func	LevelItem__vf1	vtables
+0x43e760	func	LevelItem__vf0	vtables
+0x43e850	func	AreaItem__vf0	vtables
+0x43eb40	func	comment_place	UI_BEHAVIOUR_SPEC §5.3
+0x43ef50	func	comment_place_release	UI_BEHAVIOUR_SPEC §5.3
+0x43efa0	func	comment_drag	UI_BEHAVIOUR_SPEC §5.4
+0x43f630	func	comment_paint_all	UI_BEHAVIOUR_SPEC §5.2
+0x43fab0	func	comment_hit_test	ledger L9.44
+0x43fcf0	func	comments_load_settings	UI_BEHAVIOUR_SPEC §5.6
+0x4402d0	func	comments_save_settings	UI_BEHAVIOUR_SPEC §5.6
+0x4414c0	func	drop_target_init	ledger L9.21
+0x441560	func	COleDropTargetEx__vf1	vtables
+0x4415b0	func	drop_target_on_drop	ledger L9.21
+0x441ad0	func	COleDropTargetEx__vf23	vtables
+0x441b00	func	COleDropTargetEx__vf24	vtables
+0x441b70	func	diagram_wnd_get_message_map	UI_BEHAVIOUR_SPEC §6
+0x441ce0	func	DiagramWnd__vf1	vtables
+0x441d80	func	FourieDiagramWnd__OnWM_PAINT	msgmaps
+0x441e60	func	diagram_copy_emf	ledger L9.30
+0x441fe0	func	diagram_print_page	ledger L9.22
+0x442270	func	DiffDiagramWnd__OnCommand_32864	msgmaps
+0x44227f	code	diff_wnd__lib_filter_site_a	ledger L5
+0x442290	func	DiffDiagPane__GetMessageMap	msgmaps
+0x4422a0	func	DiffDiagPane__OnWM_CREATE	msgmaps
+0x4423c0	func	DiffDiagPane__vf132	vtables
+0x442490	func	DiffDiagPane__OnCommand_33014	msgmaps
+0x4424a0	func	DiffDiagPane__OnCommand_33015	msgmaps
+0x4424b0	func	DiffDiagPane__OnCommand_33016	msgmaps
+0x4424c0	func	DiffDiagPane__OnUpdate_33028	msgmaps
+0x4424e0	func	DiffDiagPane__OnCommand_33028	msgmaps
+0x4424f0	func	DiffDiagPane__OnCommand_33019	msgmaps
+0x4424fe	code	diff_wnd__lib_filter_site_b	ledger L5
+0x442510	func	DiffDiagPane__OnCommand_33020	msgmaps
+0x442590	func	DiffDiagPane__OnCommand_33021	msgmaps
+0x442610	func	DiffDiagPane__OnCommand_33022	msgmaps
+0x442660	func	DiffDiagPane__OnCommand_33023	msgmaps
+0x4426b0	func	DiffDiagPane__OnCommand_33024	msgmaps
+0x442700	func	DiffDiagPane__OnCommand_33025	msgmaps
+0x442750	func	DiffDiagramWnd__vf94	vtables
+0x442880	func	DiffDiagramWnd__GetMessageMap	msgmaps
+0x4429e0	func	DiffDiagramWnd__vf1	vtables
+0x442a10	func	diff_diagram_init_eval	ledger L5
+0x442cc0	func	DiffDiagramWnd__OnCommand_32843	msgmaps
+0x442d40	func	DiffDiagramWnd__OnCommand_35000_35100	msgmaps
+0x442da0	func	DiffDiagramWnd__OnUpdate_35000_35100	msgmaps
+0x442df0	func	DiffDiagramWnd__OnCommand_32845	msgmaps
+0x442e70	func	DiffDiagramWnd__OnCommand_32846	msgmaps
+0x442ee0	func	DiffDiagramWnd__OnCommand_32865	msgmaps
+0x442f80	func	DiffDiagramWnd__OnWM_RBUTTONUP	msgmaps
+0x443060	func	DiffDiagramWnd__OnWM_CREATE	msgmaps
+0x443191	code	diff_wnd__lib_filter_site_c	ledger L5
+0x4431c0	func	DiffDiagramWnd__OnWM_SIZE	msgmaps
+0x4431e0	func	diff_wnd_layout_with_grid	UI_BEHAVIOUR_SPEC §6.1
+0x443320	func	DiffDiagramWnd__OnWM_LBUTTONDOWN	msgmaps
+0x443370	func	DiffDiagramWnd__OnWM_LBUTTONUP	msgmaps
+0x443390	func	DiffDiagramWnd__OnWM_MOUSEMOVE	msgmaps
+0x443550	func	DiffDiagramWnd__OnWM_MOUSEWHEEL	msgmaps
+0x443980	func	DiffDiagramWnd__OnWM_VSCROLL	msgmaps
+0x443a70	func	DiffDiagramWnd__OnWM_HSCROLL	msgmaps
+0x445e00	func	DiffDiagramWnd__vf98	vtables
+0x4461d0	func	DiffDiagramWnd__OnUpdate_33028	msgmaps
+0x4461f0	func	DiffDiagramWnd__OnCommand_33028	msgmaps
+0x446d70	func	diff_menu_channels	ledger L9.35
+0x446ff0	func	DiffDiagramWnd__OnCommand_33027	msgmaps
+0x4471e0	func	AboutWnd__vf72	vtables
+0x4477a0	func	AboutWnd__vf1	vtables
+0x4479b0	func	SplashWnd__vf72	vtables
+0x447b80	func	CFastViewApp__OnCommand_32880	msgmaps
+0x447c00	func	CFastViewApp__GetMessageMap	msgmaps
+0x447ce0	func	CFastViewApp__vf1	vtables
+0x447d90	func	SplashWnd__vf1	vtables
+0x447dc0	func	CFastViewApp__OnCommand_57664	msgmaps
+0x447e30	func	app_file_dialog_filters	UI_BEHAVIOUR_SPEC §1.5
+0x4483f0	func	app_init_instance	UI_BEHAVIOUR_SPEC §1.5
+0x448850	func	CDocManagerEx__vf1	vtables
+0x448880	func	CFastViewApp__vf28	vtables
+0x448a90	func	app_cmd_page_setup	ledger L9.22
+0x448c00	func	app_saved_settings_io_a	UI_BEHAVIOUR_SPEC §1.5
+0x448da0	func	app_saved_settings_io_b	UI_BEHAVIOUR_SPEC §1.5
+0x448e80	func	CFastViewApp__vf24	vtables
+0x448ec0	func	CFastViewApp__OnCommand_129	msgmaps
+0x449010	func	CFastViewApp__vf64	vtables
+0x449020	func	CFastViewApp__vf61	vtables
+0x449030	func	CFastViewApp__vf60	vtables
+0x449040	func	CFastViewApp__vf59	vtables
+0x449050	func	CFastViewApp__vf58	vtables
+0x449060	func	CFastViewApp__vf57	vtables
+0x449070	func	CFastViewApp__vf56	vtables
+0x4493d0	func	ChannelsDlg__vf1	vtables
+0x449490	func	LoadingDlg__vf1	vtables
+0x449890	func	doc_cmd_omp_analyse	ledger L9.11
+0x4498b0	func	CFastViewDoc__OnCommand_32862	msgmaps
+0x449920	func	CFastViewDoc__OnCommand_32879	msgmaps
+0x449930	func	doc_cmd_merge_sync	UI_BEHAVIOUR_SPEC §7.8
+0x449960	func	doc_cmd_merge_combine	UI_BEHAVIOUR_SPEC §7.8
+0x4499e0	func	FileInfoDlg__vf95	vtables
+0x449f40	func	FileInfoDlg__vf66	vtables
+0x44a24a	code	file_params_ok__undo_push	UI_BEHAVIOUR_SPEC §4
+0x44a330	func	FileInfoDlg__vf5	vtables
+0x44a390	func	FileInfoDlg__vf1	vtables
+0x44aa40	func	CZipException__vf0	vtables
+0x44ab60	func	CWildcard_ZipArchiveLib__vf0	vtables
+0x44abb0	func	CFileFilter_ZipArchiveLib__vf0	vtables
+0x44abe0	func	CFileFilter_ZipArchiveLib__vf2	vtables
+0x44abf0	func	CFileFilter_ZipArchiveLib__vf1	vtables
+0x44ac20	func	CNameFileFilter_ZipArchiveLib__vf0	vtables
+0x44ac50	func	CNameFileFilter_ZipArchiveLib__vf2	vtables
+0x44ac70	func	CNameFileFilter_ZipArchiveLib__vf1	vtables
+0x44ade0	func	doc_get_message_map	ledger L9
+0x44ae70	func	CFastViewDoc__vf0	vtables
+0x44b088	code	doc_ctor__diff_band_on	UI_BEHAVIOUR_SPEC §3.4
+0x44b0f0	func	CFastViewDoc__vf1	vtables
+0x44bf90	func	CFastViewDoc__vf35	vtables
+0x44c2e0	func	CFastViewDoc__OnCommand_32805	msgmaps
+0x44c4e0	func	CFastViewDoc__OnCommand_32861	msgmaps
+0x44c5e0	func	CFastViewDoc__OnUpdate_32805	msgmaps
+0x44c6c0	func	CFastViewDoc__OnUpdate_32806_32807	msgmaps
+0x44c710	func	doc_set_file_path	ledger L9.17
+0x44c940	func	doc_on_save_document	FORMATS_SPEC open/save
+0x44ca80	func	osc_write	FORMATS_SPEC open/save
+0x44d0f0	func	cff_write	FORMATS_SPEC cff writer
+0x44d720	func	comtrade_cfg_write	FORMATS_SPEC open/save
+0x44ee70	func	doc_open_dispatch_by_ext	FORMATS_SPEC open/save
+0x44f391	code	doc_open__fail_silently	ledger L9.31
+0x44f430	func	doc_load_by_ext	FORMATS_SPEC open/save
+0x44f5b0	func	doc_load_set_file	ledger L9.17
+0x44fd10	func	doc_cmd_load_settings_file	ledger L9.17
+0x44fe30	func	cff_read	FORMATS_SPEC cff reader
+0x450a30	func	comtrade_cfg_read	FORMATS_SPEC open/save
+0x450c36	code	comtrade_cfg_read__nominal_freq_rebuild	UI_BEHAVIOUR_SPEC §4
+0x450e70	func	comtrade_cfg_parse	ledger L9.13
+0x45158a	code	cfg_read__file_type_line	FORMATS_SPEC open/save
+0x451800	func	comtrade_dat_read_ascii	ledger L9.31
+0x451904	code	comtrade_dat_read_ascii__scale_sample	ledger L9.34
+0x451be0	func	comtrade_dat_read_binary	ledger L9.31
+0x451de0	code	comtrade_dat_read_binary__scale_sample	ledger L9.34
+0x4520f0	func	comtrade_dat_read_binary32	ledger L9.31
+0x4524b0	func	osc_read	FORMATS_SPEC osc reader
+0x4526a0	func	osc_parse_blocks	FORMATS_SPEC osc reader
+0x452f15	code	osc_parse_blocks__nominal_freq_rebuild	UI_BEHAVIOUR_SPEC §4
+0x453010	func	osc_read_samples	FORMATS_SPEC osc reader
+0x453db0	func	osc_snap_sample_rate	FORMATS_SPEC osc reader
+0x454240	func	CFastViewDoc__OnCommand_32807	msgmaps
+0x454310	func	doc_omp_result_shown	UI_BEHAVIOUR_SPEC §1.1
+0x454380	func	CFastViewDoc__OnUpdate_137	msgmaps
+0x4543a0	func	CFastViewDoc__OnCommand_137	msgmaps
+0x4543e0	func	doc_redecode_strings	ledger L9.13
+0x454530	func	doc_undo_push	UI_BEHAVIOUR_SPEC §4
+0x454640	func	doc_undo	UI_BEHAVIOUR_SPEC §4
+0x4546d0	func	record_snapshot_assign	ledger L9.19
+0x4548d0	func	doc_redo	UI_BEHAVIOUR_SPEC §4
+0x454960	func	doc_rebuild_nominal_freq_table	UI_BEHAVIOUR_SPEC §4
+0x454fa0	func	doc_save_modified	ledger L9.17
+0x4557b0	func	doc_cmdui_toggle_diff_band	UI_BEHAVIOUR_SPEC §4.9
+0x4557d0	func	doc_cmd_toggle_diff_band	UI_BEHAVIOUR_SPEC §4.9
+0x455800	func	doc_start_date_dmy	ledger L9.47
+0x455930	func	doc_group_members	ledger L9.50
+0x456e90	func	parambar_format_times	UI_BEHAVIOUR_SPEC §7.9
+0x4599d0	func	CDocumentAdapter_CDocument__vf0	vtables
+0x459a50	func	IDocument_ATL__vf0	vtables
+0x459ac0	func	CDocumentAdapter_CDocument__vf3	vtables
+0x459b10	func	CDocumentAdapter_CDocument__vf4	vtables
+0x459b20	func	CDocumentAdapter_CDocument__vf5	vtables
+0x459b30	func	CDocumentAdapter_CDocument__vf6	vtables
+0x459b50	func	CDocumentAdapter_CDocument__vf7	vtables
+0x459b60	func	CDocumentAdapter_CDocument__vf8	vtables
+0x459b80	func	CDocumentAdapter_CDocument__vf9	vtables
+0x459ba0	func	CDocumentAdapter_CDocument__vf10	vtables
+0x459bc0	func	CDocumentAdapter_CDocument__vf11	vtables
+0x459be0	func	CDocumentAdapter_CDocument__vf12	vtables
+0x459c00	func	CFastViewDoc__vf22	vtables
+0x459e60	func	codepage_guess	ledger L9.13
+0x459fe0	func	CFastViewDoc__vf26	vtables
+0x45a540	func	CFastViewDoc__vf27	vtables
+0x45a550	func	CProgressCtrl__vf1	vtables
+0x45a7d0	func	CServerItem__vf1	vtables
+0x45a8d0	func	view_on_rbutton_down	UI_BEHAVIOUR_SPEC §3.6
+0x45a960	func	CFastViewView__vf0	vtables
+0x45a970	func	view_get_message_map	ledger L9
+0x45aa90	func	CFastViewView__vf1	vtables
+0x45ab70	func	view_on_initial_update	ledger L9.4
+0x45ac60	func	CFastViewView__vf103	vtables
+0x45ac90	func	CFastViewView__OnWM_SIZE	msgmaps
+0x45acb0	func	view_cmd_edit	UI_BEHAVIOUR_SPEC §4.1
+0x45ad02	code	view_cmd_edit__paste	ledger L9.20
+0x45ad50	code	view_cmd_edit__paste_undo_push	UI_BEHAVIOUR_SPEC §4
+0x45be28	code	view_cmd_edit__copy	ledger L9.30
+0x45bf0f	code	view_cmd_edit__undo_repaint	ledger L9.19
+0x45bf60	func	view_cmdui_edit	UI_BEHAVIOUR_SPEC §4.1
+0x45c0bd	code	view_cmdui_edit__undo_count	ledger L9.36
+0x45c0da	code	view_cmdui_edit__redo_count	ledger L9.36
+0x45c10c	data	view_cmdui_edit_case_table	ledger L9.36
+0x45c120	func	view_cmd_vizir_toggle	UI_BEHAVIOUR_SPEC §3.5
+0x45c250	func	view_cmd_comment_tool	UI_BEHAVIOUR_SPEC §4.5
+0x45c2f0	func	CFastViewView__OnCommand_139	msgmaps
+0x45c300	func	CFastViewView__OnUpdate_32813_32816	msgmaps
+0x45c320	func	view_cmdui_comment_tool	UI_BEHAVIOUR_SPEC §4.5
+0x45c430	func	view_fit_xscale	UI_BEHAVIOUR_SPEC §3.1
+0x45c4f0	func	view_cmd_zoom	UI_BEHAVIOUR_SPEC §4.2
+0x45c8c0	func	view_cmdui_zoom	UI_BEHAVIOUR_SPEC §4.2
+0x45c980	func	view_cmd_channel_flags	UI_BEHAVIOUR_SPEC §4.6
+0x45c9a0	func	view_cmdui_channel_flags	UI_BEHAVIOUR_SPEC §4.6
+0x45c9c0	func	view_cmd_coefficients	UI_BEHAVIOUR_SPEC §4.10
+0x45c9f0	func	CFastViewView__OnUpdate_32866_32868	msgmaps
+0x45ca10	func	view_cmd_discrete_visibility	UI_BEHAVIOUR_SPEC §4.7
+0x45ca50	func	view_cmd_diagram_membership	UI_BEHAVIOUR_SPEC §4.8
+0x45ca80	func	view_cmdui_diagram_membership	UI_BEHAVIOUR_SPEC §4.8
+0x45caa0	func	CFastViewView__OnCommand_32853_32857	msgmaps
+0x45ccc0	func	CFastViewView__OnUpdate_32853_32857	msgmaps
+0x45ce40	func	CFastViewView__OnCommand_33038_33042	msgmaps
+0x45d160	func	CFastViewView__OnUpdate_33038_33042	msgmaps
+0x45d290	func	CFastViewView__OnCommand_33007	msgmaps
+0x45d4a0	func	view_update_scrollbars	UI_BEHAVIOUR_SPEC §3.1
+0x45d6d0	func	CFastViewView__OnWM_HSCROLL	msgmaps
+0x45d870	func	CFastViewView__OnWM_VSCROLL	msgmaps
+0x45d990	func	view_on_mouse_wheel	UI_BEHAVIOUR_SPEC §3.6
+0x45dc10	func	view_on_lbutton_down	UI_BEHAVIOUR_SPEC §3.6
+0x45e37c	code	view_on_lbutton_down__vizir_hit	ledger L9.44
+0x45e6b0	func	view_on_lbutton_up	UI_BEHAVIOUR_SPEC §3.6
+0x45ea70	func	view_on_mouse_move	UI_BEHAVIOUR_SPEC §3.6
+0x45ec4e	code	view_on_mouse_move__zoom_end_clamp	ledger L9.33
+0x45efa0	func	view_on_rbutton_up	UI_BEHAVIOUR_SPEC §3.6
+0x45f121	code	view_on_rbutton_up__comment_menu_labels	UI_BEHAVIOUR_SPEC §5.5
+0x45f3d0	func	view_hit_pending_lane	ledger L9.44
+0x45f490	func	view_on_key_down	UI_BEHAVIOUR_SPEC §3.6
+0x45f660	func	view_on_set_cursor	UI_BEHAVIOUR_SPEC §3.6
+0x45f6bc	code	view_on_set_cursor__vizir_hit	ledger L9.44
+0x45f7d0	func	view_on_activate_view	UI_BEHAVIOUR_SPEC §1.1
+0x45f950	func	view_draw	UI_BEHAVIOUR_SPEC §3.2
+0x45fa29	code	view_draw__vizirs_call	ledger L9.39
+0x45fa5e	code	view_draw__comments_call	ledger L9.39
+0x45fbe0	func	view_paint_waveforms	UI_BEHAVIOUR_SPEC §3.2
+0x460030	func	CFastViewView__vf111	vtables
+0x460060	func	CFastViewView__vf112	vtables
+0x4600b0	func	view_paginate_lanes	ledger L9.22
+0x460220	func	CFastViewView__vf114	vtables
+0x460290	func	view_lane_height	UI_BEHAVIOUR_SPEC §3.1
+0x46045f	code	view_lane_height__group_owner	ledger L9.50
+0x4606d0	func	view_measure_stats_widths	UI_BEHAVIOUR_SPEC §3.1
+0x461440	func	view_paint_stats_text	ledger L9.5
+0x462ff0	func	view_paint_lane_backgrounds	UI_BEHAVIOUR_SPEC §3.2
+0x464350	func	view_paint_ruler	UI_BEHAVIOUR_SPEC §3.3
+0x465460	func	view_cmd_vertical_zoom_arm	UI_BEHAVIOUR_SPEC §4.3
+0x4654a0	func	CFastViewView__OnUpdate_138	msgmaps
+0x4654f0	func	view_cmd_reset_window_zoom	UI_BEHAVIOUR_SPEC §4.3
+0x465850	func	view_cmd_colour	UI_BEHAVIOUR_SPEC §4.12
+0x465890	func	view_on_lbutton_dblclk	UI_BEHAVIOUR_SPEC §3.6
+0x4660c0	func	CFastViewView__OnWM_DESTROY	msgmaps
+0x466100	func	CFastViewView__vf69	vtables
+0x466170	func	view_band_time_label	UI_BEHAVIOUR_SPEC §3.4
+0x466630	func	view_paint_diff_band	UI_BEHAVIOUR_SPEC §3.4
+0x466a4e	code	view_paint_diff_band__marker_label	ledger L9.18
+0x46715c	code	view_paint_diff_band__delta_label	ledger L9.18
+0x467350	func	CFastViewView__OnUpdate_33035	msgmaps
+0x467370	func	view_cmd_combine_channels	UI_BEHAVIOUR_SPEC §4.11
+0x467b10	func	CFastViewView__OnUpdate_33037	msgmaps
+0x467c40	func	view_cmd_split_channels	UI_BEHAVIOUR_SPEC §4.11
+0x467ed0	func	view_lane_order	UI_BEHAVIOUR_SPEC §3.1
+0x4683c0	func	group_member_stats_line	ledger L9.50
+0x468c80	func	view_cmdui_combine_channels	UI_BEHAVIOUR_SPEC §4.11
+0x468e10	func	CFastViewView__OnWM_CREATE	msgmaps
+0x468e40	func	CFastViewView__vf91	vtables
+0x468f00	func	CFastViewView__vf92	vtables
+0x469060	func	view_hover_popup	UI_BEHAVIOUR_SPEC §3.6
+0x46aeb0	func	FileFinder22Dlg__GetMessageMap	msgmaps
+0x46b310	func	FileFinder22Dlg__vf1	vtables
+0x46b570	func	FileFinder22Dlg__vf95	vtables
+0x46b810	func	FileFinder22Dlg__vf66	vtables
+0x46b8f0	func	FileFinder22Dlg__OnCommand_1081	msgmaps
+0x46b9a0	func	FileFinder22Dlg__OnCommand_1083	msgmaps
+0x46b9c0	func	finder_scan_thread	ledger L9.9
+0x46bec0	func	finder_classify_by_ext	ledger L9.9
+0x46c080	func	finder_read_comtrade_header	ledger L9.9
+0x46c730	func	finder_read_osc_header	ledger L9.9
+0x46c960	func	finder_read_sto_inner_cfg	ledger L9.9
+0x46cb20	func	finder_apply_filters	ledger L9.9
+0x46cfc0	func	FileFinder22Dlg__OnMessage_CMD_code_0x1	msgmaps
+0x46cfd0	func	FileFinder22Dlg__OnNotify_0xfd09_1077	msgmaps
+0x46d420	func	FileFinder22Dlg__OnNotify_0xff94_1082	msgmaps
+0x46d4b0	func	finder_delete_files	ledger L9.49
+0x46df84	code	finder_delete_files__shift_check	ledger L9.49
+0x46e120	func	finder_open_selected	ledger L9.9
+0x46e2b0	func	FileFinder22Dlg__vf98	vtables
+0x46e330	func	FileFinder22Dlg__OnNotify_0xfffd_1082	msgmaps
+0x46ebe0	func	CDateTimeCtrl__vf1	vtables
+0x46ec10	func	FourieDiagramWnd__OnWM_LBUTTONDOWN	msgmaps
+0x46ec30	func	FourieDiagramWnd__OnCommand_32863	msgmaps
+0x46ece0	func	FourieDiagramWnd__GetMessageMap	msgmaps
+0x46ecf0	func	FourieDiagramWnd__vf1	vtables
+0x46ee20	func	FourieDiagramSettingsDlg_FourieDiagramWnd__vf95	vtables
+0x46ee70	func	FourieDiagramSettingsDlg_FourieDiagramWnd__vf66	vtables
+0x46f070	func	FourieDiagramSettingsDlg_FourieDiagramWnd__vf5	vtables
+0x46f100	func	FourieDiagramWnd__OnCommand_35000_35100	msgmaps
+0x46f180	func	FourieDiagramWnd__OnUpdate_35000_35100	msgmaps
+0x46f210	func	FourieDiagramWnd__OnCommand_32845	msgmaps
+0x46f280	func	FourieDiagramWnd__OnCommand_32846	msgmaps
+0x46f2e0	func	freq_menu_channels	ledger L9.35
+0x46f470	func	FourieDiagramWnd__OnWM_CREATE	msgmaps
+0x46f4a0	func	FourieDiagramWnd__vf90	vtables
+0x46f5a0	func	freq_diagram_draw	VIEWS_SPEC frequency
+0x4709b0	func	FVComtradeConv__vf0	vtables
+0x4709e0	func	FVComtradeConv__vf3	vtables
+0x470a40	func	FvSpecEdit__vf0	vtables
+0x470a50	func	FvSpecEdit__vf1	vtables
+0x470a90	func	FvSpecEdit__GetMessageMap	msgmaps
+0x470aa0	func	FvSpecEdit__OnWM_SHOWWINDOW	msgmaps
+0x470ac0	func	FvSpecEdit__OnWM_KILLFOCUS	msgmaps
+0x470ad0	func	FvSpecEdit__OnWM_KEYDOWN	msgmaps
+0x470ae0	func	FvSpecEdit__OnWM_KEYUP	msgmaps
+0x470b20	func	LevelItem__vf7	vtables
+0x470c10	func	LevelItem__vf8	vtables
+0x470d20	func	LevelItem__vf2	vtables
+0x470e4a	code	level_item__hit_test_site	ledger L9.33
+0x470f30	func	level_info_text	ledger L9.47
+0x471020	func	level_item_paint	ledger L9.33
+0x471430	func	LevelItem__vf5	vtables
+0x4715c0	func	LevelItem__vf3	vtables
+0x471740	func	LevelItem__vf4	vtables
+0x4717c0	func	LoadingDlg__GetMessageMap	msgmaps
+0x4717d0	func	LoadingDlg__vf95	vtables
+0x471810	func	LoadingDlg__vf66	vtables
+0x471830	func	LoadingDlg__OnWM_CLOSE	msgmaps
+0x471850	func	loading_dlg_on_cancel	ledger L9.31
+0x471870	func	loading_dlg_on_timer	ledger L9.31
+0x471940	func	CMsgCaptionBar__vf72	vtables
+0x471af0	func	VectorDiagPane__vf1	vtables
+0x471ce0	func	CircleDiagPane__vf1	vtables
+0x471dd0	func	DiffDiagPane__vf1	vtables
+0x471ec0	func	CMainFrame__OnCommand_32831	msgmaps
+0x471ed0	func	CMainFrame__OnUpdate_32806	msgmaps
+0x471f00	func	CMainFrame__OnUpdate_210_218	msgmaps
+0x471f30	func	CMFCVisualManagerOffice2007Ex__vf181	vtables
+0x472030	func	CMFCVisualManagerOffice2007Ex__vf1	vtables
+0x472070	func	CMFCVisualManagerOffice2007Ex__vf0	vtables
+0x472090	func	CMainFrame__vf0	vtables
+0x4720a0	func	mainframe_get_message_map	ledger L9
+0x4720b0	func	mainframe_ctor	UI_BEHAVIOUR_SPEC §1.1
+0x4721e6	code	mainframe_ctor__parambar_vtable	ledger L9.36
+0x4722f0	func	CMainFrame__vf1	vtables
+0x4726a0	func	CMergeBar__vf1	vtables
+0x4726d0	func	CMFCRibbonBarEx__vf1	vtables
+0x472700	func	mainframe_on_timer_repaint	UI_BEHAVIOUR_SPEC §1.1
+0x472750	func	mainframe_paint_background_strips	UI_BEHAVIOUR_SPEC §1.1
+0x4728a0	func	mainframe_on_get_min_max_info	UI_BEHAVIOUR_SPEC §1.1
+0x4728d0	func	mainframe_on_create	UI_BEHAVIOUR_SPEC §1.1
+0x4729b0	func	mainframe_create_status_bar	UI_BEHAVIOUR_SPEC §1.4
+0x472e10	func	statusbar_set_pane_text_cached	UI_BEHAVIOUR_SPEC §1.4
+0x472f30	func	ribbon_build	UI_BEHAVIOUR_SPEC §2
+0x474c76	code	ribbon_build__end	UI_BEHAVIOUR_SPEC §2
+0x474c80	func	mainframe_create_caption_bars	UI_BEHAVIOUR_SPEC §1.3
+0x474e10	func	mainframe_create_panes	UI_BEHAVIOUR_SPEC §1.2
+0x475040	func	mainframe_cmd_toggle_diagram_pane	UI_BEHAVIOUR_SPEC §1.2
+0x4750b0	func	mainframe_cmd_toggle_diagram_pane_b	UI_BEHAVIOUR_SPEC §1.2
+0x4750f0	func	mainframe_cmdui_diagram_pane	UI_BEHAVIOUR_SPEC §1.2
+0x475180	func	mainframe_cmdui_parambar	ledger L9.36
+0x4751d0	func	mainframe_cmd_toggle_parambar	ledger L9.36
+0x475210	func	CMainFrame__OnCommand_32830	msgmaps
+0x475250	func	mainframe_cmd_style	UI_BEHAVIOUR_SPEC §2.5
+0x4753a0	func	mainframe_on_close	UI_BEHAVIOUR_SPEC §1.1
+0x475400	func	CMainFrame__OnWM_DESTROY	msgmaps
+0x475420	func	mainframe_rebind_diagrams	UI_BEHAVIOUR_SPEC §1.1
+0x475530	func	CMainFrame__OnWM_COPYDATA	msgmaps
+0x475650	func	CMainFrame__OnWM_ACTIVATE	msgmaps
+0x4756e0	func	CMainFrame__OnMessage_msg_0x40a	msgmaps
+0x475750	func	mainframe_cmdui_save	UI_BEHAVIOUR_SPEC §1.5
+0x475800	func	ribbon_context_menu	UI_BEHAVIOUR_SPEC §2.5
+0x475b30	func	__CFramePane_VFourieDiagramWnd____vf72	vtables
+0x475c60	func	__CFramePane_VFourieDiagramWnd____vf1	vtables
+0x475cd0	func	CMFCVisualManagerOffice2007Ex__vf202	vtables
+0x475cf0	func	CMFCVisualManagerOffice2007Ex__vf190	vtables
+0x475d00	func	CMFCVisualManagerOffice2007Ex__vf187	vtables
+0x475d30	func	CMFCVisualManagerOffice2007Ex__vf174	vtables
+0x475d40	func	CMFCVisualManagerOffice2007Ex__vf153	vtables
+0x475d60	func	CMFCVisualManagerOffice2007Ex__vf151	vtables
+0x475d80	func	CMFCVisualManagerOffice2007Ex__vf127	vtables
+0x475dc0	func	CMFCVisualManagerOffice2007Ex__vf117	vtables
+0x475df0	func	CMFCVisualManagerOffice2007Ex__vf116	vtables
+0x475e20	func	CMFCVisualManagerOffice2007Ex__vf115	vtables
+0x475e50	func	CMFCVisualManagerOffice2007Ex__vf82	vtables
+0x475e80	func	CMFCVisualManagerOffice2007Ex__vf76	vtables
+0x475ea0	func	CMFCVisualManagerOffice2007Ex__vf72	vtables
+0x475f30	func	CMFCVisualManagerOffice2007Ex__vf51	vtables
+0x475f60	func	CMFCVisualManagerOffice2007Ex__vf48	vtables
+0x475f70	func	CMFCVisualManagerOffice2007Ex__vf45	vtables
+0x475fa0	func	CMFCVisualManagerOffice2007Ex__vf13	vtables
+0x475fb0	func	CMFCRibbonBarEx__vf106	vtables
+0x476230	func	qan_page_on_field_change	VIEWS_SPEC sheet
+0x476460	func	CMainFrame__vf123	vtables
+0x476480	func	CMainFrame__vf120	vtables
+0x476550	func	__CList_II__vf1	vtables
+0x4766e0	func	__CList_II__vf2	vtables
+0x476890	func	CMFCRibbonApplicationButton__vf1	vtables
+0x476910	func	CMFCRibbonApplicationButton__vf55	vtables
+0x476920	func	CMFCRibbonApplicationButton__vf56	vtables
+0x476930	func	CMFCRibbonApplicationButton__vf57	vtables
+0x476940	func	CMFCRibbonApplicationButton__vf58	vtables
+0x476950	func	CMFCRibbonApplicationButton__vf59	vtables
+0x476960	func	CMFCRibbonApplicationButton__vf60	vtables
+0x476990	func	CMFCRibbonApplicationButton__vf61	vtables
+0x476a20	func	CMFCRibbonApplicationButton__vf62	vtables
+0x476a60	func	CMFCRibbonApplicationButton__vf63	vtables
+0x476ae0	func	CMFCRibbonApplicationButton__vf67	vtables
+0x476b20	func	CMFCRibbonApplicationButton__vf68	vtables
+0x476b30	func	CMFCRibbonApplicationButton__vf69	vtables
+0x476b70	func	CMFCRibbonApplicationButton__vf70	vtables
+0x476c00	func	CMFCRibbonApplicationButton__vf71	vtables
+0x476c20	func	CMFCRibbonApplicationButton__vf80	vtables
+0x476c40	func	CMFCRibbonApplicationButton__vf88	vtables
+0x476c70	func	CMFCRibbonApplicationButton__vf89	vtables
+0x476c80	func	CMFCRibbonApplicationButton__vf95	vtables
+0x476c90	func	CMFCRibbonApplicationButton__vf99	vtables
+0x476cb0	func	CMFCRibbonApplicationButton__vf132	vtables
+0x476ce0	func	CMFCRibbonApplicationButton__vf151	vtables
+0x476d00	func	CMFCRibbonApplicationButton__vf152	vtables
+0x476d20	func	CMFCRibbonApplicationButton__vf153	vtables
+0x476d30	func	CMFCRibbonApplicationButton__vf160	vtables
+0x476d40	func	CMFCRibbonApplicationButton__vf161	vtables
+0x477050	func	str_cut_at_separator	ledger L9.34
+0x477250	func	CFileException__vf1	vtables
+0x477280	func	omp_phasor	OMP_SPEC §1
+0x4776f0	func	merge_spread_metric	UI_BEHAVIOUR_SPEC §10
+0x477810	func	omp_median	OMP_SPEC §11
+0x477db0	func	omp_choose_window	OMP_SPEC §10
+0x477f70	func	omp_solve_linear_zero_pivot	ledger L7
+0x479950	func	CMergeBar__GetMessageMap	msgmaps
+0x479960	func	CMergeBar__vf72	vtables
+0x479b6d	code	merge_bar_create__sync_label	UI_BEHAVIOUR_SPEC §10
+0x479b7b	code	merge_bar_create__sync_button	UI_BEHAVIOUR_SPEC §10
+0x479bc3	code	merge_bar_create__combine_label	UI_BEHAVIOUR_SPEC §10
+0x479bd1	code	merge_bar_create__combine_button	UI_BEHAVIOUR_SPEC §10
+0x479e50	func	CMergeBar__vf153	vtables
+0x479e80	func	CMergeBar__vf203	vtables
+0x47a290	func	CMergeBar__OnMessage_CMD_code_0x1	msgmaps
+0x47a2f0	func	MomentItem__vf7	vtables
+0x47a330	func	MomentItem__vf8	vtables
+0x47a370	func	MomentItem__vf2	vtables
+0x47a4e0	func	moment_info_text	ledger L9.47
+0x47a8b0	func	MomentItem__vf6	vtables
+0x47a9b0	func	MomentItem__vf5	vtables
+0x47aa10	func	MomentItem__vf3	vtables
+0x47aa50	func	oledate_format	ledger L9.47
+0x47abb0	func	oledate_add_seconds	ledger L9.47
+0x47ac50	func	__MultiplierDlg__vf66	vtables
+0x47ac70	func	__MultiplierDlg__GetMessageMap	msgmaps
+0x47ac80	func	__MultiplierDlg__vf95	vtables
+0x47af90	func	__MultiplierDlg__vf69	vtables
+0x47b610	func	__MultiplierDlg__vf97	vtables
+0x47b7b0	func	__MultiplierDlg__OnWM_DRAWITEM	msgmaps
+0x47bb90	func	merge_sync_dispatch	UI_BEHAVIOUR_SPEC §7.8
+0x47bc00	func	merge_sync_fault_component	UI_BEHAVIOUR_SPEC §7.8
+0x47c440	func	merge_sync_prefault	UI_BEHAVIOUR_SPEC §7.8
+0x47ce10	func	merge_sync_start_time	UI_BEHAVIOUR_SPEC §7.8
+0x47d990	func	merge_combine	UI_BEHAVIOUR_SPEC §7.8
+0x47e834	code	merge_combine__undo_push	UI_BEHAVIOUR_SPEC §4
+0x47e8fc	code	merge_combine__hide_bar	UI_BEHAVIOUR_SPEC §10
+0x47ecf0	func	CParamOscBar__vf72	vtables
+0x47ed00	func	CParamOscBar__vf153	vtables
+0x47ed30	func	CParamOscBar__vf203	vtables
+0x47f220	func	CProgrBarDlg__vf0	vtables
+0x47f230	func	CProgrBarDlg__vf1	vtables
+0x47f320	func	CProgrBarDlg__vf66	vtables
+0x47f340	func	CProgrBarDlg__GetMessageMap	msgmaps
+0x47f4d0	func	CProgrBarDlg__OnWM_SHOWWINDOW	msgmaps
+0x47f500	func	CProgSettingdDlg__vf0	vtables
+0x47f610	func	CProgSettingdDlg__vf1	vtables
+0x47f7a0	func	CProgSettingdDlg__vf66	vtables
+0x47f830	func	CProgSettingdDlg__GetMessageMap	msgmaps
+0x47f840	func	CProgSettingdDlg__vf95	vtables
+0x47f950	func	CProgSettingdDlg__OnCommand_2003	msgmaps
+0x47fa10	func	CProgSettingdDlg__vf97	vtables
+0x47faf0	func	CQAnDiffCursPg__vf119	vtables
+0x47fb20	func	CQAnPropPg__vf0	vtables
+0x47fb30	func	CQAnDiffCursPg__vf0	vtables
+0x47fd70	func	CQAnDiffCursPg__vf1	vtables
+0x47ff50	func	CQAnDiffCursPg__GetMessageMap	msgmaps
+0x47ff60	func	qan_page539_formulas	VIEWS_SPEC quick analysis
+0x481d60	func	CQAnDiffCursPg__vf111	vtables
+0x482b60	func	qan_page539_arm_combine_mode	VIEWS_SPEC sheet
+0x482c10	func	qan_page539_phase_count	VIEWS_SPEC sheet
+0x482ca0	func	CQAnDiffCursPg__OnMessage_CMD_code_0x1	msgmaps
+0x482f70	func	CQAnDiffCursPg__OnMessage_CMD_code_0x1_2	msgmaps
+0x483030	func	CQAnDiffCursPg__OnMessage_CMD_code_0x1_3	msgmaps
+0x4830f0	func	CQAnDiffCursPg__OnMessage_CMD_code_0x1_4	msgmaps
+0x4831b0	func	qan_page539_arm_nav_buttons	VIEWS_SPEC sheet
+0x483250	func	CQAnDiffCursPg__OnCommand_2085	msgmaps
+0x4832d0	func	CQAnDiffCursPg__OnCommand_2084	msgmaps
+0x483330	func	CQAnDiffCursPg__OnMessage_CMD_code_0x300	msgmaps
+0x483380	func	CQAnDiffCursPg__OnMessage_CMD_code_0x300_2	msgmaps
+0x4833d0	func	CQAnDiffCursPg__OnMessage_CMD_code_0x300_3	msgmaps
+0x483420	func	CQAnDiffCursPg__OnMessage_CMD_code_0x300_4	msgmaps
+0x483470	func	CQAnDiffCursPg__OnMessage_CMD_code_0x300_5	msgmaps
+0x4834c0	func	CQAnDiffCursPg__OnMessage_CMD_code_0x300_6	msgmaps
+0x483510	func	CQAnDiffCursPg__OnMessage_CMD_code_0x300_7	msgmaps
+0x483560	func	CQAnDiffCursPg__OnMessage_CMD_code_0x300_8	msgmaps
+0x4835b0	func	qan_page539_reduce_radio	VIEWS_SPEC sheet
+0x4836f0	func	CQAnDiffCursPg__OnCommand_2081	msgmaps
+0x483830	func	CQAnDiffCursPg__OnCommand_2082	msgmaps
+0x483970	func	CQAnDiffCursPg__OnCommand_2083	msgmaps
+0x483ab0	func	qan_page539_three_phase_mode	VIEWS_SPEC sheet
+0x483da0	func	qan_page539_kbrake_enable	VIEWS_SPEC sheet
+0x483e80	func	CQAnDiffCursPg__OnCommand_2088	msgmaps
+0x483e90	func	CQAnDiffCursPg__OnCommand_2091	msgmaps
+0x483ea0	func	CQAnDiffCursPg__OnMessage_CMD_code_0x1_5	msgmaps
+0x483ef0	func	CQAnDiffCursPg__OnMessage_CMD_code_0x1_6	msgmaps
+0x483f40	func	CQAnDiffCursPg__vf115	vtables
+0x484150	func	CQAnDiffCursPg__OnCommand_2175	msgmaps
+0x4841c0	func	CQAnDiffCursPg__vf117	vtables
+0x484330	func	CQAnDiffCursPg__vf118	vtables
+0x485b80	func	CQAnFormulaEditorPg__vf119	vtables
+0x485d10	func	FormulaWnd_AddFormulaDlg__vf98	vtables
+0x485d30	func	AddFormulaDlg__vf1	vtables
+0x485e10	func	CQAnFormulaEditorPg__GetMessageMap	msgmaps
+0x485e20	func	CQAnFormulaEditorPg__vf0	vtables
+0x485e30	func	qan_formula_page_on_init	ledger L9.56
+0x485f90	func	CQAnFormulaEditorPg__vf1	vtables
+0x486060	func	CQAnFormulaEditorPg__vf110	vtables
+0x486080	func	CQAnFormulaEditorPg__vf111	vtables
+0x4860a0	func	CQAnFormulaEditorPg__vf95	vtables
+0x4862e0	func	CQAnFormulaEditorPg__vf69	vtables
+0x4863a0	func	CQAnFormulaEditorPg__vf66	vtables
+0x486850	func	qan_formula_page_dblclick_edit	ledger L9.56
+0x486a50	func	qan_formula_page_check_name	ledger L9.56
+0x486bf0	func	qan_formula_page_commit_edit	ledger L9.56
+0x486d20	func	qan_formula_page_kill_active	ledger L9.56
+0x486da0	func	CQAnFormulaEditorPg__OnCommand_1015	msgmaps
+0x486dd0	func	CQAnFormulaEditorPg__OnCommand_1014	msgmaps
+0x486df0	func	qan_formula_page_on_add	ledger L9.56
+0x487170	func	qan_formula_page_on_delete	ledger L9.56
+0x487210	func	qan_formula_page_move_up	ledger L9.56
+0x4873a0	func	qan_formula_page_move_down	ledger L9.56
+0x487530	func	qan_formula_page_on_delete_all	ledger L9.56
+0x487560	func	CQAnFormulaEditorPg__vf114	vtables
+0x487580	func	CTreeCtrl__vf1	vtables
+0x4875b0	func	CQAnMezphaseSoedPg__vf119	vtables
+0x4875e0	func	CQAnMezphaseSoedPg__vf0	vtables
+0x487630	func	CQAnMezphaseSoedPg__GetMessageMap	msgmaps
+0x487640	func	qan_page538_formulas	VIEWS_SPEC quick analysis
+0x487a20	func	CQAnMezphaseSoedPg__vf111	vtables
+0x487c30	func	CQAnMezphaseSoedPg__vf113	vtables
+0x487d70	func	qan_page536_calc_ib_toggle	VIEWS_SPEC sheet
+0x487de0	func	qan_page536_phase_line_radio	VIEWS_SPEC sheet
+0x487eb0	func	CQAnMezphaseSoedPg__OnCommand_2050	msgmaps
+0x487f00	func	CQAnMezphaseSoedPg__OnCommand_2051	msgmaps
+0x487f50	func	CQAnMezphaseSoedPg__vf117	vtables
+0x4882c0	func	CQAnMezphaseSoedPg__vf118	vtables
+0x488550	func	qan_page538_ok_check	VIEWS_SPEC sheet
+0x488770	func	__QAnNullPoslPg__vf119	vtables
+0x4887a0	func	__QAnNullPoslPg__vf0	vtables
+0x4887b0	func	__QAnNullPoslPg__GetMessageMap	msgmaps
+0x4887c0	func	qan_page537_formulas	VIEWS_SPEC quick analysis
+0x488aa0	func	__QAnNullPoslPg__vf111	vtables
+0x488c00	func	__QAnNullPoslPg__vf112	vtables
+0x488d30	func	__QAnNullPoslPg__vf113	vtables
+0x488e40	func	__QAnNullPoslPg__vf114	vtables
+0x488f50	func	qan_page537_calc_meas_radio	VIEWS_SPEC sheet
+0x489010	func	__QAnNullPoslPg__OnCommand_2047	msgmaps
+0x489060	func	__QAnNullPoslPg__OnCommand_2049	msgmaps
+0x4890b0	func	qan_page537_u0_radio	VIEWS_SPEC sheet
+0x489250	func	__QAnNullPoslPg__OnCommand_2063	msgmaps
+0x489270	func	__QAnNullPoslPg__OnCommand_2156	msgmaps
+0x489510	func	__QAnNullPoslPg__OnCommand_2157	msgmaps
+0x4897f0	func	__QAnNullPoslPg__vf117	vtables
+0x489de0	func	__QAnNullPoslPg__vf118	vtables
+0x48a1f0	func	qan_page537_ok_check	ledger L9.53
+0x48a470	func	CQAnPhaseSoprotPg__vf119	vtables
+0x48a4a0	func	CQAnPhaseSoprotPg__vf0	vtables
+0x48a4b0	func	CQAnPhaseSoprotPg__GetMessageMap	msgmaps
+0x48a4c0	func	qan_page543_formulas	VIEWS_SPEC quick analysis
+0x48a6e0	func	CQAnPhaseSoprotPg__vf111	vtables
+0x48a800	func	CQAnPhaseSoprotPg__vf113	vtables
+0x48a910	func	qan_page543_mode_radio	VIEWS_SPEC sheet
+0x48aae0	func	CQAnPhaseSoprotPg__OnCommand_2123	msgmaps
+0x48ab30	func	CQAnPhaseSoprotPg__OnCommand_2124	msgmaps
+0x48ab80	func	qan_page543_parallel_enable	VIEWS_SPEC sheet
+0x48ac90	func	CQAnPhaseSoprotPg__vf117	vtables
+0x48b060	func	CQAnPhaseSoprotPg__vf118	vtables
+0x48b360	func	qan_page543_ok_check	VIEWS_SPEC sheet
+0x48b680	func	CQAnPropPg__GetMessageMap	msgmaps
+0x48b690	func	qan_page_on_init_load	VIEWS_SPEC sheet
+0x48b710	func	qan_sheet_on_ok	VIEWS_SPEC sheet
+0x48b770	func	qan_sheet_on_cancel	VIEWS_SPEC sheet
+0x48b7d0	func	CQAnPropPg__vf110	vtables
+0x48b960	func	CQAnPropSheet__vf0	vtables
+0x48b970	func	qan_sheet_init	VIEWS_SPEC sheet
+0x48bc00	func	CQAnPropSheet__vf1	vtables
+0x48be00	func	CQAnPropSheet__GetMessageMap	msgmaps
+0x48be10	func	qan_sheet_setup_buttons	VIEWS_SPEC sheet
+0x48c0e0	func	qan_sheet_generate_active_page	VIEWS_SPEC sheet
+0x48c210	func	qan_sheet_on_activate_page	VIEWS_SPEC sheet
+0x48c260	func	CQAnSymmSostPg__vf119	vtables
+0x48c290	func	CQAnSymmSostPg__vf0	vtables
+0x48c2a0	func	CQAnSymmSostPg__GetMessageMap	msgmaps
+0x48c2b0	func	qan_page536_formulas	VIEWS_SPEC quick analysis
+0x48c590	func	CQAnSymmSostPg__vf111	vtables
+0x48c870	func	qan_page536_disable_group_a	VIEWS_SPEC sheet
+0x48cb60	func	qan_page536_disable_group_b	VIEWS_SPEC sheet
+0x48ce30	func	CQAnSymmSostPg__vf117	vtables
+0x48d290	func	CQAnSymmSostPg__vf118	vtables
+0x48d5a0	func	qan_page536_ok_check	VIEWS_SPEC sheet
+0x48da40	func	set_tree_get_string	ledger L9.17
+0x48db10	func	set_tree_get_int	ledger L9.17
+0x48dbb0	func	set_tree_get_float	ledger L9.17
+0x48dc80	func	set_tree_get_or_create	ledger L9.17
+0x48dea0	func	set_tree_get_or_create_b	ledger L9.17
+0x48e1c0	func	set_file_write	ledger L9.17
+0x48e470	func	set_file_load	ledger L9.17
+0x48f130	func	_System_error_category_std__vf1	vtables
+0x48f140	func	_System_error_category_std__vf2	vtables
+0x48f1c0	func	_System_error_category_std__vf3	vtables
+0x48f200	func	CTGraphics__vf0	vtables
+0x48f240	func	VectorDiagPane__GetMessageMap	msgmaps
+0x48f250	func	VectorDiagPane__OnWM_CREATE	msgmaps
+0x48f370	func	VectorDiagPane__vf132	vtables
+0x48f440	func	VectorDiagPane__OnUpdate_33010	msgmaps
+0x48f470	func	VectorDiagPane__OnCommand_33010	msgmaps
+0x48f480	func	VectorDiagPane__OnCommand_33011	msgmaps
+0x48f490	func	VectorDiagPane__OnUpdate_33012	msgmaps
+0x48f4e0	func	VectorDiagPane__OnCommand_33012	msgmaps
+0x48f4f0	func	VectorDiagPane__OnUpdate_33013	msgmaps
+0x48f540	func	VectorDiagPane__OnCommand_33013	msgmaps
+0x48f550	func	VectorDiagramWnd__GetMessageMap	msgmaps
+0x48f560	func	VectorDiagramWnd__vf1	vtables
+0x48f590	func	VectorDiagramWnd__OnCommand_35000_35100	msgmaps
+0x48f600	func	vector_show_all	ledger L9.35
+0x48f820	func	vector_hide_all	ledger L9.35
+0x48f880	func	VectorDiagramWnd__OnUpdate_35000_35100	msgmaps
+0x48f8d0	func	VectorDiagramWnd__OnCommand_36000_36100	msgmaps
+0x48f9c0	func	VectorDiagramWnd__OnUpdate_36000_36100	msgmaps
+0x48faa0	func	VectorDiagramWnd__OnCommand_32841	msgmaps
+0x48fb20	func	VectorDiagramWnd__OnUpdate_32841	msgmaps
+0x48fb40	func	VectorDiagramWnd__OnCommand_32842	msgmaps
+0x48fbc0	func	VectorDiagramWnd__OnUpdate_32842	msgmaps
+0x48fbe0	func	VectorDiagramWnd__OnCommand_32844	msgmaps
+0x48fc60	func	VectorDiagramWnd__OnUpdate_32844	msgmaps
+0x48fc80	func	vector_menu	ledger L9.35
+0x48fda0	func	vector_attach_doc	ledger L9.35
+0x490360	func	vector_diagram_draw	VIEWS_SPEC vector
+0x492a00	func	vector_menu_channel_list	ledger L9.35
+0x492ef0	func	VectorDiagramWnd__OnWM_CREATE	msgmaps
+0x492fa0	func	vizir_toggle_place	UI_BEHAVIOUR_SPEC §3.5
+0x493110	func	view_paint_vizirs	UI_BEHAVIOUR_SPEC §3.5
+0x494179	code	view_paint_vizirs__band_check_begin	ledger L9.39
+0x4941a2	code	view_paint_vizirs__band_check_end	ledger L9.39
+0x49449a	code	view_paint_vizirs__end	ledger L9.42
+0x4944a0	func	view_lane_value_to_y	UI_BEHAVIOUR_SPEC §3.1
+0x4947d0	func	status_vizir_values	UI_BEHAVIOUR_SPEC §1.4
+0x4951a3	code	status_vizir_values__diff_seconds	ledger L9.18
+0x495800	func	vizir_hit_test	ledger L9.44
+0x495980	func	view_x_to_sample	UI_BEHAVIOUR_SPEC §3.1
+0x495b40	func	view_lane_y_to_value	UI_BEHAVIOUR_SPEC §3.1
+0x4960f0	func	status_hvizir_difference	UI_BEHAVIOUR_SPEC §1.4
+0x496360	func	doc_trigger_date_time_text	ledger L9.41
+0x497090	func	omp_sym_components	OMP_SPEC §1
+0x497f10	func	omp_detect_fault_isolated	OMP_SPEC §2
+0x498580	func	omp_detect_fault_grounded	OMP_SPEC §2
+0x498be3	code	omp_detect_grounded__phase_select_begin	OMP_SPEC §3
+0x498c64	code	omp_detect_grounded__phase_compare	ledger L7
+0x498f6c	code	omp_detect_grounded__phase_select_end	OMP_SPEC §3
+0x499000	func	omp_detect_fault_double_ended	OMP_SPEC §13
+0x499930	func	omp_debounce	OMP_SPEC §4
+0x499aa0	func	omp_find_interval_isolated	OMP_SPEC §9
+0x499b50	func	omp_find_interval_grounded	OMP_SPEC §9
+0x499c80	func	omp_loop_isolated	OMP_SPEC §5
+0x499e90	func	omp_loop_grounded	OMP_SPEC §5
+0x49a2f0	func	omp_loop_current_double	OMP_SPEC §13
+0x49a430	func	omp_distance_isolated	OMP_SPEC §7
+0x49a670	func	omp_distance_grounded	OMP_SPEC §6
+0x49adc0	func	omp_theta_recompute	OMP_SPEC §6
+0x49b210	func	omp_double_profile_from_end1	OMP_SPEC §13
+0x49b600	func	omp_double_profile_from_end2	OMP_SPEC §13
+0x49b9e0	func	omp_theta_zero_seq_carry	OMP_SPEC §6
+0x49bd40	func	omp_theta_zero_seq_beyond	OMP_SPEC §6
+0x49cf00	func	omp_double_ended_search	OMP_SPEC §13
+0x49d200	func	omp_locate_section	OMP_SPEC §12
+0x49d330	func	omp_result	OMP_SPEC §11
+0x49d700	func	omp_result_text	OMP_SPEC §12
+0x49dbf0	func	omp_write_txt_report	ledger L9.41
+0x4a00b0	func	omp_run	UI_BEHAVIOUR_SPEC §8.2
+0x4a0ad6	code	omp_run__pipelines_begin	OMP_SPEC §8
+0x4a0ec0	code	omp_run__double_inputs_begin	OMP_SPEC §13
+0x4a13a6	code	omp_run__negate_end2_begin	ledger L9.2
+0x4a1409	code	omp_run__negate_end2_end	ledger L9.2
+0x4a14a3	code	omp_run__pipelines_end	OMP_SPEC §8
+0x4a17a0	func	omp_clear_result	UI_BEHAVIOUR_SPEC §8.1
+0x4a2200	func	omp_negate_samples	ledger L9.2
+0x4a25e0	func	Station_WrongPlaceLocatorData__vf5	vtables
+0x4a25f0	func	Station_WrongPlaceLocatorData__vf6	vtables
+0x4a3050	func	omp_settings_set_section	ledger L9.17
+0x4a45f0	func	omp_read_legacy_omp_file	UI_BEHAVIOUR_SPEC §10
+0x4a55b0	func	Section_WrongPlaceLocatorData__vf0	vtables
+0x4a5610	func	Section_WrongPlaceLocatorData__vf13	vtables
+0x4a56b0	func	Section_WrongPlaceLocatorData__vf14	vtables
+0x4a5700	func	Section_WrongPlaceLocatorData__vf15	vtables
+0x4a5760	func	Section_WrongPlaceLocatorData__vf16	vtables
+0x4a57f0	func	Section_WrongPlaceLocatorData__vf17	vtables
+0x4a5b50	func	Station_WrongPlaceLocatorData__vf0	vtables
+0x4a5b90	func	Station_WrongPlaceLocatorData__vf13	vtables
+0x4a5bf0	func	Station_WrongPlaceLocatorData__vf14	vtables
+0x4a5c10	func	Station_WrongPlaceLocatorData__vf15	vtables
+0x4a5c30	func	Station_WrongPlaceLocatorData__vf16	vtables
+0x4a5c70	func	Station_WrongPlaceLocatorData__vf17	vtables
+0x4a5cb0	func	Station_WrongPlaceLocatorData__vf4	vtables
+0x4a5d70	func	omp_validate_sections	ledger L7
+0x4a79d0	func	WrongPlaceLocatorDlg__vf12	vtables
+0x4a7a41	func	map_0x4d1434__GetMessageMap	msgmaps
+0x4a7b80	func	WrongPlaceLocatorDlg__vf1	vtables
+0x4a7bb0	func	WrongPlaceLocatorDlg__vf66	vtables
+0x4a7bd0	func	WrongPlaceLocatorDlg__vf69	vtables
+0x4a7c10	func	WrongPlaceLocatorDlg__vf97	vtables
+0x4a7c50	func	WrongPlaceLocatorDlg__vf95	vtables
+0x4a85e0	func	map_0x4d1434__OnNotify_0xfe3d_1074	msgmaps
+0x4a8aa0	func	map_0x4d1434__OnCommand_32871	msgmaps
+0x4a8bc0	func	map_0x4d1434__OnCommand_32872	msgmaps
+0x4a8d50	func	map_0x4d1434__OnCommand_32873	msgmaps
+0x4a8eb0	func	map_0x4d1434__OnCommand_32874	msgmaps
+0x4a8f10	func	map_0x4d1434__OnCommand_32876	msgmaps
+0x4a8f90	func	map_0x4d1434__OnCommand_32875	msgmaps
+0x4a9010	func	map_0x4d1434__OnCommand_32878	msgmaps
+0x4a91c0	func	map_0x4d1434__OnCommand_32877	msgmaps
+0x4a9310	func	map_0x4d1434__OnMessage_CMD_code_0x1	msgmaps
+0x4a9380	func	map_0x4d1434__OnWM_ERASEBKGND	msgmaps
+0x4a9510	func	map_0x4d1434__OnNotify_0xfe39_1074	msgmaps
+0x4aa220	func	xml_tree_parse	ledger L5
+0x4aaf90	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf3	vtables
+0x4ab1a0	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf4	vtables
+0x4ab210	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf6	vtables
+0x4ab280	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf10	vtables
+0x4ab470	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf11	vtables
+0x4ab640	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf0	vtables
+0x4abef0	func	FVComtradeConv__vf4	vtables
+0x4abef6	func	FVComtradeConv__vf2	vtables
+0x4abefc	func	FVComtradeConv__vf1	vtables
+0x4abf1a	func	CBitmap__vf0	vtables
+0x4abf20	func	CGdiObject__vf0	vtables
+0x4ac10c	func	CFont__vf0	vtables
+0x4ac112	func	CBrush__vf0	vtables
+0x4ac11e	func	CCommonDialog__vf98	vtables
+0x4ac160	func	CCommonDialog__vf12	vtables
+0x4ac16c	func	CCommonDialog__vf0	vtables
+0x4ac17e	func	CBaseView__vf115	vtables
+0x4ac184	func	CPen__vf0	vtables
+0x4ac18a	func	CFastViewPrintDialog__vf0	vtables
+0x4ac190	func	CFastViewPrintDialog__vf94	vtables
+0x4ac196	func	CFastViewPrintDialog__vf100	vtables
+0x4ac1c0	func	CBaseView__vf91	vtables
+0x4ac1c6	func	CBaseView__vf92	vtables
+0x4ac1f6	func	CBaseView__vf100	vtables
+0x4ac1fc	func	CBaseView__vf101	vtables
+0x4ac208	func	CBaseView__vf103	vtables
+0x4ac21a	func	BlockProperty_BlockPropertyGrid__vf49	vtables
+0x4ac220	func	BlockProperty_BlockPropertyGrid__vf47	vtables
+0x4ac226	func	BlockProperty_BlockPropertyGrid__vf0	vtables
+0x4ac22c	func	BlockProperty_BlockPropertyGrid__vf5	vtables
+0x4ac232	func	BlockProperty_BlockPropertyGrid__vf7	vtables
+0x4ac238	func	BlockProperty_BlockPropertyGrid__vf8	vtables
+0x4ac23e	func	BlockProperty_BlockPropertyGrid__vf9	vtables
+0x4ac244	func	BlockProperty_BlockPropertyGrid__vf10	vtables
+0x4ac24a	func	BlockProperty_BlockPropertyGrid__vf11	vtables
+0x4ac250	func	BlockProperty_BlockPropertyGrid__vf12	vtables
+0x4ac256	func	BlockProperty_BlockPropertyGrid__vf13	vtables
+0x4ac25c	func	BlockProperty_BlockPropertyGrid__vf14	vtables
+0x4ac262	func	BlockProperty_BlockPropertyGrid__vf15	vtables
+0x4ac268	func	BlockProperty_BlockPropertyGrid__vf16	vtables
+0x4ac26e	func	BlockProperty_BlockPropertyGrid__vf17	vtables
+0x4ac274	func	BlockProperty_BlockPropertyGrid__vf18	vtables
+0x4ac27a	func	BlockProperty_BlockPropertyGrid__vf19	vtables
+0x4ac280	func	BlockProperty_BlockPropertyGrid__vf20	vtables
+0x4ac286	func	BlockProperty_BlockPropertyGrid__vf22	vtables
+0x4ac28c	func	BlockProperty_BlockPropertyGrid__vf23	vtables
+0x4ac292	func	BlockProperty_BlockPropertyGrid__vf24	vtables
+0x4ac298	func	BlockProperty_BlockPropertyGrid__vf25	vtables
+0x4ac29e	func	BlockProperty_BlockPropertyGrid__vf32	vtables
+0x4ac2a4	func	BlockProperty_BlockPropertyGrid__vf33	vtables
+0x4ac2aa	func	BlockProperty_BlockPropertyGrid__vf34	vtables
+0x4ac2b0	func	BlockProperty_BlockPropertyGrid__vf35	vtables
+0x4ac2b6	func	BlockProperty_BlockPropertyGrid__vf36	vtables
+0x4ac2bc	func	BlockProperty_BlockPropertyGrid__vf39	vtables
+0x4ac2c2	func	BlockProperty_BlockPropertyGrid__vf42	vtables
+0x4ac2c8	func	BlockProperty_BlockPropertyGrid__vf43	vtables
+0x4ac2ce	func	BlockProperty_BlockPropertyGrid__vf44	vtables
+0x4ac2d4	func	BlockProperty_BlockPropertyGrid__vf45	vtables
+0x4ac2da	func	BlockProperty_BlockPropertyGrid__vf48	vtables
+0x4ac2ec	func	CFastViewException__vf0	vtables
+0x4ac2f2	func	CQAnPropSheet__vf91	vtables
+0x4ac304	func	CStatic__vf91	vtables
+0x4ac30a	func	CStatic__vf90	vtables
+0x4ac310	func	CStatic__vf75	vtables
+0x4ac316	func	CStatic__vf0	vtables
+0x4ac31c	func	CComboBox__vf94	vtables
+0x4ac322	func	CComboBox__vf93	vtables
+0x4ac328	func	CComboBox__vf92	vtables
+0x4ac32e	func	CComboBox__vf91	vtables
+0x4ac334	func	CComboBox__vf90	vtables
+0x4ac33a	func	CComboBox__vf75	vtables
+0x4ac340	func	CComboBox__vf0	vtables
+0x4ac346	func	CButton__vf91	vtables
+0x4ac34c	func	CButton__vf90	vtables
+0x4ac352	func	CButton__vf75	vtables
+0x4ac358	func	CButton__vf0	vtables
+0x4ac364	func	CRgn__vf0	vtables
+0x4ac36a	func	CListCtrl__vf90	vtables
+0x4ac370	func	CListCtrl__vf75	vtables
+0x4ac376	func	CListCtrl__vf12	vtables
+0x4ac37c	func	CListCtrl__vf0	vtables
+0x4ac382	func	CEdit__vf0	vtables
+0x4ac38e	func	CTGraphics__vf1	vtables
+0x4ac394	func	CMenu__vf6	vtables
+0x4ac39a	func	CMenu__vf5	vtables
+0x4ac3a0	func	CMenu__vf0	vtables
+0x4ac3a6	func	BlockPropertyGrid__vf95	vtables
+0x4ac3ac	func	BlockPropertyGrid__vf0	vtables
+0x4ac3b2	func	BlockPropertyGrid__vf22	vtables
+0x4ac3b8	func	BlockPropertyGrid__vf32	vtables
+0x4ac3be	func	BlockPropertyGrid__vf41	vtables
+0x4ac3c4	func	BlockPropertyGrid__vf42	vtables
+0x4ac3ca	func	BlockPropertyGrid__vf43	vtables
+0x4ac3d0	func	BlockPropertyGrid__vf44	vtables
+0x4ac3d6	func	BlockPropertyGrid__vf45	vtables
+0x4ac3dc	func	BlockPropertyGrid__vf46	vtables
+0x4ac3e2	func	BlockPropertyGrid__vf47	vtables
+0x4ac3e8	func	BlockPropertyGrid__vf48	vtables
+0x4ac3ee	func	BlockPropertyGrid__vf49	vtables
+0x4ac3f4	func	BlockPropertyGrid__vf50	vtables
+0x4ac3fa	func	BlockPropertyGrid__vf51	vtables
+0x4ac400	func	BlockPropertyGrid__vf52	vtables
+0x4ac406	func	BlockPropertyGrid__vf53	vtables
+0x4ac40c	func	BlockPropertyGrid__vf54	vtables
+0x4ac412	func	BlockPropertyGrid__vf55	vtables
+0x4ac418	func	BlockPropertyGrid__vf57	vtables
+0x4ac41e	func	BlockPropertyGrid__vf64	vtables
+0x4ac424	func	BlockPropertyGrid__vf69	vtables
+0x4ac42a	func	BlockPropertyGrid__vf91	vtables
+0x4ac430	func	BlockPropertyGrid__vf92	vtables
+0x4ac436	func	BlockPropertyGrid__vf93	vtables
+0x4ac43c	func	BlockPropertyGrid__vf97	vtables
+0x4ac442	func	BlockPropertyGrid__vf98	vtables
+0x4ac448	func	BlockPropertyGrid__vf99	vtables
+0x4ac44e	func	BlockPropertyGrid__vf101	vtables
+0x4ac454	func	BlockPropertyGrid__vf102	vtables
+0x4ac45a	func	BlockPropertyGrid__vf103	vtables
+0x4ac460	func	BlockPropertyGrid__vf104	vtables
+0x4ac466	func	BlockPropertyGrid__vf105	vtables
+0x4ac46c	func	BlockPropertyGrid__vf106	vtables
+0x4ac472	func	BlockPropertyGrid__vf107	vtables
+0x4ac478	func	BlockPropertyGrid__vf108	vtables
+0x4ac47e	func	BlockPropertyGrid__vf109	vtables
+0x4ac484	func	BlockPropertyGrid__vf110	vtables
+0x4ac48a	func	BlockPropertyGrid__vf111	vtables
+0x4ac4a2	func	COleDropTargetEx__vf0	vtables
+0x4ac4ae	func	COleDropTargetEx__vf16	vtables
+0x4ac4b4	func	COleDropTargetEx__vf22	vtables
+0x4ac4ba	func	COleDropTargetEx__vf26	vtables
+0x4ac4c0	func	COleDropTargetEx__vf28	vtables
+0x4ac4c6	func	DiagramWnd__vf99	vtables
+0x4ac4cc	func	CFastViewApp__vf31	vtables
+0x4ac4d2	func	CFastViewApp__OnCommand_57600	msgmaps
+0x4ac4d8	func	CFastViewApp__OnCommand_57601	msgmaps
+0x4ac4de	func	CFastViewApp__vf85	vtables
+0x4ac4e4	func	CFastViewApp__vf33	vtables
+0x4ac4ea	func	CFastViewApp__vf35	vtables
+0x4ac4f0	func	CFastViewApp__vf34	vtables
+0x4ac4f6	func	CFastViewApp__vf36	vtables
+0x4ac4fc	func	CFastViewApp__vf0	vtables
+0x4ac502	func	CFastViewApp__vf16	vtables
+0x4ac508	func	CFastViewApp__vf23	vtables
+0x4ac50e	func	CFastViewApp__vf25	vtables
+0x4ac514	func	CFastViewApp__vf26	vtables
+0x4ac51a	func	CFastViewApp__vf27	vtables
+0x4ac520	func	CFastViewApp__vf29	vtables
+0x4ac526	func	CFastViewApp__vf30	vtables
+0x4ac52c	func	CFastViewApp__vf32	vtables
+0x4ac532	func	CFastViewApp__vf37	vtables
+0x4ac538	func	CFastViewApp__vf38	vtables
+0x4ac53e	func	CFastViewApp__vf39	vtables
+0x4ac544	func	CFastViewApp__vf40	vtables
+0x4ac54a	func	CFastViewApp__vf41	vtables
+0x4ac550	func	CFastViewApp__vf42	vtables
+0x4ac556	func	CFastViewApp__vf43	vtables
+0x4ac55c	func	CFastViewApp__vf44	vtables
+0x4ac562	func	CFastViewApp__vf45	vtables
+0x4ac568	func	CFastViewApp__vf46	vtables
+0x4ac56e	func	CFastViewApp__vf47	vtables
+0x4ac574	func	CFastViewApp__vf48	vtables
+0x4ac57a	func	CFastViewApp__vf49	vtables
+0x4ac580	func	CFastViewApp__vf50	vtables
+0x4ac586	func	CFastViewApp__vf51	vtables
+0x4ac58c	func	CFastViewApp__vf52	vtables
+0x4ac592	func	CFastViewApp__vf53	vtables
+0x4ac598	func	CFastViewApp__vf54	vtables
+0x4ac59e	func	CFastViewApp__vf55	vtables
+0x4ac5a4	func	CFastViewApp__vf65	vtables
+0x4ac5aa	func	CFastViewApp__vf66	vtables
+0x4ac5b0	func	CFastViewApp__vf67	vtables
+0x4ac5b6	func	CFastViewApp__vf68	vtables
+0x4ac5bc	func	CFastViewApp__vf69	vtables
+0x4ac5c2	func	CFastViewApp__vf70	vtables
+0x4ac5c8	func	CFastViewApp__vf71	vtables
+0x4ac5ce	func	CFastViewApp__vf72	vtables
+0x4ac5d4	func	CFastViewApp__vf73	vtables
+0x4ac5da	func	CFastViewApp__vf74	vtables
+0x4ac5e0	func	CFastViewApp__vf75	vtables
+0x4ac5e6	func	CFastViewApp__vf77	vtables
+0x4ac5ec	func	CFastViewApp__vf82	vtables
+0x4ac5f2	func	CFastViewApp__vf83	vtables
+0x4ac5f8	func	CFastViewApp__vf84	vtables
+0x4ac5fe	func	CDocManagerEx__vf0	vtables
+0x4ac604	func	CDocManagerEx__vf5	vtables
+0x4ac60a	func	CDocManagerEx__vf6	vtables
+0x4ac610	func	CDocManagerEx__vf7	vtables
+0x4ac616	func	CDocManagerEx__vf8	vtables
+0x4ac61c	func	CDocManagerEx__vf9	vtables
+0x4ac622	func	CDocManagerEx__vf10	vtables
+0x4ac628	func	CDocManagerEx__vf11	vtables
+0x4ac62e	func	CDocManagerEx__vf12	vtables
+0x4ac634	func	CDocManagerEx__vf13	vtables
+0x4ac63a	func	CDocManagerEx__vf14	vtables
+0x4ac640	func	CDocManagerEx__vf16	vtables
+0x4ac646	func	CDocManagerEx__vf17	vtables
+0x4ac64c	func	CDocManagerEx__vf18	vtables
+0x4ac652	func	CProgressCtrl__vf91	vtables
+0x4ac658	func	CProgressCtrl__vf90	vtables
+0x4ac65e	func	CProgressCtrl__vf0	vtables
+0x4ac66a	func	CFastViewDoc__vf2	vtables
+0x4ac670	func	CFastViewDoc__vf5	vtables
+0x4ac676	func	CFastViewDoc__vf6	vtables
+0x4ac67c	func	CFastViewDoc__vf16	vtables
+0x4ac682	func	CFastViewDoc__vf19	vtables
+0x4ac688	func	CFastViewDoc__vf53	vtables
+0x4ac68e	func	CFastViewDoc__vf52	vtables
+0x4ac694	func	CFastViewDoc__vf51	vtables
+0x4ac69a	func	CFastViewDoc__vf49	vtables
+0x4ac6a0	func	CFastViewDoc__vf48	vtables
+0x4ac6a6	func	CFastViewDoc__vf46	vtables
+0x4ac6ac	func	CFastViewDoc__vf50	vtables
+0x4ac6b2	func	CFastViewDoc__vf45	vtables
+0x4ac6b8	func	CFastViewDoc__vf23	vtables
+0x4ac6be	func	CFastViewDoc__vf24	vtables
+0x4ac6c4	func	CFastViewDoc__vf25	vtables
+0x4ac6ca	func	CFastViewDoc__vf28	vtables
+0x4ac6d0	func	CFastViewDoc__vf29	vtables
+0x4ac6d6	func	CFastViewDoc__vf30	vtables
+0x4ac6dc	func	CFastViewDoc__vf31	vtables
+0x4ac6e2	func	CFastViewDoc__vf32	vtables
+0x4ac6e8	func	CFastViewDoc__vf36	vtables
+0x4ac6ee	func	CFastViewDoc__vf37	vtables
+0x4ac6f4	func	CFastViewDoc__vf38	vtables
+0x4ac6fa	func	CFastViewDoc__vf44	vtables
+0x4ac700	func	CFastViewDoc__vf54	vtables
+0x4ac706	func	CFastViewDoc__vf55	vtables
+0x4ac70c	func	CFastViewDoc__vf57	vtables
+0x4ac712	func	CFastViewDoc__vf58	vtables
+0x4ac718	func	CFastViewDoc__vf59	vtables
+0x4ac71e	func	CFastViewDoc__vf60	vtables
+0x4ac724	func	CFastViewDoc__vf61	vtables
+0x4ac72a	func	CFastViewDoc__vf62	vtables
+0x4ac730	func	CFastViewDoc__vf63	vtables
+0x4ac736	func	CFastViewDoc__vf64	vtables
+0x4ac73c	func	CFastViewDoc__vf65	vtables
+0x4ac742	func	CFastViewDoc__vf66	vtables
+0x4ac748	func	CFastViewDoc__vf67	vtables
+0x4ac74e	func	CFastViewDoc__vf68	vtables
+0x4ac754	func	CFastViewDoc__vf69	vtables
+0x4ac75a	func	CFastViewDoc__vf70	vtables
+0x4ac760	func	CFastViewDoc__vf71	vtables
+0x4ac766	func	CFastViewDoc__vf72	vtables
+0x4ac76c	func	CFastViewDoc__vf73	vtables
+0x4ac772	func	CFastViewDoc__vf74	vtables
+0x4ac778	func	CFastViewDoc__vf75	vtables
+0x4ac77e	func	CFastViewDoc__vf76	vtables
+0x4ac784	func	CFastViewDoc__vf77	vtables
+0x4ac78a	func	CFastViewDoc__vf78	vtables
+0x4ac790	func	CFastViewDoc__vf79	vtables
+0x4ac796	func	CFastViewDoc__vf80	vtables
+0x4ac79c	func	CFastViewDoc__vf81	vtables
+0x4ac7a2	func	CFastViewDoc__vf82	vtables
+0x4ac7a8	func	CFastViewDoc__vf83	vtables
+0x4ac7ae	func	CFastViewDoc__vf84	vtables
+0x4ac7b4	func	CFastViewDoc__vf85	vtables
+0x4ac7ba	func	CFastViewDoc__vf87	vtables
+0x4ac7c0	func	CFastViewDoc__vf88	vtables
+0x4ac7c6	func	CFastViewDoc__vf89	vtables
+0x4ac7cc	func	CFastViewDoc__vf90	vtables
+0x4ac7d2	func	CFastViewDoc__vf91	vtables
+0x4ac7d8	func	CFastViewDoc__vf92	vtables
+0x4ac7de	func	CFastViewDoc__vf93	vtables
+0x4ac7e4	func	CFastViewDoc__vf94	vtables
+0x4ac7ea	func	CFastViewDoc__vf95	vtables
+0x4ac7f0	func	CFastViewDoc__vf96	vtables
+0x4ac7f6	func	CFastViewDoc__vf97	vtables
+0x4ac7fc	func	CFastViewDoc__vf98	vtables
+0x4ac802	func	CFastViewDoc__vf99	vtables
+0x4ac808	func	CFastViewDoc__vf100	vtables
+0x4ac80e	func	CFastViewDoc__vf101	vtables
+0x4ac814	func	CFastViewDoc__vf102	vtables
+0x4ac81a	func	CFastViewDoc__vf103	vtables
+0x4ac820	func	CFastViewDoc__vf104	vtables
+0x4ac826	func	CFastViewDoc__vf105	vtables
+0x4ac82c	func	CFastViewView__OnCommand_57607	msgmaps
+0x4ac832	func	CServerItem__vf0	vtables
+0x4ac838	func	CServerItem__vf2	vtables
+0x4ac83e	func	CServerItem__vf6	vtables
+0x4ac844	func	CServerItem__vf16	vtables
+0x4ac84a	func	CServerItem__vf22	vtables
+0x4ac850	func	CServerItem__vf24	vtables
+0x4ac856	func	CServerItem__vf25	vtables
+0x4ac85c	func	CServerItem__vf26	vtables
+0x4ac862	func	CServerItem__vf27	vtables
+0x4ac868	func	CServerItem__vf28	vtables
+0x4ac86e	func	CServerItem__vf29	vtables
+0x4ac874	func	CServerItem__vf31	vtables
+0x4ac87a	func	CServerItem__vf32	vtables
+0x4ac880	func	CServerItem__vf33	vtables
+0x4ac886	func	CServerItem__vf34	vtables
+0x4ac88c	func	CServerItem__vf35	vtables
+0x4ac892	func	CServerItem__vf36	vtables
+0x4ac898	func	CServerItem__vf37	vtables
+0x4ac89e	func	CServerItem__vf38	vtables
+0x4ac8a4	func	CServerItem__vf39	vtables
+0x4ac8aa	func	CServerItem__vf40	vtables
+0x4ac8b0	func	CServerItem__vf41	vtables
+0x4ac8b6	func	CServerItem__vf42	vtables
+0x4ac8bc	func	CDateTimeCtrl__vf90	vtables
+0x4ac8c2	func	CDateTimeCtrl__vf0	vtables
+0x4ac8ce	func	CMainFrame__OnCommand_57667	msgmaps
+0x4ac8d4	func	CMainFrame__OnCommand_57670	msgmaps
+0x4ac8da	func	CMainFrame__OnCommand_57669	msgmaps
+0x4ac8e0	func	CMainFrame__vf141	vtables
+0x4ac8e6	func	CMFCRibbonApplicationButton__vf159	vtables
+0x4ac8ec	func	CMFCRibbonApplicationButton__vf158	vtables
+0x4ac8f2	func	CMFCRibbonApplicationButton__vf155	vtables
+0x4ac8f8	func	CMFCRibbonApplicationButton__vf154	vtables
+0x4ac8fe	func	CMFCRibbonApplicationButton__vf146	vtables
+0x4ac904	func	CMFCRibbonApplicationButton__vf143	vtables
+0x4ac90a	func	CMFCRibbonApplicationButton__vf142	vtables
+0x4ac910	func	CMFCRibbonApplicationButton__vf141	vtables
+0x4ac916	func	CMFCRibbonApplicationButton__vf140	vtables
+0x4ac91c	func	CMFCRibbonApplicationButton__vf137	vtables
+0x4ac922	func	CMFCRibbonApplicationButton__vf136	vtables
+0x4ac928	func	CMFCRibbonApplicationButton__vf135	vtables
+0x4ac92e	func	CMFCRibbonApplicationButton__vf134	vtables
+0x4ac934	func	CMFCRibbonApplicationButton__vf130	vtables
+0x4ac93a	func	CMFCRibbonApplicationButton__vf126	vtables
+0x4ac940	func	CMFCRibbonApplicationButton__vf125	vtables
+0x4ac946	func	CMFCRibbonApplicationButton__vf124	vtables
+0x4ac94c	func	CMFCRibbonApplicationButton__vf122	vtables
+0x4ac952	func	CMFCRibbonApplicationButton__vf121	vtables
+0x4ac958	func	CMFCRibbonApplicationButton__vf120	vtables
+0x4ac95e	func	CMFCRibbonApplicationButton__vf119	vtables
+0x4ac964	func	CMFCRibbonApplicationButton__vf118	vtables
+0x4ac96a	func	CMFCRibbonApplicationButton__vf117	vtables
+0x4ac970	func	CMFCRibbonApplicationButton__vf116	vtables
+0x4ac976	func	CMFCRibbonApplicationButton__vf115	vtables
+0x4ac97c	func	CMFCRibbonApplicationButton__vf114	vtables
+0x4ac982	func	CMFCRibbonApplicationButton__vf112	vtables
+0x4ac988	func	CMFCRibbonApplicationButton__vf110	vtables
+0x4ac98e	func	CMFCRibbonApplicationButton__vf109	vtables
+0x4ac994	func	CMFCRibbonApplicationButton__vf108	vtables
+0x4ac99a	func	CMFCRibbonApplicationButton__vf107	vtables
+0x4ac9a0	func	CMFCRibbonApplicationButton__vf106	vtables
+0x4ac9a6	func	CMFCRibbonApplicationButton__vf105	vtables
+0x4ac9ac	func	CMFCRibbonApplicationButton__vf104	vtables
+0x4ac9b2	func	CMFCRibbonApplicationButton__vf100	vtables
+0x4ac9b8	func	CMFCRibbonApplicationButton__vf98	vtables
+0x4ac9be	func	CMFCRibbonApplicationButton__vf97	vtables
+0x4ac9c4	func	CMFCRibbonApplicationButton__vf96	vtables
+0x4ac9ca	func	CMFCRibbonApplicationButton__vf94	vtables
+0x4ac9d0	func	CMFCRibbonApplicationButton__vf93	vtables
+0x4ac9d6	func	CMFCRibbonApplicationButton__vf92	vtables
+0x4ac9dc	func	CMFCRibbonApplicationButton__vf91	vtables
+0x4ac9e2	func	CMFCRibbonApplicationButton__vf87	vtables
+0x4ac9e8	func	CMFCRibbonApplicationButton__vf81	vtables
+0x4ac9ee	func	CMFCRibbonApplicationButton__vf79	vtables
+0x4ac9f4	func	CMFCRibbonApplicationButton__vf78	vtables
+0x4ac9fa	func	CMFCRibbonApplicationButton__vf77	vtables
+0x4aca00	func	CMFCRibbonApplicationButton__vf75	vtables
+0x4aca06	func	CMFCRibbonApplicationButton__vf74	vtables
+0x4aca0c	func	CMFCRibbonApplicationButton__vf66	vtables
+0x4aca12	func	CMFCRibbonApplicationButton__vf65	vtables
+0x4aca18	func	CMFCRibbonApplicationButton__vf64	vtables
+0x4aca1e	func	CMFCRibbonApplicationButton__vf53	vtables
+0x4aca24	func	CMFCRibbonApplicationButton__vf52	vtables
+0x4aca2a	func	CMFCRibbonApplicationButton__vf51	vtables
+0x4aca30	func	CMFCRibbonApplicationButton__vf50	vtables
+0x4aca36	func	CMFCRibbonApplicationButton__vf49	vtables
+0x4aca3c	func	CMFCRibbonApplicationButton__vf48	vtables
+0x4aca42	func	CMFCRibbonApplicationButton__vf47	vtables
+0x4aca48	func	CMFCRibbonApplicationButton__vf46	vtables
+0x4aca4e	func	CMFCRibbonApplicationButton__vf45	vtables
+0x4aca54	func	CMFCRibbonApplicationButton__vf44	vtables
+0x4aca5a	func	CMFCRibbonApplicationButton__vf43	vtables
+0x4aca60	func	CMFCRibbonApplicationButton__vf42	vtables
+0x4aca66	func	CMFCRibbonApplicationButton__vf41	vtables
+0x4aca6c	func	CMFCRibbonApplicationButton__vf40	vtables
+0x4aca72	func	CMFCRibbonApplicationButton__vf39	vtables
+0x4aca78	func	CMFCRibbonApplicationButton__vf38	vtables
+0x4aca7e	func	CMFCRibbonApplicationButton__vf37	vtables
+0x4aca84	func	CMFCRibbonApplicationButton__vf36	vtables
+0x4aca8a	func	CMFCRibbonApplicationButton__vf35	vtables
+0x4aca90	func	CMFCRibbonApplicationButton__vf34	vtables
+0x4aca96	func	CMFCRibbonApplicationButton__vf33	vtables
+0x4aca9c	func	CMFCRibbonApplicationButton__vf32	vtables
+0x4acaa2	func	CMFCRibbonApplicationButton__vf31	vtables
+0x4acaa8	func	CMFCRibbonApplicationButton__vf30	vtables
+0x4acaae	func	CMFCRibbonApplicationButton__vf29	vtables
+0x4acab4	func	CMFCRibbonApplicationButton__vf28	vtables
+0x4acaba	func	CMFCRibbonApplicationButton__vf27	vtables
+0x4acac0	func	CMFCRibbonApplicationButton__vf26	vtables
+0x4acac6	func	CMFCRibbonApplicationButton__vf25	vtables
+0x4acacc	func	CMFCRibbonApplicationButton__vf24	vtables
+0x4acad2	func	CMFCRibbonApplicationButton__vf23	vtables
+0x4acad8	func	CMFCRibbonApplicationButton__vf22	vtables
+0x4acade	func	CMFCRibbonApplicationButton__vf16	vtables
+0x4acae4	func	CMFCRibbonApplicationButton__vf0	vtables
+0x4acaea	func	CMainFrame__vf91	vtables
+0x4acaf0	func	__CList_II__vf0	vtables
+0x4acafc	func	CMainFrame__vf95	vtables
+0x4acb1a	func	CMainFrame__vf92	vtables
+0x4acb20	func	CMainFrame__vf96	vtables
+0x4acb26	func	CMFCRibbonBarEx__vf133	vtables
+0x4acb2c	func	CMainFrame__vf5	vtables
+0x4acb32	func	CMainFrame__vf27	vtables
+0x4acb38	func	CMainFrame__vf29	vtables
+0x4acb3e	func	CMainFrame__vf30	vtables
+0x4acb44	func	CMainFrame__vf33	vtables
+0x4acb4a	func	CMainFrame__vf34	vtables
+0x4acb50	func	CMainFrame__vf63	vtables
+0x4acb56	func	CMainFrame__vf67	vtables
+0x4acb5c	func	CMainFrame__vf68	vtables
+0x4acb62	func	CMainFrame__vf73	vtables
+0x4acb68	func	CMainFrame__vf74	vtables
+0x4acb6e	func	CMainFrame__vf85	vtables
+0x4acb74	func	CMainFrame__vf90	vtables
+0x4acb7a	func	CMainFrame__vf93	vtables
+0x4acb80	func	CMainFrame__vf94	vtables
+0x4acb86	func	CMainFrame__vf98	vtables
+0x4acb8c	func	CMainFrame__vf99	vtables
+0x4acb92	func	CMainFrame__vf100	vtables
+0x4acb98	func	CMainFrame__vf101	vtables
+0x4acb9e	func	CMainFrame__vf102	vtables
+0x4acba4	func	CMainFrame__vf103	vtables
+0x4acbaa	func	CMainFrame__vf104	vtables
+0x4acbb0	func	CMainFrame__vf105	vtables
+0x4acbb6	func	CMainFrame__vf106	vtables
+0x4acbbc	func	CMainFrame__vf107	vtables
+0x4acbc2	func	CMainFrame__vf108	vtables
+0x4acbc8	func	CMainFrame__vf109	vtables
+0x4acbce	func	CMainFrame__vf110	vtables
+0x4acbd4	func	CMainFrame__vf111	vtables
+0x4acbda	func	CMainFrame__vf112	vtables
+0x4acbe0	func	CMainFrame__vf113	vtables
+0x4acbe6	func	CMainFrame__vf114	vtables
+0x4acbec	func	CMainFrame__vf115	vtables
+0x4acbf2	func	CMainFrame__vf116	vtables
+0x4acbf8	func	CMainFrame__vf117	vtables
+0x4acbfe	func	CMainFrame__vf118	vtables
+0x4acc04	func	CMainFrame__vf119	vtables
+0x4acc0a	func	CMainFrame__vf121	vtables
+0x4acc10	func	CMainFrame__vf122	vtables
+0x4acc16	func	CMainFrame__vf124	vtables
+0x4acc1c	func	CMainFrame__vf125	vtables
+0x4acc22	func	CMainFrame__vf132	vtables
+0x4acc28	func	CMainFrame__vf133	vtables
+0x4acc2e	func	CMainFrame__vf136	vtables
+0x4acc34	func	CMainFrame__vf137	vtables
+0x4acc3a	func	CMainFrame__vf138	vtables
+0x4acc40	func	CMainFrame__vf139	vtables
+0x4acc46	func	CMainFrame__vf140	vtables
+0x4acd6c	func	CMsgCaptionBar__vf153	vtables
+0x4ace32	func	CMsgCaptionBar__vf203	vtables
+0x4ace38	func	CMsgCaptionBar__vf204	vtables
+0x4ad156	func	CMFCRibbonBarEx__vf0	vtables
+0x4ad15c	func	CMFCRibbonBarEx__vf12	vtables
+0x4ad162	func	CMFCRibbonBarEx__vf27	vtables
+0x4ad168	func	CMFCRibbonBarEx__vf41	vtables
+0x4ad16e	func	CMFCRibbonBarEx__vf42	vtables
+0x4ad174	func	CMFCRibbonBarEx__vf55	vtables
+0x4ad17a	func	CMFCRibbonBarEx__vf56	vtables
+0x4ad180	func	CMFCRibbonBarEx__vf57	vtables
+0x4ad186	func	CMFCRibbonBarEx__vf58	vtables
+0x4ad18c	func	CMFCRibbonBarEx__vf63	vtables
+0x4ad192	func	CMFCRibbonBarEx__vf69	vtables
+0x4ad198	func	CMFCRibbonBarEx__vf71	vtables
+0x4ad19e	func	CMFCRibbonBarEx__vf140	vtables
+0x4ad1a4	func	CMFCRibbonBarEx__vf141	vtables
+0x4ad1aa	func	CMFCRibbonBarEx__vf146	vtables
+0x4ad1b0	func	CMFCRibbonBarEx__vf147	vtables
+0x4ad1b6	func	CMFCRibbonBarEx__vf150	vtables
+0x4ad1bc	func	CMFCRibbonBarEx__vf153	vtables
+0x4ad1c2	func	CMFCRibbonBarEx__vf199	vtables
+0x4ad1c8	func	CMFCRibbonBarEx__vf201	vtables
+0x4ad1ce	func	CMFCRibbonBarEx__vf202	vtables
+0x4ad1d4	func	CMFCRibbonBarEx__vf203	vtables
+0x4ad1da	func	CMFCRibbonBarEx__vf204	vtables
+0x4ad1e0	func	CMFCRibbonBarEx__vf205	vtables
+0x4ad1e6	func	CMFCRibbonBarEx__vf206	vtables
+0x4ad1ec	func	CMFCRibbonBarEx__vf207	vtables
+0x4ad1f2	func	CMFCRibbonBarEx__vf208	vtables
+0x4ad1f8	func	CMFCRibbonBarEx__vf211	vtables
+0x4ad1fe	func	CMFCRibbonBarEx__vf212	vtables
+0x4ad204	func	CMFCRibbonBarEx__vf213	vtables
+0x4ad20a	func	CMFCRibbonBarEx__vf214	vtables
+0x4ad210	func	CMFCRibbonBarEx__vf215	vtables
+0x4ad216	func	CMFCRibbonBarEx__vf216	vtables
+0x4ad21c	func	CMFCRibbonBarEx__vf217	vtables
+0x4ad222	func	__CFramePane_VFourieDiagramWnd____vf12	vtables
+0x4ad228	func	CMFCVisualManagerOffice2007Ex__vf5	vtables
+0x4ad22e	func	CMFCVisualManagerOffice2007Ex__vf6	vtables
+0x4ad234	func	CMFCVisualManagerOffice2007Ex__vf7	vtables
+0x4ad23a	func	CMFCVisualManagerOffice2007Ex__vf8	vtables
+0x4ad240	func	CMFCVisualManagerOffice2007Ex__vf9	vtables
+0x4ad246	func	CMFCVisualManagerOffice2007Ex__vf10	vtables
+0x4ad24c	func	CMFCVisualManagerOffice2007Ex__vf11	vtables
+0x4ad252	func	CMFCVisualManagerOffice2007Ex__vf12	vtables
+0x4ad258	func	CMFCVisualManagerOffice2007Ex__vf14	vtables
+0x4ad25e	func	CMFCVisualManagerOffice2007Ex__vf15	vtables
+0x4ad264	func	CMFCVisualManagerOffice2007Ex__vf16	vtables
+0x4ad26a	func	CMFCVisualManagerOffice2007Ex__vf17	vtables
+0x4ad270	func	CMFCVisualManagerOffice2007Ex__vf18	vtables
+0x4ad276	func	CMFCVisualManagerOffice2007Ex__vf19	vtables
+0x4ad27c	func	CMFCVisualManagerOffice2007Ex__vf20	vtables
+0x4ad282	func	CMFCVisualManagerOffice2007Ex__vf21	vtables
+0x4ad288	func	CMFCVisualManagerOffice2007Ex__vf22	vtables
+0x4ad28e	func	CMFCVisualManagerOffice2007Ex__vf23	vtables
+0x4ad294	func	CMFCVisualManagerOffice2007Ex__vf24	vtables
+0x4ad29a	func	CMFCVisualManagerOffice2007Ex__vf25	vtables
+0x4ad2a0	func	CMFCVisualManagerOffice2007Ex__vf26	vtables
+0x4ad2a6	func	CMFCVisualManagerOffice2007Ex__vf27	vtables
+0x4ad2ac	func	CMFCVisualManagerOffice2007Ex__vf28	vtables
+0x4ad2b2	func	CMFCVisualManagerOffice2007Ex__vf29	vtables
+0x4ad2b8	func	CMFCVisualManagerOffice2007Ex__vf30	vtables
+0x4ad2be	func	CMFCVisualManagerOffice2007Ex__vf31	vtables
+0x4ad2c4	func	CMFCVisualManagerOffice2007Ex__vf32	vtables
+0x4ad2ca	func	CMFCVisualManagerOffice2007Ex__vf33	vtables
+0x4ad2d0	func	CMFCVisualManagerOffice2007Ex__vf34	vtables
+0x4ad2d6	func	CMFCVisualManagerOffice2007Ex__vf35	vtables
+0x4ad2dc	func	CMFCVisualManagerOffice2007Ex__vf36	vtables
+0x4ad2e2	func	CMFCVisualManagerOffice2007Ex__vf37	vtables
+0x4ad2e8	func	CMFCVisualManagerOffice2007Ex__vf38	vtables
+0x4ad2ee	func	CMFCVisualManagerOffice2007Ex__vf39	vtables
+0x4ad2f4	func	CMFCVisualManagerOffice2007Ex__vf40	vtables
+0x4ad2fa	func	CMFCVisualManagerOffice2007Ex__vf41	vtables
+0x4ad300	func	CMFCVisualManagerOffice2007Ex__vf42	vtables
+0x4ad306	func	CMFCVisualManagerOffice2007Ex__vf43	vtables
+0x4ad30c	func	CMFCVisualManagerOffice2007Ex__vf44	vtables
+0x4ad312	func	CMFCVisualManagerOffice2007Ex__vf46	vtables
+0x4ad318	func	CMFCVisualManagerOffice2007Ex__vf47	vtables
+0x4ad31e	func	CMFCVisualManagerOffice2007Ex__vf49	vtables
+0x4ad324	func	CMFCVisualManagerOffice2007Ex__vf53	vtables
+0x4ad32a	func	CMFCVisualManagerOffice2007Ex__vf54	vtables
+0x4ad330	func	CMFCVisualManagerOffice2007Ex__vf55	vtables
+0x4ad336	func	CMFCVisualManagerOffice2007Ex__vf56	vtables
+0x4ad33c	func	CMFCVisualManagerOffice2007Ex__vf57	vtables
+0x4ad342	func	CMFCVisualManagerOffice2007Ex__vf58	vtables
+0x4ad348	func	CMFCVisualManagerOffice2007Ex__vf59	vtables
+0x4ad34e	func	CMFCVisualManagerOffice2007Ex__vf60	vtables
+0x4ad354	func	CMFCVisualManagerOffice2007Ex__vf61	vtables
+0x4ad35a	func	CMFCVisualManagerOffice2007Ex__vf62	vtables
+0x4ad360	func	CMFCVisualManagerOffice2007Ex__vf63	vtables
+0x4ad366	func	CMFCVisualManagerOffice2007Ex__vf64	vtables
+0x4ad36c	func	CMFCVisualManagerOffice2007Ex__vf65	vtables
+0x4ad372	func	CMFCVisualManagerOffice2007Ex__vf66	vtables
+0x4ad378	func	CMFCVisualManagerOffice2007Ex__vf67	vtables
+0x4ad37e	func	CMFCVisualManagerOffice2007Ex__vf68	vtables
+0x4ad384	func	CMFCVisualManagerOffice2007Ex__vf69	vtables
+0x4ad38a	func	CMFCVisualManagerOffice2007Ex__vf70	vtables
+0x4ad390	func	CMFCVisualManagerOffice2007Ex__vf73	vtables
+0x4ad396	func	CMFCVisualManagerOffice2007Ex__vf74	vtables
+0x4ad39c	func	CMFCVisualManagerOffice2007Ex__vf75	vtables
+0x4ad3a2	func	CMFCVisualManagerOffice2007Ex__vf80	vtables
+0x4ad3a8	func	CMFCVisualManagerOffice2007Ex__vf81	vtables
+0x4ad3ae	func	CMFCVisualManagerOffice2007Ex__vf84	vtables
+0x4ad3b4	func	CMFCVisualManagerOffice2007Ex__vf85	vtables
+0x4ad3ba	func	CMFCVisualManagerOffice2007Ex__vf86	vtables
+0x4ad3c0	func	CMFCVisualManagerOffice2007Ex__vf87	vtables
+0x4ad3c6	func	CMFCVisualManagerOffice2007Ex__vf88	vtables
+0x4ad3cc	func	CMFCVisualManagerOffice2007Ex__vf89	vtables
+0x4ad3d2	func	CMFCVisualManagerOffice2007Ex__vf90	vtables
+0x4ad3d8	func	CMFCVisualManagerOffice2007Ex__vf91	vtables
+0x4ad3de	func	CMFCVisualManagerOffice2007Ex__vf92	vtables
+0x4ad3e4	func	CMFCVisualManagerOffice2007Ex__vf93	vtables
+0x4ad3ea	func	CMFCVisualManagerOffice2007Ex__vf94	vtables
+0x4ad3f0	func	CMFCVisualManagerOffice2007Ex__vf95	vtables
+0x4ad3f6	func	CMFCVisualManagerOffice2007Ex__vf96	vtables
+0x4ad3fc	func	CMFCVisualManagerOffice2007Ex__vf97	vtables
+0x4ad402	func	CMFCVisualManagerOffice2007Ex__vf98	vtables
+0x4ad408	func	CMFCVisualManagerOffice2007Ex__vf99	vtables
+0x4ad40e	func	CMFCVisualManagerOffice2007Ex__vf100	vtables
+0x4ad414	func	CMFCVisualManagerOffice2007Ex__vf101	vtables
+0x4ad41a	func	CMFCVisualManagerOffice2007Ex__vf102	vtables
+0x4ad420	func	CMFCVisualManagerOffice2007Ex__vf103	vtables
+0x4ad426	func	CMFCVisualManagerOffice2007Ex__vf104	vtables
+0x4ad42c	func	CMFCVisualManagerOffice2007Ex__vf105	vtables
+0x4ad432	func	CMFCVisualManagerOffice2007Ex__vf106	vtables
+0x4ad438	func	CMFCVisualManagerOffice2007Ex__vf107	vtables
+0x4ad43e	func	CMFCVisualManagerOffice2007Ex__vf108	vtables
+0x4ad444	func	CMFCVisualManagerOffice2007Ex__vf110	vtables
+0x4ad44a	func	CMFCVisualManagerOffice2007Ex__vf111	vtables
+0x4ad450	func	CMFCVisualManagerOffice2007Ex__vf112	vtables
+0x4ad456	func	CMFCVisualManagerOffice2007Ex__vf113	vtables
+0x4ad45c	func	CMFCVisualManagerOffice2007Ex__vf114	vtables
+0x4ad462	func	CMFCVisualManagerOffice2007Ex__vf118	vtables
+0x4ad468	func	CMFCVisualManagerOffice2007Ex__vf119	vtables
+0x4ad46e	func	CMFCVisualManagerOffice2007Ex__vf120	vtables
+0x4ad474	func	CMFCVisualManagerOffice2007Ex__vf121	vtables
+0x4ad47a	func	CMFCVisualManagerOffice2007Ex__vf122	vtables
+0x4ad480	func	CMFCVisualManagerOffice2007Ex__vf123	vtables
+0x4ad486	func	CMFCVisualManagerOffice2007Ex__vf124	vtables
+0x4ad48c	func	CMFCVisualManagerOffice2007Ex__vf125	vtables
+0x4ad492	func	CMFCVisualManagerOffice2007Ex__vf128	vtables
+0x4ad498	func	CMFCVisualManagerOffice2007Ex__vf129	vtables
+0x4ad49e	func	CMFCVisualManagerOffice2007Ex__vf130	vtables
+0x4ad4a4	func	CMFCVisualManagerOffice2007Ex__vf131	vtables
+0x4ad4aa	func	CMFCVisualManagerOffice2007Ex__vf132	vtables
+0x4ad4b0	func	CMFCVisualManagerOffice2007Ex__vf133	vtables
+0x4ad4b6	func	CMFCVisualManagerOffice2007Ex__vf134	vtables
+0x4ad4bc	func	CMFCVisualManagerOffice2007Ex__vf135	vtables
+0x4ad4c2	func	CMFCVisualManagerOffice2007Ex__vf136	vtables
+0x4ad4c8	func	CMFCVisualManagerOffice2007Ex__vf137	vtables
+0x4ad4ce	func	CMFCVisualManagerOffice2007Ex__vf138	vtables
+0x4ad4d4	func	CMFCVisualManagerOffice2007Ex__vf139	vtables
+0x4ad4da	func	CMFCVisualManagerOffice2007Ex__vf140	vtables
+0x4ad4e0	func	CMFCVisualManagerOffice2007Ex__vf141	vtables
+0x4ad4e6	func	CMFCVisualManagerOffice2007Ex__vf142	vtables
+0x4ad4ec	func	CMFCVisualManagerOffice2007Ex__vf143	vtables
+0x4ad4f2	func	CMFCVisualManagerOffice2007Ex__vf144	vtables
+0x4ad4f8	func	CMFCVisualManagerOffice2007Ex__vf145	vtables
+0x4ad4fe	func	CMFCVisualManagerOffice2007Ex__vf146	vtables
+0x4ad504	func	CMFCVisualManagerOffice2007Ex__vf147	vtables
+0x4ad50a	func	CMFCVisualManagerOffice2007Ex__vf148	vtables
+0x4ad510	func	CMFCVisualManagerOffice2007Ex__vf149	vtables
+0x4ad516	func	CMFCVisualManagerOffice2007Ex__vf150	vtables
+0x4ad51c	func	CMFCVisualManagerOffice2007Ex__vf152	vtables
+0x4ad522	func	CMFCVisualManagerOffice2007Ex__vf154	vtables
+0x4ad528	func	CMFCVisualManagerOffice2007Ex__vf155	vtables
+0x4ad52e	func	CMFCVisualManagerOffice2007Ex__vf156	vtables
+0x4ad534	func	CMFCVisualManagerOffice2007Ex__vf157	vtables
+0x4ad53a	func	CMFCVisualManagerOffice2007Ex__vf158	vtables
+0x4ad540	func	CMFCVisualManagerOffice2007Ex__vf159	vtables
+0x4ad546	func	CMFCVisualManagerOffice2007Ex__vf160	vtables
+0x4ad54c	func	CMFCVisualManagerOffice2007Ex__vf161	vtables
+0x4ad552	func	CMFCVisualManagerOffice2007Ex__vf162	vtables
+0x4ad558	func	CMFCVisualManagerOffice2007Ex__vf163	vtables
+0x4ad55e	func	CMFCVisualManagerOffice2007Ex__vf164	vtables
+0x4ad564	func	CMFCVisualManagerOffice2007Ex__vf165	vtables
+0x4ad56a	func	CMFCVisualManagerOffice2007Ex__vf166	vtables
+0x4ad570	func	CMFCVisualManagerOffice2007Ex__vf167	vtables
+0x4ad576	func	CMFCVisualManagerOffice2007Ex__vf168	vtables
+0x4ad57c	func	CMFCVisualManagerOffice2007Ex__vf169	vtables
+0x4ad582	func	CMFCVisualManagerOffice2007Ex__vf170	vtables
+0x4ad588	func	CMFCVisualManagerOffice2007Ex__vf171	vtables
+0x4ad58e	func	CMFCVisualManagerOffice2007Ex__vf172	vtables
+0x4ad594	func	CMFCVisualManagerOffice2007Ex__vf173	vtables
+0x4ad59a	func	CMFCVisualManagerOffice2007Ex__vf175	vtables
+0x4ad5a0	func	CMFCVisualManagerOffice2007Ex__vf176	vtables
+0x4ad5a6	func	CMFCVisualManagerOffice2007Ex__vf177	vtables
+0x4ad5ac	func	CMFCVisualManagerOffice2007Ex__vf178	vtables
+0x4ad5b2	func	CMFCVisualManagerOffice2007Ex__vf179	vtables
+0x4ad5b8	func	CMFCVisualManagerOffice2007Ex__vf180	vtables
+0x4ad5be	func	CMFCVisualManagerOffice2007Ex__vf182	vtables
+0x4ad5c4	func	CMFCVisualManagerOffice2007Ex__vf183	vtables
+0x4ad5ca	func	CMFCVisualManagerOffice2007Ex__vf184	vtables
+0x4ad5d0	func	CMFCVisualManagerOffice2007Ex__vf192	vtables
+0x4ad5d6	func	CMFCVisualManagerOffice2007Ex__vf193	vtables
+0x4ad5dc	func	CMFCVisualManagerOffice2007Ex__vf194	vtables
+0x4ad5e2	func	CMFCVisualManagerOffice2007Ex__vf195	vtables
+0x4ad5e8	func	CMFCVisualManagerOffice2007Ex__vf196	vtables
+0x4ad5ee	func	CMFCVisualManagerOffice2007Ex__vf197	vtables
+0x4ad5f4	func	CMFCVisualManagerOffice2007Ex__vf198	vtables
+0x4ad5fa	func	CMFCVisualManagerOffice2007Ex__vf199	vtables
+0x4ad600	func	CMFCVisualManagerOffice2007Ex__vf200	vtables
+0x4ad606	func	CMFCVisualManagerOffice2007Ex__vf201	vtables
+0x4ad60c	func	CMFCVisualManagerOffice2007Ex__vf203	vtables
+0x4ad612	func	CMFCVisualManagerOffice2007Ex__vf204	vtables
+0x4ad618	func	CFileException__vf6	vtables
+0x4ad61e	func	CFileException__vf0	vtables
+0x4ad624	func	CFileException__vf8	vtables
+0x4ad630	func	CProgSettingdDlg__vf63	vtables
+0x4ad636	func	CProgSettingdDlg__vf69	vtables
+0x4ad68a	func	CTreeCtrl__vf12	vtables
+0x4ad690	func	CTreeCtrl__vf0	vtables
+0x4ad6a2	func	CQAnPropSheet__vf5	vtables
+0x4ad6a8	func	CQAnPropSheet__vf36	vtables
+0x4ad6ae	func	CQAnPropSheet__vf63	vtables
+0x4ad6b4	func	CQAnPropSheet__vf69	vtables
+0x4ad6ba	func	CQAnPropSheet__vf90	vtables
+0x4ad6c0	func	CQAnPropSheet__vf93	vtables
+0x4ad6c6	func	CQAnPropSheet__vf95	vtables
+0x4ad6cc	func	CQAnPropSheet__vf96	vtables
+0x4ad6d2	func	CQAnPropSheet__vf97	vtables
+0x4ad9a2	func	type_info__vf0	vtables
+0x4add66	func	CZipException__vf1	vtables
+0x4ae310	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf13	vtables
+0x4ae316	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf2	vtables
+0x4ae31c	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf1	vtables
+0x4ae322	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf9	vtables
+0x4ae328	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf5	vtables
+0x4ae32e	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf7	vtables
+0x4ae334	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf8	vtables
+0x4ae33a	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf12	vtables
+0x4ae340	func	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vf14	vtables
+0x4ae3a8	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf13	vtables
+0x4ae3ae	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf2	vtables
+0x4ae3b4	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf1	vtables
+0x4ae3ba	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf9	vtables
+0x4ae3c0	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf5	vtables
+0x4ae3c6	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf7	vtables
+0x4ae3cc	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf8	vtables
+0x4ae3d2	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf12	vtables
+0x4ae3d8	func	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vf14	vtables
+0x4c1000	data	__imp_COMCTL32_InitCommonControlsEx	imports
+0x4c1004	data	__imp_COMCTL32_ImageList_Draw	imports
+0x4c1008	data	__imp_COMCTL32_ImageList_AddMasked	imports
+0x4c100c	data	__imp_COMCTL32_ImageList_GetIcon	imports
+0x4c1014	data	__imp_CommonInclude__GetFileName__CAi_File__SA_AV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL__V23__Z	imports
+0x4c1018	data	__imp_CommonInclude__GetStringByGuid_CompileIncludeSpace__YA_AV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL__AAU_GUID___Z	imports
+0x4c101c	data	__imp_CommonInclude__ToInt_CAi_Str__SAHV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL___N_Z	imports
+0x4c1020	data	__imp_CommonInclude__CopyFileToFile_CAi_File__SA_NV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL__0_Z	imports
+0x4c1024	data	__imp_CommonInclude__DeleteFolder_CAi_File__SA_NV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL___NPA_N_Z	imports
+0x4c1028	data	__imp_CommonInclude__CreateFolder_CAi_File__SA_NV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL___N_Z	imports
+0x4c102c	data	__imp_CommonInclude__WriteBufferToFile_CAi_File__SA_NV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL__PAEH_N_Z	imports
+0x4c1030	data	__imp_CommonInclude__ReadFileToString_CAi_File__SAHV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL__PAV23__Z	imports
+0x4c1034	data	__imp_CommonInclude__GetFileExt_CAi_File__SA_AV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL__V23__Z	imports
+0x4c1038	data	__imp_CommonInclude__GetListOfFilesInFolder_CAi_File__QAE_NV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL___N_Z	imports
+0x4c103c	data	__imp_CommonInclude___1CAi_File__QAE_XZ	imports
+0x4c1040	data	__imp_CommonInclude___0CAi_File__QAE_XZ	imports
+0x4c1044	data	__imp_CommonInclude__CreateFile__CAi_File__SA_NV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL__W4CreateFileMode_1__Z	imports
+0x4c1048	data	__imp_CommonInclude__ToString_CAi_Str__SA_AV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL__H_Z	imports
+0x4c104c	data	__imp_CommonInclude__GetFileTitle__CAi_File__SA_AV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL__V23__Z	imports
+0x4c1050	data	__imp_CommonInclude__GetFilePath__CAi_File__SA_AV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL__V23__Z	imports
+0x4c1054	data	__imp_CommonInclude__IsFileExist_CAi_File__SA_NV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL___Z	imports
+0x4c105c	data	__imp_GDI32_PatBlt	imports
+0x4c1060	data	__imp_GDI32_CombineRgn	imports
+0x4c1064	data	__imp_GDI32_FrameRgn	imports
+0x4c1068	data	__imp_GDI32_RoundRect	imports
+0x4c106c	data	__imp_GDI32_GetMapMode	imports
+0x4c1070	data	__imp_GDI32_LPtoDP	imports
+0x4c1074	data	__imp_GDI32_CreateRectRgnIndirect	imports
+0x4c1078	data	__imp_GDI32_SetTextColor	imports
+0x4c107c	data	__imp_GDI32_SetBkColor	imports
+0x4c1080	data	__imp_GDI32_SaveDC	imports
+0x4c1084	data	__imp_GDI32_RestoreDC	imports
+0x4c1088	data	__imp_GDI32_CreateSolidBrush	imports
+0x4c108c	data	__imp_GDI32_Polyline	imports
+0x4c1090	data	__imp_GDI32_GetPath	imports
+0x4c1094	data	__imp_GDI32_Ellipse	imports
+0x4c1098	data	__imp_GDI32_CreateRectRgn	imports
+0x4c109c	data	__imp_GDI32_GetRgnBox	imports
+0x4c10a0	data	__imp_GDI32_PathToRegion	imports
+0x4c10a4	data	__imp_GDI32_EndPath	imports
+0x4c10a8	data	__imp_GDI32_Polygon	imports
+0x4c10ac	data	__imp_GDI32_BeginPath	imports
+0x4c10b0	data	__imp_GDI32_GetDIBColorTable	imports
+0x4c10b4	data	__imp_GDI32_DeleteDC	imports
+0x4c10b8	data	__imp_GDI32_CreatePen	imports
+0x4c10bc	data	__imp_GDI32_DeleteObject	imports
+0x4c10c0	data	__imp_GDI32_CreateFontIndirectW	imports
+0x4c10c4	data	__imp_GDI32_StretchBlt	imports
+0x4c10c8	data	__imp_GDI32_SetBrushOrgEx	imports
+0x4c10cc	data	__imp_GDI32_GetStockObject	imports
+0x4c10d0	data	__imp_GDI32_GetWindowExtEx	imports
+0x4c10d4	data	__imp_GDI32_GetDeviceCaps	imports
+0x4c10d8	data	__imp_GDI32_GetTextColor	imports
+0x4c10dc	data	__imp_GDI32_DeleteEnhMetaFile	imports
+0x4c10e0	data	__imp_GDI32_CloseEnhMetaFile	imports
+0x4c10e4	data	__imp_GDI32_CreateEnhMetaFileW	imports
+0x4c10e8	data	__imp_GDI32_GetTextExtentPoint32W	imports
+0x4c10ec	data	__imp_GDI32_BitBlt	imports
+0x4c10f0	data	__imp_GDI32_CreateFontW	imports
+0x4c10f4	data	__imp_GDI32_GetObjectW	imports
+0x4c10f8	data	__imp_GDI32_Rectangle	imports
+0x4c10fc	data	__imp_GDI32_SelectObject	imports
+0x4c1100	data	__imp_GDI32_CreateCompatibleDC	imports
+0x4c1104	data	__imp_GDI32_CreateCompatibleBitmap	imports
+0x4c110c	data	__imp_KERNEL32_GetSystemTimeAsFileTime	imports
+0x4c1110	data	__imp_KERNEL32_GetCurrentThreadId	imports
+0x4c1114	data	__imp_KERNEL32_GetCurrentProcessId	imports
+0x4c1118	data	__imp_KERNEL32_QueryPerformanceCounter	imports
+0x4c111c	data	__imp_KERNEL32_IsProcessorFeaturePresent	imports
+0x4c1120	data	__imp_KERNEL32_IsDebuggerPresent	imports
+0x4c1124	data	__imp_KERNEL32_EncodePointer	imports
+0x4c1128	data	__imp_KERNEL32_DecodePointer	imports
+0x4c112c	data	__imp_KERNEL32_GetLocalTime	imports
+0x4c1130	data	__imp_KERNEL32_Sleep	imports
+0x4c1134	data	__imp_KERNEL32_OutputDebugStringW	imports
+0x4c1138	data	__imp_KERNEL32_LocalFree	imports
+0x4c113c	data	__imp_KERNEL32_CreateDirectoryW	imports
+0x4c1140	data	__imp_KERNEL32_GetTempPathW	imports
+0x4c1144	data	__imp_KERNEL32_CloseHandle	imports
+0x4c1148	data	__imp_KERNEL32_WaitForSingleObject	imports
+0x4c114c	data	__imp_KERNEL32_CreateThread	imports
+0x4c1150	data	__imp_KERNEL32_DeleteFileW	imports
+0x4c1154	data	__imp_KERNEL32_FileTimeToSystemTime	imports
+0x4c1158	data	__imp_KERNEL32_SystemTimeToFileTime	imports
+0x4c115c	data	__imp_KERNEL32_GlobalUnlock	imports
+0x4c1160	data	__imp_KERNEL32_GlobalLock	imports
+0x4c1164	data	__imp_KERNEL32_CreateMutexW	imports
+0x4c1168	data	__imp_KERNEL32_GetCommandLineW	imports
+0x4c116c	data	__imp_KERNEL32_WideCharToMultiByte	imports
+0x4c1170	data	__imp_KERNEL32_MultiByteToWideChar	imports
+0x4c1174	data	__imp_KERNEL32_FindClose	imports
+0x4c1178	data	__imp_KERNEL32_FindNextFileW	imports
+0x4c117c	data	__imp_KERNEL32_FindFirstFileW	imports
+0x4c1180	data	__imp_KERNEL32_GetModuleFileNameW	imports
+0x4c1184	data	__imp_KERNEL32_DebugBreak	imports
+0x4c1188	data	__imp_KERNEL32_InterlockedDecrement	imports
+0x4c118c	data	__imp_KERNEL32_InterlockedExchange	imports
+0x4c1190	data	__imp_KERNEL32_EnterCriticalSection	imports
+0x4c1194	data	__imp_KERNEL32_InitializeCriticalSectionAndSpinCount	imports
+0x4c1198	data	__imp_KERNEL32_LeaveCriticalSection	imports
+0x4c119c	data	__imp_KERNEL32_DeleteCriticalSection	imports
+0x4c11a0	data	__imp_KERNEL32_GetLastError	imports
+0x4c11a4	data	__imp_KERNEL32_LoadLibraryW	imports
+0x4c11a8	data	__imp_KERNEL32_UnmapViewOfFile	imports
+0x4c11ac	data	__imp_KERNEL32_MapViewOfFile	imports
+0x4c11b0	data	__imp_KERNEL32_CreateFileMappingW	imports
+0x4c11b4	data	__imp_KERNEL32_GetFileSize	imports
+0x4c11b8	data	__imp_KERNEL32_CreateFileW	imports
+0x4c11bc	data	__imp_KERNEL32_GlobalSize	imports
+0x4c11c0	data	__imp_KERNEL32_GlobalAlloc	imports
+0x4c11c4	data	__imp_KERNEL32_InterlockedIncrement	imports
+0x4c11c8	data	__imp_KERNEL32_RemoveDirectoryW	imports
+0x4c11d0	data	__imp_MSIMG32_AlphaBlend	imports
+0x4c11d4	data	__imp_MSIMG32_GradientFill	imports
+0x4c11d8	data	__imp_MSIMG32_TransparentBlt	imports
+0x4c11e0	data	__imp_MSVCP120___BADOFF_std__3_JB	imports
+0x4c11e4	data	__imp_MSVCP120___Pninc___basic_streambuf_DU__char_traits_D_std___std__IAEPADXZ	imports
+0x4c11e8	data	__imp_MSVCP120___1__basic_streambuf_DU__char_traits_D_std___std__UAE_XZ	imports
+0x4c11ec	data	__imp_MSVCP120___1__basic_iostream_DU__char_traits_D_std___std__UAE_XZ	imports
+0x4c11f0	data	__imp_MSVCP120___0__basic_ios_DU__char_traits_D_std___std__IAE_XZ	imports
+0x4c11f4	data	__imp_MSVCP120___Lock___basic_streambuf_DU__char_traits_D_std___std__UAEXXZ	imports
+0x4c11f8	data	__imp_MSVCP120___Unlock___basic_streambuf_DU__char_traits_D_std___std__UAEXXZ	imports
+0x4c11fc	data	__imp_MSVCP120__uncaught_exception_std__YA_NXZ	imports
+0x4c1200	data	__imp_MSVCP120___Osfx___basic_ostream_DU__char_traits_D_std___std__QAEXXZ	imports
+0x4c1204	data	__imp_MSVCP120__sync___basic_streambuf_DU__char_traits_D_std___std__MAEHXZ	imports
+0x4c1208	data	__imp_MSVCP120___Syserror_map_std__YAPBDH_Z	imports
+0x4c120c	data	__imp_MSVCP120__setstate___basic_ios_DU__char_traits_D_std___std__QAEXH_N_Z	imports
+0x4c1210	data	__imp_MSVCP120__flush___basic_ostream_DU__char_traits_D_std___std__QAEAAV12_XZ	imports
+0x4c1214	data	__imp_MSVCP120___1__basic_ios_DU__char_traits_D_std___std__UAE_XZ	imports
+0x4c1218	data	__imp_MSVCP120__Inf	imports
+0x4c121c	data	__imp_MSVCP120__Dtest	imports
+0x4c1220	data	__imp_MSVCP120__Nan	imports
+0x4c1224	data	__imp_MSVCP120___Xbad_alloc_std__YAXXZ	imports
+0x4c1228	data	__imp_MSVCP120___Xlength_error_std__YAXPBD_Z	imports
+0x4c122c	data	__imp_MSVCP120___Xout_of_range_std__YAXPBD_Z	imports
+0x4c1230	data	__imp_MSVCP120__xsputn___basic_streambuf_DU__char_traits_D_std___std__MAE_JPBD_J_Z	imports
+0x4c1234	data	__imp_MSVCP120__showmanyc___basic_streambuf_DU__char_traits_D_std___std__MAE_JXZ	imports
+0x4c1238	data	__imp_MSVCP120__uflow___basic_streambuf_DU__char_traits_D_std___std__MAEHXZ	imports
+0x4c123c	data	__imp_MSVCP120__xsgetn___basic_streambuf_DU__char_traits_D_std___std__MAE_JPAD_J_Z	imports
+0x4c1240	data	__imp_MSVCP120__imbue___basic_streambuf_DU__char_traits_D_std___std__MAEXABVlocale_2__Z	imports
+0x4c1244	data	__imp_MSVCP120__sputn___basic_streambuf_DU__char_traits_D_std___std__QAE_JPBD_J_Z	imports
+0x4c1248	data	__imp_MSVCP120___0__basic_streambuf_DU__char_traits_D_std___std__IAE_XZ	imports
+0x4c124c	data	__imp_MSVCP120___0__basic_iostream_DU__char_traits_D_std___std__QAE_PAV__basic_streambuf_DU__char_traits_D_std___1__Z	imports
+0x4c1250	data	__imp_MSVCP120__setg___basic_streambuf_DU__char_traits_D_std___std__IAEXPAD00_Z	imports
+0x4c1254	data	__imp_MSVCP120___6__basic_ostream_DU__char_traits_D_std___std__QAEAAV01_N_Z	imports
+0x4c1258	data	__imp_MSVCP120__sputc___basic_streambuf_DU__char_traits_D_std___std__QAEHD_Z	imports
+0x4c125c	data	__imp_MSVCP120___6__basic_ostream_DU__char_traits_D_std___std__QAEAAV01_H_Z	imports
+0x4c1260	data	__imp_MSVCP120___Init_locale_std__CAPAV_Locimp_12__N_Z	imports
+0x4c1264	data	__imp_MSVCP120___1_Lockit_std__QAE_XZ	imports
+0x4c1268	data	__imp_MSVCP120___0_Lockit_std__QAE_H_Z	imports
+0x4c126c	data	__imp_MSVCP120___Getgloballocale_locale_std__CAPAV_Locimp_12_XZ	imports
+0x4c1270	data	__imp_MSVCP120___Bid_locale_std__QAEIXZ	imports
+0x4c1274	data	__imp_MSVCP120___Getcat___ctype__W_std__SAIPAPBVfacet_locale_2_PBV42__Z	imports
+0x4c1278	data	__imp_MSVCP120__id___ctype__W_std__2V0locale_2_A	imports
+0x4c127c	data	__imp_MSVCP120___Swap_all__Container_base12_std__QAEXAAU12__Z	imports
+0x4c1280	data	__imp_MSVCP120__tolower___ctype__W_std__QBE_W_W_Z	imports
+0x4c1284	data	__imp_MSVCP120___6__basic_ostream_DU__char_traits_D_std___std__QAEAAV01__J_Z	imports
+0x4c1288	data	__imp_MSVCP120___6__basic_ostream_DU__char_traits_D_std___std__QAEAAV01_I_Z	imports
+0x4c128c	data	__imp_MSVCP120___Winerror_map_std__YAPBDH_Z	imports
+0x4c1290	data	__imp_MSVCP120___1__basic_ios__WU__char_traits__W_std___std__UAE_XZ	imports
+0x4c1294	data	__imp_MSVCP120___1__basic_iostream__WU__char_traits__W_std___std__UAE_XZ	imports
+0x4c1298	data	__imp_MSVCP120___1__basic_streambuf__WU__char_traits__W_std___std__UAE_XZ	imports
+0x4c129c	data	__imp_MSVCP120___Pninc___basic_streambuf__WU__char_traits__W_std___std__IAEPA_WXZ	imports
+0x4c12a0	data	__imp_MSVCP120__setstate___basic_ios__WU__char_traits__W_std___std__QAEXH_N_Z	imports
+0x4c12a4	data	__imp_MSVCP120__getloc_ios_base_std__QBE_AVlocale_2_XZ	imports
+0x4c12a8	data	__imp_MSVCP120__widen___ctype__W_std__QBE_WD_Z	imports
+0x4c12ac	data	__imp_MSVCP120__flush___basic_ostream__WU__char_traits__W_std___std__QAEAAV12_XZ	imports
+0x4c12b0	data	__imp_MSVCP120__sync___basic_streambuf__WU__char_traits__W_std___std__MAEHXZ	imports
+0x4c12b4	data	__imp_MSVCP120___Osfx___basic_ostream__WU__char_traits__W_std___std__QAEXXZ	imports
+0x4c12b8	data	__imp_MSVCP120___Unlock___basic_streambuf__WU__char_traits__W_std___std__UAEXXZ	imports
+0x4c12bc	data	__imp_MSVCP120___Lock___basic_streambuf__WU__char_traits__W_std___std__UAEXXZ	imports
+0x4c12c0	data	__imp_MSVCP120__sputc___basic_streambuf__WU__char_traits__W_std___std__QAEG_W_Z	imports
+0x4c12c4	data	__imp_MSVCP120__xsputn___basic_streambuf__WU__char_traits__W_std___std__MAE_JPB_W_J_Z	imports
+0x4c12c8	data	__imp_MSVCP120__showmanyc___basic_streambuf__WU__char_traits__W_std___std__MAE_JXZ	imports
+0x4c12cc	data	__imp_MSVCP120__uflow___basic_streambuf__WU__char_traits__W_std___std__MAEGXZ	imports
+0x4c12d0	data	__imp_MSVCP120__xsgetn___basic_streambuf__WU__char_traits__W_std___std__MAE_JPA_W_J_Z	imports
+0x4c12d4	data	__imp_MSVCP120__setbuf___basic_streambuf__WU__char_traits__W_std___std__MAEPAV12_PA_W_J_Z	imports
+0x4c12d8	data	__imp_MSVCP120__imbue___basic_streambuf__WU__char_traits__W_std___std__MAEXABVlocale_2__Z	imports
+0x4c12dc	data	__imp_MSVCP120__sputn___basic_streambuf__WU__char_traits__W_std___std__QAE_JPB_W_J_Z	imports
+0x4c12e0	data	__imp_MSVCP120___0__basic_streambuf__WU__char_traits__W_std___std__IAE_XZ	imports
+0x4c12e4	data	__imp_MSVCP120___0__basic_iostream__WU__char_traits__W_std___std__QAE_PAV__basic_streambuf__WU__char_traits__W_std___1__Z	imports
+0x4c12e8	data	__imp_MSVCP120___0__basic_ios__WU__char_traits__W_std___std__IAE_XZ	imports
+0x4c12ec	data	__imp_MSVCP120__setbuf___basic_streambuf_DU__char_traits_D_std___std__MAEPAV12_PAD_J_Z	imports
+0x4c12f4	data	__imp_MSVCR120_iswdigit	imports
+0x4c12f8	data	__imp_MSVCR120___1exception_std__UAE_XZ	imports
+0x4c12fc	data	__imp_MSVCR120___0exception_std__QAE_XZ	imports
+0x4c1300	data	__imp_MSVCR120__mktime64	imports
+0x4c1304	data	__imp_MSVCR120__wcsicmp	imports
+0x4c1308	data	__imp_MSVCR120__wcsdup	imports
+0x4c130c	data	__imp_MSVCR120_setlocale	imports
+0x4c1310	data	__imp_MSVCR120__finite	imports
+0x4c1314	data	__imp_MSVCR120__terminate__YAXXZ	imports
+0x4c1318	data	__imp_MSVCR120__recalloc	imports
+0x4c131c	data	__imp_MSVCR120_calloc	imports
+0x4c1320	data	__imp_MSVCR120_free	imports
+0x4c1324	data	__imp_MSVCR120__isnan	imports
+0x4c1328	data	__imp_MSVCR120__CxxThrowException	imports
+0x4c132c	data	__imp_MSVCR120_atof	imports
+0x4c1330	data	__imp_MSVCR120_ldexp	imports
+0x4c1334	data	__imp_MSVCR120_iswalnum	imports
+0x4c1338	data	__imp_MSVCR120__wtof	imports
+0x4c133c	data	__imp_MSVCR120_wcsncpy_s	imports
+0x4c1340	data	__imp_MSVCR120__snwscanf_s	imports
+0x4c1344	data	__imp_MSVCR120_fclose	imports
+0x4c1348	data	__imp_MSVCR120_fwprintf	imports
+0x4c134c	data	__imp_MSVCR120__wfopen_s	imports
+0x4c1350	data	__imp_MSVCR120_iswspace	imports
+0x4c1354	data	__imp_MSVCR120__purecall	imports
+0x4c1358	data	__imp_MSVCR120__wtoi	imports
+0x4c135c	data	__imp_MSVCR120_memmove	imports
+0x4c1360	data	__imp_MSVCR120__CIatan2	imports
+0x4c1364	data	__imp_MSVCR120__CIfmod	imports
+0x4c1368	data	__imp_MSVCR120___CxxFrameHandler3	imports
+0x4c136c	data	__imp_MSVCR120___RTDynamicCast	imports
+0x4c1370	data	__imp_MSVCR120__libm_sse2_cos_precise	imports
+0x4c1374	data	__imp_MSVCR120__libm_sse2_exp_precise	imports
+0x4c1378	data	__imp_MSVCR120__libm_sse2_log10_precise	imports
+0x4c137c	data	__imp_MSVCR120__libm_sse2_pow_precise	imports
+0x4c1380	data	__imp_MSVCR120__libm_sse2_sin_precise	imports
+0x4c1384	data	__imp_MSVCR120__libm_sse2_sqrt_precise	imports
+0x4c1388	data	__imp_MSVCR120__libm_sse2_tan_precise	imports
+0x4c138c	data	__imp_MSVCR120_ceil	imports
+0x4c1390	data	__imp_MSVCR120_floor	imports
+0x4c1394	data	__imp_MSVCR120_memcpy	imports
+0x4c1398	data	__imp_MSVCR120_iswalpha	imports
+0x4c139c	data	__imp_MSVCR120__except1	imports
+0x4c13a0	data	__imp_MSVCR120__controlfp_s	imports
+0x4c13a4	data	__imp_MSVCR120__invoke_watson	imports
+0x4c13a8	data	__imp_MSVCR120___crtSetUnhandledExceptionFilter	imports
+0x4c13ac	data	__imp_MSVCR120__except_handler4_common	imports
+0x4c13b0	data	__imp_MSVCR120___crtTerminateProcess	imports
+0x4c13b4	data	__imp_MSVCR120___crtUnhandledException	imports
+0x4c13b8	data	__imp_MSVCR120__crt_debugger_hook	imports
+0x4c13bc	data	__imp_MSVCR120__onexit	imports
+0x4c13c0	data	__imp_MSVCR120___dllonexit	imports
+0x4c13c4	data	__imp_MSVCR120__calloc_crt	imports
+0x4c13c8	data	__imp_MSVCR120__unlock	imports
+0x4c13cc	data	__imp_MSVCR120__lock	imports
+0x4c13d0	data	__imp_MSVCR120___1type_info__UAE_XZ	imports
+0x4c13d4	data	__imp_MSVCR120__commode	imports
+0x4c13d8	data	__imp_MSVCR120__fmode	imports
+0x4c13dc	data	__imp_MSVCR120__wcmdln	imports
+0x4c13e0	data	__imp_MSVCR120__initterm	imports
+0x4c13e4	data	__imp_MSVCR120__initterm_e	imports
+0x4c13e8	data	__imp_MSVCR120___setusermatherr	imports
+0x4c13ec	data	__imp_MSVCR120__configthreadlocale	imports
+0x4c13f0	data	__imp_MSVCR120__cexit	imports
+0x4c13f4	data	__imp_MSVCR120__exit	imports
+0x4c13f8	data	__imp_MSVCR120_exit	imports
+0x4c13fc	data	__imp_MSVCR120___set_app_type	imports
+0x4c1400	data	__imp_MSVCR120___wgetmainargs	imports
+0x4c1404	data	__imp_MSVCR120__amsg_exit	imports
+0x4c1408	data	__imp_MSVCR120___crtGetShowWindowMode	imports
+0x4c140c	data	__imp_MSVCR120__XcptFilter	imports
+0x4c1410	data	__imp_MSVCR120_memset	imports
+0x4c1414	data	__imp_MSVCR120_fgetws	imports
+0x4c1418	data	__imp_MSVCR120_wcsncmp	imports
+0x4c141c	data	__imp_MSVCR120_isdigit	imports
+0x4c1420	data	__imp_MSVCR120__wtoi64	imports
+0x4c1424	data	__imp_MSVCR120___0bad_cast_std__QAE_PBD_Z	imports
+0x4c1428	data	__imp_MSVCR120___1bad_cast_std__UAE_XZ	imports
+0x4c142c	data	__imp_MSVCR120___0bad_cast_std__QAE_ABV01__Z	imports
+0x4c1430	data	__imp_MSVCR120__what_exception_std__UBEPBDXZ	imports
+0x4c1434	data	__imp_MSVCR120__localtime64_s	imports
+0x4c1438	data	__imp_MSVCR120_wcsftime	imports
+0x4c143c	data	__imp_MSVCR120___0exception_std__QAE_ABV01__Z	imports
+0x4c1444	data	__imp_OLEAUT32__9	imports
+0x4c1448	data	__imp_OLEAUT32__2	imports
+0x4c144c	data	__imp_OLEAUT32__12	imports
+0x4c1450	data	__imp_OLEAUT32__8	imports
+0x4c1454	data	__imp_OLEAUT32__10	imports
+0x4c1458	data	__imp_OLEAUT32__94	imports
+0x4c145c	data	__imp_OLEAUT32__114	imports
+0x4c1460	data	__imp_OLEAUT32__6	imports
+0x4c1468	data	__imp_OscillHelper__ConvertSto2Comtrade_ComtradeConverter__QAE_NV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL__0PAXHHAAV23__Z	imports
+0x4c146c	data	__imp_OscillHelper__ReadFromXml_ComtradeConverter__QAE_NV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL___Z	imports
+0x4c1470	data	__imp_OscillHelper__GetInfoFromStoHeader_ComtradeConverter__SA_NAAVCFile__AAGAAK_Z	imports
+0x4c1474	data	__imp_OscillHelper___1ComtradeConverter__UAE_XZ	imports
+0x4c1478	data	__imp_OscillHelper___0ComtradeConverter__QAE_H_N_Z	imports
+0x4c147c	data	__imp_OscillHelper__CheckDstCompatibility_ComtradeConverter__QAE_NGKV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL___Z	imports
+0x4c1480	data	__imp_OscillHelper__SetProgressBarStep_ComtradeConverter__MAEXV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL___Z	imports
+0x4c1484	data	__imp_OscillHelper__SetProgressInfoAboutFast_ComtradeConverter__MAEXV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL___Z	imports
+0x4c1488	data	__imp_OscillHelper__SetProgressInfoAbout_ComtradeConverter__MAEXV__CStringT__WV__StrTraitMFC_DLL__WV__ChTraitsCRT__W_ATL_____ATL___Z	imports
+0x4c1490	data	__imp_RPCRT4_UuidCreate	imports
+0x4c1498	data	__imp_SHELL32_ShellExecuteW	imports
+0x4c149c	data	__imp_SHELL32_CommandLineToArgvW	imports
+0x4c14a0	data	__imp_SHELL32_SHGetFolderLocation	imports
+0x4c14a4	data	__imp_SHELL32_SHGetPathFromIDListW	imports
+0x4c14a8	data	__imp_SHELL32_SHFileOperationW	imports
+0x4c14ac	data	__imp_SHELL32_DragAcceptFiles	imports
+0x4c14b4	data	__imp_SHLWAPI_PathFindFileNameW	imports
+0x4c14bc	data	__imp_USER32_EnableWindow	imports
+0x4c14c0	data	__imp_USER32_GetClientRect	imports
+0x4c14c4	data	__imp_USER32_GetFocus	imports
+0x4c14c8	data	__imp_USER32_GetSystemMetrics	imports
+0x4c14cc	data	__imp_USER32_GetDC	imports
+0x4c14d0	data	__imp_USER32_PostMessageW	imports
+0x4c14d4	data	__imp_USER32_SetRect	imports
+0x4c14d8	data	__imp_USER32_OffsetRect	imports
+0x4c14dc	data	__imp_USER32_PtInRect	imports
+0x4c14e0	data	__imp_USER32_InflateRect	imports
+0x4c14e4	data	__imp_USER32_GetWindowRect	imports
+0x4c14e8	data	__imp_USER32_IsWindow	imports
+0x4c14ec	data	__imp_USER32_SendMessageW	imports
+0x4c14f0	data	__imp_USER32_LoadBitmapW	imports
+0x4c14f4	data	__imp_USER32_RegisterClipboardFormatW	imports
+0x4c14f8	data	__imp_USER32_TrackMouseEvent	imports
+0x4c14fc	data	__imp_USER32_LockWindowUpdate	imports
+0x4c1500	data	__imp_USER32_SetActiveWindow	imports
+0x4c1504	data	__imp_USER32_MessageBeep	imports
+0x4c1508	data	__imp_USER32_DrawTextW	imports
+0x4c150c	data	__imp_USER32_CheckMenuItem	imports
+0x4c1510	data	__imp_USER32_AppendMenuW	imports
+0x4c1514	data	__imp_USER32_CreatePopupMenu	imports
+0x4c1518	data	__imp_USER32_GetAsyncKeyState	imports
+0x4c151c	data	__imp_USER32_IsIconic	imports
+0x4c1520	data	__imp_USER32_RedrawWindow	imports
+0x4c1524	data	__imp_USER32_IsRectEmpty	imports
+0x4c1528	data	__imp_USER32_FrameRect	imports
+0x4c152c	data	__imp_USER32_RemoveMenu	imports
+0x4c1530	data	__imp_USER32_ModifyMenuW	imports
+0x4c1534	data	__imp_USER32_GetParent	imports
+0x4c1538	data	__imp_USER32_GetKeyboardState	imports
+0x4c153c	data	__imp_USER32_IsClipboardFormatAvailable	imports
+0x4c1540	data	__imp_USER32_GetClipboardData	imports
+0x4c1544	data	__imp_USER32_CharToOemBuffW	imports
+0x4c1548	data	__imp_USER32_CopyRect	imports
+0x4c154c	data	__imp_USER32_UpdateWindow	imports
+0x4c1550	data	__imp_USER32_KillTimer	imports
+0x4c1554	data	__imp_USER32_SetTimer	imports
+0x4c1558	data	__imp_USER32_OpenClipboard	imports
+0x4c155c	data	__imp_USER32_InsertMenuW	imports
+0x4c1560	data	__imp_USER32_ReleaseDC	imports
+0x4c1564	data	__imp_USER32_ReleaseCapture	imports
+0x4c1568	data	__imp_USER32_SetCapture	imports
+0x4c156c	data	__imp_USER32_ClientToScreen	imports
+0x4c1570	data	__imp_USER32_GetSubMenu	imports
+0x4c1574	data	__imp_USER32_LoadMenuW	imports
+0x4c1578	data	__imp_USER32_LoadCursorW	imports
+0x4c157c	data	__imp_USER32_SetCursor	imports
+0x4c1580	data	__imp_USER32_ScreenToClient	imports
+0x4c1584	data	__imp_USER32_GetCursorPos	imports
+0x4c1588	data	__imp_USER32_SetRectEmpty	imports
+0x4c158c	data	__imp_USER32_InvalidateRect	imports
+0x4c1590	data	__imp_USER32_LoadImageW	imports
+0x4c1594	data	__imp_USER32_FillRect	imports
+0x4c1598	data	__imp_USER32_SetClipboardData	imports
+0x4c159c	data	__imp_USER32_CloseClipboard	imports
+0x4c15a0	data	__imp_USER32_EmptyClipboard	imports
+0x4c15a4	data	__imp_USER32_FindWindowExW	imports
+0x4c15ac	data	__imp_Utils__Save_CArchStorage__QAE_NPB_W_N1PAH_Z	imports
+0x4c15b0	data	__imp_Utils__SetFileInArchive_CArchStorage__QAEXPB_WPAXH_Z	imports
+0x4c15b4	data	__imp_Utils___1CArchStorage__UAE_XZ	imports
+0x4c15b8	data	__imp_Utils___0CArchStorage__QAE_XZ	imports
+0x4c15c0	data	__imp_ZipArchive__Close_CZipArchive__QAE_AVCZipString__H_N_Z	imports
+0x4c15c4	data	__imp_ZipArchive__Open_CZipArchive__QAE_NPB_WHK_Z	imports
+0x4c15c8	data	__imp_ZipArchive___1CZipArchive__UAE_XZ	imports
+0x4c15cc	data	__imp_ZipArchive__AddNewFiles_CZipArchive__QAE_NPB_WAAVCFileFilter_ZipArchiveLib___NH2HK_Z	imports
+0x4c15d0	data	__imp_ZipArchive__IsMatch_CWildcard_ZipArchiveLib__QAE_NPB_WPAH_Z	imports
+0x4c15d4	data	__imp_ZipArchive__IsDirectory_ZipPlatform__YA_NK_Z	imports
+0x4c15d8	data	__imp_ZipArchive__GetSystemCaseSensitivity_ZipPlatform__YA_NXZ	imports
+0x4c15dc	data	__imp_ZipArchive__Flush_CZipStorage__QAEXXZ	imports
+0x4c15e0	data	__imp_ZipArchive___1CZipException__UAE_XZ	imports
+0x4c15e4	data	__imp_ZipArchive___0CZipArchive__QAE_XZ	imports
+0x4c15e8	data	__imp_ZipArchive___0CZipException__QAE_HPB_W_Z	imports
+0x4c15f0	data	__imp_gdiplus_GdipDeleteBrush	imports
+0x4c15f4	data	__imp_gdiplus_GdipCreateSolidFill	imports
+0x4c15f8	data	__imp_gdiplus_GdipFillRectangleI	imports
+0x4c15fc	data	__imp_gdiplus_GdipDeleteGraphics	imports
+0x4c1600	data	__imp_gdiplus_GdipCreateFromHDC	imports
+0x4c1604	data	__imp_gdiplus_GdiplusShutdown	imports
+0x4c160c	data	__imp_mfc120u__10879	imports
+0x4c1610	data	__imp_mfc120u__12074	imports
+0x4c1614	data	__imp_mfc120u__2866	imports
+0x4c1618	data	__imp_mfc120u__14361	imports
+0x4c161c	data	__imp_mfc120u__2040	imports
+0x4c1620	data	__imp_mfc120u__4274	imports
+0x4c1624	data	__imp_mfc120u__9035	imports
+0x4c1628	data	__imp_mfc120u__4449	imports
+0x4c162c	data	__imp_mfc120u__9679	imports
+0x4c1630	data	__imp_mfc120u__7852	imports
+0x4c1634	data	__imp_mfc120u__7818	imports
+0x4c1638	data	__imp_mfc120u__10049	imports
+0x4c163c	data	__imp_mfc120u__9426	imports
+0x4c1640	data	__imp_mfc120u__9481	imports
+0x4c1644	data	__imp_mfc120u__9586	imports
+0x4c1648	data	__imp_mfc120u__9544	imports
+0x4c164c	data	__imp_mfc120u__12107	imports
+0x4c1650	data	__imp_mfc120u__2958	imports
+0x4c1654	data	__imp_mfc120u__8734	imports
+0x4c1658	data	__imp_mfc120u__6763	imports
+0x4c165c	data	__imp_mfc120u__8601	imports
+0x4c1660	data	__imp_mfc120u__5871	imports
+0x4c1664	data	__imp_mfc120u__850	imports
+0x4c1668	data	__imp_mfc120u__8039	imports
+0x4c166c	data	__imp_mfc120u__5484	imports
+0x4c1670	data	__imp_mfc120u__12219	imports
+0x4c1674	data	__imp_mfc120u__5864	imports
+0x4c1678	data	__imp_mfc120u__6398	imports
+0x4c167c	data	__imp_mfc120u__10131	imports
+0x4c1680	data	__imp_mfc120u__5684	imports
+0x4c1684	data	__imp_mfc120u__12758	imports
+0x4c1688	data	__imp_mfc120u__9871	imports
+0x4c168c	data	__imp_mfc120u__9406	imports
+0x4c1690	data	__imp_mfc120u__887	imports
+0x4c1694	data	__imp_mfc120u__1386	imports
+0x4c1698	data	__imp_mfc120u__7543	imports
+0x4c169c	data	__imp_mfc120u__2708	imports
+0x4c16a0	data	__imp_mfc120u__5821	imports
+0x4c16a4	data	__imp_mfc120u__12941	imports
+0x4c16a8	data	__imp_mfc120u__2308	imports
+0x4c16ac	data	__imp_mfc120u__14459	imports
+0x4c16b0	data	__imp_mfc120u__10025	imports
+0x4c16b4	data	__imp_mfc120u__10028	imports
+0x4c16b8	data	__imp_mfc120u__7542	imports
+0x4c16bc	data	__imp_mfc120u__993	imports
+0x4c16c0	data	__imp_mfc120u__1468	imports
+0x4c16c4	data	__imp_mfc120u__874	imports
+0x4c16c8	data	__imp_mfc120u__1377	imports
+0x4c16cc	data	__imp_mfc120u__6128	imports
+0x4c16d0	data	__imp_mfc120u__2265	imports
+0x4c16d4	data	__imp_mfc120u__4406	imports
+0x4c16d8	data	__imp_mfc120u__366	imports
+0x4c16dc	data	__imp_mfc120u__1069	imports
+0x4c16e0	data	__imp_mfc120u__11902	imports
+0x4c16e4	data	__imp_mfc120u__4416	imports
+0x4c16e8	data	__imp_mfc120u__7881	imports
+0x4c16ec	data	__imp_mfc120u__2163	imports
+0x4c16f0	data	__imp_mfc120u__13771	imports
+0x4c16f4	data	__imp_mfc120u__8344	imports
+0x4c16f8	data	__imp_mfc120u__7830	imports
+0x4c16fc	data	__imp_mfc120u__7883	imports
+0x4c1700	data	__imp_mfc120u__7908	imports
+0x4c1704	data	__imp_mfc120u__13937	imports
+0x4c1708	data	__imp_mfc120u__7565	imports
+0x4c170c	data	__imp_mfc120u__7199	imports
+0x4c1710	data	__imp_mfc120u__813	imports
+0x4c1714	data	__imp_mfc120u__7071	imports
+0x4c1718	data	__imp_mfc120u__1824	imports
+0x4c171c	data	__imp_mfc120u__12407	imports
+0x4c1720	data	__imp_mfc120u__2977	imports
+0x4c1724	data	__imp_mfc120u__12403	imports
+0x4c1728	data	__imp_mfc120u__14394	imports
+0x4c172c	data	__imp_mfc120u__12121	imports
+0x4c1730	data	__imp_mfc120u__477	imports
+0x4c1734	data	__imp_mfc120u__1121	imports
+0x4c1738	data	__imp_mfc120u__3014	imports
+0x4c173c	data	__imp_mfc120u__4547	imports
+0x4c1740	data	__imp_mfc120u__886	imports
+0x4c1744	data	__imp_mfc120u__4062	imports
+0x4c1748	data	__imp_mfc120u__12964	imports
+0x4c174c	data	__imp_mfc120u__6252	imports
+0x4c1750	data	__imp_mfc120u__6248	imports
+0x4c1754	data	__imp_mfc120u__6253	imports
+0x4c1758	data	__imp_mfc120u__14527	imports
+0x4c175c	data	__imp_mfc120u__14528	imports
+0x4c1760	data	__imp_mfc120u__12094	imports
+0x4c1764	data	__imp_mfc120u__6759	imports
+0x4c1768	data	__imp_mfc120u__5667	imports
+0x4c176c	data	__imp_mfc120u__12799	imports
+0x4c1770	data	__imp_mfc120u__12126	imports
+0x4c1774	data	__imp_mfc120u__10314	imports
+0x4c1778	data	__imp_mfc120u__8099	imports
+0x4c177c	data	__imp_mfc120u__12122	imports
+0x4c1780	data	__imp_mfc120u__12114	imports
+0x4c1784	data	__imp_mfc120u__3809	imports
+0x4c1788	data	__imp_mfc120u__6251	imports
+0x4c178c	data	__imp_mfc120u__14526	imports
+0x4c1790	data	__imp_mfc120u__7884	imports
+0x4c1794	data	__imp_mfc120u__12402	imports
+0x4c1798	data	__imp_mfc120u__14326	imports
+0x4c179c	data	__imp_mfc120u__11858	imports
+0x4c17a0	data	__imp_mfc120u__11857	imports
+0x4c17a4	data	__imp_mfc120u__1992	imports
+0x4c17a8	data	__imp_mfc120u__7825	imports
+0x4c17ac	data	__imp_mfc120u__12818	imports
+0x4c17b0	data	__imp_mfc120u__4047	imports
+0x4c17b4	data	__imp_mfc120u__4109	imports
+0x4c17b8	data	__imp_mfc120u__9279	imports
+0x4c17bc	data	__imp_mfc120u__14454	imports
+0x4c17c0	data	__imp_mfc120u__7806	imports
+0x4c17c4	data	__imp_mfc120u__14448	imports
+0x4c17c8	data	__imp_mfc120u__12413	imports
+0x4c17cc	data	__imp_mfc120u__12412	imports
+0x4c17d0	data	__imp_mfc120u__2444	imports
+0x4c17d4	data	__imp_mfc120u__5262	imports
+0x4c17d8	data	__imp_mfc120u__8206	imports
+0x4c17dc	data	__imp_mfc120u__12736	imports
+0x4c17e0	data	__imp_mfc120u__8268	imports
+0x4c17e4	data	__imp_mfc120u__8352	imports
+0x4c17e8	data	__imp_mfc120u__8343	imports
+0x4c17ec	data	__imp_mfc120u__2759	imports
+0x4c17f0	data	__imp_mfc120u__12878	imports
+0x4c17f4	data	__imp_mfc120u__11768	imports
+0x4c17f8	data	__imp_mfc120u__14076	imports
+0x4c17fc	data	__imp_mfc120u__8855	imports
+0x4c1800	data	__imp_mfc120u__9089	imports
+0x4c1804	data	__imp_mfc120u__8361	imports
+0x4c1808	data	__imp_mfc120u__14168	imports
+0x4c180c	data	__imp_mfc120u__12454	imports
+0x4c1810	data	__imp_mfc120u__6444	imports
+0x4c1814	data	__imp_mfc120u__1823	imports
+0x4c1818	data	__imp_mfc120u__5506	imports
+0x4c181c	data	__imp_mfc120u__6091	imports
+0x4c1820	data	__imp_mfc120u__12406	imports
+0x4c1824	data	__imp_mfc120u__11852	imports
+0x4c1828	data	__imp_mfc120u__11851	imports
+0x4c182c	data	__imp_mfc120u__12816	imports
+0x4c1830	data	__imp_mfc120u__2862	imports
+0x4c1834	data	__imp_mfc120u__6134	imports
+0x4c1838	data	__imp_mfc120u__5001	imports
+0x4c183c	data	__imp_mfc120u__9278	imports
+0x4c1840	data	__imp_mfc120u__10024	imports
+0x4c1844	data	__imp_mfc120u__10027	imports
+0x4c1848	data	__imp_mfc120u__12792	imports
+0x4c184c	data	__imp_mfc120u__4280	imports
+0x4c1850	data	__imp_mfc120u__3317	imports
+0x4c1854	data	__imp_mfc120u__3195	imports
+0x4c1858	data	__imp_mfc120u__6702	imports
+0x4c185c	data	__imp_mfc120u__1400	imports
+0x4c1860	data	__imp_mfc120u__5021	imports
+0x4c1864	data	__imp_mfc120u__3761	imports
+0x4c1868	data	__imp_mfc120u__3766	imports
+0x4c186c	data	__imp_mfc120u__3650	imports
+0x4c1870	data	__imp_mfc120u__12431	imports
+0x4c1874	data	__imp_mfc120u__265	imports
+0x4c1878	data	__imp_mfc120u__7504	imports
+0x4c187c	data	__imp_mfc120u__7248	imports
+0x4c1880	data	__imp_mfc120u__870	imports
+0x4c1884	data	__imp_mfc120u__1381	imports
+0x4c1888	data	__imp_mfc120u__4771	imports
+0x4c188c	data	__imp_mfc120u__9081	imports
+0x4c1890	data	__imp_mfc120u__14350	imports
+0x4c1894	data	__imp_mfc120u__498	imports
+0x4c1898	data	__imp_mfc120u__1139	imports
+0x4c189c	data	__imp_mfc120u__5789	imports
+0x4c18a0	data	__imp_mfc120u__12222	imports
+0x4c18a4	data	__imp_mfc120u__2843	imports
+0x4c18a8	data	__imp_mfc120u__12398	imports
+0x4c18ac	data	__imp_mfc120u__500	imports
+0x4c18b0	data	__imp_mfc120u__11837	imports
+0x4c18b4	data	__imp_mfc120u__1649	imports
+0x4c18b8	data	__imp_mfc120u__2167	imports
+0x4c18bc	data	__imp_mfc120u__503	imports
+0x4c18c0	data	__imp_mfc120u__1141	imports
+0x4c18c4	data	__imp_mfc120u__4672	imports
+0x4c18c8	data	__imp_mfc120u__4692	imports
+0x4c18cc	data	__imp_mfc120u__8059	imports
+0x4c18d0	data	__imp_mfc120u__5491	imports
+0x4c18d4	data	__imp_mfc120u__12837	imports
+0x4c18d8	data	__imp_mfc120u__13023	imports
+0x4c18dc	data	__imp_mfc120u__9103	imports
+0x4c18e0	data	__imp_mfc120u__10132	imports
+0x4c18e4	data	__imp_mfc120u__5690	imports
+0x4c18e8	data	__imp_mfc120u__5666	imports
+0x4c18ec	data	__imp_mfc120u__4660	imports
+0x4c18f0	data	__imp_mfc120u__12531	imports
+0x4c18f4	data	__imp_mfc120u__12289	imports
+0x4c18f8	data	__imp_mfc120u__13212	imports
+0x4c18fc	data	__imp_mfc120u__2801	imports
+0x4c1900	data	__imp_mfc120u__7544	imports
+0x4c1904	data	__imp_mfc120u__2516	imports
+0x4c1908	data	__imp_mfc120u__8277	imports
+0x4c190c	data	__imp_mfc120u__13925	imports
+0x4c1910	data	__imp_mfc120u__13693	imports
+0x4c1914	data	__imp_mfc120u__2816	imports
+0x4c1918	data	__imp_mfc120u__5514	imports
+0x4c191c	data	__imp_mfc120u__6102	imports
+0x4c1920	data	__imp_mfc120u__8962	imports
+0x4c1924	data	__imp_mfc120u__3818	imports
+0x4c1928	data	__imp_mfc120u__10860	imports
+0x4c192c	data	__imp_mfc120u__12658	imports
+0x4c1930	data	__imp_mfc120u__5482	imports
+0x4c1934	data	__imp_mfc120u__12446	imports
+0x4c1938	data	__imp_mfc120u__11133	imports
+0x4c193c	data	__imp_mfc120u__9365	imports
+0x4c1940	data	__imp_mfc120u__2677	imports
+0x4c1944	data	__imp_mfc120u__11969	imports
+0x4c1948	data	__imp_mfc120u__4096	imports
+0x4c194c	data	__imp_mfc120u__4045	imports
+0x4c1950	data	__imp_mfc120u__14371	imports
+0x4c1954	data	__imp_mfc120u__5283	imports
+0x4c1958	data	__imp_mfc120u__5275	imports
+0x4c195c	data	__imp_mfc120u__10313	imports
+0x4c1960	data	__imp_mfc120u__10603	imports
+0x4c1964	data	__imp_mfc120u__11019	imports
+0x4c1968	data	__imp_mfc120u__11020	imports
+0x4c196c	data	__imp_mfc120u__9244	imports
+0x4c1970	data	__imp_mfc120u__11618	imports
+0x4c1974	data	__imp_mfc120u__9860	imports
+0x4c1978	data	__imp_mfc120u__5653	imports
+0x4c197c	data	__imp_mfc120u__6850	imports
+0x4c1980	data	__imp_mfc120u__6094	imports
+0x4c1984	data	__imp_mfc120u__1860	imports
+0x4c1988	data	__imp_mfc120u__12559	imports
+0x4c198c	data	__imp_mfc120u__14387	imports
+0x4c1990	data	__imp_mfc120u__6245	imports
+0x4c1994	data	__imp_mfc120u__11401	imports
+0x4c1998	data	__imp_mfc120u__6053	imports
+0x4c199c	data	__imp_mfc120u__5167	imports
+0x4c19a0	data	__imp_mfc120u__8303	imports
+0x4c19a4	data	__imp_mfc120u__12883	imports
+0x4c19a8	data	__imp_mfc120u__10217	imports
+0x4c19ac	data	__imp_mfc120u__10137	imports
+0x4c19b0	data	__imp_mfc120u__12405	imports
+0x4c19b4	data	__imp_mfc120u__11655	imports
+0x4c19b8	data	__imp_mfc120u__9068	imports
+0x4c19bc	data	__imp_mfc120u__11282	imports
+0x4c19c0	data	__imp_mfc120u__10015	imports
+0x4c19c4	data	__imp_mfc120u__5349	imports
+0x4c19c8	data	__imp_mfc120u__11364	imports
+0x4c19cc	data	__imp_mfc120u__9285	imports
+0x4c19d0	data	__imp_mfc120u__9288	imports
+0x4c19d4	data	__imp_mfc120u__9370	imports
+0x4c19d8	data	__imp_mfc120u__11361	imports
+0x4c19dc	data	__imp_mfc120u__11288	imports
+0x4c19e0	data	__imp_mfc120u__11074	imports
+0x4c19e4	data	__imp_mfc120u__10158	imports
+0x4c19e8	data	__imp_mfc120u__3364	imports
+0x4c19ec	data	__imp_mfc120u__3887	imports
+0x4c19f0	data	__imp_mfc120u__11126	imports
+0x4c19f4	data	__imp_mfc120u__5497	imports
+0x4c19f8	data	__imp_mfc120u__10862	imports
+0x4c19fc	data	__imp_mfc120u__10909	imports
+0x4c1a00	data	__imp_mfc120u__11153	imports
+0x4c1a04	data	__imp_mfc120u__5825	imports
+0x4c1a08	data	__imp_mfc120u__309	imports
+0x4c1a0c	data	__imp_mfc120u__305	imports
+0x4c1a10	data	__imp_mfc120u__2968	imports
+0x4c1a14	data	__imp_mfc120u__14263	imports
+0x4c1a18	data	__imp_mfc120u__14265	imports
+0x4c1a1c	data	__imp_mfc120u__8599	imports
+0x4c1a20	data	__imp_mfc120u__4699	imports
+0x4c1a24	data	__imp_mfc120u__12455	imports
+0x4c1a28	data	__imp_mfc120u__1688	imports
+0x4c1a2c	data	__imp_mfc120u__291	imports
+0x4c1a30	data	__imp_mfc120u__1691	imports
+0x4c1a34	data	__imp_mfc120u__311	imports
+0x4c1a38	data	__imp_mfc120u__310	imports
+0x4c1a3c	data	__imp_mfc120u__4281	imports
+0x4c1a40	data	__imp_mfc120u__872	imports
+0x4c1a44	data	__imp_mfc120u__1383	imports
+0x4c1a48	data	__imp_mfc120u__10030	imports
+0x4c1a4c	data	__imp_mfc120u__362	imports
+0x4c1a50	data	__imp_mfc120u__1065	imports
+0x4c1a54	data	__imp_mfc120u__6778	imports
+0x4c1a58	data	__imp_mfc120u__8227	imports
+0x4c1a5c	data	__imp_mfc120u__4034	imports
+0x4c1a60	data	__imp_mfc120u__13095	imports
+0x4c1a64	data	__imp_mfc120u__9348	imports
+0x4c1a68	data	__imp_mfc120u__1682	imports
+0x4c1a6c	data	__imp_mfc120u__9229	imports
+0x4c1a70	data	__imp_mfc120u__6682	imports
+0x4c1a74	data	__imp_mfc120u__12992	imports
+0x4c1a78	data	__imp_mfc120u__10135	imports
+0x4c1a7c	data	__imp_mfc120u__5691	imports
+0x4c1a80	data	__imp_mfc120u__8019	imports
+0x4c1a84	data	__imp_mfc120u__11620	imports
+0x4c1a88	data	__imp_mfc120u__9554	imports
+0x4c1a8c	data	__imp_mfc120u__11245	imports
+0x4c1a90	data	__imp_mfc120u__10196	imports
+0x4c1a94	data	__imp_mfc120u__9379	imports
+0x4c1a98	data	__imp_mfc120u__11213	imports
+0x4c1a9c	data	__imp_mfc120u__11060	imports
+0x4c1aa0	data	__imp_mfc120u__11682	imports
+0x4c1aa4	data	__imp_mfc120u__11353	imports
+0x4c1aa8	data	__imp_mfc120u__10904	imports
+0x4c1aac	data	__imp_mfc120u__10282	imports
+0x4c1ab0	data	__imp_mfc120u__10381	imports
+0x4c1ab4	data	__imp_mfc120u__11104	imports
+0x4c1ab8	data	__imp_mfc120u__11099	imports
+0x4c1abc	data	__imp_mfc120u__11094	imports
+0x4c1ac0	data	__imp_mfc120u__11239	imports
+0x4c1ac4	data	__imp_mfc120u__6037	imports
+0x4c1ac8	data	__imp_mfc120u__11154	imports
+0x4c1acc	data	__imp_mfc120u__747	imports
+0x4c1ad0	data	__imp_mfc120u__1294	imports
+0x4c1ad4	data	__imp_mfc120u__3120	imports
+0x4c1ad8	data	__imp_mfc120u__6429	imports
+0x4c1adc	data	__imp_mfc120u__1102	imports
+0x4c1ae0	data	__imp_mfc120u__12962	imports
+0x4c1ae4	data	__imp_mfc120u__3651	imports
+0x4c1ae8	data	__imp_mfc120u__5738	imports
+0x4c1aec	data	__imp_mfc120u__2520	imports
+0x4c1af0	data	__imp_mfc120u__4456	imports
+0x4c1af4	data	__imp_mfc120u__13917	imports
+0x4c1af8	data	__imp_mfc120u__7546	imports
+0x4c1afc	data	__imp_mfc120u__13506	imports
+0x4c1b00	data	__imp_mfc120u__5716	imports
+0x4c1b04	data	__imp_mfc120u__14273	imports
+0x4c1b08	data	__imp_mfc120u__14225	imports
+0x4c1b0c	data	__imp_mfc120u__1528	imports
+0x4c1b10	data	__imp_mfc120u__3641	imports
+0x4c1b14	data	__imp_mfc120u__3754	imports
+0x4c1b18	data	__imp_mfc120u__14271	imports
+0x4c1b1c	data	__imp_mfc120u__7020	imports
+0x4c1b20	data	__imp_mfc120u__2341	imports
+0x4c1b24	data	__imp_mfc120u__581	imports
+0x4c1b28	data	__imp_mfc120u__1203	imports
+0x4c1b2c	data	__imp_mfc120u__13889	imports
+0x4c1b30	data	__imp_mfc120u__11646	imports
+0x4c1b34	data	__imp_mfc120u__469	imports
+0x4c1b38	data	__imp_mfc120u__1113	imports
+0x4c1b3c	data	__imp_mfc120u__755	imports
+0x4c1b40	data	__imp_mfc120u__1301	imports
+0x4c1b44	data	__imp_mfc120u__8220	imports
+0x4c1b48	data	__imp_mfc120u__4238	imports
+0x4c1b4c	data	__imp_mfc120u__802	imports
+0x4c1b50	data	__imp_mfc120u__1333	imports
+0x4c1b54	data	__imp_mfc120u__7202	imports
+0x4c1b58	data	__imp_mfc120u__7074	imports
+0x4c1b5c	data	__imp_mfc120u__10264	imports
+0x4c1b60	data	__imp_mfc120u__10257	imports
+0x4c1b64	data	__imp_mfc120u__9153	imports
+0x4c1b68	data	__imp_mfc120u__7404	imports
+0x4c1b6c	data	__imp_mfc120u__562	imports
+0x4c1b70	data	__imp_mfc120u__1188	imports
+0x4c1b74	data	__imp_mfc120u__1314	imports
+0x4c1b78	data	__imp_mfc120u__776	imports
+0x4c1b7c	data	__imp_mfc120u__9482	imports
+0x4c1b80	data	__imp_mfc120u__10051	imports
+0x4c1b84	data	__imp_mfc120u__9024	imports
+0x4c1b88	data	__imp_mfc120u__4221	imports
+0x4c1b8c	data	__imp_mfc120u__5362	imports
+0x4c1b90	data	__imp_mfc120u__5729	imports
+0x4c1b94	data	__imp_mfc120u__12642	imports
+0x4c1b98	data	__imp_mfc120u__8743	imports
+0x4c1b9c	data	__imp_mfc120u__11638	imports
+0x4c1ba0	data	__imp_mfc120u__10491	imports
+0x4c1ba4	data	__imp_mfc120u__10684	imports
+0x4c1ba8	data	__imp_mfc120u__10585	imports
+0x4c1bac	data	__imp_mfc120u__10532	imports
+0x4c1bb0	data	__imp_mfc120u__8748	imports
+0x4c1bb4	data	__imp_mfc120u__7665	imports
+0x4c1bb8	data	__imp_mfc120u__5391	imports
+0x4c1bbc	data	__imp_mfc120u__5396	imports
+0x4c1bc0	data	__imp_mfc120u__1980	imports
+0x4c1bc4	data	__imp_mfc120u__10417	imports
+0x4c1bc8	data	__imp_mfc120u__5761	imports
+0x4c1bcc	data	__imp_mfc120u__5765	imports
+0x4c1bd0	data	__imp_mfc120u__9583	imports
+0x4c1bd4	data	__imp_mfc120u__5526	imports
+0x4c1bd8	data	__imp_mfc120u__5580	imports
+0x4c1bdc	data	__imp_mfc120u__5364	imports
+0x4c1be0	data	__imp_mfc120u__6239	imports
+0x4c1be4	data	__imp_mfc120u__12373	imports
+0x4c1be8	data	__imp_mfc120u__8812	imports
+0x4c1bec	data	__imp_mfc120u__14407	imports
+0x4c1bf0	data	__imp_mfc120u__4657	imports
+0x4c1bf4	data	__imp_mfc120u__4646	imports
+0x4c1bf8	data	__imp_mfc120u__4652	imports
+0x4c1bfc	data	__imp_mfc120u__4625	imports
+0x4c1c00	data	__imp_mfc120u__2877	imports
+0x4c1c04	data	__imp_mfc120u__2660	imports
+0x4c1c08	data	__imp_mfc120u__8905	imports
+0x4c1c0c	data	__imp_mfc120u__9427	imports
+0x4c1c10	data	__imp_mfc120u__9634	imports
+0x4c1c14	data	__imp_mfc120u__13629	imports
+0x4c1c18	data	__imp_mfc120u__13687	imports
+0x4c1c1c	data	__imp_mfc120u__3049	imports
+0x4c1c20	data	__imp_mfc120u__13684	imports
+0x4c1c24	data	__imp_mfc120u__14052	imports
+0x4c1c28	data	__imp_mfc120u__14177	imports
+0x4c1c2c	data	__imp_mfc120u__11387	imports
+0x4c1c30	data	__imp_mfc120u__13689	imports
+0x4c1c34	data	__imp_mfc120u__6208	imports
+0x4c1c38	data	__imp_mfc120u__7779	imports
+0x4c1c3c	data	__imp_mfc120u__8824	imports
+0x4c1c40	data	__imp_mfc120u__4168	imports
+0x4c1c44	data	__imp_mfc120u__5694	imports
+0x4c1c48	data	__imp_mfc120u__5147	imports
+0x4c1c4c	data	__imp_mfc120u__6323	imports
+0x4c1c50	data	__imp_mfc120u__13320	imports
+0x4c1c54	data	__imp_mfc120u__13938	imports
+0x4c1c58	data	__imp_mfc120u__5296	imports
+0x4c1c5c	data	__imp_mfc120u__7567	imports
+0x4c1c60	data	__imp_mfc120u__13904	imports
+0x4c1c64	data	__imp_mfc120u__13521	imports
+0x4c1c68	data	__imp_mfc120u__13891	imports
+0x4c1c6c	data	__imp_mfc120u__13465	imports
+0x4c1c70	data	__imp_mfc120u__14677	imports
+0x4c1c74	data	__imp_mfc120u__14666	imports
+0x4c1c78	data	__imp_mfc120u__6217	imports
+0x4c1c7c	data	__imp_mfc120u__14674	imports
+0x4c1c80	data	__imp_mfc120u__14672	imports
+0x4c1c84	data	__imp_mfc120u__14559	imports
+0x4c1c88	data	__imp_mfc120u__14568	imports
+0x4c1c8c	data	__imp_mfc120u__14584	imports
+0x4c1c90	data	__imp_mfc120u__14577	imports
+0x4c1c94	data	__imp_mfc120u__14593	imports
+0x4c1c98	data	__imp_mfc120u__14607	imports
+0x4c1c9c	data	__imp_mfc120u__14635	imports
+0x4c1ca0	data	__imp_mfc120u__14613	imports
+0x4c1ca4	data	__imp_mfc120u__14619	imports
+0x4c1ca8	data	__imp_mfc120u__14617	imports
+0x4c1cac	data	__imp_mfc120u__14615	imports
+0x4c1cb0	data	__imp_mfc120u__14637	imports
+0x4c1cb4	data	__imp_mfc120u__14633	imports
+0x4c1cb8	data	__imp_mfc120u__14611	imports
+0x4c1cbc	data	__imp_mfc120u__14639	imports
+0x4c1cc0	data	__imp_mfc120u__14621	imports
+0x4c1cc4	data	__imp_mfc120u__14596	imports
+0x4c1cc8	data	__imp_mfc120u__14599	imports
+0x4c1ccc	data	__imp_mfc120u__14624	imports
+0x4c1cd0	data	__imp_mfc120u__14648	imports
+0x4c1cd4	data	__imp_mfc120u__6561	imports
+0x4c1cd8	data	__imp_mfc120u__1258	imports
+0x4c1cdc	data	__imp_mfc120u__668	imports
+0x4c1ce0	data	__imp_mfc120u__736	imports
+0x4c1ce4	data	__imp_mfc120u__1289	imports
+0x4c1ce8	data	__imp_mfc120u__5661	imports
+0x4c1cec	data	__imp_mfc120u__8284	imports
+0x4c1cf0	data	__imp_mfc120u__664	imports
+0x4c1cf4	data	__imp_mfc120u__1256	imports
+0x4c1cf8	data	__imp_mfc120u__12058	imports
+0x4c1cfc	data	__imp_mfc120u__9941	imports
+0x4c1d00	data	__imp_mfc120u__10222	imports
+0x4c1d04	data	__imp_mfc120u__9187	imports
+0x4c1d08	data	__imp_mfc120u__563	imports
+0x4c1d0c	data	__imp_mfc120u__4367	imports
+0x4c1d10	data	__imp_mfc120u__13334	imports
+0x4c1d14	data	__imp_mfc120u__4308	imports
+0x4c1d18	data	__imp_mfc120u__4435	imports
+0x4c1d1c	data	__imp_mfc120u__3169	imports
+0x4c1d20	data	__imp_mfc120u__737	imports
+0x4c1d24	data	__imp_mfc120u__1830	imports
+0x4c1d28	data	__imp_mfc120u__1832	imports
+0x4c1d2c	data	__imp_mfc120u__5385	imports
+0x4c1d30	data	__imp_mfc120u__3168	imports
+0x4c1d34	data	__imp_mfc120u__8253	imports
+0x4c1d38	data	__imp_mfc120u__13472	imports
+0x4c1d3c	data	__imp_mfc120u__13109	imports
+0x4c1d40	data	__imp_mfc120u__1871	imports
+0x4c1d44	data	__imp_mfc120u__666	imports
+0x4c1d48	data	__imp_mfc120u__733	imports
+0x4c1d4c	data	__imp_mfc120u__1957	imports
+0x4c1d50	data	__imp_mfc120u__707	imports
+0x4c1d54	data	__imp_mfc120u__1926	imports
+0x4c1d58	data	__imp_mfc120u__1795	imports
+0x4c1d5c	data	__imp_mfc120u__1910	imports
+0x4c1d60	data	__imp_mfc120u__4564	imports
+0x4c1d64	data	__imp_mfc120u__13561	imports
+0x4c1d68	data	__imp_mfc120u__2000	imports
+0x4c1d6c	data	__imp_mfc120u__4813	imports
+0x4c1d70	data	__imp_mfc120u__3194	imports
+0x4c1d74	data	__imp_mfc120u__2336	imports
+0x4c1d78	data	__imp_mfc120u__12276	imports
+0x4c1d7c	data	__imp_mfc120u__14516	imports
+0x4c1d80	data	__imp_mfc120u__6652	imports
+0x4c1d84	data	__imp_mfc120u__13741	imports
+0x4c1d88	data	__imp_mfc120u__667	imports
+0x4c1d8c	data	__imp_mfc120u__3152	imports
+0x4c1d90	data	__imp_mfc120u__13145	imports
+0x4c1d94	data	__imp_mfc120u__13170	imports
+0x4c1d98	data	__imp_mfc120u__13182	imports
+0x4c1d9c	data	__imp_mfc120u__14057	imports
+0x4c1da0	data	__imp_mfc120u__12334	imports
+0x4c1da4	data	__imp_mfc120u__3124	imports
+0x4c1da8	data	__imp_mfc120u__3984	imports
+0x4c1dac	data	__imp_mfc120u__2501	imports
+0x4c1db0	data	__imp_mfc120u__14058	imports
+0x4c1db4	data	__imp_mfc120u__8222	imports
+0x4c1db8	data	__imp_mfc120u__4943	imports
+0x4c1dbc	data	__imp_mfc120u__13302	imports
+0x4c1dc0	data	__imp_mfc120u__7200	imports
+0x4c1dc4	data	__imp_mfc120u__7203	imports
+0x4c1dc8	data	__imp_mfc120u__8409	imports
+0x4c1dcc	data	__imp_mfc120u__7206	imports
+0x4c1dd0	data	__imp_mfc120u__7201	imports
+0x4c1dd4	data	__imp_mfc120u__7204	imports
+0x4c1dd8	data	__imp_mfc120u__13854	imports
+0x4c1ddc	data	__imp_mfc120u__14517	imports
+0x4c1de0	data	__imp_mfc120u__9058	imports
+0x4c1de4	data	__imp_mfc120u__9310	imports
+0x4c1de8	data	__imp_mfc120u__8573	imports
+0x4c1dec	data	__imp_mfc120u__8566	imports
+0x4c1df0	data	__imp_mfc120u__3537	imports
+0x4c1df4	data	__imp_mfc120u__798	imports
+0x4c1df8	data	__imp_mfc120u__3888	imports
+0x4c1dfc	data	__imp_mfc120u__8620	imports
+0x4c1e00	data	__imp_mfc120u__1746	imports
+0x4c1e04	data	__imp_mfc120u__14457	imports
+0x4c1e08	data	__imp_mfc120u__316	imports
+0x4c1e0c	data	__imp_mfc120u__3784	imports
+0x4c1e10	data	__imp_mfc120u__2161	imports
+0x4c1e14	data	__imp_mfc120u__7115	imports
+0x4c1e18	data	__imp_mfc120u__6203	imports
+0x4c1e1c	data	__imp_mfc120u__12339	imports
+0x4c1e20	data	__imp_mfc120u__9098	imports
+0x4c1e24	data	__imp_mfc120u__11984	imports
+0x4c1e28	data	__imp_mfc120u__5837	imports
+0x4c1e2c	data	__imp_mfc120u__13560	imports
+0x4c1e30	data	__imp_mfc120u__14451	imports
+0x4c1e34	data	__imp_mfc120u__7803	imports
+0x4c1e38	data	__imp_mfc120u__9121	imports
+0x4c1e3c	data	__imp_mfc120u__2515	imports
+0x4c1e40	data	__imp_mfc120u__4452	imports
+0x4c1e44	data	__imp_mfc120u__3792	imports
+0x4c1e48	data	__imp_mfc120u__11956	imports
+0x4c1e4c	data	__imp_mfc120u__8091	imports
+0x4c1e50	data	__imp_mfc120u__3132	imports
+0x4c1e54	data	__imp_mfc120u__4945	imports
+0x4c1e58	data	__imp_mfc120u__6033	imports
+0x4c1e5c	data	__imp_mfc120u__13570	imports
+0x4c1e60	data	__imp_mfc120u__5842	imports
+0x4c1e64	data	__imp_mfc120u__13568	imports
+0x4c1e68	data	__imp_mfc120u__5841	imports
+0x4c1e6c	data	__imp_mfc120u__11308	imports
+0x4c1e70	data	__imp_mfc120u__5858	imports
+0x4c1e74	data	__imp_mfc120u__8715	imports
+0x4c1e78	data	__imp_mfc120u__9235	imports
+0x4c1e7c	data	__imp_mfc120u__11679	imports
+0x4c1e80	data	__imp_mfc120u__11674	imports
+0x4c1e84	data	__imp_mfc120u__5274	imports
+0x4c1e88	data	__imp_mfc120u__3802	imports
+0x4c1e8c	data	__imp_mfc120u__4544	imports
+0x4c1e90	data	__imp_mfc120u__11370	imports
+0x4c1e94	data	__imp_mfc120u__10283	imports
+0x4c1e98	data	__imp_mfc120u__3236	imports
+0x4c1e9c	data	__imp_mfc120u__7693	imports
+0x4c1ea0	data	__imp_mfc120u__2030	imports
+0x4c1ea4	data	__imp_mfc120u__10723	imports
+0x4c1ea8	data	__imp_mfc120u__11368	imports
+0x4c1eac	data	__imp_mfc120u__3015	imports
+0x4c1eb0	data	__imp_mfc120u__14197	imports
+0x4c1eb4	data	__imp_mfc120u__11291	imports
+0x4c1eb8	data	__imp_mfc120u__11385	imports
+0x4c1ebc	data	__imp_mfc120u__1812	imports
+0x4c1ec0	data	__imp_mfc120u__9086	imports
+0x4c1ec4	data	__imp_mfc120u__9601	imports
+0x4c1ec8	data	__imp_mfc120u__11379	imports
+0x4c1ecc	data	__imp_mfc120u__2020	imports
+0x4c1ed0	data	__imp_mfc120u__8309	imports
+0x4c1ed4	data	__imp_mfc120u__12832	imports
+0x4c1ed8	data	__imp_mfc120u__3283	imports
+0x4c1edc	data	__imp_mfc120u__3395	imports
+0x4c1ee0	data	__imp_mfc120u__5652	imports
+0x4c1ee4	data	__imp_mfc120u__6517	imports
+0x4c1ee8	data	__imp_mfc120u__12988	imports
+0x4c1eec	data	__imp_mfc120u__5900	imports
+0x4c1ef0	data	__imp_mfc120u__4907	imports
+0x4c1ef4	data	__imp_mfc120u__4869	imports
+0x4c1ef8	data	__imp_mfc120u__4862	imports
+0x4c1efc	data	__imp_mfc120u__4901	imports
+0x4c1f00	data	__imp_mfc120u__4930	imports
+0x4c1f04	data	__imp_mfc120u__4881	imports
+0x4c1f08	data	__imp_mfc120u__4911	imports
+0x4c1f0c	data	__imp_mfc120u__4922	imports
+0x4c1f10	data	__imp_mfc120u__4889	imports
+0x4c1f14	data	__imp_mfc120u__4893	imports
+0x4c1f18	data	__imp_mfc120u__4897	imports
+0x4c1f1c	data	__imp_mfc120u__4885	imports
+0x4c1f20	data	__imp_mfc120u__4918	imports
+0x4c1f24	data	__imp_mfc120u__4876	imports
+0x4c1f28	data	__imp_mfc120u__1734	imports
+0x4c1f2c	data	__imp_mfc120u__1725	imports
+0x4c1f30	data	__imp_mfc120u__1719	imports
+0x4c1f34	data	__imp_mfc120u__12062	imports
+0x4c1f38	data	__imp_mfc120u__14436	imports
+0x4c1f3c	data	__imp_mfc120u__5217	imports
+0x4c1f40	data	__imp_mfc120u__8056	imports
+0x4c1f44	data	__imp_mfc120u__8199	imports
+0x4c1f48	data	__imp_mfc120u__8126	imports
+0x4c1f4c	data	__imp_mfc120u__2661	imports
+0x4c1f50	data	__imp_mfc120u__5346	imports
+0x4c1f54	data	__imp_mfc120u__5341	imports
+0x4c1f58	data	__imp_mfc120u__2683	imports
+0x4c1f5c	data	__imp_mfc120u__3989	imports
+0x4c1f60	data	__imp_mfc120u__4749	imports
+0x4c1f64	data	__imp_mfc120u__2038	imports
+0x4c1f68	data	__imp_mfc120u__12335	imports
+0x4c1f6c	data	__imp_mfc120u__3269	imports
+0x4c1f70	data	__imp_mfc120u__8877	imports
+0x4c1f74	data	__imp_mfc120u__8822	imports
+0x4c1f78	data	__imp_mfc120u__6206	imports
+0x4c1f7c	data	__imp_mfc120u__8337	imports
+0x4c1f80	data	__imp_mfc120u__12871	imports
+0x4c1f84	data	__imp_mfc120u__8697	imports
+0x4c1f88	data	__imp_mfc120u__13989	imports
+0x4c1f8c	data	__imp_mfc120u__3089	imports
+0x4c1f90	data	__imp_mfc120u__14301	imports
+0x4c1f94	data	__imp_mfc120u__11632	imports
+0x4c1f98	data	__imp_mfc120u__10970	imports
+0x4c1f9c	data	__imp_mfc120u__3296	imports
+0x4c1fa0	data	__imp_mfc120u__11202	imports
+0x4c1fa4	data	__imp_mfc120u__2597	imports
+0x4c1fa8	data	__imp_mfc120u__4069	imports
+0x4c1fac	data	__imp_mfc120u__2025	imports
+0x4c1fb0	data	__imp_mfc120u__4990	imports
+0x4c1fb4	data	__imp_mfc120u__4995	imports
+0x4c1fb8	data	__imp_mfc120u__3091	imports
+0x4c1fbc	data	__imp_mfc120u__6179	imports
+0x4c1fc0	data	__imp_mfc120u__13076	imports
+0x4c1fc4	data	__imp_mfc120u__12023	imports
+0x4c1fc8	data	__imp_mfc120u__3974	imports
+0x4c1fcc	data	__imp_mfc120u__8688	imports
+0x4c1fd0	data	__imp_mfc120u__14175	imports
+0x4c1fd4	data	__imp_mfc120u__8027	imports
+0x4c1fd8	data	__imp_mfc120u__13340	imports
+0x4c1fdc	data	__imp_mfc120u__11043	imports
+0x4c1fe0	data	__imp_mfc120u__8883	imports
+0x4c1fe4	data	__imp_mfc120u__8838	imports
+0x4c1fe8	data	__imp_mfc120u__3188	imports
+0x4c1fec	data	__imp_mfc120u__3314	imports
+0x4c1ff0	data	__imp_mfc120u__2576	imports
+0x4c1ff4	data	__imp_mfc120u__2071	imports
+0x4c1ff8	data	__imp_mfc120u__11011	imports
+0x4c1ffc	data	__imp_mfc120u__3024	imports
+0x4c2000	data	__imp_mfc120u__9172	imports
+0x4c2004	data	__imp_mfc120u__8878	imports
+0x4c2008	data	__imp_mfc120u__12547	imports
+0x4c200c	data	__imp_mfc120u__13347	imports
+0x4c2010	data	__imp_mfc120u__3973	imports
+0x4c2014	data	__imp_mfc120u__4466	imports
+0x4c2018	data	__imp_mfc120u__11145	imports
+0x4c201c	data	__imp_mfc120u__14158	imports
+0x4c2020	data	__imp_mfc120u__9469	imports
+0x4c2024	data	__imp_mfc120u__9477	imports
+0x4c2028	data	__imp_mfc120u__9859	imports
+0x4c202c	data	__imp_mfc120u__9575	imports
+0x4c2030	data	__imp_mfc120u__9493	imports
+0x4c2034	data	__imp_mfc120u__6937	imports
+0x4c2038	data	__imp_mfc120u__6438	imports
+0x4c203c	data	__imp_mfc120u__12993	imports
+0x4c2040	data	__imp_mfc120u__12050	imports
+0x4c2044	data	__imp_mfc120u__8057	imports
+0x4c2048	data	__imp_mfc120u__8100	imports
+0x4c204c	data	__imp_mfc120u__7006	imports
+0x4c2050	data	__imp_mfc120u__8107	imports
+0x4c2054	data	__imp_mfc120u__5063	imports
+0x4c2058	data	__imp_mfc120u__2652	imports
+0x4c205c	data	__imp_mfc120u__4353	imports
+0x4c2060	data	__imp_mfc120u__4005	imports
+0x4c2064	data	__imp_mfc120u__12352	imports
+0x4c2068	data	__imp_mfc120u__8875	imports
+0x4c206c	data	__imp_mfc120u__8820	imports
+0x4c2070	data	__imp_mfc120u__8321	imports
+0x4c2074	data	__imp_mfc120u__12854	imports
+0x4c2078	data	__imp_mfc120u__14300	imports
+0x4c207c	data	__imp_mfc120u__11630	imports
+0x4c2080	data	__imp_mfc120u__2592	imports
+0x4c2084	data	__imp_mfc120u__1720	imports
+0x4c2088	data	__imp_mfc120u__8025	imports
+0x4c208c	data	__imp_mfc120u__8881	imports
+0x4c2090	data	__imp_mfc120u__14221	imports
+0x4c2094	data	__imp_mfc120u__11010	imports
+0x4c2098	data	__imp_mfc120u__3022	imports
+0x4c209c	data	__imp_mfc120u__11359	imports
+0x4c20a0	data	__imp_mfc120u__9547	imports
+0x4c20a4	data	__imp_mfc120u__8835	imports
+0x4c20a8	data	__imp_mfc120u__3971	imports
+0x4c20ac	data	__imp_mfc120u__4464	imports
+0x4c20b0	data	__imp_mfc120u__14156	imports
+0x4c20b4	data	__imp_mfc120u__3125	imports
+0x4c20b8	data	__imp_mfc120u__3298	imports
+0x4c20bc	data	__imp_mfc120u__7774	imports
+0x4c20c0	data	__imp_mfc120u__2643	imports
+0x4c20c4	data	__imp_mfc120u__14111	imports
+0x4c20c8	data	__imp_mfc120u__5343	imports
+0x4c20cc	data	__imp_mfc120u__3588	imports
+0x4c20d0	data	__imp_mfc120u__4006	imports
+0x4c20d4	data	__imp_mfc120u__3991	imports
+0x4c20d8	data	__imp_mfc120u__14333	imports
+0x4c20dc	data	__imp_mfc120u__13128	imports
+0x4c20e0	data	__imp_mfc120u__4915	imports
+0x4c20e4	data	__imp_mfc120u__3090	imports
+0x4c20e8	data	__imp_mfc120u__14163	imports
+0x4c20ec	data	__imp_mfc120u__4139	imports
+0x4c20f0	data	__imp_mfc120u__2056	imports
+0x4c20f4	data	__imp_mfc120u__11603	imports
+0x4c20f8	data	__imp_mfc120u__14142	imports
+0x4c20fc	data	__imp_mfc120u__13186	imports
+0x4c2100	data	__imp_mfc120u__2720	imports
+0x4c2104	data	__imp_mfc120u__2742	imports
+0x4c2108	data	__imp_mfc120u__11472	imports
+0x4c210c	data	__imp_mfc120u__6613	imports
+0x4c2110	data	__imp_mfc120u__13009	imports
+0x4c2114	data	__imp_mfc120u__5961	imports
+0x4c2118	data	__imp_mfc120u__11588	imports
+0x4c211c	data	__imp_mfc120u__4873	imports
+0x4c2120	data	__imp_mfc120u__4866	imports
+0x4c2124	data	__imp_mfc120u__1730	imports
+0x4c2128	data	__imp_mfc120u__1722	imports
+0x4c212c	data	__imp_mfc120u__1710	imports
+0x4c2130	data	__imp_mfc120u__9128	imports
+0x4c2134	data	__imp_mfc120u__12083	imports
+0x4c2138	data	__imp_mfc120u__4344	imports
+0x4c213c	data	__imp_mfc120u__14173	imports
+0x4c2140	data	__imp_mfc120u__2042	imports
+0x4c2144	data	__imp_mfc120u__8876	imports
+0x4c2148	data	__imp_mfc120u__8821	imports
+0x4c214c	data	__imp_mfc120u__8333	imports
+0x4c2150	data	__imp_mfc120u__12867	imports
+0x4c2154	data	__imp_mfc120u__11206	imports
+0x4c2158	data	__imp_mfc120u__1733	imports
+0x4c215c	data	__imp_mfc120u__2604	imports
+0x4c2160	data	__imp_mfc120u__4083	imports
+0x4c2164	data	__imp_mfc120u__2630	imports
+0x4c2168	data	__imp_mfc120u__8837	imports
+0x4c216c	data	__imp_mfc120u__8836	imports
+0x4c2170	data	__imp_mfc120u__8843	imports
+0x4c2174	data	__imp_mfc120u__3175	imports
+0x4c2178	data	__imp_mfc120u__3310	imports
+0x4c217c	data	__imp_mfc120u__12698	imports
+0x4c2180	data	__imp_mfc120u__8272	imports
+0x4c2184	data	__imp_mfc120u__8357	imports
+0x4c2188	data	__imp_mfc120u__8270	imports
+0x4c218c	data	__imp_mfc120u__8359	imports
+0x4c2190	data	__imp_mfc120u__13174	imports
+0x4c2194	data	__imp_mfc120u__7944	imports
+0x4c2198	data	__imp_mfc120u__7945	imports
+0x4c219c	data	__imp_mfc120u__7973	imports
+0x4c21a0	data	__imp_mfc120u__12522	imports
+0x4c21a4	data	__imp_mfc120u__12487	imports
+0x4c21a8	data	__imp_mfc120u__6371	imports
+0x4c21ac	data	__imp_mfc120u__8576	imports
+0x4c21b0	data	__imp_mfc120u__8577	imports
+0x4c21b4	data	__imp_mfc120u__8581	imports
+0x4c21b8	data	__imp_mfc120u__3778	imports
+0x4c21bc	data	__imp_mfc120u__12743	imports
+0x4c21c0	data	__imp_mfc120u__5742	imports
+0x4c21c4	data	__imp_mfc120u__5701	imports
+0x4c21c8	data	__imp_mfc120u__13178	imports
+0x4c21cc	data	__imp_mfc120u__12608	imports
+0x4c21d0	data	__imp_mfc120u__2659	imports
+0x4c21d4	data	__imp_mfc120u__12747	imports
+0x4c21d8	data	__imp_mfc120u__7787	imports
+0x4c21dc	data	__imp_mfc120u__14255	imports
+0x4c21e0	data	__imp_mfc120u__12097	imports
+0x4c21e4	data	__imp_mfc120u__8727	imports
+0x4c21e8	data	__imp_mfc120u__11242	imports
+0x4c21ec	data	__imp_mfc120u__10243	imports
+0x4c21f0	data	__imp_mfc120u__11765	imports
+0x4c21f4	data	__imp_mfc120u__8968	imports
+0x4c21f8	data	__imp_mfc120u__8987	imports
+0x4c21fc	data	__imp_mfc120u__2614	imports
+0x4c2200	data	__imp_mfc120u__4138	imports
+0x4c2204	data	__imp_mfc120u__4151	imports
+0x4c2208	data	__imp_mfc120u__2207	imports
+0x4c220c	data	__imp_mfc120u__1717	imports
+0x4c2210	data	__imp_mfc120u__9865	imports
+0x4c2214	data	__imp_mfc120u__9387	imports
+0x4c2218	data	__imp_mfc120u__9392	imports
+0x4c221c	data	__imp_mfc120u__9402	imports
+0x4c2220	data	__imp_mfc120u__8746	imports
+0x4c2224	data	__imp_mfc120u__4670	imports
+0x4c2228	data	__imp_mfc120u__2052	imports
+0x4c222c	data	__imp_mfc120u__4226	imports
+0x4c2230	data	__imp_mfc120u__3288	imports
+0x4c2234	data	__imp_mfc120u__9263	imports
+0x4c2238	data	__imp_mfc120u__4328	imports
+0x4c223c	data	__imp_mfc120u__8904	imports
+0x4c2240	data	__imp_mfc120u__1942	imports
+0x4c2244	data	__imp_mfc120u__14033	imports
+0x4c2248	data	__imp_mfc120u__2617	imports
+0x4c224c	data	__imp_mfc120u__8819	imports
+0x4c2250	data	__imp_mfc120u__12842	imports
+0x4c2254	data	__imp_mfc120u__8308	imports
+0x4c2258	data	__imp_mfc120u__14114	imports
+0x4c225c	data	__imp_mfc120u__6562	imports
+0x4c2260	data	__imp_mfc120u__5940	imports
+0x4c2264	data	__imp_mfc120u__11987	imports
+0x4c2268	data	__imp_mfc120u__4872	imports
+0x4c226c	data	__imp_mfc120u__4865	imports
+0x4c2270	data	__imp_mfc120u__14576	imports
+0x4c2274	data	__imp_mfc120u__1729	imports
+0x4c2278	data	__imp_mfc120u__1721	imports
+0x4c227c	data	__imp_mfc120u__1709	imports
+0x4c2280	data	__imp_mfc120u__9126	imports
+0x4c2284	data	__imp_mfc120u__12078	imports
+0x4c2288	data	__imp_mfc120u__14439	imports
+0x4c228c	data	__imp_mfc120u__8330	imports
+0x4c2290	data	__imp_mfc120u__12864	imports
+0x4c2294	data	__imp_mfc120u__11637	imports
+0x4c2298	data	__imp_mfc120u__10972	imports
+0x4c229c	data	__imp_mfc120u__11203	imports
+0x4c22a0	data	__imp_mfc120u__2601	imports
+0x4c22a4	data	__imp_mfc120u__11137	imports
+0x4c22a8	data	__imp_mfc120u__8300	imports
+0x4c22ac	data	__imp_mfc120u__8299	imports
+0x4c22b0	data	__imp_mfc120u__8288	imports
+0x4c22b4	data	__imp_mfc120u__13074	imports
+0x4c22b8	data	__imp_mfc120u__7778	imports
+0x4c22bc	data	__imp_mfc120u__5363	imports
+0x4c22c0	data	__imp_mfc120u__5525	imports
+0x4c22c4	data	__imp_mfc120u__9039	imports
+0x4c22c8	data	__imp_mfc120u__9882	imports
+0x4c22cc	data	__imp_mfc120u__4270	imports
+0x4c22d0	data	__imp_mfc120u__11394	imports
+0x4c22d4	data	__imp_mfc120u__14254	imports
+0x4c22d8	data	__imp_mfc120u__10050	imports
+0x4c22dc	data	__imp_mfc120u__11311	imports
+0x4c22e0	data	__imp_mfc120u__8886	imports
+0x4c22e4	data	__imp_mfc120u__5874	imports
+0x4c22e8	data	__imp_mfc120u__4216	imports
+0x4c22ec	data	__imp_mfc120u__4232	imports
+0x4c22f0	data	__imp_mfc120u__4145	imports
+0x4c22f4	data	__imp_mfc120u__4144	imports
+0x4c22f8	data	__imp_mfc120u__4601	imports
+0x4c22fc	data	__imp_mfc120u__4142	imports
+0x4c2300	data	__imp_mfc120u__4217	imports
+0x4c2304	data	__imp_mfc120u__6845	imports
+0x4c2308	data	__imp_mfc120u__11727	imports
+0x4c230c	data	__imp_mfc120u__10059	imports
+0x4c2310	data	__imp_mfc120u__9656	imports
+0x4c2314	data	__imp_mfc120u__9593	imports
+0x4c2318	data	__imp_mfc120u__9615	imports
+0x4c231c	data	__imp_mfc120u__9472	imports
+0x4c2320	data	__imp_mfc120u__9789	imports
+0x4c2324	data	__imp_mfc120u__9605	imports
+0x4c2328	data	__imp_mfc120u__9661	imports
+0x4c232c	data	__imp_mfc120u__9514	imports
+0x4c2330	data	__imp_mfc120u__9617	imports
+0x4c2334	data	__imp_mfc120u__9808	imports
+0x4c2338	data	__imp_mfc120u__6858	imports
+0x4c233c	data	__imp_mfc120u__9812	imports
+0x4c2340	data	__imp_mfc120u__9816	imports
+0x4c2344	data	__imp_mfc120u__9534	imports
+0x4c2348	data	__imp_mfc120u__9529	imports
+0x4c234c	data	__imp_mfc120u__9551	imports
+0x4c2350	data	__imp_mfc120u__9855	imports
+0x4c2354	data	__imp_mfc120u__9609	imports
+0x4c2358	data	__imp_mfc120u__9612	imports
+0x4c235c	data	__imp_mfc120u__10066	imports
+0x4c2360	data	__imp_mfc120u__9497	imports
+0x4c2364	data	__imp_mfc120u__9503	imports
+0x4c2368	data	__imp_mfc120u__10289	imports
+0x4c236c	data	__imp_mfc120u__5589	imports
+0x4c2370	data	__imp_mfc120u__8096	imports
+0x4c2374	data	__imp_mfc120u__5854	imports
+0x4c2378	data	__imp_mfc120u__10298	imports
+0x4c237c	data	__imp_mfc120u__9598	imports
+0x4c2380	data	__imp_mfc120u__9603	imports
+0x4c2384	data	__imp_mfc120u__8144	imports
+0x4c2388	data	__imp_mfc120u__7556	imports
+0x4c238c	data	__imp_mfc120u__8208	imports
+0x4c2390	data	__imp_mfc120u__7559	imports
+0x4c2394	data	__imp_mfc120u__7853	imports
+0x4c2398	data	__imp_mfc120u__5060	imports
+0x4c239c	data	__imp_mfc120u__9511	imports
+0x4c23a0	data	__imp_mfc120u__9507	imports
+0x4c23a4	data	__imp_mfc120u__10072	imports
+0x4c23a8	data	__imp_mfc120u__9509	imports
+0x4c23ac	data	__imp_mfc120u__10097	imports
+0x4c23b0	data	__imp_mfc120u__9646	imports
+0x4c23b4	data	__imp_mfc120u__9643	imports
+0x4c23b8	data	__imp_mfc120u__10094	imports
+0x4c23bc	data	__imp_mfc120u__9993	imports
+0x4c23c0	data	__imp_mfc120u__9821	imports
+0x4c23c4	data	__imp_mfc120u__10120	imports
+0x4c23c8	data	__imp_mfc120u__9829	imports
+0x4c23cc	data	__imp_mfc120u__9827	imports
+0x4c23d0	data	__imp_mfc120u__10000	imports
+0x4c23d4	data	__imp_mfc120u__9834	imports
+0x4c23d8	data	__imp_mfc120u__6890	imports
+0x4c23dc	data	__imp_mfc120u__10006	imports
+0x4c23e0	data	__imp_mfc120u__6909	imports
+0x4c23e4	data	__imp_mfc120u__6898	imports
+0x4c23e8	data	__imp_mfc120u__9830	imports
+0x4c23ec	data	__imp_mfc120u__10075	imports
+0x4c23f0	data	__imp_mfc120u__9588	imports
+0x4c23f4	data	__imp_mfc120u__10088	imports
+0x4c23f8	data	__imp_mfc120u__9622	imports
+0x4c23fc	data	__imp_mfc120u__9560	imports
+0x4c2400	data	__imp_mfc120u__10080	imports
+0x4c2404	data	__imp_mfc120u__9568	imports
+0x4c2408	data	__imp_mfc120u__9570	imports
+0x4c240c	data	__imp_mfc120u__9681	imports
+0x4c2410	data	__imp_mfc120u__10127	imports
+0x4c2414	data	__imp_mfc120u__9849	imports
+0x4c2418	data	__imp_mfc120u__9852	imports
+0x4c241c	data	__imp_mfc120u__10123	imports
+0x4c2420	data	__imp_mfc120u__9844	imports
+0x4c2424	data	__imp_mfc120u__9839	imports
+0x4c2428	data	__imp_mfc120u__9783	imports
+0x4c242c	data	__imp_mfc120u__9861	imports
+0x4c2430	data	__imp_mfc120u__9666	imports
+0x4c2434	data	__imp_mfc120u__9557	imports
+0x4c2438	data	__imp_mfc120u__6264	imports
+0x4c243c	data	__imp_mfc120u__6268	imports
+0x4c2440	data	__imp_mfc120u__9803	imports
+0x4c2444	data	__imp_mfc120u__9805	imports
+0x4c2448	data	__imp_mfc120u__10117	imports
+0x4c244c	data	__imp_mfc120u__9521	imports
+0x4c2450	data	__imp_mfc120u__9524	imports
+0x4c2454	data	__imp_mfc120u__9539	imports
+0x4c2458	data	__imp_mfc120u__10040	imports
+0x4c245c	data	__imp_mfc120u__9466	imports
+0x4c2460	data	__imp_mfc120u__4989	imports
+0x4c2464	data	__imp_mfc120u__9490	imports
+0x4c2468	data	__imp_mfc120u__9798	imports
+0x4c246c	data	__imp_mfc120u__6831	imports
+0x4c2470	data	__imp_mfc120u__6834	imports
+0x4c2474	data	__imp_mfc120u__6835	imports
+0x4c2478	data	__imp_mfc120u__10101	imports
+0x4c247c	data	__imp_mfc120u__9669	imports
+0x4c2480	data	__imp_mfc120u__9677	imports
+0x4c2484	data	__imp_mfc120u__9988	imports
+0x4c2488	data	__imp_mfc120u__9672	imports
+0x4c248c	data	__imp_mfc120u__8063	imports
+0x4c2490	data	__imp_mfc120u__11342	imports
+0x4c2494	data	__imp_mfc120u__8790	imports
+0x4c2498	data	__imp_mfc120u__10839	imports
+0x4c249c	data	__imp_mfc120u__10747	imports
+0x4c24a0	data	__imp_mfc120u__6074	imports
+0x4c24a4	data	__imp_mfc120u__9779	imports
+0x4c24a8	data	__imp_mfc120u__9685	imports
+0x4c24ac	data	__imp_mfc120u__9701	imports
+0x4c24b0	data	__imp_mfc120u__9713	imports
+0x4c24b4	data	__imp_mfc120u__9708	imports
+0x4c24b8	data	__imp_mfc120u__9745	imports
+0x4c24bc	data	__imp_mfc120u__9748	imports
+0x4c24c0	data	__imp_mfc120u__9734	imports
+0x4c24c4	data	__imp_mfc120u__9720	imports
+0x4c24c8	data	__imp_mfc120u__9722	imports
+0x4c24cc	data	__imp_mfc120u__9724	imports
+0x4c24d0	data	__imp_mfc120u__10104	imports
+0x4c24d4	data	__imp_mfc120u__10108	imports
+0x4c24d8	data	__imp_mfc120u__9688	imports
+0x4c24dc	data	__imp_mfc120u__9741	imports
+0x4c24e0	data	__imp_mfc120u__10110	imports
+0x4c24e4	data	__imp_mfc120u__9737	imports
+0x4c24e8	data	__imp_mfc120u__9695	imports
+0x4c24ec	data	__imp_mfc120u__6357	imports
+0x4c24f0	data	__imp_mfc120u__9698	imports
+0x4c24f4	data	__imp_mfc120u__9693	imports
+0x4c24f8	data	__imp_mfc120u__9542	imports
+0x4c24fc	data	__imp_mfc120u__9739	imports
+0x4c2500	data	__imp_mfc120u__10112	imports
+0x4c2504	data	__imp_mfc120u__9758	imports
+0x4c2508	data	__imp_mfc120u__9732	imports
+0x4c250c	data	__imp_mfc120u__9728	imports
+0x4c2510	data	__imp_mfc120u__9726	imports
+0x4c2514	data	__imp_mfc120u__12791	imports
+0x4c2518	data	__imp_mfc120u__9705	imports
+0x4c251c	data	__imp_mfc120u__9775	imports
+0x4c2520	data	__imp_mfc120u__6359	imports
+0x4c2524	data	__imp_mfc120u__9771	imports
+0x4c2528	data	__imp_mfc120u__9763	imports
+0x4c252c	data	__imp_mfc120u__9767	imports
+0x4c2530	data	__imp_mfc120u__9752	imports
+0x4c2534	data	__imp_mfc120u__10115	imports
+0x4c2538	data	__imp_mfc120u__6355	imports
+0x4c253c	data	__imp_mfc120u__9755	imports
+0x4c2540	data	__imp_mfc120u__9731	imports
+0x4c2544	data	__imp_mfc120u__9716	imports
+0x4c2548	data	__imp_mfc120u__6354	imports
+0x4c254c	data	__imp_mfc120u__6361	imports
+0x4c2550	data	__imp_mfc120u__6351	imports
+0x4c2554	data	__imp_mfc120u__9718	imports
+0x4c2558	data	__imp_mfc120u__9986	imports
+0x4c255c	data	__imp_mfc120u__7564	imports
+0x4c2560	data	__imp_mfc120u__10129	imports
+0x4c2564	data	__imp_mfc120u__6815	imports
+0x4c2568	data	__imp_mfc120u__9795	imports
+0x4c256c	data	__imp_mfc120u__10294	imports
+0x4c2570	data	__imp_mfc120u__9517	imports
+0x4c2574	data	__imp_mfc120u__3354	imports
+0x4c2578	data	__imp_mfc120u__4559	imports
+0x4c257c	data	__imp_mfc120u__7683	imports
+0x4c2580	data	__imp_mfc120u__10082	imports
+0x4c2584	data	__imp_mfc120u__5000	imports
+0x4c2588	data	__imp_mfc120u__4148	imports
+0x4c258c	data	__imp_mfc120u__8653	imports
+0x4c2590	data	__imp_mfc120u__2772	imports
+0x4c2594	data	__imp_mfc120u__5419	imports
+0x4c2598	data	__imp_mfc120u__6458	imports
+0x4c259c	data	__imp_mfc120u__7411	imports
+0x4c25a0	data	__imp_mfc120u__5574	imports
+0x4c25a4	data	__imp_mfc120u__5740	imports
+0x4c25a8	data	__imp_mfc120u__6298	imports
+0x4c25ac	data	__imp_mfc120u__7004	imports
+0x4c25b0	data	__imp_mfc120u__462	imports
+0x4c25b4	data	__imp_mfc120u__630	imports
+0x4c25b8	data	__imp_mfc120u__1233	imports
+0x4c25bc	data	__imp_mfc120u__1110	imports
+0x4c25c0	data	__imp_mfc120u__7384	imports
+0x4c25c4	data	__imp_mfc120u__13956	imports
+0x4c25c8	data	__imp_mfc120u__6812	imports
+0x4c25cc	data	__imp_mfc120u__2544	imports
+0x4c25d0	data	__imp_mfc120u__9116	imports
+0x4c25d4	data	__imp_mfc120u__12048	imports
+0x4c25d8	data	__imp_mfc120u__9125	imports
+0x4c25dc	data	__imp_mfc120u__10881	imports
+0x4c25e0	data	__imp_mfc120u__12076	imports
+0x4c25e4	data	__imp_mfc120u__8858	imports
+0x4c25e8	data	__imp_mfc120u__11116	imports
+0x4c25ec	data	__imp_mfc120u__11207	imports
+0x4c25f0	data	__imp_mfc120u__10451	imports
+0x4c25f4	data	__imp_mfc120u__11050	imports
+0x4c25f8	data	__imp_mfc120u__11807	imports
+0x4c25fc	data	__imp_mfc120u__11810	imports
+0x4c2600	data	__imp_mfc120u__11808	imports
+0x4c2604	data	__imp_mfc120u__11809	imports
+0x4c2608	data	__imp_mfc120u__6212	imports
+0x4c260c	data	__imp_mfc120u__6025	imports
+0x4c2610	data	__imp_mfc120u__6752	imports
+0x4c2614	data	__imp_mfc120u__1459	imports
+0x4c2618	data	__imp_mfc120u__460	imports
+0x4c261c	data	__imp_mfc120u__7125	imports
+0x4c2620	data	__imp_mfc120u__654	imports
+0x4c2624	data	__imp_mfc120u__1253	imports
+0x4c2628	data	__imp_mfc120u__7447	imports
+0x4c262c	data	__imp_mfc120u__10361	imports
+0x4c2630	data	__imp_mfc120u__8923	imports
+0x4c2634	data	__imp_mfc120u__7699	imports
+0x4c2638	data	__imp_mfc120u__7126	imports
+0x4c263c	data	__imp_mfc120u__658	imports
+0x4c2640	data	__imp_mfc120u__1254	imports
+0x4c2644	data	__imp_mfc120u__13547	imports
+0x4c2648	data	__imp_mfc120u__13458	imports
+0x4c264c	data	__imp_mfc120u__1884	imports
+0x4c2650	data	__imp_mfc120u__7448	imports
+0x4c2654	data	__imp_mfc120u__10362	imports
+0x4c2658	data	__imp_mfc120u__13333	imports
+0x4c265c	data	__imp_mfc120u__13085	imports
+0x4c2660	data	__imp_mfc120u__4947	imports
+0x4c2664	data	__imp_mfc120u__9106	imports
+0x4c2668	data	__imp_mfc120u__3012	imports
+0x4c266c	data	__imp_mfc120u__9134	imports
+0x4c2670	data	__imp_mfc120u__12077	imports
+0x4c2674	data	__imp_mfc120u__3196	imports
+0x4c2678	data	__imp_mfc120u__2552	imports
+0x4c267c	data	__imp_mfc120u__7892	imports
+0x4c2680	data	__imp_mfc120u__11087	imports
+0x4c2684	data	__imp_mfc120u__9649	imports
+0x4c2688	data	__imp_mfc120u__2115	imports
+0x4c268c	data	__imp_mfc120u__5030	imports
+0x4c2690	data	__imp_mfc120u__12947	imports
+0x4c2694	data	__imp_mfc120u__13930	imports
+0x4c2698	data	__imp_mfc120u__760	imports
+0x4c269c	data	__imp_mfc120u__1305	imports
+0x4c26a0	data	__imp_mfc120u__1859	imports
+0x4c26a4	data	__imp_mfc120u__8434	imports
+0x4c26a8	data	__imp_mfc120u__12639	imports
+0x4c26ac	data	__imp_mfc120u__13980	imports
+0x4c26b0	data	__imp_mfc120u__8617	imports
+0x4c26b4	data	__imp_mfc120u__5719	imports
+0x4c26b8	data	__imp_mfc120u__278	imports
+0x4c26bc	data	__imp_mfc120u__287	imports
+0x4c26c0	data	__imp_mfc120u__1043	imports
+0x4c26c4	data	__imp_mfc120u__300	imports
+0x4c26c8	data	__imp_mfc120u__2343	imports
+0x4c26cc	data	__imp_mfc120u__2347	imports
+0x4c26d0	data	__imp_mfc120u__8921	imports
+0x4c26d4	data	__imp_mfc120u__13516	imports
+0x4c26d8	data	__imp_mfc120u__7951	imports
+0x4c26dc	data	__imp_mfc120u__13514	imports
+0x4c26e0	data	__imp_mfc120u__7946	imports
+0x4c26e4	data	__imp_mfc120u__1234	imports
+0x4c26e8	data	__imp_mfc120u__631	imports
+0x4c26ec	data	__imp_mfc120u__1063	imports
+0x4c26f0	data	__imp_mfc120u__6393	imports
+0x4c26f4	data	__imp_mfc120u__9007	imports
+0x4c26f8	data	__imp_mfc120u__3103	imports
+0x4c26fc	data	__imp_mfc120u__4176	imports
+0x4c2700	data	__imp_mfc120u__7002	imports
+0x4c2704	data	__imp_mfc120u__1067	imports
+0x4c2708	data	__imp_mfc120u__6400	imports
+0x4c270c	data	__imp_mfc120u__9009	imports
+0x4c2710	data	__imp_mfc120u__3105	imports
+0x4c2714	data	__imp_mfc120u__4179	imports
+0x4c2718	data	__imp_mfc120u__8626	imports
+0x4c271c	data	__imp_mfc120u__2951	imports
+0x4c2720	data	__imp_mfc120u__3829	imports
+0x4c2724	data	__imp_mfc120u__1441	imports
+0x4c2728	data	__imp_mfc120u__6735	imports
+0x4c272c	data	__imp_mfc120u__9016	imports
+0x4c2730	data	__imp_mfc120u__3215	imports
+0x4c2734	data	__imp_mfc120u__4193	imports
+0x4c2738	data	__imp_mfc120u__6032	imports
+0x4c273c	data	__imp_mfc120u__999	imports
+0x4c2740	data	__imp_mfc120u__1471	imports
+0x4c2744	data	__imp_mfc120u__9090	imports
+0x4c2748	data	__imp_mfc120u__458	imports
+0x4c274c	data	__imp_mfc120u__13111	imports
+0x4c2750	data	__imp_mfc120u__2954	imports
+0x4c2754	data	__imp_mfc120u__5020	imports
+0x4c2758	data	__imp_mfc120u__4620	imports
+0x4c275c	data	__imp_mfc120u__4065	imports
+0x4c2760	data	__imp_mfc120u__494	imports
+0x4c2764	data	__imp_mfc120u__6455	imports
+0x4c2768	data	__imp_mfc120u__12655	imports
+0x4c276c	data	__imp_mfc120u__8639	imports
+0x4c2770	data	__imp_mfc120u__6219	imports
+0x4c2774	data	__imp_mfc120u__4050	imports
+0x4c2778	data	__imp_mfc120u__1140	imports
+0x4c277c	data	__imp_mfc120u__501	imports
+0x4c2780	data	__imp_mfc120u__1521	imports
+0x4c2784	data	__imp_mfc120u__5417	imports
+0x4c2788	data	__imp_mfc120u__12633	imports
+0x4c278c	data	__imp_mfc120u__2724	imports
+0x4c2790	data	__imp_mfc120u__5785	imports
+0x4c2794	data	__imp_mfc120u__2435	imports
+0x4c2798	data	__imp_mfc120u__13997	imports
+0x4c279c	data	__imp_mfc120u__3806	imports
+0x4c27a0	data	__imp_mfc120u__8594	imports
+0x4c27a4	data	__imp_mfc120u__1882	imports
+0x4c27a8	data	__imp_mfc120u__12430	imports
+0x4c27ac	data	__imp_mfc120u__12473	imports
+0x4c27b0	data	__imp_mfc120u__11938	imports
+0x4c27b4	data	__imp_mfc120u__5019	imports
+0x4c27b8	data	__imp_mfc120u__1520	imports
+0x4c27bc	data	__imp_mfc120u__8183	imports
+0x4c27c0	data	__imp_mfc120u__11134	imports
+0x4c27c4	data	__imp_mfc120u__8791	imports
+0x4c27c8	data	__imp_mfc120u__8219	imports
+0x4c27cc	data	__imp_mfc120u__14208	imports
+0x4c27d0	data	__imp_mfc120u__7735	imports
+0x4c27d4	data	__imp_mfc120u__9351	imports
+0x4c27d8	data	__imp_mfc120u__3239	imports
+0x4c27dc	data	__imp_mfc120u__9249	imports
+0x4c27e0	data	__imp_mfc120u__2036	imports
+0x4c27e4	data	__imp_mfc120u__2017	imports
+0x4c27e8	data	__imp_mfc120u__7644	imports
+0x4c27ec	data	__imp_mfc120u__6071	imports
+0x4c27f0	data	__imp_mfc120u__12129	imports
+0x4c27f4	data	__imp_mfc120u__11224	imports
+0x4c27f8	data	__imp_mfc120u__11184	imports
+0x4c27fc	data	__imp_mfc120u__9272	imports
+0x4c2800	data	__imp_mfc120u__9050	imports
+0x4c2804	data	__imp_mfc120u__9038	imports
+0x4c2808	data	__imp_mfc120u__9923	imports
+0x4c280c	data	__imp_mfc120u__3583	imports
+0x4c2810	data	__imp_mfc120u__3363	imports
+0x4c2814	data	__imp_mfc120u__9876	imports
+0x4c2818	data	__imp_mfc120u__11758	imports
+0x4c281c	data	__imp_mfc120u__4790	imports
+0x4c2820	data	__imp_mfc120u__9545	imports
+0x4c2824	data	__imp_mfc120u__9494	imports
+0x4c2828	data	__imp_mfc120u__9555	imports
+0x4c282c	data	__imp_mfc120u__9864	imports
+0x4c2830	data	__imp_mfc120u__12704	imports
+0x4c2834	data	__imp_mfc120u__6555	imports
+0x4c2838	data	__imp_mfc120u__895	imports
+0x4c283c	data	__imp_mfc120u__9625	imports
+0x4c2840	data	__imp_mfc120u__1251	imports
+0x4c2844	data	__imp_mfc120u__652	imports
+0x4c2848	data	__imp_mfc120u__4550	imports
+0x4c284c	data	__imp_mfc120u__1956	imports
+0x4c2850	data	__imp_mfc120u__878	imports
+0x4c2854	data	__imp_mfc120u__651	imports
+0x4c2858	data	__imp_mfc120u__3842	imports
+0x4c285c	data	__imp_mfc120u__13283	imports
+0x4c2860	data	__imp_mfc120u__1542	imports
+0x4c2864	data	__imp_mfc120u__13966	imports
+0x4c2868	data	__imp_mfc120u__1917	imports
+0x4c286c	data	__imp_mfc120u__266	imports
+0x4c2870	data	__imp_mfc120u__7776	imports
+0x4c2874	data	__imp_mfc120u__10530	imports
+0x4c2878	data	__imp_mfc120u__7445	imports
+0x4c287c	data	__imp_mfc120u__1168	imports
+0x4c2880	data	__imp_mfc120u__540	imports
+0x4c2884	data	__imp_mfc120u__6257	imports
+0x4c2888	data	__imp_mfc120u__12755	imports
+0x4c288c	data	__imp_mfc120u__14277	imports
+0x4c2890	data	__imp_mfc120u__8638	imports
+0x4c2894	data	__imp_mfc120u__8242	imports
+0x4c2898	data	__imp_mfc120u__9929	imports
+0x4c289c	data	__imp_mfc120u__9928	imports
+0x4c28a0	data	__imp_mfc120u__11621	imports
+0x4c28a4	data	__imp_mfc120u__8794	imports
+0x4c28a8	data	__imp_mfc120u__8804	imports
+0x4c28ac	data	__imp_mfc120u__10390	imports
+0x4c28b0	data	__imp_mfc120u__10999	imports
+0x4c28b4	data	__imp_mfc120u__9407	imports
+0x4c28b8	data	__imp_mfc120u__9872	imports
+0x4c28bc	data	__imp_mfc120u__4882	imports
+0x4c28c0	data	__imp_mfc120u__4931	imports
+0x4c28c4	data	__imp_mfc120u__4903	imports
+0x4c28c8	data	__imp_mfc120u__4864	imports
+0x4c28cc	data	__imp_mfc120u__4871	imports
+0x4c28d0	data	__imp_mfc120u__6770	imports
+0x4c28d4	data	__imp_mfc120u__12038	imports
+0x4c28d8	data	__imp_mfc120u__6552	imports
+0x4c28dc	data	__imp_mfc120u__4605	imports
+0x4c28e0	data	__imp_mfc120u__6779	imports
+0x4c28e4	data	__imp_mfc120u__13796	imports
+0x4c28e8	data	__imp_mfc120u__13795	imports
+0x4c28ec	data	__imp_mfc120u__12397	imports
+0x4c28f0	data	__imp_mfc120u__13288	imports
+0x4c28f4	data	__imp_mfc120u__5239	imports
+0x4c28f8	data	__imp_mfc120u__4355	imports
+0x4c28fc	data	__imp_mfc120u__3165	imports
+0x4c2900	data	__imp_mfc120u__2217	imports
+0x4c2904	data	__imp_mfc120u__3790	imports
+0x4c2908	data	__imp_mfc120u__5176	imports
+0x4c290c	data	__imp_mfc120u__4842	imports
+0x4c2910	data	__imp_mfc120u__2484	imports
+0x4c2914	data	__imp_mfc120u__3889	imports
+0x4c2918	data	__imp_mfc120u__6510	imports
+0x4c291c	data	__imp_mfc120u__4184	imports
+0x4c2920	data	__imp_mfc120u__8628	imports
+0x4c2924	data	__imp_mfc120u__1369	imports
+0x4c2928	data	__imp_mfc120u__1248	imports
+0x4c292c	data	__imp_mfc120u__647	imports
+0x4c2930	data	__imp_mfc120u__11410	imports
+0x4c2934	data	__imp_mfc120u__9180	imports
+0x4c2938	data	__imp_mfc120u__7385	imports
+0x4c293c	data	__imp_mfc120u__13991	imports
+0x4c2940	data	__imp_mfc120u__3129	imports
+0x4c2944	data	__imp_mfc120u__6874	imports
+0x4c2948	data	__imp_mfc120u__9582	imports
+0x4c294c	data	__imp_mfc120u__13907	imports
+0x4c2950	data	__imp_mfc120u__5753	imports
+0x4c2954	data	__imp_mfc120u__4839	imports
+0x4c2958	data	__imp_mfc120u__12966	imports
+0x4c295c	data	__imp_mfc120u__6434	imports
+0x4c2960	data	__imp_mfc120u__1210	imports
+0x4c2964	data	__imp_mfc120u__594	imports
+0x4c2968	data	__imp_mfc120u__1130	imports
+0x4c296c	data	__imp_mfc120u__6452	imports
+0x4c2970	data	__imp_mfc120u__1177	imports
+0x4c2974	data	__imp_mfc120u__6492	imports
+0x4c2978	data	__imp_mfc120u__5887	imports
+0x4c297c	data	__imp_mfc120u__9013	imports
+0x4c2980	data	__imp_mfc120u__4182	imports
+0x4c2984	data	__imp_mfc120u__306	imports
+0x4c2988	data	__imp_mfc120u__1525	imports
+0x4c298c	data	__imp_mfc120u__1527	imports
+0x4c2990	data	__imp_mfc120u__2955	imports
+0x4c2994	data	__imp_mfc120u__4623	imports
+0x4c2998	data	__imp_mfc120u__8602	imports
+0x4c299c	data	__imp_mfc120u__8595	imports
+0x4c29a0	data	__imp_mfc120u__14279	imports
+0x4c29a4	data	__imp_mfc120u__2712	imports
+0x4c29a8	data	__imp_mfc120u__12793	imports
+0x4c29ac	data	__imp_mfc120u__9867	imports
+0x4c29b0	data	__imp_mfc120u__9395	imports
+0x4c29b4	data	__imp_mfc120u__9405	imports
+0x4c29b8	data	__imp_mfc120u__9390	imports
+0x4c29bc	data	__imp_mfc120u__11160	imports
+0x4c29c0	data	__imp_mfc120u__11157	imports
+0x4c29c4	data	__imp_mfc120u__8186	imports
+0x4c29c8	data	__imp_mfc120u__11963	imports
+0x4c29cc	data	__imp_mfc120u__6773	imports
+0x4c29d0	data	__imp_mfc120u__2639	imports
+0x4c29d4	data	__imp_mfc120u__11998	imports
+0x4c29d8	data	__imp_mfc120u__9107	imports
+0x4c29dc	data	__imp_mfc120u__2500	imports
+0x4c29e0	data	__imp_mfc120u__4063	imports
+0x4c29e4	data	__imp_mfc120u__6700	imports
+0x4c29e8	data	__imp_mfc120u__6696	imports
+0x4c29ec	data	__imp_mfc120u__358	imports
+0x4c29f0	data	__imp_mfc120u__8402	imports
+0x4c29f4	data	__imp_mfc120u__13845	imports
+0x4c29f8	data	__imp_mfc120u__13983	imports
+0x4c29fc	data	__imp_mfc120u__13975	imports
+0x4c2a00	data	__imp_mfc120u__13554	imports
+0x4c2a04	data	__imp_mfc120u__4838	imports
+0x4c2a08	data	__imp_mfc120u__4087	imports
+0x4c2a0c	data	__imp_mfc120u__2295	imports
+0x4c2a10	data	__imp_mfc120u__1194	imports
+0x4c2a14	data	__imp_mfc120u__571	imports
+0x4c2a18	data	__imp_mfc120u__3911	imports
+0x4c2a1c	data	__imp_mfc120u__12738	imports
+0x4c2a20	data	__imp_mfc120u__12824	imports
+0x4c2a24	data	__imp_mfc120u__1463	imports
+0x4c2a28	data	__imp_mfc120u__988	imports
+0x4c2a2c	data	__imp_mfc120u__7513	imports
+0x4c2a30	data	__imp_mfc120u__7538	imports
+0x4c2a34	data	__imp_mfc120u__7325	imports
+0x4c2a38	data	__imp_mfc120u__1506	imports
+0x4c2a3c	data	__imp_mfc120u__6402	imports
+0x4c2a40	data	__imp_mfc120u__9091	imports
+0x4c2a44	data	__imp_mfc120u__5865	imports
+0x4c2a48	data	__imp_mfc120u__12047	imports
+0x4c2a4c	data	__imp_mfc120u__2718	imports
+0x4c2a50	data	__imp_mfc120u__13612	imports
+0x4c2a54	data	__imp_mfc120u__6121	imports
+0x4c2a58	data	__imp_mfc120u__3122	imports
+0x4c2a5c	data	__imp_mfc120u__3361	imports
+0x4c2a60	data	__imp_mfc120u__3362	imports
+0x4c2a64	data	__imp_mfc120u__11271	imports
+0x4c2a68	data	__imp_mfc120u__10895	imports
+0x4c2a6c	data	__imp_mfc120u__12006	imports
+0x4c2a70	data	__imp_mfc120u__8920	imports
+0x4c2a74	data	__imp_mfc120u__8243	imports
+0x4c2a78	data	__imp_mfc120u__12634	imports
+0x4c2a7c	data	__imp_mfc120u__4621	imports
+0x4c2a80	data	__imp_mfc120u__2949	imports
+0x4c2a84	data	__imp_mfc120u__3925	imports
+0x4c2a88	data	__imp_mfc120u__2572	imports
+0x4c2a8c	data	__imp_mfc120u__2832	imports
+0x4c2a90	data	__imp_mfc120u__14463	imports
+0x4c2a94	data	__imp_mfc120u__1057	imports
+0x4c2a98	data	__imp_mfc120u__346	imports
+0x4c2a9c	data	__imp_mfc120u__3653	imports
+0x4c2aa0	data	__imp_mfc120u__2204	imports
+0x4c2aa4	data	__imp_mfc120u__903	imports
+0x4c2aa8	data	__imp_mfc120u__2214	imports
+0x4c2aac	data	__imp_mfc120u__6392	imports
+0x4c2ab0	data	__imp_mfc120u__1425	imports
+0x4c2ab4	data	__imp_mfc120u__948	imports
+0x4c2ab8	data	__imp_mfc120u__2342	imports
+0x4c2abc	data	__imp_mfc120u__5110	imports
+0x4c2ac0	data	__imp_mfc120u__2354	imports
+0x4c2ac4	data	__imp_mfc120u__321	imports
+0x4c2ac8	data	__imp_mfc120u__6462	imports
+0x4c2acc	data	__imp_mfc120u__4049	imports
+0x4c2ad0	data	__imp_mfc120u__290	imports
+0x4c2ad4	data	__imp_mfc120u__9020	imports
+0x4c2ad8	data	__imp_mfc120u__10136	imports
+0x4c2adc	data	__imp_mfc120u__8101	imports
+0x4c2ae0	data	__imp_mfc120u__5314	imports
+0x4c2ae4	data	__imp_mfc120u__7600	imports
+0x4c2ae8	data	__imp_mfc120u__7610	imports
+0x4c2aec	data	__imp_mfc120u__7609	imports
+0x4c2af0	data	__imp_mfc120u__5137	imports
+0x4c2af4	data	__imp_mfc120u__5316	imports
+0x4c2af8	data	__imp_mfc120u__5160	imports
+0x4c2afc	data	__imp_mfc120u__1726	imports
+0x4c2b00	data	__imp_mfc120u__1735	imports
+0x4c2b04	data	__imp_mfc120u__4878	imports
+0x4c2b08	data	__imp_mfc120u__4919	imports
+0x4c2b0c	data	__imp_mfc120u__4886	imports
+0x4c2b10	data	__imp_mfc120u__4898	imports
+0x4c2b14	data	__imp_mfc120u__4894	imports
+0x4c2b18	data	__imp_mfc120u__4890	imports
+0x4c2b1c	data	__imp_mfc120u__4000	imports
+0x4c2b20	data	__imp_mfc120u__4927	imports
+0x4c2b24	data	__imp_mfc120u__5693	imports
+0x4c2b28	data	__imp_mfc120u__5430	imports
+0x4c2b2c	data	__imp_mfc120u__9231	imports
+0x4c2b30	data	__imp_mfc120u__5664	imports
+0x4c2b34	data	__imp_mfc120u__5454	imports
+0x4c2b38	data	__imp_mfc120u__5157	imports
+0x4c2b3c	data	__imp_mfc120u__12043	imports
+0x4c2b40	data	__imp_mfc120u__3223	imports
+0x4c2b44	data	__imp_mfc120u__3329	imports
+0x4c2b48	data	__imp_mfc120u__3330	imports
+0x4c2b4c	data	__imp_mfc120u__3898	imports
+0x4c2b50	data	__imp_mfc120u__11999	imports
+0x4c2b54	data	__imp_mfc120u__2640	imports
+0x4c2b58	data	__imp_mfc120u__5838	imports
+0x4c2b5c	data	__imp_mfc120u__13563	imports
+0x4c2b60	data	__imp_mfc120u__11592	imports
+0x4c2b64	data	__imp_mfc120u__6774	imports
+0x4c2b68	data	__imp_mfc120u__14455	imports
+0x4c2b6c	data	__imp_mfc120u__7807	imports
+0x4c2b70	data	__imp_mfc120u__14449	imports
+0x4c2b74	data	__imp_mfc120u__3013	imports
+0x4c2b78	data	__imp_mfc120u__4451	imports
+0x4c2b7c	data	__imp_mfc120u__9574	imports
+0x4c2b80	data	__imp_mfc120u__4459	imports
+0x4c2b84	data	__imp_mfc120u__4909	imports
+0x4c2b88	data	__imp_mfc120u__4874	imports
+0x4c2b8c	data	__imp_mfc120u__4867	imports
+0x4c2b90	data	__imp_mfc120u__4905	imports
+0x4c2b94	data	__imp_mfc120u__4932	imports
+0x4c2b98	data	__imp_mfc120u__4883	imports
+0x4c2b9c	data	__imp_mfc120u__4916	imports
+0x4c2ba0	data	__imp_mfc120u__4928	imports
+0x4c2ba4	data	__imp_mfc120u__4891	imports
+0x4c2ba8	data	__imp_mfc120u__4895	imports
+0x4c2bac	data	__imp_mfc120u__4899	imports
+0x4c2bb0	data	__imp_mfc120u__4887	imports
+0x4c2bb4	data	__imp_mfc120u__4920	imports
+0x4c2bb8	data	__imp_mfc120u__4879	imports
+0x4c2bbc	data	__imp_mfc120u__1736	imports
+0x4c2bc0	data	__imp_mfc120u__1727	imports
+0x4c2bc4	data	__imp_mfc120u__1731	imports
+0x4c2bc8	data	__imp_mfc120u__1723	imports
+0x4c2bcc	data	__imp_mfc120u__1711	imports
+0x4c2bd0	data	__imp_mfc120u__12132	imports
+0x4c2bd4	data	__imp_mfc120u__12134	imports
+0x4c2bd8	data	__imp_mfc120u__13738	imports
+0x4c2bdc	data	__imp_mfc120u__3224	imports
+0x4c2be0	data	__imp_mfc120u__9137	imports
+0x4c2be4	data	__imp_mfc120u__10883	imports
+0x4c2be8	data	__imp_mfc120u__6875	imports
+0x4c2bec	data	__imp_mfc120u__12095	imports
+0x4c2bf0	data	__imp_mfc120u__8846	imports
+0x4c2bf4	data	__imp_mfc120u__14447	imports
+0x4c2bf8	data	__imp_mfc120u__11811	imports
+0x4c2bfc	data	__imp_mfc120u__3795	imports
+0x4c2c00	data	__imp_mfc120u__11964	imports
+0x4c2c04	data	__imp_mfc120u__11601	imports
+0x4c2c08	data	__imp_mfc120u__11600	imports
+0x4c2c0c	data	__imp_mfc120u__5557	imports
+0x4c2c10	data	__imp_mfc120u__10169	imports
+0x4c2c14	data	__imp_mfc120u__10165	imports
+0x4c2c18	data	__imp_mfc120u__10167	imports
+0x4c2c1c	data	__imp_mfc120u__10168	imports
+0x4c2c20	data	__imp_mfc120u__10166	imports
+0x4c2c24	data	__imp_mfc120u__2719	imports
+0x4c2c28	data	__imp_mfc120u__8092	imports
+0x4c2c2c	data	__imp_mfc120u__3260	imports
+0x4c2c30	data	__imp_mfc120u__3263	imports
+0x4c2c34	data	__imp_mfc120u__13616	imports
+0x4c2c38	data	__imp_mfc120u__6123	imports
+0x4c2c3c	data	__imp_mfc120u__1108	imports
+0x4c2c40	data	__imp_mfc120u__12958	imports
+0x4c2c44	data	__imp_mfc120u__13153	imports
+0x4c2c48	data	__imp_mfc120u__12956	imports
+0x4c2c4c	data	__imp_mfc120u__12957	imports
+0x4c2c50	data	__imp_mfc120u__2478	imports
+0x4c2c54	data	__imp_mfc120u__1105	imports
+0x4c2c58	data	__imp_mfc120u__450	imports
+0x4c2c5c	data	__imp_mfc120u__6469	imports
+0x4c2c60	data	__imp_mfc120u__3839	imports
+0x4c2c64	data	__imp_mfc120u__4772	imports
+0x4c2c68	data	__imp_mfc120u__2262	imports
+0x4c2c6c	data	__imp_mfc120u__6389	imports
+0x4c2c70	data	__imp_mfc120u__286	imports
+0x4c2c74	data	__imp_mfc120u__1648	imports
+0x4c2c78	data	__imp_mfc120u__10896	imports
+0x4c2c7c	data	__imp_mfc120u__2948	imports
+0x4c2c80	data	__imp_mfc120u__8699	imports
+0x4c2c84	data	__imp_mfc120u__12899	imports
+0x4c2c88	data	__imp_mfc120u__4567	imports
+0x4c2c8c	data	__imp_mfc120u__2261	imports
+0x4c2c90	data	__imp_mfc120u__7704	imports
+0x4c2c94	data	__imp_mfc120u__5327	imports
+0x4c2c98	data	__imp_mfc120u__13508	imports
+0x4c2c9c	data	__imp_mfc120u__7956	imports
+0x4c2ca0	data	__imp_mfc120u__4841	imports
+0x4c2ca4	data	__imp_mfc120u__3140	imports
+0x4c2ca8	data	__imp_mfc120u__7382	imports
+0x4c2cac	data	__imp_mfc120u__13404	imports
+0x4c2cb0	data	__imp_mfc120u__4434	imports
+0x4c2cb4	data	__imp_mfc120u__3654	imports
+0x4c2cb8	data	__imp_mfc120u__3773	imports
+0x4c2cbc	data	__imp_mfc120u__14094	imports
+0x4c2cc0	data	__imp_mfc120u__10353	imports
+0x4c2cc4	data	__imp_mfc120u__14367	imports
+0x4c2cc8	data	__imp_mfc120u__2480	imports
+0x4c2ccc	data	__imp_mfc120u__2173	imports
+0x4c2cd0	data	__imp_mfc120u__285	imports
+0x4c2cd4	data	__imp_mfc120u__5824	imports
+0x4c2cd8	data	__imp_mfc120u__2967	imports
+0x4c2cdc	data	__imp_mfc120u__4843	imports
+0x4c2ce0	data	__imp_mfc120u__4442	imports
+0x4c2ce4	data	__imp_mfc120u__1658	imports
+0x4c2ce8	data	__imp_mfc120u__8346	imports
+0x4c2cec	data	__imp_mfc120u__280	imports
+0x4c2cf0	data	__imp_mfc120u__1518	imports
+0x4c2cf4	data	__imp_mfc120u__1042	imports
+0x4c2cf8	data	__imp_mfc120u__296	imports
+0x4c2cfc	data	__imp_mfc120u__1508	imports
+0x4c2d00	data	__imp_mfc120u__839	imports
+0x4c2d04	data	__imp_mfc120u__293	imports
+0x4c2d08	data	__imp_mfc120u__8693	imports
+0x4c2d0c	data	__imp_mfc120u__2367	imports
+0x4c2d10	data	__imp_mfc120u__8247	imports
+0x4c2d14	data	__imp_mfc120u__12933	imports
+0x4c2d18	data	__imp_mfc120u__6713	imports
+0x4c2d1c	data	__imp_mfc120u__1684	imports
+0x4c2d20	data	__imp_mfc120u__14224	imports
+0x4c2d24	data	__imp_mfc120u__4774	imports
+0x4c2d28	data	__imp_mfc120u__8758	imports
+0x4c2d2c	data	__imp_mfc120u__8440	imports
+0x4c2d30	data	__imp_mfc120u__1687	imports
+0x4c2d34	data	__imp_mfc120u__8777	imports
+0x4c2d3c	data	__imp_ole32_CoTaskMemFree	imports
+0x4c2dcc	data	type_info__vftable	vtables
+0x4c3030	data	figure_colour_table	ledger L4
+0x4c3180	data	AddFormulaDlg__messageMap	msgmaps
+0x4c326c	data	CGdiObject__vftable	vtables
+0x4c3378	data	CBitmap__vftable	vtables
+0x4c347c	data	CPen__vftable	vtables
+0x4c3494	data	CImage_ATL__vftable	vtables
+0x4c34a0	data	CBaseView__vftable	vtables
+0x4c366c	data	CFastViewPrintDialog__messageMap	msgmaps
+0x4c36c0	data	CFastViewView__messageMap	msgmaps
+0x4c3700	data	CCommonDialog__vftable	vtables
+0x4c3894	data	CFastViewPrintDialog__vftable	vtables
+0x4c3a2c	data	CBrush__vftable	vtables
+0x4c3a44	data	CFont__vftable	vtables
+0x4c3a5c	data	BlockProperty_BlockPropertyGrid__vftable	vtables
+0x4c3b20	data	BlockPropertyGrid__messageMap	msgmaps
+0x4c3c28	data	str_dimension_diff_tag	ledger L5
+0x4c3d90	data	vtable_figure_polypoint	ledger L4
+0x4c3da4	data	vtable_figure_ellipse	ledger L4
+0x4c3db8	data	vtable_figure_circle	ledger L4
+0x4c3dcc	data	vtable_figure_polygon	ledger L4
+0x4c3de0	data	Figure__vftable	vtables
+0x4c3df4	data	vtable_fvb_calc_context	ledger L6
+0x4c4d9c	data	CFastViewException__vftable	vtables
+0x4c4dc4	data	formula_token_name_block	ledger L1
+0x4c4f1c	data	formula_token_name_phase_b_calc	ledger L2
+0x4c528c	data	ChanPairDlg__messageMap	msgmaps
+0x4c52fc	data	CButton__vftable	vtables
+0x4c5470	data	ChanPairDlg__vftable	vtables
+0x4c5620	data	CComboBox__vftable	vtables
+0x4c57a0	data	CStatic__vftable	vtables
+0x4c5eb8	data	__basic_stringbuf_DU__char_traits_D_std__V__allocator_D_2__std__vftable	vtables
+0x4c5f18	data	_Generic_error_category_std__vftable	vtables
+0x4c5f34	data	error_category_std__vftable	vtables
+0x4c5fac	data	_Iostream_error_category_std__vftable	vtables
+0x4c6004	data	CRgn__vftable	vtables
+0x4c6154	data	__MultiplierDlg__vftable	vtables
+0x4c62e8	data	CEdit__vftable	vtables
+0x4c6454	data	CListCtrl__vftable	vtables
+0x4c65c4	data	vtable_calc_channels_context	ledger L6
+0x4c65e0	data	ChannelsDlg__messageMap	msgmaps
+0x4c6648	data	CircleDiagPane__messageMap	msgmaps
+0x4c69ec	data	CMenu__vftable	vtables
+0x4c6a0c	data	CircleDiagramWnd__vftable	vtables
+0x4c6b98	data	CircleDiagramWnd__messageMap	msgmaps
+0x4c6e14	data	BlockPropertyGrid__vftable	vtables
+0x4c7000	data	CommentItem__vftable	vtables
+0x4c70a8	data	vtable_area_item	ledger L9.47
+0x4c70d4	data	vtable_level_item	ledger L9.47
+0x4c7100	data	vtable_moment_item	ledger L9.47
+0x4c712c	data	CCommentDlg__vftable	vtables
+0x4c72c0	data	COleDropTargetEx__vftable	vtables
+0x4c7338	data	DiagramWnd__vftable	vtables
+0x4c74c4	data	FourieDiagramWnd__messageMap	msgmaps
+0x4c7518	data	DiffDiagPane__messageMap	msgmaps
+0x4c76ec	data	DiffDiagramWnd__vftable	vtables
+0x4c7878	data	DiffDiagramWnd__messageMap	msgmaps
+0x4c7ac4	data	CDocManagerEx__vftable	vtables
+0x4c7b30	data	SplashWnd__vftable	vtables
+0x4c7c9c	data	CFastViewApp__vftable	vtables
+0x4c7df0	data	CFastViewApp__messageMap	msgmaps
+0x4c7ea4	data	AboutWnd__vftable	vtables
+0x4c89a4	data	IDocument_ATL__vftable	vtables
+0x4c89dc	data	CDocumentAdapter_CDocument__vftable	vtables
+0x4c8a20	data	CFastViewDoc__vftable	vtables
+0x4c8be4	data	CFastViewDoc__messageMap	msgmaps
+0x4c8d74	data	CNameFileFilter_ZipArchiveLib__vftable	vtables
+0x4c8d88	data	CFileFilter_ZipArchiveLib__vftable	vtables
+0x4c8d9c	data	CWildcard_ZipArchiveLib__vftable	vtables
+0x4c8dac	data	CZipException__vftable	vtables
+0x4c8db8	data	FileInfoDlg__vftable	vtables
+0x4c8f4c	data	CProgressCtrl__vftable	vtables
+0x4c90c0	data	LoadingDlg__vftable	vtables
+0x4c9254	data	ChannelsDlg__vftable	vtables
+0x4c93e8	data	Element_WrongPlaceLocatorData__vftable	vtables
+0x4c9774	data	vtable_fastview_view	ledger L9
+0x4c9940	data	CFastViewView__messageMap_2	msgmaps
+0x4c9e30	data	CServerItem__vftable	vtables
+0x4ca050	data	CDateTimeCtrl__vftable	vtables
+0x4ca1c0	data	FileFinder22Dlg__vftable	vtables
+0x4ca350	data	FileFinder22Dlg__messageMap	msgmaps
+0x4ca520	data	FourieDiagramSettingsDlg_FourieDiagramWnd__vftable	vtables
+0x4ca6b4	data	FourieDiagramWnd__vftable	vtables
+0x4ca840	data	FourieDiagramWnd__messageMap_2	msgmaps
+0x4ca924	data	FVComtradeConv__vftable	vtables
+0x4ca944	data	FvSpecEdit__messageMap	msgmaps
+0x4ca9cc	data	FvSpecEdit__vftable	vtables
+0x4cab7c	data	LoadingDlg__messageMap	msgmaps
+0x4cacc4	data	__CFramePane_VFourieDiagramWnd____vftable	vtables
+0x4cb06c	data	__CList_II__vftable	vtables
+0x4cb084	data	CMFCRibbonBarEx__vftable	vtables
+0x4cb3f4	data	vtable_param_osc_bar	ledger L9.36
+0x4cb734	data	CMergeBar__vftable	vtables
+0x4cba74	data	CMFCRibbonApplicationButton__vftable	vtables
+0x4cbd00	data	vtable_mainframe	UI_BEHAVIOUR_SPEC §1.1
+0x4cbf34	data	CMainFrame__messageMap	msgmaps
+0x4cc1ec	data	CMFCVisualManagerOffice2007Ex__vftable	vtables
+0x4cc524	data	CDiffDiagToolBar__vftable	vtables
+0x4cc960	data	DiffDiagPane__vftable	vtables
+0x4ccd08	data	CCircleDiagToolBar__vftable	vtables
+0x4cd144	data	CircleDiagPane__vftable	vtables
+0x4cd4ec	data	CVectorDiagToolBar__vftable	vtables
+0x4cd928	data	VectorDiagPane__vftable	vtables
+0x4cdcd0	data	CMsgCaptionBar__vftable	vtables
+0x4ce010	data	CFileException__vftable	vtables
+0x4ce030	data	CMergeBar__messageMap	msgmaps
+0x4ce0e4	data	__MultiplierDlg__messageMap	msgmaps
+0x4ce144	data	CProgrBarDlg__messageMap	msgmaps
+0x4ce180	data	CProgrBarDlg__vftable	vtables
+0x4ce340	data	CProgSettingdDlg__messageMap	msgmaps
+0x4ce37c	data	CProgSettingdDlg__vftable	vtables
+0x4ce7b0	data	CQAnDiffCursPg__messageMap	msgmaps
+0x4cea8c	data	CQAnDiffCursPg__vftable	vtables
+0x4cecc4	data	CQAnFormulaEditorPg__vftable	vtables
+0x4ceec0	data	CQAnFormulaEditorPg__messageMap	msgmaps
+0x4cef8c	data	FormulaWnd_AddFormulaDlg__vftable	vtables
+0x4cf120	data	CTreeCtrl__vftable	vtables
+0x4cf28c	data	AddFormulaDlg__vftable	vtables
+0x4cf4f8	data	CQAnMezphaseSoedPg__messageMap	msgmaps
+0x4cf63c	data	CQAnMezphaseSoedPg__vftable	vtables
+0x4cf968	data	__QAnNullPoslPg__messageMap	msgmaps
+0x4cfb24	data	__QAnNullPoslPg__vftable	vtables
+0x4cfde8	data	CQAnPhaseSoprotPg__messageMap	msgmaps
+0x4cffec	data	CQAnPhaseSoprotPg__vftable	vtables
+0x4d01f4	data	CQAnPropPg__messageMap	msgmaps
+0x4d0200	data	CQAnPropPg__vftable	vtables
+0x4d0414	data	CQAnPropSheet__messageMap	msgmaps
+0x4d0420	data	CQAnPropSheet__vftable	vtables
+0x4d061c	data	CQAnSymmSostPg__messageMap	msgmaps
+0x4d077c	data	CQAnSymmSostPg__vftable	vtables
+0x4d09cc	data	_System_error_category_std__vftable	vtables
+0x4d09e8	data	CTGraphics__vftable	vtables
+0x4d09ec	data	VectorDiagPane__messageMap	msgmaps
+0x4d0b00	data	VectorDiagramWnd__messageMap	msgmaps
+0x4d0b0c	data	VectorDiagramWnd__vftable	vtables
+0x4d116c	data	Station_WrongPlaceLocatorData__vftable	vtables
+0x4d11b8	data	Section_WrongPlaceLocatorData__vftable	vtables
+0x4d1204	data	ParallelLine_WrongPlaceLocatorData__vftable	vtables
+0x4d1250	data	Connection_WrongPlaceLocatorData__vftable	vtables
+0x4d12a4	data	WrongPlaceLocatorDlg__vftable	vtables
+0x4d1434	data	map_0x4d1434__messageMap	msgmaps
+0x4d15a0	data	__basic_stringbuf__WU__char_traits__W_std__V__allocator__W_2__std__vftable	vtables
+0x4d16d8	data	const_f64_pi	ledger L2
+0x4d1710	data	const_merge_drag_px_to_time	UI_BEHAVIOUR_SPEC §10
+0x4d1718	data	const_f64_50	ledger L6
+0x4d1738	data	const_f64_180	ledger L2
+0x4d1890	data	const_f64_minus_one	ledger L9.2
+0x4d1a00	data	const_f64_6	ledger L6
+0x4d1a60	data	const_sse_minus_one_pair	ledger L9.2
+0x4ebe1c	data	rtti_comtrade_converter	ledger L3
+0x4ebe3c	data	rtti_fv_comtrade_conv	ledger L3
+0x4ecc20	data	formula_token_table	ledger L2
+0x905218	data	rsrc_file_open_filter	ledger L3

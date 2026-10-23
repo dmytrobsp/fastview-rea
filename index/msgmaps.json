@@ -1,0 +1,2853 @@
+[
+ {
+  "getter": "0x401c00",
+  "map": "0x4c3180",
+  "base_getter": "0x4abf0e",
+  "classes": [
+   "AddFormulaDlg"
+  ],
+  "n": 1,
+  "entries": [
+   {
+    "kind": "NOTIFY code=0xfe3d",
+    "id": 1039,
+    "last": 1039,
+    "sig": 62,
+    "pfn": "0x403260"
+   }
+  ]
+ },
+ {
+  "getter": "0x404c40",
+  "map": "0x4c36c0",
+  "base_getter": "0x4ac178",
+  "classes": [
+   "CBaseView",
+   "CFastViewView"
+  ],
+  "n": 0,
+  "entries": []
+ },
+ {
+  "getter": "0x404c50",
+  "map": "0x4c366c",
+  "base_getter": "0x4ac17e",
+  "classes": [
+   "CFastViewPrintDialog"
+  ],
+  "n": 2,
+  "entries": [
+   {
+    "kind": "COMMAND",
+    "id": 2173,
+    "last": 2173,
+    "sig": 58,
+    "pfn": "0x404960"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2174,
+    "last": 2174,
+    "sig": 58,
+    "pfn": "0x4049b0"
+   }
+  ]
+ },
+ {
+  "getter": "0x407570",
+  "map": "0x4c3b20",
+  "base_getter": "0x4ac21a",
+  "classes": [
+   "BlockPropertyGrid"
+  ],
+  "n": 2,
+  "entries": [
+   {
+    "kind": "WM_LBUTTONDOWN",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x4075c0"
+   },
+   {
+    "kind": "WM_LBUTTONDBLCLK",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x407640"
+   }
+  ]
+ },
+ {
+  "getter": "0x4216a0",
+  "map": "0x4c528c",
+  "base_getter": "0x4abf0e",
+  "classes": [
+   "ChanPairDlg"
+  ],
+  "n": 3,
+  "entries": [
+   {
+    "kind": "COMMAND",
+    "id": 2161,
+    "last": 2161,
+    "sig": 58,
+    "pfn": "0x421aa0"
+   },
+   {
+    "kind": "NOTIFY code=0xff9b",
+    "id": 2164,
+    "last": 2164,
+    "sig": 62,
+    "pfn": "0x421e10"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2166,
+    "last": 2166,
+    "sig": 58,
+    "pfn": "0x421e40"
+   }
+  ]
+ },
+ {
+  "getter": "0x4338f0",
+  "map": "0x4c65e0",
+  "base_getter": "0x4abf0e",
+  "classes": [
+   "ChannelsDlg"
+  ],
+  "n": 3,
+  "entries": [
+   {
+    "kind": "NOTIFY code=0xfffe",
+    "id": 1013,
+    "last": 1013,
+    "sig": 62,
+    "pfn": "0x4349c0"
+   },
+   {
+    "kind": "NOTIFY code=0xfebe",
+    "id": 0,
+    "last": 0,
+    "sig": 62,
+    "pfn": "0x435080"
+   },
+   {
+    "kind": "WM_DRAWITEM",
+    "id": 0,
+    "last": 0,
+    "sig": 47,
+    "pfn": "0x433db0"
+   }
+  ]
+ },
+ {
+  "getter": "0x4360a0",
+  "map": "0x4c6648",
+  "base_getter": "0x4ac38e",
+  "classes": [
+   "CircleDiagPane"
+  ],
+  "n": 18,
+  "entries": [
+   {
+    "kind": "WM_CREATE",
+    "id": 0,
+    "last": 0,
+    "sig": 13,
+    "pfn": "0x4360b0"
+   },
+   {
+    "kind": "WM_SIZE",
+    "id": 0,
+    "last": 0,
+    "sig": 26,
+    "pfn": "0x4361d0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33014,
+    "last": 33014,
+    "sig": 58,
+    "pfn": "0x436340"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33015,
+    "last": 33015,
+    "sig": 66,
+    "pfn": "0x436350"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33015,
+    "last": 33015,
+    "sig": 58,
+    "pfn": "0x436370"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33016,
+    "last": 33016,
+    "sig": 66,
+    "pfn": "0x436380"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33016,
+    "last": 33016,
+    "sig": 58,
+    "pfn": "0x4363a0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33017,
+    "last": 33017,
+    "sig": 66,
+    "pfn": "0x4363b0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33017,
+    "last": 33017,
+    "sig": 58,
+    "pfn": "0x4363d0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33018,
+    "last": 33018,
+    "sig": 66,
+    "pfn": "0x4363e0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33018,
+    "last": 33018,
+    "sig": 58,
+    "pfn": "0x436400"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33019,
+    "last": 33019,
+    "sig": 58,
+    "pfn": "0x436410"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33020,
+    "last": 33020,
+    "sig": 58,
+    "pfn": "0x436430"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33021,
+    "last": 33021,
+    "sig": 58,
+    "pfn": "0x4364b0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33022,
+    "last": 33022,
+    "sig": 58,
+    "pfn": "0x436530"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33023,
+    "last": 33023,
+    "sig": 58,
+    "pfn": "0x436580"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33024,
+    "last": 33024,
+    "sig": 58,
+    "pfn": "0x4365d0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33025,
+    "last": 33025,
+    "sig": 58,
+    "pfn": "0x436620"
+   }
+  ]
+ },
+ {
+  "getter": "0x436990",
+  "map": "0x4c6b98",
+  "base_getter": "0x441b70",
+  "classes": [
+   "CircleDiagramWnd"
+  ],
+  "n": 25,
+  "entries": [
+   {
+    "kind": "WM_CREATE",
+    "id": 0,
+    "last": 0,
+    "sig": 13,
+    "pfn": "0x437560"
+   },
+   {
+    "kind": "WM_SIZE",
+    "id": 0,
+    "last": 0,
+    "sig": 26,
+    "pfn": "0x4376c0"
+   },
+   {
+    "kind": "WM_LBUTTONDOWN",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x437890"
+   },
+   {
+    "kind": "WM_LBUTTONUP",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x4378e0"
+   },
+   {
+    "kind": "WM_RBUTTONUP",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x437440"
+   },
+   {
+    "kind": "WM_MOUSEMOVE",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x437900"
+   },
+   {
+    "kind": "WM_MOUSEWHEEL",
+    "id": 0,
+    "last": 0,
+    "sig": 56,
+    "pfn": "0x437ae0"
+   },
+   {
+    "kind": "WM_HSCROLL",
+    "id": 0,
+    "last": 0,
+    "sig": 43,
+    "pfn": "0x437ff0"
+   },
+   {
+    "kind": "WM_VSCROLL",
+    "id": 0,
+    "last": 0,
+    "sig": 43,
+    "pfn": "0x437f00"
+   },
+   {
+    "kind": "WM_SETCURSOR",
+    "id": 0,
+    "last": 0,
+    "sig": 5,
+    "pfn": "0x437820"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32843,
+    "last": 32843,
+    "sig": 58,
+    "pfn": "0x436f10"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32845,
+    "last": 32845,
+    "sig": 58,
+    "pfn": "0x437150"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32846,
+    "last": 32846,
+    "sig": 58,
+    "pfn": "0x437310"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32864,
+    "last": 32864,
+    "sig": 58,
+    "pfn": "0x436080"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32865,
+    "last": 32865,
+    "sig": 58,
+    "pfn": "0x437390"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32843,
+    "last": 32843,
+    "sig": 66,
+    "pfn": "0x436f90"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32865,
+    "last": 32865,
+    "sig": 66,
+    "pfn": "0x437420"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 35000,
+    "last": 35100,
+    "sig": 60,
+    "pfn": "0x436fb0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 35000,
+    "last": 35100,
+    "sig": 66,
+    "pfn": "0x437080"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33008,
+    "last": 33008,
+    "sig": 66,
+    "pfn": "0x43b910"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33008,
+    "last": 33008,
+    "sig": 58,
+    "pfn": "0x43b930"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33009,
+    "last": 33009,
+    "sig": 66,
+    "pfn": "0x43b9c0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33009,
+    "last": 33009,
+    "sig": 58,
+    "pfn": "0x43b9e0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33027,
+    "last": 33027,
+    "sig": 58,
+    "pfn": "0x43d6a0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33027,
+    "last": 33027,
+    "sig": 66,
+    "pfn": "0x43d670"
+   }
+  ]
+ },
+ {
+  "getter": "0x441b70",
+  "map": "0x4c74c4",
+  "base_getter": "0x4ac4c6",
+  "classes": [
+   "CircleDiagramWnd",
+   "DiagramWnd",
+   "DiffDiagramWnd",
+   "FourieDiagramWnd"
+  ],
+  "n": 2,
+  "entries": [
+   {
+    "kind": "WM_PAINT",
+    "id": 0,
+    "last": 0,
+    "sig": 19,
+    "pfn": "0x441d80"
+   },
+   {
+    "kind": "WM_ERASEBKGND",
+    "id": 0,
+    "last": 0,
+    "sig": 1,
+    "pfn": "0x408010"
+   }
+  ]
+ },
+ {
+  "getter": "0x442290",
+  "map": "0x4c7518",
+  "base_getter": "0x4ac38e",
+  "classes": [
+   "DiffDiagPane"
+  ],
+  "n": 16,
+  "entries": [
+   {
+    "kind": "WM_CREATE",
+    "id": 0,
+    "last": 0,
+    "sig": 13,
+    "pfn": "0x4422a0"
+   },
+   {
+    "kind": "WM_SIZE",
+    "id": 0,
+    "last": 0,
+    "sig": 26,
+    "pfn": "0x4361d0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33014,
+    "last": 33014,
+    "sig": 58,
+    "pfn": "0x442490"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33015,
+    "last": 33015,
+    "sig": 66,
+    "pfn": "0x436350"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33015,
+    "last": 33015,
+    "sig": 58,
+    "pfn": "0x4424a0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33028,
+    "last": 33028,
+    "sig": 66,
+    "pfn": "0x4424c0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33028,
+    "last": 33028,
+    "sig": 58,
+    "pfn": "0x4424e0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33016,
+    "last": 33016,
+    "sig": 66,
+    "pfn": "0x436380"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33016,
+    "last": 33016,
+    "sig": 58,
+    "pfn": "0x4424b0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33019,
+    "last": 33019,
+    "sig": 58,
+    "pfn": "0x4424f0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33020,
+    "last": 33020,
+    "sig": 58,
+    "pfn": "0x442510"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33021,
+    "last": 33021,
+    "sig": 58,
+    "pfn": "0x442590"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33022,
+    "last": 33022,
+    "sig": 58,
+    "pfn": "0x442610"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33023,
+    "last": 33023,
+    "sig": 58,
+    "pfn": "0x442660"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33024,
+    "last": 33024,
+    "sig": 58,
+    "pfn": "0x4426b0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33025,
+    "last": 33025,
+    "sig": 58,
+    "pfn": "0x442700"
+   }
+  ]
+ },
+ {
+  "getter": "0x442880",
+  "map": "0x4c7878",
+  "base_getter": "0x441b70",
+  "classes": [
+   "DiffDiagramWnd"
+  ],
+  "n": 23,
+  "entries": [
+   {
+    "kind": "WM_CREATE",
+    "id": 0,
+    "last": 0,
+    "sig": 13,
+    "pfn": "0x443060"
+   },
+   {
+    "kind": "WM_SIZE",
+    "id": 0,
+    "last": 0,
+    "sig": 26,
+    "pfn": "0x4431c0"
+   },
+   {
+    "kind": "WM_LBUTTONDOWN",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x443320"
+   },
+   {
+    "kind": "WM_LBUTTONUP",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x443370"
+   },
+   {
+    "kind": "WM_RBUTTONUP",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x442f80"
+   },
+   {
+    "kind": "WM_MOUSEMOVE",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x443390"
+   },
+   {
+    "kind": "WM_MOUSEWHEEL",
+    "id": 0,
+    "last": 0,
+    "sig": 56,
+    "pfn": "0x443550"
+   },
+   {
+    "kind": "WM_HSCROLL",
+    "id": 0,
+    "last": 0,
+    "sig": 43,
+    "pfn": "0x443a70"
+   },
+   {
+    "kind": "WM_VSCROLL",
+    "id": 0,
+    "last": 0,
+    "sig": 43,
+    "pfn": "0x443980"
+   },
+   {
+    "kind": "WM_SETCURSOR",
+    "id": 0,
+    "last": 0,
+    "sig": 5,
+    "pfn": "0x437820"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32843,
+    "last": 32843,
+    "sig": 58,
+    "pfn": "0x442cc0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32845,
+    "last": 32845,
+    "sig": 58,
+    "pfn": "0x442df0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32846,
+    "last": 32846,
+    "sig": 58,
+    "pfn": "0x442e70"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32864,
+    "last": 32864,
+    "sig": 58,
+    "pfn": "0x442270"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32865,
+    "last": 32865,
+    "sig": 58,
+    "pfn": "0x442ee0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32843,
+    "last": 32843,
+    "sig": 66,
+    "pfn": "0x436f90"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32865,
+    "last": 32865,
+    "sig": 66,
+    "pfn": "0x437420"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33027,
+    "last": 33027,
+    "sig": 58,
+    "pfn": "0x446ff0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33027,
+    "last": 33027,
+    "sig": 66,
+    "pfn": "0x43d670"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 35000,
+    "last": 35100,
+    "sig": 60,
+    "pfn": "0x442d40"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 35000,
+    "last": 35100,
+    "sig": 66,
+    "pfn": "0x442da0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33028,
+    "last": 33028,
+    "sig": 66,
+    "pfn": "0x4461d0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33028,
+    "last": 33028,
+    "sig": 58,
+    "pfn": "0x4461f0"
+   }
+  ]
+ },
+ {
+  "getter": "0x447c00",
+  "map": "0x4c7df0",
+  "base_getter": "0x4ac4de",
+  "classes": [
+   "CFastViewApp"
+  ],
+  "n": 6,
+  "entries": [
+   {
+    "kind": "COMMAND",
+    "id": 57664,
+    "last": 57664,
+    "sig": 58,
+    "pfn": "0x447dc0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 57600,
+    "last": 57600,
+    "sig": 58,
+    "pfn": "0x4ac4d2"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 57601,
+    "last": 57601,
+    "sig": 58,
+    "pfn": "0x4ac4d8"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 57605,
+    "last": 57605,
+    "sig": 58,
+    "pfn": "0x448a90"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32880,
+    "last": 32880,
+    "sig": 58,
+    "pfn": "0x447b80"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 129,
+    "last": 129,
+    "sig": 58,
+    "pfn": "0x448ec0"
+   }
+  ]
+ },
+ {
+  "getter": "0x44ade0",
+  "map": "0x4c8be4",
+  "base_getter": "0x4ac664",
+  "classes": [
+   "CFastViewDoc"
+  ],
+  "n": 15,
+  "entries": [
+   {
+    "kind": "COMMAND",
+    "id": 32805,
+    "last": 32805,
+    "sig": 58,
+    "pfn": "0x44c2e0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 137,
+    "last": 137,
+    "sig": 58,
+    "pfn": "0x4543a0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 137,
+    "last": 137,
+    "sig": 66,
+    "pfn": "0x454380"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32806,
+    "last": 32806,
+    "sig": 58,
+    "pfn": "0x449890"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32807,
+    "last": 32807,
+    "sig": 58,
+    "pfn": "0x454240"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32860,
+    "last": 32860,
+    "sig": 58,
+    "pfn": "0x44fd10"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32861,
+    "last": 32861,
+    "sig": 58,
+    "pfn": "0x44c4e0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32862,
+    "last": 32862,
+    "sig": 58,
+    "pfn": "0x4498b0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32879,
+    "last": 32879,
+    "sig": 58,
+    "pfn": "0x449920"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 1091,
+    "last": 1091,
+    "sig": 58,
+    "pfn": "0x449930"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 1092,
+    "last": 1092,
+    "sig": 58,
+    "pfn": "0x449960"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32805,
+    "last": 32805,
+    "sig": 66,
+    "pfn": "0x44c5e0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32806,
+    "last": 32807,
+    "sig": 66,
+    "pfn": "0x44c6c0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33033,
+    "last": 33033,
+    "sig": 66,
+    "pfn": "0x4557b0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33033,
+    "last": 33033,
+    "sig": 58,
+    "pfn": "0x4557d0"
+   }
+  ]
+ },
+ {
+  "getter": "0x45a970",
+  "map": "0x4c9940",
+  "base_getter": "0x404c40",
+  "classes": [
+   "CFastViewView"
+  ],
+  "n": 50,
+  "entries": [
+   {
+    "kind": "WM_MOUSEWHEEL",
+    "id": 0,
+    "last": 0,
+    "sig": 56,
+    "pfn": "0x45d990"
+   },
+   {
+    "kind": "WM_LBUTTONDOWN",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x45dc10"
+   },
+   {
+    "kind": "WM_LBUTTONDBLCLK",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x465890"
+   },
+   {
+    "kind": "WM_LBUTTONUP",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x45e6b0"
+   },
+   {
+    "kind": "WM_RBUTTONDOWN",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x45a8d0"
+   },
+   {
+    "kind": "WM_RBUTTONUP",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x45efa0"
+   },
+   {
+    "kind": "WM_MOUSEMOVE",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x45ea70"
+   },
+   {
+    "kind": "WM_KEYDOWN",
+    "id": 0,
+    "last": 0,
+    "sig": 25,
+    "pfn": "0x45f490"
+   },
+   {
+    "kind": "WM_HSCROLL",
+    "id": 0,
+    "last": 0,
+    "sig": 43,
+    "pfn": "0x45d6d0"
+   },
+   {
+    "kind": "WM_VSCROLL",
+    "id": 0,
+    "last": 0,
+    "sig": 43,
+    "pfn": "0x45d870"
+   },
+   {
+    "kind": "WM_SETCURSOR",
+    "id": 0,
+    "last": 0,
+    "sig": 5,
+    "pfn": "0x45f660"
+   },
+   {
+    "kind": "WM_ERASEBKGND",
+    "id": 0,
+    "last": 0,
+    "sig": 1,
+    "pfn": "0x408010"
+   },
+   {
+    "kind": "WM_SIZE",
+    "id": 0,
+    "last": 0,
+    "sig": 26,
+    "pfn": "0x45ac90"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 57607,
+    "last": 57607,
+    "sig": 58,
+    "pfn": "0x4ac82c"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 57608,
+    "last": 57608,
+    "sig": 58,
+    "pfn": "0x4ac82c"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 57609,
+    "last": 57609,
+    "sig": 58,
+    "pfn": "0x4053e0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 57632,
+    "last": 57644,
+    "sig": 60,
+    "pfn": "0x45acb0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32866,
+    "last": 32868,
+    "sig": 60,
+    "pfn": "0x45c9c0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32813,
+    "last": 32816,
+    "sig": 60,
+    "pfn": "0x45c120"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 155,
+    "last": 157,
+    "sig": 60,
+    "pfn": "0x45c250"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 139,
+    "last": 139,
+    "sig": 58,
+    "pfn": "0x45c2f0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32800,
+    "last": 32803,
+    "sig": 60,
+    "pfn": "0x45c4f0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32817,
+    "last": 32824,
+    "sig": 60,
+    "pfn": "0x45c980"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32845,
+    "last": 32848,
+    "sig": 60,
+    "pfn": "0x45ca10"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32849,
+    "last": 32852,
+    "sig": 60,
+    "pfn": "0x45ca50"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32853,
+    "last": 32857,
+    "sig": 60,
+    "pfn": "0x45caa0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33038,
+    "last": 33042,
+    "sig": 60,
+    "pfn": "0x45ce40"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 138,
+    "last": 138,
+    "sig": 58,
+    "pfn": "0x465460"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 138,
+    "last": 138,
+    "sig": 66,
+    "pfn": "0x4654a0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 141,
+    "last": 141,
+    "sig": 58,
+    "pfn": "0x4654f0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33007,
+    "last": 33007,
+    "sig": 58,
+    "pfn": "0x45d290"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33030,
+    "last": 33030,
+    "sig": 58,
+    "pfn": "0x465850"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 57632,
+    "last": 57644,
+    "sig": 66,
+    "pfn": "0x45bf60"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32866,
+    "last": 32868,
+    "sig": 66,
+    "pfn": "0x45c9f0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32813,
+    "last": 32816,
+    "sig": 66,
+    "pfn": "0x45c300"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 155,
+    "last": 157,
+    "sig": 66,
+    "pfn": "0x45c320"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 139,
+    "last": 139,
+    "sig": 66,
+    "pfn": "0x45c300"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32800,
+    "last": 32803,
+    "sig": 66,
+    "pfn": "0x45c8c0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32817,
+    "last": 32824,
+    "sig": 66,
+    "pfn": "0x45c9a0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32853,
+    "last": 32857,
+    "sig": 66,
+    "pfn": "0x45ccc0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33038,
+    "last": 33042,
+    "sig": 66,
+    "pfn": "0x45d160"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32849,
+    "last": 32852,
+    "sig": 66,
+    "pfn": "0x45ca80"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33007,
+    "last": 33007,
+    "sig": 66,
+    "pfn": "0x45ccc0"
+   },
+   {
+    "kind": "WM_DESTROY",
+    "id": 0,
+    "last": 0,
+    "sig": 19,
+    "pfn": "0x4660c0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33035,
+    "last": 33035,
+    "sig": 66,
+    "pfn": "0x467350"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33035,
+    "last": 33035,
+    "sig": 58,
+    "pfn": "0x467370"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33037,
+    "last": 33037,
+    "sig": 66,
+    "pfn": "0x467b10"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33037,
+    "last": 33037,
+    "sig": 58,
+    "pfn": "0x467c40"
+   },
+   {
+    "kind": "WM_CREATE",
+    "id": 0,
+    "last": 0,
+    "sig": 13,
+    "pfn": "0x468e10"
+   },
+   {
+    "kind": "WM_MOUSEHOVER",
+    "id": 0,
+    "last": 0,
+    "sig": 14,
+    "pfn": "0x469060"
+   }
+  ]
+ },
+ {
+  "getter": "0x46aeb0",
+  "map": "0x4ca350",
+  "base_getter": "0x4abf0e",
+  "classes": [
+   "FileFinder22Dlg"
+  ],
+  "n": 9,
+  "entries": [
+   {
+    "kind": "COMMAND",
+    "id": 1081,
+    "last": 1081,
+    "sig": 58,
+    "pfn": "0x46b8f0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 1083,
+    "last": 1083,
+    "sig": 58,
+    "pfn": "0x46b9a0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 3,
+    "last": 3,
+    "sig": 58,
+    "pfn": "0x46d4b0"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1079,
+    "last": 1079,
+    "sig": 58,
+    "pfn": "0x46cfc0"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1080,
+    "last": 1080,
+    "sig": 58,
+    "pfn": "0x46cfc0"
+   },
+   {
+    "kind": "NOTIFY code=0xfd09",
+    "id": 1077,
+    "last": 1077,
+    "sig": 62,
+    "pfn": "0x46cfd0"
+   },
+   {
+    "kind": "NOTIFY code=0xfd09",
+    "id": 1078,
+    "last": 1078,
+    "sig": 62,
+    "pfn": "0x46cfd0"
+   },
+   {
+    "kind": "NOTIFY code=0xff94",
+    "id": 1082,
+    "last": 1082,
+    "sig": 62,
+    "pfn": "0x46d420"
+   },
+   {
+    "kind": "NOTIFY code=0xfffd",
+    "id": 1082,
+    "last": 1082,
+    "sig": 62,
+    "pfn": "0x46e330"
+   }
+  ]
+ },
+ {
+  "getter": "0x46ece0",
+  "map": "0x4ca840",
+  "base_getter": "0x441b70",
+  "classes": [
+   "FourieDiagramWnd"
+  ],
+  "n": 8,
+  "entries": [
+   {
+    "kind": "WM_LBUTTONDOWN",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x46ec10"
+   },
+   {
+    "kind": "WM_RBUTTONUP",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x46f2e0"
+   },
+   {
+    "kind": "WM_CREATE",
+    "id": 0,
+    "last": 0,
+    "sig": 13,
+    "pfn": "0x46f470"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32863,
+    "last": 32863,
+    "sig": 58,
+    "pfn": "0x46ec30"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32845,
+    "last": 32845,
+    "sig": 58,
+    "pfn": "0x46f210"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32846,
+    "last": 32846,
+    "sig": 58,
+    "pfn": "0x46f280"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 35000,
+    "last": 35100,
+    "sig": 60,
+    "pfn": "0x46f100"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 35000,
+    "last": 35100,
+    "sig": 66,
+    "pfn": "0x46f180"
+   }
+  ]
+ },
+ {
+  "getter": "0x470a90",
+  "map": "0x4ca944",
+  "base_getter": "0x4ac4c6",
+  "classes": [
+   "FvSpecEdit"
+  ],
+  "n": 4,
+  "entries": [
+   {
+    "kind": "WM_SHOWWINDOW",
+    "id": 0,
+    "last": 0,
+    "sig": 22,
+    "pfn": "0x470aa0"
+   },
+   {
+    "kind": "WM_KILLFOCUS",
+    "id": 0,
+    "last": 0,
+    "sig": 36,
+    "pfn": "0x470ac0"
+   },
+   {
+    "kind": "WM_KEYDOWN",
+    "id": 0,
+    "last": 0,
+    "sig": 25,
+    "pfn": "0x470ad0"
+   },
+   {
+    "kind": "WM_KEYUP",
+    "id": 0,
+    "last": 0,
+    "sig": 25,
+    "pfn": "0x470ae0"
+   }
+  ]
+ },
+ {
+  "getter": "0x4717c0",
+  "map": "0x4cab7c",
+  "base_getter": "0x4abf0e",
+  "classes": [
+   "LoadingDlg"
+  ],
+  "n": 2,
+  "entries": [
+   {
+    "kind": "WM_TIMER",
+    "id": 0,
+    "last": 0,
+    "sig": 21,
+    "pfn": "0x471870"
+   },
+   {
+    "kind": "WM_CLOSE",
+    "id": 0,
+    "last": 0,
+    "sig": 19,
+    "pfn": "0x471830"
+   }
+  ]
+ },
+ {
+  "getter": "0x4720a0",
+  "map": "0x4cbf34",
+  "base_getter": "0x4ac8e0",
+  "classes": [
+   "CMainFrame"
+  ],
+  "n": 25,
+  "entries": [
+   {
+    "kind": "WM_CREATE",
+    "id": 0,
+    "last": 0,
+    "sig": 13,
+    "pfn": "0x4728d0"
+   },
+   {
+    "kind": "WM_ACTIVATE",
+    "id": 0,
+    "last": 0,
+    "sig": 42,
+    "pfn": "0x475650"
+   },
+   {
+    "kind": "WM_DESTROY",
+    "id": 0,
+    "last": 0,
+    "sig": 19,
+    "pfn": "0x475400"
+   },
+   {
+    "kind": "WM_CLOSE",
+    "id": 0,
+    "last": 0,
+    "sig": 19,
+    "pfn": "0x4753a0"
+   },
+   {
+    "kind": "WM_ERASEBKGND",
+    "id": 0,
+    "last": 0,
+    "sig": 1,
+    "pfn": "0x472750"
+   },
+   {
+    "kind": "WM_GETMINMAXINFO",
+    "id": 0,
+    "last": 0,
+    "sig": 45,
+    "pfn": "0x4728a0"
+   },
+   {
+    "kind": "WM_COPYDATA",
+    "id": 0,
+    "last": 0,
+    "sig": 6,
+    "pfn": "0x475530"
+   },
+   {
+    "kind": "msg=0x40a",
+    "id": 0,
+    "last": 0,
+    "sig": 14,
+    "pfn": "0x4756e0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 57667,
+    "last": 57667,
+    "sig": 58,
+    "pfn": "0x4ac8ce"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 57670,
+    "last": 57670,
+    "sig": 58,
+    "pfn": "0x4ac8d4"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 57669,
+    "last": 57669,
+    "sig": 58,
+    "pfn": "0x4ac8da"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 57671,
+    "last": 57671,
+    "sig": 58,
+    "pfn": "0x4ac8ce"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32830,
+    "last": 32830,
+    "sig": 58,
+    "pfn": "0x475210"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32831,
+    "last": 32831,
+    "sig": 58,
+    "pfn": "0x471ec0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32806,
+    "last": 32806,
+    "sig": 66,
+    "pfn": "0x471ed0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32808,
+    "last": 32811,
+    "sig": 60,
+    "pfn": "0x475040"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 140,
+    "last": 140,
+    "sig": 58,
+    "pfn": "0x4750b0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 210,
+    "last": 218,
+    "sig": 60,
+    "pfn": "0x475250"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 210,
+    "last": 218,
+    "sig": 66,
+    "pfn": "0x471f00"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32808,
+    "last": 32811,
+    "sig": 66,
+    "pfn": "0x4750f0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 140,
+    "last": 140,
+    "sig": 66,
+    "pfn": "0x4750f0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 57603,
+    "last": 57603,
+    "sig": 66,
+    "pfn": "0x475750"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 142,
+    "last": 142,
+    "sig": 66,
+    "pfn": "0x475180"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 142,
+    "last": 142,
+    "sig": 58,
+    "pfn": "0x4751d0"
+   },
+   {
+    "kind": "WM_DESTROY",
+    "id": 0,
+    "last": 0,
+    "sig": 19,
+    "pfn": "0x475400"
+   }
+  ]
+ },
+ {
+  "getter": "0x479950",
+  "map": "0x4ce030",
+  "base_getter": "0x4ad624",
+  "classes": [
+   "CMergeBar"
+  ],
+  "n": 1,
+  "entries": [
+   {
+    "kind": "CMD code=0x1",
+    "id": 1088,
+    "last": 1088,
+    "sig": 58,
+    "pfn": "0x47a290"
+   }
+  ]
+ },
+ {
+  "getter": "0x47ac70",
+  "map": "0x4ce0e4",
+  "base_getter": "0x4abf0e",
+  "classes": [
+   "Ð¡MultiplierDlg"
+  ],
+  "n": 1,
+  "entries": [
+   {
+    "kind": "WM_DRAWITEM",
+    "id": 0,
+    "last": 0,
+    "sig": 47,
+    "pfn": "0x47b7b0"
+   }
+  ]
+ },
+ {
+  "getter": "0x47f340",
+  "map": "0x4ce144",
+  "base_getter": "0x4abf0e",
+  "classes": [
+   "CProgrBarDlg"
+  ],
+  "n": 1,
+  "entries": [
+   {
+    "kind": "WM_SHOWWINDOW",
+    "id": 0,
+    "last": 0,
+    "sig": 22,
+    "pfn": "0x47f4d0"
+   }
+  ]
+ },
+ {
+  "getter": "0x47f830",
+  "map": "0x4ce340",
+  "base_getter": "0x4ad62a",
+  "classes": [
+   "CProgSettingdDlg"
+  ],
+  "n": 1,
+  "entries": [
+   {
+    "kind": "COMMAND",
+    "id": 2003,
+    "last": 2003,
+    "sig": 58,
+    "pfn": "0x47f950"
+   }
+  ]
+ },
+ {
+  "getter": "0x47ff50",
+  "map": "0x4ce7b0",
+  "base_getter": "0x48b680",
+  "classes": [
+   "CQAnDiffCursPg"
+  ],
+  "n": 29,
+  "entries": [
+   {
+    "kind": "CMD code=0x1",
+    "id": 2067,
+    "last": 2067,
+    "sig": 58,
+    "pfn": "0x482b60"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 2068,
+    "last": 2068,
+    "sig": 58,
+    "pfn": "0x482c10"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 2069,
+    "last": 2069,
+    "sig": 58,
+    "pfn": "0x482ca0"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1007,
+    "last": 1007,
+    "sig": 58,
+    "pfn": "0x482f70"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1008,
+    "last": 1008,
+    "sig": 58,
+    "pfn": "0x483030"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1009,
+    "last": 1009,
+    "sig": 58,
+    "pfn": "0x4830f0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2085,
+    "last": 2085,
+    "sig": 58,
+    "pfn": "0x483250"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2084,
+    "last": 2084,
+    "sig": 58,
+    "pfn": "0x4832d0"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 1052,
+    "last": 1052,
+    "sig": 58,
+    "pfn": "0x483330"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 1054,
+    "last": 1054,
+    "sig": 58,
+    "pfn": "0x483380"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 1053,
+    "last": 1053,
+    "sig": 58,
+    "pfn": "0x4833d0"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 1055,
+    "last": 1055,
+    "sig": 58,
+    "pfn": "0x483420"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 1056,
+    "last": 1056,
+    "sig": 58,
+    "pfn": "0x483470"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 1050,
+    "last": 1050,
+    "sig": 58,
+    "pfn": "0x4834c0"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 1057,
+    "last": 1057,
+    "sig": 58,
+    "pfn": "0x483510"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 1058,
+    "last": 1058,
+    "sig": 58,
+    "pfn": "0x483560"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2080,
+    "last": 2080,
+    "sig": 58,
+    "pfn": "0x4835b0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2081,
+    "last": 2081,
+    "sig": 58,
+    "pfn": "0x4836f0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2082,
+    "last": 2082,
+    "sig": 58,
+    "pfn": "0x483830"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2083,
+    "last": 2083,
+    "sig": 58,
+    "pfn": "0x483970"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2088,
+    "last": 2088,
+    "sig": 58,
+    "pfn": "0x483e80"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2089,
+    "last": 2089,
+    "sig": 58,
+    "pfn": "0x483e80"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2091,
+    "last": 2091,
+    "sig": 58,
+    "pfn": "0x483e90"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2092,
+    "last": 2092,
+    "sig": 58,
+    "pfn": "0x483e90"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2093,
+    "last": 2093,
+    "sig": 58,
+    "pfn": "0x483e90"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 2127,
+    "last": 2127,
+    "sig": 58,
+    "pfn": "0x483ea0"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 2129,
+    "last": 2129,
+    "sig": 58,
+    "pfn": "0x483ef0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2087,
+    "last": 2087,
+    "sig": 58,
+    "pfn": "0x483e80"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2175,
+    "last": 2175,
+    "sig": 58,
+    "pfn": "0x484150"
+   }
+  ]
+ },
+ {
+  "getter": "0x485e10",
+  "map": "0x4ceec0",
+  "base_getter": "0x48b680",
+  "classes": [
+   "CQAnFormulaEditorPg"
+  ],
+  "n": 7,
+  "entries": [
+   {
+    "kind": "COMMAND",
+    "id": 1015,
+    "last": 1015,
+    "sig": 58,
+    "pfn": "0x486da0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 1014,
+    "last": 1014,
+    "sig": 58,
+    "pfn": "0x486dd0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 1016,
+    "last": 1016,
+    "sig": 58,
+    "pfn": "0x486df0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 1017,
+    "last": 1017,
+    "sig": 58,
+    "pfn": "0x487170"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 1018,
+    "last": 1018,
+    "sig": 58,
+    "pfn": "0x487210"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 1019,
+    "last": 1019,
+    "sig": 58,
+    "pfn": "0x4873a0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 1028,
+    "last": 1028,
+    "sig": 58,
+    "pfn": "0x487530"
+   }
+  ]
+ },
+ {
+  "getter": "0x487630",
+  "map": "0x4cf4f8",
+  "base_getter": "0x48b680",
+  "classes": [
+   "CQAnMezphaseSoedPg"
+  ],
+  "n": 12,
+  "entries": [
+   {
+    "kind": "COMMAND",
+    "id": 2046,
+    "last": 2046,
+    "sig": 58,
+    "pfn": "0x487d70"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2050,
+    "last": 2050,
+    "sig": 58,
+    "pfn": "0x487eb0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2051,
+    "last": 2051,
+    "sig": 58,
+    "pfn": "0x487f00"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 2042,
+    "last": 2042,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1007,
+    "last": 1007,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1008,
+    "last": 1008,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1009,
+    "last": 1009,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1043,
+    "last": 1043,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1044,
+    "last": 1044,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1045,
+    "last": 1045,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1010,
+    "last": 1010,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1011,
+    "last": 1011,
+    "sig": 58,
+    "pfn": "0x476230"
+   }
+  ]
+ },
+ {
+  "getter": "0x4887b0",
+  "map": "0x4cf968",
+  "base_getter": "0x48b680",
+  "classes": [
+   "Ð¡QAnNullPoslPg"
+  ],
+  "n": 17,
+  "entries": [
+   {
+    "kind": "COMMAND",
+    "id": 2047,
+    "last": 2047,
+    "sig": 58,
+    "pfn": "0x489010"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2049,
+    "last": 2049,
+    "sig": 58,
+    "pfn": "0x489060"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2063,
+    "last": 2063,
+    "sig": 58,
+    "pfn": "0x489250"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2064,
+    "last": 2064,
+    "sig": 58,
+    "pfn": "0x489250"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2065,
+    "last": 2065,
+    "sig": 58,
+    "pfn": "0x489250"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2156,
+    "last": 2156,
+    "sig": 58,
+    "pfn": "0x489270"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2157,
+    "last": 2157,
+    "sig": 58,
+    "pfn": "0x489510"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1007,
+    "last": 1007,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 2072,
+    "last": 2072,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1008,
+    "last": 1008,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1009,
+    "last": 1009,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1043,
+    "last": 1043,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1044,
+    "last": 1044,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1045,
+    "last": 1045,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1067,
+    "last": 1067,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 2074,
+    "last": 2074,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1062,
+    "last": 1062,
+    "sig": 58,
+    "pfn": "0x476230"
+   }
+  ]
+ },
+ {
+  "getter": "0x48a4b0",
+  "map": "0x4cfde8",
+  "base_getter": "0x48b680",
+  "classes": [
+   "CQAnPhaseSoprotPg"
+  ],
+  "n": 20,
+  "entries": [
+   {
+    "kind": "COMMAND",
+    "id": 2123,
+    "last": 2123,
+    "sig": 58,
+    "pfn": "0x48aae0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2124,
+    "last": 2124,
+    "sig": 58,
+    "pfn": "0x48ab30"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 2043,
+    "last": 2043,
+    "sig": 58,
+    "pfn": "0x48ab80"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 2042,
+    "last": 2042,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1007,
+    "last": 1007,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1008,
+    "last": 1008,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1009,
+    "last": 1009,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1043,
+    "last": 1043,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1044,
+    "last": 1044,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1045,
+    "last": 1045,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 1051,
+    "last": 1051,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 1053,
+    "last": 1053,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 1050,
+    "last": 1050,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 1052,
+    "last": 1052,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 2121,
+    "last": 2121,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 2122,
+    "last": 2122,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 2045,
+    "last": 2045,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 2044,
+    "last": 2044,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 2125,
+    "last": 2125,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x300",
+    "id": 2126,
+    "last": 2126,
+    "sig": 58,
+    "pfn": "0x476230"
+   }
+  ]
+ },
+ {
+  "getter": "0x48b680",
+  "map": "0x4d01f4",
+  "base_getter": "0x4ad696",
+  "classes": [
+   "CQAnPropPg"
+  ],
+  "n": 0,
+  "entries": []
+ },
+ {
+  "getter": "0x48be00",
+  "map": "0x4d0414",
+  "base_getter": "0x4ad69c",
+  "classes": [
+   "CQAnPropSheet"
+  ],
+  "n": 0,
+  "entries": []
+ },
+ {
+  "getter": "0x48c2a0",
+  "map": "0x4d061c",
+  "base_getter": "0x48b680",
+  "classes": [
+   "CQAnSymmSostPg"
+  ],
+  "n": 13,
+  "entries": [
+   {
+    "kind": "COMMAND",
+    "id": 2046,
+    "last": 2046,
+    "sig": 58,
+    "pfn": "0x487d70"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2050,
+    "last": 2050,
+    "sig": 58,
+    "pfn": "0x487eb0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2051,
+    "last": 2051,
+    "sig": 58,
+    "pfn": "0x487f00"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2156,
+    "last": 2156,
+    "sig": 58,
+    "pfn": "0x48c870"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 2157,
+    "last": 2157,
+    "sig": 58,
+    "pfn": "0x48cb60"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1007,
+    "last": 1007,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1008,
+    "last": 1008,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1009,
+    "last": 1009,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1043,
+    "last": 1043,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1044,
+    "last": 1044,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1045,
+    "last": 1045,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1010,
+    "last": 1010,
+    "sig": 58,
+    "pfn": "0x476230"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1011,
+    "last": 1011,
+    "sig": 58,
+    "pfn": "0x476230"
+   }
+  ]
+ },
+ {
+  "getter": "0x48f240",
+  "map": "0x4d09ec",
+  "base_getter": "0x4ac38e",
+  "classes": [
+   "VectorDiagPane"
+  ],
+  "n": 10,
+  "entries": [
+   {
+    "kind": "WM_CREATE",
+    "id": 0,
+    "last": 0,
+    "sig": 13,
+    "pfn": "0x48f250"
+   },
+   {
+    "kind": "WM_SIZE",
+    "id": 0,
+    "last": 0,
+    "sig": 26,
+    "pfn": "0x4361d0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33010,
+    "last": 33010,
+    "sig": 66,
+    "pfn": "0x48f440"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33010,
+    "last": 33010,
+    "sig": 58,
+    "pfn": "0x48f470"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33011,
+    "last": 33011,
+    "sig": 66,
+    "pfn": "0x48f440"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33011,
+    "last": 33011,
+    "sig": 58,
+    "pfn": "0x48f480"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33012,
+    "last": 33012,
+    "sig": 66,
+    "pfn": "0x48f490"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33012,
+    "last": 33012,
+    "sig": 58,
+    "pfn": "0x48f4e0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 33013,
+    "last": 33013,
+    "sig": 66,
+    "pfn": "0x48f4f0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 33013,
+    "last": 33013,
+    "sig": 58,
+    "pfn": "0x48f540"
+   }
+  ]
+ },
+ {
+  "getter": "0x48f550",
+  "map": "0x4d0b00",
+  "base_getter": "0x441b70",
+  "classes": [
+   "VectorDiagramWnd"
+  ],
+  "n": 15,
+  "entries": [
+   {
+    "kind": "WM_LBUTTONDOWN",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x46ec10"
+   },
+   {
+    "kind": "WM_RBUTTONUP",
+    "id": 0,
+    "last": 0,
+    "sig": 54,
+    "pfn": "0x48fc80"
+   },
+   {
+    "kind": "WM_CREATE",
+    "id": 0,
+    "last": 0,
+    "sig": 13,
+    "pfn": "0x492ef0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32841,
+    "last": 32841,
+    "sig": 58,
+    "pfn": "0x48faa0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32842,
+    "last": 32842,
+    "sig": 58,
+    "pfn": "0x48fb40"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32844,
+    "last": 32844,
+    "sig": 58,
+    "pfn": "0x48fbe0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32845,
+    "last": 32845,
+    "sig": 58,
+    "pfn": "0x48f600"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32846,
+    "last": 32846,
+    "sig": 58,
+    "pfn": "0x48f820"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32841,
+    "last": 32841,
+    "sig": 66,
+    "pfn": "0x48fb20"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32842,
+    "last": 32842,
+    "sig": 66,
+    "pfn": "0x48fbc0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 32844,
+    "last": 32844,
+    "sig": 66,
+    "pfn": "0x48fc60"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 35000,
+    "last": 35100,
+    "sig": 60,
+    "pfn": "0x48f590"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 36000,
+    "last": 36100,
+    "sig": 60,
+    "pfn": "0x48f8d0"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 35000,
+    "last": 35100,
+    "sig": 66,
+    "pfn": "0x48f880"
+   },
+   {
+    "kind": "CMDUI",
+    "id": 36000,
+    "last": 36100,
+    "sig": 66,
+    "pfn": "0x48f9c0"
+   }
+  ]
+ },
+ {
+  "getter": "0x4a7a41",
+  "map": "0x4d1434",
+  "base_getter": "0x4abf0e",
+  "classes": [],
+  "n": 13,
+  "entries": [
+   {
+    "kind": "WM_ERASEBKGND",
+    "id": 0,
+    "last": 0,
+    "sig": 1,
+    "pfn": "0x4a9380"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32871,
+    "last": 32871,
+    "sig": 58,
+    "pfn": "0x4a8aa0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32872,
+    "last": 32872,
+    "sig": 58,
+    "pfn": "0x4a8bc0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32873,
+    "last": 32873,
+    "sig": 58,
+    "pfn": "0x4a8d50"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32874,
+    "last": 32874,
+    "sig": 58,
+    "pfn": "0x4a8eb0"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32876,
+    "last": 32876,
+    "sig": 58,
+    "pfn": "0x4a8f10"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32875,
+    "last": 32875,
+    "sig": 58,
+    "pfn": "0x4a8f90"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32878,
+    "last": 32878,
+    "sig": 58,
+    "pfn": "0x4a9010"
+   },
+   {
+    "kind": "COMMAND",
+    "id": 32877,
+    "last": 32877,
+    "sig": 58,
+    "pfn": "0x4a91c0"
+   },
+   {
+    "kind": "NOTIFY code=0xfe3d",
+    "id": 1074,
+    "last": 1074,
+    "sig": 62,
+    "pfn": "0x4a85e0"
+   },
+   {
+    "kind": "NOTIFY code=0xfe39",
+    "id": 1074,
+    "last": 1074,
+    "sig": 62,
+    "pfn": "0x4a9510"
+   },
+   {
+    "kind": "CMD code=0x1",
+    "id": 1075,
+    "last": 1075,
+    "sig": 58,
+    "pfn": "0x4a9310"
+   },
+   {
+    "kind": "REGMSG@0xc000",
+    "id": 0,
+    "last": 0,
+    "sig": 0,
+    "pfn": "0x0"
+   }
+  ]
+ }
+]
