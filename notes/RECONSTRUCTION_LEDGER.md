@@ -12,7 +12,7 @@ later cold session can resume from it alone.
 reconstruction. Two crates: `fvb-core` (engine), `fastview-gui` (egui app).
 Keep ALL of these green at every commit:
 - `cargo build --workspace`  (0 warnings)
-- `cargo test --workspace`   (currently 344 pass)
+- `cargo test --workspace`   (currently 347 pass)
 - `cargo clippy --workspace` (0)
 - `cargo build --workspace --target x86_64-pc-windows-gnu` (0 errors)
 
@@ -2972,6 +2972,41 @@ the others (the original keeps its list order); an area on an unknown
 channel is still dropped (not read).
 
 
+### L9.90 — Ribbon keytips as MFC shows them for this ribbon  ·  🟡
+Read (subagent report on mfc120u; by hand in FastView: the application
+button's text `"\nf"` at `0x4cacac` (pushed `0x472fb8`), the Help split
+button's `"\na"` at `0x4cacb8` (`0x474a97`), strings 276 «Вставить» + `v`,
+277 «Вырезать» + `x`, 278 «Копировать» + `c`): MFC assigns no keytip from
+a label — only keys after a `\n` in the element's text (SetText
+`0x10063ee1`), the QAT numbered 1…9 (RebuildKeys `0x1012bc08`), and in
+popup menus the letter after `&`; the text is upper-cased in a box of the
+larger of the keys and «O» plus 10 × 2. Alt held 200 ms (timer 0xec1a)
+shows the tab level; Alt released focuses the ribbon (showing them) or,
+focused, hands the focus back; F10 toggles (not with Shift / Ctrl); losing
+the focus removes them; typing compares upper-cased Latin keys (A–Z give
+the Latin letter whatever the layout, `0x100add31`) in list order — a
+one-key match activates, a longer keytip's first letter narrows; Esc goes
+back a level (out at the top), Space and an unmatched key leave. For this
+ribbon: the tab level holds F (application button), 1 / 2 / 3 (Открыть,
+Сохранить, Печать), A (Help); no tab has keys, so the category level
+(Вставить «V», Копировать «C») is unreachable; the application menu's
+rows take their `&` letters (Cyrillic — INFERRED; untypable) and Печать «P»
+/ «W».
+Ours had none. Now `keytips.rs` (`Keytips`, `Level`, `Target`, `tips`,
+the Alt / F10 / Esc / typing state machine), `App::keytips_input` (before
+the shortcuts; the keyboard is the keytips' while shown),
+`keytips_paint`, the application menu opened by «F» through egui's bar
+state (`kt_menu`; a root shows for its button's response id).
+`FV_WINDOW_STATE=keytips` / `keytipsmenu` render them. Tests
+`alt_tap_hold_and_f10`, `typing_activates_descends_and_backs_out`,
+`keytips_open_the_application_menu`.
+Residual: keytip placement per element type not read (ours: buttons at
+their bottom centre, menu rows at the left, the menu part at the right);
+Alt+key while Alt is held, the Recent Documents' keys, the colours of the
+box (ours a tooltip-like box), «A» activates nothing (our Помощь is
+disabled).
+
+
 Next in L9 (HANDOFF 2026-10-23, evening 2): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
@@ -3002,7 +3037,7 @@ channel (L9.65). The carved MFC DLLs live in `extracted/mfc/`. No user
 questions pending.
 **How to look at the GUI without running it:** `FV_WINDOW_DUMP=<png>
 [FV_WINDOW_RECORD=<cfg>] [FV_WINDOW_STATE=analysis (the sheet, two formula
-channels)|comments|group|circle|circletable|circlelegend|diff|difftable|omp|ompparams|preview|print|pagesetup|
+channels)|comments|group|circle|circletable|circlelegend|diff|difftable|keytips|keytipsmenu|omp|ompparams|preview|print|pagesetup|
 settings|channels|coef|fileparams|explorer|parambar|vizirs|alert|windows|
 paste|vecvalues|skin<k>] [FV_WINDOW_XSCALE=f] [FV_WINDOW_SIZE=w,h] [FV_WINDOW_CLICK=x,y]
 [FV_WINDOW_HOVER=x,y] cargo test window_dump`, then Read the PNG (crop with
@@ -3020,8 +3055,7 @@ strings / dialogs: `tools/pestr.py` on `extracted/mfc/mfc120rus.dll`.
 **Open next** (verify a residual is not already done before starting):
 L9.22 / L9.84 print residuals (CUPS hardware margins, the preview's
 paper; the logo bitmap stays out — it is the original's asset); L9.89's kept levels drawn snapped on digital lanes (`0x42b640` not read);
-keytips (MFC's ribbon keytip machinery — the program sets only Печать «p»
-/ «w»); L9.27 MFC's intermediate ribbon reductions; L9.64's slot +0x1f0
+L9.27 MFC's intermediate ribbon reductions; L9.64's slot +0x1f0
 and the MDI arrangements; pane re-docking (egui limit). Good recurring
 pass: render the user's real records (`~/Downloads/DOC_1999.cfg`,
 `BINARY.cfg`) after big changes.

@@ -17,6 +17,7 @@ mod formula_dlg;
 mod formula_page;
 mod icons;
 mod instance;
+mod keytips;
 mod sysclip;
 mod lanes;
 mod merge_ui;
@@ -295,7 +296,8 @@ impl App {
         self.modal_up = dialogs::window_up(ctx);
         if self.modal_up {
             dialogs::modal_backdrop(ctx, "fv_modal_backdrop", egui::Order::PanelResizeLine);
-        } else {
+            self.keytips.exit();
+        } else if !self.keytips_input(ctx) {
             self.handle_keys(ctx);
         }
 
@@ -455,6 +457,34 @@ mod window_tests {
         for dlg in [C::Settings, C::ChannelsDialog, C::Coefficients, C::Print, C::PageSetup, C::OmpParams, C::FileParams, C::ChannelMap, C::HdrComment] {
             sweep(&mut demo(&[dlg]));
         }
+    }
+
+    /// Keytips (L9.90): F10 shows them, «F» opens the application menu and
+    /// descends into it, Esc closes it and backs out, Esc again leaves.
+    #[test]
+    fn keytips_open_the_application_menu() {
+        let mut app = demo(&[]);
+        let ctx = egui::Context::default();
+        let size = Vec2::new(1320.0, 860.0);
+        let key = |key| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }];
+        let menu_open = |app: &App, ctx: &egui::Context| {
+            let (bar, ..) = app.kt_bar.expect("the application button was drawn");
+            let state = egui::menu::BarState::load(ctx, bar);
+            let root: &Option<egui::menu::MenuRoot> = &state;
+            root.is_some()
+        };
+        frames(&mut app, &ctx, size, vec![vec![], key(egui::Key::F10), vec![]]);
+        assert_eq!(app.keytips.level, Some(keytips::Level::Tabs));
+        assert!(app.kt_rects.iter().any(|(t, r, _)| *t == keytips::Target::Qat(0) && r.width() > 0.0));
+        frames(&mut app, &ctx, size, vec![key(egui::Key::F), vec![], vec![]]);
+        assert_eq!(app.keytips.level, Some(keytips::Level::AppMenu));
+        assert!(menu_open(&app, &ctx), "«F» opens the application menu");
+        assert!(app.kt_rects.iter().any(|(t, ..)| *t == keytips::Target::PrintMain), "its rows carry keytips: {:?}", app.kt_rects);
+        frames(&mut app, &ctx, size, vec![key(egui::Key::Escape), vec![]]);
+        assert_eq!(app.keytips.level, Some(keytips::Level::Tabs));
+        assert!(!menu_open(&app, &ctx), "Esc closes it");
+        frames(&mut app, &ctx, size, vec![key(egui::Key::Escape), vec![]]);
+        assert!(!app.keytips.shown());
     }
 
     /// A whole window at the default size with the demo document.
@@ -804,6 +834,10 @@ mod window_tests {
             app.formula_page.selected = Some(1);
         }
         // `FV_WINDOW_STATE=vecvalues`: the vector diagram's values table.
+        // `FV_WINDOW_STATE=keytips` / `keytipsmenu`: the tab-level keytips,
+        // or the application menu opened by «F».
+        // (Sent as keys after the click passes; a click ends keytip mode.)
+        let kt_state = std::env::var("FV_WINDOW_STATE").unwrap_or_default();
         // `FV_WINDOW_STATE=difftable`: a differential pair (Iдиф the first
         // channel, Iторм the second) and its values table.
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "difftable") {
@@ -866,7 +900,15 @@ mod window_tests {
         app.mru = vec!["/data/osc/2024-05-01 Подстанция 110 кВ.cfg".into(), "/data/osc/short.cff".into()];
         let size = pos("FV_WINDOW_SIZE").map_or(Vec2::new(1320.0, 860.0), |p| p.to_vec2());
         let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
-        let passes = vec![vec![], vec![], vec![egui::Event::PointerMoved(at), ev(true)], vec![ev(false)], vec![egui::Event::PointerMoved(hover)], vec![], vec![], vec![]];
+        let mut passes = vec![vec![], vec![], vec![egui::Event::PointerMoved(at), ev(true)], vec![ev(false)], vec![egui::Event::PointerMoved(hover)], vec![], vec![], vec![]];
+        let key = |key| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }];
+        if kt_state == "keytips" || kt_state == "keytipsmenu" {
+            passes.push(key(egui::Key::F10));
+            if kt_state == "keytipsmenu" {
+                passes.push(key(egui::Key::F));
+            }
+            passes.extend([vec![], vec![], vec![]]);
+        }
         let fonts = app_fonts();
         let c = raster::render_input(size, 1.0, Some(&fonts), passes, |ctx| app.frame_ui(ctx));
         let rgba: Vec<u8> = c.px.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();

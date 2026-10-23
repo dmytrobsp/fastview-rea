@@ -984,6 +984,13 @@ pub struct App {
 
     // dialogs / panels
     pub show_about: bool,
+    /// Ribbon keytips (L9.90) and, per frame, the elements they sit on.
+    pub keytips: crate::keytips::Keytips,
+    pub kt_rects: Vec<(crate::keytips::Target, egui::Rect, bool)>,
+    /// The application menu's bar id and button, to open / close it from
+    /// the keyboard.
+    pub kt_bar: Option<(egui::Id, egui::Rect, egui::Id)>,
+    pub kt_open_menu: bool,
     pub show_file_params: bool,
     pub show_channel_map: bool,
     pub show_settings: bool,
@@ -1138,6 +1145,10 @@ impl App {
             store: Default::default(),
             persist: false,
             show_about: false,
+            keytips: Default::default(),
+            kt_rects: Vec::new(),
+            kt_bar: None,
+            kt_open_menu: false,
             show_file_params: false,
             show_channel_map: false,
             show_settings: false,

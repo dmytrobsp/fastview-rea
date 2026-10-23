@@ -13,6 +13,7 @@ impl App {
     pub fn ribbon_ui(&mut self, ui: &mut egui::Ui) {
         let p = self.skin.palette();
         let mut cmds: Vec<Command> = Vec::new();
+        self.kt_rects.clear();
 
         // Gradient band behind the quick-access toolbar + tab strip (the ribbon
         // body below is the lighter `tab_active` fill).
@@ -31,7 +32,16 @@ impl App {
             let has_doc = self.active_doc().is_some();
             let mru = self.mru.clone();
             let sub_id = app_sub_id();
-            egui::menu::menu_button(ui, RichText::new("Файл ▾").color(p.text).strong(), |ui| {
+            // Keytip «F» opens the menu from the keyboard (L9.90).
+            let bar_id = ui.id();
+            if let Some(b) = &mut self.kt_bar {
+                b.0 = bar_id;
+            }
+            if std::mem::take(&mut self.kt_open_menu) {
+                self.kt_menu(ui.ctx(), true);
+            }
+            let mut menu_rects: Vec<(crate::keytips::Target, egui::Rect, bool)> = Vec::new();
+            let app_button = egui::menu::menu_button(ui, RichText::new(APP_MENU_TITLE).color(p.text).strong(), |ui| {
                 // Main panel (Office 2007): hovering an item with sub-items
                 // shows them in the right column in place of the recent
                 // documents. Fixed column widths: a separator takes all the
@@ -64,6 +74,11 @@ impl App {
                                 ui.separator();
                             }
                             let r = ui.add_enabled(enabled || opens.is_some(), egui::Button::new(label).frame(false).selected(opens.is_some() && sub == opens));
+                            if k == 4 {
+                                menu_rects.extend([(crate::keytips::Target::PrintMain, r.rect, enabled), (crate::keytips::Target::PrintMenu, r.rect, true)]);
+                            } else if k < 10 {
+                                menu_rects.push((crate::keytips::Target::AppItem(k), r.rect, enabled));
+                            }
                             if r.hovered() {
                                 sub = opens;
                             }
@@ -127,20 +142,29 @@ impl App {
                 });
                 ui.data_mut(|d| d.insert_temp(sub_id, (sub, frame)));
             });
+            let button = app_button.response.rect;
+            self.kt_bar = Some((bar_id, button, app_button.response.id));
+            self.kt_rects.push((crate::keytips::Target::AppButton, button, true));
+            self.kt_rects.extend(menu_rects);
             ui.add_space(4.0);
             // Quick-access toolbar: Open, Save, Print only.
-            for (icon, tip, cmd) in [
+            for (n, (icon, tip, cmd)) in [
                 (Icon::Open, "Открыть  (Ctrl+O)", Command::Open),
                 (Icon::Save, "Сохранить", Command::Save),
                 (Icon::Print, "Печать  (Ctrl+P)", Command::Print),
-            ] {
-                if qat_button(ui, p, icon).on_hover_text(tip).clicked() {
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let r = qat_button(ui, p, icon).on_hover_text(tip);
+                self.kt_rects.push((crate::keytips::Target::Qat(n), r.rect, true));
+                if r.clicked() {
                     cmds.push(cmd);
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Help split button (57667): the arrow opens {Помощь, О программе...}.
-                ui.menu_button(RichText::new("?").color(p.text).strong(), |ui| {
+                let help = ui.menu_button(RichText::new("?").color(p.text).strong(), |ui| {
                     ui.add_enabled(false, egui::Button::new("Помощь"));
                     ui.separator();
                     if ui.button("О программе...").clicked() {
@@ -148,6 +172,7 @@ impl App {
                         ui.close_menu();
                     }
                 });
+                self.kt_rects.push((crate::keytips::Target::Help, help.response.rect, true));
                 // «Стиль» (menu 200): the radio entry of the current look,
                 // persisted as `ApplicationLook`.
                 ui.menu_button(RichText::new("Стиль ▾").color(p.text), |ui| {
@@ -249,6 +274,7 @@ impl App {
         for c in cmds {
             self.dispatch(c);
         }
+        self.keytips_paint(ui.ctx());
     }
 
     fn ribbon_home(&mut self, ui: &mut egui::Ui, cmds: &mut Vec<Command>) {
@@ -908,6 +934,113 @@ fn paint_mini(painter: &egui::Painter, r: egui::Rect, glyph: Mini, col: Color32)
         }
     }
 }
+
+// ---------------- keytips (L9.90) ----------------
+
+impl App {
+    /// This frame's keytip keys (`crate::keytips`): Alt held / tapped, F10,
+    /// then — while shown — Esc, Space and typed letters or digits. True
+    /// when the keytips took the keyboard (no shortcuts then).
+    pub fn keytips_input(&mut self, ctx: &egui::Context) -> bool {
+        use crate::keytips::{Outcome, Target};
+        let was = self.keytips.shown();
+        let (mods, now, keys, pressed) = ctx.input(|i| {
+            let keys: Vec<egui::Key> = i.events.iter().filter_map(|e| if let egui::Event::Key { key, pressed: true, .. } = e { Some(*key) } else { None }).collect();
+            (i.modifiers, i.time, keys, i.pointer.any_pressed())
+        });
+        self.keytips.alt(mods.alt, !keys.is_empty(), now);
+        if mods.alt && !self.keytips.shown() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
+        let f10 = keys.contains(&egui::Key::F10) && !mods.shift && !mods.ctrl;
+        if f10 {
+            self.keytips.f10();
+        }
+        // Losing the focus (a click anywhere) removes them.
+        if pressed {
+            self.keytips.exit();
+        }
+        if was && self.keytips.shown() && !f10 {
+            for key in keys {
+                let out = match key {
+                    egui::Key::Escape => self.keytips.escape(),
+                    egui::Key::Space => {
+                        self.keytips.exit();
+                        Outcome::Exit
+                    }
+                    k => match k.name().chars().next().filter(|c| k.name().len() == 1 && c.is_ascii_alphanumeric()) {
+                        Some(c) => self.keytips.key(c),
+                        None => Outcome::None,
+                    },
+                };
+                match out {
+                    Outcome::Back => self.kt_menu(ctx, false),
+                    Outcome::Activate(t) => {
+                        match t {
+                            Target::AppButton => self.kt_open_menu = true,
+                            Target::Qat(n) => self.dispatch([Command::Open, Command::Save, Command::Print][n.min(2)].clone()),
+                            Target::PrintMain => {
+                                self.kt_menu(ctx, false);
+                                self.dispatch(Command::Print);
+                            }
+                            Target::PrintMenu => {
+                                let frame = ctx.cumulative_pass_nr();
+                                ctx.data_mut(|d| d.insert_temp(app_sub_id(), (Some(AppSub::Print), frame.saturating_sub(1))));
+                            }
+                            // Помощь is disabled in ours; the Cyrillic menu
+                            // keys cannot be typed.
+                            Target::Help | Target::AppItem(_) => {}
+                        }
+                        break;
+                    }
+                    Outcome::Exit => break,
+                    Outcome::None => {}
+                }
+            }
+        }
+        was || self.keytips.shown()
+    }
+
+    /// Open or close the application menu (its egui bar state).
+    fn kt_menu(&mut self, ctx: &egui::Context, open: bool) {
+        // A root shows for the button whose response id it carries (last
+        // frame's, stable while the layout is).
+        let Some((bar, button, id)) = self.kt_bar else { return };
+        let mut state = egui::menu::BarState::load(ctx, bar);
+        let root: &mut Option<egui::menu::MenuRoot> = &mut state;
+        *root = open.then(|| egui::menu::MenuRoot::new(button.left_bottom(), id));
+        state.store(ctx, bar);
+    }
+
+    /// Draw the shown level's keytips on their elements: the keys upper-
+    /// cased in a box the size of the larger of them and «O» plus 10 × 2,
+    /// a disabled element's greyed (`0x1017b177`, `0x10194ae0`).
+    pub fn keytips_paint(&self, ctx: &egui::Context) {
+        let Some(level) = self.keytips.level else { return };
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("fv_keytips")));
+        let font = egui::FontId::proportional(11.0);
+        let o = painter.layout_no_wrap("O".into(), font.clone(), Color32::BLACK).size();
+        for (keys, target) in crate::keytips::tips(level) {
+            let Some(&(_, r, enabled)) = self.kt_rects.iter().find(|(t, ..)| *t == target) else { continue };
+            let ink = if enabled { Color32::BLACK } else { Color32::from_gray(150) };
+            let g = painter.layout_no_wrap(crate::keytips::Keytips::label(keys), font.clone(), ink);
+            let size = egui::vec2(g.size().x.max(o.x) + 10.0, g.size().y.max(o.y) + 2.0);
+            // Menu rows carry theirs at the left (the menu part's at the
+            // right); buttons at the middle of their bottom edge.
+            let at = match target {
+                crate::keytips::Target::AppItem(_) | crate::keytips::Target::PrintMain => egui::pos2(r.left() + 4.0 + size.x / 2.0, r.center().y),
+                crate::keytips::Target::PrintMenu => egui::pos2(r.right() - 4.0 - size.x / 2.0, r.center().y),
+                _ => r.center_bottom(),
+            };
+            let bx = egui::Rect::from_center_size(at, size);
+            painter.rect(bx, 1.0, Color32::from_rgb(255, 255, 225), egui::Stroke::new(1.0f32, Color32::from_gray(118)));
+            painter.galley(bx.center() - g.size() / 2.0, g, ink);
+        }
+    }
+}
+
+/// The application button's title (the menu id is derived from it).
+pub const APP_MENU_TITLE: &str = "Файл ▾";
 
 #[cfg(test)]
 mod tests {
