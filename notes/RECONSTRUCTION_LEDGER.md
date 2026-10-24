@@ -6216,6 +6216,19 @@ against the values at fill time (MFC's MarkModifiedProperties, INFERRED)
 — ours against the defaults; the toolbar's height (CalcFixedLayout, not
 read); About's links on press within fixed rectangles (`0x4471e0`).
 
+### L9.210 — VM run: the unit normaliser's MakeUpper folds Cyrillic  ·  ✅
+Run on the VM (the original, ru-RU): a record of our own making (four
+analog channels, a = 0.0005, every sample 1) with the units «МВт»,
+«МВТ», «ном», «°» reads «500 Вт», «500 Вт», «0.0005 ном», «0.0005 °» —
+so `0x422b10`'s MakeUpper folds Cyrillic too (lower-case «Вт» is W, the
+«М» prefix ×10⁶), and «°» is DEG (L9.207). Ours took MakeUpper as
+ASCII-only and left «МВт» unrecognised («0.0005 МВт»). Now
+`units::normalize` folds with `to_uppercase`; the units test updated;
+ours rendered on the same record reads «500 Вт». (L9.34's MakeUpper
+question settled; «ном» reads «ном» in both, and its channel menu greys
+«Отображать на векторной диаграмме» — not vector-eligible, as ours.) The
+record stays local.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

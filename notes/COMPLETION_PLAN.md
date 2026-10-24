@@ -132,8 +132,9 @@ items (VM ones also in W4.4):
 - [ ] W2.5 L9.31 — phase 2 of loading on the UI thread (derived arrays,
   `.set` formula channels outside the bar); the `.cff` cancelled during its
   split shows «Неправильный формат файла» (ours silent).
-- [ ] W2.6 L9.34 — MakeUpper on Cyrillic units («МВт»), «ном»
-  vector-eligibility (VM) (binary32 with «кВ»: settled, L9.182); string 3105 is «°», a degree spelling (done, L9.207).
+- [x] W2.6 L9.34 — MakeUpper folds Cyrillic units and a «ном» channel is not
+  vector-eligible (VM runs, L9.210); binary32 with «кВ» (L9.182); string
+  3105 is «°» (L9.207).
 - [ ] W2.7 L9.37 — the preview buttons' sizes (static: done, L9.202 — the
   page buttons small); the preview's keytips (P, QI, QO, 1, X, V, C; panels
   ZP, ZZ, ZV — `0x100fccec`); QAT / app button / MDI tabs during preview (VM).

@@ -6,8 +6,8 @@
 //! unit.
 //!
 //! The original compares CP1251 literals case-sensitively against the unit
-//! and an upper-cased copy (`MakeUpper`, taken here as ASCII-only — Cyrillic
-//! case variants are listed by hand in the code); nothing is trimmed.
+//! and an upper-cased copy (`MakeUpper`, which folds Cyrillic too under the
+//! ru-RU locale — seen on the VM, L9.210); nothing is trimmed.
 
 /// A normalised unit.
 #[derive(Debug, Clone, PartialEq)]
@@ -83,7 +83,8 @@ pub fn normalize(raw: &str) -> Unit {
             break;
         }
     }
-    let u = s.to_ascii_uppercase();
+    // MakeUpper folds Cyrillic too (a VM run, L9.210: «МВт» is W ×1e6).
+    let u = s.to_uppercase();
     let canon = |c: &str| Unit { unit: c.to_string(), mult, per_second, unknown: false };
     match () {
         _ if matches!(u.as_str(), "А" | "A") => canon("A"),
@@ -247,9 +248,10 @@ mod tests {
         assert_eq!(n("мА"), ("A".into(), 1e-3));
         assert_eq!(n("мкА"), ("A".into(), 1e-6));
         assert_eq!(n("МВТ"), ("W".into(), 1e6));
-        // Upper-casing taken as ASCII-only (Cyrillic folding NOT DETERMINED):
-        // a lower-case «Вт» stays unrecognised.
-        assert_eq!(n("МВт"), ("МВт".into(), 1.0));
+        // MakeUpper folds Cyrillic (the original on the VM shows «МВт» at
+        // 0.0005 as «500 Вт», L9.210).
+        assert_eq!(n("МВт"), ("W".into(), 1e6));
+        assert_eq!(n("вт"), ("W".into(), 1.0));
         assert_eq!(n("Ом"), ("Ohm".into(), 1.0));
         assert_eq!(n("кОм"), ("Ohm".into(), 1e3));
         assert_eq!(n("m"), ("m".into(), 1.0), "a lone prefix letter is the unit");
