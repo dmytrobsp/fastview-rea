@@ -10,7 +10,7 @@ public static class W {
 }
 '@
 [W]::SetProcessDPIAware() | Out-Null
-[W]::SetThreadExecutionState(0x80000002) | Out-Null
+[W]::SetThreadExecutionState([uint32]2147483650) | Out-Null
 [W]::SetCursorPos(2550, 700) | Out-Null; Start-Sleep -Milliseconds 300; [W]::SetCursorPos(2555, 705) | Out-Null
 Start-Sleep -Seconds 3
 & (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'shot.ps1') -Out $Out

@@ -21,7 +21,7 @@ public static class In {
 [In]::SetProcessDPIAware() | Out-Null
 # Keep the display on while the steps run (ES_CONTINUOUS | ES_DISPLAY_REQUIRED):
 # an idle VM turns it off and the captures freeze on its last frame.
-[In]::SetThreadExecutionState(0x80000002) | Out-Null
+[In]::SetThreadExecutionState([uint32]2147483650) | Out-Null
 function Click([int]$x, [int]$y, [uint32]$down, [uint32]$up, [int]$times = 1) {
     [In]::SetCursorPos($x, $y) | Out-Null; Start-Sleep -Milliseconds 120
     for ($i = 0; $i -lt $times; $i++) { [In]::mouse_event($down, 0, 0, 0, [UIntPtr]::Zero); [In]::mouse_event($up, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 60 }
