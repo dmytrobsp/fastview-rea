@@ -4014,7 +4014,7 @@ invert / DC on digital, computed and pasted channels (32823 / 32824 count
 them) — next; a path-less document (only our demo) keeps the comment
 tools.
 
-### L9.130 — Keyboard and wheel as read: Ctrl+C / Ctrl+V through egui-winit, MDI keys, preview keys, визир keys, per-message wheel  ·  ✅
+### L9.130 — Keyboard and wheel as read: Ctrl+C / Ctrl+V through egui-winit, MDI keys, preview keys, визир keys, per-message wheel  ·  ✅ (the MDI keys corrected: L9.294 — they do nothing with tabbed documents)
 Read (subagent audit of RT_ACCELERATOR 128 / 30997, every PreTranslate /
 WM_KEYDOWN / WM_MOUSEWHEEL / button handler; by hand `0x45f490`,
 `0x492f20`, the clamp at `0x45f52f`): table 128 is the only accelerator
@@ -8092,6 +8092,19 @@ egui's rounded menu ending at the ▾, the ▾ unlit. Now the list is
 `popmenu::mfc_frame` rows with the window glyph in the image column,
 closed by a pick, a press outside or Esc. Test
 `the_document_list_opens_and_activates`.
+
+### L9.294 — VM: no MDI keys with tabbed documents; Ctrl+O; one record from the command line  ·  ✅
+Run on both programs:
+- **The command line.** Two record paths open only the first, in both.
+- **Ctrl+O.** Both show the system's Open dialog, and the typed path
+  opens DOC_1999 as a second tab, made active.
+- **The MDI keys.** With WIN_1999 and DOC_1999 open, Ctrl+Tab leaves
+  DOC_1999 active and Ctrl+F4 closes nothing in the original; Ctrl+F4
+  did nothing with one document either. L9.130 read
+  `TranslateMDISysAccel` after the accelerator table, but it acts through
+  a child's system menu, which MFC's tabbed MDI children have not. Ours
+  cycled and closed. Now `handle_keys` has no MDI keys; test
+  `shortcuts_as_egui_winit_sends_them` (nothing moves or closes).
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

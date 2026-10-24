@@ -1519,20 +1519,17 @@ mod window_tests {
         w.run(vec![egui::Event::Paste("x".into())]);
         w.run(vec![up]);
         assert_eq!(pending(&w), 1, "pasted once");
-        // The MDI keys: Ctrl+Tab / Ctrl+Shift+Tab cycle, Ctrl+F4 closes.
+        // No MDI keys with tabbed documents (VM): Ctrl+Tab, Ctrl+F6 and
+        // Ctrl+F4 change nothing.
         w.app.dispatch(app::Command::Demo);
         w.idle(2);
         assert_eq!((w.app.docs.len(), w.app.active), (2, Some(1)));
         w.key(egui::Key::Tab);
-        assert_eq!(w.app.active, Some(0), "Ctrl+Tab: the next, wrapping");
-        w.held = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
         w.key(egui::Key::F6);
-        assert_eq!(w.app.active, Some(1), "Ctrl+Shift+F6: the previous");
-        w.held = egui::Modifiers::CTRL;
         w.app.docs[1].set.modified = false;
         w.key(egui::Key::F4);
         w.idle(2);
-        assert_eq!(w.app.docs.len(), 1, "Ctrl+F4 closes the active document");
+        assert_eq!((w.app.docs.len(), w.app.active), (2, Some(1)), "nothing moves or closes");
     }
 
     /// MFC's pane menu on a caption right-click (`0x100ce72c`): Плавающее

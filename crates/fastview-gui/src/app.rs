@@ -1974,24 +1974,10 @@ impl App {
         let mut cmds = Vec::new();
         ctx.input(|i| {
             let m = i.modifiers;
-            // TranslateMDISysAccel after the table (`0x1024c16b`): Ctrl+F4
-            // closes the active document, Ctrl+F6 / Ctrl+Tab go to the next
-            // one, with Shift the previous (in tab order — INFERRED).
-            let n = self.docs.len();
-            if let (Some(a), true) = (self.active, n > 0) {
-                for e in &i.events {
-                    let egui::Event::Key { key, pressed: true, modifiers: km, .. } = e else { continue };
-                    if !km.ctrl || km.alt {
-                        continue;
-                    }
-                    match key {
-                        egui::Key::F4 if !km.shift => cmds.push(Command::CloseDoc(a)),
-                        egui::Key::F6 | egui::Key::Tab => cmds.push(Command::ActivateDoc(if km.shift { (a + n - 1) % n } else { (a + 1) % n })),
-                        _ => continue,
-                    }
-                    break;
-                }
-            }
+            // No MDI keys: TranslateMDISysAccel (Ctrl+F4 / Ctrl+F6 /
+            // Ctrl+Tab, L9.130) acts through a child's system menu, which the
+            // tabbed MDI children have not — on the VM Ctrl+Tab and Ctrl+F4
+            // do nothing with two documents open (L9.294).
             // Each key by the modifiers it came with: in a slow frame Ctrl
             // may be up again by the frame's end (the software runner, VM).
             // `Copy` / `Paste` come only from their shortcuts (Ctrl+Shift

@@ -253,7 +253,7 @@ items (VM ones also in W4.4):
     selection (L9.111); the print dialog's fields / status (L9.113); the
     preview's per-page DC (L9.121); «Свойства»' DEVMODE (L9.122); ~~the
     older looks' app button~~ (run, L9.223); Ctrl over a hot marker (L9.128);
-    MDI keys / order (L9.130); a 0 / negative rate in 392 (L9.131,
+    ~~MDI keys / order~~ (run: none with tabs, L9.294); a 0 / negative rate in 392 (L9.131,
     L9.148); the `.set` with formula + digital channels (L9.143); menu
     check column, combine with a computed channel, popup keyboard
     (L9.144, L9.146); ~~status bar prompts~~ (run, L9.291); ~~a group tab strip's
