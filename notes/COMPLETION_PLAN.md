@@ -214,7 +214,7 @@ items (VM ones also in W4.4):
     the binary writer with pending channels (L9.172); the legacy `.omp`
     reader `0x4a45f0` (spec §8.5).
   - **RUN** (VM scenarios, W4.4): `.set` comments by alias (L9.17); a
-    disabled V scroll bar when the lanes fit (L9.23); «МВт» / «ном»
+    ~~disabled V scroll bar when the lanes fit~~ (run, L9.196); «МВт» / «ном»
     folding (L9.34, L9.95, L2); the ГВ label's look (L9.42); the 4 × 4
     marks' fill (L9.45); quick-analysis edits and the modified flag
     (L9.55); «Окна...» arrangements under MDI tabs (L9.64, L9.91); the

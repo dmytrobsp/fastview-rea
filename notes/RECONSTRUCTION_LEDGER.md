@@ -1268,9 +1268,8 @@ panes, preview, ОМП, nine dialogs — × sizes down to 1×1, hover + LMB/RMB
 drags + Esc each), `the_horizontal_scroll_bar_is_painted_along_the_bottom_
 and_steps_by_a_screen` (painted inside its clip, arrows/track step).
 Residual: (arrow auto-repeat: L9.40); whether the V bar is
-present (disabled) when the lanes fit is NOT DETERMINED (DISABLENOSCROLL
-keeps an existing bar; the view's creation style was not read) — ours hides
-it as before; the original's thumb-position quirk (pos max 10001) not
+present (disabled) when the lanes fit — settled by a VM run (L9.196): not
+shown; the original's thumb-position quirk (pos max 10001) not
 modelled (we map first ∈ [0, N−visible] linearly).
 
 ### L9.24 — User-reported: input fell through dialogs to the view  ·  ✅
@@ -5816,11 +5815,24 @@ was an egui button in bold with a frame all round. Now `ribbon_tab` paints
 that shape (the other looks from their own colours, not read).
 Residual: the QAT's customise arrow.
 
+### L9.196 — The view's scroll bars only while there is something to scroll (VM run)  ·  ✅
+Run on the VM (W4.4; L9.23's open question): the original maximised on a
+2560 px screen with WIN_1999 — every lane and the whole record in view —
+shows neither scroll bar; in a smaller window (L9.177's capture) the
+horizontal one is there. So whatever the DISABLENOSCROLL mask does, the
+bars are absent when nothing scrolls (the view's creation style, not read,
+must lack WS_HSCROLL / WS_VSCROLL). Ours always drew the horizontal bar
+(disabled when the record fit). Now it shows only while the record does
+not fit (the layout without it decides), as the vertical one already did.
+Test `no_horizontal_bar_while_the_record_fits`.
+Residual: whether a bar shown once stays (disabled) after zooming back out
+(W1.3b's question for the planes too).
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.195)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.196)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5876,7 +5888,7 @@ fill, the group stats width); L9.186 the panes' captions; L9.187 the ribbon's pa
 gradient / height; L9.188 `doc+0x1d8` = every analog-kind record (W2.16),
 the unknowns table (W3.1); L9.189 formula channels on the frequency
 diagram; L9.190 VM runs (no document, single instance); L9.191 «Каналы» rows in
-vector order; L9.192 the ОМП flags as computed channels; L9.193 the lanes' icons; L9.194 W3.2 part A; L9.195 the ribbon's tab.
+vector order; L9.192 the ОМП flags as computed channels; L9.193 the lanes' icons; L9.194 W3.2 part A; L9.195 the ribbon's tab; L9.196 the view's scroll bars (VM run).
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

@@ -1097,12 +1097,21 @@ impl App {
 
         // ---- layout (`0x460290`, `0x45d4a0`) ----
         let band = g::RULER_H + if doc.diff_band { g::DIFF_BAND_H } else { 0.0 };
-        let client = Rect::from_min_max(full.min, Pos2::new(full.right(), full.bottom() - HSCROLL_H));
         let rows = lane_layout(doc, y_analog, primary);
         let abs_time = self.time_unit == crate::app::TimeUnit::Absolute;
         let (label_col, left_w) = ui.fonts(|fo| stats_columns(fo, doc, &rows, primary, abs_time));
         self.view_left = left_w;
         let content_h: f32 = rows.iter().map(|r| r.h).sum();
+        // Each window scroll bar only while there is something to scroll
+        // (seen on the VM: with the whole record and every lane in view
+        // neither is shown); each takes room from the other's test.
+        // Without the H bar: if the record fits, that layout stands.
+        let hbar_on = {
+            let vbar = content_h + band + 2.0 > full.height();
+            let plot_w = full.width() - if vbar { VSCROLL_W } else { 0.0 };
+            g::max_first(n, g::visible_count(plot_w, left_w, f)) > 0
+        };
+        let client = Rect::from_min_max(full.min, Pos2::new(full.right(), full.bottom() - if hbar_on { HSCROLL_H } else { 0.0 }));
         let vbar = content_h + band + 2.0 > client.height();
         let plot_right = client.right() - if vbar { VSCROLL_W } else { 0.0 };
         self.view_rects = Some((full, Rect::from_min_max(client.min, Pos2::new(plot_right, client.bottom()))));
@@ -1259,12 +1268,15 @@ impl App {
         }
 
         // ---- scrollbars (line and page step: one screen / 100 px) ----
-        // Window scroll bars: H along the whole bottom (always there), V down
-        // the whole right side, the corner between them blank.
-        let hbar = Rect::from_min_max(Pos2::new(full.left(), client.bottom()), Pos2::new(plot_right, full.bottom()));
+        // Window scroll bars: H along the whole bottom, V down the whole
+        // right side, the corner between them blank — each only while there
+        // is something to scroll.
         let hmax = g::max_first(n, visible);
-        if let Some(v) = scrollbar(ui, hbar, true, first as f32, hmax as f32, visible as f32, visible as f32, visible as f32) {
-            actions.push(Act::SetFirst(v.round().max(0.0) as usize));
+        if hbar_on {
+            let hbar = Rect::from_min_max(Pos2::new(full.left(), client.bottom()), Pos2::new(plot_right, full.bottom()));
+            if let Some(v) = scrollbar(ui, hbar, true, first as f32, hmax as f32, visible as f32, visible as f32, visible as f32) {
+                actions.push(Act::SetFirst(v.round().max(0.0) as usize));
+            }
         }
         if vbar {
             ui.painter().rect_filled(Rect::from_min_max(Pos2::new(plot_right, client.bottom()), full.max), 0.0, Color32::from_gray(236));
@@ -2624,6 +2636,24 @@ mod menu_tests {
         let touch = egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: Vec2::new(0.0, 30.0), modifiers: egui::Modifiers::NONE };
         h.frame_mod(vec![egui::Event::PointerMoved(at), touch], egui::Modifiers::NONE);
         assert_eq!(h.doc().vscroll, v + 30.0, "raw pixels");
+    }
+
+    /// With the whole record in view there is no horizontal bar (seen on
+    /// the VM, L9.196): nothing is painted along the bottom.
+    #[test]
+    fn no_horizontal_bar_while_the_record_fits() {
+        let mut h = Harness::new();
+        let fit = g::fit_scale(h.app.view_width, h.doc().osc.sample_count());
+        h.app.active_doc_mut().unwrap().xscale = Some(fit / 4.0);
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let y = SCREEN.y - 8.0 - HSCROLL_H / 2.0;
+        let bar = |h: &Harness| h.shapes.iter().any(|c| matches!(&c.shape, Shape::Rect(r) if r.rect.contains(Pos2::new(400.0, y)) && r.fill == Color32::from_gray(236)));
+        assert!(!bar(&h), "no bar while the record fits");
+        h.app.active_doc_mut().unwrap().xscale = Some(fit * 8.0);
+        h.frame(vec![]);
+        h.frame(vec![]);
+        assert!(bar(&h), "the bar once it does not");
     }
 
     #[test]
