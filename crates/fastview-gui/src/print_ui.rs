@@ -285,6 +285,10 @@ impl App {
         if ok || preview {
             self.print.printer = Some(names[dlg.printer.min(names.len() - 1)].clone());
         }
+        let closed = !open || cancel || ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        if ok || preview || closed {
+            spool::end_properties(ok || preview);
+        }
         if ok {
             let printer = (dlg.printer < self.print.printers.len()).then(|| self.print.printers[dlg.printer].clone());
             self.print_run(dlg.doc, printer);
@@ -295,7 +299,7 @@ impl App {
             self.active = Some(dlg.doc);
             self.print_preview_open();
             self.active = active;
-        } else if open && !cancel && !ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        } else if !closed {
             self.print.dialog = Some(dlg);
         }
     }

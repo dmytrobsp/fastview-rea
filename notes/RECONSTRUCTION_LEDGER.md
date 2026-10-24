@@ -7258,6 +7258,34 @@ Residuals:
 - Ours re-lays out every frame, MFC on each frame layout (the same fixed
   point).
 
+### L9.264 — VM runs: «Свойства...» in the print dialog, ours exercised there  ·  ✅
+VM runs (the original, «Microsoft Print to PDF» the default printer):
+- «Свойства...» opens the driver's document-properties dialog over the
+  print dialog, owned by it.
+- It opens on Portrait even after «Альбомная» was set and OKed in
+  «Параметры страницы»: the page setup's orientation does not reach it.
+- Landscape chosen there and OKed, a second «Свойства...» in the same
+  print dialog opens on Landscape.
+- The print dialog cancelled and opened again, it is back on Portrait:
+  the choice lives with the dialog.
+Ours passed no owner and kept a choice per printer from then on,
+cancelled dialog or not. Now:
+- `spool::properties` passes the foreground window (ours, as the button
+  is clicked) as the owner.
+- The choice is held for the open print dialog (`SESSION_DM`) and kept
+  for the printer's jobs only when the dialog ends in OK or the preview
+  (`spool::end_properties`); on Отмена, Esc or ✕ it is dropped.
+- The page setup's OK still drops both (L9.94).
+Our path was exercised on the VM for the first time: a cross-built
+ignored test (`spool::tests::driver_properties_dialog`, started in the
+desktop session by the harness's new `-ArgLine`). The driver's dialog
+came up; Landscape chosen and OKed returned true, and the second call
+opened on Landscape (true, false logged).
+Residual:
+- Whether a print OKed keeps the choice for the next print dialog was not
+  run (it would print to a PDF file): INFERRED as kept.
+- The preview treated as OK is INFERRED.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

@@ -52,9 +52,11 @@ pub fn details(printer: &str) -> [String; 4] {
 }
 
 /// «Свойства...» (psh2 of the common print dialog): the driver's own
-/// document-properties dialog; the settings chosen there apply to this
-/// printer's jobs from then on (the dialog's DEVMODE). Windows only —
-/// false where there is none (CUPS).
+/// document-properties dialog, opened on what was chosen before (in this
+/// print dialog, else kept from an earlier one), never on the page setup's
+/// orientation (VM); the choice applies to this printer's jobs once the
+/// print dialog ends in OK ([`end_properties`]). Windows only — false
+/// where there is none (CUPS).
 pub fn properties(printer: &str) -> bool {
     imp::properties(printer)
 }
@@ -63,6 +65,14 @@ pub fn properties(printer: &str) -> bool {
 /// MFC a fresh DEVMODE of the default printer (`0x448a90`, #12964).
 pub fn forget_properties(printer: &str) {
     imp::forget_properties(printer)
+}
+
+/// The print dialog ends: what its «Свойства...» chose is kept for the
+/// printers' jobs on OK (and the preview), dropped otherwise (VM: chosen,
+/// the dialog cancelled and opened again, the driver's dialog is back on
+/// the printer's own settings; within one dialog it opens on the choice).
+pub fn end_properties(keep: bool) {
+    imp::end_properties(keep)
 }
 
 /// The fields from `lpstat -p <printer>` and `lpoptions -p <printer>`.
@@ -174,6 +184,8 @@ mod imp {
 
     pub fn forget_properties(_printer: &str) {}
 
+    pub fn end_properties(_keep: bool) {}
+
     pub fn properties(_printer: &str) -> bool {
         false
     }
@@ -238,6 +250,7 @@ mod imp {
 mod imp {
     use super::*;
     use windows_sys::Win32::Foundation::{HANDLE, SIZE};
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
     use windows_sys::Win32::Graphics::Gdi::{
         CreateDCW, DeleteDC, GetDeviceCaps, GetTextExtentPoint32W, StretchDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DEVMODEW, DIB_RGB_COLORS, DMORIENT_LANDSCAPE,
         DMORIENT_PORTRAIT, DM_IN_BUFFER, DM_IN_PROMPT, DM_ORIENTATION, DM_OUT_BUFFER, HDC, HORZRES, LOGPIXELSX, LOGPIXELSY, PHYSICALHEIGHT, PHYSICALOFFSETX, PHYSICALOFFSETY, PHYSICALWIDTH, SRCCOPY,
@@ -320,18 +333,41 @@ mod imp {
         (list, default)
     }
 
-    /// The printer's DEVMODE with the orientation set (the original writes
-    /// the stored orientation into the default DEVMODE, `0x448c00`).
-    /// The DEVMODEs chosen in «Свойства...», per printer.
-    static JOB_DM: std::sync::Mutex<Vec<(String, Vec<u64>)>> = std::sync::Mutex::new(Vec::new());
+    type Chosen = std::sync::Mutex<Vec<(String, Vec<u64>)>>;
+    /// The DEVMODEs chosen in «Свойства...», per printer: kept by a print
+    /// dialog that ended in OK (or the preview); the open dialog's own.
+    static JOB_DM: Chosen = std::sync::Mutex::new(Vec::new());
+    static SESSION_DM: Chosen = std::sync::Mutex::new(Vec::new());
+
+    fn find(store: &Chosen, printer: &str) -> Option<Vec<u64>> {
+        store.lock().ok()?.iter().find(|(p, _)| p == printer).map(|(_, b)| b.clone())
+    }
+
+    fn put(store: &Chosen, printer: &str, b: Vec<u64>) {
+        if let Ok(mut v) = store.lock() {
+            v.retain(|(p, _)| p != printer);
+            v.push((printer.to_string(), b));
+        }
+    }
 
     fn chosen(printer: &str) -> Option<Vec<u64>> {
-        JOB_DM.lock().ok()?.iter().find(|(p, _)| p == printer).map(|(_, b)| b.clone())
+        find(&JOB_DM, printer)
     }
 
     pub fn forget_properties(printer: &str) {
-        if let Ok(mut v) = JOB_DM.lock() {
-            v.retain(|(p, _)| p != printer);
+        for store in [&JOB_DM, &SESSION_DM] {
+            if let Ok(mut v) = store.lock() {
+                v.retain(|(p, _)| p != printer);
+            }
+        }
+    }
+
+    pub fn end_properties(keep: bool) {
+        let session = SESSION_DM.lock().map(|mut v| std::mem::take(&mut *v)).unwrap_or_default();
+        if keep {
+            for (p, b) in session {
+                put(&JOB_DM, &p, b);
+            }
         }
     }
 
@@ -346,10 +382,14 @@ mod imp {
             }
             let size = DocumentPropertiesW(std::ptr::null_mut(), h, name.as_ptr(), std::ptr::null_mut(), std::ptr::null(), 0);
             let mut out = vec![0u64; (size.max(0) as usize).div_ceil(8).max(1)];
-            let input = chosen(printer);
+            // Seeded with the last choice only: the page setup's orientation
+            // does not reach it (VM: Landscape set there, the driver's
+            // dialog still opens on Portrait); owned by the print dialog
+            // (here our window, in front as the button is clicked).
+            let input = find(&SESSION_DM, printer).or_else(|| chosen(printer));
             let flags = DM_IN_PROMPT | DM_OUT_BUFFER | if input.is_some() { DM_IN_BUFFER } else { 0 };
             let r = DocumentPropertiesW(
-                std::ptr::null_mut(),
+                GetForegroundWindow(),
                 h,
                 name.as_ptr(),
                 out.as_mut_ptr() as *mut DEVMODEW,
@@ -358,16 +398,15 @@ mod imp {
             );
             ClosePrinter(h);
             if size > 0 && r == 1 {
-                if let Ok(mut v) = JOB_DM.lock() {
-                    v.retain(|(p, _)| p != printer);
-                    v.push((printer.to_string(), out));
-                }
+                put(&SESSION_DM, printer, out);
                 return true;
             }
             false
         }
     }
 
+    /// The printer's DEVMODE with the orientation set (the original writes
+    /// the stored orientation into the default DEVMODE, `0x448c00`).
     fn devmode(printer: &str, setup: &PageSetup) -> Option<Vec<u64>> {
         // What «Свойства...» chose stands for the job as it is.
         if let Some(b) = chosen(printer) {
@@ -547,5 +586,20 @@ mod tests {
         for p in list {
             eprintln!("{p}: {:?} {:?} {:?}", paper(&p), details(&p), device(&p, &PageSetup::default()).stock_t);
         }
+    }
+
+    /// «Свойства...»'s driver dialog on the default printer, in a desktop
+    /// session (run by hand: `--ignored --exact
+    /// spool::tests::driver_properties_dialog`; the VM harness's `-ArgLine`).
+    #[test]
+    #[ignore]
+    fn driver_properties_dialog() {
+        let (_, default) = printers();
+        let p = default.expect("a default printer");
+        let first = properties(&p);
+        let second = properties(&p);
+        // Beside the exe: the harness's console is not seen.
+        let log = std::env::current_exe().unwrap().with_file_name("driver_dialog.txt");
+        std::fs::write(log, format!("{p}: {first} {second}\n")).unwrap();
     }
 }

@@ -1,4 +1,4 @@
-# keys.ps1 -Exe <program> [-Open <file>] -Keys "<k1>;<k2>…" [-WaitSec n] [-Shot name.png] [-Leave]
+# keys.ps1 -Exe <program> [-Open <file> | -ArgLine "<args>"] -Keys "<k1>;<k2>…" [-WaitSec n] [-Shot name.png] [-Leave]
 # In the desktop session: start the program (with a file), bring it to the
 # front, run each ';'-separated step 1.5 s apart, optionally capture the
 # screen, then close it (unless -Leave). A step is SendKeys text, or
@@ -6,7 +6,7 @@
 # (a left-button drag in ten steps; "HOLD x1,y1,x2,y2" the same left held,
 # then "UP"), "WHEEL x,y,n"
 # (n notches, + up), "SHOT name.png" (a capture now). Logs next to itself.
-param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave)
+param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave)
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $log = Join-Path $here 'keys.log'
 Add-Type @'
@@ -24,7 +24,7 @@ function Click([int]$x, [int]$y, [uint32]$down, [uint32]$up, [int]$times = 1) {
 }
 "start $(Get-Date -f s) $Exe $Open" | Out-File $log -Encoding utf8
 $wsh = New-Object -ComObject WScript.Shell
-$p = if ($Open) { Start-Process -FilePath $Exe -ArgumentList "`"$Open`"" -PassThru } else { Start-Process -FilePath $Exe -PassThru }
+$p = if ($ArgLine) { Start-Process -FilePath $Exe -ArgumentList $ArgLine -PassThru } elseif ($Open) { Start-Process -FilePath $Exe -ArgumentList "`"$Open`"" -PassThru } else { Start-Process -FilePath $Exe -PassThru }
 Start-Sleep -Seconds $WaitSec
 $ok = $wsh.AppActivate($p.Id)
 "activated $ok pid $($p.Id)" | Out-File $log -Append -Encoding utf8
