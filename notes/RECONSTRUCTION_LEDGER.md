@@ -7906,6 +7906,41 @@ Residual:
   lost in the scan conversion is NOT DETERMINED; it changes no block
   seen.
 
+### L9.286 — Side by side: the ribbon's value commands; the wheel with Ctrl and Shift  ·  ✅
+W4.3 on both programs, WIN_1999, «IA БЛОКА 3» selected (each program's
+own button positions: ours' ribbon groups sit about 40 px further left,
+the known width residual):
+- «Инвертировать» → −454.087 мА; «Удал. постоянную» → −447.578 мА, the
+  same icons on the lane (ours' glyphs, W6) and the buttons lit alike.
+- The «Вычисления» small buttons: Min/Max shows nothing more in either;
+  the mode buttons light the same pair and give the same RMS curve and
+  «0 A».
+- The wheel over the plot: plain (nothing to scroll) — no change in
+  either; Ctrl+wheel up two notches — the same zoom (ticks 128 ms).
+Two differences, fixed:
+- **Shift+wheel's step.** Ours moved a whole screen a notch (two notches
+  → 3460 ms); the original 2913. `0x45d990` steps the view's horizontal
+  scroll bar, which runs 0…10000 (`0x2710`): a page is ⌊V·10000 / N⌋ (V
+  the samples shown, N the record's) and the first sample
+  ⌊(N − V)·pos / 10000⌋ (×`0xd1b71759`, >> 13), never past the last
+  screen (`GetScrollPos` / `SetScrollPos`, mfc120u #6779 / #13796). Now
+  `lanes::hscroll_page`, the position read back from the first sample:
+  two notches → 2913 as on the VM.
+- **Notches merged.** egui-winit adds a frame's wheel events into one
+  (VM trace: two notches in a slow frame arrived as 2.0 lines), and ours
+  steps once per event, so Ctrl+wheel zoomed once for two notches in that
+  run. `wheel_deltas` now splits whole lines back into notches (a fine
+  wheel's part-notch stays one); the tree (`win_tree`) and the
+  characteristic grid scroll per notch through it too. (`FV_SOFTLOG`
+  traces each frame's wheel events.)
+Tests: `wheel_modifiers_zoom_time_resize_lanes_and_scroll` (the VM's
+1457 / 2913, the last screen, merged notches).
+Residual:
+- One notch back after those two: the original 1457, ours 1455. No
+  fixed page and range fit the three readings with the position either
+  kept or read back, so something else adjusts it — NOT DETERMINED.
+- The plain wheel's lane scroll with lanes that overflow is not compared.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

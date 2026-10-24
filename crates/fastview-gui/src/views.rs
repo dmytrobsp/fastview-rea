@@ -957,8 +957,7 @@ impl App {
                 let page = (inner.height() / 17.0).floor() * 17.0;
                 let max_off = (content_h - page).max(0.0);
                 if ui.rect_contains_pointer(inner) {
-                    let dy = ui.input(|i| i.raw_scroll_delta.y);
-                    if dy != 0.0 {
+                    for dy in ui.input(|i| crate::lanes::wheel_deltas(&i.events)) {
                         off -= dy.signum() * 51.0;
                     }
                 }

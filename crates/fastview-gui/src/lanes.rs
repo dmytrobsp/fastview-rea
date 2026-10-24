@@ -670,6 +670,26 @@ pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> Vec
     }
 }
 
+/// The first sample after a page of the view's horizontal scroll bar
+/// (Shift+wheel, `0x45d990`). The bar runs 0…10000, its position read back
+/// from the first sample: a page is ⌊V·10000 / N⌋ (V the samples shown, N
+/// the record's), the first sample ⌊(N − V)·pos / 10000⌋, never past the
+/// last screen (VM: two notches from 0 → 2913 of 11000 with 1730 shown, not
+/// 3460).
+pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool) -> usize {
+    let range = n.saturating_sub(visible);
+    if n == 0 || range == 0 {
+        return 0;
+    }
+    let step = visible * 10000 / n;
+    let pos = first * 10000 / range;
+    if up {
+        range * pos.saturating_sub(step) / 10000
+    } else {
+        (range * (pos + step) / 10000).min(range)
+    }
+}
+
 /// The status icons of analog channel `i`.
 fn chan_icons(doc: &crate::app::Doc, i: usize, primary: bool) -> Vec<&'static str> {
     let (c, ch) = (&doc.chans[i], &doc.osc.analog[i]);
@@ -1688,8 +1708,10 @@ impl App {
         }
         // Wheel (`0x45d990`), per WM_MOUSEWHEEL (one per wheel event): Alt
         // = lane height, exactly Ctrl (no button held) = time zoom, exactly
-        // Shift = one screen sideways — one step each, whatever the delta —,
-        // else the lanes scroll by the raw delta in pixels (120 a notch).
+        // Shift = a page of the horizontal scroll bar sideways — one step
+        // each, whatever the delta —, else the lanes scroll by the raw delta
+        // in pixels (120 a notch); see [`hscroll_page`].
+
         if resp.hovered() && !menu_busy {
             let (wheels, buttons) = ui.input(|i| (wheel_deltas(&i.events), i.pointer.any_down()));
             let (mut first_w, mut vscroll_w) = (first as i64, vscroll);
@@ -1700,7 +1722,7 @@ impl App {
                 } else if ctrl && !shift && !buttons {
                     actions.push(Act::Cmd(Command::ZoomX(up)));
                 } else if shift && !ctrl && !buttons {
-                    first_w = (first_w - if up { 1 } else { -1 } * visible.max(1) as i64).clamp(0, hmax as i64);
+                    first_w = (hscroll_page(first_w.max(0) as usize, n, visible, up) as i64).clamp(0, hmax as i64);
                     actions.push(Act::SetFirst(first_w as usize));
                 } else {
                     vscroll_w += delta;
@@ -2376,21 +2398,28 @@ fn time_axis_menu(ui: &mut egui::Ui, unit: TimeUnit, grid: bool, band: bool, pic
 /// pixels: a notch (a line) is 120, a page three notches, points as they
 /// come.
 pub fn wheel_deltas(events: &[egui::Event]) -> Vec<f32> {
-    events
-        .iter()
-        .filter_map(|e| match e {
-            egui::Event::MouseWheel { unit, delta, .. } => {
-                let d = delta.x + delta.y;
-                let px = match unit {
-                    egui::MouseWheelUnit::Line => d * g::WHEEL_NOTCH_PX,
-                    egui::MouseWheelUnit::Page => d * 3.0 * g::WHEEL_NOTCH_PX,
-                    egui::MouseWheelUnit::Point => d,
-                };
-                (px != 0.0).then_some(px)
-            }
-            _ => None,
-        })
-        .collect()
+    let mut out = Vec::new();
+    for e in events {
+        let egui::Event::MouseWheel { unit, delta, .. } = e else { continue };
+        let d = delta.x + delta.y;
+        // egui-winit merges a frame's notches into one event (VM: two
+        // notches in a slow frame came as 2.0 lines): whole lines are
+        // split back into their WM_MOUSEWHEELs.
+        let whole = d.abs().round();
+        if *unit == egui::MouseWheelUnit::Line && whole >= 1.0 && (d.abs() - whole).abs() < 1e-3 {
+            out.extend(std::iter::repeat_n(d.signum() * g::WHEEL_NOTCH_PX, whole as usize));
+            continue;
+        }
+        let px = match unit {
+            egui::MouseWheelUnit::Line => d * g::WHEEL_NOTCH_PX,
+            egui::MouseWheelUnit::Page => d * 3.0 * g::WHEEL_NOTCH_PX,
+            egui::MouseWheelUnit::Point => d,
+        };
+        if px != 0.0 {
+            out.push(px);
+        }
+    }
+    out
 }
 
 fn comment_menu(ui: &mut egui::Ui, c: &crate::app::Comment, i: usize, pick: &mut dyn FnMut(MenuCmd)) {
@@ -2790,7 +2819,12 @@ mod menu_tests {
         assert_eq!(h.app.y_analog, 121.0, "Alt+wheel: lane height ×1.3");
         h.wheel(at, -1.0, egui::Modifiers::NONE);
         assert!(h.doc().vscroll < 0.0, "plain wheel scrolls the lanes");
-        // Shift+wheel: one screen sideways (zoomed in so there is room).
+        // The bar's page (VM: 11000 samples, 1730 shown: 0 → 1457 → 2913).
+        assert_eq!(hscroll_page(0, 11000, 1730, false), 1457);
+        assert_eq!(hscroll_page(1457, 11000, 1730, false), 2913);
+        assert_eq!(hscroll_page(2913, 11000, 1730, true), 1455);
+        assert_eq!(hscroll_page(9000, 11000, 1730, false), 9270, "the last screen");
+        // Shift+wheel: a page sideways (zoomed in so there is room).
         h.wheel(at, 1.0, egui::Modifiers::CTRL);
         h.wheel(at, 1.0, egui::Modifiers::CTRL);
         let first = h.doc().first;
@@ -2803,6 +2837,10 @@ mod menu_tests {
         h.frame_mod(vec![egui::Event::PointerMoved(at), notch.clone(), notch], egui::Modifiers::CTRL);
         let fit = g::fit_scale(h.app.view_width, h.doc().osc.sample_count());
         assert_eq!(h.doc().xscale.unwrap(), (f / 4.0).max(fit), "two steps");
+        // egui-winit's merged notches (2.0 lines in one event) are two too.
+        let merged = |d: f32| egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: Vec2::new(0.0, d), modifiers: egui::Modifiers::NONE };
+        assert_eq!(wheel_deltas(&[merged(2.0)]), vec![g::WHEEL_NOTCH_PX; 2]);
+        assert_eq!(wheel_deltas(&[merged(-0.25)]), vec![-0.25 * g::WHEEL_NOTCH_PX], "a fine wheel's part-notch stays one");
         let v = h.doc().vscroll;
         assert!(v <= -30.0, "scrolled down before: {v}");
         let touch = egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: Vec2::new(0.0, 30.0), modifiers: egui::Modifiers::NONE };

@@ -113,6 +113,10 @@ impl Soft {
         let (Some(window), Some(state)) = (self.window.as_ref(), self.state.as_mut()) else { return };
         egui_winit::update_viewport_info(&mut self.info, &self.ctx, window, false);
         let mut raw = state.take_egui_input(window);
+        let wheels: Vec<String> = raw.events.iter().filter_map(|e| if let egui::Event::MouseWheel { delta, modifiers, .. } = e { Some(format!("{:.1}{}", delta.y, if modifiers.ctrl { "^" } else { "" })) } else { None }).collect();
+        if !wheels.is_empty() {
+            trace(&format!("wheel {wheels:?}, frame mods ctrl {}", raw.modifiers.ctrl));
+        }
         raw.viewports.insert(egui::ViewportId::ROOT, self.info.clone());
         self.info.events.clear();
         // Quick key presses each in a pass of their own; the last pass's

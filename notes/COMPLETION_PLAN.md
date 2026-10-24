@@ -314,7 +314,8 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   differential grid, L9.276; «Печать» and the print preview, L9.277; the workspace after a
   restart, L9.278; the визир by mouse and keys, L9.279; the circle
   diagram with a block, L9.280; an ОМП run, L9.281; copy, paste and merge, L9.282; synchronising; every circle
-  block, L9.283):
+  block, L9.283–L9.285; the ribbon's value commands and the wheel,
+  L9.286):
   start-up window and panes; opening each sample record;
   every ribbon command and its enable state with and without a document;
   every dialog (fields, defaults, Enter / Esc, refusals); context menus

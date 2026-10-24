@@ -597,8 +597,8 @@ pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows:
         off = 16.0 * k as f32;
     }
     if ui.rect_contains_pointer(inner) {
-        let dy = ui.input(|i| i.raw_scroll_delta.y);
-        if dy != 0.0 {
+        // A notch each (egui-winit merges a frame's notches).
+        for dy in ui.input(|i| crate::lanes::wheel_deltas(&i.events)) {
             off -= dy.signum() * 48.0;
         }
     }
