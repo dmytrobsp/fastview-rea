@@ -7728,6 +7728,38 @@ Residual:
   pixel.
 - The grid starts 1 px lower.
 
+### L9.281 — Side by side: an ОМП run; the parameter grid's bold values and selected row  ·  ✅
+W4.3 on both programs, WIN_1999, the ОМП tab:
+- «Анализ» with no parameters shows the same message box,
+  «Данные для определения места повреждения не введены.»
+- «Параметры» → the open button → `params.omp` fills the tree (Подстанция,
+  Участок №1) and the grid alike.
+- After OK, «Анализ» places В1 at 219 ms and В2 at 239 ms in both, with
+  the same lane readouts. The report text was matched byte for byte in
+  L9.219.
+In the parameter dialog:
+- **Bold values.** Ours bolded a value that differed from a fixed default,
+  so every loaded value showed bold. The original's grid is a
+  CMFCPropertyGridCtrl: a value is bold when it differs from the value
+  the grid was built with. On the VM loaded values are regular; an edited
+  «10005» is bold; after «Участок №1» and back it is regular again, and
+  the section's 10 / 30 are never bold. Now `ParamsDialog::built_values`
+  keeps the values as last built for the element shown, built anew for
+  another element, a load, a method change or a tree rebuild. Bold uses
+  the Tahoma Bold face, not a second draw. Test
+  `a_value_is_bold_until_the_grid_is_built_again`.
+- **The selected row.** After Enter the original keeps the edited row's
+  name cell filled. Ours dropped it with the edit. Now the row stays
+  selected until the grid is built again.
+- **The tree's focus at opening.** The original opens with «Подстанция»
+  focused (blue). Ours drew it unfocused (grey), because the press of the
+  click that opened the dialog arrived in the tree's first frame and
+  counted as a click outside it. `win_tree` now ignores presses in the
+  frame its state is made, and each opening has its own tree id.
+Residual:
+- The long parameter name is cut at a slightly different point
+  («последовате...» / «последовательн...»).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

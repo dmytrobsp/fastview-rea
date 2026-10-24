@@ -591,6 +591,17 @@ pub struct ParamsDialog {
     pub labels: Option<Vec<(usize, Node, String)>>,
     /// The grid cell being edited in place: the element and its row.
     pub edit: Option<(Node, usize)>,
+    /// The grid's values as it was last built (CMFCPropertyGridProperty's
+    /// original values): a value differing from them is bold. Built anew
+    /// for another element, a load, a method change or a tree rebuild (VM:
+    /// an edited value bold, regular again after leaving the element and
+    /// coming back; loaded values regular).
+    built: Option<(Node, Vec<String>)>,
+    /// This opening's own ids (each opening starts with the tree focused).
+    salt: u64,
+    /// The grid's selected row, kept after its edit closes (VM: the name
+    /// cell stays filled after Enter) until the grid is built again.
+    row_sel: Option<(Node, usize)>,
 }
 
 /// Where an element goes when `removed` is deleted: gone (itself or its
@@ -744,21 +755,22 @@ pub fn field_mut(p: &mut OmpParams, node: Node, f: Field) -> Option<&mut String>
     })
 }
 
-/// A row's default value (a changed value is shown marked, as the grid does).
-fn default_value(node: Node, f: Field) -> &'static str {
-    match (node, f) {
-        (Node::Station(_), Field::Name) => "Подстанция",
-        (Node::Station(_), Field::Inom) => "0",
-        (Node::Section(..), Field::Length | Field::Supports) => "1",
-        (_, Field::Comment) | (_, Field::I0) => "",
-        (Node::Station(_), _) => "",
-        _ => "0",
-    }
-}
-
 impl ParamsDialog {
     pub fn new(doc: usize, work: OmpParams) -> Self {
-        ParamsDialog { doc, work, sel: Node::Station(0), collapsed: HashSet::new(), labels: None, edit: None }
+        static OPENED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let salt = OPENED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        ParamsDialog { doc, work, sel: Node::Station(0), collapsed: HashSet::new(), labels: None, edit: None, built: None, salt, row_sel: None }
+    }
+
+    /// The grid's rows for `node` as last built, building them anew for
+    /// another element.
+    fn built_values(&mut self, node: Node) -> Vec<String> {
+        if self.built.as_ref().is_none_or(|(n, _)| *n != node) {
+            let values = grid_rows(self.work.method, node).iter().map(|(_, f, _)| field_mut(&mut self.work, node, *f).map(|v| v.clone()).unwrap_or_default()).collect();
+            self.built = Some((node, values));
+            self.row_sel = None;
+        }
+        self.built.as_ref().map(|(_, v)| v.clone()).unwrap_or_default()
     }
 
     /// Position and sibling count of the selection (stations do not move).
@@ -796,6 +808,7 @@ impl ParamsDialog {
     pub fn add_section(&mut self) {
         if let Node::Station(st) = self.sel {
             self.labels = None;
+            self.built = None;
             let v = &mut self.work.stations[st].sections;
             v.push(SectionParams::default());
             self.sel = Node::Section(st, v.len() - 1);
@@ -807,6 +820,7 @@ impl ParamsDialog {
     pub fn add_child(&mut self, tap: bool) {
         let Node::Section(st, k) = self.sel else { return };
         self.labels = None;
+        self.built = None;
         let s = &mut self.work.stations[st].sections[k];
         self.sel = if tap {
             s.taps.push(Default::default());
@@ -856,6 +870,7 @@ impl ParamsDialog {
         }
         let j = |i: usize| if up { i - 1 } else { i + 1 };
         self.labels = None;
+        self.built = None;
         // The expanded flag is swapped with the element (`0x4a6ae0`).
         if let Node::Section(s, k) = self.sel {
             let (a, b) = (Node::Section(s, k), Node::Section(s, j(k)));
@@ -890,6 +905,7 @@ impl ParamsDialog {
     pub fn set_method(&mut self, m: u32) {
         self.work.method = m;
         self.labels = None;
+        self.built = None;
         self.fix_selection();
     }
 
@@ -897,6 +913,7 @@ impl ParamsDialog {
     pub fn load(&mut self, p: OmpParams) {
         self.work = p;
         self.labels = None;
+        self.built = None;
         self.fix_selection();
     }
 
@@ -995,7 +1012,7 @@ impl ParamsDialog {
                 crate::dialogs::TreeRow { depth: *depth, label: label.clone(), has_children, expanded: !self.collapsed.contains(node), selected: self.sel == *node }
             })
             .collect();
-        let ev = crate::dialogs::win_tree(ui, tree, egui::Id::new("omp_tree"), Color32::from_rgb(171, 173, 179), &rows, false, None, true, &mut |p, cell, k| tree_icon(p, cell, &all[shown[k]].1));
+        let ev = crate::dialogs::win_tree(ui, tree, egui::Id::new(("omp_tree", self.salt)), Color32::from_rgb(171, 173, 179), &rows, false, None, true, &mut |p, cell, k| tree_icon(p, cell, &all[shown[k]].1));
         if let Some(k) = ev.toggled.or(ev.double_clicked.filter(|&k| rows[k].has_children)) {
             let node = all[shown[k]].1;
             if !self.collapsed.remove(&node) {
@@ -1021,6 +1038,7 @@ impl ParamsDialog {
             self.edit = None;
         }
         let rows = grid_rows(self.work.method, node);
+        let built = self.built_values(node);
         let mut y = inner.top();
         for (k, (label, f, is_chan)) in rows.into_iter().enumerate() {
             let Some(v) = field_mut(&mut self.work, node, f) else { continue };
@@ -1029,9 +1047,9 @@ impl ParamsDialog {
             ui.painter().hline(inner.left() + 1.0..=inner.right() - 1.0, row.bottom() - 0.5, rule);
             let name = egui::Rect::from_min_max(row.min, egui::pos2(split - 1.0, row.bottom() - 1.0));
             let cell = egui::Rect::from_min_max(egui::pos2(split, row.top()), egui::pos2(row.right(), row.bottom() - 1.0));
-            // Seen on the VM: the names left-aligned, a modified value (not
-            // its name) bold.
-            let modified = v.as_str() != default_value(node, f);
+            // Seen on the VM: the names left-aligned, a value changed since
+            // the grid was built (not its name) bold.
+            let modified = built.get(k).is_some_and(|b| b != v);
             let font = DLG_FONT;
             ui.painter().with_clip_rect(name).text(egui::pos2(name.left() + 5.0, name.center().y), egui::Align2::LEFT_CENTER, ellipsize_to(ui, label, name.width() - 7.0), font.clone(), Color32::BLACK);
             // A click selects the row (CMFCPropertyGridCtrl, VM): its name
@@ -1040,7 +1058,7 @@ impl ParamsDialog {
             // (226, 238, 255) → (196, 221, 255), a (86, 125, 177) arrow)
             // opening the list.
             let editing = self.edit == Some((node, k));
-            if editing {
+            if editing || self.row_sel == Some((node, k)) {
                 ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2(name.left() + 1.0, name.top()), name.max), 0.0, Color32::from_rgb(180, 201, 233));
                 ui.painter().with_clip_rect(name).text(egui::pos2(name.left() + 5.0, name.center().y), egui::Align2::LEFT_CENTER, ellipsize_to(ui, label, name.width() - 7.0), font.clone(), Color32::BLACK);
             }
@@ -1081,13 +1099,16 @@ impl ParamsDialog {
             }
             let p = ui.painter().with_clip_rect(cell);
             let at_text = egui::pos2(cell.left() + 5.0, cell.center().y);
-            p.text(at_text, egui::Align2::LEFT_CENTER, v.as_str(), font.clone(), Color32::BLACK);
             if modified {
-                // Bold: the text again a pixel to the right.
-                p.text(at_text + egui::vec2(1.0, 0.0), egui::Align2::LEFT_CENTER, v.as_str(), font.clone(), Color32::BLACK);
+                // The grid's bold font (Tahoma Bold).
+                let h = ui.fonts(|f| f.row_height(&font));
+                crate::lanes::bold_text(&p, at_text - egui::vec2(0.0, h / 2.0), v.as_str(), font.clone(), Color32::BLACK);
+            } else {
+                p.text(at_text, egui::Align2::LEFT_CENTER, v.as_str(), font.clone(), Color32::BLACK);
             }
             if !editing && ui.interact(egui::Rect::from_min_max(row.min, egui::pos2(row.right(), row.bottom() - 1.0)), ui.id().with(("omp_cell_click", k)), egui::Sense::click()).clicked() {
                 self.edit = Some((node, k));
+                self.row_sel = Some((node, k));
             }
         }
         if win_button(ui, at(465.0, 413.0, 114.0, 23.0), "OK", true).clicked() {
@@ -1445,6 +1466,28 @@ mod tests {
 
     /// Neither the ОМП run (`0x4a00b0`) nor paste (57637, `0x45ad02`)
     /// reaches SetModifiedFlag; «Объединить» does (L9.19).
+    #[test]
+    fn a_value_is_bold_until_the_grid_is_built_again() {
+        // VM: loaded values regular; an edited one bold; regular again
+        // after another element and back.
+        let mut d = ParamsDialog::new(0, OmpParams { method: ISOLATED, ..Default::default() });
+        d.add_section();
+        let st = Node::Station(0);
+        let inom = grid_rows(d.work.method, st).iter().position(|r| r.1 == Field::Inom).unwrap();
+        let before = d.built_values(st);
+        *field_mut(&mut d.work, st, Field::Inom).unwrap() = "10005".into();
+        assert_ne!(d.built_values(st)[inom], "10005", "edited: differs from the built value");
+        d.row_sel = Some((st, inom));
+        let _ = d.built_values(Node::Section(0, 0));
+        assert_eq!(d.row_sel, None, "a rebuilt grid has no selected row");
+        assert_eq!(d.built_values(st)[inom], "10005", "built anew on coming back");
+        let mut loaded = d.work.clone();
+        *field_mut(&mut loaded, st, Field::Inom).unwrap() = "7".into();
+        d.load(loaded);
+        assert_eq!(d.built_values(st)[inom], "7", "a load builds anew");
+        assert_eq!(before.len(), d.built_values(st).len());
+    }
+
     #[test]
     fn paste_and_a_run_leave_the_document_unmodified() {
         let mut app = demo_app();

@@ -565,8 +565,11 @@ pub struct TreeEvents {
 pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows: &[TreeRow], lines_at_root: bool, top_row: Option<usize>, start_focused: bool, icon: &mut dyn FnMut(&egui::Painter, Rect, usize)) -> TreeEvents {
     let mut ev = TreeEvents::default();
     let focus_id = id.with("fv_tree_focus");
-    let mut focused = ui.data(|d| d.get_temp::<bool>(focus_id)).unwrap_or(start_focused);
-    if let Some(p) = ui.input(|i| i.pointer.any_pressed().then(|| crate::lanes::press_pos(i)).flatten()) {
+    let stored = ui.data(|d| d.get_temp::<bool>(focus_id));
+    let mut focused = stored.unwrap_or(start_focused);
+    // A press elsewhere takes the focus — not the one that opened the
+    // dialog, in the frame the tree first shows.
+    if let Some(p) = ui.input(|i| i.pointer.any_pressed().then(|| crate::lanes::press_pos(i)).flatten()).filter(|_| stored.is_some()) {
         focused = r.contains(p);
     }
     ui.data_mut(|d| d.insert_temp(focus_id, focused));
