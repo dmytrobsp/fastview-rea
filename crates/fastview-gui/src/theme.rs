@@ -282,6 +282,19 @@ pub struct Palette {
     pub app_orb: Option<[Color32; 3]>,
 }
 
+impl Palette {
+    /// A docking pane's caption band: Office 2007 blue's (184, 207, 233)
+    /// as captured on the VM; the other looks between their panel fill and
+    /// border (not read).
+    pub fn pane_caption(&self) -> Color32 {
+        if self.group_bg == Color32::from_rgb(223, 233, 246) {
+            Color32::from_rgb(184, 207, 233)
+        } else {
+            self.group_bg.lerp_to_gamma(self.group_border, 0.5)
+        }
+    }
+}
+
 /// Apply a skin to the egui context (base widget visuals; the ribbon paints its
 /// own gradients on top).
 pub fn apply(ctx: &egui::Context, skin: Skin) {

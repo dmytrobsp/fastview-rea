@@ -234,9 +234,8 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   selected, title, stat rows, grid height fixed. The frame layout (tab
   strip inside the MDI area under the parameters bar) and the status bar
   (153 / 218 px panes): fixed, L9.179; 1 px strokes on pixel centres and
-  the waveform texture: fixed, L9.180. Still to do, in order: the ribbon (small-button
-  pitch 22, large buttons ~55, the QAT arrow), the pane captions (~17 px,
-  flat glyphs), the diagram / bar font scale (11), the «*K» icon.
+  the waveform texture: fixed, L9.180. The pane captions (20 px, flat glyphs): fixed, L9.186. Still to do, in order: the ribbon (small-button
+  pitch 22, large buttons ~55, the QAT arrow), the diagram / bar font scale (11), the «*K» icon.
 
 ## W5 — Windows-only paths
 

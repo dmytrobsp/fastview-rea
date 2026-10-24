@@ -262,7 +262,7 @@ impl App {
     fn pane_body(&mut self, ui: &mut egui::Ui, v: DockView, p: Pane, outer: egui::Rect) {
         use crate::docking::Place;
         let place = self.docks[v.unit].place;
-        let act = pane_caption(ui, pane_title(p), (place != Place::Floating).then_some(place == Place::AutoHide));
+        let act = pane_caption(ui, &self.skin.palette(), pane_title(p), (place != Place::Floating).then_some(place == Place::AutoHide));
         let ctx = ui.ctx().clone();
         if let Some(at) = act.menu {
             let next = self.tab_order.into_iter().find(|&q| q != p && v.mask[q as usize]);
@@ -904,12 +904,16 @@ struct CaptionAct {
 
 /// A docking-pane caption: the title, the pin (`pinned` None when the pane
 /// floats — a mini-frame has none) and a close button that only hides the
-/// pane; the caption itself takes double-clicks and drags.
-fn pane_caption(ui: &mut egui::Ui, title: &str, pinned: Option<bool>) -> CaptionAct {
+/// pane; the caption itself takes double-clicks and drags. As the VM shows
+/// it (Office 2007 blue): 20 px with a 1 px light top edge on a flat band,
+/// the title 4 px in in the 9 pt UI font, the close and pin glyphs flat
+/// 1 px drawings 11 / 26 px from the right edge.
+fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pinned: Option<bool>) -> CaptionAct {
+    const H: f32 = 20.0;
     let mut act = CaptionAct::default();
     // The caption takes double-clicks and drags; registered first, so its
     // buttons, drawn over it, keep their clicks.
-    let rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), ui.spacing().interact_size.y));
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), H), egui::Sense::hover());
     let resp = ui.interact(rect, ui.id().with("fv_pane_caption"), egui::Sense::click_and_drag());
     // A double-click: two clicks within the system double-click time
     // (Windows' default 500 ms; WM_LBUTTONDBLCLK on the caption).
@@ -924,17 +928,47 @@ fn pane_caption(ui: &mut egui::Ui, title: &str, pinned: Option<bool>) -> Caption
     if resp.secondary_clicked() {
         act.menu = resp.interact_pointer_pos();
     }
-    ui.horizontal(|ui| {
-        ui.add(egui::Label::new(egui::RichText::new(title).strong()).selectable(false));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            act.close = ui.small_button("✕").on_hover_text("Закрыть").clicked();
-            if let Some(pinned) = pinned {
-                let tip = if pinned { "Закрепить" } else { "Автоматически скрывать" };
-                act.pin = ui.small_button(if pinned { "⊣" } else { "📌" }).on_hover_text(tip).clicked();
-            }
-        });
-    });
-    ui.separator();
+    let band = pal.pane_caption();
+    let p = ui.painter();
+    p.rect_filled(rect, 0.0, band);
+    p.px_hline(rect.x_range(), rect.top(), egui::Stroke::new(1.0f32, band.lerp_to_gamma(egui::Color32::WHITE, 0.4)));
+    let font = egui::FontId::proportional(12.0);
+    p.with_clip_rect(rect.shrink2(egui::vec2(0.0, 0.0)).with_max_x(rect.right() - 34.0))
+        .text(egui::pos2(rect.left() + 4.0, rect.center().y), egui::Align2::LEFT_CENTER, title, font, pal.text);
+    let glyph = egui::Color32::from_rgb(86, 125, 177);
+    let button = |ui: &mut egui::Ui, centre: egui::Pos2, salt: &str| {
+        let r = egui::Rect::from_center_size(centre, egui::vec2(15.0, 15.0));
+        let b = ui.interact(r, ui.id().with(("fv_pane_btn", salt)), egui::Sense::click());
+        if b.hovered() {
+            ui.painter().rect(r, 0.0, pal.accent_soft, egui::Stroke::new(1.0f32, pal.accent_border));
+        }
+        b
+    };
+    let cy = rect.center().y.floor() + 0.5;
+    // ✕: two 1 px diagonals in a 7 px box.
+    let c = egui::pos2(rect.right() - 11.0, cy);
+    let close = button(ui, c, "close");
+    let st = egui::Stroke::new(1.0f32, glyph);
+    ui.painter().line_segment([c + egui::vec2(-3.5, -3.5), c + egui::vec2(3.5, 3.5)], st);
+    ui.painter().line_segment([c + egui::vec2(-3.5, 3.5), c + egui::vec2(3.5, -3.5)], st);
+    act.close = close.on_hover_text("Закрыть").clicked();
+    if let Some(auto_hide) = pinned {
+        // The pin: upright while docked, on its side while auto-hidden.
+        let c = egui::pos2(rect.right() - 26.0, cy);
+        let pin = button(ui, c, "pin");
+        let pt = ui.painter();
+        if auto_hide {
+            pt.px_rect_stroke(egui::Rect::from_min_max(c + egui::vec2(-1.0, -2.0), c + egui::vec2(3.0, 2.0)), 0.0, st);
+            pt.px_vline(c.x - 1.0, (c.y - 3.0)..=(c.y + 3.0), st);
+            pt.px_hline((c.x - 4.0)..=(c.x - 1.0), c.y, st);
+        } else {
+            pt.px_rect_stroke(egui::Rect::from_min_max(c + egui::vec2(-2.0, -4.0), c + egui::vec2(2.0, 1.0)), 0.0, st);
+            pt.px_hline((c.x - 3.0)..=(c.x + 3.0), c.y + 1.0, st);
+            pt.px_vline(c.x, (c.y + 1.0)..=(c.y + 4.0), st);
+        }
+        let tip = if auto_hide { "Закрепить" } else { "Автоматически скрывать" };
+        act.pin = pin.on_hover_text(tip).clicked();
+    }
     act
 }
 

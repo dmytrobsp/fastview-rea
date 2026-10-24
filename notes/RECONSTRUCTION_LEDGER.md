@@ -5630,11 +5630,25 @@ read. Test `sorted_only_by_a_header_click`.
 Residual: «Канал 1» without the formula channels (the synchronisation
 reads file channels); the view scroll bar's system menu; the splash.
 
+### L9.186 — The docking panes' captions as the original draws them  ·  ✅
+Seen on the VM (the original with WIN_1999, Office 2007 blue): a pane's
+caption is 20 px — a 1 px light top edge, then a flat (184, 207, 233)
+band —, its title 4 px in, dark blue, in the 9 pt UI font, and the pin and
+close glyphs flat 1 px drawings in (86, 125, 177) centred 26 / 11 px from
+the right edge, no button frames (MFC's caption buttons, highlighted only
+under the pointer). Ours drew an egui label in bold, framed small buttons
+with «📌» / «✕» and a separator under it (≈ 28 px). Now `pane_caption`
+paints the band, the title and the two glyphs (the pin upright while
+docked, on its side while auto-hidden) with hover highlights, and
+`Palette::pane_caption` gives the band (other looks derived, not read).
+Residual: the vector group's caption starts 8 px lower than its
+neighbours' (the group frame's margin); the other looks' caption colours.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.185)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.186)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5686,7 +5700,7 @@ L9.182 W1.8 B2 / B4 / B5 / B8 / B9 (binary32 units, 32805 edits
 W2.18 part (zoom gate, per-key chart writes, the tokenizer's integer);
 L9.184 the merge bar's layout, the ОМП tree's labels after a delete;
 L9.185 W1.8 B3 / B10 — W1.8 done (the finder's sort, the merge bar's
-fill, the group stats width).
+fill, the group stats width); L9.186 the panes' captions.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

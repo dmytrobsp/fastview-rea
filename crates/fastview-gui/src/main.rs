@@ -896,10 +896,10 @@ mod window_tests {
             w.idle(2);
         };
         let docked = canvas(&w).expect("the vector pane is drawn");
-        double(&mut w, Pos2::new(docked.left() + 60.0, docked.top() - 22.0));
+        double(&mut w, Pos2::new(docked.left() + 60.0, docked.top() - 10.0));
         assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
         let floating = canvas(&w).expect("drawn in its window");
-        double(&mut w, Pos2::new(floating.left() + 60.0, floating.top() - 22.0));
+        double(&mut w, Pos2::new(floating.left() + 60.0, floating.top() - 10.0));
         assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "a double-click on the floating caption redocks");
         // Pin: the strip on the right; hover its first button 400 ms.
         w.app.docks[Unit::Vector].pin();
@@ -941,13 +941,13 @@ mod window_tests {
         };
         let f = canvas(&w, app::Pane::Frequency).expect("Частотная drawn");
         let centre = |a: &App| docking::five_way(a.dock_rects[Unit::Vector as usize].expect("the group's pane"), true)[4].0.center();
-        drag(&mut w, Pos2::new(f.left() + 80.0, f.top() - 22.0), &centre);
+        drag(&mut w, Pos2::new(f.left() + 80.0, f.top() - 10.0), &centre);
         assert_eq!((w.app.docks[Unit::Frequency].place, w.app.docks[Unit::Frequency].spot), (Place::Docked, Spot::Tab(Unit::Vector)));
         assert_eq!(w.app.dock_views_shown(), 1, "one tabbed group");
         // The group's caption out to the left edge marker.
         let v = canvas(&w, app::Pane::Vector).or_else(|| canvas(&w, app::Pane::Frequency)).expect("the group's pane");
         let left = |a: &App| docking::edge_markers(a.dock_client)[0].0.center();
-        drag(&mut w, Pos2::new(v.left() + 80.0, v.top() - 22.0), &left);
+        drag(&mut w, Pos2::new(v.left() + 80.0, v.top() - 10.0), &left);
         assert_eq!((w.app.docks[Unit::Vector].place, w.app.docks[Unit::Vector].spot), (Place::Docked, Spot::Edge { edge: Edge::Left, outer: true }));
         assert_eq!(w.app.docks[Unit::Frequency].spot, Spot::Tab(Unit::Vector), "the tab went along");
         let g = w.app.dock_rects[Unit::Vector as usize].unwrap();
@@ -1031,7 +1031,7 @@ mod window_tests {
         use docking::{Place, Unit};
         let mut w = Win::new();
         let f = w.app.pane_canvas.iter().find(|(q, _)| *q == app::Pane::Frequency).map(|(_, r)| *r).expect("Частотная drawn");
-        w.press(egui::PointerButton::Secondary, Pos2::new(f.left() + 80.0, f.top() - 22.0), Pos2::new(f.left() + 80.0, f.top() - 22.0));
+        w.press(egui::PointerButton::Secondary, Pos2::new(f.left() + 80.0, f.top() - 10.0), Pos2::new(f.left() + 80.0, f.top() - 10.0));
         assert!(w.app.pane_menu.is_some(), "the pane menu opens");
         w.key(egui::Key::ArrowDown);
         w.key(egui::Key::Enter);
