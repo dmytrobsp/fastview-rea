@@ -10,8 +10,10 @@ progress log.
 
 **Priority (the user, 2026-10-24):** the UI must behave and function as
 the original's — commands, enable states, dialogs, menus, values, files,
-keys and mouse. Small visual differences (font metrics, a pixel here or
-there) are acceptable: record them as residuals, don't chase them. Ours'
+keys and mouse — and still look generally the same. Only small visual
+differences are acceptable (font metrics, a pixel here or there): record
+those as residuals rather than chase pixel-perfection; visible ones
+(layout, missing elements, wrong colours or shapes) are still fixed. Ours'
 own «Дополнительно» submenu (our extras) stays.
 
 ## Definition of done
