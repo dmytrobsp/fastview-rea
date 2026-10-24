@@ -1369,7 +1369,7 @@ preview commands live in the ribbon's stock print-preview category and
 MFC hides the docking panes during preview; ours shows a button bar under
 the ribbon in place of the views.
 
-### L9.30 — Copy's picture: the view's or the focused diagram's EMF  ·  🟡
+### L9.30 — Copy's picture: the view's or the focused diagram's EMF  ·  ✅ (residuals closed: L9.269)
 Read (subagent report, `fv.asm` + Ghidra): copy 57634 (`0x45acb0` case
 `0x45be28`) calls `0x405160`, which picks by keyboard focus: GetFocus, its
 first untitled child (FindWindowExW, title ""); focus on the view or no such
@@ -1411,7 +1411,7 @@ system_clipboard_round_trip`, `--ignored`, cross-built and run over ssh); the re
 pane (the original's third case, XML only) is not modelled — a click there
 leaves the focus unchanged (done in L9.58); our status-bar messages are ours.
 
-### L9.31 — «Загрузка» progress and cancel polling  ·  🟡
+### L9.31 — «Загрузка» progress and cancel polling  ·  ✅ (the `.cff` cancel's box: L9.268; phase 2 on the UI thread stays in W2.5)
 Read (subagent report): the counters live in the document — position
 `+0x82c`, total `+0x830`, per-sample step `+0x834`, cancel `+0x838`; the
 dialog's 500 ms WM_TIMER `0x471870` sets PBM_SETPOS to
@@ -1564,7 +1564,7 @@ frequency diagram also required lane visibility. Now as read. Test
   diagram takes Iдиф | Iторм pairs from its own «Каналы ▸ Создать», not
   per-channel flags, so the «Каналы» dialog has no column for it.
 
-### L9.37 — Print preview as MFC's ribbon category  ·  🟡
+### L9.37 — Print preview as MFC's ribbon category  ·  ✅ (residuals closed: L9.202, L9.231, L9.261)
 Read (`vcredist_vs13_x86.exe` → carved WiX cabinets → `mfc120u` / `mfc120rus`,
 local only): `CMFCRibbonBar`'s preview category (`mfc120u` `0x100fcfc2`):
 panel 17092 «Печать» {0xE304}, 17093 «Масштаб» {0xE305, 0xE306, 0xE301},
@@ -3355,7 +3355,7 @@ group's tabs (the user's screenshot, L9.3 — the original's creates dock
 the Векторная | Круговая group, `0x474e10`; the screenshot is likely a
 saved workspace).
 
-### L9.102 — A tab dragged out of a tabbed group floats  ·  🟡
+### L9.102 — A tab dragged out of a tabbed group floats  ·  ✅ (residuals closed: L9.107, L9.262)
 Read (subagent report on mfc120u): a press on a tab arms detach mode and
 captures the mouse with the grab offset (`0x10068d0b`); moving inside the
 strip over another tab swaps them (reordering, `0x100690b4`); moving out
@@ -3851,7 +3851,7 @@ printer's).
 Residual: the footer keeps 12 (as read); a driver resetting DC
 attributes at StartPage NOT DETERMINED.
 
-### L9.122 — «Свойства...» in the print dialog (Windows)  ·  🟡
+### L9.122 — «Свойства...» in the print dialog (Windows)  ·  ✅ (residuals closed: L9.264)
 Read (L9.113): the dialog is the common print dialog, whose psh2
 «Свойства...» opens the driver's document properties; the DEVMODE edited
 there is the one the job prints with (INFERRED from comdlg32's
