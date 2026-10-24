@@ -627,7 +627,10 @@ impl App {
     pub fn save_doc_to(&mut self, di: usize, target: &std::path::Path) -> Result<(), String> {
         let d = self.docs.get(di).ok_or("Нет осциллограммы для сохранения.")?;
         let kind = save_kind(target).ok_or_else(|| format!("{} - неизвестный формат", target.display()))?;
-        let same = d.path.as_deref() == Some(target);
+        // `0x44d772`: the record path (never updated, case-sensitive
+        // `wcscmp`) — the same file names the record's files are not
+        // rewritten; the `.hdr` is written either way.
+        let same = d.rec_path.as_ref().is_some_and(|p| p.to_string_lossy() == target.to_string_lossy());
         if !same {
             match kind {
                 ".cff" => {
@@ -636,23 +639,25 @@ impl App {
                 }
                 ".osc" => {
                     // `0x44ca80` writes the record's own bytes to the new name.
-                    let src = d.path.clone().filter(|p| save_kind(p) == Some(".osc")).ok_or("Нет исходного файла .osc")?;
+                    let src = d.rec_path.clone().filter(|p| save_kind(p) == Some(".osc")).ok_or("Нет исходного файла .osc")?;
                     std::fs::copy(src, target).map_err(|e| e.to_string())?;
                 }
                 _ => {
                     let (cfg, dat) = comtrade::write(&d.osc, d.codepage);
                     std::fs::write(target, cfg).map_err(|e| e.to_string())?;
                     std::fs::write(target.with_extension("dat"), dat).map_err(|e| e.to_string())?;
-                    if let Some(b) = d.hdr_file_bytes() {
-                        std::fs::write(target.with_extension("hdr"), b).map_err(|e| e.to_string())?;
-                    }
                 }
             }
         }
+        if kind == ".cfg" {
+            if let Some(b) = d.hdr_file_bytes() {
+                std::fs::write(target.with_extension("hdr"), b).map_err(|e| e.to_string())?;
+            }
+        }
         let d = &mut self.docs[di];
-        // The `.cfg` / `.cff` writers set the trigger sample to 0
-        // (`0x44d6c5`, `0x44daaa`): a record saved so loses its trigger.
-        if !same && kind != ".osc" {
+        // The `.cfg` / `.cff` writers set the trigger sample to 0 whether
+        // or not they wrote the record (`0x44d6c5`, `0x44daaa`).
+        if kind != ".osc" {
             d.osc.trigger_sample = 0;
         }
         let mut t = std::mem::take(&mut d.set.tree);
@@ -692,9 +697,14 @@ impl App {
             dlg = dlg.add_filter(name, &[ext]);
         }
         // Proposed: the record's folder and its title without extension.
-        let stem = d.path.as_ref().and_then(|p| p.file_stem()).map_or_else(|| d.name.clone(), |s| s.to_string_lossy().into_owned());
+        // `0x447e30` lowers the name in place (three MakeLower calls) before
+        // splitting it: folder and title come out lowercase — harmless on
+        // Windows' case-blind names, so only there (elsewhere the lowered
+        // folder may not exist).
+        let lower = |s: String| if cfg!(windows) { s.to_lowercase() } else { s };
+        let stem = lower(d.path.as_ref().and_then(|p| p.file_stem()).map_or_else(|| d.name.clone(), |s| s.to_string_lossy().into_owned()));
         if let Some(dir) = d.path.as_ref().and_then(|p| p.parent()).filter(|p| !p.as_os_str().is_empty()) {
-            dlg = dlg.set_directory(dir);
+            dlg = dlg.set_directory(lower(dir.to_string_lossy().into_owned()));
         }
         let Some(path) = dlg.set_file_name(stem).save_file() else { return false };
         let path = save_target(path, &filters.map(|f| f.1));
@@ -990,6 +1000,28 @@ mod tests {
         app.load_comtrade_path(&cfg);
         assert!(app.loading.is_empty(), "nothing loads");
         assert_eq!((app.docs.len(), app.active), (2, Some(first)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `0x44d772` / `0x44da96`: the same-file test uses the path the record
+    /// was opened from, which a Save As never updates — saving onto the
+    /// opened file writes only its `.set`, but after a Save As every save
+    /// to the new name writes the record again.
+    #[test]
+    fn the_record_path_is_never_updated() {
+        let dir = temp_dir("recpath");
+        let cfg = write_record(&dir);
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        std::fs::remove_file(dir.join("rec.dat")).unwrap();
+        app.save_doc_to(di, &cfg).unwrap();
+        assert!(!dir.join("rec.dat").exists(), "the opened file: only the .set");
+        let other = dir.join("other.cfg");
+        app.save_doc_to(di, &other).unwrap();
+        std::fs::remove_file(dir.join("other.dat")).unwrap();
+        app.save_doc_to(di, &other).unwrap();
+        assert!(dir.join("other.dat").exists(), "after a Save As the record is written again");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

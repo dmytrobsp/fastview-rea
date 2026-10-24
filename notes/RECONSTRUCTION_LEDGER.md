@@ -5096,9 +5096,7 @@ sections. Our `.set` for WIN_1999 is now byte-identical to the original's.
 Tests updated (`eligibility_by_unit_as_the_original_reads_it`,
 `prefixed_cyrillic_units_reach_the_vector_diagram`,
 `menu_rows_tick_only_checked_items`, the code-page test).
-Residual: (the `.cfg` / `.dat` writer: L9.172); the Save path's
-lowercased proposal and the never-updated record path (`0x44d772`,
-`0x44da96`).
+Residual: (the `.cfg` / `.dat` writer: L9.172; the save path: L9.173).
 
 ### L9.172 — The `.cfg` / `.dat` writer byte for byte; `%g` with three exponent digits  ·  ✅
 Run (COMPLETION_PLAN W4.2: WIN_1999, DOC_1999 and BINARY saved through
@@ -5136,6 +5134,30 @@ Residual: an OSC2 record saved as COMTRADE (its revision / format tokens
 NOT DETERMINED, ours "1999" / "ASCII"); the `.cff` writer `0x44d0f0` beyond
 its use of these bytes; pending channels in the binary writer (the cfg
 omits them, the binary data writes them — INFERRED).
+
+### L9.173 — The save path: the record path never updated, the `.hdr` and trigger on every save, the lowered proposal  ·  ✅
+Run (the VM: Ctrl+S — accelerator 57604, Save As — proposes «win_1999»
+for WIN_1999.cfg; accepting it rewrote WIN_1999.cfg / .dat and wrote
+win_1999.set) and read (background report, `0x44c940`, `0x44d720`,
+`0x447e30`): OnSaveDocument dispatches on the target's lowered last four
+characters (.cfg `0x44d720`, .osc `0x44ca80`, .zip `0x44db10`, .cff
+`0x44d0f0`) and clears the modified flag. In `0x44d720` the same-file test
+(`0x44d772`) compares the record path `doc+0x260` — the opened path, set by
+the loader (`0x450ee4`) — with the target by `wcscmp`, case-sensitively;
+the same file skips the `.cfg` / `.dat` but still writes the `.hdr` (with a
+record comment) and the `.set`; the trigger sample is zeroed either way
+(`0x44daaa`); and `doc+0x260` is never updated (the compare at `0x44da96`
+discards its result) — after a Save As every save writes the record again.
+DoPromptFileName lowers the passed name in place (three MakeLower calls)
+before cutting folder and title (CommonInclude's GetFilePath_ /
+GetFileTitle_ keep case), so the proposal is lowercase.
+Ours compared MFC's path (updated by a Save As), wrote the `.hdr` and
+zeroed the trigger only when the record was written, and kept the name's
+case. Now `Doc::rec_path` (set at the open, never moved) drives the
+same-file test and the `.osc` copy; the `.hdr` is written on every `.cfg`
+save, the trigger zeroed on every `.cfg` / `.cff` save; the proposal is
+lowered on Windows (elsewhere a lowered folder may not exist). Test
+`the_record_path_is_never_updated`.
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

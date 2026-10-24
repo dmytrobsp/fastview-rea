@@ -589,8 +589,13 @@ pub struct Doc {
     pub osc: Oscillogram,
     pub analysis: Analysis,
     pub name: String,
-    /// Source file path (for re-opening with a different encoding).
+    /// Source file path (for re-opening with a different encoding) — MFC's
+    /// path, which a Save As moves.
     pub path: Option<std::path::PathBuf>,
+    /// The path the record was opened from (`doc+0x260`): the save's
+    /// same-file test compares with it, case-sensitively, and nothing ever
+    /// updates it (`0x44d772`, `0x44da96`).
+    pub rec_path: Option<std::path::PathBuf>,
     /// Vertical визир 1 (`doc+0x284`) — "cursor 1" of the diagrams and ОМП.
     pub main_cursor: usize,
     /// Vertical визир 2 (`doc+0x29c`) — "cursor 2".
@@ -707,6 +712,7 @@ impl Doc {
             analysis,
             name,
             path: None,
+            rec_path: None,
             main_cursor: 0,
             aux_cursor: 0,
             v3_cursor: 0,
@@ -2268,6 +2274,7 @@ impl App {
                 let enc = self.encoding;
                 if let Some(d) = self.active_doc_mut() {
                     d.path = Some(path.to_path_buf());
+                    d.rec_path = Some(path.to_path_buf());
                     d.cff = cff;
                     d.init_record_text(enc);
 
