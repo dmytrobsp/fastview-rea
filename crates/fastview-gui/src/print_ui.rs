@@ -42,6 +42,9 @@ pub struct SetupDlg {
     /// Left, top, right, bottom in mm.
     pub mm: [f32; 4],
     pub portrait: bool,
+    /// The system default printer the dialog starts from (its
+    /// RETURNDEFAULT pass, `0x448a90`); OK makes it the application's.
+    pub default: Option<String>,
     /// The application printer's paper (greyed «Размер»).
     pub paper: spool::Paper,
 }
@@ -159,10 +162,15 @@ impl App {
     }
 
     /// 57605 Параметры страницы.
+    ///
+    /// A fresh CPageSetupDialog (0x260a) each time: its RETURNDEFAULT pass
+    /// takes the SYSTEM DEFAULT printer — not the application's — with the
+    /// stored orientation written into its DEVMODE (`0x448b15`–`0x448b20`).
     pub fn page_setup_open(&mut self) {
         let s = self.print.setup;
-        let paper = self.app_paper();
-        self.print.setup_dlg = Some(SetupDlg { mm: s.margins.map(|m| m as f32 / 100.0), portrait: s.portrait, paper });
+        let (_, default) = spool::printers();
+        let paper = default.as_deref().and_then(spool::paper).unwrap_or(spool::Paper::whole("A4", crate::printout::A4_MM));
+        self.print.setup_dlg = Some(SetupDlg { mm: s.margins.map(|m| m as f32 / 100.0), portrait: s.portrait, paper, default });
     }
 
     /// Render and send a job for document `di` (`printer` None = PDF file).
@@ -343,6 +351,13 @@ impl App {
         if ok {
             self.print.setup = PageSetup { margins: dlg.mm.map(|m| (m * 100.0).round() as i32), portrait: dlg.portrait };
             self.print.setup.store(&mut self.store.view);
+            // SelectPrinter (#12964, `0x448ba3`): the default printer with
+            // this orientation becomes the application printer, an earlier
+            // «Свойства...» DEVMODE dropped.
+            if let Some(d) = dlg.default.clone() {
+                spool::forget_properties(&d);
+                self.print.printer = Some(d);
+            }
             if self.persist {
                 self.store.save();
             }

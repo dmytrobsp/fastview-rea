@@ -1199,12 +1199,22 @@ impl App {
             }
         }
         // The differential window's initial view, once after its first paint.
+        // The initial push (`0x445e00` tail, `0x44612d`–`0x44619e`) has no
+        // print test: a print consumes it too, after its page is drawn, with
+        // the limits from the live window's client (`0x443620`).
+        let printing = print_s().is_some();
         if diff && view.initial_pending {
-            view.push_lower_left(lim.0, lim.1);
-            ui.ctx().request_repaint();
+            let live = if printing { self.diag.geom[gi].map(|g| (dg::max_pan(g.pan.0, view.z), dg::max_pan(g.pan.1, view.z))) } else { Some(lim) };
+            if let Some(l) = live {
+                view.push_lower_left(l.0, l.1);
+                ui.ctx().request_repaint();
+            }
         }
         *self.plane_view(diff) = view;
-        self.diag.geom[gi] = Some(PlaneGeom { w, h, pan, max, char_max: char_ext, gate });
+        // The page's geometry is not the live window's.
+        if !printing {
+            self.diag.geom[gi] = Some(PlaneGeom { w, h, pan, max, char_max: char_ext, gate });
+        }
     }
 
     // ---- vector diagram ----

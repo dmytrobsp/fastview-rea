@@ -142,16 +142,12 @@ items (VM ones also in W4.4):
   the 316 × 169 DLU template.
 - [ ] W2.10 L9.66 — the print cell ⌊96·s/5⌋ (done, L9.202), the print
   resetting the live zoom (as ours), the differential push consumed by a
-  print (`0x445e00` tail: the live pane pushed after the page, limits from
-  the live client), the GDI+ fill's band at s = 1 (`0x43a4a0`).
+  print (done, L9.203), the GDI+ fill's band at s = 1 (`0x43a4a0`, with W5.1).
 - [x] W2.11 L9.92 — Ctrl + pin and the plain pin's slide: done, L9.202;
   the animation-off switch is a Remote Desktop session only (W6).
-- [ ] W2.12 L9.94 — page setup (`0x448a90`, read by the agent 2026-10-24):
-  its first pass returns the SYSTEM DEFAULT printer (RETURNDEFAULT, the
-  app's DEVMODE not passed), writes the stored orientation into it, and
-  OK makes that the application printer (#12964), replacing an earlier
-  «Свойства» DEVMODE — ours keeps `app_paper()` / the chosen printer; the
-  «Принтер...» button absent on Vista+ comdlg (check the template, VM).
+- [x] W2.12 L9.94 — page setup from the default printer, which OK makes the
+  application's (L9.203); the «Принтер...» button: absent on Vista+ comdlg
+  (a VM look, W4.4).
 - [ ] W2.13 L9.97 — disabled keytips' ink (VM: F10 with no document).
 - [ ] W2.14 L9.102 — where a tab dragged out lands (VM, mouse driving).
 - [ ] W2.15 L9.122 — «Свойства...» on the VM, the owner window, the

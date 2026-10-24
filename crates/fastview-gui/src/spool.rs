@@ -59,6 +59,12 @@ pub fn properties(printer: &str) -> bool {
     imp::properties(printer)
 }
 
+/// Drop what «Свойства...» chose for `printer`: the page setup's OK hands
+/// MFC a fresh DEVMODE of the default printer (`0x448a90`, #12964).
+pub fn forget_properties(printer: &str) {
+    imp::forget_properties(printer)
+}
+
 /// The fields from `lpstat -p <printer>` and `lpoptions -p <printer>`.
 #[cfg(any(not(windows), test))]
 pub fn cups_details(lpstat: &str, lpoptions: &str) -> [String; 4] {
@@ -165,6 +171,8 @@ mod imp {
         let default = lpstat("-d").and_then(|s| s.split_once(':').map(|(_, n)| n.trim().to_string())).filter(|n| !n.is_empty() && !n.contains(' '));
         (list, default)
     }
+
+    pub fn forget_properties(_printer: &str) {}
 
     pub fn properties(_printer: &str) -> bool {
         false
@@ -319,6 +327,12 @@ mod imp {
 
     fn chosen(printer: &str) -> Option<Vec<u64>> {
         JOB_DM.lock().ok()?.iter().find(|(p, _)| p == printer).map(|(_, b)| b.clone())
+    }
+
+    pub fn forget_properties(printer: &str) {
+        if let Ok(mut v) = JOB_DM.lock() {
+            v.retain(|(p, _)| p != printer);
+        }
     }
 
     pub fn properties(printer: &str) -> bool {

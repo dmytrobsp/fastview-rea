@@ -6060,6 +6060,31 @@ differential's initial push consumed by a print (`0x445e00` tail), the
 GDI+ fill's band at s = 1, the preview's keytips (P, QI, QO, 1, X, V, C)
 and the page setup's default printer (`0x448a90`) — plan W2.
 
+### L9.203 — A print consumes the differential's initial push; the page setup starts from the default printer and makes it the application's  ·  ✅
+Read by hand:
+- The differential painter's tail (`0x44612d`–`0x44619e`): only the
+  one-shot flag `+0x4c0` is tested — no s, no m_bPrinting — so a print
+  that paints the plane before the window does pushes the live view (oy +2
+  / ox −2 steps to the limits `0x443620` takes from the live window's
+  client) after the page is drawn, invalidates it and clears the flag.
+- The page setup `0x448a90`: a fresh CPageSetupDialog (flags 0x260a,
+  `0x448ad4`) whose first DoModal (PSD_RETURNDEFAULT, no DEVMODE passed)
+  returns the system default printer; the stored orientation goes into
+  that DEVMODE (`0x448b15`–`0x448b20`), RETURNDEFAULT is cleared
+  (`0x448b30`), the hook and margins set, DoModal again; on IDOK the
+  orientation and margins are stored and SelectPrinter (#12964,
+  `0x448ba3`) makes that printer and DEVMODE the application's.
+Ours pushed the live view with the page's limits (and wrote the page's
+geometry over the live one), showed the application printer's paper in
+the page setup and kept the chosen printer afterwards. Now the print pass
+pushes with the live window's limits (`PlaneGeom::pan`) and leaves
+`diag.geom` alone; `page_setup_open` reads the default printer's paper
+and its OK makes the default printer the application's, dropping a
+«Свойства...» DEVMODE (`spool::forget_properties`).
+Residual: with no printer installed the original's RETURNDEFAULT pass
+fails (not modelled); the «Принтер...» button (Vista+ comdlg has none —
+check on the VM).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
