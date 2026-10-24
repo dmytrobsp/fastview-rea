@@ -140,9 +140,9 @@ items (VM ones also in W4.4):
   ZP, ZZ, ZV — `0x100fccec`); QAT / app button / MDI tabs during preview (VM).
 - [x] W2.8 L9.41 — the report's «Осциллограмма:» line: the full path; the
   whole report byte-identical (L9.219).
-- [ ] W2.9 L9.64 — «Окна...»: Каскадом / Горизонтально / Вертикально /
-  Свернуть under MDI tabs (VM), OK's slot, LBS_SORT collation, the size from
-  the 316 × 169 DLU template.
+- [x] W2.9 L9.64 — «Окна...»: not reachable in the original (VM: the
+  tabs' ▾ list has no such item, sorted titles with window images) —
+  removed from ours (L9.220); the dialog's own questions are moot.
 - [ ] W2.10 L9.66 — the print cell ⌊96·s/5⌋ (done, L9.202), the print
   resetting the live zoom (as ours), the differential push consumed by a
   print (done, L9.203), the GDI+ fill's band at s = 1 (`0x43a4a0`, with W5.1).

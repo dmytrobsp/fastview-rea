@@ -1,7 +1,8 @@
 //! MFC's «Окна» dialog (`CMFCWindowsManagerDialog`, template 16927 of
-//! mfc120rus), opened by «Окна...» at the end of the tabs' ▾ list: the main
-//! frame calls `EnableWindowsDialog(131, 132 «&Окна...», always, no help)`
-//! (`0x47296b`). Read in the carved mfc120u (L9.64): OnInitDialog
+//! mfc120rus): the main frame calls `EnableWindowsDialog(131, 132
+//! «&Окна...», always, no help)` (`0x47296b`), but MFC adds that item to a
+//! «Window» menu only, and the tabs' ▾ list shows none (VM, L9.220) — so
+//! nothing opens it; kept as read, rendered by the harness. Read in the carved mfc120u (L9.64): OnInitDialog
 //! `0x101aa7c7`, the list fill `0x101aaafc`, the selection `0x101aaa4e`, the
 //! button states `0x101aa897` and the handlers of its message map.
 
@@ -61,6 +62,9 @@ fn click(dlg: &mut WindowsDlg, rows: &[u64], at: u64, ctrl: bool, shift: bool) {
 }
 
 impl App {
+    // Not reachable from the original's UI (VM, L9.220: MFC adds «Окна...»
+    // to a «Window» menu only); kept for the render harness.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn open_windows_dialog(&mut self) {
         let mut dlg = WindowsDlg::default();
         self.select_active_window(&mut dlg);

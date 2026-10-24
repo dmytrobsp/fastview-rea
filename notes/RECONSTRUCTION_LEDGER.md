@@ -6380,6 +6380,22 @@ stamps, the result text running into «Подстанция:» with no line brea
 Inom, the channels with «Ктр = 2000/1» padded, the section block — is as
 ours. Test hook `omp_dump` with `FV_OMP_REPORT=<file>`. Closes W2.8.
 
+### L9.220 — VM runs: the MDI tabs' ▾ list has no «Окна...»; sorted, with window images (W2.9)  ·  ✅
+Seen on the VM: with one record the tabs' arrow lists «WIN_1999.cfg»
+alone; with two (WIN_1999 opened first, DOC_1999 second) «DOC_1999.cfg»,
+«WIN_1999.cfg» — sorted by title, not in opening or tab order —, each
+with a small window image, none marked as active, and no «Окна...» and
+no separator. A right-click on a tab shows nothing (as L9.64's
+`OnShowMDITabContextMenu`). So L9.64's `EnableWindowsDialog(131, 132,
+always)` puts «Окна...» only in a «Window» menu, which this ribbon UI has
+not: MFC's windows dialog is out of reach. Ours listed the documents in
+order with radio marks and «Окна...» after a separator. Now the list is
+sorted (case folded), each row with a window image, no mark; «Окна...»
+removed (`windows_dlg.rs` kept as read, rendered by the harness —
+`FV_WINDOW_STATE=windows`; new state `twodocs` for the list).
+Residual: the sort's collation (ours: lower-cased code points) beyond
+these titles — NOT DETERMINED.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

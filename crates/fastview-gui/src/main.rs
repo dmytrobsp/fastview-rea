@@ -131,7 +131,6 @@ impl App {
     fn doc_tabs(&mut self, ui: &mut egui::Ui) {
         let mut activate = None;
         let mut close = None;
-        let mut windows = false;
         let mut dragged = None;
         let mut tabs: Vec<egui::Rect> = Vec::new();
         ui.horizontal(|ui| {
@@ -188,18 +187,22 @@ impl App {
                 ui.add_space(-6.0);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // The documents sorted by title, each with a small window
+                // image, none marked; no «Окна...» (VM: MFC adds it to a
+                // «Window» menu only, which this ribbon has not).
                 ui.menu_button("▾", |ui| {
-                    for i in 0..self.docs.len() {
-                        if ui.radio(self.active == Some(i), self.docs[i].title()).clicked() {
+                    let mut order: Vec<usize> = (0..self.docs.len()).collect();
+                    order.sort_by_key(|&i| self.docs[i].title().to_lowercase());
+                    for i in order {
+                        let r = ui.add(egui::Button::new(format!("      {}", self.docs[i].title())).frame(false));
+                        let c = egui::pos2(r.rect.left() + 10.0, r.rect.center().y);
+                        let w = egui::Rect::from_center_size(c, egui::vec2(12.0, 10.0));
+                        ui.painter().rect_stroke(w, 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_gray(110)));
+                        ui.painter().rect_filled(egui::Rect::from_min_max(w.left_top(), egui::pos2(w.left() + 3.0, w.bottom())), 0.0, egui::Color32::from_rgb(70, 130, 110));
+                        if r.clicked() {
                             activate = Some(i);
                             ui.close_menu();
                         }
-                    }
-                    // `EnableWindowsDialog(131, 132, always)`: «Окна...» last.
-                    ui.separator();
-                    if ui.button("Окна...").clicked() {
-                        windows = true;
-                        ui.close_menu();
                     }
                 });
             });
@@ -219,9 +222,6 @@ impl App {
         }
         if let Some(i) = close {
             self.dispatch(app::Command::CloseDoc(i));
-        }
-        if windows {
-            self.open_windows_dialog();
         }
     }
 
@@ -1356,11 +1356,14 @@ mod window_tests {
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "omp" || s == "ompparams") {
             app.tab = RibbonTab::Omp;
         }
-        // `FV_WINDOW_STATE=windows`: «Окна» over two documents.
-        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "windows") {
+        // `FV_WINDOW_STATE=windows`: «Окна» over two documents; `twodocs`:
+        // the two documents alone (the tabs' ▾ list).
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "windows" || s == "twodocs") {
             let osc = fvb_core::comtrade::parse(app::DEMO_CFG, app::DEMO_DAT).unwrap();
             app.add_doc(app::Doc::new(osc, "Подстанция 2".into()));
-            app.open_windows_dialog();
+            if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "windows") {
+                app.open_windows_dialog();
+            }
         }
         // `FV_WINDOW_STATE=about`: «О программе».
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "about") {
