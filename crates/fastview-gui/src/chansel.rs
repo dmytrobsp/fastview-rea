@@ -271,6 +271,13 @@ impl Doc {
                 });
             st.enabled = !self.chans.is_empty() && !bad;
         }
+        // «Отображать в отсчетах АЦП» counts the selected formula channels
+        // (analog records) for its enabling, but they never take the mode:
+        // with only those selected it is enabled, unchecked, and does
+        // nothing (VM).
+        if f == ChanFlag::Adc && !self.selected_computed().is_empty() {
+            st.enabled = true;
+        }
         st
     }
 
@@ -583,6 +590,23 @@ mod tests {
     /// names' byte order (`0x4311e0`); a member name that no longer
     /// resolves dissolves the whole group at the next evaluation
     /// (`0x455c70`).
+    /// VM: with only formula channels selected «Отображать в отсчетах АЦП»
+    /// is enabled and unchecked, and a click changes nothing.
+    #[test]
+    fn the_adc_item_with_only_formula_channels() {
+        let mut app = crate::app::App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        d.computed.push(crate::app::Computed::new("A0".into(), "1".into(), vec![0.0; d.osc.time.len()], eframe::egui::Color32::RED));
+        let j = d.computed.len() - 1;
+        d.selection = BTreeSet::from([ChanKey::Computed(j)]);
+        assert_eq!(d.flag_state(ChanFlag::Adc), ItemState { enabled: true, checked: false });
+        let before = d.chans.iter().map(|c| c.adc_counts).collect::<Vec<_>>();
+        d.toggle_flag_selected(ChanFlag::Adc);
+        assert_eq!(d.chans.iter().map(|c| c.adc_counts).collect::<Vec<_>>(), before);
+        assert_eq!(d.flag_state(ChanFlag::Adc), ItemState { enabled: true, checked: false });
+    }
+
     #[test]
     fn formula_channels_join_groups() {
         let mut app = crate::app::App::new();

@@ -8286,6 +8286,17 @@ Run (WIN_1999):
   file channels then the twelve computed ones («Ia плечо 1 прив.» …
   «Ic торм.») in the same order in both.
 
+### L9.304 — VM: the lane menu with formula channels selected; «Отображать в отсчетах АЦП» for them  ·  ✅
+Run (WIN_1999 after «Дифференциальные токи»): with two formula lanes
+selected the lane menu (561) is alike in both except «Отображать в
+отсчетах АЦП» — enabled in the original, greyed in ours; with a file
+lane added to them alike («Совместить каналы» greyed, «Копировать
+каналы…» enabled). Clicking it on a formula lane alone changes nothing
+in the original and the item stays unchecked: the formula channels count
+for its enabling only. Now `flag_state(Adc)` is enabled when a formula
+channel is selected, its check and its toggle still the file channels'.
+Test `the_adc_item_with_only_formula_channels`.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
