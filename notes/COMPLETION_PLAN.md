@@ -172,7 +172,7 @@ items (VM ones also in W4.4):
   keyboard (L9.156), an unknown saved block name in «Тип блока» (done, L9.201),
   the refresh's other callers (most, L9.208), About's text and links (W1.6), the
   frequency dialog's initial enable state (done, L9.201), the ОМП dialog's tree
-  icons / geometry / reader gaps (L9.169), a computed channel's colour
+  icons / geometry (done, L9.209; reader gaps: as ours), a computed channel's colour
   recomputed by place (done, L9.200), an OSC2 record saved as COMTRADE (done, L9.197).
 
 - [ ] W2.18 W1.8's open differences (L9.181 / L9.182). Done in

@@ -6194,6 +6194,28 @@ Residual: the refresh after 33030, 33035 / 33037, quick analysis, 33033,
 the ОМП dialog / bar, the merge bar and the file-info OK (they reach ours
 outside `dispatch`); MFC's fake OnDragLeave / OnDragEnter around the band.
 
+### L9.209 — The ОМП dialog's geometry and tree as the template and OnInitDialog place them  ·  ✅
+Read (background agent; constants by hand): DIALOG 336 is 475 × 275 DLU
+in MS Shell Dlg 8 (a 712 × 447 client), OK at (310, 254) and Cancel at
+(392, 254), 76 × 14 DLU, never moved; OnInitDialog `0x4a7c50` sets the
+toolbar at (10, 10), W − 20 wide (`0x4a7cd9`), the tree at (11, tb + 21),
+(W/3 − 22) × (H − 92) (`0x4a7ceb`–`0x4a7d1b`), the grid (`0x4a80e0`,
+WS_BORDER, no header) at (W/3, tb + 20), (2W/3 − 10) × (H − 90)
+(`0x4a7d2d`–`0x4a7d67`). The tree 1074 has buttons and lines but not at
+the root (style 0x50110003): a station has no expand button; its image
+list (BITMAP 476, four 16 × 16 cells on white) gives each item its kind's
+image — 0 station, 1 section, 2 parallel line, 3 tap (the fill
+`0x4a81b0`).
+Ours laid the dialog out by flow at 712 × 420 with separators, a ⊟ on the
+stations, no images and a striped grid. Now `ParamsDialog::ui` places the
+toolbar, tree, grid and buttons as read (tb ours 22), stations without a
+button (a double-click toggles), `tree_icon` draws our own four images,
+the grid is bordered and unstriped; rendered and looked at.
+Residual: the tree's dotted connector lines; the grid's bold marking
+against the values at fill time (MFC's MarkModifiedProperties, INFERRED)
+— ours against the defaults; the toolbar's height (CalcFixedLayout, not
+read); About's links on press within fixed rectangles (`0x4471e0`).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

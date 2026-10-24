@@ -461,7 +461,7 @@ impl App {
                 .order(egui::Order::Foreground)
                 .collapsible(false)
                 .resizable(false)
-                .fixed_size([712.0, 420.0])
+                .fixed_size([712.0, 447.0])
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| outcome = dlg.ui(ui, &names));
             match outcome {
@@ -907,8 +907,17 @@ impl ParamsDialog {
 
     fn ui(&mut self, ui: &mut egui::Ui, channels: &[String]) -> Option<DialogAction> {
         let mut action = None;
-        // Toolbar 475.
-        ui.horizontal(|ui| {
+        // DIALOG 336: 475 × 275 DLU in MS Shell Dlg 8 — a 712 × 447 client;
+        // OnInitDialog `0x4a7c50` places the toolbar, the tree and the grid
+        // (tb = the toolbar's height, ours 22); OK / Cancel stay at the
+        // template's (310, 254) / (392, 254), 76 × 14 DLU. No separators.
+        const W: f32 = 712.0;
+        const H: f32 = 447.0;
+        const TB: f32 = 22.0;
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(W, H), egui::Sense::hover());
+        let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(rect.min + egui::vec2(x, y), egui::vec2(w, h));
+        // Toolbar 475 at (10, 10), W − 20 wide (`0x4a7cd9`).
+        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(at(10.0, 10.0, W - 20.0, TB)), |ui| ui.horizontal(|ui| {
             let cur = METHODS.iter().position(|(m, _)| *m == self.work.method).unwrap_or(0);
             let mut idx = cur;
             egui::ComboBox::from_id_salt("omp_method").width(280.0).selected_text(METHODS[cur].1).show_ui(ui, |ui| {
@@ -948,15 +957,16 @@ impl ParamsDialog {
             if ui.button("💾").on_hover_text("Сохранить настройки в отдельном файле").clicked() {
                 action = Some(DialogAction::Save);
             }
-        });
-        ui.separator();
-        let body_h = 340.0;
-        ui.horizontal_top(|ui| {
-            // Tree (≈ left third, thin frame).
-            egui::Frame::none().stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(171, 173, 179))).show(ui, |ui| {
-                ui.set_min_size(egui::vec2(228.0, body_h));
-                ui.set_max_width(228.0);
-                egui::ScrollArea::vertical().id_salt("omp_tree").max_height(body_h).show(ui, |ui| {
+        }));
+        // The tree (1074, `0x4a7d1b`): (11, tb + 21), (W/3 − 22) × (H − 92);
+        // buttons and lines but not at the root (style 0x50110003) — a
+        // station has no ⊞ / ⊟ (a double-click toggles it); each item the
+        // image of its kind (BITMAP 476: station, section, parallel line,
+        // tap — our own drawings).
+        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(at(11.0, TB + 21.0, W / 3.0 - 22.0, H - 92.0)), |ui| {
+            egui::Frame::none().stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(171, 173, 179))).fill(Color32::WHITE).show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                egui::ScrollArea::vertical().id_salt("omp_tree").show(ui, |ui| {
                     let mut hidden_below: Option<usize> = None;
                     let rows = self.rows();
                     for (i, (depth, node, label)) in rows.iter().enumerate() {
@@ -968,34 +978,48 @@ impl ParamsDialog {
                         }
                         let has_children = rows.get(i + 1).is_some_and(|(d2, _, _)| d2 > depth);
                         let collapsed = self.collapsed.contains(node);
-                        ui.horizontal(|ui| {
-                            ui.add_space(4.0 + 16.0 * *depth as f32);
-                            if has_children {
-                                if ui.add(egui::Button::new(if collapsed { "⊞" } else { "⊟" }).frame(false).small()).clicked() {
-                                    if collapsed {
-                                        self.collapsed.remove(node);
-                                    } else {
-                                        self.collapsed.insert(*node);
-                                    }
-                                }
+                        let toggle = |me: &mut Self| {
+                            if me.collapsed.contains(node) {
+                                me.collapsed.remove(node);
                             } else {
-                                ui.add_space(14.0);
+                                me.collapsed.insert(*node);
                             }
-                            if ui.selectable_label(self.sel == *node, label.as_str()).clicked() {
+                        };
+                        ui.horizontal(|ui| {
+                            ui.add_space(4.0 + 16.0 * depth.saturating_sub(1) as f32);
+                            if *depth > 0 {
+                                if has_children {
+                                    if ui.add(egui::Button::new(if collapsed { "⊞" } else { "⊟" }).frame(false).small()).clicked() {
+                                        toggle(self);
+                                    }
+                                } else {
+                                    ui.add_space(14.0);
+                                }
+                            }
+                            let (ir, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                            tree_icon(ui.painter(), ir, node);
+                            let r = ui.selectable_label(self.sel == *node, label.as_str());
+                            if r.clicked() {
                                 self.sel = *node;
                             }
+                            if r.double_clicked() && has_children {
+                                toggle(self);
+                            }
                         });
-                        if has_children && collapsed {
+                        if has_children && self.collapsed.contains(node) {
                             hidden_below = Some(*depth);
                         }
                     }
                 });
             });
-            // Property grid (no header, flat list, modified values bold).
-            ui.vertical(|ui| {
-                ui.set_min_size(egui::vec2(ui.available_width(), body_h));
-                egui::ScrollArea::vertical().id_salt("omp_grid").max_height(body_h).show(ui, |ui| {
-                    egui::Grid::new("omp_grid_rows").num_columns(2).striped(true).spacing([8.0, 4.0]).show(ui, |ui| {
+        });
+        // The grid (`0x4a80e0`, WS_BORDER, no header): (W/3, tb + 20),
+        // (2W/3 − 10) × (H − 90); modified values bold.
+        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(at(W / 3.0, TB + 20.0, 2.0 * W / 3.0 - 10.0, H - 90.0)), |ui| {
+            egui::Frame::none().stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(171, 173, 179))).show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                egui::ScrollArea::vertical().id_salt("omp_grid").show(ui, |ui| {
+                    egui::Grid::new("omp_grid_rows").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
                         let node = self.sel;
                         for (label, f, is_chan) in grid_rows(self.work.method, node) {
                             let Some(v) = field_mut(&mut self.work, node, f) else { continue };
@@ -1020,16 +1044,42 @@ impl ParamsDialog {
                 });
             });
         });
-        ui.separator();
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("Отмена").clicked() {
-                action = Some(DialogAction::Cancel);
-            }
-            if ui.button("   OK   ").clicked() {
-                action = Some(DialogAction::Ok);
-            }
-        });
+        if ui.put(at(465.0, 413.0, 114.0, 23.0), egui::Button::new("OK")).clicked() {
+            action = Some(DialogAction::Ok);
+        }
+        if ui.put(at(588.0, 413.0, 114.0, 23.0), egui::Button::new("Отмена")).clicked() {
+            action = Some(DialogAction::Cancel);
+        }
         action
+    }
+}
+
+/// A tree item's image (BITMAP 476's four cells, our own drawings on
+/// white): a station's round mark, a section's conductor with its ends, a
+/// parallel line's two conductors, a tap's branch.
+fn tree_icon(p: &egui::Painter, r: egui::Rect, node: &Node) {
+    let c = r.center();
+    let v = |x: f32, y: f32| c + egui::vec2(x, y);
+    let st = |w: f32, col| egui::Stroke::new(w, col);
+    match node {
+        Node::Station(_) => {
+            p.circle_filled(c, 5.0, Color32::from_rgb(30, 60, 140));
+        }
+        Node::Section(..) => {
+            p.line_segment([v(-5.0, 0.0), v(5.0, 0.0)], st(2.0, Color32::from_rgb(170, 160, 90)));
+            for x in [-6.5, 6.5] {
+                p.rect_filled(egui::Rect::from_center_size(v(x, 0.0), egui::vec2(3.0, 5.0)), 0.0, Color32::from_rgb(230, 120, 170));
+            }
+        }
+        Node::Line(..) => {
+            for x in [-2.5, 2.5] {
+                p.line_segment([v(x, -6.0), v(x, 6.0)], st(1.5, Color32::from_rgb(90, 90, 90)));
+            }
+        }
+        Node::Tap(..) => {
+            p.line_segment([v(-2.0, -6.0), v(-2.0, 6.0)], st(1.5, Color32::from_rgb(90, 90, 90)));
+            p.line_segment([v(-2.0, 0.0), v(5.0, 0.0)], st(1.5, Color32::from_rgb(90, 90, 90)));
+        }
     }
 }
 
