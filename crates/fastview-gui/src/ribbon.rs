@@ -777,14 +777,20 @@ fn paint_orb(painter: &egui::Painter, r: egui::Rect, colors: [Color32; 3], state
 
 fn draw_logo(ui: &mut egui::Ui, h: f32, color: Color32) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(h * 1.2, h), egui::Sense::hover());
-    let painter = ui.painter();
+    paint_logo(ui.painter(), rect, color, 2.2);
+}
+
+/// Our emblem (the original's logo bitmaps are its artwork): two chevrons,
+/// `color` over green, across `rect`.
+pub(crate) fn paint_logo(painter: &egui::Painter, rect: egui::Rect, color: Color32, width: f32) {
+    let h = rect.height();
     let green = Color32::from_rgb(0x4C, 0xAF, 0x50);
     for (yoff, col) in [(0.0_f32, color), (h * 0.36, green)] {
         let a = egui::pos2(rect.left(), rect.bottom() - yoff - h * 0.1);
         let b = egui::pos2(rect.center().x, rect.top() + yoff + h * 0.05);
         let c = egui::pos2(rect.right(), rect.bottom() - yoff - h * 0.1);
-        painter.line_segment([a, b], egui::Stroke::new(2.2f32, col));
-        painter.line_segment([b, c], egui::Stroke::new(2.2f32, col));
+        painter.line_segment([a, b], egui::Stroke::new(width, col));
+        painter.line_segment([b, c], egui::Stroke::new(width, col));
     }
 }
 

@@ -311,7 +311,7 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   the plot's right-click, the ОМП tab, the pane caption menu, L9.273;
   «Каналы», «Коэффициенты», «Быстрый анализ», L9.274; the application
   menu's dialogs and the finder's tree, L9.275; a block picked in the
-  differential grid, L9.276):
+  differential grid, L9.276; «Печать» and the print preview, L9.277):
   start-up window and panes; opening each sample record;
   every ribbon command and its enable state with and without a document;
   every dialog (fields, defaults, Enter / Esc, refusals); context menus

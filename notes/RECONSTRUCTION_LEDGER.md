@@ -7625,6 +7625,35 @@ keys; the pointer's item wins).
 Residual:
 - The list's font is the dialogs' Tahoma 11; the grid's is the UI font.
 
+### L9.277 — Side by side: «Печать» and the print preview; the preview's page drawn at the scale shown  ·  ✅
+W4.3 on both programs, WIN_1999:
+- Ctrl+P opens «Печать» with the same printer, fields and ticks in both.
+- «Предварительный просмотр» closes it and shows the page in the
+  document's window, with the same ribbon tab and enable states, page
+  placement, header lines, lanes and footer.
+The page itself differed in two ways:
+- The traces. MFC's preview DC has GDI draw every line at the scale
+  shown, and a 1-pixel pen keeps its colour. Ours drew the oscillogram
+  slice at under a pixel a point, where a pixel-centre test drops thin
+  segments in a beat pattern (the waveforms broke into blocks). Now the
+  slice is drawn at about a pixel a point and shrunk keeping ink: each
+  pixel takes the darkest pixel it covers (`Canvas::shrink_ink`). Plain
+  averaging was tried first and paled the traces.
+- The logo slot was empty. The original prints its logo bitmap there;
+  ours now draws our own emblem (`ribbon::paint_logo`, the one in the
+  application button) in that slot.
+The preview also keeps each rendered page and builds its texture at the
+pixels shown (area-averaged), so a texture's linear filter no longer
+skips lines when the page is shown at under half its size.
+Harness: SendKeys' Ctrl+letter on the VM comes without a scan code, and
+egui-winit drops such a key; the original's accelerator table takes it by
+virtual key. `keys.ps1` gains `CHORD ctrl+P` (keybd_event with the scan
+code, as a keyboard sends it).
+Residual:
+- A key event with no scan code (some injection tools) does not reach
+  ours' shortcuts.
+- The emblem is ours, not the original's artwork.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

@@ -77,6 +77,8 @@ pub enum PreviewCmd {
 pub struct Preview {
     pub job: Job,
     pub tex: Vec<Option<egui::TextureHandle>>,
+    /// Each page as rendered (on its sheet, at the preview resolution).
+    sheets: Vec<Option<Canvas>>,
     /// First page shown (0-based), two pages side by side, zoom 0..=2.
     pub cur: usize,
     pub two: bool,
@@ -171,7 +173,7 @@ impl App {
         job.attrib_dpi = printer.map_or(spool::PDF_DPI, |d| d.dpi);
         job.dev.stock_t = printer.and_then(|d| d.stock_t);
         let two = job.pages.len() >= 2;
-        self.print.preview = Some(Preview { tex: vec![None; job.pages.len()], job, cur: 0, two, zoom: 0, cmd: None });
+        self.print.preview = Some(Preview { tex: vec![None; job.pages.len()], sheets: vec![None; job.pages.len()], job, cur: 0, two, zoom: 0, cmd: None });
     }
 
     /// 57605 Параметры страницы.
@@ -413,17 +415,38 @@ impl App {
         }
         let shown: Vec<usize> = if pv.two && pv.zoom == 0 { (pv.cur..(pv.cur + 2).min(n)).collect() } else { vec![pv.cur] };
         let fonts = self.print.fonts.clone();
+        // The scale the pages are shown at (as laid out below).
+        let avail = ui.available_size();
+        let page = {
+            let d = &pv.job.dev;
+            Vec2::new(d.sheet_mm.0 / 25.4 * d.dpi, d.sheet_mm.1 / 25.4 * d.dpi).round()
+        };
+        let fit = ((avail.y - 20.0) / page.y).min((avail.x - 20.0) / (page.x * shown.len() as f32 + 10.0)).max(0.05);
+        let scale = fit * [1.0, 1.6, 2.6][pv.zoom as usize];
+        let ppp = ctx.pixels_per_point();
         for &i in &shown {
-            if pv.tex.get(i).is_some_and(|t| t.is_none()) {
+            if pv.sheets.get(i).is_some_and(|c| c.is_none()) {
                 let c = if pv.job.pages.is_empty() {
                     Canvas::white(pv.job.dev.w, pv.job.dev.h)
                 } else {
                     self.render_page(&fonts, &pv.job, i, true)
                 };
                 // The page on its printable area of the sheet.
-                let c = c.on_sheet(&pv.job.dev);
-                let img = egui::ColorImage::from_rgb([c.w, c.h], &c.px.concat());
-                pv.tex[i] = Some(ctx.load_texture(format!("print_preview_{i}"), img, egui::TextureOptions::LINEAR));
+                pv.sheets[i] = Some(c.on_sheet(&pv.job.dev));
+                pv.tex[i] = None;
+            }
+            // MFC draws the page at the scale shown, every line kept: ours
+            // shrinks the rendered page to the pixels shown by averaging
+            // (a texture's linear filter skips thin lines when it shrinks
+            // by more than half).
+            let want = [((page.x * scale * ppp).round() as usize).max(1), ((page.y * scale * ppp).round() as usize).max(1)];
+            let stale = pv.tex.get(i).and_then(|t| t.as_ref()).is_none_or(|t| t.size() != want && want[0] < pv.sheets[i].as_ref().map_or(0, |c| c.w));
+            if stale {
+                if let Some(c) = &pv.sheets[i] {
+                    let shown_px = if want[0] < c.w { c.shrink(want[0], want[1]) } else { c.clone() };
+                    let img = egui::ColorImage::from_rgb([shown_px.w, shown_px.h], &shown_px.px.concat());
+                    pv.tex[i] = Some(ctx.load_texture(format!("print_preview_{i}"), img, egui::TextureOptions::LINEAR));
+                }
             }
         }
         // In the document's window, over the MDI client's colour (VM: the
@@ -432,11 +455,6 @@ impl App {
         egui::Frame::none().fill(bg).show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             egui::ScrollArea::both().show(ui, |ui| {
-                let avail = ui.available_size();
-                let d = &pv.job.dev;
-                let page = Vec2::new(d.sheet_mm.0 / 25.4 * d.dpi, d.sheet_mm.1 / 25.4 * d.dpi).round();
-                let fit = ((avail.y - 20.0) / page.y).min((avail.x - 20.0) / (page.x * shown.len() as f32 + 10.0)).max(0.05);
-                let scale = fit * [1.0, 1.6, 2.6][pv.zoom as usize];
                 // The pages centred in the grey area (stock MFC preview).
                 let total = Vec2::new((page.x * scale + 10.0) * shown.len() as f32 + 10.0, page.y * scale + 20.0);
                 ui.add_space(((avail.y - total.y) / 2.0).max(0.0) + 10.0);

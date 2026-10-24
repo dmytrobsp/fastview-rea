@@ -382,10 +382,14 @@ impl App {
         let p = ctx.layer_painter(egui::LayerId::background());
         let black = Color32::BLACK;
         // Logo slot 50 × 42 just above R (bitmap 341 is the original's
-        // artwork and is not reproduced), the light band behind the header.
+        // artwork: ours draws its emblem), the light band behind the header.
         let (logo_w, logo_h) = (50.0, 42.0);
         let logo_top = r.top() - logo_h - 0.5;
         p.rect_filled(Rect::from_min_max(Pos2::new(r.left(), logo_top), Pos2::new(r.right(), logo_top + logo_h - 1.0 / k)), 0.0, Color32::from_rgb(243, 246, 250));
+        // Our emblem in the logo's slot (VM: the original prints its logo
+        // there).
+        let slot = Rect::from_min_size(Pos2::new(r.left(), logo_top), egui::vec2(logo_w, logo_h));
+        crate::ribbon::paint_logo(&p, Rect::from_center_size(slot.center(), egui::vec2(logo_h * 0.84, logo_h * 0.7)), Color32::from_rgb(36, 96, 155), 3.0);
         let x = r.left() + logo_w + 100.0 / k;
         let stem = header_name(d.path.as_deref());
         let t = &d.osc.time;
@@ -440,7 +444,19 @@ impl App {
         match job.pages[idx] {
             PageKind::Osc(slice) => {
                 let ppp = rw as f32 / plan.client_w;
-                let img = raster::render(Vec2::new(plan.client_w, plan.page_h), ppp, Some(fonts), |ctx| this.paint_osc_slice(ctx, job.di, plan, slice));
+                let size = Vec2::new(plan.client_w, plan.page_h);
+                // Shrunk below a pixel a point (the preview): drawn at about
+                // a pixel a point and shrunk keeping ink. GDI draws every
+                // line at the scale shown in its full colour; a pixel-centre
+                // test would drop the thin ones in a beat pattern, an
+                // average would pale them.
+                let img = if ppp < 1.0 {
+                    let ss = (1.0 / ppp).ceil();
+                    let hi = raster::render(size, ppp * ss, Some(fonts), |ctx| this.paint_osc_slice(ctx, job.di, plan, slice));
+                    hi.shrink_ink(((size.x * ppp).round() as usize).max(1), ((size.y * ppp).round() as usize).max(1))
+                } else {
+                    raster::render(size, ppp, Some(fonts), |ctx| this.paint_osc_slice(ctx, job.di, plan, slice))
+                };
                 canvas.blit(&Canvas::white(rw, rh), rdev.min.x as i64, rdev.min.y as i64);
                 let img = if img.h > rh { crop(&img, rw, rh) } else { img };
                 canvas.blit(&img, rdev.min.x as i64, rdev.min.y as i64);

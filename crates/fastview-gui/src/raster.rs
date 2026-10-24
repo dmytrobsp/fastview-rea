@@ -16,6 +16,61 @@ pub struct Canvas {
 }
 
 impl Canvas {
+    /// Shrunk to `w` × `h` by area-weighted averaging: every line keeps
+    /// its share of the pixels it covers.
+    pub fn shrink(&self, w: usize, h: usize) -> Canvas {
+        let c = self;
+        let mut out = Canvas::white(w, h);
+        let (sx, sy) = (c.w as f32 / w as f32, c.h as f32 / h as f32);
+        for y in 0..h {
+            let (y0, y1) = (y as f32 * sy, (y + 1) as f32 * sy);
+            for x in 0..w {
+                let (x0, x1) = (x as f32 * sx, (x + 1) as f32 * sx);
+                let mut acc = [0f32; 3];
+                let mut area = 0f32;
+                for yy in (y0.floor() as usize)..(y1.ceil() as usize).min(c.h) {
+                    let wy = (y1.min(yy as f32 + 1.0) - y0.max(yy as f32)).max(0.0);
+                    for xx in (x0.floor() as usize)..(x1.ceil() as usize).min(c.w) {
+                        let wx = (x1.min(xx as f32 + 1.0) - x0.max(xx as f32)).max(0.0);
+                        let px = c.px[yy * c.w + xx];
+                        for k in 0..3 {
+                            acc[k] += px[k] as f32 * wx * wy;
+                        }
+                        area += wx * wy;
+                    }
+                }
+                out.px[y * w + x] = acc.map(|v| (v / area.max(1e-6)).round() as u8);
+            }
+        }
+        out
+    }
+
+    /// Shrunk to `w` × `h` keeping ink: each pixel the darkest of the
+    /// pixels it covers (a 1-pixel pen's line keeps its colour at any
+    /// scale, as GDI draws it at the scale shown).
+    pub fn shrink_ink(&self, w: usize, h: usize) -> Canvas {
+        let mut out = Canvas::white(w, h);
+        let (sx, sy) = (self.w as f32 / w as f32, self.h as f32 / h as f32);
+        for y in 0..h {
+            let (y0, y1) = ((y as f32 * sy) as usize, (((y + 1) as f32 * sy).ceil() as usize).min(self.h));
+            for x in 0..w {
+                let (x0, x1) = ((x as f32 * sx) as usize, (((x + 1) as f32 * sx).ceil() as usize).min(self.w));
+                let mut best = [255u8; 3];
+                let mut ink = u32::MAX;
+                for yy in y0..y1.max(y0 + 1).min(self.h) {
+                    for &px in &self.px[yy * self.w + x0..yy * self.w + x1.max(x0 + 1).min(self.w)] {
+                        let v = px.iter().map(|&c| c as u32).sum::<u32>();
+                        if v < ink {
+                            (ink, best) = (v, px);
+                        }
+                    }
+                }
+                out.px[y * w + x] = best;
+            }
+        }
+        out
+    }
+
     pub fn white(w: usize, h: usize) -> Canvas {
         Canvas { w, h, px: vec![[255; 3]; w * h] }
     }
@@ -238,6 +293,24 @@ fn draw_mesh(acc: &mut [[f32; 3]], w: usize, h: usize, m: &epaint::Mesh, clip: R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_shrunk_page_keeps_its_thin_lines() {
+        // A 1-pixel red line every 5 columns, shrunk 4×: averaging pales
+        // every one, keeping ink leaves each in its full colour.
+        let mut c = Canvas::white(40, 8);
+        for y in 0..8 {
+            for x in (0..40).step_by(5) {
+                c.px[y * 40 + x] = [255, 0, 0];
+            }
+        }
+        let ink = c.shrink_ink(10, 2);
+        let avg = c.shrink(10, 2);
+        let reds = |c: &Canvas| (0..10).filter(|&x| c.get(x, 0) == [255, 0, 0]).count();
+        assert_eq!(reds(&ink), 8);
+        assert_eq!(reds(&avg), 0);
+        assert!((0..10).all(|x| ink.get(x, 0) == [255, 0, 0] || ink.get(x, 0) == [255, 255, 255]));
+    }
 
     #[test]
     fn renders_shapes_and_text_at_the_requested_density() {

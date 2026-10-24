@@ -16,6 +16,8 @@ public static class In {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, int data, UIntPtr extra);
   [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint flags);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
 }
 '@
 [In]::SetProcessDPIAware() | Out-Null
@@ -49,6 +51,18 @@ foreach ($k in ($Keys -split ';')) {
         }
         Start-Sleep -Milliseconds 200
         if ($Matches[1] -eq 'DRAG') { [In]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero) }
+    } elseif ($k -match '^CHORD ((?:\w+\+)*)(\w+)$') {
+        # Keys with their scan codes (a real keyboard's; SendKeys' Ctrl+letter
+        # may come without one): CHORD ctrl+shift+P, CHORD F4, CHORD ctrl+0x4F.
+        $mods = @($Matches[1].TrimEnd('+').Split('+') | Where-Object { $_ })
+        $name = $Matches[2]
+        $vkOf = @{ ctrl = 0x11; shift = 0x10; alt = 0x12 }
+        $vk = if ($name -match '^0x[0-9a-fA-F]+$') { [Convert]::ToInt32($name, 16) } elseif ($name.Length -eq 1) { [int][char]$name.ToUpper() } elseif ($name -match '^F(\d+)$') { 0x6F + [int]$Matches[1] } else { 0 }
+        foreach ($m in $mods) { $v = $vkOf[$m.ToLower()]; [In]::keybd_event([byte]$v, [byte][In]::MapVirtualKey($v, 0), 0, [UIntPtr]::Zero) }
+        [In]::keybd_event([byte]$vk, [byte][In]::MapVirtualKey($vk, 0), 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 30
+        [In]::keybd_event([byte]$vk, [byte][In]::MapVirtualKey($vk, 0), 2, [UIntPtr]::Zero)
+        [array]::Reverse($mods)
+        foreach ($m in $mods) { $v = $vkOf[$m.ToLower()]; [In]::keybd_event([byte]$v, [byte][In]::MapVirtualKey($v, 0), 2, [UIntPtr]::Zero) }
     } elseif ($k -eq 'UP') {
         [In]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero)
     } elseif ($k -match '^WHEEL (\d+),(\d+),(-?\d+)$') {
