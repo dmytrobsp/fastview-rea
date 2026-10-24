@@ -1595,7 +1595,7 @@ impl App {
             ("Задать соответствие между активным и реактивным сопротивлениями", "Активное сопротивление", "Реактивное сопротивление")
         };
         let mut done: Option<bool> = None;
-        egui::Window::new(title).collapsible(false).resizable(false).show(ctx, |ui| {
+        crate::dialogs::dlg(ctx, title).collapsible(false).resizable(false).show(ctx, |ui| {
             egui::Grid::new("pair_combos").num_columns(2).show(ui, |ui| {
                 ui.label(ca);
                 ui.label(cb);
@@ -1685,7 +1685,7 @@ impl App {
         // then harmonics), «Значения величин» (absolute, then percent),
         // «Нормализация», OK / Отмена at the bottom right.
         const W: f32 = 330.0;
-        egui::Window::new("Настройки частотной диаграммы").collapsible(false).resizable(false).show(ctx, |ui| {
+        crate::dialogs::dlg(ctx, "Настройки частотной диаграммы").collapsible(false).resizable(false).show(ctx, |ui| {
             ui.group(|ui| {
                 ui.set_width(W);
                 ui.label("Расчет значений");

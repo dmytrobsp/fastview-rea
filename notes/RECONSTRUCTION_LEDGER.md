@@ -6775,6 +6775,16 @@ caller — the flag icons, swatches, check boxes, tables — is crisp and
 the right size; the icon matches the capture row for row (its x is 3 px
 right with the stats panel's width, fonts).
 
+### L9.240 — Dialogs centred on the main window  ·  ✅
+Seen on the VM: «Каналы» opens «Отображение каналов» centred on the main
+window — the dialog templates leave their position at 0, 0 and MFC's
+dialog setup centres such a dialog on its owner. Ours left 23 of its 25
+windows to egui's automatic placement (top-left, cascading). Now
+`dialogs::dlg` builds every dialog window centred on the main window at
+its first showing (movable afterwards, as there); the print dialogs
+already were. Open: the list's fixed height (the original's dialog is
+~780 px tall with an empty list area; ours fits its rows) — W4.5.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

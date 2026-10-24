@@ -386,7 +386,7 @@ impl App {
         let Some((msg, icon)) = self.dlg.alerts.front().cloned() else { return };
         let mut ok = false;
         crate::dialogs::modal_backdrop(ctx, "fv_alert_block", egui::Order::Middle);
-        egui::Window::new(crate::app::APP_TITLE)
+        crate::dialogs::dlg(ctx, crate::app::APP_TITLE)
             .id(egui::Id::new("fv_alert"))
             .collapsible(false)
             .resizable(false)
@@ -428,7 +428,7 @@ impl App {
         let mut open = true;
         let mut apply = false;
         let mut cp_pick: Option<Encoding> = None;
-        egui::Window::new("Параметры осциллограммы")
+        crate::dialogs::dlg(ctx, "Параметры осциллограммы")
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
@@ -580,7 +580,7 @@ impl App {
         });
         let mut open = true;
         let mut result: Option<bool> = None;
-        egui::Window::new("Установка настроек программы")
+        crate::dialogs::dlg(ctx, "Установка настроек программы")
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
@@ -647,7 +647,7 @@ impl App {
         let Some(mut st) = self.dlg.hdr_edit.take() else { return };
         let mut open = true;
         let mut result: Option<bool> = None;
-        egui::Window::new("Комментарии к диаграмме")
+        crate::dialogs::dlg(ctx, "Комментарии к диаграмме")
             .id(egui::Id::new("fv_hdr_comment"))
             .collapsible(false)
             .resizable(false)

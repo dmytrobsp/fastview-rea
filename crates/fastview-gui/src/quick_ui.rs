@@ -418,7 +418,7 @@ impl App {
         let (mut calc, mut cancel, mut open, mut ok_now) = (false, false, true, false);
         let editing = self.formula_page.edit.is_some();
         let enabled = self.formula_dlg.is_none() && self.formula_page.alert.is_none();
-        egui::Window::new("Быстрый анализ")
+        crate::dialogs::dlg(ctx, "Быстрый анализ")
             .id(egui::Id::new("fv_quick_sheet"))
             .collapsible(false)
             .resizable(false)
@@ -471,7 +471,7 @@ impl App {
             });
         if let Some(msg) = self.formula_page.alert {
             let mut close = false;
-            egui::Window::new(crate::app::APP_TITLE)
+            crate::dialogs::dlg(ctx, crate::app::APP_TITLE)
                 .id(egui::Id::new("fv_formula_page_alert"))
                 .collapsible(false)
                 .resizable(false)

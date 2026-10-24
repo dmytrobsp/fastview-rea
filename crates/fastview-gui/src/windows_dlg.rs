@@ -118,7 +118,7 @@ impl App {
         let mut save = false;
         let mut close = false;
         crate::dialogs::modal_backdrop(ctx, "fv_windows_block", egui::Order::Middle);
-        egui::Window::new("Окна")
+        crate::dialogs::dlg(ctx, "Окна")
             .id(egui::Id::new("fv_windows"))
             .collapsible(false)
             .resizable(false)

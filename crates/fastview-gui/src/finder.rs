@@ -719,7 +719,7 @@ impl App {
         }
         let mut rescan = false;
         let mut open = true;
-        egui::Window::new("Проводник")
+        crate::dialogs::dlg(ctx, "Проводник")
             .collapsible(false)
             .default_size([900.0, 520.0])
             .open(&mut open)

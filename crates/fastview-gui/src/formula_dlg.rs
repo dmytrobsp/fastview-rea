@@ -153,7 +153,7 @@ impl App {
         let modal = st.alerts.is_empty();
         st.item_rects.clear();
         st.form_focus = false;
-        egui::Window::new("Добавить новую формулу")
+        crate::dialogs::dlg(ctx, "Добавить новую формулу")
             .id(egui::Id::new("fv_add_formula"))
             .collapsible(false)
             .resizable(false)
@@ -207,7 +207,7 @@ impl App {
         if let Some(&(msg, icon)) = st.alerts.first() {
             let mut close = false;
             crate::dialogs::modal_backdrop(ctx, "fv_add_formula_alert_block", egui::Order::Middle);
-            egui::Window::new(crate::app::APP_TITLE)
+            crate::dialogs::dlg(ctx, crate::app::APP_TITLE)
                 .id(egui::Id::new("fv_add_formula_alert"))
                 .collapsible(false)
                 .resizable(false)

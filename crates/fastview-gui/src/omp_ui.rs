@@ -463,7 +463,7 @@ impl App {
                 .unwrap_or_default();
             crate::dialogs::modal_backdrop(ctx, "omp_dialog_block", egui::Order::Middle);
             let mut outcome = None;
-            egui::Window::new("Параметры ОМП")
+            crate::dialogs::dlg(ctx, "Параметры ОМП")
                 .id(egui::Id::new("omp_params_dialog"))
                 .order(egui::Order::Foreground)
                 .collapsible(false)
@@ -509,7 +509,7 @@ impl App {
         if let Some(msg) = self.omp_ui.message.clone() {
             crate::dialogs::modal_backdrop(ctx, "omp_message_block", egui::Order::Foreground);
             let mut ok = false;
-            egui::Window::new(APP_TITLE)
+            crate::dialogs::dlg(ctx, APP_TITLE)
                 .id(egui::Id::new("omp_message"))
                 .order(egui::Order::Tooltip)
                 .collapsible(false)

@@ -304,7 +304,7 @@ impl App {
         let Some(mut ed) = self.comment_edit.take() else { return };
         let mut open = true;
         let mut done: Option<bool> = None;
-        egui::Window::new("Комментарии к диаграмме")
+        crate::dialogs::dlg(ctx, "Комментарии к диаграмме")
             .collapsible(false)
             .resizable(false)
             .open(&mut open)

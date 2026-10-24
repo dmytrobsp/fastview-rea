@@ -688,7 +688,7 @@ impl App {
         let esc = self.dialog_keys(ctx) == Some(false);
         let mut open = true;
         let mut alert: Option<&'static str> = None;
-        egui::Window::new("Отображение каналов")
+        crate::dialogs::dlg(ctx, "Отображение каналов")
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
@@ -812,7 +812,7 @@ impl App {
         let pal = self.skin.palette();
         let mut open = true;
         let mut result: Option<bool> = None;
-        egui::Window::new("Коэффициенты трансформации")
+        crate::dialogs::dlg(ctx, "Коэффициенты трансформации")
             .collapsible(false)
             .resizable(false)
             .open(&mut open)

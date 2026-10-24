@@ -3,6 +3,14 @@
 use crate::app::App;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
+/// A dialog window as MFC places one: centred on the main window at its
+/// first showing (`_AfxPostInitDialog` centres a dialog whose template
+/// leaves it at 0, 0 — seen on the VM), movable afterwards.
+pub fn dlg(ctx: &egui::Context, title: impl Into<egui::WidgetText>) -> egui::Window<'static> {
+    egui::Window::new(title).pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.screen_rect().center())
+}
+
+
 /// A transparent full-screen layer at `order` that swallows the pointer
 /// below a modal window (the windows of a higher order stay live).
 pub fn modal_backdrop(ctx: &egui::Context, id: &str, order: egui::Order) {
@@ -89,7 +97,7 @@ impl App {
             if now - l.shown.1 >= 0.5 {
                 l.shown = (l.progress.percent(), now);
             }
-            egui::Window::new("Загрузка осциллограммы").id(egui::Id::new(("fv_loading", i))).collapsible(false).resizable(false).show(ctx, |ui| {
+            crate::dialogs::dlg(ctx, "Загрузка осциллограммы").id(egui::Id::new(("fv_loading", i))).collapsible(false).resizable(false).show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.add(egui::ProgressBar::new(l.shown.0 as f32 / 100.0).desired_width(240.0));
                     if ui.button("Отмена").clicked() {
@@ -111,7 +119,7 @@ impl App {
         let Some(mut col) = self.color_dialog else { return };
         let mut open = true;
         let mut done: Option<bool> = None;
-        egui::Window::new("Цвет")
+        crate::dialogs::dlg(ctx, "Цвет")
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
@@ -147,7 +155,7 @@ impl App {
             return;
         }
         let mut open = true;
-        egui::Window::new("Роли каналов Ua…Ic (дополнение FastView-REA)")
+        crate::dialogs::dlg(ctx, "Роли каналов Ua…Ic (дополнение FastView-REA)")
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
@@ -275,7 +283,7 @@ impl App {
         let mut open = true;
         let mut recolor_default = false;
         let mut close_btn = false;
-        egui::Window::new("Свойства канала")
+        crate::dialogs::dlg(ctx, "Свойства канала")
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
