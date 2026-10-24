@@ -467,18 +467,49 @@ impl App {
 
         let pal = self.skin.palette();
         egui::TopBottomPanel::top("top")
+            .show_separator_line(false)
             .frame(egui::Frame::none().fill(pal.tab_active))
             .show(ctx, |ui| {
                 self.ribbon_ui(ui);
                 // Caption bars docked under the ribbon: the ОМП result.
                 self.omp_banner(ui);
+                // The ribbon's bottom line (VM, Office 2007 Blue).
+                if pal.body.is_some() {
+                    let r = ui.max_rect();
+                    ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(157, 179, 209)));
+                }
             });
-        // 142: the parameters bar, a 75 px strip under the ribbon.
+        // The frame's client area shows the splitter brush between its bars
+        // (VM, Office 2007 Blue): under the ribbon two shade rows ((174, 199,
+        // 232), (185, 212, 247)) and 4 px of (191, 219, 255).
+        use crate::oscgeom::PixelLines;
+        let strip = self.skin.splitter();
+        egui::TopBottomPanel::top("fv_under_ribbon").exact_height(6.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |ui| {
+            let r = ui.max_rect();
+            if pal.body.is_some() {
+                ui.painter().px_hline(r.x_range(), r.top(), egui::Stroke::new(1.0f32, egui::Color32::from_rgb(174, 199, 232)));
+                ui.painter().px_hline(r.x_range(), r.top() + 1.0, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(185, 212, 247)));
+            }
+        });
+        // 142: the parameters bar, 67 px — in the Office 2007 looks a
+        // gradient from white to (213, 228, 242) between (157, 189, 216)
+        // lines —, then 4 px of the brush.
         if self.dlg.param_bar {
             egui::TopBottomPanel::top("parambar")
-                .exact_height(75.0)
+                .exact_height(67.0)
+                .show_separator_line(false)
                 .frame(egui::Frame::none().fill(pal.info_bar.unwrap_or(pal.group_bg)))
-                .show(ctx, |ui| self.param_bar_ui(ui));
+                .show(ctx, |ui| {
+                    if pal.info_bar.is_none() && pal.body.is_some() {
+                        let r = ui.max_rect();
+                        crate::lanes::gradient(ui.painter(), egui::Rect::from_min_max(egui::pos2(r.left(), r.top() + 1.0), egui::pos2(r.right(), r.bottom() - 1.0)), egui::Color32::WHITE, egui::Color32::from_rgb(213, 228, 242));
+                        let edge = egui::Stroke::new(1.0f32, egui::Color32::from_rgb(157, 189, 216));
+                        ui.painter().px_hline(r.x_range(), r.top(), edge);
+                        ui.painter().px_hline(r.x_range(), r.bottom() - 1.0, edge);
+                    }
+                    self.param_bar_ui(ui)
+                });
+            egui::TopBottomPanel::top("fv_under_parambar").exact_height(4.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
         }
 
         // The merge bar (CMergeBar, 70 px), shown after a paste.

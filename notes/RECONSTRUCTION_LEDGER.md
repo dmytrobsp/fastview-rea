@@ -6623,6 +6623,39 @@ range only because the view had no width yet).
 Residual: the printed page's own differences (the original's logo at the
 header's left, the footer as one line) — W5.1.
 
+### L9.232 — VM run: the frame's client area pixel by pixel — the splitter brush between the bars and panes, the document's sunken edge, the pane toolbars; the vector diagram's values as the original's  ·  ✅
+Seen on the VM (WIN_1999 with the six analog channels on the vector and
+frequency diagrams by their `.set` flags, a click in the lanes setting
+визир 1 at 1562 ms; ours rendered at the same 2560 × 1392), sampled row
+by row (Office 2007 Blue):
+1. Under the ribbon's (157, 179, 209) bottom line come the shade rows
+   (174, 199, 232) and (185, 212, 247), then 4 px of the splitter brush
+   (191, 219, 255).
+2. The parameters bar is 67 px — (157, 189, 216) lines round a white →
+   (213, 228, 242) gradient —, then 4 px of the brush again.
+3. The document area: its border, the tab colour 2 px at the sides and
+   the bottom and 1 px at the top, then the view's sunken edge — (160,
+   160, 160) / (105, 105, 105) at the top and left, white / (227, 227,
+   227) at the right and bottom.
+4. Between the document area and each docked column, and between panes
+   side by side, 4 px of the brush; each column is its 500 px pane plus
+   that strip (1008 for two).
+5. A pane's window starts right under its caption.
+6. A pane's toolbar is a 24 px strip, a horizontal gradient (227, 239,
+   255) → (177, 211, 255).
+Ours had egui's (58, 93, 143) separator lines in place of all of these,
+a 75 px flat bar, no sunken edge, a 2 px pane frame and a 26 px flat
+toolbar; now each is as above (`main.rs` bands, `views.rs`
+`dock_frame` / the beside panels / the client edge, `diagram_ui`
+`pane_toolbar`). With визир 1 on the same time (our stats panel is 3 px
+wider — text metrics, W6), every stats value (592.835 мА, СКЗ 416.809
+мА, A1 416.727 мА, …) and the vector diagram's arrows and header (U max
+60.0 V, I max 0.45 A) are the original's.
+Residual: the outer frame lines' exact colours ((185, 208, 237) in the
+original, ours (191, 219, 255)), a tabbed group's frame round its tab
+control (border, 2 px, (100, 100, 100)) and its tab strip's look; the
+older looks' versions of these bands (ours use their splitter brush).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

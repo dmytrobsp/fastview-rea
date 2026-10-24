@@ -678,7 +678,19 @@ impl App {
         let buttons = self.toolbar_buttons(w);
         let doc = self.active_doc().is_some();
         let mut fire = None;
-        let bar = egui::SidePanel::right(egui::Id::new(("pane_toolbar", w as u8))).resizable(false).exact_width(26.0).show_inside(ui, |ui| {
+        // A 24 px strip, a horizontal gradient (VM, Office 2007 Blue: (227,
+        // 239, 255) at its left to (177, 211, 255) at its right).
+        let bar = egui::SidePanel::right(egui::Id::new(("pane_toolbar", w as u8))).resizable(false).show_separator_line(false).frame(egui::Frame::none()).exact_width(24.0).show_inside(ui, |ui| {
+            let r = ui.max_rect();
+            let mut mesh = egui::Mesh::default();
+            let (l, rr) = (Color32::from_rgb(227, 239, 255), Color32::from_rgb(177, 211, 255));
+            for (p, c) in [(r.left_top(), l), (r.right_top(), rr), (r.right_bottom(), rr), (r.left_bottom(), l)] {
+                mesh.colored_vertex(p, c);
+            }
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(0, 2, 3);
+            ui.painter().add(egui::Shape::mesh(mesh));
+            ui.add_space(2.0);
             ui.spacing_mut().item_spacing.y = 1.0;
             // Buttons that do not fit are cut off (a short toolbar), never
             // grow the pane past its slot.

@@ -361,15 +361,17 @@ impl App {
         let natural = inside.iter().map(|v| v.natural()).fold(0.0, f32::max);
         let ext = hd.extent.unwrap_or(natural);
         let body = |app: &mut App, ui: &mut egui::Ui| app.dock_slot(ui, h, edge, &parents);
+        let strip = self.skin.splitter();
         match edge {
             Edge::Left | Edge::Right => {
                 let p = if edge == Edge::Left { egui::SidePanel::left(id) } else { egui::SidePanel::right(id) };
-                p.resizable(true).frame(dock_frame(ctx)).default_width(ext).width_range(260.0..=1200.0).show(ctx, |ui| body(self, ui));
+                // The pane's size plus the 4 px strip (VM: 500 + 4).
+                p.resizable(true).show_separator_line(false).frame(dock_frame(strip, edge)).default_width(ext + 4.0).width_range(264.0..=1204.0).show(ctx, |ui| body(self, ui));
             }
             Edge::Top | Edge::Bottom => {
                 let p = if edge == Edge::Top { egui::TopBottomPanel::top(id) } else { egui::TopBottomPanel::bottom(id) };
                 let ext = if hd.extent.is_none() && (inside.len() > 1 || natural > 200.0) { 300.0 } else { ext };
-                p.resizable(true).frame(dock_frame(ctx)).default_height(ext).height_range(80.0..=900.0).show(ctx, |ui| body(self, ui));
+                p.resizable(true).show_separator_line(false).frame(dock_frame(strip, edge)).default_height(ext + 4.0).height_range(84.0..=904.0).show(ctx, |ui| body(self, ui));
             }
         }
     }
@@ -388,12 +390,16 @@ impl App {
                 Edge::Top | Edge::Bottom => {
                     let p = if side == Edge::Top { egui::TopBottomPanel::top(inner) } else { egui::TopBottomPanel::bottom(inner) };
                     let d = wd.extent.unwrap_or(w.natural()).min(full.y / 2.0);
-                    p.resizable(true).frame(egui::Frame::none()).default_height(d).height_range(80.0..=(full.y - 120.0).max(80.0)).show_inside(ui, |ui| self.dock_slot(ui, w, edge, parents));
+                    let gap = if side == Edge::Top { egui::Margin { bottom: 4.0, ..Default::default() } } else { egui::Margin { top: 4.0, ..Default::default() } };
+                    p.resizable(true).show_separator_line(false).frame(egui::Frame::none().fill(self.skin.splitter()).inner_margin(gap)).default_height(d).height_range(80.0..=(full.y - 120.0).max(80.0)).show_inside(ui, |ui| self.dock_slot(ui, w, edge, parents));
                 }
                 Edge::Left | Edge::Right => {
                     let p = if side == Edge::Left { egui::SidePanel::left(inner) } else { egui::SidePanel::right(inner) };
                     let d = wd.extent.unwrap_or(full.x / 2.0).min(full.x / 2.0);
-                    p.resizable(true).frame(egui::Frame::none()).default_width(d).width_range(120.0..=(full.x - 120.0).max(120.0)).show_inside(ui, |ui| self.dock_slot(ui, w, edge, parents));
+                    // The panes beside each other: 4 px of the splitter brush
+                    // between them (VM).
+                    let gap = if side == Edge::Left { egui::Margin { right: 4.0, ..Default::default() } } else { egui::Margin { left: 4.0, ..Default::default() } };
+                    p.resizable(true).show_separator_line(false).frame(egui::Frame::none().fill(self.skin.splitter()).inner_margin(gap)).default_width(d).width_range(120.0..=(full.x - 120.0).max(120.0)).show_inside(ui, |ui| self.dock_slot(ui, w, edge, parents));
                 }
             }
         }
@@ -700,9 +706,14 @@ impl App {
                     });
                 let (r, g, b) = crate::app::TAB_COLORS[self.active_doc().and_then(|d| d.tab_color).unwrap_or(0)];
                 egui::CentralPanel::default()
-                    .frame(egui::Frame::none().fill(egui::Color32::from_rgb(r, g, b)).inner_margin(egui::Margin::same(2.0)))
+                    // The child frame in the tab's colour — 2 px, 1 px at the
+                    // top — round the view's sunken client edge (VM: (160,
+                    // 160, 160) / (105, 105, 105) at the top and left, white /
+                    // (227, 227, 227) at the right and bottom).
+                    .frame(egui::Frame::none().fill(egui::Color32::from_rgb(r, g, b)).inner_margin(egui::Margin { left: 2.0, right: 2.0, top: 1.0, bottom: 2.0 }))
                     .show_inside(ui, |ui| {
-                        egui::Frame::none().fill(ui.visuals().panel_fill).show(ui, |ui| {
+                        let edge = ui.available_rect_before_wrap();
+                        egui::Frame::none().fill(ui.visuals().panel_fill).inner_margin(egui::Margin::same(2.0)).show(ui, |ui| {
                             ui.set_min_size(ui.available_size());
                             if self.print.preview.is_some() {
                                 self.preview_ui(ui);
@@ -710,6 +721,17 @@ impl App {
                                 self.lanes_ui(ui);
                             }
                         });
+                        let p = ui.painter();
+                        let line = |c: u8| egui::Stroke::new(1.0f32, egui::Color32::from_gray(c));
+                        let (l, t, r_, b_) = (edge.left(), edge.top(), edge.right(), edge.bottom());
+                        p.px_hline(l..=r_ - 1.0, t, line(160));
+                        p.px_vline(l, t..=b_ - 1.0, line(160));
+                        p.px_hline(l + 1.0..=r_ - 2.0, t + 1.0, line(105));
+                        p.px_vline(l + 1.0, t + 1.0..=b_ - 2.0, line(105));
+                        p.px_hline(l..=r_ - 1.0, b_ - 1.0, line(255));
+                        p.px_vline(r_ - 1.0, t..=b_ - 1.0, line(255));
+                        p.px_hline(l + 1.0..=r_ - 2.0, b_ - 2.0, line(227));
+                        p.px_vline(r_ - 2.0, t + 1.0..=b_ - 2.0, line(227));
                     });
             });
     }
@@ -1014,8 +1036,15 @@ fn pane_title(p: Pane) -> &'static str {
 /// A docking container: the panes sit 2 px inside it, against the
 /// splitters (MFC's docking bars), not egui's 8 px panel margin; a group
 /// beside another inside the container adds none.
-fn dock_frame(ctx: &egui::Context) -> egui::Frame {
-    egui::Frame::none().fill(ctx.style().visuals.panel_fill).inner_margin(egui::Margin::same(2.0))
+/// A docked container: 4 px of the frame's splitter brush on the side
+/// facing the document area (VM, Office 2007 Blue: (191, 219, 255) between
+/// the document's border and the pane), nothing on the others.
+fn dock_frame(strip: egui::Color32, edge: crate::docking::Edge) -> egui::Frame {
+    use crate::docking::Edge;
+    let m = |e: Edge| if e == edge { 4.0 } else { 0.0 };
+    // The strip is on the inner side: a right-docked container's left.
+    let margin = egui::Margin { left: m(Edge::Right), right: m(Edge::Left), top: m(Edge::Bottom), bottom: m(Edge::Top) };
+    egui::Frame::none().fill(strip).inner_margin(margin)
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -1039,6 +1068,8 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
     let mut act = CaptionAct::default();
     // The caption takes double-clicks and drags; registered first, so its
     // buttons, drawn over it, keep their clicks.
+    // The pane's window right under it (VM: no gap).
+    ui.spacing_mut().item_spacing.y = 0.0;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), H), egui::Sense::hover());
     let resp = ui.interact(rect, ui.id().with("fv_pane_caption"), egui::Sense::click_and_drag());
     // A double-click: two clicks within the system double-click time
