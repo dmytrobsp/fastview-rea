@@ -8,7 +8,7 @@
 
 use crate::dialogs::MsgIcon;
 use crate::app::App;
-use eframe::egui::{self, Rect, Vec2};
+use eframe::egui::{self, Color32, Rect, Vec2};
 use fvb_core::addformula::{self as af, Kind, Node, Values};
 use std::collections::BTreeSet;
 
@@ -153,55 +153,58 @@ impl App {
         let modal = st.alerts.is_empty();
         st.item_rects.clear();
         st.form_focus = false;
+        // DIALOG 359 (417 × 310 DLU: 626 × 504 px), centred on its owner,
+        // the «Быстрый анализ» sheet (VM).
         crate::dialogs::dlg(ctx, "Добавить новую формулу")
             .id(egui::Id::new("fv_add_formula"))
+            .owner(egui::Id::new("fv_quick_sheet"))
+            .margin(0.0)
             .collapsible(false)
             .resizable(false)
-            .fixed_size(Vec2::new(650.0, 480.0))
             .open(&mut open)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
+                use crate::dialogs::{dlu, win_button_en, win_edit, win_label, win_tree, TreeRow};
+                let (client, _) = ui.allocate_exact_size(Vec2::new(626.0, 504.0), egui::Sense::hover());
                 ui.add_enabled_ui(modal, |ui| {
-                    ui.horizontal_top(|ui| {
-                        egui::Frame::group(ui.style()).show(ui, |ui| {
-                            ui.set_width(290.0);
-                            egui::ScrollArea::vertical().id_salt("af_tree").max_height(420.0).show(ui, |ui| {
-                                ui.set_min_height(420.0);
-                                ui.vertical(|ui| {
-                                    ui.spacing_mut().item_spacing.y = 1.0;
-                                    let mut pick = None;
-                                    tree_ui(ui, af::TREE, &mut Vec::new(), &mut st, &mut pick);
-                                    if let Some((path, form)) = pick {
-                                        st.select(path, form);
-                                    }
-                                });
-                            });
-                        });
-                        ui.vertical(|ui| {
-                            ui.set_width(330.0);
-                            ui.horizontal(|ui| {
-                                ui.label("Название канала:");
-                                ui.add(egui::TextEdit::singleline(&mut st.name).desired_width(200.0));
-                            });
-                            ui.add_space(8.0);
-                            egui::ScrollArea::vertical().id_salt("af_form").max_height(392.0).show(ui, |ui| {
-                                ui.set_min_height(392.0);
-                                if let Some(d) = st.form {
-                                    form_ui(ui, d, &mut st);
-                                }
-                            });
-                        });
-                    });
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add_sized([72.0, 22.0], egui::Button::new("Отмена")).clicked() {
-                            done = Some(false);
+                    // The template tree (1039): lines, buttons and lines at
+                    // the root; every group inserted expanded.
+                    let mut flat = Vec::new();
+                    tree_rows(af::TREE, &mut Vec::new(), &st, &mut flat);
+                    let rows: Vec<TreeRow> = flat
+                        .iter()
+                        .map(|(path, kids, _)| TreeRow { depth: path.len() - 1, label: path[path.len() - 1].to_string(), has_children: *kids, expanded: !st.collapsed.contains(path), selected: st.selected == *path })
+                        .collect();
+                    let ev = win_tree(ui, dlu(client, 12, 12, 180, 266), egui::Id::new("af_tree"), Color32::from_gray(160), &rows, true, &mut |p, cell, k| branch_icon(p, cell, flat[k].0[0]));
+                    for (k, r) in ev.rects.iter().enumerate() {
+                        st.item_rects.push((flat[k].0.clone(), *r));
+                    }
+                    if let Some(k) = ev.toggled.or(ev.double_clicked.filter(|&k| flat[k].1)) {
+                        let path = flat[k].0.clone();
+                        if !st.collapsed.remove(&path) {
+                            st.collapsed.insert(path);
                         }
-                        let ok = ui.add_enabled_ui(st.form.is_some(), |ui| ui.add_sized([72.0, 22.0], egui::Button::new("OK")));
-                        st.ok_rect = Some(ok.inner.rect);
-                        if ok.inner.clicked() {
-                            done = Some(true);
+                    }
+                    if let Some(k) = ev.clicked {
+                        st.select(flat[k].0.clone(), flat[k].2);
+                    }
+                    win_label(ui, dlu(client, 204, 14, 62, 8), "Название канала:", true, true);
+                    win_edit(ui, dlu(client, 272, 12, 131, 12), egui::Id::new("af_name"), &mut st.name, false);
+                    // The selected template's form in the place of control
+                    // 1035 (205, 36, 198 × 243).
+                    let place = dlu(client, 205, 36, 198, 243);
+                    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(place), |ui| {
+                        if let Some(d) = st.form {
+                            form_ui(ui, d, &mut st);
                         }
                     });
+                    let ok_r = dlu(client, 293, 290, 50, 14);
+                    st.ok_rect = Some(ok_r);
+                    if win_button_en(ui, ok_r, "OK", true, st.form.is_some()).clicked() {
+                        done = Some(true);
+                    }
+                    if win_button_en(ui, dlu(client, 351, 290, 50, 14), "Отмена", false, true).clicked() {
+                        done = Some(false);
+                    }
                 });
             });
         if let Some(&(msg, icon)) = st.alerts.first() {
@@ -256,43 +259,18 @@ impl App {
     }
 }
 
-/// The tree rows: a fold toggle and the label for a group, the label for a
-/// leaf; clicking a label selects the item.
-fn tree_ui(ui: &mut egui::Ui, nodes: &[Node], path: &mut Path, st: &mut AddFormulaDlg, pick: &mut Option<(Path, Option<u16>)>) {
+/// The tree's visible rows in order: each item's path, whether it is a
+/// group, and a leaf's form.
+fn tree_rows(nodes: &[Node], path: &mut Path, st: &AddFormulaDlg, out: &mut Vec<(Path, bool, Option<u16>)>) {
     for n in nodes {
         let (label, kids, form) = match *n {
             Node::Group(l, k) => (l, Some(k), None),
             Node::Leaf(l, d) => (l, None, Some(d)),
         };
         path.push(label);
-        let folded = st.collapsed.contains(path);
-        let row = ui.horizontal(|ui| {
-            ui.add_space(16.0 * (path.len() - 1) as f32);
-            match kids {
-                Some(_) => {
-                    let sign = if folded { "+" } else { "−" };
-                    if ui.add(egui::Button::new(sign).small().min_size(Vec2::new(14.0, 14.0))).clicked() {
-                        if folded {
-                            st.collapsed.remove(path);
-                        } else {
-                            st.collapsed.insert(path.clone());
-                        }
-                    }
-                }
-                None => ui.add_space(18.0),
-            }
-            // The branch's image (bitmap 395, one index per top-level
-            // branch, `0x401c9d`): our own glyphs.
-            branch_icon(ui, path[0]);
-            let r = ui.selectable_label(st.selected == *path, label);
-            if r.clicked() {
-                *pick = Some((path.clone(), form));
-            }
-            r.rect
-        });
-        st.item_rects.push((path.clone(), row.inner));
-        if let (Some(k), false) = (kids, folded) {
-            tree_ui(ui, k, path, st, pick);
+        out.push((path.clone(), kids.is_some(), form));
+        if let Some(k) = kids.filter(|_| !st.collapsed.contains(path)) {
+            tree_rows(k, path, st, out);
         }
         path.pop();
     }
@@ -301,7 +279,7 @@ fn tree_ui(ui: &mut egui::Ui, nodes: &[Node], path: &mut Path, st: &mut AddFormu
 /// A 16 × 16 glyph per top-level branch (the original's image indices 0,
 /// 5, 2, 4, 3, 1, 6 for Формула, Анализ сигналов, Токи, Напряжения,
 /// Мощности, Сопротивления, Дифференциальная защита — the images ours).
-fn branch_icon(ui: &mut egui::Ui, branch: &str) {
+fn branch_icon(p: &egui::Painter, r: Rect, branch: &str) {
     let (glyph, color) = match branch {
         "Формула" => ("ƒ", egui::Color32::from_rgb(90, 90, 160)),
         "Анализ сигналов" => ("∿", egui::Color32::from_rgb(40, 120, 60)),
@@ -311,9 +289,8 @@ fn branch_icon(ui: &mut egui::Ui, branch: &str) {
         "Сопротивления" => ("Z", egui::Color32::from_rgb(110, 50, 140)),
         _ => ("Δ", egui::Color32::from_rgb(20, 120, 130)),
     };
-    let (r, _) = ui.allocate_exact_size(Vec2::splat(16.0), egui::Sense::hover());
-    ui.painter().rect(r.shrink(1.0), 2.0f32, color.gamma_multiply(0.15f32), egui::Stroke::new(1.0f32, color));
-    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(11.0), color);
+    p.rect(r.shrink(1.0), 2.0f32, color.gamma_multiply(0.15f32), egui::Stroke::new(1.0f32, color));
+    p.text(r.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(11.0), color);
 }
 
 /// The hosted form: one row per control as in its dialog template.
@@ -534,9 +511,8 @@ mod tests {
         let mut h = Harness::new();
         assert!(h.dlg().item_rects.iter().any(|(p, _)| p == &["Токи", "Ток Ib"]));
         let row = h.dlg().item_rects.iter().find(|(p, _)| p == &["Токи"]).unwrap().1;
-        // The ± button sits left of the branch icon (16 px) and the label.
-        let gap = h.ctx.style().spacing.item_spacing.x;
-        h.click(row.left_center() - Vec2::new(16.0 + 2.0 * gap + 7.0, 0.0));
+        // The ± box is centred on the row's line, 11 px left of its image.
+        h.click(row.left_center() - Vec2::new(11.0, 0.0));
         assert!(!h.dlg().item_rects.iter().any(|(p, _)| p == &["Токи", "Ток Ib"]));
     }
 }

@@ -1465,6 +1465,11 @@ mod window_tests {
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "omp" || s == "ompparams") {
             app.tab = RibbonTab::Omp;
         }
+        // `addformula`: «Быстрый анализ» with «Добавить новую формулу» over it.
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "addformula") {
+            app.dispatch(C::QuickAnalysis);
+            app.open_formula_dlg();
+        }
         // `ratealert`: «Параметры осциллограммы» with a refused rate's box over it.
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "ratealert") {
             app.dispatch(C::FileParams);

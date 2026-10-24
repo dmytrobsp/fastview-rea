@@ -16,6 +16,7 @@ pub fn dlg<'o>(ctx: &egui::Context, title: impl Into<String>) -> Dlg<'o> {
         id: egui::Id::new(&title),
         title,
         nudge: Vec2::ZERO,
+        owner: None,
         open: None,
         tool: false,
         margin: 11.0,
@@ -33,6 +34,7 @@ pub struct Dlg<'o> {
     id: egui::Id,
     title: String,
     nudge: Vec2,
+    owner: Option<egui::Id>,
     open: Option<&'o mut bool>,
     tool: bool,
     margin: f32,
@@ -72,10 +74,6 @@ impl<'o> Dlg<'o> {
         self.win = self.win.order(order);
         self
     }
-    pub fn fixed_size(mut self, size: impl Into<Vec2>) -> Self {
-        self.win = self.win.fixed_size(size);
-        self
-    }
     pub fn default_size(mut self, size: impl Into<Vec2>) -> Self {
         self.win = self.win.default_size(size);
         self
@@ -90,6 +88,12 @@ impl<'o> Dlg<'o> {
         self.nudge = d;
         self
     }
+    /// The dialog's owner, another of our windows (by its id): it is
+    /// centred on that window instead of the main one.
+    pub fn owner(mut self, id: egui::Id) -> Self {
+        self.owner = Some(id);
+        self
+    }
     /// A WS_EX_TOOLWINDOW template's frame.
     pub fn tool(mut self) -> Self {
         self.tool = true;
@@ -102,7 +106,7 @@ impl<'o> Dlg<'o> {
     }
 
     pub fn show<R>(self, ctx: &egui::Context, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> Option<egui::InnerResponse<Option<R>>> {
-        let Dlg { mut win, id, title, nudge, open, tool, margin } = self;
+        let Dlg { mut win, id, title, nudge, owner, open, tool, margin } = self;
         if open.as_deref() == Some(&false) {
             return None;
         }
@@ -123,16 +127,39 @@ impl<'o> Dlg<'o> {
             // egui keeps the pivot's position: once placed, the left-top.
             win = win.pivot(egui::Align2::LEFT_TOP);
             if !settled {
-                // CenterWindow halves the window rect, which on Windows 11
-                // holds an invisible 2 px frame left, right and below the
-                // visible one: the visible left-top is (cx − ⌊w/2⌋,
-                // cy − 1 − ⌊h/2⌋) — VM: DIALOGs 463, 477 and 392 at
-                // (1101, 306), (1023, 475), (1019, 457) about (1280, 696).
-                let c = ctx.screen_rect().center().floor();
-                win = win.current_pos(Pos2::new(c.x - (size.x / 2.0).floor(), c.y - 1.0 - (size.y / 2.0).floor()) + nudge);
+                // CenterWindow centres the window rect on its owner's, both
+                // holding Windows 11's invisible 2 px frame left, right and
+                // below the visible one: the owner's centre is
+                // (⌊(l + r)/2⌋, ⌊(t + b + 2)/2⌋) of its visible rect (r, b
+                // exclusive), the maximised main window's the screen's
+                // centre; the visible left-top (cx − ⌊(w + 4)/2⌋ + 2,
+                // cy − ⌊(h + 2)/2⌋). VM: DIALOGs 463, 477, 392 at (1101,
+                // 306), (1023, 475), (1019, 457) about (1280, 696); 359 on
+                // «Быстрый анализ» (1016–1688 × 317–1036) at (1038, 411).
+                let o = owner.and_then(|o| ctx.memory(|m| m.area_rect(o)));
+                let (cx, cy) = match o {
+                    Some(o) => (((o.left() + o.right()) / 2.0).floor(), ((o.top() + o.bottom() + 2.0) / 2.0).floor()),
+                    None => {
+                        let s = ctx.screen_rect();
+                        (((s.left() + s.right()) / 2.0).floor(), ((s.top() + s.bottom()) / 2.0).floor())
+                    }
+                };
+                let at = Pos2::new(cx - ((size.x + 4.0) / 2.0).floor() + 2.0, cy - ((size.y + 2.0) / 2.0).floor());
+                win = win.current_pos(at + nudge);
             }
         }
         ctx.data_mut(|d| d.insert_temp(key, (frame, size, settled)));
+        // A dialog moves by its caption only (Windows): egui's own dragging
+        // of a window by its background is off; a caption drag keeps the
+        // place it reached until the dialog is opened anew.
+        let moved_key = id.with("fv_dlg_moved");
+        if prev.is_none_or(|(last, _, _)| last + 1 != frame) {
+            ctx.data_mut(|d| d.remove::<Pos2>(moved_key));
+        }
+        if let Some(at) = ctx.data(|d| d.get_temp::<Pos2>(moved_key)) {
+            win = win.current_pos(at);
+        }
+        let win = win.movable(false);
         // The DWM shadow, its look approximated.
         let shadow = egui::epaint::Shadow { offset: Vec2::new(0.0, 6.0), blur: 24.0, spread: 0.0, color: Color32::from_black_alpha(60) };
         // The border blends over what lies behind the window: the fill is
@@ -152,6 +179,11 @@ impl<'o> Dlg<'o> {
                 .inner_margin(margin)
                 .show(ui, |ui| {
                     ui.visuals_mut().override_text_color = Some(Color32::BLACK);
+                    // A client laid out on its template places every control
+                    // itself: no spacing after any of them.
+                    if margin == 0.0 {
+                        ui.spacing_mut().item_spacing = Vec2::ZERO;
+                    }
                     // The templates' MS Shell Dlg 8 (Tahoma 8 pt: 11 px).
                     for st in [egui::TextStyle::Body, egui::TextStyle::Button] {
                         ui.style_mut().text_styles.insert(st, DLG_FONT);
@@ -182,6 +214,11 @@ impl<'o> Dlg<'o> {
                 let g = Rect::from_min_size(Pos2::new(rb - 21.0, cap.top() + 7.0), Vec2::splat(10.0));
                 (Rect::from_min_max(Pos2::new(rb - 46.0, cap.top()), Pos2::new(rb, cap.bottom())), g)
             };
+            let drag = ui.interact(Rect::from_min_max(cap.min, Pos2::new(btn.left(), cap.bottom())), ui.id().with("fv_dlg_caption"), egui::Sense::drag());
+            if drag.dragged() {
+                let to = o.min + drag.drag_delta();
+                ui.ctx().data_mut(|d| d.insert_temp(moved_key, to));
+            }
             let resp = ui.interact(btn, ui.id().with("fv_dlg_close"), egui::Sense::click());
             close = resp.clicked();
             // The hover look is Windows' (red, white glyph) — not measured.
@@ -484,6 +521,129 @@ pub fn win_check_ex(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
         p.text(Pos2::new(r.left() + 16.0, b.center().y), egui::Align2::LEFT_CENTER, text, DLG_FONT, ink);
     }
     resp.clicked() && enabled
+}
+
+/// One visible row of a TreeView.
+pub struct TreeRow {
+    pub depth: usize,
+    pub label: String,
+    pub has_children: bool,
+    pub expanded: bool,
+    pub selected: bool,
+}
+
+/// What the pointer did to a TreeView's rows this frame.
+#[derive(Default)]
+pub struct TreeEvents {
+    pub clicked: Option<usize>,
+    pub double_clicked: Option<usize>,
+    pub toggled: Option<usize>,
+    /// Each row's image-and-label rect.
+    pub rects: Vec<Rect>,
+}
+
+/// A TreeView (VM, Windows 11): 16 px rows indented 19 px a level; with
+/// TVS_LINESATROOT a row's line at 11 + 19·depth from the inner left, its
+/// image's 16 px cell at 22 + 19·depth and its label 19 px after it (one
+/// level less without it: the roots then have no line nor box); dotted
+/// (109) lines on every other pixel — the vertical ones on even rows, a
+/// row's branch from its line to its image along its middle — continued
+/// for the ancestors with later siblings; the ± box 9 px on the line, a
+/// (145) frame with (186) corners on (250) shading to (227), the sign 5 px
+/// of (75, 99, 167); the selected label white on (0, 120, 212). `icon`
+/// draws row k's image into its cell.
+pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows: &[TreeRow], lines_at_root: bool, icon: &mut dyn FnMut(&egui::Painter, Rect, usize)) -> TreeEvents {
+    let mut ev = TreeEvents::default();
+    let p = ui.painter().clone();
+    p.rect_filled(r, 0.0, border);
+    let inner = r.shrink(1.0);
+    p.rect_filled(inner, 0.0, Color32::WHITE);
+    // Whether row i has a later sibling (a row of its depth before any
+    // shallower one).
+    let more: Vec<bool> = (0..rows.len())
+        .map(|i| {
+            let d = rows[i].depth;
+            rows[i + 1..].iter().take_while(|r| r.depth >= d).any(|r| r.depth == d)
+        })
+        .collect();
+    let dot = Color32::from_gray(109);
+    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(inner), |ui| {
+        egui::ScrollArea::vertical().id_salt(id).show(ui, |ui| {
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
+            let (all, _) = ui.allocate_exact_size(Vec2::new(inner.width(), 16.0 * rows.len() as f32), egui::Sense::hover());
+            let p = ui.painter().clone();
+            let shift = if lines_at_root { 0.0 } else { -19.0 };
+            let line_x = |d: usize| all.left() + shift + 11.0 + 19.0 * d as f32;
+            let vdots = |x: f32, y0: f32, y1: f32| {
+                let mut y = y0;
+                while y < y1 {
+                    p.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::splat(1.0)), 0.0, dot);
+                    y += 2.0;
+                }
+            };
+            let mut stack: Vec<usize> = Vec::new();
+            for (i, row) in rows.iter().enumerate() {
+                let top = all.top() + 16.0 * i as f32;
+                let mid = top + 8.0;
+                while stack.last().is_some_and(|&a| rows[a].depth >= row.depth) {
+                    stack.pop();
+                }
+                let lined = lines_at_root || row.depth > 0;
+                // The ancestors' lines through this row.
+                for &a in &stack {
+                    if more[a] && (lines_at_root || rows[a].depth > 0) {
+                        vdots(line_x(rows[a].depth), top, top + 16.0);
+                    }
+                }
+                let x = line_x(row.depth);
+                if lined {
+                    let first_root = i == 0;
+                    vdots(x, if first_root { mid } else { top }, if more[i] { top + 16.0 } else { mid + 1.0 });
+                    let mut hx = x + 2.0;
+                    while hx < x + 11.0 {
+                        p.rect_filled(Rect::from_min_size(Pos2::new(hx, mid), Vec2::splat(1.0)), 0.0, dot);
+                        hx += 2.0;
+                    }
+                    if row.has_children {
+                        let b = Rect::from_min_size(Pos2::new(x - 4.0, mid - 4.0), Vec2::splat(9.0));
+                        p.rect_filled(b, 0.0, Color32::from_gray(145));
+                        for (y0, n, c) in [(1.0, 3.0, Color32::from_rgb(250, 251, 251)), (4.0, 2.0, Color32::from_rgb(237, 237, 236)), (6.0, 2.0, Color32::from_gray(227))] {
+                            p.rect_filled(Rect::from_min_size(b.min + Vec2::new(1.0, y0), Vec2::new(7.0, n)), 0.0, c);
+                        }
+                        for c in [b.left_top(), b.right_top() - Vec2::new(1.0, 0.0), b.left_bottom() - Vec2::new(0.0, 1.0), b.right_bottom() - Vec2::splat(1.0)] {
+                            p.rect_filled(Rect::from_min_size(c, Vec2::splat(1.0)), 0.0, Color32::from_rgb(186, 187, 188));
+                        }
+                        let sign = Color32::from_rgb(75, 99, 167);
+                        p.rect_filled(Rect::from_min_size(b.min + Vec2::new(2.0, 4.0), Vec2::new(5.0, 1.0)), 0.0, sign);
+                        if !row.expanded {
+                            p.rect_filled(Rect::from_min_size(b.min + Vec2::new(4.0, 2.0), Vec2::new(1.0, 5.0)), 0.0, sign);
+                        }
+                        if ui.interact(b.expand(2.0), id.with(("box", i)), egui::Sense::click()).clicked() {
+                            ev.toggled = Some(i);
+                        }
+                    }
+                }
+                let cell = Rect::from_min_size(Pos2::new(x + 11.0, top), Vec2::splat(16.0));
+                icon(&p, cell, i);
+                let g = ui.fonts(|f| f.layout_no_wrap(row.label.clone(), DLG_FONT, Color32::BLACK));
+                let lr = Rect::from_min_size(Pos2::new(cell.left() + 19.0, top), Vec2::new(g.size().x + 5.0, 16.0));
+                if row.selected {
+                    p.rect_filled(lr, 0.0, Color32::from_rgb(0, 120, 212));
+                }
+                p.galley(Pos2::new(lr.left() + 2.0, (mid - g.size().y / 2.0).round()), g, if row.selected { Color32::WHITE } else { Color32::BLACK });
+                ev.rects.push(Rect::from_min_max(cell.min, lr.max));
+                let resp = ui.interact(Rect::from_min_max(cell.min, lr.max), id.with(("item", i)), egui::Sense::click());
+                if resp.clicked() {
+                    ev.clicked = Some(i);
+                }
+                if resp.double_clicked() {
+                    ev.double_clicked = Some(i);
+                }
+                stack.push(i);
+            }
+        });
+    });
+    ev
 }
 
 /// A combo box's closed height (Windows for the template font, VM).
@@ -1077,6 +1237,40 @@ mod ddx_tests {
 #[cfg(test)]
 mod combo_tests {
     use super::*;
+
+    /// A dialog moves by its caption only: a drag on the caption moves it
+    /// by the drag, a press and drag on its body does not.
+    #[test]
+    fn dialog_moves_by_its_caption() {
+        let ctx = egui::Context::default();
+        let mut t = 0.0;
+        let mut frame = |events: Vec<egui::Event>| {
+            t += 0.05;
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))), time: Some(t), events, ..Default::default() };
+            let _ = ctx.run(raw, |ctx| {
+                dlg(ctx, "Тест").margin(0.0).show(ctx, |ui| {
+                    ui.allocate_exact_size(Vec2::new(200.0, 100.0), egui::Sense::hover());
+                });
+            });
+        };
+        for _ in 0..4 {
+            frame(vec![]);
+        }
+        let rect = || ctx.memory(|m| m.area_rect(egui::Id::new("Тест"))).unwrap();
+        let r0 = rect();
+        let drag = |from: Pos2, by: Vec2| {
+            let b = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            vec![vec![egui::Event::PointerMoved(from)], vec![b(from, true)], vec![egui::Event::PointerMoved(from + by * 0.5)], vec![egui::Event::PointerMoved(from + by)], vec![b(from + by, false)], vec![]]
+        };
+        for evs in drag(r0.center() + Vec2::new(0.0, 20.0), Vec2::new(40.0, 30.0)) {
+            frame(evs);
+        }
+        assert_eq!(rect().min, r0.min, "the body does not drag the window");
+        for evs in drag(Pos2::new(r0.left() + 30.0, r0.top() + 12.0), Vec2::new(40.0, 30.0)) {
+            frame(evs);
+        }
+        assert_eq!(rect().min, r0.min + Vec2::new(40.0, 30.0));
+    }
 
     /// A click opens the list under the combo; a click on an item picks it
     /// and closes the list.

@@ -7014,6 +7014,31 @@ wider font wraps «Фазные сопротивления» in the bar, moving 
 below it down). Radios and check boxes take their place into their ids
 (537 has two «Измеренный»).
 
+### L9.252 — DIALOG 359 and the TreeView; owner-centred placement; caption-only moves  ·  ✅
+VM capture of «Добавить новую формулу» (the formula page's «Добавить»):
+626 × 504 px client at (1039, 437) — centred not on the main window but
+on its owner, the «Быстрый анализ» sheet. One rule covers every capture:
+CenterWindow centres the window rect (Windows 11's invisible 2 px frame
+left, right and below the visible one) on the owner's — the owner's
+centre (⌊(l + r)/2⌋, ⌊(t + b + 2)/2⌋) of its visible rect (r, b
+exclusive; the maximised main window's the screen's centre), the
+visible left-top (cx − ⌊(w + 4)/2⌋ + 2, cy − ⌊(h + 2)/2⌋): 359 at (1038,
+411) about (1352, 677). The TreeView (1039, lines, buttons and lines at
+the root), measured: 16 px rows, 19 px a level; a row's line at 11 +
+19·depth from the inner left, its image's 16 px cell at 22 + 19·depth,
+its label 19 px after it; dotted (109) lines on every other pixel,
+continued for ancestors with later siblings; the ± box 9 px — a (145)
+frame, (186) corners, (250) → (227) inside, the sign 5 px of (75, 99,
+167); the selected label white on (0, 120, 212); the tree's border (160).
+Ours had egui rows with egui buttons and an anchored window. Now
+`win_tree` draws trees so (the ОМП tree can take it next), `Dlg::owner`
+centres a dialog on another of ours, and 359 sits on its template (the
+hosted forms still laid out by ours inside control 1035's place — next).
+Also: a dialog no longer moves when its body is dragged — egui's
+background dragging, which jumped the window on a press in the tests —
+only by its caption, as Windows moves it (the place kept until the
+dialog is opened anew).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
