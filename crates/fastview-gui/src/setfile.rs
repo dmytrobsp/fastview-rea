@@ -776,13 +776,28 @@ impl App {
         // splitting it: folder and title come out lowercase — harmless on
         // Windows' case-blind names, so only there (elsewhere the lowered
         // folder may not exist).
-        let lower = |s: String| if cfg!(windows) { s.to_lowercase() } else { s };
+        // On Windows the folder in backslashes as well: the shell's parser
+        // (SHCreateItemFromParsingName) refuses a path with forward ones (a
+        // record opened from the command line) and the dialog falls back
+        // to the working folder (VM).
+        let lower = |s: String| if cfg!(windows) { s.to_lowercase().replace('/', "\\") } else { s };
         let stem = lower(d.path.as_ref().and_then(|p| p.file_stem()).map_or_else(|| d.name.clone(), |s| s.to_string_lossy().into_owned()));
         if let Some(dir) = d.path.as_ref().and_then(|p| p.parent()).filter(|p| !p.as_os_str().is_empty()) {
             dlg = dlg.set_directory(lower(dir.to_string_lossy().into_owned()));
         }
-        let Some(path) = dlg.set_file_name(stem).save_file() else { return false };
+        let Some(path) = dlg.set_file_name(stem.clone()).save_file() else { return false };
         let path = save_target(path, &filters.map(|f| f.1));
+        // The proposed name taken as it is: the original keeps the text it
+        // proposed (lowercase), where the shell dialog hands back an
+        // existing file's own case — the files written anew (the `.set`)
+        // come out lowercase (VM: «win_1999.set» beside «WIN_1999.cfg»).
+        let path = match path.file_stem().map(|s| s.to_string_lossy().into_owned()) {
+            Some(s) if cfg!(windows) && s != stem && s.to_lowercase() == stem => {
+                let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+                path.with_file_name(format!("{stem}.{ext}"))
+            }
+            _ => path,
+        };
         self.report_save(ai, &path)
     }
 

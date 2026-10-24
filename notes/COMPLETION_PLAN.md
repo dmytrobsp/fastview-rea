@@ -253,7 +253,7 @@ items (VM ones also in W4.4):
     selection~~ (run, L9.295); ~~the print dialog's fields / status~~ (run, L9.301); the
     preview's per-page DC (L9.121); «Свойства»' DEVMODE (L9.122); ~~the
     older looks' app button~~ (run, L9.223); ~~Ctrl over a hot marker~~ (run, L9.302);
-    ~~MDI keys / order~~ (run: none with tabs, L9.294); ~~a 0 / negative rate in 392~~ (run, L9.297); the `.set` with formula + digital channels (L9.143); menu
+    ~~MDI keys / order~~ (run: none with tabs, L9.294); ~~a 0 / negative rate in 392~~ (run, L9.297); ~~the `.set` with formula channels~~ (run: byte-identical, L9.313); menu
     check column, ~~combine with a computed channel~~ (run, L9.304), ~~popup keyboard~~
     (run, L9.303; a drop-down's Enter: L9.298); ~~status bar prompts~~ (run, L9.291); ~~a group tab strip's
     right-click~~ (run, L9.291); ~~Aqua's title~~ (run: left, as ours); ~~Enter in quick analysis~~

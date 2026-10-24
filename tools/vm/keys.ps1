@@ -7,7 +7,7 @@
 # then "UP"), "WHEEL x,y,n"
 # (n notches, + up), "KEYDOWN ctrl" / "KEYUP ctrl" (shift, alt: a modifier
 # held across steps), "SIZE w,h" (the front window restored, w × h at 0,0),
-# "CLOSE" (WM_CLOSE to the main window), "SHOT name.png" (a capture now).
+# "CLOSE" (WM_CLOSE to the front window), "SHOT name.png" (a capture now).
 # Logs next to itself.
 param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave, [switch]$Soft)
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -22,6 +22,7 @@ public static class In {
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
   [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool repaint);
 }
@@ -79,8 +80,9 @@ foreach ($k in ($Keys -split ';')) {
         [In]::ShowWindow($h, 9) | Out-Null; Start-Sleep -Milliseconds 300
         [In]::MoveWindow($h, 0, 0, [int]$Matches[1], [int]$Matches[2], $true) | Out-Null
     } elseif ($k -eq 'CLOSE') {
-        # WM_CLOSE to the program's main window (its own close path).
-        $p.CloseMainWindow() | Out-Null
+        # WM_CLOSE to the front window (the program's own close path; .NET's
+        # main-window lookup misses some windows).
+        [In]::PostMessage([In]::GetForegroundWindow(), 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
     } elseif ($k -eq 'UP') {
         [In]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero)
     } elseif ($k -match '^WHEEL (\d+),(\d+),(-?\d+)$') {

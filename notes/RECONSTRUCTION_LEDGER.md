@@ -8431,6 +8431,35 @@ on A4); ours was centred. Now right-aligned at R's right. (Our pages are
 one 600 dpi image each; the original's mostly vector — the files differ
 in size, not in what prints.)
 
+### L9.313 — VM: a saved record with formula channels byte-identical; Save As's folder and name; the first quick-analysis page; a close request in the software runner  ·  ✅
+Run (L9.143's scenario, on copies of WIN_1999 in folders of their own):
+«Дифференциальные токи» (both arms IA / IB / IC), «Инвертировать» on
+«Ia плечо 1 прив.», «Среднеквадратичные значения» on «Ib плечо 1 прив.»,
+Ctrl+S (Save As in both, from the accelerator table), Enter, «Да» to
+replace. The `.cfg` and `.dat` written are byte-identical. Differences
+found and fixed:
+- **Save As's folder.** The original's dialog opens in the record's
+  folder; ours in the working folder — the shell's parser refuses a path
+  with forward slashes (a record opened from the command line). The
+  folder is now passed with backslashes on Windows.
+- **The name.** The original keeps the text it proposed, lowercase, so
+  the new `.set` is «win_1999.set» beside the replaced «WIN_1999.cfg»;
+  the shell dialog hands ours back the existing file's case. Ours now
+  takes the proposed name when the chosen one equals it but for case.
+  (Ours' name field shows «win_1999.cfg», the original's «win_1999» —
+  the dialog adds the default extension; left.)
+- **The `.set`.** The original's also holds «SymmetricItemsPage» with its
+  defaults, the sheet having opened on the formula editor: its first page
+  is created by the time the pages save. Ours created only the pages
+  shown; now `quick_save_pages` creates the first page first. Test
+  `closing_the_sheet_creates_its_first_page`. After that the `.set` files
+  are byte-identical.
+- **A close request in the software runner.** WM_CLOSE (Alt+F4, the
+  taskbar) never closed ours on the VM: the runner exited only on an
+  explicit Close command, eframe on any close request the app does not
+  cancel. Now as eframe (a modified document still asks first — VM).
+  The harness's `CLOSE` posts WM_CLOSE to the front window.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

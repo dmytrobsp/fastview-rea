@@ -525,8 +525,16 @@ impl App {
     }
 
     /// Every created page saves (OnOK `0x48b710` / OnCancel `0x48b770`);
-    /// the record is not marked modified.
+    /// the record is not marked modified. The first page is created by
+    /// then whatever was shown (VM: the `.set` gets «SymmetricItemsPage»,
+    /// after the pages used, with the sheet never on it).
     fn quick_save_pages(&mut self) {
+        if !self.quick_shown[0] {
+            let tab = self.analysis_tab;
+            self.analysis_tab = AnalysisTab::Symmetric;
+            self.quick_show_page();
+            self.analysis_tab = tab;
+        }
         let Some(d) = self.active.and_then(|i| self.docs.get_mut(i)) else { return };
         for k in (0..5).filter(|&k| self.quick_shown[k]) {
             save_page(k, &self.quick[k], d.set.tree.section_mut(PAGE_KEYS[k]));
@@ -1212,6 +1220,20 @@ const PAGES: [(AnalysisTab, &str, &str); 6] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// VM: closing the sheet opened on the formula editor writes
+    /// «SymmetricItemsPage» too (the sheet's first page is created).
+    #[test]
+    fn closing_the_sheet_creates_its_first_page() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        app.dispatch(crate::app::Command::QuickAnalysis);
+        let d = app.active_doc().unwrap();
+        assert!(d.set.tree.section(PAGE_KEYS[0]).is_none());
+        app.quick_save_pages();
+        let sec = app.active_doc().unwrap().set.tree.section(PAGE_KEYS[0]).expect("SymmetricItemsPage");
+        assert!(sec.child("IA").is_some() && sec.attrs.contains_key("phaseVoltState"));
+    }
 
     /// The `.set` contract of 536: channel combos as `<IA channelName=…>`
     /// children, checks as `%i`; a stored name loads only when the list has

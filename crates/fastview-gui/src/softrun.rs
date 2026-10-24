@@ -118,6 +118,9 @@ impl Soft {
             trace(&format!("wheel {wheels:?}, frame mods ctrl {}", raw.modifiers.ctrl));
         }
         raw.viewports.insert(egui::ViewportId::ROOT, self.info.clone());
+        // A close request (WM_CLOSE: Alt+F4, the taskbar) closes the window
+        // unless the app cancels it this frame, as eframe does.
+        let mut closing = self.info.events.iter().any(|e| matches!(e, egui::ViewportEvent::Close));
         self.info.events.clear();
         // Quick key presses each in a pass of their own; the last pass's
         // picture is shown, every pass's textures kept.
@@ -138,6 +141,9 @@ impl Soft {
                     event_loop.exit();
                     return;
                 }
+                if vp.commands.iter().any(|c| matches!(c, egui::ViewportCommand::CancelClose)) {
+                    closing = false;
+                }
                 self.wake = if vp.repaint_delay.is_zero() {
                     window.request_redraw();
                     None
@@ -146,6 +152,10 @@ impl Soft {
                 };
             }
             last = Some(out);
+        }
+        if closing {
+            event_loop.exit();
+            return;
         }
         let Some(out) = last else { return };
         let size = window.inner_size();
