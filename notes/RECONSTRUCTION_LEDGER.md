@@ -6252,6 +6252,27 @@ systems), MFC's docking blobs replaced by our own layout record; ours
 writes `Settings Parameters` on the dialog's OK, the original also at
 exit (the same values either way).
 
+### L9.212 — VM run: the clipboard formats and the copied document byte for byte (W5.2)  ·  ✅
+Run on the VM: the original with WIN_1999, IA selected, Ctrl+C; a script
+in the desktop session listed the clipboard (EnumClipboardFormats) and
+saved the registered format's bytes (kept local): CF_ENHMETAFILE (14),
+«Mechanotronica FastView Clipboard Data» (496 676 bytes, UTF-16LE, a NUL
+at the end), CF_METAFILEPICT (3, synthesised by Windows) — the same two
+formats ours puts up, in the same order. Ours' document for the same copy
+(`FV_CLIP_DUMP`, test `clip_dump`) differed in four places: the original
+starts with `<?xml version="1.0" encoding="utf-16"?>` and CR LF; writes
+the colour only when one was set (`color_custom="0"
+custom_color_set="false"` for a place colour — ours wrote every colour
+as custom); `title` is the document's title with its extension
+(«WIN_1999.cfg»); `duration_milli_sec` holds microseconds in `%g`
+(«1.0999e+007» for 10.999 s). A fifth, `normal_state="2000068492"` on an
+analog channel, is an uninitialised field of the original's (not
+reproduced; ours writes 0). Now `ClipRecord::to_text` writes the
+declaration, `clip_record` the custom flag (L9.200), `Doc::title` and the
+duration in µs; the document is byte-identical to the original's but for
+that field. Test `layout_and_formats` updated (an earlier read had
+asserted no declaration).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

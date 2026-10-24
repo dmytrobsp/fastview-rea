@@ -1002,6 +1002,23 @@ mod tests {
         app.save_doc_to(di, Path::new(target)).expect("saved");
     }
 
+    /// `FV_CLIP_DUMP=<record>,<file> cargo test clip_dump`: open a record,
+    /// select its first analog channel and write the clipboard document as
+    /// Copy puts it up (UTF-16LE, a NUL at the end) — for a byte compare
+    /// with the original's (W5.2).
+    #[test]
+    fn clip_dump() {
+        let Ok(v) = std::env::var("FV_CLIP_DUMP") else { return };
+        let (rec, target) = v.split_once(',').expect("FV_CLIP_DUMP=<record>,<file>");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, Path::new(rec));
+        app.docs[di].selection = [ChanKey::Analog(0)].into();
+        let text = crate::merge_ui::clip_record(&app.docs[di]).to_text();
+        let bytes: Vec<u8> = text.encode_utf16().chain(Some(0)).flat_map(u16::to_le_bytes).collect();
+        std::fs::write(target, bytes).expect("written");
+    }
+
     /// MFC's OpenDocumentFile: a file already open is brought forward, not
     /// loaded again.
     #[test]

@@ -126,7 +126,7 @@ items (VM ones also in W4.4):
 - [ ] W2.3 L9.20 — analog paste with no analog channel selected (with
   W2.16); the paste's start date parsed with the target's revision rule
   (`merge_ui.rs`) — re-read; the clipboard XML's `time_multiplier` /
-  `duration_milli_sec` and the merged comment's CR LF (VM).
+  `duration_milli_sec` (settled, L9.212) and the merged comment's CR LF (VM).
 - [ ] W2.4 L9.30 — EMR_STRETCHDIBITS vs EMR_BITBLT in copy's EMF (decide:
   match or accept).
 - [ ] W2.5 L9.31 — phase 2 of loading on the UI thread (derived arrays,
@@ -300,7 +300,9 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 - [ ] W5.1 Real printing through GDI (a printer that writes a file, e.g.
   Microsoft Print to PDF with a fixed output name) — ours against the
   original's pages.
-- [ ] W5.2 The clipboard formats both put on the clipboard.
+- [x] W5.2 The clipboard formats both put on the clipboard: the same two, and
+  the copied document byte-identical but for the original's uninitialised
+  `normal_state` (VM run, L9.212).
 - [x] W5.3 Registry / settings persistence across runs: the original's key
   read after a clean exit on the VM — the same settings and defaults as ours
   (L9.211); a settings file instead of the registry, our own layout record

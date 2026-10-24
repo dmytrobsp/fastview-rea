@@ -54,7 +54,9 @@ fn from_colorref(v: u32) -> egui::Color32 {
 pub fn clip_record(d: &Doc) -> ClipRecord {
     let s = &d.osc.stamps;
     let n = d.osc.time.len();
-    let dur_ms = (duration(&d.osc.time) * 1000.0).round().to_string();
+    // `duration_milli_sec` holds microseconds, `%g` (seen on the VM: a
+    // 10.999 s record writes "1.0999e+007").
+    let dur_ms = fvb_core::views::fmt_g((duration(&d.osc.time) * 1e6).round());
     let mut rec = ClipRecord {
         rate: d.osc.rate_r,
         time_multiplier: 1.0,
@@ -64,7 +66,8 @@ pub fn clip_record(d: &Doc) -> ClipRecord {
         num_values: fvb_core::views::fmt_g(n as f64),
         station_id: d.osc.station.clone(),
         block_id: d.osc.device.clone(),
-        title: d.name.clone(),
+        // The document's title, its extension kept (seen on the VM).
+        title: d.title(),
         hdr_file: d.hdr.clone().unwrap_or_default(),
         start_time: format!("{}, {}", s.start_date, s.start_time),
         channels: Vec::new(),
@@ -94,7 +97,8 @@ pub fn clip_record(d: &Doc) -> ClipRecord {
                     secondary_value: a.secondary,
                     file_primary_value: a.primary,
                     file_secondary_value: a.secondary,
-                    color: (v.color != App::palette(i)).then(|| colorref(v.color)),
+                    // `ch+0x140` / `ch+0x144` (L9.200): only a set colour.
+                    color: v.custom_color.then(|| colorref(v.color)),
                     data: a.samples.clone(),
                     ..common(&a.id)
                 });

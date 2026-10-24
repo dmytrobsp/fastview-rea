@@ -141,7 +141,9 @@ impl ClipRecord {
             n.set("data", &c.data.iter().map(|v| format!("{v:.6},")).collect::<String>());
             root.children.push(n);
         }
-        let mut out = String::new();
+        // The original's document starts with the declaration line (seen
+        // on the VM, W5.2).
+        let mut out = String::from("<?xml version=\"1.0\" encoding=\"utf-16\"?>\n");
         root.write("", &mut out);
         out.replace('\n', "\r\n")
     }
@@ -259,12 +261,13 @@ mod tests {
     #[test]
     fn layout_and_formats() {
         let t = sample().to_text();
-        assert!(t.starts_with("<channels blockID=\"7\" discr_frequency=\"1000\" hdrFile=\"\" net_frequency=\"50,50,50\" num_values=\"3\""));
+        // The declaration line first (the original's copy, captured on the
+        // VM, W5.2).
+        assert!(t.starts_with("<?xml version=\"1.0\" encoding=\"utf-16\"?>\r\n<channels blockID=\"7\" discr_frequency=\"1000\" hdrFile=\"\" net_frequency=\"50,50,50\" num_values=\"3\""));
         assert!(t.contains("stationID=\"ПС &lt;1&gt;\""));
         assert!(t.contains("\r\n\t<channel color_custom=\"0\" custom_color_set=\"false\" data=\"1.000000,-2.250000,0.000000,\""));
         assert!(t.contains(" mul=\"0.5\" "));
         assert!(t.ends_with("</channels>\r\n"));
-        assert!(!t.contains("<?xml"));
     }
 
     #[test]
