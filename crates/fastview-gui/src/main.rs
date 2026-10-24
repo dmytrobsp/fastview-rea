@@ -428,7 +428,7 @@ impl App {
         if self.merge.is_some() && !previewing {
             egui::TopBottomPanel::top("mergebar")
                 .exact_height(70.0)
-                .frame(egui::Frame::none().fill(pal.group_bg).inner_margin(egui::Margin::symmetric(15.0, 10.0)))
+                .frame(egui::Frame::none().fill(pal.group_bg))
                 .show(ctx, |ui| self.merge_bar_ui(ui));
         }
 

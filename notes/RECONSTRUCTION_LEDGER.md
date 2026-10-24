@@ -5543,11 +5543,36 @@ still byte-identical to the original's. Tests `zoom_limits_and_pan_reset`,
 Residual: the gate's rectangle (the client less 8 / 16 px) vs ours (the
 last paint's plane); a negative endsamp clamps to 0 in ours.
 
+### L9.184 — The merge bar's fixed layout; the ОМП tree keeps its labels after a delete  ·  ✅
+Read by hand: CMergeBar's init `0x479aa0` creates the method combo 1088
+at (110, 10)–(280, 500), the channel combos 1089 / 1090 at (350, 10) /
+(510, 10), 90 wide (CBS_DROPDOWNLIST; the rects `0x4d1980`, `0x4d1990`,
+`0x4d19b0`), the method items 242 / 3376 / 3377, and the buttons 3455
+«Синхронизация» / 3319 «Объединить», 100 × 23 (`0x4d1910`, `0x4d1920`),
+which the layout `0x479db0` moves to W − 220 / W − 110 at y 9 (W the
+width less 20); the painter `0x479e80` puts «Синхронизация», 3227
+«Канал 1», 3229 «Канал 2» on the top line of the bar less (15, 14) at x
+15 / 290 / 450 and the status line at its bottom (W1.8 B9). The ОМП
+dialog (W1.8 B8): 32874 `0x4a8eb0` deletes the tree item and the element
+(`0x4a5610`, `0x4a5b90`) without a rebuild, so the others keep their
+numbers until the next add / move / load / method change; the expanded
+flag is the element's and is swapped with it (`0x4a6ae0`).
+Ours laid the bar out as a flow row in a larger font with a ✕ of its
+own, and renumbered the tree every frame with the collapsed state tied
+to the position. Now `merge_bar_ui` places the controls at the read
+coordinates in 12 px (hiding the bar is the undo, `0x479960`; no ✕),
+`ParamsDialog::labels` keeps the last build across a delete and
+`move_sel` swaps the collapsed state. Test
+`delete_keeps_the_labels_until_a_rebuild`.
+Residual: our font is wider than Segoe UI 9 pt («Синхронизация» runs into
+the method combo by a few px); where the tree control puts the selection
+after a delete (ours: the parent).
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.183)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.184)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5596,7 +5621,8 @@ aliased waveforms, 1 px lines on whole pixels; L9.181 W1.8 B1 / B6 / B7
 (a missing `)`, the boxes' order, the digital fill, the ОМП flags on top);
 L9.182 W1.8 B2 / B4 / B5 / B8 / B9 (binary32 units, 32805 edits
 `Comments/UserData`, scrolling, merged settings categories); L9.183
-W2.18 part (zoom gate, per-key chart writes, the tokenizer's integer).
+W2.18 part (zoom gate, per-key chart writes, the tokenizer's integer);
+L9.184 the merge bar's layout, the ОМП tree's labels after a delete.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

@@ -167,16 +167,13 @@ items (VM ones also in W4.4):
   icons / geometry / reader gaps (L9.169), a computed channel's colour
   recomputed by place (L9.170), an OSC2 record saved as COMTRADE (L9.172).
 
-- [ ] W2.18 W1.8's open differences (L9.181 / L9.182). Done in L9.183:
-  the zoom gate both ways, per-key chart writes, the tokenizer's integer,
+- [ ] W2.18 W1.8's open differences (L9.181 / L9.182). Done in L9.183 / L9.184:
+  the merge bar's layout, the ОМП tree after a delete, the zoom gate both ways, per-key chart writes, the tokenizer's integer,
   `.omp` gaps, «Каналы»'s rename edit. Left: groups by name ignoring
   case; the ОМП re-run's lookup among every channel ignoring case; the
-  zoom gate's rectangle (the client less 8 / 16 px); the ОМП dialog's
-  delete without renumbering and the expanded state travelling with a
-  moved section; the splash (our own picture, 2000 ms, topmost); the
+  zoom gate's rectangle (the client less 8 / 16 px); the splash (our own picture, 2000 ms, topmost); the
   frequency «Показать все» on digital channels (INFERRED — read the
-  painter `0x46f5a0`); the merge bar's fixed layout (`0x479db0`,
-  `0x479e80`); the finder's `SortMode`; «Скрыть все» to `doc+0x1d8`
+  painter `0x46f5a0`); the finder's `SortMode`; «Скрыть все» to `doc+0x1d8`
   (with W2.16).
 
 ## W3 — Resolve the unknowns

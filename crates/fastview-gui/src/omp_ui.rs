@@ -565,8 +565,27 @@ pub struct ParamsDialog {
     pub doc: usize,
     pub work: OmpParams,
     pub sel: Node,
-    /// Collapsed elements (every element starts expanded).
+    /// Collapsed elements (every element starts expanded); the state is
+    /// the element's (`+0x10`), so it travels with a moved one.
     pub collapsed: HashSet<Node>,
+    /// The tree as last built: a delete (32874, `0x4a8eb0`) removes only
+    /// its items and leaves the others' labels (`Участок №3` after №1 is
+    /// gone) until the next rebuild — add, move, load or method change.
+    pub labels: Option<Vec<(usize, Node, String)>>,
+}
+
+/// Where an element goes when `removed` is deleted: gone (itself or its
+/// children) or shifted down among its siblings.
+fn shift_after_delete(node: Node, removed: Node) -> Option<Node> {
+    use Node::*;
+    match (removed, node) {
+        (Section(s, k), Section(s2, k2)) if s == s2 => (k2 != k).then(|| Section(s2, if k2 > k { k2 - 1 } else { k2 })),
+        (Section(s, k), Line(s2, k2, n)) if s == s2 => (k2 != k).then(|| Line(s2, if k2 > k { k2 - 1 } else { k2 }, n)),
+        (Section(s, k), Tap(s2, k2, n)) if s == s2 => (k2 != k).then(|| Tap(s2, if k2 > k { k2 - 1 } else { k2 }, n)),
+        (Line(s, k, n), Line(s2, k2, n2)) if (s, k) == (s2, k2) => (n2 != n).then(|| Line(s2, k2, if n2 > n { n2 - 1 } else { n2 })),
+        (Tap(s, k, n), Tap(s2, k2, n2)) if (s, k) == (s2, k2) => (n2 != n).then(|| Tap(s2, k2, if n2 > n { n2 - 1 } else { n2 })),
+        _ => Some(node),
+    }
 }
 
 /// The method combo (id 1075): index → method code.
@@ -720,7 +739,7 @@ fn default_value(node: Node, f: Field) -> &'static str {
 
 impl ParamsDialog {
     pub fn new(doc: usize, work: OmpParams) -> Self {
-        ParamsDialog { doc, work, sel: Node::Station(0), collapsed: HashSet::new() }
+        ParamsDialog { doc, work, sel: Node::Station(0), collapsed: HashSet::new(), labels: None }
     }
 
     /// Position and sibling count of the selection (stations do not move).
@@ -757,6 +776,7 @@ impl ParamsDialog {
     /// Append a default section and select it.
     pub fn add_section(&mut self) {
         if let Node::Station(st) = self.sel {
+            self.labels = None;
             let v = &mut self.work.stations[st].sections;
             v.push(SectionParams::default());
             self.sel = Node::Section(st, v.len() - 1);
@@ -767,6 +787,7 @@ impl ParamsDialog {
     /// section and select it (lines are listed before taps).
     pub fn add_child(&mut self, tap: bool) {
         let Node::Section(st, k) = self.sel else { return };
+        self.labels = None;
         let s = &mut self.work.stations[st].sections[k];
         self.sel = if tap {
             s.taps.push(Default::default());
@@ -777,8 +798,20 @@ impl ParamsDialog {
         };
     }
 
+    /// The tree's rows as shown: the last build, or a fresh one.
+    pub fn rows(&self) -> Vec<(usize, Node, String)> {
+        self.labels.clone().unwrap_or_else(|| tree_rows(&self.work))
+    }
+
     /// Delete the selection without confirmation; its parent is selected.
+    /// The other items keep their labels (no renumbering until a rebuild).
     pub fn delete(&mut self) {
+        let removed = self.sel;
+        if !matches!(removed, Node::Station(_)) {
+            let rows = self.rows();
+            self.labels = Some(rows.into_iter().filter_map(|(d, n, l)| shift_after_delete(n, removed).map(|n| (d, n, l))).collect());
+            self.collapsed = self.collapsed.iter().filter_map(|&n| shift_after_delete(n, removed)).collect();
+        }
         let stations = &mut self.work.stations;
         self.sel = match self.sel {
             Node::Station(s) => Node::Station(s),
@@ -803,6 +836,18 @@ impl ParamsDialog {
             return;
         }
         let j = |i: usize| if up { i - 1 } else { i + 1 };
+        self.labels = None;
+        // The expanded flag is swapped with the element (`0x4a6ae0`).
+        if let Node::Section(s, k) = self.sel {
+            let (a, b) = (Node::Section(s, k), Node::Section(s, j(k)));
+            let (ca, cb) = (self.collapsed.remove(&a), self.collapsed.remove(&b));
+            if ca {
+                self.collapsed.insert(b);
+            }
+            if cb {
+                self.collapsed.insert(a);
+            }
+        }
         let stations = &mut self.work.stations;
         self.sel = match self.sel {
             Node::Station(s) => Node::Station(s),
@@ -825,12 +870,14 @@ impl ParamsDialog {
     /// kept, a hidden selection falls back to its visible ancestor.
     pub fn set_method(&mut self, m: u32) {
         self.work.method = m;
+        self.labels = None;
         self.fix_selection();
     }
 
     /// Settings read from an `.omp` file replace the working copy.
     pub fn load(&mut self, p: OmpParams) {
         self.work = p;
+        self.labels = None;
         self.fix_selection();
     }
 
@@ -899,7 +946,7 @@ impl ParamsDialog {
                 ui.set_max_width(228.0);
                 egui::ScrollArea::vertical().id_salt("omp_tree").max_height(body_h).show(ui, |ui| {
                     let mut hidden_below: Option<usize> = None;
-                    let rows = tree_rows(&self.work);
+                    let rows = self.rows();
                     for (i, (depth, node, label)) in rows.iter().enumerate() {
                         if let Some(d) = hidden_below {
                             if *depth > d {
@@ -1028,6 +1075,27 @@ mod tests {
         let s = &dlg.work.stations[0].sections[0];
         assert_eq!((s.length.as_str(), s.supports.as_str()), ("1", "1"));
         assert_eq!(dlg.sel, Node::Section(0, 0));
+    }
+
+    /// 32874 removes only its items: the rest keep their numbers until a
+    /// rebuild; a collapsed section stays collapsed through a move.
+    #[test]
+    fn delete_keeps_the_labels_until_a_rebuild() {
+        let mut dlg = ParamsDialog::new(0, OmpParams::default());
+        for _ in 0..3 {
+            dlg.sel = Node::Station(0);
+            dlg.add_section();
+        }
+        let labels = |d: &ParamsDialog| d.rows().into_iter().map(|(_, _, l)| l).collect::<Vec<_>>();
+        dlg.sel = Node::Section(0, 0);
+        dlg.delete();
+        assert_eq!(labels(&dlg), ["Подстанция", "Участок №2", "Участок №3"]);
+        assert_eq!(dlg.rows()[1].1, Node::Section(0, 0), "the element moved up, its label did not");
+        dlg.collapsed.insert(Node::Section(0, 0));
+        dlg.sel = Node::Section(0, 0);
+        dlg.move_sel(false);
+        assert_eq!(labels(&dlg), ["Подстанция", "Участок №1", "Участок №2"], "a move rebuilds");
+        assert!(dlg.collapsed.contains(&Node::Section(0, 1)) && !dlg.collapsed.contains(&Node::Section(0, 0)));
     }
 
     #[test]

@@ -605,51 +605,76 @@ impl App {
             return;
         }
         let Some(mut bar) = self.merge.clone() else { return };
-        let (mut sync, mut join, mut close) = (false, false, false);
+        let (mut sync, mut join) = (false, false);
         let d = &self.docs[ai];
-        ui.horizontal(|ui| {
-            ui.label("Синхронизация");
+        // CMergeBar's fixed layout (`0x479aa0`, `0x479db0`, `0x479e80`): the
+        // method combo 1088 at (110, 10), 170 wide, the channel combos 1089 /
+        // 1090 at (350, 10) / (510, 10), 90 wide; «Синхронизация» (3455)
+        // and «Объединить» (3319), 100 × 23 at W − 220 / W − 110, y 9, W the
+        // width less 20; the labels on the top line of the bar less (15, 14)
+        // at x 15 / 290 / 450, the status line at its bottom. No close
+        // button: hiding the bar undoes the paste (`0x479960`).
+        let r = ui.max_rect();
+        // The bar's controls in the 9 pt UI font (12 px).
+        for st in [egui::TextStyle::Body, egui::TextStyle::Button] {
+            ui.style_mut().text_styles.insert(st, egui::FontId::proportional(12.0));
+        }
+        // egui's combo adds its padding and arrow to the given width.
+        let sp = ui.spacing().clone();
+        let combo_w = |w: f32| w - 2.0 * sp.button_padding.x - sp.icon_width - sp.icon_spacing;
+        let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(r.min + egui::vec2(x, y), egui::vec2(w, h));
+        let font = egui::FontId::proportional(12.0);
+        let ink = ui.visuals().text_color();
+        const METHODS: [&str; 3] = ["По времени начала записи", "По авар. составляющей", "По доаварийному режиму"];
+        ui.put(at(110.0, 10.0, 170.0, 21.0), |ui: &mut egui::Ui| {
             egui::ComboBox::from_id_salt("merge_method")
-                .width(170.0)
-                .selected_text(["По времени начала записи", "По авар. составляющей", "По доаварийному режиму"][bar.method as usize])
+                .width(combo_w(170.0))
+                .truncate()
+                .selected_text(METHODS[bar.method as usize])
                 .show_ui(ui, |ui| {
-                    for (k, t) in ["По времени начала записи", "По авар. составляющей", "По доаварийному режиму"].into_iter().enumerate() {
+                    for (k, t) in METHODS.into_iter().enumerate() {
                         ui.selectable_value(&mut bar.method, k as u8, t);
                     }
-                });
-            ui.add_enabled_ui(bar.method != 0, |ui| {
-                ui.label("Канал 1");
-                let name1 = bar.ch1.map(|i| d.osc.analog[i].id.clone()).unwrap_or_default();
-                egui::ComboBox::from_id_salt("merge_ch1").width(90.0).selected_text(name1).show_ui(ui, |ui| {
+                })
+                .response
+        });
+        let on = bar.method != 0;
+        let name1 = bar.ch1.map(|i| d.osc.analog[i].id.clone()).unwrap_or_default();
+        ui.put(at(350.0, 10.0, 90.0, 21.0), |ui: &mut egui::Ui| {
+            ui.add_enabled_ui(on, |ui| {
+                egui::ComboBox::from_id_salt("merge_ch1").width(combo_w(90.0)).truncate().selected_text(name1).show_ui(ui, |ui| {
                     for (i, c) in d.osc.analog.iter().enumerate() {
                         ui.selectable_value(&mut bar.ch1, Some(i), &c.id);
                     }
                 });
-                ui.label("Канал 2");
-                let name2 = bar.ch2.and_then(|i| d.pending.get(i)).map(|p| p.name().to_string()).unwrap_or_default();
-                egui::ComboBox::from_id_salt("merge_ch2").width(90.0).selected_text(name2).show_ui(ui, |ui| {
+            })
+            .response
+        });
+        let name2 = bar.ch2.and_then(|i| d.pending.get(i)).map(|p| p.name().to_string()).unwrap_or_default();
+        ui.put(at(510.0, 10.0, 90.0, 21.0), |ui: &mut egui::Ui| {
+            ui.add_enabled_ui(on, |ui| {
+                egui::ComboBox::from_id_salt("merge_ch2").width(combo_w(90.0)).truncate().selected_text(name2).show_ui(ui, |ui| {
                     for (i, p) in d.pending.iter().enumerate().filter(|(_, p)| p.pasted.channel.is_ok()) {
                         ui.selectable_value(&mut bar.ch2, Some(i), p.name());
                     }
                 });
-            });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                close = ui.small_button("✕").on_hover_text("Скрыть (отменяет вставку)").clicked();
-                join = ui.button("Объединить").clicked();
-                sync = ui.button("Синхронизация").clicked();
-            });
+            })
+            .response
         });
-        ui.label(egui::RichText::new(&bar.status).small());
+        let w = r.width() - 20.0;
+        sync = ui.put(at(w - 220.0, 9.0, 100.0, 23.0), egui::Button::new("Синхронизация").wrap_mode(egui::TextWrapMode::Extend)).clicked() || sync;
+        join = ui.put(at(w - 110.0, 9.0, 100.0, 23.0), egui::Button::new("Объединить").wrap_mode(egui::TextWrapMode::Extend)).clicked() || join;
+        let text = r.shrink2(egui::vec2(15.0, 14.0));
+        for (x, t) in [(15.0, "Синхронизация"), (290.0, "Канал 1"), (450.0, "Канал 2")] {
+            ui.painter().text(egui::pos2(r.left() + x, text.top()), egui::Align2::LEFT_TOP, t, font.clone(), ink);
+        }
+        ui.painter().text(egui::pos2(text.left(), text.bottom()), egui::Align2::LEFT_BOTTOM, &bar.status, font, ink);
         self.merge = Some(bar);
         if sync {
             self.synchronise();
         }
         if join {
             self.merge_records();
-        } else if close {
-            self.undo();
-            self.docs[ai].prune_pending();
-            self.merge = None;
         }
     }
 }
