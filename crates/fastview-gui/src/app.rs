@@ -1494,6 +1494,8 @@ pub struct App {
     /// The window has no system decorations and draws its own caption row
     /// (the ribbon's, L9.150); off in tests and with `FV_SYSTEM_TITLEBAR`.
     pub own_caption: bool,
+    /// The start-up splash (`0x4478a0`): shown until this time (s).
+    pub splash_until: Option<f64>,
     /// The status bar's six panes as last written (`0x472e10`'s cache):
     /// the creation texts (3130, 3134, 3426, 3170, 3172, 3428) until a
     /// document is active, then whatever the last one showed.
@@ -1633,6 +1635,7 @@ impl App {
             modal_up: false,
             paste_announced: false,
             own_caption: false,
+            splash_until: None,
             status_panes: ["Верт. визир 1:", "Верт. визир 2:", "Разница в. визиров:", "Гор. визир 1:", "Гор. визир 2:", "Разница г. визиров:"].map(String::from),
             dlg: Default::default(),
             status: "Готово".to_string(),

@@ -6573,6 +6573,22 @@ breaks (two DrawText calls, no replacement) — as ours.
 Residual: the background colour's source (the painter's field `+0x44`;
 white on the VM).
 
+### L9.229 — The start-up splash; an area and a moment as the original's; ours cannot run on the VM  ·  ✅
+Seen on the VM at launch: the splash (`0x4478a0` / `0x4479b0`: bitmap
+462, topmost, centred, its timer destroying it after 2000 ms — the read
+of W1.8's B9 / B10) is 630 × 400 at (965, 496) on the 2560 × 1440 screen
+— centred in the work area above the 48 px taskbar —, the desktop around
+it. Ours had none. Now `App::splash` shows a borderless, always-on-top,
+taskbar-less viewport of that size there for 2 s at start-up (only from
+`main`, so the headless runs never see it); the picture is ours (the
+bitmap is the original's, W6). Also compared (L9.227's method, a `.set`
+with an area over IA–IC and a moment): both drawn as the original's, the
+area's fill over the lanes within 1 of its values since L9.224's alpha.
+Tried: ours on the VM — egui_glow needs OpenGL 2, the VM's basic display
+driver has 1.1; wgpu (Direct3D 12) finds no adapter there either, so the
+switch was not kept. Our GUI cannot be compared side by side on this VM
+(COMPLETION_PLAN W4.1 note); the splash's placement is unverified there.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

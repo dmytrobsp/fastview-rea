@@ -74,6 +74,7 @@ fn main() -> eframe::Result<()> {
             cc.egui_ctx.set_fonts(fonts.clone());
             let mut app = App::new().with_persistence();
             app.own_caption = own_caption;
+            app.splash_until = Some(2.0);
             app.print.fonts = fonts;
             let ctx = cc.egui_ctx.clone();
             app.instance = inst_dir.as_deref().and_then(|d| instance::serve(d, move || ctx.request_repaint()));
@@ -380,6 +381,47 @@ fn startup_args(args: impl Iterator<Item = String>) -> StartupArgs {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.frame_ui(ctx);
+        self.splash(ctx);
+    }
+}
+
+impl App {
+    /// The splash (`0x4478a0` / `0x4479b0`): bitmap 462 in a topmost window
+    /// centred in the work area (VM: 630 × 400 at (965, 496) on a 2560 ×
+    /// 1440 screen with a 48 px taskbar), destroyed by its timer after
+    /// 2000 ms. The picture is the original's (W6): ours is drawn.
+    fn splash(&mut self, ctx: &egui::Context) {
+        let Some(until) = self.splash_until else { return };
+        if ctx.input(|i| i.time) > until {
+            self.splash_until = None;
+            return;
+        }
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        let size = egui::vec2(630.0, 400.0);
+        let monitor = ctx.input(|i| i.viewport().monitor_size).unwrap_or(egui::vec2(1920.0, 1080.0));
+        // The work area: the screen less the taskbar (48 px on Windows 11,
+        // INFERRED for other set-ups).
+        let work = egui::vec2(monitor.x, (monitor.y - if cfg!(windows) { 48.0 } else { 0.0 }).max(size.y));
+        let at = ((work - size) / 2.0).max(egui::Vec2::ZERO).to_pos2();
+        let builder = egui::ViewportBuilder::default()
+            .with_title("FastView")
+            .with_decorations(false)
+            .with_always_on_top()
+            .with_resizable(false)
+            .with_taskbar(false)
+            .with_inner_size(size)
+            .with_position(at);
+        ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("fv_splash"), builder, |ctx, _| {
+            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                let r = ui.max_rect();
+                let p = ui.painter();
+                lanes::gradient(p, r, egui::Color32::from_rgb(44, 92, 142), egui::Color32::from_rgb(60, 118, 172));
+                let white = egui::Color32::WHITE;
+                p.text(r.left_top() + egui::vec2(28.0, 34.0), egui::Align2::LEFT_TOP, "Fast View 5", egui::FontId::proportional(40.0), white);
+                p.text(r.left_top() + egui::vec2(30.0, 96.0), egui::Align2::LEFT_TOP, "Программа для просмотра и анализа осциллограмм\nв формате COMTRADE", egui::FontId::proportional(15.0), white);
+                p.text(r.left_top() + egui::vec2(30.0, 160.0), egui::Align2::LEFT_TOP, "FastView-REA — независимая реконструкция", egui::FontId::proportional(12.0), white);
+            });
+        });
     }
 }
 

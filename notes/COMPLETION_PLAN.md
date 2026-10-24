@@ -191,7 +191,7 @@ items (VM ones also in W4.4):
   by name ignoring case (the dissolve's lookup: L9.198); the ОМП re-run's
   lookup ignoring case (as ours, L9.199's read); the zoom gate's rectangle:
   done, L9.200;
-  the splash (our own picture, 2000 ms, topmost); the view scroll bar's
+  the splash (done, L9.229: ours, 630 × 400, 2000 ms, topmost); the view scroll bar's
   system menu (done, L9.206; «Канал 1» with formula channels: L9.199; «Скрыть все» and
   «Отсчет углов» over `doc+0x1d8`: already as ours, L9.199's read).
 
@@ -267,6 +267,10 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   a close button on the record-header strip.
 - [x] W4.1a Input driving: `tools/vm/drive.ps1` (SendKeys groups in the
   session) opens records and presses commands in the original.
+- [ ] W4.1c Ours on the VM: egui_glow needs OpenGL 2 and wgpu a Direct3D 12
+  adapter; the VM's basic display driver offers neither (L9.229). A
+  software renderer (our `raster.rs` into a window) would let ours run
+  there and on GPU-less Windows like the original — not started.
 - [x] W4.1b The VM's system locale and devuser's Format set to ru-RU (user
   approved, 2026-10-24) — the original stores names through the thread
   code page, so both are needed for its Cyrillic.
