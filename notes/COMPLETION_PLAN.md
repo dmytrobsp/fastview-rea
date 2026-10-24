@@ -249,7 +249,7 @@ items (VM ones also in W4.4):
     (run, L9.291); ~~the ribbon's reduction steps~~ (run, L9.299); ~~the printed vector
     legend~~ (run, L9.296); the preview on non-A4 paper (L9.94); ~~GDI's Ellipse box~~
     (run, L9.285); the diagram tab order in the workspace (L9.105); the splitter
-    cursor (L9.106); the docking divider's limits (L9.109); ~~a paste's
+    cursor (L9.106); ~~the docking divider's limits~~ (run, L9.300); ~~a paste's
     selection~~ (run, L9.295); the print dialog's fields / status (L9.113); the
     preview's per-page DC (L9.121); «Свойства»' DEVMODE (L9.122); ~~the
     older looks' app button~~ (run, L9.223); Ctrl over a hot marker (L9.128);

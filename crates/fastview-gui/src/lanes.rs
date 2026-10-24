@@ -1644,7 +1644,15 @@ impl App {
             (p.primary_down(), p.secondary_down(), p.press_origin(), p.latest_pos(), p.primary_released(), i.time, p.delta() != Vec2::ZERO, i.key_pressed(egui::Key::Escape))
         });
         if !l_down || r_down || esc || egui::DragAndDrop::has_any_payload(&ctx) {
-            self.stats_drag_arm = None;
+            // A release that comes after the 200 ms with the button held
+            // (a slow frame: the move that armed and the release in
+            // consecutive frames) finds the loop's drag already started:
+            // it drops.
+            if let Some((_, t0, chans)) = self.stats_drag_arm.take().filter(|_| released && !r_down && !esc && !egui::DragAndDrop::has_any_payload(&ctx)) {
+                if t - t0 > DRAG_DELAY {
+                    egui::DragAndDrop::set_payload(&ctx, ChanDrag { chans });
+                }
+            }
         } else if let Some((a, t0, chans)) = self.stats_drag_arm.take() {
             let p = now.unwrap_or(a);
             let (dx, dy) = ((p.x - a.x).floor(), (p.y - a.y).floor());
@@ -2773,6 +2781,34 @@ mod menu_tests {
         }
         h.frame(vec![ev(b, false)]);
         h.frame(vec![]);
+    }
+
+    /// A drag that starts in the plot and crosses into the stats panel is
+    /// a channel drag (L9.61: the move's own point decides); with a slow
+    /// frame the release comes in the frame after the arming move, after
+    /// MFC's 200 ms: a drop (VM: «Совмещение невозможно» onto a lane of
+    /// another unit).
+    #[test]
+    fn a_plot_drag_into_the_stats_panel_drops_after_the_delay() {
+        let mut h = Harness::new();
+        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let unit = |li: usize| match rows[li].key {
+            Lane::Analog(i) => Some(h.doc().osc.analog[i].unit.clone()),
+            _ => None,
+        };
+        let other = (1..h.rows()).find(|&li| unit(li).is_some() && unit(li) != unit(0)).expect("a lane of another unit");
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into_iter().collect();
+        let b = h.row(other);
+        let a = egui::pos2(b.x + 400.0, b.y);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(a), ev(a, true)]);
+        h.frame(vec![egui::Event::PointerMoved(b)]);
+        for _ in 0..4 {
+            h.t += 0.05;
+        }
+        h.frame(vec![ev(b, false)]);
+        h.frame(vec![]);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS));
     }
 
     #[test]

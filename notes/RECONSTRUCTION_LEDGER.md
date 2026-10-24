@@ -8209,6 +8209,30 @@ original has pictures (left).
   small with text and «Вычисления»' right column to icons; 900 its middle
   column too. The harness gained `SIZE w,h` (tools/vm/keys.ps1).
 
+### L9.300 — VM: a docked block's divider is its 4 px strip, without limits; exact hit-testing; a plot drag into the stats panel drops  ·  ✅
+Run (WIN_1999, the start-up layout; the original's registry state
+restored before and after):
+- **The divider's grip.** A press 2 px inside the oscillogram view
+  beside the differential block's strip is the view's in the original (a
+  lane drag); ours grabbed the divider — egui's panel resize reaches 5 px
+  past the edge, and its hit test snaps to a draggable widget within
+  5 px. Now a docked container or a pane beside another resizes only from
+  its 4 px strip (`views::grip`, `grip_size`), and the hit test is exact
+  (`interaction.interact_radius` 0, as Win32's). Test
+  `a_docked_container_resizes_from_its_strip_only`.
+- **The divider's limits.** The original's divider follows the pointer:
+  dragged to x 2 the document area keeps 4 px, dragged to the screen's
+  right edge the block keeps its strip and 2 px. Ours stopped at 264 …
+  1204; now 6 … the space left − 4 (the same at both ends on the VM).
+- **A drag from the plot into the stats panel.** In both, a press in the
+  plot and a drag left into the stats panel is a channel drag of the
+  selected channels (L9.61: the move's own point decides); dropped on a
+  lane of another unit it shows «Совмещение невозможно.». Ours armed it
+  and then cancelled at the release when the release came in the next
+  slow frame; MFC's wait loop has started the drag by then (200 ms
+  held). Now a release after the delay drops. Test
+  `a_plot_drag_into_the_stats_panel_drops_after_the_delay`.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

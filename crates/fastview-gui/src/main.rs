@@ -1596,6 +1596,23 @@ mod window_tests {
         assert_eq!(w.app.active, Some(0), "the first document by title");
     }
 
+    /// A docked container resizes from its 4 px divider strip only (MFC's
+    /// pane divider, L9.109): a press just outside it, in the view, is the
+    /// view's (VM: 2 px inside the oscillogram a drag is a lane drag).
+    #[test]
+    fn a_docked_container_resizes_from_its_strip_only() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        let g = |w: &Win| w.app.dock_rects[docking::Unit::Vector as usize].expect("the docked group");
+        let r = g(&w);
+        let y = r.center().y;
+        w.press(Primary, Pos2::new(r.left() - 6.0, y), Pos2::new(r.left() - 106.0, y));
+        assert_eq!(g(&w).width(), r.width(), "a press in the view does not resize");
+        w.press(Primary, Pos2::new(r.left() - 2.0, y), Pos2::new(r.left() - 102.0, y));
+        w.idle(2);
+        assert_eq!(g(&w).width(), r.width() + 100.0, "the strip drags the divider");
+    }
+
     /// Enter in an open drop-down picks its highlighted item and the
     /// dialog stays (VM: «Быстрый анализ»' arm combos; Enter used to run
     /// the dialog's default button).

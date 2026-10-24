@@ -431,13 +431,26 @@ impl App {
         match edge {
             Edge::Left | Edge::Right => {
                 let p = if edge == Edge::Left { egui::SidePanel::left(id) } else { egui::SidePanel::right(id) };
-                // The pane's size plus the 4 px strip (VM: 500 + 4).
-                p.resizable(true).show_separator_line(false).frame(dock_frame(strip, edge)).default_width(ext + 4.0).width_range(264.0..=1204.0).show(ctx, |ui| body(self, ui));
+                // The pane's size plus the 4 px strip (VM: 500 + 4). The
+                // divider goes as far as the pointer takes it (VM): the
+                // block down to its strip and 2 px, the document area down
+                // to 4 px.
+                let range = 6.0..=(ctx.available_rect().width() - 4.0).max(6.0);
+                let size = grip_size(ctx, id, ext + 4.0, range.clone());
+                p.resizable(false).show_separator_line(false).frame(dock_frame(strip, edge)).exact_width(size).show(ctx, |ui| {
+                    grip(ui, id, edge, size, range);
+                    body(self, ui)
+                });
             }
             Edge::Top | Edge::Bottom => {
                 let p = if edge == Edge::Top { egui::TopBottomPanel::top(id) } else { egui::TopBottomPanel::bottom(id) };
                 let ext = if hd.extent.is_none() && (inside.len() > 1 || natural > 200.0) { 300.0 } else { ext };
-                p.resizable(true).show_separator_line(false).frame(dock_frame(strip, edge)).default_height(ext + 4.0).height_range(84.0..=904.0).show(ctx, |ui| body(self, ui));
+                let range = 6.0..=(ctx.available_rect().height() - 4.0).max(6.0);
+                let size = grip_size(ctx, id, ext + 4.0, range.clone());
+                p.resizable(false).show_separator_line(false).frame(dock_frame(strip, edge)).exact_height(size).show(ctx, |ui| {
+                    grip(ui, id, edge, size, range);
+                    body(self, ui)
+                });
             }
         }
     }
@@ -457,7 +470,12 @@ impl App {
                     let p = if side == Edge::Top { egui::TopBottomPanel::top(inner) } else { egui::TopBottomPanel::bottom(inner) };
                     let d = wd.extent.unwrap_or(w.natural()).min(full.y / 2.0);
                     let gap = if side == Edge::Top { egui::Margin { bottom: 4.0, ..Default::default() } } else { egui::Margin { top: 4.0, ..Default::default() } };
-                    p.resizable(true).show_separator_line(false).frame(egui::Frame::none().fill(self.skin.splitter()).inner_margin(gap)).default_height(d).height_range(80.0..=(full.y - 120.0).max(80.0)).show_inside(ui, |ui| self.dock_slot(ui, w, edge, parents));
+                    let range = 80.0..=(full.y - 120.0).max(80.0);
+                    let size = grip_size(ui.ctx(), inner, d, range.clone());
+                    p.resizable(false).show_separator_line(false).frame(egui::Frame::none().fill(self.skin.splitter()).inner_margin(gap)).exact_height(size).show_inside(ui, |ui| {
+                        grip(ui, inner, side, size, range);
+                        self.dock_slot(ui, w, edge, parents)
+                    });
                 }
                 Edge::Left | Edge::Right => {
                     let p = if side == Edge::Left { egui::SidePanel::left(inner) } else { egui::SidePanel::right(inner) };
@@ -465,7 +483,12 @@ impl App {
                     // The panes beside each other: 4 px of the splitter brush
                     // between them (VM).
                     let gap = if side == Edge::Left { egui::Margin { right: 4.0, ..Default::default() } } else { egui::Margin { left: 4.0, ..Default::default() } };
-                    p.resizable(true).show_separator_line(false).frame(egui::Frame::none().fill(self.skin.splitter()).inner_margin(gap)).default_width(d).width_range(120.0..=(full.x - 120.0).max(120.0)).show_inside(ui, |ui| self.dock_slot(ui, w, edge, parents));
+                    let range = 120.0..=(full.x - 120.0).max(120.0);
+                    let size = grip_size(ui.ctx(), inner, d, range.clone());
+                    p.resizable(false).show_separator_line(false).frame(egui::Frame::none().fill(self.skin.splitter()).inner_margin(gap)).exact_width(size).show_inside(ui, |ui| {
+                        grip(ui, inner, side, size, range);
+                        self.dock_slot(ui, w, edge, parents)
+                    });
                 }
             }
         }
@@ -1413,6 +1436,36 @@ fn window_border(ui: &egui::Ui, r: egui::Rect, [top, left, right, bottom]: [bool
 /// A docked container: 4 px of the frame's splitter brush on the side
 /// facing the document area (VM, Office 2007 Blue: (191, 219, 255) between
 /// the document's border and the pane), nothing on the others.
+/// A docked panel's size: as last dragged by its [`grip`], else `default`.
+fn grip_size(ctx: &egui::Context, id: egui::Id, default: f32, range: std::ops::RangeInclusive<f32>) -> f32 {
+    ctx.data(|d| d.get_temp::<f32>(id.with("size"))).unwrap_or(default).clamp(*range.start(), *range.end())
+}
+
+/// A docked panel's 4 px divider strip — on the inner side of the panel
+/// on `edge` of its slot — as its only resize grip: MFC's pane divider is
+/// that strip (L9.109); egui's own grab reaches 5 px past the edge, into
+/// the neighbour (VM: a press 2 px inside the oscillogram view starts a
+/// lane drag in the original, not a resize). Call first in the panel.
+fn grip(ui: &mut egui::Ui, id: egui::Id, edge: crate::docking::Edge, size: f32, range: std::ops::RangeInclusive<f32>) {
+    use crate::docking::Edge;
+    let c = ui.max_rect();
+    let (strip, sign) = match edge {
+        Edge::Right => (egui::Rect::from_min_max(egui::pos2(c.left() - 4.0, c.top()), egui::pos2(c.left(), c.bottom())), egui::vec2(-1.0, 0.0)),
+        Edge::Left => (egui::Rect::from_min_max(egui::pos2(c.right(), c.top()), egui::pos2(c.right() + 4.0, c.bottom())), egui::vec2(1.0, 0.0)),
+        Edge::Bottom => (egui::Rect::from_min_max(egui::pos2(c.left(), c.top() - 4.0), egui::pos2(c.right(), c.top())), egui::vec2(0.0, -1.0)),
+        Edge::Top => (egui::Rect::from_min_max(egui::pos2(c.left(), c.bottom()), egui::pos2(c.right(), c.bottom() + 4.0)), egui::vec2(0.0, 1.0)),
+    };
+    let resp = ui.interact(strip, id.with("grip"), egui::Sense::drag());
+    if resp.hovered() || resp.dragged() {
+        ui.ctx().set_cursor_icon(if sign.x != 0.0 { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical });
+    }
+    if resp.dragged() {
+        let d = resp.drag_delta() * sign;
+        let new = (size + d.x + d.y).clamp(*range.start(), *range.end());
+        ui.ctx().data_mut(|m| m.insert_temp(id.with("size"), new));
+    }
+}
+
 fn dock_frame(strip: egui::Color32, edge: crate::docking::Edge) -> egui::Frame {
     use crate::docking::Edge;
     let m = |e: Edge| if e == edge { 4.0 } else { 0.0 };
