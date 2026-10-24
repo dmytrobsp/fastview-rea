@@ -253,8 +253,101 @@ pub fn win_label(ui: &egui::Ui, r: Rect, text: &str, right: bool, enabled: bool)
     job.halign = if right { egui::Align::RIGHT } else { egui::Align::LEFT };
     let g = ui.fonts(|f| f.layout_job(job));
     let at = if right { Pos2::new(r.right(), r.top()) } else { r.left_top() };
-    let clip = if one_line { ui.clip_rect() } else { r.intersect(ui.clip_rect()) };
+    // A multi-line one is clipped at its sides only: a line more in our
+    // font stays readable below it.
+    let clip = if one_line { ui.clip_rect() } else { Rect::from_min_max(r.min, Pos2::new(r.right(), ui.clip_rect().bottom())).intersect(ui.clip_rect()) };
     ui.painter().with_clip_rect(clip).galley(at, g, ink);
+}
+
+/// A group box at its template rectangle (VM, Windows 11): a square (220)
+/// frame at the left and right − 1, top + 6 and bottom − 2; the title from
+/// left + 9, the top line broken from left + 7 to 2 px past it.
+pub fn win_group(ui: &egui::Ui, r: Rect, title: &str) {
+    let p = ui.painter();
+    let line = Stroke::new(1.0f32, Color32::from_gray(220));
+    let (x0, x1, y0, y1) = (r.left() + 0.5, r.right() - 0.5, r.top() + 6.5, r.bottom() - 1.5);
+    p.vline(x0, y0..=y1, line);
+    p.vline(x1, y0..=y1, line);
+    p.hline(x0..=x1, y1, line);
+    if title.is_empty() {
+        p.hline(x0..=x1, y0, line);
+    } else {
+        let t = p.text(Pos2::new(r.left() + 9.0, r.top()), egui::Align2::LEFT_TOP, title, DLG_FONT, Color32::BLACK);
+        p.hline(x0..=r.left() + 7.0, y0, line);
+        p.hline(t.right() + 2.0..=x1, y0, line);
+    }
+}
+
+/// An auto radio button at its template rectangle (VM, Windows 11): a
+/// 13 px disc centred in the row — checked (0, 95, 184) with a 5 px white
+/// dot, else a (98) ring on (243) — the text from 16 px in. Returns the
+/// click.
+pub fn win_radio(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool {
+    let resp = ui.interact(r, ui.id().with(("fv_radio", text)), egui::Sense::click());
+    let c = Pos2::new(r.left() + 6.5, r.top() + (r.height() / 2.0).floor());
+    let p = ui.painter();
+    if checked {
+        p.circle_filled(c, 6.5, Color32::from_rgb(0, 95, 184));
+        p.circle_filled(c, 3.0, Color32::WHITE);
+    } else {
+        p.circle_filled(c, 6.5, Color32::from_gray(98));
+        p.circle_filled(c, 5.5, if resp.hovered() { Color32::from_gray(233) } else { Color32::from_gray(243) });
+    }
+    p.text(Pos2::new(r.left() + 16.0, c.y), egui::Align2::LEFT_CENTER, text, DLG_FONT, Color32::BLACK);
+    resp.clicked()
+}
+
+/// A multi-line edit at its template rectangle (VM, Windows 11): white in a
+/// 1 px (236) frame, the bottom line 2 px of (0, 103, 192) while it has the
+/// focus, else 1 px (134). `focus` gives it the focus.
+pub fn win_edit_multiline(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, focus: bool) -> egui::Response {
+    let painter = ui.painter().clone();
+    let frame = painter.add(egui::Shape::Noop);
+    let inner = Rect::from_min_max(r.min + Vec2::new(4.0, 3.0), r.max - Vec2::new(2.0, 3.0));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+    let out = egui::ScrollArea::vertical()
+        .id_salt(id.with("scroll"))
+        .max_height(inner.height())
+        .show(&mut child, |ui| {
+            ui.add(egui::TextEdit::multiline(text).id(id).frame(false).font(DLG_FONT).margin(egui::Margin::ZERO).desired_width(inner.width() - 16.0).desired_rows(1).min_size(inner.size() - Vec2::new(16.0, 0.0)))
+        });
+    let resp = out.inner;
+    if focus {
+        resp.request_focus();
+    }
+    let focused = resp.has_focus();
+    painter.set(
+        frame,
+        egui::Shape::Vec(vec![
+            egui::Shape::rect_filled(r, 0.0, Color32::from_gray(236)),
+            egui::Shape::rect_filled(r.shrink(1.0), 0.0, Color32::WHITE),
+            if focused {
+                egui::Shape::rect_filled(Rect::from_min_max(Pos2::new(r.left(), r.bottom() - 2.0), r.max), 0.0, Color32::from_rgb(0, 103, 192))
+            } else {
+                egui::Shape::rect_filled(Rect::from_min_max(Pos2::new(r.left(), r.bottom() - 1.0), r.max), 0.0, Color32::from_gray(134))
+            },
+        ]),
+    );
+    resp
+}
+
+/// DIALOG 332 «Комментарии к диаграмме»'s body on its 379 × 307 DLU
+/// template (569 × 499 px): the edit at 6, 6 (366 × 276), OK (the default)
+/// and «Отмена» at 244 and 310, 288 (62 × 14) — the code-page combo
+/// (1087, at 6, 288) stays hidden. The edit, the first tab stop, has the
+/// focus whenever no other control has (a dialog always has one).
+/// Returns the button pressed.
+pub fn comment_dialog_body(ui: &mut egui::Ui, id: egui::Id, text: &mut String) -> Option<bool> {
+    let (client, _) = ui.allocate_exact_size(Vec2::new(569.0, 499.0), egui::Sense::hover());
+    let focus = ui.memory(|m| m.focused().is_none());
+    win_edit_multiline(ui, dlu(client, 6, 6, 366, 276), id, text, focus);
+    if win_button(ui, dlu(client, 244, 288, 62, 14), "OK", true).clicked() {
+        return Some(true);
+    }
+    if win_button(ui, dlu(client, 310, 288, 62, 14), "Отмена", false).clicked() {
+        return Some(false);
+    }
+    None
 }
 
 /// A combo box's closed height (Windows for the template font, VM).

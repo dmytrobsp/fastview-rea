@@ -305,19 +305,12 @@ impl App {
         let mut open = true;
         let mut done: Option<bool> = None;
         crate::dialogs::dlg(ctx, "Комментарии к диаграмме")
+            .margin(0.0)
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(ctx, |ui| {
-                ui.add(egui::TextEdit::multiline(&mut ed.text).desired_rows(8).desired_width(360.0));
-                ui.horizontal(|ui| {
-                    if ui.button("OK").clicked() {
-                        done = Some(true);
-                    }
-                    if ui.button("Отмена").clicked() {
-                        done = Some(false);
-                    }
-                });
+                done = crate::dialogs::comment_dialog_body(ui, egui::Id::new("fv_comment_text"), &mut ed.text);
             });
         match done {
             // `0x43f4f0`: the text set and the document modified on every OK.

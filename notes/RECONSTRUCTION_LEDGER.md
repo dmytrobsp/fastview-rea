@@ -6845,6 +6845,28 @@ places them so (INFERRED: the invisible frame's 2 px; READ: the three
 positions). A one-line static keeps its text unwrapped (our font is wider
 than Tahoma: wrapping dropped words the original shows; W6).
 
+### L9.243 — DIALOGs 510 and 332 on their templates; group boxes, radios, the multi-line edit  ·  ✅
+VM captures (application menu → «Настройки», «Комментарии»): DIALOG 510
+«Установка настроек программы» (419 × 259 DLU, 629 × 421 px) and DIALOG
+332 «Комментарии к диаграмме» (379 × 307 DLU, 569 × 499 px), both placed
+by the rule of L9.242 (clients at 966, 497 and 996, 458). Windows 11
+draws a group box as a square (220) frame at its left and right − 1 and
+at top + 6 and bottom − 2, the title from left + 9 in a break of the top
+line from left + 7 to 2 px past it (an untitled one — 510's around the
+folder link — unbroken); an auto radio button as a 13 px disc centred in
+its row — checked (0, 95, 184) with a 5 px white dot, else a (98) ring on
+(243) — and its text 16 px in; a multi-line edit white in a 1 px (236)
+frame with a 2 px (0, 103, 192) bottom line while focused (DIALOG 332's
+edit is focused as it opens: the first tab stop). 510's buttons read «OK»
+and «Cancel» (the template's own, as ours); its folder link (MfcLink at
+16, 38) was empty with no folder set. Ours drew egui groups, radios and
+a text area sized by content. Now `win_group`, `win_radio`,
+`win_edit_multiline` and the shared `comment_dialog_body` (both of
+332's uses: the record's comment and a diagram comment) lay the two
+dialogs out on their templates; they match the captures but for the
+glyphs. A multi-line static is clipped at its sides only (510's warning
+takes three lines in our wider font; W6).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

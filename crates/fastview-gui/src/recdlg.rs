@@ -545,49 +545,60 @@ impl App {
         let mut open = true;
         let mut result: Option<bool> = None;
         crate::dialogs::dlg(ctx, "Установка настроек программы")
+            .margin(0.0)
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(ctx, |ui| {
-                ui.label("Директория хранения файлов описания осциллограмм (*.dst):");
-                ui.horizontal(|ui| {
-                    // The folder as an MFC link (`0x47f840`): its text and URL,
-                    // disabled — and empty — while no folder is set; a click
-                    // opens the folder.
-                    if ui.add_enabled(!st.dst_folder.is_empty(), egui::Link::new(st.dst_folder.as_str())).clicked() {
+                use crate::dialogs::{dlu, win_button, win_group, win_label, win_radio};
+                // The 419 × 259 DLU template (629 × 421 px).
+                let (client, _) = ui.allocate_exact_size(egui::vec2(629.0, 421.0), egui::Sense::hover());
+                win_label(ui, dlu(client, 7, 16, 405, 8), "Директория хранения файлов описания осциллограмм (*.dst):", false, true);
+                win_group(ui, dlu(client, 7, 28, 405, 30), "");
+                // The folder as an MFC link (`0x47f840`): its text and URL,
+                // disabled — and empty — while no folder is set; a click
+                // opens the folder.
+                let link = dlu(client, 16, 38, 386, 15);
+                if !st.dst_folder.is_empty() {
+                    let resp = ui.interact(link, ui.id().with("fv_dst_link"), egui::Sense::click());
+                    let t = ui.painter().with_clip_rect(link).text(link.left_center(), egui::Align2::LEFT_CENTER, &st.dst_folder, crate::dialogs::DLG_FONT, egui::Color32::from_rgb(0, 0, 255));
+                    if resp.hovered() {
+                        ui.painter().hline(t.x_range(), t.bottom() - 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(0, 0, 255)));
+                    }
+                    if resp.clicked() {
                         ui.ctx().open_url(egui::OpenUrl::new_tab(format!("file:///{}", st.dst_folder.replace('\\', "/"))));
                     }
-                    // «...» (`0x47f950`): the folder browser starts at the current one.
-                    if ui.button("...").clicked() {
-                        let mut fd = rfd::FileDialog::new().set_title("Директория хранения файлов описания осциллограмм");
-                        if !st.dst_folder.is_empty() {
-                            fd = fd.set_directory(&st.dst_folder);
-                        }
-                        if let Some(p) = fd.pick_folder() {
-                            st.dst_folder = p.display().to_string();
-                        }
+                }
+                // «...» (`0x47f950`): the folder browser starts at the current one.
+                if win_button(ui, dlu(client, 6, 60, 50, 14), "...", false).clicked() {
+                    let mut fd = rfd::FileDialog::new().set_title("Директория хранения файлов описания осциллограмм");
+                    if !st.dst_folder.is_empty() {
+                        fd = fd.set_directory(&st.dst_folder);
                     }
-                });
-                ui.add_space(4.0);
-                ui.group(|ui| {
-                    ui.label("Настройки отображения времени для Comtrade 2013");
-                    ui.radio_value(&mut st.utc, true, "Отображать в UTC");
-                    ui.radio_value(&mut st.utc, false, "Отображать местное время");
-                });
-                ui.group(|ui| {
-                    ui.label("Отображать согласно кодировке:");
-                    for (e, l) in ENCODINGS {
-                        ui.radio_value(&mut st.encoding, e, l);
+                    if let Some(p) = fd.pick_folder() {
+                        st.dst_folder = p.display().to_string();
                     }
-                });
-                ui.horizontal(|ui| {
-                    if ui.button("OK").clicked() {
-                        result = Some(true);
+                }
+                win_group(ui, dlu(client, 7, 86, 405, 51), "Настройки отображения времени для Comtrade 2013");
+                if win_radio(ui, dlu(client, 23, 104, 80, 10), "Отображать в UTC", st.utc) {
+                    st.utc = true;
+                }
+                if win_radio(ui, dlu(client, 23, 120, 110, 10), "Отображать местное время", !st.utc) {
+                    st.utc = false;
+                }
+                win_group(ui, dlu(client, 7, 148, 405, 83), "Отображать согласно кодировке:");
+                for ((e, l), (y, w)) in ENCODINGS.into_iter().zip([(164, 35), (180, 63), (197, 40), (213, 39)]) {
+                    if win_radio(ui, dlu(client, 23, y, w, 10), l, st.encoding == e) {
+                        st.encoding = e;
                     }
-                    if ui.button("Cancel").clicked() {
-                        result = Some(false);
-                    }
-                });
+                }
+                win_label(ui, dlu(client, 135, 176, 211, 22), "Внимание! При смене кодировки изменения вступают в силу после переоткрытия файла осциллограммы!", false, true);
+                if win_button(ui, dlu(client, 301, 238, 50, 14), "OK", true).clicked() {
+                    result = Some(true);
+                }
+                if win_button(ui, dlu(client, 362, 238, 50, 14), "Cancel", false).clicked() {
+                    result = Some(false);
+                }
             });
         let result = result.or_else(|| self.dialog_keys(ctx));
         match result {
@@ -613,25 +624,14 @@ impl App {
         let mut result: Option<bool> = None;
         crate::dialogs::dlg(ctx, "Комментарии к диаграмме")
             .id(egui::Id::new("fv_hdr_comment"))
+            .margin(0.0)
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
-                    ui.add(egui::TextEdit::multiline(&mut st.text).desired_width(540.0).desired_rows(22));
-                });
                 // The code-page combo stays hidden: the dialog's mode
                 // (`+0x9c`) is always 0 (`0x43e110`, `0x43e380`).
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Отмена").clicked() {
-                            result = Some(false);
-                        }
-                        if ui.button("OK").clicked() {
-                            result = Some(true);
-                        }
-                    });
-                });
+                result = crate::dialogs::comment_dialog_body(ui, egui::Id::new("fv_hdr_comment_text"), &mut st.text);
             });
         match result {
             // OK: CRs removed, `UserData` written, modified every time.
