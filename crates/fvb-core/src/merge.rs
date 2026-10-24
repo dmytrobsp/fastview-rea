@@ -269,6 +269,21 @@ fn us(t: f64) -> f64 {
     (t * 1e6).round() / 1e6
 }
 
+/// The padder `0x428c20` shifts and pads a channel's own frequency vector
+/// (`ch+0x50`) with its samples when it has one: n copies of the base
+/// record's nominal frequency (`rec+0x220`) in front or behind
+/// (`0x428ea7` / `0x429094`, `0x42912b` / `0x429243`).
+fn pad_own(mut own: Vec<f64>, n: usize, front: bool, f_nom: f64) -> Vec<f64> {
+    if !own.is_empty() && n > 0 {
+        if front {
+            own.splice(0..0, std::iter::repeat_n(f_nom, n));
+        } else {
+            own.extend(std::iter::repeat_n(f_nom, n));
+        }
+    }
+    own
+}
+
 /// `0x428c20`: `n` zero samples before (`front`) or after the channel at
 /// its own step; the times relative to the new first sample.
 fn pad<T: Copy>(t: &mut Vec<f64>, x: &mut Vec<T>, zero: T, n: usize, step: f64, front: bool) {
@@ -369,7 +384,7 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
     for (i, c) in base.analog.iter().enumerate() {
         let (mut t, mut x) = (base_t.clone(), c.samples.clone());
         pad(&mut t, &mut x, base_pads.get(i).copied().unwrap_or(0.0), nb, base_step, true);
-        lanes.push((Lane { t, step: base_step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::A(x), c.own_freq.clone()));
+        lanes.push((Lane { t, step: base_step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::A(x), pad_own(c.own_freq.clone(), nb, true, base.line_freq)));
         pads.push(base_pads.get(i).copied().unwrap_or(0.0));
     }
     for (i, c) in base.digital.iter().enumerate() {
@@ -388,7 +403,7 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
             Ok(a) => {
                 let mut x: Vec<f64> = a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v }).collect();
                 pad(&mut t, &mut x, p.pad, n, step, true);
-                lanes.push((Lane { t, step, shift: sh }, Vals::A(x), a.own_freq.clone()));
+                lanes.push((Lane { t, step, shift: sh }, Vals::A(x), pad_own(a.own_freq.clone(), n, true, base.line_freq)));
                 pads.push(p.pad);
             }
             Err(d) => {
@@ -402,10 +417,13 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
     // The trailing pads up to the longest padded span.
     let span = |l: &Lane| l.t.last().copied().unwrap_or(0.0);
     let maxdur = lanes.iter().map(|(l, _, _)| span(l)).fold(0.0, f64::max);
-    for ((l, v, _), &z) in lanes.iter_mut().zip(&pads) {
+    for ((l, v, own), &z) in lanes.iter_mut().zip(&pads) {
         let n = ((maxdur - span(l)) / l.step).abs().ceil() as usize;
         match v {
-            Vals::A(x) => pad(&mut l.t, x, z, n, l.step, false),
+            Vals::A(x) => {
+                pad(&mut l.t, x, z, n, l.step, false);
+                *own = pad_own(std::mem::take(own), n, false, base.line_freq);
+            }
             Vals::D(x) => pad(&mut l.t, x, z != 0.0, n, l.step, false),
         }
     }
@@ -607,6 +625,8 @@ mod tests {
         let m = merge(&base, &[own], 0.0025, &[0.0], &[]);
         assert_eq!(m.analog[0].own_freq[50], 50.0, "the base channel: the record's track");
         assert_eq!(m.analog[1].own_freq[50], 50.5, "the pasted one: its own");
+        // Front-padded with the base's nominal frequency (`0x428c20`).
+        assert_eq!(m.analog[1].own_freq[0], base.line_freq, "the padding reads f_nom");
         // An inverted digital channel's padding reads 1 through the accessor.
         let dig = Pasted {
             channel: Err(crate::comtrade::DigitalChannel { index: 1, id: "D".into(), phase: String::new(), normal: 0, samples: vec![false; 100] }),

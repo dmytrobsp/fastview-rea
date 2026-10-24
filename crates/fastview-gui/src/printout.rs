@@ -461,10 +461,10 @@ impl App {
                 // At s = 1 the circle / differential painter's screen branch
                 // also paints its 5 px splitter strip after RestoreDC: a
                 // PatBlt at the DC's (0, 0), as wide as the live window
-                // (`0x438110`, colour INFERRED the panel fill).
+                // (`0x438110`, a solid brush by the look: `Skin::splitter`).
                 if s == 1.0 && matches!(pane, Pane::Circle | Pane::Differential) {
                     let live = self.pane_canvas.iter().find(|(p, _)| *p == pane).map_or(0.0, |(_, r)| r.width());
-                    let (r, g, b, _) = self.skin.palette().group_bg.to_tuple();
+                    let (r, g, b, _) = self.skin.splitter().to_tuple();
                     let w = ((live / to_printer) as usize).clamp(1, canvas.w.max(1));
                     canvas.blit(&Canvas { w, h: 5, px: vec![[r, g, b]; w * 5] }, 0, 0);
                 }
@@ -604,7 +604,7 @@ mod tests {
         app.docs[0].print_ticks = [false, false, false, true, false];
         app.pane_canvas.push((crate::app::Pane::Circle, Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 300.0))));
         let fonts = egui::FontDefinitions::default();
-        let (r, g, b, _) = app.skin.palette().group_bg.to_tuple();
+        let (r, g, b, _) = app.skin.splitter().to_tuple();
         for (dpi, strip) in [(150.0, true), (300.0, false)] {
             let setup = PageSetup::default();
             let job = app.print_job(0, Device::sheet(&setup, dpi), setup);

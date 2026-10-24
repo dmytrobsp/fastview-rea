@@ -311,6 +311,43 @@ fn station_node(tag: &str, st: &StationParams) -> Node {
     n
 }
 
+/// The legacy, non-XML `.omp` (`0x4a45f0`, the dialog's fallback when the
+/// XML parse fails, `0x4a8f10`): the tokenizer's fields (ending at tab,
+/// LF, CR or comma, leading blanks skipped, `0x477050`) — an integer (not
+/// used), station 1's Ia, Ib, Ic, Uab, Ubc, Uca and its nominal current
+/// (string 3309), a section count N, then N sections of length, R, X per
+/// km, supports and comment. The method becomes 1, station 1's sections
+/// are replaced, station 2 is left as it was. A field past the end reads
+/// empty (the scan finds nothing; an integer 0), and an empty field's
+/// leading-blank skip runs on into the next line, as the tokenizer does.
+/// None never comes back today (the reader's CException path, `0x4a4c9c`,
+/// is the text conversion's).
+pub fn apply_legacy(text: &str, cur: &OmpParams) -> Option<OmpParams> {
+    let mut rest = text;
+    let mut field = || -> Option<String> {
+        let t = rest.trim_start_matches(['\t', '\n', '\r', ' ']);
+        let end = t.find(['\t', '\n', '\r', ',']).unwrap_or(t.len());
+        let v = t[..end].to_string();
+        rest = t.get(end + 1..).unwrap_or("");
+        Some(v)
+    };
+    field()?;
+    let mut p = cur.clone();
+    p.method = ISOLATED;
+    let st = &mut p.stations[0];
+    for slot in [&mut st.ia, &mut st.ib, &mut st.ic, &mut st.uab, &mut st.ubc, &mut st.uca, &mut st.inom] {
+        *slot = field()?;
+    }
+    let n = crate::comtrade::read_int(&field()?).max(0);
+    let mut sections = Vec::new();
+    for _ in 0..n {
+        let (length, r, x, supports, comment) = (field()?, field()?, field()?, field()?, field()?);
+        sections.push(SectionParams { length, r, x, supports, comment, ..Default::default() });
+    }
+    st.sections = sections;
+    Some(p)
+}
+
 fn read_station(n: &Node) -> StationParams {
     let g = |k: &str| n.get(k, "");
     let mut st = StationParams {
@@ -682,5 +719,23 @@ mod tests {
         assert_eq!(s2.taps.len(), 1, "child1 missing: a tap");
         assert_eq!((s2.taps[0].r0.as_str(), s2.taps[0].x0.as_str()), ("0", "0"));
         assert_eq!(s2.lines[0].rm, "2");
+    }
+
+    /// `0x4a45f0`: the legacy text — a discarded integer, Ia … Uca, the
+    /// nominal current, N, N sections of five fields; method 1; station 2
+    /// untouched; a short file loads nothing.
+    #[test]
+    fn legacy_omp_text() {
+        let mut cur = sample();
+        cur.stations[1].name = "B".into();
+        let p = apply_legacy("7\nIa,Ib,Ic\tUab,Ubc,Uca\n100\n2\n1.5,0.1,0.4,12,first\n2,0.2,0.5,8,\n", &cur).unwrap();
+        assert_eq!(p.method, ISOLATED);
+        let st = &p.stations[0];
+        assert_eq!((st.ia.as_str(), st.uca.as_str(), st.inom.as_str()), ("Ia", "Uca", "100"));
+        assert_eq!(st.sections.len(), 2);
+        assert_eq!((st.sections[0].length.as_str(), st.sections[0].r.as_str(), st.sections[0].supports.as_str(), st.sections[0].comment.as_str()), ("1.5", "0.1", "12", "first"));
+        assert_eq!(p.stations[1].name, "B", "station 2 untouched");
+        let short = apply_legacy("7\nIa,Ib\n", &cur).unwrap();
+        assert_eq!((short.stations[0].ib.as_str(), short.stations[0].ic.as_str(), short.stations[0].sections.len()), ("Ib", "", 0), "past the end: empty, N = 0");
     }
 }

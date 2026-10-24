@@ -240,7 +240,7 @@ items (VM ones also in W4.4):
     channel drop-down with formula channels (spec §8.4).
   - **W6**: landscape margins (our CUPS path), drivers resetting the DC,
     short-row files (no sample), the `.zip` writer (unreachable).
-- [ ] W3.2 Settle the static ones — part A (rec+0x278, `zk:`, θ, bitmap 464, the print clip → RUN, «none», k, the zero-sample walk, the vector width, #12964, an area on an unknown channel, ph / ccbm): L9.194; part B running.
+- [x] W3.2 Settle the static ones — part A (rec+0x278, `zk:`, θ, bitmap 464, the print clip → RUN, «none», k, the zero-sample walk, the vector width, #12964, an area on an unknown channel, ph / ccbm): L9.194; part B (`0x428490`'s callers, Repos, the splitter strip, `0x426020` on pending lanes, 61702 / the catches, ADC, NaN DC, the merge's own frequency, the off-lane H pane, the Save As title, OSC2 as COMTRADE, the legacy `.omp`): L9.197. Left: the print clip (→ RUN).
 - [ ] W3.3 Run the RUN ones (W4.4) and tidy the settled rows' wording (tidied 2026-10-24: L4, L5 ×2, L7, L8 ×2, L3, L2's `arg:`).
 
 ## W4 — Run the original on the Windows VM

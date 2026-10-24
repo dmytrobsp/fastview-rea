@@ -23,6 +23,18 @@ pub enum Skin {
 }
 
 impl Skin {
+    /// The splitter strip's brush (`0x438110`, by the frame's look id):
+    /// Black (83, 83, 83), Silver (208, 212, 221), Aqua (196, 202, 217),
+    /// every other look (191, 219, 255).
+    pub fn splitter(self) -> Color32 {
+        match self {
+            Skin::Black => Color32::from_rgb(83, 83, 83),
+            Skin::Silver => Color32::from_rgb(208, 212, 221),
+            Skin::Aqua => Color32::from_rgb(196, 202, 217),
+            _ => Color32::from_rgb(191, 219, 255),
+        }
+    }
+
     /// In `ApplicationLook` order: 210 Windows 2000 … 214 VS.NET 2005, then
     /// the Office 2007 styles 215 … 218 (`0x475250`).
     pub const ALL: [Skin; 9] =

@@ -447,7 +447,11 @@ impl App {
                 let corr = fvb_core::freqcorr::of(&d.osc);
                 let s1 = SyncChan { times: &t1, x: x1, n: n1, corr: corr.and_then(|c| c.for_chan(c1)) };
                 let corr2 = corr.map(|c| fvb_core::freqcorr::FreqCorr { chan: fvb_core::freqcorr::OTHER, fs: if p.pasted.rate > 0.0 { p.pasted.rate } else { c.fs }, ..c });
-                let s2 = SyncChan { times: &p.pasted.times, x: &a2.samples, n: n2, corr: corr2 };
+                // The pasted channel through the accessor `0x426020` (no
+                // bit-14 branch: its own samples, DC and invert applied —
+                // the lane's `pending_own`), not the clip's raw values.
+                let own = d.computed.iter().find(|c| c.formula == PENDING && c.name == p.name()).map(|c| &c.pending_own).filter(|v| !v.is_empty());
+                let s2 = SyncChan { times: &p.pasted.times, x: own.unwrap_or(&a2.samples), n: n2, corr: corr2 };
                 let k1 = d.main_cursor;
                 let k2 = merge::cursor_in(k1, rate, p.pasted.rate, d.merge_offset);
                 if m == 1 {

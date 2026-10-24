@@ -874,8 +874,11 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
         station: String::new(),
         device: format!("OSC Осциллограф. Версия {major}.{minor}"),
         rev_year: 0,
-        // What an OSC2 record saved as COMTRADE carries: NOT DETERMINED.
-        rev_text: "1999".into(),
+        // Nothing on the OSC path sets the revision (only the `.cfg`
+        // parser `0x450e70` writes rec+0x240): saved as COMTRADE the record
+        // has no revision field, 10-field analog lines, `n,name,state`
+        // digital lines and no multiplier line (`0x44e556`; L9.197).
+        rev_text: String::new(),
         format: "ASCII".into(),
         line_freq: fnom,
         time,

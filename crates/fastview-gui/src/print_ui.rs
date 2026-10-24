@@ -115,6 +115,9 @@ const PREVIEW_DPI: f32 = 110.0;
 
 const TICK_LABELS: [&str; 5] = ["Осциллограмма", "Частотная диаграмма", "Векторная диаграмма", "Круговая диаграмма", "Дифференциальная диаграмма"];
 
+/// mfc120rus string 61702.
+pub const MSG_PRINT_FAILED: &str = "Не удалось запустить задание печати.";
+
 impl App {
     fn printers_refresh(&mut self) {
         let (list, default) = spool::printers();
@@ -181,7 +184,10 @@ impl App {
         match printer {
             Some(p) => match spool::print(&p, &title, &imgs, &dev, &setup) {
                 Ok(()) => self.status = format!("Отправлено на печать: {} стр.", imgs.len()),
-                Err(e) => self.dlg.push_alert(format!("Ошибка печати: {e}")),
+                // MFC's OnFilePrint: a printer DC that fails or a StartDoc
+                // of −1 shows string 61702 in an MB_OK box (`0x10232bcf`,
+                // `0x1023303b`); the cause is not shown.
+                Err(_) => self.dlg.push_alert(MSG_PRINT_FAILED),
             },
             None => {
                 if let Some(path) = rfd::FileDialog::new().add_filter("PDF", &["pdf"]).set_file_name(format!("{title}.pdf")).save_file() {

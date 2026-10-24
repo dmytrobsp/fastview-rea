@@ -471,11 +471,16 @@ impl App {
                 }
                 Some(DialogAction::Cancel) => {}
                 Some(DialogAction::Load) => {
-                    // The original reports nothing: an unreadable or legacy
-                    // file leaves the dialog as it was (`0x4a9010`).
+                    // The original reports nothing: an unreadable file leaves
+                    // the dialog as it was (`0x4a9010`); one that is no XML
+                    // goes through the legacy reader (`0x4a8f10` →
+                    // `0x4a45f0`, text in the display encoding).
                     if let Some(path) = omp_file_dialog().pick_file() {
-                        if let Some(p) = std::fs::read(&path).ok().and_then(|b| fvb_core::recset::omp_from_file_bytes(&b)) {
-                            dlg.load(p);
+                        if let Ok(b) = std::fs::read(&path) {
+                            let legacy = || fvb_core::omp_params::apply_legacy(&fvb_core::comtrade::decode_bytes(&b, self.encoding), &dlg.work);
+                            if let Some(p) = fvb_core::recset::omp_from_file_bytes(&b).or_else(legacy) {
+                                dlg.load(p);
+                            }
                         }
                     }
                     self.omp_ui.dialog = Some(dlg);

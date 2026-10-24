@@ -5828,11 +5828,55 @@ Test `no_horizontal_bar_while_the_record_fits`.
 Residual: whether a bar shown once stays (disabled) after zooming back out
 (W1.3b's question for the planes too).
 
+### L9.197 — W3.2 part B: twelve more static unknowns; OSC2 saved as COMTRADE, the print-failure box, the splitter strip, the merge's own frequency and sync, the legacy `.omp`  ·  ✅
+Read (background agent, W3.1's STATIC list):
+- The per-channel refresh `0x428490` (L9.103): every flag / coefficient
+  command ends in the full recompute (as ours); the diagrams' own channel
+  menus (`0x436fb0`, `0x46f100`, `0x48f590`) and quick analysis 137
+  (`0x416fc0`) refresh only the toggled channel — and `0x428490` reads no
+  diagram bit (only 0x380 / 0x400 / 0x800 / 0x1000 / 0x2000).
+- MFC's Repos (`0x101227d5`) equalises a column's widths only with
+  panel+0x90 set, which nothing sets (`0x101218ae`): large buttons keep
+  their widths — as ours (L9.114).
+- The splitter strip `0x438110`: PatBlt 5 px with a brush by the look —
+  216 Black (83, 83, 83), 217 Silver (208, 212, 221), 218 Aqua (196, 202,
+  217), else (191, 219, 255) (L9.118).
+- `0x426020` has no bit-14 branch: a pending channel reads its own
+  samples (× k, ADC, DC, invert) (L9.126).
+- String 61702 «Не удалось запустить задание печати.» — MFC's OnFilePrint
+  when the printer DC is null or StartDoc fails; every catch posting to
+  `0x475680` is catch(CException*) (16 sites) (L9.131).
+- 32852 (ADC) skips bit 13 only — pending lanes count (`0x430407`,
+  `0x4304f5`) (L9.135). The DC mean propagates a NaN (`0x428795`) (L9.136).
+- The merge's padder `0x428c20` pads a non-empty `ch+0x50` with the base's
+  nominal frequency, front and back (L9.137).
+- The "no lane at y" placement is reached while dragging an H cursor
+  (`0x495b40`): the pane reads «Гор. визир N:    0 » (L9.147).
+- The Save As title cuts at the last dot of the file name (CommonInclude
+  `GetFileTitle_` `0x10008be0`) (L9.158).
+- An OSC2 record has no revision (only `0x450e70` writes rec+0x240): saved
+  as COMTRADE no revision field, 10-field analog lines, `n,name,state`
+  digital lines, no multiplier line (`0x44e556`); the binary writer
+  `0x44e920` writes pending columns the `.cfg` does not declare (L9.172).
+- The legacy `.omp` reader `0x4a45f0` (spec §8.5): see `apply_legacy`.
+Ours wrote ",1999" for an OSC2 record saved as COMTRADE, printed «Ошибка
+печати: …», drew the splitter strip in the panel colour, synchronised the
+merge on the clip's raw values, left the own frequency unpadded and read
+no legacy `.omp`. Now `parse_osc` leaves the revision empty, the print
+failure shows 61702, `Skin::splitter`, the sync reads `pending_own`,
+`merge::pad_own`, `omp_params::apply_legacy` as the dialog's fallback.
+Tests `legacy_omp_text`, the merge's own-frequency test extended.
+Residual: ADC on pending lanes (ours excludes them); the H pane's
+«Гор. визир N:    0 » while dragging off an analog lane; the diagram
+menus' one-channel refresh (ours computes live — no stale cache); a
+leading-dot file name proposes "" in the original; the pending columns of
+the binary writer (a broken file — not reproduced).
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.196)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.197)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5888,7 +5932,7 @@ fill, the group stats width); L9.186 the panes' captions; L9.187 the ribbon's pa
 gradient / height; L9.188 `doc+0x1d8` = every analog-kind record (W2.16),
 the unknowns table (W3.1); L9.189 formula channels on the frequency
 diagram; L9.190 VM runs (no document, single instance); L9.191 «Каналы» rows in
-vector order; L9.192 the ОМП flags as computed channels; L9.193 the lanes' icons; L9.194 W3.2 part A; L9.195 the ribbon's tab; L9.196 the view's scroll bars (VM run).
+vector order; L9.192 the ОМП flags as computed channels; L9.193 the lanes' icons; L9.194 W3.2 part A; L9.195 the ribbon's tab; L9.196 the view's scroll bars (VM run); L9.197 W3.2 part B.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped
