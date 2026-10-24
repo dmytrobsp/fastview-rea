@@ -321,7 +321,8 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   the check box: L9.247; the system's Page Setup: L9.248; «Быстрый
   анализ»'s frame: L9.249, its formula page: L9.250, its other pages:
   L9.251; 359 and the TreeView, owner-centred placement: L9.252, its
-  hosted forms L9.253 (the 28 individually laid out ones open); open:
+  hosted forms L9.253 (the 28 individually laid out ones open); the
+  finder (558): L9.255–L9.256; open:
   the other dialogs laid out from their templates
   (`tools/dlg_templates.py`).
 

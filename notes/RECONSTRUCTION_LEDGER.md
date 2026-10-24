@@ -7073,6 +7073,29 @@ default, not what the dialog shows. Now `Finder::new` starts both at
 `Stamp::EPOCH`; the caption is «Поиск файлов». The dialog's layout
 (DIALOG 558's 739 × 354 DLU, the shell tree, pickers, lists) is next.
 
+### L9.256 — «Поиск файлов» (DIALOG 558) on its template  ·  ✅
+VM captures of the finder (empty Documents; then fv-test\records): the
+1109 × 575 px client placed by L9.252's rule (client 726, 420); every
+control at its template rectangle. Measured: the shell tree (2167, no
+lines at the root) in a frame of five 1 px rings — (130, 135, 144),
+white, (240), then the sunken edge (160) / (105) top and left, (255) /
+(227) bottom and right; «Папка:» and static 1084 with a static edge
+((160) top and left, white bottom and right) on (240); the station and
+block drop-down lists; the date pickers — white in a (141) frame, the
+long date 4 px in, the calendar image and ▾ at the right; the list (1082)
+— a (160) border, a 24 px header with (229) separators 2 px inside each
+column and the sort image after the sorted column's text (the original's
+own: a pale box with a pink triangle, pointing down for ascending —
+SortMode 6, Дата ascending), columns 257, 256, 85, 85, 85 px, 17 px rows
+ruled in (240) down the whole list, the file's image at +4 and its name
+at +18; «Выбрать», «Включая вложенные папки», «Удалить файлы», «Открыть
+файлы» (the default), «Закрыть»; «Поиск файлов...» at its place while
+scanning. Ours was a side panel with an egui tree, combo boxes, buttons
+for the pickers and a striped egui grid. Now it is drawn so (the tree
+through `win_tree`; the pickers' calendar popup kept; off Windows our
+delete prompt is a message box over the finder). Residual: the shell's
+icons and namespace are ours; the tree has no scroll bars of its own.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

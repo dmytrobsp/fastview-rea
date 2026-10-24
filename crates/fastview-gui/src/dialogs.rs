@@ -74,10 +74,6 @@ impl<'o> Dlg<'o> {
         self.win = self.win.order(order);
         self
     }
-    pub fn default_size(mut self, size: impl Into<Vec2>) -> Self {
-        self.win = self.win.default_size(size);
-        self
-    }
     pub fn interactable(mut self, on: bool) -> Self {
         self.win = self.win.interactable(on);
         self

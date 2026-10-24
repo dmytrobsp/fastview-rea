@@ -77,10 +77,27 @@ pub fn weekday(y: i32, mo: u32, d: u32) -> u32 {
 /// A date picker (SysDateTimePick32, long date, drop-down calendar, no
 /// «none» check): the button shows the long date; the calendar browses by
 /// month and a day click sets the date, keeping the time of day.
-fn date_picker(ui: &mut egui::Ui, id: &str, st: &mut Stamp) -> bool {
+fn date_picker(ui: &mut egui::Ui, at: egui::Rect, id: &str, st: &mut Stamp) -> bool {
     let popup = egui::Id::new(("fv_finder_date", id));
     let browse_id = popup.with("month");
-    let r = ui.button(format!("{} ▾", st.long_date()));
+    // Closed (VM): white in a (141) frame, the long date 4 px in, the
+    // calendar image and its ▾ at the right (our drawing of the image).
+    let r = ui.interact(at, popup.with("field"), egui::Sense::click());
+    {
+        use egui::{Color32, Pos2, Rect, Vec2};
+        let p = ui.painter();
+        p.rect_filled(at, 0.0, Color32::from_gray(141));
+        p.rect_filled(at.shrink(1.0), 0.0, Color32::WHITE);
+        p.text(Pos2::new(at.left() + 4.0, at.center().y), egui::Align2::LEFT_CENTER, st.long_date(), crate::dialogs::DLG_FONT, Color32::BLACK);
+        let cal = Rect::from_min_size(Pos2::new(at.right() - 27.0, at.center().y - 6.0), Vec2::new(11.0, 12.0));
+        p.rect_filled(cal, 0.0, Color32::from_rgb(119, 107, 104));
+        p.rect_filled(cal.shrink(1.0), 0.0, Color32::from_rgb(234, 239, 247));
+        for k in 0..3 {
+            p.hline(cal.left() + 2.0..=cal.right() - 2.0, cal.top() + 3.5 + 2.5 * k as f32, egui::Stroke::new(1.0f32, Color32::from_gray(190)));
+        }
+        let c = Pos2::new(at.right() - 9.0, at.center().y);
+        p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(-3.0, -1.5), c + Vec2::new(3.0, -1.5), c + Vec2::new(0.0, 1.5)], Color32::from_rgb(77, 97, 133), egui::Stroke::NONE));
+    }
     if r.clicked() {
         ui.memory_mut(|m| m.toggle_popup(popup));
         ui.data_mut(|d| d.insert_temp(browse_id, (st.y.max(1601), st.mo.clamp(1, 12))));
@@ -707,122 +724,183 @@ impl App {
         }
         let mut rescan = false;
         let mut open = true;
-        // The template's caption (DIALOG 558), not the menu item's.
+        // The template's caption (DIALOG 558), not the menu item's; its
+        // 739 × 354 DLU (1109 × 575 px), every control at its rectangle.
         crate::dialogs::dlg(ctx, "Поиск файлов")
+            .margin(0.0)
             .collapsible(false)
-            .default_size([900.0, 520.0])
+            .resizable(false)
             .open(&mut open)
             .show(ctx, |ui| {
-                egui::SidePanel::left("finder_tree").default_width(220.0).show_inside(ui, |ui| {
-                    // The shell tree (lines, buttons, no lines at the root).
-                    egui::ScrollArea::both().max_height(360.0).auto_shrink([false, false]).show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        let mut toggle = None;
-                        for (node, depth, open, more) in f.tree.rows() {
-                            ui.horizontal(|ui| {
-                                ui.add_space(depth as f32 * 16.0);
-                                let (r, resp) = ui.allocate_exact_size(egui::vec2(14.0, 18.0), egui::Sense::click());
-                                if more {
-                                    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, if open { "▾" } else { "▸" }, egui::FontId::proportional(12.0), ui.visuals().text_color());
-                                    if resp.clicked() {
-                                        toggle = Some(node.clone());
-                                    }
-                                }
-                                // A small drawn icon (the shell's images are its own).
-                                let (ir, _) = ui.allocate_exact_size(egui::vec2(16.0, 18.0), egui::Sense::hover());
-                                let c = ir.center();
-                                let pt = ui.painter();
-                                match node {
-                                    Node::Dir(_) => {
-                                        let fill = egui::Color32::from_rgb(240, 200, 90);
-                                        pt.rect_filled(egui::Rect::from_min_size(c + egui::vec2(-7.0, -4.0), egui::vec2(6.0, 3.0)), 1.0f32, fill);
-                                        pt.rect(egui::Rect::from_min_size(c + egui::vec2(-7.0, -2.0), egui::vec2(14.0, 9.0)), 1.0f32, fill, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(170, 130, 40)));
-                                    }
-                                    _ => {
-                                        let blue = egui::Color32::from_rgb(70, 110, 180);
-                                        pt.rect(egui::Rect::from_min_size(c + egui::vec2(-7.0, -6.0), egui::vec2(14.0, 9.0)), 1.0f32, egui::Color32::from_rgb(170, 200, 240), egui::Stroke::new(1.0f32, blue));
-                                        pt.hline((c.x - 4.0)..=(c.x + 4.0), c.y + 6.0, egui::Stroke::new(1.5f32, blue));
-                                    }
-                                }
-                                let label = ui.add(egui::Label::new(node.label()).selectable(false).sense(egui::Sense::click()));
-                                if f.tree.selected == node {
-                                    ui.painter().rect_stroke(label.rect.expand(1.0), 1.0f32, ui.visuals().selection.stroke);
-                                }
-                                if label.clicked() {
-                                    f.tree.selected = node.clone();
-                                }
-                                if label.double_clicked() && more {
-                                    toggle = Some(node.clone());
-                                }
-                            });
+                use crate::dialogs::{dlu, win_button, win_check, win_combo_list, win_label, win_tree, TreeRow, DLG_FONT};
+                use egui::{Color32, Pos2, Rect, Stroke, Vec2};
+                let (client, _) = ui.allocate_exact_size(Vec2::new(1109.0, 575.0), egui::Sense::hover());
+                let r = |x, y, w, h| dlu(client, x, y, w, h);
+                win_label(ui, r(12, 36, 174, 8), "Выберите папку для поиска", false, true);
+                // The shell tree (2167: lines, buttons, no lines at the
+                // root), in its frame (VM): (130, 135, 144), white, (240),
+                // then the sunken edge — (160) / (105) top and left, (255) /
+                // (227) bottom and right.
+                let tr = r(8, 57, 177, 243);
+                let rows_t = f.tree.rows();
+                let rows: Vec<TreeRow> = rows_t.iter().map(|(node, depth, open, more)| TreeRow { depth: *depth, label: node.label(), has_children: *more, expanded: *open, selected: f.tree.selected == *node }).collect();
+                let ev = win_tree(ui, tr.shrink(4.0), egui::Id::new("finder_tree"), Color32::TRANSPARENT, &rows, false, &mut |p, cell, k| {
+                    let c = cell.center();
+                    match rows_t[k].0 {
+                        Node::Dir(_) => {
+                            let fill = Color32::from_rgb(240, 200, 90);
+                            p.rect_filled(Rect::from_min_size(c + Vec2::new(-7.0, -4.0), Vec2::new(6.0, 3.0)), 1.0f32, fill);
+                            p.rect(Rect::from_min_size(c + Vec2::new(-7.0, -2.0), Vec2::new(14.0, 9.0)), 1.0f32, fill, Stroke::new(1.0f32, Color32::from_rgb(170, 130, 40)));
                         }
-                        if let Some(n) = toggle {
-                            f.tree.toggle(&n);
-                        }
-                    });
-                    // «Выбрать» (`0x46b8f0`): the tree's folder, rescanned
-                    // only when it differs (case-sensitively); a virtual node
-                    // does nothing.
-                    if ui.button("Выбрать").clicked() {
-                        if let Some(p) = f.tree.chosen().filter(|p| p.as_os_str() != f.folder.as_os_str()).map(Path::to_path_buf) {
-                            f.folder = p;
-                            rescan = true;
+                        _ => {
+                            let blue = Color32::from_rgb(70, 110, 180);
+                            p.rect(Rect::from_min_size(c + Vec2::new(-7.0, -6.0), Vec2::new(14.0, 9.0)), 1.0f32, Color32::from_rgb(170, 200, 240), Stroke::new(1.0f32, blue));
+                            p.hline((c.x - 4.0)..=(c.x + 4.0), c.y + 6.0, Stroke::new(1.5f32, blue));
                         }
                     }
-                    if ui.checkbox(&mut f.recursive, "Включая вложенные папки").changed() {
+                });
+                {
+                    let p = ui.painter();
+                    let ring = |q: Rect, tl: Color32, br: Color32| {
+                        p.rect_filled(Rect::from_min_max(q.min, Pos2::new(q.right(), q.top() + 1.0)), 0.0, tl);
+                        p.rect_filled(Rect::from_min_max(q.min, Pos2::new(q.left() + 1.0, q.bottom())), 0.0, tl);
+                        p.rect_filled(Rect::from_min_max(Pos2::new(q.left(), q.bottom() - 1.0), q.max), 0.0, br);
+                        p.rect_filled(Rect::from_min_max(Pos2::new(q.right() - 1.0, q.top()), q.max), 0.0, br);
+                    };
+                    ring(tr, Color32::from_rgb(130, 135, 144), Color32::from_rgb(130, 135, 144));
+                    ring(tr.shrink(1.0), Color32::WHITE, Color32::WHITE);
+                    ring(tr.shrink(2.0), Color32::from_gray(240), Color32::from_gray(240));
+                    ring(tr.shrink(3.0), Color32::from_gray(160), Color32::WHITE);
+                    ring(tr.shrink(4.0), Color32::from_gray(105), Color32::from_gray(227));
+                }
+                if let Some(k) = ev.toggled.or(ev.double_clicked.filter(|&k| rows_t[k].3)) {
+                    f.tree.toggle(&rows_t[k].0);
+                }
+                if let Some(k) = ev.clicked {
+                    f.tree.selected = rows_t[k].0.clone();
+                }
+                // «Выбрать» (`0x46b8f0`): the tree's folder, rescanned
+                // only when it differs (case-sensitively); a virtual node
+                // does nothing.
+                if win_button(ui, r(12, 306, 40, 13), "Выбрать", false).clicked() {
+                    if let Some(p) = f.tree.chosen().filter(|p| p.as_os_str() != f.folder.as_os_str()).map(Path::to_path_buf) {
+                        f.folder = p;
                         rescan = true;
                     }
-                });
-                // «Папка:» and a framed read-only field (static 1084).
-                ui.horizontal(|ui| {
-                    ui.label("Папка:");
-                    egui::Frame::none().stroke(ui.visuals().widgets.noninteractive.bg_stroke).inner_margin(egui::Margin::symmetric(4.0, 1.0)).show(ui, |ui| {
-                        ui.add(egui::Label::new(f.folder.display().to_string()).truncate());
-                    });
-                });
-                ui.horizontal(|ui| {
-                    for (label, cur, list) in [("Станция", &mut f.station, f.files.iter().map(|x| x.station.clone()).collect::<std::collections::BTreeSet<_>>()), ("Блок", &mut f.block, f.files.iter().map(|x| x.block.clone()).collect())] {
-                        ui.label(label);
-                        egui::ComboBox::from_id_salt(label).selected_text(cur.clone()).show_ui(ui, |ui| {
-                            ui.selectable_value(cur, ALL.to_string(), ALL);
-                            for v in list {
-                                ui.selectable_value(cur, v.clone(), v);
-                            }
-                        });
-                    }
-                    // A date change refilters (`0x46cfd0`).
-                    for (label, st) in [("С:", &mut f.from), ("По:", &mut f.to)] {
-                        ui.label(label);
-                        date_picker(ui, label, st);
-                    }
-                });
-                if f.busy() {
-                    ui.label("Поиск файлов...");
                 }
+                if win_check(ui, r(72, 307, 111, 11), "Включая вложенные папки", f.recursive) {
+                    f.recursive = !f.recursive;
+                    rescan = true;
+                }
+                // «Папка:» and static 1084 with its static edge (VM: (160)
+                // top and left, white bottom and right).
+                win_label(ui, r(195, 12, 27, 11), "Папка:", false, true);
+                let pr = r(233, 10, 330, 12);
+                {
+                    let p = ui.painter();
+                    p.rect_filled(pr, 0.0, Color32::WHITE);
+                    p.rect_filled(Rect::from_min_max(pr.min, pr.max - Vec2::splat(1.0)), 0.0, Color32::from_gray(160));
+                    p.rect_filled(Rect::from_min_max(pr.min + Vec2::splat(1.0), pr.max - Vec2::splat(1.0)), 0.0, Color32::from_gray(240));
+                    p.with_clip_rect(pr.shrink(1.0)).text(Pos2::new(pr.left() + 3.0, pr.center().y), egui::Align2::LEFT_CENTER, f.folder.display().to_string(), DLG_FONT, Color32::BLACK);
+                }
+                for (k, (lr, cr)) in [((194, 36, 36, 11), (233, 34, 118, 265)), ((354, 36, 23, 11), (380, 34, 116, 265))].into_iter().enumerate() {
+                    let (label, value) = if k == 0 { ("Станция:", &mut f.station) } else { ("Блок:", &mut f.block) };
+                    win_label(ui, r(lr.0, lr.1, lr.2, lr.3), label, false, true);
+                    let mut items = vec![ALL.to_string()];
+                    let list: std::collections::BTreeSet<String> = f.files.iter().map(|x| if k == 0 { x.station.clone() } else { x.block.clone() }).collect();
+                    items.extend(list);
+                    let at = items.iter().position(|it| it == value).unwrap_or(0);
+                    if let Some(pick) = win_combo_list(ui, r(cr.0, cr.1, cr.2, cr.3), egui::Id::new(("finder_combo", k)), &items, at, true) {
+                        *value = items[pick].clone();
+                    }
+                }
+                // A date change refilters (`0x46cfd0`).
+                win_label(ui, r(503, 36, 11, 9), "С:", false, true);
+                date_picker(ui, r(517, 34, 94, 12), "С:", &mut f.from);
+                win_label(ui, r(621, 36, 13, 9), "По:", false, true);
+                date_picker(ui, r(636, 34, 94, 12), "По:", &mut f.to);
+                // The list (1082, report, grid lines; VM): a (160) border, a
+                // 24 px header with (229) separators 2 px inside each column
+                // and the sort image after its column's text, columns 257,
+                // 256, 85, 85, 85 px, 17 px rows ruled in (240) down the
+                // whole list; the file's image at +4, its name at +18.
+                let lr = r(198, 57, 532, 243);
+                let inner = lr.shrink(1.0);
                 let rows = f.rows();
-                egui::ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
-                    egui::Grid::new("finder_list").striped(true).num_columns(5).show(ui, |ui| {
-                        for (col, label) in [(Column::Name, "Название файла"), (Column::Station, "Станция"), (Column::Block, "Блок"), (Column::Date, "Дата"), (Column::Time, "Время")] {
-                            let arrow = if f.sort.0 == col { if f.sort.1 { " ▼" } else { " ▲" } } else { "" };
-                            if ui.button(format!("{label}{arrow}")).clicked() {
-                                f.click_sort(col);
-                            }
-                        }
-                        ui.end_row();
-                        let (ctrl, shift) = ui.input(|i| (i.modifiers.command || i.modifiers.ctrl, i.modifiers.shift));
+                {
+                    let p = ui.painter();
+                    p.rect_filled(lr, 0.0, Color32::from_gray(160));
+                    p.rect_filled(inner, 0.0, Color32::WHITE);
+                }
+                let cols = [(Column::Name, "Название файла", 257.0), (Column::Station, "Станция", 256.0), (Column::Block, "Блок", 85.0), (Column::Date, "Дата", 85.0), (Column::Time, "Время", 85.0)];
+                let grid = Stroke::new(1.0f32, Color32::from_gray(240));
+                let mut x = inner.left();
+                let mut xs = Vec::new();
+                for (col, label, w) in cols {
+                    let h = Rect::from_min_size(Pos2::new(x, inner.top()), Vec2::new(w, 24.0));
+                    xs.push((x, w));
+                    let p = ui.painter();
+                    p.vline(h.right() - 1.5, h.y_range(), Stroke::new(1.0f32, Color32::from_gray(229)));
+                    p.vline(h.right() - 0.5, h.bottom()..=inner.bottom(), grid);
+                    let t = p.with_clip_rect(h).text(Pos2::new(h.left() + 6.0, h.center().y), egui::Align2::LEFT_CENTER, label, DLG_FONT, Color32::BLACK);
+                    if f.sort.0 == col {
+                        // The sort image (the original's own: a pale box
+                        // with a pink triangle) after the text.
+                        let b = Rect::from_min_size(Pos2::new(t.right() + 13.0, h.center().y - 6.0), Vec2::splat(12.0));
+                        p.rect_filled(b, 0.0, Color32::from_gray(214));
+                        p.rect_filled(b.shrink(1.0), 0.0, Color32::WHITE);
+                        let c = b.center();
+                        // Ascending points down (VM: SortMode 6, Дата ascending).
+                        let s = if f.sort.1 { -1.0 } else { 1.0 };
+                        p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(-3.0, -1.5 * s), c + Vec2::new(3.0, -1.5 * s), c + Vec2::new(0.0, 1.5 * s)], Color32::from_rgb(239, 36, 107), Stroke::NONE));
+                    }
+                    if ui.interact(h, ui.id().with(("finder_hdr", label)), egui::Sense::click()).clicked() {
+                        f.click_sort(col);
+                    }
+                    x += w;
+                }
+                let mut y = inner.top() + 24.0 + 16.5;
+                while y < inner.bottom() {
+                    ui.painter().hline(inner.x_range(), y, grid);
+                    y += 17.0;
+                }
+                if f.busy() {
+                    win_label(ui, r(431, 180, 60, 10), "Поиск файлов...", false, true);
+                }
+                let (ctrl, shift) = ui.input(|i| (i.modifiers.command || i.modifiers.ctrl, i.modifiers.shift));
+                let body = Rect::from_min_max(Pos2::new(inner.left(), inner.top() + 24.0), inner.max);
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(body), |ui| {
+                    egui::ScrollArea::vertical().id_salt("finder_list").show(ui, |ui| {
+                        ui.spacing_mut().item_spacing = Vec2::ZERO;
                         for &i in &rows {
+                            let (row, resp) = ui.allocate_exact_size(Vec2::new(body.width(), 17.0), egui::Sense::click());
                             let x = &f.files[i];
                             let sel = f.selected.contains(&i);
-                            let r = ui.selectable_label(sel, format!("{} {}", if x.osc { "〰" } else { "📄" }, x.name));
+                            let p = ui.painter();
+                            if sel {
+                                p.rect_filled(Rect::from_min_size(row.min, Vec2::new(xs[4].0 + xs[4].1 - inner.left() - 1.0, 16.0)), 0.0, Color32::from_rgb(0, 120, 215));
+                            }
+                            let ink = if sel { Color32::WHITE } else { Color32::BLACK };
+                            // The file's image (the original's own: ours a
+                            // page, green for an oscillogram description).
+                            let ic = Rect::from_min_size(row.min + Vec2::new(4.0, 0.5), Vec2::new(12.0, 15.0));
+                            p.rect(ic, 0.0, Color32::from_rgb(244, 252, 245), Stroke::new(1.0f32, if x.osc { Color32::from_rgb(53, 104, 48) } else { Color32::from_gray(120) }));
+                            let texts = [x.name.clone(), x.station.clone(), x.block.clone(), x.time.date(), x.time.time()];
+                            for (k, t) in texts.into_iter().enumerate() {
+                                let (cx, cw) = xs[k];
+                                let cell = Rect::from_min_size(Pos2::new(cx, row.top()), Vec2::new(cw - 1.0, 16.0));
+                                let at = Pos2::new(cx + if k == 0 { 18.0 } else { 6.0 }, row.top() + 8.0);
+                                p.with_clip_rect(cell).text(at, egui::Align2::LEFT_CENTER, t, DLG_FONT, ink);
+                            }
                             // NM_DBLCLK (`0x46e330`): with a selection, OnOK —
                             // every selected file opens (the first click of
                             // the double-click has set the selection).
-                            if r.double_clicked() {
+                            if resp.double_clicked() {
                                 if !f.selected.contains(&i) {
                                     f.selected = vec![i];
                                 }
                                 open_files = f.selected.iter().map(|&j| f.files[j].path.clone()).collect();
-                            } else if r.clicked() {
+                            } else if resp.clicked() {
                                 if ctrl {
                                     if sel {
                                         f.selected.retain(|&j| j != i);
@@ -837,58 +915,50 @@ impl App {
                                     f.selected = vec![i];
                                 }
                             }
-                            ui.label(&x.station);
-                            ui.label(&x.block);
-                            ui.label(x.time.date());
-                            ui.label(x.time.time());
-                            ui.end_row();
                         }
                     });
                 });
-                ui.horizontal(|ui| {
-                    // Neither button is ever greyed (the finder only enables
-                    // and disables its list).
-                    if ui.button("Удалить файлы").clicked() && !f.selected.is_empty() {
-                        // `0x46d4b0`: every selected file and its companions
-                        // in one shell delete — to the recycle bin unless
-                        // Shift is held; the shell asks, not the program.
-                        let paths: Vec<PathBuf> = f.selected.iter().flat_map(|&i| companions(&f.files[i].path)).collect();
-                        let permanent = ui.input(|i| i.modifiers.shift);
-                        if cfg!(windows) {
-                            rescan = shell_delete(&paths, permanent);
-                        } else {
-                            f.confirm_delete = Some((paths, permanent));
-                        }
-                    }
-                    // OnOK: stop the scan, open every selected file, close —
-                    // with nothing selected it only closes.
-                    if ui.button("Открыть файлы").clicked() {
-                        open_files = f.selected.iter().map(|&i| f.files[i].path.clone()).collect();
-                        close = true;
-                    }
-                    if ui.button("Закрыть").clicked() {
-                        close = true;
-                    }
-                });
-                if let Some((paths, permanent)) = f.confirm_delete.clone() {
-                    // Off Windows there is no shell prompt: ours stands in.
-                    ui.separator();
-                    ui.label(if permanent {
-                        format!("Удалить безвозвратно файлы ({})?", paths.len())
+                // Neither button is ever greyed (the finder only enables
+                // and disables its list).
+                if win_button(ui, r(198, 306, 83, 14), "Удалить файлы", false).clicked() && !f.selected.is_empty() {
+                    // `0x46d4b0`: every selected file and its companions in
+                    // one shell delete — to the recycle bin unless Shift is
+                    // held; the shell asks, not the program.
+                    let paths: Vec<PathBuf> = f.selected.iter().flat_map(|&i| companions(&f.files[i].path)).collect();
+                    let permanent = ui.input(|i| i.modifiers.shift);
+                    if cfg!(windows) {
+                        rescan = shell_delete(&paths, permanent);
                     } else {
-                        format!("Переместить файлы в корзину ({})?", paths.len())
-                    });
-                    ui.horizontal(|ui| {
-                        if ui.button("Да").clicked() {
-                            rescan = shell_delete(&paths, permanent);
-                            f.confirm_delete = None;
-                        }
-                        if ui.button("Нет").clicked() {
-                            f.confirm_delete = None;
-                        }
-                    });
+                        f.confirm_delete = Some((paths, permanent));
+                    }
+                }
+                // OnOK: stop the scan, open every selected file, close —
+                // with nothing selected it only closes.
+                if win_button(ui, r(552, 306, 83, 14), "Открыть файлы", true).clicked() {
+                    open_files = f.selected.iter().map(|&i| f.files[i].path.clone()).collect();
+                    close = true;
+                }
+                if win_button(ui, r(648, 306, 83, 14), "Закрыть", false).clicked() {
+                    close = true;
                 }
             });
+        // Off Windows there is no shell prompt: ours stands in, a message
+        // box over the finder.
+        if let Some(f) = self.finder.as_mut() {
+            if let Some((paths, permanent)) = f.confirm_delete.clone() {
+                let text = if permanent { format!("Удалить безвозвратно файлы ({})?", paths.len()) } else { format!("Переместить файлы в корзину ({})?", paths.len()) };
+                crate::dialogs::dlg(ctx, crate::app::APP_TITLE).id(egui::Id::new("finder_confirm")).margin(0.0).collapsible(false).resizable(false).order(egui::Order::Foreground).show(ctx, |ui| {
+                    match crate::dialogs::message_box(ui, crate::dialogs::MsgIcon::Question, &text, &["Да", "Нет"]) {
+                        Some(0) => {
+                            rescan = shell_delete(&paths, permanent);
+                            f.confirm_delete = None;
+                        }
+                        Some(_) => f.confirm_delete = None,
+                        None => {}
+                    }
+                });
+            }
+        }
         if rescan {
             if let Some(f) = self.finder.as_mut() {
                 f.rescan();
