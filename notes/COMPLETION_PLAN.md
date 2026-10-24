@@ -30,7 +30,10 @@ own «Дополнительно» submenu (our extras) stays.
 4. **Runtime.** The W4 scenario checklist, run against the original on the
    Windows VM and against ours, matches (differences only from W6).
 5. **Gates.** Tests green on Linux and on Windows (the VM run), clippy
-   clean on both targets, the publish guard green.
+   clean on both targets, the publish guard green. CI runs the guard on every
+   push and the checks and builds only when something built changed since
+   the last commit whose checks passed (notes, tools, indexes and Markdown
+   alone skip them); a newer push cancels an older run.
 
 ## Measures
 
