@@ -7654,6 +7654,22 @@ Residual:
   ours' shortcuts.
 - The emblem is ours, not the original's artwork.
 
+### L9.278 — Side by side: the workspace after a restart  ·  ✅
+W4.3 on both programs (the original's registry key exported before and
+imported after, so later runs start from the same layout):
+- With WIN_1999 open, the vector diagram's caption ✕ hides the pane in
+  both; the circle diagram, its tab neighbour, takes the slot alone.
+- Closed with the title bar's ✕, the original writes the pane's
+  `IsVisible` 0 and its recent rects (12 registry lines, as L9.98 read).
+- Started again with no record, both show the same layout: no vector
+  pane, the circle diagram alone on the right, the differential diagram
+  beside it, Частотная along the bottom, the ribbon's «Векторная» unlit.
+Observed: in the original, Alt+F4 right after the caption ✕ does
+nothing (the window stays and nothing is saved); on its own Alt+F4 closes
+the window. The keyboard focus is most likely left on the hidden pane.
+Ours closes. Not reproduced: it looks like a focus slip, not a designed
+behaviour.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
