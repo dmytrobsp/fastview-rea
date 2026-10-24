@@ -6420,6 +6420,29 @@ Residual: how the ASCII reader takes binary bytes (the original keeps a
 few samples, ours none) — NOT DETERMINED; a revision-2013 BINARY
 record's `.cfg` / `.cff` (int32 written, int16 read) not run.
 
+### L9.222 — VM run: the diagrams' parameter grid as MFC's property grid draws it  ·  ✅
+Seen on the VM (Office 2007 Blue, the differential pane, block «БМРЗ -
+Защита трансформаторов (с 2025 г.в.)»), measured in pixels: 17 px rows
+(16 + a (185, 208, 237) line, the same colour for the column line); the
+name column half the grid's width; «Тип блока» 6 px in, groups and
+parameters 22 px in; group rows white like the rest (no band), the name
+bold, a 9 × 9 expand box at (+4, top + 3) — (145, 145, 145) frame, a
+light grey gradient, the sign in (75, 99, 167) —, and at the right a
+12 × 12 check box 4 px from the edge at top + 2 whose frame and tick take
+the characteristic's colour; values 5 px after the column line. The
+selected row — «Тип блока» after the rebuild (L9.156) — has its name
+cell filled (213, 228, 242), (180, 201, 233) once the grid has the focus;
+a selected combo row shows a 15 px drop button at the value's right,
+which opens the plain block list; one click on the value only selects.
+Ours: 20 px rows, a third for the names, a grey band for groups with a
+10 px box, a 12 px box with a blue «✓» glyph, no selection, «Тип блока»
+an egui combo. Now `char_side_panel` draws those (a selection kept per
+row, the focus colour after a press in the grid), «Тип блока» its text
+with the button on the selected row; harness `FV_WINDOW_BLOCK`.
+Residual: MFC's keyboard (arrows, ± and Enter on groups) still not
+modelled; the vertical scroll bar the original shows when the rows
+overflow (ours: egui's); the font metrics (ours 12 px).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

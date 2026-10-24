@@ -753,45 +753,76 @@ impl App {
     /// its parameters as text rows; an edit re-evaluates the whole block.
     fn char_side_panel(&mut self, ui: &mut egui::Ui) {
         const TEXT: egui::Color32 = egui::Color32::from_rgb(40, 40, 40);
+        // CMFCPropertyGridCtrl as the VM shows it (Office 2007 Blue): 17 px
+        // rows (16 + a (185, 208, 237) line), the name column half the
+        // width, names 6 px in (a group's and its parameters' 22 px, past
+        // the expand box), the selected row's name cell filled (180, 201,
+        // 233) with the focus, (213, 228, 242) without.
         let w = ui.available_width();
-        let name_w = (w / 3.0).max(60.0);
-        let row_h = 20.0;
-        let line = egui::Stroke::new(1.0f32, egui::Color32::from_gray(220));
+        let name_w = (w / 2.0).floor();
+        let row_h = 17.0;
+        let line = egui::Stroke::new(1.0f32, egui::Color32::from_rgb(185, 208, 237));
+        let sel_id = ui.id().with("fv_grid_sel");
+        let focus_id = ui.id().with("fv_grid_focus");
+        // The rebuild selects «Тип блока» (`0x407750`).
+        let selected: egui::Id = ui.data(|d| d.get_temp(sel_id)).unwrap_or(sel_id.with("type"));
+        let focused = ui.data(|d| d.get_temp::<bool>(focus_id)).unwrap_or(false);
+        let sel_fill = if focused { egui::Color32::from_rgb(180, 201, 233) } else { egui::Color32::from_rgb(213, 228, 242) };
+        let select: std::cell::Cell<Option<egui::Id>> = std::cell::Cell::new(None);
         // One grid row: the name cell and the rect left for the value.
-        let row = |ui: &mut egui::Ui, name: &str, bold: bool, band: bool| -> (egui::Rect, egui::Rect) {
+        let row = |ui: &mut egui::Ui, key: egui::Id, name: &str, bold: bool, indent: f32, group: bool| -> (egui::Rect, egui::Rect) {
             let (r, _) = ui.allocate_exact_size(egui::vec2(w, row_h), egui::Sense::hover());
-            if band {
-                ui.painter().rect_filled(r, 0.0, egui::Color32::from_gray(232));
+            let body = egui::Rect::from_min_max(r.min, egui::pos2(r.right(), r.bottom() - 1.0));
+            ui.painter().px_hline(r.x_range(), r.bottom() - 1.0, line);
+            let nr = egui::Rect::from_min_max(body.min, egui::pos2(body.left() + name_w, body.bottom()));
+            if key == selected {
+                ui.painter().rect_filled(if group { body } else { nr }, 0.0, sel_fill);
             }
-            ui.painter().px_hline(r.x_range(), r.bottom(), line);
-            let nr = egui::Rect::from_min_max(r.min, egui::pos2(r.left() + name_w, r.bottom()));
-            let font = if bold { egui::FontId::new(12.0, egui::FontFamily::Proportional) } else { egui::FontId::proportional(12.0) };
+            if ui.interact(egui::Rect::from_min_max(egui::pos2(nr.left() + indent, nr.top()), nr.max), key.with("name"), egui::Sense::click()).clicked() {
+                select.set(Some(key));
+            }
+            let font = egui::FontId::proportional(12.0);
             let g = ui.painter().layout_no_wrap(name.to_string(), font, TEXT);
-            let at = egui::pos2(nr.left() + 14.0, nr.center().y - g.size().y / 2.0);
-            ui.painter().with_clip_rect(nr).galley(at, g.clone(), TEXT);
+            let at = egui::pos2(nr.left() + indent, nr.center().y - g.size().y / 2.0);
+            let clip = if group { body } else { nr };
+            ui.painter().with_clip_rect(clip).galley(at, g.clone(), TEXT);
             if bold {
-                ui.painter().with_clip_rect(nr).galley(at + egui::vec2(0.5, 0.0), g, TEXT);
+                ui.painter().with_clip_rect(clip).galley(at + egui::vec2(0.5, 0.0), g, TEXT);
             }
-            if !band {
-                ui.painter().px_vline(nr.right(), r.y_range(), line);
+            if !group {
+                ui.painter().px_vline(nr.right(), body.y_range(), line);
             }
-            (r, egui::Rect::from_min_max(egui::pos2(nr.right() + 2.0, r.top() + 1.0), egui::pos2(r.right() - 2.0, r.bottom() - 1.0)))
+            (r, egui::Rect::from_min_max(egui::pos2(nr.right() + 1.0, body.top()), body.max))
         };
         ui.spacing_mut().item_spacing.y = 0.0;
-        // «Тип блока».
-        let (_, vr) = row(ui, "Тип блока", false, false);
+        // «Тип блока»: its text, and on the selected row the list's button
+        // (15 px at the value's right); the list drops from the cell.
+        let type_key = sel_id.with("type");
+        let (_, vr) = row(ui, type_key, "Тип блока", false, 6.0, false);
         let prev = self.block_idx;
         let names: Vec<String> = self.library.blocks.iter().map(|b| b.name.clone()).collect();
-        let combo = ui.put(vr, |ui: &mut egui::Ui| {
-            egui::ComboBox::from_id_salt("blockcombo")
-                .width(vr.width())
-                .selected_text(self.block_text.clone().or_else(|| names.get(self.block_idx).cloned()).unwrap_or_default())
-                .show_ui(ui, |ui| {
-                    for (i, name) in names.iter().enumerate() {
-                        ui.selectable_value(&mut self.block_idx, i, name);
-                    }
-                })
-                .response
+        let shown = self.block_text.clone().or_else(|| names.get(self.block_idx).cloned()).unwrap_or_default();
+        let combo = ui.interact(vr, ui.id().with("fv_grid_type_value"), egui::Sense::click());
+        ui.painter().with_clip_rect(vr).text(egui::pos2(vr.left() + 4.0, vr.center().y), egui::Align2::LEFT_CENTER, &shown, egui::FontId::proportional(12.0), TEXT);
+        let list_id = ui.id().with("fv_grid_type_list");
+        if selected == type_key {
+            let bt = egui::Rect::from_min_max(egui::pos2(vr.right() - 15.0, vr.top()), vr.max);
+            let hot = combo.hovered() && ui.ctx().pointer_hover_pos().is_some_and(|q| bt.contains(q));
+            ui.painter().rect_filled(bt, 0.0, if hot { egui::Color32::from_rgb(253, 170, 78) } else { egui::Color32::from_gray(240) });
+            let c = bt.center();
+            ui.painter().add(egui::Shape::convex_polygon(vec![egui::pos2(c.x - 3.0, c.y - 1.0), egui::pos2(c.x + 3.0, c.y - 1.0), egui::pos2(c.x, c.y + 2.0)], TEXT, egui::Stroke::NONE));
+            if combo.clicked() && ui.ctx().pointer_interact_pos().is_some_and(|q| bt.contains(q)) {
+                ui.memory_mut(|m| m.toggle_popup(list_id));
+            }
+        }
+        if combo.clicked() {
+            select.set(Some(type_key));
+        }
+        egui::popup_below_widget(ui, list_id, &combo, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for (i, name) in names.iter().enumerate() {
+                ui.selectable_value(&mut self.block_idx, i, egui::RichText::new(name).size(12.0));
+            }
         });
         // A click in any value area marks the document modified, «Тип
         // блока»'s included (`0x4075c0` → `0x407c40`).
@@ -818,25 +849,38 @@ impl App {
         for (ci, name, params) in &groups {
             let open_id = ui.id().with(("fv_grid_open", b, *ci));
             let open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(true);
-            let (r, _) = row(ui, name, true, true);
-            // The expand box and the visibility box.
-            let toggle = egui::Rect::from_min_size(egui::pos2(r.left() + 2.0, r.center().y - 5.0), egui::vec2(10.0, 10.0));
-            ui.painter().px_rect_stroke(toggle, 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_gray(128)));
-            ui.painter().text(toggle.center(), egui::Align2::CENTER_CENTER, if open { "−" } else { "+" }, egui::FontId::proportional(10.0), TEXT);
+            let (r, _) = row(ui, sel_id.with(("group", *ci)), name, true, 22.0, true);
+            // The expand box (9 × 9 at +4, top + 3: a (145, 145, 145)
+            // frame round a light gradient, the sign in (75, 99, 167)) and
+            // the visibility box.
+            let toggle = egui::Rect::from_min_size(egui::pos2(r.left() + 4.0, r.top() + 3.0), egui::vec2(9.0, 9.0));
+            crate::lanes::gradient(ui.painter(), toggle, egui::Color32::from_rgb(250, 251, 251), egui::Color32::from_gray(227));
+            ui.painter().px_rect_stroke(toggle, 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_gray(145)));
+            let sign = egui::Stroke::new(1.0f32, egui::Color32::from_rgb(75, 99, 167));
+            let c = toggle.center();
+            ui.painter().px_hline(c.x - 2.0..=c.x + 2.0, c.y, sign);
+            if !open {
+                ui.painter().px_vline(c.x, c.y - 2.0..=c.y + 2.0, sign);
+            }
             // The grid drops a double-click on a group row (`0x407640`): the
             // second click of a pair does nothing.
             let once = |r: egui::Response| r.clicked() && !r.double_clicked();
             if once(ui.interact(toggle.expand(2.0), ui.id().with(("fv_grid_tg", b, *ci)), egui::Sense::click())) {
                 ui.data_mut(|d| d.insert_temp(open_id, !open));
             }
-            if ui.interact(egui::Rect::from_min_max(egui::pos2(toggle.right() + 2.0, r.top()), egui::pos2(r.left() + name_w, r.bottom())), ui.id().with(("fv_grid_name", b, *ci)), egui::Sense::click()).clicked() {
+            if select.get() == Some(sel_id.with(("group", *ci))) {
                 self.selected_char = Some(*ci);
             }
             if let Some(st) = self.chars.get_mut(&(b, *ci)) {
-                let bx = egui::Rect::from_min_max(egui::pos2(r.right() - 14.0, r.top() + 3.0), egui::pos2(r.right() - 2.0, r.top() + 15.0));
-                ui.painter().rect(bx, 0.0, egui::Color32::WHITE, egui::Stroke::new(1.0f32, st.color));
+                // 12 × 12, 4 px from the right, top + 2: frame and tick in
+                // the characteristic's colour (VM).
+                let bx = egui::Rect::from_min_size(egui::pos2(r.right() - 16.0, r.top() + 2.0), egui::vec2(12.0, 12.0));
+                ui.painter().rect_filled(bx, 0.0, egui::Color32::WHITE);
+                ui.painter().px_rect_stroke(bx, 0.0, egui::Stroke::new(1.0f32, st.color));
                 if st.visible {
-                    ui.painter().text(bx.center(), egui::Align2::CENTER_CENTER, "✓", egui::FontId::proportional(11.0), egui::Color32::from_rgb(0, 0, 200));
+                    let tick = egui::Stroke::new(1.5f32, st.color);
+                    ui.painter().line_segment([bx.left_center() + egui::vec2(2.5, 0.0), egui::pos2(bx.left() + 5.0, bx.bottom() - 3.0)], tick);
+                    ui.painter().line_segment([egui::pos2(bx.left() + 5.0, bx.bottom() - 3.0), egui::pos2(bx.right() - 2.5, bx.top() + 2.5)], tick);
                 }
                 let value_area = egui::Rect::from_min_max(egui::pos2(r.left() + name_w, r.top()), r.max);
                 if once(ui.interact(value_area, ui.id().with(("fv_grid_vis", b, *ci)), egui::Sense::click())) {
@@ -848,16 +892,20 @@ impl App {
             if !open {
                 continue;
             }
-            for p in params {
-                let (_, vr) = row(ui, p, false, false);
+            for (pi, p) in params.iter().enumerate() {
+                let key = sel_id.with(("param", *ci, pi));
+                let (_, vr) = row(ui, key, p, false, 22.0, false);
                 if let Some(st) = self.chars.get_mut(&(b, *ci)) {
                     let text = st.settings.entry(p.clone()).or_default();
-                    let resp = ui.put(vr, egui::TextEdit::singleline(text).frame(false).text_color(TEXT));
+                    let resp = ui.put(vr, egui::TextEdit::singleline(text).frame(false).text_color(TEXT).font(egui::FontId::proportional(12.0)));
                     // The stock in-place edit (CMFCPropertyGridCtrl, INFERRED):
                     // Esc restores the text, a commit (Enter, focus lost)
                     // reaches OnPropertyChanged (`0x407580`) only when the
                     // text changed.
                     let before_id = resp.id.with("fv_grid_before");
+                    if resp.clicked() || resp.gained_focus() {
+                        select.set(Some(key));
+                    }
                     if resp.gained_focus() {
                         let t = text.clone();
                         ui.data_mut(|d| d.insert_temp(before_id, t));
@@ -874,6 +922,14 @@ impl App {
                     }
                 }
             }
+        }
+        if let Some(k) = select.get() {
+            ui.data_mut(|d| d.insert_temp(sel_id, k));
+        }
+        // The grid has the focus after a press inside it, until one outside.
+        let area = ui.min_rect();
+        if let Some(q) = ui.input(|i| i.pointer.any_pressed().then_some(i.pointer.interact_pos()).flatten()) {
+            ui.data_mut(|d| d.insert_temp(focus_id, area.contains(q)));
         }
         if touched {
             if let Some(d) = self.active_doc_mut() {

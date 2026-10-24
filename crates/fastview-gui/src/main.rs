@@ -686,7 +686,8 @@ mod window_tests {
         w.idle(2);
         w.app.active_doc_mut().unwrap().set.modified = false;
         let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
-        let at = Pos2::new(grid.right() - 60.0, grid.top() + 8.0 + 30.0);
+        // The first group row: «Тип блока»'s 17 px row, then its middle.
+        let at = Pos2::new(grid.right() - 60.0, grid.top() + 1.0 + 17.0 + 8.0);
         let vis = |w: &Win| w.app.chars.get(&(w.app.block_idx, 0)).map(|c| c.visible);
         let before = vis(&w);
         w.press(Primary, at, at);
@@ -1532,7 +1533,21 @@ mod window_tests {
             passes.extend([vec![], vec![], vec![]]);
         }
         let fonts = app_fonts();
-        let c = raster::render_input(size, 1.0, Some(&fonts), passes, |ctx| app.frame_ui(ctx));
+        // `FV_WINDOW_BLOCK=<n|name>`: the active diagram grid's block (0 =
+        // «Нет»; with `FV_WINDOW_STATE=diff` the differential one), set
+        // after the first passes have bound the grid to the document.
+        let block = std::env::var("FV_WINDOW_BLOCK").ok();
+        let mut pass = 0;
+        let c = raster::render_input(size, 1.0, Some(&fonts), passes, |ctx| {
+            if pass == 2 {
+                if let Some(b) = block.as_ref().and_then(|v| v.parse().ok().or_else(|| app.library.blocks.iter().position(|b| &b.name == v))) {
+                    app.block_idx = b;
+                    app.ensure_block_state();
+                }
+            }
+            pass += 1;
+            app.frame_ui(ctx)
+        });
         let rgba: Vec<u8> = c.px.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
         std::fs::write(path, util::png_rgba(c.w as u32, c.h as u32, &rgba)).unwrap();
     }
