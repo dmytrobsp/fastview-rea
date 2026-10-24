@@ -149,8 +149,8 @@ impl App {
 
     /// «Рассчитать» on this page (`0x415780`): each row in order — the
     /// record's channel of that name (exact, else case-insensitive) gets the
-    /// formula and is recomputed in place, a new name is inserted after the
-    /// analog channels (each new one at the same place). No diagram flags.
+    /// formula and is recomputed in place, a new name goes to the end of the
+    /// analog-kind block (`0x42ea36`). No diagram flags.
     /// On an error the record's formula channels are left as before and the
     /// message is shown.
     pub fn fp_apply(&mut self) {
@@ -177,12 +177,14 @@ impl App {
                             d.reflag_computed(i);
                         }
                         None => {
-                            // Inserted first among the computed channels.
-                            let color = crate::app::channel_color(&c.name, "", d.osc.analog.len());
+                            // At the analog-kind block's end (`rec+0x58`,
+                            // `0x42ea36`): after every channel before it.
+                            let place = d.kind0_order().len();
+                            let color = crate::app::channel_color(&c.name, "", place);
                             let mut cc = crate::app::Computed::new(c.name, c.formula, Vec::new(), color);
                             cc.unit = c.unit;
                             cc.set_values(c.samples, c.phasors);
-                            d.computed.insert(0, cc);
+                            d.computed.push(cc);
                         }
                     }
                 }

@@ -272,9 +272,13 @@ pub struct ChanView {
     /// 32867 «Первичные» / 32868 «Вторичные»).
     pub primary: bool,
     /// A merged channel pasted at the analog block's end (`None`) or in
-    /// front of the formula channel named: «Объединить» moves no record
-    /// (`0x47d990`), so it keeps that place among the formula channels.
-    pub merged_after: Option<Option<String>>,
+    /// front of the formula channel named, with its lane's creation
+    /// sequence: «Объединить» moves no record (`0x47d990`), so it keeps
+    /// that place among the formula channels.
+    pub merged_after: Option<(Option<String>, u64)>,
+    /// The colour was set by 33030 or a `.set` (`ch+0x140`): it no longer
+    /// follows the channel's place.
+    pub custom_color: bool,
 }
 
 /// Stats-panel rows of a channel (channel flag bits 4 Max/Min, 6 СКЗ, 5 A1):
@@ -323,6 +327,7 @@ impl ChanView {
             on_circle: false,
             primary: false,
             merged_after: None,
+            custom_color: false,
         }
     }
 }
@@ -376,7 +381,14 @@ pub struct Computed {
     /// A channel group (33035): formula channels can be members
     /// (`0x468c80`).
     pub group: Option<u32>,
+    /// Creation order: a new analog-kind record goes to the block's end
+    /// (`rec+0x58`, `0x42ea36`), so the block's end lists them by it.
+    pub seq: u64,
+    /// The colour was set by 33030 or a `.set` (`ch+0x140`).
+    pub custom_color: bool,
 }
+
+static NEXT_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Computed {
     pub fn new(name: String, formula: String, samples: Vec<f64>, color: egui::Color32) -> Computed {
@@ -403,6 +415,8 @@ impl Computed {
             pending_own: Vec::new(),
             pending_phasors: Vec::new(),
             group: None,
+            seq: NEXT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            custom_color: false,
         }
     }
 
@@ -1145,6 +1159,9 @@ pub struct DigFlags {
     pub invert: bool,
     pub remove_dc: bool,
     pub mode: ValueMode,
+    /// A colour set by 33030 (`ch+0x140` / `ch+0x144`), else the table's by
+    /// place.
+    pub color: Option<egui::Color32>,
 }
 
 /// An undo/redo entry: the record's data model (`doc+0x180 … 0x27f`,
@@ -3148,15 +3165,15 @@ mod tests {
         let y_color = app.active_doc().unwrap().computed[0].color;
         app.quick_calc();
         let d = app.active_doc().unwrap();
-        assert_eq!(names(&app), ["Z", "Y"], "the new channel after the analog ones");
-        assert_eq!(d.computed[1].formula, "Ub*3");
-        assert_eq!(d.computed[1].color, y_color, "updated in place");
+        assert_eq!(names(&app), ["Y", "Z"], "the new channel at the analog-kind block's end (`0x42ea36`)");
+        assert_eq!(d.computed[0].formula, "Ub*3");
+        assert_eq!(d.computed[0].color, y_color, "updated in place");
         // «Отмена» keeps a deletion.
         app.dispatch(Command::QuickAnalysis);
         app.formula_page.selected = Some(0);
         app.fp_delete();
         app.quick_open = false;
-        assert_eq!(names(&app), ["Y"]);
+        assert_eq!(names(&app), ["Z"], "row 0 is Y, in record order");
     }
 
     #[test]

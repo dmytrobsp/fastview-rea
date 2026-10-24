@@ -242,6 +242,8 @@ impl Doc {
         if (self.computed.len(), self.osc.digital.len()) == before {
             return false;
         }
+        // The places behind the removed ones moved (`0x42b5f0`).
+        self.recolor();
         let comments = std::mem::take(&mut self.comments);
         self.comments = comments
             .into_iter()
@@ -358,13 +360,12 @@ impl Doc {
         for i in 0..self.osc.analog.len() {
             let key = self.file_key(i);
             let a = &self.osc.analog[i];
-            let def = crate::app::default_channel_color(a, i);
             let rec = ChannelRec {
                 show_flags: Self::merged_flags(t, &key, self.analog_flags(i), known_a) & mask,
                 primary_mul: a.primary,
                 secondary_mul: a.secondary,
                 alias: self.alias(i, &a.id),
-                custom_color: (self.chans[i].color != def).then(|| colorref(self.chans[i].color)),
+                custom_color: self.chans[i].custom_color.then(|| colorref(self.chans[i].color)),
             };
             recset::write_channel(t.section_mut(&key), &rec);
             recset::write_net_freq(t.section_mut(&key), &a.own_freq);
@@ -383,7 +384,7 @@ impl Doc {
                 primary_mul: 1.0,
                 secondary_mul: 1.0,
                 alias: self.alias(na + k, &self.osc.digital[k].id),
-                custom_color: None,
+                custom_color: self.dig(k).color.map(colorref),
             };
             recset::write_channel(t.section_mut(&key), &rec);
         }
@@ -533,7 +534,7 @@ impl App {
                     a.id = r.alias;
                 }
                 if let Some(c) = r.custom_color {
-                    d.chans[i].color = from_colorref(c);
+                    (d.chans[i].color, d.chans[i].custom_color) = (from_colorref(c), true);
                 }
             } else {
                 let k = i - na;
@@ -546,7 +547,7 @@ impl App {
                 };
                 let r = recset::read_channel(&sec, &cur);
                 d.digital_visible[k] = r.show_flags & flag::VISIBLE != 0;
-                *d.dig_mut(k) = crate::app::DigFlags { invert: r.show_flags & flag::INVERT != 0, remove_dc: r.show_flags & flag::REMOVE_DC != 0, mode: mode_of(r.show_flags) };
+                *d.dig_mut(k) = crate::app::DigFlags { invert: r.show_flags & flag::INVERT != 0, remove_dc: r.show_flags & flag::REMOVE_DC != 0, mode: mode_of(r.show_flags), color: r.custom_color.map(from_colorref) };
                 if !r.alias.is_empty() {
                     d.osc.digital[k].id = r.alias;
                 }
@@ -594,7 +595,7 @@ impl App {
             c.remove_dc = r.show_flags & flag::REMOVE_DC != 0;
             c.mode = mode_of(r.show_flags);
             if let Some(v) = r.custom_color {
-                c.color = from_colorref(v);
+                (c.color, c.custom_color) = (from_colorref(v), true);
             }
             d.reflag_computed(j);
         }
@@ -1137,7 +1138,7 @@ mod tests {
         {
             let d = &mut app.docs[di];
             d.chans[0].invert = true;
-            d.chans[1].color = egui::Color32::from_rgb(1, 2, 3);
+            (d.chans[1].color, d.chans[1].custom_color) = (egui::Color32::from_rgb(1, 2, 3), true);
             d.chans[4].stats.minmax = true;
             d.comments.push(Comment::new(CommentKind::Moment { pos: 100 }));
             let mut lvl = Comment::new(CommentKind::Level { chan: ChanKey::Analog(3), value: 2.5, from: 10, to: 20 });

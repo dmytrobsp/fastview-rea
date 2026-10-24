@@ -226,7 +226,8 @@ impl Doc {
             _ => false,
         };
         // A merged channel among the formula channels (`ChanView::merged_after`).
-        let merged = |at: &str| -> Vec<ChanKey> { (0..n).filter(|&i| self.chans.get(i).and_then(|c| c.merged_after.as_ref()).is_some_and(|m| m.as_deref() == Some(at))).map(ChanKey::Analog).collect() };
+        let merged_at = |i: usize| self.chans.get(i).and_then(|c| c.merged_after.as_ref());
+        let merged = |at: &str| -> Vec<ChanKey> { (0..n).filter(|&i| merged_at(i).is_some_and(|m| m.0.as_deref() == Some(at))).map(ChanKey::Analog).collect() };
         let formula = |name: &str| self.computed.iter().any(|c| c.formula != PENDING && c.name == name);
         let mut v = Vec::new();
         for i in 0..n {
@@ -235,16 +236,21 @@ impl Doc {
                 v.push(ChanKey::Analog(i));
             }
         }
-        let pending_end: Vec<usize> = (0..self.computed.len()).filter(|&j| analog_lane(j) && !anchored(j) && self.computed[j].formula == PENDING).collect();
-        for j in (0..self.computed.len()).filter(|&j| analog_lane(j) && !anchored(j) && self.computed[j].formula != PENDING) {
-            v.extend(merged(&self.computed[j].name));
-            v.extend((0..self.computed.len()).filter(|&p| anchored_before(p, ChanKey::Computed(j))).map(ChanKey::Computed));
-            v.push(ChanKey::Computed(j));
+        // The block's end in creation order: computed channels and lanes
+        // pasted there, and channels merged from such lanes (their anchor
+        // gone too).
+        let mut tail: Vec<(u64, ChanKey)> = (0..self.computed.len()).filter(|&j| analog_lane(j) && !anchored(j)).map(|j| (self.computed[j].seq, ChanKey::Computed(j))).collect();
+        tail.extend((0..n).filter_map(|i| merged_at(i).filter(|m| m.0.as_deref().is_none_or(|f| !formula(f))).map(|m| (m.1, ChanKey::Analog(i)))));
+        tail.sort_by_key(|t| t.0);
+        for (_, k) in tail {
+            if let ChanKey::Computed(j) = k {
+                if self.computed[j].formula != PENDING {
+                    v.extend(merged(&self.computed[j].name));
+                    v.extend((0..self.computed.len()).filter(|&p| anchored_before(p, k)).map(ChanKey::Computed));
+                }
+            }
+            v.push(k);
         }
-        // At the block's end: merged channels (their anchor gone too), then
-        // lanes pasted since.
-        v.extend((0..n).filter(|&i| self.chans.get(i).and_then(|c| c.merged_after.as_ref()).is_some_and(|m| m.as_deref().is_none_or(|f| !formula(f)))).map(ChanKey::Analog));
-        v.extend(pending_end.into_iter().map(ChanKey::Computed));
         v
     }
 
@@ -425,6 +431,8 @@ impl App {
                 c.color
             };
             let mut lane = Computed::new(name, PENDING.into(), Vec::new(), color);
+            // A colour the clipboard carries stays the lane's own.
+            lane.custom_color = c.color != egui::Color32::TRANSPARENT;
             if let Ok(a) = &c.pasted.channel {
                 lane.unit = a.unit.clone();
             }
@@ -621,32 +629,41 @@ impl App {
         let (at_a, at_d) = (anchor(false).unwrap_or(nb).min(nb), anchor(true).unwrap_or(nd).min(nd));
         // Pasted at the block's end or before a formula channel: the merged
         // channels stay there, among the formula channels.
-        let merged_after = d.computed.iter().filter(|c| c.formula == PENDING && !d.pending_digital_named(&c.name)).find_map(|c| match c.before {
-            Some(ChanKey::Analog(_)) => None,
-            Some(ChanKey::Computed(f)) => Some(d.computed.get(f).map(|c| c.name.clone())),
-            _ => Some(None),
-        });
+        let lanes: Vec<(String, Option<Option<String>>, u64)> = d
+            .computed
+            .iter()
+            .filter(|c| c.formula == PENDING && !d.pending_digital_named(&c.name))
+            .map(|c| {
+                let at = match c.before {
+                    Some(ChanKey::Analog(_)) => None,
+                    Some(ChanKey::Computed(f)) => Some(d.computed.get(f).map(|c| c.name.clone())),
+                    _ => Some(None),
+                };
+                (c.name.clone(), at, c.seq)
+            })
+            .collect();
         d.osc = merged;
         for i in nb..d.osc.analog.len() {
             let mut v = ChanView::new(&d.osc.analog[i], i);
-            if let Some(p) = d.pending.iter().find(|p| p.name() == d.osc.analog[i].id) {
-                v.color = p.color;
+            if let Some(c) = d.computed.iter().find(|c| c.formula == PENDING && c.name == d.osc.analog[i].id) {
+                (v.color, v.custom_color) = (c.color, c.custom_color);
             }
             if let Some(&(_, inv, dc, mode)) = flags.iter().find(|f| f.0 == d.osc.analog[i].id) {
                 (v.invert, v.remove_dc, v.mode) = (inv, dc, mode);
             }
-            v.merged_after = merged_after.clone();
+            v.merged_after = lanes.iter().find(|l| l.0 == d.osc.analog[i].id).and_then(|l| l.1.clone().map(|at| (at, l.2)));
             d.chans.push(v);
         }
         d.digital_visible.resize(d.osc.digital.len(), true);
         for i in nd..d.osc.digital.len() {
             if let Some(&(_, invert, remove_dc, mode)) = flags.iter().find(|f| f.0 == d.osc.digital[i].id) {
-                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode };
+                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode, color: None };
             }
         }
         d.move_appended(at_a, nb, at_d, nd);
         d.computed.retain(|c| c.formula != PENDING);
         d.pending.clear();
+        d.recolor();
         d.channels_changed();
         d.merge_offset = 0.0;
         let mut snap = Self::snapshot_of_doc(d);

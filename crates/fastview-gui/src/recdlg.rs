@@ -232,6 +232,7 @@ impl Doc {
     /// candidates (`0x42ebd0`), which turns «Не корректировать» back into the
     /// first candidate whenever there is one (L9.65).
     pub fn channels_changed(&mut self) {
+        self.recolor();
         // Formula channels (after the analog ones) and pasted analog ones
         // (at their insertion point) are candidates too, by the same test
         // (`0x42aee0`: ph / ccbm «system» or a frequency unit — no bit-14

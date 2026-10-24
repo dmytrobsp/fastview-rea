@@ -170,7 +170,7 @@ items (VM ones also in W4.4):
   the refresh's other callers (L9.162), About's text and links (W1.6), the
   frequency dialog's initial enable state (L9.160), the ОМП dialog's tree
   icons / geometry / reader gaps (L9.169), a computed channel's colour
-  recomputed by place (L9.170), an OSC2 record saved as COMTRADE (L9.172).
+  recomputed by place (done, L9.200), an OSC2 record saved as COMTRADE (L9.172).
 
 - [ ] W2.18 W1.8's open differences (L9.181 / L9.182). Done in
   L9.183–L9.185: the zoom gate both ways, per-key chart writes, the
@@ -178,8 +178,9 @@ items (VM ones also in W4.4):
   bar's layout and fill, the ОМП tree after a delete, the finder's sort
   and `SortMode`, the settings link, the group stats width, the report's
   «Ктр»; the frequency «Показать все» (no digital, VM run). Left: groups
-  by name ignoring case; the ОМП re-run's lookup among every channel
-  ignoring case; the zoom gate's rectangle (the client less 8 / 16 px);
+  by name ignoring case (the dissolve's lookup: L9.198); the ОМП re-run's
+  lookup ignoring case (as ours, L9.199's read); the zoom gate's rectangle:
+  done, L9.200;
   the splash (our own picture, 2000 ms, topmost); the view scroll bar's
   system menu («Канал 1» with formula channels: L9.199; «Скрыть все» and
   «Отсчет углов» over `doc+0x1d8`: already as ours, L9.199's read).

@@ -51,11 +51,17 @@ pub struct PlaneGeom {
     pub pan: (i32, i32),
     pub max: [f64; 2],
     pub char_max: f64,
+    /// The zoom gate's own rectangle (`0x4379e0` / `0x443470`): the client
+    /// deflated by 8 px left / right and 16 px top / bottom
+    /// (`InflateRect(−8, −16)`, `0x437a2f`–`0x437a37`) — not the painted
+    /// plane.
+    pub gate: (i32, i32),
 }
 
 impl PlaneGeom {
+    /// The gate's Ω pixels per unit at zoom `z`.
     fn ppu_at(&self, z: f64) -> Option<f64> {
-        dg::plane_scale(self.w, self.h, z, self.max).ppu[0]
+        dg::plane_scale(self.gate.0, self.gate.1, z, self.max).ppu[0]
     }
 }
 
@@ -967,6 +973,7 @@ impl App {
         let table = readout != 0 && rect.height() - table_h >= dpx(120.0);
         rect.max.y -= if table { table_h } else { 20.0 };
         let (w, h) = (rect.width() as i32, rect.height() as i32);
+        let gate = (client.width() as i32 - 16, client.height() as i32 - 32);
         let mut view = view;
         let mut sc = dg::plane_scale(w, h, view.z, max);
         if dg::zoom_resets(char_ext, sc.ppu[0]) {
@@ -1167,7 +1174,7 @@ impl App {
         if (resp.hovered() || over_bar) && self.diag.menu.is_none() {
             let (wheels, mods, buttons) = ui.input(|i| (crate::lanes::wheel_deltas(&i.events), i.modifiers, i.pointer.any_down()));
             for delta in wheels {
-                let g = PlaneGeom { w, h, pan, max, char_max: char_ext };
+                let g = PlaneGeom { w, h, pan, max, char_max: char_ext, gate };
                 match dg::wheel_action(delta > 0.0, (mods.ctrl || mods.command) && !buttons, mods.shift && !buttons) {
                     WheelAct::Zoom(zin) => {
                         view.zoom(zin, char_ext, |z| g.ppu_at(z));
@@ -1187,7 +1194,7 @@ impl App {
             ui.ctx().request_repaint();
         }
         *self.plane_view(diff) = view;
-        self.diag.geom[gi] = Some(PlaneGeom { w, h, pan, max, char_max: char_ext });
+        self.diag.geom[gi] = Some(PlaneGeom { w, h, pan, max, char_max: char_ext, gate });
     }
 
     // ---- vector diagram ----
@@ -1865,6 +1872,15 @@ fn vector_header(painter: &egui::Painter, full: Rect, [u, i]: [f64; 2]) {
 mod tests {
     use super::*;
     use crate::app::{Command, Pane};
+
+    /// The zoom gate scales over the client less 8 / 16 px (`0x4379e0`),
+    /// not over the painted plane.
+    #[test]
+    fn the_zoom_gate_measures_its_own_rectangle() {
+        let g = PlaneGeom { w: 100, h: 100, pan: (0, 0), max: [10.0, 10.0], char_max: 10.0, gate: (400, 400) };
+        assert_eq!(g.ppu_at(1.0), dg::plane_scale(400, 400, 1.0, [10.0, 10.0]).ppu[0]);
+        assert_ne!(g.ppu_at(1.0), dg::plane_scale(100, 100, 1.0, [10.0, 10.0]).ppu[0]);
+    }
 
     struct H {
         app: App,

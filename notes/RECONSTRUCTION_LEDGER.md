@@ -5961,6 +5961,37 @@ writers keep the file order (formula channels are not written; a merged
 channel's place is not stored); the «Каналы» rename's row → record index
 mismatch with pair rows (`0x435da1`, agent's read) not reproduced.
 
+### L9.200 — The zoom gate's rectangle; a new formula channel at the block's end; colours by the current place; 33030 on digital channels  ·  ✅
+Read by hand:
+- The zoom gates `0x4379e0` / `0x443470` take GetClientRect and
+  InflateRect(−8, −16) (`0x437a2f`–`0x437a37`, `0x4434bf`–`0x4434c7`)
+  before the scale `0x438b50` / `0x4441b0` — the client less 16 × 32 px,
+  not the painted plane (client − 6, top + 5, less the table or 20 px).
+- A new formula channel goes in at index `rec+0x58` (`0x42ea36`) — the
+  end of the analog-kind block, after every channel created before it —
+  and `rec+0x58` is raised (`0x42eabf`).
+- The colour getter `0x42b520`: `ch+0x140` set → `ch+0x144`; else for a
+  kind-0 record the phase / name class (`0x42b0c0`); else the table
+  `0x4c2fe0` by the place `0x42b5f0` mod 10 — the record's index in its
+  channel vector, searched at every call (−1 → black). So a colour
+  follows the record's current place until one is set.
+- 33030 (background agent: `0x465850` → `0x4310b0`): the dialog starts
+  from the first selected record in vector order, digital ones included;
+  OK sets `ch+0x140` and the colour on every selected record.
+Ours gated the zoom on the painted plane, inserted a new formula channel
+first among the computed ones, fixed every colour at creation and left
+digital channels out of 33030. Now `PlaneGeom::gate`, `fp_apply` appends
+(the block's end ordered by a creation sequence `Computed::seq`, merged
+channels by their lane's), `custom_color` on file and computed channels
+and `DigFlags::color`, `Doc::recolor` on every vector change
+(`channels_changed`, `removing_channels`, the merge), `Doc::color_of`,
+33030 over the vector order. The Save As of WIN_1999 / DOC_1999 / BINARY
+is still byte-identical (WIN_1999 against the ru-RU run's output).
+Tests `the_zoom_gate_measures_its_own_rectangle`,
+`colours_follow_the_place_until_set`, the formula page's test updated.
+Residual: ours writes every computed channel's colour to the `.set` as a
+custom one (the original writes `ch+0x140` as it is; not re-read).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

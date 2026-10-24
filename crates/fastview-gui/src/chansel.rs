@@ -466,30 +466,68 @@ impl Doc {
         self.dissolve_groups(&sel);
     }
 
-    /// The colour «Цвет канала» starts from: the first selected channel's.
+    /// The colour «Цвет канала» starts from (`0x465850`): the first selected
+    /// record in vector order, a digital one too.
     pub fn first_selected_color(&self) -> Option<eframe::egui::Color32> {
-        self.selection.iter().find_map(|k| match k {
-            ChanKey::Analog(i) => self.chans.get(*i).map(|c| c.color),
-            ChanKey::Computed(i) => self.computed.get(*i).map(|c| c.color),
-            ChanKey::Digital(_) => None,
-        })
+        crate::chandlg::rows(self).into_iter().find(|k| self.selection.contains(k)).map(|k| self.color_of(k))
     }
 
-    /// 33030 OK: every selected channel gets the colour.
+    /// 33030 OK (`0x4310b0`): every selected record, digital ones too, gets
+    /// the colour as its own (`ch+0x140` set).
     pub fn set_color_selected(&mut self, col: eframe::egui::Color32) {
         for k in self.selection.clone() {
             match k {
                 ChanKey::Analog(i) => {
                     if let Some(c) = self.chans.get_mut(i) {
-                        c.color = col;
+                        (c.color, c.custom_color) = (col, true);
                     }
                 }
                 ChanKey::Computed(i) => {
                     if let Some(c) = self.computed.get_mut(i) {
-                        c.color = col;
+                        (c.color, c.custom_color) = (col, true);
                     }
                 }
-                ChanKey::Digital(_) => {}
+                ChanKey::Digital(i) => {
+                    if i < self.osc.digital.len() {
+                        self.dig_mut(i).color = Some(col);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A record's colour (`0x42b520`).
+    pub fn color_of(&self, k: ChanKey) -> eframe::egui::Color32 {
+        match k {
+            ChanKey::Analog(i) => self.chans[i].color,
+            ChanKey::Computed(j) => self.computed[j].color,
+            ChanKey::Digital(i) => self.dig(i).color.unwrap_or_else(|| {
+                let place = crate::chandlg::rows(self).iter().position(|&r| r == k);
+                place.map_or(eframe::egui::Color32::BLACK, crate::app::table_color)
+            }),
+        }
+    }
+
+    /// The colours without a custom one follow the records' current places
+    /// (`0x42b520` reads the place `0x42b5f0` at every call): the phase /
+    /// name class for an analog-kind record, else the table by place mod
+    /// 10 — a pasted digital lane is kind 1, never classed.
+    pub fn recolor(&mut self) {
+        for (place, k) in crate::chandlg::rows(self).into_iter().enumerate() {
+            match k {
+                ChanKey::Analog(i) if !self.chans[i].custom_color => {
+                    let a = &self.osc.analog[i];
+                    self.chans[i].color = crate::app::channel_color(&a.id, &a.phase, place);
+                }
+                ChanKey::Computed(j) if !self.computed[j].custom_color => {
+                    let color = match self.pending_of(j).map(|p| &p.pasted.channel) {
+                        Some(Err(_)) => crate::app::table_color(place),
+                        Some(Ok(a)) => crate::app::channel_color(&self.computed[j].name, &a.phase, place),
+                        None => crate::app::channel_color(&self.computed[j].name, "", place),
+                    };
+                    self.computed[j].color = color;
+                }
+                _ => {}
             }
         }
     }
@@ -580,6 +618,34 @@ mod tests {
         d.prune_groups();
         assert_eq!((d.group_of(Analog(0)), d.group_of(ChanKey::Computed(j))), (None, None));
         assert!(d.group_names.is_empty());
+    }
+
+    /// `0x42b520`: a colour without a custom one follows the record's place;
+    /// 33030 sets custom colours on every selected record, digital too.
+    #[test]
+    fn colours_follow_the_place_until_set() {
+        let mut app = crate::app::App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        let n = d.osc.time.len();
+        for name in ["P", "Q"] {
+            d.computed.push(crate::app::Computed::new(name.into(), "1".into(), vec![0.0; n], eframe::egui::Color32::RED));
+        }
+        d.channels_changed();
+        let place = |d: &Doc, k| crate::chandlg::rows(d).iter().position(|&r| r == k).unwrap();
+        let (p, q) = (d.computed.len() - 2, d.computed.len() - 1);
+        assert_eq!(d.computed[q].color, crate::app::table_color(place(d, ChanKey::Computed(q))));
+        assert_ne!(d.computed[p].color, d.computed[q].color, "two places, two colours");
+        let dig = d.color_of(Digital(0));
+        assert_eq!(dig, crate::app::table_color(place(d, Digital(0))));
+        // A custom colour sticks when the places move.
+        let blue = eframe::egui::Color32::from_rgb(1, 2, 3);
+        d.selection = BTreeSet::from([ChanKey::Computed(q), Digital(0)]);
+        assert_eq!(d.first_selected_color(), Some(d.computed[q].color), "the first in vector order");
+        d.set_color_selected(blue);
+        assert!(d.removing_channels(|d| { d.computed.remove(p); }));
+        let q = q - 1;
+        assert_eq!((d.computed[q].color, d.color_of(Digital(0))), (blue, blue));
     }
 
     #[test]
