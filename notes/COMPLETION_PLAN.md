@@ -260,8 +260,8 @@ items (VM ones also in W4.4):
     (run, L9.295); ~~32806 with no document~~ (run, L9.295); ~~«Удалить файлы» with
     nothing selected~~ (run, L9.296); ~~Save As caption~~ (run: the system's own); ~~opening an open
     file~~ (run, L9.190), a drop on the frame (L9.159); ~~the toolbar wheel~~ (run, L9.291); drag
-    auto-scroll at the left / right insets (L9.164); the level edit
-    scrolled (L9.175); the caption bars' order (spec §1.3); ~~the ОМП
+    auto-scroll at the left / right insets (L9.164); ~~the level edit
+    scrolled~~ (run, L9.306); the caption bars' order (spec §1.3); ~~the ОМП
     channel drop-down with formula channels~~ (run, L9.303).
   - **W6**: landscape margins (our CUPS path), drivers resetting the DC,
     short-row files (no sample), the `.zip` writer (unreachable).

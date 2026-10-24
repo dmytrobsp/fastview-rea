@@ -8306,8 +8306,23 @@ makes the element `comment_hot` (a moved one too). The ends' dots are
 about 10 px across in the original; ours 11 — radius 4 now. Test
 `comment_tools_are_one_shot_and_drag_out_levels_and_areas` (selected
 after the drag).
-Not run: the level edit in a scrolled view (L9.175) — WIN_1999's lanes
-fit the view, nothing scrolls.
+The level edit in a scrolled view: L9.306.
+
+### L9.306 — VM: «Изменить уровень» in a scrolled view; the selection kept through a popup menu  ·  ✅
+Run (WIN_1999, the lanes made tall with Alt+wheel so the view scrolls, a
+level drawn on IA, one notch down, its menu, «Изменить уровень»):
+- **The edit's place.** In the original it opens at the level's
+  unscrolled y + 3 — a notch's scroll below the line (L9.175's inference
+  confirmed); ours followed the line. Now the view's scroll is taken back
+  out (`level_rect`).
+- **The selection.** The original's level stays selected through its menu
+  and the edit (a popup is modal: no mouse moves reach the view, and
+  closing it is none); ours re-picked under the moving pointer, lost it,
+  and then refused the commit (it applies to the selected element). Now
+  no re-pick while a lane menu is open, and the pointer under the popup
+  still counts as seen by the view.
+- **The edit's look.** A plain white field with a (100) line at its
+  left, right and bottom; ours was egui's framed edit.
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

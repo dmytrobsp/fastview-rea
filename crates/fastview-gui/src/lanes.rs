@@ -1401,7 +1401,10 @@ impl App {
         // kept while the pointer is elsewhere (no mouse-leave handler).
         let pointer_now = hover.filter(|p| client.contains(*p));
         let idle = self.vizir_drag.is_none() && self.comment_drag.is_none() && self.merge_drag.is_none() && !matches!(self.rect_zoom, RectZoom::Dragging { .. });
-        let hot = match pointer_now.filter(|p| idle && p.x >= left && self.view_pointer != Some(*p)) {
+        // A popup menu is modal: the view gets no mouse moves under it, so
+        // the element stays picked through the menu and after it (VM: the
+        // level stays selected for «Изменить уровень»).
+        let hot = match pointer_now.filter(|p| idle && !menu_busy && p.x >= left && self.view_pointer != Some(*p)) {
             Some(p) => {
                 let h = comment_at(p).map(|h| h.0);
                 if h != doc.comment_hot {
@@ -1422,7 +1425,9 @@ impl App {
                         let g = fo.layout_no_wrap("A".into(), ROW_FONT, Color32::BLACK);
                         (g.size().x, g.size().y)
                     });
-                    level_rect = Some(Rect::from_min_size(Pos2::new(x_of(*from as f64).max(left), y + 3.0), Vec2::new(25.0 * aw, (1.2 * th).trunc())));
+                    // The view's scroll is not added (VM: in a scrolled view
+                    // the edit sits that far below the line).
+                    level_rect = Some(Rect::from_min_size(Pos2::new(x_of(*from as f64).max(left), y - vscroll + 3.0), Vec2::new(25.0 * aw, (1.2 * th).trunc())));
                 }
             }
         }
@@ -1821,6 +1826,12 @@ impl App {
 
         if pointer_now.is_some() {
             self.view_pointer = pointer_now;
+        } else if menu_busy {
+            // Under the popup the view's own hover is empty: the pointer
+            // still counts as seen there, so closing the menu is no move.
+            if let Some(p) = ui.input(|i| i.pointer.hover_pos()).filter(|p| client.contains(*p)) {
+                self.view_pointer = Some(p);
+            }
         }
         for a in actions {
             let d = &mut self.docs[ai];
@@ -2002,7 +2013,18 @@ impl App {
         let Some(at) = at else { return };
         let mut done: Option<bool> = None;
         let area = egui::Area::new(egui::Id::new("fv_level_edit").with(i)).order(egui::Order::Foreground).fixed_pos(at.min).show(ui.ctx(), |ui| {
-            let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(at.width()).min_size(at.size()));
+            // A plain white field with a (100) line at its left, right and
+            // bottom (VM).
+            use crate::oscgeom::PixelLines;
+            let (r, _) = ui.allocate_exact_size(at.size(), egui::Sense::hover());
+            let p = ui.painter();
+            p.rect_filled(r, 0.0, Color32::WHITE);
+            let ink = egui::Stroke::new(1.0f32, Color32::from_gray(100));
+            p.px_hline(r.x_range(), r.bottom() - 1.0, ink);
+            p.px_vline(r.left(), r.y_range(), ink);
+            p.px_vline(r.right() - 1.0, r.y_range(), ink);
+            let field = Rect::from_min_max(r.min + Vec2::new(2.0, 0.0), r.max - Vec2::new(2.0, 1.0));
+            let r = egui::TextEdit::singleline(&mut text).frame(false).font(ROW_FONT).text_color(Color32::BLACK).margin(egui::Margin::ZERO).desired_width(field.width()).show(&mut ui.new_child(egui::UiBuilder::new().max_rect(field))).response;
             r.request_focus();
             if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 done = Some(false);
