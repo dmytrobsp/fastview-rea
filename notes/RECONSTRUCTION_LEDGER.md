@@ -5807,11 +5807,20 @@ never carried ccbm through the clipboard, and blanked only a lower-case
 names at x + 26 and column 1's header is a waveform, the copy writes
 `desc3` and the paste reads it, `stats_value_text` lower-cases first.
 
+### L9.195 — The ribbon's active category tab as the original draws it  ·  ✅
+Seen on the VM (Office 2007 blue): the active tab is 23 px tall with 12 px
+of padding round its label, a 1 px (141, 178, 227) frame with rounded top
+corners opening into the body, filled (244, 249, 255) → (222, 232, 245),
+the label in the 9 pt UI font; an inactive tab is its label alone. Ours
+was an egui button in bold with a frame all round. Now `ribbon_tab` paints
+that shape (the other looks from their own colours, not read).
+Residual: the QAT's customise arrow.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.194)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.195)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5867,7 +5876,7 @@ fill, the group stats width); L9.186 the panes' captions; L9.187 the ribbon's pa
 gradient / height; L9.188 `doc+0x1d8` = every analog-kind record (W2.16),
 the unknowns table (W3.1); L9.189 formula channels on the frequency
 diagram; L9.190 VM runs (no document, single instance); L9.191 «Каналы» rows in
-vector order; L9.192 the ОМП flags as computed channels; L9.193 the lanes' icons; L9.194 W3.2 part A.
+vector order; L9.192 the ОМП flags as computed channels; L9.193 the lanes' icons; L9.194 W3.2 part A; L9.195 the ribbon's tab.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

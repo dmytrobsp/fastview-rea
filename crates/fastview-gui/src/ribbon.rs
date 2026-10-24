@@ -755,24 +755,32 @@ fn help_menu_id() -> egui::Id {
 
 /// A category tab: the active one on its light fill in `text`
 /// (TextHighlighted), the others on the band in the inactive colour.
+/// A category tab. The active one as the VM shows it (Office 2007 blue):
+/// 23 px tall, a 1 px (141, 178, 227) frame with rounded top corners, open
+/// at the bottom into the body, filled (244, 249, 255) → (222, 232, 245);
+/// the label in the 9 pt UI font, 12 px of padding each side; an inactive
+/// tab is its label alone.
 fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, p: crate::theme::Palette) -> egui::Response {
-    let (active_bg, text) = (p.tab_active, if active { p.text } else { p.tab_text });
-    let fill = if active { active_bg } else { Color32::TRANSPARENT };
-    let btn = egui::Button::new(RichText::new(label).color(text).strong())
-        .fill(fill)
-        .stroke(if active {
-            egui::Stroke::new(1.0f32, text.gamma_multiply(0.3f32))
-        } else {
-            egui::Stroke::NONE
-        })
-        .rounding(egui::Rounding {
-            nw: 4.0,
-            ne: 4.0,
-            sw: 0.0,
-            se: 0.0,
-        })
-        .min_size(egui::vec2(72.0, 22.0));
-    ui.add(btn)
+    let font = egui::FontId::proportional(12.0);
+    let text = if active { p.text } else { p.tab_text };
+    let tw = ui.fonts(|f| f.layout_no_wrap(label.to_owned(), font.clone(), text).size().x);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2((tw + 24.0).round(), 23.0), egui::Sense::click());
+    let painter = ui.painter();
+    let blue = p.group_bg == Color32::from_rgb(223, 233, 246);
+    if active {
+        let (top, bottom) = if blue { (Color32::from_rgb(244, 249, 255), Color32::from_rgb(222, 232, 245)) } else { (Color32::WHITE.lerp_to_gamma(p.tab_active, 0.5), p.tab_active) };
+        let frame = if blue { Color32::from_rgb(141, 178, 227) } else { p.group_border };
+        let rounding = egui::Rounding { nw: 3.0, ne: 3.0, sw: 0.0, se: 0.0 };
+        painter.rect_filled(rect, rounding, bottom);
+        painter.add(gradient_mesh(rect.shrink2(egui::vec2(1.0, 0.0)).with_min_y(rect.top() + 3.0), &[(0.0, top), (rect.height() - 3.0, bottom)]));
+        painter.px_rect_stroke(rect.with_max_y(rect.bottom() + 2.0), 3.0, egui::Stroke::new(1.0f32, frame));
+        // Open at the bottom: the body's colour over the frame's lower edge.
+        painter.rect_filled(egui::Rect::from_min_max(egui::pos2(rect.left() + 1.0, rect.bottom()), egui::pos2(rect.right() - 1.0, rect.bottom() + 3.0)), 0.0, bottom);
+    } else if resp.hovered() {
+        painter.rect(rect, egui::Rounding { nw: 3.0, ne: 3.0, sw: 0.0, se: 0.0 }, p.tab_active.gamma_multiply(0.4f32), egui::Stroke::NONE);
+    }
+    painter.text(rect.center(), egui::Align2::CENTER_CENTER, label, font, text);
+    resp
 }
 
 /// A ribbon group: content row/area + centered caption + right divider.
