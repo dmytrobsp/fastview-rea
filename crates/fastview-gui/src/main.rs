@@ -690,9 +690,75 @@ impl App {
     }
 }
 
+/// A frame's input as passes of at most one key press each (the software
+/// runner, whose frames are slow): a window gets each WM_KEYDOWN on its
+/// own, so quick presses each act, as in the original; egui's per-frame
+/// `key_pressed` would see them as one. A pass with a press carries that
+/// press's modifiers; dropped files and viewport events (a close request)
+/// go with the first.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn one_press_per_pass(mut raw: egui::RawInput) -> Vec<egui::RawInput> {
+    let events = std::mem::take(&mut raw.events);
+    let mut passes: Vec<(Vec<egui::Event>, Option<egui::Modifiers>)> = vec![(Vec::new(), None)];
+    for e in events {
+        if let egui::Event::Key { pressed: true, modifiers, .. } = e {
+            if passes.last().is_some_and(|p| p.1.is_some()) {
+                passes.push((Vec::new(), None));
+            }
+            if let Some(p) = passes.last_mut() {
+                p.1 = Some(modifiers);
+            }
+        }
+        if let Some(p) = passes.last_mut() {
+            p.0.push(e);
+        }
+    }
+    let n = passes.len();
+    passes
+        .into_iter()
+        .enumerate()
+        .map(|(i, (events, mods))| {
+            let mut r = raw.clone();
+            r.events = events;
+            if let Some(m) = mods.filter(|_| n > 1) {
+                r.modifiers = m;
+            }
+            if i > 0 {
+                r.dropped_files.clear();
+                r.viewports.values_mut().for_each(|v| v.events.clear());
+            }
+            r
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quick_key_presses_get_a_pass_each() {
+        let key = |k, pressed, m| egui::Event::Key { key: k, physical_key: None, pressed, repeat: false, modifiers: m };
+        let (none, ctrl) = (egui::Modifiers::NONE, egui::Modifiers::CTRL);
+        let raw = egui::RawInput {
+            events: vec![
+                egui::Event::PointerMoved(egui::pos2(1.0, 1.0)),
+                key(egui::Key::ArrowRight, true, none),
+                key(egui::Key::ArrowRight, false, none),
+                key(egui::Key::ArrowRight, true, none),
+                key(egui::Key::C, true, ctrl),
+                egui::Event::Text("x".into()),
+            ],
+            modifiers: none,
+            ..Default::default()
+        };
+        let passes = one_press_per_pass(raw);
+        assert_eq!(passes.iter().map(|p| p.events.len()).collect::<Vec<_>>(), [3, 1, 2]);
+        assert_eq!(passes[2].modifiers, ctrl, "the press's own modifiers");
+        // One press or none: a single pass as it came.
+        let one = one_press_per_pass(egui::RawInput { events: vec![key(egui::Key::A, true, ctrl)], modifiers: none, ..Default::default() });
+        assert_eq!((one.len(), one[0].modifiers), (1, none));
+    }
 
     #[test]
     fn command_line_switches() {

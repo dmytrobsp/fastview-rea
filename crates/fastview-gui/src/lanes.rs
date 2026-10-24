@@ -1713,22 +1713,43 @@ impl App {
         let view_keys = self.copy_focus == crate::app::CopyFocus::View && !alt;
         let popup_up = self.pane_menu.is_some() || self.diag.menu.is_some();
         if view_keys && !menu_busy && !popup_up && !ui.ctx().wants_keyboard_input() && self.rename_edit.is_none() && !self.modal_up {
-            let (l, r, u, d) = ui.input(|i| {
-                (i.key_pressed(egui::Key::ArrowLeft), i.key_pressed(egui::Key::ArrowRight), i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown))
+            // Each press is a WM_KEYDOWN: several in one frame each move.
+            use egui::Key::{ArrowDown, ArrowLeft, ArrowRight, ArrowUp};
+            let keys: Vec<egui::Key> = ui.input(|i| {
+                i.events
+                    .iter()
+                    .filter_map(|e| match e {
+                        egui::Event::Key { key: k @ (ArrowLeft | ArrowRight | ArrowUp | ArrowDown), pressed: true, .. } => Some(*k),
+                        _ => None,
+                    })
+                    .collect()
             });
             let vk = usize::from(ctrl);
-            if l || r {
-                let cur = viz[vk].0 as i64 + if r { 1 } else { -1 };
-                actions.push(Act::MoveV(vk, cur.clamp(0, n.max(1) as i64 - 1) as usize));
+            let (mut cur, mut y) = (None::<i64>, hrows[vk].map(|(hy, _)| hy));
+            let mut moved_h = false;
+            for k in keys {
+                match k {
+                    ArrowLeft | ArrowRight => {
+                        let c = cur.unwrap_or(viz[vk].0 as i64) + if k == ArrowRight { 1 } else { -1 };
+                        cur = Some(c.clamp(0, n.max(1) as i64 - 1));
+                    }
+                    _ => {
+                        // y ∓ 1, ↑ clamped at the view's top; a ГВ never
+                        // placed has y = −1 (`0x4944a0`), so either key puts
+                        // it at the top.
+                        y = Some(match y {
+                            Some(hy) if k == ArrowDown => hy + 1.0,
+                            Some(hy) => (hy - 1.0).max(client.top()),
+                            None => client.top(),
+                        });
+                        moved_h = true;
+                    }
+                }
             }
-            if u || d {
-                // y ∓ 1, ↑ clamped at the view's top; a ГВ never placed has
-                // y = −1 (`0x4944a0`), so either key puts it at the top.
-                let y = match hrows[vk] {
-                    Some((hy, _)) if d => hy + 1.0,
-                    Some((hy, _)) => (hy - 1.0).max(client.top()),
-                    None => client.top(),
-                };
+            if let Some(c) = cur {
+                actions.push(Act::MoveV(vk, c as usize));
+            }
+            if let Some(y) = y.filter(|_| moved_h) {
                 if let Some((ch, v)) = analog_at(y, &geo, &ranges) {
                     actions.push(Act::SetH(vk, ch, v));
                 }
@@ -3362,6 +3383,13 @@ mod menu_tests {
         assert_eq!(h.doc().main_cursor, v1 + 1);
         h.frame_mod(vec![key(egui::Key::ArrowLeft, egui::Modifiers::CTRL)], egui::Modifiers::CTRL);
         assert_eq!(h.doc().aux_cursor, v2 - 1);
+        // Quick presses landing in one frame each move (VM: three → +3).
+        let r = || key(egui::Key::ArrowRight, egui::Modifiers::NONE);
+        h.frame_mod(vec![r(), r(), r()], egui::Modifiers::NONE);
+        assert_eq!(h.doc().main_cursor, v1 + 4);
+        let l = || key(egui::Key::ArrowLeft, egui::Modifiers::NONE);
+        h.frame_mod(vec![l(), l(), l()], egui::Modifiers::NONE);
+        assert_eq!(h.doc().main_cursor, v1 + 1);
         // A hidden визир is shown by the key (`0x492f20`); Alt does nothing.
         h.app.active_doc_mut().unwrap().v_shown[0] = false;
         h.frame_mod(vec![key(egui::Key::ArrowLeft, egui::Modifiers::ALT)], egui::Modifiers::ALT);

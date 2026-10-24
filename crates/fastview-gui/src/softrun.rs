@@ -115,30 +115,39 @@ impl Soft {
         let mut raw = state.take_egui_input(window);
         raw.viewports.insert(egui::ViewportId::ROOT, self.info.clone());
         self.info.events.clear();
-        let app = &mut self.app;
-        let out = self.ctx.run(raw, |ctx| {
-            app.frame_ui(ctx);
-            app.splash(ctx);
-        });
-        state.handle_platform_output(window, out.platform_output);
-        if let Some(vp) = out.viewport_output.get(&egui::ViewportId::ROOT) {
-            let mut actions = egui::ahash::HashSet::default();
-            egui_winit::process_viewport_commands(&self.ctx, &mut self.info, vp.commands.iter().cloned(), window, &mut actions);
-            if vp.commands.iter().any(|c| matches!(c, egui::ViewportCommand::Close)) {
-                event_loop.exit();
-                return;
+        // Quick key presses each in a pass of their own; the last pass's
+        // picture is shown, every pass's textures kept.
+        let mut textures = egui::TexturesDelta::default();
+        let mut last = None;
+        for raw in crate::one_press_per_pass(raw) {
+            let app = &mut self.app;
+            let mut out = self.ctx.run(raw, |ctx| {
+                app.frame_ui(ctx);
+                app.splash(ctx);
+            });
+            state.handle_platform_output(window, std::mem::take(&mut out.platform_output));
+            textures.append(std::mem::take(&mut out.textures_delta));
+            if let Some(vp) = out.viewport_output.get(&egui::ViewportId::ROOT) {
+                let mut actions = egui::ahash::HashSet::default();
+                egui_winit::process_viewport_commands(&self.ctx, &mut self.info, vp.commands.iter().cloned(), window, &mut actions);
+                if vp.commands.iter().any(|c| matches!(c, egui::ViewportCommand::Close)) {
+                    event_loop.exit();
+                    return;
+                }
+                self.wake = if vp.repaint_delay.is_zero() {
+                    window.request_redraw();
+                    None
+                } else {
+                    Instant::now().checked_add(vp.repaint_delay)
+                };
             }
-            self.wake = if vp.repaint_delay.is_zero() {
-                window.request_redraw();
-                None
-            } else {
-                Instant::now().checked_add(vp.repaint_delay)
-            };
+            last = Some(out);
         }
+        let Some(out) = last else { return };
         let size = window.inner_size();
         let t0 = Instant::now();
         let prims = self.ctx.tessellate(out.shapes, out.pixels_per_point);
-        let canvas = self.painter.paint(&prims, &out.textures_delta, size.width as usize, size.height as usize, out.pixels_per_point);
+        let canvas = self.painter.paint(&prims, &textures, size.width as usize, size.height as usize, out.pixels_per_point);
         blit(window, &canvas);
         trace(&format!("frame {}×{} in {:?}", size.width, size.height, t0.elapsed()));
     }

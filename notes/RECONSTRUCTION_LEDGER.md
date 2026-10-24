@@ -7670,6 +7670,28 @@ the window. The keyboard focus is most likely left on the hidden pane.
 Ours closes. Not reproduced: it looks like a focus slip, not a designed
 behaviour.
 
+### L9.279 — Side by side: the визир by mouse and keys; quick key presses each act  ·  ✅
+W4.3 on both programs, WIN_1999:
+- A click in the plot places В1; a drag moves it. The status bar's
+  «Верт. визир 1» and the lanes' instantaneous values follow in both.
+- Ours lands 5 samples (1 px) to the right of the original's, the known
+  1 px stats-column difference from the font widths (accepted).
+- Shift+→ moves one sample in both; End does nothing in both.
+Three → sent quickly moved the original's В1 three samples and ours one.
+Each press is its own WM_KEYDOWN for the original. Ours, under the slow
+software runner, got all three in one frame, and egui's per-frame
+`key_pressed` counts them once. The same held for every key handler
+(lists, menus, grids). Two fixes:
+- `one_press_per_pass` (main.rs): the software runner feeds a frame's
+  input to egui in passes of at most one key press each (each with that
+  press's modifiers), keeping every pass's textures and showing the
+  last.
+- The view's ←/→/↑/↓ walk the frame's key events in order, so the GPU
+  path also counts each press.
+Tests: `quick_key_presses_get_a_pass_each`,
+`arrow_keys_move_v1_and_ctrl_v2_by_one_sample` (three presses in one
+frame).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
