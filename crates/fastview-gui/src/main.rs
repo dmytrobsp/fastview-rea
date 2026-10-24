@@ -1478,6 +1478,33 @@ mod window_tests {
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "addformula") {
             app.dispatch(C::QuickAnalysis);
             app.open_formula_dlg();
+            // `FV_ADDFORMULA_FORM=<dialog>`: the first tree item hosting it.
+            if let Some(d) = std::env::var("FV_ADDFORMULA_FORM").ok().and_then(|v| v.parse::<u16>().ok()) {
+                fn find(nodes: &[fvb_core::addformula::Node], path: &mut Vec<&'static str>, d: u16) -> Option<Vec<&'static str>> {
+                    for n in nodes {
+                        match *n {
+                            fvb_core::addformula::Node::Leaf(l, f) if f == d => {
+                                let mut p = path.clone();
+                                p.push(l);
+                                return Some(p);
+                            }
+                            fvb_core::addformula::Node::Group(l, k) => {
+                                path.push(l);
+                                let r = find(k, path, d);
+                                path.pop();
+                                if r.is_some() {
+                                    return r;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    None
+                }
+                if let (Some(path), Some(st)) = (find(fvb_core::addformula::TREE, &mut Vec::new(), d), app.formula_dlg.as_mut()) {
+                    st.select(path, Some(d));
+                }
+            }
         }
         // `ratealert`: «Параметры осциллограммы» with a refused rate's box over it.
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "ratealert") {

@@ -293,6 +293,158 @@ fn branch_icon(p: &egui::Painter, r: Rect, branch: &str) {
     p.text(r.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(11.0), color);
 }
 
+/// Where the individually laid-out forms (501–542) put their fields, at
+/// their templates' dialog units: the field, its label (x, y, w, h,
+/// SS_RIGHT) and its control; a check box has no label (BS_LEFTTEXT).
+type Place = (u16, Option<(i32, i32, i32, i32, bool)>, (i32, i32, i32, i32), bool);
+
+fn form_places(dialog: u16) -> Option<&'static [Place]> {
+    Some(match dialog {
+        501 => &[
+            (1057, Some((30, 23, 26, 8, false)), (60, 20, 135, 30), false),
+            (1052, Some((30, 48, 30, 8, false)), (60, 47, 135, 12), false),
+        ],
+        502 => &[
+            (1057, Some((30, 24, 26, 8, false)), (60, 22, 126, 30), false),
+            (1052, Some((37, 49, 16, 8, false)), (60, 48, 126, 12), false),
+            (1053, Some((25, 72, 27, 8, false)), (59, 72, 126, 12), false),
+        ],
+        503 => &[
+            (1057, Some((30, 24, 26, 8, false)), (60, 22, 126, 30), false),
+            (1052, Some((37, 49, 16, 8, false)), (60, 48, 126, 12), false),
+            (1053, Some((33, 72, 20, 8, false)), (59, 72, 126, 12), false),
+            (1050, Some((33, 96, 20, 8, false)), (59, 96, 126, 12), false),
+        ],
+        504 => &[
+            (1057, Some((30, 24, 26, 8, false)), (60, 22, 126, 30), false),
+            (1052, Some((37, 49, 16, 8, false)), (60, 48, 126, 12), false),
+            (1053, Some((34, 73, 18, 8, false)), (59, 72, 126, 12), false),
+        ],
+        505 => &[
+            (1007, Some((14, 22, 28, 8, true)), (49, 19, 135, 30), false),
+            (1008, Some((16, 47, 26, 8, true)), (50, 44, 134, 30), false),
+            (1009, Some((7, 74, 35, 8, true)), (50, 71, 134, 30), false),
+            (2009, Some((6, 100, 36, 8, true)), (50, 98, 134, 30), false),
+            (2175, None, (34, 125, 150, 8), true),
+        ],
+        506 | 507 => &[
+            (1007, Some((14, 22, 28, 8, true)), (49, 19, 135, 30), false),
+            (1008, Some((16, 47, 26, 8, true)), (50, 44, 134, 30), false),
+            (1009, Some((7, 74, 35, 8, true)), (50, 71, 134, 30), false),
+            (2009, Some((6, 99, 36, 8, true)), (50, 98, 134, 30), false),
+            (2175, None, (34, 125, 150, 8), true),
+        ],
+        508 | 520 | 521 => &[
+            (1007, Some((14, 22, 28, 8, true)), (49, 19, 135, 30), false),
+            (1008, Some((16, 47, 26, 8, true)), (50, 44, 134, 30), false),
+            (1009, Some((7, 74, 35, 8, true)), (50, 71, 134, 30), false),
+            (2010, Some((6, 100, 36, 8, true)), (50, 98, 134, 30), false),
+        ],
+        522 | 524 => &[
+            (2016, Some((19, 9, 10, 8, true)), (30, 6, 60, 30), false),
+            (2015, Some((100, 9, 19, 8, true)), (120, 6, 60, 30), false),
+            (2017, Some((19, 27, 10, 8, true)), (30, 24, 60, 30), false),
+            (2018, Some((109, 26, 10, 8, true)), (120, 24, 60, 30), false),
+            (2019, Some((19, 44, 10, 8, true)), (30, 42, 60, 30), false),
+            (2020, Some((109, 44, 10, 8, true)), (120, 42, 60, 30), false),
+            (2021, Some((20, 63, 10, 8, true)), (30, 60, 60, 30), false),
+            (2022, Some((109, 62, 10, 8, true)), (120, 60, 60, 30), false),
+            (2023, Some((19, 81, 10, 8, true)), (30, 78, 60, 30), false),
+            (2024, Some((105, 81, 14, 8, true)), (120, 78, 60, 30), false),
+            (2025, Some((16, 98, 14, 8, true)), (30, 96, 60, 30), false),
+            (2026, Some((105, 98, 14, 8, true)), (120, 96, 60, 30), false),
+            (2027, Some((16, 116, 14, 8, true)), (30, 114, 60, 30), false),
+            (2028, Some((105, 116, 14, 8, true)), (120, 114, 60, 30), false),
+            (2029, Some((15, 134, 14, 8, true)), (30, 132, 60, 30), false),
+            (2030, Some((105, 135, 14, 8, true)), (120, 132, 60, 30), false),
+            (2031, Some((16, 153, 14, 8, true)), (30, 150, 60, 30), false),
+            (2032, Some((105, 152, 14, 8, true)), (120, 150, 60, 30), false),
+            (2033, Some((15, 170, 14, 8, true)), (30, 168, 60, 30), false),
+            (2034, Some((105, 170, 14, 8, true)), (120, 168, 60, 30), false),
+            (2035, Some((15, 188, 14, 8, true)), (30, 186, 60, 30), false),
+            (2036, Some((105, 188, 14, 8, true)), (120, 186, 60, 30), false),
+            (2037, Some((15, 206, 14, 8, true)), (30, 204, 60, 30), false),
+            (2038, Some((105, 207, 14, 8, true)), (120, 204, 60, 30), false),
+        ],
+        523 => &[
+            (1007, Some((36, 25, 10, 8, true)), (48, 24, 138, 30), false),
+            (1008, Some((36, 49, 10, 8, true)), (48, 48, 138, 30), false),
+            (2041, Some((22, 74, 24, 8, true)), (48, 72, 138, 30), false),
+        ],
+        525 => &[
+            (2041, Some((6, 8, 24, 8, true)), (32, 6, 138, 30), false),
+            (2016, Some((16, 27, 10, 8, true)), (27, 24, 60, 30), false),
+            (2015, Some((97, 27, 19, 8, true)), (117, 24, 60, 30), false),
+            (2017, Some((16, 45, 10, 8, true)), (27, 42, 60, 30), false),
+            (2018, Some((106, 44, 10, 8, true)), (117, 42, 60, 30), false),
+            (2019, Some((16, 62, 10, 8, true)), (27, 60, 60, 30), false),
+            (2020, Some((106, 62, 10, 8, true)), (117, 60, 60, 30), false),
+            (2021, Some((17, 81, 10, 8, true)), (27, 78, 60, 30), false),
+            (2022, Some((106, 80, 10, 8, true)), (117, 78, 60, 30), false),
+            (2023, Some((16, 99, 10, 8, true)), (27, 96, 60, 30), false),
+            (2024, Some((102, 99, 14, 8, true)), (117, 96, 60, 30), false),
+            (2025, Some((13, 116, 14, 8, true)), (27, 114, 60, 30), false),
+            (2026, Some((102, 116, 14, 8, true)), (117, 114, 60, 30), false),
+            (2027, Some((13, 134, 14, 8, true)), (27, 132, 60, 30), false),
+            (2028, Some((102, 134, 14, 8, true)), (117, 132, 60, 30), false),
+            (2029, Some((12, 152, 14, 8, true)), (27, 150, 60, 30), false),
+            (2030, Some((102, 153, 14, 8, true)), (117, 150, 60, 30), false),
+            (2031, Some((13, 171, 14, 8, true)), (27, 168, 60, 30), false),
+            (2032, Some((102, 170, 14, 8, true)), (117, 168, 60, 30), false),
+            (2033, Some((12, 188, 14, 8, true)), (27, 186, 60, 30), false),
+            (2034, Some((102, 188, 14, 8, true)), (117, 186, 60, 30), false),
+            (2035, Some((12, 206, 14, 8, true)), (27, 204, 60, 30), false),
+            (2036, Some((102, 206, 14, 8, true)), (117, 204, 60, 30), false),
+            (2037, Some((12, 224, 14, 8, true)), (27, 222, 60, 30), false),
+            (2038, Some((102, 225, 14, 8, true)), (117, 222, 60, 30), false),
+        ],
+        526 | 528 => &[
+            (1007, Some((0, 22, 40, 8, true)), (46, 19, 150, 54), false),
+            (1008, Some((0, 41, 40, 8, true)), (46, 39, 150, 54), false),
+            (1043, Some((0, 62, 40, 8, true)), (46, 59, 150, 54), false),
+            (2042, Some((8, 82, 31, 8, true)), (46, 80, 149, 14), false),
+        ],
+        527 => &[
+            (1007, Some((1, 22, 40, 8, true)), (47, 19, 150, 54), false),
+            (1008, Some((1, 41, 40, 8, true)), (47, 39, 150, 54), false),
+            (1043, Some((1, 62, 40, 8, true)), (47, 59, 150, 54), false),
+            (2042, Some((9, 82, 31, 8, true)), (47, 80, 149, 14), false),
+        ],
+        529..=531 => &[
+            (1043, Some((7, 9, 33, 8, true)), (45, 7, 150, 54), false),
+            (1007, Some((7, 29, 32, 8, true)), (45, 27, 150, 54), false),
+            (1041, Some((6, 49, 33, 8, true)), (45, 47, 150, 54), false),
+            (2043, Some((22, 70, 18, 8, true)), (45, 68, 150, 30), false),
+            (1052, Some((7, 92, 33, 8, true)), (45, 90, 150, 12), false),
+            (1053, Some((7, 112, 33, 8, true)), (45, 110, 150, 12), false),
+            (2044, Some((9, 133, 31, 8, true)), (45, 130, 150, 14), false),
+            (1050, Some((8, 154, 33, 8, true)), (46, 152, 150, 12), false),
+            (1051, Some((8, 174, 33, 8, true)), (46, 172, 150, 12), false),
+            (2045, Some((6, 194, 35, 8, true)), (46, 191, 150, 14), false),
+            (2042, Some((10, 214, 31, 8, true)), (46, 212, 149, 14), false),
+        ],
+        532..=534 => &[
+            (1010, Some((0, 20, 40, 8, true)), (45, 18, 150, 54), false),
+            (1011, Some((0, 40, 40, 8, true)), (45, 38, 150, 54), false),
+            (1062, Some((0, 60, 40, 8, true)), (45, 58, 150, 54), false),
+            (1052, Some((16, 81, 24, 8, true)), (46, 79, 150, 12), false),
+            (1053, Some((12, 99, 28, 8, true)), (46, 98, 149, 12), false),
+        ],
+        540..=542 => &[
+            (1043, Some((7, 9, 33, 8, true)), (45, 7, 150, 54), false),
+            (1007, Some((7, 29, 32, 8, true)), (45, 27, 150, 54), false),
+            (1041, Some((6, 49, 33, 8, true)), (45, 47, 150, 54), false),
+            (2043, Some((22, 70, 18, 8, true)), (45, 68, 150, 30), false),
+            (2121, Some((7, 92, 33, 8, true)), (45, 90, 150, 12), false),
+            (2044, Some((9, 115, 31, 8, true)), (45, 112, 150, 14), false),
+            (2122, Some((8, 136, 33, 8, true)), (46, 134, 150, 12), false),
+            (2045, Some((6, 159, 35, 8, true)), (46, 156, 150, 14), false),
+            (2042, Some((10, 180, 31, 8, true)), (46, 178, 149, 14), false),
+        ],
+        _ => return None,
+    })
+}
+
 /// A hosted form on its template, from the place of control 1035 (VM:
 /// DIALOG 400's «Формула:» at 1347, 496): 400 its label at (0, 0) over
 /// the edit at (0, 12) 191 × 12 DLU; 488 «Параметры отсутствуют» at (20,
@@ -315,14 +467,35 @@ fn template_form(ui: &mut egui::Ui, at: egui::Pos2, dialog: u16, st: &mut AddFor
         return true;
     }
     let regular = matches!(dialog, 401..=461 | 490 | 491 | 1069);
-    if !regular || form.fields.iter().any(|&(_, id)| af::kind(id) == Kind::Check) {
+    let places = if regular { None } else { form_places(dialog) };
+    if !regular && places.is_none() {
         return false;
     }
     for (k, &(label, id)) in form.fields.iter().enumerate() {
-        let y = 20 * k as i32;
-        win_label(ui, dlu(o, 0, 20 + y, 40, 8), label, false, true);
         let kind = af::kind(id);
-        let r = dlu(o, 45, 18 + y, 150, 12);
+        let r = match places.and_then(|ps| ps.iter().find(|p| p.0 == id)) {
+            // An individually laid-out form: its own places.
+            Some(&(_, lab, (x, y, w, h), left)) => {
+                if kind == Kind::Check {
+                    let on = st.values.get(&id).is_some_and(|v| v == "1");
+                    if crate::dialogs::win_check_ex(ui, dlu(o, x, y, w, h), label, on, true, left) {
+                        st.values.insert(id, if on { "0" } else { "1" }.into());
+                    }
+                    continue;
+                }
+                if let Some((lx, ly, lw, lh, right)) = lab {
+                    win_label(ui, dlu(o, lx, ly, lw, lh), label, right, true);
+                }
+                dlu(o, x, y, w, h.min(14))
+            }
+            None if places.is_some() => continue,
+            // The grid of the regular forms.
+            None => {
+                let y = 20 * k as i32;
+                win_label(ui, dlu(o, 0, 20 + y, 40, 8), label, false, true);
+                dlu(o, 45, 18 + y, 150, 12)
+            }
+        };
         let items: Vec<String> = match kind {
             Kind::Channel { .. } => af::channel_items(kind, &st.channels).0,
             Kind::List(items, _) => items.iter().map(|s| s.to_string()).collect(),

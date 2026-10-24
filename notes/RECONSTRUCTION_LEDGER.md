@@ -7140,6 +7140,19 @@ Removed with
 its field. «Окна» (MFC's windows dialog) stays as L9.220 left it —
 unreachable in the original's ribbon UI.
 
+### L9.260 — The individually laid-out formula forms on their templates  ·  ✅
+The 26 hosted forms of 501–542 that do not follow the grid of L9.253
+(the reduction, group, 24-current, braking, interphase, resistance and
+voltage forms): each of our fields pairs with its template control by id
+and with its label by text — all 26 without a miss — so `form_places`
+holds, per form, each field's label (with SS_RIGHT) and control
+rectangles at the template's dialog units and a check box's BS_LEFTTEXT
+(«Удалять нулевую последовательность»); forms that share a layout share
+an entry (506 / 507, 508 / 520 / 521, 522 / 524, 526 / 528, 529–531,
+532–534, 540–542). `template_form` lays them out so; `form_ui` remains
+only as the fallback. Harness: `FV_ADDFORMULA_FORM=<dialog>` selects the
+first tree item hosting that form.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
