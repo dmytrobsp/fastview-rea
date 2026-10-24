@@ -93,7 +93,8 @@ Batches, in this order (the size of the unread code, user visibility):
 - [x] **W1.5** Document and view — the seven cited (L9.175); the level edit and the ruler picks fixed.
 - [ ] **W1.5b** Comments bound by display name at every paint (a rename hides a level / area; the `.set` keeps the old name) — confirm on the VM (put a level on Ia, rename Ia in «Каналы», save, look), then rebind ours.
 - [ ] **W1.6** Small windows — AboutWnd, FileInfoDlg, ChanPairDlg, FileFinder22Dlg (2), CParamOscBar.
-- [ ] **W1.7** The unlabelled (`?`, 45) — label them first (callers further up, data references), then fold them into the batches above or new ones.
+- [x] **W1.7** The unlabelled large functions — labelled and read (L9.176); the coefficient dialog fixed.
+- [ ] **W1.7b** From W1.7: groups pruned after every formula evaluation (`0x455c70`) and computed channels as group members (with L9.144); a pasted channel's vector phasor from its own cache (`0x490120`); OSC2 channel lines (field counts, digital normal state, no phase, the empty-name quirk); the `.sto` open flow's messages and `-Dst` as a file (reader stays ⛔); group members painted in name order.
 - [ ] **W1.8** The medium functions (50–149 instructions, 474 uncited) — the same way, batch by area once W1.1–W1.7 are done.
 - [ ] **W1.9** The "explained away" list: functions that need no note, each with a one-line reason.
 

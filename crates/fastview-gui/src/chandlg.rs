@@ -408,6 +408,8 @@ pub struct CoefDlg {
     pub dirty: bool,
     /// Top-left of the header row at the last frame (for tests).
     pub origin: Option<Pos2>,
+    /// Where each value cell was drawn at the last frame (for tests).
+    pub cell_rects: Vec<(Cell, Rect)>,
 }
 
 impl CoefDlg {
@@ -420,48 +422,48 @@ impl CoefDlg {
         }
     }
 
-    fn rect(a: Cell, b: Cell) -> BTreeSet<Cell> {
-        let (r0, r1) = (a.0.min(b.0), a.0.max(b.0));
-        let (c0, c1) = (a.1.min(b.1), a.1.max(b.1));
-        (r0..=r1).flat_map(|r| (c0..=c1).map(move |c| (r, c))).collect()
+    /// A press anywhere but the edit (`0x47af90` → `0x47b3d0`): only the
+    /// commit — a single click selects nothing.
+    pub fn press(&mut self, shift: bool) {
+        self.commit(shift);
     }
 
-    /// A press on a cell (`0x47af90`): with Shift the selection becomes the
-    /// rectangle from the anchor; without it the selection clears and the
-    /// cell becomes the anchor. A running edit is committed first (into the
-    /// selected cells of its column).
-    pub fn press(&mut self, at: Cell, shift: bool) {
+    /// A double-click on a cell (`0x47b020`): the edit committed; with Shift
+    /// every row between the anchor's and this one takes the rectangle's
+    /// columns (those rows overwritten, the others kept); the cell joins the
+    /// selection and its edit opens.
+    pub fn double_click(&mut self, at: Cell, shift: bool) {
+        self.commit(shift);
         if shift {
             if let Some(a) = self.anchor {
-                self.sel = Self::rect(a, at);
+                let (r0, r1) = (a.0.min(at.0), a.0.max(at.0));
+                let (c0, c1) = (a.1.min(at.1), a.1.max(at.1));
+                self.sel.retain(|&(r, _)| !(r0..=r1).contains(&r));
+                self.sel.extend((r0..=r1).flat_map(|r| (c0..=c1).map(move |c| (r, c))));
             }
-        } else {
-            self.sel.clear();
-            self.anchor = Some(at);
         }
-        self.commit();
-    }
-
-    /// A double-click opens the in-place edit over the cell.
-    pub fn open_edit(&mut self, at: Cell) {
-        self.commit();
-        self.anchor = Some(at);
+        self.sel.insert(at);
         self.edit = Some((at, self.cells[at.0][at.1].clone()));
     }
 
-    /// Commit the edit (`0x47b3d0`): only a text that differs from the
-    /// cell's makes the grid dirty and goes into the edited cell and every
-    /// selected cell of either column (the rows' item-data bits).
-    pub fn commit(&mut self) {
+    /// Commit the edit (`0x47b3d0`): a text that differs from the cell's
+    /// makes the grid dirty and goes into the edited cell and every selected
+    /// cell of either column (the rows' item-data bits); then the edited
+    /// cell is the anchor and, without Shift, the selection clears — after
+    /// the write.
+    pub fn commit(&mut self, shift: bool) {
         let Some(((r, c), text)) = self.edit.take() else { return };
-        if text == self.cells[r][c] {
-            return;
+        if text != self.cells[r][c] {
+            self.cells[r][c] = text.clone();
+            for &(sr, sc) in &self.sel {
+                self.cells[sr][sc] = text.clone();
+            }
+            self.dirty = true;
         }
-        self.cells[r][c] = text.clone();
-        for &(sr, sc) in &self.sel {
-            self.cells[sr][sc] = text.clone();
+        self.anchor = Some((r, c));
+        if !shift {
+            self.sel.clear();
         }
-        self.dirty = true;
     }
 
     pub fn cancel_edit(&mut self) {
@@ -473,7 +475,7 @@ impl CoefDlg {
     /// marks the document modified on IDOK (`0x42fea7`). Returns the
     /// channels whose coefficients changed.
     pub fn apply(&mut self, doc: &mut Doc) -> Option<Vec<usize>> {
-        self.commit();
+        self.commit(false);
         if !self.dirty {
             return None;
         }
@@ -704,6 +706,7 @@ impl App {
             .resizable(false)
             .open(&mut open)
             .show(ctx, |ui| {
+                st.cell_rects.clear();
                 let shift = ui.input(|i| i.modifiers.shift);
                 const W: f32 = 420.0;
                 let cw = W * 0.33;
@@ -726,6 +729,7 @@ impl App {
                         ui.painter().with_clip_rect(nr).text(nr.left_center() + Vec2::new(4.0, 0.0), egui::Align2::LEFT_CENTER, &st.names[row], egui::FontId::proportional(12.0), pal.text);
                         for col in 0..2 {
                             let r = Rect::from_min_size(rr.min + Vec2::new(name_w + cw * col as f32, 0.0), Vec2::new(cw, row_h));
+                            st.cell_rects.push(((row, col), r));
                             if let Some((_, text)) = st.edit.as_mut().filter(|(at, _)| *at == (row, col)) {
                                 let te = ui.put(r.shrink(1.0), egui::TextEdit::singleline(text).id(egui::Id::new(("fv_coef_edit", row, col))).desired_width(r.width() - 4.0));
                                 te.request_focus();
@@ -737,13 +741,8 @@ impl App {
                                 } else if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                     result = Some(true);
                                 } else if te.lost_focus() {
-                                    // A press elsewhere: the pressed cell decides
-                                    // the Shift range, then the text is committed.
-                                    let target = ui.input(|i| i.pointer.press_origin()).and_then(|p| coef_cell_at(rr, p, name_w, cw, row_h, row, st.cells.len()));
-                                    match target {
-                                        Some(t) => st.press(t, shift),
-                                        None => st.commit(),
-                                    }
+                                    // A press elsewhere commits (`0x47b3d0`).
+                                    st.press(shift);
                                 }
                                 continue;
                             }
@@ -762,9 +761,9 @@ impl App {
                                 if selected { Color32::WHITE } else { pal.text },
                             );
                             if resp.double_clicked() {
-                                st.open_edit((row, col));
+                                st.double_click((row, col), shift);
                             } else if resp.clicked() {
-                                st.press((row, col), shift);
+                                st.press(shift);
                             }
                         }
                     }
@@ -797,18 +796,6 @@ impl App {
             None => {}
         }
     }
-}
-
-/// The value cell under `p` in the coefficient grid, given one row's rect
-/// (rows are laid out one under the other from that rect's row index).
-fn coef_cell_at(rr: Rect, p: Pos2, name_w: f32, cw: f32, row_h: f32, row: usize, n: usize) -> Option<Cell> {
-    let top = rr.top() - row as f32 * row_h;
-    let r = ((p.y - top) / row_h).floor();
-    let x = p.x - rr.left() - name_w;
-    if r < 0.0 || r as usize >= n || x < 0.0 || x >= 2.0 * cw {
-        return None;
-    }
-    Some((r as usize, (x / cw) as usize))
 }
 
 #[cfg(test)]
@@ -935,27 +922,32 @@ mod tests {
         assert_eq!(wtof(".5"), 0.5);
     }
 
+    /// `0x47b020` / `0x47b3d0`: the range is built by Shift + double-click
+    /// from the anchor; the commit fills every selected cell, then clears
+    /// the selection without Shift; a single click selects nothing.
     #[test]
     fn coefficient_bulk_entry_fills_the_shift_range() {
         let mut d = demo_doc();
         let mut g = CoefDlg::new(&d);
         assert_eq!(g.cells[0], ["1".to_string(), "1".to_string()]);
-        // Double-click row 0 primary, type, Shift+press row 2 secondary.
-        g.press((0, 0), false);
-        g.open_edit((0, 0));
-        g.edit.as_mut().unwrap().1 = "110000".into();
-        g.press((2, 1), true);
+        // Double-click row 0 primary, then Shift + double-click row 2
+        // secondary: the rectangle, its edit open; type and commit.
+        g.double_click((0, 0), false);
+        g.double_click((2, 1), true);
         assert_eq!(g.sel.len(), 6);
-        // Every selected cell of either column (`0x47b3d0`'s item-data bits).
+        g.edit.as_mut().unwrap().1 = "110000".into();
+        g.press(false);
         for r in 0..3 {
             assert_eq!(g.cells[r], ["110000".to_string(), "110000".to_string()]);
         }
         assert_eq!(g.cells[3][0], "1");
-        // Without Shift only the edited cell, and the selection clears.
-        g.open_edit((4, 1));
-        g.edit.as_mut().unwrap().1 = "bad".into();
-        g.press((5, 0), false);
+        assert!(g.sel.is_empty(), "cleared after the write");
+        // A single click selects nothing; a double-click edits one cell.
+        g.press(false);
         assert!(g.sel.is_empty());
+        g.double_click((4, 1), false);
+        g.edit.as_mut().unwrap().1 = "bad".into();
+        g.press(false);
         assert_eq!(g.cells[4][1], "bad");
         let changed = g.apply(&mut d);
         assert_eq!(changed, Some(vec![0, 1, 2, 4]));
@@ -988,10 +980,10 @@ mod tests {
     fn coefficients_ok_without_edits_changes_nothing() {
         let mut d = demo_doc();
         let mut g = CoefDlg::new(&d);
-        g.press((1, 1), false);
+        g.press(false);
         // An edit that keeps the text is no change either.
-        g.open_edit((1, 1));
-        g.press((2, 1), false);
+        g.double_click((1, 1), false);
+        g.press(false);
         assert!(g.apply(&mut d).is_none(), "nothing dirty: OnCancel");
     }
 }
@@ -1037,7 +1029,10 @@ mod ui_tests {
 
         fn click_mod(&mut self, pos: Pos2, modifiers: egui::Modifiers) {
             let ev = |pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers };
-            self.frame_mod(vec![egui::Event::PointerMoved(pos), ev(true)], modifiers);
+            // The pointer arrives first: a move and a press in one frame
+            // would be read as a drag (and move the window).
+            self.frame_mod(vec![egui::Event::PointerMoved(pos)], modifiers);
+            self.frame_mod(vec![ev(true)], modifiers);
             self.frame_mod(vec![ev(false)], modifiers);
         }
 
@@ -1056,9 +1051,17 @@ mod ui_tests {
         }
 
         fn double_click(&mut self, pos: Pos2) {
-            self.click_mod(pos, Default::default());
-            self.click_mod(pos, Default::default());
-            self.frame(vec![]);
+            self.double_click_mod(pos, Default::default());
+        }
+
+        fn double_click_mod(&mut self, pos: Pos2, m: egui::Modifiers) {
+            // Past the last click's double-click window first (0.3 s).
+            for _ in 0..7 {
+                self.frame(vec![]);
+            }
+            self.click_mod(pos, m);
+            self.click_mod(pos, m);
+            self.frame_mod(vec![], m);
         }
     }
 
@@ -1129,16 +1132,22 @@ mod ui_tests {
         for _ in 0..6 {
             h.frame(vec![]);
         }
-        let o = h.app.dlg.coef.as_ref().and_then(|s| s.origin).expect("dialog drawn");
-        let cw = 420.0 * 0.33;
-        let name_w = 420.0 - 2.0 * cw;
-        let cell = |r: usize, c: usize| o + Vec2::new(name_w + cw * c as f32 + cw / 2.0, 22.0 + 20.0 * r as f32 + 10.0);
-        h.double_click(cell(0, 0));
+        // The cells' places as drawn.
+        let cell = |h: &Harness, r: usize, c: usize| {
+            let st = h.app.dlg.coef.as_ref().expect("dialog drawn");
+            st.cell_rects.iter().find(|(at, _)| *at == (r, c)).map(|(_, rect)| rect.center()).expect("cell drawn")
+        };
+        let at = cell(&h, 0, 0);
+        h.double_click(at);
         assert_eq!(h.app.dlg.coef.as_ref().unwrap().edit.as_ref().map(|e| e.0), Some((0, 0)));
-        // Replace the text, then Shift+click row 3 of the same column.
+        // Shift + double-click row 3 of the same column (`0x47b020`): the
+        // range from the anchor, the edit on row 3; type, press elsewhere.
+        let at = cell(&h, 3, 0);
+        h.double_click_mod(at, egui::Modifiers::SHIFT);
+        assert_eq!(h.app.dlg.coef.as_ref().unwrap().sel.len(), 4);
         h.app.dlg.coef.as_mut().unwrap().edit.as_mut().unwrap().1 = "6000".into();
-        h.click_mod(cell(3, 0), egui::Modifiers::SHIFT);
-        h.frame(vec![]);
+        let at = cell(&h, 5, 1);
+        h.click(at);
         let st = h.app.dlg.coef.as_ref().unwrap();
         assert!(st.edit.is_none());
         assert_eq!((0..4).map(|r| st.cells[r][0].as_str()).collect::<Vec<_>>(), ["6000"; 4]);

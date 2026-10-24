@@ -5207,6 +5207,44 @@ original (a rename hides them; ours binds a row index at load, re-bound
 by name only on deletions, L9.157) — VM run planned (plan W1.5b); the
 scroll offset of the level edit.
 
+### L9.176 — «Коэффициенты трансформации»: selection by Shift + double-click, the commit fills then clears; W1.7 read  ·  ✅
+Read (COMPLETION_PLAN W1.7; by hand the routing in `0x47af90`): DIALOG
+477's PreTranslateMessage `0x47af90` sends a double-click on the list
+(WM_LBUTTONDBLCLK) to `0x47b020` and any press not on the open edit
+(WM_LBUTTONDOWN) to the commit `0x47b3d0`; the map has only WM_DRAWITEM —
+a single click selects nothing. `0x47b020` commits an open edit, hit-tests
+the column and row; with Shift every row between the anchor's and the hit
+row takes the rectangle's column bits (those rows overwritten, the others
+kept; a rectangle touching the name column clears its rows); on column 1
+or 2 it opens the edit (style 0x10000080, id 100, left + 3 / top + 1 /
+bottom − 1, the list's font) and ORs the cell into its row's bits. The
+commit `0x47b3d0`: a changed text marks the dialog dirty and goes into
+every selected cell of both columns; the edited cell becomes the anchor
+and, without Shift, the selection clears — after the write. OnInitDialog
+`0x47ac80` (three columns of (list − 25)·33 %, rows at the channel index for
+analog channels below doc+0x1d8 without bit 13, `%g` of +0xd0 / +0xd8),
+OnDrawItem `0x47b7b0` (white rows, selected cells (100,100,255) with white
+text but the edited one). Also read in W1.7, already described or library:
+the `.sto` open `0x4563b0` / the `.dst` search `0x455040` (⛔ reader — the
+details go to plan W2), the OSC2 channel-line constructor `0x424800`, the
+group painting `0x4311e0`, the group dissolve `0x456170` (and the pruning
+after a formula evaluation, `0x455c70` — plan W1.7b), the vector phasor of
+a pasted channel `0x490120`, the unit walk's cases `0x416360` (L9.70), the
+ОМП model constructor `0x496400`, the result bar / report save
+`0x4a1840`; explained away: `0x431630`, `0x432a60`, `0x432d90`, `0x433340`,
+`0x406c10`, `0x420410`, `0x4a2020`, `0x469f80`, `0x410ec0`, `0x440ea0`,
+`0x4411c0`, `0x46ab90`, `0x410930`, `0x440c30`, `0x46a350`, `0x479040`,
+`0x478e90`, `0x42ce80`, `0x458390`, `0x42c580`, `0x42c810`, `0x42c9e0`,
+`0x4766e0` (vector / map / set / sort / stream / CList helpers).
+Ours built the rectangle on Shift + single click, replaced the selection
+and cleared it before committing (so a fill typed then committed by a
+click elsewhere went into one cell). Now `CoefDlg::press` only commits,
+`double_click` builds the Shift range as read and opens the edit, `commit`
+fills then sets the anchor and clears without Shift. The UI test's harness
+now moves the pointer before pressing (a move and a press in one frame
+read as a window drag). Tests `coefficient_bulk_entry_fills_the_shift_range`,
+`coefficients_double_click_type_and_shift_click_fill`.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
