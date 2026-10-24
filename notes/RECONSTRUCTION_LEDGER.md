@@ -7051,6 +7051,14 @@ fields in the templates' row order (checked against every template).
 `win_edit`, `win_combo_list`); the 28 forms laid out individually (the
 multi-current and differential ones, 501–542) keep ours — open (W4.5).
 
+### L9.254 — The ОМП tree through `win_tree`  ·  ✅
+DIALOG 336's tree (1074, buttons and lines, no TVS_LINESATROOT) now draws
+through the TreeView of L9.252 with its roots one level left: no line or
+box at the station, a section's dotted branch and ± box one level in
+(the VM's root row — image at 938, selection from 957, 16 px — as
+before). Its (171, 173, 179) border, the double-click toggling a station
+kept.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

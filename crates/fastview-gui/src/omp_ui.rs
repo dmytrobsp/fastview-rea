@@ -972,67 +972,39 @@ impl ParamsDialog {
         // our own drawings) at +3, the label from +22, the selection white
         // on (0, 120, 212) (VM).
         let tree = at(10.0, 44.0, third - 20.0, H - 90.0);
-        ui.painter().rect_filled(tree, 0.0, Color32::from_rgb(171, 173, 179));
-        ui.painter().rect_filled(tree.shrink(1.0), 0.0, Color32::WHITE);
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(tree.shrink(1.0)), |ui| {
-            ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
-            egui::ScrollArea::vertical().id_salt("omp_tree").show(ui, |ui| {
-                let mut hidden_below: Option<usize> = None;
-                let rows = self.rows();
-                for (i, (depth, node, label)) in rows.iter().enumerate() {
-                    if let Some(d) = hidden_below {
-                        if *depth > d {
-                            continue;
-                        }
-                        hidden_below = None;
-                    }
-                    let has_children = rows.get(i + 1).is_some_and(|(d2, _, _)| d2 > depth);
-                    let collapsed = self.collapsed.contains(node);
-                    let (row, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 16.0), egui::Sense::hover());
-                    let x0 = row.left() + 3.0 + 19.0 * *depth as f32;
-                    let p = ui.painter().clone();
-                    if *depth > 0 && has_children {
-                        // The ⊞ / ⊟ box, 9 px, left of the image.
-                        let b = egui::Rect::from_center_size(egui::pos2(x0 - 9.5, row.center().y), egui::vec2(9.0, 9.0));
-                        p.rect_filled(b, 0.0, Color32::from_gray(150));
-                        p.rect_filled(b.shrink(1.0), 0.0, Color32::WHITE);
-                        p.hline(b.left() + 2.0..=b.right() - 2.0, b.center().y, egui::Stroke::new(1.0f32, Color32::BLACK));
-                        if collapsed {
-                            p.vline(b.center().x, b.top() + 2.0..=b.bottom() - 2.0, egui::Stroke::new(1.0f32, Color32::BLACK));
-                        }
-                        if ui.interact(b.expand(2.0), ui.id().with(("omp_box", i)), egui::Sense::click()).clicked() {
-                            if collapsed {
-                                self.collapsed.remove(node);
-                            } else {
-                                self.collapsed.insert(*node);
-                            }
-                        }
-                    }
-                    tree_icon(&p, egui::Rect::from_min_size(egui::pos2(x0, row.top()), egui::vec2(16.0, 16.0)), node);
-                    let g = ui.fonts(|f| f.layout_no_wrap(label.clone(), DLG_FONT, Color32::BLACK));
-                    let lr = egui::Rect::from_min_size(egui::pos2(x0 + 19.0, row.top()), egui::vec2(g.size().x + 5.0, 16.0));
-                    let selected = self.sel == *node;
-                    if selected {
-                        p.rect_filled(lr, 0.0, Color32::from_rgb(0, 120, 212));
-                    }
-                    p.galley(egui::pos2(lr.left() + 2.0, lr.center().y - g.size().y / 2.0), g, if selected { Color32::WHITE } else { Color32::BLACK });
-                    let resp = ui.interact(lr, ui.id().with(("omp_item", i)), egui::Sense::click());
-                    if resp.clicked() {
-                        self.sel = *node;
-                    }
-                    if resp.double_clicked() && has_children {
-                        if self.collapsed.contains(node) {
-                            self.collapsed.remove(node);
-                        } else {
-                            self.collapsed.insert(*node);
-                        }
-                    }
-                    if has_children && self.collapsed.contains(node) {
-                        hidden_below = Some(*depth);
-                    }
+        let all = self.rows();
+        let mut shown = Vec::new();
+        let mut hidden_below: Option<usize> = None;
+        for (k, (depth, node, _)) in all.iter().enumerate() {
+            if let Some(d) = hidden_below {
+                if *depth > d {
+                    continue;
                 }
-            });
-        });
+                hidden_below = None;
+            }
+            if self.collapsed.contains(node) {
+                hidden_below = Some(*depth);
+            }
+            shown.push(k);
+        }
+        let rows: Vec<crate::dialogs::TreeRow> = shown
+            .iter()
+            .map(|&k| {
+                let (depth, node, label) = &all[k];
+                let has_children = all.get(k + 1).is_some_and(|(d2, _, _)| d2 > depth);
+                crate::dialogs::TreeRow { depth: *depth, label: label.clone(), has_children, expanded: !self.collapsed.contains(node), selected: self.sel == *node }
+            })
+            .collect();
+        let ev = crate::dialogs::win_tree(ui, tree, egui::Id::new("omp_tree"), Color32::from_rgb(171, 173, 179), &rows, false, &mut |p, cell, k| tree_icon(p, cell, &all[shown[k]].1));
+        if let Some(k) = ev.toggled.or(ev.double_clicked.filter(|&k| rows[k].has_children)) {
+            let node = all[shown[k]].1;
+            if !self.collapsed.remove(&node) {
+                self.collapsed.insert(node);
+            }
+        }
+        if let Some(k) = ev.clicked {
+            self.sel = all[shown[k]].1;
+        }
         // The grid (`0x4a80e0`, WS_BORDER, no header) (VM): 17 px rows ruled
         // in (240) below each, the names and the values 5 px into their
         // columns, the value column from 231 px; a modified value bold. A
