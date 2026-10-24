@@ -6106,6 +6106,26 @@ Now `diff_scale_range` / `diff_scale_max` set the differential's extent;
 test `circle_range_and_points_as_read` extended. With L9.204 this closes
 W1.3b.
 
+### L9.206 — The view scroll bars' system menu and what its commands do  ·  ✅
+Seen on the VM (L9.185's run): the view's window scroll bars carry the
+system's own context menu («Scroll Here», …, in the system's language).
+Read by hand what its commands reach: WM_HSCROLL `0x45d6d0` (table
+`0x45d848`) — line and page left / right share a step (one screen), the
+thumb codes set first = (N − visible)·nPos / 10000, SB_LEFT / SB_RIGHT
+go to the common tail (`0x45d81a`) with no change; WM_VSCROLL `0x45d870`
+(byte table `0x45d97c`, cases `0x45d96c`) — line and page ±100 px, and
+THUMBPOSITION / THUMBTRACK / SB_TOP / SB_BOTTOM all set the position to
+nPos (`0x45d917`), which is 0 for the last two: «Top» and «Bottom» both
+go to the top; SB_ENDSCROLL nothing.
+Ours had no menu on its scroll bars. Now `scrollbar` opens the menu on a
+right-click — «Scroll Here» (the thumb centred there), the edge, page
+and line items with the effects above; the texts are the English ones the
+VM shows (the system's menu, INFERRED item list). Test
+`the_horizontal_scroll_bar_is_painted_along_the_bottom_and_steps_by_a_screen`
+extended.
+Residual: the menu's language follows the system's (ours fixed English);
+a disabled bar's menu not checked.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

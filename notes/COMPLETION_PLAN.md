@@ -185,7 +185,7 @@ items (VM ones also in W4.4):
   lookup ignoring case (as ours, L9.199's read); the zoom gate's rectangle:
   done, L9.200;
   the splash (our own picture, 2000 ms, topmost); the view scroll bar's
-  system menu («Канал 1» with formula channels: L9.199; «Скрыть все» and
+  system menu (done, L9.206; «Канал 1» with formula channels: L9.199; «Скрыть все» and
   «Отсчет углов» over `doc+0x1d8`: already as ours, L9.199's read).
 
 ## W3 — Resolve the unknowns

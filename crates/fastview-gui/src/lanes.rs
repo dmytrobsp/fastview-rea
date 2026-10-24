@@ -992,6 +992,51 @@ fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f
     let id = ui.id().with(("fv_scroll", horizontal));
     let r = ui.interact(rect, id, Sense::click_and_drag());
     let along_of = |p: Pos2| if horizontal { p.x - rect.left() } else { p.y - rect.top() };
+    // The system's own context menu of a window scroll bar (seen on the VM:
+    // «Scroll Here», …, in the system's language). Its commands reach the
+    // view's handlers: WM_HSCROLL `0x45d6d0` ignores SB_LEFT / SB_RIGHT
+    // (`0x45d81a`); WM_VSCROLL `0x45d870` takes nPos for SB_TOP and
+    // SB_BOTTOM too (`0x45d917`) — 0, so both go to the top; the page items
+    // step as the arrows (`0x45d848`, `0x45d97c`).
+    let menu_id = id.with("menu");
+    if r.secondary_clicked() {
+        if let Some(q) = r.interact_pointer_pos() {
+            let menu = crate::popmenu::PopMenu::new(ui.ctx().cumulative_pass_nr(), q);
+            ui.data_mut(|d| d.insert_temp(menu_id, (menu, along_of(q))));
+        }
+    }
+    if let Some((mut menu, at_click)) = ui.data(|d| d.get_temp::<(crate::popmenu::PopMenu, f32)>(menu_id)) {
+        use crate::popmenu::{Entry, Mark};
+        let names = if horizontal {
+            ["Scroll Here", "Left Edge", "Right Edge", "Page Left", "Page Right", "Scroll Left", "Scroll Right"]
+        } else {
+            ["Scroll Here", "Top", "Bottom", "Page Up", "Page Down", "Scroll Up", "Scroll Down"]
+        };
+        let mut entries = Vec::new();
+        for (k, name) in names.into_iter().enumerate() {
+            if matches!(k, 1 | 3 | 5) {
+                entries.push(Entry::Sep);
+            }
+            entries.push(Entry::item(name, true, Mark::None, k));
+        }
+        let out = crate::popmenu::show(ui.ctx(), "fv_scroll_menu", &mut menu, &entries);
+        if out.close {
+            ui.data_mut(|d| d.remove::<(crate::popmenu::PopMenu, f32)>(menu_id));
+        } else {
+            ui.data_mut(|d| d.insert_temp(menu_id, (menu, at_click)));
+        }
+        let track = len - 2.0 * arrow;
+        let thumb_len = (track * page / (max + page)).max(8.0_f32.min(track)).min(track).max(0.0);
+        let travel = track - thumb_len;
+        return match out.chosen {
+            // SB_THUMBPOSITION for the thumb centred on the click.
+            Some(0) if travel > 0.0 => Some(((at_click - arrow - thumb_len / 2.0) / travel * max).clamp(0.0, max)),
+            Some(1 | 2) if !horizontal => Some(0.0),
+            Some(3 | 5) => Some((value - if horizontal { jump } else { line }).clamp(0.0, max)),
+            Some(4 | 6) => Some((value + if horizontal { jump } else { line }).clamp(0.0, max)),
+            _ => None,
+        };
+    }
     // Thumb tracking: where the thumb was grabbed, kept for the whole drag;
     // the thumb then follows the pointer's position along the bar wherever
     // the pointer goes (a press on the track does not grab it).
@@ -2735,6 +2780,20 @@ mod menu_tests {
         assert_eq!(h.doc().first, 0);
         h.button(Pos2::new(plot_right - 3.0 * HSCROLL_H, y), egui::PointerButton::Primary);
         assert_eq!(h.doc().first, visible, "a track click right of the thumb pages right");
+        // The system's menu (`0x45d6d0`): «Page Right» pages, «Left Edge»
+        // (SB_LEFT) does nothing.
+        let item = |h: &Harness, label: &str| {
+            h.shapes.iter().find_map(|c| if let Shape::Text(t) = &c.shape { (t.galley.text() == label).then(|| t.pos + t.galley.rect.center().to_vec2()) } else { None })
+        };
+        h.button(Pos2::new(400.0, y), egui::PointerButton::Secondary);
+        let at = item(&h, "Page Right").expect("the menu is open");
+        h.button(at, egui::PointerButton::Primary);
+        assert_eq!(h.doc().first, 2 * visible);
+        h.button(Pos2::new(400.0, y), egui::PointerButton::Secondary);
+        let at = item(&h, "Left Edge").expect("the menu is open");
+        h.button(at, egui::PointerButton::Primary);
+        assert_eq!(h.doc().first, 2 * visible, "SB_LEFT is ignored");
+        assert!(item(&h, "Left Edge").is_none(), "closed");
     }
 
     /// Dragging the thumb follows the pointer along the bar wherever it
