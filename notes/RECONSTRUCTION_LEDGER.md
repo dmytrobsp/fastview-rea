@@ -5872,7 +5872,7 @@ menus' one-channel refresh (ours computes live — no stale cache); a
 leading-dot file name proposes "" in the original; the pending columns of
 the binary writer (a broken file — not reproduced).
 
-Next in L9 (HANDOFF 2026-10-24, night 6): **public at
+Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
