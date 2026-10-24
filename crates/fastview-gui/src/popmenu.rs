@@ -87,6 +87,116 @@ pub fn area_id(base: &str, serial: u64) -> egui::Id {
     egui::Id::new(base).with(serial)
 }
 
+// CMFCPopupMenu in the Office 2007 looks (VM, every context menu of the
+// original — the view's, the panes', the diagrams'): a (134, 134, 134)
+// border and a (245, 245, 245) line inside it round a (250, 250, 250)
+// ground, a 24 px (233, 238, 238) image column ending in a (197, 197, 197)
+// / (245, 245, 245) pair, navy text, and a 3 px shadow.
+const MFC_GROUND: Color32 = Color32::from_rgb(250, 250, 250);
+const MFC_INNER: Color32 = Color32::from_rgb(245, 245, 245);
+const MFC_COLUMN: Color32 = Color32::from_rgb(233, 238, 238);
+const MFC_RULE: Color32 = Color32::from_rgb(197, 197, 197);
+const MFC_TEXT: Color32 = Color32::from_rgb(0, 21, 110);
+const MFC_GREY: Color32 = Color32::from_rgb(141, 141, 141);
+/// The image column's width.
+const MFC_COL_W: f32 = 24.0;
+
+/// A popup menu's frame and image column around `add` (the rows).
+pub fn mfc_frame<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    mfc_frame_with(ui, true, add)
+}
+
+/// [`mfc_frame`], with or without the image column (a menu of large
+/// images and descriptions has none).
+pub fn mfc_frame_with<R>(ui: &mut egui::Ui, column: bool, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    use crate::oscgeom::PixelLines;
+    let frame = egui::Frame::none()
+        .fill(MFC_GROUND)
+        .stroke(Stroke::new(1.0f32, Color32::from_gray(134)))
+        .inner_margin(egui::Margin::same(2.0))
+        .shadow(egui::epaint::Shadow { offset: Vec2::new(3.0, 3.0), blur: 3.0, spread: 0.0, color: Color32::from_black_alpha(60) });
+    frame
+        .show(ui, |ui| {
+            menu_style(ui.style_mut());
+            let under = ui.painter().add(egui::Shape::Noop);
+            let r = ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), add).inner;
+            let c = ui.min_rect();
+            let p = ui.painter();
+            p.px_rect_stroke(c.expand(1.0), 0.0, Stroke::new(1.0f32, MFC_INNER));
+            if column {
+                let col = Rect::from_min_max(Pos2::new(c.left(), c.top() + 1.0), Pos2::new(c.left() + MFC_COL_W, c.bottom() - 1.0));
+                p.set(under, egui::Shape::rect_filled(col, 0.0, MFC_COLUMN));
+                p.px_vline(col.right(), col.y_range(), Stroke::new(1.0f32, MFC_RULE));
+                p.px_vline(col.right() + 1.0, col.y_range(), Stroke::new(1.0f32, MFC_INNER));
+            }
+            r
+        })
+        .inner
+}
+
+/// A menu's title band (a ribbon menu's caption, VM): 17 px of (222, 232,
+/// 239), the title bold, a rule under it.
+pub fn title_band(ui: &mut egui::Ui, title: &str) {
+    use crate::oscgeom::PixelLines;
+    // The menu at least as wide as its title.
+    let tw = ui.fonts(|f| crate::lanes::bold_font(f, 12.0).map(|b| f.layout_no_wrap(title.to_string(), b, MFC_TEXT).size().x)).unwrap_or(0.0);
+    ui.set_min_width(tw + 12.0);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(1.0, 19.0), egui::Sense::hover());
+    let w = ui.max_rect().x_range();
+    let band = Rect::from_x_y_ranges(w, r.top()..=r.top() + 17.0);
+    ui.painter().rect_filled(band, 0.0, Color32::from_rgb(222, 232, 239));
+    crate::lanes::bold_text(ui.painter(), Pos2::new(band.left() + 5.0, band.top() + 2.0), title, egui::FontId::proportional(12.0), MFC_TEXT);
+    ui.painter().px_hline(w, band.bottom(), Stroke::new(1.0f32, MFC_RULE));
+    ui.painter().px_hline(w, band.bottom() + 1.0, Stroke::new(1.0f32, MFC_INNER));
+}
+
+/// A large item: its 32 px image, a bold title and the description under
+/// it (a ribbon menu's entries, VM).
+pub fn large_item(ui: &mut egui::Ui, label: &str, desc: &str, enabled: bool, icon: RowIcon) -> egui::Response {
+    let wrap = ui.max_rect().width() - 53.0;
+    let gal = ui.painter().layout(desc.to_string(), egui::FontId::proportional(12.0), Color32::from_rgb(21, 66, 139), wrap);
+    let h = (22.0 + gal.size().y + 6.0).max(48.0);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(1.0, h), egui::Sense::hover());
+    let row = Rect::from_x_y_ranges(ui.max_rect().x_range(), rect.y_range());
+    let resp = ui.interact(row, ui.id().with(("fv_large_item", label)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    if enabled && ui.rect_contains_pointer(row) {
+        hot_bar(ui.painter(), row);
+    }
+    icon(ui.painter(), Rect::from_min_size(Pos2::new(row.left() + 6.0, row.top() + 3.0), Vec2::splat(32.0)), if enabled { Color32::from_rgb(40, 60, 130) } else { MFC_GREY });
+    let ink = if enabled { MFC_TEXT } else { MFC_GREY };
+    crate::lanes::bold_text(ui.painter(), Pos2::new(row.left() + 43.0, row.top() + 4.0), label, egui::FontId::proportional(12.0), ink);
+    ui.painter().galley(Pos2::new(row.left() + 43.0, row.top() + 20.0), gal, ink);
+    resp
+}
+
+/// A menu's separator: 7 px with a (197, 197, 197) / (245, 245, 245) rule
+/// from the text's column to the edge (VM).
+pub fn separator(ui: &mut egui::Ui) {
+    use crate::oscgeom::PixelLines;
+    // No width of its own (a popup sizes to its widest row): drawn across
+    // the menu's width.
+    let (r, _) = ui.allocate_exact_size(Vec2::new(1.0, 6.0), egui::Sense::hover());
+    let w = ui.max_rect();
+    let x = (w.left() + MFC_COL_W + 5.0)..=w.right();
+    ui.painter().px_hline(x.clone(), r.top() + 2.0, Stroke::new(1.0f32, MFC_RULE));
+    ui.painter().px_hline(x, r.top() + 3.0, Stroke::new(1.0f32, MFC_INNER));
+}
+
+/// The hot item's bar: 22 px, a thin amber border and a two-part gradient
+/// (VM).
+pub(crate) fn hot_bar(p: &egui::Painter, r: Rect) {
+    use crate::oscgeom::PixelLines;
+    let inner = r.shrink(1.0);
+    let mid = inner.top() + 10.0;
+    crate::lanes::gradient(p, Rect::from_min_max(inner.min, Pos2::new(inner.right(), mid)), Color32::from_rgb(255, 253, 235), Color32::from_rgb(255, 235, 172));
+    crate::lanes::gradient(p, Rect::from_min_max(Pos2::new(inner.left(), mid), Pos2::new(inner.right(), inner.bottom() - 1.0)), Color32::from_rgb(255, 213, 99), Color32::from_rgb(255, 227, 145));
+    p.px_hline(inner.x_range(), inner.bottom() - 1.0, Stroke::new(1.0f32, Color32::from_rgb(255, 248, 181)));
+    p.px_hline(r.x_range(), r.top(), Stroke::new(1.0f32, Color32::from_rgb(219, 206, 153)));
+    p.px_hline(r.x_range(), r.bottom() - 1.0, Stroke::new(1.0f32, Color32::from_rgb(215, 208, 179)));
+    p.px_vline(r.left(), r.y_range(), Stroke::new(1.0f32, Color32::from_rgb(195, 170, 121)));
+    p.px_vline(r.right() - 1.0, r.y_range(), Stroke::new(1.0f32, Color32::from_rgb(195, 170, 121)));
+}
+
 /// The look of a Win32 popup menu's rows (also the view's own menus).
 pub fn menu_style(style: &mut egui::Style) {
     style.wrap_mode = Some(egui::TextWrapMode::Extend);
@@ -98,6 +208,7 @@ pub fn menu_style(style: &mut egui::Style) {
     style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
     style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
     style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
+    style.visuals.override_text_color = Some(MFC_TEXT);
 }
 
 /// A menu row as Win32 draws it: a check-mark column (a tick for a
@@ -108,11 +219,20 @@ pub fn mark_item_hot(ui: &mut egui::Ui, label: &str, enabled: bool, mark: Option
     mark_item_keys(ui, label, None, enabled, mark, hot)
 }
 
+/// An item's image in the menu's column, painted into a 16 px square.
+pub type RowIcon<'a> = &'a dyn Fn(&egui::Painter, Rect, Color32);
+
 /// [`mark_item_hot`] with the accelerator's text right-aligned (the
 /// original's «Ctrl+C» beside an item, VM).
 pub fn mark_item_keys(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enabled: bool, mark: Option<&str>, hot: bool) -> egui::Response {
-    // The check / image column: the label 33 px in from the menu's edge (VM).
-    const COL: f32 = 28.0;
+    mark_item_icon(ui, label, keys, enabled, mark, hot, None)
+}
+
+/// [`mark_item_keys`] with the item's image in the column: a checked item
+/// shows its image in the amber box instead of a tick (VM).
+pub fn mark_item_icon(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enabled: bool, mark: Option<&str>, hot: bool, icon: Option<RowIcon>) -> egui::Response {
+    // The check / image column: the label 31 px in from the menu's edge (VM).
+    const COL: f32 = 29.0;
     let font = egui::TextStyle::Button.resolve(ui.style());
     let galley = ui.painter().layout_no_wrap(label.to_string(), font.clone(), Color32::PLACEHOLDER);
     let keys_w = keys.map_or(0.0, |k| ui.painter().layout_no_wrap(k.to_string(), font.clone(), Color32::PLACEHOLDER).size().x + 40.0);
@@ -120,11 +240,19 @@ pub fn mark_item_keys(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enable
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let row = Rect::from_x_y_ranges(ui.max_rect().x_range(), rect.y_range());
     if enabled && (resp.hovered() || hot) {
-        ui.painter().rect_filled(row, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
+        hot_bar(ui.painter(), Rect::from_min_max(row.min, Pos2::new(row.right(), row.top() + 22.0)));
     }
-    let col = if enabled { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
+    let col = if enabled { MFC_TEXT } else { MFC_GREY };
+    let bx = Rect::from_min_size(Pos2::new(row.left() + 2.0, rect.top() + 1.0), Vec2::splat(20.0));
     if let Some(m) = mark {
-        ui.painter().text(Pos2::new(rect.left() + COL / 2.0, rect.center().y), egui::Align2::CENTER_CENTER, m, font.clone(), col);
+        // A checked item: its mark (or image) in a 20 px amber box.
+        ui.painter().rect(bx.shrink(0.5), 0.0, Color32::from_rgb(255, 227, 149), Stroke::new(1.0f32, Color32::from_rgb(242, 149, 54)));
+        if icon.is_none() {
+            ui.painter().text(bx.center(), egui::Align2::CENTER_CENTER, m, font.clone(), col);
+        }
+    }
+    if let Some(paint) = icon {
+        paint(ui.painter(), Rect::from_center_size(bx.center(), Vec2::splat(16.0)), if enabled { Color32::from_rgb(40, 60, 130) } else { MFC_GREY });
     }
     ui.painter().galley(Pos2::new(rect.left() + COL, rect.center().y - galley.size().y / 2.0), galley, col);
     if let Some(k) = keys {
@@ -172,7 +300,7 @@ fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<us
         match e {
             Entry::Sep => {
                 if shown[i] {
-                    ui.separator();
+                    separator(ui);
                 }
             }
             Entry::Item { label, enabled, check, cmd } => {
@@ -185,7 +313,7 @@ fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<us
                 }
             }
             Entry::Sub { label, .. } => {
-                let r = ui.add(egui::Button::new(format!("{label}    ▸")).selected(*open == Some(i) || hot == Some(i)));
+                let r = mark_item_keys(ui, label, Some("▸"), true, None, *open == Some(i) || hot == Some(i));
                 if r.hovered() || r.clicked() {
                     *open = Some(i);
                 }
@@ -246,10 +374,7 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
     let mut open = menu.sub;
     let mut sub_rect = None;
     let frame_ui = |ui: &mut egui::Ui, f: &mut dyn FnMut(&mut egui::Ui)| {
-        egui::Frame::menu(ui.style()).show(ui, |ui| {
-            menu_style(ui.style_mut());
-            ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| f(ui));
-        });
+        mfc_frame(ui, |ui| f(ui));
     };
     let root = egui::Area::new(area_id(base, menu.serial))
         .kind(egui::UiKind::Menu)

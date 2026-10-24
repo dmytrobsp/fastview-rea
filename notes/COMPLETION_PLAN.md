@@ -241,14 +241,14 @@ items (VM ones also in W4.4):
     reader `0x4a45f0` (spec §8.5).
   - **RUN** (VM scenarios, W4.4): ~~`.set` comments by alias~~ (run, L9.227); a
     ~~disabled V scroll bar when the lanes fit~~ (run, L9.196); ~~«МВт» / «ном»
-    folding~~ (run, L9.210); the ГВ label's look (L9.42); the 4 × 4
+    folding~~ (run, L9.210); ~~the ГВ label's look~~ (run, L9.291); the 4 × 4
     marks' fill (L9.45); quick-analysis edits and the modified flag
     (L9.55); ~~«Окна...» arrangements under MDI tabs~~ (out of reach, L9.220); ~~the
-    `.set` after an ОМП run~~ (run, L9.217); plane labels' background (L9.75); the
+    `.set` after an ОМП run~~ (run, L9.217); ~~plane labels' background~~ (run: opaque in both, L9.280); the
     differential table's row order (L9.81); the app menu's keytips
-    (L9.90); the ribbon's reduction steps (L9.91); the printed vector
-    legend (L9.93); the preview on non-A4 paper (L9.94); GDI's Ellipse box
-    (L9.99); the diagram tab order in the workspace (L9.105); the splitter
+    (run, L9.291); the ribbon's reduction steps (L9.91); the printed vector
+    legend (L9.93); the preview on non-A4 paper (L9.94); ~~GDI's Ellipse box~~
+    (run, L9.285); the diagram tab order in the workspace (L9.105); the splitter
     cursor (L9.106); the docking divider's limits (L9.109); a paste's
     selection (L9.111); the print dialog's fields / status (L9.113); the
     preview's per-page DC (L9.121); «Свойства»' DEVMODE (L9.122); ~~the
@@ -256,11 +256,11 @@ items (VM ones also in W4.4):
     MDI keys / order (L9.130); a 0 / negative rate in 392 (L9.131,
     L9.148); the `.set` with formula + digital channels (L9.143); menu
     check column, combine with a computed channel, popup keyboard
-    (L9.144, L9.146); status bar prompts (L9.147); a group tab strip's
-    right-click (L9.149); ~~Aqua's title~~ (run: left, as ours); Enter in quick analysis
+    (L9.144, L9.146); ~~status bar prompts~~ (run, L9.291); ~~a group tab strip's
+    right-click~~ (run, L9.291); ~~Aqua's title~~ (run: left, as ours); Enter in quick analysis
     (L9.151); 32806 with no document (L9.152); «Удалить файлы» with
     nothing selected (L9.154); ~~Save As caption~~ (run: the system's own); ~~opening an open
-    file~~ (run, L9.190), a drop on the frame (L9.159); the toolbar wheel (L9.161); drag
+    file~~ (run, L9.190), a drop on the frame (L9.159); ~~the toolbar wheel~~ (run, L9.291); drag
     auto-scroll at the left / right insets (L9.164); the level edit
     scrolled (L9.175); the caption bars' order (spec §1.3); the ОМП
     channel drop-down with formula channels (spec §8.4).

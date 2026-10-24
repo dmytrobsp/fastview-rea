@@ -11,6 +11,25 @@ use crate::theme::Skin;
 use eframe::egui::{self, Color32, RichText};
 
 impl App {
+    /// The wheel over the ribbon steps its tabs (CMFCRibbonBar's
+    /// OnMouseWheel, VM): a notch down the next, up the previous, stopping
+    /// at either end; not with a modifier, nor in the print preview.
+    pub fn ribbon_wheel(&mut self, ui: &egui::Ui, rect: egui::Rect) {
+        if self.print.preview.is_some() || !ui.rect_contains_pointer(rect) {
+            return;
+        }
+        let (deltas, mods) = ui.input(|i| (crate::lanes::wheel_deltas(&i.events), i.modifiers));
+        if !mods.is_none() {
+            return;
+        }
+        let tabs = [RibbonTab::Home, RibbonTab::Omp];
+        for d in deltas {
+            let at = tabs.iter().position(|t| *t == self.tab).unwrap_or(0);
+            let next = if d < 0.0 { (at + 1).min(tabs.len() - 1) } else { at.saturating_sub(1) };
+            self.tab = tabs[next];
+        }
+    }
+
     pub fn ribbon_ui(&mut self, ui: &mut egui::Ui) {
         let p = self.skin.palette();
         let mut cmds: Vec<Command> = Vec::new();
@@ -859,25 +878,24 @@ impl App {
         let mut chosen = false;
         let min = self.ribbon_minimized;
         let area = egui::Area::new(qat_menu_id()).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
-            egui::Frame::menu(ui.style()).show(ui, |ui| match menu {
+            crate::popmenu::mfc_frame_with(ui, menu == QatMenu::Minimize, |ui| match menu {
                 QatMenu::Minimize => {
                     ui.set_min_width(150.0);
-                    if ui.checkbox(&mut { min }, "Свернуть ленту").clicked() {
+                    if crate::popmenu::mark_item_hot(ui, "Свернуть ленту", true, min.then_some("✓"), false).clicked() {
                         cmds.push(Command::ToggleRibbonMin);
                         chosen = true;
                     }
                 }
                 QatMenu::Print => {
-                    ui.set_width(300.0);
-                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                    ui.label(RichText::new("Предварительный просмотр и печать документа").strong());
-                    ui.separator();
-                    for (label, desc, cmd) in [
-                        ("Параметры страницы", "Изменение параметров страницы", Command::PageSetup),
-                        ("Предварительный просмотр", "Просмотр документа в полностраничном режиме", Command::PrintPreview),
-                        ("Печать", "Печать активного документа", Command::Print),
+                    ui.set_min_width(276.0);
+                    crate::popmenu::title_band(ui, "Предварительный просмотр и печать документа");
+                    for (label, desc, cmd, icon) in [
+                        ("Параметры страницы", "Изменение параметров страницы", Command::PageSetup, Icon::Pages),
+                        ("Предварительный просмотр", "Просмотр документа в полностраничном режиме", Command::PrintPreview, Icon::ZoomIn),
+                        ("Печать", "Печать активного документа", Command::Print, Icon::Print),
                     ] {
-                        if sub_entry(ui, label, desc, true).clicked() {
+                        let paint = move |p: &egui::Painter, r: egui::Rect, c: Color32| icons::paint(p, r, icon, c);
+                        if crate::popmenu::large_item(ui, label, desc, true, &paint).clicked() {
                             cmds.push(cmd);
                             chosen = true;
                         }
@@ -1281,7 +1299,7 @@ fn inks(ui: &egui::Ui, p: crate::theme::Palette) -> (Color32, Color32) {
 /// The glyphs of the ribbon's small icon-only buttons (our drawings; the
 /// original's image list is not reproduced).
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Mini {
+pub(crate) enum Mini {
     ShowDigital,
     HideDigital,
     HideUnchanged,
@@ -1318,7 +1336,7 @@ fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, tip: &s
     resp.on_hover_text(tip).clicked() && enabled
 }
 
-fn paint_mini(painter: &egui::Painter, r: egui::Rect, glyph: Mini, col: Color32) {
+pub(crate) fn paint_mini(painter: &egui::Painter, r: egui::Rect, glyph: Mini, col: Color32) {
     use egui::{pos2, Stroke};
     let s = Stroke::new(1.5f32, col);
     let at = |x: f32, y: f32| pos2(r.left() + x * r.width(), r.top() + y * r.height());

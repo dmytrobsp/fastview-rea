@@ -2059,16 +2059,13 @@ impl App {
             .fixed_pos(menu.pos)
             .constrain(true)
             .show(ctx, |ui| {
-                egui::Frame::menu(ui.style()).show(ui, |ui| {
-                    menu_style(ui.style_mut());
-                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                        let mut pick = |c: MenuCmd| chosen = Some(c);
-                        match menu.kind {
-                            LaneMenuKind::Channels => channel_menu(ui, doc, can_paste, &mut pick),
-                            LaneMenuKind::TimeAxis => time_axis_menu(ui, time_unit, grid, band, &mut pick),
-                            LaneMenuKind::Comment(i) => comment_menu(ui, &doc.comments[i], i, &mut pick),
-                        }
-                    });
+                crate::popmenu::mfc_frame(ui, |ui| {
+                    let mut pick = |c: MenuCmd| chosen = Some(c);
+                    match menu.kind {
+                        LaneMenuKind::Channels => channel_menu(ui, doc, can_paste, &mut pick),
+                        LaneMenuKind::TimeAxis => time_axis_menu(ui, time_unit, grid, band, &mut pick),
+                        LaneMenuKind::Comment(i) => comment_menu(ui, &doc.comments[i], i, &mut pick),
+                    }
                 });
             });
         let rect = area.response.rect;
@@ -2258,12 +2255,6 @@ impl App {
     }
 }
 
-/// The look of a Win32 popup menu: flat items, no wrapping (a menu is as
-/// wide as its longest item).
-fn menu_style(style: &mut egui::Style) {
-    crate::popmenu::menu_style(style);
-}
-
 /// The view menus' keyboard state (a Win32 popup's ↑ / ↓ / Enter): the
 /// rows are counted as they are laid out each frame.
 #[derive(Debug, Clone, Default)]
@@ -2285,6 +2276,12 @@ fn menu_row(ui: &mut egui::Ui, label: &str, enabled: bool, mark: Option<&str>) -
 }
 
 fn menu_row_keys(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enabled: bool, mark: Option<&str>) -> bool {
+    menu_row_icon(ui, label, keys, enabled, mark, None)
+}
+
+/// A row with its image in the menu's column (MENU 561's items carry the
+/// toolbar images; ours are our glyphs).
+fn menu_row_icon(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enabled: bool, mark: Option<&str>, icon: Option<crate::popmenu::RowIcon>) -> bool {
     let mut k: MenuKeys = ui.ctx().data(|d| d.get_temp(menu_keys_id())).unwrap_or_default();
     let idx = k.count;
     k.count += 1;
@@ -2292,7 +2289,7 @@ fn menu_row_keys(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enabled: bo
     let hot = k.hot == Some(idx);
     let picked = enabled && hot && k.activate;
     ui.ctx().data_mut(|d| d.insert_temp(menu_keys_id(), k));
-    crate::popmenu::mark_item_keys(ui, label, keys, enabled, mark, hot).clicked() || picked
+    crate::popmenu::mark_item_icon(ui, label, keys, enabled, mark, hot, icon).clicked() || picked
 }
 
 fn menu_item(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
@@ -2301,6 +2298,19 @@ fn menu_item(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
 
 fn menu_check(ui: &mut egui::Ui, label: &str, st: ItemState) -> bool {
     menu_row(ui, label, st.enabled, st.checked.then_some("✓"))
+}
+
+fn menu_check_icon(ui: &mut egui::Ui, label: &str, st: ItemState, icon: crate::popmenu::RowIcon) -> bool {
+    menu_row_icon(ui, label, None, st.enabled, st.checked.then_some("✓"), Some(icon))
+}
+
+/// The column images of MENU 561's items (our glyphs for the toolbar's).
+fn mini_icon(m: crate::ribbon::Mini) -> impl Fn(&egui::Painter, Rect, Color32) {
+    move |p, r, c| crate::ribbon::paint_mini(p, r, m, c)
+}
+
+fn big_icon(i: crate::icons::Icon) -> impl Fn(&egui::Painter, Rect, Color32) {
+    move |p, r, c| crate::icons::paint(p, r, i, c)
 }
 
 fn menu_radio(ui: &mut egui::Ui, label: &str, st: ItemState) -> bool {
@@ -2320,50 +2330,52 @@ fn channel_menu(ui: &mut egui::Ui, doc: &crate::app::Doc, can_paste: bool, pick:
             pick(MenuCmd::Flag(f));
         }
     }
-    ui.separator();
+    crate::popmenu::separator(ui);
     if menu_check(ui, "Отображать в отсчетах АЦП", doc.flag_state(ChanFlag::Adc)) {
         pick(MenuCmd::Flag(ChanFlag::Adc));
     }
-    ui.separator();
+    crate::popmenu::separator(ui);
     if menu_item(ui, "Скрыть", true) {
         pick(MenuCmd::Hide);
     }
-    ui.separator();
-    for (label, m) in [
-        ("Мгновенные значения", ValueMode::Instant),
-        ("Среднеквадратичные значения", ValueMode::Rms),
-        ("Первая гармоника", ValueMode::FirstHarmonic),
+    crate::popmenu::separator(ui);
+    use crate::icons::Icon;
+    use crate::ribbon::Mini;
+    for (label, m, g) in [
+        ("Мгновенные значения", ValueMode::Instant, Mini::Instant),
+        ("Среднеквадратичные значения", ValueMode::Rms, Mini::RmsMode),
+        ("Первая гармоника", ValueMode::FirstHarmonic, Mini::Harm1),
     ] {
-        if menu_check(ui, label, doc.mode_state(m)) {
+        if menu_check_icon(ui, label, doc.mode_state(m), &mini_icon(g)) {
             pick(MenuCmd::Mode(m));
         }
     }
-    ui.separator();
-    if menu_check(ui, "Инвертировать", doc.flag_state(ChanFlag::Invert)) {
+    crate::popmenu::separator(ui);
+    if menu_check_icon(ui, "Инвертировать", doc.flag_state(ChanFlag::Invert), &big_icon(Icon::Invert)) {
         pick(MenuCmd::Flag(ChanFlag::Invert));
     }
-    if menu_check(ui, "Удалить постоянную составляющую", doc.flag_state(ChanFlag::RemoveDc)) {
+    if menu_check_icon(ui, "Удалить постоянную составляющую", doc.flag_state(ChanFlag::RemoveDc), &big_icon(Icon::RemoveDc)) {
         pick(MenuCmd::Flag(ChanFlag::RemoveDc));
     }
-    if menu_item(ui, "Вернуть к исходному размеру", true) {
+    if menu_row_icon(ui, "Вернуть к исходному размеру", None, true, None, Some(&mini_icon(Mini::Reset))) {
         pick(MenuCmd::ResetZoom);
     }
-    ui.separator();
+    crate::popmenu::separator(ui);
     // MENU 561 carries the accelerators' text after a tab (VM).
-    if menu_row_keys(ui, "Копировать каналы для объединения осциллограмм", Some("Ctrl+C"), doc.can_copy(), None) {
+    if menu_row_icon(ui, "Копировать каналы для объединения осциллограмм", Some("Ctrl+C"), doc.can_copy(), None, Some(&big_icon(Icon::Copy))) {
         pick(MenuCmd::CopyMerge);
     }
-    if menu_row_keys(ui, "Вставить каналы для объединения осциллограмм", Some("Ctrl+V"), can_paste, None) {
+    if menu_row_icon(ui, "Вставить каналы для объединения осциллограмм", Some("Ctrl+V"), can_paste, None, Some(&big_icon(Icon::Paste))) {
         pick(MenuCmd::PasteMerge);
     }
-    ui.separator();
+    crate::popmenu::separator(ui);
     if menu_item(ui, "Совместить каналы", doc.can_combine()) {
         pick(MenuCmd::Combine);
     }
     if menu_item(ui, "Разъединить каналы", doc.can_split()) {
         pick(MenuCmd::Split);
     }
-    ui.separator();
+    crate::popmenu::separator(ui);
     if menu_item(ui, "Цвет канала", true) {
         pick(MenuCmd::Color);
     }
@@ -2385,11 +2397,11 @@ fn time_axis_menu(ui: &mut egui::Ui, unit: TimeUnit, grid: bool, band: bool, pic
             pick(MenuCmd::TimeUnit(u));
         }
     }
-    ui.separator();
+    crate::popmenu::separator(ui);
     if menu_check(ui, "Сетка", ItemState { enabled: true, checked: grid }) {
         pick(MenuCmd::Grid);
     }
-    ui.separator();
+    crate::popmenu::separator(ui);
     if menu_check(ui, "Разница между визирами", ItemState { enabled: true, checked: band }) {
         pick(MenuCmd::DiffBand);
     }
@@ -3459,8 +3471,9 @@ mod menu_tests {
         assert!(hv.shown && hv.chan == Some(0), "{hv:?}");
     }
 
-    /// MFC's menu rows: a tick in the left column only for a checked item,
-    /// no box for an unchecked one.
+    /// MFC's menu rows: a checked item's amber box in the column (its
+    /// image in it, or a tick / bullet without one), none for an unchecked
+    /// one (VM).
     #[test]
     fn menu_rows_tick_only_checked_items() {
         let mut h = Harness::new();
@@ -3472,9 +3485,10 @@ mod menu_tests {
         let texts: Vec<String> = h.shapes.iter().filter_map(|c| if let Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
         assert!(texts.iter().any(|t| t == "Инвертировать"));
         let before = |mark: &str, label: &str| texts.windows(2).any(|w| w[0] == mark && w[1] == label);
-        assert!(before("✓", "Инвертировать") && before("✓", "Мгновенные значения"), "{texts:?}");
         assert!(before("•", "Отображать на векторной диаграмме"), "SetRadio: a bullet");
-        assert_eq!(texts.iter().filter(|t| *t == "✓").count(), 2, "unchecked items carry no mark");
+        assert_eq!(texts.iter().filter(|t| *t == "✓").count(), 0, "items with an image show it, not a tick");
+        let boxes = h.shapes.iter().filter(|c| matches!(&c.shape, Shape::Rect(r) if r.fill == Color32::from_rgb(255, 227, 149))).count();
+        assert_eq!(boxes, 3, "Инвертировать, Мгновенные значения and the vector flag");
     }
 
     /// The view's menus follow the keyboard as a Win32 popup: ↓ lands on

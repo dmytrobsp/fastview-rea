@@ -595,6 +595,7 @@ impl App {
             .frame(egui::Frame::none().fill(pal.tab_active))
             .show(ctx, |ui| {
                 self.ribbon_ui(ui);
+                self.ribbon_wheel(ui, ui.min_rect());
                 // Caption bars docked under the ribbon: the ОМП result.
                 self.omp_banner(ui);
                 // The ribbon's bottom row (VM, per Office 2007 style).
@@ -1536,6 +1537,36 @@ mod window_tests {
         w.key(egui::Key::Enter);
         w.idle(2);
         assert_eq!(w.app.docks[Unit::Frequency].place, Place::Docked, "Закрепленное");
+    }
+
+    /// The wheel over the ribbon steps its tabs and stops at either end
+    /// (VM: two notches down from «Главная» → «ОМП», up twice → «Главная»).
+    #[test]
+    fn the_wheel_over_the_ribbon_steps_its_tabs() {
+        let mut w = Win::new();
+        let at = Pos2::new(300.0, 80.0);
+        let notch = |w: &mut Win, d: f32| {
+            w.run(vec![egui::Event::PointerMoved(at), egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: Vec2::new(0.0, d), modifiers: egui::Modifiers::NONE }]);
+            w.idle(1);
+        };
+        notch(&mut w, -2.0);
+        assert_eq!(w.app.tab, app::RibbonTab::Omp, "down: the next, stopping at the last");
+        notch(&mut w, 1.0);
+        notch(&mut w, 1.0);
+        assert_eq!(w.app.tab, app::RibbonTab::Home, "up: the previous, stopping at the first");
+    }
+
+    /// A right-click on a group's tab brings it to the front and opens the
+    /// pane menu for that pane (VM).
+    #[test]
+    fn a_tab_right_click_opens_its_pane_menu() {
+        let mut w = Win::new();
+        let tab = w.app.pane_tab_rects.iter().find(|(p, _)| *p == app::Pane::Circle).map(|(_, r)| r.center()).expect("the circle tab");
+        w.press(egui::PointerButton::Secondary, tab, tab);
+        let menu = w.app.pane_menu.as_ref().map(|m| m.1);
+        assert_eq!(menu, Some(app::Pane::Circle), "the tab's pane menu");
+        assert!(w.app.pane_tab_rects.iter().any(|(p, _)| *p == app::Pane::Circle), "still tabbed");
+        assert!(w.app.pane_canvas.iter().any(|(p, _)| *p == app::Pane::Circle), "in front");
     }
 
     /// IsDialogMessage: Enter is the default button, Esc cancels; Enter on a

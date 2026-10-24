@@ -8027,6 +8027,49 @@ As, needs an OSC2 record, which none of the samples is; every other
 save was compared byte for byte (L9.172–L9.221). W4.2 closed for the
 records we have.
 
+### L9.291 — Side by side: the ribbon wheel, a pane tab's right-click, and every popup in MFC's Office 2007 look  ·  ✅
+W4.4 RUN items on both programs (WIN_1999):
+- **The toolbar wheel (L9.161).** The wheel over the ribbon steps its
+  tabs in the original (CMFCRibbonBar's OnMouseWheel): a notch down the
+  next tab, up the previous, stopping at either end (two down from
+  «Главная» → «ОМП»; up twice → «Главная»). Ours did nothing. Now
+  `App::ribbon_wheel` over the ribbon's own rect (not the caption bars
+  under it, not with a modifier, not in the preview). Test
+  `the_wheel_over_the_ribbon_steps_its_tabs`.
+- **A group tab strip's right-click (L9.149).** In the original it
+  brings the tab to the front and opens the pane menu (the caption's
+  five items) for that pane at the pointer. Ours did nothing. Now the
+  same. Test `a_tab_right_click_opens_its_pane_menu`.
+- **Keytips (L9.90).** A quick Alt shows none in either.
+- **Status bar prompts (L9.147).** None in either.
+- **The ГВ label (L9.42).** Alike.
+- **The popups' look.** Every context menu of the original (the
+  lanes', the panes', the ribbon's) is a CMFCPopupMenu in the Office 2007
+  look, sampled on the VM:
+  - a (134, 134, 134) border with a (245, 245, 245) line inside, a
+    (250, 250, 250) ground, and a 3 px shadow;
+  - a 24 px (233, 238, 238) image column ending in a (197, 197, 197) /
+    (245, 245, 245) pair;
+  - navy text (0, 21, 110), disabled (141, 141, 141), at 31 px in;
+  - separators of the same pair from the text to the edge;
+  - a checked item's image (or tick) in a 20 px (255, 227, 149) box
+    edged (242, 149, 54);
+  - the hot item a 22 px bar: a thin amber border, (255, 253, 235) →
+    (255, 235, 172) over (255, 213, 99) → (255, 227, 145).
+  Ours drew egui's rounded menu with a tinted hover. Now
+  `popmenu::mfc_frame` / `separator` / `mark_item_icon` (rows with
+  images: MENU 561's value modes, invert, DC, reset, copy, paste —
+  ours' glyphs) for the lane menus and the popmenu ones. The ribbon's
+  «Свернуть ленту» uses the same rows. The print split button's menu has
+  no column: a 17 px (222, 232, 239) title band, the bold title and a
+  rule, then 48 px entries with a 32 px image, a bold title and a navy
+  description (`title_band`, `large_item`). Test
+  `menu_rows_tick_only_checked_items` (the boxes).
+Residual:
+- Ours' menus are a little wider (the font).
+- The images are ours (W6).
+- The QAT's print menu opens 20 px further right with our QAT.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

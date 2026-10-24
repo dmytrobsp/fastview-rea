@@ -270,6 +270,16 @@ impl App {
                     if (r.clicked() || r.drag_started()) && !on {
                         self.dispatch(Command::ActivatePane(p));
                     }
+                    // A right-click too, and opens the pane's menu there
+                    // (VM: the caption's five items, for that pane).
+                    if r.secondary_clicked() {
+                        if !on {
+                            self.dispatch(Command::ActivatePane(p));
+                        }
+                        let at = ui.ctx().pointer_interact_pos().unwrap_or(rect.center());
+                        let next = self.tab_order.into_iter().find(|&q| q != p && v.mask[q as usize]);
+                        self.pane_menu = Some((v.unit, p, next, crate::popmenu::PopMenu::new(ui.ctx().cumulative_pass_nr(), at)));
+                    }
                     if r.dragged() {
                         dragged = Some(p);
                     }
