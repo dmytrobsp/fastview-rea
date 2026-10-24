@@ -86,13 +86,13 @@ Batches, in this order (the size of the unread code, user visibility):
 
 - [x] **W1.1** ChannelsDlg area — 11 functions: 4 with behaviour, 7 library code explained away (L9.166).
 - [x] **W1.2** Quick-analysis pages — the sixteen functions cited (L9.167); ↑ / ↓ icons fixed.
-- [ ] **W1.2b** The rest of the quick-analysis pages: 537 `0x4897f0` / `0x489de0`, getters `0x488aa0`, `0x488530`, `0x48b810`, `0x48b840` (and confirm `0x487a20`, `0x48a6e0`, `0x487c30`, `0x48a800`).
+- [x] **W1.2b** The rest of the quick-analysis pages — read, ours matches (L9.178).
 - [x] **W1.3** Circle / differential diagrams — the thirteen cited (L9.170); channel colours fixed.
 - [ ] **W1.3b** W1.3's remaining differences: scroll bars disabled (not hidden) after zooming back out (check on the VM first), the differential scale over [min(c1, c2), …] (the pan limit and the scale box's pen: done, L9.174).
 - [x] **W1.4** ОМП — the eight functions (L9.169): the `.omp` format fixed, the toolbar.
 - [x] **W1.5** Document and view — the seven cited (L9.175); the level edit and the ruler picks fixed.
 - [ ] **W1.5b** Comments bound by display name at every paint (a rename hides a level / area; the `.set` keeps the old name) — confirm on the VM (put a level on Ia, rename Ia in «Каналы», save, look), then rebind ours.
-- [ ] **W1.6** Small windows — AboutWnd, FileInfoDlg, ChanPairDlg, FileFinder22Dlg (2), CParamOscBar.
+- [x] **W1.6** Small windows — read (L9.178): About in the original's layout, the finder's reselect, the bar's labels.
 - [x] **W1.7** The unlabelled large functions — labelled and read (L9.176); the coefficient dialog fixed.
 - [ ] **W1.7b** From W1.7: groups pruned after every formula evaluation (`0x455c70`) and computed channels as group members (with L9.144); a pasted channel's vector phasor from its own cache (`0x490120`); OSC2 channel lines (field counts, digital normal state, no phase, the empty-name quirk); the `.sto` open flow's messages and `-Dst` as a file (reader stays ⛔); group members painted in name order.
 - [ ] **W1.8** The medium functions (50–149 instructions, 474 uncited) — the same way, batch by area once W1.1–W1.7 are done.

@@ -5277,6 +5277,41 @@ under the parameters bar), pixel-centred 1 px strokes, the status bar
 pane captions (~17 px), the font scale of the diagrams and the bar, the
 "*K" icon look; group stats lines in the width.
 
+### L9.178 — «О программе» in the original's layout; the finder's reselect; the bar's labels; W1.6 read  ·  ✅
+Read (COMPLETION_PLAN W1.6 / W1.2b): 57664 → `0x447dc0` runs AboutWnd
+(`0x4470a0`, a CDialog on DIALOG 100 — no caption, border or controls)
+modally; its window procedure `0x4471e0`: BITMAP 479 (630 × 400) blitted at
+(0,0), the window sized to it and centred on the main window, a solid
+(51,104,154) brush, Verdana 14 weight 500 (plain and underlined), three
+statics — at (35,300)–(435,345) «Версия » + strings 186 / 185 then
+«Официальный сайт компании : », «Служба поддержки : » in white; the two
+links in (0,172,134) at (241,314)–(336,329) and (176,328)–(323,343) —,
+the hand cursor over the links and the close corner (530,350)–(630,400),
+whose click is EndDialog(1); the links open an https URL and a mailto:.
+The finder's scan worker `0x46bae0` (through `0x46bd20`) refills the
+Станция / Блок combos («Все» first, then the sets) and re-picks the saved
+text with CB_FINDSTRING — case-insensitive prefix, from after «Все»,
+wrapping to it last; its sort callback `0x46d010` (name / station / block
+case-sensitive, the timestamp's low 32 bits, the time of day on 1 Jan 2000).
+CParamOscBar's text `0x47ed30` draws the labels right-aligned WITH their
+trailing spaces. ChanPairDlg's OnInitDialog `0x4217d0` (grid lines, two half
+columns, titles 200 / 201 / 210 in R/X mode): the diff constructor
+`0x421280` stores to `+0x9c`, the R/X one `0x4213f0` to `+0xa8` (spec §7.7
+had them swapped). Page 537 (W1.2b): loader `0x4897f0`, saver `0x489de0`,
+the 2156 / 2157 handlers `0x489270` / `0x489510`, the getters `0x488aa0`,
+`0x488c00`, `0x488d30`, `0x488e40`, the base defaults `0x48b810` /
+`0x48b840` / `0x48b860`, `0x488530`; `0x487a20`, `0x487c30`, `0x48a6e0`,
+`0x48a800` match VIEWS_SPEC — ours matches. Explained away: `0x496c00`
+(the ОМП engine's work vectors resized), `0x418250` (set node insert).
+Ours had a titled window with our own texts and no links, re-picked the
+finder's text case-sensitively (an empty text → «Все»), and trimmed the
+bar's labels. Now `about_window` is the borderless 630 × 400 modal in the
+original's layout, colours, link rectangles, close corner and cursors —
+with this program's own title, version and project links (not the
+original's version or its company's contacts) —, the finder re-picks as
+CB_FINDSTRING, the bar draws its labels untrimmed. `FV_WINDOW_STATE=about`
+renders the box.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

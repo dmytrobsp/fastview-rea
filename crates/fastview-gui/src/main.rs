@@ -1267,6 +1267,10 @@ mod window_tests {
             app.add_doc(app::Doc::new(osc, "Подстанция 2".into()));
             app.open_windows_dialog();
         }
+        // `FV_WINDOW_STATE=about`: «О программе».
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "about") {
+            app.show_about = true;
+        }
         // `FV_WINDOW_STATE=freqdlg`: the frequency diagram's settings.
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "freqdlg") {
             app.diag_cmd(diagram_ui::Window::Freq, diagram::DiagCmd::FreqSettings, Pos2::ZERO);

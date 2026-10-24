@@ -592,8 +592,12 @@ impl Finder {
             self.to = hi;
         }
         let (stations, blocks) = (self.stations(), self.blocks());
+        // The saved text re-picked by CB_FINDSTRING (`0x46bae0`): a
+        // case-insensitive prefix, searched from after «Все» and wrapping to
+        // it last — an empty text takes the first real entry; no match «Все».
         for (cur, list) in [(&mut self.station, stations), (&mut self.block, blocks)] {
-            *cur = list.iter().find(|v| v.starts_with(cur.as_str()) && !cur.is_empty()).cloned().unwrap_or_else(|| ALL.into());
+            let want = cur.to_lowercase();
+            *cur = list.iter().find(|v| v.to_lowercase().starts_with(&want)).cloned().unwrap_or_else(|| ALL.into());
         }
         self.sort = (Column::Date, false);
     }

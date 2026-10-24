@@ -197,40 +197,75 @@ impl App {
         self.show_channel_map = open;
     }
 
+    /// 57664 «О программе» (`0x447dc0`; AboutWnd `0x4471e0`, DIALOG 100):
+    /// a borderless 630 × 400 modal centred on the main window over its own
+    /// picture (BITMAP 479 — the original's asset; ours draws its own title
+    /// on the same (51,104,154) ground); white Verdana 14 text at (35,300)
+    /// — the version, then the site and support lines —, the two links
+    /// underlined in (0,172,134) with a hand cursor, the bottom-right corner
+    /// (530,350)–(630,400) closing it; Esc / Enter close it too. The texts
+    /// are this program's, not the original's version and contacts.
     fn about_window(&mut self, ctx: &egui::Context) {
         if !self.show_about {
             return;
         }
-        let mut open = true;
-        egui::Window::new("О программе")
-            .collapsible(false)
-            .resizable(false)
-            .open(&mut open)
+        const BG: egui::Color32 = egui::Color32::from_rgb(51, 104, 154);
+        const LINK: egui::Color32 = egui::Color32::from_rgb(0, 172, 134);
+        const SITE: &str = "https://github.com/dmytrobsp/fastview-rea";
+        const ISSUES: &str = "https://github.com/dmytrobsp/fastview-rea/issues";
+        let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Enter));
+        modal_backdrop(ctx, "fv_about_block", egui::Order::Middle);
+        let size = Vec2::new(630.0, 400.0);
+        egui::Area::new(egui::Id::new("fv_about"))
+            .order(egui::Order::Foreground)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    let (rect, _) = ui.allocate_exact_size(Vec2::new(64.0, 64.0), egui::Sense::hover());
-                    chevron(ui.painter(), rect);
-                    ui.add_space(8.0);
-                    ui.vertical(|ui| {
-                        ui.heading("Fast View 5");
-                        ui.label("Программа для просмотра и анализа осциллограмм\nв формате COMTRADE");
-                        ui.add_space(4.0);
-                        ui.label(egui::RichText::new("Кроссплатформенная реконструкция (Rust / egui)").weak());
-                        ui.label(egui::RichText::new("© НТЦ «Механотроника» — mtrele.ru").weak());
-                    });
-                });
-                ui.separator();
-                ui.label(
-                    egui::RichText::new(
-                        "Независимая совместимая реализация, созданная по результатам \
-                         поведенческого анализа. Оригинальный код не используется.",
-                    )
-                    .small()
-                    .weak(),
+                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                let p = ui.painter();
+                let o = rect.min;
+                p.rect_filled(rect, 0.0, BG);
+                // Our own picture: the mark and the title.
+                chevron(p, Rect::from_min_size(o + Vec2::new(36.0, 40.0), Vec2::splat(72.0)));
+                p.text(o + Vec2::new(128.0, 44.0), egui::Align2::LEFT_TOP, "FastView-REA", egui::FontId::proportional(34.0), egui::Color32::WHITE);
+                p.text(o + Vec2::new(130.0, 92.0), egui::Align2::LEFT_TOP, "Просмотр и анализ осциллограмм COMTRADE", egui::FontId::proportional(15.0), egui::Color32::WHITE);
+                p.text(
+                    o + Vec2::new(130.0, 116.0),
+                    egui::Align2::LEFT_TOP,
+                    "Независимая совместимая реконструкция Fast View 5 (Rust / egui).\nОригинальный код не используется.",
+                    egui::FontId::proportional(12.0),
+                    egui::Color32::from_gray(220),
                 );
+                // The text block at (35,300), 14 px lines.
+                let font = egui::FontId::proportional(12.5);
+                let line = |k: f32| o + Vec2::new(35.0, 300.0 + 14.0 * k);
+                p.text(line(0.0), egui::Align2::LEFT_TOP, format!("Версия {}", env!("CARGO_PKG_VERSION")), font.clone(), egui::Color32::WHITE);
+                let link = |k: f32, label: &str, text: &str, url: &str| {
+                    let g = p.text(line(k), egui::Align2::LEFT_TOP, label, font.clone(), egui::Color32::WHITE);
+                    let at = egui::pos2(g.right() + 4.0, g.top());
+                    let r = p.text(at, egui::Align2::LEFT_TOP, text, font.clone(), LINK);
+                    p.hline(r.x_range(), r.bottom(), egui::Stroke::new(1.0f32, LINK));
+                    let resp = ui.interact(r, ui.id().with(url), egui::Sense::click());
+                    if resp.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    if resp.clicked() {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+                    }
+                };
+                link(1.0, "Сайт проекта :", "github.com/dmytrobsp/fastview-rea", SITE);
+                link(2.0, "Обратная связь :", "github.com/dmytrobsp/fastview-rea/issues", ISSUES);
+                // The close corner.
+                let corner = Rect::from_min_max(o + Vec2::new(530.0, 350.0), o + Vec2::new(630.0, 400.0));
+                p.text(corner.center(), egui::Align2::CENTER_CENTER, "Закрыть ×", egui::FontId::proportional(14.0), egui::Color32::WHITE);
+                let resp = ui.interact(corner, ui.id().with("fv_about_close"), egui::Sense::click());
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                close |= resp.clicked();
             });
-        self.show_about = open;
+        if close {
+            self.show_about = false;
+        }
     }
 
     fn channel_props_window(&mut self, ctx: &egui::Context) {

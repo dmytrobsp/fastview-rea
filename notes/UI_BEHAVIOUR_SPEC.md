@@ -1038,8 +1038,10 @@ str 200, columns Активное / Реактивное сопротивлен�
 deletes the selected row and selects the next (or last); list of pairs (two
 half-width columns). The caller reads the pairs after OK [I]. Handlers
 (L9.106): Добавить `0x421aa0` (diff mode stores (second combo, first
-combo) — Iторм, Iдиф as `doc+0x878` — in `+0xa8`, R/X mode (first,
-second) in `+0x9c`), list notify `0x421e10`, Удалить `0x421e40`.
+combo) — Iторм, Iдиф as `doc+0x878` — in `+0x9c` (constructor `0x421280`,
+mode byte 0), R/X mode (first, second) in `+0xa8` (`0x4213f0`, mode byte 1;
+L9.178 corrected the two offsets), list notify `0x421e10`, Удалить
+`0x421e40`.
 
 ### 7.8 Merge bar (CMergeBar, id 223, 70 px)
 - Shown automatically after a paste; no command opens it.

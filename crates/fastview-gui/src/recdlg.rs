@@ -697,7 +697,9 @@ impl App {
         let painter = ui.painter();
         let label = |text: &str, x1: f32, k: usize| {
             let (y0, y1) = row(k);
-            painter.text(egui::pos2(x0 + x1, (y0 + y1) / 2.0), egui::Align2::RIGHT_CENTER, text.trim_end(), font.clone(), pal.text);
+            // Drawn right-aligned with their trailing spaces (`0x47ed30`), so
+            // «Номер регистратора: » ends a space before its column's edge.
+            painter.text(egui::pos2(x0 + x1, (y0 + y1) / 2.0), egui::Align2::RIGHT_CENTER, text, font.clone(), pal.text);
         };
         label(lab[0], w + 15.0, 0);
         label(lab[1], w + 15.0, 1);
