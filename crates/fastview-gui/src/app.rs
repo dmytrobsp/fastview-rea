@@ -693,6 +693,13 @@ pub struct Doc {
 }
 
 impl Doc {
+    /// The document title the tab, the caption and «Окна...» show: MFC's
+    /// SetPathName → AfxGetFileTitle, the file name with its extension (seen
+    /// on the VM: «WIN_1999.cfg»); a document without a file, its name.
+    pub fn title(&self) -> String {
+        self.path.as_ref().and_then(|p| p.file_name()).map_or_else(|| self.name.clone(), |n| n.to_string_lossy().into_owned())
+    }
+
     pub fn new(osc: Oscillogram, name: String) -> Self {
         let analysis = Analysis::compute(&osc);
         let n = osc.samples_per_cycle().max(2);
@@ -2284,6 +2291,14 @@ impl App {
                 }
                 if let Some(di) = self.active {
                     self.load_record_settings(di);
+                    // OnOpenDocument selects the record's channel 0 once the
+                    // loader is done (`0x44f245`, `.cff` `0x44f358`).
+                    let d = &mut self.docs[di];
+                    if !d.osc.analog.is_empty() {
+                        d.selection.insert(ChanKey::Analog(0));
+                    } else if !d.osc.digital.is_empty() {
+                        d.selection.insert(ChanKey::Digital(0));
+                    }
                 }
                 self.remember_recent(path);
             }

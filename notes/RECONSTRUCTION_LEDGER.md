@@ -5245,6 +5245,38 @@ now moves the pointer before pressing (a move and a press in one frame
 read as a window drag). Tests `coefficient_bulk_entry_fills_the_shift_range`,
 `coefficients_double_click_type_and_shift_click_fill`.
 
+### L9.177 — The main window against the original's: the stats panel's width, channel 0 selected, the title, the stat rows, the grid's height  ·  ✅
+Run (COMPLETION_PLAN W4.5: WIN_1999 in the original on the VM and in ours
+at the same 1905 × 1013 window, compared pixel for pixel) and read
+(background report: the view base constructor `0x404c60`, the width
+`0x4606d0`, the painter `0x461440`, OnOpenDocument `0x44ee70`):
+- Fonts (`0x404df9`–`0x404f38`): Tahoma 15 weight 900 (values), 15 weight
+  700 (names, hB = 15), 13 weight 400 (rows, hS = 13).
+- The width `0x4606d0` measures every channel of the record (hidden ones
+  too) in the names font: label column = max(«Max:», the widest analog /
+  computed name cut to 25 + 5); + max template (": -0.00000000 A" / ": -0.0000000E-000 ") + 10; discrete names
+  + 10 only bound the width from below, as does the absolute-time stamp.
+  Seen: 190 px, the value at labelCol + 5 right after «IA БЛОКА 3».
+- The stat rows at top + 8 + i · hS (i from 1): СКЗ at top + 21, A1 at
+  top + 34.
+- OnOpenDocument selects the record's channel 0 (`0x44f245`, `.cff`
+  `0x44f358`) — the gold lane and the enabled Копировать / Инвертировать /
+  Удал. постоянную, the checked «Мгновенные», on open.
+- The tab and the caption carry the file name with its extension
+  (AfxGetFileTitle: «WIN_1999.cfg»).
+- The circle / differential grid fills its 200 px white.
+Ours: a ~300 px panel (digital names in the label column, the template in
+the row font without + 10), stat rows at top + 23 every 15, nothing
+selected, «WIN_1999», a grid shrunk to its one row (~50 px). Now
+`stats_columns` as `0x4606d0`, the rows at top + 8 + 13 · i, channel 0
+selected after a load, `Doc::title`, the grid's scroll area not shrinking
+and white.
+Residual (plan W4.5): the frame layout (the tab strip in the MDI area,
+under the parameters bar), pixel-centred 1 px strokes, the status bar
+(left-aligned texts, 153 / 218 px panes), the ribbon's pitch / sizes, the
+pane captions (~17 px), the font scale of the diagrams and the bar, the
+"*K" icon look; group stats lines in the width.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

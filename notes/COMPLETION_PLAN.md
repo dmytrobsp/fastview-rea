@@ -204,7 +204,14 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 - [ ] W4.5 Visual comparison of the main window and the dialogs
   (layout, sizes, colours per skin) — differences either fixed or W6.
   Seen in the first capture: the start-up pane layout (fixed, L9.165);
-  the record-header strip's close button (fixed, L9.168).
+  the record-header strip's close button (fixed, L9.168). The main window
+  with WIN_1999 against the original's (L9.177): stats panel, channel 0
+  selected, title, stat rows, grid height fixed. Still to do, in order:
+  the frame layout (tab strip inside the MDI area under the parameters
+  bar), 1 px strokes on pixel centres (lines and waveform texture), the
+  status bar (left-aligned, 153 / 218 px panes), the ribbon (small-button
+  pitch 22, large buttons ~55, the QAT arrow), the pane captions (~17 px,
+  flat glyphs), the diagram / bar font scale (11), the «*K» icon.
 
 ## W5 — Windows-only paths
 

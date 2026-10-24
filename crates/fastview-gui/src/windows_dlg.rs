@@ -75,7 +75,7 @@ impl App {
     /// The rows: every document's title, sorted as LBS_SORT does (ignoring
     /// case).
     pub fn window_rows(&self) -> Vec<(u64, String)> {
-        let mut rows: Vec<(u64, String)> = self.docs.iter().map(|d| (d.serial, d.name.clone())).collect();
+        let mut rows: Vec<(u64, String)> = self.docs.iter().map(|d| (d.serial, d.title())).collect();
         rows.sort_by_key(|(_, t)| t.to_lowercase());
         rows
     }

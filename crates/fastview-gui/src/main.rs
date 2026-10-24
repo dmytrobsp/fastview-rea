@@ -142,7 +142,7 @@ impl App {
                     self.docs[i].tab_color = Some(self.tab_auto.assign(i, prev));
                 }
                 let active = self.active == Some(i);
-                let title = self.docs[i].name.clone();
+                let title = self.docs[i].title();
                 let font = egui::FontId::proportional(13.0);
                 let text_w = ui.fonts(|f| f.layout_no_wrap(title.clone(), font.clone(), egui::Color32::BLACK).size().x);
                 let w = text_w + 34.0 + if active { 20.0 } else { 0.0 };
@@ -190,7 +190,7 @@ impl App {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.menu_button("▾", |ui| {
                     for i in 0..self.docs.len() {
-                        if ui.radio(self.active == Some(i), self.docs[i].name.clone()).clicked() {
+                        if ui.radio(self.active == Some(i), self.docs[i].title()).clicked() {
                             activate = Some(i);
                             ui.close_menu();
                         }
@@ -348,7 +348,7 @@ impl App {
         // Window title «Механотроника FastView - <document>» (0x45f7d0) and
         // files dropped on the window (DragAcceptFiles).
         let title = match self.active_doc() {
-            Some(d) => format!("Механотроника FastView - {}", d.name),
+            Some(d) => format!("Механотроника FastView - {}", d.title()),
             None => app::APP_TITLE.to_string(),
         };
         if self.window_title != title {

@@ -299,7 +299,8 @@ impl App {
         let dy = -(slice as f32) * plan.page_h;
         let total = plan.pages as f32 * plan.page_h;
         let rows: Vec<Row> = lanes::lane_layout(doc, self.y_analog, primary);
-        let (label_col, left_w) = ctx.fonts(|fo| lanes::stats_columns(fo, doc, &rows, primary));
+        let abs_time = self.time_unit == crate::app::TimeUnit::Absolute;
+        let (label_col, left_w) = ctx.fonts(|fo| lanes::stats_columns(fo, doc, &rows, primary, abs_time));
         let n = doc.osc.sample_count();
         let f = doc.xscale.unwrap_or(1.0);
         let (x0, right) = (0.0, plan.client_w);

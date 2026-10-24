@@ -261,7 +261,10 @@ impl OscView<'_> {
             first.expect("a group has members")
         } else {
             let name_rect = header(top + 5.0, &name, &unit, color, val);
-            let mut yy = top + 5.0 + ROW_H + 3.0;
+            // The rows at top + 8 + i · hS, i from 1, hS the 13 px row font's
+            // height (`0x4621fe`, `0x4627d6`; seen on the VM: СКЗ at top + 21,
+            // A1 at top + 34).
+            let mut yy = top + 8.0 + GROUP_STATS_H;
             if let Some(st) = stat_rows(doc, lane) {
                 let mut rows_txt: Vec<(&str, f64)> = Vec::new();
                 if st.minmax {
@@ -276,7 +279,7 @@ impl OscView<'_> {
                 for (lbl, v) in rows_txt {
                     lp.text(Pos2::new(self.x0 + 5.0, yy), Align2::LEFT_TOP, lbl, ROW_FONT, row_col);
                     lp.text(Pos2::new(col_x, yy), Align2::LEFT_TOP, fvb_core::views::readout_text(v, &unit), ROW_FONT, row_col);
-                    yy += ROW_H;
+                    yy += GROUP_STATS_H;
                 }
             }
             icons(status_icons(doc, r, primary), top + h - 21.0);
@@ -651,27 +654,40 @@ fn chan_icons(doc: &crate::app::Doc, i: usize, primary: bool) -> Vec<&'static st
     .collect()
 }
 
-/// Stats-panel columns (`0x4606d0`): the label column is the widest
-/// (cut) name + 10 (at least «Max:»); the panel adds a value template —
-/// `": -0.00000000 A"` for SI units, `": -0.0000000E-000 "` otherwise.
-pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], primary: bool) -> (f32, f32) {
+/// The stats panel's columns (`0x4606d0`): every channel of the record is
+/// measured in the names font, hidden ones too — the label column is the
+/// widest analog / computed name (cut to 25 characters) + 5, at least
+/// «Max:»; the value template (": -0.00000000 A" for SI units, else
+/// ": -0.0000000E-000 ") + 10 widens the rest; discrete names (+ 10) only
+/// bound the whole width from below, as does the absolute-time stamp.
+/// Returns (label column, panel width).
+pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, _rows: &[Row], primary: bool, abs_time: bool) -> (f32, f32) {
     let w = |s: &str, f: &FontId| fonts.layout_no_wrap(s.to_string(), f.clone(), Color32::BLACK).size().x;
-    let mut label = w("Max:", &ROW_FONT);
-    let mut template: f32 = 0.0;
-    for r in rows {
-        let (name, unit, ..) = lane_stats(doc, &r.key, 0, primary);
-        let names = std::iter::once(name).chain(r.members.iter().skip(1).map(|&m| doc.osc.analog[m].id.clone()));
-        for n in names {
-            let short: String = n.chars().take(NAME_CHARS).collect();
-            label = label.max(w(&short, &NAME_FONT) + 10.0);
-        }
+    let cut = |n: &str| n.chars().take(NAME_CHARS).collect::<String>();
+    let mut label = w("Max:", &NAME_FONT);
+    let (mut templ, mut digital) = (0.0f32, 0.0f32);
+    let analog = (0..doc.osc.analog.len()).map(Lane::Analog).chain((0..doc.computed.len()).map(Lane::Computed));
+    let mut any = false;
+    for lane in analog {
+        any = true;
+        let (name, unit, ..) = lane_stats(doc, &lane, 0, primary);
+        label = label.max(w(&cut(&name), &NAME_FONT) + 5.0);
         let t = if fvb_core::views::si_unit(&unit.canon) { ": -0.00000000 A" } else { ": -0.0000000E-000 " };
-        template = template.max(w(t, &ROW_FONT));
+        templ = templ.max(w(t, &NAME_FONT) + 10.0);
     }
-    if rows.is_empty() {
-        return (label, LEFT_W_DEFAULT);
+    for c in &doc.osc.digital {
+        any = true;
+        digital = digital.max(w(&cut(&c.id), &NAME_FONT) + 10.0);
+        templ = templ.max(10.0);
     }
-    (label, label + template)
+    if !any {
+        return (label, label);
+    }
+    let mut left = label + templ;
+    if abs_time {
+        left = left.max(w("99/99/9999   ", &ROW_FONT) + 5.0 + w("99:99:99.999", &ROW_FONT) / 2.0);
+    }
+    (label, left.max(digital))
 }
 
 /// Text in a heavier weight (egui's default font has no bold face: the
@@ -1051,7 +1067,8 @@ impl App {
         let band = g::RULER_H + if doc.diff_band { g::DIFF_BAND_H } else { 0.0 };
         let client = Rect::from_min_max(full.min, Pos2::new(full.right(), full.bottom() - HSCROLL_H));
         let rows = lane_layout(doc, y_analog, primary);
-        let (label_col, left_w) = ui.fonts(|fo| stats_columns(fo, doc, &rows, primary));
+        let abs_time = self.time_unit == crate::app::TimeUnit::Absolute;
+        let (label_col, left_w) = ui.fonts(|fo| stats_columns(fo, doc, &rows, primary, abs_time));
         self.view_left = left_w;
         let content_h: f32 = rows.iter().map(|r| r.h).sum();
         let vbar = content_h + band + 2.0 > client.height();

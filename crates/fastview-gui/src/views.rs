@@ -664,8 +664,12 @@ impl App {
             .resizable(true)
             .default_height(stored)
             .height_range(50.0..=(h - 150.0).max(50.0))
+            // The property grid is a white list (seen on the VM).
+            .frame(egui::Frame::none().fill(egui::Color32::WHITE).inner_margin(egui::Margin::same(1.0)))
             .show_inside(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| self.char_side_panel(ui));
+                // The grid fills its splitter part however few its rows
+                // (a panel would otherwise shrink to «Тип блока» alone).
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.char_side_panel(ui));
             });
         let now = grid.response.rect.height().round();
         if (now - stored).abs() >= 1.0 && self.persist {
