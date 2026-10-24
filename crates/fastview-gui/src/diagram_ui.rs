@@ -2063,6 +2063,20 @@ mod tests {
     }
 
     #[test]
+    fn a_circles_box_leaves_out_its_right_and_bottom_edges() {
+        // VM: «БМРЗ - Защита генераторов (с 2025 г.в.)» on an 8-cell plane
+        // reads X ±64, an 8 Ом cell: its largest circle's `Ellipse` box
+        // reaches 65 on the right, which GDI leaves out of the path.
+        let mut h = H::new(Pane::Circle);
+        let b = h.app.library.blocks.iter().position(|b| b.name == "БМРЗ - Защита генераторов (с 2025 г.в.)").expect("the block");
+        h.app.block_idx = b;
+        h.app.ensure_block_state();
+        h.frame(vec![], Default::default());
+        let g = h.app.diag.geom[0].as_ref().expect("the circle plane painted");
+        assert_eq!(g.max[0], 64.0);
+    }
+
+    #[test]
     fn the_shipped_ohm_characteristics_take_the_impedance_scale() {
         // VM: «БМРЗ - Защита генераторов» on the circle plane, no loci: the
         // edges read ±66 Ом and 0 Вт, the circles drawn (`0x4387d0`

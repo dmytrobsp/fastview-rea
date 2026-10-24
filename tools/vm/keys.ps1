@@ -5,7 +5,8 @@
 # "CLICK x,y" / "RCLICK x,y" / "DCLICK x,y" (screen pixels), "DRAG x1,y1,x2,y2"
 # (a left-button drag in ten steps; "HOLD x1,y1,x2,y2" the same left held,
 # then "UP"), "WHEEL x,y,n"
-# (n notches, + up), "SHOT name.png" (a capture now). Logs next to itself.
+# (n notches, + up), "KEYDOWN ctrl" / "KEYUP ctrl" (shift, alt: a modifier
+# held across steps), "SHOT name.png" (a capture now). Logs next to itself.
 param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave, [switch]$Soft)
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $log = Join-Path $here 'keys.log'
@@ -51,6 +52,10 @@ foreach ($k in ($Keys -split ';')) {
         }
         Start-Sleep -Milliseconds 200
         if ($Matches[1] -eq 'DRAG') { [In]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero) }
+    } elseif ($k -match '^KEY(DOWN|UP) (ctrl|shift|alt)$') {
+        # A modifier held across the next steps (KEYDOWN ctrl; WHEEL …; KEYUP ctrl).
+        $v = @{ ctrl = 0x11; shift = 0x10; alt = 0x12 }[$Matches[2]]
+        [In]::keybd_event([byte]$v, [byte][In]::MapVirtualKey($v, 0), $(if ($Matches[1] -eq 'UP') { 2 } else { 0 }), [UIntPtr]::Zero)
     } elseif ($k -match '^CHORD ((?:\w+\+)*)(\w+)$') {
         # Keys with their scan codes (a real keyboard's; SendKeys' Ctrl+letter
         # may come without one): CHORD ctrl+shift+P, CHORD F4, CHORD ctrl+0x4F.

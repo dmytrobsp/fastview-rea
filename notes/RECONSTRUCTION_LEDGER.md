@@ -2937,7 +2937,7 @@ scale they fit (< 800 px); with only VA / W loci or none they are not
 drawn and the zoom snaps to 1; the «Вт» upc (labels, scale box) includes
 the characteristic extent. Extents (`0x4389a2`–`0x438a44`): max |·| of the
 integer box, no +1; polygons / polypoints round vertices to the nearest
-unit (ties up), circles outward; an empty box (width **or** height 0) is
+unit (ties up), circles outward (the box's right / bottom edges left out: L9.285); an empty box (width **or** height 0) is
 1×1 at the first vertex rounded up.
 Ours put every characteristic into the Ω scale (so they set the Ω scale
 themselves and were always drawn), rounded the extent box outward and
@@ -7876,8 +7876,35 @@ Residual:
   pointer, MFC moves it by the drag's distance.
 - «БМРЗ - Защита генераторов (с 2025 г.в.)»: the original scales the
   plane to an 8 Ом cell (X ±64, R ±88; its cyan circle runs past the
-  top), ours to 9 Ом (X ±72, R ±99). The characteristic extent box
-  (`0x4389a2`–`0x438a44`) differs for this block — open.
+  top), ours to 9 Ом (X ±72, R ±99). (Fixed: L9.285.)
+
+### L9.285 — A circle's extent box leaves out its right and bottom edges (GDI paths)  ·  ✅
+Read (subagent report; by hand the builders' calls): for the plane scale
+(`0x4387d0`) each figure builds its region at scale 1. The circle
+(`0x40a170`) draws `Ellipse(⌊cx−r⌋, ⌊−(cy+r)⌋, ⌈cx+r⌉, ⌈r−cy⌉)` between
+`BeginPath` / `EndPath` and takes `PathToRegion`. The ellipse
+(`0x40a5d0`) draws `Ellipse` into a path, reads it back with `GetPath`,
+turns it and draws it again. Polygons and polypoints use `Polygon`.
+FastView never calls `SetGraphicsMode` (none imported), so the DC stays
+in GDI's compatible mode. There `Ellipse` / `Rectangle` in a path leave
+out the box's right and bottom edges (INFERRED from GDI's documented
+rule, which Wine's path code also keeps): the region box ends at
+right − 1 and bottom − 1. The scale itself (`0x438b50`, one significant
+digit rounded up over min(columns, rows) cells) is as ours.
+VM: «БМРЗ - Защита генераторов (с 2025 г.в.)» on an 8-row plane. Its
+largest circle's box reaches 65 on the right, so ours took 65 → 9 Ом
+cells (X ±72, R ±99). The original takes 64 → 8 Ом (X ±64, R ±88).
+Now `geom::device_region` takes the circle's box to ⌈cx+r⌉ − 1 and
+⌈r−cy⌉ − 1, and the ellipse's axis-aligned box likewise (INFERRED, the
+same rule through `GetPath`). On the VM all three planes checked match:
+the generator block at the default height (±66 / ±132, 6 Ом), «Защита
+линий» and the 2025 generator block after the drag. Tests
+`a_circles_box_leaves_out_its_right_and_bottom_edges`;
+`characteristic_extent_in_whole_units` (the 5 × 3 ellipse now 3).
+Residual:
+- Whether a region's tip row or column (a circle's top / left) is also
+  lost in the scan conversion is NOT DETERMINED; it changes no block
+  seen.
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
