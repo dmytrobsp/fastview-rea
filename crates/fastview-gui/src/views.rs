@@ -1047,18 +1047,20 @@ impl App {
             let c = bt.center();
             ui.painter().add(egui::Shape::convex_polygon(vec![egui::pos2(c.x - 3.0, c.y - 1.0), egui::pos2(c.x + 3.0, c.y - 1.0), egui::pos2(c.x, c.y + 2.0)], TEXT, egui::Stroke::NONE));
             if combo.clicked() && ui.ctx().pointer_interact_pos().is_some_and(|q| bt.contains(q)) {
-                ui.memory_mut(|m| m.toggle_popup(list_id));
+                let open = !ui.data(|d| d.get_temp::<bool>(list_id.with("open")).unwrap_or(false));
+                ui.data_mut(|d| d.insert_temp(list_id.with("open"), open));
             }
         }
         if combo.clicked() {
             select.set(Some(type_key));
         }
-        egui::popup_below_widget(ui, list_id, &combo, egui::PopupCloseBehavior::CloseOnClick, |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for (i, name) in names.iter().enumerate() {
-                ui.selectable_value(&mut self.block_idx, i, egui::RichText::new(name).size(12.0));
+        // The in-place combo's drop-down list: a Win32 list the value
+        // cell's width under it, long names cut at its edge (VM).
+        if ui.data(|d| d.get_temp::<bool>(list_id.with("open")).unwrap_or(false)) {
+            if let Some(i) = crate::dialogs::combo_popup(ui, vr, list_id, &names, Some(self.block_idx)) {
+                self.block_idx = i;
             }
-        });
+        }
         // A click in any value area marks the document modified, «Тип
         // блока»'s included (`0x4075c0` → `0x407c40`).
         let mut touched = combo.clicked();
@@ -1174,7 +1176,7 @@ impl App {
         // parameter F4 or Enter opens its edit, a typed character opens it
         // with that character in place of the text; F4 on «Тип блока»
         // drops its list.
-        let editing = ui.memory(|m| m.focused().is_some() || m.any_popup_open());
+        let editing = ui.memory(|m| m.focused().is_some() || m.any_popup_open()) || ui.data(|d| d.get_temp::<bool>(list_id.with("open")).unwrap_or(false));
         if focused && !editing && !self.modal_up {
             let cur = select.get().unwrap_or(selected);
             let at = order.iter().position(|(k, _)| *k == cur).unwrap_or(0);
@@ -1209,7 +1211,7 @@ impl App {
                             ui.memory_mut(|m| m.request_focus(edit));
                         }
                     }
-                    GridRow::Type if f4 => ui.memory_mut(|m| m.open_popup(list_id)),
+                    GridRow::Type if f4 => ui.data_mut(|d| d.insert_temp(list_id.with("open"), true)),
                     _ => {}
                 }
             }

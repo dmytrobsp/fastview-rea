@@ -758,7 +758,25 @@ pub fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], curre
             let k = ((q.y - list.top() - 1.0) / 13.0).floor();
             (k >= 0.0 && (k as usize) < items.len()).then_some(k as usize)
         });
-        let hot = hover.or(current);
+        // The keyboard's item: ↑ / ↓ move it from the current one, Enter
+        // picks it (a Win32 list's keys); the pointer's item wins.
+        let key_id = id.with("key_hot");
+        let mut key_hot: Option<usize> = ui.data(|d| d.get_temp(key_id)).unwrap_or(current);
+        let (up, down, enter) = ui.input(|i| (i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown), i.key_pressed(egui::Key::Enter)));
+        if !items.is_empty() && (up || down) {
+            let k = key_hot.map_or(0, |k| if down { (k + 1).min(items.len() - 1) } else { k.saturating_sub(1) });
+            key_hot = Some(k);
+        }
+        if hover.is_some() {
+            key_hot = hover;
+        }
+        ui.data_mut(|d| d.insert_temp(key_id, key_hot));
+        if enter {
+            picked = key_hot;
+        }
+        let hot = key_hot;
+        // Long items are cut at the list's edge.
+        let text_p = p.with_clip_rect(list.shrink(1.0));
         for (k, t) in items.iter().enumerate() {
             let row = Rect::from_min_size(Pos2::new(list.left() + 1.0, list.top() + 1.0 + 13.0 * k as f32), Vec2::new(list.width() - 2.0, 13.0));
             let ink = if hot == Some(k) {
@@ -767,15 +785,18 @@ pub fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], curre
             } else {
                 Color32::BLACK
             };
-            p.text(row.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, t, DLG_FONT, ink);
+            text_p.text(row.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, t, DLG_FONT, ink);
         }
-        if ui.input(|i| i.pointer.primary_released()) {
+        if ui.input(|i| i.pointer.primary_released()) && hover.is_some() {
             picked = hover;
         }
     });
     let outside = ctx.input(|i| i.pointer.any_pressed()) && !area.response.rect.contains(ctx.input(|i| i.pointer.interact_pos()).unwrap_or_default()) && !r.contains(ctx.input(|i| i.pointer.interact_pos()).unwrap_or_default());
     if picked.is_some() || outside || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        ctx.data_mut(|d| d.insert_temp(open_id, false));
+        ctx.data_mut(|d| {
+            d.insert_temp(open_id, false);
+            d.remove::<Option<usize>>(id.with("key_hot"));
+        });
     }
     picked
 }

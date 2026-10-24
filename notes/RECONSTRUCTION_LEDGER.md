@@ -7607,6 +7607,24 @@ Residual:
   drawn as plain folders.
 - The other dialogs' lists still use egui's floating bar.
 
+### L9.276 — Side by side: «Тип блока»'s list as a Win32 combo list; a block picked  ·  ✅
+W4.3 on both programs, the differential diagram's grid:
+- A click on «Нет» selects the row and opens nothing in either; ↓ and
+  Enter leave «Нет».
+- The ▾ drops the list of nine blocks in both.
+- Picking «БМРЗ - Защита трансформаторов» gives the same groups,
+  parameters and values, the same plane, «Iдиф: 22.5 ном» / «Iторм: 12
+  ном».
+The list's look differed. The original shows a Win32 list the value
+cell's width under it: 13 px rows, the long names cut at its edge, the
+current one white on blue. Ours showed an egui popup with rounded corners,
+wrapping long names over two lines, its current item orange. Now
+`char_side_panel` uses `dialogs::combo_popup` (as the ОМП grid does),
+which now cuts text at its edge and takes ↑ / ↓ / Enter (a Win32 list's
+keys; the pointer's item wins).
+Residual:
+- The list's font is the dialogs' Tahoma 11; the grid's is the UI font.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
