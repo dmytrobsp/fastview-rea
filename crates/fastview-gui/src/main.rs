@@ -983,6 +983,34 @@ mod window_tests {
         assert_eq!(vis(&w), before, "a double-click flips once");
     }
 
+    /// «Тип блока» alone (VM): F4 drops nothing; ↓ steps its value in an
+    /// in-place edit, Enter keeps the text without loading the block, Esc
+    /// puts it back.
+    #[test]
+    fn the_block_type_alone_steps_its_text() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.idle(2);
+        assert_eq!(w.app.block_idx, 0, "«Нет»");
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let at = Pos2::new(grid.left() + 30.0, grid.top() + 9.0);
+        w.press(Primary, at, at);
+        w.key(egui::Key::F4);
+        w.idle(1);
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::Enter);
+        w.idle(2);
+        let names: Vec<String> = w.app.library.blocks.iter().map(|b| b.name.clone()).collect();
+        assert_eq!((w.app.block_idx, w.app.block_text.as_deref()), (0, Some(names[2].as_str())), "the text only");
+        assert!(w.app.chars.is_empty(), "no block's rows");
+        w.key(egui::Key::ArrowUp);
+        w.key(egui::Key::Escape);
+        w.idle(2);
+        assert_eq!(w.app.block_text.as_deref(), Some(names[2].as_str()), "Esc puts the edit's text back");
+    }
+
     /// The grid's keys (CMFCPropertyGridCtrl): ↓ from a group selects its
     /// first parameter, a typed character opens its edit with that
     /// character, Esc puts the text back; ← closes the group, so ↓ goes to

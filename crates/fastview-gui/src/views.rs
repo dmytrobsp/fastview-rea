@@ -944,9 +944,37 @@ impl App {
             // The property grid is a white list (seen on the VM).
             .frame(egui::Frame::none().fill(egui::Color32::WHITE).inner_margin(egui::Margin::same(1.0)))
             .show_inside(ui, |ui| {
-                // The grid fills its splitter part however few its rows
-                // (a panel would otherwise shrink to «Тип блока» alone).
-                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.char_side_panel(ui));
+                // The grid fills its splitter part however few its rows. It
+                // scrolls by whole 17 px rows with the window scroll bar
+                // (Windows 11's, as the tree's) taking 17 px of its width
+                // whenever the rows overflow (VM: the value column — and
+                // «Тип блока»'s ▾ — narrower by it), the wheel three rows a
+                // notch. The rows' height is last frame's.
+                let inner = ui.max_rect();
+                ui.allocate_rect(inner, egui::Sense::hover());
+                let sid = egui::Id::new(("char_grid_scroll", pane));
+                let (mut off, content_h): (f32, f32) = ui.data(|d| d.get_temp(sid)).unwrap_or((0.0, 0.0));
+                let page = (inner.height() / 17.0).floor() * 17.0;
+                let max_off = (content_h - page).max(0.0);
+                if ui.rect_contains_pointer(inner) {
+                    let dy = ui.input(|i| i.raw_scroll_delta.y);
+                    if dy != 0.0 {
+                        off -= dy.signum() * 51.0;
+                    }
+                }
+                let content = if max_off > 0.0 { egui::Rect::from_min_max(inner.min, egui::pos2(inner.right() - 17.0, inner.bottom())) } else { inner };
+                if max_off > 0.0 {
+                    let bar = egui::Rect::from_min_max(egui::pos2(content.right(), inner.top()), inner.max);
+                    if let Some(v) = crate::lanes::scrollbar(ui, bar, false, off, max_off, page, 17.0, page) {
+                        off = v;
+                    }
+                }
+                off = ((off / 17.0).round() * 17.0).clamp(0.0, max_off);
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(content.min - egui::vec2(0.0, off), egui::vec2(content.width(), f32::INFINITY))));
+                child.set_clip_rect(content.intersect(ui.clip_rect()));
+                self.char_side_panel(&mut child);
+                let h = child.min_rect().height();
+                ui.data_mut(|d| d.insert_temp(sid, (off, h)));
             });
         let now = grid.response.rect.height().round();
         if (now - stored).abs() >= 1.0 && self.persist {
@@ -1040,7 +1068,20 @@ impl App {
         let names: Vec<String> = self.library.blocks.iter().map(|b| b.name.clone()).collect();
         let shown = self.block_text.clone().or_else(|| names.get(self.block_idx).cloned()).unwrap_or_default();
         let combo = ui.interact(vr, ui.id().with("fv_grid_type_value"), egui::Sense::click());
-        ui.painter().with_clip_rect(vr).text(egui::pos2(vr.left() + 4.0, vr.center().y), egui::Align2::LEFT_CENTER, &shown, egui::FontId::proportional(12.0), TEXT);
+        // «Тип блока» stepped by ↓ / ↑ (below): its in-place edit, the text
+        // selected, until Enter, Esc or a click; holds the text before.
+        let type_edit_id = ui.id().with("fv_grid_type_edit");
+        let type_edit: Option<Option<String>> = ui.data(|d| d.get_temp(type_edit_id));
+        let at_text = egui::pos2(vr.left() + 4.0, vr.center().y);
+        let font12 = egui::FontId::proportional(12.0);
+        if type_edit.is_some() {
+            let gal = ui.painter().layout_no_wrap(shown.clone(), font12.clone(), egui::Color32::WHITE);
+            let r = egui::Align2::LEFT_CENTER.anchor_size(at_text, gal.size());
+            ui.painter().with_clip_rect(vr).rect_filled(r, 0.0, egui::Color32::from_rgb(0, 120, 215));
+            ui.painter().with_clip_rect(vr).galley(r.min, gal, egui::Color32::WHITE);
+        } else {
+            ui.painter().with_clip_rect(vr).text(at_text, egui::Align2::LEFT_CENTER, &shown, font12, TEXT);
+        }
         let list_id = ui.id().with("fv_grid_type_list");
         if selected == type_key {
             let bt = egui::Rect::from_min_max(egui::pos2(vr.right() - 15.0, vr.top()), vr.max);
@@ -1184,8 +1225,7 @@ impl App {
         // open (INFERRED from MFC): ↑ / ↓ / Home / End move the selection;
         // on a group Enter toggles it, + / → open and − / ← close it; on a
         // parameter F4 or Enter opens its edit, a typed character opens it
-        // with that character in place of the text; F4 on «Тип блока»
-        // drops its list.
+        // with that character in place of the text.
         let editing = ui.memory(|m| m.focused().is_some() || m.any_popup_open()) || ui.data(|d| d.get_temp::<bool>(list_id.with("open")).unwrap_or(false));
         if focused && !editing && !self.modal_up {
             let cur = select.get().unwrap_or(selected);
@@ -1197,7 +1237,41 @@ impl App {
             });
             let [up, down, home, end, enter, f4, open_key, close_key] = keys;
             let last = order.len().saturating_sub(1);
-            let to = if up { Some(at.saturating_sub(1)) } else if down { Some((at + 1).min(last)) } else if home { Some(0) } else if end { Some(last) } else { None };
+            // «Тип блока» alone (no block's rows): ↓ / ↑ step its value in
+            // an in-place edit and Enter keeps the text — the block is not
+            // loaded (VM: «Нет» → «БМРЗ - Защита линий» → «… генераторов»,
+            // after Enter no rows and no characteristics); Esc restores it.
+            // With rows below, the keys move the selection.
+            let sole_type = order.len() == 1 && matches!(order.get(at), Some((_, GridRow::Type)));
+            let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+            if let Some(before) = type_edit.clone() {
+                if enter || esc {
+                    if esc {
+                        self.block_text = before;
+                    }
+                    ui.data_mut(|d| d.remove::<Option<String>>(type_edit_id));
+                }
+            }
+            let to = if sole_type && (up || down) {
+                let cur = self.block_text.as_ref().and_then(|t| names.iter().position(|n| n == t)).unwrap_or(self.block_idx);
+                let next = if down { (cur + 1).min(names.len().saturating_sub(1)) } else { cur.saturating_sub(1) };
+                if type_edit.is_none() {
+                    let before = self.block_text.clone();
+                    ui.data_mut(|d| d.insert_temp(type_edit_id, before));
+                }
+                self.block_text = (next != self.block_idx).then(|| names[next].clone());
+                None
+            } else if up {
+                Some(at.saturating_sub(1))
+            } else if down {
+                Some((at + 1).min(last))
+            } else if home {
+                Some(0)
+            } else if end {
+                Some(last)
+            } else {
+                None
+            };
             if let Some(j) = to {
                 select.set(Some(order[j].0));
                 // As a click on the group's row does.
@@ -1221,7 +1295,8 @@ impl App {
                             ui.memory_mut(|m| m.request_focus(edit));
                         }
                     }
-                    GridRow::Type if f4 => ui.data_mut(|d| d.insert_temp(list_id.with("open"), true)),
+                    // F4 on «Тип блока» does nothing (VM; MFC drops the list
+                    // only from an open in-place edit).
                     _ => {}
                 }
             }
@@ -1230,9 +1305,11 @@ impl App {
             ui.data_mut(|d| d.insert_temp(sel_id, k));
         }
         // The grid has the focus after a press inside it, until one outside.
+        // A press ends «Тип блока»'s in-place edit, its text kept.
         let area = ui.min_rect();
         if let Some(q) = ui.input(|i| i.pointer.any_pressed().then_some(i.pointer.interact_pos()).flatten()) {
             ui.data_mut(|d| d.insert_temp(focus_id, area.contains(q)));
+            ui.data_mut(|d| d.remove::<Option<String>>(type_edit_id));
         }
         if touched {
             if let Some(d) = self.active_doc_mut() {

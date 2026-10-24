@@ -7808,6 +7808,42 @@ Residual:
   which table 128 does not.
 - The move marker's glyph is ours (W6).
 
+### L9.283 — Side by side: synchronising a paste; every circle block; the grid's scroll bar and «Тип блока»'s keys  ·  ✅
+W4.3 on both programs, WIN_1999:
+- **Synchronising** «IA БЛОКА 3 (вст.)» by «По авар. составляющей»: the
+  channels fill in alike. With В1 too near the start, both say
+  «Красный визир должен отстоять от начала осциллограммы на расстояние
+  более 3 периодов». With В1 placed, both report «Синхронизация
+  произведена успешно» with the same СКЗ / A1. The instantaneous values
+  differ only by the known 5-sample cursor offset.
+- **The circle diagram with each block** (mouse and keys).
+Two differences, fixed:
+- **The grid's scroll bar.** With more rows than fit, the original's
+  property grid shows the window scroll bar, which takes 17 px of the
+  grid's width. The value column, and «Тип блока»'s ▾, are narrower by
+  it: the ▾ sits 18 px further left. Ours used egui's floating bar, which
+  takes no width, so the same click hit the ▾ in ours and missed it in
+  the original. The grid now scrolls by whole 17 px rows on a child ui,
+  with `lanes::scrollbar` (Windows 11's, as `win_tree`'s) whenever the
+  rows overflow, the wheel three rows a notch. With the bar in both, the
+  same clicks give the same blocks.
+- **«Тип блока»'s keys.** The VM's original, with «Тип блока» the only
+  row (no block): F4 does nothing. ↓ opens its in-place edit and steps
+  the value («Нет» → «БМРЗ - Защита линий» → «… генераторов», the text
+  selected). Enter keeps the text and loads nothing: no rows and no
+  characteristics, even after a click elsewhere. With a block's rows
+  below, ↓ / ↑ move the selection and Enter folds a group, as ours did.
+  Ours dropped the list on F4 and loaded the block on Enter. Now F4 does
+  nothing there. ↓ / ↑ step `block_text` in an in-place edit shown with
+  the text selected; Enter or a click ends it, Esc puts the text back.
+  ↑ is by symmetry (INFERRED). Test
+  `the_block_type_alone_steps_its_text`.
+Residual:
+- The grid does not scroll a key-selected row into view (MFC's
+  EnsureVisible).
+- What the original saves for a keyed-in block (`SelectedBlock`) is NOT
+  DETERMINED.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
