@@ -370,11 +370,10 @@ impl App {
         };
         if let CopyFocus::Diagram(pane) = focus {
             let picture = self.diagram_picture(pane);
-            self.status = if self.clip.put(None, picture.as_ref()) {
-                "Диаграмма скопирована в буфер обмена.".into()
-            } else {
-                "Не удалось записать в буфер обмена.".into()
-            };
+            // The original says nothing on success (no status line).
+            if !self.clip.put(None, picture.as_ref()) {
+                self.status = "Не удалось записать в буфер обмена.".into();
+            }
             return;
         }
         let Some(d) = self.active_doc() else { return };
@@ -383,13 +382,10 @@ impl App {
             self.status = "Не выбраны каналы для копирования.".into();
             return;
         }
-        let n = rec.channels.len();
         let picture = if focus == CopyFocus::View { self.view_picture() } else { None };
-        self.status = if self.clip.put(Some(&rec.to_text()), picture.as_ref()) {
-            format!("Скопировано каналов для объединения: {n}")
-        } else {
-            "Не удалось записать в буфер обмена.".into()
-        };
+        if !self.clip.put(Some(&rec.to_text()), picture.as_ref()) {
+            self.status = "Не удалось записать в буфер обмена.".into();
+        }
     }
 
     /// 57637 (`0x45ad02`): read the clipboard document, undo snapshot, clear

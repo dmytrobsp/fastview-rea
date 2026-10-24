@@ -234,13 +234,37 @@ impl App {
         // A tab pulled out of the strip (`0x10068d0b` / `0x100690b4`).
         let mut dragged: Option<Pane> = None;
         let mut tabs: Vec<(Pane, egui::Rect)> = Vec::new();
-        let strip = egui::TopBottomPanel::bottom(egui::Id::new(("pane_tabs", v.unit))).frame(egui::Frame::none().inner_margin(egui::Margin::symmetric(2.0, 1.0))).show_inside(ui, |ui| {
+        // The tab strip (VM, Office 2007 Blue): a (157, 189, 216) line over
+        // the brush (191, 219, 255), 20 px tabs from 4 px in; the front tab
+        // framed (141, 178, 227) on a (224, 233, 246) → (247, 251, 255)
+        // gradient, its bottom edge (154, 187, 230); every label (21, 66,
+        // 139), 6 px in.
+        let brush = self.skin.splitter();
+        let strip = egui::TopBottomPanel::bottom(egui::Id::new(("pane_tabs", v.unit))).show_separator_line(false).exact_height(24.0).frame(egui::Frame::none().fill(brush)).show_inside(ui, |ui| {
+            let band = ui.max_rect();
+            ui.painter().hline(band.x_range(), band.top() + 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(157, 189, 216)));
+            ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+            ui.add_space(1.0);
             ui.horizontal(|ui| {
+                ui.add_space(4.0);
                 let order = self.tab_order;
                 for p in order.into_iter().filter(|&p| v.mask[p as usize]) {
                     let on = p == v.front;
+                    let font = egui::FontId::proportional(12.0);
+                    let ink = egui::Color32::from_rgb(21, 66, 139);
+                    let g = ui.painter().layout_no_wrap(pane_title(p).to_string(), font, ink);
                     // An id per pane: the drag follows the tab when it moves.
-                    let r = ui.push_id(("fv_pane_tab", p as u8), |ui| ui.selectable_label(on, pane_title(p)).interact(egui::Sense::click_and_drag())).inner;
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(g.size().x + 12.0, 20.0), egui::Sense::hover());
+                    let r = ui.interact(rect, ui.id().with(("fv_pane_tab", p as u8)), egui::Sense::click_and_drag());
+                    let pnt = ui.painter();
+                    if on {
+                        crate::lanes::gradient(pnt, rect, egui::Color32::from_rgb(224, 233, 246), egui::Color32::from_rgb(247, 251, 255));
+                        let frame = egui::Stroke::new(1.0f32, egui::Color32::from_rgb(141, 178, 227));
+                        pnt.vline(rect.left() + 0.5, rect.y_range(), frame);
+                        pnt.vline(rect.right() - 0.5, rect.y_range(), frame);
+                        pnt.hline(rect.x_range(), rect.bottom() - 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(154, 187, 230)));
+                    }
+                    pnt.galley(egui::pos2(rect.left() + 6.0, rect.center().y - g.size().y / 2.0), g, ink);
                     tabs.push((p, r.rect));
                     // A press (or a drag) brings the tab to the front.
                     if (r.clicked() || r.drag_started()) && !on {

@@ -191,7 +191,7 @@ impl App {
         let title = self.docs[di].name.clone();
         match printer {
             Some(p) => match spool::print(&p, &title, &imgs, &dev, &setup) {
-                Ok(()) => self.status = format!("Отправлено на печать: {} стр.", imgs.len()),
+                Ok(()) => {}
                 // MFC's OnFilePrint: a printer DC that fails or a StartDoc
                 // of −1 shows string 61702 in an MB_OK box (`0x10232bcf`,
                 // `0x1023303b`); the cause is not shown.

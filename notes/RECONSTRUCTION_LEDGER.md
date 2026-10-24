@@ -6656,6 +6656,21 @@ original, ours (191, 219, 255)), a tabbed group's frame round its tab
 control (border, 2 px, (100, 100, 100)) and its tab strip's look; the
 older looks' versions of these bands (ours use their splitter brush).
 
+### L9.233 — The pane group's tab strip as drawn; no messages where the original shows none  ·  ✅
+Seen on the VM (L9.232's run, the Векторная | Круговая group): the tab
+strip is a (157, 189, 216) line over the splitter brush, 20 px tabs from
+4 px in; the front tab framed (141, 178, 227) at its sides on a (224,
+233, 246) → (247, 251, 255) gradient with a (154, 187, 230) bottom edge
+(«Векторная диаграмма» 130 px wide), the others its label alone; every
+label (21, 66, 139), 6 px in. Ours drew egui's selectable labels (the
+front one yellow). Now `unit_body` paints the strip and tabs so (the
+drag and swap behaviour unchanged).
+Also seen: the original shows nothing after opening, saving, copying,
+printing or adding channels — no status text (it has no free-text pane,
+L9.18), no message. Ours raised a 4 s toast for each («Загружена
+осциллограмма: …», …); those are gone, the toast kept for clipboard
+failures and our own extra commands (demo, CSV, archive, image, `.fvb`).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

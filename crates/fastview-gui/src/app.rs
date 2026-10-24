@@ -1693,12 +1693,10 @@ impl App {
     pub fn add_doc(&mut self, mut doc: Doc) {
         doc.serial = self.next_serial;
         self.next_serial += 1;
-        let name = doc.name.clone();
-        let n = doc.osc.sample_count();
+        // The original's open says nothing (no status line, no message).
         self.docs.push(doc);
         self.active = Some(self.docs.len() - 1);
         self.view = View::Oscillogram;
-        self.status = format!("Загружена осциллограмма: {name} ({n} отсчётов)");
     }
 
     /// Close document `i` without asking.
@@ -2669,7 +2667,6 @@ impl App {
                 d.set.modified = true;
             }
         }
-        self.status = format!("Добавлено каналов: {}", names.len());
     }
 }
 
