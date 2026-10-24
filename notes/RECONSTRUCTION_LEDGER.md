@@ -8382,6 +8382,16 @@ bold.
   analog block, selected, and the merge bar offers IA БЛОКА 3 / IA БЛОКА 3
   (вст.).
 
+### L9.310 — VM: «Стиль» and the black look; the property grid's divider down the empty list  ·  ✅
+Run (W4.5): «Стиль»'s menu and its «Office 2007» submenu list the same
+entries in both (the radio on «Голубой стиль»); picking «Черный стиль»
+gives both the same dark ribbon, captions and panes. Found on the way:
+the circle / differential property grid's name / value divider runs on
+down the empty part of the list in the original ((185, 208, 237), from
+the last row to the grid's bottom); ours stopped with the rows. Now drawn
+there. Small differences left: the submenu opens about 25 px further left
+in the original; ours' menu text renders a little heavier.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

@@ -1001,6 +1001,13 @@ impl App {
                 child.set_clip_rect(content.intersect(ui.clip_rect()));
                 self.char_side_panel(&mut child);
                 let h = child.min_rect().height();
+                // The name / value divider on down the empty list (VM).
+                let below = content.top() - off + h;
+                if below < content.bottom() {
+                    use crate::oscgeom::PixelLines;
+                    let x = content.left() + (content.width() / 2.0).floor();
+                    ui.painter().with_clip_rect(content).px_vline(x, below..=content.bottom(), egui::Stroke::new(1.0f32, egui::Color32::from_rgb(185, 208, 237)));
+                }
                 ui.data_mut(|d| d.insert_temp(sid, (off, h)));
             });
         let now = grid.response.rect.height().round();
