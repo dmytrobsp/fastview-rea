@@ -308,6 +308,9 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   (153 / 218 px panes): fixed, L9.179; 1 px strokes on pixel centres and
   the waveform texture: fixed, L9.180. The pane captions (20 px, flat glyphs): fixed, L9.186. The ribbon's packing, checked gradient and height: fixed, L9.187.
   The «*K» icon and the diagrams' 11 px font: fixed, L9.193. The tab row:
+  The frequency bars' value labels (VM, L9.232's run): IA / IC «100»
+  horizontal, IB «100.0» rotated — ours «100» rotated on all three (the
+  «%10.0f» label's width test and an x87 value just under 100: to read).
   L9.195. The QAT's customise arrow, its print split button and the
   ribbon's one context menu: L9.216. The parameter grid: L9.222. The
   plot's fills (stacked GDI+ alpha) and the check box: L9.224 (the scale
