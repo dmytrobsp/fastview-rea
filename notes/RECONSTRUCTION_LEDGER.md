@@ -7286,6 +7286,25 @@ Residual:
   run (it would print to a PDF file): INFERRED as kept.
 - The preview treated as OK is INFERRED.
 
+### L9.265 — The document strip's ▾ and its band as the VM draws them  ·  ✅
+VM (Office 2007 Blue, measured beside L9.263's runs):
+- The document menu's button is a bare (86, 125, 177) triangle, with no
+  frame and no button face. Its top row is 9 px across, 8 px below the
+  strip's top. It narrows by 1 px each side over 5 rows to its point,
+  which is 11 px in from the strip's right end.
+- The strip's band runs (180, 212, 255) → (224, 237, 255) down the 19
+  rows above its bottom line.
+Ours drew an egui menu button (a framed box with a black glyph) at the
+row's right, and fell back to a band from the ribbon colour, (192, 220,
+255) at the top. Now:
+- `doc_tabs` paints the triangle pixel by pixel and lays a frameless
+  `menu_custom_button` over it; each group's strip has its own.
+- Blue's `mdi_tabs` holds the band (the rendered column is within 1 of
+  the VM's).
+Residual:
+- The triangle's hot / pressed look is not captured.
+- The other Office 2007 looks' bands are not measured.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

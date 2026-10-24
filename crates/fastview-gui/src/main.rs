@@ -211,11 +211,22 @@ impl App {
                 }
                 ui.add_space(-6.0);
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // The document menu's button: a bare (86, 125, 177) triangle,
+            // 9 px across its top row 8 px down the strip, 5 rows to its
+            // point, its right end 7 px in from the strip's (VM).
+            let x0 = strip.right() - 15.0;
+            let y0 = strip.top() + 8.0;
+            let hit = egui::Rect::from_min_max(egui::pos2(x0 - 3.0, strip.top()), egui::pos2(x0 + 12.0, strip.bottom()));
+            let tri = egui::Color32::from_rgb(86, 125, 177);
+            for k in 0..5 {
+                let row = egui::Rect::from_min_max(egui::pos2(x0 + k as f32, y0 + k as f32), egui::pos2(x0 + 9.0 - k as f32, y0 + k as f32 + 1.0));
+                ui.painter().rect_filled(row, 0.0, tri);
+            }
+            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(hit), |ui| {
                 // The documents sorted by title, each with a small window
                 // image, none marked; no «Окна...» (VM: MFC adds it to a
                 // «Window» menu only, which this ribbon has not).
-                ui.menu_button("▾", |ui| {
+                egui::menu::menu_custom_button(ui, egui::Button::new("").frame(false).min_size(hit.size()), |ui| {
                     // The group's own tabs (its tab control's list).
                     let mut order = members.clone();
                     order.sort_by_key(|&i| self.docs[i].title().to_lowercase());

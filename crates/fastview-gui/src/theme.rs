@@ -224,7 +224,7 @@ impl Skin {
                 info_bar: None,
                 pane_cap: None,
                 status_flat: None,
-                mdi_tabs: None,
+                mdi_tabs: Some([Color32::from_rgb(179, 211, 255), Color32::from_rgb(228, 239, 255)]),
                 bands: Some(Bands { under_ribbon: [Color32::from_rgb(157, 179, 209), Color32::from_rgb(174, 199, 232), Color32::from_rgb(185, 212, 247)], bar_line: Color32::from_rgb(157, 189, 216), bar_bottom: Color32::from_rgb(213, 228, 242), mdi_border: Color32::from_rgb(185, 208, 237) , caption: Color32::from_rgb(184, 207, 233), toolbar: [Color32::from_rgb(227, 239, 255), Color32::from_rgb(177, 211, 255)] , status: [0x567DB0, 0xFFFFFF, 0xD7E6F9, 0xD3E4FA, 0xD0E2FB, 0xCCE0FB, 0xC5DBF8, 0xC7DCF8, 0xB3D0F5, 0xB3D0F5, 0xB6D1F5, 0xB6D1F5, 0xBAD3F5, 0xBAD3F5, 0xBDD6F5, 0xBDD6F5, 0xC1D8F6, 0xC1D8F6, 0xC5DAF6, 0xC5DAF6, 0xC5DAF6, 0xC9DDF6, 0xC9DDF6, 0xCDDFF6], status_pane: [0x567DB0, 0xC5DCF8, 0xC2D9F7, 0xBBD5F6, 0xB4D0F5, 0xAECDF4, 0xADCCF6, 0xA9CAF7, 0x90B6EA, 0x90B6EA, 0x8EB4E7, 0x8EB4E7, 0x8BB2E5, 0x8BB2E5, 0x89AFE1, 0x89AFE1, 0x87ACDE, 0x87ACDE, 0x84A9DA, 0x84A9DA, 0x84A9DA, 0x82A6D7, 0x82A6D7, 0x7FA3D3], pane_edge: [Color32::from_rgb(229, 238, 251), Color32::from_rgb(105, 141, 189)] }),
             },
                         Skin::Black => Palette {
@@ -366,7 +366,9 @@ pub struct Palette {
     /// The status bar flat in `status_bg`, its last pane too, with this top
     /// line (`Some(None)`: none) — the older looks (VM).
     pub status_flat: Option<Option<Color32>>,
-    /// The MDI tab row's fill, top and bottom, in the older looks (VM).
+    /// The MDI tab row's fill, top and bottom of its 20 px (VM: the older
+    /// looks; Blue's rows (180, 212, 255) → (224, 237, 255) at the pixel
+    /// centres of the 19 above its bottom line).
     pub mdi_tabs: Option<[Color32; 2]>,
     /// The Office 2007 frame's bands (VM): the three rows under the ribbon
     /// (its bottom line, two shades), the parameters bar's lines and its
