@@ -160,8 +160,9 @@ impl App {
                             None => {
                                 ui.label(RichText::new("Последние документы").strong());
                                 ui.separator();
+                                let cwd = std::env::current_dir().ok();
                                 for (k, path) in mru.iter().enumerate() {
-                                    let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                                    let name = mru_display(path, cwd.as_deref());
                                     // «&1 name» … «1&0 name», then the plain name.
                                     let text = if k < 10 { format!("{} {name}", k + 1) } else { name };
                                     let b = egui::Button::new(text).frame(false).truncate();
@@ -1634,5 +1635,79 @@ mod tests {
         assert_eq!(reduction_plan(&w, full - 150.0), vec![1, 2, 0, 0]);
         // Below every last layout: all at once.
         assert_eq!(reduction_plan(&w, 200.0), vec![2, 3, 1, 0]);
+    }
+}
+
+/// A recent file's label (MFC's `CRecentFileList::GetDisplayName`): just
+/// its name when it lies in the current folder, else its path through
+/// `AbbreviateName` to 30 characters (VM: «C:\Users\...\WIN_1999.cfg»).
+fn mru_display(path: &std::path::Path, cwd: Option<&std::path::Path>) -> String {
+    let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    if path.parent().is_some_and(|p| cwd.is_some_and(|c| p == c)) {
+        return name;
+    }
+    let full = path.to_string_lossy();
+    let full = if cfg!(windows) { full.replace('/', "\\") } else { full.into_owned() };
+    abbreviate_name(&full, 30)
+}
+
+/// MFC's `AbbreviateName(path, cchMax, TRUE)`: the whole path when it fits;
+/// else the root and its first folder, «\...», and the shortest tail of
+/// folders and the name that fits; the bare name when not even
+/// «root\first\...\name» does.
+fn abbreviate_name(full: &str, max: usize) -> String {
+    let sep = if full.contains('\\') { '\\' } else { '/' };
+    let chars: Vec<char> = full.chars().collect();
+    let n = chars.len();
+    if n <= max {
+        return full.to_string();
+    }
+    let name_start = chars.iter().rposition(|&c| c == sep).map_or(0, |i| i + 1);
+    let name: String = chars[name_start..].iter().collect();
+    let name_len = n - name_start;
+    if max < name_len {
+        return name;
+    }
+    // Past "C:" (or a leading separator), then one more folder.
+    let mut cur = 2.min(n);
+    while cur < n && chars[cur] != sep {
+        cur += 1;
+    }
+    if n - name_len > 3 {
+        cur += 1;
+        while cur < n && chars[cur] != sep {
+            cur += 1;
+        }
+    }
+    let vol = cur;
+    if max < vol + 5 + name_len || cur >= n {
+        return name;
+    }
+    while vol + 4 + (n - cur) > max {
+        cur += 1;
+        while cur < n && chars[cur] != sep {
+            cur += 1;
+        }
+    }
+    let head: String = chars[..vol].iter().collect();
+    let tail: String = chars[cur..].iter().collect();
+    format!("{head}{sep}...{tail}")
+}
+
+#[cfg(test)]
+mod mru_tests {
+    use super::abbreviate_name;
+
+    /// MFC's `AbbreviateName` at 30 characters (VM: the recent list shows
+    /// «C:\Users\...\WIN_1999.cfg» for the record in fv-test\records).
+    #[test]
+    fn recent_names_abbreviate_as_mfc() {
+        assert_eq!(abbreviate_name("C:\\Users\\devuser\\fv-test\\records\\WIN_1999.cfg", 30), "C:\\Users\\...\\WIN_1999.cfg");
+        assert_eq!(abbreviate_name("C:\\data\\a.cfg", 30), "C:\\data\\a.cfg");
+        assert_eq!(abbreviate_name("C:\\Users\\devuser\\records\\x.cfg", 30), "C:\\Users\\devuser\\records\\x.cfg", "30: fits whole");
+        assert_eq!(abbreviate_name("C:\\Users\\devuser1\\records\\x.cfg", 30), "C:\\Users\\...\\records\\x.cfg");
+        assert_eq!(abbreviate_name("C:\\Users\\a_very_long_record_name_indeed_x.cfg", 30), "a_very_long_record_name_indeed_x.cfg");
+        // A Unix path (ours only): the same steps, «/home/user» as the root.
+        assert_eq!(abbreviate_name("/home/user/osc/2024/records/rec.cfg", 30), "/home/user/.../records/rec.cfg");
     }
 }

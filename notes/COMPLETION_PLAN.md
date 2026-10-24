@@ -295,7 +295,9 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   after the same edits, the clipboard document, the quick-analysis and ОМП
   channels) compared byte for byte or value for value.
 - [ ] W4.3 Scenario checklist (each: the original's result recorded, ours
-  compared): start-up window and panes; opening each sample record;
+  compared — both on the VM since L9.271; done: the ribbon's states with
+  and without a document, the application menu, the lane menu, L9.272):
+  start-up window and panes; opening each sample record;
   every ribbon command and its enable state with and without a document;
   every dialog (fields, defaults, Enter / Esc, refusals); context menus
   of the view, lanes, diagrams, captions; keys and the wheel; визиры and

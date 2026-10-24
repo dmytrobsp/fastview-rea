@@ -2195,12 +2195,7 @@ impl App {
 /// The look of a Win32 popup menu: flat items, no wrapping (a menu is as
 /// wide as its longest item).
 fn menu_style(style: &mut egui::Style) {
-    style.wrap_mode = Some(egui::TextWrapMode::Extend);
-    style.spacing.button_padding = Vec2::new(2.0, 0.0);
-    style.visuals.widgets.active.bg_stroke = Stroke::NONE;
-    style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
-    style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
-    style.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
+    crate::popmenu::menu_style(style);
 }
 
 /// The view menus' keyboard state (a Win32 popup's ↑ / ↓ / Enter): the
@@ -2220,6 +2215,10 @@ fn menu_keys_id() -> egui::Id {
 
 /// One row: laid out, counted, highlighted / picked by the keyboard.
 fn menu_row(ui: &mut egui::Ui, label: &str, enabled: bool, mark: Option<&str>) -> bool {
+    menu_row_keys(ui, label, None, enabled, mark)
+}
+
+fn menu_row_keys(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enabled: bool, mark: Option<&str>) -> bool {
     let mut k: MenuKeys = ui.ctx().data(|d| d.get_temp(menu_keys_id())).unwrap_or_default();
     let idx = k.count;
     k.count += 1;
@@ -2227,7 +2226,7 @@ fn menu_row(ui: &mut egui::Ui, label: &str, enabled: bool, mark: Option<&str>) -
     let hot = k.hot == Some(idx);
     let picked = enabled && hot && k.activate;
     ui.ctx().data_mut(|d| d.insert_temp(menu_keys_id(), k));
-    crate::popmenu::mark_item_hot(ui, label, enabled, mark, hot).clicked() || picked
+    crate::popmenu::mark_item_keys(ui, label, keys, enabled, mark, hot).clicked() || picked
 }
 
 fn menu_item(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
@@ -2284,10 +2283,11 @@ fn channel_menu(ui: &mut egui::Ui, doc: &crate::app::Doc, can_paste: bool, pick:
         pick(MenuCmd::ResetZoom);
     }
     ui.separator();
-    if menu_item(ui, "Копировать каналы для объединения осциллограмм", doc.can_copy()) {
+    // MENU 561 carries the accelerators' text after a tab (VM).
+    if menu_row_keys(ui, "Копировать каналы для объединения осциллограмм", Some("Ctrl+C"), doc.can_copy(), None) {
         pick(MenuCmd::CopyMerge);
     }
-    if menu_item(ui, "Вставить каналы для объединения осциллограмм", can_paste) {
+    if menu_row_keys(ui, "Вставить каналы для объединения осциллограмм", Some("Ctrl+V"), can_paste, None) {
         pick(MenuCmd::PasteMerge);
     }
     ui.separator();

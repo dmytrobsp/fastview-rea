@@ -7497,6 +7497,41 @@ Residual:
   are glyph rasterisation, the waveforms' column sampling and 1 px offsets
   of the planes' grids (W4.5).
 
+### L9.272 — Side by side on the VM: the ribbon's states, the application menu, the lane menu  ·  ✅
+The first W4.3 scenarios, run on both programs on the VM (the same steps,
+`both.sh` in the scratchpad: the harness with `-Soft` for ours):
+- **Ribbon without a document and with WIN_1999:** every enabled, greyed
+  and checked state matches group by group. That includes the QAT's open
+  / save / print, Объединение, Видимость, the six statistics toggles (F,
+  СКЗ, A1 on) and «Вторичные знач.». The icons are ours (W6).
+- **Application menu:** the same ten items.
+  - The recent file read «1 C:\Users\...\WIN_1999.cfg» in the original:
+    MFC's `GetDisplayName` (the bare name for a file in the current
+    folder, else `AbbreviateName` to 30). Ours showed only the name. Now
+    `ribbon::mru_display` / `abbreviate_name` as MFC's; on Unix the same
+    steps, with «/home/user» as the root.
+  - Ours keeps its own «Дополнительно» submenu (our extras; the original
+    has none: kept, a user decision).
+- **Lane name's right-click menu:** the same items, order and disabled
+  ones. Differences fixed:
+  - The original shows «Ctrl+C» / «Ctrl+V» beside the copy / paste items.
+    Now `popmenu::mark_item_keys`.
+  - The original's rows are 22 px apart and 29 across a separator, the
+    label 33 px in, the 9 pt UI font. Ours had 24 / 35 px, 23 px in and
+    egui's 12.5 (13) px. Now rows of 21 px with 1 px spacing
+    (`popmenu::menu_style`, shared by the view's menus), a 28 px column,
+    the body and button text styles 12 px. The menu is 412 px tall against
+    the original's 413.
+  - The check mark and the submenu arrows were boxes on Windows (the
+    system fallback, Arial, lacks them). Now DejaVu Sans is embedded as
+    the fallback face (`assets/fonts/DejaVuSans.ttf`, its licence beside
+    it and in the release archives).
+Residual:
+- The original marks a checked item that has an icon by framing the icon.
+- The menus' white face with a grey icon gutter, and the icons themselves
+  (W6).
+- «Печать»'s arrow is right-aligned in the original.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

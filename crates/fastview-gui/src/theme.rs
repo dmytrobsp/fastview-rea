@@ -459,6 +459,11 @@ pub fn apply(ctx: &egui::Context, skin: Skin) {
     ctx.style_mut(|s| {
         s.spacing.item_spacing = egui::vec2(6.0, 5.0);
         s.spacing.button_padding = egui::vec2(6.0, 3.0);
+        // The menus' and labels' text: the system's 9 pt UI font, 12 px
+        // (VM: Segoe UI 9 pt; egui's own 12.5 rounds to 13).
+        for st in [egui::TextStyle::Body, egui::TextStyle::Button] {
+            s.text_styles.insert(st, egui::FontId::proportional(12.0));
+        }
     });
 }
 

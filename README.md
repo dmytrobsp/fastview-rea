@@ -210,7 +210,8 @@ The reconstruction's code is dual-licensed under
 The program embeds Wine's Tahoma fonts (`assets/fonts/tahoma.ttf`,
 `tahomabd.ttf`: Wine's own substitutes, not Microsoft's), which keep their
 own licences — the GNU LGPL 2.1 or later and the Bitstream Vera licence —
-in [assets/fonts/LICENSE-tahoma.txt](assets/fonts/LICENSE-tahoma.txt).
+in [assets/fonts/LICENSE-tahoma.txt](assets/fonts/LICENSE-tahoma.txt); and DejaVu Sans for the
+symbols Tahoma lacks ([assets/fonts/LICENSE-dejavu.txt](assets/fonts/LICENSE-dejavu.txt)).
 
 ## Legal
 

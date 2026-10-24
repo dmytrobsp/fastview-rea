@@ -133,6 +133,9 @@ fn window_placement(st: &persist::Store) -> Option<(egui::Rect, bool)> {
 /// vertical metrics of the Tahoma the original's GDI text uses.
 const TAHOMA: &[u8] = include_bytes!("../../../assets/fonts/tahoma.ttf");
 const TAHOMA_BOLD: &[u8] = include_bytes!("../../../assets/fonts/tahomabd.ttf");
+/// DejaVu Sans (`assets/fonts/LICENSE-dejavu.txt`): the glyphs Tahoma lacks
+/// (arrows, check marks), alike on every platform.
+const DEJAVU: &[u8] = include_bytes!("../../../assets/fonts/DejaVuSans.ttf");
 
 /// A font whose size is its em, as GDI's: egui scales a face by its
 /// ascent − descent and rounds that height to whole pixels, so Tahoma
@@ -157,31 +160,14 @@ fn em_sized(bytes: &'static [u8]) -> egui::FontData {
     d
 }
 
-/// The window's fonts: Tahoma first — a size is then about the em in
-/// pixels as GDI counts it (egui lays Tahoma out at size 11 106 px wide
-/// where GDI's 8 pt Tahoma takes 108 for «Номер регистратора:»); then the
-/// first system font found that covers Cyrillic, for the glyphs Tahoma
-/// lacks; the bold face as the family "bold".
+/// The window's fonts: Tahoma, sized as GDI's em (`em_sized`), then DejaVu
+/// Sans for the glyphs Tahoma lacks; the bold face as the family "bold".
 fn app_fonts() -> egui::FontDefinitions {
-    const CANDIDATES: &[&str] = &[
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "C:/Windows/Fonts/arial.ttf",
-        "C:/Windows/Fonts/segoeui.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/Library/Fonts/Arial.ttf",
-    ];
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.insert("tahoma".to_owned(), em_sized(TAHOMA));
     fonts.font_data.insert("tahoma-bold".to_owned(), em_sized(TAHOMA_BOLD));
-    let mut order = vec!["tahoma".to_owned()];
-    if let Some(bytes) = CANDIDATES.iter().find_map(|p| std::fs::read(p).ok()) {
-        fonts.font_data.insert("cyr".to_owned(), egui::FontData::from_owned(bytes));
-        order.push("cyr".to_owned());
-    }
+    fonts.font_data.insert("dejavu".to_owned(), egui::FontData::from_static(DEJAVU));
+    let order = ["tahoma".to_owned(), "dejavu".to_owned()];
     for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
         let list = fonts.families.entry(family).or_default();
         for (k, name) in order.iter().enumerate() {

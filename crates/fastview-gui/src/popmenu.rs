@@ -87,9 +87,13 @@ pub fn area_id(base: &str, serial: u64) -> egui::Id {
     egui::Id::new(base).with(serial)
 }
 
-fn menu_style(style: &mut egui::Style) {
+/// The look of a Win32 popup menu's rows (also the view's own menus).
+pub fn menu_style(style: &mut egui::Style) {
     style.wrap_mode = Some(egui::TextWrapMode::Extend);
     style.spacing.button_padding = Vec2::new(2.0, 0.0);
+    // Rows 21 px a pixel apart: the 22 px pitch of the original's menus,
+    // and with egui's 6 px separator its 29 px across one (VM).
+    style.spacing.item_spacing.y = 1.0;
     style.visuals.widgets.active.bg_stroke = Stroke::NONE;
     style.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
     style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
@@ -101,10 +105,18 @@ fn menu_style(style: &mut egui::Style) {
 /// then the label.
 /// Highlighted as the keyboard's item when `hot`.
 pub fn mark_item_hot(ui: &mut egui::Ui, label: &str, enabled: bool, mark: Option<&str>, hot: bool) -> egui::Response {
-    const COL: f32 = 18.0;
+    mark_item_keys(ui, label, None, enabled, mark, hot)
+}
+
+/// [`mark_item_hot`] with the accelerator's text right-aligned (the
+/// original's «Ctrl+C» beside an item, VM).
+pub fn mark_item_keys(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enabled: bool, mark: Option<&str>, hot: bool) -> egui::Response {
+    // The check / image column: the label 33 px in from the menu's edge (VM).
+    const COL: f32 = 28.0;
     let font = egui::TextStyle::Button.resolve(ui.style());
     let galley = ui.painter().layout_no_wrap(label.to_string(), font.clone(), Color32::PLACEHOLDER);
-    let size = Vec2::new(COL + galley.size().x + 10.0, (galley.size().y + 4.0).max(ui.spacing().interact_size.y));
+    let keys_w = keys.map_or(0.0, |k| ui.painter().layout_no_wrap(k.to_string(), font.clone(), Color32::PLACEHOLDER).size().x + 40.0);
+    let size = Vec2::new(COL + galley.size().x + 10.0 + keys_w, 21.0);
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let row = Rect::from_x_y_ranges(ui.max_rect().x_range(), rect.y_range());
     if enabled && (resp.hovered() || hot) {
@@ -112,9 +124,12 @@ pub fn mark_item_hot(ui: &mut egui::Ui, label: &str, enabled: bool, mark: Option
     }
     let col = if enabled { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
     if let Some(m) = mark {
-        ui.painter().text(Pos2::new(rect.left() + COL / 2.0, rect.center().y), egui::Align2::CENTER_CENTER, m, font, col);
+        ui.painter().text(Pos2::new(rect.left() + COL / 2.0, rect.center().y), egui::Align2::CENTER_CENTER, m, font.clone(), col);
     }
     ui.painter().galley(Pos2::new(rect.left() + COL, rect.center().y - galley.size().y / 2.0), galley, col);
+    if let Some(k) = keys {
+        ui.painter().text(Pos2::new(row.right() - 14.0, rect.center().y), egui::Align2::RIGHT_CENTER, k, font, col);
+    }
     resp
 }
 
