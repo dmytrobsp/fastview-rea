@@ -174,7 +174,7 @@ impl App {
                         .iter()
                         .map(|(path, kids, _)| TreeRow { depth: path.len() - 1, label: path[path.len() - 1].to_string(), has_children: *kids, expanded: !st.collapsed.contains(path), selected: st.selected == *path })
                         .collect();
-                    let ev = win_tree(ui, dlu(client, 12, 12, 180, 266), egui::Id::new("af_tree"), Color32::from_gray(160), &rows, true, &mut |p, cell, k| branch_icon(p, cell, flat[k].0[0]));
+                    let ev = win_tree(ui, dlu(client, 12, 12, 180, 266), egui::Id::new("af_tree"), Color32::from_gray(160), &rows, true, None, true, &mut |p, cell, k| branch_icon(p, cell, flat[k].0[0]));
                     for (k, r) in ev.rects.iter().enumerate() {
                         st.item_rects.push((flat[k].0.clone(), *r));
                     }

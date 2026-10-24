@@ -377,8 +377,12 @@ impl Node {
 /// takes it (`0x46b8f0`).
 pub struct FolderTree {
     pub selected: Node,
+    /// The nodes `open_to` expanded, in order, until the tree is first
+    /// drawn and scrolled as the TreeView scrolls for them.
+    reveal: Vec<Node>,
     expanded: std::collections::HashSet<Node>,
     children: std::collections::HashMap<Node, Vec<Node>>,
+    has_sub: std::collections::HashMap<Node, bool>,
     /// Where the children come from (the file system; a stand-in in tests).
     list: fn(&Node) -> Vec<Node>,
 }
@@ -443,9 +447,18 @@ pub fn documents_dir() -> Option<PathBuf> {
 
 impl FolderTree {
     pub fn new(start: &Path, list: fn(&Node) -> Vec<Node>) -> FolderTree {
-        let mut t = FolderTree { selected: Node::Desktop, expanded: Default::default(), children: Default::default(), list };
+        let mut t = FolderTree { selected: Node::Desktop, reveal: Vec::new(), expanded: Default::default(), children: Default::default(), has_sub: Default::default(), list };
         t.open_to(start);
         t
+    }
+
+    /// Whether a node has a subfolder to show, asked once (the shell's
+    /// SFGAO_HASSUBFOLDER); the virtual nodes always.
+    fn has_sub(&mut self, n: &Node) -> bool {
+        let Node::Dir(p) = n else { return true };
+        *self.has_sub.entry(n.clone()).or_insert_with(|| {
+            std::fs::read_dir(p).map(|rd| rd.flatten().any(|e| e.file_type().is_ok_and(|t| t.is_dir()) && !hidden(&e))).unwrap_or(false)
+        })
     }
 
     /// The node's children, read once.
@@ -475,8 +488,25 @@ impl FolderTree {
             opened.push(at);
             at = next;
         }
-        self.expanded.extend(opened);
+        // `SelectPath` expands the folder it selects too (VM: Documents
+        // opened on its subfolder).
+        opened.push(at.clone());
+        self.expanded.extend(opened.iter().cloned());
+        self.reveal = opened;
         self.selected = at;
+    }
+
+    /// The first row to show once `open_to` has expanded its path, as the
+    /// Win32 TreeView scrolls (VM): each expansion in turn brings its last
+    /// child into view without taking the expanded folder above the top,
+    /// then the selection is made visible. `None` after the first call.
+    pub fn take_reveal(&mut self, visible: usize) -> Option<usize> {
+        if self.reveal.is_empty() {
+            return None;
+        }
+        let order = std::mem::take(&mut self.reveal);
+        let rows = self.rows();
+        Some(reveal_top(&rows, &order, &self.selected, visible.max(1)))
     }
 
     pub fn toggle(&mut self, n: &Node) {
@@ -491,9 +521,10 @@ impl FolderTree {
         let mut stack = vec![(Node::Desktop, 0usize)];
         while let Some((n, d)) = stack.pop() {
             let open = self.expanded.contains(&n);
-            // An unread folder may have children (the shell's has-children
-            // mark); a read one shows its button only when it has some.
-            let more = if open || self.children.contains_key(&n) { !self.kids(&n).is_empty() } else { true };
+            // An unread folder shows its button by the shell's
+            // has-subfolder mark (SFGAO_HASSUBFOLDER: VM, no button on a
+            // folder without subfolders); a read one when it has some.
+            let more = if open || self.children.contains_key(&n) { !self.kids(&n).is_empty() } else { self.has_sub(&n) };
             if open {
                 for k in self.kids(&n).to_vec().into_iter().rev() {
                     stack.push((k, d + 1));
@@ -512,6 +543,27 @@ impl FolderTree {
             _ => None,
         }
     }
+}
+
+/// [`FolderTree::take_reveal`]'s scrolling over `rows`.
+fn reveal_top(rows: &[(Node, usize, bool, bool)], order: &[Node], selected: &Node, visible: usize) -> usize {
+    let mut top = 0;
+    for n in order {
+        let Some(r) = rows.iter().position(|x| x.0 == *n) else { continue };
+        let d = rows[r].1;
+        let last = rows[r + 1..].iter().take_while(|x| x.1 > d).enumerate().filter(|(_, x)| x.1 == d + 1).map(|(k, _)| r + 1 + k).last().unwrap_or(r);
+        if last >= top + visible {
+            top = r.min(last + 1 - visible);
+        }
+    }
+    if let Some(s) = rows.iter().position(|x| x.0 == *selected) {
+        if s < top {
+            top = s;
+        } else if s >= top + visible {
+            top = s + 1 - visible;
+        }
+    }
+    top
 }
 
 /// A running scan: its cancel flag, result channel and worker thread.
@@ -744,7 +796,9 @@ impl App {
                 let tr = r(8, 57, 177, 243);
                 let rows_t = f.tree.rows();
                 let rows: Vec<TreeRow> = rows_t.iter().map(|(node, depth, open, more)| TreeRow { depth: *depth, label: node.label(), has_children: *more, expanded: *open, selected: f.tree.selected == *node }).collect();
-                let ev = win_tree(ui, tr.shrink(4.0), egui::Id::new("finder_tree"), Color32::TRANSPARENT, &rows, false, &mut |p, cell, k| {
+                // 16 px rows inside the tree's 1 px frame.
+                let top_row = f.tree.take_reveal(((tr.shrink(4.0).height() - 2.0) / 16.0).floor() as usize);
+                let ev = win_tree(ui, tr.shrink(4.0), egui::Id::new("finder_tree"), Color32::TRANSPARENT, &rows, false, top_row, false, &mut |p, cell, k| {
                     let c = cell.center();
                     match rows_t[k].0 {
                         Node::Dir(_) => {
@@ -1012,6 +1066,33 @@ mod tests {
         // A folder not reachable: the Desktop.
         let t = FolderTree::new(Path::new("/nowhere/x"), list);
         assert_eq!(t.selected, Node::Desktop);
+    }
+
+    /// The VM's tree: opened to C:\Users\devuser\Documents (the 18th of
+    /// devuser's 30 folders) with 24 rows shown, devuser's expansion scrolls
+    /// it to the top row; Documents is expanded on its subfolder and in view.
+    #[test]
+    fn the_tree_scrolls_as_the_treeview_opening_its_path() {
+        fn list(n: &Node) -> Vec<Node> {
+            let d = |s: &str| Node::Dir(PathBuf::from(s));
+            match n {
+                Node::Desktop => vec![Node::Computer],
+                Node::Computer => vec![d("/")],
+                Node::Dir(p) if p == Path::new("/") => ["inetpub", "PerfLogs", "Program Files", "Program Files (x86)", "Users"].iter().map(|x| d(&format!("/{x}"))).collect(),
+                Node::Dir(p) if p == Path::new("/Users") => ["a", "b", "c", "devuser"].iter().map(|x| d(&format!("/Users/{x}"))).collect(),
+                Node::Dir(p) if p == Path::new("/Users/devuser") => (0..30).map(|k| d(&format!("/Users/devuser/{}", if k == 17 { "Documents".to_string() } else { format!("f{k:02}") }))).collect(),
+                Node::Dir(p) if p == Path::new("/Users/devuser/Documents") => vec![d("/Users/devuser/Documents/WindowsPowerShell")],
+                _ => vec![],
+            }
+        }
+        let mut t = FolderTree::new(Path::new("/Users/devuser/Documents"), list);
+        let top = t.take_reveal(24).expect("scrolled once");
+        let rows = t.rows();
+        assert_eq!(rows[top].0.label(), "devuser");
+        let docs = rows.iter().position(|r| r.0.label() == "Documents").unwrap();
+        assert!(rows[docs].2 && rows[docs + 1].0.label() == "WindowsPowerShell", "the selected folder expanded");
+        assert!(docs < top + 24);
+        assert_eq!(t.take_reveal(24), None, "only on opening");
     }
 
     #[test]

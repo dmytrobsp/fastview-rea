@@ -309,7 +309,8 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   compared — both on the VM since L9.271; done: the ribbon's states with
   and without a document, the application menu, the lane menu, L9.272;
   the plot's right-click, the ОМП tab, the pane caption menu, L9.273;
-  «Каналы», «Коэффициенты», «Быстрый анализ», L9.274):
+  «Каналы», «Коэффициенты», «Быстрый анализ», L9.274; the application
+  menu's dialogs and the finder's tree, L9.275):
   start-up window and panes; opening each sample record;
   every ribbon command and its enable state with and without a document;
   every dialog (fields, defaults, Enter / Esc, refusals); context menus

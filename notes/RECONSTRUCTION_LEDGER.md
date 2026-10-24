@@ -7573,6 +7573,40 @@ Residual:
 - The ribbon's groups 10–20 px narrower than the original's (Segoe UI's
   widths, W6).
 
+### L9.275 — Side by side: dialogs from the application menu; the finder's tree as the TreeView opens it  ·  ✅
+More W4.3 scenarios on both programs:
+- **Matching:** «Параметры осциллограммы» (the same fields and values),
+  ОМП «Параметры», «Частотная» toggled off (the pane hidden, the button
+  unchecked, the view taller), «Установка настроек программы», and
+  «Комментарии к диаграмме» (typing goes straight to the text: the edit
+  has the focus in both).
+- **The finder («Поиск файлов»):** its tree differed in four ways.
+  1. The original expands the selected folder too (`SelectPath`:
+     Documents opened on WindowsPowerShell). Ours expanded only its
+     ancestors.
+  2. The original scrolls as the Win32 TreeView does for each expansion in
+     turn: the last child brought into view without taking the expanded
+     folder above the top; then the selection is made visible. Opening
+     C:\Users\devuser\Documents therefore leaves devuser on the top row.
+     Ours stayed at the top of the tree. Now `FolderTree::take_reveal`
+     replays that, and `win_tree` takes the first row (`top_row`).
+  3. A folder without subfolders has no expand box (the shell's
+     SFGAO_HASSUBFOLDER). Ours showed one on every unread folder. Now
+     `has_sub`, asked once per folder.
+  4. The selection without the focus is (240) behind black text
+     (TVS_SHOWSELALWAYS); the tree opens unfocused. Ours was always blue.
+     Now `win_tree` keeps a focus (a press inside, lost to one outside;
+     the ОМП and formula trees start focused as before).
+- The tree's scroll bar: the original shows Windows 11's (an idle thin
+  thumb). Ours had egui's, which floats in on hover. `win_tree` now
+  scrolls by whole rows with the view's bar (`lanes::scrollbar`), the wheel
+  three rows a notch.
+Tests: `the_tree_scrolls_as_the_treeview_opening_its_path`.
+Residual:
+- The shell's special-folder icons (Desktop, Documents, Downloads) are
+  drawn as plain folders.
+- The other dialogs' lists still use egui's floating bar.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

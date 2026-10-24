@@ -995,7 +995,7 @@ impl ParamsDialog {
                 crate::dialogs::TreeRow { depth: *depth, label: label.clone(), has_children, expanded: !self.collapsed.contains(node), selected: self.sel == *node }
             })
             .collect();
-        let ev = crate::dialogs::win_tree(ui, tree, egui::Id::new("omp_tree"), Color32::from_rgb(171, 173, 179), &rows, false, &mut |p, cell, k| tree_icon(p, cell, &all[shown[k]].1));
+        let ev = crate::dialogs::win_tree(ui, tree, egui::Id::new("omp_tree"), Color32::from_rgb(171, 173, 179), &rows, false, None, true, &mut |p, cell, k| tree_icon(p, cell, &all[shown[k]].1));
         if let Some(k) = ev.toggled.or(ev.double_clicked.filter(|&k| rows[k].has_children)) {
             let node = all[shown[k]].1;
             if !self.collapsed.remove(&node) {

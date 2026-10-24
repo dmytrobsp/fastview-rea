@@ -974,7 +974,7 @@ fn analog_at(y: f32, geo: &RowGeo, ranges: &[(f64, f64)]) -> Option<(usize, f64)
 /// `page` sizes the thumb (nPage); `line` / `jump` are the steps of an
 /// arrow / a click on the track.
 #[allow(clippy::too_many_arguments)]
-fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f32, page: f32, line: f32, jump: f32) -> Option<f32> {
+pub(crate) fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f32, page: f32, line: f32, jump: f32) -> Option<f32> {
     let p = ui.painter_at(rect);
     // Windows 11's bar (VM): a BTNFACE track; idle, the arrows hidden (their
     // room kept) and the thumb a 2 px (133, 133, 133) line along the

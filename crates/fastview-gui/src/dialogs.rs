@@ -557,9 +557,19 @@ pub struct TreeEvents {
 /// for the ancestors with later siblings; the ± box 9 px on the line, a
 /// (145) frame with (186) corners on (250) shading to (227), the sign 5 px
 /// of (75, 99, 167); the selected label white on (0, 120, 212). `icon`
-/// draws row k's image into its cell.
-pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows: &[TreeRow], lines_at_root: bool, icon: &mut dyn FnMut(&egui::Painter, Rect, usize)) -> TreeEvents {
+/// draws row k's image into its cell; `top_row` scrolls row k to the top
+/// this frame. Without the focus (`start_focused` until a press inside,
+/// lost to a press outside) the selection is (240) behind black text, as
+/// TVS_SHOWSELALWAYS draws it (VM: the finder's tree on opening).
+#[allow(clippy::too_many_arguments)]
+pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows: &[TreeRow], lines_at_root: bool, top_row: Option<usize>, start_focused: bool, icon: &mut dyn FnMut(&egui::Painter, Rect, usize)) -> TreeEvents {
     let mut ev = TreeEvents::default();
+    let focus_id = id.with("fv_tree_focus");
+    let mut focused = ui.data(|d| d.get_temp::<bool>(focus_id)).unwrap_or(start_focused);
+    if let Some(p) = ui.input(|i| i.pointer.any_pressed().then(|| crate::lanes::press_pos(i)).flatten()) {
+        focused = r.contains(p);
+    }
+    ui.data_mut(|d| d.insert_temp(focus_id, focused));
     let p = ui.painter().clone();
     p.rect_filled(r, 0.0, border);
     let inner = r.shrink(1.0);
@@ -573,10 +583,37 @@ pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows:
         })
         .collect();
     let dot = Color32::from_gray(109);
-    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(inner), |ui| {
-        egui::ScrollArea::vertical().id_salt(id).show(ui, |ui| {
-            ui.spacing_mut().item_spacing = Vec2::ZERO;
-            let (all, _) = ui.allocate_exact_size(Vec2::new(inner.width(), 16.0 * rows.len() as f32), egui::Sense::hover());
+    // Scrolled by whole rows: the window scroll bar (Windows 11's, as the
+    // view's) whenever the rows overflow, the wheel three rows a notch.
+    let scroll_id = id.with("fv_tree_scroll");
+    let content_h = 16.0 * rows.len() as f32;
+    let page = (inner.height() / 16.0).floor() * 16.0;
+    let max_off = (content_h - page).max(0.0);
+    let mut off: f32 = ui.data(|d| d.get_temp(scroll_id)).unwrap_or(0.0);
+    if let Some(k) = top_row {
+        off = 16.0 * k as f32;
+    }
+    if ui.rect_contains_pointer(inner) {
+        let dy = ui.input(|i| i.raw_scroll_delta.y);
+        if dy != 0.0 {
+            off -= dy.signum() * 48.0;
+        }
+    }
+    let content = if max_off > 0.0 { Rect::from_min_max(inner.min, Pos2::new(inner.right() - 17.0, inner.bottom())) } else { inner };
+    if max_off > 0.0 {
+        let bar = Rect::from_min_max(Pos2::new(content.right(), inner.top()), inner.max);
+        if let Some(v) = crate::lanes::scrollbar(ui, bar, false, off, max_off, page, 16.0, page) {
+            off = v;
+        }
+    }
+    off = ((off / 16.0).round() * 16.0).clamp(0.0, max_off);
+    ui.data_mut(|d| d.insert_temp(scroll_id, off));
+    {
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(content));
+        child.set_clip_rect(content.intersect(ui.clip_rect()));
+        let ui = &mut child;
+        {
+            let all = Rect::from_min_size(Pos2::new(content.left(), content.top() - off), Vec2::new(content.width(), content_h));
             let p = ui.painter().clone();
             let shift = if lines_at_root { 0.0 } else { -19.0 };
             let line_x = |d: usize| all.left() + shift + 11.0 + 19.0 * d as f32;
@@ -634,9 +671,9 @@ pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows:
                 let g = ui.fonts(|f| f.layout_no_wrap(row.label.clone(), DLG_FONT, Color32::BLACK));
                 let lr = Rect::from_min_size(Pos2::new(cell.left() + 19.0, top), Vec2::new(g.size().x + 5.0, 16.0));
                 if row.selected {
-                    p.rect_filled(lr, 0.0, Color32::from_rgb(0, 120, 212));
+                    p.rect_filled(lr, 0.0, if focused { Color32::from_rgb(0, 120, 212) } else { Color32::from_gray(240) });
                 }
-                p.galley(Pos2::new(lr.left() + 2.0, (mid - g.size().y / 2.0).round()), g, if row.selected { Color32::WHITE } else { Color32::BLACK });
+                p.galley(Pos2::new(lr.left() + 2.0, (mid - g.size().y / 2.0).round()), g, if row.selected && focused { Color32::WHITE } else { Color32::BLACK });
                 ev.rects.push(Rect::from_min_max(cell.min, lr.max));
                 let resp = ui.interact(Rect::from_min_max(cell.min, lr.max), id.with(("item", i)), egui::Sense::click());
                 if resp.clicked() {
@@ -647,8 +684,8 @@ pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows:
                 }
                 stack.push(i);
             }
-        });
-    });
+        }
+    }
     ev
 }
 
