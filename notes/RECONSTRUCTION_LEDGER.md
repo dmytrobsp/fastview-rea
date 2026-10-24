@@ -5759,11 +5759,20 @@ Residual: a pending (bit-14 only) lane may be renamed in the original
 (ours refuses: its paste record is matched by name); whether the `.set`
 keeps the flag channels after a run (RUN, L9.68).
 
+### L9.193 — The lanes' status icons in image list 489's look; the coefficient's «*K»  ·  ✅
+Seen on the VM (WIN_1999, every channel shown secondary through its
+ratio): the stats panel draws image list 489's icon at (leftW − 21,
+top + h − 21) — a 16 px box, a 1 px (142, 140, 99) frame on a light
+lavender ground, «*K» in blue — for a channel whose ratio applies
+(`0x462b15`, L9.142). Ours drew «П» in a rounded blue-grey box. Now the
+boxes take that look and the ratio's glyph is «*K» (the other glyphs
+stay ours; the bitmap is the original's asset, W6).
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.192)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.193)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5819,7 +5828,7 @@ fill, the group stats width); L9.186 the panes' captions; L9.187 the ribbon's pa
 gradient / height; L9.188 `doc+0x1d8` = every analog-kind record (W2.16),
 the unknowns table (W3.1); L9.189 formula channels on the frequency
 diagram; L9.190 VM runs (no document, single instance); L9.191 «Каналы» rows in
-vector order; L9.192 the ОМП flags as computed channels.
+vector order; L9.192 the ОМП flags as computed channels; L9.193 the lanes' icons.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

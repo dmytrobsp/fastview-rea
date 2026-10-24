@@ -217,10 +217,14 @@ impl OscView<'_> {
         // Status icons, right to left from the panel edge, tops at `y`.
         let icons = |glyphs: Vec<&str>, y: f32| {
             for (j, glyph) in glyphs.into_iter().enumerate() {
+                // Image list 489's look (seen on the VM): a 16 px box, a
+                // 1 px (142, 140, 99) frame on a light lavender ground, the
+                // glyph in blue — our own glyphs (the bitmap is the
+                // original's).
                 let at = Rect::from_min_size(Pos2::new(left - 21.0 - 21.0 * j as f32, y), Vec2::splat(16.0));
-                lp.rect_filled(at, 2.0, Color32::from_rgb(232, 236, 248));
-                lp.px_rect_stroke(at, 2.0, Stroke::new(1.0f32, Color32::from_rgb(120, 130, 170)));
-                lp.text(at.center(), Align2::CENTER_CENTER, glyph, FontId::proportional(9.0), Color32::from_rgb(40, 50, 110));
+                lp.rect_filled(at, 0.0, Color32::from_rgb(243, 238, 246));
+                lp.px_rect_stroke(at, 0.0, Stroke::new(1.0f32, Color32::from_rgb(142, 140, 99)));
+                lp.text(at.center(), Align2::CENTER_CENTER, glyph, FontId::proportional(9.0), Color32::from_rgb(80, 80, 200));
             }
         };
         let row_col = Color32::from_rgb(0, 0, 127);
@@ -232,9 +236,9 @@ impl OscView<'_> {
             if let Lane::Digital(i) = lane {
                 if doc.dig(*i).invert {
                     let at = Rect::from_min_size(Pos2::new(left - 18.0, top + 2.0), Vec2::splat(16.0));
-                    lp.rect_filled(at, 2.0, Color32::from_rgb(232, 236, 248));
-                    lp.px_rect_stroke(at, 2.0, Stroke::new(1.0f32, Color32::from_rgb(120, 130, 170)));
-                    lp.text(at.center(), Align2::CENTER_CENTER, "−", FontId::proportional(9.0), Color32::from_rgb(40, 50, 110));
+                    lp.rect_filled(at, 0.0, Color32::from_rgb(243, 238, 246));
+                    lp.px_rect_stroke(at, 0.0, Stroke::new(1.0f32, Color32::from_rgb(142, 140, 99)));
+                    lp.text(at.center(), Align2::CENTER_CENTER, "−", FontId::proportional(9.0), Color32::from_rgb(80, 80, 200));
                 }
             }
             bold_text(lp, Pos2::new(self.x0 + 5.0, top + 2.0), &short, NAME_FONT, color)
@@ -645,7 +649,8 @@ fn chan_icons(doc: &crate::app::Doc, i: usize, primary: bool) -> Vec<&'static st
         (c.window.is_some(), "↕"),
         (c.remove_dc, "DC"),
         (c.invert, "−"),
-        (scaled, "П"),
+        // The coefficient's «*K» (the ratio applied, `0x462b15`).
+        (scaled, "*K"),
         (c.mode == ValueMode::Rms, "~"),
         (c.mode == ValueMode::FirstHarmonic, "1"),
         (c.adc_counts, "#"),
