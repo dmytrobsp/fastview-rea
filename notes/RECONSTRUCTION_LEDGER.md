@@ -5770,11 +5770,48 @@ stay ours; the bitmap is the original's asset, W6). The diagrams' font
 follows the DiagramWnd base's Tahoma with a 13 px cell (`0x441b80`, W1.8
 B2): an 11 px em, ours was 12.
 
+### L9.194 — W3.2 part A: twelve static unknowns settled; «Каналы» row icons, the paste's ccbm, «none» in the readout  ·  ✅
+Read (background agent, W3.1's STATIC list):
+- rec+0x278 (the harmonic-1 gain) is 1.0 from the record constructor
+  `0x449740` (sub+0xf8); only the OSC2 reader writes another (`0x4527d2`)
+  — as ours (L6).
+- `zk:` (`0x41ccc7`): Z = e0 / (e1 + e2·ZA + e3·ZB), ZA / ZB from e4–e7
+  in degrees, the divide-by-zero tail of `zf:` when e8 > |phasor e1| / k
+  — as ours (L6).
+- The Takagi θ (`obj+0x380`) is zeroed before the first pass (`0x4a0db9`)
+  and written only by `0x49adc0` (`0x49b1bf`): arg(Mb − Mc·e^{jMa}) — as
+  ours' `refine_theta` (L7).
+- «Каналы»'s image list (bitmap 464, 16 × 16): a row's image at x + 5
+  (`0x433db0`) — a channel 8, a discrete one 9 (INFERRED), a differential
+  pair 4 (`0x434080`), an R/X pair 3 (`0x434191`) —; columns 1–5 carry
+  images 0–4; cells 5 / 6 / 7 (set / clear / not applicable).
+- The print slice `0x405970` draws into an MM_ISOTROPIC memory DC while
+  the lanes clip with device-unit regions (CreateRectRgn, SelectClipRgn):
+  in print a lane's clip is probably misplaced (INFERRED — a RUN item).
+- The group stats line does not blank «none» (`0x4683c0`); the stats
+  readout `0x461440` lower-cases the unit first (`_wcslwr_s`,
+  `0x461c31`–`0x461c3e`).
+- A computed channel's k (`ch+0xf0`) is 1 (`0x424070`, `0x428533`) — as
+  ours (L9.69). The unit walk over zero samples reads a stale evaluator
+  position (`0x415bd0`, `0x419800`) — not modelled (L9.70). The vector
+  magnitude's width comes from the unscaled |z| (`0x492611`–`0x492682`)
+  — as ours (L9.72). #12964 is CWinApp::SelectPrinter (mfc120u
+  `0x101af191`), called by page setup at `0x448ba3` (L9.94). An area on
+  an unknown channel gets an empty box (`0x403b60` → `0x403c6a`): not
+  drawn — as ours (L9.96).
+- The paste reads ph / ccbm from `desc2` / `desc3` (`0x424f8b`–`0x424fe1`)
+  and the copy writes them (`0x427ff4`, `0x428026`) (L9.86).
+Ours drew no row icons («Каналы» names at x + 4, an eye over column 1),
+never carried ccbm through the clipboard, and blanked only a lower-case
+«none» in the readout. Now `row_icon` draws our images at x + 5 with the
+names at x + 26 and column 1's header is a waveform, the copy writes
+`desc3` and the paste reads it, `stats_value_text` lower-cases first.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.193)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.194)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5830,7 +5867,7 @@ fill, the group stats width); L9.186 the panes' captions; L9.187 the ribbon's pa
 gradient / height; L9.188 `doc+0x1d8` = every analog-kind record (W2.16),
 the unknowns table (W3.1); L9.189 formula channels on the frequency
 diagram; L9.190 VM runs (no document, single instance); L9.191 «Каналы» rows in
-vector order; L9.192 the ОМП flags as computed channels; L9.193 the lanes' icons.
+vector order; L9.192 the ОМП flags as computed channels; L9.193 the lanes' icons; L9.194 W3.2 part A.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

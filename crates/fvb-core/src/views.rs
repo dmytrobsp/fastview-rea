@@ -158,7 +158,9 @@ pub fn stats_value_text(v: f64, unit: impl Into<crate::units::Shown>) -> Option<
         return None;
     }
     let unit = unit.into();
-    let unit = if unit.canon == "none" { crate::units::Shown::default() } else { unit };
+    // The readout lower-cases the unit before the "none" test
+    // (`_wcslwr_s`, `0x461c31`–`0x461c3e`): «None» / «NONE» blank too.
+    let unit = if unit.canon.to_lowercase() == "none" { crate::units::Shown::default() } else { unit };
     let (s, u) = si_scaled(v.abs(), unit);
     let u: String = u.chars().take(5).collect();
     Some(format!("{}{:<6} {u}", if v < 0.0 { "-" } else { " " }, fmt_g(s)))

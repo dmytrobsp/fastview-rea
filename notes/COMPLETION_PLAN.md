@@ -240,7 +240,7 @@ items (VM ones also in W4.4):
     channel drop-down with formula channels (spec §8.4).
   - **W6**: landscape margins (our CUPS path), drivers resetting the DC,
     short-row files (no sample), the `.zip` writer (unreachable).
-- [ ] W3.2 Settle the static ones.
+- [ ] W3.2 Settle the static ones — part A (rec+0x278, `zk:`, θ, bitmap 464, the print clip → RUN, «none», k, the zero-sample walk, the vector width, #12964, an area on an unknown channel, ph / ccbm): L9.194; part B running.
 - [ ] W3.3 Run the RUN ones (W4.4) and tidy the settled rows' wording (tidied 2026-10-24: L4, L5 ×2, L7, L8 ×2, L3, L2's `arg:`).
 
 ## W4 — Run the original on the Windows VM

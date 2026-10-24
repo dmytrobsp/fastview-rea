@@ -82,7 +82,9 @@ pub fn clip_record(d: &Doc) -> ClipRecord {
                 let (a, v) = (&d.osc.analog[i], &d.chans[i]);
                 rec.channels.push(ClipChannel {
                     dimension: a.unit.clone(),
+                    // `desc2` / `desc3` ← ph / ccbm (`0x427ff4`, `0x428026`).
                     desc2: a.phase.clone(),
+                    desc3: a.ccbm.clone(),
                     primary_values: a.is_primary,
                     primary_mode: v.primary,
                     mul: a.a,
@@ -136,8 +138,9 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
                 Ok(fvb_core::comtrade::AnalogChannel {
                     index: 0,
                     id: c.name.clone(),
+                    // ph / ccbm from `desc2` / `desc3` (`0x424f8b`–`0x424fe1`).
                     phase: c.desc2.clone(),
-                    ccbm: String::new(),
+                    ccbm: c.desc3.clone(),
                     // The clip's values are already in base units.
                     unit: fvb_core::units::normalize(&c.dimension).unit,
                     raw_unit: c.dimension.clone(),

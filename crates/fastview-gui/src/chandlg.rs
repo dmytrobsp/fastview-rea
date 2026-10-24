@@ -541,14 +541,8 @@ fn header_glyph(p: &egui::Painter, r: Rect, col: usize, c: Color32) {
     let m = r.center();
     let s = Stroke::new(1.3f32, c);
     match col {
-        1 => {
-            // an eye
-            p.circle_stroke(m, 3.0, s);
-            p.line_segment([m + Vec2::new(-7.0, 0.0), m + Vec2::new(0.0, -4.5)], s);
-            p.line_segment([m + Vec2::new(0.0, -4.5), m + Vec2::new(7.0, 0.0)], s);
-            p.line_segment([m + Vec2::new(-7.0, 0.0), m + Vec2::new(0.0, 4.5)], s);
-            p.line_segment([m + Vec2::new(0.0, 4.5), m + Vec2::new(7.0, 0.0)], s);
-        }
+        // Column 1 is bitmap 464's image 0: a waveform (the oscillogram).
+        1 => sine_glyph(p, m, c),
         2 => {
             for (k, h) in [5.0f32, 9.0, 3.0, 6.0].into_iter().enumerate() {
                 let x = m.x - 6.0 + k as f32 * 4.0;
@@ -574,6 +568,28 @@ fn header_glyph(p: &egui::Painter, r: Rect, col: usize, c: Color32) {
             let pts = [(-7.0, 2.0), (-2.0, 2.0), (7.0, -6.0)];
             p.add(egui::Shape::line(pts.iter().map(|&(x, y)| m + Vec2::new(x, y)).collect(), s));
         }
+    }
+}
+
+/// A small sine wave, 14 px wide (our drawing of a waveform image).
+fn sine_glyph(p: &egui::Painter, m: Pos2, c: Color32) {
+    let pts: Vec<Pos2> = (0..=14).map(|k| m + Vec2::new(k as f32 - 7.0, -4.5 * (k as f32 / 14.0 * std::f32::consts::TAU).sin())).collect();
+    p.add(egui::Shape::line(pts, Stroke::new(1.3f32, c)));
+}
+
+/// The row's image at x + 5 (`0x433db0`, bitmap 464): a channel 8 (a
+/// discrete one 9), a differential pair 4, an R/X pair 3 — our drawings.
+fn row_icon(p: &egui::Painter, r: Rect, image: u8, c: Color32) {
+    let at = Rect::from_min_size(Pos2::new(r.left() + 5.0, r.center().y - 8.0), Vec2::splat(16.0));
+    match image {
+        8 => sine_glyph(p, at.center(), c),
+        9 => {
+            let m = at.center();
+            let pts = [(-7.0, 4.0), (-3.0, 4.0), (-3.0, -4.0), (3.0, -4.0), (3.0, 4.0), (7.0, 4.0)];
+            p.add(egui::Shape::line(pts.iter().map(|&(x, y)| m + Vec2::new(x, y)).collect(), Stroke::new(1.3f32, c)));
+        }
+        3 => header_glyph(p, at, 4, c),
+        _ => header_glyph(p, at, 5, c),
     }
 }
 
@@ -659,7 +675,9 @@ impl App {
                                     let r = Rect::from_min_size(rr.min + Vec2::new(col_x(c), 0.0), Vec2::new(col_w(c), row_h));
                                     ui.painter().rect_stroke(r, 0.0f32, Stroke::new(1.0f32, pal.group_border));
                                     if c == 0 {
-                                        ui.painter().with_clip_rect(r).text(r.left_center() + Vec2::new(4.0, 0.0), egui::Align2::LEFT_CENTER, pair_name(doc, pr), egui::FontId::proportional(12.0), pal.text);
+                                        let p = ui.painter().with_clip_rect(r);
+                                        row_icon(&p, r, if matches!(pr, PairRow::Dif(_)) { 4 } else { 3 }, pal.accent);
+                                        p.text(r.left_center() + Vec2::new(26.0, 0.0), egui::Align2::LEFT_CENTER, pair_name(doc, pr), egui::FontId::proportional(12.0), pal.text);
                                     } else {
                                         let resp = ui.interact(r, ui.id().with(("fv_ch_pair", pr, c)), Sense::click());
                                         cell_mark(ui.painter(), r, pair_cell(doc, pr, c), pal.accent);
@@ -703,7 +721,8 @@ impl App {
                                 // Every name in black; a renamed channel's original
                                 // name follows in (150, 150, 150) (`0x4342e3`–`0x434416`).
                                 let p = ui.painter().with_clip_rect(r);
-                                let at = r.left_center() + Vec2::new(4.0, 0.0);
+                                row_icon(&p, r, if digital_row(doc, key) { 9 } else { 8 }, pal.accent);
+                                let at = r.left_center() + Vec2::new(26.0, 0.0);
                                 let name = p.text(at, egui::Align2::LEFT_CENTER, row_name(doc, key), egui::FontId::proportional(12.0), pal.text);
                                 if let Some(orig) = doc.original_name(key) {
                                     p.text(Pos2::new(name.right() + 5.0, at.y), egui::Align2::LEFT_CENTER, format!("({orig})"), egui::FontId::proportional(12.0), GREY);
