@@ -678,12 +678,12 @@ impl App {
         let buttons = self.toolbar_buttons(w);
         let doc = self.active_doc().is_some();
         let mut fire = None;
-        // A 24 px strip, a horizontal gradient (VM, Office 2007 Blue: (227,
+        // A 24 px strip, a horizontal gradient (VM: per style, Blue's (227,
         // 239, 255) at its left to (177, 211, 255) at its right).
         let bar = egui::SidePanel::right(egui::Id::new(("pane_toolbar", w as u8))).resizable(false).show_separator_line(false).frame(egui::Frame::none()).exact_width(24.0).show_inside(ui, |ui| {
             let r = ui.max_rect();
             let mut mesh = egui::Mesh::default();
-            let (l, rr) = (Color32::from_rgb(227, 239, 255), Color32::from_rgb(177, 211, 255));
+            let [l, rr] = self.skin.palette().bands.map_or([Color32::from_rgb(227, 239, 255), Color32::from_rgb(177, 211, 255)], |b| b.toolbar);
             for (p, c) in [(r.left_top(), l), (r.right_top(), rr), (r.right_bottom(), rr), (r.left_bottom(), l)] {
                 mesh.colored_vertex(p, c);
             }

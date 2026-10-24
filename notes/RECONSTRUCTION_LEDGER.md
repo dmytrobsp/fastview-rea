@@ -6743,6 +6743,13 @@ lines (157, 189, 216), gradient to (213, 228, 242), border (185, 208,
 splitter brush. Ours used Blue's for Black and Silver and none for Aqua.
 Now `Palette::bands` carries them; the four styles' rows 143–221 match
 the captures.
+So do the docking panes' caption bands — Blue (184, 207, 233), Black
+(158, 160, 160), Silver (186, 193, 202), Aqua (181, 189, 211), each under
+a line of its bar gradient's bottom colour — and the pane toolbars'
+horizontal gradients — Blue (227, 239, 255) → (177, 211, 255), Black
+(205, 208, 213) → (148, 156, 166), Silver (233, 238, 247) → (209, 214,
+222), Aqua (225, 226, 236) → (150, 148, 177); now in `Bands` too (ours
+within 1–2 of each at the sampled points).
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

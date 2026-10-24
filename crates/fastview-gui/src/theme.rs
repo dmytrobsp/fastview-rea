@@ -225,7 +225,7 @@ impl Skin {
                 pane_cap: None,
                 status_flat: None,
                 mdi_tabs: None,
-                bands: Some(Bands { under_ribbon: [Color32::from_rgb(157, 179, 209), Color32::from_rgb(174, 199, 232), Color32::from_rgb(185, 212, 247)], bar_line: Color32::from_rgb(157, 189, 216), bar_bottom: Color32::from_rgb(213, 228, 242), mdi_border: Color32::from_rgb(185, 208, 237) }),
+                bands: Some(Bands { under_ribbon: [Color32::from_rgb(157, 179, 209), Color32::from_rgb(174, 199, 232), Color32::from_rgb(185, 212, 247)], bar_line: Color32::from_rgb(157, 189, 216), bar_bottom: Color32::from_rgb(213, 228, 242), mdi_border: Color32::from_rgb(185, 208, 237) , caption: Color32::from_rgb(184, 207, 233), toolbar: [Color32::from_rgb(227, 239, 255), Color32::from_rgb(177, 211, 255)] }),
             },
                         Skin::Black => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -255,7 +255,7 @@ impl Skin {
                 pane_cap: None,
                 status_flat: None,
                 mdi_tabs: None,
-                bands: Some(Bands { under_ribbon: [Color32::from_rgb(61, 61, 61), Color32::from_rgb(66, 66, 66), Color32::from_rgb(77, 77, 77)], bar_line: Color32::from_rgb(129, 129, 129), bar_bottom: Color32::from_rgb(235, 235, 235), mdi_border: Color32::from_rgb(172, 172, 172) }),
+                bands: Some(Bands { under_ribbon: [Color32::from_rgb(61, 61, 61), Color32::from_rgb(66, 66, 66), Color32::from_rgb(77, 77, 77)], bar_line: Color32::from_rgb(129, 129, 129), bar_bottom: Color32::from_rgb(235, 235, 235), mdi_border: Color32::from_rgb(172, 172, 172) , caption: Color32::from_rgb(158, 160, 160), toolbar: [Color32::from_rgb(205, 208, 213), Color32::from_rgb(148, 156, 166)] }),
             },
                         Skin::Silver => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -285,7 +285,7 @@ impl Skin {
                 pane_cap: None,
                 status_flat: None,
                 mdi_tabs: None,
-                bands: Some(Bands { under_ribbon: [Color32::from_rgb(152, 155, 161), Color32::from_rgb(166, 169, 176), Color32::from_rgb(194, 198, 206)], bar_line: Color32::from_rgb(124, 124, 124), bar_bottom: Color32::from_rgb(233, 238, 247), mdi_border: Color32::from_rgb(172, 175, 183) }),
+                bands: Some(Bands { under_ribbon: [Color32::from_rgb(152, 155, 161), Color32::from_rgb(166, 169, 176), Color32::from_rgb(194, 198, 206)], bar_line: Color32::from_rgb(124, 124, 124), bar_bottom: Color32::from_rgb(233, 238, 247), mdi_border: Color32::from_rgb(172, 175, 183) , caption: Color32::from_rgb(186, 193, 202), toolbar: [Color32::from_rgb(233, 238, 247), Color32::from_rgb(209, 214, 222)] }),
             },
                         Skin::Aqua => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -315,7 +315,7 @@ impl Skin {
                 pane_cap: None,
                 status_flat: None,
                 mdi_tabs: None,
-                bands: Some(Bands { under_ribbon: [Color32::from_rgb(195, 202, 217), Color32::from_rgb(137, 152, 163), Color32::from_rgb(237, 239, 243)], bar_line: Color32::from_rgb(106, 112, 128), bar_bottom: Color32::from_rgb(206, 212, 225), mdi_border: Color32::from_rgb(177, 187, 198) }),
+                bands: Some(Bands { under_ribbon: [Color32::from_rgb(195, 202, 217), Color32::from_rgb(137, 152, 163), Color32::from_rgb(237, 239, 243)], bar_line: Color32::from_rgb(106, 112, 128), bar_bottom: Color32::from_rgb(206, 212, 225), mdi_border: Color32::from_rgb(177, 187, 198) , caption: Color32::from_rgb(181, 189, 211), toolbar: [Color32::from_rgb(225, 226, 236), Color32::from_rgb(150, 148, 177)] }),
             },
         }
     }
@@ -380,6 +380,10 @@ pub struct Bands {
     pub bar_line: Color32,
     pub bar_bottom: Color32,
     pub mdi_border: Color32,
+    /// A docking pane's caption band (under a `bar_bottom` line) and its
+    /// toolbar's horizontal gradient, left to right.
+    pub caption: Color32,
+    pub toolbar: [Color32; 2],
 }
 
 impl Palette {
@@ -387,8 +391,8 @@ impl Palette {
     /// as captured on the VM; the other looks between their panel fill and
     /// border (not read).
     pub fn pane_caption(&self) -> Color32 {
-        if self.group_bg == Color32::from_rgb(223, 233, 246) {
-            Color32::from_rgb(184, 207, 233)
+        if let Some(b) = self.bands {
+            b.caption
         } else {
             self.group_bg.lerp_to_gamma(self.group_border, 0.5)
         }

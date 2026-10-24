@@ -1213,7 +1213,9 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
         }
         None => {
             p.rect_filled(rect, 0.0, band);
-            p.px_hline(rect.x_range(), rect.top(), egui::Stroke::new(1.0f32, band.lerp_to_gamma(egui::Color32::WHITE, 0.4)));
+            // The line over it: the bar gradient's bottom colour (VM).
+            let top = pal.bands.map_or(band.lerp_to_gamma(egui::Color32::WHITE, 0.4), |b| b.bar_bottom);
+            p.px_hline(rect.x_range(), rect.top(), egui::Stroke::new(1.0f32, top));
             pal.text
         }
     };
