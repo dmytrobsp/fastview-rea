@@ -8115,6 +8115,25 @@ Three RUN items, alike in both programs, nothing to change:
   enabled-looking was wrong.
 - **Enter in «Быстрый анализ» (L9.151).** It closes the panel (its OK).
 
+### L9.296 — VM: the preview's diagram pages keep their 1-pixel pens  ·  ✅
+Side by side (the vector page of WIN_1999 in «Предварительный просмотр»,
+the VM's Print to PDF): the original's grid, radials and vectors are crisp
+lines of one screen pixel in their full colour (GDI draws a pen thinner
+than a device pixel one pixel wide, at the scale shown). Ours drew the
+printer's pens of a few printer pixels (under a point), feathered, and
+averaged the page down to the pixels shown: the grid came out a pale grey.
+Now the diagram pages render with no pen under a device pixel
+(`diagram_ui::with_pixel`) and unfeathered (`raster::crisp`), and the
+preview shrinks the diagram's rect keeping ink (`App::ink_rect`;
+`Canvas::shrink_ink` now partitions the source, so a 1-pixel line stays
+one pixel); the header and the oscillogram page are averaged as before.
+Tests `a_one_pixel_line_stays_one_pixel_at_a_fractional_shrink`,
+`crisp_lines_cover_whole_pixels`. The printed legend (L9.93's residual):
+both centre the row under the circle; the original's text is heavier
+(GDI's small font) — left.
+Also run: «Удалить файлы» in the finder with nothing selected does
+nothing in both (L9.154's open point).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

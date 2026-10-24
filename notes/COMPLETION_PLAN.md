@@ -246,8 +246,8 @@ items (VM ones also in W4.4):
     (L9.55); ~~«Окна...» arrangements under MDI tabs~~ (out of reach, L9.220); ~~the
     `.set` after an ОМП run~~ (run, L9.217); ~~plane labels' background~~ (run: opaque in both, L9.280); the
     differential table's row order (L9.81); the app menu's keytips
-    (run, L9.291); the ribbon's reduction steps (L9.91); the printed vector
-    legend (L9.93); the preview on non-A4 paper (L9.94); ~~GDI's Ellipse box~~
+    (run, L9.291); the ribbon's reduction steps (L9.91); ~~the printed vector
+    legend~~ (run, L9.296); the preview on non-A4 paper (L9.94); ~~GDI's Ellipse box~~
     (run, L9.285); the diagram tab order in the workspace (L9.105); the splitter
     cursor (L9.106); the docking divider's limits (L9.109); ~~a paste's
     selection~~ (run, L9.295); the print dialog's fields / status (L9.113); the
@@ -258,8 +258,8 @@ items (VM ones also in W4.4):
     check column, combine with a computed channel, popup keyboard
     (L9.144, L9.146); ~~status bar prompts~~ (run, L9.291); ~~a group tab strip's
     right-click~~ (run, L9.291); ~~Aqua's title~~ (run: left, as ours); ~~Enter in quick analysis~~
-    (run, L9.295); ~~32806 with no document~~ (run, L9.295); «Удалить файлы» with
-    nothing selected (L9.154); ~~Save As caption~~ (run: the system's own); ~~opening an open
+    (run, L9.295); ~~32806 with no document~~ (run, L9.295); ~~«Удалить файлы» with
+    nothing selected~~ (run, L9.296); ~~Save As caption~~ (run: the system's own); ~~opening an open
     file~~ (run, L9.190), a drop on the frame (L9.159); ~~the toolbar wheel~~ (run, L9.291); drag
     auto-scroll at the left / right insets (L9.164); the level edit
     scrolled (L9.175); the caption bars' order (spec §1.3); the ОМП

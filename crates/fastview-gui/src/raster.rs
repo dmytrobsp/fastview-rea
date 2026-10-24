@@ -52,9 +52,10 @@ impl Canvas {
         let mut out = Canvas::white(w, h);
         let (sx, sy) = (self.w as f32 / w as f32, self.h as f32 / h as f32);
         for y in 0..h {
-            let (y0, y1) = ((y as f32 * sy) as usize, (((y + 1) as f32 * sy).ceil() as usize).min(self.h));
+            // Blocks that partition the source: a 1-pixel line stays one.
+            let (y0, y1) = ((y as f32 * sy) as usize, (((y + 1) as f32 * sy) as usize).min(self.h));
             for x in 0..w {
-                let (x0, x1) = ((x as f32 * sx) as usize, (((x + 1) as f32 * sx).ceil() as usize).min(self.w));
+                let (x0, x1) = ((x as f32 * sx) as usize, (((x + 1) as f32 * sx) as usize).min(self.w));
                 let mut best = [255u8; 3];
                 let mut ink = u32::MAX;
                 for yy in y0..y1.max(y0 + 1).min(self.h) {
@@ -67,6 +68,16 @@ impl Canvas {
                 }
                 out.px[y * w + x] = best;
             }
+        }
+        out
+    }
+
+    /// The `w` × `h` region at (x, y), clipped.
+    pub fn region(&self, x: usize, y: usize, w: usize, h: usize) -> Canvas {
+        let (w, h) = (w.min(self.w.saturating_sub(x)), h.min(self.h.saturating_sub(y)));
+        let mut out = Canvas::white(w.max(1), h.max(1));
+        for yy in 0..h {
+            out.px[yy * out.w..yy * out.w + w].copy_from_slice(&self.px[(y + yy) * self.w + x..(y + yy) * self.w + x + w]);
         }
         out
     }
@@ -164,6 +175,20 @@ fn apply(textures: &mut HashMap<egui::TextureId, Tex>, delta: &egui::TexturesDel
     }
 }
 
+thread_local! {
+    /// Shapes without feathering: lines and edges cover the pixels whose
+    /// centres they contain, in full colour, as GDI draws them.
+    static CRISP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`render`] drawing crisp (unfeathered) shapes.
+pub fn crisp<R>(f: impl FnOnce() -> R) -> R {
+    let old = CRISP.with(|c| c.replace(true));
+    let r = f();
+    CRISP.with(|c| c.set(old));
+    r
+}
+
 /// Run `paint` headless on a `size` (points) screen at `ppp` pixels per
 /// point and rasterise the result onto a white canvas. The pass runs twice
 /// so widgets that size themselves on their first frame draw on the second.
@@ -179,6 +204,9 @@ pub fn render_input(size: Vec2, ppp: f32, fonts: Option<&egui::FontDefinitions>,
         ctx.set_fonts(f.clone());
     }
     ctx.set_pixels_per_point(ppp);
+    if CRISP.with(std::cell::Cell::get) {
+        ctx.tessellation_options_mut(|o| o.feathering = false);
+    }
     let mut textures = HashMap::new();
     let mut out = None;
     for (pass, events) in passes.into_iter().enumerate() {
@@ -310,6 +338,34 @@ mod tests {
         assert_eq!(reds(&ink), 8);
         assert_eq!(reds(&avg), 0);
         assert!((0..10).all(|x| ink.get(x, 0) == [255, 0, 0] || ink.get(x, 0) == [255, 255, 255]));
+    }
+
+    #[test]
+    fn a_one_pixel_line_stays_one_pixel_at_a_fractional_shrink() {
+        // Shrunk by 1.5: every source column falls in one block, so a
+        // 1-pixel line is one pixel wide, never two.
+        for x0 in 0..30 {
+            let mut c = Canvas::white(30, 3);
+            for y in 0..3 {
+                c.px[y * 30 + x0] = [100, 100, 100];
+            }
+            let ink = c.shrink_ink(20, 2);
+            assert_eq!((0..20).filter(|&x| ink.get(x, 0) == [100, 100, 100]).count(), 1, "line at {x0}");
+        }
+    }
+
+    #[test]
+    fn crisp_lines_cover_whole_pixels() {
+        let c = crisp(|| {
+            render(Vec2::new(20.0, 10.0), 1.0, None, |ctx| {
+                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                    ui.painter().line_segment([Pos2::new(0.0, 5.3), Pos2::new(20.0, 5.3)], egui::Stroke::new(1.0f32, egui::Color32::from_gray(100)));
+                });
+            })
+        });
+        let col: Vec<[u8; 3]> = (0..10).map(|y| c.get(10, y)).collect();
+        assert_eq!(col.iter().filter(|p| **p == [100, 100, 100]).count(), 1, "{col:?}");
+        assert!(col.iter().all(|p| *p == [100, 100, 100] || *p == [255, 255, 255]), "{col:?}");
     }
 
     #[test]

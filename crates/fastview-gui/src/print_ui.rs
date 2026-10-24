@@ -443,7 +443,14 @@ impl App {
             let stale = pv.tex.get(i).and_then(|t| t.as_ref()).is_none_or(|t| t.size() != want && want[0] < pv.sheets[i].as_ref().map_or(0, |c| c.w));
             if stale {
                 if let Some(c) = &pv.sheets[i] {
-                    let shown_px = if want[0] < c.w { c.shrink(want[0], want[1]) } else { c.clone() };
+                    let mut shown_px = if want[0] < c.w { c.shrink(want[0], want[1]) } else { c.clone() };
+                    // A diagram's 1-pixel pens kept in full colour.
+                    if let Some(r) = App::ink_rect(&pv.job, i).filter(|_| want[0] < c.w) {
+                        let k = want[0] as f32 / c.w as f32;
+                        let (x0, y0, x1, y1) = ((r.left() * k).round() as usize, (r.top() * k).round() as usize, (r.right() * k).round() as usize, (r.bottom() * k).round() as usize);
+                        let part = c.region(r.left() as usize, r.top() as usize, r.width() as usize, r.height() as usize).shrink_ink(x1.saturating_sub(x0).max(1), y1.saturating_sub(y0).max(1));
+                        shown_px.blit(&part, x0 as i64, y0 as i64);
+                    }
                     let img = egui::ColorImage::from_rgb([shown_px.w, shown_px.h], &shown_px.px.concat());
                     pv.tex[i] = Some(ctx.load_texture(format!("print_preview_{i}"), img, egui::TextureOptions::LINEAR));
                 }

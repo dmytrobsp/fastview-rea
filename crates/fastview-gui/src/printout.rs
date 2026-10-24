@@ -472,7 +472,9 @@ impl App {
                 let to_printer = job.attrib_dpi / dev.dpi;
                 let page = (!preview).then(|| rdev.min.to_vec2() * to_printer / s);
                 let size = Vec2::new(rw as f32, rh as f32) * to_printer / s;
-                let img = crate::diagram_ui::with_print_scale(Some(s), page, || self.render_diagram(fonts, job.di, pane, size, s / to_printer));
+                let kd = s / to_printer;
+                // GDI's pens: none under a device pixel, unfeathered.
+                let img = crate::diagram_ui::with_print_scale(Some(s), page, || crate::diagram_ui::with_pixel(1.0 / kd, || raster::crisp(|| self.render_diagram(fonts, job.di, pane, size, kd))));
                 canvas.blit(&img, rdev.min.x as i64, rdev.min.y as i64);
                 // At s = 1 the circle / differential painter's screen branch
                 // also paints its 5 px splitter strip after RestoreDC: a
@@ -487,6 +489,13 @@ impl App {
             }
         }
         canvas
+    }
+
+    /// Where a page's lines are 1-pixel pens to keep when the preview
+    /// shrinks it (the diagram's rect R on its sheet; an oscillogram slice
+    /// is already shrunk keeping ink).
+    pub fn ink_rect(job: &Job, idx: usize) -> Option<Rect> {
+        matches!(job.pages.get(idx), Some(PageKind::Diagram(_))).then(|| job.dev.margin_rect(&job.setup).translate(Vec2::new(job.dev.offset.0 as f32, job.dev.offset.1 as f32)))
     }
 
     /// A diagram page (`0x441fe0`): the pane's own painter into R, at the

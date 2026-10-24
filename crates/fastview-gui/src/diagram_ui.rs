@@ -168,7 +168,7 @@ const AXES: Color32 = Color32::from_rgb(150, 150, 150);
 const SCROLL_W: f32 = 16.0;
 
 fn stroke(w: f32, c: Color32) -> Stroke {
-    Stroke::new(w, c)
+    Stroke::new(w.max(PIXEL.with(std::cell::Cell::get)), c)
 }
 
 thread_local! {
@@ -178,6 +178,18 @@ thread_local! {
     /// On a real print (`m_bPrinting`; not the preview's memory DC): the
     /// page origin relative to the diagram rect, in points.
     static PRINT_PAGE: std::cell::Cell<Option<Vec2>> = const { std::cell::Cell::new(None) };
+    /// One pixel of the device drawn on, in points, while a page renders:
+    /// GDI draws a pen thinner than a device pixel one pixel wide in its
+    /// full colour (the preview's pens of a few printer pixels).
+    static PIXEL: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+}
+
+/// Run `f` with no pen thinner than `px` points (a device pixel).
+pub fn with_pixel<R>(px: f32, f: impl FnOnce() -> R) -> R {
+    let old = PIXEL.with(|c| c.replace(px));
+    let r = f();
+    PIXEL.with(|c| c.set(old));
+    r
 }
 
 /// Run `f` with the print scale `s` set (the diagram painters' print
@@ -213,7 +225,7 @@ fn dpx(v: f32) -> f32 {
 /// points.
 fn dev_pen(dev: f32, c: Color32) -> Stroke {
     let s = print_s().unwrap_or(1.0);
-    Stroke::new(dev.floor().max(1.0) / s, c)
+    stroke(dev.floor().max(1.0) / s, c)
 }
 
 fn rgb((r, g, b): (u8, u8, u8)) -> Color32 {
