@@ -6709,6 +6709,17 @@ ours shows the flat «100»s. Which channel's 100 comes out one unit low
 sin / cos) — NOT DETERMINED. The x labels still crowd in ours: our
 glyphs are wider than Tahoma's (W6).
 
+### L9.236 — The diagram windows' borders and the tabbed group's frame  ·  ✅
+Sampled on the VM (L9.232's run): each diagram window has a 1 px (100,
+100, 100) border — WS_BORDER in Windows 11's COLOR_WINDOWFRAME — the
+vector window on all four sides, the differential plane at its sides and
+bottom (its top the line over the splitter strip); one white column
+separates it from its toolbar; a tabbed group (Векторная | Круговая)
+frames its panes under the caption with a (185, 208, 237) line and 2 px
+of (213, 228, 242). Ours drew no window borders and no group frame.
+Now `window_border` draws them and `pane_body` frames a tabbed group's
+`pane_window`; every column and row checked lands on the VM's.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

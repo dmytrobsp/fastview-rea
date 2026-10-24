@@ -315,13 +315,40 @@ impl App {
         if act.close {
             return;
         }
+        // A tabbed group frames its panes under the caption (VM: a (185,
+        // 208, 237) line, then 2 px of (213, 228, 242), at the top and
+        // sides; the tab strip below).
+        if v.strip {
+            let r = ui.available_rect_before_wrap();
+            let pnt = ui.painter();
+            pnt.rect_filled(r, 0.0, egui::Color32::from_rgb(213, 228, 242));
+            let b = egui::Stroke::new(1.0f32, egui::Color32::from_rgb(185, 208, 237));
+            pnt.px_hline(r.left()..=r.right() - 1.0, r.top(), b);
+            pnt.px_vline(r.left(), r.top()..=r.bottom() - 1.0, b);
+            pnt.px_vline(r.right() - 1.0, r.top()..=r.bottom() - 1.0, b);
+            let inner = egui::Rect::from_min_max(r.min + egui::vec2(3.0, 3.0), r.max - egui::vec2(3.0, 2.0));
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(*ui.layout()));
+            self.pane_window(&mut child, p);
+            ui.advance_cursor_after_rect(r);
+            return;
+        }
+        self.pane_window(ui, p);
+    }
+
+    /// The pane's window under its caption: the toolbar on the right and
+    /// the diagram.
+    fn pane_window(&mut self, ui: &mut egui::Ui, p: Pane) {
         match p {
             Pane::Vector => {
                 self.pane_toolbar(ui, Window::Vector);
-                egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
+                egui::CentralPanel::default().frame(egui::Frame::none().inner_margin(egui::Margin::same(1.0))).show_inside(ui, |ui| {
                     self.pane_canvas.push((Pane::Vector, ui.available_rect_before_wrap()));
                     self.vector_ui(ui);
                     self.pane_drop(ui, Pane::Vector);
+                    // A white column before the toolbar, as the plane's.
+                    let w = ui.max_rect().expand(1.0);
+                    ui.painter().px_vline(w.right() - 1.0, w.y_range(), egui::Stroke::new(1.0f32, egui::Color32::WHITE));
+                    window_border(ui, w.with_max_x(w.right() - 1.0), [true; 4]);
                 });
             }
             Pane::Circle | Pane::Differential => {
@@ -834,8 +861,15 @@ impl App {
             let (strip, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 6.0), egui::Sense::hover());
             ui.painter().rect_filled(strip, 0.0, strip_col);
             ui.painter().px_hline(strip.x_range(), strip.top(), egui::Stroke::new(1.0f32, egui::Color32::from_gray(100)));
-            self.pane_canvas.push((pane, ui.available_rect_before_wrap()));
+            let plane = ui.available_rect_before_wrap();
+            self.pane_canvas.push((pane, plane));
             self.plane_ui(ui);
+            // The plane window's border at its sides and bottom (its top is
+            // the line above the strip).
+            // The last column is white before the toolbar (VM).
+            let plane = plane.with_max_x(plane.right() - 1.0);
+            ui.painter().px_vline(plane.right(), plane.y_range(), egui::Stroke::new(1.0f32, egui::Color32::WHITE));
+            window_border(ui, plane, [false, true, true, true]);
         });
     }
 
@@ -1097,6 +1131,25 @@ fn pane_title(p: Pane) -> &'static str {
 /// A docking container: the panes sit 2 px inside it, against the
 /// splitters (MFC's docking bars), not egui's 8 px panel margin; a group
 /// beside another inside the container adds none.
+/// A diagram window's WS_BORDER: 1 px of COLOR_WINDOWFRAME (VM: (100, 100,
+/// 100)) on the sides asked for — top, left, right, bottom.
+fn window_border(ui: &egui::Ui, r: egui::Rect, [top, left, right, bottom]: [bool; 4]) {
+    let st = egui::Stroke::new(1.0f32, egui::Color32::from_gray(100));
+    let p = ui.painter();
+    if top {
+        p.px_hline(r.left()..=r.right() - 1.0, r.top(), st);
+    }
+    if bottom {
+        p.px_hline(r.left()..=r.right() - 1.0, r.bottom() - 1.0, st);
+    }
+    if left {
+        p.px_vline(r.left(), r.top()..=r.bottom() - 1.0, st);
+    }
+    if right {
+        p.px_vline(r.right() - 1.0, r.top()..=r.bottom() - 1.0, st);
+    }
+}
+
 /// A docked container: 4 px of the frame's splitter brush on the side
 /// facing the document area (VM, Office 2007 Blue: (191, 219, 255) between
 /// the document's border and the pane), nothing on the others.
