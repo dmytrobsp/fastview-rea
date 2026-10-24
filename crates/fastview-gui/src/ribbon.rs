@@ -174,7 +174,9 @@ impl App {
             self.kt_rects.push((crate::keytips::Target::AppButton, button, true));
             self.kt_rects.extend(menu_rects);
             ui.add_space(4.0);
-            // Quick-access toolbar: Open, Save, Print only.
+            // Quick-access toolbar: Open, Save, Print only; Печать is a
+            // split button whose arrow opens the application menu's print
+            // list (VM), then the customise arrow.
             for (n, (icon, tip, cmd)) in [
                 (Icon::Open, "Открыть  (Ctrl+O)", Command::Open),
                 (Icon::Save, "Сохранить", Command::Save),
@@ -196,6 +198,21 @@ impl App {
                 if r.clicked() {
                     cmds.push(cmd);
                 }
+                if r.secondary_clicked() {
+                    open_min_menu(ui, r.rect.left_bottom());
+                }
+                if n == 2 {
+                    let arrow = ui.add_enabled_ui(enabled, |ui| qat_arrow(ui, p, false)).inner;
+                    if arrow.clicked() {
+                        open_qat_menu(ui, QatMenu::Print, r.rect.left_bottom());
+                    }
+                }
+            }
+            ui.add_space(6.0);
+            // The customise arrow: one item, «Minimize the Ribbon».
+            let custom = qat_arrow(ui, p, true);
+            if custom.clicked() || custom.secondary_clicked() {
+                open_min_menu(ui, custom.rect.left_bottom());
             }
             // The caption row (the ribbon's own, `bReplaceFrameCaption`,
             // over DWM's frame — L9.150): the title centred in the free
@@ -274,14 +291,9 @@ impl App {
                 } else if r.clicked() {
                     self.tab = tab;
                 }
-                // Right-click on the ribbon: one item, minimise (checked when minimised).
-                let min = self.ribbon_minimized;
-                r.context_menu(|ui| {
-                    if ui.checkbox(&mut { min }, "Свернуть ленту").clicked() {
-                        cmds.push(Command::ToggleRibbonMin);
-                        ui.close_menu();
-                    }
-                });
+                if r.secondary_clicked() {
+                    open_min_menu(ui, r.rect.left_bottom());
+                }
             }
             // §2.5: «Стиль» and Help on the right of the tab row.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -390,7 +402,13 @@ impl App {
                 let r = body.response.rect;
                 ui.painter().set(body_bg, gradient_mesh(r, &[(0.0, top), (18.0, dip), (r.height(), bottom)]));
             }
+            // A right-click anywhere on the body, its buttons included.
+            let at = ui.input(|i| i.pointer.secondary_clicked().then_some(i.pointer.interact_pos()).flatten());
+            if let Some(q) = at.filter(|q| body.response.rect.contains(*q)) {
+                open_min_menu(ui, q);
+            }
         }
+        self.qat_menu(ui.ctx(), &mut cmds);
 
         for c in cmds {
             self.dispatch(c);
@@ -753,6 +771,90 @@ fn qat_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon) -> egui::
     }
     let box_ = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0));
     icons::paint(painter, box_, icon, if ui.is_enabled() { p.accent } else { disabled_ink(p) });
+    resp
+}
+
+/// The ribbon's own small menus: MFC's one-item ribbon menu (a right-click
+/// on the ribbon or the QAT, or the customise arrow) and the QAT print
+/// button's list.
+#[derive(Clone, Copy, PartialEq)]
+enum QatMenu {
+    Minimize,
+    Print,
+}
+
+fn qat_menu_id() -> egui::Id {
+    egui::Id::new("fv_ribbon_qat_menu")
+}
+
+fn open_min_menu(ui: &egui::Ui, at: egui::Pos2) {
+    open_qat_menu(ui, QatMenu::Minimize, at);
+}
+
+fn open_qat_menu(ui: &egui::Ui, menu: QatMenu, at: egui::Pos2) {
+    let frame = ui.ctx().cumulative_pass_nr();
+    ui.data_mut(|d| d.insert_temp(qat_menu_id(), (menu, at, frame)));
+}
+
+impl App {
+    /// The open small menu, if any. «Minimize the Ribbon» is MFC's own
+    /// English item, checked while minimised (the QAT customise items are
+    /// not offered) — as on the VM. Commands chosen go to `cmds`.
+    fn qat_menu(&mut self, ctx: &egui::Context, cmds: &mut Vec<Command>) {
+        let Some((menu, at, opened)) = ctx.data(|d| d.get_temp::<(QatMenu, egui::Pos2, u64)>(qat_menu_id())) else { return };
+        let mut chosen = false;
+        let min = self.ribbon_minimized;
+        let area = egui::Area::new(qat_menu_id()).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
+            egui::Frame::menu(ui.style()).show(ui, |ui| match menu {
+                QatMenu::Minimize => {
+                    ui.set_min_width(150.0);
+                    if ui.checkbox(&mut { min }, "Minimize the Ribbon").clicked() {
+                        cmds.push(Command::ToggleRibbonMin);
+                        chosen = true;
+                    }
+                }
+                QatMenu::Print => {
+                    ui.set_width(300.0);
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    ui.label(RichText::new("Предварительный просмотр и печать документа").strong());
+                    ui.separator();
+                    for (label, desc, cmd) in [
+                        ("Параметры страницы", "Изменение параметров страницы", Command::PageSetup),
+                        ("Предварительный просмотр", "Просмотр документа в полностраничном режиме", Command::PrintPreview),
+                        ("Печать", "Печать активного документа", Command::Print),
+                    ] {
+                        if sub_entry(ui, label, desc, true).clicked() {
+                            cmds.push(cmd);
+                            chosen = true;
+                        }
+                    }
+                }
+            });
+        });
+        let fresh = ctx.cumulative_pass_nr() == opened;
+        let away = ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|q| !area.response.rect.contains(q)));
+        let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        if chosen || esc || (away && !fresh) {
+            ctx.data_mut(|d| d.remove::<(QatMenu, egui::Pos2, u64)>(qat_menu_id()));
+        }
+    }
+}
+
+/// The QAT's small drop-down arrow: the print split part, or the customise
+/// arrow (a bar over the triangle).
+fn qat_arrow(ui: &mut egui::Ui, p: crate::theme::Palette, customise: bool) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(if customise { 13.0 } else { 11.0 }, 22.0), egui::Sense::click());
+    let painter = ui.painter();
+    if resp.hovered() && ui.is_enabled() {
+        painter.rect(rect, 3.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
+    }
+    let ink = if ui.is_enabled() { p.text } else { disabled_ink(p) };
+    let c = rect.center();
+    if customise {
+        painter.line_segment([egui::pos2(c.x - 3.0, c.y - 2.5), egui::pos2(c.x + 3.0, c.y - 2.5)], egui::Stroke::new(1.0f32, ink));
+    }
+    let y = if customise { c.y } else { c.y - 1.0 };
+    painter.add(egui::Shape::convex_polygon(vec![egui::pos2(c.x - 3.0, y), egui::pos2(c.x + 3.0, y), egui::pos2(c.x, y + 3.0)], ink, egui::Stroke::NONE));
     resp
 }
 

@@ -6306,6 +6306,23 @@ modified channel value is bold, `tree_icon` draws the two rings.
 Residual: a modified text value's bold (ours cannot bold an edit field);
 the ОМП file comparison (W4.2).
 
+### L9.216 — VM run: the ribbon's one context menu, the QAT customise arrow and the print split button  ·  ✅
+Seen on the VM (WIN_1999 open): a right-click on a category tab, on a
+QAT button or anywhere on the ribbon body (its buttons included) opens
+one menu with one item, MFC's own English «Minimize the Ribbon» (no
+mfc120rus text for it is used); the QAT customise arrow (a bar over a
+small triangle, right of the QAT) opens the same one-item menu, ticked
+while the ribbon is minimised — no «Customize Quick Access Toolbar» items.
+The QAT's Печать is a split button: its arrow opens «Предварительный
+просмотр и печать документа» with Параметры страницы / Предварительный
+просмотр / Печать and their descriptions, as the application menu's
+Печать list. Ours had «Свернуть ленту» on the tabs only, no customise
+arrow and a plain print button. Now `qat_arrow` draws both arrows and
+`App::qat_menu` shows either menu (opened by `open_qat_menu`) from all
+those places.
+Residual: the print list's icons and whether its arrow stays enabled
+without a document (ours: greyed with the button) — NOT DETERMINED.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
