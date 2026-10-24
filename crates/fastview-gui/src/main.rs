@@ -7,6 +7,7 @@
 
 mod app;
 mod chandlg;
+mod colordlg;
 mod chansel;
 mod comments;
 mod diagram;
@@ -836,7 +837,7 @@ mod window_tests {
         let mut w = Win::new();
         w.app.color_dialog = Some(egui::Color32::RED);
         w.idle(3);
-        let win = w.ctx.memory(|m| m.area_rect(egui::Id::new("Цвет"))).expect("the colour dialog");
+        let win = w.ctx.memory(|m| m.area_rect(egui::Id::new("Цвета"))).expect("the colour dialog");
         assert!(!win.contains(at));
         let before = w.view_state();
         // Beside the dialog, on its colour plane, on its right margin.
@@ -1464,6 +1465,10 @@ mod window_tests {
         };
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "omp" || s == "ompparams") {
             app.tab = RibbonTab::Omp;
+        }
+        // `colordlg`: «Цвет канала» on the first channel's colour.
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "colordlg") {
+            app.color_dialog = app.active_doc().and_then(|d| crate::chandlg::rows(d).into_iter().next().map(|k| d.color_of(k)));
         }
         // `pairdlg`: the differential diagram's «Каналы ▸ Создать» (DIALOG 554).
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "pairdlg") {

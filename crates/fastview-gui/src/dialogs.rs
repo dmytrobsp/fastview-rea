@@ -947,39 +947,6 @@ impl App {
         }
     }
 
-    /// «Цвет канала» (33030): a colour dialog started from the first selected
-    /// channel's colour; OK gives the colour to every selected channel.
-    fn color_window(&mut self, ctx: &egui::Context) {
-        let Some(mut col) = self.color_dialog else { return };
-        let mut open = true;
-        let mut done: Option<bool> = None;
-        crate::dialogs::dlg(ctx, "Цвет")
-            .collapsible(false)
-            .resizable(false)
-            .open(&mut open)
-            .show(ctx, |ui| {
-                egui::color_picker::color_picker_color32(ui, &mut col, egui::color_picker::Alpha::Opaque);
-                ui.horizontal(|ui| {
-                    if ui.button("OK").clicked() {
-                        done = Some(true);
-                    }
-                    if ui.button("Отмена").clicked() {
-                        done = Some(false);
-                    }
-                });
-            });
-        self.color_dialog = match done {
-            Some(true) => {
-                if let Some(d) = self.active_doc_mut() {
-                    d.set_color_selected(col);
-                }
-                None
-            }
-            Some(false) => None,
-            None => open.then_some(col),
-        };
-    }
-
     /// Channel-role assignment — **our extension**, not a dialog of the
     /// original (whose «Отображение каналов» is the visibility grid, DIALOG
     /// 463, `chandlg`): pick which analog channel plays Ua/Ub/Uc and Ia/Ib/Ic

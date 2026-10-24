@@ -7114,6 +7114,24 @@ INFERRED — it never stays up long enough on the VM). DIALOGs 335
 «Коэффициент канала» and 357 «Предварительный просмотр» have no code
 reference (no immediate of 0x14f / 0x165 anywhere): unused templates.
 
+### L9.258 — «Цвет канала» as MFC's colour dialog  ·  ✅
+VM capture (the channel menu's «Цвет канала»): the original shows MFC's
+CMFCColorDialog — mfc120rus's «Цвета» template (252 × 180 DLU, 378 × 293
+px; its pages «Обычные» / «Спектр»; English on the VM), placed by L9.252's
+rule (border 1090, 535). Measured: the tab control at (6, 6) 273 × 280,
+its page (249) in a (229) frame from y 27, the selected tab (249) from y
+7 and open into the page, the other (243) from y 9; «Цвета:»; the colour
+hexagon — 127 pointy-top cells 14 px wide on 12 px rows (7 … 13 … 7 a
+row) centred at (143.5, 144.5), each cell's colour sampled from the
+capture (`HEX_COLORS`), the new colour's cell outlined in black; the grey
+section — a large white and a large black hexagon and two rows of small
+greys ((240) … (30), (225) … (45)); ОК (the default), «Отмена», «Выбор...»,
+«Новый», the swatch (the new colour above the current, a (105) frame) and
+«Текущий» at their template rectangles. Ours was egui's colour picker.
+Now `colordlg` draws the dialog so; «Спектр» is ours on its template
+(hue × saturation, lightness bar, the six fields); «Выбор...» — which
+picks a colour off the screen — is greyed (ours cannot read the screen).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
