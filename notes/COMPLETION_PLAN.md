@@ -92,7 +92,7 @@ Batches, in this order (the size of the unread code, user visibility):
 - [x] **W1.2** Quick-analysis pages — the sixteen functions cited (L9.167); ↑ / ↓ icons fixed.
 - [x] **W1.2b** The rest of the quick-analysis pages — read, ours matches (L9.178).
 - [x] **W1.3** Circle / differential diagrams — the thirteen cited (L9.170); channel colours fixed.
-- [ ] **W1.3b** W1.3's remaining differences: scroll bars disabled (not hidden) after zooming back out (check on the VM first), the differential scale over [min(c1, c2), …] (the pan limit and the scale box's pen: done, L9.174).
+- [x] **W1.3b** W1.3's remaining differences: the scroll bars after zooming back out are hidden, as ours (VM run, L9.204); the differential scale over [min(c1, c2), …] (L9.205); the pan limit and the scale box's pen (L9.174).
 - [x] **W1.4** ОМП — the eight functions (L9.169): the `.omp` format fixed, the toolbar.
 - [x] **W1.5** Document and view — the seven cited (L9.175); the level edit and the ruler picks fixed.
 - [ ] **W1.5b** Comments bound by display name at every paint (a rename hides a level / area; the `.set` keeps the old name) — confirm on the VM (put a level on Ia, rename Ia in «Каналы», save, look), then rebind ours.

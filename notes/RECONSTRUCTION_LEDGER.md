@@ -6085,6 +6085,27 @@ Residual: with no printer installed the original's RETURNDEFAULT pass
 fails (not modelled); the «Принтер...» button (Vista+ comdlg has none —
 check on the VM).
 
+### L9.204 — VM run: the differential plane's scroll bars after zooming back out are hidden  ·  ✅
+Run on the VM (the original, WIN_1999, maximised): «Тип блока» → «БМРЗ -
+Защита трансформаторов» (the plane shows quadrant I, the initial push),
+the pane toolbar's «+» twice — both scroll bars appear —, then «−» twice
+(z back to 1): both scroll bars are gone, the plane centred on the origin
+(Iторм −9.6…9.6). So at z ≤ 1 the bars are hidden, not disabled — as ours
+(`diagram::scroll_range` none at z ≤ 1, the pans reset). Captures stay
+local (scratch `w13b_*.png`).
+
+### L9.205 — The differential scale over its own cursor range  ·  ✅
+Read by hand: the differential's scale `0x4441b0` runs over N..len, or —
+with «Диапазон между визирами» (`+0x488`, `0x44425d`) — over
+[min(c1, c2), max(c1, c2)] not raised to N, each bound only capped at
+the sample count (`0x444275`–`0x4442b8`); per enabled pair (`doc+0x878`,
+12-byte entries, on byte +8) the two channels' values `0x426020`, NaN
+skipped (`0x444391`–`0x44441b`). The curves keep the circle's range
+(raised to N, `0x4457a0`). Ours took the scale from the drawn curves.
+Now `diff_scale_range` / `diff_scale_max` set the differential's extent;
+test `circle_range_and_points_as_read` extended. With L9.204 this closes
+W1.3b.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

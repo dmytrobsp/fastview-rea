@@ -373,6 +373,38 @@ fn circle_range(d: &Doc, between: bool) -> std::ops::RangeInclusive<usize> {
 
 /// A point of the circle diagram: a non-finite part or a sample past the
 /// values gives the origin (`0x43ab37`–`0x43ab96`).
+/// The differential scale's range (`0x4441b0`, `0x44425d`–`0x4442b8`):
+/// N..=len, or with «Диапазон между визирами» [min(c1,c2), max(c1,c2)]
+/// NOT raised to N — each bound only capped at the sample count — while
+/// the curves keep the circle's range.
+fn diff_scale_range(d: &Doc, between: bool) -> std::ops::RangeInclusive<usize> {
+    let len = d.osc.sample_count();
+    if !between {
+        return circle_range(d, false);
+    }
+    let (a, b) = (d.main_cursor.min(d.aux_cursor), d.main_cursor.max(d.aux_cursor));
+    a.min(len)..=b.min(len)
+}
+
+/// The largest |value| of the enabled differential pairs over `range`
+/// (`0x444391`–`0x44441b`: NaN skipped, 0 past the values).
+fn diff_scale_max(d: &Doc, range: std::ops::RangeInclusive<usize>) -> f64 {
+    let len = d.osc.sample_count();
+    let mut m = 0.0f64;
+    for p in d.dif_pairs.iter().filter(|p| p.on) {
+        if let (Some((dif, _)), Some((tor, _))) = (inst_by_name(d, &p.a), inst_by_name(d, &p.b)) {
+            for k in range.clone().filter(|&k| k < len) {
+                for v in [tor(k), dif(k)] {
+                    if !v.is_nan() {
+                        m = m.max(v.abs());
+                    }
+                }
+            }
+        }
+    }
+    m
+}
+
 fn finite_or_origin(p: [f64; 2]) -> [f64; 2] {
     if p[0].is_finite() && p[1].is_finite() {
         p
@@ -958,12 +990,19 @@ impl App {
         let loci = self.active_doc().map(|d| plane_loci(d, diff, between)).unwrap_or_default();
         let mut max = char_ext;
         let char_ext = char_ext[0].max(char_ext[1]);
-        for l in &loci {
-            let s = usize::from(l.power && !diff);
-            for p in &l.pts {
-                for v in p {
-                    if v.is_finite() {
-                        max[s] = max[s].max(v.abs());
+        if diff {
+            // The differential's scale over its own range (`0x4441b0`).
+            if let Some(d) = self.active_doc() {
+                max[0] = max[0].max(diff_scale_max(d, diff_scale_range(d, between)));
+            }
+        } else {
+            for l in &loci {
+                let s = usize::from(l.power);
+                for p in &l.pts {
+                    for v in p {
+                        if v.is_finite() {
+                            max[s] = max[s].max(v.abs());
+                        }
                     }
                 }
             }
@@ -2121,6 +2160,11 @@ mod tests {
         assert_eq!(circle_range(d, false), n..=len);
         (d.main_cursor, d.aux_cursor) = (len + 50, 1);
         assert_eq!(circle_range(d, true), n..=len, "both bounds ≥ N, ≤ len");
+        // The differential's scale range is not raised to N (`0x44425d`).
+        assert_eq!(diff_scale_range(d, true), 1..=len);
+        (d.main_cursor, d.aux_cursor) = (3, 1);
+        assert_eq!((diff_scale_range(d, true), circle_range(d, true)), (1..=3, n..=n));
+        assert_eq!(diff_scale_range(d, false), n..=len);
         assert_eq!(finite_or_origin([f64::NAN, 1.0]), [0.0, 0.0]);
         let names: Vec<String> = d.osc.analog.iter().take(2).map(|c| c.id.clone()).collect();
         d.rx_pairs.push(crate::diagram::ChanPair::new(names[0].clone(), names[1].clone()));
