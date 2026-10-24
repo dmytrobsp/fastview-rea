@@ -219,8 +219,8 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   with WIN_1999 against the original's (L9.177): stats panel, channel 0
   selected, title, stat rows, grid height fixed. The frame layout (tab
   strip inside the MDI area under the parameters bar) and the status bar
-  (153 / 218 px panes): fixed, L9.179. Still to do, in order: 1 px strokes
-  on pixel centres (lines and waveform texture), the ribbon (small-button
+  (153 / 218 px panes): fixed, L9.179; 1 px strokes on pixel centres and
+  the waveform texture: fixed, L9.180. Still to do, in order: the ribbon (small-button
   pitch 22, large buttons ~55, the QAT arrow), the pane captions (~17 px,
   flat glyphs), the diagram / bar font scale (11), the «*K» icon.
 

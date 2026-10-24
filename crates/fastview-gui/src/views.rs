@@ -4,6 +4,7 @@
 
 use crate::app::{App, Command, Pane, View};
 use crate::diagram_ui::Window;
+use crate::oscgeom::PixelLines;
 use eframe::egui;
 
 impl App {
@@ -740,7 +741,7 @@ impl App {
             if band {
                 ui.painter().rect_filled(r, 0.0, egui::Color32::from_gray(232));
             }
-            ui.painter().hline(r.x_range(), r.bottom(), line);
+            ui.painter().px_hline(r.x_range(), r.bottom(), line);
             let nr = egui::Rect::from_min_max(r.min, egui::pos2(r.left() + name_w, r.bottom()));
             let font = if bold { egui::FontId::new(12.0, egui::FontFamily::Proportional) } else { egui::FontId::proportional(12.0) };
             let g = ui.painter().layout_no_wrap(name.to_string(), font, TEXT);
@@ -750,7 +751,7 @@ impl App {
                 ui.painter().with_clip_rect(nr).galley(at + egui::vec2(0.5, 0.0), g, TEXT);
             }
             if !band {
-                ui.painter().vline(nr.right(), r.y_range(), line);
+                ui.painter().px_vline(nr.right(), r.y_range(), line);
             }
             (r, egui::Rect::from_min_max(egui::pos2(nr.right() + 2.0, r.top() + 1.0), egui::pos2(r.right() - 2.0, r.bottom() - 1.0)))
         };
@@ -798,7 +799,7 @@ impl App {
             let (r, _) = row(ui, name, true, true);
             // The expand box and the visibility box.
             let toggle = egui::Rect::from_min_size(egui::pos2(r.left() + 2.0, r.center().y - 5.0), egui::vec2(10.0, 10.0));
-            ui.painter().rect_stroke(toggle, 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_gray(128)));
+            ui.painter().px_rect_stroke(toggle, 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_gray(128)));
             ui.painter().text(toggle.center(), egui::Align2::CENTER_CENTER, if open { "−" } else { "+" }, egui::FontId::proportional(10.0), TEXT);
             // The grid drops a double-click on a group row (`0x407640`): the
             // second click of a pair does nothing.

@@ -605,37 +605,107 @@ pub fn drawn_last(len: usize, first: usize, f: f64, plot_w: f32) -> Option<usize
     (count > 0).then(|| first + count - 1)
 }
 
-/// The same image with fewer vertices: points sharing a pixel column keep
-/// only their first, lowest, highest and last (in sample order) — the
-/// original overdraws every sample into the column (our rendering economy).
-pub fn collapse_columns(pts: &[eframe::egui::Pos2]) -> Vec<eframe::egui::Pos2> {
-    let mut out: Vec<eframe::egui::Pos2> = Vec::with_capacity(pts.len().min(4096));
-    let mut i = 0;
-    while i < pts.len() {
-        let col = pts[i].x.round();
-        let mut j = i;
-        let (mut lo, mut hi) = (i, i);
-        while j < pts.len() && pts[j].x.round() == col {
-            if pts[j].y < pts[lo].y {
-                lo = j;
-            }
-            if pts[j].y > pts[hi].y {
-                hi = j;
-            }
-            j += 1;
-        }
-        let mut keep = [i, lo, hi, j - 1];
-        keep.sort_unstable();
-        let mut prev = usize::MAX;
-        for k in keep {
-            if k != prev {
-                out.push(pts[k]);
-                prev = k;
-            }
-        }
-        i = j;
+/// GDI draws a pen on whole pixels; egui centres a stroke on its
+/// coordinate, so a 1 px line at a whole coordinate smears over two pixels
+/// at half strength. These snap axis-aligned strokes to pixel centres (an
+/// even width to the pixel edge), in physical pixels.
+pub trait PixelLines {
+    fn px_hline(&self, x: impl Into<eframe::egui::Rangef>, y: f32, s: eframe::egui::Stroke);
+    fn px_vline(&self, x: f32, y: impl Into<eframe::egui::Rangef>, s: eframe::egui::Stroke);
+    /// A horizontal or vertical segment snapped; any other as it is.
+    fn px_segment(&self, pts: [eframe::egui::Pos2; 2], s: eframe::egui::Stroke);
+    fn px_rect_stroke(&self, r: eframe::egui::Rect, rounding: f32, s: eframe::egui::Stroke);
+}
+
+fn px_snap(ppp: f32, v: f32, w: f32) -> f32 {
+    if (w * ppp).round() as i64 % 2 == 1 {
+        ((v * ppp).floor() + 0.5) / ppp
+    } else {
+        (v * ppp).round() / ppp
     }
-    out
+}
+
+impl PixelLines for eframe::egui::Painter {
+    fn px_hline(&self, x: impl Into<eframe::egui::Rangef>, y: f32, s: eframe::egui::Stroke) {
+        self.hline(x, px_snap(self.ctx().pixels_per_point(), y, s.width), s);
+    }
+    fn px_vline(&self, x: f32, y: impl Into<eframe::egui::Rangef>, s: eframe::egui::Stroke) {
+        self.vline(px_snap(self.ctx().pixels_per_point(), x, s.width), y, s);
+    }
+    fn px_segment(&self, [a, b]: [eframe::egui::Pos2; 2], s: eframe::egui::Stroke) {
+        let ppp = self.ctx().pixels_per_point();
+        if a.y == b.y {
+            let y = px_snap(ppp, a.y, s.width);
+            self.line_segment([eframe::egui::pos2(a.x, y), eframe::egui::pos2(b.x, y)], s);
+        } else if a.x == b.x {
+            let x = px_snap(ppp, a.x, s.width);
+            self.line_segment([eframe::egui::pos2(x, a.y), eframe::egui::pos2(x, b.y)], s);
+        } else {
+            self.line_segment([a, b], s);
+        }
+    }
+    fn px_rect_stroke(&self, r: eframe::egui::Rect, rounding: f32, s: eframe::egui::Stroke) {
+        let ppp = self.ctx().pixels_per_point();
+        let q = |v: f32| px_snap(ppp, v, s.width);
+        let r = eframe::egui::Rect::from_min_max(eframe::egui::pos2(q(r.left()), q(r.top())), eframe::egui::pos2(q(r.right()), q(r.bottom())));
+        self.rect_stroke(r, rounding, s);
+    }
+}
+
+/// An aliased 1 px polyline as GDI draws it (the analog painters' Polyline,
+/// L9.45): the vertices on whole pixels, each segment's pixels by rounding
+/// along its major axis with the end pixel left out (the next segment
+/// starts there), merged into vertical runs — one rectangle per run,
+/// `[x, x + 1) × [y0, y1 + 1)`. Steps are taken per column, so a long record
+/// costs one or two runs per vertex.
+pub fn aliased_runs(pts: &[eframe::egui::Pos2]) -> Vec<eframe::egui::Rect> {
+    use eframe::egui::{pos2, Rect};
+    // Round half up: ⌊(2a + b) / 2b⌋, b > 0.
+    let rhu = |a: i64, b: i64| (2 * a + b).div_euclid(2 * b);
+    let mut runs = Vec::new();
+    let mut cur: Option<(i64, i64, i64)> = None;
+    let mut span = |x: i64, a: i64, b: i64, runs: &mut Vec<Rect>| {
+        let (a, b) = (a.min(b), a.max(b));
+        match &mut cur {
+            Some((cx, lo, hi)) if *cx == x && a <= *hi + 1 && b >= *lo - 1 => {
+                *lo = (*lo).min(a);
+                *hi = (*hi).max(b);
+            }
+            c => {
+                if let Some((cx, lo, hi)) = c.take() {
+                    runs.push(Rect::from_min_max(pos2(cx as f32, lo as f32), pos2(cx as f32 + 1.0, hi as f32 + 1.0)));
+                }
+                *c = Some((x, a, b));
+            }
+        }
+    };
+    for w in pts.windows(2) {
+        let (x0, y0) = (w[0].x.round() as i64, w[0].y.round() as i64);
+        let (x1, y1) = (w[1].x.round() as i64, w[1].y.round() as i64);
+        let (dx, dy) = (x1 - x0, y1 - y0);
+        let n = dx.abs().max(dy.abs());
+        if n == 0 {
+            continue;
+        }
+        let y_at = |s: i64| y0 + dy.signum() * rhu(dy.abs() * s, n);
+        if dy.abs() > dx.abs() {
+            // Y-major: in each column a contiguous range of steps.
+            let adx = dx.abs();
+            for k in 0..=adx {
+                let lo = if k == 0 { 0 } else { ((2 * k - 1) * n).div_euclid(2 * adx) + i64::from(((2 * k - 1) * n).rem_euclid(2 * adx) != 0) };
+                let hi = if adx == 0 { n - 1 } else { (((2 * k + 1) * n).div_euclid(2 * adx) + i64::from(((2 * k + 1) * n).rem_euclid(2 * adx) != 0) - 1).min(n - 1) };
+                if lo <= hi {
+                    span(x0 + dx.signum() * k, y_at(lo), y_at(hi), &mut runs);
+                }
+            }
+        } else {
+            for s in 0..n {
+                span(x0 + dx.signum() * s, y_at(s), y_at(s), &mut runs);
+            }
+        }
+    }
+    span(i64::MIN, 0, 0, &mut runs);
+    runs
 }
 
 /// What the digital painter draws (`0x42a0f0`), x relative to leftW: the
@@ -942,7 +1012,7 @@ pub fn base_bar_len(n: usize, f: f64, ratio: f64) -> f32 {
 #[cfg(test)]
 mod draw_tests {
     use super::*;
-    use eframe::egui::Pos2;
+    use eframe::egui::{Pos2, Rect};
 
     #[test]
     fn pasted_value_at_the_cursor() {
@@ -1016,12 +1086,18 @@ mod draw_tests {
     }
 
     #[test]
-    fn column_collapse_keeps_the_envelope_in_order() {
-        let pts: Vec<Pos2> = [(0.0, 5.0), (0.2, 1.0), (0.3, 9.0), (0.4, 4.0), (1.0, 3.0)].iter().map(|&(x, y)| Pos2::new(x, y)).collect();
-        let c = collapse_columns(&pts);
-        assert_eq!(c.iter().map(|p| p.y).collect::<Vec<_>>(), [5.0, 1.0, 9.0, 4.0, 3.0]);
-        let dense: Vec<Pos2> = (0..1000).map(|i| Pos2::new(i as f32 * 0.01, (i % 7) as f32)).collect();
-        assert!(collapse_columns(&dense).len() <= 4 * 11);
+    fn aliased_polyline_runs_as_gdi_draws_them() {
+        let p = |v: &[(f32, f32)]| v.iter().map(|&(x, y)| Pos2::new(x, y)).collect::<Vec<_>>();
+        let r = |runs: Vec<Rect>| runs.iter().map(|r| (r.left() as i32, r.top() as i32, r.bottom() as i32)).collect::<Vec<_>>();
+        // A horizontal segment: one pixel per column, the end left out.
+        assert_eq!(r(aliased_runs(&p(&[(0.0, 5.0), (3.0, 5.0)]))), [(0, 5, 6), (1, 5, 6), (2, 5, 6)]);
+        // Vertical: one run, the end left out; the next segment goes on.
+        assert_eq!(r(aliased_runs(&p(&[(2.0, 1.0), (2.0, 5.0), (2.0, 9.0)]))), [(2, 1, 9)]);
+        // A steep step to the next column: half in each.
+        assert_eq!(r(aliased_runs(&p(&[(0.0, 0.0), (1.0, 4.0)]))), [(0, 0, 2), (1, 2, 4)]);
+        // Many samples in one column: the column's envelope as one run.
+        let dense: Vec<Pos2> = (0..100).map(|i| Pos2::new(10.0 + i as f32 * 0.004, if i % 2 == 0 { 0.0 } else { 20.0 })).collect();
+        assert_eq!(r(aliased_runs(&dense)), [(10, 0, 21)]);
     }
 
     #[test]

@@ -1694,8 +1694,8 @@ W − 4), r = count / P) OR-ed into runs plus red ticks for mixed columns;
 mid = top + h/2; pen RGB(200,0,0), fill RGB(253,219,102) when selected.
 Ours: analog count `oscgeom::drawn_last` (was ⌊W/k⌋ + 1, one point at R),
 marks after the line; with no marks each pixel column's vertices collapse
-to first / min / max / last (`collapse_columns` — the same image, our
-rendering economy for long records). `oscgeom::digital_shapes` implements
+to first / min / max / last (`collapse_columns`; since L9.180 an aliased
+raster, `aliased_runs`). `oscgeom::digital_shapes` implements
 the digital rules (tested); wired into the lanes in L9.46.
 Tests in `oscgeom::draw_tests`.
 
@@ -5330,11 +5330,31 @@ seen (`status_bar`, 24 px). Test `document_tabs_sit_in_the_mdi_area`.
 Residual: the size grip's dots; the band colours for the other looks are
 derived from each look's status colour, not read.
 
+### L9.180 — Aliased waveforms and 1 px lines on whole pixels  ·  ✅
+The analog painters draw one aliased GDI Polyline through every sample
+(`0x429490` / `0x429c30`, L9.45); at many samples per pixel that gives the
+striped texture of the VM capture — each column holds the envelope of its
+samples and the steps between them, with gaps where neighbouring columns
+do not overlap. GDI pens sit on whole pixels: the capture's grid (230),
+lane separators (200) and the plot's left edge (100) are exactly 1 px of
+their colour. Ours drew the waveform as an antialiased egui line (a solid
+band) and every 1 px line centred on a whole coordinate (two pixels at
+half strength). Now `oscgeom::aliased_runs` rasterises the polyline as
+GDI does (vertices rounded, each segment's pixels by its major axis, the
+end pixel left out) into vertical runs drawn as one mesh, and
+`oscgeom::PixelLines` snaps axis-aligned strokes to pixel centres (an
+even width to the edge) — used by the lanes, the plane and vector grids,
+the property grid and the scale box. The capture and ours now match
+colour for colour. Test `aliased_polyline_runs_as_gdi_draws_them`.
+Residual: GDI's exact diamond-exit rule for the steps is not modelled
+(rounding along the major axis instead); diagonal strokes stay
+antialiased.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.179)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.180)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5378,7 +5398,8 @@ L9.173 the save path; L9.174 the planes' pan limit; L9.175 «Изменить
 L9.177 **the main window against the original's capture** (stats panel,
 channel 0 selected, title, stat rows); L9.178 «О программе» in the
 original's layout with our own texts, W1.6 / W1.2b read; L9.179 the
-document tabs inside the MDI area, the status bar's panes.
+document tabs inside the MDI area, the status bar's panes; L9.180
+aliased waveforms, 1 px lines on whole pixels.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

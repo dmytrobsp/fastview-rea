@@ -10,6 +10,7 @@
 use crate::app::{App, Doc};
 use crate::diagram::{self as dg, ChanPair, DiagCmd, MenuChan, PlaneView, WheelAct};
 use crate::popmenu::{self, Entry, PopMenu};
+use crate::oscgeom::PixelLines;
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, Stroke, Vec2};
 use fvb_core::geom::Shape;
 use num_complex::Complex64;
@@ -970,20 +971,20 @@ impl App {
         };
         for k in 0..ny {
             for y in [c.y + k as f32 * cell, c.y - k as f32 * cell] {
-                painter.line_segment([Pos2::new(frame.left(), y), Pos2::new(frame.right(), y)], gs);
+                painter.px_segment([Pos2::new(frame.left(), y), Pos2::new(frame.right(), y)], gs);
             }
         }
         for k in 0..nx {
             for x in [c.x + k as f32 * cell, c.x - k as f32 * cell] {
-                painter.line_segment([Pos2::new(x, frame.top()), Pos2::new(x, frame.bottom())], gs);
+                painter.px_segment([Pos2::new(x, frame.top()), Pos2::new(x, frame.bottom())], gs);
             }
         }
-        painter.rect_stroke(frame, 0.0, fs);
+        painter.px_rect_stroke(frame, 0.0, fs);
         if (rect.left()..=rect.right()).contains(&origin.x) {
-            painter.line_segment([Pos2::new(origin.x, frame.top()), Pos2::new(origin.x, frame.bottom())], axs);
+            painter.px_segment([Pos2::new(origin.x, frame.top()), Pos2::new(origin.x, frame.bottom())], axs);
         }
         if (rect.top()..=rect.bottom()).contains(&origin.y) {
-            painter.line_segment([Pos2::new(frame.left(), origin.y), Pos2::new(frame.right(), origin.y)], axs);
+            painter.px_segment([Pos2::new(frame.left(), origin.y), Pos2::new(frame.right(), origin.y)], axs);
         }
         // Edge labels: the coordinate at each frame edge (pan included).
         let edge = |n: i32, o: i32, s: usize, sign: f64| (sign * f64::from(n) - f64::from(o)) * sc.upc[s];
@@ -1223,7 +1224,7 @@ impl App {
         let black = dev_pen(s, Color32::BLACK);
         let swatch = |r: Rect, col: Color32| {
             painter.rect_filled(r, 0.0, col);
-            painter.rect_stroke(r, 0.0, black);
+            painter.px_rect_stroke(r, 0.0, black);
         };
         let grid = match ps {
             Some(s) => dev_pen(s / 2.0, Color32::from_rgb(100, 100, 100)),
@@ -1237,16 +1238,16 @@ impl App {
         if lay.table {
             let (x0, x1) = (full.left() + xoff, full.left() + xoff + tw);
             let y1 = lay.b + shown.len() as f32 * h;
-            painter.hline(x0..=x1, lay.b, grid);
+            painter.px_hline(x0..=x1, lay.b, grid);
             for (row, c) in shown.iter().enumerate() {
                 let y = lay.b + row as f32 * h;
-                painter.hline(x0..=x1, y + h, grid);
+                painter.px_hline(x0..=x1, y + h, grid);
                 let third = (cy / 3.0).floor();
                 swatch(Rect::from_min_max(Pos2::new(x0 + third, y + third), Pos2::new(x0 + third + cy - 1.0, y + h - third)), c.3);
                 painter.text(Pos2::new(x0 + cy + (cy / 2.0).floor(), y + cy / 4.0), egui::Align2::LEFT_TOP, &c.0, font(), ink);
             }
             for x in [x0, x0 + name_w, x1 - val_w, x1] {
-                painter.vline(x, lay.b..=y1, grid);
+                painter.px_vline(x, lay.b..=y1, grid);
             }
         } else {
             // The legend: one centred row (from x = m when it does not fit).
@@ -1376,7 +1377,7 @@ impl App {
             let x0 = tl.swatch_x(&g, c, width(&name, font()));
             let sw = Rect::from_min_max(pt(x0, yb + 3), pt(x0 + 10 * si, yb + 3 + 10 * si));
             painter.rect_filled(sw, 0.0, d.chans[i].color);
-            painter.rect_stroke(sw.shrink(0.5), 0.0, Stroke::new(1.0f32, Color32::BLACK));
+            painter.px_rect_stroke(sw.shrink(0.5), 0.0, Stroke::new(1.0f32, Color32::BLACK));
             painter.text(pt(x0 + 16 * si, yb), egui::Align2::LEFT_TOP, name, font(), ink);
             if tl.rows > 1 {
                 continue;
@@ -1420,7 +1421,7 @@ impl App {
                     mesh.add_triangle(0, 1, 2);
                     mesh.add_triangle(0, 2, 3);
                     painter.add(egui::Shape::mesh(mesh));
-                    painter.rect_stroke(bar.shrink(0.5), 0.0, Stroke::new(1.0f32, color));
+                    painter.px_rect_stroke(bar.shrink(0.5), 0.0, Stroke::new(1.0f32, color));
                 }
                 let val = if percent {
                     if norm == 0.0 { 0.0 } else { 100.0 * v / norm }
@@ -1448,11 +1449,11 @@ impl App {
         };
         for c in 0..chans.len() as i32 {
             let x = g.left + 9 * si + c * tl.panel_w;
-            painter.line_segment([pt(x, g.top + 12 * si + g.h), pt(x, g.bottom - 6 * si - 1)], axis);
+            painter.px_segment([pt(x, g.top + 12 * si + g.h), pt(x, g.bottom - 6 * si - 1)], axis);
         }
         for idx in 0..tl.rows {
             let y = g.b - 1 - 18 * si - idx * tl.row_h;
-            painter.line_segment([pt(g.left + 6 * si, y), pt(g.right - 6 * si, y)], axis);
+            painter.px_segment([pt(g.left + 6 * si, y), pt(g.right - 6 * si, y)], axis);
         }
     }
 
@@ -1719,14 +1720,14 @@ fn circle_table(p: &egui::Painter, ui: &egui::Ui, rect: Rect, cy: f32, loci: &[L
     let bottom = top + row_h * loci.len() as f32;
     for ri in 0..=loci.len() {
         let y = top + row_h * ri as f32;
-        p.line_segment([Pos2::new(left, y), Pos2::new(left + total, y)], rule);
+        p.px_segment([Pos2::new(left, y), Pos2::new(left + total, y)], rule);
     }
     let mut xs = vec![left, left + name_col, left + total];
     if mode == 2 {
         xs.push(left + name_col + val_col);
     }
     for x in xs {
-        p.line_segment([Pos2::new(x, top), Pos2::new(x, bottom)], rule);
+        p.px_segment([Pos2::new(x, top), Pos2::new(x, bottom)], rule);
     }
 }
 
@@ -1812,9 +1813,9 @@ fn vector_header(painter: &egui::Painter, full: Rect, [u, i]: [f64; 2]) {
     };
     let rect = Rect::from_min_max(Pos2::new(x0, top), Pos2::new(x0 + l + w + m, top + 2.0 * h));
     painter.rect_filled(rect, 0.0, Color32::from_rgb(254, 250, 220));
-    painter.rect_stroke(rect, 0.0, pen);
-    painter.vline(x0 + l, top..=top + 2.0 * h, pen);
-    painter.hline(rect.x_range(), top + h, pen);
+    painter.px_rect_stroke(rect, 0.0, pen);
+    painter.px_vline(x0 + l, top..=top + 2.0 * h, pen);
+    painter.px_hline(rect.x_range(), top + h, pen);
     for (row, (label, value)) in [("U max", ut), ("I max", it)].into_iter().enumerate() {
         let y = top + cy / 4.0 + row as f32 * h;
         painter.text(Pos2::new(x0 + m, y), egui::Align2::LEFT_TOP, label, font(), ink);

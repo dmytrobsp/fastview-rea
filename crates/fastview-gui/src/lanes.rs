@@ -9,7 +9,7 @@
 //! height and the view scrolls vertically when there are many channels.
 
 use crate::app::{App, ChanKey, Command, CommentEdit, RectZoom, TimeUnit, ValueMode};
-use crate::oscgeom as g;
+use crate::oscgeom::{self as g, PixelLines};
 use crate::chansel::{select_click, ChanFlag, ItemState, SelClick};
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Shape, Stroke, Vec2};
 
@@ -204,7 +204,7 @@ impl OscView<'_> {
         let header = |y: f32, name: &str, unit: &fvb_core::units::Shown, color: Color32, val: f64| {
             let short: String = name.chars().take(NAME_CHARS).collect();
             let name_rect = bold_text(lp, Pos2::new(self.x0 + 5.0, y), &short, NAME_FONT, color);
-            lp.rect_stroke(
+            lp.px_rect_stroke(
                 Rect::from_min_max(Pos2::new(self.x0 + 3.0, y), Pos2::new(name_rect.right() + 2.0, name_rect.bottom())),
                 0.0,
                 Stroke::new(1.0f32, Color32::from_gray(128)),
@@ -219,7 +219,7 @@ impl OscView<'_> {
             for (j, glyph) in glyphs.into_iter().enumerate() {
                 let at = Rect::from_min_size(Pos2::new(left - 21.0 - 21.0 * j as f32, y), Vec2::splat(16.0));
                 lp.rect_filled(at, 2.0, Color32::from_rgb(232, 236, 248));
-                lp.rect_stroke(at, 2.0, Stroke::new(1.0f32, Color32::from_rgb(120, 130, 170)));
+                lp.px_rect_stroke(at, 2.0, Stroke::new(1.0f32, Color32::from_rgb(120, 130, 170)));
                 lp.text(at.center(), Align2::CENTER_CENTER, glyph, FontId::proportional(9.0), Color32::from_rgb(40, 50, 110));
             }
         };
@@ -233,7 +233,7 @@ impl OscView<'_> {
                 if doc.dig(*i).invert {
                     let at = Rect::from_min_size(Pos2::new(left - 18.0, top + 2.0), Vec2::splat(16.0));
                     lp.rect_filled(at, 2.0, Color32::from_rgb(232, 236, 248));
-                    lp.rect_stroke(at, 2.0, Stroke::new(1.0f32, Color32::from_rgb(120, 130, 170)));
+                    lp.px_rect_stroke(at, 2.0, Stroke::new(1.0f32, Color32::from_rgb(120, 130, 170)));
                     lp.text(at.center(), Align2::CENTER_CENTER, "−", FontId::proportional(9.0), Color32::from_rgb(40, 50, 110));
                 }
             }
@@ -306,7 +306,7 @@ impl OscView<'_> {
                 for (a, b) in shapes.runs {
                     let rr = Rect::from_min_max(Pos2::new(left + a, mid - 6.0), Pos2::new(left + b.max(a + 1.0), mid + 6.0));
                     pp.rect_filled(rr, 0.0, fill);
-                    pp.rect_stroke(rr, 0.0, Stroke::new(1.0f32, red));
+                    pp.px_rect_stroke(rr, 0.0, Stroke::new(1.0f32, red));
                 }
                 for t in shapes.ticks {
                     pp.rect_filled(Rect::from_min_max(Pos2::new(left + t, mid - 6.0), Pos2::new(left + t + 1.0, mid + 6.0)), 0.0, red);
@@ -323,7 +323,7 @@ impl OscView<'_> {
                 let painter_for = |m: Option<usize>| if m.is_some_and(zoomed) { &lane_clip } else { pp };
                 if lo <= 0.0 && 0.0 <= hi {
                     let zy = g::value_y(0.0, top, h, lo, hi);
-                    painter_for(r.members.first().copied()).hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
+                    painter_for(r.members.first().copied()).px_hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
                 }
                 // Offsets 0..min(⌈W/k⌉, len − first) (`0x4295fc`).
                 let last = g::drawn_last(n, first, f, plot_right - left).unwrap_or(first.saturating_sub(1));
@@ -396,7 +396,7 @@ impl OscView<'_> {
         for (a, b) in g::pasted_digital_runs(&on, n, k, &xs) {
             let rr = Rect::from_min_max(Pos2::new(left + a, mid - 6.0), Pos2::new(left + b.max(a + 1.0), mid + 6.0));
             pp.rect_filled(rr, 0.0, fill);
-            pp.rect_stroke(rr, 0.0, Stroke::new(1.0f32, red));
+            pp.px_rect_stroke(rr, 0.0, Stroke::new(1.0f32, red));
         }
         paste_icon(pp, Pos2::new(left - 3.0, top + g::DIGITAL_H - 19.0), false);
     }
@@ -408,7 +408,7 @@ impl OscView<'_> {
         let (doc, left, plot_right, first, f, n) = (self.doc, self.left, self.right, self.first, self.f, self.n);
         let ruler_top = bottom - g::RULER_H;
         painter.rect_filled(Rect::from_min_max(Pos2::new(self.x0, ruler_top), Pos2::new(client_right, bottom)), 0.0, Color32::WHITE);
-        painter.hline(self.x0..=client_right, ruler_top, Stroke::new(1.0f32, Color32::BLACK));
+        painter.px_hline(self.x0..=client_right, ruler_top, Stroke::new(1.0f32, Color32::BLACK));
         let text_col = Color32::from_rgb(0, 0, 127);
         let start_tod = fvb_core::comtrade::time_of_day(&doc.osc.stamps.start_time);
         if self.unit == TimeUnit::Absolute {
@@ -419,7 +419,7 @@ impl OscView<'_> {
         }
         let mut first_label = true;
         for t in g::ruler_ticks(left, plot_right) {
-            painter.vline(t.x, ruler_top..=ruler_top + t.len, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
+            painter.px_vline(t.x, ruler_top..=ruler_top + t.len, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
             if t.labelled {
                 let k = g::tick_sample(first, t.i, f);
                 if k < n {
@@ -487,9 +487,9 @@ impl OscView<'_> {
                 continue;
             }
             let st = Stroke::new(1.0f32, text_col);
-            painter.hline(xa..=xb, dim_y, st);
-            painter.vline(xa, dim_y - 4.0..=dim_y + 4.0, st);
-            painter.vline(xb, dim_y - 4.0..=dim_y + 4.0, st);
+            painter.px_hline(xa..=xb, dim_y, st);
+            painter.px_vline(xa, dim_y - 4.0..=dim_y + 4.0, st);
+            painter.px_vline(xb, dim_y - 4.0..=dim_y + 4.0, st);
             for (tip, dir) in [(xa, 1.0f32), (xb, -1.0)] {
                 painter.add(Shape::convex_polygon(
                     vec![Pos2::new(tip, dim_y), Pos2::new(tip + 8.0 * dir, dim_y - 2.0), Pos2::new(tip + 8.0 * dir, dim_y + 2.0)],
@@ -536,7 +536,7 @@ impl OscView<'_> {
                 continue;
             }
             let col = if i == 1 && xs[1] == xs[0] { viz[2].2 } else { *col };
-            painter.vline(xs[i], top..=v_bottom, Stroke::new(1.0f32, col));
+            painter.px_vline(xs[i], top..=v_bottom, Stroke::new(1.0f32, col));
         }
         if !labels {
             return;
@@ -587,7 +587,7 @@ pub fn paint_hvizirs(painter: &egui::Painter, (x0, left, right): (f32, f32, f32)
         }
         if y < band_top {
             let col = if j == 1 && y1_seen == Some(y) { green } else if j == 0 { red } else { blue };
-            painter.hline(left..=right, y, Stroke::new(1.0f32, col));
+            painter.px_hline(left..=right, y, Stroke::new(1.0f32, col));
         }
         if let Some(ly) = label_y {
             let col = if j == 0 { red } else { blue };
@@ -775,8 +775,8 @@ fn paste_icon(p: &egui::Painter, at: Pos2, large: bool) {
     let (bl, br) = if large { (12.0, 18.0) } else { (13.0, 17.0) };
     p.add(Shape::convex_polygon(vec![pt(l, mid), pt(bl, top), pt(bl, bot)], c, Stroke::NONE));
     p.add(Shape::convex_polygon(vec![pt(r, mid), pt(br, bot), pt(br, top)], c, Stroke::NONE));
-    p.vline(at.x + bl + 1.5, (at.y + top)..=(at.y + bot), Stroke::new(1.0f32, c));
-    p.vline(at.x + br - 1.5, (at.y + top)..=(at.y + bot), Stroke::new(1.0f32, c));
+    p.px_vline(at.x + bl + 1.5, (at.y + top)..=(at.y + bot), Stroke::new(1.0f32, c));
+    p.px_vline(at.x + br - 1.5, (at.y + top)..=(at.y + bot), Stroke::new(1.0f32, c));
     if large {
         p.rect_filled(Rect::from_min_size(pt(14.0, mid - 1.0), Vec2::splat(2.0)), 0.0, c);
     }
@@ -800,15 +800,16 @@ fn draw_series(
         return;
     }
     let pts: Vec<Pos2> = (first..=last).map(|k| Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi))).collect();
-    // The marks come after the line (`0x429b52`); without marks, columns
-    // are collapsed to the same image with fewer vertices.
+    // Aliased, as GDI's Polyline; the marks come after the line (`0x429b52`).
+    let mut mesh = egui::Mesh::default();
+    for r in g::aliased_runs(&pts) {
+        mesh.add_colored_rect(r, color);
+    }
+    p.add(Shape::mesh(mesh));
     if f > 0.16 {
-        p.add(Shape::line(pts.clone(), Stroke::new(1.0f32, color)));
         for q in &pts {
             p.circle_stroke(*q, 2.0f32, Stroke::new(1.0f32, color));
         }
-    } else {
-        p.add(Shape::line(g::collapse_columns(&pts), Stroke::new(1.0f32, color)));
     }
 }
 
@@ -1104,16 +1105,16 @@ impl App {
             } else if li % 2 == 1 {
                 gradient(&lp, lane, Color32::from_rgb(214, 255, 255), Color32::from_rgb(243, 255, 255));
             }
-            lp.hline(client.left()..=plot_right, tops[li] + r.h - 1.0, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
+            lp.px_hline(client.left()..=plot_right, tops[li] + r.h - 1.0, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
         }
         if show_grid {
             let mut x = left + 50.0;
             while x < plot_right {
-                painter.vline(x, client.top()..=grid_bottom, Stroke::new(1.0f32, Color32::from_rgb(230, 230, 230)));
+                painter.px_vline(x, client.top()..=grid_bottom, Stroke::new(1.0f32, Color32::from_rgb(230, 230, 230)));
                 x += 50.0;
             }
         }
-        painter.vline(left, client.top()..=grid_bottom, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
+        painter.px_vline(left, client.top()..=grid_bottom, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
 
         // ---- stats panel and waveforms ----
         let k_main = doc.main_cursor;
@@ -1353,9 +1354,9 @@ impl App {
                     actions.push(Act::RectZoom(RectZoom::Dragging { chan, x, y0, y1 }));
                     // The rubber line with ±5 px end ticks.
                     let st = Stroke::new(1.0f32, Color32::BLACK);
-                    painter.vline(x, y0.min(y1)..=y0.max(y1), st);
-                    painter.hline(x - 5.0..=x + 5.0, y0, st);
-                    painter.hline(x - 5.0..=x + 5.0, y1, st);
+                    painter.px_vline(x, y0.min(y1)..=y0.max(y1), st);
+                    painter.px_hline(x - 5.0..=x + 5.0, y0, st);
+                    painter.px_hline(x - 5.0..=x + 5.0, y1, st);
                 } else {
                     let (a, b) = (((y0.min(y1) - top) / h) as f64, ((y0.max(y1) - top) / h) as f64);
                     actions.push(Act::WindowZoom(chan, a, b));
