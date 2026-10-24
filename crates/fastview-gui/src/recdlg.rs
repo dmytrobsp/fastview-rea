@@ -139,9 +139,6 @@ pub fn stamp_texts(osc: &comtrade::Oscillogram, utc: bool) -> (String, String) {
 /// Code-page combo of DIALOG 392 / 332 (DLGINIT: 0 «866 MS-DOS», 1 «Windows-1251»).
 const CODEPAGES: [(Encoding, &str); 2] = [(Encoding::Cp866, "866 MS-DOS"), (Encoding::Cp1251, "Windows-1251")];
 
-fn codepage_label(e: Encoding) -> &'static str {
-    CODEPAGES.iter().find(|(x, _)| *x == e).map_or("", |(_, l)| l)
-}
 
 impl Doc {
     /// 32867/32868 CMDUI (`0x42ffb0`): the radio follows channel 0.
@@ -429,93 +426,60 @@ impl App {
         let mut apply = false;
         let mut cp_pick: Option<Encoding> = None;
         crate::dialogs::dlg(ctx, "Параметры осциллограммы")
+            .margin(0.0)
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(ctx, |ui| {
+                use crate::dialogs::{dlu, win_label};
                 let d = &self.docs[ai];
                 let o = &d.osc;
                 let (start, trig) = stamp_texts(o, utc);
-                let ro = |ui: &mut egui::Ui, s: String| {
-                    let mut s = s;
-                    ui.add(egui::TextEdit::singleline(&mut s).interactive(false).desired_width(260.0));
-                };
-                egui::Grid::new("fv_fileparams").num_columns(2).spacing([12.0, 5.0]).show(ui, |ui| {
-                    ui.label("Число каналов:");
-                    ro(ui, (o.analog.len() + o.digital.len()).to_string());
-                    ui.end_row();
-                    ui.label("Число аналоговых каналов:");
-                    ro(ui, o.analog.len().to_string());
-                    ui.end_row();
-                    ui.label("Число дискретных каналов:");
-                    ro(ui, o.digital.len().to_string());
-                    ui.end_row();
-                    ui.label("Число измерений:");
-                    ro(ui, o.sample_count().to_string());
-                    ui.end_row();
-                    ui.label("Частота сети:");
+                // The 347 × 277 DLU template (521 × 450 px): right-aligned
+                // labels at x 12–13, the values as static text at 120–121.
+                let (client, _) = ui.allocate_exact_size(egui::vec2(521.0, 450.0), egui::Sense::hover());
+                let rows: [(i32, i32, &str, Option<String>); 10] = [
+                    (12, 12, "Число каналов:", Some((o.analog.len() + o.digital.len()).to_string())),
+                    (12, 30, "Число аналоговых каналов:", Some(o.analog.len().to_string())),
+                    (12, 48, "Число дискретных каналов:", Some(o.digital.len().to_string())),
+                    (12, 66, "Число измерений:", Some(o.sample_count().to_string())),
                     // DDX_Text of a double shows `%.*g` at 15 digits.
-                    ro(ui, fvb_core::views::fmt_gp(o.line_freq, 15));
-                    ui.end_row();
-                    ui.label("Частота дискретизации:");
-                    ui.horizontal(|ui| {
-                        let focus = st.fail && self.dlg.alerts.is_empty();
-                        if focus {
-                            st.fail = false;
-                        }
-                        crate::dialogs::ddx_edit(ui, &mut st.rate_text, 228.0, focus);
-                        ui.menu_button("▾", |ui| {
-                            for r in rate_list(o.line_freq) {
-                                if ui.button(r.to_string()).clicked() {
-                                    st.rate_text = r.to_string();
-                                    ui.close_menu();
-                                }
-                            }
-                        });
-                    });
-                    ui.end_row();
-                    ui.label("Частота для коррекции\nрасчётных значений:");
-                    // «Не корректировать», then each frequency candidate by
-                    // name (`0x4499e0`); disabled when there is none.
-                    let items: Vec<String> = std::iter::once("Не корректировать".to_string())
-                        .chain(fvb_core::freqcorr::candidate_names(o))
-                        .collect();
-                    ui.add_enabled_ui(items.len() > 1, |ui| {
-                        let shown = items.get(st.correction).cloned().unwrap_or_default();
-                        egui::ComboBox::from_id_salt("fv_corr").selected_text(shown).width(260.0).show_ui(ui, |ui| {
-                            for (k, t) in items.iter().enumerate() {
-                                ui.selectable_value(&mut st.correction, k, t);
-                            }
-                        });
-                    });
-                    ui.end_row();
-                    ui.label("Станция:");
-                    ro(ui, o.station.clone());
-                    ui.end_row();
-                    ui.label("Номер регистратора:");
-                    ro(ui, o.device.clone());
-                    ui.end_row();
-                    ui.label("Начало записи:");
-                    ro(ui, start);
-                    ui.end_row();
-                    ui.label("Момент запуска:");
-                    ro(ui, trig);
-                    ui.end_row();
-                    ui.label("Длительность:");
-                    ro(ui, duration_text(o));
-                    ui.end_row();
-                    ui.label("Кодировка:");
-                    egui::ComboBox::from_id_salt("fv_codepage").selected_text(codepage_label(d.codepage)).width(260.0).show_ui(ui, |ui| {
-                        for (e, l) in CODEPAGES {
-                            if ui.selectable_label(d.codepage == e, l).clicked() {
-                                cp_pick = Some(e);
-                            }
-                        }
-                    });
-                    ui.end_row();
-                });
-                ui.separator();
-                ui.vertical_centered(|ui| apply = ui.button("  Закрыть  ").clicked());
+                    (12, 84, "Частота сети:", Some(fvb_core::views::fmt_gp(o.line_freq, 15))),
+                    (13, 145, "Станция:", Some(o.station.clone())),
+                    (13, 162, "Номер регистратора:", Some(o.device.clone())),
+                    (13, 181, "Начало записи:", Some(start)),
+                    (13, 199, "Момент запуска:", Some(trig)),
+                    (13, 217, "Длительность:", Some(duration_text(o))),
+                ];
+                for (x, y, label, value) in rows {
+                    win_label(ui, dlu(client, x, y, 96, 9), label, true, true);
+                    if let Some(v) = value {
+                        win_label(ui, dlu(client, if x == 12 { 120 } else { 121 }, y, 216, 9), &v, false, true);
+                    }
+                }
+                win_label(ui, dlu(client, 13, 102, 96, 9), "Частота дискретизации:", true, true);
+                let focus = st.fail && self.dlg.alerts.is_empty();
+                if focus {
+                    st.fail = false;
+                }
+                let rates: Vec<String> = rate_list(o.line_freq).iter().map(|r| r.to_string()).collect();
+                crate::dialogs::win_combo_edit(ui, dlu(client, 120, 102, 80, 12), egui::Id::new("fv_rate"), &mut st.rate_text, &rates, focus);
+                win_label(ui, dlu(client, 12, 123, 96, 17), "Частота для коррекции расчётных значений:", true, true);
+                // «Не корректировать», then each frequency candidate by
+                // name (`0x4499e0`); disabled when there is none.
+                let items: Vec<String> = std::iter::once("Не корректировать".to_string())
+                    .chain(fvb_core::freqcorr::candidate_names(o))
+                    .collect();
+                if let Some(k) = crate::dialogs::win_combo_list(ui, dlu(client, 119, 125, 80, 70), egui::Id::new("fv_corr"), &items, st.correction, items.len() > 1) {
+                    st.correction = k;
+                }
+                win_label(ui, dlu(client, 12, 234, 96, 9), "Кодировка:", true, true);
+                let cps: Vec<String> = CODEPAGES.iter().map(|(_, l)| l.to_string()).collect();
+                let cur = CODEPAGES.iter().position(|(e, _)| *e == d.codepage).unwrap_or(0);
+                if let Some(k) = crate::dialogs::win_combo_list(ui, dlu(client, 121, 233, 80, 70), egui::Id::new("fv_codepage"), &cps, cur, true) {
+                    cp_pick = Some(CODEPAGES[k].0);
+                }
+                apply = crate::dialogs::win_button(ui, dlu(client, 258, 256, 80, 14), "Закрыть", true).clicked();
             });
         if let Some(cp) = cp_pick {
             self.docs[ai].set_codepage(cp);

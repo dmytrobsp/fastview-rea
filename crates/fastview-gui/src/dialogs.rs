@@ -99,8 +99,7 @@ impl<'o> Dlg<'o> {
             return None;
         }
         // CenterWindow at every opening (each DoModal creates the dialog
-        // anew): the left-top at the screen's (W − w) / 2, (H − h) / 2
-        // floored, from the window's measured size — for its first frames
+        // anew), from the window's measured size — for its first frames
         // after it appears (egui's own pivot placement rounds half-way
         // positions by the size it had a frame before); movable after.
         let key = id.with("fv_dlg_placed");
@@ -116,8 +115,13 @@ impl<'o> Dlg<'o> {
             // egui keeps the pivot's position: once placed, the left-top.
             win = win.pivot(egui::Align2::LEFT_TOP);
             if !settled {
-                let screen = ctx.screen_rect();
-                win = win.current_pos(screen.min + ((screen.size() - size) / 2.0).floor());
+                // CenterWindow halves the window rect, which on Windows 11
+                // holds an invisible 2 px frame left, right and below the
+                // visible one: the visible left-top is (cx − ⌊w/2⌋,
+                // cy − 1 − ⌊h/2⌋) — VM: DIALOGs 463, 477 and 392 at
+                // (1101, 306), (1023, 475), (1019, 457) about (1280, 696).
+                let c = ctx.screen_rect().center().floor();
+                win = win.current_pos(Pos2::new(c.x - (size.x / 2.0).floor(), c.y - 1.0 - (size.y / 2.0).floor()));
             }
         }
         ctx.data_mut(|d| d.insert_temp(key, (frame, size, settled)));
@@ -226,6 +230,166 @@ pub fn win_button(ui: &mut egui::Ui, r: Rect, text: &str, default: bool) -> egui
     p.rect_filled(face.shrink(1.0), 3.0, fill);
     p.text(face.center(), egui::Align2::CENTER_CENTER, text, DLG_FONT, Color32::BLACK);
     resp
+}
+
+/// A template rectangle in the client's pixels: each field through MulDiv
+/// at MS Shell Dlg 8's base units (6 × 13), as the dialog manager converts
+/// a template's controls (VM: DIALOG 477's list at 7, 7, 327 × 221 DLU is
+/// 11, 11, 491 × 359 px).
+pub fn dlu(client: Rect, x: i32, y: i32, w: i32, h: i32) -> Rect {
+    let md = |a: i32, b: i32, c: i32| ((a * b * 2 + c) / (2 * c)) as f32;
+    Rect::from_min_size(client.min + Vec2::new(md(x, 6, 4), md(y, 13, 8)), Vec2::new(md(w, 6, 4), md(h, 13, 8)))
+}
+
+/// A static control's text: from its rectangle's top, word-wrapped to its
+/// width, SS_LEFT or SS_RIGHT; a disabled one in the theme's (109). A
+/// one-line control keeps its text on one line and unclipped: our font is
+/// wider than Tahoma, and wrapping there would drop words the original
+/// shows (W6).
+pub fn win_label(ui: &egui::Ui, r: Rect, text: &str, right: bool, enabled: bool) {
+    let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
+    let one_line = r.height() < 26.0;
+    let mut job = egui::text::LayoutJob::simple(text.to_owned(), DLG_FONT, ink, if one_line { f32::INFINITY } else { r.width() });
+    job.halign = if right { egui::Align::RIGHT } else { egui::Align::LEFT };
+    let g = ui.fonts(|f| f.layout_job(job));
+    let at = if right { Pos2::new(r.right(), r.top()) } else { r.left_top() };
+    let clip = if one_line { ui.clip_rect() } else { r.intersect(ui.clip_rect()) };
+    ui.painter().with_clip_rect(clip).galley(at, g, ink);
+}
+
+/// A combo box's closed height (Windows for the template font, VM).
+pub const COMBO_H: f32 = 21.0;
+
+/// The look of a closed combo box (VM, Windows 11): a drop-down list is a
+/// push-button face, (253) in a rounded (210) → (188) border, square (250)
+/// in (234) when disabled; an editable one (CBS_DROPDOWN) is a white field
+/// in a square (141) border. While its list is open: (204, 228, 247) in a
+/// square (0, 95, 183) border. The chevron: a 1 px (111) V from 13 to 6 px
+/// left of the right edge, rows 9–12.
+fn combo_face(ui: &egui::Ui, r: Rect, edit: bool, enabled: bool, open: bool, hover: bool) {
+    let p = ui.painter();
+    if open {
+        p.rect_filled(r, 0.0, Color32::from_rgb(0, 95, 183));
+        p.rect_filled(r.shrink(1.0), 0.0, Color32::from_rgb(204, 228, 247));
+    } else if !enabled {
+        p.rect_filled(r, 0.0, Color32::from_gray(234));
+        p.rect_filled(r.shrink(1.0), 0.0, Color32::from_gray(250));
+    } else if edit {
+        p.rect_filled(r, 0.0, if hover { Color32::from_rgb(0, 120, 215) } else { Color32::from_gray(141) });
+        p.rect_filled(r.shrink(1.0), 0.0, Color32::WHITE);
+    } else {
+        let (edge, bottom, fill) = if hover {
+            (Color32::from_rgb(0, 120, 212), Color32::from_rgb(0, 108, 191), Color32::from_rgb(224, 238, 249))
+        } else {
+            (Color32::from_gray(210), Color32::from_gray(188), Color32::from_gray(253))
+        };
+        p.rect_filled(r, 4.0, bottom);
+        p.rect_filled(Rect::from_min_max(r.min, Pos2::new(r.right(), r.bottom() - 1.0)), 4.0, edge);
+        p.rect_filled(r.shrink(1.0), 3.0, fill);
+    }
+    let ink = if enabled { Color32::from_gray(111) } else { Color32::from_gray(191) };
+    let (x, y) = (r.right(), r.top());
+    p.add(egui::Shape::line(vec![Pos2::new(x - 12.5, y + 9.0), Pos2::new(x - 9.0, y + 12.5), Pos2::new(x - 5.5, y + 9.0)], Stroke::new(1.0f32, ink)));
+}
+
+/// A combo box's drop-down list under `r` (VM): its width, a 1 px
+/// (0, 120, 215) border, 13 px items, the one under the pointer (at first
+/// the current one) white on (0, 120, 212), a soft shadow at the right.
+/// Returns the item picked; closes on a pick or a press elsewhere.
+fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], current: Option<usize>) -> Option<usize> {
+    let ctx = ui.ctx().clone();
+    let open_id = id.with("open");
+    let mut picked = None;
+    let list = Rect::from_min_size(Pos2::new(r.left(), r.bottom()), Vec2::new(r.width(), 2.0 + 13.0 * items.len() as f32));
+    let area = egui::Area::new(id.with("popup")).order(egui::Order::Foreground).fixed_pos(list.min).show(&ctx, |ui| {
+        ui.allocate_exact_size(list.size(), egui::Sense::hover());
+        let p = ui.painter();
+        for k in 1..=5 {
+            let a = [134u8, 161, 200, 227, 237][k - 1];
+            p.vline(list.right() + k as f32 - 0.5, list.top() + 3.0..=list.bottom(), Stroke::new(1.0f32, Color32::from_black_alpha(255 - a)));
+        }
+        p.rect_filled(list, 0.0, Color32::from_rgb(0, 120, 215));
+        p.rect_filled(list.shrink(1.0), 0.0, Color32::WHITE);
+        let hover = ui.input(|i| i.pointer.interact_pos()).filter(|q| list.contains(*q)).and_then(|q| {
+            let k = ((q.y - list.top() - 1.0) / 13.0).floor();
+            (k >= 0.0 && (k as usize) < items.len()).then_some(k as usize)
+        });
+        let hot = hover.or(current);
+        for (k, t) in items.iter().enumerate() {
+            let row = Rect::from_min_size(Pos2::new(list.left() + 1.0, list.top() + 1.0 + 13.0 * k as f32), Vec2::new(list.width() - 2.0, 13.0));
+            let ink = if hot == Some(k) {
+                p.rect_filled(row, 0.0, Color32::from_rgb(0, 120, 212));
+                Color32::WHITE
+            } else {
+                Color32::BLACK
+            };
+            p.text(row.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, t, DLG_FONT, ink);
+        }
+        if ui.input(|i| i.pointer.primary_released()) {
+            picked = hover;
+        }
+    });
+    let outside = ctx.input(|i| i.pointer.any_pressed()) && !area.response.rect.contains(ctx.input(|i| i.pointer.interact_pos()).unwrap_or_default()) && !r.contains(ctx.input(|i| i.pointer.interact_pos()).unwrap_or_default());
+    if picked.is_some() || outside || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        ctx.data_mut(|d| d.insert_temp(open_id, false));
+    }
+    picked
+}
+
+/// A drop-down list combo (CBS_DROPDOWNLIST) at its closed rectangle:
+/// returns the item picked from its list.
+pub fn win_combo_list(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[String], current: usize, enabled: bool) -> Option<usize> {
+    let r = Rect::from_min_size(r.min, Vec2::new(r.width(), COMBO_H));
+    let resp = ui.interact(r, id, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let open_id = id.with("open");
+    let mut open = enabled && ui.data(|d| d.get_temp(open_id)).unwrap_or(false);
+    if resp.clicked() {
+        open = !open;
+        ui.data_mut(|d| d.insert_temp(open_id, open));
+    }
+    combo_face(ui, r, false, enabled, open, resp.hovered() && enabled);
+    let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
+    let text_r = Rect::from_min_max(r.min + Vec2::new(4.0, 0.0), Pos2::new(r.right() - 17.0, r.bottom()));
+    if let Some(t) = items.get(current) {
+        ui.painter().with_clip_rect(text_r).text(text_r.left_center(), egui::Align2::LEFT_CENTER, t, DLG_FONT, ink);
+    }
+    if open {
+        return combo_popup(ui, r, id, items, Some(current));
+    }
+    None
+}
+
+/// An editable combo (CBS_DROPDOWN) at its closed rectangle: the edit over
+/// the field (`focus` selects its text and focuses it), the button at the
+/// right opening the list; returns the item picked.
+pub fn win_combo_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, items: &[String], focus: bool) -> Option<usize> {
+    let r = Rect::from_min_size(r.min, Vec2::new(r.width(), COMBO_H));
+    let button = Rect::from_min_max(Pos2::new(r.right() - 17.0, r.top()), r.max);
+    let resp = ui.interact(button, id, egui::Sense::click());
+    let open_id = id.with("open");
+    let mut open = ui.data(|d| d.get_temp(open_id)).unwrap_or(false);
+    if resp.clicked() {
+        open = !open;
+        ui.data_mut(|d| d.insert_temp(open_id, open));
+    }
+    let hover = ui.rect_contains_pointer(r);
+    combo_face(ui, r, true, true, open, hover);
+    let field = Rect::from_min_max(r.min + Vec2::new(3.0, 3.0), Pos2::new(button.left(), r.bottom() - 3.0));
+    let mut out = egui::TextEdit::singleline(text).frame(false).font(DLG_FONT).margin(egui::Margin::symmetric(1.0, 0.0)).desired_width(field.width()).show(&mut ui.new_child(egui::UiBuilder::new().max_rect(field)));
+    if focus {
+        out.response.request_focus();
+        let n = text.chars().count();
+        out.state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(n))));
+        out.state.store(ui.ctx(), out.response.id);
+    }
+    if open {
+        let cur = items.iter().position(|t| t == text);
+        if let Some(k) = combo_popup(ui, r, id, items, cur) {
+            *text = items[k].clone();
+            return Some(k);
+        }
+    }
+    None
 }
 
 /// A transparent full-screen layer at `order` that swallows the pointer
@@ -646,5 +810,48 @@ mod ddx_tests {
         assert_eq!(ddx_int("-7x"), Some(-7));
         assert_eq!(ddx_int("0x10"), Some(0));
         assert_eq!((ddx_int(""), ddx_int("-"), ddx_int("abc")), (None, None, None));
+    }
+}
+
+#[cfg(test)]
+mod combo_tests {
+    use super::*;
+
+    /// A click opens the list under the combo; a click on an item picks it
+    /// and closes the list.
+    #[test]
+    fn drop_down_list_opens_and_picks() {
+        let ctx = egui::Context::default();
+        let items = vec!["866 MS-DOS".to_string(), "Windows-1251".to_string()];
+        let r = Rect::from_min_size(Pos2::new(100.0, 100.0), Vec2::new(120.0, COMBO_H));
+        let mut picked = None;
+        let mut t = 0.0;
+        let mut frame = |events: Vec<egui::Event>, picked: &mut Option<usize>| {
+            t += 0.05;
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))), time: Some(t), events, ..Default::default() };
+            let _ = ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    if let Some(k) = win_combo_list(ui, r, egui::Id::new("cp"), &items, 1, true) {
+                        *picked = Some(k);
+                    }
+                });
+            });
+        };
+        let click = |pos: Pos2| {
+            let ev = |pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            vec![vec![egui::Event::PointerMoved(pos)], vec![ev(true)], vec![ev(false)]]
+        };
+        frame(vec![], &mut picked);
+        for evs in click(r.center()) {
+            frame(evs, &mut picked);
+        }
+        frame(vec![], &mut picked);
+        // Item 0: the list's first 13 px row under the combo.
+        for evs in click(Pos2::new(r.left() + 20.0, r.bottom() + 1.0 + 6.0)) {
+            frame(evs, &mut picked);
+        }
+        assert_eq!(picked, Some(0));
+        frame(vec![], &mut picked);
+        assert_eq!(ctx.data(|d| d.get_temp::<bool>(egui::Id::new("cp").with("open"))), Some(false));
     }
 }

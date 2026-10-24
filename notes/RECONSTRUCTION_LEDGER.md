@@ -6818,6 +6818,33 @@ both, doubling translucent ink (a 40 % border came out 64 %); it now
 samples a fraction of a pixel off the centre, a fill rule like the GPU's.
 Open (W4.5): the other 21 dialogs on their templates.
 
+### L9.242 — DIALOG 392 on its template; the dialog controls' Windows looks  ·  ✅
+VM capture of «Параметры осциллограммы» (application menu → «Параметры
+файла...») against its 347 × 277 DLU template: the client 521 × 450 px,
+every control at its template rectangle (each field through MulDiv at the
+6 × 13 base units — the dialog manager's conversion, the same that put
+DIALOG 477's list at 11, 11, 491 × 359), the labels SS_RIGHT at x 12–13,
+the values static text at 120–121, ОК «Закрыть» 120 × 23 at (387, 416).
+The combos are 21 px tall and look like Windows 11 draws them: a
+drop-down list as a push-button face (253 in a rounded (210) → (188)
+border), disabled as (250) in a square (234) with (109) text, the
+editable one (the sample rate, CBS_DROPDOWN) a white field in a square
+(141) border; the chevron a 1 px (111) V 13–6 px from the right edge;
+open, the combo turns (204, 228, 247) in (0, 95, 183) and its list hangs
+under it at its width — a (0, 120, 215) border, 13 px items, the one
+under the pointer white on (0, 120, 212), a 5 px shadow at its right
+(the code page list: «866 MS-DOS», «Windows-1251», as ours). Ours was an
+egui grid of read-only text fields and egui combo boxes. Now `dlu`,
+`win_label`, `win_combo_list` and `win_combo_edit` (in `dialogs.rs`) draw
+the template's controls, and DIALOG 392 is laid out on them. The VM's
+placement fits CenterWindow halving the window rect with Windows 11's
+invisible 2 px frame left, right and below: the visible left-top is
+(cx − ⌊w/2⌋, cy − 1 − ⌊h/2⌋) about the main window's centre (1280, 696)
+— DIALOGs 463, 477, 392 at (1101, 306), (1023, 475), (1019, 457); ours
+places them so (INFERRED: the invisible frame's 2 px; READ: the three
+positions). A one-line static keeps its text unwrapped (our font is wider
+than Tahoma: wrapping dropped words the original shows; W6).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

@@ -1435,6 +1435,7 @@ mod window_tests {
             "channels" => vec![C::ChannelsDialog],
             "coef" => vec![C::Coefficients],
             "fileparams" => vec![C::FileParams],
+            "hdrcomment" => vec![C::HdrComment],
             "explorer" => vec![C::ToggleExplorer],
             "parambar" => vec![C::ToggleParamBar],
             "vizirs" => vec![C::ToggleVizir(0), C::ToggleVizir(1), C::ToggleVizir(2)],
