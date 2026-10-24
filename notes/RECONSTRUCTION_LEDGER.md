@@ -4581,8 +4581,8 @@ ours (the original: one MFC property grid — «Тип блока» row, a group
 per characteristic with a framed colour box ticked when visible and
 toggled by a click, `0x407dc0` / `0x4075c0`); (the grid's splitter
 height `Properties Height` is now kept per diagram in our settings — read
-as the panel's default, written when it changes); 32806 with no document stays
-enabled-looking in the original (INFERRED; ours greys it).
+as the panel's default, written when it changes); ~~32806 with no document stays
+enabled-looking in the original (INFERRED; ours greys it)~~ — run: greyed in both (L9.295).
 
 ### L9.153 — The circle / differential parameter grid as the original's property grid  ·  ✅
 Read (gap sweep, by hand `0x4076fd`): the panel under the circle and the
@@ -8105,6 +8105,15 @@ Run on both programs:
   a child's system menu, which MFC's tabbed MDI children have not. Ours
   cycled and closed. Now `handle_keys` has no MDI keys; test
   `shortcuts_as_egui_winit_sends_them` (nothing moves or closes).
+
+### L9.295 — VM: a paste's selection, 32806 with no document, Enter in «Быстрый анализ»  ·  ✅
+Three RUN items, alike in both programs, nothing to change:
+- **A paste's selection (L9.111).** After Ctrl+V only the pasted lane is
+  selected; the copied channel is deselected.
+- **32806 with no document (L9.152).** The ОМП tab's «Параметры» and
+  «Анализ» are greyed. L9.152's guess that the original shows it
+  enabled-looking was wrong.
+- **Enter in «Быстрый анализ» (L9.151).** It closes the panel (its OK).
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

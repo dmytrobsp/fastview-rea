@@ -249,16 +249,16 @@ items (VM ones also in W4.4):
     (run, L9.291); the ribbon's reduction steps (L9.91); the printed vector
     legend (L9.93); the preview on non-A4 paper (L9.94); ~~GDI's Ellipse box~~
     (run, L9.285); the diagram tab order in the workspace (L9.105); the splitter
-    cursor (L9.106); the docking divider's limits (L9.109); a paste's
-    selection (L9.111); the print dialog's fields / status (L9.113); the
+    cursor (L9.106); the docking divider's limits (L9.109); ~~a paste's
+    selection~~ (run, L9.295); the print dialog's fields / status (L9.113); the
     preview's per-page DC (L9.121); «Свойства»' DEVMODE (L9.122); ~~the
     older looks' app button~~ (run, L9.223); Ctrl over a hot marker (L9.128);
     ~~MDI keys / order~~ (run: none with tabs, L9.294); a 0 / negative rate in 392 (L9.131,
     L9.148); the `.set` with formula + digital channels (L9.143); menu
     check column, combine with a computed channel, popup keyboard
     (L9.144, L9.146); ~~status bar prompts~~ (run, L9.291); ~~a group tab strip's
-    right-click~~ (run, L9.291); ~~Aqua's title~~ (run: left, as ours); Enter in quick analysis
-    (L9.151); 32806 with no document (L9.152); «Удалить файлы» with
+    right-click~~ (run, L9.291); ~~Aqua's title~~ (run: left, as ours); ~~Enter in quick analysis~~
+    (run, L9.295); ~~32806 with no document~~ (run, L9.295); «Удалить файлы» with
     nothing selected (L9.154); ~~Save As caption~~ (run: the system's own); ~~opening an open
     file~~ (run, L9.190), a drop on the frame (L9.159); ~~the toolbar wheel~~ (run, L9.291); drag
     auto-scroll at the left / right insets (L9.164); the level edit
