@@ -1447,7 +1447,7 @@ mod window_tests {
         assert_eq!(w.app.dock_views_shown(), 1, "one tabbed group");
         // The group's caption out to the left edge marker.
         let v = canvas(&w, app::Pane::Vector).or_else(|| canvas(&w, app::Pane::Frequency)).expect("the group's pane");
-        let left = |a: &App| docking::edge_markers(a.dock_client)[0].0.center();
+        let left = |_: &App| docking::edge_markers(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0)).expand(8.0))[0].0.center();
         drag(&mut w, Pos2::new(v.left() + 80.0, v.top() - 10.0), &left);
         assert_eq!((w.app.docks[Unit::Vector].place, w.app.docks[Unit::Vector].spot), (Place::Docked, Spot::Edge { edge: Edge::Left, outer: true }));
         assert_eq!(w.app.docks[Unit::Frequency].spot, Spot::Tab(Unit::Vector), "the tab went along");

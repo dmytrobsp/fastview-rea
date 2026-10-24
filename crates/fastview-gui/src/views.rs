@@ -636,7 +636,11 @@ impl App {
         let down = down || self.dock_drag_hold;
         let client = self.dock_client;
         let docs = ctx.available_rect();
-        let mut markers: Vec<(egui::Rect, Drop)> = crate::docking::edge_markers(client).to_vec();
+        // The edge markers on the frame's client — the whole window with
+        // its 8 px invisible frame: the ribbon draws the caption (VM,
+        // maximised: the top one over the caption row 8 px from the
+        // screen's top, the side ones centred on the window's height).
+        let mut markers: Vec<(egui::Rect, Drop)> = crate::docking::edge_markers(ctx.screen_rect().expand(8.0)).to_vec();
         // The docked group under the pointer (its slot's pane rect).
         let target = pos.and_then(|p| UNITS.into_iter().filter(|&t| t != unit && self.docks[t].place == Place::Docked).find_map(|t| self.dock_rects[t as usize].filter(|r| r.contains(p)).map(|r| (t, r))));
         let host = target.map(|(_, r)| r);
@@ -686,16 +690,7 @@ impl App {
         }
         for (r, d) in &markers {
             let on = hot == Some(*d) && pos.is_some_and(|p| r.contains(p));
-            let fill = if on { egui::Color32::from_rgb(120, 160, 230) } else { egui::Color32::from_rgb(230, 236, 248) };
-            painter.rect(*r, 3.0, fill, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(70, 100, 170)));
-            let glyph = match d {
-                Drop::Edge(Edge::Left, _) | Drop::Beside(Edge::Left) => "◀",
-                Drop::Edge(Edge::Right, _) | Drop::Beside(Edge::Right) => "▶",
-                Drop::Edge(Edge::Top, _) | Drop::Beside(Edge::Top) => "▲",
-                Drop::Edge(Edge::Bottom, _) | Drop::Beside(Edge::Bottom) => "▼",
-                Drop::Tab => "▣",
-            };
-            painter.text(r.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(14.0), egui::Color32::from_rgb(40, 60, 120));
+            dock_marker(&painter, *r, *d, on);
         }
         if down {
             // While a marker is hot only the preview moves.
@@ -1464,6 +1459,44 @@ fn grip(ui: &mut egui::Ui, id: egui::Id, edge: crate::docking::Edge, size: f32, 
         let new = (size + d.x + d.y).clamp(*range.start(), *range.end());
         ui.ctx().data_mut(|m| m.insert_temp(id.with("size"), new));
     }
+}
+
+/// A smart-docking marker in the VS2008 look (VM): a rounded box, white
+/// at the top to light grey, a grey edge, and a small blue-grey triangle on
+/// the box's inner side pointing to its edge; the centre one a small pane.
+/// Hot: a light blue face.
+fn dock_marker(p: &egui::Painter, r: egui::Rect, d: crate::docking::Drop, on: bool) {
+    use crate::docking::{Drop, Edge};
+    use egui::{pos2, Color32};
+    let r = r.shrink(2.0);
+    let (top, bottom) = if on { (Color32::from_rgb(232, 240, 252), Color32::from_rgb(196, 214, 240)) } else { (Color32::from_rgb(252, 252, 252), Color32::from_rgb(222, 224, 228)) };
+    let mut mesh = egui::Mesh::default();
+    for (q, c) in [(r.left_top(), top), (r.right_top(), top), (r.right_bottom(), bottom), (r.left_bottom(), bottom)] {
+        mesh.colored_vertex(q, c);
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    p.add(egui::Shape::mesh(mesh));
+    p.rect_stroke(r, 4.0, egui::Stroke::new(1.0f32, Color32::from_rgb(166, 170, 178)));
+    let ink = Color32::from_rgb(112, 132, 188);
+    let (c, h) = (r.center(), 5.0);
+    let edge = match d {
+        Drop::Edge(e, _) | Drop::Beside(e) => Some(e),
+        Drop::Tab => None,
+    };
+    let tri = match edge {
+        Some(Edge::Top) => [pos2(c.x - h, r.bottom() - 7.0), pos2(c.x + h, r.bottom() - 7.0), pos2(c.x, r.bottom() - 7.0 - h)],
+        Some(Edge::Bottom) => [pos2(c.x - h, r.top() + 7.0), pos2(c.x + h, r.top() + 7.0), pos2(c.x, r.top() + 7.0 + h)],
+        Some(Edge::Left) => [pos2(r.right() - 7.0, c.y - h), pos2(r.right() - 7.0, c.y + h), pos2(r.right() - 7.0 - h, c.y)],
+        Some(Edge::Right) => [pos2(r.left() + 7.0, c.y - h), pos2(r.left() + 7.0, c.y + h), pos2(r.left() + 7.0 + h, c.y)],
+        None => {
+            let w = egui::Rect::from_center_size(c, egui::vec2(16.0, 14.0));
+            p.rect(w, 0.0, Color32::WHITE, egui::Stroke::new(1.0f32, ink));
+            p.rect_filled(egui::Rect::from_min_size(w.min, egui::vec2(16.0, 3.0)), 0.0, ink);
+            return;
+        }
+    };
+    p.add(egui::Shape::convex_polygon(tri.to_vec(), ink, egui::Stroke::NONE));
 }
 
 fn dock_frame(strip: egui::Color32, edge: crate::docking::Edge) -> egui::Frame {

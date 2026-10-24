@@ -7,7 +7,8 @@
 # then "UP"), "WHEEL x,y,n"
 # (n notches, + up), "KEYDOWN ctrl" / "KEYUP ctrl" (shift, alt: a modifier
 # held across steps), "SIZE w,h" (the front window restored, w × h at 0,0),
-# "SHOT name.png" (a capture now). Logs next to itself.
+# "CLOSE" (WM_CLOSE to the main window), "SHOT name.png" (a capture now).
+# Logs next to itself.
 param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave, [switch]$Soft)
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $log = Join-Path $here 'keys.log'
@@ -77,6 +78,9 @@ foreach ($k in ($Keys -split ';')) {
         $h = [In]::GetForegroundWindow()
         [In]::ShowWindow($h, 9) | Out-Null; Start-Sleep -Milliseconds 300
         [In]::MoveWindow($h, 0, 0, [int]$Matches[1], [int]$Matches[2], $true) | Out-Null
+    } elseif ($k -eq 'CLOSE') {
+        # WM_CLOSE to the program's main window (its own close path).
+        $p.CloseMainWindow() | Out-Null
     } elseif ($k -eq 'UP') {
         [In]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero)
     } elseif ($k -match '^WHEEL (\d+),(\d+),(-?\d+)$') {

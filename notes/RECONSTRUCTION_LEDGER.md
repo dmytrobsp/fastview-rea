@@ -8246,6 +8246,29 @@ our wording; comdlg's "%lu documents waiting" is still not shown.)
 Small visual: the original's printer combo opens with the focus (a
 dotted focus rectangle); ours has no focus mark there.
 
+### L9.302 — VM: the diagram tab order kept, Ctrl in a docking drag, the edge markers on the whole window in the VS2008 look  ·  ✅
+Run (WIN_1999; the original's registry state restored before and
+after; the harness gained `CLOSE`, WM_CLOSE to the main window):
+- **The tab order (L9.105).** «Круговая» dragged over «Векторная» swaps
+  them in both; after a close and a restart both open with «Круговая
+  диаграмма» first and in front. (Ours stores the workspace as it
+  changes, the original at its close: only a killed process differs.)
+- **Ctrl over a hot marker (L9.128).** A pane dragged out, Ctrl pressed
+  and released: in both the window just follows and stays floating.
+- **The edge markers' place.** The original's frame client is the whole
+  window — the ribbon draws the caption — with its 8 px invisible frame
+  when maximised: its top marker sits over the caption row (8 px from
+  the screen's top) and the side ones are centred on the window's
+  height. Ours were 16 px in from the area under the ribbon. Now
+  `edge_markers` of the window rect grown by 8 px (the drops and
+  previews keep the dock area).
+- **Their look.** The original's (VS2008) markers are light rounded
+  boxes, white to light grey with a grey edge, and a small blue-grey
+  triangle on the inner side; ours were bordered in blue with a large
+  dark glyph in the middle. Now `views::dock_marker` draws them so
+  (the centre one a small pane). Small visual: the original's fade in
+  and are a little translucent.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
