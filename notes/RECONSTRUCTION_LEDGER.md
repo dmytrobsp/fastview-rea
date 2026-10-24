@@ -6291,6 +6291,21 @@ were identical, the `.set` differed only in the new computed channels'
 (L9.200's residual). Now the writer takes `Computed::custom_color`; the
 three files are byte-identical. The outputs stay local.
 
+### L9.215 — VM run: the ОМП dialog's grid and station image as the original shows them  ·  ✅
+Run on the VM (the original, WIN_1999): «ОМП» → «Параметры» shows the
+712 × 447 dialog of L9.209; the grid's names left-aligned, its first row
+«Название | Подстанция»; a channel row's value opens an in-place combo
+listing the record's analog channels; a value set becomes bold — the
+value, not its name; the station's image is two overlapping rings (a
+transformer's mark). With Ia–Ic and Uab–Uca chosen and nothing else,
+«Анализ» shows «Данные для определения места повреждения не введены.»
+(MB_ICONWARNING) — the ОМП files compare stays to do (it needs a whole
+line description entered by clicks). Ours centred the names, bolded the
+name, drew the station as a dot. Now the names are left-aligned, a
+modified channel value is bold, `tree_icon` draws the two rings.
+Residual: a modified text value's bold (ours cannot bold an edit field);
+the ОМП file comparison (W4.2).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

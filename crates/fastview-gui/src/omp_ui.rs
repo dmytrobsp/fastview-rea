@@ -1023,13 +1023,18 @@ impl ParamsDialog {
                         let node = self.sel;
                         for (label, f, is_chan) in grid_rows(self.work.method, node) {
                             let Some(v) = field_mut(&mut self.work, node, f) else { continue };
+                            // Seen on the VM: the names left-aligned, a
+                            // modified value (not its name) bold.
                             let modified = v.as_str() != default_value(node, f);
-                            let text = if modified { RichText::new(label).strong() } else { RichText::new(label) };
-                            ui.add_sized([230.0, 18.0], egui::Label::new(text).truncate());
+                            ui.allocate_ui_with_layout(egui::vec2(230.0, 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                ui.set_min_width(230.0);
+                                ui.add(egui::Label::new(label).truncate());
+                            });
                             if is_chan {
+                                let shown = if modified { RichText::new(v.as_str()).strong() } else { RichText::new(v.as_str()) };
                                 egui::ComboBox::from_id_salt(("omp_chan", label))
                                     .width(190.0)
-                                    .selected_text(v.as_str())
+                                    .selected_text(shown)
                                     .show_ui(ui, |ui| {
                                         for n in channels {
                                             ui.selectable_value(v, n.clone(), n.as_str());
@@ -1055,15 +1060,18 @@ impl ParamsDialog {
 }
 
 /// A tree item's image (BITMAP 476's four cells, our own drawings on
-/// white): a station's round mark, a section's conductor with its ends, a
+/// white): a station's two rings, a section's conductor with its ends, a
 /// parallel line's two conductors, a tap's branch.
 fn tree_icon(p: &egui::Painter, r: egui::Rect, node: &Node) {
     let c = r.center();
     let v = |x: f32, y: f32| c + egui::vec2(x, y);
     let st = |w: f32, col| egui::Stroke::new(w, col);
     match node {
+        // Two overlapping rings, a transformer's mark (seen on the VM).
         Node::Station(_) => {
-            p.circle_filled(c, 5.0, Color32::from_rgb(30, 60, 140));
+            for x in [-2.5, 2.5] {
+                p.circle_stroke(v(x, 0.0), 4.5, st(1.5, Color32::from_rgb(40, 40, 100)));
+            }
         }
         Node::Section(..) => {
             p.line_segment([v(-5.0, 0.0), v(5.0, 0.0)], st(2.0, Color32::from_rgb(170, 160, 90)));
