@@ -91,10 +91,16 @@ fn find_chan(d: &Doc, name: &str) -> Option<Result<usize, usize>> {
 }
 
 fn chan_samples(d: &Doc, name: &str) -> Option<Vec<f64>> {
-    // The flagged values (`0x426020`: ADC / remove-DC / invert; the cache
-    // ch+0x20 the engine copies), ledger L9.7 / L9.134.
+    // The flagged values as `0x426020` returns them (ADC / remove-DC /
+    // invert, times the shown factor k — a «P» record shown in secondary
+    // values is divided by its ratio; the cache ch+0x20 the engine
+    // copies), ledger L9.7 / L9.134; VM: WIN_1999 with Inom 1000 gives
+    // «КЗ отсутствует.».
     match find_chan(d, name)? {
-        Ok(i) => d.flagged.analog.get(i).map(|c| c.samples.clone()),
+        Ok(i) => {
+            let k = d.shown_k(i);
+            d.flagged.analog.get(i).map(|c| c.samples.iter().map(|x| x * k).collect())
+        }
         Err(j) => Some(d.computed[j].samples.clone()),
     }
 }
@@ -283,6 +289,7 @@ impl App {
             // The flags lead the digital list: their shown / value flags go
             // with them.
             let keep: Vec<bool> = d.osc.digital.iter().map(|c| !KZ_PHASES.contains(&c.id.as_str())).collect();
+            d.retain_digital_keys(&keep);
             let mut it = keep.iter();
             d.digital_visible.retain(|_| *it.next().unwrap_or(&true));
             let mut it = keep.iter();

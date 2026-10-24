@@ -210,7 +210,7 @@ impl App {
             }
             ui.add_space(6.0);
             // The customise arrow: one item, «Minimize the Ribbon».
-            let custom = qat_arrow(ui, p, true);
+            let custom = qat_arrow(ui, p, true).on_hover_text("Customize Quick Access Toolbar");
             if custom.clicked() || custom.secondary_clicked() {
                 open_min_menu(ui, custom.rect.left_bottom());
             }
@@ -284,8 +284,9 @@ impl App {
                 let hot = ctx.input(|i| i.pointer.hover_pos()).is_some_and(|q| q.distance(r.center()) <= r.width() / 2.0);
                 paint_orb(&ui.painter().clone().with_layer_id(egui::LayerId::new(egui::Order::Middle, egui::Id::new("fv_app_orb_layer"))), r, colors, if open { 2 } else if hot { 1 } else { 0 });
             }
-            for (label, tab) in [("Главная", RibbonTab::Home), ("ОМП", RibbonTab::Omp)] {
+            for (n, (label, tab)) in [("Главная", RibbonTab::Home), ("ОМП", RibbonTab::Omp)].into_iter().enumerate() {
                 let r = ribbon_tab(ui, label, self.tab == tab, p);
+                self.kt_rects.push((crate::keytips::Target::Tab(n), r.rect, true));
                 if r.double_clicked() {
                     cmds.push(Command::ToggleRibbonMin);
                 } else if r.clicked() {
@@ -1429,8 +1430,8 @@ impl App {
                                     self.dispatch(Command::OpenPath(path));
                                 }
                             }
-                            // The Cyrillic menu keys cannot be typed.
-                            Target::AppItem(_) => {}
+                            // The Cyrillic menu and tab keys cannot be typed.
+                            Target::AppItem(_) | Target::Tab(_) => {}
                         }
                         break;
                     }
@@ -1467,11 +1468,12 @@ impl App {
         let look = crate::keytips::office2007_box(self.skin);
         for (keys, target) in crate::keytips::tips(level) {
             let Some(&(_, r, enabled)) = self.kt_rects.iter().find(|(t, ..)| *t == target) else { continue };
-            // The text: the style's tooltip ink (76,76,76), disabled blended
-            // half-way (the blend colour INFERRED white); COLOR_INFOTEXT else.
+            // The text: the style's tooltip ink (76,76,76); a disabled
+            // element's whole window at alpha 128, so its ink too (VM: the
+            // button shows through); COLOR_INFOTEXT else.
             let ink = match (look.is_some(), enabled) {
                 (true, true) => Color32::from_gray(76),
-                (true, false) => Color32::from_gray(165),
+                (true, false) => Color32::from_gray(76).gamma_multiply(0.5),
                 (false, true) => Color32::BLACK,
                 (false, false) => Color32::from_gray(150),
             };

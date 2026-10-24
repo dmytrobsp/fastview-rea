@@ -325,6 +325,13 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
 /// channel names shown through the record's code page (`0x4543e0`): so
 /// those go out in `names` (the record's code page), the rest in cp1251.
 pub fn write(osc: &Oscillogram, names: Encoding) -> (Vec<u8>, Vec<u8>) {
+    write_numbered(osc, names, &[])
+}
+
+/// [`write`] with the digital channels' numbers given (`dig_no[i]` for
+/// channel i; empty = their places): channels left out of the record
+/// (the ОМП's flags) still count in the original's numbering (VM).
+pub fn write_numbered(osc: &Oscillogram, names: Encoding, dig_no: &[usize]) -> (Vec<u8>, Vec<u8>) {
     use crate::views::fmt_g;
     // Names are wrapped in \u{1} … \u{2} and encoded on their own below.
     let nm = |s: &str| format!("\u{1}{s}\u{2}");
@@ -359,10 +366,11 @@ pub fn write(osc: &Oscillogram, names: Encoding) -> (Vec<u8>, Vec<u8>) {
         cfg.push_str("\r\n");
     }
     for (i, ch) in osc.digital.iter().enumerate() {
+        let no = dig_no.get(i).copied().unwrap_or(i + 1);
         if rev {
-            cfg.push_str(&format!("{},{},,,{}\r\n", i + 1, nm(&ch.id), ch.normal));
+            cfg.push_str(&format!("{},{},,,{}\r\n", no, nm(&ch.id), ch.normal));
         } else {
-            cfg.push_str(&format!("{},{},{}\r\n", i + 1, nm(&ch.id), ch.normal));
+            cfg.push_str(&format!("{},{},{}\r\n", no, nm(&ch.id), ch.normal));
         }
     }
     cfg.push_str(&format!("{}\r\n", fmt_g(osc.line_freq)));
@@ -566,11 +574,16 @@ pub struct CffRevisionError;
 /// sections that came with the record, then `--- file type: DAT BINARY: n---`
 /// and the data bytes. Text in CP1251.
 pub fn write_cff(osc: &Oscillogram, sections: &CffSections, names: Encoding) -> Result<Vec<u8>, CffRevisionError> {
+    write_cff_numbered(osc, sections, names, &[])
+}
+
+/// [`write_cff`] with the digital channels' numbers (see [`write_numbered`]).
+pub fn write_cff_numbered(osc: &Oscillogram, sections: &CffSections, names: Encoding, dig_no: &[usize]) -> Result<Vec<u8>, CffRevisionError> {
     if osc.rev_year < 2013 {
         return Err(CffRevisionError);
     }
     // The `.cfg` writer's bytes (cp1251, CR LF, the revision as read).
-    let (cfg, dat) = write(osc, names);
+    let (cfg, dat) = write_numbered(osc, names, dig_no);
     let mut out = to_cp1251("--- file type: CFG ---\r\n");
     out.extend(cfg);
     for (kind, body) in [("HDR", &sections.hdr), ("INF", &sections.inf), ("SET", &sections.set)] {

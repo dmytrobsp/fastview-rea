@@ -6323,6 +6323,53 @@ those places.
 Residual: the print list's icons and whether its arrow stays enabled
 without a document (ours: greyed with the button) — NOT DETERMINED.
 
+### L9.217 — VM runs: an ОМП run and the saved files, byte for byte (W4.2)  ·  ✅
+Read (subagent report, spot-checked): the run `0x4a00b0` sets the shown
+flag first (`0x4a00f5`), fails with 349 / 354 before the визиры, and past
+the method's pipeline runs one tail with no exits (`0x4a1433`…): the
+window to визиры 1 / 2, the result bar (frame+0x751c, id 221) shown,
+the text, «Lкз» and «КЗ фазы C / B / А» added — whatever the result
+(«КЗ отсутствует.», «на смежной линии.» alike). «Параметры» OK runs it
+(`0x4542e4`) and «Анализ» (`0x449890`) then toggles it off (`0x4a17a0`:
+bar hidden, channels deleted, визиры kept) — which an earlier VM attempt
+had done, seeing no bar.
+VM (WIN_1999, «P» channels 2000 / 7500 : 1, our `.omp`: isolated, Ia–Ic,
+Uab–Uca = UA–UC I СШ, one section 10 km / 30 / 0.1 / 0.4, OK only, then
+Save As): Inom 1000 → «    КЗ отсутствует.», визиры 219 / 238 ms; Inom 1
+→ «    2-х фазное КЗ: фазы BC на смежной линии.», визиры 242 / 261 ms.
+The saved `.cfg` keeps `7,6A,1D` (the flags are not written) with the
+record's digital channel numbered 4, its place after the three flags; the
+`.set` has «Lкз» and the three «КЗ фазы» with ShowFlags 8417 (bit 13).
+Ours gave a fault with Inom 1000: the ОМП read the flagged values without
+the shown factor k (`0x426020` returns x·k: a «P» record shown secondary
+divided by its ratio — L9.7 / L9.134); wrote the flags into the `.cfg`
+and their ShowFlags without bit 13; and lost «КЗ фазы А» from the `.set`
+— the file-name keys (`set.keys`) did not move when channels were moved
+in front (the ОМП's flags; a merge's anchored channels too). Now
+`chan_samples` applies `shown_k`, `Doc::file_record` drops the flags and
+numbers the rest by their place (`comtrade::write_numbered` /
+`write_cff_numbered`), `digital_flags` sets bit 13 for them,
+`move_appended_keys` / `retain_digital_keys` keep the keys with their
+channels. The `.cfg` / `.dat` / `.set` of both runs are byte-identical to
+the original's (test hook `omp_dump`, `FV_OMP_INOM`). Test
+`inserted_flags_keep_the_keys_and_the_numbering`.
+Residual: whether the numbering counts skipped records the same way for
+analog (formula channels among file ones) — NOT DETERMINED (INFERRED
+alike); the `.cff` path not run on the VM.
+
+### L9.218 — VM run: the keytips with no document; «&Главная»'s «Г»  ·  ✅
+Seen on the VM (F10, no document): F, 1, and 2 / 3 for the disabled
+Сохранить / Печать drawn as the whole keytip at half alpha (the button
+shows through box and text — L9.97's alpha-128 window); «Г» under
+«Главная», centred across the tab and on its bottom edge — the category's
+name is «&Главная» in the binary, «ОМП» has no `&` and no keytip; U (the
+key under «Г») does nothing, the keytips stay. The customise arrow's
+tooltip reads «Customize Quick Access Toolbar». Ours drew the disabled
+text in an opaque grey and had no tab keytips. Now the disabled ink is
+the tooltip ink at half alpha, `keytips::Target::Tab` with «Г» (never
+typed: A–Z give Latin letters, L9.90), and the arrow has its tooltip.
+Closes W2.13.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

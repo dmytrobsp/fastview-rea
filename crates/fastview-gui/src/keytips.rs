@@ -33,6 +33,8 @@ pub enum Target {
     PrintMenu,
     /// Recent document `n` (0-based): «&1»…«&9», «1&0» (`0x1011cb1e`).
     Recent(usize),
+    /// Category tab `n`: «&Главная» gives «Г» (VM); «ОМП» has no `&`.
+    Tab(usize),
 }
 
 /// The top-left of a keytip box of `size` on its element `r`
@@ -51,6 +53,8 @@ pub fn tip_origin(target: Target, r: Rect, size: Vec2) -> Pos2 {
         Target::AppButton => Pos2::new(r.left() + 10.0, cy - half(size.y)),
         Target::Qat(_) => Pos2::new(cx - half(size.x), cy),
         Target::Help => Pos2::new(r.left() + 10.0, r.bottom() - half(size.y)),
+        // A category tab: centred across it and on its bottom edge (VM).
+        Target::Tab(_) => Pos2::new(cx - half(size.x), r.bottom() - half(size.y)),
         Target::AppItem(_) | Target::PrintMain => Pos2::new(r.left() + 32.0 + 4.0 - size.x, r.bottom() - size.y - 4.0),
         Target::PrintMenu => Pos2::new(r.right() - half(size.x), r.bottom() - size.y - 4.0),
         // A text-only menu row: at its left, centred on its middle (ours).
@@ -95,7 +99,9 @@ pub fn office2007_box(skin: crate::theme::Skin) -> Option<(Color32, Color32, Col
 /// The keytips of a level, in the order they are scanned.
 pub fn tips(level: Level) -> Vec<(&'static str, Target)> {
     match level {
-        Level::Tabs => vec![("F", Target::AppButton), ("1", Target::Qat(0)), ("2", Target::Qat(1)), ("3", Target::Qat(2)), ("A", Target::Help)],
+        // «Г» is Cyrillic: no key types it (A–Z give Latin letters), so the
+        // category level stays out of reach.
+        Level::Tabs => vec![("F", Target::AppButton), ("1", Target::Qat(0)), ("2", Target::Qat(1)), ("3", Target::Qat(2)), ("Г", Target::Tab(0)), ("A", Target::Help)],
         // Rows: Открыть, Сохранить, Сохранить как, Проводник, Печать,
         // Параметры файла, Комментарии, Загрузка настроек, Настройки,
         // Закрыть (Проводник and Комментарии have no `&`).

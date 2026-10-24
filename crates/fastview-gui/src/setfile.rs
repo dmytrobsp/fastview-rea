@@ -193,6 +193,36 @@ impl Doc {
         comtrade::encode_text(&text, Encoding::Cp1251)
     }
 
+    /// The file-name keys after channels were appended past `nb` analog /
+    /// `nd` digital ones and are about to move to `at_a` / `at_d` (merge,
+    /// the ОМП's flags): each key follows its channel, a new one keyed by
+    /// its own name. Called before the channels move.
+    pub fn move_appended_keys(&mut self, at_a: usize, nb: usize, at_d: usize, nd: usize) {
+        if self.set.keys.is_empty() {
+            return;
+        }
+        let old = std::mem::take(&mut self.set.keys);
+        let own = |id: &str| comtrade::recode(id, self.codepage, Encoding::Cp1251);
+        let mut a: Vec<String> = self.osc.analog.iter().enumerate().map(|(i, c)| old.get(i).filter(|_| i < nb).cloned().unwrap_or_else(|| own(&c.id))).collect();
+        let mut d: Vec<String> = self.osc.digital.iter().enumerate().map(|(k, c)| old.get(nb + k).filter(|_| k < nd).cloned().unwrap_or_else(|| own(&c.id))).collect();
+        let (ka, kd) = (a.len() - nb, d.len() - nd);
+        a[at_a..].rotate_right(ka);
+        d[at_d..].rotate_right(kd);
+        a.extend(d);
+        self.set.keys = a;
+    }
+
+    /// Drop the keys of the digital channels not kept (the ОМП's clear).
+    pub fn retain_digital_keys(&mut self, keep: &[bool]) {
+        let na = self.osc.analog.len();
+        if self.set.keys.len() <= na {
+            return;
+        }
+        let mut it = keep.iter();
+        let digital = self.set.keys.split_off(na).into_iter().filter(|_| *it.next().unwrap_or(&true));
+        self.set.keys.extend(digital);
+    }
+
     /// Remember the channels' file names (after the names were decoded).
     pub fn init_set_keys(&mut self) {
         self.set.keys.clear();
@@ -327,7 +357,21 @@ impl Doc {
     fn digital_flags(&self, k: usize) -> u32 {
         let f = self.dig(k);
         let bit = |on: bool, b: u32| if on { b } else { 0 };
-        bit(self.digital_visible.get(k).copied().unwrap_or(true), flag::VISIBLE) | mode_bits(f.mode) | bit(f.remove_dc, flag::REMOVE_DC) | bit(f.invert, flag::INVERT)
+        bit(self.digital_visible.get(k).copied().unwrap_or(true), flag::VISIBLE) | mode_bits(f.mode) | bit(f.remove_dc, flag::REMOVE_DC) | bit(f.invert, flag::INVERT) | bit(self.dig_computed(k), flag::COMPUTED)
+    }
+
+    /// The record as the `.cfg` / `.cff` writers see it: the ОМП's flag
+    /// channels (bit 13) left out (VM: `7,6A,1D` after a run), the others
+    /// numbered by their place among all digital channels (VM: «4,
+    /// Несправн. …» after the three flags).
+    fn file_record(&self) -> (std::borrow::Cow<'_, fvb_core::Oscillogram>, Vec<usize>) {
+        if !(0..self.osc.digital.len()).any(|k| self.dig_computed(k)) {
+            return (std::borrow::Cow::Borrowed(&self.osc), Vec::new());
+        }
+        let keep: Vec<usize> = (0..self.osc.digital.len()).filter(|&k| !self.dig_computed(k)).collect();
+        let mut osc = self.osc.clone();
+        osc.digital = keep.iter().map(|&k| self.osc.digital[k].clone()).collect();
+        (std::borrow::Cow::Owned(osc), keep.iter().map(|k| k + 1).collect())
     }
 
     /// The modelled bits replace their stored values; the others (bits we
@@ -378,7 +422,7 @@ impl Doc {
                 continue;
             }
             let key = self.file_key(na + k);
-            let known_d = flag::VISIBLE | flag::MODE_INSTANT | flag::MODE_RMS | flag::MODE_HARMONIC | flag::REMOVE_DC | flag::INVERT;
+            let known_d = flag::VISIBLE | flag::MODE_INSTANT | flag::MODE_RMS | flag::MODE_HARMONIC | flag::REMOVE_DC | flag::INVERT | flag::COMPUTED;
             let rec = ChannelRec {
                 show_flags: Self::merged_flags(t, &key, self.digital_flags(k), known_d) & mask,
                 primary_mul: 1.0,
@@ -655,7 +699,8 @@ impl App {
         if !same {
             match kind {
                 ".cff" => {
-                    let bytes = comtrade::write_cff(&d.osc, &d.cff_sections(), d.codepage).map_err(|e| e.to_string())?;
+                    let (rec, no) = d.file_record();
+                    let bytes = comtrade::write_cff_numbered(&rec, &d.cff_sections(), d.codepage, &no).map_err(|e| e.to_string())?;
                     std::fs::write(target, bytes).map_err(|e| e.to_string())?;
                 }
                 ".osc" => {
@@ -664,7 +709,8 @@ impl App {
                     std::fs::copy(src, target).map_err(|e| e.to_string())?;
                 }
                 _ => {
-                    let (cfg, dat) = comtrade::write(&d.osc, d.codepage);
+                    let (rec, no) = d.file_record();
+                    let (cfg, dat) = comtrade::write_numbered(&rec, d.codepage, &no);
                     std::fs::write(target, cfg).map_err(|e| e.to_string())?;
                     std::fs::write(target.with_extension("dat"), dat).map_err(|e| e.to_string())?;
                 }
@@ -1172,6 +1218,35 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    /// A channel inserted in front of the record's digital ones (the ОМП's
+    /// flags) moves the file-name keys with it, is left out of the record
+    /// files and still counts in their numbering (VM, WIN_1999).
+    #[test]
+    fn inserted_flags_keep_the_keys_and_the_numbering() {
+        let dir = temp_dir("flags");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        let d = &mut app.docs[di];
+        let (na, nd) = (d.osc.analog.len(), d.osc.digital.len());
+        assert!(nd > 0, "the demo record has digital channels");
+        let first = d.file_key(na);
+        let samples = vec![false; d.osc.sample_count()];
+        d.osc.digital.push(fvb_core::DigitalChannel { index: nd as u32 + 1, id: crate::omp_ui::KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples });
+        d.digital_visible.resize(nd + 1, true);
+        d.move_appended(na, na, 0, nd);
+        assert_eq!(d.file_key(na), crate::omp_ui::KZ_PHASES[0]);
+        assert_eq!(d.file_key(na + 1), first);
+        let (rec, no) = d.file_record();
+        assert_eq!(rec.digital.len(), nd);
+        assert_eq!(no, (2..=nd + 1).collect::<Vec<_>>());
+        let keep: Vec<bool> = (0..=nd).map(|k| k > 0).collect();
+        d.retain_digital_keys(&keep);
+        d.osc.digital.remove(0);
+        assert_eq!(d.file_key(na), first);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn write_record(dir: &Path) -> PathBuf {

@@ -303,6 +303,7 @@ impl Doc {
     /// their insertion points `at_a` / `at_d` (`0x42e5c0`), shifting every
     /// stored channel index at or after them.
     pub fn move_appended(&mut self, at_a: usize, nb: usize, at_d: usize, nd: usize) {
+        self.move_appended_keys(at_a, nb, at_d, nd);
         let (ka, kd) = (self.osc.analog.len() - nb, self.osc.digital.len() - nd);
         self.osc.analog[at_a..].rotate_right(ka);
         self.chans[at_a..].rotate_right(ka);
