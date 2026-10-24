@@ -696,7 +696,8 @@ impl App {
         let sz = width(lab[1]);
         let (w, h) = (sz.x, sz.y);
         let w2 = width(lab[3]).x;
-        let row = |k: usize| (rect.top() + 5.0 + k as f32 * (h + 5.0), rect.top() + 10.0 + (k + 1) as f32 * h + k as f32 * 5.0);
+        // The rows from the bar's top (VM: the first centred 10 px down).
+        let row = |k: usize| (rect.top() + k as f32 * (h + 5.0), rect.top() + 5.0 + (k + 1) as f32 * h + k as f32 * 5.0);
         let x0 = rect.left();
         let painter = ui.painter();
         let label = |text: &str, x1: f32, k: usize| {

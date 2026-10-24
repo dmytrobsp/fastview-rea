@@ -6651,6 +6651,8 @@ toolbar; now each is as above (`main.rs` bands, `views.rs`
 wider — text metrics, W6), every stats value (592.835 мА, СКЗ 416.809
 мА, A1 416.727 мА, …) and the vector diagram's arrows and header (U max
 60.0 V, I max 0.45 A) are the original's.
+The parameters bar's three text rows were then 5 px low (their offsets
+dated from the 75 px bar): now from the bar's top, on the VM's rows.
 Residual: the outer frame lines' exact colours ((185, 208, 237) in the
 original, ours (191, 219, 255)), a tabbed group's frame round its tab
 control (border, 2 px, (100, 100, 100)) and its tab strip's look; the
