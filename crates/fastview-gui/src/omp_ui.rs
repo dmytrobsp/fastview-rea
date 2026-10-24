@@ -1012,7 +1012,7 @@ impl ParamsDialog {
                 crate::dialogs::TreeRow { depth: *depth, label: label.clone(), has_children, expanded: !self.collapsed.contains(node), selected: self.sel == *node }
             })
             .collect();
-        let ev = crate::dialogs::win_tree(ui, tree, egui::Id::new(("omp_tree", self.salt)), Color32::from_rgb(171, 173, 179), &rows, false, None, true, &mut |p, cell, k| tree_icon(p, cell, &all[shown[k]].1));
+        let ev = crate::dialogs::win_tree(ui, tree, egui::Id::new(("omp_tree", self.salt)), Color32::from_rgb(171, 173, 179), &rows, false, None, true, false, &mut |p, cell, k| tree_icon(p, cell, &all[shown[k]].1));
         if let Some(k) = ev.toggled.or(ev.double_clicked.filter(|&k| rows[k].has_children)) {
             let node = all[shown[k]].1;
             if !self.collapsed.remove(&node) {
@@ -1162,11 +1162,14 @@ fn tool_button(ui: &mut egui::Ui, r: egui::Rect, icon: ToolIcon, text: Option<&s
     let ink = if enabled { Color32::from_rgb(0, 21, 110) } else { Color32::from_gray(141) };
     let c = cell.center();
     let st = egui::Stroke::new(1.5f32, if enabled { Color32::from_rgb(60, 60, 60) } else { Color32::from_gray(170) });
+    // Disabled images in grey (VM); the delete cross red while enabled.
+    let grey = (!enabled).then(|| Color32::from_gray(190));
     match icon {
-        ToolIcon::Section => tree_icon(p, cell, &Node::Section(0, 0)),
-        ToolIcon::Line => tree_icon(p, cell, &Node::Line(0, 0, 0)),
-        ToolIcon::Tap => tree_icon(p, cell, &Node::Tap(0, 0, 0)),
+        ToolIcon::Section => tree_icon_ink(p, cell, &Node::Section(0, 0), grey),
+        ToolIcon::Line => tree_icon_ink(p, cell, &Node::Line(0, 0, 0), grey),
+        ToolIcon::Tap => tree_icon_ink(p, cell, &Node::Tap(0, 0, 0), grey),
         ToolIcon::Delete => {
+            let st = if enabled { egui::Stroke::new(1.5f32, Color32::from_rgb(225, 30, 30)) } else { st };
             p.line_segment([c + egui::vec2(-5.0, -5.0), c + egui::vec2(5.0, 5.0)], st);
             p.line_segment([c + egui::vec2(5.0, -5.0), c + egui::vec2(-5.0, 5.0)], st);
         }
@@ -1195,30 +1198,37 @@ fn tool_button(ui: &mut egui::Ui, r: egui::Rect, icon: ToolIcon, text: Option<&s
 /// white): a station's two rings, a section's conductor with its ends, a
 /// parallel line's two conductors, a tap's branch.
 fn tree_icon(p: &egui::Painter, r: egui::Rect, node: &Node) {
+    tree_icon_ink(p, r, node, None);
+}
+
+/// [`tree_icon`] all in `grey` when given (a disabled toolbar button's
+/// image, VM).
+fn tree_icon_ink(p: &egui::Painter, r: egui::Rect, node: &Node, grey: Option<Color32>) {
     let c = r.center();
+    let ink = |col: Color32| grey.unwrap_or(col);
     let v = |x: f32, y: f32| c + egui::vec2(x, y);
     let st = |w: f32, col| egui::Stroke::new(w, col);
     match node {
         // Two overlapping rings, a transformer's mark (seen on the VM).
         Node::Station(_) => {
             for x in [-2.5, 2.5] {
-                p.circle_stroke(v(x, 0.0), 4.5, st(1.5, Color32::from_rgb(40, 40, 100)));
+                p.circle_stroke(v(x, 0.0), 4.5, st(1.5, ink(Color32::from_rgb(40, 40, 100))));
             }
         }
         Node::Section(..) => {
-            p.line_segment([v(-5.0, 0.0), v(5.0, 0.0)], st(2.0, Color32::from_rgb(170, 160, 90)));
+            p.line_segment([v(-5.0, 0.0), v(5.0, 0.0)], st(2.0, ink(Color32::from_rgb(170, 160, 90))));
             for x in [-6.5, 6.5] {
-                p.rect_filled(egui::Rect::from_center_size(v(x, 0.0), egui::vec2(3.0, 5.0)), 0.0, Color32::from_rgb(230, 120, 170));
+                p.rect_filled(egui::Rect::from_center_size(v(x, 0.0), egui::vec2(3.0, 5.0)), 0.0, ink(Color32::from_rgb(230, 120, 170)));
             }
         }
         Node::Line(..) => {
             for x in [-2.5, 2.5] {
-                p.line_segment([v(x, -6.0), v(x, 6.0)], st(1.5, Color32::from_rgb(90, 90, 90)));
+                p.line_segment([v(x, -6.0), v(x, 6.0)], st(1.5, ink(Color32::from_rgb(90, 90, 90))));
             }
         }
         Node::Tap(..) => {
-            p.line_segment([v(-2.0, -6.0), v(-2.0, 6.0)], st(1.5, Color32::from_rgb(90, 90, 90)));
-            p.line_segment([v(-2.0, 0.0), v(5.0, 0.0)], st(1.5, Color32::from_rgb(90, 90, 90)));
+            p.line_segment([v(-2.0, -6.0), v(-2.0, 6.0)], st(1.5, ink(Color32::from_rgb(90, 90, 90))));
+            p.line_segment([v(-2.0, 0.0), v(5.0, 0.0)], st(1.5, ink(Color32::from_rgb(90, 90, 90))));
         }
     }
 }

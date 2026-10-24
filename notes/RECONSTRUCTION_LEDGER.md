@@ -8460,6 +8460,21 @@ found and fixed:
   cancel. Now as eframe (a modified document still asks first — VM).
   The harness's `CLOSE` posts WM_CLOSE to the front window.
 
+### L9.314 — VM: «Параметры ОМП» with a section: the toolbar's images, the tree without a focus mark  ·  ✅
+Run (WIN_1999: Ia / Ib / Ic and three voltages set, «Участок» added, R
+and X typed, OK, «Анализ»): both still answer «Данные для определения
+места повреждения не введены.» (so the caption bars' order — needing an
+ОМП result — stays unreached), and the dialog shows alike but for:
+- **The toolbar's images.** With the section selected the original greys
+  the images of the disabled «Участок» / «Параллельная линия» /
+  «Отпайка» and draws the enabled delete cross red; ours kept the add
+  buttons' images in colour and the cross black (the enable states were
+  alike). Now grey when disabled, the cross red when enabled.
+- **The tree's selection.** The original's tree (no TVS_SHOWSELALWAYS)
+  marks nothing once the grid has the focus; ours kept a (240) band.
+  `win_tree` takes `sel_always` — the finder's and the formula dialog's
+  trees keep the band, the ОМП tree not.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

@@ -562,8 +562,10 @@ pub struct TreeEvents {
 /// this frame. Without the focus (`start_focused` until a press inside,
 /// lost to a press outside) the selection is (240) behind black text, as
 /// TVS_SHOWSELALWAYS draws it (VM: the finder's tree on opening).
+/// `sel_always` (TVS_SHOWSELALWAYS): the selection stays marked, grey,
+/// without the focus; else it is not marked then.
 #[allow(clippy::too_many_arguments)]
-pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows: &[TreeRow], lines_at_root: bool, top_row: Option<usize>, start_focused: bool, icon: &mut dyn FnMut(&egui::Painter, Rect, usize)) -> TreeEvents {
+pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows: &[TreeRow], lines_at_root: bool, top_row: Option<usize>, start_focused: bool, sel_always: bool, icon: &mut dyn FnMut(&egui::Painter, Rect, usize)) -> TreeEvents {
     let mut ev = TreeEvents::default();
     let focus_id = id.with("fv_tree_focus");
     let stored = ui.data(|d| d.get_temp::<bool>(focus_id));
@@ -674,7 +676,7 @@ pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows:
                 icon(&p, cell, i);
                 let g = ui.fonts(|f| f.layout_no_wrap(row.label.clone(), DLG_FONT, Color32::BLACK));
                 let lr = Rect::from_min_size(Pos2::new(cell.left() + 19.0, top), Vec2::new(g.size().x + 5.0, 16.0));
-                if row.selected {
+                if row.selected && (focused || sel_always) {
                     p.rect_filled(lr, 0.0, if focused { Color32::from_rgb(0, 120, 212) } else { Color32::from_gray(240) });
                 }
                 p.galley(Pos2::new(lr.left() + 2.0, (mid - g.size().y / 2.0).round()), g, if row.selected && focused { Color32::WHITE } else { Color32::BLACK });

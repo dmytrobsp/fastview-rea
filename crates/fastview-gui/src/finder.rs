@@ -798,7 +798,7 @@ impl App {
                 let rows: Vec<TreeRow> = rows_t.iter().map(|(node, depth, open, more)| TreeRow { depth: *depth, label: node.label(), has_children: *more, expanded: *open, selected: f.tree.selected == *node }).collect();
                 // 16 px rows inside the tree's 1 px frame.
                 let top_row = f.tree.take_reveal(((tr.shrink(4.0).height() - 2.0) / 16.0).floor() as usize);
-                let ev = win_tree(ui, tr.shrink(4.0), egui::Id::new("finder_tree"), Color32::TRANSPARENT, &rows, false, top_row, false, &mut |p, cell, k| {
+                let ev = win_tree(ui, tr.shrink(4.0), egui::Id::new("finder_tree"), Color32::TRANSPARENT, &rows, false, top_row, false, true, &mut |p, cell, k| {
                     let c = cell.center();
                     match rows_t[k].0 {
                         Node::Dir(_) => {
