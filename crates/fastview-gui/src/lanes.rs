@@ -128,16 +128,19 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
     };
     let pending_at = |key: Option<ChanKey>, rows: &mut Vec<Row>, groups: &mut std::collections::HashMap<u32, usize>| {
         for j in (0..doc.computed.len()).filter(|&j| doc.computed[j].visible && doc.computed[j].before == key) {
-            push(Lane::Computed(j), if doc.pending_digital(j) { g::DIGITAL_H } else { y_analog }, rows, groups);
+            push(Lane::Computed(j), g::DIGITAL_H, rows, groups);
         }
     };
-    for (i, c) in doc.chans.iter().enumerate() {
-        pending_at(Some(Lane::Analog(i)), &mut rows, &mut groups);
-        if c.visible {
-            push(Lane::Analog(i), y_analog, &mut rows, &mut groups);
+    for k in doc.kind0_order() {
+        let visible = match k {
+            Lane::Analog(i) => doc.chans[i].visible,
+            Lane::Computed(j) => doc.computed[j].visible,
+            Lane::Digital(_) => false,
+        };
+        if visible {
+            push(k, y_analog, &mut rows, &mut groups);
         }
     }
-    pending_at(None, &mut rows, &mut groups);
     for i in 0..=doc.osc.digital.len() {
         pending_at(Some(Lane::Digital(i)), &mut rows, &mut groups);
         if i < doc.osc.digital.len() && doc.digital_visible.get(i).copied().unwrap_or(true) {

@@ -237,31 +237,33 @@ struct DChan {
     pending: bool,
 }
 
+/// The analog-kind records in vector order (a pasted digital channel is
+/// kind 1, past `doc+0x1d8`, L9.188).
 fn doc_chans(d: &Doc) -> Vec<DChan> {
-    let mut v: Vec<DChan> = d
-        .osc
-        .analog
-        .iter()
-        .enumerate()
-        // The canonical unit, none in ADC mode (`0x414c30`).
-        .map(|(i, c)| {
-            let unit = if d.chans[i].adc_counts { String::new() } else { c.unit.clone() };
-            let shown = fvb_core::units::Shown::file(&unit, c.per_second);
-            DChan { name: c.id.clone(), unit, shown, color: d.chans[i].color, analog: Some(i), computed: None, pending: false }
+    d.kind0_order()
+        .into_iter()
+        .map(|k| match k {
+            // The canonical unit, none in ADC mode (`0x414c30`).
+            crate::app::ChanKey::Analog(i) | crate::app::ChanKey::Digital(i) => {
+                let c = &d.osc.analog[i];
+                let unit = if d.chans[i].adc_counts { String::new() } else { c.unit.clone() };
+                let shown = fvb_core::units::Shown::file(&unit, c.per_second);
+                DChan { name: c.id.clone(), unit, shown, color: d.chans[i].color, analog: Some(i), computed: None, pending: false }
+            }
+            crate::app::ChanKey::Computed(j) => {
+                let c = &d.computed[j];
+                DChan {
+                    name: c.name.clone(),
+                    unit: c.unit.trim().to_string(),
+                    shown: fvb_core::units::Shown::computed(c.unit.trim()),
+                    color: c.color,
+                    analog: None,
+                    computed: Some(j),
+                    pending: d.pending_of(j).is_some(),
+                }
+            }
         })
-        .collect();
-    // Analog-kind records only: a pasted digital channel is kind 1, past
-    // `doc+0x1d8` (L9.188).
-    v.extend(d.computed.iter().enumerate().filter(|(j, _)| !d.pending_digital(*j)).map(|(j, c)| DChan {
-        name: c.name.clone(),
-        unit: c.unit.trim().to_string(),
-        shown: fvb_core::units::Shown::computed(c.unit.trim()),
-        color: c.color,
-        analog: None,
-        computed: Some(j),
-        pending: d.pending_of(j).is_some(),
-    }));
-    v
+        .collect()
 }
 
 /// Instantaneous value of a channel by name (`0x426020`).

@@ -33,8 +33,9 @@ impl ClipChan {
 pub struct MergeBar {
     /// 1088: 0 by start time, 1 by the fault component, 2 by the pre-fault mode.
     pub method: u8,
-    /// 1089: a base analog channel; 1090: a pending analog channel.
-    pub ch1: Option<usize>,
+    /// 1089: a base analog-kind channel (file or formula, `0x479ff0`);
+    /// 1090: a pending analog channel.
+    pub ch1: Option<ChanKey>,
     pub ch2: Option<usize>,
     pub status: String,
 }
@@ -208,6 +209,51 @@ impl Doc {
         }
     }
 
+    /// The analog-kind records in the original's vector order (L9.188):
+    /// file channels with a pasted analog lane in front of the one it was
+    /// pasted before, then the computed channels in creation order with a
+    /// lane pasted before a formula channel in front of it; a lane pasted
+    /// with no analog-kind channel selected goes with them at the block's
+    /// end (`doc+0x1d8`, `0x45ad77`–`0x45add1`).
+    pub fn kind0_order(&self) -> Vec<ChanKey> {
+        let n = self.osc.analog.len();
+        let analog_lane = |j: usize| !self.pending_digital(j);
+        let anchored_before = |j: usize, at: ChanKey| analog_lane(j) && self.computed[j].before == Some(at);
+        // A lane whose anchor is gone keeps the block's end.
+        let anchored = |j: usize| match self.computed[j].before {
+            Some(ChanKey::Analog(i)) => i < n,
+            Some(ChanKey::Computed(f)) => f < self.computed.len() && f != j && self.computed[f].formula != PENDING,
+            _ => false,
+        };
+        // A merged channel among the formula channels (`ChanView::merged_after`).
+        let merged = |at: &str| -> Vec<ChanKey> { (0..n).filter(|&i| self.chans.get(i).and_then(|c| c.merged_after.as_ref()).is_some_and(|m| m.as_deref() == Some(at))).map(ChanKey::Analog).collect() };
+        let formula = |name: &str| self.computed.iter().any(|c| c.formula != PENDING && c.name == name);
+        let mut v = Vec::new();
+        for i in 0..n {
+            v.extend((0..self.computed.len()).filter(|&j| anchored_before(j, ChanKey::Analog(i))).map(ChanKey::Computed));
+            if self.chans.get(i).is_none_or(|c| c.merged_after.is_none()) {
+                v.push(ChanKey::Analog(i));
+            }
+        }
+        let pending_end: Vec<usize> = (0..self.computed.len()).filter(|&j| analog_lane(j) && !anchored(j) && self.computed[j].formula == PENDING).collect();
+        for j in (0..self.computed.len()).filter(|&j| analog_lane(j) && !anchored(j) && self.computed[j].formula != PENDING) {
+            v.extend(merged(&self.computed[j].name));
+            v.extend((0..self.computed.len()).filter(|&p| anchored_before(p, ChanKey::Computed(j))).map(ChanKey::Computed));
+            v.push(ChanKey::Computed(j));
+        }
+        // At the block's end: merged channels (their anchor gone too), then
+        // lanes pasted since.
+        v.extend((0..n).filter(|&i| self.chans.get(i).and_then(|c| c.merged_after.as_ref()).is_some_and(|m| m.as_deref().is_none_or(|f| !formula(f)))).map(ChanKey::Analog));
+        v.extend(pending_end.into_iter().map(ChanKey::Computed));
+        v
+    }
+
+    /// «Канал 1»'s entries (`0x479ff0`): every analog-kind record but the
+    /// pending ones, in vector order.
+    pub fn base_channels(&self) -> Vec<ChanKey> {
+        self.kind0_order().into_iter().filter(|&k| !matches!(k, ChanKey::Computed(j) if self.computed[j].formula == PENDING)).collect()
+    }
+
     /// The pasted channel behind computed lane `j`, if it is pending.
     pub fn pending_of(&self, j: usize) -> Option<&ClipChan> {
         let c = self.computed.get(j).filter(|c| c.formula == PENDING)?;
@@ -220,6 +266,11 @@ impl Doc {
         let p = self.pending_of(j)?;
         let t = crate::oscgeom::PastedTimes { own: &p.pasted.times, own_rate: p.pasted.rate, rec: &self.osc.time, rec_rate: self.osc.sample_rate, offset: self.merge_offset };
         Some((t, p))
+    }
+
+    /// Is the pending lane named `name` a pasted digital channel?
+    fn pending_digital_named(&self, name: &str) -> bool {
+        self.pending.iter().any(|p| p.name() == name && p.pasted.channel.is_err())
     }
 
     /// Is computed lane `j` a pasted digital channel (drawn as a digital
@@ -347,12 +398,10 @@ impl App {
         let rev = self.docs[ai].osc.rev_year;
         let clip = clip_chans(&rec, rev);
         let d = &mut self.docs[ai];
-        // Insertion points, taken before deselecting: the first selected
-        // analog / digital channel, else the end of its block.
-        let at_analog = d.selection.iter().find_map(|k| match *k {
-            ChanKey::Analog(i) => Some(ChanKey::Analog(i)),
-            _ => None,
-        });
+        // Insertion points, taken before deselecting (`0x45ad77`–`0x45ae64`):
+        // the first selected analog-kind record in vector order — a formula
+        // channel too — / digital channel, else the end of its block.
+        let at_analog = d.kind0_order().into_iter().find(|k| d.selection.contains(k));
         let at_digital = d.selection.iter().find_map(|k| matches!(k, ChanKey::Digital(_)).then_some(*k)).unwrap_or(ChanKey::Digital(d.osc.digital.len()));
         d.selection.clear();
         for mut c in clip {
@@ -404,7 +453,7 @@ impl App {
         }
         // The bar's fill (`0x479ff0`): both channel combos refilled and set
         // to their first entry; the method and the status text untouched.
-        let ch1 = (!d.osc.analog.is_empty()).then_some(0);
+        let ch1 = d.base_channels().first().copied();
         let ch2 = d.pending.iter().position(|p| p.pasted.channel.is_ok());
         let kept = self.merge.take().unwrap_or_default();
         self.merge = Some(MergeBar { ch1, ch2, ..kept });
@@ -440,12 +489,16 @@ impl App {
                 let rate = d.osc.int_rate_hz();
                 let n1 = merge::period_samples(0.0, rate, d.osc.line_freq);
                 let n2 = merge::period_samples(p.pasted.rate, rate, d.osc.line_freq);
-                let x1 = &d.flagged.analog[c1].samples;
                 // Under the frequency correction both read corrected values
                 // (L9.126): the pasted channel at its own rate, the base
-                // frequency at its own index.
+                // frequency at its own index. A formula channel reads its
+                // flagged values (`0x47a1b0` → `0x42edf0` by display name).
                 let corr = fvb_core::freqcorr::of(&d.osc);
-                let s1 = SyncChan { times: &t1, x: x1, n: n1, corr: corr.and_then(|c| c.for_chan(c1)) };
+                let (x1, corr1) = match c1 {
+                    ChanKey::Computed(j) => (&d.computed[j].samples, d.computed_corr(j).map(|c| fvb_core::freqcorr::FreqCorr { chan: fvb_core::freqcorr::OTHER, ..c })),
+                    ChanKey::Analog(i) | ChanKey::Digital(i) => (&d.flagged.analog[i].samples, corr.and_then(|c| c.for_chan(i))),
+                };
+                let s1 = SyncChan { times: &t1, x: x1, n: n1, corr: corr1 };
                 let corr2 = corr.map(|c| fvb_core::freqcorr::FreqCorr { chan: fvb_core::freqcorr::OTHER, fs: if p.pasted.rate > 0.0 { p.pasted.rate } else { c.fs }, ..c });
                 // The pasted channel through the accessor `0x426020` (no
                 // bit-14 branch: its own samples, DC and invert applied —
@@ -566,6 +619,13 @@ impl App {
             })
         };
         let (at_a, at_d) = (anchor(false).unwrap_or(nb).min(nb), anchor(true).unwrap_or(nd).min(nd));
+        // Pasted at the block's end or before a formula channel: the merged
+        // channels stay there, among the formula channels.
+        let merged_after = d.computed.iter().filter(|c| c.formula == PENDING && !d.pending_digital_named(&c.name)).find_map(|c| match c.before {
+            Some(ChanKey::Analog(_)) => None,
+            Some(ChanKey::Computed(f)) => Some(d.computed.get(f).map(|c| c.name.clone())),
+            _ => Some(None),
+        });
         d.osc = merged;
         for i in nb..d.osc.analog.len() {
             let mut v = ChanView::new(&d.osc.analog[i], i);
@@ -575,6 +635,7 @@ impl App {
             if let Some(&(_, inv, dc, mode)) = flags.iter().find(|f| f.0 == d.osc.analog[i].id) {
                 (v.invert, v.remove_dc, v.mode) = (inv, dc, mode);
             }
+            v.merged_after = merged_after.clone();
             d.chans.push(v);
         }
         d.digital_visible.resize(d.osc.digital.len(), true);
@@ -652,12 +713,12 @@ impl App {
                 .response
         });
         let on = bar.method != 0;
-        let name1 = bar.ch1.map(|i| d.osc.analog[i].id.clone()).unwrap_or_default();
+        let name1 = bar.ch1.map(|k| crate::chandlg::row_name(d, k)).unwrap_or_default();
         ui.put(at(350.0, 10.0, 90.0, 21.0), |ui: &mut egui::Ui| {
             ui.add_enabled_ui(on, |ui| {
                 egui::ComboBox::from_id_salt("merge_ch1").width(combo_w(90.0)).truncate().selected_text(name1).show_ui(ui, |ui| {
-                    for (i, c) in d.osc.analog.iter().enumerate() {
-                        ui.selectable_value(&mut bar.ch1, Some(i), &c.id);
+                    for k in d.base_channels() {
+                        ui.selectable_value(&mut bar.ch1, Some(k), crate::chandlg::row_name(d, k));
                     }
                 });
             })
@@ -726,6 +787,117 @@ mod tests {
         assert_eq!(cj(false).pending_phasors.len(), a.samples.len());
         assert!(cj(false).pending_phasors.iter().any(|z| z.norm() > 0.0));
         assert!(cj(true).pending_phasors.is_empty());
+    }
+
+    /// The paste's analog point (`0x45ad77`–`0x45add1`): a selected formula
+    /// channel is one — the lane goes in front of it; with nothing
+    /// selected after the formula channels.
+    #[test]
+    fn a_selected_formula_channel_is_the_paste_point() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.computed.push(Computed::new("F".into(), "1".into(), vec![1.0; d.osc.time.len()], egui::Color32::RED));
+        d.selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        d.selection = [ChanKey::Computed(0)].into();
+        app.paste_channels_for_merge();
+        let d = app.active_doc().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
+        let order = d.kind0_order();
+        let n = d.osc.analog.len();
+        assert_eq!(order[n..], [ChanKey::Computed(j), ChanKey::Computed(0)]);
+        assert_eq!(crate::chandlg::rows(d)[n..n + 2], [ChanKey::Computed(j), ChanKey::Computed(0)]);
+        let lanes: Vec<ChanKey> = crate::lanes::lane_layout(d, 93.0, false).into_iter().map(|r| r.key).collect();
+        let at = |k| lanes.iter().position(|&x| x == k).unwrap();
+        assert!(at(ChanKey::Computed(j)) + 1 == at(ChanKey::Computed(0)));
+    }
+
+    /// «Коэффициенты трансформации» (`0x47ac80`, `0x47b610`): pasted
+    /// analog lanes are rows, formula channels are not; a row placed after
+    /// a formula channel is appended with empty cells (its vector index is
+    /// past the list) and an OK with an edit reads "" for it — k = 0.
+    #[test]
+    fn the_coefficient_grid_lists_pasted_lanes() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.computed.push(Computed::new("F".into(), "1".into(), vec![1.0; d.osc.time.len()], egui::Color32::RED));
+        d.selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.active_doc_mut().unwrap().selection.clear();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let n = d.osc.analog.len();
+        let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
+        let mut g = crate::chandlg::CoefDlg::new(d);
+        assert_eq!(g.keys.len(), n + 1);
+        assert_eq!(g.keys[n], (ChanKey::Computed(j), n + 1));
+        assert_eq!(g.cells[n], [String::new(), String::new()]);
+        assert_eq!(g.cells[0], ["1".to_string(), "1".to_string()]);
+        g.double_click((0, 0), false);
+        g.edit.as_mut().unwrap().1 = "2".into();
+        let changed = g.apply(d).unwrap();
+        assert_eq!(changed, [ChanKey::Analog(0), ChanKey::Computed(j)]);
+        let Ok(a) = &d.pending_of(j).unwrap().pasted.channel else { unreachable!() };
+        assert_eq!((a.primary, a.secondary), (0.0, 0.0));
+    }
+
+    /// «Объединить» moves no record (`0x47d990`): a channel pasted with
+    /// nothing selected stays after the formula channels once merged; one
+    /// pasted before a formula channel stays in front of it.
+    #[test]
+    fn a_merged_channel_keeps_its_place_among_the_formula_channels() {
+        for before_formula in [false, true] {
+            let mut app = demo_app();
+            let d = app.active_doc_mut().unwrap();
+            d.computed.push(Computed::new("F".into(), "1".into(), vec![1.0; d.osc.time.len()], egui::Color32::RED));
+            d.selection.insert(ChanKey::Analog(0));
+            app.copy_channels_for_merge();
+            let d = app.active_doc_mut().unwrap();
+            d.selection = if before_formula { [ChanKey::Computed(0)].into() } else { Default::default() };
+            let n0 = d.osc.analog.len();
+            app.paste_channels_for_merge();
+            app.merge_records();
+            let d = app.active_doc().unwrap();
+            assert_eq!(d.osc.analog.len(), n0 + 1);
+            let order = d.kind0_order();
+            let tail = if before_formula { [ChanKey::Analog(n0), ChanKey::Computed(0)] } else { [ChanKey::Computed(0), ChanKey::Analog(n0)] };
+            assert_eq!(order[n0..], tail, "before a formula channel: {before_formula}");
+            assert_eq!(crate::chandlg::rows(d)[n0..n0 + 2], tail);
+        }
+    }
+
+    /// A pasted lane can be renamed in «Каналы» (`0x435ac0`); the paste
+    /// keeps its channel and the merge takes the new name.
+    #[test]
+    fn a_pending_lane_can_be_renamed() {
+        let mut app = demo_app();
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Computed(j), "Новый"), Ok(()));
+        assert!(d.pending_of(j).is_some_and(|p| p.name() == "Новый"), "still linked");
+        app.merge_records();
+        assert!(app.active_doc().unwrap().osc.analog.iter().any(|c| c.id == "Новый"));
+    }
+
+    /// «Канал 1» (`0x479ff0`): file and formula channels, not pending ones.
+    #[test]
+    fn base_channel_combo_takes_formula_channels() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.computed.push(Computed::new("F".into(), "1".into(), vec![1.0; d.osc.time.len()], egui::Color32::RED));
+        d.selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc().unwrap();
+        let f = d.computed.iter().position(|c| c.name == "F").unwrap();
+        let base = d.base_channels();
+        assert_eq!(base.len(), d.osc.analog.len() + 1);
+        assert_eq!(base.last(), Some(&ChanKey::Computed(f)));
+        assert_eq!(app.merge.as_ref().unwrap().ch1, Some(ChanKey::Analog(0)));
     }
 
     #[test]

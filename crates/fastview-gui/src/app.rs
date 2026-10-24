@@ -271,6 +271,10 @@ pub struct ChanView {
     /// Values in primary units (`ch+0x89`, set on every file channel by
     /// 32867 «Первичные» / 32868 «Вторичные»).
     pub primary: bool,
+    /// A merged channel pasted at the analog block's end (`None`) or in
+    /// front of the formula channel named: «Объединить» moves no record
+    /// (`0x47d990`), so it keeps that place among the formula channels.
+    pub merged_after: Option<Option<String>>,
 }
 
 /// Stats-panel rows of a channel (channel flag bits 4 Max/Min, 6 СКЗ, 5 A1):
@@ -318,6 +322,7 @@ impl ChanView {
             on_vector: false,
             on_circle: false,
             primary: false,
+            merged_after: None,
         }
     }
 }

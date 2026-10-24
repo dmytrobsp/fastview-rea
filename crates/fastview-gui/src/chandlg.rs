@@ -39,12 +39,7 @@ pub fn rows(doc: &Doc) -> Vec<ChanKey> {
         (0..doc.computed.len()).filter(move |&j| doc.pending_digital(j) == want_digital && doc.computed[j].before == at).map(ChanKey::Computed)
     };
     let nd = doc.osc.digital.len();
-    let mut v: Vec<ChanKey> = Vec::new();
-    for i in 0..doc.osc.analog.len() {
-        v.extend(comp(false, Some(ChanKey::Analog(i))));
-        v.push(ChanKey::Analog(i));
-    }
-    v.extend((0..doc.computed.len()).filter(|&j| !doc.pending_digital(j) && !matches!(doc.computed[j].before, Some(ChanKey::Analog(i)) if i < doc.osc.analog.len())).map(ChanKey::Computed));
+    let mut v: Vec<ChanKey> = doc.kind0_order();
     for n in 0..nd {
         v.extend(comp(true, Some(ChanKey::Digital(n))));
         v.push(ChanKey::Digital(n));
@@ -357,10 +352,11 @@ fn set_flag(doc: &mut Doc, k: ChanKey, col: usize, v: bool) {
 }
 
 /// Can the name cell be edited? Computed channels (bit 13) answer 398 —
-/// the ОМП's flag channels too (`0x435ac0`).
+/// the ОМП's flag channels too; a pasted lane (bit 14) can be renamed
+/// (`0x435ac0`, `0x435b5c`–`0x435b65`).
 pub fn can_rename(doc: &Doc, key: ChanKey) -> Result<(), &'static str> {
     match key {
-        ChanKey::Computed(_) => Err(MSG_NO_RENAME_COMPUTED),
+        ChanKey::Computed(j) if doc.pending_of(j).is_none() => Err(MSG_NO_RENAME_COMPUTED),
         ChanKey::Digital(i) if doc.dig_computed(i) => Err(MSG_NO_RENAME_COMPUTED),
         _ => Ok(()),
     }
@@ -379,7 +375,17 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
     match key {
         ChanKey::Analog(i) => doc.osc.analog[i].id = name.to_string(),
         ChanKey::Digital(k) => doc.osc.digital[k].id = name.to_string(),
-        ChanKey::Computed(_) => {}
+        // A pasted lane: its pasted channel is renamed along, so the paste
+        // keeps its link (the original finds them by bit 14).
+        ChanKey::Computed(j) => {
+            let old = std::mem::replace(&mut doc.computed[j].name, name.to_string());
+            if let Some(p) = doc.pending.iter_mut().find(|p| p.name() == old) {
+                match &mut p.pasted.channel {
+                    Ok(a) => a.id = name.to_string(),
+                    Err(d) => d.id = name.to_string(),
+                }
+            }
+        }
     }
     doc.set.modified = true;
     Ok(())
@@ -431,14 +437,38 @@ pub fn wtof(s: &str) -> f64 {
     s[..end].parse().unwrap_or(0.0)
 }
 
+/// The analog channel whose coefficients a row edits: a file channel, or a
+/// pasted analog lane's own channel; none for a formula channel.
+fn coef_channel(doc: &Doc, k: ChanKey) -> Option<&fvb_core::comtrade::AnalogChannel> {
+    match k {
+        ChanKey::Analog(i) => doc.osc.analog.get(i),
+        ChanKey::Computed(j) => doc.pending_of(j)?.pasted.channel.as_ref().ok(),
+        ChanKey::Digital(_) => None,
+    }
+}
+
+fn coef_channel_mut(doc: &mut Doc, k: ChanKey) -> Option<&mut fvb_core::comtrade::AnalogChannel> {
+    match k {
+        ChanKey::Analog(i) => doc.osc.analog.get_mut(i),
+        ChanKey::Computed(j) => {
+            let name = doc.computed.get(j).filter(|c| c.formula == crate::merge_ui::PENDING)?.name.clone();
+            doc.pending.iter_mut().find(|p| p.name() == name)?.pasted.channel.as_mut().ok()
+        }
+        ChanKey::Digital(_) => None,
+    }
+}
+
 /// A cell of the coefficient grid: (row, column 0 = primary / 1 = secondary).
 pub type Cell = (usize, usize);
 
-/// The coefficient grid (`CMultiplierDlg`): one row per file analog channel,
-/// `%g` texts of `ch+0xd0` / `ch+0xd8`, a rectangular Shift selection and an
-/// in-place edit whose text fills every selected cell of its column.
+/// The coefficient grid (`CMultiplierDlg`): one row per analog-kind record
+/// but the formula ones (file and pasted analog channels), `%g` texts of
+/// `ch+0xd0` / `ch+0xd8`, a rectangular Shift selection and an in-place edit
+/// whose text fills every selected cell of its column.
 #[derive(Debug, Clone, Default)]
 pub struct CoefDlg {
+    /// Each row's record and its index in the record vector.
+    pub keys: Vec<(ChanKey, usize)>,
     pub names: Vec<String>,
     pub cells: Vec<[String; 2]>,
     pub sel: BTreeSet<Cell>,
@@ -452,13 +482,21 @@ pub struct CoefDlg {
 }
 
 impl CoefDlg {
+    /// OnInitDialog (`0x47ac80`): over the first `doc+0x1d8` records, the
+    /// formula ones (bit 13) skipped, each inserted at its **vector** index
+    /// (`0x47ae8f`) and its cells set there — so a row after a formula
+    /// channel is appended and its cells stay empty.
     pub fn new(doc: &Doc) -> CoefDlg {
         let g = fvb_core::views::fmt_g;
-        CoefDlg {
-            names: doc.osc.analog.iter().map(|c| c.id.clone()).collect(),
-            cells: doc.osc.analog.iter().map(|c| [g(c.primary), g(c.secondary)]).collect(),
-            ..Default::default()
+        let mut dlg = CoefDlg::default();
+        for (vi, k) in doc.kind0_order().into_iter().enumerate() {
+            let Some(ch) = coef_channel(doc, k) else { continue };
+            let row = dlg.keys.len();
+            dlg.keys.push((k, vi));
+            dlg.names.push(row_name(doc, k));
+            dlg.cells.push(if vi == row { [g(ch.primary), g(ch.secondary)] } else { Default::default() });
         }
+        dlg
     }
 
     /// A press anywhere but the edit (`0x47af90` → `0x47b3d0`): only the
@@ -513,19 +551,23 @@ impl CoefDlg {
     /// cell is read with `_wtof` and the changed values stored — the caller
     /// marks the document modified on IDOK (`0x42fea7`). Returns the
     /// channels whose coefficients changed.
-    pub fn apply(&mut self, doc: &mut Doc) -> Option<Vec<usize>> {
+    ///
+    /// Each record reads the row at its vector index (`0x47b6b7`,
+    /// `0x47b70b`): a row past the list reads "" — 0.
+    pub fn apply(&mut self, doc: &mut Doc) -> Option<Vec<ChanKey>> {
         self.commit(false);
         if !self.dirty {
             return None;
         }
         let mut changed = Vec::new();
-        for (i, [p, s]) in self.cells.iter().enumerate() {
-            let Some(ch) = doc.osc.analog.get_mut(i) else { continue };
-            let (p, s) = (wtof(p), wtof(s));
+        for &(k, vi) in &self.keys {
+            let [p, s] = self.cells.get(vi).cloned().unwrap_or_default();
+            let Some(ch) = coef_channel_mut(doc, k) else { continue };
+            let (p, s) = (wtof(&p), wtof(&s));
             if p != ch.primary || s != ch.secondary {
                 ch.primary = p;
                 ch.secondary = s;
-                changed.push(i);
+                changed.push(k);
             }
         }
         Some(changed)
@@ -1014,7 +1056,7 @@ mod tests {
         g.press(false);
         assert_eq!(g.cells[4][1], "bad");
         let changed = g.apply(&mut d);
-        assert_eq!(changed, Some(vec![0, 1, 2, 4]));
+        assert_eq!(changed, Some([0, 1, 2, 4].map(ChanKey::Analog).to_vec()));
         assert_eq!(d.osc.analog[1].primary, 110000.0);
         // No validation: bad text is 0.
         assert_eq!(d.osc.analog[4].secondary, 0.0);

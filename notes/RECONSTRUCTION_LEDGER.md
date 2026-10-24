@@ -5923,6 +5923,44 @@ member gone between evaluations still paints (the original's lookup throws
 354 there); the OSC2 block's NUL padding (ours drops it before
 tokenising); H визиры and window zoom on formula members not modelled.
 
+### L9.199 — W2.19: one order over the analog-kind records; a formula channel as the paste point, the merged channel's place, the coefficient grid, «Канал 1», renaming a pasted lane  ·  ✅
+Read (background agent; by hand where cited):
+- The paste's analog point (`0x45ad77`–`0x45add1`): the first record in
+  vector order that is selected and of kind 0 — no bit-13 test, so a
+  formula channel is one —, else `doc+0x1d8`, the block's end after the
+  formula channels. «Объединить» (`0x47d990`) clears bit 14 in place and
+  moves no record (agent's read).
+- The merge bar's fill `0x479ff0`: over the record vector, kind-0 records
+  with bit 14 to «Канал 2» (`0x47a0d6`), the others — file and formula — to
+  «Канал 1», each by its display name; both set to entry 0 (`0x47a16c`).
+- «Коэффициенты трансформации» `0x47ac80`: i < `doc+0x1d8` (`0x47ae42`),
+  bit 13 skipped (`0x47ae5c`), the row inserted at index i (`0x47ae8f`) and
+  its two cells set at row i (`0x47aede`, `0x47af18`) — a row after a
+  formula channel is appended and keeps empty cells; OK `0x47b610` (dirty
+  `0x194`, `0x47b66f`) reads each record's row i the same way (`0x47b684`,
+  `0x47b6ac`), so such a record reads "" — k = 0 — when anything was edited.
+- «Каналы» rename `0x435ac0`: only bit 13 refuses (398, `0x435b5c`–`0x435b65`)
+  — a pasted lane can be renamed.
+Ours ended a paste's place at file channels only, put a merged channel at
+the end of the file channels (before the formula ones), listed file
+channels only in the coefficient grid and «Канал 1», and refused renaming
+a pasted lane. Now `Doc::kind0_order` (file channels with lanes in front,
+then the computed channels with lanes in front, merged channels in their
+place via `ChanView::merged_after`, lanes pasted at the end) drives
+«Каналы» rows, the lanes, the diagrams' lists, «Канал 1» (`base_channels`,
+a formula channel synchronised through its flagged values) and the
+coefficient grid (`CoefDlg::keys` with the vector index); the paste takes
+its point from it; `chandlg::rename` renames a pasted lane with its pasted
+channel. Tests `a_selected_formula_channel_is_the_paste_point`,
+`a_merged_channel_keeps_its_place_among_the_formula_channels`,
+`the_coefficient_grid_lists_pasted_lanes`, `a_pending_lane_can_be_renamed`,
+`base_channel_combo_takes_formula_channels`.
+Residual: a pasted lane's k is not applied to its own samples (`0x426020`
+×k on a bit-14 record; the clipboard's k ND); the `.set` / COMTRADE
+writers keep the file order (formula channels are not written; a merged
+channel's place is not stored); the «Каналы» rename's row → record index
+mismatch with pair rows (`0x435da1`, agent's read) not reproduced.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

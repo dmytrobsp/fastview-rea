@@ -158,15 +158,11 @@ items (VM ones also in W4.4):
   `rec+0x58` and raises `rec+0x5c`; the paste's insert `0x42e5c0` and the
   remove `0x42ecf0` count by kind). The earlier "file channels only" read
   was wrong. Ours' differences filed in W2.19.
-- [ ] W2.19 From W2.16 (done in L9.189: formula channels on the
-  frequency diagram, the circle «Показать все» skipping pending lanes;
-  L9.191: rows in vector order, pending digital lanes as digital; L9.192:
-  the ОМП flags as computed). Left: a pasted analog
-  channel with nothing selected goes after the formula channels and stays
-  there after «Объединить» (needs one order over the kind-0 records);
-  the paste's analog point from a selected formula channel
-  too; the coefficient dialog lists pending analog channels; renaming a
-  pending lane.
+- [x] W2.19 From W2.16 (L9.189, L9.191, L9.192; the rest in L9.199: one
+  order over the analog-kind records, a formula channel as the paste
+  point, the merged channel's place, the coefficient grid's pasted rows,
+  «Канал 1», renaming a pasted lane). Left as residuals: a pasted lane's k
+  on its own samples; the rename's row index with pair rows.
 - [ ] W2.17 The open residuals of ✅ entries since L9.128 (each entry's
   "Residual:" lines): quick analysis's rollback of its channels on a
   failed recompute (L9.157), drag-scroll left / right (L9.164), the grid's
@@ -185,8 +181,8 @@ items (VM ones also in W4.4):
   by name ignoring case; the ОМП re-run's lookup among every channel
   ignoring case; the zoom gate's rectangle (the client less 8 / 16 px);
   the splash (our own picture, 2000 ms, topmost); the view scroll bar's
-  system menu; «Канал 1» with formula channels; «Скрыть все» and
-  «Отсчет углов» to `doc+0x1d8` (with W2.16).
+  system menu («Канал 1» with formula channels: L9.199; «Скрыть все» and
+  «Отсчет углов» over `doc+0x1d8`: already as ours, L9.199's read).
 
 ## W3 — Resolve the unknowns
 
