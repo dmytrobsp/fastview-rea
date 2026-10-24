@@ -1681,47 +1681,43 @@ impl App {
             dlg.fail = None;
         }
         let mut done: Option<bool> = None;
-        // DIALOG 353's order, top to bottom: «Расчет значений» (periods,
-        // then harmonics), «Значения величин» (absolute, then percent),
-        // «Нормализация», OK / Отмена at the bottom right.
-        const W: f32 = 330.0;
-        crate::dialogs::dlg(ctx, "Настройки частотной диаграммы").collapsible(false).resizable(false).show(ctx, |ui| {
-            ui.group(|ui| {
-                ui.set_width(W);
-                ui.label("Расчет значений");
-                egui::Grid::new("freq_calc").num_columns(2).show(ui, |ui| {
-                    ui.label("Число обрабатываемых периодов:");
-                    crate::dialogs::ddx_edit(ui, &mut dlg.periods, 60.0, focus == Some(0));
-                    ui.end_row();
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| ui.label("Число гармоник:"));
-                    crate::dialogs::ddx_edit(ui, &mut dlg.harmonics, 60.0, focus == Some(1));
-                    ui.end_row();
-                });
-            });
+        crate::dialogs::dlg(ctx, "Настройки частотной диаграммы").margin(0.0).collapsible(false).resizable(false).show(ctx, |ui| {
+            use crate::dialogs::{dlu, win_button, win_edit, win_group, win_group_en, win_label, win_radio_en};
+            // The 226 × 222 DLU template (339 × 361 px). The dialog opens
+            // with the first edit focused, its text selected.
+            let (client, _) = ui.allocate_exact_size(Vec2::new(339.0, 361.0), egui::Sense::hover());
+            let first = ui.memory(|m| m.focused().is_none());
+            win_group(ui, dlu(client, 12, 12, 204, 54), "Расчет значений");
+            win_label(ui, dlu(client, 24, 30, 121, 8), "Число обрабатываемых периодов:", true, true);
+            win_edit(ui, dlu(client, 150, 30, 42, 12), egui::Id::new("fv_freq_periods"), &mut dlg.periods, focus == Some(0) || (first && focus.is_none()));
+            win_label(ui, dlu(client, 84, 50, 60, 8), "Число гармоник:", true, true);
+            win_edit(ui, dlu(client, 150, 48, 42, 12), egui::Id::new("fv_freq_harmonics"), &mut dlg.harmonics, focus == Some(1));
             let mut clicked = false;
-            ui.group(|ui| {
-                ui.set_width(W);
-                ui.label("Значения величин");
-                clicked |= ui.radio_value(&mut dlg.percent, false, "Абсолютные величины").clicked();
-                clicked |= ui.radio_value(&mut dlg.percent, true, "В процентах (нормализовано)").clicked();
-            });
-            ui.group(|ui| {
-                ui.set_width(W);
-                ui.add_enabled(dlg.frame_on, egui::Label::new("Нормализация"));
-                ui.add_enabled_ui(dlg.radios_on, |ui| {
-                    clicked |= ui.radio_value(&mut dlg.use_rms, false, "По основной гармонике").clicked();
-                    clicked |= ui.radio_value(&mut dlg.use_rms, true, "По среднеквадратичному значению").clicked();
-                });
-            });
-            ui.allocate_ui_with_layout(Vec2::new(W + 12.0, 24.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Отмена").clicked() {
-                    done = Some(false);
-                }
-                if ui.button("OK").clicked() {
-                    done = Some(true);
-                    clicked = true;
-                }
-            });
+            win_group(ui, dlu(client, 12, 72, 204, 54), "Значения величин");
+            if win_radio_en(ui, dlu(client, 24, 88, 95, 12), "Абсолютные величины", !dlg.percent, true) {
+                dlg.percent = false;
+                clicked = true;
+            }
+            if win_radio_en(ui, dlu(client, 24, 106, 178, 12), "В процентах (нормализовано)", dlg.percent, true) {
+                dlg.percent = true;
+                clicked = true;
+            }
+            win_group_en(ui, dlu(client, 12, 132, 204, 60), "Нормализация", dlg.frame_on);
+            if win_radio_en(ui, dlu(client, 24, 150, 126, 12), "По основной гармонике", !dlg.use_rms, dlg.radios_on) {
+                dlg.use_rms = false;
+                clicked = true;
+            }
+            if win_radio_en(ui, dlu(client, 24, 168, 150, 12), "По среднеквадратичному значению", dlg.use_rms, dlg.radios_on) {
+                dlg.use_rms = true;
+                clicked = true;
+            }
+            if win_button(ui, dlu(client, 114, 200, 50, 14), "OK", true).clicked() {
+                done = Some(true);
+                clicked = true;
+            }
+            if win_button(ui, dlu(client, 168, 200, 50, 14), "Отмена", false).clicked() {
+                done = Some(false);
+            }
             if clicked {
                 (dlg.radios_on, dlg.frame_on) = (dlg.percent, dlg.percent);
             }

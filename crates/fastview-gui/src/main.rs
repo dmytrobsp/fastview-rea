@@ -1465,8 +1465,8 @@ mod window_tests {
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "omp" || s == "ompparams") {
             app.tab = RibbonTab::Omp;
         }
-        // `alert`: «Параметры осциллограммы» with a refused rate's box over it.
-        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "alert") {
+        // `ratealert`: «Параметры осциллограммы» with a refused rate's box over it.
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "ratealert") {
             app.dispatch(C::FileParams);
             app.dlg.push_alert("Введите целое число.");
         }

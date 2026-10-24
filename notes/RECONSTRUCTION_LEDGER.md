@@ -6883,6 +6883,21 @@ of all five boxes (the alert queue, the formula page's, the ОМП
 message, the add-formula alerts and «Сохранить изменения в …?» with
 «Да», «Нет», «Отмена» 10 px apart); the icons stay our drawings.
 
+### L9.245 — DIALOG 353 on its template; the single-line edit  ·  ✅
+VM capture (the frequency pane's context menu → «Настройки»): DIALOG 353
+«Настройки частотной диаграммы», 226 × 222 DLU (339 × 361 px), placed
+by L9.242's rule (client 1111, 527; edges 1110 / 1450, bottom 888 as
+ours). Windows 11's single-line edit: white, a (236) line along its top
+and left, none at the right, the bottom 2 px of (0, 103, 192) with the
+focus, else 1 px (131); the selection white on (0, 120, 212) from 6 px
+in. The dialog opens with its first edit focused and its text selected.
+Ours was egui groups, a grid and egui fields. Now `win_edit` (which
+replaces the old `ddx_edit`, focus-and-select included) and enabled
+flags on `win_group_en` / `win_radio_en` (the «Нормализация» group and
+its radios grey out with «В процентах» off; the disabled look
+approximated) lay it out on the template; it matches the capture but
+for the glyphs.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

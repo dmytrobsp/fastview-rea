@@ -263,6 +263,11 @@ pub fn win_label(ui: &egui::Ui, r: Rect, text: &str, right: bool, enabled: bool)
 /// frame at the left and right − 1, top + 6 and bottom − 2; the title from
 /// left + 9, the top line broken from left + 7 to 2 px past it.
 pub fn win_group(ui: &egui::Ui, r: Rect, title: &str) {
+    win_group_en(ui, r, title, true);
+}
+
+/// `win_group` with its title greyed when disabled.
+pub fn win_group_en(ui: &egui::Ui, r: Rect, title: &str, enabled: bool) {
     let p = ui.painter();
     let line = Stroke::new(1.0f32, Color32::from_gray(220));
     let (x0, x1, y0, y1) = (r.left() + 0.5, r.right() - 0.5, r.top() + 6.5, r.bottom() - 1.5);
@@ -272,7 +277,8 @@ pub fn win_group(ui: &egui::Ui, r: Rect, title: &str) {
     if title.is_empty() {
         p.hline(x0..=x1, y0, line);
     } else {
-        let t = p.text(Pos2::new(r.left() + 9.0, r.top()), egui::Align2::LEFT_TOP, title, DLG_FONT, Color32::BLACK);
+        let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
+        let t = p.text(Pos2::new(r.left() + 9.0, r.top()), egui::Align2::LEFT_TOP, title, DLG_FONT, ink);
         p.hline(x0..=r.left() + 7.0, y0, line);
         p.hline(t.right() + 2.0..=x1, y0, line);
     }
@@ -283,18 +289,65 @@ pub fn win_group(ui: &egui::Ui, r: Rect, title: &str) {
 /// dot, else a (98) ring on (243) — the text from 16 px in. Returns the
 /// click.
 pub fn win_radio(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool {
-    let resp = ui.interact(r, ui.id().with(("fv_radio", text)), egui::Sense::click());
+    win_radio_en(ui, r, text, checked, true)
+}
+
+/// `win_radio`, disabled: paler, its text (109), deaf to clicks (the
+/// disabled look approximated).
+pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabled: bool) -> bool {
+    let resp = ui.interact(r, ui.id().with(("fv_radio", text)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let c = Pos2::new(r.left() + 6.5, r.top() + (r.height() / 2.0).floor());
     let p = ui.painter();
-    if checked {
-        p.circle_filled(c, 6.5, Color32::from_rgb(0, 95, 184));
-        p.circle_filled(c, 3.0, Color32::WHITE);
-    } else {
-        p.circle_filled(c, 6.5, Color32::from_gray(98));
-        p.circle_filled(c, 5.5, if resp.hovered() { Color32::from_gray(233) } else { Color32::from_gray(243) });
+    match (checked, enabled) {
+        (true, true) => {
+            p.circle_filled(c, 6.5, Color32::from_rgb(0, 95, 184));
+            p.circle_filled(c, 3.0, Color32::WHITE);
+        }
+        (true, false) => {
+            p.circle_filled(c, 6.5, Color32::from_gray(160));
+            p.circle_filled(c, 3.0, Color32::WHITE);
+        }
+        (false, _) => {
+            p.circle_filled(c, 6.5, Color32::from_gray(if enabled { 98 } else { 191 }));
+            p.circle_filled(c, 5.5, if resp.hovered() && enabled { Color32::from_gray(233) } else { Color32::from_gray(243) });
+        }
     }
-    p.text(Pos2::new(r.left() + 16.0, c.y), egui::Align2::LEFT_CENTER, text, DLG_FONT, Color32::BLACK);
+    let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
+    p.text(Pos2::new(r.left() + 16.0, c.y), egui::Align2::LEFT_CENTER, text, DLG_FONT, ink);
     resp.clicked()
+}
+
+/// A single-line edit at its template rectangle (VM, Windows 11): white,
+/// a (236) line along its top and left, the bottom 2 px of (0, 103, 192)
+/// while it has the focus, else 1 px (131); the selection white on
+/// (0, 120, 212) from 6 px in. `focus` focuses it with its text selected
+/// (as a dialog's first edit opens, or after a refused value's message).
+pub fn win_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, focus: bool) -> egui::Response {
+    let painter = ui.painter().clone();
+    let frame = painter.add(egui::Shape::Noop);
+    let inner = Rect::from_min_max(r.min + Vec2::new(5.0, 2.0), r.max - Vec2::new(2.0, 2.0));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+    child.visuals_mut().selection.bg_fill = Color32::from_rgb(0, 120, 212);
+    child.visuals_mut().selection.stroke = Stroke::new(1.0f32, Color32::WHITE);
+    let mut out = egui::TextEdit::singleline(text).id(id).frame(false).font(DLG_FONT).margin(egui::Margin::symmetric(1.0, 1.0)).desired_width(inner.width() - 2.0).show(&mut child);
+    if focus {
+        out.response.request_focus();
+        let n = text.chars().count();
+        out.state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(n))));
+        out.state.store(ui.ctx(), out.response.id);
+    }
+    let focused = out.response.has_focus() || focus;
+    let line = |y: f32, h: f32, c: Color32| egui::Shape::rect_filled(Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), y + h)), 0.0, c);
+    painter.set(
+        frame,
+        egui::Shape::Vec(vec![
+            egui::Shape::rect_filled(r, 0.0, Color32::WHITE),
+            line(r.top(), 1.0, Color32::from_gray(236)),
+            egui::Shape::rect_filled(Rect::from_min_max(r.min, Pos2::new(r.left() + 1.0, r.bottom())), 0.0, Color32::from_gray(236)),
+            if focused { line(r.bottom() - 2.0, 2.0, Color32::from_rgb(0, 103, 192)) } else { line(r.bottom() - 1.0, 1.0, Color32::from_gray(131)) },
+        ]),
+    );
+    out.response
 }
 
 /// A multi-line edit at its template rectangle (VM, Windows 11): white in a
@@ -902,19 +955,6 @@ fn chevron(painter: &egui::Painter, rect: Rect) {
         painter.line_segment([a, b], Stroke::new(w, col));
         painter.line_segment([b, c], Stroke::new(w, col));
     }
-}
-
-/// A DDX edit: single-line; with `focus` it takes the keyboard focus with
-/// its whole text selected (CDataExchange::Fail after a refused value).
-pub fn ddx_edit(ui: &mut egui::Ui, text: &mut String, width: f32, focus: bool) -> egui::Response {
-    let mut out = egui::TextEdit::singleline(text).desired_width(width).show(ui);
-    if focus {
-        out.response.request_focus();
-        let n = text.chars().count();
-        out.state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(n))));
-        out.state.store(ui.ctx(), out.response.id);
-    }
-    out.response
 }
 
 /// MFC 12's DDX_Text of an int (`0x101e0e79`): up to 64 characters of the
