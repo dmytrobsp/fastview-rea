@@ -9,7 +9,7 @@ use crate::app::App;
 use crate::printout::{Device, Job, PageSetup};
 use crate::raster::Canvas;
 use crate::spool;
-use eframe::egui::{self, Color32, RichText, Vec2};
+use eframe::egui::{self, Color32, Vec2};
 
 /// Our extension: a PDF file as the last «Имя» entry.
 pub const PDF_ENTRY: &str = "Файл PDF… (FastView-REA)";
@@ -47,6 +47,19 @@ pub struct SetupDlg {
     pub default: Option<String>,
     /// The application printer's paper (greyed «Размер»).
     pub paper: spool::Paper,
+    /// The four margin edits' texts (left, top, right, bottom); a changed
+    /// one is read into `mm`.
+    pub mm_text: [String; 4],
+}
+
+/// A margin as the page-setup edits show it: whole millimetres plain,
+/// else up to two decimals with the decimal comma.
+fn mm_text(v: f32) -> String {
+    if v.fract() == 0.0 {
+        format!("{v:.0}")
+    } else {
+        format!("{:.2}", v).trim_end_matches('0').replace('.', ",")
+    }
 }
 
 /// A command of MFC's print-preview ribbon category (`0xE300`–`0xE306`).
@@ -170,7 +183,7 @@ impl App {
         let s = self.print.setup;
         let (_, default) = spool::printers();
         let paper = default.as_deref().and_then(spool::paper).unwrap_or(spool::Paper::whole("A4", crate::printout::A4_MM));
-        self.print.setup_dlg = Some(SetupDlg { mm: s.margins.map(|m| m as f32 / 100.0), portrait: s.portrait, paper, default });
+        self.print.setup_dlg = Some(SetupDlg { mm: s.margins.map(|m| m as f32 / 100.0), portrait: s.portrait, paper, default, mm_text: s.margins.map(|m| mm_text(m as f32 / 100.0)) });
     }
 
     /// Render and send a job for document `di` (`printer` None = PDF file).
@@ -292,58 +305,54 @@ impl App {
         let (mut ok, mut cancel) = (false, false);
         let mut open = true;
         crate::dialogs::modal_backdrop(ctx, "fv_page_setup_block", egui::Order::Middle);
-        egui::Window::new("Параметры страницы").collapsible(false).resizable(false).open(&mut open).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).order(egui::Order::Foreground).show(ctx, |ui| {
-            // The sample page (bitmaps 345 / 346 in the original).
-            let (w, h) = if dlg.portrait { (84.0, 119.0) } else { (119.0, 84.0) };
-            ui.vertical_centered(|ui| {
-                let (r, _) = ui.allocate_exact_size(Vec2::new(w, h), egui::Sense::hover());
-                let p = ui.painter();
-                p.rect_filled(r.translate(Vec2::splat(3.0)), 0.0, Color32::GRAY);
-                p.rect_filled(r, 0.0, Color32::WHITE);
-                p.rect_stroke(r, 0.0, egui::Stroke::new(1.0f32, Color32::BLACK));
-                let (sw, sh) = if dlg.portrait { dlg.paper.mm } else { (dlg.paper.mm.1, dlg.paper.mm.0) };
-                let m = egui::Rect::from_min_max(
-                    r.min + Vec2::new(dlg.mm[0] / sw * w, dlg.mm[1] / sh * h),
-                    r.max - Vec2::new(dlg.mm[2] / sw * w, dlg.mm[3] / sh * h),
-                );
-                p.rect_stroke(m, 0.0, egui::Stroke::new(1.0f32, Color32::from_gray(160)));
-            });
-            ui.add_enabled_ui(false, |ui| {
-                ui.group(|ui| {
-                    ui.label(RichText::new("Бумага").strong());
-                    ui.horizontal(|ui| {
-                        ui.label("Размер:");
-                        ui.label(&dlg.paper.name);
-                    });
-                });
-            });
-            ui.horizontal(|ui| {
-                ui.group(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(RichText::new("Ориентация").strong());
-                        ui.radio_value(&mut dlg.portrait, true, "Книжная");
-                        ui.radio_value(&mut dlg.portrait, false, "Альбомная");
-                    });
-                });
-                ui.group(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(RichText::new("Поля (мм)").strong());
-                        egui::Grid::new("print_margins").num_columns(4).show(ui, |ui| {
-                            for pair in [[(0usize, "Левое:"), (2, "Правое:")], [(1, "Верхнее:"), (3, "Нижнее:")]] {
-                                for (i, l) in pair {
-                                    ui.label(l);
-                                    ui.add(egui::DragValue::new(&mut dlg.mm[i]).range(0.0..=100.0).speed(0.5).fixed_decimals(1));
-                                }
-                                ui.end_row();
-                            }
-                        });
-                    });
-                });
-            });
-            ui.horizontal(|ui| {
-                ok = ui.button("   OK   ").clicked();
-                cancel = ui.button("Отмена").clicked();
-            });
+        // Windows' own Page Setup (PageSetupDlg, comdlg32's template, in
+        // the system's language), measured on the VM: a 360 × 390 client
+        // in the dialog frame, placed as the others.
+        crate::dialogs::dlg(ctx, "Параметры страницы").margin(0.0).collapsible(false).resizable(false).open(&mut open).order(egui::Order::Foreground).show(ctx, |ui| {
+            use crate::dialogs::{win_button, win_combo_list, win_edit, win_group, win_label, win_radio};
+            let (client, _) = ui.allocate_exact_size(Vec2::new(360.0, 390.0), egui::Sense::hover());
+            let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(client.min + Vec2::new(x, y), Vec2::new(w, h));
+            // The sample page: A4's 91 × 130 px at (134, 13) (VM), across
+            // when landscape, centred in the same place; a (128) frame at
+            // its left and top, black at its right and bottom, an 8 px
+            // (160) shadow 8 px down and right. The original paints its
+            // bitmaps 345 / 346 inside (the page-paint hook); ours the
+            // margins.
+            let (w, h) = if dlg.portrait { (91.0, 130.0) } else { (130.0, 91.0) };
+            let r = egui::Rect::from_center_size(client.min + Vec2::new(179.5, 77.5), Vec2::new(w, h));
+            let p = ui.painter();
+            p.rect_filled(r.translate(Vec2::splat(8.0)), 0.0, Color32::from_gray(160));
+            p.rect_filled(r, 0.0, Color32::BLACK);
+            p.rect_filled(egui::Rect::from_min_max(r.min, r.max - Vec2::splat(1.0)), 0.0, Color32::from_gray(128));
+            p.rect_filled(egui::Rect::from_min_max(r.min + Vec2::splat(1.0), r.max - Vec2::splat(1.0)), 0.0, Color32::WHITE);
+            let (sw, sh) = if dlg.portrait { dlg.paper.mm } else { (dlg.paper.mm.1, dlg.paper.mm.0) };
+            let m = egui::Rect::from_min_max(r.min + Vec2::new(dlg.mm[0] / sw * w, dlg.mm[1] / sh * h), r.max - Vec2::new(dlg.mm[2] / sw * w, dlg.mm[3] / sh * h));
+            p.rect_stroke(m, 0.0, egui::Stroke::new(1.0f32, Color32::from_gray(160)));
+            win_group(ui, at(12.0, 156.0, 336.0, 91.0), "Бумага");
+            win_label(ui, at(24.0, 182.0, 70.0, 14.0), "Размер:", false, false);
+            win_combo_list(ui, at(96.0, 179.0, 240.0, 21.0), egui::Id::new("fv_ps_size"), std::slice::from_ref(&dlg.paper.name), 0, false);
+            win_label(ui, at(24.0, 214.0, 70.0, 14.0), "Подача:", false, false);
+            win_combo_list(ui, at(96.0, 211.0, 240.0, 21.0), egui::Id::new("fv_ps_source"), &[], 0, false);
+            win_group(ui, at(12.0, 254.0, 96.0, 91.0), "Ориентация");
+            if win_radio(ui, at(24.0, 277.0, 80.0, 16.0), "Книжная", dlg.portrait) {
+                dlg.portrait = true;
+            }
+            if win_radio(ui, at(24.0, 310.0, 80.0, 16.0), "Альбомная", !dlg.portrait) {
+                dlg.portrait = false;
+            }
+            win_group(ui, at(120.0, 254.0, 228.0, 91.0), "Поля (мм)");
+            for (k, (lx, ly, label)) in [(131.0, 279.0, "Левое:"), (131.0, 312.0, "Верхнее:"), (245.0, 279.0, "Правое:"), (245.0, 312.0, "Нижнее:")].into_iter().enumerate() {
+                win_label(ui, at(lx, ly, 44.0, 14.0), label, false, true);
+                if win_edit(ui, at(lx + 46.0, ly - 3.0, 48.0, 20.0), egui::Id::new(("fv_ps_mm", k)), &mut dlg.mm_text[k], false).changed() {
+                    if let Ok(v) = dlg.mm_text[k].trim().replace(',', ".").parse::<f32>() {
+                        dlg.mm[k] = v.clamp(0.0, 100.0);
+                    }
+                }
+            }
+            // PSD_SHOWHELP: «Справка» (the VM shows it); it opens nothing here.
+            win_button(ui, at(12.0, 358.0, 72.0, 23.0), "Справка", false);
+            ok = win_button(ui, at(198.0, 358.0, 72.0, 23.0), "ОК", true).clicked();
+            cancel = win_button(ui, at(276.0, 358.0, 72.0, 23.0), "Отмена", false).clicked();
         });
         if ok {
             self.print.setup = PageSetup { margins: dlg.mm.map(|m| (m * 100.0).round() as i32), portrait: dlg.portrait };

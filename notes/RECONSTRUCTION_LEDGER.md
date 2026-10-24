@@ -6938,6 +6938,25 @@ other template controls; it matches the capture but for the glyphs and
 the printer list's contents (the VM's printers; ours lists the PDF
 entry).
 
+### L9.248 — «Параметры страницы» as Windows' Page Setup  ·  ✅
+VM capture («Печать» → «Параметры страницы»): the original calls the
+system's PageSetupDlg (comdlg32's own template, in the system's language
+— English on the VM), centred by the rule of L9.242 (frame 1099–1460 ×
+487–903, a 360 × 390 client). Measured: the sample page — A4 91 × 130 px
+at (134, 13), a (128) frame left and top, black right and bottom, an 8 px
+(160) shadow 8 px down and right; the original paints its bitmaps inside
+through the page-paint hook — «Paper» (12, 156)–(348, 247) with its two
+disabled 240 px drop-down lists at (96, 179) and (96, 211), «Orientation»
+(12, 254)–(108, 345) with its radios at x 24, y 277 / 310, «Margins
+(millimeters)» (120, 254)–(348, 345) with four 48 × 20 edits at x 177 /
+291, y 276 / 309, and Help, OK, Cancel 72 × 23 at x 12, 198, 276, y 358
+(PSD_SHOWHELP; no «Printer...»). Ours was an egui window. Now it is
+`Dlg` with those controls at those places, in Windows' Russian strings
+(«Бумага», «Размер:», «Подача:», «Ориентация», «Книжная», «Альбомная»,
+«Поля (мм)», «Левое:» …, «Справка», «ОК», «Отмена»); the margins are
+edits showing whole millimetres plain, else the decimal comma, read back
+as typed. Our page shows the margins (not the original's bitmaps).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
