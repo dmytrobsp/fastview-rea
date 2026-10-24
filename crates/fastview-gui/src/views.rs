@@ -317,7 +317,7 @@ impl App {
         }
         // A tabbed group frames its panes under the caption (VM: a (185,
         // 208, 237) line, then 2 px of (213, 228, 242), at the top and
-        // sides; the tab strip below).
+        // sides; 1 px of it at the bottom, the tab strip below).
         if v.strip {
             let r = ui.available_rect_before_wrap();
             let pnt = ui.painter();
@@ -326,7 +326,7 @@ impl App {
             pnt.px_hline(r.left()..=r.right() - 1.0, r.top(), b);
             pnt.px_vline(r.left(), r.top()..=r.bottom() - 1.0, b);
             pnt.px_vline(r.right() - 1.0, r.top()..=r.bottom() - 1.0, b);
-            let inner = egui::Rect::from_min_max(r.min + egui::vec2(3.0, 3.0), r.max - egui::vec2(3.0, 2.0));
+            let inner = egui::Rect::from_min_max(r.min + egui::vec2(3.0, 3.0), r.max - egui::vec2(3.0, 1.0));
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(*ui.layout()));
             self.pane_window(&mut child, p);
             ui.advance_cursor_after_rect(r);
@@ -993,8 +993,11 @@ impl App {
             // The plane window: its border at the sides and bottom (its top
             // is the line above the strip), a white column before the
             // toolbar (VM); the plane drawn in its client area.
+            // The plane window begins under the line: its top 5 rows are
+            // the splitter's brush, which its layout counts (VM: the cells
+            // from line + 11, not + 16).
             let outer = ui.available_rect_before_wrap();
-            let client = egui::Rect::from_min_max(egui::pos2(outer.left() + 1.0, outer.top()), egui::pos2(outer.right() - 2.0, outer.bottom() - 1.0));
+            let client = egui::Rect::from_min_max(egui::pos2(outer.left() + 1.0, strip.top() + 1.0), egui::pos2(outer.right() - 2.0, outer.bottom() - 1.0));
             self.pane_canvas.push((pane, client));
             let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(client).layout(*ui.layout()));
             self.plane_ui(&mut inner);

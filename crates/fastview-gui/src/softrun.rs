@@ -149,7 +149,7 @@ impl Soft {
         let prims = self.ctx.tessellate(out.shapes, out.pixels_per_point);
         let canvas = self.painter.paint(&prims, &textures, size.width as usize, size.height as usize, out.pixels_per_point);
         blit(window, &canvas);
-        trace(&format!("frame {}×{} in {:?}", size.width, size.height, t0.elapsed()));
+        trace(&format!("frame {}×{} in {:?}; dragged {:?}, down {}, top {:?}", size.width, size.height, t0.elapsed(), self.ctx.dragged_id(), self.ctx.input(|i| i.pointer.any_down()), self.ctx.pointer_latest_pos().and_then(|p| self.ctx.layer_id_at(p))));
     }
 }
 

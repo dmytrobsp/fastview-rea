@@ -968,7 +968,8 @@ impl App {
         let sb = dg::scroll_range(view.z);
         let client = if sb.is_some() { Rect::from_min_max(full.min, full.max - Vec2::splat(SCROLL_W)) } else { full };
         let painter = ui.painter_at(full);
-        painter.rect_filled(full, 0.0, Color32::WHITE);
+        // White below the splitter's 5 rows, which the window keeps.
+        painter.rect_filled(Rect::from_min_max(full.min + Vec2::new(0.0, dpx(5.0)), full.max), 0.0, Color32::WHITE);
         self.window_menu_click(&resp, win);
         if client.width() < dpx(121.0) || client.height() < dpx(121.0) {
             return;

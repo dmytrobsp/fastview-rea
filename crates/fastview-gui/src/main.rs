@@ -701,28 +701,39 @@ impl App {
     }
 }
 
-/// A frame's input as passes of at most one key press each (the software
-/// runner, whose frames are slow): a window gets each WM_KEYDOWN on its
-/// own, so quick presses each act, as in the original; egui's per-frame
-/// `key_pressed` would see them as one. A pass with a press carries that
-/// press's modifiers; dropped files and viewport events (a close request)
-/// go with the first.
+/// A frame's input as passes of at most one key press or mouse-button
+/// change each (the software runner, whose frames are slow): a window gets
+/// each WM_KEYDOWN / WM_LBUTTONDOWN / …UP on its own, so quick presses each
+/// act and a button change is seen where the pointer was then, as in the
+/// original. egui's per-frame `key_pressed` would see quick presses as one,
+/// and a press followed by the first moves of a drag in one frame lands
+/// past a 5 px splitter line (egui tests the latest position; VM). A pass
+/// with a key press carries that press's modifiers; dropped files and
+/// viewport events (a close request) go with the first.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn one_press_per_pass(mut raw: egui::RawInput) -> Vec<egui::RawInput> {
     let events = std::mem::take(&mut raw.events);
     let mut passes: Vec<(Vec<egui::Event>, Option<egui::Modifiers>)> = vec![(Vec::new(), None)];
+    // A pass ends after its key press or button change.
+    let mut closed = false;
     for e in events {
-        if let egui::Event::Key { pressed: true, modifiers, .. } = e {
-            if passes.last().is_some_and(|p| p.1.is_some()) {
-                passes.push((Vec::new(), None));
-            }
-            if let Some(p) = passes.last_mut() {
-                p.1 = Some(modifiers);
-            }
+        let (boundary, mods) = match &e {
+            egui::Event::Key { pressed: true, modifiers, .. } => (true, Some(*modifiers)),
+            egui::Event::PointerButton { .. } => (true, None),
+            _ => (false, None),
+        };
+        // A key's text stays with its press.
+        if closed && !matches!(e, egui::Event::Text(_)) {
+            passes.push((Vec::new(), None));
+            closed = false;
         }
         if let Some(p) = passes.last_mut() {
+            if mods.is_some() {
+                p.1 = mods;
+            }
             p.0.push(e);
         }
+        closed |= boundary;
     }
     let n = passes.len();
     passes
@@ -764,8 +775,16 @@ mod tests {
             ..Default::default()
         };
         let passes = one_press_per_pass(raw);
-        assert_eq!(passes.iter().map(|p| p.events.len()).collect::<Vec<_>>(), [3, 1, 2]);
+        assert_eq!(passes.iter().map(|p| p.events.len()).collect::<Vec<_>>(), [2, 2, 2], "a key's text with it");
         assert_eq!(passes[2].modifiers, ctrl, "the press's own modifiers");
+        // A press, then the drag's first moves: the press alone, where it
+        // was (VM: a splitter's 5 px line).
+        let at = |y| egui::pos2(10.0, y);
+        let btn = |pressed| egui::Event::PointerButton { pos: at(446.0), button: egui::PointerButton::Primary, pressed, modifiers: none };
+        let drag = one_press_per_pass(egui::RawInput { events: vec![egui::Event::PointerMoved(at(446.0)), btn(true), egui::Event::PointerMoved(at(461.0)), egui::Event::PointerMoved(at(477.0))], ..Default::default() });
+        assert_eq!(drag.iter().map(|p| p.events.len()).collect::<Vec<_>>(), [2, 2]);
+        // A quick click: press and release apart.
+        assert_eq!(one_press_per_pass(egui::RawInput { events: vec![btn(true), btn(false)], ..Default::default() }).len(), 2);
         // One press or none: a single pass as it came.
         let one = one_press_per_pass(egui::RawInput { events: vec![key(egui::Key::A, true, ctrl)], modifiers: none, ..Default::default() });
         assert_eq!((one.len(), one[0].modifiers), (1, none));
@@ -981,6 +1000,39 @@ mod window_tests {
         w.run(vec![ev(false)]);
         w.idle(2);
         assert_eq!(vis(&w), before, "a double-click flips once");
+    }
+
+    /// The grid's splitter drags (VM: the original's moves with a drag
+    /// from its 5 px band).
+    #[test]
+    fn the_grid_splitter_drags() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.idle(2);
+        let g0 = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let at = Pos2::new(g0.center().x, g0.bottom() + 2.0);
+        w.press(Primary, at, at + Vec2::new(0.0, 12.0));
+        let g1 = *w.app.pane_grid.first().unwrap();
+        assert!((g1.bottom() - at.y - 12.0).abs() <= 1.0, "{g0:?} → {g1:?}");
+        // After a click on a pane tab too (VM: ours' splitters stopped
+        // dragging after one).
+        // A quick click: press and release in one (slow) frame.
+        let quick = |w: &mut Win, at: Pos2| {
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: Primary, pressed, modifiers: Default::default() };
+            w.run(vec![egui::Event::PointerMoved(at), ev(true), ev(false)]);
+            w.idle(2);
+        };
+        let tab = w.app.pane_tab_rects.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| r.center()).expect("the vector tab");
+        quick(&mut w, tab);
+        let tab = w.app.pane_tab_rects.iter().find(|(p, _)| *p == app::Pane::Circle).map(|(_, r)| r.center()).expect("the circle tab");
+        quick(&mut w, tab);
+        assert_eq!(w.app.pane_grid.len(), 1, "the circle in front");
+        let g1 = *w.app.pane_grid.first().unwrap();
+        let at = Pos2::new(g1.center().x, g1.bottom() + 2.0);
+        w.press(Primary, at, at - Vec2::new(0.0, 12.0));
+        let g2 = *w.app.pane_grid.first().unwrap();
+        assert!((g2.bottom() - (at.y - 12.0)).abs() <= 1.0, "after a tab click: {g1:?} → {g2:?}");
     }
 
     /// «Тип блока» alone (VM): F4 drops nothing; ↓ steps its value in an

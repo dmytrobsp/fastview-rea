@@ -7844,6 +7844,41 @@ Residual:
 - What the original saves for a keyed-in block (`SelectedBlock`) is NOT
   DETERMINED.
 
+### L9.284 — Side by side: the grid's splitter dragged; button changes in their own pass; the plane window keeps the splitter's rows  ·  ✅
+W4.3 on both programs, the circle diagram: the grid/plane splitter
+dragged from y 446 to 1000, then blocks picked.
+- **The drag did nothing in ours on the VM** (and once, by luck, did).
+  egui's panel resize starts only if the pointer's *latest* position is
+  within 5 px of the line in the frame of the press. A software-runner
+  frame (about 280 ms) held the press and the drag's first two steps,
+  15–30 px on. `one_press_per_pass` now also ends a pass after each mouse
+  button press or release, so a button change is seen where the pointer
+  was then, as WM_LBUTTONDOWN gives it. A key's text stays in its press's
+  pass. (`FV_SOFTLOG` now traces the dragged widget, the button and the
+  top layer each frame.) Test `quick_key_presses_get_a_pass_each` (a
+  press with the drag's moves, a quick click), `the_grid_splitter_drags`
+  (after quick tab clicks too).
+- **The plane's height.** After the drag the original fits 16 cell rows,
+  ours 14, so the scales differed (X ±24 / ±21; another block 8 Ом / 10
+  Ом cells). The original's plane window begins right under the
+  splitter's line and keeps its top 5 rows for the brush (`0x438110`),
+  which its layout's «+ 5» counts: cells from the line + 11. Ours began
+  under the brush and added the 5 again. Now the plane's rectangle starts
+  at the brush and its white fill leaves those rows. A tabbed group also
+  inset its panes 2 px from the bottom where the VM shows 1 (the pane
+  window's border at 1342, one (213, 228, 242) row, the strip's line at
+  1344). With both, «Защита линий» reads X ±24, R ±33 in both, and the
+  default-height planes still match.
+- The original saves «Properties Height» on every re-layout, so its
+  registry key was imported again before and after these runs.
+Residual:
+- After the same drag ours' splitter ends 1 px lower: egui puts it at the
+  pointer, MFC moves it by the drag's distance.
+- «БМРЗ - Защита генераторов (с 2025 г.в.)»: the original scales the
+  plane to an 8 Ом cell (X ±64, R ±88; its cyan circle runs past the
+  top), ours to 9 Ом (X ±72, R ±99). The characteristic extent box
+  (`0x4389a2`–`0x438a44`) differs for this block — open.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
