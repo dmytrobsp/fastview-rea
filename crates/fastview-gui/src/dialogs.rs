@@ -403,6 +403,18 @@ pub fn comment_dialog_body(ui: &mut egui::Ui, id: egui::Id, text: &mut String) -
     None
 }
 
+/// `text` cut to `width` with «...» at its end (a grid cell's
+/// DT_END_ELLIPSIS).
+pub fn ellipsize(ui: &egui::Ui, text: &str, font: egui::FontId, width: f32) -> String {
+    let w = |s: &str| ui.fonts(|f| f.layout_no_wrap(s.to_owned(), font.clone(), Color32::BLACK).size().x);
+    let chars: Vec<char> = text.chars().collect();
+    let mut n = chars.len();
+    while n > 0 && w(&format!("{}...", chars[..n].iter().collect::<String>())) > width {
+        n -= 1;
+    }
+    format!("{}...", chars[..n].iter().collect::<String>())
+}
+
 /// A combo box's closed height (Windows for the template font, VM).
 pub const COMBO_H: f32 = 21.0;
 
@@ -442,7 +454,7 @@ fn combo_face(ui: &egui::Ui, r: Rect, edit: bool, enabled: bool, open: bool, hov
 /// (0, 120, 215) border, 13 px items, the one under the pointer (at first
 /// the current one) white on (0, 120, 212), a soft shadow at the right.
 /// Returns the item picked; closes on a pick or a press elsewhere.
-fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], current: Option<usize>) -> Option<usize> {
+pub fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], current: Option<usize>) -> Option<usize> {
     let ctx = ui.ctx().clone();
     let open_id = id.with("open");
     let mut picked = None;

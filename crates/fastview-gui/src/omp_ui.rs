@@ -468,8 +468,7 @@ impl App {
                 .order(egui::Order::Foreground)
                 .collapsible(false)
                 .resizable(false)
-                .fixed_size([712.0, 447.0])
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .margin(0.0)
                 .show(ctx, |ui| outcome = dlg.ui(ui, &names));
             match outcome {
                 Some(DialogAction::Ok) => {
@@ -590,6 +589,8 @@ pub struct ParamsDialog {
     /// its items and leaves the others' labels (`Участок №3` after №1 is
     /// gone) until the next rebuild — add, move, load or method change.
     pub labels: Option<Vec<(usize, Node, String)>>,
+    /// The grid cell being edited in place: the element and its row.
+    pub edit: Option<(Node, usize)>,
 }
 
 /// Where an element goes when `removed` is deleted: gone (itself or its
@@ -757,7 +758,7 @@ fn default_value(node: Node, f: Field) -> &'static str {
 
 impl ParamsDialog {
     pub fn new(doc: usize, work: OmpParams) -> Self {
-        ParamsDialog { doc, work, sel: Node::Station(0), collapsed: HashSet::new(), labels: None }
+        ParamsDialog { doc, work, sel: Node::Station(0), collapsed: HashSet::new(), labels: None, edit: None }
     }
 
     /// Position and sibling count of the selection (stations do not move).
@@ -912,157 +913,289 @@ impl ParamsDialog {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, channels: &[String]) -> Option<DialogAction> {
+        use crate::dialogs::{win_button, win_combo_list, DLG_FONT};
         let mut action = None;
-        // DIALOG 336: 475 × 275 DLU in MS Shell Dlg 8 — a 712 × 447 client;
-        // OnInitDialog `0x4a7c50` places the toolbar, the tree and the grid
-        // (tb = the toolbar's height, ours 22); OK / Cancel stay at the
-        // template's (310, 254) / (392, 254), 76 × 14 DLU. No separators.
-        const W: f32 = 712.0;
+        // DIALOG 336: 475 × 275 DLU in MS Shell Dlg 8 — a 713 × 447 client;
+        // OnInitDialog `0x4a7c50` places the method combo and the toolbar,
+        // the tree and the grid (VM: the combo at (13, 12), 278 × 21; the
+        // tree at (10, 44), W/3 − 20 × H − 90; the grid at (W/3, 44),
+        // 2W/3 − 10 wide, the thirds whole pixels); OK / Cancel stay at the
+        // template's (310, 254) / (392, 254), 76 × 14 DLU.
+        const W: f32 = 713.0;
         const H: f32 = 447.0;
-        const TB: f32 = 22.0;
+        let third = (W / 3.0).floor();
         let (rect, _) = ui.allocate_exact_size(egui::vec2(W, H), egui::Sense::hover());
         let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(rect.min + egui::vec2(x, y), egui::vec2(w, h));
-        // Toolbar 475 at (10, 10), W − 20 wide (`0x4a7cd9`).
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(at(10.0, 10.0, W - 20.0, TB)), |ui| ui.horizontal(|ui| {
-            let cur = METHODS.iter().position(|(m, _)| *m == self.work.method).unwrap_or(0);
-            let mut idx = cur;
-            egui::ComboBox::from_id_salt("omp_method").width(280.0).selected_text(METHODS[cur].1).show_ui(ui, |ui| {
-                for (i, (_, label)) in METHODS.iter().enumerate() {
-                    ui.selectable_value(&mut idx, i, *label);
+        let cur = METHODS.iter().position(|(m, _)| *m == self.work.method).unwrap_or(0);
+        let methods: Vec<String> = METHODS.iter().map(|(_, l)| l.to_string()).collect();
+        if let Some(k) = win_combo_list(ui, at(13.0, 12.0, 278.0, 21.0), egui::Id::new("omp_method"), &methods, cur, true) {
+            if k != cur {
+                self.set_method(METHODS[k].0);
+            }
+        }
+        // TOOLBAR 475 (`0x4a7e40`), flat, right of the combo (VM): text only
+        // on the three add buttons — (0, 21, 110), (141) disabled — the rest
+        // icons, two separators; the tooltips are the command strings
+        // 32870–32878; the icons our own drawings.
+        let items: [ToolItem; 8] = [
+            (292.0, 67.0, ToolIcon::Section, Some("Участок"), "Добавить участок к линии", self.can_add_section()),
+            (362.0, 132.0, ToolIcon::Line, Some("Параллельная линия"), "Добавить параллельную линию к участку", self.can_add_child()),
+            (498.0, 67.0, ToolIcon::Tap, Some("Отпайка"), "Добавить отпайку от линии к участку", self.can_add_child()),
+            (567.0, 22.0, ToolIcon::Delete, None, "Удалить выделенный элемент", self.can_delete()),
+            (597.0, 22.0, ToolIcon::Down, None, "Переместить выделенный элемент вниз", self.can_move(false)),
+            (619.0, 22.0, ToolIcon::Up, None, "Переместить выделенный элемент вверх", self.can_move(true)),
+            (650.0, 22.0, ToolIcon::Open, None, "Загрузить настройки в отдельном файле", true),
+            (672.0, 22.0, ToolIcon::Save, None, "Сохранить настройки в отдельном файле", true),
+        ];
+        for (k, (x, w, icon, text, tip, enabled)) in items.into_iter().enumerate() {
+            if tool_button(ui, at(x, 12.0, w, 22.0), icon, text, enabled).on_hover_text(tip).clicked() && enabled {
+                match k {
+                    0 => self.add_section(),
+                    1 => self.add_child(false),
+                    2 => self.add_child(true),
+                    3 => self.delete(),
+                    4 => self.move_sel(false),
+                    5 => self.move_sel(true),
+                    6 => action = Some(DialogAction::Load),
+                    _ => action = Some(DialogAction::Save),
                 }
-            });
-            if idx != cur {
-                self.set_method(METHODS[idx].0);
             }
-            // TOOLBAR 475 (`0x4a7e40`): no separator after the combo; text
-            // only on the three add buttons, the rest icons; the tooltips
-            // are the command strings 32870–32878.
-            if ui.add_enabled(self.can_add_section(), egui::Button::new("Участок")).on_hover_text("Добавить участок к линии").clicked() {
-                self.add_section();
-            }
-            if ui.add_enabled(self.can_add_child(), egui::Button::new("Параллельная линия")).on_hover_text("Добавить параллельную линию к участку").clicked() {
-                self.add_child(false);
-            }
-            if ui.add_enabled(self.can_add_child(), egui::Button::new("Отпайка")).on_hover_text("Добавить отпайку от линии к участку").clicked() {
-                self.add_child(true);
-            }
-            if ui.add_enabled(self.can_delete(), egui::Button::new("✖")).on_hover_text("Удалить выделенный элемент").clicked() {
-                self.delete();
-            }
-            ui.separator();
-            if ui.add_enabled(self.can_move(false), egui::Button::new("⬇")).on_hover_text("Переместить выделенный элемент вниз").clicked() {
-                self.move_sel(false);
-            }
-            if ui.add_enabled(self.can_move(true), egui::Button::new("⬆")).on_hover_text("Переместить выделенный элемент вверх").clicked() {
-                self.move_sel(true);
-            }
-            ui.separator();
-            if ui.button("📂").on_hover_text("Загрузить настройки в отдельном файле").clicked() {
-                action = Some(DialogAction::Load);
-            }
-            if ui.button("💾").on_hover_text("Сохранить настройки в отдельном файле").clicked() {
-                action = Some(DialogAction::Save);
-            }
-        }));
-        // The tree (1074, `0x4a7d1b`): (11, tb + 21), (W/3 − 22) × (H − 92);
-        // buttons and lines but not at the root (style 0x50110003) — a
-        // station has no ⊞ / ⊟ (a double-click toggles it); each item the
-        // image of its kind (BITMAP 476: station, section, parallel line,
-        // tap — our own drawings).
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(at(11.0, TB + 21.0, W / 3.0 - 22.0, H - 92.0)), |ui| {
-            egui::Frame::none().stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(171, 173, 179))).fill(Color32::WHITE).show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                egui::ScrollArea::vertical().id_salt("omp_tree").show(ui, |ui| {
-                    let mut hidden_below: Option<usize> = None;
-                    let rows = self.rows();
-                    for (i, (depth, node, label)) in rows.iter().enumerate() {
-                        if let Some(d) = hidden_below {
-                            if *depth > d {
-                                continue;
-                            }
-                            hidden_below = None;
+        }
+        for x in [593.0, 645.0] {
+            let r = at(x, 11.0, 1.0, 22.0);
+            ui.painter().rect_filled(r, 0.0, Color32::from_gray(197));
+            ui.painter().rect_filled(r.translate(egui::vec2(1.0, 0.0)), 0.0, Color32::WHITE);
+        }
+        // The tree (1074, `0x4a7d1b`): buttons and lines but not at the
+        // root (style 0x50110003) — a station has no ⊞ / ⊟ (a double-click
+        // toggles it); 16 px rows, each the image of its kind (BITMAP 476:
+        // our own drawings) at +3, the label from +22, the selection white
+        // on (0, 120, 212) (VM).
+        let tree = at(10.0, 44.0, third - 20.0, H - 90.0);
+        ui.painter().rect_filled(tree, 0.0, Color32::from_rgb(171, 173, 179));
+        ui.painter().rect_filled(tree.shrink(1.0), 0.0, Color32::WHITE);
+        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(tree.shrink(1.0)), |ui| {
+            ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+            egui::ScrollArea::vertical().id_salt("omp_tree").show(ui, |ui| {
+                let mut hidden_below: Option<usize> = None;
+                let rows = self.rows();
+                for (i, (depth, node, label)) in rows.iter().enumerate() {
+                    if let Some(d) = hidden_below {
+                        if *depth > d {
+                            continue;
                         }
-                        let has_children = rows.get(i + 1).is_some_and(|(d2, _, _)| d2 > depth);
-                        let collapsed = self.collapsed.contains(node);
-                        let toggle = |me: &mut Self| {
-                            if me.collapsed.contains(node) {
-                                me.collapsed.remove(node);
+                        hidden_below = None;
+                    }
+                    let has_children = rows.get(i + 1).is_some_and(|(d2, _, _)| d2 > depth);
+                    let collapsed = self.collapsed.contains(node);
+                    let (row, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 16.0), egui::Sense::hover());
+                    let x0 = row.left() + 3.0 + 19.0 * *depth as f32;
+                    let p = ui.painter().clone();
+                    if *depth > 0 && has_children {
+                        // The ⊞ / ⊟ box, 9 px, left of the image.
+                        let b = egui::Rect::from_center_size(egui::pos2(x0 - 9.5, row.center().y), egui::vec2(9.0, 9.0));
+                        p.rect_filled(b, 0.0, Color32::from_gray(150));
+                        p.rect_filled(b.shrink(1.0), 0.0, Color32::WHITE);
+                        p.hline(b.left() + 2.0..=b.right() - 2.0, b.center().y, egui::Stroke::new(1.0f32, Color32::BLACK));
+                        if collapsed {
+                            p.vline(b.center().x, b.top() + 2.0..=b.bottom() - 2.0, egui::Stroke::new(1.0f32, Color32::BLACK));
+                        }
+                        if ui.interact(b.expand(2.0), ui.id().with(("omp_box", i)), egui::Sense::click()).clicked() {
+                            if collapsed {
+                                self.collapsed.remove(node);
                             } else {
-                                me.collapsed.insert(*node);
+                                self.collapsed.insert(*node);
                             }
-                        };
-                        ui.horizontal(|ui| {
-                            ui.add_space(4.0 + 16.0 * depth.saturating_sub(1) as f32);
-                            if *depth > 0 {
-                                if has_children {
-                                    if ui.add(egui::Button::new(if collapsed { "⊞" } else { "⊟" }).frame(false).small()).clicked() {
-                                        toggle(self);
-                                    }
-                                } else {
-                                    ui.add_space(14.0);
-                                }
-                            }
-                            let (ir, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                            tree_icon(ui.painter(), ir, node);
-                            let r = ui.selectable_label(self.sel == *node, label.as_str());
-                            if r.clicked() {
-                                self.sel = *node;
-                            }
-                            if r.double_clicked() && has_children {
-                                toggle(self);
-                            }
-                        });
-                        if has_children && self.collapsed.contains(node) {
-                            hidden_below = Some(*depth);
                         }
                     }
-                });
-            });
-        });
-        // The grid (`0x4a80e0`, WS_BORDER, no header): (W/3, tb + 20),
-        // (2W/3 − 10) × (H − 90); modified values bold.
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(at(W / 3.0, TB + 20.0, 2.0 * W / 3.0 - 10.0, H - 90.0)), |ui| {
-            egui::Frame::none().stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(171, 173, 179))).show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                egui::ScrollArea::vertical().id_salt("omp_grid").show(ui, |ui| {
-                    egui::Grid::new("omp_grid_rows").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-                        let node = self.sel;
-                        for (label, f, is_chan) in grid_rows(self.work.method, node) {
-                            let Some(v) = field_mut(&mut self.work, node, f) else { continue };
-                            // Seen on the VM: the names left-aligned, a
-                            // modified value (not its name) bold.
-                            let modified = v.as_str() != default_value(node, f);
-                            ui.allocate_ui_with_layout(egui::vec2(230.0, 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                ui.set_min_width(230.0);
-                                ui.add(egui::Label::new(label).truncate());
-                            });
-                            if is_chan {
-                                let shown = if modified { RichText::new(v.as_str()).strong() } else { RichText::new(v.as_str()) };
-                                egui::ComboBox::from_id_salt(("omp_chan", label))
-                                    .width(190.0)
-                                    .selected_text(shown)
-                                    .show_ui(ui, |ui| {
-                                        for n in channels {
-                                            ui.selectable_value(v, n.clone(), n.as_str());
-                                        }
-                                    });
-                            } else {
-                                ui.add(egui::TextEdit::singleline(v).desired_width(190.0));
-                            }
-                            ui.end_row();
+                    tree_icon(&p, egui::Rect::from_min_size(egui::pos2(x0, row.top()), egui::vec2(16.0, 16.0)), node);
+                    let g = ui.fonts(|f| f.layout_no_wrap(label.clone(), DLG_FONT, Color32::BLACK));
+                    let lr = egui::Rect::from_min_size(egui::pos2(x0 + 19.0, row.top()), egui::vec2(g.size().x + 5.0, 16.0));
+                    let selected = self.sel == *node;
+                    if selected {
+                        p.rect_filled(lr, 0.0, Color32::from_rgb(0, 120, 212));
+                    }
+                    p.galley(egui::pos2(lr.left() + 2.0, lr.center().y - g.size().y / 2.0), g, if selected { Color32::WHITE } else { Color32::BLACK });
+                    let resp = ui.interact(lr, ui.id().with(("omp_item", i)), egui::Sense::click());
+                    if resp.clicked() {
+                        self.sel = *node;
+                    }
+                    if resp.double_clicked() && has_children {
+                        if self.collapsed.contains(node) {
+                            self.collapsed.remove(node);
+                        } else {
+                            self.collapsed.insert(*node);
                         }
-                    });
-                });
+                    }
+                    if has_children && self.collapsed.contains(node) {
+                        hidden_below = Some(*depth);
+                    }
+                }
             });
         });
-        if ui.put(at(465.0, 413.0, 114.0, 23.0), egui::Button::new("OK")).clicked() {
+        // The grid (`0x4a80e0`, WS_BORDER, no header) (VM): 17 px rows ruled
+        // in (240) below each, the names and the values 5 px into their
+        // columns, the value column from 231 px; a modified value bold. A
+        // click on a value edits it in place: an edit, or the channel list.
+        let grid = at(third, 44.0, (2.0 * W / 3.0).floor() - 10.0, H - 90.0);
+        ui.painter().rect_filled(grid, 0.0, Color32::from_rgb(171, 173, 179));
+        let inner = grid.shrink(1.0);
+        ui.painter().rect_filled(inner, 0.0, Color32::WHITE);
+        let split = inner.left() + 231.0;
+        let rule = egui::Stroke::new(1.0f32, Color32::from_gray(240));
+        ui.painter().vline(split - 0.5, inner.y_range(), rule);
+        let node = self.sel;
+        if self.edit.is_some_and(|(n, _)| n != node) {
+            self.edit = None;
+        }
+        let rows = grid_rows(self.work.method, node);
+        let mut y = inner.top();
+        for (k, (label, f, is_chan)) in rows.into_iter().enumerate() {
+            let Some(v) = field_mut(&mut self.work, node, f) else { continue };
+            let row = egui::Rect::from_min_max(egui::pos2(inner.left(), y), egui::pos2(inner.right(), y + 17.0));
+            y += 17.0;
+            ui.painter().hline(inner.left() + 1.0..=inner.right() - 1.0, row.bottom() - 0.5, rule);
+            let name = egui::Rect::from_min_max(row.min, egui::pos2(split - 1.0, row.bottom() - 1.0));
+            let cell = egui::Rect::from_min_max(egui::pos2(split, row.top()), egui::pos2(row.right(), row.bottom() - 1.0));
+            // Seen on the VM: the names left-aligned, a modified value (not
+            // its name) bold.
+            let modified = v.as_str() != default_value(node, f);
+            let font = DLG_FONT;
+            ui.painter().with_clip_rect(name).text(egui::pos2(name.left() + 5.0, name.center().y), egui::Align2::LEFT_CENTER, ellipsize_to(ui, label, name.width() - 7.0), font.clone(), Color32::BLACK);
+            // A click selects the row (CMFCPropertyGridCtrl, VM): its name
+            // on (180, 201, 233) and its value in place — a number in a
+            // frameless edit at once, a channel with a drop button (14 px,
+            // (226, 238, 255) → (196, 221, 255), a (86, 125, 177) arrow)
+            // opening the list.
+            let editing = self.edit == Some((node, k));
+            if editing {
+                ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2(name.left() + 1.0, name.top()), name.max), 0.0, Color32::from_rgb(180, 201, 233));
+                ui.painter().with_clip_rect(name).text(egui::pos2(name.left() + 5.0, name.center().y), egui::Align2::LEFT_CENTER, ellipsize_to(ui, label, name.width() - 7.0), font.clone(), Color32::BLACK);
+            }
+            if editing && !is_chan {
+                let id = egui::Id::new(("omp_cell", k));
+                let resp = ui.put(cell, egui::TextEdit::singleline(v).id(id).frame(false).font(font.clone()).margin(egui::Margin { left: 5.0, right: 2.0, top: 2.0, bottom: 1.0 }).desired_width(cell.width() - 7.0));
+                if !resp.has_focus() && !resp.lost_focus() {
+                    resp.request_focus();
+                }
+                if resp.lost_focus() {
+                    self.edit = None;
+                }
+                continue;
+            }
+            if editing {
+                let btn = egui::Rect::from_min_max(egui::pos2(inner.right() - 14.0, cell.top()), egui::pos2(inner.right(), cell.bottom()));
+                let mut mesh = egui::Mesh::default();
+                for (pt, c) in [(btn.left_top(), (226, 238, 255)), (btn.right_top(), (226, 238, 255)), (btn.right_bottom(), (196, 221, 255)), (btn.left_bottom(), (196, 221, 255))] {
+                    mesh.colored_vertex(pt, Color32::from_rgb(c.0, c.1, c.2));
+                }
+                mesh.add_triangle(0, 1, 2);
+                mesh.add_triangle(0, 2, 3);
+                ui.painter().add(mesh);
+                let c = btn.center() + egui::vec2(0.0, -1.0);
+                ui.painter().add(egui::Shape::convex_polygon(vec![c + egui::vec2(-2.5, -1.0), c + egui::vec2(2.5, -1.0), c + egui::vec2(0.0, 1.5)], Color32::from_rgb(86, 125, 177), egui::Stroke::NONE));
+                let list_id = egui::Id::new(("omp_chan", k));
+                let open_id = list_id.with("open");
+                if ui.interact(btn, ui.id().with(("omp_drop", k)), egui::Sense::click()).clicked() {
+                    let open = !ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
+                    ui.data_mut(|d| d.insert_temp(open_id, open));
+                }
+                if ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false)) {
+                    let cur = channels.iter().position(|c| c == v);
+                    if let Some(pick) = crate::dialogs::combo_popup(ui, cell, list_id, channels, cur) {
+                        *v = channels[pick].clone();
+                    }
+                }
+            }
+            let p = ui.painter().with_clip_rect(cell);
+            let at_text = egui::pos2(cell.left() + 5.0, cell.center().y);
+            p.text(at_text, egui::Align2::LEFT_CENTER, v.as_str(), font.clone(), Color32::BLACK);
+            if modified {
+                // Bold: the text again a pixel to the right.
+                p.text(at_text + egui::vec2(1.0, 0.0), egui::Align2::LEFT_CENTER, v.as_str(), font.clone(), Color32::BLACK);
+            }
+            if !editing && ui.interact(egui::Rect::from_min_max(row.min, egui::pos2(row.right(), row.bottom() - 1.0)), ui.id().with(("omp_cell_click", k)), egui::Sense::click()).clicked() {
+                self.edit = Some((node, k));
+            }
+        }
+        if win_button(ui, at(465.0, 413.0, 114.0, 23.0), "OK", true).clicked() {
             action = Some(DialogAction::Ok);
         }
-        if ui.put(at(588.0, 413.0, 114.0, 23.0), egui::Button::new("Отмена")).clicked() {
+        if win_button(ui, at(588.0, 413.0, 114.0, 23.0), "Отмена", false).clicked() {
             action = Some(DialogAction::Cancel);
         }
         action
     }
+}
+
+/// A grid name cut to `width` with «...» (DT_END_ELLIPSIS), whole when it
+/// fits.
+fn ellipsize_to(ui: &egui::Ui, text: &str, width: f32) -> String {
+    let font = crate::dialogs::DLG_FONT;
+    if ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::BLACK).size().x) <= width {
+        return text.to_owned();
+    }
+    crate::dialogs::ellipsize(ui, text, font, width)
+}
+
+/// A toolbar button: x and width in the client, image, text, tooltip,
+/// enabled.
+type ToolItem<'a> = (f32, f32, ToolIcon, Option<&'a str>, &'a str, bool);
+
+/// TOOLBAR 475's images (our own drawings).
+#[derive(Clone, Copy)]
+enum ToolIcon {
+    Section,
+    Line,
+    Tap,
+    Delete,
+    Down,
+    Up,
+    Open,
+    Save,
+}
+
+/// A flat toolbar button (VM): the 16 px image 3 px in, the text after it
+/// in (0, 21, 110) — (141) and a pale image when disabled; under the
+/// pointer the Office 2007 hot face (approximated).
+fn tool_button(ui: &mut egui::Ui, r: egui::Rect, icon: ToolIcon, text: Option<&str>, enabled: bool) -> egui::Response {
+    let resp = ui.interact(r, ui.id().with(("omp_tool", r.left() as i32)), egui::Sense::click());
+    let p = ui.painter();
+    if enabled && resp.hovered() {
+        p.rect_filled(r, 2.0, Color32::from_rgb(255, 189, 105));
+        p.rect_filled(r.shrink(1.0), 2.0, Color32::from_rgb(255, 231, 162));
+    }
+    let cell = egui::Rect::from_min_size(egui::pos2(r.left() + 3.0, r.center().y - 8.0), egui::vec2(16.0, 16.0));
+    let ink = if enabled { Color32::from_rgb(0, 21, 110) } else { Color32::from_gray(141) };
+    let c = cell.center();
+    let st = egui::Stroke::new(1.5f32, if enabled { Color32::from_rgb(60, 60, 60) } else { Color32::from_gray(170) });
+    match icon {
+        ToolIcon::Section => tree_icon(p, cell, &Node::Section(0, 0)),
+        ToolIcon::Line => tree_icon(p, cell, &Node::Line(0, 0, 0)),
+        ToolIcon::Tap => tree_icon(p, cell, &Node::Tap(0, 0, 0)),
+        ToolIcon::Delete => {
+            p.line_segment([c + egui::vec2(-5.0, -5.0), c + egui::vec2(5.0, 5.0)], st);
+            p.line_segment([c + egui::vec2(5.0, -5.0), c + egui::vec2(-5.0, 5.0)], st);
+        }
+        ToolIcon::Down | ToolIcon::Up => {
+            let s = if matches!(icon, ToolIcon::Down) { 1.0 } else { -1.0 };
+            let tri = vec![c + egui::vec2(-4.5, -2.5 * s), c + egui::vec2(4.5, -2.5 * s), c + egui::vec2(0.0, 2.5 * s)];
+            p.add(egui::Shape::convex_polygon(tri, st.color, egui::Stroke::NONE));
+        }
+        ToolIcon::Open => {
+            p.rect_filled(egui::Rect::from_min_max(c + egui::vec2(-7.0, -4.0), c + egui::vec2(7.0, 6.0)), 1.0, Color32::from_rgb(232, 182, 70));
+            p.rect_filled(egui::Rect::from_min_max(c + egui::vec2(-7.0, -6.0), c + egui::vec2(-1.0, -3.0)), 1.0, Color32::from_rgb(232, 182, 70));
+        }
+        ToolIcon::Save => {
+            let r = egui::Rect::from_min_max(c + egui::vec2(-6.5, -6.5), c + egui::vec2(6.5, 6.5));
+            p.rect_filled(r, 1.0, Color32::from_rgb(40, 60, 170));
+            p.rect_filled(egui::Rect::from_min_max(r.min + egui::vec2(3.0, 1.0), egui::pos2(r.right() - 3.0, r.top() + 6.0)), 0.0, Color32::WHITE);
+        }
+    }
+    if let Some(t) = text {
+        p.text(egui::pos2(cell.right() + 3.0, r.center().y), egui::Align2::LEFT_CENTER, t, crate::dialogs::DLG_FONT, ink);
+    }
+    resp
 }
 
 /// A tree item's image (BITMAP 476's four cells, our own drawings on

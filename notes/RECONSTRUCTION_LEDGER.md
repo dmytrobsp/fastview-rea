@@ -6898,6 +6898,27 @@ its radios grey out with «В процентах» off; the disabled look
 approximated) lay it out on the template; it matches the capture but
 for the glyphs.
 
+### L9.246 — DIALOG 336 «Параметры ОМП» as on the VM  ·  ✅
+VM captures (ОМП tab → «Параметры»; then a click on a number's and a
+channel's value): the 713 × 447 client placed by L9.242's rule (client
+924, 484). OnInitDialog's controls measured: the method combo at (13, 12)
+278 × 21 (a drop-down list); TOOLBAR 475 flat to its right — images 3 px
+into each button, text on the three add buttons in (0, 21, 110), (141)
+disabled, two 2 px separators (x 593, 645); the tree at (10, 44),
+W/3 − 20 × H − 90 with the thirds whole pixels (217 × 357; ours had 11,
+tb + 21 and W/3 − 22), 16 px rows, the image at +3, the label from +22,
+the selection white on (0, 120, 212); the grid at (W/3, 44), 2W/3 − 10
+wide (465 × 357), a CMFCPropertyGridCtrl-like list: 17 px rows ruled in
+(240) below each, names and values 5 px into their columns, the value
+column from 231 px, long names cut with «...». A click selects a row:
+its name on (180, 201, 233) and its value in place at once — a number
+in a frameless edit, a channel with a 14 px drop button ((226, 238, 255)
+→ (196, 221, 255), a (86, 125, 177) arrow) that opens the list. Ours had
+egui buttons, a tree of egui labels and egui text fields / combo boxes in
+every row, 11 px of margin and its own anchor. Now the dialog is drawn
+so (`tool_button`, the in-place `edit` row, `combo_popup` shared); it
+matches the captures but for the glyphs and our own toolbar images.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
