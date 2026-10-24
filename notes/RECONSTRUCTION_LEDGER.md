@@ -6919,6 +6919,25 @@ every row, 11 px of margin and its own anchor. Now the dialog is drawn
 so (`tool_button`, the in-place `edit` row, `combo_popup` shared); it
 matches the captures but for the glyphs and our own toolbar images.
 
+### L9.247 — DIALOG 347 «Печать» on its template; the check box  ·  ✅
+VM capture (application menu → «Печать»): DIALOG 347, 341 × 258 DLU
+(512 × 419 px), DS_CENTER — centred in the work area, which with the
+main window maximised is where L9.242's rule puts it (border 1023 as
+ours). The printer group with «Имя:» and its drop-down list, «Свойства...»
+right of it, the four detail labels and their values (static text), the
+«Параметры страницы» button, the «Диаграмма» group of five auto check
+boxes, «Предварительный просмотр», OK (the default) and «Отмена», all at
+their template rectangles; «Печать в файл» (1040) lacks WS_VISIBLE and
+edit 1154 lies off the client — neither shows. Windows 11's check box:
+13 px rounded 2 px, centred in its row — checked (0, 95, 184) with a thin
+white tick, else a (98) frame on (243) — the text 16 px in. Ours was an
+egui window (not yet `Dlg`) with groups, a grid and egui widgets. Now it
+is `Dlg` with `win_check`, `win_button_en` (a disabled button: the look
+approximated — ours's «Свойства...» is disabled off Windows) and the
+other template controls; it matches the capture but for the glyphs and
+the printer list's contents (the VM's printers; ours lists the PDF
+entry).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

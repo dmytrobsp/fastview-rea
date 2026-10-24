@@ -226,46 +226,43 @@ impl App {
         }
         let (mut ok, mut cancel, mut preview, mut setup) = (false, false, false, false);
         let mut open = true;
-        egui::Window::new("Печать").collapsible(false).resizable(false).open(&mut open).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
-            ui.group(|ui| {
-                ui.label(RichText::new("Принтер").strong());
-                egui::Grid::new("print_printer").num_columns(2).show(ui, |ui| {
-                    ui.label("Имя:");
-                    egui::ComboBox::from_id_salt("print_name").width(260.0).selected_text(names[dlg.printer.min(names.len() - 1)].clone()).show_ui(ui, |ui| {
-                        for (i, n) in names.iter().enumerate() {
-                            ui.selectable_value(&mut dlg.printer, i, n);
-                        }
-                    });
-                    ui.end_row();
-                    let details = dlg.details.as_ref().map(|d| d.1.clone()).unwrap_or_default();
-                    for (l, v) in ["Состояние:", "Тип:", "Место:", "Комментарий:"].into_iter().zip(details) {
-                        ui.label(l);
-                        ui.label(v);
-                        ui.end_row();
-                    }
-                });
-                // The driver's dialog (Windows); the chosen settings
-                // apply to this printer's jobs.
-                let real = self.print.printers.get(dlg.printer).cloned();
-                if ui.add_enabled(cfg!(windows) && real.is_some(), egui::Button::new("Свойства...")).clicked() {
-                    if let Some(p) = real {
-                        spool::properties(&p);
-                        dlg.details = None;
-                    }
+        crate::dialogs::dlg(ctx, "Печать").margin(0.0).collapsible(false).resizable(false).open(&mut open).show(ctx, |ui| {
+            use crate::dialogs::{dlu, win_button, win_button_en, win_check, win_combo_list, win_group, win_label};
+            // The 341 × 258 DLU template (512 × 419 px); «Печать в файл»
+            // (1040) is hidden, edit 1154 off the client.
+            let (client, _) = ui.allocate_exact_size(Vec2::new(512.0, 419.0), egui::Sense::hover());
+            win_group(ui, dlu(client, 8, 4, 323, 97), "Принтер");
+            win_label(ui, dlu(client, 16, 20, 36, 8), "Имя:", false, true);
+            if let Some(k) = win_combo_list(ui, dlu(client, 70, 18, 180, 152), egui::Id::new("print_name"), &names, dlg.printer.min(names.len() - 1), true) {
+                dlg.printer = k;
+            }
+            // The driver's dialog (Windows); the chosen settings apply to
+            // this printer's jobs.
+            let real = self.print.printers.get(dlg.printer).cloned();
+            if win_button_en(ui, dlu(client, 258, 17, 60, 14), "Свойства...", false, cfg!(windows) && real.is_some()).clicked() {
+                if let Some(p) = real {
+                    spool::properties(&p);
+                    dlg.details = None;
                 }
-            });
-            setup = ui.button("Параметры страницы").clicked();
-            ui.group(|ui| {
-                ui.label(RichText::new("Диаграмма").strong());
-                for (t, l) in dlg.ticks.iter_mut().zip(TICK_LABELS) {
-                    ui.checkbox(t, l);
+            }
+            let details = dlg.details.as_ref().map(|d| d.1.clone()).unwrap_or_default();
+            let rows = [((16, 36, 36), (71, 36, 224), "Состояние:"), ((16, 51, 36), (72, 51, 224), "Тип:"), ((16, 66, 36), (72, 66, 224), "Место:"), ((16, 81, 50), (72, 82, 228), "Комментарий:")];
+            for (k, ((lx, ly, lw), (vx, vy, vw), l)) in rows.into_iter().enumerate() {
+                win_label(ui, dlu(client, lx, ly, lw, 10), l, false, true);
+                if let Some(v) = details.get(k) {
+                    win_label(ui, dlu(client, vx, vy, vw, 10), v, false, true);
                 }
-            });
-            ui.horizontal(|ui| {
-                preview = ui.button("Предварительный просмотр").clicked();
-                ok = ui.button("   OK   ").clicked();
-                cancel = ui.button("Отмена").clicked();
-            });
+            }
+            setup = win_button(ui, dlu(client, 7, 107, 120, 14), "Параметры страницы", false).clicked();
+            win_group(ui, dlu(client, 8, 125, 322, 108), "Диаграмма");
+            for ((t, l), (y, w)) in dlg.ticks.iter_mut().zip(TICK_LABELS).zip([(144, 68), (161, 90), (178, 90), (195, 86), (212, 122)]) {
+                if win_check(ui, dlu(client, 16, y, w, 10), l, *t) {
+                    *t = !*t;
+                }
+            }
+            preview = win_button(ui, dlu(client, 7, 238, 120, 14), "Предварительный просмотр", false).clicked();
+            ok = win_button(ui, dlu(client, 189, 238, 67, 14), "OK", true).clicked();
+            cancel = win_button(ui, dlu(client, 262, 238, 67, 14), "Отмена", false).clicked();
         });
         // The checkboxes are kept per view, also on Отмена (`0x404b30`).
         self.docs[dlg.doc].print_ticks = dlg.ticks;

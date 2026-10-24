@@ -215,8 +215,21 @@ impl<'o> Dlg<'o> {
 /// (0, 120, 212) to (0, 108, 191). Hover and pressed are the theme's
 /// (approximated); the text centred, black.
 pub fn win_button(ui: &mut egui::Ui, r: Rect, text: &str, default: bool) -> egui::Response {
-    let resp = ui.interact(r, ui.id().with(("fv_btn", text)), egui::Sense::click());
+    win_button_en(ui, r, text, default, true)
+}
+
+/// `win_button`, disabled: a paler face and grey text, deaf to clicks
+/// (the disabled look approximated).
+pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enabled: bool) -> egui::Response {
+    let resp = ui.interact(r, ui.id().with(("fv_btn", text)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let face = r.shrink(1.0);
+    if !enabled {
+        let p = ui.painter();
+        p.rect_filled(face, 4.0, Color32::from_gray(229));
+        p.rect_filled(face.shrink(1.0), 3.0, Color32::from_gray(245));
+        p.text(face.center(), egui::Align2::CENTER_CENTER, text, DLG_FONT, Color32::from_gray(160));
+        return resp;
+    }
     let (fill, edge, bottom) = match (resp.is_pointer_button_down_on(), resp.hovered(), default) {
         (true, _, _) => (Color32::from_rgb(204, 228, 247), Color32::from_rgb(0, 84, 153), Color32::from_rgb(0, 84, 153)),
         (false, true, _) => (Color32::from_rgb(224, 238, 249), Color32::from_rgb(0, 120, 212), Color32::from_rgb(0, 108, 191)),
@@ -413,6 +426,26 @@ pub fn ellipsize(ui: &egui::Ui, text: &str, font: egui::FontId, width: f32) -> S
         n -= 1;
     }
     format!("{}...", chars[..n].iter().collect::<String>())
+}
+
+/// An auto check box at its template rectangle (VM, Windows 11): a 13 px
+/// box rounded 2 px, centred in the row — checked (0, 95, 184) with a thin
+/// white tick, else a (98) frame on (243) — the text from 16 px in.
+/// Returns the click.
+pub fn win_check(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool {
+    let resp = ui.interact(r, ui.id().with(("fv_check", text)), egui::Sense::click());
+    let b = Rect::from_min_size(Pos2::new(r.left(), r.top() + ((r.height() - 13.0) / 2.0).floor()), Vec2::splat(13.0));
+    let p = ui.painter();
+    if checked {
+        p.rect_filled(b, 2.5, Color32::from_rgb(0, 95, 184));
+        let o = b.min;
+        p.add(egui::Shape::line(vec![o + Vec2::new(3.5, 6.5), o + Vec2::new(5.5, 8.5), o + Vec2::new(9.5, 4.5)], Stroke::new(1.0f32, Color32::WHITE)));
+    } else {
+        p.rect_filled(b, 2.5, Color32::from_gray(98));
+        p.rect_filled(b.shrink(1.0), 1.5, if resp.hovered() { Color32::from_gray(233) } else { Color32::from_gray(243) });
+    }
+    p.text(Pos2::new(r.left() + 16.0, b.center().y), egui::Align2::LEFT_CENTER, text, DLG_FONT, Color32::BLACK);
+    resp.clicked()
 }
 
 /// A combo box's closed height (Windows for the template font, VM).
