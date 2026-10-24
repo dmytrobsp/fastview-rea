@@ -3510,7 +3510,8 @@ against `CMDIFrameWndEx`'s overrides slots 0–4, 12, 66, 69, 97, 120, 123,
 returns FALSE unless the allowed items carry the can-be-docked bit 0x10,
 then offers only the «dockable» item −106): a tab dropped outside its
 strip or right-clicked offers no new tab group, so FastView never splits
-the document area into groups.
+the document area into groups. [Corrected by L9.262 / L9.263: a FALSE
+return on a drop means MFC's default action, which makes groups.]
 Ours had fixed tab order. Now `doc_tabs`: an id per document (its
 serial), a press or drag brings the tab to the front, a drag over another
 tab past its middle swaps them (`0x100690b4`); out of the strip nothing
@@ -7172,7 +7173,7 @@ activation; Esc goes back to the tabs. The panels' keys (zp, zz, zv)
 show only when collapsed (never at this width). Harness:
 `FV_WINDOW_KEYTIPS=tabs|p` with `FV_WINDOW_LATE=preview`.
 
-### L9.262 — VM runs: a pane tab pulled out floats at the pointer; document tabs make tab groups  ·  🟡
+### L9.262 — VM runs: a pane tab pulled out floats at the pointer; document tabs make tab groups  ·  ✅
 VM runs with a mouse drag (the harness's new `DRAG` / `HOLD` … `UP`
 steps): the Круговая tab pulled out of the start-up Векторная group and
 let go at (1500, 700) floats Круговая alone at about its create size
@@ -7193,7 +7194,69 @@ while dragging (the dragged tab only takes its pressed look); the
 splitter drags; the tab dragged back onto the first group's strip merges
 the groups again; a right-click on a tab shows no menu; a click in the
 other group's view both activates its document and acts (the визир
-moves). Ours: not yet — L9.263.
+moves). Ours: L9.263.
+
+### L9.263 — MDI tab groups: made, joined, emptied, re-laid out as MFC does  ·  ✅
+Read (subagent report on mfc120u; the VM runs of L9.262): the frame's
+`OnShowMDITabContextMenu` (`0x100bc637`) returns FALSE for a drop as for a
+right-click, and for a drop FALSE means MFC's default (`0x100b537d`):
+- Let go over another group, the tab is appended to that group and its
+  document activated. Over its own group, with another tab left there, the
+  tab makes a new group right after it: vertical unless the groups already
+  run horizontally (the two never mix). With one tab nothing happens.
+- While dragging (`0x100b5028`), within 40 px of a group's right edge
+  (bottom edge when horizontal, or whichever edge is nearer while there is
+  one group) the far half is offered as a new group. Over another group's
+  strip, that group is offered. Either shows as a 4 px halftone XOR
+  outline; elsewhere nothing shows.
+- The new group gets the far half of the target's child area: the window
+  less its edge and 4 px (`0x100b56f6`).
+- The client area's re-layout runs on every frame layout (`0x100b3a5b`
+  from its CalcWindowRect): each group but the last takes its share of
+  the total in whole percent, rounded up, of the length (truncated); the
+  last takes the rest; every group keeps at least 40 px. Nothing else is
+  kept, so the VM's 1552 px area goes 778 | 774 → 791 | 761, and a further
+  split of the first group goes 400 | 391 | 761 → 403 | 403 | 746.
+- Every group but the last carries a 5 px resize edge inside its window,
+  over its own border and its child's frame: a 1 px line, then the face
+  (VM, Blue: (185, 208, 237), (213, 228, 242)). The edge drags with a
+  halftone bar, kept 40 px from the two neighbours' far ends, and resizes
+  only those two when let go.
+- An emptied group goes, its room merged into the group before it (the
+  next one if it was first).
+- Each group shows its own front document. Only the active document's tab
+  is bold (`0x1013b543`). A press in another group activates its document
+  and the view takes the click too.
+- No menu, no group commands, nothing saved (FastView never calls
+  Save/LoadMDIState).
+- A tab that changes group is a new tab there, so it takes a new colour by
+  L9.63's pick; the VM's colours match exactly: colour 0 alone in a new
+  group, 4 for the next new group, 1 appended after colour 0.
+
+Ours had one strip and one view, and a tab dragged off the strip did
+nothing; every tab's label was drawn bold. Now `crate::mdi`:
+- `Doc::mdi_group`, `Doc::front_stamp`.
+- `App::mdi_widths` (the windows along the axis), `mdi_vertical`,
+  `drop_preview` / `drop_doc_tab`, `new_group_after`, `move_to_group`,
+  `prune_groups`, `relayout_groups`, `drag_split`.
+- `view_oscillogram` lays the groups out and draws each one's front
+  document through `doc_group_ui`, the active group last, with the edges
+  (`group_edge`) on top.
+- `doc_tabs` draws one group's tabs (colours picked within the group, ▾
+  listing the group's tabs — INFERRED, bold only for the active document),
+  the outline while dragging, and the drop.
+
+Tests: `mdi::tests` (the VM's widths), and
+`a_document_tab_dragged_over_another_swaps_with_it` (into the view and
+back). Harness: `FV_WINDOW_STATE=groups`. Rendered against the VM: the
+boundary row matches pixel for pixel.
+
+Residuals:
+- The two drag cursors (MFC resources 0x4297 / 0x4298) are not drawn.
+- The edge's colours in the other looks were not measured.
+- The new tab's frame tint differs slightly (the frame gradient, L9.234).
+- Ours re-lays out every frame, MFC on each frame layout (the same fixed
+  point).
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
@@ -7265,7 +7328,7 @@ take that same key (L9.148).
 background research agents (MFC docking / tabs, merge, print, ribbon,
 finder, style data, the 401–543 dialogs, engine residuals):** L9.107 the
 four diagram panes as docking units of their own and MFC's tab show /
-hide rules; L9.108 document tabs reorder, no MDI tab groups (as read);
+hide rules; L9.108 document tabs reorder (MDI tab groups: L9.263);
 L9.109 edge blocks in the docking manager's order; L9.110 printing in the
 printer's hardware margins (CUPS PPD, preview); L9.111 merge method 2 as
 read, N = own rate ÷ 50 / R div trunc(f), flags baked in; L9.112 print

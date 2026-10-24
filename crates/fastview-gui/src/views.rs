@@ -740,95 +740,191 @@ impl App {
             egui::CentralPanel::default().frame(egui::Frame::none().fill(pal.work_bg)).show(ctx, |ui| self.lanes_ui(ui));
             return;
         }
-        let edge = egui::Stroke::new(1.0f32, pal.ribbon_top.gamma_multiply(0.92));
-        egui::CentralPanel::default()
-            .frame(egui::Frame::none().fill(pal.ribbon_top).stroke(edge).inner_margin(egui::Margin::same(1.0)))
-            .show(ctx, |ui| {
-                ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
-                egui::TopBottomPanel::top("fv_doc_tabs")
-                    .exact_height(20.0)
-                    .show_separator_line(false)
-                    .frame(egui::Frame::none())
-                    .show_inside(ui, |ui| {
-                        let r = ui.max_rect();
-                        let band = pal.mdi_tabs.unwrap_or([pal.ribbon_top.gamma_multiply(0.95), pal.ribbon_top.lerp_to_gamma(egui::Color32::WHITE, 0.5)]);
-                        let mut mesh = egui::Mesh::default();
-                        for (p, c) in [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()].into_iter().zip([band[0], band[0], band[1], band[1]]) {
-                            mesh.colored_vertex(p, c);
-                        }
-                        mesh.add_triangle(0, 1, 2);
-                        mesh.add_triangle(0, 2, 3);
-                        ui.painter().add(egui::Shape::mesh(mesh));
-                        // The row's bottom line (VM, Blue: (185, 208, 237)).
-                        if let Some(bands) = pal.bands {
-                            ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0f32, bands.mdi_border));
-                        }
-                        self.doc_tabs(ui);
-                    });
-                let (r, g, b) = crate::app::TAB_COLORS[self.active_doc().and_then(|d| d.tab_color).unwrap_or(0)];
-                egui::CentralPanel::default()
-                    // The child frame in the tab's colour — 2 px, 1 px at the
-                    // top — round the view's sunken client edge (VM: (160,
-                    // 160, 160) / (105, 105, 105) at the top and left, white /
-                    // (227, 227, 227) at the right and bottom).
-                    .frame(egui::Frame::none().inner_margin(egui::Margin { left: 2.0, right: 2.0, top: 1.0, bottom: 2.0 }))
-                    .show_inside(ui, |ui| {
-                        // The frame's colour runs along the diagonal from
-                        // the tab's colour at the top left to 35 lighter per
-                        // channel at the bottom right (VM: (255, 220, 120) →
-                        // (255, 254, 155)).
-                        let m = ui.max_rect();
-                        let fr = egui::Rect::from_min_max(m.min - egui::vec2(2.0, 1.0), m.max + egui::vec2(2.0, 2.0));
-                        let base = egui::Color32::from_rgb(r, g, b);
-                        let shade = |t: f32| {
-                            let up = |c: u8| (c as f32 + 35.0 * t).round().min(255.0) as u8;
-                            egui::Color32::from_rgb(up(r), up(g), up(b))
-                        };
-                        let (w, h) = (fr.width(), fr.height());
-                        let d2 = (w * w + h * h).max(1.0);
-                        let mut mesh = egui::Mesh::default();
-                        for (pt, c) in [(fr.left_top(), base), (fr.right_top(), shade(w * w / d2)), (fr.right_bottom(), shade(1.0)), (fr.left_bottom(), shade(h * h / d2))] {
-                            mesh.colored_vertex(pt, c);
-                        }
-                        mesh.add_triangle(0, 1, 2);
-                        mesh.add_triangle(0, 2, 3);
-                        ui.painter().add(egui::Shape::mesh(mesh));
-                        let edge = ui.available_rect_before_wrap();
-                        egui::Frame::none().fill(ui.visuals().panel_fill).inner_margin(egui::Margin::same(2.0)).show(ui, |ui| {
-                            ui.set_min_size(ui.available_size());
-                            if self.print.preview.is_some() {
-                                self.preview_ui(ui);
-                            } else {
-                                self.lanes_ui(ui);
-                            }
-                        });
-                        let p = ui.painter();
-                        let line = |c: u8| egui::Stroke::new(1.0f32, egui::Color32::from_gray(c));
-                        let (l, t, r_, b_) = (edge.left(), edge.top(), edge.right(), edge.bottom());
-                        p.px_hline(l..=r_ - 1.0, t, line(160));
-                        p.px_vline(l, t..=b_ - 1.0, line(160));
-                        p.px_hline(l + 1.0..=r_ - 2.0, t + 1.0, line(105));
-                        p.px_vline(l + 1.0, t + 1.0..=b_ - 2.0, line(105));
-                        p.px_hline(l..=r_ - 1.0, b_ - 1.0, line(255));
-                        p.px_vline(r_ - 1.0, t..=b_ - 1.0, line(255));
-                        p.px_hline(l + 1.0..=r_ - 2.0, b_ - 2.0, line(227));
-                        p.px_vline(r_ - 2.0, t + 1.0..=b_ - 2.0, line(227));
-                    });
-                // The document area's 1 px border, inside (VM, Office 2007
-                // Blue: (185, 208, 237); the other looks keep the band's
-                // shade, not measured).
-                if let Some(bands) = pal.bands {
-                    let r = ui.max_rect().expand(1.0);
-                    let b = egui::Stroke::new(1.0f32, bands.mdi_border);
-                    let p = ui.painter();
-                    p.px_hline(r.left()..=r.right() - 1.0, r.top(), b);
-                    p.px_hline(r.left()..=r.right() - 1.0, r.bottom() - 1.0, b);
-                    p.px_vline(r.left(), r.top()..=r.bottom() - 1.0, b);
-                    p.px_vline(r.right() - 1.0, r.top()..=r.bottom() - 1.0, b);
+        if let Some((serial, at)) = self.mdi_drop.take() {
+            if let Some(i) = self.docs.iter().position(|d| d.serial == serial) {
+                self.drop_doc_tab(i, at);
+            }
+        }
+        self.touch_front();
+        // A press in another group activates its document first (MFC's
+        // mouse activation), and the view takes the click as well (VM: the
+        // визир moves).
+        let press = ctx.input(|i| i.pointer.any_pressed().then(|| i.pointer.interact_pos()).flatten());
+        if let Some(p) = press.filter(|&p| ctx.layer_id_at(p).is_some_and(|l| l.order == egui::Order::Background)) {
+            if let Some(h) = self.mdi_rects.iter().position(|r| r.contains(p)) {
+                if self.active_doc().map(|d| d.mdi_group) != Some(h) {
+                    if let Some(f) = self.group_front(h) {
+                        self.active = Some(f);
+                        self.touch_front();
+                    }
                 }
-            });
+            }
+        }
+        self.doc_tab_rects = vec![egui::Rect::NOTHING; self.docs.len()];
+        // Between the groups each one's resize edge: the document area's
+        // border line, then 4 px of the face (VM, Blue: (213, 228, 242);
+        // the other looks not measured).
+        let face = pal.bands.map_or(pal.ribbon_top, |b| b.bar_bottom);
+        egui::CentralPanel::default().frame(egui::Frame::none().fill(face)).show(ctx, |ui| {
+            self.layout_groups(ui.max_rect());
+            let n = self.group_count();
+            self.mdi_strips = vec![egui::Rect::NOTHING; n];
+            // The active group last: what the frame keeps of a view this
+            // pass is the active document's.
+            let bold = self.active;
+            let active_g = self.active_doc().map_or(0, |d| d.mdi_group);
+            for g in (0..n).filter(|&g| g != active_g).chain([active_g]) {
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(self.mdi_rects[g]).id_salt(("fv_mdi_group", g)));
+                let front = self.group_front(g);
+                let real = std::mem::replace(&mut self.active, front);
+                self.doc_group_ui(&mut child, g, bold, g == active_g);
+                // Unless the group's own strip changed it.
+                if self.active == front {
+                    self.active = real;
+                }
+            }
+            for g in 0..n.saturating_sub(1) {
+                self.group_edge(ui, g);
+            }
+        });
     }
 
+    /// Tab group `g` in its part of the MDI area, its front document taken
+    /// as the active one: the tab strip, the child frame in the tab's
+    /// colour, the view (or the preview, in the active group), the border.
+    fn doc_group_ui(&mut self, ui: &mut egui::Ui, g: usize, bold: Option<usize>, front_is_active: bool) {
+        let pal = self.skin.palette();
+        let edge = egui::Stroke::new(1.0f32, pal.ribbon_top.gamma_multiply(0.92));
+        egui::Frame::none().fill(pal.ribbon_top).stroke(edge).inner_margin(egui::Margin::same(1.0)).show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+        egui::TopBottomPanel::top(if g == 0 { egui::Id::new("fv_doc_tabs") } else { egui::Id::new(("fv_doc_tabs", g)) })
+            .exact_height(20.0)
+            .show_separator_line(false)
+            .frame(egui::Frame::none())
+            .show_inside(ui, |ui| {
+                let r = ui.max_rect();
+                let band = pal.mdi_tabs.unwrap_or([pal.ribbon_top.gamma_multiply(0.95), pal.ribbon_top.lerp_to_gamma(egui::Color32::WHITE, 0.5)]);
+                let mut mesh = egui::Mesh::default();
+                for (p, c) in [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()].into_iter().zip([band[0], band[0], band[1], band[1]]) {
+                    mesh.colored_vertex(p, c);
+                }
+                mesh.add_triangle(0, 1, 2);
+                mesh.add_triangle(0, 2, 3);
+                ui.painter().add(egui::Shape::mesh(mesh));
+                // The row's bottom line (VM, Blue: (185, 208, 237)).
+                if let Some(bands) = pal.bands {
+                    ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0f32, bands.mdi_border));
+                }
+                self.doc_tabs(ui, g, bold);
+            });
+        let (r, g, b) = crate::app::TAB_COLORS[self.active_doc().and_then(|d| d.tab_color).unwrap_or(0)];
+        egui::CentralPanel::default()
+            // The child frame in the tab's colour — 2 px, 1 px at the
+            // top — round the view's sunken client edge (VM: (160,
+            // 160, 160) / (105, 105, 105) at the top and left, white /
+            // (227, 227, 227) at the right and bottom).
+            .frame(egui::Frame::none().inner_margin(egui::Margin { left: 2.0, right: 2.0, top: 1.0, bottom: 2.0 }))
+            .show_inside(ui, |ui| {
+                // The frame's colour runs along the diagonal from
+                // the tab's colour at the top left to 35 lighter per
+                // channel at the bottom right (VM: (255, 220, 120) →
+                // (255, 254, 155)).
+                let m = ui.max_rect();
+                let fr = egui::Rect::from_min_max(m.min - egui::vec2(2.0, 1.0), m.max + egui::vec2(2.0, 2.0));
+                let base = egui::Color32::from_rgb(r, g, b);
+                let shade = |t: f32| {
+                    let up = |c: u8| (c as f32 + 35.0 * t).round().min(255.0) as u8;
+                    egui::Color32::from_rgb(up(r), up(g), up(b))
+                };
+                let (w, h) = (fr.width(), fr.height());
+                let d2 = (w * w + h * h).max(1.0);
+                let mut mesh = egui::Mesh::default();
+                for (pt, c) in [(fr.left_top(), base), (fr.right_top(), shade(w * w / d2)), (fr.right_bottom(), shade(1.0)), (fr.left_bottom(), shade(h * h / d2))] {
+                    mesh.colored_vertex(pt, c);
+                }
+                mesh.add_triangle(0, 1, 2);
+                mesh.add_triangle(0, 2, 3);
+                ui.painter().add(egui::Shape::mesh(mesh));
+                let edge = ui.available_rect_before_wrap();
+                egui::Frame::none().fill(ui.visuals().panel_fill).inner_margin(egui::Margin::same(2.0)).show(ui, |ui| {
+                    ui.set_min_size(ui.available_size());
+                    if self.print.preview.is_some() && front_is_active {
+                        self.preview_ui(ui);
+                    } else {
+                        self.lanes_ui(ui);
+                    }
+                });
+                let p = ui.painter();
+                let line = |c: u8| egui::Stroke::new(1.0f32, egui::Color32::from_gray(c));
+                let (l, t, r_, b_) = (edge.left(), edge.top(), edge.right(), edge.bottom());
+                p.px_hline(l..=r_ - 1.0, t, line(160));
+                p.px_vline(l, t..=b_ - 1.0, line(160));
+                p.px_hline(l + 1.0..=r_ - 2.0, t + 1.0, line(105));
+                p.px_vline(l + 1.0, t + 1.0..=b_ - 2.0, line(105));
+                p.px_hline(l..=r_ - 1.0, b_ - 1.0, line(255));
+                p.px_vline(r_ - 1.0, t..=b_ - 1.0, line(255));
+                p.px_hline(l + 1.0..=r_ - 2.0, b_ - 2.0, line(227));
+                p.px_vline(r_ - 2.0, t + 1.0..=b_ - 2.0, line(227));
+            });
+        // The document area's 1 px border, inside (VM, Office 2007
+        // Blue: (185, 208, 237); the other looks keep the band's
+        // shade, not measured).
+        if let Some(bands) = pal.bands {
+            let r = ui.max_rect().expand(1.0);
+            let b = egui::Stroke::new(1.0f32, bands.mdi_border);
+            let p = ui.painter();
+            p.px_hline(r.left()..=r.right() - 1.0, r.top(), b);
+            p.px_hline(r.left()..=r.right() - 1.0, r.bottom() - 1.0, b);
+            p.px_vline(r.left(), r.top()..=r.bottom() - 1.0, b);
+            p.px_vline(r.right() - 1.0, r.top()..=r.bottom() - 1.0, b);
+        }
+        });
+    }
+
+    /// The resize edge after group `g`: dragged, a bar follows the pointer
+    /// and the two neighbours take the new split when it is let go.
+    fn group_edge(&mut self, ui: &mut egui::Ui, g: usize) {
+        let win = self.mdi_wins[g];
+        let v = self.mdi_vertical;
+        let strip = if v { egui::Rect::from_min_max(egui::pos2(win.right() - 5.0, win.top()), win.max) } else { egui::Rect::from_min_max(egui::pos2(win.left(), win.bottom() - 5.0), win.max) };
+        // The document area's border colour for the line (VM, Blue: (185,
+        // 208, 237)), the face after it; the other looks not measured.
+        let pal = self.skin.palette();
+        let line = pal.bands.map_or(pal.ribbon_top.gamma_multiply(0.92), |b| b.mdi_border);
+        let face = pal.bands.map_or(pal.ribbon_top, |b| b.bar_bottom);
+        ui.painter().rect_filled(strip, 0.0, face);
+        if v {
+            ui.painter().px_vline(strip.left(), strip.y_range(), egui::Stroke::new(1.0f32, line));
+        } else {
+            ui.painter().px_hline(strip.x_range(), strip.top(), egui::Stroke::new(1.0f32, line));
+        }
+        let resp = ui.interact(strip, egui::Id::new(("fv_mdi_edge", g)), egui::Sense::drag());
+        if resp.hovered() || resp.dragged() {
+            ui.ctx().set_cursor_icon(if v { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical });
+        }
+        let moved = |r: &egui::Response| r.interact_pointer_pos().zip(ui.ctx().input(|i| i.pointer.press_origin())).map(|(p, o)| if v { p.x - o.x } else { p.y - o.y });
+        if resp.dragged() {
+            if let Some(d) = moved(&resp) {
+                // The halftone bar (`0x1013f622`), kept within 40 px of the
+                // neighbours' far ends.
+                let span = win.union(self.mdi_wins[g + 1]);
+                let bar = if v {
+                    let x = (strip.left() + d).clamp(span.left() + 40.0, span.right() - 40.0 - 5.0);
+                    egui::Rect::from_min_size(egui::pos2(x, strip.top()), strip.size())
+                } else {
+                    let y = (strip.top() + d).clamp(span.top() + 40.0, span.bottom() - 40.0 - 5.0);
+                    egui::Rect::from_min_size(egui::pos2(strip.left(), y), strip.size())
+                };
+                halftone(ui.ctx(), bar, None);
+            }
+        }
+        if resp.drag_stopped() {
+            if let Some(d) = moved(&resp) {
+                self.drag_split(g, d);
+            }
+        }
+    }
     // ---- Круговая / Дифференциальная: characteristics + impedance overlay ----
     /// Circle / differential pane: the block and settings grid above the
     /// plot behind a splitter (200 px, 50 px .. height − 150), as the
@@ -1280,6 +1376,35 @@ fn strip_button(ui: &mut egui::Ui, title: &str, vertical: bool) -> egui::Respons
         ui.painter().galley(rect.left_center() + egui::vec2(8.0, -galley.size().y / 2.0), galley, ui.visuals().text_color());
     }
     resp
+}
+
+/// MFC's drag feedback (`DrawDragRect` with the halftone brush, XOR): a
+/// checkerboard of dark pixels over `r`, or only a `frame`-wide outline of it.
+pub fn halftone(ctx: &egui::Context, r: egui::Rect, frame: Option<f32>) {
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("fv_halftone")));
+    let ink = egui::Color32::from_black_alpha(150);
+    let r = egui::Rect::from_min_max(r.min.round(), r.max.round());
+    let parts = match frame {
+        None => vec![r],
+        Some(t) => vec![
+            egui::Rect::from_min_max(r.min, egui::pos2(r.right(), r.top() + t)),
+            egui::Rect::from_min_max(egui::pos2(r.left(), r.bottom() - t), r.max),
+            egui::Rect::from_min_max(egui::pos2(r.left(), r.top() + t), egui::pos2(r.left() + t, r.bottom() - t)),
+            egui::Rect::from_min_max(egui::pos2(r.right() - t, r.top() + t), egui::pos2(r.right(), r.bottom() - t)),
+        ],
+    };
+    let mut mesh = egui::Mesh::default();
+    for p in parts {
+        let (x0, y0, x1, y1) = (p.left() as i32, p.top() as i32, p.right() as i32, p.bottom() as i32);
+        for y in y0..y1 {
+            let mut x = x0 + (x0 + y).rem_euclid(2);
+            while x < x1 {
+                mesh.add_colored_rect(egui::Rect::from_min_size(egui::pos2(x as f32, y as f32), egui::vec2(1.0, 1.0)), ink);
+                x += 2;
+            }
+        }
+    }
+    painter.add(egui::Shape::mesh(mesh));
 }
 
 #[cfg(test)]

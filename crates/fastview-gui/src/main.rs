@@ -22,6 +22,7 @@ mod instance;
 mod keytips;
 mod sysclip;
 mod lanes;
+mod mdi;
 mod merge_ui;
 mod omp_ui;
 mod oscgeom;
@@ -129,21 +130,29 @@ impl App {
     /// OneNote tabs, auto colour, the document menu, the close button on the
     /// active tab, tab swap left on): tabs coloured per document, the ▾
     /// document list; a tab dragged over another swaps with it
-    /// (`0x100690b4`).
-    fn doc_tabs(&mut self, ui: &mut egui::Ui) {
+    /// (`0x100690b4`), off the strip it goes to a group (`crate::mdi`).
+    /// Group `g`'s tabs, its front document taken as `self.active`; the
+    /// label bold only on `bold`, the active document (`0x1013b543`).
+    fn doc_tabs(&mut self, ui: &mut egui::Ui, g: usize, bold: Option<usize>) {
         let mut activate = None;
         let mut close = None;
         let mut dragged = None;
-        let mut tabs: Vec<egui::Rect> = Vec::new();
+        let mut released = None;
+        let mut tabs: Vec<(usize, egui::Rect)> = Vec::new();
+        let strip = ui.max_rect();
+        if let Some(s) = self.mdi_strips.get_mut(g) {
+            *s = strip;
+        }
+        let members: Vec<usize> = (0..self.docs.len()).filter(|&i| self.docs[i].mdi_group == g).collect();
         ui.horizontal(|ui| {
             // Nothing in the row taller than the tabs (the ▾ button included).
             ui.spacing_mut().interact_size.y = 19.0;
             ui.spacing_mut().button_padding.y = 0.0;
             ui.add_space(6.0);
-            for i in 0..self.docs.len() {
+            for (k, &i) in members.iter().enumerate() {
                 if self.docs[i].tab_color.is_none() {
-                    let prev = i.checked_sub(1).and_then(|j| self.docs[j].tab_color);
-                    self.docs[i].tab_color = Some(self.tab_auto.assign(i, prev));
+                    let prev = k.checked_sub(1).and_then(|j| self.docs[members[j]].tab_color);
+                    self.docs[i].tab_color = Some(self.tab_auto.assign(k, prev));
                 }
                 let active = self.active == Some(i);
                 let title = self.docs[i].title();
@@ -154,7 +163,7 @@ impl App {
                 // 19 px, over the row's bottom line (VM).
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 19.0), egui::Sense::hover());
                 let resp = ui.interact(rect, egui::Id::new(("fv_doc_tab", self.docs[i].serial)), egui::Sense::click_and_drag());
-                tabs.push(rect);
+                tabs.push((i, rect));
                 let (r, g, b) = app::TAB_COLORS[self.docs[i].tab_color.unwrap_or(0)];
                 let base = egui::Color32::from_rgb(r, g, b);
                 let top = base.lerp_to_gamma(egui::Color32::WHITE, if active { 0.45 } else { 0.25 });
@@ -170,7 +179,9 @@ impl App {
                 ui.painter().add(egui::Shape::line(pts.to_vec(), egui::Stroke::new(1.0f32, egui::Color32::from_gray(140))));
                 let text_pos = egui::pos2(rect.left() + 20.0, rect.center().y);
                 ui.painter().text(text_pos, egui::Align2::LEFT_CENTER, &title, font.clone(), egui::Color32::BLACK);
-                ui.painter().text(text_pos + egui::vec2(0.5, 0.0), egui::Align2::LEFT_CENTER, &title, font, egui::Color32::BLACK);
+                if bold == Some(i) {
+                    ui.painter().text(text_pos + egui::vec2(0.5, 0.0), egui::Align2::LEFT_CENTER, &title, font, egui::Color32::BLACK);
+                }
                 if active {
                     let xr = egui::Rect::from_center_size(egui::pos2(rect.right() - 12.0, rect.center().y), egui::vec2(14.0, 14.0));
                     let xresp = ui.interact(xr, ui.id().with(("tab_close", i)), egui::Sense::click());
@@ -195,6 +206,9 @@ impl App {
                 if resp.dragged() {
                     dragged = Some(i);
                 }
+                if resp.drag_stopped() {
+                    released = Some(i);
+                }
                 ui.add_space(-6.0);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -202,7 +216,8 @@ impl App {
                 // image, none marked; no «Окна...» (VM: MFC adds it to a
                 // «Window» menu only, which this ribbon has not).
                 ui.menu_button("▾", |ui| {
-                    let mut order: Vec<usize> = (0..self.docs.len()).collect();
+                    // The group's own tabs (its tab control's list).
+                    let mut order = members.clone();
                     order.sort_by_key(|&i| self.docs[i].title().to_lowercase());
                     for i in order {
                         let r = ui.add(egui::Button::new(format!("      {}", self.docs[i].title())).frame(false));
@@ -218,17 +233,34 @@ impl App {
                 });
             });
         });
-        self.doc_tab_rects.clone_from(&tabs);
+        for &(i, r) in &tabs {
+            if let Some(t) = self.doc_tab_rects.get_mut(i) {
+                *t = r;
+            }
+        }
         if let Some(i) = activate {
             self.dispatch(app::Command::ActivateDoc(i));
         }
+        let at = ui.ctx().input(|inp| inp.pointer.latest_pos());
         // Past the other tab's middle, so tabs of unequal widths do not swap
         // back and forth.
-        if let (Some(i), Some(at)) = (dragged, ui.ctx().input(|inp| inp.pointer.latest_pos())) {
-            let own = tabs[i].center().x;
-            if let Some(j) = tabs.iter().position(|r| r.contains(at) && (r.center().x > own) == (at.x > r.center().x)).filter(|&j| j != i) {
+        if let (Some(i), Some(at)) = (dragged, at) {
+            let own = tabs.iter().find(|t| t.0 == i).map_or(0.0, |t| t.1.center().x);
+            if let Some(&(j, _)) = tabs.iter().find(|(j, r)| *j != i && r.contains(at) && (r.center().x > own) == (at.x > r.center().x)) {
                 self.docs.swap(i, j);
                 self.active = Some(j);
+            }
+            // Off the strip: the outline of where it would go (4 px).
+            if !strip.contains(at) {
+                if let Some((_, r)) = self.drop_preview(i, at) {
+                    crate::views::halftone(ui.ctx(), r, Some(4.0));
+                }
+            }
+        }
+        // Let go off the strip: taken up before the next frame's layout.
+        if let (Some(i), Some(at)) = (released, at) {
+            if !strip.contains(at) {
+                self.mdi_drop = Some((self.docs[i].serial, at));
             }
         }
         if let Some(i) = close {
@@ -1304,8 +1336,11 @@ mod window_tests {
 
     /// Document tabs (`EnableMDITabbedGroups`, tab swap on): the second
     /// tab dragged over the first swaps with it and is in front; dragged
-    /// out of the strip it stays where it is (no new tab group: FastView
-    /// keeps MFC's `OnShowMDITabContextMenu`, slot 117).
+    /// out of the strip into the view it starts a second, vertical group
+    /// (MFC's default when `OnShowMDITabContextMenu` returns FALSE, L9.263),
+    /// each group showing its own document; a press in the other group's
+    /// view activates its document; the tab dragged back onto the first
+    /// group's strip joins it and the groups are one again.
     #[test]
     fn a_document_tab_dragged_over_another_swaps_with_it() {
         let mut w = Win { ctx: egui::Context::default(), app: demo(&[app::Command::Demo]), held: egui::Modifiers::NONE };
@@ -1328,7 +1363,26 @@ mod window_tests {
         assert_eq!(w.app.active, Some(0), "the dragged tab in front");
         let a = w.app.doc_tab_rects[0];
         drag(&mut w, a.center(), a.center() + Vec2::new(0.0, 300.0));
-        assert_eq!(serials(&w), [before[1], before[0]], "out of the strip: no change");
+        assert_eq!(w.app.group_count(), 2, "out of the strip: a new group");
+        let moved = w.app.active.expect("the moved document active");
+        assert_eq!((w.app.docs[moved].serial, w.app.docs[moved].mdi_group), (before[1], 1));
+        let (g0, g1) = (w.app.mdi_rects[0], w.app.mdi_rects[1]);
+        let wins = &w.app.mdi_wins;
+        assert!(wins[0].right() == wins[1].left() && g0.top() == g1.top(), "side by side: {wins:?}");
+        // Both views drawn: the first group's tab is laid out too.
+        let other = 1 - moved;
+        assert!(g0.contains(w.app.doc_tab_rects[other].center()) && g1.contains(w.app.doc_tab_rects[moved].center()));
+        let p = Pos2::new(g0.center().x, g0.bottom() - 60.0);
+        w.run(vec![egui::Event::PointerMoved(p), ev(p, true)]);
+        w.run(vec![ev(p, false)]);
+        w.idle(2);
+        assert_eq!(w.app.active, Some(other), "a press in the other group's view");
+        let t = w.app.doc_tab_rects[moved];
+        // Left of the 40 px hot zone at the group's right edge.
+        let onto = Pos2::new(w.app.mdi_strips[0].right() - 100.0, w.app.mdi_strips[0].center().y);
+        drag(&mut w, t.center(), onto);
+        assert_eq!(w.app.group_count(), 1, "back onto the first strip: one group");
+        assert_eq!(w.app.docs[w.app.active.unwrap()].serial, before[1]);
     }
 
     /// A right-click on a document tab activates it and shows no menu (the
@@ -1604,6 +1658,19 @@ mod window_tests {
                 app.docks.leave(docking::Unit::Vector, |_| true);
                 app.docks[docking::Unit::Vector].double_click(egui::pos2(60.0, 220.0));
             }
+            // `groups`: the record open twice, the second copy's tab let go
+            // over the view (a second, vertical tab group — at pass 2,
+            // once the area is laid out).
+            "groups" => {
+                if let Some(path) = app.docs.first_mut().and_then(|d| d.path.take()) {
+                    app.load_comtrade_path(&path);
+                    while !app.loading.is_empty() {
+                        app.poll_loading();
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
+                    app.docs[0].path = Some(path);
+                }
+            }
             "autohide" => {
                 app.docks.leave(docking::Unit::Vector, |_| true);
                 let d = &mut app.docks[docking::Unit::Vector];
@@ -1734,6 +1801,9 @@ mod window_tests {
         let c = raster::render_input(size, 1.0, Some(&fonts), passes, |ctx| {
             if pass == 2 && late_preview {
                 app.dispatch(app::Command::PrintPreview);
+            }
+            if pass == 2 && std::env::var("FV_WINDOW_STATE").is_ok_and(|v| v == "groups") && app.docs.len() > 1 {
+                app.new_group_after(1, 0, true);
             }
             if pass == 2 {
                 if let Some(b) = block.as_ref().and_then(|v| v.parse().ok().or_else(|| app.library.blocks.iter().position(|b| &b.name == v))) {

@@ -159,7 +159,9 @@ items (VM ones also in W4.4):
   (a VM look, W4.4).
 - [x] W2.13 L9.97 — disabled keytips' ink (VM: F10 with no document): the
   whole keytip at half alpha, and «Г» on «&Главная» (L9.218).
-- [ ] W2.14 L9.102 — where a tab dragged out lands (VM, mouse driving).
+- [x] W2.14 L9.102 — where a tab dragged out lands (VM, mouse driving):
+  a pane tab floats with its corner under the pointer (L9.262); a
+  document tab makes, joins and empties MDI tab groups (L9.263).
 - [ ] W2.15 L9.122 — «Свойства...» on the VM, the owner window, the
   orientation merge (with W2.12).
 - [x] W2.16 What `doc+0x1d8` counts — settled 2026-10-24 (background

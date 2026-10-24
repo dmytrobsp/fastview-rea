@@ -672,6 +672,11 @@ pub struct Doc {
     pub tab_color: Option<usize>,
     /// A number of its own (its MDI child window), kept while others close.
     pub serial: u64,
+    /// Its MDI tab group, 0 the first (`crate::mdi`, L9.263).
+    pub mdi_group: usize,
+    /// When it was last the active document: a group shows its most
+    /// recent one in front.
+    pub front_stamp: u64,
     /// Selected channels (the original's per-channel `+0x100` flag): the
     /// target of the channel context menu and the per-channel commands.
     pub selection: BTreeSet<ChanKey>,
@@ -783,6 +788,8 @@ impl Doc {
             comment_hot: None,
             tab_color: None,
             serial: 0,
+            mdi_group: 0,
+            front_stamp: 0,
             selection: BTreeSet::new(),
             sel_anchor: None,
             next_group: 1,
@@ -1450,6 +1457,28 @@ pub struct App {
     pub view_pointer: Option<egui::Pos2>,
     /// MFC's process-wide auto-colour state of the tabs.
     pub tab_auto: TabAuto,
+    /// The MDI tab groups' widths left to right, the 4 px splitters
+    /// between them not counted (`crate::mdi`); fewer than two: one group.
+    pub mdi_widths: Vec<f32>,
+    /// The length along the groups' axis `mdi_widths` were fitted to.
+    pub mdi_len: f32,
+    /// The groups side by side (else stacked); with one group the next
+    /// split may go either way.
+    pub mdi_vertical: bool,
+    /// The area the groups were last laid out in.
+    pub mdi_area: egui::Rect,
+    /// Each group's window (with its edge) as last laid out.
+    pub mdi_wins: Vec<egui::Rect>,
+    /// What each group's documents get (its window less its edge) as last
+    /// laid out; the press that activates a group is tested against them
+    /// before anything is drawn.
+    pub mdi_rects: Vec<egui::Rect>,
+    /// Each group's tab strip as last drawn.
+    pub mdi_strips: Vec<egui::Rect>,
+    /// A document tab let go off its strip (its document's serial, where).
+    pub mdi_drop: Option<(u64, egui::Pos2)>,
+    /// The counter behind `Doc::front_stamp`.
+    pub front_counter: u64,
     /// «Окна» (MFC's windows dialog), when open.
     pub windows_dlg: Option<crate::windows_dlg::WindowsDlg>,
     /// The serial of the next document.
@@ -1615,6 +1644,15 @@ impl App {
             pane_grid: Vec::new(),
             view_pointer: None,
             tab_auto: TabAuto::default(),
+            mdi_widths: Vec::new(),
+            mdi_len: 0.0,
+            mdi_vertical: true,
+            mdi_area: egui::Rect::NOTHING,
+            mdi_wins: Vec::new(),
+            mdi_rects: Vec::new(),
+            mdi_strips: Vec::new(),
+            mdi_drop: None,
+            front_counter: 0,
             windows_dlg: None,
             next_serial: 1,
             copy_focus: CopyFocus::View,
@@ -1691,6 +1729,8 @@ impl App {
     pub fn add_doc(&mut self, mut doc: Doc) {
         doc.serial = self.next_serial;
         self.next_serial += 1;
+        // Into the active tab group (MFC adds a new child to it).
+        doc.mdi_group = self.active_doc().map_or(0, |d| d.mdi_group);
         // The original's open says nothing (no status line, no message).
         self.docs.push(doc);
         self.active = Some(self.docs.len() - 1);
@@ -1700,7 +1740,7 @@ impl App {
     /// Close document `i` without asking.
     pub fn close_doc_now(&mut self, i: usize) {
         if i < self.docs.len() {
-            self.docs.remove(i);
+            let g = self.docs.remove(i).mdi_group;
             // Indices shift: re-bind the ОМП bar and the settings sync on
             // the next frame.
             self.omp_ui.bar_doc = None;
@@ -1708,8 +1748,10 @@ impl App {
             self.active = if self.docs.is_empty() {
                 None
             } else {
-                Some(i.min(self.docs.len() - 1))
+                // The group's next document in front, else another group's.
+                self.group_front(g).or(Some(i.min(self.docs.len() - 1)))
             };
+            self.prune_groups();
         }
     }
 
