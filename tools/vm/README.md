@@ -11,7 +11,7 @@ original.
 | `insession.ps1 -Exe <path> [-Args …] [-Wait]` | runs a program in that user's desktop session (an `ssh` session has none) through a one-off scheduled task |
 | `shot.ps1 -Out <png>` | captures the whole desktop (DPI-aware) |
 | `capture.ps1 -Name <png>` | `shot.ps1` through `insession.ps1`, into `shots\` next to the scripts |
-| `drive.ps1 -Exe <program> [-Open <file>] [-Keys "<s1>;<s2>…"] [-Shot <png>] [-Leave]` | `keys.ps1` in the session: start the program (with a file), run the steps 1.5 s apart — SendKeys text, `CLICK x,y` / `RCLICK x,y` / `DCLICK x,y`, `WHEEL x,y,n`, `SHOT name.png` —, capture, close; prints its log |
+| `drive.ps1 -Exe <program> [-Open <file>] [-Keys "<s1>;<s2>…"] [-Shot <png>] [-Leave]` | `keys.ps1` in the session: start the program (with a file), run the steps 1.5 s apart — SendKeys text, `CLICK x,y` / `RCLICK x,y` / `DCLICK x,y`, `DRAG x1,y1,x2,y2` (or `HOLD …` then `UP`), `WHEEL x,y,n`, `SHOT name.png` —, capture, close; prints its log |
 
 Install of the original used here (file copy — its own setup wizard needs
 clicks): the files of `extracted/stage1/` in a folder, the English resource

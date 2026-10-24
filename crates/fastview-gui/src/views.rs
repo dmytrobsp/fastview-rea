@@ -375,7 +375,11 @@ impl App {
     /// (SM_CXDRAG / SM_CYDRAG, 4 px, `0x10068657`) and outside the strip,
     /// `CTabbedPane::FloatTab` (`0x1013a259`) floats that pane alone under
     /// the pointer (the group's own pane hands the group to the next tab);
-    /// the drag then goes on as a floating caption drag (the markers).
+    /// the drag then goes on as a floating caption drag (the markers). The
+    /// mini-frame comes up at the create size with the pane's own corner
+    /// under the pointer: its outer corner 4 px left of and 27 px above
+    /// it (VM: Круговая pulled out of the group to (1500, 700) floats with
+    /// its frame at (1496, 673)).
     fn tab_drag_out(&mut self, ctx: &egui::Context, v: DockView, pulled: Pane, strip: egui::Rect) {
         let (press, now) = ctx.input(|i| (i.pointer.press_origin(), i.pointer.latest_pos()));
         let (Some(press), Some(now)) = (press, now) else { return };
@@ -385,7 +389,7 @@ impl App {
         }
         let next = self.tab_order.into_iter().find(|&q| q != pulled && v.mask[q as usize]).unwrap_or(v.unit);
         let origin = Self::float_origin(ctx);
-        let grab = egui::vec2(40.0, 10.0);
+        let grab = egui::vec2(4.0, 27.0);
         let size = self.docks[pulled].float_at(origin).size();
         self.docks.float_tab(pulled, v.unit, next, egui::Rect::from_min_size(now - grab, size));
         self.dock_drag = Some((pulled, grab));

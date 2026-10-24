@@ -1120,6 +1120,9 @@ mod window_tests {
         drag(&mut w, tab, &nowhere);
         assert_eq!((w.app.docks[Unit::Frequency].place, w.app.docks[Unit::Frequency].spot), (Place::Floating, Spot::Tab(Unit::Vector)));
         assert_eq!((w.app.docks[Unit::Vector].place, w.app.dock_views_shown()), (Place::Docked, 2));
+        // The pane's corner under the pointer, the frame 4 left, 27 up (VM).
+        let at = w.app.docks[Unit::Frequency].float_rect.expect("floating").min;
+        assert!((at - Pos2::new(596.0, 573.0)).length() < 1.0, "{at:?}");
         // With Ctrl held nothing docks (`0x1008c860`, `0x1008a2cd`): the
         // floating Частотная released on the group's centre marker stays
         // floating where it was let go.
@@ -1139,6 +1142,30 @@ mod window_tests {
         assert_eq!(w.app.docks[Unit::Frequency].place, Place::Floating, "Ctrl held: no dock");
         let moved = w.app.docks[Unit::Frequency].float_rect.unwrap();
         assert!((moved.min - (fr.min + (to - from))).length() < 2.0, "it moved with the pointer: {fr:?} → {moved:?}");
+    }
+
+    /// VM: in the start-up layout the Круговая tab pulled out of the
+    /// Векторная group floats Круговая alone, its frame at the pointer
+    /// − (4, 27); Векторная stays docked in front.
+    #[test]
+    fn a_pane_tab_pulled_out_floats_that_pane_at_the_pointer() {
+        use docking::{Place, Unit};
+        let mut w = Win::new();
+        w.idle(2);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let from = w.app.pane_tab_rects.iter().find(|(p, _)| *p == app::Pane::Circle).map(|(_, r)| r.center()).expect("the Круговая tab");
+        let to = Pos2::new(500.0, 400.0);
+        w.run(vec![egui::Event::PointerMoved(from)]);
+        w.run(vec![ev(from, true)]);
+        for k in 1..=10 {
+            w.run(vec![egui::Event::PointerMoved(from + (to - from) * (k as f32 / 10.0))]);
+        }
+        w.run(vec![ev(to, false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Circle].place, Place::Floating);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked);
+        let at = w.app.docks[Unit::Circle].float_rect.expect("floating").min;
+        assert!((at - Pos2::new(496.0, 373.0)).length() < 1.0, "{at:?}");
     }
 
     /// Table 128 as egui-winit delivers it: Ctrl+C arrives as `Event::Copy`

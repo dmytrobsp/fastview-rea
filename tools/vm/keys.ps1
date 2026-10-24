@@ -2,7 +2,9 @@
 # In the desktop session: start the program (with a file), bring it to the
 # front, run each ';'-separated step 1.5 s apart, optionally capture the
 # screen, then close it (unless -Leave). A step is SendKeys text, or
-# "CLICK x,y" / "RCLICK x,y" / "DCLICK x,y" (screen pixels), "WHEEL x,y,n"
+# "CLICK x,y" / "RCLICK x,y" / "DCLICK x,y" (screen pixels), "DRAG x1,y1,x2,y2"
+# (a left-button drag in ten steps; "HOLD x1,y1,x2,y2" the same left held,
+# then "UP"), "WHEEL x,y,n"
 # (n notches, + up), "SHOT name.png" (a capture now). Logs next to itself.
 param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave)
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -31,6 +33,17 @@ foreach ($k in ($Keys -split ';')) {
     if ($k -match '^(R|D)?CLICK (\d+),(\d+)$') {
         $x = [int]$Matches[2]; $y = [int]$Matches[3]
         switch ($Matches[1]) { 'R' { Click $x $y 0x8 0x10 } 'D' { Click $x $y 0x2 0x4 2 } default { Click $x $y 0x2 0x4 } }
+    } elseif ($k -match '^(DRAG|HOLD) (\d+),(\d+),(\d+),(\d+)$') {
+        $x1 = [int]$Matches[2]; $y1 = [int]$Matches[3]; $x2 = [int]$Matches[4]; $y2 = [int]$Matches[5]
+        [In]::SetCursorPos($x1, $y1) | Out-Null; Start-Sleep -Milliseconds 120
+        [In]::mouse_event(0x2, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 120
+        for ($i = 1; $i -le 10; $i++) {
+            [In]::SetCursorPos([int]($x1 + ($x2 - $x1) * $i / 10), [int]($y1 + ($y2 - $y1) * $i / 10)) | Out-Null; Start-Sleep -Milliseconds 60
+        }
+        Start-Sleep -Milliseconds 200
+        if ($Matches[1] -eq 'DRAG') { [In]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero) }
+    } elseif ($k -eq 'UP') {
+        [In]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero)
     } elseif ($k -match '^WHEEL (\d+),(\d+),(-?\d+)$') {
         [In]::SetCursorPos([int]$Matches[1], [int]$Matches[2]) | Out-Null; Start-Sleep -Milliseconds 120
         $n = [int]$Matches[3]; $step = if ($n -gt 0) { 120 } else { -120 }

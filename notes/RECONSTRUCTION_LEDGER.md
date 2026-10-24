@@ -7172,6 +7172,29 @@ activation; Esc goes back to the tabs. The panels' keys (zp, zz, zv)
 show only when collapsed (never at this width). Harness:
 `FV_WINDOW_KEYTIPS=tabs|p` with `FV_WINDOW_LATE=preview`.
 
+### L9.262 — VM runs: a pane tab pulled out floats at the pointer; document tabs make tab groups  ·  🟡
+VM runs with a mouse drag (the harness's new `DRAG` / `HOLD` … `UP`
+steps): the Круговая tab pulled out of the start-up Векторная group and
+let go at (1500, 700) floats Круговая alone at about its create size
+(498 × 498 outside), the mini-frame's outer corner at (1496, 673) — the
+pane's own corner under the pointer, 4 px in and 27 px down (the frame
+and its caption) —; Векторная stays docked in front. Ours floated it at
+the pointer − (40, 10); now − (4, 27) (`tab_drag_out`; tests
+`a_pane_tab_pulled_out_floats_that_pane_at_the_pointer` and the
+smart-docking one). L9.102's residual of a group tab doing nothing was
+closed by L9.107.
+Document tabs: L9.108 concluded from slot 117 that FastView never splits
+the document area. The VM says otherwise: the second document's tab
+dragged out of the strip and let go over the view (at (700, 700) or (600,
+1050) alike) makes a new vertical tab group — two groups side by side,
+each with its own strip and front document, the left 787 px, a 4 px
+splitter, the right 761 px of the 1552 px area —; no marker is drawn
+while dragging (the dragged tab only takes its pressed look); the
+splitter drags; the tab dragged back onto the first group's strip merges
+the groups again; a right-click on a tab shows no menu; a click in the
+other group's view both activates its document and acts (the визир
+moves). Ours: not yet — L9.263.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
