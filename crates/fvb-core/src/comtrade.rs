@@ -332,6 +332,11 @@ pub fn write(osc: &Oscillogram, names: Encoding) -> (Vec<u8>, Vec<u8>) {
 /// channel i; empty = their places): channels left out of the record
 /// (the ОМП's flags) still count in the original's numbering (VM).
 pub fn write_numbered(osc: &Oscillogram, names: Encoding, dig_no: &[usize]) -> (Vec<u8>, Vec<u8>) {
+    write_rows(osc, names, dig_no, osc.format != "ASCII")
+}
+
+/// The writer with the data's kind chosen: `binary` rows, or ASCII text.
+fn write_rows(osc: &Oscillogram, names: Encoding, dig_no: &[usize], binary: bool) -> (Vec<u8>, Vec<u8>) {
     use crate::views::fmt_g;
     // Names are wrapped in \u{1} … \u{2} and encoded on their own below.
     let nm = |s: &str| format!("\u{1}{s}\u{2}");
@@ -386,12 +391,13 @@ pub fn write_numbered(osc: &Oscillogram, names: Encoding, dig_no: &[usize]) -> (
     }
     let us = |k: usize| round_fv(osc.time.get(k).copied().unwrap_or(0.0) * 1e6);
     let mut dat = Vec::new();
-    if osc.format == "ASCII" {
+    if !binary {
         let mut text = String::new();
         for k in 0..n {
             text.push_str(&format!("{},{}", k + 1, us(k)));
             for ch in &osc.analog {
-                text.push_str(&format!(", {}", ch.samples.get(k).map_or(0.0, |&v| raw(ch, v))));
+                // An integer: a value rounding to −0 is written «0» (VM).
+                text.push_str(&format!(", {}", ch.samples.get(k).map_or(0.0, |&v| raw(ch, v)) + 0.0));
             }
             for ch in &osc.digital {
                 text.push_str(if ch.samples.get(k).copied().unwrap_or(false) { ", 1" } else { ", 0" });
@@ -582,8 +588,10 @@ pub fn write_cff_numbered(osc: &Oscillogram, sections: &CffSections, names: Enco
     if osc.rev_year < 2013 {
         return Err(CffRevisionError);
     }
-    // The `.cfg` writer's bytes (cp1251, CR LF, the revision as read).
-    let (cfg, dat) = write_numbered(osc, names, dig_no);
+    // The `.cfg` writer's bytes (cp1251, CR LF, the revision and format
+    // line as read); the data binary whatever that line says (VM: an
+    // «ASCII» record saved as `.cff` has int32 rows).
+    let (cfg, dat) = write_rows(osc, names, dig_no, true);
     let mut out = to_cp1251("--- file type: CFG ---\r\n");
     out.extend(cfg);
     for (kind, body) in [("HDR", &sections.hdr), ("INF", &sections.inf), ("SET", &sections.set)] {

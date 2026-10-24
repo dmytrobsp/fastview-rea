@@ -270,7 +270,8 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   `.cfg` / `.dat` / `.set` byte-identical since L9.172; the clipboard document
   (L9.212), the `.set` after channel-menu edits (L9.213) and after a quick
   analysis (L9.214) too, and after an ОМП run, Inom 1000 and 1 (L9.217);
-  next: DOC_1999 / BINARY with the same edits) (started 2026-10-24: WIN_1999 saved by
+  DOC_1999 / BINARY raw and re-saved, a revision-2013 record as `.cfg`
+  and `.cff` (L9.221); left: the `.osc` Save As (no OSC2 sample)) (started 2026-10-24: WIN_1999 saved by
   both through Save As — `FV_SAVE_AS` makes ours; differences found: Ctrl+S
   always asks with a lowercase name, the same-name save rewrites the
   record, and the `.cfg` / `.dat` / `.set` formats, see the save-path read

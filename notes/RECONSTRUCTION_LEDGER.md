@@ -6396,6 +6396,30 @@ removed (`windows_dlg.rs` kept as read, rendered by the harness —
 Residual: the sort's collation (ours: lower-cased code points) beyond
 these titles — NOT DETERMINED.
 
+### L9.221 — VM runs: DOC_1999 / BINARY and a revision-2013 record saved as `.cfg` and `.cff`, byte for byte (W4.2)  ·  ✅
+Run on the VM, compared with ours (`FV_SAVE_AS`): DOC_1999 and BINARY,
+both the raw records and the VM's copies (already re-saved, with their
+`.set`) — `.cfg` / `.dat` / `.set` byte-identical. A revision-2013 copy
+of our demo record (the header year and the two 2013 lines added): the
+original drops the time-code lines when writing, as ours. Saved as
+`.cfg`: identical once ours writes a value rounding to −0 as «0» (ours
+printed «-0» in the ASCII rows). Saved as `.cff` (the type chosen in the
+dialog — a typed «x.cff» with the `*.cfg` type gives `x.cfg`, L9.158's
+rule): the CFG part keeps the format line «ASCII», yet the data is
+binary — int32 number, int32 time, int32 values (revision 2013), the
+digital words — `--- file type: DAT BINARY: n---`; ours wrote the rows
+in the record's own format. Now `write_cff` forces the binary rows
+(`comtrade::write_rows`) and the ASCII writer adds +0.0; the `.cff` and
+its `.set` identical. The original opening its own `.cff` reads the
+binary bytes as ASCII: «Длительность: 0 с», all values 0, a few flat
+points; ours reads 0 s and zeros with no samples. Tests
+`cff_data_is_binary_for_an_ascii_record`,
+`ascii_data_writes_minus_zero_as_zero`; `cff_round_trip` now checks the
+sections only (the samples do not read back, in the original either).
+Residual: how the ASCII reader takes binary bytes (the original keeps a
+few samples, ours none) — NOT DETERMINED; a revision-2013 BINARY
+record's `.cfg` / `.cff` (int32 written, int16 read) not run.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

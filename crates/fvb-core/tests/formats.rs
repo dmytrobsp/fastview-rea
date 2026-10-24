@@ -20,7 +20,11 @@ fn cfg_file_type_spellings() {
     assert_eq!(ComtradeError::Format.to_string(), "Неправильный формат файла");
 }
 
-/// Our `.cff` writer output reads back through the original's reader rules.
+/// Our `.cff` writer's sections read back through the original's reader
+/// rules. The samples do not: the data is int32 rows (revision 2013)
+/// whatever the format line says, which the reader takes as that line's
+/// kind — the original's own `.cff` of an «ASCII» record opens as zeros
+/// (VM).
 #[test]
 fn cff_round_trip() {
     let mut osc = demo();
@@ -33,13 +37,36 @@ fn cff_round_trip() {
     assert!(text.contains("--- file type: DAT BINARY: "));
     let (back, secs) = parse_cff(&bytes, Encoding::Cp1251).unwrap();
     assert_eq!(back.analog.len(), osc.analog.len());
-    assert_eq!(back.analog[0].samples.len(), osc.analog[0].samples.len());
-    // Same values as a plain .cfg/.dat round trip (the writer quantises to
-    // integer sample codes).
-    let (c, d) = comtrade::write(&osc, comtrade::Encoding::Cp1251);
-    let plain = comtrade::parse(&comtrade::decode_bytes(&c, Encoding::Cp1251), &d).unwrap();
-    assert_eq!(back.analog[0].samples, plain.analog[0].samples);
     assert_eq!(secs.hdr.as_deref(), Some("заголовок\r\n"));
+}
+
+/// The `.cff` data is binary for an «ASCII» record too — int32 number,
+/// int32 time, int32 values (revision 2013), the digital words — and the
+/// format line stays «ASCII» (VM, the original's file byte for byte).
+#[test]
+fn cff_data_is_binary_for_an_ascii_record() {
+    let mut osc = demo();
+    osc.rev_year = 2013;
+    osc.rev_text = "2013".into();
+    assert_eq!(osc.format, "ASCII");
+    let bytes = write_cff(&osc, &CffSections::default(), comtrade::Encoding::Cp1251).unwrap();
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(text.contains("\r\nASCII\r\n"));
+    let n = osc.sample_count();
+    let row = 4 + 4 + 4 * osc.analog.len() + 2 * osc.digital.len().div_ceil(16);
+    assert!(text.contains(&format!("--- file type: DAT BINARY: {}---\r\n", n * row)));
+    let at = bytes.windows(3).rposition(|w| w == b"---").unwrap() + 5;
+    assert_eq!(&bytes[at..at + 8], &[1, 0, 0, 0, 0, 0, 0, 0]);
+}
+
+/// The ASCII data writes integers: a value rounding to −0 is «0» (VM).
+#[test]
+fn ascii_data_writes_minus_zero_as_zero() {
+    let osc = demo();
+    let (_, dat) = comtrade::write(&osc, comtrade::Encoding::Cp1251);
+    let text = String::from_utf8(dat).unwrap();
+    assert!(!text.contains(", -0,") && !text.contains(", -0\r"));
+    assert!(text.starts_with("1,0, 0, -71, 71, 0, -1, 1, 0\r\n"));
 }
 
 /// Only COMTRADE'13+ records can be written as `.cff` (error 187).
