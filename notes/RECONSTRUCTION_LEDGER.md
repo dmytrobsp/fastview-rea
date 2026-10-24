@@ -8363,6 +8363,25 @@ LGPL, allows the modification; the file on disk is unchanged). Test
 `the_copied_cyrillic_outlines_get_bold`; VM: the lane names uniformly
 bold.
 
+### L9.309 — VM: Enter / Esc in «Печать» and «Параметры страницы»; the printed footer's company width; the caption buttons; a paste with nothing selected  ·  ✅
+- **The print dialogs' keys.** In the original Enter in «Печать» is its
+  OK (the Print to PDF save dialog opens) and Esc its Отмена; ours took
+  only Esc, and the page setup neither. Both now through `dialog_keys`
+  (an open drop-down keeps its Enter, L9.298). (Committed with L9.308.)
+- **The printed footer** (W5.1's first run): ours drew «ООО «НТЦ
+  «Механотроника»» in bold but stepped to «www.mtrele.ru» by its regular
+  width, so the link overlapped it. Now measured in the face it is drawn
+  in.
+- **The caption buttons.** Maximised, the original shows Windows 11's
+  restore glyph (an 8 px square and the corner of another 2 px up and
+  right); ours drew DejaVu's «❐» (a shadowed square) and set its buttons
+  52 px apart (egui's item spacing). Now `caption_glyph` paints the four
+  glyphs in their 10 px box and the buttons are 46 px apart.
+- **A paste with no analog channel selected (W2.3).** IA copied, then
+  deselected, Ctrl+V: in both the pasted lane comes at the end of the
+  analog block, selected, and the merge bar offers IA БЛОКА 3 / IA БЛОКА 3
+  (вст.).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

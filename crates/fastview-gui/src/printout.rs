@@ -412,7 +412,12 @@ impl App {
             p.text(Pos2::new(r.center().x, r.bottom() + T), Align2::CENTER_TOP, cur.to_string(), DECOR_FONT, black);
         }
         let width = |s: &str| ctx.fonts(|f| f.layout_no_wrap(s.to_string(), DECOR_FONT, black).size().x);
-        let whole = width(&format!("{S_REPORT}  {S_COMPANY}  {S_URL}"));
+        // The company in bold on paper: measured in the face it is drawn in.
+        let company_w = ctx.fonts(|f| {
+            let font = if preview { None } else { lanes::bold_font(f, DECOR_FONT.size) };
+            f.layout_no_wrap(S_COMPANY.to_string(), font.unwrap_or(DECOR_FONT), black).size().x
+        });
+        let whole = width(S_REPORT) + company_w + width(S_URL) + 2.0 * width("  ");
         let gap = 30.0 / k;
         let mut x = r.center().x - whole / 2.0;
         let y = r.bottom() + 2.0 * T;
@@ -423,7 +428,7 @@ impl App {
         } else {
             lanes::bold_text(&p, Pos2::new(x, y), S_COMPANY, DECOR_FONT, black);
         }
-        x += width(S_COMPANY) + gap;
+        x += company_w + gap;
         let blue = Color32::from_rgb(0, 0, 200);
         let rect = p.text(Pos2::new(x, y), Align2::LEFT_TOP, S_URL, DECOR_FONT, blue);
         if !preview {

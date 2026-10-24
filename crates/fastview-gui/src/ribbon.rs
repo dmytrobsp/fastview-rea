@@ -1622,13 +1622,46 @@ impl App {
 /// The application button's title (the menu id is derived from it).
 pub const APP_MENU_TITLE: &str = "Файл ▾";
 
+/// A caption button's glyph in its 10 px box (VM, Windows 11): close an
+/// ×; maximise a square; restore a 8 px square with the corner of a
+/// second one 2 px up and right; minimise a 10 px line.
+fn caption_glyph(p: &egui::Painter, r: egui::Rect, k: u8, max: bool, col: Color32) {
+    let o = egui::pos2((r.center().x - 5.0).round(), (r.center().y - 5.0).round());
+    // A 1 px run from (x0, y0) to (x1, y1) inclusive, in the box.
+    let run = |x0: f32, y0: f32, x1: f32, y1: f32| {
+        p.rect_filled(egui::Rect::from_min_max(o + egui::vec2(x0, y0), o + egui::vec2(x1 + 1.0, y1 + 1.0)), 0.0, col);
+    };
+    let square = |x: f32, y: f32, n: f32| {
+        run(x, y, x + n, y);
+        run(x, y + n, x + n, y + n);
+        run(x, y, x, y + n);
+        run(x + n, y, x + n, y + n);
+    };
+    match (k, max) {
+        (0, _) => {
+            let s = egui::Stroke::new(1.0f32, col);
+            p.line_segment([o, o + egui::vec2(10.0, 10.0)], s);
+            p.line_segment([o + egui::vec2(10.0, 0.0), o + egui::vec2(0.0, 10.0)], s);
+        }
+        (1, false) => square(0.0, 0.0, 9.0),
+        (1, true) => {
+            square(0.0, 2.0, 7.0);
+            run(2.0, 0.0, 9.0, 0.0);
+            run(9.0, 0.0, 9.0, 7.0);
+        }
+        _ => run(0.0, 5.0, 9.0, 5.0),
+    }
+}
+
 /// The system's caption buttons as Windows 10 / 11 draw them on the DWM
 /// frame (FastView's caption is DWM's with composition on, L9.150):
 /// minimise, maximise / restore, close (red when hot), 46 px wide each.
 fn caption_buttons(ui: &mut egui::Ui) {
     let h = ui.available_height().max(22.0);
     let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
-    for (k, glyph) in [(0, "✕"), (1, if max { "❐" } else { "☐" }), (2, "—")] {
+    // The buttons edge to edge (VM: 46 px apart).
+    ui.spacing_mut().item_spacing.x = 0.0;
+    for k in 0..3 {
         let (r, resp) = ui.allocate_exact_size(egui::vec2(46.0, h), egui::Sense::click());
         let close = k == 0;
         let hot = resp.hovered();
@@ -1636,7 +1669,7 @@ fn caption_buttons(ui: &mut egui::Ui) {
             ui.painter().rect_filled(r, 0.0, if close { Color32::from_rgb(232, 17, 35) } else { Color32::from_black_alpha(26) });
         }
         let col = if close && hot { Color32::WHITE } else { Color32::BLACK };
-        ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(12.0), col);
+        caption_glyph(ui.painter(), r, k, max, col);
         if resp.clicked() {
             ui.ctx().send_viewport_cmd(match k {
                 0 => egui::ViewportCommand::Close,
