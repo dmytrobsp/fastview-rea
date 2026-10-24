@@ -976,8 +976,10 @@ impl App {
         // Characteristics: extent of every visible one (operate and reset).
         let b = self.block_idx;
         let mut draws = Vec::new();
-        // The circle splits them by an exact «Ohm» dimension (`0x4387d0`,
-        // CString::Compare): the shipped «OHM» ones go to the power extent.
+        // The circle splits them by dimension (`0x4387d0`): string 3060
+        // «Ohm» upper-cased (MakeUpper, `0x43897c`), then an exact compare —
+        // the shipped «OHM» ones go to the Ω extent, any other text
+        // (a literal «Ohm» too) to the power one.
         let mut char_ext = [0.0f64; 2];
         if let Some(block) = self.library.blocks.get(b) {
             for (ci, ch) in block.characteristics.iter().enumerate() {
@@ -987,7 +989,7 @@ impl App {
                 }
                 let Some(geo) = &st.geo else { continue };
                 if geo.bounds.is_some() {
-                    let s = usize::from(!diff && ch.dimension_text != "Ohm");
+                    let s = usize::from(!diff && ch.dimension_text != "OHM");
                     char_ext[s] = char_ext[s].max(st.extent);
                 }
                 // Open polypoints are closed against the visible area.
@@ -1083,10 +1085,18 @@ impl App {
         // `" R: %g %s%s, %g %s%s"`: the Ω value goes to `0x43d960` with the
         // unit «Ω», which it never prefixes; the power one with "W"; the
         // unit texts are "Ohm" / "W" / "var" as shown (`0x42b740`).
+        // C's `%g` keeps a zero's sign: with no loci (scale 0) the left
+        // edge, −(n·u) − ox·u, is −0 (VM: «R: -0 Ом, -0 Вт» on the left,
+        // «0» on the other three edges, `0x439b3a`–`0x439d7d`).
+        let g_signed = |v: f64| if v == 0.0 && v.is_sign_negative() { "-0".to_string() } else { fvb_core::views::fmt_g(v) };
         let fmt2 = |axis: &str, a: f64, b: f64, ub: &str| {
-            let (tb, pb) = g_si(b);
-            format!(" {axis}: {} {}, {tb} {pb}{}", fvb_core::views::fmt_g(a), fvb_core::units::ru("Ohm"), fvb_core::units::ru(ub))
+            let (sb, pb) = fvb_core::omp::si(b);
+            format!(" {axis}: {} {}, {} {pb}{}", g_signed(a), fvb_core::units::ru("Ohm"), g_signed(sb), fvb_core::units::ru(ub))
         };
+        // The circle plane's edges in the original's order of operations:
+        // ±(n·u) − ox·u across, oy·u ± n·u up and down.
+        let cedge = |s: usize, sign: f64| sign * (f64::from(nx) * sc.upc[s]) - f64::from(view.ox) * sc.upc[s];
+        let cedge_y = |s: usize, sign: f64| f64::from(view.oy) * sc.upc[s] + sign * (f64::from(ny) * sc.upc[s]);
         // The differential plane: strings 163 « Iторм: %g %s%s» (left /
         // right) and 161 « Iдиф: %g %s%s» (top / bottom), unit string 162
         // «ном», never prefixed.
@@ -1100,10 +1110,10 @@ impl App {
             ]
         } else {
             [
-                (fmt2("R", edge(nx, view.ox, 0, 1.0), edge(nx, view.ox, 1, 1.0), "W"), Pos2::new(frame.right() - 3.0, c.y - 3.0), egui::Align2::RIGHT_BOTTOM),
-                (fmt2("R", edge(nx, view.ox, 0, -1.0), edge(nx, view.ox, 1, -1.0), "W"), Pos2::new(frame.left() + 3.0, c.y - 3.0), egui::Align2::LEFT_BOTTOM),
-                (fmt2("X", edge_y(ny, 0, 1.0), edge_y(ny, 1, 1.0), "var"), Pos2::new(c.x + 3.0, frame.top() + 3.0), egui::Align2::LEFT_TOP),
-                (fmt2("X", edge_y(ny, 0, -1.0), edge_y(ny, 1, -1.0), "var"), Pos2::new(c.x + 3.0, frame.bottom() - 3.0), egui::Align2::LEFT_BOTTOM),
+                (fmt2("R", cedge(0, 1.0), cedge(1, 1.0), "W"), Pos2::new(frame.right() - 3.0, c.y - 3.0), egui::Align2::RIGHT_BOTTOM),
+                (fmt2("R", cedge(0, -1.0), cedge(1, -1.0), "W"), Pos2::new(frame.left() + 3.0, c.y - 3.0), egui::Align2::LEFT_BOTTOM),
+                (fmt2("X", cedge_y(0, 1.0), cedge_y(1, 1.0), "var"), Pos2::new(c.x + 3.0, frame.top() + 3.0), egui::Align2::LEFT_TOP),
+                (fmt2("X", cedge_y(0, -1.0), cedge_y(1, -1.0), "var"), Pos2::new(c.x + 3.0, frame.bottom() - 3.0), egui::Align2::LEFT_BOTTOM),
             ]
         };
         // The DC keeps its default OPAQUE mode here: each text cell is
@@ -2052,6 +2062,21 @@ mod tests {
     }
 
     #[test]
+    fn the_shipped_ohm_characteristics_take_the_impedance_scale() {
+        // VM: «БМРЗ - Защита генераторов» on the circle plane, no loci: the
+        // edges read ±66 Ом and 0 Вт, the circles drawn (`0x4387d0`
+        // upper-cases «Ohm» before its exact compare with «OHM»).
+        let mut h = H::new(Pane::Circle);
+        let b = h.app.library.blocks.iter().position(|b| b.name == "БМРЗ - Защита генераторов").expect("the block");
+        h.app.block_idx = b;
+        h.app.ensure_block_state();
+        h.frame(vec![], Default::default());
+        let g = h.app.diag.geom[0].as_ref().expect("the circle plane painted");
+        assert!(g.max[0] > 0.0 && g.char_max == g.max[0], "the Ω extent: {:?}", g.max);
+        assert_eq!(g.max[1], 0.0, "nothing on the power scale");
+    }
+
+    #[test]
     fn circle_wheel_pans_and_zooms_without_egui_plot() {
         let mut h = H::new(Pane::Circle);
         assert!(h.app.diag.geom[0].is_some(), "the circle plane painted");
@@ -2059,8 +2084,8 @@ mod tests {
         assert_eq!(h.app.diag.circle.oy, 2, "plain wheel up: oy + 2");
         h.wheel(-1.0, egui::Modifiers::SHIFT);
         assert_eq!(h.app.diag.circle.ox, -2, "Shift+wheel down: ox − 2");
-        // The shipped characteristics are «OHM» — the power extent — so with
-        // no Ω locus the Ω scale is infinite: no zoom (`0x438b50`).
+        // No block and no Ω locus: the Ω scale is infinite, no zoom
+        // (`0x438b50`).
         h.wheel(1.0, egui::Modifiers::CTRL);
         assert_eq!(h.app.diag.circle.z, 1.0, "no Ω locus: Ctrl+wheel cannot zoom");
         let d = h.app.active_doc_mut().unwrap();

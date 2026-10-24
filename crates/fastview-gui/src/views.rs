@@ -994,6 +994,8 @@ impl App {
         let w = ui.available_width();
         let name_w = (w / 2.0).floor();
         let row_h = 17.0;
+        // Rows edge to edge (VM: a 17 px pitch).
+        ui.spacing_mut().item_spacing.y = 0.0;
         let line = egui::Stroke::new(1.0f32, egui::Color32::from_rgb(185, 208, 237));
         let sel_id = ui.id().with("fv_grid_sel");
         let focus_id = ui.id().with("fv_grid_focus");
@@ -1138,7 +1140,15 @@ impl App {
                 let (_, vr) = row(ui, key, p, false, 22.0, false);
                 if let Some(st) = self.chars.get_mut(&(b, *ci)) {
                     let text = st.settings.entry(p.clone()).or_default();
-                    let resp = ui.put(vr, egui::TextEdit::singleline(text).frame(false).text_color(TEXT).font(egui::FontId::proportional(12.0)));
+                    // The edit in its cell, its line centred 4 px in as
+                    // «Тип блока»'s, on a child that leaves the row's
+                    // 17 px allocation alone (`put` moved the next row to
+                    // the edit's bottom: 16–19 px pitches, VM 17).
+                    let font = egui::FontId::proportional(12.0);
+                    let top = ((vr.height() - ui.fonts(|f| f.row_height(&font))) / 2.0).max(0.0);
+                    let margin = egui::Margin { left: 4.0, right: 4.0, top, bottom: 0.0 };
+                    let mut cell = ui.new_child(egui::UiBuilder::new().max_rect(vr));
+                    let resp = cell.add_sized(vr.size(), egui::TextEdit::singleline(text).frame(false).text_color(TEXT).font(font).margin(margin));
                     order.push((key, GridRow::Param(resp.id, *ci, pi)));
                     // The stock in-place edit (CMFCPropertyGridCtrl, INFERRED):
                     // Esc restores the text, a commit (Enter, focus lost)

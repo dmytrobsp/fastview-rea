@@ -2918,7 +2918,7 @@ method, and `0x4167f0` pairs them by index — names slide (the tail past
 the list NOT DETERMINED); ours names the extra lines «_2».
 
 
-### L9.88 — Circle scales: characteristics split by an exact «Ohm»; no Ω locus, no characteristics  ·  ✅
+### L9.88 — Circle scales: characteristics split by an exact «Ohm»; no Ω locus, no characteristics  ·  ✅ (the split corrected: L9.280 — «Ohm» is upper-cased first, the shipped «OHM» ones take the Ω scale)
 Read (subagent reports; by hand: the dimension compare `0x438987` is
 `#2948` = CString::Compare → MSVCR120 `wcscmp`, case-sensitive, against
 string 3060 «Ohm»; the shipped FastView.fvb writes `dimension="OHM"` 33
@@ -7691,6 +7691,42 @@ software runner, got all three in one frame, and egui's per-frame
 Tests: `quick_key_presses_get_a_pass_each`,
 `arrow_keys_move_v1_and_ctrl_v2_by_one_sample` (three presses in one
 frame).
+
+### L9.280 — Side by side: the circle diagram with a block; the characteristic split corrected; the grid's 17 px rows  ·  ✅
+W4.3 on both programs, WIN_1999, the circle diagram's tab:
+- «Тип блока»'s list shows the same ten entries in both.
+- With «БМРЗ - Защита генераторов» picked, the same groups, parameters
+  and values.
+Three differences, fixed:
+- The characteristics. The original draws the block's circles on an Ω
+  scale (edges ±66 Ом / ±132 Ом, a 6 Ом cell, 0 Вт). Ours drew nothing
+  and stayed on the power scale. L9.88 read `0x4387d0` as an exact compare
+  of the dimension with string 3060 «Ohm», which sent the shipped «OHM»
+  ones (the VM's FastView.fvb: OHM ×33, DIF ×29) to the power maximum.
+  It missed the call between the load and the compare, `0x43897c`
+  (mfc120u #8601), which calls `_wcsupr_s`: `CString::MakeUpper`. The
+  original compares with «OHM»: those characteristics take the Ω
+  maximum, and any other text (a literal «Ohm» too) the power one. The
+  loci's compare (`0x438b50`, `0x438cb9`) loads 3060 with no upper-casing
+  and stays «Ohm». Ours now splits on «OHM». Test
+  `the_shipped_ohm_characteristics_take_the_impedance_scale`.
+- The edge labels' zero sign. With nothing on a scale the original's
+  left edge reads «R: -0 Ом, -0 Вт» and the other three «0»: C's `%g`
+  prints a zero's sign. `0x439b3a`–`0x439d7d` compute the edges as
+  ±(n·u) − ox·u across and oy·u ± n·u up and down, so only the left one
+  is −0. Ours now computes them in that order and keeps the sign in the
+  circle plane's labels. (The differential plane's left edge reads «0» on
+  the VM; it keeps the plain `fmt_g`.)
+- The grid's rows. The original's pitch is 17 px. Ours drifted between
+  16 and 19 px, because each value's edit was `put` in its cell with
+  egui's 2 px margins, and `put` moved the next row to the edit's
+  bottom. The edit now sits on a child ui inside the cell, its line
+  centred 4 px in, with no item spacing between rows.
+Residual:
+- Ours' text looks heavier: egui's unhinted anti-aliasing against GDI's
+  hinted 1 px stems, at the same 11 / 12 px sizes and widths within a
+  pixel.
+- The grid starts 1 px lower.
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
