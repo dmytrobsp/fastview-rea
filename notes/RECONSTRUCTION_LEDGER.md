@@ -7305,6 +7305,37 @@ Residual:
 - The triangle's hot / pressed look is not captured.
 - The other Office 2007 looks' bands are not measured.
 
+### L9.266 — VM run: a merged record saved — « (вст.)», the comment's last CR LF, the ratios in %g  ·  ✅
+VM run: a channel of DOC_1999 copied and pasted into the same document,
+«Объединить», then «Сохранить как» `.cfg`. The saved files were read
+byte for byte (kept local).
+- The pasted lane is named «IA БЛОКА 3 (вст.)» as soon as it is pasted.
+  That is the name plus string 3024 « (вст.)», added by the channel
+  constructor `0x424cb0`. Only while that name is taken does the paste's
+  loop (`0x45b120`, `0x42edf0` comparing names) append «(2)», «(3)»…
+  without a space. L9.20's «name + "(%i)"» had missed the first step.
+- The `.hdr` (the merged comment, cp1251, CR LF) has L9.20's lines as
+  ours built them. Each side ends with a CR LF after its comment, so the
+  text ends with one more CR LF than ours had. The writer writes the
+  stored text verbatim, so the CR LF belongs to the text.
+- The pasted channel's line ends «…,2000,1,P»: its ratios are written in
+  `%g`, while the record's own channels keep their tokens as read
+  («2000.000000,1.000000»). Its unit is the base unit («A») the clipboard
+  carries.
+Ours now:
+- `paste_channels_for_merge` names the lane «<name> (вст.)», then
+  «(k)»;
+- `merged_header` ends with the CR LF;
+- `clip_chans` gives a pasted channel `%g` tokens.
+Tests: `merged_header_text` (the VM's text byte for byte, as a string)
+and `paste_is_pending_then_merges_onto_one_grid` (the name, the «(2)»
+after a merge, the tokens).
+Residual:
+- A paste from another record (the clip's own comment in side 2) was not
+  run: the Ctrl+Tab in the harness did not switch documents.
+- The start date's parse with the target's revision rule (W2.3) stays as
+  read.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

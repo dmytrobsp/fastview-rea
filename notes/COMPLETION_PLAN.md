@@ -131,7 +131,8 @@ items (VM ones also in W4.4):
 - [ ] W2.3 L9.20 — analog paste with no analog channel selected (with
   W2.16); the paste's start date parsed with the target's revision rule
   (`merge_ui.rs`) — re-read; the clipboard XML's `time_multiplier` /
-  `duration_milli_sec` (settled, L9.212) and the merged comment's CR LF (VM).
+  `duration_milli_sec` (settled, L9.212) and the merged comment's CR LF (VM:
+  done, L9.266 — with the « (вст.)» name and the `%g` ratios).
 - [ ] W2.4 L9.30 — EMR_STRETCHDIBITS vs EMR_BITBLT in copy's EMF (decide:
   match or accept).
 - [ ] W2.5 L9.31 — phase 2 of loading on the UI thread (derived arrays,

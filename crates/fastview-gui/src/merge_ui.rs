@@ -156,8 +156,10 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
                     skew: 0.0,
                     primary: c.primary_value,
                     secondary: c.secondary_value,
-                    primary_tok: String::new(),
-                    secondary_tok: String::new(),
+                    // Written back as `%g` (VM: a pasted channel saved with
+                    // «2000,1», the record's own «2000.000000,1.000000»).
+                    primary_tok: fvb_core::views::fmt_g(c.primary_value),
+                    secondary_tok: fvb_core::views::fmt_g(c.secondary_value),
                     is_primary: c.primary_values,
                     samples: c.data.clone(),
                     // `0x45ad02` → `0x424cb0` (`0x425002`): net_frequency to ch+0x50.
@@ -390,7 +392,9 @@ impl App {
 
     /// 57637 (`0x45ad02`): read the clipboard document, undo snapshot, clear
     /// the ОМП result, deselect all, add the channels as pending lanes that
-    /// come in selected (duplicate names get "(2)", "(3)"… without a space),
+    /// come in selected, each named with « (вст.)» after its own name
+    /// (string 3024, `0x424cb0`; VM) and, while that is taken, "(2)",
+    /// "(3)"… without a space (`0x45b120`),
     /// rewrite the record comment as the merged-record summary and show the
     /// merge bar.
     pub fn paste_channels_for_merge(&mut self) {
@@ -415,10 +419,11 @@ impl App {
             let taken = |n: &str, d: &Doc| {
                 d.osc.analog.iter().any(|a| a.id == n) || d.osc.digital.iter().any(|x| x.id == n) || d.computed.iter().any(|x| x.name == n)
             };
-            let mut name = c.name().to_string();
+            let base = format!("{} (вст.)", c.name());
+            let mut name = base.clone();
             let mut k = 2;
             while taken(&name, d) {
-                name = format!("{}({k})", c.name());
+                name = format!("{base}({k})");
                 k += 1;
             }
             match &mut c.pasted.channel {
@@ -927,7 +932,9 @@ mod tests {
         app.paste_channels_for_merge();
         let d = app.active_doc().unwrap();
         assert_eq!(d.pending.len(), 1);
-        assert!(d.computed.iter().any(|c| c.formula == PENDING && c.name.ends_with("(2)") && !c.name.ends_with(" (2)")), "duplicate names get (2), no space");
+        let id0 = d.osc.analog[0].id.clone();
+        assert!(d.computed.iter().any(|c| c.formula == PENDING && c.name == format!("{id0} (вст.)")), "« (вст.)» after the name (VM)");
+
         assert!(crate::omp_ui::has_pending_paste(d), "ОМП and another paste are blocked");
         assert!(app.merge.is_some(), "the merge bar shows");
         // Shift by 2 ms; out-of-range offsets are clamped.
@@ -1100,10 +1107,18 @@ mod tests {
         let d = app.active_doc().unwrap();
         assert_eq!(d.osc.analog.len(), n0 + 1);
         assert_eq!(d.osc.analog[0].id, id0);
-        assert_eq!(d.osc.analog[1].id, format!("{id0}(2)"), "merged in place");
+        assert_eq!(d.osc.analog[1].id, format!("{id0} (вст.)"), "merged in place");
+        let m = &d.osc.analog[1];
+        assert_eq!((m.primary_tok.clone(), m.secondary_tok.clone()), (fvb_core::views::fmt_g(m.primary), fvb_core::views::fmt_g(m.secondary)), "the ratios written %g");
         assert_eq!(d.osc.analog[2].id, id1);
         assert_eq!(d.hviz[0].chan, Some(2), "stored indices follow");
         assert_eq!(d.chans.len(), d.osc.analog.len());
+        // Pasted again: « (вст.)» is taken now, so "(2)" without a space.
+        app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into();
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc().unwrap();
+        assert!(d.computed.iter().any(|c| c.name == format!("{id0} (вст.)(2)")), "{:?}", d.computed.iter().map(|c| &c.name).collect::<Vec<_>>());
     }
 
     #[test]

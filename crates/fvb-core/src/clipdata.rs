@@ -213,8 +213,9 @@ impl ClipRecord {
 
 /// The record comment a paste writes (`0x45ad02`, strings 3272, 3221, 3048,
 /// 3218, 3479, 3308, 3297, 3249, 3050): the document's own record as
-/// «Осциллограмма 1», the clipboard's as «Осциллограмма 2». The CR LF
-/// placement after each value is inferred from the concatenation count.
+/// «Осциллограмма 1», the clipboard's as «Осциллограмма 2»; each side
+/// ends with a CR LF after its comment, an empty line between them (VM:
+/// a merged record saved, its `.hdr` byte for byte).
 pub struct HeaderSide<'a> {
     pub title: &'a str,
     pub station: &'a str,
@@ -231,7 +232,7 @@ pub fn merged_header(own: &HeaderSide, clip: &HeaderSide) -> String {
         )
     };
     format!(
-        "Механотроника. FastView, Объединенная осциллограмма\r\nИсходные осциллограммы: \r\n{}\r\n\r\n{}",
+        "Механотроника. FastView, Объединенная осциллограмма\r\nИсходные осциллограммы: \r\n{}\r\n\r\n{}\r\n",
         side(own, "1) Осциллограмма 1\r\n"),
         side(clip, "2) Осциллограмма 2\r\n")
     )
@@ -296,6 +297,11 @@ mod tests {
         let h = merged_header(&a, &b);
         assert!(h.starts_with("Механотроника. FastView, Объединенная осциллограмма\r\nИсходные осциллограммы: \r\n1) Осциллограмма 1\r\nИмя осциллограммы: A\r\nСтанция:S1\r\n"));
         assert!(h.contains("Комментарий: \r\nc1\r\n\r\n2) Осциллограмма 2\r\n"));
-        assert!(h.ends_with("Комментарий: \r\n"));
+        assert!(h.ends_with("Комментарий: \r\n\r\n"));
+        // The VM's merge of a record with no comment into itself, as saved.
+        let s = HeaderSide { title: "DOC_1999.cfg", station: "PC1-1", block: "1", start: "03/05/2025, 06:55:36.265000", comment: "" };
+        let side = |n: u8| format!("{n}) Осциллограмма {n}\r\nИмя осциллограммы: DOC_1999.cfg\r\nСтанция:PC1-1\r\nНомер регистратора: 1\r\nНачало записи: 03/05/2025, 06:55:36.265000\r\nКомментарий: \r\n\r\n");
+        let want = format!("Механотроника. FastView, Объединенная осциллограмма\r\nИсходные осциллограммы: \r\n{}\r\n{}", side(1), side(2));
+        assert_eq!(merged_header(&s, &s), want);
     }
 }
