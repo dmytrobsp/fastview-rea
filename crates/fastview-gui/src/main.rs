@@ -1356,6 +1356,22 @@ mod window_tests {
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "omp" || s == "ompparams") {
             app.tab = RibbonTab::Omp;
         }
+        // `FV_WINDOW_SKIN=<win2000|officexp|winxp|office2003|vs2005|black|silver|aqua>`.
+        if let Ok(name) = std::env::var("FV_WINDOW_SKIN") {
+            use theme::Skin;
+            let skin = match name.as_str() {
+                "win2000" => Skin::Win2000,
+                "officexp" => Skin::OfficeXp,
+                "winxp" => Skin::WinXp,
+                "office2003" => Skin::Office2003,
+                "vs2005" => Skin::Vs2005,
+                "black" => Skin::Black,
+                "silver" => Skin::Silver,
+                "aqua" => Skin::Aqua,
+                _ => Skin::Blue,
+            };
+            app.dispatch(app::Command::SetSkin(skin));
+        }
         // `FV_WINDOW_STATE=windows`: «Окна» over two documents; `twodocs`:
         // the two documents alone (the tabs' ▾ list).
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "windows" || s == "twodocs") {
