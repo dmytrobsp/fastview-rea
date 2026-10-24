@@ -8233,6 +8233,19 @@ restored before and after):
   held). Now a release after the delay drops. Test
   `a_plot_drag_into_the_stats_panel_drops_after_the_delay`.
 
+### L9.301 — VM: the print dialog's status in comdlg32's words; «Состояние» without a colon  ·  ✅
+Run (Ctrl+P on WIN_1999, the VM's Print to PDF): the original's
+«Состояние» field reads «Ready» — comdlg32's own string, in the system's
+language (the VM's Windows is English), not the program's — and its
+label has no colon (the template's text). Ours wrote «Готов» (L9.113's
+inferred wording) under «Состояние:». Now `spool` loads the status from
+comdlg32's string table at run time (found on the VM: 1536 «Ready»,
+1537 + k for PRINTER_STATUS bit k, «Paused; », «Error; » …, joined, the
+last "; " dropped) and the label is «Состояние». VM: alike. (CUPS keeps
+our wording; comdlg's "%lu documents waiting" is still not shown.)
+Small visual: the original's printer combo opens with the focus (a
+dotted focus rectangle); ours has no focus mark there.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

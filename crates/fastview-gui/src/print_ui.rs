@@ -261,7 +261,7 @@ impl App {
                 }
             }
             let details = dlg.details.as_ref().map(|d| d.1.clone()).unwrap_or_default();
-            let rows = [((16, 36, 36), (71, 36, 224), "Состояние:"), ((16, 51, 36), (72, 51, 224), "Тип:"), ((16, 66, 36), (72, 66, 224), "Место:"), ((16, 81, 50), (72, 82, 228), "Комментарий:")];
+            let rows = [((16, 36, 36), (71, 36, 224), "Состояние"), ((16, 51, 36), (72, 51, 224), "Тип:"), ((16, 66, 36), (72, 66, 224), "Место:"), ((16, 81, 50), (72, 82, 228), "Комментарий:")];
             for (k, ((lx, ly, lw), (vx, vy, vw), l)) in rows.into_iter().enumerate() {
                 win_label(ui, dlu(client, lx, ly, lw, 10), l, false, true);
                 if let Some(v) = details.get(k) {

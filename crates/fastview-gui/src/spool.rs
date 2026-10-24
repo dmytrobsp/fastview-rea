@@ -262,8 +262,35 @@ mod imp {
     };
     use windows_sys::Win32::Storage::Xps::{EndDoc, EndPage, StartDocW, StartPage, DOCINFOW};
 
-    /// PRINTER_INFO_2: the status (0 «Готов»; paused, error — INFERRED
-    /// wording), the driver, the port, the comment.
+    /// The status as the common print dialog words it, in comdlg32's own
+    /// strings (the system's language — VM: «Ready»): string 1536 for none,
+    /// else string 1537 + k («Paused; », «Error; » …) for each status bit
+    /// k, joined, the last "; " dropped.
+    fn status_text(status: u32) -> String {
+        use windows_sys::Win32::Foundation::FreeLibrary;
+        use windows_sys::Win32::System::LibraryLoader::{LoadLibraryExW, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE};
+        use windows_sys::Win32::UI::WindowsAndMessaging::LoadStringW;
+        let name = wide("comdlg32.dll");
+        // SAFETY: a data-file load, strings copied into a sized buffer,
+        // freed after.
+        unsafe {
+            let h = LoadLibraryExW(name.as_ptr(), std::ptr::null_mut(), LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+            if h.is_null() {
+                return String::new();
+            }
+            let load = |id: u32| {
+                let mut buf = [0u16; 256];
+                let n = LoadStringW(h, id, buf.as_mut_ptr(), buf.len() as i32);
+                String::from_utf16_lossy(&buf[..n.max(0) as usize])
+            };
+            let text = if status == 0 { load(1536) } else { (0..23).filter(|k| status & (1 << k) != 0).map(|k| load(1537 + k)).collect::<String>() };
+            FreeLibrary(h);
+            text.trim_end_matches([';', ' ']).to_string()
+        }
+    }
+
+    /// PRINTER_INFO_2: the status ([`status_text`]), the driver, the port,
+    /// the comment.
     pub fn details(printer: &str) -> [String; 4] {
         let name = wide(printer);
         let mut h: HANDLE = std::ptr::null_mut();
@@ -281,13 +308,7 @@ mod imp {
                 return Default::default();
             }
             let i = &*(buf.as_ptr() as *const PRINTER_INFO_2W);
-            let status = match i.Status {
-                0 => "Готов",
-                s if s & 1 != 0 => "Приостановлен",
-                s if s & 2 != 0 => "Ошибка",
-                _ => "",
-            };
-            [status.into(), from_wide(i.pDriverName), from_wide(i.pPortName), from_wide(i.pComment)]
+            [status_text(i.Status), from_wide(i.pDriverName), from_wide(i.pPortName), from_wide(i.pComment)]
         }
     }
 
