@@ -68,15 +68,18 @@ pub struct ViewSnap {
     pub grid: bool,
 }
 
-/// `Codepage`: 0 = the ANSI code page (1251 here), 1 = the OEM one (866);
-/// other values are code page numbers (`0x4543e0`).
+/// `Codepage`: the loader stores the guess `0x459e60` (`0x450d56`) — 1
+/// when the text has more Cyrillic letters as it stands than converted
+/// from OEM, i.e. 1 = the ANSI code page (1251), 0 = the OEM one (866), a
+/// tie 0 (seen on the VM: a CP1251 record's new `.set` says 1); other values
+/// are code page numbers (`0x4543e0`).
 pub fn cp_code(e: Encoding) -> i32 {
-    i32::from(e == Encoding::Cp866)
+    i32::from(e != Encoding::Cp866)
 }
 
 pub fn cp_of(code: i32) -> Encoding {
     match code {
-        1 | 866 => Encoding::Cp866,
+        0 | 866 => Encoding::Cp866,
         20866 => Encoding::Koi8r,
         65001 => Encoding::Utf8,
         _ => Encoding::Cp1251,
@@ -302,7 +305,9 @@ impl Doc {
     /// The modelled bits replace their stored values; the others (bits we
     /// do not model, a stored `NetFreq`, …) are kept.
     fn merged_flags(t: &SetTree, key: &str, ours: u32, known: u32) -> u32 {
-        let old = t.section(key).map_or(0, |s| s.get_int("ShowFlags", 0) as u32);
+        // Without a stored word the constructor's 0xE1 (`0x422536`): its
+        // СКЗ / A1 bits stay on a discrete channel, which nothing reads.
+        let old = t.section(key).and_then(|s| s.attrs.get("ShowFlags")).map_or(0xE1, |v| recset::wtoi(v) as u32);
         ours | (old & !known)
     }
 
@@ -311,6 +316,14 @@ impl Doc {
     /// 32845–32848 change without marking the document, and ОМП / pending
     /// channels left out).
     pub fn store_settings(&self, t: &mut SetTree, print: bool) {
+        // Sections and subtrees the original's reads get or create
+        // (`0x48dc80`; the block load `0x409030`) are saved even empty.
+        for k in ["Frequency Chart", "Vector Chart", "View"] {
+            t.section_mut(k);
+        }
+        for k in ["Circle Chart", "Diff Chart"] {
+            t.section_mut(k).child_mut("Selected Block");
+        }
         let calc: Vec<(String, String)> = self.computed.iter().filter(|c| is_formula(c)).map(|c| (c.name.clone(), c.formula.clone())).collect();
         recset::write_calculated(t.section_mut("CalculatedChannels"), &calc);
         recset::write_omp(t.section_mut("WrongPlaceFinding"), &self.omp.params);
@@ -1268,7 +1281,7 @@ mod tests {
         assert!(!needs_save_prompt(&d));
         assert_eq!(save_kind(Path::new("/a/b.CFG")), Some(".cfg"));
         assert_eq!(save_kind(Path::new("/a/b.dat")), None);
-        assert_eq!((cp_code(Encoding::Cp866), cp_code(Encoding::Cp1251)), (1, 0));
-        assert_eq!((cp_of(1), cp_of(0)), (Encoding::Cp866, Encoding::Cp1251));
+        assert_eq!((cp_code(Encoding::Cp866), cp_code(Encoding::Cp1251)), (0, 1));
+        assert_eq!((cp_of(0), cp_of(1)), (Encoding::Cp866, Encoding::Cp1251));
     }
 }

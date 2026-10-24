@@ -310,13 +310,13 @@ impl ChanView {
             group: None,
             mode: ValueMode::Instant,
             stats: StatRows::default(),
-            on_freq: true,
-            // Cleared on attach unless the unit passes the vector test
-            // (`0x48fda0`), so a drawn phasor is always listed.
-            on_vector: crate::diagram::vector_unit_ok(&ch.unit),
-            // The circle flag is cleared on attach unless the unit is
-            // Ohm / VA (`0x436b30`).
-            on_circle: i == 0 && crate::diagram::circle_pane_unit_ok(&ch.unit),
+            // The channel constructor's ShowFlags 0xE1 (`0x422536`): visible,
+            // the СКЗ / A1 rows, instant values — on no diagram (seen on the
+            // VM: a record opened without a `.set` shows empty frequency and
+            // vector diagrams, and its new `.set` says 225).
+            on_freq: false,
+            on_vector: false,
+            on_circle: false,
             primary: false,
         }
     }

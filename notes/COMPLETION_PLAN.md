@@ -170,11 +170,11 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   a close button on the record-header strip.
 - [x] W4.1a Input driving: `tools/vm/drive.ps1` (SendKeys groups in the
   session) opens records and presses commands in the original.
-- [ ] W4.1b The VM's "Language for non-Unicode programs" Russian (code page
-  1251) — on the English locale the original's ANSI conversions turn
-  Cyrillic names and units into «?», which also changes unit-driven flags;
-  needs the user's approval (a system setting and a restart).
-- [ ] W4.2 File-level comparisons (started 2026-10-24: WIN_1999 saved by
+- [x] W4.1b The VM's system locale and devuser's Format set to ru-RU (user
+  approved, 2026-10-24) — the original stores names through the thread
+  code page, so both are needed for its Cyrillic.
+- [ ] W4.2 File-level comparisons (WIN_1999's `.set`: byte-identical since
+  L9.171; its `.cfg` / `.dat`: the writer next) (started 2026-10-24: WIN_1999 saved by
   both through Save As — `FV_SAVE_AS` makes ours; differences found: Ctrl+S
   always asks with a lowercase name, the same-name save rewrites the
   record, and the `.cfg` / `.dat` / `.set` formats, see the save-path read

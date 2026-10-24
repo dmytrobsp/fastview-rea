@@ -3058,6 +3058,7 @@ mod menu_tests {
     fn menu_rows_tick_only_checked_items() {
         let mut h = Harness::new();
         h.app.active_doc_mut().unwrap().chans[0].invert = true;
+        h.app.active_doc_mut().unwrap().chans[0].on_vector = true;
         let top = h.row(0);
         h.button(top, egui::PointerButton::Secondary);
         assert!(h.app.lane_menu.is_some());

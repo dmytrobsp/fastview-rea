@@ -148,6 +148,16 @@ pub fn circle_refresh_flags(doc: &mut Doc) {
             _ => {}
         }
     }
+    // The vector window's refresh (`0x48fda0`, the same refresh-all) clears
+    // the vector flag of every channel failing the vector test (`0x4900cb`).
+    for key in rows(doc) {
+        let ok = unit_of(doc, key).is_some_and(|u| vector_unit_ok(&u));
+        match key {
+            ChanKey::Analog(i) if !ok => doc.chans[i].on_vector = false,
+            ChanKey::Computed(j) if !ok => doc.computed[j].on_vector = false,
+            _ => {}
+        }
+    }
 }
 
 /// The flag a cell shows, or `None` where it does not apply (drawn grey).
@@ -817,8 +827,9 @@ mod tests {
         assert!(circle_unit_ok("Ohm") && circle_unit_ok("va") && circle_unit_ok("W") && circle_unit_ok("var"));
         assert!(!circle_unit_ok("A") && !circle_unit_ok(""));
         let mut d = demo_doc();
-        // Ua is in V: vector yes, circle no; the discrete channel has only column 1.
-        assert_eq!(cell(&d, ChanKey::Analog(0), 3), Some(true));
+        // Ua is in V: vector yes (unticked — 0xE1 puts no channel on a
+        // diagram), circle no; the discrete channel has only column 1.
+        assert_eq!(cell(&d, ChanKey::Analog(0), 3), Some(false));
         assert_eq!(cell(&d, ChanKey::Analog(0), 4), None);
         assert_eq!(cell(&d, ChanKey::Digital(0), 2), None);
         assert!(cell(&d, ChanKey::Digital(0), 1).is_some());

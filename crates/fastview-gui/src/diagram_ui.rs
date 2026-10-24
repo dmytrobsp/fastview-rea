@@ -2102,7 +2102,12 @@ mod tests {
         assert_eq!(osc.analog[3].raw_unit, "кА");
         assert_eq!(osc.analog[2].unit, "B", "a Latin B is no volt");
         let mut app = App::new();
-        app.add_doc(Doc::new(osc, "units".into()));
+        let mut doc = Doc::new(osc, "units".into());
+        for c in &mut doc.chans {
+            c.on_vector = true;
+        }
+        app.add_doc(doc);
+        app.refresh_blocks();
         let names = |app: &App| -> Vec<String> {
             app.menu_chans(Window::Vector).into_iter().map(|c| c.name).collect()
         };

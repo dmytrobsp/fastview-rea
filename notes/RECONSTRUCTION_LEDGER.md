@@ -1042,7 +1042,7 @@ absent), setters `%i`/`%f`; loader `0x48e470` (skip BOM, UTF-16LE via
 .cfg/.osc/.sto/.zip/.cff, append .set; reader `0x44f5b0` falls back to path
 minus 3 chars + `ini`). Sections: `Comments` (`0x43fcf0`: Areas/Levels/
 Moments, text, locked 0, visible 1, kind fields, channels by name),
-`Oscillogram/DiscretisationFrequensy`, `Codepage` (0 ANSI / 1 OEM, wins over
+`Oscillogram/DiscretisationFrequensy`, `Codepage` (~~0 ANSI / 1 OEM~~ 1 ANSI / 0 OEM — L9.171; wins over
 the guess), per-channel sections (`0x427d20`: ShowFlags = `ch+0x60`,
 PrimaryMul, SecondaryMul, AliasName, NetFreq, CustomColorSet, colorCustom),
 `CalculatedChannels` (`Channel<i>` = `name,formula`), `WrongPlaceFinding`
@@ -5064,6 +5064,44 @@ each pair is unused here; the scroll bars kept disabled after zooming
 back out, the pan limit with the table on, the differential scale over a
 cursor range inside the first period and the print scale box's pen
 (W1.3's list) are not yet changed.
+
+### L9.171 — Channel defaults on no diagram; `Codepage` 1 = ANSI; the `.set` as the original writes it, byte for byte  ·  ✅
+Run (COMPLETION_PLAN W4.2: WIN_1999 opened in the original on the VM and
+saved through Save As — with the user Format and the system locale ru-RU;
+under an English Format the original stores names through
+CP_THREAD_ACP and turns Cyrillic into «?», mfc #1527 → WideCharToMultiByte)
+and read (by hand `0x422536`, `0x48fda0`–`0x4900cb`, `0x459e60`,
+`0x450d56`):
+- A new channel's ShowFlags is the constructor's 0xE1 (`0x422536`: visible,
+  the A1 / СКЗ rows, instant values) — on no diagram: the record's new
+  `.set` says 225 for every analog and the discrete channel, and the
+  vector / frequency diagrams show nothing until channels are put on them.
+- The vector window's refresh (`0x48fda0`, part of the refresh-all) clears
+  the vector flag of every channel failing the vector test (`0x4900cb`), as
+  the circle refresh does for its flag (L9.163).
+- `Codepage` in `Oscillogram` is the loader's guess (`0x450d56` stores
+  `0x459e60`'s result): 1 when the text has more Cyrillic letters as it is
+  than converted from OEM — 1 = ANSI (1251), 0 = OEM (866), a tie 0; the
+  CP1251 record got 1. L9.17's "0 ANSI / 1 OEM" was inverted — ours read
+  the original's files' 1 as 866.
+- The sections the reads get or create are saved even empty: «Frequency
+  Chart», «Vector Chart», «View», and «Selected Block» under both charts.
+Ours put every channel on the frequency diagram, A / V ones on the vector
+diagram and the first Ohm one on the circle diagram, wrote discrete flags
+without the 0x60 bits, inverted `Codepage` and dropped the empty sections.
+Now `ChanView::new` starts on no diagram; `circle_refresh_flags` also
+clears the vector flag of ineligible channels; `merged_flags` defaults to
+0xE1; `cp_code` / `cp_of` 1 = 1251; `store_settings` creates the empty
+sections. Our `.set` for WIN_1999 is now byte-identical to the original's.
+Tests updated (`eligibility_by_unit_as_the_original_reads_it`,
+`prefixed_cyrillic_units_reach_the_vector_diagram`,
+`menu_rows_tick_only_checked_items`, the code-page test).
+Residual: the `.cfg` / `.dat` writer (`0x44dfa0`, `0x425530`, `0x44e680`,
+`0x44e920`: %g fields, min / max from the data, raw primary / secondary
+tokens, the digital state and layout, CRLF, ", " in the `.dat`, BINARY kept,
+the revision and multiplier lines, cp1251 bytes) — next; the Save path's
+lowercased proposal and the never-updated record path (`0x44d772`,
+`0x44da96`).
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
