@@ -8297,6 +8297,18 @@ for its enabling only. Now `flag_state(Adc)` is enabled when a formula
 channel is selected, its check and its toggle still the file channels'.
 Test `the_adc_item_with_only_formula_channels`.
 
+### L9.305 — VM: a comment just placed or dragged stays selected; the level's end dots  ·  ✅
+Run (WIN_1999, «Линия уровня» dragged out on IC): on release the
+original keeps the new level selected — its 3 px (192, 0, 0) line and
+the info box «Уровень: 0.90» at the pointer, without a further move;
+ours drew it unselected until the pointer moved. Now `EndCommentDrag`
+makes the element `comment_hot` (a moved one too). The ends' dots are
+about 10 px across in the original; ours 11 — radius 4 now. Test
+`comment_tools_are_one_shot_and_drag_out_levels_and_areas` (selected
+after the drag).
+Not run: the level edit in a scrolled view (L9.175) — WIN_1999's lanes
+fit the view, nothing scrolls.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

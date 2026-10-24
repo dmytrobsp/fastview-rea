@@ -258,8 +258,9 @@ fn draw(p: &egui::Painter, c: &Comment, sel: bool, geo: &Geo, font: &FontId) -> 
             let y = ly.draw;
             let (x1, x2) = ((geo.x_of)(from.min(to) as f64), (geo.x_of)(from.max(to) as f64));
             p.hline(x1..=x2, y, Stroke::new(3.0f32, col));
+            // The ends: dots about 10 px across (VM).
             for x in [x1, x2] {
-                p.circle(Pos2::new(x, y), 5.0, Color32::from_rgb(255, 0, 0), Stroke::new(1.0f32, col));
+                p.circle(Pos2::new(x, y), 4.0, Color32::from_rgb(255, 0, 0), Stroke::new(1.0f32, col));
             }
             bubble(p, Pos2::new(x2 + 10.0, y - 9.0), col);
             if !c.hidden {

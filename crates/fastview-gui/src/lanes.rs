@@ -1877,6 +1877,10 @@ impl App {
                         if let Some(c) = d.comments.get_mut(i) {
                             c.normalise();
                         }
+                        // The element stays the selected one (VM: a level
+                        // just drawn keeps its 3 px line and its info box
+                        // with the pointer still).
+                        d.comment_hot = Some(i);
                         if part == 1 {
                             d.comment_mode = 0;
                         }
@@ -3424,6 +3428,7 @@ mod menu_tests {
             }
             ref k => panic!("{k:?}"),
         }
+        assert_eq!(h.doc().comment_hot, Some(1), "the level just drawn stays selected (VM)");
         assert_eq!(h.doc().comment_mode, 0);
 
         h.app.dispatch(Command::CommentMode(3));
