@@ -6957,6 +6957,27 @@ disabled 240 px drop-down lists at (96, 179) and (96, 211), «Orientation»
 edits showing whole millimetres plain, else the decimal comma, read back
 as typed. Our page shows the margins (not the original's bitmaps).
 
+### L9.249 — «Быстрый анализ»'s frame: the Outlook bar, the page, the strip  ·  ✅
+VM capture (ribbon «Быстрый анализ», opened on «Редактор формул»):
+CQAnPropSheet's frame 1016–1687 × 317–1035, a 670 × 692 client — not
+where CenterWindow would put it: its left-top is where a sheet 144 px
+narrower and 38 px taller would be centred (READ the place; INFERRED that
+the Outlook bar and the hidden tab strip change the size after the
+sheet was centred). The bar at (1, 1), 148 × 657, a (185, 208, 237)
+border, (227, 239, 255) down its first quarter then shading to (177, 211,
+255) at its bottom; each page a 26 px image 7 px below its item's top
+and its title centred under it in (0, 21, 110), 13 px lines, items 42 px
++ the lines (68 / 55 px); the selected page carries no mark. The page
+from x 150 to the right edge, (249) with a (229) line at its left and at
+y 657; below it the (240) strip with a (243) line on top and «Рассчитать»
+(the default) / «Отмена» 75 × 23 at (509, 664) / (590, 664). Ours was an
+egui window with selectable labels, a page title, separators and egui
+buttons. Now it is drawn so (`Dlg::nudge` for the place); the page's own
+content (the formula editor's list and buttons, the analysis pages) is
+still ours — next. Also: the harness's `analysis` state adds its demo
+formulas only to the demo record (over WIN_1999 they raised a message
+the original never shows).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

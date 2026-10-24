@@ -1522,7 +1522,7 @@ mod window_tests {
             }
         }
         // `FV_WINDOW_STATE=analysis`: two formula channels in the list.
-        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "analysis") {
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "analysis") && std::env::var("FV_WINDOW_RECORD").is_err() {
             app.append_computed(&[("Uab".into(), "Ua-Ub".into()), ("P".into(), "Ua*Ia [W]".into())]);
             app.dispatch(app::Command::QuickAnalysis);
             app.formula_page.selected = Some(1);

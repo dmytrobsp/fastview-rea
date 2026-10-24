@@ -418,55 +418,86 @@ impl App {
         let (mut calc, mut cancel, mut open, mut ok_now) = (false, false, true, false);
         let editing = self.formula_page.edit.is_some();
         let enabled = self.formula_dlg.is_none() && self.formula_page.alert.is_none();
+        // VM: a 670 × 692 client whose left-top is where a sheet 144 px
+        // narrower and 38 px taller would be centred (the Outlook bar is
+        // added after; READ the place, INFERRED the cause): (1016, 317).
         crate::dialogs::dlg(ctx, "Быстрый анализ")
             .id(egui::Id::new("fv_quick_sheet"))
+            .margin(0.0)
+            .nudge(egui::vec2(72.0, -19.0))
             .collapsible(false)
             .resizable(false)
-            .fixed_size(egui::Vec2::new(700.0, 510.0))
             .open(&mut open)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
+                // Everything sits at its own place: no spacing after the client.
+                ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                let (client, _) = ui.allocate_exact_size(egui::vec2(670.0, 692.0), egui::Sense::hover());
+                let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(client.min + egui::vec2(x, y), egui::vec2(w, h));
                 ui.add_enabled_ui(enabled, |ui| {
-                    ui.horizontal_top(|ui| {
-                        // The separator spans the row: keep it to the page.
-                        ui.set_max_height(470.0);
-                        ui.vertical(|ui| {
-                            ui.set_width(150.0);
-                            for (tab, glyph, title) in PAGES {
-                                let sel = self.analysis_tab == tab;
-                                let text = egui::RichText::new(format!("{glyph}\n{title}")).size(11.5);
-                                let r = ui.add_sized([150.0, 58.0], egui::SelectableLabel::new(sel, text));
-                                if r.clicked() && self.analysis_tab != tab {
-                                    if self.analysis_tab == AnalysisTab::Formula {
-                                        self.fp_kill_active();
-                                    }
-                                    self.analysis_tab = tab;
-                                    self.quick_show_page();
-                                }
+                    // The Outlook bar (VM): (1, 1) 148 × 657 in a (185, 208,
+                    // 237) border, (227, 239, 255) down its first quarter,
+                    // then shading to (177, 211, 255) at its bottom; each
+                    // page a 26 px image (our glyphs — bitmap 549 is the
+                    // original's) 7 px below the item's top, its title
+                    // centred under it in (0, 21, 110), 13 px lines; items
+                    // 42 px + the lines; no mark on the selected one.
+                    let bar = at(1.0, 1.0, 148.0, 657.0);
+                    let p = ui.painter().clone();
+                    p.rect_filled(bar, 0.0, egui::Color32::from_rgb(185, 208, 237));
+                    let inner = bar.shrink(1.0);
+                    let q = inner.top() + (inner.height() / 4.0).round();
+                    let (c0, c1) = (egui::Color32::from_rgb(227, 239, 255), egui::Color32::from_rgb(177, 211, 255));
+                    p.rect_filled(egui::Rect::from_min_max(inner.min, egui::pos2(inner.right(), q)), 0.0, c0);
+                    let mut mesh = egui::Mesh::default();
+                    for (pt, c) in [(egui::pos2(inner.left(), q), c0), (egui::pos2(inner.right(), q), c0), (inner.right_bottom(), c1), (inner.left_bottom(), c1)] {
+                        mesh.colored_vertex(pt, c);
+                    }
+                    mesh.add_triangle(0, 1, 2);
+                    mesh.add_triangle(0, 2, 3);
+                    p.add(mesh);
+                    let ink = egui::Color32::from_rgb(0, 21, 110);
+                    let mut y = inner.top();
+                    for (tab, glyph, title) in PAGES {
+                        let mut job = egui::text::LayoutJob::simple(title.to_string(), crate::dialogs::DLG_FONT, ink, inner.width() - 8.0);
+                        job.halign = egui::Align::Center;
+                        let g = ui.fonts(|f| f.layout_job(job));
+                        let lines = g.rows.len().max(1) as f32;
+                        let item = egui::Rect::from_min_size(egui::pos2(inner.left(), y), egui::vec2(inner.width(), 42.0 + 13.0 * lines));
+                        let icon = egui::Rect::from_center_size(egui::pos2(inner.center().x, y + 7.0 + 13.0), egui::vec2(26.0, 26.0));
+                        p.rect_filled(icon, 0.0, egui::Color32::from_rgb(149, 153, 173));
+                        p.rect_filled(icon.shrink(1.0), 0.0, egui::Color32::from_rgb(242, 239, 250));
+                        p.text(icon.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(9.0), ink);
+                        p.galley(egui::pos2(inner.center().x, icon.bottom() + 8.0), g, ink);
+                        if ui.interact(item, ui.id().with(("fv_quick_page", title)), egui::Sense::click()).clicked() && self.analysis_tab != tab {
+                            if self.analysis_tab == AnalysisTab::Formula {
+                                self.fp_kill_active();
+                            }
+                            self.analysis_tab = tab;
+                            self.quick_show_page();
+                        }
+                        y = item.bottom();
+                    }
+                    // The page: (150, 0) to the client's right, (249) with a
+                    // (229) line at its left and bottom; the strip below in
+                    // COLOR_3DFACE with a (243) line at its top.
+                    let page = at(150.0, 0.0, 520.0, 658.0);
+                    p.rect_filled(page, 0.0, egui::Color32::from_gray(249));
+                    p.vline(page.left() + 0.5, page.y_range(), egui::Stroke::new(1.0f32, egui::Color32::from_gray(229)));
+                    p.hline(page.x_range(), page.bottom() - 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_gray(229)));
+                    p.hline(client.x_range(), page.bottom() + 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_gray(243)));
+                    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(egui::Rect::from_min_max(page.min + egui::vec2(15.0, 10.0), page.max - egui::vec2(15.0, 10.0))), |ui| {
+                        egui::ScrollArea::both().id_salt("quick_page").show(ui, |ui| {
+                            if self.analysis_tab == AnalysisTab::Formula {
+                                self.formula_page_ui(ui);
+                            } else {
+                                self.quick_tab_ui(ui);
                             }
                         });
-                        ui.separator();
-                        ui.vertical(|ui| {
-                            ui.set_width(530.0);
-                            ui.label(egui::RichText::new(PAGES.iter().find(|p| p.0 == self.analysis_tab).map_or("", |p| p.2)).strong());
-                            ui.separator();
-                            egui::ScrollArea::both().id_salt("quick_page").max_height(420.0).show(ui, |ui| {
-                                ui.set_min_height(420.0);
-                                if self.analysis_tab == AnalysisTab::Formula {
-                                    self.formula_page_ui(ui);
-                                } else {
-                                    self.quick_tab_ui(ui);
-                                }
-                            });
-                        });
                     });
-                    ui.separator();
-                    ui.allocate_ui_with_layout(egui::Vec2::new(ui.available_width(), 26.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        cancel = ui.add_sized([80.0, 22.0], egui::Button::new("Отмена")).clicked();
-                        let ok = page_index(self.analysis_tab).is_none_or(|i| self.quick[i].ok_enabled(self.analysis_tab));
-                        ok_now = ok;
-                        calc = ui.add_enabled(ok, egui::Button::new("Рассчитать").min_size(egui::Vec2::new(80.0, 22.0))).clicked();
-                    });
+                    let ok = page_index(self.analysis_tab).is_none_or(|i| self.quick[i].ok_enabled(self.analysis_tab));
+                    ok_now = ok;
+                    calc = crate::dialogs::win_button_en(ui, at(509.0, 664.0, 75.0, 23.0), "Рассчитать", true, ok).clicked();
+                    cancel = crate::dialogs::win_button(ui, at(590.0, 664.0, 75.0, 23.0), "Отмена", false).clicked();
                 });
             });
         if let Some(msg) = self.formula_page.alert {

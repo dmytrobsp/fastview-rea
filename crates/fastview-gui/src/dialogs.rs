@@ -15,6 +15,7 @@ pub fn dlg<'o>(ctx: &egui::Context, title: impl Into<String>) -> Dlg<'o> {
         win: egui::Window::new(title.clone()).pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.screen_rect().center()),
         id: egui::Id::new(&title),
         title,
+        nudge: Vec2::ZERO,
         open: None,
         tool: false,
         margin: 11.0,
@@ -31,6 +32,7 @@ pub struct Dlg<'o> {
     win: egui::Window<'static>,
     id: egui::Id,
     title: String,
+    nudge: Vec2,
     open: Option<&'o mut bool>,
     tool: bool,
     margin: f32,
@@ -82,6 +84,12 @@ impl<'o> Dlg<'o> {
         self.win = self.win.interactable(on);
         self
     }
+    /// An offset from the CenterWindow place (a window that grows after
+    /// it was centred keeps its left-top).
+    pub fn nudge(mut self, d: Vec2) -> Self {
+        self.nudge = d;
+        self
+    }
     /// A WS_EX_TOOLWINDOW template's frame.
     pub fn tool(mut self) -> Self {
         self.tool = true;
@@ -94,7 +102,7 @@ impl<'o> Dlg<'o> {
     }
 
     pub fn show<R>(self, ctx: &egui::Context, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> Option<egui::InnerResponse<Option<R>>> {
-        let Dlg { mut win, id, title, open, tool, margin } = self;
+        let Dlg { mut win, id, title, nudge, open, tool, margin } = self;
         if open.as_deref() == Some(&false) {
             return None;
         }
@@ -121,7 +129,7 @@ impl<'o> Dlg<'o> {
                 // cy − 1 − ⌊h/2⌋) — VM: DIALOGs 463, 477 and 392 at
                 // (1101, 306), (1023, 475), (1019, 457) about (1280, 696).
                 let c = ctx.screen_rect().center().floor();
-                win = win.current_pos(Pos2::new(c.x - (size.x / 2.0).floor(), c.y - 1.0 - (size.y / 2.0).floor()));
+                win = win.current_pos(Pos2::new(c.x - (size.x / 2.0).floor(), c.y - 1.0 - (size.y / 2.0).floor()) + nudge);
             }
         }
         ctx.data_mut(|d| d.insert_temp(key, (frame, size, settled)));
