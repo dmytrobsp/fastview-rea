@@ -1032,6 +1032,8 @@ impl App {
         // (15 px at the value's right); the list drops from the cell.
         let type_key = sel_id.with("type");
         let (_, vr) = row(ui, type_key, "Тип блока", false, 6.0, false);
+        // The rows in order, for the keys.
+        let mut order: Vec<(egui::Id, GridRow)> = vec![(type_key, GridRow::Type)];
         let prev = self.block_idx;
         let names: Vec<String> = self.library.blocks.iter().map(|b| b.name.clone()).collect();
         let shown = self.block_text.clone().or_else(|| names.get(self.block_idx).cloned()).unwrap_or_default();
@@ -1083,6 +1085,7 @@ impl App {
             let open_id = ui.id().with(("fv_grid_open", b, *ci));
             let open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(true);
             let (r, _) = row(ui, sel_id.with(("group", *ci)), name, true, 22.0, true);
+            order.push((sel_id.with(("group", *ci)), GridRow::Group(open_id, open, *ci)));
             // The expand box (9 × 9 at +4, top + 3: a (145, 145, 145)
             // frame round a light gradient, the sign in (75, 99, 167)) and
             // the visibility box.
@@ -1134,6 +1137,7 @@ impl App {
                 if let Some(st) = self.chars.get_mut(&(b, *ci)) {
                     let text = st.settings.entry(p.clone()).or_default();
                     let resp = ui.put(vr, egui::TextEdit::singleline(text).frame(false).text_color(TEXT).font(egui::FontId::proportional(12.0)));
+                    order.push((key, GridRow::Param(resp.id, *ci, pi)));
                     // The stock in-place edit (CMFCPropertyGridCtrl, INFERRED):
                     // Esc restores the text, a commit (Enter, focus lost)
                     // reaches OnPropertyChanged (`0x407580`) only when the
@@ -1143,8 +1147,13 @@ impl App {
                         select.set(Some(key));
                     }
                     if resp.gained_focus() {
+                        // Kept when a typed character opened the edit.
                         let t = text.clone();
-                        ui.data_mut(|d| d.insert_temp(before_id, t));
+                        ui.data_mut(|d| {
+                            if d.get_temp::<String>(before_id).is_none() {
+                                d.insert_temp(before_id, t);
+                            }
+                        });
                     }
                     if resp.lost_focus() {
                         let before: Option<String> = ui.data_mut(|d| d.remove_temp(before_id));
@@ -1156,6 +1165,52 @@ impl App {
                             changed |= before.as_ref() != Some(text);
                         }
                     }
+                }
+            }
+        }
+        // CMFCPropertyGridCtrl's keys while it has the focus and no edit is
+        // open (INFERRED from MFC): ↑ / ↓ / Home / End move the selection;
+        // on a group Enter toggles it, + / → open and − / ← close it; on a
+        // parameter F4 or Enter opens its edit, a typed character opens it
+        // with that character in place of the text; F4 on «Тип блока»
+        // drops its list.
+        let editing = ui.memory(|m| m.focused().is_some() || m.any_popup_open());
+        if focused && !editing && !self.modal_up {
+            let cur = select.get().unwrap_or(selected);
+            let at = order.iter().position(|(k, _)| *k == cur).unwrap_or(0);
+            let (keys, typed) = ui.input(|i| {
+                let typed: Option<String> = i.events.iter().find_map(|e| if let egui::Event::Text(t) = e { Some(t.clone()) } else { None });
+                let k = |key| i.key_pressed(key);
+                ([k(egui::Key::ArrowUp), k(egui::Key::ArrowDown), k(egui::Key::Home), k(egui::Key::End), k(egui::Key::Enter), k(egui::Key::F4), k(egui::Key::ArrowRight) || k(egui::Key::Plus), k(egui::Key::ArrowLeft) || k(egui::Key::Minus)], typed)
+            });
+            let [up, down, home, end, enter, f4, open_key, close_key] = keys;
+            let last = order.len().saturating_sub(1);
+            let to = if up { Some(at.saturating_sub(1)) } else if down { Some((at + 1).min(last)) } else if home { Some(0) } else if end { Some(last) } else { None };
+            if let Some(j) = to {
+                select.set(Some(order[j].0));
+                // As a click on the group's row does.
+                if let GridRow::Group(.., ci) = order[j].1 {
+                    self.selected_char = Some(ci);
+                }
+            } else if let Some((_, r)) = order.get(at) {
+                match *r {
+                    GridRow::Group(open_id, open, _) if enter || open_key || close_key => {
+                        let want = if enter { !open } else { open_key };
+                        ui.data_mut(|d| d.insert_temp(open_id, want));
+                    }
+                    GridRow::Param(edit, ..) if enter || f4 => ui.memory_mut(|m| m.request_focus(edit)),
+                    GridRow::Param(edit, ci, pi) => {
+                        let name = groups.iter().find(|g| g.0 == ci).and_then(|g| g.2.get(pi)).cloned();
+                        if let (Some(t), Some(name), Some(st)) = (typed.filter(|t| !t.trim().is_empty()), name, self.chars.get_mut(&(b, ci))) {
+                            // The text before the edit, for Esc and the
+                            // commit's comparison.
+                            let before = st.settings.insert(name, t).unwrap_or_default();
+                            ui.data_mut(|d| d.insert_temp(edit.with("fv_grid_before"), before));
+                            ui.memory_mut(|m| m.request_focus(edit));
+                        }
+                    }
+                    GridRow::Type if f4 => ui.memory_mut(|m| m.open_popup(list_id)),
+                    _ => {}
                 }
             }
         }
@@ -1376,6 +1431,17 @@ fn strip_button(ui: &mut egui::Ui, title: &str, vertical: bool) -> egui::Respons
         ui.painter().galley(rect.left_center() + egui::vec2(8.0, -galley.size().y / 2.0), galley, ui.visuals().text_color());
     }
     resp
+}
+
+/// A row of the parameter grid, for its keys.
+#[derive(Clone, Copy)]
+enum GridRow {
+    /// «Тип блока».
+    Type,
+    /// A characteristic: its open state's id, whether it is open, its index.
+    Group(egui::Id, bool, usize),
+    /// A parameter: its edit's id, its group and its place there.
+    Param(egui::Id, usize, usize),
 }
 
 /// MFC's drag feedback (`DrawDragRect` with the halftone brush, XOR): a

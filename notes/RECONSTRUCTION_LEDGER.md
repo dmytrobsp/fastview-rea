@@ -7336,6 +7336,30 @@ Residual:
 - The start date's parse with the target's revision rule (W2.3) stays as
   read.
 
+### L9.267 — The parameter grid's keys  ·  ✅
+VM (Office 2007 Blue): a click on «Тип блока»'s name selects it, and its
+name cell turns from (213, 228, 242) to (180, 201, 233) with the focus.
+Ours already drew that (L9.156's "no row selection" residual was stale).
+L9.156 left the keys open. MFC's CMFCPropertyGridCtrl keys (INFERRED from
+MFC; the grid is stock, its WM_KEYDOWN / WM_CHAR not overridden by
+FastView's BlockPropertyGrid, whose vtable sweep in L9.156 found only the
+click and double-click handlers):
+- ↑ / ↓ / Home / End move the selection over the shown rows.
+- On a group, Enter toggles it, + or → opens it, − or ← closes it.
+- On a parameter, F4 or Enter opens its edit. A typed character opens the
+  edit with that character in place of the text, and Esc puts the text
+  back.
+- F4 on «Тип блока» drops its list.
+Ours had none of these. Now `char_side_panel` keeps the rows in order
+(`GridRow`) and handles the keys while the grid has the focus and no edit
+or list is open. The view's arrows stay off, since they need the view's
+focus (L9.130). A group chosen by key becomes the selected characteristic,
+as a click makes it. Test `grid_keys_move_edit_and_fold`.
+Residual:
+- PgUp / PgDn not modelled.
+- MFC's keys are INFERRED, not run on the VM (with block «Нет» the VM's
+  grid has a single row).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

@@ -853,6 +853,42 @@ mod window_tests {
         assert_eq!(vis(&w), before, "a double-click flips once");
     }
 
+    /// The grid's keys (CMFCPropertyGridCtrl): ↓ from a group selects its
+    /// first parameter, a typed character opens its edit with that
+    /// character, Esc puts the text back; ← closes the group, so ↓ goes to
+    /// the next group.
+    #[test]
+    fn grid_keys_move_edit_and_fold() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.idle(2);
+        let b = (0..w.app.library.blocks.len()).find(|&b| w.app.library.blocks[b].characteristics.len() >= 2 && !w.app.library.blocks[b].characteristics[0].parameters.is_empty()).expect("a block with two characteristics");
+        w.app.block_idx = b;
+        w.app.ensure_block_state();
+        w.idle(2);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let at = Pos2::new(grid.left() + 60.0, grid.top() + 1.0 + 17.0 + 8.0);
+        w.press(Primary, at, at);
+        assert_eq!(w.app.selected_char, Some(0));
+        let p0 = w.app.library.blocks[b].characteristics[0].parameters[0].name.clone();
+        let text = |w: &Win| w.app.chars.get(&(b, 0)).and_then(|c| c.settings.get(&p0).cloned()).unwrap_or_default();
+        let before = text(&w);
+        w.key(egui::Key::ArrowDown);
+        w.run(vec![egui::Event::Text("7".into())]);
+        w.idle(2);
+        assert_eq!(text(&w), "7");
+        assert!(w.ctx.memory(|m| m.focused().is_some()), "the edit is open");
+        w.key(egui::Key::Escape);
+        w.idle(2);
+        assert_eq!(text(&w), before, "Esc puts the text back");
+        w.key(egui::Key::ArrowUp);
+        w.key(egui::Key::ArrowLeft);
+        w.key(egui::Key::ArrowDown);
+        w.idle(1);
+        assert_eq!(w.app.selected_char, Some(1), "the closed group's parameters are skipped");
+    }
+
     /// The parameters bar is a message-mode caption bar (`0x474dc5`): its
     /// close button at the top right hides it.
     #[test]

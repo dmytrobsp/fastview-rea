@@ -182,7 +182,7 @@ items (VM ones also in W4.4):
 - [ ] W2.17 The open residuals of ✅ entries since L9.128 (each entry's
   "Residual:" lines): quick analysis's rollback of its channels on a
   failed recompute (done, L9.201), drag-scroll left / right (done, L9.208), the grid's
-  keyboard (L9.156), an unknown saved block name in «Тип блока» (done, L9.201),
+  keyboard (done, L9.267), an unknown saved block name in «Тип блока» (done, L9.201),
   the refresh's other callers (most, L9.208), About's text and links (W1.6), the
   frequency dialog's initial enable state (done, L9.201), the ОМП dialog's tree
   icons / geometry (done, L9.209; reader gaps: as ours), a computed channel's colour
