@@ -215,7 +215,7 @@ impl App {
         // A tab pulled out of the strip (`0x10068d0b` / `0x100690b4`).
         let mut dragged: Option<Pane> = None;
         let mut tabs: Vec<(Pane, egui::Rect)> = Vec::new();
-        let strip = egui::TopBottomPanel::bottom(egui::Id::new(("pane_tabs", v.unit))).show_inside(ui, |ui| {
+        let strip = egui::TopBottomPanel::bottom(egui::Id::new(("pane_tabs", v.unit))).frame(egui::Frame::none().inner_margin(egui::Margin::symmetric(2.0, 1.0))).show_inside(ui, |ui| {
             ui.horizontal(|ui| {
                 let order = self.tab_order;
                 for p in order.into_iter().filter(|&p| v.mask[p as usize]) {
@@ -250,7 +250,7 @@ impl App {
             let ctx = ui.ctx().clone();
             self.tab_drag_out(&ctx, v, p, strip.response.rect);
         }
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
             ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
             self.pane_body(ui, v, v.front, outer);
         });
@@ -345,12 +345,12 @@ impl App {
         match edge {
             Edge::Left | Edge::Right => {
                 let p = if edge == Edge::Left { egui::SidePanel::left(id) } else { egui::SidePanel::right(id) };
-                p.resizable(true).default_width(ext).width_range(260.0..=1200.0).show(ctx, |ui| body(self, ui));
+                p.resizable(true).frame(dock_frame(ctx)).default_width(ext).width_range(260.0..=1200.0).show(ctx, |ui| body(self, ui));
             }
             Edge::Top | Edge::Bottom => {
                 let p = if edge == Edge::Top { egui::TopBottomPanel::top(id) } else { egui::TopBottomPanel::bottom(id) };
                 let ext = if hd.extent.is_none() && (inside.len() > 1 || natural > 200.0) { 300.0 } else { ext };
-                p.resizable(true).default_height(ext).height_range(80.0..=900.0).show(ctx, |ui| body(self, ui));
+                p.resizable(true).frame(dock_frame(ctx)).default_height(ext).height_range(80.0..=900.0).show(ctx, |ui| body(self, ui));
             }
         }
     }
@@ -369,12 +369,12 @@ impl App {
                 Edge::Top | Edge::Bottom => {
                     let p = if side == Edge::Top { egui::TopBottomPanel::top(inner) } else { egui::TopBottomPanel::bottom(inner) };
                     let d = wd.extent.unwrap_or(w.natural()).min(full.y / 2.0);
-                    p.resizable(true).default_height(d).height_range(80.0..=(full.y - 120.0).max(80.0)).show_inside(ui, |ui| self.dock_slot(ui, w, edge, parents));
+                    p.resizable(true).frame(egui::Frame::none()).default_height(d).height_range(80.0..=(full.y - 120.0).max(80.0)).show_inside(ui, |ui| self.dock_slot(ui, w, edge, parents));
                 }
                 Edge::Left | Edge::Right => {
                     let p = if side == Edge::Left { egui::SidePanel::left(inner) } else { egui::SidePanel::right(inner) };
                     let d = wd.extent.unwrap_or(full.x / 2.0).min(full.x / 2.0);
-                    p.resizable(true).default_width(d).width_range(120.0..=(full.x - 120.0).max(120.0)).show_inside(ui, |ui| self.dock_slot(ui, w, edge, parents));
+                    p.resizable(true).frame(egui::Frame::none()).default_width(d).width_range(120.0..=(full.x - 120.0).max(120.0)).show_inside(ui, |ui| self.dock_slot(ui, w, edge, parents));
                 }
             }
         }
@@ -892,6 +892,13 @@ fn pane_title(p: Pane) -> &'static str {
 }
 
 /// What a caption did this frame.
+/// A docking container: the panes sit 2 px inside it, against the
+/// splitters (MFC's docking bars), not egui's 8 px panel margin; a group
+/// beside another inside the container adds none.
+fn dock_frame(ctx: &egui::Context) -> egui::Frame {
+    egui::Frame::none().fill(ctx.style().visuals.panel_fill).inner_margin(egui::Margin::same(2.0))
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct CaptionAct {
     close: bool,

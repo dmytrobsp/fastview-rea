@@ -5641,8 +5641,10 @@ with «📌» / «✕» and a separator under it (≈ 28 px). Now `pane_caption`
 paints the band, the title and the two glyphs (the pin upright while
 docked, on its side while auto-hidden) with hover highlights, and
 `Palette::pane_caption` gives the band (other looks derived, not read).
-Residual: the vector group's caption starts 8 px lower than its
-neighbours' (the group frame's margin); the other looks' caption colours.
+The panes also sat inside egui's 8 px panel margins (the tabbed group's
+caption 8 px below its neighbours'); the dock containers now keep 2 px
+(`dock_frame`), groups beside another and the tabbed group's body none.
+Residual: the other looks' caption colours.
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
