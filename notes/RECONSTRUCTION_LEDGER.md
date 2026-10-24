@@ -7135,7 +7135,8 @@ picks a colour off the screen — is greyed (ours cannot read the screen).
 ### L9.259 — An unreachable window of ours removed  ·  ✅
 «Свойства канала» was an egui window of ours that nothing opened (its
 `props_channel` never set) and that the original has no counterpart for
-(its channel commands are the stats panel's menu: L9.39 ff.). Removed with
+(its channel commands are the oscillogram's context menu: L9.1, L9.144).
+Removed with
 its field. «Окна» (MFC's windows dialog) stays as L9.220 left it —
 unreachable in the original's ribbon UI.
 
