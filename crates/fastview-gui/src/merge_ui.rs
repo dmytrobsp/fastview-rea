@@ -96,7 +96,8 @@ pub fn clip_record(d: &Doc) -> ClipRecord {
                     ..common(&a.id)
                 });
             }
-            ChanKey::Digital(i) if i < d.osc.digital.len() => {
+            // Computed channels (bit 13) are not copied: the ОМП flags.
+            ChanKey::Digital(i) if i < d.osc.digital.len() && !d.dig_computed(i) => {
                 let x = &d.osc.digital[i];
                 rec.channels.push(ClipChannel {
                     discrete: true,

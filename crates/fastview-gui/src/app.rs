@@ -1020,8 +1020,16 @@ impl Doc {
     pub fn can_copy(&self) -> bool {
         self.selection.iter().any(|k| match k {
             ChanKey::Computed(j) => self.computed.get(*j).is_some_and(|c| c.formula == crate::merge_ui::PENDING),
-            _ => true,
+            ChanKey::Digital(i) => !self.dig_computed(*i),
+            ChanKey::Analog(_) => true,
         })
+    }
+
+    /// A digital channel made by a computation: the ОМП's «КЗ фазы» flags
+    /// carry bit 13 (`0x4245a0` → `0x425f90`), so the copy, its CMDUI and
+    /// the rename treat them as computed channels (L9.188).
+    pub fn dig_computed(&self, i: usize) -> bool {
+        self.osc.digital.get(i).is_some_and(|c| crate::omp_ui::KZ_PHASES.contains(&c.id.as_str()))
     }
 
     /// 32817..32819 (`FUN_0042f4b0`): when not every analog channel has the

@@ -1196,6 +1196,19 @@ mod tests {
         assert!(app.active_doc().unwrap().omp.shown);
     }
 
+    /// The flag channels carry bit 13: the copy's CMDUI does not count them.
+    #[test]
+    fn flag_channels_are_not_copied() {
+        let mut app = demo_app();
+        grounded(&mut app);
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app.dispatch(Command::OmpAnalysis);
+        let d = app.active_doc_mut().unwrap();
+        d.selection = std::collections::BTreeSet::from([ChanKey::Digital(0)]);
+        assert!(!d.can_copy());
+        assert!(crate::merge_ui::clip_record(d).channels.is_empty());
+    }
+
     #[test]
     fn analysis_toggle_runs_and_clears() {
         let mut app = demo_app();
@@ -1212,6 +1225,8 @@ mod tests {
         let digital: Vec<&str> = d.osc.digital.iter().map(|c| c.id.as_str()).collect();
         assert_eq!(&digital[..3], ["КЗ фазы А", "КЗ фазы B", "КЗ фазы C"], "above the record's own");
         assert!(d.computed.iter().all(|c| !c.name.starts_with("КЗ фазы")), "flags are digital channels");
+        // ...made by a computation (bit 13): no rename.
+        assert!(crate::chandlg::can_rename(d, ChanKey::Digital(0)).is_err());
         let text = app.omp_result().unwrap().text;
         assert_eq!(app.omp_ui.bar.as_deref(), Some(text.as_str()));
         let n_dig = d.osc.digital.len();

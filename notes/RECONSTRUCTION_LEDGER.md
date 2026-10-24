@@ -5745,11 +5745,25 @@ with nothing selected (ours appends it to the file channels, before the
 formula ones); the paste's analog point from a selected formula channel;
 the coefficient dialog's pending analog rows; the ОМП flags' computed bit.
 
+### L9.192 — The ОМП flag channels are computed channels: not copied, not renamed (W2.19 part)  ·  ✅
+From L9.188 / L9.181: the digital adder `0x42ead0` builds the ОМП's
+«КЗ фазы» channels through `0x4245a0` → `0x425f90`, which sets bit 13
+(computed). The copy takes the selected channels without bit 13 and its
+CMDUI counts them alike (L9.20: "a selected non-computed channel");
+«Каналы»'s rename `0x435ac0` answers 398 on a bit-13 record. Ours copied
+the flag channels and let them be renamed. Now `Doc::dig_computed` marks
+them (by their names, which the ОМП owns), `clip_record` and `can_copy`
+skip them and `chandlg::can_rename` refuses them with 398. Test
+`flag_channels_are_not_copied`, `analysis_toggle_runs_and_clears`.
+Residual: a pending (bit-14 only) lane may be renamed in the original
+(ours refuses: its paste record is matched by name); whether the `.set`
+keeps the flag channels after a run (RUN, L9.68).
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.191)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.192)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5805,7 +5819,7 @@ fill, the group stats width); L9.186 the panes' captions; L9.187 the ribbon's pa
 gradient / height; L9.188 `doc+0x1d8` = every analog-kind record (W2.16),
 the unknowns table (W3.1); L9.189 formula channels on the frequency
 diagram; L9.190 VM runs (no document, single instance); L9.191 «Каналы» rows in
-vector order.
+vector order; L9.192 the ОМП flags as computed channels.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

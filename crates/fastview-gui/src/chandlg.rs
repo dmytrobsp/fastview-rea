@@ -352,10 +352,12 @@ fn set_flag(doc: &mut Doc, k: ChanKey, col: usize, v: bool) {
     }
 }
 
-/// Can the name cell be edited? Computed channels (bit 13) answer 398.
-pub fn can_rename(key: ChanKey) -> Result<(), &'static str> {
+/// Can the name cell be edited? Computed channels (bit 13) answer 398 —
+/// the ОМП's flag channels too (`0x435ac0`).
+pub fn can_rename(doc: &Doc, key: ChanKey) -> Result<(), &'static str> {
     match key {
         ChanKey::Computed(_) => Err(MSG_NO_RENAME_COMPUTED),
+        ChanKey::Digital(i) if doc.dig_computed(i) => Err(MSG_NO_RENAME_COMPUTED),
         _ => Ok(()),
     }
 }
@@ -363,7 +365,7 @@ pub fn can_rename(key: ChanKey) -> Result<(), &'static str> {
 /// Commit an in-place rename (`0x435c80`): unchanged text does nothing; a
 /// name another channel already has is refused with 397.
 pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static str> {
-    can_rename(key)?;
+    can_rename(doc, key)?;
     if name == row_name(doc, key) {
         return Ok(());
     }
@@ -707,7 +709,7 @@ impl App {
                                     p.text(Pos2::new(name.right() + 5.0, at.y), egui::Align2::LEFT_CENTER, format!("({orig})"), egui::FontId::proportional(12.0), GREY);
                                 }
                                 if resp.clicked() {
-                                    match can_rename(key) {
+                                    match can_rename(doc, key) {
                                         Ok(()) => st.rename = Some((key, row_name(doc, key))),
                                         Err(m) => alert = Some(m),
                                     }
