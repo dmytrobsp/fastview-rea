@@ -614,37 +614,70 @@ impl App {
             // Help split button (57667): the arrow opens {Помощь, О программе...}.
             let help = ui.button(RichText::new("?").color(p.text).strong());
             if help.clicked() {
-                ui.memory_mut(|m| m.toggle_popup(help_menu_id()));
+                self.open_top_menu(ui.ctx(), TopMenu::Help, help.rect);
             }
-            egui::popup_below_widget(ui, help_menu_id(), &help, egui::PopupCloseBehavior::CloseOnClick, |ui| {
-                ui.set_min_width(140.0);
-                ui.add_enabled(false, egui::Button::new("Помощь").frame(false));
-                ui.separator();
-                if ui.add(egui::Button::new("О программе...").frame(false)).clicked() {
-                    self.show_about = true;
-                    ui.memory_mut(|m| m.close_popup());
-                }
-            });
             self.kt_rects.push((crate::keytips::Target::Help, help.rect, true));
             // «Стиль» (menu 200): the radio entry of the current look,
             // persisted as `ApplicationLook`.
-            ui.menu_button(RichText::new("Стиль ▾").color(p.text), |ui| {
-                for (s, name) in Skin::ALL.into_iter().zip(["Windows 2000", "Office XP", "Windows XP", "Office 2003", "Visual Studio.NET 2005"]) {
-                    if ui.radio(self.skin == s, name).clicked() {
-                        cmds.push(Command::SetSkin(s));
-                        ui.close_menu();
-                    }
-                }
-                ui.menu_button("Office 2007", |ui| {
-                    for (s, name) in Skin::ALL[5..].iter().copied().zip(["Голубой стиль", "Черный стиль", "Серебристый стиль", "Зеленовато-голубой стиль"]) {
-                        if ui.radio(self.skin == s, name).clicked() {
-                            cmds.push(Command::SetSkin(s));
-                            ui.close_menu();
-                        }
-                    }
-                });
-            });
+            let style = ui.button(RichText::new("Стиль ▾").color(p.text));
+            if style.clicked() {
+                self.open_top_menu(ui.ctx(), TopMenu::Style, style.rect);
+            }
         });
+        self.top_menu_frame(ui.ctx(), cmds);
+    }
+
+    /// Open a tab-row menu under its button, its right edge on the
+    /// button's (VM).
+    pub(crate) fn open_top_menu(&mut self, ctx: &egui::Context, kind: TopMenu, button: egui::Rect) {
+        let width = match kind {
+            TopMenu::Style => 160.0,
+            TopMenu::Help => 140.0,
+        };
+        let at = egui::pos2(button.right() - width, button.bottom());
+        self.top_menu = Some((kind, crate::popmenu::PopMenu::new(ctx.cumulative_pass_nr(), at)));
+    }
+
+    /// The open tab-row menu, as the original's popups.
+    fn top_menu_frame(&mut self, ctx: &egui::Context, cmds: &mut Vec<Command>) {
+        use crate::popmenu::{Entry, Mark};
+        let Some((kind, mut menu)) = self.top_menu else { return };
+        if menu.serial == ctx.cumulative_pass_nr() {
+            // Not the frame of the click that opened it.
+            self.top_menu = Some((kind, menu));
+            return;
+        }
+        #[derive(Clone)]
+        enum Pick {
+            Skin(Skin),
+            About,
+            Nothing,
+        }
+        let entries: Vec<Entry<Pick>> = match kind {
+            TopMenu::Style => {
+                let mut e: Vec<Entry<Pick>> = Skin::ALL
+                    .into_iter()
+                    .zip(["Windows 2000", "Office XP", "Windows XP", "Office 2003", "Visual Studio.NET 2005"])
+                    .map(|(s, name)| Entry::item(name, true, Mark::Radio(self.skin == s), Pick::Skin(s)))
+                    .collect();
+                let sub = Skin::ALL[5..]
+                    .iter()
+                    .copied()
+                    .zip(["Голубой стиль", "Черный стиль", "Серебристый стиль", "Зеленовато-голубой стиль"])
+                    .map(|(s, name)| Entry::item(name, true, Mark::Radio(self.skin == s), Pick::Skin(s)))
+                    .collect();
+                e.push(Entry::sub("Office 2007", sub));
+                e
+            }
+            TopMenu::Help => vec![Entry::item("Помощь", false, Mark::None, Pick::Nothing), Entry::Sep, Entry::item("О программе...", true, Mark::None, Pick::About)],
+        };
+        let out = crate::popmenu::show(ctx, "fv_top_menu", &mut menu, &entries);
+        match out.chosen {
+            Some(Pick::Skin(s)) => cmds.push(Command::SetSkin(s)),
+            Some(Pick::About) => self.show_about = true,
+            _ => {}
+        }
+        self.top_menu = (!out.close).then_some((kind, menu));
     }
 
     /// MFC's print-preview category (`mfc120u` `0x100fcfc2`): «Печать»
@@ -928,11 +961,6 @@ fn qat_arrow(ui: &mut egui::Ui, p: crate::theme::Palette, customise: bool) -> eg
     let y = if customise { c.y } else { c.y - 1.0 };
     painter.add(egui::Shape::convex_polygon(vec![egui::pos2(c.x - 3.0, y), egui::pos2(c.x + 3.0, y), egui::pos2(c.x, y + 3.0)], ink, egui::Stroke::NONE));
     resp
-}
-
-/// The Help split button's drop-down (Помощь, О программе...).
-fn help_menu_id() -> egui::Id {
-    egui::Id::new("fv_help_menu")
 }
 
 /// A category tab: the active one on its light fill in `text`
@@ -1298,6 +1326,13 @@ fn inks(ui: &egui::Ui, p: crate::theme::Palette) -> (Color32, Color32) {
 
 /// The glyphs of the ribbon's small icon-only buttons (our drawings; the
 /// original's image list is not reproduced).
+/// The tab row's own menus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TopMenu {
+    Style,
+    Help,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Mini {
     ShowDigital,
@@ -1497,7 +1532,10 @@ impl App {
                             // The Help button has a menu and no separate menu
                             // key: its keytip opens the drop-down (`OnKey`
                             // `0x101036b6`); the menu's own keys are Cyrillic.
-                            Target::Help => ctx.memory_mut(|m| m.open_popup(help_menu_id())),
+                            Target::Help => {
+                                let r = self.kt_rects.iter().find(|(t, ..)| *t == Target::Help).map(|(_, r, _)| *r).unwrap_or(egui::Rect::ZERO);
+                                self.open_top_menu(ctx, TopMenu::Help, r);
+                            }
                             Target::Recent(n) => {
                                 if let Some(path) = self.mru.get(n).cloned() {
                                     self.kt_menu(ctx, false);

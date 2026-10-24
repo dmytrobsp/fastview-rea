@@ -1339,6 +1339,8 @@ pub struct App {
     /// MFC's pane menu open on a caption (`0x100ce72c`): the unit, the
     /// pane shown in it, another shown tab of its group, the popup.
     pub pane_menu: Option<(crate::docking::Unit, Pane, Option<Pane>, crate::popmenu::PopMenu)>,
+    /// The tab row's own menus («Стиль», Help), open.
+    pub top_menu: Option<(crate::ribbon::TopMenu, crate::popmenu::PopMenu)>,
     /// The frame client (the edge markers' rect) and each docked group's
     /// pane rect this frame (by the group's own unit).
     pub dock_client: egui::Rect,
@@ -1584,6 +1586,7 @@ impl App {
             docks: crate::docking::Docks::default(),
             dock_drag: None,
             pane_menu: None,
+            top_menu: None,
             dock_client: egui::Rect::NOTHING,
             dock_rects: [None; 4],
             tab_order: [Pane::Vector, Pane::Circle, Pane::Differential, Pane::Frequency],

@@ -8070,6 +8070,19 @@ Residual:
 - The images are ours (W6).
 - The QAT's print menu opens 20 px further right with our QAT.
 
+### L9.292 — «Стиль» and Help as MFC popups; a submenu's arrow  ·  ✅
+Seen on the VM: the tab row's «Стиль» and «?» drop-downs are the same
+Office 2007 CMFCPopupMenu as the context menus (L9.291). «Стиль» lists
+the five looks and the «Office 2007» submenu, its right edge on the
+button's, and no bullet on the top level while an Office 2007 look is
+current. Ours drew egui's rounded menu with a radio circle on every
+entry. Now both menus are `popmenu` entries (`App::top_menu`,
+`open_top_menu` / `top_menu_frame`; the Help keytip opens it too), with
+radio marks only on the current look. A submenu row's arrow is a solid
+triangle, as the original's, not a «▸» glyph.
+Residual: the menus' text is Tahoma 12 for the system's Segoe UI 9
+(heavier, a little wider).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

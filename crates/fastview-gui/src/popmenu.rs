@@ -255,8 +255,16 @@ pub fn mark_item_icon(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enable
         paint(ui.painter(), Rect::from_center_size(bx.center(), Vec2::splat(16.0)), if enabled { Color32::from_rgb(40, 60, 130) } else { MFC_GREY });
     }
     ui.painter().galley(Pos2::new(rect.left() + COL, rect.center().y - galley.size().y / 2.0), galley, col);
-    if let Some(k) = keys {
-        ui.painter().text(Pos2::new(row.right() - 14.0, rect.center().y), egui::Align2::RIGHT_CENTER, k, font, col);
+    match keys {
+        // A submenu's arrow: a solid triangle (VM).
+        Some("▸") => {
+            let c = Pos2::new(row.right() - 12.0, rect.center().y);
+            ui.painter().add(egui::Shape::convex_polygon(vec![c + Vec2::new(-2.0, -4.0), c + Vec2::new(2.0, 0.0), c + Vec2::new(-2.0, 4.0)], col, Stroke::NONE));
+        }
+        Some(k) => {
+            ui.painter().text(Pos2::new(row.right() - 14.0, rect.center().y), egui::Align2::RIGHT_CENTER, k, font, col);
+        }
+        None => {}
     }
     resp
 }
