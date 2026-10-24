@@ -648,6 +648,22 @@ mod tests {
         assert_eq!((d.computed[q].color, d.color_of(Digital(0))), (blue, blue));
     }
 
+    /// 32850 ends in the refresh-all (`0x430340` → `0x475420`), whose circle
+    /// sweep keeps only Ohm / VA channels: a W one ticked leaves at once.
+    #[test]
+    fn the_circle_flag_is_swept_by_the_refresh() {
+        let mut app = crate::app::App::new();
+        app.dispatch(crate::app::Command::Demo);
+        for (unit, kept) in [("W", false), ("Ohm", true)] {
+            let d = app.active_doc_mut().unwrap();
+            d.osc.analog[0].unit = unit.into();
+            d.chans[0].on_circle = false;
+            d.selection = BTreeSet::from([Analog(0)]);
+            app.dispatch(crate::app::Command::ToggleFlag(ChanFlag::OnCircle));
+            assert_eq!(app.active_doc().unwrap().chans[0].on_circle, kept, "{unit}");
+        }
+    }
+
     #[test]
     fn ansi_case_fold() {
         let b = |t: &str| fvb_core::comtrade::encode_text(t, fvb_core::comtrade::Encoding::Cp1251);

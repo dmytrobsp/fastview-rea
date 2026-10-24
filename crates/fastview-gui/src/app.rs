@@ -1428,9 +1428,10 @@ pub struct App {
     /// A stats-panel drag waiting to start (MFC's OnBeginDrag loop): where
     /// the pointer was, when, and the channels.
     pub stats_drag_arm: Option<(egui::Pos2, f64, Vec<usize>)>,
-    /// A channel drag resting in the view's top / bottom scroll inset: when
-    /// it entered and when it last scrolled.
-    pub drag_scroll: Option<(f64, f64)>,
+    /// A channel drag in the view's 11 px scroll inset: its scroll code
+    /// (vertical part high, horizontal low) and when the delay last
+    /// restarted or it last scrolled.
+    pub drag_scroll: Option<(u16, f64)>,
     /// Width of the oscillogram view at the last layout (for «вся осциллограмма»).
     pub view_width: f32,
     /// Stats-panel width at the last layout (fitted to the text).
@@ -1716,9 +1717,21 @@ impl App {
     // ---------- command dispatch ----------
     pub fn dispatch(&mut self, cmd: Command) {
         let mark = crate::setfile::marks_modified(&cmd).then_some(self.active).flatten();
+        // The handlers that end in the frame's refresh-all `0x475420` (the
+        // diagrams' refresh, slot 90): paste 57637 and undo / redo
+        // (`0x45acb0`, `0x45bf26`), 32849–32852 (`0x430340`), 32817–32824
+        // (`0x42f4b0`), 32866–32868 (`0x42fdb0`), the визиры (`0x492f20`),
+        // the `.cfg` / `.cff` writers (`0x44d720`, `0x44d0f0`).
+        let refresh = matches!(
+            cmd,
+            Command::Paste | Command::Undo | Command::Redo | Command::ToggleFlag(_) | Command::SetValueMode(_) | Command::StatsRow(_) | Command::SetPrimaryValues(_) | Command::ToggleVizir(_) | Command::Save | Command::SaveAs
+        );
         self.dispatch_inner(cmd);
         if let Some(d) = mark.and_then(|i| self.docs.get_mut(i)) {
             d.set.modified = true;
+        }
+        if refresh {
+            self.refresh_blocks();
         }
     }
 

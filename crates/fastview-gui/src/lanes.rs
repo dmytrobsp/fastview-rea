@@ -1596,25 +1596,35 @@ impl App {
         if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
             ctx.set_cursor_icon(egui::CursorIcon::Move);
         }
-        // Drag auto-scroll (MFC's CView::OnDragScroll over the client rect:
-        // an 11 px inset, 50 ms before the first step, then one every
-        // 50 ms). The view's OnScroll `0x468e40` maps only a vertical line-up
-        // to SB_LINEUP — anything else is SB_LINEDOWN — and OnScrollBy
-        // `0x468f00` sends it as WM_VSCROLL: 100 px a step. (Whether the
-        // left / right edges scroll too — down, by that mapping — depends on
-        // the view's scroll-bar styles: not determined; ours does not.)
-        match now.filter(|p| client.contains(*p) && egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx)) {
-            Some(p) if p.y < client.top() + DRAG_INSET || p.y >= client.bottom() - DRAG_INSET => {
-                let (t0, last) = self.drag_scroll.get_or_insert((t, t));
-                let due = |since: f64| t - since >= DRAG_SCROLL_S - 1e-6;
-                if due(*t0) && due(*last) {
-                    *last = t;
-                    let step = if p.y < client.top() + DRAG_INSET { VSCROLL_LINE } else { -VSCROLL_LINE };
-                    actions.push(Act::SetVScroll(vscroll + step));
+        // Drag auto-scroll during the channel drag only (COleDropTarget::
+        // OnDragScroll, mfc120u `0x102172dd`; the view has no timer of its
+        // own): inside the client but within 11 px of an edge, a code of a
+        // horizontal (left / right) and a vertical (top / bottom) line
+        // part; a new code restarts the 50 ms delay, a step comes once
+        // strictly more than it has passed, then every 50 ms. The view's
+        // OnScroll `0x468e40` drops the horizontal part and scrolls up only
+        // for a vertical line-up — everything else down (`0x468f00`,
+        // WM_VSCROLL, 100 px): the side bands scroll down.
+        let code = now.filter(|p| client.contains(*p) && egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx)).and_then(|p| {
+            let h = if p.x < client.left() + DRAG_INSET { 0u8 } else if p.x >= client.right() - DRAG_INSET { 1 } else { 0xff };
+            let v = if p.y < client.top() + DRAG_INSET { 0u8 } else if p.y >= client.bottom() - DRAG_INSET { 1 } else { 0xff };
+            (h != 0xff || v != 0xff).then_some(u16::from(v) << 8 | u16::from(h))
+        });
+        match code {
+            Some(code) => {
+                if self.drag_scroll.is_none_or(|d| d.0 != code) {
+                    self.drag_scroll = Some((code, t));
+                }
+                if let Some((_, last)) = self.drag_scroll.as_mut() {
+                    if t - *last > DRAG_SCROLL_S + 1e-9 {
+                        *last = t;
+                        let up = code >> 8 == 0;
+                        actions.push(Act::SetVScroll(vscroll + if up { VSCROLL_LINE } else { -VSCROLL_LINE }));
+                    }
                 }
                 ctx.request_repaint_after(std::time::Duration::from_secs_f64(DRAG_SCROLL_S));
             }
-            _ => self.drag_scroll = None,
+            None => self.drag_scroll = None,
         }
         // Drop on a lane (`0x4415b0`, kind 1): x is ignored; the analog lane
         // under y, unless it is one of the dragged channels, joins them.
@@ -3109,15 +3119,25 @@ mod menu_tests {
         h.frame(vec![egui::Event::PointerMoved(bottom)]);
         assert_eq!(h.doc().vscroll, 0.0, "not before 50 ms");
         h.frame(vec![]);
+        assert_eq!(h.doc().vscroll, 0.0, "50 ms is not more than 50 ms");
+        h.frame(vec![]);
         assert_eq!(h.doc().vscroll, -100.0);
         h.frame(vec![]);
-        assert_eq!(h.doc().vscroll, -200.0);
-        let top = Pos2::new(o.x + 5.0, client.top() + 5.0);
-        // Into the other inset the timer runs on (MFC keeps its last tick).
-        h.frame(vec![egui::Event::PointerMoved(top)]);
-        assert_eq!(h.doc().vscroll, -100.0, "the top inset scrolls up");
         h.frame(vec![]);
-        assert_eq!(h.doc().vscroll, 0.0);
+        assert_eq!(h.doc().vscroll, -200.0);
+        // A new code restarts the delay; the top inset scrolls up.
+        let top = Pos2::new(o.x + 5.0, client.top() + 5.0);
+        h.frame(vec![egui::Event::PointerMoved(top)]);
+        h.frame(vec![]);
+        assert_eq!(h.doc().vscroll, -200.0, "restarted");
+        h.frame(vec![]);
+        assert_eq!(h.doc().vscroll, -100.0, "the top inset scrolls up");
+        // The side bands scroll down (`0x468e40`).
+        let side = Pos2::new(client.left() + 5.0, client.center().y);
+        h.frame(vec![egui::Event::PointerMoved(side)]);
+        h.frame(vec![]);
+        h.frame(vec![]);
+        assert_eq!(h.doc().vscroll, -200.0, "the left band scrolls down");
         h.frame(vec![ev(top, false)]);
     }
 

@@ -6160,6 +6160,40 @@ other open, `startup_args` as read, «°» → DEG. Tests
 Residual (⛔): everything from the header read on — the converter
 (OscillHelper.dll could be read, but nothing to verify it against).
 
+### L9.208 — The channel drag's scroll bands as MFC's; the refresh-all after the commands that end in it  ·  ✅
+Read (background agent; by hand where cited):
+- The view has no auto-scroll of its own (no WM_TIMER in its map; its
+  mouse move `0x45ea70` scrolls nothing): визир and selection drags never
+  scroll. Only the OLE channel drag does, through MFC's
+  COleDropTarget::OnDragScroll (mfc120u `0x102172dd`; the view's slot 98 is
+  MFC's): inside the client and within 11 px of an edge it builds a code of
+  a horizontal part (left: line-up, right: line-down) and a vertical one
+  (top / bottom); a code differing from the last restarts the 50 ms delay;
+  a step once strictly more than it has passed, then every 50 ms. The
+  view's OnScroll `0x468e40` drops the horizontal part and scrolls up only
+  for a vertical line-up — every other code down — through OnScrollBy
+  `0x468f00` (WM_VSCROLL, 100 px). So the side bands scroll down.
+- The refresh-all `0x475420` (the diagrams' refresh, slot 90 — the circle
+  and vector flag sweeps) ends 32849–32852 `0x430340`, 32817–32824
+  `0x42f4b0`, 32866–32868 `0x42fdb0`, the paste `0x45acb0`, the визир
+  placement `0x492f20` and the `.cfg` writer `0x44d720` (each checked);
+  per the agent also undo / redo `0x45bf26`, the `.cff` writer `0x44d0f0`,
+  33030 `0x465850`, 33037 `0x467c40`, quick analysis `0x4543a0`, 33033
+  `0x4557d0`, the ОМП parameters / bar close, the merge bar's 1091 / 1092,
+  the file-info OK, a lane rename `0x465df0` and «Каналы».
+Ours scrolled only at the top / bottom insets, kept the delay across a
+change of edge and stepped at exactly 50 ms; and refreshed the diagrams
+only on activation, 32860 and «Каналы». Now the drag scroll keeps the
+code (`App::drag_scroll`), restarts on a change, steps strictly after
+50 ms, the side bands down; `App::dispatch` refreshes after paste, undo /
+redo, the diagram flags / ADC, the modes and stats rows, primary /
+secondary, the визиры and Save. Tests
+`a_channel_drag_scrolls_at_the_top_and_bottom_edges` (rewritten),
+`the_circle_flag_is_swept_by_the_refresh`.
+Residual: the refresh after 33030, 33035 / 33037, quick analysis, 33033,
+the ОМП dialog / bar, the merge bar and the file-info OK (they reach ours
+outside `dispatch`); MFC's fake OnDragLeave / OnDragEnter around the band.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

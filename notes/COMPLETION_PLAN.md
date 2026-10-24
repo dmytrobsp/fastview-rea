@@ -168,9 +168,9 @@ items (VM ones also in W4.4):
   on its own samples; the rename's row index with pair rows.
 - [ ] W2.17 The open residuals of ✅ entries since L9.128 (each entry's
   "Residual:" lines): quick analysis's rollback of its channels on a
-  failed recompute (done, L9.201), drag-scroll left / right (L9.164), the grid's
+  failed recompute (done, L9.201), drag-scroll left / right (done, L9.208), the grid's
   keyboard (L9.156), an unknown saved block name in «Тип блока» (done, L9.201),
-  the refresh's other callers (L9.162), About's text and links (W1.6), the
+  the refresh's other callers (most, L9.208), About's text and links (W1.6), the
   frequency dialog's initial enable state (done, L9.201), the ОМП dialog's tree
   icons / geometry / reader gaps (L9.169), a computed channel's colour
   recomputed by place (done, L9.200), an OSC2 record saved as COMTRADE (done, L9.197).
