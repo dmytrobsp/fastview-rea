@@ -292,7 +292,9 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 - [x] W4.1b The VM's system locale and devuser's Format set to ru-RU (user
   approved, 2026-10-24) — the original stores names through the thread
   code page, so both are needed for its Cyrillic.
-- [ ] W4.2 File-level comparisons (Save As of WIN_1999, DOC_1999, BINARY:
+- [x] W4.2 (2026-10-24, L9.290: closed for every record we have; the
+  `.osc` Save As needs an OSC2 record — the original offers `.osc` only
+  for one) File-level comparisons (Save As of WIN_1999, DOC_1999, BINARY:
   `.cfg` / `.dat` / `.set` byte-identical since L9.172; the clipboard document
   (L9.212), the `.set` after channel-menu edits (L9.213) and after a quick
   analysis (L9.214) too, and after an ОМП run, Inom 1000 and 1 (L9.217);

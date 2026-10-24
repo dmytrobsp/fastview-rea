@@ -8018,6 +8018,15 @@ Residual:
   scalings would change them.
 - BINARY's stats column: see L9.288 (7 px).
 
+### L9.290 — VM: Save As offers `.cfg` and `.cff` for a COMTRADE record  ·  ✅
+The original's Save As for WIN_1999.cfg lists exactly «Осциллограммы
+COMTRADE (*.cfg)» and «Осциллограммы COMTRADE'13 (*.cff)», as
+`setfile::save_filters` builds them (string 569); `.osc` is offered only
+for an `.osc` record (string 394). So W4.2's last item, the `.osc` Save
+As, needs an OSC2 record, which none of the samples is; every other
+save was compared byte for byte (L9.172–L9.221). W4.2 closed for the
+records we have.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
