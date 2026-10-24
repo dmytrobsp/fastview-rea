@@ -7958,6 +7958,27 @@ dragged from 446 to 1000, then each of its eight blocks picked by its
 Residual: the plane's text looks heavier in ours (anti-aliasing, as
 L9.280).
 
+### L9.288 — Side by side: the vector and frequency diagrams with channels; why the cursor lands 5 samples off  ·  ✅
+W4.3 on both programs, WIN_1999: «Каналы» (both dialogs in the same
+place, the columns at the same x), the vector column ticked for the six
+analog channels, the frequency column for «IA БЛОКА 3» and «UA I СШ»,
+then В1 placed in the plot.
+- With ours' В1 moved back to the original's sample (both at 1050 ms):
+  the vector diagram is the same — every arrow, «U max 65.0 V», «I max
+  0.25 A», the legend; the frequency diagram the same to every bar's
+  value (2.3, 100, 0.6, 0.7, 0.2, 1.3 … for IA; 0.1, 100, 0.1, 0.3 … for
+  UA).
+- At the same *click*, ours' arrows stood a quarter turn round: the
+  cursor lands 5 samples later, 5 ms = 90° of 50 Hz. The cause is found:
+  the plot starts at x 195 in the original and 194 in ours. The stats
+  column is «IA БЛОКА 3» + 5 and «: -0.00000000 A» + 10 in the bold
+  names font. GDI measures with whole-pixel advances from MS Tahoma
+  Bold's `hdmx` table (78 + 112 = 190). Wine's Tahoma Bold has no `hdmx`,
+  and its rounded advances give 189. At 12 px, 42 bold glyphs (25 regular)
+  differ by a pixel between the two. Kept (accepted by the user as a
+  small font difference); matching it would need MS Tahoma's per-glyph
+  pixel widths.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
