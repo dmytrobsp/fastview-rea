@@ -205,15 +205,23 @@ pub fn hit(c: &Comment, pos: Pos2, geo: &Geo) -> Option<Part> {
 }
 
 /// A small speech-bubble mark (the original draws a bitmap).
-fn bubble(p: &egui::Painter, at: Pos2, color: Color32) {
-    let body = Rect::from_min_size(at, Vec2::new(14.0, 10.0));
-    p.rect_filled(body, 3.0, Color32::WHITE);
-    p.rect_stroke(body, 3.0, Stroke::new(1.0f32, color));
+fn bubble(p: &egui::Painter, at: Pos2, _color: Color32) {
+    // The original's is an image (ImageList_Draw, `0x471263`): a pale
+    // yellow speech bubble, grey rim, three text lines, the tail at the
+    // lower left (VM) — ours drawn after it.
+    let body = Rect::from_min_size(at, Vec2::new(18.0, 13.0));
+    let rim = Color32::from_gray(120);
     p.add(Shape::convex_polygon(
-        vec![Pos2::new(at.x + 3.0, at.y + 10.0), Pos2::new(at.x + 8.0, at.y + 10.0), Pos2::new(at.x + 3.0, at.y + 14.0)],
-        color,
+        vec![Pos2::new(at.x + 4.0, at.y + 12.0), Pos2::new(at.x + 9.0, at.y + 12.0), Pos2::new(at.x + 4.0, at.y + 17.0)],
+        rim,
         Stroke::NONE,
     ));
+    p.rect_filled(body, 5.0, Color32::from_rgb(252, 252, 178));
+    p.rect_stroke(body, 5.0, Stroke::new(1.0f32, rim));
+    for (k, w) in [(0.0, 10.0), (1.0, 10.0), (2.0, 6.0)] {
+        let y = at.y + 4.0 + k * 2.5;
+        p.hline(at.x + 4.0..=at.x + 4.0 + w, y, Stroke::new(1.0f32, Color32::from_rgb(140, 140, 90)));
+    }
 }
 
 /// Paint every element, then the selected one (`hover`, the element under
@@ -253,9 +261,19 @@ fn draw(p: &egui::Painter, c: &Comment, sel: bool, geo: &Geo, font: &FontId) -> 
             for x in [x1, x2] {
                 p.circle(Pos2::new(x, y), 5.0, Color32::from_rgb(255, 0, 0), Stroke::new(1.0f32, col));
             }
-            bubble(p, Pos2::new(x2 + 10.0, y - 7.0), col);
+            bubble(p, Pos2::new(x2 + 10.0, y - 9.0), col);
             if !c.hidden {
-                p.text(Pos2::new(x1 + 5.0, y + 5.0), Align2::LEFT_TOP, c.info(geo.us, geo.abs), font.clone(), TEXT);
+                // `0x471020`: slot 9's text with its CR / LF turned into
+                // spaces — one line — on an opaque white background,
+                // clipped to (x1 + 5, y + 5)–(x2 − 5, y + 20) (VM: «уровень
+                // Уровень: 0.30» under the line's left end).
+                let label = c.info(geo.us, geo.abs).replace(['\n', '\r'], " ");
+                let clip = Rect::from_min_max(Pos2::new(x1 + 5.0, y + 5.0), Pos2::new(x2 - 5.0, y + 20.0));
+                let g = p.layout_no_wrap(label, font.clone(), TEXT);
+                let at = clip.min;
+                let pc = p.with_clip_rect(clip.intersect(p.clip_rect()));
+                pc.rect_filled(Rect::from_min_size(at, g.size()), 0.0, Color32::WHITE);
+                pc.galley(at, g, TEXT);
             }
             // The info box hangs at the unsnapped y (`0x471430`).
             Pos2::new(x2 + 3.0, ly.hit?)

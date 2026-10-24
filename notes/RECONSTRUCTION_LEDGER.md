@@ -6555,6 +6555,24 @@ Residual: the level's label in the original is one boxed line «уровень
 Уровень: 0.30» under its left end; ours writes two lines (seen in the
 same runs — W4.5).
 
+### L9.228 — A level's label on one line, boxed; the comment mark as the original's image  ·  ✅
+Read by hand (`0x471020`, the level painter): when the element's label
+flag is set it takes slot 9's text (L9.47), replaces every «\n» and
+every «\r» with a space (#12634 twice, strings at `0x4c6fd4` / `0x4c968c`
+→ `0x4c6818`), sets an opaque background and the text colour (128, 0, 0)
+(0 under another flag), and draws it with DrawText, format 0, into
+(x1 + 5, y + 5)–(x2 − 5, y + 20) — one clipped line. The mark at the
+right end is an image list's picture (ImageList_Draw `0x471263`). VM
+(L9.227's run a): «уровень  Уровень: 0.30» on a white box under the
+line's left end; the mark a pale yellow speech bubble with a grey rim,
+three lines and a tail. Ours drew the text as three lines with no
+background and a white box with the channel's rim. Now the label is that
+one boxed line and the mark is drawn after the image (ours; the bitmap
+is the original's). The area painter (`0x4040c0`) keeps its line
+breaks (two DrawText calls, no replacement) — as ours.
+Residual: the background colour's source (the painter's field `+0x44`;
+white on the VM).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
