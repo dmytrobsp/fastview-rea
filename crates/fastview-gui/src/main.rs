@@ -615,6 +615,30 @@ impl App {
                 ui.painter().px_hline(r.x_range(), r.top() + 1.0, egui::Stroke::new(1.0f32, b.under_ribbon[2]));
             }
         });
+        // A control bar's face in the Office 2007 looks: a gradient from
+        // white to (213, 228, 242) between (157, 189, 216) lines.
+        let bar_face = |ui: &egui::Ui| {
+            if let (None, Some(b)) = (pal.info_bar, pal.bands) {
+                let r = ui.max_rect();
+                crate::lanes::gradient(ui.painter(), egui::Rect::from_min_max(egui::pos2(r.left(), r.top() + 1.0), egui::pos2(r.right(), r.bottom() - 1.0)), egui::Color32::WHITE, b.bar_bottom);
+                let edge = egui::Stroke::new(1.0f32, b.bar_line);
+                ui.painter().px_hline(r.x_range(), r.top(), edge);
+                ui.painter().px_hline(r.x_range(), r.bottom() - 1.0, edge);
+            }
+        };
+        // The merge bar (CMergeBar, 70 px), shown after a paste — docked
+        // above the parameters bar (VM), then 4 px of the brush.
+        if self.merge.is_some() {
+            egui::TopBottomPanel::top("mergebar")
+                .exact_height(70.0)
+                .show_separator_line(false)
+                .frame(egui::Frame::none().fill(pal.info_bar.unwrap_or(pal.group_bg)))
+                .show(ctx, |ui| {
+                    bar_face(ui);
+                    self.merge_bar_ui(ui)
+                });
+            egui::TopBottomPanel::top("fv_under_mergebar").exact_height(4.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
+        }
         // 142: the parameters bar, 67 px — in the Office 2007 looks a
         // gradient from white to (213, 228, 242) between (157, 189, 216)
         // lines —, then 4 px of the brush.
@@ -624,25 +648,12 @@ impl App {
                 .show_separator_line(false)
                 .frame(egui::Frame::none().fill(pal.info_bar.unwrap_or(pal.group_bg)))
                 .show(ctx, |ui| {
-                    if let (None, Some(b)) = (pal.info_bar, pal.bands) {
-                        let r = ui.max_rect();
-                        crate::lanes::gradient(ui.painter(), egui::Rect::from_min_max(egui::pos2(r.left(), r.top() + 1.0), egui::pos2(r.right(), r.bottom() - 1.0)), egui::Color32::WHITE, b.bar_bottom);
-                        let edge = egui::Stroke::new(1.0f32, b.bar_line);
-                        ui.painter().px_hline(r.x_range(), r.top(), edge);
-                        ui.painter().px_hline(r.x_range(), r.bottom() - 1.0, edge);
-                    }
+                    bar_face(ui);
                     self.param_bar_ui(ui)
                 });
             egui::TopBottomPanel::top("fv_under_parambar").exact_height(4.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
         }
 
-        // The merge bar (CMergeBar, 70 px), shown after a paste.
-        if self.merge.is_some() {
-            egui::TopBottomPanel::top("mergebar")
-                .exact_height(70.0)
-                .frame(egui::Frame::none().fill(pal.group_bg))
-                .show(ctx, |ui| self.merge_bar_ui(ui));
-        }
 
         egui::TopBottomPanel::bottom("status")
             .exact_height(24.0)
@@ -920,7 +931,7 @@ mod window_tests {
         }
 
         fn key(&mut self, key: egui::Key) {
-            self.run(vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+            self.run(vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: self.held }]);
             self.idle(1);
         }
 
@@ -1381,9 +1392,11 @@ mod window_tests {
         w.held = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
         w.run(vec![egui::Event::Copy]);
         assert!(!w.app.clip.available(), "Ctrl+Shift+C is not in the table");
-        w.held = egui::Modifiers::CTRL;
+        // A slow frame (the software runner): Ctrl already up at its end.
+        w.held = egui::Modifiers::NONE;
         w.run(vec![egui::Event::Copy]);
         assert!(w.app.clip.available(), "Ctrl+C copies");
+        w.held = egui::Modifiers::CTRL;
         // No text on the OS clipboard: only the key-up comes.
         let up = egui::Event::Key { key: egui::Key::V, physical_key: None, pressed: false, repeat: false, modifiers: egui::Modifiers::CTRL };
         w.run(vec![up.clone()]);

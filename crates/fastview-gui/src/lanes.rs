@@ -651,14 +651,17 @@ fn status_icons(doc: &crate::app::Doc, r: &Row, primary: bool) -> Vec<&'static s
 }
 
 /// The status icons of one channel.
-fn key_icons(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> Vec<&'static str> {
+pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> Vec<&'static str> {
     match k {
         Lane::Analog(i) => chan_icons(doc, i, primary),
         // A computed or pasted channel's icons: no bit-13 / 14 gate but the
         // ratio's (`0x462b15`).
         Lane::Computed(j) if !doc.pending_digital(j) => {
             let c = &doc.computed[j];
-            [(c.remove_dc, "DC"), (c.invert, "−"), (c.mode == ValueMode::Rms, "~"), (c.mode == ValueMode::FirstHarmonic, "1")]
+            // A pasted lane read ×k in its copied mode (VM: «*K» on a
+            // pasted 2000/1 channel shown secondary).
+            let scaled = c.formula == crate::merge_ui::PENDING && doc.pending.iter().find(|p| p.name() == c.name).is_some_and(|p| p.display_k() != 1.0);
+            [(c.remove_dc, "DC"), (c.invert, "−"), (scaled, "*K"), (c.mode == ValueMode::Rms, "~"), (c.mode == ValueMode::FirstHarmonic, "1")]
                 .into_iter()
                 .filter_map(|(on, g)| on.then_some(g))
                 .collect()
@@ -1710,48 +1713,53 @@ impl App {
         // (Ctrl: В2) a sample, ↑/↓ move ГВ1 (Ctrl: ГВ2) a pixel; the setter
         // (`0x492f20`) shows the визир. Ours caps → at N − 1 (the original
         // at N, `0x45f52f`, a sample past the data).
-        let view_keys = self.copy_focus == crate::app::CopyFocus::View && !alt;
+        let view_keys = self.copy_focus == crate::app::CopyFocus::View;
         let popup_up = self.pane_menu.is_some() || self.diag.menu.is_some();
         if view_keys && !menu_busy && !popup_up && !ui.ctx().wants_keyboard_input() && self.rename_edit.is_none() && !self.modal_up {
-            // Each press is a WM_KEYDOWN: several in one frame each move.
+            // Each press is a WM_KEYDOWN, with the modifiers it came with
+            // (several in one slow frame each move; Ctrl may be up again
+            // by the frame's end).
             use egui::Key::{ArrowDown, ArrowLeft, ArrowRight, ArrowUp};
-            let keys: Vec<egui::Key> = ui.input(|i| {
+            let keys: Vec<(egui::Key, egui::Modifiers)> = ui.input(|i| {
                 i.events
                     .iter()
                     .filter_map(|e| match e {
-                        egui::Event::Key { key: k @ (ArrowLeft | ArrowRight | ArrowUp | ArrowDown), pressed: true, .. } => Some(*k),
+                        egui::Event::Key { key: k @ (ArrowLeft | ArrowRight | ArrowUp | ArrowDown), pressed: true, modifiers, .. } if !modifiers.alt => Some((*k, *modifiers)),
                         _ => None,
                     })
                     .collect()
             });
-            let vk = usize::from(ctrl);
-            let (mut cur, mut y) = (None::<i64>, hrows[vk].map(|(hy, _)| hy));
-            let mut moved_h = false;
-            for k in keys {
+            let mut cur = [None::<i64>; 2];
+            let mut y = [hrows[0].map(|(hy, _)| hy), hrows[1].map(|(hy, _)| hy)];
+            let mut moved_h = [false; 2];
+            for (k, km) in keys {
+                let vk = usize::from(km.ctrl);
                 match k {
                     ArrowLeft | ArrowRight => {
-                        let c = cur.unwrap_or(viz[vk].0 as i64) + if k == ArrowRight { 1 } else { -1 };
-                        cur = Some(c.clamp(0, n.max(1) as i64 - 1));
+                        let c = cur[vk].unwrap_or(viz[vk].0 as i64) + if k == ArrowRight { 1 } else { -1 };
+                        cur[vk] = Some(c.clamp(0, n.max(1) as i64 - 1));
                     }
                     _ => {
                         // y ∓ 1, ↑ clamped at the view's top; a ГВ never
                         // placed has y = −1 (`0x4944a0`), so either key puts
                         // it at the top.
-                        y = Some(match y {
+                        y[vk] = Some(match y[vk] {
                             Some(hy) if k == ArrowDown => hy + 1.0,
                             Some(hy) => (hy - 1.0).max(client.top()),
                             None => client.top(),
                         });
-                        moved_h = true;
+                        moved_h[vk] = true;
                     }
                 }
             }
-            if let Some(c) = cur {
-                actions.push(Act::MoveV(vk, c as usize));
-            }
-            if let Some(y) = y.filter(|_| moved_h) {
-                if let Some((ch, v)) = analog_at(y, &geo, &ranges) {
-                    actions.push(Act::SetH(vk, ch, v));
+            for vk in 0..2 {
+                if let Some(c) = cur[vk] {
+                    actions.push(Act::MoveV(vk, c as usize));
+                }
+                if let Some(y) = y[vk].filter(|_| moved_h[vk]) {
+                    if let Some((ch, v)) = analog_at(y, &geo, &ranges) {
+                        actions.push(Act::SetH(vk, ch, v));
+                    }
                 }
             }
         }

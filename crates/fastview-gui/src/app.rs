@@ -896,7 +896,9 @@ impl Doc {
                 Ok(a) => {
                     let pn = if p.pasted.rate == 0.0 { n } else { (p.pasted.rate / 50.0).round().max(1.0) as usize };
                     let own_corr = corr.map(|q| fvb_core::freqcorr::FreqCorr { fs: if p.pasted.rate == 0.0 { q.fs } else { p.pasted.rate }, ..q });
-                    let x: Vec<f64> = a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v }).collect();
+                    // Read ×k in the copied channel's display mode.
+                    let k = p.display_k();
+                    let x: Vec<f64> = a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v * k }).collect();
                     let dc = if c.remove_dc { whole_period_mean(&x, pn) } else { 0.0 };
                     c.pending_own = x.iter().map(|v| sign * (v - dc)).collect();
                     c.pending_phasors = fvb_core::freqcorr::sliding_phasors(own_corr, fvb_core::freqcorr::OTHER, &c.pending_own, pn);
@@ -1972,33 +1974,41 @@ impl App {
             // TranslateMDISysAccel after the table (`0x1024c16b`): Ctrl+F4
             // closes the active document, Ctrl+F6 / Ctrl+Tab go to the next
             // one, with Shift the previous (in tab order — INFERRED).
-            if m.ctrl && !m.alt {
-                let n = self.docs.len();
-                if let (Some(a), true) = (self.active, n > 0) {
-                    if i.key_pressed(egui::Key::F4) && !m.shift {
-                        cmds.push(Command::CloseDoc(a));
-                    } else if i.key_pressed(egui::Key::F6) || i.key_pressed(egui::Key::Tab) {
-                        cmds.push(Command::ActivateDoc(if m.shift { (a + n - 1) % n } else { (a + 1) % n }));
+            let n = self.docs.len();
+            if let (Some(a), true) = (self.active, n > 0) {
+                for e in &i.events {
+                    let egui::Event::Key { key, pressed: true, modifiers: km, .. } = e else { continue };
+                    if !km.ctrl || km.alt {
+                        continue;
                     }
+                    match key {
+                        egui::Key::F4 if !km.shift => cmds.push(Command::CloseDoc(a)),
+                        egui::Key::F6 | egui::Key::Tab => cmds.push(Command::ActivateDoc(if km.shift { (a + n - 1) % n } else { (a + 1) % n })),
+                        _ => continue,
+                    }
+                    break;
                 }
             }
-            if !(m.command || m.ctrl) || m.shift || m.alt {
-                return;
-            }
+            // Each key by the modifiers it came with: in a slow frame Ctrl
+            // may be up again by the frame's end (the software runner, VM).
+            // `Copy` / `Paste` come only from their shortcuts (Ctrl+Shift
+            // too: refused while Shift / Alt is held).
+            let accel = |m: &egui::Modifiers| (m.command || m.ctrl) && !m.shift && !m.alt;
+            let plain = !m.shift && !m.alt;
             for e in &i.events {
                 match e {
-                    egui::Event::Key { key, pressed: true, .. } => {
+                    egui::Event::Key { key, pressed: true, modifiers, .. } if accel(modifiers) => {
                         if let Some((_, c)) = Self::keymap().into_iter().find(|(k, _)| k == key) {
                             cmds.push(c);
                         }
                     }
-                    egui::Event::Copy => cmds.push(Command::Copy),
-                    egui::Event::Paste(_) => {
+                    egui::Event::Copy if plain => cmds.push(Command::Copy),
+                    egui::Event::Paste(_) if plain => {
                         self.paste_announced = true;
                         cmds.push(Command::Paste);
                     }
                     // The key-up also clears the announcement.
-                    egui::Event::Key { key: egui::Key::V, pressed: false, .. } if !std::mem::take(&mut self.paste_announced) => cmds.push(Command::Paste),
+                    egui::Event::Key { key: egui::Key::V, pressed: false, modifiers, .. } if accel(modifiers) && !std::mem::take(&mut self.paste_announced) => cmds.push(Command::Paste),
                     _ => {}
                 }
             }

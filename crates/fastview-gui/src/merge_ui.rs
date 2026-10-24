@@ -17,9 +17,22 @@ pub struct ClipChan {
     pub pasted: Pasted,
     pub color: egui::Color32,
     pub start: Option<f64>,
+    /// The copied channel's display mode (`primary_mode`, `ch+0x89`): the
+    /// pasted lane reads its values ×k as the channel did (VM: a copied
+    /// «IA БЛОКА 3», 2000/1 primary values shown secondary, pastes at
+    /// «454.087 мА», not 908 A).
+    pub primary_mode: bool,
 }
 
 impl ClipChan {
+    /// The factor from the pasted samples to the values shown.
+    pub fn display_k(&self) -> f64 {
+        match &self.pasted.channel {
+            Ok(a) => crate::app::display_k(a, self.primary_mode),
+            Err(_) => 1.0,
+        }
+    }
+
     pub fn name(&self) -> &str {
         match &self.pasted.channel {
             Ok(a) => &a.id,
@@ -166,7 +179,7 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
                     own_freq: net_freq.clone(),
                 })
             };
-            ClipChan { pasted: Pasted { channel, times, rate: rec.rate, pad: 0.0 }, color: c.color.map_or(egui::Color32::TRANSPARENT, from_colorref), start }
+            ClipChan { pasted: Pasted { channel, times, rate: rec.rate, pad: 0.0 }, color: c.color.map_or(egui::Color32::TRANSPARENT, from_colorref), start, primary_mode: c.primary_mode }
         })
         .collect()
 }
@@ -574,11 +587,14 @@ impl App {
                 if let Some(c) = lane_of(p).filter(|c| !c.pending_own.is_empty()) {
                     // The accessor's reading of a zero sample: −DC, negated.
                     let sign = if c.invert { -1.0 } else { 1.0 };
+                    // The lane's own values back from the shown ones (÷k).
+                    let k = p.display_k();
+                    let k = if k != 0.0 { k } else { 1.0 };
                     match &mut q.channel {
                         Ok(a) => {
                             let x0 = a.samples.first().copied().filter(|v| !v.is_nan()).unwrap_or(0.0);
-                            q.pad = c.pending_own[0] - sign * x0;
-                            a.samples = c.pending_own.clone();
+                            q.pad = c.pending_own[0] / k - sign * x0;
+                            a.samples = c.pending_own.iter().map(|v| v / k).collect();
                         }
                         Err(dch) => {
                             q.pad = f64::from(u8::from(c.invert));
@@ -590,15 +606,30 @@ impl App {
             })
             .collect();
         let flags: Vec<(String, bool, bool, ValueMode)> = d.pending.iter().filter_map(|p| lane_of(p).map(|c| (c.name.clone(), c.invert, c.remove_dc, c.mode))).collect();
+        // The pasted channels' display modes (`primary_mode`, `ch+0x89`).
+        let modes: Vec<(String, bool)> = d.pending.iter().map(|p| (p.name().to_string(), p.primary_mode)).collect();
         // Every channel is resampled as the accessor reads it (`0x426020`:
         // ADC code, minus the DC, inverted, ×k, NaN as 0), then divided by
         // k (`0x47e598`): the flags' transforms are baked into the data
-        // while the flags stay set.
+        // while the flags stay set. Ours' flagged series has the DC and
+        // the invert but not ×k, so a value comes back as it is; only an
+        // ADC-mode code (which the accessor does not scale) ends ÷k. (A
+        // plain ÷k multiplied a 2000/1 channel shown secondary by 2000 —
+        // VM: «IA БЛОКА 3» at 908.174 A after a merge, 454.087 мА in the
+        // original.)
+        let unscale = |i: usize, v: f64| {
+            let k = crate::app::display_k(&d.osc.analog[i], d.chans[i].primary);
+            if !v.is_finite() {
+                0.0
+            } else if d.chans[i].adc_counts && k != 0.0 {
+                v / k
+            } else {
+                v
+            }
+        };
         let mut src = d.osc.clone();
         for (i, a) in src.analog.iter_mut().enumerate() {
-            let k = crate::app::display_k(&d.osc.analog[i], d.chans[i].primary);
-            let k = if k != 0.0 { k } else { 1.0 };
-            a.samples = d.flagged.analog[i].samples.iter().map(|v| if v.is_nan() { 0.0 } else { v / k }).collect();
+            a.samples = d.flagged.analog[i].samples.iter().map(|&v| unscale(i, v)).collect();
         }
         // Digital channels are picked through the accessor too (`0x47e6a9`):
         // an inverted one is baked in, its flag stays.
@@ -613,12 +644,7 @@ impl App {
                 let k = crate::app::display_k(&d.osc.analog[i], d.chans[i].primary);
                 let mut z = d.osc.analog[i].clone();
                 z.samples = vec![0.0];
-                let v = crate::app::flag_series(&z, &d.chans[i], d.dc_mean[i], k)[0];
-                if k != 0.0 && v.is_finite() {
-                    v / k
-                } else {
-                    0.0
-                }
+                unscale(i, crate::app::flag_series(&z, &d.chans[i], d.dc_mean[i], k)[0])
             })
             .collect();
         let dig_pads: Vec<bool> = (0..d.osc.digital.len()).map(|i| d.dig(i).invert).collect();
@@ -656,6 +682,9 @@ impl App {
             }
             if let Some(&(_, inv, dc, mode)) = flags.iter().find(|f| f.0 == d.osc.analog[i].id) {
                 (v.invert, v.remove_dc, v.mode) = (inv, dc, mode);
+            }
+            if let Some(&(_, m)) = modes.iter().find(|m| m.0 == d.osc.analog[i].id) {
+                v.primary = m;
             }
             v.merged_after = lanes.iter().find(|l| l.0 == d.osc.analog[i].id).and_then(|l| l.1.clone().map(|at| (at, l.2)));
             d.chans.push(v);
@@ -716,51 +745,33 @@ impl App {
         for st in [egui::TextStyle::Body, egui::TextStyle::Button] {
             ui.style_mut().text_styles.insert(st, egui::FontId::proportional(12.0));
         }
-        // egui's combo adds its padding and arrow to the given width.
-        let sp = ui.spacing().clone();
-        let combo_w = |w: f32| w - 2.0 * sp.button_padding.x - sp.icon_width - sp.icon_spacing;
         let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(r.min + egui::vec2(x, y), egui::vec2(w, h));
         let font = egui::FontId::proportional(12.0);
         let ink = ui.visuals().text_color();
+        // Win32 drop-down lists (VM: the text clipped at the button, no
+        // ellipsis) and push buttons.
+        use crate::dialogs::{win_button, win_combo_list_in};
         const METHODS: [&str; 3] = ["По времени начала записи", "По авар. составляющей", "По доаварийному режиму"];
-        ui.put(at(110.0, 10.0, 170.0, 21.0), |ui: &mut egui::Ui| {
-            egui::ComboBox::from_id_salt("merge_method")
-                .width(combo_w(170.0))
-                .truncate()
-                .selected_text(METHODS[bar.method as usize])
-                .show_ui(ui, |ui| {
-                    for (k, t) in METHODS.into_iter().enumerate() {
-                        ui.selectable_value(&mut bar.method, k as u8, t);
-                    }
-                })
-                .response
-        });
+        let methods: Vec<String> = METHODS.iter().map(|m| m.to_string()).collect();
+        if let Some(k) = win_combo_list_in(ui, at(110.0, 10.0, 170.0, 21.0), egui::Id::new("merge_method"), &methods, bar.method as usize, true, font.clone()) {
+            bar.method = k as u8;
+        }
         let on = bar.method != 0;
-        let name1 = bar.ch1.map(|k| crate::chandlg::row_name(d, k)).unwrap_or_default();
-        ui.put(at(350.0, 10.0, 90.0, 21.0), |ui: &mut egui::Ui| {
-            ui.add_enabled_ui(on, |ui| {
-                egui::ComboBox::from_id_salt("merge_ch1").width(combo_w(90.0)).truncate().selected_text(name1).show_ui(ui, |ui| {
-                    for k in d.base_channels() {
-                        ui.selectable_value(&mut bar.ch1, Some(k), crate::chandlg::row_name(d, k));
-                    }
-                });
-            })
-            .response
-        });
-        let name2 = bar.ch2.and_then(|i| d.pending.get(i)).map(|p| p.name().to_string()).unwrap_or_default();
-        ui.put(at(510.0, 10.0, 90.0, 21.0), |ui: &mut egui::Ui| {
-            ui.add_enabled_ui(on, |ui| {
-                egui::ComboBox::from_id_salt("merge_ch2").width(combo_w(90.0)).truncate().selected_text(name2).show_ui(ui, |ui| {
-                    for (i, p) in d.pending.iter().enumerate().filter(|(_, p)| p.pasted.channel.is_ok()) {
-                        ui.selectable_value(&mut bar.ch2, Some(i), p.name());
-                    }
-                });
-            })
-            .response
-        });
+        let base = d.base_channels();
+        let names1: Vec<String> = base.iter().map(|&k| crate::chandlg::row_name(d, k)).collect();
+        let cur1 = bar.ch1.and_then(|c| base.iter().position(|&k| k == c)).unwrap_or(usize::MAX);
+        if let Some(k) = win_combo_list_in(ui, at(350.0, 10.0, 90.0, 21.0), egui::Id::new("merge_ch1"), &names1, cur1, on, font.clone()) {
+            bar.ch1 = Some(base[k]);
+        }
+        let analog: Vec<usize> = d.pending.iter().enumerate().filter(|(_, p)| p.pasted.channel.is_ok()).map(|(i, _)| i).collect();
+        let names2: Vec<String> = analog.iter().map(|&i| d.pending[i].name().to_string()).collect();
+        let cur2 = bar.ch2.and_then(|c| analog.iter().position(|&i| i == c)).unwrap_or(usize::MAX);
+        if let Some(k) = win_combo_list_in(ui, at(510.0, 10.0, 90.0, 21.0), egui::Id::new("merge_ch2"), &names2, cur2, on, font.clone()) {
+            bar.ch2 = Some(analog[k]);
+        }
         let w = r.width() - 20.0;
-        sync = ui.put(at(w - 220.0, 9.0, 100.0, 23.0), egui::Button::new("Синхронизация").wrap_mode(egui::TextWrapMode::Extend)).clicked() || sync;
-        join = ui.put(at(w - 110.0, 9.0, 100.0, 23.0), egui::Button::new("Объединить").wrap_mode(egui::TextWrapMode::Extend)).clicked() || join;
+        sync = win_button(ui, at(w - 220.0, 9.0, 100.0, 23.0), "Синхронизация", false).clicked() || sync;
+        join = win_button(ui, at(w - 110.0, 9.0, 100.0, 23.0), "Объединить", false).clicked() || join;
         let text = r.shrink2(egui::vec2(15.0, 14.0));
         for (x, t) in [(15.0, "Синхронизация"), (290.0, "Канал 1"), (450.0, "Канал 2")] {
             ui.painter().text(egui::pos2(r.left() + x, text.top()), egui::Align2::LEFT_TOP, t, font.clone(), ink);
@@ -950,6 +961,39 @@ mod tests {
         assert_eq!(d.chans.len(), d.osc.analog.len());
         assert!(d.osc.analog.iter().all(|c| c.samples.len() == d.osc.time.len()));
         assert!(app.merge.is_none(), "the bar is hidden");
+    }
+
+    /// A pasted channel is read in its copied display mode (VM: 2000/1
+    /// primary values shown secondary paste as the source shows them); the
+    /// merge writes the file values back.
+    #[test]
+    fn a_pasted_lane_shows_values_as_its_channel_did() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        let a = &mut d.osc.analog[0];
+        (a.primary, a.secondary, a.is_primary) = (2000.0, 1.0, true);
+        d.chans[0].primary = false;
+        let src = d.osc.analog[0].samples.clone();
+        d.selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
+        let own = &d.computed[j].pending_own;
+        assert!(own.iter().zip(&src).all(|(o, s)| (o - s / 2000.0).abs() < 1e-9), "shown ÷2000, secondary");
+        assert!(crate::lanes::key_icons(d, ChanKey::Computed(j), false).contains(&"*K"), "the ratio's icon");
+        app.merge_records();
+        let d = app.active_doc().unwrap();
+        let merged = d.osc.analog.iter().find(|a| a.id.ends_with("(вст.)")).expect("the merged channel");
+        assert!(merged.samples.iter().zip(&src).all(|(m, s)| (m - s).abs() < 1e-6 * s.abs().max(1.0)), "the file values merged");
+        // The copied channel itself stays shown secondary (VM).
+        let i = d.osc.analog.iter().position(|a| !a.id.ends_with("(вст.)") && a.primary == 2000.0).expect("the source");
+        let a = &d.osc.analog[i];
+        assert_eq!((a.is_primary, a.primary, a.secondary, d.chans[i].primary), (true, 2000.0, 1.0, false), "the source's ratio and mode kept");
+        assert!(a.samples.iter().zip(&src).all(|(m, s)| (m - s).abs() < 1e-6 * s.abs().max(1.0)), "the source's file values kept: {} vs {}", a.samples[5], src[5]);
+        // The merged channel, now first, keeps the copied mode: the
+        // document stays secondary (VM).
+        assert!(!d.primary_values(), "the document's mode is its first channel's");
     }
 
     /// A pending lane's flags (L9.111's residual; `0x428490` with bit 14):

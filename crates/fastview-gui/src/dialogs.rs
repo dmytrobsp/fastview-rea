@@ -807,6 +807,12 @@ pub fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], curre
 /// A drop-down list combo (CBS_DROPDOWNLIST) at its closed rectangle:
 /// returns the item picked from its list.
 pub fn win_combo_list(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[String], current: usize, enabled: bool) -> Option<usize> {
+    win_combo_list_in(ui, r, id, items, current, enabled, DLG_FONT)
+}
+
+/// [`win_combo_list`] with its text in `font` (a control bar's 9 pt UI
+/// font); `current` past the items shows an empty field.
+pub fn win_combo_list_in(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[String], current: usize, enabled: bool, font: egui::FontId) -> Option<usize> {
     let r = Rect::from_min_size(r.min, Vec2::new(r.width(), COMBO_H));
     let resp = ui.interact(r, id, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let open_id = id.with("open");
@@ -819,10 +825,10 @@ pub fn win_combo_list(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[String]
     let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
     let text_r = Rect::from_min_max(r.min + Vec2::new(4.0, 0.0), Pos2::new(r.right() - 17.0, r.bottom()));
     if let Some(t) = items.get(current) {
-        ui.painter().with_clip_rect(text_r).text(text_r.left_center(), egui::Align2::LEFT_CENTER, t, DLG_FONT, ink);
+        ui.painter().with_clip_rect(text_r).text(text_r.left_center(), egui::Align2::LEFT_CENTER, t, font, ink);
     }
     if open {
-        return combo_popup(ui, r, id, items, Some(current));
+        return combo_popup(ui, r, id, items, (current < items.len()).then_some(current));
     }
     None
 }

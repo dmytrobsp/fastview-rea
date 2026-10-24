@@ -2868,7 +2868,7 @@ record's window, and left the harmonic-1 gain off computed lanes' A1. Now
 `harmonic1_gain`. Test `pasted_value_at_the_cursor` (backward line,
 mirrored statistic, own period).
 Residual: the display mode of a pasted channel (ours none — whether the
-UI can set one is NOT DETERMINED).
+UI can set one is NOT DETERMINED). (The copied mode is kept and applied: L9.282.)
 
 ### L9.86 — Frequency candidates in vector order; pasted ones; no self-correction  ·  ✅
 Read (subagent report; by hand as cited): `0x42aee0` has no bit-14 test,
@@ -7759,6 +7759,54 @@ In the parameter dialog:
 Residual:
 - The long parameter name is cut at a slightly different point
   («последовате...» / «последовательн...»).
+
+### L9.282 — Side by side: copy, paste and merge; the merge no longer multiplies a ratio in; shortcuts by their own modifiers  ·  ✅
+W4.3 on both programs, WIN_1999: «IA БЛОКА 3» selected, Ctrl+C, Ctrl+V,
+«Объединить».
+- **Ctrl+C / Ctrl+V did nothing in ours on the VM.** egui-winit sends
+  them as `Event::Copy` / `Event::Paste`, and `handle_keys` accepted
+  those only while the frame's modifiers still held Ctrl. In a slow
+  software-runner frame Ctrl is up again by the frame's end. Now each key
+  event is judged by the modifiers it came with. `Copy` / `Paste` need no
+  Ctrl; they are refused only with Shift or Alt held (egui-winit also
+  sends `Copy` for Ctrl+Shift+C, which table 128 does not take). The MDI
+  keys (Ctrl+F4 / F6 / Tab) and the view's ←/→/↑/↓ (Ctrl: В2 / ГВ2) also
+  use their events' modifiers. The test harness's keys now carry the held
+  modifiers, as egui's do.
+- **The pasted lane's value.** The original shows «454.087 мА», as the
+  source does; ours showed «908.174 A». The original's clipboard
+  (registered format «Mechanotronica FastView Clipboard Data», UTF-16 XML,
+  read on the VM, kept local) holds the file's primary values with
+  `values_type="primary"`, `primary_value="2000"`, `secondary_value="1"`
+  and `primary_mode="false"`. The paste keeps the copied display mode
+  (`ch+0x89`) and reads ×k as the channel did. Ours dropped
+  `primary_mode`. Now `ClipChan::primary_mode` and `display_k` scale the
+  pending lane's own series, and the merge divides that back out. A
+  scaled pasted lane shows «*K» (VM).
+- **The merge multiplied file channels by their ratio.** After
+  «Объединить» the original shows every channel as before. Ours showed
+  «IA БЛОКА 3» 908.174 A, «IB» −713.193 A and «UA» −533.546 кВ: the
+  values ×2000 / ×7500. The merge reads each channel as the accessor does
+  (×k) and divides by k (`0x47e598`). Ours divided our flagged series by
+  k, but that series carries the DC and the invert, not ×k. Now only an
+  ADC-mode code (which the accessor does not scale) is divided, and the
+  padding's zero likewise. The merged channel's view also takes the
+  copied mode. L9.266's byte-for-byte save (DOC_1999, k = 1) could not
+  show this.
+- **The merge bar.** The original docks it under the ribbon, above the
+  parameters bar, with the same gradient face and 4 px of the brush
+  under it; ours sat below the parameters bar on a flat fill. Its combos
+  are Win32 drop-down lists, the text clipped at the button with no «...»,
+  and its buttons are push buttons. Ours used egui's. Now
+  `win_combo_list_in` (the 12 px bar font) and `win_button`.
+Test `a_pasted_lane_shows_values_as_its_channel_did` (÷2000 shown, «*K»,
+the file values merged, the source's ratio, mode and samples kept, the
+document still secondary); `shortcuts_as_egui_winit_sends_them` with
+Ctrl already up at the frame's end.
+Residual:
+- egui-winit also takes Shift+Insert / Ctrl+Insert as paste / copy,
+  which table 128 does not.
+- The move marker's glyph is ours (W6).
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
