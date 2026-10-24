@@ -568,7 +568,7 @@ impl App {
                 Edge::Top => egui::Rect::from_min_max(r.min, egui::pos2(r.right(), r.top() + x)),
                 Edge::Bottom => egui::Rect::from_min_max(egui::pos2(r.left(), r.bottom() - x), r.max),
             };
-            let fill = egui::Color32::from_rgba_unmultiplied(60, 110, 200, 60);
+            let fill = crate::theme::alpha(60, 110, 200, 60);
             let stroke = egui::Stroke::new(2.0f32, egui::Color32::from_rgb(60, 110, 200));
             match (d, host) {
                 (Drop::Edge(e, outer), _) => {
@@ -872,13 +872,16 @@ impl App {
                 self.selected_char = Some(*ci);
             }
             if let Some(st) = self.chars.get_mut(&(b, *ci)) {
-                // 12 × 12, 4 px from the right, top + 2: frame and tick in
-                // the characteristic's colour (VM).
-                let bx = egui::Rect::from_min_size(egui::pos2(r.right() - 16.0, r.top() + 2.0), egui::vec2(12.0, 12.0));
-                ui.painter().rect_filled(bx, 0.0, egui::Color32::WHITE);
+                // `0x407dc0`: Rectangle(right − 14, top + 3, right − 2,
+                // top + 15) with a pen in the operate colour and a brush in
+                // the palette's fourth column; when visible, image 0 of
+                // bitmap 470 (13 × 13) — a dark slate tick, ours drawn.
+                let (ir, ig, ib) = crate::diagram::CHAR_PALETTE[*ci % 9][3];
+                let bx = egui::Rect::from_min_size(egui::pos2(r.right() - 15.0, r.top() + 2.0), egui::vec2(12.0, 12.0));
+                ui.painter().rect_filled(bx, 0.0, egui::Color32::from_rgb(ir, ig, ib));
                 ui.painter().px_rect_stroke(bx, 0.0, egui::Stroke::new(1.0f32, st.color));
                 if st.visible {
-                    let tick = egui::Stroke::new(1.5f32, st.color);
+                    let tick = egui::Stroke::new(1.5f32, egui::Color32::from_rgb(71, 92, 148));
                     ui.painter().line_segment([bx.left_center() + egui::vec2(2.5, 0.0), egui::pos2(bx.left() + 5.0, bx.bottom() - 3.0)], tick);
                     ui.painter().line_segment([egui::pos2(bx.left() + 5.0, bx.bottom() - 3.0), egui::pos2(bx.right() - 2.5, bx.top() + 2.5)], tick);
                 }

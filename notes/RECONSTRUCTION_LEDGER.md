@@ -6474,6 +6474,51 @@ dock splitter and pane toolbar strip colours — not yet matched; the
 system colours are Windows 11's defaults (a machine with another accent
 colour differs).
 
+### L9.224 — The characteristic fills stack as GDI+ blends them; the grid's check box  ·  ✅
+Read (subagent report; by hand the palette table's bytes): the paint
+`0x43a4a0` walks the visible characteristics last → first; per one, the
+operate pass's combined region becomes the DC's clip and one GDI+ solid
+rectangle fill at alpha 50 in the palette's fill colour covers the
+client — so overlapping characteristics stack —, then FrameRgn in the
+operate (or, with window byte `+0x489`, also the reset) colour. The
+palette at `0x4c3030` (copy `0x4c2f50`) has four 4-byte columns per
+entry: operate frame, reset frame, fill, and the grid check box's
+interior; its index, field `+0x68`, is the characteristic's ordinal
+among its plane's ones in the block (`0x40cbdf` / `0x40cdf3`) — ours
+already. VM (block «БМРЗ - Защита трансформаторов (с 2025 г.в.)»): ДТО
+over ДЗТ over «Сигнализация небаланса» gives (174, 203, 232), ДЗТ over
+the green (210, 193, 226), the green alone (212, 240, 220) — each
+`dst + (src − dst)·50/255`. Ours built the fill with
+`from_rgba_unmultiplied`, which egui premultiplies in linear light: the
+colour came out light and overlaps clamped ((222, 255, 255)). Now
+`theme::alpha` premultiplies in gamma space (used for every translucent
+colour: the fills, Office 2007's caption bands, the orb's gloss, the
+comment and zoom highlights); ours gives the VM's numbers exactly. The
+grid's check box (`0x407dc0`): Rectangle(right − 14, top + 3, right −
+2, top + 15) in the operate colour round the fourth column's interior,
+the tick image 0 of bitmap 470 when visible — a fixed dark slate, not
+the characteristic's colour (L9.222 said otherwise); ours now so (the
+tick drawn). Test `alpha_stacks_as_gdiplus`.
+Residual: FrameRgn's edge pixels inside the region vs our stroked rings
+(±½ px); GDI+'s own rounding (±1).
+
+### L9.225 — The ribbon's rows as the VM measures them: the caption white, 30 + 23 px, an 89 px body  ·  ✅
+Seen on the VM, every look: the QAT's row is the window caption, which
+Windows 11 paints white (rows 0–29); the tab strip 30–52 is the look's
+flat colour ((191, 219, 255) Blue, (83, 83, 83) Black, (208, 212, 221)
+Silver, (196, 202, 217) Aqua — the splitter brushes of `0x438110`); the
+body's line at 53, the body 54–142 (89 px) and its line at 143; a
+panel's frame at 56, its large button 58–123, its 16 px caption band
+right under it to 139, its edge at 140. Ours painted a 52 px gradient
+from the caption down, the body started at 55 and was 97 px (the
+panels' item spacing, a 72 px group separator stretching «Видимость»
+and «Вычисления», a caption label taller than its band). Now the
+caption row is white and 30 px, the tab row 23 px, the rows touch, the
+panels stack their content and a fixed 16 px caption, the separator is
+`LARGE_H`; the document tab row lands at the VM's y.
+Residual: the body's top line colour (ours the panel border colour); the
+title's own font and position in the caption.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

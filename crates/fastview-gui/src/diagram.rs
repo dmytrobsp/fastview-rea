@@ -17,22 +17,26 @@ pub const CELL_PX: i32 = 96 / 5;
 pub const ZOOM_IN_LIMIT_PX: f64 = 400.0;
 pub const ZOOM_RESET_PX: f64 = 800.0;
 
-/// A characteristic's colours: (operate, reset, fill) by `index mod 9`
-/// (`0x43a4a0`; the original indexes by characteristic field `+0x68`, whose
-/// meaning was not decoded — we use the characteristic's ordinal).
-pub const CHAR_PALETTE: [[(u8, u8, u8); 3]; 9] = [
-    [(1, 37, 255), (88, 112, 253), (25, 245, 253)],
-    [(202, 1, 252), (225, 119, 251), (202, 1, 252)],
-    [(34, 177, 76), (50, 230, 29), (34, 177, 76)],
-    [(254, 0, 0), (254, 159, 159), (252, 66, 101)],
-    [(0, 162, 232), (153, 217, 234), (0, 162, 232)],
-    [(163, 73, 164), (200, 191, 231), (163, 73, 164)],
-    [(63, 72, 204), (112, 146, 190), (63, 72, 204)],
-    [(163, 73, 164), (255, 201, 14), (163, 73, 164)],
-    [(136, 0, 21), (185, 122, 87), (136, 0, 21)],
+/// A characteristic's colours: operate frame, reset frame, fill and the
+/// grid check box's interior, by `index mod 9` (the 16-byte table at
+/// `0x4c3030`, a copy at `0x4c2f50` for the grid). The index is field
+/// `+0x68`: the characteristic's ordinal among its plane's ones in the
+/// block (the `.fvb` loader's counter, `0x40cbdf` / `0x40cdf3`).
+pub const CHAR_PALETTE: [[(u8, u8, u8); 4]; 9] = [
+    [(1, 37, 255), (88, 112, 253), (25, 245, 253), (210, 253, 255)],
+    [(202, 1, 252), (225, 119, 251), (202, 1, 252), (254, 205, 254)],
+    [(34, 177, 76), (50, 230, 29), (34, 177, 76), (212, 240, 220)],
+    [(254, 0, 0), (254, 159, 159), (252, 66, 101), (254, 208, 216)],
+    [(0, 162, 232), (153, 217, 234), (0, 162, 232), (153, 217, 234)],
+    [(163, 73, 164), (200, 191, 231), (163, 73, 164), (237, 219, 237)],
+    [(63, 72, 204), (112, 146, 190), (63, 72, 204), (217, 219, 245)],
+    [(163, 73, 164), (255, 201, 14), (163, 73, 164), (255, 201, 14)],
+    [(136, 0, 21), (185, 122, 87), (136, 0, 21), (232, 205, 209)],
 ];
 
-/// Alpha of the operate-region fill (GDI+ fill at 50/255).
+/// Alpha of the operate-region fill: one GDI+ rectangle fill at 50/255
+/// per visible characteristic, clipped to its operate region
+/// (`0x43a4a0`); overlapping characteristics stack, last → first.
 pub const FILL_ALPHA: u8 = 50;
 
 /// A channel pair of the circle diagram (R | X, `doc+0x884`) or of the

@@ -303,10 +303,9 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   the waveform texture: fixed, L9.180. The pane captions (20 px, flat glyphs): fixed, L9.186. The ribbon's packing, checked gradient and height: fixed, L9.187.
   The «*K» icon and the diagrams' 11 px font: fixed, L9.193. The tab row:
   L9.195. The QAT's customise arrow, its print split button and the
-  ribbon's one context menu: L9.216. The parameter grid: L9.222. Seen
-  then, to do: with that block the differential plot's scale reads «Iдиф:
-  22.5 ном» and its area is blue in the original, «12.5 ном» and cyan in
-  ours.
+  ribbon's one context menu: L9.216. The parameter grid: L9.222. The
+  plot's fills (stacked GDI+ alpha) and the check box: L9.224 (the scale
+  differed only by the pane's height). The ribbon's rows: L9.225.
 
 ## W5 — Windows-only paths
 

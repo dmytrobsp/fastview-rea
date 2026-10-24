@@ -212,7 +212,7 @@ impl Skin {
                 status_bg: Color32::from_rgb(186, 212, 247),
                 status_text: Color32::from_rgb(21, 66, 139),
                 body: Some([Color32::from_rgb(229, 237, 248), Color32::from_rgb(199, 216, 237), Color32::from_rgb(231, 242, 255)]),
-                caption_band: Some([Color32::from_rgba_unmultiplied(152, 188, 232, 92), Color32::from_rgba_unmultiplied(133, 169, 216, 92)]),
+                caption_band: Some([alpha(152, 188, 232, 92), alpha(133, 169, 216, 92)]),
                 caption_text: Color32::from_rgb(62, 106, 170),
                 app_orb: Some([Color32::from_rgb(215, 221, 229), Color32::from_rgb(247, 222, 89), Color32::from_rgb(205, 126, 14)]),
                 orb_flat: None,
@@ -241,7 +241,7 @@ impl Skin {
                 status_bg: Color32::from_rgb(47, 48, 48),
                 status_text: Color32::from_rgb(255, 255, 255),
                 body: Some([Color32::from_rgb(215, 219, 224), Color32::from_rgb(181, 188, 198), Color32::from_rgb(211, 211, 211)]),
-                caption_band: Some([Color32::from_rgba_unmultiplied(159, 159, 159, 186), Color32::from_rgba_unmultiplied(137, 137, 137, 186)]),
+                caption_band: Some([alpha(159, 159, 159, 186), alpha(137, 137, 137, 186)]),
                 caption_text: Color32::from_rgb(255, 255, 255),
                 app_orb: Some([Color32::from_rgb(223, 223, 223), Color32::from_rgb(247, 222, 89), Color32::from_rgb(205, 126, 14)]),
                 orb_flat: None,
@@ -270,7 +270,7 @@ impl Skin {
                 status_bg: Color32::from_rgb(199, 201, 206),
                 status_text: Color32::from_rgb(35, 38, 42),
                 body: Some([Color32::from_rgb(242, 244, 248), Color32::from_rgb(213, 220, 231), Color32::from_rgb(249, 249, 249)]),
-                caption_band: Some([Color32::from_rgba_unmultiplied(222, 226, 238, 186), Color32::from_rgba_unmultiplied(196, 201, 210, 186)]),
+                caption_band: Some([alpha(222, 226, 238, 186), alpha(196, 201, 210, 186)]),
                 caption_text: Color32::from_rgb(83, 84, 89),
                 app_orb: Some([Color32::from_rgb(223, 223, 223), Color32::from_rgb(247, 222, 89), Color32::from_rgb(205, 126, 14)]),
                 orb_flat: None,
@@ -374,6 +374,18 @@ impl Palette {
     }
 }
 
+/// A colour at alpha `a` as Windows blends it (GDI+ / AlphaBlend: in gamma
+/// space, `dst + (src − dst)·a/255`): premultiplied in gamma space, which
+/// egui's blending then reproduces. `Color32::from_rgba_unmultiplied`
+/// premultiplies in linear light instead, which brightens the colour and
+/// clamps where layers overlap (VM: the diagram fills, L9.224).
+pub const fn alpha(r: u8, g: u8, b: u8, a: u8) -> Color32 {
+    const fn m(c: u8, a: u8) -> u8 {
+        ((c as u32 * a as u32 + 127) / 255) as u8
+    }
+    Color32::from_rgba_premultiplied(m(r, a), m(g, a), m(b, a), a)
+}
+
 /// Apply a skin to the egui context (base widget visuals; the ribbon paints its
 /// own gradients on top).
 pub fn apply(ctx: &egui::Context, skin: Skin) {
@@ -433,5 +445,30 @@ mod tests {
             assert_ne!(w.bg_fill, v.panel_fill, "{skin:?}");
             assert!(w.bg_stroke.width > 0.0 && w.bg_stroke.color != v.panel_fill, "{skin:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod alpha_tests {
+    use super::*;
+
+    /// Source-over as egui composes a premultiplied colour, in gamma space.
+    fn over(dst: (f32, f32, f32), c: Color32) -> (f32, f32, f32) {
+        let k = 1.0 - c.a() as f32 / 255.0;
+        (c.r() as f32 + dst.0 * k, c.g() as f32 + dst.1 * k, c.b() as f32 + dst.2 * k)
+    }
+
+    /// The VM's differential plane (L9.224): the green, magenta and cyan
+    /// fills at 50/255 stacked over white, last → first.
+    #[test]
+    fn alpha_stacks_as_gdiplus() {
+        let [g, m, c] = [(34, 177, 76), (202, 1, 252), (25, 245, 253)].map(|(r, gg, b)| alpha(r, gg, b, 50));
+        let near = |a: (f32, f32, f32), b: (u8, u8, u8)| (a.0 - b.0 as f32).abs() <= 1.0 && (a.1 - b.1 as f32).abs() <= 1.0 && (a.2 - b.2 as f32).abs() <= 1.0;
+        let white = (255.0, 255.0, 255.0);
+        assert!(near(over(white, g), (212, 240, 220)));
+        assert!(near(over(over(white, g), m), (210, 193, 226)));
+        assert!(near(over(over(over(white, g), m), c), (174, 203, 232)));
+        assert!(near(over(over(white, g), c), (175, 241, 227)));
+        assert!(near(over(white, c), (210, 253, 255)));
     }
 }

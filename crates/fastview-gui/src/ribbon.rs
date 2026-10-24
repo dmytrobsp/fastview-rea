@@ -16,10 +16,14 @@ impl App {
         let mut cmds: Vec<Command> = Vec::new();
         self.kt_rects.clear();
 
-        // Gradient band behind the quick-access toolbar + tab strip (the ribbon
-        // body below is the lighter `tab_active` fill).
+        // The quick-access toolbar's row is the frame's caption, which
+        // Windows 11's DWM paints white in every look (VM: rows 0–29); the
+        // tab strip below it (30–52) is the look's band — Office 2007 Blue
+        // (191, 219, 255), Black (83, 83, 83), … — and the ribbon body
+        // below that the lighter `tab_active` fill.
         let full = ui.max_rect();
-        let band = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), 52.0));
+        ui.painter().rect_filled(egui::Rect::from_min_size(full.min, egui::vec2(full.width(), 30.0)), 0.0, Color32::WHITE);
+        let band = egui::Rect::from_min_size(full.min + egui::vec2(0.0, 30.0), egui::vec2(full.width(), 23.0));
         paint_v_gradient(ui, band, p.ribbon_top, p.ribbon_bottom);
 
         // The Office 2007 looks' round application button, 45 × 45 at the
@@ -28,8 +32,13 @@ impl App {
         // The older looks' flat button is 41 px about the same centre (VM).
         let orb_d = if p.orb_flat.is_some() { 41.0 } else { 45.0 };
         let orb = p.app_orb.map(|c| (egui::Rect::from_center_size(full.min + egui::vec2(3.0 + 22.5, 2.0 + 22.5), egui::vec2(orb_d, orb_d)), c));
+        // The rows touch: the caption 30 px, the tab strip 23 px, then the
+        // body's frame (VM: rows 0–29, 30–52, the line at 53).
+        let row_gap = ui.spacing().item_spacing.y;
+        ui.spacing_mut().item_spacing.y = 0.0;
         // ---- Row 1: quick-access toolbar + title + style/help ----
         ui.horizontal(|ui| {
+            ui.set_height(30.0);
             ui.add_space(4.0);
             if orb.is_none() {
                 draw_logo(ui, 18.0, p.accent);
@@ -268,6 +277,8 @@ impl App {
             return;
         }
         ui.horizontal(|ui| {
+            // 23 px, and the body frame's stroke straddles its edge: 24.
+            ui.set_height(24.0);
             ui.add_space(6.0);
             if let Some((r, colors)) = orb {
                 // The orb's lower part opens the menu too; then it is drawn
@@ -343,12 +354,13 @@ impl App {
             let body = egui::Frame::none()
                 .fill(if p.body.is_some() { Color32::TRANSPARENT } else { p.tab_active })
                 .stroke(egui::Stroke::new(1.0f32, p.group_border))
-                .inner_margin(egui::Margin::symmetric(6.0, 1.0))
+                .inner_margin(egui::Margin { left: 6.0, right: 6.0, top: 3.0, bottom: 1.0 })
                 .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = row_gap;
                     // A constant height: expanded panels (a large button,
                     // the panel margins and its 15 px caption), across the
                     // whole window — 86 px inside, as on the VM.
-                    ui.set_min_height(LARGE_H + 4.0 + 1.0 + 15.0);
+                    ui.set_min_height(LARGE_H + 2.0 + 16.0 + 2.0);
                     ui.set_min_width(ui.available_width());
                     // Never wrap a label: a group that does not fit is
                     // collapsed (below), not squeezed.
@@ -741,7 +753,7 @@ fn paint_orb(painter: &egui::Painter, r: egui::Rect, colors: [Color32; 3], state
         let rim = c.lerp_to_gamma(Color32::BLACK, 0.35);
         painter.circle(r.center(), rad, c, egui::Stroke::new(1.5f32, rim));
         // The gloss: a lighter ellipse over the upper half.
-        let gloss = Color32::from_rgba_unmultiplied(255, 255, 255, 90);
+        let gloss = crate::theme::alpha(255, 255, 255, 90);
         let top = egui::Rect::from_center_size(r.center() - egui::vec2(0.0, rad * 0.38), egui::vec2(rad * 1.5, rad * 0.9));
         painter.add(egui::Shape::ellipse_filled(top.center(), top.size() / 2.0, gloss));
     }
@@ -1013,8 +1025,12 @@ fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: 
     let bg = ui.painter().add(egui::Shape::Noop);
     let panel = ui.scope(|ui| {
         ui.vertical(|ui| {
+            // Content then a 16 px caption, touching (VM: the large
+            // buttons 66 px from the panel's top + 2, the caption band
+            // right under them).
+            ui.spacing_mut().item_spacing.y = 0.0;
             egui::Frame::none()
-                .inner_margin(egui::Margin::symmetric(4.0, 2.0))
+                .inner_margin(egui::Margin { left: 4.0, right: 4.0, top: 2.0, bottom: 0.0 })
                 .show(ui, |ui| {
                     ui.horizontal_top(|ui| {
                         // MFC packs a panel's elements edge to edge (the
@@ -1024,27 +1040,22 @@ fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: 
                         content(ui);
                     });
                 });
-            ui.add_space(1.0);
-            ui.allocate_ui_with_layout(
-                egui::vec2(ui.min_rect().width().max(40.0), 15.0),
-                egui::Layout::top_down(egui::Align::Center),
-                |ui| {
-                    // The caption in the 9 pt UI font (12 px).
-                    ui.label(RichText::new(title).size(12.0).color(p.caption_text));
-                },
-            );
+            // The caption in the 9 pt UI font (12 px), centred.
+            let w = ui.fonts(|f| f.layout_no_wrap(title.to_owned(), egui::FontId::proportional(12.0), p.caption_text).size().x);
+            let (cap, _) = ui.allocate_exact_size(egui::vec2(ui.min_rect().width().max(w + 8.0).max(40.0), 16.0), egui::Sense::hover());
+            ui.painter().text(cap.center(), egui::Align2::CENTER_CENTER, title, egui::FontId::proportional(12.0), p.caption_text);
         });
     });
     // Office 2007 (RIBBON_PANEL_BACK_T / _B): a white inner line, the
     // caption band 15 px at the bottom.
     if let Some([top, bottom]) = p.caption_band {
         let r = panel.response.rect;
-        let band = egui::Rect::from_min_max(egui::pos2(r.left(), r.bottom() - 15.0), r.max);
+        let band = egui::Rect::from_min_max(egui::pos2(r.left(), r.bottom() - 16.0), r.max);
         ui.painter().set(
             bg,
             egui::Shape::Vec(vec![
-                egui::Shape::rect_stroke(r.shrink(1.0), 2.0f32, egui::Stroke::new(1.0f32, Color32::from_rgba_unmultiplied(255, 255, 255, 130))),
-                gradient_mesh(band, &[(0.0, top), (15.0, bottom)]),
+                egui::Shape::rect_stroke(r.shrink(1.0), 2.0f32, egui::Stroke::new(1.0f32, crate::theme::alpha(255, 255, 255, 130))),
+                gradient_mesh(band, &[(0.0, top), (16.0, bottom)]),
             ]),
         );
     }
@@ -1196,7 +1207,8 @@ fn small_button_mode(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, la
 /// A separator inside a panel, as tall as the button rows (an egui
 /// separator would take the whole height and push the panel title out).
 fn group_separator(ui: &mut egui::Ui, p: crate::theme::Palette) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(7.0, 72.0), egui::Sense::hover());
+    // As tall as the large buttons: a taller one stretched its panel.
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(7.0, LARGE_H), egui::Sense::hover());
     ui.painter().vline(rect.center().x, rect.y_range(), egui::Stroke::new(1.0f32, p.group_border));
 }
 

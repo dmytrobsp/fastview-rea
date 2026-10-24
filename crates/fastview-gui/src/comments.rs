@@ -262,7 +262,7 @@ fn draw(p: &egui::Painter, c: &Comment, sel: bool, geo: &Geo, font: &FontId) -> 
         }
         CommentKind::Area { chan_from, chan_to, from, to } => {
             let r = area_rect(from, to, chan_from, chan_to, geo)?;
-            p.rect_filled(r, 0.0, Color32::from_rgba_unmultiplied(255, 0, 0, 64));
+            p.rect_filled(r, 0.0, crate::theme::alpha(255, 0, 0, 64));
             p.rect_stroke(r, 0.0, Stroke::new(3.0f32, col));
             if !c.hidden {
                 p.text(Pos2::new(r.left() + 5.0, r.bottom() - 5.0), Align2::LEFT_BOTTOM, c.info(geo.us, geo.abs), font.clone(), TEXT);

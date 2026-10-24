@@ -1119,7 +1119,7 @@ impl App {
         // only while their extent stays under 800 px.
         if let Some(ppu) = sc.ppu[0].filter(|ppu| char_ext * ppu < dg::ZOOM_RESET_PX) {
             for d in draws.iter().rev() {
-                let [op, rs, fl] = dg::CHAR_PALETTE[d.pal];
+                let [op, rs, fl, _] = dg::CHAR_PALETTE[d.pal];
                 let rings = |shapes: &[Shape]| -> Vec<Vec<Vec<[f32; 2]>>> {
                     shapes
                         .iter()
@@ -1133,7 +1133,7 @@ impl App {
                 }
                 let (r, g, bb) = fl;
                 for r_ in rings(&d.op) {
-                    paint_region(&clip, &r_, Some(Color32::from_rgba_unmultiplied(r, g, bb, dg::FILL_ALPHA)), rgb(op), client);
+                    paint_region(&clip, &r_, Some(crate::theme::alpha(r, g, bb, dg::FILL_ALPHA)), rgb(op), client);
                 }
             }
         }
