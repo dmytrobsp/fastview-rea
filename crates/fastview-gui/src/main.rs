@@ -265,6 +265,13 @@ impl App {
             }
             mesh
         };
+        // A bitmap of rows, uniform along x: row i's colour at r.top() + i.
+        let rows = |painter: &egui::Painter, r: egui::Rect, rows: &[u32; 24]| {
+            for (i, c) in rows.iter().enumerate() {
+                let col = egui::Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, *c as u8);
+                painter.rect_filled(egui::Rect::from_min_size(egui::pos2(r.left(), r.top() + i as f32), egui::vec2(r.width(), 1.0)), 0.0, col);
+            }
+        };
         match p.status_flat {
             // The older looks: flat, a top line or none (VM).
             Some(line) => {
@@ -272,10 +279,14 @@ impl App {
                     painter.hline(r.x_range(), r.top() + 0.5, egui::Stroke::new(1.0f32, c));
                 }
             }
-            None => {
-                painter.add(band(p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.45), p.status_bg, r));
-                painter.hline(r.x_range(), r.top() + 0.5, egui::Stroke::new(1.0f32, p.accent.lerp_to_gamma(p.status_bg, 0.3)));
-            }
+            None => match p.bands {
+                // The Office 2007 styles: the bar's bitmap row by row (VM).
+                Some(b) => rows(painter, r, &b.status),
+                None => {
+                    painter.add(band(p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.45), p.status_bg, r));
+                    painter.hline(r.x_range(), r.top() + 0.5, egui::Stroke::new(1.0f32, p.accent.lerp_to_gamma(p.status_bg, 0.3)));
+                }
+            },
         }
         let font = egui::FontId::proportional(12.0);
         let mut x = r.left();
@@ -285,8 +296,15 @@ impl App {
             painter.with_clip_rect(clip).text(egui::pos2(x + 9.0, r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
             x += w;
         }
-        let ext = egui::Rect::from_min_max(egui::pos2(r.right() - 155.0, r.top() + 1.0), r.right_bottom());
-        if p.status_flat.is_none() {
+        // The last pane: 135 px at the right (VM), its own rows and a light
+        // and a dark column at its left in the Office 2007 styles.
+        let ext = egui::Rect::from_min_max(egui::pos2(r.right() - if p.bands.is_some() { 135.0 } else { 155.0 }, r.top() + 1.0), r.right_bottom());
+        if let (None, Some(b)) = (p.status_flat, p.bands) {
+            let pane = egui::Rect::from_min_max(egui::pos2(ext.left() - 1.0, r.top()), r.right_bottom());
+            rows(painter, pane, &b.status_pane);
+            painter.vline(ext.left() - 0.5, ext.y_range(), egui::Stroke::new(1.0f32, b.pane_edge[0]));
+            painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, b.pane_edge[1]));
+        } else if p.status_flat.is_none() {
             let dark = p.status_bg.lerp_to_gamma(p.accent, 0.35);
             painter.add(band(dark.lerp_to_gamma(egui::Color32::WHITE, 0.3), dark, ext));
             painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.6)));

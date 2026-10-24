@@ -6751,6 +6751,18 @@ horizontal gradients — Blue (227, 239, 255) → (177, 211, 255), Black
 222), Aqua (225, 226, 236) → (150, 148, 177); now in `Bands` too (ours
 within 1–2 of each at the sampled points).
 
+### L9.238 — The status bar as each Office 2007 style's bitmap  ·  ✅
+Sampled on the VM's four Office 2007 captures: the status bar is the
+style's bitmap, uniform along x — 24 rows from a top line (Blue (86,
+125, 176); Black (65, 65, 65); Silver (172, 175, 183); Aqua (119, 130,
+153)) through a lighter upper half and a darker lower one, the last pane
+135 px wide in its own darker rows with a light and a dark column at its
+left (Blue (229, 238, 251) / (105, 141, 189)). Ours drew one gradient of
+the look's colour and a 155 px pane. Now `Bands::{status, status_pane,
+pane_edge}` hold the sampled rows and `status_bar` paints them row by
+row; the four styles' bars match the captures (the text is our font —
+wider, so «НТЦ Механотроника» overruns its 135 px pane: W6).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

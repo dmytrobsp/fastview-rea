@@ -225,7 +225,7 @@ impl Skin {
                 pane_cap: None,
                 status_flat: None,
                 mdi_tabs: None,
-                bands: Some(Bands { under_ribbon: [Color32::from_rgb(157, 179, 209), Color32::from_rgb(174, 199, 232), Color32::from_rgb(185, 212, 247)], bar_line: Color32::from_rgb(157, 189, 216), bar_bottom: Color32::from_rgb(213, 228, 242), mdi_border: Color32::from_rgb(185, 208, 237) , caption: Color32::from_rgb(184, 207, 233), toolbar: [Color32::from_rgb(227, 239, 255), Color32::from_rgb(177, 211, 255)] }),
+                bands: Some(Bands { under_ribbon: [Color32::from_rgb(157, 179, 209), Color32::from_rgb(174, 199, 232), Color32::from_rgb(185, 212, 247)], bar_line: Color32::from_rgb(157, 189, 216), bar_bottom: Color32::from_rgb(213, 228, 242), mdi_border: Color32::from_rgb(185, 208, 237) , caption: Color32::from_rgb(184, 207, 233), toolbar: [Color32::from_rgb(227, 239, 255), Color32::from_rgb(177, 211, 255)] , status: [0x567DB0, 0xFFFFFF, 0xD7E6F9, 0xD3E4FA, 0xD0E2FB, 0xCCE0FB, 0xC5DBF8, 0xC7DCF8, 0xB3D0F5, 0xB3D0F5, 0xB6D1F5, 0xB6D1F5, 0xBAD3F5, 0xBAD3F5, 0xBDD6F5, 0xBDD6F5, 0xC1D8F6, 0xC1D8F6, 0xC5DAF6, 0xC5DAF6, 0xC5DAF6, 0xC9DDF6, 0xC9DDF6, 0xCDDFF6], status_pane: [0x567DB0, 0xC5DCF8, 0xC2D9F7, 0xBBD5F6, 0xB4D0F5, 0xAECDF4, 0xADCCF6, 0xA9CAF7, 0x90B6EA, 0x90B6EA, 0x8EB4E7, 0x8EB4E7, 0x8BB2E5, 0x8BB2E5, 0x89AFE1, 0x89AFE1, 0x87ACDE, 0x87ACDE, 0x84A9DA, 0x84A9DA, 0x84A9DA, 0x82A6D7, 0x82A6D7, 0x7FA3D3], pane_edge: [Color32::from_rgb(229, 238, 251), Color32::from_rgb(105, 141, 189)] }),
             },
                         Skin::Black => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -255,7 +255,7 @@ impl Skin {
                 pane_cap: None,
                 status_flat: None,
                 mdi_tabs: None,
-                bands: Some(Bands { under_ribbon: [Color32::from_rgb(61, 61, 61), Color32::from_rgb(66, 66, 66), Color32::from_rgb(77, 77, 77)], bar_line: Color32::from_rgb(129, 129, 129), bar_bottom: Color32::from_rgb(235, 235, 235), mdi_border: Color32::from_rgb(172, 172, 172) , caption: Color32::from_rgb(158, 160, 160), toolbar: [Color32::from_rgb(205, 208, 213), Color32::from_rgb(148, 156, 166)] }),
+                bands: Some(Bands { under_ribbon: [Color32::from_rgb(61, 61, 61), Color32::from_rgb(66, 66, 66), Color32::from_rgb(77, 77, 77)], bar_line: Color32::from_rgb(129, 129, 129), bar_bottom: Color32::from_rgb(235, 235, 235), mdi_border: Color32::from_rgb(172, 172, 172) , caption: Color32::from_rgb(158, 160, 160), toolbar: [Color32::from_rgb(205, 208, 213), Color32::from_rgb(148, 156, 166)] , status: [0x414141, 0x434752, 0x424651, 0x40434E, 0x3E414B, 0x3C404A, 0x3C404A, 0x3B3E46, 0x2F3030, 0x2F3030, 0x2F2F2F, 0x2F2F2F, 0x302F2F, 0x302F2F, 0x30302F, 0x30302F, 0x313130, 0x313130, 0x333332, 0x333332, 0x333332, 0x353534, 0x353534, 0x373736], status_pane: [0x333333, 0xD8D7D8, 0xC6C5C6, 0xC3C3C3, 0xC0BFC0, 0xBBBBBB, 0xB7B7B7, 0xB4B4B4, 0x979898, 0x979898, 0x979898, 0x979898, 0x929496, 0x929496, 0x8C9093, 0x8C9093, 0x858A8E, 0x858A8E, 0x7E848A, 0x7E848A, 0x7E848A, 0x787F86, 0x787F86, 0x717981], pane_edge: [Color32::from_rgb(150, 150, 150), Color32::from_rgb(0, 0, 0)] }),
             },
                         Skin::Silver => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -285,7 +285,7 @@ impl Skin {
                 pane_cap: None,
                 status_flat: None,
                 mdi_tabs: None,
-                bands: Some(Bands { under_ribbon: [Color32::from_rgb(152, 155, 161), Color32::from_rgb(166, 169, 176), Color32::from_rgb(194, 198, 206)], bar_line: Color32::from_rgb(124, 124, 124), bar_bottom: Color32::from_rgb(233, 238, 247), mdi_border: Color32::from_rgb(172, 175, 183) , caption: Color32::from_rgb(186, 193, 202), toolbar: [Color32::from_rgb(233, 238, 247), Color32::from_rgb(209, 214, 222)] }),
+                bands: Some(Bands { under_ribbon: [Color32::from_rgb(152, 155, 161), Color32::from_rgb(166, 169, 176), Color32::from_rgb(194, 198, 206)], bar_line: Color32::from_rgb(124, 124, 124), bar_bottom: Color32::from_rgb(233, 238, 247), mdi_border: Color32::from_rgb(172, 175, 183) , caption: Color32::from_rgb(186, 193, 202), toolbar: [Color32::from_rgb(233, 238, 247), Color32::from_rgb(209, 214, 222)] , status: [0xACAFB7, 0xE7E8EB, 0xE3E4E8, 0xDCDEE3, 0xD4D7DD, 0xCBCFD7, 0xC3C7D1, 0xBBC0CC, 0xB5BBC7, 0xB5BBC7, 0xA9AFB6, 0xA9AFB6, 0xAAB0B7, 0xAAB0B7, 0xADB3B9, 0xADB3B9, 0xB0B5BC, 0xB0B5BC, 0xB4B9BF, 0xB4B9BF, 0xB4B9BF, 0xB8BCC2, 0xB8BCC2, 0xBCBFC5], status_pane: [0xACAFB7, 0xE7E8EB, 0xE3E4E8, 0xDCDFE3, 0xD5D8DE, 0xCDD0D9, 0xC4C9D3, 0xBDC1CD, 0xB6BBC7, 0xB6BBC7, 0xA5ABAF, 0xA5ABAF, 0xA6ABAF, 0xA6ABAF, 0xA7ABB0, 0xA7ABB0, 0xA7ACB2, 0xA7ACB2, 0xA9AEB4, 0xA9AEB4, 0xA9AEB4, 0xAAB0B5, 0xAAB0B5, 0xACB2B7], pane_edge: [Color32::from_rgb(225, 225, 225), Color32::from_rgb(152, 152, 152)] }),
             },
                         Skin::Aqua => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -315,7 +315,7 @@ impl Skin {
                 pane_cap: None,
                 status_flat: None,
                 mdi_tabs: None,
-                bands: Some(Bands { under_ribbon: [Color32::from_rgb(195, 202, 217), Color32::from_rgb(137, 152, 163), Color32::from_rgb(237, 239, 243)], bar_line: Color32::from_rgb(106, 112, 128), bar_bottom: Color32::from_rgb(206, 212, 225), mdi_border: Color32::from_rgb(177, 187, 198) , caption: Color32::from_rgb(181, 189, 211), toolbar: [Color32::from_rgb(225, 226, 236), Color32::from_rgb(150, 148, 177)] }),
+                bands: Some(Bands { under_ribbon: [Color32::from_rgb(195, 202, 217), Color32::from_rgb(137, 152, 163), Color32::from_rgb(237, 239, 243)], bar_line: Color32::from_rgb(106, 112, 128), bar_bottom: Color32::from_rgb(206, 212, 225), mdi_border: Color32::from_rgb(177, 187, 198) , caption: Color32::from_rgb(181, 189, 211), toolbar: [Color32::from_rgb(225, 226, 236), Color32::from_rgb(150, 148, 177)] , status: [0x778299, 0xEEF0F6, 0xD8DFEB, 0xD8DEEA, 0xD7DDE9, 0xD5DBE9, 0xD4DBE7, 0xD3DAE7, 0xD1D7E5, 0xD1D7E5, 0xD0D6E4, 0xD0D6E4, 0xCED5E3, 0xCED5E3, 0xCDD3E2, 0xCDD3E2, 0xC0C8DB, 0xC0C8DB, 0xBEC6D9, 0xBEC6D9, 0xBEC6D9, 0xBBC4D7, 0xBBC4D7, 0xB9C2D6], status_pane: [0x778299, 0xDCE3F0, 0xDDE3F1, 0xDEE4F2, 0xDFE5F3, 0xE0E7F4, 0xE1E7F5, 0xE2E8F6, 0xE2E8F6, 0xE2E8F6, 0xE2E8F7, 0xE2E8F7, 0xE2E8F7, 0xE2E8F7, 0xE2E8F7, 0xE2E8F7, 0xCED5E7, 0xCED5E7, 0xCCD3E5, 0xCCD3E5, 0xCCD3E5, 0xC9D0E2, 0xC9D0E2, 0xC7CEE1], pane_edge: [Color32::from_rgb(190, 198, 217), Color32::from_rgb(119, 130, 153)] }),
             },
         }
     }
@@ -384,6 +384,12 @@ pub struct Bands {
     /// toolbar's horizontal gradient, left to right.
     pub caption: Color32,
     pub toolbar: [Color32; 2],
+    /// The status bar's 24 rows (RGB, top line first) — its bitmap,
+    /// uniform along x — for the bar and for its last pane, whose left edge
+    /// is a light and a dark column.
+    pub status: [u32; 24],
+    pub status_pane: [u32; 24],
+    pub pane_edge: [Color32; 2],
 }
 
 impl Palette {
