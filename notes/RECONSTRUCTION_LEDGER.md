@@ -7941,6 +7941,23 @@ Residual:
   kept or read back, so something else adjusts it — NOT DETERMINED.
 - The plain wheel's lane scroll with lanes that overflow is not compared.
 
+### L9.287 — Side by side: the differential diagram with every block; a drag's last moves before its release  ·  ✅
+W4.3 on both programs, WIN_1999: the differential pane's grid splitter
+dragged from 446 to 1000, then each of its eight blocks picked by its
+▾ and list.
+- After the drag ours' splitter stopped at 945, the original's at 1000.
+  The trace showed ours following the pointer to 945. The drag's last
+  moves and the release came in one software-runner frame, and egui ends
+  a drag at the start of its release frame, so those moves were lost.
+  `one_press_per_pass` now also begins a pass at a release when moves
+  precede it (they are seen with the button down). Test
+  `quick_key_presses_get_a_pass_each` (moves then a release: two passes).
+- With the grid at 1000 in both, all eight blocks give the same plane:
+  edge labels (Iдиф 24 / 11.2 ном, Iторм 0 / 19.2 ном; one block 60 / 28 /
+  48 with 2 ном cells), cells and the characteristic's corner in view.
+Residual: the plane's text looks heavier in ours (anti-aliasing, as
+L9.280).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

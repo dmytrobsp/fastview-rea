@@ -702,7 +702,8 @@ impl App {
 }
 
 /// A frame's input as passes of at most one key press or mouse-button
-/// change each (the software runner, whose frames are slow): a window gets
+/// change each, a release in a pass of its own (the software runner, whose
+/// frames are slow): a window gets
 /// each WM_KEYDOWN / WM_LBUTTONDOWN / …UP on its own, so quick presses each
 /// act and a button change is seen where the pointer was then, as in the
 /// original. egui's per-frame `key_pressed` would see quick presses as one,
@@ -722,8 +723,13 @@ fn one_press_per_pass(mut raw: egui::RawInput) -> Vec<egui::RawInput> {
             egui::Event::PointerButton { .. } => (true, None),
             _ => (false, None),
         };
-        // A key's text stays with its press.
-        if closed && !matches!(e, egui::Event::Text(_)) {
+        // A key's text stays with its press; a release begins a pass of
+        // its own, so the moves before it are seen with the button down
+        // (egui ends a drag at the start of its release frame: a splitter
+        // stopped short of where it was let go, VM).
+        let release = matches!(e, egui::Event::PointerButton { pressed: false, .. });
+        let open = passes.last().is_some_and(|p| !p.0.is_empty());
+        if (closed && !matches!(e, egui::Event::Text(_))) || (release && open) {
             passes.push((Vec::new(), None));
             closed = false;
         }
@@ -785,6 +791,9 @@ mod tests {
         assert_eq!(drag.iter().map(|p| p.events.len()).collect::<Vec<_>>(), [2, 2]);
         // A quick click: press and release apart.
         assert_eq!(one_press_per_pass(egui::RawInput { events: vec![btn(true), btn(false)], ..Default::default() }).len(), 2);
+        // The drag's last moves before the release, with the button down.
+        let end = one_press_per_pass(egui::RawInput { events: vec![egui::Event::PointerMoved(at(990.0)), egui::Event::PointerMoved(at(1000.0)), btn(false)], ..Default::default() });
+        assert_eq!(end.iter().map(|p| p.events.len()).collect::<Vec<_>>(), [2, 1]);
         // One press or none: a single pass as it came.
         let one = one_press_per_pass(egui::RawInput { events: vec![key(egui::Key::A, true, ctrl)], modifiers: none, ..Default::default() });
         assert_eq!((one.len(), one[0].modifiers), (1, none));
