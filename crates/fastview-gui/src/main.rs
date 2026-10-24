@@ -275,26 +275,48 @@ impl App {
                 let row = egui::Rect::from_min_max(egui::pos2(x0 + k as f32, y0 + k as f32), egui::pos2(x0 + 9.0 - k as f32, y0 + k as f32 + 1.0));
                 ui.painter().rect_filled(row, 0.0, tri);
             }
-            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(hit), |ui| {
-                // The documents sorted by title, each with a small window
-                // image, none marked; no «Окна...» (VM: MFC adds it to a
-                // «Window» menu only, which this ribbon has not).
-                egui::menu::menu_custom_button(ui, egui::Button::new("").frame(false).min_size(hit.size()), |ui| {
-                    // The group's own tabs (its tab control's list).
-                    let mut order = members.clone();
-                    order.sort_by_key(|&i| self.docs[i].title().to_lowercase());
-                    for i in order {
-                        let r = ui.add(egui::Button::new(format!("      {}", self.docs[i].title())).frame(false));
-                        let c = egui::pos2(r.rect.left() + 10.0, r.rect.center().y);
-                        let w = egui::Rect::from_center_size(c, egui::vec2(12.0, 10.0));
-                        ui.painter().rect_stroke(w, 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_gray(110)));
-                        ui.painter().rect_filled(egui::Rect::from_min_max(w.left_top(), egui::pos2(w.left() + 3.0, w.bottom())), 0.0, egui::Color32::from_rgb(70, 130, 110));
-                        if r.clicked() {
-                            activate = Some(i);
-                            ui.close_menu();
+            // The documents sorted by title, each with a small window
+            // image, none marked; no «Окна...» (VM: MFC adds it to a
+            // «Window» menu only, which this ribbon has not). An MFC popup
+            // at the button's left under it; the button lit (15 px, (252,
+            // 151, 61) → (254, 181, 91)) while it is open (VM).
+            let list_id = ui.id().with("fv_doc_list");
+            let btn = ui.interact(hit, list_id.with("btn"), egui::Sense::click());
+            let mut open: Option<u64> = ui.data(|d| d.get_temp(list_id));
+            if btn.clicked() {
+                open = if open.is_some() { None } else { Some(ui.ctx().cumulative_pass_nr()) };
+            }
+            let lit = egui::Rect::from_min_size(egui::pos2(x0 - 3.0, strip.top() + 1.0), egui::vec2(15.0, 15.0));
+            if let Some(serial) = open {
+                crate::lanes::gradient(ui.painter(), lit, egui::Color32::from_rgb(252, 151, 61), egui::Color32::from_rgb(254, 181, 91));
+                for k in 0..5 {
+                    let row = egui::Rect::from_min_max(egui::pos2(x0 + k as f32, y0 + k as f32), egui::pos2(x0 + 9.0 - k as f32, y0 + k as f32 + 1.0));
+                    ui.painter().rect_filled(row, 0.0, tri);
+                }
+                let mut order = members.clone();
+                order.sort_by_key(|&i| self.docs[i].title().to_lowercase());
+                let window = |p: &egui::Painter, r: egui::Rect, _c: egui::Color32| {
+                    let w = egui::Rect::from_center_size(r.center(), egui::vec2(12.0, 10.0));
+                    p.rect_stroke(w, 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_gray(110)));
+                    p.rect_filled(egui::Rect::from_min_max(w.left_top(), egui::pos2(w.left() + 3.0, w.bottom())), 0.0, egui::Color32::from_rgb(70, 130, 110));
+                };
+                let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom()).constrain(true).show(ui.ctx(), |ui| {
+                    crate::popmenu::mfc_frame(ui, |ui| {
+                        for i in order {
+                            if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, false, Some(&window)).clicked() {
+                                activate = Some(i);
+                            }
                         }
-                    }
+                    })
                 });
+                let outside = ui.input(|inp| inp.pointer.any_pressed() && inp.pointer.interact_pos().is_some_and(|q| !area.response.rect.contains(q) && !hit.contains(q)));
+                if activate.is_some() || outside || ui.input(|inp| inp.key_pressed(egui::Key::Escape)) {
+                    open = None;
+                }
+            }
+            ui.data_mut(|d| match open {
+                Some(o) => d.insert_temp(list_id, o),
+                None => d.remove::<u64>(list_id),
             });
         });
         for &(i, r) in &tabs {
@@ -1537,6 +1559,25 @@ mod window_tests {
         w.key(egui::Key::Enter);
         w.idle(2);
         assert_eq!(w.app.docks[Unit::Frequency].place, Place::Docked, "Закрепленное");
+    }
+
+    /// The document strip's ▾ opens the list under it at its left (an MFC
+    /// popup, VM); an entry activates its document and closes the list.
+    #[test]
+    fn the_document_list_opens_and_activates() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Demo);
+        w.idle(3);
+        assert_eq!((w.app.docs.len(), w.app.active), (2, Some(1)));
+        let tab = w.app.doc_tab_rects[0];
+        let area = w.app.mdi_rects[0];
+        let arrow = Pos2::new(area.right() - 10.0, tab.top() + 9.0);
+        w.press(Primary, arrow, arrow);
+        // The first row of the list: 2 px of frame, then 22 px rows.
+        let row = Pos2::new(arrow.x + 20.0, tab.top() + 16.0 + 3.0 + 11.0);
+        w.press(Primary, row, row);
+        assert_eq!(w.app.active, Some(0), "the first document by title");
     }
 
     /// The wheel over the ribbon steps its tabs and stops at either end

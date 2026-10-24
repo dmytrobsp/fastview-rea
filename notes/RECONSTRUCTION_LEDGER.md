@@ -8083,6 +8083,16 @@ triangle, as the original's, not a «▸» glyph.
 Residual: the menus' text is Tahoma 12 for the system's Segoe UI 9
 (heavier, a little wider).
 
+### L9.293 — The document strip's list as an MFC popup  ·  ✅
+VM: the ▾ at the strip's right opens the documents (sorted by title,
+each with a small window image) as the same Office 2007 popup, at the
+▾'s left edge under it, reaching right over the pane beside; the ▾ is lit
+while it is open (15 × 15, (252, 151, 61) → (254, 181, 91)). Ours drew
+egui's rounded menu ending at the ▾, the ▾ unlit. Now the list is
+`popmenu::mfc_frame` rows with the window glyph in the image column,
+closed by a pick, a press outside or Esc. Test
+`the_document_list_opens_and_activates`.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
