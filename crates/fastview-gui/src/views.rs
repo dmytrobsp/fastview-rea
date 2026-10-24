@@ -688,7 +688,7 @@ impl App {
                     .frame(egui::Frame::none())
                     .show_inside(ui, |ui| {
                         let r = ui.max_rect();
-                        let band = [pal.ribbon_top.gamma_multiply(0.95), pal.ribbon_top.lerp_to_gamma(egui::Color32::WHITE, 0.5)];
+                        let band = pal.mdi_tabs.unwrap_or([pal.ribbon_top.gamma_multiply(0.95), pal.ribbon_top.lerp_to_gamma(egui::Color32::WHITE, 0.5)]);
                         let mut mesh = egui::Mesh::default();
                         for (p, c) in [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()].into_iter().zip([band[0], band[0], band[1], band[1]]) {
                             mesh.colored_vertex(p, c);
@@ -1041,11 +1041,21 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
     }
     let band = pal.pane_caption();
     let p = ui.painter();
-    p.rect_filled(rect, 0.0, band);
-    p.px_hline(rect.x_range(), rect.top(), egui::Stroke::new(1.0f32, band.lerp_to_gamma(egui::Color32::WHITE, 0.4)));
+    let ink = match pal.pane_cap {
+        // The older looks' captions (VM): a gradient or flat, their text.
+        Some([top, bottom, text]) => {
+            crate::lanes::gradient(p, rect, top, bottom);
+            text
+        }
+        None => {
+            p.rect_filled(rect, 0.0, band);
+            p.px_hline(rect.x_range(), rect.top(), egui::Stroke::new(1.0f32, band.lerp_to_gamma(egui::Color32::WHITE, 0.4)));
+            pal.text
+        }
+    };
     let font = egui::FontId::proportional(12.0);
     p.with_clip_rect(rect.shrink2(egui::vec2(0.0, 0.0)).with_max_x(rect.right() - 34.0))
-        .text(egui::pos2(rect.left() + 4.0, rect.center().y), egui::Align2::LEFT_CENTER, title, font, pal.text);
+        .text(egui::pos2(rect.left() + 4.0, rect.center().y), egui::Align2::LEFT_CENTER, title, font, ink);
     let glyph = egui::Color32::from_rgb(86, 125, 177);
     let button = |ui: &mut egui::Ui, centre: egui::Pos2, salt: &str| {
         let r = egui::Rect::from_center_size(centre, egui::vec2(15.0, 15.0));

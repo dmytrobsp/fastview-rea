@@ -25,7 +25,9 @@ impl App {
         // The Office 2007 looks' round application button, 45 × 45 at the
         // top left over both rows (`SetApplicationButton` with (45, 45),
         // `0x472fef`; its image 570 is the original's — ours the logo).
-        let orb = p.app_orb.map(|c| (egui::Rect::from_min_size(full.min + egui::vec2(3.0, 2.0), egui::vec2(45.0, 45.0)), c));
+        // The older looks' flat button is 41 px about the same centre (VM).
+        let orb_d = if p.orb_flat.is_some() { 41.0 } else { 45.0 };
+        let orb = p.app_orb.map(|c| (egui::Rect::from_center_size(full.min + egui::vec2(3.0 + 22.5, 2.0 + 22.5), egui::vec2(orb_d, orb_d)), c));
         // ---- Row 1: quick-access toolbar + title + style/help ----
         ui.horizontal(|ui| {
             ui.add_space(4.0);
@@ -282,7 +284,7 @@ impl App {
                     root.is_some()
                 });
                 let hot = ctx.input(|i| i.pointer.hover_pos()).is_some_and(|q| q.distance(r.center()) <= r.width() / 2.0);
-                paint_orb(&ui.painter().clone().with_layer_id(egui::LayerId::new(egui::Order::Middle, egui::Id::new("fv_app_orb_layer"))), r, colors, if open { 2 } else if hot { 1 } else { 0 });
+                paint_orb(&ui.painter().clone().with_layer_id(egui::LayerId::new(egui::Order::Middle, egui::Id::new("fv_app_orb_layer"))), r, colors, if open { 2 } else if hot { 1 } else { 0 }, p.orb_flat);
             }
             for (n, (label, tab)) in [("Главная", RibbonTab::Home), ("ОМП", RibbonTab::Omp)].into_iter().enumerate() {
                 let r = ribbon_tab(ui, label, self.tab == tab, p);
@@ -729,15 +731,20 @@ fn paint_v_gradient(ui: &egui::Ui, rect: egui::Rect, top: Color32, bottom: Color
 /// The Office 2007 application button (RIBBON_BTN_MAIN, its centre in the
 /// normal / hot / pressed states): a round button with a darker rim and a
 /// glossy upper half, our logo inside.
-fn paint_orb(painter: &egui::Painter, r: egui::Rect, colors: [Color32; 3], state: usize) {
+fn paint_orb(painter: &egui::Painter, r: egui::Rect, colors: [Color32; 3], state: usize, flat: Option<Color32>) {
     let c = colors[state.min(2)];
     let rad = r.width() / 2.0;
-    let rim = c.lerp_to_gamma(Color32::BLACK, 0.35);
-    painter.circle(r.center(), rad, c, egui::Stroke::new(1.5f32, rim));
-    // The gloss: a lighter ellipse over the upper half.
-    let gloss = Color32::from_rgba_unmultiplied(255, 255, 255, 90);
-    let top = egui::Rect::from_center_size(r.center() - egui::vec2(0.0, rad * 0.38), egui::vec2(rad * 1.5, rad * 0.9));
-    painter.add(egui::Shape::ellipse_filled(top.center(), top.size() / 2.0, gloss));
+    if let Some(line) = flat {
+        // The older looks: the body colour, a 1 px outline, no gloss.
+        painter.circle(r.center(), rad - 0.5, c, egui::Stroke::new(1.0f32, line));
+    } else {
+        let rim = c.lerp_to_gamma(Color32::BLACK, 0.35);
+        painter.circle(r.center(), rad, c, egui::Stroke::new(1.5f32, rim));
+        // The gloss: a lighter ellipse over the upper half.
+        let gloss = Color32::from_rgba_unmultiplied(255, 255, 255, 90);
+        let top = egui::Rect::from_center_size(r.center() - egui::vec2(0.0, rad * 0.38), egui::vec2(rad * 1.5, rad * 0.9));
+        painter.add(egui::Shape::ellipse_filled(top.center(), top.size() / 2.0, gloss));
+    }
     // The logo (two chevrons), as `draw_logo`.
     let h = rad * 0.9;
     let lr = egui::Rect::from_center_size(r.center(), egui::vec2(h * 1.2, h));

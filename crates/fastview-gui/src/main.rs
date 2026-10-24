@@ -255,8 +255,18 @@ impl App {
             }
             mesh
         };
-        painter.add(band(p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.45), p.status_bg, r));
-        painter.hline(r.x_range(), r.top() + 0.5, egui::Stroke::new(1.0f32, p.accent.lerp_to_gamma(p.status_bg, 0.3)));
+        match p.status_flat {
+            // The older looks: flat, a top line or none (VM).
+            Some(line) => {
+                if let Some(c) = line {
+                    painter.hline(r.x_range(), r.top() + 0.5, egui::Stroke::new(1.0f32, c));
+                }
+            }
+            None => {
+                painter.add(band(p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.45), p.status_bg, r));
+                painter.hline(r.x_range(), r.top() + 0.5, egui::Stroke::new(1.0f32, p.accent.lerp_to_gamma(p.status_bg, 0.3)));
+            }
+        }
         let font = egui::FontId::proportional(12.0);
         let mut x = r.left();
         for (i, text) in s.iter().enumerate() {
@@ -266,9 +276,11 @@ impl App {
             x += w;
         }
         let ext = egui::Rect::from_min_max(egui::pos2(r.right() - 155.0, r.top() + 1.0), r.right_bottom());
-        let dark = p.status_bg.lerp_to_gamma(p.accent, 0.35);
-        painter.add(band(dark.lerp_to_gamma(egui::Color32::WHITE, 0.3), dark, ext));
-        painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.6)));
+        if p.status_flat.is_none() {
+            let dark = p.status_bg.lerp_to_gamma(p.accent, 0.35);
+            painter.add(band(dark.lerp_to_gamma(egui::Color32::WHITE, 0.3), dark, ext));
+            painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.6)));
+        }
         painter.text(egui::pos2((ext.left() + ext.right() - 12.0) / 2.0, ext.center().y), egui::Align2::CENTER_CENTER, "НТЦ Механотроника", font, p.status_text);
         ui.allocate_rect(r, egui::Sense::hover());
         self.status_toast(ui.ctx());
@@ -425,7 +437,7 @@ impl App {
         if self.dlg.param_bar && !previewing {
             egui::TopBottomPanel::top("parambar")
                 .exact_height(75.0)
-                .frame(egui::Frame::none().fill(pal.group_bg))
+                .frame(egui::Frame::none().fill(pal.info_bar.unwrap_or(pal.group_bg)))
                 .show(ctx, |ui| self.param_bar_ui(ui));
         }
 

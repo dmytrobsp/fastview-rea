@@ -6443,6 +6443,37 @@ Residual: MFC's keyboard (arrows, ± and Enter on groups) still not
 modelled; the vertical scroll bar the original shows when the rows
 overflow (ours: egui's); the font metrics (ours 12 px).
 
+### L9.223 — VM runs: the five pre-2007 looks as Windows 11 draws them (W2.2)  ·  ✅
+Read (subagent report, spot-checked at the jump table): «Стиль» ids
+210–214 (`0x475250`, table `0x47537c`) hand MFC's SetDefaultManager the
+classes Windows 2000 (CMFCVisualManager), Office XP, Windows XP (with
+an MFC data flag set first), Office 2003 and VS 2005 (the last two with
+an extra call #13334(0x80, 0)); 215–218 the Office 2007 styles; each
+repaints and writes `ApplicationLook` (class names INFERRED from
+mfc120u's export order). Seen on the VM, every look captured and
+sampled: these managers draw with the system colours — Windows 11's
+BTNFACE 240, BTNSHADOW 160, INFOBK (255, 255, 225), INACTIVECAPTION
+(191, 205, 219), GRADIENTINACTIVECAPTION, HIGHLIGHT-derived blues in
+Office 2003 —; all keep the round application button, drawn flat (a
+41 px circle in the body colour with a 1 px outline, no gloss); the
+parameters strip is INFOBK; the panels' caption strips INACTIVECAPTION;
+the status bar flat BTNFACE (a 215 top line in XP, 2003, VS) with no
+darker last pane; pane captions per look (INACTIVECAPTION flat, BTNFACE,
+an INACTIVECAPTION gradient, Office 2003's blue gradient, VS's 188 grey
+with white text); checked buttons HIGHLIGHT-tinted (210, 230, 245) with a
+(0, 120, 212) frame, Office 2003's orange. Ours used Windows 2000-era
+beiges, a «Файл ▾» text button and the Office 2007 status bar for these
+looks. Now `theme.rs` has the measured values and `Palette::{orb_flat,
+info_bar, pane_cap, status_flat, mdi_tabs}`; `paint_orb` draws the flat
+button; the strip, status bar, pane captions and MDI tab row follow.
+Harness `FV_WINDOW_SKIN`.
+Residual: hot / pressed states, the active pane caption, menus and
+dialogs under these looks, Windows 2000's sunken checked buttons and
+Office 2003's orange gradient (ours flat), the etched panel borders, the
+dock splitter and pane toolbar strip colours — not yet matched; the
+system colours are Windows 11's defaults (a machine with another accent
+colour differs).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

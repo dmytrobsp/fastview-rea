@@ -123,9 +123,10 @@ items (VM ones also in W4.4):
 - [ ] W2.1 L9.12 — the grid / plane splitter's look and cursor (VM).
 - [ ] W2.2 L9.14 — the pre-2007 looks 210–214: read the older visual
   managers in mfc120u, or capture each Стиль on the VM (captured
-  2026-10-24: every look keeps the round application button and the QAT,
-  the header strip pale yellow; colours being surveyed against ours —
-  `FV_WINDOW_SKIN` renders ours per look).
+  2026-10-24: done in L9.223 — Windows 11's system colours, the flat
+  round button, INFOBK strip, flat status bar, captions; residual there:
+  hot / pressed, sunken / gradient checked buttons, panel borders,
+  splitter and toolbar strip).
 - [ ] W2.3 L9.20 — analog paste with no analog channel selected (with
   W2.16); the paste's start date parsed with the target's revision rule
   (`merge_ui.rs`) — re-read; the clipboard XML's `time_multiplier` /
