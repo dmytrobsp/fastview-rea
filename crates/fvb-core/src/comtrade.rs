@@ -422,6 +422,26 @@ pub fn write(osc: &Oscillogram, names: Encoding) -> (Vec<u8>, Vec<u8>) {
 }
 
 /// Parse from in-memory cfg text + dat bytes (used by tests and the `.cff` path).
+/// The tokenizer's integer (`0x477130`): blanks skipped, then decimal
+/// digits into a wrapping 32-bit int, every '-' among them flipping the
+/// sign; any other character ('+' and '.' too) ends the number.
+pub fn read_int(s: &str) -> i32 {
+    let mut v: i32 = 0;
+    let mut neg = false;
+    for c in s.trim_start_matches(['\t', '\n', '\r', ' ']).chars() {
+        match c {
+            '0'..='9' => v = v.wrapping_mul(10).wrapping_add(c as i32 - '0' as i32),
+            '-' => neg = !neg,
+            _ => break,
+        }
+    }
+    if neg {
+        v.wrapping_neg()
+    } else {
+        v
+    }
+}
+
 pub fn parse(cfg_text: &str, dat: &[u8]) -> Result<Oscillogram, ComtradeError> {
     parse_progress(cfg_text, dat, None)
 }
@@ -1442,13 +1462,13 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
     let line_freq = lf.trim().parse::<f64>().unwrap_or(50.0);
 
     // nrates then that many "samp,endsamp"
-    let nrates = next(&mut li)?.trim().parse::<usize>().unwrap_or(1).max(1);
+    let nrates = read_int(next(&mut li)?).max(1) as usize;
     let mut rates = Vec::new();
     for _ in 0..nrates {
         let l = next(&mut li)?;
         let f: Vec<&str> = l.split(',').collect();
         let rate = f.first().and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
-        let end = f.get(1).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+        let end = read_int(f.get(1).copied().unwrap_or("")).max(0) as usize;
         rates.push(RateSection { rate, end_sample: end });
     }
 
@@ -1576,15 +1596,14 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
                 }
                 // columns: sample#, timestamp, A1..Ana, D1..Dnd; the
                 // timestamp read as an integer (`0x477130`).
-                stamps_us.push(crate::clipdata::wtoi(f.get(1).copied().unwrap_or("")) as f64);
+                stamps_us.push(f64::from(read_int(f.get(1).copied().unwrap_or(""))));
                 // value = mult·a·raw + b (`0x451904`).
                 for (ai, ch) in rec.analog.iter_mut().enumerate() {
                     let raw: f64 = f.get(2 + ai).and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
                     ch.samples.push(ch.unit_mult * ch.a * raw + ch.b);
                 }
                 for (di, ch) in rec.digital.iter_mut().enumerate() {
-                    let v: i64 = f.get(2 + na + di).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
-                    ch.samples.push(v != 0);
+                    ch.samples.push(read_int(f.get(2 + na + di).copied().unwrap_or("")) != 0);
                 }
                 rows += 1;
             }

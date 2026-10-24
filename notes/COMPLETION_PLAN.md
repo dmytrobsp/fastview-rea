@@ -167,22 +167,17 @@ items (VM ones also in W4.4):
   icons / geometry / reader gaps (L9.169), a computed channel's colour
   recomputed by place (L9.170), an OSC2 record saved as COMTRADE (L9.172).
 
-- [ ] W2.18 W1.8's open differences (L9.181 / L9.182): «Каналы»'s
-  rename edit (borderless, cell left + 23, the list font); groups by name
-  ignoring case; the ОМП re-run's lookup among every channel ignoring
-  case; the circle / differential zoom gate (both directions, ppu · z′/z,
-  the client less 8 / 16 px — `0x4379e0`, `0x443470`); each chart toggle
-  writes only its own key (`0x437390`, `0x43b930`, `0x442ee0`, `0x4461f0`,
-  `0x492940`; the angle radio modifies even when unchanged); the
-  tokenizer's integer rules for the DAT sample number / timestamp /
-  digital columns and the `.cfg` nrates / endsamp (`0x477130`: wrapping
-  i32, every '-' flips the sign, '+' ends it); `.omp` gaps as defaulted
-  sections / taps (`0x4a38c0`); the ОМП dialog's delete without
-  renumbering and the expanded state travelling with a moved section;
-  the splash (our own picture, 2000 ms, topmost); the frequency «Показать
-  все» on digital channels (INFERRED — read the painter `0x46f5a0`); the
-  merge bar's fixed layout (`0x479db0`, `0x479e80`); the finder's
-  `SortMode`; «Скрыть все» to `doc+0x1d8` (with W2.16).
+- [ ] W2.18 W1.8's open differences (L9.181 / L9.182). Done in L9.183:
+  the zoom gate both ways, per-key chart writes, the tokenizer's integer,
+  `.omp` gaps, «Каналы»'s rename edit. Left: groups by name ignoring
+  case; the ОМП re-run's lookup among every channel ignoring case; the
+  zoom gate's rectangle (the client less 8 / 16 px); the ОМП dialog's
+  delete without renumbering and the expanded state travelling with a
+  moved section; the splash (our own picture, 2000 ms, topmost); the
+  frequency «Показать все» on digital channels (INFERRED — read the
+  painter `0x46f5a0`); the merge bar's fixed layout (`0x479db0`,
+  `0x479e80`); the finder's `SortMode`; «Скрыть все» to `doc+0x1d8`
+  (with W2.16).
 
 ## W3 — Resolve the unknowns
 

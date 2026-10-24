@@ -810,7 +810,13 @@ impl App {
                     self.plane_view(diff).pan(x_axis, delta, limit);
                 }
             }
-            DiagCmd::AngleRef(r) => self.vec_angle_ref = r,
+            // 36000+ (`0x48f8d0`): saved and modified even when unchanged.
+            DiagCmd::AngleRef(r) => {
+                self.vec_angle_ref = r;
+                if let Some(d) = self.active_doc_mut() {
+                    d.set.modified = true;
+                }
+            }
             DiagCmd::ShowValues => self.vec_show_values = !self.vec_show_values,
             DiagCmd::DirectionOnly => self.vec_direction_only = !self.vec_direction_only,
             DiagCmd::FreqSettings => {

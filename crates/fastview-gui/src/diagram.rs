@@ -181,19 +181,18 @@ impl PlaneView {
         true
     }
 
-    /// Zoom ×1.5 (in) or ×⅔ (out) about the origin (`0x43d580`). Zoom-in is
-    /// refused when the characteristics would exceed 400 px
-    /// (`char_max · ppuΩ(z') ≥ 400`, `ppu_at` gives the Ω pixels per unit at
-    /// a zoom); zoom-out is unlimited; at `z ≤ 1` the pans reset to 0.
+    /// Zoom ×1.5 (in) or ×0.666… (out, the double `0x4d1650`) about the
+    /// origin (`0x43d580`), either way only when the gate allows it
+    /// (`0x4379e0`, the differential's `0x443470`): the Ω pixels per unit
+    /// at the current zoom (`ppu_at(z)`), scaled by z′ / z, times the
+    /// larger characteristic extent stays under 400 px — an empty plane has
+    /// no finite scale and refuses both; at `z′ ≤ 1` the pans reset to 0.
     pub fn zoom(&mut self, zoom_in: bool, char_max: f64, ppu_at: impl Fn(f64) -> Option<f64>) -> bool {
-        let z = if zoom_in { self.z * 1.5 } else { self.z / 1.5 };
-        if zoom_in {
-            // An empty plane (no extent) has no finite scale: NaN < 400 fails.
-            let Some(ppu) = ppu_at(z) else { return false };
-            let px = char_max * ppu;
-            if px.is_nan() || px >= ZOOM_IN_LIMIT_PX {
-                return false;
-            }
+        let z = self.z * if zoom_in { 1.5 } else { 0.6666666666666666 };
+        let Some(ppu) = ppu_at(self.z) else { return false };
+        let px = ppu * z / self.z * char_max;
+        if px.is_nan() || px >= ZOOM_IN_LIMIT_PX {
+            return false;
         }
         self.z = z;
         if z <= 1.0 {
@@ -737,14 +736,18 @@ mod tests {
     #[test]
     fn zoom_limits_and_pan_reset() {
         let mut v = PlaneView { ox: 4, oy: -2, ..Default::default() };
-        // 10 Ω of characteristics at 30 px/Ω = 300 px < 400: accepted.
-        assert!(v.zoom(true, 10.0, |_| Some(30.0)));
+        let ppu = |z: f64| Some(20.0 * z);
+        // 10 Ω at 20 px/Ω × 1.5 = 300 px < 400: accepted.
+        assert!(v.zoom(true, 10.0, ppu));
         assert_eq!(v.z, 1.5);
-        // 10 Ω at 45 px/Ω = 450 px: refused.
-        assert!(!v.zoom(true, 10.0, |_| Some(45.0)));
-        assert!(!v.zoom(true, 0.0, |_| None), "no finite scale: refused");
-        assert!(v.zoom(false, 10.0, |_| None));
-        assert_eq!((v.z, v.ox, v.oy), (1.0, 0, 0), "z ≤ 1 resets the pans");
+        // 30 px/Ω × 1.5 × 10 Ω = 450 px: refused.
+        assert!(!v.zoom(true, 10.0, ppu));
+        // The gate holds both ways: no finite scale refuses a zoom-out too.
+        assert!(!v.zoom(false, 0.0, |_| None), "no finite scale: refused");
+        assert!(!v.zoom(false, 30.0, ppu), "30 px/Ω × ⅔ × 30 Ω = 600 px: refused");
+        assert!(v.zoom(false, 10.0, ppu));
+        assert_eq!(v.z, 1.0, "1.5 × 0.666… rounds to 1");
+        assert_eq!((v.ox, v.oy), (0, 0), "z ≤ 1 resets the pans");
     }
 
     #[test]

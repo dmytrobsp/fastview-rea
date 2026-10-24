@@ -250,3 +250,17 @@ fn binary32_applies_the_unit_multiplier() {
     let m = b32.analog[0].unit_mult;
     assert_eq!(b32.analog[0].samples, vec![m * 2.0 * 10.0 + 0.5, m * 2.0 * 20.0 + 0.5]);
 }
+
+/// The tokenizer's integer (`0x477130`), used for the DAT timestamps and
+/// digital columns and the `.cfg` rates: a wrapping i32, every '-' flips
+/// the sign, '+' or '.' ends it.
+#[test]
+fn the_tokenizer_integer() {
+    use comtrade::read_int;
+    assert_eq!(read_int(" 123"), 123);
+    assert_eq!(read_int("12-3"), -123);
+    assert_eq!(read_int("--5"), 5);
+    assert_eq!(read_int("+7"), 0);
+    assert_eq!(read_int("1.0"), 1);
+    assert_eq!(read_int("2147483648"), i32::MIN);
+}

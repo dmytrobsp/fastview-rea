@@ -800,13 +800,13 @@ impl App {
                 if now != old {
                     let t = &mut self.docs[ai].set.tree;
                     if now.circle != old.circle {
-                        recset::write_plane_chart(t.section_mut("Circle Chart"), &now.circle);
+                        recset::write_plane_chart(t.section_mut("Circle Chart"), &old.circle, &now.circle);
                     }
                     if now.diff != old.diff {
-                        recset::write_plane_chart(t.section_mut("Diff Chart"), &now.diff);
+                        recset::write_plane_chart(t.section_mut("Diff Chart"), &old.diff, &now.diff);
                     }
                     if now.vector != old.vector {
-                        recset::write_vector_chart(t.section_mut("Vector Chart"), &now.vector);
+                        recset::write_vector_chart(t.section_mut("Vector Chart"), &old.vector, &now.vector);
                     }
                     if now.freq != old.freq {
                         recset::write_frequency_chart(t.section_mut("Frequency Chart"), &now.freq);

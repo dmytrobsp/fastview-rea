@@ -327,9 +327,12 @@ fn read_station(n: &Node) -> StationParams {
         uc: g("Uc"),
         sections: Vec::new(),
     };
-    // Section{k} for k = 1 ..= the number of children (`0x4a3d0f`).
+    // Section{k} for k = 1 ..= the number of children (`0x4a3d0f`); a
+    // missing one reads as an empty element — a section of "" values, and
+    // a missing child{j} a tap of "0" / "0" / "" (`0x4a38c0`).
+    let empty = Node::new("");
     for k in 1..=n.children.len() {
-        let Some(e) = n.child(&format!("Section{k}")) else { continue };
+        let e = n.child(&format!("Section{k}")).unwrap_or(&empty);
         let g = |a: &str| e.get(a, "");
         let mut s = SectionParams {
             length: g("lenght"),
@@ -345,7 +348,7 @@ fn read_station(n: &Node) -> StationParams {
             taps: Vec::new(),
         };
         for j in 1..=e.children.len() {
-            let Some(c) = e.child(&format!("child{j}")) else { continue };
+            let c = e.child(&format!("child{j}")).unwrap_or(&empty);
             if c.get("type", "") == "parLine" {
                 s.lines.push(ParLineParams {
                     rm: c.get("rm", "0"),
@@ -663,5 +666,21 @@ mod tests {
         assert!(report(&p, &none, &info, |_| None).contains("Момент запуска: \n\nКЗ отсутствует.\n\nПодстанция: "));
         let far = OmpResult { distance: 5.0, ..r };
         assert!(report(&p, &far, &info, |_| None).contains("фазы A на смежной линии.Подстанция: "));
+    }
+
+    /// `0x4a38c0`: Section{k} up to the child count, a missing one read as
+    /// a section of "" values; a missing child{j} as a tap of "0" / "0".
+    #[test]
+    fn gaps_read_as_defaulted_elements() {
+        let xml = r#"<omp ver="2" type="1"><Station1 In="5"><Section2 r1="1"><child2 type="parLine" rm="2"/><x/></Section2><y/></Station1></omp>"#;
+        let p = OmpParams::from_node(&Node::parse(xml).unwrap()).unwrap();
+        let st = &p.stations[0];
+        assert_eq!(st.sections.len(), 2);
+        assert_eq!((st.sections[0].r1.as_str(), st.sections[0].length.as_str()), ("", ""));
+        let s2 = &st.sections[1];
+        assert_eq!(s2.r1, "1");
+        assert_eq!(s2.taps.len(), 1, "child1 missing: a tap");
+        assert_eq!((s2.taps[0].r0.as_str(), s2.taps[0].x0.as_str()), ("0", "0"));
+        assert_eq!(s2.lines[0].rm, "2");
     }
 }

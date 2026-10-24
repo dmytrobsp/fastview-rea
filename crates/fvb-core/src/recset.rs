@@ -542,11 +542,19 @@ pub fn read_plane_chart(sec: Option<&SetNode>, diff: bool) -> PlaneChart {
 }
 
 /// The toggles' setters (`0x436f10` / `0x437390` / `0x43b930` and the
-/// differential's `0x442cc0` / `0x442ee0` / `0x4461f0`).
-pub fn write_plane_chart(sec: &mut SetNode, c: &PlaneChart) {
-    sec.set_bool("SightsOnly", c.sights_only);
-    sec.set_bool("ShowOffCharacteristics", c.show_off);
-    sec.set_int("ViewChannelType", c.view_type);
+/// differential's `0x442cc0` / `0x442ee0` / `0x4461f0`): each writes only
+/// its own key, so after a block save has emptied the section (L9.162) the
+/// untouched ones stay absent.
+pub fn write_plane_chart(sec: &mut SetNode, old: &PlaneChart, c: &PlaneChart) {
+    if c.sights_only != old.sights_only {
+        sec.set_bool("SightsOnly", c.sights_only);
+    }
+    if c.show_off != old.show_off {
+        sec.set_bool("ShowOffCharacteristics", c.show_off);
+    }
+    if c.view_type != old.view_type {
+        sec.set_int("ViewChannelType", c.view_type);
+    }
 }
 
 /// One characteristic's saved state: name, visible, (parameter, value text).
@@ -600,12 +608,20 @@ pub fn read_vector_chart(sec: Option<&SetNode>) -> VectorChart {
     }
 }
 
-/// `0x48faa0` / `0x48fb40` / `0x48fbe0` / `0x492940`.
-pub fn write_vector_chart(sec: &mut SetNode, c: &VectorChart) {
-    sec.set_bool("AngleInRadians", c.angle_in_radians);
-    sec.set_bool("OnlyDirection", c.only_direction);
-    sec.set_bool("ShowAnglesValue", c.show_angles_value);
-    sec.set_str("AngleChannelName", &c.angle_channel);
+/// `0x48faa0` / `0x48fb40` / `0x48fbe0` / `0x492940`: each its own key.
+pub fn write_vector_chart(sec: &mut SetNode, old: &VectorChart, c: &VectorChart) {
+    if c.angle_in_radians != old.angle_in_radians {
+        sec.set_bool("AngleInRadians", c.angle_in_radians);
+    }
+    if c.only_direction != old.only_direction {
+        sec.set_bool("OnlyDirection", c.only_direction);
+    }
+    if c.show_angles_value != old.show_angles_value {
+        sec.set_bool("ShowAnglesValue", c.show_angles_value);
+    }
+    if c.angle_channel != old.angle_channel {
+        sec.set_str("AngleChannelName", &c.angle_channel);
+    }
 }
 
 /// `Frequency Chart` (`0x46f4a0` reader, `0x46ee70` writer).

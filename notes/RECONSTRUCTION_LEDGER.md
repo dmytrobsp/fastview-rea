@@ -5518,11 +5518,36 @@ turns the readout on, those OKs mark modified, `SetNode::merge_xml`.
 Tests `binary32_applies_the_unit_multiplier`, `same_named_categories_merge`,
 `hdr_comment_only_for_cfg_and_cff`. Residual — filed as plan W2.18.
 
+### L9.183 — W2.18 (part): the zoom gate both ways, per-key chart writes, the tokenizer's integer, `.omp` gaps, «Каналы»'s rename edit  ·  ✅
+Read by hand on W1.8's leads: the zoom routine `0x43d580` multiplies z by
+1.5 or by the double 0.6666666666666666 (`0x4d16a0` / `0x4d1650`) and asks
+the gate `0x4379e0` either way; the gate takes the Ω pixels per unit at
+the current zoom (`0x438b50`), times z′ / z, times the larger extent, under
+400.0 (`0x4d1768`) — an empty plane refuses both. The tokenizer's integer
+`0x477130`: digits accumulate as 10·v + d in 32 bits, a '-' among them
+toggles the sign, anything else stops it. From the reports (L9.182): each
+chart toggle writes only its own key; `.omp` gaps read as empty elements
+(`0x4a38c0`); «Каналы»'s rename edit `0x435ac0`; the vector's angle radio
+modifies even unchanged (`0x48f8d0`).
+Ours refused only zoom-in (on the scale recomputed at z′) and divided by
+1.5; rewrote all of a chart section's keys on any toggle; read the DAT
+timestamps as i64 with '+' and the digital columns as strict integers
+("1.0" → 0); skipped missing sections / taps; put a framed edit over the
+whole cell. Now `PlaneView::zoom` gates both ways as read,
+`write_plane_chart` / `write_vector_chart` write the changed fields,
+`comtrade::read_int` (DAT timestamps and digital columns, `.cfg` nrates /
+endsamp), `read_station` reads gaps as empty elements, the rename edit is
+borderless from 23 px in. The Save As of WIN_1999 / DOC_1999 / BINARY is
+still byte-identical to the original's. Tests `zoom_limits_and_pan_reset`,
+`the_tokenizer_integer`, `gaps_read_as_defaulted_elements`.
+Residual: the gate's rectangle (the client less 8 / 16 px) vs ours (the
+last paint's plane); a negative endsamp clamps to 0 in ours.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.182)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.183)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5570,7 +5595,8 @@ document tabs inside the MDI area, the status bar's panes; L9.180
 aliased waveforms, 1 px lines on whole pixels; L9.181 W1.8 B1 / B6 / B7
 (a missing `)`, the boxes' order, the digital fill, the ОМП flags on top);
 L9.182 W1.8 B2 / B4 / B5 / B8 / B9 (binary32 units, 32805 edits
-`Comments/UserData`, scrolling, merged settings categories).
+`Comments/UserData`, scrolling, merged settings categories); L9.183
+W2.18 part (zoom gate, per-key chart writes, the tokenizer's integer).
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

@@ -646,7 +646,12 @@ impl App {
                             if c == 0 {
                                 if let Some((k, text)) = st.rename.as_mut().filter(|(k, _)| *k == key) {
                                     let k = *k;
-                                    let te = ui.put(r.shrink(1.0), egui::TextEdit::singleline(text).id(egui::Id::new(("fv_ch_rename", k))).desired_width(r.width() - 4.0));
+                                    // A borderless edit over the cell from 23 px in, 1 px
+                                    // inside top and bottom, to column 0's right edge
+                                    // (`0x435ac0`).
+                                    let er = Rect::from_min_max(r.min + Vec2::new(23.0, 1.0), Pos2::new(r.right(), r.bottom() - 1.0));
+                                    ui.painter().rect_filled(er, 0.0, Color32::WHITE);
+                                    let te = ui.put(er, egui::TextEdit::singleline(text).id(egui::Id::new(("fv_ch_rename", k))).frame(false).margin(egui::Margin::symmetric(1.0, 0.0)).desired_width(er.width() - 2.0));
                                     te.request_focus();
                                     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                                         st.rename = None;
