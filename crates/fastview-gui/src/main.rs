@@ -482,10 +482,10 @@ impl App {
                 self.ribbon_ui(ui);
                 // Caption bars docked under the ribbon: the ОМП result.
                 self.omp_banner(ui);
-                // The ribbon's bottom line (VM, Office 2007 Blue).
-                if pal.body.is_some() {
+                // The ribbon's bottom row (VM, per Office 2007 style).
+                if let Some(b) = pal.bands {
                     let r = ui.max_rect();
-                    ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(157, 179, 209)));
+                    ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0f32, b.under_ribbon[0]));
                 }
             });
         // The frame's client area shows the splitter brush between its bars
@@ -495,9 +495,9 @@ impl App {
         let strip = self.skin.splitter();
         egui::TopBottomPanel::top("fv_under_ribbon").exact_height(6.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |ui| {
             let r = ui.max_rect();
-            if pal.body.is_some() {
-                ui.painter().px_hline(r.x_range(), r.top(), egui::Stroke::new(1.0f32, egui::Color32::from_rgb(174, 199, 232)));
-                ui.painter().px_hline(r.x_range(), r.top() + 1.0, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(185, 212, 247)));
+            if let Some(b) = pal.bands {
+                ui.painter().px_hline(r.x_range(), r.top(), egui::Stroke::new(1.0f32, b.under_ribbon[1]));
+                ui.painter().px_hline(r.x_range(), r.top() + 1.0, egui::Stroke::new(1.0f32, b.under_ribbon[2]));
             }
         });
         // 142: the parameters bar, 67 px — in the Office 2007 looks a
@@ -509,10 +509,10 @@ impl App {
                 .show_separator_line(false)
                 .frame(egui::Frame::none().fill(pal.info_bar.unwrap_or(pal.group_bg)))
                 .show(ctx, |ui| {
-                    if pal.info_bar.is_none() && pal.body.is_some() {
+                    if let (None, Some(b)) = (pal.info_bar, pal.bands) {
                         let r = ui.max_rect();
-                        crate::lanes::gradient(ui.painter(), egui::Rect::from_min_max(egui::pos2(r.left(), r.top() + 1.0), egui::pos2(r.right(), r.bottom() - 1.0)), egui::Color32::WHITE, egui::Color32::from_rgb(213, 228, 242));
-                        let edge = egui::Stroke::new(1.0f32, egui::Color32::from_rgb(157, 189, 216));
+                        crate::lanes::gradient(ui.painter(), egui::Rect::from_min_max(egui::pos2(r.left(), r.top() + 1.0), egui::pos2(r.right(), r.bottom() - 1.0)), egui::Color32::WHITE, b.bar_bottom);
+                        let edge = egui::Stroke::new(1.0f32, b.bar_line);
                         ui.painter().px_hline(r.x_range(), r.top(), edge);
                         ui.painter().px_hline(r.x_range(), r.bottom() - 1.0, edge);
                     }

@@ -756,8 +756,8 @@ impl App {
                         mesh.add_triangle(0, 2, 3);
                         ui.painter().add(egui::Shape::mesh(mesh));
                         // The row's bottom line (VM, Blue: (185, 208, 237)).
-                        if self.skin == crate::theme::Skin::Blue {
-                            ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(185, 208, 237)));
+                        if let Some(bands) = pal.bands {
+                            ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0f32, bands.mdi_border));
                         }
                         self.doc_tabs(ui);
                     });
@@ -813,9 +813,9 @@ impl App {
                 // The document area's 1 px border, inside (VM, Office 2007
                 // Blue: (185, 208, 237); the other looks keep the band's
                 // shade, not measured).
-                if self.skin == crate::theme::Skin::Blue {
+                if let Some(bands) = pal.bands {
                     let r = ui.max_rect().expand(1.0);
-                    let b = egui::Stroke::new(1.0f32, egui::Color32::from_rgb(185, 208, 237));
+                    let b = egui::Stroke::new(1.0f32, bands.mdi_border);
                     let p = ui.painter();
                     p.px_hline(r.left()..=r.right() - 1.0, r.top(), b);
                     p.px_hline(r.left()..=r.right() - 1.0, r.bottom() - 1.0, b);

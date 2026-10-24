@@ -6729,6 +6729,21 @@ original's (frame row 466 against 464) — the client rect's vertical
 inset not pinned down from pixels (L9.200's "top + 5" against the
 window's top border at 441).
 
+### L9.237 — The frame's bands per Office 2007 style  ·  ✅
+Sampled on the VM's Black, Silver and Aqua captures (L9.223's runs)
+beside Blue's: the three rows under the ribbon, the parameters bar's
+lines and gradient bottom, and the document area's border differ per
+style — Blue (157, 179, 209) / (174, 199, 232) / (185, 212, 247), bar
+lines (157, 189, 216), gradient to (213, 228, 242), border (185, 208,
+237); Black (61, 61, 61) / (66, 66, 66) / (77, 77, 77), (129, 129, 129),
+(235, 235, 235), (172, 172, 172); Silver (152, 155, 161) / (166, 169,
+176) / (194, 198, 206), (124, 124, 124), (233, 238, 247), (172, 175,
+183); Aqua (195, 202, 217) / (137, 152, 163) / (237, 239, 243), (106,
+112, 128), (206, 212, 225), (177, 187, 198) — the strips in each style's
+splitter brush. Ours used Blue's for Black and Silver and none for Aqua.
+Now `Palette::bands` carries them; the four styles' rows 143–221 match
+the captures.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

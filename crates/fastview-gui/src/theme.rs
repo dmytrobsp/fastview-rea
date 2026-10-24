@@ -83,6 +83,7 @@ impl Skin {
                 pane_cap: Some([Color32::from_rgb(191, 205, 219), Color32::from_rgb(191, 205, 219), Color32::from_rgb(0, 0, 0)]),
                 status_flat: Some(None),
                 mdi_tabs: Some([Color32::from_gray(240); 2]),
+                bands: None,
             },
             // Office XP: the checked buttons HIGHLIGHT-tinted, captions BTNFACE.
             Skin::OfficeXp => Palette {
@@ -110,6 +111,7 @@ impl Skin {
                 pane_cap: Some([Color32::from_rgb(240, 240, 240), Color32::from_rgb(240, 240, 240), Color32::from_rgb(0, 0, 0)]),
                 status_flat: Some(None),
                 mdi_tabs: Some([Color32::from_gray(247); 2]),
+                bands: None,
             },
             // Windows XP: a white tab row, captions INACTIVECAPTION → GRADIENTINACTIVECAPTION.
             Skin::WinXp => Palette {
@@ -137,6 +139,7 @@ impl Skin {
                 pane_cap: Some([Color32::from_rgb(191, 205, 219), Color32::from_rgb(213, 226, 240), Color32::from_rgb(0, 0, 0)]),
                 status_flat: Some(Some(Color32::from_rgb(215, 215, 215))),
                 mdi_tabs: Some([Color32::from_gray(247); 2]),
+                bands: None,
             },
             // Office 2003: HIGHLIGHT-derived blues, the checked buttons orange.
             Skin::Office2003 => Palette {
@@ -164,6 +167,7 @@ impl Skin {
                 pane_cap: Some([Color32::from_rgb(208, 234, 254), Color32::from_rgb(118, 186, 236), Color32::from_rgb(0, 0, 0)]),
                 status_flat: Some(Some(Color32::from_rgb(215, 215, 215))),
                 mdi_tabs: Some([Color32::from_rgb(120, 187, 237), Color32::from_rgb(205, 232, 254)]),
+                bands: None,
             },
             // Visual Studio .NET 2005: grey captions with white text.
             Skin::Vs2005 => Palette {
@@ -191,6 +195,7 @@ impl Skin {
                 pane_cap: Some([Color32::from_rgb(188, 188, 188), Color32::from_rgb(188, 188, 188), Color32::from_rgb(255, 255, 255)]),
                 status_flat: Some(Some(Color32::from_rgb(215, 215, 215))),
                 mdi_tabs: Some([Color32::from_gray(240); 2]),
+                bands: None,
             },
             Skin::Blue => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -220,6 +225,7 @@ impl Skin {
                 pane_cap: None,
                 status_flat: None,
                 mdi_tabs: None,
+                bands: Some(Bands { under_ribbon: [Color32::from_rgb(157, 179, 209), Color32::from_rgb(174, 199, 232), Color32::from_rgb(185, 212, 247)], bar_line: Color32::from_rgb(157, 189, 216), bar_bottom: Color32::from_rgb(213, 228, 242), mdi_border: Color32::from_rgb(185, 208, 237) }),
             },
                         Skin::Black => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -249,6 +255,7 @@ impl Skin {
                 pane_cap: None,
                 status_flat: None,
                 mdi_tabs: None,
+                bands: Some(Bands { under_ribbon: [Color32::from_rgb(61, 61, 61), Color32::from_rgb(66, 66, 66), Color32::from_rgb(77, 77, 77)], bar_line: Color32::from_rgb(129, 129, 129), bar_bottom: Color32::from_rgb(235, 235, 235), mdi_border: Color32::from_rgb(172, 172, 172) }),
             },
                         Skin::Silver => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -278,6 +285,7 @@ impl Skin {
                 pane_cap: None,
                 status_flat: None,
                 mdi_tabs: None,
+                bands: Some(Bands { under_ribbon: [Color32::from_rgb(152, 155, 161), Color32::from_rgb(166, 169, 176), Color32::from_rgb(194, 198, 206)], bar_line: Color32::from_rgb(124, 124, 124), bar_bottom: Color32::from_rgb(233, 238, 247), mdi_border: Color32::from_rgb(172, 175, 183) }),
             },
                         Skin::Aqua => Palette {
                 // The Office 2007 style data (L9.117): BARS/DEFAULT for the
@@ -307,6 +315,7 @@ impl Skin {
                 pane_cap: None,
                 status_flat: None,
                 mdi_tabs: None,
+                bands: Some(Bands { under_ribbon: [Color32::from_rgb(195, 202, 217), Color32::from_rgb(137, 152, 163), Color32::from_rgb(237, 239, 243)], bar_line: Color32::from_rgb(106, 112, 128), bar_bottom: Color32::from_rgb(206, 212, 225), mdi_border: Color32::from_rgb(177, 187, 198) }),
             },
         }
     }
@@ -359,6 +368,18 @@ pub struct Palette {
     pub status_flat: Option<Option<Color32>>,
     /// The MDI tab row's fill, top and bottom, in the older looks (VM).
     pub mdi_tabs: Option<[Color32; 2]>,
+    /// The Office 2007 frame's bands (VM): the three rows under the ribbon
+    /// (its bottom line, two shades), the parameters bar's lines and its
+    /// gradient's bottom (from white), the document area's border.
+    pub bands: Option<Bands>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Bands {
+    pub under_ribbon: [Color32; 3],
+    pub bar_line: Color32,
+    pub bar_bottom: Color32,
+    pub mdi_border: Color32,
 }
 
 impl Palette {
