@@ -1065,7 +1065,12 @@ impl App {
                 painter.px_segment([Pos2::new(x, frame.top()), Pos2::new(x, frame.bottom())], gs);
             }
         }
-        painter.px_rect_stroke(frame, 0.0, fs);
+        // The frame as four aligned 1 px lines (a stroked rect straddles
+        // its outline and blurs over two pixels; VM: one crisp row).
+        painter.px_hline(frame.left()..=frame.right(), frame.top(), fs);
+        painter.px_hline(frame.left()..=frame.right(), frame.bottom(), fs);
+        painter.px_vline(frame.left(), frame.top()..=frame.bottom(), fs);
+        painter.px_vline(frame.right(), frame.top()..=frame.bottom(), fs);
         if (rect.left()..=rect.right()).contains(&origin.x) {
             painter.px_segment([Pos2::new(origin.x, frame.top()), Pos2::new(origin.x, frame.bottom())], axs);
         }

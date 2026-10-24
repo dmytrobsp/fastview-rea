@@ -6719,6 +6719,15 @@ frames its panes under the caption with a (185, 208, 237) line and 2 px
 of (213, 228, 242). Ours drew no window borders and no group frame.
 Now `window_border` draws them and `pane_body` frames a tabbed group's
 `pane_window`; every column and row checked lands on the VM's.
+Then the planes: drawn inside their window (one column in at the left,
+the white column and border off at the right, a row off at the bottom)
+the differential plane's grid now falls on the VM's columns (axis 1565,
+lines every 19 px from 1584) and its frame is four aligned lines (a
+stroked rect blurred over two pixels; the VM's is one crisp (200, 200,
+200) row). Residual: the plane's centre is 2 px lower than the
+original's (frame row 466 against 464) — the client rect's vertical
+inset not pinned down from pixels (L9.200's "top + 5" against the
+window's top border at 441).
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

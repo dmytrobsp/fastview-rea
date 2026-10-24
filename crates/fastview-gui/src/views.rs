@@ -341,12 +341,13 @@ impl App {
         match p {
             Pane::Vector => {
                 self.pane_toolbar(ui, Window::Vector);
-                egui::CentralPanel::default().frame(egui::Frame::none().inner_margin(egui::Margin::same(1.0))).show_inside(ui, |ui| {
+                egui::CentralPanel::default().frame(egui::Frame::none().inner_margin(egui::Margin { left: 1.0, right: 2.0, top: 1.0, bottom: 1.0 })).show_inside(ui, |ui| {
                     self.pane_canvas.push((Pane::Vector, ui.available_rect_before_wrap()));
                     self.vector_ui(ui);
                     self.pane_drop(ui, Pane::Vector);
                     // A white column before the toolbar, as the plane's.
-                    let w = ui.max_rect().expand(1.0);
+                    let m = ui.max_rect();
+                    let w = egui::Rect::from_min_max(m.min - egui::vec2(1.0, 1.0), m.max + egui::vec2(2.0, 1.0));
                     ui.painter().px_vline(w.right() - 1.0, w.y_range(), egui::Stroke::new(1.0f32, egui::Color32::WHITE));
                     window_border(ui, w.with_max_x(w.right() - 1.0), [true; 4]);
                 });
@@ -861,15 +862,18 @@ impl App {
             let (strip, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 6.0), egui::Sense::hover());
             ui.painter().rect_filled(strip, 0.0, strip_col);
             ui.painter().px_hline(strip.x_range(), strip.top(), egui::Stroke::new(1.0f32, egui::Color32::from_gray(100)));
-            let plane = ui.available_rect_before_wrap();
-            self.pane_canvas.push((pane, plane));
-            self.plane_ui(ui);
-            // The plane window's border at its sides and bottom (its top is
-            // the line above the strip).
-            // The last column is white before the toolbar (VM).
-            let plane = plane.with_max_x(plane.right() - 1.0);
-            ui.painter().px_vline(plane.right(), plane.y_range(), egui::Stroke::new(1.0f32, egui::Color32::WHITE));
-            window_border(ui, plane, [false, true, true, true]);
+            // The plane window: its border at the sides and bottom (its top
+            // is the line above the strip), a white column before the
+            // toolbar (VM); the plane drawn in its client area.
+            let outer = ui.available_rect_before_wrap();
+            let client = egui::Rect::from_min_max(egui::pos2(outer.left() + 1.0, outer.top()), egui::pos2(outer.right() - 2.0, outer.bottom() - 1.0));
+            self.pane_canvas.push((pane, client));
+            let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(client).layout(*ui.layout()));
+            self.plane_ui(&mut inner);
+            ui.advance_cursor_after_rect(outer);
+            let border = outer.with_max_x(outer.right() - 1.0);
+            ui.painter().px_vline(border.right(), border.y_range(), egui::Stroke::new(1.0f32, egui::Color32::WHITE));
+            window_border(ui, border, [false, true, true, true]);
         });
     }
 
