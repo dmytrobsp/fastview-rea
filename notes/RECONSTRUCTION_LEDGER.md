@@ -7548,6 +7548,31 @@ More W4.3 scenarios on both programs:
   rows. The VM's original shows MFC's English strings (its Windows
   language, L9.231).
 
+### L9.274 — Side by side: «Каналы», «Коэффициенты», «Быстрый анализ»; the ribbon's text sizes  ·  ✅
+More W4.3 scenarios on both programs:
+- **«Каналы»** («Отображение каналов»): the same place, size and rows,
+  and every check box in the same state. The analog channels are on the
+  oscillogram, free for the frequency and vector diagrams, greyed for the
+  circle and differential ones; the digital channel is on the oscillogram
+  and greyed elsewhere.
+- **«Коэффициенты»** («Коэффициенты трансформации»): the same rows and
+  values (2000 / 1, 7500 / 1).
+- **«Быстрый анализ»:** the sheet in the same place, on its formula page,
+  with an empty list.
+Measured on the way: the original's ribbon text is the 9 pt UI font
+(Segoe UI 12 px). It falls between Tahoma's 11 and 12 for these words,
+and egui only takes whole-pixel ems.
+- At 11 (ours, 10.5 rounding up) the groups come out 10–20 px narrow
+  («Диаграммы» 232 px against 242); at 12 they come out 20 px wide. The
+  button labels stay at 11, the closer fit. Our buttons sit up to 40 px
+  left of the original's at the ribbon's right end (a click on the
+  original's «Быстрый анализ» misses ours).
+- The window title and the application menu's items (13 before) are now
+  12.
+Residual:
+- The ribbon's groups 10–20 px narrower than the original's (Segoe UI's
+  widths, W6).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

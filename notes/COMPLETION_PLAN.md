@@ -297,7 +297,8 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 - [ ] W4.3 Scenario checklist (each: the original's result recorded, ours
   compared — both on the VM since L9.271; done: the ribbon's states with
   and without a document, the application menu, the lane menu, L9.272;
-  the plot's right-click, the ОМП tab, the pane caption menu, L9.273):
+  the plot's right-click, the ОМП tab, the pane caption menu, L9.273;
+  «Каналы», «Коэффициенты», «Быстрый анализ», L9.274):
   start-up window and panes; opening each sample record;
   every ribbon command and its enable state with and without a document;
   every dialog (fields, defaults, Enter / Esc, refusals); context menus

@@ -242,7 +242,8 @@ impl App {
                     } else if hit.drag_started() {
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
                     }
-                    let font = egui::FontId::proportional(13.0);
+                    // Windows 11's caption font, Segoe UI 9 pt (12 px).
+                    let font = egui::FontId::proportional(12.0);
                     let g = ui.painter().layout_no_wrap(self.window_title.clone(), font, Color32::BLACK);
                     let w = g.size().x.min(free.width());
                     // The style's TextCenter: off for Aqua (left-aligned).
@@ -1100,6 +1101,9 @@ fn big_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &s
 }
 
 fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str, selected: bool) -> egui::Response {
+    // The 9 pt UI font is Segoe UI's 12 px, between Tahoma's 11 and 12 for
+    // these words; 11 (10.5 rounds up) lays the groups out closest (VM:
+    // «Диаграммы» 232 px against 242; 12 gives 262).
     let font = egui::FontId::proportional(10.5);
     let measure = |t: &str| ui.fonts(|f| f.layout_no_wrap(t.to_owned(), font.clone(), p.text).size().x);
     let (lines, text_w) = bottom_text(label, 0.0, measure);
@@ -1182,7 +1186,7 @@ fn main_entry(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Option<Icon>, l
         let img = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.center().y - 16.0), egui::vec2(32.0, 32.0));
         crate::icons::paint(ui.painter(), img.shrink(4.0), icon, if enabled { p.text } else { disabled_ink(p) });
     }
-    let font = egui::FontId::proportional(13.0);
+    let font = egui::FontId::proportional(12.0);
     let room = rect.right() - rect.left() - 38.0 - 4.0;
     let galley = ui.fonts(|f| {
         let mut job = egui::text::LayoutJob::simple_singleline(label.to_owned(), font.clone(), ink);
@@ -1200,8 +1204,8 @@ fn sub_entry(ui: &mut egui::Ui, label: &str, desc: &str, enabled: bool) -> egui:
         ui.painter().rect_filled(rect, 2.0f32, v.widgets.hovered.weak_bg_fill);
     }
     let (strong, weak) = if enabled { (v.strong_text_color(), v.text_color()) } else { (v.weak_text_color(), v.weak_text_color()) };
-    ui.painter().text(rect.left_top() + egui::vec2(6.0, 3.0), egui::Align2::LEFT_TOP, label, egui::FontId::proportional(13.0), strong);
-    ui.painter().text(rect.left_top() + egui::vec2(6.0, 20.0), egui::Align2::LEFT_TOP, desc, egui::FontId::proportional(11.0), weak);
+    ui.painter().text(rect.left_top() + egui::vec2(6.0, 3.0), egui::Align2::LEFT_TOP, label, egui::FontId::proportional(12.0), strong);
+    ui.painter().text(rect.left_top() + egui::vec2(6.0, 20.0), egui::Align2::LEFT_TOP, desc, egui::FontId::proportional(12.0), weak);
     resp
 }
 
