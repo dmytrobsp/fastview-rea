@@ -1096,6 +1096,10 @@ mod tests {
         app.docs[di].omp.params = p;
         app.dispatch(crate::app::Command::OmpAnalysis);
         eprintln!("ОМП: {:?}", app.omp_ui.bar);
+        // `FV_OMP_REPORT=<file.txt>`: the bar's «Сохранить...» bytes.
+        if let (Ok(out), Some(text)) = (std::env::var("FV_OMP_REPORT"), app.omp_report()) {
+            std::fs::write(out, fvb_core::omp_params::utf16le_crlf(&text)).expect("report written");
+        }
         app.save_doc_to(di, Path::new(parts[2])).expect("saved");
     }
 

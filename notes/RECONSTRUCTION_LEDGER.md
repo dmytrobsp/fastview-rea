@@ -6370,6 +6370,16 @@ the tooltip ink at half alpha, `keytips::Target::Tab` with «Г» (never
 typed: A–Z give Latin letters, L9.90), and the arrow has its tooltip.
 Closes W2.13.
 
+### L9.219 — VM run: the ОМП report saved, byte for byte; «Осциллограмма:» is the path (W2.8)  ·  ✅
+Run on the VM after L9.217's Inom 1 run: the result bar's «Сохранить...»
+to a `.txt`. The file (UTF-16 LE with BOM, CR LF, 30 lines) equals ours
+byte for byte except the record's path itself: «Осциллограмма:» holds the
+record's full path as opened (C:\Users\…\WIN_1999.cfg there, ours the
+host's), not its title. Everything else — the algorithm line, station,
+stamps, the result text running into «Подстанция:» with no line break,
+Inom, the channels with «Ктр = 2000/1» padded, the section block — is as
+ours. Test hook `omp_dump` with `FV_OMP_REPORT=<file>`. Closes W2.8.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

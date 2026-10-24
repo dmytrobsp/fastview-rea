@@ -138,7 +138,8 @@ items (VM ones also in W4.4):
 - [ ] W2.7 L9.37 — the preview buttons' sizes (static: done, L9.202 — the
   page buttons small); the preview's keytips (P, QI, QO, 1, X, V, C; panels
   ZP, ZZ, ZV — `0x100fccec`); QAT / app button / MDI tabs during preview (VM).
-- [ ] W2.8 L9.41 — the report's «Осциллограмма:» line: path or title (VM).
+- [x] W2.8 L9.41 — the report's «Осциллограмма:» line: the full path; the
+  whole report byte-identical (L9.219).
 - [ ] W2.9 L9.64 — «Окна...»: Каскадом / Горизонтально / Вертикально /
   Свернуть under MDI tabs (VM), OK's slot, LBS_SORT collation, the size from
   the 316 × 169 DLU template.
