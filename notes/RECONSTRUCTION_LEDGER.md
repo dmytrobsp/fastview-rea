@@ -864,7 +864,8 @@ Read (spec §7.5 and the scope-F finder sub-report: `0x46b9c0` scan thread,
 first, swapped when month > 12, +2000 below 100; `0x46c730` OSC «OSC
 Осциллограф. Версия %i.%i» with the time from header bytes 6..11; `0x46cb20`
 live filters, station/block exact or «Все», `С ≤ t ≤ По + 1 day`; sorting,
-«Время» by time of day, every scan forces Дата ascending; `0x46e120` opens
+«Время» by time of day, every scan forces Дата ascending (corrected in
+L9.185: only a header click sorts); `0x46e120` opens
 every selected file; `0x46d4b0` deletes the file and its existing companions
 (cfg → dat hdr ini inf set; cff, osc → set; sto → dst); `FileFinder`
 persistence). Ours: `finder.rs` (header readers, `scan` on a worker with
@@ -5568,11 +5569,72 @@ Residual: our font is wider than Segoe UI 9 pt («Синхронизация» r
 the method combo by a few px); where the tree control puts the selection
 after a delete (ours: the parent).
 
+### L9.185 — W1.8 batches B3, B10 (W1.8 done): the finder sorts only on a header click, the merge bar's fill, the group stats width, the settings link, the ОМП report's «Ктр»; the frequency «Показать все» run on the VM  ·  ✅
+Read (background agents; by hand where marked):
+- B3, the unlabelled `0x45a980`–`0x4a7510`. Behaviour: the view's
+  constructor `0x45a980` (ruler 1, scale 1.0, 93 px lanes, 125 px stats,
+  grid on); **a group member's stats template `0x468b00`** — by hand: at
+  `0x46121c` the label column becomes max(itself, the template's width +
+  10) in the group line's font, the pieces «Max:%s» / «Min:%s», string
+  3449, «A1:%s» of «000.00mV» by bits 4 / 6 / 5; the comment lanes'
+  hit-test `0x468f60`; the finder's date range `0x46ca70`; the panes'
+  constructors `0x471a30` (ShowAnglesValue 1) / `0x475a80` (1 period, 10
+  harmonics) and the merge bar's `0x472380`; **the merge bar's fill
+  `0x479ff0`** — «Канал 2» the pending analog channels, «Канал 1» the
+  other analog-kind ones, both set to their first entry, the method and
+  status untouched; the coefficients' OK `0x47b610`; the progress dialog
+  `0x47f350`; AddFormulaDlg `0x485bb0`; page 537's radios `0x4891c0`; the
+  pages' "chosen" test `0x48b8b0` (only «Канал отсутствует» is unchosen —
+  ours treats an unfilled "" alike, never seen in the original's combos);
+  «Отсчет углов» `0x492d50` (to `doc+0x1d8`, W2.16); the ОМП report's
+  channel line `0x49db00` (the channel found ignoring case among file and
+  computed channels, its own name printed). Library code: `0x46a1f0`,
+  `0x46a290`, `0x46a5b0`, `0x46a6f0`, `0x46a770`, `0x46a7f0`, `0x46a8b0`,
+  `0x46a970`, `0x46aa30`, `0x46ad70`, `0x46ae10`, `0x46e3b0`, `0x46e480`,
+  `0x46e550`, `0x46e660`, `0x46e790`, `0x46e820`, `0x46e8b0`, `0x4765b0`,
+  `0x476670`, `0x478c40`, `0x4791c0`, `0x479350`, `0x479480`, `0x479530`,
+  `0x479660`, `0x479770`, `0x479800`, `0x4798b0`, `0x47eaa0`, `0x47ec50`,
+  `0x48eab0`, `0x48ef10`, `0x48efc0`, `0x48f060`, `0x4a1d40`, `0x4a1e90`,
+  `0x4a2450`, `0x4a6740`, `0x4a7350`, `0x4a7510`.
+- B10, the small windows. Behaviour: CServerItem's clipboard data
+  `0x42bd50` (the stats-panel drag, L9.21); the splash `0x4479b0` /
+  `0x447a20` (bitmap 462, centred, timer 1 → destroyed); the finder's DDX
+  `0x46b810` and **Sort `0x46d2e0`** — the binary's only LVM_SORTITEMS,
+  called by OnInitDialog (6) and the header click; mode = 2 × column +
+  descending, `FileFinder/SortMode` read at construction (default 8) and
+  written at destruction; the caption bar's hide `0x471940`; the progress
+  bar `0x47f400`; DIALOG 510's DDX `0x47f7a0`, OnInitDialog `0x47f840`
+  (an empty folder is an empty, disabled link), «...» `0x47f950` (starts
+  at the current folder, title 133) and OK `0x47fa10`. Library code:
+  `0x407260`, `0x414b90`, `0x42d950`, `0x42d9d0`, `0x42dae0`, `0x42dc90`,
+  `0x42dd50`, `0x4477d0`, `0x449490`, `0x46ea40`, `0x46eac0`, `0x476a60`,
+  `0x47f610`, `0x48f140`.
+- Run on the VM (WIN_1999, one digital channel): the frequency
+  diagram's menu is «Каналы ▸» / «Настройки»; «Каналы» lists the six
+  analog channels; «Показать все» draws six charts — no digital one, as
+  ours (W2.18's INFERRED item settled). The original's view scroll bar
+  has the system's own context menu («Scroll Here», …).
+Ours re-sorted the finder's list every frame and reset it to Дата ▲
+after each scan, scanned a folder's files before its subfolders and never
+saved `SortMode`; showed «C:\» for an empty .dst folder, its link inert,
+the picker not starting there; left the merge bar's channels unselected
+(«Выберите каналы», our own text) and reset its method on each paste;
+ignored group members' stats in the panel width; and matched the report's
+channels exactly among the file's only. Now `Finder::click_sort` /
+`rows` (the scan order until a header click, kept while the filter is the
+same; descending by the reversed comparison), the inline depth-first
+`scan`, `sort_mode` written at close; the folder link as read, opening
+the folder; the merge bar's first entries selected, the method kept;
+`stats_columns` measures the group template; the report's lookup as
+read. Test `sorted_only_by_a_header_click`.
+Residual: «Канал 1» without the formula channels (the synchronisation
+reads file channels); the view scroll bar's system menu; the splash.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.184)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.185)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5622,7 +5684,9 @@ aliased waveforms, 1 px lines on whole pixels; L9.181 W1.8 B1 / B6 / B7
 L9.182 W1.8 B2 / B4 / B5 / B8 / B9 (binary32 units, 32805 edits
 `Comments/UserData`, scrolling, merged settings categories); L9.183
 W2.18 part (zoom gate, per-key chart writes, the tokenizer's integer);
-L9.184 the merge bar's layout, the ОМП tree's labels after a delete.
+L9.184 the merge bar's layout, the ОМП tree's labels after a delete;
+L9.185 W1.8 B3 / B10 — W1.8 done (the finder's sort, the merge bar's
+fill, the group stats width).
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

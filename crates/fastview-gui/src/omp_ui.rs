@@ -395,7 +395,14 @@ impl App {
             start: format!("{}, {}", st.start_date, st.start_time),
             trigger: format!("{}, {}", st.trigger_date, st.trigger_time),
         };
-        let ktr = |n: &str| d.osc.analog.iter().find(|c| c.id == n).map(|c| (c.primary, c.secondary));
+        // `0x42edf0`: over the file and computed channels, ignoring case,
+        // an exact match first; the line prints the found channel's own
+        // name with its coefficients (`0x49db00`; computed ones 1 / 1).
+        let ktr = |n: &str| {
+            let chans = d.osc.analog.iter().map(|c| (c.id.as_str(), c.primary, c.secondary)).chain(d.computed.iter().map(|c| (c.name.as_str(), 1.0, 1.0)));
+            let all: Vec<_> = chans.collect();
+            all.iter().find(|c| c.0 == n).or_else(|| all.iter().find(|c| c.0.to_lowercase() == n.to_lowercase())).map(|c| (c.0.to_string(), c.1, c.2))
+        };
         Some(params::report(&d.omp.params, &r, &info, ktr))
     }
 

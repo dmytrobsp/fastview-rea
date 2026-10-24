@@ -660,9 +660,13 @@ fn chan_icons(doc: &crate::app::Doc, i: usize, primary: bool) -> Vec<&'static st
 /// widest analog / computed name (cut to 25 characters) + 5, at least
 /// «Max:»; the value template (": -0.00000000 A" for SI units, else
 /// ": -0.0000000E-000 ") + 10 widens the rest; discrete names (+ 10) only
-/// bound the whole width from below, as does the absolute-time stamp.
+/// bound the whole width from below, as does the absolute-time stamp. A
+/// group member with stat rows on widens the label column to its stats
+/// line's template + 10 in the group line's font (`0x468b00` at
+/// `0x46121c`): «Max:000.00mV|Min:000.00mV», «СКЗ:000.00mV», «A1:000.00mV»
+/// for the rows it shows, `|`-joined.
 /// Returns (label column, panel width).
-pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, _rows: &[Row], primary: bool, abs_time: bool) -> (f32, f32) {
+pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], primary: bool, abs_time: bool) -> (f32, f32) {
     let w = |s: &str, f: &FontId| fonts.layout_no_wrap(s.to_string(), f.clone(), Color32::BLACK).size().x;
     let cut = |n: &str| n.chars().take(NAME_CHARS).collect::<String>();
     let mut label = w("Max:", &NAME_FONT);
@@ -683,6 +687,13 @@ pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, _r
     }
     if !any {
         return (label, label);
+    }
+    for &m in rows.iter().filter(|r| r.members.len() > 1).flat_map(|r| r.members.iter()) {
+        let st = doc.chans[m].stats;
+        let pieces: Vec<&str> = [(st.minmax, "Max:000.00mV|Min:000.00mV"), (st.rms, "СКЗ:000.00mV"), (st.a1, "A1:000.00mV")].into_iter().filter_map(|(on, t)| on.then_some(t)).collect();
+        if !pieces.is_empty() {
+            label = label.max(w(&pieces.join("|"), &ROW_FONT) + 10.0);
+        }
     }
     let mut left = label + templ;
     if abs_time {

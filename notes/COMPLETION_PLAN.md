@@ -46,6 +46,7 @@ tool skips this file), never in the ledger or the specs.
 | 2026-10-24 | `50472bd` | 523 / 1803 | 60.3 % | 107 / 322 | 474 / 684 | 128 / 36 | 37 | 249 ✓ |
 | 2026-10-24 (later) | `36605ec` | 583 / 1803 | 68.1 % | 54 / 322 | 469 / 684 | 137 / 36 | 39 | 256 ✓ |
 | 2026-10-24 (night) | `8dadc7d` | 659 / 1803 | 74.9 % | 0 / 322 | 453 / 684 | 163 / 15 | 39 | 256 ✓ |
+| 2026-10-24 (W1.8 done) | L9.185 | 1115 / 1803 | 91.8 % | 0 / 322 | 0 / 684 | 170 / 15 | 39 | 260 ✓ |
 
 ## W1 — Read the uncited code
 
@@ -96,18 +97,18 @@ Batches, in this order (the size of the unread code, user visibility):
 - [x] **W1.6** Small windows — read (L9.178): About in the original's layout, the finder's reselect, the bar's labels.
 - [x] **W1.7** The unlabelled large functions — labelled and read (L9.176); the coefficient dialog fixed.
 - [ ] **W1.7b** From W1.7: groups pruned after every formula evaluation (`0x455c70`) and computed channels as group members (with L9.144); a pasted channel's vector phasor from its own cache (`0x490120`); OSC2 channel lines (field counts, digital normal state, no phase, the empty-name quirk); the `.sto` open flow's messages and `-Dst` as a file (reader stays ⛔); group members painted in name order.
-- [ ] **W1.8** The medium functions (50–149 instructions; 453 uncited on 2026-10-24 night) — the same way, in ten batches (`coverage.py --min 50`, split by area; the unlabelled ones by address):
+- [x] **W1.8** The medium functions (50–149 instructions; 453 uncited on 2026-10-24 night) — the same way, in ten batches (`coverage.py --min 50`, split by area; the unlabelled ones by address):
   - [x] B1 unlabelled `0x4035d0`–`0x42cdb0` (58) — L9.181
   - [x] B2 unlabelled `0x42d0f0`–`0x45a720` (58) — L9.182
-  - [ ] B3 unlabelled `0x45a980`–`0x4a7510` (56)
+  - [x] B3 unlabelled `0x45a980`–`0x4a7510` (56) — L9.185
   - [x] B4 circle diagram and its shapes (51) — L9.182
   - [x] B5 differential / frequency / vector diagrams, the property grid, «Пары каналов» (43) — L9.182
   - [x] B6 quick-analysis pages, «Каналы», «Добавить формулу» (42) — L9.181
   - [x] B7 the ОМП engine (`FileInfoDlg` area) and its dialog (30) — L9.181
   - [x] B8 the ОМП data: lines, stations, sections (39) — L9.182
   - [x] B9 document, view, app, frame, merge bar, comment items (51) — L9.182
-  - [ ] B10 the small windows and library classes (25)
-- [ ] **W1.9** The "explained away" list: functions that need no note, each with a one-line reason.
+  - [x] B10 the small windows and library classes (25) — L9.185
+- [x] **W1.9** The "explained away" list: functions that need no note, each with a one-line reason — kept per batch in the ledger ("Library code: …" in L9.166–L9.185).
 
 ## W2 — Close the 🟡 ledger entries
 
@@ -167,14 +168,17 @@ items (VM ones also in W4.4):
   icons / geometry / reader gaps (L9.169), a computed channel's colour
   recomputed by place (L9.170), an OSC2 record saved as COMTRADE (L9.172).
 
-- [ ] W2.18 W1.8's open differences (L9.181 / L9.182). Done in L9.183 / L9.184:
-  the merge bar's layout, the ОМП tree after a delete, the zoom gate both ways, per-key chart writes, the tokenizer's integer,
-  `.omp` gaps, «Каналы»'s rename edit. Left: groups by name ignoring
-  case; the ОМП re-run's lookup among every channel ignoring case; the
-  zoom gate's rectangle (the client less 8 / 16 px); the splash (our own picture, 2000 ms, topmost); the
-  frequency «Показать все» on digital channels (INFERRED — read the
-  painter `0x46f5a0`); the finder's `SortMode`; «Скрыть все» to `doc+0x1d8`
-  (with W2.16).
+- [ ] W2.18 W1.8's open differences (L9.181 / L9.182). Done in
+  L9.183–L9.185: the zoom gate both ways, per-key chart writes, the
+  tokenizer's integer, `.omp` gaps, «Каналы»'s rename edit, the merge
+  bar's layout and fill, the ОМП tree after a delete, the finder's sort
+  and `SortMode`, the settings link, the group stats width, the report's
+  «Ктр»; the frequency «Показать все» (no digital, VM run). Left: groups
+  by name ignoring case; the ОМП re-run's lookup among every channel
+  ignoring case; the zoom gate's rectangle (the client less 8 / 16 px);
+  the splash (our own picture, 2000 ms, topmost); the view scroll bar's
+  system menu; «Канал 1» with formula channels; «Скрыть все» and
+  «Отсчет углов» to `doc+0x1d8` (with W2.16).
 
 ## W3 — Resolve the unknowns
 

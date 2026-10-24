@@ -1009,8 +1009,11 @@ correction selection → store and recompute.
   independent; after a scan С:/По: = earliest/latest file date; a file passes
   when `С ≤ t ≤ По + 1 day` at 00:00 (inclusive, `0x46cb20`).
 - Sorting: header click ascending, again descending (header arrows); Время
-  sorts by time of day only; text compares case-sensitive; **every open forces
-  Дата ascending**.
+  sorts by time of day only; text compares case-sensitive; the dialog opens with
+  Дата ▲ (Sort(6), before the scan fills the list); only a header click
+  sorts (`0x46d2e0`) — a refill after a scan or a filter change lists the
+  matches in scan order (`0x46cb20`), the arrow kept; `SortMode` =
+  2 × column + descending is saved at close (L9.185).
 - «Выбрать» rescans with the tree's path (a tree click alone does not);
   checkbox → immediate rescan.
 - Open: double-click or «Открыть файлы» opens **every selected file** as its

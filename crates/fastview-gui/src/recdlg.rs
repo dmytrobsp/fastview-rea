@@ -586,10 +586,19 @@ impl App {
             .show(ctx, |ui| {
                 ui.label("Директория хранения файлов описания осциллограмм (*.dst):");
                 ui.horizontal(|ui| {
-                    let shown = if st.dst_folder.is_empty() { "C:\\".to_string() } else { st.dst_folder.clone() };
-                    ui.add_enabled(!st.dst_folder.is_empty(), egui::Link::new(shown));
+                    // The folder as an MFC link (`0x47f840`): its text and URL,
+                    // disabled — and empty — while no folder is set; a click
+                    // opens the folder.
+                    if ui.add_enabled(!st.dst_folder.is_empty(), egui::Link::new(st.dst_folder.as_str())).clicked() {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(format!("file:///{}", st.dst_folder.replace('\\', "/"))));
+                    }
+                    // «...» (`0x47f950`): the folder browser starts at the current one.
                     if ui.button("...").clicked() {
-                        if let Some(p) = rfd::FileDialog::new().set_title("Директория хранения файлов описания осциллограмм").pick_folder() {
+                        let mut fd = rfd::FileDialog::new().set_title("Директория хранения файлов описания осциллограмм");
+                        if !st.dst_folder.is_empty() {
+                            fd = fd.set_directory(&st.dst_folder);
+                        }
+                        if let Some(p) = fd.pick_folder() {
                             st.dst_folder = p.display().to_string();
                         }
                     }

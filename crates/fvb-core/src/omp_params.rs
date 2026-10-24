@@ -412,11 +412,11 @@ pub struct ReportInfo {
     pub trigger: String,
 }
 
-/// The `.txt` report (`0x49dbf0`), `\n` line ends. `ktr` gives a channel's
-/// primary / secondary coefficients when the document has a channel of that
-/// name; station 1's channel lines then read `%-10s Ктр = %g/%g`
+/// The `.txt` report (`0x49dbf0`), `\n` line ends. `ktr` gives the found
+/// channel's own name and primary / secondary coefficients when the
+/// document has a channel of that name; station 1's channel lines then read `%-10s Ктр = %g/%g`
 /// (`0x49db00`), station 2's are the bare names.
-pub fn report(p: &OmpParams, r: &OmpResult, info: &ReportInfo, ktr: impl Fn(&str) -> Option<(f64, f64)>) -> String {
+pub fn report(p: &OmpParams, r: &OmpResult, info: &ReportInfo, ktr: impl Fn(&str) -> Option<(String, f64, f64)>) -> String {
     let mut s = format!("Механотроника FastView\n\nОсциллограмма: {}\n\n", info.title);
     s.push_str(match p.method {
         ISOLATED => "Алгоритм: ОМП для сетей с изолированной нейтралью\n\n",
@@ -430,7 +430,7 @@ pub fn report(p: &OmpParams, r: &OmpResult, info: &ReportInfo, ktr: impl Fn(&str
     s.push_str(&result_line(p, r));
     let st1 = &p.stations[0];
     let chan = |name: &str| match ktr(name) {
-        Some((a, b)) => format!("{name:<10} Ктр = {}/{}", msvc_g(a), msvc_g(b)),
+        Some((found, a, b)) => format!("{found:<10} Ктр = {}/{}", msvc_g(a), msvc_g(b)),
         None => name.to_string(),
     };
     let station_head = |s: &mut String, title: &str, st: &StationParams| {
@@ -652,7 +652,7 @@ mod tests {
             text: String::new(),
         };
         let info = ReportInfo { title: "rec.cfg".into(), station: "ПС".into(), recorder: "Рег".into(), ..Default::default() };
-        let t = report(&p, &r, &info, |n| (n == "Ia").then_some((600.0, 5.0)));
+        let t = report(&p, &r, &info, |n| (n == "Ia").then(|| ("Ia".to_string(), 600.0, 5.0)));
         let expect_head = "Механотроника FastView\n\nОсциллограмма: rec.cfg\n\nАлгоритм: ОМП для сетей с заземленной нейтралью\n\n\
             Станция: ПС\nРегистратор: Рег\n\nНачало записи:  \nМомент запуска: \n\n\
             1-х фазное КЗ: фазы A на участке № 1, опоры 0 - 1.    Расстояние = 500.00 m.     Расстояние от нач. участка = 500.00 m.    Погрешность расчета = 1.50 %.\n\n\

@@ -398,7 +398,12 @@ impl App {
                 d.reflag_computed(j);
             }
         }
-        self.merge = Some(MergeBar::default());
+        // The bar's fill (`0x479ff0`): both channel combos refilled and set
+        // to their first entry; the method and the status text untouched.
+        let ch1 = (!d.osc.analog.is_empty()).then_some(0);
+        let ch2 = d.pending.iter().position(|p| p.pasted.channel.is_ok());
+        let kept = self.merge.take().unwrap_or_default();
+        self.merge = Some(MergeBar { ch1, ch2, ..kept });
     }
 
     /// 1091 «Синхронизация» (`0x47bb90`) by the chosen method; the result

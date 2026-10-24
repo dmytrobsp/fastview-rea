@@ -234,28 +234,27 @@ fn read_entry(path: &Path, root: &Path) -> Option<Found> {
 
 /// Walk `root` (recursively when asked), checking `cancel` at every step.
 pub fn scan(root: &Path, recursive: bool, cancel: &AtomicBool) -> Vec<Found> {
-    let mut out = Vec::new();
-    let mut dirs = vec![root.to_path_buf()];
-    while let Some(dir) = dirs.pop() {
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+    // FindFirstFile / FindNextFile with the recursion inline (`0x46bd20`):
+    // a subfolder's files come where the subfolder is met.
+    fn walk(dir: &Path, root: &Path, recursive: bool, cancel: &AtomicBool, out: &mut Vec<Found>) {
+        let Ok(rd) = std::fs::read_dir(dir) else { return };
         let mut entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
         entries.sort();
         for p in entries {
             if cancel.load(Ordering::Relaxed) {
-                break;
+                return;
             }
             if p.is_dir() {
                 if recursive {
-                    dirs.push(p);
+                    walk(&p, root, recursive, cancel, out);
                 }
             } else if let Some(f) = read_entry(&p, root) {
                 out.push(f);
             }
         }
     }
+    let mut out = Vec::new();
+    walk(root, root, recursive, cancel, &mut out);
     out
 }
 
@@ -528,6 +527,11 @@ pub struct Finder {
     pub files: Vec<Found>,
     pub selected: Vec<usize>,
     pub sort: (Column, bool),
+    /// The list's order after a header click, for the filter it was made
+    /// under: the refill (`0x46cb20`, after a scan or a filter change)
+    /// lists the matches in scan order and nothing re-sorts them — only a
+    /// header click sorts (`0x46d2e0`, LVM_SORTITEMS).
+    sorted: Option<(Filter, Vec<usize>)>,
     /// Off Windows: the files awaiting our stand-in for the shell's delete
     /// prompt, and whether Shift was held (permanent).
     pub confirm_delete: Option<(Vec<PathBuf>, bool)>,
@@ -547,7 +551,10 @@ impl Finder {
             to: Stamp::today(),
             files: Vec::new(),
             selected: Vec::new(),
+            // OnInitDialog's Sort(6) — Дата ascending — runs before the scan
+            // fills the list, so it sorts nothing but sets the arrow.
             sort: (Column::Date, false),
+            sorted: None,
             confirm_delete: None,
             scanning: None,
         };
@@ -565,6 +572,7 @@ impl Finder {
         });
         self.files.clear();
         self.selected.clear();
+        self.sorted = None;
         self.scanning = Some((cancel, rx, handle));
     }
 
@@ -599,7 +607,7 @@ impl Finder {
             let want = cur.to_lowercase();
             *cur = list.iter().find(|v| v.to_lowercase().starts_with(&want)).cloned().unwrap_or_else(|| ALL.into());
         }
-        self.sort = (Column::Date, false);
+        self.sorted = None;
     }
 
     fn uniq(&self, f: impl Fn(&Found) -> &str) -> Vec<String> {
@@ -615,12 +623,29 @@ impl Finder {
         self.uniq(|f| &f.block)
     }
 
-    /// Indices of the listed rows, filtered and sorted.
+    fn filter(&self) -> Filter {
+        (self.station.clone(), self.block.clone(), self.from, self.to)
+    }
+
+    /// Indices of the listed rows: the matches in scan order, or the order
+    /// of the last header click while the filter is unchanged.
     pub fn rows(&self) -> Vec<usize> {
-        let mut v: Vec<usize> = (0..self.files.len()).filter(|&i| passes(&self.files[i], &self.station, &self.block, self.from, self.to)).collect();
-        let key = |i: &usize| {
-            let f = &self.files[*i];
-            match self.sort.0 {
+        if let Some((f, v)) = &self.sorted {
+            if *f == self.filter() {
+                return v.clone();
+            }
+        }
+        (0..self.files.len()).filter(|&i| passes(&self.files[i], &self.station, &self.block, self.from, self.to)).collect()
+    }
+
+    /// A header click (`0x46d420` → `0x46d2e0`): the column ascending, again
+    /// descending; the listed rows sorted by it — descending with the
+    /// comparison reversed, so equal keys keep their order.
+    pub fn click_sort(&mut self, col: Column) {
+        self.sort = if self.sort.0 == col { (col, !self.sort.1) } else { (col, false) };
+        let key = |i: usize| {
+            let f = &self.files[i];
+            match col {
                 Column::Name => (f.name.clone(), Stamp::default()),
                 Column::Station => (f.station.clone(), Stamp::default()),
                 Column::Block => (f.block.clone(), Stamp::default()),
@@ -629,13 +654,20 @@ impl Finder {
                 Column::Time => (String::new(), Stamp { h: f.time.h, mi: f.time.mi, s: f.time.s, ..Default::default() }),
             }
         };
-        v.sort_by_key(key);
-        if self.sort.1 {
-            v.reverse();
-        }
-        v
+        let mut v = self.rows();
+        let desc = self.sort.1;
+        v.sort_by(|&a, &b| if desc { key(b).cmp(&key(a)) } else { key(a).cmp(&key(b)) });
+        self.sorted = Some((self.filter(), v));
+    }
+
+    /// `FileFinder/SortMode` (`0x46b3f5`): 2 × column + 1 when descending.
+    pub fn sort_mode(&self) -> u32 {
+        2 * self.sort.0 as u32 + u32::from(self.sort.1)
     }
 }
+
+/// The filter a sorted order was made under: station, block, С:, По:.
+type Filter = (String, String, Stamp, Stamp);
 
 impl Drop for Finder {
     fn drop(&mut self) {
@@ -662,6 +694,7 @@ impl App {
             v.insert("FileFinder/IncludeSubdirs".into(), u8::from(f.recursive).to_string());
             v.insert("FileFinder/StationName".into(), f.station.clone());
             v.insert("FileFinder/StationID".into(), f.block.clone());
+            v.insert("FileFinder/SortMode".into(), f.sort_mode().to_string());
             self.explorer_dir = f.folder.clone();
             if self.persist {
                 self.store.save();
@@ -783,7 +816,7 @@ impl App {
                         for (col, label) in [(Column::Name, "Название файла"), (Column::Station, "Станция"), (Column::Block, "Блок"), (Column::Date, "Дата"), (Column::Time, "Время")] {
                             let arrow = if f.sort.0 == col { if f.sort.1 { " ▼" } else { " ▲" } } else { "" };
                             if ui.button(format!("{label}{arrow}")).clicked() {
-                                f.sort = if f.sort.0 == col { (col, !f.sort.1) } else { (col, false) };
+                                f.click_sort(col);
                             }
                         }
                         ui.end_row();
@@ -954,6 +987,33 @@ mod tests {
         assert!(!passes(&f, ALL, ALL, day(2), day(3)));
         assert!(!passes(&f, "другая", ALL, day(1), day(1)));
         assert_eq!(day(28).next_day(), Stamp { y: 2021, mo: 3, d: 1, ..Default::default() });
+    }
+
+    /// The list keeps the scan order until a header click sorts it; a
+    /// filter change (a refill) brings the scan order back (`0x46cb20`,
+    /// `0x46d2e0`); `SortMode` is 2 × column + descending.
+    #[test]
+    fn sorted_only_by_a_header_click() {
+        let dir = std::env::temp_dir().join(format!("fv_finder_sort_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut f = Finder::new(dir.clone(), false, String::new(), String::new());
+        while f.busy() {
+            f.poll();
+        }
+        let stamp = |d: u32| Stamp { y: 2024, mo: 1, d, ..Default::default() };
+        let found = |name: &str, st: &str, d: u32| Found { path: name.into(), name: name.into(), osc: false, station: st.into(), block: String::new(), time: stamp(d) };
+        f.files = vec![found("b", "S1", 3), found("a", "S2", 1), found("c", "S1", 2)];
+        (f.station, f.block, f.from, f.to) = (ALL.into(), ALL.into(), stamp(1), stamp(3));
+        assert_eq!(f.rows(), [0, 1, 2], "scan order, though the arrow says Дата ▲");
+        f.click_sort(Column::Name);
+        assert_eq!(f.rows(), [1, 0, 2]);
+        f.click_sort(Column::Name);
+        assert_eq!((f.rows(), f.sort_mode()), (vec![2, 0, 1], 1));
+        f.station = "S1".into();
+        assert_eq!(f.rows(), [0, 2], "a refill lists in scan order");
+        f.click_sort(Column::Date);
+        assert_eq!((f.rows(), f.sort_mode()), (vec![2, 0], 6));
+        let _ = std::fs::remove_dir(&dir);
     }
 
     #[test]
