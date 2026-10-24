@@ -45,6 +45,9 @@ pub struct OpenMenu {
 pub struct PlaneGeom {
     pub w: i32,
     pub h: i32,
+    /// The span the pan limit counts in (`0x443620` / `0x437b90`): client
+    /// − 6, top + 5, bottom − 20 always — the readout table not subtracted.
+    pub pan: (i32, i32),
     pub max: [f64; 2],
     pub char_max: f64,
 }
@@ -802,7 +805,7 @@ impl App {
             DiagCmd::Pan(x_axis, delta) => {
                 if let Some(g) = self.diag.geom[gi] {
                     let z = self.plane_view(diff).z;
-                    let limit = dg::max_pan(if x_axis { g.w } else { g.h }, z);
+                    let limit = dg::max_pan(if x_axis { g.pan.0 } else { g.pan.1 }, z);
                     self.plane_view(diff).pan(x_axis, delta, limit);
                 }
             }
@@ -939,6 +942,7 @@ impl App {
         let text_h = 14.0f32;
         let mut rect = client.shrink(6.0);
         rect.min.y += dpx(5.0);
+        let pan = (rect.width() as i32, (rect.height() - 20.0) as i32);
         let rows = loci.len() as f32;
         let table_h = (text_h + 6.0) * rows + 12.0;
         let table = readout != 0 && rect.height() - table_h >= dpx(120.0);
@@ -1023,7 +1027,8 @@ impl App {
         }
         // Scale box: one cell filled (240,240,240) and the value of a cell.
         let bx = Rect::from_min_size(Pos2::new(frame.left() + cell, frame.bottom() - 2.0 * cell), Vec2::splat(cell));
-        painter.rect(bx, 0.0, Color32::from_gray(240), stroke(1.0, AXES));
+        // Outlined with the axes pen (`0x444630`) — black ⌊2s/3⌋ on paper.
+        painter.rect(bx, 0.0, Color32::from_gray(240), axs);
         // `" %g %s%s, %g %s%s"` (Ω never prefixed); the differential plane
         // `" %g %S%s"` with «ном».
         let scale_text = if diff {
@@ -1124,7 +1129,7 @@ impl App {
             }
         }
         // Scroll bars.
-        let lim = (dg::max_pan(w, view.z), dg::max_pan(h, view.z));
+        let lim = (dg::max_pan(pan.0, view.z), dg::max_pan(pan.1, view.z));
         if let Some((page, m)) = sb {
             let hb = Rect::from_min_max(Pos2::new(full.left(), client.bottom()), Pos2::new(client.right(), full.bottom()));
             let vb = Rect::from_min_max(Pos2::new(client.right(), full.top()), Pos2::new(full.right(), client.bottom()));
@@ -1143,7 +1148,7 @@ impl App {
         if (resp.hovered() || over_bar) && self.diag.menu.is_none() {
             let (wheels, mods, buttons) = ui.input(|i| (crate::lanes::wheel_deltas(&i.events), i.modifiers, i.pointer.any_down()));
             for delta in wheels {
-                let g = PlaneGeom { w, h, max, char_max: char_ext };
+                let g = PlaneGeom { w, h, pan, max, char_max: char_ext };
                 match dg::wheel_action(delta > 0.0, (mods.ctrl || mods.command) && !buttons, mods.shift && !buttons) {
                     WheelAct::Zoom(zin) => {
                         view.zoom(zin, char_ext, |z| g.ppu_at(z));
@@ -1163,7 +1168,7 @@ impl App {
             ui.ctx().request_repaint();
         }
         *self.plane_view(diff) = view;
-        self.diag.geom[gi] = Some(PlaneGeom { w, h, max, char_max: char_ext });
+        self.diag.geom[gi] = Some(PlaneGeom { w, h, pan, max, char_max: char_ext });
     }
 
     // ---- vector diagram ----

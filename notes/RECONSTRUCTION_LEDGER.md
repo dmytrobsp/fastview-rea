@@ -5159,6 +5159,21 @@ save, the trigger zeroed on every `.cfg` / `.cff` save; the proposal is
 lowered on Windows (elsewhere a lowered folder may not exist). Test
 `the_record_path_is_never_updated`.
 
+### L9.174 — The planes' pan limit counts without the readout table; the scale box's pen  ·  ✅
+Read (W1.3 report; the pan limits `0x443620` / `0x437b90`, the grid
+`0x444630`): the pan limit is round(⌊span / cell⌋ · z · 0.5) over the client
+− 6 px, top + 5, bottom − 20 always — even with the readout table shown,
+whose height only the painter's plot rect loses; the scale box is
+outlined with the axes pen (black ⌊2s/3⌋ on paper). Ours took the limit
+from the table-shortened plot rect (the wheel / toolbar pans refused early
+and the differential's lower-left push stopped short with the table on)
+and printed the box in the grid grey. Now `PlaneGeom::pan` carries the
+span for every limit (the scroll bars, the toolbar pans), and the box takes
+`axs`.
+Residual (W1.3b): the scroll bars disabled rather than hidden after zooming
+back to 1 (VM check first); the differential scale over a cursor range
+inside the first period.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
