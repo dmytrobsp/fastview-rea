@@ -137,7 +137,8 @@ items (VM ones also in W4.4):
   match or accept).
 - [ ] W2.5 L9.31 — phase 2 of loading on the UI thread (derived arrays,
   `.set` formula channels outside the bar); the `.cff` cancelled during its
-  split shows «Неправильный формат файла» (ours silent).
+  split shows «Неправильный формат файла» (done, L9.268, with the ASCII
+  reader's byte scan).
 - [x] W2.6 L9.34 — MakeUpper folds Cyrillic units and a «ном» channel is not
   vector-eligible (VM runs, L9.210); binary32 with «кВ» (L9.182); string
   3105 is «°» (L9.207).

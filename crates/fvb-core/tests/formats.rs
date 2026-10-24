@@ -106,7 +106,9 @@ fn cff_dat_line_quirks() {
     // `BINARY32: 100` gives a byte count of 32.
     let file2 = format!("--- file type: CFG ---\r\n{}--- file type: DAT BINARY32: 100---\r\n{}", CFG.replace('\n', "\r\n"), "x".repeat(200));
     let r = parse_cff(file2.as_bytes(), Encoding::Auto);
-    assert!(r.is_ok() || matches!(r, Err(ComtradeError::Dat(_))));
+    // Its 32 bytes are one ASCII field, so no row: the loader's
+    // zero-sample check (`0x450bc1`) answers string 330.
+    assert!(matches!(r, Err(ComtradeError::FormatAt(_))), "{:?}", r.map(|r| r.0.analog.len()));
 }
 
 /// Build an OSC2 file per the verified layout: block 0, one calibration
@@ -233,11 +235,30 @@ fn loading_progress_follows_the_original_counters() {
     let (p, rec) = run("binary32", &CFG.replacen("\nASCII", "\nbinary32", 1), &bin32);
     assert_eq!(rec.analog[0].samples.len() as u32, n);
     assert_eq!((p.total.load(Relaxed), p.percent()), (0, 0));
-    // Cancelled before the first line: nothing is read.
+    // Cancelled before the first line: nothing is read, and the loader's
+    // zero-sample check (`0x450bc1`) gives string 330 with the record's
+    // path less its extension.
     let p = Progress::default();
     p.cancel.store(true, Relaxed);
-    let rec = comtrade::load_progress(temp_record("cancel", CFG, DAT), Encoding::Auto, Some(&p));
-    assert!(rec.map_or(true, |r| r.analog[0].samples.is_empty()));
+    let path = temp_record("cancel", CFG, DAT);
+    let base = path.with_extension("").to_string_lossy().into_owned();
+    match comtrade::load_progress(&path, Encoding::Auto, Some(&p)) {
+        Err(comtrade::ComtradeError::FormatAt(d)) => assert_eq!(d, base),
+        r => panic!("{:?}", r.map(|r| r.analog.len())),
+    }
+    // So does an empty data file, cancelled or not.
+    assert!(matches!(comtrade::load_progress(temp_record("empty", CFG, b""), Encoding::Auto, None), Err(comtrade::ComtradeError::FormatAt(_))));
+    // A `.cff` cancelled during its split: the unpacked copy's path.
+    let mut osc = demo();
+    osc.rev_year = 2013;
+    osc.rev_text = "2013".into();
+    let bytes = write_cff(&osc, &CffSections::default(), Encoding::Cp1251).unwrap();
+    let p = Progress::default();
+    p.cancel.store(true, Relaxed);
+    match comtrade::parse_cff_progress(&bytes, Encoding::Cp1251, Some(&p)) {
+        Err(comtrade::ComtradeError::FormatAt(d)) => assert!(d.contains("Fast_View_") && d.ends_with("tmp_cfg"), "{d}"),
+        r => panic!("{:?}", r.map(|r| r.0.analog.len())),
+    }
     // The display wraps like the original's 32-bit multiply.
     let p = Progress::default();
     p.total.store(1000, Relaxed);
@@ -312,4 +333,18 @@ fn the_tokenizer_integer() {
     assert_eq!(read_int("+7"), 0);
     assert_eq!(read_int("1.0"), 1);
     assert_eq!(read_int("2147483648"), i32::MIN);
+}
+
+/// The ASCII data reader scans bytes, not lines (`0x451800`): a row is
+/// 2 + nA + nD fields wherever the line ends fall; a value is C's `atof`
+/// of its field (the leading number: «1.5x» is 1.5, a NUL ends it).
+#[test]
+fn ascii_rows_are_fields_not_lines() {
+    let cfg = "S,D,1999\r\n2,2A,0D\r\n1,X,,,V,1,0,0,-9,9\r\n2,Y,,,V,1,0,0,-9,9\r\n50\r\n1\r\n1000,3\r\n\
+               01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.000000\r\nASCII\r\n1\r\n";
+    let dat = b"1,0,1.5x,2\r\n2,1000,\r\n7,8\r\n3,2000,-4\0,1e3\r\n";
+    let rec = comtrade::parse(cfg, dat).unwrap();
+    assert_eq!(rec.analog[0].samples, [1.5, 7.0, -4.0]);
+    assert_eq!(rec.analog[1].samples, [2.0, 8.0, 1000.0]);
+    assert_eq!(rec.time, [0.0, 0.001, 0.002]);
 }

@@ -21,6 +21,11 @@ pub enum ComtradeError {
     /// type, a `.cff` without CFG or DAT section, a bad `.osc`).
     #[error("Неправильный формат файла")]
     Format,
+    /// String 330 with its detail: the `.cfg` loader's check that the data
+    /// gave samples (`0x450bc1`), the detail the record's path less its
+    /// extension (`0x44c710`) — for a `.cff` its unpacked copy's.
+    #[error("Неправильный формат файла")]
+    FormatAt(String),
     /// A CFastViewException's own text, shown alone (`0x4186a0`): the
     /// `.sto` open's messages carry no " - <file>" detail.
     #[error("{0}")]
@@ -301,6 +306,7 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
     let (mut rec, fmt) = parse_cfg(&cfg_text)?;
     let dat = std::fs::read(&dat_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
     parse_dat(&mut rec, fmt, &dat, prog)?;
+    check_samples(&rec, || crate::recset::record_base(path))?;
     if let Some(p) = prog {
         p.recompute_phase(&rec, false);
     }
@@ -551,10 +557,32 @@ pub fn parse_cff_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) 
     let dat = dat.ok_or(ComtradeError::Format)?;
     let (mut rec, fmt) = parse_cfg(&cfg)?;
     parse_dat(&mut rec, fmt, dat, prog)?;
+    check_samples(&rec, cff_temp_base)?;
     if let Some(p) = prog {
         p.recompute_phase(&rec, false);
     }
     Ok((rec, sections))
+}
+
+/// The `.cfg` loader's check after the data (`0x450bc1`): no analog
+/// channel, or none of the first one's samples read — an empty data file,
+/// or a load cancelled before its first line or record (the readers poll
+/// the cancel before each, the `.cff` split never) — is string 330.
+/// (The original takes the first analog channel without bit 14 at `+0x60`,
+/// `0x431020`; the bit is not modelled: the first.)
+fn check_samples(rec: &Oscillogram, detail: impl FnOnce() -> String) -> Result<(), ComtradeError> {
+    if rec.analog.first().is_none_or(|a| a.samples.is_empty()) {
+        return Err(ComtradeError::FormatAt(detail()));
+    }
+    Ok(())
+}
+
+/// Where the original unpacks a `.cff` (`0x44fe30`): `tmp_cfg` in a
+/// `Fast_View_<hex>` folder under the temporary folder, named from the
+/// clock (the hex's form INFERRED).
+fn cff_temp_base() -> String {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() / 100 + 116_444_736_000_000_000);
+    std::env::temp_dir().join(format!("Fast_View_{t:X}")).join("tmp_cfg").to_string_lossy().into_owned()
 }
 
 /// Encode text as CP1251 (the original writes every text section in it).
@@ -1039,11 +1067,6 @@ fn decode_text_enc(bytes: &[u8], enc: Encoding) -> String {
         Encoding::Cp866 => bytes.iter().map(|&b| cp866_to_char(b)).collect(),
         Encoding::Koi8r => bytes.iter().map(|&b| koi8r_to_char(b)).collect(),
     }
-}
-
-/// Decode cfg bytes: UTF-8/ASCII, or CP1251 fall-back for Cyrillic channel ids.
-fn decode_text(bytes: &[u8]) -> String {
-    decode_text_enc(bytes, Encoding::Auto)
 }
 
 /// Decode bytes with an encoding (the public face of the loader's decoder).
@@ -1592,8 +1615,101 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
     Ok((rec, fmt))
 }
 
+/// The ASCII data reader's tokenizer over the mapped bytes (`0x4771f0`,
+/// `0x477130`, `0x477050`): blanks are TAB, LF, CR and space; a field ends
+/// at TAB, LF, CR or a comma, which is consumed; NUL and bytes ≥ 0x80 are
+/// ordinary.
+struct AsciiScan<'a> {
+    b: &'a [u8],
+    at: usize,
+}
+
+impl AsciiScan<'_> {
+    fn blank(&mut self) {
+        while self.b.get(self.at).is_some_and(|c| matches!(c, 9 | 10 | 13 | 32)) {
+            self.at += 1;
+        }
+    }
+
+    /// To past the next delimiter (or the end); the field's end.
+    fn past_delim(&mut self) -> usize {
+        while self.b.get(self.at).is_some_and(|c| !matches!(c, 9 | 10 | 13 | b',')) {
+            self.at += 1;
+        }
+        let end = self.at;
+        self.at = (self.at + 1).min(self.b.len());
+        end
+    }
+
+    /// An integer field: digits (wrapping at 32 bits) and '-' signs from
+    /// its start, the rest of it ignored.
+    fn int(&mut self) -> i32 {
+        self.blank();
+        let (mut v, mut neg) = (0i32, false);
+        while let Some(&c) = self.b.get(self.at) {
+            match c {
+                b'0'..=b'9' => v = v.wrapping_mul(10).wrapping_add(i32::from(c - b'0')),
+                b'-' => neg = !neg,
+                _ => break,
+            }
+            self.at += 1;
+        }
+        self.past_delim();
+        if neg {
+            v.wrapping_neg()
+        } else {
+            v
+        }
+    }
+
+    /// A float field, through C's `atof`: its leading number, else 0.
+    fn float(&mut self) -> f64 {
+        self.blank();
+        let start = self.at;
+        let end = self.past_delim();
+        c_atof(&self.b[start..end])
+    }
+}
+
+/// C's `atof` over bytes: blanks, then the longest sign / digits / point /
+/// exponent prefix (up to a NUL or anything else); none gives 0.
+fn c_atof(f: &[u8]) -> f64 {
+    let mut i = f.iter().take_while(|c| matches!(c, 9..=13 | 32)).count();
+    let start = i;
+    if matches!(f.get(i), Some(b'+' | b'-')) {
+        i += 1;
+    }
+    let digits = |i: &mut usize| {
+        let s = *i;
+        while f.get(*i).is_some_and(u8::is_ascii_digit) {
+            *i += 1;
+        }
+        *i > s
+    };
+    let mut any = digits(&mut i);
+    if f.get(i) == Some(&b'.') {
+        i += 1;
+        any |= digits(&mut i);
+    }
+    if !any {
+        return 0.0;
+    }
+    let mantissa = i;
+    if matches!(f.get(i), Some(b'e' | b'E')) {
+        let mut j = i + 1;
+        if matches!(f.get(j), Some(b'+' | b'-')) {
+            j += 1;
+        }
+        if digits(&mut j) {
+            i = j;
+        }
+    }
+    let text = std::str::from_utf8(&f[start..i]).unwrap_or("0");
+    text.parse().or_else(|_| std::str::from_utf8(&f[start..mantissa]).unwrap_or("0").parse()).unwrap_or(0.0)
+}
+
 /// The data file. Progress (`0x451800` / `0x451be0` / `0x4520f0`): ASCII
-/// total 5·S, position = bytes consumed after each line; BINARY total 5·S,
+/// total 5·S, position = the cursor's offset after each row; BINARY total 5·S,
 /// position `T − remaining` after each record; binary32 never sets the
 /// total (the bar stays at 0). Cancel is polled before each line / record.
 fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&Progress>) -> Result<(), ComtradeError> {
@@ -1615,45 +1731,41 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
 
     match fmt {
         DataFormat::Ascii => {
-            let text = decode_text(dat);
-            let mut rows = 0usize;
+            // A byte cursor over the mapped file (`0x451863`–`0x451b05`), a
+            // row being 2 + nA + nD fields wherever the line ends fall.
+            let mut sc = AsciiScan { b: dat, at: 0 };
             let mut stamps_us: Vec<f64> = Vec::new();
-            let mut consumed = 0usize;
-            for line in text.split_inclusive('\n') {
-                if cancelled() {
+            loop {
+                sc.blank();
+                if sc.at >= dat.len() || cancelled() {
                     break;
                 }
-                consumed += line.len();
-                if let Some(p) = prog {
-                    p.pos.store(consumed.min(dat.len()) as u32, Ordering::Relaxed);
-                }
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                let f: Vec<&str> = line.split(',').collect();
-                // Nothing after the sample number and the timestamp — the
-                // reader is at the buffer's end (`0x45189b`): no row (a
-                // trailing ^Z line).
-                if f.len() < 3 {
+                // The sample number, read and dropped; the timestamp as an
+                // integer (`0x477130`).
+                sc.int();
+                let ts = sc.int();
+                // Nothing after them: the reader is at the buffer's end
+                // (`0x45189b`) — no row (a trailing ^Z).
+                sc.blank();
+                if sc.at >= dat.len() {
                     break;
                 }
-                // columns: sample#, timestamp, A1..Ana, D1..Dnd; the
-                // timestamp read as an integer (`0x477130`).
-                stamps_us.push(f64::from(read_int(f.get(1).copied().unwrap_or(""))));
-                // value = mult·a·raw + b (`0x451904`).
-                for (ai, ch) in rec.analog.iter_mut().enumerate() {
-                    let raw: f64 = f.get(2 + ai).and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
+                stamps_us.push(f64::from(ts));
+                // value = mult·a·raw + b (`0x451904`); fields past the end
+                // read as 0.
+                for ch in rec.analog.iter_mut() {
+                    let raw = sc.float();
                     ch.samples.push(ch.unit_mult * ch.a * raw + ch.b);
                 }
-                for (di, ch) in rec.digital.iter_mut().enumerate() {
-                    ch.samples.push(read_int(f.get(2 + na + di).copied().unwrap_or("")) != 0);
+                for ch in rec.digital.iter_mut() {
+                    ch.samples.push(sc.int() != 0);
                 }
-                rows += 1;
+                if let Some(p) = prog {
+                    p.pos.store(sc.at as u32, Ordering::Relaxed);
+                }
             }
             // Every row's time is its timestamp × the multiplier, rounded
             // to whole µs (`0x4518a7`–`0x4518cd`) — whatever the rates say.
-            let _ = rows;
             rec.time = stamps_us.iter().map(|t| round_fv(t * rec.time_mult) / 1e6).collect();
         }
         DataFormat::Int16 | DataFormat::Int32 => {

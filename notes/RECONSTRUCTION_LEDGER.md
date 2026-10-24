@@ -7360,6 +7360,58 @@ Residual:
 - MFC's keys are INFERRED, not run on the VM (with block «Нет» the VM's
   grid has a single row).
 
+### L9.268 — The `.cfg` loader's zero-sample check; the ASCII reader scans bytes, not lines  ·  ✅
+Read (two subagent reports).
+1. The «Неправильный формат файла» of a `.cff` cancelled during its split
+   comes from a check in the shared `.cfg` loader `0x450a30`, not from
+   the split.
+   - After the data, `0x450bc1` throws string 330 when the record has no
+     analog channel, or when its first analog channel has no sample read.
+     (The first means the first without bit 14 at `+0x60`, `0x431020`;
+     the bit is not modelled.)
+   - The catch posts the exception to the frame (`0x475680`, message
+     0x40a), which shows «Неправильный формат файла - <file>». The detail
+     is the path less its extension (`0x44c710`); for a `.cff` it is the
+     unpacked copy `%TEMP%\Fast_View_<hex>\tmp_cfg`.
+   - The data readers poll the cancel before each line or record; the
+     `.cff` split (`0x44fe30`) never does. So a cancel there, or during
+     the header, leaves no sample and the box shows. A cancel later fails
+     silently (`0x44f391`).
+   - An empty data file, or a record without analog channels, gets the
+     same box with no cancel at all. `.osc` has no such check.
+2. The ASCII data reader (`0x451800`) runs a byte cursor over the mapped
+   file rather than lines.
+   - Blanks are TAB, LF, CR and space; a field ends at TAB, LF, CR or a
+     comma.
+   - A row is 2 + nA + nD fields wherever the line ends fall. The sample
+     number is read and dropped; the timestamp and the digital fields are
+     integers from the field's leading digits and minus signs; the analog
+     fields go through C's `atof` («1.5x» is 1.5, a NUL ends the field).
+   - It stops when only blanks follow the timestamp. There is no endsamp
+     cap.
+   - So a `.cff` whose int32 data is labelled ASCII opens as rows of
+     zeros: the VM's run in L9.141 / formats.rs.
+Ours split the text on LF, trimmed, split on commas and stopped at a line
+with fewer than three fields, so binary data gave no rows. It had no
+zero-sample check, and every cancelled load was silent. Now:
+- `comtrade::AsciiScan` (`blank`, `int`, `float`) and `c_atof`; progress
+  is the cursor's offset.
+- `check_samples` after the data of a `.cfg` and a `.cff` returns
+  `ComtradeError::FormatAt(detail)`: `recset::record_base`, or for a
+  `.cff` `cff_temp_base`, whose hex form is INFERRED.
+- The load worker forwards errors even when cancelled, dropping only
+  results.
+Tests:
+- `ascii_rows_are_fields_not_lines`;
+- `loading_progress_follows_the_original_counters` (cancelled, an empty
+  data file, a cancelled `.cff`);
+- `cff_dat_line_quirks`;
+- `a_record_without_samples_reports_the_wrong_format`.
+Residual:
+- Bit 14 of the first-channel test is not modelled.
+- MSVCR's `atof` on inf / nan is not settled (ours: no).
+- The UI freeze until the worker ends is not reproduced.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

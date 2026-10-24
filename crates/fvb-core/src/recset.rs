@@ -211,16 +211,21 @@ impl SetTree {
 /// are dropped, otherwise the whole path is kept; then `.set` (`0x4c85d0`)
 /// is appended (`x.OSC` → `x.set`, `x.dat` → `x.dat.set`).
 pub fn set_path(record: &std::path::Path) -> std::path::PathBuf {
+    std::path::PathBuf::from(format!("{}.set", record_base(record)))
+}
+
+/// A record's path less its `.cfg` / `.osc` / `.sto` / `.zip` / `.cff`
+/// (the last four characters, lowercased; `0x44c710`), else whole.
+pub fn record_base(record: &std::path::Path) -> String {
     let s = record.to_string_lossy();
     let chars: Vec<char> = s.chars().collect();
     let n = chars.len();
     let tail: String = chars[n.saturating_sub(4)..].iter().collect::<String>().to_lowercase();
-    let base: String = if [".cfg", ".osc", ".sto", ".zip", ".cff"].contains(&tail.as_str()) {
+    if [".cfg", ".osc", ".sto", ".zip", ".cff"].contains(&tail.as_str()) {
         chars[..n - 4].iter().collect()
     } else {
         s.into_owned()
-    };
-    std::path::PathBuf::from(format!("{base}.set"))
+    }
 }
 
 // ---------------------------------------------------------------- Comments

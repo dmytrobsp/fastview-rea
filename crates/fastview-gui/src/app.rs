@@ -2386,8 +2386,11 @@ impl App {
         let prog = progress.clone();
         std::thread::spawn(move || {
             let r = parse_file(&p, enc, Some(&prog));
-            // A cancelled open is abandoned silently (`0x44f391`).
-            if !prog.cancelled() {
+            // A cancelled open is abandoned silently (`0x44f391`) — but an
+            // error the reader posted still shows (the `.cfg` loader's
+            // zero-sample check, `0x450bc1`: a `.cff` cancelled during its
+            // split, which polls nothing).
+            if !prog.cancelled() || r.is_err() {
                 let _ = tx.send(r);
             }
         });
@@ -2446,6 +2449,7 @@ impl App {
             // message 0x40a) and reported in an MB_OK box (`0x4756e0`): its
             // text "<message> - <file>" (`0x42dfe0`, the file as detail).
             Err(fvb_core::comtrade::ComtradeError::Plain(m)) => self.dlg.push_alert(m),
+            Err(ref e @ fvb_core::comtrade::ComtradeError::FormatAt(ref d)) => self.dlg.push_alert(format!("{e} - {d}")),
             Err(e) => self.dlg.push_alert(format!("{e} - {}", path.display())),
         }
     }
@@ -2717,6 +2721,32 @@ mod tests {
     /// L9.65: a record with a «Гц» channel opens corrected; «Не
     /// корректировать» recomputes with the fixed window; the next channel
     /// change turns the correction back on.
+    /// A record whose data gives no sample (an empty `.dat`; the same as a
+    /// `.cff` cancelled during its split) fails with string 330 and the
+    /// record's path less its extension (`0x450bc1`, `0x475680`); cancelled,
+    /// the error still shows (L9.268).
+    #[test]
+    fn a_record_without_samples_reports_the_wrong_format() {
+        let dir = std::env::temp_dir().join(format!("fv_nosamples_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = "S,D,1999\r\n1,1A,0D\r\n1,X,,,V,1,0,0,-9,9\r\n50\r\n1\r\n1000,3\r\n01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.000000\r\nASCII\r\n1\r\n";
+        std::fs::write(dir.join("rec.cfg"), cfg).unwrap();
+        std::fs::write(dir.join("rec.dat"), b"").unwrap();
+        for cancel in [false, true] {
+            let mut app = App::new();
+            app.load_comtrade_path(&dir.join("rec.cfg"));
+            if cancel {
+                app.loading[0].progress.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            while !app.loading.is_empty() {
+                app.poll_loading();
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            assert!(app.docs.is_empty());
+            assert_eq!(app.dlg.alert(), Some(format!("Неправильный формат файла - {}", dir.join("rec").display()).as_str()), "cancelled: {cancel}");
+        }
+    }
+
     #[test]
     fn frequency_correction_on_load_off_and_back() {
         let cfg = DEMO_CFG.replacen("2,Ub,B,,V,", "2,Ub,B,,Гц,", 1);
