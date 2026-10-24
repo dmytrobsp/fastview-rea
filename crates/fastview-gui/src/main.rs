@@ -699,10 +699,11 @@ mod window_tests {
         use egui::PointerButton::Primary;
         let mut w = Win::new();
         assert!(w.app.dlg.param_bar);
-        w.press(Primary, Pos2::new(400.0, 220.0), Pos2::new(400.0, 220.0));
+        let bar = egui::containers::panel::PanelState::load(&w.ctx, egui::Id::new("parambar")).expect("the bar").rect;
+        w.press(Primary, Pos2::new(400.0, bar.center().y), Pos2::new(400.0, bar.center().y));
         assert!(w.app.dlg.param_bar, "a click on the bar's text does nothing");
-        let mut y = 186.0;
-        while w.app.dlg.param_bar && y < 240.0 {
+        let mut y = bar.top();
+        while w.app.dlg.param_bar && y < bar.bottom() {
             w.press(Primary, Pos2::new(1320.0 - 12.0, y), Pos2::new(1320.0 - 12.0, y));
             y += 4.0;
         }
@@ -842,6 +843,9 @@ mod window_tests {
     #[test]
     fn narrow_ribbon_collapses_panels_and_keeps_its_height() {
         use egui::containers::panel::PanelState;
+        // A width where «Вычисления» has collapsed (the panels pack their
+        // elements edge to edge, L9.187).
+        const NARROW: f32 = 600.0;
         let height = |w: f32| {
             let ctx = egui::Context::default();
             let mut app = demo(&[]);
@@ -854,7 +858,7 @@ mod window_tests {
         };
         let (h_wide, c_wide, ..) = height(1320.0);
         assert_eq!(c_wide, vec![0; 5], "everything fits at the default size");
-        let (h_narrow, c_narrow, ctx, mut app) = height(700.0);
+        let (h_narrow, c_narrow, ctx, mut app) = height(NARROW);
         assert!((h_narrow - h_wide).abs() < 1.0, "ribbon height {h_narrow} vs {h_wide}");
         // MFC's order (L9.91): Вычисления and Диаграммы step through their
         // layouts first, «Вычисления» collapses (step 3); with the read
@@ -863,18 +867,18 @@ mod window_tests {
         assert!(c_narrow[3] == 3 && c_narrow[1] > 0, "steps: {c_narrow:?}");
         // The first width that needs a step: the panel with the most steps
         // left takes it (ties: the rightmost).
-        let first = (0..30).map(|k| height(1300.0 - 20.0 * k as f32).1).find(|c| c.iter().any(|&s| s > 0)).expect("a step before 700 px");
+        let first = (0..30).map(|k| height(1300.0 - 20.0 * k as f32).1).find(|c| c.iter().any(|&s| s > 0)).expect("a step before the narrow width");
         assert_eq!(first, vec![0, 0, 0, 1, 0], "first step: the panel with the most steps left, rightmost");
         // «Вычисления»'s button opens the panel as a popup.
         let popup = egui::Id::new(("fv_ribbon_group_popup", "Вычисления"));
-        for x in (300..700).step_by(10) {
+        for x in (300..NARROW as i32).step_by(10) {
             let at = Pos2::new(x as f32, 100.0);
             let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
-            frames(&mut app, &ctx, Vec2::new(700.0, 860.0), vec![vec![egui::Event::PointerMoved(at)], vec![ev(true)], vec![ev(false)], vec![]]);
+            frames(&mut app, &ctx, Vec2::new(NARROW, 860.0), vec![vec![egui::Event::PointerMoved(at)], vec![ev(true)], vec![ev(false)], vec![]]);
             if ctx.memory(|m| m.is_popup_open(popup)) {
                 return;
             }
-            frames(&mut app, &ctx, Vec2::new(700.0, 860.0), vec![vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }], vec![]]);
+            frames(&mut app, &ctx, Vec2::new(NARROW, 860.0), vec![vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }], vec![]]);
         }
         panic!("no collapsed «Вычисления» button opened its panel");
     }

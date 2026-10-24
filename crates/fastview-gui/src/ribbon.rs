@@ -6,6 +6,7 @@
 
 use crate::app::{App, Command, Pane, RibbonTab, ValueMode};
 use crate::icons::{self, Icon};
+use crate::oscgeom::PixelLines;
 use crate::theme::Skin;
 use eframe::egui::{self, Color32, RichText};
 
@@ -327,11 +328,12 @@ impl App {
             let body = egui::Frame::none()
                 .fill(if p.body.is_some() { Color32::TRANSPARENT } else { p.tab_active })
                 .stroke(egui::Stroke::new(1.0f32, p.group_border))
-                .inner_margin(egui::Margin::symmetric(6.0, 4.0))
+                .inner_margin(egui::Margin::symmetric(6.0, 1.0))
                 .show(ui, |ui| {
-                    // A constant height: expanded panels (buttons + title),
-                    // across the whole window.
-                    ui.set_min_height(102.0);
+                    // A constant height: expanded panels (a large button,
+                    // the panel margins and its 15 px caption), across the
+                    // whole window — 86 px inside, as on the VM.
+                    ui.set_min_height(LARGE_H + 4.0 + 1.0 + 15.0);
                     ui.set_min_width(ui.available_width());
                     // Never wrap a label: a group that does not fit is
                     // collapsed (below), not squeezed.
@@ -658,6 +660,20 @@ impl App {
 
 /// A vertical gradient through `stops` (y offsets from the top, colours) as
 /// one mesh, the last colour down to the bottom.
+/// A checked button's ground. The Office 2007 looks (seen on the VM, Blue):
+/// a 1 px (147, 135, 108) frame round a two-part gradient — (253, 212, 167)
+/// at the top, (249, 151, 50) at 42 %, (252, 230, 156) at the bottom; the
+/// older looks their flat selection colour.
+fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette) {
+    if p.caption_band.is_some() && p.accent_soft == Color32::from_rgb(255, 228, 150) {
+        let h = rect.height();
+        painter.add(gradient_mesh(rect.shrink(1.0), &[(0.0, Color32::from_rgb(253, 212, 167)), (0.42 * h, Color32::from_rgb(249, 151, 50)), (h, Color32::from_rgb(252, 230, 156))]));
+        painter.px_rect_stroke(rect, 2.0, egui::Stroke::new(1.0f32, Color32::from_rgb(147, 135, 108)));
+    } else {
+        painter.rect(rect, 2.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
+    }
+}
+
 fn gradient_mesh(rect: egui::Rect, stops: &[(f32, Color32)]) -> egui::Shape {
     let mut mesh = egui::Mesh::default();
     let mut pts: Vec<(f32, Color32)> = stops.iter().map(|&(y, c)| (rect.top() + y.min(rect.height()), c)).collect();
@@ -875,15 +891,20 @@ fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: 
                 .inner_margin(egui::Margin::symmetric(4.0, 2.0))
                 .show(ui, |ui| {
                     ui.horizontal_top(|ui| {
+                        // MFC packs a panel's elements edge to edge (the
+                        // diagram buttons touch; small buttons on a 22 px
+                        // pitch — seen on the VM).
+                        ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                         content(ui);
                     });
                 });
             ui.add_space(1.0);
             ui.allocate_ui_with_layout(
-                egui::vec2(ui.min_rect().width().max(40.0), 14.0),
+                egui::vec2(ui.min_rect().width().max(40.0), 15.0),
                 egui::Layout::top_down(egui::Align::Center),
                 |ui| {
-                    ui.label(RichText::new(title).small().color(p.caption_text));
+                    // The caption in the 9 pt UI font (12 px).
+                    ui.label(RichText::new(title).size(12.0).color(p.caption_text));
                 },
             );
         });
@@ -925,9 +946,10 @@ fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label
     // The checked fill is light in every look: dark ink on it.
     let ink = if selected && ui.is_enabled() { CHECKED_INK } else { ink };
     let hovered = resp.hovered() && ui.is_enabled();
-    if selected || hovered {
-        let fill = if selected { p.accent_soft } else { p.accent_soft.gamma_multiply(0.5f32) };
-        painter.rect(rect, 3.0f32, fill, egui::Stroke::new(1.0f32, p.accent_border));
+    if selected {
+        checked_bg(painter, rect, &p);
+    } else if hovered {
+        painter.rect(rect, 3.0f32, p.accent_soft.gamma_multiply(0.5f32), egui::Stroke::new(1.0f32, p.accent_border));
     }
     // The 32 px image centred from the top + 3, the lines from + 38
     // (`OnDraw` `0x10100cae`); our drawings fill 28 px of it.
@@ -1033,7 +1055,7 @@ fn small_button_mode(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, la
     let (ink, accent) = inks(ui, p);
     let ink = if selected && ui.is_enabled() { CHECKED_INK } else { ink };
     if selected {
-        painter.rect(rect, 2.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
+        checked_bg(painter, rect, &p);
     } else if resp.hovered() && ui.is_enabled() {
         painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
     }
@@ -1112,7 +1134,7 @@ fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, tip: &s
     let painter = &plain_painter(ui);
     let enabled = enabled && ui.is_enabled();
     if on {
-        painter.rect(rect, 2.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
+        checked_bg(painter, rect, &p);
     } else if enabled && resp.hovered() {
         painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
     }

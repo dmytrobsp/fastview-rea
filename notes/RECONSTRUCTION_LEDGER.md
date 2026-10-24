@@ -5646,11 +5646,28 @@ caption 8 px below its neighbours'); the dock containers now keep 2 px
 (`dock_frame`), groups beside another and the tabbed group's body none.
 Residual: the other looks' caption colours.
 
+### L9.187 — The ribbon against the original's: packed panels, the checked buttons' gradient, the panel captions' font, the body's height  ·  ✅
+Seen on the VM (WIN_1999, Office 2007 blue): the panels' elements are
+packed edge to edge — the four diagram buttons touch (x 160–218, 219–279,
+…), small buttons stand on a 22 px pitch; a checked button is a 1 px
+(147, 135, 108) frame round a two-part gradient, (253, 212, 167) at the
+top, (249, 151, 50) at 42 % of its height, (252, 230, 156) at the bottom;
+the panel captions are in the 9 pt UI font; the body is ≈ 86 px (a 64 px
+large button, the panel margins and the caption band). Ours spaced the
+elements by egui's item spacing, filled checked buttons flat (255, 228,
+150), wrote the captions small and kept a 102 px body. Now the panel
+content has no item spacing, `checked_bg` paints the gradient for the
+Office 2007 looks (the older ones keep their flat colour), captions at
+12 px, the body `LARGE_H` + 4 + 1 + 15. The narrow-ribbon test moved to
+600 px (the panels are narrower, the reduction plan unchanged).
+Residual: the hover gradient; the QAT arrow; the tab row's tab shapes;
+the icons are ours (W6).
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.186)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.187)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5702,7 +5719,8 @@ L9.182 W1.8 B2 / B4 / B5 / B8 / B9 (binary32 units, 32805 edits
 W2.18 part (zoom gate, per-key chart writes, the tokenizer's integer);
 L9.184 the merge bar's layout, the ОМП tree's labels after a delete;
 L9.185 W1.8 B3 / B10 — W1.8 done (the finder's sort, the merge bar's
-fill, the group stats width); L9.186 the panes' captions.
+fill, the group stats width); L9.186 the panes' captions; L9.187 the ribbon's packing / checked
+gradient / height.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped
