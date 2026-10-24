@@ -5663,11 +5663,37 @@ Office 2007 looks (the older ones keep their flat colour), captions at
 Residual: the hover gradient; the QAT arrow; the tab row's tab shapes;
 the icons are ours (W6).
 
+### L9.188 — `doc+0x1d8` counts every analog-kind record (W2.16 settled); the unknowns table (W3.1)  ·  ✅
+Read (background agent; by hand: the `.cfg` reader's count by the kind
+byte `0x451178`–`0x451189` / `0x451247`–`0x451258`, the analog adder's
+`inc [rec+0x58]` at `0x42e930`): `doc+0x1d8` (`rec+0x58`) counts the
+kind-0 records — file analog, formula and pasted analog channels —,
+`doc+0x1dc` the kind-1 ones; both zeroed at `0x44b918` / `0x44b95a`,
+`0x4966f8` / `0x496702`, copied by the snapshot `0x4546d0`. The analog
+adders `0x42e810` / `0x42e940` insert a new formula channel at index
+`rec+0x58` (the end of the analog block) and raise it (`0x42e930`,
+`0x42eabf`); the digital adder `0x42ead0` inserts at `rec+0x58` (the
+first digital place) and raises `rec+0x5c` (`0x42ebbc`); the insert
+`0x42e5c0` and the remove `0x42ecf0` count by kind. So the vector is
+always [kind 0][kind 1], and a loop to `doc+0x1d8` covers every analog
+channel — formula and pending ones included — and no digital one: «Скрыть
+все» `0x437310`, the frequency «Показать все» `0x46f210` (computed
+channels too; the painter `0x46f5a0` draws by bit 1 alone), «Отсчет
+углов» `0x492d50`, the coefficient dialog `0x47ac80` / `0x47b610` (bit 13
+skipped only), «Каналы» `0x433b00`, the pair combos `0x4216b0`. The paste
+`0x45acb0` inserts analog channels at the first selected kind-0 record or
+at `doc+0x1d8` (after the formula channels), digital ones at the first
+selected kind-1 record or the end; the merge `0x47d990` moves nothing.
+The earlier "file channels only" read (plan W2.16, L9.20 / L9.151 /
+L9.181 residuals) was wrong. Ours' differences are plan W2.19.
+W3.1: every NOT DETERMINED / INFERRED / ND of the ledger and the specs is
+classified in the plan (STATIC / RUN / W6 / already settled).
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.187)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.188)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5720,7 +5746,8 @@ W2.18 part (zoom gate, per-key chart writes, the tokenizer's integer);
 L9.184 the merge bar's layout, the ОМП tree's labels after a delete;
 L9.185 W1.8 B3 / B10 — W1.8 done (the finder's sort, the merge bar's
 fill, the group stats width); L9.186 the panes' captions; L9.187 the ribbon's packing / checked
-gradient / height.
+gradient / height; L9.188 `doc+0x1d8` = every analog-kind record (W2.16),
+the unknowns table (W3.1).
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

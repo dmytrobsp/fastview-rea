@@ -149,16 +149,23 @@ items (VM ones also in W4.4):
 - [ ] W2.14 L9.102 — where a tab dragged out lands (VM, mouse driving).
 - [ ] W2.15 L9.122 — «Свойства...» on the VM, the owner window, the
   orientation merge (with W2.12).
-- [ ] W2.16 Whether `doc+0x1d8` counts computed channels (shared by
-  L9.20, L9.151, L9.154, L9.166). Read 2026-10-24: only the readers raise it
-  (`.cfg` `0x451181` / `0x451250`, `.osc` `0x4529f8` / `0x452b65`, with
-  `doc+0x1dc`; zeroed `0x44b95a`, `0x4966f8`) — it counts the file's
-  channels (analog + digital); added formula / pasted channels do not raise
-  it. With the vector analog → computed → digital (L9.145) a loop over the
-  first `doc+0x1d8` entries takes the computed channels only up to the
-  number of digital ones. But «Каналы»'s row filler `0x433b00` suggests
-  the opposite (W1.8 B6, INFERRED). To do: settle that; confirm where formula channels are
-  inserted, then apply to the pair combos, the circle refresh and the paste.
+- [x] W2.16 What `doc+0x1d8` counts — settled 2026-10-24 (background
+  read, by hand where L9.188 says): every kind-0 record — file analog,
+  formula and pasted analog —, `doc+0x1dc` the kind-1 ones; the vector is
+  always [kind 0][kind 1] (the readers count by kind; the analog adders
+  insert at `rec+0x58` and raise it; the digital adder inserts at
+  `rec+0x58` and raises `rec+0x5c`; the paste's insert `0x42e5c0` and the
+  remove `0x42ecf0` count by kind). The earlier "file channels only" read
+  was wrong. Ours' differences filed in W2.19.
+- [ ] W2.19 From W2.16: formula channels on the frequency diagram
+  (`on_freq`, «Каналы» column 2, the menu, the painter); a pasted analog
+  channel with nothing selected goes after the formula channels and stays
+  there after «Объединить» (needs one order over the kind-0 records);
+  pending pasted digital channels among the digital rows / outside the
+  analog loops; the paste's analog point from a selected formula channel
+  too; the coefficient dialog lists pending analog channels; circle
+  «Показать все» skips pending lanes (`0x437150`); the ОМП flags carry
+  the computed bit.
 - [ ] W2.17 The open residuals of ✅ entries since L9.128 (each entry's
   "Residual:" lines): quick analysis's rollback of its channels on a
   failed recompute (L9.157), drag-scroll left / right (L9.164), the grid's
@@ -182,11 +189,59 @@ items (VM ones also in W4.4):
 
 ## W3 — Resolve the unknowns
 
-- [ ] W3.1 List every NOT DETERMINED (37) and INFERRED (44) of the ledger
-  with its entry, in a table here: how it will be settled (a static
-  re-read, a W4 run) or why it cannot be (W6).
+- [x] W3.1 The table (2026-10-24, a background read of every NOT
+  DETERMINED / INFERRED / ND in the ledger and the specs): 115 ledger
+  marks + 8 in UI_BEHAVIOUR_SPEC; 23 + 5 already settled by later entries
+  (their wording to tidy: L4's Ordinal_2948 — case-sensitive, ours folds
+  case: a divergence to fix —, L5 ×2, L7, L8 ×2, L3, L2's `arg:`, L9.52,
+  L9.79, L9.80, L9.85, L9.97, L9.115, L9.129, L9.134, L9.135b, L9.148b;
+  UI spec §10). About 80 distinct open questions remain:
+  - **STATIC** (re-read): rec+0x278's default for COMTRADE (L6); `zk:`
+    (L6); the Takagi θ with taps `0x49a670` (L7); bitmap 464's indices
+    (L9.13); lane clipping when printing / EMF (L9.33); the group stats
+    line with unit "none" `0x468b00` / `0x4695c5` (L9.50); computed
+    channels' k `ch+0xf0` (L9.69); the unit walk on zero samples `0x425d70`
+    (L9.70); the vector magnitude's width (L9.72); the pasted channel's
+    ph / ccbm `0x424cb0` (L9.86); #12964 = SelectPrinter? (L9.94); an area
+    on an unknown channel `0x4040c0` (L9.96); the flag refresh's other
+    callers `0x428490` (L9.103); Repos stretching large buttons
+    `0x101227d5` (L9.114); the splitter strip's brush `0x438110`
+    (L9.118); pasted samples vs `0x426020` (L9.126); MFC string 61702 and
+    the catch handlers' types (L9.131); the ADC flag on computed channels
+    (L9.135); DC mean over NaN `0x428795` (L9.136); the merge's padding
+    `0x47d990` (L9.137); the "no lane at y" setter path (L9.147); the
+    Save As title helper (L9.158); an OSC2 record saved as COMTRADE and
+    the binary writer with pending channels (L9.172); the legacy `.omp`
+    reader `0x4a45f0` (spec §8.5).
+  - **RUN** (VM scenarios, W4.4): `.set` comments by alias (L9.17); a
+    disabled V scroll bar when the lanes fit (L9.23); «МВт» / «ном»
+    folding (L9.34, L9.95, L2); the ГВ label's look (L9.42); the 4 × 4
+    marks' fill (L9.45); quick-analysis edits and the modified flag
+    (L9.55); «Окна...» arrangements under MDI tabs (L9.64, L9.91); the
+    `.set` after an ОМП run (L9.68); plane labels' background (L9.75); the
+    differential table's row order (L9.81); the app menu's keytips
+    (L9.90); the ribbon's reduction steps (L9.91); the printed vector
+    legend (L9.93); the preview on non-A4 paper (L9.94); GDI's Ellipse box
+    (L9.99); the diagram tab order in the workspace (L9.105); the splitter
+    cursor (L9.106); the docking divider's limits (L9.109); a paste's
+    selection (L9.111); the print dialog's fields / status (L9.113); the
+    preview's per-page DC (L9.121); «Свойства»' DEVMODE (L9.122); the
+    older looks' app button (L9.127); Ctrl over a hot marker (L9.128);
+    MDI keys / order (L9.130); a 0 / negative rate in 392 (L9.131,
+    L9.148); the `.set` with formula + digital channels (L9.143); menu
+    check column, combine with a computed channel, popup keyboard
+    (L9.144, L9.146); status bar prompts (L9.147); a group tab strip's
+    right-click (L9.149); Aqua's title (L9.150); Enter in quick analysis
+    (L9.151); 32806 with no document (L9.152); «Удалить файлы» with
+    nothing selected (L9.154); Save As caption (L9.158); opening an open
+    file, a drop on the frame (L9.159); the toolbar wheel (L9.161); drag
+    auto-scroll at the left / right insets (L9.164); the level edit
+    scrolled (L9.175); the caption bars' order (spec §1.3); the ОМП
+    channel drop-down with formula channels (spec §8.4).
+  - **W6**: landscape margins (our CUPS path), drivers resetting the DC,
+    short-row files (no sample), the `.zip` writer (unreachable).
 - [ ] W3.2 Settle the static ones.
-- [ ] W3.3 Hand the runtime ones to W4 as scenarios.
+- [ ] W3.3 Run the RUN ones (W4.4) and tidy the settled rows' wording.
 
 ## W4 — Run the original on the Windows VM
 
