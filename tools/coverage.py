@@ -19,7 +19,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-args = [a for a in sys.argv[1:] if not a.startswith('--')]
+args = [a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith('--') and sys.argv[i - 1] != '--min']
 listing = args[0] if args else os.path.join(ROOT, 'dumps', 'fv.asm')
 min_size = int(sys.argv[sys.argv.index('--min') + 1]) if '--min' in sys.argv else 150
 show_all = '--all' in sys.argv

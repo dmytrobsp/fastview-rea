@@ -5316,7 +5316,7 @@ Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.173)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.178)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5355,7 +5355,11 @@ the end; L9.168 the parameters bar's ✕; L9.169 the `.omp` file is a
 settings document; L9.170 channel colours by phase / name / place; L9.171
 channels start on no diagram, `Codepage` 1 = ANSI; L9.172 **the `.cfg` /
 `.dat` / `.set` byte-identical to the original's on three records**;
-L9.173 the save path.
+L9.173 the save path; L9.174 the planes' pan limit; L9.175 «Изменить
+уровень» as read; L9.176 the coefficient dialog's selection / commit;
+L9.177 **the main window against the original's capture** (stats panel,
+channel 0 selected, title, stat rows); L9.178 «О программе» in the
+original's layout with our own texts, W1.6 / W1.2b read.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

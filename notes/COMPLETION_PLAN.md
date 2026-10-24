@@ -45,6 +45,7 @@ tool skips this file), never in the ledger or the specs.
 |---|---|---|---|---|---|---|---|---|
 | 2026-10-24 | `50472bd` | 523 / 1803 | 60.3 % | 107 / 322 | 474 / 684 | 128 / 36 | 37 | 249 ✓ |
 | 2026-10-24 (later) | `36605ec` | 583 / 1803 | 68.1 % | 54 / 322 | 469 / 684 | 137 / 36 | 39 | 256 ✓ |
+| 2026-10-24 (night) | `8dadc7d` | 659 / 1803 | 74.9 % | 0 / 322 | 453 / 684 | 163 / 15 | 39 | 256 ✓ |
 
 ## W1 — Read the uncited code
 
@@ -95,7 +96,17 @@ Batches, in this order (the size of the unread code, user visibility):
 - [x] **W1.6** Small windows — read (L9.178): About in the original's layout, the finder's reselect, the bar's labels.
 - [x] **W1.7** The unlabelled large functions — labelled and read (L9.176); the coefficient dialog fixed.
 - [ ] **W1.7b** From W1.7: groups pruned after every formula evaluation (`0x455c70`) and computed channels as group members (with L9.144); a pasted channel's vector phasor from its own cache (`0x490120`); OSC2 channel lines (field counts, digital normal state, no phase, the empty-name quirk); the `.sto` open flow's messages and `-Dst` as a file (reader stays ⛔); group members painted in name order.
-- [ ] **W1.8** The medium functions (50–149 instructions, 474 uncited) — the same way, batch by area once W1.1–W1.7 are done.
+- [ ] **W1.8** The medium functions (50–149 instructions; 453 uncited on 2026-10-24 night) — the same way, in ten batches (`coverage.py --min 50`, split by area; the unlabelled ones by address):
+  - [ ] B1 unlabelled `0x4035d0`–`0x42cdb0` (58)
+  - [ ] B2 unlabelled `0x42d0f0`–`0x45a720` (58)
+  - [ ] B3 unlabelled `0x45a980`–`0x4a7510` (56)
+  - [ ] B4 circle diagram and its shapes (51)
+  - [ ] B5 differential / frequency / vector diagrams, the property grid, «Пары каналов» (43)
+  - [ ] B6 quick-analysis pages, «Каналы», «Добавить формулу» (42)
+  - [ ] B7 the ОМП engine (`FileInfoDlg` area) and its dialog (30)
+  - [ ] B8 the ОМП data: lines, stations, sections (39)
+  - [ ] B9 document, view, app, frame, merge bar, comment items (51)
+  - [ ] B10 the small windows and library classes (25)
 - [ ] **W1.9** The "explained away" list: functions that need no note, each with a one-line reason.
 
 ## W2 — Close the 🟡 ledger entries
