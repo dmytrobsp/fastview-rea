@@ -6229,6 +6229,29 @@ question settled; «ном» reads «ном» in both, and its channel menu grey
 «Отображать на векторной диаграмме» — not vector-eligible, as ours.) The
 record stays local.
 
+### L9.211 — VM run: what the original keeps in the registry across runs (W5.3)  ·  ✅
+Run on the VM: the original opened WIN_1999 and was closed with Alt+F4
+(the harness otherwise kills it, so nothing is saved at exit), then
+HKCU\Software\НТЦ Механотроника\Механотроника FastView was exported (kept
+local). It holds: «Circle Diagram» / «Diff Diagram» `Properties Height` 200;
+«Print Parameters» — Left / Right / Top / Bottom Margin 2000 (0.01 mm),
+Page Orientation 1; «Recent File List» File1; «Settings Parameters» — Dst
+folder "", UTC for Comtrade2013 1, Display Encoding 1 (written at exit,
+`0x448da0`, with no dialog opened); «Workspace» — ApplicationLook 215,
+WindowPlacement (MainWindowRect, Flags 2, ShowCmd 3 = maximised), and
+MFC's own docking / ribbon / toolbar / keyboard state (BasePane-*,
+Pane-*, DockingManager-128, MFCRibbonBar-59398 QuickAccessToolbarOnTop 1
+IsMinimized 0, Keyboard-0, ControlBars-Summary). The `View` values
+(XScale, YAnalogSize, RulerState, Sells) are in each record's `.set`, not
+here.
+Ours keeps the same settings with the same defaults (margins 2000,
+portrait, Properties Height 200, UTC 1, Display Encoding 1 = Windows-1251,
+look 215, the window placement, the MRU) in its own settings file
+(`persist::Store`) — a file rather than the registry (ours runs on three
+systems), MFC's docking blobs replaced by our own layout record; ours
+writes `Settings Parameters` on the dialog's OK, the original also at
+exit (the same values either way).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

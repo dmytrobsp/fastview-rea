@@ -301,8 +301,10 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   Microsoft Print to PDF with a fixed output name) — ours against the
   original's pages.
 - [ ] W5.2 The clipboard formats both put on the clipboard.
-- [ ] W5.3 Registry / settings persistence across runs (what the original
-  writes under its key vs ours).
+- [x] W5.3 Registry / settings persistence across runs: the original's key
+  read after a clean exit on the VM — the same settings and defaults as ours
+  (L9.211); a settings file instead of the registry, our own layout record
+  instead of MFC's docking blobs.
 
 ## W6 — Out of reach (with the reason)
 
