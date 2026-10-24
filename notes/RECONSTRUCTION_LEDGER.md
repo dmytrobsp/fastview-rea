@@ -6519,6 +6519,20 @@ panels stack their content and a fixed 16 px caption, the separator is
 Residual: the body's top line colour (ours the panel border colour); the
 title's own font and position in the caption.
 
+### L9.226 — The view's scroll bars as Windows 11 draws them  ·  ✅
+Seen on the VM (WIN_1999 maximised, the record wider than the view, the
+pointer elsewhere): the horizontal bar is a 16 px BTNFACE (240, 240,
+240) track with a (227, 227, 227) line under it; its arrows are hidden
+while the pointer is away, their 17 px kept, and the thumb is a 2 px
+(133, 133, 133) line along the track's middle, 1 px in from the thumb's
+ends (x 23–969 of a 5–1547 track). Ours drew a (236) track with arrow
+buttons and a full grey thumb at all times. Now `lanes::scrollbar`
+paints the idle look and, under the pointer, the arrows and a full
+(133) thumb; the geometry and behaviour unchanged.
+Residual: Windows 11's hover animation and the exact hovered thumb
+(ours a 2 px-rounded bar); the planes' bars (`diagram_ui::scrollbar`)
+not compared yet.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

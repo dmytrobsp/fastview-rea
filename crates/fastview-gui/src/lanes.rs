@@ -949,7 +949,12 @@ fn analog_at(y: f32, geo: &RowGeo, ranges: &[(f64, f64)]) -> Option<(usize, f64)
 #[allow(clippy::too_many_arguments)]
 fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f32, page: f32, line: f32, jump: f32) -> Option<f32> {
     let p = ui.painter_at(rect);
-    p.rect_filled(rect, 0.0, Color32::from_gray(236));
+    // Windows 11's bar (VM): a BTNFACE track; idle, the arrows hidden (their
+    // room kept) and the thumb a 2 px (133, 133, 133) line along the
+    // middle, 1 px in from its ends; under the pointer, arrows and a full
+    // thumb.
+    p.rect_filled(rect, 0.0, Color32::from_gray(240));
+    let hot = ui.rect_contains_pointer(rect);
     let len = if horizontal { rect.width() } else { rect.height() };
     let thick = if horizontal { rect.height() } else { rect.width() };
     if len <= 0.0 || thick <= 0.0 {
@@ -967,7 +972,7 @@ fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f
     };
     let (dec, inc) = (along(0.0, arrow), along(len - arrow, len));
     let glyph = Color32::from_gray(if enabled { 96 } else { 180 });
-    for (r, back) in [(dec, true), (inc, false)] {
+    for (r, back) in [(dec, true), (inc, false)].into_iter().filter(|_| hot) {
         p.rect_filled(r.shrink(1.0), 0.0, Color32::from_gray(222));
         let (c, s) = (r.center(), (arrow / 4.0).min(4.0));
         let tri = match (horizontal, back) {
@@ -987,7 +992,17 @@ fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f
     let at = arrow + travel * (value / max).clamp(0.0, 1.0);
     let thumb = along(at, at + thumb_len).shrink2(if horizontal { Vec2::new(0.0, 2.0) } else { Vec2::new(2.0, 0.0) });
     if thumb_len > 0.0 {
-        p.rect_filled(thumb, 2.0, Color32::from_gray(176));
+        if hot {
+            p.rect_filled(thumb, 2.0, Color32::from_gray(133));
+        } else {
+            let c = thumb.center();
+            let line = if horizontal {
+                Rect::from_min_max(Pos2::new(thumb.left() + 1.0, (c.y - 1.0).round()), Pos2::new(thumb.right() - 1.0, (c.y - 1.0).round() + 2.0))
+            } else {
+                Rect::from_min_max(Pos2::new((c.x - 1.0).round(), thumb.top() + 1.0), Pos2::new((c.x - 1.0).round() + 2.0, thumb.bottom() - 1.0))
+            };
+            p.rect_filled(line, 0.0, Color32::from_gray(133));
+        }
     }
     let id = ui.id().with(("fv_scroll", horizontal));
     let r = ui.interact(rect, id, Sense::click_and_drag());
@@ -2748,7 +2763,7 @@ mod menu_tests {
         h.frame(vec![]);
         h.frame(vec![]);
         let y = SCREEN.y - 8.0 - HSCROLL_H / 2.0;
-        let bar = |h: &Harness| h.shapes.iter().any(|c| matches!(&c.shape, Shape::Rect(r) if r.rect.contains(Pos2::new(400.0, y)) && r.fill == Color32::from_gray(236)));
+        let bar = |h: &Harness| h.shapes.iter().any(|c| matches!(&c.shape, Shape::Rect(r) if r.rect.contains(Pos2::new(400.0, y)) && r.fill == Color32::from_gray(240)));
         assert!(!bar(&h), "no bar while the record fits");
         h.app.active_doc_mut().unwrap().xscale = Some(fit * 8.0);
         h.frame(vec![]);
@@ -2777,7 +2792,7 @@ mod menu_tests {
         let y = SCREEN.y - 8.0 - HSCROLL_H / 2.0;
         let painted = |p: Pos2| {
             h.shapes.iter().any(|c| {
-                c.clip_rect.contains(p) && matches!(&c.shape, Shape::Rect(r) if r.rect.contains(p) && r.fill == Color32::from_gray(236))
+                c.clip_rect.contains(p) && matches!(&c.shape, Shape::Rect(r) if r.rect.contains(p) && r.fill == Color32::from_gray(240))
             })
         };
         assert!(painted(Pos2::new(400.0, y)));
