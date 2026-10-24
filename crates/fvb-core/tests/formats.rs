@@ -222,8 +222,11 @@ fn loading_progress_follows_the_original_counters() {
     assert_eq!((rec.analog.len() as u32, rec.analog[0].samples.len() as u32), (a, n));
     let t = 5 * s;
     assert_eq!(p.total.load(Relaxed), t);
-    assert_eq!(p.pos.load(Relaxed), s + a * n * (t / (n * c)), "S after the parse, then the steps");
-    assert_eq!(p.percent(), ((s + a * n * (t / (n * c))) * 100 / t).min(100));
+    // The cursor after the last row: past its last value's delimiter, so
+    // short of a CR LF's LF (a checkout with CR LF line ends).
+    let end = s - u32::from(DAT.ends_with(b"\r\n"));
+    assert_eq!(p.pos.load(Relaxed), end + a * n * (t / (n * c)), "the cursor after the parse, then the steps");
+    assert_eq!(p.percent(), ((end + a * n * (t / (n * c))) * 100 / t).min(100));
     // BINARY: 8 + 6·2 + 2 bytes a record.
     let bin = vec![0u8; (n * 22) as usize];
     let (p, _) = run("binary", &CFG.replacen("\nASCII", "\nBINARY", 1), &bin);
