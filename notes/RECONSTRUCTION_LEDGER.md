@@ -686,7 +686,7 @@ now negates end-2 current samples first; `tests/omp_engine.rs` records end 2
 in the standard into-the-line convention (the unfixed engine located an 18 km
 fault at 1.18 km). Spec: `notes/OMP_SPEC.md` §13.
 
-### L9.3 — Diagrams as docking panes beside the oscillogram  ·  🟡
+### L9.3 — Diagrams as docking panes beside the oscillogram  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 
 Original (read, `0x474e10`, `0x475040`/`0x4750b0`, CMDUI `0x4750f0`; help
 screenshot clip0014): four CDockablePanes created visible — Vector and Circle
@@ -708,7 +708,7 @@ DETERMINED) — we follow the screenshot's single tab group; the vertical pane
 toolbars (550/552/553) and pane contents are item 19/20+ of the backlog;
 Быстрый анализ and ОМП still replace the central view (backlog 6, dialogs).
 
-### L9.4 — Oscillogram view geometry, визиры, wheel, ruler, status  ·  🟡
+### L9.4 — Oscillogram view geometry, визиры, wheel, ruler, status  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 
 Read (spec §3; checked by hand: `0x45c4f0` zoom steps, `0x45c430` fit,
 `0x45ab70` initial update, `0x449170` визир block, `0x45d990` wheel,
@@ -778,7 +778,7 @@ lane growth, width fits the cut name.
 Residual: egui has no Tahoma/bold (bold simulated by double drawing); (group
 lanes' per-member blocks: done in L9.50).
 
-### L9.6 — Comments: moments, level lines, areas  ·  🟡 (no .set persistence)
+### L9.6 — Comments: moments, level lines, areas  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 
 Read (spec §5: `0x43eb40` placement, `0x43ef50` release, `0x43efa0` drag,
 `0x43f630` paint, `0x43df90` info box, `0x45efa0`/`0x45ce40` MENU 563):
@@ -838,7 +838,7 @@ Residual: the frequency diagram still reads raw samples (track D rewrites it
 merge operations only (paste) is now the only snapshotting command but the
 Отмена/Возврат enable-by-count rule is pending (ribbon item 11).
 
-### L9.8 — Document tabs, window title, start-up  ·  🟡
+### L9.8 — Document tabs, window title, start-up  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 
 Read (spec §1.1/§1.5; help screenshot clip0014 sampled with
 `tools/pngcrop.py`): OneNote-style tabs (slanted left edge, gradient
@@ -856,7 +856,7 @@ is handed over and the start exits once accepted); (new tab groups: none
 in the original either, tab reordering: L9.108); («Окна...» in the ▾
 list: done in L9.64).
 
-### L9.9 — «Проводник» as the original's modal finder  ·  🟡
+### L9.9 — «Проводник» as the original's modal finder  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 
 Read (spec §7.5 and the scope-F finder sub-report: `0x46b9c0` scan thread,
 `0x46bec0` by the last three characters, `0x46c080` COMTRADE header — station
@@ -877,7 +877,7 @@ Residual: `.sto` entries not read (no sample `.sto`; `0x46c960` converts
 it like the open does); (delete through the shell / recycle bin: L9.49;
 the folder tree, «Выбрать», the date pickers: L9.116).
 
-### L9.10 — Loading on a worker thread with the «Загрузка» dialog  ·  🟡
+### L9.10 — Loading on a worker thread with the «Загрузка» dialog  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 
 Read (spec §7.6): parsing always on a worker thread; the modal dialog only
 when the `.dat` of a `.cfg` or the `.cff` exceeds 200 000 bytes, or the `.osc`
@@ -924,7 +924,7 @@ contents, frequency margins NOT DETERMINED; (per-document «* Chart»
 persistence: done in L9.17), the themed splitter, bit 14 pending merge not modelled;
 `egui_plot` dependency now unused (removed 2026-10-23).
 
-### L9.13 — Dialogs and the parameters bar (track F, merged)  ·  🟡
+### L9.13 — Dialogs and the parameters bar (track F, merged)  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 
 Merged from `worktree-agent-a7cb4acef380f64fb` (`2818fb2`, `0fea977`,
 `bf752d4`, `60831ef`). Read: parameters bar `0x456e90` (raw stamp
@@ -980,7 +980,7 @@ sets keys on one element only — `SetKeys("p", "w")` at `0x473307` on
 the application menu's Печать (57607); every other keytip would come from
 MFC's ribbon keytip machinery in mfc120u, not read).
 
-### L9.15 — Merging oscillograms («Объединение»)  ·  🟡
+### L9.15 — Merging oscillograms («Объединение»)  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 
 Read: `0x47bc00` by hand (sync by fault component: per channel the jump
 `|x[k] − 2x[k−N] + x[k−2N]| / A(k−1)` with A the fault component
@@ -1184,7 +1184,7 @@ leave our window (no OLE "Embed Source" / cross-instance index drop — the
 original's foreign drops are inert or misapplied anyway); the 200 ms
 delay start: done in L9.61.
 
-### L9.22 — Printing: dialog, page setup, paged output, preview (backlog 36)  ·  🟡
+### L9.22 — Printing: dialog, page setup, paged output, preview (backlog 36)  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 
 Read (research report; MFC ordinals resolved against the local
 mfc120u.dll): 57607 → OnPreparePrinting `0x4053f0` (CPrintDialog with
@@ -1324,7 +1324,7 @@ off (a short toolbar), the tab group's content is clipped to its own rect.
 Test: `diagram_pane_toolbar_stays_above_the_tab_strip` (860 / 700 / 560 px
 windows). Residual: the original's toolbar overflow chevron not modelled.
 
-### L9.27 — Ribbon: icon-only small buttons; panels collapse when narrow  ·  🟡
+### L9.27 — Ribbon: icon-only small buttons; panels collapse when narrow  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Our bug (headless `window_dump` render at the default 1320 px): the
 «Видимость» group drew 140 px text buttons in six columns, so «Главная» was
 ~1400 px wide; past the window edge egui wrapped labels almost per
@@ -1357,7 +1357,7 @@ look. Ours: idle controls get a white interior, the lighter tab face for
 buttons and a frame-coloured outline (as Windows controls). Test:
 `theme::idle_controls_stand_out_from_the_panel` (all nine looks).
 
-### L9.29 — Print preview pages centred  ·  🟡
+### L9.29 — Print preview pages centred  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Headless render: our preview drew the page(s) at the top-left of the grey
 area; the stock MFC preview (57609 `AFXPrintPreview`) centres them. Ours:
 centred horizontally and vertically at every zoom that fits.
@@ -1603,7 +1603,7 @@ map-mode test — a ГВ is drawn when shown (`+0x48`) and above the bottom band
 labels on their paged lanes (L9.22 residual closed). Test
 `horizontal_vizirs_are_printed`.
 
-### L9.40 — Scroll bar arrows and track act on the press and repeat  ·  🟡
+### L9.40 — Scroll bar arrows and track act on the press and repeat  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Window scroll bar behaviour (system, not program code): a press on an
 arrow or the track scrolls at once and repeats while held; the track stops
 once the thumb reaches the pointer. Ours (was: one step per click): the
@@ -1824,7 +1824,7 @@ Residual: hS scaled like our fonts (13 px); whether "none" units are
 blanked in the line NOT DETERMINED (kept); СКЗ / A1 read at В1 without
 the bit-14 interpolation (as the original; ours has none either).
 
-### L9.51 — «Быстрый анализ» is a modal sheet, not a view  ·  🟡 (stage A)
+### L9.51 — «Быстрый анализ» is a modal sheet, not a view  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read (subagent report; the sheet in VIEWS_SPEC «The sheet»): 137 shows a
 modal `CMFCPropertySheet` with a 150 px Outlook bar, caption 159, only
 «Рассчитать» / «Отмена», always opened on «Редактор формул»; only the
@@ -2831,7 +2831,7 @@ channels had no units). Now the same unit rules for every channel. Test
 `unitless_formula_channels_are_not_circle_channels`.
 
 
-### L9.84 — Printing on the CUPS printer's paper  ·  🟡
+### L9.84 — Printing on the CUPS printer's paper  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read (L9.22): the original lays its pages out on the printer DC's paper —
 its size and printable area from GDI caps (our Windows path does the
 same). Ours sent every CUPS job as A4. Now `spool::cups_paper` takes the
@@ -2950,7 +2950,7 @@ Residual: (per-figure extents: L9.99); loci at an infinite scale land at
 INT_MIN in GDI — nothing visible, as ours skipping them (L9.99).
 
 
-### L9.89 — Level lines: a body drag re-homes; unshown levels are kept  ·  🟡
+### L9.89 — Level lines: a body drag re-homes; unshown levels are kept  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read (subagent report): placement `0x43eb40` needs a visible analog lane
 (kind `+0x5c` == 0), so no level is placed on a digital lane — as ours;
 the body drag `0x43efa0` (mode 4) reassigns the level's channel name to
@@ -2970,7 +2970,7 @@ the `.set` round trip (a kept level saved back).
 Residual: (kept levels drawn, hit and kept in place, areas kept: L9.96).
 
 
-### L9.90 — Ribbon keytips as MFC shows them for this ribbon  ·  🟡
+### L9.90 — Ribbon keytips as MFC shows them for this ribbon  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read (subagent report on mfc120u; by hand in FastView: the application
 button's text `"\nf"` at `0x4cacac` (pushed `0x472fb8`), the Help split
 button's `"\na"` at `0x4cacb8` (`0x474a97`), strings 276 «Вставить» + `v`,
@@ -3002,7 +3002,7 @@ Residual: (placement and the box: L9.97; Alt+key held, the Recent
 Documents' keys, «A»: L9.115).
 
 
-### L9.91 — Ribbon panels reduce in MFC's steps  ·  🟡
+### L9.91 — Ribbon panels reduce in MFC's steps  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read (subagent report on mfc120u): `CMFCRibbonCategory::RecalcLayout`
 (`0x10106b37`) resets every panel to its first layout when the width
 changes; when even the sum of 2 + (collapsed width + 2) does not fit, all
@@ -3115,7 +3115,7 @@ sheet; the dialog's OK does not write our orientation into the printer's
 own defaults (ours keeps it in the page setup); the standard dialog's
 «Принтер...» button not modelled.
 
-### L9.95 — Appended names: «_2» ignoring case; what a frequency change refreshes  ·  🟡
+### L9.95 — Appended names: «_2» ignoring case; what a frequency change refreshes  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read (subagent report; by hand: the format `"_%d"` at `0x4d040c`;
 `0x48bed0` walks the channel vector `doc+0x184` (stride 0x160) and then
 the definition names `doc+0x194`, comparing with #2954 = `_wcsicmp`
@@ -3214,7 +3214,7 @@ NOT DETERMINED; tab and collapsed-panel keytip rules not needed (no
 level reaches them); the original's 32 px images are its own (ours drawn,
 four rows without one).
 
-### L9.98 — The workspace: pane layout and window placement saved on exit  ·  🟡
+### L9.98 — The workspace: pane layout and window placement saved on exit  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read (subagent report on mfc120u and FastView; by hand: `SaveState`
 `0x101a9425` returns at once unless `+0xfc`, which the CWinAppEx
 constructor sets to 1 (`0x101a8a64`); nothing in FastView writes the app
@@ -3270,7 +3270,7 @@ Residual: whether GDI's box of an Ellipse path includes its right /
 bottom edge NOT DETERMINED (ours: the inscribed polygon's box); our
 ellipse ring is sampled (180 points) where GDI flattens the Bézier path.
 
-### L9.100 — Ribbon: Repos generically checked; small button sizes; the fit test  ·  🟡
+### L9.100 — Ribbon: Repos generically checked; small button sizes; the fit test  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read (subagent report on mfc120u; by hand the keytip rect start `0x101033e0`
 only): FastView adds no button groups (ordinals 669 / 670 / 1259 not
 imported), so every panel keeps align-by-column. An element starts large
@@ -3308,7 +3308,7 @@ arrows never show at our 866 px minimum (all-collapsed «Главная» is far
 narrower) — not modelled; the 16 px skip of near-equal states not
 modelled (our measured states differ by more).
 
-### L9.101 — Smart docking: edge markers, the five-way group, drops beside and into a pane  ·  🟡
+### L9.101 — Smart docking: edge markers, the five-way group, drops beside and into a pane  ·  ✅ (W2 review 2026-10-24: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read (two subagent reports on mfc120u; by hand: SaveState's gate only):
 FastView's frame sets DT_SMART (`0x1008fad2`, immediate) and the VS2008
 look (Office 2007 manager, `0x101950e0`); dragging a floating pane shows

@@ -98,54 +98,53 @@ Batches, in this order (the size of the unread code, user visibility):
 
 ## W2 — Close the 🟡 ledger entries
 
-Many residuals were closed by later entries without the old status being
-updated; others are real. For each entry: re-read its residual lines
-against today's code, then tick ✅, split the real remainder into a concrete
-item here, or move it to W6.
+Reviewed 2026-10-24 (a background read of every 🟡 entry against later
+entries and the code): 21 closed (L9.3, L9.4, L9.6, L9.8, L9.9, L9.10,
+L9.13, L9.15, L9.22, L9.27, L9.29, L9.40, L9.51, L9.84, L9.89, L9.90, L9.91,
+L9.95, L9.98, L9.100, L9.101 — their headings now say so). What is left, as
+items (VM ones also in W4.4):
 
-- [ ] W2.1 L9.3 docking panes beside the oscillogram
-- [ ] W2.2 L9.4 view geometry, визиры, wheel, ruler, status
-- [ ] W2.3 L9.6 comments (the ".set persistence" note is stale since L9.17)
-- [ ] W2.4 L9.8 document tabs, title, start-up
-- [ ] W2.5 L9.9 «Проводник»
-- [ ] W2.6 L9.10 loading on a worker thread
-- [ ] W2.7 L9.12 diagram panes
-- [ ] W2.8 L9.13 dialogs and the parameters bar
-- [ ] W2.9 L9.14 ribbon contents, application menu, QAT, Стиль, help
-- [ ] W2.10 L9.15 merging
-- [ ] W2.11 L9.20 the clipboard document
-- [ ] W2.12 L9.22 printing
-- [ ] W2.13 L9.27 ribbon small buttons, panel collapse
-- [ ] W2.14 L9.29 print preview centring
-- [ ] W2.15 L9.30 copy's EMF picture
-- [ ] W2.16 L9.31 loading progress / cancel polling
-- [ ] W2.17 L9.34 unit normalisation
-- [ ] W2.18 L9.37 print preview category
-- [ ] W2.19 L9.40 scroll bar repeat
-- [ ] W2.20 L9.41 ОМП report times
-- [ ] W2.21 L9.51 quick analysis (stage A)
-- [ ] W2.22 L9.64 «Окна...»
-- [ ] W2.23 L9.66 diagram pages in print
-- [ ] W2.24 L9.84 CUPS paper
-- [ ] W2.25 L9.89 level lines
-- [ ] W2.26 L9.90 keytips
-- [ ] W2.27 L9.91 ribbon panel reduction
-- [ ] W2.28 L9.92 panes float / re-dock / auto-hide
-- [ ] W2.29 L9.94 page setup on the printer's paper
-- [ ] W2.30 L9.95 appended names, frequency-change refresh
-- [ ] W2.31 L9.97 keytip placement, menu rows
-- [ ] W2.32 L9.98 workspace save
-- [ ] W2.33 L9.100 ribbon Repos / sizes / fit
-- [ ] W2.34 L9.101 smart docking
-- [ ] W2.35 L9.102 tab dragged out floats
-- [ ] W2.36 L9.122 «Свойства...» in the print dialog
-- [ ] W2.37 The open residuals of ✅ entries since L9.128 (each entry's
-  "Residual:" lines): drop position (→ W6), quick analysis's rollback of
-  its channels on a failed recompute (L9.157), drag-scroll left / right and
-  the refresh-all per step (L9.164), the grid's keyboard (L9.156), an
-  unknown saved block name shown in «Тип блока» (L9.162), the refresh's
-  other callers (L9.162), About's text and links (vtable sweep), the
-  frequency dialog's initial enable state (L9.160).
+- [ ] W2.1 L9.12 — the grid / plane splitter's look and cursor (VM).
+- [ ] W2.2 L9.14 — the pre-2007 looks 210–214: read the older visual
+  managers in mfc120u, or capture each Стиль on the VM.
+- [ ] W2.3 L9.20 — analog paste with no analog channel selected (with
+  W2.16); the paste's start date parsed with the target's revision rule
+  (`merge_ui.rs`) — re-read; the clipboard XML's `time_multiplier` /
+  `duration_milli_sec` and the merged comment's CR LF (VM).
+- [ ] W2.4 L9.30 — EMR_STRETCHDIBITS vs EMR_BITBLT in copy's EMF (decide:
+  match or accept).
+- [ ] W2.5 L9.31 — phase 2 of loading on the UI thread (derived arrays,
+  `.set` formula channels outside the bar); the `.cff` cancelled during its
+  split shows «Неправильный формат файла» (ours silent).
+- [ ] W2.6 L9.34 — MakeUpper on Cyrillic units («МВт»), binary32 with
+  «кВ», «ном» vector-eligibility (VM); string 3105's «гр» spelling (static).
+- [ ] W2.7 L9.37 — the preview buttons' sizes (static, mfc120u
+  `0x100fcfc2`); QAT / app button / MDI tabs during preview (VM).
+- [ ] W2.8 L9.41 — the report's «Осциллограмма:» line: path or title (VM).
+- [ ] W2.9 L9.64 — «Окна...»: Каскадом / Горизонтально / Вертикально /
+  Свернуть under MDI tabs (VM), OK's slot, LBS_SORT collation, the size from
+  the 316 × 169 DLU template.
+- [ ] W2.10 L9.66 — the print cell ⌊96·s/5⌋ (ours a fixed 19), the print
+  resetting the live zoom, the differential push consumed by a print, the
+  GDI+ fill's offset band.
+- [ ] W2.11 L9.92 — Ctrl + pin (`0x100871c7`'s Ctrl branch); the
+  animation-off switch.
+- [ ] W2.12 L9.94 — page setup's orientation into the printer's DEVMODE;
+  the «Принтер...» button (flags 0x260a).
+- [ ] W2.13 L9.97 — disabled keytips' ink (VM: F10 with no document).
+- [ ] W2.14 L9.102 — where a tab dragged out lands (VM, mouse driving).
+- [ ] W2.15 L9.122 — «Свойства...» on the VM, the owner window, the
+  orientation merge (with W2.12).
+- [ ] W2.16 Whether `doc+0x1d8` counts computed channels (shared by
+  L9.20, L9.151, L9.154, L9.166) — settle once.
+- [ ] W2.17 The open residuals of ✅ entries since L9.128 (each entry's
+  "Residual:" lines): quick analysis's rollback of its channels on a
+  failed recompute (L9.157), drag-scroll left / right (L9.164), the grid's
+  keyboard (L9.156), an unknown saved block name in «Тип блока» (L9.162),
+  the refresh's other callers (L9.162), About's text and links (W1.6), the
+  frequency dialog's initial enable state (L9.160), the ОМП dialog's tree
+  icons / geometry / reader gaps (L9.169), a computed channel's colour
+  recomputed by place (L9.170), an OSC2 record saved as COMTRADE (L9.172).
 
 ## W3 — Resolve the unknowns
 
@@ -191,7 +190,8 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   of the view, lanes, diagrams, captions; keys and the wheel; визиры and
   comments; the four diagrams with each block; merge; ОМП; quick
   analysis; print preview; the workspace after a restart.
-- [ ] W4.4 Each W3 runtime unknown as a scenario.
+- [ ] W4.4 Each W3 runtime unknown as a scenario, and W2's VM checks
+  (W2.1, W2.3, W2.6, W2.7, W2.8, W2.9, W2.13, W2.14, W2.15).
 - [ ] W4.5 Visual comparison of the main window and the dialogs
   (layout, sizes, colours per skin) — differences either fixed or W6.
   Seen in the first capture: the start-up pane layout (fixed, L9.165);
@@ -214,3 +214,7 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 - Where a dropped file lands — egui reports no drop position (L9.159).
 - Exact glyph rasterisation — egui is not GDI; layout and metrics are
   matched, pixels are not.
+- The comment bubble bitmap (L9.6), the docking markers 17117–17127 (MFC's
+  own bitmaps, L9.101), the ribbon / menu images, the help (Помощь — the CHM
+  is not shipped, L9.14, L9.115).
+- The scroll-bar repeat timing (system settings, L9.40).
