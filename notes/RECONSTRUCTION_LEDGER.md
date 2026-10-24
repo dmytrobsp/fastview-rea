@@ -7989,7 +7989,34 @@ then В1 placed in the plot.
   were Microsoft Tahoma's pixel widths (copied from its font file) and
   measuring through GDI on Windows. Pinning the value template's
   observed width (112 px with its 10 px gap) is possible if this is ever
-  wanted.
+  wanted. The gap grows with long Cyrillic names: BINARY's «Напряжение фазы
+  В» measures 137 px in ours, 129 in the original, so its plot starts 7
+  px further right (278 / 271; L9.289). Same cause, same decision.
+
+### L9.289 — Side by side: the sample records opened; a new view's zoom is measured at the MDI child's default size  ·  ✅
+W4.3 on both programs: DOC_1999 and BINARY opened.
+- DOC_1999: the same window, lanes, zoom and readouts.
+- BINARY (411 samples at 1 kHz) opened one zoom step further in in ours
+  (0…192 ms shown) than in the original (0…400 ms). The initial scale
+  (`0x45ab70`) is the stored `View/XScale`, by default twice the fit
+  scale (`0x45c430`): halve from 1 while the view's client width ÷
+  (samples × 25) is smaller, as ours. But the width is the view's
+  `GetClientRect` *at its creation*, before its MDI child is shown
+  maximised in a tab. Synthetic records on the VM (one channel, 1 kHz)
+  bracket it: 352, 368, 384 and 388 samples open at 0.25; 392, 396 and
+  400 at 0.125. So the width was 1212.5…1225 px, while the finished view
+  is about 1550. That fits Windows' default MDI child (INFERRED, Wine's
+  `MDI_CalcDefaultChildPos`): the MDI client less one 26 px cascade step
+  per three of its height, less two 8 px borders. On the VM's 1552 × 955
+  area that is 1552 − 12·26 − 16 = 1224. Ours measured its final view.
+  Now `oscgeom::mdi_default_client_width` from the MDI area gives the
+  width, and ours opens Z388 at 0.25, Z392 at 0.125 and BINARY at the
+  original's 0…400 ms (32 ms ticks). Test `initial_scale` (1224, 388 /
+  392).
+Residual:
+- The 26 / 8 px metrics are Windows 11's at 100 % scaling; other
+  scalings would change them.
+- BINARY's stats column: see L9.288 (7 px).
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

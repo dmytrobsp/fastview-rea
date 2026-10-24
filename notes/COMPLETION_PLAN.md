@@ -316,7 +316,8 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   diagram with a block, L9.280; an ОМП run, L9.281; copy, paste and merge, L9.282; synchronising; every circle
   block, L9.283–L9.285; the ribbon's value commands and the wheel,
   L9.286; every differential block, L9.287; the vector and
-  frequency diagrams with channels, L9.288):
+  frequency diagrams with channels, L9.288; the sample records opened,
+  L9.289):
   start-up window and panes; opening each sample record;
   every ribbon command and its enable state with and without a document;
   every dialog (fields, defaults, Enter / Esc, refusals); context menus

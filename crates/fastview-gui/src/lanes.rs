@@ -1244,7 +1244,11 @@ impl App {
             let pref = self.xscale_pref;
             let d = &mut self.docs[ai];
             if d.xscale.is_none() {
-                d.xscale = Some(g::initial_scale(pref, full.width(), d.osc.sample_count()));
+                // Measured as a default-sized MDI child (see
+                // `mdi_default_client_width`), not at its final size.
+                let area = self.mdi_area;
+                let w = if area.width() > 0.0 { g::mdi_default_client_width(area.width(), area.height()) } else { full.width() };
+                d.xscale = Some(g::initial_scale(pref, w, d.osc.sample_count()));
             }
         }
         let mut actions: Vec<Act> = Vec::new();

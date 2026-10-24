@@ -30,6 +30,19 @@ pub fn fit_scale(width: f32, n: usize) -> f64 {
     f
 }
 
+/// The client width of a new MDI child at Windows' default size: the view
+/// measures itself (`0x45c430`, `GetClientRect`) when it is created, before
+/// the child is shown maximised in its tab. The default child is the MDI
+/// client less one cascade step per three of its height (a step is the
+/// caption's 23 px and the frame's 4, less 1: 26 px; Wine's
+/// `MDI_CalcDefaultChildPos`), less its two 8 px borders (INFERRED; VM: synthetic records of 388 samples open at
+/// 0.25 and of 392 at 0.125 on a 1552 × 955 MDI area → a width in
+/// 1212.5…1225; this gives 1224).
+pub fn mdi_default_client_width(area_w: f32, area_h: f32) -> f32 {
+    let step = 26.0;
+    (area_w - step * (area_h / (3.0 * step)).floor() - 16.0).max(1.0)
+}
+
 /// Initial scale of a new view (`0x45ab70`): the stored `View/XScale`, by
 /// default twice the fit scale.
 pub fn initial_scale(stored: Option<f64>, width: f32, n: usize) -> f64 {
@@ -339,6 +352,11 @@ mod tests {
         assert_eq!(fit_scale(1000.0, 10), 1.0);
         assert_eq!(initial_scale(None, 1000.0, 400), 0.125);
         assert_eq!(initial_scale(Some(0.5), 1000.0, 400), 0.5);
+        // VM: on a 1552 × 955 MDI area the view measures 1224 px at its
+        // creation: 388 samples open at 0.25, 392 at 0.125.
+        let w = mdi_default_client_width(1552.0, 955.0);
+        assert_eq!(w, 1224.0);
+        assert_eq!((initial_scale(None, w, 388), initial_scale(None, w, 392)), (0.25, 0.125));
     }
 
     #[test]
