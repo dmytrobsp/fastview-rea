@@ -410,10 +410,12 @@ impl App {
         line(1.0).text(Pos2::new(x, logo_top + 0.9 * th), Align2::LEFT_TOP, line2, DECOR_FONT, black);
         let line3 = format!("{S_STATION}\"{}\"   {S_BLOCK}\"{}\"", d.osc.station.trim_end(), d.osc.device);
         line(2.0).text(Pos2::new(x, logo_top + 1.8 * th), Align2::LEFT_TOP, line3, DECOR_FONT, black);
-        // Footer: the page number only in jobs of two or more pages, then
+        // Footer: the page number only in jobs of two or more pages (at the
+        // right), then
         // the three-piece company line centred, 30 device px apart.
         if count > 1 {
-            p.text(Pos2::new(r.center().x, r.bottom() + T), Align2::CENTER_TOP, cur.to_string(), DECOR_FONT, black);
+            // At R's right edge (VM).
+            p.text(Pos2::new(r.right(), r.bottom() + T), Align2::RIGHT_TOP, cur.to_string(), DECOR_FONT, black);
         }
         let width = |s: &str| ctx.fonts(|f| f.layout_no_wrap(s.to_string(), DECOR_FONT, black).size().x);
         // The company in bold on paper: measured in the face it is drawn in.

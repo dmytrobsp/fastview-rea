@@ -8419,6 +8419,18 @@ the PDFs rendered and compared (kept local: they carry the record).
   Esc (Enter is the edit's new line); ours ignored Esc. Now
   `comment_dialog_body` takes it as Отмена.
 
+### L9.312 — VM: the whole job printed (W5.1); the page number at R's right  ·  ✅
+Run: «Печать» with all five boxes ticked, Microsoft Print to PDF, both
+programs; five pages each, compared at 300 dpi. The frequency page
+(empty: no channels on it), the vector page, the circle and the
+differential planes are alike in layout, lines and inks (the frame (50),
+the scale box, the grid; at 60 dpi a viewer thins our raster's lines more
+than the original's vector ones — not on paper). One difference: the
+page number sits at R's right edge in the original (7.45 in of R's 7.48
+on A4); ours was centred. Now right-aligned at R's right. (Our pages are
+one 600 dpi image each; the original's mostly vector — the files differ
+in size, not in what prints.)
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
