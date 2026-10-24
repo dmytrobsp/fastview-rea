@@ -5421,11 +5421,108 @@ ignoring case (ours: the computed list / exact names); the row filler
 `0x433b00` suggests `doc+0x1d8` counts computed channels (INFERRED by B6,
 against W2.16's read — to settle).
 
+### L9.182 — W1.8 batches B2, B4, B5, B8, B9: binary32 units, «Комментарии» edits the `.set`'s text, scrolling, merged settings categories  ·  ✅
+Read (background agents; by hand where marked):
+- B2, the unlabelled `0x42d0f0`–`0x45a720`. Behaviour: the clipboard's
+  "%g" `0x42e180`; the record's constructors `0x42e480` / `0x449740` (the
+  header text at `doc+0x1e0`, f_nom 50); the merge clamp's durations
+  `0x430f50`; the selected block `0x4367a0`; the circle / differential
+  window constructors `0x4369a0` / `0x442890` and their base `0x441b80`
+  (Tahoma 13); the Level / Area items `0x43e6b0` / `0x43e7a0`; the comment
+  list `0x43e890` (image list 562); the band's moments `0x4406e0` — a map
+  by sample, so a later moment on the same sample wins; the splash
+  `0x4478a0` (bitmap 462, topmost, gone after 2000 ms; shown by default);
+  theApp `0x447c10`; **the binary32 store `0x449200` — unit · a · raw + b**
+  (by hand, called once, from `0x4522c2`); the `.osc` swap `0x44a4b0` and
+  device text `0x44a7b0`; the clipboard's `hdrFile` `0x454a10`; the temp
+  folder `0x454c50` / `0x454dd0`. Library code: `0x42d0f0`, `0x42d7a0`,
+  `0x42e390`, `0x4313f0`, `0x431540`, `0x431d50`, `0x4332a0`, `0x433650`,
+  `0x4337c0`, `0x4408b0`, `0x441080`, `0x4413a0`, `0x448f60`, `0x44a850`,
+  `0x44a910`, `0x44aa70`, `0x44ad00`, `0x4573d0`, `0x457470`, `0x457690`,
+  `0x457a90`, `0x457b80`, `0x457ff0`, `0x4587a0`, `0x458f50`, `0x459010`,
+  `0x4590c0`, `0x459160`, `0x4592c0`, `0x459360`, `0x4597c0`, `0x459cd0`,
+  `0x45a010`, `0x45a120`, `0x45a2e0`, `0x45a390`, `0x45a580`, `0x45a720`.
+- B4, the circle diagram. Behaviour: BlockProperty `0x407b60`; the shapes'
+  clones `0x408570`, `0x4086e0`, `0x408840`, `0x408980`; the calculator's
+  copy / teardown `0x408320`, `0x409680`, `0x409710`; the window's teardown
+  `0x436840`; the «Каналы» items `0x436fb0`; «Скрыть все» `0x437310` (to
+  `doc+0x1d8`); the return characteristics `0x437390`; the splitter drag
+  `0x437900`; the zoom gate `0x4379e0` (ppu · z′ / z · extent < 400 on the
+  client less 8 / 16 px, both ways); the horizontal scroll `0x437ff0`; the
+  readouts `0x43b930` / `0x43b9e0`; «Создать» `0x43d6a0`; SetInt
+  `0x48d780`; a category's copy `0x48de20`. Library code: `0x406ba0`,
+  `0x406e60`, `0x40e5a0`, `0x40e660`, `0x40e7a0`, `0x40e810`, `0x40e8c0`,
+  `0x40e9d0`, `0x40eb00`, `0x40ebf0`, `0x40edc0`, `0x40f240`, `0x40f390`,
+  `0x40f480`, `0x40f5d0`, `0x40f6b0`, `0x40f8f0`, `0x40f9e0`, `0x40fe20`,
+  `0x40ff20`, `0x410c70`, `0x410d40`, `0x411730`, `0x411820`, `0x4184b0`,
+  `0x42d650`, `0x46a670`, `0x471ce0`, `0x48e7c0`, `0x48e840`, `0x48edd0`.
+- B5, the differential / frequency / vector windows and «Пары каналов».
+  Behaviour: the pair record `0x414cf0`; the dialog's DDX `0x421610`,
+  list `0x421c50`, buttons `0x421d80`; the shared paint `0x441d80`; the
+  panes `0x4422a0`, `0x4423c0`, `0x48f250`, `0x48f370`; the differential's
+  «Показать все» `0x442df0`, 32865 `0x442ee0`, menu `0x442f80`, splitter
+  `0x443390`, zoom gate `0x443470`, wheel `0x443550`, scrolls `0x443980` /
+  `0x443a70`, 33028 `0x4461f0`, «Создать» `0x446ff0`; the frequency's
+  settings `0x46ec30`, menu update `0x46f180`, «Показать все» `0x46f210`
+  and re-read `0x46f4a0`; the vector's angle reference `0x48f8d0` /
+  `0x48f9c0` / `0x492940` — as ours (see the residuals). Library code:
+  `0x404700`, `0x408080`, `0x408150`, `0x408210`, `0x417560`, `0x417630`,
+  `0x417b10`, `0x417c10`, `0x417e80`, `0x421530`, `0x421f60`, `0x436680`,
+  `0x441ce0`, `0x442770`, `0x46ed20`, `0x471b70`, `0x471dd0`.
+- B8, the ОМП data and the settings XML. Behaviour: the XML document
+  `0x408b80`; SetAttribute `0x422150`; the "settings" root `0x45a660`; the
+  tokenizer's integer `0x477130`; node ↔ XML `0x48e040` / **`0x48e370` —
+  a child element goes into the child its name gets or creates, so
+  same-named categories merge**; the ОМП elements' properties `0x4a4e50`,
+  `0x4a4fe0`, `0x4a7790`, `0x4a7870`, constructors `0x4a50c0` / `0x4a5210`,
+  tree edits `0x4a5610`, `0x4a5700`, `0x4a5760`, `0x4a5b90`, `0x4a5cb0` and
+  swaps `0x4a68e0`, `0x4a69e0`, `0x4a6ae0`. Library code: `0x404640`,
+  `0x4112a0`, `0x42cbb0`, `0x4a64e0`, `0x4a66a0`, `0x4a6bc0`, `0x4a6c60`,
+  `0x4a6cd0`, `0x4a6d80`, `0x4a6e20`, `0x4a6ec0`, `0x4a6f20`, `0x4a6fd0`,
+  `0x4a7100`, `0x4a71f0`, `0x4a72e0`, `0x4a7440`, `0x4a7600`, `0x4a76d0`.
+- B9, the document, view, app, frame, merge bar and comment items.
+  Behaviour: the items' save / load / hits `0x403820`, `0x403930`,
+  `0x403aa0`, `0x43ddd0`, `0x43deb0`, `0x470c10`, `0x47a370`, `0x47a8b0`;
+  CCommentDlg `0x43e110` / `0x43e1e0` / `0x43e410` — **its mode `+0x9c` is
+  always 0, so the code-page combo is hidden** (by hand: `0x43e181`, and
+  OnInitDialog `0x43e380` hides it) —; an item's text `0x43f4f0` (modified
+  on every OK); quick analysis turning the differential readout on
+  `0x446280`; 129 `0x448ec0`; the document's teardown `0x44bdf0` (the
+  temp folder removed, `0x454e90`); **32805 `0x44c2e0` edits the `.set`'s
+  `Comments/UserData`** (LF ↔ CR LF, modified on every OK) — by hand: the
+  `.hdr` text is `doc+0x1e0`, read from the file and written back on save
+  untouched (`0x450cb5`, `0x44d98a`, the getter `0x4492e0`), and the
+  reader stores its guessed code page as `Comments/Codepage`
+  (`0x450d1f`–`0x450d63`); 32861 `0x44c4e0`; 32805's CMDUI `0x44c5e0`;
+  32807 `0x454240` (modified on every OK); WM_VSCROLL `0x45d870` — line =
+  page = 100, the offset down to −(Σ lanes + band − client − 2) (by hand:
+  `0x45d8db`); 33037's CMDUI `0x467b10`; the finder's teardown `0x46b340`;
+  the merge bar `0x479960`, `0x479db0`, `0x479e80`; the settings dialog
+  `0x47f510`; SetDouble / SetString `0x48d870` / `0x48d970`; В3 at a pixel
+  `0x495a60`; the ОМП dialog `0x4a7a50`. Library code: `0x404fd0`,
+  `0x4176f0`, `0x417830`, `0x4178c0`, `0x43e540`, `0x43e9b0`, `0x4409b0`,
+  `0x447ce0`, `0x44b0f0`, `0x44b150`, `0x457d80`, `0x457f60`, `0x459c00`,
+  `0x45aac0`, `0x4722f0`, `0x472450`, `0x472500`, `0x476490`, `0x47f6b0`,
+  `0x4a16d0`.
+Ours read binary32 samples without the unit multiplier (L9.34's residual,
+W2.6's «кВ» part — settled), edited the `.hdr` text in 32805 with a
+code-page combo that re-encoded it (and wrote `Codepage` there), kept the
+first of two moments on one sample, paged the vertical bar by a screen
+and scrolled 4 px further, left the differential readout off after quick
+analysis, marked an item's text / the ОМП parameters modified only on a
+change, and kept only the last of same-named settings categories. Now
+binary32 multiplies, 32805 edits `Comments/UserData` (no combo), the
+reader sets `Comments/Codepage` when a `.hdr` exists, the band keeps the
+last moment, the vertical track steps 100 and stops at −2, quick analysis
+turns the readout on, those OKs mark modified, `SetNode::merge_xml`.
+Tests `binary32_applies_the_unit_multiplier`, `same_named_categories_merge`,
+`hdr_comment_only_for_cfg_and_cff`. Residual — filed as plan W2.18.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.181)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.182)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5471,7 +5568,9 @@ channel 0 selected, title, stat rows); L9.178 «О программе» in the
 original's layout with our own texts, W1.6 / W1.2b read; L9.179 the
 document tabs inside the MDI area, the status bar's panes; L9.180
 aliased waveforms, 1 px lines on whole pixels; L9.181 W1.8 B1 / B6 / B7
-(a missing `)`, the boxes' order, the digital fill, the ОМП flags on top).
+(a missing `)`, the boxes' order, the digital fill, the ОМП flags on top);
+L9.182 W1.8 B2 / B4 / B5 / B8 / B9 (binary32 units, 32805 edits
+`Comments/UserData`, scrolling, merged settings categories).
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

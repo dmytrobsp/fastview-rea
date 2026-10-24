@@ -453,9 +453,10 @@ impl OscView<'_> {
         let bx = |k: usize| left + ((k as f64 - self.first as f64) * g::PX_PER_SAMPLE * self.f).trunc() as f32;
         // Labels: В1 В2 В3 first, then the comment moments by sample; one is
         // dropped when its cell ±3 px overlaps a placed one; only x > leftW.
-        let mut moments: Vec<(usize, Option<&str>)> = doc.comments.iter().filter_map(|c| c.moment().map(|k| (k, (!c.hidden).then_some(c.text.as_str())))).collect();
-        moments.sort_by_key(|m| m.0);
-        let order = self.viz().iter().filter(|v| v.1).map(|v| (v.0, None)).chain(moments.iter().copied()).collect::<Vec<_>>();
+        // A map by sample (`0x4406e0`): a later moment on the same sample
+        // replaces the earlier one.
+        let moments: std::collections::BTreeMap<usize, Option<&str>> = doc.comments.iter().filter_map(|c| c.moment().map(|k| (k, (!c.hidden).then_some(c.text.as_str())))).collect();
+        let order = self.viz().iter().filter(|v| v.1).map(|v| (v.0, None)).chain(moments.iter().map(|(&k, &t)| (k, t))).collect::<Vec<_>>();
         let mut taken: Vec<(f32, f32)> = Vec::new();
         for (k, text) in order {
             let x = bx(k);
@@ -478,7 +479,7 @@ impl OscView<'_> {
         // Dimension lines between consecutive marks of a map keyed by sample
         // (moments and shown визиры, deduplicated): drawn when x_a > leftW and
         // x_b − x_a > 16; no right-edge test.
-        let keys: std::collections::BTreeSet<usize> = self.viz().iter().filter(|v| v.1).map(|v| v.0).chain(moments.iter().map(|m| m.0)).collect();
+        let keys: std::collections::BTreeSet<usize> = self.viz().iter().filter(|v| v.1).map(|v| v.0).chain(moments.keys().copied()).collect();
         let marks: Vec<(f32, usize)> = keys.into_iter().map(|k| (bx(k), k)).collect();
         let dim_y = ruler_top - 35.0;
         for w in marks.windows(2) {
@@ -880,7 +881,10 @@ fn analog_at(y: f32, geo: &RowGeo, ranges: &[(f64, f64)]) -> Option<(usize, f64)
 /// over `[0, max]` with a page of `page`: arrow buttons step by `line`, the
 /// track by one page, the thumb drags. Shown disabled (no thumb, inert) when
 /// there is nothing to scroll (`SIF_DISABLENOSCROLL`). Returns the new value.
-fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f32, page: f32, line: f32) -> Option<f32> {
+/// `page` sizes the thumb (nPage); `line` / `jump` are the steps of an
+/// arrow / a click on the track.
+#[allow(clippy::too_many_arguments)]
+fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f32, page: f32, line: f32, jump: f32) -> Option<f32> {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, Color32::from_gray(236));
     let len = if horizontal { rect.width() } else { rect.height() };
@@ -963,8 +967,8 @@ fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f
     let step_of = |part: i8| match part {
         -1 => -line,
         1 => line,
-        -2 => -page,
-        _ => page,
+        -2 => -jump,
+        _ => jump,
     };
     if ui.input(|i| i.pointer.primary_pressed()) && r.is_pointer_button_down_on() {
         let part = ui.input(|i| i.pointer.press_origin()).map_or(0, part_at);
@@ -1092,7 +1096,8 @@ impl App {
         self.view_rects = Some((full, Rect::from_min_max(client.min, Pos2::new(plot_right, client.bottom()))));
         let left = client.left() + left_w;
         let plot_bottom = client.bottom() - band;
-        let vmin = -(content_h + band + 2.0 - client.height()).max(0.0);
+        // `0x45d8db`: the offset down to −(Σ lanes + band − client − 2).
+        let vmin = -(content_h + band - 2.0 - client.height()).max(0.0);
         let vscroll = doc.vscroll.clamp(vmin, 0.0);
         let visible = g::visible_count(plot_right - client.left(), left_w, f);
         let first = doc.first.min(g::max_first(n, visible));
@@ -1246,14 +1251,15 @@ impl App {
         // the whole right side, the corner between them blank.
         let hbar = Rect::from_min_max(Pos2::new(full.left(), client.bottom()), Pos2::new(plot_right, full.bottom()));
         let hmax = g::max_first(n, visible);
-        if let Some(v) = scrollbar(ui, hbar, true, first as f32, hmax as f32, visible as f32, visible as f32) {
+        if let Some(v) = scrollbar(ui, hbar, true, first as f32, hmax as f32, visible as f32, visible as f32, visible as f32) {
             actions.push(Act::SetFirst(v.round().max(0.0) as usize));
         }
         if vbar {
             ui.painter().rect_filled(Rect::from_min_max(Pos2::new(plot_right, client.bottom()), full.max), 0.0, Color32::from_gray(236));
             let vrect = Rect::from_min_max(Pos2::new(plot_right, client.top()), Pos2::new(client.right(), client.bottom()));
             let page = (client.height() - band).max(0.0);
-            if let Some(v) = scrollbar(ui, vrect, false, -vscroll, -vmin, page, VSCROLL_LINE) {
+            // WM_VSCROLL `0x45d870`: a page is a line, 100 px.
+            if let Some(v) = scrollbar(ui, vrect, false, -vscroll, -vmin, page, VSCROLL_LINE, VSCROLL_LINE) {
                 actions.push(Act::SetVScroll(-v));
             }
         }

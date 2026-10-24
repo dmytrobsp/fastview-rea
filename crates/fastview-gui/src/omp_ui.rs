@@ -431,6 +431,8 @@ impl App {
         let di = dlg.doc;
         if let Some(d) = self.docs.get_mut(di) {
             d.omp.params = dlg.work;
+            // 32807 (`0x454240`): modified on every OK.
+            d.set.modified = true;
             if !has_pending_paste(d) && self.active == Some(di) {
                 self.run_omp();
             }

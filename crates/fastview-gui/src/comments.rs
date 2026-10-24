@@ -302,9 +302,13 @@ impl App {
                 });
             });
         match done {
+            // `0x43f4f0`: the text set and the document modified on every OK.
             Some(true) => {
-                if let Some(c) = self.active_doc_mut().and_then(|d| d.comments.get_mut(ed.idx)) {
-                    c.text = ed.text;
+                if let Some(d) = self.active_doc_mut() {
+                    if let Some(c) = d.comments.get_mut(ed.idx) {
+                        c.text = ed.text;
+                        d.set.modified = true;
+                    }
                 }
             }
             Some(false) => {}

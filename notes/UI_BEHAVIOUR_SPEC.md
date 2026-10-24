@@ -1114,11 +1114,14 @@ toggles it (ShowPane(!visible) + RecalcLayout); CMDUI checked = visible.
 
 ### 7.10 Comment text dialog — DIALOG 332 «Комментарии к диаграмме» (CCommentDlg)
 Multi-line edit (366×276 DLU, Enter = newline) + code-page combo (866 MS-DOS /
-Windows-1251) + OK / Отмена. Item mode (§5): combo hidden/disabled [I]; OK sets
-the text. Record mode (32805): text from the settings `Comments/UserData` (the
-COMTRADE `.hdr` text per help), `\n` → `\r\n` for display and back on OK;
-changing the combo **re-encodes the edit text** between 866 and 1251; OK
-stores text and code page; modified only when the code page changed.
+Windows-1251) + OK / Отмена. The combo is **always hidden**: the dialog's
+mode (`+0x9c`) is set to 0 by its only constructor `0x43e110` and
+OnInitDialog `0x43e380` hides it (its re-encoding `0x43e410` never runs).
+Item mode (§5): OK sets the text, modified every time (`0x43f4f0`). Record
+mode (32805, `0x44c2e0`): text from the settings `Comments/UserData` — not
+the `.hdr` text, which the reader keeps at `doc+0x1e0` and the save writes
+back untouched —, `\n` → `\r\n` for display, CRs removed on OK; OK writes
+`UserData` only and marks the document modified every time (L9.182).
 
 ### 7.11 Print — DIALOG 347 (CFastViewPrintDialog)
 - CPrintDialog (no print-to-file) with a custom template: five checkboxes

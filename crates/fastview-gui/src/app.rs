@@ -2553,6 +2553,15 @@ impl App {
         if let Some(m) = g.circle_readout {
             self.circle_readout = m;
         }
+        // `0x446280` (from «Рассчитать», `0x417426`): with Iдиф / Iторм
+        // pairs the differential readout goes on — `ViewChannelType` 1, the
+        // document modified — unless it already is.
+        if !g.dif_pairs.is_empty() && !self.diag.diff_values {
+            self.diag.diff_values = true;
+            if let Some(d) = self.active_doc_mut() {
+                d.set.modified = true;
+            }
+        }
         self.status = format!("Добавлено каналов: {}", names.len());
     }
 }

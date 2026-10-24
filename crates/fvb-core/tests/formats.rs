@@ -231,3 +231,22 @@ fn cfg_dat_writer_as_the_original() {
     );
     assert_eq!(String::from_utf8(d).unwrap(), "1,0, 10, 1\r\n2,1000, -20, 0\r\n3,2000, 5, 1\r\n");
 }
+
+/// binary32 samples carry the unit multiplier as BINARY does: the store
+/// `0x449200` (called from `0x4522c2`) computes unit · a · raw + b.
+#[test]
+fn binary32_applies_the_unit_multiplier() {
+    let cfg_of = |unit: &str, ty: &str| {
+        format!(
+            "S,D,1999\r\n1,1A,0D\r\n1,X,,,{unit},2,0.5,0,-2147483648,2147483647,1,1,S\r\n50\r\n1\r\n1000,2\r\n\
+             01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.000000\r\n{ty}\r\n1\r\n"
+        )
+    };
+    let row32 = |n: u32, v: i32| [n.to_le_bytes().to_vec(), 0u32.to_le_bytes().to_vec(), v.to_le_bytes().to_vec()].concat();
+    let row16 = |n: u32, v: i16| [n.to_le_bytes().to_vec(), 0u32.to_le_bytes().to_vec(), v.to_le_bytes().to_vec()].concat();
+    let b32 = comtrade::parse(&cfg_of("кВ", "binary32"), &[row32(1, 10), row32(2, 20)].concat()).unwrap();
+    let b16 = comtrade::parse(&cfg_of("кВ", "BINARY"), &[row16(1, 10), row16(2, 20)].concat()).unwrap();
+    assert_eq!(b32.analog[0].samples, b16.analog[0].samples);
+    let m = b32.analog[0].unit_mult;
+    assert_eq!(b32.analog[0].samples, vec![m * 2.0 * 10.0 + 0.5, m * 2.0 * 20.0 + 0.5]);
+}

@@ -96,14 +96,16 @@ impl SetNode {
         n
     }
 
-    /// `0x48e370`: every attribute (`name` included) and the children keyed
-    /// by their `name`.
-    fn from_xml(n: &Node) -> SetNode {
-        let mut s = SetNode { attrs: n.attrs.clone(), children: BTreeMap::new() };
-        for c in &n.children {
-            s.children.insert(c.get("name", ""), SetNode::from_xml(c));
+    /// `0x48e370`: every attribute (`name` included) set into the node, each
+    /// child element into the child its `name` selects — got or created, so
+    /// elements sharing a name merge (later attributes win).
+    fn merge_xml(&mut self, n: &Node) {
+        for (k, v) in &n.attrs {
+            self.attrs.insert(k.clone(), v.clone());
         }
-        s
+        for c in &n.children {
+            self.children.entry(c.get("name", "")).or_default().merge_xml(c);
+        }
     }
 }
 
@@ -151,7 +153,7 @@ impl SetTree {
             if !root.children.is_empty() || !root.attrs.is_empty() {
                 self.sections.clear();
                 for c in &root.children {
-                    self.sections.insert(c.get("name", ""), SetNode::from_xml(c));
+                    self.sections.entry(c.get("name", "")).or_default().merge_xml(c);
                 }
                 return;
             }
@@ -874,5 +876,21 @@ mod tests {
         assert_eq!(wtoi("-7"), -7);
         assert_eq!(wtoi("x"), 0);
         assert_eq!(wtoi("99999999999"), i32::MAX);
+    }
+
+    /// `0x48e370`: categories sharing a name merge (later attributes win,
+    /// the rest and the children kept) — at the top level and nested.
+    #[test]
+    fn same_named_categories_merge() {
+        let xml = "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n<settings>\r\n\
+            \t<category name=\"View\" A=\"1\" B=\"2\"><category name=\"K\" x=\"1\"/></category>\r\n\
+            \t<category name=\"View\" A=\"3\"><category name=\"K\" y=\"2\"/></category>\r\n\
+            </settings>\r\n";
+        let mut t = SetTree::default();
+        t.load_bytes(&settree::utf16le_crlf(xml));
+        let v = t.section("View").unwrap();
+        assert_eq!((v.get_str("A", ""), v.get_str("B", "")), ("3".to_string(), "2".to_string()));
+        let k = v.child("K").unwrap();
+        assert_eq!((k.get_str("x", ""), k.get_str("y", "")), ("1".to_string(), "2".to_string()));
     }
 }

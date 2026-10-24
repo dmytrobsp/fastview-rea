@@ -98,14 +98,14 @@ Batches, in this order (the size of the unread code, user visibility):
 - [ ] **W1.7b** From W1.7: groups pruned after every formula evaluation (`0x455c70`) and computed channels as group members (with L9.144); a pasted channel's vector phasor from its own cache (`0x490120`); OSC2 channel lines (field counts, digital normal state, no phase, the empty-name quirk); the `.sto` open flow's messages and `-Dst` as a file (reader stays ⛔); group members painted in name order.
 - [ ] **W1.8** The medium functions (50–149 instructions; 453 uncited on 2026-10-24 night) — the same way, in ten batches (`coverage.py --min 50`, split by area; the unlabelled ones by address):
   - [x] B1 unlabelled `0x4035d0`–`0x42cdb0` (58) — L9.181
-  - [ ] B2 unlabelled `0x42d0f0`–`0x45a720` (58)
+  - [x] B2 unlabelled `0x42d0f0`–`0x45a720` (58) — L9.182
   - [ ] B3 unlabelled `0x45a980`–`0x4a7510` (56)
-  - [ ] B4 circle diagram and its shapes (51)
-  - [ ] B5 differential / frequency / vector diagrams, the property grid, «Пары каналов» (43)
+  - [x] B4 circle diagram and its shapes (51) — L9.182
+  - [x] B5 differential / frequency / vector diagrams, the property grid, «Пары каналов» (43) — L9.182
   - [x] B6 quick-analysis pages, «Каналы», «Добавить формулу» (42) — L9.181
   - [x] B7 the ОМП engine (`FileInfoDlg` area) and its dialog (30) — L9.181
-  - [ ] B8 the ОМП data: lines, stations, sections (39)
-  - [ ] B9 document, view, app, frame, merge bar, comment items (51)
+  - [x] B8 the ОМП data: lines, stations, sections (39) — L9.182
+  - [x] B9 document, view, app, frame, merge bar, comment items (51) — L9.182
   - [ ] B10 the small windows and library classes (25)
 - [ ] **W1.9** The "explained away" list: functions that need no note, each with a one-line reason.
 
@@ -129,8 +129,8 @@ items (VM ones also in W4.4):
 - [ ] W2.5 L9.31 — phase 2 of loading on the UI thread (derived arrays,
   `.set` formula channels outside the bar); the `.cff` cancelled during its
   split shows «Неправильный формат файла» (ours silent).
-- [ ] W2.6 L9.34 — MakeUpper on Cyrillic units («МВт»), binary32 with
-  «кВ», «ном» vector-eligibility (VM); string 3105's «гр» spelling (static).
+- [ ] W2.6 L9.34 — MakeUpper on Cyrillic units («МВт»), «ном»
+  vector-eligibility (VM) (binary32 with «кВ»: settled, L9.182); string 3105's «гр» spelling (static).
 - [ ] W2.7 L9.37 — the preview buttons' sizes (static, mfc120u
   `0x100fcfc2`); QAT / app button / MDI tabs during preview (VM).
 - [ ] W2.8 L9.41 — the report's «Осциллограмма:» line: path or title (VM).
@@ -166,6 +166,23 @@ items (VM ones also in W4.4):
   frequency dialog's initial enable state (L9.160), the ОМП dialog's tree
   icons / geometry / reader gaps (L9.169), a computed channel's colour
   recomputed by place (L9.170), an OSC2 record saved as COMTRADE (L9.172).
+
+- [ ] W2.18 W1.8's open differences (L9.181 / L9.182): «Каналы»'s
+  rename edit (borderless, cell left + 23, the list font); groups by name
+  ignoring case; the ОМП re-run's lookup among every channel ignoring
+  case; the circle / differential zoom gate (both directions, ppu · z′/z,
+  the client less 8 / 16 px — `0x4379e0`, `0x443470`); each chart toggle
+  writes only its own key (`0x437390`, `0x43b930`, `0x442ee0`, `0x4461f0`,
+  `0x492940`; the angle radio modifies even when unchanged); the
+  tokenizer's integer rules for the DAT sample number / timestamp /
+  digital columns and the `.cfg` nrates / endsamp (`0x477130`: wrapping
+  i32, every '-' flips the sign, '+' ends it); `.omp` gaps as defaulted
+  sections / taps (`0x4a38c0`); the ОМП dialog's delete without
+  renumbering and the expanded state travelling with a moved section;
+  the splash (our own picture, 2000 ms, topmost); the frequency «Показать
+  все» on digital channels (INFERRED — read the painter `0x46f5a0`); the
+  merge bar's fixed layout (`0x479db0`, `0x479e80`); the finder's
+  `SortMode`; «Скрыть все» to `doc+0x1d8` (with W2.16).
 
 ## W3 — Resolve the unknowns
 

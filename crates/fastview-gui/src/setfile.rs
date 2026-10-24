@@ -430,15 +430,6 @@ impl Doc {
         self.store_settings(&mut t, true);
         t.to_xml()
     }
-
-    /// 32805 OK (`0x44c2e0`): the text without CR into `Comments/UserData`.
-    pub fn store_user_data(&mut self) {
-        let text = self.hdr.clone().unwrap_or_default().replace('\r', "");
-        let c = self.set.tree.section_mut("Comments");
-        c.set_str("UserData", &text);
-        c.set_int("Codepage", cp_code(self.hdr_cp));
-        self.set.modified = true;
-    }
 }
 
 /// The display-mode bits 7–9.

@@ -88,7 +88,6 @@ pub struct SettingsDlg {
 #[derive(Debug, Clone)]
 pub struct HdrEdit {
     pub text: String,
-    pub cp: Encoding,
 }
 
 /// `Display Encoding` codes of DIALOG 510 (radios 4005–4008, `0x422300`):
@@ -188,6 +187,10 @@ impl Doc {
         if let Some(b) = raw {
             self.hdr_cp = if single { comtrade::detect_codepage(&b) } else { enc };
             self.hdr = Some(comtrade::decode_bytes(&b, self.hdr_cp));
+            // The reader keeps the `.hdr` bytes (`doc+0x1e0`, written back
+            // on every save) and stores their guessed code page as
+            // `Comments/Codepage` (`0x450d1f`…`0x450d63`).
+            self.set.tree.section_mut("Comments").set_int("Codepage", crate::setfile::cp_code(self.hdr_cp));
         }
     }
 
@@ -360,10 +363,11 @@ impl App {
         if !self.hdr_comment_enabled() {
             return;
         }
-        if let Some(d) = self.active_doc() {
-            let cp = if matches!(d.hdr_cp, Encoding::Cp866 | Encoding::Cp1251) { d.hdr_cp } else { Encoding::Cp1251 };
-            let text = comtrade::recode(d.hdr.as_deref().unwrap_or(""), d.hdr_cp, cp);
-            self.dlg.hdr_edit = Some(HdrEdit { text, cp });
+        // 32805 (`0x44c2e0`): the `.set`'s `Comments/UserData` — not the
+        // `.hdr` text —, the node made if missing (kept on Cancel too).
+        if let Some(d) = self.active_doc_mut() {
+            let text = d.set.tree.section_mut("Comments").get_str("UserData", "");
+            self.dlg.hdr_edit = Some(HdrEdit { text });
         }
     }
 
@@ -642,19 +646,9 @@ impl App {
                 egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
                     ui.add(egui::TextEdit::multiline(&mut st.text).desired_width(540.0).desired_rows(22));
                 });
+                // The code-page combo stays hidden: the dialog's mode
+                // (`+0x9c`) is always 0 (`0x43e110`, `0x43e380`).
                 ui.horizontal(|ui| {
-                    let mut pick = None;
-                    egui::ComboBox::from_id_salt("fv_hdr_cp").selected_text(codepage_label(st.cp)).show_ui(ui, |ui| {
-                        for (e, l) in CODEPAGES {
-                            if ui.selectable_label(st.cp == e, l).clicked() {
-                                pick = Some(e);
-                            }
-                        }
-                    });
-                    if let Some(e) = pick.filter(|e| *e != st.cp) {
-                        st.text = comtrade::recode(&st.text, st.cp, e);
-                        st.cp = e;
-                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("Отмена").clicked() {
                             result = Some(false);
@@ -666,11 +660,11 @@ impl App {
                 });
             });
         match result {
+            // OK: CRs removed, `UserData` written, modified every time.
             Some(true) => {
                 if let Some(d) = self.active_doc_mut() {
-                    d.hdr = Some(st.text.replace('\r', ""));
-                    d.hdr_cp = st.cp;
-                    d.store_user_data();
+                    d.set.tree.section_mut("Comments").set_str("UserData", &st.text.replace('\r', ""));
+                    d.set.modified = true;
                 }
             }
             Some(false) => {}
@@ -850,6 +844,20 @@ mod tests {
         app.active_doc_mut().unwrap().path = Some("/x/rec.CFG".into());
         app.dispatch(Command::HdrComment);
         assert!(app.dlg.hdr_edit.is_some());
+        let d = app.active_doc_mut().unwrap();
+        // The dialog edits `Comments/UserData`, never the `.hdr` text.
+        d.hdr = Some("hdr".into());
+        app.dlg.hdr_edit = None;
+        app.dispatch(Command::HdrComment);
+        assert_eq!(app.dlg.hdr_edit.as_ref().unwrap().text, "");
+        app.dlg.hdr_edit.as_mut().unwrap().text = "a\r\nb".into();
+        let d = app.active_doc_mut().unwrap();
+        d.set.modified = false;
+        let st = app.dlg.hdr_edit.take().unwrap();
+        let d = app.active_doc_mut().unwrap();
+        d.set.tree.section_mut("Comments").set_str("UserData", &st.text.replace('\r', ""));
+        assert_eq!(d.set.tree.section("Comments").unwrap().get_str("UserData", ""), "a\nb");
+        assert_eq!(d.hdr.as_deref(), Some("hdr"));
         let d = app.active_doc_mut().unwrap();
         d.hdr = Some("строка 1\nстрока 2".into());
         d.hdr_cp = Encoding::Cp866;

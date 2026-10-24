@@ -1636,11 +1636,10 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
                         }
                         DataFormat::Ascii => 0.0,
                     };
-                    // BINARY folds in the unit multiplier (`0x451de0`); the
-                    // binary32 reader does not read it (`0x4520f0`; whether a
-                    // helper applies it is NOT DETERMINED).
-                    let mult = if fmt == DataFormat::Int16 { ch.unit_mult } else { 1.0 };
-                    ch.samples.push(mult * ch.a * raw + ch.b);
+                    // Both fold in the unit multiplier: BINARY inline
+                    // (`0x451de0`), binary32 through its store `0x449200`
+                    // (from `0x4522c2`): unit · a · raw + b.
+                    ch.samples.push(ch.unit_mult * ch.a * raw + ch.b);
                     off += abytes;
                 }
                 for w in 0..dwords {
