@@ -47,10 +47,17 @@ mod windows_dlg;
 use app::App;
 use eframe::egui;
 
+/// The frame's minimum tracking size (CMainFrame::OnGetMinMaxInfo
+/// `0x4728a0`: 866 × 500, always, after MFC's base handler) is the window
+/// rect with Windows 11's invisible borders; what shows of it (VM, by a
+/// drag of an edge) is 852 × 493 — ours, with no system frame, as its
+/// client. Physical pixels: the original is system-DPI aware.
+const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
+
 fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1320.0, 860.0])
-        .with_min_inner_size([866.0, 500.0])
+        .with_min_inner_size(MIN_VISIBLE)
         .with_title(app::APP_TITLE)
         .with_drag_and_drop(true);
     // The ribbon draws the caption row (L9.150): no system decorations,
@@ -436,6 +443,16 @@ impl App {
 
     /// A frameless window's edges resize it (the DWM frame's sizing border):
     /// 5 px, corners 12 px along each edge; not while maximised.
+    /// [`MIN_VISIBLE`] in points at the monitor's scale, sent again when
+    /// the scale changes.
+    fn min_size(&mut self, ctx: &egui::Context) {
+        let Some(ppp) = ctx.input(|i| i.viewport().native_pixels_per_point) else { return };
+        if self.min_size_ppp != ppp {
+            self.min_size_ppp = ppp;
+            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::Vec2::from(MIN_VISIBLE) / ppp));
+        }
+    }
+
     fn resize_edges(&mut self, ctx: &egui::Context) {
         use egui::viewport::ResizeDirection as D;
         if !self.own_caption || ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
@@ -576,6 +593,7 @@ impl App {
     /// so headless tests can drive it).
     pub fn frame_ui(&mut self, ctx: &egui::Context) {
         dialogs::route_combo_keys(ctx);
+        self.min_size(ctx);
         // Window title «Механотроника FastView - <document>» (0x45f7d0) and
         // files dropped on the window (DragAcceptFiles).
         let title = match self.active_doc() {

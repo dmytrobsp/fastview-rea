@@ -246,7 +246,7 @@ items (VM ones also in W4.4):
     (L9.55); ~~«Окна...» arrangements under MDI tabs~~ (out of reach, L9.220); ~~the
     `.set` after an ОМП run~~ (run, L9.217); ~~plane labels' background~~ (run: opaque in both, L9.280); the
     ~~differential table's row order~~ (run, L9.298); the app menu's keytips
-    (run, L9.291); the ribbon's reduction steps (L9.91); ~~the printed vector
+    (run, L9.291); ~~the ribbon's reduction steps~~ (run, L9.299); ~~the printed vector
     legend~~ (run, L9.296); the preview on non-A4 paper (L9.94); ~~GDI's Ellipse box~~
     (run, L9.285); the diagram tab order in the workspace (L9.105); the splitter
     cursor (L9.106); the docking divider's limits (L9.109); ~~a paste's

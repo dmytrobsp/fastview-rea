@@ -6,7 +6,8 @@
 # (a left-button drag in ten steps; "HOLD x1,y1,x2,y2" the same left held,
 # then "UP"), "WHEEL x,y,n"
 # (n notches, + up), "KEYDOWN ctrl" / "KEYUP ctrl" (shift, alt: a modifier
-# held across steps), "SHOT name.png" (a capture now). Logs next to itself.
+# held across steps), "SIZE w,h" (the front window restored, w × h at 0,0),
+# "SHOT name.png" (a capture now). Logs next to itself.
 param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave, [switch]$Soft)
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $log = Join-Path $here 'keys.log'
@@ -19,6 +20,9 @@ public static class In {
   [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint flags);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
   [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint type);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+  [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool repaint);
 }
 '@
 [In]::SetProcessDPIAware() | Out-Null
@@ -68,6 +72,11 @@ foreach ($k in ($Keys -split ';')) {
         [In]::keybd_event([byte]$vk, [byte][In]::MapVirtualKey($vk, 0), 2, [UIntPtr]::Zero)
         [array]::Reverse($mods)
         foreach ($m in $mods) { $v = $vkOf[$m.ToLower()]; [In]::keybd_event([byte]$v, [byte][In]::MapVirtualKey($v, 0), 2, [UIntPtr]::Zero) }
+    } elseif ($k -match '^SIZE (\d+),(\d+)$') {
+        # The front window restored and sized w × h at the screen's corner.
+        $h = [In]::GetForegroundWindow()
+        [In]::ShowWindow($h, 9) | Out-Null; Start-Sleep -Milliseconds 300
+        [In]::MoveWindow($h, 0, 0, [int]$Matches[1], [int]$Matches[2], $true) | Out-Null
     } elseif ($k -eq 'UP') {
         [In]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero)
     } elseif ($k -match '^WHEEL (\d+),(\d+),(-?\d+)$') {

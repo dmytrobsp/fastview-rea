@@ -1505,6 +1505,8 @@ pub struct App {
     pub finder: Option<crate::finder::Finder>,
     /// The window title last sent to the viewport.
     pub window_title: String,
+    /// The scale the minimum window size was last sent for.
+    pub min_size_ppp: f32,
     /// `-Dst <file>` (app+0x118): the `.dst` description the next `.sto`
     /// open uses as is (`0x45646b`); emptied by every open that gets past
     /// the `.sto` step (`0x44f05a`).
@@ -1663,6 +1665,7 @@ impl App {
             copy_focus: CopyFocus::View,
             ppp: 1.0,
             window_title: String::new(),
+            min_size_ppp: 0.0,
             finder: None,
             loading: Vec::new(),
             mru: Vec::new(),

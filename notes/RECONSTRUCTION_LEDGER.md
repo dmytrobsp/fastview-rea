@@ -8179,10 +8179,35 @@ IA / IB / IC блока 3, «Рассчитать»):
   «Ic …», Iдиф's column then Iторм's; the three «прив.» channels alike.
 - **An exact 0.** The original's cell is «0.0» alone; ours added the
   unit. Fixed in `circle_cells`.
-Residual (open): the original's table top is 2 px under the plot's frame
-and its rows 19 px (cy 13); ours sits on the frame with 21 px rows.
+Residual: the table's place and rows — closed by L9.299.
 Visual: ours' «Быстрый анализ» side bar draws its own glyphs where the
 original has pictures (left).
+
+### L9.299 — The plane tables' cy and the frame's GDI edges; the frame's minimum size; the ribbon's steps by width  ·  ✅
+- **The readout table (circle and differential).** Read (subagent,
+  `0x446320` / `0x43ba80` reserves, `0x446460` / `0x43bbf0` painters):
+  cy is the "Ay" extent in the pane font — Tahoma's 13 px cell on screen
+  (`0x441b80`), Arial's ⌊52s/5⌋ device px in print (`0x4420b1`); the
+  reserve is (cy + 6m)·rows + 12m; the table's top rule is the plot
+  rect's bottom; the grid's frame is a GDI Rectangle (`0x444b73`,
+  `0x4398ff`), which leaves out its right and bottom edges. Ours took cy
+  as 14 (rows 21 px, the reserve 3 px larger) and drew the frame's right
+  and bottom lines a pixel out, so the frame fell on the table's rule.
+  Now cy as read and those lines a device pixel in; VM: the rules at the
+  original's rows (frame 65, table 67, 86, 105, 124).
+- **The minimum frame size.** Read (subagent): CMainFrame's
+  WM_GETMINMAXINFO (`0x4728a0`) calls CMDIFrameWndEx's and then sets
+  ptMinTrackSize to 866 × 500, always — the window rect, Windows 11's
+  invisible borders included; a drag of an edge on the VM stops the
+  visible window at 852 × 493. Ours (no system frame) kept 866 × 500 of
+  client; now 852 × 493 physical pixels (the original is system-DPI
+  aware), sent again when the monitor's scale changes. VM: an edge drag
+  stops ours at 852 × 493. (A MoveWindow from outside is held by the
+  original, not by our frameless window — the tool's, not a user's.)
+- **The ribbon's reduction by width (L9.91).** Run at 1100, 950, 900
+  and 866: alike at every width — 950 «Диаграммы» to Частотная + three
+  small with text and «Вычисления»' right column to icons; 900 its middle
+  column too. The harness gained `SIZE w,h` (tools/vm/keys.ps1).
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

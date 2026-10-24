@@ -1038,7 +1038,12 @@ impl App {
         // or − the readout table when there is room for a 120 px plot (the
         // 5 and the 120 in device pixels on paper too, `0x43b679` /
         // `0x43b6b2`).
-        let text_h = 14.0f32;
+        // cy: the "Ay" extent in the pane font (`0x446320` / `0x43ba80`) —
+        // Tahoma's 13 px cell on screen, Arial's ⌊52s/5⌋ device px in print.
+        let text_h = match print_s() {
+            Some(s) => (52.0 * s / 5.0).floor() / s,
+            None => 13.0f32,
+        };
         let mut rect = client.shrink(6.0);
         rect.min.y += dpx(5.0);
         let pan = (rect.width() as i32, (rect.height() - 20.0) as i32);
@@ -1081,11 +1086,14 @@ impl App {
             }
         }
         // The frame as four aligned 1 px lines (a stroked rect straddles
-        // its outline and blurs over two pixels; VM: one crisp row).
-        painter.px_hline(frame.left()..=frame.right(), frame.top(), fs);
-        painter.px_hline(frame.left()..=frame.right(), frame.bottom(), fs);
-        painter.px_vline(frame.left(), frame.top()..=frame.bottom(), fs);
-        painter.px_vline(frame.right(), frame.top()..=frame.bottom(), fs);
+        // its outline and blurs over two pixels; VM: one crisp row). GDI's
+        // Rectangle (`0x444b73`, `0x4398ff`) leaves out its right and bottom
+        // edges: those lines are a device pixel in.
+        let (fr, fb) = (frame.right() - dpx(1.0), frame.bottom() - dpx(1.0));
+        painter.px_hline(frame.left()..=fr, frame.top(), fs);
+        painter.px_hline(frame.left()..=fr, fb, fs);
+        painter.px_vline(frame.left(), frame.top()..=fb, fs);
+        painter.px_vline(fr, frame.top()..=fb, fs);
         if (rect.left()..=rect.right()).contains(&origin.x) {
             painter.px_segment([Pos2::new(origin.x, frame.top()), Pos2::new(origin.x, frame.bottom())], axs);
         }
