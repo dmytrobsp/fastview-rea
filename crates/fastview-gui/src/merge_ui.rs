@@ -130,7 +130,7 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
             }
             times.truncate(c.data.len());
             let channel = if c.discrete {
-                Err(fvb_core::comtrade::DigitalChannel { index: 0, id: c.name.clone(), phase: c.desc2.clone(), samples: c.data.iter().map(|&v| v != 0.0).collect() })
+                Err(fvb_core::comtrade::DigitalChannel { index: 0, id: c.name.clone(), phase: c.desc2.clone(), normal: 0, samples: c.data.iter().map(|&v| v != 0.0).collect() })
             } else {
                 Ok(fvb_core::comtrade::AnalogChannel {
                     index: 0,
@@ -144,8 +144,11 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
                     per_second: fvb_core::units::normalize(&c.dimension).per_second,
                     a: c.mul,
                     b: c.offset,
+                    skew: 0.0,
                     primary: c.primary_value,
                     secondary: c.secondary_value,
+                    primary_tok: String::new(),
+                    secondary_tok: String::new(),
                     is_primary: c.primary_values,
                     samples: c.data.clone(),
                     // `0x45ad02` → `0x424cb0` (`0x425002`): net_frequency to ch+0x50.

@@ -28,9 +28,12 @@ fn analog_line_primary_secondary_ps() {
     let ua = &rec.analog[0];
     assert_eq!((ua.primary, ua.secondary, ua.is_primary), (110000.0, 100.0, true));
     assert_eq!((rec.analog[1].primary, rec.analog[1].secondary, rec.analog[1].is_primary), (1.0, 1.0, false));
-    let (c, d) = comtrade::write(&rec);
-    let back = comtrade::parse(&c, d.as_bytes()).unwrap();
+    let (c, d) = comtrade::write(&rec, comtrade::Encoding::Cp1251);
+    let c = comtrade::decode_bytes(&c, comtrade::Encoding::Cp1251);
+    let back = comtrade::parse(&c, &d).unwrap();
     assert_eq!((back.analog[0].primary, back.analog[0].secondary, back.analog[0].is_primary), (110000.0, 100.0, true));
+    // The tokens go back as read (`0x425530`).
+    assert!(c.contains(",110000,100,P\r\n"));
 }
 
 #[test]
@@ -39,12 +42,15 @@ fn rev_2013_reads_time_code_line_and_writer_keeps_stamps() {
     let rec = comtrade::parse(&cfg, DAT).unwrap();
     assert_eq!(rec.stamps.time_code, "+3h30");
     assert_eq!(rec.stamps.local_code, "+3h30");
-    let (c, d) = comtrade::write(&rec);
-    assert!(c.contains("01/01/2024,00:00:00.030000\n"));
-    assert!(c.contains("\n+3h30,+3h30\n"));
-    // The written record reads back with the same stamps (as 2013).
-    let back = comtrade::parse(&c.replacen(",1999", ",2013", 1), d.as_bytes()).unwrap();
-    assert_eq!(back.stamps, rec.stamps);
+    let (c, d) = comtrade::write(&rec, comtrade::Encoding::Cp1251);
+    let c = comtrade::decode_bytes(&c, comtrade::Encoding::Cp1251);
+    assert!(c.contains("01/01/2024,00:00:00.030000\r\n"));
+    // The writer keeps the revision as read but never writes the time-code
+    // line (`0x44dfa0`).
+    assert!(c.lines().next().unwrap().ends_with(",2013"));
+    assert!(!c.contains("+3h30"));
+    let back = comtrade::parse(&c, &d).unwrap();
+    assert_eq!((back.stamps.start_time.as_str(), back.stamps.time_code.as_str()), (rec.stamps.start_time.as_str(), ""));
 }
 
 #[test]

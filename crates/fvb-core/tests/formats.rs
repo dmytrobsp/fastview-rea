@@ -25,8 +25,9 @@ fn cfg_file_type_spellings() {
 fn cff_round_trip() {
     let mut osc = demo();
     osc.rev_year = 2013;
+    osc.rev_text = "2013".into();
     let sections = CffSections { hdr: Some("заголовок\r\n".into()), ..Default::default() };
-    let bytes = write_cff(&osc, &sections).unwrap();
+    let bytes = write_cff(&osc, &sections, comtrade::Encoding::Cp1251).unwrap();
     let text = String::from_utf8_lossy(&bytes);
     assert!(text.starts_with("--- file type: CFG ---\r\n"));
     assert!(text.contains("--- file type: DAT BINARY: "));
@@ -35,8 +36,8 @@ fn cff_round_trip() {
     assert_eq!(back.analog[0].samples.len(), osc.analog[0].samples.len());
     // Same values as a plain .cfg/.dat round trip (the writer quantises to
     // integer sample codes).
-    let (c, d) = comtrade::write(&osc);
-    let plain = comtrade::parse(&c, d.as_bytes()).unwrap();
+    let (c, d) = comtrade::write(&osc, comtrade::Encoding::Cp1251);
+    let plain = comtrade::parse(&comtrade::decode_bytes(&c, Encoding::Cp1251), &d).unwrap();
     assert_eq!(back.analog[0].samples, plain.analog[0].samples);
     assert_eq!(secs.hdr.as_deref(), Some("заголовок\r\n"));
 }
@@ -46,7 +47,7 @@ fn cff_round_trip() {
 fn cff_needs_revision_2013() {
     let osc = demo();
     assert!(osc.rev_year < 2013);
-    assert!(write_cff(&osc, &CffSections::default()).is_err());
+    assert!(write_cff(&osc, &CffSections::default(), comtrade::Encoding::Cp1251).is_err());
 }
 
 /// No CFG or DAT section → error 330.
@@ -208,4 +209,25 @@ fn osc_loading_progress() {
     let (n, c) = (rec.analog[0].samples.len() as u32, rec.analog.len() as u32 + rec.digital.len() as u32);
     assert_eq!(p.total.load(Relaxed), t);
     assert_eq!(p.pos.load(Relaxed), t + rec.analog.len() as u32 * n * 5 * (t / (n * c)));
+}
+
+/// The `.cfg` / `.dat` writer as the original's (`0x44dfa0`, `0x425530`,
+/// `0x44e680`; checked byte for byte against the original's output on
+/// three records, L9.172): CR LF, `%g` coefficients, min / max from the
+/// data, primary / secondary tokens as read, the discrete line with its
+/// normal state, ", " in the data rows, no time-code line.
+#[test]
+fn cfg_dat_writer_as_the_original() {
+    let cfg = "St,Dev,1999\r\n2,1A,1D\r\n1,Ia,A,,кА,0.025227049,0.000000000,0.000000,-2047,2047,2000.000000,1.000000,P\r\n\
+               1,D1,,,1\r\n50.000000\r\n1\r\n1000.000000,3\r\n01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.001000\r\nASCII\r\n1.000000\r\n";
+    let dat = "1,0,10,1\r\n2,1000,-20,0\r\n3,2000,5,1\r\n";
+    let rec = comtrade::parse(cfg, dat.as_bytes()).unwrap();
+    let (c, d) = comtrade::write(&rec, Encoding::Cp1251);
+    let c = comtrade::decode_bytes(&c, Encoding::Cp1251);
+    assert_eq!(
+        c,
+        "St,Dev,1999\r\n2,1A,1D\r\n1,Ia,A,,кА,0.025227,0,0,-20000,10000,2000.000000,1.000000,P\r\n1,D1,,,1\r\n50\r\n1\r\n1000,3\r\n\
+         01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.001000\r\nASCII\r\n1\r\n"
+    );
+    assert_eq!(String::from_utf8(d).unwrap(), "1,0, 10, 1\r\n2,1000, -20, 0\r\n3,2000, 5, 1\r\n");
 }

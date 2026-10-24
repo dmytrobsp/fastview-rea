@@ -609,7 +609,7 @@ mod tests {
         assert_eq!(m.analog[1].own_freq[50], 50.5, "the pasted one: its own");
         // An inverted digital channel's padding reads 1 through the accessor.
         let dig = Pasted {
-            channel: Err(crate::comtrade::DigitalChannel { index: 1, id: "D".into(), phase: String::new(), samples: vec![false; 100] }),
+            channel: Err(crate::comtrade::DigitalChannel { index: 1, id: "D".into(), phase: String::new(), normal: 0, samples: vec![false; 100] }),
             times: (0..100).map(|k| k as f64 / 1000.0).collect(),
             rate: 1000.0,
             pad: 1.0,

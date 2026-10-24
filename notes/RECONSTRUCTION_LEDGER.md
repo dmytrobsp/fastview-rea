@@ -5096,12 +5096,46 @@ sections. Our `.set` for WIN_1999 is now byte-identical to the original's.
 Tests updated (`eligibility_by_unit_as_the_original_reads_it`,
 `prefixed_cyrillic_units_reach_the_vector_diagram`,
 `menu_rows_tick_only_checked_items`, the code-page test).
-Residual: the `.cfg` / `.dat` writer (`0x44dfa0`, `0x425530`, `0x44e680`,
-`0x44e920`: %g fields, min / max from the data, raw primary / secondary
-tokens, the digital state and layout, CRLF, ", " in the `.dat`, BINARY kept,
-the revision and multiplier lines, cp1251 bytes) — next; the Save path's
+Residual: (the `.cfg` / `.dat` writer: L9.172); the Save path's
 lowercased proposal and the never-updated record path (`0x44d772`,
 `0x44da96`).
+
+### L9.172 — The `.cfg` / `.dat` writer byte for byte; `%g` with three exponent digits  ·  ✅
+Run (COMPLETION_PLAN W4.2: WIN_1999, DOC_1999 and BINARY saved through
+Save As by the original on the VM and by ours with `FV_SAVE_AS` — all nine
+files now byte-identical) and read (background report on `0x44dfa0`,
+`0x425530`, `0x44e680`, `0x44e920`, `0x422300`; by hand the min / max
+quirk seen at runtime):
+- The writer is a narrow stream with default formatting (doubles `%g`, MSVC
+  12's three exponent digits — also on screen: «-3.79074e-005»), CR LF.
+  Line 1: the station, `,device` when not empty, `,rev` when the revision
+  token read was not empty. Analog lines `n,name,ph,ccbm,unit,a,b,skew,
+  min,max` (+ `,primary,secondary,P|S` with a revision): min / max rounded
+  (`0x411bf0`) from the channel's actual values as (v − b) / a — the unit
+  prefix not undone, so a kA channel's are 1000× its codes; primary /
+  secondary the tokens as read. Discrete lines `n,name,,,state` (bare
+  `n,name,state` without a revision) with the normal state read. Then the
+  frequency, the rate table as read, the stamps, the format line as read
+  and the multiplier (with a revision); never a time-code line.
+- The data: exactly "ASCII" writes rows `n,µs` (the stored µs) then
+  `, value` per channel (round((v − b) / (mult · a)), discrete 1 / 0);
+  anything else binary records — int32 number, int32 µs / multiplier,
+  int16 values (int32 for revision "2013"), discrete bits in LSB-first
+  words.
+- The texts stay the bytes read: station, recorder and names are shown
+  through the record's code page (L9.171), so they go back unchanged —
+  DOC_1999's CP866 names stay CP866, its CP1251 units CP1251.
+Ours wrote UTF-8, LF, shortest-exact numbers, ±32768, `%g`-less tokens, the
+digital state 0 with its phase, ",1999" always, one rate line, "ASCII", the
+2013 time-code line, and always an ASCII `.dat`. Now `comtrade::write(osc,
+names)` as above (`rev_text`, `format`, `skew`, `primary_tok` /
+`secondary_tok`, `normal` kept by the readers), `write_cff` on its bytes,
+`fmt_gp` with three exponent digits. Test `cfg_dat_writer_as_the_original`;
+the integration tests follow (the 2013 test now checks no time-code line).
+Residual: an OSC2 record saved as COMTRADE (its revision / format tokens
+NOT DETERMINED, ours "1999" / "ASCII"); the `.cff` writer `0x44d0f0` beyond
+its use of these bytes; pending channels in the binary writer (the cfg
+omits them, the binary data writes them — INFERRED).
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

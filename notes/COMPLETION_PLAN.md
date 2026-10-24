@@ -173,8 +173,9 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 - [x] W4.1b The VM's system locale and devuser's Format set to ru-RU (user
   approved, 2026-10-24) — the original stores names through the thread
   code page, so both are needed for its Cyrillic.
-- [ ] W4.2 File-level comparisons (WIN_1999's `.set`: byte-identical since
-  L9.171; its `.cfg` / `.dat`: the writer next) (started 2026-10-24: WIN_1999 saved by
+- [ ] W4.2 File-level comparisons (Save As of WIN_1999, DOC_1999, BINARY:
+  `.cfg` / `.dat` / `.set` byte-identical since L9.172; next: the clipboard
+  document, quick-analysis / ОМП channels, a `.set` after edits) (started 2026-10-24: WIN_1999 saved by
   both through Save As — `FV_SAVE_AS` makes ours; differences found: Ctrl+S
   always asks with a lowercase name, the same-name save rewrites the
   record, and the `.cfg` / `.dat` / `.set` formats, see the save-path read

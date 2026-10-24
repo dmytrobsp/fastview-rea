@@ -273,10 +273,10 @@ mod tests {
         assert_eq!(back.channels[0].data, [1.0, -2.25, 0.0], "%f drops values below 5e-7");
         assert_eq!(back.times_us, [0, 1000, 2000]);
         assert_eq!(back.station_id, "ПС <1>");
-        // 10⁶ samples: num_values "1e+06" bounds the arrays to one entry.
+        // 10⁶ samples: num_values "1e+006" (MSVC 12) bounds the arrays to one entry.
         let mut big = sample();
         big.num_values = fmt_g(1e6);
-        assert_eq!(big.num_values, "1e+06");
+        assert_eq!(big.num_values, "1e+006");
         assert_eq!(ClipRecord::parse(&big.to_text()).unwrap().times_us, [0]);
         // Times above 2³¹ µs keep only the low 32 bits.
         big.times_us = vec![(1i64 << 31) + 5];

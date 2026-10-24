@@ -631,7 +631,7 @@ impl App {
         if !same {
             match kind {
                 ".cff" => {
-                    let bytes = comtrade::write_cff(&d.osc, &d.cff_sections()).map_err(|e| e.to_string())?;
+                    let bytes = comtrade::write_cff(&d.osc, &d.cff_sections(), d.codepage).map_err(|e| e.to_string())?;
                     std::fs::write(target, bytes).map_err(|e| e.to_string())?;
                 }
                 ".osc" => {
@@ -640,7 +640,7 @@ impl App {
                     std::fs::copy(src, target).map_err(|e| e.to_string())?;
                 }
                 _ => {
-                    let (cfg, dat) = comtrade::write(&d.osc);
+                    let (cfg, dat) = comtrade::write(&d.osc, d.codepage);
                     std::fs::write(target, cfg).map_err(|e| e.to_string())?;
                     std::fs::write(target.with_extension("dat"), dat).map_err(|e| e.to_string())?;
                     if let Some(b) = d.hdr_file_bytes() {

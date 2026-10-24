@@ -254,7 +254,7 @@ impl App {
                 Some(c) => c.samples = samples,
                 None => {
                     let index = d.osc.digital.len() as u32 + 1;
-                    d.osc.digital.push(fvb_core::DigitalChannel { index, id: KZ_PHASES[k].into(), phase: String::new(), samples });
+                    d.osc.digital.push(fvb_core::DigitalChannel { index, id: KZ_PHASES[k].into(), phase: String::new(), normal: 0, samples });
                 }
             }
         }

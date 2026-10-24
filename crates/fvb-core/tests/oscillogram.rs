@@ -180,8 +180,8 @@ fn comtrade_write_round_trips() {
         include_bytes!("../../../assets/demo/demo_fault.dat"),
     )
     .expect("demo");
-    let (cfg, dat) = comtrade::write(&rec);
-    let rec2 = comtrade::parse(&cfg, dat.as_bytes()).expect("reparse written");
+    let (cfg, dat) = comtrade::write(&rec, comtrade::Encoding::Cp1251);
+    let rec2 = comtrade::parse(&comtrade::decode_bytes(&cfg, comtrade::Encoding::Cp1251), &dat).expect("reparse written");
     assert_eq!(rec2.analog.len(), rec.analog.len());
     assert_eq!(rec2.digital.len(), rec.digital.len());
     assert_eq!(rec2.sample_count(), rec.sample_count());

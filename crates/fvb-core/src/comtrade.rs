@@ -43,8 +43,14 @@ pub struct AnalogChannel {
     pub per_second: bool,
     pub a: f64,
     pub b: f64,
+    /// The skew field (`ch+0xc8`), written back with `%g`.
+    pub skew: f64,
     pub primary: f64,
     pub secondary: f64,
+    /// The primary / secondary tokens as read (`ch+0x80` / `ch+0x84`): the
+    /// writer copies them; empty when the record had none (then `%f`).
+    pub primary_tok: String,
+    pub secondary_tok: String,
     /// `true` if the stored channel is already a primary value (`PS` = 'P').
     pub is_primary: bool,
     pub samples: Vec<f64>,
@@ -75,6 +81,8 @@ pub struct DigitalChannel {
     pub index: u32,
     pub id: String,
     pub phase: String,
+    /// The normal state as read (`ch+0x104`), written back as is.
+    pub normal: i32,
     pub samples: Vec<bool>,
 }
 
@@ -83,6 +91,12 @@ pub struct Oscillogram {
     pub station: String,
     pub device: String,
     pub rev_year: i32,
+    /// Line 1's revision token as read ("" when absent): the writer adds it,
+    /// the primary / secondary fields and the multiplier line only when set.
+    pub rev_text: String,
+    /// The data-file format line as read (`doc+0x25c`): "ASCII" writes an
+    /// ASCII `.dat`, anything else a binary one.
+    pub format: String,
     pub line_freq: f64,
     /// Per-sample time in seconds (from the sample-rate sections, scaled by the
     /// configured time multiplier).
@@ -289,67 +303,122 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
     Ok(rec)
 }
 
-/// Serialise an oscillogram to a COMTRADE 1999 ASCII `(cfg, dat)` pair
-/// (analog + digital channels; computed channels are not COMTRADE channels).
-pub fn write(osc: &Oscillogram) -> (String, String) {
+/// The `.cfg` / `.dat` bytes the save writes (`0x44dfa0`, the analog line
+/// `0x425530`, the ASCII data `0x44e680`, the binary data `0x44e920`): a
+/// narrow text stream with default formatting (doubles as `%g`), CR LF line
+/// ends, the names in the thread code page (cp1251 on a Russian system).
+/// Line 1 is the station, `,device` when not empty and `,rev` when the
+/// revision token read was not empty; analog lines `n,name,ph,ccbm,unit,a,
+/// b,skew,min,max` (+ `,primary,secondary,P|S` with a revision), min / max
+/// rounded from the channel's actual values as `(v − b) / a` — the unit
+/// prefix not undone —, primary / secondary the tokens as read; discrete
+/// lines `n,name,,,state` (`n,name,state` without a revision) with the
+/// normal state read; the rate table, the stamps, the format line as read
+/// and the time multiplier (with a revision only); never a time-code line.
+/// The data file follows the format line: exactly "ASCII" writes rows
+/// `n,µs` then `, value` per channel; anything else binary records.
+/// The record keeps its texts as the bytes read, the station, recorder and
+/// channel names shown through the record's code page (`0x4543e0`): so
+/// those go out in `names` (the record's code page), the rest in cp1251.
+pub fn write(osc: &Oscillogram, names: Encoding) -> (Vec<u8>, Vec<u8>) {
+    use crate::views::fmt_g;
+    // Names are wrapped in \u{1} … \u{2} and encoded on their own below.
+    let nm = |s: &str| format!("\u{1}{s}\u{2}");
     let na = osc.analog.len();
     let nd = osc.digital.len();
     let n = osc.sample_count();
-    let rate = if osc.sample_rate > 0.0 {
-        osc.sample_rate
-    } else if n > 1 && osc.time[1] > osc.time[0] {
-        1.0 / (osc.time[1] - osc.time[0])
-    } else {
-        0.0
-    };
-
-    let mut cfg = String::new();
-    cfg.push_str(&format!("{},{},1999\n", osc.station, osc.device));
-    cfg.push_str(&format!("{},{}A,{}D\n", na + nd, na, nd));
+    let rev = !osc.rev_text.is_empty();
+    let mut cfg = nm(&osc.station);
+    if !osc.device.is_empty() {
+        cfg.push(',');
+        cfg.push_str(&nm(&osc.device));
+    }
+    if rev {
+        cfg.push(',');
+        cfg.push_str(&osc.rev_text);
+    }
+    cfg.push_str("\r\n");
+    cfg.push_str(&format!("{},{}A,{}D\r\n", na + nd, na, nd));
+    let raw = |ch: &AnalogChannel, v: f64| round_fv((v - ch.b) / (ch.unit_mult * ch.a));
     for (i, ch) in osc.analog.iter().enumerate() {
+        // `0x411bf0` over the stored values, from ±DBL_MAX.
+        let (lo, hi) = ch.samples.iter().fold((f64::MAX, f64::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
+        let ext = |v: f64| if ch.samples.is_empty() { 0.0 } else { round_fv((v - ch.b) / ch.a) };
         cfg.push_str(&format!(
-            "{},{},{},,{},{},{},0,-32768,32767,{},{},{}\n",
-            i + 1, ch.id, ch.phase, ch.file_unit(), ch.a, ch.b, ch.primary, ch.secondary,
-            if ch.is_primary { "P" } else { "S" },
+            "{},{},{},{},{},{},{},{},{},{}",
+            i + 1, nm(&ch.id), ch.phase, ch.ccbm, ch.file_unit(), fmt_g(ch.a), fmt_g(ch.b), fmt_g(ch.skew), ext(lo), ext(hi),
         ));
+        if rev {
+            let tok = |t: &str, v: f64| if t.is_empty() { format!("{v:.6}") } else { t.to_string() };
+            cfg.push_str(&format!(",{},{},{}", tok(&ch.primary_tok, ch.primary), tok(&ch.secondary_tok, ch.secondary), if ch.is_primary { "P" } else { "S" }));
+        }
+        cfg.push_str("\r\n");
     }
     for (i, ch) in osc.digital.iter().enumerate() {
-        cfg.push_str(&format!("{},{},{},,0\n", i + 1, ch.id, ch.phase));
-    }
-    cfg.push_str(&format!("{}\n", osc.line_freq));
-    cfg.push_str("1\n");
-    cfg.push_str(&format!("{},{}\n", rate, n));
-    // The record's own time stamps (a record without them gets 01/01/2000).
-    let st = &osc.stamps;
-    for (d, t) in [(&st.start_date, &st.start_time), (&st.trigger_date, &st.trigger_time)] {
-        if d.is_empty() {
-            cfg.push_str("01/01/2000,00:00:00.000000\n");
+        if rev {
+            cfg.push_str(&format!("{},{},,,{}\r\n", i + 1, nm(&ch.id), ch.normal));
         } else {
-            cfg.push_str(&format!("{d},{t}\n"));
+            cfg.push_str(&format!("{},{},{}\r\n", i + 1, nm(&ch.id), ch.normal));
         }
     }
-    cfg.push_str("ASCII\n1\n");
-    if osc.rev_year == 2013 {
-        cfg.push_str(&format!("{},{}\n", st.time_code, st.local_code));
+    cfg.push_str(&format!("{}\r\n", fmt_g(osc.line_freq)));
+    cfg.push_str(&format!("{}\r\n", osc.rate_segs.len()));
+    for (rate, end) in &osc.rate_segs {
+        cfg.push_str(&format!("{},{}\r\n", fmt_g(*rate), end));
     }
-
-    let mut dat = String::new();
-    for k in 0..n {
-        let ts = (osc.time.get(k).copied().unwrap_or(0.0) * 1e6).round() as i64;
-        dat.push_str(&format!("{},{}", k + 1, ts));
-        for ch in &osc.analog {
-            let v = ch.samples.get(k).copied().unwrap_or(0.0);
-            // The inverse of the reader's mult·a·raw + b (`0x422250`).
-            let k = ch.a * ch.unit_mult;
-            let raw = if k.abs() > 1e-12 { (v - ch.b) / k } else { v };
-            dat.push_str(&format!(",{}", raw.round() as i64));
-        }
-        for ch in &osc.digital {
-            dat.push_str(&format!(",{}", if ch.samples.get(k).copied().unwrap_or(false) { 1 } else { 0 }));
-        }
-        dat.push('\n');
+    let st = &osc.stamps;
+    cfg.push_str(&format!("{},{}\r\n{},{}\r\n", st.start_date, st.start_time, st.trigger_date, st.trigger_time));
+    cfg.push_str(&format!("{}\r\n", osc.format));
+    if rev {
+        cfg.push_str(&format!("{}\r\n", fmt_g(osc.time_mult)));
     }
-    (cfg, dat)
+    let us = |k: usize| round_fv(osc.time.get(k).copied().unwrap_or(0.0) * 1e6);
+    let mut dat = Vec::new();
+    if osc.format == "ASCII" {
+        let mut text = String::new();
+        for k in 0..n {
+            text.push_str(&format!("{},{}", k + 1, us(k)));
+            for ch in &osc.analog {
+                text.push_str(&format!(", {}", ch.samples.get(k).map_or(0.0, |&v| raw(ch, v))));
+            }
+            for ch in &osc.digital {
+                text.push_str(if ch.samples.get(k).copied().unwrap_or(false) { ", 1" } else { ", 0" });
+            }
+            text.push_str("\r\n");
+        }
+        dat = text.into_bytes();
+    } else {
+        // int32 number, int32 µs / multiplier, int16 values (4 bytes for
+        // revision "2013"), then the discrete bits LSB first in words.
+        let wide = osc.rev_text == "2013";
+        let mult = if osc.time_mult != 0.0 { osc.time_mult } else { 1.0 };
+        for k in 0..n {
+            dat.extend_from_slice(&(k as i32 + 1).to_le_bytes());
+            dat.extend_from_slice(&(round_fv(us(k) / mult) as i32).to_le_bytes());
+            for ch in &osc.analog {
+                let v = ch.samples.get(k).map_or(0.0, |&v| raw(ch, v));
+                if wide {
+                    dat.extend_from_slice(&(v as i32).to_le_bytes());
+                } else {
+                    dat.extend_from_slice(&(v as i16).to_le_bytes());
+                }
+            }
+            for w in 0..nd.div_ceil(16) {
+                let mut word = 0u16;
+                for bit in 0..16 {
+                    if osc.digital.get(w * 16 + bit).and_then(|c| c.samples.get(k)).copied().unwrap_or(false) {
+                        word |= 1 << bit;
+                    }
+                }
+                dat.extend_from_slice(&word.to_le_bytes());
+            }
+        }
+    }
+    let mut bytes = Vec::new();
+    for (k, part) in cfg.split(['\u{1}', '\u{2}']).enumerate() {
+        bytes.extend(encode_text(part, if k % 2 == 1 { names } else { Encoding::Cp1251 }));
+    }
+    (bytes, dat)
 }
 
 /// Parse from in-memory cfg text + dat bytes (used by tests and the `.cff` path).
@@ -472,20 +541,21 @@ pub struct CffRevisionError;
 /// `--- file type: CFG ---` + the cfg (CRLF lines), then the HDR, INF, SET
 /// sections that came with the record, then `--- file type: DAT BINARY: n---`
 /// and the data bytes. Text in CP1251.
-pub fn write_cff(osc: &Oscillogram, sections: &CffSections) -> Result<Vec<u8>, CffRevisionError> {
+pub fn write_cff(osc: &Oscillogram, sections: &CffSections, names: Encoding) -> Result<Vec<u8>, CffRevisionError> {
     if osc.rev_year < 2013 {
         return Err(CffRevisionError);
     }
-    let (cfg, dat) = write(osc);
-    let cfg = cfg.replacen(",1999\n", &format!(",{}\n", osc.rev_year), 1).replace('\n', "\r\n");
-    let mut out = to_cp1251(&format!("--- file type: CFG ---\r\n{cfg}"));
+    // The `.cfg` writer's bytes (cp1251, CR LF, the revision as read).
+    let (cfg, dat) = write(osc, names);
+    let mut out = to_cp1251("--- file type: CFG ---\r\n");
+    out.extend(cfg);
     for (kind, body) in [("HDR", &sections.hdr), ("INF", &sections.inf), ("SET", &sections.set)] {
         if let Some(b) = body {
             out.extend(to_cp1251(&format!("--- file type: {kind} ---\r\n{b}")));
         }
     }
     out.extend(to_cp1251(&format!("--- file type: DAT BINARY: {}---\r\n", dat.len())));
-    out.extend(dat.as_bytes());
+    out.extend(dat);
     Ok(out)
 }
 
@@ -698,8 +768,11 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
             per_second: crate::units::normalize(unit).per_second,
             a: cal[i].0,
             b: cal[i].1,
+            skew: 0.0,
             primary: ratio(i),
             secondary: 1.0,
+            primary_tok: String::new(),
+            secondary_tok: String::new(),
             is_primary: false,
             samples: Vec::new(),
             own_freq: Vec::new(),
@@ -708,7 +781,7 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
     let mut digital: Vec<DigitalChannel> = digital_defs
         .iter()
         .enumerate()
-        .map(|(i, (name, phase))| DigitalChannel { index: i as u32 + 1, id: name.clone(), phase: phase.clone(), samples: Vec::new() })
+        .map(|(i, (name, phase))| DigitalChannel { index: i as u32 + 1, id: name.clone(), phase: phase.clone(), normal: 0, samples: Vec::new() })
         .collect();
     let m = analog_defs.iter().filter(|(_, _, u)| matches!(u.trim(), "V" | "В" | "A" | "А" | "")).count() as f64;
     let words = nd / 16;
@@ -781,6 +854,9 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
         station: String::new(),
         device: format!("OSC Осциллограф. Версия {major}.{minor}"),
         rev_year: 0,
+        // What an OSC2 record saved as COMTRADE carries: NOT DETERMINED.
+        rev_text: "1999".into(),
+        format: "ASCII".into(),
         line_freq: fnom,
         time,
         analog,
@@ -1297,10 +1373,8 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
     let f1: Vec<&str> = l1.split(',').collect();
     let station = f1.first().unwrap_or(&"").trim().to_string();
     let device = f1.get(1).unwrap_or(&"").trim().to_string();
-    let rev_year = f1
-        .get(2)
-        .and_then(|s| s.trim().parse::<i32>().ok())
-        .unwrap_or(1991);
+    let rev_text = f1.get(2).map(|s| s.trim().to_string()).unwrap_or_default();
+    let rev_year = rev_text.parse::<i32>().unwrap_or(1991);
 
     // Line 2: TT, ##A, ##D
     let l2 = next(&mut li)?;
@@ -1334,6 +1408,9 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
             per_second: norm.per_second,
             a: g(5).parse().unwrap_or(1.0),
             b: g(6).parse().unwrap_or(0.0),
+            skew: g(7).parse().unwrap_or(0.0),
+            primary_tok: g(10).to_string(),
+            secondary_tok: g(11).to_string(),
             // An,ch_id,ph,ccbm,uu,a,b,skew,min,max,primary,secondary,PS
             // (fields 11–13 of the 1999 line; absent in 1991 → 1, 1, S).
             primary: g(10).parse().unwrap_or(1.0),
@@ -1349,10 +1426,13 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         let l = next(&mut li)?;
         let f: Vec<&str> = l.split(',').collect();
         let g = |i: usize| f.get(i).map(|s| s.trim()).unwrap_or("");
+        // `n,id,ph,ccbm,y` (1999) or `n,id,y` (1991).
+        let normal = if f.len() >= 5 { g(4) } else { g(2) };
         digital.push(DigitalChannel {
             index: g(0).parse().unwrap_or(0),
             id: g(1).to_string(),
-            phase: g(2).to_string(),
+            phase: if f.len() >= 5 { g(2).to_string() } else { String::new() },
+            normal: crate::clipdata::wtoi(normal) as i32,
             samples: Vec::new(),
         });
     }
@@ -1424,6 +1504,8 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         station,
         device,
         rev_year,
+        rev_text,
+        format: ft.clone(),
         line_freq,
         time,
         analog,

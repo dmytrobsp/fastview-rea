@@ -2357,11 +2357,11 @@ impl App {
         else {
             return;
         };
-        let (cfg, dat) = fvb_core::comtrade::write(&d.osc);
+        let (cfg, dat) = fvb_core::comtrade::write(&d.osc, d.codepage);
         let csv = Self::csv_string(d);
         let zip = crate::util::zip_store(&[
-            (format!("{}.cfg", d.name), cfg.into_bytes()),
-            (format!("{}.dat", d.name), dat.into_bytes()),
+            (format!("{}.cfg", d.name), cfg),
+            (format!("{}.dat", d.name), dat),
             (format!("{}.csv", d.name), csv.into_bytes()),
         ]);
         match std::fs::write(&path, zip) {

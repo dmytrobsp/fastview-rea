@@ -87,7 +87,8 @@ pub fn freq_label(v: f64) -> String {
 }
 
 /// C's `%g` (precision 6): exponent form when the decimal exponent is below
-/// −4 or at least 6, trailing zeros removed.
+/// −4 or at least 6, trailing zeros removed — with MSVC 12's three exponent
+/// digits (the VS2013 CRT; seen on the VM: «-3.79074e-005»).
 pub fn fmt_g(v: f64) -> String {
     fmt_gp(v, 6)
 }
@@ -114,7 +115,7 @@ pub fn fmt_gp(v: f64, p: usize) -> String {
     if (-4..p as i32).contains(&x) {
         trim(&format!("{v:.*}", (p as i32 - 1 - x) as usize))
     } else {
-        format!("{}e{}{:02}", trim(mant), if x < 0 { '-' } else { '+' }, x.abs())
+        format!("{}e{}{:03}", trim(mant), if x < 0 { '-' } else { '+' }, x.abs())
     }
 }
 
@@ -233,8 +234,8 @@ mod tests {
     fn printf_g() {
         assert_eq!(fmt_g(57.1234567), "57.1235");
         assert_eq!(fmt_g(0.0001), "0.0001");
-        assert_eq!(fmt_g(0.00001234), "1.234e-05");
-        assert_eq!(fmt_g(1234567.0), "1.23457e+06");
+        assert_eq!(fmt_g(0.00001234), "1.234e-005");
+        assert_eq!(fmt_g(1234567.0), "1.23457e+006");
         assert_eq!(fmt_g(100.0), "100");
         assert_eq!(readout_text(57_100.0, "V"), " 57.1     кВ");
         assert_eq!(readout_text(-57_100.0, "V"), "-57.1    кВ");
