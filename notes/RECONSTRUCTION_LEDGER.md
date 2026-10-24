@@ -6688,6 +6688,27 @@ mesh, the tabs are 19 px with the ▾ button held to that height, and
 Residual: the other looks' border colours; the label's weight (the active
 tab is bold in the original too, ours heavier — fonts, W6).
 
+### L9.235 — The frequency value labels: measured in Tahoma, flat «100» as the original  ·  ✅
+Read (subagent report, checked at the cited addresses): the label is
+Format then TrimLeft (`0x4704a1`–`0x470590`: "0" below 0.01, "%1.1f"
+below 10, "%2.1f" below 100, else "%10.0f" trimmed) of (v·100)/norm in
+SSE2 doubles — for the largest bin exactly 100 most of the time, one
+unit below now and then, which prints «100.0»; it is measured with
+GetTextExtentPoint32W in the diagrams' Tahoma (13 px cell, `0x441b80`,
+selected at `0x46f800`; `0x4705e6`) and rotated when ⌊6w/5⌋ exceeds the
+slot panelW / (K + 1) (`0x4705f3`–`0x470618`); the rotated font is the
+same Tahoma at escapement 900 (`0x46f7b7`), left selected after a rotated
+label (the next test then measures in it — the same metrics on screen).
+VM (L9.232's run, panels 256 px, slot 23): Tahoma's digits advance 6 px,
+«.» 3, so «100» (18 → 21) stays flat on IA, IC, UA, UB, UC and IB's
+«100.0» (27 → 32) turns. Ours measured in its own font (digits ≈ 7 px)
+and turned every «100». Now `frequency_ui` measures numbers with
+`diagram::tahoma13_width` and the rotated label uses the diagrams' font;
+ours shows the flat «100»s. Which channel's 100 comes out one unit low
+(IB there, UA in ours) depends on the values' last bits (the CRT's
+sin / cos) — NOT DETERMINED. The x labels still crowd in ours: our
+glyphs are wider than Tahoma's (W6).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

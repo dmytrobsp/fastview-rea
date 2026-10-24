@@ -1479,7 +1479,8 @@ impl App {
         let pt = |x: i32, y: i32| Pos2::new(x as f32 / s, y as f32 / s);
         let Some(g) = dg::freq_geom((dev(full.left()), dev(full.top()), dev(full.right()), dev(full.bottom())), si, chans.len(), k_max, h) else { return };
         let width = |t: &str, fid: FontId| (painter.layout_no_wrap(t.into(), fid, ink).size().x * s).round() as i32;
-        let rot_font = FontId::proportional(12.0);
+        // The rotated label's font: the same 13 px-cell Tahoma (`0x46f7b7`).
+        let rot_font = font();
         let corr = fvb_core::freqcorr::of(&d.osc);
         // In print the panels tile the page by the screen pane's aspect.
         let screen = self.pane_canvas.iter().find(|(p, _)| *p == crate::app::Pane::Frequency).map_or((0, 0), |(_, r)| (r.width() as i32, r.height() as i32));
@@ -1545,7 +1546,10 @@ impl App {
                     v
                 };
                 let label = fvb_core::views::freq_label(val).trim().to_string();
-                if 6 * width(&label, font()) / 5 <= tl.slot {
+                // Measured in the diagrams' Tahoma 13 (`0x4705e6`): its
+                // digits advance 6 px, «.» 3 — numbers only reach here.
+                let w = dg::tahoma13_width(&label).map_or_else(|| width(&label, font()), |w| (w as f32 * s).round() as i32);
+                if 6 * w / 5 <= tl.slot {
                     let at = pt(sl, row_top + t + 6 * si) + Vec2::new(tl.slot as f32 / s / 2.0, 0.0);
                     painter.text(at, egui::Align2::CENTER_TOP, label, font(), ink);
                 } else {

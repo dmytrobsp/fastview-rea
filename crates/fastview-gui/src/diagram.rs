@@ -34,6 +34,18 @@ pub const CHAR_PALETTE: [[(u8, u8, u8); 4]; 9] = [
     [(136, 0, 21), (185, 122, 87), (136, 0, 21), (232, 205, 209)],
 ];
 
+/// A number's advance in the diagrams' Tahoma (13 px cell, 11 px em) as
+/// GetTextExtentPoint32 gives it on screen (VM: digits 6 px, «.» and «,»
+/// 3 px, «-» 4 px); `None` for any other character.
+pub fn tahoma13_width(t: &str) -> Option<i32> {
+    t.chars().map(|c| match c {
+        '0'..='9' => Some(6),
+        '.' | ',' => Some(3),
+        '-' => Some(4),
+        _ => None,
+    }).sum()
+}
+
 /// Alpha of the operate-region fill: one GDI+ rectangle fill at 50/255
 /// per visible characteristic, clipped to its operate region
 /// (`0x43a4a0`); overlapping characteristics stack, last → first.
