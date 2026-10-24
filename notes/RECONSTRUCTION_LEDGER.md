@@ -6785,6 +6785,39 @@ its first showing (movable afterwards, as there); the print dialogs
 already were. Open: the list's fixed height (the original's dialog is
 ~780 px tall with an empty list area; ours fits its rows) — W4.5.
 
+### L9.241 — The dialogs' Windows frame; DIALOGs 463 and 477 on their templates  ·  ✅
+VM captures of «Отображение каналов» and «Коэффициенты трансформации»
+against the templates (`tools/dlg_templates.py`): the client is the
+template's size in dialog units at MS Shell Dlg 8's base units 6 × 13
+(237 × 463 → 356 × 752 px; 341 × 255 → 512 × 414), MulDiv-rounded; the
+frame is Windows 11's: a 1 px border (grey 113 at 40 % over the window's
+DWM shadow), a 25 px (243) caption with the 12 px title 5 px in, a thin
+10 px × 11 px from the right edge — DIALOG 463 alone is WS_EX_TOOLWINDOW
+and has a 19 px (199, 80, 80) close box with a small white × — and the
+client in COLOR_3DFACE (240) with the controls in the template font
+(Tahoma 8 pt, 11 px) in black. MFC centres each dialog on its owner at
+every opening: left-top = (W − w) / 2, (H − h) / 2 floored (VM: 1101, 306
+on the 2560 × 1392 work area). Ours drew egui's rounded window with a
+large centred title, sized by its content.
+Now `dialogs::Dlg` (built by `dlg`) wraps egui's window in that frame for
+all 23 dialogs and places it exactly at each opening (egui's own pivot
+placement rounded the half pixel by the previous frame's size);
+`win_button` is the theme's push button (face inset 1 px, (253) with a
+(208) → (186) border; the default button's (0, 120, 212) → (0, 108,
+191)); `DLG_FONT` the controls' 11 px. DIALOG 463's list fills its
+client: a white 24 px header with (229) separators 2 px inside each
+column, 17 px rows ruled in (240) across the whole list, the name column
+172 px and five 32 px image columns, the check box 13 px at (+9, +2) with
+the theme's frame, ring, shaded interior and (72, 93, 149) tick. DIALOG
+477's list sits at (11, 11) 491 × 359 with a (130, 135, 144) border, a
+25 px header, 19 px rows, columns 155 / 153 / 153 px, and ОК / «Отмена»
+110 × 23 at (272, 380) / (392, 380). Both now match the captures to the
+pixel but for the glyphs (W6, fonts). Also in the dump harness: its
+rasteriser counted a pixel centre on an edge shared by two triangles in
+both, doubling translucent ink (a 40 % border came out 64 %); it now
+samples a fraction of a pixel off the centre, a fill rule like the GPU's.
+Open (W4.5): the other 21 dialogs on their templates.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

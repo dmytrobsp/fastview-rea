@@ -313,6 +313,9 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   ribbon's one context menu: L9.216. The parameter grid: L9.222. The
   plot's fills (stacked GDI+ alpha) and the check box: L9.224 (the scale
   differed only by the pane's height). The ribbon's rows: L9.225.
+  The dialogs' Windows frame, their CenterWindow placement and DIALOGs
+  463 / 477 on their templates: L9.240–L9.241; open: the other 21
+  dialogs laid out from their templates (`tools/dlg_templates.py`).
 
 ## W5 — Windows-only paths
 

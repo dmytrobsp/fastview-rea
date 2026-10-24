@@ -173,7 +173,11 @@ fn draw_mesh(acc: &mut [[f32; 3]], w: usize, h: usize, m: &epaint::Mesh, clip: R
         let col = v.map(|v| v.color.to_array().map(f32::from));
         for y in miny..maxy {
             for x in minx..maxx {
-                let q = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
+                // The pixel centre, nudged a fraction of a pixel: a fill
+                // rule — a centre on an edge two triangles share falls in
+                // exactly one (the GPU's top-left rule does the same; an
+                // inclusive test drew it twice, doubling translucent ink).
+                let q = Vec2::new(x as f32 + 0.5 + 1.0 / 512.0, y as f32 + 0.5 + 1.0 / 256.0);
                 let e = |a: Vec2, b: Vec2| (b - a).x * (q - a).y - (b - a).y * (q - a).x;
                 let (w0, w1, w2) = (e(p[1], p[2]) / area, e(p[2], p[0]) / area, e(p[0], p[1]) / area);
                 if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {

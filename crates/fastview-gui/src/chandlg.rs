@@ -645,22 +645,36 @@ fn row_icon(p: &egui::Painter, r: Rect, image: u8, c: Color32) {
     }
 }
 
-fn cell_mark(p: &egui::Painter, r: Rect, v: Option<bool>, accent: Color32) {
-    let b = Rect::from_center_size(r.center(), Vec2::splat(11.0));
-    match v {
-        // Not applicable: a greyed-out box (bitmap 464's image 7).
-        None => {
-            p.rect(b, 1.0f32, Color32::from_gray(236), Stroke::new(1.0f32, Color32::from_gray(190)));
-        }
-        Some(on) => {
-            p.rect_stroke(b, 1.0f32, Stroke::new(1.0f32, accent));
-            if on {
-                p.add(egui::Shape::line(
-                    vec![b.min + Vec2::new(2.0, 5.5), b.min + Vec2::new(4.5, 8.5), b.min + Vec2::new(9.0, 2.5)],
-                    Stroke::new(1.8f32, accent),
-                ));
-            }
-        }
+/// A cell's check box as the list shows it (VM): 13 px at (+9, +2) in the
+/// cell, a (142, 143, 143) frame, a 1 px light ring and a 9 px interior
+/// shaded from its top-left; the tick (72, 93, 149). Not applicable: the
+/// same box pale (bitmap 464's image 7).
+fn cell_mark(p: &egui::Painter, r: Rect, v: Option<bool>, _accent: Color32) {
+    let b = Rect::from_min_size(r.min + Vec2::new(9.0, 2.0), Vec2::splat(13.0));
+    let (frame, ring, edge, from, to) = match v {
+        None => (205, 250, (219, 222, 224), (232, 234, 237), (251, 251, 251)),
+        Some(_) => (142, 244, (174, 179, 185), (203, 207, 213), (246, 246, 246)),
+    };
+    let rgb = |c: (u8, u8, u8)| Color32::from_rgb(c.0, c.1, c.2);
+    p.rect_filled(b, 0.0, Color32::from_gray(frame));
+    p.rect_filled(b.shrink(1.0), 0.0, Color32::from_gray(ring));
+    let inner = Rect::from_min_size(b.min + Vec2::splat(2.0), Vec2::splat(9.0));
+    // The interior: a diagonal ramp, darkest at the top-left.
+    let mut mesh = egui::Mesh::default();
+    for (pt, t) in [(inner.left_top(), 0.0), (inner.right_top(), 0.5), (inner.right_bottom(), 1.0), (inner.left_bottom(), 0.5)] {
+        mesh.colored_vertex(pt, rgb(from).lerp_to_gamma(rgb(to), t));
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    p.add(mesh);
+    p.hline(inner.left()..=inner.right() - 1.0, inner.top() + 0.5, Stroke::new(1.0f32, rgb(edge)));
+    p.vline(inner.left() + 0.5, inner.top()..=inner.bottom() - 1.0, Stroke::new(1.0f32, rgb(edge)));
+    if v == Some(true) {
+        let o = b.min;
+        p.add(egui::Shape::line(
+            vec![o + Vec2::new(3.5, 7.0), o + Vec2::new(6.0, 9.5), o + Vec2::new(9.8, 2.2)],
+            Stroke::new(1.8f32, Color32::from_rgb(72, 93, 149)),
+        ));
     }
 }
 
@@ -688,28 +702,43 @@ impl App {
         let esc = self.dialog_keys(ctx) == Some(false);
         let mut open = true;
         let mut alert: Option<&'static str> = None;
-        crate::dialogs::dlg(ctx, "Отображение каналов")
+        crate::dialogs::dlg(ctx, "Отображение каналов").tool().margin(0.0)
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(ctx, |ui| {
                 let doc = &mut self.docs[ai];
-                const LIST_W: f32 = 420.0;
-                let name_w = LIST_W - 185.0;
-                let row_h = 20.0;
+                // The list fills the 237 × 463 DLU client (356 × 752 px):
+                // a 24 px header, 17 px rows ruled in (240) across the whole
+                // list down to its bottom, the name column 172 px and the
+                // five image columns 32 px (VM).
+                let (list, _) = ui.allocate_exact_size(Vec2::new(356.0, 752.0), Sense::hover());
+                ui.painter().rect_filled(list, 0.0, Color32::WHITE);
+                let (name_w, row_h, hdr_h) = (172.0, 17.0, 24.0);
                 let col_x = |c: usize| if c == 0 { 0.0 } else { name_w + 32.0 * (c - 1) as f32 };
                 let col_w = |c: usize| if c == 0 { name_w } else { 32.0 };
-                ui.spacing_mut().item_spacing.y = 0.0;
-                // Header.
-                let (hr, _) = ui.allocate_exact_size(Vec2::new(LIST_W - 25.0, row_h + 2.0), Sense::hover());
+                let grid = Stroke::new(1.0f32, Color32::from_gray(240));
+                let ink = Color32::BLACK;
+                for c in 0..COLS {
+                    let x = list.left() + col_x(c) + col_w(c) - 0.5;
+                    ui.painter().vline(x, list.top() + hdr_h..=list.bottom(), grid);
+                }
+                let mut y = list.top() + hdr_h + row_h - 0.5;
+                while y < list.bottom() {
+                    ui.painter().hline(list.x_range(), y, grid);
+                    y += row_h;
+                }
+                // Header: white, a (229) separator 2 px inside each column's
+                // right edge.
+                let hr = Rect::from_min_size(list.min, Vec2::new(list.width(), hdr_h));
                 st.origin = Some(hr.min);
                 for c in 0..COLS {
                     let r = Rect::from_min_size(hr.min + Vec2::new(col_x(c), 0.0), Vec2::new(col_w(c), hr.height()));
                     let resp = ui.interact(r, ui.id().with(("fv_ch_hdr", c)), Sense::click());
                     let p = ui.painter();
-                    p.rect(r, 0.0f32, pal.group_bg, Stroke::new(1.0f32, pal.group_border));
+                    p.vline(r.right() - 1.5, r.y_range(), Stroke::new(1.0f32, Color32::from_gray(229)));
                     if c == 0 {
-                        p.text(r.left_center() + Vec2::new(4.0, 0.0), egui::Align2::LEFT_CENTER, "Каналы", egui::FontId::proportional(12.0), pal.text);
+                        p.text(r.left_center() + Vec2::new(5.0, 0.0), egui::Align2::LEFT_CENTER, "Каналы", crate::dialogs::DLG_FONT, ink);
                     } else {
                         header_glyph(p, r, c, pal.accent);
                     }
@@ -717,19 +746,21 @@ impl App {
                         toggle_column(doc, c);
                     }
                 }
-                egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+                let rows = Rect::from_min_max(Pos2::new(list.left(), hr.bottom()), list.max);
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rows), |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                egui::ScrollArea::vertical().max_height(rows.height()).show(ui, |ui| {
                     for row in dlg_rows(doc) {
                         let key = match row {
                             DlgRow::Chan(k) => k,
                             DlgRow::Pair(pr) => {
-                                let (rr, _) = ui.allocate_exact_size(Vec2::new(LIST_W - 25.0, row_h), Sense::hover());
+                                let (rr, _) = ui.allocate_exact_size(Vec2::new(list.width(), row_h), Sense::hover());
                                 for c in 0..COLS {
                                     let r = Rect::from_min_size(rr.min + Vec2::new(col_x(c), 0.0), Vec2::new(col_w(c), row_h));
-                                    ui.painter().rect_stroke(r, 0.0f32, Stroke::new(1.0f32, pal.group_border));
                                     if c == 0 {
                                         let p = ui.painter().with_clip_rect(r);
                                         row_icon(&p, r, if matches!(pr, PairRow::Dif(_)) { 4 } else { 3 }, pal.accent);
-                                        p.text(r.left_center() + Vec2::new(26.0, 0.0), egui::Align2::LEFT_CENTER, pair_name(doc, pr), egui::FontId::proportional(12.0), pal.text);
+                                        p.text(r.left_center() + Vec2::new(26.0, 0.0), egui::Align2::LEFT_CENTER, pair_name(doc, pr), crate::dialogs::DLG_FONT, ink);
                                     } else {
                                         let resp = ui.interact(r, ui.id().with(("fv_ch_pair", pr, c)), Sense::click());
                                         cell_mark(ui.painter(), r, pair_cell(doc, pr, c), pal.accent);
@@ -744,10 +775,9 @@ impl App {
                                 continue;
                             }
                         };
-                        let (rr, _) = ui.allocate_exact_size(Vec2::new(LIST_W - 25.0, row_h), Sense::hover());
+                        let (rr, _) = ui.allocate_exact_size(Vec2::new(list.width(), row_h), Sense::hover());
                         for c in 0..COLS {
                             let r = Rect::from_min_size(rr.min + Vec2::new(col_x(c), 0.0), Vec2::new(col_w(c), row_h));
-                            ui.painter().rect_stroke(r, 0.0f32, Stroke::new(1.0f32, pal.group_border));
                             if c == 0 {
                                 if let Some((k, text)) = st.rename.as_mut().filter(|(k, _)| *k == key) {
                                     let k = *k;
@@ -775,9 +805,9 @@ impl App {
                                 let p = ui.painter().with_clip_rect(r);
                                 row_icon(&p, r, if digital_row(doc, key) { 9 } else { 8 }, pal.accent);
                                 let at = r.left_center() + Vec2::new(26.0, 0.0);
-                                let name = p.text(at, egui::Align2::LEFT_CENTER, row_name(doc, key), egui::FontId::proportional(12.0), pal.text);
+                                let name = p.text(at, egui::Align2::LEFT_CENTER, row_name(doc, key), crate::dialogs::DLG_FONT, ink);
                                 if let Some(orig) = doc.original_name(key) {
-                                    p.text(Pos2::new(name.right() + 5.0, at.y), egui::Align2::LEFT_CENTER, format!("({orig})"), egui::FontId::proportional(12.0), GREY);
+                                    p.text(Pos2::new(name.right() + 5.0, at.y), egui::Align2::LEFT_CENTER, format!("({orig})"), crate::dialogs::DLG_FONT, GREY);
                                 }
                                 if resp.clicked() {
                                     match can_rename(doc, key) {
@@ -796,6 +826,7 @@ impl App {
                         }
                     }
                 });
+                });
             });
         if let Some(m) = alert {
             self.dlg.push_alert(m.to_string());
@@ -809,40 +840,61 @@ impl App {
     pub fn coef_window(&mut self, ctx: &egui::Context) {
         let Some(mut st) = self.dlg.coef.take() else { return };
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
-        let pal = self.skin.palette();
         let mut open = true;
         let mut result: Option<bool> = None;
         crate::dialogs::dlg(ctx, "Коэффициенты трансформации")
+            .margin(0.0)
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(ctx, |ui| {
                 st.cell_rects.clear();
                 let shift = ui.input(|i| i.modifiers.shift);
-                const W: f32 = 420.0;
-                let cw = W * 0.33;
-                let name_w = W - 2.0 * cw;
-                let row_h = 20.0;
-                let (hr, _) = ui.allocate_exact_size(Vec2::new(W, row_h + 2.0), Sense::hover());
-                st.origin = Some(hr.min);
-                for (t, x, w) in [("Канал", 0.0, name_w), ("Первичное значение", name_w, cw), ("Вторичное значение", name_w + cw, cw)] {
-                    let r = Rect::from_min_size(hr.min + Vec2::new(x, 0.0), Vec2::new(w, hr.height()));
-                    let p = ui.painter();
-                    p.rect(r, 0.0f32, pal.group_bg, Stroke::new(1.0f32, pal.group_border));
-                    p.with_clip_rect(r).text(r.left_center() + Vec2::new(4.0, 0.0), egui::Align2::LEFT_CENTER, t, egui::FontId::proportional(12.0), pal.text);
+                // The 341 × 255 DLU client (512 × 414 px): the list at 7, 7
+                // (11, 11 px; 491 × 359 px) with a (130, 135, 144) border,
+                // its 25 px header, 19 px rows ruled in (240), columns 155 /
+                // 153 / 153 px; ОК and «Отмена» 110 × 23 px at (272, 380)
+                // and (392, 380) (VM).
+                let (client, _) = ui.allocate_exact_size(Vec2::new(512.0, 414.0), Sense::hover());
+                let list = Rect::from_min_size(client.min + Vec2::splat(11.0), Vec2::new(491.0, 359.0));
+                let inner = list.shrink(1.0);
+                ui.painter().rect_filled(list, 0.0, Color32::from_rgb(130, 135, 144));
+                ui.painter().rect_filled(inner, 0.0, Color32::WHITE);
+                let (row_h, hdr_h) = (19.0, 25.0);
+                let cols = [(0.0, 155.0), (155.0, 153.0), (308.0, 153.0)];
+                let grid = Stroke::new(1.0f32, Color32::from_gray(240));
+                let ink = Color32::BLACK;
+                let font = crate::dialogs::DLG_FONT;
+                for (x, w) in cols {
+                    ui.painter().vline(inner.left() + x + w - 0.5, inner.top() + hdr_h..=inner.bottom(), grid);
                 }
+                let mut y = inner.top() + hdr_h + row_h - 0.5;
+                while y < inner.bottom() {
+                    ui.painter().hline(inner.x_range(), y, grid);
+                    y += row_h;
+                }
+                let hr = Rect::from_min_size(inner.min, Vec2::new(inner.width(), hdr_h));
+                st.origin = Some(hr.min);
+                for (t, (x, w)) in ["Канал", "Первичное значение", "Вторичное значение"].into_iter().zip(cols) {
+                    let r = Rect::from_min_size(hr.min + Vec2::new(x, 0.0), Vec2::new(w, hdr_h));
+                    let p = ui.painter();
+                    p.vline(r.right() - 1.5, r.y_range(), Stroke::new(1.0f32, Color32::from_gray(229)));
+                    p.with_clip_rect(r).text(r.left_center() + Vec2::new(6.0, 0.0), egui::Align2::LEFT_CENTER, t, font.clone(), ink);
+                }
+                let rows = Rect::from_min_max(Pos2::new(inner.left(), hr.bottom()), inner.max);
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rows), |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
-                egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
+                egui::ScrollArea::vertical().max_height(rows.height()).show(ui, |ui| {
                     for row in 0..st.cells.len() {
-                        let (rr, _) = ui.allocate_exact_size(Vec2::new(W, row_h), Sense::hover());
-                        let nr = Rect::from_min_size(rr.min, Vec2::new(name_w, row_h));
-                        ui.painter().rect_stroke(nr, 0.0f32, Stroke::new(1.0f32, pal.group_border));
-                        ui.painter().with_clip_rect(nr).text(nr.left_center() + Vec2::new(4.0, 0.0), egui::Align2::LEFT_CENTER, &st.names[row], egui::FontId::proportional(12.0), pal.text);
+                        let (rr, _) = ui.allocate_exact_size(Vec2::new(rows.width(), row_h), Sense::hover());
+                        let nr = Rect::from_min_size(rr.min, Vec2::new(cols[0].1 - 1.0, row_h - 1.0));
+                        ui.painter().with_clip_rect(nr).text(nr.left_center() + Vec2::new(6.0, 0.0), egui::Align2::LEFT_CENTER, &st.names[row], font.clone(), ink);
                         for col in 0..2 {
-                            let r = Rect::from_min_size(rr.min + Vec2::new(name_w + cw * col as f32, 0.0), Vec2::new(cw, row_h));
+                            let (x, w) = cols[col + 1];
+                            let r = Rect::from_min_size(rr.min + Vec2::new(x, 0.0), Vec2::new(w - 1.0, row_h - 1.0));
                             st.cell_rects.push(((row, col), r));
                             if let Some((_, text)) = st.edit.as_mut().filter(|(at, _)| *at == (row, col)) {
-                                let te = ui.put(r.shrink(1.0), egui::TextEdit::singleline(text).id(egui::Id::new(("fv_coef_edit", row, col))).desired_width(r.width() - 4.0));
+                                let te = ui.put(r, egui::TextEdit::singleline(text).id(egui::Id::new(("fv_coef_edit", row, col))).desired_width(r.width() - 4.0));
                                 te.request_focus();
                                 // The edit is a plain CEdit: Enter reaches IDOK
                                 // (commit, apply, close), Esc IDCANCEL.
@@ -863,13 +915,12 @@ impl App {
                             if selected {
                                 p.rect_filled(r, 0.0f32, SEL_BG);
                             }
-                            p.rect_stroke(r, 0.0f32, Stroke::new(1.0f32, pal.group_border));
                             p.with_clip_rect(r).text(
-                                r.left_center() + Vec2::new(4.0, 0.0),
+                                r.left_center() + Vec2::new(6.0, 0.0),
                                 egui::Align2::LEFT_CENTER,
                                 &st.cells[row][col],
-                                egui::FontId::proportional(12.0),
-                                if selected { Color32::WHITE } else { pal.text },
+                                font.clone(),
+                                if selected { Color32::WHITE } else { ink },
                             );
                             if resp.double_clicked() {
                                 st.double_click((row, col), shift);
@@ -879,15 +930,14 @@ impl App {
                         }
                     }
                 });
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    if ui.button("OK").clicked() {
-                        result = Some(true);
-                    }
-                    if ui.button("Отмена").clicked() {
-                        result = Some(false);
-                    }
                 });
+                let btn = |x: f32| Rect::from_min_size(client.min + Vec2::new(x, 380.0), Vec2::new(110.0, 23.0));
+                if crate::dialogs::win_button(ui, btn(272.0), "ОК", true).clicked() {
+                    result = Some(true);
+                }
+                if crate::dialogs::win_button(ui, btn(392.0), "Отмена", false).clicked() {
+                    result = Some(false);
+                }
                 // OK is the default button, Esc cancels.
                 if st.edit.is_none() && result.is_none() {
                     result = ui.input(|i| if i.key_pressed(egui::Key::Enter) { Some(true) } else if i.key_pressed(egui::Key::Escape) { Some(false) } else { None });
@@ -1194,11 +1244,11 @@ mod ui_tests {
 
     /// Centre of cell (row, col) of the «Каналы» grid; row None = header.
     fn ch_cell(o: Pos2, row: Option<usize>, col: usize) -> Pos2 {
-        let name_w = 420.0 - 185.0;
+        let name_w = 172.0;
         let x = if col == 0 { 40.0 } else { name_w + 32.0 * (col - 1) as f32 + 16.0 };
         let y = match row {
-            None => 11.0,
-            Some(r) => 22.0 + 20.0 * r as f32 + 10.0,
+            None => 12.0,
+            Some(r) => 24.0 + 17.0 * r as f32 + 8.0,
         };
         o + Vec2::new(x, y)
     }

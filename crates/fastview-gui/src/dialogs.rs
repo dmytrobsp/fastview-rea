@@ -5,11 +5,228 @@ use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 /// A dialog window as MFC places one: centred on the main window at its
 /// first showing (`_AfxPostInitDialog` centres a dialog whose template
-/// leaves it at 0, 0 — seen on the VM), movable afterwards.
-pub fn dlg(ctx: &egui::Context, title: impl Into<egui::WidgetText>) -> egui::Window<'static> {
-    egui::Window::new(title).pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.screen_rect().center())
+/// leaves it at 0, 0 — seen on the VM), movable afterwards, in the
+/// system's dialog frame (`Dlg::show`).
+pub fn dlg<'o>(ctx: &egui::Context, title: impl Into<String>) -> Dlg<'o> {
+    let title = title.into();
+    Dlg {
+        // The first frame (egui's sizing pass, size unknown): about the
+        // centre; `show` then places it exactly.
+        win: egui::Window::new(title.clone()).pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.screen_rect().center()),
+        id: egui::Id::new(&title),
+        title,
+        open: None,
+        tool: false,
+        margin: 11.0,
+    }
 }
 
+/// A dialog window drawn in the frame Windows gives the original's dialogs
+/// (VM, Windows 11): a 1 px border, a 25 px (243) caption with the title
+/// 5 px in, the client on COLOR_3DFACE (240) with black text. The close
+/// button is a thin 10 px × 11 px from the right edge — or, for a
+/// WS_EX_TOOLWINDOW template (DIALOG 463 only), a 19 px (199, 80, 80) box
+/// with a small white ×.
+pub struct Dlg<'o> {
+    win: egui::Window<'static>,
+    id: egui::Id,
+    title: String,
+    open: Option<&'o mut bool>,
+    tool: bool,
+    margin: f32,
+}
+
+/// The frame's colours (VM): the caption, the client, the border.
+const DLG_CAPTION: Color32 = Color32::from_rgb(243, 243, 243);
+const DLG_FACE: Color32 = Color32::from_rgb(240, 240, 240);
+const DLG_BORDER: Color32 = Color32::from_rgba_premultiplied(45, 45, 45, 102);
+const DLG_CAPTION_H: f32 = 25.0;
+/// The controls' font: the templates' MS Shell Dlg 8 (Tahoma 8 pt, 11 px);
+/// the caption is the system's 9 pt (12 px).
+pub const DLG_FONT: egui::FontId = egui::FontId::new(11.0, egui::FontFamily::Proportional);
+
+impl<'o> Dlg<'o> {
+    pub fn collapsible(self, _: bool) -> Self {
+        self
+    }
+    pub fn resizable(mut self, on: bool) -> Self {
+        self.win = self.win.resizable(on);
+        self
+    }
+    pub fn open(mut self, open: &'o mut bool) -> Self {
+        self.open = Some(open);
+        self
+    }
+    pub fn id(mut self, id: egui::Id) -> Self {
+        self.win = self.win.id(id);
+        self.id = id;
+        self
+    }
+    pub fn anchor(mut self, align: egui::Align2, offset: impl Into<Vec2>) -> Self {
+        self.win = self.win.anchor(align, offset);
+        self
+    }
+    pub fn order(mut self, order: egui::Order) -> Self {
+        self.win = self.win.order(order);
+        self
+    }
+    pub fn fixed_size(mut self, size: impl Into<Vec2>) -> Self {
+        self.win = self.win.fixed_size(size);
+        self
+    }
+    pub fn default_size(mut self, size: impl Into<Vec2>) -> Self {
+        self.win = self.win.default_size(size);
+        self
+    }
+    pub fn interactable(mut self, on: bool) -> Self {
+        self.win = self.win.interactable(on);
+        self
+    }
+    /// A WS_EX_TOOLWINDOW template's frame.
+    pub fn tool(mut self) -> Self {
+        self.tool = true;
+        self
+    }
+    /// The client's margin (default 11 px, the templates' 7 dialog units).
+    pub fn margin(mut self, m: f32) -> Self {
+        self.margin = m;
+        self
+    }
+
+    pub fn show<R>(self, ctx: &egui::Context, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> Option<egui::InnerResponse<Option<R>>> {
+        let Dlg { mut win, id, title, open, tool, margin } = self;
+        if open.as_deref() == Some(&false) {
+            return None;
+        }
+        // CenterWindow at every opening (each DoModal creates the dialog
+        // anew): the left-top at the screen's (W − w) / 2, (H − h) / 2
+        // floored, from the window's measured size — for its first frames
+        // after it appears (egui's own pivot placement rounds half-way
+        // positions by the size it had a frame before); movable after.
+        let key = id.with("fv_dlg_placed");
+        let frame = ctx.cumulative_pass_nr();
+        let size = ctx.memory(|m| m.area_rect(id)).map(|r| r.size());
+        // (the last frame shown, its size, whether the size has settled)
+        let prev: Option<(u64, Option<Vec2>, bool)> = ctx.data(|d| d.get_temp(key));
+        let settled = match prev {
+            Some((last, prev_size, settled)) if last + 1 == frame => settled || (size.is_some() && size == prev_size),
+            _ => false,
+        };
+        if let Some(size) = size {
+            // egui keeps the pivot's position: once placed, the left-top.
+            win = win.pivot(egui::Align2::LEFT_TOP);
+            if !settled {
+                let screen = ctx.screen_rect();
+                win = win.current_pos(screen.min + ((screen.size() - size) / 2.0).floor());
+            }
+        }
+        ctx.data_mut(|d| d.insert_temp(key, (frame, size, settled)));
+        // The DWM shadow, its look approximated.
+        let shadow = egui::epaint::Shadow { offset: Vec2::new(0.0, 6.0), blur: 24.0, spread: 0.0, color: Color32::from_black_alpha(60) };
+        // The border blends over what lies behind the window: the fill is
+        // painted inside it.
+        let frame = egui::Frame::none().inner_margin(1.0).shadow(shadow);
+        let mut close = false;
+        let r = win.title_bar(false).collapsible(false).frame(frame).show(ctx, |ui| {
+            // The client's fill, under the content (set once its size is known).
+            let face = ui.painter().add(egui::Shape::Noop);
+            let font = egui::FontId::proportional(12.0);
+            let tw = ui.fonts(|f| f.layout_no_wrap(title.clone(), font.clone(), Color32::BLACK).size().x);
+            let spacing = ui.spacing().item_spacing;
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
+            let (cap, _) = ui.allocate_exact_size(Vec2::new(5.0 + tw + if tool { 30.0 } else { 56.0 }, DLG_CAPTION_H), egui::Sense::hover());
+            ui.spacing_mut().item_spacing = spacing;
+            let inner = egui::Frame::none()
+                .inner_margin(margin)
+                .show(ui, |ui| {
+                    ui.visuals_mut().override_text_color = Some(Color32::BLACK);
+                    // The templates' MS Shell Dlg 8 (Tahoma 8 pt: 11 px).
+                    for st in [egui::TextStyle::Body, egui::TextStyle::Button] {
+                        ui.style_mut().text_styles.insert(st, DLG_FONT);
+                    }
+                    add_contents(ui)
+                })
+                .inner;
+            let full = ui.min_rect();
+            let cap = Rect::from_min_max(Pos2::new(full.left(), cap.top()), Pos2::new(full.right(), cap.bottom()));
+            let p = ui.painter();
+            p.set(face, egui::Shape::rect_filled(Rect::from_min_max(Pos2::new(full.left(), cap.bottom()), full.max), 0.0, DLG_FACE));
+            p.rect_filled(cap, 0.0, DLG_CAPTION);
+            p.text(Pos2::new(cap.left() + 4.0, cap.center().y), egui::Align2::LEFT_CENTER, &title, font, Color32::BLACK);
+            // The border: 1 px around the client and caption, as lines on
+            // the pixel centres (a 1 px filled rect is feathered twice).
+            let o = full.expand(1.0);
+            let b = Stroke::new(1.0f32, DLG_BORDER);
+            p.hline(o.left()..=o.right(), o.top() + 0.5, b);
+            p.hline(o.left()..=o.right(), o.bottom() - 0.5, b);
+            p.vline(o.left() + 0.5, o.top() + 1.0..=o.bottom() - 1.0, b);
+            p.vline(o.right() - 0.5, o.top() + 1.0..=o.bottom() - 1.0, b);
+            // The close button (the right border is at o.right() − 1).
+            let rb = o.right() - 1.0;
+            let (btn, glyph) = if tool {
+                let b = Rect::from_min_size(Pos2::new(rb - 20.0, cap.top() + 2.0), Vec2::splat(19.0));
+                (b, Rect::from_min_size(b.min + Vec2::splat(7.0), Vec2::splat(5.0)))
+            } else {
+                let g = Rect::from_min_size(Pos2::new(rb - 21.0, cap.top() + 7.0), Vec2::splat(10.0));
+                (Rect::from_min_max(Pos2::new(rb - 46.0, cap.top()), Pos2::new(rb, cap.bottom())), g)
+            };
+            let resp = ui.interact(btn, ui.id().with("fv_dlg_close"), egui::Sense::click());
+            close = resp.clicked();
+            // The hover look is Windows' (red, white glyph) — not measured.
+            let (bg, ink) = match (tool, resp.hovered()) {
+                (true, false) => (Some(Color32::from_rgb(199, 80, 80)), Color32::WHITE),
+                (true, true) => (Some(Color32::from_rgb(224, 67, 67)), Color32::WHITE),
+                (false, false) => (None, Color32::from_rgb(23, 24, 24)),
+                (false, true) => (Some(Color32::from_rgb(196, 43, 28)), Color32::WHITE),
+            };
+            if let Some(bg) = bg {
+                p.rect_filled(btn, 0.0, bg);
+            }
+            if tool {
+                // The 5 × 5 bold × of the bitmap: two pixels wide but at the
+                // centre.
+                for (dx, dy) in [(0, 0), (1, 0), (3, 0), (4, 0), (1, 1), (2, 1), (3, 1), (2, 2), (1, 3), (2, 3), (3, 3), (0, 4), (1, 4), (3, 4), (4, 4)] {
+                    p.rect_filled(Rect::from_min_size(glyph.min + Vec2::new(dx as f32, dy as f32), Vec2::splat(1.0)), 0.0, ink);
+                }
+            } else {
+                let s = Stroke::new(1.0f32, ink);
+                p.line_segment([glyph.left_top() + Vec2::splat(0.5), glyph.right_bottom() - Vec2::splat(0.5)], s);
+                p.line_segment([glyph.right_top() + Vec2::new(-0.5, 0.5), glyph.left_bottom() + Vec2::new(0.5, -0.5)], s);
+            }
+            inner
+        });
+        if close {
+            if let Some(o) = open {
+                *o = false;
+            }
+        }
+        r
+    }
+}
+
+
+/// A dialog's push button at its template rectangle (VM, Windows 11
+/// theme): the face inset 1 px, corners rounded 4 px, (253) with a (208)
+/// border darkening to (186) along the bottom; the default button's border
+/// (0, 120, 212) to (0, 108, 191). Hover and pressed are the theme's
+/// (approximated); the text centred, black.
+pub fn win_button(ui: &mut egui::Ui, r: Rect, text: &str, default: bool) -> egui::Response {
+    let resp = ui.interact(r, ui.id().with(("fv_btn", text)), egui::Sense::click());
+    let face = r.shrink(1.0);
+    let (fill, edge, bottom) = match (resp.is_pointer_button_down_on(), resp.hovered(), default) {
+        (true, _, _) => (Color32::from_rgb(204, 228, 247), Color32::from_rgb(0, 84, 153), Color32::from_rgb(0, 84, 153)),
+        (false, true, _) => (Color32::from_rgb(224, 238, 249), Color32::from_rgb(0, 120, 212), Color32::from_rgb(0, 108, 191)),
+        (false, false, true) => (Color32::from_gray(253), Color32::from_rgb(0, 120, 212), Color32::from_rgb(0, 108, 191)),
+        (false, false, false) => (Color32::from_gray(253), Color32::from_gray(208), Color32::from_gray(186)),
+    };
+    let p = ui.painter();
+    // The bottom edge's colour under the face, the border over the rest.
+    p.rect_filled(face, 4.0, bottom);
+    p.rect_filled(Rect::from_min_max(face.min, Pos2::new(face.right(), face.bottom() - 1.0)), 4.0, edge);
+    p.rect_filled(face.shrink(1.0), 3.0, fill);
+    p.text(face.center(), egui::Align2::CENTER_CENTER, text, DLG_FONT, Color32::BLACK);
+    resp
+}
 
 /// A transparent full-screen layer at `order` that swallows the pointer
 /// below a modal window (the windows of a higher order stay live).

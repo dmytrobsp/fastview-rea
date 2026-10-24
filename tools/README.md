@@ -53,6 +53,10 @@ extracted/stage1/vcredist_vs13_x86.exe vcr/` carves its cabinets, `7z x` them,
 then `pestr.py` on `F_CENTRAL_mfc120rus_x86` / `objdump` on
 `F_CENTRAL_mfc120u_x86`.
 
+`tools/dlg_templates.py <FastView.exe> [ids…]` prints the dialog templates'
+geometry (dialog units, styles, control rectangles), which our dialogs are
+laid out from; its output quotes resource text, so it stays local too.
+
 ## 3. Decompile
 
 Decompilation was done with [REA](https://www.npmjs.com/package/rea-agents)
