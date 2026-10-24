@@ -85,6 +85,12 @@ pub struct FreqDialog {
     pub periods: String,
     /// The field a refused OK left the focus in (0 periods, 1 harmonics).
     pub fail: Option<u8>,
+    /// The enable states of 1026 / 1027 (the two «Нормализация» radios)
+    /// and of the frame 1061: OnInitDialog (`0x46ee20`) disables only the
+    /// radios, in absolute mode; every click (`0x46f070`, nCode 0) sets all
+    /// three from 1023's check.
+    pub radios_on: bool,
+    pub frame_on: bool,
 }
 
 /// DIALOG 353's exchange on OK (`0x46ee70`): 0x401 (periods) an int in
@@ -844,6 +850,8 @@ impl App {
                     harmonics: self.freq_harmonics.to_string(),
                     periods: self.freq_periods.to_string(),
                     fail: None,
+                    radios_on: self.freq_percent,
+                    frame_on: true,
                 })
             }
         }
@@ -1618,18 +1626,19 @@ impl App {
                     ui.end_row();
                 });
             });
+            let mut clicked = false;
             ui.group(|ui| {
                 ui.set_width(W);
                 ui.label("Значения величин");
-                ui.radio_value(&mut dlg.percent, false, "Абсолютные величины");
-                ui.radio_value(&mut dlg.percent, true, "В процентах (нормализовано)");
+                clicked |= ui.radio_value(&mut dlg.percent, false, "Абсолютные величины").clicked();
+                clicked |= ui.radio_value(&mut dlg.percent, true, "В процентах (нормализовано)").clicked();
             });
-            ui.add_enabled_ui(dlg.percent, |ui| {
-                ui.group(|ui| {
-                    ui.set_width(W);
-                    ui.label("Нормализация");
-                    ui.radio_value(&mut dlg.use_rms, false, "По основной гармонике");
-                    ui.radio_value(&mut dlg.use_rms, true, "По среднеквадратичному значению");
+            ui.group(|ui| {
+                ui.set_width(W);
+                ui.add_enabled(dlg.frame_on, egui::Label::new("Нормализация"));
+                ui.add_enabled_ui(dlg.radios_on, |ui| {
+                    clicked |= ui.radio_value(&mut dlg.use_rms, false, "По основной гармонике").clicked();
+                    clicked |= ui.radio_value(&mut dlg.use_rms, true, "По среднеквадратичному значению").clicked();
                 });
             });
             ui.allocate_ui_with_layout(Vec2::new(W + 12.0, 24.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1638,8 +1647,12 @@ impl App {
                 }
                 if ui.button("OK").clicked() {
                     done = Some(true);
+                    clicked = true;
                 }
             });
+            if clicked {
+                (dlg.radios_on, dlg.frame_on) = (dlg.percent, dlg.percent);
+            }
         });
         let done = done.or_else(|| self.dialog_keys(ctx));
         match done {
@@ -2151,6 +2164,11 @@ mod tests {
         h.app.apply_freq_dialog(FreqDialog { periods: "2".into(), harmonics: "20".into(), ..dlg });
         assert!(!h.app.freq_percent);
         assert_eq!((h.app.freq_periods, h.app.freq_harmonics), (2, 20));
+        // Opened in absolute mode (`0x46ee20`): only the two radios greyed,
+        // the frame's caption not.
+        h.app.diag_cmd(Window::Freq, DiagCmd::FreqSettings, Pos2::ZERO);
+        let d = h.app.diag.freq_dlg.as_ref().unwrap();
+        assert_eq!((d.radios_on, d.frame_on), (false, true));
     }
 
     /// `0x46ee70`'s checks: MFC's int parse, then the two ranges.

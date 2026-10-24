@@ -766,7 +766,7 @@ impl App {
         let combo = ui.put(vr, |ui: &mut egui::Ui| {
             egui::ComboBox::from_id_salt("blockcombo")
                 .width(vr.width())
-                .selected_text(names.get(self.block_idx).cloned().unwrap_or_default())
+                .selected_text(self.block_text.clone().or_else(|| names.get(self.block_idx).cloned()).unwrap_or_default())
                 .show_ui(ui, |ui| {
                     for (i, name) in names.iter().enumerate() {
                         ui.selectable_value(&mut self.block_idx, i, name);
@@ -834,13 +834,39 @@ impl App {
                 if let Some(st) = self.chars.get_mut(&(b, *ci)) {
                     let text = st.settings.entry(p.clone()).or_default();
                     let resp = ui.put(vr, egui::TextEdit::singleline(text).frame(false).text_color(TEXT));
-                    changed |= resp.lost_focus();
+                    // The stock in-place edit (CMFCPropertyGridCtrl, INFERRED):
+                    // Esc restores the text, a commit (Enter, focus lost)
+                    // reaches OnPropertyChanged (`0x407580`) only when the
+                    // text changed.
+                    let before_id = resp.id.with("fv_grid_before");
+                    if resp.gained_focus() {
+                        let t = text.clone();
+                        ui.data_mut(|d| d.insert_temp(before_id, t));
+                    }
+                    if resp.lost_focus() {
+                        let before: Option<String> = ui.data_mut(|d| d.remove_temp(before_id));
+                        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            if let Some(t) = before {
+                                *text = t;
+                            }
+                        } else {
+                            changed |= before.as_ref() != Some(text);
+                        }
+                    }
                 }
             }
         }
         if touched {
             if let Some(d) = self.active_doc_mut() {
                 d.set.modified = true;
+            }
+        }
+        // «Тип блока»'s value click saves the active block too (slot 94),
+        // over a saved name the library lacks.
+        if combo.clicked() || self.block_idx != prev {
+            self.block_text = None;
+            if self.block_idx == prev {
+                self.save_block();
             }
         }
         // A parameter commit (`0x407580`) re-evaluates, then the block is

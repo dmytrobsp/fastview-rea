@@ -5992,6 +5992,42 @@ Tests `the_zoom_gate_measures_its_own_rectangle`,
 Residual: ours writes every computed channel's colour to the `.set` as a
 custom one (the original writes `ch+0x140` as it is; not re-read).
 
+### L9.201 — W2.17 part: a failing formula aborts the batch, the invalid-result box, DIALOG 353's enable states, «Тип блока» with an unknown saved name, the grid's edit  ·  ✅
+Read by hand (on the background agent's leads):
+- The formula batch `0x415780` evaluates the definitions in order; a
+  result neither all scalar nor all complex (`0x4159ce` → `0x415ac6`)
+  throws a CFastViewException whose text is the definition's NAME (the
+  name list at `this+4`), ": " (`0x4c4d94`) and string 1070 «Результат не
+  действителен» (`0x415ae2`–`0x415b3b`); any failure ends the batch — the
+  definitions before it keep their new values — and only a full success
+  reaches the group sweep (`0x415b97`). Quick analysis runs it over the
+  old definitions and the new ones together (`0x416ed6`), so an old one
+  failing means its box and no new channel (agent: `0x416ee7`–`0x416f69`).
+- DIALOG 353: OnInitDialog `0x46ee20` disables 1026 / 1027 only, when the
+  radio index `+0xa4` ≠ 0 (absolute values); OnCmdMsg `0x46f070`, on every
+  nCode-0 command, reads 1023's BM_GETCHECK and enables 1026, 1027 and the
+  frame 1061 by it.
+- The block refresh `0x436b30`: after the rebuild by name (`0x407750`,
+  an unknown name → block 0, `0x407814`–`0x40784d`) it writes the SAVED
+  text into the cell (`0x436d3b`–`0x436d61`); a value click on the cell
+  saves the active block (L9.156) and so replaces the unknown name.
+Ours skipped a failing old formula and added the new channels, prefixed
+the invalid-result box with the formula, swept the groups on a failure,
+greyed the whole «Нормализация» block live, showed «Нет» for an unknown
+saved block, only marked the document on a «Тип блока» click, and
+committed a parameter on every focus loss (Esc included). Now
+`Doc::try_reevaluate_formulas` (stops at the first failure, sweeps only
+on success; `append_computed` boxes it and adds nothing), the name in the
+1070 box, `FreqDialog::{radios_on, frame_on}`, `App::block_text`, the
+block saved on a «Тип блока» click, and the grid's edit restoring on Esc
+and committing only a changed text (stock CMFCPropertyGridCtrl behaviour,
+INFERRED). Tests `a_failing_old_formula_aborts_quick_analysis`, the
+frequency dialog's and `block_state_is_the_documents` extended.
+Residual: the quick analysis's review-list sweep per rolled-back name
+(`0x42ecf0`); the parse errors' texts inside the batch (`0x418c40` /
+`0x419950`); the grid's keyboard navigation (L9.156); the formula page's
+rollback (`0x4168db`–`0x4168f1`) re-running the batch.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

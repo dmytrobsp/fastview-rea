@@ -429,7 +429,9 @@ pub fn evaluate_batch_with(
         } else if all_c {
             cplx.iter().map(|z| z.re).collect()
         } else {
-            return Err(fail(ExprError::InvalidResult));
+            // 1070 after the definition's NAME (`0x415b16`–`0x415b3b`), not
+            // its formula.
+            return Err(FormulaError { formula: name.clone(), error: ExprError::InvalidResult });
         };
         let taken: Vec<String> = taken_names(osc, all.iter().map(|c| c.name.as_str()));
         let ch = ComputedChannel {

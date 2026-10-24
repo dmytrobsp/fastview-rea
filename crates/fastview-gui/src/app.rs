@@ -833,15 +833,22 @@ impl Doc {
     /// and correction (`0x415780` over the whole definition list; merged and
     /// ОМП channels carry no formula to re-evaluate).
     pub fn reevaluate_formulas(&mut self, show_primary: bool) {
+        let _ = self.try_reevaluate_formulas(show_primary);
+    }
+
+    /// The batch `0x415780` over the record's formula channels: in order,
+    /// each updated as it goes; the first failure stops it (the ones before
+    /// keep their new values) and is returned; only a full success sweeps
+    /// the groups (`0x415b97` → `0x455c70`).
+    pub fn try_reevaluate_formulas(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
         for j in 0..self.computed.len() {
             let c = &mut self.computed[j];
-            if c.formula != "ОМП" && c.formula != "объединение" {
+            if c.formula != "ОМП" && c.formula != "объединение" && c.formula != crate::merge_ui::PENDING {
                 let batch = [(c.name.clone(), c.formula.clone())];
-                if let Ok(mut out) = fvb_core::quick::evaluate_batch_with(&self.flagged, fvb_core::freqcorr::of(&self.osc), &done, &batch, show_primary) {
-                    if let Some(new) = out.pop() {
-                        c.set_values(new.samples, new.phasors);
-                    }
+                let mut out = fvb_core::quick::evaluate_batch_with(&self.flagged, fvb_core::freqcorr::of(&self.osc), &done, &batch, show_primary)?;
+                if let Some(new) = out.pop() {
+                    c.set_values(new.samples, new.phasors);
                 }
             }
             // A later formula reads this one through the accessor and the
@@ -850,6 +857,7 @@ impl Doc {
             done.push(self.computed[j].as_core());
         }
         self.prune_groups();
+        Ok(())
     }
 
     /// Computed channel `j`'s flags over its evaluation (`0x428490` for a
@@ -1282,6 +1290,11 @@ pub struct App {
     pub library: Library,
     pub source_name: String,
     pub block_idx: usize,
+    /// «Тип блока»'s text when the document names a block the library
+    /// lacks: the refresh writes the saved name into the cell (`0x436d3b`)
+    /// while block 0 is active (`0x407814`); a click on the cell saves the
+    /// active block over it.
+    pub block_text: Option<String>,
     pub chars: HashMap<(usize, usize), CharState>,
     pub selected_char: Option<usize>,
     pub show_reset: bool,
@@ -1509,6 +1522,7 @@ impl App {
             diag_bound: [None, None],
             source_name,
             block_idx: 0,
+            block_text: None,
             chars: HashMap::new(),
             selected_char: None,
             show_reset: true,
@@ -2158,6 +2172,7 @@ impl App {
         let name = sec.map(|s| s.get_str("SelectedBlock", "")).filter(|n| !n.is_empty()).unwrap_or_else(|| NO_BLOCK.to_string());
         let serial = d.serial;
         let mut changed = false;
+        self.block_text = (!self.library.blocks.is_empty() && !self.library.blocks.iter().any(|b| b.name == name)).then(|| name.clone());
         if self.library.blocks.get(self.block_idx).map(|b| b.name.as_str()) != Some(name.as_str()) {
             self.block_idx = self.library.blocks.iter().position(|b| b.name == name).unwrap_or(0);
             self.selected_char = None;
@@ -2540,8 +2555,12 @@ impl App {
         };
         // The new definitions join the list and `0x415780` evaluates the
         // whole list: the older formula channels take the current values
-        // and correction too (L9.103).
-        d.reevaluate_formulas(show_primary);
+        // and correction too (L9.103); an old one failing aborts the batch
+        // — its box, nothing added (`0x416ed6`–`0x416f69`).
+        if let Err(e) = d.try_reevaluate_formulas(show_primary) {
+            self.dlg.push_alert(e.to_string());
+            return None;
+        }
         let existing: Vec<_> = d.computed.iter().map(Computed::as_core).collect();
         match fvb_core::quick::evaluate_batch_with(&d.flagged, fvb_core::freqcorr::of(&d.osc), &existing, batch, show_primary) {
             Ok(added) => {
@@ -3117,6 +3136,12 @@ mod tests {
         let st = &app.chars[&(1, 0)];
         assert_eq!(st.settings[&p], "1+1");
         assert!(!st.visible);
+        assert_eq!(app.block_text, None);
+        // A saved name the library lacks: block 0, the cell shows the name
+        // (`0x407814`, `0x436d3b`).
+        app.active_doc_mut().unwrap().set.tree.section_mut("Circle Chart").set_str("SelectedBlock", "Неизвестный");
+        app.refresh_blocks();
+        assert_eq!((app.block_idx, app.block_text.as_deref()), (0, Some("Неизвестный")));
     }
 
     /// `ch+0xf0` (`0x428490`, L9.57): a «P» record shown «Вторичные» (the
@@ -3212,6 +3237,18 @@ mod tests {
                 assert!(b.characteristics.iter().all(|c| c.dimension == dim), "{}", b.name);
             }
         }
+    }
+
+    /// `0x416ed6`: quick analysis evaluates the whole list; an old formula
+    /// that fails aborts it with its box and nothing is added.
+    #[test]
+    fn a_failing_old_formula_aborts_quick_analysis() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        app.active_doc_mut().unwrap().computed[0].formula = "Нет*2".into();
+        assert!(app.append_computed(&[("Y".into(), "Ub*2".into())]).is_none());
+        assert_eq!(app.dlg.alert(), Some("Нет*2: Имя канала задано неправильно."), "its box (0x162 in channel mode)");
+        assert!(app.active_doc().unwrap().computed.iter().all(|c| c.name != "Y"), "nothing added");
     }
 
     #[test]
