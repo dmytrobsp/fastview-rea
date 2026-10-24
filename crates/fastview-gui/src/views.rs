@@ -162,10 +162,29 @@ impl App {
         }
         let origin = Self::float_origin(ctx);
         if act.pin {
-            if self.docks[unit].place == Place::Docked {
-                self.dock_leave(unit);
+            // Ctrl held at the release (mfc120u `0x100871c7`, GetAsyncKeyState
+            // at `0x10087337`): every shown group on the same edge in the
+            // same state goes at once — auto-hidden with no slide, or
+            // restored; a plain pin slides the pane shut in 12 steps.
+            let ctrl = ctx.input(|i| i.modifiers.ctrl);
+            let (place, edge) = (self.docks[unit].place, self.docks.edge(unit));
+            let units: Vec<crate::docking::Unit> = if ctrl {
+                crate::docking::UNITS
+                    .into_iter()
+                    .filter(|&u| self.docks.host(u) == u && self.docks[u].place == place && self.docks.edge(u) == edge && self.panes.front(self.docks.members(u)).is_some())
+                    .collect()
+            } else {
+                vec![unit]
+            };
+            for u in units {
+                if self.docks[u].place == Place::Docked {
+                    self.dock_leave(u);
+                }
+                self.docks[u].pin();
+                if !ctrl && self.docks[u].place == Place::AutoHide {
+                    self.docks[u].slide = 1.0;
+                }
             }
-            self.docks[unit].pin();
         }
         if act.double {
             if self.docks[unit].place == Place::Docked {

@@ -6028,6 +6028,38 @@ Residual: the quick analysis's review-list sweep per rolled-back name
 `0x419950`); the grid's keyboard navigation (L9.156); the formula page's
 rollback (`0x4168db`–`0x4168f1`) re-running the batch.
 
+### L9.202 — The preview's page buttons small; Ctrl + pin takes the whole edge, a plain pin slides; the printed plane's cell ⌊96·s/5⌋  ·  ✅
+Read (background agent; by hand where cited):
+- MFC's print-preview category (mfc120u `0x100fcf07`–`0x100fd5a5`):
+  «Следующая страница» E302 and «Предыдущая страница» E303 are created
+  with large image −1 (`0x100fd3ad`, `0x100fd437`) — small buttons with
+  their text, in one column —, then a separator and the large «Закрыть»
+  E300; Печать, Увеличить, Уменьшить, Одна/Две страницы are large.
+- The pane pin (mfc120u `0x100871c7`): with VK_CONTROL down at the release
+  (`0x10087337`) and the pane's "all" flag (slot 0x344, always set here)
+  every pane on the same divider goes to auto-hide at once — no slide, no
+  check timer — or, when the pane is auto-hidden, its bar's panes all come
+  back (`0x1008736d`); a plain pin is SetAutoHideMode with the timer: the
+  pane slides shut in 12 steps (agent's read of `0x100882ea`; the slide is
+  instant only under a Remote Desktop session, SM_REMOTESESSION).
+- The plane's cell `0x438b50`: GetDC(NULL), GetDeviceCaps(LOGPIXELSX)·s/5
+  truncated (`0x4390cb`–`0x439103`; the differential's `0x4441b0` the
+  same) — 96 device px at s = 5, 115 at s = 6, not 19·s; the cells counted
+  in device px. The print's zoom reset (`0x43b72f`) compares device px with
+  800·s — as ours in points.
+Ours drew the two page buttons large, pinned one group without a slide
+whatever the modifiers, and printed the plane with a 19·s cell. Now
+`ribbon_preview` stacks the two as small text buttons; `caption_acts`
+pins every shown group on the edge at once with Ctrl (restoring with Ctrl
+on an auto-hidden one) and starts a plain pin's slide at 1;
+`plane_scale_s` (cell ⌊96·s/5⌋ device px, `cell_pt`, `half_cells`) under
+the print scale. Tests `ctrl_pin_takes_the_whole_edge`, the plane scale
+test extended; the preview ribbon rendered and looked at.
+Residual: the screen's own dpi (LOGPIXELSX ≠ 96) not modelled; the
+differential's initial push consumed by a print (`0x445e00` tail), the
+GDI+ fill's band at s = 1, the preview's keytips (P, QI, QO, 1, X, V, C)
+and the page setup's default printer (`0x448a90`) — plan W2.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

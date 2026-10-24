@@ -607,10 +607,10 @@ impl App {
         let numpage = pv.numpage_label();
         let state: Vec<(P, bool)> = [P::Print, P::ZoomIn, P::ZoomOut, P::NumPage, P::Next, P::Prev, P::Close].into_iter().map(|c| (c, pv.enabled(c))).collect();
         let on = |c: P| state.iter().any(|&(k, e)| k == c && e);
-        let mut fire = None;
-        let mut button = |ui: &mut egui::Ui, icon: Icon, label: &str, c: P| {
+        let fire = std::cell::Cell::new(None);
+        let button = |ui: &mut egui::Ui, icon: Icon, label: &str, c: P| {
             if ui.add_enabled_ui(on(c), |ui| big_button(ui, p, icon, label)).inner.clicked() {
-                fire = Some(c);
+                fire.set(Some(c));
             }
         };
         ribbon_group(ui, p, "Печать", 1, |ui, _| button(ui, Icon::Print, "Печать", P::Print));
@@ -619,13 +619,21 @@ impl App {
             button(ui, Icon::ZoomOut, "Уменьшить", P::ZoomOut);
             button(ui, Icon::Pages, numpage, P::NumPage);
         });
+        // «Следующая» / «Предыдущая» have no large image (mfc120u
+        // `0x100fd3ad`, `0x100fd437`): small buttons with their text,
+        // stacked in one column, before the separator and «Закрыть».
         ribbon_group(ui, p, "Просмотр", 1, |ui, _| {
-            button(ui, Icon::NextPage, "Следующая страница", P::Next);
-            button(ui, Icon::PrevPage, "Предыдущая страница", P::Prev);
+            ui.vertical(|ui| {
+                for (icon, label, c) in [(Icon::NextPage, "Следующая страница", P::Next), (Icon::PrevPage, "Предыдущая страница", P::Prev)] {
+                    if ui.add_enabled_ui(on(c), |ui| small_button_mode(ui, p, icon, label, false, false)).inner.clicked() {
+                        fire.set(Some(c));
+                    }
+                }
+            });
             group_separator(ui, p);
             button(ui, Icon::ClosePreview, "Закрыть", P::Close);
         });
-        if let (Some(c), Some(pv)) = (fire, self.print.preview.as_mut()) {
+        if let (Some(c), Some(pv)) = (fire.get(), self.print.preview.as_mut()) {
             pv.cmd = Some(c);
         }
     }

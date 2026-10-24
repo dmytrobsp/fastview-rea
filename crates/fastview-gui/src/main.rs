@@ -917,6 +917,45 @@ mod window_tests {
         assert!(canvas(&w).is_some(), "drawn over the content");
     }
 
+    /// The pin (mfc120u `0x100871c7`): a plain click slides the group shut
+    /// in 12 steps; with Ctrl every shown group on the same edge goes at
+    /// once, no slide, and Ctrl on an auto-hidden one brings them all back.
+    #[test]
+    fn ctrl_pin_takes_the_whole_edge() {
+        use docking::{Place, Unit};
+        let mut w = Win::new();
+        let caption_pin = |w: &Win| {
+            let r = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r).expect("the vector pane");
+            let group = w.app.dock_rects[Unit::Vector as usize].expect("its group");
+            Pos2::new(group.right() - 26.0, r.top() - 10.0)
+        };
+        let click = |w: &mut Win, at: Pos2, ctrl: bool| {
+            let modifiers = egui::Modifiers { ctrl, command: ctrl, ..Default::default() };
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers };
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.held = modifiers;
+            w.run(vec![ev(true), ev(false)]);
+            w.held = egui::Modifiers::NONE;
+        };
+        let edge = w.app.docks.edge(Unit::Vector);
+        let same: Vec<Unit> = docking::UNITS
+            .into_iter()
+            .filter(|&u| w.app.docks.host(u) == u && w.app.docks[u].place == Place::Docked && w.app.docks.edge(u) == edge && w.app.panes.front(w.app.docks.members(u)).is_some())
+            .collect();
+        let at = caption_pin(&w);
+        click(&mut w, at, true);
+        for &u in &same {
+            assert_eq!((w.app.docks[u].place, w.app.docks[u].slide), (Place::AutoHide, 0.0), "{u:?} at once");
+        }
+        // A plain pin back, then a plain pin: it slides shut from 1.
+        w.app.docks[Unit::Vector].pin();
+        w.idle(3);
+        let at = caption_pin(&w);
+        click(&mut w, at, false);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::AutoHide);
+        assert!(w.app.docks[Unit::Vector].slide > 0.0, "sliding shut");
+    }
+
     /// Smart docking (L9.101): Частотная's caption dragged out of its pane
     /// detaches; released on the group's five-way centre it becomes a tab
     /// of the group; dragged out again (the group floats with it) and

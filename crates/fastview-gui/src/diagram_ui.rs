@@ -983,15 +983,17 @@ impl App {
         let (w, h) = (rect.width() as i32, rect.height() as i32);
         let gate = (client.width() as i32 - 16, client.height() as i32 - 32);
         let mut view = view;
-        let mut sc = dg::plane_scale(w, h, view.z, max);
+        let ps = print_s().unwrap_or(1.0);
+        let mut sc = dg::plane_scale_s(w, h, view.z, max, ps);
+        // Device px against 800·s (`0x43b72f`) — in points against 800.
         if dg::zoom_resets(char_ext, sc.ppu[0]) {
             view.z = 1.0;
-            sc = dg::plane_scale(w, h, 1.0, max);
+            sc = dg::plane_scale_s(w, h, 1.0, max, ps);
         }
-        let cell = sc.cell as f32;
+        let cell = sc.cell_pt;
         let c = Pos2::new(rect.left() + (w / 2) as f32, rect.top() + (h / 2) as f32);
         let origin = c + Vec2::new(view.ox as f32 * cell, view.oy as f32 * cell);
-        let (nx, ny) = ((w / 2) / sc.cell, (h / 2) / sc.cell);
+        let (nx, ny) = sc.half_cells;
         // Grid (`0x4393b0`): lines every cell outward from the centre, the
         // frame at a whole number of cells, axes through the origin.
         let (fx, fy) = (nx as f32 * cell, ny as f32 * cell);

@@ -133,19 +133,25 @@ items (VM ones also in W4.4):
   split shows «Неправильный формат файла» (ours silent).
 - [ ] W2.6 L9.34 — MakeUpper on Cyrillic units («МВт»), «ном»
   vector-eligibility (VM) (binary32 with «кВ»: settled, L9.182); string 3105's «гр» spelling (static).
-- [ ] W2.7 L9.37 — the preview buttons' sizes (static, mfc120u
-  `0x100fcfc2`); QAT / app button / MDI tabs during preview (VM).
+- [ ] W2.7 L9.37 — the preview buttons' sizes (static: done, L9.202 — the
+  page buttons small); the preview's keytips (P, QI, QO, 1, X, V, C; panels
+  ZP, ZZ, ZV — `0x100fccec`); QAT / app button / MDI tabs during preview (VM).
 - [ ] W2.8 L9.41 — the report's «Осциллограмма:» line: path or title (VM).
 - [ ] W2.9 L9.64 — «Окна...»: Каскадом / Горизонтально / Вертикально /
   Свернуть under MDI tabs (VM), OK's slot, LBS_SORT collation, the size from
   the 316 × 169 DLU template.
-- [ ] W2.10 L9.66 — the print cell ⌊96·s/5⌋ (ours a fixed 19), the print
-  resetting the live zoom, the differential push consumed by a print, the
-  GDI+ fill's offset band.
-- [ ] W2.11 L9.92 — Ctrl + pin (`0x100871c7`'s Ctrl branch); the
-  animation-off switch.
-- [ ] W2.12 L9.94 — page setup's orientation into the printer's DEVMODE;
-  the «Принтер...» button (flags 0x260a).
+- [ ] W2.10 L9.66 — the print cell ⌊96·s/5⌋ (done, L9.202), the print
+  resetting the live zoom (as ours), the differential push consumed by a
+  print (`0x445e00` tail: the live pane pushed after the page, limits from
+  the live client), the GDI+ fill's band at s = 1 (`0x43a4a0`).
+- [x] W2.11 L9.92 — Ctrl + pin and the plain pin's slide: done, L9.202;
+  the animation-off switch is a Remote Desktop session only (W6).
+- [ ] W2.12 L9.94 — page setup (`0x448a90`, read by the agent 2026-10-24):
+  its first pass returns the SYSTEM DEFAULT printer (RETURNDEFAULT, the
+  app's DEVMODE not passed), writes the stored orientation into it, and
+  OK makes that the application printer (#12964), replacing an earlier
+  «Свойства» DEVMODE — ours keeps `app_paper()` / the chosen printer; the
+  «Принтер...» button absent on Vista+ comdlg (check the template, VM).
 - [ ] W2.13 L9.97 — disabled keytips' ink (VM: F10 with no document).
 - [ ] W2.14 L9.102 — where a tab dragged out lands (VM, mouse driving).
 - [ ] W2.15 L9.122 — «Свойства...» on the VM, the owner window, the

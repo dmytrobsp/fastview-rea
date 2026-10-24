@@ -120,6 +120,10 @@ pub struct PlaneScale {
     pub cells: i32,
     pub upc: [f64; 2],
     pub ppu: [Option<f64>; 2],
+    /// The cell in points (`cell` device px / s) and the whole cells from
+    /// the centre to each side, x and y, counted in device px.
+    pub cell_pt: f32,
+    pub half_cells: (i32, i32),
 }
 
 /// One significant digit, rounded up, sign kept (`0x438b50`).
@@ -139,11 +143,22 @@ pub fn nice_up(v: f64) -> f64 {
 /// `cells = round(min(w/2, h/2)) / cell` (integer division) and
 /// `upc = nice(max / (z · cells))` for both scales.
 pub fn plane_scale(w: i32, h: i32, z: f64, max: [f64; 2]) -> PlaneScale {
-    let cell = CELL_PX;
-    let cells = ((w / 2).min(h / 2)) / cell;
+    plane_scale_s(w, h, z, max, 1.0)
+}
+
+/// [`plane_scale`] on a device `s` times the screen's (a printout): the
+/// cell is ⌊LOGPIXELSX·s/5⌋ device px with the screen's 96 dpi
+/// (`0x4390cb`–`0x439103`, the differential's `0x44446d`), the halves and
+/// the cells counted in device px; `w`, `h` and the pixels per unit in
+/// points.
+pub fn plane_scale_s(w: i32, h: i32, z: f64, max: [f64; 2], s: f32) -> PlaneScale {
+    let cell = if s == 1.0 { CELL_PX } else { (96.0 * s / 5.0).floor() as i32 };
+    let (wd, hd) = if s == 1.0 { (w, h) } else { ((w as f32 * s).floor() as i32, (h as f32 * s).floor() as i32) };
+    let cells = ((wd / 2).min(hd / 2)) / cell;
     let upc = max.map(|m| if cells > 0 { nice_up(m / (z * f64::from(cells))) } else { 0.0 });
-    let ppu = upc.map(|u| (u > 0.0).then(|| f64::from(cell) / u));
-    PlaneScale { cell, cells, upc, ppu }
+    let cell_pt = cell as f32 / s;
+    let ppu = upc.map(|u| (u > 0.0).then(|| f64::from(cell_pt) / u));
+    PlaneScale { cell, cells, upc, ppu, cell_pt, half_cells: ((wd / 2) / cell, (hd / 2) / cell) }
 }
 
 /// The pan limit of one axis (`0x437b90`): `round((span / cell) · z / 2)`
@@ -719,6 +734,11 @@ mod tests {
         assert_eq!(s.ppu, [Some(19.0 / 5.0), None]);
         // Zoomed ×1.5: 30/10.5 = 2.86 → 3.
         assert_eq!(plane_scale(400, 300, 1.5, [30.0, 0.0]).upc[0], 3.0);
+        // On paper the cell is ⌊96·s/5⌋ device px (`0x4390cb`): 96 at s = 5,
+        // not 5 × 19; the cells counted in device px.
+        let p = plane_scale_s(400, 300, 1.0, [30.0, 0.0], 5.0);
+        assert_eq!((p.cell, p.cells, p.half_cells), (96, 7, (10, 7)));
+        assert_eq!(p.cell_pt, 19.2);
     }
 
     #[test]
