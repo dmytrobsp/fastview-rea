@@ -12,7 +12,7 @@ Distilled from the decompiled `FastView.exe`; addresses as evidence.
 - `.cfg` file-type line (`0x45158a`): after a trim the value must be exactly
   `ASCII`, `BINARY` or lowercase `binary32`; anything else (incl. `FLOAT32`,
   `BINARY32`, `ascii`) → error 330 "Неправильный формат файла" shown as
-  "<file> - <message>".
+  "<message> - <file>" (the exception's text, `0x42dfe0`).
 
 ## `.cff` reader (`0x44fe30`)
 - Writes `tmp_cfg.{cfg,dat,inf,hdr,set}` into `%TEMP%\Fast_View_<FILETIME hex>`

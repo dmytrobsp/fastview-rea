@@ -405,12 +405,12 @@ pub fn read_net_freq(sec: &SetNode, count: usize, cur: &[f64]) -> Vec<f64> {
 
 // ---------------------------------------------------------------- formulas
 
-/// `0x415500` over `CalculatedChannels`: `Channel<i>` for i from 0 to the
-/// attribute count − 2 (the count includes the `name` attribute a loaded
-/// node carries), each `name,formula` (`"%[^,\n\r],%[^\r\n"`: both parts
+/// `0x415500` over `CalculatedChannels`: `Channel<i>` for i below the
+/// attribute map's size (a `name` attribute counts too; its extra index
+/// finds no key), each `name,formula` (`"%[^,\n\r],%[^\r\n"`: both parts
 /// non-empty, the formula is the rest of the line).
 pub fn read_calculated(sec: &SetNode) -> Vec<(String, String)> {
-    let n = sec.attrs.len().saturating_sub(1);
+    let n = sec.attrs.len();
     let mut out = Vec::new();
     for i in 0..n {
         let v = sec.get_str(&format!("Channel{i}"), "");

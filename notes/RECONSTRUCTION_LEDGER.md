@@ -4055,7 +4055,7 @@ imports, mfc #2261 / #2262; by hand `0x475680`, `0x4756e0`, `0x47d915`,
 evaluation / ОМП / .set load catch their exception and post it to the
 frame (`0x475680`, message 0x40a), whose handler calls its ReportError(0,
 0) — an MB_OK box (MFC adds the exclamation) with the exception's text,
-"<file> - <message>" for file errors; «Синхронизация» by start time with
+"<message> - <file>" for file errors (order corrected, L9.181); «Синхронизация» by start time with
 no overlap shows 219 with MB_ICONHAND and leaves the bar's text; DIALOG
 392's sample rate goes through DDX_Text of an **int** (mfc #3761 — the
 ordinal order of the int& / double& overloads, #3766 being 0x414's
@@ -5350,11 +5350,82 @@ Residual: GDI's exact diamond-exit rule for the steps is not modelled
 (rounding along the major axis instead); diagonal strokes stay
 antialiased.
 
+### L9.181 — W1.8 batches B1, B6, B7: a missing `)`, the error boxes' order, the digital fill, the ОМП flags on top  ·  ✅
+Read (background agents, spot-checked by hand where marked):
+- B1, the unlabelled code `0x4035d0`–`0x42cdb0`. Behaviour: the print
+  dialog `0x4049e0` (flags 0x104000, template 347 from the resource DLL);
+  OnDraw `0x4050c0` (a back buffer blitted once); the `.set`
+  `CalculatedChannels` writer `0x4153a0` and reader `0x415500` — the loop
+  runs to the attribute map's size (by hand: `[node+4]`), ours stopped one
+  short; the unit walk's levels `0x415fa0`, `0x4160d0`, `0x416200`,
+  `0x4162b0`, `0x4165f0`, `0x4166b0` (as ours); the calculator's consume
+  `0x4196b0` — consuming END throws 0x157 (by hand: cursor < count − 1 or
+  throw) — and current token `0x419800`; error 0x431 `0x41fe80` built as
+  string + ": '" + formula + "'" (by hand: the literals `0x4c5210` /
+  `0x4c5214`), 0x430 alike; the pair writers `0x420ea0` / `0x421090`; the
+  image list 489 `0x423fc0`; `NetFreq` `0x427a00`. Library code: `0x4035d0`,
+  `0x403660`, `0x406b00`, `0x406f20`, `0x407060`, `0x407180`, `0x40e1e0`,
+  `0x40e410`, `0x40ed20`, `0x40eed0`, `0x40f880`, `0x40faa0`, `0x40fc40`,
+  `0x40fd40`, `0x40ffe0`, `0x4100c0`, `0x4107c0`, `0x4108a0`, `0x410bb0`,
+  `0x4110a0`, `0x411660`, `0x4118d0`, `0x411a30`, `0x411ad0`, `0x417d10`,
+  `0x418570`, `0x41ffc0`, `0x420160`, `0x420240`, `0x4202f0`, `0x420360`,
+  `0x420670`, `0x420760`, `0x420aa0`, `0x420ba0`, `0x425aa0`, `0x42c3f0`,
+  `0x42c4a0`, `0x42c7b0`, `0x42cc70`, `0x42cdb0`.
+- B6, the quick-analysis pages, «Каналы», «Добавить формулу».
+  Behaviour: the pages' loaders / savers `0x414780`, `0x414870`,
+  `0x414960`, `0x4149f0`, `0x414aa0`; **the exception's text `0x42dfe0`**:
+  the message, then " - " and the detail only when there is one (by
+  hand: `0x414b90` and the concatenation `0x404640` take the register
+  operand first) — the readers pass the file, so the box reads «<message>
+  - <file>»; «Каналы»'s rename edit `0x435ac0` (borderless, the cell's
+  left + 23, 1 px in, the list's font; a computed channel → message 398);
+  a name's group `0x455b30` (ignoring case); the tokenizer's rest of line
+  `0x476f30`; page 539's per-arm combos `0x482f70`, `0x483030`,
+  `0x4830f0` and «>>» `0x483250`; the option savers `0x484b30`,
+  `0x484ec0`; the formula page's PreTranslateMessage `0x4862e0` — all as
+  ours but the rename edit. Library code: `0x4045a0`, `0x40e2c0`,
+  `0x4115c0`, `0x417790`, `0x417a40`, `0x417b90`, `0x417ca0`, `0x417d90`,
+  `0x417fa0`, `0x418100`, `0x418420`, `0x42c220`, `0x42e690`, `0x431ea0`,
+  `0x431f60`, `0x432630`, `0x458060`, `0x458580`, `0x4586a0`, `0x458810`,
+  `0x4595e0`, `0x4718b0`, `0x47fda0`, `0x485d60`, `0x488700`, `0x48bc30`.
+- B7, the ОМП engine's surroundings. Behaviour: the channel constructors
+  `0x424070` (analog: flags 0xE1, `ch+0x110` = RGB(255, 255, 100)) and
+  `0x4245a0` (digital: the caller's colour — the ОМП flags'
+  RGB(249, 175, 172)); the display name `0x425960`; the unit and samples
+  `0x425b60` / `0x425f90`; the stamps `0x4495e0` / `0x449690`; the flag
+  median `0x477970`; the station lookup `0x4a4f10`; the settings copy
+  `0x4a7950` — no numerical difference. Library code: `0x40f960`,
+  `0x40fbc0`, `0x42c060`, `0x42c180`, `0x42c300`, `0x432570`, `0x44a390`,
+  `0x457eb0`, `0x458130`, `0x458c30`, `0x458d40`, `0x459dc0`, `0x45a440`,
+  `0x478d70`, `0x4a1ac0`, `0x4a1ca0`, `0x4a1df0`, `0x4a1f40`, `0x4a2300`,
+  `0x4a23a0`.
+- The digital painter fills a lane's "1" runs with the channel's
+  `ch+0x110` (by hand: `0x4225d7` stores 0x64FFFF, the brush at
+  `0x42a18d` takes `ch+0x110`), (253, 219, 102) when selected; the ОМП
+  creates its flags C, B, A each at the first digital place (`0x42ead0`).
+Ours accepted a formula missing its `)` (`(1+2` gave 3), showed 0x430 /
+0x431 as «<formula>: <message>», showed file errors as «<file> -
+<message>» (and this ledger, FORMATS_SPEC §1 said so), filled digital runs
+in the lane's table colour, appended the ОМП flags C, B, A after the
+record's digital channels, and read one `Channel<i>` short. Now
+`Parser::advance` fails on END, `FormulaError` builds 0x430 / 0x431 as
+read, the boxes read «<message> - <file>», `lanes::DIGITAL_FILL` /
+`digital_fill`, the flags go on top through `move_appended` (and
+`omp_clear` drops their shown / value flags with them), `read_calculated`
+reads to the map's size. Tests `a_missing_close_paren_is_a_syntax_error`,
+`argument_errors_quote_the_formula_after_the_message`,
+`a_failed_open_is_reported_in_a_box`, `analysis_toggle_runs_and_clears`.
+Residual: «Каналы»'s rename edit geometry; groups by name ignoring case;
+the ОМП re-run's lookup of «Lкз» / «КЗ фазы» among every channel
+ignoring case (ours: the computed list / exact names); the row filler
+`0x433b00` suggests `doc+0x1d8` counts computed channels (INFERRED by B6,
+against W2.16's read — to settle).
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.180)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.181)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5399,7 +5470,8 @@ L9.177 **the main window against the original's capture** (stats panel,
 channel 0 selected, title, stat rows); L9.178 «О программе» in the
 original's layout with our own texts, W1.6 / W1.2b read; L9.179 the
 document tabs inside the MDI area, the status bar's panes; L9.180
-aliased waveforms, 1 px lines on whole pixels.
+aliased waveforms, 1 px lines on whole pixels; L9.181 W1.8 B1 / B6 / B7
+(a missing `)`, the boxes' order, the digital fill, the ОМП flags on top).
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped
@@ -5561,7 +5633,7 @@ one byte after the line terminator (the original's LF offset bug, reproduced:
 harmless for ASCII, corrupts binary .cff) — and `.cff` writer (rev ≥ 2013 else
 error 187; CFG, HDR/INF/SET, `DAT BINARY: n---`; CP1251). GUI opens `.cff`,
 keeps its HDR/INF/SET and offers `.cff` in Save-As; load errors read
-"<file> - <message>". Pinned by `tests/formats.rs` (5). A test fixture that
+"<message> - <file>" (L9.181). Pinned by `tests/formats.rs` (5). A test fixture that
 only loaded because unknown file types used to fall back to ASCII was fixed.
 
 OSC2 (`.osc`) reader implemented (`parse_osc`): header/calibration/text/info/

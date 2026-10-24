@@ -780,7 +780,8 @@ mod tests {
         let _ = std::fs::remove_dir(&dir);
         assert!(app.docs.is_empty());
         let (msg, icon) = app.dlg.alerts.front().expect("a box");
-        assert!(msg.starts_with(&format!("{} - ", path.display())), "{msg}");
+        // "<message> - <file>" (`0x42dfe0`).
+        assert!(msg.ends_with(&format!(" - {}", path.display())), "{msg}");
         assert_eq!(*icon, crate::dialogs::MsgIcon::Exclamation);
     }
 

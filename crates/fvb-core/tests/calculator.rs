@@ -148,3 +148,24 @@ fn channel_functions_need_a_channel() {
     // pk: has no channel check: Re/|·| of a plain number.
     assert_eq!(eval_str("pk:(1)", &c()).unwrap(), 1.0);
 }
+
+/// 0x4196b0: consuming the END token throws 0x157, so a group missing its
+/// `)` — whose closing step consumes without checking — is a syntax error.
+#[test]
+fn a_missing_close_paren_is_a_syntax_error() {
+    for src in ["(1+2", "2*(3", "sin:(0", "((1)"] {
+        assert_eq!(eval_str(src, &c()), Err(ExprError::UnexpectedEof), "{src}");
+    }
+    assert_eq!(ev("(1+2)"), 3.0);
+}
+
+/// 0x41fd00 / 0x41fe80 build "<message>: '<formula>'"; the rest
+/// "<formula>: <message>".
+#[test]
+fn argument_errors_quote_the_formula_after_the_message() {
+    use fvb_core::expr::FormulaError;
+    let e = |error| FormulaError { formula: "rms:(1)".into(), error }.to_string();
+    assert_eq!(e(ExprError::NeedsChannel("rms")), "Аргумент функции должен быть каналом: 'rms:(1)'");
+    assert_eq!(e(ExprError::ArgCount("rms", 1, 2)), "Неправильное число переменных: 'rms:(1)'");
+    assert_eq!(e(ExprError::UnexpectedEof), "rms:(1): Синтаксическая ошибка в формуле");
+}

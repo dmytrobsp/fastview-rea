@@ -2303,9 +2303,9 @@ impl App {
                 self.remember_recent(path);
             }
             // The reader's exception is posted to the frame (`0x475680`,
-            // message 0x40a) and reported in an MB_OK box (`0x4756e0`):
-            // "<file> - <message>".
-            Err(e) => self.dlg.push_alert(format!("{} - {e}", path.display())),
+            // message 0x40a) and reported in an MB_OK box (`0x4756e0`): its
+            // text "<message> - <file>" (`0x42dfe0`, the file as detail).
+            Err(e) => self.dlg.push_alert(format!("{e} - {}", path.display())),
         }
     }
 

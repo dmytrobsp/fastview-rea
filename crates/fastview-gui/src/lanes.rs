@@ -296,7 +296,7 @@ impl OscView<'_> {
                 // whatever the scroll position.
                 let end_x = (left + g::base_bar_len(s.len(), f, 1.0)).min(plot_right);
                 pp.rect_filled(Rect::from_min_max(Pos2::new(left, mid - 2.0), Pos2::new(end_x, mid + 2.0)), 0.0, Color32::from_rgb(150, 150, 255));
-                let fill = if r.selected(doc) { Color32::from_rgb(253, 219, 102) } else { color };
+                let fill = if r.selected(doc) { Color32::from_rgb(253, 219, 102) } else { digital_fill(&doc.osc.digital[*i].id) };
                 let red = Color32::from_rgb(200, 0, 0);
                 // The painter's runs and transition ticks (`0x42a0f0`), x
                 // from leftW, GDI rectangles mid−6..mid+6.
@@ -312,7 +312,7 @@ impl OscView<'_> {
                     pp.rect_filled(Rect::from_min_max(Pos2::new(left + t, mid - 6.0), Pos2::new(left + t + 1.0, mid + 6.0)), 0.0, red);
                 }
             }
-            Lane::Computed(j) if doc.pending_digital(*j) => self.pasted_digital(pp, *j, top, color, r.selected(doc)),
+            Lane::Computed(j) if doc.pending_digital(*j) => self.pasted_digital(pp, *j, top, r.selected(doc)),
             _ => {
                 // A window-zoomed channel is drawn through a clip region of
                 // its lane, (0, top + 5)–(W, top + h) (`0x4295a5`,
@@ -379,14 +379,14 @@ impl OscView<'_> {
     /// the paste offset, the runs of its own samples at their times
     /// (`pasted_digital_runs`, no column OR-ing), then icon 1 at
     /// (leftW − 3, top + h − 19).
-    fn pasted_digital(&self, pp: &egui::Painter, j: usize, top: f32, color: Color32, selected: bool) {
+    fn pasted_digital(&self, pp: &egui::Painter, j: usize, top: f32, selected: bool) {
         let Some((t, p)) = self.pasted_times(j) else { return };
         let Err(d) = &p.pasted.channel else { return };
         let (left, mid) = (self.left, top + 10.0);
         let n = d.samples.len();
         let bar = g::base_bar_len(n, self.f, t.ratio()) + t.offset_px(self.f);
         pp.rect_filled(Rect::from_min_max(Pos2::new(left, mid - 2.0), Pos2::new((left + bar).min(self.right), mid + 2.0)), 0.0, Color32::from_rgb(150, 150, 255));
-        let fill = if selected { Color32::from_rgb(253, 219, 102) } else { color };
+        let fill = if selected { Color32::from_rgb(253, 219, 102) } else { DIGITAL_FILL };
         let red = Color32::from_rgb(200, 0, 0);
         let k = t.first(self.first);
         let end = t.digital_end(n, self.first, k, self.f, self.right - self.left);
@@ -779,6 +779,21 @@ fn paste_icon(p: &egui::Painter, at: Pos2, large: bool) {
     p.px_vline(at.x + br - 1.5, (at.y + top)..=(at.y + bot), Stroke::new(1.0f32, c));
     if large {
         p.rect_filled(Rect::from_min_size(pt(14.0, mid - 1.0), Vec2::splat(2.0)), 0.0, c);
+    }
+}
+
+/// The fill of a digital lane's "1" runs: the channel's own colour
+/// (`ch+0x110`, the brush at `0x42a18d`) — (255, 255, 100) from every
+/// channel constructor (`0x4225d7`, `0x424070`, …), (249, 175, 172) for the
+/// ОМП flags (`0x4245a0` from `0x42ead0`); the name text keeps the table
+/// colour by place (L9.170).
+pub const DIGITAL_FILL: Color32 = Color32::from_rgb(255, 255, 100);
+
+fn digital_fill(id: &str) -> Color32 {
+    if crate::omp_ui::KZ_PHASES.contains(&id) {
+        Color32::from_rgb(249, 175, 172)
+    } else {
+        DIGITAL_FILL
     }
 }
 

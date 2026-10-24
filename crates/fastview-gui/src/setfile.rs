@@ -718,9 +718,9 @@ impl App {
                 true
             }
             // The writer's exception is reported in an MB_OK box (`0x475680`
-            // → `0x4756e0`).
+            // → `0x4756e0`): "<message> - <file>" (`0x42dfe0`).
             Err(e) => {
-                self.dlg.push_alert(format!("{} - {e}", path.display()));
+                self.dlg.push_alert(format!("{e} - {}", path.display()));
                 false
             }
         }

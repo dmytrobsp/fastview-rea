@@ -132,12 +132,22 @@ pub enum ExprError {
 }
 
 /// An [`ExprError`] together with the formula text it came from, displayed
-/// as the original's message box does.
+/// as the original's message box does: "<formula>: <message>", except
+/// 0x430 / 0x431, built as "<message>: '<formula>'" (`0x41fd00`,
+/// `0x41fe80`).
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
-#[error("{formula}: {error}")]
 pub struct FormulaError {
     pub formula: String,
     pub error: ExprError,
+}
+
+impl std::fmt::Display for FormulaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.error {
+            ExprError::ArgCount(..) | ExprError::NeedsChannel(_) => write!(f, "{}: '{}'", self.error, self.formula),
+            _ => write!(f, "{}: {}", self.formula, self.error),
+        }
+    }
 }
 
 /// Formula functions (token ids 0x08..0x3f of the original table). Only the
@@ -586,10 +596,14 @@ impl Parser {
         &self.toks[self.pos]
     }
 
-    fn advance(&mut self) {
-        if self.pos + 1 < self.toks.len() {
-            self.pos += 1;
+    /// `0x4196b0`: consuming the END token is a syntax error (so is a
+    /// missing `)` — the group's unchecked step consumes END).
+    fn advance(&mut self) -> Result<(), ExprError> {
+        if self.pos + 1 >= self.toks.len() {
+            return Err(ExprError::UnexpectedEof);
         }
+        self.pos += 1;
+        Ok(())
     }
 
     fn peek_op(&self, op: u8) -> bool {
@@ -599,7 +613,7 @@ impl Parser {
     fn list(&mut self) -> Result<Vec<Node>, ExprError> {
         let mut items = vec![self.expr()?];
         while self.peek_op(0x00) {
-            self.advance();
+            self.advance()?;
             items.push(self.expr()?);
         }
         Ok(items)
@@ -608,7 +622,7 @@ impl Parser {
     fn expr(&mut self) -> Result<Node, ExprError> {
         let mut lhs = self.term()?;
         while let Tok::Op(op @ (0x01 | 0x02)) = *self.peek() {
-            self.advance();
+            self.advance()?;
             let rhs = self.term()?;
             lhs = Node::Bin(op, Box::new(lhs), Box::new(rhs));
         }
@@ -618,7 +632,7 @@ impl Parser {
     fn term(&mut self) -> Result<Node, ExprError> {
         let mut lhs = self.pow()?;
         while let Tok::Op(op @ (0x03 | 0x04)) = *self.peek() {
-            self.advance();
+            self.advance()?;
             let rhs = self.pow()?;
             lhs = Node::Bin(op, Box::new(lhs), Box::new(rhs));
         }
@@ -628,7 +642,7 @@ impl Parser {
     fn pow(&mut self) -> Result<Node, ExprError> {
         let base = self.unary()?;
         if self.peek_op(0x05) {
-            self.advance();
+            self.advance()?;
             let exp = self.unary()?;
             return Ok(Node::Bin(0x05, Box::new(base), Box::new(exp)));
         }
@@ -638,7 +652,7 @@ impl Parser {
     fn unary(&mut self) -> Result<Node, ExprError> {
         let sign = match *self.peek() {
             Tok::Op(op @ (0x01 | 0x02)) => {
-                self.advance();
+                self.advance()?;
                 op
             }
             _ => 0x01,
@@ -649,7 +663,7 @@ impl Parser {
 
     fn primary(&mut self) -> Result<Node, ExprError> {
         if let Tok::Func(id) = *self.peek() {
-            self.advance();
+            self.advance()?;
             let args = self.group()?;
             let (f, name, n) =
                 Func::from_id(id).ok_or_else(|| ExprError::UnknownFunction(format!("{id:#x}")))?;
@@ -667,12 +681,12 @@ impl Parser {
         if !self.peek_op(0x06) {
             return Ok(vec![self.atom()?]);
         }
-        self.advance();
+        self.advance()?;
         if self.peek_op(0x07) {
             return Ok(Vec::new());
         }
         let items = self.list()?;
-        self.advance();
+        self.advance()?;
         Ok(items)
     }
 
@@ -688,9 +702,9 @@ impl Parser {
             Tok::End => return Err(ExprError::UnexpectedEof),
             _ => return Err(ExprError::Expected("operand")),
         };
-        self.advance();
+        self.advance()?;
         if matches!(self.peek(), Tok::Dimension(_)) {
-            self.advance();
+            self.advance()?;
         }
         Ok(n)
     }

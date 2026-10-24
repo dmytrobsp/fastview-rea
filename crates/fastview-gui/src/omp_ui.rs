@@ -248,7 +248,11 @@ impl App {
                 d.computed.push(c);
             }
         }
-        for k in [2, 1, 0] {
+        // `0x42ead0` inserts each new flag at the first digital place, made
+        // in the order C, B, A (`0x4a158a`…`0x4a15f6`): they read А, B, C
+        // above the record's own digital channels.
+        let (na, nd) = (d.osc.analog.len(), d.osc.digital.len());
+        for k in [0, 1, 2] {
             let samples = flags[k].clone();
             match d.osc.digital.iter_mut().find(|c| c.id == KZ_PHASES[k]) {
                 Some(c) => c.samples = samples,
@@ -257,6 +261,10 @@ impl App {
                     d.osc.digital.push(fvb_core::DigitalChannel { index, id: KZ_PHASES[k].into(), phase: String::new(), normal: 0, samples });
                 }
             }
+        }
+        if d.osc.digital.len() > nd {
+            d.digital_visible.resize(d.osc.digital.len(), true);
+            d.move_appended(na, na, 0, nd);
         }
         d.channels_changed();
         d.omp.run = Some(OmpRun { method, trace, sections });
@@ -272,6 +280,13 @@ impl App {
         d.omp.run = None;
         let removed = d.removing_channels(|d| {
             d.computed.retain(|c| c.name != L_KZ);
+            // The flags lead the digital list: their shown / value flags go
+            // with them.
+            let keep: Vec<bool> = d.osc.digital.iter().map(|c| !KZ_PHASES.contains(&c.id.as_str())).collect();
+            let mut it = keep.iter();
+            d.digital_visible.retain(|_| *it.next().unwrap_or(&true));
+            let mut it = keep.iter();
+            d.dig_flags.retain(|_| *it.next().unwrap_or(&true));
             d.osc.digital.retain(|c| !KZ_PHASES.contains(&c.id.as_str()));
         });
         if removed {
@@ -1118,7 +1133,7 @@ mod tests {
         let lkz = d.computed.iter().find(|c| c.name == L_KZ).unwrap();
         assert_eq!(lkz.unit, "m");
         let digital: Vec<&str> = d.osc.digital.iter().map(|c| c.id.as_str()).collect();
-        assert_eq!(&digital[digital.len() - 3..], ["КЗ фазы C", "КЗ фазы B", "КЗ фазы А"]);
+        assert_eq!(&digital[..3], ["КЗ фазы А", "КЗ фазы B", "КЗ фазы C"], "above the record's own");
         assert!(d.computed.iter().all(|c| !c.name.starts_with("КЗ фазы")), "flags are digital channels");
         let text = app.omp_result().unwrap().text;
         assert_eq!(app.omp_ui.bar.as_deref(), Some(text.as_str()));
