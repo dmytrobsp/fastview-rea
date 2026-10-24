@@ -716,6 +716,18 @@ pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, 
 
 /// An analog channel's drawing range: min..max of its displayed series over
 /// the whole record, or its window zoom (`0x42b640`).
+/// A level's channel range for 33042's commit (ch+0xb0 / ch+0xa8, the
+/// whole record): `None` when the channel does not resolve.
+fn level_range(doc: &crate::app::Doc, chan: crate::app::ChanKey, primary: bool) -> Option<(f64, f64)> {
+    use crate::app::ChanKey;
+    match chan {
+        ChanKey::Analog(i) if i < doc.osc.analog.len() => Some(chan_range(doc, i, primary)),
+        ChanKey::Computed(j) => doc.computed.get(j).map(|c| c.samples.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| (lo.min(v), hi.max(v)))),
+        ChanKey::Digital(k) if k < doc.osc.digital.len() => Some((0.0, 1.0)),
+        _ => None,
+    }
+}
+
 pub fn chan_range(doc: &crate::app::Doc, i: usize, primary: bool) -> (f64, f64) {
     let [mut lo, mut hi, ..] = scaled_minmax(doc, i, primary);
     if lo > hi {
@@ -1185,7 +1197,13 @@ impl App {
         if let Some((i, _)) = &self.level_edit {
             if let Some(crate::comments::CommentKind::Level { chan, value, from, .. }) = doc.comments.get(*i).map(|c| &c.kind) {
                 if let Some(y) = level_y(*chan, *value).map(|l| l.draw) {
-                    level_rect = Some(Rect::from_min_size(Pos2::new(x_of(*from as f64), y - 10.0), Vec2::new(80.0, 20.0)));
+                    // `0x45ce40` after `0x440530`: left max(x(from), leftW),
+                    // top y + 3, 25 × the width of "A", 1.2 × the text height.
+                    let (aw, th) = ui.fonts(|fo| {
+                        let g = fo.layout_no_wrap("A".into(), ROW_FONT, Color32::BLACK);
+                        (g.size().x, g.size().y)
+                    });
+                    level_rect = Some(Rect::from_min_size(Pos2::new(x_of(*from as f64).max(left), y + 3.0), Vec2::new(25.0 * aw, (1.2 * th).trunc())));
                 }
             }
         }
@@ -1701,13 +1719,17 @@ impl App {
     }
 
     /// «Изменить уровень» (33042): an edit over the level line pre-filled
-    /// with `%.2f`; Enter sets the level, Esc cancels.
+    /// with `%.2f`. The commit (the level branch of `0x465df0` → `0x4404b0`)
+    /// on Enter or a press elsewhere: `_wtof` of the text, stored only if the
+    /// element selected NOW is a level whose channel resolves and the value
+    /// lies within the channel's whole-record [min, max] — else dropped —;
+    /// the document is marked modified either way. Esc just closes.
     fn level_edit_ui(&mut self, ui: &mut egui::Ui, ai: usize, at: Option<Rect>) {
         let Some((i, mut text)) = self.level_edit.take() else { return };
         let Some(at) = at else { return };
         let mut done: Option<bool> = None;
-        egui::Area::new(egui::Id::new("fv_level_edit").with(i)).order(egui::Order::Foreground).fixed_pos(at.min).show(ui.ctx(), |ui| {
-            let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(at.width()));
+        let area = egui::Area::new(egui::Id::new("fv_level_edit").with(i)).order(egui::Order::Foreground).fixed_pos(at.min).show(ui.ctx(), |ui| {
+            let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(at.width()).min_size(at.size()));
             r.request_focus();
             if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 done = Some(false);
@@ -1715,15 +1737,30 @@ impl App {
                 done = Some(true);
             }
         });
+        let pressed_out = ui.input(|inp| inp.pointer.any_pressed() && inp.pointer.interact_pos().is_some_and(|p| !area.response.rect.contains(p)));
+        if done.is_none() && pressed_out {
+            done = Some(true);
+        }
         match done {
             None => self.level_edit = Some((i, text)),
             Some(false) => {}
             Some(true) => {
-                if let (Ok(v), Some(c)) = (text.trim().replace(',', ".").parse::<f64>(), self.docs[ai].comments.get_mut(i)) {
-                    if let crate::comments::CommentKind::Level { value, .. } = &mut c.kind {
-                        *value = v;
+                let v = crate::chandlg::wtof(&text);
+                let d = &mut self.docs[ai];
+                let primary = d.primary_values();
+                let target = d.comment_hot;
+                let range = target.and_then(|t| d.comments.get(t)).and_then(|c| match c.kind {
+                    crate::comments::CommentKind::Level { chan, .. } => level_range(d, chan, primary),
+                    _ => None,
+                });
+                if let (Some(t), Some((lo, hi))) = (target, range) {
+                    if (lo..=hi).contains(&v) {
+                        if let crate::comments::CommentKind::Level { value, .. } = &mut d.comments[t].kind {
+                            *value = v;
+                        }
                     }
                 }
+                d.set.modified = true;
             }
         }
     }
@@ -1820,8 +1857,22 @@ impl App {
         match cmd {
             MenuCmd::CopyMerge => self.copy_channels_for_merge(),
             MenuCmd::PasteMerge => self.paste_channels_for_merge(),
-            MenuCmd::TimeUnit(u) => self.time_unit = u,
-            MenuCmd::Grid => self.show_grid = !self.show_grid,
+            // 32853–32857 (`0x45caa0`) and 33007 (`0x45d290`): every pick —
+            // the ticked one too — writes `View/Sells` and `View/RulerState`
+            // and marks the document modified.
+            MenuCmd::TimeUnit(_) | MenuCmd::Grid => {
+                match cmd {
+                    MenuCmd::TimeUnit(u) => self.time_unit = u,
+                    _ => self.show_grid = !self.show_grid,
+                }
+                let (grid, ruler) = (self.show_grid, i32::from(crate::persist::ruler_state(self.time_unit)));
+                if let Some(d) = self.docs.get_mut(ai) {
+                    let v = d.set.tree.section_mut("View");
+                    v.set_bool("Sells", grid);
+                    v.set_int("RulerState", ruler);
+                    d.set.modified = true;
+                }
+            }
             // 33033 (`0x4557d0`): a per-document toggle, no modified mark.
             MenuCmd::DiffBand => {
                 if let Some(d) = self.docs.get_mut(ai) {
@@ -1834,6 +1885,8 @@ impl App {
             MenuCmd::EditComment(i) => self.open_comment_editor(ai, i),
             MenuCmd::EditLevel(i) => {
                 if let Some(crate::comments::CommentKind::Level { value, .. }) = self.docs.get(ai).and_then(|d| d.comments.get(i)).map(|c| &c.kind) {
+                    // An open edit is destroyed without its commit.
+                    self.rename_edit = None;
                     self.level_edit = Some((i, format!("{value:.2}")));
                 }
             }
@@ -2823,6 +2876,34 @@ mod menu_tests {
         hover(&mut h, at(600.0));
         drag(&mut h, at(600.0), at(500.0));
         assert_ne!(h.doc().comments[0].kind, before, "a hidden text does not stop the drag");
+    }
+
+    /// 33042's commit (`0x465df0` → `0x4404b0`): `_wtof` of the text, kept
+    /// only within the channel's range, on the element selected now; the
+    /// document marked modified on every commit, not on Esc.
+    #[test]
+    fn the_level_edit_commits_as_the_original() {
+        use crate::comments::{Comment, CommentKind};
+        let key = |k| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        d.comments.push(Comment { kind: CommentKind::Level { chan: crate::app::ChanKey::Analog(0), value: 0.0, from: 0, to: 50 }, text: String::new(), locked: false, hidden: false });
+        d.comment_hot = Some(0);
+        d.set.modified = false;
+        let value = |h: &Harness| match h.doc().comments[0].kind {
+            CommentKind::Level { value, .. } => value,
+            _ => f64::NAN,
+        };
+        for (text, k, want, modified) in [("1,5", egui::Key::Enter, 1.0, true), ("1e9", egui::Key::Enter, 1.0, true), ("2", egui::Key::Escape, 1.0, false)] {
+            h.app.active_doc_mut().unwrap().set.modified = false;
+            h.app.level_edit = Some((0, text.into()));
+            h.frame(vec![]);
+            h.frame(vec![key(k)]);
+            h.frame(vec![]);
+            assert!(h.app.level_edit.is_none(), "{text}: closed");
+            assert_eq!(value(&h), want, "{text}");
+            assert_eq!(h.doc().set.modified, modified, "{text}: modified");
+        }
     }
 
     /// A channel drag resting in the view's bottom 11 px scrolls a 100 px

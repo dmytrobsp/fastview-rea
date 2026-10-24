@@ -90,7 +90,8 @@ Batches, in this order (the size of the unread code, user visibility):
 - [x] **W1.3** Circle / differential diagrams — the thirteen cited (L9.170); channel colours fixed.
 - [ ] **W1.3b** W1.3's remaining differences: scroll bars disabled (not hidden) after zooming back out (check on the VM first), the differential scale over [min(c1, c2), …] (the pan limit and the scale box's pen: done, L9.174).
 - [x] **W1.4** ОМП — the eight functions (L9.169): the `.omp` format fixed, the toolbar.
-- [ ] **W1.5** Document and view — CFastViewDoc (2), CFastViewView (4), AreaItem (1).
+- [x] **W1.5** Document and view — the seven cited (L9.175); the level edit and the ruler picks fixed.
+- [ ] **W1.5b** Comments bound by display name at every paint (a rename hides a level / area; the `.set` keeps the old name) — confirm on the VM (put a level on Ia, rename Ia in «Каналы», save, look), then rebind ours.
 - [ ] **W1.6** Small windows — AboutWnd, FileInfoDlg, ChanPairDlg, FileFinder22Dlg (2), CParamOscBar.
 - [ ] **W1.7** The unlabelled (`?`, 45) — label them first (callers further up, data references), then fold them into the batches above or new ones.
 - [ ] **W1.8** The medium functions (50–149 instructions, 474 uncited) — the same way, batch by area once W1.1–W1.7 are done.

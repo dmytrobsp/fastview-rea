@@ -638,7 +638,7 @@ pub fn write_frequency_chart(sec: &mut SetNode, c: &FrequencyChart) {
 }
 
 /// `View` (read at the view's initial update `0x45ab70`; written by the zoom
-/// 32800–32803 `0x45c4f0`, ruler `0x45caa0` and grid `0x45d290` handlers):
+/// 32800–32803 `0x45c4f0`, ruler / grid `0x45caa0` and 33007 `0x45d290` handlers):
 /// XScale (default 2 × fit), RulerState (1 = ms), YAnalogSize (93), Sells
 /// (grid, 1).
 #[derive(Debug, Clone, PartialEq)]

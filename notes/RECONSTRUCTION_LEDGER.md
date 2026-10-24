@@ -5174,6 +5174,39 @@ Residual (W1.3b): the scroll bars disabled rather than hidden after zooming
 back to 1 (VM check first); the differential scale over a cursor range
 inside the first period.
 
+### L9.175 — «Изменить уровень» as read; the ruler / grid picks always write and mark  ·  ✅
+Read (COMPLETION_PLAN W1.5): 33042 (`0x440530`, called from MENU 563's
+handler `0x45ce40`) acts only on a selected level: it destroys an open
+inline edit without its commit, marks the edit as a level edit
+(view+0x1bc = 0x7fffffff) and opens the shared edit at left max(x(from),
+leftW), top y + 3, 25 × the width of "A" in the view font, 1.2 × the text
+height (no vertical scroll offset added — INFERRED to sit off the line in a
+scrolled view), text `%.2f`. Its commit — the level branch of
+`0x465df0` → `0x4404b0` (`0x465e3f`–`0x465eaa`) — on Enter or a press
+elsewhere takes `_wtof` of the text and stores it only if the element
+selected now (doc+0x854, re-picked by the pointer) is a level whose
+channel resolves by name (`0x42edf0`) and min ch+0xb0 ≤ v ≤ max ch+0xa8;
+SetModifiedFlag(TRUE) and a repaint follow every commit, refused or not;
+Esc only destroys the edit. The ruler / grid commands 32853–32857
+(`0x45caa0`, CMDUI `0x45ccc0`: SetRadio / SetCheck, never Enable) and 33007
+(`0x45d290`) write `View/Sells` then `View/RulerState` and mark the
+document modified on every pick, an unchanged one too. The comments' lane
+map `0x43f8d0` (visible channels by display name, case-sensitive, a later
+duplicate winning, group members on their owner's lane) and the area's
+rect `0x403b60` (empty when a channel is missing — never picked, painted
+at x ≈ 0 and clipped) are cited; explained away: `0x44b300` (the ОМП
+model's destructor), `0x457810` (map erase), `0x440a50` (map hint insert).
+Ours replaced "," by "." and refused unparsable text, had no range check,
+committed to the edited index, marked nothing, placed an 80 × 20 edit at y
+− 10, and wrote the ruler / grid keys only when they changed. Now
+`level_edit_ui` / `level_range` / `MenuCmd::EditLevel` as read, and the
+ruler / grid picks write both keys and mark the document. Test
+`the_level_edit_commits_as_the_original`.
+Residual: comments are bound by display name at every paint in the
+original (a rename hides them; ours binds a row index at load, re-bound
+by name only on deletions, L9.157) — VM run planned (plan W1.5b); the
+scroll offset of the level edit.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
