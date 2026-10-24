@@ -474,7 +474,8 @@ pub fn comment_dialog_body(ui: &mut egui::Ui, id: egui::Id, text: &mut String) -
     if win_button(ui, dlu(client, 244, 288, 62, 14), "OK", true).clicked() {
         return Some(true);
     }
-    if win_button(ui, dlu(client, 310, 288, 62, 14), "Отмена", false).clicked() {
+    // Esc is Отмена (VM); Enter stays the edit's new line (ES_WANTRETURN).
+    if win_button(ui, dlu(client, 310, 288, 62, 14), "Отмена", false).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         return Some(false);
     }
     None

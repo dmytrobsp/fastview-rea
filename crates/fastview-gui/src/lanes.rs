@@ -426,14 +426,17 @@ impl OscView<'_> {
         paste_icon(pp, Pos2::new(left - 3.0, top + g::DIGITAL_H - 19.0), false);
     }
 
-    /// The time ruler (`0x464350`) with its bottom at `bottom`: a white band
-    /// 30 px high with a black top line, ticks every 25 px, labels every
-    /// 100 px; in absolute mode the start date under the stats panel.
-    pub fn ruler(&self, painter: &egui::Painter, bottom: f32, client_right: f32) {
+    /// The time ruler (`0x464350`) with its bottom at `bottom`: a white
+    /// rectangle `height` high (30, or 75 over the difference band — VM)
+    /// with a black top line across, black ticks every 25 px from 30 px up,
+    /// labels every 100 px; in absolute mode the start date under the stats
+    /// panel.
+    pub fn ruler(&self, painter: &egui::Painter, bottom: f32, client_right: f32, height: f32) {
         let (doc, left, plot_right, first, f, n) = (self.doc, self.left, self.right, self.first, self.f, self.n);
         let ruler_top = bottom - g::RULER_H;
-        painter.rect_filled(Rect::from_min_max(Pos2::new(self.x0, ruler_top), Pos2::new(client_right, bottom)), 0.0, Color32::WHITE);
-        painter.px_hline(self.x0..=client_right, ruler_top, Stroke::new(1.0f32, Color32::BLACK));
+        let rect_top = bottom - height;
+        painter.rect_filled(Rect::from_min_max(Pos2::new(self.x0, rect_top), Pos2::new(client_right, bottom)), 0.0, Color32::WHITE);
+        painter.px_hline(self.x0..=client_right, rect_top, Stroke::new(1.0f32, Color32::BLACK));
         let text_col = Color32::from_rgb(0, 0, 127);
         let start_tod = fvb_core::comtrade::time_of_day(&doc.osc.stamps.start_time);
         if self.unit == TimeUnit::Absolute {
@@ -444,7 +447,7 @@ impl OscView<'_> {
         }
         let mut first_label = true;
         for t in g::ruler_ticks(left, plot_right) {
-            painter.px_vline(t.x, ruler_top..=ruler_top + t.len, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
+            painter.px_vline(t.x, ruler_top..=ruler_top + t.len, Stroke::new(1.0f32, Color32::BLACK));
             if t.labelled {
                 let k = g::tick_sample(first, t.i, f);
                 if k < n {
@@ -467,13 +470,21 @@ impl OscView<'_> {
     }
 
     /// The difference band (`0x466630`) above a ruler whose top is
-    /// `ruler_top`: marker labels and Δt dimension lines.
-    pub fn band(&self, painter: &egui::Painter, ruler_top: f32) {
+    /// `ruler_top`, on the ruler's white: a (100) line across at its top,
+    /// the (230) grid on through it, marker labels and Δt dimension lines.
+    pub fn band(&self, painter: &egui::Painter, ruler_top: f32, client_right: f32, grid: bool) {
         let (doc, left, plot_right) = (self.doc, self.left, self.right);
         let text_col = Color32::from_rgb(0, 0, 127);
         let start_tod = fvb_core::comtrade::time_of_day(&doc.osc.stamps.start_time);
         let band_top = ruler_top - g::DIFF_BAND_H;
-        painter.rect_filled(Rect::from_min_max(Pos2::new(self.x0, band_top), Pos2::new(plot_right, ruler_top)), 0.0, Color32::WHITE);
+        painter.px_hline(self.x0..=client_right, ruler_top, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
+        if grid {
+            let mut x = left + 50.0;
+            while x < plot_right {
+                painter.px_vline(x, band_top..=ruler_top, Stroke::new(1.0f32, Color32::from_rgb(230, 230, 230)));
+                x += 50.0;
+            }
+        }
         // Positions (`0x4669d8`): leftW + trunc((s − first)·25·f).
         let bx = |k: usize| left + ((k as f64 - self.first as f64) * g::PX_PER_SAMPLE * self.f).trunc() as f32;
         // Labels: В1 В2 В3 first, then the comment moments by sample; one is
@@ -1345,7 +1356,7 @@ impl App {
 
         // ---- time ruler (`0x464350`) and difference band (`0x466630`) ----
         let ruler_top = client.bottom() - g::RULER_H;
-        ov.ruler(&painter, client.bottom(), plot_right);
+        ov.ruler(&painter, client.bottom(), plot_right, band);
         let t0 = doc.osc.time.first().copied().unwrap_or(0.0);
         let time_at = |k: usize| doc.osc.time.get(k).copied().unwrap_or(0.0) - t0;
         let viz = [
@@ -1354,8 +1365,11 @@ impl App {
             (doc.v3_cursor, doc.v_shown[2], Color32::from_rgb(0, 160, 0), "В3"),
         ];
         if doc.diff_band {
-            ov.band(&painter, ruler_top);
+            ov.band(&painter, ruler_top, plot_right, show_grid);
         }
+        // The ruler's last step (`0x465302`): the stats / plot separator
+        // again, down through the band to the ruler.
+        painter.px_vline(left, client.top()..=ruler_top, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
 
         // ---- визиры (`0x493110`): no shading between В1 and В2 ----
         let v_bottom = if doc.diff_band { ruler_top - 25.0 } else { ruler_top };

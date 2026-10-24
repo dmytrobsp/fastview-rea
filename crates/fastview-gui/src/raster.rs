@@ -72,6 +72,19 @@ impl Canvas {
         out
     }
 
+    /// Enlarged to `w` × `h`, each pixel repeated (a stretch without
+    /// interpolation).
+    pub fn enlarge_nearest(&self, w: usize, h: usize) -> Canvas {
+        let mut out = Canvas::white(w, h);
+        for y in 0..h {
+            let sy = (y * self.h / h.max(1)).min(self.h - 1);
+            for x in 0..w {
+                out.px[y * w + x] = self.px[sy * self.w + (x * self.w / w.max(1)).min(self.w - 1)];
+            }
+        }
+        out
+    }
+
     /// The `w` × `h` region at (x, y), clipped.
     pub fn region(&self, x: usize, y: usize, w: usize, h: usize) -> Canvas {
         let (w, h) = (w.min(self.w.saturating_sub(x)), h.min(self.h.saturating_sub(y)));

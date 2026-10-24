@@ -263,6 +263,9 @@ const S_REPORT: &str = "Отчет сформирован программой F
 const S_COMPANY: &str = "ООО «НТЦ «Механотроника»";
 const S_URL: &str = "www.mtrele.ru";
 
+/// The printed slice's bitmap resolution (`0x405970`, VM).
+const SLICE_PPI: f32 = 136.0;
+
 /// The header/footer font: «Arial» 12 screen px cell height.
 const DECOR_FONT: FontId = FontId::proportional(10.5);
 /// The header/footer line pitch `T` (≈ the cell height of that font).
@@ -334,16 +337,17 @@ impl App {
         let ov = OscView { doc, primary, unit: self.time_unit, f, first, n, left, right, x0, label_col };
         for (li, r) in rows.iter().enumerate() {
             if let Some(bottom) = paged.ruler_before[li] {
-                ov.ruler(&painter, dy + bottom, right);
+                ov.ruler(&painter, dy + bottom, right, g::RULER_H);
             }
             let range = lanes::row_range(doc, r, primary);
             ov.row(&lp, &pp, r, dy + paged.tops[li], range);
         }
-        ov.ruler(&painter, dy + total, right);
+        ov.ruler(&painter, dy + total, right, g::RULER_H + if doc.diff_band { g::DIFF_BAND_H } else { 0.0 });
         let ruler_top = dy + total - g::RULER_H;
         if doc.diff_band {
-            ov.band(&painter, ruler_top);
+            ov.band(&painter, ruler_top, right, self.show_grid);
         }
+        painter.vline(left, dy..=ruler_top, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
         let v_bottom = if doc.diff_band { ruler_top - 25.0 } else { ruler_top };
         ov.vizirs(&painter, dy, v_bottom, true);
         let tops: Vec<f32> = paged.tops.iter().map(|t| t + dy).collect();
@@ -455,12 +459,26 @@ impl App {
                 // line at the scale shown in its full colour; a pixel-centre
                 // test would drop the thin ones in a beat pattern, an
                 // average would pale them.
-                let img = if ppp < 1.0 {
-                    let ss = (1.0 / ppp).ceil();
-                    let hi = raster::render(size, ppp * ss, Some(fonts), |ctx| this.paint_osc_slice(ctx, job.di, plan, slice));
-                    hi.shrink_ink(((size.x * ppp).round() as usize).max(1), ((size.y * ppp).round() as usize).max(1))
+                // At `k` px a point, every 1 px line kept in its colour.
+                let at = |k: f32| {
+                    let (w, h) = (((size.x * k).round() as usize).max(1), ((size.y * k).round() as usize).max(1));
+                    if k < 1.0 {
+                        let ss = (1.0 / k).ceil();
+                        raster::render(size, k * ss, Some(fonts), |ctx| this.paint_osc_slice(ctx, job.di, plan, slice)).shrink_ink(w, h)
+                    } else {
+                        raster::render(size, k, Some(fonts), |ctx| this.paint_osc_slice(ctx, job.di, plan, slice))
+                    }
+                };
+                // A real print (`0x405970`): the view's painter into a memory
+                // bitmap (MM_ISOTROPIC, about 136 px an inch — VM: A4 at 600
+                // dpi, 910 px across R) stretched onto R, so a line is a
+                // bitmap pixel wide on paper (VM: 4.4 printer px) and the
+                // text as blocky.
+                let img = if job.dev.dpi > SLICE_PPI && !preview {
+                    let k = rw as f32 / job.dev.dpi * SLICE_PPI / plan.client_w;
+                    at(k).enlarge_nearest(((size.x * ppp).round() as usize).max(1), ((size.y * ppp).round() as usize).max(1))
                 } else {
-                    raster::render(size, ppp, Some(fonts), |ctx| this.paint_osc_slice(ctx, job.di, plan, slice))
+                    at(ppp)
                 };
                 canvas.blit(&Canvas::white(rw, rh), rdev.min.x as i64, rdev.min.y as i64);
                 let img = if img.h > rh { crop(&img, rw, rh) } else { img };

@@ -8392,6 +8392,33 @@ the last row to the grid's bottom); ours stopped with the rows. Now drawn
 there. Small differences left: the submenu opens about 25 px further left
 in the original; ours' menu text renders a little heavier.
 
+### L9.311 — The real print's slice as the original's bitmap; the ruler's rectangle, the band's lines and the separator (screen too); Esc in the comment dialogs  ·  ✅
+W5.1, run: «Печать» to Microsoft Print to PDF (600 dpi, A4) from both,
+the PDFs rendered and compared (kept local: they carry the record).
+- **The slice.** Read (subagent, `0x405970`): the view's ordinary painter
+  draws the slice into a memory bitmap under MM_ISOTROPIC — every pen the
+  screen's, 1 logical px — which a HALFTONE StretchBlt puts on R, then a
+  1 px frame. On the VM the bitmap is 910 px across R (about 136 px an
+  inch): a line is one bitmap pixel in its colour, 4.4 printer px on
+  paper, the text as blocky. Ours drew the page at 600 dpi: lines 2.6
+  printer px, anti-aliased, the grid paler. Now a real print (a device
+  finer than 136 dpi) renders the slice at 136 px an inch and enlarges it
+  pixel for pixel (`Canvas::enlarge_nearest`); the preview keeps its path.
+  The constant is the VM's measurement (the default MM_ISOTROPIC window
+  extent behind it NOT DETERMINED).
+- **The ruler and the band** (`0x464350`, `0x466630`; screen and paper
+  alike): the ruler is a white rectangle with a black 1 px top across the
+  view, 75 px high over the difference band (30 without), black ticks;
+  the band then draws a (100) line across at the ruler's top and the
+  (230) grid on through it; the ruler's last step draws the stats / plot
+  separator again, (100), from the top down to the ruler. Ours put the
+  black line at the ruler's top, blanked the band (grid and separator
+  stopping above it) and drew grey ticks. Now as read; VM: the screen's
+  bottom band identical, the print's too.
+- **Esc in «Комментарии» / the comment editor.** The original closes on
+  Esc (Enter is the edit's new line); ours ignored Esc. Now
+  `comment_dialog_body` takes it as Отмена.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

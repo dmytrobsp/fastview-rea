@@ -370,7 +370,9 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 
 - [ ] W5.1 Real printing through GDI (a printer that writes a file, e.g.
   Microsoft Print to PDF with a fixed output name) — ours against the
-  original's pages.
+  original's pages. Oscillogram page run (L9.308, L9.309, L9.311): bold
+  Cyrillic, the footer, the slice bitmap, the ruler / band — alike; the
+  diagram pages still to print.
 - [x] W5.2 The clipboard formats both put on the clipboard: the same two, and
   the copied document byte-identical but for the original's uninitialised
   `normal_state` (VM run, L9.212).
