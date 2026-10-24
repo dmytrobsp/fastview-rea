@@ -623,7 +623,7 @@ impl App {
         // panels and the windows takes the pointer, and no shortcuts run.
         self.modal_up = dialogs::window_up(ctx);
         if self.modal_up {
-            dialogs::modal_backdrop(ctx, "fv_modal_backdrop", egui::Order::PanelResizeLine);
+            dialogs::backdrop(ctx, "fv_modal_backdrop", egui::Order::PanelResizeLine);
             self.keytips.exit();
         } else if !self.keytips_input(ctx) && self.print.preview.is_none() {
             // Print preview swaps table 128 for MFC's 30997 (`0x102474d9`).
@@ -1611,6 +1611,21 @@ mod window_tests {
         w.press(Primary, Pos2::new(r.left() - 2.0, y), Pos2::new(r.left() - 102.0, y));
         w.idle(2);
         assert_eq!(g(&w).width(), r.width() + 100.0, "the strip drags the divider");
+    }
+
+    /// A message box is modal: with the ОМП message up (VM, «Анализ» with
+    /// nothing entered) Ctrl+C / Ctrl+V do nothing to the document.
+    #[test]
+    fn no_shortcuts_under_a_message_box() {
+        let mut w = Win::new();
+        let ai = w.app.active.unwrap();
+        w.app.docs[ai].selection = [app::ChanKey::Analog(0)].into_iter().collect();
+        w.app.omp_ui.message = Some("Данные для определения места повреждения не введены.".into());
+        w.idle(2);
+        w.run(vec![egui::Event::Copy]);
+        w.idle(1);
+        assert!(!w.app.clip.available(), "nothing copied");
+        assert!(w.app.omp_ui.message.is_some());
     }
 
     /// Enter in an open drop-down picks its highlighted item and the

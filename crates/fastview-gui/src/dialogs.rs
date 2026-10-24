@@ -891,6 +891,14 @@ pub fn win_combo_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut Strin
 /// A transparent full-screen layer at `order` that swallows the pointer
 /// below a modal window (the windows of a higher order stay live).
 pub fn modal_backdrop(ctx: &egui::Context, id: &str, order: egui::Order) {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_modal_pass"), pass));
+    backdrop(ctx, id, order);
+}
+
+/// The layer of [`modal_backdrop`] alone (the frame's own, while a modal
+/// window is up: not itself a reason to be modal).
+pub fn backdrop(ctx: &egui::Context, id: &str, order: egui::Order) {
     let screen = ctx.screen_rect();
     egui::Area::new(egui::Id::new(id)).order(order).fixed_pos(screen.min).show(ctx, |ui| {
         ui.allocate_exact_size(screen.size(), egui::Sense::click_and_drag());
@@ -983,7 +991,11 @@ fn message_icon(p: &egui::Painter, r: Rect, icon: MsgIcon) {
 /// Whether a dialog window (egui's `Order::Middle` layer, where every
 /// `egui::Window` of ours lives or puts its backdrop) was shown last frame.
 pub fn window_up(ctx: &egui::Context) -> bool {
-    ctx.memory(|m| m.areas().visible_layer_ids().iter().any(|l| l.order == egui::Order::Middle))
+    // A backdrop shown in the last pass counts too, whatever its order (a
+    // message box over a dialog sits above the Middle windows).
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<u64>(egui::Id::new("fv_modal_pass"))).is_some_and(|p| p + 1 >= pass)
+        || ctx.memory(|m| m.areas().visible_layer_ids().iter().any(|l| l.order == egui::Order::Middle))
 }
 
 impl App {

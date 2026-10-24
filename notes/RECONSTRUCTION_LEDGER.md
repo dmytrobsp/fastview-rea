@@ -8324,6 +8324,26 @@ level drawn on IA, one notch down, its menu, «Изменить уровень»
 - **The edit's look.** A plain white field with a (100) line at its
   left, right and bottom; ours was egui's framed edit.
 
+### L9.307 — VM: no shortcuts under the ОМП message; «Анализ» with nothing entered; no sideways drag scroll  ·  ✅
+Run (WIN_1999):
+- **«Анализ» with no ОМП data.** Both show «Данные для определения места
+  повреждения не введены.»; the original's button keeps its hot look
+  under the box (the pointer is still over it), ours draws it plain.
+- **Shortcuts under that box.** With it up, Ctrl+C then Ctrl+V do
+  nothing to the original's document (the box is modal); ours copied the
+  selected channel and pasted it behind the box (the merge bar appeared):
+  our modal test counted only Middle-order windows and the message box's
+  backdrop is Foreground (it covers the ОМП dialog). Now every
+  `modal_backdrop` marks the frame modal (`window_up`); the frame's own
+  backdrop (`dialogs::backdrop`) does not. Test
+  `no_shortcuts_under_a_message_box`.
+- **The caption bars' order (spec §1.3).** Not reached: the merge bar
+  needs a paste and the ОМП bar a result; with no ОМП data entered the
+  two cannot show together on WIN_1999.
+- **A channel drag at the right inset (L9.164).** Zoomed in (time on the
+  ruler 0 … 832 ms), a stats drag held 6 px from the view's right edge:
+  neither scrolls sideways.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
