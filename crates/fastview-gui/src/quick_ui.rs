@@ -485,15 +485,15 @@ impl App {
                     p.vline(page.left() + 0.5, page.y_range(), egui::Stroke::new(1.0f32, egui::Color32::from_gray(229)));
                     p.hline(page.x_range(), page.bottom() - 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_gray(229)));
                     p.hline(client.x_range(), page.bottom() + 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_gray(243)));
-                    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(egui::Rect::from_min_max(page.min + egui::vec2(15.0, 10.0), page.max - egui::vec2(15.0, 10.0))), |ui| {
-                        egui::ScrollArea::both().id_salt("quick_page").show(ui, |ui| {
-                            if self.analysis_tab == AnalysisTab::Formula {
-                                self.formula_page_ui(ui);
-                            } else {
-                                self.quick_tab_ui(ui);
-                            }
+                    // A page's template from (154, −1) in the client (VM:
+                    // DIALOG 340's list at 7, 7 DLU lands at 1182, 353).
+                    if self.analysis_tab == AnalysisTab::Formula {
+                        self.formula_page_ui(ui, client.min + egui::vec2(154.0, -1.0));
+                    } else {
+                        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(egui::Rect::from_min_max(page.min + egui::vec2(15.0, 10.0), page.max - egui::vec2(15.0, 10.0))), |ui| {
+                            egui::ScrollArea::both().id_salt("quick_page").show(ui, |ui| self.quick_tab_ui(ui));
                         });
-                    });
+                    }
                     let ok = page_index(self.analysis_tab).is_none_or(|i| self.quick[i].ok_enabled(self.analysis_tab));
                     ok_now = ok;
                     calc = crate::dialogs::win_button_en(ui, at(509.0, 664.0, 75.0, 23.0), "Рассчитать", true, ok).clicked();

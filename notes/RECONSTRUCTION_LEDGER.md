@@ -6978,6 +6978,22 @@ still ours — next. Also: the harness's `analysis` state adds its demo
 formulas only to the demo record (over WIN_1999 they raised a message
 the original never shows).
 
+### L9.250 — «Редактор формул» (DIALOG 340) on its template  ·  ✅
+VM capture of the sheet's formula page: DIALOG 340 (337 × 257 DLU) sits
+with its origin at (154, −1) in the sheet's client — its list at 7, 7 DLU
+lands at (1182, 353), its buttons at 218 DLU at y 696. The list: a (130,
+135, 144) border, a white 25 px header («Название канала», «Формула»)
+with (229) separators 2 px inside each column, columns 120 and 331 px,
+17 px rows ruled in (240) down the whole list; the buttons «Загрузить»,
+«Сохранить», ▲, ▼, «Добавить», «Удалить», «Удалить все» at their
+template rectangles; ▲ / ▼ (bitmap 475's images) are a (136, 0, 20)
+triangle 9 px at its base and 5 rows tall, centred at +11, rows 9–13 of
+the 24 × 23 button (ours drew it black). Ours was an egui frame, grid and
+buttons at our own places. Now the page is drawn on the template (the
+selected row (0, 120, 215) with white text — the classic list highlight,
+not measured: the VM's list was empty); `win_button`'s id includes its
+place (two text-less buttons). The other five pages remain ours — next.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

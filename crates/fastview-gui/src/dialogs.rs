@@ -229,7 +229,7 @@ pub fn win_button(ui: &mut egui::Ui, r: Rect, text: &str, default: bool) -> egui
 /// `win_button`, disabled: a paler face and grey text, deaf to clicks
 /// (the disabled look approximated).
 pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enabled: bool) -> egui::Response {
-    let resp = ui.interact(r, ui.id().with(("fv_btn", text)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let resp = ui.interact(r, ui.id().with(("fv_btn", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let face = r.shrink(1.0);
     if !enabled {
         let p = ui.painter();

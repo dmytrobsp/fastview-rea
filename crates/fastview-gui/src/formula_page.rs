@@ -204,45 +204,73 @@ impl App {
     /// selection, grid lines, no sorting), a double click on the selected
     /// row edits the cell under the pointer, and the seven buttons (never
     /// greyed).
-    pub(crate) fn formula_page_ui(&mut self, ui: &mut egui::Ui) {
-        let w = ui.available_width().min(520.0);
-        let (w0, w1) = (w * 0.25, w * 0.70);
+    /// DIALOG 340 «Редактор формул» on its 337 × 257 DLU template from the
+    /// page's origin `o` (VM: the list at 7, 7 — 316 × 203 — with a (130,
+    /// 135, 144) border, a 25 px header with (229) separators 2 px inside
+    /// each column, columns 120 and 331 px, 17 px rows ruled in (240)
+    /// down the whole list; the buttons at 218).
+    pub(crate) fn formula_page_ui(&mut self, ui: &mut egui::Ui, o: egui::Pos2) {
+        use crate::dialogs::{dlu, win_button, DLG_FONT};
+        use egui::{Color32, Rect, Stroke};
+        let origin = Rect::from_min_size(o, egui::Vec2::ZERO);
+        let list = dlu(origin, 7, 7, 316, 203);
+        let inner = list.shrink(1.0);
+        let p = ui.painter().clone();
+        p.rect_filled(list, 0.0, Color32::from_rgb(130, 135, 144));
+        p.rect_filled(inner, 0.0, Color32::WHITE);
+        let (hdr_h, row_h) = (25.0, 17.0);
+        let cols = [(0.0, 120.0), (120.0, 331.0)];
+        let grid = Stroke::new(1.0f32, Color32::from_gray(240));
+        for (x, w) in cols {
+            p.vline(inner.left() + x + w - 0.5, inner.top() + hdr_h..=inner.bottom(), grid);
+        }
+        let mut y = inner.top() + hdr_h + row_h - 0.5;
+        while y < inner.bottom() {
+            p.hline(inner.x_range(), y, grid);
+            y += row_h;
+        }
+        for ((x, w), t) in cols.into_iter().zip(["Название канала", "Формула"]) {
+            let r = Rect::from_min_size(inner.min + egui::vec2(x, 0.0), egui::vec2(w, hdr_h));
+            p.vline(r.right() - 1.5, r.y_range(), Stroke::new(1.0f32, Color32::from_gray(229)));
+            p.with_clip_rect(r).text(r.left_center() + egui::vec2(6.0, 0.0), egui::Align2::LEFT_CENTER, t, DLG_FONT, Color32::BLACK);
+        }
         let mut double = None;
         let mut pressed_outside = false;
-        egui::Frame::group(ui.style()).show(ui, |ui| {
-            ui.set_width(w);
-            ui.set_min_height(300.0);
-            egui::Grid::new("fp_list").num_columns(2).min_col_width(0.0).spacing([0.0, 0.0]).show(ui, |ui| {
-                cell(ui, w0, "Название канала", false, true);
-                cell(ui, w1, "Формула", false, true);
-                ui.end_row();
-                let p = &mut self.formula_page;
-                for i in 0..p.rows.len() {
-                    let sel = p.selected == Some(i);
-                    for (col, width) in [(0usize, w0), (1, w1)] {
-                        let editing = matches!(&p.edit, Some((r, c, _)) if *r == i && *c == col);
-                        if editing {
-                            let Some((_, _, text)) = p.edit.as_mut() else { continue };
-                            let r = ui.add_sized([width, 18.0], egui::TextEdit::singleline(text).frame(false));
-                            r.request_focus();
-                            if ui.input(|inp| inp.pointer.any_pressed()) && !r.hovered() {
-                                pressed_outside = true;
-                            }
-                        } else {
-                            let text = if col == 0 { &p.rows[i].0 } else { &p.rows[i].1 };
-                            let r = cell(ui, width, text, sel, false);
-                            if r.clicked() {
-                                p.selected = Some(i);
-                            }
-                            if r.double_clicked() {
-                                double = Some(col);
-                            }
-                        }
+        let rows_rect = Rect::from_min_max(egui::pos2(inner.left(), inner.top() + hdr_h), inner.max);
+        let fp = &mut self.formula_page;
+        for i in 0..fp.rows.len() {
+            let top = rows_rect.top() + row_h * i as f32;
+            if top + row_h > rows_rect.bottom() {
+                break;
+            }
+            let sel = fp.selected == Some(i);
+            let row = Rect::from_min_size(egui::pos2(inner.left(), top), egui::vec2(cols[1].0 + cols[1].1 - 1.0, row_h - 1.0));
+            if sel {
+                p.rect_filled(row, 0.0, Color32::from_rgb(0, 120, 215));
+            }
+            for (col, (x, w)) in cols.into_iter().enumerate() {
+                let r = Rect::from_min_size(egui::pos2(inner.left() + x, top), egui::vec2(w - 1.0, row_h - 1.0));
+                let editing = matches!(&fp.edit, Some((er, ec, _)) if *er == i && *ec == col);
+                if editing {
+                    let Some((_, _, text)) = fp.edit.as_mut() else { continue };
+                    let resp = ui.put(r, egui::TextEdit::singleline(text).frame(false).font(DLG_FONT).margin(egui::Margin::symmetric(5.0, 1.0)));
+                    resp.request_focus();
+                    if ui.input(|inp| inp.pointer.any_pressed()) && !resp.hovered() {
+                        pressed_outside = true;
                     }
-                    ui.end_row();
+                    continue;
                 }
-            });
-        });
+                let text = if col == 0 { &fp.rows[i].0 } else { &fp.rows[i].1 };
+                p.with_clip_rect(r).text(r.left_center() + egui::vec2(6.0, 0.0), egui::Align2::LEFT_CENTER, text, DLG_FONT, if sel { Color32::WHITE } else { Color32::BLACK });
+                let resp = ui.interact(r, ui.id().with(("fp_cell", i, col)), egui::Sense::click());
+                if resp.clicked() {
+                    fp.selected = Some(i);
+                }
+                if resp.double_clicked() {
+                    double = Some(col);
+                }
+            }
+        }
         // The edit starts on the selection mark's row, in the clicked column.
         if let (Some(col), Some(row)) = (double, self.formula_page.selected) {
             self.fp_commit_edit();
@@ -253,67 +281,49 @@ impl App {
         if self.formula_page.edit.is_some() && (pressed_outside || ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape))) {
             self.fp_commit_edit();
         }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui.button("Загрузить").clicked() {
-                if let Some(path) = rfd::FileDialog::new().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).pick_file() {
-                    if let Ok(bytes) = std::fs::read(&path) {
-                        let text = fvb_core::comtrade::decode_bytes(&bytes, self.encoding);
-                        self.fp_load_rows(fvb_core::quick::parse_frm(&text));
-                    }
+        if win_button(ui, dlu(origin, 7, 218, 52, 14), "Загрузить", false).clicked() {
+            if let Some(path) = rfd::FileDialog::new().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).pick_file() {
+                if let Ok(bytes) = std::fs::read(&path) {
+                    let text = fvb_core::comtrade::decode_bytes(&bytes, self.encoding);
+                    self.fp_load_rows(fvb_core::quick::parse_frm(&text));
                 }
             }
-            if ui.button("Сохранить").clicked() {
-                self.fp_update();
-                if let Some(path) = rfd::FileDialog::new().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).set_file_name("*.frm").save_file() {
-                    let text = fvb_core::quick::write_frm(&self.formula_page.rows);
-                    let _ = std::fs::write(path, fvb_core::comtrade::encode_text(&text, fvb_core::comtrade::Encoding::Cp1251));
-                }
+        }
+        if win_button(ui, dlu(origin, 63, 218, 52, 14), "Сохранить", false).clicked() {
+            self.fp_update();
+            if let Some(path) = rfd::FileDialog::new().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).set_file_name("*.frm").save_file() {
+                let text = fvb_core::quick::write_frm(&self.formula_page.rows);
+                let _ = std::fs::write(path, fvb_core::comtrade::encode_text(&text, fvb_core::comtrade::Encoding::Cp1251));
             }
-            if tri_button(ui, true).clicked() {
-                self.fp_move(true);
-            }
-            if tri_button(ui, false).clicked() {
-                self.fp_move(false);
-            }
-            if ui.button("Добавить").clicked() {
-                self.open_formula_dlg();
-            }
-            if ui.button("Удалить").clicked() {
-                self.fp_delete();
-            }
-            if ui.button("Удалить все").clicked() {
-                self.fp_delete_all();
-            }
-        });
+        }
+        if tri_button(ui, dlu(origin, 120, 218, 16, 14), true).clicked() {
+            self.fp_move(true);
+        }
+        if tri_button(ui, dlu(origin, 140, 218, 16, 14), false).clicked() {
+            self.fp_move(false);
+        }
+        if win_button(ui, dlu(origin, 159, 218, 52, 14), "Добавить", false).clicked() {
+            self.open_formula_dlg();
+        }
+        if win_button(ui, dlu(origin, 215, 218, 52, 14), "Удалить", false).clicked() {
+            self.fp_delete();
+        }
+        if win_button(ui, dlu(origin, 271, 218, 52, 14), "Удалить все", false).clicked() {
+            self.fp_delete_all();
+        }
     }
 }
 
-/// A list-view cell: left-aligned text, the selected row highlighted, a
-/// grid line at the bottom and right; a header cell in bold.
-fn cell(ui: &mut egui::Ui, width: f32, text: &str, selected: bool, header: bool) -> egui::Response {
-    let (rect, r) = ui.allocate_exact_size(egui::Vec2::new(width, 18.0), if header { egui::Sense::hover() } else { egui::Sense::click() });
-    let v = ui.visuals();
-    if selected {
-        ui.painter().rect_filled(rect, 0.0, v.selection.bg_fill);
+/// ↑ 1018 / ↓ 1019 (`0x4860a0`): bitmap 475's icons 6 / 5 on a push
+/// button — a (136, 0, 20) triangle 9 px at the base and 5 rows tall,
+/// centred at +11, rows 9–13 of the 24 × 23 button (VM).
+fn tri_button(ui: &mut egui::Ui, r: egui::Rect, up: bool) -> egui::Response {
+    let resp = crate::dialogs::win_button(ui, r, "", false);
+    let ink = egui::Color32::from_rgb(136, 0, 20);
+    for k in 0..5 {
+        let half = if up { k } else { 4 - k } as f32;
+        let row = egui::Rect::from_min_size(egui::pos2(r.left() + 11.0 - half, r.top() + 9.0 + k as f32), egui::vec2(2.0 * half + 1.0, 1.0));
+        ui.painter().rect_filled(row, 0.0, ink);
     }
-    let grid = egui::Stroke::new(1.0f32, v.widgets.noninteractive.bg_stroke.color);
-    ui.painter().hline(rect.x_range(), rect.bottom(), grid);
-    ui.painter().vline(rect.right(), rect.y_range(), grid);
-    let color = if selected { v.selection.stroke.color } else { v.text_color() };
-    let font = if header { egui::FontId::proportional(13.0) } else { egui::FontId::proportional(12.5) };
-    let galley = ui.painter().layout_no_wrap(text.to_string(), font, color);
-    ui.painter().with_clip_rect(rect).galley(rect.left_center() + egui::Vec2::new(3.0, -galley.size().y / 2.0), galley, color);
-    r
-}
-
-/// ↑ 1018 / ↓ 1019 (`0x4860a0`): bitmap 475's icons 6 / 5 — a filled black
-/// triangle, 9 px at the base and 5 rows tall, centred in 16 × 16.
-fn tri_button(ui: &mut egui::Ui, up: bool) -> egui::Response {
-    let r = ui.add(egui::Button::new("").min_size(egui::vec2(24.0, 20.0)));
-    let c = r.rect.center();
-    let (tip, base) = if up { (c.y - 2.5, c.y + 2.5) } else { (c.y + 2.5, c.y - 2.5) };
-    let pts = vec![egui::pos2(c.x, tip), egui::pos2(c.x + 4.5, base), egui::pos2(c.x - 4.5, base)];
-    ui.painter().add(egui::Shape::convex_polygon(pts, egui::Color32::BLACK, egui::Stroke::NONE));
-    r
+    resp
 }
