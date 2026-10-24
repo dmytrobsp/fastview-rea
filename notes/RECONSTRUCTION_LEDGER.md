@@ -7489,7 +7489,13 @@ Both programs can now run the same scenario on the same machine (W4.3).
 Residual:
 - Ours repaints continuously on the VM (about 13 frames a second); the
   cause of the repeated repaint request is not traced.
-- Ours starts at its default 1320 × 860 with no saved placement.
+- Ours starts at its default 1320 × 860 with no saved placement. Given
+  the original's (maximised), ours now opens maximised: egui-winit applies
+  the builder's size and position after creating the window, which takes
+  it out of maximised on Windows, so `softrun` maximises again. Side by
+  side on the VM, the two windows' layouts coincide; the pixel differences
+  are glyph rasterisation, the waveforms' column sampling and 1 px offsets
+  of the planes' grids (W4.5).
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

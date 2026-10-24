@@ -60,6 +60,11 @@ impl ApplicationHandler for Soft {
                 return;
             }
         };
+        // The builder's size and position, applied after creation, take a
+        // window out of maximised on Windows: maximised again.
+        if self.viewport.maximized == Some(true) {
+            window.set_maximized(true);
+        }
         trace(&format!("window {:?} visible {:?}", window.inner_size(), window.is_visible()));
         let state = egui_winit::State::new(self.ctx.clone(), egui::ViewportId::ROOT, &window, Some(window.scale_factor() as f32), None, Some(16384));
         egui_winit::update_viewport_info(&mut self.info, &self.ctx, &window, true);
