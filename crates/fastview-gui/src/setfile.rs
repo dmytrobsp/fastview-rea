@@ -1027,6 +1027,32 @@ mod tests {
         app.save_doc_to(di, Path::new(target)).expect("saved");
     }
 
+    /// `FV_OMP_DUMP=<record>,<file.omp>,<target> cargo test omp_dump`: an
+    /// isolated-neutral description (channels 0–2 the currents, 3–5 the line
+    /// voltages, Inom 1000, one 10 km section R 0.1 / X 0.4) written as an
+    /// `.omp`, run on the record, the record saved as `target` — for a
+    /// comparison with the original loading the same file (W4.2).
+    #[test]
+    fn omp_dump() {
+        let Ok(v) = std::env::var("FV_OMP_DUMP") else { return };
+        let parts: Vec<&str> = v.split(',').collect();
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, Path::new(parts[0]));
+        let ids: Vec<String> = app.docs[di].osc.analog.iter().map(|c| c.id.clone()).collect();
+        let mut p = fvb_core::omp_params::OmpParams::default();
+        let st = &mut p.stations[0];
+        st.inom = std::env::var("FV_OMP_INOM").unwrap_or_else(|_| "1000".into());
+        (st.ia, st.ib, st.ic) = (ids[0].clone(), ids[1].clone(), ids[2].clone());
+        (st.uab, st.ubc, st.uca) = (ids[3].clone(), ids[4].clone(), ids[5].clone());
+        st.sections.push(fvb_core::omp_params::SectionParams { length: "10".into(), supports: "30".into(), r: "0.1".into(), x: "0.4".into(), ..Default::default() });
+        std::fs::write(parts[1], fvb_core::recset::omp_file_bytes(&p)).expect("omp written");
+        app.docs[di].omp.params = p;
+        app.dispatch(crate::app::Command::OmpAnalysis);
+        eprintln!("ОМП: {:?}", app.omp_ui.bar);
+        app.save_doc_to(di, Path::new(parts[2])).expect("saved");
+    }
+
     /// `FV_CLIP_DUMP=<record>,<file> cargo test clip_dump`: open a record,
     /// select its first analog channel and write the clipboard document as
     /// Copy puts it up (UTF-16LE, a NUL at the end) — for a byte compare

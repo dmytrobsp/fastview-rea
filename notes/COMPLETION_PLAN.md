@@ -267,7 +267,10 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 - [ ] W4.2 File-level comparisons (Save As of WIN_1999, DOC_1999, BINARY:
   `.cfg` / `.dat` / `.set` byte-identical since L9.172; the clipboard document
   (L9.212), the `.set` after channel-menu edits (L9.213) and after a quick
-  analysis (L9.214) too; next: ОМП channels) (started 2026-10-24: WIN_1999 saved by
+  analysis (L9.214) too; next: ОМП — a run on WIN_1999 with a full
+  isolated description (`omp_dump`, an `.omp` of ours loaded in the
+  original) shows no result bar and no flag lanes in the original but a
+  result in ours: being read) (started 2026-10-24: WIN_1999 saved by
   both through Save As — `FV_SAVE_AS` makes ours; differences found: Ctrl+S
   always asks with a lowercase name, the same-name save rewrites the
   record, and the `.cfg` / `.dat` / `.set` formats, see the save-path read
