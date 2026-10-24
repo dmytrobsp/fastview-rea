@@ -94,9 +94,9 @@ pub fn normalize(raw: &str) -> Unit {
         _ if s == "Ом" || s == "Ω" || u == "OHM" => canon("Ohm"),
         _ if matches!(u.as_str(), "Ф" | "F") => canon("F"),
         _ if matches!(u.as_str(), "ГН" | "H") => canon("H"),
-        // Degrees, nominal and per-unit drop the prefix again.
-        // (String 3105, a further spelling, is not decoded.)
-        _ if matches!(s.as_str(), "гр" | "ГР" | "Гр" | "гР") || u == "DEG" => plain("DEG", false),
+        // Degrees, nominal and per-unit drop the prefix again; string 3105
+        // «°» is the fifth degree spelling (`0x42314c`).
+        _ if matches!(s.as_str(), "гр" | "ГР" | "Гр" | "гР" | "°") || u == "DEG" => plain("DEG", false),
         _ if matches!(s.as_str(), "н" | "Н" | "ном" | "Ном" | "НОМ") || u == "NOM" => plain("nom", false),
         _ if matches!(u.as_str(), "О. Е." | "О.Е." | "ОЕ" | "О Е" | "P. U." | "P.U." | "PU" | "P U") => plain("p. u.", false),
         _ if matches!(u.as_str(), "ГЦ" | "HZ") => canon("Hz"),
@@ -214,6 +214,7 @@ mod tests {
         assert_eq!(ru("W"), "Вт");
         assert_eq!(ru("nom"), "ном");
         assert_eq!(ru("DEG"), "°");
+        assert_eq!(normalize("°").unit, "DEG", "string 3105");
         assert_eq!(ru("S"), "См");
         // Plain substring replacement in table order.
         assert_eq!(ru("p. u."), "o. e.");

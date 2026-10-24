@@ -525,7 +525,17 @@ pub struct Loading {
 
 /// Parse a `.cfg` / `.cff` / `.osc` record.
 fn parse_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::comtrade::Progress>) -> LoadResult {
-    if path.to_string_lossy().to_lowercase().ends_with(".cff") {
+    let lower = path.to_string_lossy().to_lowercase();
+    if lower.ends_with(".sto") {
+        // A Configurator-MT record (`0x4563b0`): the name re-built with a
+        // lowercase ".sto" (`0x44c710`), opened, its header read by the
+        // converter (OscillHelper.dll — ⛔, no sample) — never a `.cfg`
+        // beside it. A failed open or header read throws string 124 with
+        // that path (`0x4564cd`–`0x4564fe`); ours stops there.
+        let sto = path.with_extension("sto");
+        return Err(fvb_core::comtrade::ComtradeError::Plain(format!("Ошибка чтения файла {}", sto.display())));
+    }
+    if lower.ends_with(".cff") {
         std::fs::read(path)
             .map_err(|e| fvb_core::comtrade::ComtradeError::Io(e.to_string()))
             .and_then(|b| fvb_core::comtrade::parse_cff_progress(&b, enc, prog))
@@ -1462,8 +1472,10 @@ pub struct App {
     pub finder: Option<crate::finder::Finder>,
     /// The window title last sent to the viewport.
     pub window_title: String,
-    /// `-Dst <dir>`: the folder of the DST description files.
-    pub dst_dir: Option<std::path::PathBuf>,
+    /// `-Dst <file>` (app+0x118): the `.dst` description the next `.sto`
+    /// open uses as is (`0x45646b`); emptied by every open that gets past
+    /// the `.sto` step (`0x44f05a`).
+    pub dst_file: Option<std::path::PathBuf>,
     /// The open oscillogram context menu, latched at the right-click.
     pub lane_menu: Option<crate::lanes::LaneMenu>,
     /// Bumped on every right-click so each menu gets a fresh popup area.
@@ -1612,7 +1624,7 @@ impl App {
             mru: Vec::new(),
             merge: None,
             merge_drag: None,
-            dst_dir: None,
+            dst_file: None,
             lane_menu: None,
             lane_menu_serial: 0,
             lane_menu_eat: false,
@@ -2309,6 +2321,11 @@ impl App {
         if self.loading.iter().any(|l| same(&l.path)) {
             return;
         }
+        // Past the `.sto` step every open empties `-Dst` (`0x44f05a`); a
+        // `.sto` stops before it here (its converter ⛔).
+        if !path.to_string_lossy().to_lowercase().ends_with(".sto") {
+            self.dst_file = None;
+        }
         let (tx, rx) = std::sync::mpsc::channel();
         let (p, enc) = (path.to_path_buf(), self.encoding);
         let progress = std::sync::Arc::new(fvb_core::comtrade::Progress::default());
@@ -2374,6 +2391,7 @@ impl App {
             // The reader's exception is posted to the frame (`0x475680`,
             // message 0x40a) and reported in an MB_OK box (`0x4756e0`): its
             // text "<message> - <file>" (`0x42dfe0`, the file as detail).
+            Err(fvb_core::comtrade::ComtradeError::Plain(m)) => self.dlg.push_alert(m),
             Err(e) => self.dlg.push_alert(format!("{e} - {}", path.display())),
         }
     }
@@ -3237,6 +3255,19 @@ mod tests {
                 assert!(b.characteristics.iter().all(|c| c.dimension == dim), "{}", b.name);
             }
         }
+    }
+
+    /// A `.sto` (`0x4563b0`): never the `.cfg` beside it; string 124 with
+    /// the name ending in a lowercase ".sto", shown as it is.
+    #[test]
+    fn a_sto_record_reports_124_alone() {
+        let mut app = App::new();
+        let p = std::path::Path::new("/r/Запись.STO");
+        let r = parse_file(p, Encoding::Cp1251, None);
+        assert!(matches!(&r, Err(fvb_core::comtrade::ComtradeError::Plain(m)) if m == "Ошибка чтения файла /r/Запись.sto"));
+        app.finish_load(p, r);
+        assert_eq!(app.dlg.alert(), Some("Ошибка чтения файла /r/Запись.sto"), "no \" - <file>\" detail");
+        assert!(app.docs.is_empty());
     }
 
     /// `0x416ed6`: quick analysis evaluates the whole list; an old formula

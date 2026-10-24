@@ -98,7 +98,7 @@ Batches, in this order (the size of the unread code, user visibility):
 - [ ] **W1.5b** Comments bound by display name at every paint (a rename hides a level / area; the `.set` keeps the old name) — confirm on the VM (put a level on Ia, rename Ia in «Каналы», save, look), then rebind ours.
 - [x] **W1.6** Small windows — read (L9.178): About in the original's layout, the finder's reselect, the bar's labels.
 - [x] **W1.7** The unlabelled large functions — labelled and read (L9.176); the coefficient dialog fixed.
-- [ ] **W1.7b** From W1.7 — done in L9.198: the pasted channel's vector phasor, OSC2 channel lines, formula channels as group members, the member paint order, the dissolve after an evaluation. Left: the `.sto` open flow's messages and `-Dst` as a file (reader stays ⛔).
+- [x] **W1.7b** From W1.7 — done in L9.198: the pasted channel's vector phasor, OSC2 channel lines, formula channels as group members, the member paint order, the dissolve after an evaluation. The `.sto` open flow's messages and `-Dst` as a file: L9.207 (the converter stays ⛔).
 - [x] **W1.8** The medium functions (50–149 instructions; 453 uncited on 2026-10-24 night) — the same way, in ten batches (`coverage.py --min 50`, split by area; the unlabelled ones by address):
   - [x] B1 unlabelled `0x4035d0`–`0x42cdb0` (58) — L9.181
   - [x] B2 unlabelled `0x42d0f0`–`0x45a720` (58) — L9.182
@@ -133,7 +133,7 @@ items (VM ones also in W4.4):
   `.set` formula channels outside the bar); the `.cff` cancelled during its
   split shows «Неправильный формат файла» (ours silent).
 - [ ] W2.6 L9.34 — MakeUpper on Cyrillic units («МВт»), «ном»
-  vector-eligibility (VM) (binary32 with «кВ»: settled, L9.182); string 3105's «гр» spelling (static).
+  vector-eligibility (VM) (binary32 with «кВ»: settled, L9.182); string 3105 is «°», a degree spelling (done, L9.207).
 - [ ] W2.7 L9.37 — the preview buttons' sizes (static: done, L9.202 — the
   page buttons small); the preview's keytips (P, QI, QO, 1, X, V, C; panels
   ZP, ZZ, ZV — `0x100fccec`); QAT / app button / MDI tabs during preview (VM).

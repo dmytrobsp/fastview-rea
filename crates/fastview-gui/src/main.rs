@@ -77,8 +77,8 @@ fn main() -> eframe::Result<()> {
             app.print.fonts = fonts;
             let ctx = cc.egui_ctx.clone();
             app.instance = inst_dir.as_deref().and_then(|d| instance::serve(d, move || ctx.request_repaint()));
-            if let Some(dir) = &args.dst {
-                app.dst_dir = Some(dir.clone());
+            if let Some(f) = &args.dst {
+                app.dst_file = Some(f.clone());
             }
             if args.find {
                 app.dispatch(app::Command::ToggleExplorer);
@@ -345,18 +345,23 @@ struct StartupArgs {
     files: Vec<std::path::PathBuf>,
 }
 
+/// `InitInstance` (`0x4483f0`): `-Dst <file>` is looked for, ignoring case,
+/// only at argv[2] … argv[argc − 2] (`0x44872c`–`0x44876d`), its value kept
+/// as given (a later one wins); `-Find` is a case-sensitive " -Find " in the
+/// command line after the program name (`0x4487da` — never the first or
+/// the last argument); the file is MFC's: the first argument that does not
+/// start with '-' or '/', only one.
 fn startup_args(args: impl Iterator<Item = String>) -> StartupArgs {
+    let args: Vec<String> = args.collect();
     let mut out = StartupArgs::default();
-    let mut args = args.peekable();
-    while let Some(a) = args.next() {
-        if a.eq_ignore_ascii_case("-dst") {
-            out.dst = args.next().map(Into::into);
-        } else if a.eq_ignore_ascii_case("-find") {
-            out.find = true;
-        } else {
-            out.files.push(a.into());
+    let inner = 1..args.len().saturating_sub(1);
+    for j in inner.clone() {
+        if args[j].eq_ignore_ascii_case("-dst") {
+            out.dst = Some(args[j + 1].clone().into());
         }
     }
+    out.find = inner.into_iter().any(|j| args[j] == "-Find");
+    out.files = args.iter().find(|a| !a.starts_with('-') && !a.starts_with('/')).map(|a| vec![a.into()]).unwrap_or_default();
     out
 }
 
@@ -487,8 +492,12 @@ mod tests {
 
     #[test]
     fn command_line_switches() {
-        let a = startup_args(["-Dst", "/d", "-FIND", "x.cfg"].into_iter().map(String::from));
-        assert_eq!(a, StartupArgs { dst: Some("/d".into()), find: true, files: vec!["x.cfg".into()] });
+        let args = |v: &[&str]| startup_args(v.iter().map(|s| s.to_string()));
+        assert_eq!(args(&["x.sto", "-dst", "d.dst", "-Find", "y.cfg"]), StartupArgs { dst: Some("d.dst".into()), find: true, files: vec!["x.sto".into()] });
+        // `-Dst` first: not looked for there, its value becomes the file.
+        assert_eq!(args(&["-Dst", "d.dst", "x.sto"]), StartupArgs { dst: None, find: false, files: vec!["d.dst".into()] });
+        // `-Find` is case-sensitive, never the first or the last argument.
+        assert!(!args(&["x.cfg", "-FIND", "y"]).find && !args(&["x.cfg", "-Find"]).find);
     }
 }
 

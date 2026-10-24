@@ -21,6 +21,10 @@ pub enum ComtradeError {
     /// type, a `.cff` without CFG or DAT section, a bad `.osc`).
     #[error("Неправильный формат файла")]
     Format,
+    /// A CFastViewException's own text, shown alone (`0x4186a0`): the
+    /// `.sto` open's messages carry no " - <file>" detail.
+    #[error("{0}")]
+    Plain(String),
 }
 
 /// One analog channel definition and its samples (already scaled to primary

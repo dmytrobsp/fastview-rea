@@ -6126,6 +6126,40 @@ extended.
 Residual: the menu's language follows the system's (ours fixed English);
 a disabled bar's menu not checked.
 
+### L9.207 — The `.sto` open up to the converter; `-Dst` a file used once; the command line as MFC's; «°» a degree spelling  ·  ✅ (the converter ⛔)
+Read (background agent; by hand where cited):
+- The `.sto` open `0x4563b0` (from OnOpenDocument `0x44ee70` when the
+  lowercased last four characters are ".sto"): the name re-built with a
+  lowercase ".sto" (`0x44c710` strips .cfg / .osc / .sto / .zip / .cff),
+  opened read-only (`0x4564bf`); a failure throws string 124 «Ошибка
+  чтения файла %s» with that name (`0x4564cd`–`0x4564fe`), as does a
+  failed header read (GetInfoFromStoHeader, OscillHelper.dll). The rest —
+  `-Dst` taken as the `.dst` file as is (`0x45646b`), else the `.dst`
+  search (`0x455040`: the `.sto`'s folder, then the settings' folder,
+  every `*.dst` through CheckDstCompatibility), the file dialog (125 /
+  126; Cancel: no box), 135 on a bad pick, ReadFromXml, the temp folder
+  `Fast_View_%I64X`, ConvertSto2Comtrade — needs the converter and a
+  sample (⛔). The catch `0x44f3d4` posts the exception; its box shows the
+  message alone (`0x4186a0`), no " - <file>". Every open past this step
+  empties `-Dst` (`0x44f05a`). OnCloseDocument `0x44bf90`: a modified
+  `.sto` asks 190 (OK / Cancel) — unreachable while ours cannot open one.
+- `InitInstance` (`0x44872c`–`0x44876d`): "-Dst" (ignoring case) only at
+  argv[2] … argv[argc − 2], the next argument stored as is (app+0x118, a
+  `.dst` FILE); `-Find` a case-sensitive " -Find " after the program name
+  (`0x4487da`); the file is MFC's CCommandLineInfo's — the first argument
+  not starting with '-' or '/', one only.
+- The unit normaliser: after the four «гр» spellings, string 3105 «°»
+  (`0x42314c`) — DEG.
+Ours ran a `.sto` through the `.cfg` reader (a `<stem>.cfg` beside it
+opened under the `.sto` name, else an English message), kept `-Dst` as an
+unused folder, took the switches anywhere and opened every other argument
+as a file, and left «°» unknown. Now `parse_file` stops a `.sto` with 124
+as `ComtradeError::Plain` (shown alone), `App::dst_file` emptied by every
+other open, `startup_args` as read, «°» → DEG. Tests
+`a_sto_record_reports_124_alone`, `command_line_switches`, the units test.
+Residual (⛔): everything from the header read on — the converter
+(OscillHelper.dll could be read, but nothing to verify it against).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
