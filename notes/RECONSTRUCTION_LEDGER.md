@@ -8278,8 +8278,8 @@ Run (WIN_1999):
   every item, disabled or not (separators skipped). Ours skipped the
   disabled ones (L9.146's reading). Now `popmenu::step` and the view
   menus' `MenuKeys` stop on every row, Enter on a disabled one does
-  nothing, and a disabled row under the keyboard or the pointer gets
-  `popmenu::grey_bar` (the hot bar in greys as sampled). Test
+  nothing, and a disabled row under the keyboard gets `popmenu::grey_bar`
+  (the hot bar in greys as sampled) — under the pointer nothing (VM). Test
   `popups_follow_the_keyboard` updated.
 - **The ОМП channel drop-down (spec §8.4).** After «Дифференциальные
   токи» (both arms IA / IB / IC), «Параметры ОМП»'s Ia cell lists the six

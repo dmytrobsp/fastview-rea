@@ -199,7 +199,7 @@ pub(crate) fn hot_bar(p: &egui::Painter, r: Rect) {
     p.px_vline(r.right() - 1.0, r.y_range(), Stroke::new(1.0f32, Color32::from_rgb(195, 170, 121)));
 }
 
-/// A disabled item's bar under the pointer or the keyboard: the hot bar
+/// A disabled item's bar under the keyboard: the hot bar
 /// in greys (VM: a (212) top, (195) sides, 250 to 231 above the middle,
 /// 210 to 224 below, a (230) inner bottom line, a (222) bottom).
 pub(crate) fn grey_bar(p: &egui::Painter, r: Rect) {
@@ -257,13 +257,13 @@ pub fn mark_item_icon(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enable
     let size = Vec2::new(COL + galley.size().x + 10.0 + keys_w, 21.0);
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let row = Rect::from_x_y_ranges(ui.max_rect().x_range(), rect.y_range());
-    if resp.hovered() || hot {
-        let bar = Rect::from_min_max(row.min, Pos2::new(row.right(), row.top() + 22.0));
-        if enabled {
-            hot_bar(ui.painter(), bar);
-        } else {
-            grey_bar(ui.painter(), bar);
-        }
+    // A disabled row: the grey bar under the keyboard only, nothing under
+    // the pointer (VM).
+    let bar = Rect::from_min_max(row.min, Pos2::new(row.right(), row.top() + 22.0));
+    if enabled && (resp.hovered() || hot) {
+        hot_bar(ui.painter(), bar);
+    } else if !enabled && hot {
+        grey_bar(ui.painter(), bar);
     }
     let col = if enabled { MFC_TEXT } else { MFC_GREY };
     let bx = Rect::from_min_size(Pos2::new(row.left() + 2.0, rect.top() + 1.0), Vec2::splat(20.0));
