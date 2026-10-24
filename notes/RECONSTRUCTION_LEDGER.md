@@ -6673,6 +6673,21 @@ L9.18), no message. Ours raised a 4 s toast for each («Загружена
 осциллограмма: …», …); those are gone, the toast kept for clipboard
 failures and our own extra commands (demo, CSV, archive, image, `.fvb`).
 
+### L9.234 — The document window's frame: the border, a 19 px tab row, the tab colour's diagonal gradient, the tab's ✕  ·  ✅
+Sampled on the VM (L9.232's run, Office 2007 Blue): the MDI area has a 1 px
+(185, 208, 237) border on every side; its tab row is 19 px with that
+colour as its bottom line; the child frame in the document's tab colour
+is a linear gradient along the diagonal, from the tab colour at the top
+left to 35 lighter per channel at the bottom right ((255, 220, 120) →
+(255, 254, 155), clamped); the tab's close button is two 2 px diagonals
+in (86, 125, 177). Ours had the band's shade for the border (clipped), a
+22 px tab row stretching its panel, the tab colour flat, a grey «✕»
+glyph. Now `view_oscillogram` paints the border (Blue) and the gradient
+mesh, the tabs are 19 px with the ▾ button held to that height, and
+`doc_tabs` draws the ✕ so; every row of the frame lands on the VM's.
+Residual: the other looks' border colours; the label's weight (the active
+tab is bold in the original too, ours heavier — fonts, W6).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

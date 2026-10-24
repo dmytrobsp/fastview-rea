@@ -712,6 +712,7 @@ impl App {
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(pal.ribbon_top).stroke(edge).inner_margin(egui::Margin::same(1.0)))
             .show(ctx, |ui| {
+                ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                 egui::TopBottomPanel::top("fv_doc_tabs")
                     .exact_height(20.0)
                     .show_separator_line(false)
@@ -726,6 +727,10 @@ impl App {
                         mesh.add_triangle(0, 1, 2);
                         mesh.add_triangle(0, 2, 3);
                         ui.painter().add(egui::Shape::mesh(mesh));
+                        // The row's bottom line (VM, Blue: (185, 208, 237)).
+                        if self.skin == crate::theme::Skin::Blue {
+                            ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(185, 208, 237)));
+                        }
                         self.doc_tabs(ui);
                     });
                 let (r, g, b) = crate::app::TAB_COLORS[self.active_doc().and_then(|d| d.tab_color).unwrap_or(0)];
@@ -734,8 +739,28 @@ impl App {
                     // top — round the view's sunken client edge (VM: (160,
                     // 160, 160) / (105, 105, 105) at the top and left, white /
                     // (227, 227, 227) at the right and bottom).
-                    .frame(egui::Frame::none().fill(egui::Color32::from_rgb(r, g, b)).inner_margin(egui::Margin { left: 2.0, right: 2.0, top: 1.0, bottom: 2.0 }))
+                    .frame(egui::Frame::none().inner_margin(egui::Margin { left: 2.0, right: 2.0, top: 1.0, bottom: 2.0 }))
                     .show_inside(ui, |ui| {
+                        // The frame's colour runs along the diagonal from
+                        // the tab's colour at the top left to 35 lighter per
+                        // channel at the bottom right (VM: (255, 220, 120) →
+                        // (255, 254, 155)).
+                        let m = ui.max_rect();
+                        let fr = egui::Rect::from_min_max(m.min - egui::vec2(2.0, 1.0), m.max + egui::vec2(2.0, 2.0));
+                        let base = egui::Color32::from_rgb(r, g, b);
+                        let shade = |t: f32| {
+                            let up = |c: u8| (c as f32 + 35.0 * t).round().min(255.0) as u8;
+                            egui::Color32::from_rgb(up(r), up(g), up(b))
+                        };
+                        let (w, h) = (fr.width(), fr.height());
+                        let d2 = (w * w + h * h).max(1.0);
+                        let mut mesh = egui::Mesh::default();
+                        for (pt, c) in [(fr.left_top(), base), (fr.right_top(), shade(w * w / d2)), (fr.right_bottom(), shade(1.0)), (fr.left_bottom(), shade(h * h / d2))] {
+                            mesh.colored_vertex(pt, c);
+                        }
+                        mesh.add_triangle(0, 1, 2);
+                        mesh.add_triangle(0, 2, 3);
+                        ui.painter().add(egui::Shape::mesh(mesh));
                         let edge = ui.available_rect_before_wrap();
                         egui::Frame::none().fill(ui.visuals().panel_fill).inner_margin(egui::Margin::same(2.0)).show(ui, |ui| {
                             ui.set_min_size(ui.available_size());
@@ -757,6 +782,18 @@ impl App {
                         p.px_hline(l + 1.0..=r_ - 2.0, b_ - 2.0, line(227));
                         p.px_vline(r_ - 2.0, t + 1.0..=b_ - 2.0, line(227));
                     });
+                // The document area's 1 px border, inside (VM, Office 2007
+                // Blue: (185, 208, 237); the other looks keep the band's
+                // shade, not measured).
+                if self.skin == crate::theme::Skin::Blue {
+                    let r = ui.max_rect().expand(1.0);
+                    let b = egui::Stroke::new(1.0f32, egui::Color32::from_rgb(185, 208, 237));
+                    let p = ui.painter();
+                    p.px_hline(r.left()..=r.right() - 1.0, r.top(), b);
+                    p.px_hline(r.left()..=r.right() - 1.0, r.bottom() - 1.0, b);
+                    p.px_vline(r.left(), r.top()..=r.bottom() - 1.0, b);
+                    p.px_vline(r.right() - 1.0, r.top()..=r.bottom() - 1.0, b);
+                }
             });
     }
 

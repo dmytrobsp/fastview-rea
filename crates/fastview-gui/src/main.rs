@@ -135,6 +135,9 @@ impl App {
         let mut dragged = None;
         let mut tabs: Vec<egui::Rect> = Vec::new();
         ui.horizontal(|ui| {
+            // Nothing in the row taller than the tabs (the ▾ button included).
+            ui.spacing_mut().interact_size.y = 19.0;
+            ui.spacing_mut().button_padding.y = 0.0;
             ui.add_space(6.0);
             for i in 0..self.docs.len() {
                 if self.docs[i].tab_color.is_none() {
@@ -147,7 +150,8 @@ impl App {
                 let text_w = ui.fonts(|f| f.layout_no_wrap(title.clone(), font.clone(), egui::Color32::BLACK).size().x);
                 let w = text_w + 34.0 + if active { 20.0 } else { 0.0 };
                 // An id per document: the drag follows the tab when it moves.
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 22.0), egui::Sense::hover());
+                // 19 px, over the row's bottom line (VM).
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 19.0), egui::Sense::hover());
                 let resp = ui.interact(rect, egui::Id::new(("fv_doc_tab", self.docs[i].serial)), egui::Sense::click_and_drag());
                 tabs.push(rect);
                 let (r, g, b) = app::TAB_COLORS[self.docs[i].tab_color.unwrap_or(0)];
@@ -169,8 +173,13 @@ impl App {
                 if active {
                     let xr = egui::Rect::from_center_size(egui::pos2(rect.right() - 12.0, rect.center().y), egui::vec2(14.0, 14.0));
                     let xresp = ui.interact(xr, ui.id().with(("tab_close", i)), egui::Sense::click());
-                    let col = if xresp.hovered() { egui::Color32::from_rgb(200, 0, 0) } else { egui::Color32::from_gray(90) };
-                    ui.painter().text(xr.center(), egui::Align2::CENTER_CENTER, "✕", egui::FontId::proportional(11.0), col);
+                    // Two 2 px diagonals in the pane buttons' blue (VM: (86,
+                    // 125, 177)).
+                    let col = if xresp.hovered() { egui::Color32::from_rgb(200, 0, 0) } else { egui::Color32::from_rgb(86, 125, 177) };
+                    let c = xr.center();
+                    let st = egui::Stroke::new(2.0f32, col);
+                    ui.painter().line_segment([c + egui::vec2(-3.5, -3.0), c + egui::vec2(3.5, 3.0)], st);
+                    ui.painter().line_segment([c + egui::vec2(3.5, -3.0), c + egui::vec2(-3.5, 3.0)], st);
                     if xresp.clicked() {
                         close = Some(i);
                     }
