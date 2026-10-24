@@ -220,8 +220,8 @@ impl App {
                 }
             }
             ui.add_space(6.0);
-            // The customise arrow: one item, «Minimize the Ribbon».
-            let custom = qat_arrow(ui, p, true).on_hover_text("Customize Quick Access Toolbar");
+            // The customise arrow: one item, «Свернуть ленту».
+            let custom = qat_arrow(ui, p, true).on_hover_text("Настройка панели быстрого доступа");
             if custom.clicked() || custom.secondary_clicked() {
                 open_min_menu(ui, custom.rect.left_bottom());
             }
@@ -255,17 +255,21 @@ impl App {
         // Print preview: MFC's own category is the only one shown
         // (`CMFCRibbonBar::SetPrintPreviewMode`; labels from mfc120rus).
         if self.print.preview.is_some() {
+            // The application button and the QAT stay (VM).
             ui.horizontal(|ui| {
+                ui.set_height(24.0);
                 ui.add_space(6.0);
+                self.orb_ui(ui, orb, p);
                 ribbon_tab(ui, "Просмотр для печати", true, p);
             });
             if !self.ribbon_minimized {
                 egui::Frame::none()
                     .fill(p.tab_active)
                     .stroke(egui::Stroke::new(1.0f32, p.group_border))
-                    .inner_margin(egui::Margin::symmetric(6.0, 4.0))
+                    .inner_margin(egui::Margin { left: 6.0, right: 6.0, top: 3.0, bottom: 1.0 })
                     .show(ui, |ui| {
-                        ui.set_min_height(102.0);
+                        ui.spacing_mut().item_spacing.y = row_gap;
+                        ui.set_min_height(LARGE_H + 2.0 + 16.0 + 2.0);
                         ui.set_min_width(ui.available_width());
                         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                         ui.horizontal_top(|ui| self.ribbon_preview(ui));
@@ -280,23 +284,7 @@ impl App {
             // 23 px, and the body frame's stroke straddles its edge: 24.
             ui.set_height(24.0);
             ui.add_space(6.0);
-            if let Some((r, colors)) = orb {
-                // The orb's lower part opens the menu too; then it is drawn
-                // over both rows.
-                ui.add_space(r.right() - ui.cursor().left() + 4.0);
-                let ctx = ui.ctx().clone();
-                let hit = ui.interact(r, ui.id().with("fv_app_orb"), egui::Sense::click());
-                if hit.clicked() {
-                    self.kt_menu(&ctx, true);
-                }
-                let open = self.kt_bar.is_some_and(|b| {
-                    let st = egui::menu::BarState::load(&ctx, b.0);
-                    let root: &Option<egui::menu::MenuRoot> = &st;
-                    root.is_some()
-                });
-                let hot = ctx.input(|i| i.pointer.hover_pos()).is_some_and(|q| q.distance(r.center()) <= r.width() / 2.0);
-                paint_orb(&ui.painter().clone().with_layer_id(egui::LayerId::new(egui::Order::Middle, egui::Id::new("fv_app_orb_layer"))), r, colors, if open { 2 } else if hot { 1 } else { 0 }, p.orb_flat);
-            }
+            self.orb_ui(ui, orb, p);
             for (n, (label, tab)) in [("Главная", RibbonTab::Home), ("ОМП", RibbonTab::Omp)].into_iter().enumerate() {
                 let r = ribbon_tab(ui, label, self.tab == tab, p);
                 self.kt_rects.push((crate::keytips::Target::Tab(n), r.rect, true));
@@ -794,6 +782,28 @@ fn qat_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon) -> egui::
     resp
 }
 
+impl App {
+    /// The round application button over the caption and tab rows: room
+    /// for it in the tab row, its lower part a hit area that opens the
+    /// menu, drawn normal / hot / open.
+    fn orb_ui(&mut self, ui: &mut egui::Ui, orb: Option<(egui::Rect, [Color32; 3])>, p: crate::theme::Palette) {
+        let Some((r, colors)) = orb else { return };
+        ui.add_space(r.right() - ui.cursor().left() + 4.0);
+        let ctx = ui.ctx().clone();
+        let hit = ui.interact(r, ui.id().with("fv_app_orb"), egui::Sense::click());
+        if hit.clicked() {
+            self.kt_menu(&ctx, true);
+        }
+        let open = self.kt_bar.is_some_and(|b| {
+            let st = egui::menu::BarState::load(&ctx, b.0);
+            let root: &Option<egui::menu::MenuRoot> = &st;
+            root.is_some()
+        });
+        let hot = ctx.input(|i| i.pointer.hover_pos()).is_some_and(|q| q.distance(r.center()) <= r.width() / 2.0);
+        paint_orb(&ui.painter().clone().with_layer_id(egui::LayerId::new(egui::Order::Middle, egui::Id::new("fv_app_orb_layer"))), r, colors, if open { 2 } else if hot { 1 } else { 0 }, p.orb_flat);
+    }
+}
+
 /// The ribbon's own small menus: MFC's one-item ribbon menu (a right-click
 /// on the ribbon or the QAT, or the customise arrow) and the QAT print
 /// button's list.
@@ -817,9 +827,10 @@ fn open_qat_menu(ui: &egui::Ui, menu: QatMenu, at: egui::Pos2) {
 }
 
 impl App {
-    /// The open small menu, if any. «Minimize the Ribbon» is MFC's own
-    /// English item, checked while minimised (the QAT customise items are
-    /// not offered) — as on the VM. Commands chosen go to `cmds`.
+    /// The open small menu, if any. «Свернуть ленту» is MFC's own item
+    /// (mfc120rus 17086; «Minimize the Ribbon» under an English Windows,
+    /// as on the VM), checked while minimised; the QAT customise items are
+    /// not offered. Commands chosen go to `cmds`.
     fn qat_menu(&mut self, ctx: &egui::Context, cmds: &mut Vec<Command>) {
         let Some((menu, at, opened)) = ctx.data(|d| d.get_temp::<(QatMenu, egui::Pos2, u64)>(qat_menu_id())) else { return };
         let mut chosen = false;
@@ -828,7 +839,7 @@ impl App {
             egui::Frame::menu(ui.style()).show(ui, |ui| match menu {
                 QatMenu::Minimize => {
                     ui.set_min_width(150.0);
-                    if ui.checkbox(&mut { min }, "Minimize the Ribbon").clicked() {
+                    if ui.checkbox(&mut { min }, "Свернуть ленту").clicked() {
                         cmds.push(Command::ToggleRibbonMin);
                         chosen = true;
                     }

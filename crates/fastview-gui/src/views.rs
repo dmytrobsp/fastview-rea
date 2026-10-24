@@ -704,7 +704,11 @@ impl App {
                     .show_inside(ui, |ui| {
                         egui::Frame::none().fill(ui.visuals().panel_fill).show(ui, |ui| {
                             ui.set_min_size(ui.available_size());
-                            self.lanes_ui(ui);
+                            if self.print.preview.is_some() {
+                                self.preview_ui(ui);
+                            } else {
+                                self.lanes_ui(ui);
+                            }
                         });
                     });
             });

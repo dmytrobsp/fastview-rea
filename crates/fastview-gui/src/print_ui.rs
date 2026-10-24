@@ -368,7 +368,8 @@ impl App {
 
     /// The print preview in place of the views (CPreviewViewEx): its
     /// toolbar, then one or two pages on grey.
-    pub fn preview_ui(&mut self, ctx: &egui::Context) {
+    pub fn preview_ui(&mut self, ui: &mut egui::Ui) {
+        let ctx = &ui.ctx().clone();
         let Some(mut pv) = self.print.preview.take() else { return };
         if pv.job.di >= self.docs.len() {
             return;
@@ -415,7 +416,11 @@ impl App {
                 pv.tex[i] = Some(ctx.load_texture(format!("print_preview_{i}"), img, egui::TextureOptions::LINEAR));
             }
         }
-        egui::CentralPanel::default().frame(egui::Frame::none().fill(Color32::from_gray(128))).show(ctx, |ui| {
+        // In the document's window, over the MDI client's colour (VM: the
+        // panes, the parameters strip and the tab row stay).
+        let bg = self.skin.palette().work_bg;
+        egui::Frame::none().fill(bg).show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
             egui::ScrollArea::both().show(ui, |ui| {
                 let avail = ui.available_size();
                 let d = &pv.job.dev;
@@ -430,7 +435,13 @@ impl App {
                     for &i in &shown {
                         if let Some(Some(t)) = pv.tex.get(i) {
                             ui.add_space(10.0);
-                            ui.add(egui::Image::new((t.id(), page * scale)).bg_fill(Color32::WHITE));
+                            let r = ui.add(egui::Image::new((t.id(), page * scale)).bg_fill(Color32::WHITE)).rect;
+                            // The sheet's frame and its shadow (VM: (100,
+                            // 100, 100), then 3 px of (160, 160, 160)).
+                            let p = ui.painter();
+                            p.rect_filled(egui::Rect::from_min_max(egui::pos2(r.right() + 1.0, r.top() + 3.0), egui::pos2(r.right() + 4.0, r.bottom() + 4.0)), 0.0, Color32::from_gray(160));
+                            p.rect_filled(egui::Rect::from_min_max(egui::pos2(r.left() + 3.0, r.bottom() + 1.0), egui::pos2(r.right() + 4.0, r.bottom() + 4.0)), 0.0, Color32::from_gray(160));
+                            p.rect_stroke(r.expand(0.5), 0.0, egui::Stroke::new(1.0f32, Color32::from_gray(100)));
                         }
                     }
                 });
@@ -458,7 +469,7 @@ mod tests {
         let raw = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1200.0, 900.0))), events, ..Default::default() };
         let _ = ctx.run(raw, |ctx| {
             if app.print.preview.is_some() {
-                app.preview_ui(ctx);
+                egui::CentralPanel::default().show(ctx, |ui| app.preview_ui(ui));
             }
             app.print_windows(ctx);
         });

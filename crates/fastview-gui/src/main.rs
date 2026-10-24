@@ -474,9 +474,7 @@ impl App {
                 self.omp_banner(ui);
             });
         // 142: the parameters bar, a 75 px strip under the ribbon.
-        // MFC hides the docking panes during print preview.
-        let previewing = self.print.preview.is_some();
-        if self.dlg.param_bar && !previewing {
+        if self.dlg.param_bar {
             egui::TopBottomPanel::top("parambar")
                 .exact_height(75.0)
                 .frame(egui::Frame::none().fill(pal.info_bar.unwrap_or(pal.group_bg)))
@@ -484,7 +482,7 @@ impl App {
         }
 
         // The merge bar (CMergeBar, 70 px), shown after a paste.
-        if self.merge.is_some() && !previewing {
+        if self.merge.is_some() {
             egui::TopBottomPanel::top("mergebar")
                 .exact_height(70.0)
                 .frame(egui::Frame::none().fill(pal.group_bg))
@@ -498,13 +496,10 @@ impl App {
             .show(ctx, |ui| self.status_bar(ui));
 
 
-        // The print preview takes the place of the views.
-        if self.print.preview.is_some() {
-            self.preview_ui(ctx);
-        } else {
-            self.diagram_panes(ctx);
-            self.render_tab(ctx);
-        }
+        // The print preview takes the document view's place in its window
+        // (VM: the panes and strips stay).
+        self.diagram_panes(ctx);
+        self.render_tab(ctx);
         self.track_copy_focus(ctx);
         self.dialogs_ui(ctx);
         self.print_windows(ctx);
@@ -1591,8 +1586,13 @@ mod window_tests {
         // «Нет»; with `FV_WINDOW_STATE=diff` the differential one), set
         // after the first passes have bound the grid to the document.
         let block = std::env::var("FV_WINDOW_BLOCK").ok();
+        // `FV_WINDOW_LATE=preview`: the preview opened once the view is laid out.
+        let late_preview = std::env::var("FV_WINDOW_LATE").is_ok_and(|v| v == "preview");
         let mut pass = 0;
         let c = raster::render_input(size, 1.0, Some(&fonts), passes, |ctx| {
+            if pass == 2 && late_preview {
+                app.dispatch(app::Command::PrintPreview);
+            }
             if pass == 2 {
                 if let Some(b) = block.as_ref().and_then(|v| v.parse().ok().or_else(|| app.library.blocks.iter().position(|b| &b.name == v))) {
                     app.block_idx = b;

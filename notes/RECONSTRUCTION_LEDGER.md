@@ -6309,8 +6309,9 @@ the ОМП file comparison (W4.2).
 ### L9.216 — VM run: the ribbon's one context menu, the QAT customise arrow and the print split button  ·  ✅
 Seen on the VM (WIN_1999 open): a right-click on a category tab, on a
 QAT button or anywhere on the ribbon body (its buttons included) opens
-one menu with one item, MFC's own English «Minimize the Ribbon» (no
-mfc120rus text for it is used); the QAT customise arrow (a bar over a
+one menu with one item, MFC's own «Minimize the Ribbon» — English there
+because the VM's Windows display language is English (mfc120rus has
+«Свернуть ленту», 17086, which ours uses: L9.231); the QAT customise arrow (a bar over a
 small triangle, right of the QAT) opens the same one-item menu, ticked
 while the ribbon is minimised — no «Customize Quick Access Toolbar» items.
 The QAT's Печать is a split button: its arrow opens «Предварительный
@@ -6597,6 +6598,30 @@ right after. Ours had egui's 1 px separator and the plane against it.
 Now `char_ui` draws that line and strip above the plane (the colour per
 look from `Skin::splitter`), the panel's own separator off.
 Residual: the resize cursor (not captured by the harness's screenshots).
+
+### L9.231 — VM run: the print preview stays in the document's window; MFC's strings follow Windows' language  ·  ✅
+Seen on the VM (the QAT print list → «Предварительный просмотр», WIN_1999):
+the preview replaces only the document's view — the docking panes, the
+parameters strip and the MDI tab row stay —, the sheet centred on the MDI
+client's colour (164, 195, 235) with a (100, 100, 100) frame and a 3 px
+(160, 160, 160) shadow; the application button and the QAT stay (F10:
+«F», «1»–«3» and «P» on the category). The category and its panels read
+«Print Preview», «Print», «Zoom In» / «Zoom Out» / «Two Page», «Next
+Page» / «Previous Page» / «Close» — MFC's built-in English: the VM's
+Windows display language is English, so MFC loads no mfc120rus; on a
+Russian Windows these are mfc120rus's («Просмотр для печати», …), as ours
+(L9.115). The same holds for L9.216's ribbon menu: ours goes back to
+mfc120rus's «Свернуть ленту» (17086) and «Настройка панели быстрого
+доступа» (17096) for the customise arrow's tooltip. Ours hid the panes
+and strips and filled the window grey, and dropped the application
+button in preview; now `preview_ui` draws into the document's window
+(`view_oscillogram`), the panes and strips stay, the sheet has its frame
+and shadow, and `orb_ui` serves both tab rows; the preview's body is the
+normal body's height. Harness `FV_WINDOW_LATE=preview` (the preview
+opened after the view is laid out — opened before, ours printed a 32 ms
+range only because the view had no width yet).
+Residual: the printed page's own differences (the original's logo at the
+header's left, the footer as one line) — W5.1.
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

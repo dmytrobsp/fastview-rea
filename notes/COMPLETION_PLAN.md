@@ -140,7 +140,8 @@ items (VM ones also in W4.4):
 - [x] W2.6 L9.34 — MakeUpper folds Cyrillic units and a «ном» channel is not
   vector-eligible (VM runs, L9.210); binary32 with «кВ» (L9.182); string
   3105 is «°» (L9.207).
-- [ ] W2.7 L9.37 — the preview buttons' sizes (static: done, L9.202 — the
+- [ ] W2.7 (L9.231: the preview in the document's window, the panes,
+  strips, application button and QAT staying — done) L9.37 — the preview buttons' sizes (static: done, L9.202 — the
   page buttons small); the preview's keytips (P, QI, QO, 1, X, V, C; panels
   ZP, ZZ, ZV — `0x100fccec`); QAT / app button / MDI tabs during preview (VM).
 - [x] W2.8 L9.41 — the report's «Осциллограмма:» line: the full path; the
