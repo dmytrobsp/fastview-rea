@@ -136,7 +136,14 @@ items (VM ones also in W4.4):
 - [ ] W2.15 L9.122 — «Свойства...» on the VM, the owner window, the
   orientation merge (with W2.12).
 - [ ] W2.16 Whether `doc+0x1d8` counts computed channels (shared by
-  L9.20, L9.151, L9.154, L9.166) — settle once.
+  L9.20, L9.151, L9.154, L9.166). Read 2026-10-24: only the readers raise it
+  (`.cfg` `0x451181` / `0x451250`, `.osc` `0x4529f8` / `0x452b65`, with
+  `doc+0x1dc`; zeroed `0x44b95a`, `0x4966f8`) — it counts the file's
+  channels (analog + digital); added formula / pasted channels do not raise
+  it. With the vector analog → computed → digital (L9.145) a loop over the
+  first `doc+0x1d8` entries takes the computed channels only up to the
+  number of digital ones. To do: confirm where formula channels are
+  inserted, then apply to the pair combos, the circle refresh and the paste.
 - [ ] W2.17 The open residuals of ✅ entries since L9.128 (each entry's
   "Residual:" lines): quick analysis's rollback of its channels on a
   failed recompute (L9.157), drag-scroll left / right (L9.164), the grid's
