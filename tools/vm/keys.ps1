@@ -1,4 +1,4 @@
-# keys.ps1 -Exe <program> [-Open <file> | -ArgLine "<args>"] -Keys "<k1>;<k2>…" [-WaitSec n] [-Shot name.png] [-Leave]
+# keys.ps1 -Exe <program> [-Open <file> | -ArgLine "<args>"] -Keys "<k1>;<k2>…" [-WaitSec n] [-Shot name.png] [-Leave] [-Soft]
 # In the desktop session: start the program (with a file), bring it to the
 # front, run each ';'-separated step 1.5 s apart, optionally capture the
 # screen, then close it (unless -Leave). A step is SendKeys text, or
@@ -6,7 +6,7 @@
 # (a left-button drag in ten steps; "HOLD x1,y1,x2,y2" the same left held,
 # then "UP"), "WHEEL x,y,n"
 # (n notches, + up), "SHOT name.png" (a capture now). Logs next to itself.
-param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave)
+param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave, [switch]$Soft)
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $log = Join-Path $here 'keys.log'
 Add-Type @'
@@ -15,14 +15,21 @@ public static class In {
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, int data, UIntPtr extra);
+  [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint flags);
 }
 '@
 [In]::SetProcessDPIAware() | Out-Null
+# Keep the display on while the steps run (ES_CONTINUOUS | ES_DISPLAY_REQUIRED):
+# an idle VM turns it off and the captures freeze on its last frame.
+[In]::SetThreadExecutionState(0x80000002) | Out-Null
 function Click([int]$x, [int]$y, [uint32]$down, [uint32]$up, [int]$times = 1) {
     [In]::SetCursorPos($x, $y) | Out-Null; Start-Sleep -Milliseconds 120
     for ($i = 0; $i -lt $times; $i++) { [In]::mouse_event($down, 0, 0, 0, [UIntPtr]::Zero); [In]::mouse_event($up, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 60 }
 }
 "start $(Get-Date -f s) $Exe $Open" | Out-File $log -Encoding utf8
+# -Soft: our build in its software runner from the start (a launcher that
+# falls back to it leaves the window to a child process).
+if ($Soft) { $env:FV_SOFTWARE = '1' }
 $wsh = New-Object -ComObject WScript.Shell
 $p = if ($ArgLine) { Start-Process -FilePath $Exe -ArgumentList $ArgLine -PassThru } elseif ($Open) { Start-Process -FilePath $Exe -ArgumentList "`"$Open`"" -PassThru } else { Start-Process -FilePath $Exe -PassThru }
 Start-Sleep -Seconds $WaitSec

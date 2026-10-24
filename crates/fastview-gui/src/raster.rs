@@ -154,6 +154,37 @@ pub fn render_input(size: Vec2, ppp: f32, fonts: Option<&egui::FontDefinitions>,
     canvas
 }
 
+/// egui's output rasterised frame after frame (the software runner,
+/// `crate::softrun`): the textures kept between frames.
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Default)]
+pub struct Painter {
+    textures: HashMap<egui::TextureId, Tex>,
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+impl Painter {
+    /// Paint `prims` on a `w` × `h` pixel white ground: the new textures
+    /// set first, the freed ones dropped after (egui's order).
+    pub fn paint(&mut self, prims: &[epaint::ClippedPrimitive], delta: &egui::TexturesDelta, w: usize, h: usize, ppp: f32) -> Canvas {
+        apply(&mut self.textures, &egui::TexturesDelta { set: delta.set.clone(), free: Vec::new() });
+        let mut canvas = Canvas::white(w.max(1), h.max(1));
+        let mut acc: Vec<[f32; 3]> = vec![[255.0; 3]; canvas.w * canvas.h];
+        for p in prims {
+            if let epaint::Primitive::Mesh(m) = &p.primitive {
+                draw_mesh(&mut acc, canvas.w, canvas.h, m, p.clip_rect, ppp, self.textures.get(&m.texture_id));
+            }
+        }
+        for (o, a) in canvas.px.iter_mut().zip(&acc) {
+            *o = a.map(|v| v.round().clamp(0.0, 255.0) as u8);
+        }
+        for id in &delta.free {
+            self.textures.remove(id);
+        }
+        canvas
+    }
+}
+
 fn draw_mesh(acc: &mut [[f32; 3]], w: usize, h: usize, m: &epaint::Mesh, clip: Rect, ppp: f32, tex: Option<&Tex>) {
     let cx0 = (clip.min.x * ppp).max(0.0).floor() as i64;
     let cy0 = (clip.min.y * ppp).max(0.0).floor() as i64;

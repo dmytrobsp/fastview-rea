@@ -36,6 +36,8 @@ mod raster;
 mod recdlg;
 mod ribbon;
 mod setfile;
+#[cfg(windows)]
+mod softrun;
 mod spool;
 mod theme;
 mod util;
@@ -59,6 +61,8 @@ fn main() -> eframe::Result<()> {
     if let Some((r, max)) = window_placement(&persist::Store::load()) {
         viewport = viewport.with_inner_size(r.size()).with_position(r.min).with_maximized(max);
     }
+    #[cfg(windows)]
+    let soft_viewport = viewport.clone();
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     // Command line (`InitInstance` 0x4483f0): `-Dst <dir>`, `-Find` (open
     // Проводник at start-up) and the file to open.
@@ -68,30 +72,54 @@ fn main() -> eframe::Result<()> {
     if !args.files.is_empty() && inst_dir.as_deref().is_some_and(|d| instance::hand_off(d, &args.files)) {
         return Ok(());
     }
-    eframe::run_native(
-        "FastView",
-        options,
-        Box::new(|cc| {
-            let fonts = app_fonts();
-            cc.egui_ctx.set_fonts(fonts.clone());
-            let mut app = App::new().with_persistence();
-            app.own_caption = own_caption;
-            app.splash_until = Some(2.0);
-            app.print.fonts = fonts;
-            let ctx = cc.egui_ctx.clone();
-            app.instance = inst_dir.as_deref().and_then(|d| instance::serve(d, move || ctx.request_repaint()));
-            if let Some(f) = &args.dst {
-                app.dst_file = Some(f.clone());
-            }
-            if args.find {
-                app.dispatch(app::Command::ToggleExplorer);
-            }
-            for f in &args.files {
-                app.load_comtrade_path(f);
-            }
-            Ok(Box::new(app))
-        }),
-    )
+    // No OpenGL 2 / Direct3D 12 (a basic display driver): the software
+    // runner (W4.1c), also forced by `FV_SOFTWARE`.
+    #[cfg(windows)]
+    let soft = |why: &str| {
+        softrun::trace(&format!("software rendering ({why})"));
+        let ctx = egui::Context::default();
+        let app = make_app(&ctx, &args, inst_dir.as_deref(), own_caption);
+        softrun::trace("app made");
+        softrun::run(app, soft_viewport.clone(), ctx).map_err(|e| eframe::Error::AppCreation(e.into()))
+    };
+    #[cfg(windows)]
+    if std::env::var_os("FV_SOFTWARE").is_some() {
+        return soft("FV_SOFTWARE");
+    }
+    let r = eframe::run_native("FastView", options, Box::new(|cc| Ok(Box::new(make_app(&cc.egui_ctx, &args, inst_dir.as_deref(), own_caption)))));
+    // winit makes one event loop a process: the software runner starts
+    // over in a new process of its own.
+    #[cfg(windows)]
+    if let Err(e) = &r {
+        eprintln!("fastview: {e}");
+        let exe = std::env::current_exe().map_err(|e| eframe::Error::AppCreation(e.into()))?;
+        let status = std::process::Command::new(exe).args(std::env::args_os().skip(1)).env("FV_SOFTWARE", "1").status();
+        return status.map(|_| ()).map_err(|e| eframe::Error::AppCreation(e.into()));
+    }
+    r
+}
+
+/// The application as both runners start it: the fonts, the persisted
+/// state, the single-instance server, the command line.
+fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path::Path>, own_caption: bool) -> App {
+    let fonts = app_fonts();
+    ctx.set_fonts(fonts.clone());
+    let mut app = App::new().with_persistence();
+    app.own_caption = own_caption;
+    app.splash_until = Some(2.0);
+    app.print.fonts = fonts;
+    let c = ctx.clone();
+    app.instance = inst_dir.and_then(|d| instance::serve(d, move || c.request_repaint()));
+    if let Some(f) = &args.dst {
+        app.dst_file = Some(f.clone());
+    }
+    if args.find {
+        app.dispatch(app::Command::ToggleExplorer);
+    }
+    for f in &args.files {
+        app.load_comtrade_path(f);
+    }
+    app
 }
 
 /// `Workspace/WindowPlacement` ("l t r b maximised") as saved on exit.
@@ -101,8 +129,39 @@ fn window_placement(st: &persist::Store) -> Option<(egui::Rect, bool)> {
     Some((docking::parse_rect(rect)?, max == "1"))
 }
 
-/// The window's fonts: the first system font found that covers Cyrillic,
-/// in front of egui's own.
+/// Wine's Tahoma (LGPL, `assets/fonts/LICENSE-tahoma.txt`): the widths and
+/// vertical metrics of the Tahoma the original's GDI text uses.
+const TAHOMA: &[u8] = include_bytes!("../../../assets/fonts/tahoma.ttf");
+const TAHOMA_BOLD: &[u8] = include_bytes!("../../../assets/fonts/tahomabd.ttf");
+
+/// A font whose size is its em, as GDI's: egui scales a face by its
+/// ascent − descent and rounds that height to whole pixels, so Tahoma
+/// (1.207 em high) could only take ems of 10.77, 11.6, 12.43 … px — never
+/// 12. The copy's `hhea` ascent − descent is made one em (the rest moved
+/// into the line gap, so rows keep their height) and the glyphs shifted
+/// back down to their own baseline.
+fn em_sized(bytes: &'static [u8]) -> egui::FontData {
+    let mut b = bytes.to_vec();
+    let rd = |b: &[u8], o: usize| u16::from_be_bytes([b[o], b[o + 1]]);
+    let table = |b: &[u8], tag: &[u8; 4]| (0..rd(b, 4) as usize).map(|i| 12 + 16 * i).find(|&r| &b[r..r + 4] == tag).map(|r| u32::from_be_bytes([b[r + 8], b[r + 9], b[r + 10], b[r + 11]]) as usize);
+    let (Some(head), Some(hhea)) = (table(&b, b"head"), table(&b, b"hhea")) else { return egui::FontData::from_static(bytes) };
+    let upem = f32::from(rd(&b, head + 18));
+    let (asc, desc, gap) = (f32::from(rd(&b, hhea + 4) as i16), f32::from(rd(&b, hhea + 6) as i16), f32::from(rd(&b, hhea + 8) as i16));
+    let new_asc = (asc * upem / (asc - desc)).round();
+    let (new_desc, new_gap) = (new_asc - upem, gap + (asc - desc) - upem);
+    for (o, v) in [(4, new_asc), (6, new_desc), (8, new_gap)] {
+        b[hhea + o..hhea + o + 2].copy_from_slice(&(v as i16).to_be_bytes());
+    }
+    let mut d = egui::FontData::from_owned(b);
+    d.tweak.y_offset_factor = (asc - new_asc) / upem;
+    d
+}
+
+/// The window's fonts: Tahoma first — a size is then about the em in
+/// pixels as GDI counts it (egui lays Tahoma out at size 11 106 px wide
+/// where GDI's 8 pt Tahoma takes 108 for «Номер регистратора:»); then the
+/// first system font found that covers Cyrillic, for the glyphs Tahoma
+/// lacks; the bold face as the family "bold".
 fn app_fonts() -> egui::FontDefinitions {
     const CANDIDATES: &[&str] = &[
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -116,12 +175,21 @@ fn app_fonts() -> egui::FontDefinitions {
         "/Library/Fonts/Arial.ttf",
     ];
     let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert("tahoma".to_owned(), em_sized(TAHOMA));
+    fonts.font_data.insert("tahoma-bold".to_owned(), em_sized(TAHOMA_BOLD));
+    let mut order = vec!["tahoma".to_owned()];
     if let Some(bytes) = CANDIDATES.iter().find_map(|p| std::fs::read(p).ok()) {
         fonts.font_data.insert("cyr".to_owned(), egui::FontData::from_owned(bytes));
-        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-            fonts.families.entry(family).or_default().insert(0, "cyr".to_owned());
+        order.push("cyr".to_owned());
+    }
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        let list = fonts.families.entry(family).or_default();
+        for (k, name) in order.iter().enumerate() {
+            list.insert(k, name.clone());
         }
     }
+    let bold: Vec<String> = std::iter::once("tahoma-bold".to_owned()).chain(order.iter().cloned()).collect();
+    fonts.families.insert(egui::FontFamily::Name("bold".into()), bold);
     fonts
 }
 
@@ -156,7 +224,9 @@ impl App {
                 }
                 let active = self.active == Some(i);
                 let title = self.docs[i].title();
-                let font = egui::FontId::proportional(13.0);
+                // MFC's tab font, 11 px (VM: «WIN_1999.cfg» 68 px); the
+                // active document's in the bold face (`0x1013b543`).
+                let font = if bold == Some(i) { ui.fonts(|f| crate::lanes::bold_font(f, 11.0)).unwrap_or(egui::FontId::proportional(11.0)) } else { egui::FontId::proportional(11.0) };
                 let text_w = ui.fonts(|f| f.layout_no_wrap(title.clone(), font.clone(), egui::Color32::BLACK).size().x);
                 let w = text_w + 34.0 + if active { 20.0 } else { 0.0 };
                 // An id per document: the drag follows the tab when it moves.
@@ -178,10 +248,7 @@ impl App {
                 ui.painter().add(egui::Shape::mesh(mesh));
                 ui.painter().add(egui::Shape::line(pts.to_vec(), egui::Stroke::new(1.0f32, egui::Color32::from_gray(140))));
                 let text_pos = egui::pos2(rect.left() + 20.0, rect.center().y);
-                ui.painter().text(text_pos, egui::Align2::LEFT_CENTER, &title, font.clone(), egui::Color32::BLACK);
-                if bold == Some(i) {
-                    ui.painter().text(text_pos + egui::vec2(0.5, 0.0), egui::Align2::LEFT_CENTER, &title, font, egui::Color32::BLACK);
-                }
+                ui.painter().text(text_pos, egui::Align2::LEFT_CENTER, &title, font, egui::Color32::BLACK);
                 if active {
                     let xr = egui::Rect::from_center_size(egui::pos2(rect.right() - 12.0, rect.center().y), egui::vec2(14.0, 14.0));
                     let xresp = ui.interact(xr, ui.id().with(("tab_close", i)), egui::Sense::click());
@@ -1865,3 +1932,5 @@ mod window_tests {
         std::fs::write(path, util::png_rgba(c.w as u32, c.h as u32, &rgba)).unwrap();
     }
 }
+
+

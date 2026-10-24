@@ -274,10 +274,10 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   a close button on the record-header strip.
 - [x] W4.1a Input driving: `tools/vm/drive.ps1` (SendKeys groups in the
   session) opens records and presses commands in the original.
-- [ ] W4.1c Ours on the VM: egui_glow needs OpenGL 2 and wgpu a Direct3D 12
-  adapter; the VM's basic display driver offers neither (L9.229). A
-  software renderer (our `raster.rs` into a window) would let ours run
-  there and on GPU-less Windows like the original — not started.
+- [x] W4.1c Ours on the VM: egui_glow needs OpenGL 2 and wgpu a Direct3D 12
+  adapter; the VM's basic display driver offers neither (L9.229). The
+  software runner (`softrun`: our rasteriser into a GDI window) runs ours
+  there and on any GPU-less Windows; the harness drives it (`-Soft`), L9.271.
 - [x] W4.1b The VM's system locale and devuser's Format set to ru-RU (user
   approved, 2026-10-24) — the original stores names through the thread
   code page, so both are needed for its Cyrillic.
@@ -357,10 +357,9 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 - The proprietary bitmaps (logo, splash, About picture) — assets of the
   original; ours draws its own.
 - Where a dropped file lands — egui reports no drop position (L9.159).
-- Glyph metrics: many small layout gaps (the stats panel 3 px wider, the
-  frequency x labels crowding, label weights) are DejaVu (egui's) against
-  GDI's Tahoma / Segoe UI. A metric-compatible free face (e.g. Wine's LGPL
-  Tahoma) would close them — a licence decision for the user (proposal).
+- Glyph metrics: settled — Wine's LGPL Tahoma, chosen by the user, sized as
+  GDI's em (L9.270); left: Segoe UI where the original uses it (ours
+  Tahoma, about 4 % narrower).
 - A level or area whose channel name no longer resolves blanks the
   original's oscillogram view (VM, L9.227) — ours leaves that element out
   instead of reproducing the paint failure.

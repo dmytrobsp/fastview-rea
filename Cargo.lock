@@ -1127,12 +1127,14 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "eframe",
+ "egui-winit",
  "flate2",
  "fvb-core",
  "num-complex",
  "rfd",
  "trash",
  "windows-sys 0.59.0",
+ "winit",
 ]
 
 [[package]]

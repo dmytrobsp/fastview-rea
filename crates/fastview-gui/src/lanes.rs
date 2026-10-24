@@ -19,7 +19,9 @@ pub const LEFT_W_DEFAULT: f32 = 125.0;
 const NAME_CHARS: usize = 25;
 /// Name / value font (Tahoma 15 bold / heavy in the original) and the row
 /// font (Tahoma 13); `ROW_H` is the name font's line height ("Ay").
-const NAME_FONT: FontId = FontId::proportional(13.0);
+/// The lane names and values: Tahoma Bold 12 px (VM: «IA БЛОКА 3» 73 px,
+/// «454.087 мА» 72 px).
+const NAME_FONT: FontId = FontId::proportional(12.0);
 const ROW_FONT: FontId = FontId::proportional(11.0);
 const ROW_H: f32 = 15.0;
 /// Horizontal scrollbar height below the view and vertical scrollbar width:
@@ -696,7 +698,12 @@ fn chan_icons(doc: &crate::app::Doc, i: usize, primary: bool) -> Vec<&'static st
 /// for the rows it shows, `|`-joined.
 /// Returns (label column, panel width).
 pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], primary: bool, abs_time: bool) -> (f32, f32) {
-    let w = |s: &str, f: &FontId| fonts.layout_no_wrap(s.to_string(), f.clone(), Color32::BLACK).size().x;
+    // The names are drawn bold: measured so.
+    let name_font = bold_font(fonts, NAME_FONT.size).unwrap_or(NAME_FONT);
+    let w = |s: &str, f: &FontId| {
+        let f = if *f == NAME_FONT { &name_font } else { f };
+        fonts.layout_no_wrap(s.to_string(), f.clone(), Color32::BLACK).size().x
+    };
     let cut = |n: &str| n.chars().take(NAME_CHARS).collect::<String>();
     let mut label = w("Max:", &NAME_FONT);
     let (mut templ, mut digital) = (0.0f32, 0.0f32);
@@ -731,9 +738,19 @@ pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, ro
     (label, left.max(digital))
 }
 
-/// Text in a heavier weight (egui's default font has no bold face: the
-/// glyphs are drawn twice, half a pixel apart).
+/// The bold face at `size`, when the fonts have it (the app's Tahoma Bold;
+/// a bare context has none).
+pub(crate) fn bold_font(fonts: &egui::text::Fonts, size: f32) -> Option<FontId> {
+    let fam = egui::FontFamily::Name("bold".into());
+    fonts.families().contains(&fam).then(|| FontId::new(size, fam))
+}
+
+/// Text in the bold face — without one, the glyphs drawn twice, half a
+/// pixel apart.
 pub(crate) fn bold_text(p: &egui::Painter, pos: Pos2, text: &str, font: FontId, color: Color32) -> Rect {
+    if let Some(b) = p.ctx().fonts(|f| bold_font(f, font.size)) {
+        return p.text(pos, Align2::LEFT_TOP, text, b, color);
+    }
     p.text(pos + Vec2::new(0.5, 0.0), Align2::LEFT_TOP, text, font.clone(), color);
     p.text(pos, Align2::LEFT_TOP, text, font, color)
 }

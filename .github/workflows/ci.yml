@@ -115,7 +115,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p stage
-          cp "dist/${{ matrix.exe }}" README.md LICENSE-MIT LICENSE-APACHE stage/
+          cp "dist/${{ matrix.exe }}" README.md LICENSE-MIT LICENSE-APACHE assets/fonts/LICENSE-tahoma.txt stage/
           test -z "$(find stage -mindepth 1 -type d)"
           ls -la stage
       - uses: actions/upload-artifact@v4

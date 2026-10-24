@@ -207,6 +207,11 @@ and as tools that regenerate the raw data from your own copy
 The reconstruction's code is dual-licensed under
 [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
 
+The program embeds Wine's Tahoma fonts (`assets/fonts/tahoma.ttf`,
+`tahomabd.ttf`: Wine's own substitutes, not Microsoft's), which keep their
+own licences — the GNU LGPL 2.1 or later and the Bitstream Vera licence —
+in [assets/fonts/LICENSE-tahoma.txt](assets/fonts/LICENSE-tahoma.txt).
+
 ## Legal
 
 This is an independent, interoperable reimplementation created from behavioural

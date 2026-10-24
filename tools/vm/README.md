@@ -11,7 +11,9 @@ original.
 | `insession.ps1 -Exe <path> [-Args …] [-Wait]` | runs a program in that user's desktop session (an `ssh` session has none) through a one-off scheduled task |
 | `shot.ps1 -Out <png>` | captures the whole desktop (DPI-aware) |
 | `capture.ps1 -Name <png>` | `shot.ps1` through `insession.ps1`, into `shots\` next to the scripts |
-| `drive.ps1 -Exe <program> [-Open <file> \| -ArgLine "<args>"] [-Keys "<s1>;<s2>…"] [-Shot <png>] [-Leave]` | `keys.ps1` in the session: start the program (with a file), run the steps 1.5 s apart — SendKeys text, `CLICK x,y` / `RCLICK x,y` / `DCLICK x,y`, `DRAG x1,y1,x2,y2` (or `HOLD …` then `UP`), `WHEEL x,y,n`, `SHOT name.png` —, capture, close; prints its log |
+| `wakeshot.ps1 -Out <png>` | `shot.ps1` after waking the display (an idle VM turns it off and captures freeze on its last frame); run it through `insession.ps1` |
+| `cleanup.ps1` | stops every FastView (ours or the original) and stuck `keys.ps1` runs |
+| `drive.ps1 -Exe <program> [-Open <file> \| -ArgLine "<args>"] [-Keys "<s1>;<s2>…"] [-Shot <png>] [-Leave] [-Soft]` | `keys.ps1` in the session: start the program (with a file), run the steps 1.5 s apart — SendKeys text, `CLICK x,y` / `RCLICK x,y` / `DCLICK x,y`, `DRAG x1,y1,x2,y2` (or `HOLD …` then `UP`), `WHEEL x,y,n`, `SHOT name.png` —, capture, close; prints its log. `-ArgLine` passes a raw argument line instead of `-Open`; `-Soft` starts ours in its software runner (`FV_SOFTWARE=1`) |
 
 Install of the original used here (file copy — its own setup wizard needs
 clicks): the files of `extracted/stage1/` in a folder, the English resource

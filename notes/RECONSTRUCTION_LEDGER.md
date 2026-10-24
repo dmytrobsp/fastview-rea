@@ -7426,6 +7426,71 @@ Residual:
 - The recorded bitmap's header (bit depth, as the screen DDB's) was not
   compared byte for byte with an original copy.
 
+### L9.270 — Wine's Tahoma as the UI font, sized as GDI's em  ·  ✅
+The user chose a metric-compatible Tahoma (W6's proposal). Measured on the
+VM against the original:
+- Dialogs use Tahoma 8 pt: «Параметры страницы» is 108 px of ink, as
+  Microsoft's Tahoma at 11 px.
+- The main window uses Segoe UI at about 11 px: «Номер регистратора:» is
+  113 px.
+- The lane names and values are Tahoma Bold 12 px: «IA БЛОКА 3» 73 px,
+  «454.087 мА» 72 px.
+- The tabs are 11 px: «WIN_1999.cfg» 68 px.
+Wine's own Tahoma (Larry Snyder's, based on Bitstream Vera; LGPL, shipped
+with Wine) has Microsoft's vertical metrics and its widths within 1–2 px at
+11 px. DejaVu, which we used before, is about 15 % wider.
+Ours now:
+- `assets/fonts/tahoma.ttf` and `tahomabd.ttf` are embedded, with
+  `LICENSE-tahoma.txt` (also in the release archives and the README).
+  `app_fonts` puts Tahoma first, a system face behind it for missing
+  glyphs, and the bold face as the family «bold».
+- egui scales a face by its ascent − descent and rounds that height to
+  whole pixels, so Tahoma (1.207 em high) could only take ems of 10.77,
+  11.6, 12.43… px, never 12. `em_sized` patches the in-memory copy's
+  `hhea` so ascent − descent is one em, moves the rest into the line gap
+  (rows keep their height) and shifts the baseline back. A size is now the
+  em: egui lays «Номер регистратора:» out at 107 / 120 / 126 px at 11 / 12
+  / 13, against GDI's 108 / 122 / 125.
+- The lane names and values (`bold_text`, measured with the same face) and
+  the active document's tab use the real bold instead of a double draw. The
+  tab label is 11 px, as measured, instead of 13.
+Rendered against the VM:
+- the header 118 px against 113 (Tahoma for Segoe);
+- the lane name 76 = 76, the value 72 against 73, baselines on the same
+  rows;
+- the print dialog's labels within 2 px.
+Residual:
+- Where the original uses Segoe UI (the main window, menus, ribbon), our
+  Tahoma is about 4 % narrower at the same size.
+- Glyph rasterisation is egui's, not GDI's ClearType.
+
+### L9.271 — Our program runs on the VM: a software runner  ·  ✅
+W4.1c. The VM's basic display driver has OpenGL 1.1 and no Direct3D 12
+adapter, so eframe cannot start there («egui_glow requires opengl 2.0+»),
+and nor could ours on any GPU-less Windows, where the original (plain GDI)
+runs. Now `softrun`, on Windows:
+- a winit window and egui-winit's input and viewport handling;
+- egui's output rasterised by `raster::Painter` (textures kept across
+  frames) and blitted with `SetDIBitsToDevice`;
+- immediate viewports (the splash) embedded in the main window.
+It is used when `FV_SOFTWARE` is set, or when eframe fails. winit allows
+one event loop a process, so the failed process starts itself again with
+`FV_SOFTWARE=1` and waits for it. `make_app` builds the application for
+both runners. On the VM: frames of 1320 × 860 in about 75 ms, the whole
+window as on Linux. `FV_SOFTLOG=<file>` traces it (a release build has no
+console).
+The harness gains:
+- `keys.ps1 -Soft` (our build started in the runner, so the started
+  process owns the window), `-ArgLine` and a display-on request while the
+  steps run (`SetThreadExecutionState`: an idle VM turned its display off
+  and the captures froze on the last frame — the cause of the stale shots);
+- `wakeshot.ps1` and `cleanup.ps1`.
+Both programs can now run the same scenario on the same machine (W4.3).
+Residual:
+- Ours repaints continuously on the VM (about 13 frames a second); the
+  cause of the repeated repaint request is not traced.
+- Ours starts at its default 1320 × 860 with no saved placement.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
