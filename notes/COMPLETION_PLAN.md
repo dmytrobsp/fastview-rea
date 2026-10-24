@@ -8,6 +8,12 @@ file is the record of *what is left*. Every commit that closes an item ticks
 it here; every checkpoint re-runs the measures and adds a row to the
 progress log.
 
+**Priority (the user, 2026-10-24):** the UI must behave and function as
+the original's — commands, enable states, dialogs, menus, values, files,
+keys and mouse. Small visual differences (font metrics, a pixel here or
+there) are acceptable: record them as residuals, don't chase them. Ours'
+own «Дополнительно» submenu (our extras) stays.
+
 ## Definition of done
 
 1. **Coverage.** Every function of the program's own code (`0x401000` –
