@@ -167,9 +167,9 @@ pub fn cell(doc: &Doc, key: ChanKey, col: usize) -> Option<bool> {
         (ChanKey::Analog(i), 1) => Some(doc.chans[i].visible),
         (ChanKey::Computed(j), 1) => Some(doc.computed[j].visible),
         (ChanKey::Digital(k), 1) => Some(doc.digital_visible.get(k).copied().unwrap_or(true)),
-        // Column 2: analog, not pending a merge (our computed channels have
-        // no frequency-diagram flag).
+        // Column 2: every analog-kind record not pending a merge.
         (ChanKey::Analog(i), 2) => Some(doc.chans[i].on_freq),
+        (ChanKey::Computed(j), 2) if !pending(doc, j) => Some(doc.computed[j].on_freq),
         (ChanKey::Analog(i), 3) if vector_unit_ok(unit.as_deref().unwrap_or("")) => Some(doc.chans[i].on_vector),
         (ChanKey::Computed(j), 3) if vector_unit_ok(unit.as_deref().unwrap_or("")) => Some(doc.computed[j].on_vector),
         (ChanKey::Analog(i), 4) if circle_unit_ok(unit.as_deref().unwrap_or("")) => Some(doc.chans[i].on_circle),
@@ -214,6 +214,7 @@ pub fn set_cell(doc: &mut Doc, key: ChanKey, col: usize, v: bool) {
             }
         }
         (ChanKey::Analog(i), 2) => doc.chans[i].on_freq = v,
+        (ChanKey::Computed(j), 2) => doc.computed[j].on_freq = v,
         (ChanKey::Analog(i), 3) => doc.chans[i].on_vector = v,
         (ChanKey::Computed(j), 3) => doc.computed[j].on_vector = v,
         (ChanKey::Analog(i), 4) => doc.chans[i].on_circle = v,
@@ -237,7 +238,7 @@ fn pending(doc: &Doc, j: usize) -> bool {
 /// can be when fewer rows have it than the column counts as applicable,
 /// else cleared — with the original's counts, which are not the cells':
 /// column 2 counts every analog row (computed and pending ones included)
-/// but writes the file channels only, column 3 counts the flag on any row,
+/// and writes the non-pending ones, column 3 counts the flag on any row,
 /// column 4 counts the eligible rows pending or not (and the R/X pairs) but
 /// writes the non-pending ones; column 5 is the differential pairs alone.
 /// No group is dissolved; the document is marked and the diagrams
@@ -266,10 +267,17 @@ pub fn toggle_column(doc: &mut Doc, col: usize) {
             }
         }
         2 => {
-            let set = doc.chans.iter().filter(|c| c.on_freq).count();
+            // Set: bit 1 and not bit 14; applicable: every analog-kind row;
+            // written: the non-pending ones (`0x435080`).
+            let set = doc.chans.iter().filter(|c| c.on_freq).count() + (0..doc.computed.len()).filter(|&j| doc.computed[j].on_freq && !pending(doc, j)).count();
             let v = set < analog.len();
             for c in &mut doc.chans {
                 c.on_freq = v;
+            }
+            for j in 0..doc.computed.len() {
+                if !pending(doc, j) {
+                    doc.computed[j].on_freq = v;
+                }
             }
         }
         3 => {
@@ -859,17 +867,18 @@ mod tests {
         assert!(!d.digital_visible[0]);
     }
 
-    /// The header's counts (`0x435080`): column 2 counts the computed rows
-    /// as applicable but writes the file channels only, so with a computed
-    /// channel it can only set; column 1 hides without dissolving groups.
+    /// The header's counts (`0x435080`): column 2 counts every analog-kind
+    /// row and writes the non-pending ones — formula channels too (L9.188);
+    /// column 1 hides without dissolving groups.
     #[test]
     fn header_clicks_use_the_originals_counts() {
         let mut d = demo_doc();
         d.computed.push(crate::app::Computed::new("X".into(), "Ua".into(), vec![], Color32::RED));
         toggle_column(&mut d, 2);
-        assert!(d.chans.iter().all(|c| c.on_freq));
+        assert!(d.chans.iter().all(|c| c.on_freq) && d.computed[0].on_freq);
+        assert_eq!(cell(&d, ChanKey::Computed(0), 2), Some(true));
         toggle_column(&mut d, 2);
-        assert!(d.chans.iter().all(|c| c.on_freq), "set < applicable: set again");
+        assert!(d.chans.iter().all(|c| !c.on_freq) && !d.computed[0].on_freq, "all set: cleared");
         d.chans[0].group = Some(3);
         d.chans[1].group = Some(3);
         toggle_column(&mut d, 1);

@@ -336,6 +336,11 @@ pub struct Computed {
     /// Shown on the vector / circle diagrams (flags 0x4 / 0x8).
     pub on_vector: bool,
     pub on_circle: bool,
+    /// Shown on the frequency diagram (flag 0x2): formula channels are
+    /// analog records below `doc+0x1d8`, so «Каналы» column 2, the
+    /// frequency menu and «Показать все» reach them (L9.188); off at
+    /// creation (flags 0xE1).
+    pub on_freq: bool,
     pub stats: StatRows,
     /// A pending (pasted) lane's place: in front of this analog / digital
     /// channel (`Digital(n)` = the end of the digital block); `None` for the
@@ -373,6 +378,7 @@ impl Computed {
             phasors: None,
             on_vector: false,
             on_circle: false,
+            on_freq: false,
             stats: StatRows::default(),
             visible: true,
             before: None,

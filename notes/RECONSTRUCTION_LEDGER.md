@@ -5689,11 +5689,30 @@ L9.181 residuals) was wrong. Ours' differences are plan W2.19.
 W3.1: every NOT DETERMINED / INFERRED / ND of the ledger and the specs is
 classified in the plan (STATIC / RUN / W6 / already settled).
 
+### L9.189 — Formula channels on the frequency diagram; the circle «Показать все» skips pending lanes (W2.19 part)  ·  ✅
+From L9.188: a formula channel is an analog record below `doc+0x1d8`
+with bit 13, created with flags 0xE1 (bit 1 off). The frequency menu
+`0x46f2e0` lists every kind-0 record without bit 14, «Показать все»
+`0x46f210` sets bit 1 on them, the painter `0x46f5a0` draws every record
+with bit 1 (`0x46fb1c`, `0x4700bc`), «Каналы» column 2 shows and the
+header `0x435080` writes it for every non-pending analog row; the circle's
+«Показать все» `0x437150` skips bit 14. Ours had no frequency flag on
+formula channels (the menu, column 2, the painter and the `.set` left
+them out) and ticked pending lanes on the circle. Now `Computed::on_freq`
+(the menu, «Показать все», column 2 and its header, the ribbon's
+32849 over selected formula channels, the `.set` ShowFlags bit 1), the
+painter draws them after the file's channels with k = 1 and no frequency
+correction, and the circle's «Показать все» skips pending lanes. Tests
+`formula_channels_reach_the_frequency_diagram`,
+`header_clicks_use_the_originals_counts` (now clearing formula rows too).
+Residual: whether a formula channel's spectrum goes through its own
+frequency vector (`ch+0x50`); the rest of W2.19.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.188)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.189)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5747,7 +5766,8 @@ L9.184 the merge bar's layout, the ОМП tree's labels after a delete;
 L9.185 W1.8 B3 / B10 — W1.8 done (the finder's sort, the merge bar's
 fill, the group stats width); L9.186 the panes' captions; L9.187 the ribbon's packing / checked
 gradient / height; L9.188 `doc+0x1d8` = every analog-kind record (W2.16),
-the unknowns table (W3.1).
+the unknowns table (W3.1); L9.189 formula channels on the frequency
+diagram.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped

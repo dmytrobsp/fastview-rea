@@ -180,7 +180,7 @@ impl Doc {
     /// them).
     fn computed_flag_targets(&self, f: ChanFlag) -> Vec<usize> {
         match f {
-            ChanFlag::OnVector | ChanFlag::OnCircle => self.selected_computed(),
+            ChanFlag::OnFreq | ChanFlag::OnVector | ChanFlag::OnCircle => self.selected_computed(),
             ChanFlag::Invert | ChanFlag::RemoveDc => self.selected_computed(),
             _ => Vec::new(),
         }
@@ -190,6 +190,7 @@ impl Doc {
     pub fn flag_state(&self, f: ChanFlag) -> ItemState {
         let comp = self.computed_flag_targets(f);
         let cflag = |j: usize| match f {
+            ChanFlag::OnFreq => self.computed[j].on_freq,
             ChanFlag::OnVector => self.computed[j].on_vector,
             ChanFlag::Invert => self.computed[j].invert,
             ChanFlag::RemoveDc => self.computed[j].remove_dc,
@@ -244,6 +245,7 @@ impl Doc {
         }
         for j in self.computed_flag_targets(f) {
             match f {
+                ChanFlag::OnFreq => self.computed[j].on_freq = v,
                 ChanFlag::OnVector => self.computed[j].on_vector = v,
                 ChanFlag::Invert => self.computed[j].invert = v,
                 ChanFlag::RemoveDc => self.computed[j].remove_dc = v,

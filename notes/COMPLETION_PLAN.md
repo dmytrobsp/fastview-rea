@@ -157,15 +157,14 @@ items (VM ones also in W4.4):
   `rec+0x58` and raises `rec+0x5c`; the paste's insert `0x42e5c0` and the
   remove `0x42ecf0` count by kind). The earlier "file channels only" read
   was wrong. Ours' differences filed in W2.19.
-- [ ] W2.19 From W2.16: formula channels on the frequency diagram
-  (`on_freq`, «Каналы» column 2, the menu, the painter); a pasted analog
+- [ ] W2.19 From W2.16 (done in L9.189: formula channels on the
+  frequency diagram, the circle «Показать все» skipping pending lanes). Left: a pasted analog
   channel with nothing selected goes after the formula channels and stays
   there after «Объединить» (needs one order over the kind-0 records);
   pending pasted digital channels among the digital rows / outside the
   analog loops; the paste's analog point from a selected formula channel
-  too; the coefficient dialog lists pending analog channels; circle
-  «Показать все» skips pending lanes (`0x437150`); the ОМП flags carry
-  the computed bit.
+  too; the coefficient dialog lists pending analog channels; the ОМП
+  flags carry the computed bit.
 - [ ] W2.17 The open residuals of ✅ entries since L9.128 (each entry's
   "Residual:" lines): quick analysis's rollback of its channels on a
   failed recompute (L9.157), drag-scroll left / right (L9.164), the grid's

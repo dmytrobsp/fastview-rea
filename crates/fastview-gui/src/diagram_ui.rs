@@ -231,6 +231,8 @@ struct DChan {
     color: Color32,
     analog: Option<usize>,
     computed: Option<usize>,
+    /// A pasted channel waiting for «Объединить» (bit 14).
+    pending: bool,
 }
 
 fn doc_chans(d: &Doc) -> Vec<DChan> {
@@ -243,7 +245,7 @@ fn doc_chans(d: &Doc) -> Vec<DChan> {
         .map(|(i, c)| {
             let unit = if d.chans[i].adc_counts { String::new() } else { c.unit.clone() };
             let shown = fvb_core::units::Shown::file(&unit, c.per_second);
-            DChan { name: c.id.clone(), unit, shown, color: d.chans[i].color, analog: Some(i), computed: None }
+            DChan { name: c.id.clone(), unit, shown, color: d.chans[i].color, analog: Some(i), computed: None, pending: false }
         })
         .collect();
     v.extend(d.computed.iter().enumerate().map(|(j, c)| DChan {
@@ -253,6 +255,7 @@ fn doc_chans(d: &Doc) -> Vec<DChan> {
         color: c.color,
         analog: None,
         computed: Some(j),
+        pending: d.pending_of(j).is_some(),
     }));
     v
 }
@@ -278,6 +281,7 @@ fn chan_flag(d: &Doc, w: Window, c: &DChan) -> bool {
         (Some(i), _, _) => d.chans[i].on_circle,
         (_, Some(j), Window::Vector) => d.computed[j].on_vector,
         (_, Some(j), Window::Circle) => d.computed[j].on_circle,
+        (_, Some(j), Window::Freq) => d.computed[j].on_freq,
         _ => false,
     }
 }
@@ -295,6 +299,7 @@ fn set_chan_flag(d: &mut Doc, w: Window, idx: usize, v: bool) {
         match w {
             Window::Vector => c.on_vector = v,
             Window::Circle => c.on_circle = v,
+            Window::Freq => c.on_freq = v,
             _ => {}
         }
     }
@@ -306,7 +311,8 @@ fn listed(w: Window, c: &DChan) -> bool {
         Window::Vector => dg::vector_unit_ok(&c.unit),
         // Formula channels by their walked unit like any other (L9.83).
         Window::Circle => dg::circle_pane_unit_ok(&c.unit),
-        Window::Freq => c.analog.is_some(),
+        // Every analog-kind record not pending a merge (`0x46f2e0`).
+        Window::Freq => c.analog.is_some() || c.computed.is_some() && !c.pending,
         Window::Diff => false,
     }
 }
@@ -743,10 +749,11 @@ impl App {
                     Window::Diff => d.dif_pairs.iter_mut().for_each(|p| p.on = on),
                     _ => {
                         // «Показать все» sets the flag on every listed channel
-                        // (`0x437150`), «Скрыть все» clears it on all.
+                        // — the circle's skips one pending a merge (bit 14,
+                        // `0x437150`) —, «Скрыть все» clears it on all.
                         let chans = doc_chans(d);
                         for (idx, c) in chans.iter().enumerate() {
-                            if !on || listed(w, c) {
+                            if !on || listed(w, c) && !(w == Window::Circle && c.pending) {
                                 set_chan_flag(d, w, idx, on);
                             }
                         }
@@ -1360,7 +1367,20 @@ impl App {
         let f = d.osc.line_freq;
         // Only the diagram's own flag counts (`0x46fb1c`), not the lane's
         // visibility on the oscillogram.
-        let chans: Vec<usize> = (0..d.osc.analog.len()).filter(|i| d.chans[*i].on_freq).collect();
+        // Formula channels too, after the file's, in vector order
+        // (`0x46fb1c` walks the whole vector by bit 1, L9.188).
+        struct FreqChan<'a> {
+            name: &'a str,
+            color: Color32,
+            samples: &'a [f64],
+            /// The file channel (its frequency correction and k).
+            file: Option<usize>,
+        }
+        let chans: Vec<FreqChan> = (0..d.osc.analog.len())
+            .filter(|i| d.chans[*i].on_freq)
+            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: &d.flagged.analog[i].samples, file: Some(i) })
+            .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && d.pending_of(*j).is_none()).map(|(_, c)| FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: None }))
+            .collect();
         let s = print_s().unwrap_or(1.0);
         let si = s as i32;
         let ink = Color32::from_gray(20);
@@ -1376,13 +1396,13 @@ impl App {
         let tl = if print_look().is_some() { g.print_tiling(chans.len(), k_max, screen) } else { g.screen_tiling(chans.len()) };
         // Pass 1: swatch and name under each panel's row; the x labels
         // (with several rows their rects are inverted: none).
-        for (pi, &i) in chans.iter().enumerate() {
+        for (pi, ch) in chans.iter().enumerate() {
             let (c, r) = tl.cell(pi);
             let yb = tl.row_bottom(&g, r);
-            let name = format!("{}{}", d.osc.analog[i].id, if percent { ", %" } else { "" });
+            let name = format!("{}{}", ch.name, if percent { ", %" } else { "" });
             let x0 = tl.swatch_x(&g, c, width(&name, font()));
             let sw = Rect::from_min_max(pt(x0, yb + 3), pt(x0 + 10 * si, yb + 3 + 10 * si));
-            painter.rect_filled(sw, 0.0, d.chans[i].color);
+            painter.rect_filled(sw, 0.0, ch.color);
             painter.px_rect_stroke(sw.shrink(0.5), 0.0, Stroke::new(1.0f32, Color32::BLACK));
             painter.text(pt(x0 + 16 * si, yb), egui::Align2::LEFT_TOP, name, font(), ink);
             if tl.rows > 1 {
@@ -1397,18 +1417,18 @@ impl App {
             }
         }
         // Pass 2: the bars and their value labels.
-        for (pi, &i) in chans.iter().enumerate() {
+        for (pi, ch) in chans.iter().enumerate() {
             let (c, r) = tl.cell(pi);
             let (row_top, yb) = (g.top + r * tl.row_h, tl.row_bottom(&g, r));
-            let samples = &d.flagged.analog[i].samples;
-            let mine = corr.and_then(|cr| cr.for_chan(i));
+            let samples = ch.samples;
+            let mine = ch.file.and_then(|i| corr.and_then(|cr| cr.for_chan(i)));
             // The spectrum reads the samples through `0x426020`: times k.
-            let kf = d.shown_k(i);
+            let kf = ch.file.map_or(1.0, |i| d.shown_k(i));
             let sp: Vec<f64> = fvb_core::freqcorr::spectrum(mine, samples, pos, n, periods, k_max.max(periods), d.osc.harmonic1_gain).into_iter().map(|v| v * kf).collect();
             let max = sp[..=k_max].iter().copied().fold(0.0, f64::max);
             let max = if max == 0.0 { 1.0 } else { max };
-            let norm = if use_rms { fvb_core::freqcorr::rms_at(corr, i, samples, pos, n, periods) * kf } else { sp.get(periods).copied().unwrap_or(0.0) };
-            let color = d.chans[i].color;
+            let norm = if use_rms { fvb_core::freqcorr::rms_at(ch.file.and(corr), ch.file.unwrap_or(0), samples, pos, n, periods) * kf } else { sp.get(periods).copied().unwrap_or(0.0) };
+            let color = ch.color;
             if g.plot_h() - 30 * si - g.h <= 0 {
                 continue;
             }
@@ -2010,9 +2030,28 @@ mod tests {
 
     /// A formula channel is listed on the circle pane by its unit like any
     /// other (`0x43d220`): none → not listed (L9.83).
+    /// The frequency diagram lists every analog-kind channel not pending a
+    /// merge, formula channels included (`0x46f2e0`, L9.188); its flag
+    /// round-trips through the formula channel.
+    #[test]
+    fn formula_channels_reach_the_frequency_diagram() {
+        let ch = |pending: bool| DChan { name: "F".into(), unit: String::new(), shown: Default::default(), color: Color32::RED, analog: None, computed: Some(0), pending };
+        assert!(listed(Window::Freq, &ch(false)));
+        assert!(!listed(Window::Freq, &ch(true)), "pending a merge");
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        d.computed.push(crate::app::Computed::new("F".into(), "Ua".into(), vec![0.0; d.osc.sample_count()], Color32::RED));
+        let idx = d.chans.len();
+        set_chan_flag(d, Window::Freq, idx, true);
+        assert!(d.computed[0].on_freq);
+        let chans = doc_chans(d);
+        assert!(chan_flag(d, Window::Freq, &chans[idx]));
+    }
+
     #[test]
     fn unitless_formula_channels_are_not_circle_channels() {
-        let mk = |unit: &str| DChan { name: "Z".into(), unit: unit.into(), shown: Default::default(), color: Color32::RED, analog: None, computed: Some(0) };
+        let mk = |unit: &str| DChan { name: "Z".into(), unit: unit.into(), shown: Default::default(), color: Color32::RED, analog: None, computed: Some(0), pending: false };
         assert!(!listed(Window::Circle, &mk("")));
         assert!(listed(Window::Circle, &mk("Ohm")) && listed(Window::Circle, &mk("VA")));
     }

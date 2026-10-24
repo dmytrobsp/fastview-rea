@@ -283,6 +283,7 @@ impl Doc {
         let c = &self.computed[j];
         let bit = |on: bool, b: u32| if on { b } else { 0 };
         bit(c.visible, flag::VISIBLE)
+            | bit(c.on_freq, flag::FREQUENCY)
             | bit(c.on_vector, flag::VECTOR)
             | bit(c.on_circle, flag::CIRCLE)
             | bit(c.stats.minmax, flag::MINMAX)
@@ -556,6 +557,7 @@ impl App {
             let r = recset::read_channel(&sec, &cur);
             let c = &mut d.computed[j];
             c.visible = r.show_flags & flag::VISIBLE != 0;
+            c.on_freq = r.show_flags & flag::FREQUENCY != 0;
             c.on_vector = r.show_flags & flag::VECTOR != 0;
             c.on_circle = r.show_flags & flag::CIRCLE != 0;
             c.stats.minmax = r.show_flags & flag::MINMAX != 0;
