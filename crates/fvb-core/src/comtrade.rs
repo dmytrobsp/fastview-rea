@@ -181,7 +181,7 @@ impl Oscillogram {
     /// (`0x42734b` and every signal function, L9.142 — the integer rate,
     /// not the first rate line); estimated from the time axis if unknown.
     pub fn int_rate_hz(&self) -> f64 {
-        if self.rate_r > 0.0 {
+        if self.rate_r != 0.0 {
             self.rate_r
         } else {
             self.sample_rate
@@ -189,8 +189,15 @@ impl Oscillogram {
     }
 
     pub fn samples_per_cycle(&self) -> usize {
-        if let Some(n) = crate::signal::samples_per_period(self.int_rate_hz(), self.line_freq) {
-            n
+        if let Some(n) = crate::signal::samples_per_period(self.int_rate_hz(), self.line_freq).filter(|&n| n > 0) {
+            // A negative R divides as unsigned (−5 → 85 899 345 at 50 Hz):
+            // no window fits, so anything past the record's length is
+            // the same — kept there, not allocated.
+            if self.rate_r < 0.0 {
+                n.min(self.time.len() + 1)
+            } else {
+                n
+            }
         } else if self.time.len() > 1 {
             let dt = self.time[1] - self.time[0];
             if dt > 0.0 {
@@ -1406,18 +1413,11 @@ pub fn format_stamp(date: &str, time: &str, rev_year: i32, local_code: &str, utc
 }
 
 impl Oscillogram {
-    /// Re-time the record at a new sample rate (file parameters, `0x449f40`):
-    /// a uniform grid from the first sample.
-    pub fn retime(&mut self, rate: f64) {
-        if rate <= 0.0 || !rate.is_finite() {
-            return;
-        }
-        let t0 = self.time.first().copied().unwrap_or(0.0);
-        for (k, t) in self.time.iter_mut().enumerate() {
-            *t = t0 + k as f64 / rate;
-        }
-        self.sample_rate = rate;
-        // `rec+0x228`, then the track over the old segments (`0x42e540`).
+    /// «Параметры осциллограммы»' new rate (`0x44a257`, `0x42e540`): only
+    /// the integer rate `rec+0x228` and the nominal track built from it —
+    /// the time axis, the rate segments and the first rate stay, so the
+    /// ruler does not move; the windows' N follows R.
+    pub fn set_rate_r(&mut self, rate: f64) {
         self.rate_r = rate;
         self.rebuild_freq_track();
     }

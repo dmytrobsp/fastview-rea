@@ -19,9 +19,12 @@ pub type Phasors = Vec<Complex64>;
 /// Samples per nominal period as the original computes it: `rate / trunc(f)`
 /// with unsigned integer division (`0x427062`), from the record's integer
 /// working sample rate and nominal frequency. Never a measured frequency.
+/// A negative rate (an int typed into «Параметры осциллограммы») divides
+/// as its unsigned 32-bit pattern; a rate under f gives 0.
 pub fn samples_per_period(sample_rate: f64, line_freq: f64) -> Option<usize> {
     let (rate, f) = (sample_rate.trunc(), line_freq.trunc());
-    (rate >= 1.0 && f >= 1.0).then(|| (rate as u64 / f as u64) as usize)
+    let rate = if rate < 0.0 { rate as i32 as u32 as u64 } else { rate as u64 };
+    (f >= 1.0).then(|| (rate / f as u64) as usize)
 }
 
 /// The 120° rotation operator used by the symmetric-component transform.

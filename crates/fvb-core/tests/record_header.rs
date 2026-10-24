@@ -103,10 +103,11 @@ fn code_page_guess_counts_letters() {
 }
 
 #[test]
-fn retime_rebuilds_a_uniform_grid() {
+fn a_new_rate_keeps_the_time_axis() {
     let mut rec = comtrade::parse(CFG, DAT).unwrap();
-    rec.retime(4000.0);
-    assert_eq!(rec.sample_rate, 4000.0);
-    assert!((rec.time[4] - rec.time[0] - 0.001).abs() < 1e-12);
-    assert!((rec.duration() - (rec.sample_count() - 1) as f64 / 4000.0).abs() < 1e-9);
+    let (time, rate, dur) = (rec.time.clone(), rec.sample_rate, rec.duration());
+    rec.set_rate_r(4000.0);
+    assert_eq!(rec.rate_r, 4000.0);
+    assert_eq!((rec.time.clone(), rec.sample_rate, rec.duration()), (time, rate, dur));
+    assert_eq!(rec.samples_per_cycle(), 80);
 }

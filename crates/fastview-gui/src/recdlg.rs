@@ -488,31 +488,10 @@ impl App {
         let esc = keys == Some(false);
         let apply = apply || keys == Some(true);
         if apply {
-            // 0x415 goes through DDX_Text of an int (mfc #3761, `0x44a230`:
-            // scanf "%d", L9.148); no DDV — ours refuses 0 and negatives
-            // (deliberately: what follows such a rate is ND).
-            let rate = crate::dialogs::ddx_int(&st.rate_text).filter(|r| *r > 0).map(f64::from);
-            match rate {
-                None => {
-                    // AFX_IDP_PARSE_INT; the dialog stays.
-                    self.dlg.push_alert("Введите целое число.");
-                    st.fail = true;
-                    self.dlg.file_params = Some(st);
-                    return;
-                }
-                Some(r) if r != self.docs[ai].osc.rate_r => {
-                    // `0x44a24a`: undo snapshot, the new rate, the full
-                    // recompute, the silent ОМП run (always) and the
-                    // modified mark.
-                    let d = &mut self.docs[ai];
-                    let snap = App::snapshot_of_doc(d);
-                    App::push_undo(d, snap);
-                    d.osc.retime(r);
-                    d.recompute_signals();
-                    d.set.modified = true;
-                    self.run_omp_silent(ai);
-                }
-                Some(_) => {}
+            if let Err(fail) = self.apply_file_rate(ai, &st.rate_text) {
+                st.fail = fail;
+                self.dlg.file_params = Some(st);
+                return;
             }
             // `0x44a2c9`: a new correction choice is stored, the document
             // marked modified and every channel recomputed.
@@ -528,6 +507,41 @@ impl App {
         } else {
             self.dlg.file_params = Some(st);
         }
+    }
+
+    /// 392's sample rate on «Закрыть». 0x415 goes through DDX_Text of an
+    /// int (mfc #3761, `0x44a230`: scanf "%d", L9.148) with no DDV, so 0
+    /// and negatives are taken. A new R (`0x44a24a`): the undo snapshot, R
+    /// stored and the nominal track (`0x42e540`); then each channel's
+    /// recompute, which throws the format error when R div f is 0
+    /// (`0x4285b9`) — after the snapshot and the store, before anything
+    /// else: no recompute, ОМП or modified mark. Otherwise the full
+    /// recompute, the silent ОМП run (always) and the modified mark.
+    /// `Err(refocus)`: the dialog stays (UpdateData failed); `true` puts
+    /// the caret back in the field (the int parse).
+    pub fn apply_file_rate(&mut self, ai: usize, text: &str) -> Result<(), bool> {
+        let Some(rate) = crate::dialogs::ddx_int(text) else {
+            // AFX_IDP_PARSE_INT.
+            self.dlg.push_alert("Введите целое число.");
+            return Err(true);
+        };
+        let rate = f64::from(rate);
+        if rate == self.docs[ai].osc.rate_r {
+            return Ok(());
+        }
+        let d = &mut self.docs[ai];
+        let snap = App::snapshot_of_doc(d);
+        App::push_undo(d, snap);
+        d.osc.set_rate_r(rate);
+        if fvb_core::signal::samples_per_period(rate, d.osc.line_freq) == Some(0) {
+            // The exception's text with an empty detail: no file name.
+            self.dlg.push_alert(fvb_core::comtrade::ComtradeError::Format.to_string());
+            return Err(false);
+        }
+        d.recompute_signals();
+        d.set.modified = true;
+        self.run_omp_silent(ai);
+        Ok(())
     }
 
     /// DIALOG 510 «Установка настроек программы»: OK stores and persists; the
@@ -721,6 +735,52 @@ mod tests {
         let osc = comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
         app.add_doc(Doc::new(osc, "demo".into()));
         app
+    }
+
+    #[test]
+    fn a_new_rate_changes_the_windows_not_the_time_axis() {
+        let mut app = demo_app();
+        let d = &app.docs[0];
+        let (time, n, r) = (d.osc.time.clone(), d.osc.samples_per_cycle(), d.osc.rate_r);
+        let half = (r / 2.0) as i32;
+        assert_eq!(app.apply_file_rate(0, &half.to_string()), Ok(()));
+        let d = &app.docs[0];
+        assert_eq!(d.osc.time, time, "the ruler stays");
+        assert_eq!(d.osc.samples_per_cycle(), n / 2);
+        assert!(d.set.modified);
+        assert_eq!(d.undo.len(), 1);
+        // The same value again: nothing.
+        app.docs[0].set.modified = false;
+        assert_eq!(app.apply_file_rate(0, &format!("{half} Гц")), Ok(()));
+        assert!(!app.docs[0].set.modified);
+        assert_eq!(app.docs[0].undo.len(), 1);
+    }
+
+    #[test]
+    fn a_rate_under_the_line_frequency_is_a_format_error_after_the_store() {
+        let mut app = demo_app();
+        assert_eq!(app.apply_file_rate(0, "0"), Err(false));
+        assert_eq!(app.dlg.alert(), Some("Неправильный формат файла"));
+        let d = &app.docs[0];
+        assert_eq!((d.osc.rate_r, d.undo.len(), d.set.modified), (0.0, 1, false), "stored and undoable, not modified");
+        assert!(d.osc.freq_track.iter().all(|f| f.is_infinite()));
+        // «Закрыть» again: equal to the stored R, it closes.
+        app.dlg.alerts.clear();
+        assert_eq!(app.apply_file_rate(0, "0"), Ok(()));
+        assert!(app.dlg.alerts.is_empty());
+        assert_eq!(app.apply_file_rate(0, "x"), Err(true));
+    }
+
+    #[test]
+    fn a_negative_rate_divides_unsigned_and_leaves_no_window() {
+        let mut app = demo_app();
+        assert_eq!(app.apply_file_rate(0, "-5"), Ok(()));
+        let d = &app.docs[0];
+        assert_eq!(d.osc.rate_r, -5.0);
+        assert_eq!(fvb_core::signal::samples_per_period(-5.0, 50.0), Some(85_899_345));
+        assert_eq!(d.osc.samples_per_cycle(), d.osc.sample_count() + 1);
+        assert!(d.analysis.phasors.iter().all(|p| p.iter().all(|z| z.norm() == 0.0)));
+        assert!(d.set.modified);
     }
 
     #[test]

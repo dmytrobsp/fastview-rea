@@ -8134,6 +8134,37 @@ both centre the row under the circle; the original's text is heavier
 Also run: «Удалить файлы» in the finder with nothing selected does
 nothing in both (L9.154's open point).
 
+### L9.297 — DIALOG 392's sample rate: R only, the time axis stays; 0 and negatives as the original  ·  ✅
+Run (VM, WIN_1999, 1000 Hz): 1000 → 500 closes with the ruler unchanged
+(0 … 6656 ms); 0 shows «Неправильный формат файла» (no file name) and
+the dialog stays; −5 closes silently and reopening shows −5. Ours
+re-timed the record (the ruler doubled) and refused 0 / negatives with
+«Введите целое число.».
+Read (subagent, by hand `0x449f40`, `0x44a240`–`0x44a257`, `0x42e540`,
+`0x428490`): a value equal to `rec+0x228` does nothing; a new one pushes
+the undo snapshot, stores R and rebuilds the nominal track (`0x454960`:
+segment rate ÷ X · f, X = round(R/f)·round(f) — the segments, the time
+array and the first rate are never written, so the ruler and the
+duration stay); then each channel's recompute (`0x428490`) takes N = R
+div trunc(f) as **unsigned** 32-bit numbers and throws the format
+exception (string 330, empty detail) when N is 0 (`0x4285b9`) — any R
+under f, after the snapshot and the store, before any cache, ОМП or
+modified mark; UpdateData fails, so the dialog stays, and «Закрыть»
+again finds R equal and closes. −5 divides as 4 294 967 291: N =
+85 899 345, no window fits (zero phasors, NaN DC mean), then formulas,
+the silent ОМП and the modified mark as for any new rate.
+Now `Oscillogram::set_rate_r` (was `retime`), `signal::samples_per_period`
+(unsigned for a negative rate, 0 under f), `samples_per_cycle` (a
+negative R's N kept at the record's length + 1: no window either way,
+nothing allocated), `App::apply_file_rate`. Tests
+`a_new_rate_changes_the_windows_not_the_time_axis`,
+`a_rate_under_the_line_frequency_is_a_format_error_after_the_store`,
+`a_negative_rate_divides_unsigned_and_leaves_no_window`,
+`a_new_rate_keeps_the_time_axis`; run on the VM: all three alike.
+Residual: after a refused 0 the original keeps its old caches while R
+is 0; ours computes live from the time axis's N for an R of 0 (only
+reachable through this refusal).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
