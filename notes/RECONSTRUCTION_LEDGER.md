@@ -7059,6 +7059,20 @@ box at the station, a section's dotted branch and ± box one level in
 before). Its (171, 173, 179) border, the double-click toggling a station
 kept.
 
+### L9.255 — The finder's caption and its pickers' first dates  ·  ✅
+VM runs of «Проводник» (application menu): the dialog is DIALOG 558 and
+its caption the template's «Поиск файлов» (ours: «Проводник», the menu
+item's). With no record in the scanned folder (Documents) both date
+pickers show «1 января 1970 г.» — the dialog's date members, never set,
+are a zero time (the profile keeps only Path, StationName, StationID,
+IncludeSubdirs and SortMode: no dates); with records (the folder set to
+fv-test\records through `FileFinder\Path`) they show the files'
+earliest and latest dates, 27 июня 2023 г. and 5 марта 2025 г., as ours's
+`poll` did. L9.116's «the pickers start at today» was the picker's own
+default, not what the dialog shows. Now `Finder::new` starts both at
+`Stamp::EPOCH`; the caption is «Поиск файлов». The dialog's layout
+(DIALOG 558's 739 × 354 DLU, the shell tree, pickers, lists) is next.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

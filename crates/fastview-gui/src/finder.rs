@@ -30,22 +30,8 @@ impl Stamp {
         format!("{:02}:{:02}:{:02}", self.h, self.mi, self.s)
     }
 
-    /// The current date (UTC; the pickers' initial value — the local
-    /// offset is not taken).
-    pub fn today() -> Stamp {
-        let days = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() / 86_400) as i64;
-        // Days since 1970-01-01 to a civil date (Hinnant's algorithm).
-        let z = days + 719_468;
-        let era = z.div_euclid(146_097);
-        let doe = z - era * 146_097;
-        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-        let mp = (5 * doy + 2) / 153;
-        let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-        let mo = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-        let y = (yoe + era * 400 + i64::from(mo <= 2)) as i32;
-        Stamp { y, mo, d, h: 0, mi: 0, s: 0 }
-    }
+    /// 1 January 1970, a zero CTime's date.
+    pub const EPOCH: Stamp = Stamp { y: 1970, mo: 1, d: 1, h: 0, mi: 0, s: 0 };
 
     /// The system long date (Russian: «23 октября 2026 г.»), as the
     /// date pickers show it (DTS_LONGDATEFORMAT, no custom format).
@@ -546,9 +532,11 @@ impl Finder {
             recursive,
             station,
             block,
-            // A date-time picker starts at the current date.
-            from: Stamp::today(),
-            to: Stamp::today(),
+            // Both pickers start at the members' zero time — 1 January 1970
+            // (VM: with no file found they show «1 января 1970 г.»; a scan
+            // that finds files sets the files' earliest / latest, `poll`).
+            from: Stamp::EPOCH,
+            to: Stamp::EPOCH,
             files: Vec::new(),
             selected: Vec::new(),
             // OnInitDialog's Sort(6) — Дата ascending — runs before the scan
@@ -719,7 +707,8 @@ impl App {
         }
         let mut rescan = false;
         let mut open = true;
-        crate::dialogs::dlg(ctx, "Проводник")
+        // The template's caption (DIALOG 558), not the menu item's.
+        crate::dialogs::dlg(ctx, "Поиск файлов")
             .collapsible(false)
             .default_size([900.0, 520.0])
             .open(&mut open)
