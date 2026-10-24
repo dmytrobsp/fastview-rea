@@ -240,7 +240,7 @@ items (VM ones also in W4.4):
   - **W6**: landscape margins (our CUPS path), drivers resetting the DC,
     short-row files (no sample), the `.zip` writer (unreachable).
 - [ ] W3.2 Settle the static ones.
-- [ ] W3.3 Run the RUN ones (W4.4) and tidy the settled rows' wording.
+- [ ] W3.3 Run the RUN ones (W4.4) and tidy the settled rows' wording (tidied 2026-10-24: L4, L5 ×2, L7, L8 ×2, L3, L2's `arg:`).
 
 ## W4 — Run the original on the Windows VM
 

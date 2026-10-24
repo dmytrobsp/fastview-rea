@@ -238,8 +238,9 @@ Residual / not modelled (honest):
   failure; we drop the vertex (graceful divergence on invalid input).
 - Absent `type` on a non-first figure: undefined in the original (uninitialised
   heap); we union. Not reachable with the shipped library.
-- `mode`/`type`/`closed` string compares: Ordinal_2948 case-sensitivity NOT
-  DETERMINED; we compare case-insensitively.
+- `mode`/`type`/`closed` string compares: Ordinal_2948 case-sensitivity —
+  settled in L5 (CString::Compare, wcscmp: case-sensitive; ours since then,
+  test `attribute_values_are_case_sensitive`).
 - Paint details (presentation, not geometry): characteristics drawn last→first,
   operate fill alpha 50, reset outline only and gated by a window flag, nothing
   drawn when `scale·extent ≥ 800·printScale`, the 9-entry colour table
@@ -283,7 +284,8 @@ mfc120u.dll 12.0.40649 export table: Ordinal_2948 = `CString::Compare`
   default text, no mask/min/max/format) re-evaluated as formulas. Persistence
   (`FUN_00408cf0` save / `FUN_00409030` load): settings tree section "Circle
   Chart" / "Diff Chart" → "Selected Block" → per characteristic `visible` and
-  per parameter `value` text (backing file NOT DETERMINED).
+  per parameter `value` text (backing file: the record's `.set`, settled
+  by L9.162).
 
 Our impl: `parse.rs` rewritten as a structural DOM walk with exact compares
 and lenient (`Expr::lenient`) expression storage; `model.rs` exact
@@ -304,9 +306,8 @@ Residual / honest:
 - Persistence ✅ (behaviour): per diagram ("Circle Chart"/"Diff Chart") the
   selected block, each characteristic's visibility and parameter texts are
   saved on every change and restored (`persist.rs`, GUI test). Storage differs:
-  a TSV file in the platform config dir (the original's settings-tree file is
-  NOT DETERMINED), keyed by (diagram, block, characteristic) where the
-  original's exact key nesting is ambiguous.
+  a TSV file in the platform config dir (the original's settings-tree file:
+  the record's `.set`, keyed as L9.162 reads — since then ours too).
 - Figure-granular staleness: the original updates a failing figure's fields up
   to the failing attribute; we keep the whole figure's previous values.
 - Never-evaluated figures: original's zero-initialised fields → we treat as
@@ -424,7 +425,8 @@ cursor-instant phasor, plain reactance / textbook two-terminal formula) is
   (R0,X0 total Ω). Channels by name: isolated Uab/Ubc/Uca + Ia/Ib/Ic; grounded
   Ua/Ub/Uc + Ia/Ib/Ic. No sections or Inom = 0 → message 349. Validation
   0x4a5d70 (R0&X0 / R1&X1 not both 0, section length ≠ 0). Primary vs
-  secondary NOT DETERMINED (no ratio applied in ОМП code).
+  secondary — settled by L9.7 / L9.134 (ОМП copies `ch+0x20`, which
+  `0x426020` fills with the ratio applied).
 - Phasors (0x477280, ✔ read directly): fixed-rate path = Σ_{j=0}^{N−1}
   x[i−N+j]·(sin θj + j·cos θj), θj = 2πj/N, × 2/N (**peak**, window
   [i−N, i−1], excludes i) — i.e. the channel phasor (L6) at i−1 times √2;
@@ -564,8 +566,8 @@ texts " %8.2fº" / value/π " %8.2fπ", direction-only, solid pen for "V",
 diagram draws every channel with the circle flag as its phasor series
 (N..end or between the cursors), "+" markers at both cursors, readout at
 cursor 1 (Re ± jIm / |·|∠); differential diagram draws the (Iторм, Iдиф)
-pairs. Not modelled: separate scales for "Ohm" vs other circle channels
-(NOT DETERMINED), R/X channel pairs (DIALOG 554), the vector table layout.
+pairs. Not modelled then: separate scales for "Ohm" vs other circle channels
+(settled by L9.80 / L9.83), R/X channel pairs (DIALOG 554), the vector table layout.
 Frequency diagram (done): `signal::spectrum` = `0x426510` (P-period window,
 bins k·f/P, bin 0 = |a0|, harmonic-1 gain on bin 1 even for P > 1), periods /
 harmonic count (≤ Nyquist) / percent (of bin P or of true RMS) settings, bars
@@ -574,7 +576,8 @@ display mode drives the plotted series, the value at the cursor and Max/Min;
 СКЗ/A1 always one-period RMS / first harmonic (with the record gain);
 computed channels read out like any channel; text = `views::readout_text`
 (`" %-8g %s"` + SI prefix, `fmt_g` emulating C `%g`). Residual: the default of
-the percent switch and the stat-visibility controls (NOT DETERMINED); MSVC
+the percent switch and the stat-visibility controls (settled by L9.12 and
+L9.177); MSVC
 printf tie rounding not modelled.
 
 ---
@@ -5894,7 +5897,7 @@ Not verified / residual (honest):
   folds Cyrillic (CRT behaviour INFERRED) — as ours, which the shipped
   library needs (`ДЗМф2_Rср` vs `ДЗМФ2_Rср`).
 - `arg:` warm-up count in the `.fvb` context (vtable[2] of that Calculator
-  subclass) not determined; we assume no warm-up.
+  subclass) — settled in L6: no warm-up (vtable `0x4c3df4`).
 - ❌ Channel mode (computed channels): identifiers resolve via vtable[0] to
   CHANNEL tokens (flags 7; scalar = sample `FUN_00426020`, complex = phasor
   `FUN_00428ac0`; an unresolved name emits *nothing*). Our GUI feeds channel
@@ -5945,7 +5948,7 @@ Verdict: 🟡 **PARTIAL** (all readers present).
 - ✅ `.osc` Save-As (`0x44ca80` writes the record's own bytes under the new
   name; ours copies the file — triaged 2026-10-23); (OSC stamps and the
   trigger sample: L9.124 / L9.125); unit-prefix
-  table beyond micro/milli NOT DETERMINED.
+  table beyond micro/milli — settled by L9.34 (the normaliser `0x422b10`).
 - ⛔ `.sto` — needs the native ConvertSto2Comtrade and a sample file.
 - Not modelled: the temp-folder mechanics, `<base>.set` files, the
   save-onto-own-path rule, the `.dat` → `.cfg` open redirect is native already.
