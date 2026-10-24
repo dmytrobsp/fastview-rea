@@ -6994,6 +6994,26 @@ selected row (0, 120, 215) with white text — the classic list highlight,
 not measured: the VM's list was empty); `win_button`'s id includes its
 place (two text-less buttons). The other five pages remain ours — next.
 
+### L9.251 — The five analysis pages on their templates; the bar's hot face  ·  ✅
+VM captures of each page of «Быстрый анализ» (a click on its bar item):
+pages 536, 537, 538, 543 and 539 sit, like 340, with their origin at
+(154, −1) in the sheet's client (536's «Токи» frame at x 1180, y 359 as
+its 6, 7 DLU put it), every control at its template rectangle — group
+boxes, right-aligned labels, the channel drop-down lists («Канал
+отсутствует» / «Не учитывать» on top while chosen), radios, check boxes,
+edits, «<<» / «>>»; the hidden statics (no WS_VISIBLE) do not show. The
+«Отключить» checks are BS_LEFTTEXT: the box at the control's right end,
+the text right-aligned 3 px before it. Under the pointer a bar item
+shows the Office 2007 hot face around its image: 5 px round it, a (135,
+171, 217) border, (255, 251, 232) → (250, 229, 169) above and (255, 208,
+73) → (255, 225, 149) below (the sheet opened on a page shows none: no
+selection mark). Ours drew the pages as egui grids. Now `Pg` places each
+page's controls (with `win_check_ex` — disabled, left text — and
+`win_edit_en`), every page matching its capture but for the glyphs (our
+wider font wraps «Фазные сопротивления» in the bar, moving the items
+below it down). Radios and check boxes take their place into their ids
+(537 has two «Измеренный»).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

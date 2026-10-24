@@ -319,8 +319,8 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   radios, the multi-line edit): L9.243; the message boxes: L9.244; 353
   and the single-line edit: L9.245; 336 (ОМП): L9.246; 347 (Печать) and
   the check box: L9.247; the system's Page Setup: L9.248; «Быстрый
-  анализ»'s frame: L9.249, its formula page: L9.250 (the other five
-  pages next); open:
+  анализ»'s frame: L9.249, its formula page: L9.250, its other pages:
+  L9.251; open:
   the other dialogs laid out from their templates
   (`tools/dlg_templates.py`).
 

@@ -316,7 +316,7 @@ pub fn win_radio(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool 
 /// `win_radio`, disabled: paler, its text (109), deaf to clicks (the
 /// disabled look approximated).
 pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabled: bool) -> bool {
-    let resp = ui.interact(r, ui.id().with(("fv_radio", text)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let resp = ui.interact(r, ui.id().with(("fv_radio", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let c = Pos2::new(r.left() + 6.5, r.top() + (r.height() / 2.0).floor());
     let p = ui.painter();
     match (checked, enabled) {
@@ -369,6 +369,19 @@ pub fn win_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, foc
         ]),
     );
     out.response
+}
+
+/// `win_edit`, or when disabled its text in (109) on (250) in a (234)
+/// frame, not editable (the disabled look approximated).
+pub fn win_edit_en(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, focus: bool, enabled: bool) {
+    if enabled {
+        win_edit(ui, r, id, text, focus);
+        return;
+    }
+    let p = ui.painter();
+    p.rect_filled(r, 0.0, Color32::from_gray(234));
+    p.rect_filled(r.shrink(1.0), 0.0, Color32::from_gray(250));
+    p.with_clip_rect(r.shrink(1.0)).text(Pos2::new(r.left() + 6.0, r.center().y), egui::Align2::LEFT_CENTER, text.as_str(), DLG_FONT, Color32::from_gray(109));
 }
 
 /// A multi-line edit at its template rectangle (VM, Windows 11): white in a
@@ -441,19 +454,36 @@ pub fn ellipsize(ui: &egui::Ui, text: &str, font: egui::FontId, width: f32) -> S
 /// white tick, else a (98) frame on (243) — the text from 16 px in.
 /// Returns the click.
 pub fn win_check(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool {
-    let resp = ui.interact(r, ui.id().with(("fv_check", text)), egui::Sense::click());
-    let b = Rect::from_min_size(Pos2::new(r.left(), r.top() + ((r.height() - 13.0) / 2.0).floor()), Vec2::splat(13.0));
+    win_check_ex(ui, r, text, checked, true, false)
+}
+
+/// `win_check`, greyed when disabled (the look approximated) and, with
+/// BS_LEFTTEXT (`left`), the box at the control's right end and the text
+/// right-aligned before it.
+pub fn win_check_ex(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabled: bool, left: bool) -> bool {
+    let resp = ui.interact(r, ui.id().with(("fv_check", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let bx = if left { r.right() - 13.0 } else { r.left() };
+    let b = Rect::from_min_size(Pos2::new(bx, r.top() + ((r.height() - 13.0) / 2.0).floor()), Vec2::splat(13.0));
     let p = ui.painter();
-    if checked {
-        p.rect_filled(b, 2.5, Color32::from_rgb(0, 95, 184));
-        let o = b.min;
-        p.add(egui::Shape::line(vec![o + Vec2::new(3.5, 6.5), o + Vec2::new(5.5, 8.5), o + Vec2::new(9.5, 4.5)], Stroke::new(1.0f32, Color32::WHITE)));
-    } else {
-        p.rect_filled(b, 2.5, Color32::from_gray(98));
-        p.rect_filled(b.shrink(1.0), 1.5, if resp.hovered() { Color32::from_gray(233) } else { Color32::from_gray(243) });
+    match (checked, enabled) {
+        (true, _) => {
+            p.rect_filled(b, 2.5, if enabled { Color32::from_rgb(0, 95, 184) } else { Color32::from_gray(160) });
+            let o = b.min;
+            p.add(egui::Shape::line(vec![o + Vec2::new(3.5, 6.5), o + Vec2::new(5.5, 8.5), o + Vec2::new(9.5, 4.5)], Stroke::new(1.0f32, Color32::WHITE)));
+        }
+        (false, _) => {
+            p.rect_filled(b, 2.5, Color32::from_gray(if enabled { 98 } else { 191 }));
+            p.rect_filled(b.shrink(1.0), 1.5, if resp.hovered() && enabled { Color32::from_gray(233) } else { Color32::from_gray(243) });
+        }
     }
-    p.text(Pos2::new(r.left() + 16.0, b.center().y), egui::Align2::LEFT_CENTER, text, DLG_FONT, Color32::BLACK);
-    resp.clicked()
+    let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
+    if left {
+        // BS_LEFTTEXT: the text right-aligned 3 px before the box (VM).
+        p.text(Pos2::new(b.left() - 3.0, b.center().y), egui::Align2::RIGHT_CENTER, text, DLG_FONT, ink);
+    } else {
+        p.text(Pos2::new(r.left() + 16.0, b.center().y), egui::Align2::LEFT_CENTER, text, DLG_FONT, ink);
+    }
+    resp.clicked() && enabled
 }
 
 /// A combo box's closed height (Windows for the template font, VM).

@@ -163,51 +163,8 @@ impl Default for QuickForms {
     }
 }
 
-/// A group box: its caption and, at the top right, an «Отключить» check
-/// (`enabled` — each group's check greys the other's, so never both).
-fn group(ui: &mut egui::Ui, title: &str, off: Option<(&mut bool, bool)>, body: impl FnOnce(&mut egui::Ui)) {
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.set_width(470.0);
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(title).strong());
-            if let Some((v, enabled)) = off {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_enabled(enabled, egui::Checkbox::new(v, "Отключить"));
-                });
-            }
-        });
-        body(ui);
-    });
-}
 
-/// A labelled channel combo as one grid cell, greyed unless `enabled`.
-fn cell_combo(ui: &mut egui::Ui, enabled: bool, id: &str, label: &str, value: &mut String, names: &[String]) {
-    ui.add_enabled_ui(enabled, |ui| {
-        ui.horizontal(|ui| {
-            ui.add_sized([30.0, 18.0], egui::Label::new(label));
-            egui::ComboBox::from_id_salt(id).selected_text(value.as_str()).width(140.0).show_ui(ui, |ui| {
-                // The placeholder inserted at the top (`0x411c70`).
-                if value == fvb_core::addformula::NO_CHANNEL || value == fvb_core::addformula::NOT_COUNTED {
-                    let v = value.clone();
-                    ui.selectable_value(value, v.clone(), v);
-                }
-                for n in names {
-                    ui.selectable_value(value, n.clone(), n);
-                }
-            });
-        });
-    });
-}
 
-/// A labelled edit as one grid cell, greyed unless `enabled`.
-fn cell_edit(ui: &mut egui::Ui, enabled: bool, label: &str, value: &mut String) {
-    ui.add_enabled_ui(enabled, |ui| {
-        ui.horizontal(|ui| {
-            ui.add_sized([80.0, 18.0], egui::Label::new(label));
-            ui.add(egui::TextEdit::singleline(value).desired_width(90.0));
-        });
-    });
-}
 
 /// A combo's channel counts as chosen (not empty, not «нет канала»).
 fn chosen(s: &str) -> bool {
@@ -464,6 +421,27 @@ impl App {
                         let lines = g.rows.len().max(1) as f32;
                         let item = egui::Rect::from_min_size(egui::pos2(inner.left(), y), egui::vec2(inner.width(), 42.0 + 13.0 * lines));
                         let icon = egui::Rect::from_center_size(egui::pos2(inner.center().x, y + 7.0 + 13.0), egui::vec2(26.0, 26.0));
+                        if ui.rect_contains_pointer(item) {
+                            // The Office 2007 hot face under the pointer (VM):
+                            // 5 px round the image, a (135, 171, 217) border,
+                            // (255, 251, 232) → (250, 229, 169) above,
+                            // (255, 208, 73) → (255, 225, 149) below.
+                            let b = icon.expand(5.0);
+                            p.rect_filled(b, 2.0, egui::Color32::from_rgb(135, 171, 217));
+                            let f = b.shrink(1.0);
+                            let mid = f.top() + (f.height() / 2.0).floor() - 2.0;
+                            let mut mesh = egui::Mesh::default();
+                            for (y0, y1, a, c) in [(f.top(), mid, (255, 251, 232), (250, 229, 169)), (mid, f.bottom(), (255, 208, 73), (255, 225, 149))] {
+                                let k = mesh.vertices.len() as u32;
+                                let (a, c) = (egui::Color32::from_rgb(a.0, a.1, a.2), egui::Color32::from_rgb(c.0, c.1, c.2));
+                                for (pt, col) in [(egui::pos2(f.left(), y0), a), (egui::pos2(f.right(), y0), a), (egui::pos2(f.right(), y1), c), (egui::pos2(f.left(), y1), c)] {
+                                    mesh.colored_vertex(pt, col);
+                                }
+                                mesh.add_triangle(k, k + 1, k + 2);
+                                mesh.add_triangle(k, k + 2, k + 3);
+                            }
+                            p.add(mesh);
+                        }
                         p.rect_filled(icon, 0.0, egui::Color32::from_rgb(149, 153, 173));
                         p.rect_filled(icon.shrink(1.0), 0.0, egui::Color32::from_rgb(242, 239, 250));
                         p.text(icon.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(9.0), ink);
@@ -487,12 +465,11 @@ impl App {
                     p.hline(client.x_range(), page.bottom() + 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_gray(243)));
                     // A page's template from (154, −1) in the client (VM:
                     // DIALOG 340's list at 7, 7 DLU lands at 1182, 353).
+                    let origin = client.min + egui::vec2(154.0, -1.0);
                     if self.analysis_tab == AnalysisTab::Formula {
-                        self.formula_page_ui(ui, client.min + egui::vec2(154.0, -1.0));
+                        self.formula_page_ui(ui, origin);
                     } else {
-                        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(egui::Rect::from_min_max(page.min + egui::vec2(15.0, 10.0), page.max - egui::vec2(15.0, 10.0))), |ui| {
-                            egui::ScrollArea::both().id_salt("quick_page").show(ui, |ui| self.quick_tab_ui(ui));
-                        });
+                        self.quick_tab_ui(ui, origin);
                     }
                     let ok = page_index(self.analysis_tab).is_none_or(|i| self.quick[i].ok_enabled(self.analysis_tab));
                     ok_now = ok;
@@ -573,7 +550,7 @@ impl App {
     }
 
     /// The form of the active quick-analysis page.
-    pub fn quick_tab_ui(&mut self, ui: &mut egui::Ui) {
+    pub fn quick_tab_ui(&mut self, ui: &mut egui::Ui, origin: egui::Pos2) {
         self.quick_defaults();
         let Some(d) = self.active_doc() else { return };
         let names: Vec<String> =
@@ -581,219 +558,260 @@ impl App {
         let tab = self.analysis_tab;
         let Some(i) = page_index(tab) else { return };
         let f = &mut self.quick[i];
+        let pg = Pg { o: egui::Rect::from_min_size(origin, egui::Vec2::ZERO) };
         match tab {
-            AnalysisTab::Symmetric => symmetric_page(ui, f, &names, false),
-            AnalysisTab::PhasePhase => symmetric_page(ui, f, &names, true),
-            AnalysisTab::Zero => zero_page(ui, f, &names),
-            AnalysisTab::Phase => phase_page(ui, f, &names),
-            AnalysisTab::Differential => differential_page(ui, f, &names),
+            AnalysisTab::Symmetric => symmetric_page(ui, &pg, f, &names, false),
+            AnalysisTab::PhasePhase => symmetric_page(ui, &pg, f, &names, true),
+            AnalysisTab::Zero => zero_page(ui, &pg, f, &names),
+            AnalysisTab::Phase => phase_page(ui, &pg, f, &names),
+            AnalysisTab::Differential => differential_page(ui, &pg, f, &names),
             AnalysisTab::Formula => {}
         }
     }
 }
 
-/// Pages 536 «Симметричные составляющие» and (`interphase`) 538
-/// «Междуфазные сопротивления»: «Токи» (Ia / Ib / Ic, «Рассчитать Ib по Ia
-/// и Iс *» greying Ib `0x487d70`; 538: «Iтр, А:») and «Напряжения» (Фазные /
-/// Линейные radios enabling Ua–Uc or Uab / Ubc `0x487de0`); on 536 each
-/// group's «Отключить» greys its block and the other group's check
-/// (`0x48c870`, `0x48cb60`).
-fn symmetric_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String], interphase: bool) {
-    let (i_off, u_off) = if interphase { (false, false) } else { (f.currents_off, f.voltages_off) };
-    let off_i = (!interphase).then_some((&mut f.currents_off, !u_off));
-    group(ui, "Токи", off_i, |ui| {
-        ui.add_enabled_ui(!i_off, |ui| {
-            egui::Grid::new("q_currents").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                cell_combo(ui, true, "q_ia", "Ia", &mut f.ia, names);
-                ui.end_row();
-                cell_combo(ui, !f.calc_ib, "q_ib", "Ib", &mut f.ib, names);
-                ui.checkbox(&mut f.calc_ib, "Рассчитать Ib по Ia и Iс *");
-                ui.end_row();
-                cell_combo(ui, true, "q_ic", "Ic", &mut f.ic, names);
-                ui.end_row();
-                if interphase {
-                    ui.horizontal(|ui| {
-                        ui.label("Iтр, А:");
-                        ui.add(egui::TextEdit::singleline(&mut f.itr).desired_width(140.0));
-                    });
-                    ui.label("- ток точной работы");
-                    ui.end_row();
-                }
-            });
-            ui.label("* - только в сетях с изолированной нейтралью");
-        });
-    });
-    ui.add_space(6.0);
-    let off_u = (!interphase).then_some((&mut f.voltages_off, !i_off));
-    group(ui, "Напряжения", off_u, |ui| {
-        ui.add_enabled_ui(!u_off, |ui| {
-            egui::Grid::new("q_voltages").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                ui.radio_value(&mut f.line_voltages, false, "Фазные напряжения");
-                ui.radio_value(&mut f.line_voltages, true, "Линейные напряжения");
-                ui.end_row();
-                let line = f.line_voltages;
-                let (ua, ub, uc, uab, ubc) = (&mut f.ua, &mut f.ub, &mut f.uc, &mut f.uab, &mut f.ubc);
-                for (k, (u, l)) in [(ua, "Ua"), (ub, "Ub"), (uc, "Uc")].into_iter().enumerate() {
-                    cell_combo(ui, !line, &format!("q_u{k}"), l, u, names);
-                    match k {
-                        0 => cell_combo(ui, line, "q_uab", "Uab", uab, names),
-                        1 => cell_combo(ui, line, "q_ubc", "Ubc", ubc, names),
-                        _ => {}
-                    }
-                    ui.end_row();
-                }
-            });
-        });
-    });
+/// A property page's controls at its template's dialog units from the
+/// page's origin (VM: (154, −1) in the sheet's client).
+struct Pg {
+    o: egui::Rect,
 }
 
-/// Page 537 «Нулевая последовательность»: «Ток 3Io» (Расчетный → Ia–Ic,
-/// Измеренный → «3Io:», `0x488f50`) and «Напряжение 3Uo» (из Ua, Ub, Uc /
-/// из Uни, Uик / Измеренный, each enabling its own combos, `0x4890b0`); the
-/// «Отключить» pair as on 536 (`0x489270`, `0x489510`).
-fn zero_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
-    let (i_off, u_off) = (f.zero_i_off, f.zero_u_off);
-    group(ui, "Ток 3Io", Some((&mut f.zero_i_off, !u_off)), |ui| {
-        ui.add_enabled_ui(!i_off, |ui| {
-            egui::Grid::new("q_zero_i").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                ui.radio_value(&mut f.zero_i, 1, "Расчетный");
-                ui.radio_value(&mut f.zero_i, 2, "Измеренный");
-                ui.end_row();
-                let calc = f.zero_i != 2;
-                cell_combo(ui, calc, "q_zia", "Ia", &mut f.ia, names);
-                cell_combo(ui, !calc, "q_z3io", "3Io:", &mut f.i3o, names);
-                ui.end_row();
-                cell_combo(ui, calc, "q_zib", "Ib", &mut f.ib, names);
-                ui.end_row();
-                cell_combo(ui, calc, "q_zic", "Ic", &mut f.ic, names);
-                ui.end_row();
-            });
-        });
-    });
-    ui.add_space(6.0);
-    group(ui, "Напряжение 3Uo", Some((&mut f.zero_u_off, !i_off)), |ui| {
-        ui.add_enabled_ui(!u_off, |ui| {
-            egui::Grid::new("q_zero_u").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-                ui.radio_value(&mut f.zero_u, 1, "Расчитанный из Ua, Ub, Uc");
-                ui.radio_value(&mut f.zero_u, 2, "Расчитанный из Uни, Uик");
-                ui.end_row();
-                let m = f.zero_u;
-                cell_combo(ui, m == 1, "q_zua", "Ua", &mut f.ua, names);
-                cell_combo(ui, m == 2, "q_zuni", "Uни", &mut f.uni, names);
-                ui.end_row();
-                cell_combo(ui, m == 1, "q_zub", "Ub", &mut f.ub, names);
-                cell_combo(ui, m == 2, "q_zuik", "Uик", &mut f.uik, names);
-                ui.end_row();
-                cell_combo(ui, m == 1, "q_zuc", "Uc", &mut f.uc, names);
-                ui.radio_value(&mut f.zero_u, 3, "Измеренный");
-                ui.end_row();
-                ui.label("");
-                cell_combo(ui, m == 3, "q_z3uo", "3Uo:", &mut f.u3o, names);
-                ui.end_row();
-            });
-        });
-    });
-}
-
-/// Page 543 «Фазные сопротивления»: «Токи» (Ia–Ic, «Iтр, А:»), «Ток 3Io*»
-/// (По удельным параметрам → X1 / R1 / X0 / R0; По коэффициентам компенсации
-/// → K0 / Ф0, `0x48a910`), «Ток 3Io параллельной линии» («3Ion:» with
-/// «Не учитывать» first; its edits — Xm / Rm or Km / Фm by the radio — only
-/// with a channel, `0x48ab80`) and «Напряжения» (Ua–Uc).
-fn phase_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
-    use fvb_core::addformula::NOT_COUNTED;
-    group(ui, "Токи", None, |ui| {
-        egui::Grid::new("q_ph_i").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-            cell_combo(ui, true, "q_pia", "Ia", &mut f.ia, names);
-            ui.end_row();
-            cell_combo(ui, true, "q_pib", "Ib", &mut f.ib, names);
-            ui.end_row();
-            cell_combo(ui, true, "q_pic", "Ic", &mut f.ic, names);
-            ui.end_row();
-            cell_edit(ui, true, "Iтр, А:", &mut f.itr);
-            ui.end_row();
-        });
-    });
-    ui.add_space(6.0);
-    group(ui, "Ток 3Io*", None, |ui| {
-        ui.label("Расчет коэффициента компенсации тока 3Io");
-        egui::Grid::new("q_ph_c").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-            ui.radio_value(&mut f.per_unit, true, "По удельным параметрам");
-            ui.radio_value(&mut f.per_unit, false, "По коэффициентам компенсации");
-            ui.end_row();
-            let pu = f.per_unit;
-            cell_edit(ui, pu, "X1, Ом/км", &mut f.x1);
-            cell_edit(ui, !pu, "K0", &mut f.k0);
-            ui.end_row();
-            cell_edit(ui, pu, "R1, Ом/км", &mut f.r1);
-            cell_edit(ui, !pu, "Ф0, град", &mut f.f0);
-            ui.end_row();
-            cell_edit(ui, pu, "X0, Ом/км", &mut f.x0);
-            ui.end_row();
-            cell_edit(ui, pu, "R0, Ом/км", &mut f.r0);
-            ui.end_row();
-        });
-        ui.label("* Ток нулевой последовательности рассчитывается из фазных токов");
-    });
-    ui.add_space(6.0);
-    group(ui, "Ток 3Io параллельной линии", None, |ui| {
-        let mut items = vec![NOT_COUNTED.to_string()];
-        items.extend(names.iter().cloned());
-        if f.i0_parallel.is_empty() {
-            f.i0_parallel = NOT_COUNTED.into();
+impl Pg {
+    fn r(&self, x: i32, y: i32, w: i32, h: i32) -> egui::Rect {
+        crate::dialogs::dlu(self.o, x, y, w, h)
+    }
+    fn label(&self, ui: &egui::Ui, (x, y, w, h): (i32, i32, i32, i32), text: &str, right: bool, enabled: bool) {
+        crate::dialogs::win_label(ui, self.r(x, y, w, h), text, right, enabled);
+    }
+    fn group(&self, ui: &egui::Ui, (x, y, w, h): (i32, i32, i32, i32), title: &str) {
+        crate::dialogs::win_group(ui, self.r(x, y, w, h), title);
+    }
+    /// A channel list: the placeholder at the top while it is the value
+    /// (`0x411c70`), then the record's channels.
+    fn combo(&self, ui: &mut egui::Ui, (x, y, w, h): (i32, i32, i32, i32), id: &str, value: &mut String, names: &[String], enabled: bool) {
+        let mut items = Vec::new();
+        if value == fvb_core::addformula::NO_CHANNEL || value == fvb_core::addformula::NOT_COUNTED {
+            items.push(value.clone());
         }
-        let used = f.parallel_used();
-        let pu = f.per_unit;
-        egui::Grid::new("q_ph_m").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-            cell_combo(ui, true, "q_p3ion", "3Ion:", &mut f.i0_parallel, &items);
-            ui.end_row();
-            cell_edit(ui, used && pu, "Xm, Ом/км", &mut f.xm);
-            cell_edit(ui, used && !pu, "Km", &mut f.km);
-            ui.end_row();
-            cell_edit(ui, used && pu, "Rm, Ом/км", &mut f.rm);
-            cell_edit(ui, used && !pu, "Фm, град", &mut f.fm);
-            ui.end_row();
-        });
-    });
-    ui.add_space(6.0);
-    group(ui, "Напряжения", None, |ui| {
-        egui::Grid::new("q_ph_u").num_columns(1).spacing([8.0, 6.0]).show(ui, |ui| {
-            cell_combo(ui, true, "q_pua", "Ua", &mut f.ua, names);
-            ui.end_row();
-            cell_combo(ui, true, "q_pub", "Ub", &mut f.ub, names);
-            ui.end_row();
-            cell_combo(ui, true, "q_puc", "Uc", &mut f.uc, names);
-            ui.end_row();
-        });
-    });
+        items.extend(names.iter().cloned());
+        let cur = items.iter().position(|n| n == value).unwrap_or(0);
+        if let Some(k) = crate::dialogs::win_combo_list(ui, self.r(x, y, w, h), egui::Id::new(id), &items, cur, enabled) {
+            *value = items[k].clone();
+        }
+    }
+    /// A fixed list of choices; returns the one picked.
+    fn choice(&self, ui: &mut egui::Ui, (x, y, w, h): (i32, i32, i32, i32), id: &str, items: &[String], cur: usize, enabled: bool) -> Option<usize> {
+        crate::dialogs::win_combo_list(ui, self.r(x, y, w, h), egui::Id::new(id), items, cur, enabled)
+    }
+    fn check(&self, ui: &mut egui::Ui, (x, y, w, h): (i32, i32, i32, i32), text: &str, v: &mut bool, enabled: bool, left: bool) {
+        if crate::dialogs::win_check_ex(ui, self.r(x, y, w, h), text, *v, enabled, left) {
+            *v = !*v;
+        }
+    }
+    fn radio(&self, ui: &mut egui::Ui, (x, y, w, h): (i32, i32, i32, i32), text: &str, checked: bool, enabled: bool) -> bool {
+        crate::dialogs::win_radio_en(ui, self.r(x, y, w, h), text, checked, enabled)
+    }
+    fn edit(&self, ui: &mut egui::Ui, (x, y, w, h): (i32, i32, i32, i32), id: &str, v: &mut String, enabled: bool) {
+        crate::dialogs::win_edit_en(ui, self.r(x, y, w, h), egui::Id::new(id), v, false, enabled);
+    }
 }
 
-/// Page 539 «Дифференциальные токи»: arm and phase counts; per arm (kept
-/// per arm) «Приведение плеч» (its radio enables only its edit block,
-/// `0x4835b0`…) and «Учет группы соединений» (3 phases only, `0x482c10`:
-/// По последовательностям → «Группа» 0…11 + «Удалить I0», Цифровой
-/// треугольник → {0, 1, 11}, Не учитывать → 0…11 greyed, `0x483ab0`); «<<» /
-/// «Текущее плечо:» / «>>» (greyed at the ends, `0x4831b0`); the arm's group
-/// «Плечо %d» (string 198); «Расчет тока торможения» — «Полуразность токов»
-/// only with 2 arms (else forced to «Полусумма», `0x482b60`), «Kторм:» {1, 0.5}
-/// for Полусумма or Полуразность with 2 arms (`0x483da0`).
-fn differential_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
-    ui.horizontal(|ui| {
-        ui.label("Количество плеч:");
-        // A changed count keeps every slot (`0x482b60` → `0x482a40`).
-        egui::ComboBox::from_id_salt("q_dif_n").selected_text(f.dif_arms.to_string()).width(50.0).show_ui(ui, |ui| {
-            for k in 2..=ARM_SLOTS {
-                ui.selectable_value(&mut f.dif_arms, k, k.to_string());
-            }
-        });
-        ui.add_space(30.0);
-        ui.label("Количество фаз:");
-        egui::ComboBox::from_id_salt("q_dif_ph").selected_text(f.dif_phases.to_string()).width(50.0).show_ui(ui, |ui| {
-            for k in [1, 3] {
-                ui.selectable_value(&mut f.dif_phases, k, k.to_string());
-            }
-        });
-    });
+/// Pages 536 «Симметричные составляющие» and (`interphase`) 538
+/// «Междуфазные сопротивления» on their templates: «Токи» (Ia / Ib / Ic,
+/// «Рассчитать Ib по Ia и Iс *» greying Ib `0x487d70`; 538: «Iтр, А:») and
+/// «Напряжения» (Фазные / Линейные radios enabling Ua–Uc or Uab / Ubc
+/// `0x487de0`); on 536 each group's «Отключить» (BS_LEFTTEXT) greys its
+/// block and the other group's check (`0x48c870`, `0x48cb60`).
+fn symmetric_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String], interphase: bool) {
+    let (i_off, u_off) = if interphase { (false, false) } else { (f.currents_off, f.voltages_off) };
+    let line = f.line_voltages;
+    if interphase {
+        pg.group(ui, (7, 7, 307, 119), "Токи");
+        for (k, (ly, cy)) in [(22, 18), (41, 39), (62, 60)].into_iter().enumerate() {
+            pg.label(ui, (12, ly, 24, 8), ["Ia:", "Ib:", "Ic:"][k], true, true);
+            let v = match k { 0 => &mut f.ia, 1 => &mut f.ib, _ => &mut f.ic };
+            pg.combo(ui, (42, cy, 150, 54), ["q_ia", "q_ib", "q_ic"][k], v, names, k != 1 || !f.calc_ib);
+        }
+        pg.check(ui, (204, 42, 102, 10), "Рассчитать Ib по Ia и Iс *", &mut f.calc_ib, true, false);
+        pg.label(ui, (12, 86, 24, 8), "Iтр, А:", true, true);
+        pg.edit(ui, (42, 84, 150, 14), "q_itr", &mut f.itr, true);
+        pg.label(ui, (204, 88, 102, 8), "- ток точной работы", false, true);
+        pg.label(ui, (24, 108, 162, 8), "* - только в сетях с изолированной нейтралью", false, true);
+        pg.group(ui, (6, 138, 307, 109), "Напряжения");
+        if pg.radio(ui, (54, 150, 85, 10), "Фазные напряжения", !line, true) {
+            f.line_voltages = false;
+        }
+        if pg.radio(ui, (198, 150, 93, 10), "Линейные напряжения", line, true) {
+            f.line_voltages = true;
+        }
+        for (k, (ly, cy)) in [(170, 168), (190, 188), (210, 208)].into_iter().enumerate() {
+            pg.label(ui, (12, ly, 18, 8), ["Ua:", "Ub:", "Uc:"][k], true, true);
+            let v = match k { 0 => &mut f.ua, 1 => &mut f.ub, _ => &mut f.uc };
+            pg.combo(ui, (36, cy, 120, 54), ["q_u0", "q_u1", "q_u2"][k], v, names, !line);
+        }
+        pg.label(ui, (165, 171, 22, 8), "Uab:", true, true);
+        pg.combo(ui, (189, 168, 120, 54), "q_uab", &mut f.uab, names, line);
+        pg.label(ui, (162, 190, 24, 8), "Ubc:", true, true);
+        pg.combo(ui, (189, 188, 120, 54), "q_ubc", &mut f.ubc, names, line);
+        return;
+    }
+    pg.group(ui, (6, 7, 306, 113), "Токи");
+    pg.check(ui, (225, 11, 86, 10), "Отключить", &mut f.currents_off, !u_off, true);
+    for (k, (ly, cy)) in [(34, 30), (54, 52), (74, 73)].into_iter().enumerate() {
+        pg.label(ui, (12, ly, 24, 8), ["Ia:", "Ib:", "Ic:"][k], true, !i_off);
+        let v = match k { 0 => &mut f.ia, 1 => &mut f.ib, _ => &mut f.ic };
+        pg.combo(ui, (42, cy, 150, 54), ["q_ia", "q_ib", "q_ic"][k], v, names, !i_off && (k != 1 || !f.calc_ib));
+    }
+    pg.check(ui, (204, 54, 102, 10), "Рассчитать Ib по Ia и Iс *", &mut f.calc_ib, !i_off, false);
+    pg.label(ui, (27, 102, 162, 8), "* - только в сетях с изолированной нейтралью", false, !i_off);
+    pg.group(ui, (6, 126, 307, 108), "Напряжения");
+    pg.check(ui, (200, 131, 112, 8), "Отключить", &mut f.voltages_off, !i_off, true);
+    if pg.radio(ui, (47, 150, 85, 10), "Фазные напряжения", !line, !u_off) {
+        f.line_voltages = false;
+    }
+    if pg.radio(ui, (191, 150, 93, 10), "Линейные напряжения", line, !u_off) {
+        f.line_voltages = true;
+    }
+    for (k, (ly, cy)) in [(170, 169), (190, 187), (210, 209)].into_iter().enumerate() {
+        pg.label(ui, (11, ly, 18, 8), ["Ua:", "Ub:", "Uc:"][k], true, !u_off);
+        let v = match k { 0 => &mut f.ua, 1 => &mut f.ub, _ => &mut f.uc };
+        pg.combo(ui, (35, cy, 114, 54), ["q_u0", "q_u1", "q_u2"][k], v, names, !u_off && !line);
+    }
+    pg.label(ui, (161, 171, 22, 8), "Uab:", true, !u_off);
+    pg.combo(ui, (185, 169, 120, 54), "q_uab", &mut f.uab, names, !u_off && line);
+    pg.label(ui, (158, 190, 24, 8), "Ubc:", true, !u_off);
+    pg.combo(ui, (185, 187, 120, 54), "q_ubc", &mut f.ubc, names, !u_off && line);
+}
+
+/// Page 537 «Нулевая последовательность» on its template: «Ток 3Io»
+/// (Расчетный → Ia–Ic, Измеренный → «3Io:», `0x488f50`) and «Напряжение
+/// 3Uo» (из Ua, Ub, Uc / из Uни, Uик / Измеренный, each enabling its own
+/// combos, `0x4890b0`); the «Отключить» pair as on 536 (`0x489270`,
+/// `0x489510`).
+fn zero_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) {
+    let (i_off, u_off) = (f.zero_i_off, f.zero_u_off);
+    pg.group(ui, (6, 12, 319, 113), "Ток 3Io");
+    pg.check(ui, (238, 17, 86, 10), "Отключить", &mut f.zero_i_off, !u_off, true);
+    if pg.radio(ui, (72, 36, 53, 10), "Расчетный", f.zero_i != 2, !i_off) {
+        f.zero_i = 1;
+    }
+    if pg.radio(ui, (228, 36, 57, 10), "Измеренный", f.zero_i == 2, !i_off) {
+        f.zero_i = 2;
+    }
+    let calc = f.zero_i != 2;
+    for (k, (ly, cy)) in [(57, 55), (75, 76), (97, 95)].into_iter().enumerate() {
+        pg.label(ui, (12, ly, 18, 8), ["Ia:", "Ib:", "Ic:"][k], true, !i_off);
+        let v = match k { 0 => &mut f.ia, 1 => &mut f.ib, _ => &mut f.ic };
+        pg.combo(ui, (36, cy, 132, 54), ["q_zia", "q_zib", "q_zic"][k], v, names, !i_off && calc);
+    }
+    pg.label(ui, (179, 57, 14, 8), "3Io:", true, !i_off);
+    pg.combo(ui, (198, 55, 120, 54), "q_z3io", &mut f.i3o, names, !i_off && !calc);
+    pg.group(ui, (6, 132, 318, 138), "Напряжение 3Uo");
+    pg.check(ui, (244, 137, 78, 8), "Отключить", &mut f.zero_u_off, !i_off, true);
+    for (m, (r, text)) in [((54, 156, 107, 10), "Расчитанный из Ua, Ub, Uc"), ((198, 156, 102, 10), "Расчитанный из Uни, Uик"), ((198, 228, 72, 10), "Измеренный")].into_iter().enumerate() {
+        if pg.radio(ui, r, text, f.zero_u == m as u8 + 1, !u_off) {
+            f.zero_u = m as u8 + 1;
+        }
+    }
+    let m = f.zero_u;
+    for (k, (ly, cy)) in [(176, 174), (196, 195), (219, 216)].into_iter().enumerate() {
+        pg.label(ui, (12, ly, 18, 8), ["Ua:", "Ub:", "Uc:"][k], true, !u_off);
+        let v = match k { 0 => &mut f.ua, 1 => &mut f.ub, _ => &mut f.uc };
+        pg.combo(ui, (36, cy, 132, 54), ["q_zua", "q_zub", "q_zuc"][k], v, names, !u_off && m == 1);
+    }
+    pg.label(ui, (176, 177, 16, 8), "Uни:", true, !u_off);
+    pg.combo(ui, (198, 174, 120, 54), "q_zuni", &mut f.uni, names, !u_off && m == 2);
+    pg.label(ui, (176, 197, 16, 8), "Uик:", true, !u_off);
+    pg.combo(ui, (198, 195, 120, 54), "q_zuik", &mut f.uik, names, !u_off && m == 2);
+    pg.label(ui, (168, 248, 24, 8), "3Uo:", true, !u_off);
+    pg.combo(ui, (198, 246, 122, 54), "q_z3uo", &mut f.u3o, names, !u_off && m == 3);
+}
+
+/// Page 543 «Фазные сопротивления» on its template: «Токи» (Ia–Ic, «Iтр,
+/// А:»), «Ток 3Io*» (По удельным параметрам → X1 / R1 / X0 / R0; По
+/// коэффициентам компенсации → K0 / Ф0, `0x48a910`), «Ток 3Io параллельной
+/// линии» («3Ion:» with «Не учитывать» first; its edits — Xm / Rm or Km /
+/// Фm by the radio — only with a channel, `0x48ab80`) and «Напряжения»
+/// (Ua–Uc).
+fn phase_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) {
+    use fvb_core::addformula::NOT_COUNTED;
+    pg.group(ui, (7, 7, 315, 89), "Токи");
+    for (k, (ly, cy)) in [(20, 18), (39, 39), (60, 59)].into_iter().enumerate() {
+        pg.label(ui, (12, ly, 24, 8), ["Ia:", "Ib:", "Ic:"][k], true, true);
+        let v = match k { 0 => &mut f.ia, 1 => &mut f.ib, _ => &mut f.ic };
+        pg.combo(ui, (42, cy, 126, 54), ["q_pia", "q_pib", "q_pic"][k], v, names, true);
+    }
+    pg.label(ui, (12, 80, 24, 8), "Iтр, А:", true, true);
+    pg.edit(ui, (42, 78, 126, 14), "q_pitr", &mut f.itr, true);
+    pg.label(ui, (174, 80, 102, 8), "- ток точной работы", false, true);
+    pg.group(ui, (7, 99, 315, 127), "Ток 3Io*");
+    pg.label(ui, (42, 111, 152, 8), "Расчет коэффициента компенсации тока 3Io", false, true);
+    if pg.radio(ui, (24, 123, 103, 10), "По удельным параметрам", f.per_unit, true) {
+        f.per_unit = true;
+    }
+    if pg.radio(ui, (192, 123, 126, 10), "По коэффициентам компенсации", !f.per_unit, true) {
+        f.per_unit = false;
+    }
+    let pu = f.per_unit;
+    for ((ly, ey, label), (id, v)) in [(143, 141, "X1, Ом/км:"), (159, 159, "R1, Ом/км:"), (177, 177, "X0, Ом/км:"), (195, 195, "R0, Ом/км:")].into_iter().zip([("q_x1", &mut f.x1), ("q_r1", &mut f.r1), ("q_x0", &mut f.x0), ("q_r0", &mut f.r0)]) {
+        pg.label(ui, (12, ly, 42, 8), label, true, pu);
+        pg.edit(ui, (60, ey, 96, 12), id, v, pu);
+    }
+    pg.label(ui, (168, 143, 33, 8), "K0:", true, !pu);
+    pg.edit(ui, (204, 141, 108, 12), "q_k0", &mut f.k0, !pu);
+    pg.label(ui, (168, 161, 33, 8), "Ф0, град:", true, !pu);
+    pg.edit(ui, (204, 159, 108, 12), "q_f0", &mut f.f0, !pu);
+    pg.label(ui, (42, 213, 239, 8), "* Ток нулевой последовательности рассчитывается из фазных токов", false, true);
+    pg.group(ui, (6, 229, 316, 80), "Ток 3Io параллельной линии");
+    if f.i0_parallel.is_empty() {
+        f.i0_parallel = NOT_COUNTED.into();
+    }
+    pg.label(ui, (12, 249, 18, 8), "3Ion:", true, true);
+    let mut items = vec![NOT_COUNTED.to_string()];
+    items.extend(names.iter().cloned());
+    let cur = items.iter().position(|n| *n == f.i0_parallel).unwrap_or(0);
+    if let Some(k) = pg.choice(ui, (36, 247, 132, 30), "q_p3ion", &items, cur, true) {
+        f.i0_parallel = items[k].clone();
+    }
+    let used = f.parallel_used();
+    pg.label(ui, (12, 274, 42, 8), "Xm, Ом/км:", true, used && pu);
+    pg.edit(ui, (60, 271, 96, 14), "q_xm", &mut f.xm, used && pu);
+    pg.label(ui, (13, 292, 41, 8), "Rm, Ом/км:", true, used && pu);
+    pg.edit(ui, (60, 289, 96, 14), "q_rm", &mut f.rm, used && pu);
+    pg.label(ui, (168, 274, 31, 8), "Km:", true, used && !pu);
+    pg.edit(ui, (204, 271, 108, 14), "q_km", &mut f.km, used && !pu);
+    pg.label(ui, (164, 291, 35, 8), "Фm, град:", true, used && !pu);
+    pg.edit(ui, (204, 289, 108, 14), "q_fm", &mut f.fm, used && !pu);
+    pg.group(ui, (6, 312, 316, 76), "Напряжения");
+    for (k, (ly, cy)) in [(330, 328), (350, 348), (370, 368)].into_iter().enumerate() {
+        pg.label(ui, (12, ly, 18, 8), ["Ua:", "Ub:", "Uc:"][k], true, true);
+        let v = match k { 0 => &mut f.ua, 1 => &mut f.ub, _ => &mut f.uc };
+        pg.combo(ui, (36, cy, 132, 54), ["q_pua", "q_pub", "q_puc"][k], v, names, true);
+    }
+}
+
+/// Page 539 «Дифференциальные токи» on its template: arm and phase
+/// counts; per arm (kept per arm) «Приведение плеч» (its radio enables
+/// only its edit block, `0x4835b0`…) and «Учет группы соединений» (3 phases
+/// only, `0x482c10`: По последовательностям → «Группа» 0…11 + «Удалить
+/// I0», Цифровой треугольник → {0, 1, 11}, Не учитывать → 0…11 greyed,
+/// `0x483ab0`); «<<» / «Текущее плечо:» / «>>» (greyed at the ends,
+/// `0x4831b0`); the arm's group «Плечо %d» (string 198); «Расчет тока
+/// торможения» — «Полуразность токов» only with 2 arms (else forced to
+/// «Полусумма», `0x482b60`), «Kторм:» {1, 0.5} for Полусумма or Полуразность
+/// with 2 arms (`0x483da0`).
+fn differential_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) {
+    pg.label(ui, (12, 12, 90, 8), "Количество плеч:", true, true);
+    // A changed count keeps every slot (`0x482b60` → `0x482a40`).
+    let arms: Vec<String> = (2..=ARM_SLOTS).map(|k| k.to_string()).collect();
+    if let Some(k) = pg.choice(ui, (108, 10, 42, 30), "q_dif_n", &arms, f.dif_arms.saturating_sub(2), true) {
+        f.dif_arms = k + 2;
+    }
+    pg.label(ui, (192, 13, 72, 8), "Количество фаз:", true, true);
+    let phases = ["1".to_string(), "3".to_string()];
+    if let Some(k) = pg.choice(ui, (270, 10, 44, 30), "q_dif_ph", &phases, usize::from(f.dif_phases == 3), true) {
+        f.dif_phases = if k == 1 { 3 } else { 1 };
+    }
     let n = f.dif_arms;
     if n > 2 && f.braking == 1 {
         f.braking = 0;
@@ -801,118 +819,89 @@ fn differential_page(ui: &mut egui::Ui, f: &mut QuickForms, names: &[String]) {
     f.cur_arm = f.cur_arm.min(n - 1);
     let three = f.dif_phases == 3;
     let cur = f.cur_arm;
-    group(ui, "Приведение плеч", None, |ui| {
-        egui::Grid::new("q_dif_red").num_columns(2).show(ui, |ui| {
-            let checked = f.dif_methods();
-            let mut radio = |ui: &mut egui::Ui, m: u8, text: &str| {
-                if ui.radio(checked.contains(&m), text).clicked() {
-                    f.dif_reduction = m;
-                    f.dif_also.clear();
-                }
-            };
-            radio(ui, 2, "По мощности");
-            radio(ui, 0, "По коэффициенту приведения");
-            ui.end_row();
-            radio(ui, 3, "По номинальному току");
-            radio(ui, 1, "По коэффициенту трансформации ТТ");
-            ui.end_row();
-        });
-    });
-    group(ui, "Учет группы соединений", None, |ui| {
-        ui.add_enabled_ui(three, |ui| {
-            ui.horizontal(|ui| {
-                ui.radio_value(&mut f.dif_group, 0, "Не учитывать");
-                ui.radio_value(&mut f.dif_group, 1, "По последовательностям");
-                ui.radio_value(&mut f.dif_group, 2, "Цифровой треугольник");
-            });
-        });
-    });
+    pg.group(ui, (6, 31, 305, 40), "Приведение плеч");
+    let checked = f.dif_methods();
+    for (m, r, text) in [(2u8, (18, 45, 60, 10), "По мощности"), (3, (18, 58, 93, 10), "По номинальному току"), (0, (150, 45, 119, 10), "По коэффициенту приведения"), (1, (150, 58, 141, 10), "По коэффициенту трансформации ТТ")] {
+        if pg.radio(ui, r, text, checked.contains(&m), true) {
+            f.dif_reduction = m;
+            f.dif_also.clear();
+        }
+    }
+    pg.group(ui, (6, 79, 306, 42), "Учет группы соединений");
+    for (g, r, text) in [(0u8, (18, 91, 64, 10), "Не учитывать"), (1, (18, 103, 102, 10), "По последовательностям"), (2, (150, 103, 96, 10), "Цифровой треугольник")] {
+        if pg.radio(ui, r, text, f.dif_group == g, three) {
+            f.dif_group = g;
+        }
+    }
     let (r, grp) = (f.dif_edit_method(), f.dif_group);
-    ui.horizontal(|ui| {
-        if ui.add_enabled(cur > 0, egui::Button::new("<<")).clicked() {
-            f.cur_arm -= 1;
-        }
-        ui.label("Текущее плечо:");
-        egui::ComboBox::from_id_salt("q_dif_cur").selected_text((cur + 1).to_string()).width(50.0).show_ui(ui, |ui| {
-            for k in 0..n {
-                ui.selectable_value(&mut f.cur_arm, k, (k + 1).to_string());
-            }
-        });
-        if ui.add_enabled(cur + 1 < n, egui::Button::new(">>")).clicked() {
-            f.cur_arm += 1;
-        }
-    });
+    pg.label(ui, (48, 133, 66, 8), "Текущее плечо:", true, true);
+    if crate::dialogs::win_button_en(ui, pg.r(120, 133, 24, 14), "<<", false, cur > 0).clicked() {
+        f.cur_arm -= 1;
+    }
+    let curs: Vec<String> = (1..=n).map(|k| k.to_string()).collect();
+    if let Some(k) = pg.choice(ui, (150, 133, 42, 30), "q_dif_cur", &curs, cur, true) {
+        f.cur_arm = k;
+    }
+    if crate::dialogs::win_button_en(ui, pg.r(198, 133, 24, 14), ">>", false, cur + 1 < n).clicked() {
+        f.cur_arm += 1;
+    }
     let arm = &mut f.arms[cur];
-    group(ui, &format!("Плечо {}", cur + 1), None, |ui| {
-        egui::Grid::new("q_dif_arm").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
-            let [ia, ib, ic] = &mut arm.currents;
-            cell_combo(ui, true, "q_dia", "Ia", ia, names);
-            ui.end_row();
-            cell_combo(ui, three, "q_dib", "Ib", ib, names);
-            ui.end_row();
-            cell_combo(ui, three, "q_dic", "Ic", ic, names);
-            ui.end_row();
-            ui.label("По мощности:");
-            ui.end_row();
-            cell_edit(ui, r == 2, "Kтт", &mut arm.pw_ktt);
-            cell_edit(ui, r == 2, "Sном, кВА", &mut arm.snom);
-            ui.end_row();
-            cell_edit(ui, r == 2, "Uном, кВ", &mut arm.unom);
-            ui.end_row();
-            ui.label("По номинальному току:");
-            ui.end_row();
-            cell_edit(ui, r == 3, "Kтт", &mut arm.amp_ktt);
-            cell_edit(ui, r == 3, "Iном, А", &mut arm.inom);
-            ui.end_row();
-            ui.label("По коэффициенту приведения:");
-            ui.end_row();
-            cell_edit(ui, r == 0, "Kприв", &mut arm.kpriv);
-            ui.end_row();
-            ui.label("По коэффициенту трансформации ТТ:");
-            ui.end_row();
-            cell_edit(ui, r == 1, "Kтт", &mut arm.tt_ktt);
-            cell_edit(ui, r == 1, "Kттбаз", &mut arm.tt_base);
-            ui.end_row();
-            // Two «Группа:» combos at one place, one per method.
-            // With one phase the sequence combo shows, whatever the radio
-            // (`0x483ab0`).
-            let (groups, value): (&[&str], &mut String) = if three && grp == 2 {
-                (&["0", "1", "11"], &mut arm.tri_group)
-            } else {
-                (&["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"], &mut arm.seq_group)
-            };
-            ui.add_enabled_ui(three && grp != 0, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Группа:");
-                    egui::ComboBox::from_id_salt(("q_dif_grp", grp)).selected_text(value.as_str()).width(50.0).show_ui(ui, |ui| {
-                        for g in groups {
-                            ui.selectable_value(value, g.to_string(), *g);
-                        }
-                    });
-                });
-            });
-            ui.add_enabled(three && grp == 1, egui::Checkbox::new(&mut arm.remove_i0, "Удалить I0"));
-            ui.end_row();
-        });
-    });
-    group(ui, "Расчет тока торможения", None, |ui| {
-        ui.horizontal(|ui| {
-            ui.radio_value(&mut f.braking, 0, "Полусумма модулей токов");
-            ui.add_enabled_ui(n == 2, |ui| ui.radio_value(&mut f.braking, 1, "Полуразность токов"));
-            ui.radio_value(&mut f.braking, 2, "Максимальный из токов");
-        });
-        let kt = f.braking == 0 || (f.braking == 1 && n == 2);
-        ui.add_enabled_ui(kt, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Kторм:");
-                egui::ComboBox::from_id_salt("q_dif_kt").selected_text(f.k_torm.as_str()).width(50.0).show_ui(ui, |ui| {
-                    for k in ["1", "0.5"] {
-                        ui.selectable_value(&mut f.k_torm, k.to_string(), k);
-                    }
-                });
-            });
-        });
-    });
+    pg.group(ui, (6, 151, 306, 192), &format!("Плечо {}", cur + 1));
+    {
+        let [ia, ib, ic] = &mut arm.currents;
+        for (k, (ly, cy), v) in [(0, (167, 165), ia), (1, (188, 186), ib), (2, (209, 207), ic)] {
+            pg.label(ui, (15, ly, 24, 8), ["Ia:", "Ib:", "Ic:"][k], true, k == 0 || three);
+            pg.combo(ui, (45, cy, 150, 54), ["q_dia", "q_dib", "q_dic"][k], v, names, k == 0 || three);
+        }
+    }
+    pg.label(ui, (155, 229, 107, 8), "По коэффициенту приведения:", false, r == 0);
+    pg.label(ui, (173, 242, 30, 8), "Kприв:", false, r == 0);
+    pg.edit(ui, (203, 241, 102, 12), "q_kpriv", &mut arm.kpriv, r == 0);
+    pg.label(ui, (155, 258, 129, 8), "По коэффициенту трансформации ТТ:", false, r == 1);
+    pg.label(ui, (173, 271, 16, 8), "Kтт:", false, r == 1);
+    pg.edit(ui, (203, 271, 102, 12), "q_tt_ktt", &mut arm.tt_ktt, r == 1);
+    pg.label(ui, (173, 289, 27, 8), "Kттбаз:", false, r == 1);
+    pg.edit(ui, (203, 289, 102, 12), "q_tt_base", &mut arm.tt_base, r == 1);
+    pg.label(ui, (19, 229, 48, 8), "По мощности:", false, r == 2);
+    pg.label(ui, (25, 241, 24, 8), "Kтт:", true, r == 2);
+    pg.edit(ui, (49, 241, 90, 12), "q_pw_ktt", &mut arm.pw_ktt, r == 2);
+    pg.label(ui, (7, 259, 42, 8), "Sном, кВА:", true, r == 2);
+    pg.edit(ui, (49, 259, 90, 12), "q_snom", &mut arm.snom, r == 2);
+    pg.label(ui, (7, 277, 42, 8), "Uном, кВ:", true, r == 2);
+    pg.edit(ui, (49, 277, 90, 12), "q_unom", &mut arm.unom, r == 2);
+    pg.label(ui, (19, 295, 80, 8), "По номинальному току:", false, r == 3);
+    pg.label(ui, (25, 306, 24, 8), "Kтт:", true, r == 3);
+    pg.edit(ui, (49, 306, 90, 12), "q_amp_ktt", &mut arm.amp_ktt, r == 3);
+    pg.label(ui, (13, 327, 36, 8), "Iном, А:", true, r == 3);
+    pg.edit(ui, (49, 325, 90, 12), "q_inom", &mut arm.inom, r == 3);
+    // Two «Группа:» combos at one place (2127 / 2129), one per method; with
+    // one phase the sequence combo shows, whatever the radio (`0x483ab0`).
+    let (groups, value): (&[&str], &mut String) = if three && grp == 2 {
+        (&["0", "1", "11"], &mut arm.tri_group)
+    } else {
+        (&["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"], &mut arm.seq_group)
+    };
+    let gl: Vec<String> = groups.iter().map(|g| g.to_string()).collect();
+    let genabled = three && grp != 0;
+    pg.label(ui, (173, 328, 28, 8), "Группа:", false, genabled);
+    let gcur = gl.iter().position(|g| g == value).unwrap_or(0);
+    if let Some(k) = pg.choice(ui, (203, 325, 29, 30), &format!("q_dif_grp{grp}"), &gl, gcur, genabled) {
+        *value = gl[k].clone();
+    }
+    pg.check(ui, (237, 328, 50, 10), "Удалить I0", &mut arm.remove_i0, three && grp == 1, false);
+    pg.group(ui, (6, 346, 305, 53), "Расчет тока торможения");
+    for (b, r, text, en) in [(0u8, (17, 357, 105, 10), "Полусумма модулей токов", true), (1, (17, 370, 85, 10), "Полуразность токов", n == 2), (2, (17, 383, 97, 10), "Максимальный из токов", true)] {
+        if pg.radio(ui, r, text, f.braking == b, en) {
+            f.braking = b;
+        }
+    }
+    let kt = f.braking == 0 || (f.braking == 1 && n == 2);
+    pg.label(ui, (149, 363, 24, 8), "Kторм:", true, kt);
+    let kts = ["1".to_string(), "0.5".to_string()];
+    let kcur = kts.iter().position(|k| *k == f.k_torm).unwrap_or(0);
+    if let Some(k) = pg.choice(ui, (185, 362, 42, 30), "q_dif_kt", &kts, kcur, kt) {
+        f.k_torm = kts[k].clone();
+    }
 }
 
 /// The `.set` category of each page (`0x48b690` → vslot 0x1dc), in
