@@ -512,12 +512,11 @@ impl App {
             crate::dialogs::dlg(ctx, APP_TITLE)
                 .id(egui::Id::new("omp_message"))
                 .order(egui::Order::Tooltip)
+                .margin(0.0)
                 .collapsible(false)
                 .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
-                    crate::dialogs::message_body(ui, crate::dialogs::MsgIcon::Exclamation, &msg);
-                    ui.vertical_centered(|ui| ok = ui.button("   OK   ").clicked());
+                    ok = crate::dialogs::message_box(ui, crate::dialogs::MsgIcon::Exclamation, &msg, &["OK"]).is_some();
                 });
             if ok || ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
                 self.omp_ui.message = None;

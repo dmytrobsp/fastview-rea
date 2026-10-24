@@ -1465,6 +1465,11 @@ mod window_tests {
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "omp" || s == "ompparams") {
             app.tab = RibbonTab::Omp;
         }
+        // `alert`: «Параметры осциллограммы» with a refused rate's box over it.
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "alert") {
+            app.dispatch(C::FileParams);
+            app.dlg.push_alert("Введите целое число.");
+        }
         // `FV_WINDOW_SKIN=<win2000|officexp|winxp|office2003|vs2005|black|silver|aqua>`.
         if let Ok(name) = std::env::var("FV_WINDOW_SKIN") {
             use theme::Skin;

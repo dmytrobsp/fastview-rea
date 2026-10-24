@@ -505,31 +505,76 @@ pub enum MsgIcon {
     Question,
 }
 
-/// A message box's body: its icon left of the text (our drawing of the
-/// system icons).
-pub fn message_body(ui: &mut egui::Ui, icon: MsgIcon, text: &str) {
-    ui.horizontal(|ui| {
-        let (r, _) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
-        let p = ui.painter();
-        let c = r.center();
-        let (mark, bg) = match icon {
-            MsgIcon::Exclamation => {
-                let tri = vec![Pos2::new(c.x, r.top() + 2.0), Pos2::new(r.right() - 1.0, r.bottom() - 3.0), Pos2::new(r.left() + 1.0, r.bottom() - 3.0)];
-                p.add(egui::Shape::convex_polygon(tri, Color32::from_rgb(252, 204, 34), Stroke::new(1.0f32, Color32::from_rgb(190, 140, 0))));
-                ("!", None)
-            }
-            MsgIcon::Error => ("✕", Some(Color32::from_rgb(214, 40, 40))),
-            MsgIcon::Question => ("?", Some(Color32::from_rgb(40, 100, 200))),
-        };
-        if let Some(bg) = bg {
-            p.circle_filled(c, 15.0, bg);
+/// A message box's client (VM, Windows 11's MessageBox): a white area —
+/// the 32 px icon at (21, 23) (our drawing of the system icons), the text
+/// from x 61 centred on the icon's middle, 31 px clear at the right, at
+/// least 23 px above and below — over a 42 px (240) strip with the buttons
+/// (75 × 23, 10 px down, 10 px apart, the last 15 px from the right edge);
+/// the first is the default one, with the focus rectangle. Returns the
+/// button pressed.
+pub fn message_box(ui: &mut egui::Ui, icon: MsgIcon, text: &str, buttons: &[&str]) -> Option<usize> {
+    let font = egui::FontId::proportional(12.0);
+    let g = ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::BLACK));
+    let n = buttons.len() as f32;
+    let w = (61.0 + g.size().x + 31.0).max(15.0 + 75.0 * n + 10.0 * (n - 1.0) + 15.0).ceil();
+    let white_h = (23.0 + 32.0 + 23.0f32).max(g.size().y + 46.0).ceil();
+    let (client, _) = ui.allocate_exact_size(Vec2::new(w, white_h + 42.0), egui::Sense::hover());
+    let white = Rect::from_min_size(client.min, Vec2::new(w, white_h));
+    ui.painter().rect_filled(white, 0.0, Color32::WHITE);
+    let cell = Rect::from_min_size(white.min + Vec2::new(21.0, 23.0), Vec2::splat(32.0));
+    message_icon(ui.painter(), cell, icon);
+    let mid = if g.size().y > 32.0 { white.center().y } else { cell.center().y };
+    ui.painter().galley(Pos2::new(white.left() + 61.0, (mid - g.size().y / 2.0).round()), g, Color32::BLACK);
+    let mut pressed = None;
+    for (k, label) in buttons.iter().enumerate() {
+        let x = client.right() - 15.0 - 75.0 * (n - k as f32) - 10.0 * (n - 1.0 - k as f32);
+        let r = Rect::from_min_size(Pos2::new(x, white.bottom() + 10.0), Vec2::new(75.0, 23.0));
+        if win_button(ui, r, label, k == 0).clicked() {
+            pressed = Some(k);
         }
-        let color = if bg.is_some() { Color32::WHITE } else { Color32::BLACK };
-        let at = if bg.is_some() { c } else { c + Vec2::new(0.0, 4.0) };
-        p.text(at, egui::Align2::CENTER_CENTER, mark, egui::FontId::proportional(20.0), color);
-        ui.add_space(8.0);
-        ui.label(text);
-    });
+        if k == 0 {
+            focus_rect(ui.painter(), Rect::from_min_max(r.min + Vec2::new(4.0, 3.0), r.max - Vec2::new(4.0, 3.0)));
+        }
+    }
+    pressed
+}
+
+/// The focus rectangle: a dotted (13) frame, every other pixel (VM).
+pub fn focus_rect(p: &egui::Painter, r: Rect) {
+    let ink = Color32::from_gray(13);
+    let dot = |x: f32, y: f32| p.rect_filled(Rect::from_min_size(Pos2::new(x, y), Vec2::splat(1.0)), 0.0, ink);
+    let mut x = r.left();
+    while x < r.right() {
+        dot(x, r.top());
+        dot(x, r.bottom() - 1.0);
+        x += 2.0;
+    }
+    let mut y = r.top() + 2.0;
+    while y < r.bottom() - 1.0 {
+        dot(r.left(), y);
+        dot(r.right() - 1.0, y);
+        y += 2.0;
+    }
+}
+
+/// Our drawing of a system message icon in its 32 px cell.
+fn message_icon(p: &egui::Painter, r: Rect, icon: MsgIcon) {
+    let c = r.center();
+    let (mark, bg) = match icon {
+        MsgIcon::Exclamation => {
+            let tri = vec![Pos2::new(c.x, r.top() + 2.0), Pos2::new(r.right() - 2.0, r.bottom() - 3.0), Pos2::new(r.left() + 2.0, r.bottom() - 3.0)];
+            p.add(egui::Shape::convex_polygon(tri, Color32::from_rgb(252, 204, 34), Stroke::new(1.0f32, Color32::from_rgb(190, 140, 0))));
+            ("!", None)
+        }
+        MsgIcon::Error => ("✕", Some(Color32::from_rgb(214, 40, 40))),
+        MsgIcon::Question => ("?", Some(Color32::from_rgb(40, 100, 200))),
+    };
+    if let Some(bg) = bg {
+        p.circle_filled(c, 15.0, bg);
+    }
+    let color = if bg.is_some() { Color32::WHITE } else { Color32::BLACK };
+    let at = if bg.is_some() { c } else { c + Vec2::new(0.0, 4.0) };
+    p.text(at, egui::Align2::CENTER_CENTER, mark, egui::FontId::proportional(20.0), color);
 }
 
 /// Whether a dialog window (egui's `Order::Middle` layer, where every

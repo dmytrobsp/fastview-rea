@@ -385,13 +385,12 @@ impl App {
         crate::dialogs::modal_backdrop(ctx, "fv_alert_block", egui::Order::Middle);
         crate::dialogs::dlg(ctx, crate::app::APP_TITLE)
             .id(egui::Id::new("fv_alert"))
-            .collapsible(false)
+            .margin(0.0)
+                .collapsible(false)
             .resizable(false)
             .order(egui::Order::Foreground)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                crate::dialogs::message_body(ui, icon, &msg);
-                ui.vertical_centered(|ui| ok = ui.button("    OK    ").clicked());
+                ok = crate::dialogs::message_box(ui, icon, &msg, &["OK"]).is_some();
             });
         // The box takes Enter / Esc: consumed, so the dialog under it does
         // not see them too.

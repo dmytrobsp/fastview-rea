@@ -316,8 +316,9 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   The dialogs' Windows frame, their CenterWindow placement and DIALOGs
   463 / 477 on their templates: L9.240–L9.241; 392 and the controls'
   Windows looks (labels, combos): L9.242; 510 and 332 (group boxes,
-  radios, the multi-line edit): L9.243; open: the other dialogs laid out
-  from their templates (`tools/dlg_templates.py`).
+  radios, the multi-line edit): L9.243; the message boxes: L9.244; open:
+  the other dialogs laid out from their templates
+  (`tools/dlg_templates.py`).
 
 ## W5 — Windows-only paths
 

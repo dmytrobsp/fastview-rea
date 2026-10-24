@@ -6867,6 +6867,22 @@ dialogs out on their templates; they match the captures but for the
 glyphs. A multi-line static is clipped at its sides only (510's warning
 takes three lines in our wider font; W6).
 
+### L9.244 — Message boxes as Windows 11 draws them  ·  ✅
+VM capture of the box a refused sample rate raises over DIALOG 392 (its
+text in English there: the VM's display language picks MFC's English
+resources; ours keeps mfc120rus): Windows 11's MessageBox in the dialog
+frame of L9.241 — the client a white area with the 32 px icon at (21, 23)
+and the text from x 61 centred on the icon's middle (31 px clear at the
+right; 78 px tall for one line), over a 42 px (240) strip holding the
+buttons, 75 × 23, 10 px down, the last 15 px from the right edge; the
+default button with the theme's blue border and a dotted (13) focus
+rectangle 4 / 3 px inside. Placed by the rule of L9.242: (1189, 622) for
+its 182 × 147 px, as ours. Ours drew an egui window with the icon, the
+label and a centred egui button. Now `dialogs::message_box` is the body
+of all five boxes (the alert queue, the formula page's, the ОМП
+message, the add-formula alerts and «Сохранить изменения в …?» with
+«Да», «Нет», «Отмена» 10 px apart); the icons stay our drawings.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

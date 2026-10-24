@@ -473,14 +473,13 @@ impl App {
             let mut close = false;
             crate::dialogs::dlg(ctx, crate::app::APP_TITLE)
                 .id(egui::Id::new("fv_formula_page_alert"))
+                .margin(0.0)
                 .collapsible(false)
                 .resizable(false)
                 .order(egui::Order::Foreground)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
                     // `0x486a9d` / `0x486bd3`: MB_ICONHAND.
-                    crate::dialogs::message_body(ui, crate::dialogs::MsgIcon::Error, msg);
-                    ui.vertical_centered(|ui| close = ui.button("    OK    ").clicked());
+                    close = crate::dialogs::message_box(ui, crate::dialogs::MsgIcon::Error, msg, &["OK"]).is_some();
                 });
             if close || ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
                 self.formula_page.alert = None;

@@ -1009,23 +1009,17 @@ impl App {
         crate::dialogs::modal_backdrop(ctx, "fv_save_prompt_block", egui::Order::Middle);
         crate::dialogs::dlg(ctx, crate::app::APP_TITLE)
             .id(egui::Id::new("fv_save_prompt"))
-            .collapsible(false)
+            .margin(0.0)
+                .collapsible(false)
             .resizable(false)
             .order(egui::Order::Foreground)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                crate::dialogs::message_body(ui, crate::dialogs::MsgIcon::Question, &format!("Сохранить изменения в {title}?"));
-                ui.horizontal(|ui| {
-                    if ui.button("   Да   ").clicked() {
-                        answer = Some(Some(true));
-                    }
-                    if ui.button("   Нет   ").clicked() {
-                        answer = Some(Some(false));
-                    }
-                    if ui.button(" Отмена ").clicked() {
-                        answer = Some(None);
-                    }
-                });
+                match crate::dialogs::message_box(ui, crate::dialogs::MsgIcon::Question, &format!("Сохранить изменения в {title}?"), &["Да", "Нет", "Отмена"]) {
+                    Some(0) => answer = Some(Some(true)),
+                    Some(1) => answer = Some(Some(false)),
+                    Some(_) => answer = Some(None),
+                    None => {}
+                }
             });
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             answer = Some(None);
