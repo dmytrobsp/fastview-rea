@@ -575,6 +575,7 @@ impl App {
     /// One frame of the whole window (kept apart from `eframe::App::update`
     /// so headless tests can drive it).
     pub fn frame_ui(&mut self, ctx: &egui::Context) {
+        dialogs::route_combo_keys(ctx);
         // Window title «Механотроника FastView - <document>» (0x45f7d0) and
         // files dropped on the window (DragAcceptFiles).
         let title = match self.active_doc() {
@@ -1575,6 +1576,31 @@ mod window_tests {
         let row = Pos2::new(arrow.x + 20.0, tab.top() + 16.0 + 3.0 + 11.0);
         w.press(Primary, row, row);
         assert_eq!(w.app.active, Some(0), "the first document by title");
+    }
+
+    /// Enter in an open drop-down picks its highlighted item and the
+    /// dialog stays (VM: «Быстрый анализ»' arm combos; Enter used to run
+    /// the dialog's default button).
+    #[test]
+    fn enter_in_an_open_drop_down_picks_and_keeps_the_dialog() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::FileParams);
+        // The window settles where it is centred after its first frames.
+        w.idle(5);
+        let combo = w.ctx.read_response(egui::Id::new("fv_codepage")).expect("the encoding combo").rect.center();
+        let before = w.app.docs[w.app.active.unwrap()].codepage;
+        w.press(Primary, combo, combo);
+        w.held = egui::Modifiers::NONE;
+        w.key(egui::Key::ArrowUp);
+        w.key(egui::Key::Enter);
+        w.idle(2);
+        assert!(w.app.show_file_params, "the dialog stays");
+        assert_ne!(w.app.docs[w.app.active.unwrap()].codepage, before, "the item above picked");
+        // Closed, Enter is the dialog's again.
+        w.key(egui::Key::Enter);
+        w.idle(2);
+        assert!(!w.app.show_file_params);
     }
 
     /// The wheel over the ribbon steps its tabs and stops at either end

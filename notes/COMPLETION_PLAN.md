@@ -245,7 +245,7 @@ items (VM ones also in W4.4):
     marks' fill (L9.45); quick-analysis edits and the modified flag
     (L9.55); ~~«Окна...» arrangements under MDI tabs~~ (out of reach, L9.220); ~~the
     `.set` after an ОМП run~~ (run, L9.217); ~~plane labels' background~~ (run: opaque in both, L9.280); the
-    differential table's row order (L9.81); the app menu's keytips
+    ~~differential table's row order~~ (run, L9.298); the app menu's keytips
     (run, L9.291); the ribbon's reduction steps (L9.91); ~~the printed vector
     legend~~ (run, L9.296); the preview on non-A4 paper (L9.94); ~~GDI's Ellipse box~~
     (run, L9.285); the diagram tab order in the workspace (L9.105); the splitter
@@ -255,7 +255,7 @@ items (VM ones also in W4.4):
     older looks' app button~~ (run, L9.223); Ctrl over a hot marker (L9.128);
     ~~MDI keys / order~~ (run: none with tabs, L9.294); ~~a 0 / negative rate in 392~~ (run, L9.297); the `.set` with formula + digital channels (L9.143); menu
     check column, combine with a computed channel, popup keyboard
-    (L9.144, L9.146); ~~status bar prompts~~ (run, L9.291); ~~a group tab strip's
+    (L9.144, L9.146; a drop-down's Enter: L9.298); ~~status bar prompts~~ (run, L9.291); ~~a group tab strip's
     right-click~~ (run, L9.291); ~~Aqua's title~~ (run: left, as ours); ~~Enter in quick analysis~~
     (run, L9.295); ~~32806 with no document~~ (run, L9.295); ~~«Удалить файлы» with
     nothing selected~~ (run, L9.296); ~~Save As caption~~ (run: the system's own); ~~opening an open

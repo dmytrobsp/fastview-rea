@@ -1840,7 +1840,8 @@ fn circle_cells(l: &Locus, mode: u8) -> [String; 2] {
         let cell = |v: f64, u: &fvb_core::units::Shown| {
             let (s, unit) = fvb_core::views::si_scaled(v, u);
             if v == 0.0 {
-                format!("0.0 {unit}")
+                // VM: «0.0» alone, no unit.
+                "0.0".to_string()
             } else {
                 format!("{s:.3} {unit}")
             }

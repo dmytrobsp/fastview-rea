@@ -739,6 +739,24 @@ fn combo_face(ui: &egui::Ui, r: Rect, edit: bool, enabled: bool, open: bool, hov
     p.add(egui::Shape::line(vec![Pos2::new(x - 12.5, y + 9.0), Pos2::new(x - 9.0, y + 12.5), Pos2::new(x - 5.5, y + 9.0)], Stroke::new(1.0f32, ink)));
 }
 
+/// An open drop-down list owns Enter and Esc (a Win32 list's keys, VM:
+/// Enter picks the highlighted item and the dialog stays): at a frame's
+/// start, while a list was open in the last one, they are taken out of the
+/// input before any dialog reads them, and kept for the list.
+pub fn route_combo_keys(ctx: &egui::Context) {
+    let id = egui::Id::new("fv_combo_popup");
+    let pass = ctx.cumulative_pass_nr();
+    let open = ctx.data(|d| d.get_temp::<u64>(id)).is_some_and(|f| f + 1 >= pass);
+    let keys = if open { ctx.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, egui::Key::Enter), i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))) } else { (false, false) };
+    ctx.data_mut(|d| d.insert_temp(id.with("keys"), keys));
+}
+
+/// Enter and Esc for an open list: pressed, or routed to it.
+fn combo_keys(ctx: &egui::Context) -> (bool, bool) {
+    let (enter, esc) = ctx.data(|d| d.get_temp::<(bool, bool)>(egui::Id::new("fv_combo_popup").with("keys"))).unwrap_or_default();
+    ctx.input(|i| (enter || i.key_pressed(egui::Key::Enter), esc || i.key_pressed(egui::Key::Escape)))
+}
+
 /// A combo box's drop-down list under `r` (VM): its width, a 1 px
 /// (0, 120, 215) border, 13 px items, the one under the pointer (at first
 /// the current one) white on (0, 120, 212), a soft shadow at the right.
@@ -765,7 +783,8 @@ pub fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], curre
         // picks it (a Win32 list's keys); the pointer's item wins.
         let key_id = id.with("key_hot");
         let mut key_hot: Option<usize> = ui.data(|d| d.get_temp(key_id)).unwrap_or(current);
-        let (up, down, enter) = ui.input(|i| (i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown), i.key_pressed(egui::Key::Enter)));
+        let (up, down) = ui.input(|i| (i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown)));
+        let enter = combo_keys(ui.ctx()).0;
         if !items.is_empty() && (up || down) {
             let k = key_hot.map_or(0, |k| if down { (k + 1).min(items.len() - 1) } else { k.saturating_sub(1) });
             key_hot = Some(k);
@@ -795,11 +814,14 @@ pub fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], curre
         }
     });
     let outside = ctx.input(|i| i.pointer.any_pressed()) && !area.response.rect.contains(ctx.input(|i| i.pointer.interact_pos()).unwrap_or_default()) && !r.contains(ctx.input(|i| i.pointer.interact_pos()).unwrap_or_default());
-    if picked.is_some() || outside || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if picked.is_some() || outside || combo_keys(&ctx).1 {
         ctx.data_mut(|d| {
             d.insert_temp(open_id, false);
             d.remove::<Option<usize>>(id.with("key_hot"));
         });
+    } else {
+        let pass = ctx.cumulative_pass_nr();
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_combo_popup"), pass));
     }
     picked
 }

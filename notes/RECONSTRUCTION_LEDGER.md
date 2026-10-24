@@ -8165,6 +8165,25 @@ Residual: after a refused 0 the original keeps its old caches while R
 is 0; ours computes live from the time axis's N for an R of 0 (only
 reachable through this refusal).
 
+### L9.298 — VM: Enter in an open drop-down picks; the differential table's rows and its exact 0  ·  ✅
+Run («Быстрый анализ» → «Дифференциальные токи» on WIN_1999, both arms
+IA / IB / IC блока 3, «Рассчитать»):
+- **A drop-down's keys.** In the original, a click opens an arm's channel
+  list, ↓ moves the highlight (the field keeps its text) and Enter picks
+  it with the dialog staying. Ours let Enter through to the dialog —
+  «Рассчитать» ran with the arms empty («Имя канала задано неправильно»).
+  Now `dialogs::route_combo_keys` takes Enter and Esc out of a frame's
+  input while a list was open in the last one, for the list. Test
+  `enter_in_an_open_drop_down_picks_and_keeps_the_dialog`.
+- **The table's rows (L9.81).** Alike: «Ia диф. Ia торм.», «Ib …»,
+  «Ic …», Iдиф's column then Iторм's; the three «прив.» channels alike.
+- **An exact 0.** The original's cell is «0.0» alone; ours added the
+  unit. Fixed in `circle_cells`.
+Residual (open): the original's table top is 2 px under the plot's frame
+and its rows 19 px (cy 13); ours sits on the frame with 21 px rows.
+Visual: ours' «Быстрый анализ» side bar draws its own glyphs where the
+original has pictures (left).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
