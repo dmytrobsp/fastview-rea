@@ -7039,6 +7039,18 @@ background dragging, which jumped the window on a press in the tests —
 only by its caption, as Windows moves it (the place kept until the
 dialog is opened anew).
 
+### L9.253 — The add-formula dialog's hosted forms on their templates  ·  ✅
+The hosted forms (DIALOGs 400–542, 1069; created at control 1035's place
+— VM: 400's «Формула:» at 1347, 496): 400 has its label at (0, 0) over the
+edit at (0, 12) 191 × 12 DLU; 488 «Параметры отсутствуют» at (20, 20);
+48 of the 76 templates follow one grid — row k's label at (0, 20 + 20k)
+40 × 8 and its control at (45, 18 + 20k), 150 DLU wide — and the 29 our
+`addformula::form` hosts among them (401–461, 490, 491, 1069) list their
+fields in the templates' row order (checked against every template).
+`template_form` lays those out so with the dialog controls (labels,
+`win_edit`, `win_combo_list`); the 28 forms laid out individually (the
+multi-current and differential ones, 501–542) keep ours — open (W4.5).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

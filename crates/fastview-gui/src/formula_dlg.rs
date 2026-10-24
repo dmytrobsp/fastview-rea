@@ -192,11 +192,11 @@ impl App {
                     // The selected template's form in the place of control
                     // 1035 (205, 36, 198 × 243).
                     let place = dlu(client, 205, 36, 198, 243);
-                    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(place), |ui| {
-                        if let Some(d) = st.form {
-                            form_ui(ui, d, &mut st);
+                    if let Some(d) = st.form {
+                        if !template_form(ui, place.min, d, &mut st) {
+                            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(place), |ui| form_ui(ui, d, &mut st));
                         }
-                    });
+                    }
                     let ok_r = dlu(client, 293, 290, 50, 14);
                     st.ok_rect = Some(ok_r);
                     if win_button_en(ui, ok_r, "OK", true, st.form.is_some()).clicked() {
@@ -291,6 +291,57 @@ fn branch_icon(p: &egui::Painter, r: Rect, branch: &str) {
     };
     p.rect(r.shrink(1.0), 2.0f32, color.gamma_multiply(0.15f32), egui::Stroke::new(1.0f32, color));
     p.text(r.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(11.0), color);
+}
+
+/// A hosted form on its template, from the place of control 1035 (VM:
+/// DIALOG 400's «Формула:» at 1347, 496): 400 its label at (0, 0) over
+/// the edit at (0, 12) 191 × 12 DLU; 488 «Параметры отсутствуют» at (20,
+/// 20); and 401–461, 490, 491 and 1069 — row k's label at (0, 20 + 20k)
+/// 40 × 8, its control at (45, 18 + 20k) 150 DLU wide. Returns false for
+/// the forms laid out otherwise (their own places; ours in `form_ui`).
+fn template_form(ui: &mut egui::Ui, at: egui::Pos2, dialog: u16, st: &mut AddFormulaDlg) -> bool {
+    use crate::dialogs::{dlu, win_combo_list, win_edit, win_label};
+    let Some(form) = af::form(dialog) else { return true };
+    let o = Rect::from_min_size(at, Vec2::ZERO);
+    if dialog == 400 {
+        win_label(ui, dlu(o, 0, 0, 32, 8), "Формула:", false, true);
+        let text = st.values.entry(af::id::FORMULA).or_default();
+        let r = win_edit(ui, dlu(o, 0, 12, 191, 12), egui::Id::new(("af_field", af::id::FORMULA)), text, false);
+        st.form_focus |= r.has_focus() || r.lost_focus();
+        return true;
+    }
+    if form.fields.is_empty() {
+        win_label(ui, dlu(o, 20, 20, 100, 8), af::NO_PARAMS, false, true);
+        return true;
+    }
+    let regular = matches!(dialog, 401..=461 | 490 | 491 | 1069);
+    if !regular || form.fields.iter().any(|&(_, id)| af::kind(id) == Kind::Check) {
+        return false;
+    }
+    for (k, &(label, id)) in form.fields.iter().enumerate() {
+        let y = 20 * k as i32;
+        win_label(ui, dlu(o, 0, 20 + y, 40, 8), label, false, true);
+        let kind = af::kind(id);
+        let r = dlu(o, 45, 18 + y, 150, 12);
+        let items: Vec<String> = match kind {
+            Kind::Channel { .. } => af::channel_items(kind, &st.channels).0,
+            Kind::List(items, _) => items.iter().map(|s| s.to_string()).collect(),
+            Kind::Harmonic => af::harmonics(st.sample_rate, st.line_freq),
+            Kind::Edit(_) => {
+                let text = st.values.entry(id).or_default();
+                let resp = win_edit(ui, r, egui::Id::new(("af_field", id)), text, false);
+                st.form_focus |= resp.has_focus() || resp.lost_focus();
+                continue;
+            }
+            Kind::Check => continue,
+        };
+        let cur = st.values.entry(id).or_default();
+        let at = items.iter().position(|it| it == cur).unwrap_or(0);
+        if let Some(k) = win_combo_list(ui, r, egui::Id::new(("af_field", id)), &items, at, true) {
+            *cur = items[k].clone();
+        }
+    }
+    true
 }
 
 /// The hosted form: one row per control as in its dialog template.
