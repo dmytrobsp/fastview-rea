@@ -6839,6 +6839,26 @@ GUI test exe — run it when the VM is back (windows-vm memory).
 (Done: night 6 L9.128–L9.150, night 5 L9.107–L9.127.)
 ---
 
+**Night 7 (L9.198–L9.235, 2026-10-24, with the VM's desktop session):**
+byte-for-byte VM comparisons — Save As of WIN_1999 / DOC_1999 / BINARY and
+a revision-2013 record as `.cfg` and `.cff` (the `.cff` data always
+binary), the clipboard document, the `.set` after channel edits, a quick
+analysis and an ОМП run (values times the shown factor k, flags out of
+the `.cfg`, keys moving with their channels), the ОМП report — all
+identical; then pixel-by-pixel looks: the ribbon's rows and body, its one
+context menu and QAT arrows, keytips, the five pre-2007 looks in Windows
+11's system colours, the parameter grid as MFC's property grid, the
+characteristic fills as GDI+ blends them (`theme::alpha`, gamma-space),
+the frame's splitter-brush bands, the document's sunken edge and
+gradient frame, pane toolbars and tab strips, Windows 11 scroll bars,
+the print preview inside the document window, levels resolved by shown
+name, the splash. Lessons: the VM's Windows display language is English,
+so MFC's own strings there are English (ours keeps mfc120rus); ours
+cannot run on the VM (OpenGL 1.1, no D3D12 adapter — W4.1c); most
+remaining visual gaps are font metrics (egui's DejaVu against GDI's
+Tahoma / Segoe UI). Test hooks: `FV_OMP_DUMP` / `FV_OMP_INOM` /
+`FV_OMP_REPORT`, `FV_WINDOW_SKIN` / `_BLOCK` / `_LATE`. Tests 460.
+
 ## L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
 
 Evidence (Ghidra pseudocode + objdump of FastView.exe; spot-checked by hand

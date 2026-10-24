@@ -333,6 +333,10 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 - The proprietary bitmaps (logo, splash, About picture) — assets of the
   original; ours draws its own.
 - Where a dropped file lands — egui reports no drop position (L9.159).
+- Glyph metrics: many small layout gaps (the stats panel 3 px wider, the
+  frequency x labels crowding, label weights) are DejaVu (egui's) against
+  GDI's Tahoma / Segoe UI. A metric-compatible free face (e.g. Wine's LGPL
+  Tahoma) would close them — a licence decision for the user (proposal).
 - A level or area whose channel name no longer resolves blanks the
   original's oscillogram view (VM, L9.227) — ours leaves that element out
   instead of reproducing the paint failure.
