@@ -8344,6 +8344,25 @@ Run (WIN_1999):
   ruler 0 … 832 ms), a stats drag held 6 px from the view's right edge:
   neither scrolls sideways.
 
+### L9.308 — Bold Cyrillic in one weight: Wine's Tahoma Bold's copied outlines thickened at load  ·  ✅
+Found in the real print (W5.1, Print to PDF on the VM: the header
+«Наименование осциллограммы» and the lane names): every bold Cyrillic
+word of ours came out in two weights — «Н**а**им**е**н**о**вание». Wine's
+`tahomabd.ttf` carries, for the Cyrillic letters with no Latin
+look-alike (и, м, в, л, г, ц, ы, Б, Л …), glyph records byte for byte
+those of `tahoma.ttf` — regular outlines in the bold advances —, while
+the look-alikes (Н, а, е, о, К …) are composites of the real bold Latin
+glyphs. The original's (Microsoft's) Tahoma Bold is bold throughout.
+Now `fontfix::embolden_copied_cyrillic` (at font load): each copied
+outline is offset outward by the two faces' stem difference (from «l»:
+87 font units a side, 0.35 of that vertically, the baseline kept),
+FreeType's miter rule per point, the normals turned for a glyph drawn
+counter-clockwise; centred in its bold advance; `glyf` / `loca` rebuilt
+with long offsets, the rest of the file as it was (the font's licence,
+LGPL, allows the modification; the file on disk is unchanged). Test
+`the_copied_cyrillic_outlines_get_bold`; VM: the lane names uniformly
+bold.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

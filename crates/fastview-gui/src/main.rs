@@ -13,6 +13,7 @@ mod comments;
 mod diagram;
 mod diagram_ui;
 mod dialogs;
+mod fontfix;
 mod docking;
 mod finder;
 mod formula_dlg;
@@ -150,11 +151,11 @@ const DEJAVU: &[u8] = include_bytes!("../../../assets/fonts/DejaVuSans.ttf");
 /// 12. The copy's `hhea` ascent − descent is made one em (the rest moved
 /// into the line gap, so rows keep their height) and the glyphs shifted
 /// back down to their own baseline.
-fn em_sized(bytes: &'static [u8]) -> egui::FontData {
-    let mut b = bytes.to_vec();
+fn em_sized(bytes: Vec<u8>) -> egui::FontData {
+    let mut b = bytes;
     let rd = |b: &[u8], o: usize| u16::from_be_bytes([b[o], b[o + 1]]);
     let table = |b: &[u8], tag: &[u8; 4]| (0..rd(b, 4) as usize).map(|i| 12 + 16 * i).find(|&r| &b[r..r + 4] == tag).map(|r| u32::from_be_bytes([b[r + 8], b[r + 9], b[r + 10], b[r + 11]]) as usize);
-    let (Some(head), Some(hhea)) = (table(&b, b"head"), table(&b, b"hhea")) else { return egui::FontData::from_static(bytes) };
+    let (Some(head), Some(hhea)) = (table(&b, b"head"), table(&b, b"hhea")) else { return egui::FontData::from_owned(b) };
     let upem = f32::from(rd(&b, head + 18));
     let (asc, desc, gap) = (f32::from(rd(&b, hhea + 4) as i16), f32::from(rd(&b, hhea + 6) as i16), f32::from(rd(&b, hhea + 8) as i16));
     let new_asc = (asc * upem / (asc - desc)).round();
@@ -171,8 +172,9 @@ fn em_sized(bytes: &'static [u8]) -> egui::FontData {
 /// Sans for the glyphs Tahoma lacks; the bold face as the family "bold".
 fn app_fonts() -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
-    fonts.font_data.insert("tahoma".to_owned(), em_sized(TAHOMA));
-    fonts.font_data.insert("tahoma-bold".to_owned(), em_sized(TAHOMA_BOLD));
+    fonts.font_data.insert("tahoma".to_owned(), em_sized(TAHOMA.to_vec()));
+    // Its copied regular Cyrillic outlines made bold (`fontfix`).
+    fonts.font_data.insert("tahoma-bold".to_owned(), em_sized(fontfix::embolden_copied_cyrillic(TAHOMA_BOLD, TAHOMA)));
     fonts.font_data.insert("dejavu".to_owned(), egui::FontData::from_static(DEJAVU));
     let order = ["tahoma".to_owned(), "dejavu".to_owned()];
     for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {

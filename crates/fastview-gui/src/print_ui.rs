@@ -279,6 +279,10 @@ impl App {
             ok = win_button(ui, dlu(client, 189, 238, 67, 14), "OK", true).clicked();
             cancel = win_button(ui, dlu(client, 262, 238, 67, 14), "Отмена", false).clicked();
         });
+        // Enter is the default button OK, Esc Отмена (VM).
+        let keys = self.dialog_keys(ctx);
+        let ok = ok || keys == Some(true);
+        let cancel = cancel || keys == Some(false);
         // The checkboxes are kept per view, also on Отмена (`0x404b30`).
         self.docs[dlg.doc].print_ticks = dlg.ticks;
         if setup {
@@ -287,7 +291,7 @@ impl App {
         if ok || preview {
             self.print.printer = Some(names[dlg.printer.min(names.len() - 1)].clone());
         }
-        let closed = !open || cancel || ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        let closed = !open || cancel;
         if ok || preview || closed {
             spool::end_properties(ok || preview);
         }
@@ -360,6 +364,9 @@ impl App {
             ok = win_button(ui, at(198.0, 358.0, 72.0, 23.0), "ОК", true).clicked();
             cancel = win_button(ui, at(276.0, 358.0, 72.0, 23.0), "Отмена", false).clicked();
         });
+        // Enter is OK, Esc Отмена (the common dialog's).
+        let keys = self.dialog_keys(ctx);
+        let (ok, cancel) = (ok || keys == Some(true), cancel || keys == Some(false));
         if ok {
             self.print.setup = PageSetup { margins: dlg.mm.map(|m| (m * 100.0).round() as i32), portrait: dlg.portrait };
             self.print.setup.store(&mut self.store.view);
