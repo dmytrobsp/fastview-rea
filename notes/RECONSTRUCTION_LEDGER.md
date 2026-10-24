@@ -5989,8 +5989,7 @@ and `DigFlags::color`, `Doc::recolor` on every vector change
 is still byte-identical (WIN_1999 against the ru-RU run's output).
 Tests `the_zoom_gate_measures_its_own_rectangle`,
 `colours_follow_the_place_until_set`, the formula page's test updated.
-Residual: ours writes every computed channel's colour to the `.set` as a
-custom one (the original writes `ch+0x140` as it is; not re-read).
+Residual: (the `.set`'s computed colours: fixed in L9.214).
 
 ### L9.201 — W2.17 part: a failing formula aborts the batch, the invalid-result box, DIALOG 353's enable states, «Тип блока» with an unknown saved name, the grid's edit  ·  ✅
 Read by hand (on the background agent's leads):
@@ -6280,6 +6279,17 @@ Run on the VM: the original with WIN_1999, IA's channel menu
 Ours did the same (`FV_SAVE_EDIT=invert` / `rms,dc` in `save_as_dump`):
 the `.cfg`, `.dat` and `.set` are byte-identical to the original's in
 both runs. The outputs stay local.
+
+### L9.214 — VM run: the files after a quick analysis, byte for byte; a computed channel's colour flag in the `.set`  ·  ✅
+Run on the VM: the original with WIN_1999, «Быстрый анализ» (it opens on
+«Редактор формул»), «Симметричные составляющие» with Ia / Ib / Ic = IA /
+IB / IC БЛОКА 3 and the voltages' «Отключить», «Рассчитать», Save As to a
+new name. Ours did the same (`FV_SAVE_EDIT=symm`): the `.cfg` and `.dat`
+were identical, the `.set` differed only in the new computed channels'
+`CustomColorSet` / `colorCustom` — the original writes the flag as it is
+(0 and 0 for a place colour), ours wrote every computed colour as custom
+(L9.200's residual). Now the writer takes `Computed::custom_color`; the
+three files are byte-identical. The outputs stay local.
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

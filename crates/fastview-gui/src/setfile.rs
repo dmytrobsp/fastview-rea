@@ -398,7 +398,9 @@ impl Doc {
                 primary_mul: 1.0,
                 secondary_mul: 1.0,
                 alias: String::new(),
-                custom_color: Some(colorref(c.color)),
+                // `ch+0x140` as it is (a VM run, L9.213): a place colour
+                // writes CustomColorSet 0, colorCustom 0.
+                custom_color: c.custom_color.then(|| colorref(c.color)),
             };
             recset::write_channel(t.section_mut(&c.name), &rec);
         }
@@ -1007,6 +1009,18 @@ mod tests {
                 "invert" => app.dispatch(crate::app::Command::ToggleFlag(crate::chansel::ChanFlag::Invert)),
                 "dc" => app.dispatch(crate::app::Command::ToggleFlag(crate::chansel::ChanFlag::RemoveDc)),
                 "rms" => app.dispatch(crate::app::Command::SetValueMode(crate::app::ValueMode::Rms)),
+                // Quick analysis, «Симметричные составляющие»: Ia / Ib / Ic =
+                // the first three analog channels, voltages «Отключить».
+                "symm" => {
+                    app.dispatch(crate::app::Command::QuickAnalysis);
+                    app.analysis_tab = crate::app::AnalysisTab::Symmetric;
+                    app.quick_show_page();
+                    let names: Vec<String> = app.docs[di].osc.analog.iter().take(3).map(|c| c.id.clone()).collect();
+                    let q = &mut app.quick[crate::quick_ui::page_index(crate::app::AnalysisTab::Symmetric).unwrap()];
+                    (q.ia, q.ib, q.ic) = (names[0].clone(), names[1].clone(), names[2].clone());
+                    q.voltages_off = true;
+                    app.quick_calc();
+                }
                 _ => {}
             }
         }
