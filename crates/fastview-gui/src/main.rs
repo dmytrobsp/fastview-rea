@@ -1286,8 +1286,11 @@ mod window_tests {
             s if s.starts_with("skin") => s[4..].parse::<usize>().ok().and_then(|k| theme::Skin::ALL.get(k).copied()).map(C::SetSkin).into_iter().collect(),
             _ => vec![],
         };
-        // `FV_WINDOW_RECORD=<file.cfg>`: that record instead of the demo.
+        // `FV_WINDOW_RECORD=<file.cfg>`: that record instead of the demo
+        // (`none`: no document).
         let mut app = match std::env::var("FV_WINDOW_RECORD") {
+            // `none`: the window with no document.
+            Ok(rec) if rec == "none" => App::new(),
             Ok(rec) => {
                 let mut app = App::new();
                 app.load_comtrade_path(std::path::Path::new(&rec));

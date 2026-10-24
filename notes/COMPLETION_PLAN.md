@@ -232,8 +232,8 @@ items (VM ones also in W4.4):
     (L9.144, L9.146); status bar prompts (L9.147); a group tab strip's
     right-click (L9.149); Aqua's title (L9.150); Enter in quick analysis
     (L9.151); 32806 with no document (L9.152); «Удалить файлы» with
-    nothing selected (L9.154); Save As caption (L9.158); opening an open
-    file, a drop on the frame (L9.159); the toolbar wheel (L9.161); drag
+    nothing selected (L9.154); Save As caption (L9.158); ~~opening an open
+    file~~ (run, L9.190), a drop on the frame (L9.159); the toolbar wheel (L9.161); drag
     auto-scroll at the left / right insets (L9.164); the level edit
     scrolled (L9.175); the caption bars' order (spec §1.3); the ОМП
     channel drop-down with formula channels (spec §8.4).

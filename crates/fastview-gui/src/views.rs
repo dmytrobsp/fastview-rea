@@ -651,11 +651,14 @@ impl App {
     /// (20 px on a light band, 1 px edge) sits inside it, and the active
     /// document is framed 2 px in its tab's colour.
     fn view_oscillogram(&mut self, ctx: &egui::Context) {
+        let pal = self.skin.palette();
+        // With no document the MDI client shows its own colour, nothing
+        // else (MAINWND/MainClientArea; (164, 195, 235) in blue, seen on
+        // the VM).
         if self.docs.is_empty() {
-            egui::CentralPanel::default().show(ctx, |ui| self.lanes_ui(ui));
+            egui::CentralPanel::default().frame(egui::Frame::none().fill(pal.work_bg)).show(ctx, |ui| self.lanes_ui(ui));
             return;
         }
-        let pal = self.skin.palette();
         let edge = egui::Stroke::new(1.0f32, pal.ribbon_top.gamma_multiply(0.92));
         egui::CentralPanel::default()
             .frame(egui::Frame::none().fill(pal.ribbon_top).stroke(edge).inner_margin(egui::Margin::same(1.0)))

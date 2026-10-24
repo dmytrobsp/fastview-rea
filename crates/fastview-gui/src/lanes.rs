@@ -1070,12 +1070,8 @@ enum MenuCmd {
 
 impl App {
     pub fn lanes_ui(&mut self, ui: &mut egui::Ui) {
-        let Some(ai) = self.active else {
-            ui.centered_and_justified(|ui| {
-                ui.label("Осциллограмма не загружена. Откройте COMTRADE (Ctrl+O) или «Демо».");
-            });
-            return;
-        };
+        // No document: the MDI client's bare ground (`view_oscillogram`).
+        let Some(ai) = self.active else { return };
         let primary = self.docs[ai].primary_values();
         let (time_unit, show_grid, y_analog) = (self.time_unit, self.show_grid, self.y_analog);
         let full = ui.available_rect_before_wrap();

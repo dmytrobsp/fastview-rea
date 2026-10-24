@@ -5711,11 +5711,25 @@ correction, and the circle's «Показать все» skips pending lanes. Te
 Residual: whether a formula channel's spectrum goes through its own
 frequency vector (`ch+0x50`); the rest of W2.19.
 
+### L9.190 — VM runs: the window with no document; single instance and an open file handed again  ·  ✅
+Run on the VM (W4.4): started with no file, the original shows the
+parameters bar's labels only, the status panes' creation texts («Разница
+в. визиров:», L9.147), the diagram buttons and «Осциллограмма» enabled
+and the rest greyed, the differential diagram's empty plane, a blank
+vector pane — and the MDI client bare, (164, 195, 235), no text. Started
+again with WIN_1999 while an instance runs, the file goes to that
+instance (no second process; L9.21's read), and handing an already open
+file three times leaves one tab (L9.159's "brought forward only",
+confirmed); a start without a file runs a new instance. Ours matched
+except the MDI client: it showed our own hint («Осциллограмма не
+загружена…») on the panel colour. Now the bare `work_bg` ground; the
+render harness takes `FV_WINDOW_RECORD=none`.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.189)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.190)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5770,7 +5784,7 @@ L9.185 W1.8 B3 / B10 — W1.8 done (the finder's sort, the merge bar's
 fill, the group stats width); L9.186 the panes' captions; L9.187 the ribbon's packing / checked
 gradient / height; L9.188 `doc+0x1d8` = every analog-kind record (W2.16),
 the unknowns table (W3.1); L9.189 formula channels on the frequency
-diagram.
+diagram; L9.190 VM runs (no document, single instance).
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped
