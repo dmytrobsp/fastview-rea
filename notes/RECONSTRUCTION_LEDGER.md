@@ -8269,6 +8269,23 @@ after; the harness gained `CLOSE`, WM_CLOSE to the main window):
   (the centre one a small pane). Small visual: the original's fade in
   and are a little translucent.
 
+### L9.303 — VM: a popup's keyboard stops on disabled items with a grey bar; the ОМП channel list with formula channels  ·  ✅
+Run (WIN_1999):
+- **A popup's keys (L9.146).** On the lane menu (a right-click on the
+  stats), ↓ three times lands in the original on «Отображать на круговой
+  диаграмме» — greyed — with a grey bar, and ↑ four times from there wraps
+  to «Разъединить каналы», greyed too: CMFCPopupMenu's keyboard stops on
+  every item, disabled or not (separators skipped). Ours skipped the
+  disabled ones (L9.146's reading). Now `popmenu::step` and the view
+  menus' `MenuKeys` stop on every row, Enter on a disabled one does
+  nothing, and a disabled row under the keyboard or the pointer gets
+  `popmenu::grey_bar` (the hot bar in greys as sampled). Test
+  `popups_follow_the_keyboard` updated.
+- **The ОМП channel drop-down (spec §8.4).** After «Дифференциальные
+  токи» (both arms IA / IB / IC), «Параметры ОМП»'s Ia cell lists the six
+  file channels then the twelve computed ones («Ia плечо 1 прив.» …
+  «Ic торм.») in the same order in both.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

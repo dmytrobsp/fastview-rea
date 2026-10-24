@@ -254,15 +254,15 @@ items (VM ones also in W4.4):
     preview's per-page DC (L9.121); «Свойства»' DEVMODE (L9.122); ~~the
     older looks' app button~~ (run, L9.223); ~~Ctrl over a hot marker~~ (run, L9.302);
     ~~MDI keys / order~~ (run: none with tabs, L9.294); ~~a 0 / negative rate in 392~~ (run, L9.297); the `.set` with formula + digital channels (L9.143); menu
-    check column, combine with a computed channel, popup keyboard
-    (L9.144, L9.146; a drop-down's Enter: L9.298); ~~status bar prompts~~ (run, L9.291); ~~a group tab strip's
+    check column, combine with a computed channel, ~~popup keyboard~~
+    (run, L9.303; a drop-down's Enter: L9.298); ~~status bar prompts~~ (run, L9.291); ~~a group tab strip's
     right-click~~ (run, L9.291); ~~Aqua's title~~ (run: left, as ours); ~~Enter in quick analysis~~
     (run, L9.295); ~~32806 with no document~~ (run, L9.295); ~~«Удалить файлы» with
     nothing selected~~ (run, L9.296); ~~Save As caption~~ (run: the system's own); ~~opening an open
     file~~ (run, L9.190), a drop on the frame (L9.159); ~~the toolbar wheel~~ (run, L9.291); drag
     auto-scroll at the left / right insets (L9.164); the level edit
-    scrolled (L9.175); the caption bars' order (spec §1.3); the ОМП
-    channel drop-down with formula channels (spec §8.4).
+    scrolled (L9.175); the caption bars' order (spec §1.3); ~~the ОМП
+    channel drop-down with formula channels~~ (run, L9.303).
   - **W6**: landscape margins (our CUPS path), drivers resetting the DC,
     short-row files (no sample), the `.zip` writer (unreachable).
 - [x] W3.2 Settle the static ones — part A (rec+0x278, `zk:`, θ, bitmap 464, the print clip → RUN, «none», k, the zero-sample walk, the vector width, #12964, an area on an unknown channel, ph / ccbm): L9.194; part B (`0x428490`'s callers, Repos, the splitter strip, `0x426020` on pending lanes, 61702 / the catches, ADC, NaN DC, the merge's own frequency, the off-lane H pane, the Save As title, OSC2 as COMTRADE, the legacy `.omp`): L9.197. Left: the print clip (→ RUN).

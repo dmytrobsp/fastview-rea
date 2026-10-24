@@ -2077,8 +2077,9 @@ impl App {
                 });
             });
         let rect = area.response.rect;
-        // ↑ / ↓ over the enabled rows (wrapping); Enter picks on the next
-        // pass.
+        // ↑ / ↓ over the rows, the disabled ones too (wrapping; VM: a
+        // grey bar on a greyed row); Enter picks an enabled one on the
+        // next pass.
         let (up, down, enter) = ctx.input(|i| (i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown), i.key_pressed(egui::Key::Enter)));
         ctx.data_mut(|d| {
             let k: &mut MenuKeys = d.get_temp_mut_or_default(menu_keys_id());
@@ -2086,13 +2087,8 @@ impl App {
             let n = k.enabled.len();
             if (up || down) && n > 0 {
                 let mut i = k.hot.unwrap_or(if down { n - 1 } else { 0 });
-                for _ in 0..n {
-                    i = if down { (i + 1) % n } else { (i + n - 1) % n };
-                    if k.enabled[i] {
-                        k.hot = Some(i);
-                        break;
-                    }
-                }
+                i = if down { (i + 1) % n } else { (i + n - 1) % n };
+                k.hot = Some(i);
             }
             if enter && k.hot.is_some() {
                 k.activate = true;

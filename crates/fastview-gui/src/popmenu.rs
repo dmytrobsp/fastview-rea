@@ -52,11 +52,13 @@ impl PopMenu {
 }
 
 /// An item the keyboard can land on: an enabled item or a submenu.
+/// The keyboard's stops: every item, disabled ones too (VM: ↓ lands on a
+/// greyed item with a grey bar), and the submenus; not the separators.
 fn selectable<C>(e: &Entry<C>) -> bool {
-    matches!(e, Entry::Item { enabled: true, .. } | Entry::Sub { .. })
+    matches!(e, Entry::Item { .. } | Entry::Sub { .. })
 }
 
-/// The next (or previous) selectable entry from `from`, wrapping.
+/// The next (or previous) item or submenu from `from`, wrapping.
 pub fn step<C>(entries: &[Entry<C>], from: Option<usize>, down: bool) -> Option<usize> {
     let n = entries.len();
     if n == 0 {
@@ -197,6 +199,22 @@ pub(crate) fn hot_bar(p: &egui::Painter, r: Rect) {
     p.px_vline(r.right() - 1.0, r.y_range(), Stroke::new(1.0f32, Color32::from_rgb(195, 170, 121)));
 }
 
+/// A disabled item's bar under the pointer or the keyboard: the hot bar
+/// in greys (VM: a (212) top, (195) sides, 250 to 231 above the middle,
+/// 210 to 224 below, a (230) inner bottom line, a (222) bottom).
+pub(crate) fn grey_bar(p: &egui::Painter, r: Rect) {
+    use crate::oscgeom::PixelLines;
+    let inner = r.shrink(1.0);
+    let mid = inner.top() + 10.0;
+    crate::lanes::gradient(p, Rect::from_min_max(inner.min, Pos2::new(inner.right(), mid)), Color32::from_gray(250), Color32::from_gray(231));
+    crate::lanes::gradient(p, Rect::from_min_max(Pos2::new(inner.left(), mid), Pos2::new(inner.right(), inner.bottom() - 1.0)), Color32::from_gray(210), Color32::from_gray(224));
+    p.px_hline(inner.x_range(), inner.bottom() - 1.0, Stroke::new(1.0f32, Color32::from_gray(230)));
+    p.px_hline(r.x_range(), r.top(), Stroke::new(1.0f32, Color32::from_gray(212)));
+    p.px_hline(r.x_range(), r.bottom() - 1.0, Stroke::new(1.0f32, Color32::from_gray(222)));
+    p.px_vline(r.left(), r.y_range(), Stroke::new(1.0f32, Color32::from_gray(195)));
+    p.px_vline(r.right() - 1.0, r.y_range(), Stroke::new(1.0f32, Color32::from_gray(195)));
+}
+
 /// The look of a Win32 popup menu's rows (also the view's own menus).
 pub fn menu_style(style: &mut egui::Style) {
     style.wrap_mode = Some(egui::TextWrapMode::Extend);
@@ -239,8 +257,13 @@ pub fn mark_item_icon(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enable
     let size = Vec2::new(COL + galley.size().x + 10.0 + keys_w, 21.0);
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let row = Rect::from_x_y_ranges(ui.max_rect().x_range(), rect.y_range());
-    if enabled && (resp.hovered() || hot) {
-        hot_bar(ui.painter(), Rect::from_min_max(row.min, Pos2::new(row.right(), row.top() + 22.0)));
+    if resp.hovered() || hot {
+        let bar = Rect::from_min_max(row.min, Pos2::new(row.right(), row.top() + 22.0));
+        if enabled {
+            hot_bar(ui.painter(), bar);
+        } else {
+            grey_bar(ui.painter(), bar);
+        }
     }
     let col = if enabled { MFC_TEXT } else { MFC_GREY };
     let bx = Rect::from_min_size(Pos2::new(row.left() + 2.0, rect.top() + 1.0), Vec2::splat(20.0));
@@ -437,9 +460,10 @@ mod tests {
         assert_eq!((glyph(Mark::Check(false)), glyph(Mark::Radio(true))), (None, Some("•")));
     }
 
-    /// A Win32 popup's keys: ↓ lands on the first selectable item (a
-    /// disabled one and separators skipped), → opens a submenu on its first
-    /// item, Esc leaves the submenu only, Enter picks.
+    /// A popup's keys (CMFCPopupMenu, VM): ↓ / ↑ stop on every item, a
+    /// disabled one too (Enter there picks nothing), separators skipped; →
+    /// opens a submenu on its first item, Esc leaves the submenu only,
+    /// Enter picks.
     #[test]
     fn popups_follow_the_keyboard() {
         let e = vec![
@@ -448,9 +472,9 @@ mod tests {
             Entry::Sep,
             Entry::sub("sub", vec![Entry::item("x", true, Mark::None, 7), Entry::item("y", true, Mark::None, 8)]),
         ];
-        assert_eq!(step(&e, None, true), Some(1));
+        assert_eq!(step(&e, None, true), Some(0), "the disabled item is a stop");
         assert_eq!(step(&e, Some(1), true), Some(3), "the separator skipped");
-        assert_eq!(step(&e, Some(3), true), Some(1), "wraps past the disabled item");
+        assert_eq!(step(&e, Some(3), true), Some(0), "wraps to the disabled item");
         let ctx = egui::Context::default();
         let mut m = PopMenu::new(1, Pos2::new(10.0, 10.0));
         let frame = |m: &mut PopMenu, keys: &[egui::Key]| {
@@ -459,6 +483,9 @@ mod tests {
             let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |ctx| out = Some(show(ctx, "t", m, &e)));
             out.unwrap()
         };
+        frame(&mut m, &[egui::Key::ArrowDown]);
+        let o = frame(&mut m, &[egui::Key::Enter]);
+        assert!(m.hot == Some(0) && o.chosen.is_none() && !o.close, "Enter on a disabled item: nothing");
         frame(&mut m, &[egui::Key::ArrowDown]);
         frame(&mut m, &[egui::Key::ArrowDown]);
         assert_eq!(m.hot, Some(3));
