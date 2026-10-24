@@ -1399,7 +1399,6 @@ pub struct App {
     pub encoding: Encoding,
     pub explorer_dir: std::path::PathBuf,
     pub ribbon_minimized: bool,
-    pub props_channel: Option<usize>,
     pub comment_edit: Option<CommentEdit>,
     /// Pending image-export target (filled once the screenshot arrives).
     pub want_screenshot: Option<std::path::PathBuf>,
@@ -1595,7 +1594,6 @@ impl App {
             encoding: Encoding::Cp1251,
             explorer_dir: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
             ribbon_minimized: false,
-            props_channel: None,
             comment_edit: None,
             want_screenshot: None,
             clip: Default::default(),

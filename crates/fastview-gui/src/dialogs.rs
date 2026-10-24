@@ -901,7 +901,6 @@ impl App {
     pub fn dialogs_ui(&mut self, ctx: &egui::Context) {
         self.about_window(ctx);
         self.windows_dialog(ctx);
-        self.channel_props_window(ctx);
         self.comment_window(ctx);
         self.channel_map_window(ctx);
         self.color_window(ctx);
@@ -1077,81 +1076,6 @@ impl App {
         }
     }
 
-    fn channel_props_window(&mut self, ctx: &egui::Context) {
-        let Some(i) = self.props_channel else {
-            return;
-        };
-        let mut open = true;
-        let mut recolor_default = false;
-        let mut close_btn = false;
-        crate::dialogs::dlg(ctx, "Свойства канала")
-            .collapsible(false)
-            .resizable(false)
-            .open(&mut open)
-            .show(ctx, |ui| {
-                let Some(doc) = self.active.and_then(|a| self.docs.get_mut(a)) else {
-                    ui.label("Нет активной осциллограммы.");
-                    return;
-                };
-                let Some(ch) = doc.osc.analog.get(i) else {
-                    ui.label("Канал недоступен.");
-                    return;
-                };
-                let (id, unit, phase) = (ch.id.clone(), ch.unit.clone(), ch.phase.clone());
-                egui::Grid::new("chprops").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-                    ui.label("Имя:");
-                    ui.label(egui::RichText::new(&id).strong());
-                    ui.end_row();
-                    ui.label("Фаза:");
-                    ui.label(if phase.is_empty() { "—" } else { &phase });
-                    ui.end_row();
-                    ui.label("Единица:");
-                    ui.label(if unit.is_empty() { "—" } else { &unit });
-                    ui.end_row();
-                    if let Some(cv) = doc.chans.get_mut(i) {
-                        ui.label("Цвет:");
-                        ui.color_edit_button_srgba(&mut cv.color);
-                        ui.end_row();
-                        ui.label("Инвертировать:");
-                        ui.checkbox(&mut cv.invert, "");
-                        ui.end_row();
-                        ui.label("Удалить постоянную:");
-                        ui.checkbox(&mut cv.remove_dc, "");
-                        ui.end_row();
-                        ui.label("Видимый:");
-                        ui.checkbox(&mut cv.visible, "");
-                        ui.end_row();
-                        ui.label("На диаграммах:");
-                        ui.horizontal(|ui| {
-                            ui.checkbox(&mut cv.on_freq, "частотн.");
-                            // Eligibility by unit as CMDUI 32850 / 32851 (`0x430650`).
-                            ui.add_enabled(crate::diagram::vector_unit_ok(unit.trim()), egui::Checkbox::new(&mut cv.on_vector, "вект."));
-                            ui.add_enabled(crate::diagram::circle_flag_unit_ok(unit.trim()), egui::Checkbox::new(&mut cv.on_circle, "круг."));
-                        });
-                        ui.end_row();
-                    }
-                });
-                ui.separator();
-                ui.horizontal(|ui| {
-                    if ui.button("Цвет по умолчанию").clicked() {
-                        recolor_default = true;
-                    }
-                    if ui.button("Закрыть").clicked() {
-                        close_btn = true;
-                    }
-                });
-            });
-        if recolor_default {
-            if let Some(doc) = self.active.and_then(|a| self.docs.get_mut(a)) {
-                if let (Some(ch), Some(cv)) = (doc.osc.analog.get(i), doc.chans.get_mut(i)) {
-                    cv.color = crate::app::default_channel_color(ch, i);
-                }
-            }
-        }
-        if !open || close_btn {
-            self.props_channel = None;
-        }
-    }
 }
 
 /// A labelled channel-role combo bound to an `Option<usize>` slot.

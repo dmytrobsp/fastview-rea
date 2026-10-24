@@ -7132,6 +7132,13 @@ Now `colordlg` draws the dialog so; «Спектр» is ours on its template
 (hue × saturation, lightness bar, the six fields); «Выбор...» — which
 picks a colour off the screen — is greyed (ours cannot read the screen).
 
+### L9.259 — An unreachable window of ours removed  ·  ✅
+«Свойства канала» was an egui window of ours that nothing opened (its
+`props_channel` never set) and that the original has no counterpart for
+(its channel commands are the stats panel's menu: L9.39 ff.). Removed with
+its field. «Окна» (MFC's windows dialog) stays as L9.220 left it —
+unreachable in the original's ribbon UI.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
