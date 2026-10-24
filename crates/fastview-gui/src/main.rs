@@ -1465,6 +1465,10 @@ mod window_tests {
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "omp" || s == "ompparams") {
             app.tab = RibbonTab::Omp;
         }
+        // `pairdlg`: the differential diagram's «Каналы ▸ Создать» (DIALOG 554).
+        if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "pairdlg") {
+            app.diag_cmd(diagram_ui::Window::Diff, diagram::DiagCmd::CreatePairs, Pos2::ZERO);
+        }
         // `addformula`: «Быстрый анализ» with «Добавить новую формулу» over it.
         if std::env::var("FV_WINDOW_STATE").is_ok_and(|s| s == "addformula") {
             app.dispatch(C::QuickAnalysis);

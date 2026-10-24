@@ -1595,62 +1595,93 @@ impl App {
             ("Задать соответствие между активным и реактивным сопротивлениями", "Активное сопротивление", "Реактивное сопротивление")
         };
         let mut done: Option<bool> = None;
-        crate::dialogs::dlg(ctx, title).collapsible(false).resizable(false).show(ctx, |ui| {
-            egui::Grid::new("pair_combos").num_columns(2).show(ui, |ui| {
-                ui.label(ca);
-                ui.label(cb);
-                ui.end_row();
-                for (slot, id) in [(&mut dlg.a, "pair_a"), (&mut dlg.b, "pair_b")] {
-                    egui::ComboBox::from_id_salt(id).width(180.0).selected_text(slot.clone().unwrap_or_default()).show_ui(ui, |ui| {
-                        for n in &names {
-                            ui.selectable_value(slot, Some(n.clone()), n);
-                        }
-                    });
+        // DIALOG 554: 393 × 367 DLU (590 × 596 px), every control at its
+        // rectangle (VM).
+        crate::dialogs::dlg(ctx, title).margin(0.0).collapsible(false).resizable(false).show(ctx, |ui| {
+            use crate::dialogs::{dlu, win_button_en, win_combo_list, DLG_FONT};
+            use egui::{Color32, Pos2, Rect, Stroke};
+            let (client, _) = ui.allocate_exact_size(Vec2::new(590.0, 596.0), egui::Sense::hover());
+            let r = |x, y, w, h| dlu(client, x, y, w, h);
+            // The two SS_CENTER labels over the two lists.
+            for (lr, t) in [(r(18, 18, 168, 8), ca), (r(204, 17, 168, 8), cb)] {
+                ui.painter().text(Pos2::new(lr.center().x, lr.top()), egui::Align2::CENTER_TOP, t, DLG_FONT, Color32::BLACK);
+            }
+            for (k, (cr, slot)) in [(r(18, 36, 168, 30), &mut dlg.a), (r(204, 36, 167, 30), &mut dlg.b)].into_iter().enumerate() {
+                let cur = slot.as_ref().and_then(|v| names.iter().position(|n| n == v)).unwrap_or(0);
+                if let Some(pick) = win_combo_list(ui, cr, egui::Id::new(("pair_combo", k)), &names, cur, !names.is_empty()) {
+                    *slot = Some(names[pick].clone());
                 }
-                ui.end_row();
-            });
-            // The template's layout: «Добавить» at the right under the
-            // combos, the list, «Удалить» at the right under it, then OK /
-            // Отмена at the bottom right.
-            ui.allocate_ui_with_layout(Vec2::new(380.0, 22.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // «Добавить» needs both channels; the new row is selected.
-                if ui.add_enabled(dlg.a.is_some() && dlg.b.is_some(), egui::Button::new("Добавить")).clicked() {
-                    dlg.pairs.push(ChanPair::new(dlg.a.clone().unwrap_or_default(), dlg.b.clone().unwrap_or_default()));
-                    dlg.sel = Some(dlg.pairs.len() - 1);
+            }
+            // «Добавить» needs both channels; the new row is selected.
+            if win_button_en(ui, r(324, 60, 49, 14), "Добавить", false, dlg.a.is_some() && dlg.b.is_some()).clicked() {
+                dlg.pairs.push(ChanPair::new(dlg.a.clone().unwrap_or_default(), dlg.b.clone().unwrap_or_default()));
+                dlg.sel = Some(dlg.pairs.len() - 1);
+            }
+            // The list (VM): a (130, 135, 144) border; the header MFC draws
+            // — a white row, (247, 250, 252) shading to (212, 221, 233) over
+            // 23 rows, a (158, 182, 206) line below and at each column's
+            // right edge − 2; columns 265 and 263 px; 17 px rows ruled in
+            // (240) down the whole list; the selection (0, 120, 215).
+            let lr = r(18, 90, 354, 222);
+            let inner = lr.shrink(1.0);
+            let p = ui.painter().clone();
+            p.rect_filled(lr, 0.0, Color32::from_rgb(130, 135, 144));
+            p.rect_filled(inner, 0.0, Color32::WHITE);
+            let hdr = Rect::from_min_size(inner.min, Vec2::new(inner.width(), 25.0));
+            let mut mesh = egui::Mesh::default();
+            let g = Rect::from_min_max(Pos2::new(hdr.left(), hdr.top() + 1.0), Pos2::new(hdr.right(), hdr.bottom() - 1.0));
+            for (pt, c) in [(g.left_top(), (247, 250, 252)), (g.right_top(), (247, 250, 252)), (g.right_bottom(), (212, 221, 233)), (g.left_bottom(), (212, 221, 233))] {
+                mesh.colored_vertex(pt, Color32::from_rgb(c.0, c.1, c.2));
+            }
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(0, 2, 3);
+            p.add(mesh);
+            let edge = Stroke::new(1.0f32, Color32::from_rgb(158, 182, 206));
+            p.hline(hdr.x_range(), hdr.bottom() - 0.5, edge);
+            let grid = Stroke::new(1.0f32, Color32::from_gray(240));
+            let cols = [(0.0, 265.0, ca), (265.0, 263.0, cb)];
+            for (x, w, t) in cols {
+                let c = Rect::from_min_size(Pos2::new(inner.left() + x, hdr.top()), Vec2::new(w, 25.0));
+                p.vline(c.right() - 1.5, c.y_range(), edge);
+                p.vline(c.right() - 0.5, c.bottom()..=inner.bottom(), grid);
+                p.with_clip_rect(c).text(Pos2::new(c.left() + 7.0, c.center().y), egui::Align2::LEFT_CENTER, t, DLG_FONT, Color32::BLACK);
+            }
+            let mut y = hdr.bottom() + 16.5;
+            while y < inner.bottom() {
+                p.hline(inner.x_range(), y, grid);
+                y += 17.0;
+            }
+            for (i, pair) in dlg.pairs.iter().enumerate() {
+                let top = hdr.bottom() + 17.0 * i as f32;
+                if top + 17.0 > inner.bottom() {
+                    break;
                 }
-            });
-            egui::Frame::none().stroke(ui.visuals().widgets.noninteractive.bg_stroke).show(ui, |ui| {
-                ui.set_min_size(Vec2::new(380.0, 120.0));
-                egui::Grid::new("pair_list").num_columns(2).min_col_width(185.0).striped(true).show(ui, |ui| {
-                    ui.strong(ca);
-                    ui.strong(cb);
-                    ui.end_row();
-                    for (i, p) in dlg.pairs.iter().enumerate() {
-                        let sel = dlg.sel == Some(i);
-                        if ui.selectable_label(sel, &p.a).clicked() | ui.selectable_label(sel, &p.b).clicked() {
-                            dlg.sel = Some(i);
-                        }
-                        ui.end_row();
-                    }
-                });
-            });
-            ui.allocate_ui_with_layout(Vec2::new(380.0, 22.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // «Удалить» removes the selected row and selects the next (or last).
-                if ui.add_enabled(dlg.sel.is_some(), egui::Button::new("Удалить")).clicked() {
-                    if let Some(s) = dlg.sel {
-                        dlg.pairs.remove(s);
-                        dlg.sel = if dlg.pairs.is_empty() { None } else { Some(s.min(dlg.pairs.len() - 1)) };
-                    }
+                let row = Rect::from_min_size(Pos2::new(inner.left(), top), Vec2::new(cols[1].0 + cols[1].1 - 1.0, 16.0));
+                let sel = dlg.sel == Some(i);
+                if sel {
+                    p.rect_filled(row, 0.0, Color32::from_rgb(0, 120, 215));
                 }
-            });
-            ui.allocate_ui_with_layout(Vec2::new(380.0, 22.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Отмена").clicked() {
-                    done = Some(false);
+                for ((x, w, _), t) in cols.into_iter().zip([&pair.a, &pair.b]) {
+                    let c = Rect::from_min_size(Pos2::new(inner.left() + x, top), Vec2::new(w - 1.0, 16.0));
+                    p.with_clip_rect(c).text(Pos2::new(c.left() + 6.0, c.center().y), egui::Align2::LEFT_CENTER, t, DLG_FONT, if sel { Color32::WHITE } else { Color32::BLACK });
                 }
-                if ui.button("OK").clicked() {
-                    done = Some(true);
+                if ui.interact(row, ui.id().with(("pair_row", i)), egui::Sense::click()).clicked() {
+                    dlg.sel = Some(i);
                 }
-            });
+            }
+            // «Удалить» removes the selected row and selects the next (or last).
+            if win_button_en(ui, r(324, 318, 50, 14), "Удалить", false, dlg.sel.is_some()).clicked() {
+                if let Some(s) = dlg.sel {
+                    dlg.pairs.remove(s);
+                    dlg.sel = if dlg.pairs.is_empty() { None } else { Some(s.min(dlg.pairs.len() - 1)) };
+                }
+            }
+            if win_button_en(ui, r(252, 348, 50, 14), "OK", true, true).clicked() {
+                done = Some(true);
+            }
+            if win_button_en(ui, r(324, 348, 50, 14), "Отмена", false, true).clicked() {
+                done = Some(false);
+            }
         });
         let done = done.or_else(|| self.dialog_keys(ctx));
         match done {

@@ -322,7 +322,7 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   анализ»'s frame: L9.249, its formula page: L9.250, its other pages:
   L9.251; 359 and the TreeView, owner-centred placement: L9.252, its
   hosted forms L9.253 (the 28 individually laid out ones open); the
-  finder (558): L9.255–L9.256; open:
+  finder (558): L9.255–L9.256; 554, 492: L9.257; open:
   the other dialogs laid out from their templates
   (`tools/dlg_templates.py`).
 

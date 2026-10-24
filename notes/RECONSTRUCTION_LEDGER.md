@@ -7096,6 +7096,24 @@ through `win_tree`; the pickers' calendar popup kept; off Windows our
 delete prompt is a message box over the finder). Residual: the shell's
 icons and namespace are ours; the tree has no scroll bars of its own.
 
+### L9.257 — DIALOGs 554 and 492 on their templates; 335 / 357 unused  ·  ✅
+VM capture of «Задать соответствие между дифференциальным током и током
+торможения» (the differential pane's «Каналы ▸ Создать»): DIALOG 554,
+393 × 367 DLU (590 × 596 px), placed by L9.252's rule (border 984);
+the SS_CENTER labels over the two drop-down lists — both open on the
+first channel, as ours —, «Добавить», the list — a (130, 135, 144)
+border and the header MFC draws: a white row, (247, 250, 252) shading
+to (212, 221, 233) over 23 rows, a (158, 182, 206) line below and at
+each column's right − 2; columns 265 and 263 px; 17 px rows ruled in
+(240) — «Удалить» (greyed without a selection), OK and «Отмена». Ours was
+an egui grid. Now it is drawn so (harness state `pairdlg`). DIALOG 492
+(the loading bar, 200 × 25 DLU, 300 × 41 px) has no WS_SYSMENU: no close
+button (`Dlg::no_close`); its progress bar and «Отмена» sit at their
+template rectangles (`win_progress`: the Windows 11 bar's colours
+INFERRED — it never stays up long enough on the VM). DIALOGs 335
+«Коэффициент канала» and 357 «Предварительный просмотр» have no code
+reference (no immediate of 0x14f / 0x165 anywhere): unused templates.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

@@ -17,6 +17,7 @@ pub fn dlg<'o>(ctx: &egui::Context, title: impl Into<String>) -> Dlg<'o> {
         title,
         nudge: Vec2::ZERO,
         owner: None,
+        sysmenu: true,
         open: None,
         tool: false,
         margin: 11.0,
@@ -35,6 +36,7 @@ pub struct Dlg<'o> {
     title: String,
     nudge: Vec2,
     owner: Option<egui::Id>,
+    sysmenu: bool,
     open: Option<&'o mut bool>,
     tool: bool,
     margin: f32,
@@ -90,6 +92,11 @@ impl<'o> Dlg<'o> {
         self.owner = Some(id);
         self
     }
+    /// A template without WS_SYSMENU: no close button in the caption.
+    pub fn no_close(mut self) -> Self {
+        self.sysmenu = false;
+        self
+    }
     /// A WS_EX_TOOLWINDOW template's frame.
     pub fn tool(mut self) -> Self {
         self.tool = true;
@@ -102,7 +109,7 @@ impl<'o> Dlg<'o> {
     }
 
     pub fn show<R>(self, ctx: &egui::Context, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> Option<egui::InnerResponse<Option<R>>> {
-        let Dlg { mut win, id, title, nudge, owner, open, tool, margin } = self;
+        let Dlg { mut win, id, title, nudge, owner, sysmenu, open, tool, margin } = self;
         if open.as_deref() == Some(&false) {
             return None;
         }
@@ -214,6 +221,9 @@ impl<'o> Dlg<'o> {
             if drag.dragged() {
                 let to = o.min + drag.drag_delta();
                 ui.ctx().data_mut(|d| d.insert_temp(moved_key, to));
+            }
+            if !sysmenu {
+                return inner;
             }
             let resp = ui.interact(btn, ui.id().with("fv_dlg_close"), egui::Sense::click());
             close = resp.clicked();
@@ -642,6 +652,18 @@ pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows:
     ev
 }
 
+/// A progress bar (msctls_progress32, Windows 11 theme; not measured —
+/// none stayed up long enough on the VM): a (188) frame on (230), the done
+/// part (6, 176, 37).
+pub fn win_progress(ui: &egui::Ui, r: Rect, fraction: f32) {
+    let p = ui.painter();
+    p.rect_filled(r, 0.0, Color32::from_gray(188));
+    let inner = r.shrink(1.0);
+    p.rect_filled(inner, 0.0, Color32::from_gray(230));
+    let w = (inner.width() * fraction.clamp(0.0, 1.0)).round();
+    p.rect_filled(Rect::from_min_size(inner.min, Vec2::new(w, inner.height())), 0.0, Color32::from_rgb(6, 176, 37));
+}
+
 /// A combo box's closed height (Windows for the template font, VM).
 pub const COMBO_H: f32 = 21.0;
 
@@ -908,13 +930,14 @@ impl App {
             if now - l.shown.1 >= 0.5 {
                 l.shown = (l.progress.percent(), now);
             }
-            crate::dialogs::dlg(ctx, "Загрузка осциллограммы").id(egui::Id::new(("fv_loading", i))).collapsible(false).resizable(false).show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add(egui::ProgressBar::new(l.shown.0 as f32 / 100.0).desired_width(240.0));
-                    if ui.button("Отмена").clicked() {
-                        cancel = Some(i);
-                    }
-                });
+            // DIALOG 492: 200 × 25 DLU (300 × 41 px), no WS_SYSMENU — no
+            // close button; the bar at 5, 7 and «Отмена» at 135, 6.
+            crate::dialogs::dlg(ctx, "Загрузка осциллограммы").id(egui::Id::new(("fv_loading", i))).margin(0.0).no_close().collapsible(false).resizable(false).show(ctx, |ui| {
+                let (client, _) = ui.allocate_exact_size(Vec2::new(300.0, 41.0), egui::Sense::hover());
+                win_progress(ui, dlu(client, 5, 7, 120, 11), l.shown.0 as f32 / 100.0);
+                if win_button(ui, dlu(client, 135, 6, 60, 12), "Отмена", false).clicked() {
+                    cancel = Some(i);
+                }
             });
         }
         // «Отмена» sets the flag the readers poll; the open is abandoned.
