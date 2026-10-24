@@ -120,7 +120,8 @@ L9.13, L9.15, L9.22, L9.27, L9.29, L9.40, L9.51, L9.84, L9.89, L9.90, L9.91,
 L9.95, L9.98, L9.100, L9.101 — their headings now say so). What is left, as
 items (VM ones also in W4.4):
 
-- [ ] W2.1 L9.12 — the grid / plane splitter's look and cursor (VM).
+- [x] W2.1 L9.12 — the grid / plane splitter's look (L9.230); its cursor
+  cannot be captured (W6).
 - [ ] W2.2 L9.14 — the pre-2007 looks 210–214: read the older visual
   managers in mfc120u, or capture each Стиль on the VM (captured
   2026-10-24: done in L9.223 — Windows 11's system colours, the flat

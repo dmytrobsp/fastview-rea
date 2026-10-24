@@ -6589,6 +6589,15 @@ driver has 1.1; wgpu (Direct3D 12) finds no adapter there either, so the
 switch was not kept. Our GUI cannot be compared side by side on this VM
 (COMPLETION_PLAN W4.1 note); the splash's placement is unverified there.
 
+### L9.230 — The grid / plane splitter as the VM draws it (W2.1)  ·  ✅
+Seen on the VM (Office 2007 Blue, the differential pane): under the
+parameter grid a 1 px (100, 100, 100) line, then 5 px of the frame's
+splitter brush (191, 219, 255) (`0x438110`, L9.197's strip), the plane
+right after. Ours had egui's 1 px separator and the plane against it.
+Now `char_ui` draws that line and strip above the plane (the colour per
+look from `Skin::splitter`), the panel's own separator off.
+Residual: the resize cursor (not captured by the harness's screenshots).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

@@ -723,6 +723,7 @@ impl App {
         let stored = self.store.view.get(&key).and_then(|v| v.parse::<f32>().ok()).unwrap_or(200.0);
         let grid = egui::TopBottomPanel::top(egui::Id::new(("char_grid", pane)))
             .resizable(true)
+            .show_separator_line(false)
             .default_height(stored)
             .height_range(50.0..=(h - 150.0).max(50.0))
             // The property grid is a white list (seen on the VM).
@@ -738,15 +739,22 @@ impl App {
             self.store.save();
         }
         self.pane_grid.push(grid.response.rect);
+        let strip_col = self.skin.splitter();
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
+            // The splitter (VM): a 1 px (100, 100, 100) line under the grid,
+            // then 5 px of the frame's splitter brush (`0x438110`).
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let (strip, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 6.0), egui::Sense::hover());
+            ui.painter().rect_filled(strip, 0.0, strip_col);
+            ui.painter().px_hline(strip.x_range(), strip.top(), egui::Stroke::new(1.0f32, egui::Color32::from_gray(100)));
             self.pane_canvas.push((pane, ui.available_rect_before_wrap()));
             self.plane_ui(ui);
         });
     }
 
     /// The block property grid (`BlockPropertyGrid`, an MFC property grid
-    /// with no header, text (40, 40, 40), the name column a third of the
-    /// width): «Тип блока» (string 3483) choosing the block (`0x407cc0`),
+    /// with no header, text (40, 40, 40), the name column half the width):
+    /// «Тип блока» (string 3483) choosing the block (`0x407cc0`),
     /// then one group per characteristic — its row carries, at the right, a
     /// 12 × 12 box framed in the characteristic's colour with a tick while
     /// it is shown (`0x407dc0`; a click there toggles it, `0x4075c0`) — and
