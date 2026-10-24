@@ -10,6 +10,12 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same ref cancels the run still going for an older
+# one; a tag's run (a release) is never cancelled.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -25,8 +31,60 @@ jobs:
       # non-approved identities anywhere in the history.
       - run: python3 -I tools/publish_guard.py --all
 
+  # Whether anything that is built changed since the last commit whose
+  # checks passed: notes, tools, indexes or Markdown alone skip the checks
+  # and builds (the guard above still runs). The base is that commit, not
+  # the push's parent, because a newer push cancels or replaces an older
+  # run, which must not leave its code unchecked. Tags, manual runs, pull
+  # requests and an unknown base always build.
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          build() { echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; }
+          if [ "$EVENT" != push ] || [ "$REF" != refs/heads/main ]; then build; fi
+          # The newest successful run on main whose «Check» jobs all passed
+          # (skipped ones do not count).
+          base=""
+          for run in $(gh api "repos/$REPO/actions/workflows/ci.yml/runs?branch=main&status=success&per_page=30" --jq '.workflow_runs[] | "\(.id):\(.head_sha)"'); do
+            id=${run%%:*}; sha=${run##*:}
+            ok=$(gh api "repos/$REPO/actions/runs/$id/jobs" --jq '[.jobs[] | select(.name | startswith("Check")) | .conclusion] | if length > 0 and all(. == "success") then "yes" else "no" end')
+            if [ "$ok" = yes ]; then base=$sha; break; fi
+          done
+          if [ -z "$base" ] || ! git merge-base --is-ancestor "$base" "$AFTER" 2>/dev/null; then build; fi
+          echo "checked last at $base"
+          files=$(git diff --name-only "$base" "$AFTER")
+          echo "$files"
+          # The files outside notes / tools / indexes / Markdown, collected
+          # rather than tested with `grep -q` (whose early exit fails a
+          # pipe's writer under pipefail).
+          built=$(grep -vE '^(notes/|tools/|index/)|\.md$' <<< "$files" || true)
+          if [ -n "$built" ]; then build; fi
+          echo "code=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::notes / tools / docs only since $base: checks and builds skipped"
+
   check:
     name: Check (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -56,8 +114,8 @@ jobs:
 
   build:
     name: Build ${{ matrix.name }}
-    needs: [guard, check]
-    if: github.event_name != 'pull_request'
+    needs: [guard, changes, check]
+    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
