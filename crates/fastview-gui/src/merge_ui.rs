@@ -771,6 +771,27 @@ mod tests {
         assert!(dot < 0.0, "the data baked inverted");
     }
 
+    /// «Каналы» lists rows in the record's vector order (L9.188): a pasted
+    /// digital channel among the digital rows, after the pair rows; it is
+    /// no analog record for the diagrams' lists.
+    #[test]
+    fn pasted_digital_rows_sit_with_the_digital_channels() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        assert!(!d.osc.digital.is_empty(), "the demo has a digital channel");
+        d.selection.insert(ChanKey::Digital(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc().unwrap();
+        let j = (0..d.computed.len()).find(|&j| d.pending_digital(j)).expect("a pasted digital lane");
+        let rows = crate::chandlg::dlg_rows(d);
+        let pos = |r: crate::chandlg::DlgRow| rows.iter().position(|&x| x == r).unwrap();
+        use crate::chandlg::DlgRow::Chan;
+        assert!(pos(Chan(ChanKey::Computed(j))) > pos(Chan(ChanKey::Analog(d.osc.analog.len() - 1))), "past the analog block");
+        assert!(crate::chandlg::digital_row(d, ChanKey::Computed(j)));
+        assert!(!crate::chandlg::rows(d).iter().take(d.osc.analog.len()).any(|&k| k == ChanKey::Computed(j)));
+    }
+
     /// «Синхронизация» by start time with records that do not overlap:
     /// message 219 in a box with the stop icon (`0x47d915`), the bar's text
     /// unchanged; a second box queues behind it.

@@ -158,11 +158,11 @@ items (VM ones also in W4.4):
   remove `0x42ecf0` count by kind). The earlier "file channels only" read
   was wrong. Ours' differences filed in W2.19.
 - [ ] W2.19 From W2.16 (done in L9.189: formula channels on the
-  frequency diagram, the circle «Показать все» skipping pending lanes). Left: a pasted analog
+  frequency diagram, the circle «Показать все» skipping pending lanes;
+  L9.191: rows in vector order, pending digital lanes as digital). Left: a pasted analog
   channel with nothing selected goes after the formula channels and stays
   there after «Объединить» (needs one order over the kind-0 records);
-  pending pasted digital channels among the digital rows / outside the
-  analog loops; the paste's analog point from a selected formula channel
+  the paste's analog point from a selected formula channel
   too; the coefficient dialog lists pending analog channels; the ОМП
   flags carry the computed bit.
 - [ ] W2.17 The open residuals of ✅ entries since L9.128 (each entry's

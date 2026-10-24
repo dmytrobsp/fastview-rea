@@ -30,11 +30,36 @@ pub struct ChannelsDlg {
 /// ones, which the original keeps in the same vector with bit 13), then the
 /// discrete channels (kind 1); the pair rows go between them ([`dlg_rows`]).
 pub fn rows(doc: &Doc) -> Vec<ChanKey> {
-    (0..doc.osc.analog.len())
-        .map(ChanKey::Analog)
-        .chain((0..doc.computed.len()).map(ChanKey::Computed))
-        .chain((0..doc.osc.digital.len()).map(ChanKey::Digital))
-        .collect()
+    // The record's vector (L9.188): the analog block — a pasted analog
+    // channel at its insertion point (before a file channel, or at the
+    // block's end, `doc+0x1d8`, with the formula channels in creation
+    // order) —, then the digital block with a pasted digital channel at
+    // its point (before a digital channel, or the end).
+    let comp = |want_digital: bool, at: Option<ChanKey>| {
+        (0..doc.computed.len()).filter(move |&j| doc.pending_digital(j) == want_digital && doc.computed[j].before == at).map(ChanKey::Computed)
+    };
+    let nd = doc.osc.digital.len();
+    let mut v: Vec<ChanKey> = Vec::new();
+    for i in 0..doc.osc.analog.len() {
+        v.extend(comp(false, Some(ChanKey::Analog(i))));
+        v.push(ChanKey::Analog(i));
+    }
+    v.extend((0..doc.computed.len()).filter(|&j| !doc.pending_digital(j) && !matches!(doc.computed[j].before, Some(ChanKey::Analog(i)) if i < doc.osc.analog.len())).map(ChanKey::Computed));
+    for n in 0..nd {
+        v.extend(comp(true, Some(ChanKey::Digital(n))));
+        v.push(ChanKey::Digital(n));
+    }
+    v.extend((0..doc.computed.len()).filter(|&j| doc.pending_digital(j) && !matches!(doc.computed[j].before, Some(ChanKey::Digital(n)) if n < nd)).map(ChanKey::Computed));
+    v
+}
+
+/// Is a row a discrete channel's (a pasted digital one included)?
+pub fn digital_row(doc: &Doc, k: ChanKey) -> bool {
+    match k {
+        ChanKey::Digital(_) => true,
+        ChanKey::Computed(j) => doc.pending_digital(j),
+        ChanKey::Analog(_) => false,
+    }
 }
 
 /// A pair row (`0x433b00`–`0x433d6a`): a differential pair (`doc+0x878`)
@@ -55,7 +80,7 @@ pub enum DlgRow {
 /// Every row in the original's order: the analog channels, one row per
 /// differential pair, one per R/X pair, then the discrete channels.
 pub fn dlg_rows(doc: &Doc) -> Vec<DlgRow> {
-    let (chan, dig): (Vec<ChanKey>, Vec<ChanKey>) = rows(doc).into_iter().partition(|k| !matches!(k, ChanKey::Digital(_)));
+    let (dig, chan): (Vec<ChanKey>, Vec<ChanKey>) = rows(doc).into_iter().partition(|&k| digital_row(doc, k));
     chan.into_iter()
         .map(DlgRow::Chan)
         .chain((0..doc.dif_pairs.len()).map(|i| DlgRow::Pair(PairRow::Dif(i))))
@@ -245,7 +270,7 @@ fn pending(doc: &Doc, j: usize) -> bool {
 /// refreshed even when nothing applies.
 pub fn toggle_column(doc: &mut Doc, col: usize) {
     let keys = rows(doc);
-    let analog: Vec<ChanKey> = keys.iter().copied().filter(|k| !matches!(k, ChanKey::Digital(_))).collect();
+    let analog: Vec<ChanKey> = keys.iter().copied().filter(|&k| !digital_row(doc, k)).collect();
     let unit_ok = |doc: &Doc, k: ChanKey, f: fn(&str) -> bool| unit_of(doc, k).is_some_and(|u| f(&u));
     match col {
         1 => {

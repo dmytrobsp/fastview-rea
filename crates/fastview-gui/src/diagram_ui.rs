@@ -248,7 +248,9 @@ fn doc_chans(d: &Doc) -> Vec<DChan> {
             DChan { name: c.id.clone(), unit, shown, color: d.chans[i].color, analog: Some(i), computed: None, pending: false }
         })
         .collect();
-    v.extend(d.computed.iter().enumerate().map(|(j, c)| DChan {
+    // Analog-kind records only: a pasted digital channel is kind 1, past
+    // `doc+0x1d8` (L9.188).
+    v.extend(d.computed.iter().enumerate().filter(|(j, _)| !d.pending_digital(*j)).map(|(j, c)| DChan {
         name: c.name.clone(),
         unit: c.unit.trim().to_string(),
         shown: fvb_core::units::Shown::computed(c.unit.trim()),
@@ -286,16 +288,15 @@ fn chan_flag(d: &Doc, w: Window, c: &DChan) -> bool {
     }
 }
 
-fn set_chan_flag(d: &mut Doc, w: Window, idx: usize, v: bool) {
-    let na = d.chans.len();
-    if idx < na {
-        let c = &mut d.chans[idx];
+fn set_chan_flag(d: &mut Doc, w: Window, c: &DChan, v: bool) {
+    if let Some(i) = c.analog {
+        let c = &mut d.chans[i];
         match w {
             Window::Vector => c.on_vector = v,
             Window::Freq => c.on_freq = v,
             _ => c.on_circle = v,
         }
-    } else if let Some(c) = d.computed.get_mut(idx - na) {
+    } else if let Some(c) = c.computed.and_then(|j| d.computed.get_mut(j)) {
         match w {
             Window::Vector => c.on_vector = v,
             Window::Circle => c.on_circle = v,
@@ -752,9 +753,9 @@ impl App {
                         // — the circle's skips one pending a merge (bit 14,
                         // `0x437150`) —, «Скрыть все» clears it on all.
                         let chans = doc_chans(d);
-                        for (idx, c) in chans.iter().enumerate() {
+                        for c in &chans {
                             if !on || listed(w, c) && !(w == Window::Circle && c.pending) {
-                                set_chan_flag(d, w, idx, on);
+                                set_chan_flag(d, w, c, on);
                             }
                         }
                         if w == Window::Circle {
@@ -770,7 +771,7 @@ impl App {
                 let chans = doc_chans(d);
                 if let Some(c) = chans.get(idx) {
                     let v = !chan_flag(d, w, c);
-                    set_chan_flag(d, w, idx, v);
+                    set_chan_flag(d, w, c, v);
                     d.set.modified = true;
                 }
             }
@@ -2043,7 +2044,8 @@ mod tests {
         let d = app.active_doc_mut().unwrap();
         d.computed.push(crate::app::Computed::new("F".into(), "Ua".into(), vec![0.0; d.osc.sample_count()], Color32::RED));
         let idx = d.chans.len();
-        set_chan_flag(d, Window::Freq, idx, true);
+        let chans = doc_chans(d);
+        set_chan_flag(d, Window::Freq, &chans[idx], true);
         assert!(d.computed[0].on_freq);
         let chans = doc_chans(d);
         assert!(chan_flag(d, Window::Freq, &chans[idx]));

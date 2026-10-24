@@ -5725,11 +5725,31 @@ except the MDI client: it showed our own hint («Осциллограмма не
 загружена…») on the panel colour. Now the bare `work_bg` ground; the
 render harness takes `FV_WINDOW_RECORD=none`.
 
+### L9.191 — «Каналы» rows in the record's vector order; a pasted digital channel is no analog record (W2.19 part)  ·  ✅
+From L9.188: the paste puts an analog channel at the first selected
+analog record or at `doc+0x1d8` (the analog block's end, after the
+formula channels) and a digital one at the first selected digital record
+or the vector's end; «Каналы» fills rows in vector order with the pair
+rows between the blocks (`0x433b00`), and every list over `i < doc+0x1d8`
+(pair combos `0x4216b0`, the circle's and vector's lists) leaves kind-1
+records out. Ours listed every pending lane — a pasted digital one too —
+in the analog section and fed it to the diagrams' lists. Now
+`chandlg::rows` builds the analog block with pending analog lanes at
+their `before` (else at the block's end in creation order with the
+formula channels) and the digital block with pending digital lanes at
+theirs; `digital_row` classifies; `toggle_column` and `doc_chans` skip
+pending digital lanes; `set_chan_flag` addresses the channel itself, not
+a list index. Test `pasted_digital_rows_sit_with_the_digital_channels`.
+Residual (W2.19): a pasted analog channel's place after «Объединить»
+with nothing selected (ours appends it to the file channels, before the
+formula ones); the paste's analog point from a selected formula channel;
+the coefficient dialog's pending analog rows; the ОМП flags' computed bit.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.190)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.191)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5784,7 +5804,8 @@ L9.185 W1.8 B3 / B10 — W1.8 done (the finder's sort, the merge bar's
 fill, the group stats width); L9.186 the panes' captions; L9.187 the ribbon's packing / checked
 gradient / height; L9.188 `doc+0x1d8` = every analog-kind record (W2.16),
 the unknowns table (W3.1); L9.189 formula channels on the frequency
-diagram; L9.190 VM runs (no document, single instance).
+diagram; L9.190 VM runs (no document, single instance); L9.191 «Каналы» rows in
+vector order.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped
