@@ -7975,9 +7975,21 @@ then В1 placed in the plot.
   names font. GDI measures with whole-pixel advances from MS Tahoma
   Bold's `hdmx` table (78 + 112 = 190). Wine's Tahoma Bold has no `hdmx`,
   and its rounded advances give 189. At 12 px, 42 bold glyphs (25 regular)
-  differ by a pixel between the two. Kept (accepted by the user as a
-  small font difference); matching it would need MS Tahoma's per-glyph
-  pixel widths.
+  differ by a pixel between the two. No simple rounding rule on our
+  font reproduces those widths: plain rounding is the closest and still
+  misses 40 of 159 bold glyphs at 12 px; Microsoft's come from the font's
+  hinting.
+- **A non-issue (user, 2026-10-24).** Only the plot's start moves: the
+  waveforms, zoom, ruler and every read-out value are drawn from that
+  edge and agree, and at the same sample all diagrams match. What
+  differs is which sample sits under a given *screen pixel* (5 samples
+  here), visible only when both programs get identical screen positions
+  (the harness) or are overlaid; a click on a feature of the waveform
+  picks the same sample in either. Not to be fixed. The rejected options
+  were Microsoft Tahoma's pixel widths (copied from its font file) and
+  measuring through GDI on Windows. Pinning the value template's
+  observed width (112 px with its 10 px gap) is possible if this is ever
+  wanted.
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

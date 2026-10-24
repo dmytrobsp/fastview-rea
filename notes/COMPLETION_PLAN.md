@@ -325,6 +325,10 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   analysis; print preview; the workspace after a restart.
 - [ ] W4.4 Each W3 runtime unknown as a scenario, and W2's VM checks
   (W2.1, W2.3, W2.6, W2.7, W2.8, W2.9, W2.13, W2.14, W2.15).
+- Known, not to be fixed (user, 2026-10-24): the stats column is 1 px
+  narrower than the original's (Wine's Tahoma Bold has no `hdmx` pixel
+  widths), so the plot starts 1 px further left and a given screen pixel
+  is a few samples later; the drawing and every value agree (L9.288).
 - [ ] W4.5 Visual comparison of the main window and the dialogs
   (layout, sizes, colours per skin) — differences either fixed or W6.
   Seen in the first capture: the start-up pane layout (fixed, L9.165);
