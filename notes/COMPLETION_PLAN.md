@@ -290,8 +290,8 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   strip inside the MDI area under the parameters bar) and the status bar
   (153 / 218 px panes): fixed, L9.179; 1 px strokes on pixel centres and
   the waveform texture: fixed, L9.180. The pane captions (20 px, flat glyphs): fixed, L9.186. The ribbon's packing, checked gradient and height: fixed, L9.187.
-  The «*K» icon: fixed, L9.193. Still to do: the QAT arrow and tab
-  shapes, the diagram / bar font scale (11).
+  The «*K» icon and the diagrams' 11 px font: fixed, L9.193. Still to
+  do: the QAT arrow and the tab row's shapes.
 
 ## W5 — Windows-only paths
 

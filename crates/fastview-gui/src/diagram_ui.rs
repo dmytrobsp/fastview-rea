@@ -210,8 +210,10 @@ fn rgb((r, g, b): (u8, u8, u8)) -> Color32 {
 
 /// Tahoma 13 on screen; printing passes Arial `⌊52·s/5⌋` (`0x441fe0`),
 /// 0.8 of the screen size.
+/// The diagrams' font: Tahoma with a 13 px cell (`0x441b80`, the
+/// DiagramWnd base), an 11 px em.
 fn font() -> FontId {
-    FontId::proportional(if print_s().is_some() { 12.0 * 0.8 } else { 12.0 })
+    FontId::proportional(if print_s().is_some() { 11.0 * 0.8 } else { 11.0 })
 }
 
 /// `%g` with an SI prefix: (text, prefix).

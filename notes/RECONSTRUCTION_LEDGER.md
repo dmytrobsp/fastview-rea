@@ -5766,7 +5766,9 @@ top + h − 21) — a 16 px box, a 1 px (142, 140, 99) frame on a light
 lavender ground, «*K» in blue — for a channel whose ratio applies
 (`0x462b15`, L9.142). Ours drew «П» in a rounded blue-grey box. Now the
 boxes take that look and the ratio's glyph is «*K» (the other glyphs
-stay ours; the bitmap is the original's asset, W6).
+stay ours; the bitmap is the original's asset, W6). The diagrams' font
+follows the DiagramWnd base's Tahoma with a 13 px cell (`0x441b80`, W1.8
+B2): an 11 px em, ours was 12.
 
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
