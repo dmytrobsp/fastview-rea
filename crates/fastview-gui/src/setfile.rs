@@ -999,6 +999,17 @@ mod tests {
         let mut app = App::new();
         app.persist = false;
         let di = open(&mut app, Path::new(rec));
+        // `FV_SAVE_EDIT=invert,rms,dc`: the first analog channel's menu
+        // commands applied in that order, as a VM run did before saving.
+        for e in std::env::var("FV_SAVE_EDIT").unwrap_or_default().split(',') {
+            app.docs[di].selection = [ChanKey::Analog(0)].into();
+            match e {
+                "invert" => app.dispatch(crate::app::Command::ToggleFlag(crate::chansel::ChanFlag::Invert)),
+                "dc" => app.dispatch(crate::app::Command::ToggleFlag(crate::chansel::ChanFlag::RemoveDc)),
+                "rms" => app.dispatch(crate::app::Command::SetValueMode(crate::app::ValueMode::Rms)),
+                _ => {}
+            }
+        }
         app.save_doc_to(di, Path::new(target)).expect("saved");
     }
 

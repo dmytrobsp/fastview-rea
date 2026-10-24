@@ -6273,6 +6273,14 @@ duration in µs; the document is byte-identical to the original's but for
 that field. Test `layout_and_formats` updated (an earlier read had
 asserted no declaration).
 
+### L9.213 — VM runs: the `.cfg` / `.dat` / `.set` after channel-menu edits, byte for byte (W4.2)  ·  ✅
+Run on the VM: the original with WIN_1999, IA's channel menu
+«Инвертировать», then Save As to a new name; and again with
+«Среднеквадратичные значения» and «Удалить постоянную составляющую».
+Ours did the same (`FV_SAVE_EDIT=invert` / `rms,dc` in `save_as_dump`):
+the `.cfg`, `.dat` and `.set` are byte-identical to the original's in
+both runs. The outputs stay local.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
