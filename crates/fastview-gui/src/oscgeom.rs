@@ -648,7 +648,20 @@ impl PixelLines for eframe::egui::Painter {
         let ppp = self.ctx().pixels_per_point();
         let q = |v: f32| px_snap(ppp, v, s.width);
         let r = eframe::egui::Rect::from_min_max(eframe::egui::pos2(q(r.left()), q(r.top())), eframe::egui::pos2(q(r.right()), q(r.bottom())));
-        self.rect_stroke(r, rounding, s);
+        if rounding > 0.0 {
+            self.rect_stroke(r, rounding, s);
+            return;
+        }
+        // Square: four lines — a stroked rect straddles its outline and
+        // comes out over two pixels — on GDI's Rectangle pixels: the left
+        // and top edges in, the right and bottom ones out (seen on the VM:
+        // a 16 px box is 16 pixels).
+        let (rt, bt) = (r.right() - 1.0 / ppp, r.bottom() - 1.0 / ppp);
+        let h = s.width / 2.0;
+        self.hline(r.left() - h..=rt + h, r.top(), s);
+        self.hline(r.left() - h..=rt + h, bt, s);
+        self.vline(r.left(), r.top()..=bt, s);
+        self.vline(rt, r.top()..=bt, s);
     }
 }
 

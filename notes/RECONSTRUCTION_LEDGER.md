@@ -6763,6 +6763,18 @@ pane_edge}` hold the sampled rows and `status_bar` paints them row by
 row; the four styles' bars match the captures (the text is our font —
 wider, so «НТЦ Механотроника» overruns its 135 px pane: W6).
 
+### L9.239 — Square frames on GDI's pixels  ·  ✅
+Seen on the VM (L9.232's run): the stats panel's «*K» icon is a crisp
+16 × 16 box, its (142, 140, 99) frame on rows 317 and 332 — GDI's
+Rectangle covers [left, right) × [top, bottom), the right and bottom
+edges outside. Ours drew every square frame through egui's stroked
+rect, which straddles its outline: a 17 px box blurred over two pixels
+at each edge. Now `PixelLines::px_rect_stroke` draws a square frame as
+four 1 px lines on GDI's pixels (rounded ones as before), so every
+caller — the flag icons, swatches, check boxes, tables — is crisp and
+the right size; the icon matches the capture row for row (its x is 3 px
+right with the stats panel's width, fonts).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
