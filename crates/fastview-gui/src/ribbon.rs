@@ -260,7 +260,10 @@ impl App {
                 ui.set_height(24.0);
                 ui.add_space(6.0);
                 self.orb_ui(ui, orb, p);
-                ribbon_tab(ui, "Просмотр для печати", true, p);
+                let r = ribbon_tab(ui, "Просмотр для печати", true, p);
+                self.kt_rects.push((crate::keytips::Target::PreviewTab, r.rect, true));
+                // «Стиль» and Help stay on the right (VM).
+                self.tab_row_right(ui, p, &mut cmds);
             });
             if !self.ribbon_minimized {
                 egui::Frame::none()
@@ -275,6 +278,7 @@ impl App {
                         ui.horizontal_top(|ui| self.ribbon_preview(ui));
                     });
             }
+            self.keytips_paint(ui.ctx());
             for c in cmds {
                 self.dispatch(c);
             }
@@ -297,42 +301,7 @@ impl App {
                     open_min_menu(ui, r.rect.left_bottom());
                 }
             }
-            // §2.5: «Стиль» and Help on the right of the tab row.
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Help split button (57667): the arrow opens {Помощь, О программе...}.
-                let help = ui.button(RichText::new("?").color(p.text).strong());
-                if help.clicked() {
-                    ui.memory_mut(|m| m.toggle_popup(help_menu_id()));
-                }
-                egui::popup_below_widget(ui, help_menu_id(), &help, egui::PopupCloseBehavior::CloseOnClick, |ui| {
-                    ui.set_min_width(140.0);
-                    ui.add_enabled(false, egui::Button::new("Помощь").frame(false));
-                    ui.separator();
-                    if ui.add(egui::Button::new("О программе...").frame(false)).clicked() {
-                        self.show_about = true;
-                        ui.memory_mut(|m| m.close_popup());
-                    }
-                });
-                self.kt_rects.push((crate::keytips::Target::Help, help.rect, true));
-                // «Стиль» (menu 200): the radio entry of the current look,
-                // persisted as `ApplicationLook`.
-                ui.menu_button(RichText::new("Стиль ▾").color(p.text), |ui| {
-                    for (s, name) in Skin::ALL.into_iter().zip(["Windows 2000", "Office XP", "Windows XP", "Office 2003", "Visual Studio.NET 2005"]) {
-                        if ui.radio(self.skin == s, name).clicked() {
-                            cmds.push(Command::SetSkin(s));
-                            ui.close_menu();
-                        }
-                    }
-                    ui.menu_button("Office 2007", |ui| {
-                        for (s, name) in Skin::ALL[5..].iter().copied().zip(["Голубой стиль", "Черный стиль", "Серебристый стиль", "Зеленовато-голубой стиль"]) {
-                            if ui.radio(self.skin == s, name).clicked() {
-                                cmds.push(Command::SetSkin(s));
-                                ui.close_menu();
-                            }
-                        }
-                    });
-                });
-            });
+            self.tab_row_right(ui, p, &mut cmds);
         });
 
         // ---- Row 3: ribbon body (fixed height; hidden when minimised) ----
@@ -617,10 +586,50 @@ impl App {
         });
     }
 
+    /// «Стиль» and Help on the right of the tab row (§2.5).
+    fn tab_row_right(&mut self, ui: &mut egui::Ui, p: crate::theme::Palette, cmds: &mut Vec<Command>) {
+        // §2.5: «Стиль» and Help on the right of the tab row.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // Help split button (57667): the arrow opens {Помощь, О программе...}.
+            let help = ui.button(RichText::new("?").color(p.text).strong());
+            if help.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(help_menu_id()));
+            }
+            egui::popup_below_widget(ui, help_menu_id(), &help, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(140.0);
+                ui.add_enabled(false, egui::Button::new("Помощь").frame(false));
+                ui.separator();
+                if ui.add(egui::Button::new("О программе...").frame(false)).clicked() {
+                    self.show_about = true;
+                    ui.memory_mut(|m| m.close_popup());
+                }
+            });
+            self.kt_rects.push((crate::keytips::Target::Help, help.rect, true));
+            // «Стиль» (menu 200): the radio entry of the current look,
+            // persisted as `ApplicationLook`.
+            ui.menu_button(RichText::new("Стиль ▾").color(p.text), |ui| {
+                for (s, name) in Skin::ALL.into_iter().zip(["Windows 2000", "Office XP", "Windows XP", "Office 2003", "Visual Studio.NET 2005"]) {
+                    if ui.radio(self.skin == s, name).clicked() {
+                        cmds.push(Command::SetSkin(s));
+                        ui.close_menu();
+                    }
+                }
+                ui.menu_button("Office 2007", |ui| {
+                    for (s, name) in Skin::ALL[5..].iter().copied().zip(["Голубой стиль", "Черный стиль", "Серебристый стиль", "Зеленовато-голубой стиль"]) {
+                        if ui.radio(self.skin == s, name).clicked() {
+                            cmds.push(Command::SetSkin(s));
+                            ui.close_menu();
+                        }
+                    }
+                });
+            });
+        });
+    }
+
     /// MFC's print-preview category (`mfc120u` `0x100fcfc2`): «Печать»
     /// {0xE304 Печать}, «Масштаб» {0xE305 Увеличить, 0xE306 Уменьшить,
     /// 0xE301 Одна / Две страницы}, «Просмотр» {0xE302 Следующая страница,
-    /// 0xE303 Предыдущая страница, ─, 0xE300 Закрыть}; all large buttons.
+    /// 0xE303 Предыдущая страница, ─, 0xE300 Закрыть}.
     fn ribbon_preview(&mut self, ui: &mut egui::Ui) {
         use crate::print_ui::PreviewCmd as P;
         let p = self.skin.palette();
@@ -629,8 +638,11 @@ impl App {
         let state: Vec<(P, bool)> = [P::Print, P::ZoomIn, P::ZoomOut, P::NumPage, P::Next, P::Prev, P::Close].into_iter().map(|c| (c, pv.enabled(c))).collect();
         let on = |c: P| state.iter().any(|&(k, e)| k == c && e);
         let fire = std::cell::Cell::new(None);
+        let kt = std::cell::RefCell::new(Vec::new());
         let button = |ui: &mut egui::Ui, icon: Icon, label: &str, c: P| {
-            if ui.add_enabled_ui(on(c), |ui| big_button(ui, p, icon, label)).inner.clicked() {
+            let r = ui.add_enabled_ui(on(c), |ui| big_button(ui, p, icon, label)).inner;
+            kt.borrow_mut().push((crate::keytips::Target::Preview(c), r.rect, on(c)));
+            if r.clicked() {
                 fire.set(Some(c));
             }
         };
@@ -646,7 +658,9 @@ impl App {
         ribbon_group(ui, p, "Просмотр", 1, |ui, _| {
             ui.vertical(|ui| {
                 for (icon, label, c) in [(Icon::NextPage, "Следующая страница", P::Next), (Icon::PrevPage, "Предыдущая страница", P::Prev)] {
-                    if ui.add_enabled_ui(on(c), |ui| small_button_mode(ui, p, icon, label, false, false)).inner.clicked() {
+                    let r = ui.add_enabled_ui(on(c), |ui| small_button_mode(ui, p, icon, label, false, false)).inner;
+                    kt.borrow_mut().push((crate::keytips::Target::Preview(c), r.rect, on(c)));
+                    if r.clicked() {
                         fire.set(Some(c));
                     }
                 }
@@ -657,6 +671,7 @@ impl App {
         if let (Some(c), Some(pv)) = (fire.get(), self.print.preview.as_mut()) {
             pv.cmd = Some(c);
         }
+        self.kt_rects.extend(kt.into_inner());
     }
 
     /// Category «ОМП», panel ОМП: 32807 Параметры (always enabled with a
@@ -1460,8 +1475,14 @@ impl App {
                                     self.dispatch(Command::OpenPath(path));
                                 }
                             }
-                            // The Cyrillic menu and tab keys cannot be typed.
-                            Target::AppItem(_) | Target::Tab(_) => {}
+                            Target::Preview(c) => {
+                                if let Some(pv) = self.print.preview.as_mut() {
+                                    pv.cmd = Some(c);
+                                }
+                            }
+                            // The Cyrillic menu and tab keys cannot be typed;
+                            // the preview tab only descends.
+                            Target::AppItem(_) | Target::Tab(_) | Target::PreviewTab => {}
                         }
                         break;
                     }

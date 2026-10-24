@@ -1686,6 +1686,16 @@ mod window_tests {
             }
             passes.extend([vec![], vec![], vec![]]);
         }
+        // `FV_WINDOW_KEYTIPS=tabs|p`: F10 (then P) over any state — the
+        // print preview's keytips with `FV_WINDOW_LATE=preview`.
+        if let Ok(k) = std::env::var("FV_WINDOW_KEYTIPS") {
+            passes.extend([vec![], vec![]]);
+            passes.push(key(egui::Key::F10));
+            if k == "p" {
+                passes.push(key(egui::Key::P));
+            }
+            passes.extend([vec![], vec![], vec![]]);
+        }
         let fonts = app_fonts();
         // `FV_WINDOW_BLOCK=<n|name>`: the active diagram grid's block (0 =
         // «Нет»; with `FV_WINDOW_STATE=diff` the differential one), set

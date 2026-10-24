@@ -17,6 +17,8 @@ pub enum Level {
     Tabs,
     /// Inside the open application menu.
     AppMenu,
+    /// Inside MFC's print-preview category (its tab's «P»).
+    Preview,
 }
 
 /// What a keytip stands for.
@@ -35,6 +37,10 @@ pub enum Target {
     Recent(usize),
     /// Category tab `n`: «&Главная» gives «Г» (VM); «ОМП» has no `&`.
     Tab(usize),
+    /// The print-preview category's tab (MFC: «p»).
+    PreviewTab,
+    /// A print-preview button.
+    Preview(crate::print_ui::PreviewCmd),
 }
 
 /// The top-left of a keytip box of `size` on its element `r`
@@ -59,6 +65,16 @@ pub fn tip_origin(target: Target, r: Rect, size: Vec2) -> Pos2 {
         Target::PrintMenu => Pos2::new(r.right() - half(size.x), r.bottom() - size.y - 4.0),
         // A text-only menu row: at its left, centred on its middle (ours).
         Target::Recent(_) => Pos2::new(r.left() + 4.0, cy - half(size.y)),
+        Target::PreviewTab => Pos2::new(cx - half(size.x), r.bottom() - half(size.y)),
+        // The preview's large buttons: centred across, on the bottom edge;
+        // the two small ones at their left + 10 on the top edge (VM).
+        Target::Preview(c) => {
+            use crate::print_ui::PreviewCmd as P;
+            match c {
+                P::Next | P::Prev => Pos2::new(r.left() + 10.0, r.top() - half(size.y)),
+                _ => Pos2::new(cx - half(size.x), r.bottom() - half(size.y)),
+            }
+        }
     }
 }
 
@@ -101,7 +117,15 @@ pub fn tips(level: Level) -> Vec<(&'static str, Target)> {
     match level {
         // «Г» is Cyrillic: no key types it (A–Z give Latin letters), so the
         // category level stays out of reach.
-        Level::Tabs => vec![("F", Target::AppButton), ("1", Target::Qat(0)), ("2", Target::Qat(1)), ("3", Target::Qat(2)), ("Г", Target::Tab(0)), ("A", Target::Help)],
+        // In print preview the category tab carries «P» (the others are not
+        // shown: their keys drop out).
+        Level::Tabs => vec![("F", Target::AppButton), ("1", Target::Qat(0)), ("2", Target::Qat(1)), ("3", Target::Qat(2)), ("Г", Target::Tab(0)), ("P", Target::PreviewTab), ("A", Target::Help)],
+        // MFC's preview category (mfc120u's literals «p», «qi», «qo», «x»,
+        // «v», «c»; the one / two pages button shows «2», VM).
+        Level::Preview => {
+            use crate::print_ui::PreviewCmd as P;
+            vec![("P", Target::Preview(P::Print)), ("QI", Target::Preview(P::ZoomIn)), ("QO", Target::Preview(P::ZoomOut)), ("2", Target::Preview(P::NumPage)), ("X", Target::Preview(P::Next)), ("V", Target::Preview(P::Prev)), ("C", Target::Preview(P::Close))]
+        }
         // Rows: Открыть, Сохранить, Сохранить как, Проводник, Печать,
         // Параметры файла, Комментарии, Загрузка настроек, Настройки,
         // Закрыть (Проводник and Комментарии have no `&`).
@@ -184,7 +208,7 @@ impl Keytips {
     /// Esc: back to the parent level, out from the tab level.
     pub fn escape(&mut self) -> Outcome {
         match self.level {
-            Some(Level::AppMenu) => {
+            Some(Level::AppMenu | Level::Preview) => {
                 self.level = Some(Level::Tabs);
                 self.prefix = None;
                 Outcome::Back
@@ -236,6 +260,11 @@ impl Keytips {
         match t {
             // The application button opens its menu and descends into it.
             Target::AppButton => self.level = Some(Level::AppMenu),
+            // The preview's tab descends into its category.
+            Target::PreviewTab => {
+                self.level = Some(Level::Preview);
+                self.prefix = None;
+            }
             // The Печать menu part opens its submenu; the level stays.
             Target::PrintMenu => {}
             _ => self.exit(),
@@ -267,6 +296,35 @@ mod tests {
         let screen = Rect::from_min_max(Pos2::ZERO, Pos2::new(800.0, 600.0));
         let b = Rect::from_min_size(Pos2::new(790.0, -5.0), size);
         assert_eq!(into_screen(b, screen).min, Pos2::new(782.0, 0.0));
+    }
+
+    /// In print preview: F10, then «P» descends into the category, whose
+    /// keys run its buttons; Esc goes back to the tabs.
+    #[test]
+    fn the_preview_category_has_its_own_level() {
+        use crate::print_ui::PreviewCmd as P;
+        let mut k = Keytips::default();
+        // Only the preview's elements are there.
+        let preview = |t: Target| match t {
+            Target::Tab(_) => None,
+            Target::Preview(P::ZoomOut) => Some(false),
+            _ => Some(true),
+        };
+        k.f10();
+        assert_eq!(k.key('p', preview), Outcome::Activate(Target::PreviewTab));
+        assert_eq!(k.level, Some(Level::Preview));
+        assert_eq!(k.key('Q', preview), Outcome::None, "the first of «QI» / «QO»");
+        assert_eq!(k.key('O', preview), Outcome::None, "Zoom Out disabled: nothing, the keytips stay");
+        assert_eq!(k.level, Some(Level::Preview));
+        assert_eq!(k.key('Q', preview), Outcome::None);
+        assert_eq!(k.key('I', preview), Outcome::Activate(Target::Preview(P::ZoomIn)));
+        assert!(!k.shown());
+        k.f10();
+        k.key('P', preview);
+        assert_eq!(k.escape(), Outcome::Back);
+        assert_eq!(k.level, Some(Level::Tabs));
+        k.key('P', preview);
+        assert_eq!(k.key('2', preview), Outcome::Activate(Target::Preview(P::NumPage)));
     }
 
     #[test]

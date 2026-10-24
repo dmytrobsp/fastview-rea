@@ -7153,6 +7153,25 @@ an entry (506 / 507, 508 / 520 / 521, 522 / 524, 526 / 528, 529–531,
 only as the fallback. Harness: `FV_ADDFORMULA_FORM=<dialog>` selects the
 first tree item hosting that form.
 
+### L9.261 — The print preview's keytips; «Стиль» and Help stay in the preview  ·  ✅
+VM runs (the print dialog's «Предварительный просмотр», then F10 and P):
+in the preview the tab-level keytips are F, 1, 2, 3, the category tab's
+«P» and Help's «A» («Стиль» keeps its place, no keytip); «P» descends into
+MFC's preview category — Печать «P», Увеличить «QI», Уменьшить «QO», the
+one / two pages button «2», Следующая страница «X», Предыдущая страница
+«V», Закрыть «C» (mfc120u's own literals «p», «qi», «qo», «x», «v», «c»
+— language-independent; «2» not among them: the VM's) —, the disabled
+ones faded; the large buttons' keytips centred across them on their
+bottom edges, the two small ones at their left + 10 on their top edges.
+Ours had no keytips in the preview (the ribbon's preview branch returned
+before painting them) and no «Стиль» / Help in its tab row. Now
+`keytips::{Level::Preview, Target::PreviewTab, Target::Preview}`, the
+preview tab row drawing «Стиль» and Help (`tab_row_right`, shared with
+the normal row), each preview button's keytip rect and its command on
+activation; Esc goes back to the tabs. The panels' keys (zp, zz, zv)
+show only when collapsed (never at this width). Harness:
+`FV_WINDOW_KEYTIPS=tabs|p` with `FV_WINDOW_LATE=preview`.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
