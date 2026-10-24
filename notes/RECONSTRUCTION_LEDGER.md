@@ -6533,6 +6533,28 @@ Residual: Windows 11's hover animation and the exact hovered thumb
 (ours a 2 px-rounded bar); the planes' bars (`diagram_ui::scrollbar`)
 not compared yet.
 
+### L9.227 — VM runs: a level resolves its channel by the shown name (W1.5b)  ·  ✅
+Run on the VM with three `.set` files beside WIN_1999 (made by ours,
+hand-edited): (a) a level «уровень» on «IA БЛОКА 3» — drawn on IA's lane
+(«Уровень: 0.30»); (c) IA's `AliasName` «Новое» alone — the lane named
+«Новое», drawn normally; (b) both — the oscillogram view paints nothing
+at all (the panes and the rest of the window do), and a Save As writes
+the level back with channel «IA БЛОКА 3». So the review elements keep
+the name they were made on and the painters look it up among the shown
+names (aliases included) on every paint; one that does not resolve
+there breaks the original's view painting outright. Ours bound the
+elements at load before the aliases were applied, by channel index, so
+(b) drew the level on «Новое», and a rename kept it bound. Now
+`apply_record_settings` binds them after every channel is in place, and
+`chandlg::rename` re-resolves each element from the name it had: a
+renamed channel's level becomes unbound (not drawn, saved with its old
+name), renaming back binds it again. The original's blank view for an
+unresolved level is not reproduced (W6: ours leaves that element out).
+Test `a_rename_unbinds_a_level_by_name`.
+Residual: the level's label in the original is one boxed line «уровень
+Уровень: 0.30» under its left end; ours writes two lines (seen in the
+same runs — W4.5).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

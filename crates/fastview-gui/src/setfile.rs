@@ -462,7 +462,7 @@ impl Doc {
         recset::write_comments(t.section_mut("Comments"), &items);
     }
 
-    fn comment_rec(&self, c: &Comment) -> CommentRec {
+    pub(crate) fn comment_rec(&self, c: &Comment) -> CommentRec {
         let kind = match &c.kind {
             CommentKind::Kept(r) => return (**r).clone(),
             CommentKind::Moment { pos } => CommentKindRec::Moment { position: *pos as i32 },
@@ -484,7 +484,7 @@ impl Doc {
 
     /// An element read back; one naming a channel we do not have stays in
     /// its place as [`CommentKind::Kept`] (`0x43fcf0` appends every item).
-    fn comment_of(&self, r: &CommentRec) -> Comment {
+    pub(crate) fn comment_of(&self, r: &CommentRec) -> Comment {
         let s = |v: i32| v.max(0) as usize;
         let kind = match &r.kind {
             CommentKindRec::Moment { position } => Some(CommentKind::Moment { pos: s(*position) }),
@@ -529,9 +529,13 @@ impl App {
     /// 32860 (comments are not re-read).
     pub fn apply_record_settings(&mut self, di: usize, from_command: bool) {
         let Some(d) = self.docs.get_mut(di) else { return };
+        // The review elements name their channels; the painters resolve
+        // those names among the shown ones (aliases included) — bound here
+        // once every channel is in place (VM, L9.227).
+        let mut comment_recs = None;
         if !from_command {
             if let Some(c) = d.set.tree.section("Comments") {
-                d.comments = recset::read_comments(c).iter().map(|r| d.comment_of(r)).collect();
+                comment_recs = Some(recset::read_comments(c));
                 // The record comment edited by 32805.
                 if let Some(u) = c.attrs.get("UserData") {
                     d.hdr = Some(u.clone());
@@ -644,6 +648,10 @@ impl App {
                 (c.color, c.custom_color) = (from_colorref(v), true);
             }
             d.reflag_computed(j);
+        }
+        if let Some(recs) = comment_recs {
+            let d = &mut self.docs[di];
+            d.comments = recs.iter().map(|r| d.comment_of(r)).collect();
         }
         // The diagram windows and the view re-read their sections.
         self.setfile.sync = None;

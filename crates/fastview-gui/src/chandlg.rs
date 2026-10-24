@@ -372,6 +372,11 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
     if rows(doc).into_iter().any(|k| k != key && row_name(doc, k) == name) {
         return Err(MSG_NAME_TAKEN);
     }
+    // A level or an area keeps the name it was made on: after a rename it
+    // no longer resolves (nor is drawn) and is saved with that name; one
+    // naming the new name now resolves (VM, L9.227 — the original's
+    // painters look the names up among the shown ones each time).
+    let recs: Vec<_> = doc.comments.iter().map(|c| doc.comment_rec(c)).collect();
     match key {
         ChanKey::Analog(i) => doc.osc.analog[i].id = name.to_string(),
         ChanKey::Digital(k) => doc.osc.digital[k].id = name.to_string(),
@@ -387,6 +392,7 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
             }
         }
     }
+    doc.comments = recs.iter().map(|r| doc.comment_of(r)).collect();
     doc.set.modified = true;
     Ok(())
 }
@@ -976,6 +982,21 @@ mod tests {
         toggle_column(&mut d, 1);
         assert!(d.chans.iter().all(|c| !c.visible));
         assert_eq!(d.chans[0].group, Some(3), "no dissolve from the header");
+    }
+
+    /// A level keeps the name it was made on: renaming its channel unbinds
+    /// it (not drawn, saved with that name), renaming back binds it again
+    /// (VM, L9.227).
+    #[test]
+    fn a_rename_unbinds_a_level_by_name() {
+        use crate::comments::{Comment, CommentKind};
+        let mut d = demo_doc();
+        let old = d.osc.analog[0].id.clone();
+        d.comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(0), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
+        assert_eq!(rename(&mut d, ChanKey::Analog(0), "Новое"), Ok(()));
+        assert!(matches!(&d.comments[0].kind, CommentKind::Kept(r) if matches!(&r.kind, fvb_core::recset::CommentKindRec::Level { channel, .. } if *channel == old)));
+        assert_eq!(rename(&mut d, ChanKey::Analog(0), &old), Ok(()));
+        assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(0), .. }));
     }
 
     /// A renamed channel shows its file name after the new one (`0x4342e3`).

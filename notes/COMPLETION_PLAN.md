@@ -95,7 +95,7 @@ Batches, in this order (the size of the unread code, user visibility):
 - [x] **W1.3b** W1.3's remaining differences: the scroll bars after zooming back out are hidden, as ours (VM run, L9.204); the differential scale over [min(c1, c2), …] (L9.205); the pan limit and the scale box's pen (L9.174).
 - [x] **W1.4** ОМП — the eight functions (L9.169): the `.omp` format fixed, the toolbar.
 - [x] **W1.5** Document and view — the seven cited (L9.175); the level edit and the ruler picks fixed.
-- [ ] **W1.5b** Comments bound by display name at every paint (a rename hides a level / area; the `.set` keeps the old name) — confirm on the VM (put a level on Ia, rename Ia in «Каналы», save, look), then rebind ours.
+- [x] **W1.5b** (L9.227: confirmed on the VM, ours rebound; the original's blank view on an unresolved level is W6) Comments bound by display name at every paint (a rename hides a level / area; the `.set` keeps the old name) — confirm on the VM (put a level on Ia, rename Ia in «Каналы», save, look), then rebind ours.
 - [x] **W1.6** Small windows — read (L9.178): About in the original's layout, the finder's reselect, the bar's labels.
 - [x] **W1.7** The unlabelled large functions — labelled and read (L9.176); the coefficient dialog fixed.
 - [x] **W1.7b** From W1.7 — done in L9.198: the pasted channel's vector phasor, OSC2 channel lines, formula channels as group members, the member paint order, the dissolve after an evaluation. The `.sto` open flow's messages and `-Dst` as a file: L9.207 (the converter stays ⛔).
