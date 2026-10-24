@@ -738,6 +738,16 @@ pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, ro
     (label, left.max(digital))
 }
 
+/// Where this frame's button press happened: egui's press origin, or —
+/// when the release came in the same frame (a quick click, which egui
+/// clears it for) — the press event's own position.
+pub(crate) fn press_pos(i: &egui::InputState) -> Option<egui::Pos2> {
+    i.pointer.press_origin().or_else(|| i.events.iter().find_map(|e| match e {
+        egui::Event::PointerButton { pos, pressed: true, .. } => Some(*pos),
+        _ => None,
+    }))
+}
+
 /// The bold face at `size`, when the fonts have it (the app's Tahoma Bold;
 /// a bare context has none).
 pub(crate) fn bold_font(fonts: &egui::text::Fonts, size: f32) -> Option<FontId> {
@@ -1110,8 +1120,9 @@ fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: f32, max: f
         -2 => -jump,
         _ => jump,
     };
-    if ui.input(|i| i.pointer.primary_pressed()) && r.is_pointer_button_down_on() {
-        let part = ui.input(|i| i.pointer.press_origin()).map_or(0, part_at);
+    let press = ui.input(|i| i.pointer.primary_pressed().then(|| press_pos(i)).flatten());
+    if let Some(at) = press.filter(|p| r.rect.contains(*p)) {
+        let part = part_at(at);
         if part != 0 {
             ui.data_mut(|d| d.insert_temp(rep_id, (part, now + 0.4)));
             return Some((value + step_of(part)).clamp(0.0, max));
@@ -1428,7 +1439,7 @@ impl App {
                 y >= t && y < t + r.h && matches!(r.key, Lane::Computed(i) if doc.computed[i].formula == crate::merge_ui::PENDING)
             })
         };
-        let (pressed_l, pressed_r, press_pos) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.secondary_pressed(), i.pointer.press_origin()));
+        let (pressed_l, pressed_r, press_pos) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.secondary_pressed(), press_pos(i)));
         let in_view = |p: Pos2| client.contains(p) && p.x < plot_right;
         if !menu_busy && (pressed_l || pressed_r) {
             if let Some(pos) = press_pos.filter(|p| in_view(*p) && resp.hovered()) {
@@ -3470,6 +3481,19 @@ mod menu_tests {
         h.button(Pos2::new(700.0, h.row(0).y), egui::PointerButton::Secondary);
         assert!(h.app.lane_menu.is_none());
         assert!(h.doc().v_shown[1] && h.doc().aux_cursor > 0, "В2 placed and shown");
+    }
+
+    /// A quick click: press and release in one frame (egui then clears its
+    /// press origin; VM: the harness's clicks on the software runner).
+    #[test]
+    fn a_quick_click_on_the_plot_still_acts() {
+        let mut h = Harness::new();
+        let at = Pos2::new(700.0, h.row(0).y);
+        let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(at)]);
+        h.frame(vec![ev(true), ev(false)]);
+        h.frame(vec![]);
+        assert!(h.doc().v_shown[1] && h.doc().aux_cursor > 0, "В2 placed by a one-frame click");
     }
 
     #[test]

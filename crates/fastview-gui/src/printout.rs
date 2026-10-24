@@ -508,7 +508,7 @@ impl App {
         if self.modal_up {
             return;
         }
-        let Some(p) = ctx.input(|i| if i.pointer.any_pressed() { i.pointer.press_origin() } else { None }) else { return };
+        let Some(p) = ctx.input(|i| if i.pointer.any_pressed() { crate::lanes::press_pos(i) } else { None }) else { return };
         if let Some((pane, _)) = self.pane_canvas.iter().find(|(_, r)| r.contains(p)) {
             self.copy_focus = CopyFocus::Diagram(*pane);
         } else if self.pane_grid.iter().any(|r| r.contains(p)) {

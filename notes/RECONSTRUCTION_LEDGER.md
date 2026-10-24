@@ -7532,6 +7532,22 @@ Residual:
   (W6).
 - «Печать»'s arrow is right-aligned in the original.
 
+### L9.273 — Side by side: a quick click is a click; the ОМП tab and the pane caption menu  ·  ✅
+More W4.3 scenarios on both programs:
+- **A right-click in the plot** places В2 there in the original, and no
+  menu opens. Ours did nothing on the VM. The harness's press and release
+  arrive in one frame, and egui clears its press origin on the release, so
+  the view's press test (and the scroll arrows', and the copy focus's)
+  found no press. A quick real click can do the same. Now
+  `lanes::press_pos` falls back to the press event's own position. Test
+  `a_quick_click_on_the_plot_still_acts`.
+- **The ОМП tab:** «Параметры» and «Анализ» enabled with a document, in
+  both.
+- **The diagram pane caption's right-click menu:** the same five items,
+  «Закрепленное» checked, «В закладке» greyed; the same place and 18 px
+  rows. The VM's original shows MFC's English strings (its Windows
+  language, L9.231).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
