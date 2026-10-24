@@ -83,23 +83,29 @@ fn cff_dat_line_quirks() {
 }
 
 /// Build an OSC2 file per the verified layout: block 0, one calibration
-/// block, one text block, the info block, then data blocks.
-fn osc_file(text: &str, blocks: &[(i16, Vec<[i16; 2]>)]) -> Vec<u8> {
+/// block, the text blocks (one per tag), the info block, then data blocks.
+fn osc_file(texts: &[&str], blocks: &[(i16, Vec<[i16; 2]>)]) -> Vec<u8> {
     let mut b0 = [0u8; 128];
     b0[0] = 2;
     b0[1] = 6;
-    b0[2] = 3; // H = block 0 + 1 calibration + 1 text
+    b0[2] = 2 + texts.len() as u8; // H = block 0 + 1 calibration + the texts
     let mut cal = [0u8; 128];
     cal[0..4].copy_from_slice(&(2.0f32 * 3276.8).to_be_bytes()); // F1[0]
     cal[0x20..0x22].copy_from_slice(&1i16.to_be_bytes()); // S1[0]
     cal[0x30..0x34].copy_from_slice(&1.0f32.to_be_bytes()); // F2[0]
     cal[0x50..0x52].copy_from_slice(&1i16.to_be_bytes()); // S2[0]
-    let mut txt = [0u8; 128];
-    txt[..text.len()].copy_from_slice(text.as_bytes());
+    let txt: Vec<[u8; 128]> = texts
+        .iter()
+        .map(|t| {
+            let mut b = [0u8; 128];
+            b[..t.len()].copy_from_slice(t.as_bytes());
+            b
+        })
+        .collect();
     let mut info = [0u8; 128];
     info[2..4].copy_from_slice(&(blocks.len() as i16).to_be_bytes());
     info[0x40..0x44].copy_from_slice(&100.0f32.to_be_bytes());
-    let mut out = [b0, cal, txt, info].concat();
+    let mut out = [vec![b0, cal], txt, vec![info]].concat().concat();
     for (code, samples) in blocks {
         let mut blk = [0u8; 128];
         for (s, [a, b]) in samples.iter().enumerate() {
@@ -116,9 +122,9 @@ fn osc_file(text: &str, blocks: &[(i16, Vec<[i16; 2]>)]) -> Vec<u8> {
 /// version gain, first-block rate snapping, per-block rates and µs time.
 #[test]
 fn osc2_reader() {
-    let text = "01A,02\r\n1,Ia,A,A\r\n2,,B,V\r\n01F,4\r\n";
+    let text = ["nnA,02\r\n1,Ia,A,A\r\n2,,B,V\r\n", "nnF,4\r\n"];
     // M = 2 (units A and V): code = 1e6 / (Fs·0.0625).
-    let bytes = osc_file(text, &[(16000, vec![[10, 1]; 4]), (8000, vec![[20, 2]; 4])]);
+    let bytes = osc_file(&text, &[(16000, vec![[10, 1]; 4]), (8000, vec![[20, 2]; 4])]);
     let rec = comtrade::parse_osc(&bytes, Encoding::Cp1251).unwrap();
     assert_eq!(rec.device, "OSC Осциллограф. Версия 2.6");
     assert_eq!(rec.harmonic1_gain, 1.00259);
@@ -136,9 +142,25 @@ fn osc2_reader() {
     assert!((rec.time[1] - 0.000833).abs() < 1e-12);
     assert!((rec.time[5] - rec.time[4] - 0.0005).abs() < 1e-12);
     assert_eq!(rec.rev_year, 0, "an OSC record cannot be saved as .cff");
-    // No nnF line → error 330.
-    let bad = osc_file("01A,01\r\n1,Ia,A,A\r\n", &[(16000, vec![[1, 1]; 4])]);
+    // No nnF line → error 330; a tag is its three characters exactly.
+    let bad = osc_file(&["nnA,01\r\n1,Ia,A,A\r\n"], &[(16000, vec![[1, 1]; 4])]);
     assert!(matches!(comtrade::parse_osc(&bad, Encoding::Cp1251), Err(ComtradeError::Format)));
+    let bad = osc_file(&["01A,01\r\n1,Ia,A,A\r\n", "nnF,4\r\n"], &[(16000, vec![[1, 1]; 4])]);
+    assert!(matches!(comtrade::parse_osc(&bad, Encoding::Cp1251), Err(ComtradeError::Format)));
+}
+
+/// OSC2 channel lines (`0x424800`): analog 4 or 5 fields untrimmed, else
+/// «Резерв.» with nothing; a block short of lines gives «Резерв.»
+/// channels; digital: the name up to the comma searched from two
+/// characters on, the normal state `_wtoi` after it, no phase.
+#[test]
+fn osc2_channel_lines() {
+    let text = ["nnA,04\r\n1, Ia,A,cc,kA\r\n2,Ib,B,A,x,y\r\n\r\n3,,C,V\r\n", "nnD,3\r\n1,K1,1\r\n2,,0\r\n3,K3\r\n", "nnF,4\r\n"];
+    let rec = comtrade::parse_osc(&osc_file(&text, &[(16000, vec![[10, 1]; 4])]), Encoding::Cp1251).unwrap();
+    let a: Vec<(&str, &str, &str, &str)> = rec.analog.iter().map(|c| (c.id.as_str(), c.phase.as_str(), c.ccbm.as_str(), c.raw_unit.as_str())).collect();
+    assert_eq!(a, [(" Ia", "A", "cc", "kA"), ("Резерв.", "", "", ""), ("Резерв.", "C", "", "V"), ("Резерв.", "", "", "")]);
+    let d: Vec<(&str, &str, i32)> = rec.digital.iter().map(|c| (c.id.as_str(), c.phase.as_str(), c.normal)).collect();
+    assert_eq!(d, [("K1", "", 1), (",0", "", 2), ("K3", "", 3)]);
 }
 
 /// Writes `rec.cfg` + `rec.dat` into a fresh temp folder; the `.cfg` path.
@@ -201,11 +223,11 @@ fn loading_progress_follows_the_original_counters() {
 #[test]
 fn osc_loading_progress() {
     use std::sync::atomic::Ordering::Relaxed;
-    let text = "01A,02\r\n1,Ia,A,A\r\n2,,B,V\r\n01F,4\r\n";
-    let bytes = osc_file(text, &[(16000, vec![[10, 1]; 4]), (8000, vec![[20, 2]; 4])]);
+    let text = ["nnA,02\r\n1,Ia,A,A\r\n2,,B,V\r\n", "nnF,4\r\n"];
+    let bytes = osc_file(&text, &[(16000, vec![[10, 1]; 4]), (8000, vec![[20, 2]; 4])]);
     let p = comtrade::Progress::default();
     let rec = comtrade::parse_osc_progress(&bytes, Encoding::Cp1251, Some(&p)).unwrap();
-    let t = 5 * (bytes.len() as u32 - 4 * 128);
+    let t = 5 * (bytes.len() as u32 - 5 * 128);
     let (n, c) = (rec.analog[0].samples.len() as u32, rec.analog.len() as u32 + rec.digital.len() as u32);
     assert_eq!(p.total.load(Relaxed), t);
     assert_eq!(p.pos.load(Relaxed), t + rec.analog.len() as u32 * n * 5 * (t / (n * c)));

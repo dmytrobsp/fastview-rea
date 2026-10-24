@@ -5872,6 +5872,57 @@ menus' one-channel refresh (ours computes live — no stale cache); a
 leading-dot file name proposes "" in the original; the pending columns of
 the binary writer (a broken file — not reproduced).
 
+### L9.198 — W1.7b: a pasted channel's vector phasor, OSC2 channel lines, formula channels in groups and the group dissolve  ·  ✅
+Read by hand:
+- The vector diagram's phasor `0x490120` (called for every flagged channel
+  at `0x490f60` and `0x491f2c`): a file / formula channel reads its phasor
+  cache `ch+0x38` at the record index, 0 past it, for a digital one
+  (`+0x5c`) or with a NaN part; a pasted channel (bit 14) takes
+  t = `0x454b40`(k) − `doc+0x6d8`·10⁶, scans its own times `0x428b40` **from
+  index 0** to the first ≥ t and interpolates the cache linearly between
+  j = i − 1 and i (an index past the cache, j = −1 included, reads 0; then
+  ct(j) lies 2³² − len own periods on, so before the paste the value is
+  about the first entry). The cache is sized by the channel's own samples
+  (`0x4287b7`) and filled per own index by `0x426fc0` or, with the record's
+  frequency track on another channel, `0x4267e0` (`0x42891e`–`0x42896d`).
+- OSC2 text blocks (`0x452840`–`0x452c40`): each 128-byte block on its own;
+  its first three characters (`Left`, mfc120u `0x10065a29`) compared
+  exactly with «nnA» / «nnD» / «nnF»; the count `_wtoi` of characters 4..7;
+  the block's CR / LF tokens, the first the tag line, then `count` lines
+  (empty past the block's end); «nnF» sets N = `_wtoi` after its first comma;
+  another tag → error 330 (`0x452f4a`). A line (`0x424800`, comma string
+  `0x4c4d60`): analog — split at every comma, no trim, 4 fields (index,
+  name, phase, unit) or 5 (… phase, ccbm, unit), else nothing; digital — the
+  name from after the first comma to the comma searched from two characters
+  on, the normal state `ch+0x104` = `_wtoi` after it (the whole line without
+  that comma; with a revision two fields are skipped first), no phase; an
+  empty name reads string 3442 «Резерв.».
+- CMDUI 33035 `0x468c80`: over every selected visible record — a digital
+  one, an empty unit or bit 14 refuses — at least two with the first one's
+  unit (exact); formula channels take part.
+- The group painter `0x4311e0` (from `0x45fee9`): the member set walked in
+  its order, each name resolved by `0x42f020`, the scale over the members'
+  ranges (`0x42b640`), then each painted (`0x429c30`) with the first drawing
+  the zero line. The formula batch `0x415780` ends in `0x455c70`
+  (`0x415b9a`): every group with a member name that does not resolve (or
+  whose lookup throws) is dissolved whole (`0x456170`).
+Ours drew a pasted channel's vector as 0, trimmed OSC2 fields, took the
+tag's third character only, read the channel table as one text, gave a
+digital line a phase and normal state 0, refused formula channels in
+groups and drew members in channel order. Now `Computed::pending_phasors`
+(the own cache, `sliding_phasors` at its own N) and
+`PastedTimes::phasor_at`; `osc_analog_line` / `osc_digital_line` per text
+block; `Computed::group`, groups by `ChanKey` (`group_of`, `with_groups`,
+`dissolve_groups`), `Doc::group_names` (members' ANSI names,
+`member_name`) pruned after every evaluation (`prune_groups`), lanes with
+`ChanKey` members painted in `group_paint_order`. Tests `osc2_channel_lines`,
+`formula_channels_join_groups`, `ansi_case_fold`, the pasted value test and
+`pasted_lanes_keep_their_kind` extended.
+Residual: the name lookup's case folding (CRT 1251 tables INFERRED); a
+member gone between evaluations still paints (the original's lookup throws
+354 there); the OSC2 block's NUL padding (ours drops it before
+tokenising); H визиры and window zoom on formula members not modelled.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

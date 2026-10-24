@@ -193,6 +193,8 @@ impl App {
                 }
             }
         }
+        // `0x415b9a`: the batch done, groups whose member is gone dissolve.
+        d.prune_groups();
         d.channels_changed();
     }
 

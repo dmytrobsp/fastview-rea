@@ -696,6 +696,39 @@ pub fn parse_osc_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) 
     Ok(rec)
 }
 
+/// An OSC2 analog line (`0x424800`, kind 0): split at every comma, no
+/// trim; exactly 4 fields (index, name, phase, unit) or 5 (index, name,
+/// phase, ccbm, unit), else nothing; an empty name reads «Резерв.».
+/// Returns (name, phase, ccbm, unit).
+fn osc_analog_line(line: &str) -> (String, String, String, String) {
+    let f: Vec<&str> = line.split(',').collect();
+    let (name, phase, ccbm, unit) = match f.len() {
+        4 => (f[1], f[2], "", f[3]),
+        5 => (f[1], f[2], f[3], f[4]),
+        _ => ("", "", "", ""),
+    };
+    (osc_name(name), phase.into(), ccbm.into(), unit.into())
+}
+
+/// An OSC2 digital line (`0x424800`, kind 1; an OSC2 record has no
+/// revision): the name from after the first comma to the next comma
+/// searched from two characters on — so an empty name takes the rest —, the
+/// normal state `_wtoi` after it (the whole line without that comma); no
+/// phase. Returns (name, normal).
+fn osc_digital_line(line: &str) -> (String, i32) {
+    let c: Vec<char> = line.chars().collect();
+    let find = |from: usize| (from..c.len()).find(|&i| c[i] == ',');
+    let start = find(0).map_or(0, |p| p + 1);
+    let end = find(start + 1);
+    let name: String = c[start.min(c.len())..end.unwrap_or(c.len())].iter().collect();
+    let rest: String = c[end.map_or(0, |p| p + 1)..].iter().collect();
+    (osc_name(&name), wtoi(&rest) as i32)
+}
+
+fn osc_name(name: &str) -> String {
+    if name.is_empty() { "Резерв.".into() } else { name.into() }
+}
+
 fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Result<Oscillogram, ComtradeError> {
     const B: usize = 128;
     let block = |i: usize| bytes.get(i * B..(i + 1) * B).ok_or(ComtradeError::Format);
@@ -711,40 +744,23 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
         (2, 9) => 1.014065,
         _ => 1.0,
     };
-    // Channel table text.
-    let mut text = String::new();
+    // Channel table (`0x452840`–`0x452c40`): each text block on its own —
+    // its first three characters the tag, compared exactly; the count
+    // `_wtoi` of characters 4..7; its lines CR / LF tokens (empty ones
+    // skipped), the first one the tag line; a block runs out of lines into
+    // empty ones (→ «Резерв.» channels).
+    let (mut analog_defs, mut digital_defs, mut n_per_block) = (Vec::new(), Vec::new(), None);
     for i in k + 1..h {
         let raw: Vec<u8> = block(i)?.iter().copied().filter(|b| *b != 0).collect();
-        text.push_str(&decode_text_enc(&raw, enc));
-        text.push('\n');
-    }
-    let lines: Vec<&str> = text.split(['\r', '\n']).filter(|l| !l.trim().is_empty()).collect();
-    let (mut analog_defs, mut digital_defs, mut n_per_block) = (Vec::new(), Vec::new(), None);
-    let mut li = 0;
-    while li < lines.len() {
-        let line = lines[li];
-        let tag: String = line.chars().take(3).collect();
-        let count: usize = line.chars().skip(4).take(3).collect::<String>().trim().parse().unwrap_or(0);
-        li += 1;
-        match tag.chars().nth(2) {
-            Some('A') | Some('D') => {
-                for _ in 0..count {
-                    let Some(l) = lines.get(li) else { break };
-                    li += 1;
-                    let f: Vec<String> = l.split(',').map(|x| x.trim().to_string()).collect();
-                    let name = f.get(1).filter(|n| !n.is_empty()).cloned().unwrap_or_else(|| "Резерв.".into());
-                    let phase = f.get(2).cloned().unwrap_or_default();
-                    if tag.ends_with('A') {
-                        let unit = if f.len() >= 5 { f[4].clone() } else { f.get(3).cloned().unwrap_or_default() };
-                        analog_defs.push((name, phase, unit));
-                    } else {
-                        digital_defs.push((name, phase));
-                    }
-                }
-            }
-            Some('F') => {
-                n_per_block = line.split(',').nth(1).and_then(|n| n.trim().parse::<usize>().ok());
-            }
+        let text = decode_text_enc(&raw, enc);
+        let tag: String = text.chars().take(3).collect();
+        let count = wtoi(&text.chars().skip(4).take(3).collect::<String>());
+        let mut lines = text.split(['\r', '\n']).filter(|l| !l.is_empty()).skip(1);
+        let mut next = || lines.next().unwrap_or("");
+        match tag.as_str() {
+            "nnA" => (0..count).for_each(|_| analog_defs.push(osc_analog_line(next()))),
+            "nnD" => (0..count).for_each(|_| digital_defs.push(osc_digital_line(next()))),
+            "nnF" => n_per_block = Some(wtoi(text.find(',').map_or(&text[..], |p| &text[p + 1..])).max(0) as usize),
             _ => return Err(ComtradeError::Format),
         }
     }
@@ -777,11 +793,11 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
     let mut analog: Vec<AnalogChannel> = analog_defs
         .iter()
         .enumerate()
-        .map(|(i, (name, phase, unit))| AnalogChannel {
+        .map(|(i, (name, phase, ccbm, unit))| AnalogChannel {
             index: i as u32 + 1,
             id: name.clone(),
             phase: phase.clone(),
-            ccbm: String::new(),
+            ccbm: ccbm.clone(),
             unit: crate::units::normalize(unit).unit,
             raw_unit: unit.clone(),
             unit_mult: crate::units::normalize(unit).mult,
@@ -801,9 +817,9 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
     let mut digital: Vec<DigitalChannel> = digital_defs
         .iter()
         .enumerate()
-        .map(|(i, (name, phase))| DigitalChannel { index: i as u32 + 1, id: name.clone(), phase: phase.clone(), normal: 0, samples: Vec::new() })
+        .map(|(i, (name, normal))| DigitalChannel { index: i as u32 + 1, id: name.clone(), phase: String::new(), normal: *normal, samples: Vec::new() })
         .collect();
-    let m = analog_defs.iter().filter(|(_, _, u)| matches!(u.trim(), "V" | "В" | "A" | "А" | "")).count() as f64;
+    let m = analog_defs.iter().filter(|(_, _, _, u)| matches!(u.trim(), "V" | "В" | "A" | "А" | "")).count() as f64;
     let words = nd / 16;
     let rec_len = (na + words) * 2;
     let mul: Vec<f64> = analog.iter().map(|c| c.unit_mult).collect();

@@ -85,18 +85,24 @@ pub enum VizDrag {
     H(usize),
 }
 
-/// One lane of the view: its row (an analog lane carries all members of its
-/// channel group, the first being the row's own channel) and its height.
+/// One lane of the view: its row (an analog-kind lane carries all members
+/// of its channel group in channel order, the first being the row's own
+/// channel) and its height.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row {
     pub key: ChanKey,
-    pub members: Vec<usize>,
+    pub members: Vec<ChanKey>,
     pub h: f32,
 }
 
 impl Row {
     fn selected(&self, doc: &crate::app::Doc) -> bool {
-        doc.selection.contains(&self.key) || self.members.iter().any(|&m| doc.selection.contains(&Lane::Analog(m)))
+        doc.selection.contains(&self.key) || self.members.iter().any(|m| doc.selection.contains(m))
+    }
+
+    /// Is channel `k` drawn in this lane (its own or a group member)?
+    pub fn has(&self, k: ChanKey) -> bool {
+        self.key == k || self.members.contains(&k)
     }
 }
 
@@ -107,28 +113,33 @@ impl Row {
 /// group at least one name row per member), digital lanes 20 px. No stretch.
 pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<Row> {
     let mut rows: Vec<Row> = Vec::new();
-    let mut group_row: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
-    let pending_at = |key: Option<ChanKey>, rows: &mut Vec<Row>| {
-        let at = (0..doc.computed.len()).filter(|&j| doc.computed[j].visible && doc.computed[j].before == key);
-        rows.extend(at.map(|j| Row { key: Lane::Computed(j), members: Vec::new(), h: if doc.pending_digital(j) { g::DIGITAL_H } else { y_analog } }));
+    let mut groups: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+    // A visible analog-kind channel: its own lane, or a member of its
+    // group's lane (at the first visible member; formula channels too).
+    let push = |key: Lane, h: f32, rows: &mut Vec<Row>, groups: &mut std::collections::HashMap<u32, usize>| {
+        if let Some(gid) = doc.group_of(key) {
+            if let Some(&ri) = groups.get(&gid) {
+                rows[ri].members.push(key);
+                return;
+            }
+            groups.insert(gid, rows.len());
+        }
+        rows.push(Row { key, members: vec![key], h });
+    };
+    let pending_at = |key: Option<ChanKey>, rows: &mut Vec<Row>, groups: &mut std::collections::HashMap<u32, usize>| {
+        for j in (0..doc.computed.len()).filter(|&j| doc.computed[j].visible && doc.computed[j].before == key) {
+            push(Lane::Computed(j), if doc.pending_digital(j) { g::DIGITAL_H } else { y_analog }, rows, groups);
+        }
     };
     for (i, c) in doc.chans.iter().enumerate() {
-        pending_at(Some(Lane::Analog(i)), &mut rows);
-        if !c.visible {
-            continue;
+        pending_at(Some(Lane::Analog(i)), &mut rows, &mut groups);
+        if c.visible {
+            push(Lane::Analog(i), y_analog, &mut rows, &mut groups);
         }
-        if let Some(gid) = c.group {
-            if let Some(&ri) = group_row.get(&gid) {
-                rows[ri].members.push(i);
-                continue;
-            }
-            group_row.insert(gid, rows.len());
-        }
-        rows.push(Row { key: Lane::Analog(i), members: vec![i], h: y_analog });
     }
-    pending_at(None, &mut rows);
+    pending_at(None, &mut rows, &mut groups);
     for i in 0..=doc.osc.digital.len() {
-        pending_at(Some(Lane::Digital(i)), &mut rows);
+        pending_at(Some(Lane::Digital(i)), &mut rows, &mut groups);
         if i < doc.osc.digital.len() && doc.digital_visible.get(i).copied().unwrap_or(true) {
             rows.push(Row { key: Lane::Digital(i), members: Vec::new(), h: g::DIGITAL_H });
         }
@@ -249,18 +260,18 @@ impl OscView<'_> {
             // has stat rows, and its own icons ending at top + (k+1)·S.
             let mut first = None;
             for (k, &m) in r.members.iter().enumerate() {
-                let (mn, mu, mc, mmax, mmin, mrms, ma1, mv) = lane_stats(doc, &Lane::Analog(m), k_main, primary);
+                let (mn, mu, mc, mmax, mmin, mrms, ma1, mv) = lane_stats(doc, &m, k_main, primary);
                 let stride = group_stride(doc, m);
                 let y = top + 5.0 + k as f32 * stride;
                 let nr = header(y, &mn, &mu, mc, mv);
                 first.get_or_insert(nr);
-                let st = doc.chans[m].stats;
+                let st = stat_rows(doc, &m).unwrap_or_default();
                 if st.count() > 0 {
                     let line = fvb_core::views::group_stats_line(st.minmax.then_some((mmax, mmin)), st.rms.then_some(mrms), st.a1.then_some(ma1), &mu);
                     let band = Rect::from_min_size(Pos2::new(self.x0 + 5.0, top + 8.0 + k as f32 * stride + GROUP_STATS_H), Vec2::new(left - self.x0 - 5.0, GROUP_STATS_H));
                     lp.with_clip_rect(band.intersect(lp.clip_rect())).text(band.left_center(), Align2::LEFT_CENTER, line, ROW_FONT, row_col);
                 }
-                icons(chan_icons(doc, m, primary), top - 21.0 + (k + 1) as f32 * stride);
+                icons(key_icons(doc, m, primary), top - 21.0 + (k + 1) as f32 * stride);
             }
             first.expect("a group has members")
         } else {
@@ -322,26 +333,31 @@ impl OscView<'_> {
                 // its lane, (0, top + 5)–(W, top + h) (`0x4295a5`,
                 // `0x429cb6`): values outside the window are cut, never
                 // clamped. Unzoomed channels need none.
-                let zoomed = |m: usize| doc.chans.get(m).is_some_and(|c| c.window.is_some());
+                let zoomed = |m: ChanKey| matches!(m, Lane::Analog(i) if doc.chans.get(i).is_some_and(|c| c.window.is_some()));
                 let lane_clip = pp.with_clip_rect(pp.clip_rect().intersect(Rect::from_min_max(Pos2::new(left, top + 5.0), Pos2::new(plot_right, top + h))));
-                let painter_for = |m: Option<usize>| if m.is_some_and(zoomed) { &lane_clip } else { pp };
+                let painter_for = |m: Option<ChanKey>| if m.is_some_and(zoomed) { &lane_clip } else { pp };
+                // A group's curves in member-set order (`0x4311e0`); the
+                // first draws the zero line.
+                let order = doc.group_paint_order(&r.members);
                 if lo <= 0.0 && 0.0 <= hi {
                     let zy = g::value_y(0.0, top, h, lo, hi);
-                    painter_for(r.members.first().copied()).px_hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
+                    painter_for(order.first().copied()).px_hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
                 }
                 // Offsets 0..min(⌈W/k⌉, len − first) (`0x4295fc`).
                 let last = g::drawn_last(n, first, f, plot_right - left).unwrap_or(first.saturating_sub(1));
-                for &m in &r.members {
-                    let c = doc.chans[m].color;
-                    draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, m, k, primary), &x_of, top, h, (lo, hi), c, f);
-                }
-                if let Lane::Computed(i) = lane {
-                    if doc.pending_of(*i).is_some() {
-                        self.pasted_analog(pp, *i, top, h, (lo, hi), color);
-                    } else {
-                        // The display cache (`0x429490` reads ch+0x2c).
-                        let c = &doc.computed[*i];
-                        draw_series(pp, (first, last.min(c.samples.len().saturating_sub(1))), &|k| c.shown(k), &x_of, top, h, (lo, hi), color, f);
+                for &m in &order {
+                    match m {
+                        Lane::Analog(i) => {
+                            let c = doc.chans[i].color;
+                            draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k, primary), &x_of, top, h, (lo, hi), c, f);
+                        }
+                        Lane::Computed(j) if doc.pending_of(j).is_some() => self.pasted_analog(pp, j, top, h, (lo, hi), doc.computed[j].color),
+                        Lane::Computed(j) => {
+                            // The display cache (`0x429490` reads ch+0x2c).
+                            let c = &doc.computed[j];
+                            draw_series(pp, (first, last.min(c.samples.len().saturating_sub(1))), &|k| c.shown(k), &x_of, top, h, (lo, hi), c.color, f);
+                        }
+                        Lane::Digital(_) => {}
                     }
                 }
             }
@@ -609,8 +625,8 @@ pub fn paint_hvizirs(painter: &egui::Painter, (x0, left, right): (f32, f32, f32)
 
 /// A group member's block height (`0x461440`, `0x460290`): the name row
 /// + 33, + the stats line when the member has stat rows.
-fn group_stride(doc: &crate::app::Doc, m: usize) -> f32 {
-    ROW_H + 33.0 + if doc.chans[m].stats.count() > 0 { GROUP_STATS_H } else { 0.0 }
+fn group_stride(doc: &crate::app::Doc, m: ChanKey) -> f32 {
+    ROW_H + 33.0 + if stat_rows(doc, &m).is_some_and(|s| s.count() > 0) { GROUP_STATS_H } else { 0.0 }
 }
 
 /// The stat rows a lane shows (none for digital lanes).
@@ -626,7 +642,12 @@ fn stat_rows(doc: &crate::app::Doc, key: &ChanKey) -> Option<crate::app::StatRow
 /// window zoom, remove DC, invert, primary/secondary scaling, RMS mode,
 /// harmonic mode, ADC counts.
 fn status_icons(doc: &crate::app::Doc, r: &Row, primary: bool) -> Vec<&'static str> {
-    match r.key {
+    key_icons(doc, r.key, primary)
+}
+
+/// The status icons of one channel.
+fn key_icons(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> Vec<&'static str> {
+    match k {
         Lane::Analog(i) => chan_icons(doc, i, primary),
         // A computed or pasted channel's icons: no bit-13 / 14 gate but the
         // ratio's (`0x462b15`).
@@ -693,8 +714,8 @@ pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, ro
     if !any {
         return (label, label);
     }
-    for &m in rows.iter().filter(|r| r.members.len() > 1).flat_map(|r| r.members.iter()) {
-        let st = doc.chans[m].stats;
+    for m in rows.iter().filter(|r| r.members.len() > 1).flat_map(|r| r.members.iter()) {
+        let st = stat_rows(doc, m).unwrap_or_default();
         let pieces: Vec<&str> = [(st.minmax, "Max:000.00mV|Min:000.00mV"), (st.rms, "СКЗ:000.00mV"), (st.a1, "A1:000.00mV")].into_iter().filter_map(|(on, t)| on.then_some(t)).collect();
         if !pieces.is_empty() {
             label = label.max(w(&pieces.join("|"), &ROW_FONT) + 10.0);
@@ -725,12 +746,17 @@ pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, 
         }
     };
     match r.key {
-        Lane::Analog(_) => {
+        _ if r.members.len() > 1 => {
             for &m in &r.members {
-                let (a, b) = chan_range(doc, m, primary);
+                let (a, b) = member_range(doc, m, primary);
                 take(a);
                 take(b);
             }
+        }
+        Lane::Analog(i) => {
+            let (a, b) = chan_range(doc, i, primary);
+            take(a);
+            take(b);
         }
         // A pasted channel's own samples (its `+0xa8` / `+0xb0`).
         Lane::Computed(i) => match doc.pending_of(i).map(|p| &p.pasted.channel) {
@@ -758,6 +784,24 @@ fn level_range(doc: &crate::app::Doc, chan: crate::app::ChanKey, primary: bool) 
         ChanKey::Computed(j) => doc.computed.get(j).map(|c| c.samples.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| (lo.min(v), hi.max(v)))),
         ChanKey::Digital(k) if k < doc.osc.digital.len() => Some((0.0, 1.0)),
         _ => None,
+    }
+}
+
+/// A group member's own range (`0x42b640` over its `+0xa8` / `+0xb0`): a
+/// file channel's [`chan_range`], a computed one's displayed series.
+fn member_range(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> (f64, f64) {
+    match k {
+        Lane::Analog(i) => chan_range(doc, i, primary),
+        Lane::Computed(j) => {
+            let v = doc.computed[j].shown_series().iter().copied().filter(|v| v.is_finite());
+            let (lo, hi) = v.fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), x| (l.min(x), h.max(x)));
+            if lo > hi {
+                (0.0, 0.0)
+            } else {
+                (lo, hi)
+            }
+        }
+        Lane::Digital(_) => (0.0, 1.0),
     }
 }
 
@@ -857,10 +901,10 @@ pub struct RowGeo<'a> {
 /// A level line's place (`0x471020`): the lane of channel `k` and its
 /// current range — a digital channel its raw 0 / 1 window, drawn snapped.
 pub fn level_place(doc: &crate::app::Doc, (rows, tops, ranges): (&[Row], &[f32], &[(f64, f64)]), primary: bool, k: Lane, v: f64) -> Option<g::LevelY> {
-    let li = rows.iter().position(|r| r.key == k || matches!(k, Lane::Analog(i) if r.members.contains(&i)))?;
+    let li = rows.iter().position(|r| r.has(k))?;
     let ((lo, hi), digital) = match k {
         Lane::Digital(j) => (g::digital_window(&doc.osc.digital.get(j)?.samples), true),
-        Lane::Analog(ch) if rows[li].members.len() != 1 => (chan_range(doc, ch, primary), false),
+        _ if rows[li].members.len() > 1 => (member_range(doc, k, primary), false),
         _ => (ranges[li], false),
     };
     g::level_y(v, tops[li], rows[li].h, lo, hi, digital)
@@ -1202,7 +1246,7 @@ impl App {
         let mut hrows: [Option<(f32, usize)>; 2] = [None, None];
         for (j, h) in doc.hviz.iter().enumerate() {
             let Some(ch) = h.chan else { continue };
-            let Some(li) = rows.iter().position(|r| r.members.contains(&ch)) else { continue };
+            let Some(li) = rows.iter().position(|r| r.has(Lane::Analog(ch))) else { continue };
             let (lo, hi) = ranges[li];
             if h.value.is_nan() {
                 // First show: 10 / 20 px from the top of its lane.
@@ -1217,9 +1261,7 @@ impl App {
 
         // ---- comments (`0x43f630`), the one under the pointer selected ----
         let lane_of = |k: ChanKey| {
-            rows.iter()
-                .position(|r| r.key == k || matches!(k, Lane::Analog(i) if r.members.contains(&i)))
-                .map(|li| (tops[li], rows[li].h))
+            rows.iter().position(|r| r.has(k)).map(|li| (tops[li], rows[li].h))
         };
         // A level line (`0x471020` / `0x470e4a`) uses its channel's current
         // range — a digital channel its raw 0 / 1 window, the line snapped —
@@ -1391,7 +1433,7 @@ impl App {
             }
         }
         if let (RectZoom::Dragging { chan, x, y0, .. }, Some(pos)) = (self.rect_zoom, ui.input(|i| i.pointer.interact_pos())) {
-            if let Some(li) = rows.iter().position(|r| r.members.contains(&chan)) {
+            if let Some(li) = rows.iter().position(|r| r.has(Lane::Analog(chan))) {
                 let (top, h) = (tops[li], rows[li].h);
                 // The end stays on the lane (`0x45ec4e`: top..top + h − 1).
                 let y1 = pos.y.clamp(top, top + h - 1.0);
@@ -2482,7 +2524,7 @@ mod menu_tests {
     #[test]
     fn hit_test_reaches_the_top_row_and_the_axis_band() {
         let rows = [
-            Row { key: ChanKey::Analog(0), members: vec![0], h: 93.0 },
+            Row { key: ChanKey::Analog(0), members: vec![ChanKey::Analog(0)], h: 93.0 },
             Row { key: ChanKey::Digital(0), members: vec![], h: 20.0 },
         ];
         let geo = RowGeo { left: 158.0, axis_top: 200.0, tops: &[0.0, 93.0], rows: &rows };
@@ -2513,7 +2555,7 @@ mod menu_tests {
         d.chans[1].group = Some(7);
         let n = lane_layout(h.doc(), h.app.y_analog, false).len();
         let rows = lane_layout(h.doc(), h.app.y_analog, false);
-        assert_eq!(rows[0].members, [0, 1]);
+        assert_eq!(rows[0].members, [ChanKey::Analog(0), ChanKey::Analog(1)]);
         assert_eq!(rows[0].h, 2.0 * (ROW_H + 33.0 + GROUP_STATS_H), "default СКЗ + A1 rows");
         h.app.active_doc_mut().unwrap().chans[0].stats = crate::app::StatRows { minmax: false, rms: false, a1: false };
         let rows = lane_layout(h.doc(), h.app.y_analog, false);

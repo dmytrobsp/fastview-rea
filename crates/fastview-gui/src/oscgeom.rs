@@ -848,24 +848,42 @@ impl PastedTimes<'_> {
     /// negative before the paste, so the line through samples 0 and 1
     /// extends backwards.
     pub fn bracket(&self, k: usize, n: usize) -> (usize, usize, f64) {
+        self.scan(k, n, 1)
+    }
+
+    /// The scan from own index `from`; with `from` = 0 and the first own
+    /// time already ≥ t, j = i − 1 wraps (a 32-bit count): v(j) reads 0 and
+    /// ct(j) lies 2³² − len own periods on, so frac ≈ 1.
+    fn scan(&self, k: usize, n: usize, from: usize) -> (usize, usize, f64) {
         let t = time_us(self.rec, self.rec_rate, k) - self.offset * 1e6;
-        let last = n.max(2) - 1;
+        let last = n.max(from + 1) - 1;
         let mut i = if t <= self.ct(last) {
-            (1..=last).find(|&i| self.ct(i) >= t).unwrap_or(last)
+            (from..=last).find(|&i| self.ct(i) >= t).unwrap_or(last)
         } else {
             // Past the values: jump by the own period, then settle.
             let rate = if self.own_rate == 0.0 { self.rec_rate } else { self.own_rate };
             let step = 1e6 / rate;
             last + (((t - self.ct(last)) / step).floor().max(0.0) as usize)
         };
-        while i > 1 && self.ct(i - 1) >= t {
+        while i > from && self.ct(i - 1) >= t {
             i -= 1;
         }
         while self.ct(i) < t {
             i += 1;
         }
-        let (cj, ci) = (self.ct(i - 1), self.ct(i));
-        (i - 1, i, (t - cj) / (ci - cj))
+        let j = if i == 0 { u32::MAX as usize } else { i - 1 };
+        let (cj, ci) = (self.ct(j), self.ct(i));
+        (j, i, (t - cj) / (ci - cj))
+    }
+
+    /// The vector diagram's phasor of a pasted channel at record sample `k`
+    /// (`0x490120`): its own phasor cache scanned by own time **from index
+    /// 0**, v(j) + (v(i) − v(j))·frac, an entry past the cache or with a NaN
+    /// part reading 0.
+    pub fn phasor_at(&self, k: usize, cache: &[num_complex::Complex64]) -> num_complex::Complex64 {
+        let v = |m: usize| cache.get(m).copied().filter(|z| !z.re.is_nan() && !z.im.is_nan()).unwrap_or_default();
+        let (j, i, frac) = self.scan(k, cache.len(), 0);
+        v(j) + (v(i) - v(j)) * frac
     }
 
     /// The value at record sample `k` the stats panel reads out (`0x461a24`):
@@ -1038,6 +1056,17 @@ mod draw_tests {
         assert_eq!(at(11), 2.5);
         assert_eq!(at(12), 0.0);
         assert_eq!(at(19), 0.0);
+        // The vector phasor (`0x490120`) scans from own index 0: before the
+        // paste j wraps, v(j) = 0 and frac ≈ 1 — about the first entry.
+        let cache: Vec<num_complex::Complex64> = vals.iter().map(|&v| num_complex::Complex64::new(v, -v)).collect();
+        let ph = |k: usize| p.phasor_at(k, &cache);
+        assert_eq!(ph(2), cache[0]);
+        assert_eq!(ph(5), num_complex::Complex64::new(2.5, -2.5));
+        assert!((ph(0) - cache[0]).norm() < 1e-6 && ph(0).re > 1.0, "{:?}", ph(0));
+        assert_eq!((ph(10), ph(11), ph(12)), (cache[4], cache[4] / 2.0, num_complex::Complex64::default()));
+        let mut nan = cache.clone();
+        nan[1].im = f64::NAN;
+        assert_eq!(p.phasor_at(4, &nan), num_complex::Complex64::default(), "a NaN part reads 0");
         // The own step past the end is not rounded (`0x428b40`).
         assert_eq!(own_time_us(&own, 3000.0, 5), 4000.0 + 1e6 / 3000.0);
         assert_eq!(time_us(&own, 3000.0, 5), 4333.0);

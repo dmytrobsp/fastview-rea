@@ -7,6 +7,11 @@
 use crate::app::{ChanKey, Doc, ValueMode};
 use std::collections::BTreeSet;
 
+/// The file analog channels among `keys`.
+fn analog_only(keys: Vec<ChanKey>) -> impl Iterator<Item = usize> {
+    keys.into_iter().filter_map(|k| if let ChanKey::Analog(i) = k { Some(i) } else { None })
+}
+
 /// How a stats-panel row was clicked (`nFlags` of the button-down message).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelClick {
@@ -124,31 +129,75 @@ impl Doc {
             .collect()
     }
 
-    /// `chans` plus every member of the groups they belong to.
-    /// Dissolve the groups of `chans` (`0x455df0`): a horizontal визир on a
-    /// member goes back to "never placed" (hidden, value 0, no channel),
-    /// then the members are ungrouped.
-    pub fn dissolve_groups(&mut self, chans: &[usize]) {
-        let members: Vec<usize> = self.with_groups(chans).into_iter().filter(|&i| self.chans[i].group.is_some()).collect();
-        for h in &mut self.hviz {
-            if h.chan.is_some_and(|c| members.contains(&c)) {
-                *h = crate::app::HVizir::default();
-            }
-        }
-        for i in members {
-            self.chans[i].group = None;
+    /// The group of a lane's channel (file analog or computed).
+    pub fn group_of(&self, k: ChanKey) -> Option<u32> {
+        match k {
+            ChanKey::Analog(i) => self.chans.get(i)?.group,
+            ChanKey::Computed(j) => self.computed.get(j)?.group,
+            ChanKey::Digital(_) => None,
         }
     }
 
-    pub fn with_groups(&self, chans: &[usize]) -> Vec<usize> {
-        let groups: BTreeSet<u32> = chans.iter().filter_map(|&i| self.chans[i].group).collect();
-        let mut out: BTreeSet<usize> = chans.iter().copied().collect();
-        for (i, c) in self.chans.iter().enumerate() {
-            if c.group.is_some_and(|g| groups.contains(&g)) {
-                out.insert(i);
+    fn set_group(&mut self, k: ChanKey, g: Option<u32>) {
+        match k {
+            ChanKey::Analog(i) => self.chans[i].group = g,
+            ChanKey::Computed(j) => self.computed[j].group = g,
+            ChanKey::Digital(_) => {}
+        }
+    }
+
+    /// The analog-kind channels, file ones then computed.
+    fn kind0_keys(&self) -> impl Iterator<Item = ChanKey> {
+        (0..self.chans.len()).map(ChanKey::Analog).chain((0..self.computed.len()).map(ChanKey::Computed))
+    }
+
+    /// Dissolve the groups of `keys` (`0x455df0`): a horizontal визир on a
+    /// member goes back to "never placed" (hidden, value 0, no channel),
+    /// then the members are ungrouped.
+    pub fn dissolve_groups(&mut self, keys: &[ChanKey]) {
+        let members: Vec<ChanKey> = self.with_groups(keys).into_iter().filter(|&k| self.group_of(k).is_some()).collect();
+        for h in &mut self.hviz {
+            if h.chan.is_some_and(|c| members.contains(&ChanKey::Analog(c))) {
+                *h = crate::app::HVizir::default();
             }
         }
+        for k in members {
+            if let Some(g) = self.group_of(k) {
+                self.group_names.remove(&g);
+            }
+            self.set_group(k, None);
+        }
+    }
+
+    /// `keys` plus every member of the groups they belong to.
+    pub fn with_groups(&self, keys: &[ChanKey]) -> Vec<ChanKey> {
+        let groups: BTreeSet<u32> = keys.iter().filter_map(|&k| self.group_of(k)).collect();
+        let mut out: BTreeSet<ChanKey> = keys.iter().copied().collect();
+        out.extend(self.kind0_keys().filter(|&k| self.group_of(k).is_some_and(|g| groups.contains(&g))));
         out.into_iter().collect()
+    }
+
+    /// The order a group's curves are drawn in (`0x45fbe0` → `0x4311e0`):
+    /// the member set's, by the original names' ANSI bytes (case-sensitive),
+    /// the first one drawing the zero line.
+    pub fn group_paint_order(&self, members: &[ChanKey]) -> Vec<ChanKey> {
+        let mut v = members.to_vec();
+        v.sort_by_cached_key(|&k| self.member_name(k));
+        v
+    }
+
+    /// After a formula evaluation (`0x455c70`): every group with a member
+    /// name that no longer resolves (`0x42f020`: exact, else ignoring case)
+    /// is dissolved whole.
+    pub fn prune_groups(&mut self) {
+        let names: Vec<Vec<u8>> = self.kind0_keys().map(|k| self.member_name(k)).collect();
+        let resolves = |n: &Vec<u8>| names.iter().any(|m| crate::setfile::ansi_fold(m) == crate::setfile::ansi_fold(n));
+        let dead: Vec<u32> = self.group_names.iter().filter(|(_, ns)| !ns.iter().all(resolves)).map(|(&g, _)| g).collect();
+        for g in dead {
+            let members: Vec<ChanKey> = self.kind0_keys().filter(|&k| self.group_of(k) == Some(g)).collect();
+            self.group_names.remove(&g);
+            self.dissolve_groups(&members);
+        }
     }
 
     fn flag(&self, i: usize, f: ChanFlag) -> bool {
@@ -270,33 +319,43 @@ impl Doc {
     }
 
     pub fn set_mode_selected(&mut self, m: ValueMode) {
-        for i in self.with_groups(&self.selected_analog()) {
-            self.chans[i].mode = m;
+        let sel: Vec<ChanKey> = self.selected_analog().into_iter().map(ChanKey::Analog).chain(self.selected_computed().into_iter().map(ChanKey::Computed)).collect();
+        for k in self.with_groups(&sel) {
+            match k {
+                ChanKey::Analog(i) => self.chans[i].mode = m,
+                ChanKey::Computed(j) => {
+                    self.computed[j].mode = m;
+                    self.reflag_computed(j);
+                }
+                ChanKey::Digital(_) => {}
+            }
         }
         for i in self.selected_digital() {
             self.dig_mut(i).mode = m;
-        }
-        for j in self.selected_computed() {
-            self.computed[j].mode = m;
-            self.reflag_computed(j);
         }
     }
 
     /// 32848 «Скрыть»: hide the selected channels and their groups, dissolve
     /// those groups and deselect them.
     pub fn hide_selected(&mut self) {
-        let members = self.with_groups(&self.selected_analog());
+        let sel: Vec<ChanKey> = self.selected_analog().into_iter().map(ChanKey::Analog).collect();
+        let members = self.with_groups(&sel);
         self.dissolve_groups(&members);
-        for i in members {
-            self.chans[i].visible = false;
-            self.selection.remove(&ChanKey::Analog(i));
+        for k in members {
+            match k {
+                ChanKey::Analog(i) => self.chans[i].visible = false,
+                ChanKey::Computed(j) => self.computed[j].visible = false,
+                ChanKey::Digital(_) => {}
+            }
+            self.selection.remove(&k);
         }
     }
 
     /// 141 «Вернуть к исходному размеру» (`0x4654f0`): drop the window zoom
     /// of the selected analog channels and their groups.
     pub fn reset_zoom_selected(&mut self) {
-        for i in self.with_groups(&self.selected_analog()) {
+        let sel: Vec<ChanKey> = self.selected_analog().into_iter().map(ChanKey::Analog).collect();
+        for i in analog_only(self.with_groups(&sel)) {
             self.chans[i].window = None;
         }
     }
@@ -305,7 +364,7 @@ impl Doc {
     /// fractions `a < b` of the lane applied to channel `chan` and its group,
     /// each from its current range; equal ends reset their zoom.
     pub fn apply_window_zoom(&mut self, chan: usize, a: f64, b: f64, ranges: &dyn Fn(usize) -> (f64, f64)) {
-        for i in self.with_groups(&[chan]) {
+        for i in analog_only(self.with_groups(&[ChanKey::Analog(chan)])) {
             if a == b {
                 self.chans[i].window = None;
                 continue;
@@ -322,27 +381,54 @@ impl Doc {
         }
     }
 
-    /// Selected visible analog channels (the combine/split target set).
-    fn selected_visible_analog(&self) -> Vec<usize> {
-        self.selected_analog().into_iter().filter(|&i| self.chans[i].visible).collect()
+    /// Selected visible analog-kind channels (file and computed; the
+    /// combine / split target set).
+    fn selected_visible_kind0(&self) -> Vec<ChanKey> {
+        self.selection
+            .iter()
+            .copied()
+            .filter(|&k| match k {
+                ChanKey::Analog(i) => self.chans.get(i).is_some_and(|c| c.visible),
+                ChanKey::Computed(j) => self.computed.get(j).is_some_and(|c| c.visible),
+                ChanKey::Digital(_) => false,
+            })
+            .collect()
     }
 
-    /// CMDUI 33035: at least two selected visible channels, all analog, all
-    /// with the same non-empty unit.
-    pub fn can_combine(&self) -> bool {
-        let vis: Vec<&crate::app::ChanKey> = self
-            .selection
-            .iter()
-            .filter(|k| match k {
-                ChanKey::Analog(i) => self.chans.get(*i).is_some_and(|c| c.visible),
-                _ => true,
-            })
-            .collect();
-        if vis.len() < 2 || vis.iter().any(|k| !matches!(k, ChanKey::Analog(_))) {
-            return false;
+    fn unit_of(&self, k: ChanKey) -> &str {
+        match k {
+            ChanKey::Analog(i) => self.osc.analog[i].unit.trim(),
+            ChanKey::Computed(j) => self.computed[j].unit.trim(),
+            ChanKey::Digital(_) => "",
         }
-        let units: BTreeSet<&str> = self.selected_visible_analog().iter().map(|&i| self.osc.analog[i].unit.trim()).collect();
-        units.len() == 1 && !units.iter().next().unwrap().is_empty()
+    }
+
+    /// CMDUI 33035 (`0x468c80`): over the selected visible channels — a
+    /// digital one, an empty unit or a pasted one refuses — at least two,
+    /// all with the first one's unit; formula channels take part.
+    pub fn can_combine(&self) -> bool {
+        let mut unit: Option<&str> = None;
+        let mut ok = false;
+        for &k in &self.selection {
+            let visible = match k {
+                ChanKey::Analog(i) => self.chans.get(i).is_some_and(|c| c.visible),
+                ChanKey::Computed(j) => self.computed.get(j).is_some_and(|c| c.visible),
+                ChanKey::Digital(d) => self.digital_visible.get(d).copied().unwrap_or(true),
+            };
+            if !visible {
+                continue;
+            }
+            let u = self.unit_of(k);
+            if matches!(k, ChanKey::Digital(_)) || u.is_empty() || matches!(k, ChanKey::Computed(j) if self.computed[j].formula == crate::merge_ui::PENDING) {
+                return false;
+            }
+            match unit {
+                None => unit = Some(u),
+                Some(f) if f == u => ok = true,
+                Some(_) => return false,
+            }
+        }
+        ok
     }
 
     /// 33035 «Совместить каналы»: one new group of the selection (and the
@@ -352,27 +438,31 @@ impl Doc {
         if !self.can_combine() {
             return;
         }
-        let members = self.with_groups(&self.selected_visible_analog());
+        let members = self.with_groups(&self.selected_visible_kind0());
         // The old groups are dissolved first (`0x467796`).
         self.dissolve_groups(&members);
         let g = self.next_group;
         self.next_group += 1;
-        for &i in &members {
-            self.chans[i].group = Some(g);
-            self.chans[i].window = None;
+        for &k in &members {
+            self.set_group(k, Some(g));
+            if let ChanKey::Analog(i) = k {
+                self.chans[i].window = None;
+            }
         }
+        let names = members.iter().map(|&k| self.member_name(k)).collect();
+        self.group_names.insert(g, names);
         self.set_mode_selected(ValueMode::Instant);
     }
 
     /// CMDUI 33037: some selected visible channel is in a group.
     pub fn can_split(&self) -> bool {
-        self.selected_visible_analog().iter().any(|&i| self.chans[i].group.is_some())
+        self.selected_visible_kind0().iter().any(|&k| self.group_of(k).is_some())
     }
 
     /// 33037 «Разъединить каналы»: dissolve every group a selected visible
     /// channel belongs to.
     pub fn split_selected(&mut self) {
-        let sel = self.selected_visible_analog();
+        let sel = self.selected_visible_kind0();
         self.dissolve_groups(&sel);
     }
 
@@ -448,6 +538,54 @@ mod tests {
         assert_eq!(sel, BTreeSet::from([Analog(0), Analog(1)]), "inside the selection: kept");
         click(&mut sel, &mut anchor, Analog(2), SelClick::Right);
         assert_eq!(sel, BTreeSet::from([Analog(2)]), "outside: only the clicked row");
+    }
+
+    /// 33035 with a formula channel (`0x468c80`): it joins the group of a
+    /// file channel of the same unit; the curves are drawn in the member
+    /// names' byte order (`0x4311e0`); a member name that no longer
+    /// resolves dissolves the whole group at the next evaluation
+    /// (`0x455c70`).
+    #[test]
+    fn formula_channels_join_groups() {
+        let mut app = crate::app::App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        let unit = d.osc.analog[0].unit.clone();
+        let mut c = crate::app::Computed::new("A0".into(), "1".into(), vec![0.0; d.osc.time.len()], eframe::egui::Color32::RED);
+        c.unit = unit.clone();
+        d.computed.push(c);
+        let j = d.computed.len() - 1;
+        d.selection = BTreeSet::from([Analog(0), ChanKey::Computed(j)]);
+        assert!(d.can_combine());
+        d.computed[j].unit = String::new();
+        assert!(!d.can_combine(), "an empty unit refuses");
+        d.computed[j].unit = unit;
+        d.selection.insert(Digital(0));
+        assert!(!d.can_combine(), "a visible digital one refuses");
+        d.selection.remove(&Digital(0));
+        d.combine_selected();
+        assert!(d.group_of(Analog(0)).is_some() && d.group_of(Analog(0)) == d.group_of(ChanKey::Computed(j)));
+        let rows = crate::lanes::lane_layout(d, 93.0, false);
+        let row = rows.iter().find(|r| r.key == Analog(0)).unwrap();
+        assert_eq!(row.members, [Analog(0), ChanKey::Computed(j)], "one lane, the stats in channel order");
+        assert!(!rows.iter().any(|r| r.key == ChanKey::Computed(j)));
+        // "A0" sorts before the file name when that starts with a later byte.
+        let file = d.member_name(Analog(0));
+        let want = if file.as_slice() < b"A0".as_slice() { [Analog(0), ChanKey::Computed(j)] } else { [ChanKey::Computed(j), Analog(0)] };
+        assert_eq!(d.group_paint_order(&row.members), want);
+        // Renaming the formula member: the group survives until a formula
+        // evaluation, then goes whole.
+        d.computed[j].name = "B0".into();
+        assert!(d.group_of(Analog(0)).is_some());
+        d.prune_groups();
+        assert_eq!((d.group_of(Analog(0)), d.group_of(ChanKey::Computed(j))), (None, None));
+        assert!(d.group_names.is_empty());
+    }
+
+    #[test]
+    fn ansi_case_fold() {
+        let b = |t: &str| fvb_core::comtrade::encode_text(t, fvb_core::comtrade::Encoding::Cp1251);
+        assert_eq!(crate::setfile::ansi_fold(&b("UaЁЖ")), b("uaёж"));
     }
 
     /// CMDUI 32850 / 32851 (`0x430650`): a selected channel of the wrong

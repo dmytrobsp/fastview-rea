@@ -51,7 +51,7 @@ All numbers big-endian. 128-byte blocks, in order:
 |---|---|---|
 | 0 | 0 | byte0 major, byte1 minor version, byte2 = H (header blocks incl. block 0, calibration and text blocks), byte 0x7D ≠ 0 → K = 2 calibration blocks else 1 |
 | 1..K | 128·i | calibration: f32 F1[8] @0, i16 S1[8] @0x20, f32 F2[8] @0x30, i16 S2[8] @0x50; analog channel i → block i/8, slot i%8; a = F1/(F2·3276.8) (1 if F2 = 0), b = −(S1+S2)·a, non-finite → a = 1, b = 0 |
-| K+1..H−1 | 128·i | text (ANSI, CR/LF lines): tag line chars 0..3 `nnA`/`nnD`/`nnF`, count at chars 4..6; `nnA` → c analog lines `idx,name,phase,unit` or `idx,name,phase,ccbm,unit`; `nnD` → digital `idx,name[,ph,ccbm],normal`; empty name → "Резерв."; `nnF,<N>` samples per data block (mandatory); other tag / no F → error 330 |
+| K+1..H−1 | 128·i | text, one section per block (ANSI, CR/LF tokens): tag = chars 0..3 exactly `nnA`/`nnD`/`nnF`, count `_wtoi` of chars 4..6, then that many lines (empty past the block's end); `nnA` → analog lines of exactly `idx,name,phase,unit` or `idx,name,phase,ccbm,unit`, untrimmed (else no fields); `nnD` → digital `idx,name,normal` (the name ends at the comma searched from two characters past the first, no phase; L9.198); empty name → "Резерв."; `nnF,<N>` samples per data block (mandatory); other tag / no F → error 330 |
 | H | 128·H | info: i16 @2 max data blocks; i16 @0x0E pre-trigger blocks; BCD @5..0xB = ms/10, s, min, h, day, month, year−2000 (trigger); f32 @0x40+4i ratio (0.1 < r < 1e5 else 1) → primary rating, not used in values |
 | H+1.. | 128·(H+1+j) | data, fixed 128 bytes, until the max count or EOF (a partial last block ignored): N sample records from offset 0, each nA i16 then ⌊nD/16⌋ u16 (bit b of word w → digital 16w+b, LSB first); i16 timing code @0x7C |
 

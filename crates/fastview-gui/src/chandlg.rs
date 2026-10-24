@@ -215,12 +215,16 @@ pub fn set_cell(doc: &mut Doc, key: ChanKey, col: usize, v: bool) {
     match (key, col) {
         // Hiding takes the whole group: every member hidden and deselected,
         // the group dissolved (`0x434b1c`–`0x434c71`, `0x455df0`).
-        (ChanKey::Analog(i), 1) if !v => {
-            let members = doc.with_groups(&[i]);
+        (ChanKey::Analog(_) | ChanKey::Computed(_), 1) if !v => {
+            let members = doc.with_groups(&[key]);
             doc.dissolve_groups(&members);
             for m in members {
-                doc.chans[m].visible = false;
-                doc.selection.remove(&ChanKey::Analog(m));
+                match m {
+                    ChanKey::Analog(i) => doc.chans[i].visible = false,
+                    ChanKey::Computed(j) => doc.computed[j].visible = false,
+                    ChanKey::Digital(_) => {}
+                }
+                doc.selection.remove(&m);
             }
         }
         (ChanKey::Analog(i), 1) => doc.chans[i].visible = true,

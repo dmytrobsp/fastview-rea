@@ -720,6 +720,12 @@ mod tests {
         let Ok(a) = &d.pending_of(match lane(false).key { ChanKey::Computed(j) => j, _ => unreachable!() }).unwrap().pasted.channel else { unreachable!() };
         let own = a.samples.iter().copied().fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), v| (l.min(v), h.max(v)));
         assert_eq!(crate::lanes::row_range(d, lane(false), false), own);
+        // The analog one carries its own phasor cache (`0x490120`'s
+        // source), the digital one none.
+        let cj = |digital: bool| match lane(digital).key { ChanKey::Computed(j) => &d.computed[j], _ => unreachable!() };
+        assert_eq!(cj(false).pending_phasors.len(), a.samples.len());
+        assert!(cj(false).pending_phasors.iter().any(|z| z.norm() > 0.0));
+        assert!(cj(true).pending_phasors.is_empty());
     }
 
     #[test]

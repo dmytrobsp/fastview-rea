@@ -364,6 +364,13 @@ pub struct Computed {
     /// minus its DC over its own period, negated; a digital one 1 / 0,
     /// inverted with the flag); `display` is then its cache per mode.
     pub pending_own: Vec<f64>,
+    /// A pending analog lane's phasor cache (`ch+0x38`) over
+    /// [`Self::pending_own`] at its own N (`0x428490` → `0x426fc0` /
+    /// `0x4267e0`); the vector diagram interpolates it by own time.
+    pub pending_phasors: Vec<Complex64>,
+    /// A channel group (33035): formula channels can be members
+    /// (`0x468c80`).
+    pub group: Option<u32>,
 }
 
 impl Computed {
@@ -389,6 +396,8 @@ impl Computed {
             mode: ValueMode::Instant,
             display: Vec::new(),
             pending_own: Vec::new(),
+            pending_phasors: Vec::new(),
+            group: None,
         }
     }
 
@@ -641,6 +650,11 @@ pub struct Doc {
     pub sel_anchor: Option<ChanKey>,
     /// Next free channel-group id (Совместить каналы).
     pub next_group: u32,
+    /// Each group's members as the document keeps them (`doc+0x174`): their
+    /// original names' ANSI bytes, resolved by `0x42f020`; a group whose
+    /// name no longer resolves is dissolved after a formula evaluation
+    /// (`0x455c70`). Membership itself is the channels' `group`.
+    pub group_names: std::collections::BTreeMap<u32, Vec<Vec<u8>>>,
     /// Comment placement tool (`doc+0x858`): 0 off, 1 момент времени,
     /// 2 линия уровня, 3 область (one-shot).
     pub comment_mode: u8,
@@ -743,6 +757,7 @@ impl Doc {
             selection: BTreeSet::new(),
             sel_anchor: None,
             next_group: 1,
+            group_names: Default::default(),
             comment_mode: 0,
             first: 0,
             xscale: None,
@@ -815,6 +830,7 @@ impl Doc {
             self.reflag_computed(j);
             done.push(self.computed[j].as_core());
         }
+        self.prune_groups();
     }
 
     /// Computed channel `j`'s flags over its evaluation (`0x428490` for a
@@ -839,6 +855,7 @@ impl Doc {
                     let x: Vec<f64> = a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v }).collect();
                     let dc = if c.remove_dc { whole_period_mean(&x, pn) } else { 0.0 };
                     c.pending_own = x.iter().map(|v| sign * (v - dc)).collect();
+                    c.pending_phasors = fvb_core::freqcorr::sliding_phasors(own_corr, fvb_core::freqcorr::OTHER, &c.pending_own, pn);
                     c.display = match c.mode {
                         ValueMode::Instant => Vec::new(),
                         ValueMode::Rms => (0..x.len()).map(|k| fvb_core::freqcorr::rms_at(own_corr, fvb_core::freqcorr::OTHER, &c.pending_own, k, pn, 1)).collect(),
@@ -847,6 +864,7 @@ impl Doc {
                 }
                 Err(dch) => {
                     c.pending_own = dch.samples.iter().map(|&b| if b != c.invert { 1.0 } else { 0.0 }).collect();
+                    c.pending_phasors = Vec::new();
                     c.display = Vec::new();
                 }
             }

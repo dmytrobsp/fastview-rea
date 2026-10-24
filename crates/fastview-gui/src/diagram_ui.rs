@@ -1207,9 +1207,16 @@ impl App {
             if let Some(i) = d.osc.analog.iter().position(|c| c.id == name) {
                 return d.analysis.phasors.get(i).and_then(|p| p.get(k)).map(|z| z * d.shown_k(i));
             }
-            d.computed.iter().enumerate().find(|(_, c)| c.name == name).map(|(j, c)| match &c.phasors {
-                Some(p) => p.get(k).copied().unwrap_or_default(),
-                None => fvb_core::freqcorr::phasor_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, &c.samples, k, n),
+            d.computed.iter().enumerate().find(|(_, c)| c.name == name).map(|(j, c)| {
+                // A pasted channel: its own cache by own time (`0x490120`),
+                // 0 for a digital one.
+                if let Some((t, _)) = d.pasted_times(j) {
+                    return t.phasor_at(k, &c.pending_phasors);
+                }
+                match &c.phasors {
+                    Some(p) => p.get(k).copied().unwrap_or_default(),
+                    None => fvb_core::freqcorr::phasor_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, &c.samples, k, n),
+                }
             })
         };
         let shown: Vec<(String, String, Complex64, Color32, fvb_core::units::Shown)> = doc_chans(d)

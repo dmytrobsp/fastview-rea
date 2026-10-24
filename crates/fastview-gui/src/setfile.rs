@@ -73,6 +73,19 @@ pub struct ViewSnap {
 /// from OEM, i.e. 1 = the ANSI code page (1251), 0 = the OEM one (866), a
 /// tie 0 (seen on the VM: a CP1251 record's new `.set` says 1); other values
 /// are code page numbers (`0x4543e0`).
+/// ANSI case folding for name lookups ignoring case (`0x42f020`): ASCII and
+/// the Windows-1251 Cyrillic letters (INFERRED: the CRT's 1251 tables).
+pub fn ansi_fold(b: &[u8]) -> Vec<u8> {
+    b.iter()
+        .map(|&c| match c {
+            b'A'..=b'Z' => c + 32,
+            0xC0..=0xDF => c + 32,
+            0xA8 => 0xB8,
+            _ => c,
+        })
+        .collect()
+}
+
 pub fn cp_code(e: Encoding) -> i32 {
     i32::from(e != Encoding::Cp866)
 }
@@ -166,6 +179,18 @@ impl Doc {
         }
         let id = if i < self.osc.analog.len() { &self.osc.analog[i].id } else { &self.osc.digital[i - self.osc.analog.len()].id };
         comtrade::recode(id, self.codepage, Encoding::Cp1251)
+    }
+
+    /// A group member's name as the member set keeps it (`+0x64`, ANSI
+    /// bytes, `0x42e270`): a file channel's file name (a rename leaves it),
+    /// a computed one's name.
+    pub fn member_name(&self, k: ChanKey) -> Vec<u8> {
+        let text = match k {
+            ChanKey::Analog(i) => self.file_key(i),
+            ChanKey::Computed(j) => self.computed[j].name.clone(),
+            ChanKey::Digital(d) => self.file_key(self.osc.analog.len() + d),
+        };
+        comtrade::encode_text(&text, Encoding::Cp1251)
     }
 
     /// Remember the channels' file names (after the names were decoded).
