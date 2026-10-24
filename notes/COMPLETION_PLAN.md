@@ -44,6 +44,7 @@ tool skips this file), never in the ledger or the specs.
 | date | commit | own functions cited | instructions in cited functions | large uncited (≥150) | medium uncited (50–149) | ledger ✅ / 🟡 | NOT DETERMINED | Windows tests |
 |---|---|---|---|---|---|---|---|---|
 | 2026-10-24 | `50472bd` | 523 / 1803 | 60.3 % | 107 / 322 | 474 / 684 | 128 / 36 | 37 | 249 ✓ |
+| 2026-10-24 (later) | `36605ec` | 583 / 1803 | 68.1 % | 54 / 322 | 469 / 684 | 137 / 36 | 39 | 256 ✓ |
 
 ## W1 — Read the uncited code
 
