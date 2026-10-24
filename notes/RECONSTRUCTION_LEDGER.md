@@ -7412,6 +7412,20 @@ Residual:
 - MSVCR's `atof` on inf / nan is not settled (ours: no).
 - The UI freeze until the worker ends is not reproduced.
 
+### L9.269 — Copy's metafile holds one BitBlt, as the original's  ·  ✅
+W2.4's decision: match. L9.30 read the original's copy picture
+(`0x45be28`) as a raster drawn into a screen-compatible memory DC and
+put into `CreateEnhMetaFileW(NULL…)` with one BitBlt, which GDI records
+as EMR_BITBLT. Ours recorded EMR_STRETCHDIBITS. Now `sysclip::metafile`
+does the same: a `CreateCompatibleDC` / `CreateCompatibleBitmap` of the
+screen, the pixels set by `SetDIBitsToDevice`, one `BitBlt` into the
+metafile. The ignored test `system_clipboard_round_trip` now reads the
+metafile back off the clipboard: one EMR_BITBLT (76), no
+EMR_STRETCHDIBITS (81). Run on the VM: passed.
+Residual:
+- The recorded bitmap's header (bit depth, as the screen DDB's) was not
+  compared byte for byte with an original copy.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

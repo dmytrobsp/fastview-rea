@@ -99,7 +99,10 @@ mod win {
         CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
     use windows_sys::Win32::Foundation::HANDLE;
-    use windows_sys::Win32::Graphics::Gdi::{CloseEnhMetaFile, CreateEnhMetaFileW, StretchDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, SRCCOPY};
+    use windows_sys::Win32::Graphics::Gdi::{
+        BitBlt, CloseEnhMetaFile, CreateCompatibleBitmap, CreateCompatibleDC, CreateEnhMetaFileW, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject, SetDIBitsToDevice, BITMAPINFO,
+        BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, SRCCOPY,
+    };
     use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
 
     fn format() -> u32 {
@@ -148,7 +151,8 @@ mod win {
 
     /// An enhanced metafile holding the picture as one bitmap record at
     /// (0, 0) — `CreateEnhMetaFileW(NULL, NULL, NULL, NULL)` (screen
-    /// reference, frame from the content) and one blit, as the original.
+    /// reference, frame from the content) and one BitBlt from a memory DC,
+    /// as the original.
     ///
     /// # Safety
     /// Calls GDI; the returned handle is owned by the caller.
@@ -165,7 +169,25 @@ mod win {
         info.bmiHeader.biPlanes = 1;
         info.bmiHeader.biBitCount = 32;
         info.bmiHeader.biCompression = BI_RGB;
-        StretchDIBits(dc, 0, 0, c.w as i32, c.h as i32, 0, 0, c.w as i32, c.h as i32, bgra.as_ptr().cast(), &info, DIB_RGB_COLORS, SRCCOPY);
+        // The picture drawn into a screen-compatible memory DC, then one
+        // BitBlt of it into the metafile (EMR_BITBLT, as `0x45be28`'s).
+        let (w, h) = (c.w as i32, c.h as i32);
+        let screen = GetDC(std::ptr::null_mut());
+        let mem = CreateCompatibleDC(screen);
+        let bmp = CreateCompatibleBitmap(screen, w, h);
+        ReleaseDC(std::ptr::null_mut(), screen);
+        if !mem.is_null() && !bmp.is_null() {
+            let old = SelectObject(mem, bmp);
+            SetDIBitsToDevice(mem, 0, 0, w as u32, h as u32, 0, 0, 0, h as u32, bgra.as_ptr().cast(), &info, DIB_RGB_COLORS);
+            BitBlt(dc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
+            SelectObject(mem, old);
+        }
+        if !bmp.is_null() {
+            DeleteObject(bmp);
+        }
+        if !mem.is_null() {
+            DeleteDC(mem);
+        }
         CloseEnhMetaFile(dc) as HANDLE
     }
 
@@ -238,6 +260,32 @@ mod windows_tests {
         assert!(unsafe { IsClipboardFormatAvailable(14) } != 0, "CF_ENHMETAFILE present");
         assert!(clip.available(), "the registered format is present");
         assert_eq!(clip.get().as_deref(), Some("<channels/>"));
+        // The metafile's records: header, one EMR_BITBLT (76), EOF — no
+        // EMR_STRETCHDIBITS (81) — as the original's (`0x45be28`).
+        let kinds = unsafe {
+            use windows_sys::Win32::Graphics::Gdi::GetEnhMetaFileBits;
+            use windows_sys::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard};
+            assert!(OpenClipboard(std::ptr::null_mut()) != 0);
+            let h = GetClipboardData(14);
+            let n = GetEnhMetaFileBits(h as _, 0, std::ptr::null_mut());
+            let mut b = vec![0u8; n as usize];
+            GetEnhMetaFileBits(h as _, n, b.as_mut_ptr());
+            CloseClipboard();
+            let mut kinds = Vec::new();
+            let mut at = 0usize;
+            while at + 8 <= b.len() {
+                let kind = u32::from_le_bytes(b[at..at + 4].try_into().unwrap());
+                let size = u32::from_le_bytes(b[at + 4..at + 8].try_into().unwrap()) as usize;
+                kinds.push(kind);
+                if size == 0 {
+                    break;
+                }
+                at += size;
+            }
+            kinds
+        };
+        assert_eq!(kinds.iter().filter(|&&k| k == 76).count(), 1, "{kinds:?}");
+        assert!(!kinds.contains(&81), "{kinds:?}");
         // A picture-only put (a diagram copy) leaves no document.
         assert!(clip.put(None, Some(&picture)));
         assert!(!clip.available());

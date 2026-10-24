@@ -133,8 +133,8 @@ items (VM ones also in W4.4):
   (`merge_ui.rs`) — re-read; the clipboard XML's `time_multiplier` /
   `duration_milli_sec` (settled, L9.212) and the merged comment's CR LF (VM:
   done, L9.266 — with the « (вст.)» name and the `%g` ratios).
-- [ ] W2.4 L9.30 — EMR_STRETCHDIBITS vs EMR_BITBLT in copy's EMF (decide:
-  match or accept).
+- [x] W2.4 L9.30 — EMR_STRETCHDIBITS vs EMR_BITBLT in copy's EMF: matched,
+  one BitBlt from a memory DC (L9.269, VM-tested).
 - [ ] W2.5 L9.31 — phase 2 of loading on the UI thread (derived arrays,
   `.set` formula channels outside the bar); the `.cff` cancelled during its
   split shows «Неправильный формат файла» (done, L9.268, with the ASCII
