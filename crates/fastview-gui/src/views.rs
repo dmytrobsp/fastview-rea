@@ -645,8 +645,46 @@ impl App {
         }
     }
 
+    /// The MDI area: what the docking panes and bars leave (under the
+    /// parameters bar, beside the diagrams — seen on the VM). The tab strip
+    /// (20 px on a light band, 1 px edge) sits inside it, and the active
+    /// document is framed 2 px in its tab's colour.
     fn view_oscillogram(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| self.lanes_ui(ui));
+        if self.docs.is_empty() {
+            egui::CentralPanel::default().show(ctx, |ui| self.lanes_ui(ui));
+            return;
+        }
+        let pal = self.skin.palette();
+        let edge = egui::Stroke::new(1.0f32, pal.ribbon_top.gamma_multiply(0.92));
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none().fill(pal.ribbon_top).stroke(edge).inner_margin(egui::Margin::same(1.0)))
+            .show(ctx, |ui| {
+                egui::TopBottomPanel::top("fv_doc_tabs")
+                    .exact_height(20.0)
+                    .show_separator_line(false)
+                    .frame(egui::Frame::none())
+                    .show_inside(ui, |ui| {
+                        let r = ui.max_rect();
+                        let band = [pal.ribbon_top.gamma_multiply(0.95), pal.ribbon_top.lerp_to_gamma(egui::Color32::WHITE, 0.5)];
+                        let mut mesh = egui::Mesh::default();
+                        for (p, c) in [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()].into_iter().zip([band[0], band[0], band[1], band[1]]) {
+                            mesh.colored_vertex(p, c);
+                        }
+                        mesh.add_triangle(0, 1, 2);
+                        mesh.add_triangle(0, 2, 3);
+                        ui.painter().add(egui::Shape::mesh(mesh));
+                        self.doc_tabs(ui);
+                    });
+                let (r, g, b) = crate::app::TAB_COLORS[self.active_doc().and_then(|d| d.tab_color).unwrap_or(0)];
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::none().fill(egui::Color32::from_rgb(r, g, b)).inner_margin(egui::Margin::same(2.0)))
+                    .show_inside(ui, |ui| {
+                        egui::Frame::none().fill(ui.visuals().panel_fill).show(ui, |ui| {
+                            ui.set_min_size(ui.available_size());
+                            self.lanes_ui(ui);
+                        });
+                    });
+            });
     }
 
     // ---- Круговая / Дифференциальная: characteristics + impedance overlay ----

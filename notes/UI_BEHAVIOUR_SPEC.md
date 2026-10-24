@@ -148,6 +148,8 @@ CMFCRibbonStatusBar with six static panes (id 32838) of fixed width plus a
 right-aligned extended element «НТЦ Механотроника» (32839). **No free-text
 message pane.** Each pane holds one complete string (caption + value), set by
 a cached setter that only repaints on change (0x472e10).
+Seen on the VM: the panes are 153 / 218 px (template + 18), text 9 px in,
+left-aligned, no separators; the extended element 155 px on a darker band.
 
 | # | caption when its визир(s) hidden | width template |
 |---|---|---|

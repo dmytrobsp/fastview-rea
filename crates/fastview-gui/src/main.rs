@@ -234,18 +234,43 @@ impl App {
             self.status_panes = s;
         }
         let s = self.status_panes.clone();
-        ui.horizontal(|ui| {
-            // Six fixed-width panes (27 / 40-character templates, `0x4729b0`).
-            let char_w = 6.2;
-            for (i, text) in s.iter().enumerate() {
-                let w = if i == 2 || i == 5 { 40.0 } else { 27.0 } * char_w;
-                ui.add_sized([w, 16.0], egui::Label::new(egui::RichText::new(text).small().color(p.status_text)).truncate());
-                ui.separator();
+        // As the VM shows it: a 1 px line on top of a light band, six panes
+        // with no separators — 27 / 40 × "_" templates (`0x4729b0`) in the
+        // 9 pt UI font, 153 / 218 px with the text 9 px in, left-aligned —
+        // and the extended element, 155 px on a darker band behind a light
+        // edge, its text centred clear of the size grip.
+        let r = ui.max_rect();
+        let painter = ui.painter();
+        let band = |c0: egui::Color32, c1: egui::Color32, rr: egui::Rect| {
+            let mut mesh = egui::Mesh::default();
+            let mid = rr.top() + rr.height() * 0.45;
+            let quads = [(rr.top(), mid, c0, c1), (mid, rr.bottom(), c1, c0.lerp_to_gamma(c1, 0.5))];
+            for (y0, y1, a, b) in quads {
+                let k = mesh.vertices.len() as u32;
+                for (x, y, c) in [(rr.left(), y0, a), (rr.right(), y0, a), (rr.right(), y1, b), (rr.left(), y1, b)] {
+                    mesh.colored_vertex(egui::pos2(x, y), c);
+                }
+                mesh.add_triangle(k, k + 1, k + 2);
+                mesh.add_triangle(k, k + 2, k + 3);
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(egui::RichText::new("НТЦ Механотроника").small().color(p.status_text.gamma_multiply(0.6f32)));
-            });
-        });
+            mesh
+        };
+        painter.add(band(p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.45), p.status_bg, r));
+        painter.hline(r.x_range(), r.top() + 0.5, egui::Stroke::new(1.0f32, p.accent.lerp_to_gamma(p.status_bg, 0.3)));
+        let font = egui::FontId::proportional(12.0);
+        let mut x = r.left();
+        for (i, text) in s.iter().enumerate() {
+            let w = if i == 2 || i == 5 { 218.0 } else { 153.0 };
+            let clip = egui::Rect::from_min_max(egui::pos2(x, r.top()), egui::pos2(x + w - 2.0, r.bottom()));
+            painter.with_clip_rect(clip).text(egui::pos2(x + 9.0, r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
+            x += w;
+        }
+        let ext = egui::Rect::from_min_max(egui::pos2(r.right() - 155.0, r.top() + 1.0), r.right_bottom());
+        let dark = p.status_bg.lerp_to_gamma(p.accent, 0.35);
+        painter.add(band(dark.lerp_to_gamma(egui::Color32::WHITE, 0.3), dark, ext));
+        painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.6)));
+        painter.text(egui::pos2((ext.left() + ext.right() - 12.0) / 2.0, ext.center().y), egui::Align2::CENTER_CENTER, "НТЦ Механотроника", font, p.status_text);
+        ui.allocate_rect(r, egui::Sense::hover());
         self.status_toast(ui.ctx());
         self.resize_edges(ui.ctx());
     }
@@ -388,9 +413,6 @@ impl App {
                 self.ribbon_ui(ui);
                 // Caption bars docked under the ribbon: the ОМП result.
                 self.omp_banner(ui);
-                if !self.docs.is_empty() {
-                    self.doc_tabs(ui);
-                }
             });
         // 142: the parameters bar, a 75 px strip under the ribbon.
         // MFC hides the docking panes during print preview.
@@ -411,7 +433,9 @@ impl App {
         }
 
         egui::TopBottomPanel::bottom("status")
-            .frame(egui::Frame::none().fill(pal.status_bg).inner_margin(egui::Margin::symmetric(6.0, 3.0)))
+            .exact_height(24.0)
+            .show_separator_line(false)
+            .frame(egui::Frame::none().fill(pal.status_bg))
             .show(ctx, |ui| self.status_bar(ui));
 
 
@@ -794,6 +818,22 @@ mod window_tests {
             // Either it ends above the tabs or it is too short for a button.
             assert!(bar.bottom() <= tabs.top() + 0.5 || bar.height() < 22.0, "h {h}: toolbar {bar:?} over tabs {tabs:?}");
         }
+    }
+
+    /// The document tabs sit in the MDI area: under the parameters bar and
+    /// left of the docked diagrams, as the original's frame lays them out.
+    #[test]
+    fn document_tabs_sit_in_the_mdi_area() {
+        use egui::containers::panel::PanelState;
+        let ctx = egui::Context::default();
+        let mut app = demo(&[]);
+        frames(&mut app, &ctx, Vec2::new(1320.0, 860.0), vec![vec![]; 3]);
+        let bar = PanelState::load(&ctx, egui::Id::new("parambar")).expect("the parameters bar").rect;
+        let tab = app.doc_tab_rects[0];
+        assert!(tab.top() >= bar.bottom(), "tab {tab:?} under the bar {bar:?}");
+        // The panes beside it (the frequency diagram docks below it).
+        let diagrams = app.pane_canvas.iter().filter(|(p, _)| *p != app::Pane::Frequency).map(|(_, r)| r.left()).fold(f32::MAX, f32::min);
+        assert!(tab.right() < diagrams, "tab {tab:?} left of the diagrams at {diagrams}");
     }
 
     /// A narrow window collapses ribbon panels from the right instead of

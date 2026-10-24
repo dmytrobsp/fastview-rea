@@ -5312,11 +5312,29 @@ original's version or its company's contacts) —, the finder re-picks as
 CB_FINDSTRING, the bar draws its labels untrimmed. `FV_WINDOW_STATE=about`
 renders the box.
 
+### L9.179 — The frame's layout: the document tabs inside the MDI area; the status bar's panes  ·  ✅
+Seen on the VM (the original with WIN_1999, plan W4.5): the parameters
+bar spans the frame under the ribbon and the diagram panes start under
+it; the MDI area is what they leave, and the tabbed-MDI strip lies inside
+it — 20 px on a light band with a 1 px edge round the area, the active
+document framed 2 px in its tab's colour (MFC's tabbed MDI, `0x47293b`).
+The status bar (`0x4729b0`): a 1 px line over a light band, the six panes
+with no separators, 153 px (27 × "_") and 218 px (40 × "_") — the
+template's width in the 9 pt UI font plus 18 —, their text 9 px in and
+left-aligned in that font; the extended «НТЦ Механотроника» 155 px at the
+right on a darker band behind a light edge, before the size grip. Ours
+drew the tab strip across the whole window above the parameters bar and
+the panes centred in small text with separators. Now the strip and the
+frame are in the central area (`view_oscillogram`), the status bar as
+seen (`status_bar`, 24 px). Test `document_tabs_sit_in_the_mdi_area`.
+Residual: the size grip's dots; the band colours for the other looks are
+derived from each look's status colour, not read.
+
 Next in L9 (HANDOFF 2026-10-24, night 6): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
 each one flat archive). `main` = HEAD, 405 tests.
-**Night 6 (L9.128–L9.178)**, audits as background agents (message boxes,
+**Night 6 (L9.128–L9.179)**, audits as background agents (message boxes,
 CMDUI, keys / wheel, context menus, dialog DDX, status bar, docking-pane
 menus, the caption) and follow-up reads (frequency track, flags on
 non-file channels, the ОМП tracked phasor, `.set` per channel, N): L9.128
@@ -5359,7 +5377,8 @@ L9.173 the save path; L9.174 the planes' pan limit; L9.175 «Изменить
 уровень» as read; L9.176 the coefficient dialog's selection / commit;
 L9.177 **the main window against the original's capture** (stats panel,
 channel 0 selected, title, stat rows); L9.178 «О программе» in the
-original's layout with our own texts, W1.6 / W1.2b read.
+original's layout with our own texts, W1.6 / W1.2b read; L9.179 the
+document tabs inside the MDI area, the status bar's panes.
 Lessons: tests that inject `Key::C` passed while the
 real app never saw a key — check what egui-winit emits; never chain the
 gates and a commit in one command (a commit with clippy warnings slipped
