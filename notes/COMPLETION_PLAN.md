@@ -323,9 +323,15 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   L9.251; 359 and the TreeView, owner-centred placement: L9.252, its
   hosted forms L9.253 and L9.260; the
   finder (558): L9.255–L9.256; 554, 492: L9.257; MFC's colour dialog:
-  L9.258; open:
-  the other dialogs laid out from their templates
-  (`tools/dlg_templates.py`).
+  L9.258; the 26 individually laid-out forms: L9.260. Every reachable
+  dialog now sits on its template (335, 357, 480, 509 and «Окна» are
+  never shown by the original: L9.123, L9.220, L9.257). Residual: the
+  glyphs (our font, W6 — wider text overruns or wraps where Tahoma does
+  not), the colour dialog's «Выбор...» (screen read) and its «Спектр»
+  page drawn by us, the shell tree's own scroll bars and icons, the
+  disabled controls' looks and the progress bar's colours (approximated).
+  Open: the main window's remaining pixel residuals (the plane centre,
+  the stats panel width — fonts).
 
 ## W5 — Windows-only paths
 
