@@ -6,7 +6,7 @@
 //! (MENU 387 / 388 / 355 / 351) and the vector / frequency layout rules.
 //! Painting lives in `diagram_ui.rs`.
 
-use crate::popmenu::{Entry, Mark};
+use crate::popmenu::{Entry, Mark, MenuImage};
 
 /// Grid cell of the circle / differential plane: `LOGPIXELSX · scale / 5`
 /// (`0x438b50`), 19 px at 96 dpi.
@@ -461,8 +461,8 @@ fn check(label: impl Into<String>, on: bool, cmd: DiagCmd) -> Entry<DiagCmd> {
 pub fn circle_channels_menu(doc_open: bool, chans: &[MenuChan], n_ch: usize, pairs: &[ChanPair]) -> Vec<Entry<DiagCmd>> {
     let mut m = vec![
         Entry::item("Создать", doc_open, Mark::None, DiagCmd::CreatePairs),
-        Entry::item("Показать все", true, Mark::None, DiagCmd::ShowAll(true)),
-        Entry::item("Скрыть все", true, Mark::None, DiagCmd::ShowAll(false)),
+        Entry::item("Показать все", true, Mark::Image(MenuImage::EyePlus), DiagCmd::ShowAll(true)),
+        Entry::item("Скрыть все", true, Mark::Image(MenuImage::EyeMinus), DiagCmd::ShowAll(false)),
         Entry::Sep,
     ];
     for c in chans.iter().filter(|c| circle_pane_unit_ok(&c.unit)) {
@@ -479,8 +479,8 @@ pub fn circle_channels_menu(doc_open: bool, chans: &[MenuChan], n_ch: usize, pai
 pub fn diff_channels_menu(doc_open: bool, pairs: &[ChanPair]) -> Vec<Entry<DiagCmd>> {
     let mut m = vec![
         Entry::item("Создать", doc_open, Mark::None, DiagCmd::CreatePairs),
-        Entry::item("Показать все", true, Mark::None, DiagCmd::ShowAll(true)),
-        Entry::item("Скрыть все", true, Mark::None, DiagCmd::ShowAll(false)),
+        Entry::item("Показать все", true, Mark::Image(MenuImage::EyePlus), DiagCmd::ShowAll(true)),
+        Entry::item("Скрыть все", true, Mark::Image(MenuImage::EyeMinus), DiagCmd::ShowAll(false)),
         Entry::Sep,
     ];
     for (j, p) in pairs.iter().enumerate() {
@@ -514,8 +514,8 @@ pub fn plane_menu(diff: bool, channels: Vec<Entry<DiagCmd>>, show_reset: bool, b
 /// (`0x492a00`, `0x46f2e0`; a skipped channel leaves no hole).
 pub fn simple_channels_menu(chans: &[MenuChan]) -> Vec<Entry<DiagCmd>> {
     let mut m = vec![
-        Entry::item("Показать все", true, Mark::None, DiagCmd::ShowAll(true)),
-        Entry::item("Скрыть все", true, Mark::None, DiagCmd::ShowAll(false)),
+        Entry::item("Показать все", true, Mark::Image(MenuImage::EyePlus), DiagCmd::ShowAll(true)),
+        Entry::item("Скрыть все", true, Mark::Image(MenuImage::EyeMinus), DiagCmd::ShowAll(false)),
         Entry::Sep,
     ];
     for c in chans {

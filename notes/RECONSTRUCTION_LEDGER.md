@@ -9144,6 +9144,24 @@ owned by the frame, the frame disabled; the shots alike. The dialog's
 place is the shell's per-program memory in both (the original's opened
 at the top left once and centred later).
 
+### L9.355 — VM: the popup menus' border on their point; a submenu's place; «Показать все» / «Скрыть все» with their images  ·  ✅
+Run (a right-click on the vector diagram at (2150, 800), then ↓ →
+into «Каналы»): the original's menu has its (134) border on the point
+itself, (245) just inside; ours drew egui's frame stroke a pixel further
+out, a stray (250) ring between — every popup (the lanes' too) a pixel
+too big all round. Its submenu's border lies a pixel inside the parent's
+right one and a pixel below the parent's top (801 against 800); ours
+opened 3 px further in and 2 px higher. «Показать все» / «Скрыть все»
+show the toolbar's eye images, a «+» / «−» at the lower left; ours had
+none (the residual of the 2026-10-25 session close). Now `mfc_frame`
+paints the border on the frame's own outer pixels, the submenu opens at
+its row's right and its item's top − 1, and `Mark::Image` (our drawings,
+`popmenu::MenuImage`) puts an image in the column — for the three
+«Каналы» submenus. VM: the edges at 2150 / 800, the submenu at the
+parent's right − 1 and 801, the images in place. Left: ours' text a few
+per cent wider (Tahoma for Segoe UI: Selawik, the metric twin, has no
+Cyrillic), so ours' menus are narrower or wider by a few pixels.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

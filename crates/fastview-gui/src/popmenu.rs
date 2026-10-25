@@ -12,6 +12,35 @@ pub enum Mark {
     None,
     Check(bool),
     Radio(bool),
+    /// An item's image in the column (the toolbar image the original's
+    /// CMFCPopupMenu finds for its command).
+    Image(MenuImage),
+}
+
+/// Our drawings of the menu images (VM: 16 × 16, blue).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuImage {
+    /// «Показать все»: the eye with a «+».
+    EyePlus,
+    /// «Скрыть все»: the eye with a «−».
+    EyeMinus,
+}
+
+/// Paint `img` into its 16 px square: a (52, 152, 200) frame round a
+/// (140, 212, 240) face, a white eye (outline and pupil) in its upper
+/// half, the «+» / «−» at its lower left (VM, the original's images).
+fn paint_image(p: &egui::Painter, r: Rect, img: MenuImage) {
+    let r = Rect::from_min_size(r.min.round(), Vec2::splat(16.0));
+    p.rect_filled(r, 0.0, Color32::from_rgb(52, 152, 200));
+    p.rect_filled(r.shrink(1.0), 0.0, Color32::from_rgb(140, 212, 240));
+    let white = Stroke::new(1.0f32, Color32::WHITE);
+    p.add(egui::Shape::ellipse_stroke(Pos2::new(r.left() + 9.0, r.top() + 6.5), Vec2::new(5.5, 2.5), white));
+    p.rect_filled(Rect::from_min_size(Pos2::new(r.left() + 8.0, r.top() + 5.0), Vec2::splat(2.0)), 0.0, Color32::WHITE);
+    let (y, x0, x1) = (r.bottom() - 3.5, r.left() + 1.0, r.left() + 6.0);
+    p.hline(x0..=x1, y, white);
+    if img == MenuImage::EyePlus {
+        p.vline(r.left() + 3.5, y - 2.5..=y + 2.5, white);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -112,9 +141,11 @@ pub fn mfc_frame<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> 
 /// images and descriptions has none).
 pub fn mfc_frame_with<R>(ui: &mut egui::Ui, column: bool, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     use crate::oscgeom::PixelLines;
+    // The (134) border on the frame's own outer pixels, the inner line
+    // just inside it (VM: the border at the menu's point, then (245));
+    // egui's stroke would sit a pixel further out.
     let frame = egui::Frame::none()
         .fill(MFC_GROUND)
-        .stroke(Stroke::new(1.0f32, Color32::from_gray(134)))
         .inner_margin(egui::Margin::same(2.0))
         .shadow(egui::epaint::Shadow { offset: Vec2::new(3.0, 3.0), blur: 3.0, spread: 0.0, color: Color32::from_black_alpha(60) });
     frame
@@ -125,6 +156,7 @@ pub fn mfc_frame_with<R>(ui: &mut egui::Ui, column: bool, add: impl FnOnce(&mut 
             let c = ui.min_rect();
             let p = ui.painter();
             p.px_rect_stroke(c.expand(1.0), 0.0, Stroke::new(1.0f32, MFC_INNER));
+            p.px_rect_stroke(c.expand(2.0), 0.0, Stroke::new(1.0f32, Color32::from_gray(134)));
             if column {
                 let col = Rect::from_min_max(Pos2::new(c.left(), c.top() + 1.0), Pos2::new(c.left() + MFC_COL_W, c.bottom() - 1.0));
                 p.set(under, egui::Shape::rect_filled(col, 0.0, MFC_COLUMN));
@@ -335,7 +367,13 @@ fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<us
                 }
             }
             Entry::Item { label, enabled, check, cmd } => {
-                let r = mark_item_hot(ui, label, *enabled, glyph(*check), hot == Some(i));
+                let r = match check {
+                    Mark::Image(img) => {
+                        let img = *img;
+                        mark_item_icon(ui, label, None, *enabled, None, hot == Some(i), Some(&move |p: &egui::Painter, r: Rect, _| paint_image(p, r, img)))
+                    }
+                    _ => mark_item_hot(ui, label, *enabled, glyph(*check), hot == Some(i)),
+                };
                 if root && r.hovered() {
                     *open = None;
                 }
@@ -430,7 +468,9 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
             // «Каналы» near the screen's foot). Its height is last frame's.
             let sub_id = area_id(base, menu.serial).with(("sub", i));
             let h = ctx.memory(|m| m.area_rect(sub_id)).map_or(0.0, |r| r.height());
-            let y = if at.top() - 3.0 + h > ctx.screen_rect().bottom() { at.bottom() + 3.0 - h } else { at.top() - 3.0 };
+            // Its border a pixel inside the parent's right one and a pixel
+            // above its item (VM: «Каналы» of the vector pane).
+            let y = if at.top() - 1.0 + h > ctx.screen_rect().bottom() { at.bottom() + 1.0 - h } else { at.top() - 1.0 };
             let area = egui::Area::new(sub_id)
                 .kind(egui::UiKind::Menu)
                 .order(egui::Order::Foreground)
