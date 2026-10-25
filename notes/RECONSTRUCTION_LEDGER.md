@@ -8551,6 +8551,21 @@ without the L9.313 workaround. VM: the reports identical. (The report's
 save dialog opens in the shell's last folder in both — different
 folders here, the system's choice.)
 
+### L9.320 — VM: Save As with a typed extension other than the filter's (residual)  ·  🟡
+Run: Save As on WIN_1999 with «out.cff» typed and the first filter
+(«*.cfg») left: the original writes out.cfg / .dat / .set; ours refuses
+with «В формате .cff можно сохранять только осциллограммы стандарта
+comtrade'13 и новее». Read by hand (`0x448208`–`0x448368`, after
+DoModal): the name is lowered and tested against every extension of the
+filter list (Right / Compare); one found that differs from the chosen
+filter's (OPENFILENAME's nFilterIndex) is cut and the filter's appended;
+none found, the filter's is appended; the chosen filter's kept as is.
+Ours keeps any listed extension: our file dialog (rfd's IFileSaveDialog)
+does not report the chosen file type, so the rule cannot be applied as
+read. Residual: only a typed listed extension that contradicts the
+chosen type differs; a plain name gets the type's extension from the
+shell dialog itself.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
