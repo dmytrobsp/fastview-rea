@@ -210,7 +210,23 @@ impl<'o> Dlg<'o> {
         let cues_key = id.with("fv_cues");
         let mut cues = if fresh { ctx.data(|d| d.get_temp::<bool>(egui::Id::new("fv_last_input_key"))).unwrap_or(false) } else { ctx.data(|d| d.get_temp::<bool>(cues_key)).unwrap_or(false) };
         let was_msg = ctx.data(|d| d.get_temp::<bool>(id.with("fv_is_msg"))).unwrap_or(false);
-        if !owns_shown && (was_msg || !under_message(ctx)) {
+        let active = !owns_shown && (was_msg || !under_message(ctx));
+        // Inactive under a box or a dialog it owns, its focus is the other
+        // window's: kept aside, and given back once active again (Win32
+        // restores the focus it had).
+        let saved_key = id.with("fv_saved_focus");
+        let focus_here = ctx.memory(|m| m.focused()).filter(|f| ring.iter().any(|s| s.0 == *f));
+        if !active {
+            if let Some(f) = focus_here {
+                ctx.data_mut(|d| d.insert_temp(saved_key, Some(f)));
+                ctx.memory_mut(|m| m.surrender_focus(f));
+            }
+        } else if let Some(f) = ctx.data_mut(|d| d.remove_temp::<Option<egui::Id>>(saved_key)).flatten() {
+            if ctx.memory(|m| m.focused()).is_none() {
+                ctx.memory_mut(|m| m.request_focus(f));
+            }
+        }
+        if active {
             let (alt, enter) = ctx.input(|i| (i.modifiers.alt, i.key_pressed(egui::Key::Enter) && i.modifiers.is_none()));
             cues |= alt;
             // The Tab presses kept from egui for this pass (`take_dialog_tabs`).
@@ -367,11 +383,12 @@ pub fn win_button(ui: &mut egui::Ui, r: Rect, text: &str, default: bool) -> egui
 /// (the disabled look approximated).
 pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enabled: bool) -> egui::Response {
     let resp = ui.interact(r, ui.id().with(("fv_btn", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    // A tab stop; with the focus it looks as the default button (VM: the
-    // finder's «Выбрать» blue beside the default «Открыть файлы»), its
-    // focus rectangle with the cues.
+    // A tab stop. A focused push button takes the default look, which the
+    // default button loses meanwhile (the dialog manager's DM_SETDEFID;
+    // VM: «Печать»'s OK plain while «Свойства...» has the focus); its focus
+    // rectangle with the cues.
     let focused = enabled && tab_stop(ui, resp.id, StopKind::Button);
-    let default = default || focused;
+    let default = (default && !other_button_focused(ui, resp.id)) || focused;
     let face = r.shrink(1.0);
     if !enabled {
         let p = ui.painter();
@@ -768,7 +785,9 @@ pub fn take_dialog_tabs(ctx: &egui::Context, raw: &mut egui::RawInput) {
     }
     // The arrows too while a control other than an edit has the focus
     // (egui would move its focus by them; a combo takes them instead).
-    let not_edit = ctx.data(|d| d.get_temp::<(u64, StopKind)>(egui::Id::new("fv_focus_kind"))).is_some_and(|(p, k)| p + 2 >= pass && k != StopKind::Edit);
+    // (Not while a drop-down list is open: its own keys.)
+    let list_open = ctx.data(|d| d.get_temp::<u64>(egui::Id::new("fv_combo_popup"))).is_some_and(|f| f + 2 >= pass);
+    let not_edit = !list_open && ctx.data(|d| d.get_temp::<(u64, StopKind)>(egui::Id::new("fv_focus_kind"))).is_some_and(|(p, k)| p + 2 >= pass && k != StopKind::Edit);
     let arrow = |k: &egui::Key| matches!(k, egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight);
     let (mut tabs, mut arrows) = (Vec::new(), Vec::new());
     raw.events.retain(|e| match e {
@@ -833,6 +852,11 @@ fn cur_dlg(ctx: &egui::Context) -> Option<egui::Id> {
 /// template's order: the order drawn); whether it holds the focus.
 pub fn tab_stop(ui: &egui::Ui, id: egui::Id, kind: StopKind) -> bool {
     let ctx = ui.ctx();
+    // A press on it gives it the focus (a Win32 control takes the focus at
+    // its WM_LBUTTONDOWN; egui gives none but to its text edits).
+    if kind != StopKind::Edit && ctx.input(|i| i.pointer.primary_pressed()) && ctx.read_response(id).is_some_and(|r| r.contains_pointer()) {
+        ctx.memory_mut(|m| m.request_focus(id));
+    }
     let no_tab = ctx.data(|d| d.get_temp::<bool>(egui::Id::new("fv_no_tab"))).unwrap_or(false);
     let Some(d) = cur_dlg(ctx).filter(|_| !no_tab) else { return ctx.memory(|m| m.has_focus(id)) };
     let ring = ctx.data_mut(|m| {
@@ -854,6 +878,14 @@ pub fn no_tab_stop<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -
     let r = add(ui);
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_no_tab"), false));
     r
+}
+
+/// Whether another push button of the dialog being drawn holds the focus.
+fn other_button_focused(ui: &egui::Ui, id: egui::Id) -> bool {
+    let ctx = ui.ctx();
+    let Some(d) = cur_dlg(ctx) else { return false };
+    let ring = ctx.data(|m| m.get_temp::<Ring>(d.with("fv_tab_ring"))).map(|r| r.prev).unwrap_or_default();
+    focused_stop(ctx, &ring).is_some_and(|f| f != id && ring.iter().any(|s| s.0 == f && s.1 == StopKind::Button))
 }
 
 /// Whether the dialog being drawn shows its focus cues.
@@ -898,6 +930,14 @@ pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows:
         if !keeps_focus_at(ui.ctx(), p) {
             focused = r.contains(p);
         }
+    }
+    // A tab stop of its dialog: Tab onto it gives it the focus, Tab off
+    // takes it.
+    tab_stop(ui, id, StopKind::Other);
+    let pass = ui.ctx().cumulative_pass_nr();
+    if let Some((to, p)) = ui.ctx().data(|d| d.get_temp::<(egui::Id, u64)>(egui::Id::new("fv_tabbed_to"))).filter(|(_, p)| *p == pass) {
+        let _ = p;
+        focused = to == id;
     }
     ui.data_mut(|d| d.insert_temp(focus_id, focused));
     // Under a message box the focus is the box's: the tree draws as

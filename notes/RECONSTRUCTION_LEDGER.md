@@ -8951,6 +8951,40 @@ Left: the other dialogs' draw order against their templates (next);
 lists, trees and the property grids are no tab stops yet; the arrows'
 moves between a group's radios and between push buttons.
 
+### L9.344 — VM: the tab order of 347, 510, 477, 336, 554 and 353; the default look moves to a focused button  ·  ✅
+Each dialog's template (local dump) against our draw order, then Tab
+three to six times in both programs:
+- 347 «Печать»: the printer combo (initial focus), «Свойства...»,
+  «Параметры страницы», «Предварительный просмотр», OK, Отмена, then the
+  five check boxes — ours drew the check boxes before the last three
+  buttons; moved.
+- 510 «Установка настроек программы»: OK, Cancel, the folder link (only
+  while a folder is set), «...», then each group's checked radio — the
+  radios have no WS_TABSTOP in the template, yet Tab reaches «Отображать
+  в UTC» and «Windows-1251»: an auto radio button takes WS_TABSTOP while
+  checked. Ours drew OK / Cancel last; moved, the link a stop.
+- 477 «Коэффициенты»: the list (initial focus), ОК, Отмена — the list now
+  a tab stop.
+- 336 «Параметры ОМП»: the tree (initial focus), OK, Отмена — the
+  toolbar's method combo is no stop of the dialog; the tree now joins the
+  ring (Tab onto it gives it its focus look, Tab off takes it).
+- 554 the pair dialog: OK, Отмена, the right combo, the left one,
+  «Добавить», the list, «Удалить» — ours had the combos first; redrawn in
+  that order, the list a tab stop (its selection blue only with the
+  focus, L9.339, now through the ring).
+- 353 already in order (the two edits, each group's checked radio, OK,
+  Отмена).
+And a look: while another push button has the focus the default button
+shows plain — the dialog manager moves BS_DEFPUSHBUTTON to the focused
+one (VM: «Печать»'s OK plain while «Свойства...» is focused); ours kept
+both blue. Also: a press on a control gives it the focus (Win32's
+WM_LBUTTONDOWN; egui gives none but to its edits); under a message box a
+dialog's focus is parked and given back after (the formula dialog's OK,
+focused by its click, had taken the box's Enter as its own click).
+VM: every step of the six dialogs alike.
+Left: the remaining dialogs' orders (359 and its forms, 558, the
+quick-analysis pages, 463), arrows between radios / push buttons.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

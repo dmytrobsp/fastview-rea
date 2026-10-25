@@ -569,6 +569,16 @@ impl App {
                 use crate::dialogs::{dlu, win_button, win_group, win_label, win_radio};
                 // The 419 × 259 DLU template (629 × 421 px).
                 let (client, _) = ui.allocate_exact_size(egui::vec2(629.0, 421.0), egui::Sense::hover());
+                // The template's order is the tab order: OK, Cancel, the
+                // link, «...», then each group's checked radio (an auto radio
+                // button takes WS_TABSTOP while checked; VM: Tab after «...»
+                // lands on «Отображать в UTC»).
+                if win_button(ui, dlu(client, 301, 238, 50, 14), "OK", true).clicked() {
+                    result = Some(true);
+                }
+                if win_button(ui, dlu(client, 362, 238, 50, 14), "Cancel", false).clicked() {
+                    result = Some(false);
+                }
                 win_label(ui, dlu(client, 7, 16, 405, 8), "Директория хранения файлов описания осциллограмм (*.dst):", false, true);
                 win_group(ui, dlu(client, 7, 28, 405, 30), "");
                 // The folder as an MFC link (`0x47f840`): its text and URL,
@@ -577,7 +587,11 @@ impl App {
                 let link = dlu(client, 16, 38, 386, 15);
                 if !st.dst_folder.is_empty() {
                     let resp = ui.interact(link, ui.id().with("fv_dst_link"), egui::Sense::click());
+                    let focused = crate::dialogs::tab_stop(ui, resp.id, crate::dialogs::StopKind::Button);
                     let t = ui.painter().with_clip_rect(link).text(link.left_center(), egui::Align2::LEFT_CENTER, &st.dst_folder, crate::dialogs::DLG_FONT, egui::Color32::from_rgb(0, 0, 255));
+                    if focused && crate::dialogs::cues(ui) {
+                        crate::dialogs::focus_rect(ui.painter(), t.expand(1.0));
+                    }
                     if resp.hovered() {
                         ui.painter().hline(t.x_range(), t.bottom() - 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(0, 0, 255)));
                     }
@@ -609,12 +623,6 @@ impl App {
                     }
                 }
                 win_label(ui, dlu(client, 135, 176, 211, 22), "Внимание! При смене кодировки изменения вступают в силу после переоткрытия файла осциллограммы!", false, true);
-                if win_button(ui, dlu(client, 301, 238, 50, 14), "OK", true).clicked() {
-                    result = Some(true);
-                }
-                if win_button(ui, dlu(client, 362, 238, 50, 14), "Cancel", false).clicked() {
-                    result = Some(false);
-                }
             });
         let result = result.or_else(|| self.dialog_keys(ctx));
         match result {

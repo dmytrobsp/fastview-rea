@@ -269,15 +269,17 @@ impl App {
                 }
             }
             setup = win_button(ui, dlu(client, 7, 107, 120, 14), "Параметры страницы", false).clicked();
+            // The template's order is the tab order: the buttons, then the
+            // five check boxes.
+            preview = win_button(ui, dlu(client, 7, 238, 120, 14), "Предварительный просмотр", false).clicked();
+            ok = win_button(ui, dlu(client, 189, 238, 67, 14), "OK", true).clicked();
+            cancel = win_button(ui, dlu(client, 262, 238, 67, 14), "Отмена", false).clicked();
             win_group(ui, dlu(client, 8, 125, 322, 108), "Диаграмма");
             for ((t, l), (y, w)) in dlg.ticks.iter_mut().zip(TICK_LABELS).zip([(144, 68), (161, 90), (178, 90), (195, 86), (212, 122)]) {
                 if win_check(ui, dlu(client, 16, y, w, 10), l, *t) {
                     *t = !*t;
                 }
             }
-            preview = win_button(ui, dlu(client, 7, 238, 120, 14), "Предварительный просмотр", false).clicked();
-            ok = win_button(ui, dlu(client, 189, 238, 67, 14), "OK", true).clicked();
-            cancel = win_button(ui, dlu(client, 262, 238, 67, 14), "Отмена", false).clicked();
         });
         // Enter is the default button OK, Esc Отмена (VM).
         let keys = self.dialog_keys(ctx);

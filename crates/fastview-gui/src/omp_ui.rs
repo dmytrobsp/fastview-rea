@@ -983,7 +983,9 @@ impl ParamsDialog {
         let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(rect.min + egui::vec2(x, y), egui::vec2(w, h));
         let cur = METHODS.iter().position(|(m, _)| *m == self.work.method).unwrap_or(0);
         let methods: Vec<String> = METHODS.iter().map(|(_, l)| l.to_string()).collect();
-        if let Some(k) = win_combo_list(ui, at(13.0, 12.0, 278.0, 21.0), egui::Id::new("omp_method"), &methods, cur, true) {
+        // The method combo is the toolbar's, no tab stop of the dialog; the
+        // tree comes first in the tab order, then OK and Отмена.
+        if let Some(k) = crate::dialogs::no_tab_stop(ui, |ui| win_combo_list(ui, at(13.0, 12.0, 278.0, 21.0), egui::Id::new("omp_method"), &methods, cur, true)) {
             if k != cur {
                 self.set_method(METHODS[k].0);
             }

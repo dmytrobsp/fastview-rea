@@ -925,6 +925,11 @@ impl App {
                     p.with_clip_rect(r).text(r.left_center() + Vec2::new(6.0, 0.0), egui::Align2::LEFT_CENTER, t, font.clone(), ink);
                 }
                 let rows = Rect::from_min_max(Pos2::new(inner.left(), hr.bottom()), inner.max);
+                // The list is the first tab stop (the template's order: the
+                // list, ОК, «Отмена»).
+                let list_id = egui::Id::new("fv_coef_list");
+                ui.interact(rows, list_id, Sense::click());
+                crate::dialogs::tab_stop(ui, list_id, crate::dialogs::StopKind::Other);
                 ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rows), |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 egui::ScrollArea::vertical().max_height(rows.height()).show(ui, |ui| {

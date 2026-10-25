@@ -1640,7 +1640,15 @@ impl App {
             for (lr, t) in [(r(18, 18, 168, 8), ca), (r(204, 17, 168, 8), cb)] {
                 ui.painter().text(Pos2::new(lr.center().x, lr.top()), egui::Align2::CENTER_TOP, t, DLG_FONT, Color32::BLACK);
             }
-            for (k, (cr, slot)) in [(r(18, 36, 168, 30), &mut dlg.a), (r(204, 36, 167, 30), &mut dlg.b)].into_iter().enumerate() {
+            // The template's order is the tab order: OK, Отмена, the right
+            // combo, the left one, «Добавить», the list, «Удалить».
+            if win_button_en(ui, r(252, 348, 50, 14), "OK", true, true).clicked() {
+                done = Some(true);
+            }
+            if win_button_en(ui, r(324, 348, 50, 14), "Отмена", false, true).clicked() {
+                done = Some(false);
+            }
+            for (k, (cr, slot)) in [(1, (r(204, 36, 167, 30), &mut dlg.b)), (0, (r(18, 36, 168, 30), &mut dlg.a))] {
                 let cur = slot.as_ref().and_then(|v| names.iter().position(|n| n == v)).unwrap_or(0);
                 if let Some(pick) = win_combo_list(ui, cr, egui::Id::new(("pair_combo", k)), &names, cur, !names.is_empty()) {
                     *slot = Some(names[pick].clone());
@@ -1685,10 +1693,10 @@ impl App {
                 p.hline(inner.x_range(), y, grid);
                 y += 17.0;
             }
-            // A press on the list gives it the focus, one elsewhere takes it.
-            if let Some(at) = ui.input(|i| i.pointer.any_pressed().then(|| crate::lanes::press_pos(i)).flatten()) {
-                dlg.list_focus = inner.contains(at);
-            }
+            // The list is a tab stop; a press on it gives it the focus.
+            let list_id = egui::Id::new("pair_list");
+            ui.interact(Rect::from_min_max(Pos2::new(inner.left(), hdr.bottom()), inner.max), list_id, egui::Sense::click());
+            dlg.list_focus = crate::dialogs::tab_stop(ui, list_id, crate::dialogs::StopKind::Other);
             for (i, pair) in dlg.pairs.iter().enumerate() {
                 let top = hdr.bottom() + 17.0 * i as f32;
                 if top + 17.0 > inner.bottom() {
@@ -1714,12 +1722,6 @@ impl App {
                     dlg.pairs.remove(s);
                     dlg.sel = if dlg.pairs.is_empty() { None } else { Some(s.min(dlg.pairs.len() - 1)) };
                 }
-            }
-            if win_button_en(ui, r(252, 348, 50, 14), "OK", true, true).clicked() {
-                done = Some(true);
-            }
-            if win_button_en(ui, r(324, 348, 50, 14), "Отмена", false, true).clicked() {
-                done = Some(false);
             }
         });
         let done = done.or_else(|| self.dialog_keys(ctx));
