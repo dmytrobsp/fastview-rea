@@ -9239,6 +9239,29 @@ clamps the «?» menu 5 px further left; its rule a pixel high; «Помощь»
 greyed in ours (no CHM shipped — the original's help file), enabled
 with its image in the original.
 
+### L9.360 — VM: the ribbon's tooltips as MFC's (CMFCToolTipCtrl): image, bold title, wrapped description  ·  ✅
+Run (each of the 39 ribbon elements and the quick-access buttons
+hovered, the pointer still): the original shows, after half a second
+— disabled elements too —, a box with a (118, 118, 118) rounded edge
+round a (253, 253, 254) → (203, 218, 239) gradient and a soft shadow:
+the element's image (32 px for a large button, beside both lines; 16
+px for a small one), the bold title — the command prompt's part after
+«\n», with the accelerator for paste / copy / undo / redo / open /
+print —, the description (the part before) wrapped between 187 and 190
+px, lines 13 px apart from y 22 (42 px tall with one line). A panel
+element's box opens at its left, 3 px under the ribbon's body; a
+quick-access button's at the pointer's x, at y 31; the customise arrow's
+is a plain one-line tip (21 px). «Каналы» has none (its command has no
+prompt); «Быстрый анализ»'s string 137 has no «\n», so its text is
+both. Ours had a few egui hover texts (the labels). Now `tips.rs`:
+`cmd_tip` (each command's texts; undo / redo are mfc120rus's 57643 /
+57644), `ribbon_tip` / `qat_tip` (the timing: 0.5 s, restarted on
+entering again, quiet after a press) and the box (Tahoma wraps at 195 px
+to break where Segoe UI does at 190). VM: 14 elements and two QAT tips
+side by side — the same lines, places and sizes. Left: the titles in
+Tahoma Bold (a little wider), our images. Tests
+`commands_carry_their_prompt_texts`, `descriptions_wrap_by_words`.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

@@ -41,6 +41,7 @@ mod setfile;
 mod softrun;
 mod spool;
 mod theme;
+mod tips;
 mod util;
 mod views;
 mod windows_dlg;

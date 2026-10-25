@@ -8,6 +8,7 @@ use crate::app::{App, Command, Pane, RibbonTab, ValueMode};
 use crate::icons::{self, Icon};
 use crate::oscgeom::PixelLines;
 use crate::theme::Skin;
+use crate::tips::{self, TipImage};
 use eframe::egui::{self, Color32, RichText};
 
 impl App {
@@ -41,6 +42,8 @@ impl App {
         // (191, 219, 255), Black (83, 83, 83), … — and the ribbon body
         // below that the lighter `tab_active` fill.
         let full = ui.max_rect();
+        // The body's bottom line (row 143, L9.225): the tooltips open under it.
+        crate::tips::set_ribbon_bottom(ui.ctx(), full.min.y + 143.0);
         ui.painter().rect_filled(egui::Rect::from_min_size(full.min, egui::vec2(full.width(), 30.0)), 0.0, Color32::WHITE);
         let band = egui::Rect::from_min_size(full.min + egui::vec2(0.0, 30.0), egui::vec2(full.width(), 23.0));
         paint_v_gradient(ui, band, p.ribbon_top, p.ribbon_bottom);
@@ -272,11 +275,7 @@ impl App {
             } else {
                 ui.add_space(4.0);
             }
-            for (n, (icon, tip, cmd)) in [
-                (Icon::Open, "Открыть  (Ctrl+O)", Command::Open),
-                (Icon::Save, "Сохранить", Command::Save),
-                (Icon::Print, "Печать  (Ctrl+P)", Command::Print),
-            ]
+            for (n, (icon, cmd)) in [(Icon::Open, Command::Open), (Icon::Save, Command::Save), (Icon::Print, Command::Print)]
             .into_iter()
             .enumerate()
             {
@@ -288,7 +287,10 @@ impl App {
                     1 => self.can_save(),
                     _ => has_doc,
                 };
-                let r = ui.add_enabled_ui(enabled, |ui| qat_button(ui, p, icon)).inner.on_hover_text(tip);
+                let r = ui.add_enabled_ui(enabled, |ui| qat_button(ui, p, icon)).inner;
+                if let Some((title, desc)) = tips::cmd_tip(&cmd) {
+                    tips::qat_tip(ui, &r, TipImage::Small(icon), title, desc);
+                }
                 self.kt_rects.push((crate::keytips::Target::Qat(n), r.rect, enabled));
                 if r.clicked() {
                     cmds.push(cmd);
@@ -298,6 +300,10 @@ impl App {
                 }
                 if n == 2 {
                     let arrow = ui.add_enabled_ui(enabled, |ui| qat_arrow(ui, p, false)).inner;
+                    // The arrow's tip is the print button's (VM).
+                    if let Some((title, desc)) = tips::cmd_tip(&Command::Print) {
+                        tips::qat_tip(ui, &arrow, TipImage::Small(Icon::Print), title, desc);
+                    }
                     if arrow.clicked() {
                         open_qat_menu(ui, QatMenu::Print, r.rect.left_bottom());
                     }
@@ -305,7 +311,9 @@ impl App {
             }
             ui.add_space(14.5);
             // The customise arrow: one item, «Свернуть ленту».
-            let custom = qat_arrow(ui, p, true).on_hover_text("Настройка панели быстрого доступа");
+            let custom = qat_arrow(ui, p, true);
+            // A plain one-line tip (mfc120rus 17096).
+            tips::qat_tip(ui, &custom, TipImage::None, "", "Настройка панели быстрого доступа");
             ui.spacing_mut().item_spacing.x = qat_spacing;
             // Its menu right under the button's own 20 px (VM: the border at
             // y 24, under the pressed look's 18–23).
@@ -486,7 +494,9 @@ impl App {
             let can_paste = self.active_doc().is_some_and(|d| self.clip.available() && !crate::omp_ui::has_pending_paste(d));
             let can_copy = self.active_doc().is_some_and(|d| d.can_copy());
             let (undo, redo) = self.active_doc().map_or((false, false), |d| (!d.undo.is_empty(), !d.redo.is_empty()));
-            if ui.add_enabled_ui(can_paste, |ui| big_button(ui, p, Icon::Paste, "Вставить")).inner.clicked() {
+            let r = ui.add_enabled_ui(can_paste, |ui| big_button(ui, p, Icon::Paste, "Вставить")).inner;
+            tips::ribbon_tip(ui, &r, TipImage::Large(Icon::Paste), &Command::Paste);
+            if r.clicked() {
                 cmds.push(Command::Paste);
             }
             ui.vertical(|ui| {
@@ -495,7 +505,9 @@ impl App {
                     (Icon::Undo, "Отмена", undo, Command::Undo),
                     (Icon::Redo, "Возврат", redo, Command::Redo),
                 ] {
-                    if ui.add_enabled_ui(on, |ui| small_button_mode(ui, p, icon, label, false, step >= 1)).inner.clicked() {
+                    let r = ui.add_enabled_ui(on, |ui| small_button_mode(ui, p, icon, label, false, step >= 1)).inner;
+                    tips::ribbon_tip(ui, &r, TipImage::Small(icon), &cmd);
+                    if r.clicked() {
                         cmds.push(cmd);
                     }
                 }
@@ -516,7 +528,9 @@ impl App {
                 if k > 0 && step > 0 {
                     continue;
                 }
-                if big_button_sel(ui, p, icon, label, self.panes.visible(pane)).clicked() {
+                let r = big_button_sel(ui, p, icon, label, self.panes.visible(pane));
+                tips::ribbon_tip(ui, &r, TipImage::Large(icon), &Command::TogglePane(pane));
+                if r.clicked() {
                     cmds.push(Command::TogglePane(pane));
                 }
             }
@@ -524,7 +538,9 @@ impl App {
                 ui.vertical(|ui| {
                     for (icon, label, pane) in buttons.into_iter().skip(1) {
                         let label = label.replace("-\n", "");
-                        if small_button_mode(ui, p, icon, &label, self.panes.visible(pane), step >= 2).clicked() {
+                        let r = small_button_mode(ui, p, icon, &label, self.panes.visible(pane), step >= 2);
+                        tips::ribbon_tip(ui, &r, TipImage::Small(icon), &Command::TogglePane(pane));
+                        if r.clicked() {
                             cmds.push(Command::TogglePane(pane));
                         }
                     }
@@ -586,8 +602,10 @@ impl App {
                     group_separator(ui, p);
                 }
                 ui.vertical(|ui| {
-                    for (glyph, tip, enabled, on, cmd) in column {
-                        if mini_button(ui, p, *glyph, tip, *enabled, *on) {
+                    for (glyph, _label, enabled, on, cmd) in column {
+                        let r = mini_button(ui, p, *glyph, *enabled, *on);
+                        tips::ribbon_tip(ui, &r, TipImage::Mini(*glyph), cmd);
+                        if r.clicked() {
                             cmds.push(cmd.clone());
                         }
                     }
@@ -620,8 +638,10 @@ impl App {
             ];
             for column in columns {
                 ui.vertical(|ui| {
-                    for (glyph, tip, st, cmd) in column {
-                        if mini_button(ui, p, glyph, tip, st.enabled, st.checked) {
+                    for (glyph, _label, st, cmd) in column {
+                        let r = mini_button(ui, p, glyph, st.enabled, st.checked);
+                        tips::ribbon_tip(ui, &r, TipImage::Mini(glyph), &cmd);
+                        if r.clicked() {
                             cmds.push(cmd);
                         }
                     }
@@ -635,7 +655,9 @@ impl App {
                 let st = |f| self.active_doc().map(|d| d.flag_state(f)).unwrap_or(crate::chansel::ItemState { enabled: false, checked: false });
                 for (icon, label, f) in [(Icon::Invert, "Инвертировать", ChanFlag::Invert), (Icon::RemoveDc, "Удал. постоянную", ChanFlag::RemoveDc)] {
                     let s = st(f);
-                    if ui.add_enabled_ui(s.enabled, |ui| small_button_mode(ui, p, icon, label, s.checked, step >= 2)).inner.clicked() {
+                    let r = ui.add_enabled_ui(s.enabled, |ui| small_button_mode(ui, p, icon, label, s.checked, step >= 2)).inner;
+                    tips::ribbon_tip(ui, &r, TipImage::Small(icon), &Command::ToggleFlag(f));
+                    if r.clicked() {
                         cmds.push(Command::ToggleFlag(f));
                     }
                 }
@@ -645,19 +667,23 @@ impl App {
                 // from channel 0 (CMDUI `0x42ffb0`; neither with no analog
                 // channel); all three the view's — greyed with no document.
                 let has_doc = self.active_doc().is_some();
-                if ui.add_enabled_ui(has_doc, |ui| small_button_mode(ui, p, Icon::Params, "Коэффициенты", false, step >= 1)).inner.clicked() {
-                    cmds.push(Command::Coefficients);
-                }
                 let prim = self.active_doc().and_then(|d| d.primary_shown());
-                if ui.add_enabled_ui(has_doc, |ui| small_button_mode(ui, p, Icon::Primary, "Первичные знач.", prim == Some(true), step >= 1)).inner.clicked() {
-                    cmds.push(Command::SetPrimaryValues(true));
-                }
-                if ui.add_enabled_ui(has_doc, |ui| small_button_mode(ui, p, Icon::Primary, "Вторичные знач.", prim == Some(false), step >= 1)).inner.clicked() {
-                    cmds.push(Command::SetPrimaryValues(false));
+                for (icon, label, on, cmd) in [
+                    (Icon::Params, "Коэффициенты", false, Command::Coefficients),
+                    (Icon::Primary, "Первичные знач.", prim == Some(true), Command::SetPrimaryValues(true)),
+                    (Icon::Primary, "Вторичные знач.", prim == Some(false), Command::SetPrimaryValues(false)),
+                ] {
+                    let r = ui.add_enabled_ui(has_doc, |ui| small_button_mode(ui, p, icon, label, on, step >= 1)).inner;
+                    tips::ribbon_tip(ui, &r, TipImage::Small(icon), &cmd);
+                    if r.clicked() {
+                        cmds.push(cmd);
+                    }
                 }
             });
             let analog = self.active_doc().is_some_and(|d| !d.osc.analog.is_empty());
-            if ui.add_enabled_ui(analog, |ui| big_button(ui, p, Icon::Analysis, "Быстрый анализ")).inner.clicked() {
+            let r = ui.add_enabled_ui(analog, |ui| big_button(ui, p, Icon::Analysis, "Быстрый анализ")).inner;
+            tips::ribbon_tip(ui, &r, TipImage::Large(Icon::Analysis), &Command::QuickAnalysis);
+            if r.clicked() {
                 cmds.push(Command::QuickAnalysis);
             }
         });
@@ -665,10 +691,9 @@ impl App {
         // The unnamed panel (title " ", «Информация» in the help).
         ribbon_group(ui, p, " ", 1, |ui, _| {
             // 142: toggles the parameters bar, checked while it is shown.
-            if big_button_sel(ui, p, Icon::Wave, "Осцилло грамма", self.dlg.param_bar)
-                .on_hover_text("Показать или скрыть панель параметров осциллограммы")
-                .clicked()
-            {
+            let r = big_button_sel(ui, p, Icon::Wave, "Осцилло грамма", self.dlg.param_bar);
+            tips::ribbon_tip(ui, &r, TipImage::Large(Icon::Wave), &Command::ToggleParamBar);
+            if r.clicked() {
                 cmds.push(Command::ToggleParamBar);
             }
         });
@@ -855,12 +880,16 @@ impl App {
         let shown = doc.is_some_and(|d| d.omp.shown);
         ribbon_group(ui, p, "ОМП", 1, |ui, _| {
             ui.add_enabled_ui(has_doc, |ui| {
-                if big_button(ui, p, Icon::Params, "Параметры").on_hover_text("Параметры определения места повреждения").clicked() {
+                let r = big_button(ui, p, Icon::Params, "Параметры");
+                tips::ribbon_tip(ui, &r, TipImage::Large(Icon::Params), &Command::OmpParams);
+                if r.clicked() {
                     cmds.push(Command::OmpParams);
                 }
             });
             ui.add_enabled_ui(can_run, |ui| {
-                if big_button_sel(ui, p, Icon::OmpRun, "Анализ", shown).on_hover_text("Произвести определение места повреждения").clicked() {
+                let r = big_button_sel(ui, p, Icon::OmpRun, "Анализ", shown);
+                tips::ribbon_tip(ui, &r, TipImage::Large(Icon::OmpRun), &Command::OmpAnalysis);
+                if r.clicked() {
                     cmds.push(Command::OmpAnalysis);
                 }
             });
@@ -1513,7 +1542,7 @@ fn small_button_mode(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, la
     // text + image + 10 wide, max(16, image, text) + 6 tall.
     let w = if icon_only { 22.0 } else { text_w + 16.0 + 10.0 };
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 22.0), egui::Sense::click());
-    let resp = if icon_only { resp.on_hover_text(label) } else { resp };
+    // (Icon-only, its tooltip is still the command's: `tips`.)
     let painter = &plain_painter(ui);
     let (ink, accent) = inks(ui, p);
     let ink = if selected && ui.is_enabled() { CHECKED_INK } else { ink };
@@ -1597,9 +1626,9 @@ pub(crate) enum Mini {
     Harm1,
 }
 
-/// A small icon-only button (24×24) with its label as the tooltip; framed
-/// while `on`. Returns whether it was clicked.
-fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, tip: &str, enabled: bool, on: bool) -> bool {
+/// A small icon-only button (24×24), framed while `on` (its tooltip the
+/// command's, `tips`); clicks only while enabled.
+fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, enabled: bool, on: bool) -> egui::Response {
     // Icon-only: (small image + 6)² (`0x10101d6a`).
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let painter = &plain_painter(ui);
@@ -1611,7 +1640,7 @@ fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, tip: &s
     }
     let col = if enabled { p.accent } else { disabled_ink(p) };
     paint_mini(painter, rect.shrink(4.0), glyph, col);
-    resp.on_hover_text(tip).clicked() && enabled
+    resp
 }
 
 pub(crate) fn paint_mini(painter: &egui::Painter, r: egui::Rect, glyph: Mini, col: Color32) {

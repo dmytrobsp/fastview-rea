@@ -83,6 +83,9 @@ impl ApplicationHandler for Soft {
                 window.request_redraw();
             }
             event => {
+                if matches!(event, WindowEvent::CursorMoved { .. } | WindowEvent::CursorEntered { .. } | WindowEvent::CursorLeft { .. } | WindowEvent::MouseInput { .. }) {
+                    trace(&format!("event {event:?}"));
+                }
                 // A Win32 click carries where it happened; egui-winit drops a
                 // button while it has seen no cursor move (a window shown
                 // under a still pointer: VM runs whose pointer was already

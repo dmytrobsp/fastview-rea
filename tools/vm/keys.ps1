@@ -2,7 +2,8 @@
 # In the desktop session: start the program (with a file), bring it to the
 # front, run each ';'-separated step 1.5 s apart, optionally capture the
 # screen, then close it (unless -Leave). A step is SendKeys text, or
-# "CLICK x,y" / "RCLICK x,y" / "DCLICK x,y" (screen pixels), "DRAG x1,y1,x2,y2"
+# "CLICK x,y" / "RCLICK x,y" / "DCLICK x,y" (screen pixels), "MOVE x,y" (the
+# pointer there in five steps, no button), "DRAG x1,y1,x2,y2"
 # (a left-button drag in ten steps; "HOLD x1,y1,x2,y2" the same left held,
 # then "UP"), "WHEEL x,y,n"
 # (n notches, + up), "KEYDOWN ctrl" / "KEYUP ctrl" (shift, alt: a modifier
@@ -11,7 +12,7 @@
 # "WINS name.txt" (the program's top-level windows: handle, owner, visible,
 # enabled, class, title — into shots/).
 # Logs next to itself.
-param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave, [switch]$Soft)
+param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave, [switch]$Soft, [string]$SoftLog = '')
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $log = Join-Path $here 'keys.log'
 Add-Type @'
@@ -64,6 +65,8 @@ function Click([int]$x, [int]$y, [uint32]$down, [uint32]$up, [int]$times = 1, [i
 # -Soft: our build in its software runner from the start (a launcher that
 # falls back to it leaves the window to a child process).
 if ($Soft) { $env:FV_SOFTWARE = '1' }
+# -SoftLog name: the software runner's trace (FV_SOFTLOG) into shots\name.
+if ($SoftLog) { $env:FV_SOFTLOG = Join-Path (Join-Path $here 'shots') $SoftLog }
 $wsh = New-Object -ComObject WScript.Shell
 $p = if ($ArgLine) { Start-Process -FilePath $Exe -ArgumentList $ArgLine -PassThru } elseif ($Open) { Start-Process -FilePath $Exe -ArgumentList "`"$Open`"" -PassThru } else { Start-Process -FilePath $Exe -PassThru }
 Start-Sleep -Seconds $WaitSec
@@ -74,6 +77,9 @@ foreach ($k in ($Keys -split ';')) {
     if ($k -match '^(R|D)?CLICK (\d+),(\d+)(?:,(\d+))?$') {
         $x = [int]$Matches[2]; $y = [int]$Matches[3]
         switch ($Matches[1]) { 'R' { Click $x $y 0x8 0x10 1 $(if ($Matches[4]) { [int]$Matches[4] } else { 60 }) } 'D' { Click $x $y 0x2 0x4 2 $(if ($Matches[4]) { [int]$Matches[4] } else { 60 }) } default { Click $x $y 0x2 0x4 } }
+    } elseif ($k -match '^MOVE (\d+),(\d+)$') {
+        $x = [int]$Matches[1]; $y = [int]$Matches[2]
+        for ($i = 4; $i -ge 0; $i--) { [In]::SetCursorPos($x - 2 * $i, $y) | Out-Null; Start-Sleep -Milliseconds 40 }
     } elseif ($k -match '^(DRAG|HOLD) (\d+),(\d+),(\d+),(\d+)$') {
         $x1 = [int]$Matches[2]; $y1 = [int]$Matches[3]; $x2 = [int]$Matches[4]; $y2 = [int]$Matches[5]
         [In]::SetCursorPos($x1, $y1) | Out-Null; Start-Sleep -Milliseconds 120
