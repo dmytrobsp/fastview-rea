@@ -8828,8 +8828,22 @@ for pixel alike; the greys' larger cells keep a three-line outline.
 Left (L9.258): «Выбор...» stays disabled in ours (the original's picks a
 colour from the screen).
 Seen on the way: on the VM a right-click on a lane's name badge in ours
-sometimes opens no lane menu (v0.3.0 too, so not a regression; lower in
-the stats cell it always does; headless it does) — not yet explained.
+sometimes opened no lane menu — explained and fixed in L9.338.
+
+### L9.338 — A click without a cursor move before it (the software runner)  ·  ✅
+On the VM some right-clicks in ours opened nothing (a lane's name badge,
+the differential diagram), at random — in v0.3.0 too (bisected: not a
+regression). Cause: egui-winit drops a button while it has seen no
+cursor move in the window (`on_mouse_button_input` needs
+`pointer_pos_in_points`); a run whose pointer already sat where the next
+click went got no WM_MOUSEMOVE, so the click was lost. A Win32 click
+carries its own place, and the original took every one. The software
+runner now hands egui-winit the OS cursor (GetCursorPos → ScreenToClient)
+before each button event. VM: the same right-clicks, repeated with the
+pointer already there, open their menus every time. Left: the GPU path
+(eframe's own winit loop) keeps egui-winit's rule — on a desktop a moved
+pointer always precedes a click, so only a click under a still pointer
+over a freshly shown window could be lost.
 
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,

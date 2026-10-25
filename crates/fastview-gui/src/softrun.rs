@@ -83,6 +83,15 @@ impl ApplicationHandler for Soft {
                 window.request_redraw();
             }
             event => {
+                // A Win32 click carries where it happened; egui-winit drops a
+                // button while it has seen no cursor move (a window shown
+                // under a still pointer: VM runs whose pointer was already
+                // there missed their clicks). The OS cursor first.
+                if let WindowEvent::MouseInput { device_id, .. } = &event {
+                    if let Some(position) = cursor_in(window) {
+                        let _ = state.on_window_event(window, &WindowEvent::CursorMoved { device_id: *device_id, position });
+                    }
+                }
                 let r = state.on_window_event(window, &event);
                 if r.repaint {
                     window.request_redraw();
@@ -165,6 +174,20 @@ impl Soft {
         blit(window, &canvas);
         trace(&format!("frame {}×{} in {:?}; dragged {:?}, down {}, top {:?}", size.width, size.height, t0.elapsed(), self.ctx.dragged_id(), self.ctx.input(|i| i.pointer.any_down()), self.ctx.pointer_latest_pos().and_then(|p| self.ctx.layer_id_at(p))));
     }
+}
+
+/// The OS cursor in the window's client coordinates (physical pixels).
+fn cursor_in(window: &Window) -> Option<winit::dpi::PhysicalPosition<f64>> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let handle = window.window_handle().ok()?;
+    let RawWindowHandle::Win32(h) = handle.as_raw() else { return None };
+    let hwnd = h.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+    let mut p = POINT { x: 0, y: 0 };
+    // SAFETY: plain queries into a local POINT for our own window.
+    let ok = unsafe { GetCursorPos(&mut p) != 0 && ScreenToClient(hwnd, &mut p) != 0 };
+    ok.then(|| winit::dpi::PhysicalPosition::new(p.x as f64, p.y as f64))
 }
 
 /// The picture into the window's client area (SetDIBitsToDevice, a
