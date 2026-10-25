@@ -381,6 +381,21 @@ pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
     resp.clicked()
 }
 
+/// An edit's selected text in the highlight's ink, white (Win32's
+/// COLOR_HIGHLIGHTTEXT; egui fills only the selection's background).
+fn selected_white(p: &egui::Painter, out: &egui::text_edit::TextEditOutput) {
+    let Some(cr) = out.cursor_range.filter(|c| !c.is_empty()) else { return };
+    let [a, b] = cr.sorted_cursors();
+    let (a, b) = (a.rcursor, b.rcursor);
+    for ri in a.row..=b.row.min(out.galley.rows.len().saturating_sub(1)) {
+        let row = &out.galley.rows[ri];
+        let l = if ri == a.row { row.x_offset(a.column) } else { row.rect.left() };
+        let r = if ri == b.row { row.x_offset(b.column) } else { row.rect.right() };
+        let rect = Rect::from_min_max(Pos2::new(l, row.min_y()), Pos2::new(r, row.max_y())).translate(out.galley_pos.to_vec2());
+        p.with_clip_rect(rect.intersect(out.text_clip_rect)).galley_with_override_text_color(out.galley_pos, out.galley.clone(), Color32::WHITE);
+    }
+}
+
 /// A single-line edit at its template rectangle (VM, Windows 11): white,
 /// a (236) line along its top and left, the bottom 2 px of (0, 103, 192)
 /// while it has the focus, else 1 px (131); the selection white on
@@ -394,6 +409,7 @@ pub fn win_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, foc
     child.visuals_mut().selection.bg_fill = Color32::from_rgb(0, 120, 212);
     child.visuals_mut().selection.stroke = Stroke::new(1.0f32, Color32::WHITE);
     let mut out = egui::TextEdit::singleline(text).id(id).frame(false).font(DLG_FONT).margin(egui::Margin::symmetric(1.0, 1.0)).desired_width(inner.width() - 2.0).show(&mut child);
+    selected_white(child.painter(), &out);
     if focus {
         out.response.request_focus();
         let n = text.chars().count();
@@ -439,12 +455,21 @@ pub fn win_edit_multiline(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut S
         .id_salt(id.with("scroll"))
         .max_height(inner.height())
         .show(&mut child, |ui| {
-            ui.add(egui::TextEdit::multiline(text).id(id).frame(false).font(DLG_FONT).margin(egui::Margin::ZERO).desired_width(inner.width() - 16.0).desired_rows(1).min_size(inner.size() - Vec2::new(16.0, 0.0)))
+            ui.visuals_mut().selection.bg_fill = Color32::from_rgb(0, 120, 212);
+            ui.visuals_mut().selection.stroke = Stroke::new(1.0f32, Color32::WHITE);
+            let mut out = egui::TextEdit::multiline(text).id(id).frame(false).font(DLG_FONT).margin(egui::Margin::ZERO).desired_width(inner.width() - 16.0).desired_rows(1).min_size(inner.size() - Vec2::new(16.0, 0.0)).show(ui);
+            selected_white(ui.painter(), &out);
+            // Focused as the dialog's first tab stop, its text selected
+            // (VM: the comment reopened shows all of it selected).
+            if focus {
+                out.response.request_focus();
+                let n = text.chars().count();
+                out.state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(n))));
+                out.state.store(ui.ctx(), id);
+            }
+            out.response
         });
     let resp = out.inner;
-    if focus {
-        resp.request_focus();
-    }
     let focused = resp.has_focus();
     painter.set(
         frame,

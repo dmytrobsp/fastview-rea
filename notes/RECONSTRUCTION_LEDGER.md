@@ -8644,6 +8644,20 @@ the start time leaves it there with an empty status line — the same
 outcome from the date parsed with the target's rule (ours, `merge_ui`).
 W2.3 closed for the records we have.
 
+### L9.327 — VM: «Комментарии к диаграмме» reopened; selected text in white; the view's keys  ·  ✅
+Runs: the record's comment dialog — placement, Enter as a new line
+(ES_WANTRETURN), OK keeping the text and the close asking to save — alike.
+Reopened, the original shows the whole text selected (a dialog's first
+edit takes the focus with its text selected); ours put the caret at the
+start. `win_edit_multiline` now selects all when it takes the dialog's
+focus, as `win_edit` did. And the selected text: Windows draws it white
+on the (0, 120, 212) highlight, egui fills only the background — both
+edits now repaint the selection's glyphs white (`selected_white`).
+Left: egui's selection also covers a selected newline's width.
+Also run: the view's keys after a click in the plot — ↓ keeps the lane
+selection, three → move the визир one pixel, End / Home / PgDn / + / −
+change nothing, in both.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
