@@ -321,7 +321,7 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   L9.286; every differential block, L9.287; the vector and
   frequency diagrams with channels, L9.288; the sample records opened,
   L9.289; «Параметры ОМП»'s refusals, keys and focus, L9.333; «Добавить новую
-  формулу»'s refusals, L9.334):
+  формулу»'s refusals, L9.334; «Отображение каналов»'s renames, L9.335):
   start-up window and panes; opening each sample record;
   every ribbon command and its enable state with and without a document;
   every dialog (fields, defaults, Enter / Esc, refusals); context menus

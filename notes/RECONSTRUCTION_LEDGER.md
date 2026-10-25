@@ -8782,6 +8782,23 @@ Seen, not fixed: the ribbon's «Вычисления» group ends about 50 px le
 the original's (Segoe UI text widths and our own icons' spacing — W6's
 Segoe UI item).
 
+### L9.335 — VM: «Отображение каналов»'s renames: a click on another name commits; 397 over the edit  ·  ✅
+Run (WIN_1999): a click on IA's name opens its edit, «X» typed, then a
+click on IB's name — the original commits IA («X (IA БЛОКА 3)») and opens
+IB's edit; ours dropped IA's rename (its edit asked for the focus every
+frame, so it never lost it, and the second click replaced it). Now a
+press outside the edit commits it first (its kill focus, `0x435c80`),
+then the click starts the other row's. IB → «X», Enter: 397 «Данное имя
+канала уже используется.» in both, centred alike; under the box the
+original's edit still shows «X» and the dialog is inactive (the tool
+window's ✕ on (218) instead of (199, 80, 80)); after OK the edit is gone
+and IB keeps its name. Ours closed the edit at once and kept the red ✕ —
+now the refused text stays until the box is closed (`ChannelsDlg::
+refused`) and an inactive tool caption greys. The row's image also stays
+left of the edit (ours' edit covered it). Esc closes the dialog, and a
+header click sets / clears its whole column, alike. Test
+`a_click_on_another_name_commits_the_rename`.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

@@ -22,6 +22,11 @@ pub const MSG_NO_RENAME_COMPUTED: &str = "Переименование расч�
 #[derive(Debug, Clone, Default)]
 pub struct ChannelsDlg {
     pub rename: Option<(ChanKey, String)>,
+    /// The rename edit's rect at the last frame: a press outside commits.
+    pub rename_rect: Option<Rect>,
+    /// The rename was refused: its edit shows the text under the message
+    /// box and goes once the box is closed (VM).
+    pub refused: bool,
     /// Top-left of the header row at the last frame (for tests).
     pub origin: Option<Pos2>,
 }
@@ -700,6 +705,10 @@ impl App {
         // handler (`0x436030`) only commits a running rename; Esc is MFC's
         // OnCancel and closes the dialog, a running rename dropped.
         let esc = self.dialog_keys(ctx) == Some(false);
+        if st.refused && self.dlg.alerts.is_empty() {
+            st.refused = false;
+            st.rename = None;
+        }
         let mut open = true;
         let mut alert: Option<&'static str> = None;
         crate::dialogs::dlg(ctx, "Отображение каналов").tool().margin(0.0)
@@ -708,6 +717,19 @@ impl App {
             .open(&mut open)
             .show(ctx, |ui| {
                 let doc = &mut self.docs[ai];
+                // A press outside the rename's edit commits it (its kill
+                // focus, `0x435c80`): a click on another name commits, then
+                // starts that one (VM: IA → «X», then IB's edit).
+                if let (Some(er), Some(p)) = (st.rename_rect, ui.input(|i| i.pointer.any_pressed().then(|| crate::lanes::press_pos(i)).flatten())) {
+                    if !er.contains(p) {
+                        if let Some((k, name)) = st.rename.take() {
+                            if let Err(m) = rename(doc, k, &name) {
+                                alert = Some(m);
+                            }
+                        }
+                        st.rename_rect = None;
+                    }
+                }
                 // The list fills the 237 × 463 DLU client (356 × 752 px):
                 // a 24 px header, 17 px rows ruled in (240) across the whole
                 // list down to its bottom, the name column 172 px and the
@@ -785,16 +807,26 @@ impl App {
                                     // inside top and bottom, to column 0's right edge
                                     // (`0x435ac0`).
                                     let er = Rect::from_min_max(r.min + Vec2::new(23.0, 1.0), Pos2::new(r.right(), r.bottom() - 1.0));
+                                    st.rename_rect = Some(er);
+                                    // The row's image stays left of the edit (VM).
+                                    row_icon(&ui.painter().with_clip_rect(r), r, if digital_row(doc, k) { 9 } else { 8 }, pal.accent);
                                     ui.painter().rect_filled(er, 0.0, Color32::WHITE);
+                                    if st.refused {
+                                        ui.painter().with_clip_rect(er).text(er.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, text.as_str(), crate::dialogs::DLG_FONT, ink);
+                                        continue;
+                                    }
                                     let te = ui.put(er, egui::TextEdit::singleline(text).id(egui::Id::new(("fv_ch_rename", k))).frame(false).margin(egui::Margin::symmetric(1.0, 0.0)).desired_width(er.width() - 2.0));
                                     te.request_focus();
                                     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                                         st.rename = None;
                                     } else if te.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                         let name = text.clone();
-                                        st.rename = None;
-                                        if let Err(m) = rename(doc, k, &name) {
-                                            alert = Some(m);
+                                        match rename(doc, k, &name) {
+                                            Ok(()) => st.rename = None,
+                                            Err(m) => {
+                                                alert = Some(m);
+                                                st.refused = true;
+                                            }
                                         }
                                     }
                                     continue;
@@ -1276,6 +1308,21 @@ mod ui_tests {
         h.frame(vec![]);
         assert_eq!(h.app.dlg.alert(), Some(MSG_NAME_TAKEN));
         assert_eq!(h.app.docs[0].osc.analog[0].id, "Ua");
+    }
+
+    /// A click on another name commits the running rename, then starts
+    /// that row's (VM: IA → «X», IB's edit open).
+    #[test]
+    fn a_click_on_another_name_commits_the_rename() {
+        let mut h = Harness::new();
+        h.app.dispatch(Command::ChannelsDialog);
+        h.frame(vec![]);
+        h.frame(vec![]);
+        h.click(ch_cell(h.ch_origin(), Some(0), 0));
+        h.app.dlg.channels.as_mut().unwrap().rename.as_mut().unwrap().1 = "X".into();
+        h.click(ch_cell(h.ch_origin(), Some(1), 0));
+        assert_eq!(h.app.docs[0].osc.analog[0].id, "X");
+        assert_eq!(h.app.dlg.channels.as_ref().unwrap().rename.as_ref().map(|r| r.0), Some(ChanKey::Analog(1)));
     }
 
     /// DIALOG 463 has no OK: Enter only commits a rename, Esc closes the

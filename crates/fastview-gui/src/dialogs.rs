@@ -261,6 +261,9 @@ impl<'o> Dlg<'o> {
             close = resp.clicked();
             // The hover look is Windows' (red, white glyph) — not measured.
             let (bg, ink) = match (tool, resp.hovered()) {
+                // Inactive, the tool window's button greys (VM: «Отображение
+                // каналов» under 397).
+                (true, false) if inactive => (Some(Color32::from_gray(218)), Color32::WHITE),
                 (true, false) => (Some(Color32::from_rgb(199, 80, 80)), Color32::WHITE),
                 (true, true) => (Some(Color32::from_rgb(224, 67, 67)), Color32::WHITE),
                 (false, false) if inactive => (None, Color32::from_gray(155)),
