@@ -293,6 +293,12 @@ impl Doc {
         self.set.keys = keys;
     }
 
+    /// File channel `i`'s name as read, in the record's code page (as
+    /// `Doc::set_codepage` decodes the names).
+    fn file_name(&self, i: usize) -> String {
+        comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.codepage).chars().map(comtrade::best_fit_1251).collect()
+    }
+
     /// A renamed file channel's original name (`+0x64`, decoded,
     /// `0x4292e0`) — `None` while the name is the file's.
     pub fn original_name(&self, k: ChanKey) -> Option<String> {
@@ -301,7 +307,7 @@ impl Doc {
             ChanKey::Digital(d) => (self.osc.analog.len() + d, &self.osc.digital.get(d)?.id),
             ChanKey::Computed(_) => return None,
         };
-        let file = comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.codepage);
+        let file = self.file_name(i);
         (file != *id).then_some(file)
     }
 
@@ -360,7 +366,7 @@ impl Doc {
 
     /// `AliasName`: the displayed name when it differs from the file's.
     fn alias(&self, i: usize, id: &str) -> String {
-        let file = comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.codepage);
+        let file = self.file_name(i);
         if id == file {
             String::new()
         } else {
@@ -1010,6 +1016,15 @@ impl App {
     /// The window's close button: one question per modified document
     /// (`SaveAllModified`); «Отмена» keeps the program open.
     pub fn handle_exit_request(&mut self, ctx: &egui::Context) {
+        // The restored rect, kept while the frame is maximised.
+        if let Some(r) = ctx.input(|i| {
+            let v = i.viewport();
+            let restored = !v.maximized.unwrap_or(false) && !v.minimized.unwrap_or(false);
+            let inner = v.inner_rect.filter(|_| restored)?;
+            Some(egui::Rect::from_min_size(v.outer_rect.map_or(inner.min, |o| o.min), inner.size()))
+        }) {
+            self.frame_normal = Some(r);
+        }
         if !ctx.input(|i| i.viewport().close_requested()) {
             return;
         }

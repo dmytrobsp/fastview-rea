@@ -741,6 +741,9 @@ pub struct Doc {
     /// The code page the record's names are currently decoded in (`doc+0x6e8`,
     /// 866 / 1251: file parameters «Кодировка»; see `recdlg`).
     pub codepage: Encoding,
+    /// The station, recorder and channel names' bytes as read, each with
+    /// the text last decoded from them (see `Doc::set_codepage`).
+    pub name_raw: Vec<(Vec<u8>, String)>,
     /// The record comment (`.hdr` text, 32805) and its code page.
     pub hdr: Option<String>,
     pub hdr_cp: Encoding,
@@ -817,6 +820,7 @@ impl Doc {
             digital_visible,
             dig_flags: Vec::new(),
             codepage: Encoding::Cp1251,
+            name_raw: Vec::new(),
             hdr: None,
             hdr_cp: Encoding::Cp1251,
             omp: Default::default(),
@@ -1533,6 +1537,10 @@ pub struct App {
     /// A dialog window was up last frame: the original's dialogs are all
     /// modal, so the main window takes no pointer or key input.
     pub modal_up: bool,
+    /// The frame's last restored (not maximised) rect this session, saved
+    /// as the normal placement when the frame closes maximised (GDI's
+    /// `rcNormalPosition`).
+    pub frame_normal: Option<egui::Rect>,
     /// An `Event::Paste` came since Ctrl+V was last let go.
     pub paste_announced: bool,
     /// The window has no system decorations and draws its own caption row
@@ -1696,6 +1704,7 @@ impl App {
             lane_menu_eat: false,
             color_dialog: None,
             modal_up: false,
+            frame_normal: None,
             paste_announced: false,
             own_caption: false,
             splash_until: None,
@@ -2210,10 +2219,12 @@ impl App {
         let ids: Vec<&str> = [(self.status_hidden[..6].iter().any(|&h| h), "32838"), (self.status_hidden[6], "32839")].into_iter().filter(|x| x.0).map(|x| x.1).collect();
         v.insert("Workspace/StatusBar/Hidden".into(), ids.join(" "));
         if let Some((r, max)) = placement {
-            let normal = v.get("Workspace/WindowPlacement").and_then(|s| s.rsplit_once(' ')).map(|(r, _)| r.to_string());
-            let rect = match normal {
-                Some(n) if max => n,
-                _ => format!("{} {} {} {}", r.left(), r.top(), r.right(), r.bottom()),
+            let fmt = |r: egui::Rect| format!("{} {} {} {}", r.left(), r.top(), r.right(), r.bottom());
+            let saved = v.get("Workspace/WindowPlacement").and_then(|s| s.rsplit_once(' ')).map(|(r, _)| r.to_string());
+            let rect = match (self.frame_normal, saved) {
+                (Some(n), _) if max => fmt(n),
+                (None, Some(n)) if max => n,
+                _ => fmt(r),
             };
             v.insert("Workspace/WindowPlacement".into(), format!("{rect} {}", u8::from(max)));
         }

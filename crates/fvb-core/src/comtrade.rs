@@ -1104,6 +1104,26 @@ pub fn recode(text: &str, from: Encoding, to: Encoding) -> String {
     decode_text_enc(&encode_text(text, from), to)
 }
 
+/// A character as the original's ANSI strings keep it (Windows-1251, the
+/// system code page it runs under): IBM866's pseudo-graphics, which 1251
+/// lacks, take Windows' best fit (VM: `WideCharToMultiByte` on each 866
+/// byte); everything else is kept.
+pub fn best_fit_1251(c: char) -> char {
+    match c as u32 {
+        0x2500 | 0x2518 | 0x250C | 0x2552 | 0x255B..=0x255D | 0x2580 | 0x2584 | 0x2588 | 0x2591..=0x2593 => '-',
+        0x2502 | 0x2551 | 0x255E..=0x2563 | 0x2567..=0x2569 | 0x258C | 0x2590 | 0x25A0 => '¦',
+        0x251C | 0x2524 | 0x2534 | 0x253C | 0x256A..=0x256C => '+',
+        0x252C | 0x2564..=0x2566 => 'T',
+        0x2514 | 0x2558 | 0x2559 | 0x255A => 'L',
+        0x2510 | 0x2555..=0x2557 => '¬',
+        0x2553 | 0x2554 => 'г',
+        0x2550 => '=',
+        0x2219 => '•',
+        0x221A => 'v',
+        _ => c,
+    }
+}
+
 /// The record code page guessed from the raw channel-name bytes
 /// (`0x459e60`, run by the settings loader `0x44f5b0` at every open): count
 /// the bytes that are Cyrillic letters read as Windows-1251 (0xC0..0xFF) and

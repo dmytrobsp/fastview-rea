@@ -9045,6 +9045,32 @@ area less 14 / 28 px (`default_frame_size`) and lets Windows place it.
 VM: the frame 1906 wide; maximised, the record spans the same width in
 both. Left: Windows' cascade position itself (system state).
 
+### L9.350 — VM: 392's «Кодировка» re-decodes from the bytes as read, into 1251 with Windows' best fit; the frame's normal rect kept while maximised  ·  ✅
+Run (WIN_1999, a 1251 record): «866 MS-DOS» picked in DIALOG 392. In the
+original, «Отображение каналов» then lists «IA +T+¦L 3», «UA I C+»: the
+1251 bytes read as 866 give pseudo-graphics (┴╦╬╩└), and these land in
+the program's 1251 strings by Windows' best fit (VM: the 866 → 1251
+mapping of every byte, taken with the system's own encoder — ┴ → «+»,
+╦ → «T», ╩ → «¦», └ → «L» …). Back to «Windows-1251» gives «IA БЛОКА 3»
+exactly, so the switch decodes the bytes as read, not the shown text.
+Ours kept the Unicode box characters and recoded the shown text (lossy
+once best-fitted), and showed the as-read name as a grey «(…)» suffix.
+Now `comtrade::best_fit_1251` (the 51 characters of 866 that 1251 lacks)
+and `Doc::name_raw` (the bytes, with the text last decoded from them; an
+edited name is re-read from its text); the as-read name goes through
+the same (`Doc::file_name`). VM: the list alike after 866 and after
+866 → 1251. Test `a_1251_name_read_as_866_takes_the_best_fit_and_comes_back`.
+Not followed: the original's lanes keep the old names until their next
+layout (a channel's visibility toggled, then every lane shows the new
+ones): a missing repaint; ours draws the current names at once.
+«abc» as the rate + Enter: «Enter an integer.» in the original on the
+VM's English UI, mfc120rus's «Введите целое число.» in ours (L9.330),
+the text selected after OK in both.
+Also: a frame closed maximised saved its maximised rect as the normal
+one when no normal rect was saved before (a first run); now the restored
+rect seen last is kept (`App::frame_normal`, GDI's `rcNormalPosition`):
+VM 312 312 2218 1328 after a first run maximised and closed.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

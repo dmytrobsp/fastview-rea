@@ -192,17 +192,29 @@ impl Doc {
     }
 
     /// «Кодировка» of DIALOG 392 (`0x4543e0`): re-decode the station, the
-    /// recorder and every channel name in the new code page.
+    /// recorder and every channel name in the new code page — from the
+    /// bytes as read, so 1251 → 866 → 1251 gives the names back (VM) —
+    /// into the original's ANSI strings (`comtrade::best_fit_1251`: «БЛОКА»
+    /// read as 866 shows «+T+¦L»). A name edited since is taken as its
+    /// text in the old code page.
     pub fn set_codepage(&mut self, cp: Encoding) {
         let from = self.codepage;
         if from == cp {
             return;
         }
-        let rc = |s: &mut String| *s = comtrade::recode(s, from, cp);
-        rc(&mut self.osc.station);
-        rc(&mut self.osc.device);
-        self.osc.analog.iter_mut().for_each(|c| rc(&mut c.id));
-        self.osc.digital.iter_mut().for_each(|c| rc(&mut c.id));
+        let mut raw = std::mem::take(&mut self.name_raw).into_iter();
+        let mut rc = |s: &mut String| {
+            let bytes = match raw.next() {
+                Some((b, seen)) if seen == *s => b,
+                _ => comtrade::encode_text(s, from),
+            };
+            *s = comtrade::decode_bytes(&bytes, cp).chars().map(comtrade::best_fit_1251).collect();
+            (bytes, s.clone())
+        };
+        let mut kept = vec![rc(&mut self.osc.station), rc(&mut self.osc.device)];
+        kept.extend(self.osc.analog.iter_mut().map(|c| rc(&mut c.id)));
+        kept.extend(self.osc.digital.iter_mut().map(|c| rc(&mut c.id)));
+        self.name_raw = kept;
         self.codepage = cp;
     }
 
@@ -852,6 +864,26 @@ mod tests {
         d.osc.analog[0].id = comtrade::decode_bytes(&raw, Encoding::Cp1251);
         d.set_codepage(Encoding::Cp866);
         assert_eq!(d.osc.analog[0].id, "Ток");
+    }
+
+    #[test]
+    fn a_1251_name_read_as_866_takes_the_best_fit_and_comes_back() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[0].id = "IA БЛОКА 3".into();
+        d.osc.analog[1].id = "UA I CШ".into();
+        d.init_set_keys();
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA +T+¦L 3", "UA I C+"));
+        assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)), None, "still the file's name");
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA БЛОКА 3", "UA I CШ"));
+        // A name renamed meanwhile is re-read from its own text.
+        d.set_codepage(Encoding::Cp866);
+        d.osc.analog[0].id = "Ток".into();
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.osc.analog[0].id, "’®Є");
     }
 
     #[test]
