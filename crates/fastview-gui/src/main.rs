@@ -1629,6 +1629,23 @@ mod window_tests {
         assert_eq!(g(&w).width(), r.width() + 100.0, "the strip drags the divider");
     }
 
+    /// VM: opening «Быстрый анализ» and leaving it with Esc does not mark
+    /// the record modified (no question at the close).
+    #[test]
+    fn the_quick_sheet_cancelled_leaves_the_record_unmodified() {
+        let mut w = Win::new();
+        w.app.docs.iter_mut().for_each(|d| d.set.modified = false);
+        let ai = w.app.active.unwrap();
+        w.idle(1);
+        w.app.dispatch(app::Command::QuickAnalysis);
+        w.idle(3);
+        assert!(w.app.quick_open);
+        w.key(egui::Key::Escape);
+        w.idle(2);
+        assert!(!w.app.quick_open);
+        assert!(!w.app.docs[ai].set.modified);
+    }
+
     /// A message box is modal: with the ОМП message up (VM, «Анализ» with
     /// nothing entered) Ctrl+C / Ctrl+V do nothing to the document.
     #[test]

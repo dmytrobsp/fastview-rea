@@ -501,6 +501,12 @@ impl Doc {
     pub fn settings_print(&self) -> String {
         let mut t = self.set.tree.clone();
         self.store_settings(&mut t, true);
+        // The quick-analysis pages save into the tree with no modified mark
+        // (L9.55; VM: the sheet opened and cancelled, no question at the
+        // close).
+        for k in crate::quick_ui::PAGE_KEYS {
+            t.sections.remove(k);
+        }
         t.to_xml()
     }
 }

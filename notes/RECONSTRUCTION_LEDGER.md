@@ -8499,6 +8499,17 @@ Also a frame after any click or key is now drawn again (`frame_ui`): a
 command dispatched after its button was drawn showed its old state until
 the next input (seen with «Анализ» after its run).
 
+### L9.316 — VM: the quick-analysis sheet opened and left marks nothing  ·  ✅
+Run (L9.55's open point): «Быстрый анализ» opened, a page looked at (or
+an arm picked), Esc; then the window closed. The original closes without
+a question; ours asked «Сохранить изменения…?». The cause: the sheet's
+pages get-or-create their `.set` categories as the original does, and our
+settings fingerprint (the stand-in for the original's explicit modified
+marks) saw the new sections. The quick-analysis page sections are now
+left out of the fingerprint (`settings_print`): they reach the `.set` on
+the next save as before, with no mark (L9.55: no SetModifiedFlag). Test
+`the_quick_sheet_cancelled_leaves_the_record_unmodified`.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
