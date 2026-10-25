@@ -681,6 +681,9 @@ impl App {
         // small menu arrow, framed only under the pointer: «Стиль» in the
         // tab ink, the help button's round blue «?» image.
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // The two buttons touch (VM: «Стиль» from x 2480, its arrow at
+            // 2521, the «?» image's centre at 2537).
+            ui.spacing_mut().item_spacing.x = 0.0;
             // Help split button (57667): the arrow opens {Помощь, О программе...}.
             let (hr, help) = ui.allocate_exact_size(egui::vec2(33.0, 22.0), egui::Sense::click());
             tab_row_hot(ui, &help, &p);
@@ -692,10 +695,10 @@ impl App {
             self.kt_rects.push((crate::keytips::Target::Help, help.rect, true));
             // «Стиль» (menu 200): the radio entry of the current look,
             // persisted as `ApplicationLook`.
-            let (sr, style) = ui.allocate_exact_size(egui::vec2(50.0, 22.0), egui::Sense::click());
+            let (sr, style) = ui.allocate_exact_size(egui::vec2(48.5, 22.0), egui::Sense::click());
             tab_row_hot(ui, &style, &p);
             ui.painter().text(egui::pos2(sr.left() + 2.0, sr.center().y), egui::Align2::LEFT_CENTER, "Стиль", egui::FontId::proportional(12.0), p.text);
-            menu_arrow(ui.painter(), egui::pos2(sr.left() + 41.0, sr.center().y - 1.0));
+            menu_arrow(ui.painter(), egui::pos2(sr.left() + 43.0, sr.center().y - 1.0));
             if style.clicked() {
                 self.open_top_menu(ui.ctx(), TopMenu::Style, style.rect);
             }
@@ -737,15 +740,16 @@ fn help_image(p: &egui::Painter, c: egui::Pos2) {
 }
 
 impl App {
-    /// Open a tab-row menu under its button, its right edge on the
-    /// button's (VM).
+    /// Open a tab-row menu under its button, the original's width (its
+    /// font's) ending 1.5 px past the button's right, a pixel up (VM:
+    /// «Стиль»'s at (2369, 52)); a ribbon button's menu, without pads.
     pub(crate) fn open_top_menu(&mut self, ctx: &egui::Context, kind: TopMenu, button: egui::Rect) {
         let width = match kind {
             TopMenu::Style => 160.0,
-            TopMenu::Help => 140.0,
+            TopMenu::Help => 123.5,
         };
-        let at = egui::pos2(button.right() - width, button.bottom());
-        self.top_menu = Some((kind, crate::popmenu::PopMenu::new(ctx.cumulative_pass_nr(), at)));
+        let at = egui::pos2(button.right() + 1.5 - width, button.bottom() - 1.0);
+        self.top_menu = Some((kind, crate::popmenu::PopMenu::new(ctx.cumulative_pass_nr(), at).unpadded()));
     }
 
     /// The open tab-row menu, as the original's popups.
@@ -767,19 +771,20 @@ impl App {
             TopMenu::Style => {
                 let mut e: Vec<Entry<Pick>> = Skin::ALL
                     .into_iter()
-                    .zip(["Windows 2000", "Office XP", "Windows XP", "Office 2003", "Visual Studio.NET 2005"])
+                    // MENU 202's texts with their mnemonics (VM: underlined).
+                    .zip(["Windows &2000", "Office &XP", "&Windows XP", "Office 200&3", "Visual Studio.NET 200&5"])
                     .map(|(s, name)| Entry::item(name, true, Mark::Radio(self.skin == s), Pick::Skin(s)))
                     .collect();
                 let sub = Skin::ALL[5..]
                     .iter()
                     .copied()
-                    .zip(["Голубой стиль", "Черный стиль", "Серебристый стиль", "Зеленовато-голубой стиль"])
+                    .zip(["&Голубой стиль", "Ч&ерный стиль", "&Серебристый стиль", "&Зеленовато-голубой стиль"])
                     .map(|(s, name)| Entry::item(name, true, Mark::Radio(self.skin == s), Pick::Skin(s)))
                     .collect();
-                e.push(Entry::sub("Office 2007", sub));
+                e.push(Entry::sub("Office 200&7", sub));
                 e
             }
-            TopMenu::Help => vec![Entry::item("Помощь", false, Mark::None, Pick::Nothing), Entry::Sep, Entry::item("О программе...", true, Mark::None, Pick::About)],
+            TopMenu::Help => vec![Entry::item("&Помощь", false, Mark::None, Pick::Nothing), Entry::Sep, Entry::item("&О программе...", true, Mark::None, Pick::About)],
         };
         let out = crate::popmenu::show(ctx, "fv_top_menu", &mut menu, &entries);
         match out.chosen {

@@ -72,11 +72,20 @@ pub struct PopMenu {
     pub hot: Option<usize>,
     pub sub_hot: Option<usize>,
     pub in_sub: bool,
+    /// A context menu's pixel pads above and below its rows; a ribbon
+    /// button's menu has none (VM: «Стиль»).
+    pub pad: bool,
 }
 
 impl PopMenu {
     pub fn new(serial: u64, pos: Pos2) -> Self {
-        PopMenu { serial, pos, sub: None, hot: None, sub_hot: None, in_sub: false }
+        PopMenu { serial, pos, sub: None, hot: None, sub_hot: None, in_sub: false, pad: true }
+    }
+
+    /// A ribbon button's menu: no pads.
+    pub fn unpadded(mut self) -> Self {
+        self.pad = false;
+        self
     }
 }
 
@@ -438,14 +447,17 @@ pub fn shown_seps<C>(entries: &[Entry<C>]) -> Vec<bool> {
 
 /// Lay out `entries`; returns the picked command and, for submenu rows, their
 /// index and rect (hovered or clicked → `open`).
-fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<usize>, sub_rect: &mut Option<Rect>, root: bool, hot: Option<usize>) -> Option<C> {
+fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<usize>, sub_rect: &mut Option<Rect>, root: bool, hot: Option<usize>, pad: bool) -> Option<C> {
     let mut chosen = None;
     let shown = shown_seps(entries);
     for (i, e) in entries.iter().enumerate() {
         match e {
             Entry::Sep => {
-                if shown[i] {
+                // A ribbon button's menu has the panel's 4 px separator.
+                if shown[i] && pad {
                     separator(ui);
+                } else if shown[i] {
+                    panel_separator(ui);
                 }
             }
             Entry::Item { label, enabled, check, cmd } => {
@@ -546,8 +558,15 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
     }
     let mut open = menu.sub;
     let mut sub_rect = None;
+    let pad = menu.pad;
     let frame_ui = |ui: &mut egui::Ui, f: &mut dyn FnMut(&mut egui::Ui)| {
-        mfc_frame(ui, |ui| f(ui));
+        mfc_frame_with(ui, true, pad, |ui| {
+            f(ui);
+            // Unpadded, the last row's 22 px bar still ends the menu.
+            if !pad {
+                ui.allocate_exact_size(Vec2::new(1.0, 0.0), egui::Sense::hover());
+            }
+        });
     };
     let root = egui::Area::new(area_id(base, menu.serial))
         .kind(egui::UiKind::Menu)
@@ -556,7 +575,7 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
         .constrain(true)
         .show(ctx, |ui| {
             frame_ui(ui, &mut |ui| {
-                if let Some(c) = items(ui, entries, &mut open, &mut sub_rect, true, menu.hot) {
+                if let Some(c) = items(ui, entries, &mut open, &mut sub_rect, true, menu.hot, pad) {
                     chosen = Some(c);
                 }
             })
@@ -580,7 +599,7 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
                 .show(ctx, |ui| {
                     frame_ui(ui, &mut |ui| {
                         let (mut none, mut r) = (None, None);
-                        if let Some(c) = items(ui, sub, &mut none, &mut r, false, if menu.in_sub { menu.sub_hot } else { None }) {
+                        if let Some(c) = items(ui, sub, &mut none, &mut r, false, if menu.in_sub { menu.sub_hot } else { None }, pad) {
                             chosen = Some(c);
                         }
                     })

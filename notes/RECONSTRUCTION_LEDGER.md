@@ -9222,6 +9222,23 @@ original's. Tests `a_right_click_on_the_property_grid_opens_its_panes_menu`,
 `a_mnemonic_is_split_out_and_picks_its_item` (the VM's English layout
 cannot type «с»).
 
+### L9.359 — VM: the tab row's «Стиль» and «?»: their places, their menus' mnemonics, corners and separators  ·  ✅
+Run (maximised): «Стиль» from x 2480 with its arrow at 2521, the «?»
+image centred at 2537 — the two buttons touch; ours had the item
+spacing between them, «Стиль» 7 px left. Its menu (MENU 202's texts:
+«Windows &2000», «Office &XP», «&Windows XP», «Office 200&3», «Visual
+Studio.NET 200&5», «Office 200&7» ▸ «&Голубой стиль» …) shows its
+mnemonics underlined and is a ribbon button's menu: no pads, the panel's
+4 px separator (the «?» menu: «&Помощь», ─, «&О программе...»), the
+original's 160 / 123 px width ending 1.5 px past its button and clamped
+to the screen, its top a pixel over the button's bottom. Now the labels
+carry the «&», `PopMenu::unpadded` (and its separators the panel's), the
+button 48.5 px with its arrow at + 43. VM: «Стиль»'s menu at (2369,
+52–187) in both; the «?» menu 52–103 in both. Left: our wider text
+clamps the «?» menu 5 px further left; its rule a pixel high; «Помощь»
+greyed in ours (no CHM shipped — the original's help file), enabled
+with its image in the original.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
