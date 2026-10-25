@@ -8708,6 +8708,14 @@ disabled in ours (no CHM shipped, as decided earlier); «О программе..
 alike. Also run: the differential «Каналы ▸ Создать» pair dialog —
 layout, lists and grid lines pixel-alike.
 
+Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
+down to the harness-unreachable items (non-A4 preview, splitter cursor,
+per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
+W4.3's remaining dialogs / context menus, W4.5's per-skin look, W2.2 /
+W2.5 residuals. Known small looks left: file dialogs unowned (no title
+icon, L9.328), «Показать все» / «Скрыть все» without images, egui's
+selection over a newline, «Помощь» disabled (no CHM).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
