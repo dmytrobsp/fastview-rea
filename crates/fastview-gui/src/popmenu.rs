@@ -422,10 +422,16 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
     let mut rects = vec![root.response.rect];
     if let (Some(i), Some(at)) = (open, sub_rect) {
         if let Some(Entry::Sub { entries: sub, .. }) = entries.get(i) {
-            let area = egui::Area::new(area_id(base, menu.serial).with(("sub", i)))
+            // CMFCPopupMenu: a submenu that would run past the bottom opens
+            // upward, its bottom at its item's (VM: the frequency pane's
+            // «Каналы» near the screen's foot). Its height is last frame's.
+            let sub_id = area_id(base, menu.serial).with(("sub", i));
+            let h = ctx.memory(|m| m.area_rect(sub_id)).map_or(0.0, |r| r.height());
+            let y = if at.top() - 3.0 + h > ctx.screen_rect().bottom() { at.bottom() + 3.0 - h } else { at.top() - 3.0 };
+            let area = egui::Area::new(sub_id)
                 .kind(egui::UiKind::Menu)
                 .order(egui::Order::Foreground)
-                .fixed_pos(Pos2::new(at.right(), at.top() - 3.0))
+                .fixed_pos(Pos2::new(at.right(), y))
                 .constrain(true)
                 .show(ctx, |ui| {
                     frame_ui(ui, &mut |ui| {

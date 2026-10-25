@@ -8589,6 +8589,18 @@ proposed folder and lowercase name as before. VM: «out.cff» typed under
 «*.cfg» — both write out.cfg / .dat / .set, byte-identical. Test
 `save_as_filters_and_extension` extended.
 
+### L9.323 — VM: the diagrams' menus; a submenu near the bottom opens upward  ·  ✅
+Run: the vector pane's menu (Каналы ▸, Отсчет углов ▸, Показывать
+значения, Только направление) and the differential plane's (Каналы ▸,
+the three checked items, Перезагрузить базы характеристик) alike in
+both. The frequency pane's «Каналы» submenu, opened near the screen's
+foot, goes upward in the original — its bottom at its item's
+(CMFCPopupMenu's placement); ours was pushed up by the window's edge
+only, its top near the item's. Now `popmenu::show` opens a submenu that
+would run past the bottom with its bottom at its item's (the height from
+the last frame). VM: placed alike. Small visual left: the original's
+«Показать все» / «Скрыть все» carry images.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
