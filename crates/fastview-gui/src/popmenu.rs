@@ -313,6 +313,10 @@ pub fn mark_item_icon(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enable
     // The check / image column: the label 31 px in from the menu's edge (VM).
     const COL: f32 = 29.0;
     let font = egui::TextStyle::Button.resolve(ui.style());
+    // «&» marks the mnemonic: shown underlined (CMFCPopupMenu draws it
+    // always, VM: the pane menu opened by the mouse).
+    let (label, ul) = split_mnemonic(label);
+    let label = label.as_str();
     let galley = ui.painter().layout_no_wrap(label.to_string(), font.clone(), Color32::PLACEHOLDER);
     let keys_w = keys.map_or(0.0, |k| ui.painter().layout_no_wrap(k.to_string(), font.clone(), Color32::PLACEHOLDER).size().x + 40.0);
     let size = Vec2::new(COL + galley.size().x + 10.0 + keys_w, 21.0);
@@ -338,7 +342,15 @@ pub fn mark_item_icon(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enable
     if let Some(paint) = icon {
         paint(ui.painter(), Rect::from_center_size(bx.center(), Vec2::splat(16.0)), if enabled { Color32::from_rgb(40, 60, 130) } else { MFC_GREY });
     }
-    ui.painter().galley(Pos2::new(rect.left() + COL, rect.center().y - galley.size().y / 2.0), galley, col);
+    let at = Pos2::new(rect.left() + COL, rect.center().y - galley.size().y / 2.0);
+    if let Some(i) = ul {
+        let w = |t: String| ui.painter().layout_no_wrap(t, font.clone(), col).size().x;
+        let x0 = at.x + w(label.chars().take(i).collect());
+        let x1 = x0 + w(label.chars().skip(i).take(1).collect());
+        let y = (at.y + galley.size().y - 2.0).round();
+        ui.painter().rect_filled(Rect::from_min_max(Pos2::new(x0.round(), y), Pos2::new(x1.round(), y + 1.0)), 0.0, col);
+    }
+    ui.painter().galley(at, galley, col);
     match keys {
         // A submenu's arrow: a solid triangle (VM).
         Some("▸") => {
@@ -351,6 +363,47 @@ pub fn mark_item_icon(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enable
         None => {}
     }
     resp
+}
+
+/// A label without its «&» and the place of the letter it marks («&&» is
+/// an ampersand).
+pub fn split_mnemonic(label: &str) -> (String, Option<usize>) {
+    let (mut out, mut ul, mut chars) = (String::new(), None, label.chars().peekable());
+    while let Some(c) = chars.next() {
+        if c == '&' {
+            match chars.next() {
+                Some('&') => out.push('&'),
+                Some(n) => {
+                    ul = ul.or(Some(out.chars().count()));
+                    out.push(n);
+                }
+                None => {}
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    (out, ul)
+}
+
+/// The entry of `entries` whose mnemonic is `typed` (case-insensitive),
+/// when exactly one has it.
+fn mnemonic_entry<C>(entries: &[Entry<C>], typed: &str) -> Option<usize> {
+    let key = typed.to_lowercase();
+    let hits: Vec<usize> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| {
+            let label = match e {
+                Entry::Item { label, .. } | Entry::Sub { label, .. } => label,
+                Entry::Sep => return false,
+            };
+            let (shown, ul) = split_mnemonic(label);
+            ul.and_then(|i| shown.chars().nth(i)).is_some_and(|c| c.to_lowercase().to_string() == key)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    (hits.len() == 1).then(|| hits[0])
 }
 
 /// The glyph of a mark (none when unchecked).
@@ -440,6 +493,25 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
         Some(Entry::Sub { entries, .. }) => Some(entries.as_slice()),
         _ => None,
     };
+    // A mnemonic's letter picks its item (or opens its submenu) when one
+    // item of the level has it (Win32's menu loop).
+    let typed: Option<String> = ctx.input(|i| i.events.iter().find_map(|e| if let egui::Event::Text(t) = e { Some(t.clone()) } else { None }));
+    if let Some(t) = typed {
+        if menu.in_sub {
+            if let Some(Entry::Item { cmd, enabled: true, .. }) = mnemonic_entry(sub_entries(menu.sub).unwrap_or(&[]), &t).and_then(|h| sub_entries(menu.sub).and_then(|s| s.get(h))) {
+                chosen = Some(cmd.clone());
+            }
+        } else if let Some(h) = mnemonic_entry(entries, &t) {
+            match &entries[h] {
+                Entry::Item { cmd, enabled: true, .. } => chosen = Some(cmd.clone()),
+                Entry::Sub { entries: sub, .. } => {
+                    (menu.hot, menu.sub, menu.in_sub) = (Some(h), Some(h), true);
+                    menu.sub_hot = step(sub, None, true);
+                }
+                _ => {}
+            }
+        }
+    }
     let mut esc_close = esc_key;
     if menu.in_sub {
         let sub = sub_entries(menu.sub).unwrap_or(&[]);
@@ -527,6 +599,15 @@ mod tests {
 
     /// `0x100e2fdd`–`0x100e3010`: no separator first, after another one,
     /// or last.
+    #[test]
+    fn a_mnemonic_is_split_out_and_picks_its_item() {
+        assert_eq!(split_mnemonic("&Скрыть"), ("Скрыть".into(), Some(0)));
+        assert_eq!(split_mnemonic("R && X"), ("R & X".into(), None));
+        assert_eq!(split_mnemonic("Плава&ющее"), ("Плавающее".into(), Some(5)));
+        let e = vec![Entry::item("&Плавающее", true, Mark::None, 1), Entry::Sep, Entry::item("&Скрыть", true, Mark::None, 2)];
+        assert_eq!((mnemonic_entry(&e, "с"), mnemonic_entry(&e, "С"), mnemonic_entry(&e, "x")), (Some(2), Some(2), None));
+    }
+
     #[test]
     fn separators_as_mfc_copies_them() {
         let i = |n: u8| Entry::item(n.to_string(), true, Mark::None, n);

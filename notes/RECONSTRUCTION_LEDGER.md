@@ -9204,6 +9204,24 @@ borders at the original's x and y; the customise glyph at 142–147
 (143–147). Left: the print list's three large items 2 px taller in all
 (ours' description font).
 
+### L9.358 — VM: a property grid's right-click opens its pane's menu; popup menus' mnemonics  ·  ✅
+Run (a right-click on the differential pane's «Тип блока» grid, on its
+row and below it): the original opens the pane's menu there — the grid
+(CMFCPropertyGridCtrl) leaves WM_CONTEXTMENU to its parent, the pane
+(`0x100ce72c`) — «&Floating / &Docking / &Tabbed Document / &Auto Hide /
+&Hide» with each mnemonic underlined, though opened by the mouse; a
+bare «h» then hides the pane. Ours opened nothing off the caption and
+showed no underlines. Now `char_ui` reports a right-click on its grid
+(the circle pane's too) and `pane_body` opens the pane menu at the
+point; popup labels take «&» (`popmenu::split_mnemonic`: drawn without
+it, the letter underlined, «&&» an ampersand), and a typed letter picks
+the one item of the level that has it, or opens its submenu
+(`mnemonic_entry`). The pane menu's labels are mfc120rus's 17039–17042
+/ 17088 with their «&». VM: the menu at the point, underlined as the
+original's. Tests `a_right_click_on_the_property_grid_opens_its_panes_menu`,
+`a_mnemonic_is_split_out_and_picks_its_item` (the VM's English layout
+cannot type «с»).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

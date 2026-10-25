@@ -1684,6 +1684,21 @@ mod window_tests {
         assert_eq!(w.app.docks[Unit::Frequency].place, Place::Docked, "Закрепленное");
     }
 
+    /// A property grid leaves the right-click to its pane: the pane's menu
+    /// opens there (VM: «Floating / Docking / …» over «Тип блока»).
+    #[test]
+    fn a_right_click_on_the_property_grid_opens_its_panes_menu() {
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.idle(2);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let at = Pos2::new(grid.left() + 40.0, grid.bottom() - 20.0);
+        w.press(egui::PointerButton::Secondary, at, at);
+        let (_, pane, _, menu) = w.app.pane_menu.expect("the pane menu opens");
+        assert_eq!(pane, app::Pane::Circle);
+        assert_eq!(menu.pos, at, "at the pointer");
+    }
+
     /// The document strip's ▾ opens the list under it at its left (an MFC
     /// popup, VM); an entry activates its document and closes the list.
     #[test]

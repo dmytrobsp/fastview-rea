@@ -120,11 +120,12 @@ impl App {
         let place = self.docks[unit].place;
         let ah = place == Place::AutoHide;
         let entries = vec![
-            Entry::item("Плавающее", !ah, Mark::Check(place == Place::Floating), Cmd::Float),
-            Entry::item("Закрепленное", !ah, Mark::Check(place == Place::Docked), Cmd::Dock),
-            Entry::item("В закладке", false, Mark::None, Cmd::Tab),
-            Entry::item("Автоматически скрывать", place != Place::Floating, Mark::Check(ah), Cmd::AutoHide),
-            Entry::item("Скрыть", !ah, Mark::None, Cmd::Hide),
+            // mfc120rus's texts, each with its mnemonic.
+            Entry::item("&Плавающее", !ah, Mark::Check(place == Place::Floating), Cmd::Float),
+            Entry::item("&Закрепленное", !ah, Mark::Check(place == Place::Docked), Cmd::Dock),
+            Entry::item("&В закладке", false, Mark::None, Cmd::Tab),
+            Entry::item("&Автоматически скрывать", place != Place::Floating, Mark::Check(ah), Cmd::AutoHide),
+            Entry::item("&Скрыть", !ah, Mark::None, Cmd::Hide),
         ];
         let out = crate::popmenu::show(ctx, "fv_pane_menu", &mut pm, &entries);
         self.pane_menu = (!out.close).then_some((unit, pane, next, pm));
@@ -338,16 +339,29 @@ impl App {
             pnt.px_vline(r.right() - 1.0, r.top()..=r.bottom() - 1.0, b);
             let inner = egui::Rect::from_min_max(r.min + egui::vec2(3.0, 3.0), r.max - egui::vec2(3.0, 1.0));
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(*ui.layout()));
-            self.pane_window(&mut child, p);
+            let menu = self.pane_window(&mut child, p);
             ui.advance_cursor_after_rect(r);
+            self.grid_pane_menu(ui.ctx(), v, p, menu);
             return;
         }
-        self.pane_window(ui, p);
+        let menu = self.pane_window(ui, p);
+        self.grid_pane_menu(ui.ctx(), v, p, menu);
+    }
+
+    /// A right-click on a property grid (`at`): its pane's menu there, as
+    /// on the caption (VM: «Floating / Docking / …» over «Тип блока»).
+    fn grid_pane_menu(&mut self, ctx: &egui::Context, v: DockView, p: Pane, at: Option<egui::Pos2>) {
+        if let Some(at) = at {
+            let next = self.tab_order.into_iter().find(|&q| q != p && v.mask[q as usize]);
+            self.pane_menu = Some((v.unit, p, next, crate::popmenu::PopMenu::new(ctx.cumulative_pass_nr(), at)));
+        }
     }
 
     /// The pane's window under its caption: the toolbar on the right and
     /// the diagram.
-    fn pane_window(&mut self, ui: &mut egui::Ui, p: Pane) {
+    /// Returns where its property grid was right-clicked.
+    fn pane_window(&mut self, ui: &mut egui::Ui, p: Pane) -> Option<egui::Pos2> {
+        let mut grid_menu = None;
         match p {
             Pane::Vector => {
                 self.pane_toolbar(ui, Window::Vector);
@@ -367,7 +381,7 @@ impl App {
                 // pane's is brought in.
                 self.switch_diagram(pane_dim(p));
                 self.pane_toolbar(ui, if p == Pane::Circle { Window::Circle } else { Window::Diff });
-                self.char_ui(ui, p);
+                grid_menu = self.char_ui(ui, p);
                 // The differential diagram has no drop target.
                 if p == Pane::Circle {
                     self.pane_drop(ui, Pane::Circle);
@@ -379,6 +393,7 @@ impl App {
                 self.pane_drop(ui, Pane::Frequency);
             }
         }
+        grid_menu
     }
 
     /// A tab dragged out of a group's strip: past the system drag distance
@@ -957,7 +972,9 @@ impl App {
     /// Circle / differential pane: the block and settings grid above the
     /// plot behind a splitter (200 px, 50 px .. height − 150), as the
     /// original's pane.
-    fn char_ui(&mut self, ui: &mut egui::Ui, pane: Pane) {
+    /// Returns where the property grid was right-clicked: the grid leaves
+    /// WM_CONTEXTMENU to its pane, which shows its own menu (VM).
+    fn char_ui(&mut self, ui: &mut egui::Ui, pane: Pane) -> Option<egui::Pos2> {
         let h = ui.available_height();
         // `Properties Height` of «Circle Diagram» / «Diff Diagram»
         // (default 200, clamped to [50, pane − 150], persisted on every
@@ -1016,6 +1033,7 @@ impl App {
             self.store.save();
         }
         self.pane_grid.push(grid.response.rect);
+        let grid_menu = (ui.rect_contains_pointer(grid.response.rect) && ui.input(|i| i.pointer.secondary_clicked())).then(|| ui.ctx().pointer_interact_pos()).flatten();
         let strip_col = self.skin.splitter();
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
             // The splitter (VM): a 1 px (100, 100, 100) line under the grid,
@@ -1040,6 +1058,7 @@ impl App {
             ui.painter().px_vline(border.right(), border.y_range(), egui::Stroke::new(1.0f32, egui::Color32::WHITE));
             window_border(ui, border, [false, true, true, true]);
         });
+        grid_menu
     }
 
     /// The block property grid (`BlockPropertyGrid`, an MFC property grid
