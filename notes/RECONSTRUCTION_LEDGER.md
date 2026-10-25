@@ -8682,6 +8682,19 @@ consumes the arrows, Enter and Esc it reads. VM: the dialog opens in both,
 its fields, groups, radios and buttons alike. Test
 `a_menu_enter_does_not_reach_the_dialog_it_opens` (fails without the fix).
 
+### L9.330 — VM: the frequency dialog's refusals; Tab selects an edit's text  ·  ✅
+Run («Настройки частотной диаграммы»): 0 periods + Enter → «Enter an
+integer between 1 and 550.» (MFC's AFX_IDP_PARSE_INT_RANGE; ours shows
+mfc120rus's «Введите целое число от 1 до 550.»), the field selected
+after OK — alike. Then «1», Tab, «0», Enter: the original's Tab selects
+«Число гармоник»'s text (the dialog manager's EM_SETSEL for an edit), so
+«0» replaces «10» and the refusal reads «1 … 10»; ours kept the caret
+and appended («100»). Now an edit reached with Tab selects all
+(`dialogs::tabbed_in`, in both edit helpers). VM: the same «0», the same
+message. Test `tab_into_an_edit_selects_its_text` (fails without the
+fix). Left: under the message box ours still draws the last focused edit
+with its selection, the original none.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

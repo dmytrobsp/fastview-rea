@@ -1678,6 +1678,20 @@ mod window_tests {
         assert_eq!(g(&w).width(), r.width() + 100.0, "the strip drags the divider");
     }
 
+    /// Tab into a dialog's edit selects its text, so typing replaces it
+    /// (VM: Tab into «Число гармоник», «0» → 0, not «100»).
+    #[test]
+    fn tab_into_an_edit_selects_its_text() {
+        let mut w = Win::new();
+        w.app.diag_cmd(diagram_ui::Window::Freq, diagram::DiagCmd::FreqSettings, Pos2::ZERO);
+        w.idle(3);
+        w.key(egui::Key::Tab);
+        w.idle(1);
+        w.run(vec![egui::Event::Text("0".into())]);
+        w.idle(1);
+        assert_eq!(w.app.diag.freq_dlg.as_ref().map(|d| d.harmonics.as_str()), Some("0"));
+    }
+
     /// A popup item chosen with Enter opens its dialog, which does not take
     /// that Enter as its own OK (VM: the frequency menu's «Настройки»).
     #[test]

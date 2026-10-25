@@ -381,6 +381,11 @@ pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
     resp.clicked()
 }
 
+/// The edit took the focus from the keyboard (Tab / Shift+Tab) this pass.
+fn tabbed_in(ui: &egui::Ui, r: &egui::Response) -> bool {
+    r.gained_focus() && ui.input(|i| i.key_pressed(egui::Key::Tab))
+}
+
 /// An edit's selected text in the highlight's ink, white (Win32's
 /// COLOR_HIGHLIGHTTEXT; egui fills only the selection's background).
 fn selected_white(p: &egui::Painter, out: &egui::text_edit::TextEditOutput) {
@@ -410,7 +415,10 @@ pub fn win_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, foc
     child.visuals_mut().selection.stroke = Stroke::new(1.0f32, Color32::WHITE);
     let mut out = egui::TextEdit::singleline(text).id(id).frame(false).font(DLG_FONT).margin(egui::Margin::symmetric(1.0, 1.0)).desired_width(inner.width() - 2.0).show(&mut child);
     selected_white(child.painter(), &out);
-    if focus {
+    // Focused by the dialog, or reached with Tab (the dialog manager's
+    // EM_SETSEL for DLGC_HASSETSEL; VM: Tab into «Число гармоник» then a
+    // digit replaces its text): the text selected.
+    if focus || tabbed_in(ui, &out.response) {
         out.response.request_focus();
         let n = text.chars().count();
         out.state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(n))));
@@ -461,7 +469,7 @@ pub fn win_edit_multiline(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut S
             selected_white(ui.painter(), &out);
             // Focused as the dialog's first tab stop, its text selected
             // (VM: the comment reopened shows all of it selected).
-            if focus {
+            if focus || tabbed_in(ui, &out.response) {
                 out.response.request_focus();
                 let n = text.chars().count();
                 out.state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(n))));
