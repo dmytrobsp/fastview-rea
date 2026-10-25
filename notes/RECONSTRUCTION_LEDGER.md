@@ -9109,6 +9109,25 @@ Tests `a_message_box_takes_arrows_and_its_mnemonics`,
 `a_message_box_gives_the_dialogs_focus_back` (fails without the
 hand-over).
 
+### L9.353 — VM: the arrows along a dialog's groups (radios checked as reached; OK ↔ Отмена)  ·  ✅
+Run (DIALOG 353): «Абсолютные величины» clicked, then ↓ ↓ ↑ — the
+original moves the focus round the frame's two radios, checking each it
+reaches (the «Нормализация» pair greying and back); Tab to «По основной
+гармонике», ↓ checks «По среднеквадратичному значению»; Tab to OK, → →
+steps OK → Отмена → OK. Ours ignored every arrow off an edit or a combo.
+The templates' WS_GROUP spans (all 60 read): each radio set in its own
+frame, OK / Отмена together, a few spans mixing kinds (a combo heading
+537's / 543's radios, 554's OK … Удалить, 347's buttons with its checks).
+Now the dialog manager keeps a group list besides its tab stops
+(`GroupKind`, `group_item`, `group_step`): push buttons, radios and
+checks pass the focus round a run of their own kind, a group box (or
+another kind) starting the next; a radio reached is clicked; edits,
+combos, lists and trees keep their arrows. The message box's buttons
+use the same (L9.352's own stepping folded in). Left: the mixed spans
+(e.g. ↑ from 537's first radio reaches the combo in the original, the
+last radio in ours). VM: all eight steps alike. Tests
+`an_arrow_steps_round_its_group`, `an_arrow_checks_the_next_radio_of_its_frame`.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

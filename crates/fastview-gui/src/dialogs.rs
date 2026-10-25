@@ -205,10 +205,13 @@ impl<'o> Dlg<'o> {
                 let mut stops = std::mem::take(&mut r.stops);
                 stops.sort_by_key(|s| s.2);
                 r.prev = stops.into_iter().map(|s| (s.0, s.1)).collect();
+                r.prev_items = std::mem::take(&mut r.items);
+                r.brk = false;
                 r.pass = frame;
             }
             r.prev.clone()
         });
+        let items = ctx.data(|d| d.get_temp::<Ring>(ring_key)).map(|r| r.prev_items).unwrap_or_default();
         let cues_key = id.with("fv_cues");
         let mut cues = if fresh { ctx.data(|d| d.get_temp::<bool>(egui::Id::new("fv_last_input_key"))).unwrap_or(false) } else { ctx.data(|d| d.get_temp::<bool>(cues_key)).unwrap_or(false) };
         let was_msg = ctx.data(|d| d.get_temp::<bool>(id.with("fv_is_msg"))).unwrap_or(false);
@@ -250,6 +253,19 @@ impl<'o> Dlg<'o> {
                 ctx.memory_mut(|m| m.request_focus(next));
                 ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_tabbed_to"), (next, frame)));
                 cues = true;
+            }
+            // The arrows along the focused control's group.
+            let on = ctx.memory(|m| m.focused()).and_then(|f| items.iter().position(|s| s.0 == f && s.1 != GroupKind::Other));
+            if let Some(mut at) = on {
+                for key in take_arrows(ctx) {
+                    at = group_step(&items, at, matches!(key, egui::Key::ArrowLeft | egui::Key::ArrowUp));
+                    let (to, kind, _) = items[at];
+                    ctx.memory_mut(|m| m.request_focus(to));
+                    if kind == GroupKind::Radio {
+                        ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_arrow_click"), (to, frame)));
+                    }
+                    cues = true;
+                }
             }
             // Enter on a focused push button presses that button, not the
             // default one: egui's keyboard click (Space), unseen by the
@@ -396,6 +412,9 @@ pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enab
     // default button loses meanwhile (the dialog manager's DM_SETDEFID;
     // VM: «Печать»'s OK plain while «Свойства...» has the focus); its focus
     // rectangle with the cues.
+    if enabled {
+        group_item(ui, resp.id, GroupKind::Push);
+    }
     let focused = tab_stop_if(ui, resp.id, StopKind::Button, enabled);
     let default = (default && !other_button_focused(ui, resp.id)) || focused;
     let face = r.shrink(1.0);
@@ -457,6 +476,7 @@ pub fn win_label(ui: &egui::Ui, r: Rect, text: &str, right: bool, enabled: bool)
 /// A disabled one looks the same (VM, Windows 11's theme: DIALOG 353's
 /// «Нормализация» 1061 after a click on «Абсолютные величины»).
 pub fn win_group(ui: &egui::Ui, r: Rect, title: &str) {
+    group_break(ui);
     let p = ui.painter();
     let line = Stroke::new(1.0f32, Color32::from_gray(220));
     let (x0, x1, y0, y1) = (r.left() + 0.5, r.right() - 0.5, r.top() + 6.5, r.bottom() - 1.5);
@@ -489,6 +509,9 @@ pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
     // the focus as it gets checked.
     let pressed = ui.input(|i| i.pointer.primary_pressed()) && resp.contains_pointer();
     let held = ui.memory(|m| m.has_focus(resp.id));
+    if enabled {
+        group_item(ui, resp.id, GroupKind::Radio);
+    }
     let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled && (checked || pressed || held));
     let c = Pos2::new(r.left() + 6.5, r.top() + (r.height() / 2.0).floor());
     let p = ui.painter();
@@ -511,7 +534,13 @@ pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
     if focused && cues(ui) {
         focus_rect(p, t.expand2(Vec2::new(1.0, 1.0)));
     }
-    keyboard_free_click(ui, &resp)
+    // Reached by an arrow: clicked (BM_CLICK).
+    let pass = ui.ctx().cumulative_pass_nr();
+    let arrowed = ui.ctx().data(|d| d.get_temp::<(egui::Id, u64)>(egui::Id::new("fv_arrow_click"))).is_some_and(|(to, p)| to == resp.id && p + 1 >= pass);
+    if arrowed {
+        ui.ctx().data_mut(|d| d.remove::<(egui::Id, u64)>(egui::Id::new("fv_arrow_click")));
+    }
+    keyboard_free_click(ui, &resp) || (enabled && arrowed)
 }
 
 /// A click by the pointer, or Space with the focus — not Enter, which the
@@ -725,6 +754,9 @@ pub fn win_check(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool 
 /// right-aligned before it.
 pub fn win_check_ex(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabled: bool, left: bool) -> bool {
     let resp = ui.interact(r, ui.id().with(("fv_check", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    if enabled {
+        group_item(ui, resp.id, GroupKind::Check);
+    }
     let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled);
     let bx = if left { r.right() - 13.0 } else { r.left() };
     let b = Rect::from_min_size(Pos2::new(bx, r.top() + ((r.height() - 13.0) / 2.0).floor()), Vec2::splat(13.0));
@@ -845,6 +877,58 @@ struct Ring {
     /// This pass's stops with their place in the order.
     stops: Vec<(egui::Id, StopKind, u32)>,
     prev: Vec<(egui::Id, StopKind)>,
+    /// This pass's controls for the arrows' groups (whether each starts
+    /// one), a group box drawn since the last, and last pass's.
+    items: Vec<(egui::Id, GroupKind, bool)>,
+    brk: bool,
+    prev_items: Vec<(egui::Id, GroupKind, bool)>,
+}
+
+/// A control as the arrows see it (the dialog manager's
+/// GetNextDlgGroupItem): from a push button, a radio or a check box they
+/// pass the focus along its group, round from end to start, and an auto
+/// radio reached is clicked; other controls keep the arrows. A group
+/// (WS_GROUP in the templates) is approximated as a run of controls of
+/// one of the first three kinds with no group box drawn between: the
+/// templates' radio sets each in their frame and their OK / Отмена pairs.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum GroupKind {
+    Push,
+    Radio,
+    Check,
+    Other,
+}
+
+/// Register `id` as the next control of the dialog being drawn for the
+/// arrows' groups (an enabled one: the dialog manager skips the others).
+fn group_item(ui: &egui::Ui, id: egui::Id, kind: GroupKind) {
+    let ctx = ui.ctx();
+    let Some(d) = cur_dlg(ctx) else { return };
+    ctx.data_mut(|m| {
+        let r: &mut Ring = m.get_temp_mut_or_default(d.with("fv_tab_ring"));
+        if r.items.iter().any(|s| s.0 == id) {
+            return;
+        }
+        let start = r.brk || kind == GroupKind::Other || r.items.last().is_none_or(|l| l.1 != kind);
+        r.items.push((id, kind, start));
+        r.brk = false;
+    });
+}
+
+/// A group box drawn: the next control starts a group.
+fn group_break(ui: &egui::Ui) {
+    let ctx = ui.ctx();
+    if let Some(d) = cur_dlg(ctx) {
+        ctx.data_mut(|m| m.get_temp_mut_or_default::<Ring>(d.with("fv_tab_ring")).brk = true);
+    }
+}
+
+/// The item an arrow (`back`: ← / ↑) passes the focus to from `at`.
+fn group_step(items: &[(egui::Id, GroupKind, bool)], at: usize, back: bool) -> usize {
+    let s = (0..=at).rev().find(|&k| items[k].2).unwrap_or(0);
+    let e = (at + 1..items.len()).find(|&k| items[k].2).unwrap_or(items.len());
+    let n = e - s;
+    s + (at - s + if back { n - 1 } else { 1 }) % n
 }
 
 /// The stop holding the focus: the focused control when it is one of
@@ -862,6 +946,9 @@ fn cur_dlg(ctx: &egui::Context) -> Option<egui::Id> {
 /// Register `id` as the next tab stop of the dialog being drawn (in the
 /// template's order: the order drawn); whether it holds the focus.
 pub fn tab_stop(ui: &egui::Ui, id: egui::Id, kind: StopKind) -> bool {
+    // Push buttons, radios and checks registered themselves; the rest
+    // keep the arrows.
+    group_item(ui, id, GroupKind::Other);
     let ctx = ui.ctx();
     // A press on it gives it the focus (a Win32 control takes the focus at
     // its WM_LBUTTONDOWN; egui gives none but to its text edits).
@@ -1366,7 +1453,7 @@ pub enum MsgIcon {
 /// (75 × 23, 10 px down, 10 px apart, the last 15 px from the right edge);
 /// the first is the default one, with the focus rectangle. As the dialog
 /// manager runs it (VM): ← / → (↑ / ↓) move the focus along the buttons,
-/// round from the last to the first; «Да» and «Нет» are user32's «&Да» /
+/// round from the last to the first (one group, `GroupKind`); «Да» and «Нет» are user32's «&Да» /
 /// «&Нет», their letter underlined with the cues, and that letter pressed
 /// presses the button. Returns the button pressed.
 pub fn message_box(ui: &mut egui::Ui, icon: MsgIcon, text: &str, buttons: &[&str]) -> Option<usize> {
@@ -1431,13 +1518,6 @@ pub fn message_box(ui: &mut egui::Ui, icon: MsgIcon, text: &str, buttons: &[&str
         let prev = ui.memory(|m| m.focused());
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_box_took"), prev));
         ui.memory_mut(|m| m.request_focus(ids[0]));
-    }
-    if let Some(at) = at {
-        for key in take_arrows(ui.ctx()) {
-            let back = matches!(key, egui::Key::ArrowLeft | egui::Key::ArrowUp);
-            let to = if back { (at + ids.len() - 1) % ids.len() } else { (at + 1) % ids.len() };
-            ui.memory_mut(|m| m.request_focus(ids[to]));
-        }
     }
     pressed
 }
@@ -1946,6 +2026,66 @@ mod tests {
         }
         assert!(!box_up.get(), "Enter pressed OK");
         assert_eq!(ctx.memory(|m| m.focused()), Some(b), "back on B");
+    }
+
+    /// The arrows' groups: a run of one kind from its start, round at its
+    /// end; another kind or a group box starts the next.
+    #[test]
+    fn an_arrow_steps_round_its_group() {
+        let id = |n: u32| egui::Id::new(("g", n));
+        let items = [(id(0), GroupKind::Other, true), (id(1), GroupKind::Radio, true), (id(2), GroupKind::Radio, false), (id(3), GroupKind::Radio, false), (id(4), GroupKind::Push, true), (id(5), GroupKind::Push, false)];
+        assert_eq!(group_step(&items, 1, false), 2);
+        assert_eq!(group_step(&items, 3, false), 1, "round to the first radio");
+        assert_eq!(group_step(&items, 1, true), 3, "back round to the last");
+        assert_eq!(group_step(&items, 5, false), 4);
+    }
+
+    /// ↓ on a focused radio focuses and clicks the next one of its frame
+    /// (VM: DIALOG 353's «Абсолютные величины» → «В процентах»), not the
+    /// next frame's.
+    #[test]
+    fn an_arrow_checks_the_next_radio_of_its_frame() {
+        let ctx = egui::Context::default();
+        let checked = std::cell::Cell::new([0usize, 0]);
+        let at = std::cell::RefCell::new(Vec::new());
+        let mut t = 0.0;
+        let mut pass = |events: Vec<egui::Event>| {
+            t += 0.05;
+            let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))), time: Some(t), events, ..Default::default() };
+            take_dialog_tabs(&ctx, &mut raw);
+            let _ = ctx.run(raw, |ctx| {
+                dlg(ctx, "t").show(ctx, |ui| {
+                    let (client, _) = ui.allocate_exact_size(Vec2::new(300.0, 200.0), egui::Sense::hover());
+                    let r = |y: f32| Rect::from_min_size(client.min + Vec2::new(10.0, y), Vec2::new(150.0, 18.0));
+                    *at.borrow_mut() = vec![r(20.0)];
+                    for (g, top) in [(0usize, 0.0f32), (1, 100.0)] {
+                        win_group(ui, Rect::from_min_size(client.min + Vec2::new(0.0, top), Vec2::new(200.0, 90.0)), "G");
+                        for k in 0..2 {
+                            if win_radio_en(ui, r(top + 20.0 + 25.0 * k as f32), &format!("{g}{k}"), checked.get()[g] == k, true) {
+                                let mut c = checked.get();
+                                c[g] = k;
+                                checked.set(c);
+                            }
+                        }
+                    }
+                });
+            });
+        };
+        for _ in 0..3 {
+            pass(vec![]);
+        }
+        let a = at.borrow()[0].center();
+        let button = |pressed| egui::Event::PointerButton { pos: a, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        pass(vec![egui::Event::PointerMoved(a), button(true)]);
+        pass(vec![button(false)]);
+        pass(vec![]);
+        let key = |key| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }];
+        pass(key(egui::Key::ArrowDown));
+        pass(vec![]);
+        assert_eq!(checked.get(), [1, 0], "the frame's second, the other frame untouched");
+        pass(key(egui::Key::ArrowDown));
+        pass(vec![]);
+        assert_eq!(checked.get(), [0, 0], "round to the first");
     }
 
     /// A press on an unchecked radio gives it the focus, which it keeps as
