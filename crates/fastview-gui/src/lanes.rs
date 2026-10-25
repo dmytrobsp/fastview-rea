@@ -395,7 +395,7 @@ impl OscView<'_> {
         pp.add(Shape::line(pts.clone(), Stroke::new(1.0f32, color)));
         if self.f > 0.16 {
             for q in &pts {
-                sample_mark(&pp, *q, color);
+                sample_mark(pp, *q, color);
             }
         }
     }
