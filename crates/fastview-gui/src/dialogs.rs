@@ -381,6 +381,19 @@ pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
     resp.clicked()
 }
 
+/// A message box is up over the dialog (this pass or the last): the
+/// dialog is inactive, its edit shows neither selection nor caret (no
+/// ES_NOHIDESEL; VM: a refused value's message).
+fn under_message(ctx: &egui::Context) -> bool {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<u64>(egui::Id::new("fv_msgbox_pass"))).is_some_and(|p| p + 1 >= pass)
+}
+
+fn hide_focus(v: &mut egui::Visuals) {
+    v.selection.bg_fill = Color32::TRANSPARENT;
+    v.text_cursor.stroke = Stroke::NONE;
+}
+
 /// The edit took the focus from the keyboard (Tab / Shift+Tab) this pass.
 fn tabbed_in(ui: &egui::Ui, r: &egui::Response) -> bool {
     r.gained_focus() && ui.input(|i| i.key_pressed(egui::Key::Tab))
@@ -413,8 +426,14 @@ pub fn win_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, foc
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
     child.visuals_mut().selection.bg_fill = Color32::from_rgb(0, 120, 212);
     child.visuals_mut().selection.stroke = Stroke::new(1.0f32, Color32::WHITE);
+    let inactive = under_message(ui.ctx());
+    if inactive {
+        hide_focus(child.visuals_mut());
+    }
     let mut out = egui::TextEdit::singleline(text).id(id).frame(false).font(DLG_FONT).margin(egui::Margin::symmetric(1.0, 1.0)).desired_width(inner.width() - 2.0).show(&mut child);
-    selected_white(child.painter(), &out);
+    if !inactive {
+        selected_white(child.painter(), &out);
+    }
     // Focused by the dialog, or reached with Tab (the dialog manager's
     // EM_SETSEL for DLGC_HASSETSEL; VM: Tab into «Число гармоник» then a
     // digit replaces its text): the text selected.
@@ -424,7 +443,7 @@ pub fn win_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, foc
         out.state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(n))));
         out.state.store(ui.ctx(), out.response.id);
     }
-    let focused = out.response.has_focus() || focus;
+    let focused = (out.response.has_focus() || focus) && !inactive;
     let line = |y: f32, h: f32, c: Color32| egui::Shape::rect_filled(Rect::from_min_max(Pos2::new(r.left(), y), Pos2::new(r.right(), y + h)), 0.0, c);
     painter.set(
         frame,
@@ -465,8 +484,14 @@ pub fn win_edit_multiline(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut S
         .show(&mut child, |ui| {
             ui.visuals_mut().selection.bg_fill = Color32::from_rgb(0, 120, 212);
             ui.visuals_mut().selection.stroke = Stroke::new(1.0f32, Color32::WHITE);
+            let inactive = under_message(ui.ctx());
+            if inactive {
+                hide_focus(ui.visuals_mut());
+            }
             let mut out = egui::TextEdit::multiline(text).id(id).frame(false).font(DLG_FONT).margin(egui::Margin::ZERO).desired_width(inner.width() - 16.0).desired_rows(1).min_size(inner.size() - Vec2::new(16.0, 0.0)).show(ui);
-            selected_white(ui.painter(), &out);
+            if !inactive {
+                selected_white(ui.painter(), &out);
+            }
             // Focused as the dialog's first tab stop, its text selected
             // (VM: the comment reopened shows all of it selected).
             if focus || tabbed_in(ui, &out.response) {
@@ -478,7 +503,7 @@ pub fn win_edit_multiline(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut S
             out.response
         });
     let resp = out.inner;
-    let focused = resp.has_focus();
+    let focused = resp.has_focus() && !under_message(ui.ctx());
     painter.set(
         frame,
         egui::Shape::Vec(vec![
@@ -984,6 +1009,8 @@ pub enum MsgIcon {
 /// the first is the default one, with the focus rectangle. Returns the
 /// button pressed.
 pub fn message_box(ui: &mut egui::Ui, icon: MsgIcon, text: &str, buttons: &[&str]) -> Option<usize> {
+    let pass = ui.ctx().cumulative_pass_nr();
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_msgbox_pass"), pass));
     let font = egui::FontId::proportional(12.0);
     let g = ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::BLACK));
     let n = buttons.len() as f32;

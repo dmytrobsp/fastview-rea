@@ -8692,8 +8692,10 @@ after OK — alike. Then «1», Tab, «0», Enter: the original's Tab selects
 and appended («100»). Now an edit reached with Tab selects all
 (`dialogs::tabbed_in`, in both edit helpers). VM: the same «0», the same
 message. Test `tab_into_an_edit_selects_its_text` (fails without the
-fix). Left: under the message box ours still draws the last focused edit
-with its selection, the original none.
+fix). Under the message box the original's dialog is inactive: its edit
+shows no selection, caret or focus line (no ES_NOHIDESEL); ours kept
+them — now hidden while a message box is up (`under_message`, set by
+`message_box`). VM: the field alike under the message and after it.
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
