@@ -8551,7 +8551,7 @@ without the L9.313 workaround. VM: the reports identical. (The report's
 save dialog opens in the shell's last folder in both — different
 folders here, the system's choice.)
 
-### L9.320 — VM: Save As with a typed extension other than the filter's (residual)  ·  🟡
+### L9.320 — VM: Save As with a typed extension other than the filter's  ·  ✅ (fixed in L9.322)
 Run: Save As on WIN_1999 with «out.cff» typed and the first filter
 («*.cfg») left: the original writes out.cfg / .dat / .set; ours refuses
 with «В формате .cff можно сохранять только осциллограммы стандарта
@@ -8577,6 +8577,17 @@ identical (the plot's known 1 px offset aside, L9.288).
 Also run: «Настройки» and «Каналы» open and close alike with Esc, and
 Enter closes «Настройки» in both; their contents alike (our text a little
 heavier: the unhinted renderer).
+
+### L9.322 — Save As through comdlg32 on Windows: the chosen type's extension rule  ·  ✅
+L9.320's residual closed: on Windows Save As now opens comdlg32's
+GetSaveFileNameW (the system's own dialog, as MFC's CFileDialog shows
+it), which reports the chosen type (nFilterIndex), and `save_target`
+applies the rule as read — a listed extension other than the chosen
+type's is replaced, the chosen one kept, an unlisted name gets the chosen
+one appended (rfd elsewhere, which reports no type: the old rule). The
+proposed folder and lowercase name as before. VM: «out.cff» typed under
+«*.cfg» — both write out.cfg / .dat / .set, byte-identical. Test
+`save_as_filters_and_extension` extended.
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;

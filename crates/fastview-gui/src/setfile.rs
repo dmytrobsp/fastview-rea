@@ -157,18 +157,81 @@ pub fn save_filters(record: Option<&std::path::Path>) -> [(&'static str, &'stati
     }
 }
 
-/// The name after OK: an extension of the filter list is kept, any other
-/// name gets one appended ("x.txt" → "x.txt.cfg"). The original appends
-/// the chosen filter's; the file dialog here does not report the choice,
-/// so the first filter's is used.
-pub fn save_target(p: std::path::PathBuf, exts: &[&str]) -> std::path::PathBuf {
+/// The name after OK (`0x448208`–`0x448368`): lowered, tested against
+/// every extension of the filter list; one found that differs from the
+/// chosen filter's is cut (four characters) and the chosen one appended,
+/// none found the chosen one is appended ("x.txt" → "x.txt.cfg"), the
+/// chosen one is kept. `chosen` None (a dialog that does not report it):
+/// any listed extension kept, else the first filter's.
+pub fn save_target(p: std::path::PathBuf, exts: &[&str], chosen: Option<usize>) -> std::path::PathBuf {
     let s = p.to_string_lossy().to_lowercase();
-    if exts.iter().any(|e| s.ends_with(&format!(".{e}"))) {
-        return p;
+    let found = exts.iter().find(|e| s.ends_with(&format!(".{e}")));
+    let want = chosen.and_then(|i| exts.get(i)).copied();
+    match (found, want) {
+        (Some(_), None) => p,
+        (Some(f), Some(w)) if *f == w => p,
+        (Some(_), Some(w)) => {
+            let t = p.to_string_lossy();
+            let cut: String = t.chars().take(t.chars().count().saturating_sub(4)).collect();
+            std::path::PathBuf::from(format!("{cut}.{w}"))
+        }
+        (None, w) => {
+            let mut o = p.into_os_string();
+            o.push(format!(".{}", w.unwrap_or(exts[0])));
+            o.into()
+        }
     }
-    let mut o = p.into_os_string();
-    o.push(format!(".{}", exts[0]));
-    o.into()
+}
+
+/// The save dialog (MFC's CFileDialog): on Windows comdlg32's, which
+/// reports the chosen file type (OPENFILENAME's nFilterIndex); elsewhere
+/// rfd's, which does not.
+fn save_dialog(filters: &[(&str, &str)], dir: Option<String>, name: &str) -> Option<(std::path::PathBuf, Option<usize>)> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Controls::Dialogs::{GetSaveFileNameW, OFN_EXPLORER, OFN_HIDEREADONLY, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW};
+        let wide = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
+        let mut filter: Vec<u16> = Vec::new();
+        for (desc, ext) in filters {
+            filter.extend(wide(desc));
+            filter.push(0);
+            filter.extend(wide(&format!("*.{ext}")));
+            filter.push(0);
+        }
+        filter.push(0);
+        let mut file = vec![0u16; 1024];
+        let n = wide(name);
+        file[..n.len().min(1023)].copy_from_slice(&n[..n.len().min(1023)]);
+        let dir_w: Option<Vec<u16>> = dir.map(|d| wide(&d).into_iter().chain(Some(0)).collect());
+        // SAFETY: every pointer outlives the call; the file buffer's size is
+        // given.
+        unsafe {
+            let mut ofn: OPENFILENAMEW = std::mem::zeroed();
+            ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+            ofn.lpstrFilter = filter.as_ptr();
+            ofn.nFilterIndex = 1;
+            ofn.lpstrFile = file.as_mut_ptr();
+            ofn.nMaxFile = file.len() as u32;
+            ofn.lpstrInitialDir = dir_w.as_ref().map_or(std::ptr::null(), |d| d.as_ptr());
+            ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR;
+            if GetSaveFileNameW(&mut ofn) == 0 {
+                return None;
+            }
+            let len = file.iter().position(|&c| c == 0).unwrap_or(file.len());
+            Some((std::path::PathBuf::from(String::from_utf16_lossy(&file[..len])), Some(ofn.nFilterIndex.max(1) as usize - 1)))
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let mut dlg = rfd::FileDialog::new();
+        for (desc, ext) in filters {
+            dlg = dlg.add_filter(*desc, &[*ext]);
+        }
+        if let Some(d) = dir {
+            dlg = dlg.set_directory(d);
+        }
+        dlg.set_file_name(name).save_file().map(|p| (p, None))
+    }
 }
 
 impl Doc {
@@ -773,28 +836,18 @@ impl App {
         };
         let d = &self.docs[ai];
         let filters = save_filters(d.path.as_deref());
-        let mut dlg = rfd::FileDialog::new();
-        for (name, ext) in filters {
-            dlg = dlg.add_filter(name, &[ext]);
-        }
         // Proposed: the record's folder and its title without extension.
         // `0x447e30` lowers the name in place (three MakeLower calls) before
         // splitting it: folder and title come out lowercase — harmless on
         // Windows' case-blind names, so only there (elsewhere the lowered
         // folder may not exist).
-        // On Windows the folder in backslashes as well: the shell's parser
-        // (SHCreateItemFromParsingName) refuses a path with forward ones (a
-        // record opened from the command line) and the dialog falls back
-        // to the working folder (VM).
-        let lower = |s: String| if cfg!(windows) { s.to_lowercase().replace('/', "\\") } else { s };
+        let lower = |s: String| if cfg!(windows) { s.to_lowercase() } else { s };
         let stem = lower(d.path.as_ref().and_then(|p| p.file_stem()).map_or_else(|| d.name.clone(), |s| s.to_string_lossy().into_owned()));
-        if let Some(dir) = d.path.as_ref().and_then(|p| p.parent()).filter(|p| !p.as_os_str().is_empty()) {
-            dlg = dlg.set_directory(lower(dir.to_string_lossy().into_owned()));
-        }
-        let Some(path) = dlg.set_file_name(stem.clone()).save_file() else { return false };
-        let path = save_target(path, &filters.map(|f| f.1));
+        let dir = d.path.as_ref().and_then(|p| p.parent()).filter(|p| !p.as_os_str().is_empty()).map(|p| lower(p.to_string_lossy().into_owned()));
+        let Some((path, chosen)) = save_dialog(&filters, dir, &stem) else { return false };
+        let path = save_target(path, &filters.map(|f| f.1), chosen);
         // The proposed name taken as it is: the original keeps the text it
-        // proposed (lowercase), where the shell dialog hands back an
+        // proposed (lowercase), where a shell dialog may hand back an
         // existing file's own case — the files written anew (the `.set`)
         // come out lowercase (VM: «win_1999.set» beside «WIN_1999.cfg»).
         let path = match path.file_stem().map(|s| s.to_string_lossy().into_owned()) {
@@ -1189,9 +1242,16 @@ mod tests {
         assert_eq!(save_filters(Some(Path::new("/r/a.sto"))).map(|x| x.1), ["cfg", "cff"]);
         assert_eq!(save_filters(None).map(|x| x.1), ["cfg", "cff"]);
         let exts = ["cfg", "cff"];
-        assert_eq!(save_target(PathBuf::from("/r/x.CFF"), &exts), PathBuf::from("/r/x.CFF"));
-        assert_eq!(save_target(PathBuf::from("/r/x.txt"), &exts), PathBuf::from("/r/x.txt.cfg"));
-        assert_eq!(save_target(PathBuf::from("/r/x.osc"), &exts), PathBuf::from("/r/x.osc.cfg"));
+        assert_eq!(save_target(PathBuf::from("/r/x.CFF"), &exts, None), PathBuf::from("/r/x.CFF"));
+        assert_eq!(save_target(PathBuf::from("/r/x.txt"), &exts, None), PathBuf::from("/r/x.txt.cfg"));
+        assert_eq!(save_target(PathBuf::from("/r/x.osc"), &exts, None), PathBuf::from("/r/x.osc.cfg"));
+        // The chosen type (`0x448208`): a different listed extension is
+        // replaced (VM: «aout.cff» under «*.cfg» → aout.cfg), the chosen
+        // one kept, an unlisted one gets the chosen appended.
+        assert_eq!(save_target(PathBuf::from("/r/aout.cff"), &exts, Some(0)), PathBuf::from("/r/aout.cfg"));
+        assert_eq!(save_target(PathBuf::from("/r/x.CFG"), &exts, Some(1)), PathBuf::from("/r/x.cff"));
+        assert_eq!(save_target(PathBuf::from("/r/x.cff"), &exts, Some(1)), PathBuf::from("/r/x.cff"));
+        assert_eq!(save_target(PathBuf::from("/r/x"), &exts, Some(1)), PathBuf::from("/r/x.cff"));
     }
 
     /// `0x42ecf0` → `0x440800`: deleting a channel drops the levels / areas
