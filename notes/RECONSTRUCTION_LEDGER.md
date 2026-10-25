@@ -8999,6 +8999,21 @@ eleven steps alike in both.
 Left: the quick-analysis sheet's pages (their templates' orders are long
 and scattered; not yet compared), 463's single list.
 
+### L9.346 — VM: the quick-analysis pages' tab order (536, 538)  ·  ✅
+536 «Симметричные составляющие» on the VM: the page's first control (Ia)
+holds the initial focus, then Ib, Ic, «Рассчитать Ib по Ia и Iс *», the
+checked voltage radio, Ua, Ub, Uc (Uab / Ubc while line voltages), and
+the two «Отключить» last — the template's order. Ours drew the currents'
+«Отключить» first, so it took the initial focus, and the voltages' one
+before the radios. Both pages drawn by `symmetric_page` now give their
+controls the template's places (538: Ia–Ic, the check box, the radio,
+Ua–Uc, «Iтр», Uab, Ubc); a control shown disabled or unchecked still
+takes up its place (`tab_stop_if`). The sheet's «Рассчитать» / «Отмена»
+follow the page. VM: the nine steps alike.
+Left: 537, 539 and 543's orders (their templates list the controls out of
+their visual order; not yet numbered), the Outlook bar's place in the
+cycle.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

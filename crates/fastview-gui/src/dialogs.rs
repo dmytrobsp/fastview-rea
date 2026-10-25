@@ -389,7 +389,7 @@ pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enab
     // default button loses meanwhile (the dialog manager's DM_SETDEFID;
     // VM: «Печать»'s OK plain while «Свойства...» has the focus); its focus
     // rectangle with the cues.
-    let focused = enabled && tab_stop(ui, resp.id, StopKind::Button);
+    let focused = tab_stop_if(ui, resp.id, StopKind::Button, enabled);
     let default = (default && !other_button_focused(ui, resp.id)) || focused;
     let face = r.shrink(1.0);
     if !enabled {
@@ -482,7 +482,7 @@ pub fn win_radio(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool 
 pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabled: bool) -> bool {
     let resp = ui.interact(r, ui.id().with(("fv_radio", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     // A group's checked button is its tab stop (Tab enters a group there).
-    let focused = enabled && checked && tab_stop(ui, resp.id, StopKind::Other);
+    let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled && checked);
     let c = Pos2::new(r.left() + 6.5, r.top() + (r.height() / 2.0).floor());
     let p = ui.painter();
     match (checked, enabled) {
@@ -616,6 +616,7 @@ pub fn win_edit_en(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, 
         win_edit(ui, r, id, text, focus);
         return;
     }
+    tab_stop_if(ui, id, StopKind::Edit, false);
     let p = ui.painter();
     p.rect_filled(r, 0.0, Color32::from_gray(234));
     p.rect_filled(r.shrink(1.0), 0.0, Color32::from_gray(250));
@@ -717,7 +718,7 @@ pub fn win_check(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool 
 /// right-aligned before it.
 pub fn win_check_ex(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabled: bool, left: bool) -> bool {
     let resp = ui.interact(r, ui.id().with(("fv_check", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    let focused = enabled && tab_stop(ui, resp.id, StopKind::Other);
+    let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled);
     let bx = if left { r.right() - 13.0 } else { r.left() };
     let b = Rect::from_min_size(Pos2::new(bx, r.top() + ((r.height() - 13.0) / 2.0).floor()), Vec2::splat(13.0));
     let p = ui.painter();
@@ -881,6 +882,16 @@ pub fn tab_stop(ui: &egui::Ui, id: egui::Id, kind: StopKind) -> bool {
 /// in their drawing order after every numbered one.
 pub fn tab_index(ui: &egui::Ui, n: u32) {
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_tab_index"), Some(n)));
+}
+
+/// `tab_stop` for a control that is one only when `on` (enabled, or a
+/// checked radio); otherwise it takes up its `tab_index` all the same.
+pub fn tab_stop_if(ui: &egui::Ui, id: egui::Id, kind: StopKind, on: bool) -> bool {
+    if on {
+        return tab_stop(ui, id, kind);
+    }
+    ui.ctx().data_mut(|d| d.remove_temp::<Option<u32>>(egui::Id::new("fv_tab_index")));
+    false
 }
 
 /// Controls drawn in `add` are no tab stops (a template control without
@@ -1219,7 +1230,7 @@ pub fn win_combo_list(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[String]
 pub fn win_combo_list_in(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[String], current: usize, enabled: bool, font: egui::FontId) -> Option<usize> {
     let r = Rect::from_min_size(r.min, Vec2::new(r.width(), COMBO_H));
     let resp = ui.interact(r, id, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    let focused = enabled && tab_stop(ui, resp.id, StopKind::Other);
+    let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled);
     let open_id = id.with("open");
     let mut open = enabled && ui.data(|d| d.get_temp(open_id)).unwrap_or(false);
     // The pointer opens it; Enter goes to the default button and Space does

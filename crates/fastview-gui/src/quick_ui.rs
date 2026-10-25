@@ -638,56 +638,77 @@ fn symmetric_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[Strin
         for (k, (ly, cy)) in [(22, 18), (41, 39), (62, 60)].into_iter().enumerate() {
             pg.label(ui, (12, ly, 24, 8), ["Ia:", "Ib:", "Ic:"][k], true, true);
             let v = match k { 0 => &mut f.ia, 1 => &mut f.ib, _ => &mut f.ic };
+            // The template's tab order (538): Ia–Ic, the check box, the
+            // checked radio, Ua–Uc, «Iтр», Uab, Ubc.
+            crate::dialogs::tab_index(ui, k as u32);
             pg.combo(ui, (42, cy, 150, 54), ["q_ia", "q_ib", "q_ic"][k], v, names, k != 1 || !f.calc_ib);
         }
+        crate::dialogs::tab_index(ui, 3);
         pg.check(ui, (204, 42, 102, 10), "Рассчитать Ib по Ia и Iс *", &mut f.calc_ib, true, false);
         pg.label(ui, (12, 86, 24, 8), "Iтр, А:", true, true);
+        crate::dialogs::tab_index(ui, 8);
         pg.edit(ui, (42, 84, 150, 14), "q_itr", &mut f.itr, true);
         pg.label(ui, (204, 88, 102, 8), "- ток точной работы", false, true);
         pg.label(ui, (24, 108, 162, 8), "* - только в сетях с изолированной нейтралью", false, true);
         pg.group(ui, (6, 138, 307, 109), "Напряжения");
+        crate::dialogs::tab_index(ui, 4);
         if pg.radio(ui, (54, 150, 85, 10), "Фазные напряжения", !line, true) {
             f.line_voltages = false;
         }
+        crate::dialogs::tab_index(ui, 4);
         if pg.radio(ui, (198, 150, 93, 10), "Линейные напряжения", line, true) {
             f.line_voltages = true;
         }
         for (k, (ly, cy)) in [(170, 168), (190, 188), (210, 208)].into_iter().enumerate() {
             pg.label(ui, (12, ly, 18, 8), ["Ua:", "Ub:", "Uc:"][k], true, true);
             let v = match k { 0 => &mut f.ua, 1 => &mut f.ub, _ => &mut f.uc };
+            crate::dialogs::tab_index(ui, 5 + k as u32);
             pg.combo(ui, (36, cy, 120, 54), ["q_u0", "q_u1", "q_u2"][k], v, names, !line);
         }
         pg.label(ui, (165, 171, 22, 8), "Uab:", true, true);
+        crate::dialogs::tab_index(ui, 9);
         pg.combo(ui, (189, 168, 120, 54), "q_uab", &mut f.uab, names, line);
         pg.label(ui, (162, 190, 24, 8), "Ubc:", true, true);
+        crate::dialogs::tab_index(ui, 10);
         pg.combo(ui, (189, 188, 120, 54), "q_ubc", &mut f.ubc, names, line);
         return;
     }
+    // The template's tab order (536; VM): Ia–Ic, the check box, the
+    // checked radio, Ua–Uc, Uab, Ubc, then the two «Отключить».
     pg.group(ui, (6, 7, 306, 113), "Токи");
+    crate::dialogs::tab_index(ui, 11);
     pg.check(ui, (225, 11, 86, 10), "Отключить", &mut f.currents_off, !u_off, true);
     for (k, (ly, cy)) in [(34, 30), (54, 52), (74, 73)].into_iter().enumerate() {
         pg.label(ui, (12, ly, 24, 8), ["Ia:", "Ib:", "Ic:"][k], true, !i_off);
         let v = match k { 0 => &mut f.ia, 1 => &mut f.ib, _ => &mut f.ic };
+        crate::dialogs::tab_index(ui, k as u32);
         pg.combo(ui, (42, cy, 150, 54), ["q_ia", "q_ib", "q_ic"][k], v, names, !i_off && (k != 1 || !f.calc_ib));
     }
+    crate::dialogs::tab_index(ui, 3);
     pg.check(ui, (204, 54, 102, 10), "Рассчитать Ib по Ia и Iс *", &mut f.calc_ib, !i_off, false);
     pg.label(ui, (27, 102, 162, 8), "* - только в сетях с изолированной нейтралью", false, !i_off);
     pg.group(ui, (6, 126, 307, 108), "Напряжения");
+    crate::dialogs::tab_index(ui, 12);
     pg.check(ui, (200, 131, 112, 8), "Отключить", &mut f.voltages_off, !i_off, true);
+    crate::dialogs::tab_index(ui, 4);
     if pg.radio(ui, (47, 150, 85, 10), "Фазные напряжения", !line, !u_off) {
         f.line_voltages = false;
     }
+    crate::dialogs::tab_index(ui, 4);
     if pg.radio(ui, (191, 150, 93, 10), "Линейные напряжения", line, !u_off) {
         f.line_voltages = true;
     }
     for (k, (ly, cy)) in [(170, 169), (190, 187), (210, 209)].into_iter().enumerate() {
         pg.label(ui, (11, ly, 18, 8), ["Ua:", "Ub:", "Uc:"][k], true, !u_off);
         let v = match k { 0 => &mut f.ua, 1 => &mut f.ub, _ => &mut f.uc };
+        crate::dialogs::tab_index(ui, 5 + k as u32);
         pg.combo(ui, (35, cy, 114, 54), ["q_u0", "q_u1", "q_u2"][k], v, names, !u_off && !line);
     }
     pg.label(ui, (161, 171, 22, 8), "Uab:", true, !u_off);
+    crate::dialogs::tab_index(ui, 8);
     pg.combo(ui, (185, 169, 120, 54), "q_uab", &mut f.uab, names, !u_off && line);
     pg.label(ui, (158, 190, 24, 8), "Ubc:", true, !u_off);
+    crate::dialogs::tab_index(ui, 9);
     pg.combo(ui, (185, 187, 120, 54), "q_ubc", &mut f.ubc, names, !u_off && line);
 }
 
