@@ -8816,6 +8816,21 @@ IC marks IA … IC, «1000» typed and a click below the rows fills all three
   any press outside it commits (`CoefDlg::edit_rect`).
 Test `a_coefficient_edit_types_at_the_start_and_a_press_elsewhere_commits`.
 
+### L9.337 — VM: «Цвет канала» picked and applied; the selected cell's ring  ·  ✅
+Run (WIN_1999, the lane menu's «Цвет канала» on IA): MFC's colour dialog
+opens on IA's yellow («Current» / «Текущий») in both; a cell picked shows
+in «New» / «Новый», OK recolours the lane alike. The dialog's strings are
+English on the VM in the original and mfc120rus's in ours (L9.231). One
+look differed: the picked cell's ring — the original's is a 16 × 16 run
+of black and white steps along the cell's outline, ours a 2 px black line
+over the neighbours; now drawn from the VM's pixels (`SEL_RING`), pixel
+for pixel alike; the greys' larger cells keep a three-line outline.
+Left (L9.258): «Выбор...» stays disabled in ours (the original's picks a
+colour from the screen).
+Seen on the way: on the VM a right-click on a lane's name badge in ours
+sometimes opens no lane menu (v0.3.0 too, so not a regression; lower in
+the stats cell it always does; headless it does) — not yet explained.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

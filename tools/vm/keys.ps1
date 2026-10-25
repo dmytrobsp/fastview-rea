@@ -50,7 +50,7 @@ foreach ($k in ($Keys -split ';')) {
     if (-not $k) { Start-Sleep -Milliseconds 1500; continue }
     if ($k -match '^(R|D)?CLICK (\d+),(\d+)(?:,(\d+))?$') {
         $x = [int]$Matches[2]; $y = [int]$Matches[3]
-        switch ($Matches[1]) { 'R' { Click $x $y 0x8 0x10 } 'D' { Click $x $y 0x2 0x4 2 $(if ($Matches[4]) { [int]$Matches[4] } else { 60 }) } default { Click $x $y 0x2 0x4 } }
+        switch ($Matches[1]) { 'R' { Click $x $y 0x8 0x10 1 $(if ($Matches[4]) { [int]$Matches[4] } else { 60 }) } 'D' { Click $x $y 0x2 0x4 2 $(if ($Matches[4]) { [int]$Matches[4] } else { 60 }) } default { Click $x $y 0x2 0x4 } }
     } elseif ($k -match '^(DRAG|HOLD) (\d+),(\d+),(\d+),(\d+)$') {
         $x1 = [int]$Matches[2]; $y1 = [int]$Matches[3]; $x2 = [int]$Matches[4]; $y2 = [int]$Matches[5]
         [In]::SetCursorPos($x1, $y1) | Out-Null; Start-Sleep -Milliseconds 120

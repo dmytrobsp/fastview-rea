@@ -34,6 +34,27 @@ fn rgb(c: u32) -> Color32 {
     Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8)
 }
 
+/// The selected cell's ring (VM: the original's pixels, `#` black, `o`
+/// white).
+const SEL_RING: [&str; 16] = [
+    "......oooo......",
+    "....oo####oo....",
+    "..oo###oo###oo..",
+    "oo###o####o###oo",
+    "###o###..###o###",
+    "#o###......###o#",
+    "#o#..........#o#",
+    "#o#..........#o#",
+    "#o#..........#o#",
+    "#o#..........#o#",
+    "#o#o........o#o#",
+    "#o###o....o###o#",
+    "###o###oo###o###",
+    "..###o####o###..",
+    "....###oo###....",
+    "......####......",
+];
+
 /// A pointy-top hexagon over [l, r) × [t, b) with tips `tip` px deep.
 fn hexagon(l: f32, t: f32, r: f32, b: f32, tip: f32) -> Vec<Pos2> {
     let cx = (l + r) / 2.0;
@@ -107,7 +128,7 @@ impl App {
                         let col = rgb(HEX_COLORS[k]);
                         p.add(egui::Shape::convex_polygon(pts.clone(), col, Stroke::NONE));
                         if col == st.new {
-                            hot = Some(pts.clone());
+                            hot = Some((Rect::from_center_size(Pos2::new(client.left() + cx, client.top() + cy), Vec2::new(14.0, 16.0)), 4.0));
                         }
                         let cell = Rect::from_center_size(Pos2::new(client.left() + cx, client.top() + cy), Vec2::new(13.0, 12.0));
                         if ui.interact(cell, ui.id().with(("fv_hex", k)), egui::Sense::click()).clicked() {
@@ -130,16 +151,35 @@ impl App {
                 }
                 for (i, (r, tip, col)) in greys.into_iter().enumerate() {
                     let pts = hexagon(r.left() - 0.6, r.top() - 0.6, r.right() + 0.6, r.bottom() + 0.6, tip);
-                    p.add(egui::Shape::convex_polygon(pts.clone(), col, Stroke::NONE));
+                    p.add(egui::Shape::convex_polygon(pts, col, Stroke::NONE));
                     if col == st.new {
-                        hot = Some(pts);
+                        hot = Some((r, tip));
                     }
                     if ui.interact(r.shrink2(Vec2::new(0.0, tip / 2.0)), ui.id().with(("fv_grey", i)), egui::Sense::click()).clicked() {
                         st.new = col;
                     }
                 }
-                if let Some(pts) = hot {
-                    p.add(egui::Shape::closed_line(pts, Stroke::new(2.0f32, Color32::BLACK)));
+                // The selected cell's ring as CMFCColorPickerCtrl draws it
+                // (VM pixels, 16 × 16 about the cell's centre: black and
+                // white steps along its outline).
+                // The greys' larger cells keep a three-line outline.
+                if let Some((r, tip)) = hot.filter(|(r, _)| r.width() > 15.0) {
+                    for (i, ink) in [Color32::BLACK, Color32::WHITE, Color32::BLACK].into_iter().enumerate() {
+                        let d = 0.5 + i as f32;
+                        p.add(egui::Shape::closed_line(hexagon(r.left() + d, r.top() + d, r.right() - d, r.bottom() - d, (tip - i as f32 * 0.5).max(1.0)), Stroke::new(1.0f32, ink)));
+                    }
+                } else if let Some((r, _)) = hot {
+                    let o = Pos2::new((r.center().x - 8.5).round(), (r.center().y - 8.5).round());
+                    for (y, row) in SEL_RING.iter().enumerate() {
+                        for (x, ch) in row.chars().enumerate() {
+                            let ink = match ch {
+                                '#' => Color32::BLACK,
+                                'o' => Color32::WHITE,
+                                _ => continue,
+                            };
+                            p.rect_filled(Rect::from_min_size(o + Vec2::new(x as f32, y as f32), Vec2::splat(1.0)), 0.0, ink);
+                        }
+                    }
                 }
             }
             // The right column (template): ОК, Отмена, «Выбор...», «Новый»,
