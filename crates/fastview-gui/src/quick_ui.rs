@@ -719,11 +719,16 @@ fn symmetric_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[Strin
 /// `0x489510`).
 fn zero_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) {
     let (i_off, u_off) = (f.zero_i_off, f.zero_u_off);
+    // The template's tab order (537): Ia–Ic, the checked 3Io radio, Ua–Uc,
+    // the checked 3Uo radio, 3Io, Uни, Uик, 3Uo, the two «Отключить».
     pg.group(ui, (6, 12, 319, 113), "Ток 3Io");
+    crate::dialogs::tab_index(ui, 12);
     pg.check(ui, (238, 17, 86, 10), "Отключить", &mut f.zero_i_off, !u_off, true);
+    crate::dialogs::tab_index(ui, 3);
     if pg.radio(ui, (72, 36, 53, 10), "Расчетный", f.zero_i != 2, !i_off) {
         f.zero_i = 1;
     }
+    crate::dialogs::tab_index(ui, 3);
     if pg.radio(ui, (228, 36, 57, 10), "Измеренный", f.zero_i == 2, !i_off) {
         f.zero_i = 2;
     }
@@ -731,13 +736,17 @@ fn zero_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) {
     for (k, (ly, cy)) in [(57, 55), (75, 76), (97, 95)].into_iter().enumerate() {
         pg.label(ui, (12, ly, 18, 8), ["Ia:", "Ib:", "Ic:"][k], true, !i_off);
         let v = match k { 0 => &mut f.ia, 1 => &mut f.ib, _ => &mut f.ic };
+        crate::dialogs::tab_index(ui, k as u32);
         pg.combo(ui, (36, cy, 132, 54), ["q_zia", "q_zib", "q_zic"][k], v, names, !i_off && calc);
     }
     pg.label(ui, (179, 57, 14, 8), "3Io:", true, !i_off);
+    crate::dialogs::tab_index(ui, 8);
     pg.combo(ui, (198, 55, 120, 54), "q_z3io", &mut f.i3o, names, !i_off && !calc);
     pg.group(ui, (6, 132, 318, 138), "Напряжение 3Uo");
+    crate::dialogs::tab_index(ui, 13);
     pg.check(ui, (244, 137, 78, 8), "Отключить", &mut f.zero_u_off, !i_off, true);
     for (m, (r, text)) in [((54, 156, 107, 10), "Расчитанный из Ua, Ub, Uc"), ((198, 156, 102, 10), "Расчитанный из Uни, Uик"), ((198, 228, 72, 10), "Измеренный")].into_iter().enumerate() {
+        crate::dialogs::tab_index(ui, 7);
         if pg.radio(ui, r, text, f.zero_u == m as u8 + 1, !u_off) {
             f.zero_u = m as u8 + 1;
         }
@@ -746,13 +755,17 @@ fn zero_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) {
     for (k, (ly, cy)) in [(176, 174), (196, 195), (219, 216)].into_iter().enumerate() {
         pg.label(ui, (12, ly, 18, 8), ["Ua:", "Ub:", "Uc:"][k], true, !u_off);
         let v = match k { 0 => &mut f.ua, 1 => &mut f.ub, _ => &mut f.uc };
+        crate::dialogs::tab_index(ui, 4 + k as u32);
         pg.combo(ui, (36, cy, 132, 54), ["q_zua", "q_zub", "q_zuc"][k], v, names, !u_off && m == 1);
     }
     pg.label(ui, (176, 177, 16, 8), "Uни:", true, !u_off);
+    crate::dialogs::tab_index(ui, 9);
     pg.combo(ui, (198, 174, 120, 54), "q_zuni", &mut f.uni, names, !u_off && m == 2);
     pg.label(ui, (176, 197, 16, 8), "Uик:", true, !u_off);
+    crate::dialogs::tab_index(ui, 10);
     pg.combo(ui, (198, 195, 120, 54), "q_zuik", &mut f.uik, names, !u_off && m == 2);
     pg.label(ui, (168, 248, 24, 8), "3Uo:", true, !u_off);
+    crate::dialogs::tab_index(ui, 11);
     pg.combo(ui, (198, 246, 122, 54), "q_z3uo", &mut f.u3o, names, !u_off && m == 3);
 }
 
@@ -768,27 +781,36 @@ fn phase_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) 
     for (k, (ly, cy)) in [(20, 18), (39, 39), (60, 59)].into_iter().enumerate() {
         pg.label(ui, (12, ly, 24, 8), ["Ia:", "Ib:", "Ic:"][k], true, true);
         let v = match k { 0 => &mut f.ia, 1 => &mut f.ib, _ => &mut f.ic };
+        crate::dialogs::tab_index(ui, k as u32);
         pg.combo(ui, (42, cy, 126, 54), ["q_pia", "q_pib", "q_pic"][k], v, names, true);
     }
+    // The template's tab order (543): Ia–Ic, the checked radio, R0, R1,
+    // X0, X1, K0, Ф0, 3Ion, Rm, Xm, Km, Фm, Ua–Uc, then «Iтр».
     pg.label(ui, (12, 80, 24, 8), "Iтр, А:", true, true);
+    crate::dialogs::tab_index(ui, 18);
     pg.edit(ui, (42, 78, 126, 14), "q_pitr", &mut f.itr, true);
     pg.label(ui, (174, 80, 102, 8), "- ток точной работы", false, true);
     pg.group(ui, (7, 99, 315, 127), "Ток 3Io*");
     pg.label(ui, (42, 111, 152, 8), "Расчет коэффициента компенсации тока 3Io", false, true);
+    crate::dialogs::tab_index(ui, 3);
     if pg.radio(ui, (24, 123, 103, 10), "По удельным параметрам", f.per_unit, true) {
         f.per_unit = true;
     }
+    crate::dialogs::tab_index(ui, 3);
     if pg.radio(ui, (192, 123, 126, 10), "По коэффициентам компенсации", !f.per_unit, true) {
         f.per_unit = false;
     }
     let pu = f.per_unit;
-    for ((ly, ey, label), (id, v)) in [(143, 141, "X1, Ом/км:"), (159, 159, "R1, Ом/км:"), (177, 177, "X0, Ом/км:"), (195, 195, "R0, Ом/км:")].into_iter().zip([("q_x1", &mut f.x1), ("q_r1", &mut f.r1), ("q_x0", &mut f.x0), ("q_r0", &mut f.r0)]) {
+    for (((ly, ey, label), (id, v)), place) in [(143, 141, "X1, Ом/км:"), (159, 159, "R1, Ом/км:"), (177, 177, "X0, Ом/км:"), (195, 195, "R0, Ом/км:")].into_iter().zip([("q_x1", &mut f.x1), ("q_r1", &mut f.r1), ("q_x0", &mut f.x0), ("q_r0", &mut f.r0)]).zip([7, 5, 6, 4]) {
         pg.label(ui, (12, ly, 42, 8), label, true, pu);
+        crate::dialogs::tab_index(ui, place);
         pg.edit(ui, (60, ey, 96, 12), id, v, pu);
     }
     pg.label(ui, (168, 143, 33, 8), "K0:", true, !pu);
+    crate::dialogs::tab_index(ui, 8);
     pg.edit(ui, (204, 141, 108, 12), "q_k0", &mut f.k0, !pu);
     pg.label(ui, (168, 161, 33, 8), "Ф0, град:", true, !pu);
+    crate::dialogs::tab_index(ui, 9);
     pg.edit(ui, (204, 159, 108, 12), "q_f0", &mut f.f0, !pu);
     pg.label(ui, (42, 213, 239, 8), "* Ток нулевой последовательности рассчитывается из фазных токов", false, true);
     pg.group(ui, (6, 229, 316, 80), "Ток 3Io параллельной линии");
@@ -799,27 +821,34 @@ fn phase_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) 
     let mut items = vec![NOT_COUNTED.to_string()];
     items.extend(names.iter().cloned());
     let cur = items.iter().position(|n| *n == f.i0_parallel).unwrap_or(0);
+    crate::dialogs::tab_index(ui, 10);
     if let Some(k) = pg.choice(ui, (36, 247, 132, 30), "q_p3ion", &items, cur, true) {
         f.i0_parallel = items[k].clone();
     }
     let used = f.parallel_used();
     pg.label(ui, (12, 274, 42, 8), "Xm, Ом/км:", true, used && pu);
+    crate::dialogs::tab_index(ui, 12);
     pg.edit(ui, (60, 271, 96, 14), "q_xm", &mut f.xm, used && pu);
     pg.label(ui, (13, 292, 41, 8), "Rm, Ом/км:", true, used && pu);
+    crate::dialogs::tab_index(ui, 11);
     pg.edit(ui, (60, 289, 96, 14), "q_rm", &mut f.rm, used && pu);
     pg.label(ui, (168, 274, 31, 8), "Km:", true, used && !pu);
+    crate::dialogs::tab_index(ui, 13);
     pg.edit(ui, (204, 271, 108, 14), "q_km", &mut f.km, used && !pu);
     pg.label(ui, (164, 291, 35, 8), "Фm, град:", true, used && !pu);
+    crate::dialogs::tab_index(ui, 14);
     pg.edit(ui, (204, 289, 108, 14), "q_fm", &mut f.fm, used && !pu);
     pg.group(ui, (6, 312, 316, 76), "Напряжения");
     for (k, (ly, cy)) in [(330, 328), (350, 348), (370, 368)].into_iter().enumerate() {
         pg.label(ui, (12, ly, 18, 8), ["Ua:", "Ub:", "Uc:"][k], true, true);
         let v = match k { 0 => &mut f.ua, 1 => &mut f.ub, _ => &mut f.uc };
+        crate::dialogs::tab_index(ui, 15 + k as u32);
         pg.combo(ui, (36, cy, 132, 54), ["q_pua", "q_pub", "q_puc"][k], v, names, true);
     }
 }
 
-/// Page 539 «Дифференциальные токи» on its template: arm and phase
+/// Page 539 «Дифференциальные токи» on its template (its controls given
+/// the template's tab places): arm and phase
 /// counts; per arm (kept per arm) «Приведение плеч» (its radio enables
 /// only its edit block, `0x4835b0`…) and «Учет группы соединений» (3 phases
 /// only, `0x482c10`: По последовательностям → «Группа» 0…11 + «Удалить
@@ -833,11 +862,13 @@ fn differential_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[St
     pg.label(ui, (12, 12, 90, 8), "Количество плеч:", true, true);
     // A changed count keeps every slot (`0x482b60` → `0x482a40`).
     let arms: Vec<String> = (2..=ARM_SLOTS).map(|k| k.to_string()).collect();
+    crate::dialogs::tab_index(ui, 0);
     if let Some(k) = pg.choice(ui, (108, 10, 42, 30), "q_dif_n", &arms, f.dif_arms.saturating_sub(2), true) {
         f.dif_arms = k + 2;
     }
     pg.label(ui, (192, 13, 72, 8), "Количество фаз:", true, true);
     let phases = ["1".to_string(), "3".to_string()];
+    crate::dialogs::tab_index(ui, 1);
     if let Some(k) = pg.choice(ui, (270, 10, 44, 30), "q_dif_ph", &phases, usize::from(f.dif_phases == 3), true) {
         f.dif_phases = if k == 1 { 3 } else { 1 };
     }
@@ -851,6 +882,7 @@ fn differential_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[St
     pg.group(ui, (6, 31, 305, 40), "Приведение плеч");
     let checked = f.dif_methods();
     for (m, r, text) in [(2u8, (18, 45, 60, 10), "По мощности"), (3, (18, 58, 93, 10), "По номинальному току"), (0, (150, 45, 119, 10), "По коэффициенту приведения"), (1, (150, 58, 141, 10), "По коэффициенту трансформации ТТ")] {
+        crate::dialogs::tab_index(ui, 6 + m as u32);
         if pg.radio(ui, r, text, checked.contains(&m), true) {
             f.dif_reduction = m;
             f.dif_also.clear();
@@ -858,19 +890,23 @@ fn differential_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[St
     }
     pg.group(ui, (6, 79, 306, 42), "Учет группы соединений");
     for (g, r, text) in [(0u8, (18, 91, 64, 10), "Не учитывать"), (1, (18, 103, 102, 10), "По последовательностям"), (2, (150, 103, 96, 10), "Цифровой треугольник")] {
+        crate::dialogs::tab_index(ui, 20 + g as u32);
         if pg.radio(ui, r, text, f.dif_group == g, three) {
             f.dif_group = g;
         }
     }
     let (r, grp) = (f.dif_edit_method(), f.dif_group);
     pg.label(ui, (48, 133, 66, 8), "Текущее плечо:", true, true);
+    crate::dialogs::tab_index(ui, 10);
     if crate::dialogs::win_button_en(ui, pg.r(120, 133, 24, 14), "<<", false, cur > 0).clicked() {
         f.cur_arm -= 1;
     }
     let curs: Vec<String> = (1..=n).map(|k| k.to_string()).collect();
+    crate::dialogs::tab_index(ui, 2);
     if let Some(k) = pg.choice(ui, (150, 133, 42, 30), "q_dif_cur", &curs, cur, true) {
         f.cur_arm = k;
     }
+    crate::dialogs::tab_index(ui, 11);
     if crate::dialogs::win_button_en(ui, pg.r(198, 133, 24, 14), ">>", false, cur + 1 < n).clicked() {
         f.cur_arm += 1;
     }
@@ -880,28 +916,37 @@ fn differential_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[St
         let [ia, ib, ic] = &mut arm.currents;
         for (k, (ly, cy), v) in [(0, (167, 165), ia), (1, (188, 186), ib), (2, (209, 207), ic)] {
             pg.label(ui, (15, ly, 24, 8), ["Ia:", "Ib:", "Ic:"][k], true, k == 0 || three);
+            crate::dialogs::tab_index(ui, 3 + k as u32);
             pg.combo(ui, (45, cy, 150, 54), ["q_dia", "q_dib", "q_dic"][k], v, names, k == 0 || three);
         }
     }
     pg.label(ui, (155, 229, 107, 8), "По коэффициенту приведения:", false, r == 0);
     pg.label(ui, (173, 242, 30, 8), "Kприв:", false, r == 0);
+    crate::dialogs::tab_index(ui, 12);
     pg.edit(ui, (203, 241, 102, 12), "q_kpriv", &mut arm.kpriv, r == 0);
     pg.label(ui, (155, 258, 129, 8), "По коэффициенту трансформации ТТ:", false, r == 1);
     pg.label(ui, (173, 271, 16, 8), "Kтт:", false, r == 1);
+    crate::dialogs::tab_index(ui, 13);
     pg.edit(ui, (203, 271, 102, 12), "q_tt_ktt", &mut arm.tt_ktt, r == 1);
     pg.label(ui, (173, 289, 27, 8), "Kттбаз:", false, r == 1);
+    crate::dialogs::tab_index(ui, 14);
     pg.edit(ui, (203, 289, 102, 12), "q_tt_base", &mut arm.tt_base, r == 1);
     pg.label(ui, (19, 229, 48, 8), "По мощности:", false, r == 2);
     pg.label(ui, (25, 241, 24, 8), "Kтт:", true, r == 2);
+    crate::dialogs::tab_index(ui, 15);
     pg.edit(ui, (49, 241, 90, 12), "q_pw_ktt", &mut arm.pw_ktt, r == 2);
     pg.label(ui, (7, 259, 42, 8), "Sном, кВА:", true, r == 2);
+    crate::dialogs::tab_index(ui, 16);
     pg.edit(ui, (49, 259, 90, 12), "q_snom", &mut arm.snom, r == 2);
     pg.label(ui, (7, 277, 42, 8), "Uном, кВ:", true, r == 2);
+    crate::dialogs::tab_index(ui, 17);
     pg.edit(ui, (49, 277, 90, 12), "q_unom", &mut arm.unom, r == 2);
     pg.label(ui, (19, 295, 80, 8), "По номинальному току:", false, r == 3);
     pg.label(ui, (25, 306, 24, 8), "Kтт:", true, r == 3);
+    crate::dialogs::tab_index(ui, 18);
     pg.edit(ui, (49, 306, 90, 12), "q_amp_ktt", &mut arm.amp_ktt, r == 3);
     pg.label(ui, (13, 327, 36, 8), "Iном, А:", true, r == 3);
+    crate::dialogs::tab_index(ui, 19);
     pg.edit(ui, (49, 325, 90, 12), "q_inom", &mut arm.inom, r == 3);
     // Two «Группа:» combos at one place (2127 / 2129), one per method; with
     // one phase the sequence combo shows, whatever the radio (`0x483ab0`).
@@ -914,12 +959,15 @@ fn differential_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[St
     let genabled = three && grp != 0;
     pg.label(ui, (173, 328, 28, 8), "Группа:", false, genabled);
     let gcur = gl.iter().position(|g| g == value).unwrap_or(0);
+    crate::dialogs::tab_index(ui, 27);
     if let Some(k) = pg.choice(ui, (203, 325, 29, 30), &format!("q_dif_grp{grp}"), &gl, gcur, genabled) {
         *value = gl[k].clone();
     }
+    crate::dialogs::tab_index(ui, 28);
     pg.check(ui, (237, 328, 50, 10), "Удалить I0", &mut arm.remove_i0, three && grp == 1, false);
     pg.group(ui, (6, 346, 305, 53), "Расчет тока торможения");
     for (b, r, text, en) in [(0u8, (17, 357, 105, 10), "Полусумма модулей токов", true), (1, (17, 370, 85, 10), "Полуразность токов", n == 2), (2, (17, 383, 97, 10), "Максимальный из токов", true)] {
+        crate::dialogs::tab_index(ui, 24 + b as u32);
         if pg.radio(ui, r, text, f.braking == b, en) {
             f.braking = b;
         }
@@ -928,6 +976,7 @@ fn differential_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[St
     pg.label(ui, (149, 363, 24, 8), "Kторм:", true, kt);
     let kts = ["1".to_string(), "0.5".to_string()];
     let kcur = kts.iter().position(|k| *k == f.k_torm).unwrap_or(0);
+    crate::dialogs::tab_index(ui, 23);
     if let Some(k) = pg.choice(ui, (185, 362, 42, 30), "q_dif_kt", &kts, kcur, kt) {
         f.k_torm = kts[k].clone();
     }

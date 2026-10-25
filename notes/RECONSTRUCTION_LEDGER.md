@@ -9010,9 +9010,20 @@ controls the template's places (538: Ia–Ic, the check box, the radio,
 Ua–Uc, «Iтр», Uab, Ubc); a control shown disabled or unchecked still
 takes up its place (`tab_stop_if`). The sheet's «Рассчитать» / «Отмена»
 follow the page. VM: the nine steps alike.
-Left: 537, 539 and 543's orders (their templates list the controls out of
-their visual order; not yet numbered), the Outlook bar's place in the
-cycle.
+Left: the Outlook bar's place in the cycle (537, 539, 543: L9.347).
+
+### L9.347 — VM: the tab order of the pages 537, 543 and 539  ·  ✅
+Their templates list the controls out of their visual order; each now
+gives its controls the template's places (`tab_index`):
+- 537: Ia–Ic, the checked «Ток 3Io» radio, Ua–Uc, the checked
+  «Напряжение 3Uo» radio, 3Io, Uни, Uик, 3Uo, the two «Отключить»;
+- 543: Ia–Ic, the checked radio, R0, R1, X0, X1 (the per-unit edits
+  bottom-up), K0, Ф0, 3Ion, Rm, Xm, Km, Фm, Ua–Uc, and «Iтр» last;
+- 539: the arm count, the phase count, the current-arm selector, Ia–Ic,
+  the checked «Приведение плеч» radio, «<<», «>>», the eight edits in the
+  template's order, the checked «Учет группы» radio, «Кторм», the checked
+  braking radio, «Группа», «Удалить I0».
+VM: nine steps on each page alike in both.
 
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
