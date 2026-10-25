@@ -8845,6 +8845,18 @@ pointer already there, open their menus every time. Left: the GPU path
 pointer always precedes a click, so only a click under a still pointer
 over a freshly shown window could be lost.
 
+### L9.339 — VM: the pair dialog's buttons; its list's selection without the focus  ·  ✅
+Run (WIN_1999, the differential diagram's «Каналы ▸ Создать», DIALOG
+554): «Добавить» twice adds two «IA БЛОКА 3 | IA БЛОКА 3» rows and
+selects the new one; a click selects a row; «Удалить» removes it and
+selects the next; OK puts the pair into «Отображение каналов» (its row
+with the differential column ticked) and the diagram's header shows
+«Iдиф: 1.8 ном» — alike in both. One look differed: with the focus on a
+button the original's list shows its selected row in (240) with black
+text (LVS_SHOWSELALWAYS), blue only while the list has the focus; ours
+was always blue. Now `PairDialog::list_focus` (a press on the list gives
+it, a press elsewhere takes it). VM: the same three pictures after.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

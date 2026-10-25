@@ -73,6 +73,9 @@ pub struct PairDialog {
     pub a: Option<String>,
     pub b: Option<String>,
     pub sel: Option<usize>,
+    /// The list holds the focus: its selection (0, 120, 215), else (240)
+    /// (LVS_SHOWSELALWAYS; VM: after «Добавить» / «Удалить»).
+    pub list_focus: bool,
 }
 
 /// DIALOG 353 «Настройки частотной диаграммы».
@@ -813,7 +816,7 @@ impl App {
                     // Both combos open on their first channel (`0x4216b0`,
                     // CB_SETCURSEL 0), so «Добавить» is usable at once.
                     let first = doc_chans(d).into_iter().next().map(|c| c.name);
-                    self.diag.pair_dlg = Some(PairDialog { diff, pairs, a: first.clone(), b: first, sel: None });
+                    self.diag.pair_dlg = Some(PairDialog { diff, pairs, a: first.clone(), b: first, sel: None, list_focus: false });
                 }
             }
             DiagCmd::ShowAll(on) => {
@@ -1682,6 +1685,10 @@ impl App {
                 p.hline(inner.x_range(), y, grid);
                 y += 17.0;
             }
+            // A press on the list gives it the focus, one elsewhere takes it.
+            if let Some(at) = ui.input(|i| i.pointer.any_pressed().then(|| crate::lanes::press_pos(i)).flatten()) {
+                dlg.list_focus = inner.contains(at);
+            }
             for (i, pair) in dlg.pairs.iter().enumerate() {
                 let top = hdr.bottom() + 17.0 * i as f32;
                 if top + 17.0 > inner.bottom() {
@@ -1689,12 +1696,13 @@ impl App {
                 }
                 let row = Rect::from_min_size(Pos2::new(inner.left(), top), Vec2::new(cols[1].0 + cols[1].1 - 1.0, 16.0));
                 let sel = dlg.sel == Some(i);
+                let lit = sel && dlg.list_focus;
                 if sel {
-                    p.rect_filled(row, 0.0, Color32::from_rgb(0, 120, 215));
+                    p.rect_filled(row, 0.0, if lit { Color32::from_rgb(0, 120, 215) } else { Color32::from_gray(240) });
                 }
                 for ((x, w, _), t) in cols.into_iter().zip([&pair.a, &pair.b]) {
                     let c = Rect::from_min_size(Pos2::new(inner.left() + x, top), Vec2::new(w - 1.0, 16.0));
-                    p.with_clip_rect(c).text(Pos2::new(c.left() + 6.0, c.center().y), egui::Align2::LEFT_CENTER, t, DLG_FONT, if sel { Color32::WHITE } else { Color32::BLACK });
+                    p.with_clip_rect(c).text(Pos2::new(c.left() + 6.0, c.center().y), egui::Align2::LEFT_CENTER, t, DLG_FONT, if lit { Color32::WHITE } else { Color32::BLACK });
                 }
                 if ui.interact(row, ui.id().with(("pair_row", i)), egui::Sense::click()).clicked() {
                     dlg.sel = Some(i);
