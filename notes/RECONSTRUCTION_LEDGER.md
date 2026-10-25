@@ -9088,6 +9088,27 @@ back: the radios enabled, its focus rect, alike. Esc keeps the saved
 mode, alike. Test `a_press_on_an_unchecked_radio_focuses_it` (fails
 without the fix).
 
+### L9.352 — VM: a message box's keys: arrows round its buttons, «&Да» / «&Нет»; it takes the focus and gives it back  ·  ✅
+Run (a channel toggled twice in «Каналы», so the record is modified;
+Alt+F4): the save prompt (MFC's «Save changes to WIN_1999.cfg?» on the
+VM's English UI, mfc120rus's in ours — L9.330). Tab: Yes → No → Cancel →
+Yes in both. → / ← in the original move the focus along the buttons
+(Yes → No → Yes; from the first, ← goes round to the last); ours ignored
+them. The original's «Yes» / «No» show their mnemonics underlined (the
+cues are on, the box raised by a key); a bare «n» answers No (the
+program closed unsaved). Esc closes the box and the program stays,
+alike. Now `message_box`: ← ↑ / → ↓ step the focus round its buttons;
+«Да» / «Нет» are user32's «&Да» / «&Нет» (Russian Windows), the first
+letter underlined with the cues and pressed by its key; the first
+button takes the real focus at once (MessageBox's own SetFocus — it was
+only implied, so an arrow pressed first found nothing), and the control
+it took the focus from goes to its dialog's parked focus, given back
+when the box closes. VM: Tab, →, ←, ← (round to «Отмена») alike, «Да» /
+«Нет» underlined; 392's «abc» box still gives the edit back selected.
+Tests `a_message_box_takes_arrows_and_its_mnemonics`,
+`a_message_box_gives_the_dialogs_focus_back` (fails without the
+hand-over).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

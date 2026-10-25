@@ -217,7 +217,14 @@ impl<'o> Dlg<'o> {
         // window's: kept aside, and given back once active again (Win32
         // restores the focus it had).
         let saved_key = id.with("fv_saved_focus");
-        let focus_here = ctx.memory(|m| m.focused()).filter(|f| ring.iter().any(|s| s.0 == *f));
+        let mine = |f: &egui::Id| ring.iter().any(|s| s.0 == *f);
+        let focus_here = ctx.memory(|m| m.focused()).filter(mine);
+        // Or the focus a message box took from it (`message_box`).
+        let taken = ctx.data(|d| d.get_temp::<Option<egui::Id>>(egui::Id::new("fv_box_took"))).flatten().filter(mine);
+        let focus_here = focus_here.or(taken.filter(|_| !active));
+        if taken.is_some() && !active {
+            ctx.data_mut(|d| d.remove_temp::<Option<egui::Id>>(egui::Id::new("fv_box_took")));
+        }
         if !active {
             if let Some(f) = focus_here {
                 ctx.data_mut(|d| d.insert_temp(saved_key, Some(f)));
@@ -1357,8 +1364,11 @@ pub enum MsgIcon {
 /// from x 61 centred on the icon's middle, 31 px clear at the right, at
 /// least 23 px above and below — over a 42 px (240) strip with the buttons
 /// (75 × 23, 10 px down, 10 px apart, the last 15 px from the right edge);
-/// the first is the default one, with the focus rectangle. Returns the
-/// button pressed.
+/// the first is the default one, with the focus rectangle. As the dialog
+/// manager runs it (VM): ← / → (↑ / ↓) move the focus along the buttons,
+/// round from the last to the first; «Да» and «Нет» are user32's «&Да» /
+/// «&Нет», their letter underlined with the cues, and that letter pressed
+/// presses the button. Returns the button pressed.
 pub fn message_box(ui: &mut egui::Ui, icon: MsgIcon, text: &str, buttons: &[&str]) -> Option<usize> {
     let pass = ui.ctx().cumulative_pass_nr();
     let shown_before = ui.ctx().data(|d| d.get_temp::<u64>(egui::Id::new("fv_msgbox_pass"))).is_some_and(|p| p + 1 >= pass);
@@ -1387,11 +1397,46 @@ pub fn message_box(ui: &mut egui::Ui, icon: MsgIcon, text: &str, buttons: &[&str
     let mid = if g.size().y > 32.0 { white.center().y } else { cell.center().y };
     ui.painter().galley(Pos2::new(white.left() + 61.0, (mid - g.size().y / 2.0).round()), g, Color32::BLACK);
     let mut pressed = None;
+    let mut ids = Vec::new();
+    let typed: Vec<String> = ui.input(|i| i.events.iter().filter_map(|e| if let egui::Event::Text(t) = e { Some(t.to_lowercase()) } else { None }).collect());
     for (k, label) in buttons.iter().enumerate() {
         let x = client.right() - 15.0 - 75.0 * (n - k as f32) - 10.0 * (n - 1.0 - k as f32);
         let r = Rect::from_min_size(Pos2::new(x, white.bottom() + 10.0), Vec2::new(75.0, 23.0));
-        if win_button(ui, r, label, k == 0).clicked() {
+        let resp = win_button(ui, r, label, k == 0);
+        if resp.clicked() {
             pressed = Some(k);
+        }
+        // user32's mnemonics: the first letter of «&Да» / «&Нет».
+        if matches!(*label, "Да" | "Нет") {
+            let first: String = label.chars().take(1).collect();
+            if cues {
+                let face = r.shrink(1.0);
+                let w = |t: &str| ui.fonts(|f| f.layout_no_wrap(t.to_owned(), DLG_FONT, Color32::BLACK).size());
+                let (all, one) = (w(label), w(&first));
+                let x0 = (face.center().x - all.x / 2.0).round();
+                let y = (face.center().y - all.y / 2.0).round() + all.y - 2.0;
+                ui.painter().rect_filled(Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x0 + one.x.round(), y + 1.0)), 0.0, Color32::BLACK);
+            }
+            if typed.iter().any(|t| *t == first.to_lowercase()) {
+                pressed = Some(k);
+            }
+        }
+        ids.push(resp.id);
+    }
+    // The default (first) button holds the focus from the start
+    // (MessageBox's own SetFocus), so the arrows find it.
+    let at = ids.iter().position(|id| ui.memory(|m| m.has_focus(*id)));
+    if at.is_none() && pressed.is_none() {
+        // The control it takes the focus from is its owner's to restore.
+        let prev = ui.memory(|m| m.focused());
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_box_took"), prev));
+        ui.memory_mut(|m| m.request_focus(ids[0]));
+    }
+    if let Some(at) = at {
+        for key in take_arrows(ui.ctx()) {
+            let back = matches!(key, egui::Key::ArrowLeft | egui::Key::ArrowUp);
+            let to = if back { (at + ids.len() - 1) % ids.len() } else { (at + 1) % ids.len() };
+            ui.memory_mut(|m| m.request_focus(ids[to]));
         }
     }
     pressed
@@ -1822,6 +1867,85 @@ mod tests {
         let dialog_saw_enter = pass(key(egui::Key::Enter, false));
         assert_eq!(*pressed.borrow(), vec!["B"]);
         assert!(!dialog_saw_enter, "the Enter went to B");
+    }
+
+    /// A message box as user32 runs it: ← from the first button goes round
+    /// to the last, Enter presses the focused one, and «Нет»'s letter
+    /// presses «Нет» (VM: Yes / No / Cancel; «n» answers No).
+    #[test]
+    fn a_message_box_takes_arrows_and_its_mnemonics() {
+        let run = |keys: Vec<Vec<egui::Event>>| -> Option<usize> {
+            let ctx = egui::Context::default();
+            let mut t = 0.0;
+            let mut got = None;
+            for events in std::iter::repeat_n(vec![], 3).chain(keys).chain(std::iter::repeat_n(vec![], 2)) {
+                t += 0.05;
+                let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))), time: Some(t), events, ..Default::default() };
+                take_dialog_tabs(&ctx, &mut raw);
+                let _ = ctx.run(raw, |ctx| {
+                    dlg(ctx, "m").show(ctx, |ui| {
+                        if let Some(k) = message_box(ui, MsgIcon::Question, "Сохранить?", &["Да", "Нет", "Отмена"]) {
+                            got = got.or(Some(k));
+                        }
+                    });
+                });
+            }
+            got
+        };
+        let key = |key| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }];
+        assert_eq!(run(vec![vec![egui::Event::Text("н".into())]]), Some(1), "«&Нет»");
+        assert_eq!(run(vec![key(egui::Key::ArrowLeft), vec![], key(egui::Key::Enter)]), Some(2), "round to «Отмена»");
+        assert_eq!(run(vec![key(egui::Key::ArrowRight), vec![], key(egui::Key::Enter)]), Some(1));
+    }
+
+    /// A message box over a dialog takes the focus to its button, and on
+    /// closing the dialog's own focus comes back (Win32 restores it).
+    #[test]
+    fn a_message_box_gives_the_dialogs_focus_back() {
+        let ctx = egui::Context::default();
+        let box_up = std::cell::Cell::new(false);
+        let ids = std::cell::RefCell::new(Vec::new());
+        let mut t = 0.0;
+        let mut pass = |events: Vec<egui::Event>| {
+            t += 0.05;
+            let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))), time: Some(t), events, ..Default::default() };
+            take_dialog_tabs(&ctx, &mut raw);
+            let _ = ctx.run(raw, |ctx| {
+                dlg(ctx, "p").show(ctx, |ui| {
+                    let (client, _) = ui.allocate_exact_size(Vec2::new(300.0, 100.0), egui::Sense::hover());
+                    let r = |x: f32| Rect::from_min_size(client.min + Vec2::new(x, 10.0), Vec2::new(60.0, 23.0));
+                    let a = win_button(ui, r(0.0), "A", true);
+                    let b = win_button(ui, r(70.0), "B", false);
+                    *ids.borrow_mut() = vec![a.id, b.id];
+                });
+                if box_up.get() {
+                    dlg(ctx, "m").show(ctx, |ui| {
+                        if message_box(ui, MsgIcon::Exclamation, "!", &["OK"]).is_some() {
+                            box_up.set(false);
+                        }
+                    });
+                }
+            });
+        };
+        let key = |key| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }];
+        for _ in 0..3 {
+            pass(vec![]);
+        }
+        pass(key(egui::Key::Tab));
+        pass(vec![]);
+        let b = ids.borrow()[1];
+        assert_eq!(ctx.memory(|m| m.focused()), Some(b));
+        box_up.set(true);
+        for _ in 0..3 {
+            pass(vec![]);
+        }
+        assert_ne!(ctx.memory(|m| m.focused()), Some(b), "the box's OK has it");
+        pass(key(egui::Key::Enter));
+        for _ in 0..3 {
+            pass(vec![]);
+        }
+        assert!(!box_up.get(), "Enter pressed OK");
+        assert_eq!(ctx.memory(|m| m.focused()), Some(b), "back on B");
     }
 
     /// A press on an unchecked radio gives it the focus, which it keeps as
