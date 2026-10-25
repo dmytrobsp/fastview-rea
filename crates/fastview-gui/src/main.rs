@@ -65,9 +65,14 @@ fn main() -> eframe::Result<()> {
     // unless `FV_SYSTEM_TITLEBAR` asks for them.
     let own_caption = std::env::var_os("FV_SYSTEM_TITLEBAR").is_none();
     viewport = viewport.with_decorations(!own_caption);
-    // `LoadState` restores the frame's saved window placement.
+    // `LoadState` restores the frame's saved window placement; on a first
+    // run the frame is CW_USEDEFAULT's: placed by Windows, three quarters of
+    // the work area less its invisible borders (VM: 1906 × 1016 shown of
+    // a 2560 × 1392 work area).
     if let Some((r, max)) = window_placement(&persist::Store::load()) {
         viewport = viewport.with_inner_size(r.size()).with_position(r.min).with_maximized(max);
+    } else if let Some(size) = default_frame_size() {
+        viewport = viewport.with_inner_size(size);
     }
     #[cfg(windows)]
     let soft_viewport = viewport.clone();
@@ -138,6 +143,25 @@ fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path
         app.load_comtrade_path(f);
     }
     app
+}
+
+/// A first run's frame size on Windows (CW_USEDEFAULT): ¾ of the work
+/// area, less the 14 / 28 px of invisible border a framed window keeps
+/// (ours has none). Physical pixels, as the original (system-DPI aware).
+#[cfg(windows)]
+fn default_frame_size() -> Option<[f32; 2]> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA};
+    let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+    // SAFETY: SPI_GETWORKAREA fills the RECT passed.
+    let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, (&mut r as *mut RECT).cast(), 0) } != 0;
+    let (w, h) = ((r.right - r.left) as f32, (r.bottom - r.top) as f32);
+    (ok && w > 0.0 && h > 0.0).then(|| [(w * 0.75).floor() - 14.0, (h * 0.75).floor() - 28.0])
+}
+
+#[cfg(not(windows))]
+fn default_frame_size() -> Option<[f32; 2]> {
+    None
 }
 
 /// `Workspace/WindowPlacement` ("l t r b maximised") as saved on exit.

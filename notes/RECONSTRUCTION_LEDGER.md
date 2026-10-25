@@ -9032,6 +9032,19 @@ sheet's buttons. Ours drew ▲ / ▼ before «Добавить» and had the lis
 the cycle; now numbered as the template, the list a stop (its selection
 look keeps L9.334's rule). VM: nine steps alike.
 
+### L9.349 — VM: a first run's frame (CW_USEDEFAULT) and so its first view's zoom  ·  ✅
+Run with no saved state in either program (the original's registry key
+removed, then re-imported from `orig_state.reg`; ours' settings file
+removed): the original's frame shows 1906 × 1016 — CW_USEDEFAULT's
+three quarters of the 2560 × 1392 work area less the invisible borders —
+at a place Windows chooses; ours opened 1320 × 860 at the top left. The
+first view's zoom is measured at the MDI child's size (L9.289), so after
+maximising ours showed WIN_1999 squeezed into about 300 px where the
+original fills about 1070. Now a first run on Windows takes ¾ of the work
+area less 14 / 28 px (`default_frame_size`) and lets Windows place it.
+VM: the frame 1906 wide; maximised, the record spans the same width in
+both. Left: Windows' cascade position itself (system state).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
