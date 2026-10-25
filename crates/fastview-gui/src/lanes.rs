@@ -395,7 +395,7 @@ impl OscView<'_> {
         pp.add(Shape::line(pts.clone(), Stroke::new(1.0f32, color)));
         if self.f > 0.16 {
             for q in &pts {
-                pp.circle_stroke(*q, 2.0f32, Stroke::new(1.0f32, color));
+                sample_mark(&pp, *q, color);
             }
         }
     }
@@ -782,6 +782,24 @@ pub(crate) fn press_pos(i: &egui::InputState) -> Option<egui::Pos2> {
     }))
 }
 
+/// A sample's mark (`0x429b52`): GDI's Ellipse(x − 2, y − 2, x + 2, y + 2)
+/// with the channel's 1 px pen and the DC's white brush — a 4 × 4 ring,
+/// the right and bottom edges left out, its middle white over the line
+/// (VM).
+fn sample_mark(p: &egui::Painter, q: Pos2, color: Color32) {
+    // Whole pixels, unfeathered, the point rounded as the line's
+    // (`oscgeom::aliased_runs`).
+    let (x, y) = (q.x.round(), q.y.round());
+    let mut mesh = egui::Mesh::default();
+    for (dx, dy) in [(-1.0, -2.0), (0.0, -2.0), (-2.0, -1.0), (1.0, -1.0), (-2.0, 0.0), (1.0, 0.0), (-1.0, 1.0), (0.0, 1.0)] {
+        mesh.add_colored_rect(Rect::from_min_size(Pos2::new(x + dx, y + dy), Vec2::splat(1.0)), color);
+    }
+    for (dx, dy) in [(-1.0, -1.0), (0.0, -1.0), (-1.0, 0.0), (0.0, 0.0)] {
+        mesh.add_colored_rect(Rect::from_min_size(Pos2::new(x + dx, y + dy), Vec2::splat(1.0)), Color32::WHITE);
+    }
+    p.add(Shape::mesh(mesh));
+}
+
 /// The bold face at `size`, when the fonts have it (the app's Tahoma Bold;
 /// a bare context has none).
 pub(crate) fn bold_font(fonts: &egui::text::Fonts, size: f32) -> Option<FontId> {
@@ -948,7 +966,7 @@ fn draw_series(
     p.add(Shape::mesh(mesh));
     if f > 0.16 {
         for q in &pts {
-            p.circle_stroke(*q, 2.0f32, Stroke::new(1.0f32, color));
+            sample_mark(p, *q, color);
         }
     }
 }

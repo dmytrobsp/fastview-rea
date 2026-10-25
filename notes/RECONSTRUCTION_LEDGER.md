@@ -8566,6 +8566,18 @@ read. Residual: only a typed listed extension that contradicts the
 chosen type differs; a plain name gets the type's extension from the
 shell dialog itself.
 
+### L9.321 — VM: the sample marks' fill; dialogs' Esc / Enter  ·  ✅
+Run (WIN_1999 zoomed in eight notches): the original's marks are GDI
+Ellipses 4 × 4 (x − 2 … x + 1, y − 2 … y + 1) in the channel's colour
+with the DC's white brush, after the line — a ring of eight pixels round
+four white ones (L9.45's «fill ND» settled). Ours drew egui's feathered
+radius-2 circles, unfilled. Now `lanes::sample_mark`: the same pixels as
+an unfeathered mesh, the point rounded as the line's. VM: the pattern
+identical (the plot's known 1 px offset aside, L9.288).
+Also run: «Настройки» and «Каналы» open and close alike with Esc, and
+Enter closes «Настройки» in both; their contents alike (our text a little
+heavier: the unhinted renderer).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

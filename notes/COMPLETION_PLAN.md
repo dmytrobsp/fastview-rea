@@ -241,8 +241,8 @@ items (VM ones also in W4.4):
     reader `0x4a45f0` (spec §8.5).
   - **RUN** (VM scenarios, W4.4): ~~`.set` comments by alias~~ (run, L9.227); a
     ~~disabled V scroll bar when the lanes fit~~ (run, L9.196); ~~«МВт» / «ном»
-    folding~~ (run, L9.210); ~~the ГВ label's look~~ (run, L9.291); the 4 × 4
-    marks' fill (L9.45); ~~quick-analysis edits and the modified flag~~
+    folding~~ (run, L9.210); ~~the ГВ label's look~~ (run, L9.291); ~~the 4 × 4
+    marks' fill~~ (run, L9.321); ~~quick-analysis edits and the modified flag~~
     (run, L9.316); ~~«Окна...» arrangements under MDI tabs~~ (out of reach, L9.220); ~~the
     `.set` after an ОМП run~~ (run, L9.217); ~~plane labels' background~~ (run: opaque in both, L9.280); the
     ~~differential table's row order~~ (run, L9.298); the app menu's keytips
