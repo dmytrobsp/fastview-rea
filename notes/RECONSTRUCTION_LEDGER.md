@@ -8540,6 +8540,17 @@ marks, the визиры and the «242» label alike in both. One pixel: the flat
 ours on 46.5 (the next row down). `value_y` puts a flat channel on the
 middle in whole pixels; VM: the same row.
 
+### L9.319 — VM: the ОМП report byte-identical; a record's path made full at open  ·  ✅
+Run (L9.315's result, «Сохранить...» on the bar, a name typed): both
+write a UTF-16 report of 1514 bytes; the only difference was the
+«Осциллограмма:» line — the original's path in backslashes, ours as
+given on the command line (C:/…). MFC opens by AfxFullPath
+(GetFullPathName); `load_comtrade_path` now takes the full path on
+Windows (`std::path::absolute`), which also gives Save As its folder
+without the L9.313 workaround. VM: the reports identical. (The report's
+save dialog opens in the shell's last folder in both — different
+folders here, the system's choice.)
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

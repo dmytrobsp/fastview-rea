@@ -2370,6 +2370,11 @@ impl App {
     /// (`LoadingDlg`, DIALOG 492); the progress dialog shows only for large
     /// files and «Отмена» abandons the open.
     pub fn load_comtrade_path(&mut self, path: &std::path::Path) {
+        // MFC opens by AfxFullPath (GetFullPathName): the record's path is
+        // the full one in backslashes (VM: the ОМП report's
+        // «Осциллограмма:» line for a record opened as C:/…).
+        let full = if cfg!(windows) { std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()) } else { path.to_path_buf() };
+        let path = full.as_path();
         // MFC's OpenDocumentFile (the stock document manager — CDocManagerEx
         // overrides only the file dialog): a file already open just brings
         // its document forward (AfxComparePath, case-insensitive), for the
