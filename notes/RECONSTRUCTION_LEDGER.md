@@ -8857,6 +8857,18 @@ text (LVS_SHOWSELALWAYS), blue only while the list has the focus; ours
 was always blue. Now `PairDialog::list_focus` (a press on the list gives
 it, a press elsewhere takes it). VM: the same three pictures after.
 
+### L9.340 — VM: the analysis pages calculated  ·  ✅
+Run (WIN_1999, «Быстрый анализ»): «Нулевая последовательность»,
+«Междуфазные сопротивления» and «Фазные сопротивления» open with the
+same controls and defaults (combos on «Канал отсутствует», the 3Uo
+voltages on «IA БЛОКА 3», «Iтр, А:» 0.25, the compensation 1. / 0.).
+«Симметричные составляющие» with IA / IB / IC: «Рассчитать» stays
+disabled while the voltages are «Канал отсутствует», enabled once their
+«Отключить» is ticked (which greys the currents' own «Отключить»); it
+adds I1, I2 and 3I0 — the same lanes and curves in both. «Фазные
+сопротивления» with IA … UC adds 3I0 and the phase impedances in Ом,
+alike. No difference found.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
