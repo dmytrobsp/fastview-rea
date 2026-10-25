@@ -644,6 +644,7 @@ impl App {
     pub fn frame_ui(&mut self, ctx: &egui::Context) {
         dialogs::route_combo_keys(ctx);
         self.min_size(ctx);
+        self.run_deferred(ctx);
         // A click or a key acts after the frame that drew it (a command is
         // dispatched once its button is drawn): one more frame shows the
         // state it left (VM: «Анализ» drawn unchecked after its run until

@@ -8658,6 +8658,21 @@ Also run: the view's keys after a click in the plot — ↓ keeps the lane
 selection, three → move the визир one pixel, End / Home / PgDn / + / −
 change nothing, in both.
 
+### L9.328 — VM: a file dialog from the application menu; the menu gone behind it  ·  ✅
+Run («Загрузка настроек...» and «Открыть...» from the application menu):
+the original's menu is closed and repainted away before its file dialog
+shows; ours chose the command in the menu's pass and the blocking dialog
+ran before the window was painted without the menu, so the menu stayed
+in the picture behind the dialog. Now `App::dispatch_from_menu` defers
+the commands that open a system file dialog (Open, Save As, LoadSettings
+and our extras' exports) by two passes — the next one draws and paints
+the window without the menu — `run_deferred` at the start of the frame.
+VM: the dialog over a clean window in both, the same filter («Настройки
+осциллограммы F…») and place. Left: the original's dialog is owned by its
+frame (the icon in its title); ours, given our window as owner, opened
+at the window's top-left instead of the shell's remembered place, so ours
+stays unowned (no title icon).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

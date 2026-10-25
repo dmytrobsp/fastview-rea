@@ -1539,6 +1539,10 @@ pub struct App {
     pub status_hidden: [bool; 7],
     /// That menu, open at a point since a pass.
     pub status_menu: Option<(egui::Pos2, u64)>,
+    /// Commands from a menu that open a system file dialog, run in a
+    /// later pass once the closed menu has been painted (the dialog blocks
+    /// the frame loop).
+    pub deferred: Vec<(Command, u64)>,
     /// Dialogs and bars of `chandlg` / `recdlg` (backlog 16, 18, 28, 29, 34, 39).
     pub dlg: crate::recdlg::DialogState,
 
@@ -1687,6 +1691,7 @@ impl App {
             splash_until: None,
             status_hidden: [false; 7],
             status_menu: None,
+            deferred: Vec::new(),
             status_panes: ["Верт. визир 1:", "Верт. визир 2:", "Разница в. визиров:", "Гор. визир 1:", "Гор. визир 2:", "Разница г. визиров:"].map(String::from),
             dlg: Default::default(),
             status: "Готово".to_string(),
@@ -1767,6 +1772,33 @@ impl App {
                 self.group_front(g).or(Some(i.min(self.docs.len() - 1)))
             };
             self.prune_groups();
+        }
+    }
+
+    // ---------- command dispatch ----------
+    /// A command chosen in a menu: one that opens a system file dialog
+    /// waits for the next pass, so the menu is gone from the window behind
+    /// the dialog (VM: «Загрузка настроек...» from the application menu).
+    pub fn dispatch_from_menu(&mut self, ctx: &egui::Context, cmd: Command) {
+        if matches!(cmd, Command::Open | Command::SaveAs | Command::LoadSettings | Command::ExportCsv | Command::Archive | Command::OpenFvb | Command::ExportImage) {
+            self.deferred.push((cmd, ctx.cumulative_pass_nr()));
+            ctx.request_repaint();
+        } else {
+            self.dispatch(cmd);
+        }
+    }
+
+    /// The deferred commands two passes on: the one after the choice draws
+    /// the window without the menu and is painted, then the dialog.
+    pub fn run_deferred(&mut self, ctx: &egui::Context) {
+        let now = ctx.cumulative_pass_nr();
+        let (due, wait): (Vec<_>, Vec<_>) = std::mem::take(&mut self.deferred).into_iter().partition(|(_, at)| *at + 1 < now);
+        self.deferred = wait;
+        if !self.deferred.is_empty() {
+            ctx.request_repaint();
+        }
+        for (c, _) in due {
+            self.dispatch(c);
         }
     }
 

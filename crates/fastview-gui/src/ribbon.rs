@@ -404,7 +404,7 @@ impl App {
         self.qat_menu(ui.ctx(), &mut cmds);
 
         for c in cmds {
-            self.dispatch(c);
+            self.dispatch_from_menu(ui.ctx(), c);
         }
         self.keytips_paint(ui.ctx());
     }
