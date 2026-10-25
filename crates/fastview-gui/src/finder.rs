@@ -83,12 +83,22 @@ fn date_picker(ui: &mut egui::Ui, at: egui::Rect, id: &str, st: &mut Stamp) -> b
     // Closed (VM): white in a (141) frame, the long date 4 px in, the
     // calendar image and its ▾ at the right (our drawing of the image).
     let r = ui.interact(at, popup.with("field"), egui::Sense::click());
+    let focused = crate::dialogs::tab_stop(ui, r.id, crate::dialogs::StopKind::Other);
     {
         use egui::{Color32, Pos2, Rect, Vec2};
         let p = ui.painter();
         p.rect_filled(at, 0.0, Color32::from_gray(141));
         p.rect_filled(at.shrink(1.0), 0.0, Color32::WHITE);
-        p.text(Pos2::new(at.left() + 4.0, at.center().y), egui::Align2::LEFT_CENTER, st.long_date(), crate::dialogs::DLG_FONT, Color32::BLACK);
+        let text = st.long_date();
+        let t = p.text(Pos2::new(at.left() + 4.0, at.center().y), egui::Align2::LEFT_CENTER, &text, crate::dialogs::DLG_FONT, Color32::BLACK);
+        // With the focus its day field is selected (VM: Tab onto «С:»).
+        if focused {
+            let day = text.split(' ').next().unwrap_or_default().to_owned();
+            let w = ui.fonts(|f| f.layout_no_wrap(day.clone(), crate::dialogs::DLG_FONT, Color32::BLACK).size().x);
+            let hl = Rect::from_min_max(Pos2::new(t.left() - 1.0, t.top()), Pos2::new(t.left() + w + 1.0, t.bottom()));
+            p.rect_filled(hl, 0.0, Color32::from_rgb(0, 120, 215));
+            p.text(Pos2::new(at.left() + 4.0, at.center().y), egui::Align2::LEFT_CENTER, &day, crate::dialogs::DLG_FONT, Color32::WHITE);
+        }
         let cal = Rect::from_min_size(Pos2::new(at.right() - 27.0, at.center().y - 6.0), Vec2::new(11.0, 12.0));
         p.rect_filled(cal, 0.0, Color32::from_rgb(119, 107, 104));
         p.rect_filled(cal.shrink(1.0), 0.0, Color32::from_rgb(234, 239, 247));
@@ -800,6 +810,10 @@ impl App {
                 let rows: Vec<TreeRow> = rows_t.iter().map(|(node, depth, open, more)| TreeRow { depth: *depth, label: node.label(), has_children: *more, expanded: *open, selected: f.tree.selected == *node }).collect();
                 // 16 px rows inside the tree's 1 px frame.
                 let top_row = f.tree.take_reveal(((tr.shrink(4.0).height() - 2.0) / 16.0).floor() as usize);
+                // The tab order is the template's (VM): «Открыть файлы»,
+                // «Закрыть», «Удалить файлы», С:, По:, Станция, Блок,
+                // «Выбрать», the list, the check box, the tree.
+                crate::dialogs::tab_index(ui, 10);
                 let ev = win_tree(ui, tr.shrink(4.0), egui::Id::new("finder_tree"), Color32::TRANSPARENT, &rows, false, top_row, false, true, &mut |p, cell, k| {
                     let c = cell.center();
                     match rows_t[k].0 {
@@ -838,12 +852,14 @@ impl App {
                 // «Выбрать» (`0x46b8f0`): the tree's folder, rescanned
                 // only when it differs (case-sensitively); a virtual node
                 // does nothing.
+                crate::dialogs::tab_index(ui, 7);
                 if win_button(ui, r(12, 306, 40, 13), "Выбрать", false).clicked() {
                     if let Some(p) = f.tree.chosen().filter(|p| p.as_os_str() != f.folder.as_os_str()).map(Path::to_path_buf) {
                         f.folder = p;
                         rescan = true;
                     }
                 }
+                crate::dialogs::tab_index(ui, 9);
                 if win_check(ui, r(72, 307, 111, 11), "Включая вложенные папки", f.recursive) {
                     f.recursive = !f.recursive;
                     rescan = true;
@@ -866,14 +882,17 @@ impl App {
                     let list: std::collections::BTreeSet<String> = f.files.iter().map(|x| if k == 0 { x.station.clone() } else { x.block.clone() }).collect();
                     items.extend(list);
                     let at = items.iter().position(|it| it == value).unwrap_or(0);
+                    crate::dialogs::tab_index(ui, 5 + k as u32);
                     if let Some(pick) = win_combo_list(ui, r(cr.0, cr.1, cr.2, cr.3), egui::Id::new(("finder_combo", k)), &items, at, true) {
                         *value = items[pick].clone();
                     }
                 }
                 // A date change refilters (`0x46cfd0`).
                 win_label(ui, r(503, 36, 11, 9), "С:", false, true);
+                crate::dialogs::tab_index(ui, 3);
                 date_picker(ui, r(517, 34, 94, 12), "С:", &mut f.from);
                 win_label(ui, r(621, 36, 13, 9), "По:", false, true);
+                crate::dialogs::tab_index(ui, 4);
                 date_picker(ui, r(636, 34, 94, 12), "По:", &mut f.to);
                 // The list (1082, report, grid lines; VM): a (160) border, a
                 // 24 px header with (229) separators 2 px inside each column
@@ -920,6 +939,10 @@ impl App {
                     ui.painter().hline(inner.x_range(), y, grid);
                     y += 17.0;
                 }
+                let list_id = egui::Id::new("finder_list");
+                ui.interact(Rect::from_min_max(Pos2::new(inner.left(), inner.top() + 24.0), inner.max), list_id, egui::Sense::click());
+                crate::dialogs::tab_index(ui, 8);
+                crate::dialogs::tab_stop(ui, list_id, crate::dialogs::StopKind::Other);
                 if f.busy() {
                     win_label(ui, r(431, 180, 60, 10), "Поиск файлов...", false, true);
                 }
@@ -976,6 +999,7 @@ impl App {
                 });
                 // Neither button is ever greyed (the finder only enables
                 // and disables its list).
+                crate::dialogs::tab_index(ui, 2);
                 if win_button(ui, r(198, 306, 83, 14), "Удалить файлы", false).clicked() && !f.selected.is_empty() {
                     // `0x46d4b0`: every selected file and its companions in
                     // one shell delete — to the recycle bin unless Shift is
@@ -990,10 +1014,12 @@ impl App {
                 }
                 // OnOK: stop the scan, open every selected file, close —
                 // with nothing selected it only closes.
+                crate::dialogs::tab_index(ui, 0);
                 if win_button(ui, r(552, 306, 83, 14), "Открыть файлы", true).clicked() {
                     open_files = f.selected.iter().map(|&i| f.files[i].path.clone()).collect();
                     close = true;
                 }
+                crate::dialogs::tab_index(ui, 1);
                 if win_button(ui, r(648, 306, 83, 14), "Закрыть", false).clicked() {
                     close = true;
                 }

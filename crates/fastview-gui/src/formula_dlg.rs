@@ -199,11 +199,16 @@ impl App {
                     win_edit(ui, dlu(client, 272, 12, 131, 12), egui::Id::new("af_name"), &mut st.name, false);
                     // The selected template's form in the place of control
                     // 1035 (205, 36, 198 × 243).
+                    // The form is a child dialog without DS_CONTROL: its fields
+                    // are not in this dialog's tab order (tree, name, OK,
+                    // Отмена).
                     let place = dlu(client, 205, 36, 198, 243);
                     if let Some(d) = st.form {
-                        if !template_form(ui, place.min, d, &mut st) {
-                            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(place), |ui| form_ui(ui, d, &mut st));
-                        }
+                        crate::dialogs::no_tab_stop(ui, |ui| {
+                            if !template_form(ui, place.min, d, &mut st) {
+                                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(place), |ui| form_ui(ui, d, &mut st));
+                            }
+                        });
                     }
                     let ok_r = dlu(client, 293, 290, 50, 14);
                     st.ok_rect = Some(ok_r);

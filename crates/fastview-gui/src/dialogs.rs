@@ -202,7 +202,9 @@ impl<'o> Dlg<'o> {
                 *r = Ring::default();
             }
             if r.pass != frame {
-                r.prev = std::mem::take(&mut r.stops);
+                let mut stops = std::mem::take(&mut r.stops);
+                stops.sort_by_key(|s| s.2);
+                r.prev = stops.into_iter().map(|s| (s.0, s.1)).collect();
                 r.pass = frame;
             }
             r.prev.clone()
@@ -832,7 +834,8 @@ pub enum StopKind {
 #[derive(Clone, Default)]
 struct Ring {
     pass: u64,
-    stops: Vec<(egui::Id, StopKind)>,
+    /// This pass's stops with their place in the order.
+    stops: Vec<(egui::Id, StopKind, u32)>,
     prev: Vec<(egui::Id, StopKind)>,
 }
 
@@ -859,9 +862,11 @@ pub fn tab_stop(ui: &egui::Ui, id: egui::Id, kind: StopKind) -> bool {
     }
     let no_tab = ctx.data(|d| d.get_temp::<bool>(egui::Id::new("fv_no_tab"))).unwrap_or(false);
     let Some(d) = cur_dlg(ctx).filter(|_| !no_tab) else { return ctx.memory(|m| m.has_focus(id)) };
+    let place = ctx.data_mut(|m| m.remove_temp::<Option<u32>>(egui::Id::new("fv_tab_index"))).flatten();
     let ring = ctx.data_mut(|m| {
         let r: &mut Ring = m.get_temp_mut_or_default(d.with("fv_tab_ring"));
-        r.stops.push((id, kind));
+        let k = place.unwrap_or(10_000 + r.stops.len() as u32);
+        r.stops.push((id, kind, k));
         r.prev.clone()
     });
     if ctx.memory(|m| m.has_focus(id)) {
@@ -869,6 +874,13 @@ pub fn tab_stop(ui: &egui::Ui, id: egui::Id, kind: StopKind) -> bool {
         ctx.data_mut(|m| m.insert_temp(egui::Id::new("fv_focus_kind"), (pass, kind)));
     }
     focused_stop(ctx, &ring) == Some(id)
+}
+
+/// The next tab stop drawn takes place `n` in its dialog's tab order (the
+/// template's z-order where the drawing order differs); the others follow
+/// in their drawing order after every numbered one.
+pub fn tab_index(ui: &egui::Ui, n: u32) {
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_tab_index"), Some(n)));
 }
 
 /// Controls drawn in `add` are no tab stops (a template control without

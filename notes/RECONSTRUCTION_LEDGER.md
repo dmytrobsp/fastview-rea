@@ -8985,6 +8985,20 @@ VM: every step of the six dialogs alike.
 Left: the remaining dialogs' orders (359 and its forms, 558, the
 quick-analysis pages, 463), arrows between radios / push buttons.
 
+### L9.345 — VM: the tab order of 359 and the finder; tab indexes  ·  ✅
+359 «Добавить новую формулу»: the tree, the name, OK, Отмена and round
+again — the hosted form's fields are never reached (the form templates
+lack DS_CONTROL); ours had them in the cycle, now outside it. The finder
+(558), from its template and the VM: «Открыть файлы», «Закрыть»,
+«Удалить файлы», the two date pickers (the focused one shows its day
+selected), Станция, Блок, «Выбрать», the list, the check box, the tree.
+Ours drew them in another order; `dialogs::tab_index` now gives a
+control its template place where the drawing order differs (the ring is
+sorted by it), and the date pickers and the list are tab stops. VM: the
+eleven steps alike in both.
+Left: the quick-analysis sheet's pages (their templates' orders are long
+and scattered; not yet compared), 463's single list.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
