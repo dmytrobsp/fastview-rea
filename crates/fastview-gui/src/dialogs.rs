@@ -447,12 +447,9 @@ pub fn win_label(ui: &egui::Ui, r: Rect, text: &str, right: bool, enabled: bool)
 /// A group box at its template rectangle (VM, Windows 11): a square (220)
 /// frame at the left and right − 1, top + 6 and bottom − 2; the title from
 /// left + 9, the top line broken from left + 7 to 2 px past it.
+/// A disabled one looks the same (VM, Windows 11's theme: DIALOG 353's
+/// «Нормализация» 1061 after a click on «Абсолютные величины»).
 pub fn win_group(ui: &egui::Ui, r: Rect, title: &str) {
-    win_group_en(ui, r, title, true);
-}
-
-/// `win_group` with its title greyed when disabled.
-pub fn win_group_en(ui: &egui::Ui, r: Rect, title: &str, enabled: bool) {
     let p = ui.painter();
     let line = Stroke::new(1.0f32, Color32::from_gray(220));
     let (x0, x1, y0, y1) = (r.left() + 0.5, r.right() - 0.5, r.top() + 6.5, r.bottom() - 1.5);
@@ -462,8 +459,7 @@ pub fn win_group_en(ui: &egui::Ui, r: Rect, title: &str, enabled: bool) {
     if title.is_empty() {
         p.hline(x0..=x1, y0, line);
     } else {
-        let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
-        let t = p.text(Pos2::new(r.left() + 9.0, r.top()), egui::Align2::LEFT_TOP, title, DLG_FONT, ink);
+        let t = p.text(Pos2::new(r.left() + 9.0, r.top()), egui::Align2::LEFT_TOP, title, DLG_FONT, Color32::BLACK);
         p.hline(x0..=r.left() + 7.0, y0, line);
         p.hline(t.right() + 2.0..=x1, y0, line);
     }
@@ -481,8 +477,12 @@ pub fn win_radio(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool 
 /// disabled look approximated).
 pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabled: bool) -> bool {
     let resp = ui.interact(r, ui.id().with(("fv_radio", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    // A group's checked button is its tab stop (Tab enters a group there).
-    let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled && checked);
+    // A group's checked button is its tab stop (Tab enters a group there);
+    // a press focuses an unchecked one too (VM, DIALOG 353), which holds
+    // the focus as it gets checked.
+    let pressed = ui.input(|i| i.pointer.primary_pressed()) && resp.contains_pointer();
+    let held = ui.memory(|m| m.has_focus(resp.id));
+    let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled && (checked || pressed || held));
     let c = Pos2::new(r.left() + 6.5, r.top() + (r.height() / 2.0).floor());
     let p = ui.painter();
     match (checked, enabled) {
@@ -1822,6 +1822,52 @@ mod tests {
         let dialog_saw_enter = pass(key(egui::Key::Enter, false));
         assert_eq!(*pressed.borrow(), vec!["B"]);
         assert!(!dialog_saw_enter, "the Enter went to B");
+    }
+
+    /// A press on an unchecked radio gives it the focus, which it keeps as
+    /// it gets checked (VM: DIALOG 353's «Абсолютные величины» shows the
+    /// focus rect and the edit loses its selection).
+    #[test]
+    fn a_press_on_an_unchecked_radio_focuses_it() {
+        let ctx = egui::Context::default();
+        let checked = std::cell::Cell::new(0);
+        let at = std::cell::RefCell::new(Vec::new());
+        let mut t = 0.0;
+        let mut pass = |events: Vec<egui::Event>| {
+            t += 0.05;
+            let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))), time: Some(t), events, ..Default::default() };
+            take_dialog_tabs(&ctx, &mut raw);
+            let _ = ctx.run(raw, |ctx| {
+                dlg(ctx, "t").show(ctx, |ui| {
+                    let (client, _) = ui.allocate_exact_size(Vec2::new(300.0, 100.0), egui::Sense::hover());
+                    let mut e = String::from("1");
+                    let first = ui.memory(|m| m.focused().is_none());
+                    win_edit(ui, Rect::from_min_size(client.min + Vec2::new(10.0, 5.0), Vec2::new(60.0, 20.0)), egui::Id::new("e"), &mut e, first);
+                    let r = |y: f32| Rect::from_min_size(client.min + Vec2::new(10.0, y), Vec2::new(150.0, 18.0));
+                    *at.borrow_mut() = vec![r(40.0), r(65.0)];
+                    for k in 0..2 {
+                        if win_radio_en(ui, r(40.0 + 25.0 * k as f32), if k == 0 { "A" } else { "B" }, checked.get() == k, true) {
+                            checked.set(k);
+                        }
+                    }
+                });
+            });
+        };
+        for _ in 0..3 {
+            pass(vec![]);
+        }
+        let edit = ctx.memory(|m| m.focused());
+        assert!(edit.is_some(), "the edit starts focused");
+        let b = at.borrow()[1].center();
+        let button = |pressed| egui::Event::PointerButton { pos: b, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        pass(vec![egui::Event::PointerMoved(b), button(true)]);
+        pass(vec![]);
+        let held = ctx.memory(|m| m.focused());
+        pass(vec![button(false)]);
+        pass(vec![]);
+        assert_eq!(checked.get(), 1, "B checked on the release");
+        assert!(held.is_some() && ctx.memory(|m| m.focused()) == held, "B focused from the press on");
+        assert_ne!(held, edit);
     }
 
     /// A press on a toolbar button leaves a TreeView's focus (and its blue

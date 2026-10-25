@@ -9071,6 +9071,23 @@ one when no normal rect was saved before (a first run); now the restored
 rect seen last is kept (`App::frame_normal`, GDI's `rcNormalPosition`):
 VM 312 312 2218 1328 after a first run maximised and closed.
 
+### L9.351 — VM: DIALOG 353's radios: a press focuses an unchecked one; «Нормализация» never greys  ·  ✅
+Run (the frequency pane's menu, «Настройки»; opened from the keyboard,
+so the focus cues show): a click on «Абсолютные величины» in the
+original moves the focus there — the dotted rect round its text, the
+periods edit's selection gone — and greys the two «Нормализация»
+radios; the frame's caption stays black, after any click and when the
+dialog opens in absolute mode (VM, every shot: the caption's darkest
+pixel 0). Ours kept the focus in the edit (an unchecked radio was no tab
+stop, so its press focused nothing) and greyed the caption. Now a radio
+registers while pressed or focused too (`win_radio_en`), and a group
+box is drawn alike enabled or not (`win_group_en` and
+`FreqDialog::frame_on` gone; the static reading of 1061's enable state
+stands, it just does not show under Windows 11's theme). «В процентах»
+back: the radios enabled, its focus rect, alike. Esc keeps the saved
+mode, alike. Test `a_press_on_an_unchecked_radio_focuses_it` (fails
+without the fix).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

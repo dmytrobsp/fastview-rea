@@ -88,12 +88,11 @@ pub struct FreqDialog {
     pub periods: String,
     /// The field a refused OK left the focus in (0 periods, 1 harmonics).
     pub fail: Option<u8>,
-    /// The enable states of 1026 / 1027 (the two «Нормализация» radios)
-    /// and of the frame 1061: OnInitDialog (`0x46ee20`) disables only the
-    /// radios, in absolute mode; every click (`0x46f070`, nCode 0) sets all
-    /// three from 1023's check.
+    /// The enable state of 1026 / 1027 (the two «Нормализация» radios):
+    /// OnInitDialog (`0x46ee20`) disables them in absolute mode; every
+    /// click (`0x46f070`, nCode 0) sets them — and the frame 1061, which
+    /// looks the same either way (VM) — from 1023's check.
     pub radios_on: bool,
-    pub frame_on: bool,
 }
 
 /// DIALOG 353's exchange on OK (`0x46ee70`): 0x401 (periods) an int in
@@ -910,7 +909,6 @@ impl App {
                     periods: self.freq_periods.to_string(),
                     fail: None,
                     radios_on: self.freq_percent,
-                    frame_on: true,
                 })
             }
         }
@@ -1754,7 +1752,7 @@ impl App {
         }
         let mut done: Option<bool> = None;
         crate::dialogs::dlg(ctx, "Настройки частотной диаграммы").margin(0.0).collapsible(false).resizable(false).show(ctx, |ui| {
-            use crate::dialogs::{dlu, win_button, win_edit, win_group, win_group_en, win_label, win_radio_en};
+            use crate::dialogs::{dlu, win_button, win_edit, win_group, win_label, win_radio_en};
             // The 226 × 222 DLU template (339 × 361 px). The dialog opens
             // with the first edit focused, its text selected.
             let (client, _) = ui.allocate_exact_size(Vec2::new(339.0, 361.0), egui::Sense::hover());
@@ -1774,7 +1772,7 @@ impl App {
                 dlg.percent = true;
                 clicked = true;
             }
-            win_group_en(ui, dlu(client, 12, 132, 204, 60), "Нормализация", dlg.frame_on);
+            win_group(ui, dlu(client, 12, 132, 204, 60), "Нормализация");
             if win_radio_en(ui, dlu(client, 24, 150, 126, 12), "По основной гармонике", !dlg.use_rms, dlg.radios_on) {
                 dlg.use_rms = false;
                 clicked = true;
@@ -1791,7 +1789,7 @@ impl App {
                 done = Some(false);
             }
             if clicked {
-                (dlg.radios_on, dlg.frame_on) = (dlg.percent, dlg.percent);
+                dlg.radios_on = dlg.percent;
             }
         });
         let done = done.or_else(|| self.dialog_keys(ctx));
@@ -2339,11 +2337,9 @@ mod tests {
         h.app.apply_freq_dialog(FreqDialog { periods: "2".into(), harmonics: "20".into(), ..dlg });
         assert!(!h.app.freq_percent);
         assert_eq!((h.app.freq_periods, h.app.freq_harmonics), (2, 20));
-        // Opened in absolute mode (`0x46ee20`): only the two radios greyed,
-        // the frame's caption not.
+        // Opened in absolute mode (`0x46ee20`): the two radios greyed.
         h.app.diag_cmd(Window::Freq, DiagCmd::FreqSettings, Pos2::ZERO);
-        let d = h.app.diag.freq_dlg.as_ref().unwrap();
-        assert_eq!((d.radios_on, d.frame_on), (false, true));
+        assert!(!h.app.diag.freq_dlg.as_ref().unwrap().radios_on);
     }
 
     /// `0x46ee70`'s checks: MFC's int parse, then the two ranges.
