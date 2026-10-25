@@ -8475,6 +8475,30 @@ and X typed, OK, «Анализ»): both still answer «Данные для оп
   `win_tree` takes `sel_always` — the finder's and the formula dialog's
   trees keep the band, the ОМП tree not.
 
+### L9.315 — VM: an ОМП result and the caption bars' place and faces  ·  ✅
+Run: «Параметры ОМП» with «Номинальный ток…» 1, Ia / Ib / Ic and the
+three line voltages, one section (R 0.1, X 0.4), OK — which runs the
+analysis in both («2-х фазное КЗ: фазы BC на смежной линии.», the визиры
+placed alike, «Анализ» checked); then a channel copied and pasted.
+- **The bars' order (spec §1.3).** The ОМП result bar comes first under
+  the ribbon, the merge bar above the parameters bar; a paste clears the
+  ОМП result in both, so the three never show together. Ours drew the
+  ОМП bar inside the ribbon's panel; now in a band of its own.
+- **Their geometry** (rows measured on the VM, now identical: 143 / 150
+  / 182, 191 …): the ОМП bar 33 px, the merge bar 62 (ours 70), each
+  followed by 8 px of the brush (the merge bar's ours 4); each face a box
+  from 4 px in to 22 px short of the window's right, framed in (157, 189,
+  216) on four sides, the brush round it (ours spanned the window with
+  lines top and bottom only). The ОМП bar: bitmap 230's light orange «i»
+  13 px in, the text (four leading spaces) from 25 in (30, 57, 91) 11 px,
+  «Сохранить...» a flat white button framed (157, 189, 216).
+- **Kept for a follow-up:** each bar's «×» in the right margin (VM) —
+  what MFC's message-bar close does per bar; the merge bar's controls a
+  few px lower in ours.
+Also a frame after any click or key is now drawn again (`frame_ui`): a
+command dispatched after its button was drawn showed its old state until
+the next input (seen with «Анализ» after its run).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

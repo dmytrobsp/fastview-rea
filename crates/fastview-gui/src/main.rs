@@ -596,6 +596,13 @@ impl App {
     pub fn frame_ui(&mut self, ctx: &egui::Context) {
         dialogs::route_combo_keys(ctx);
         self.min_size(ctx);
+        // A click or a key acts after the frame that drew it (a command is
+        // dispatched once its button is drawn): one more frame shows the
+        // state it left (VM: «Анализ» drawn unchecked after its run until
+        // the next input).
+        if ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::PointerButton { .. } | egui::Event::Key { .. } | egui::Event::Text(_) | egui::Event::Copy | egui::Event::Paste(_)))) {
+            ctx.request_repaint();
+        }
         // Window title «Механотроника FastView - <document>» (0x45f7d0) and
         // files dropped on the window (DragAcceptFiles).
         let title = match self.active_doc() {
@@ -639,8 +646,6 @@ impl App {
             .show(ctx, |ui| {
                 self.ribbon_ui(ui);
                 self.ribbon_wheel(ui, ui.min_rect());
-                // Caption bars docked under the ribbon: the ОМП result.
-                self.omp_banner(ui);
                 // The ribbon's bottom row (VM, per Office 2007 style).
                 if let Some(b) = pal.bands {
                     let r = ui.max_rect();
@@ -659,29 +664,38 @@ impl App {
                 ui.painter().px_hline(r.x_range(), r.top() + 1.0, egui::Stroke::new(1.0f32, b.under_ribbon[2]));
             }
         });
-        // A control bar's face in the Office 2007 looks: a gradient from
-        // white to (213, 228, 242) between (157, 189, 216) lines.
+        // The ОМП result bar (221), first under the ribbon, then 8 px of the
+        // brush (VM).
+        self.omp_sync_bar();
+        if self.omp_ui.bar.is_some() {
+            egui::TopBottomPanel::top("fv_ompbar").exact_height(33.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |ui| self.omp_banner(ui));
+            egui::TopBottomPanel::top("fv_under_ompbar").exact_height(8.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
+        }
+        // A caption bar's face in the Office 2007 looks (VM): a box from 4 px
+        // in to 22 px short of the window's right, the brush round it, a
+        // gradient from white to (213, 228, 242) inside (157, 189, 216)
+        // lines.
         let bar_face = |ui: &egui::Ui| {
             if let (None, Some(b)) = (pal.info_bar, pal.bands) {
-                let r = ui.max_rect();
-                crate::lanes::gradient(ui.painter(), egui::Rect::from_min_max(egui::pos2(r.left(), r.top() + 1.0), egui::pos2(r.right(), r.bottom() - 1.0)), egui::Color32::WHITE, b.bar_bottom);
-                let edge = egui::Stroke::new(1.0f32, b.bar_line);
-                ui.painter().px_hline(r.x_range(), r.top(), edge);
-                ui.painter().px_hline(r.x_range(), r.bottom() - 1.0, edge);
+                let m = ui.max_rect();
+                ui.painter().rect_filled(m, 0.0, strip);
+                let r = egui::Rect::from_min_max(m.min + egui::vec2(4.0, 0.0), egui::pos2(m.right() - 22.0, m.bottom()));
+                crate::lanes::gradient(ui.painter(), r.shrink(1.0), egui::Color32::WHITE, b.bar_bottom);
+                ui.painter().px_rect_stroke(r, 0.0, egui::Stroke::new(1.0f32, b.bar_line));
             }
         };
-        // The merge bar (CMergeBar, 70 px), shown after a paste — docked
-        // above the parameters bar (VM), then 4 px of the brush.
+        // The merge bar (CMergeBar), shown after a paste — docked above the
+        // parameters bar, 62 px with its lines, then 8 px of the brush (VM).
         if self.merge.is_some() {
             egui::TopBottomPanel::top("mergebar")
-                .exact_height(70.0)
+                .exact_height(62.0)
                 .show_separator_line(false)
                 .frame(egui::Frame::none().fill(pal.info_bar.unwrap_or(pal.group_bg)))
                 .show(ctx, |ui| {
                     bar_face(ui);
                     self.merge_bar_ui(ui)
                 });
-            egui::TopBottomPanel::top("fv_under_mergebar").exact_height(4.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
+            egui::TopBottomPanel::top("fv_under_mergebar").exact_height(8.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
         }
         // 142: the parameters bar, 67 px — in the Office 2007 looks a
         // gradient from white to (213, 228, 242) between (157, 189, 216)

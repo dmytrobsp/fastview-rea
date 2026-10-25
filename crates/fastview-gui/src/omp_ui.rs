@@ -10,7 +10,7 @@
 //! `fvb_core::omp`, the settings model `fvb_core::omp_params`.
 
 use crate::app::{App, Computed, Doc};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, Color32};
 use fvb_core::omp::{NeutralMode, OmpResult, Section, Trace};
 use fvb_core::omp_params::{self as params, OmpParams, SectionParams, DOUBLE_ENDED, GROUNDED, ISOLATED};
 use std::collections::HashSet;
@@ -327,7 +327,7 @@ impl App {
 
     /// Re-bind the bar to the active document (`0x45f7d0` → `0x454310`) and
     /// refresh its text while the result is shown.
-    fn omp_sync_bar(&mut self) {
+    pub(crate) fn omp_sync_bar(&mut self) {
         if self.omp_ui.bar_doc != self.active || self.active.is_none() {
             self.omp_ui.bar_doc = self.active;
             let shown = self.active_doc().is_some_and(|d| d.omp.shown);
@@ -339,38 +339,61 @@ impl App {
         }
     }
 
-    /// The result bar under the ribbon: "i" icon, the text (leading spaces
-    /// kept), right-aligned «Сохранить...» and the close button.
+    /// The result bar (CMsgCaptionBar 221) in its own band under the
+    /// ribbon, 33 px (VM, Office 2007): the control-bar face — a gradient
+    /// from white between (157, 189, 216) lines; the older looks' INFOBK —
+    /// from 4 px in to 22 px short of the window's right (the close button
+    /// in that margin), framed; bitmap 230's orange «i» centred 13
+    /// px in, the text (its four leading spaces kept) from 25, a flat
+    /// «Сохранить...» 93 × 22 at the face's right.
     pub fn omp_banner(&mut self, ui: &mut egui::Ui) {
+        use crate::oscgeom::PixelLines;
         self.omp_sync_bar();
         let Some(text) = self.omp_ui.bar.clone() else {
             self.omp_ui.close_rect = None;
             return;
         };
         let pal = self.skin.palette();
-        let mut save = false;
-        let mut close = false;
-        egui::Frame::none()
-            .fill(Color32::from_rgb(255, 255, 225))
-            .stroke(egui::Stroke::new(1.0_f32, pal.group_border))
-            .inner_margin(egui::Margin::symmetric(6.0, 4.0))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    let (r, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                    ui.painter().circle_filled(r.center(), 7.5, Color32::from_rgb(40, 90, 200));
-                    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, "i", egui::FontId::proportional(12.0), Color32::WHITE);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let x = ui.add(egui::Button::new("✕").frame(false).small());
-                        self.omp_ui.close_rect = Some(x.rect);
-                        close = x.clicked();
-                        save = ui.button("Сохранить...").on_hover_text("Сохранить рерультаты ОМП").clicked();
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            ui.add(egui::Label::new(RichText::new(&text).color(Color32::BLACK)).truncate());
-                        });
-                    });
-                });
-            });
+        let full = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(ui.available_width(), 33.0));
+        ui.allocate_rect(full, egui::Sense::hover());
+        // 4 px of the brush at the left, the face framed on three sides.
+        let face = egui::Rect::from_min_max(full.min + egui::vec2(4.0, 0.0), egui::pos2(full.right() - 22.0, full.bottom()));
+        let p = ui.painter().clone();
+        match pal.bands.filter(|_| pal.info_bar.is_none()) {
+            Some(b) => {
+                crate::lanes::gradient(&p, egui::Rect::from_min_max(face.min + egui::vec2(0.0, 1.0), face.max - egui::vec2(0.0, 1.0)), Color32::WHITE, b.bar_bottom);
+                let edge = egui::Stroke::new(1.0f32, b.bar_line);
+                p.px_rect_stroke(face, 0.0, edge);
+            }
+            None => {
+                p.rect_filled(face, 0.0, pal.info_bar.unwrap_or(Color32::from_rgb(255, 255, 225)));
+                p.rect_stroke(face, 0.0, egui::Stroke::new(1.0_f32, pal.group_border));
+            }
+        }
+        let mid = face.center().y;
+        let ic = egui::pos2(face.left() + 13.0, mid);
+        // Bitmap 230 (VM): a light orange disc, darker below, a brown «i».
+        p.circle_filled(ic, 6.5, Color32::from_rgb(254, 200, 153));
+        p.circle_filled(ic + egui::vec2(0.0, 1.0), 5.5, Color32::from_rgb(253, 175, 120));
+        p.text(ic, egui::Align2::CENTER_CENTER, "i", egui::FontId::proportional(12.0), Color32::from_rgb(120, 60, 20));
+        let br = egui::Rect::from_min_size(egui::pos2(face.right() - 97.0, mid - 11.0), egui::vec2(93.0, 22.0));
+        p.with_clip_rect(egui::Rect::from_min_max(face.min, egui::pos2(br.left() - 4.0, face.bottom()))).text(egui::pos2(face.left() + 25.0, mid), egui::Align2::LEFT_CENTER, &text, egui::FontId::proportional(11.0), Color32::from_rgb(30, 57, 91));
+        let bresp = ui.interact(br, ui.id().with("fv_omp_save"), egui::Sense::click()).on_hover_text("Сохранить рерультаты ОМП");
+        if bresp.hovered() {
+            crate::popmenu::hot_bar(&p, br);
+        } else {
+            p.rect_filled(br, 0.0, Color32::WHITE);
+            p.px_rect_stroke(br, 0.0, egui::Stroke::new(1.0f32, Color32::from_rgb(157, 189, 216)));
+        }
+        p.text(br.center(), egui::Align2::CENTER_CENTER, "Сохранить...", egui::FontId::proportional(12.0), Color32::from_rgb(30, 57, 91));
+        let save = bresp.clicked();
+        let xr = egui::Rect::from_center_size(egui::pos2(face.right() + 11.5, full.top() + 9.0), egui::vec2(16.0, 16.0));
+        let xresp = ui.interact(xr, ui.id().with("fv_omp_close"), egui::Sense::click());
+        let xs = egui::Stroke::new(1.5f32, if xresp.hovered() { Color32::from_rgb(30, 57, 91) } else { Color32::from_rgb(77, 96, 130) });
+        p.line_segment([xr.center() + egui::vec2(-3.5, -3.5), xr.center() + egui::vec2(3.5, 3.5)], xs);
+        p.line_segment([xr.center() + egui::vec2(3.5, -3.5), xr.center() + egui::vec2(-3.5, 3.5)], xs);
+        self.omp_ui.close_rect = Some(xr);
+        let close = xresp.clicked();
         if save {
             self.omp_save_report();
         }
