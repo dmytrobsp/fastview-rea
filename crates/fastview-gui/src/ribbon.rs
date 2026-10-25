@@ -100,7 +100,8 @@ impl App {
             let anchor = match orb {
                 // The orb's upper part anchors the menu (its lower part is
                 // in the tab row, below).
-                Some((r, _)) => egui::Button::new("").frame(false).min_size(egui::vec2(r.width() - 4.0, 20.0)),
+                // (narrower than the orb: the QAT starts at x 49)
+                Some((r, _)) => egui::Button::new("").frame(false).min_size(egui::vec2(r.width() - 10.0, 20.0)),
                 None => egui::Button::new(RichText::new(APP_MENU_TITLE).color(p.text).strong()),
             };
             // The main panel is MFC's Office 2007 one (VM, Blue): opened
@@ -302,12 +303,14 @@ impl App {
                     }
                 }
             }
-            ui.add_space(12.5);
+            ui.add_space(14.5);
             // The customise arrow: one item, «Свернуть ленту».
             let custom = qat_arrow(ui, p, true).on_hover_text("Настройка панели быстрого доступа");
             ui.spacing_mut().item_spacing.x = qat_spacing;
+            // Its menu right under the button's own 20 px (VM: the border at
+            // y 24, under the pressed look's 18–23).
             if custom.clicked() || custom.secondary_clicked() {
-                open_min_menu(ui, custom.rect.left_bottom());
+                open_min_menu(ui, custom.rect.left_bottom() - egui::vec2(0.0, 2.0));
             }
             // The caption row (the ribbon's own, `bReplaceFrameCaption`,
             // over DWM's frame — L9.150): the title centred in the free
@@ -1051,7 +1054,10 @@ impl App {
         let mut chosen = false;
         let min = self.ribbon_minimized;
         let area = egui::Area::new(qat_menu_id()).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
-            crate::popmenu::mfc_frame_with(ui, menu == QatMenu::Minimize, false, |ui| match menu {
+            // The minimise item is a menu row (its pads, VM); the print list
+            // a panel of large items.
+            let row_menu = menu == QatMenu::Minimize;
+            crate::popmenu::mfc_frame_with(ui, row_menu, row_menu, |ui| match menu {
                 QatMenu::Minimize => {
                     ui.set_min_width(150.0);
                     if crate::popmenu::mark_item_hot(ui, "Свернуть ленту", true, min.then_some("✓"), false).clicked() {

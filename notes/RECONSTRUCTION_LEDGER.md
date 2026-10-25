@@ -9188,6 +9188,22 @@ the glass's edges, the cut, the buttons and the arrows at its x and y;
 the orb within half a pixel. Left: the glyphs are ours (the original's
 bitmaps are its artwork); the older looks' flat button untouched.
 
+### L9.357 — VM: the QAT's two menus at the original's corners  ·  ✅
+Run (the customise arrow, then the print button's arrow): the
+original's «Minimize the Ribbon» menu (mfc120rus «Свернуть ленту» in
+ours, L9.330) has its border at (139, 24) — right under the customise
+button's own 20 px — down to 51, with a context menu's pixel pads; the
+print list's at (93, 26), its title band and rules as the status bar
+menu's (L9.356). Ours: the QAT's buttons had landed 2 px right of their
+aim (the orb's invisible menu anchor ended past x 49), so the print
+list opened at 95; the customise menu at y 26 without pads. Now the
+anchor is 10 px narrower than the orb's button (its own hit area
+unchanged), the buttons at 49 / 71 / 93, the customise arrow 14.5 px
+after the print arrow, its menu 2 px higher with pads. VM: both menus'
+borders at the original's x and y; the customise glyph at 142–147
+(143–147). Left: the print list's three large items 2 px taller in all
+(ours' description font).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
