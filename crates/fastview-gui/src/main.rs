@@ -115,7 +115,13 @@ fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path
     // A double-click within Windows' default GetDoubleClickTime, 500 ms
     // (egui's own is 300 ms: a hand's double-click on the coefficient list
     // was missed on the VM).
-    ctx.options_mut(|o| o.input_options.max_double_click_delay = 0.5);
+    // A press released in place is a click however long it was held, as a
+    // Win32 button or menu item takes it (egui's limit is 0.8 s; VM: an
+    // application menu item pressed for 1.5 s acts in the original).
+    ctx.options_mut(|o| {
+        o.input_options.max_double_click_delay = 0.5;
+        o.input_options.max_click_duration = f64::INFINITY;
+    });
     let mut app = App::new().with_persistence();
     app.own_caption = own_caption;
     app.splash_until = Some(2.0);
@@ -1302,8 +1308,9 @@ mod window_tests {
         assert!(open(&w), "the menu opened from the orb's lower half");
     }
 
-    /// The «Файл» menu is two columns wide, not the window's width; hovering
-    /// «Печать» puts its sub-items in the right column.
+    /// The «Файл» menu is MFC's main panel, 490 px wide (VM), not the
+    /// window's width; hovering «Печать» puts its sub-items in the right
+    /// column.
     #[test]
     fn app_menu_is_two_columns_and_shows_print_items_on_the_right() {
         use ribbon::{app_sub_id, AppSub};
@@ -1315,7 +1322,7 @@ mod window_tests {
             ids.iter().filter(|l| l.order == egui::Order::Foreground).filter_map(|l| m.area_rect(l.id)).max_by(|a, b| a.area().total_cmp(&b.area()))
         });
         let menu = menu.expect("the menu is open");
-        assert!(menu.width() > 500.0 && menu.width() < 600.0, "{menu:?}");
+        assert!((489.0..=494.0).contains(&menu.width()), "{menu:?}");
         let sub = |w: &Win| w.ctx.data(|d| d.get_temp::<(Option<AppSub>, u64)>(app_sub_id())).and_then(|s| s.0);
         assert_eq!(sub(&w), None);
         let print = (0..(menu.height() as i32 / 4))
@@ -1326,8 +1333,9 @@ mod window_tests {
                 sub(&w) == Some(AppSub::Print)
             })
             .expect("a «Печать» item");
-        // Across to the first sub-item, «Параметры страницы».
-        let target = Pos2::new(menu.left() + 300.0, menu.top() + 45.0);
+        // Across to the first sub-item, «Параметры страницы» (under the
+        // 25 px top band and the column's header).
+        let target = Pos2::new(menu.left() + 300.0, menu.top() + 25.0 + 27.0 + 15.0);
         w.run(vec![egui::Event::PointerMoved(Pos2::new(menu.left() + 230.0, print.y))]);
         w.press(egui::PointerButton::Primary, target, target);
         assert!(w.app.print.setup_dlg.is_some(), "page setup opened from the right column");

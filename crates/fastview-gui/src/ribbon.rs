@@ -84,47 +84,74 @@ impl App {
                 Some((r, _)) => egui::Button::new("").frame(false).min_size(egui::vec2(r.width() - 4.0, 20.0)),
                 None => egui::Button::new(RichText::new(APP_MENU_TITLE).color(p.text).strong()),
             };
+            // The main panel is MFC's Office 2007 one (VM, Blue): opened
+            // under the tab row with its corner at (0, 26); egui's own menu
+            // frame is set aside for this popup and the panel painted
+            // under its rows (`main_panel_ground`).
+            let saved_style = ui.ctx().style();
+            ui.ctx().style_mut(|s| {
+                s.visuals.window_fill = Color32::TRANSPARENT;
+                s.visuals.window_stroke = egui::Stroke::NONE;
+                s.visuals.menu_rounding = egui::Rounding::ZERO;
+                s.visuals.popup_shadow = egui::epaint::Shadow::NONE;
+                s.spacing.menu_margin = egui::Margin::ZERO;
+            });
+            {
+                let state = egui::menu::BarState::load(ui.ctx(), bar_id);
+                let root: &Option<egui::menu::MenuRoot> = &state;
+                if let Some(root) = root {
+                    root.menu_state.write().rect.min = full.min + egui::vec2(0.0, 26.0);
+                }
+            }
             let app_button = egui::menu::menu_custom_button(ui, anchor, |ui| {
-                // Main panel (Office 2007): hovering an item with sub-items
-                // shows them in the right column in place of the recent
-                // documents. Fixed column widths: a separator takes all the
-                // width it is offered, which would stretch the menu.
-                // Kept only while the menu stays open (stamped each pass;
-                // egui returns no inner result while a menu stays open).
+                // Hovering an item with sub-items shows them in the right
+                // column in place of the recent documents; kept only while
+                // the menu stays open (stamped each pass; egui returns no
+                // inner result while a menu stays open).
                 let frame = ui.ctx().cumulative_pass_nr();
                 let mut sub = ui.data(|d| d.get_temp::<(Option<AppSub>, u64)>(sub_id)).filter(|s| s.1 + 1 == frame).and_then(|s| s.0);
+                let o = ui.max_rect().min;
+                let ground = ui.painter().add(egui::Shape::Noop);
+                ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                // The top band: the outer line, white, the gradient, white,
+                // the inner line (25 rows).
+                ui.allocate_exact_size(egui::vec2(MAIN_W, 25.0), egui::Sense::hover());
                 ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                    ui.add_space(7.0);
                     ui.vertical(|ui| {
-                        ui.set_width(220.0);
+                        ui.set_width(MAIN_LEFT_W);
+                        ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                         let close_cmd = self.active.map(Command::CloseDoc);
-                        let items: [(&str, bool, Option<Command>, Option<AppSub>); 10] = [
-                            ("Открыть...", true, Some(Command::Open), None),
-                            ("Сохранить", self.can_save(), Some(Command::Save), None),
-                            ("Сохранить как...", has_doc, Some(Command::SaveAs), None),
-                            ("Проводник", true, Some(Command::ToggleExplorer), None),
+                        // (label, its underlined letter, enabled, command, sub-items)
+                        let items: [MainItem; 10] = [
+                            ("Открыть...", Some(0), true, Some(Command::Open), None),
+                            ("Сохранить", Some(0), self.can_save(), Some(Command::Save), None),
+                            ("Сохранить как...", Some(10), has_doc, Some(Command::SaveAs), None),
+                            ("Проводник", None, true, Some(Command::ToggleExplorer), None),
                             // The main part prints (57607).
-                            ("Печать  ▸", has_doc, Some(Command::Print), Some(AppSub::Print)),
-                            ("Параметры файла...", has_doc, Some(Command::FileParams), None),
-                            ("Комментарии", self.hdr_comment_enabled(), Some(Command::HdrComment), None),
-                            ("Загрузка настроек...", has_doc, Some(Command::LoadSettings), None),
-                            ("Настройки", true, Some(Command::Settings), None),
-                            ("Закрыть", close_cmd.is_some(), close_cmd, None),
+                            ("Печать", None, has_doc, Some(Command::Print), Some(AppSub::Print)),
+                            ("Параметры файла...", Some(0), has_doc, Some(Command::FileParams), None),
+                            ("Комментарии", None, self.hdr_comment_enabled(), Some(Command::HdrComment), None),
+                            ("Загрузка настроек...", Some(9), has_doc, Some(Command::LoadSettings), None),
+                            ("Настройки", Some(1), true, Some(Command::Settings), None),
+                            ("Закрыть", Some(0), close_cmd.is_some(), close_cmd, None),
                         ];
-                        // A separator between every item (each is its own
-                        // group in the original's main panel); tight, so the
-                        // column fits the 500 px minimum window.
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        for (k, (label, enabled, cmd, opens)) in items.into_iter().chain([("Дополнительно  ▸", true, None, Some(AppSub::Extras))]).enumerate() {
-                            if k > 0 {
-                                // From after the image column (4 + 32 px).
-                                let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 3.0), egui::Sense::hover());
-                                ui.painter().hline((r.left() + 36.0)..=r.right(), r.center().y, ui.visuals().widgets.noninteractive.bg_stroke);
+                        for (k, (label, ul, enabled, cmd, opens)) in items.into_iter().chain([("Дополнительно", None, true, None, Some(AppSub::Extras))]).enumerate() {
+                            // A separator after «Сохранить как...» and after
+                            // every later item (VM): its line from after the
+                            // image column, 4 rows in all.
+                            if k >= 3 {
+                                let (r, _) = ui.allocate_exact_size(egui::vec2(MAIN_LEFT_W, 4.0), egui::Sense::hover());
+                                let line = egui::Rect::from_min_max(egui::pos2(r.left() + 35.0, r.top()), egui::pos2(r.right(), r.top() + 1.0));
+                                ui.painter().rect_filled(line, 0.0, MAIN_RULE);
+                                ui.painter().rect_filled(line.translate(egui::vec2(0.0, 1.0)), 0.0, MAIN_RULE_LIGHT);
                             }
                             // Every item is a large-image button with its text
                             // on the right (the main panel's Repos); the
                             // drawings are ours.
                             let icon = [Some(Icon::Open), Some(Icon::Save), Some(Icon::Save), None, Some(Icon::Print), Some(Icon::Params)].get(k).copied().flatten();
-                            let r = main_entry(ui, p, icon, label, enabled || opens.is_some(), opens.is_some() && sub == opens);
+                            let r = main_entry(ui, p, icon, label, ul, enabled || opens.is_some(), opens.is_some() && sub == opens, opens.is_some());
                             if k == 4 {
                                 menu_rects.extend([(crate::keytips::Target::PrintMain, r.rect, enabled), (crate::keytips::Target::PrintMenu, r.rect, true)]);
                             } else if k < 10 {
@@ -141,27 +168,32 @@ impl App {
                             }
                         }
                     });
-                    ui.separator();
+                    // The divider: a (197) and a (245) column.
+                    ui.add_space(2.0);
                     ui.vertical(|ui| {
-                        ui.set_width(300.0);
+                        ui.set_width(MAIN_RIGHT_W);
+                        ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                        let title = match sub {
+                            Some(AppSub::Print) => "Предварительный просмотр и печать документа",
+                            Some(AppSub::Extras) => "Дополнительно (FastView-REA)",
+                            None => "Последние документы",
+                        };
+                        main_header(ui, title);
                         match sub {
                             Some(AppSub::Print) => {
-                                ui.label(RichText::new("Предварительный просмотр и печать документа").strong());
-                                ui.separator();
-                                for (label, desc, enabled, cmd) in [
-                                    ("Параметры страницы", "Изменение параметров страницы", true, Command::PageSetup),
-                                    ("Предварительный просмотр", "Просмотр документа в полностраничном режиме", has_doc, Command::PrintPreview),
-                                    ("Печать", "Печать активного документа", has_doc, Command::Print),
+                                for (label, desc, enabled, cmd, icon) in [
+                                    ("Параметры страницы", "Изменение параметров страницы", true, Command::PageSetup, Icon::Pages),
+                                    ("Предварительный просмотр", "Просмотр документа в полностраничном режиме", has_doc, Command::PrintPreview, Icon::ZoomIn),
+                                    ("Печать", "Печать активного документа", has_doc, Command::Print, Icon::Print),
                                 ] {
-                                    if sub_entry(ui, label, desc, enabled).clicked() {
+                                    let paint = move |p: &egui::Painter, r: egui::Rect, c: Color32| icons::paint(p, r, icon, c);
+                                    if crate::popmenu::large_item(ui, label, desc, enabled, &paint).clicked() && enabled {
                                         cmds.push(cmd);
                                         ui.close_menu();
                                     }
                                 }
                             }
                             Some(AppSub::Extras) => {
-                                ui.label(RichText::new("Дополнительно (FastView-REA)").strong());
-                                ui.separator();
                                 for (label, cmd) in [
                                     ("Демо-осциллограмма", Command::Demo),
                                     ("Экспорт каналов в CSV…", Command::ExportCsv),
@@ -170,22 +202,19 @@ impl App {
                                     ("Роли каналов Ua…Ic…", Command::ChannelMap),
                                     ("Экспорт изображения окна (PNG)…", Command::ExportImage),
                                 ] {
-                                    if ui.add(egui::Button::new(label).frame(false)).clicked() {
+                                    if recent_row(ui, label, None).clicked() {
                                         cmds.push(cmd);
                                         ui.close_menu();
                                     }
                                 }
                             }
                             None => {
-                                ui.label(RichText::new("Последние документы").strong());
-                                ui.separator();
                                 let cwd = std::env::current_dir().ok();
                                 for (k, path) in mru.iter().enumerate() {
                                     let name = mru_display(path, cwd.as_deref());
                                     // «&1 name» … «1&0 name», then the plain name.
-                                    let text = if k < 10 { format!("{} {name}", k + 1) } else { name };
-                                    let b = egui::Button::new(text).frame(false).truncate();
-                                    let r = ui.add(b);
+                                    let (text, ul) = if k < 9 { (format!("{} {name}", k + 1), Some(0)) } else if k == 9 { (format!("10 {name}"), Some(1)) } else { (name, None) };
+                                    let r = recent_row(ui, &text, ul);
                                     if k < 10 {
                                         menu_rects.push((crate::keytips::Target::Recent(k), r.rect, true));
                                     }
@@ -197,9 +226,15 @@ impl App {
                             }
                         }
                     });
+                    ui.add_space(9.0);
                 });
+                // The frame's lower lines end 1 px below the last item,
+                // over its last two rows (VM).
+                let bottom = ui.min_rect().bottom() + 1.0;
+                ui.painter().set(ground, main_panel_ground(o, bottom));
                 ui.data_mut(|d| d.insert_temp(sub_id, (sub, frame)));
             });
+            ui.ctx().set_style(saved_style);
             let button = app_button.response.rect;
             self.kt_bar = Some((bar_id, button, app_button.response.id));
             self.kt_rects.push((crate::keytips::Target::AppButton, button, true));
@@ -945,7 +980,10 @@ impl App {
             root.is_some()
         });
         let hot = ctx.input(|i| i.pointer.hover_pos()).is_some_and(|q| q.distance(r.center()) <= r.width() / 2.0);
-        paint_orb(&ui.painter().clone().with_layer_id(egui::LayerId::new(egui::Order::Middle, egui::Id::new("fv_app_orb_layer"))), r, colors, if open { 2 } else if hot { 1 } else { 0 }, p.orb_flat);
+        // Over the open main panel (VM: the orb stays whole above its top
+        // band).
+        let order = if open { egui::Order::Tooltip } else { egui::Order::Middle };
+        paint_orb(&ui.painter().clone().with_layer_id(egui::LayerId::new(order, egui::Id::new("fv_app_orb_layer"))), r, colors, if open { 2 } else if hot { 1 } else { 0 }, p.orb_flat);
     }
 }
 
@@ -1297,37 +1335,129 @@ pub enum AppSub {
 /// Rows 44 px (max(text, 34) + 2 × 5, `0x1011cea4`), the image at the
 /// left + 3 centred, the text from + 38 on one line with an end ellipsis
 /// (`0x101012f1`).
-fn main_entry(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Option<Icon>, label: &str, enabled: bool, selected: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 44.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    let v = ui.visuals();
-    if selected || (enabled && resp.hovered()) {
-        ui.painter().rect_filled(rect, 2.0f32, v.widgets.hovered.weak_bg_fill);
+/// A main panel item: its label, the letter underlined, enabled, its
+/// command, the sub-items it shows.
+type MainItem<'a> = (&'a str, Option<usize>, bool, Option<Command>, Option<AppSub>);
+
+/// The application menu's main panel (Office 2007 Blue, VM): 490 px wide,
+/// the item column 174, the right column 298.
+const MAIN_W: f32 = 490.0;
+const MAIN_LEFT_W: f32 = 174.0;
+const MAIN_RIGHT_W: f32 = 298.0;
+const MAIN_RULE: Color32 = Color32::from_rgb(197, 197, 197);
+const MAIN_RULE_LIGHT: Color32 = Color32::from_rgb(245, 245, 245);
+/// The items' and recent documents' ink, the header's, and disabled text.
+const MAIN_INK: Color32 = Color32::from_rgb(21, 66, 139);
+const MAIN_TITLE_INK: Color32 = Color32::from_rgb(0, 21, 110);
+const MAIN_DISABLED: Color32 = Color32::from_rgb(141, 141, 141);
+
+/// The main panel's frame and grounds from its corner `o` down to
+/// `bottom` (exclusive), as the VM shows them: a 1 px (155, 175, 202)
+/// outer line, white, (196, 214, 237) — the top band's first rows a
+/// gradient from (215, 229, 247) —, white and the inner line, 7 px at the
+/// left, 9 at the right, 25 on top and 3 below; the item column (250), a
+/// (197) / (245) divider, the right column (233, 238, 238) under a 25 px
+/// (222, 232, 239) header and its rule; a 4 px shadow.
+fn main_panel_ground(o: egui::Pos2, bottom: f32) -> egui::Shape {
+    let px = |x0: f32, y0: f32, x1: f32, y1: f32, c: Color32| egui::Shape::rect_filled(egui::Rect::from_min_max(egui::pos2(o.x + x0, y0), egui::pos2(o.x + x1, y1)), 0.0, c);
+    let (t, b) = (o.y, bottom);
+    let outer = Color32::from_rgb(155, 175, 202);
+    let blue = Color32::from_rgb(196, 214, 237);
+    let mut v = Vec::new();
+    // The shadow, right and below: three columns / rows fading out.
+    for (i, a) in [97u8, 61, 28].into_iter().enumerate() {
+        let i = i as f32;
+        v.push(px(MAIN_W + i, t + 4.0 + i, MAIN_W + i + 1.0, b + i, Color32::from_black_alpha(a)));
+        v.push(px(4.0 + i, b + i, MAIN_W + i, b + i + 1.0, Color32::from_black_alpha(a)));
     }
-    let ink = if enabled { v.text_color() } else { disabled_ink(p) };
+    v.extend([
+        px(0.0, t, MAIN_W, b, outer),
+        px(1.0, t + 1.0, MAIN_W - 1.0, b - 1.0, Color32::WHITE),
+        px(2.0, t + 2.0, MAIN_W - 2.0, b - 1.0, blue),
+    ]);
+    let mut mesh = egui::Mesh::default();
+    let g = egui::Rect::from_min_max(egui::pos2(o.x + 2.0, t + 2.0), egui::pos2(o.x + MAIN_W - 2.0, t + 12.0));
+    for (pt, c) in [(g.left_top(), (215, 229, 247)), (g.right_top(), (215, 229, 247)), (g.right_bottom(), (196, 214, 237)), (g.left_bottom(), (196, 214, 237))] {
+        mesh.colored_vertex(pt, Color32::from_rgb(c.0, c.1, c.2));
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    v.push(egui::Shape::mesh(mesh));
+    v.extend([
+        // The bottom's middle row, then the white ring and the inner line.
+        px(1.0, b - 2.0, MAIN_W - 1.0, b - 1.0, Color32::from_rgb(201, 238, 255)),
+        px(5.0, t + 23.0, MAIN_W - 7.0, b - 3.0, Color32::WHITE),
+        px(6.0, t + 24.0, MAIN_W - 8.0, b - 2.0, outer),
+        px(7.0, t + 25.0, 181.0, b - 3.0, Color32::from_gray(250)),
+        px(181.0, t + 25.0, 182.0, b - 3.0, MAIN_RULE),
+        px(182.0, t + 25.0, 183.0, b - 3.0, MAIN_RULE_LIGHT),
+        px(183.0, t + 25.0, 481.0, b - 3.0, Color32::from_rgb(233, 238, 238)),
+        px(183.0, t + 25.0, 481.0, t + 50.0, Color32::from_rgb(222, 232, 239)),
+        px(183.0, t + 50.0, 481.0, t + 51.0, MAIN_RULE),
+        px(183.0, t + 51.0, 481.0, t + 52.0, MAIN_RULE_LIGHT),
+    ]);
+    egui::Shape::Vec(v)
+}
+
+/// `label` at `at` (left, vertical centre) with its letter `ul` underlined
+/// (the main panel shows its mnemonics, VM).
+fn mnemonic_text(ui: &egui::Ui, at: egui::Pos2, label: &str, ul: Option<usize>, ink: Color32) {
+    let font = egui::FontId::proportional(12.0);
+    let g = ui.fonts(|f| f.layout_no_wrap(label.to_owned(), font.clone(), ink));
+    let top = (at.y - g.size().y / 2.0).round();
+    if let Some(i) = ul {
+        let before: String = label.chars().take(i).collect();
+        let ch: String = label.chars().skip(i).take(1).collect();
+        let x0 = ui.fonts(|f| f.layout_no_wrap(before, font.clone(), ink).size().x);
+        let w = ui.fonts(|f| f.layout_no_wrap(ch, font.clone(), ink).size().x);
+        let y = top + g.size().y - 2.0;
+        ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2((at.x + x0).round(), y), egui::pos2((at.x + x0 + w).round(), y + 1.0)), 0.0, ink);
+    }
+    ui.painter().galley(egui::pos2(at.x, top), g, ink);
+}
+
+/// One item of the main panel's column: 44 px, the 32 px image at the
+/// left + 3, the text from + 38 (`Repos` `0x1011cea4`), MFC's hot bar
+/// under the pointer, an arrow at the right for one with sub-items.
+#[allow(clippy::too_many_arguments)]
+fn main_entry(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Option<Icon>, label: &str, ul: Option<usize>, enabled: bool, selected: bool, arrow: bool) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(MAIN_LEFT_W, 44.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    if selected || (enabled && resp.hovered()) {
+        crate::popmenu::hot_bar(ui.painter(), rect);
+    }
+    let ink = if enabled { MAIN_INK } else { MAIN_DISABLED };
     if let Some(icon) = icon {
         let img = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.center().y - 16.0), egui::vec2(32.0, 32.0));
         crate::icons::paint(ui.painter(), img.shrink(4.0), icon, if enabled { p.text } else { disabled_ink(p) });
     }
-    let font = egui::FontId::proportional(12.0);
-    let room = rect.right() - rect.left() - 38.0 - 4.0;
-    let galley = ui.fonts(|f| {
-        let mut job = egui::text::LayoutJob::simple_singleline(label.to_owned(), font.clone(), ink);
-        job.wrap = egui::text::TextWrapping::truncate_at_width(room);
-        f.layout_job(job)
-    });
-    ui.painter().galley(egui::pos2(rect.left() + 38.0, rect.center().y - galley.size().y / 2.0), galley, ink);
+    mnemonic_text(ui, egui::pos2(rect.left() + 38.0, rect.center().y), label, ul, ink);
+    if arrow {
+        let c = egui::pos2(rect.right() - 10.0, rect.center().y);
+        ui.painter().add(egui::Shape::convex_polygon(vec![c + egui::vec2(-2.0, -4.0), c + egui::vec2(2.0, 0.0), c + egui::vec2(-2.0, 4.0)], Color32::from_rgb(86, 125, 177), egui::Stroke::NONE));
+    }
     resp
 }
 
-fn sub_entry(ui: &mut egui::Ui, label: &str, desc: &str, enabled: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 38.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    let v = ui.visuals();
-    if enabled && resp.hovered() {
-        ui.painter().rect_filled(rect, 2.0f32, v.widgets.hovered.weak_bg_fill);
+/// The right column's header: 25 px, its title bold from + 2, the rule
+/// under it painted with the panel.
+fn main_header(ui: &mut egui::Ui, title: &str) {
+    let (r, _) = ui.allocate_exact_size(egui::vec2(MAIN_RIGHT_W, 27.0), egui::Sense::hover());
+    let font = egui::FontId::proportional(12.0);
+    let h = ui.fonts(|f| f.row_height(&font));
+    crate::lanes::bold_text(ui.painter(), egui::pos2(r.left() + 2.0, (r.top() + 12.5 - h / 2.0).round()), title, font, MAIN_TITLE_INK);
+}
+
+/// A row of the right column (a recent document): 30 px, the text from
+/// + 3, MFC's hot bar under the pointer.
+fn recent_row(ui: &mut egui::Ui, text: &str, ul: Option<usize>) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(MAIN_RIGHT_W, 30.0), egui::Sense::click());
+    if resp.hovered() {
+        crate::popmenu::hot_bar(ui.painter(), rect);
     }
-    let (strong, weak) = if enabled { (v.strong_text_color(), v.text_color()) } else { (v.weak_text_color(), v.weak_text_color()) };
-    ui.painter().text(rect.left_top() + egui::vec2(6.0, 3.0), egui::Align2::LEFT_TOP, label, egui::FontId::proportional(12.0), strong);
-    ui.painter().text(rect.left_top() + egui::vec2(6.0, 20.0), egui::Align2::LEFT_TOP, desc, egui::FontId::proportional(12.0), weak);
+    let room = rect.width() - 6.0;
+    let font = egui::FontId::proportional(12.0);
+    let shown = if ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font.clone(), MAIN_INK).size().x) <= room { text.to_owned() } else { crate::dialogs::ellipsize(ui, text, font, room) };
+    mnemonic_text(ui, egui::pos2(rect.left() + 3.0, rect.center().y), &shown, ul, MAIN_INK);
     resp
 }
 

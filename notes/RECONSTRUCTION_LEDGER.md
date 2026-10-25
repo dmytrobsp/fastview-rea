@@ -8869,6 +8869,35 @@ adds I1, I2 and 3I0 — the same lanes and curves in both. «Фазные
 сопротивления» with IA … UC adds 3I0 and the phase impedances in Ом,
 alike. No difference found.
 
+### L9.341 — VM: the application menu as MFC's main panel; a long press is a click  ·  ✅
+Measured on the VM (Office 2007 Blue, WIN_1999): the main panel opens
+with its corner at (0, 26), under the orb, which stays drawn over it; it
+is 490 px wide: a 1 px (155, 175, 202) outer line, white, (196, 214, 237)
+and white again round an inner line — 7 px at the left, 9 at the right,
+3 below (the middle row (201, 238, 255)) — and a 25 px top band whose
+first rows shade from (215, 229, 247); a 4 px shadow fading out over three
+pixels. The item column (x 7–180) is (250): 44 px items, the 32 px image
+at + 3, the text from + 38 in (21, 66, 139) with its mnemonic underlined
+(О̲ткрыть, С̲охранить, Сохранить к̲ак, П̲араметры файла, Загрузка
+н̲астроек, На̲стройки, З̲акрыть), (141) disabled; a 4-row separator
+((197) / (245) from x 42) after «Сохранить как...» and after every later
+item. A (197) / (245) divider, then the right column (233, 238, 238)
+under a 25 px (222, 232, 239) header with its bold (0, 21, 110) title and
+rule; the recent documents in 30 px rows from + 3, the number underlined.
+The frame's lower lines end 1 px below the last item. Ours was egui's
+own popup: light blue, 550 px, a line under every item, opened at y 24
+over the tab row. Now `main_panel_ground` paints the panel under the rows
+(egui's menu frame neutralised for this popup only; its position set
+through the menu root), `main_entry` / `main_header` / `recent_row` the
+rows with MFC's hot bar. VM: the frame, separators, columns, shadow and
+place pixel-alike (ours one item taller: our «Дополнительно»).
+Also seen: an item pressed for 1.5 s acts on release in the original
+(«Параметры файла...» opened); egui counts no click held over 0.8 s, so
+ours ignored it. `max_click_duration` is now unbounded, as a Win32 button
+takes a press however long. VM: the dialog opens in both.
+Residual: the other looks' main panel colours not measured; the images
+are ours (W6).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
