@@ -8708,6 +8708,21 @@ disabled in ours (no CHM shipped, as decided earlier); «О программе..
 alike. Also run: the differential «Каналы ▸ Создать» pair dialog —
 layout, lists and grid lines pixel-alike.
 
+### L9.332 — Phase 2 of an open on the loader's thread (W2.5)  ·  ✅
+L9.31's read: the original's per-sample recompute (`0x428490`, through
+the `.set` apply `0x44f5b0`) runs on the loader's thread while DIALOG 492
+is up. Ours parsed on the worker but built the document's derived arrays
+(phasors, the sliding RMS, the DC means, the frequency correction) on the
+UI thread once the worker was done. Now the worker builds the document
+(`open_file` → `Doc::new`) and hands it over; the UI thread only applies
+the `.set` and selects channel 0. Measured (release, `frame_bench`, which
+now prints the open's UI-thread time): DOC_1999 2.8 → 1.4 ms on the UI
+thread. Test `the_loader_builds_the_derived_arrays`.
+Residual: the `.set`'s formula channels are still computed on the UI
+thread (they need the library and the program's settings); our counter's
+phase-2 steps are added at the end of the parse rather than during the
+build, so the bar reaches its last value before the build ends.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

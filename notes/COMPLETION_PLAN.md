@@ -147,8 +147,9 @@ items (VM ones also in W4.4):
   done, L9.266 — with the « (вст.)» name and the `%g` ratios).
 - [x] W2.4 L9.30 — EMR_STRETCHDIBITS vs EMR_BITBLT in copy's EMF: matched,
   one BitBlt from a memory DC (L9.269, VM-tested).
-- [ ] W2.5 L9.31 — phase 2 of loading on the UI thread (derived arrays,
-  `.set` formula channels outside the bar); the `.cff` cancelled during its
+- [x] W2.5 L9.31 — phase 2 of loading on the UI thread (derived arrays:
+  on the loader's thread, L9.332; the `.set` formula channels stay on the
+  UI thread, a residual); the `.cff` cancelled during its
   split shows «Неправильный формат файла» (done, L9.268, with the ASCII
   reader's byte scan).
 - [x] W2.6 L9.34 — MakeUpper folds Cyrillic units and a «ном» channel is not

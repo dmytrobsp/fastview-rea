@@ -483,7 +483,9 @@ pub enum RectZoom {
     Dragging { chan: usize, x: f32, y0: f32, y1: f32 },
 }
 
-type LoadResult = Result<(Oscillogram, fvb_core::comtrade::CffSections), fvb_core::comtrade::ComtradeError>;
+type ParseResult = Result<(Oscillogram, fvb_core::comtrade::CffSections), fvb_core::comtrade::ComtradeError>;
+/// A parsed record with its derived arrays, built on the worker.
+type LoadResult = Result<(Box<Doc>, fvb_core::comtrade::CffSections), fvb_core::comtrade::ComtradeError>;
 
 /// «Нет» (string 3306): the empty block the library loader `0x40c7e0` puts
 /// first in each diagram's «Тип блока» list.
@@ -524,7 +526,7 @@ pub struct Loading {
 }
 
 /// Parse a `.cfg` / `.cff` / `.osc` record.
-fn parse_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::comtrade::Progress>) -> LoadResult {
+fn parse_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::comtrade::Progress>) -> ParseResult {
     let lower = path.to_string_lossy().to_lowercase();
     if lower.ends_with(".sto") {
         // A Configurator-MT record (`0x4563b0`): the name re-built with a
@@ -542,6 +544,14 @@ fn parse_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::com
     } else {
         fvb_core::comtrade::load_progress(path, enc, prog).map(|o| (o, Default::default()))
     }
+}
+
+/// Parse a record and build its document on the loader's thread: the
+/// original's phase 2 (`0x428490` through the `.set` apply `0x44f5b0`, the
+/// per-sample recompute) runs there too, under the progress dialog.
+fn open_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::comtrade::Progress>) -> LoadResult {
+    let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    parse_file(path, enc, prog).map(|(osc, cff)| (Box::new(Doc::new(osc, name)), cff))
 }
 
 /// The progress dialog shows when the `.dat` of a `.cfg` or the `.cff` is
@@ -2447,7 +2457,7 @@ impl App {
         let progress = std::sync::Arc::new(fvb_core::comtrade::Progress::default());
         let prog = progress.clone();
         std::thread::spawn(move || {
-            let r = parse_file(&p, enc, Some(&prog));
+            let r = open_file(&p, enc, Some(&prog));
             // A cancelled open is abandoned silently (`0x44f391`) — but an
             // error the reader posted still shows (the `.cfg` loader's
             // zero-sample check, `0x450bc1`: a `.cff` cancelled during its
@@ -2477,12 +2487,8 @@ impl App {
 
     fn finish_load(&mut self, path: &std::path::Path, loaded: LoadResult) {
         match loaded {
-            Ok((osc, cff)) => {
-                let name = path
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                self.add_doc(Doc::new(osc, name));
+            Ok((doc, cff)) => {
+                self.add_doc(*doc);
                 let enc = self.encoding;
                 if let Some(d) = self.active_doc_mut() {
                     d.path = Some(path.to_path_buf());
@@ -3408,11 +3414,30 @@ mod tests {
     fn a_sto_record_reports_124_alone() {
         let mut app = App::new();
         let p = std::path::Path::new("/r/Запись.STO");
-        let r = parse_file(p, Encoding::Cp1251, None);
+        let r = open_file(p, Encoding::Cp1251, None);
         assert!(matches!(&r, Err(fvb_core::comtrade::ComtradeError::Plain(m)) if m == "Ошибка чтения файла /r/Запись.sto"));
         app.finish_load(p, r);
         assert_eq!(app.dlg.alert(), Some("Ошибка чтения файла /r/Запись.sto"), "no \" - <file>\" detail");
         assert!(app.docs.is_empty());
+    }
+
+    /// Phase 2 of the open (`0x428490` under `0x44f5b0`) runs on the
+    /// loader's thread: the worker hands over a document whose derived
+    /// arrays are built.
+    #[test]
+    fn the_loader_builds_the_derived_arrays() {
+        let dir = std::env::temp_dir().join(format!("fv_open_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("r.cfg");
+        std::fs::write(&cfg, "S,1,1999\n1,1A,0D\n1,Ia,A,,A,1,0,0,-1000,1000\n50\n1\n1000,40\n01/01/2000,00:00:00.000000\n01/01/2000,00:00:00.000000\nASCII\n").unwrap();
+        let rows: String = (0..40).map(|k| format!("{},{},{}\n", k + 1, k * 1000, ((k as f64) * std::f64::consts::PI / 10.0).sin() * 100.0)).collect();
+        std::fs::write(dir.join("r.dat"), rows).unwrap();
+        let (doc, _) = open_file(&cfg, Encoding::Cp1251, None).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(doc.name, "r");
+        assert_eq!(doc.rms.len(), 1);
+        assert_eq!(doc.rms[0].len(), 40);
+        assert!(doc.rms[0][39] > 60.0, "{}", doc.rms[0][39]);
     }
 
     /// `0x416ed6`: quick analysis evaluates the whole list; an old formula

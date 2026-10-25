@@ -2046,12 +2046,19 @@ mod window_tests {
         let Ok(rec) = std::env::var("FV_FRAME_BENCH") else { return };
         let mut app = App::new();
         app.load_comtrade_path(std::path::Path::new(&rec));
+        let mut ui_thread = std::time::Duration::ZERO;
         while !app.loading.is_empty() {
+            let t = std::time::Instant::now();
             app.poll_loading();
+            ui_thread += t.elapsed();
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
+        eprintln!("open on the UI thread: {:.1} ms", ui_thread.as_secs_f64() * 1000.0);
         let ctx = egui::Context::default();
-        frames(&mut app, &ctx, Vec2::new(1320.0, 860.0), vec![vec![]; 3]);
+        let t0 = std::time::Instant::now();
+        frames(&mut app, &ctx, Vec2::new(1320.0, 860.0), vec![vec![]; 1]);
+        eprintln!("first frame: {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0);
+        frames(&mut app, &ctx, Vec2::new(1320.0, 860.0), vec![vec![]; 2]);
         let n = 30;
         let t0 = std::time::Instant::now();
         frames(&mut app, &ctx, Vec2::new(1320.0, 860.0), vec![vec![egui::Event::PointerMoved(Pos2::new(400.0, 400.0))]; n]);
