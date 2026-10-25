@@ -418,7 +418,8 @@ impl App {
         }
         let font = egui::FontId::proportional(12.0);
         let mut x = r.left();
-        for (i, text) in s.iter().enumerate() {
+        // A hidden pane leaves no gap: the rest move left (VM).
+        for (i, text) in s.iter().enumerate().filter(|(i, _)| !self.status_hidden[*i]) {
             let w = if i == 2 || i == 5 { 218.0 } else { 153.0 };
             let clip = egui::Rect::from_min_max(egui::pos2(x, r.top()), egui::pos2(x + w - 2.0, r.bottom()));
             painter.with_clip_rect(clip).text(egui::pos2(x + 9.0, r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
@@ -427,7 +428,10 @@ impl App {
         // The last pane: 135 px at the right (VM), its own rows and a light
         // and a dark column at its left in the Office 2007 styles.
         let ext = egui::Rect::from_min_max(egui::pos2(r.right() - if p.bands.is_some() { 135.0 } else { 155.0 }, r.top() + 1.0), r.right_bottom());
-        if let (None, Some(b)) = (p.status_flat, p.bands) {
+        let ext_shown = !self.status_hidden[6];
+        if !ext_shown {
+            // Hidden from the menu: the bar's own face there.
+        } else if let (None, Some(b)) = (p.status_flat, p.bands) {
             let pane = egui::Rect::from_min_max(egui::pos2(ext.left() - 1.0, r.top()), r.right_bottom());
             rows(painter, pane, &b.status_pane);
             painter.vline(ext.left() - 0.5, ext.y_range(), egui::Stroke::new(1.0f32, b.pane_edge[0]));
@@ -437,10 +441,53 @@ impl App {
             painter.add(band(dark.lerp_to_gamma(egui::Color32::WHITE, 0.3), dark, ext));
             painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.6)));
         }
-        painter.text(egui::pos2((ext.left() + ext.right() - 12.0) / 2.0, ext.center().y), egui::Align2::CENTER_CENTER, "НТЦ Механотроника", font, p.status_text);
-        ui.allocate_rect(r, egui::Sense::hover());
+        if ext_shown {
+            painter.text(egui::pos2((ext.left() + ext.right() - 12.0) / 2.0, ext.center().y), egui::Align2::CENTER_CENTER, "НТЦ Механотроника", font, p.status_text);
+        }
+        // CMFCRibbonStatusBar's right-click: its configuration menu.
+        let bar = ui.allocate_rect(r, egui::Sense::click());
+        if bar.secondary_clicked() {
+            if let Some(at) = bar.interact_pointer_pos() {
+                self.status_menu = Some((at, ui.ctx().cumulative_pass_nr()));
+            }
+        }
+        self.status_config_menu(ui.ctx(), &s);
         self.status_toast(ui.ctx());
         self.resize_edges(ui.ctx());
+    }
+
+    /// «Status Bar Configuration» (MFC's own, its English title on the VM):
+    /// each element with its current text right-aligned, a tick while
+    /// shown; a click toggles it and the menu stays; Esc or a press
+    /// outside closes it. Opened upward from the point when it would run
+    /// past the bottom.
+    fn status_config_menu(&mut self, ctx: &egui::Context, texts: &[String; 6]) {
+        let Some((at, opened)) = self.status_menu else { return };
+        let id = egui::Id::new("fv_status_menu");
+        let h = ctx.memory(|m| m.area_rect(id)).map_or(0.0, |r| r.height());
+        let pos = if at.y + h > ctx.screen_rect().bottom() { egui::pos2(at.x, at.y - h) } else { at };
+        let mut toggle = None;
+        let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain(true).show(ctx, |ui| {
+            crate::popmenu::mfc_frame(ui, |ui| {
+                crate::popmenu::title_band(ui, "Status Bar Configuration");
+                for (i, t) in texts.iter().map(String::as_str).chain(Some("НТЦ Механотроника")).enumerate() {
+                    if i == 6 {
+                        crate::popmenu::separator(ui);
+                    }
+                    if crate::popmenu::mark_item_keys(ui, "", Some(t), true, (!self.status_hidden[i]).then_some("✓"), false).clicked() {
+                        toggle = Some(i);
+                    }
+                }
+            })
+        });
+        if let Some(i) = toggle {
+            self.status_hidden[i] = !self.status_hidden[i];
+        }
+        let fresh = ctx.cumulative_pass_nr() == opened;
+        let away = ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|q| !area.response.rect.contains(q)));
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) || (away && !fresh) {
+            self.status_menu = None;
+        }
     }
 
     /// A frameless window's edges resize it (the DWM frame's sizing border):
@@ -1647,6 +1694,35 @@ mod window_tests {
         w.idle(2);
         assert!(w.app.merge.is_none(), "the bar hidden");
         assert_eq!(w.app.docs[ai].computed.len(), n, "the paste undone");
+    }
+
+    /// The status bar's right-click menu (CMFCRibbonStatusBar): a click
+    /// on an element's row hides it and the menu stays; Esc closes it; the
+    /// workspace keeps the hidden ids, one pane's hiding all six (VM).
+    #[test]
+    fn the_status_bar_menu_hides_elements() {
+        use egui::PointerButton::{Primary, Secondary};
+        let mut w = Win::new();
+        let at = Pos2::new(300.0, 860.0 - 8.0);
+        w.press(Secondary, at, at);
+        w.idle(2);
+        assert!(w.app.status_menu.is_some());
+        let menu = w.ctx.memory(|m| m.area_rect(egui::Id::new("fv_status_menu"))).expect("the menu shown");
+        assert!(menu.bottom() <= 860.0 + 0.5, "opened upward from the bar");
+        // The fourth element's row: under the 19 px title, 22 px rows.
+        let row = Pos2::new(menu.center().x, menu.top() + 3.0 + 19.0 + 3.0 * 22.0 + 11.0);
+        w.press(Primary, row, row);
+        w.idle(2);
+        assert_eq!(w.app.status_hidden, [false, false, false, true, false, false, false]);
+        assert!(w.app.status_menu.is_some(), "the menu stays");
+        w.key(egui::Key::Escape);
+        w.idle(1);
+        assert!(w.app.status_menu.is_none());
+        // Saved as the ids (32838 for any pane): restored, all six hidden.
+        w.app.status_hidden = [false; 7];
+        w.app.store.view.insert("Workspace/StatusBar/Hidden".into(), "32838".into());
+        w.app.restore_workspace();
+        assert_eq!(w.app.status_hidden, [true, true, true, true, true, true, false]);
     }
 
     /// VM: opening «Быстрый анализ» and leaving it with Esc does not mark

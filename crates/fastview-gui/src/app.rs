@@ -1534,6 +1534,11 @@ pub struct App {
     /// the creation texts (3130, 3134, 3426, 3170, 3172, 3428) until a
     /// document is active, then whatever the last one showed.
     pub status_panes: [String; 6],
+    /// The status bar's elements hidden from its «Status Bar
+    /// Configuration» menu: the six panes, then the extended one.
+    pub status_hidden: [bool; 7],
+    /// That menu, open at a point since a pass.
+    pub status_menu: Option<(egui::Pos2, u64)>,
     /// Dialogs and bars of `chandlg` / `recdlg` (backlog 16, 18, 28, 29, 34, 39).
     pub dlg: crate::recdlg::DialogState,
 
@@ -1680,6 +1685,8 @@ impl App {
             paste_announced: false,
             own_caption: false,
             splash_until: None,
+            status_hidden: [false; 7],
+            status_menu: None,
             status_panes: ["Верт. визир 1:", "Верт. визир 2:", "Разница в. визиров:", "Гор. визир 1:", "Гор. визир 2:", "Разница г. визиров:"].map(String::from),
             dlg: Default::default(),
             status: "Готово".to_string(),
@@ -2155,6 +2162,11 @@ impl App {
         v.insert("Workspace/TabOrder".into(), names.join(" "));
         // The parameters bar's visibility (`BasePane-810` IsVisible).
         v.insert("Workspace/ParamBar/IsVisible".into(), u8::from(self.dlg.param_bar).to_string());
+        // The status bar's hidden elements by command id
+        // (`MFCStatusBarPanes`): the six panes share 32838, the extended
+        // element is 32839.
+        let ids: Vec<&str> = [(self.status_hidden[..6].iter().any(|&h| h), "32838"), (self.status_hidden[6], "32839")].into_iter().filter(|x| x.0).map(|x| x.1).collect();
+        v.insert("Workspace/StatusBar/Hidden".into(), ids.join(" "));
         if let Some((r, max)) = placement {
             let normal = v.get("Workspace/WindowPlacement").and_then(|s| s.rsplit_once(' ')).map(|(r, _)| r.to_string());
             let rect = match normal {
@@ -2171,6 +2183,12 @@ impl App {
         let v = &self.store.view;
         if let Some(x) = v.get("Workspace/ParamBar/IsVisible") {
             self.dlg.param_bar = x != "0";
+        }
+        // Loaded by id: one pane hidden at exit hides all six (VM).
+        if let Some(x) = v.get("Workspace/StatusBar/Hidden") {
+            let has = |id: &str| x.split_whitespace().any(|w| w == id);
+            self.status_hidden = [has("32838"); 7];
+            self.status_hidden[6] = has("32839");
         }
         if let Some(o) = v.get("Workspace/TabOrder") {
             let all = [Pane::Vector, Pane::Circle, Pane::Differential, Pane::Frequency];

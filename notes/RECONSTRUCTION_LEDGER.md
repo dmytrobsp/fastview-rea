@@ -8601,6 +8601,23 @@ would run past the bottom with its bottom at its item's (the height from
 the last frame). VM: placed alike. Small visual left: the original's
 «Показать все» / «Скрыть все» carry images.
 
+### L9.324 — VM: the status bar's «Status Bar Configuration» menu  ·  ✅
+Run: a right-click on the original's status bar opens MFC's own
+CMFCRibbonStatusBar menu, «Status Bar Configuration» (English, MFC's
+string), opened upward from the point near the screen's foot: the six
+panes with their current text right-aligned («Верт. визир 1: 2074 мс»),
+a separator, «НТЦ Механотроника», each ticked while shown. A click
+toggles its element and the menu stays open; Esc or a press outside
+closes it; a hidden pane leaves no gap, the rest move left. The hidden
+elements are saved by command id in `MFCRibbonBar-59393\MFCStatusBarPanes`
+(a list holding 32838 after one pane was hidden) — the six panes share
+id 32838 (`0x4729b0`; the extended element 32839), so on the next start
+all six are hidden (VM: one pane hidden, exit, restart → an empty bar,
+the menu with six unticked rows). Ours had no menu. Now
+`App::status_config_menu`, `status_hidden`, the ids in the workspace
+(`Workspace/StatusBar/Hidden`) restored the same way. VM: menu, toggle
+and bar alike. Test `the_status_bar_menu_hides_elements`.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
