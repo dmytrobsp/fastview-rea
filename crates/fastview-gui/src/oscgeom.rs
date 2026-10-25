@@ -160,7 +160,9 @@ pub fn digital_window(raw: &[bool]) -> (f64, f64) {
 
 pub fn value_y(v: f64, top: f32, h: f32, min: f64, max: f64) -> f32 {
     if max <= min || !v.is_finite() {
-        return top + h / 2.0;
+        // The lane's middle in whole pixels (VM: a flat channel of a 93 px
+        // lane on its row 46, not 46.5).
+        return top + (h / 2.0).floor();
     }
     top + h - 5.0 - round_half_up((v - min) * f64::from(h - 10.0) / (max - min)) as f32
 }
@@ -392,7 +394,7 @@ mod tests {
     fn amplitude_maps_min_max_with_5px_margins() {
         assert_eq!(value_y(-2.0, 100.0, 93.0, -2.0, 6.0), 188.0);
         assert_eq!(value_y(6.0, 100.0, 93.0, -2.0, 6.0), 105.0);
-        assert_eq!(value_y(3.0, 100.0, 93.0, 3.0, 3.0), 146.5, "flat channel: lane middle");
+        assert_eq!(value_y(3.0, 100.0, 93.0, 3.0, 3.0), 146.0, "flat channel: lane middle");
         assert!((y_value(188.0, 100.0, 93.0, -2.0, 6.0) + 2.0).abs() < 1e-9);
     }
 

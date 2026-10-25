@@ -8522,7 +8522,7 @@ hides; its visibility is saved with the workspace (`BasePane-810`) and
 142 «Осциллограмма» brings it back. The info box is the window shrunk by
 4 px on each side and by 17 more at the right (its border on W − 22); the
 merge and parameters bars paint in the window's coordinates, 4 px above
-the box. Ours: no close button on the merge bar (L9.? read it as none),
+the box. Ours: no close button on the merge bar (read earlier as having none),
 the parameters bar's cross elsewhere, the merge bar's controls 4 px low,
 the parameters rows 1 px high, the box a pixel narrow, the bar's
 visibility not kept. Now `dialogs::caption_close` (the VM's 8 × 7 cross
@@ -8532,6 +8532,13 @@ bar's close hides it and undoes a pending paste; the coordinates as read;
 border alike; the merge bar's cross leaves both programs with the paste
 undone and «Возврат» enabled. Test
 `closing_the_merge_bar_undoes_a_pending_paste`.
+
+### L9.318 — VM: the ОМП result lanes; a flat channel on a whole pixel row  ·  ✅
+Run (L9.315's ОМП result): the «Lкз» lane, «КЗ фазы A / B / C» with their
+marks, the визиры and the «242» label alike in both. One pixel: the flat
+«Lкз» (all zero) is drawn on its lane's row 46 of 93 in the original,
+ours on 46.5 (the next row down). `value_y` puts a flat channel on the
+middle in whole pixels; VM: the same row.
 
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
