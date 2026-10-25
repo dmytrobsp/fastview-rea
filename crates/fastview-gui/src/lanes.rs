@@ -2138,7 +2138,11 @@ impl App {
         // ↑ / ↓ over the rows, the disabled ones too (wrapping; VM: a
         // grey bar on a greyed row); Enter picks an enabled one on the
         // next pass.
-        let (up, down, enter) = ctx.input(|i| (i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::ArrowDown), i.key_pressed(egui::Key::Enter)));
+        // Taken from the input, as a Win32 menu loop eats its keys.
+        let (up, down, enter) = ctx.input_mut(|i| {
+            let mut k = |key| i.consume_key(egui::Modifiers::NONE, key);
+            (k(egui::Key::ArrowUp), k(egui::Key::ArrowDown), k(egui::Key::Enter))
+        });
         ctx.data_mut(|d| {
             let k: &mut MenuKeys = d.get_temp_mut_or_default(menu_keys_id());
             k.activate = false;
