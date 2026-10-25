@@ -50,7 +50,26 @@ impl App {
         // `0x472fef`; its image 570 is the original's — ours the logo).
         // The older looks' flat button is 41 px about the same centre (VM).
         let orb_d = if p.orb_flat.is_some() { 41.0 } else { 45.0 };
-        let orb = p.app_orb.map(|c| (egui::Rect::from_center_size(full.min + egui::vec2(3.0 + 22.5, 2.0 + 22.5), egui::vec2(orb_d, orb_d)), c));
+        // Maximised, the caption's content sits a pixel higher (VM).
+        let max_up = if ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false)) { 1.0 } else { 0.0 };
+        let orb = p.app_orb.map(|c| (egui::Rect::from_center_size(full.min + egui::vec2(3.0 + 22.5, 2.0 + 22.5 - max_up), egui::vec2(orb_d, orb_d)), c));
+        // Office 2007's quick-access toolbar in the caption: its glass
+        // frame (RIBBON_CAPTION_QA_GLASS, VM): from under the orb to x 131,
+        // y 6–26, a (173, 176, 184) edge round a light face, the right
+        // end rounded; a white disc 25.5 px about the orb's centre cuts its
+        // left end, a grey arc along the cut.
+        if orb.is_some() && p.orb_flat.is_none() {
+            let c = full.min + egui::vec2(22.0, 25.0 - max_up);
+            // (the orb's centre, `paint_orb`)
+            let glass = egui::Rect::from_min_max(egui::pos2(c.x, full.min.y + 6.0 - max_up), egui::pos2(full.min.x + 132.0, full.min.y + 27.0 - max_up));
+            let round = egui::Rounding { nw: 0.0, sw: 0.0, ne: 10.5, se: 10.5 };
+            let painter = ui.painter();
+            painter.rect_filled(glass, round, Color32::from_rgb(173, 176, 184));
+            painter.rect_filled(glass.shrink(1.0), egui::Rounding { ne: 9.5, se: 9.5, ..Default::default() }, Color32::from_rgb(232, 237, 241));
+            let cut = painter.with_clip_rect(glass);
+            cut.circle_filled(c, 25.5, Color32::WHITE);
+            cut.circle_stroke(c, 25.5, egui::Stroke::new(1.0f32, Color32::from_rgb(205, 207, 211)));
+        }
         // The rows touch: the caption 30 px, the tab strip 23 px, then the
         // body's frame (VM: rows 0–29, 30–52, the line at 53).
         let row_gap = ui.spacing().item_spacing.y;
@@ -239,10 +258,19 @@ impl App {
             self.kt_bar = Some((bar_id, button, app_button.response.id));
             self.kt_rects.push((crate::keytips::Target::AppButton, button, true));
             self.kt_rects.extend(menu_rects);
-            ui.add_space(4.0);
             // Quick-access toolbar: Open, Save, Print only; Печать is a
             // split button whose arrow opens the application menu's print
-            // list (VM), then the customise arrow.
+            // list (VM), then the customise arrow. Its buttons 22 px apart
+            // from x 49, the print arrow after the print button, the
+            // customise arrow outside the glass (VM).
+            let qat_spacing = ui.spacing().item_spacing.x;
+            ui.spacing_mut().item_spacing.x = 0.0;
+            if orb.is_some() {
+                let to = full.min.x + 49.0 - ui.cursor().min.x;
+                ui.add_space(to.max(0.0));
+            } else {
+                ui.add_space(4.0);
+            }
             for (n, (icon, tip, cmd)) in [
                 (Icon::Open, "Открыть  (Ctrl+O)", Command::Open),
                 (Icon::Save, "Сохранить", Command::Save),
@@ -274,9 +302,10 @@ impl App {
                     }
                 }
             }
-            ui.add_space(6.0);
+            ui.add_space(12.5);
             // The customise arrow: one item, «Свернуть ленту».
             let custom = qat_arrow(ui, p, true).on_hover_text("Настройка панели быстрого доступа");
+            ui.spacing_mut().item_spacing.x = qat_spacing;
             if custom.clicked() || custom.secondary_clicked() {
                 open_min_menu(ui, custom.rect.left_bottom());
             }
@@ -907,7 +936,10 @@ fn paint_v_gradient(ui: &egui::Ui, rect: egui::Rect, top: Color32, bottom: Color
 /// glossy upper half, our logo inside.
 fn paint_orb(painter: &egui::Painter, r: egui::Rect, colors: [Color32; 3], state: usize, flat: Option<Color32>) {
     let c = colors[state.min(2)];
-    let rad = r.width() / 2.0;
+    // The flat looks' button fills its 41 px; Office 2007's round image is
+    // 36 px in the 45 px button, its centre at (22, 25) (VM).
+    // (The rim's stroke inside the 18 px radius.)
+    let (r, rad) = if flat.is_some() { (r, r.width() / 2.0) } else { (egui::Rect::from_center_size(r.min + egui::vec2(19.0, 23.0), egui::vec2(36.0, 36.0)), 17.25) };
     if let Some(line) = flat {
         // The older looks: the body colour, a 1 px outline, no gloss.
         painter.circle(r.center(), rad - 0.5, c, egui::Stroke::new(1.0f32, line));
@@ -952,7 +984,7 @@ pub(crate) fn paint_logo(painter: &egui::Painter, rect: egui::Rect, color: Color
 }
 
 fn qat_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(24.0, 22.0), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::click());
     let painter = ui.painter();
     if resp.hovered() && ui.is_enabled() {
         painter.rect(rect, 3.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
@@ -1019,7 +1051,7 @@ impl App {
         let mut chosen = false;
         let min = self.ribbon_minimized;
         let area = egui::Area::new(qat_menu_id()).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
-            crate::popmenu::mfc_frame_with(ui, menu == QatMenu::Minimize, |ui| match menu {
+            crate::popmenu::mfc_frame_with(ui, menu == QatMenu::Minimize, false, |ui| match menu {
                 QatMenu::Minimize => {
                     ui.set_min_width(150.0);
                     if crate::popmenu::mark_item_hot(ui, "Свернуть ленту", true, min.then_some("✓"), false).clicked() {
@@ -1056,7 +1088,7 @@ impl App {
 /// The QAT's small drop-down arrow: the print split part, or the customise
 /// arrow (a bar over the triangle).
 fn qat_arrow(ui: &mut egui::Ui, p: crate::theme::Palette, customise: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(if customise { 13.0 } else { 11.0 }, 22.0), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(if customise { 13.0 } else { 9.0 }, 22.0), egui::Sense::click());
     let painter = ui.painter();
     if resp.hovered() && ui.is_enabled() {
         painter.rect(rect, 3.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));

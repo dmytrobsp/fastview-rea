@@ -9162,6 +9162,32 @@ parent's right − 1 and 801, the images in place. Left: ours' text a few
 per cent wider (Tahoma for Segoe UI: Selawik, the metric twin, has no
 Cyrillic), so ours' menus are narrower or wider by a few pixels.
 
+### L9.356 — VM: popup menus' rows as MFC spaces them; the ribbon panel menus; the QAT's glass frame and the orb's size  ·  ✅
+Measured on the VM (maximised and restored, every line by pixel scans):
+a context menu (CMFCPopupMenu: the lanes', the diagrams') has a pixel
+clear above its first row and below its last, and an 8 px separator
+(three clear, the (197) rule, its (245) line, three clear) — ours ran
+1 px high and 1 px short per separator; a ribbon panel menu (the status
+bar's, the QAT's) has neither pad, a 4 px separator (the rule, its line,
+two clear) and its title band 17 px with the rule under it. The
+caption: Office 2007's quick-access toolbar sits in its glass frame
+(RIBBON_CAPTION_QA_GLASS; L9.150's residual) — a (173, 176, 184) edge
+round a light face from under the orb to x 131, y 6–26 (5–25
+maximised), the right end rounded, its left end cut by a white disc of
+25.5 px about the orb's centre; its buttons 22 px apart from x 49, the
+print arrow after the print button, the customise arrow at 143–147.
+The orb's round image is 36 px (centre (22, 25), a pixel higher
+maximised) in MFC's 45 px button — ours painted the whole 45 px. Ours
+had no glass, 24 px buttons from x 57, and the arrows further right.
+Now `mfc_frame_with(…, pad, …)`, `separator` (8 px) and
+`panel_separator` (4 px), `title_band`, and in `ribbon_ui` the glass,
+the QAT's placement and `paint_orb`'s 36 px (the hit area stays 45 px).
+VM: the lane menu's seven rules and both borders, the diagram menus'
+rows, the status bar menu's rows, rules and title at the original's y;
+the glass's edges, the cut, the buttons and the arrows at its x and y;
+the orb within half a pixel. Left: the glyphs are ours (the original's
+bitmaps are its artwork); the older looks' flat button untouched.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

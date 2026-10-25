@@ -503,11 +503,11 @@ impl App {
         let pos = if at.y + h > ctx.screen_rect().bottom() { egui::pos2(at.x, at.y - h) } else { at };
         let mut toggle = None;
         let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain(true).show(ctx, |ui| {
-            crate::popmenu::mfc_frame(ui, |ui| {
+            crate::popmenu::mfc_frame_with(ui, true, false, |ui| {
                 crate::popmenu::title_band(ui, "Конфигурация строки состояния");
                 for (i, t) in texts.iter().map(String::as_str).chain(Some("НТЦ Механотроника")).enumerate() {
                     if i == 6 {
-                        crate::popmenu::separator(ui);
+                        crate::popmenu::panel_separator(ui);
                     }
                     if crate::popmenu::mark_item_keys(ui, "", Some(t), true, (!self.status_hidden[i]).then_some("✓"), false).clicked() {
                         toggle = Some(i);

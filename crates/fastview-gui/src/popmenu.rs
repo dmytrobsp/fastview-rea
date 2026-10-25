@@ -134,12 +134,14 @@ const MFC_COL_W: f32 = 24.0;
 
 /// A popup menu's frame and image column around `add` (the rows).
 pub fn mfc_frame<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    mfc_frame_with(ui, true, add)
+    mfc_frame_with(ui, true, true, add)
 }
 
 /// [`mfc_frame`], with or without the image column (a menu of large
-/// images and descriptions has none).
-pub fn mfc_frame_with<R>(ui: &mut egui::Ui, column: bool, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+/// images and descriptions has none), and with a context menu's pixel
+/// clear above and below its rows (`pad`) or without, as a ribbon
+/// panel menu has it (VM: the status bar's and the QAT's).
+pub fn mfc_frame_with<R>(ui: &mut egui::Ui, column: bool, pad: bool, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     use crate::oscgeom::PixelLines;
     // The (134) border on the frame's own outer pixels, the inner line
     // just inside it (VM: the border at the menu's point, then (245));
@@ -152,7 +154,19 @@ pub fn mfc_frame_with<R>(ui: &mut egui::Ui, column: bool, add: impl FnOnce(&mut 
         .show(ui, |ui| {
             menu_style(ui.style_mut());
             let under = ui.painter().add(egui::Shape::Noop);
-            let r = ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), add).inner;
+            // A pixel clear above the first row and below the last (VM).
+            let r = ui
+                .with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                    if pad {
+                        ui.allocate_exact_size(Vec2::new(1.0, 0.0), egui::Sense::hover());
+                    }
+                    let r = add(ui);
+                    if pad {
+                        ui.allocate_exact_size(Vec2::new(1.0, 1.0), egui::Sense::hover());
+                    }
+                    r
+                })
+                .inner;
             let c = ui.min_rect();
             let p = ui.painter();
             p.px_rect_stroke(c.expand(1.0), 0.0, Stroke::new(1.0f32, MFC_INNER));
@@ -175,6 +189,8 @@ pub fn title_band(ui: &mut egui::Ui, title: &str) {
     // The menu at least as wide as its title.
     let tw = ui.fonts(|f| crate::lanes::bold_font(f, 12.0).map(|b| f.layout_no_wrap(title.to_string(), b, MFC_TEXT).size().x)).unwrap_or(0.0);
     ui.set_min_width(tw + 12.0);
+    // The band 17 px, then the rule and its light line; the rows from
+    // the band's top + 20 (VM, the status bar's menu).
     let (r, _) = ui.allocate_exact_size(Vec2::new(1.0, 19.0), egui::Sense::hover());
     let w = ui.max_rect().x_range();
     let band = Rect::from_x_y_ranges(w, r.top()..=r.top() + 17.0);
@@ -209,11 +225,24 @@ pub fn separator(ui: &mut egui::Ui) {
     use crate::oscgeom::PixelLines;
     // No width of its own (a popup sizes to its widest row): drawn across
     // the menu's width.
-    let (r, _) = ui.allocate_exact_size(Vec2::new(1.0, 6.0), egui::Sense::hover());
+    // 8 px with the item spacing: three clear, the rule, its light line,
+    // three clear (VM).
+    let (r, _) = ui.allocate_exact_size(Vec2::new(1.0, 7.0), egui::Sense::hover());
     let w = ui.max_rect();
     let x = (w.left() + MFC_COL_W + 5.0)..=w.right();
-    ui.painter().px_hline(x.clone(), r.top() + 2.0, Stroke::new(1.0f32, MFC_RULE));
-    ui.painter().px_hline(x, r.top() + 3.0, Stroke::new(1.0f32, MFC_INNER));
+    ui.painter().px_hline(x.clone(), r.top() + 3.0, Stroke::new(1.0f32, MFC_RULE));
+    ui.painter().px_hline(x, r.top() + 4.0, Stroke::new(1.0f32, MFC_INNER));
+}
+
+/// A ribbon panel menu's separator: 4 px with the item spacing — the
+/// rule, its light line, two clear (VM, the status bar's menu).
+pub fn panel_separator(ui: &mut egui::Ui) {
+    use crate::oscgeom::PixelLines;
+    let (r, _) = ui.allocate_exact_size(Vec2::new(1.0, 3.0), egui::Sense::hover());
+    let w = ui.max_rect();
+    let x = (w.left() + MFC_COL_W + 5.0)..=w.right();
+    ui.painter().px_hline(x.clone(), r.top(), Stroke::new(1.0f32, MFC_RULE));
+    ui.painter().px_hline(x, r.top() + 1.0, Stroke::new(1.0f32, MFC_INNER));
 }
 
 /// The hot item's bar: 22 px, a thin amber border and a two-part gradient
