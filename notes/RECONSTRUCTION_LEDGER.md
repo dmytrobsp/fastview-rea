@@ -8619,6 +8619,19 @@ the menu with six unticked rows). Ours had no menu. Now
 (`Workspace/StatusBar/Hidden`) restored the same way. VM: menu, toggle
 and bar alike. Test `the_status_bar_menu_hides_elements`.
 
+### L9.325 — VM: a large ribbon button under the pointer  ·  ✅
+Run («Каналы» hovered, Office 2007 Blue): the original draws MFC's hot
+face — a 1 px border with cut corners ((221, 207, 155) top, (210, 208,
+188) bottom, (210, 192, 141) sides), a light inner line, and an amber
+face in three parts: (255, 253, 220) → (255, 231, 148) over the top 23
+rows, (255, 215, 81) → (255, 211, 74) → (255, 213, 82) to row 41, then
+(255, 214, 85) → (255, 231, 153). Ours drew a pale accent box. Now
+`ribbon::hot_large` in the Office 2007 looks (the older ones keep their
+box). VM: alike. Also run: right-clicks on the ribbon («Свернуть ленту»),
+a pane caption (Плавающее / Закрепленное / …), the QAT — alike, MFC's
+strings in English on the VM's English Windows, ours mfc120rus's; none
+on the parameters bar in either.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

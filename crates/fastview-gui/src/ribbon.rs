@@ -772,6 +772,33 @@ fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palet
     }
 }
 
+/// A large button under the pointer in the Office 2007 looks (VM,
+/// «Каналы» hot): a 1 px border with its corners cut — (221, 207, 155) on
+/// top, (210, 208, 188) below, (210, 192, 141) at the sides — a light inner
+/// line, and the face from (255, 253, 220) to (255, 231, 148) down to row
+/// 25, (255, 215, 81) to (255, 211, 74) and back to (255, 213, 82) down to
+/// row 41, then (255, 214, 85) to (255, 231, 153). The older looks: their
+/// soft accent box.
+fn hot_large(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette) {
+    if !(p.caption_band.is_some() && p.accent_soft == Color32::from_rgb(255, 228, 150)) {
+        painter.rect(rect, 3.0f32, p.accent_soft.gamma_multiply(0.5f32), egui::Stroke::new(1.0f32, p.accent_border));
+        return;
+    }
+    let rgb = |c: u32| Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8);
+    let face = egui::Rect::from_min_max(rect.min + egui::vec2(2.0, 2.0), rect.max - egui::vec2(2.0, 2.0));
+    painter.add(gradient_mesh(face, &[(0.0, rgb(0xfffddc)), (23.0, rgb(0xffe794)), (23.0, rgb(0xffd751)), (31.0, rgb(0xffd34a)), (38.0, rgb(0xffd552)), (39.0, rgb(0xffd655)), (face.height(), rgb(0xffe799))]));
+    let (l, r, t, b) = (rect.left(), rect.right() - 1.0, rect.top(), rect.bottom() - 1.0);
+    // Pixel columns / rows a..=b as end-exclusive spans.
+    painter.px_hline(l + 2.0..=r - 1.0, t + 1.0, egui::Stroke::new(1.0f32, rgb(0xfffff7)));
+    painter.px_hline(l + 2.0..=r - 1.0, b - 1.0, egui::Stroke::new(1.0f32, rgb(0xfff89a)));
+    painter.px_vline(l + 1.0, t + 1.0..=b, egui::Stroke::new(1.0f32, rgb(0xfff2bd)));
+    painter.px_vline(r - 1.0, t + 1.0..=b, egui::Stroke::new(1.0f32, rgb(0xfff2bd)));
+    painter.px_hline(l + 1.0..=r, t, egui::Stroke::new(1.0f32, rgb(0xddcf9b)));
+    painter.px_hline(l + 1.0..=r, b, egui::Stroke::new(1.0f32, rgb(0xd2d0bc)));
+    painter.px_vline(l, t + 1.0..=b, egui::Stroke::new(1.0f32, rgb(0xd2c08d)));
+    painter.px_vline(r, t + 1.0..=b, egui::Stroke::new(1.0f32, rgb(0xd2c08d)));
+}
+
 fn gradient_mesh(rect: egui::Rect, stops: &[(f32, Color32)]) -> egui::Shape {
     let mut mesh = egui::Mesh::default();
     let mut pts: Vec<(f32, Color32)> = stops.iter().map(|&(y, c)| (rect.top() + y.min(rect.height()), c)).collect();
@@ -1169,7 +1196,7 @@ fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label
     if selected {
         checked_bg(painter, rect, &p);
     } else if hovered {
-        painter.rect(rect, 3.0f32, p.accent_soft.gamma_multiply(0.5f32), egui::Stroke::new(1.0f32, p.accent_border));
+        hot_large(painter, rect, &p);
     }
     // The 32 px image centred from the top + 3, the lines from + 38
     // (`OnDraw` `0x10100cae`); our drawings fill 28 px of it.
