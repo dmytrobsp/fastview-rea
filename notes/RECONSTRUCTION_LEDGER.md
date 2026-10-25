@@ -8673,6 +8673,15 @@ frame (the icon in its title); ours, given our window as owner, opened
 at the window's top-left instead of the shell's remembered place, so ours
 stays unowned (no title icon).
 
+### L9.329 — VM: a popup item chosen with Enter; the frequency settings dialog  ·  ✅
+Run: the frequency pane's menu, ↓ ↓ Enter on «Настройки». The original
+opens «Настройки частотной диаграммы»; ours chose the item, opened the
+dialog in the same pass and the dialog took that Enter as its OK, so
+nothing was seen. A Win32 menu loop eats its keys: `popmenu::show` now
+consumes the arrows, Enter and Esc it reads. VM: the dialog opens in both,
+its fields, groups, radios and buttons alike. Test
+`a_menu_enter_does_not_reach_the_dialog_it_opens` (fails without the fix).
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

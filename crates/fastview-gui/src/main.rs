@@ -1678,6 +1678,20 @@ mod window_tests {
         assert_eq!(g(&w).width(), r.width() + 100.0, "the strip drags the divider");
     }
 
+    /// A popup item chosen with Enter opens its dialog, which does not take
+    /// that Enter as its own OK (VM: the frequency menu's «Настройки»).
+    #[test]
+    fn a_menu_enter_does_not_reach_the_dialog_it_opens() {
+        let mut w = Win::new();
+        w.app.open_diag_menu(diagram_ui::Window::Freq, diagram_ui::MenuKind::Full, Pos2::new(300.0, 700.0));
+        w.idle(1);
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::Enter);
+        w.idle(2);
+        assert!(w.app.diag.freq_dlg.is_some(), "the dialog stays open");
+    }
+
     /// The merge bar's close button (message-bar mode, `0x479960`): the bar
     /// goes, and with a pasted channel still pending the paste is undone.
     #[test]

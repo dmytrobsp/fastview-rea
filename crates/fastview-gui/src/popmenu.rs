@@ -362,8 +362,11 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
     let mut chosen = None;
     // The keys of a Win32 popup: ↑ / ↓ over the selectable items, → into a
     // submenu, ← back out, Enter picks, Esc leaves a submenu first.
-    let (up, down, right, left, enter, esc_key) = ctx.input(|i| {
-        let k = |key| i.key_pressed(key);
+    // The open popup owns these keys (Win32's menu loop): taken from the
+    // input, so a dialog the chosen item opens in this pass does not see
+    // the Enter that chose it (VM: the frequency «Настройки» by keys).
+    let (up, down, right, left, enter, esc_key) = ctx.input_mut(|i| {
+        let mut k = |key| i.consume_key(egui::Modifiers::NONE, key);
         (k(egui::Key::ArrowUp), k(egui::Key::ArrowDown), k(egui::Key::ArrowRight), k(egui::Key::ArrowLeft), k(egui::Key::Enter), k(egui::Key::Escape))
     });
     let sub_entries = |i: Option<usize>| match i.and_then(|i| entries.get(i)) {

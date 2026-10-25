@@ -743,7 +743,7 @@ impl App {
         }
     }
 
-    fn open_diag_menu(&mut self, win: Window, kind: MenuKind, pos: Pos2) {
+    pub(crate) fn open_diag_menu(&mut self, win: Window, kind: MenuKind, pos: Pos2) {
         self.diag.serial += 1;
         self.diag.menu = Some(OpenMenu { win, kind, pm: PopMenu::new(self.diag.serial, pos) });
     }
