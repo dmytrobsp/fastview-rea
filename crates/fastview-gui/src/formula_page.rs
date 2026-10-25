@@ -237,13 +237,21 @@ impl App {
         let mut double = None;
         let mut pressed_outside = false;
         let rows_rect = Rect::from_min_max(egui::pos2(inner.left(), inner.top() + hdr_h), inner.max);
+        // The list draws its selection only with the focus (no
+        // LVS_SHOWSELALWAYS): not under «Добавить новую формулу» or a
+        // message box (VM: «X1» unmarked behind the 473 box).
+        let list_focus = self.formula_dlg.is_none() && !crate::dialogs::under_message(ui.ctx());
+        // A click below the rows clears the selection (a ListView's, VM).
+        if ui.interact(rows_rect, ui.id().with("fp_blank"), egui::Sense::click()).clicked() {
+            self.formula_page.selected = None;
+        }
         let fp = &mut self.formula_page;
         for i in 0..fp.rows.len() {
             let top = rows_rect.top() + row_h * i as f32;
             if top + row_h > rows_rect.bottom() {
                 break;
             }
-            let sel = fp.selected == Some(i);
+            let sel = fp.selected == Some(i) && list_focus;
             let row = Rect::from_min_size(egui::pos2(inner.left(), top), egui::vec2(cols[1].0 + cols[1].1 - 1.0, row_h - 1.0));
             if sel {
                 p.rect_filled(row, 0.0, Color32::from_rgb(0, 120, 215));

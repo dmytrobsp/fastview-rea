@@ -109,9 +109,29 @@ impl<'o> Dlg<'o> {
     }
 
     pub fn show<R>(self, ctx: &egui::Context, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> Option<egui::InnerResponse<Option<R>>> {
-        let Dlg { mut win, id, title, nudge, owner, sysmenu, open, tool, margin } = self;
+        let Dlg { mut win, id, title, nudge, mut owner, sysmenu, open, tool, margin } = self;
         if open.as_deref() == Some(&false) {
             return None;
+        }
+        // The dialogs shown, in drawing order, this pass and the last. A
+        // message box with no owner given is centred on the dialog shown
+        // last before it (Windows centres a MessageBox on its owner, the
+        // active window — VM: «Неправильное имя канала.» over «Добавить
+        // новую формулу», off the screen's centre).
+        let seen_id = egui::Id::new("fv_dlg_seen");
+        let pass = ctx.cumulative_pass_nr();
+        let prev_shown: Vec<egui::Id> = ctx.data_mut(|d| {
+            let v: &mut (u64, Vec<egui::Id>, Vec<egui::Id>) = d.get_temp_mut_or_default(seen_id);
+            if v.0 != pass {
+                v.2 = std::mem::take(&mut v.1);
+                v.0 = pass;
+            }
+            v.1.push(id);
+            v.2.clone()
+        });
+        let is_msg = |ctx: &egui::Context, d: egui::Id| ctx.data(|m| m.get_temp::<bool>(d.with("fv_is_msg"))).unwrap_or(false);
+        if owner.is_none() && is_msg(ctx, id) {
+            owner = prev_shown.iter().rev().find(|&&d| d != id && !is_msg(ctx, d)).copied();
         }
         // CenterWindow at every opening (each DoModal creates the dialog
         // anew), from the window's measured size — for its first frames
@@ -204,6 +224,7 @@ impl<'o> Dlg<'o> {
             // dialog it owns: the caption's text and ✕ grey (VM: «Параметры
             // ОМП» under «Длина участка не может быть равна нулю»).
             let holds_msg = ui.ctx().data(|d| d.get_temp::<u64>(egui::Id::new("fv_msgbox_pass"))) != msg_before;
+            ui.ctx().data_mut(|d| d.insert_temp(id.with("fv_is_msg"), holds_msg));
             let inactive = owns_shown || (under_message(ui.ctx()) && !holds_msg);
             let full = ui.min_rect();
             let cap = Rect::from_min_max(Pos2::new(full.left(), cap.top()), Pos2::new(full.right(), cap.bottom()));

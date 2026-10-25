@@ -8754,6 +8754,34 @@ Left: the original's «Участок» stays hot (and unrefreshed) under the
 pointer after it disables itself until the pointer moves — a repaint lag,
 not reproduced.
 
+### L9.334 — VM: «Добавить новую формулу»'s refusals; a row's name is taken; message boxes centred on their owner  ·  ✅
+Run (WIN_1999, «Быстрый анализ» ▸ «Редактор формул» ▸ «Добавить»): an
+empty name and OK → 396 «Неправильное имя канала.», Enter → 396 again,
+Enter → the dialog stays with OK focused (L9.48's sequence) — alike.
+Then «X1» added, and a second «X1» → the original refuses with 473
+«Данное имя канала уже существует.» and stays; ours took it and added a
+second row. Read by hand: `0x4033a0` compares the name with the record's
+channels and then with the name list at `+0x9c` (0x1d9 = 473 on a match)
+— the page's rows. Ours' taken names now include the rows
+(`open_formula_dlg`).
+Looks fixed the same run:
+- A message box with no owner given is centred on the dialog shown last
+  before it, as Windows centres a MessageBox on its owner (VM: the 396
+  box centred on «Добавить новую формулу», off the screen's centre);
+  ours centred every box on the screen. `Dlg` keeps the dialogs shown
+  per pass and marks the ones holding a message box.
+- The dialog under its box kept its looks in the original (only the
+  caption greys, L9.333); ours greyed its whole content. Now its input is
+  blocked by the backdrop (and typing dropped) without the greying.
+- The page's list draws its selection only with the focus (no
+  LVS_SHOWSELALWAYS): unmarked under the dialog and its boxes, blue after
+  an add; a click below the rows clears the selection (VM).
+Test `a_rows_name_is_taken`. VM: the boxes, their places and the list
+alike after.
+Seen, not fixed: the ribbon's «Вычисления» group ends about 50 px left of
+the original's (Segoe UI text widths and our own icons' spacing — W6's
+Segoe UI item).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

@@ -141,7 +141,10 @@ impl App {
         let rows: Vec<&str> = self.formula_page.rows.iter().map(|r| r.0.as_str()).collect();
         let analog = d.osc.analog.iter().map(|c| c.id.clone());
         let channels: Vec<String> = analog.clone().chain(computed.iter().map(|s| s.to_string())).collect();
-        let taken = channels.iter().cloned().chain(d.osc.digital.iter().map(|c| c.id.clone())).collect();
+        // `0x4033a0` refuses (473, Compare) the record's channels and then
+        // the list at `+0x9c`: the page's rows (VM: a second «X1» refused
+        // while the first is only a row).
+        let taken = channels.iter().cloned().chain(d.osc.digital.iter().map(|c| c.id.clone())).chain(rows.iter().map(|r| r.to_string())).collect();
         let name = af::default_name(&rows);
         self.formula_dlg = Some(AddFormulaDlg::new(name, channels, taken, d.osc.int_rate_hz(), d.osc.line_freq));
     }
@@ -151,6 +154,11 @@ impl App {
         let mut done: Option<bool> = None;
         let mut open = true;
         let modal = st.alerts.is_empty();
+        if !modal {
+            // The message box has the focus: no typing reaches the dialog
+            // under it, which keeps its looks (VM: only its caption greys).
+            ctx.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Text(_) | egui::Event::Key { key: egui::Key::Tab, .. })));
+        }
         st.item_rects.clear();
         st.form_focus = false;
         // DIALOG 359 (417 × 310 DLU: 626 × 504 px), centred on its owner,
@@ -165,7 +173,7 @@ impl App {
             .show(ctx, |ui| {
                 use crate::dialogs::{dlu, win_button_en, win_edit, win_label, win_tree, TreeRow};
                 let (client, _) = ui.allocate_exact_size(Vec2::new(626.0, 504.0), egui::Sense::hover());
-                ui.add_enabled_ui(modal, |ui| {
+                ui.scope(|ui| {
                     // The template tree (1039): lines, buttons and lines at
                     // the root; every group inserted expanded.
                     let mut flat = Vec::new();
@@ -209,13 +217,13 @@ impl App {
             });
         if let Some(&(msg, icon)) = st.alerts.first() {
             let mut close = false;
-            crate::dialogs::modal_backdrop(ctx, "fv_add_formula_alert_block", egui::Order::Middle);
+            crate::dialogs::modal_backdrop(ctx, "fv_add_formula_alert_block", egui::Order::Foreground);
             crate::dialogs::dlg(ctx, crate::app::APP_TITLE)
                 .id(egui::Id::new("fv_add_formula_alert"))
                 .margin(0.0)
                 .collapsible(false)
                 .resizable(false)
-                .order(egui::Order::Foreground)
+                .order(egui::Order::Tooltip)
                 .show(ctx, |ui| {
                     close = crate::dialogs::message_box(ui, icon, msg, &["OK"]).is_some();
                 });
@@ -665,6 +673,24 @@ mod tests {
         assert_eq!(p.rows.last().map(|r| (r.0.as_str(), r.1.as_str())), Some(("I0x3", "3I0: (Ia, Ib, Ic)")));
         assert_eq!(p.selected, Some(p.rows.len() - 1), "the new row is selected");
         assert!(h.app.active_doc().unwrap().computed.is_empty(), "nothing computed yet");
+    }
+
+    /// A name already among the page's rows is taken (`0x4033a0`'s list
+    /// at `+0x9c`; VM: a second «X1» → 473, the dialog stays).
+    #[test]
+    fn a_rows_name_is_taken() {
+        let mut h = Harness::new();
+        h.app.formula_dlg.as_mut().unwrap().name = "X1".into();
+        h.ok();
+        assert!(h.app.formula_dlg.is_none());
+        h.app.open_formula_dlg();
+        for _ in 0..3 {
+            h.frame(vec![]);
+        }
+        h.app.formula_dlg.as_mut().unwrap().name = "X1".into();
+        h.ok();
+        assert_eq!(h.dlg().alerts, vec![(af::MSG_NAME_TAKEN, MsgIcon::Error)]);
+        assert_eq!(h.app.formula_page.rows.iter().filter(|r| r.0 == "X1").count(), 1);
     }
 
     /// A group hosts no form and greys OK.
