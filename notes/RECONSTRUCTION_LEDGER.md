@@ -8603,8 +8603,9 @@ the last frame). VM: placed alike. Small visual left: the original's
 
 ### L9.324 — VM: the status bar's «Status Bar Configuration» menu  ·  ✅
 Run: a right-click on the original's status bar opens MFC's own
-CMFCRibbonStatusBar menu, «Status Bar Configuration» (English, MFC's
-string), opened upward from the point near the screen's foot: the six
+CMFCRibbonStatusBar menu, «Status Bar Configuration» (string 17087,
+English under the VM's English Windows; ours shows mfc120rus's
+«Конфигурация строки состояния», as its other MFC strings), opened upward from the point near the screen's foot: the six
 panes with their current text right-aligned («Верт. визир 1: 2074 мс»),
 a separator, «НТЦ Механотроника», each ticked while shown. A click
 toggles its element and the menu stays open; Esc or a press outside

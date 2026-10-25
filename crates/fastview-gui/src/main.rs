@@ -456,7 +456,8 @@ impl App {
         self.resize_edges(ui.ctx());
     }
 
-    /// «Status Bar Configuration» (MFC's own, its English title on the VM):
+    /// «Конфигурация строки состояния» (mfc120rus 17087; «Status Bar
+    /// Configuration» under the VM's English Windows, as MFC's other menus):
     /// each element with its current text right-aligned, a tick while
     /// shown; a click toggles it and the menu stays; Esc or a press
     /// outside closes it. Opened upward from the point when it would run
@@ -469,7 +470,7 @@ impl App {
         let mut toggle = None;
         let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain(true).show(ctx, |ui| {
             crate::popmenu::mfc_frame(ui, |ui| {
-                crate::popmenu::title_band(ui, "Status Bar Configuration");
+                crate::popmenu::title_band(ui, "Конфигурация строки состояния");
                 for (i, t) in texts.iter().map(String::as_str).chain(Some("НТЦ Механотроника")).enumerate() {
                     if i == 6 {
                         crate::popmenu::separator(ui);
