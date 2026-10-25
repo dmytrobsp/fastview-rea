@@ -907,7 +907,7 @@ reads `Doc::flagged` (L9.7); `recompute_active` re-runs it when shown.
 Residual: (report times: L9.41), no
 legacy `.omp` reader / `.set` embedding.
 
-### L9.12 — Diagram panes (track D, merged)  ·  🟡
+### L9.12 — Diagram panes (track D, merged)  ·  ✅ (W2 review 2026-10-25: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 
 Merged from `worktree-agent-a7526b4faa28680ce` (`cafd051`): `diagram.rs`
 (pure: extent `0x438b50`, grid cell LOGPIXELSX·scale/5 with integer-divided
@@ -1127,7 +1127,7 @@ RMS, phasors, pending lanes) and clamps визиры to the record; no beep; a
 manual Ctrl+Z while the bar is up still hides our bar (the original leaves
 it up, stale).
 
-### L9.20 — «Mechanotronica FastView Clipboard Data»: copy/paste through the clipboard document  ·  🟡
+### L9.20 — «Mechanotronica FastView Clipboard Data»: copy/paste through the clipboard document  ·  ✅ (W2 review 2026-10-25: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 
 Read (research report): the format is registered once at start-up
 (`0x404f5e`); copy `0x45be28` puts an EMF picture of the view and the data
@@ -1478,7 +1478,7 @@ lane`. Residual: (round-half-up for value→y: done in L9.47); the clip under pr
 the original's rect-zoom lane top sums preceding visible analog channels in
 channel order (differs for group members — quirk not modelled).
 
-### L9.34 — Units are normalised on load (`0x422b10`)  ·  🟡
+### L9.34 — Units are normalised on load (`0x422b10`)  ·  ✅ (W2 review 2026-10-25: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 User report: with real records («кА», «кВ», Cyrillic «А»/«В») the vector
 diagram's «Каналы» list was empty, the «Каналы» dialog's vector column and
 the channel menu's «на векторную диаграмму» were disabled.
@@ -1615,7 +1615,7 @@ step on the press, then repeats after 0.4 s every 0.05 s — delays assumed
 checks the pointer is still beyond the thumb. Test
 `held_scroll_arrow_and_track_repeat`. (L9.23 residual closed.)
 
-### L9.41 — ОМП report: start / trigger times and the document line  ·  🟡
+### L9.41 — ОМП report: start / trigger times and the document line  ·  ✅ (W2 review 2026-10-25: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read (subagent, `0x49dbf0` disassembly): the header literals match ours
 exactly (strings 128, 3102, 3112–3114, 3480, 3103, 3298 «Начало записи:  »,
 3279 «Момент запуска: »); «Начало записи» = `doc+0x24c + ", " + doc+0x250`
@@ -2178,7 +2178,7 @@ Residual: the ≤ 8 bpp list not modelled; when MFC calls the pick (at
 insert vs at layout) was not traced — ours at first layout, in order,
 which gives the same colours for tabs appended one by one or together.
 
-### L9.64 — «Окна...»: MFC's windows dialog  ·  🟡
+### L9.64 — «Окна...»: MFC's windows dialog  ·  ✅ (W2 review 2026-10-25: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read by hand: `OnCreate` (`0x47296b`) calls `EnableWindowsDialog(131,
 132 «&Окна...», always, no help button)`. The dialog is MFC's
 `CMFCWindowsManagerDialog` (mfc120u; template 16927 «Окна» of mfc120rus,
@@ -3046,7 +3046,7 @@ selected ones; under MDI tabs their visible effect is NOT DETERMINED, ours
 still does nothing.)
 
 
-### L9.92 — Diagram panes float, re-dock and auto-hide  ·  🟡
+### L9.92 — Diagram panes float, re-dock and auto-hide  ·  ✅ (W2 review 2026-10-25: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read (subagent report on mfc120u and FastView; by hand: the four
 `CreateEx` calls at `0x474e81` / `0x474ef8` / `0x474f7b` / `0x474fea`
 push pane style 0xF (float, close, resize, auto-hide), tabs 0x20, window
@@ -3094,7 +3094,7 @@ Residual: in print the original's m is in the page DC's coordinates
 (whether the printed cell has its own origin NOT DETERMINED; ours m from
 the cell).
 
-### L9.94 — Page setup and preview on the application printer's paper  ·  🟡
+### L9.94 — Page setup and preview on the application printer's paper  ·  ✅ (W2 review 2026-10-25: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read by hand: «Параметры страницы» `0x448a90` builds a CPageSetupDialog
 (#886) with flags 0x260a — margins, in 0.01 mm, paper greyed, the
 RETURNDEFAULT pass first, then the paint hook `0x4488a0` — so its first
@@ -3183,7 +3183,7 @@ first digital lane (rendered: drawn at the lane's bottom).
 Residual: (levels placed / re-homed on formula channels: L9.104); whether `0x4040c0` draws an
 area on an unknown channel NOT DETERMINED (ours: not drawn).
 
-### L9.97 — Keytips placed per element; the Office 2007 box; menu rows with large images  ·  🟡
+### L9.97 — Keytips placed per element; the Office 2007 box; menu rows with large images  ·  ✅ (W2 review 2026-10-25: residuals closed by later entries or out of reach — COMPLETION_PLAN W2)
 Read (subagent report on mfc120u; by hand: `CMFCRibbonButton::GetKeyTipRect`
 `0x101033e0` — the element rect at `+0x74`, left = R.left + 10 or, for
 the menu part's key, R.right − w/2; top = R.bottom − h/2 before the
