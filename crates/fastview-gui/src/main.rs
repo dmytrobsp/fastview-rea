@@ -642,6 +642,7 @@ impl App {
     /// One frame of the whole window (kept apart from `eframe::App::update`
     /// so headless tests can drive it).
     pub fn frame_ui(&mut self, ctx: &egui::Context) {
+        dialogs::track_input(ctx);
         dialogs::route_combo_keys(ctx);
         self.min_size(ctx);
         self.run_deferred(ctx);
@@ -1676,6 +1677,26 @@ mod window_tests {
         w.press(Primary, Pos2::new(r.left() - 2.0, y), Pos2::new(r.left() - 102.0, y));
         w.idle(2);
         assert_eq!(g(&w).width(), r.width() + 100.0, "the strip drags the divider");
+    }
+
+    /// «Параметры ОМП»'s keys (VM): Enter is OK — refused here with the
+    /// dialog kept, the box's own Enter not taken by the dialog —, Esc
+    /// cancels.
+    #[test]
+    fn the_omp_dialog_takes_enter_and_esc() {
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::OmpParams);
+        w.idle(2);
+        w.app.omp_ui.dialog.as_mut().expect("the dialog").add_section();
+        w.key(egui::Key::Enter);
+        w.idle(1);
+        assert!(w.app.omp_ui.message.is_some() && w.app.omp_ui.dialog.is_some(), "R = X = 0 refused, the dialog stays");
+        w.key(egui::Key::Enter);
+        w.idle(1);
+        assert!(w.app.omp_ui.message.is_none() && w.app.omp_ui.dialog.is_some(), "the box's Enter closes only the box");
+        w.key(egui::Key::Escape);
+        w.idle(1);
+        assert!(w.app.omp_ui.dialog.is_none());
     }
 
     /// Tab into a dialog's edit selects its text, so typing replaces it

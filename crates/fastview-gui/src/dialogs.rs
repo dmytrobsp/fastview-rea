@@ -163,6 +163,11 @@ impl<'o> Dlg<'o> {
             win = win.current_pos(at);
         }
         let win = win.movable(false);
+        // A dialog owning another shown is inactive (this pass or the last).
+        if let Some(o) = owner {
+            ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_dlg_owner").with(o), frame));
+        }
+        let owns_shown = ctx.data(|d| d.get_temp::<u64>(egui::Id::new("fv_dlg_owner").with(id))).is_some_and(|p| p + 1 >= frame);
         // The DWM shadow, its look approximated.
         let shadow = egui::epaint::Shadow { offset: Vec2::new(0.0, 6.0), blur: 24.0, spread: 0.0, color: Color32::from_black_alpha(60) };
         // The border blends over what lies behind the window: the fill is
@@ -178,6 +183,7 @@ impl<'o> Dlg<'o> {
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             let (cap, _) = ui.allocate_exact_size(Vec2::new(5.0 + tw + if tool { 30.0 } else { 56.0 }, DLG_CAPTION_H), egui::Sense::hover());
             ui.spacing_mut().item_spacing = spacing;
+            let msg_before = ui.ctx().data(|d| d.get_temp::<u64>(egui::Id::new("fv_msgbox_pass")));
             let inner = egui::Frame::none()
                 .inner_margin(margin)
                 .show(ui, |ui| {
@@ -194,12 +200,17 @@ impl<'o> Dlg<'o> {
                     add_contents(ui)
                 })
                 .inner;
+            // Inactive under a message box (not the box's own window) or a
+            // dialog it owns: the caption's text and ✕ grey (VM: «Параметры
+            // ОМП» under «Длина участка не может быть равна нулю»).
+            let holds_msg = ui.ctx().data(|d| d.get_temp::<u64>(egui::Id::new("fv_msgbox_pass"))) != msg_before;
+            let inactive = owns_shown || (under_message(ui.ctx()) && !holds_msg);
             let full = ui.min_rect();
             let cap = Rect::from_min_max(Pos2::new(full.left(), cap.top()), Pos2::new(full.right(), cap.bottom()));
             let p = ui.painter();
             p.set(face, egui::Shape::rect_filled(Rect::from_min_max(Pos2::new(full.left(), cap.bottom()), full.max), 0.0, DLG_FACE));
             p.rect_filled(cap, 0.0, DLG_CAPTION);
-            p.text(Pos2::new(cap.left() + 4.0, cap.center().y), egui::Align2::LEFT_CENTER, &title, font, Color32::BLACK);
+            p.text(Pos2::new(cap.left() + 4.0, cap.center().y), egui::Align2::LEFT_CENTER, &title, font, if inactive { Color32::from_gray(145) } else { Color32::BLACK });
             // The border: 1 px around the client and caption, as lines on
             // the pixel centres (a 1 px filled rect is feathered twice).
             let o = full.expand(1.0);
@@ -231,6 +242,7 @@ impl<'o> Dlg<'o> {
             let (bg, ink) = match (tool, resp.hovered()) {
                 (true, false) => (Some(Color32::from_rgb(199, 80, 80)), Color32::WHITE),
                 (true, true) => (Some(Color32::from_rgb(224, 67, 67)), Color32::WHITE),
+                (false, false) if inactive => (None, Color32::from_gray(155)),
                 (false, false) => (None, Color32::from_rgb(23, 24, 24)),
                 (false, true) => (Some(Color32::from_rgb(196, 43, 28)), Color32::WHITE),
             };
@@ -381,10 +393,28 @@ pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
     resp.clicked()
 }
 
+/// Whether the last input was the keyboard's (a key, or a copy / paste
+/// egui-winit made of one) rather than a button press: a window opened
+/// after it starts with its focus cues shown (WM_CHANGEUISTATE's
+/// UIS_INITIALIZE), after a click hidden. Called at the start of a pass.
+pub fn track_input(ctx: &egui::Context) {
+    let id = egui::Id::new("fv_last_input_key");
+    let last = ctx.input(|i| {
+        i.events.iter().rev().find_map(|e| match e {
+            egui::Event::Key { pressed: true, .. } | egui::Event::Copy | egui::Event::Cut | egui::Event::Paste(_) => Some(true),
+            egui::Event::PointerButton { pressed: true, .. } => Some(false),
+            _ => None,
+        })
+    });
+    if let Some(k) = last {
+        ctx.data_mut(|d| d.insert_temp(id, k));
+    }
+}
+
 /// A message box is up over the dialog (this pass or the last): the
 /// dialog is inactive, its edit shows neither selection nor caret (no
 /// ES_NOHIDESEL; VM: a refused value's message).
-fn under_message(ctx: &egui::Context) -> bool {
+pub fn under_message(ctx: &egui::Context) -> bool {
     let pass = ctx.cumulative_pass_nr();
     ctx.data(|d| d.get_temp::<u64>(egui::Id::new("fv_msgbox_pass"))).is_some_and(|p| p + 1 >= pass)
 }
@@ -597,6 +627,27 @@ pub struct TreeRow {
     pub selected: bool,
 }
 
+/// A control that never takes the focus (a toolbar's button: CMFCToolBar
+/// buttons are no windows): a press inside `r` this pass leaves the focus
+/// where it was. Register it before the focus-holding controls run.
+pub fn keeps_focus(ui: &egui::Ui, r: Rect) {
+    let pass = ui.ctx().cumulative_pass_nr();
+    let id = egui::Id::new("fv_keeps_focus");
+    ui.ctx().data_mut(|d| {
+        let v: &mut (u64, Vec<Rect>) = d.get_temp_mut_or_default(id);
+        if v.0 != pass {
+            *v = (pass, Vec::new());
+        }
+        v.1.push(r);
+    });
+}
+
+/// Whether `p` is on a control registered with `keeps_focus` this pass.
+pub fn keeps_focus_at(ctx: &egui::Context, p: Pos2) -> bool {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<(u64, Vec<Rect>)>(egui::Id::new("fv_keeps_focus"))).is_some_and(|(n, v)| n == pass && v.iter().any(|r| r.contains(p)))
+}
+
 /// What the pointer did to a TreeView's rows this frame.
 #[derive(Default)]
 pub struct TreeEvents {
@@ -631,9 +682,14 @@ pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows:
     // A press elsewhere takes the focus — not the one that opened the
     // dialog, in the frame the tree first shows.
     if let Some(p) = ui.input(|i| i.pointer.any_pressed().then(|| crate::lanes::press_pos(i)).flatten()).filter(|_| stored.is_some()) {
-        focused = r.contains(p);
+        if !keeps_focus_at(ui.ctx(), p) {
+            focused = r.contains(p);
+        }
     }
     ui.data_mut(|d| d.insert_temp(focus_id, focused));
+    // Under a message box the focus is the box's: the tree draws as
+    // unfocused, its focus back after (VM: «Параметры ОМП»'s refusal).
+    let focused = focused && !under_message(ui.ctx());
     let p = ui.painter().clone();
     p.rect_filled(r, 0.0, border);
     let inner = r.shrink(1.0);
@@ -1010,7 +1066,15 @@ pub enum MsgIcon {
 /// button pressed.
 pub fn message_box(ui: &mut egui::Ui, icon: MsgIcon, text: &str, buttons: &[&str]) -> Option<usize> {
     let pass = ui.ctx().cumulative_pass_nr();
+    let shown_before = ui.ctx().data(|d| d.get_temp::<u64>(egui::Id::new("fv_msgbox_pass"))).is_some_and(|p| p + 1 >= pass);
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_msgbox_pass"), pass));
+    // The focus rectangle only with the focus cues on: a box raised by a
+    // key shows it, one raised by a click not until a key is pressed in it
+    // (VM: «Параметры ОМП»'s OK clicked — no dotted frame).
+    let cues_id = egui::Id::new("fv_msgbox_cues");
+    let cues = if shown_before { ui.ctx().data(|d| d.get_temp::<bool>(cues_id)).unwrap_or(true) } else { ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::new("fv_last_input_key"))).unwrap_or(true) }
+        || ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { pressed: true, .. })));
+    ui.ctx().data_mut(|d| d.insert_temp(cues_id, cues));
     let font = egui::FontId::proportional(12.0);
     let g = ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::BLACK));
     let n = buttons.len() as f32;
@@ -1030,7 +1094,7 @@ pub fn message_box(ui: &mut egui::Ui, icon: MsgIcon, text: &str, buttons: &[&str
         if win_button(ui, r, label, k == 0).clicked() {
             pressed = Some(k);
         }
-        if k == 0 {
+        if k == 0 && cues {
             focus_rect(ui.painter(), Rect::from_min_max(r.min + Vec2::new(4.0, 3.0), r.max - Vec2::new(4.0, 3.0)));
         }
     }
@@ -1406,5 +1470,44 @@ mod combo_tests {
         assert_eq!(picked, Some(0));
         frame(vec![], &mut picked);
         assert_eq!(ctx.data(|d| d.get_temp::<bool>(egui::Id::new("cp").with("open"))), Some(false));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A press on a toolbar button leaves a TreeView's focus (and its blue
+    /// selection) alone; a press on any other place outside takes it (VM:
+    /// «Параметры ОМП»'s «Участок»).
+    #[test]
+    fn a_toolbar_press_keeps_the_tree_focused() {
+        let tree_r = Rect::from_min_size(Pos2::new(10.0, 40.0), Vec2::new(150.0, 200.0));
+        let tool_r = Rect::from_min_size(Pos2::new(200.0, 10.0), Vec2::new(60.0, 22.0));
+        let rows = [TreeRow { depth: 0, label: "Подстанция".into(), has_children: false, expanded: true, selected: true }];
+        let id = egui::Id::new("t_tree");
+        let ctx = egui::Context::default();
+        let focused = |ctx: &egui::Context| ctx.data(|d| d.get_temp::<bool>(id.with("fv_tree_focus")));
+        let mut t = 0.0;
+        let mut pass = |events: Vec<egui::Event>| {
+            t += 0.05;
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 300.0))), time: Some(t), events, ..Default::default() };
+            let _ = ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    keeps_focus(ui, tool_r);
+                    win_tree(ui, tree_r, id, Color32::GRAY, &rows, false, None, true, false, &mut |_, _, _| {});
+                });
+            });
+        };
+        let press = |p: Pos2| vec![egui::Event::PointerMoved(p), egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }];
+        let release = |p: Pos2| vec![egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }];
+        pass(vec![]);
+        pass(vec![]);
+        pass(press(tool_r.center()));
+        pass(release(tool_r.center()));
+        assert_eq!(focused(&ctx), Some(true), "the toolbar takes no focus");
+        pass(press(Pos2::new(300.0, 200.0)));
+        pass(release(Pos2::new(300.0, 200.0)));
+        assert_eq!(focused(&ctx), Some(false), "a press elsewhere does");
     }
 }

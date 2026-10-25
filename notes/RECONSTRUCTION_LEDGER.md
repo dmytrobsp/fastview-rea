@@ -8723,6 +8723,37 @@ thread (they need the library and the program's settings); our counter's
 phase-2 steps are added at the end of the parse rather than during the
 build, so the bar reaches its last value before the build ends.
 
+### L9.333 — VM: «Параметры ОМП»'s refusals, keys and focus  ·  ✅
+Run (WIN_1999, method 1, «Участок» added): OK refuses with 3068 «R и X
+удельные не могут одновременно быть равны нулю», then length 0 with 3187
+first (before «Число опор» 0) — the dialog stays; alike in both. The
+differences found and fixed:
+- Enter in the dialog is OK (the default button) and Esc is Отмена; ours
+  had neither. Not while a value is being edited: there Enter keeps the
+  value and Esc puts the old one back, the dialog staying (original: «5»,
+  Esc → «1»; a second Esc closes, the reopened dialog without the
+  section). Ours kept the typed value on Esc.
+- The click that starts a value's edit places the caret where it fell
+  (the grid hands it to the new edit): «5» typed at the left of «1» gives
+  «51»; ours appended («15»).
+- The toolbar takes no focus (CMFCToolBar buttons are no windows): after
+  «Участок» the tree keeps the focus and shows the new section in blue;
+  ours lost it to the press (`dialogs::keeps_focus`).
+- The grid's selected row without the focus is (240), with it (180, 201,
+  233); ours stayed blue after OK took the focus.
+- Under a message box the dialog is inactive: its caption text (145) and
+  ✕ (155) grey, the tree's selection hidden, the grid's row (240) — any
+  `Dlg` owning a shown dialog or under a message box now draws so.
+- A message box raised by a click shows no focus rectangle (Windows' UI
+  state starts hidden after mouse input), raised by a key it does — ours
+  always drew it (`dialogs::track_input`).
+Tests `the_omp_dialog_takes_enter_and_esc`,
+`the_toolbar_takes_no_focus_and_ok_takes_the_grids`,
+`a_toolbar_press_keeps_the_tree_focused`. VM: the same pictures after.
+Left: the original's «Участок» stays hot (and unrefreshed) under the
+pointer after it disables itself until the pointer moves — a repaint lag,
+not reproduced.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

@@ -481,6 +481,10 @@ impl App {
                 .map(|d| d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect())
                 .unwrap_or_default();
             crate::dialogs::modal_backdrop(ctx, "omp_dialog_block", egui::Order::Middle);
+            // The dialog's own Enter (OK, the default button) and Esc
+            // (Отмена) — not while a grid value is edited (its edit takes
+            // them) or the message box is up (VM).
+            let keys_free = dlg.edit.is_none() && self.omp_ui.message.is_none();
             let mut outcome = None;
             crate::dialogs::dlg(ctx, "Параметры ОМП")
                 .id(egui::Id::new("omp_params_dialog"))
@@ -489,6 +493,14 @@ impl App {
                 .resizable(false)
                 .margin(0.0)
                 .show(ctx, |ui| outcome = dlg.ui(ui, &names));
+            if outcome.is_none() && keys_free {
+                let (enter, esc) = ctx.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, egui::Key::Enter), i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)));
+                if enter {
+                    outcome = Some(DialogAction::Ok);
+                } else if esc {
+                    outcome = Some(DialogAction::Cancel);
+                }
+            }
             match outcome {
                 Some(DialogAction::Ok) => {
                     self.omp_ui.dialog = Some(dlg);
@@ -621,6 +633,13 @@ pub struct ParamsDialog {
     /// The grid's selected row, kept after its edit closes (VM: the name
     /// cell stays filled after Enter) until the grid is built again.
     row_sel: Option<(Node, usize)>,
+    /// The grid holds the focus: its selected row's name (180, 201, 233),
+    /// without it (240) (VM: after OK is pressed).
+    grid_focus: bool,
+    /// The value a grid edit started from: Esc puts it back (VM).
+    edit_orig: String,
+    /// Where the click that started the edit fell (x): the caret goes there.
+    edit_click: Option<f32>,
 }
 
 /// Where an element goes when `removed` is deleted: gone (itself or its
@@ -778,7 +797,7 @@ impl ParamsDialog {
     pub fn new(doc: usize, work: OmpParams) -> Self {
         static OPENED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let salt = OPENED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        ParamsDialog { doc, work, sel: Node::Station(0), collapsed: HashSet::new(), labels: None, edit: None, built: None, salt, row_sel: None }
+        ParamsDialog { doc, work, sel: Node::Station(0), collapsed: HashSet::new(), labels: None, edit: None, built: None, salt, row_sel: None, grid_focus: false, edit_orig: String::new(), edit_click: None }
     }
 
     /// The grid's rows for `node` as last built, building them anew for
@@ -1056,6 +1075,13 @@ impl ParamsDialog {
         if self.edit.is_some_and(|(n, _)| n != node) {
             self.edit = None;
         }
+        // A press on the grid gives it the focus, one elsewhere (but on the
+        // toolbar) takes it.
+        if let Some(p) = ui.input(|i| i.pointer.any_pressed().then(|| crate::lanes::press_pos(i)).flatten()) {
+            if !crate::dialogs::keeps_focus_at(ui.ctx(), p) {
+                self.grid_focus = grid.contains(p);
+            }
+        }
         let rows = grid_rows(self.work.method, node);
         let built = self.built_values(node);
         let mut y = inner.top();
@@ -1078,16 +1104,31 @@ impl ParamsDialog {
             // opening the list.
             let editing = self.edit == Some((node, k));
             if editing || self.row_sel == Some((node, k)) {
-                ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2(name.left() + 1.0, name.top()), name.max), 0.0, Color32::from_rgb(180, 201, 233));
+                let fill = if (editing || self.grid_focus) && !crate::dialogs::under_message(ui.ctx()) { Color32::from_rgb(180, 201, 233) } else { Color32::from_gray(240) };
+                ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2(name.left() + 1.0, name.top()), name.max), 0.0, fill);
                 ui.painter().with_clip_rect(name).text(egui::pos2(name.left() + 5.0, name.center().y), egui::Align2::LEFT_CENTER, ellipsize_to(ui, label, name.width() - 7.0), font.clone(), Color32::BLACK);
             }
             if editing && !is_chan {
                 let id = egui::Id::new(("omp_cell", k));
-                let resp = ui.put(cell, egui::TextEdit::singleline(v).id(id).frame(false).font(font.clone()).margin(egui::Margin { left: 5.0, right: 2.0, top: 2.0, bottom: 1.0 }).desired_width(cell.width() - 7.0));
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cell));
+                let mut out = egui::TextEdit::singleline(v).id(id).frame(false).font(font.clone()).margin(egui::Margin { left: 5.0, right: 2.0, top: 2.0, bottom: 1.0 }).desired_width(cell.width() - 7.0).show(&mut child);
+                let resp = out.response.clone();
                 if !resp.has_focus() && !resp.lost_focus() {
+                    // The grid hands the click on to the new edit: the caret
+                    // where it fell (VM: «5» typed before the «1» clicked
+                    // at its left).
+                    let n = v.chars().count();
+                    let at = self.edit_click.take().map(|x| out.galley.cursor_from_pos(egui::vec2(x - out.galley_pos.x, 0.0)).ccursor).unwrap_or(egui::text::CCursor::new(n));
+                    out.state.cursor.set_char_range(Some(egui::text::CCursorRange::one(at)));
+                    out.state.store(ui.ctx(), id);
                     resp.request_focus();
                 }
                 if resp.lost_focus() {
+                    // Enter keeps the value, Esc puts the old one back; the
+                    // dialog stays either way (VM: «5», Esc → «1»).
+                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        *v = self.edit_orig.clone();
+                    }
                     self.edit = None;
                 }
                 continue;
@@ -1114,6 +1155,16 @@ impl ParamsDialog {
                     if let Some(pick) = crate::dialogs::combo_popup(ui, cell, list_id, channels, cur) {
                         *v = channels[pick].clone();
                     }
+                } else {
+                    // The in-place list's Enter / Esc end the edit (Esc
+                    // restoring) without reaching the dialog.
+                    let (enter, esc) = ui.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, egui::Key::Enter), i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)));
+                    if esc {
+                        *v = self.edit_orig.clone();
+                    }
+                    if enter || esc {
+                        self.edit = None;
+                    }
                 }
             }
             let p = ui.painter().with_clip_rect(cell);
@@ -1126,6 +1177,8 @@ impl ParamsDialog {
                 p.text(at_text, egui::Align2::LEFT_CENTER, v.as_str(), font.clone(), Color32::BLACK);
             }
             if !editing && ui.interact(egui::Rect::from_min_max(row.min, egui::pos2(row.right(), row.bottom() - 1.0)), ui.id().with(("omp_cell_click", k)), egui::Sense::click()).clicked() {
+                self.edit_orig = v.clone();
+                self.edit_click = ui.input(|i| i.pointer.interact_pos()).filter(|p| cell.contains(*p)).map(|p| p.x);
                 self.edit = Some((node, k));
                 self.row_sel = Some((node, k));
             }
@@ -1172,6 +1225,9 @@ enum ToolIcon {
 /// pointer the Office 2007 hot face (approximated).
 fn tool_button(ui: &mut egui::Ui, r: egui::Rect, icon: ToolIcon, text: Option<&str>, enabled: bool) -> egui::Response {
     let resp = ui.interact(r, ui.id().with(("omp_tool", r.left() as i32)), egui::Sense::click());
+    // A toolbar button takes no focus: the tree keeps its marked selection
+    // through «Участок» (VM: the new section selected in blue).
+    crate::dialogs::keeps_focus(ui, r);
     let p = ui.painter();
     if enabled && resp.hovered() {
         p.rect_filled(r, 2.0, Color32::from_rgb(255, 189, 105));
@@ -1491,6 +1547,59 @@ mod tests {
         assert!(!d.omp.shown && has_pending_paste(d));
         app.dispatch(Command::OmpAnalysis);
         assert!(!app.active_doc().unwrap().omp.shown, "Анализ is disabled while pasted channels are pending");
+    }
+
+    /// The dialog driven by the pointer (VM, «Участок» then OK): the
+    /// toolbar leaves the tree's focus, a click on a value gives the grid
+    /// the focus and OK takes it — the row then marked in (240).
+    #[test]
+    fn the_toolbar_takes_no_focus_and_ok_takes_the_grids() {
+        let mut d = ParamsDialog::new(0, OmpParams { method: ISOLATED, ..Default::default() });
+        let ctx = egui::Context::default();
+        let mut t = 0.0;
+        let mut pass = |d: &mut ParamsDialog, events: Vec<egui::Event>| {
+            t += 0.05;
+            let raw = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), time: Some(t), events, ..Default::default() };
+            let _ = ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| d.ui(ui, &[]));
+            });
+        };
+        let click = |p: egui::Pos2| {
+            let b = |pressed| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            [vec![egui::Event::PointerMoved(p), b(true)], vec![b(false)]]
+        };
+        let salt = d.salt;
+        let tree_focus = |ctx: &egui::Context| ctx.data(|m| m.get_temp::<bool>(egui::Id::new(("omp_tree", salt)).with("fv_tree_focus")));
+        pass(&mut d, vec![]);
+        pass(&mut d, vec![]);
+        for e in click(egui::pos2(292.0 + 30.0, 12.0 + 11.0)) {
+            pass(&mut d, e);
+        }
+        assert_eq!(d.sel, Node::Section(0, 0), "«Участок» added a section");
+        assert_eq!(tree_focus(&ctx), Some(true), "the tree keeps the focus");
+        for e in click(egui::pos2(237.0 + 300.0, 44.0 + 8.0)) {
+            pass(&mut d, e);
+        }
+        assert!(d.grid_focus && d.row_sel.is_some());
+        assert_eq!(tree_focus(&ctx), Some(false));
+        pass(&mut d, vec![]);
+        for e in click(egui::pos2(465.0 + 50.0, 413.0 + 10.0)) {
+            pass(&mut d, e);
+        }
+        assert!(!d.grid_focus && d.row_sel.is_some(), "OK takes the focus, the row stays selected");
+        assert!(d.edit.is_none(), "the edit ended with its focus");
+        // A click at the left of the «1» puts the caret before it; Esc in
+        // the edit puts the old value back (VM: «5», Esc → «1»).
+        for e in click(egui::pos2(475.0, 44.0 + 8.0)) {
+            pass(&mut d, e);
+        }
+        pass(&mut d, vec![]);
+        assert!(d.edit.is_some());
+        pass(&mut d, vec![egui::Event::Text("5".into())]);
+        assert_eq!(d.work.stations[0].sections[0].length, "51", "the caret where the click fell, left of «1»");
+        pass(&mut d, vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+        assert_eq!(d.work.stations[0].sections[0].length, "1");
+        assert!(d.edit.is_none());
     }
 
     /// Neither the ОМП run (`0x4a00b0`) nor paste (57637, `0x45ad02`)
