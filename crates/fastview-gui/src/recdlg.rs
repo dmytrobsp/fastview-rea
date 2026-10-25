@@ -450,6 +450,10 @@ impl App {
                     (13, 199, "Момент запуска:", Some(trig)),
                     (13, 217, "Длительность:", Some(duration_text(o))),
                 ];
+                // The controls in the template's order, the tab order:
+                // «Закрыть» first (the initial focus), the rate combo no tab
+                // stop, then «Кодировка» and the correction combo (VM).
+                apply = crate::dialogs::win_button(ui, dlu(client, 258, 256, 80, 14), "Закрыть", true).clicked();
                 for (x, y, label, value) in rows {
                     win_label(ui, dlu(client, x, y, 96, 9), label, true, true);
                     if let Some(v) = value {
@@ -462,7 +466,13 @@ impl App {
                     st.fail = false;
                 }
                 let rates: Vec<String> = rate_list(o.line_freq).iter().map(|r| r.to_string()).collect();
-                crate::dialogs::win_combo_edit(ui, dlu(client, 120, 102, 80, 12), egui::Id::new("fv_rate"), &mut st.rate_text, &rates, focus);
+                crate::dialogs::no_tab_stop(ui, |ui| crate::dialogs::win_combo_edit(ui, dlu(client, 120, 102, 80, 12), egui::Id::new("fv_rate"), &mut st.rate_text, &rates, focus));
+                win_label(ui, dlu(client, 12, 234, 96, 9), "Кодировка:", true, true);
+                let cps: Vec<String> = CODEPAGES.iter().map(|(_, l)| l.to_string()).collect();
+                let cur = CODEPAGES.iter().position(|(e, _)| *e == d.codepage).unwrap_or(0);
+                if let Some(k) = crate::dialogs::win_combo_list(ui, dlu(client, 121, 233, 80, 70), egui::Id::new("fv_codepage"), &cps, cur, true) {
+                    cp_pick = Some(CODEPAGES[k].0);
+                }
                 win_label(ui, dlu(client, 12, 123, 96, 17), "Частота для коррекции расчётных значений:", true, true);
                 // «Не корректировать», then each frequency candidate by
                 // name (`0x4499e0`); disabled when there is none.
@@ -472,13 +482,6 @@ impl App {
                 if let Some(k) = crate::dialogs::win_combo_list(ui, dlu(client, 119, 125, 80, 70), egui::Id::new("fv_corr"), &items, st.correction, items.len() > 1) {
                     st.correction = k;
                 }
-                win_label(ui, dlu(client, 12, 234, 96, 9), "Кодировка:", true, true);
-                let cps: Vec<String> = CODEPAGES.iter().map(|(_, l)| l.to_string()).collect();
-                let cur = CODEPAGES.iter().position(|(e, _)| *e == d.codepage).unwrap_or(0);
-                if let Some(k) = crate::dialogs::win_combo_list(ui, dlu(client, 121, 233, 80, 70), egui::Id::new("fv_codepage"), &cps, cur, true) {
-                    cp_pick = Some(CODEPAGES[k].0);
-                }
-                apply = crate::dialogs::win_button(ui, dlu(client, 258, 256, 80, 14), "Закрыть", true).clicked();
             });
         if let Some(cp) = cp_pick {
             self.docs[ai].set_codepage(cp);

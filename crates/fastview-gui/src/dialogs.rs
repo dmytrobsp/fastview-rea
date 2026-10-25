@@ -188,6 +188,61 @@ impl<'o> Dlg<'o> {
             ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_dlg_owner").with(o), frame));
         }
         let owns_shown = ctx.data(|d| d.get_temp::<u64>(egui::Id::new("fv_dlg_owner").with(id))).is_some_and(|p| p + 1 >= frame);
+        // The dialog manager's keyboard (IsDialogMessage). The controls
+        // register their tab stops as they are drawn (`tab_stop`); the
+        // ring of the last pass is the dialog's tab order. With no control
+        // focused the first stop holds the focus (as the dialog's initial
+        // focus). The focus cues start as the last input left them and
+        // show from the first Tab or Alt (WM_CHANGEUISTATE).
+        let fresh = prev.is_none_or(|(last, _, _)| last + 1 != frame);
+        let ring_key = id.with("fv_tab_ring");
+        let ring: Vec<(egui::Id, StopKind)> = ctx.data_mut(|d| {
+            let r: &mut Ring = d.get_temp_mut_or_default(ring_key);
+            if fresh {
+                *r = Ring::default();
+            }
+            if r.pass != frame {
+                r.prev = std::mem::take(&mut r.stops);
+                r.pass = frame;
+            }
+            r.prev.clone()
+        });
+        let cues_key = id.with("fv_cues");
+        let mut cues = if fresh { ctx.data(|d| d.get_temp::<bool>(egui::Id::new("fv_last_input_key"))).unwrap_or(false) } else { ctx.data(|d| d.get_temp::<bool>(cues_key)).unwrap_or(false) };
+        let was_msg = ctx.data(|d| d.get_temp::<bool>(id.with("fv_is_msg"))).unwrap_or(false);
+        if !owns_shown && (was_msg || !under_message(ctx)) {
+            let (alt, enter) = ctx.input(|i| (i.modifiers.alt, i.key_pressed(egui::Key::Enter) && i.modifiers.is_none()));
+            cues |= alt;
+            // The Tab presses kept from egui for this pass (`take_dialog_tabs`).
+            let tabs = ctx.data_mut(|d| d.remove_temp::<(u64, Vec<bool>)>(egui::Id::new("fv_tabs"))).filter(|(p, _)| p + 1 >= frame).map(|t| t.1).unwrap_or_default();
+            for back in tabs {
+                if ring.is_empty() {
+                    break;
+                }
+                let n = ring.len();
+                let cur = focused_stop(ctx, &ring).and_then(|f| ring.iter().position(|s| s.0 == f)).unwrap_or(0);
+                let next = ring[if back { (cur + n - 1) % n } else { (cur + 1) % n }].0;
+                ctx.memory_mut(|m| m.request_focus(next));
+                ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_tabbed_to"), (next, frame)));
+                cues = true;
+            }
+            // Enter on a focused push button presses that button, not the
+            // default one: egui's keyboard click (Space), unseen by the
+            // dialog's own Enter.
+            let on_button = ctx.memory(|m| m.focused()).is_some_and(|f| ring.iter().any(|s| s.0 == f && s.1 == StopKind::Button));
+            if enter && on_button {
+                ctx.input_mut(|i| {
+                    for e in &mut i.events {
+                        if let egui::Event::Key { key, pressed: true, .. } = e {
+                            if *key == egui::Key::Enter {
+                                *key = egui::Key::Space;
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        ctx.data_mut(|d| d.insert_temp(cues_key, cues));
         // The DWM shadow, its look approximated.
         let shadow = egui::epaint::Shadow { offset: Vec2::new(0.0, 6.0), blur: 24.0, spread: 0.0, color: Color32::from_black_alpha(60) };
         // The border blends over what lies behind the window: the fill is
@@ -204,6 +259,8 @@ impl<'o> Dlg<'o> {
             let (cap, _) = ui.allocate_exact_size(Vec2::new(5.0 + tw + if tool { 30.0 } else { 56.0 }, DLG_CAPTION_H), egui::Sense::hover());
             ui.spacing_mut().item_spacing = spacing;
             let msg_before = ui.ctx().data(|d| d.get_temp::<u64>(egui::Id::new("fv_msgbox_pass")));
+            let outer_dlg = ui.ctx().data(|d| d.get_temp::<Option<egui::Id>>(egui::Id::new("fv_cur_dlg"))).flatten();
+            ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_cur_dlg"), Some(id)));
             let inner = egui::Frame::none()
                 .inner_margin(margin)
                 .show(ui, |ui| {
@@ -220,6 +277,7 @@ impl<'o> Dlg<'o> {
                     add_contents(ui)
                 })
                 .inner;
+            ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_cur_dlg"), outer_dlg));
             // Inactive under a message box (not the box's own window) or a
             // dialog it owns: the caption's text and ✕ grey (VM: «Параметры
             // ОМП» under «Длина участка не может быть равна нулю»).
@@ -309,6 +367,11 @@ pub fn win_button(ui: &mut egui::Ui, r: Rect, text: &str, default: bool) -> egui
 /// (the disabled look approximated).
 pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enabled: bool) -> egui::Response {
     let resp = ui.interact(r, ui.id().with(("fv_btn", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    // A tab stop; with the focus it looks as the default button (VM: the
+    // finder's «Выбрать» blue beside the default «Открыть файлы»), its
+    // focus rectangle with the cues.
+    let focused = enabled && tab_stop(ui, resp.id, StopKind::Button);
+    let default = default || focused;
     let face = r.shrink(1.0);
     if !enabled {
         let p = ui.painter();
@@ -329,6 +392,9 @@ pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enab
     p.rect_filled(Rect::from_min_max(face.min, Pos2::new(face.right(), face.bottom() - 1.0)), 4.0, edge);
     p.rect_filled(face.shrink(1.0), 3.0, fill);
     p.text(face.center(), egui::Align2::CENTER_CENTER, text, DLG_FONT, Color32::BLACK);
+    if focused && cues(ui) {
+        focus_rect(p, Rect::from_min_max(r.min + Vec2::new(4.0, 3.0), r.max - Vec2::new(4.0, 3.0)));
+    }
     resp
 }
 
@@ -396,6 +462,8 @@ pub fn win_radio(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool 
 /// disabled look approximated).
 pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabled: bool) -> bool {
     let resp = ui.interact(r, ui.id().with(("fv_radio", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    // A group's checked button is its tab stop (Tab enters a group there).
+    let focused = enabled && checked && tab_stop(ui, resp.id, StopKind::Other);
     let c = Pos2::new(r.left() + 6.5, r.top() + (r.height() / 2.0).floor());
     let p = ui.painter();
     match (checked, enabled) {
@@ -413,8 +481,17 @@ pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
         }
     }
     let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
-    p.text(Pos2::new(r.left() + 16.0, c.y), egui::Align2::LEFT_CENTER, text, DLG_FONT, ink);
-    resp.clicked()
+    let t = p.text(Pos2::new(r.left() + 16.0, c.y), egui::Align2::LEFT_CENTER, text, DLG_FONT, ink);
+    if focused && cues(ui) {
+        focus_rect(p, t.expand2(Vec2::new(1.0, 1.0)));
+    }
+    keyboard_free_click(ui, &resp)
+}
+
+/// A click by the pointer, or Space with the focus — not Enter, which the
+/// dialog gives its default button.
+fn keyboard_free_click(ui: &egui::Ui, resp: &egui::Response) -> bool {
+    resp.clicked_by(egui::PointerButton::Primary) || (resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Space)))
 }
 
 /// Whether the last input was the keyboard's (a key, or a copy / paste
@@ -450,7 +527,8 @@ fn hide_focus(v: &mut egui::Visuals) {
 
 /// The edit took the focus from the keyboard (Tab / Shift+Tab) this pass.
 fn tabbed_in(ui: &egui::Ui, r: &egui::Response) -> bool {
-    r.gained_focus() && ui.input(|i| i.key_pressed(egui::Key::Tab))
+    let pass = ui.ctx().cumulative_pass_nr();
+    r.gained_focus() && ui.ctx().data(|d| d.get_temp::<(egui::Id, u64)>(egui::Id::new("fv_tabbed_to"))).is_some_and(|(id, p)| id == r.id && p + 1 >= pass)
 }
 
 /// An edit's selected text in the highlight's ink, white (Win32's
@@ -485,6 +563,7 @@ pub fn win_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, foc
         hide_focus(child.visuals_mut());
     }
     let mut out = egui::TextEdit::singleline(text).id(id).frame(false).font(DLG_FONT).margin(egui::Margin::symmetric(1.0, 1.0)).desired_width(inner.width() - 2.0).show(&mut child);
+    tab_stop(ui, out.response.id, StopKind::Edit);
     if !inactive {
         selected_white(child.painter(), &out);
     }
@@ -543,6 +622,7 @@ pub fn win_edit_multiline(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut S
                 hide_focus(ui.visuals_mut());
             }
             let mut out = egui::TextEdit::multiline(text).id(id).frame(false).font(DLG_FONT).margin(egui::Margin::ZERO).desired_width(inner.width() - 16.0).desired_rows(1).min_size(inner.size() - Vec2::new(16.0, 0.0)).show(ui);
+            tab_stop(ui, out.response.id, StopKind::Edit);
             if !inactive {
                 selected_white(ui.painter(), &out);
             }
@@ -618,6 +698,7 @@ pub fn win_check(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool 
 /// right-aligned before it.
 pub fn win_check_ex(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabled: bool, left: bool) -> bool {
     let resp = ui.interact(r, ui.id().with(("fv_check", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let focused = enabled && tab_stop(ui, resp.id, StopKind::Other);
     let bx = if left { r.right() - 13.0 } else { r.left() };
     let b = Rect::from_min_size(Pos2::new(bx, r.top() + ((r.height() - 13.0) / 2.0).floor()), Vec2::splat(13.0));
     let p = ui.painter();
@@ -633,13 +714,16 @@ pub fn win_check_ex(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
         }
     }
     let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
-    if left {
+    let t = if left {
         // BS_LEFTTEXT: the text right-aligned 3 px before the box (VM).
-        p.text(Pos2::new(b.left() - 3.0, b.center().y), egui::Align2::RIGHT_CENTER, text, DLG_FONT, ink);
+        p.text(Pos2::new(b.left() - 3.0, b.center().y), egui::Align2::RIGHT_CENTER, text, DLG_FONT, ink)
     } else {
-        p.text(Pos2::new(r.left() + 16.0, b.center().y), egui::Align2::LEFT_CENTER, text, DLG_FONT, ink);
+        p.text(Pos2::new(r.left() + 16.0, b.center().y), egui::Align2::LEFT_CENTER, text, DLG_FONT, ink)
+    };
+    if focused && cues(ui) {
+        focus_rect(p, t.expand2(Vec2::new(1.0, 1.0)));
     }
-    resp.clicked() && enabled
+    keyboard_free_click(ui, &resp) && enabled
 }
 
 /// One visible row of a TreeView.
@@ -670,6 +754,111 @@ pub fn keeps_focus(ui: &egui::Ui, r: Rect) {
 pub fn keeps_focus_at(ctx: &egui::Context, p: Pos2) -> bool {
     let pass = ctx.cumulative_pass_nr();
     ctx.data(|d| d.get_temp::<(u64, Vec<Rect>)>(egui::Id::new("fv_keeps_focus"))).is_some_and(|(n, v)| n == pass && v.iter().any(|r| r.contains(p)))
+}
+
+/// With a dialog up (last pass), its Tab presses are kept from egui — whose
+/// own focus move follows the order widgets are drawn, and is decided as a
+/// pass begins — for the dialog manager in `Dlg::show`. Called on each
+/// pass's raw input before the pass.
+pub fn take_dialog_tabs(ctx: &egui::Context, raw: &mut egui::RawInput) {
+    let pass = ctx.cumulative_pass_nr();
+    let up = ctx.data(|d| d.get_temp::<(u64, Vec<egui::Id>, Vec<egui::Id>)>(egui::Id::new("fv_dlg_seen"))).is_some_and(|(p, cur, prev)| p + 2 >= pass && !(cur.is_empty() && prev.is_empty()));
+    if !up {
+        return;
+    }
+    // The arrows too while a control other than an edit has the focus
+    // (egui would move its focus by them; a combo takes them instead).
+    let not_edit = ctx.data(|d| d.get_temp::<(u64, StopKind)>(egui::Id::new("fv_focus_kind"))).is_some_and(|(p, k)| p + 2 >= pass && k != StopKind::Edit);
+    let arrow = |k: &egui::Key| matches!(k, egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight);
+    let (mut tabs, mut arrows) = (Vec::new(), Vec::new());
+    raw.events.retain(|e| match e {
+        egui::Event::Key { key: egui::Key::Tab, pressed, modifiers, .. } => {
+            if *pressed {
+                tabs.push(modifiers.shift);
+            }
+            false
+        }
+        egui::Event::Key { key, pressed, .. } if not_edit && arrow(key) => {
+            if *pressed {
+                arrows.push(*key);
+            }
+            false
+        }
+        _ => true,
+    });
+    ctx.data_mut(|d| {
+        d.insert_temp(egui::Id::new("fv_tabs"), (pass, tabs));
+        d.insert_temp(egui::Id::new("fv_arrows"), (pass, arrows));
+    });
+}
+
+/// The arrow presses kept from egui this pass (`take_dialog_tabs`), taken.
+fn take_arrows(ctx: &egui::Context) -> Vec<egui::Key> {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.remove_temp::<(u64, Vec<egui::Key>)>(egui::Id::new("fv_arrows"))).filter(|(p, _)| p + 1 >= pass).map(|a| a.1).unwrap_or_default()
+}
+
+/// What a tab stop is, for the keys the dialog manager gives it.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum StopKind {
+    /// A push button: Enter presses it while it has the focus.
+    Button,
+    /// An edit: the arrows move its caret.
+    Edit,
+    Other,
+}
+
+/// A dialog's tab stops: those drawn this pass, and last pass's (the
+/// order Tab follows).
+#[derive(Clone, Default)]
+struct Ring {
+    pass: u64,
+    stops: Vec<(egui::Id, StopKind)>,
+    prev: Vec<(egui::Id, StopKind)>,
+}
+
+/// The stop holding the focus: the focused control when it is one of
+/// `ring`, else the first (the dialog's initial focus).
+fn focused_stop(ctx: &egui::Context, ring: &[(egui::Id, StopKind)]) -> Option<egui::Id> {
+    let f = ctx.memory(|m| m.focused());
+    f.filter(|f| ring.iter().any(|s| s.0 == *f)).or_else(|| ring.first().map(|s| s.0))
+}
+
+/// The dialog being drawn.
+fn cur_dlg(ctx: &egui::Context) -> Option<egui::Id> {
+    ctx.data(|d| d.get_temp::<Option<egui::Id>>(egui::Id::new("fv_cur_dlg"))).flatten()
+}
+
+/// Register `id` as the next tab stop of the dialog being drawn (in the
+/// template's order: the order drawn); whether it holds the focus.
+pub fn tab_stop(ui: &egui::Ui, id: egui::Id, kind: StopKind) -> bool {
+    let ctx = ui.ctx();
+    let no_tab = ctx.data(|d| d.get_temp::<bool>(egui::Id::new("fv_no_tab"))).unwrap_or(false);
+    let Some(d) = cur_dlg(ctx).filter(|_| !no_tab) else { return ctx.memory(|m| m.has_focus(id)) };
+    let ring = ctx.data_mut(|m| {
+        let r: &mut Ring = m.get_temp_mut_or_default(d.with("fv_tab_ring"));
+        r.stops.push((id, kind));
+        r.prev.clone()
+    });
+    if ctx.memory(|m| m.has_focus(id)) {
+        let pass = ctx.cumulative_pass_nr();
+        ctx.data_mut(|m| m.insert_temp(egui::Id::new("fv_focus_kind"), (pass, kind)));
+    }
+    focused_stop(ctx, &ring) == Some(id)
+}
+
+/// Controls drawn in `add` are no tab stops (a template control without
+/// WS_TABSTOP: VM, DIALOG 392's sample-rate combo).
+pub fn no_tab_stop<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_no_tab"), true));
+    let r = add(ui);
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_no_tab"), false));
+    r
+}
+
+/// Whether the dialog being drawn shows its focus cues.
+pub fn cues(ui: &egui::Ui) -> bool {
+    cur_dlg(ui.ctx()).is_some_and(|d| ui.ctx().data(|m| m.get_temp::<bool>(d.with("fv_cues"))).unwrap_or(false))
 }
 
 /// What the pointer did to a TreeView's rows this frame.
@@ -978,9 +1167,12 @@ pub fn win_combo_list(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[String]
 pub fn win_combo_list_in(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[String], current: usize, enabled: bool, font: egui::FontId) -> Option<usize> {
     let r = Rect::from_min_size(r.min, Vec2::new(r.width(), COMBO_H));
     let resp = ui.interact(r, id, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let focused = enabled && tab_stop(ui, resp.id, StopKind::Other);
     let open_id = id.with("open");
     let mut open = enabled && ui.data(|d| d.get_temp(open_id)).unwrap_or(false);
-    if resp.clicked() {
+    // The pointer opens it; Enter goes to the default button and Space does
+    // nothing (a CBS_DROPDOWNLIST).
+    if resp.clicked_by(egui::PointerButton::Primary) {
         open = !open;
         ui.data_mut(|d| d.insert_temp(open_id, open));
     }
@@ -990,8 +1182,23 @@ pub fn win_combo_list_in(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[Stri
     if let Some(t) = items.get(current) {
         ui.painter().with_clip_rect(text_r).text(text_r.left_center(), egui::Align2::LEFT_CENTER, t, font, ink);
     }
+    if focused && cues(ui) && !open {
+        focus_rect(ui.painter(), Rect::from_min_max(r.min + Vec2::new(3.0, 3.0), Pos2::new(r.right() - 19.0, r.bottom() - 3.0)));
+    }
     if open {
         return combo_popup(ui, r, id, items, (current < items.len()).then_some(current));
+    }
+    // Closed with the focus: ↑ / ↓ pick the previous / next item.
+    if resp.has_focus() && !items.is_empty() {
+        let keys = take_arrows(ui.ctx());
+        let up = keys.iter().any(|k| matches!(k, egui::Key::ArrowUp | egui::Key::ArrowLeft));
+        let down = keys.iter().any(|k| matches!(k, egui::Key::ArrowDown | egui::Key::ArrowRight));
+        if down && current + 1 < items.len() {
+            return Some(current + 1);
+        }
+        if up && current > 0 && current <= items.len() {
+            return Some(current - 1);
+        }
     }
     None
 }
@@ -1013,6 +1220,7 @@ pub fn win_combo_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut Strin
     combo_face(ui, r, true, true, open, hover);
     let field = Rect::from_min_max(r.min + Vec2::new(3.0, 3.0), Pos2::new(button.left(), r.bottom() - 3.0));
     let mut out = egui::TextEdit::singleline(text).frame(false).font(DLG_FONT).margin(egui::Margin::symmetric(1.0, 0.0)).desired_width(field.width()).show(&mut ui.new_child(egui::UiBuilder::new().max_rect(field)));
+    tab_stop(ui, out.response.id, StopKind::Edit);
     if focus {
         out.response.request_focus();
         let n = text.chars().count();
@@ -1099,6 +1307,10 @@ pub fn message_box(ui: &mut egui::Ui, icon: MsgIcon, text: &str, buttons: &[&str
     let cues = if shown_before { ui.ctx().data(|d| d.get_temp::<bool>(cues_id)).unwrap_or(true) } else { ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::new("fv_last_input_key"))).unwrap_or(true) }
         || ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { pressed: true, .. })));
     ui.ctx().data_mut(|d| d.insert_temp(cues_id, cues));
+    // The box's buttons draw their focus by the box's own rule.
+    if let Some(d) = cur_dlg(ui.ctx()) {
+        ui.ctx().data_mut(|m| m.insert_temp(d.with("fv_cues"), cues));
+    }
     let font = egui::FontId::proportional(12.0);
     let g = ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::BLACK));
     let n = buttons.len() as f32;
@@ -1117,9 +1329,6 @@ pub fn message_box(ui: &mut egui::Ui, icon: MsgIcon, text: &str, buttons: &[&str
         let r = Rect::from_min_size(Pos2::new(x, white.bottom() + 10.0), Vec2::new(75.0, 23.0));
         if win_button(ui, r, label, k == 0).clicked() {
             pressed = Some(k);
-        }
-        if k == 0 && cues {
-            focus_rect(ui.painter(), Rect::from_min_max(r.min + Vec2::new(4.0, 3.0), r.max - Vec2::new(4.0, 3.0)));
         }
     }
     pressed
@@ -1500,6 +1709,57 @@ mod combo_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The dialog manager's keys: Tab follows the controls in their order
+    /// (one outside the tab stops skipped), Shift+Tab back, and Enter on a
+    /// focused push button presses that button, not the dialog's Enter.
+    #[test]
+    fn tab_follows_the_stops_and_enter_presses_the_focused_button() {
+        let ctx = egui::Context::default();
+        let ids = std::cell::RefCell::new(Vec::new());
+        let pressed = std::cell::RefCell::new(Vec::new());
+        let mut t = 0.0;
+        let mut pass = |events: Vec<egui::Event>| -> bool {
+            t += 0.05;
+            let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))), time: Some(t), events, ..Default::default() };
+            take_dialog_tabs(&ctx, &mut raw);
+            let mut enter = false;
+            let _ = ctx.run(raw, |ctx| {
+                dlg(ctx, "t").show(ctx, |ui| {
+                    let (client, _) = ui.allocate_exact_size(Vec2::new(300.0, 100.0), egui::Sense::hover());
+                    let r = |x: f32| Rect::from_min_size(client.min + Vec2::new(x, 10.0), Vec2::new(60.0, 23.0));
+                    let a = win_button(ui, r(0.0), "A", true);
+                    let mut c = String::new();
+                    no_tab_stop(ui, |ui| win_edit(ui, r(70.0), egui::Id::new("c"), &mut c, false));
+                    let b = win_button(ui, r(140.0), "B", false);
+                    *ids.borrow_mut() = vec![a.id, b.id];
+                    for (name, resp) in [("A", a), ("B", b)] {
+                        if resp.clicked() {
+                            pressed.borrow_mut().push(name);
+                        }
+                    }
+                });
+                enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+            });
+            enter
+        };
+        let key = |key, shift| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: if shift { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE } }];
+        for _ in 0..3 {
+            pass(vec![]);
+        }
+        let focused = || ctx.memory(|m| m.focused());
+        pass(key(egui::Key::Tab, false));
+        pass(vec![]);
+        assert_eq!(focused(), Some(ids.borrow()[1]), "A (the first stop) → B, the edit skipped");
+        pass(key(egui::Key::Tab, true));
+        pass(vec![]);
+        assert_eq!(focused(), Some(ids.borrow()[0]), "Shift+Tab back to A");
+        pass(key(egui::Key::Tab, false));
+        pass(vec![]);
+        let dialog_saw_enter = pass(key(egui::Key::Enter, false));
+        assert_eq!(*pressed.borrow(), vec!["B"]);
+        assert!(!dialog_saw_enter, "the Enter went to B");
+    }
 
     /// A press on a toolbar button leaves a TreeView's focus (and its blue
     /// selection) alone; a press on any other place outside takes it (VM:

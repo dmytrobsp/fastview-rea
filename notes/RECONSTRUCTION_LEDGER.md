@@ -8917,6 +8917,40 @@ Left: the rows' file icons (the shell's association icon in the
 original; ours a blank page — W6). The harness now resets ours' settings
 file before each run, as the original's registry is reset.
 
+### L9.343 — The dialog manager's keyboard: tab stops in template order, focus cues, Enter on a focused button  ·  ✅
+VM, DIALOG 392: Tab moves the focus «Закрыть» → «Кодировка» → «Закрыть»
+…, a dotted focus rectangle on each. Its template (local dump) explains
+it: the controls in z-order are «Закрыть» (BS_DEFPUSHBUTTON, WS_TABSTOP),
+the labels, the rate combo 1045 without WS_TABSTOP, «Кодировка» 1063 and
+the correction combo 1096 (disabled) — the tab order is the template's
+order over the enabled WS_TABSTOP controls, the first one the initial
+focus. Ours had egui's own Tab, which follows the order widgets are drawn,
+counts every clickable widget and draws no focus: nothing visible
+happened. Now the dialog manager is ours (`dialogs`):
+- the controls register as tab stops as they are drawn (`tab_stop`; the
+  check boxes, push buttons, list combos, edits, the checked radio of a
+  group); `no_tab_stop` for a template control without WS_TABSTOP; 392
+  drawn in its template's order;
+- `Dlg::show` keeps each dialog's ring and moves the focus on Tab /
+  Shift+Tab; with none focused the first stop holds it; the Tab presses
+  (and the arrows while a non-edit control has the focus) are kept from
+  egui before each pass (`take_dialog_tabs`, from eframe's
+  `raw_input_hook`, the software runner and the test frames), since egui
+  decides its own focus move as a pass begins;
+- the focus cues start as the last input left them and show from the
+  first Tab or Alt; a focused push button looks as the default one (VM:
+  the finder's «Выбрать» blue beside «Открыть файлы») with its dotted
+  rectangle, a check box / radio / combo the rectangle round its text;
+- Enter on a focused push button presses that button (given to egui as
+  its keyboard click, unseen by the dialog's own Enter); Enter on any
+  other control goes to the default button, Space clicks the focused one,
+  ↑ / ↓ step a focused list combo.
+Test `tab_follows_the_stops_and_enter_presses_the_focused_button`. VM:
+392's four steps alike.
+Left: the other dialogs' draw order against their templates (next);
+lists, trees and the property grids are no tab stops yet; the arrows'
+moves between a group's radios and between push buttons.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

@@ -602,6 +602,10 @@ fn startup_args(args: impl Iterator<Item = String>) -> StartupArgs {
 }
 
 impl eframe::App for App {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        dialogs::take_dialog_tabs(ctx, raw);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.frame_ui(ctx);
         self.splash(ctx);
@@ -942,7 +946,8 @@ mod window_tests {
     fn frames_held(app: &mut App, ctx: &egui::Context, size: Vec2, batches: Vec<Vec<egui::Event>>, modifiers: egui::Modifiers) {
         for events in batches {
             let t = ctx.input(|i| i.time) + 0.05;
-            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), time: Some(t), events, modifiers, ..Default::default() };
+            let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), time: Some(t), events, modifiers, ..Default::default() };
+            dialogs::take_dialog_tabs(ctx, &mut raw);
             let _ = ctx.run(raw, |ctx| app.frame_ui(ctx));
         }
     }

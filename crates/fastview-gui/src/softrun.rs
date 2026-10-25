@@ -135,7 +135,8 @@ impl Soft {
         // picture is shown, every pass's textures kept.
         let mut textures = egui::TexturesDelta::default();
         let mut last = None;
-        for raw in crate::one_press_per_pass(raw) {
+        for mut raw in crate::one_press_per_pass(raw) {
+            crate::dialogs::take_dialog_tabs(&self.ctx, &mut raw);
             let app = &mut self.app;
             let mut out = self.ctx.run(raw, |ctx| {
                 app.frame_ui(ctx);
