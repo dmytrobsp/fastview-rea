@@ -902,15 +902,33 @@ impl App {
 
 /// A vertical gradient through `stops` (y offsets from the top, colours) as
 /// one mesh, the last colour down to the bottom.
-/// A checked button's ground. The Office 2007 looks (seen on the VM, Blue):
-/// a 1 px (147, 135, 108) frame round a two-part gradient — (253, 212, 167)
-/// at the top, (249, 151, 50) at 42 %, (252, 230, 156) at the bottom; the
+/// Whether `p` is one of the Office 2007 looks (their gradients and
+/// navy ink).
+fn office2007(p: &crate::theme::Palette) -> bool {
+    p.caption_band.is_some() && p.accent_soft == Color32::from_rgb(255, 228, 150)
+}
+
+/// A checked button's ground. The Office 2007 looks (VM, Blue, a large
+/// button scanned): a (142, 129, 101) frame, its bottom edge gold (255,
+/// 209, 53), round a two-part face — a light gradient over its upper 39 %
+/// ((253, 212, 167) → (251, 174, 95)), then a step to (249, 150, 48) going
+/// back to (252, 231, 157); under the pointer (`hot`) the same darker:
+/// (246, 178, 109) → (235, 152, 84), (230, 131, 51) → (247, 196, 95). The
 /// older looks their flat selection colour.
-fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette) {
-    if p.caption_band.is_some() && p.accent_soft == Color32::from_rgb(255, 228, 150) {
-        let h = rect.height();
-        painter.add(gradient_mesh(rect.shrink(1.0), &[(0.0, Color32::from_rgb(253, 212, 167)), (0.42 * h, Color32::from_rgb(249, 151, 50)), (h, Color32::from_rgb(252, 230, 156))]));
-        painter.px_rect_stroke(rect, 2.0, egui::Stroke::new(1.0f32, Color32::from_rgb(147, 135, 108)));
+fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette, hot: bool) {
+    if office2007(p) {
+        let face = rect.shrink(1.0);
+        let h = face.height();
+        let split = (0.39 * h).round();
+        let c = |r, g, b| Color32::from_rgb(r, g, b);
+        let stops = if hot {
+            [(0.0, c(246, 178, 109)), (split - 1.0, c(235, 152, 84)), (split, c(230, 131, 51)), (h, c(247, 196, 95))]
+        } else {
+            [(0.0, c(253, 212, 167)), (split - 1.0, c(251, 174, 95)), (split, c(249, 150, 48)), (h, c(252, 231, 157))]
+        };
+        painter.add(gradient_mesh(face, &stops));
+        painter.px_rect_stroke(rect, 2.0, egui::Stroke::new(1.0f32, if hot { c(167, 135, 94) } else { c(142, 129, 101) }));
+        painter.px_hline(rect.left() + 2.0..=rect.right() - 3.0, rect.bottom() - 1.0, egui::Stroke::new(1.0f32, c(255, 209, 53)));
     } else {
         painter.rect(rect, 2.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
     }
@@ -924,7 +942,7 @@ fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palet
 /// row 41, then (255, 214, 85) to (255, 231, 153). The older looks: their
 /// soft accent box.
 fn hot_large(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette) {
-    if !(p.caption_band.is_some() && p.accent_soft == Color32::from_rgb(255, 228, 150)) {
+    if !office2007(p) {
         painter.rect(rect, 3.0f32, p.accent_soft.gamma_multiply(0.5f32), egui::Stroke::new(1.0f32, p.accent_border));
         return;
     }
@@ -1343,11 +1361,10 @@ fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     let painter = &plain_painter(ui);
     let (ink, accent) = inks(ui, p);
-    // The checked fill is light in every look: dark ink on it.
-    let ink = if selected && ui.is_enabled() { CHECKED_INK } else { ink };
+    let ink = if selected && ui.is_enabled() { checked_ink(&p, ink) } else { ink };
     let hovered = resp.hovered() && ui.is_enabled();
     if selected {
-        checked_bg(painter, rect, &p);
+        checked_bg(painter, rect, &p, hovered);
     } else if hovered {
         hot_large(painter, rect, &p);
     }
@@ -1545,9 +1562,9 @@ fn small_button_mode(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, la
     // (Icon-only, its tooltip is still the command's: `tips`.)
     let painter = &plain_painter(ui);
     let (ink, accent) = inks(ui, p);
-    let ink = if selected && ui.is_enabled() { CHECKED_INK } else { ink };
+    let ink = if selected && ui.is_enabled() { checked_ink(&p, ink) } else { ink };
     if selected {
-        checked_bg(painter, rect, &p);
+        checked_bg(painter, rect, &p, resp.hovered() && ui.is_enabled());
     } else if resp.hovered() && ui.is_enabled() {
         painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
     }
@@ -1579,6 +1596,17 @@ fn plain_painter(ui: &egui::Ui) -> egui::Painter {
 
 /// Labels on the (light) checked fill.
 const CHECKED_INK: Color32 = Color32::from_rgb(0x20, 0x20, 0x20);
+
+/// A checked button's text: the look's own navy in the Office 2007 looks
+/// (VM: «Частотная», «Вторичные знач.» checked), elsewhere dark on the
+/// light selection fill.
+fn checked_ink(p: &crate::theme::Palette, ink: Color32) -> Color32 {
+    if office2007(p) && ink.r() < 128 {
+        ink
+    } else {
+        CHECKED_INK
+    }
+}
 
 /// A disabled label: the Office 2007 looks' fixed TextDisabled (141, 141,
 /// 141; Aqua 159, 141, 154 — `0x10193a84`), the older looks the text
@@ -1634,7 +1662,7 @@ fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, enabled
     let painter = &plain_painter(ui);
     let enabled = enabled && ui.is_enabled();
     if on {
-        checked_bg(painter, rect, &p);
+        checked_bg(painter, rect, &p, enabled && resp.hovered());
     } else if enabled && resp.hovered() {
         painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
     }

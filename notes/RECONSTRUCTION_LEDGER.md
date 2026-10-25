@@ -9262,6 +9262,19 @@ side by side — the same lines, places and sizes. Left: the titles in
 Tahoma Bold (a little wider), our images. Tests
 `commands_carry_their_prompt_texts`, `descriptions_wrap_by_words`.
 
+### L9.361 — VM: a checked ribbon button under the pointer; the checked buttons' ink  ·  ✅
+Scanned (Office 2007 Blue, «Частотная» checked, then hovered): the
+checked face is two-part — (253, 212, 167) → (251, 174, 95) over its
+upper 39 %, a step to (249, 150, 48), back to (252, 231, 157) — in a
+(142, 129, 101) frame with a gold (255, 209, 53) bottom edge; hovered,
+the same darker: (246, 178, 109) → (235, 152, 84), (230, 131, 51) →
+(247, 196, 95), the frame (167, 135, 94). The label keeps the look's
+navy. Ours blended one gradient through 42 %, showed no hot state on a
+checked button, and wrote checked labels near-black. Now
+`checked_bg(…, hot)` with the two faces (large, small and mini buttons)
+and `checked_ink` (the look's ink in the Office 2007 looks, the dark
+one elsewhere). VM: the faces and the ink as the original's.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
