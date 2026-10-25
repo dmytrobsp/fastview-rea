@@ -139,7 +139,7 @@ items (VM ones also in W4.4):
   round button, INFOBK strip, flat status bar, captions; residual there:
   hot / pressed, sunken / gradient checked buttons, panel borders,
   splitter and toolbar strip).
-- [ ] W2.3 L9.20 — analog paste with no analog channel selected (with
+- [x] W2.3 (VM, L9.326) L9.20 — analog paste with no analog channel selected (with
   W2.16); the paste's start date parsed with the target's revision rule
   (`merge_ui.rs`) — re-read; the clipboard XML's `time_multiplier` /
   `duration_milli_sec` (settled, L9.212) and the merged comment's CR LF (VM:

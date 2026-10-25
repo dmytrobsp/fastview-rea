@@ -8632,6 +8632,18 @@ a pane caption (Плавающее / Закрепленное / …), the QAT �
 strings in English on the VM's English Windows, ours mfc120rus's; none
 on the parameters bar in either.
 
+### L9.326 — VM: W2.3's pastes — no analog channel selected, across revisions  ·  ✅
+Runs (WIN_1999): a channel copied and pasted (1) with only the digital
+channel selected and (2) with nothing selected (a click under the
+lanes) — in both programs the pasted lane goes after the analog ones,
+before the digital, and the selection is as before the paste. (3) A
+channel of BINARY.cfg (a 1991-revision record, its date «6/27/23» month
+first) pasted into WIN_1999 (1999, day first): in both the lane goes in
+front of the selected first channel at time 0, and «Синхронизация» by
+the start time leaves it there with an empty status line — the same
+outcome from the date parsed with the target's rule (ours, `merge_ui`).
+W2.3 closed for the records we have.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,
