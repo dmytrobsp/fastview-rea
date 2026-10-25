@@ -8697,6 +8697,17 @@ shows no selection, caret or focus line (no ES_NOHIDESEL); ours kept
 them — now hidden while a message box is up (`under_message`, set by
 `message_box`). VM: the field alike under the message and after it.
 
+### L9.331 — VM: «Стиль» and the help button on the tab row; the pair dialog  ·  ✅
+Seen: the original draws «Стиль» and the help split button flat on the
+tab row — the text in the tab ink and a blue round «?» image, each with
+MFC's small menu arrow (rows of 5, 3 and 1 px in (86, 125, 177) edged in
+white) — framed only under the pointer; ours drew two framed egui
+buttons («Стиль ▾», a «?»). Now painted as seen (`menu_arrow`,
+`help_image`). VM: alike (our text a pixel heavier). «Помощь» stays
+disabled in ours (no CHM shipped, as decided earlier); «О программе...»
+alike. Also run: the differential «Каналы ▸ Создать» pair dialog —
+layout, lists and grid lines pixel-alike.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

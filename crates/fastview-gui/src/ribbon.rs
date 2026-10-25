@@ -610,16 +610,25 @@ impl App {
     /// «Стиль» and Help on the right of the tab row (§2.5).
     fn tab_row_right(&mut self, ui: &mut egui::Ui, p: crate::theme::Palette, cmds: &mut Vec<Command>) {
         // §2.5: «Стиль» and Help on the right of the tab row.
+        // Both flat on the tab row (VM, Office 2007 Blue), each with MFC's
+        // small menu arrow, framed only under the pointer: «Стиль» in the
+        // tab ink, the help button's round blue «?» image.
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // Help split button (57667): the arrow opens {Помощь, О программе...}.
-            let help = ui.button(RichText::new("?").color(p.text).strong());
+            let (hr, help) = ui.allocate_exact_size(egui::vec2(33.0, 22.0), egui::Sense::click());
+            tab_row_hot(ui, &help, &p);
+            help_image(ui.painter(), egui::pos2(hr.left() + 10.5, hr.center().y));
+            menu_arrow(ui.painter(), egui::pos2(hr.left() + 25.0, hr.center().y - 1.0));
             if help.clicked() {
                 self.open_top_menu(ui.ctx(), TopMenu::Help, help.rect);
             }
             self.kt_rects.push((crate::keytips::Target::Help, help.rect, true));
             // «Стиль» (menu 200): the radio entry of the current look,
             // persisted as `ApplicationLook`.
-            let style = ui.button(RichText::new("Стиль ▾").color(p.text));
+            let (sr, style) = ui.allocate_exact_size(egui::vec2(50.0, 22.0), egui::Sense::click());
+            tab_row_hot(ui, &style, &p);
+            ui.painter().text(egui::pos2(sr.left() + 2.0, sr.center().y), egui::Align2::LEFT_CENTER, "Стиль", egui::FontId::proportional(12.0), p.text);
+            menu_arrow(ui.painter(), egui::pos2(sr.left() + 41.0, sr.center().y - 1.0));
             if style.clicked() {
                 self.open_top_menu(ui.ctx(), TopMenu::Style, style.rect);
             }
@@ -627,6 +636,40 @@ impl App {
         self.top_menu_frame(ui.ctx(), cmds);
     }
 
+}
+
+/// A tab-row button's frame under the pointer.
+fn tab_row_hot(ui: &egui::Ui, r: &egui::Response, p: &crate::theme::Palette) {
+    if r.hovered() {
+        ui.painter().rect(r.rect, 2.0f32, p.accent_soft.gamma_multiply(0.5f32), egui::Stroke::new(1.0f32, p.accent_border));
+    }
+}
+
+/// MFC's small menu arrow (VM): rows of 5, 3 and 1 px in (86, 125, 177)
+/// from `at` (its top-left), a white pixel on either end of the lower two.
+fn menu_arrow(p: &egui::Painter, at: egui::Pos2) {
+    let (x, y) = (at.x.round(), at.y.round());
+    let px = |dx: f32, dy: f32, w: f32, c: Color32| p.rect_filled(egui::Rect::from_min_size(egui::pos2(x + dx, y + dy), egui::vec2(w, 1.0)), 0.0, c);
+    let ink = Color32::from_rgb(86, 125, 177);
+    px(0.0, 0.0, 5.0, ink);
+    px(1.0, 1.0, 3.0, ink);
+    px(2.0, 2.0, 1.0, ink);
+    for (dx, dy) in [(0.0, 1.0), (4.0, 1.0), (1.0, 2.0), (3.0, 2.0)] {
+        px(dx, dy, 1.0, Color32::WHITE);
+    }
+}
+
+/// The help button's image (VM): a blue sphere with a white ring inside a
+/// (80, 113, 160) edge, a white «?».
+fn help_image(p: &egui::Painter, c: egui::Pos2) {
+    p.circle_filled(c, 7.5, Color32::from_rgb(80, 113, 160));
+    p.circle_filled(c, 6.5, Color32::WHITE);
+    p.circle_filled(c, 5.5, Color32::from_rgb(31, 95, 230));
+    p.circle_filled(c + egui::vec2(-1.5, -1.5), 3.0, Color32::from_rgb(79, 136, 250));
+    p.text(c + egui::vec2(0.0, 0.5), egui::Align2::CENTER_CENTER, "?", egui::FontId::proportional(10.0), Color32::WHITE);
+}
+
+impl App {
     /// Open a tab-row menu under its button, its right edge on the
     /// button's (VM).
     pub(crate) fn open_top_menu(&mut self, ctx: &egui::Context, kind: TopMenu, button: egui::Rect) {
