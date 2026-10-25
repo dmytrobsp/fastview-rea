@@ -242,9 +242,15 @@ impl App {
         // message box (VM: «X1» unmarked behind the 473 box).
         let list_focus = self.formula_dlg.is_none() && !crate::dialogs::under_message(ui.ctx());
         // A click below the rows clears the selection (a ListView's, VM).
-        if ui.interact(rows_rect, ui.id().with("fp_blank"), egui::Sense::click()).clicked() {
+        let blank = ui.interact(rows_rect, ui.id().with("fp_blank"), egui::Sense::click());
+        if blank.clicked() {
             self.formula_page.selected = None;
         }
+        // The list is the first tab stop (DIALOG 340's order: the list,
+        // «Загрузить», «Сохранить», «Добавить», «Удалить», ▲, ▼, «Удалить
+        // все»).
+        crate::dialogs::tab_index(ui, 0);
+        crate::dialogs::tab_stop(ui, blank.id, crate::dialogs::StopKind::Other);
         let fp = &mut self.formula_page;
         for i in 0..fp.rows.len() {
             let top = rows_rect.top() + row_h * i as f32;
@@ -289,6 +295,7 @@ impl App {
         if self.formula_page.edit.is_some() && (pressed_outside || ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape))) {
             self.fp_commit_edit();
         }
+        crate::dialogs::tab_index(ui, 1);
         if win_button(ui, dlu(origin, 7, 218, 52, 14), "Загрузить", false).clicked() {
             if let Some(path) = rfd::FileDialog::new().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).pick_file() {
                 if let Ok(bytes) = std::fs::read(&path) {
@@ -297,6 +304,7 @@ impl App {
                 }
             }
         }
+        crate::dialogs::tab_index(ui, 2);
         if win_button(ui, dlu(origin, 63, 218, 52, 14), "Сохранить", false).clicked() {
             self.fp_update();
             if let Some(path) = rfd::FileDialog::new().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).set_file_name("*.frm").save_file() {
@@ -304,18 +312,23 @@ impl App {
                 let _ = std::fs::write(path, fvb_core::comtrade::encode_text(&text, fvb_core::comtrade::Encoding::Cp1251));
             }
         }
+        crate::dialogs::tab_index(ui, 5);
         if tri_button(ui, dlu(origin, 120, 218, 16, 14), true).clicked() {
             self.fp_move(true);
         }
+        crate::dialogs::tab_index(ui, 6);
         if tri_button(ui, dlu(origin, 140, 218, 16, 14), false).clicked() {
             self.fp_move(false);
         }
+        crate::dialogs::tab_index(ui, 3);
         if win_button(ui, dlu(origin, 159, 218, 52, 14), "Добавить", false).clicked() {
             self.open_formula_dlg();
         }
+        crate::dialogs::tab_index(ui, 4);
         if win_button(ui, dlu(origin, 215, 218, 52, 14), "Удалить", false).clicked() {
             self.fp_delete();
         }
+        crate::dialogs::tab_index(ui, 7);
         if win_button(ui, dlu(origin, 271, 218, 52, 14), "Удалить все", false).clicked() {
             self.fp_delete_all();
         }

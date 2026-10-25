@@ -9025,6 +9025,13 @@ gives its controls the template's places (`tab_index`):
   braking radio, «Группа», «Удалить I0».
 VM: nine steps on each page alike in both.
 
+### L9.348 — VM: the formula editor page's tab order  ·  ✅
+DIALOG 340: the list (initial focus), «Загрузить», «Сохранить»,
+«Добавить», «Удалить», ▲ (1018), ▼ (1019), «Удалить все», then the
+sheet's buttons. Ours drew ▲ / ▼ before «Добавить» and had the list out of
+the cycle; now numbered as the template, the list a stop (its selection
+look keeps L9.334's rule). VM: nine steps alike.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
