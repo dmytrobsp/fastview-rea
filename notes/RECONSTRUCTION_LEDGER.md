@@ -8898,6 +8898,25 @@ takes a press however long. VM: the dialog opens in both.
 Residual: the other looks' main panel colours not measured; the images
 are ours (W6).
 
+### L9.342 — VM: the finder's scan, sort, multi-open and remembered state; the tree's expand boxes  ·  ✅
+Run («Проводник», both programs from their clean settings): fv-test
+chosen and «Выбрать» lists nothing (no records at its top); «Включая
+вложенные папки» rescans at once and lists the 22 records with the same
+stations, blocks, dates and times, С: / По: set to 1 января 2023 / 5 марта
+2025; two clicks on «Дата» sort it; a click and a Ctrl+click select two
+rows; Enter opens both (tabs WIN_1999 | Z352 | Z384) and closes; reopened,
+the folder, the ticked box and the dates are kept — alike in both. One
+difference: the folder tree's expand boxes. The shell's
+SFGAO_HASSUBFOLDER, which the original's tree shows, is set for any
+folder that is not empty — hidden entries counted («out» with only
+records in it, «Contacts» with only its desktop.ini) — and the empty
+«WindowsPowerShell» has none; ours showed a box only over real
+subfolders. Now `FolderTree::has_sub` so; opened, a folder keeps its box
+only with subfolders, as before. VM: the same boxes.
+Left: the rows' file icons (the shell's association icon in the
+original; ours a blank page — W6). The harness now resets ours' settings
+file before each run, as the original's registry is reset.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

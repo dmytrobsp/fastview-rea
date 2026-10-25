@@ -452,13 +452,15 @@ impl FolderTree {
         t
     }
 
-    /// Whether a node has a subfolder to show, asked once (the shell's
-    /// SFGAO_HASSUBFOLDER); the virtual nodes always.
+    /// Whether a node shows an expand box before it is opened, asked once
+    /// (the shell's SFGAO_HASSUBFOLDER, which the file system answers for
+    /// any folder that is not empty, hidden entries counted: VM, «out» with
+    /// only records in it and «Contacts» with only its desktop.ini have
+    /// one, the empty «WindowsPowerShell» none); the virtual nodes always.
+    /// Opened, the box stays only with subfolders.
     fn has_sub(&mut self, n: &Node) -> bool {
         let Node::Dir(p) = n else { return true };
-        *self.has_sub.entry(n.clone()).or_insert_with(|| {
-            std::fs::read_dir(p).map(|rd| rd.flatten().any(|e| e.file_type().is_ok_and(|t| t.is_dir()) && !hidden(&e))).unwrap_or(false)
-        })
+        *self.has_sub.entry(n.clone()).or_insert_with(|| std::fs::read_dir(p).is_ok_and(|mut rd| rd.next().is_some()))
     }
 
     /// The node's children, read once.
