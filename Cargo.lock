@@ -1131,6 +1131,7 @@ dependencies = [
  "flate2",
  "fvb-core",
  "num-complex",
+ "raw-window-handle",
  "rfd",
  "trash",
  "windows-sys 0.59.0",

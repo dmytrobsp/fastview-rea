@@ -1522,6 +1522,52 @@ pub fn message_box(ui: &mut egui::Ui, icon: MsgIcon, text: &str, buttons: &[&str
     pressed
 }
 
+/// A system file dialog owned by the frame, as MFC's CFileDialog is: the
+/// frame disabled while it is up and the dialog kept in front of it (VM:
+/// unowned, a click on the frame raised the frozen frame over the dialog).
+pub fn file_dialog() -> rfd::FileDialog {
+    let d = rfd::FileDialog::new();
+    #[cfg(windows)]
+    if let Some(o) = Owner::active() {
+        return d.set_parent(&o);
+    }
+    d
+}
+
+/// The thread's active window (the frame, as a command runs) as a
+/// system dialog's owner.
+#[cfg(windows)]
+pub struct Owner(std::num::NonZeroIsize);
+
+#[cfg(windows)]
+impl Owner {
+    pub fn active() -> Option<Owner> {
+        // SAFETY: no arguments; the calling (UI) thread's active window.
+        let h = unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow() };
+        std::num::NonZeroIsize::new(h as isize).map(Owner)
+    }
+
+    pub fn hwnd(&self) -> windows_sys::Win32::Foundation::HWND {
+        self.0.get() as windows_sys::Win32::Foundation::HWND
+    }
+}
+
+#[cfg(windows)]
+impl raw_window_handle::HasWindowHandle for Owner {
+    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+        let raw = raw_window_handle::RawWindowHandle::Win32(raw_window_handle::Win32WindowHandle::new(self.0));
+        // SAFETY: the frame outlives the dialog it owns (the call blocks).
+        Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(raw) })
+    }
+}
+
+#[cfg(windows)]
+impl raw_window_handle::HasDisplayHandle for Owner {
+    fn display_handle(&self) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
+        Ok(raw_window_handle::DisplayHandle::windows())
+    }
+}
+
 /// The focus rectangle: a dotted (13) frame, every other pixel (VM).
 pub fn focus_rect(p: &egui::Painter, r: Rect) {
     let ink = Color32::from_gray(13);

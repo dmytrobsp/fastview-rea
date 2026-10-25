@@ -436,7 +436,7 @@ impl App {
     /// default extension txt, no overwrite prompt; UTF-16LE with BOM, CRLF.
     pub fn omp_save_report(&mut self) {
         let Some(text) = self.omp_report() else { return };
-        let Some(mut path) = rfd::FileDialog::new()
+        let Some(mut path) = crate::dialogs::file_dialog()
             .add_filter("Результаты ОМП (*.txt)", &["txt"])
             .add_filter("Все файлы (*.*)", &["*"])
             .save_file()
@@ -556,7 +556,7 @@ impl App {
 }
 
 fn omp_file_dialog() -> rfd::FileDialog {
-    rfd::FileDialog::new().add_filter("Установки ОМП (*.omp)", &["omp"]).add_filter("Все файлы (*.*)", &["*"])
+    crate::dialogs::file_dialog().add_filter("Установки ОМП (*.omp)", &["omp"]).add_filter("Все файлы (*.*)", &["*"])
 }
 
 // ------------------------------------------------------------------ dialog

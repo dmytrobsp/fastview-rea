@@ -213,7 +213,7 @@ impl App {
                 Err(_) => self.dlg.push_alert(MSG_PRINT_FAILED),
             },
             None => {
-                if let Some(path) = rfd::FileDialog::new().add_filter("PDF", &["pdf"]).set_file_name(format!("{title}.pdf")).save_file() {
+                if let Some(path) = crate::dialogs::file_dialog().add_filter("PDF", &["pdf"]).set_file_name(format!("{title}.pdf")).save_file() {
                     self.status = match std::fs::write(&path, spool::pdf_bytes(&imgs, &dev)) {
                         Ok(()) => format!("Сохранено: {}", path.display()),
                         Err(e) => format!("Ошибка записи: {e}"),

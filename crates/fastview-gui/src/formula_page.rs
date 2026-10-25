@@ -297,7 +297,7 @@ impl App {
         }
         crate::dialogs::tab_index(ui, 1);
         if win_button(ui, dlu(origin, 7, 218, 52, 14), "Загрузить", false).clicked() {
-            if let Some(path) = rfd::FileDialog::new().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).pick_file() {
+            if let Some(path) = crate::dialogs::file_dialog().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).pick_file() {
                 if let Ok(bytes) = std::fs::read(&path) {
                     let text = fvb_core::comtrade::decode_bytes(&bytes, self.encoding);
                     self.fp_load_rows(fvb_core::quick::parse_frm(&text));
@@ -307,7 +307,7 @@ impl App {
         crate::dialogs::tab_index(ui, 2);
         if win_button(ui, dlu(origin, 63, 218, 52, 14), "Сохранить", false).clicked() {
             self.fp_update();
-            if let Some(path) = rfd::FileDialog::new().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).set_file_name("*.frm").save_file() {
+            if let Some(path) = crate::dialogs::file_dialog().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).set_file_name("*.frm").save_file() {
                 let text = fvb_core::quick::write_frm(&self.formula_page.rows);
                 let _ = std::fs::write(path, fvb_core::comtrade::encode_text(&text, fvb_core::comtrade::Encoding::Cp1251));
             }

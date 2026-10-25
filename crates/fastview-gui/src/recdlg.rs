@@ -613,7 +613,7 @@ impl App {
                 }
                 // «...» (`0x47f950`): the folder browser starts at the current one.
                 if win_button(ui, dlu(client, 6, 60, 50, 14), "...", false).clicked() {
-                    let mut fd = rfd::FileDialog::new().set_title("Директория хранения файлов описания осциллограмм");
+                    let mut fd = crate::dialogs::file_dialog().set_title("Директория хранения файлов описания осциллограмм");
                     if !st.dst_folder.is_empty() {
                         fd = fd.set_directory(&st.dst_folder);
                     }

@@ -7,7 +7,9 @@
 # then "UP"), "WHEEL x,y,n"
 # (n notches, + up), "KEYDOWN ctrl" / "KEYUP ctrl" (shift, alt: a modifier
 # held across steps), "SIZE w,h" (the front window restored, w × h at 0,0),
-# "CLOSE" (WM_CLOSE to the front window), "SHOT name.png" (a capture now).
+# "CLOSE" (WM_CLOSE to the front window), "SHOT name.png" (a capture now),
+# "WINS name.txt" (the program's top-level windows: handle, owner, visible,
+# enabled, class, title — into shots/).
 # Logs next to itself.
 param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave, [switch]$Soft)
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -25,6 +27,27 @@ public static class In {
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool repaint);
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr l);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr h);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+  public static string List(uint pid) {
+    var o = new System.Text.StringBuilder();
+    EnumWindows((h, l) => {
+      uint p; GetWindowThreadProcessId(h, out p);
+      if (p == pid) {
+        var c = new System.Text.StringBuilder(256); GetClassName(h, c, 256);
+        var t = new System.Text.StringBuilder(256); GetWindowText(h, t, 256);
+        o.AppendFormat("{0:X} owner={1:X} vis={2} en={3} class={4} title={5}\n", (long)h, (long)GetWindow(h, 4), IsWindowVisible(h), IsWindowEnabled(h), c, t);
+      }
+      return true;
+    }, IntPtr.Zero);
+    return o.ToString();
+  }
 }
 '@
 [In]::SetProcessDPIAware() | Out-Null
@@ -91,6 +114,8 @@ foreach ($k in ($Keys -split ';')) {
         [In]::SetCursorPos([int]$Matches[1], [int]$Matches[2]) | Out-Null; Start-Sleep -Milliseconds 120
         $n = [int]$Matches[3]; $step = if ($n -gt 0) { 120 } else { -120 }
         for ($i = 0; $i -lt [Math]::Abs($n); $i++) { [In]::mouse_event(0x800, 0, 0, $step, [UIntPtr]::Zero); Start-Sleep -Milliseconds 80 }
+    } elseif ($k -match '^WINS (.+)$') {
+        [In]::List([uint32]$p.Id) | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Encoding utf8
     } elseif ($k -match '^SHOT (.+)$') {
         & (Join-Path $here 'shot.ps1') -Out (Join-Path (Join-Path $here 'shots') $Matches[1])
     } else {

@@ -2394,7 +2394,7 @@ impl App {
 
     // ---------- data loading ----------
     pub fn open_fvb(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = crate::dialogs::file_dialog()
             .add_filter("FastView library", &["fvb"])
             .pick_file()
         {
@@ -2424,7 +2424,7 @@ impl App {
     pub fn open_comtrade(&mut self) {
         // String 328 (`0x447e30` when opening); patterns in both cases for
         // the case-sensitive dialogs off Windows.
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = crate::dialogs::file_dialog()
             .add_filter("Осциллограммы (*.cfg, *.cff, *.osc, *.sto)", &["cfg", "cff", "osc", "sto", "CFG", "CFF", "OSC", "STO"])
             .add_filter("Осциллограммы COMTRADE (*.cfg)", &["cfg", "CFG"])
             .add_filter("Осциллограммы COMTRADE'13 (*.cff)", &["cff", "CFF"])
@@ -2576,7 +2576,7 @@ impl App {
             self.status = "Нет осциллограммы для экспорта.".into();
             return;
         };
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::dialogs::file_dialog()
             .add_filter("CSV", &["csv"])
             .set_file_name(format!("{}.csv", d.name))
             .save_file()
@@ -2596,7 +2596,7 @@ impl App {
             self.status = "Нет осциллограммы для архивирования.".into();
             return;
         };
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::dialogs::file_dialog()
             .add_filter("ZIP", &["zip"])
             .set_file_name(format!("{}.zip", d.name))
             .save_file()
@@ -2623,7 +2623,7 @@ impl App {
             self.status = "Нет осциллограммы для печати/экспорта изображения.".into();
             return;
         }
-        if let Some(path) = rfd::FileDialog::new()
+        if let Some(path) = crate::dialogs::file_dialog()
             .add_filter("PNG", &["png"])
             .set_file_name("fastview.png")
             .save_file()

@@ -208,6 +208,8 @@ fn save_dialog(filters: &[(&str, &str)], dir: Option<String>, name: &str) -> Opt
         unsafe {
             let mut ofn: OPENFILENAMEW = std::mem::zeroed();
             ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+            // Owned by the frame (`dialogs::file_dialog`).
+            ofn.hwndOwner = crate::dialogs::Owner::active().map_or(std::ptr::null_mut(), |o| o.hwnd());
             ofn.lpstrFilter = filter.as_ptr();
             ofn.nFilterIndex = 1;
             ofn.lpstrFile = file.as_mut_ptr();
@@ -223,7 +225,7 @@ fn save_dialog(filters: &[(&str, &str)], dir: Option<String>, name: &str) -> Opt
     }
     #[cfg(not(windows))]
     {
-        let mut dlg = rfd::FileDialog::new();
+        let mut dlg = crate::dialogs::file_dialog();
         for (desc, ext) in filters {
             dlg = dlg.add_filter(*desc, &[*ext]);
         }
@@ -749,7 +751,7 @@ impl App {
     /// without the comments, mark modified, refresh.
     pub fn load_settings_command(&mut self) {
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::dialogs::file_dialog()
             .add_filter("Настройки осциллограммы FastView (*.set)", &["set"])
             .add_filter("Все файлы (*.*)", &["*"])
             .pick_file()

@@ -9128,6 +9128,22 @@ use the same (L9.352's own stepping folded in). Left: the mixed spans
 last radio in ours). VM: all eight steps alike. Tests
 `an_arrow_steps_round_its_group`, `an_arrow_checks_the_next_radio_of_its_frame`.
 
+### L9.354 — VM: the system file dialogs owned by the frame (L9.328's residual)  ·  ✅
+Run (Ctrl+O, then a right-click on the lanes' name column outside the
+dialog, then Esc): the original's dialog is owned by its frame, which is
+disabled — the click does nothing, the dialog stays in front, Esc
+closes it and nothing else happens. Ours' was unowned (L9.328): the
+click raised our frozen frame over the dialog (its modal loop pumping
+our window), so the dialog hid behind it, Esc reached nothing and the
+program looked hung. Now every rfd dialog comes from
+`dialogs::file_dialog` (Windows: owned by the thread's active window
+through raw-window-handle, `dialogs::Owner`) and our Save As
+(`GetSaveFileNameW`) gets the same `hwndOwner`. VM (the harness's new
+`WINS` step lists the program's top-level windows): «Open» (#32770)
+owned by the frame, the frame disabled; the shots alike. The dialog's
+place is the shell's per-program memory in both (the original's opened
+at the top left once and centred later).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
