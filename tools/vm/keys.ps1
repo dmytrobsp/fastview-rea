@@ -31,9 +31,11 @@ public static class In {
 # Keep the display on while the steps run (ES_CONTINUOUS | ES_DISPLAY_REQUIRED):
 # an idle VM turns it off and the captures freeze on its last frame.
 [In]::SetThreadExecutionState([uint32]2147483650) | Out-Null
-function Click([int]$x, [int]$y, [uint32]$down, [uint32]$up, [int]$times = 1) {
+function Click([int]$x, [int]$y, [uint32]$down, [uint32]$up, [int]$times = 1, [int]$gap = 60) {
     [In]::SetCursorPos($x, $y) | Out-Null; Start-Sleep -Milliseconds 120
-    for ($i = 0; $i -lt $times; $i++) { [In]::mouse_event($down, 0, 0, 0, [UIntPtr]::Zero); [In]::mouse_event($up, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 60 }
+    # A gap other than 60 ms (DCLICK x,y,ms) also holds each press 40 ms, as a hand does.
+    $hold = if ($gap -ne 60) { 40 } else { 0 }
+    for ($i = 0; $i -lt $times; $i++) { [In]::mouse_event($down, 0, 0, 0, [UIntPtr]::Zero); if ($hold) { Start-Sleep -Milliseconds $hold }; [In]::mouse_event($up, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds $gap }
 }
 "start $(Get-Date -f s) $Exe $Open" | Out-File $log -Encoding utf8
 # -Soft: our build in its software runner from the start (a launcher that
@@ -46,9 +48,9 @@ $ok = $wsh.AppActivate($p.Id)
 "activated $ok pid $($p.Id)" | Out-File $log -Append -Encoding utf8
 foreach ($k in ($Keys -split ';')) {
     if (-not $k) { Start-Sleep -Milliseconds 1500; continue }
-    if ($k -match '^(R|D)?CLICK (\d+),(\d+)$') {
+    if ($k -match '^(R|D)?CLICK (\d+),(\d+)(?:,(\d+))?$') {
         $x = [int]$Matches[2]; $y = [int]$Matches[3]
-        switch ($Matches[1]) { 'R' { Click $x $y 0x8 0x10 } 'D' { Click $x $y 0x2 0x4 2 } default { Click $x $y 0x2 0x4 } }
+        switch ($Matches[1]) { 'R' { Click $x $y 0x8 0x10 } 'D' { Click $x $y 0x2 0x4 2 $(if ($Matches[4]) { [int]$Matches[4] } else { 60 }) } default { Click $x $y 0x2 0x4 } }
     } elseif ($k -match '^(DRAG|HOLD) (\d+),(\d+),(\d+),(\d+)$') {
         $x1 = [int]$Matches[2]; $y1 = [int]$Matches[3]; $x2 = [int]$Matches[4]; $y2 = [int]$Matches[5]
         [In]::SetCursorPos($x1, $y1) | Out-Null; Start-Sleep -Milliseconds 120

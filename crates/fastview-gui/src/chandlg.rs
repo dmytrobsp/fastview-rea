@@ -490,6 +490,8 @@ pub struct CoefDlg {
     pub origin: Option<Pos2>,
     /// Where each value cell was drawn at the last frame (for tests).
     pub cell_rects: Vec<(Cell, Rect)>,
+    /// The open edit's cell at the last frame: a press elsewhere commits.
+    pub edit_rect: Option<Rect>,
 }
 
 impl CoefDlg {
@@ -882,6 +884,15 @@ impl App {
             .show(ctx, |ui| {
                 st.cell_rects.clear();
                 let shift = ui.input(|i| i.modifiers.shift);
+                // Any press not on the open edit commits it (the dialog's
+                // PreTranslateMessage → `0x47b3d0`; VM: «5» typed, a click
+                // below the rows → «52000» kept).
+                if let (Some(er), Some(p)) = (st.edit_rect, ui.input(|i| i.pointer.any_pressed().then(|| crate::lanes::press_pos(i)).flatten())) {
+                    if st.edit.is_some() && !er.contains(p) {
+                        st.press(shift);
+                    }
+                }
+                st.edit_rect = None;
                 // The 341 × 255 DLU client (512 × 414 px): the list at 7, 7
                 // (11, 11 px; 491 × 359 px) with a (130, 135, 144) border,
                 // its 25 px header, 19 px rows ruled in (240), columns 155 /
@@ -926,8 +937,21 @@ impl App {
                             let r = Rect::from_min_size(rr.min + Vec2::new(x, 0.0), Vec2::new(w - 1.0, row_h - 1.0));
                             st.cell_rects.push(((row, col), r));
                             if let Some((_, text)) = st.edit.as_mut().filter(|(at, _)| *at == (row, col)) {
-                                let te = ui.put(r, egui::TextEdit::singleline(text).id(egui::Id::new(("fv_coef_edit", row, col))).desired_width(r.width() - 4.0));
-                                te.request_focus();
+                                // A borderless edit at the cell's left + 3, top
+                                // + 1, bottom − 1, its caret at the start as
+                                // SetWindowText leaves it (VM: «5» → «52000»).
+                                st.edit_rect = Some(r);
+                                ui.painter().rect_filled(r, 0.0, Color32::WHITE);
+                                let er = Rect::from_min_max(r.min + Vec2::new(3.0, 1.0), r.max - Vec2::new(0.0, 1.0));
+                                let id = egui::Id::new(("fv_coef_edit", row, col));
+                                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(er));
+                                let mut out = egui::TextEdit::singleline(text).id(id).frame(false).font(font.clone()).margin(egui::Margin { left: 3.0, right: 1.0, top: 1.0, bottom: 0.0 }).desired_width(er.width() - 4.0).show(&mut child);
+                                let te = out.response.clone();
+                                if !te.has_focus() && !te.lost_focus() {
+                                    out.state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(0))));
+                                    out.state.store(ui.ctx(), id);
+                                    te.request_focus();
+                                }
                                 // The edit is a plain CEdit: Enter reaches IDOK
                                 // (commit, apply, close), Esc IDCANCEL.
                                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -1377,5 +1401,30 @@ mod ui_tests {
         assert_eq!((0..4).map(|r| st.cells[r][0].as_str()).collect::<Vec<_>>(), ["6000"; 4]);
         assert_eq!(st.cells[4][0], "1");
         assert!(st.cells.iter().all(|c| c[1] == "1"));
+    }
+
+    /// The edit opens with its caret at the start; a press below the rows
+    /// commits it (VM: «5» typed into «2000» → «52000»).
+    #[test]
+    fn a_coefficient_edit_types_at_the_start_and_a_press_elsewhere_commits() {
+        let mut h = Harness::new();
+        h.app.dispatch(Command::Coefficients);
+        for _ in 0..7 {
+            h.frame(vec![]);
+        }
+        let st = h.app.dlg.coef.as_ref().expect("dialog drawn");
+        let (at, below) = {
+            let r = st.cell_rects.iter().find(|(c, _)| *c == (0, 0)).map(|(_, r)| *r).unwrap();
+            let last = st.cell_rects.iter().map(|(_, r)| r.bottom()).fold(0.0, f32::max);
+            (r.center(), Pos2::new(r.center().x, last + 30.0))
+        };
+        let old = st.cells[0][0].clone();
+        h.double_click(at);
+        h.frame(vec![]);
+        h.frame(vec![egui::Event::Text("5".into())]);
+        h.click(below);
+        let st = h.app.dlg.coef.as_ref().unwrap();
+        assert!(st.edit.is_none(), "committed");
+        assert_eq!(st.cells[0][0], format!("5{old}"));
     }
 }

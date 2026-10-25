@@ -112,6 +112,10 @@ fn main() -> eframe::Result<()> {
 fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path::Path>, own_caption: bool) -> App {
     let fonts = app_fonts();
     ctx.set_fonts(fonts.clone());
+    // A double-click within Windows' default GetDoubleClickTime, 500 ms
+    // (egui's own is 300 ms: a hand's double-click on the coefficient list
+    // was missed on the VM).
+    ctx.options_mut(|o| o.input_options.max_double_click_delay = 0.5);
     let mut app = App::new().with_persistence();
     app.own_caption = own_caption;
     app.splash_until = Some(2.0);

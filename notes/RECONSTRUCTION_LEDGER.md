@@ -8799,6 +8799,23 @@ left of the edit (ours' edit covered it). Esc closes the dialog, and a
 header click sets / clears its whole column, alike. Test
 `a_click_on_another_name_commits_the_rename`.
 
+### L9.336 — VM: «Коэффициенты трансформации»'s edits; a double-click within Windows' 500 ms  ·  ✅
+Run (WIN_1999): a double-click on IA's primary value opens the edit
+(L9.176's read): borderless, the caret at the start — «5» typed gives
+«52000» —, and a press anywhere else commits it. Shift + double-click on
+IC marks IA … IC, «1000» typed and a click below the rows fills all three
+— alike in both after these fixes:
+- Ours missed a hand's double-click (150 ms between the clicks, each held
+  40 ms): egui counts one within 300 ms of the last release; Windows'
+  GetDoubleClickTime default is 500 ms. `max_double_click_delay` is now
+  0.5 s. (The original missed the harness's old 60 ms / 0 ms clicks;
+  `DCLICK x,y,ms` in `tools/vm/keys.ps1` now gives a hand's timing.)
+- Ours' edit had a frame and its caret at the end, and asked for the focus
+  every frame, so a press elsewhere never committed it. Now borderless at
+  the cell's left + 3 / top + 1 / bottom − 1, the caret at the start, and
+  any press outside it commits (`CoefDlg::edit_rect`).
+Test `a_coefficient_edit_types_at_the_start_and_a_press_elsewhere_commits`.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
