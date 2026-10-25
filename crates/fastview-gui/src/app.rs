@@ -2153,6 +2153,8 @@ impl App {
         // `rcNormalPosition`; egui reports only the maximised one).
         let names = self.tab_order.map(|p| format!("{p:?}"));
         v.insert("Workspace/TabOrder".into(), names.join(" "));
+        // The parameters bar's visibility (`BasePane-810` IsVisible).
+        v.insert("Workspace/ParamBar/IsVisible".into(), u8::from(self.dlg.param_bar).to_string());
         if let Some((r, max)) = placement {
             let normal = v.get("Workspace/WindowPlacement").and_then(|s| s.rsplit_once(' ')).map(|(r, _)| r.to_string());
             let rect = match normal {
@@ -2167,6 +2169,9 @@ impl App {
     /// `LoadState` (`0x101a8eea`) for the panes.
     pub fn restore_workspace(&mut self) {
         let v = &self.store.view;
+        if let Some(x) = v.get("Workspace/ParamBar/IsVisible") {
+            self.dlg.param_bar = x != "0";
+        }
         if let Some(o) = v.get("Workspace/TabOrder") {
             let all = [Pane::Vector, Pane::Circle, Pane::Differential, Pane::Frequency];
             let read: Vec<Pane> = o.split_whitespace().filter_map(|w| all.into_iter().find(|p| format!("{p:?}") == w)).collect();

@@ -672,14 +672,14 @@ impl App {
             egui::TopBottomPanel::top("fv_under_ompbar").exact_height(8.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
         }
         // A caption bar's face in the Office 2007 looks (VM): a box from 4 px
-        // in to 22 px short of the window's right, the brush round it, a
+        // in to 21 px short of the window's right (its border on W − 22), the brush round it, a
         // gradient from white to (213, 228, 242) inside (157, 189, 216)
         // lines.
         let bar_face = |ui: &egui::Ui| {
             if let (None, Some(b)) = (pal.info_bar, pal.bands) {
                 let m = ui.max_rect();
                 ui.painter().rect_filled(m, 0.0, strip);
-                let r = egui::Rect::from_min_max(m.min + egui::vec2(4.0, 0.0), egui::pos2(m.right() - 22.0, m.bottom()));
+                let r = egui::Rect::from_min_max(m.min + egui::vec2(4.0, 0.0), egui::pos2(m.right() - 21.0, m.bottom()));
                 crate::lanes::gradient(ui.painter(), r.shrink(1.0), egui::Color32::WHITE, b.bar_bottom);
                 ui.painter().px_rect_stroke(r, 0.0, egui::Stroke::new(1.0f32, b.bar_line));
             }
@@ -1627,6 +1627,26 @@ mod window_tests {
         w.press(Primary, Pos2::new(r.left() - 2.0, y), Pos2::new(r.left() - 102.0, y));
         w.idle(2);
         assert_eq!(g(&w).width(), r.width() + 100.0, "the strip drags the divider");
+    }
+
+    /// The merge bar's close button (message-bar mode, `0x479960`): the bar
+    /// goes, and with a pasted channel still pending the paste is undone.
+    #[test]
+    fn closing_the_merge_bar_undoes_a_pending_paste() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        let ai = w.app.active.unwrap();
+        w.app.docs[ai].selection = [app::ChanKey::Analog(0)].into_iter().collect();
+        w.app.copy_channels_for_merge();
+        let n = w.app.docs[ai].computed.len();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        assert!(w.app.merge.is_some() && w.app.docs[ai].computed.len() == n + 1);
+        let at = w.app.merge.as_ref().and_then(|m| m.close).expect("the close button drawn").center();
+        w.press(Primary, at, at);
+        w.idle(2);
+        assert!(w.app.merge.is_none(), "the bar hidden");
+        assert_eq!(w.app.docs[ai].computed.len(), n, "the paste undone");
     }
 
     /// VM: opening «Быстрый анализ» and leaving it with Esc does not mark

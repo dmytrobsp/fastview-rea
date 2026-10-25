@@ -674,9 +674,11 @@ impl App {
         let (w, h) = (sz.x, sz.y);
         let w2 = width(lab[3]).x;
         // The rows from the bar's top (VM: the first centred 10 px down).
-        let row = |k: usize| (rect.top() + k as f32 * (h + 5.0), rect.top() + 5.0 + (k + 1) as f32 * h + k as f32 * 5.0);
+        // `0x47ed30` in the bar window's coordinates, whose top is 4 px
+        // above the box: row k from y 5 + k(h + 5), h + 5 high.
+        let row = |k: usize| (rect.top() + 1.0 + k as f32 * (h + 5.0), rect.top() + 6.0 + (k + 1) as f32 * h + k as f32 * 5.0);
         let x0 = rect.left();
-        let painter = ui.painter();
+        let painter = ui.painter().clone();
         let label = |text: &str, x1: f32, k: usize| {
             let (y0, y1) = row(k);
             // Drawn right-aligned with their trailing spaces (`0x47ed30`), so
@@ -689,17 +691,8 @@ impl App {
         label(lab[3], w + w2 + 465.0, 1);
         label(lab[4], w + w2 + 465.0, 2);
         // Created in MFC's message-bar mode (`0x474dc5`: Create(…, 810, −1,
-        // TRUE)): a close button at the top right hides the bar, as 142 does.
-        let close = Rect::from_min_size(egui::pos2(rect.right() - 20.0, rect.top() + 4.0), egui::vec2(16.0, 16.0));
-        let resp = ui.interact(close, ui.id().with("fv_param_close"), egui::Sense::click());
-        if resp.hovered() {
-            painter.rect(close, 0.0, pal.group_bg, egui::Stroke::new(1.0f32, pal.group_border));
-        }
-        let (c, k) = (close.center(), 3.5);
-        let x = egui::Stroke::new(1.5f32, pal.text);
-        painter.line_segment([c + egui::vec2(-k, -k), c + egui::vec2(k, k)], x);
-        painter.line_segment([c + egui::vec2(-k, k), c + egui::vec2(k, -k)], x);
-        if resp.clicked() {
+        // TRUE)): its close button hides the bar, as 142 does (`0x47ecf0`).
+        if crate::dialogs::caption_close(ui, rect, ui.id().with("fv_param_close")) {
             self.dlg.param_bar = false;
             return;
         }

@@ -8510,6 +8510,29 @@ left out of the fingerprint (`settings_print`): they reach the `.set` on
 the next save as before, with no mark (L9.55: no SetModifiedFlag). Test
 `the_quick_sheet_cancelled_leaves_the_record_unmodified`.
 
+### L9.317 — The caption bars' close buttons and coordinates; the parameters bar remembered  ·  ✅
+Read (subagent: the three Create calls `0x474cb9` / `0x474d7d` /
+`0x474db5` with message-bar mode on; mfc `0x1006ec5c`, `0x1006fd4c`,
+`0x100706b8` / `0x10070767`; the subclasses' hide handlers): every bar has
+MFC's close button — 17 × 17 at (the bar's right − 20, the box's top),
+no face until hot — whose click hides the bar (ShowPane(FALSE)); on that
+hide the ОМП bar posts 32830, the merge bar posts Undo (57643) when a
+pasted channel is still pending (`0x479960`), the parameters bar just
+hides; its visibility is saved with the workspace (`BasePane-810`) and
+142 «Осциллограмма» brings it back. The info box is the window shrunk by
+4 px on each side and by 17 more at the right (its border on W − 22); the
+merge and parameters bars paint in the window's coordinates, 4 px above
+the box. Ours: no close button on the merge bar (L9.? read it as none),
+the parameters bar's cross elsewhere, the merge bar's controls 4 px low,
+the parameters rows 1 px high, the box a pixel narrow, the bar's
+visibility not kept. Now `dialogs::caption_close` (the VM's 8 × 7 cross
+in (86, 125, 177), the hot bar under the pointer) on all three; the merge
+bar's close hides it and undoes a pending paste; the coordinates as read;
+`Workspace/ParamBar/IsVisible`. VM: the crosses, the rows and the right
+border alike; the merge bar's cross leaves both programs with the paste
+undone and «Возврат» enabled. Test
+`closing_the_merge_bar_undoes_a_pending_paste`.
+
 Next in L9 (HANDOFF 2026-10-24, night 6; continued to L9.197 the same day — status and what is left: notes/COMPLETION_PLAN.md): **public at
 github.com/dmytrobsp/fastview-rea** (release v0.1.0 = the 2026-10-22 state;
 CI artifacts since then: linux-x86_64, windows-x86_64, macos-universal,

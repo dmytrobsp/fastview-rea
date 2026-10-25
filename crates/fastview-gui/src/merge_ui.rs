@@ -51,6 +51,8 @@ pub struct MergeBar {
     pub ch1: Option<ChanKey>,
     pub ch2: Option<usize>,
     pub status: String,
+    /// The close button as last drawn.
+    pub close: Option<egui::Rect>,
 }
 
 /// COLORREF (0x00BBGGRR) ↔ colour.
@@ -738,9 +740,11 @@ impl App {
         // 1090 at (350, 10) / (510, 10), 90 wide; «Синхронизация» (3455)
         // and «Объединить» (3319), 100 × 23 at W − 220 / W − 110, y 9, W the
         // width less 20; the labels on the top line of the bar less (15, 14)
-        // at x 15 / 290 / 450, the status line at its bottom. No close
-        // button: hiding the bar undoes the paste (`0x479960`).
-        let r = ui.max_rect();
+        // at x 15 / 290 / 450, the status line at its bottom. A close
+        // button (message-bar mode): hiding the bar undoes the paste while
+        // a pasted channel is pending (`0x479960`, 57643). The layout is in
+        // the bar window's coordinates, 4 px above and below the box.
+        let r = ui.max_rect().expand2(egui::vec2(0.0, 4.0));
         // The bar's controls in the 9 pt UI font (12 px).
         for st in [egui::TextStyle::Body, egui::TextStyle::Button] {
             ui.style_mut().text_styles.insert(st, egui::FontId::proportional(12.0));
@@ -777,7 +781,16 @@ impl App {
             ui.painter().text(egui::pos2(r.left() + x, text.top()), egui::Align2::LEFT_TOP, t, font.clone(), ink);
         }
         ui.painter().text(egui::pos2(text.left(), text.bottom()), egui::Align2::LEFT_BOTTOM, &bar.status, font, ink);
+        let close = crate::dialogs::caption_close(ui, ui.max_rect(), ui.id().with("fv_merge_close"));
+        bar.close = Some(egui::Rect::from_min_size(egui::pos2(ui.max_rect().right() - 20.0, ui.max_rect().top()), egui::vec2(17.0, 17.0)));
         self.merge = Some(bar);
+        if close {
+            self.merge = None;
+            if self.active_doc().is_some_and(crate::omp_ui::has_pending_paste) {
+                self.dispatch(crate::app::Command::Undo);
+            }
+            return;
+        }
         if sync {
             self.synchronise();
         }

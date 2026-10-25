@@ -891,6 +891,30 @@ pub fn win_combo_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut Strin
     None
 }
 
+/// A caption bar's close button (CMFCCaptionBar in message-bar mode,
+/// mfc `0x1006fd4c`): 17 × 17 at (the bar's right − 20, the box's top), its
+/// cross, the hot look only under the pointer. Returns a click.
+pub fn caption_close(ui: &mut egui::Ui, bar: Rect, id: egui::Id) -> bool {
+    let r = Rect::from_min_size(Pos2::new(bar.right() - 20.0, bar.top()), Vec2::splat(17.0));
+    let resp = ui.interact(r, id, egui::Sense::click());
+    if resp.hovered() {
+        crate::popmenu::hot_bar(ui.painter(), r);
+    }
+    // The glyph (VM, Office 2007 Blue): an 8 × 7 cross of 2 px steps in
+    // (86, 125, 177), 4 px in and 5 down.
+    let o = r.min + Vec2::new(4.0, 5.0);
+    let ink = Color32::from_rgb(86, 125, 177);
+    let run = |x0: f32, x1: f32, y: f32| ui.painter().rect_filled(Rect::from_min_max(o + Vec2::new(x0, y), o + Vec2::new(x1 + 1.0, y + 1.0)), 0.0, ink);
+    for (y, a, b) in [(0.0, 0.0, 6.0), (1.0, 1.0, 5.0), (5.0, 1.0, 5.0), (6.0, 0.0, 6.0)] {
+        run(a, a + 1.0, y);
+        run(b, b + 1.0, y);
+    }
+    run(2.0, 5.0, 2.0);
+    run(3.0, 4.0, 3.0);
+    run(2.0, 5.0, 4.0);
+    resp.clicked()
+}
+
 /// A transparent full-screen layer at `order` that swallows the pointer
 /// below a modal window (the windows of a higher order stay live).
 pub fn modal_backdrop(ctx: &egui::Context, id: &str, order: egui::Order) {

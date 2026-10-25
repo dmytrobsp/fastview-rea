@@ -357,7 +357,7 @@ impl App {
         let full = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(ui.available_width(), 33.0));
         ui.allocate_rect(full, egui::Sense::hover());
         // 4 px of the brush at the left, the face framed on three sides.
-        let face = egui::Rect::from_min_max(full.min + egui::vec2(4.0, 0.0), egui::pos2(full.right() - 22.0, full.bottom()));
+        let face = egui::Rect::from_min_max(full.min + egui::vec2(4.0, 0.0), egui::pos2(full.right() - 21.0, full.bottom()));
         let p = ui.painter().clone();
         match pal.bands.filter(|_| pal.info_bar.is_none()) {
             Some(b) => {
@@ -387,13 +387,9 @@ impl App {
         }
         p.text(br.center(), egui::Align2::CENTER_CENTER, "Сохранить...", egui::FontId::proportional(12.0), Color32::from_rgb(30, 57, 91));
         let save = bresp.clicked();
-        let xr = egui::Rect::from_center_size(egui::pos2(face.right() + 11.5, full.top() + 9.0), egui::vec2(16.0, 16.0));
-        let xresp = ui.interact(xr, ui.id().with("fv_omp_close"), egui::Sense::click());
-        let xs = egui::Stroke::new(1.5f32, if xresp.hovered() { Color32::from_rgb(30, 57, 91) } else { Color32::from_rgb(77, 96, 130) });
-        p.line_segment([xr.center() + egui::vec2(-3.5, -3.5), xr.center() + egui::vec2(3.5, 3.5)], xs);
-        p.line_segment([xr.center() + egui::vec2(3.5, -3.5), xr.center() + egui::vec2(-3.5, 3.5)], xs);
-        self.omp_ui.close_rect = Some(xr);
-        let close = xresp.clicked();
+        let close = crate::dialogs::caption_close(ui, full, ui.id().with("fv_omp_close"));
+        self.omp_ui.close_rect = Some(egui::Rect::from_min_size(egui::pos2(full.right() - 20.0, full.top()), egui::vec2(17.0, 17.0)));
+
         if save {
             self.omp_save_report();
         }
