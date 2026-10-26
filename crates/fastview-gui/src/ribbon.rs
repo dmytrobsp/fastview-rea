@@ -998,10 +998,22 @@ pub(crate) fn hot_small(painter: &egui::Painter, rect: egui::Rect, p: &crate::th
     let (hl, low) = (c(255, 255, 251), c(255, 250, 207));
     painter.add(gradient_mesh(face, &[(0.0, hl), (1.0, hl), (1.0, c(255, 252, 228)), (mid, c(255, 236, 161)), (mid, c(255, 216, 66)), (h - 1.0, c(255, 228, 123)), (h - 1.0, low), (h, low)]));
     let (l, r, t, b) = (rect.left(), rect.right() - 1.0, rect.top(), rect.bottom() - 1.0);
-    painter.px_hline(l + 1.0..=r - 1.0, t, egui::Stroke::new(1.0f32, c(219, 206, 153)));
-    painter.px_hline(l + 1.0..=r - 1.0, b, egui::Stroke::new(1.0f32, c(126, 114, 90)));
-    painter.px_vline(l, t + 1.0..=b - 1.0, egui::Stroke::new(1.0f32, c(185, 160, 116)));
-    painter.px_vline(r, t + 1.0..=b - 1.0, egui::Stroke::new(1.0f32, c(185, 160, 116)));
+    // A light column inside each side, stepping with the face (VM, the
+    // QAT's «Открыть» and «Копировать» hot): (255, 255, 250) → (255, 249,
+    // 227), then (255, 242, 201) → (255, 246, 185); the sides shading
+    // (216, 202, 150) → (179, 156, 116) → (144, 126, 97).
+    let col = |x: f32, y0: f32, y1: f32, stops: &[(f32, Color32)]| gradient_mesh(egui::Rect::from_min_max(egui::pos2(x, y0), egui::pos2(x + 1.0, y1)), stops);
+    let light = [(0.0, c(255, 255, 250)), (mid - 1.0, c(255, 249, 227)), (mid, c(255, 242, 201)), (h - 2.0, c(255, 246, 185))];
+    let side = [(0.5, c(216, 202, 150)), (8.5, c(185, 160, 116)), (h - 3.5, c(177, 157, 117)), (h - 0.5, c(144, 126, 97))];
+    painter.add(col(l + 1.0, t + 2.0, b - 1.0, &light));
+    painter.add(col(r - 1.0, t + 2.0, b - 1.0, &light));
+    painter.add(col(l, t + 1.0, b, &side));
+    painter.add(col(r, t + 1.0, b, &side));
+    painter.rect_filled(egui::Rect::from_min_max(egui::pos2(l + 1.0, t), egui::pos2(r, t + 1.0)), 0.0, c(219, 206, 153));
+    painter.rect_filled(egui::Rect::from_min_max(egui::pos2(l + 1.0, b), egui::pos2(r, b + 1.0)), 0.0, c(113, 97, 72));
+    for (x, y, k) in [(l + 1.0, t + 1.0, c(233, 223, 159)), (r - 1.0, t + 1.0, c(233, 223, 159)), (l + 1.0, b - 1.0, c(206, 191, 147)), (r - 1.0, b - 1.0, c(206, 191, 147))] {
+        painter.rect_filled(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(1.0, 1.0)), 0.0, k);
+    }
 }
 
 /// A large button under the pointer in the Office 2007 looks (VM,

@@ -9612,6 +9612,18 @@ close 2513–2557, rows 0–27), (245) or the close button's (196, 43, 28);
 ours filled the whole slot in (229) / (232, 17, 35). Now so; VM: both
 faces' edges and colours exact.
 
+### L9.390 — VM: a small button under the pointer: its inner light and shaded sides  ·  ✅
+Scanned the QAT's «Открыть» and the ribbon's «Копировать» under the
+pointer (Office 2007 Blue): inside each side a light column stepping
+with the face — (255, 255, 250) → (255, 249, 227), then (255, 242, 201)
+→ (255, 246, 185) — with (233, 223, 159) / (206, 191, 147) corners; the
+sides shading (216, 202, 150) → (185, 160, 116) by the ninth row →
+(144, 126, 97) at the bottom; the bottom edge (113, 97, 72), the top and
+bottom edges reaching the corner columns. Ours had flat (185, 160, 116)
+sides, no inner light, a (126, 114, 90) bottom a pixel short at the
+right. Now `hot_small` so (every small and icon-only button, the QAT's).
+VM: the QAT button's columns and edges within a few units.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
