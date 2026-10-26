@@ -95,27 +95,35 @@ pub fn set_ribbon_bottom(ctx: &egui::Context, y: f32) {
 pub fn ribbon_tip(ui: &egui::Ui, r: &egui::Response, img: TipImage, cmd: &Command) {
     let Some((title, desc)) = cmd_tip(cmd) else { return };
     let bottom = ui.ctx().data(|d| d.get_temp::<f32>(egui::Id::new("fv_ribbon_bottom"))).unwrap_or(r.rect.bottom());
-    tip(ui, r, Pos2::new(r.rect.left(), bottom + 3.0), img, title, desc, true);
+    tip(ui, r, Pos2::new(r.rect.left(), bottom + 3.0), img, title, desc, true, 2.0);
 }
 
 /// A quick-access button's tooltip: at the pointer's x, under the caption
 /// row (VM: y 31).
 pub fn qat_tip(ui: &egui::Ui, r: &egui::Response, img: TipImage, title: &str, desc: &str) {
     let x = ui.ctx().pointer_hover_pos().map_or(r.rect.left(), |p| p.x);
-    tip(ui, r, Pos2::new(x, ui.max_rect().top() + 31.0), img, title, desc, true);
+    tip(ui, r, Pos2::new(x, ui.max_rect().top() + 31.0), img, title, desc, true, 2.0);
 }
 
 /// A toolbar button's tooltip: 18 px under the pointer, kept on the
 /// screen; its title bold or not (VM: the panes' vertical toolbars write
 /// it in the regular weight, «Параметры ОМП»'s toolbar in bold).
 pub fn pointer_tip(ui: &egui::Ui, r: &egui::Response, img: TipImage, title: &str, desc: &str, bold: bool) {
+    pointer_tip_inset(ui, r, img, title, desc, bold, 2.0);
+}
+
+/// [`pointer_tip`] kept `inset` px inside the screen's right edge: a
+/// tooltip the system places (the ОМП bar's button, VM) stops 8 px short,
+/// where CMFCToolBar's own placement leaves 2.
+pub fn pointer_tip_inset(ui: &egui::Ui, r: &egui::Response, img: TipImage, title: &str, desc: &str, bold: bool, inset: f32) {
     let at = ui.ctx().pointer_hover_pos().unwrap_or(r.rect.left_bottom()) + Vec2::new(0.0, 18.0);
-    tip(ui, r, at, img, title, desc, bold);
+    tip(ui, r, at, img, title, desc, bold, inset);
 }
 
 /// The hover timing: shown after 0.5 s over `r` (restarted on entering it
 /// again), not after a press until the pointer leaves.
-fn tip(ui: &egui::Ui, r: &egui::Response, at: Pos2, img: TipImage, title: &str, desc: &str, bold_title: bool) {
+#[allow(clippy::too_many_arguments)]
+fn tip(ui: &egui::Ui, r: &egui::Response, at: Pos2, img: TipImage, title: &str, desc: &str, bold_title: bool, inset: f32) {
     if !r.contains_pointer() {
         return;
     }
@@ -140,7 +148,7 @@ fn tip(ui: &egui::Ui, r: &egui::Response, at: Pos2, img: TipImage, title: &str, 
         ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait));
         return;
     }
-    paint(ctx, at, img, title, desc, bold_title);
+    paint(ctx, at, img, title, desc, bold_title, inset);
 }
 
 /// Words of `text` in lines no wider than `max` (a single longer word on
@@ -160,7 +168,7 @@ fn wrap(ctx: &egui::Context, text: &str, font: &egui::FontId, max: f32) -> Vec<S
     lines
 }
 
-fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, bold_title: bool) {
+fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, bold_title: bool, inset: f32) {
     const INK: Color32 = Color32::from_rgb(76, 76, 76);
     const PITCH: f32 = 13.0;
     let font = egui::FontId::proportional(12.0);
@@ -177,8 +185,8 @@ fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, 
     let text_w = lines.iter().map(|l| width(l, &font)).chain(std::iter::once(if plain { 0.0 } else { width(title, &bold) })).fold(0.0, f32::max);
     let size = if plain { Vec2::new((text_x + text_w + 7.0).round(), 21.0) } else { Vec2::new((text_x + text_w + 10.0).round(), 24.0 + PITCH * lines.len() as f32 + 5.0) };
     let screen = ctx.screen_rect();
-    // Kept 2 px inside the screen's right edge (VM).
-    let at = Pos2::new(at.x.min(screen.right() - 2.0 - size.x).max(screen.left()), at.y).round();
+    // Kept `inset` px inside the screen's right edge (VM).
+    let at = Pos2::new(at.x.min(screen.right() - inset - size.x).max(screen.left()), at.y).round();
     egui::Area::new(egui::Id::new("fv_rtip_area")).order(egui::Order::Tooltip).fixed_pos(at).interactable(false).show(ctx, |ui| {
         let (r, _) = ui.allocate_exact_size(size, egui::Sense::hover());
         let p = ui.painter();

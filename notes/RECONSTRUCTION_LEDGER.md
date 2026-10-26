@@ -9447,6 +9447,18 @@ lower than the original's. Now `lanes::scrollbar`'s hot state and the
 toolbar's layout. VM: the thumb's rows and the toolbars' buttons and
 separators at the original's y.
 
+### L9.379 — VM: the ОМП bar's «Сохранить...» tip  ·  ✅
+Run (L9.364's open point): «Параметры ОМП», the toolbar's «Загрузить
+настройки» with the VM's saved settings (Iном 1000, Ia–Ic, three
+voltages, one section), OK — the result bar shows in both; the pointer
+on «Сохранить...». The original's tip is the plain Office box (as the
+document tab's «Закрыть», L9.376) with «Сохранить рерультаты ОМП», 18 px
+under the pointer — but kept 8 px inside the screen's right edge, where
+the toolbars' own placement leaves 2. Ours showed egui's label. Now
+`tips::pointer_tip_inset(…, 8.0)` (`pointer_tip` the 2 px case). VM: the
+box's rows (178–198) and right edge (2551) alike; ours 7 px wider (the
+font). The Tab rings of 510 and 392 re-run: alike (L9.344).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

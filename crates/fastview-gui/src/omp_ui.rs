@@ -378,7 +378,10 @@ impl App {
         p.text(ic, egui::Align2::CENTER_CENTER, "i", egui::FontId::proportional(12.0), Color32::from_rgb(120, 60, 20));
         let br = egui::Rect::from_min_size(egui::pos2(face.right() - 97.0, mid - 11.0), egui::vec2(93.0, 22.0));
         p.with_clip_rect(egui::Rect::from_min_max(face.min, egui::pos2(br.left() - 4.0, face.bottom()))).text(egui::pos2(face.left() + 25.0, mid), egui::Align2::LEFT_CENTER, &text, egui::FontId::proportional(11.0), Color32::from_rgb(30, 57, 91));
-        let bresp = ui.interact(br, ui.id().with("fv_omp_save"), egui::Sense::click()).on_hover_text("Сохранить рерультаты ОМП");
+        let bresp = ui.interact(br, ui.id().with("fv_omp_save"), egui::Sense::click());
+        // Its tip (CMFCCaptionBar's, VM): the plain Office box 18 px under
+        // the pointer, 8 px inside the screen's right edge.
+        crate::tips::pointer_tip_inset(ui, &bresp, crate::tips::TipImage::None, "", "Сохранить рерультаты ОМП", false, 8.0);
         if bresp.hovered() {
             crate::popmenu::hot_bar(&p, br);
         } else {
