@@ -1270,6 +1270,15 @@ mod window_tests {
         w.key(egui::Key::Escape);
         w.idle(2);
         assert_eq!(w.app.block_text.as_deref(), Some(names[2].as_str()), "Esc puts the edit's text back");
+        // A click on the value keeps the text; ↓ goes on from it.
+        let value = Pos2::new(grid.left() + grid.width() * 0.75, grid.top() + 9.0);
+        w.press(Primary, value, value);
+        w.idle(1);
+        assert_eq!(w.app.block_text.as_deref(), Some(names[2].as_str()), "the click keeps the text");
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::Enter);
+        w.idle(2);
+        assert_eq!((w.app.block_idx, w.app.block_text.as_deref()), (0, Some(names[3].as_str())), "↓ from the shown text");
     }
 
     /// The grid's keys (CMFCPropertyGridCtrl): ↓ from a group selects its

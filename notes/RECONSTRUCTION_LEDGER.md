@@ -9535,6 +9535,24 @@ gradient. Now `ribbon::body_2007` for the Blue look (egui's stroke
 transparent there; the layout unchanged). VM: rows 53–142 at both edges
 and mid-window within a unit.
 
+### L9.385 — VM: the diagrams' property grid — its corner, Blue's drop button; «Тип блока»'s text kept by a click  ·  ✅
+Scanned the differential pane's grid: it starts on the pane's client
+corner (ours a white row and column first, so every row sat a pixel low
+and right); the selected combo row's button in Office 2007 Blue is 14
+px wide, shading (226, 238, 255) → (196, 221, 255) down the row, with
+a 5 / 3 / 1 px (86, 125, 177) arrow 6 rows down (ours a 15 px grey box
+and a black arrow — kept for the other looks); «Тип блока»'s ink 6 px
+in (ours 8.5: our «Т» starts 2.5 px into its cell). Run: «Тип блока»
+stepped by ↓ to «БМРЗ - Защита линии», Enter, then a click on the value
+and ↓ — the original goes on to «… генераторов», ours went back to the
+first block after «Нет»: a value click reset the shown text to the
+loaded block («Нет»). The click saves the block (slot 94, L9.156 /
+L9.201) — the saved settings, not the cell. Now the grid's frame has no
+top / left margin, the Blue drop button, «Тип блока» 3 px in, and a
+value click keeps the text (only a block change resets it). VM: the
+grid's edge, divider, button and text pixel for pixel; the stepping
+alike. Test `the_block_type_alone_steps_its_text` extended.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

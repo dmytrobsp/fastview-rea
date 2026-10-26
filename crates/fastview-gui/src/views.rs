@@ -1009,8 +1009,9 @@ impl App {
             .show_separator_line(false)
             .default_height(stored)
             .height_range(50.0..=(h - 150.0).max(50.0))
-            // The property grid is a white list (seen on the VM).
-            .frame(egui::Frame::none().fill(egui::Color32::WHITE).inner_margin(egui::Margin::same(1.0)))
+            // The property grid is a white list (seen on the VM), from the
+            // pane's client corner, a white column and row after it.
+            .frame(egui::Frame::none().fill(egui::Color32::WHITE).inner_margin(egui::Margin { left: 0.0, right: 1.0, top: 0.0, bottom: 1.0 }))
             .show_inside(ui, |ui| {
                 // The grid fills its splitter part however few its rows. It
                 // scrolls by whole 17 px rows with the window scroll bar
@@ -1140,7 +1141,9 @@ impl App {
         // «Тип блока»: its text, and on the selected row the list's button
         // (15 px at the value's right); the list drops from the cell.
         let type_key = sel_id.with("type");
-        let (_, vr) = row(ui, type_key, "Тип блока", false, 6.0, false);
+        // Its ink 6 px in as the original's (VM: our «Т» starts 2.5 px into
+        // its cell).
+        let (_, vr) = row(ui, type_key, "Тип блока", false, 3.0, false);
         // The rows in order, for the keys.
         let mut order: Vec<(egui::Id, GridRow)> = vec![(type_key, GridRow::Type)];
         let prev = self.block_idx;
@@ -1163,11 +1166,24 @@ impl App {
         }
         let list_id = ui.id().with("fv_grid_type_list");
         if selected == type_key {
-            let bt = egui::Rect::from_min_max(egui::pos2(vr.right() - 15.0, vr.top()), vr.max);
+            // Office 2007 Blue (VM): a 14 px button shading (226, 238, 255)
+            // → (196, 221, 255) down the row, a 5 / 3 / 1 px (86, 125, 177)
+            // arrow 6 rows down; the other looks a grey box.
+            let blue = self.skin.palette().bands.is_some_and(|b| b.panel_sep.is_some());
+            let bt = egui::Rect::from_min_max(egui::pos2(vr.right() - if blue { 14.0 } else { 15.0 }, vr.top()), vr.max);
             let hot = combo.hovered() && ui.ctx().pointer_hover_pos().is_some_and(|q| bt.contains(q));
-            ui.painter().rect_filled(bt, 0.0, if hot { egui::Color32::from_rgb(253, 170, 78) } else { egui::Color32::from_gray(240) });
-            let c = bt.center();
-            ui.painter().add(egui::Shape::convex_polygon(vec![egui::pos2(c.x - 3.0, c.y - 1.0), egui::pos2(c.x + 3.0, c.y - 1.0), egui::pos2(c.x, c.y + 2.0)], TEXT, egui::Stroke::NONE));
+            if blue && !hot {
+                ui.painter().add(crate::ribbon::gradient_mesh(bt, &[(0.5, egui::Color32::from_rgb(226, 238, 255)), (bt.height() - 0.5, egui::Color32::from_rgb(196, 221, 255))]));
+                let ink = egui::Color32::from_rgb(86, 125, 177);
+                for (k, (dx, w)) in [(5.0, 5.0), (6.0, 3.0), (7.0, 1.0)].into_iter().enumerate() {
+                    let y = bt.top() + 6.0 + k as f32;
+                    ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(bt.left() + dx, y), egui::vec2(w, 1.0)), 0.0, ink);
+                }
+            } else {
+                ui.painter().rect_filled(bt, 0.0, if hot { egui::Color32::from_rgb(253, 170, 78) } else { egui::Color32::from_gray(240) });
+                let c = bt.center();
+                ui.painter().add(egui::Shape::convex_polygon(vec![egui::pos2(c.x - 3.0, c.y - 1.0), egui::pos2(c.x + 3.0, c.y - 1.0), egui::pos2(c.x, c.y + 2.0)], TEXT, egui::Stroke::NONE));
+            }
             if combo.clicked() && ui.ctx().pointer_interact_pos().is_some_and(|q| bt.contains(q)) {
                 let open = !ui.data(|d| d.get_temp::<bool>(list_id.with("open")).unwrap_or(false));
                 ui.data_mut(|d| d.insert_temp(list_id.with("open"), open));
@@ -1396,12 +1412,12 @@ impl App {
             }
         }
         // «Тип блока»'s value click saves the active block too (slot 94),
-        // over a saved name the library lacks.
-        if combo.clicked() || self.block_idx != prev {
+        // over a saved name the library lacks; the cell keeps its text (VM:
+        // stepped to «… линии», Enter, a click and ↓ give «… генераторов»).
+        if self.block_idx != prev {
             self.block_text = None;
-            if self.block_idx == prev {
-                self.save_block();
-            }
+        } else if combo.clicked() {
+            self.save_block();
         }
         // A parameter commit (`0x407580`) re-evaluates, then the block is
         // saved into the document (`0x408cf0`), as after a visibility click.
