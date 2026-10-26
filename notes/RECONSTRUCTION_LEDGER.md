@@ -9316,6 +9316,16 @@ Now `tips::pointer_tip` with no image. VM: the tip alike in place and
 look. Left: the OMP result's save button tip (needs an ОМП run with
 data entered; unchecked).
 
+### L9.366 — VM: a small or icon-only ribbon button under the pointer  ·  ✅
+Scanned (Office 2007 Blue, «Показать дискретные каналы» and
+«Коэффициенты» hovered): a 22 px hot button has a 1 px frame — (219,
+206, 153) on top, (185, 160, 116) at the sides, (126, 114, 90) below —
+round a face with a light first and last row and the two-part gold
+gradient: (255, 252, 228) → (255, 236, 161) over the upper half, (255,
+216, 66) → (255, 228, 123) under it. Ours drew a flat beige box. Now
+`hot_small` (the older looks keep their soft accent box) for the small
+and mini buttons. VM: alike.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

@@ -936,6 +936,30 @@ fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palet
     }
 }
 
+/// A small or icon-only button (22 px) under the pointer in the Office 2007
+/// looks (VM, «Коэффициенты» and «Показать дискретные» hot): a 1 px frame
+/// — (219, 206, 153) on top, (185, 160, 116) at the sides, (126, 114, 90)
+/// below — round a face with a light first and last row, (255, 252, 228)
+/// → (255, 236, 161) over its upper half, then (255, 216, 66) → (255, 228,
+/// 123). The older looks: their soft accent box.
+fn hot_small(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette) {
+    if !office2007(p) {
+        painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
+        return;
+    }
+    let c = |r, g, b| Color32::from_rgb(r, g, b);
+    let face = rect.shrink(1.0);
+    let h = face.height();
+    let mid = (h / 2.0).floor();
+    let (hl, low) = (c(255, 255, 251), c(255, 250, 207));
+    painter.add(gradient_mesh(face, &[(0.0, hl), (1.0, hl), (1.0, c(255, 252, 228)), (mid, c(255, 236, 161)), (mid, c(255, 216, 66)), (h - 1.0, c(255, 228, 123)), (h - 1.0, low), (h, low)]));
+    let (l, r, t, b) = (rect.left(), rect.right() - 1.0, rect.top(), rect.bottom() - 1.0);
+    painter.px_hline(l + 1.0..=r - 1.0, t, egui::Stroke::new(1.0f32, c(219, 206, 153)));
+    painter.px_hline(l + 1.0..=r - 1.0, b, egui::Stroke::new(1.0f32, c(126, 114, 90)));
+    painter.px_vline(l, t + 1.0..=b - 1.0, egui::Stroke::new(1.0f32, c(185, 160, 116)));
+    painter.px_vline(r, t + 1.0..=b - 1.0, egui::Stroke::new(1.0f32, c(185, 160, 116)));
+}
+
 /// A large button under the pointer in the Office 2007 looks (VM,
 /// «Каналы» hot): a 1 px border with its corners cut — (221, 207, 155) on
 /// top, (210, 208, 188) below, (210, 192, 141) at the sides — a light inner
@@ -1568,7 +1592,7 @@ fn small_button_mode(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, la
     if selected {
         checked_bg(painter, rect, &p, resp.hovered() && ui.is_enabled());
     } else if resp.hovered() && ui.is_enabled() {
-        painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
+        hot_small(painter, rect, &p);
     }
     let box_ = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.top() + 3.0), egui::vec2(16.0, 16.0)).shrink(1.0);
     icons::paint(painter, box_, icon, accent);
@@ -1666,7 +1690,7 @@ fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, enabled
     if on {
         checked_bg(painter, rect, &p, enabled && resp.hovered());
     } else if enabled && resp.hovered() {
-        painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
+        hot_small(painter, rect, &p);
     }
     let col = if enabled { p.accent } else { disabled_ink(p) };
     paint_mini(painter, rect.shrink(4.0), glyph, col);
