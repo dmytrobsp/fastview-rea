@@ -958,6 +958,26 @@ pub(crate) fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::t
         // on the button's own first and last rows and columns (VM: row 58
         // and 123 of a 58–123 button).
         painter.rect_stroke(face, 1.0f32, egui::Stroke::new(1.0f32, if hot { c(167, 135, 94) } else { c(142, 129, 101) }));
+        if !hot {
+            // VM («Частотная» checked): three shaded rows under the top —
+            // (181, 153, 120), (221, 184, 136), (245, 205, 155) —, a
+            // bright column inside each side ((250, 193, 102) to the gold
+            // (255, 207, 45) at the bottom), the sides lightening to (198,
+            // 192, 178) over their lower part.
+            let (l, r, t, b) = (rect.left(), rect.right() - 1.0, rect.top(), rect.bottom() - 1.0);
+            let px = |x0: f32, y0: f32, x1: f32, y1: f32, k: Color32| painter.rect_filled(egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1)), 0.0, k);
+            for (dy, k) in [(1.0, c(181, 153, 120)), (2.0, c(221, 184, 136)), (3.0, c(245, 205, 155))] {
+                px(l + 1.0, t + dy, r, t + dy + 1.0, k);
+            }
+            let glow = [(0.0, c(181, 167, 145)), (1.0, c(230, 175, 85)), (2.0, c(243, 186, 94)), (3.0, c(250, 193, 102)), (split + 1.0, c(250, 195, 92)), (split + 1.0, c(248, 189, 81)), (b - t - 1.0, c(255, 207, 45))];
+            let side = [(0.0, c(142, 129, 101)), (38.0, c(142, 129, 101)), (b - t - 2.0, c(198, 192, 178))];
+            for x in [l + 1.0, r - 1.0] {
+                painter.add(gradient_mesh(egui::Rect::from_min_max(egui::pos2(x, t + 1.0), egui::pos2(x + 1.0, b)), &glow));
+            }
+            for x in [l, r] {
+                painter.add(gradient_mesh(egui::Rect::from_min_max(egui::pos2(x, t + 1.0), egui::pos2(x + 1.0, b - 1.0)), &side));
+            }
+        }
         painter.px_hline(rect.left() + 2.0..=rect.right() - 3.0, rect.bottom() - 1.0, egui::Stroke::new(1.0f32, c(255, 209, 53)));
     } else {
         painter.rect(rect, 2.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));

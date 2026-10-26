@@ -9624,6 +9624,16 @@ sides, no inner light, a (126, 114, 90) bottom a pixel short at the
 right. Now `hot_small` so (every small and icon-only button, the QAT's).
 VM: the QAT button's columns and edges within a few units.
 
+### L9.391 — VM: a checked large button's inner shading  ·  ✅
+Scanned «Частотная» checked (idle): under its top edge three shaded rows
+— (181, 153, 120), (221, 184, 136), (245, 205, 155) — before the face's
+gradient; inside each side a bright column, (250, 193, 102) shading to
+the gold (255, 207, 45) at the bottom; the sides (142, 129, 101) down to
+row 97, then lightening to (198, 192, 178). Ours went straight from the
+frame to the face, uniform sides. Now `checked_bg` (idle) draws them.
+VM: the columns' rows within a few units; the original's second-to-last
+row a little more golden.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
