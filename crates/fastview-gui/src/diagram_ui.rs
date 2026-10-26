@@ -707,8 +707,11 @@ impl App {
             mesh.add_triangle(0, 1, 2);
             mesh.add_triangle(0, 2, 3);
             ui.painter().add(egui::Shape::mesh(mesh));
-            ui.add_space(2.0);
-            ui.spacing_mut().item_spacing.y = 1.0;
+            // CMFCToolBar's vertical layout (VM): 22 px buttons touching,
+            // 8 px separators — a (118, 161, 218) line 3 px down with a
+            // white one under it, 14 px long from 6 px in.
+            ui.add_space(1.0);
+            ui.spacing_mut().item_spacing.y = 0.0;
             // Buttons that do not fit are cut off (a short toolbar), never
             // grow the pane past its slot.
             for b in &buttons {
@@ -716,8 +719,11 @@ impl App {
                     break;
                 }
                 let Some((tool, tip, cmd, checked)) = b else {
-                    ui.add_space(3.0);
-                    ui.separator();
+                    use crate::oscgeom::PixelLines;
+                    let (sep, _) = ui.allocate_exact_size(Vec2::new(24.0, 8.0), egui::Sense::hover());
+                    let x = sep.left() + 6.0..=sep.left() + 19.0;
+                    ui.painter().px_hline(x.clone(), sep.top() + 3.0, stroke(1.0, Color32::from_rgb(118, 161, 218)));
+                    ui.painter().px_hline(x, sep.top() + 4.0, stroke(1.0, Color32::WHITE));
                     continue;
                 };
                 // The vector toolbar is enabled with a document (CMDUI 0x48f440).

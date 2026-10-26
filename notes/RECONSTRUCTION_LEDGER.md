@@ -9434,6 +9434,19 @@ hovered tab plain. Now `unit_body`'s strip draws it
 (`ribbon::gradient_mesh` shared). VM: alike; ours' tabs a few pixels
 wider (the font).
 
+### L9.378 — VM: the view's scroll bar under the pointer; the panes' toolbars' pitch  ·  ✅
+Scanned: under the pointer (on its thumb, its track or an arrow) the
+view's Windows 11 scroll bar shows its arrows without a box and a 6 px
+rounded thumb along the middle (rows 1148–1153 of the 1143–1158 bar);
+ours drew grey arrow boxes and a 13 px thumb (L9.226 had read a pressed
+state). The panes' vertical toolbars (CMFCToolBar) stack 22 px buttons
+touching, with 8 px separators — a (118, 161, 218) line three pixels
+down, a white one under it, 14 px long from 6 px in; ours spaced the
+buttons 23 px and the separators about 10 (egui's), so «+» sat 12 px
+lower than the original's. Now `lanes::scrollbar`'s hot state and the
+toolbar's layout. VM: the thumb's rows and the toolbars' buttons and
+separators at the original's y.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

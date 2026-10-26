@@ -1030,8 +1030,9 @@ pub(crate) fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: 
     let p = ui.painter_at(rect);
     // Windows 11's bar (VM): a BTNFACE track; idle, the arrows hidden (their
     // room kept) and the thumb a 2 px (133, 133, 133) line along the
-    // middle, 1 px in from its ends; under the pointer, arrows and a full
-    // thumb.
+    // middle, 1 px in from its ends; under the pointer, the arrows (no box)
+    // and a 6 px rounded thumb along the middle (VM: rows 1148–1153 of the
+    // view's 1143–1158 bar, the pointer on its thumb, track or arrow).
     p.rect_filled(rect, 0.0, Color32::from_gray(240));
     let hot = ui.rect_contains_pointer(rect);
     let len = if horizontal { rect.width() } else { rect.height() };
@@ -1052,7 +1053,6 @@ pub(crate) fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: 
     let (dec, inc) = (along(0.0, arrow), along(len - arrow, len));
     let glyph = Color32::from_gray(if enabled { 96 } else { 180 });
     for (r, back) in [(dec, true), (inc, false)].into_iter().filter(|_| hot) {
-        p.rect_filled(r.shrink(1.0), 0.0, Color32::from_gray(222));
         let (c, s) = (r.center(), (arrow / 4.0).min(4.0));
         let tri = match (horizontal, back) {
             (true, true) => [c + Vec2::new(-s, 0.0), c + Vec2::new(s, -s), c + Vec2::new(s, s)],
@@ -1072,7 +1072,13 @@ pub(crate) fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: 
     let thumb = along(at, at + thumb_len).shrink2(if horizontal { Vec2::new(0.0, 2.0) } else { Vec2::new(2.0, 0.0) });
     if thumb_len > 0.0 {
         if hot {
-            p.rect_filled(thumb, 2.0, Color32::from_gray(133));
+            let c = thumb.center();
+            let fat = if horizontal {
+                Rect::from_min_max(Pos2::new(thumb.left() + 1.0, (c.y - 3.0).round()), Pos2::new(thumb.right() - 1.0, (c.y - 3.0).round() + 6.0))
+            } else {
+                Rect::from_min_max(Pos2::new((c.x - 3.0).round(), thumb.top() + 1.0), Pos2::new((c.x - 3.0).round() + 6.0, thumb.bottom() - 1.0))
+            };
+            p.rect_filled(fat, 3.0, Color32::from_gray(133));
         } else {
             let c = thumb.center();
             let line = if horizontal {
