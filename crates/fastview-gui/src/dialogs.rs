@@ -1586,24 +1586,54 @@ pub fn focus_rect(p: &egui::Painter, r: Rect) {
     }
 }
 
-/// Our drawing of a system message icon in its 32 px cell.
+/// Our drawing of a system message icon in its 32 px cell, after Windows
+/// 11's (VM): the error a circle from (234, 98, 33) at its top to (218,
+/// 64, 6) with a white ✕; the question one from (26, 155, 225) to (9, 122,
+/// 205) with a white «?»; the exclamation a rounded triangle from (255,
+/// 203, 1) to (255, 190, 1), a (224, 152, 6) edge, a black «!».
 fn message_icon(p: &egui::Painter, r: Rect, icon: MsgIcon) {
     let c = r.center();
-    let (mark, bg) = match icon {
-        MsgIcon::Exclamation => {
-            let tri = vec![Pos2::new(c.x, r.top() + 2.0), Pos2::new(r.right() - 2.0, r.bottom() - 3.0), Pos2::new(r.left() + 2.0, r.bottom() - 3.0)];
-            p.add(egui::Shape::convex_polygon(tri, Color32::from_rgb(252, 204, 34), Stroke::new(1.0f32, Color32::from_rgb(190, 140, 0))));
-            ("!", None)
+    // A disc shaded top to bottom (a fan whose rim takes its height's colour).
+    let disc = |rad: f32, top: Color32, bottom: Color32| {
+        let mut mesh = egui::Mesh::default();
+        let at = |y: f32| top.lerp_to_gamma(bottom, ((y - (c.y - rad)) / (2.0 * rad)).clamp(0.0, 1.0));
+        mesh.colored_vertex(c, at(c.y));
+        let n = 48;
+        for k in 0..=n {
+            let a = k as f32 / n as f32 * std::f32::consts::TAU;
+            let q = c + Vec2::new(a.cos(), a.sin()) * rad;
+            mesh.colored_vertex(q, at(q.y));
         }
-        MsgIcon::Error => ("✕", Some(Color32::from_rgb(214, 40, 40))),
-        MsgIcon::Question => ("?", Some(Color32::from_rgb(40, 100, 200))),
+        for k in 1..=n as u32 {
+            mesh.add_triangle(0, k, k + 1);
+        }
+        p.add(mesh);
     };
-    if let Some(bg) = bg {
-        p.circle_filled(c, 15.0, bg);
+    match icon {
+        MsgIcon::Error => {
+            disc(15.5, Color32::from_rgb(234, 98, 33), Color32::from_rgb(218, 64, 6));
+            let st = Stroke::new(2.5f32, Color32::WHITE);
+            p.line_segment([c + Vec2::new(-5.5, -5.5), c + Vec2::new(5.5, 5.5)], st);
+            p.line_segment([c + Vec2::new(-5.5, 5.5), c + Vec2::new(5.5, -5.5)], st);
+        }
+        MsgIcon::Question => {
+            disc(15.5, Color32::from_rgb(26, 155, 225), Color32::from_rgb(9, 122, 205));
+            p.text(c + Vec2::new(0.0, 0.5), egui::Align2::CENTER_CENTER, "?", egui::FontId::proportional(22.0), Color32::WHITE);
+        }
+        MsgIcon::Exclamation => {
+            let (top, bl, br) = (Pos2::new(c.x, r.top() + 2.0), Pos2::new(r.left() + 2.0, r.bottom() - 3.0), Pos2::new(r.right() - 2.0, r.bottom() - 3.0));
+            let mut mesh = egui::Mesh::default();
+            mesh.colored_vertex(top, Color32::from_rgb(255, 203, 1));
+            mesh.colored_vertex(br, Color32::from_rgb(255, 190, 1));
+            mesh.colored_vertex(bl, Color32::from_rgb(255, 190, 1));
+            mesh.add_triangle(0, 1, 2);
+            p.add(mesh);
+            p.add(egui::Shape::closed_line(vec![top, br, bl], Stroke::new(1.5f32, Color32::from_rgb(224, 152, 6))));
+            let ink = Color32::from_rgb(30, 30, 30);
+            p.line_segment([Pos2::new(c.x, c.y - 6.0), Pos2::new(c.x, c.y + 5.0)], Stroke::new(2.5f32, ink));
+            p.circle_filled(Pos2::new(c.x, c.y + 9.0), 1.6, ink);
+        }
     }
-    let color = if bg.is_some() { Color32::WHITE } else { Color32::BLACK };
-    let at = if bg.is_some() { c } else { c + Vec2::new(0.0, 4.0) };
-    p.text(at, egui::Align2::CENTER_CENTER, mark, egui::FontId::proportional(20.0), color);
 }
 
 /// Whether a dialog window (egui's `Order::Middle` layer, where every

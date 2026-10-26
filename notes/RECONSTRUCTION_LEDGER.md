@@ -9351,6 +9351,19 @@ orb's two chevrons, blue over green — into a 48 px RGBA icon for the
 viewport (both runners take it). The original's icon is its artwork,
 not reused; the exe's own resource icon (Explorer) is not set (W6).
 
+### L9.370 — VM: message box 219 run; the message icons as Windows 11 draws them  ·  ✅
+Run (records made on the VM from WIN_1999: `t219\late` a day later):
+a channel of the later record copied, pasted into WIN_1999,
+«Синхронизация» (by start time) — 219 «Осциллограммы не пересекаются по
+времени» with the error icon in both, alike in text, place and size.
+The icons themselves (sampled): Windows 11's error is a circle shaded
+(234, 98, 33) → (218, 64, 6) with a white ✕; the question (26, 155,
+225) → (9, 122, 205) with a white «?»; the exclamation a rounded triangle
+(255, 203, 1) → (255, 190, 1) with a (224, 152, 6) edge and a black «!».
+Ours drew flat red / blue discs and a flat triangle. Now
+`dialogs::message_icon` draws the three shaded (our drawings). VM: the
+three side by side alike.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
