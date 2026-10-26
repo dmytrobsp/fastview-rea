@@ -2247,7 +2247,9 @@ pub const APP_MENU_TITLE: &str = "Файл ▾";
 /// ×; maximise a square; restore a 8 px square with the corner of a
 /// second one 2 px up and right; minimise a 10 px line.
 fn caption_glyph(p: &egui::Painter, r: egui::Rect, k: u8, max: bool, col: Color32) {
-    let o = egui::pos2((r.center().x - 5.0).round(), (r.center().y - 5.0).round());
+    // The 10 px glyph box 16 px into the button, 6 px over its middle
+    // (VM: the boxes at x + 16, y 9 maximised; the dash at x + 17, y 14).
+    let o = egui::pos2(r.left() + 16.0, (r.center().y - 6.0).round());
     // A 1 px run from (x0, y0) to (x1, y1) inclusive, in the box.
     let run = |x0: f32, y0: f32, x1: f32, y1: f32| {
         p.rect_filled(egui::Rect::from_min_max(o + egui::vec2(x0, y0), o + egui::vec2(x1 + 1.0, y1 + 1.0)), 0.0, col);
@@ -2260,9 +2262,10 @@ fn caption_glyph(p: &egui::Painter, r: egui::Rect, k: u8, max: bool, col: Color3
     };
     match (k, max) {
         (0, _) => {
+            // Pixel centre to pixel centre: a 10 × 10 cross.
             let s = egui::Stroke::new(1.0f32, col);
-            p.line_segment([o, o + egui::vec2(10.0, 10.0)], s);
-            p.line_segment([o + egui::vec2(10.0, 0.0), o + egui::vec2(0.0, 10.0)], s);
+            p.line_segment([o + egui::vec2(0.5, 0.5), o + egui::vec2(9.5, 9.5)], s);
+            p.line_segment([o + egui::vec2(9.5, 0.5), o + egui::vec2(0.5, 9.5)], s);
         }
         (1, false) => square(0.0, 0.0, 9.0),
         (1, true) => {
@@ -2270,7 +2273,7 @@ fn caption_glyph(p: &egui::Painter, r: egui::Rect, k: u8, max: bool, col: Color3
             run(2.0, 0.0, 9.0, 0.0);
             run(9.0, 0.0, 9.0, 7.0);
         }
-        _ => run(0.0, 5.0, 9.0, 5.0),
+        _ => run(1.0, 5.0, 10.0, 5.0),
     }
 }
 
@@ -2280,8 +2283,10 @@ fn caption_glyph(p: &egui::Painter, r: egui::Rect, k: u8, max: bool, col: Color3
 fn caption_buttons(ui: &mut egui::Ui) {
     let h = ui.available_height().max(22.0);
     let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
-    // The buttons edge to edge (VM: 46 px apart).
+    // The buttons edge to edge (VM: 46 px apart); their glyphs grey while
+    // the window is inactive (VM: (163) against (25)).
     ui.spacing_mut().item_spacing.x = 0.0;
+    let focused = ui.ctx().input(|i| i.viewport().focused.unwrap_or(true));
     for k in 0..3 {
         let (r, resp) = ui.allocate_exact_size(egui::vec2(46.0, h), egui::Sense::click());
         let close = k == 0;
@@ -2289,7 +2294,7 @@ fn caption_buttons(ui: &mut egui::Ui) {
         if hot {
             ui.painter().rect_filled(r, 0.0, if close { Color32::from_rgb(232, 17, 35) } else { Color32::from_black_alpha(26) });
         }
-        let col = if close && hot { Color32::WHITE } else { Color32::BLACK };
+        let col = if close && hot { Color32::WHITE } else if focused || hot { Color32::BLACK } else { Color32::from_gray(163) };
         caption_glyph(ui.painter(), r, k, max, col);
         if resp.clicked() {
             ui.ctx().send_viewport_cmd(match k {

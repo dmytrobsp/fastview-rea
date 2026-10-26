@@ -9598,6 +9598,16 @@ the centre) a row higher. Now centred on the window's centre + 25,
 kept inside that space, a pixel lower maximised. VM: 1304.5 / rows 11–22
 maximised, +25.5 restored.
 
+### L9.389 — VM: the caption buttons' glyphs: their box, the inactive grey  ·  ✅
+Scanned the three system buttons maximised, the original active (a
+click on its caption — the harness leaves it inactive) and not: each
+glyph in a 10 × 10 box 16 px into its 46 px button, rows 9–18 (the dash
+from x + 17 on row 14), dark (25) while the window is active and light
+(163) while it is not. Ours had the boxes 1–2 px right and a row lower,
+an antialiased 12 × 11 cross, and stayed black. Now `caption_glyph`'s
+box and pixel-centred cross, the glyphs grey without the focus. VM: the
+three glyphs' extents identical.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
