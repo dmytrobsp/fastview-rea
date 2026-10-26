@@ -9289,6 +9289,13 @@ with `TipImage::Tool`; and the descriptions' glyphs start at + 26 as
 the original's (ours were 2 px high). VM: the toolbar tip and a two-
 line ribbon tip row for row within a pixel, 42 / 55 px tall alike.
 
+### L9.363 — VM: the pane captions' ✕ / pin tips as MFC's plain ones  ·  ✅
+Run (the vector pane's ✕, then its pin, hovered): MFC's plain one-line
+tips («Close», «Auto Hide» on the VM's English UI; mfc120rus «Закрыть»,
+«Автоматически скрывать») in the tooltip box, 21 px tall, 18 px under
+the pointer, kept on the screen. Ours showed egui's tooltips. Now
+`tips::pointer_tip` with no image. VM: alike in place and size.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
