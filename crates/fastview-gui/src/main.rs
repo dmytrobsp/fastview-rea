@@ -320,8 +320,23 @@ impl App {
                     let xr = egui::Rect::from_center_size(egui::pos2(rect.right() - 12.0, rect.center().y), egui::vec2(14.0, 14.0));
                     let xresp = ui.interact(xr, ui.id().with(("tab_close", i)), egui::Sense::click());
                     // Two 2 px diagonals in the pane buttons' blue (VM: (86,
-                    // 125, 177)).
-                    let col = if xresp.hovered() { egui::Color32::from_rgb(200, 0, 0) } else { egui::Color32::from_rgb(86, 125, 177) };
+                    // 125, 177)). Hot: a 14 px box, a (255, 189, 105) frame
+                    // round a (255, 242, 197) → (255, 222, 129) face, the
+                    // cross as before; MFC's plain «Close» tip (mfc120rus).
+                    let col = egui::Color32::from_rgb(86, 125, 177);
+                    if xresp.hovered() {
+                        let mut mesh = egui::Mesh::default();
+                        let face = xr.shrink(1.0);
+                        let (t, b) = (egui::Color32::from_rgb(255, 242, 197), egui::Color32::from_rgb(255, 222, 129));
+                        for (p, c) in [(face.left_top(), t), (face.right_top(), t), (face.right_bottom(), b), (face.left_bottom(), b)] {
+                            mesh.colored_vertex(p, c);
+                        }
+                        mesh.add_triangle(0, 1, 2);
+                        mesh.add_triangle(0, 2, 3);
+                        ui.painter().add(egui::Shape::mesh(mesh));
+                        ui.painter().rect_stroke(xr.shrink(0.5), 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(255, 189, 105)));
+                    }
+                    crate::tips::pointer_tip(ui, &xresp, crate::tips::TipImage::None, "", "Закрыть", false);
                     let c = xr.center();
                     let st = egui::Stroke::new(2.0f32, col);
                     ui.painter().line_segment([c + egui::vec2(-3.5, -3.0), c + egui::vec2(3.5, 3.0)], st);

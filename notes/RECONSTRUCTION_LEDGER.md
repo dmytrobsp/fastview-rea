@@ -9416,6 +9416,14 @@ the help button its image with «Help Topics» / «List Help topics»
 `TipImage::Blank` / `TipImage::Help` (`ribbon::help_image`). VM: alike
 (ours in Russian, L9.330).
 
+### L9.376 — VM: the document tab's ✕ under the pointer  ·  ✅
+Scanned (WIN_1999's tab, its ✕ hovered): a 14 px hot box — a (255, 189,
+105) frame round a (255, 242, 197) → (255, 222, 129) face — with the
+cross unchanged (86, 125, 177), and MFC's plain «Close» tip 18 px under
+the pointer (mfc120rus «Закрыть»). Ours turned the cross red, no box, no
+tip. Now so in `frame_ui`'s tab strip. The tab itself has no tip in
+either. VM: alike.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
