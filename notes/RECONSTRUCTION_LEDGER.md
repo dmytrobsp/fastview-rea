@@ -9606,7 +9606,11 @@ from x + 17 on row 14), dark (25) while the window is active and light
 (163) while it is not. Ours had the boxes 1–2 px right and a row lower,
 an antialiased 12 × 11 cross, and stayed black. Now `caption_glyph`'s
 box and pixel-centred cross, the glyphs grey without the focus. VM: the
-three glyphs' extents identical.
+three glyphs' extents identical. Under the pointer the original's face
+is 45 × 28 from a pixel left of the 46 px slot (minimise 2421–2465,
+close 2513–2557, rows 0–27), (245) or the close button's (196, 43, 28);
+ours filled the whole slot in (229) / (232, 17, 35). Now so; VM: both
+faces' edges and colours exact.
 
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,

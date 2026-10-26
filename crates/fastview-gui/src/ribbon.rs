@@ -2291,8 +2291,11 @@ fn caption_buttons(ui: &mut egui::Ui) {
         let (r, resp) = ui.allocate_exact_size(egui::vec2(46.0, h), egui::Sense::click());
         let close = k == 0;
         let hot = resp.hovered();
+        // Under the pointer (VM, maximised): a 45 × 28 face from a pixel
+        // left of the button — (245) or the close button's (196, 43, 28).
         if hot {
-            ui.painter().rect_filled(r, 0.0, if close { Color32::from_rgb(232, 17, 35) } else { Color32::from_black_alpha(26) });
+            let face = egui::Rect::from_min_size(egui::pos2(r.left() - 1.0, r.top()), egui::vec2(45.0, 28.0));
+            ui.painter().rect_filled(face, 0.0, if close { Color32::from_rgb(196, 43, 28) } else { Color32::from_gray(245) });
         }
         let col = if close && hot { Color32::WHITE } else if focused || hot { Color32::BLACK } else { Color32::from_gray(163) };
         caption_glyph(ui.painter(), r, k, max, col);
