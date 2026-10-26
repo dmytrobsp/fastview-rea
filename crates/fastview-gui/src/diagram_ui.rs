@@ -696,16 +696,21 @@ impl App {
         let doc = self.active_doc().is_some();
         let mut fire = None;
         // A 24 px strip, a horizontal gradient (VM: per style, Blue's (227,
-        // 239, 255) at its left to (177, 211, 255) at its right).
+        // 239, 255) flat for 6 px, then shading over 16 to (177, 211, 255),
+        // flat for the last 2).
         let bar = egui::SidePanel::right(egui::Id::new(("pane_toolbar", w as u8))).resizable(false).show_separator_line(false).frame(egui::Frame::none()).exact_width(24.0).show_inside(ui, |ui| {
             let r = ui.max_rect();
             let mut mesh = egui::Mesh::default();
             let [l, rr] = self.skin.palette().bands.map_or([Color32::from_rgb(227, 239, 255), Color32::from_rgb(177, 211, 255)], |b| b.toolbar);
-            for (p, c) in [(r.left_top(), l), (r.right_top(), rr), (r.right_bottom(), rr), (r.left_bottom(), l)] {
-                mesh.colored_vertex(p, c);
+            for (k, (x0, x1, c0, c1)) in [(0.0, 6.0, l, l), (6.0, 22.0, l, rr), (22.0, r.width(), rr, rr)].into_iter().enumerate() {
+                let (a, b) = (r.left() + x0, r.left() + x1);
+                for (x, y, c) in [(a, r.top(), c0), (b, r.top(), c1), (b, r.bottom(), c1), (a, r.bottom(), c0)] {
+                    mesh.colored_vertex(egui::pos2(x, y), c);
+                }
+                let i = 4 * k as u32;
+                mesh.add_triangle(i, i + 1, i + 2);
+                mesh.add_triangle(i, i + 2, i + 3);
             }
-            mesh.add_triangle(0, 1, 2);
-            mesh.add_triangle(0, 2, 3);
             ui.painter().add(egui::Shape::mesh(mesh));
             // CMFCToolBar's vertical layout (VM): 22 px buttons touching,
             // 8 px separators — a (118, 161, 218) line 3 px down with a

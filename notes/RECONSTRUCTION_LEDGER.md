@@ -9468,6 +9468,13 @@ the pointer, 3 px inside the screen's right edge. Ours had none. Now
 `dialogs::caption_close` shows it on every caption bar (ОМП, merge,
 parameters). VM: the box's rows (168–188) and right edge (2556) alike.
 
+### L9.381 — VM: the panes' toolbar strip's gradient  ·  ✅
+Scanned across the differential pane's toolbar: the original keeps the
+style's left colour (Blue: (227, 239, 255)) flat for 6 px, shades over
+the next 16 to the right colour ((177, 211, 255)) and keeps that for the
+last 2; ours shaded across all 24 (the "slightly bluer" residual). Now
+`pane_toolbar`'s mesh in three parts. VM: every column within one unit.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
