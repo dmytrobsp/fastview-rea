@@ -724,8 +724,9 @@ impl App {
                 let enabled = w != Window::Vector || doc;
                 let (rect, resp) = ui.allocate_exact_size(Vec2::splat(22.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
                 let vis = ui.visuals();
+                // Checked: CMFCToolBar's checked face (VM).
                 if checked == &Some(true) {
-                    ui.painter().rect(rect, 2.0, vis.selection.bg_fill.gamma_multiply(0.5), stroke(1.0, vis.selection.stroke.color));
+                    crate::ribbon::toolbar_checked(ui.painter(), rect, &self.skin.palette());
                 } else if resp.hovered() && enabled {
                     // The ribbon's hot face (VM, the gold gradient).
                     crate::ribbon::hot_small(ui.painter(), rect, &self.skin.palette());

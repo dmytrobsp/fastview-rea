@@ -917,7 +917,7 @@ fn office2007(p: &crate::theme::Palette) -> bool {
 /// back to (252, 231, 157); under the pointer (`hot`) the same darker:
 /// (246, 178, 109) → (235, 152, 84), (230, 131, 51) → (247, 196, 95). The
 /// older looks their flat selection colour.
-fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette, hot: bool) {
+pub(crate) fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette, hot: bool) {
     if office2007(p) {
         let face = rect.shrink(1.0);
         let h = face.height();
@@ -934,6 +934,22 @@ fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palet
     } else {
         painter.rect(rect, 2.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
     }
+}
+
+/// A checked toolbar button (CMFCToolBar, not the ribbon; VM, the
+/// differential pane's «Диапазон между визирами»): in the Office 2007
+/// looks a (85, 123, 175) frame round a light orange face, (251, 219,
+/// 181) → (253, 201, 114) at mid-height → (255, 228, 127); else the
+/// ribbon's checked ground.
+pub(crate) fn toolbar_checked(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette) {
+    if !office2007(p) {
+        checked_bg(painter, rect, p, false);
+        return;
+    }
+    let face = rect.shrink(1.0);
+    let h = face.height();
+    painter.add(gradient_mesh(face, &[(0.0, Color32::from_rgb(251, 219, 181)), (h / 2.0, Color32::from_rgb(253, 201, 114)), (h, Color32::from_rgb(255, 228, 127))]));
+    painter.px_rect_stroke(rect, 1.0, egui::Stroke::new(1.0f32, Color32::from_rgb(85, 123, 175)));
 }
 
 /// A small or icon-only button (22 px) under the pointer in the Office 2007

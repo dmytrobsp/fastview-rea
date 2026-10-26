@@ -9333,6 +9333,17 @@ button the same face in its 22 px cell. Ours drew a flat beige box in
 both. Now `hot_small` there too. VM: alike; left: the pane toolbar's
 frame a little bluer in the original.
 
+### L9.368 — VM: a pane toolbar's checked button  ·  ✅
+Scanned (the differential pane's toolbar, «Диапазон между визирами»,
+«Характеристики возврата» and «Показывать значения» checked): CMFCToolBar's
+checked face in Office 2007 Blue is a (85, 123, 175) frame round a light
+orange gradient — (251, 219, 181) → (253, 201, 114) at mid-height →
+(255, 228, 127); ours drew egui's selection colours (pale, a blue frame).
+Now `ribbon::toolbar_checked` (the older looks: the ribbon's checked
+ground). «Перезагрузить базы характеристик» looks greyed in the original
+only by its image (33019 has no update handler; enabled, as ours). VM:
+alike.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
