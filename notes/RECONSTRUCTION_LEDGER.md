@@ -9395,6 +9395,17 @@ away from the pointer keeps its normal look (ours alike). Ours never lit
 a panel. Now `ribbon_group_expanded` paints that state while the pointer
 is over the panel. VM: alike.
 
+### L9.374 — VM: a ribbon tab under the pointer; the tabs' places  ·  ✅
+Scanned (Office 2007 Blue, «ОМП» hovered): the hot tab has a (152, 187,
+233) frame with rounded top corners from a pixel under the tab row's
+top, open onto the body's line, a (237, 244, 254) inner line at its
+sides, and a face shading (196, 221, 251) → (222, 233, 246) over ten
+rows then (213, 227, 239) → (225, 210, 163) down to the body. Ours lit
+a flat box. The tabs' frames start at x 48, four pixels apart; ours at
+51, five apart. Now `ribbon_tab`'s hot state (the other looks keep their
+box) and the orb's hand-over and the tabs' spacing. VM: the hot tab
+alike; «Главная» from 48 (2 px wider in ours: the font).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

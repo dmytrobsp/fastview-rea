@@ -387,6 +387,8 @@ impl App {
             ui.set_height(24.0);
             ui.add_space(6.0);
             self.orb_ui(ui, orb, p);
+            // Four pixels between the tabs' frames (VM).
+            ui.spacing_mut().item_spacing.x -= 1.0;
             for (n, (label, tab)) in [("Главная", RibbonTab::Home), ("ОМП", RibbonTab::Omp)].into_iter().enumerate() {
                 let r = ribbon_tab(ui, label, self.tab == tab, p);
                 self.kt_rects.push((crate::keytips::Target::Tab(n), r.rect, true));
@@ -1098,7 +1100,8 @@ impl App {
     /// menu, drawn normal / hot / open.
     fn orb_ui(&mut self, ui: &mut egui::Ui, orb: Option<(egui::Rect, [Color32; 3])>, p: crate::theme::Palette) {
         let Some((r, colors)) = orb else { return };
-        ui.add_space(r.right() - ui.cursor().left() + 4.0);
+        // The first tab's frame at x 48 (VM).
+        ui.add_space(r.right() - ui.cursor().left() + 1.0);
         let ctx = ui.ctx().clone();
         let hit = ui.interact(r, ui.id().with("fv_app_orb"), egui::Sense::click());
         if hit.clicked() {
@@ -1227,6 +1230,21 @@ fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, p: crate::theme::Pal
         painter.px_rect_stroke(rect.with_max_y(rect.bottom() + 2.0), 3.0, egui::Stroke::new(1.0f32, frame));
         // Open at the bottom: the body's colour over the frame's lower edge.
         painter.rect_filled(egui::Rect::from_min_max(egui::pos2(rect.left() + 1.0, rect.bottom()), egui::pos2(rect.right() - 1.0, rect.bottom() + 3.0)), 0.0, bottom);
+    } else if resp.hovered() && blue {
+        // Hot (VM, «ОМП» under the pointer): a (152, 187, 233) frame with
+        // rounded top corners from a pixel down, open onto the body's line,
+        // a light (237, 244, 254) inner line at the sides, the face (196,
+        // 221, 251) → (222, 233, 246) over 10 rows, then (213, 227, 239) →
+        // (225, 210, 163) at the bottom.
+        let c = |r, g, b| Color32::from_rgb(r, g, b);
+        let r = rect.with_min_y(rect.top() + 1.0);
+        let face = r.shrink(1.0).with_max_y(r.bottom());
+        let h = face.height();
+        painter.add(gradient_mesh(face, &[(0.0, c(196, 221, 251)), (10.0, c(222, 233, 246)), (10.0, c(213, 227, 239)), (h, c(225, 210, 163))]));
+        let light = egui::Stroke::new(1.0f32, c(237, 244, 254));
+        painter.px_vline(face.left(), face.top() + 2.0..=face.bottom() - 1.0, light);
+        painter.px_vline(face.right() - 1.0, face.top() + 2.0..=face.bottom() - 1.0, light);
+        painter.px_rect_stroke(r.with_max_y(r.bottom() + 1.0), 3.0, egui::Stroke::new(1.0f32, c(152, 187, 233)));
     } else if resp.hovered() {
         painter.rect(rect, egui::Rounding { nw: 3.0, ne: 3.0, sw: 0.0, se: 0.0 }, p.tab_active.gamma_multiply(0.4f32), egui::Stroke::NONE);
     }
