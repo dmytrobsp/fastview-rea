@@ -9344,6 +9344,13 @@ ground). «Перезагрузить базы характеристик» look
 only by its image (33019 has no update handler; enabled, as ours). VM:
 alike.
 
+### L9.369 — The window's icon: our logo on the taskbar  ·  ✅
+Seen (VM taskbar): the original's button shows its icon; ours had none
+(the system's generic window). Now `app_icon` draws our logo — the
+orb's two chevrons, blue over green — into a 48 px RGBA icon for the
+viewport (both runners take it). The original's icon is its artwork,
+not reused; the exe's own resource icon (Explorer) is not set (W6).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

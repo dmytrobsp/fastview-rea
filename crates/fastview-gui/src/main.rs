@@ -61,6 +61,7 @@ fn main() -> eframe::Result<()> {
         .with_inner_size([1320.0, 860.0])
         .with_min_inner_size(MIN_VISIBLE)
         .with_title(app::APP_TITLE)
+        .with_icon(app_icon())
         .with_drag_and_drop(true);
     // The ribbon draws the caption row (L9.150): no system decorations,
     // unless `FV_SYSTEM_TITLEBAR` asks for them.
@@ -163,6 +164,42 @@ fn default_frame_size() -> Option<[f32; 2]> {
 #[cfg(not(windows))]
 fn default_frame_size() -> Option<[f32; 2]> {
     None
+}
+
+/// The window's icon (taskbar, Alt+Tab): our logo — the orb's two
+/// chevrons, blue over green — drawn into 48 × 48 RGBA (the original's
+/// icon is its artwork).
+fn app_icon() -> egui::IconData {
+    const N: usize = 48;
+    let seg = |p: (f32, f32), a: (f32, f32), b: (f32, f32)| {
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        let t = (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
+        ((p.0 - a.0 - t * dx).powi(2) + (p.1 - a.1 - t * dy).powi(2)).sqrt()
+    };
+    // As `ribbon::paint_logo` over a 40 × 33 box at (4, 8), 5 px strokes.
+    let (l, t, w, h) = (4.0f32, 8.0f32, 40.0f32, 33.0f32);
+    let chevron = |yoff: f32| [(l, t + h - yoff - h * 0.1), (l + w / 2.0, t + yoff + h * 0.05), (l + w, t + h - yoff - h * 0.1)];
+    let marks = [(chevron(0.0), [0x2E, 0x5B, 0x9E]), (chevron(h * 0.36), [0x4C, 0xAF, 0x50])];
+    let mut rgba = vec![0u8; N * N * 4];
+    for y in 0..N {
+        for x in 0..N {
+            let p = (x as f32 + 0.5, y as f32 + 0.5);
+            for (pts, col) in &marks {
+                let d = seg(p, pts[0], pts[1]).min(seg(p, pts[1], pts[2]));
+                let cover = (2.5 + 0.5 - d).clamp(0.0, 1.0);
+                if cover > 0.0 {
+                    let i = (y * N + x) * 4;
+                    let a = (cover * 255.0) as u8;
+                    // The later (green) chevron over the first.
+                    if a >= rgba[i + 3] || col[1] == 0xAF {
+                        rgba[i..i + 3].copy_from_slice(col);
+                        rgba[i + 3] = rgba[i + 3].max(a);
+                    }
+                }
+            }
+        }
+    }
+    egui::IconData { rgba, width: N as u32, height: N as u32 }
 }
 
 /// `Workspace/WindowPlacement` ("l t r b maximised") as saved on exit.
