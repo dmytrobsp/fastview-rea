@@ -321,7 +321,7 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   L9.286; every differential block, L9.287; the vector and
   frequency diagrams with channels, L9.288; the sample records opened,
   L9.289; «Параметры ОМП»'s refusals, keys and focus, L9.333; «Добавить новую
-  формулу»'s refusals, L9.334; «Отображение каналов»'s renames, L9.335; «Коэффициенты»' edits, L9.336; «Цвет канала», L9.337; the pair dialog, L9.339; the analysis pages calculated, L9.340; the application menu's panel, L9.341; the finder, L9.342; the dialogs' tab order, L9.343–L9.348; a first run's frame, L9.349; 392's code page, L9.350; 353's radios, L9.351; the message boxes' keys, L9.352; the arrows' groups, L9.353; file dialogs owned, L9.354; menus' spacing, images, mnemonics and the QAT, L9.355–L9.359; the ribbon's tooltips, L9.360):
+  формулу»'s refusals, L9.334; «Отображение каналов»'s renames, L9.335; «Коэффициенты»' edits, L9.336; «Цвет канала», L9.337; the pair dialog, L9.339; the analysis pages calculated, L9.340; the application menu's panel, L9.341; the finder, L9.342; the dialogs' tab order, L9.343–L9.348; a first run's frame, L9.349; 392's code page, L9.350; 353's radios, L9.351; the message boxes' keys, L9.352; the arrows' groups, L9.353; file dialogs owned, L9.354; menus' spacing, images, mnemonics and the QAT, L9.355–L9.359; the ribbon's tooltips, L9.360; toolbar, caption, tab and orb tips, hot and checked faces, panels and tabs under the pointer, the window icon, merges, 219, scroll bar and toolbar metrics, L9.361–L9.378):
   start-up window and panes; opening each sample record;
   every ribbon command and its enable state with and without a document;
   every dialog (fields, defaults, Enter / Esc, refusals); context menus
@@ -402,3 +402,7 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   own bitmaps, L9.101), the ribbon / menu images, the help (Помощь — the CHM
   is not shipped, L9.14, L9.115).
 - The scroll-bar repeat timing (system settings, L9.40).
+- The exe's own resource icon (Explorer, shortcuts): ours draws its window
+  icon at start-up (L9.369); a resource needs a build-time tool.
+- Message 239 («Выбранные каналы имеют разную частоту»): not reachable by
+  merging records (one rate after a merge, L9.371).
