@@ -698,6 +698,38 @@ impl App {
             }
         }
         d.move_appended(at_a, nb, at_d, nd);
+        // A selected pending lane stays selected as its merged channel (VM:
+        // «IA БЛОКА 3 (вст.)» still highlighted after «Объединить»); the
+        // formula channels' keys follow their new places.
+        let picked: Vec<String> = d.computed.iter().enumerate().filter(|(j, c)| c.formula == PENDING && d.selection.contains(&ChanKey::Computed(*j))).map(|(_, c)| c.name.clone()).collect();
+        let mut kept = 0;
+        let new_at: Vec<Option<usize>> = d
+            .computed
+            .iter()
+            .map(|c| {
+                (c.formula != PENDING).then(|| {
+                    kept += 1;
+                    kept - 1
+                })
+            })
+            .collect();
+        let remap = |k: ChanKey| match k {
+            ChanKey::Computed(j) => new_at.get(j).copied().flatten().map(ChanKey::Computed),
+            k => Some(k),
+        };
+        d.selection = d.selection.iter().filter_map(|&k| remap(k)).collect();
+        d.sel_anchor = d.sel_anchor.and_then(remap);
+        let (ka, kd) = (d.osc.analog.len() - nb, d.osc.digital.len() - nd);
+        for i in at_a..at_a + ka {
+            if picked.contains(&d.osc.analog[i].id) {
+                d.selection.insert(ChanKey::Analog(i));
+            }
+        }
+        for i in at_d..at_d + kd {
+            if picked.contains(&d.osc.digital[i].id) {
+                d.selection.insert(ChanKey::Digital(i));
+            }
+        }
         d.computed.retain(|c| c.formula != PENDING);
         d.pending.clear();
         d.recolor();

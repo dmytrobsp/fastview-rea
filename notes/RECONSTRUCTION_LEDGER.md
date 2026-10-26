@@ -9374,6 +9374,18 @@ the harness clicked before the paste had landed.) Message 239 («Выбранн�
 way: after a merge every channel shares the record's rate. Test
 `a_channel_pasted_at_another_rate_survives_the_merge`.
 
+### L9.372 — VM: a merged lane stays selected  ·  ✅
+Run (redone with the lane really selected — `t239\fast`'s «IA БЛОКА 3»
+by its name badge —, copied, pasted into WIN_1999, «Объединить»; L9.371's
+runs had clicked inside the ribbon, ours' «Вставить», and pasted an
+older clipboard): the original takes a few seconds, then shows the
+merged record with the pasted lane «IA БЛОКА 3 (вст.)» still selected.
+Ours merged alike but dropped the selection (the pending lane's
+`ChanKey::Computed` key went with it). Now `merge_records` selects each
+selected pending lane's merged channel and re-indexes the remaining
+formula channels' keys (selection and anchor). VM: alike. Test
+`a_channel_pasted_at_another_rate_survives_the_merge` extended.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

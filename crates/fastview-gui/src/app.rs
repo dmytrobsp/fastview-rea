@@ -3171,9 +3171,15 @@ mod tests {
         let n = app.docs[base].osc.analog.len();
         app.dispatch(Command::Paste);
         assert!(!app.docs[base].pending.is_empty(), "pasted");
+        let picked = app.docs[base].selection.clone();
         app.merge_records();
         let d = &app.docs[base];
         assert_eq!(d.osc.analog.len(), n + 1, "the pasted channel merged: {:?}", d.osc.analog.iter().map(|c| &c.id).collect::<Vec<_>>());
+        // The pasted lane was selected: its merged channel is (VM).
+        assert!(picked.iter().any(|k| matches!(k, ChanKey::Computed(_))), "the paste selects its lane");
+        let merged = d.osc.analog.iter().position(|c| c.id.contains("(вст.)")).expect("the merged channel");
+        assert!(d.selection.contains(&ChanKey::Analog(merged)), "still selected after the merge");
+        assert!(!d.selection.iter().any(|k| matches!(k, ChanKey::Computed(_))));
     }
 
     /// The ribbon's update rules (`0x45c8c0`, `0x42fc60`, `0x475750`,
