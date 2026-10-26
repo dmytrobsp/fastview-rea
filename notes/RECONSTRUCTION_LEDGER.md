@@ -9475,6 +9475,24 @@ the next 16 to the right colour ((177, 211, 255)) and keeps that for the
 last 2; ours shaded across all 24 (the "slightly bluer" residual). Now
 `pane_toolbar`'s mesh in three parts. VM: every column within one unit.
 
+### L9.382 — VM: the vector diagram's grid on GDI's pixels; its window a row short  ·  ✅
+A difference map of the default windows showed the whole polar grid
+apart. Scanned: the original's spokes are one pixel column wide, (200,
+200, 200), GDI's cosmetic PS_DOT — 3 pixels on, 3 off, from the centre
+— and its inner circles the same pattern on crisp pixel rings; the
+outer circle is Ellipse's box (pixels 2070…2523 about 2297, right and
+bottom left out). Ours drew 2-on-2-off antialiased lines straddling two
+columns, and the outer ring a pixel outside that box. Also the vector
+diagram's window stops a row short of its frame, white under it (the
+circle diagram's does not), so its height — and the floored centre —
+was a pixel more in ours (803 against 802). Now `diagram_ui`'s
+`line_pixels` (Bresenham, end left out), `circle_pixels` (Ellipse's box,
+counter-clockwise from the right) and `gdi_pixels` (solid or PS_DOT)
+draw the grid on screen (print keeps its pens); `pane_body` keeps the
+white row for the vector pane. VM: spokes, rings and the outer circle
+pixel for pixel; some inner rings' dash phase differs. Test
+`the_vector_grid_lies_on_gdis_pixels`.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

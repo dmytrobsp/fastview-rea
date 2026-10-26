@@ -347,7 +347,9 @@ impl App {
         }
         // A tabbed group frames its panes under the caption (VM: a (185,
         // 208, 237) line, then 2 px of (213, 228, 242), at the top and
-        // sides; 1 px of it at the bottom, the tab strip below).
+        // sides; 1 px of it at the bottom, the tab strip below). The
+        // vector diagram's window stops a row short: white under it (VM;
+        // the circle diagram's reaches the frame).
         if v.strip {
             let r = ui.available_rect_before_wrap();
             let pnt = ui.painter();
@@ -356,7 +358,9 @@ impl App {
             pnt.px_hline(r.left()..=r.right() - 1.0, r.top(), b);
             pnt.px_vline(r.left(), r.top()..=r.bottom() - 1.0, b);
             pnt.px_vline(r.right() - 1.0, r.top()..=r.bottom() - 1.0, b);
-            let inner = egui::Rect::from_min_max(r.min + egui::vec2(3.0, 3.0), r.max - egui::vec2(3.0, 1.0));
+            let short = if p == Pane::Vector { 1.0 } else { 0.0 };
+            let inner = egui::Rect::from_min_max(r.min + egui::vec2(3.0, 3.0), r.max - egui::vec2(3.0, 1.0 + short));
+            pnt.rect_filled(egui::Rect::from_min_max(inner.left_bottom(), egui::pos2(inner.right(), inner.bottom() + short)), 0.0, egui::Color32::WHITE);
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(*ui.layout()));
             let menu = self.pane_window(&mut child, p);
             ui.advance_cursor_after_rect(r);

@@ -520,6 +520,61 @@ fn dotted(p: &egui::Painter, a: Pos2, b: Pos2, color: Color32, width: f32) {
     p.extend(egui::Shape::dashed_line(&[a, b], stroke(width, color), 2.0, 2.0));
 }
 
+/// GDI's cosmetic PS_DOT over whole pixels (VM: 3 on, 3 off, from the
+/// figure's first pixel): pixel (x, y) is the square from (x, y).
+fn gdi_dots(p: &egui::Painter, px: &[(i32, i32)], color: Color32) {
+    gdi_pixels(p, px, color, true);
+}
+
+/// `px` lit in `color`: every one, or PS_DOT's three of each six.
+fn gdi_pixels(p: &egui::Painter, px: &[(i32, i32)], color: Color32, dots: bool) {
+    let mut mesh = egui::Mesh::default();
+    for (k, &(x, y)) in px.iter().enumerate() {
+        if !dots || k % 6 < 3 {
+            mesh.add_colored_rect(Rect::from_min_size(Pos2::new(x as f32, y as f32), Vec2::splat(1.0)), color);
+        }
+    }
+    p.add(egui::Shape::mesh(mesh));
+}
+
+/// The pixels LineTo lights from `a` towards `b` (Bresenham, `b` left out).
+fn line_pixels(a: (i32, i32), b: (i32, i32)) -> Vec<(i32, i32)> {
+    let (dx, dy) = ((b.0 - a.0).abs(), -(b.1 - a.1).abs());
+    let (sx, sy) = ((b.0 - a.0).signum(), (b.1 - a.1).signum());
+    let (mut x, mut y, mut err) = (a.0, a.1, dx + dy);
+    let mut out = Vec::new();
+    while (x, y) != b {
+        out.push((x, y));
+        let e2 = 2 * err;
+        if e2 >= dy {
+            err += dy;
+            x += sx;
+        }
+        if e2 <= dx {
+            err += dx;
+            y += sy;
+        }
+    }
+    out
+}
+
+/// Ellipse's pixels for a circle of radius `r` about pixel `c` (its box
+/// from c − r to c + r, the right and bottom edges out), counter-clockwise
+/// from the right.
+fn circle_pixels(c: (i32, i32), r: i32) -> Vec<(i32, i32)> {
+    let n = (8 * r).max(8);
+    let (cx, cy, rr) = (c.0 as f32 - 0.5, c.1 as f32 - 0.5, r as f32 - 0.5);
+    let mut out: Vec<(i32, i32)> = Vec::new();
+    for i in 0..n {
+        let t = i as f32 / n as f32 * std::f32::consts::TAU;
+        let q = ((cx + rr * t.cos()).round() as i32, (cy - rr * t.sin()).round() as i32);
+        if out.last() != Some(&q) && out.first() != Some(&q) {
+            out.push(q);
+        }
+    }
+    out
+}
+
 /// A tool button glyph of the pane toolbars (our own line art; the
 /// original's toolbar bitmaps are not redistributed).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1430,7 +1485,8 @@ impl App {
             Some(s) => {
                 painter.line_segment([a, b], dev_pen(s / 3.0, Color32::from_rgb(100, 100, 100)));
             }
-            None => dotted(&painter, a, b, FRAME, 1.0),
+            // GDI's dotted pen (VM: one pixel column, 3 on, 3 off).
+            None => gdi_dots(&painter, &line_pixels((a.x as i32, a.y as i32), (b.x as i32, b.y as i32)), FRAME),
         };
         for j in (1..=nc).rev() {
             let rr = ((r * s) as usize * j / nc) as f32 / s;
@@ -1438,10 +1494,10 @@ impl App {
                 let col = if j == nc { Color32::from_rgb(50, 50, 50) } else { Color32::from_rgb(100, 100, 100) };
                 painter.circle_stroke(c, rr, dev_pen(s / 3.0, col));
             } else if j == nc {
-                painter.circle_stroke(c, rr, stroke(1.0, AXES));
+                // Ellipse's box (VM: 2070…2523 about 2297).
+                gdi_pixels(&painter, &circle_pixels((c.x as i32, c.y as i32), rr as i32), AXES, false);
             } else {
-                let pts: Vec<Pos2> = (0..=120).map(|t| c + Vec2::angled(t as f32 / 120.0 * std::f32::consts::TAU) * rr).collect();
-                painter.extend(egui::Shape::dashed_line(&pts, stroke(1.0, FRAME), 2.0, 2.0));
+                gdi_dots(&painter, &circle_pixels((c.x as i32, c.y as i32), rr as i32), FRAME);
             }
         }
         let rhu = |v: f32| crate::oscgeom::round_half_up(f64::from(v)) as f32;
@@ -2107,6 +2163,19 @@ mod tests {
             self.frame(vec![ev(false)], Default::default());
             self.frame(vec![], Default::default());
         }
+    }
+
+    #[test]
+    fn the_vector_grid_lies_on_gdis_pixels() {
+        // VM: the 227 px ring about pixel (2297, 802) spans 2070…2523 and
+        // 575…1028; a spoke starts on the centre and leaves out its end.
+        let ring = super::circle_pixels((2297, 802), 227);
+        let xs = ring.iter().map(|p| p.0);
+        let ys = ring.iter().map(|p| p.1);
+        assert_eq!((xs.clone().min(), xs.max(), ys.clone().min(), ys.max()), (Some(2070), Some(2523), Some(575), Some(1028)));
+        assert_eq!(ring[0], (2523, 802), "counter-clockwise from the right");
+        let up = super::line_pixels((2297, 802), (2297, 575));
+        assert_eq!((up.len(), up[0], up[up.len() - 1]), (227, (2297, 802), (2297, 576)));
     }
 
     #[test]
