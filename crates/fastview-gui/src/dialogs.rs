@@ -1396,13 +1396,16 @@ pub fn win_combo_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut Strin
 
 /// A caption bar's close button (CMFCCaptionBar in message-bar mode,
 /// mfc `0x1006fd4c`): 17 × 17 at (the bar's right − 20, the box's top), its
-/// cross, the hot look only under the pointer. Returns a click.
+/// cross, the hot look only under the pointer, MFC's own «Close» tip (in
+/// English, VM: the plain box 18 px under the pointer, 3 px inside the
+/// screen's right edge). Returns a click.
 pub fn caption_close(ui: &mut egui::Ui, bar: Rect, id: egui::Id) -> bool {
     let r = Rect::from_min_size(Pos2::new(bar.right() - 20.0, bar.top()), Vec2::splat(17.0));
     let resp = ui.interact(r, id, egui::Sense::click());
     if resp.hovered() {
         crate::popmenu::hot_bar(ui.painter(), r);
     }
+    crate::tips::pointer_tip_inset(ui, &resp, crate::tips::TipImage::None, "", "Close", false, 3.0);
     // The glyph (VM, Office 2007 Blue): an 8 × 7 cross of 2 px steps in
     // (86, 125, 177), 4 px in and 5 down.
     let o = r.min + Vec2::new(4.0, 5.0);

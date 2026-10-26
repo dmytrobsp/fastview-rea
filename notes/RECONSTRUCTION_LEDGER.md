@@ -9459,6 +9459,15 @@ the toolbars' own placement leaves 2. Ours showed egui's label. Now
 box's rows (178–198) and right edge (2551) alike; ours 7 px wider (the
 font). The Tab rings of 510 and 392 re-run: alike (L9.344).
 
+### L9.380 — VM: the caption bars' «×»: what it closes, its tip  ·  ✅
+L9.315's open point. Pressed on the parameters bar, its «×» hides that
+bar in both (the ОМП bar's clears the result, L9.315). Under the
+pointer the original shows MFC's own tip «Close» — in English (the
+string is MFC's, not the program's) — the plain Office box 18 px under
+the pointer, 3 px inside the screen's right edge. Ours had none. Now
+`dialogs::caption_close` shows it on every caption bar (ОМП, merge,
+parameters). VM: the box's rows (168–188) and right edge (2556) alike.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
