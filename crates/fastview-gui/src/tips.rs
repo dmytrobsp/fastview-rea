@@ -23,6 +23,10 @@ pub enum TipImage {
     Mini(Mini),
     Tool(crate::diagram_ui::Tool),
     OmpTool(crate::omp_ui::ToolIcon),
+    /// The help button's round «?».
+    Help,
+    /// A title and description with no image (VM: «Стиль»).
+    Blank,
 }
 
 /// A command's tooltip title and description (its prompt string,
@@ -167,8 +171,8 @@ fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, 
     let plain = matches!(img, TipImage::None);
     let text_x = match img {
         TipImage::Large(_) => 45.0,
-        TipImage::Small(_) | TipImage::Mini(_) | TipImage::Tool(_) | TipImage::OmpTool(_) => 29.0,
-        TipImage::None => 6.0,
+        TipImage::Small(_) | TipImage::Mini(_) | TipImage::Tool(_) | TipImage::OmpTool(_) | TipImage::Help => 29.0,
+        TipImage::None | TipImage::Blank => 6.0,
     };
     let text_w = lines.iter().map(|l| width(l, &font)).chain(std::iter::once(if plain { 0.0 } else { width(title, &bold) })).fold(0.0, f32::max);
     let size = if plain { Vec2::new((text_x + text_w + 7.0).round(), 21.0) } else { Vec2::new((text_x + text_w + 10.0).round(), 24.0 + PITCH * lines.len() as f32 + 5.0) };
@@ -203,7 +207,8 @@ fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, 
             // (the toolbar's 22 px cell, the glyph 4 px in)
             TipImage::Tool(t) => crate::diagram_ui::paint_tool(p, Rect::from_min_size(r.min + Vec2::new(5.0, 2.0), Vec2::splat(22.0)), t, accent),
             TipImage::OmpTool(t) => crate::omp_ui::paint_tool_icon(p, Rect::from_min_size(r.min + Vec2::new(9.0, 5.0), Vec2::splat(16.0)), t, true),
-            TipImage::None => {}
+            TipImage::Help => crate::ribbon::help_image(p, r.min + Vec2::new(17.0, 13.0)),
+            TipImage::None | TipImage::Blank => {}
         }
         if plain {
             p.text(r.min + Vec2::new(text_x, 4.0), egui::Align2::LEFT_TOP, desc, font.clone(), INK);

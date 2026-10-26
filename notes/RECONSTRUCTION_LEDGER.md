@@ -9406,6 +9406,16 @@ a flat box. The tabs' frames start at x 48, four pixels apart; ours at
 box) and the orb's hand-over and the tabs' spacing. VM: the hot tab
 alike; «Главная» from 48 (2 px wider in ours: the font).
 
+### L9.375 — VM: the orb's, «Стиль»'s and «?»'s tips  ·  ✅
+Run (each hovered): the orb shows a plain «Файл» 18 px under the
+pointer; «Стиль» a rich tip with no image — the bold «Изменить стиль
+оформления» over «Выберите одну из тем Office 2007» (strings 287 / 288);
+the help button its image with «Help Topics» / «List Help topics»
+(MFC's 57667 — mfc120rus «Вызов справки» / «Вывод оглавления справочной
+системы»). Ours showed none. Now `tips::pointer_tip` there with
+`TipImage::Blank` / `TipImage::Help` (`ribbon::help_image`). VM: alike
+(ours in Russian, L9.330).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

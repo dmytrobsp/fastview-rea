@@ -718,6 +718,8 @@ impl App {
             tab_row_hot(ui, &help, &p);
             help_image(ui.painter(), egui::pos2(hr.left() + 10.5, hr.center().y));
             menu_arrow(ui.painter(), egui::pos2(hr.left() + 25.0, hr.center().y - 1.0));
+            // mfc120rus 57667, as the original's tip («Help Topics» on the VM).
+            tips::pointer_tip(ui, &help, TipImage::Help, "Вызов справки", "Вывод оглавления справочной системы", true);
             if help.clicked() {
                 self.open_top_menu(ui.ctx(), TopMenu::Help, help.rect);
             }
@@ -728,6 +730,8 @@ impl App {
             tab_row_hot(ui, &style, &p);
             ui.painter().text(egui::pos2(sr.left() + 2.0, sr.center().y), egui::Align2::LEFT_CENTER, "Стиль", egui::FontId::proportional(12.0), p.text);
             menu_arrow(ui.painter(), egui::pos2(sr.left() + 43.0, sr.center().y - 1.0));
+            // Its own tip and description (strings 287 / 288, VM).
+            tips::pointer_tip(ui, &style, TipImage::Blank, "Изменить стиль оформления", "Выберите одну из тем Office 2007", true);
             if style.clicked() {
                 self.open_top_menu(ui.ctx(), TopMenu::Style, style.rect);
             }
@@ -760,7 +764,7 @@ fn menu_arrow(p: &egui::Painter, at: egui::Pos2) {
 
 /// The help button's image (VM): a blue sphere with a white ring inside a
 /// (80, 113, 160) edge, a white «?».
-fn help_image(p: &egui::Painter, c: egui::Pos2) {
+pub(crate) fn help_image(p: &egui::Painter, c: egui::Pos2) {
     p.circle_filled(c, 7.5, Color32::from_rgb(80, 113, 160));
     p.circle_filled(c, 6.5, Color32::WHITE);
     p.circle_filled(c, 5.5, Color32::from_rgb(31, 95, 230));
@@ -1104,6 +1108,8 @@ impl App {
         ui.add_space(r.right() - ui.cursor().left() + 1.0);
         let ctx = ui.ctx().clone();
         let hit = ui.interact(r, ui.id().with("fv_app_orb"), egui::Sense::click());
+        // Its plain tip: the button's text «Файл» (VM).
+        tips::pointer_tip(ui, &hit, TipImage::None, "", "Файл", false);
         if hit.clicked() {
             self.kt_menu(&ctx, true);
         }
