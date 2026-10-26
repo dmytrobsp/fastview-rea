@@ -9424,6 +9424,16 @@ the pointer (mfc120rus «Закрыть»). Ours turned the cross red, no box, n
 tip. Now so in `frame_ui`'s tab strip. The tab itself has no tip in
 either. VM: alike.
 
+### L9.377 — VM: a pane tab under the pointer  ·  ✅
+Scanned («Круговая диаграмма» hovered in the vector / circle group's
+strip): the ribbon's hot tab upside down — warm (225, 211, 165) at the
+strip's line shading to (208, 225, 243) by mid-height, then (200, 224,
+255) → (197, 222, 254) and a light last row, a (152, 187, 233) frame at
+the sides and bottom with a (239, 246, 255) line inside. Ours left a
+hovered tab plain. Now `unit_body`'s strip draws it
+(`ribbon::gradient_mesh` shared). VM: alike; ours' tabs a few pixels
+wider (the font).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

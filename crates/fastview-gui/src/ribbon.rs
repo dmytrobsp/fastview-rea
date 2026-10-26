@@ -1009,7 +1009,7 @@ fn hot_large(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palett
     painter.px_vline(r, t + 1.0..=b, egui::Stroke::new(1.0f32, rgb(0xd2c08d)));
 }
 
-fn gradient_mesh(rect: egui::Rect, stops: &[(f32, Color32)]) -> egui::Shape {
+pub(crate) fn gradient_mesh(rect: egui::Rect, stops: &[(f32, Color32)]) -> egui::Shape {
     let mut mesh = egui::Mesh::default();
     let mut pts: Vec<(f32, Color32)> = stops.iter().map(|&(y, c)| (rect.top() + y.min(rect.height()), c)).collect();
     if let Some(&(_, c)) = pts.last() {

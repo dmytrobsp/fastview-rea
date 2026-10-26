@@ -264,6 +264,25 @@ impl App {
                         pnt.vline(rect.left() + 0.5, rect.y_range(), frame);
                         pnt.vline(rect.right() - 0.5, rect.y_range(), frame);
                         pnt.hline(rect.x_range(), rect.bottom() - 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(154, 187, 230)));
+                    } else if r.hovered() {
+                        // Hot (VM, «Круговая диаграмма» under the pointer):
+                        // the ribbon's hot tab upside down — warm (225, 211,
+                        // 165) at the strip's line to (208, 225, 243) at
+                        // mid-height, then (200, 224, 255) → (197, 222, 254),
+                        // a light last row; a (152, 187, 233) frame at the
+                        // sides and bottom, (239, 246, 255) inside it.
+                        use crate::oscgeom::PixelLines;
+                        let c = |r, g, b| egui::Color32::from_rgb(r, g, b);
+                        let face = rect.shrink2(egui::vec2(1.0, 0.0)).with_max_y(rect.bottom() - 1.0);
+                        let (h, mid) = (face.height(), (face.height() / 2.0).round());
+                        let (hi, frame) = (c(226, 239, 255), egui::Stroke::new(1.0f32, c(152, 187, 233)));
+                        pnt.add(crate::ribbon::gradient_mesh(face, &[(0.0, c(225, 211, 165)), (mid, c(208, 225, 243)), (mid, c(200, 224, 255)), (h - 1.0, c(197, 222, 254)), (h - 1.0, hi), (h, hi)]));
+                        let inner = egui::Stroke::new(1.0f32, c(239, 246, 255));
+                        pnt.px_vline(face.left(), face.top()..=face.bottom() - 2.0, inner);
+                        pnt.px_vline(face.right() - 1.0, face.top()..=face.bottom() - 2.0, inner);
+                        pnt.px_vline(rect.left(), rect.top()..=rect.bottom() - 2.0, frame);
+                        pnt.px_vline(rect.right() - 1.0, rect.top()..=rect.bottom() - 2.0, frame);
+                        pnt.px_hline(rect.left() + 1.0..=rect.right() - 2.0, rect.bottom() - 1.0, frame);
                     }
                     pnt.galley(egui::pos2(rect.left() + 6.0, rect.center().y - g.size().y / 2.0), g, ink);
                     tabs.push((p, r.rect));
