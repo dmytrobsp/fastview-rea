@@ -9364,6 +9364,16 @@ Ours drew flat red / blue discs and a flat triangle. Now
 `dialogs::message_icon` draws the three shaded (our drawings). VM: the
 three side by side alike.
 
+### L9.371 — VM: a channel pasted from a record at another rate, merged  ·  ✅
+Run (`t239\fast`: WIN_1999 with a 2000 Hz rate line, made on the VM): a
+channel copied from it, pasted into WIN_1999, «Объединить» — in both the
+pasted lane stays («IA БЛОКА 3 (вст.)») and the record takes the merged
+rate (duration «10.9965 с.»), alike. (A first run of ours looked lossy:
+the harness clicked before the paste had landed.) Message 239 («Выбранные
+каналы имеют разную частоту», «Совместить каналы») is not reachable this
+way: after a merge every channel shares the record's rate. Test
+`a_channel_pasted_at_another_rate_survives_the_merge`.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

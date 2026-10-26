@@ -3153,6 +3153,29 @@ mod tests {
         assert!(d.computed.iter().all(|c| c.samples.len() == n), "merged channels align to length");
     }
 
+    /// A channel pasted from a record at twice the rate survives
+    /// «Объединить» (VM: the original keeps it, the record at the higher
+    /// rate).
+    #[test]
+    fn a_channel_pasted_at_another_rate_survives_the_merge() {
+        let mut app = demo_app();
+        let mut osc = app.active_doc().unwrap().osc.clone();
+        osc.sample_rate *= 2.0;
+        osc.time.iter_mut().for_each(|t| *t /= 2.0);
+        app.docs.push(Doc::new(osc, "fast".into()));
+        let (base, fast) = (app.active.unwrap(), app.docs.len() - 1);
+        app.active = Some(fast);
+        app.docs[fast].selection.extend([ChanKey::Analog(0)]);
+        app.dispatch(Command::Copy);
+        app.active = Some(base);
+        let n = app.docs[base].osc.analog.len();
+        app.dispatch(Command::Paste);
+        assert!(!app.docs[base].pending.is_empty(), "pasted");
+        app.merge_records();
+        let d = &app.docs[base];
+        assert_eq!(d.osc.analog.len(), n + 1, "the pasted channel merged: {:?}", d.osc.analog.iter().map(|c| &c.id).collect::<Vec<_>>());
+    }
+
     /// The ribbon's update rules (`0x45c8c0`, `0x42fc60`, `0x475750`,
     /// `0x45bf60`, `0x42ffb0`).
     #[test]
