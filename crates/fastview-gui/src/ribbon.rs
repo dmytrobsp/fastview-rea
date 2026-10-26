@@ -367,13 +367,16 @@ impl App {
                 egui::Frame::none()
                     .fill(p.tab_active)
                     .stroke(egui::Stroke::new(1.0f32, p.group_border))
-                    .inner_margin(egui::Margin { left: 6.0, right: 6.0, top: 3.0, bottom: 1.0 })
+                    .inner_margin(egui::Margin { left: 4.0, right: 6.0, top: 2.0, bottom: 2.0 })
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing.y = row_gap;
                         ui.set_min_height(LARGE_H + 2.0 + 16.0 + 2.0);
                         ui.set_min_width(ui.available_width());
                         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                        ui.horizontal_top(|ui| self.ribbon_preview(ui));
+                        ui.horizontal_top(|ui| {
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            self.ribbon_preview(ui)
+                        });
                     });
             }
             self.keytips_paint(ui.ctx());
@@ -406,12 +409,14 @@ impl App {
 
         // ---- Row 3: ribbon body (fixed height; hidden when minimised) ----
         if !self.ribbon_minimized {
-            // The category body's gradient behind it (set below).
+            // The category body's gradient behind it (set below). Its
+            // content from row 56: a panel's frame there, its buttons from
+            // 58 (VM).
             let body_bg = ui.painter().add(egui::Shape::Noop);
             let body = egui::Frame::none()
                 .fill(if p.body.is_some() { Color32::TRANSPARENT } else { p.tab_active })
                 .stroke(egui::Stroke::new(1.0f32, p.group_border))
-                .inner_margin(egui::Margin { left: 6.0, right: 6.0, top: 3.0, bottom: 1.0 })
+                .inner_margin(egui::Margin { left: 4.0, right: 6.0, top: 2.0, bottom: 2.0 })
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = row_gap;
                     // A constant height: expanded panels (a large button,
@@ -437,6 +442,7 @@ impl App {
                         let far = egui::Rect::from_min_size(egui::pos2(-30000.0, 0.0), egui::vec2(10000.0, 200.0));
                         let mut child = ui.new_child(egui::UiBuilder::new().id_salt(("fv_ribbon_measure", step)).max_rect(far).layout(egui::Layout::left_to_right(egui::Align::TOP)).invisible());
                         child.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                        child.spacing_mut().item_spacing.x = 0.0;
                         let mut sink = Vec::new();
                         match self.tab {
                             RibbonTab::Home => self.ribbon_home(&mut child, &mut sink),
@@ -465,9 +471,13 @@ impl App {
                             d.insert_temp(group_step_id(t), if *step >= *n && w.len() > *n { *n } else { (*step).min(n - 1) });
                         }
                     });
-                    ui.horizontal_top(|ui| match self.tab {
-                        RibbonTab::Home => self.ribbon_home(ui, &mut cmds),
-                        RibbonTab::Omp => self.ribbon_omp(ui, &mut cmds),
+                    // The panels set their own gaps (`ribbon_group`).
+                    ui.horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        match self.tab {
+                            RibbonTab::Home => self.ribbon_home(ui, &mut cmds),
+                            RibbonTab::Omp => self.ribbon_omp(ui, &mut cmds),
+                        }
                     });
                 });
             if let Some([top, dip, bottom]) = p.body {
@@ -935,7 +945,10 @@ pub(crate) fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::t
             [(0.0, c(253, 212, 167)), (split - 1.0, c(251, 174, 95)), (split, c(249, 150, 48)), (h, c(252, 231, 157))]
         };
         painter.add(gradient_mesh(face, &stops));
-        painter.px_rect_stroke(rect, 2.0, egui::Stroke::new(1.0f32, if hot { c(167, 135, 94) } else { c(142, 129, 101) }));
+        // epaint strokes a rect outside it: the face's rect puts the frame
+        // on the button's own first and last rows and columns (VM: row 58
+        // and 123 of a 58–123 button).
+        painter.rect_stroke(face, 1.0f32, egui::Stroke::new(1.0f32, if hot { c(167, 135, 94) } else { c(142, 129, 101) }));
         painter.px_hline(rect.left() + 2.0..=rect.right() - 3.0, rect.bottom() - 1.0, egui::Stroke::new(1.0f32, c(255, 209, 53)));
     } else {
         painter.rect(rect, 2.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
@@ -1354,7 +1367,7 @@ fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, lay
             [egui::pos2(rect.right() + 2.0, r.top() + 4.0), egui::pos2(rect.right() + 2.0, r.bottom() - 2.0)],
             egui::Stroke::new(1.0f32, p.group_border),
         );
-        ui.add_space(6.0);
+        ui.add_space(12.0);
         return;
     }
     let start = ui.cursor().left();
@@ -1400,7 +1413,10 @@ fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: 
         // lights up: a white frame, its face (229, 240, 255) → (231, 241,
         // 253) over the first 13 rows then (220, 234, 252) → (221, 233,
         // 249), the band (200, 224, 255) → (214, 237, 255).
-        let shapes = if office2007(&p) && ui.rect_contains_pointer(r) {
+        let blue = p.bands.is_some_and(|b| b.panel_sep.is_some());
+        let shapes = if blue {
+            panel_2007(r, ui.rect_contains_pointer(r))
+        } else if office2007(&p) && ui.rect_contains_pointer(r) {
             let c = |r, g, b| Color32::from_rgb(r, g, b);
             let face = egui::Rect::from_min_max(r.min + egui::vec2(1.0, 1.0), egui::pos2(r.right() - 1.0, band.top()));
             let h = face.height();
@@ -1416,14 +1432,122 @@ fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: 
             ]
         };
         ui.painter().set(bg, egui::Shape::Vec(shapes));
+        if blue {
+            ui.add_space(3.0);
+            return;
+        }
     }
     // right divider
     let r = ui.min_rect();
     ui.painter().line_segment(
-        [egui::pos2(r.right() + 2.0, r.top() + 4.0), egui::pos2(r.right() + 2.0, r.bottom() - 2.0)],
+        [egui::pos2(r.right() + 1.5, r.top() + 4.0), egui::pos2(r.right() + 1.5, r.bottom() - 2.0)],
         egui::Stroke::new(1.0f32, p.group_border),
     );
-    ui.add_space(6.0);
+    // The next panel 3 px on (VM: frames at 152 / 156, 399 / 403 …).
+    ui.add_space(3.0);
+}
+
+/// Office 2007 Blue's panel (VM, «Видимость» scanned, rows 56–140): a
+/// rounded frame shading (194, 207, 221) → (169, 191, 210) → (157, 192,
+/// 218) down its sides, (196, 209, 222) along the top and (158, 192, 218)
+/// the bottom; a light line inside it at the top and left, one outside it
+/// on the right and under it; the face (222, 231, 245) → (208, 223, 240)
+/// over 13 rows, then (199, 216, 237) → (216, 232, 245); the 15-row
+/// caption band (193, 215, 240) → (191, 216, 239). `r` the panel: its
+/// frame on its first and last columns, its top row and the row under it.
+/// Under the pointer (`hot`, VM): a bluer frame, (172, 198, 223) → (132,
+/// 176, 212) → (126, 172, 210), a white line all round inside it, the
+/// face (229, 240, 255) → (233, 241, 253), (221, 235, 252) → (221, 233,
+/// 249), the band (200, 224, 255) lighting to (214, 237, 255) over its
+/// last rows, no light outside.
+fn panel_2007(r: egui::Rect, hot: bool) -> Vec<egui::Shape> {
+    use egui::{pos2, Rect, Shape};
+    let c = |r, g, b| Color32::from_rgb(r, g, b);
+    let (l, rt, t, b) = (r.left(), r.right() - 1.0, r.top(), r.bottom());
+    let band = b - 15.0;
+    let px = |x0: f32, y0: f32, x1: f32, y1: f32, col: Color32| Shape::rect_filled(Rect::from_min_max(pos2(x0, y0), pos2(x1, y1)), 0.0, col);
+    let col = |x: f32, y0: f32, y1: f32, stops: &[(f32, Color32)]| gradient_mesh(Rect::from_min_max(pos2(x, y0), pos2(x + 1.0, y1)), stops);
+    if hot {
+        let side = [(0.0, c(171, 198, 223)), (66.0, c(132, 176, 212)), (80.0, c(126, 172, 210))];
+        let (white, soft) = (Color32::WHITE, c(239, 246, 255));
+        let mut v = vec![
+            gradient_mesh(Rect::from_min_max(pos2(l + 2.0, t + 2.0), pos2(rt - 1.0, t + 15.0)), &[(0.0, c(229, 240, 255)), (12.0, c(233, 241, 253))]),
+            gradient_mesh(Rect::from_min_max(pos2(l + 2.0, t + 15.0), pos2(rt - 1.0, band)), &[(0.0, c(221, 235, 252)), (band - t - 16.0, c(221, 233, 249))]),
+            gradient_mesh(Rect::from_min_max(pos2(l + 2.0, band), pos2(rt - 1.0, b - 1.0)), &[(0.0, c(200, 224, 255)), (8.0, c(201, 225, 255)), (13.0, c(214, 237, 255))]),
+            // The white line inside the frame, softer at its ends.
+            px(l + 2.0, t + 1.0, rt - 1.0, t + 2.0, white),
+            px(l + 2.0, b - 1.0, rt - 1.0, b, white),
+            px(l + 1.0, t + 2.0, l + 2.0, b - 1.0, white),
+            px(rt - 1.0, t + 2.0, rt, b - 1.0, white),
+            // The frame.
+            px(l + 2.0, t, rt - 1.0, t + 1.0, c(172, 198, 223)),
+            px(l + 2.0, b, rt - 1.0, b + 1.0, c(125, 172, 210)),
+            col(l, t + 2.0, b - 1.0, &side),
+            col(rt, t + 2.0, b - 1.0, &side),
+        ];
+        for (x, y, col) in [
+            (l + 2.0, t + 1.0, soft),
+            (rt - 2.0, t + 1.0, soft),
+            (l + 1.0, t + 2.0, soft),
+            (rt - 1.0, t + 2.0, soft),
+            (l + 1.0, b - 2.0, soft),
+            (rt - 1.0, b - 2.0, soft),
+            (l + 2.0, b - 1.0, soft),
+            (rt - 2.0, b - 1.0, soft),
+            (l + 1.0, t, c(193, 212, 232)),
+            (l, t + 1.0, c(193, 212, 232)),
+            (l + 1.0, t + 1.0, c(172, 198, 223)),
+            (rt - 1.0, t, c(193, 212, 232)),
+            (rt, t + 1.0, c(192, 211, 232)),
+            (rt - 1.0, t + 1.0, c(172, 198, 223)),
+            (l, b - 1.0, c(167, 201, 228)),
+            (l + 1.0, b - 1.0, c(126, 172, 210)),
+            (l + 1.0, b, c(166, 201, 228)),
+            (rt, b - 1.0, c(167, 201, 228)),
+            (rt - 1.0, b - 1.0, c(126, 172, 210)),
+            (rt - 1.0, b, c(166, 201, 228)),
+        ] {
+            v.push(px(x, y, x + 1.0, y + 1.0, col));
+        }
+        return v;
+    }
+    let side = [(0.0, c(194, 207, 221)), (21.0, c(169, 191, 210)), (80.0, c(157, 192, 218))];
+    let light = [(0.0, c(238, 243, 250)), (12.0, c(232, 239, 248)), (13.0, c(227, 236, 246)), (66.0, c(236, 244, 250))];
+    let mut v = vec![
+        gradient_mesh(Rect::from_min_max(pos2(l + 2.0, t + 2.0), pos2(rt, t + 15.0)), &[(0.0, c(222, 231, 245)), (12.0, c(208, 223, 240))]),
+        gradient_mesh(Rect::from_min_max(pos2(l + 2.0, t + 15.0), pos2(rt, band)), &[(0.0, c(199, 216, 237)), (band - t - 16.0, c(216, 232, 245))]),
+        gradient_mesh(Rect::from_min_max(pos2(l + 2.0, band), pos2(rt, b)), &[(0.0, c(193, 215, 240)), (14.0, c(191, 216, 239))]),
+        // The inner light: the top row, the left column (lighter in the band).
+        px(l + 2.0, t + 1.0, rt, t + 2.0, c(239, 244, 250)),
+        col(l + 1.0, t + 2.0, band, &light),
+        col(l + 1.0, band, b - 1.0, &[(0.0, c(205, 223, 243)), (13.0, c(201, 220, 240))]),
+        // The frame.
+        px(l + 2.0, t, rt - 1.0, t + 1.0, c(196, 209, 222)),
+        px(l + 2.0, b, rt - 1.0, b + 1.0, c(158, 192, 218)),
+        col(l, t + 2.0, b - 1.0, &side),
+        col(rt, t + 2.0, b - 1.0, &side),
+        // The outer light: right of the frame and under it.
+        col(rt + 1.0, t + 2.0, b, &[(0.0, c(238, 243, 250)), (12.0, c(232, 239, 248)), (13.0, c(227, 236, 246)), (66.0, c(236, 244, 250)), (80.0, c(241, 250, 255))]),
+        px(l + 3.0, b + 1.0, rt - 1.0, b + 2.0, c(243, 249, 255)),
+    ];
+    // The rounded corners.
+    for (x, y, col) in [
+        (l + 1.0, t, c(207, 218, 231)),
+        (l, t + 1.0, c(206, 218, 231)),
+        (l + 1.0, t + 1.0, c(195, 209, 222)),
+        (rt - 1.0, t, c(207, 218, 231)),
+        (rt, t + 1.0, c(206, 218, 231)),
+        (rt - 1.0, t + 1.0, c(194, 208, 222)),
+        (l, b - 1.0, c(186, 214, 232)),
+        (l + 1.0, b - 1.0, c(158, 192, 218)),
+        (l + 1.0, b, c(186, 214, 233)),
+        (rt, b - 1.0, c(186, 214, 232)),
+        (rt - 1.0, b - 1.0, c(149, 184, 217)),
+        (rt - 1.0, b, c(186, 214, 233)),
+    ] {
+        v.push(px(x, y, x + 1.0, y + 1.0, col));
+    }
+    v
 }
 
 fn big_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str) -> egui::Response {
@@ -1659,9 +1783,14 @@ fn small_button_mode(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, la
 /// A separator inside a panel, as tall as the button rows (an egui
 /// separator would take the whole height and push the panel title out).
 fn group_separator(ui: &mut egui::Ui, p: crate::theme::Palette) {
-    // As tall as the large buttons: a taller one stretched its panel.
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(7.0, LARGE_H), egui::Sense::hover());
-    ui.painter().vline(rect.center().x, rect.y_range(), egui::Stroke::new(1.0f32, p.group_border));
+    // As tall as the large buttons: a taller one stretched its panel. 8 px
+    // (VM, Blue): a light column 1 px in and a dark one beside it, from 6
+    // px under the buttons' top to 6 above their bottom.
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, LARGE_H), egui::Sense::hover());
+    let [light, dark] = p.bands.and_then(|b| b.panel_sep).unwrap_or([crate::theme::alpha(255, 255, 255, 160), p.group_border]);
+    let col = |dx: f32| egui::Rect::from_min_max(egui::pos2(rect.left() + dx, rect.top() + 6.0), egui::pos2(rect.left() + dx + 1.0, rect.bottom() - 5.0));
+    ui.painter().rect_filled(col(1.0), 0.0, light);
+    ui.painter().rect_filled(col(2.0), 0.0, dark);
 }
 
 /// An icon-only button: glyph, tooltip, enabled, checked, command.
@@ -1734,11 +1863,13 @@ pub(crate) enum Mini {
     Harm1,
 }
 
-/// A small icon-only button (24×24), framed while `on` (its tooltip the
+/// A small icon-only button (26×22), framed while `on` (its tooltip the
 /// command's, `tips`); clicks only while enabled.
 fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, enabled: bool, on: bool) -> egui::Response {
-    // Icon-only: (small image + 6)² (`0x10101d6a`).
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    // Icon-only: the small image + 6 tall (`0x10101d6a`), 26 wide with the
+    // image 3 px in (VM: the hot and checked faces, «Видимость» and
+    // «Вычисления»'s columns on a 26 px pitch).
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(26.0, 22.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let painter = &plain_painter(ui);
     let enabled = enabled && ui.is_enabled();
     if on {
@@ -1747,7 +1878,7 @@ fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, enabled
         hot_small(painter, rect, &p);
     }
     let col = if enabled { p.accent } else { disabled_ink(p) };
-    paint_mini(painter, rect.shrink(4.0), glyph, col);
+    paint_mini(painter, egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 4.0), egui::vec2(14.0, 14.0)), glyph, col);
     resp
 }
 

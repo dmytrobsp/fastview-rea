@@ -9493,6 +9493,33 @@ white row for the vector pane. VM: spokes, rings and the outer circle
 pixel for pixel; some inner rings' dash phase differs. Test
 `the_vector_grid_lies_on_gdis_pixels`.
 
+### L9.383 — VM: the ribbon's panels as Office 2007 Blue draws them; icon-only buttons 26 px; the separators  ·  ✅
+Scanned «Видимость» (rows 52–143, idle and under the pointer) and the
+panels' places along row 80. The original frames every panel: a
+rounded (196, 209, 222) top, sides shading (194, 207, 221) → (169, 191,
+210) → (157, 192, 218), a (158, 192, 218) bottom on row 140, a light
+line inside it at the top and left and one outside it on the right and
+under it; the face (222, 231, 245) → (208, 223, 240) over its first 13
+rows, then (199, 216, 237) → (216, 232, 245); the band (193, 215, 240)
+on rows 125–139. Under the pointer a bluer frame ((172, 198, 223) →
+(126, 172, 210)) with a white line all round inside, no light outside.
+The panels stand 3 px apart (frames at 4 / 152, 156 / 399, 403 / 625,
+629 …), the first frame at x 4, the content 4 px inside. An icon-only
+small button is 26 × 22, the image 3 px in («Видимость» and
+«Вычисления»'s columns on a 26 px pitch); a separator 8 px, a (250,
+251, 253) column 1 px in and a (144, 174, 211) one beside it, rows 64–
+118. Ours drew no panel frames — a divider between panels about 10 px
+apart, a white inner outline — 22 px icon-only buttons and a 7 px
+single-line separator; its panels sat a row low (frame on 57) and a
+checked large button's frame straddled two rows (epaint strokes a rect
+outside it). Now `ribbon::panel_2007` (idle / hot, the Blue look —
+`Bands::panel_sep` set), the body's margins (4 px left, the content from
+row 56), 3 px between panels in every look, `mini_button` 26 wide,
+`group_separator` 8 px two-tone, `checked_bg`'s frame on the button's
+own edge rows. VM: «Видимость» 222 px wide in both, its separators at
+the same offsets, the frames, faces, band and the hot look within a
+unit; the other panels narrower by their labels' widths (the font, W6).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
