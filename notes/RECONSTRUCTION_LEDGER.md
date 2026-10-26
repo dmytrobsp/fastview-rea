@@ -9556,6 +9556,18 @@ keys — the harness's clicks do not take in a combo's list), the groups'
 and parameters' names 22–24 px in against 22–23, the expand boxes at +4
 in both. Test `the_block_type_alone_steps_its_text` extended.
 
+### L9.386 — VM: «Тип блока»'s drop button pressed; its list's place  ·  ✅
+Scanned with the block list down and after it closed by Enter: the
+button turns orange — a (251, 140, 61) left edge, the face (252, 153,
+61) → (254, 181, 89) — while the list is down and stays so after a key
+closes it (not after ↓ stepping, nor in a fresh window); the list opens
+under the row's line (row 258 under a 241–256 row) from 3 px left of
+the value cell (x 1791), to the cell's right. Ours kept the blue face
+(only the pointer over it lit it, flat) and opened the list a row
+higher and 3 px narrower. Now the pressed face (Blue; cleared by the
+next press) and the list's rect. VM: the button's column and the list's
+edges alike. Left: the list's drop shadow (Windows', ours none).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

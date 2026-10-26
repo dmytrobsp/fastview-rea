@@ -1173,8 +1173,21 @@ impl App {
             let blue = self.skin.palette().bands.is_some_and(|b| b.panel_sep.is_some());
             let bt = egui::Rect::from_min_max(egui::pos2(vr.right() - if blue { 14.0 } else { 15.0 }, vr.top()), vr.max);
             let hot = combo.hovered() && ui.ctx().pointer_hover_pos().is_some_and(|q| bt.contains(q));
-            if blue && !hot {
-                ui.painter().add(crate::ribbon::gradient_mesh(bt, &[(0.5, egui::Color32::from_rgb(226, 238, 255)), (bt.height() - 0.5, egui::Color32::from_rgb(196, 221, 255))]));
+            // Pressed (VM): while its list is down and after the list
+            // closes by a key, until the next press — a (251, 140, 61)
+            // left edge, the face (252, 153, 61) → (254, 181, 89).
+            let down_id = list_id.with("down");
+            let open = ui.data(|d| d.get_temp::<bool>(list_id.with("open")).unwrap_or(false));
+            if !open && ui.input(|i| i.pointer.any_pressed()) {
+                ui.data_mut(|d| d.remove::<bool>(down_id));
+            }
+            let down = open || ui.data(|d| d.get_temp::<bool>(down_id).unwrap_or(false));
+            if blue {
+                let (top, bottom) = if hot || down { (egui::Color32::from_rgb(252, 153, 61), egui::Color32::from_rgb(254, 181, 89)) } else { (egui::Color32::from_rgb(226, 238, 255), egui::Color32::from_rgb(196, 221, 255)) };
+                ui.painter().add(crate::ribbon::gradient_mesh(bt, &[(0.5, top), (bt.height() - 0.5, bottom)]));
+                if hot || down {
+                    ui.painter().rect_filled(egui::Rect::from_min_size(bt.min, egui::vec2(1.0, bt.height())), 0.0, egui::Color32::from_rgb(251, 140, 61));
+                }
                 let ink = egui::Color32::from_rgb(86, 125, 177);
                 for (k, (dx, w)) in [(5.0, 5.0), (6.0, 3.0), (7.0, 1.0)].into_iter().enumerate() {
                     let y = bt.top() + 6.0 + k as f32;
@@ -1188,6 +1201,9 @@ impl App {
             if combo.clicked() && ui.ctx().pointer_interact_pos().is_some_and(|q| bt.contains(q)) {
                 let open = !ui.data(|d| d.get_temp::<bool>(list_id.with("open")).unwrap_or(false));
                 ui.data_mut(|d| d.insert_temp(list_id.with("open"), open));
+                if open {
+                    ui.data_mut(|d| d.insert_temp(down_id, true));
+                }
             }
         }
         if combo.clicked() {
@@ -1196,7 +1212,10 @@ impl App {
         // The in-place combo's drop-down list: a Win32 list the value
         // cell's width under it, long names cut at its edge (VM).
         if ui.data(|d| d.get_temp::<bool>(list_id.with("open")).unwrap_or(false)) {
-            if let Some(i) = crate::dialogs::combo_popup(ui, vr, list_id, &names, Some(self.block_idx)) {
+            // Under the row's line, from 3 px left of the value (VM: x 1791
+            // for a value from 1794, row 258 under a 241–256 row).
+            let under = egui::Rect::from_min_max(egui::pos2(vr.left() - 3.0, vr.top()), egui::pos2(vr.right(), vr.bottom() + 1.0));
+            if let Some(i) = crate::dialogs::combo_popup(ui, under, list_id, &names, Some(self.block_idx)) {
                 self.block_idx = i;
             }
         }
