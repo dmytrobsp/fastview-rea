@@ -9572,6 +9572,22 @@ of the list and under it from 5 px in, (142) → (171) → (212) → (241) →
 `dialogs::combo_popup` draws both strips (every combo list). VM: the
 bottom shadow's five rows exact.
 
+### L9.387 — VM: the characteristics' frames on whole pixels (FrameRgn)  ·  ✅
+Run: the differential pane with «БМРЗ - Защита трансформаторов (с 2025
+г.в.)» (picked from «Тип блока»'s list by keys). The original's region
+frames (`FrameRgn` 1 × 1) are solid frame-coloured pixels — 1 px on
+straight edges, doubling at each step of a slope (column by column
+along ДЗТ's edge: 1250–1251, 1249–1250, 1248–1249, 1248, …) — where ours
+drew an antialiased 1 px polyline over two rows at half strength. The
+edge pixels are the region's own with any of their 8 neighbours outside
+it; the region's points are whole pixels — the scaled offsets truncated
+(rounding put the slopes a column off). Now `diagram::region_runs` (the
+pixels of a region, centre rule, for the fill too) and
+`diagram::frame_runs`, and the characteristics' rings truncated. VM:
+straight edges pixel for pixel, ДЗТ's slope 11 of 12 columns exact (one
+step's phase); the «Сигнализация небаланса» bottom edge a row lower
+than the original's. Test `a_regions_frame_is_its_edge_pixels`.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

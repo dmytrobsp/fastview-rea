@@ -320,6 +320,53 @@ pub fn scanline_spans(rings: &[Vec<[f32; 2]>], y0: i32, y1: i32) -> Vec<(i32, f3
     out
 }
 
+/// The pixels of a region from `spans` (scanline_spans' rows) as (row,
+/// first, end) runs: a pixel in when its centre is.
+pub fn region_runs(spans: &[(i32, f32, f32)]) -> Vec<(i32, i32, i32)> {
+    spans
+        .iter()
+        .filter_map(|&(y, x0, x1)| {
+            let (a, b) = ((x0 - 0.5).ceil() as i32, (x1 - 0.5).ceil() as i32);
+            (b > a).then_some((y, a, b))
+        })
+        .collect()
+}
+
+/// `FrameRgn(…, 1, 1)` over the region of `spans` (scanline_spans'
+/// rows): the region's pixels (`region_runs`) with any
+/// of its 8 neighbours outside it (VM: a slope's frame doubles at each
+/// step, a straight edge stays 1 px), as (row, first, end) runs.
+pub fn frame_runs(spans: &[(i32, f32, f32)]) -> Vec<(i32, i32, i32)> {
+    use std::collections::BTreeMap;
+    let mut rows: BTreeMap<i32, Vec<(i32, i32)>> = BTreeMap::new();
+    for (y, a, b) in region_runs(spans) {
+        rows.entry(y).or_default().push((a, b));
+    }
+    let covers = |r: Option<&Vec<(i32, i32)>>, x: i32| r.is_some_and(|v| v.iter().any(|&(a, b)| a <= x && x < b));
+    let mut out = Vec::new();
+    for (&y, runs) in &rows {
+        let (up, down) = (rows.get(&(y - 1)), rows.get(&(y + 1)));
+        for &(a, b) in runs {
+            let mut start: Option<i32> = None;
+            for x in a..b {
+                let edge = x == a || x == b - 1 || (x - 1..=x + 1).any(|k| !covers(up, k) || !covers(down, k));
+                match (edge, start) {
+                    (true, None) => start = Some(x),
+                    (false, Some(s)) => {
+                        out.push((y, s, x));
+                        start = None;
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(s) = start {
+                out.push((y, s, b));
+            }
+        }
+    }
+    out
+}
+
 // ---- vector and frequency layout ------------------------------------------
 
 /// Does the plane's zoom snap back to 1 (`0x43b72f`–`0x43b78e`)? The larger
@@ -791,6 +838,16 @@ mod tests {
         let mut v = PlaneView { initial_pending: true, ..Default::default() };
         v.push_lower_left(7, 5);
         assert_eq!((v.ox, v.oy, v.initial_pending), (-6, 4, false));
+    }
+
+    #[test]
+    fn a_regions_frame_is_its_edge_pixels() {
+        // A 4 × 3 block: its ring of 10 pixels; a step: the lower row's
+        // pixels up to the upper one's first.
+        let block = [(0, 0.0, 4.0), (1, 0.0, 4.0), (2, 0.0, 4.0)];
+        assert_eq!(frame_runs(&block), vec![(0, 0, 4), (1, 0, 1), (1, 3, 4), (2, 0, 4)]);
+        let stair = [(0, 2.0, 6.0), (1, 0.0, 6.0), (2, 0.0, 6.0)];
+        assert_eq!(frame_runs(&stair), vec![(0, 2, 6), (1, 0, 3), (1, 5, 6), (2, 0, 6)]);
     }
 
     #[test]

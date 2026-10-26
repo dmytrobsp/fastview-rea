@@ -498,22 +498,29 @@ struct CharDraw {
 }
 
 /// Paint one region: even-odd fill (alpha 50) clipped to the region, then
-/// a 1 px frame (`FrameRgn`).
+/// a 1 px frame (`FrameRgn`): the region's own edge pixels, solid (VM: a
+/// shallow edge 1–2 rows of the frame colour, not a thin line).
 fn paint_region(p: &egui::Painter, rings: &[Vec<[f32; 2]>], fill: Option<Color32>, frame: Color32, clip: Rect) {
+    let (y0, y1) = (clip.top().floor() as i32 - 1, clip.bottom().ceil() as i32 + 1);
+    let spans = dg::scanline_spans(rings, y0, y1);
     if let Some(fc) = fill {
-        let (y0, y1) = (clip.top().floor() as i32, clip.bottom().ceil() as i32);
         let mut mesh = egui::Mesh::default();
-        for (y, x0, x1) in dg::scanline_spans(rings, y0, y1) {
-            let (x0, x1) = (x0.max(clip.left()), x1.min(clip.right()));
-            if x1 > x0 {
-                mesh.add_colored_rect(Rect::from_min_max(Pos2::new(x0, y as f32), Pos2::new(x1, y as f32 + 1.0)), fc);
+        for (y, a, b) in dg::region_runs(&spans) {
+            let r = Rect::from_min_max(Pos2::new(a as f32, y as f32), Pos2::new(b as f32, y as f32 + 1.0)).intersect(clip);
+            if r.is_positive() {
+                mesh.add_colored_rect(r, fc);
             }
         }
         p.add(egui::Shape::mesh(mesh));
     }
-    for ring in rings {
-        p.add(egui::Shape::closed_line(ring.iter().map(|q| Pos2::new(q[0], q[1])).collect(), stroke(1.0, frame)));
+    let mut mesh = egui::Mesh::default();
+    for (y, a, b) in dg::frame_runs(&spans) {
+        let r = Rect::from_min_max(Pos2::new(a as f32, y as f32), Pos2::new(b as f32, y as f32 + 1.0)).intersect(clip);
+        if r.is_positive() {
+            mesh.add_colored_rect(r, frame);
+        }
     }
+    p.add(egui::Shape::mesh(mesh));
 }
 
 fn dotted(p: &egui::Painter, a: Pos2, b: Pos2, color: Color32, width: f32) {
@@ -1242,10 +1249,12 @@ impl App {
         if let Some(ppu) = sc.ppu[0].filter(|ppu| char_ext * ppu < dg::ZOOM_RESET_PX) {
             for d in draws.iter().rev() {
                 let [op, rs, fl, _] = dg::CHAR_PALETTE[d.pal];
+                // Polygon's whole-pixel points: the scaled offsets
+                // truncated (VM: the slopes' pixels as the original's).
                 let rings = |shapes: &[Shape]| -> Vec<Vec<Vec<[f32; 2]>>> {
                     shapes
                         .iter()
-                        .map(|Shape::Region(rr)| rr.iter().filter(|r| r.len() >= 3).map(|r| r.iter().map(|p| to_px(p[0], p[1], ppu)).collect()).collect())
+                        .map(|Shape::Region(rr)| rr.iter().filter(|r| r.len() >= 3).map(|r| r.iter().map(|p| [origin.x + (p[0] * ppu).trunc() as f32, origin.y - (p[1] * ppu).trunc() as f32]).collect()).collect())
                         .collect()
                 };
                 if show_reset {
