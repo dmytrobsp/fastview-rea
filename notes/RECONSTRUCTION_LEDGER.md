@@ -9326,6 +9326,13 @@ gradient: (255, 252, 228) → (255, 236, 161) over the upper half, (255,
 `hot_small` (the older looks keep their soft accent box) for the small
 and mini buttons. VM: alike.
 
+### L9.367 — VM: the quick-access and the panes' toolbar buttons under the pointer  ·  ✅
+Seen (Office 2007 Blue): a hot QAT button or arrow shows the small
+ribbon buttons' gold face (L9.366) 22 × 20 at y 6–25; a pane toolbar's
+button the same face in its 22 px cell. Ours drew a flat beige box in
+both. Now `hot_small` there too. VM: alike; left: the pane toolbar's
+frame a little bluer in the original.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

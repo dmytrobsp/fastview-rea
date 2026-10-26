@@ -942,7 +942,7 @@ fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palet
 /// below — round a face with a light first and last row, (255, 252, 228)
 /// → (255, 236, 161) over its upper half, then (255, 216, 66) → (255, 228,
 /// 123). The older looks: their soft accent box.
-fn hot_small(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette) {
+pub(crate) fn hot_small(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette) {
     if !office2007(p) {
         painter.rect(rect, 2.0f32, p.accent_soft.gamma_multiply(0.7f32), egui::Stroke::new(1.0f32, p.accent_border));
         return;
@@ -1067,8 +1067,9 @@ pub(crate) fn paint_logo(painter: &egui::Painter, rect: egui::Rect, color: Color
 fn qat_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::click());
     let painter = ui.painter();
+    // Hot: the small buttons' gold face, 20 px from 2 px down (VM: y 6–25).
     if resp.hovered() && ui.is_enabled() {
-        painter.rect(rect, 3.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
+        hot_small(painter, egui::Rect::from_min_max(rect.min + egui::vec2(0.0, 2.0), rect.max), &p);
     }
     let box_ = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0));
     icons::paint(painter, box_, icon, if ui.is_enabled() { p.accent } else { disabled_ink(p) });
@@ -1175,7 +1176,7 @@ fn qat_arrow(ui: &mut egui::Ui, p: crate::theme::Palette, customise: bool) -> eg
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(if customise { 13.0 } else { 9.0 }, 22.0), egui::Sense::click());
     let painter = ui.painter();
     if resp.hovered() && ui.is_enabled() {
-        painter.rect(rect, 3.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
+        hot_small(painter, egui::Rect::from_min_max(rect.min + egui::vec2(0.0, 2.0), rect.max), &p);
     }
     let ink = if ui.is_enabled() { p.text } else { disabled_ink(p) };
     let c = rect.center();

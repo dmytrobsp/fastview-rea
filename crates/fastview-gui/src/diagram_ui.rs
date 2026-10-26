@@ -727,7 +727,8 @@ impl App {
                 if checked == &Some(true) {
                     ui.painter().rect(rect, 2.0, vis.selection.bg_fill.gamma_multiply(0.5), stroke(1.0, vis.selection.stroke.color));
                 } else if resp.hovered() && enabled {
-                    ui.painter().rect_filled(rect, 2.0, vis.widgets.hovered.weak_bg_fill);
+                    // The ribbon's hot face (VM, the gold gradient).
+                    crate::ribbon::hot_small(ui.painter(), rect, &self.skin.palette());
                 }
                 let col = if enabled { vis.text_color() } else { vis.weak_text_color() };
                 paint_tool(ui.painter(), rect, *tool, col);
