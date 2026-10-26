@@ -523,7 +523,7 @@ fn dotted(p: &egui::Painter, a: Pos2, b: Pos2, color: Color32, width: f32) {
 /// A tool button glyph of the pane toolbars (our own line art; the
 /// original's toolbar bitmaps are not redistributed).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Tool {
+pub(crate) enum Tool {
     Channels,
     Angles,
     Range,
@@ -541,7 +541,7 @@ enum Tool {
     Right,
 }
 
-fn paint_tool(p: &egui::Painter, r: Rect, t: Tool, c: Color32) {
+pub(crate) fn paint_tool(p: &egui::Painter, r: Rect, t: Tool, c: Color32) {
     let r = r.shrink(4.0);
     let s = stroke(1.4, c);
     let pt = |x: f32, y: f32| Pos2::new(r.left() + x * r.width(), r.top() + y * r.height());
@@ -614,7 +614,8 @@ fn paint_tool(p: &egui::Painter, r: Rect, t: Tool, c: Color32) {
     }
 }
 
-/// One toolbar button: (glyph, tooltip, command, checked state).
+/// One toolbar button: (glyph, its command's prompt «description\ntitle»
+/// — the tooltip's, `tips` —, command, checked state).
 type ToolButton = (Tool, &'static str, DiagCmd, Option<bool>);
 
 impl App {
@@ -644,41 +645,43 @@ impl App {
             Window::Vector => {
                 let doc = self.active_doc().is_some();
                 vec![
-                    Some((Tool::Channels, "Каналы", DiagCmd::ChannelsMenu, None)),
+                    // 33010 / 33011 / 33012 / 33013.
+                    Some((Tool::Channels, "Настройка каналов\nКаналы", DiagCmd::ChannelsMenu, None)),
                     None,
-                    Some((Tool::Angles, "Отсчет углов", DiagCmd::AngleMenu, None)),
+                    Some((Tool::Angles, "Отсчет углов\nОтсчет углов", DiagCmd::AngleMenu, None)),
                     None,
-                    Some((Tool::Values, "Показывавать действующее значение и угол", DiagCmd::ShowValues, Some(doc && self.vec_show_values))),
-                    Some((Tool::Direction, "Только направление", DiagCmd::DirectionOnly, Some(doc && self.vec_direction_only))),
+                    Some((Tool::Values, "Показывавать действующее значение и угол\nПоказывавать действующее значение и угол", DiagCmd::ShowValues, Some(doc && self.vec_show_values))),
+                    Some((Tool::Direction, "Отображать на диаграмме только направление\nТолько направление", DiagCmd::DirectionOnly, Some(doc && self.vec_direction_only))),
                 ]
             }
             Window::Circle | Window::Diff => {
                 let (between, reset, readout) = self.plane_opts(diff);
                 let mut v = vec![
-                    Some((Tool::Channels, "Каналы", DiagCmd::ChannelsMenu, None)),
+                    // 33014 … 33025, 33028.
+                    Some((Tool::Channels, "Настройка каналов\nКаналы", DiagCmd::ChannelsMenu, None)),
                     None,
-                    Some((Tool::Range, "Диапазон между визирами", DiagCmd::BetweenCursors, Some(between))),
-                    Some((Tool::Reset, "Характеристики возврата", DiagCmd::ShowReset, Some(reset))),
+                    Some((Tool::Range, "Диапазон между визирами\nДиапазон между визирами", DiagCmd::BetweenCursors, Some(between))),
+                    Some((Tool::Reset, "Отображать характеристики возврата\nХарактеристики возврата", DiagCmd::ShowReset, Some(reset))),
                     None,
                 ];
                 if diff {
                     v.push(Some((Tool::Values, "Показывать значения", DiagCmd::Readout(1), Some(readout != 0))));
                 } else {
-                    v.push(Some((Tool::ReIm, "Показывать вещественную и мнимую части", DiagCmd::Readout(1), Some(readout == 1))));
-                    v.push(Some((Tool::Polar, "Показывавать действующее значение и угол", DiagCmd::Readout(2), Some(readout == 2))));
+                    v.push(Some((Tool::ReIm, "Показывать вещественную и мнимую части\nПоказывать вещественную и мнимую части", DiagCmd::Readout(1), Some(readout == 1))));
+                    v.push(Some((Tool::Polar, "Показывавать действующее значение и угол\nПоказывавать действующее значение и угол", DiagCmd::Readout(2), Some(readout == 2))));
                 }
                 v.extend([
                     None,
-                    Some((Tool::Reload, "Перезагрузить базы характеристик", DiagCmd::Reload, None)),
+                    Some((Tool::Reload, "Перезагрузить базы характеристик\nПерезагрузить базы характеристик", DiagCmd::Reload, None)),
                     None,
-                    Some((Tool::Plus, "Увеличить масштаб", DiagCmd::Zoom(true), None)),
-                    Some((Tool::Minus, "Уменьшить масштаб", DiagCmd::Zoom(false), None)),
+                    Some((Tool::Plus, "Увеличить масштаб\nУвеличить масштаб", DiagCmd::Zoom(true), None)),
+                    Some((Tool::Minus, "Уменьшить масштаб\nУменьшить масштаб", DiagCmd::Zoom(false), None)),
                     None,
-                    Some((Tool::Up, "Сдвиг вверх", DiagCmd::Pan(false, -2), None)),
-                    Some((Tool::Down, "Сдвиг вниз", DiagCmd::Pan(false, 2), None)),
+                    Some((Tool::Up, "Сдвиг вверх\nСдвиг вверх", DiagCmd::Pan(false, -2), None)),
+                    Some((Tool::Down, "Сдвиг вниз\nСдвиг вниз", DiagCmd::Pan(false, 2), None)),
                     None,
-                    Some((Tool::Left, "Сдвиг влево", DiagCmd::Pan(true, -2), None)),
-                    Some((Tool::Right, "Сдвиг вправо", DiagCmd::Pan(true, 2), None)),
+                    Some((Tool::Left, "Сдвиг влево\nСдвиг влево", DiagCmd::Pan(true, -2), None)),
+                    Some((Tool::Right, "Сдвиг вправо\nСдвиг вправо", DiagCmd::Pan(true, 2), None)),
                 ]);
                 v
             }
@@ -728,7 +731,9 @@ impl App {
                 }
                 let col = if enabled { vis.text_color() } else { vis.weak_text_color() };
                 paint_tool(ui.painter(), rect, *tool, col);
-                let resp = resp.on_hover_text(*tip);
+                // A prompt without «\n» is both title and description.
+                let (desc, title) = tip.split_once('\n').unwrap_or((tip, tip));
+                crate::tips::pointer_tip(ui, &resp, crate::tips::TipImage::Tool(*tool), title, desc);
                 if resp.clicked() {
                     fire = Some(cmd.clone());
                 }

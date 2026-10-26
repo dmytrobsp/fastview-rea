@@ -9275,6 +9275,20 @@ checked button, and wrote checked labels near-black. Now
 and `checked_ink` (the look's ink in the Office 2007 looks, the dark
 one elsewhere). VM: the faces and the ink as the original's.
 
+### L9.362 — VM: the panes' toolbar tooltips; the tooltips' description rows  ·  ✅
+Run (the vector pane's «Отсчет углов» hovered): CMFCToolBar's tooltip
+is the ribbon's box with the title in the regular weight, 18 px under
+the pointer, kept 2 px inside the screen's right edge; its texts the
+commands' prompts — 33010 / 33014 «Настройка каналов» \n «Каналы»,
+33013 «Отображать на диаграмме только направление» \n «Только
+направление», 33016 «Отображать характеристики возврата» \n
+«Характеристики возврата», the others their own title (33011, 33012,
+33015, 33017–33025; 33028 without «\n»). Ours showed egui's plain
+label. Now the toolbar's strings are the prompts, `tips::pointer_tip`
+with `TipImage::Tool`; and the descriptions' glyphs start at + 26 as
+the original's (ours were 2 px high). VM: the toolbar tip and a two-
+line ribbon tip row for row within a pixel, 42 / 55 px tall alike.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

@@ -21,6 +21,7 @@ pub enum TipImage {
     Large(Icon),
     Small(Icon),
     Mini(Mini),
+    Tool(crate::diagram_ui::Tool),
 }
 
 /// A command's tooltip title and description (its prompt string,
@@ -89,19 +90,27 @@ pub fn set_ribbon_bottom(ctx: &egui::Context, y: f32) {
 pub fn ribbon_tip(ui: &egui::Ui, r: &egui::Response, img: TipImage, cmd: &Command) {
     let Some((title, desc)) = cmd_tip(cmd) else { return };
     let bottom = ui.ctx().data(|d| d.get_temp::<f32>(egui::Id::new("fv_ribbon_bottom"))).unwrap_or(r.rect.bottom());
-    tip(ui, r, Pos2::new(r.rect.left(), bottom + 3.0), img, title, desc);
+    tip(ui, r, Pos2::new(r.rect.left(), bottom + 3.0), img, title, desc, true);
 }
 
 /// A quick-access button's tooltip: at the pointer's x, under the caption
 /// row (VM: y 31).
 pub fn qat_tip(ui: &egui::Ui, r: &egui::Response, img: TipImage, title: &str, desc: &str) {
     let x = ui.ctx().pointer_hover_pos().map_or(r.rect.left(), |p| p.x);
-    tip(ui, r, Pos2::new(x, ui.max_rect().top() + 31.0), img, title, desc);
+    tip(ui, r, Pos2::new(x, ui.max_rect().top() + 31.0), img, title, desc, true);
+}
+
+/// A toolbar button's tooltip: 18 px under the pointer, its title in the
+/// regular weight (VM: a pane's vertical toolbar — CMFCToolBar's, not the
+/// ribbon's bold), kept on the screen.
+pub fn pointer_tip(ui: &egui::Ui, r: &egui::Response, img: TipImage, title: &str, desc: &str) {
+    let at = ui.ctx().pointer_hover_pos().unwrap_or(r.rect.left_bottom()) + Vec2::new(0.0, 18.0);
+    tip(ui, r, at, img, title, desc, false);
 }
 
 /// The hover timing: shown after 0.5 s over `r` (restarted on entering it
 /// again), not after a press until the pointer leaves.
-fn tip(ui: &egui::Ui, r: &egui::Response, at: Pos2, img: TipImage, title: &str, desc: &str) {
+fn tip(ui: &egui::Ui, r: &egui::Response, at: Pos2, img: TipImage, title: &str, desc: &str, bold_title: bool) {
     if !r.contains_pointer() {
         return;
     }
@@ -126,7 +135,7 @@ fn tip(ui: &egui::Ui, r: &egui::Response, at: Pos2, img: TipImage, title: &str, 
         ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait));
         return;
     }
-    paint(ctx, at, img, title, desc);
+    paint(ctx, at, img, title, desc, bold_title);
 }
 
 /// Words of `text` in lines no wider than `max` (a single longer word on
@@ -146,24 +155,25 @@ fn wrap(ctx: &egui::Context, text: &str, font: &egui::FontId, max: f32) -> Vec<S
     lines
 }
 
-fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str) {
+fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, bold_title: bool) {
     const INK: Color32 = Color32::from_rgb(76, 76, 76);
     const PITCH: f32 = 13.0;
     let font = egui::FontId::proportional(12.0);
-    let bold = ctx.fonts(|f| crate::lanes::bold_font(f, 12.0)).unwrap_or(font.clone());
+    let bold = if bold_title { ctx.fonts(|f| crate::lanes::bold_font(f, 12.0)).unwrap_or(font.clone()) } else { font.clone() };
     let width = |t: &str, f: &egui::FontId| ctx.fonts(|fs| fs.layout_no_wrap(t.to_owned(), f.clone(), INK).size().x);
     // Segoe UI wraps near 190 px; Tahoma's letters are a little wider.
     let lines = wrap(ctx, desc, &font, 195.0);
     let plain = matches!(img, TipImage::None);
     let text_x = match img {
         TipImage::Large(_) => 45.0,
-        TipImage::Small(_) | TipImage::Mini(_) => 29.0,
+        TipImage::Small(_) | TipImage::Mini(_) | TipImage::Tool(_) => 29.0,
         TipImage::None => 6.0,
     };
     let text_w = lines.iter().map(|l| width(l, &font)).chain(std::iter::once(if plain { 0.0 } else { width(title, &bold) })).fold(0.0, f32::max);
-    let size = if plain { Vec2::new((text_x + text_w + 7.0).round(), 21.0) } else { Vec2::new((text_x + text_w + 10.0).round(), 22.0 + PITCH * lines.len() as f32 + 7.0) };
+    let size = if plain { Vec2::new((text_x + text_w + 7.0).round(), 21.0) } else { Vec2::new((text_x + text_w + 10.0).round(), 24.0 + PITCH * lines.len() as f32 + 5.0) };
     let screen = ctx.screen_rect();
-    let at = Pos2::new(at.x.min(screen.right() - size.x).max(screen.left()), at.y).round();
+    // Kept 2 px inside the screen's right edge (VM).
+    let at = Pos2::new(at.x.min(screen.right() - 2.0 - size.x).max(screen.left()), at.y).round();
     egui::Area::new(egui::Id::new("fv_rtip_area")).order(egui::Order::Tooltip).fixed_pos(at).interactable(false).show(ctx, |ui| {
         let (r, _) = ui.allocate_exact_size(size, egui::Sense::hover());
         let p = ui.painter();
@@ -189,15 +199,22 @@ fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str) 
             TipImage::Large(icon) => crate::icons::paint(p, Rect::from_min_size(r.min + Vec2::new(12.0, 5.0), Vec2::splat(32.0)).shrink(2.0), icon, accent),
             TipImage::Small(icon) => crate::icons::paint(p, Rect::from_min_size(r.min + Vec2::new(9.0, 5.0), Vec2::splat(16.0)), icon, accent),
             TipImage::Mini(m) => crate::ribbon::paint_mini(p, Rect::from_min_size(r.min + Vec2::new(9.0, 5.0), Vec2::splat(16.0)), m, accent),
+            // (the toolbar's 22 px cell, the glyph 4 px in)
+            TipImage::Tool(t) => crate::diagram_ui::paint_tool(p, Rect::from_min_size(r.min + Vec2::new(5.0, 2.0), Vec2::splat(22.0)), t, accent),
             TipImage::None => {}
         }
         if plain {
             p.text(r.min + Vec2::new(text_x, 4.0), egui::Align2::LEFT_TOP, desc, font.clone(), INK);
             return;
         }
-        crate::lanes::bold_text(p, r.min + Vec2::new(text_x, 5.0), title, font.clone(), INK);
+        if bold_title {
+            crate::lanes::bold_text(p, r.min + Vec2::new(text_x, 5.0), title, font.clone(), INK);
+        } else {
+            p.text(r.min + Vec2::new(text_x, 5.0), egui::Align2::LEFT_TOP, title, font.clone(), INK);
+        }
         for (k, l) in lines.iter().enumerate() {
-            p.text(r.min + Vec2::new(text_x, 22.0 + PITCH * k as f32), egui::Align2::LEFT_TOP, l, font.clone(), INK);
+            // (the glyphs from + 26, as the original's)
+            p.text(r.min + Vec2::new(text_x, 24.0 + PITCH * k as f32), egui::Align2::LEFT_TOP, l, font.clone(), INK);
         }
     });
 }
