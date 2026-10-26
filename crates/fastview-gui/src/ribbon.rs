@@ -943,6 +943,30 @@ fn office2007(p: &crate::theme::Palette) -> bool {
 /// (246, 178, 109) → (235, 152, 84), (230, 131, 51) → (247, 196, 95). The
 /// older looks their flat selection colour.
 pub(crate) fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette, hot: bool) {
+    if office2007(p) && !hot && rect.height() <= 24.0 {
+        // A small button checked (VM, «Вторичные знач.»): a (167, 142,
+        // 102) top edge, two shaded rows — (202, 179, 152), (233, 208,
+        // 177) —, the face (247, 218, 182) → (250, 209, 146) down to its
+        // 11th row, then (248, 195, 94) → (251, 232, 155), a (251, 221,
+        // 160) last row; (158, 130, 85) sides with a (240, 176, 90) column
+        // inside; a (182, 178, 158) bottom edge.
+        let c = |r, g, b| Color32::from_rgb(r, g, b);
+        let (l, r, t, b) = (rect.left(), rect.right() - 1.0, rect.top(), rect.bottom() - 1.0);
+        let px = |x0: f32, y0: f32, x1: f32, y1: f32, k: Color32| painter.rect_filled(egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1)), 0.0, k);
+        let split = t + 12.0;
+        painter.add(gradient_mesh(egui::Rect::from_min_max(egui::pos2(l + 1.0, t + 3.0), egui::pos2(r, split)), &[(0.5, c(247, 218, 182)), (split - t - 3.5, c(250, 209, 146))]));
+        painter.add(gradient_mesh(egui::Rect::from_min_max(egui::pos2(l + 1.0, split), egui::pos2(r, b - 1.0)), &[(0.5, c(248, 195, 94)), (b - split - 1.5, c(251, 232, 155))]));
+        px(l + 1.0, b - 1.0, r, b, c(251, 221, 160));
+        px(l + 1.0, t + 1.0, r, t + 2.0, c(202, 179, 152));
+        px(l + 1.0, t + 2.0, r, t + 3.0, c(233, 208, 177));
+        px(l + 1.0, t + 3.0, l + 2.0, b, c(240, 176, 90));
+        px(r - 1.0, t + 3.0, r, b, c(240, 176, 90));
+        px(l + 1.0, t, r, t + 1.0, c(167, 142, 102));
+        px(l + 1.0, b, r, b + 1.0, c(182, 178, 158));
+        px(l, t + 1.0, l + 1.0, b, c(158, 130, 85));
+        px(r, t + 1.0, r + 1.0, b, c(158, 130, 85));
+        return;
+    }
     if office2007(p) {
         let face = rect.shrink(1.0);
         let h = face.height();

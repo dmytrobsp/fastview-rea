@@ -9632,7 +9632,14 @@ the gold (255, 207, 45) at the bottom; the sides (142, 129, 101) down to
 row 97, then lightening to (198, 192, 178). Ours went straight from the
 frame to the face, uniform sides. Now `checked_bg` (idle) draws them.
 VM: the columns' rows within a few units; the original's second-to-last
-row a little more golden.
+row a little more golden. A small (and icon-only) button checked is
+another image (VM, «Вторичные знач.»): a (167, 142, 102) top edge, two
+shaded rows (202, 179, 152) / (233, 208, 177), the face (247, 218, 182)
+→ (250, 209, 146) to its 11th row, then (248, 195, 94) → (251, 232,
+155), a (251, 221, 160) last row, (158, 130, 85) sides with a (240,
+176, 90) column inside, a light (182, 178, 158) bottom edge — ours had
+drawn the large one's darker orange and gold edge. Now its own branch;
+VM: its column within a few units.
 
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
