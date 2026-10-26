@@ -9588,6 +9588,16 @@ straight edges pixel for pixel, ДЗТ's slope 11 of 12 columns exact (one
 step's phase); the «Сигнализация небаланса» bottom edge a row lower
 than the original's. Test `a_regions_frame_is_its_edge_pixels`.
 
+### L9.388 — VM: the window title's place  ·  ✅
+L9.225's residual (the title's position). Measured maximised and
+restored (a double-click on the caption): the original centres the
+title 25 px right of the window's centre in both (1305 of 2560; 1193 of
+a 216–2120 window), rows 11–22 maximised. Ours centred it in the space
+between the quick-access toolbar and the system buttons (7 px right of
+the centre) a row higher. Now centred on the window's centre + 25,
+kept inside that space, a pixel lower maximised. VM: 1304.5 / rows 11–22
+maximised, +25.5 restored.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

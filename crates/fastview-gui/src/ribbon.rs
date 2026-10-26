@@ -342,9 +342,15 @@ impl App {
                     let font = egui::FontId::proportional(12.0);
                     let g = ui.painter().layout_no_wrap(self.window_title.clone(), font, Color32::BLACK);
                     let w = g.size().x.min(free.width());
-                    // The style's TextCenter: off for Aqua (left-aligned).
-                    let x = if self.skin == Skin::Aqua { free.left() + 4.0 } else { (free.center().x - w / 2.0).max(free.left()) };
-                    ui.painter().with_clip_rect(free).galley(egui::pos2(x, free.center().y - g.size().y / 2.0), g, Color32::BLACK);
+                    // The style's TextCenter: off for Aqua (left-aligned);
+                    // else 25 px right of the window's centre, maximised or
+                    // not (VM: 1305.5 of 2560, 1193 of a 216–2120 window),
+                    // a pixel lower when maximised (rows 11–22).
+                    let mid = ui.ctx().screen_rect().center().x + 25.0;
+                    let x = if self.skin == Skin::Aqua { free.left() + 4.0 } else { (mid - w / 2.0).min(free.right() - w).max(free.left()) };
+                    let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+                    let y = free.center().y - g.size().y / 2.0 + if max { 1.0 } else { 0.0 };
+                    ui.painter().with_clip_rect(free).galley(egui::pos2(x, y), g, Color32::BLACK);
                 });
             }
         });
