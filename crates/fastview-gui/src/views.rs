@@ -1141,8 +1141,9 @@ impl App {
         // «Тип блока»: its text, and on the selected row the list's button
         // (15 px at the value's right); the list drops from the cell.
         let type_key = sel_id.with("type");
-        // Its ink 6 px in as the original's (VM: our «Т» starts 2.5 px into
-        // its cell).
+        // The names' ink where the original's is (VM, «БМРЗ - Защита
+        // трансформаторов (с 2025 г.в.)»): «Тип блока» 6 px in, the groups'
+        // and parameters' 22–23 (our «Т» starts 2.5 px into its cell).
         let (_, vr) = row(ui, type_key, "Тип блока", false, 3.0, false);
         // The rows in order, for the keys.
         let mut order: Vec<(egui::Id, GridRow)> = vec![(type_key, GridRow::Type)];

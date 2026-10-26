@@ -9551,7 +9551,10 @@ L9.201) — the saved settings, not the cell. Now the grid's frame has no
 top / left margin, the Blue drop button, «Тип блока» 3 px in, and a
 value click keeps the text (only a block change resets it). VM: the
 grid's edge, divider, button and text pixel for pixel; the stepping
-alike. Test `the_block_type_alone_steps_its_text` extended.
+alike; with «… трансформаторов (с 2025 г.в.)» picked from the list (by
+keys — the harness's clicks do not take in a combo's list), the groups'
+and parameters' names 22–24 px in against 22–23, the expand boxes at +4
+in both. Test `the_block_type_alone_steps_its_text` extended.
 
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
