@@ -9296,6 +9296,18 @@ tips («Close», «Auto Hide» on the VM's English UI; mfc120rus «Закрыт�
 the pointer, kept on the screen. Ours showed egui's tooltips. Now
 `tips::pointer_tip` with no image. VM: alike in place and size.
 
+### L9.364 — VM: «Параметры ОМП»'s toolbar tips (bold titles); the panes' toolbar titles regular  ·  ✅
+Run («Участок» of DIALOG 336's TOOLBAR 475 hovered): the original's tip
+— 18 px under the pointer — has the bold title «Добавить участок» over
+«Добавить участок к линии» (32871); the panes' vertical toolbars write
+the title in the regular weight (L9.362: the title as wide as the same
+text below it, only darker). Ours showed nothing in the dialog (egui's
+tooltip). Now TOOLBAR 475's buttons carry the prompts 32871–32878
+(«…\nДобавить участок», «Удалить элемент», «Переместить вверх / вниз»,
+«Загрузить / Сохранить настройки»), `tips::pointer_tip(…, bold)`,
+`TipImage::OmpTool` with `omp_ui::paint_tool_icon` (taken out of
+`tool_button`). VM: the tip alike.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

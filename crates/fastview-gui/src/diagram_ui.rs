@@ -733,7 +733,7 @@ impl App {
                 paint_tool(ui.painter(), rect, *tool, col);
                 // A prompt without «\n» is both title and description.
                 let (desc, title) = tip.split_once('\n').unwrap_or((tip, tip));
-                crate::tips::pointer_tip(ui, &resp, crate::tips::TipImage::Tool(*tool), title, desc);
+                crate::tips::pointer_tip(ui, &resp, crate::tips::TipImage::Tool(*tool), title, desc, false);
                 if resp.clicked() {
                     fire = Some(cmd.clone());
                 }

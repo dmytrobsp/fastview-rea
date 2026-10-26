@@ -1607,7 +1607,7 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
     ui.painter().line_segment([c + egui::vec2(-3.5, -3.5), c + egui::vec2(3.5, 3.5)], st);
     ui.painter().line_segment([c + egui::vec2(-3.5, 3.5), c + egui::vec2(3.5, -3.5)], st);
     // MFC's plain tips under the pointer (mfc120rus; VM «Close» / «Auto Hide»).
-    crate::tips::pointer_tip(ui, &close, crate::tips::TipImage::None, "", "Закрыть");
+    crate::tips::pointer_tip(ui, &close, crate::tips::TipImage::None, "", "Закрыть", false);
     act.close = close.clicked();
     if let Some(auto_hide) = pinned {
         // The pin: upright while docked, on its side while auto-hidden.
@@ -1624,7 +1624,7 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
             pt.px_vline(c.x, (c.y + 1.0)..=(c.y + 4.0), st);
         }
         let tip = if auto_hide { "Закрепить" } else { "Автоматически скрывать" };
-        crate::tips::pointer_tip(ui, &pin, crate::tips::TipImage::None, "", tip);
+        crate::tips::pointer_tip(ui, &pin, crate::tips::TipImage::None, "", tip, false);
         act.pin = pin.clicked();
     }
     act

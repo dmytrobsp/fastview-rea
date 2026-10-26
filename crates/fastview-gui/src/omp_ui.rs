@@ -993,19 +993,23 @@ impl ParamsDialog {
         // TOOLBAR 475 (`0x4a7e40`), flat, right of the combo (VM): text only
         // on the three add buttons — (0, 21, 110), (141) disabled — the rest
         // icons, two separators; the tooltips are the command strings
-        // 32870–32878; the icons our own drawings.
+        // 32871–32878 («description\ntitle»); the icons our own drawings.
         let items: [ToolItem; 8] = [
-            (292.0, 67.0, ToolIcon::Section, Some("Участок"), "Добавить участок к линии", self.can_add_section()),
-            (362.0, 132.0, ToolIcon::Line, Some("Параллельная линия"), "Добавить параллельную линию к участку", self.can_add_child()),
-            (498.0, 67.0, ToolIcon::Tap, Some("Отпайка"), "Добавить отпайку от линии к участку", self.can_add_child()),
-            (567.0, 22.0, ToolIcon::Delete, None, "Удалить выделенный элемент", self.can_delete()),
-            (597.0, 22.0, ToolIcon::Down, None, "Переместить выделенный элемент вниз", self.can_move(false)),
-            (619.0, 22.0, ToolIcon::Up, None, "Переместить выделенный элемент вверх", self.can_move(true)),
-            (650.0, 22.0, ToolIcon::Open, None, "Загрузить настройки в отдельном файле", true),
-            (672.0, 22.0, ToolIcon::Save, None, "Сохранить настройки в отдельном файле", true),
+            (292.0, 67.0, ToolIcon::Section, Some("Участок"), "Добавить участок к линии\nДобавить участок", self.can_add_section()),
+            (362.0, 132.0, ToolIcon::Line, Some("Параллельная линия"), "Добавить параллельную линию к участку\nДобавить параллельную линию", self.can_add_child()),
+            (498.0, 67.0, ToolIcon::Tap, Some("Отпайка"), "Добавить отпайку от линии к участку\nДобавить отпайку", self.can_add_child()),
+            (567.0, 22.0, ToolIcon::Delete, None, "Удалить выделенный элемент\nУдалить элемент", self.can_delete()),
+            (597.0, 22.0, ToolIcon::Down, None, "Переместить выделенный элемент вниз\nПереместить вниз", self.can_move(false)),
+            (619.0, 22.0, ToolIcon::Up, None, "Переместить выделенный элемент вверх\nПереместить вверх", self.can_move(true)),
+            (650.0, 22.0, ToolIcon::Open, None, "Загрузить настройки в отдельном файле\nЗагрузить настройки", true),
+            (672.0, 22.0, ToolIcon::Save, None, "Сохранить настройки в отдельном файле\nСохранить настройки", true),
         ];
         for (k, (x, w, icon, text, tip, enabled)) in items.into_iter().enumerate() {
-            if tool_button(ui, at(x, 12.0, w, 22.0), icon, text, enabled).on_hover_text(tip).clicked() && enabled {
+            // Its tip CMFCToolBar's: the prompt's title and description.
+            let r = tool_button(ui, at(x, 12.0, w, 22.0), icon, text, enabled);
+            let (desc, title) = tip.split_once('\n').unwrap_or((tip, tip));
+            crate::tips::pointer_tip(ui, &r, crate::tips::TipImage::OmpTool(icon), title, desc, true);
+            if r.clicked() && enabled {
                 match k {
                     0 => self.add_section(),
                     1 => self.add_child(false),
@@ -1211,7 +1215,7 @@ type ToolItem<'a> = (f32, f32, ToolIcon, Option<&'a str>, &'a str, bool);
 
 /// TOOLBAR 475's images (our own drawings).
 #[derive(Clone, Copy)]
-enum ToolIcon {
+pub(crate) enum ToolIcon {
     Section,
     Line,
     Tap,
@@ -1237,6 +1241,15 @@ fn tool_button(ui: &mut egui::Ui, r: egui::Rect, icon: ToolIcon, text: Option<&s
     }
     let cell = egui::Rect::from_min_size(egui::pos2(r.left() + 3.0, r.center().y - 8.0), egui::vec2(16.0, 16.0));
     let ink = if enabled { Color32::from_rgb(0, 21, 110) } else { Color32::from_gray(141) };
+    paint_tool_icon(p, cell, icon, enabled);
+    if let Some(t) = text {
+        p.text(egui::pos2(cell.right() + 3.0, r.center().y), egui::Align2::LEFT_CENTER, t, crate::dialogs::DLG_FONT, ink);
+    }
+    resp
+}
+
+/// A TOOLBAR 475 image in its 16 px cell (our drawings; greyed disabled).
+pub(crate) fn paint_tool_icon(p: &egui::Painter, cell: egui::Rect, icon: ToolIcon, enabled: bool) {
     let c = cell.center();
     let st = egui::Stroke::new(1.5f32, if enabled { Color32::from_rgb(60, 60, 60) } else { Color32::from_gray(170) });
     // Disabled images in grey (VM); the delete cross red while enabled.
@@ -1265,10 +1278,6 @@ fn tool_button(ui: &mut egui::Ui, r: egui::Rect, icon: ToolIcon, text: Option<&s
             p.rect_filled(egui::Rect::from_min_max(r.min + egui::vec2(3.0, 1.0), egui::pos2(r.right() - 3.0, r.top() + 6.0)), 0.0, Color32::WHITE);
         }
     }
-    if let Some(t) = text {
-        p.text(egui::pos2(cell.right() + 3.0, r.center().y), egui::Align2::LEFT_CENTER, t, crate::dialogs::DLG_FONT, ink);
-    }
-    resp
 }
 
 /// A tree item's image (BITMAP 476's four cells, our own drawings on

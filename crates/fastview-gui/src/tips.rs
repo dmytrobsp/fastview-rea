@@ -22,6 +22,7 @@ pub enum TipImage {
     Small(Icon),
     Mini(Mini),
     Tool(crate::diagram_ui::Tool),
+    OmpTool(crate::omp_ui::ToolIcon),
 }
 
 /// A command's tooltip title and description (its prompt string,
@@ -100,12 +101,12 @@ pub fn qat_tip(ui: &egui::Ui, r: &egui::Response, img: TipImage, title: &str, de
     tip(ui, r, Pos2::new(x, ui.max_rect().top() + 31.0), img, title, desc, true);
 }
 
-/// A toolbar button's tooltip: 18 px under the pointer, its title in the
-/// regular weight (VM: a pane's vertical toolbar — CMFCToolBar's, not the
-/// ribbon's bold), kept on the screen.
-pub fn pointer_tip(ui: &egui::Ui, r: &egui::Response, img: TipImage, title: &str, desc: &str) {
+/// A toolbar button's tooltip: 18 px under the pointer, kept on the
+/// screen; its title bold or not (VM: the panes' vertical toolbars write
+/// it in the regular weight, «Параметры ОМП»'s toolbar in bold).
+pub fn pointer_tip(ui: &egui::Ui, r: &egui::Response, img: TipImage, title: &str, desc: &str, bold: bool) {
     let at = ui.ctx().pointer_hover_pos().unwrap_or(r.rect.left_bottom()) + Vec2::new(0.0, 18.0);
-    tip(ui, r, at, img, title, desc, false);
+    tip(ui, r, at, img, title, desc, bold);
 }
 
 /// The hover timing: shown after 0.5 s over `r` (restarted on entering it
@@ -166,7 +167,7 @@ fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, 
     let plain = matches!(img, TipImage::None);
     let text_x = match img {
         TipImage::Large(_) => 45.0,
-        TipImage::Small(_) | TipImage::Mini(_) | TipImage::Tool(_) => 29.0,
+        TipImage::Small(_) | TipImage::Mini(_) | TipImage::Tool(_) | TipImage::OmpTool(_) => 29.0,
         TipImage::None => 6.0,
     };
     let text_w = lines.iter().map(|l| width(l, &font)).chain(std::iter::once(if plain { 0.0 } else { width(title, &bold) })).fold(0.0, f32::max);
@@ -201,6 +202,7 @@ fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, 
             TipImage::Mini(m) => crate::ribbon::paint_mini(p, Rect::from_min_size(r.min + Vec2::new(9.0, 5.0), Vec2::splat(16.0)), m, accent),
             // (the toolbar's 22 px cell, the glyph 4 px in)
             TipImage::Tool(t) => crate::diagram_ui::paint_tool(p, Rect::from_min_size(r.min + Vec2::new(5.0, 2.0), Vec2::splat(22.0)), t, accent),
+            TipImage::OmpTool(t) => crate::omp_ui::paint_tool_icon(p, Rect::from_min_size(r.min + Vec2::new(9.0, 5.0), Vec2::splat(16.0)), t, true),
             TipImage::None => {}
         }
         if plain {
