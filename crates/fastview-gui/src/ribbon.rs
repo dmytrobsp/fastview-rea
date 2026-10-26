@@ -1372,13 +1372,26 @@ fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: 
     if let Some([top, bottom]) = p.caption_band {
         let r = panel.response.rect;
         let band = egui::Rect::from_min_max(egui::pos2(r.left(), r.bottom() - 16.0), r.max);
-        ui.painter().set(
-            bg,
-            egui::Shape::Vec(vec![
+        // Under the pointer (Office 2007, VM «Видимость» hot) the panel
+        // lights up: a white frame, its face (229, 240, 255) → (231, 241,
+        // 253) over the first 13 rows then (220, 234, 252) → (221, 233,
+        // 249), the band (200, 224, 255) → (214, 237, 255).
+        let shapes = if office2007(&p) && ui.rect_contains_pointer(r) {
+            let c = |r, g, b| Color32::from_rgb(r, g, b);
+            let face = egui::Rect::from_min_max(r.min + egui::vec2(1.0, 1.0), egui::pos2(r.right() - 1.0, band.top()));
+            let h = face.height();
+            vec![
+                gradient_mesh(face, &[(0.0, c(229, 240, 255)), (13.0, c(231, 241, 253)), (13.0, c(220, 234, 252)), (h, c(221, 233, 249))]),
+                gradient_mesh(band.shrink2(egui::vec2(1.0, 0.0)), &[(0.0, c(200, 224, 255)), (16.0, c(214, 237, 255))]),
+                egui::Shape::rect_stroke(r.shrink(1.0), 2.0f32, egui::Stroke::new(1.0f32, Color32::WHITE)),
+            ]
+        } else {
+            vec![
                 egui::Shape::rect_stroke(r.shrink(1.0), 2.0f32, egui::Stroke::new(1.0f32, crate::theme::alpha(255, 255, 255, 130))),
                 gradient_mesh(band, &[(0.0, top), (16.0, bottom)]),
-            ]),
-        );
+            ]
+        };
+        ui.painter().set(bg, egui::Shape::Vec(shapes));
     }
     // right divider
     let r = ui.min_rect();

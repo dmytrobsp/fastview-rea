@@ -9386,6 +9386,15 @@ selected pending lane's merged channel and re-indexes the remaining
 formula channels' keys (selection and anchor). VM: alike. Test
 `a_channel_pasted_at_another_rate_survives_the_merge` extended.
 
+### L9.373 — VM: a ribbon panel under the pointer lights up  ·  ✅
+Scanned (Office 2007 Blue, the pointer on «Видимость»'s caption): the
+panel under the pointer gets a white frame, a face of (229, 240, 255) →
+(231, 241, 253) over its first 13 rows then (220, 234, 252) → (221, 233,
+249), and its caption band (200, 224, 255) → (214, 237, 255); a panel
+away from the pointer keeps its normal look (ours alike). Ours never lit
+a panel. Now `ribbon_group_expanded` paints that state while the pointer
+is over the panel. VM: alike.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
