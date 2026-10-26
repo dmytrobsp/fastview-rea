@@ -241,7 +241,9 @@ impl App {
                                     if k < 10 {
                                         menu_rects.push((crate::keytips::Target::Recent(k), r.rect, true));
                                     }
-                                    if r.on_hover_text(path.display().to_string()).clicked() {
+                                    // The full path as a plain tip (VM).
+                                    tips::pointer_tip(ui, &r, TipImage::None, "", &path.display().to_string(), false);
+                                    if r.clicked() {
                                         cmds.push(Command::OpenPath(path.clone()));
                                         ui.close_menu();
                                     }

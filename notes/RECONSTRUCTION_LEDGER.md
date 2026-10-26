@@ -9308,6 +9308,14 @@ tooltip). Now TOOLBAR 475's buttons carry the prompts 32871–32878
 `TipImage::OmpTool` with `omp_ui::paint_tool_icon` (taken out of
 `tool_button`). VM: the tip alike.
 
+### L9.365 — VM: the application menu's recent file: its full path as a plain tip  ·  ✅
+Run (the application menu open, the pointer on «1 C:\Users\…\WIN_1999.cfg»):
+the original shows the full path in MFC's plain tooltip under the
+pointer; ours (egui's hover text inside the menu popup) showed nothing.
+Now `tips::pointer_tip` with no image. VM: the tip alike in place and
+look. Left: the OMP result's save button tip (needs an ОМП run with
+data entered; unchecked).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
