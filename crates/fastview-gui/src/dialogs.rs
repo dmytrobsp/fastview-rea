@@ -1256,9 +1256,14 @@ pub fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], curre
     let area = egui::Area::new(id.with("popup")).order(egui::Order::Foreground).fixed_pos(list.min).show(&ctx, |ui| {
         ui.allocate_exact_size(list.size(), egui::Sense::hover());
         let p = ui.painter();
-        for k in 1..=5 {
-            let a = [134u8, 161, 200, 227, 237][k - 1];
-            p.vline(list.right() + k as f32 - 0.5, list.top() + 3.0..=list.bottom(), Stroke::new(1.0f32, Color32::from_black_alpha(255 - a)));
+        // Windows' drop shadow (VM, over white): 5 px right of the list
+        // and under it from 5 px in, (142) → (171) → (212) → (241) →
+        // (252) outwards.
+        for (k, a) in [142u8, 171, 212, 241, 252].into_iter().enumerate() {
+            let shade = Color32::from_black_alpha(255 - a);
+            let d = k as f32;
+            p.rect_filled(Rect::from_min_max(Pos2::new(list.right() + d, list.top() + 5.0), Pos2::new(list.right() + d + 1.0, list.bottom())), 0.0, shade);
+            p.rect_filled(Rect::from_min_max(Pos2::new(list.left() + 5.0, list.bottom() + d), Pos2::new(list.right() + 5.0, list.bottom() + d + 1.0)), 0.0, shade);
         }
         p.rect_filled(list, 0.0, Color32::from_rgb(0, 120, 215));
         p.rect_filled(list.shrink(1.0), 0.0, Color32::WHITE);

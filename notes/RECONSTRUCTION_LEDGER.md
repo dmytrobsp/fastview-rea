@@ -9566,7 +9566,11 @@ the value cell (x 1791), to the cell's right. Ours kept the blue face
 (only the pointer over it lit it, flat) and opened the list a row
 higher and 3 px narrower. Now the pressed face (Blue; cleared by the
 next press) and the list's rect. VM: the button's column and the list's
-edges alike. Left: the list's drop shadow (Windows', ours none).
+edges alike. And the combo lists' drop shadow (Windows'): 5 px right
+of the list and under it from 5 px in, (142) → (171) → (212) → (241) →
+(252) outwards over white; ours had only a darker right strip. Now
+`dialogs::combo_popup` draws both strips (every combo list). VM: the
+bottom shadow's five rows exact.
 
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
