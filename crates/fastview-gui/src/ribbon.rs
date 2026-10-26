@@ -413,9 +413,10 @@ impl App {
             // content from row 56: a panel's frame there, its buttons from
             // 58 (VM).
             let body_bg = ui.painter().add(egui::Shape::Noop);
+            let blue = p.bands.is_some_and(|b| b.panel_sep.is_some());
             let body = egui::Frame::none()
                 .fill(if p.body.is_some() { Color32::TRANSPARENT } else { p.tab_active })
-                .stroke(egui::Stroke::new(1.0f32, p.group_border))
+                .stroke(egui::Stroke::new(1.0f32, if blue { Color32::TRANSPARENT } else { p.group_border }))
                 .inner_margin(egui::Margin { left: 4.0, right: 6.0, top: 2.0, bottom: 2.0 })
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = row_gap;
@@ -480,7 +481,9 @@ impl App {
                         }
                     });
                 });
-            if let Some([top, dip, bottom]) = p.body {
+            if blue {
+                ui.painter().set(body_bg, egui::Shape::Vec(body_2007(body.response.rect)));
+            } else if let Some([top, dip, bottom]) = p.body {
                 let r = body.response.rect;
                 ui.painter().set(body_bg, gradient_mesh(r, &[(0.0, top), (18.0, dip), (r.height(), bottom)]));
             }
@@ -1445,6 +1448,107 @@ fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: 
     );
     // The next panel 3 px on (VM: frames at 152 / 156, 399 / 403 …).
     ui.add_space(3.0);
+}
+
+/// Office 2007 Blue's category body (VM, rows 53–142 of a maximised
+/// window): a (141, 178, 227) line along the top and down both sides 1 px
+/// in, rounded at the top, a light column inside each side, the frame's
+/// brush (191, 219, 255) → (185, 212, 247) outside them; the ground the
+/// panels' own two-part face — (222, 231, 245) → (208, 223, 240) over its
+/// first rows, then (199, 216, 237) on to (227, 244, 255) — and a light
+/// last row. `r` the body frame's rect (its stroke row above it).
+fn body_2007(r: egui::Rect) -> Vec<egui::Shape> {
+    use egui::{pos2, Rect, Shape};
+    let c = |r, g, b| Color32::from_rgb(r, g, b);
+    // Rows t … t + 88 (54–142 maximised), the line on t − 1.
+    let (l, w, t) = (r.left().floor(), r.right().round() - 1.0, r.top().round());
+    let b = t + 89.0;
+    let px = |x0: f32, y0: f32, x1: f32, y1: f32, col: Color32| Shape::rect_filled(Rect::from_min_max(pos2(x0, y0), pos2(x1, y1)), 0.0, col);
+    let col = |x: f32, y0: f32, y1: f32, stops: &[(f32, Color32)]| gradient_mesh(Rect::from_min_max(pos2(x, y0), pos2(x + 1.0, y1)), stops);
+    let line = c(141, 178, 227);
+    let light = [(0.0, c(225, 238, 247)), (13.0, c(213, 235, 247)), (14.0, c(204, 232, 245)), (43.0, c(206, 244, 251)), (83.0, c(194, 249, 255))];
+    let mut v = vec![
+        gradient_mesh(
+            Rect::from_min_max(pos2(l, t), pos2(w + 1.0, b - 1.0)),
+            &[
+                (0.0, c(231, 239, 248)),
+                (1.0, c(231, 239, 248)),
+                (1.0, c(223, 236, 247)),
+                (2.0, c(223, 236, 247)),
+                (2.0, c(224, 233, 245)),
+                (4.0, c(222, 231, 245)),
+                (17.0, c(208, 223, 240)),
+                (17.0, c(199, 216, 237)),
+                (71.0, c(216, 232, 245)),
+                (87.0, c(227, 244, 255)),
+                (87.0, c(231, 242, 255)),
+                (88.0, c(231, 242, 255)),
+            ],
+        ),
+        px(l, b - 1.0, w + 1.0, b, c(192, 249, 255)),
+        // The brush outside the lines.
+        col(l, t, b + 1.0, &[(0.0, c(191, 219, 255)), (84.0, c(185, 212, 247)), (90.0, c(189, 216, 252))]),
+        col(w, t, b + 1.0, &[(0.0, c(191, 219, 255)), (84.0, c(185, 212, 247)), (90.0, c(189, 216, 252))]),
+        // The lines and the light inside them.
+        px(l + 5.0, t - 1.0, w - 3.0, t, line),
+        col(l + 1.0, t + 3.0, b - 1.0, &[(0.0, line), (82.0, line), (83.0, c(146, 181, 227)), (85.0, c(179, 205, 239))]),
+        col(w - 1.0, t + 3.0, b - 1.0, &[(0.0, c(148, 183, 229)), (80.0, c(153, 189, 231)), (82.0, c(140, 177, 225)), (85.0, c(180, 206, 240))]),
+        col(l + 2.0, t + 3.0, b - 1.0, &light),
+        col(w - 2.0, t + 3.0, b - 1.0, &light),
+    ];
+    // The rounded top corners.
+    let brush = c(191, 219, 255);
+    for (x, y, k) in [
+        (l, t - 1.0, brush),
+        (l + 1.0, t - 1.0, brush),
+        (w - 1.0, t - 1.0, brush),
+        (w, t - 1.0, brush),
+        (l + 4.0, t, c(224, 233, 246)),
+        (l + 2.0, t - 1.0, c(184, 214, 251)),
+        (l + 3.0, t - 1.0, c(164, 196, 239)),
+        (l + 4.0, t - 1.0, c(147, 182, 229)),
+        (l + 1.0, t, c(182, 213, 249)),
+        (l + 2.0, t, c(160, 193, 236)),
+        (l + 3.0, t, c(198, 216, 240)),
+        (l + 1.0, t + 1.0, c(162, 194, 237)),
+        (l + 2.0, t + 1.0, c(200, 217, 240)),
+        (l + 1.0, t + 2.0, c(143, 179, 227)),
+        (l + 2.0, t + 2.0, c(223, 235, 247)),
+        (w - 3.0, t - 1.0, c(162, 196, 238)),
+        (w - 2.0, t - 1.0, c(184, 212, 251)),
+        (w - 3.0, t, c(201, 218, 241)),
+        (w - 2.0, t, c(144, 179, 227)),
+        (w - 1.0, t, c(178, 208, 247)),
+        (w, t, brush),
+        (w - 3.0, t + 1.0, c(227, 237, 248)),
+        (w - 2.0, t + 1.0, c(206, 222, 242)),
+        (w - 1.0, t + 1.0, c(157, 192, 235)),
+        (w - 2.0, t + 2.0, c(226, 237, 247)),
+        (w - 1.0, t + 2.0, c(142, 178, 227)),
+        // The rounded bottom corners (rows 140–142).
+        (l + 1.0, t + 86.0, c(146, 181, 227)),
+        (l + 1.0, t + 87.0, c(160, 190, 229)),
+        (l + 2.0, t + 87.0, c(194, 243, 252)),
+        (l + 3.0, t + 87.0, c(207, 240, 252)),
+        (l + 4.0, t + 87.0, c(226, 240, 254)),
+        (l, t + 88.0, c(187, 215, 250)),
+        (l + 1.0, t + 88.0, c(179, 205, 239)),
+        (l + 2.0, t + 88.0, c(169, 199, 229)),
+        (l + 3.0, t + 88.0, c(191, 237, 248)),
+        (l + 4.0, t + 88.0, c(193, 247, 254)),
+        (w - 2.0, t + 86.0, c(196, 249, 255)),
+        (w - 1.0, t + 86.0, c(150, 183, 227)),
+        (w - 3.0, t + 87.0, c(202, 240, 252)),
+        (w - 2.0, t + 87.0, c(190, 236, 249)),
+        (w - 1.0, t + 87.0, c(165, 194, 231)),
+        (w - 3.0, t + 88.0, c(187, 229, 243)),
+        (w - 2.0, t + 88.0, c(164, 191, 224)),
+        (w - 1.0, t + 88.0, c(180, 206, 240)),
+        (w, t + 88.0, c(188, 216, 251)),
+    ] {
+        v.push(px(x, y, x + 1.0, y + 1.0, k));
+    }
+    v
 }
 
 /// Office 2007 Blue's panel (VM, «Видимость» scanned, rows 56–140): a

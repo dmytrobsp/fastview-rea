@@ -9520,6 +9520,21 @@ own edge rows. VM: «Видимость» 222 px wide in both, its separators at
 the same offsets, the frames, faces, band and the hot look within a
 unit; the other panels narrower by their labels' widths (the font, W6).
 
+### L9.384 — VM: the ribbon's category body as Office 2007 Blue draws it  ·  ✅
+L9.225's residual (the body's top line colour). Scanned rows 52–143 at
+both window edges and between panels: the body is framed — a (141, 178,
+227) line along row 53 and down both sides 1 px in (x 1 and 2558),
+rounded at all four corners, a light column inside each side, the
+frame's brush (191, 219, 255) → (185, 212, 247) outside them — and its
+ground is the panels' own two-part face: (231, 239, 248), (223, 236,
+247), then (222, 231, 245) → (208, 223, 240) to row 70, (199, 216, 237)
+→ (216, 232, 245) → (227, 244, 255) to row 140, (231, 242, 255) and a
+(192, 249, 255) last row. Ours drew a (174, 197, 214) top line, no side
+lines (egui's stroke lay outside the window) and a smooth three-stop
+gradient. Now `ribbon::body_2007` for the Blue look (egui's stroke
+transparent there; the layout unchanged). VM: rows 53–142 at both edges
+and mid-window within a unit.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
