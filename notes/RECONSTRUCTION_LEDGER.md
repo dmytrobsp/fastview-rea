@@ -9722,6 +9722,17 @@ or a digital channel named as an analog group member — the original's
 name-keyed groups take the namesake in (a second group lane painting the
 members, hides and flags acting on them); ours keeps groups per channel.
 
+### L9.396 — VM (a clone): «Быстрый анализ»'s Outlook bar titles wrap as the original's  ·  ✅
+Side by side at 1280 × 800 the sheet sits and lays out alike, but the
+original breaks «Дифференциальные токи» onto two lines, so «Редактор
+формул» sits 13 px lower than ours. The bar draws its titles in its own
+font, Segoe UI 9 pt (12 px; VM, by the glyphs), not the dialog's; ours
+used the dialog's 11 px Tahoma, about 6 % narrower. Now `bar_title`
+lays them out in Tahoma at 12 px in the same 138 px: «Фазные
+сопротивления» on one line, the other long ones on two. VM: the six
+items' rows identical. Test `outlook_titles_wrap_as_the_original`.
+Residual: Tahoma 12 px looks a little heavier than Segoe UI (W6, the font).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

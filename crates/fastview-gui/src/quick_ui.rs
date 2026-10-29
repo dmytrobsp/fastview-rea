@@ -415,9 +415,7 @@ impl App {
                     let ink = egui::Color32::from_rgb(0, 21, 110);
                     let mut y = inner.top();
                     for (tab, glyph, title) in PAGES {
-                        let mut job = egui::text::LayoutJob::simple(title.to_string(), crate::dialogs::DLG_FONT, ink, inner.width() - 8.0);
-                        job.halign = egui::Align::Center;
-                        let g = ui.fonts(|f| f.layout_job(job));
+                        let g = ui.fonts(|f| f.layout_job(bar_title(title, ink, inner.width())));
                         let lines = g.rows.len().max(1) as f32;
                         let item = egui::Rect::from_min_size(egui::pos2(inner.left(), y), egui::vec2(inner.width(), 42.0 + 13.0 * lines));
                         let icon = egui::Rect::from_center_size(egui::pos2(inner.center().x, y + 7.0 + 13.0), egui::vec2(26.0, 26.0));
@@ -1287,9 +1285,30 @@ const PAGES: [(AnalysisTab, &str, &str); 6] = [
     (AnalysisTab::Formula, "f(x)", "Редактор формул"),
 ];
 
+/// An Outlook-bar page title: the bar's own font, Segoe UI 9 pt (VM; ours
+/// Tahoma at its 12 px, which wraps the titles where Segoe UI does —
+/// «Дифференциальные токи» on two lines, «Фазные сопротивления» on one),
+/// centred, wrapped 4 px in from each side.
+fn bar_title(title: &str, ink: egui::Color32, width: f32) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::simple(title.to_string(), egui::FontId::proportional(12.0), ink, width - 8.0);
+    job.halign = egui::Align::Center;
+    job
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Outlook bar's titles break where the original's do (VM, a
+    /// clone run: «Дифференциальные токи» on two lines).
+    #[test]
+    fn outlook_titles_wrap_as_the_original() {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(crate::app_fonts());
+        let _ = ctx.run(Default::default(), |_| {});
+        let rows: Vec<usize> = PAGES.iter().map(|(_, _, t)| ctx.fonts(|f| f.layout_job(bar_title(t, egui::Color32::BLACK, 146.0))).rows.len()).collect();
+        assert_eq!(rows, [2, 2, 2, 1, 2, 1], "{:?}", PAGES.map(|p| p.2));
+    }
 
     /// VM: closing the sheet opened on the formula editor writes
     /// «SymmetricItemsPage» too (the sheet's first page is created).
