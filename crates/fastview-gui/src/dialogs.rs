@@ -49,6 +49,26 @@ const DLG_BORDER: Color32 = Color32::from_rgba_premultiplied(45, 45, 45, 102);
 const DLG_CAPTION_H: f32 = 25.0;
 /// The controls' font: the templates' MS Shell Dlg 8 (Tahoma 8 pt, 11 px);
 /// the caption is the system's 9 pt (12 px).
+/// CenterWindow's last step (MFC): the window rect — the visible one with
+/// Windows 11's invisible 2 px frame left, right and below — moved inside
+/// the work area, its right and bottom edges first, then its left and top,
+/// so a dialog taller than the work area hangs from its top (VM, L9.401:
+/// «Отображение каналов» at 1280 × 800 from row 0). Ours' work area is its
+/// window (maximised, the monitor's). `at` the visible left-top.
+pub fn work_area_fit(at: Pos2, size: Vec2, area: egui::Rect) -> Pos2 {
+    let (w, h) = (size.x + 4.0, size.y + 2.0);
+    let (mut x, mut y) = (at.x - 2.0, at.y);
+    if x + w > area.right() {
+        x = area.right() - w;
+    }
+    x = x.max(area.left());
+    if y + h > area.bottom() {
+        y = area.bottom() - h;
+    }
+    y = y.max(area.top());
+    Pos2::new(x + 2.0, y)
+}
+
 pub const DLG_FONT: egui::FontId = egui::FontId::new(11.0, egui::FontFamily::Proportional);
 
 impl<'o> Dlg<'o> {
@@ -168,7 +188,7 @@ impl<'o> Dlg<'o> {
                     }
                 };
                 let at = Pos2::new(cx - ((size.x + 4.0) / 2.0).floor() + 2.0, cy - ((size.y + 2.0) / 2.0).floor());
-                win = win.current_pos(at + nudge);
+                win = win.current_pos(work_area_fit(at + nudge, size, ctx.screen_rect()));
             }
         }
         ctx.data_mut(|d| d.insert_temp(key, (frame, size, settled)));

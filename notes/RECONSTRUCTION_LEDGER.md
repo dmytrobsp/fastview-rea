@@ -9795,6 +9795,18 @@ the difference band as ours; ours' first-run frame is 945 × 536 shown
 against the original's 943 × 533, so Частотная docks a pixel taller
 (145 against 144; residual).
 
+### L9.401 — VM (a clone): a dialog taller than the work area hangs from its top  ·  ✅
+«Отображение каналов» (DIALOG 463, a 356 × 752 px client) does not fit
+the 752 px work area of a 1280 × 800 screen: the original shows it from
+row 0, caption and all, running on under the taskbar; ours centred it
+on the frame, its caption 13 px above the screen. MFC's CenterWindow
+ends by moving the window rect into the monitor's work area — its right
+and bottom edges first, then its left and top — which ours left out.
+Now `dialogs::work_area_fit` does that step for every dialog, ours'
+window standing for the work area (maximised, it is). VM: the caption
+from row 0, the list from 26, the sides at 461 / 818 in both. Test
+`a_tall_dialog_keeps_its_caption_on_the_screen`.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

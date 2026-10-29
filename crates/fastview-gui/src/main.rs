@@ -1218,6 +1218,21 @@ mod window_tests {
         assert_eq!(vis(&w), before, "a double-click flips once");
     }
 
+    /// A dialog taller than the work area hangs from its top (MFC's
+    /// CenterWindow, VM L9.401: «Отображение каналов» at 1280 × 800).
+    #[test]
+    fn a_tall_dialog_keeps_its_caption_on_the_screen() {
+        let mut app = demo(&[]);
+        app.open_channels_dialog();
+        let ctx = egui::Context::default();
+        frames_held(&mut app, &ctx, Vec2::new(1280.0, 752.0), vec![vec![]; 6], egui::Modifiers::NONE);
+        let list = app.dlg.channels.as_ref().and_then(|s| s.origin).expect("the dialog drawn");
+        // Its caption (25 px) and the 1 px frame above the list.
+        assert_eq!(list.y, 26.0, "the window from row 0");
+        assert_eq!(dialogs::work_area_fit(Pos2::new(500.0, -13.0), Vec2::new(360.0, 780.0), Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 752.0))), Pos2::new(500.0, 0.0));
+        assert_eq!(dialogs::work_area_fit(Pos2::new(1000.0, 600.0), Vec2::new(360.0, 200.0), Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 752.0))), Pos2::new(918.0, 550.0), "right and bottom edges inside first");
+    }
+
     /// A short pane keeps the grid's saved height (VM, L9.399: the
     /// original's layout `0x4376e0` does not clamp it; only a drag does).
     #[test]
