@@ -9655,6 +9655,17 @@ slightly different pointer: kept (egui offers the system cursors only;
 W6). Test `the_grid_splitter_drags` (the cursor on the line and brush,
 none on the plane).
 
+### L9.393 — VM (a clone): the minimum size holds for any resize  ·  ✅
+The harness's `SIZE 640,500` (SetWindowPos) left the original 852 px
+wide on screen and ours 640: the frame's WM_WINDOWPOSCHANGING goes to
+DefWindowProc, which asks WM_GETMINMAXINFO (`0x4728a0`, 866 × 500 with
+the invisible borders) and grows a smaller size to it — for SetWindowPos,
+Snap or another program, not only for a drag of the edge. winit answers
+that message itself, so ours kept its minimum for drags only. Now
+`minsize` subclasses the main window (both runners) and grows the size
+to [`MIN_VISIBLE`] plus the frame's own edges, unless minimised or
+maximised. VM: `SIZE 640,400` gives ours 852 × 493, as the original.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

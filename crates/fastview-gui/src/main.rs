@@ -25,6 +25,8 @@ mod sysclip;
 mod lanes;
 mod mdi;
 mod merge_ui;
+#[cfg(windows)]
+mod minsize;
 mod omp_ui;
 mod oscgeom;
 mod pdf;
@@ -684,6 +686,8 @@ impl eframe::App for App {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        #[cfg(windows)]
+        minsize::install_on(_frame);
         self.frame_ui(ctx);
         self.splash(ctx);
     }
