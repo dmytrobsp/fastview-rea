@@ -9733,6 +9733,25 @@ lays them out in Tahoma at 12 px in the same 138 px: «Фазные
 items' rows identical. Test `outlook_titles_wrap_as_the_original`.
 Residual: Tahoma 12 px looks a little heavier than Segoe UI (W6, the font).
 
+### L9.397 — VM (a clone): the category tabs on whole pixels; the active tab under the pointer  ·  ✅
+Scanned the tab row at 1280 × 800 (Office 2007 Blue). The original's
+active tab is a crisp frame on rows 31–52, «Главная»'s columns 48–115,
+four pixels to «ОМП»'s; its last row (53) opens into the body with a
+flare each side; a light column inside each side, two soft shadow
+columns outside. Ours sat half a pixel high (23 px centred in the 24 px
+row: y 30.5), so egui's rounded stroke smeared the frame over two rows
+and columns, a pixel right, five pixels between the tabs, and the
+body's line ran under the open row. Under the pointer the original's
+active tab turns gold — a (220, 186, 128) top, sides (184, 177, 164) →
+(254, 209, 94), (255, 255, 189) columns inside, two cream rows, a glow
+outside — which ours did not draw; the inactive tab's hot frame was
+also smeared. Now `ribbon_tab` snaps to whole pixels, `active_tab_blue`
+/ `active_tab_hot` / the inactive hot frame paint those pixels, and the
+open row is painted again after the body (`active_tab_open_row`).
+VM: «Главная» 48–115 and «ОМП» from 120 in both; the frames, inner
+columns and open rows within a few units. Residual: «ОМП» 2 px narrower
+(Segoe UI's label), the faces' middle a few units darker.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

@@ -396,8 +396,10 @@ impl App {
             ui.set_height(24.0);
             ui.add_space(6.0);
             self.orb_ui(ui, orb, p);
-            // Four pixels between the tabs' frames (VM).
-            ui.spacing_mut().item_spacing.x -= 1.0;
+            // «Главная»'s frame from x 48, four pixels between the tabs'
+            // frames (VM, 1280 × 800).
+            ui.add_space(-1.0);
+            ui.spacing_mut().item_spacing.x -= 2.0;
             for (n, (label, tab)) in [("Главная", RibbonTab::Home), ("ОМП", RibbonTab::Omp)].into_iter().enumerate() {
                 let r = ribbon_tab(ui, label, self.tab == tab, p);
                 self.kt_rects.push((crate::keytips::Target::Tab(n), r.rect, true));
@@ -489,6 +491,9 @@ impl App {
                 });
             if blue {
                 ui.painter().set(body_bg, egui::Shape::Vec(body_2007(body.response.rect)));
+                if let Some(t) = ui.ctx().data(|d| d.get_temp::<egui::Rect>(egui::Id::new("fv_active_tab"))) {
+                    active_tab_open_row(ui.painter(), t);
+                }
             } else if let Some([top, dip, bottom]) = p.body {
                 let r = body.response.rect;
                 ui.painter().set(body_bg, gradient_mesh(r, &[(0.0, top), (18.0, dip), (r.height(), bottom)]));
@@ -1293,6 +1298,103 @@ fn qat_arrow(ui: &mut egui::Ui, p: crate::theme::Palette, customise: bool) -> eg
 
 /// A category tab: the active one on its light fill in `text`
 /// (TextHighlighted), the others on the band in the inactive colour.
+/// The active tab in Office 2007 Blue, pixel by pixel as the VM shows it
+/// («Главная», rows 31–53 of the frame): a (141, 178, 227) frame with
+/// three-pixel corners, its top row (156, 188, 231) → (141, 178, 227); a
+/// light column inside each side; two soft shadow columns outside; the
+/// face (242, 247, 255) with a lighter third row, then (237, 244, 254) →
+/// (222, 232, 245) down to its last row, which opens into the body with
+/// a flare each side.
+fn active_tab_blue(painter: &egui::Painter, rect: egui::Rect) {
+    let c = |r, g, b| Color32::from_rgb(r, g, b);
+    let (l, r, t) = (rect.left(), rect.right(), rect.top());
+    let dot = |x: f32, y: f32, col: Color32| painter.rect_filled(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(1.0, 1.0)), 0.0, col);
+    let col = |x: f32, y0: f32, y1: f32, a: Color32, b: Color32| painter.add(gradient_mesh(egui::Rect::from_min_max(egui::pos2(x, y0), egui::pos2(x + 1.0, y1)), &[(0.0, a), (y1 - y0 - 1.0, b)]));
+    // The face, from under the top edge to the open row.
+    let face = egui::Rect::from_min_max(egui::pos2(l + 1.0, t + 1.0), egui::pos2(r - 1.0, t + 23.0));
+    painter.add(gradient_mesh(face, &[(0.0, c(242, 247, 255)), (1.0, c(243, 248, 254)), (2.0, c(247, 250, 255)), (3.0, c(237, 244, 254)), (21.0, c(222, 232, 245))]));
+    // Shadows outside, the frame's sides, the light columns inside.
+    col(l - 2.0, t + 3.0, t + 21.0, c(190, 217, 253), c(187, 215, 250));
+    col(l - 1.0, t + 3.0, t + 21.0, c(188, 216, 251), c(185, 212, 247));
+    col(r, t + 3.0, t + 21.0, c(178, 204, 238), c(173, 198, 231));
+    col(r + 1.0, t + 3.0, t + 21.0, c(189, 216, 252), c(183, 210, 244));
+    col(l, t + 3.0, t + 20.0, c(141, 178, 227), c(141, 178, 227));
+    col(r - 1.0, t + 3.0, t + 20.0, c(141, 178, 227), c(141, 178, 227));
+    col(l + 1.0, t + 3.0, t + 21.0, c(207, 251, 255), c(205, 251, 255));
+    col(r - 2.0, t + 3.0, t + 21.0, c(217, 245, 254), c(191, 250, 255));
+    // The top edge and its corners.
+    painter.add(gradient_mesh_h(egui::Rect::from_min_max(egui::pos2(l + 3.0, t), egui::pos2(r - 3.0, t + 1.0)), c(156, 188, 231), c(141, 178, 227)));
+    for (x, y, k) in [(l + 1.0, t, c(179, 209, 248)), (l + 2.0, t, c(159, 193, 236)), (l, t + 1.0, c(181, 210, 249)), (l + 1.0, t + 1.0, c(148, 197, 235)), (l + 2.0, t + 1.0, c(217, 234, 249)), (l, t + 2.0, c(160, 193, 236)), (l + 1.0, t + 2.0, c(198, 237, 251))] {
+        dot(x, y, k);
+    }
+    for (x, y, k) in [(r - 3.0, t, c(146, 181, 229)), (r - 2.0, t, c(163, 195, 238)), (r - 1.0, t, c(183, 213, 250)), (r - 3.0, t + 1.0, c(232, 241, 253)), (r - 2.0, t + 1.0, c(145, 181, 228)), (r - 1.0, t + 1.0, c(180, 210, 248)), (r - 2.0, t + 2.0, c(205, 225, 246)), (r - 1.0, t + 2.0, c(158, 192, 235))] {
+        dot(x, y, k);
+    }
+    // The flares into the body.
+    for (x, y, k) in [(l - 2.0, t + 21.0, c(184, 212, 248)), (l - 1.0, t + 21.0, c(159, 192, 235)), (l, t + 20.0, c(146, 185, 230)), (l, t + 21.0, c(173, 219, 243)), (l + 1.0, t + 21.0, c(217, 247, 253))] {
+        dot(x, y, k);
+    }
+    for (x, y, k) in [(r - 2.0, t + 21.0, c(207, 245, 252)), (r - 1.0, t + 20.0, c(150, 189, 231)), (r - 1.0, t + 21.0, c(176, 223, 244)), (r, t + 21.0, c(150, 180, 220)), (r + 1.0, t + 21.0, c(181, 206, 241))] {
+        dot(x, y, k);
+    }
+    active_tab_open_row(painter, rect);
+}
+
+/// The active tab's last row, open into the body (VM): the face's colour
+/// with a flare each side into the body's top line. Painted again after
+/// the body, whose line runs under it.
+pub(crate) fn active_tab_open_row(painter: &egui::Painter, rect: egui::Rect) {
+    let c = |r, g, b| Color32::from_rgb(r, g, b);
+    let (l, r, t) = (rect.left(), rect.right(), rect.top());
+    let dot = |x: f32, y: f32, col: Color32| painter.rect_filled(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(1.0, 1.0)), 0.0, col);
+    painter.rect_filled(egui::Rect::from_min_max(egui::pos2(l + 2.0, t + 22.0), egui::pos2(r - 2.0, t + 23.0)), 0.0, c(225, 234, 246));
+    for (x, y, k) in [(l - 3.0, t + 22.0, c(141, 178, 227)), (l - 2.0, t + 22.0, c(150, 190, 231)), (l - 1.0, t + 22.0, c(182, 227, 246)), (l, t + 22.0, c(220, 247, 253)), (l + 1.0, t + 22.0, c(229, 241, 249))] {
+        dot(x, y, k);
+    }
+    for (x, y, k) in [(r - 2.0, t + 22.0, c(223, 237, 248)), (r - 1.0, t + 22.0, c(207, 245, 252)), (r, t + 22.0, c(175, 220, 243)), (r + 1.0, t + 22.0, c(141, 178, 220)), (r + 2.0, t + 22.0, c(141, 178, 227))] {
+        dot(x, y, k);
+    }
+}
+
+/// A horizontal two-colour gradient over `rect`.
+fn gradient_mesh_h(rect: egui::Rect, a: Color32, b: Color32) -> egui::Shape {
+    let mut mesh = egui::Mesh::default();
+    for (p, k) in [(rect.left_top(), a), (rect.right_top(), b), (rect.right_bottom(), b), (rect.left_bottom(), a)] {
+        mesh.colored_vertex(p, k);
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    egui::Shape::mesh(mesh)
+}
+
+/// The active tab under the pointer (VM, Office 2007 Blue, «ОМП»): a gold
+/// frame — (220, 186, 128) on top, the sides (186, 171, 152) → (254, 209,
+/// 94) down to the body —, inside it a (255, 255, 189) column each side and
+/// two cream rows under the top, outside it a 1 px glow on the band.
+fn active_tab_hot(painter: &egui::Painter, rect: egui::Rect) {
+    let c = |r, g, b| Color32::from_rgb(r, g, b);
+    let (l, r, t, b) = (rect.left(), rect.right(), rect.top(), rect.bottom());
+    let px = |x: f32, y0: f32, y1: f32, col: Color32| painter.rect_filled(egui::Rect::from_min_max(egui::pos2(x, y0), egui::pos2(x + 1.0, y1)), 0.0, col);
+    let row = |y: f32, x0: f32, x1: f32, col: Color32| painter.rect_filled(egui::Rect::from_min_max(egui::pos2(x0, y), egui::pos2(x1, y + 1.0)), 0.0, col);
+    // The glow, then the frame's corners and edges.
+    row(t - 1.0, l + 3.0, r - 3.0, c(202, 216, 208));
+    px(l - 1.0, t + 3.0, b, c(199, 199, 168));
+    px(r, t + 3.0, b, c(199, 199, 168));
+    row(t, l + 3.0, r - 3.0, c(220, 186, 128));
+    // Inside: the two cream rows and the light columns.
+    row(t + 1.0, l + 3.0, r - 3.0, c(249, 235, 197));
+    row(t + 2.0, l + 2.0, r - 2.0, c(250, 237, 198));
+    px(l + 1.0, t + 4.0, b - 1.0, c(255, 255, 189));
+    px(r - 2.0, t + 4.0, b - 1.0, c(255, 255, 189));
+    for (x, y, k) in [(l, t + 1.0, c(190, 198, 197)), (l + 1.0, t + 1.0, c(185, 198, 207)), (l + 2.0, t + 1.0, c(177, 179, 179)), (l + 1.0, t + 2.0, c(174, 187, 191)), (l + 2.0, t + 2.0, c(234, 222, 185)), (l + 1.0, t + 3.0, c(225, 228, 193))] {
+        px(x, y, y + 1.0, k);
+        px(l + r - 1.0 - x, y, y + 1.0, k);
+    }
+    for x in [l, r - 1.0] {
+        painter.add(gradient_mesh(egui::Rect::from_min_max(egui::pos2(x, t + 2.0), egui::pos2(x + 1.0, b - 1.0)), &[(0.0, c(184, 177, 164)), (b - t - 4.0, c(254, 209, 94))]));
+    }
+}
+
 /// A category tab. The active one as the VM shows it (Office 2007 blue):
 /// 23 px tall, a 1 px (141, 178, 227) frame with rounded top corners, open
 /// at the bottom into the body, filled (244, 249, 255) → (222, 232, 245);
@@ -1303,9 +1405,20 @@ fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, p: crate::theme::Pal
     let text = if active { p.text } else { p.tab_text };
     let tw = ui.fonts(|f| f.layout_no_wrap(label.to_owned(), font.clone(), text).size().x);
     let (rect, resp) = ui.allocate_exact_size(egui::vec2((tw + 24.0).round(), 23.0), egui::Sense::click());
+    // Centred in the 24 px row it would sit half a pixel down: on whole
+    // pixels, its frame on the band's second row (VM).
+    let rect = rect.translate(egui::vec2(0.0, rect.top().ceil() - rect.top()));
+    if active {
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_active_tab"), rect));
+    }
     let painter = ui.painter();
     let blue = p.group_bg == Color32::from_rgb(223, 233, 246);
-    if active {
+    if active && blue {
+        active_tab_blue(painter, rect);
+        if resp.hovered() {
+            active_tab_hot(painter, rect);
+        }
+    } else if active {
         let (top, bottom) = if blue { (Color32::from_rgb(244, 249, 255), Color32::from_rgb(222, 232, 245)) } else { (Color32::WHITE.lerp_to_gamma(p.tab_active, 0.5), p.tab_active) };
         let frame = if blue { Color32::from_rgb(141, 178, 227) } else { p.group_border };
         let rounding = egui::Rounding { nw: 3.0, ne: 3.0, sw: 0.0, se: 0.0 };
@@ -1321,14 +1434,28 @@ fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, p: crate::theme::Pal
         // 221, 251) → (222, 233, 246) over 10 rows, then (213, 227, 239) →
         // (225, 210, 163) at the bottom.
         let c = |r, g, b| Color32::from_rgb(r, g, b);
-        let r = rect.with_min_y(rect.top() + 1.0);
-        let face = r.shrink(1.0).with_max_y(r.bottom());
+        let (l, r, t) = (rect.left(), rect.right(), rect.top());
+        let dot = |x: f32, y: f32, k: Color32| painter.rect_filled(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(1.0, 1.0)), 0.0, k);
+        let col = |x: f32, y0: f32, y1: f32, stops: &[(f32, Color32)]| painter.add(gradient_mesh(egui::Rect::from_min_max(egui::pos2(x, y0), egui::pos2(x + 1.0, y1)), stops));
+        let face = egui::Rect::from_min_max(egui::pos2(l + 1.0, t + 1.0), egui::pos2(r - 1.0, t + 22.0));
         let h = face.height();
         painter.add(gradient_mesh(face, &[(0.0, c(196, 221, 251)), (10.0, c(222, 233, 246)), (10.0, c(213, 227, 239)), (h, c(225, 210, 163))]));
-        let light = egui::Stroke::new(1.0f32, c(237, 244, 254));
-        painter.px_vline(face.left(), face.top() + 2.0..=face.bottom() - 1.0, light);
-        painter.px_vline(face.right() - 1.0, face.top() + 2.0..=face.bottom() - 1.0, light);
-        painter.px_rect_stroke(r.with_max_y(r.bottom() + 1.0), 3.0, egui::Stroke::new(1.0f32, c(152, 187, 233)));
+        // Pixel by pixel (VM, «ОМП» under the pointer, rows 31–52): a glow
+        // outside each side, the frame, a light column inside it.
+        for x in [l - 1.0, r] {
+            col(x, t + 3.0, t + 22.0, &[(0.0, c(203, 225, 254)), (6.0, c(215, 233, 255)), (18.0, c(197, 222, 255))]);
+        }
+        for x in [l, r - 1.0] {
+            col(x, t + 2.0, t + 22.0, &[(0.0, c(152, 187, 233))]);
+        }
+        for x in [l + 1.0, r - 2.0] {
+            col(x, t + 2.0, t + 22.0, &[(0.0, c(196, 220, 252)), (1.0, c(224, 238, 255)), (7.0, c(239, 246, 255)), (19.0, c(199, 224, 255))]);
+        }
+        painter.rect_filled(egui::Rect::from_min_max(egui::pos2(l + 3.0, t), egui::pos2(r - 3.0, t + 1.0)), 0.0, c(162, 194, 238));
+        for (dx, dy, k) in [(1.0, 0.0, c(182, 211, 249)), (2.0, 0.0, c(171, 202, 243)), (0.0, 1.0, c(179, 209, 248)), (1.0, 1.0, c(170, 202, 243)), (2.0, 1.0, c(190, 216, 250))] {
+            dot(l + dx, t + dy, k);
+            dot(r - 1.0 - dx, t + dy, k);
+        }
     } else if resp.hovered() {
         painter.rect(rect, egui::Rounding { nw: 3.0, ne: 3.0, sw: 0.0, se: 0.0 }, p.tab_active.gamma_multiply(0.4f32), egui::Stroke::NONE);
     }
