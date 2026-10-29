@@ -43,6 +43,7 @@ public static class In {
   [DllImport("user32.dll")] public static extern IntPtr GetCursor();
   [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint a, uint b, bool attach);
   [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll")] public static extern bool DrawIconEx(IntPtr hdc, int x, int y, IntPtr h, int w, int hh, int step, IntPtr brush, int flags);
   public static string Cursor() {
     var ci = new CURSORINFO(); ci.cbSize = Marshal.SizeOf(typeof(CURSORINFO));
     if (!GetCursorInfo(ref ci)) return "?";
@@ -149,7 +150,7 @@ foreach ($k in ($Keys -split ';')) {
             Add-Type -AssemblyName System.Drawing
             $bmp = New-Object System.Drawing.Bitmap 32, 32
             $g = [System.Drawing.Graphics]::FromImage($bmp); $g.Clear([System.Drawing.Color]::White)
-            ([System.Drawing.Icon]::FromHandle([IntPtr][Convert]::ToInt64($Matches[1], 16))).Draw($g, 0, 0) 2>$null
+            $dc = $g.GetHdc(); [In]::DrawIconEx($dc, 0, 0, [IntPtr][Convert]::ToInt64($Matches[1], 16), 32, 32, 0, [IntPtr]::Zero, 3) | Out-Null; $g.ReleaseHdc($dc)
             $g.Dispose(); $bmp.Save((Join-Path (Join-Path $here 'shots') ("cursor_" + $Matches[1] + ".png"))); $bmp.Dispose()
         }
     } elseif ($k -match '^WINS (.+)$') {

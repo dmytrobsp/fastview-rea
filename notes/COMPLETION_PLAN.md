@@ -133,7 +133,7 @@ L9.95, L9.98, L9.100, L9.101 — their headings now say so). What is left, as
 items (VM ones also in W4.4):
 
 - [x] W2.1 L9.12 — the grid / plane splitter's look (L9.230); its cursor
-  cannot be captured (W6).
+  captured since L9.392 (MFC's split bar; ours the system's, W6).
 - [ ] W2.2 L9.14 — the pre-2007 looks 210–214: read the older visual
   managers in mfc120u, or capture each Стиль on the VM (captured
   2026-10-24: done in L9.223 — Windows 11's system colours, the flat
@@ -250,8 +250,8 @@ items (VM ones also in W4.4):
     ~~differential table's row order~~ (run, L9.298); the app menu's keytips
     (run, L9.291); ~~the ribbon's reduction steps~~ (run, L9.299); ~~the printed vector
     legend~~ (run, L9.296); the preview on non-A4 paper (L9.94); ~~GDI's Ellipse box~~
-    (run, L9.285); ~~the diagram tab order in the workspace~~ (run, L9.302); the splitter
-    cursor (L9.106); ~~the docking divider's limits~~ (run, L9.300); ~~a paste's
+    (run, L9.285); ~~the diagram tab order in the workspace~~ (run, L9.302); ~~the splitter
+    cursor~~ (run, L9.392); ~~the docking divider's limits~~ (run, L9.300); ~~a paste's
     selection~~ (run, L9.295); ~~the print dialog's fields / status~~ (run, L9.301); the
     preview's per-page DC (L9.121); «Свойства»' DEVMODE (L9.122); ~~the
     older looks' app button~~ (run, L9.223); ~~Ctrl over a hot marker~~ (run, L9.302);
@@ -406,3 +406,6 @@ The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
   icon at start-up (L9.369); a resource needs a build-time tool.
 - Message 239 («Выбранные каналы имеют разную частоту»): not reachable by
   merging records (one rate after a merge, L9.371).
+- The splitters' pointer images (MFC's split-bar cursors; ours the
+  system's SIZEWE / SIZENS in the same places): egui sets system cursors
+  only (L9.392).

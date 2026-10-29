@@ -9641,6 +9641,20 @@ shaded rows (202, 179, 152) / (233, 208, 177), the face (247, 218, 182)
 drawn the large one's darker orange and gold edge. Now its own branch;
 VM: its column within a few units.
 
+### L9.392 — VM (a throwaway clone): the splitters' pointers  ·  ✅
+The VM runs now go to a fresh Windows 11 clone per session (`tools/vm/
+clone.sh`: 1280 × 800, the original and ours prepared in it), and the
+harness reads the pointer's shape (`keys.ps1` `CURSOR`: the system
+cursor's IDC_ name, else its image). Over the dividers between the
+docked panes and the document area, and between the panes, the original
+shows MFC's split-bar pointer (two bars with arrows, ⇹); over the
+Частотная divider and the grid / plane splitter the vertical one (⇳) —
+not the system's. Ours shows Windows' SIZEWE / SIZENS there (and SIZENS
+on the grid's splitter, which the test now pins). Same places, a
+slightly different pointer: kept (egui offers the system cursors only;
+W6). Test `the_grid_splitter_drags` (the cursor on the line and brush,
+none on the plane).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

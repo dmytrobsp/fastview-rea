@@ -1020,13 +1020,16 @@ mod window_tests {
     }
 
     /// [`frames`] with `modifiers` held throughout.
-    fn frames_held(app: &mut App, ctx: &egui::Context, size: Vec2, batches: Vec<Vec<egui::Event>>, modifiers: egui::Modifiers) {
+    /// Returns the last frame's cursor.
+    fn frames_held(app: &mut App, ctx: &egui::Context, size: Vec2, batches: Vec<Vec<egui::Event>>, modifiers: egui::Modifiers) -> egui::CursorIcon {
+        let mut cursor = egui::CursorIcon::Default;
         for events in batches {
             let t = ctx.input(|i| i.time) + 0.05;
             let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), time: Some(t), events, modifiers, ..Default::default() };
             dialogs::take_dialog_tabs(ctx, &mut raw);
-            let _ = ctx.run(raw, |ctx| app.frame_ui(ctx));
+            cursor = ctx.run(raw, |ctx| app.frame_ui(ctx)).platform_output.cursor_icon;
         }
+        cursor
     }
 
     /// At `size`: the pointer rests at the centre, then drags from a third
@@ -1134,8 +1137,8 @@ mod window_tests {
             w
         }
 
-        fn run(&mut self, events: Vec<egui::Event>) {
-            frames_held(&mut self.app, &self.ctx, Vec2::new(1320.0, 860.0), vec![events], self.held);
+        fn run(&mut self, events: Vec<egui::Event>) -> egui::CursorIcon {
+            frames_held(&mut self.app, &self.ctx, Vec2::new(1320.0, 860.0), vec![events], self.held)
         }
 
         fn idle(&mut self, n: usize) {
@@ -1242,6 +1245,26 @@ mod window_tests {
         w.press(Primary, at, at - Vec2::new(0.0, 12.0));
         let g2 = *w.app.pane_grid.first().unwrap();
         assert!((g2.bottom() - (at.y - 12.0)).abs() <= 1.0, "after a tab click: {g1:?} → {g2:?}");
+        // Its line and brush show the resize cursor; the plane under them
+        // does not (VM, L9.392).
+        let hover = |w: &mut Win, y: f32| {
+            w.run(vec![egui::Event::PointerMoved(Pos2::new(g2.center().x, y))]);
+            w.run(vec![])
+        };
+        for dy in [1.0, 3.0, 5.0] {
+            assert_eq!(hover(&mut w, g2.bottom() + dy), egui::CursorIcon::ResizeVertical, "{dy} under the grid");
+        }
+        assert_ne!(hover(&mut w, g2.bottom() + 40.0), egui::CursorIcon::ResizeVertical, "on the plane");
+        // The start-up layout's differential pane too.
+        let mut w = Win::new();
+        w.app.docks = docking::Docks::default();
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Differential));
+        w.idle(3);
+        let g = *w.app.pane_grid.first().expect("the differential pane's grid");
+        for dy in [1.0, 3.0, 5.0] {
+            let c = { w.run(vec![egui::Event::PointerMoved(Pos2::new(g.center().x, g.bottom() + dy))]); w.run(vec![]) };
+            assert_eq!(c, egui::CursorIcon::ResizeVertical, "{dy} under the differential grid {g:?}");
+        }
     }
 
     /// «Тип блока» alone (VM): F4 drops nothing; ↓ steps its value in an
