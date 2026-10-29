@@ -5383,7 +5383,7 @@ Read (background agents, spot-checked by hand where marked):
   operand first) — the readers pass the file, so the box reads «<message>
   - <file>»; «Каналы»'s rename edit `0x435ac0` (borderless, the cell's
   left + 23, 1 px in, the list's font; a computed channel → message 398);
-  a name's group `0x455b30` (ignoring case); the tokenizer's rest of line
+  a name's group `0x455b30` (exact: mfc #2949, see L9.395); the tokenizer's rest of line
   `0x476f30`; page 539's per-arm combos `0x482f70`, `0x483030`,
   `0x4830f0` and «>>» `0x483250`; the option savers `0x484b30`,
   `0x484ec0`; the formula page's PreTranslateMessage `0x4862e0` — all as
@@ -5419,7 +5419,7 @@ read, the boxes read «<message> - <file>», `lanes::DIGITAL_FILL` /
 reads to the map's size. Tests `a_missing_close_paren_is_a_syntax_error`,
 `argument_errors_quote_the_formula_after_the_message`,
 `a_failed_open_is_reported_in_a_box`, `analysis_toggle_runs_and_clears`.
-Residual: «Каналы»'s rename edit geometry; groups by name ignoring case;
+Residual: «Каналы»'s rename edit geometry; groups by name (exact, L9.395);
 the ОМП re-run's lookup of «Lкз» / «КЗ фазы» among every channel
 ignoring case (ours: the computed list / exact names); the row filler
 `0x433b00` suggests `doc+0x1d8` counts computed channels (INFERRED by B6,
@@ -9695,6 +9695,32 @@ original's registry key, ours' settings folder), record `-` opens none.
 Test `start_up_blocks_take_half_the_area_left_and_keep_it`.
 Residual: a block cut by a narrower frame keeps its cut size in the
 original; ours returns to its extent when the frame grows again.
+
+### L9.395 — A channel's group is found by its exact name; lookups ignoring case fold every 1251 letter  ·  ✅
+Read (a background agent, W2.18; the import spot-checked: `0x4c2a80` =
+mfc120u #2949): `0x455b30`, a channel's group, compares its `+0x64`
+name with each member set's names by CStringA::Compare (`_mbscmp`) —
+exactly, not ignoring case as L9.181 had it; so do the member-set
+searches in its callers (`0x45fde0`, `0x4603d0`, `0x4681a0`,
+`0x461800`, `0x4635cb`). Its 20 callers (the stats flags 32820–32822
+`0x42f65d`, «Скрыть» `0x43016f`, «Каналы»' hide `0x434b6f`, the hit
+tests `0x45decc` / `0x465a77` / `0x4692a9`, mouse-up `0x45e847`, the
+painter `0x45fd3d`, lane height `0x46033d`, stats `0x46171c`, lane
+backgrounds `0x4634dd` / `0x463f97`, the zoom reset `0x4655f8`,
+«Совместить» `0x4674cf` / `0x4675d6`, 33037's CMDUI `0x467baf` and
+command `0x467d19`, the lane order `0x468029`, value ↔ y `0x49456c` /
+`0x495c2a`) all act on the same names. Channels named «Ia» and «IA»
+stay apart (as ours: groups per channel). A rename («Каналы»
+`0x435ed5`) writes only `+0x6c`, so the group follows it (as ours). The
+lookup that does ignore case is `0x42f020` (#2955 CStringA::CompareNoCase,
+`_mbsicmp` under Russian_Russia.1251): ours' `ansi_fold` folded only
+A–Z, А–Я and Ё; now every 1251 pair (Є І Ї Ґ Ў Ј Ѕ Ђ Ѓ Љ Њ Ќ Ћ Џ;
+INFERRED from the CRT's tables). Test
+`ansi_case_fold` (every pair).
+Out of reach (W6): a record with two channels of the same exact name,
+or a digital channel named as an analog group member — the original's
+name-keyed groups take the namesake in (a second group lane painting the
+members, hides and flags acting on them); ours keeps groups per channel.
 
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,

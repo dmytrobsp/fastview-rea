@@ -73,14 +73,24 @@ pub struct ViewSnap {
 /// from OEM, i.e. 1 = the ANSI code page (1251), 0 = the OEM one (866), a
 /// tie 0 (seen on the VM: a CP1251 record's new `.set` says 1); other values
 /// are code page numbers (`0x4543e0`).
-/// ANSI case folding for name lookups ignoring case (`0x42f020`): ASCII and
-/// the Windows-1251 Cyrillic letters (INFERRED: the CRT's 1251 tables).
+/// ANSI case folding for name lookups ignoring case (`0x42f020`: mfc #2955,
+/// `_mbsicmp` under the Russian_Russia.1251 locale): ASCII and every
+/// Windows-1251 letter pair — Russian, and the Ukrainian, Belarusian and
+/// Serbian ones (INFERRED: the CRT's 1251 case tables).
 pub fn ansi_fold(b: &[u8]) -> Vec<u8> {
     b.iter()
         .map(|&c| match c {
             b'A'..=b'Z' => c + 32,
             0xC0..=0xDF => c + 32,
-            0xA8 => 0xB8,
+            0x80 => 0x90,
+            0x81 => 0x83,
+            0x8A | 0x8C..=0x8F => c + 0x10,
+            0xA1 => 0xA2,
+            0xA3 => 0xBC,
+            0xA5 => 0xB4,
+            0xA8 | 0xAA | 0xAF => c + 0x10,
+            0xB2 => 0xB3,
+            0xBD => 0xBE,
             _ => c,
         })
         .collect()

@@ -208,8 +208,8 @@ items (VM ones also in W4.4):
   tokenizer's integer, `.omp` gaps, «Каналы»'s rename edit, the merge
   bar's layout and fill, the ОМП tree after a delete, the finder's sort
   and `SortMode`, the settings link, the group stats width, the report's
-  «Ктр»; the frequency «Показать все» (no digital, VM run). Left: groups
-  by name ignoring case (the dissolve's lookup: L9.198); the ОМП re-run's
+  «Ктр»; the frequency «Показать все» (no digital, VM run). Left: ~~groups
+  by name ignoring case~~ (exact names, L9.395); the ОМП re-run's
   lookup ignoring case (as ours, L9.199's read); the zoom gate's rectangle:
   done, L9.200;
   the splash (done, L9.229: ours, 630 × 400, 2000 ms, topmost); the view scroll bar's
@@ -415,6 +415,10 @@ size-dependent behaviour the 2560 × 1440 VM never did (L9.393 –).
   icon at start-up (L9.369); a resource needs a build-time tool.
 - Message 239 («Выбранные каналы имеют разную частоту»): not reachable by
   merging records (one rate after a merge, L9.371).
+- Name-keyed groups with namesakes: a record with two channels of one
+  exact name, or a digital channel named as an analog member — the
+  original draws the namesake as a second group lane; ours keeps groups
+  per channel (degenerate records, L9.395).
 - The splitters' pointer images (MFC's split-bar cursors; ours the
   system's SIZEWE / SIZENS in the same places): egui sets system cursors
   only (L9.392).

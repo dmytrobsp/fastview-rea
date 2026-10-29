@@ -692,6 +692,7 @@ mod tests {
     fn ansi_case_fold() {
         let b = |t: &str| fvb_core::comtrade::encode_text(t, fvb_core::comtrade::Encoding::Cp1251);
         assert_eq!(crate::setfile::ansi_fold(&b("UaЁЖ")), b("uaёж"));
+        assert_eq!(crate::setfile::ansi_fold(&b("ЄІЇҐЎЈЅЂЃЉЊЌЋЏ")), b("єіїґўјѕђѓљњќћџ"), "every 1251 pair");
     }
 
     /// CMDUI 32850 / 32851 (`0x430650`): a selected channel of the wrong
