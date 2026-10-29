@@ -5,6 +5,21 @@ from your own copy) and ours side by side on a Windows machine reached by
 `ssh`, and capture what they show. Nothing here contains any part of the
 original.
 
+Use a throwaway clone (`clone.sh`): a fresh Windows 11
+throwaway VM (the maintainer's testbox tool, `instance new --desktop windows`), 1280 × 800,
+user `tbuser`, prepared by the script (the original from your copy, its VC++
+runtime, ru-RU locale and Format with one restart, the records, this folder
+and ours) in about two minutes, removed after the runs. A shared VM is for
+tests that need that machine itself.
+
+```sh
+tools/vm/clone.sh new                       # start + prepare (prints its name)
+FV_SHOTS=out/ tools/vm/clone.sh run o "SHOT a.png"   # the original, maximised, WIN_1999
+FV_NOMAX=1 tools/vm/clone.sh run u "SIZE 900,600;SHOT b.png"  # ours, as first shown
+tools/vm/clone.sh ours                      # push a rebuilt ours
+tools/vm/clone.sh rm
+```
+
 | script | what |
 |---|---|
 | `autologon.ps1` | turns on automatic sign-in of the test user (asks for the password at a hidden prompt, checks it first; undo commands at its top) — a desktop session is needed for anything visible |
@@ -13,7 +28,7 @@ original.
 | `capture.ps1 -Name <png>` | `shot.ps1` through `insession.ps1`, into `shots\` next to the scripts |
 | `wakeshot.ps1 -Out <png>` | `shot.ps1` after waking the display (an idle VM turns it off and captures freeze on its last frame); run it through `insession.ps1` |
 | `cleanup.ps1` | stops every FastView (ours or the original) and stuck `keys.ps1` runs |
-| `drive.ps1 -Exe <program> [-Open <file> \| -ArgLine "<args>"] [-Keys "<s1>;<s2>…"] [-Shot <png>] [-Leave] [-Soft]` | `keys.ps1` in the session: start the program (with a file), run the steps 1.5 s apart — SendKeys text, `CLICK x,y` / `RCLICK x,y[,ms]` / `DCLICK x,y[,ms]` (ms: the gap between the clicks, each press then held 40 ms), `DRAG x1,y1,x2,y2` (or `HOLD …` then `UP`), `WHEEL x,y,n`, `SHOT name.png` —, capture, close; prints its log. `-ArgLine` passes a raw argument line instead of `-Open`; `-Soft` starts ours in its software runner (`FV_SOFTWARE=1`) |
+| `drive.ps1 -Exe <program> [-Open <file> \| -ArgLine "<args>"] [-Keys "<s1>;<s2>…"] [-Shot <png>] [-Leave] [-Soft]` | `keys.ps1` in the session: start the program (with a file), run the steps 1.5 s apart — SendKeys text, `CLICK x,y` / `RCLICK x,y[,ms]` / `DCLICK x,y[,ms]` (ms: the gap between the clicks, each press then held 40 ms), `DRAG x1,y1,x2,y2` (or `HOLD …` then `UP`), `WHEEL x,y,n`, `MOVE x,y`, `SIZE w,h`, `CLOSE`, `SHOT name.png`, `WINS f.txt` (top-level windows), `CURSOR f.txt` (the pointer's shape) —, capture, close; prints its log. `-ArgLine` passes a raw argument line instead of `-Open`; `-Soft` starts ours in its software runner (`FV_SOFTWARE=1`) |
 
 Install of the original used here (file copy — its own setup wizard needs
 clicks): the files of `extracted/stage1/` in a folder, the English resource

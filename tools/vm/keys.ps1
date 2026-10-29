@@ -10,7 +10,8 @@
 # held across steps), "SIZE w,h" (the front window restored, w × h at 0,0),
 # "CLOSE" (WM_CLOSE to the front window), "SHOT name.png" (a capture now),
 # "WINS name.txt" (the program's top-level windows: handle, owner, visible,
-# enabled, class, title — into shots/).
+# enabled, class, title — into shots/), "CURSOR name.txt" (the cursor now
+# shown, by its IDC_ name when it is a system one — appended to shots/).
 # Logs next to itself.
 param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave, [switch]$Soft, [string]$SoftLog = '')
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -36,6 +37,26 @@ public static class In {
   [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr h);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+  [StructLayout(LayoutKind.Sequential)] public struct CURSORINFO { public int cbSize; public int flags; public IntPtr hCursor; public int x; public int y; }
+  [DllImport("user32.dll")] public static extern bool GetCursorInfo(ref CURSORINFO ci);
+  [DllImport("user32.dll")] public static extern IntPtr LoadCursor(IntPtr inst, IntPtr id);
+  [DllImport("user32.dll")] public static extern IntPtr GetCursor();
+  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint a, uint b, bool attach);
+  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+  public static string Cursor() {
+    var ci = new CURSORINFO(); ci.cbSize = Marshal.SizeOf(typeof(CURSORINFO));
+    if (!GetCursorInfo(ref ci)) return "?";
+    // With no mouse attached the system hides the cursor (no handle): the
+    // front window's thread input still holds the one SetCursor chose.
+    if (ci.hCursor == IntPtr.Zero) {
+      uint pid; uint t = GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+      uint me = GetCurrentThreadId();
+      if (AttachThreadInput(me, t, true)) { ci.hCursor = GetCursor(); AttachThreadInput(me, t, false); }
+    }
+    var names = new System.Collections.Generic.Dictionary<int, string> { {32512, "ARROW"}, {32513, "IBEAM"}, {32514, "WAIT"}, {32515, "CROSS"}, {32516, "UPARROW"}, {32642, "SIZENWSE"}, {32643, "SIZENESW"}, {32644, "SIZEWE"}, {32645, "SIZENS"}, {32646, "SIZEALL"}, {32648, "NO"}, {32649, "HAND"}, {32650, "APPSTARTING"}, {32651, "HELP"} };
+    foreach (var kv in names) if (LoadCursor(IntPtr.Zero, (IntPtr)kv.Key) == ci.hCursor) return kv.Value + " at " + ci.x + "," + ci.y;
+    return string.Format("{0:X} at {1},{2}", (long)ci.hCursor, ci.x, ci.y);
+  }
   public static string List(uint pid) {
     var o = new System.Text.StringBuilder();
     EnumWindows((h, l) => {
@@ -120,6 +141,17 @@ foreach ($k in ($Keys -split ';')) {
         [In]::SetCursorPos([int]$Matches[1], [int]$Matches[2]) | Out-Null; Start-Sleep -Milliseconds 120
         $n = [int]$Matches[3]; $step = if ($n -gt 0) { 120 } else { -120 }
         for ($i = 0; $i -lt [Math]::Abs($n); $i++) { [In]::mouse_event(0x800, 0, 0, $step, [UIntPtr]::Zero); Start-Sleep -Milliseconds 80 }
+    } elseif ($k -match '^CURSOR (.+)$') {
+        $c = [In]::Cursor()
+        $c | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Append -Encoding utf8
+        # Not a system cursor: its image too (shots/cursor_<handle>.png).
+        if ($c -match '^([0-9A-F]+) at ') {
+            Add-Type -AssemblyName System.Drawing
+            $bmp = New-Object System.Drawing.Bitmap 32, 32
+            $g = [System.Drawing.Graphics]::FromImage($bmp); $g.Clear([System.Drawing.Color]::White)
+            ([System.Drawing.Icon]::FromHandle([IntPtr][Convert]::ToInt64($Matches[1], 16))).Draw($g, 0, 0) 2>$null
+            $g.Dispose(); $bmp.Save((Join-Path (Join-Path $here 'shots') ("cursor_" + $Matches[1] + ".png"))); $bmp.Dispose()
+        }
     } elseif ($k -match '^WINS (.+)$') {
         [In]::List([uint32]$p.Id) | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Encoding utf8
     } elseif ($k -match '^SHOT (.+)$') {
