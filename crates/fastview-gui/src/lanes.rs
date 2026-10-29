@@ -198,9 +198,12 @@ impl OscView<'_> {
     /// t(k) − t(trigger) for every unit (`0x4649cf`–`0x464a0d`), so
     /// «Абсолютное время» is the start's time of day plus it (a quirk with
     /// an `.osc` trigger); samples print k − trigger + 1.
+    /// Past the record's end the times run on at its rate (`0x454b40`):
+    /// the ruler labels the ticks out to the plot's edge (VM, L9.398).
     fn label_at(&self, k: usize) -> (f64, i64) {
-        let trig = self.doc.osc.trigger_sample;
-        (self.time_at(k) - self.time_at(trig), k as i64 - trig as i64)
+        let (osc, trig) = (&self.doc.osc, self.doc.osc.trigger_sample);
+        let us = |i| g::time_us(&osc.time, osc.rate_r, i);
+        ((us(k) - us(trig)) / 1e6, k as i64 - trig as i64)
     }
 
     /// One lane's stats text (`0x461440`) and waveforms (`0x45fbe0`);
@@ -432,7 +435,7 @@ impl OscView<'_> {
     /// labels every 100 px; in absolute mode the start date under the stats
     /// panel.
     pub fn ruler(&self, painter: &egui::Painter, bottom: f32, client_right: f32, height: f32) {
-        let (doc, left, plot_right, first, f, n) = (self.doc, self.left, self.right, self.first, self.f, self.n);
+        let (doc, left, plot_right, first, f) = (self.doc, self.left, self.right, self.first, self.f);
         let ruler_top = bottom - g::RULER_H;
         let rect_top = bottom - height;
         painter.rect_filled(Rect::from_min_max(Pos2::new(self.x0, rect_top), Pos2::new(client_right, bottom)), 0.0, Color32::WHITE);
@@ -450,12 +453,10 @@ impl OscView<'_> {
             painter.px_vline(t.x, ruler_top..=ruler_top + t.len, Stroke::new(1.0f32, Color32::BLACK));
             if t.labelled {
                 let k = g::tick_sample(first, t.i, f);
-                if k < n {
-                    let (tk, kr) = self.label_at(k);
-                    let s = g::ruler_label(self.unit, tk, kr, first_label, start_tod);
-                    painter.text(Pos2::new(t.x, bottom - 20.0), Align2::CENTER_TOP, s, FontId::proportional(11.0), text_col);
-                    first_label = false;
-                }
+                let (tk, kr) = self.label_at(k);
+                let s = g::ruler_label(self.unit, tk, kr, first_label, start_tod);
+                painter.text(Pos2::new(t.x, bottom - 20.0), Align2::CENTER_TOP, s, FontId::proportional(11.0), text_col);
+                first_label = false;
             }
         }
     }

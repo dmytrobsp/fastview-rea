@@ -9752,6 +9752,19 @@ VM: «Главная» 48–115 and «ОМП» from 120 in both; the frames, inn
 columns and open rows within a few units. Residual: «ОМП» 2 px narrower
 (Segoe UI's label), the faces' middle a few units darker.
 
+### L9.398 — VM (a clone): the ruler labels ticks past the record's end  ·  ✅
+At 1280 × 800 WIN_1999 (10.999 s) fits the plot, and the original's
+ruler labels the tick at sample 12 288 — «12 288» — past the data, out
+to the plot's edge; ours stopped at the last label inside the record.
+Read by hand: the label loop (`0x4649b1`–`0x4649e3`) takes k = first +
+i·step and its time from `0x454b40` with no range check; past the end
+that is the last time plus round-half-up((k − n + 1)·10⁶ / R) µs, R the
+integer rate (`rec+0x228`; constants 10⁶ and 0.5 at `0x4d1840`,
+`0x4d1648`) — ours' `oscgeom::time_us`, which the ruler did not use.
+Now `label_at` takes both times from `time_us`, and every labelled tick
+gets its label. VM: «0 мс 4 096 8 192 12 288» in both. Test
+`the_ruler_labels_ticks_past_the_record_end`.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

@@ -1218,6 +1218,33 @@ mod window_tests {
         assert_eq!(vis(&w), before, "a double-click flips once");
     }
 
+    /// The ruler labels its ticks out to the plot's edge, past the record's
+    /// end too (VM, L9.398: «12 288» after a 10.999 s record).
+    #[test]
+    fn the_ruler_labels_ticks_past_the_record_end() {
+        let mut app = demo(&[]);
+        let n = app.active_doc().unwrap().osc.time.len();
+        // The whole record within the first 25 px.
+        app.active_doc_mut().unwrap().xscale = Some(1.0 / (2.0 * n as f64));
+        let ctx = egui::Context::default();
+        frames_held(&mut app, &ctx, Vec2::new(1320.0, 860.0), vec![vec![]; 2], egui::Modifiers::NONE);
+        let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(ctx.input(|i| i.time) + 0.05), ..Default::default() };
+        let out = ctx.run(raw, |ctx| app.frame_ui(ctx));
+        let labels: Vec<String> = out
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Text(t) if t.galley.job.sections.first().is_some_and(|f| f.format.color == egui::Color32::from_rgb(0, 0, 127)) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .filter(|t| t.chars().next().is_some_and(|c| c.is_ascii_digit() || c == '-'))
+            .collect();
+        let ms = |t: &str| t.trim_end_matches(" мс").replace(' ', "").parse::<f64>().ok();
+        let last = labels.iter().filter_map(|t| ms(t)).fold(f64::MIN, f64::max);
+        let dur = app.active_doc().unwrap().osc.duration() * 1000.0;
+        assert!(last > dur, "a label past the record's {dur} ms: {labels:?}");
+    }
+
     /// The start-up docking on a small frame (VM, a clone's 944 px first
     /// run, L9.394): each block capped at half the documents' area the
     /// earlier ones leave, then kept as the frame grows or shrinks.
