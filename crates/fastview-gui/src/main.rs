@@ -1218,6 +1218,20 @@ mod window_tests {
         assert_eq!(vis(&w), before, "a double-click flips once");
     }
 
+    /// A short pane keeps the grid's saved height (VM, L9.399: the
+    /// original's layout `0x4376e0` does not clamp it; only a drag does).
+    #[test]
+    fn a_short_pane_keeps_the_grids_height() {
+        let mut app = demo(&[]);
+        app.persist = true;
+        let ctx = egui::Context::default();
+        frames_held(&mut app, &ctx, Vec2::new(944.0, 560.0), vec![vec![]; 3], egui::Modifiers::NONE);
+        let g = *app.pane_grid.first().expect("the differential grid");
+        assert_eq!(g.height().round(), 200.0, "{g:?}");
+        let saved = app.store.view.get("Diff Diagram\\Properties Height");
+        assert!(!matches!(saved, Some(v) if v != "200"), "kept, not clamped: {saved:?}");
+    }
+
     /// The ruler labels its ticks out to the plot's edge, past the record's
     /// end too (VM, L9.398: «12 288» after a 10.999 s record).
     #[test]

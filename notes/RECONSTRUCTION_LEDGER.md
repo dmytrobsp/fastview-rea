@@ -9765,6 +9765,21 @@ Now `label_at` takes both times from `time_us`, and every labelled tick
 gets its label. VM: «0 мс 4 096 8 192 12 288» in both. Test
 `the_ruler_labels_ticks_past_the_record_end`.
 
+### L9.399 — VM (a clone): the parameter grid keeps its height in a short pane  ·  ✅
+After a first run at the 944 px default frame (diagram panes 288 px
+tall) and a maximise, the original's differential grid is 200 px, ours
+about 105. Read by hand: the pane's layout `0x4376e0` moves the grid to
+(0, 0, width, `+0x490`) and the plane under it, then writes
+«Properties Height» — no clamp; only the splitter's drag `0x437900`
+clamps `+0x490` to [50, client − 150] (cmovl / cmovg with −150 and
+0x32). Ours' egui panel clamped to that range every frame and saved the
+clamped height. Now the range's top is the saved height or more except
+while the splitter is dragged. VM: the splitter line on row 441 in both.
+Test `a_short_pane_keeps_the_grids_height`.
+Residual: a drag that starts with the grid above pane − 150 snaps it
+down in the original at the first move; ours lets the drag start from
+where it is.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

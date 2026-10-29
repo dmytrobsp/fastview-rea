@@ -1014,15 +1014,19 @@ impl App {
     fn char_ui(&mut self, ui: &mut egui::Ui, pane: Pane) -> Option<egui::Pos2> {
         let h = ui.available_height();
         // `Properties Height` of «Circle Diagram» / «Diff Diagram»
-        // (default 200, clamped to [50, pane − 150], persisted on every
-        // re-layout — `0x437900` / `0x443390`).
+        // (default 200, persisted on every re-layout — `0x4376e0`). Only a
+        // drag clamps it to [50, pane − 150] (`0x437900` / `0x443390`); the
+        // layout takes it as it is, however small the pane (VM, L9.399).
         let key = format!("{}\\Properties Height", if pane == Pane::Differential { "Diff Diagram" } else { "Circle Diagram" });
         let stored = self.store.view.get(&key).and_then(|v| v.parse::<f32>().ok()).unwrap_or(200.0);
-        let grid = egui::TopBottomPanel::top(egui::Id::new(("char_grid", pane)))
+        let grid_id = egui::Id::new(("char_grid", pane));
+        let dragging = ui.ctx().dragged_id() == Some(grid_id.with("__resize"));
+        let top = (h - 150.0).max(50.0);
+        let grid = egui::TopBottomPanel::top(grid_id)
             .resizable(true)
             .show_separator_line(false)
             .default_height(stored)
-            .height_range(50.0..=(h - 150.0).max(50.0))
+            .height_range(50.0..=if dragging { top } else { top.max(stored) })
             // The property grid is a white list (seen on the VM), from the
             // pane's client corner, a white column and row after it.
             .frame(egui::Frame::none().fill(egui::Color32::WHITE).inner_margin(egui::Margin { left: 0.0, right: 1.0, top: 0.0, bottom: 1.0 }))
