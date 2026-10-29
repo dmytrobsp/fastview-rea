@@ -173,7 +173,7 @@ impl App {
                             // Every item is a large-image button with its text
                             // on the right (the main panel's Repos); the
                             // drawings are ours.
-                            let icon = [Some(Icon::Open), Some(Icon::Save), Some(Icon::Save), None, Some(Icon::Print), Some(Icon::Params)].get(k).copied().flatten();
+                            let icon = [Icon::Open, Icon::Save, Icon::Save, Icon::Explorer, Icon::Print, Icon::Params, Icon::Comments, Icon::LoadSettings, Icon::Settings, Icon::CloseDoc].get(k).copied();
                             let r = main_entry(ui, p, icon, label, ul, enabled || opens.is_some(), opens.is_some() && sub == opens, opens.is_some());
                             if k == 4 {
                                 menu_rects.extend([(crate::keytips::Target::PrintMain, r.rect, enabled), (crate::keytips::Target::PrintMenu, r.rect, true)]);

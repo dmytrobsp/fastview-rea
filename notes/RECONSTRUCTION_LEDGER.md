@@ -9807,6 +9807,16 @@ window standing for the work area (maximised, it is). VM: the caption
 from row 0, the list from 26, the sides at 461 / 818 in both. Test
 `a_tall_dialog_keeps_its_caption_on_the_screen`.
 
+### L9.402 — VM (a clone): the application menu's lower items have images  ·  ✅
+Side by side at 1280 × 800 the application menu matches but for its
+images: the original has one on every item (its bitmaps, W6), ours left
+«Проводник», «Комментарии», «Загрузка настроек...», «Настройки» and
+«Закрыть» blank. Now ours draws its own for them (`icons::Icon::{Explorer,
+Comments, LoadSettings, Settings, CloseDoc}`: a page under a magnifier,
+a note, a folder under a list, a gear, a folder with a cross); greyed
+with their item. Also compared (no change): «Коэффициенты» and «Параметры
+ОМП» sit and lay out as the original's on the small screen.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

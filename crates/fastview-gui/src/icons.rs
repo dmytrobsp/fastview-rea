@@ -35,6 +35,12 @@ pub enum Icon {
     NextPage,
     PrevPage,
     ClosePreview,
+    /// The application menu's lower items (our drawings).
+    Explorer,
+    Comments,
+    LoadSettings,
+    Settings,
+    CloseDoc,
 }
 
 /// Paint `icon` centred in `rect`, scaled to it, using `color` as the primary
@@ -90,6 +96,46 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::ClosePreview => {
             line(painter, p(0.20, 0.20), p(0.80, 0.80));
             line(painter, p(0.80, 0.20), p(0.20, 0.80));
+        }
+        Icon::Explorer => {
+            // a page under a magnifier
+            painter.rect_stroke(Rect::from_min_max(p(0.14, 0.10), p(0.62, 0.78)), 0.0, stroke);
+            painter.circle_stroke(p(0.56, 0.52), s * 0.20, stroke);
+            line(painter, p(0.70, 0.66), p(0.88, 0.86));
+        }
+        Icon::Comments => {
+            // a note with lines and a pen
+            painter.rect_stroke(Rect::from_min_max(p(0.12, 0.14), p(0.70, 0.86)), 0.0, stroke);
+            for y in [0.34f32, 0.50, 0.66] {
+                line(painter, p(0.24, y), p(0.58, y));
+            }
+            line(painter, p(0.62, 0.70), p(0.90, 0.24));
+        }
+        Icon::LoadSettings => {
+            // a folder with a list on it
+            poly(painter, vec![p(0.08, 0.40), p(0.34, 0.40), p(0.42, 0.50), p(0.92, 0.50), p(0.92, 0.88), p(0.08, 0.88)]);
+            painter.rect_stroke(Rect::from_min_max(p(0.36, 0.10), p(0.80, 0.44)), 0.0, stroke);
+            line(painter, p(0.46, 0.22), p(0.70, 0.22));
+            line(painter, p(0.46, 0.32), p(0.70, 0.32));
+        }
+        Icon::Settings => {
+            // a gear
+            let c = p(0.5, 0.5);
+            let teeth: Vec<Pos2> = (0..16)
+                .map(|i| {
+                    let a = i as f32 * std::f32::consts::TAU / 16.0;
+                    let rr = if i % 2 == 0 { 0.40 } else { 0.30 } * s;
+                    c + Vec2::new(a.cos(), a.sin()) * rr
+                })
+                .collect();
+            poly(painter, teeth);
+            painter.circle_stroke(c, s * 0.12, stroke);
+        }
+        Icon::CloseDoc => {
+            // a folder with a cross
+            poly(painter, vec![p(0.08, 0.30), p(0.40, 0.30), p(0.50, 0.42), p(0.92, 0.42), p(0.92, 0.82), p(0.08, 0.82)]);
+            line(painter, p(0.38, 0.52), p(0.62, 0.74));
+            line(painter, p(0.62, 0.52), p(0.38, 0.74));
         }
         Icon::Print => {
             painter.rect_stroke(Rect::from_min_max(p(0.30, 0.12), p(0.70, 0.34)), 0.0, stroke);
