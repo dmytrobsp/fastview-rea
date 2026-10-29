@@ -167,6 +167,18 @@ pub fn dock_extent(drop: Drop, size: Vec2, area: Rect) -> f32 {
     }
 }
 
+/// A block's size when it docks at its create size (`AdjustRectToClientArea`
+/// `0x1008c750`): at least half the documents' area `span` across its edge
+/// → that half, rounded down (the docking manager's 50 %).
+pub fn start_extent(size: f32, span: f32) -> f32 {
+    let allowed = (span / 2.0).floor();
+    if size >= allowed {
+        allowed
+    } else {
+        size
+    }
+}
+
 /// Swap two tabs of a strip's order (`0x100690b4`).
 pub fn swap_tabs<T: PartialEq + Copy>(order: &mut [T], a: T, b: T) {
     if let (Some(i), Some(j)) = (order.iter().position(|&x| x == a), order.iter().position(|&x| x == b)) {

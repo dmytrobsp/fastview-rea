@@ -463,7 +463,22 @@ impl App {
         // the last drop's; a new drop is a new panel.
         let id = egui::Id::new(("fv_dock", edge as u8, h.unit, hd.gen));
         let natural = inside.iter().map(|v| v.natural()).fold(0.0, f32::max);
-        let ext = hd.extent.unwrap_or(natural);
+        let across = matches!(edge, Edge::Left | Edge::Right);
+        let mut ext = match hd.extent {
+            Some(e) => e,
+            None if !across && (inside.len() > 1 || natural > 200.0) => 300.0,
+            None => natural,
+        };
+        // Docked at its create size (no saved one), a block is capped once
+        // at half the documents' area the earlier blocks leave
+        // (`DockToFrameWindow` `0x10088f61`, `AdjustRectToClientArea`
+        // `0x1008c750`), then keeps that size however the frame changes
+        // (VM, L9.394).
+        if hd.extent.is_none() {
+            let avail = ctx.available_rect();
+            ext = crate::docking::start_extent(ext, if across { avail.width() } else { avail.height() });
+            self.docks[h.unit].extent = Some(ext);
+        }
         let body = |app: &mut App, ui: &mut egui::Ui| app.dock_slot(ui, h, edge, &parents);
         let strip = self.skin.splitter();
         match edge {
@@ -482,7 +497,6 @@ impl App {
             }
             Edge::Top | Edge::Bottom => {
                 let p = if edge == Edge::Top { egui::TopBottomPanel::top(id) } else { egui::TopBottomPanel::bottom(id) };
-                let ext = if hd.extent.is_none() && (inside.len() > 1 || natural > 200.0) { 300.0 } else { ext };
                 let range = 6.0..=(ctx.available_rect().height() - 4.0).max(6.0);
                 let size = grip_size(ctx, id, ext + 4.0, range.clone());
                 p.resizable(false).show_separator_line(false).frame(dock_frame(strip, edge)).exact_height(size).show(ctx, |ui| {

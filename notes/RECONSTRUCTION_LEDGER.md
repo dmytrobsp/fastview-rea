@@ -9666,6 +9666,36 @@ that message itself, so ours kept its minimum for drags only. Now
 to [`MIN_VISIBLE`] plus the frame's own edges, unless minimised or
 maximised. VM: `SIZE 640,400` gives ours 852 × 493, as the original.
 
+### L9.394 — VM (a clone): the start-up panes on a small frame take half the space left  ·  ✅
+A first run on the clone's 1280 × 800 screen opens the frame at its
+CW_USEDEFAULT size (client 944 px wide), and there the original's
+panes are not 500 wide: Векторная's block 476, Дифференциальная's 238,
+the documents 230, Частотная 144 tall (VM, by the 4 px divider strips;
+maximised and resized later they keep these sizes, the documents take
+the rest). Read (mfc120u, a background agent; spot-checked against the
+runs): `DockPane` with no rect → `DockToFrameWindow` `0x10088f61` takes
+the create rect (500 × 500, Частотная 200 × 200), grows it to the
+pane's minimum, then `AdjustRectToClientArea` `0x1008c750`: a size ≥
+⌊span · 50 / 100⌋ of the documents' area the earlier blocks left (the
+docking manager's rect after the last layout, `0x1008d335`) becomes
+that half, along the edge's axis; each block is that pane plus its 4 px
+divider (`0x1008860c`, `0x100d5986`). Later layouts (`0x1008ce9f`,
+`AlignByRect` `0x1008d64f`) keep each block's thickness and cut one
+only when it is thicker than all that is left. So Vw = ⌊C / 2⌋, Dw =
+⌊(C − Vw − 4) / 2⌋, Fh = min(200, ⌊Hrem / 2⌋). The empty header strip
+is there with no record too (VM), so the same sizes. Ours kept 500 / 500
+and on the 944 px frame left the documents nothing. Now
+`docking::start_extent` caps a block with no saved size once, against
+egui's area left at its turn, and keeps it as its extent. VM: ours at
+the default size 238 / 476 / 230 / 144 as the original; maximised its
+dividers 1 px left of the original's (566 / 804; headless at 1280 ours
+gives exactly 566 / 804 — the frameless window's maximised rect,
+residual). Harness: `FV_FRESH=1` drops the saved state first (the
+original's registry key, ours' settings folder), record `-` opens none.
+Test `start_up_blocks_take_half_the_area_left_and_keep_it`.
+Residual: a block cut by a narrower frame keeps its cut size in the
+original; ours returns to its extent when the frame grows again.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

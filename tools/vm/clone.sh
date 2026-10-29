@@ -6,7 +6,8 @@
 #   clone.sh run o|u "<keys>" [record]
 #                                drive.ps1 in the clone: the original (o) or ours (u),
 #                                maximised first (not with FV_NOMAX=1), with
-#                                records\<record> (WIN_1999.cfg);
+#                                records\<record> (WIN_1999.cfg, "-" for none); FV_FRESH=1
+#                                first drops its saved state (a first run);
 #                                every SHOT named in the keys lands in $FV_SHOTS
 #   clone.sh push SRC DST | pull SRC DST | exec CMD... | desk CMD... | shot OUT.png
 #   clone.sh ours                push a fresh ours (after a rebuild)
@@ -89,10 +90,18 @@ run)
     load
     who=$2; keys=$3; rec=${4:-WIN_1999.cfg}
     H="$G\\harness"
+    open="-Open $G\\records\\$rec"; [ "$rec" != - ] || open=""
     [ -n "${FV_NOMAX:-}" ] || keys="% ;x;;$keys"
     tb_exec "powershell -NoProfile -ExecutionPolicy Bypass -File $H\\cleanup.ps1" >/dev/null 2>&1 || true
     if [ "$who" = o ]; then exe="$G\\FastView5\\FastView.exe"; extra=""; else exe="$G\\ours\\fastview.exe"; extra="-Soft"; fi
-    tb_exec "powershell -NoProfile -ExecutionPolicy Bypass -File $H\\drive.ps1 -Exe $exe -Open $G\\records\\$rec $extra -Keys \"$keys\"" 2>&1 | grep -v '^step' | tail -3
+    if [ -n "${FV_FRESH:-}" ]; then
+        if [ "$who" = o ]; then
+            tb_exec 'powershell -NoProfile -Command "Get-ChildItem HKCU:\Software | Get-ChildItem | Where-Object PSChildName -like *FastView | Remove-Item -Recurse"'
+        else
+            tb_exec 'if exist "%APPDATA%\fastview-rea" rmdir /s /q "%APPDATA%\fastview-rea"'
+        fi
+    fi
+    tb_exec "powershell -NoProfile -ExecutionPolicy Bypass -File $H\\drive.ps1 -Exe $exe $open $extra -Keys \"$keys\"" 2>&1 | grep -v '^step' | tail -3
     for s in $(printf '%s' "$keys" | grep -o 'SHOT [^;]*' | cut -d' ' -f2); do
         "${TB[@]}" instance pull "$name" "$id" "$H\\shots\\$s" "$shots/$s"
     done

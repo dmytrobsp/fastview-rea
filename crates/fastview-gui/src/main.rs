@@ -1218,6 +1218,30 @@ mod window_tests {
         assert_eq!(vis(&w), before, "a double-click flips once");
     }
 
+    /// The start-up docking on a small frame (VM, a clone's 944 px first
+    /// run, L9.394): each block capped at half the documents' area the
+    /// earlier ones leave, then kept as the frame grows or shrinks.
+    #[test]
+    fn start_up_blocks_take_half_the_area_left_and_keep_it() {
+        use docking::Unit;
+        let mut app = demo(&[]);
+        let ctx = egui::Context::default();
+        let mut seen = Vec::new();
+        for size in [Vec2::new(944.0, 560.0), Vec2::new(1280.0, 760.0), Vec2::new(852.0, 493.0)] {
+            frames_held(&mut app, &ctx, size, vec![vec![]; 3], egui::Modifiers::NONE);
+            let r = app.dock_rects;
+            let (v, d, f) = (r[Unit::Vector as usize].expect("vector"), r[Unit::Differential as usize].expect("differential"), r[Unit::Frequency as usize].expect("frequency"));
+            seen.push((v.width(), d.width(), f.height()));
+            if size.x == 944.0 {
+                assert_eq!(v.width(), 472.0, "⌊944 / 2⌋");
+                assert_eq!(d.width(), ((944.0 - 476.0) / 2.0f32).floor(), "half of what Векторная's block leaves");
+                assert_eq!(f.height(), (v.height() / 2.0).floor().min(200.0), "half the documents' height, at most 200");
+                assert!(d.left() - 4.0 > 200.0, "the documents keep {} px", d.left() - 4.0);
+            }
+        }
+        assert!(seen.windows(2).all(|w| w[0] == w[1]), "the blocks keep their sizes: {seen:?}");
+    }
+
     /// The grid's splitter drags (VM: the original's moves with a drag
     /// from its 5 px band).
     #[test]
