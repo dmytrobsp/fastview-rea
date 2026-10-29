@@ -61,6 +61,7 @@ tool skips this file), never in the ledger or the specs.
 | 2026-10-24 (handoff) | L9.197 | 1117 / 1803 | 91.8 % | 0 / 322 | 0 / 684 | 182 / 15 | 33 | 260 ✓ (L9.185) |
 | 2026-10-24 (W1.7b, W2.19, W2.17 part, W2.10–W2.12) | L9.203 | 1117 / 1803 | 91.8 % | 0 / 322 | 0 / 684 | 188 / 15 | 33 | 275 ✓ |
 | 2026-10-25 (v0.3.0; stale 🟡 headings re-marked) | L9.331 | 1118 / 1803 | 91.8 % | 0 / 322 | 0 / 684 | 329 / 2 | 41 | 501 ✓ |
+| 2026-10-30 (runs move to throwaway clones) | L9.393 | 1118 / 1803 | 91.8 % | 0 / 322 | 0 / 684 | 393 / 2 | 41 | 522 ✓ (clone) |
 
 ## W1 — Read the uncited code
 
@@ -275,6 +276,14 @@ items (VM ones also in W4.4):
 The original is installed (2026-10-24): `C:\Users\devuser\fv-test\FastView5`
 (the files of `extracted/stage1/`, the English resource DLL moved to
 `eng\` so the UI is Russian), VC++ 2013 x86 runtime installed. It runs in devuser's desktop session through `tools/vm/insession.ps1`.
+
+Since 2026-10-30 the runs go to a **throwaway clone** instead (the user's
+direction): `tools/vm/clone.sh new` starts a fresh Windows 11 VM (testbox
+instance, 1280 × 800, user `tbuser`) and installs the same there (the
+original, its runtime, ru-RU locale and Format, the records, the harness,
+ours) in about two minutes; `run o|u`, `ours`, `rm`. A fresh clone has a
+fresh registry, so no state import is needed; its smaller screen showed
+size-dependent behaviour the 2560 × 1440 VM never did (L9.393 –).
 
 - [x] W4.1 A desktop session and a capture harness (2026-10-24): automatic
   sign-in of devuser (approved by the user), `tools/vm/` (`insession.ps1`
