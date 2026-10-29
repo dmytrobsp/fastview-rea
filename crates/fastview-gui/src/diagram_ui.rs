@@ -1065,6 +1065,18 @@ impl App {
         painter.rect_filled(Rect::from_min_max(full.min + Vec2::new(0.0, dpx(5.0)), full.max), 0.0, Color32::WHITE);
         self.window_menu_click(&resp, win);
         if client.width() < dpx(121.0) || client.height() < dpx(121.0) {
+            // Too small to paint, the painter still runs its tail
+            // (`0x445eb2` → `0x44611f`): the differential window's initial
+            // push happens on its first paint however small, with this
+            // client's limits (VM, L9.403: a first run at the default frame
+            // pushes x only).
+            if diff && view.initial_pending && print_s().is_none() {
+                let mut rect = client.shrink(6.0);
+                rect.min.y += dpx(5.0);
+                let mut v = view;
+                v.push_lower_left(dg::max_pan(rect.width() as i32, v.z), dg::max_pan((rect.height() - 20.0) as i32, v.z));
+                *self.plane_view(diff) = v;
+            }
             return;
         }
         // Characteristics: extent of every visible one (operate and reset).

@@ -1218,6 +1218,21 @@ mod window_tests {
         assert_eq!(vis(&w), before, "a double-click flips once");
     }
 
+    /// The differential window's initial push runs on its first paint, a
+    /// plane too small to draw included (VM, L9.403): at the 944 px first
+    /// run it moves x only, and the view keeps that when the frame grows.
+    #[test]
+    fn the_differential_push_runs_on_a_small_first_paint() {
+        let mut app = demo(&[]);
+        let ctx = egui::Context::default();
+        frames_held(&mut app, &ctx, Vec2::new(944.0, 560.0), vec![vec![]; 3], egui::Modifiers::NONE);
+        let v = app.diag.diff;
+        assert!(!v.initial_pending, "pushed on the small first paint");
+        assert_eq!(v.oy, 0, "no room to push y");
+        frames_held(&mut app, &ctx, Vec2::new(1280.0, 760.0), vec![vec![]; 3], egui::Modifiers::NONE);
+        assert_eq!((app.diag.diff.ox, app.diag.diff.oy), (v.ox, v.oy), "kept after the frame grows");
+    }
+
     /// A dialog taller than the work area hangs from its top (MFC's
     /// CenterWindow, VM L9.401: «Отображение каналов» at 1280 × 800).
     #[test]

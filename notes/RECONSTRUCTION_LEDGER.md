@@ -9817,6 +9817,21 @@ a note, a folder under a list, a gear, a folder with a cross); greyed
 with their item. Also compared (no change): «Коэффициенты» and «Параметры
 ОМП» sit and lay out as the original's on the small screen.
 
+### L9.403 — VM (a clone): the differential window's first push runs on a plane too small to paint  ·  ✅
+After a first run at the default frame and a maximise, the original's
+differential plane («Нет») has its origin pushed left only, the x axis
+through the middle (row 581); ours had pushed it down to the bottom too.
+Read by hand: the painter `0x445e00` tests the client against 120
+(`0x445eaf` / `0x445ebe`) and on a small one jumps to `0x44611f`, its
+tail — which still runs the one-shot push to the lower left
+(`0x44612d`–`0x44619e`, limits `0x443620` from the client then). At the
+first paint the plane is a few dozen pixels tall, so y has no room and
+only x moves. Ours returned before the push and pushed later, on the
+maximised plane. Now the small-plane return does the push first. VM:
+the x axis on row 581 in both; the pane itself a pixel left (L9.394's
+maximised residual). Test
+`the_differential_push_runs_on_a_small_first_paint`.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:
