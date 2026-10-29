@@ -9780,6 +9780,21 @@ Residual: a drag that starts with the grid above pane − 150 snaps it
 down in the original at the first move; ours lets the drag start from
 where it is.
 
+### L9.400 — VM (a clone): «Стиль» and Help pressed while their menu is open  ·  ✅
+With «Стиль»'s menu open the original's button keeps the Office 2007
+small button's checked face ((167, 142, 102) top, the two shaded rows,
+the gold face and sides), under the pointer the small hot face; its
+face spans x 1196–1246, rows 30–51 at 1280 wide. Ours drew a generic
+pale box for both, 49 px wide and a row low. Now `tab_row_hot` paints
+`checked_bg` while the button's menu is open and `hot_small` under the
+pointer (the older looks keep their box), on whole pixels from row 30;
+«Стиль» is 51 px with its label and arrow where they were. VM: the face's
+edges at 1196 / 1246 and its column within a few units.
+Also seen at 1280 × 800 (no change): the ruler's right-click menu in
+the difference band as ours; ours' first-run frame is 945 × 536 shown
+against the original's 943 × 533, so Частотная docks a pixel taller
+(145 against 144; residual).
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

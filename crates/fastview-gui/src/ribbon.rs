@@ -739,7 +739,8 @@ impl App {
             ui.spacing_mut().item_spacing.x = 0.0;
             // Help split button (57667): the arrow opens {Помощь, О программе...}.
             let (hr, help) = ui.allocate_exact_size(egui::vec2(33.0, 22.0), egui::Sense::click());
-            tab_row_hot(ui, &help, &p);
+            let open_menu = self.top_menu.as_ref().map(|(m, _)| *m);
+            tab_row_hot(ui, &help, &p, open_menu == Some(TopMenu::Help));
             help_image(ui.painter(), egui::pos2(hr.left() + 10.5, hr.center().y));
             menu_arrow(ui.painter(), egui::pos2(hr.left() + 25.0, hr.center().y - 1.0));
             // mfc120rus 57667, as the original's tip («Help Topics» on the VM).
@@ -750,10 +751,11 @@ impl App {
             self.kt_rects.push((crate::keytips::Target::Help, help.rect, true));
             // «Стиль» (menu 200): the radio entry of the current look,
             // persisted as `ApplicationLook`.
-            let (sr, style) = ui.allocate_exact_size(egui::vec2(48.5, 22.0), egui::Sense::click());
-            tab_row_hot(ui, &style, &p);
-            ui.painter().text(egui::pos2(sr.left() + 2.0, sr.center().y), egui::Align2::LEFT_CENTER, "Стиль", egui::FontId::proportional(12.0), p.text);
-            menu_arrow(ui.painter(), egui::pos2(sr.left() + 43.0, sr.center().y - 1.0));
+            // 51 px (VM: its face from x 1196 to 1246 at 1280 wide).
+            let (sr, style) = ui.allocate_exact_size(egui::vec2(51.0, 22.0), egui::Sense::click());
+            tab_row_hot(ui, &style, &p, open_menu == Some(TopMenu::Style));
+            ui.painter().text(egui::pos2(sr.right() - 46.5, sr.center().y), egui::Align2::LEFT_CENTER, "Стиль", egui::FontId::proportional(12.0), p.text);
+            menu_arrow(ui.painter(), egui::pos2(sr.right() - 5.5, sr.center().y - 1.0));
             // Its own tip and description (strings 287 / 288, VM).
             tips::pointer_tip(ui, &style, TipImage::Blank, "Изменить стиль оформления", "Выберите одну из тем Office 2007", true);
             if style.clicked() {
@@ -765,9 +767,19 @@ impl App {
 
 }
 
-/// A tab-row button's frame under the pointer.
-fn tab_row_hot(ui: &egui::Ui, r: &egui::Response, p: &crate::theme::Palette) {
-    if r.hovered() {
+/// A tab-row button's frame under the pointer, or pressed while its menu
+/// is open (VM, Office 2007 Blue, «Стиль»: the small buttons' hot and
+/// checked faces).
+fn tab_row_hot(ui: &egui::Ui, r: &egui::Response, p: &crate::theme::Palette, open: bool) {
+    // On whole pixels, from the tab row's top (VM: rows 30–51).
+    let rect = egui::Rect::from_min_max(r.rect.min.floor(), r.rect.max.floor()).translate(egui::vec2(0.0, -1.0));
+    if office2007(p) {
+        if open {
+            checked_bg(ui.painter(), rect, p, false);
+        } else if r.hovered() {
+            hot_small(ui.painter(), rect, p);
+        }
+    } else if open || r.hovered() {
         ui.painter().rect(r.rect, 2.0f32, p.accent_soft.gamma_multiply(0.5f32), egui::Stroke::new(1.0f32, p.accent_border));
     }
 }
