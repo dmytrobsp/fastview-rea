@@ -60,13 +60,17 @@ impl Analysis {
     /// [`Analysis::compute`] with the frequency correction `corr` (taken
     /// from the record as stored when `osc` is a flagged copy).
     pub fn compute_with(osc: &Oscillogram, corr: Option<crate::freqcorr::FreqCorr<'_>>) -> Analysis {
+        let series: Vec<&[f64]> = osc.analog.iter().map(|c| c.samples.as_slice()).collect();
+        Analysis::compute_over(osc, &series, corr)
+    }
+
+    /// [`Analysis::compute_with`] with the phasors taken over `series` (one per
+    /// analog channel) instead of the channels' own samples: the values as the
+    /// accessor `0x426020` returns them, the display factor already applied
+    /// per sample.
+    pub fn compute_over(osc: &Oscillogram, series: &[&[f64]], corr: Option<crate::freqcorr::FreqCorr<'_>>) -> Analysis {
         let n = osc.samples_per_cycle().max(2);
-        let phasors: Vec<Phasors> = osc
-            .analog
-            .iter()
-            .enumerate()
-            .map(|(i, c)| crate::freqcorr::sliding_phasors(corr, i, &c.samples, n))
-            .collect();
+        let phasors: Vec<Phasors> = series.iter().enumerate().map(|(i, x)| crate::freqcorr::sliding_phasors(corr, i, x, n)).collect();
 
         let mut u_abc = [None, None, None];
         let mut i_abc = [None, None, None];
