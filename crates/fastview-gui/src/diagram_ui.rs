@@ -2211,11 +2211,16 @@ mod tests {
         let t = texts(&mut app);
         assert!(t.iter().any(|s| s == "Ia") && !value(&t), "{t:?}");
         let d = app.active_doc_mut().unwrap();
-        // Placed on sample 0, as a click there does.
-        (d.main_cursor, d.v_shown[0], d.v1_placed) = (0, true, true);
+        // 32813 places В1; moved onto sample 0 and hidden again by 32813,
+        // the values stay.
+        d.toggle_vizir(0, 500.0, 0.0);
+        assert!(d.v_shown[0] && d.v1_placed);
         let t = texts(&mut app);
         assert!(value(&t), "{t:?}");
-        app.active_doc_mut().unwrap().v_shown[0] = false;
+        let d = app.active_doc_mut().unwrap();
+        d.main_cursor = 0;
+        d.toggle_vizir(0, 500.0, 0.0);
+        assert!(!d.v_shown[0]);
         assert!(value(&texts(&mut app)), "hidden again: the values stay");
     }
 
