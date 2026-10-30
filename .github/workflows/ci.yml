@@ -30,9 +30,11 @@ jobs:
       # No original binaries, raw decompilation / disassembly output or
       # non-approved identities anywhere in the history.
       - run: python3 -I tools/publish_guard.py --all
+      # The milestone helper's own tests (cheap; tools/ changes alone skip the builds).
+      - run: python3 -I -m unittest discover -s tools/milestone -p 'test_*.py'
 
   # Whether anything that is built changed since the last commit whose
-  # checks passed: notes, tools, indexes or Markdown alone skip the checks
+  # checks passed: notes, docs, tools, indexes or Markdown alone skip the checks
   # and builds (the guard above still runs). The base is that commit, not
   # the push's parent, because a newer push cancels or replaces an older
   # run, which must not leave its code unchecked. Tags, manual runs, pull
@@ -76,7 +78,7 @@ jobs:
           # The files outside notes / tools / indexes / Markdown, collected
           # rather than tested with `grep -q` (whose early exit fails a
           # pipe's writer under pipefail).
-          built=$(grep -vE '^(notes/|tools/|index/)|\.md$' <<< "$files" || true)
+          built=$(grep -vE '^(notes/|docs/|tools/|index/|\.github/ISSUE_TEMPLATE/)|\.md$' <<< "$files" || true)
           if [ -n "$built" ]; then build; fi
           echo "code=false" >> "$GITHUB_OUTPUT"
           echo "::notice::notes / tools / docs only since $base: checks and builds skipped"

@@ -84,3 +84,12 @@ turns the symbol list into a Ghidra, IDA or rizin / radare2 script; see
 
 Other helpers: `pngcrop.py` (crop help screenshots), `msgmaps.py` (used by
 `vt.py`, `index.py` and `regen-dumps.sh`).
+
+## The milestone helper
+
+`python3 tools/milestone/milestone.py start|add|gate|ungate|rm|end|ls` does
+the git part of running a milestone with several implementers at once: the
+milestone branch, a worktree per unit, the merge gate
+([`../docs/agents/workflow.md`](../docs/agents/workflow.md#branches-and-worktrees)).
+Its tests: `python3 -I -m unittest discover -s tools/milestone -p 'test_*.py'`
+(CI runs them).
