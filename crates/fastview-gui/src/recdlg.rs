@@ -1451,13 +1451,13 @@ mod tests {
         osc.text_enc = Some(Encoding::Utf8);
         osc.station = "Підстанція".into();
         osc.analog[0].id = "Струм фази А".into();
-        osc.analog[1].id = "Гр.\u{FFFD}.:Напруга".into();
+        osc.analog[1].id = "Шина 2 напр\u{FFFD}".into();
         let mut d = Doc::new(osc, "x".into());
         d.path = Some(dir.join("rec.cfg"));
         d.init_record_text(Encoding::Cp1251);
         let _ = std::fs::remove_dir_all(&dir);
         let names = |d: &Doc| [d.osc.station.clone(), d.osc.analog[0].id.clone(), d.osc.analog[1].id.clone()];
-        let read = ["Підстанція", "Струм фази А", "Гр.\u{FFFD}.:Напруга"].map(String::from);
+        let read = ["Підстанція", "Струм фази А", "Шина 2 напр\u{FFFD}"].map(String::from);
         assert_eq!((d.codepage, d.read_enc, names(&d)), (Encoding::Utf8, Encoding::Utf8, read.clone()));
         assert_eq!((d.hdr.as_deref(), d.hdr_cp), (Some(hdr), Encoding::Utf8));
         assert_eq!(d.hdr_file_bytes().unwrap(), hdr.as_bytes());
@@ -1476,7 +1476,7 @@ mod tests {
         d.init_set_keys();
         let read = [read[0].clone(), read[1].clone(), read[2].clone(), "U√3 ─ Ia".into()];
         let names = |d: &Doc| [d.osc.station.clone(), d.osc.analog[0].id.clone(), d.osc.analog[1].id.clone(), d.osc.analog[2].id.clone()];
-        let ansi = ["Підстанція", "Струм фази А", "Гр.?.:Напруга", "U?3 ? Ia"].map(String::from);
+        let ansi = ["Підстанція", "Струм фази А", "Шина 2 напр?", "U?3 ? Ia"].map(String::from);
         let oem = ansi.clone().map(|s| comtrade::recode(&s, Encoding::Cp1251, Encoding::Cp866).chars().map(comtrade::best_fit_1251).collect::<String>());
         for (cp, shown) in [(Encoding::Cp1251, &ansi), (Encoding::Cp866, &oem), (Encoding::Cp1251, &ansi)] {
             d.set_codepage(cp);

@@ -12,8 +12,8 @@ fn cfg(rev: &str) -> String {
     [
         &format!("Підстанція Тест,Реєстратор 1,{rev}"),
         "4,2A,2D",
-        "1,Струм фази А,A,,A,2.5e-37,5.0e-03,0,-3.4028235E38,3.4028235E38,10000,5,S",
-        "2,Гр.\u{FFFD}.:Напруга шин,,,kV,2.0e-37,1.25e-02,0,-3.4028235E38,3.4028235E38,10000,5,S",
+        "1,Струм фази А,A,,A,2.5e-37,0.005,0,-3.4028235E38,3.4028235E38,10000,5,S",
+        "2,Шина 2 напр\u{FFFD},,,kV,2.0e-37,0.0125,0,-3.4028235E38,3.4028235E38,35000,110,S",
         "1,Пуск захисту,,,0",
         "2,Вимкнення,,,0",
         "50",
@@ -85,7 +85,7 @@ fn a_bom_cfg_reads_as_utf8_whatever_the_program_encoding() {
         let rec = comtrade::load_with(r.cfg(), enc).unwrap();
         assert_eq!((rec.station.as_str(), rec.device.as_str()), ("Підстанція Тест", "Реєстратор 1"), "{enc:?}");
         assert_eq!(rec.analog[0].id, "Струм фази А");
-        assert_eq!(rec.analog[1].id, "Гр.\u{FFFD}.:Напруга шин");
+        assert_eq!(rec.analog[1].id, "Шина 2 напр\u{FFFD}");
         assert_eq!(rec.digital[1].id, "Вимкнення");
         assert_eq!((rec.text_enc, rec.text_bom), (Some(Encoding::Utf8), true));
         assert_eq!((rec.rev_year, rec.rev_text.as_str()), (2013, "2013"));
@@ -135,7 +135,7 @@ fn the_2013_time_lines() {
 
 /// Float samples over the whole float32 range with `a` ≈ 1e‑37: the value
 /// is `m·a·x + b` in f64 (`0x451904`) — a few tens of volts here; the cfg's
-/// min / max (±3.40282e+38) are not used; the ADC code (`0x422250`) gives
+/// min / max (±3.4·10³⁸) are not used; the ADC code (`0x422250`) gives
 /// the raw sample back, `m` included, however small `a`.
 #[test]
 fn float32_range_samples_with_tiny_scale_factors() {
