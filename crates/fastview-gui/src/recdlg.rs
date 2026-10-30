@@ -1172,6 +1172,50 @@ mod tests {
         assert_eq!(d.computed[j].name, pasted);
     }
 
+    /// A merged channel keeps its lane's name as read: the bytes as pasted
+    /// (866 → merge → 1251 gives the pasted name back), the alias of a
+    /// rename (kept across a switch).
+    #[test]
+    fn a_merged_lane_keeps_its_name_as_read() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "IA БЛОКА 3".into();
+        d.osc.analog[4].id = "IB БЛОКА 3".into();
+        d.init_set_keys();
+        d.selection = [ChanKey::Analog(3), ChanKey::Analog(4)].into();
+        app.copy_channels_for_merge();
+        app.active_doc_mut().unwrap().selection.clear();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let lanes: Vec<usize> = (0..d.computed.len()).filter(|&j| d.computed[j].formula == crate::merge_ui::PENDING).collect();
+        let pasted = d.computed[lanes[0]].name.clone();
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Computed(lanes[1]), "Своё"), Ok(()));
+        d.set_codepage(Encoding::Cp866);
+        let na = d.osc.analog.len();
+        app.merge_records();
+        let d = app.active_doc_mut().unwrap();
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!((d.osc.analog[na].id.as_str(), d.osc.analog[na + 1].id.as_str()), (pasted.as_str(), "Своё"));
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.osc.analog[na + 1].id, "Своё");
+    }
+
+    /// A rename on a document whose names as read were never taken (the
+    /// demo) takes them first: an empty rename brings the file's name back.
+    #[test]
+    fn an_empty_rename_brings_the_name_back_without_kept_names() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        let own = d.osc.analog[0].id.clone();
+        assert!(d.name_raw.is_empty());
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Analog(0), "X"), Ok(()));
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Analog(0), ""), Ok(()));
+        assert_eq!(d.osc.analog[0].id, own);
+    }
+
     /// An alias typed equal to the file's name as shown is still an alias
     /// (`+0x6c` non-empty): kept as typed across «Кодировка».
     #[test]
@@ -1218,6 +1262,10 @@ mod tests {
             Err(_) => Vec::new(),
         };
         assert_eq!((own(d, lanes[0]), own(d, lanes[1])), (b.clone(), c.clone()));
+        // An offset change redraws each lane from its own channel.
+        d.set_merge_offset(0.0);
+        let m = b.len() / 2;
+        assert!((d.computed[lanes[0]].samples[m] - b[m]).abs() < 1e-9 && (d.computed[lanes[1]].samples[m] - c[m]).abs() < 1e-9);
         let na = d.osc.analog.len();
         app.merge_records();
         let d = app.active_doc().unwrap();

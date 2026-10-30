@@ -395,6 +395,8 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
     if name_taken(doc, key, name) {
         return Err(MSG_NAME_TAKEN);
     }
+    // The names as read are taken before the new one is written.
+    doc.ensure_name_raw();
     let shown = shown_after_rename(doc, key, name);
     let alias = !name.is_empty();
     let name = shown.as_str();

@@ -208,11 +208,7 @@ impl Doc {
         let t0 = self.osc.time.first().copied().unwrap_or(0.0);
         let grid: Vec<f64> = self.osc.time.iter().map(|t| t - t0 - self.merge_offset).collect();
         for p in &self.pending {
-            let name = match &p.pasted.channel {
-                Ok(a) => &a.id,
-                Err(d) => &d.id,
-            };
-            let Some(c) = self.computed.iter_mut().find(|c| c.formula == PENDING && &c.name == name) else { continue };
+            let Some(c) = self.computed.iter_mut().find(|c| c.formula == PENDING && c.seq == p.lane) else { continue };
             let ts = &p.pasted.times;
             c.samples = grid
                 .iter()
@@ -542,7 +538,7 @@ impl App {
                 // The pasted channel through the accessor `0x426020` (no
                 // bit-14 branch: its own samples, DC and invert applied —
                 // the lane's `pending_own`), not the clip's raw values.
-                let own = d.computed.iter().find(|c| c.formula == PENDING && c.name == p.name()).map(|c| &c.pending_own).filter(|v| !v.is_empty());
+                let own = d.computed.iter().find(|c| c.formula == PENDING && c.seq == p.lane).map(|c| &c.pending_own).filter(|v| !v.is_empty());
                 let s2 = SyncChan { times: &p.pasted.times, x: own.unwrap_or(&a2.samples), n: n2, corr: corr2 };
                 let k1 = d.main_cursor;
                 let k2 = merge::cursor_in(k1, rate, p.pasted.rate, d.merge_offset);
@@ -629,6 +625,8 @@ impl App {
             /// Pasted at the block's end or before a formula channel.
             after: Option<(Option<String>, u64)>,
             picked: bool,
+            /// The lane's name as read (its bytes, its alias flag).
+            raw: Option<crate::app::RawName>,
         }
         let pend = |p: &ClipChan| {
             let j = d.computed.iter().position(|c| c.formula == PENDING && c.seq == p.lane);
@@ -647,6 +645,7 @@ impl App {
                 mode: p.primary_mode,
                 after,
                 picked: j.is_some_and(|j| d.selection.contains(&ChanKey::Computed(j))),
+                raw: c.and_then(|c| c.name_raw.clone()),
             }
         };
         let (pend_a, pend_d): (Vec<Pend>, Vec<Pend>) = {
@@ -726,6 +725,22 @@ impl App {
             }
         }
         d.move_appended(at_a, nb, at_d, nd);
+        // The merged channels keep their lanes' names as read: the bytes as
+        // pasted, the alias of a rename.
+        let (ka, kd) = (d.osc.analog.len() - nb, d.osc.digital.len() - nd);
+        if d.name_raw.len() == 2 + d.osc.analog.len() + d.osc.digital.len() {
+            let na = d.osc.analog.len();
+            for (k, p) in pend_a.iter().enumerate().take(ka) {
+                if let Some(r) = &p.raw {
+                    d.name_raw[2 + at_a + k] = r.clone();
+                }
+            }
+            for (k, p) in pend_d.iter().enumerate().take(kd) {
+                if let Some(r) = &p.raw {
+                    d.name_raw[2 + na + at_d + k] = r.clone();
+                }
+            }
+        }
         // A selected pending lane stays selected as its merged channel (VM:
         // «IA БЛОКА 3 (вст.)» still highlighted after «Объединить»); the
         // formula channels' keys follow their new places.
@@ -746,7 +761,6 @@ impl App {
         };
         d.selection = d.selection.iter().filter_map(|&k| remap(k)).collect();
         d.sel_anchor = d.sel_anchor.and_then(remap);
-        let (ka, kd) = (d.osc.analog.len() - nb, d.osc.digital.len() - nd);
         for (i, p) in (at_a..at_a + ka).zip(&pend_a) {
             if p.picked {
                 d.selection.insert(ChanKey::Analog(i));
