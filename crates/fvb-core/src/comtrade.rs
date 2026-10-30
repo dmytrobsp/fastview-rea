@@ -1157,11 +1157,12 @@ fn decode_text_enc(bytes: &[u8], enc: Encoding) -> String {
 /// visibly fails: a file starting with the UTF-8 BOM (stripped), or one of
 /// revision 2013 that is valid UTF-8 with at least one multi-byte character
 /// and nothing but Latin, Greek, Cyrillic, general punctuation, letterlike
-/// symbols and U+FFFD (Cyrillic in 1251 / KOI8-R practically never is
-/// valid UTF-8; a short 866 word may be, as a CJK or other far character,
-/// which the check refuses). A sequence that
-/// is not UTF-8 after a BOM reads U+FFFD; a U+FFFD written by the exporter
-/// (a name cut mid-character) stays as it is, so a save writes it back.
+/// symbols, arrows, mathematical operators (−, √, ∆, ∠) and U+FFFD
+/// (Cyrillic in 1251 / KOI8-R practically never is valid UTF-8; a short
+/// 866 word may be, as a CJK or other far character, which the check
+/// refuses). A sequence that is not UTF-8 after a BOM reads U+FFFD; a
+/// U+FFFD written by the exporter (a name cut mid-character) stays as it
+/// is, so a save writes it back.
 pub fn cfg_utf8(bytes: &[u8], cff: bool) -> Option<String> {
     if let Some(rest) = bytes.strip_prefix(b"\xEF\xBB\xBF") {
         return Some(String::from_utf8_lossy(rest).into_owned());
@@ -1175,7 +1176,7 @@ pub fn cfg_utf8(bytes: &[u8], cff: bool) -> Option<String> {
         lines.next();
     }
     let rev = lines.next()?.split(',').nth(2)?.trim().parse::<i32>().ok()?;
-    let plausible = |c: char| c < '\u{0530}' || ('\u{2000}'..='\u{214F}').contains(&c) || c == '\u{FFFD}';
+    let plausible = |c: char| c < '\u{0530}' || ('\u{2000}'..='\u{22FF}').contains(&c) || c == '\u{FFFD}';
     (rev == 2013 && text.chars().all(plausible)).then(|| text.to_string())
 }
 

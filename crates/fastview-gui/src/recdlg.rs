@@ -467,6 +467,12 @@ impl Doc {
         s
     }
 
+    /// The record comment as text for others (the clipboard's `hdrFile`, a
+    /// merged header): a UTF-8 `.hdr`'s BOM, kept for the save, left out.
+    pub fn hdr_text(&self) -> String {
+        self.hdr.as_deref().unwrap_or_default().trim_start_matches('\u{FEFF}').to_string()
+    }
+
     /// The `.hdr` file to write beside a saved `.cfg` (CRLF lines, in the
     /// comment's code page), if the record has a comment.
     pub fn hdr_file_bytes(&self) -> Option<Vec<u8>> {
@@ -1461,6 +1467,10 @@ mod tests {
         assert_eq!((d.codepage, d.read_enc, names(&d)), (Encoding::Utf8, Encoding::Utf8, read.clone()));
         assert_eq!((d.hdr.as_deref(), d.hdr_cp), (Some(hdr), Encoding::Utf8));
         assert_eq!(d.hdr_file_bytes().unwrap(), hdr.as_bytes());
+        // A BOM is saved back but kept out of the text others take.
+        d.hdr = Some(format!("\u{FEFF}{hdr}"));
+        assert_eq!(d.hdr_text(), hdr);
+        assert!(d.hdr_file_bytes().unwrap().starts_with(b"\xEF\xBB\xBF"));
         let guess = crate::setfile::cp_code(comtrade::detect_codepage(hdr.as_bytes()));
         assert_eq!(d.set.tree.section("Comments").unwrap().get_int("Codepage", -1), guess);
         // «Кодировка»: the original's two, then UTF-8 — current.

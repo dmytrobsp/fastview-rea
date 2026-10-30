@@ -110,6 +110,9 @@ fn a_bomless_2013_cfg_in_utf8_is_utf8_others_keep_the_program_encoding() {
     let text = cfg("2013").replace('\u{FFFD}', "?");
     let rec = load("cp1251", &comtrade::encode_text(&text, Encoding::Cp1251));
     assert_eq!((rec.analog[0].id.as_str(), rec.text_enc), ("Струм фази А", None));
+    // Arrows and mathematical operators are plausible (U+2190–U+22FF).
+    let rec = load("maths2013", cfg("2013").replacen("Струм фази А", "Uл−√3∠∆", 1).as_bytes());
+    assert_eq!((rec.analog[0].id.as_str(), rec.text_enc), ("Uл−√3∠∆", Some(Encoding::Utf8)));
     // Plain ASCII fixes nothing either.
     assert_eq!(comtrade::cfg_utf8(b"S,D,2013\r\n", false), None);
     // «фаз» in 866 is valid UTF-8 (one CJK character): not taken.
@@ -223,7 +226,7 @@ fn a_utf8_record_saves_and_reads_back_as_utf8() {
     // A BOM-less record that gained a far character (a renamed channel):
     // written with a BOM, as the BOM-less rule would not take it back.
     let mut rec = load("rtfar", cyr("2013").as_bytes());
-    rec.analog[0].id = "U − √3·I".into();
+    rec.analog[0].id = "U ⚡ Ia".into();
     let (c, _) = comtrade::write(&rec, Encoding::Utf8);
     assert!(c.starts_with(b"\xEF\xBB\xBF"));
     let back = load("rtfarb", &c);
