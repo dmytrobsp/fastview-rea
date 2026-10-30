@@ -37,11 +37,15 @@ is out of reach (those are listed in `notes/COMPLETION_PLAN.md`, W6).
   when it had one or when it would not read back as UTF-8 without.
   Reason: the saved file reads back as it was, with no 1251 / UTF-8 mix.
 - **«Кодировка» on a record read in UTF-8 / KOI8-R.** The original offers
-  OEM / ANSI only (`doc+0x6e8`, `0x44a112`); its names exist only as ANSI
-  strings. Ours lists the record's own encoding as a third entry, current
-  at open (a stored `Codepage` other than 0 selects it), and its 866 /
-  1251 entries read the name bytes in those code pages. Reason: the
-  combo shows the record's real encoding and can come back to it.
+  OEM / ANSI only (`doc+0x6e8`, `0x44a112`, `0x44a330` → `0x4543e0`); its
+  names exist only as ANSI strings, so the way back from 866 is
+  «Windows-1251» with «?» for every character 1251 lacks (VM). Ours gives
+  the same two entries the same results — ANSI the names narrowed to 1251,
+  OEM those bytes read as 866 — and lists the record's own encoding as a
+  third entry, current at open (a stored `Codepage` other than 0 selects
+  it), which gives the names back as read, nothing narrowed or
+  best-fitted («√», box-drawing, U+FFFD kept). Reason: the combo shows the
+  record's real encoding, and a look at 866 / 1251 loses nothing.
 - **ADC codes beyond ±2³¹** (float32-range samples with a tiny `a`). The
   original truncates the code to a 32-bit int (`0x422250` → `0x411bf0`),
   every such code −2147483648; ours keeps it whole. Reason: the true raw

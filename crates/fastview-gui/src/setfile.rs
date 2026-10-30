@@ -328,7 +328,10 @@ impl Doc {
     /// File channel `i`'s name as read, in the record's code page (as
     /// `Doc::set_codepage` decodes the names).
     fn file_name(&self, i: usize) -> String {
-        comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.codepage).chars().map(comtrade::best_fit_1251).collect()
+        // The keys are the names' bytes as read, as 1251 text (taken at the
+        // open, `init_set_keys`, while the names showed as read).
+        let bytes = comtrade::encode_text(&self.file_key(i), Encoding::Cp1251);
+        crate::recdlg::decode_name(&bytes, self.read_enc, self.codepage)
     }
 
     /// A renamed file channel's original name (`+0x64`, decoded,
