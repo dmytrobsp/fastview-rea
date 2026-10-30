@@ -20,6 +20,12 @@ tools/vm/clone.sh ours                      # push a rebuilt ours
 tools/vm/clone.sh rm
 ```
 
+Parallel agents each keep their own clone: `FV_CLONE=~/.cache/fastview-rea/clone-<name>`
+and `FV_PURPOSE="fastview-rea: <what>"` on every call (a worktree finds the
+original in the main checkout's `extracted/`). `FV_FRESH=1 run …` starts
+from no saved state; record `-` opens none. `tools/gates.sh` is the gate
+(clippy both targets, tests, publish guard; GATES-OK).
+
 | script | what |
 |---|---|
 | `autologon.ps1` | turns on automatic sign-in of the test user (asks for the password at a hidden prompt, checks it first; undo commands at its top) — a desktop session is needed for anything visible |

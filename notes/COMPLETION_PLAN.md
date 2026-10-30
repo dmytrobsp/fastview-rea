@@ -62,6 +62,7 @@ tool skips this file), never in the ledger or the specs.
 | 2026-10-24 (W1.7b, W2.19, W2.17 part, W2.10–W2.12) | L9.203 | 1117 / 1803 | 91.8 % | 0 / 322 | 0 / 684 | 188 / 15 | 33 | 275 ✓ |
 | 2026-10-25 (v0.3.0; stale 🟡 headings re-marked) | L9.331 | 1118 / 1803 | 91.8 % | 0 / 322 | 0 / 684 | 329 / 2 | 41 | 501 ✓ |
 | 2026-10-30 (runs move to throwaway clones) | L9.393 | 1118 / 1803 | 91.8 % | 0 / 322 | 0 / 684 | 393 / 2 | 41 | 522 ✓ (clone) |
+| 2026-10-30 (session close; issues #4–#8 open) | L9.403 | 1118 / 1803 | 91.8 % | 0 / 322 | 0 / 684 | 401 / 2 | 41 | 522 ✓ (clone, L9.393) |
 
 ## W1 — Read the uncited code
 

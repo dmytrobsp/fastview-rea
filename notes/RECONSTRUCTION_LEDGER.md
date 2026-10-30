@@ -9832,6 +9832,17 @@ the x axis on row 581 in both; the pane itself a pixel left (L9.394's
 maximised residual). Test
 `the_differential_push_runs_on_a_small_first_paint`.
 
+Session close 2026-10-30 (L9.392–L9.403, all pushed): VM runs moved to
+throwaway testbox clones (`tools/vm/clone.sh`, 1280 × 800); the small
+screen surfaced the size-dependent items above. User feedback (GitHub #1–#3,
+on v0.3.0) split into issues #4–#7, a new record format filed as #8 (a
+Siemens 7KE85 COMTRADE 2013 export; the sample is local only, under
+`extracted/samples/7ke85/`). Next: one sub-agent per issue (worktree, its
+own clone), each verified, fixed, reviewed and opened as a PR into main.
+Known small residuals: ours' first-run frame 2–3 px larger than the
+original's at 1280 × 800 (1 px pane offsets when maximised); the finder's
+shell namespace; Office 2003 panel / checked-button details.
+
 Session close 2026-10-25 (L9.294–L9.331, all pushed): W4.4's RUN list is
 down to the harness-unreachable items (non-A4 preview, splitter cursor,
 per-page DC, DEVMODE, a drop on the frame); W2.3 closed (L9.326). Next:

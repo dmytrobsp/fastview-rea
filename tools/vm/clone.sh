@@ -21,13 +21,17 @@
 # folder as harness\, and ours (target/x86_64-pc-windows-gnu/release). Layout
 # in the guest: C:\Users\tbuser\fv-test\{FastView5,harness,records,out,ours}.
 # The clone's name and id are kept in FV_CLONE (0600); the id is the key to
-# the clone, so it is never printed.
+# the clone, so it is never printed. Parallel agents: one FV_CLONE file each
+# (and FV_PURPOSE to say whose clone it is); a worktree finds the original in
+# the main checkout's extracted/.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 TB=(python3 "$HOME/projects/testbox/tb.py")
 state=${FV_CLONE:-$HOME/.cache/fastview-rea/clone}
-orig=${FV_ORIG:-$repo/extracted/stage1}
+# The main checkout (a worktree has no extracted/): beside the common .git.
+main=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")
+orig=${FV_ORIG:-$main/extracted/stage1}
 records=${FV_RECORDS:-$HOME/Downloads}
 shots=${FV_SHOTS:-$PWD}
 ours=$repo/target/x86_64-pc-windows-gnu/release/fastview.exe
@@ -60,7 +64,7 @@ case ${1:-} in
 new)
     [ ! -f "$state" ] || { echo "a clone is already recorded in $state (clone.sh rm first)" >&2; exit 2; }
     [ -f "$orig/FastView.exe" ] && [ -f "$orig/vcredist_vs13_x86.exe" ] || { echo "no original in $orig (FV_ORIG)" >&2; exit 2; }
-    out=$("${TB[@]}" instance new --desktop windows --purpose "fastview-rea: runs of the original and ours" --wait 15m)
+    out=$("${TB[@]}" instance new --desktop windows --purpose "${FV_PURPOSE:-fastview-rea: runs of the original and ours}" --wait 30m)
     name=$(printf '%s\n' "$out" | sed -n 's/^instance \([^ ]*\) id=\([^ ]*\) .*/\1/p')
     id=$(printf '%s\n' "$out" | sed -n 's/^instance \([^ ]*\) id=\([^ ]*\) .*/\2/p')
     [ -n "$name" ] && [ -n "$id" ] || { echo "clone: instance new said: $out" >&2; exit 5; }
