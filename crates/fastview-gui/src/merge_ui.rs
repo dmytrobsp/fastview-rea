@@ -382,9 +382,16 @@ impl App {
         if self.active_doc().is_none() {
             return;
         }
+        // A pane window focused (its caption or strip button pressed): its
+        // diagram's picture only, as for a press in it (VM: Copy then holds
+        // a metafile and no document).
         let focus = match self.copy_focus {
+            CopyFocus::Pane(u) => self.panes.front(self.docks.members(self.docks.host(u))).map_or(CopyFocus::View, CopyFocus::Diagram),
+            f => f,
+        };
+        let focus = match focus {
             CopyFocus::Diagram(p) if !self.pane_canvas.iter().any(|(q, _)| *q == p) => CopyFocus::View,
-            CopyFocus::Grid if self.pane_grid.is_empty() => CopyFocus::View,
+            CopyFocus::Grid(_) if self.pane_grid.is_empty() => CopyFocus::View,
             f => f,
         };
         if let CopyFocus::Diagram(pane) = focus {
