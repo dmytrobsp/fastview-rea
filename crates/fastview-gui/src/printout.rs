@@ -585,8 +585,9 @@ impl App {
             let owner = slid
                 .or_else(|| crate::docking::UNITS.into_iter().find(|&u| floating(u).is_some_and(|r| r.contains(p))))
                 .or_else(|| crate::docking::UNITS.into_iter().find(|&u| self.dock_rects[u as usize].is_some_and(|r| r.contains(p))));
-            if let Some(u) = owner {
-                self.copy_focus = CopyFocus::Grid(u);
+            // The grid is its group's front pane's (circle or differential).
+            if let Some(pane) = owner.and_then(|u| self.panes.front(self.docks.members(u))) {
+                self.copy_focus = CopyFocus::Grid(pane);
             }
         } else if slid.is_none() && on_float.is_none() && self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
             self.copy_focus = CopyFocus::View;

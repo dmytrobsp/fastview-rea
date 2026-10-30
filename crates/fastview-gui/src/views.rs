@@ -740,7 +740,7 @@ impl App {
         // the view).
         if let Some(g) = self.focus_group() {
             let d = self.docks[g];
-            let pane_closed = matches!(self.copy_focus, crate::app::CopyFocus::Diagram(p) if !self.panes.visible(p));
+            let pane_closed = matches!(self.copy_focus, crate::app::CopyFocus::Diagram(p) | crate::app::CopyFocus::Grid(p) if !self.panes.visible(p));
             if pane_closed || !views.iter().any(|v| v.unit == g) || (d.place == Place::AutoHide && !d.out && d.slide == 0.0) {
                 self.copy_focus = crate::app::CopyFocus::View;
             }

@@ -2853,7 +2853,7 @@ mod window_tests {
         assert!(g1 > g0, "its grid drawn");
         let grid = w.app.pane_grid[g0];
         w.press(egui::PointerButton::Primary, grid.center(), grid.center());
-        assert_eq!(w.app.copy_focus, app::CopyFocus::Grid(Unit::Vector));
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Grid(app::Pane::Circle));
         w.run(vec![egui::Event::PointerMoved(away)]);
         w.idle(60);
         assert!(w.app.docks[Unit::Vector].out, "the grid's focus holds it out");
@@ -2895,6 +2895,36 @@ mod window_tests {
             .expect("a point of the pane, off its diagram, over the view");
         w.press(egui::PointerButton::Primary, off, off);
         assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector), "not the view under it");
+    }
+
+    /// The focus leaves a pane that closes (#77): a focused diagram's, and
+    /// a focused property grid's (Windows hands a hidden window's focus to
+    /// its parent, the frame passes it on to the view), so the view's arrow
+    /// keys work again at once.
+    #[test]
+    fn closing_the_pane_that_holds_the_focus_returns_it_to_the_view() {
+        use app::{Command, CopyFocus, Pane};
+        let mut w = Win::new();
+        // A focused diagram.
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        w.press(egui::PointerButton::Primary, canvas.center(), canvas.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
+        w.app.dispatch(Command::TogglePane(Pane::Vector));
+        w.idle(3);
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the diagram's pane closed");
+        // A focused property grid, its group's other panes still shown.
+        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        w.idle(3);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        w.press(egui::PointerButton::Primary, grid.center(), grid.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
+        w.app.dispatch(Command::TogglePane(Pane::Circle));
+        w.idle(3);
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the grid's pane closed");
+        // The view's keys work again without a press in it.
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_ne!(w.view_state(), before, "the arrow key reaches the view");
     }
 
     /// A press on a menu or other popup over a pane gives that pane no
