@@ -394,7 +394,7 @@ impl App {
         p.text(br.center(), egui::Align2::CENTER_CENTER, "Сохранить...", egui::FontId::proportional(crate::dpi::font(12.0)), Color32::from_rgb(30, 57, 91));
         let save = bresp.clicked();
         let close = crate::dialogs::caption_close(ui, full, ui.id().with("fv_omp_close"));
-        self.omp_ui.close_rect = Some(egui::Rect::from_min_size(egui::pos2(full.right() - 20.0, full.top()), egui::vec2(17.0, 17.0)));
+        self.omp_ui.close_rect = Some(egui::Rect::from_min_size(egui::pos2(full.right() - crate::dpi::s(20.0), full.top()), egui::vec2(crate::dpi::s(17.0), crate::dpi::s(17.0))));
 
         if save {
             self.omp_save_report();

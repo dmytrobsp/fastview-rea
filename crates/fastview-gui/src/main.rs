@@ -471,7 +471,7 @@ impl App {
             // point, its right end 7 px in from the strip's (VM).
             let x0 = strip.right() - dpi::s(15.0);
             let y0 = strip.top() + 8.0 + ((strip.height() - 20.0) / 2.0).floor();
-            let hit = egui::Rect::from_min_max(egui::pos2(x0 - 3.0, strip.top()), egui::pos2(x0 + 12.0, strip.bottom()));
+            let hit = egui::Rect::from_min_max(egui::pos2(x0 - 3.0, strip.top()), egui::pos2(x0 - 3.0 + dpi::s(15.0), strip.bottom()));
             let tri = egui::Color32::from_rgb(86, 125, 177);
             for k in 0..5 {
                 let row = egui::Rect::from_min_max(egui::pos2(x0 + k as f32, y0 + k as f32), egui::pos2(x0 + 9.0 - k as f32, y0 + k as f32 + 1.0));
@@ -488,7 +488,7 @@ impl App {
             if btn.clicked() {
                 open = if open.is_some() { None } else { Some(ui.ctx().cumulative_pass_nr()) };
             }
-            let lit = egui::Rect::from_min_size(egui::pos2(x0 - 3.0, y0 - 7.0), egui::vec2(15.0, 15.0));
+            let lit = egui::Rect::from_min_size(egui::pos2(x0 - 3.0, y0 + 1.0 - (dpi::s(15.0) / 2.0).ceil()), egui::vec2(dpi::s(15.0), dpi::s(15.0)));
             if let Some(serial) = open {
                 crate::lanes::gradient(ui.painter(), lit, egui::Color32::from_rgb(252, 151, 61), egui::Color32::from_rgb(254, 181, 91));
                 for k in 0..5 {

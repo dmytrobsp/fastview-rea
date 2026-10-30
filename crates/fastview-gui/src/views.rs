@@ -608,10 +608,11 @@ impl App {
                 }
             };
             let strip = match edge {
-                Edge::Left => egui::SidePanel::left(id).resizable(false).exact_width(24.0).show(ctx, |ui| draw(ui)),
-                Edge::Right => egui::SidePanel::right(id).resizable(false).exact_width(24.0).show(ctx, |ui| draw(ui)),
-                Edge::Top => egui::TopBottomPanel::top(id).resizable(false).exact_height(24.0).show(ctx, |ui| ui.horizontal(|ui| draw(ui)).inner),
-                Edge::Bottom => egui::TopBottomPanel::bottom(id).resizable(false).exact_height(24.0).show(ctx, |ui| ui.horizontal(|ui| draw(ui)).inner),
+                // CMFCAutoHideBar's strip, at the system DPI.
+                Edge::Left => egui::SidePanel::left(id).resizable(false).exact_width(crate::dpi::s(24.0)).show(ctx, |ui| draw(ui)),
+                Edge::Right => egui::SidePanel::right(id).resizable(false).exact_width(crate::dpi::s(24.0)).show(ctx, |ui| draw(ui)),
+                Edge::Top => egui::TopBottomPanel::top(id).resizable(false).exact_height(crate::dpi::s(24.0)).show(ctx, |ui| ui.horizontal(|ui| draw(ui)).inner),
+                Edge::Bottom => egui::TopBottomPanel::bottom(id).resizable(false).exact_height(crate::dpi::s(24.0)).show(ctx, |ui| ui.horizontal(|ui| draw(ui)).inner),
             };
             self.dock_strips[v.unit as usize] = Some(strip.response.rect);
             if let Some(p) = hit.2.filter(|&p| p != v.front) {
@@ -1045,21 +1046,23 @@ impl App {
                 ui.allocate_rect(inner, egui::Sense::hover());
                 let sid = egui::Id::new(("char_grid_scroll", pane));
                 let (mut off, content_h): (f32, f32) = ui.data(|d| d.get_temp(sid)).unwrap_or((0.0, 0.0));
-                let page = (inner.height() / 17.0).floor() * 17.0;
+                // (the rows and the scroll bar at the system DPI: `dpi`)
+                let (row, bar_w) = (crate::dpi::s(17.0), crate::dpi::s(17.0));
+                let page = (inner.height() / row).floor() * row;
                 let max_off = (content_h - page).max(0.0);
                 if ui.rect_contains_pointer(inner) {
                     for dy in ui.input(|i| crate::lanes::wheel_deltas(&i.events)) {
-                        off -= dy.signum() * 51.0;
+                        off -= dy.signum() * 3.0 * row;
                     }
                 }
-                let content = if max_off > 0.0 { egui::Rect::from_min_max(inner.min, egui::pos2(inner.right() - 17.0, inner.bottom())) } else { inner };
+                let content = if max_off > 0.0 { egui::Rect::from_min_max(inner.min, egui::pos2(inner.right() - bar_w, inner.bottom())) } else { inner };
                 if max_off > 0.0 {
                     let bar = egui::Rect::from_min_max(egui::pos2(content.right(), inner.top()), inner.max);
-                    if let Some(v) = crate::lanes::scrollbar(ui, bar, false, off, max_off, page, 17.0, page) {
+                    if let Some(v) = crate::lanes::scrollbar(ui, bar, false, off, max_off, page, row, page) {
                         off = v;
                     }
                 }
-                off = ((off / 17.0).round() * 17.0).clamp(0.0, max_off);
+                off = ((off / row).round() * row).clamp(0.0, max_off);
                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(content.min - egui::vec2(0.0, off), egui::vec2(content.width(), f32::INFINITY))));
                 child.set_clip_rect(content.intersect(ui.clip_rect()));
                 self.char_side_panel(&mut child);
@@ -1273,7 +1276,8 @@ impl App {
             // The expand box (9 × 9 at +4, top + 3: a (145, 145, 145)
             // frame round a light gradient, the sign in (75, 99, 167)) and
             // the visibility box.
-            let toggle = egui::Rect::from_min_size(egui::pos2(r.left() + 4.0, r.top() + 3.0), egui::vec2(9.0, 9.0));
+            // (centred in a taller row at > 100 %)
+            let toggle = egui::Rect::from_min_size(egui::pos2(r.left() + 4.0, r.top() + 3.0 + ((r.height() - 17.0) / 2.0).floor()), egui::vec2(9.0, 9.0));
             crate::lanes::gradient(ui.painter(), toggle, egui::Color32::from_rgb(250, 251, 251), egui::Color32::from_gray(227));
             ui.painter().px_rect_stroke(toggle, 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_gray(145)));
             let sign = egui::Stroke::new(1.0f32, egui::Color32::from_rgb(75, 99, 167));
@@ -1297,7 +1301,7 @@ impl App {
                 // the palette's fourth column; when visible, image 0 of
                 // bitmap 470 (13 × 13) — a dark slate tick, ours drawn.
                 let (ir, ig, ib) = crate::diagram::CHAR_PALETTE[*ci % 9][3];
-                let bx = egui::Rect::from_min_size(egui::pos2(r.right() - 15.0, r.top() + 2.0), egui::vec2(12.0, 12.0));
+                let bx = egui::Rect::from_min_size(egui::pos2(r.right() - 15.0, r.top() + 2.0 + ((r.height() - 17.0) / 2.0).floor()), egui::vec2(12.0, 12.0));
                 ui.painter().rect_filled(bx, 0.0, egui::Color32::from_rgb(ir, ig, ib));
                 ui.painter().px_rect_stroke(bx, 0.0, egui::Stroke::new(1.0f32, st.color));
                 if st.visible {
@@ -1720,10 +1724,11 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
 /// An auto-hide strip button: the pane's title, written down the right
 /// strip or along the bottom one.
 fn strip_button(ui: &mut egui::Ui, title: &str, vertical: bool) -> egui::Response {
-    let font = egui::FontId::proportional(11.0);
+    let font = egui::FontId::proportional(crate::dpi::font(11.0));
     let galley = ui.painter().layout_no_wrap(title.to_owned(), font, ui.visuals().text_color());
     let len = galley.size().x + 16.0;
-    let size = if vertical { egui::vec2(20.0, len) } else { egui::vec2(len, 20.0) };
+    let side = crate::dpi::s(20.0);
+    let size = if vertical { egui::vec2(side, len) } else { egui::vec2(len, side) };
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     let fill = if resp.hovered() { ui.visuals().widgets.hovered.bg_fill } else { ui.visuals().widgets.inactive.bg_fill };
     ui.painter().rect(rect, 2.0, fill, ui.visuals().widgets.inactive.bg_stroke);

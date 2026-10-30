@@ -1768,7 +1768,7 @@ impl App {
             // DIALOG 492: 200 × 25 DLU (300 × 41 px), no WS_SYSMENU — no
             // close button; the bar at 5, 7 and «Отмена» at 135, 6.
             crate::dialogs::dlg(ctx, "Загрузка осциллограммы").id(egui::Id::new(("fv_loading", i))).margin(0.0).no_close().collapsible(false).resizable(false).show(ctx, |ui| {
-                let (client, _) = ui.allocate_exact_size(dp_size(300.0, 41.0), egui::Sense::hover());
+                let (client, _) = ui.allocate_exact_size(dlu_size(200, 25), egui::Sense::hover());
                 win_progress(ui, dlu(client, 5, 7, 120, 11), l.shown.0 as f32 / 100.0);
                 if win_button(ui, dlu(client, 135, 6, 60, 12), "Отмена", false).clicked() {
                     cancel = Some(i);

@@ -276,7 +276,8 @@ impl Dockable {
             return false;
         }
         let size = self.float_at(origin).size();
-        let grab = Vec2::new((press.x - pane.left()).min(size.x - 20.0).max(0.0), (press.y - pane.top()).clamp(0.0, 20.0));
+        let cap = crate::dpi::measured(20.0, 29.0, 33.0);
+        let grab = Vec2::new((press.x - pane.left()).min(size.x - 20.0).max(0.0), (press.y - pane.top()).clamp(0.0, cap));
         self.float_rect = Some(Rect::from_min_size(now - grab, size));
         self.place = Place::Floating;
         true

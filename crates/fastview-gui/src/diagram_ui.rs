@@ -1062,7 +1062,7 @@ impl App {
         let view = *self.plane_view(diff);
         // Scroll bars take client area while zoomed (`0x437ca0`).
         let sb = dg::scroll_range(view.z);
-        let client = if sb.is_some() { Rect::from_min_max(full.min, full.max - Vec2::splat(SCROLL_W)) } else { full };
+        let client = if sb.is_some() { Rect::from_min_max(full.min, full.max - Vec2::splat(crate::dpi::s(SCROLL_W))) } else { full };
         let painter = ui.painter_at(full);
         // White below the splitter's 5 rows, which the window keeps.
         painter.rect_filled(Rect::from_min_max(full.min + Vec2::new(0.0, dpx(5.0)), full.max), 0.0, Color32::WHITE);

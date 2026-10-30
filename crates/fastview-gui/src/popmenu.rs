@@ -275,7 +275,7 @@ pub fn panel_separator(ui: &mut egui::Ui) {
 pub(crate) fn hot_bar(p: &egui::Painter, r: Rect) {
     use crate::oscgeom::PixelLines;
     let inner = r.shrink(1.0);
-    let mid = inner.top() + (inner.height() / 2.0).floor();
+    let mid = inner.top() + crate::dpi::s(10.0);
     crate::lanes::gradient(p, Rect::from_min_max(inner.min, Pos2::new(inner.right(), mid)), Color32::from_rgb(255, 253, 235), Color32::from_rgb(255, 235, 172));
     crate::lanes::gradient(p, Rect::from_min_max(Pos2::new(inner.left(), mid), Pos2::new(inner.right(), inner.bottom() - 1.0)), Color32::from_rgb(255, 213, 99), Color32::from_rgb(255, 227, 145));
     p.px_hline(inner.x_range(), inner.bottom() - 1.0, Stroke::new(1.0f32, Color32::from_rgb(255, 248, 181)));
@@ -291,7 +291,7 @@ pub(crate) fn hot_bar(p: &egui::Painter, r: Rect) {
 pub(crate) fn grey_bar(p: &egui::Painter, r: Rect) {
     use crate::oscgeom::PixelLines;
     let inner = r.shrink(1.0);
-    let mid = inner.top() + (inner.height() / 2.0).floor();
+    let mid = inner.top() + crate::dpi::s(10.0);
     crate::lanes::gradient(p, Rect::from_min_max(inner.min, Pos2::new(inner.right(), mid)), Color32::from_gray(250), Color32::from_gray(231));
     crate::lanes::gradient(p, Rect::from_min_max(Pos2::new(inner.left(), mid), Pos2::new(inner.right(), inner.bottom() - 1.0)), Color32::from_gray(210), Color32::from_gray(224));
     p.px_hline(inner.x_range(), inner.bottom() - 1.0, Stroke::new(1.0f32, Color32::from_gray(230)));
