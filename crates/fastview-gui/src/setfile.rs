@@ -611,11 +611,36 @@ fn mode_of(f: u32) -> ValueMode {
     }
 }
 
+/// A file analog channel's inputs to a recompute besides its samples:
+/// a, b, the unit multiplier, primary, secondary, P / S, its own
+/// frequencies, the sample count, the unit.
+type ChanInputs = (f64, f64, f64, f64, f64, bool, Vec<f64>, usize, String);
+
+/// What a full recompute (`Doc::recompute`) reads besides the samples —
+/// the window, rate, nominal frequency, correction choice and candidates,
+/// the fundamental's gain and each channel's coefficients — when its
+/// values would be the file's as read, as `Doc::new` computes them: no
+/// channel or discrete flag that changes a value, no computed channel, no
+/// group. `None` otherwise.
+#[allow(clippy::type_complexity)]
+fn recompute_inputs(d: &Doc) -> Option<(usize, f64, f64, i32, Vec<fvb_core::comtrade::ExtraFreq>, f64, Vec<ChanInputs>)> {
+    let flagged = d.chans.iter().any(|c| c.adc_counts || c.remove_dc || c.invert) || d.dig_flags.iter().any(|f| f.invert);
+    if flagged || !d.computed.is_empty() || !d.group_names.is_empty() {
+        return None;
+    }
+    let o = &d.osc;
+    let chans = o.analog.iter().map(|c| (c.a, c.b, c.unit_mult, c.primary, c.secondary, c.is_primary, c.own_freq.clone(), c.samples.len(), c.unit.clone())).collect();
+    Some((o.samples_per_cycle(), o.rate_r, o.line_freq, o.freq_sel, o.extra_freq.clone(), o.harmonic1_gain, chans))
+}
+
 impl App {
     /// Read the settings for document `di` (`0x44f5b0`); `from_command` =
     /// 32860 (comments are not re-read).
     pub fn apply_record_settings(&mut self, di: usize, from_command: bool) {
         let Some(d) = self.docs.get_mut(di) else { return };
+        // At an open the document holds what `Doc::new` computed from the
+        // record as read (on the loader's thread).
+        let as_read = if from_command { None } else { recompute_inputs(d) };
         // The review elements name their channels; the painters resolve
         // those names among the shown ones (aliases included) — bound here
         // once every channel is in place (VM, L9.227).
@@ -708,7 +733,18 @@ impl App {
         if let Some(x) = recset::read_view(d.set.tree.section("View")).xscale.filter(|f| *f > 0.0 && *f <= 1.0) {
             d.xscale = Some(x);
         }
-        self.recompute_doc(di);
+        // The original recomputes here (`0x44f5b0`, per channel); when the
+        // settings changed nothing a recompute reads, it would give back
+        // what the open computed: ours keeps that (2 × the time on the UI
+        // thread for a big record otherwise) and only takes the flagged
+        // copy anew, for the names.
+        let d = &mut self.docs[di];
+        if as_read.is_some() && as_read == recompute_inputs(d) && !d.omp.shown {
+            d.flagged = d.osc.clone();
+            d.series_gen += 1;
+        } else {
+            self.recompute_doc(di);
+        }
         if !calc.is_empty() {
             let (active, status) = (self.active, self.status.clone());
             self.active = Some(di);
@@ -1384,6 +1420,66 @@ mod tests {
         // First frame: the view / diagram sections are read.
         app.track_settings();
         ai
+    }
+
+    /// What a recompute leaves in a document: the phasors and roles, the
+    /// RMS and DC, the flagged copy's values and names.
+    fn computed_state(d: &Doc) -> String {
+        let a = &d.analysis;
+        let analog: Vec<_> = d.flagged.analog.iter().map(|c| (&c.id, &c.samples)).collect();
+        let digital: Vec<_> = d.flagged.digital.iter().map(|c| (&c.id, &c.samples)).collect();
+        format!("{:?}", (&a.phasors, a.u_abc, a.i_abc, a.calc_ib, a.n, &d.rms, &d.dc_mean, analog, digital, &d.flagged.station))
+    }
+
+    /// Opened, then recomputed in full once more: the same state; and how
+    /// many full recomputes the open ran.
+    fn open_and_recompute(cfg: &Path) -> (usize, String, String) {
+        let mut app = App::new();
+        app.persist = false;
+        crate::recdlg::RECOMPUTES.with(|c| c.set(0));
+        let di = open(&mut app, cfg);
+        let runs = crate::recdlg::RECOMPUTES.with(|c| c.get());
+        let opened = computed_state(&app.docs[di]);
+        app.recompute_doc(di);
+        (runs, opened, computed_state(&app.docs[di]))
+    }
+
+    /// An open computes the record once (`Doc::new`, on the loader's
+    /// thread): the settings apply recomputes only when they changed what
+    /// a recompute reads — the result the same as a full recompute either
+    /// way, names from the `.set` (an alias) included.
+    #[test]
+    fn an_open_recomputes_only_when_the_settings_change_the_values() {
+        let dir = temp_dir("once");
+        let cfg = write_record(&dir);
+        let (runs, opened, again) = open_and_recompute(&cfg);
+        assert_eq!(runs, 0, "no .set: nothing to recompute");
+        assert_eq!(opened, again);
+        // A rename in the `.set`: the names change, not the values.
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        crate::chandlg::rename(&mut app.docs[di], ChanKey::Analog(0), "Ua'").unwrap();
+        app.track_settings();
+        assert!(app.save_active());
+        drop(app);
+        let (runs, opened, again) = open_and_recompute(&cfg);
+        assert_eq!(runs, 0, "an alias: no recompute");
+        assert_eq!(opened, again);
+        assert!(opened.contains("\"Ua'\""), "the flagged copy has the alias");
+        // An inverted channel: recomputed, once.
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        app.docs[di].chans[1].invert = true;
+        app.recompute_doc(di);
+        app.track_settings();
+        assert!(app.save_active());
+        drop(app);
+        let (runs, opened, again) = open_and_recompute(&cfg);
+        assert_eq!(runs, 1);
+        assert_eq!(opened, again);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

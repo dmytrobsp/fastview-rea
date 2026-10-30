@@ -310,10 +310,18 @@ impl Doc {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Full recomputes run on this thread (tests count them).
+    pub static RECOMPUTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl App {
     /// A full recompute of document `di`; ОМП is re-run silently when its
     /// result is on this document (`doc+0x690`).
     pub fn recompute_doc(&mut self, di: usize) {
+        #[cfg(test)]
+        RECOMPUTES.with(|c| c.set(c.get() + 1));
         let Some(d) = self.docs.get_mut(di) else { return };
         d.recompute_signals();
         if self.docs[di].omp.shown {
