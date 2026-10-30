@@ -93,3 +93,6 @@ milestone branch, a worktree per unit, the merge gate
 ([`../docs/agents/workflow.md`](../docs/agents/workflow.md#branches-and-worktrees)).
 Its tests: `python3 -I -m unittest discover -s tools/milestone -p 'test_*.py'`
 (CI runs them).
+
+`tools/review-package.sh BASE HEAD OUT` writes a unit's review package (commits, stat, diff with
+context) for an independent reviewer ([`../docs/agents/review.md`](../docs/agents/review.md)).

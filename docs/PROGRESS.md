@@ -20,7 +20,7 @@ Last rewritten: 2026-10-30 (milestone 0.4.0 in flight; tracking moved to GitHub 
   91.8 % covered by cited functions (`tools/coverage.py`: 1118 of 1803 functions, none of the large or medium ones
   uncited).
 - Ours runs on Linux, Windows (GPU or its software runner) and macOS. Deliberate improvements:
-  [IMPROVEMENTS.md](IMPROVEMENTS.md); differences the maintainer accepted: [ACCEPTED.md](ACCEPTED.md).
+  [IMPROVEMENTS.md](IMPROVEMENTS.md); differences the maintainer accepted: [ACCEPTED-DIFFERENCES.md](ACCEPTED-DIFFERENCES.md).
 
 ## In flight
 
@@ -52,7 +52,7 @@ List the queue: `gh issue list -S '-label:triage'`.
 | The queue | [GitHub Issues](https://github.com/dmytrobsp/fastview-rea/issues), milestones and labels |
 | Milestones | [milestones/](milestones/README.md): plan and ledger per milestone |
 | What the original does | [original/](original/README.md): L1–L9.x and the specs |
-| Deliberate differences | [IMPROVEMENTS.md](IMPROVEMENTS.md) (improvements), [ACCEPTED.md](ACCEPTED.md) (accepted by the maintainer) |
+| Deliberate differences | [IMPROVEMENTS.md](IMPROVEMENTS.md) (improvements), [ACCEPTED-DIFFERENCES.md](ACCEPTED-DIFFERENCES.md) (accepted by the maintainer) |
 | History | [history/](history/): the completion plan (to 2026-10-30), the ledger's session notes |
 | Tools | [tools/README.md](../tools/README.md); the milestone helper `tools/milestone/milestone.py` |
 

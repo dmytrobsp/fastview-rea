@@ -41,7 +41,7 @@ Everything to do is an issue; nothing is queued in a file — not in the record 
 - **Decisions live in docs, issues are their entry points.** A deliberate improvement is recorded in
   [IMPROVEMENTS.md](../IMPROVEMENTS.md) by the pull request that makes it (the original's behaviour, ours, the
   reason, the issue). A difference the maintainer accepts — hard to fix for little benefit, almost invisible — is
-  recorded in [ACCEPTED.md](../ACCEPTED.md) (what differs, where it shows, why it isn't fixed, the decision with its
+  recorded in [ACCEPTED-DIFFERENCES.md](../ACCEPTED-DIFFERENCES.md) (what differs, where it shows, why it isn't fixed, the decision with its
   date), and its issue is closed as not planned with the `accepted` label and a link to the entry. Only the
   maintainer accepts a difference; agents propose.
 - **User reports** (often in Ukrainian or Russian) stay open as filed; the controller splits them into issues it can
@@ -88,50 +88,69 @@ repository. Only the controller runs it. Pushes run from the main checkout, whic
    (`extracted/` and `CLAUDE.local.md` are only there); the hard rules of AGENTS.md (publishing, user data, shell,
    identity and trailer, guard); the clone rules of [windows-testing.md](windows-testing.md) with the unit's own
    `FV_CLONE` file; and the limits: **never `git push`, never `gh pr` / `gh issue` writes, never edit the record of
-   the original, ACCEPTED.md or the milestone ledger** (the report carries the drafts), never run `milestone.py`. A
-   deliberate improvement adds its own IMPROVEMENTS.md entry in the unit.
+   the original, ACCEPTED-DIFFERENCES.md or the milestone ledger** (the report carries the drafts), never run
+   `milestone.py`, **never dispatch subagents** (no reviewers of its own: the review is the controller's). A
+   deliberate improvement adds its own IMPROVEMENTS.md entry in the unit. The controller records the base commit.
 2. **Implementation.** Reproduce first (headless or in a clone); read the original in its binary where behaviour must
    be matched; the test that fails without the fix (shown failing, by reverting the fix); `tools/gates.sh` →
-   GATES-OK; one commit per logical step.
-3. **Own review loop.** The implementer has a fresh reviewer read its diff (correctness and fidelity to the original,
-   not style) and fixes what is real, until the reviewer finds nothing significant.
-4. **The report** — the unit is not done while anything below is open:
-   - **Fixed**: what changed, commits, tests (which failed before the fix), the gates result.
-   - **Questions**: anything needing a decision, each with the recommended answer. An implementer with an open
-     question reports **BLOCKED**, not done. The controller answers it (a ruling in the ledger, with what it costs if
-     wrong) or asks the maintainer, then resumes the same implementer, which goes on.
+   GATES-OK; one commit per logical step. The implementer reviews its own diff before reporting, but that never
+   replaces the independent review.
+3. **The report** — written to a report file in the scratch folder (fix rounds append to it); the unit is not done
+   while anything below is open:
+   - **Status**: DONE, DONE_WITH_CONCERNS (with the concerns), or BLOCKED (with the question and its recommended
+     answer). The controller answers a question itself (a ruling in the ledger, with what it costs if wrong) or asks
+     the maintainer, then resumes the same implementer, which goes on.
+   - **Fixed**: what changed, commits, tests (which failed before the fix, and the command and output), gates.
    - **Follow-ups**: out-of-scope items found, each as a draft issue (title, a few lines, public wording).
    - **Dropped**: true nits only, one line each with why.
    - **Verified how**: UNIT (tests), VM (a clone run, what was seen), NOT (not exercised, and why).
    - **Drafts**: the pull request body (the record entry in prose — what the original does with addresses as
      references, what ours did, what it does now, how it was checked — and "Improvements over the original" where
      any: the original's behaviour, ours, the reason).
-5. **Controller's check.** The controller reads the diff for obvious problems left (sends them back: they are
-   fixed, not filed), runs the publish guard and a user-data check over every new commit and the body
-   (`git log -p milestone/NAME..m/NAME/UNIT` and the body in a scratch folder: no sample names or values, no binary
-   listings), then pushes (`git push -u origin m/NAME/UNIT`) and opens or updates the pull request
-   (`--base milestone/NAME`, `Fixes #N`, milestone set). CI runs on it.
-6. **Review.** A fresh reviewer reads the pushed diff against the issue and the rules; findings go to the same
-   implementer (resumed), then a scoped re-review. Every real finding in scope is fixed; nits dropped with a reason in
-   the ledger; out-of-scope items and the maintainer's decisions become issues.
-7. **Merge gate**, one unit at a time, never rewriting a pushed branch:
+4. **Controller's check.** The controller runs the publish guard and the user-data check over every new commit and
+   the body (`git log -p` of the range and the body in a scratch folder, compared field by field and line by line
+   against the users' records — any value taken from one is a finding, however generic it looks), then pushes
+   (`git push -u origin <unit branch>`) and opens or updates the pull request (`--base milestone/NAME`, `Fixes #N`,
+   milestone set). CI runs on it. The controller doesn't judge the code here: that is the review's job.
+5. **Task review** by an independent reviewer — never the implementer, never a reviewer the implementer dispatched,
+   never the controller ([review.md](review.md) has the prompts):
+   - The controller writes a **review package** (the commit list, `git diff --stat` and `git diff -U10` for
+     BASE..HEAD, BASE being the commit recorded before dispatch — never `HEAD~1`) to a file and gives the reviewer
+     its path, the brief and the report file. The package never enters the controller's context.
+   - Two verdicts are required: **fidelity and spec** (does it do what the issue and the original require — nothing
+     missing, extra or misunderstood) and **quality** (correct, tested — each test failing without its fix —, no
+     publishing breach), with findings graded Critical / Important / Minor, each with file:line.
+   - The controller never pre-judges: no "don't flag X" in a reviewer's prompt.
+6. **The fix loop** runs while the review has a spec ❌ or a Critical / Important finding. Minors don't enter it: they
+   go to the ledger as deferred minors for the final review to triage. A round is one fix dispatch plus one **scoped
+   re-review** (the findings list and the fix diff only, FIX_BASE..HEAD; each finding ADDRESSED or NOT ADDRESSED;
+   new breakage in the fix diff joins the list; observations outside it go to the ledger). Rounds 1–3 resume the
+   same implementer with the findings verbatim; rounds 4–5 go to a fresh implementer on a more capable model ("a
+   prior implementer tried N times; read the report file"). After round 5 the controller adjudicates each open
+   finding — parked with a ruling, or ruled on when later work builds on it — and every adjudication is a ledger
+   line. The controller never fixes findings itself, and never ends the loop early by ruling. Each round goes to the
+   ledger: `<unit>: fix round R/5 (X addressed, Y open — …; commits a..b)`.
+7. **Merge gate**, one unit at a time, after a clean review (or the breaker), never rewriting a pushed branch:
    1. the pull request's head equals the local unit branch; CI green on it;
    2. `milestone.py gate NAME UNIT`; `tools/gates.sh` in the gate worktree on the merge result;
    3. `git push origin milestone/NAME` from the main checkout (GitHub marks the pull request merged);
-   4. the record entry (`docs/original/`) and the ledger line, committed on `main`; the follow-up issues filed;
-      `milestone.py rm NAME UNIT`.
+   4. the record entry (`docs/original/`) and the ledger line (`<unit>: complete (a..b, review clean)` or with the
+      parked count), committed on `main`; the follow-up issues filed; `milestone.py rm NAME UNIT`.
    A red gate: `ungate`, the unit goes back to its implementer (it merges the milestone tip into its branch and
    fixes it); a conflict the same way.
 
 ### The end of a milestone
 
-1. All units merged; a final whole-milestone review (the milestone branch against `main`) and one fix wave through
-   the same review and gate.
+1. All units merged. A **final whole-milestone review** (the milestone branch against `main`, as a review package)
+   by a fresh reviewer on the most capable model, pointed at the ledger's deferred minors and parked findings to
+   triage. Its findings go to **one** fix implementer as a single list, then **one** scoped re-review; residual
+   findings are adjudicated as in the breaker. No second fix wave: what is left goes to the maintainer.
 2. The checks: `tools/gates.sh`, the Windows test executable run in a clone, ours against the original in a clone
    for each fixed issue's scenario.
 3. **The milestone pull request** (`milestone/NAME` into `main`) with the report: per unit what changed and how it
-   was verified, the improvements, the follow-ups filed, the health line. The maintainer says "merge"; the controller
-   merges with a merge commit (not squashed, so `Fixes #N` closes the issues), runs the gates on `main`, pushes.
+   was verified, the improvements, the follow-ups filed, the health line, and **every ruling the controller made**
+   (from the ledger, in order, each with what it costs if wrong). The maintainer says "merge"; the controller merges
+   with a merge commit (not squashed, so `Fixes #N` closes the issues), runs the gates on `main`, pushes.
 4. **Cleanup**: unit and gate worktrees removed (`rm`, `end`), the milestone's own branches deleted on GitHub and
    locally, the GitHub milestone closed once nothing is open in it, clones removed. A release follows only on the
    maintainer's word.
@@ -146,7 +165,7 @@ repository. Only the controller runs it. Pushes run from the main checkout, whic
 - Entries come from the unit's pull request body and are written on `main` by the controller at the merge, so units
   never conflict over the record.
 - A deliberate improvement goes into [IMPROVEMENTS.md](../IMPROVEMENTS.md) too, with the reason; a difference the
-  maintainer accepted into [ACCEPTED.md](../ACCEPTED.md). Neither list is a task list.
+  maintainer accepted into [ACCEPTED-DIFFERENCES.md](../ACCEPTED-DIFFERENCES.md). Neither list is a task list.
 
 ## Making a change
 

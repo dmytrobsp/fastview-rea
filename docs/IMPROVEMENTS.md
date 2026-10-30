@@ -5,7 +5,7 @@ differently on purpose — an improvement — the difference is listed here.
 Each entry says what the original does (addresses in `FastView.exe` /
 `mfc120u.dll` as references), what ours does, and why, with the issue or
 pull request it came from. Differences we know of and don't fix are a
-separate list: [ACCEPTED.md](ACCEPTED.md). A difference listed in neither
+separate list: [ACCEPTED-DIFFERENCES.md](ACCEPTED-DIFFERENCES.md). A difference listed in neither
 is a bug.
 
 Ours improves on the original only where the original visibly fails or
