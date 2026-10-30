@@ -354,19 +354,17 @@ impl Doc {
                 }
             }
         }
-        fn retarget(node: &mut fvb_core::recset::SetNode, by_row: &dyn Fn(&str) -> Option<String>) {
-            for v in node.attrs.values_mut() {
-                if let Some(new) = by_row(v) {
-                    *v = new;
-                }
-            }
-            for c in node.children.values_mut() {
-                retarget(c, by_row);
-            }
-        }
+        // The pages' channel picks only: a combo's `channelName` (536–538,
+        // 543) and an arm's `IA` / `IB` / `IC` (539's `Leg_%d`).
         for k in &crate::quick_ui::PAGE_KEYS[..5] {
-            if let Some(sec) = self.set.tree.sections.get_mut(*k) {
-                retarget(sec, &by_row);
+            let Some(sec) = self.set.tree.sections.get_mut(*k) else { continue };
+            for (name, node) in &mut sec.children {
+                let keys: &[&str] = if name.starts_with("Leg_") { &["IA", "IB", "IC"] } else { &["channelName"] };
+                for key in keys {
+                    if let Some(new) = node.attrs.get(*key).and_then(|v| by_row(v)) {
+                        node.attrs.insert((*key).to_string(), new);
+                    }
+                }
             }
         }
         // A level or area stays bound to its channel; one kept unbound
@@ -1326,8 +1324,16 @@ mod tests {
         crate::quick_ui::save_page(z, &app.quick[z].clone(), app.active_doc_mut().unwrap().set.tree.section_mut(crate::quick_ui::PAGE_KEYS[z]));
         assert!(app.append_computed(&[("D".into(), "\"Пуск БЛОКА\"*2".into())]).is_some(), "{:?}", app.dlg.alert());
         let d = app.active_doc_mut().unwrap();
+        // A differential arm's pick follows; a text that only equals a name
+        // (an edit's) does not.
+        let dif = d.set.tree.section_mut(crate::quick_ui::PAGE_KEYS[4]);
+        dif.child_mut("Leg_0").set_str("IA", "IA БЛОКА 3");
+        dif.set_str("brakeCoeff", "IA БЛОКА 3");
         let before = d.computed.iter().find(|c| c.name == "3I0").unwrap().samples.clone();
         d.set_codepage(Encoding::Cp866);
+        let dif = d.set.tree.section(crate::quick_ui::PAGE_KEYS[4]).unwrap();
+        assert_eq!(dif.children["Leg_0"].attrs["IA"], d.osc.analog[3].id);
+        assert_eq!(dif.attrs["brakeCoeff"], "IA БЛОКА 3", "not a channel pick");
         assert_eq!(d.omp.params.stations[0].ia, d.osc.analog[3].id, "ОМП's channel too");
         let dig = d.osc.digital[0].id.clone();
         assert!(d.computed.iter().find(|c| c.name == "D").unwrap().formula.contains(&format!("\"{dig}\"")), "a digital channel's reference too");
