@@ -235,8 +235,44 @@ pub fn render_input(size: Vec2, ppp: f32, fonts: Option<&egui::FontDefinitions>,
         out = Some((full.shapes, full.pixels_per_point));
     }
     let (shapes, ppp) = out.expect("a pass ran");
-    let prims = ctx.tessellate(shapes, ppp);
     let (w, h) = ((size.x * ppp).round() as usize, (size.y * ppp).round() as usize);
+    rasterise(&ctx, shapes, ppp, &textures, w, h)
+}
+
+/// [`render_input`] as a runner on a monitor at `native` pixels per point
+/// shows it: the window `px` device pixels, so each pass's screen is
+/// `px` / (zoom · native) points (egui-winit), the zoom what `setup` and
+/// then the app left it at; the last pass rasterised at its own pixels per
+/// point onto `px`.
+#[cfg(test)]
+pub fn render_native(px: Vec2, native: f32, setup: impl FnOnce(&egui::Context), fonts: Option<&egui::FontDefinitions>, passes: Vec<Vec<egui::Event>>, mut paint: impl FnMut(&egui::Context)) -> Canvas {
+    let ctx = egui::Context::default();
+    if let Some(f) = fonts {
+        ctx.set_fonts(f.clone());
+    }
+    setup(&ctx);
+    let mut textures = HashMap::new();
+    let mut out = None;
+    for (pass, events) in passes.into_iter().enumerate() {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, px / (ctx.zoom_factor() * native))),
+            max_texture_side: Some(16384),
+            time: Some(pass as f64 * 0.1),
+            events,
+            ..Default::default()
+        };
+        raw.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(native);
+        let full = ctx.run(raw, &mut paint);
+        apply(&mut textures, &full.textures_delta);
+        out = Some((full.shapes, full.pixels_per_point));
+    }
+    let (shapes, ppp) = out.expect("a pass ran");
+    rasterise(&ctx, shapes, ppp, &textures, px.x.round() as usize, px.y.round() as usize)
+}
+
+/// egui's shapes tessellated at `ppp` and drawn onto a white `w` × `h`.
+fn rasterise(ctx: &egui::Context, shapes: Vec<epaint::ClippedShape>, ppp: f32, textures: &HashMap<egui::TextureId, Tex>, w: usize, h: usize) -> Canvas {
+    let prims = ctx.tessellate(shapes, ppp);
     let mut canvas = Canvas::white(w.max(1), h.max(1));
     let mut acc: Vec<[f32; 3]> = vec![[255.0; 3]; canvas.w * canvas.h];
     for p in &prims {
