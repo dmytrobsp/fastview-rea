@@ -1223,8 +1223,10 @@ pub fn best_fit_1251(c: char) -> char {
 }
 
 /// Windows' best fit to code page 1251 (WideCharToMultiByte, no flags,
-/// read off a Windows 11 clone for every BMP character): the characters
-/// 1251 lacks that map to a byte other than «?», by code point.
+/// read off a Windows 11 clone for every BMP character; Microsoft publishes
+/// the same mapping as `WindowsBestFit/bestfit1251.txt` at unicode.org):
+/// the characters 1251 lacks that map to a byte other than «?», by code
+/// point.
 const BEST_FIT_1251: &[(u16, u8)] = &[
     (0x00C0, 0x41), (0x00C1, 0x41), (0x00C2, 0x41), (0x00C3, 0x41), (0x00C4, 0x41),
     (0x00C5, 0x41), (0x00C7, 0x43), (0x00C8, 0x45), (0x00C9, 0x45), (0x00CA, 0x45), (0x00CB, 0x45),
