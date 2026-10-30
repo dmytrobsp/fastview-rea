@@ -66,3 +66,13 @@ maintainer), **issue**.
 - **Why it isn't fixed**: system state and Windows' own drawing; the defaults already match.
 - **Decided**: 2026-10-30, the maintainer.
 - **Issue**: [#55](https://github.com/dmytrobsp/fastview-rea/issues/55).
+
+## `.sto` records can't be opened
+
+- **What differs**: the original opens `.sto` (Configurator-MT) records by running the vendor's native converter on
+  them and reading its output (L3, L9.207); ours stops at the converter step, so a `.sto` record doesn't open.
+- **Where it shows**: only for users with `.sto` records, a vendor-specific proprietary format.
+- **Why it isn't fixed**: the converter is a separate proprietary program of the original's vendor, and no sample
+  record exists to reverse or verify the format against; the vendor's own software reads these records.
+- **Decided**: 2026-10-30, the maintainer.
+- **Issue**: [#49](https://github.com/dmytrobsp/fastview-rea/issues/49).
