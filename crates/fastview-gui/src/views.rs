@@ -601,7 +601,7 @@ impl App {
             let mut draw = |ui: &mut egui::Ui| {
                 for &t in &titles {
                     let r = strip_button(ui, pane_title(t), edge.vertical());
-                    buttons.push(r.rect);
+                    buttons.push(r.interact_rect);
                     if r.hovered() || r.clicked() {
                         hit = (true, hit.1 || r.clicked(), Some(t));
                     }
@@ -677,6 +677,11 @@ impl App {
     /// screen as it grows) would cover the strip and take its hover.
     fn slide_area(&mut self, ctx: &egui::Context, id: egui::Id, rect: egui::Rect, body: impl FnOnce(&mut App, &mut egui::Ui)) {
         egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(rect.min).constrain(false).default_size(rect.size()).show(ctx, |ui| {
+            // The area claims its rect for clicks before its content runs,
+            // with the last frame's size — sliding in, a size that still
+            // reaches over the strip: claimed again with this frame's rect
+            // (the last claim of an id wins).
+            ui.interact(rect, id.with("move"), egui::Sense::click());
             ui.set_clip_rect(rect);
             let v = ui.visuals();
             ui.painter().rect(rect, 0.0, v.panel_fill, v.window_stroke());

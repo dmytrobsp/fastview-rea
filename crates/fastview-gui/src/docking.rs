@@ -282,6 +282,12 @@ impl Dockable {
         true
     }
 
+    /// Whether the pointer was on its strip button in the last frame.
+    #[cfg(test)]
+    pub fn on_button(&self) -> bool {
+        self.hover_since.is_some()
+    }
+
     /// One frame of an auto-hidden unit: hovering its button 400 ms or a
     /// click shows it; every 700 ms a shown one slides back when the pointer
     /// is outside it and its button (not while a menu is up); the slide
@@ -307,7 +313,12 @@ impl Dockable {
         }
         let target = if self.out { 1.0 } else { 0.0 };
         let step = 1.0 / SLIDE_STEPS;
-        self.slide = if self.slide < target { (self.slide + step).min(1.0) } else { (self.slide - step).max(0.0) };
+        // Fully out or in, it rests there.
+        if self.slide < target {
+            self.slide = (self.slide + step).min(1.0);
+        } else if self.slide > target {
+            self.slide = (self.slide - step).max(0.0);
+        }
         self.slide != target || (on_button && !self.out)
     }
 }
@@ -740,6 +751,7 @@ mod tests {
             d.auto_hide_frame(0.5 + f64::from(k) * 0.016, false, false, true, false);
         }
         assert_eq!(d.slide, 1.0, "out in 12 steps");
+        assert!(!d.auto_hide_frame(0.7, false, false, true, false) && d.slide == 1.0, "out, it rests");
         // In the pane at the check: stays; outside at the next check: back.
         d.auto_hide_frame(1.2, false, false, true, false);
         assert!(d.out);

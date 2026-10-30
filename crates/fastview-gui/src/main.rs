@@ -1668,48 +1668,74 @@ mod window_tests {
 
     /// An auto-hidden group slid out by hovering its strip button stays
     /// out while the pointer rests there (issue #4): the slid-out pane
-    /// keeps to its rect beside the strip, so the button stays hovered and
-    /// the 700 ms hide check finds the pointer on it — on every edge, for
-    /// a tabbed group and a pane beside it. Moved off both, it slides back.
+    /// keeps to its rect beside the strip, so the button stays hovered
+    /// every frame and the 700 ms hide check finds the pointer on it — on
+    /// every edge, for a tabbed group, the pane beside it and that pane on
+    /// an edge of its own. Moved off both, it slides back; back on the
+    /// button while it slides in, the button is hovered at once.
     #[test]
     fn auto_hidden_pane_stays_out_while_its_button_is_hovered() {
         use docking::{Edge, Spot, Unit};
-        let cases = [(Unit::Vector, Some(Edge::Right)), (Unit::Vector, Some(Edge::Left)), (Unit::Vector, Some(Edge::Top)), (Unit::Vector, Some(Edge::Bottom)), (Unit::Frequency, None)];
-        for (unit, edge) in cases {
+        let edge = |edge| Some(Spot::Edge { edge, outer: true });
+        let cases = [(Unit::Vector, edge(Edge::Right)), (Unit::Vector, edge(Edge::Left)), (Unit::Vector, edge(Edge::Top)), (Unit::Vector, edge(Edge::Bottom)), (Unit::Frequency, None), (Unit::Frequency, edge(Edge::Left))];
+        for (unit, spot) in cases {
+            let case = format!("{unit:?} {spot:?}");
             let mut w = Win::new();
-            if let Some(edge) = edge {
-                w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+            if let Some(spot) = spot {
+                w.app.docks.0[unit as usize].spot = spot;
                 w.idle(2);
             }
             w.app.docks.0[unit as usize].pin();
             w.idle(2);
-            let strip = w.app.dock_strips[unit as usize].unwrap_or_else(|| panic!("{unit:?} {edge:?}: its strip"));
-            // The first button, 2 px into the strip's start.
+            let strip = w.app.dock_strips[unit as usize].unwrap_or_else(|| panic!("{case}: its strip"));
+            let area = |w: &Win| w.ctx.memory(|m| m.area_rect(egui::Id::new(("fv_slide", unit))));
+            // On the first button.
             let on = if w.app.docks.edge(unit).vertical() { Pos2::new(strip.center().x, strip.top() + 20.0) } else { Pos2::new(strip.left() + 20.0, strip.center().y) };
             w.run(vec![egui::Event::PointerMoved(on)]);
-            let mut outs = Vec::new();
-            for _ in 0..80 {
+            let mut first = None;
+            for k in 0..80 {
                 w.run(vec![]);
-                outs.push(w.app.docks[unit].out);
+                let d = w.app.docks[unit];
+                assert!(d.on_button(), "{case}: frame {k}: the button lost its hover");
+                if d.out {
+                    first.get_or_insert(k);
+                    // The pane keeps to its rect: the strip stays uncovered.
+                    let (a, r) = (area(&w).expect("the slid-out pane"), w.app.dock_areas[unit as usize].expect("its rect"));
+                    assert!(r.expand(0.5).contains_rect(a) && !a.intersects(strip.shrink(0.5)), "{case}: frame {k}: area {a:?}, rect {r:?}, strip {strip:?}");
+                } else {
+                    assert!(first.is_none(), "{case}: frame {k}: it went back while the button was hovered");
+                }
+                if first.is_some_and(|f| k > f + 12) {
+                    assert_eq!(d.slide, 1.0, "{case}: frame {k}: out, it rests");
+                }
             }
-            let first = outs.iter().position(|&o| o).unwrap_or_else(|| panic!("{unit:?} {edge:?}: the hover slid it out"));
-            assert!(first * 50 <= 600, "{unit:?} {edge:?}: out after {} ms", first * 50);
-            assert!(outs[first..].iter().all(|&o| o), "{unit:?} {edge:?}: it went back while the button was hovered: {outs:?}");
-            // The pane keeps to its rect: the strip stays uncovered.
-            let area = w.ctx.memory(|m| m.area_rect(egui::Id::new(("fv_slide", unit)))).expect("the slid-out pane");
-            let rect = w.app.dock_areas[unit as usize].expect("its rect");
-            assert!(rect.expand(0.5).contains_rect(area), "{unit:?} {edge:?}: area {area:?} past {rect:?}");
-            assert!(!area.intersects(strip.shrink(0.5)), "{unit:?} {edge:?}: area {area:?} over the strip {strip:?}");
+            let first = first.unwrap_or_else(|| panic!("{case}: the hover slid it out"));
+            assert!(first * 50 <= 600, "{case}: out after {} ms", first * 50);
             // Into the pane: still out; then away from both: it slides back.
+            let rect = w.app.dock_areas[unit as usize].expect("its rect");
             w.run(vec![egui::Event::PointerMoved(rect.center())]);
             w.idle(30);
-            assert!(w.app.docks[unit].out, "{unit:?} {edge:?}: the pointer in the pane keeps it out");
+            assert!(w.app.docks[unit].out, "{case}: the pointer in the pane keeps it out");
             let view = w.app.view_rects.expect("the view").0.shrink(10.0);
             let away = [view.left_top(), view.right_top(), view.left_bottom(), view.right_bottom()].into_iter().find(|&q| !rect.contains(q) && !strip.contains(q)).expect("a point off both");
             w.run(vec![egui::Event::PointerMoved(away)]);
+            for _ in 0..30 {
+                if !w.app.docks[unit].out {
+                    break;
+                }
+                w.run(vec![]);
+            }
+            // Sliding in, back on the button: hovered at once, out again.
+            w.idle(3);
+            assert!(!w.app.docks[unit].out && w.app.docks[unit].slide > 0.0, "{case}: sliding in");
+            w.run(vec![egui::Event::PointerMoved(on)]);
+            assert!(w.app.docks[unit].on_button(), "{case}: the button is hovered while the pane slides in");
+            w.idle(20);
+            assert!(w.app.docks[unit].out, "{case}: the hover slid it out again");
+            w.run(vec![egui::Event::PointerMoved(away)]);
             w.idle(30);
             let pane = w.app.dock_areas[unit as usize];
-            assert!(!w.app.docks[unit].out && pane.is_none(), "{unit:?} {edge:?}: away from both it slid back ({pane:?})");
+            assert!(!w.app.docks[unit].out && pane.is_none(), "{case}: away from both it slid back ({pane:?})");
         }
     }
 
