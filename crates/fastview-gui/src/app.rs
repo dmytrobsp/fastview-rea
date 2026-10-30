@@ -135,8 +135,12 @@ pub enum CopyFocus {
     /// A diagram pane (a click in its window): that diagram's picture only.
     Diagram(Pane),
     /// A circle / differential property grid (its untitled children are a
-    /// scroll bar and a header, no diagram window): the document only.
-    Grid,
+    /// scroll bar and a header, no diagram window): the document only. With
+    /// the group it lies in.
+    Grid(Pane),
+    /// A group's pane window itself: its caption or its strip button
+    /// pressed (`0x10086d23` / `0x10086f01`, `0x1005f612`).
+    Pane(Pane),
 }
 
 /// Visibility of the four diagram panes (all created visible) and the active
@@ -1551,6 +1555,9 @@ pub struct App {
     pub pane_grid: Vec<egui::Rect>,
     /// Where the keyboard focus is, as far as copy (`0x405160`) cares.
     pub copy_focus: CopyFocus,
+    /// Each slid-out group's diagram windows and grids in `pane_canvas` /
+    /// `pane_grid`: [canvas from, to, grid from, to] (drawn last).
+    pub slid_ranges: [Option<[usize; 4]>; 4],
     /// Screen pixels per point, for pictures at the screen's resolution.
     pub ppp: f32,
     /// The merge bar (shown after a paste).
@@ -1736,6 +1743,7 @@ impl App {
             windows_dlg: None,
             next_serial: 1,
             copy_focus: CopyFocus::View,
+            slid_ranges: [None; 4],
             ppp: 1.0,
             window_title: String::new(),
             min_size_ppp: 0.0,
