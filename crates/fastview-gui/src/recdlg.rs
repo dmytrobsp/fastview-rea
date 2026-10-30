@@ -195,27 +195,201 @@ impl Doc {
     /// recorder and every channel name in the new code page — from the
     /// bytes as read, so 1251 → 866 → 1251 gives the names back (VM) —
     /// into the original's ANSI strings (`comtrade::best_fit_1251`: «БЛОКА»
-    /// read as 866 shows «+T+¦L»). A name edited since is taken as its
-    /// text in the old code page.
-    pub fn set_codepage(&mut self, cp: Encoding) {
+    /// read as 866 shows «+T+¦L»). A renamed channel keeps its name: the
+    /// shown name is the alias while there is one, else the file's name
+    /// decoded (`0x425960`). Ours alone: whatever named a channel before
+    /// names it after (formulas, quick-analysis picks, levels and areas,
+    /// pairs); the names changed are returned (old, new).
+    pub fn set_codepage(&mut self, cp: Encoding) -> Vec<(String, String)> {
+        use crate::app::ChanKey;
         let from = self.codepage;
         if from == cp {
-            return;
+            return Vec::new();
         }
-        let mut raw = std::mem::take(&mut self.name_raw).into_iter();
-        let mut rc = |s: &mut String| {
-            let bytes = match raw.next() {
-                Some((b, seen)) if seen == *s => b,
-                _ => comtrade::encode_text(s, from),
-            };
-            *s = comtrade::decode_bytes(&bytes, cp).chars().map(comtrade::best_fit_1251).collect();
-            (bytes, s.clone())
+        let recs: Vec<_> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
+        // Every channel's name before (the formulas' resolver order: analog,
+        // computed, then digital, `OscChannels`; then every row for the rest).
+        let formula_names = |d: &Doc| -> Vec<String> {
+            let trim = |s: &String| s.trim_end_matches(' ').to_string();
+            d.osc.analog.iter().map(|c| trim(&c.id)).chain(d.computed.iter().map(|c| c.name.clone())).chain(d.osc.digital.iter().map(|c| trim(&c.id))).collect()
         };
-        let mut kept = vec![rc(&mut self.osc.station), rc(&mut self.osc.device)];
-        kept.extend(self.osc.analog.iter_mut().map(|c| rc(&mut c.id)));
-        kept.extend(self.osc.digital.iter_mut().map(|c| rc(&mut c.id)));
+        let row_names = |d: &Doc| -> Vec<String> { crate::chandlg::rows(d).into_iter().map(|k| crate::chandlg::row_name(d, k)).collect() };
+        let (old_f, old_rows) = (formula_names(self), row_names(self));
+        // The file's names in `set.keys` are 1251 text: they stand for the
+        // bytes only while the names were read in a single-byte code page.
+        let single = matches!(from, Encoding::Cp1251 | Encoding::Cp866);
+        let na = self.osc.analog.len();
+        let file: Vec<Option<String>> = [None, None]
+            .into_iter()
+            .chain((0..na).map(|i| self.original_name(ChanKey::Analog(i)).filter(|_| single)))
+            .chain((0..self.osc.digital.len()).map(|k| self.original_name(ChanKey::Digital(k)).filter(|_| single)))
+            .collect();
+        let mut names: Vec<String> = [self.osc.station.clone(), self.osc.device.clone()]
+            .into_iter()
+            .chain(self.osc.analog.iter().map(|c| c.id.clone()))
+            .chain(self.osc.digital.iter().map(|c| c.id.clone()))
+            .collect();
+        // Each name as read, in step with the channels (`move_appended_keys`,
+        // `retain_digital_keys`, undo): an alias is kept as typed, with its
+        // bytes (`0x425960`); a name still the text last decoded from its
+        // bytes is decoded again from them (a name changed otherwise is
+        // kept as well). Out of step, a name takes the first entry with its
+        // text not yet taken, in order (two names can decode alike: «В» and
+        // «С» read as 866 both show «T»).
+        let raw = std::mem::take(&mut self.name_raw);
+        let aligned = raw.len() == names.len();
+        let mut used = vec![false; raw.len()];
+        // (bytes, decode again, alias)
+        let mut out: Vec<Option<(Vec<u8>, bool, bool)>> = vec![None; names.len()];
+        for (p, n) in names.iter().enumerate() {
+            if aligned {
+                let r = &raw[p];
+                let redo = !r.alias && r.seen == *n;
+                out[p] = Some((r.bytes.clone(), redo, !redo));
+            }
+        }
+        for (p, n) in names.iter().enumerate() {
+            if out[p].is_some() {
+                continue;
+            }
+            out[p] = Some(if let Some(j) = (0..raw.len()).find(|&j| !used[j] && !raw[j].alias && raw[j].seen == *n) {
+                used[j] = true;
+                (raw[j].bytes.clone(), true, false)
+            } else if let Some(f) = &file[p] {
+                // No bytes kept: the keys were taken from names read
+                // losslessly, and a name not the file's is an alias.
+                (comtrade::encode_text(f, from), false, true)
+            } else {
+                (comtrade::encode_text(n, from), true, false)
+            });
+        }
+        let decode = |b: &[u8]| -> String { comtrade::decode_bytes(b, cp).chars().map(comtrade::best_fit_1251).collect() };
+        let mut kept = Vec::with_capacity(names.len());
+        for (n, o) in names.iter_mut().zip(out) {
+            let (bytes, redecode, alias) = o.unwrap_or_default();
+            let seen = decode(&bytes);
+            if redecode {
+                n.clone_from(&seen);
+            }
+            kept.push(crate::app::RawName { bytes, seen, alias });
+        }
+        let mut it = names.into_iter();
+        self.osc.station = it.next().unwrap_or_default();
+        self.osc.device = it.next().unwrap_or_default();
+        for c in &mut self.osc.analog {
+            c.id = it.next().unwrap_or_default();
+        }
+        for c in &mut self.osc.digital {
+            c.id = it.next().unwrap_or_default();
+        }
         self.name_raw = kept;
+        // A pasted lane (bit 14) is re-decoded too — `0x425960` spares only
+        // the computed ones (bit 13): VM, «IA БЛОКА 3 (вст.)» pasted, then
+        // 866, lists «IA +T+¦L 3 (тёЄ.)». Its bytes go with the channel; a
+        // renamed one keeps its name.
+        let pasted: Vec<usize> = (0..self.computed.len()).filter(|&j| self.pending_of(j).is_some()).collect();
+        for j in pasted {
+            let c = &mut self.computed[j];
+            let (bytes, redecode) = match c.name_raw.take() {
+                Some(r) => {
+                    let redo = !r.alias && r.seen == c.name;
+                    (r.bytes, redo)
+                }
+                None => (comtrade::encode_shown(&c.name, from), true),
+            };
+            let seen = decode(&bytes);
+            if redecode {
+                c.name.clone_from(&seen);
+            }
+            c.name_raw = Some(crate::app::RawName { bytes, seen, alias: !redecode });
+            let new = c.name.clone();
+            if let Some(p) = self.pending_of_mut(j) {
+                match &mut p.pasted.channel {
+                    Ok(a) => a.id = new,
+                    Err(d) => d.id = new,
+                }
+            }
+        }
         self.codepage = cp;
+        // Ours alone (#7, the maintainer's call): what named a channel
+        // before the switch names it after — the formulas (the quick
+        // analysis's among them), the quick-analysis pages' picks, the
+        // levels and areas, the diagram pairs. The original keeps the old
+        // names, so a formula on them fails («Имя канала задано
+        // неправильно.», the whole batch with it) and the levels no longer
+        // draw (L9.227).
+        let (new_f, new_rows) = (formula_names(self), row_names(self));
+        // A name maps only while it stands for one channel before and one
+        // after: names that decode alike («В» and «С» read as 866 both show
+        // «T») are left as they were, so a reference fails as in the
+        // original rather than landing on the wrong channel.
+        let once = |v: &[String], n: &str| v.iter().filter(|x| *x == n).count() == 1;
+        let renamed: Vec<(String, String)> =
+            old_rows.iter().zip(&new_rows).filter(|(o, n)| o != n && once(&old_rows, o) && once(&new_rows, n)).map(|(o, n)| (o.clone(), n.clone())).collect();
+        let by_row = |name: &str| renamed.iter().find(|(o, _)| o == name).map(|(_, n)| n.clone());
+        if old_f.len() == new_f.len() {
+            // The channel the formula resolved (`OscChannels::resolve`:
+            // exact, else the first case-insensitive match), written as a
+            // name that resolves to it alone.
+            let by_ref = |name: &str| {
+                let i = old_f.iter().position(|o| o == name).or_else(|| old_f.iter().position(|o| o.to_lowercase() == name.to_lowercase()))?;
+                let unique = new_f.iter().filter(|n| n.to_lowercase() == new_f[i].to_lowercase()).count() == 1;
+                (old_f[i] != new_f[i] && unique).then(|| new_f[i].clone())
+            };
+            for c in self.computed.iter_mut().filter(|c| crate::setfile::is_formula(c)) {
+                c.formula = fvb_core::expr::rename_channel_refs(&c.formula, &by_ref);
+            }
+        }
+        for p in self.dif_pairs.iter_mut().chain(self.rx_pairs.iter_mut()) {
+            for n in [&mut p.a, &mut p.b] {
+                if let Some(new) = by_row(n) {
+                    *n = new;
+                }
+            }
+        }
+        for st in &mut self.omp.params.stations {
+            for n in [&mut st.ia, &mut st.ib, &mut st.ic, &mut st.uab, &mut st.ubc, &mut st.uca, &mut st.ua, &mut st.ub, &mut st.uc] {
+                if let Some(new) = by_row(n) {
+                    *n = new;
+                }
+            }
+        }
+        // The pages' channel picks only: a combo's `channelName` (536–538,
+        // 543) and an arm's `IA` / `IB` / `IC` (539's `Leg_%d`).
+        for k in &crate::quick_ui::PAGE_KEYS[..5] {
+            let Some(sec) = self.set.tree.sections.get_mut(*k) else { continue };
+            for (name, node) in &mut sec.children {
+                let keys: &[&str] = if name.starts_with("Leg_") { &["IA", "IB", "IC"] } else { &["channelName"] };
+                for key in keys {
+                    if let Some(new) = node.attrs.get(*key).and_then(|v| by_row(v)) {
+                        node.attrs.insert((*key).to_string(), new);
+                    }
+                }
+            }
+        }
+        // A level or area stays bound to its channel; one kept unbound
+        // (from a `.set`, or a rename) is tried again with the new names.
+        let comments = std::mem::take(&mut self.comments);
+        self.comments = comments
+            .into_iter()
+            .zip(recs)
+            .map(|(c, mut r)| {
+                if !matches!(c.kind, crate::comments::CommentKind::Kept(_)) {
+                    return c;
+                }
+                use fvb_core::recset::CommentKindRec as K;
+                match &mut r.kind {
+                    K::Level { channel, .. } => *channel = by_row(channel).unwrap_or(channel.clone()),
+                    K::Area { channel_from, channel_to, .. } => {
+                        *channel_from = by_row(channel_from).unwrap_or(channel_from.clone());
+                        *channel_to = by_row(channel_to).unwrap_or(channel_to.clone());
+                    }
+                    K::Moment { .. } => {}
+                }
+                self.comment_of(&r)
+            })
+            .collect();
+        renamed
     }
 
     /// The `.cff` text sections to write, with the edited record comment.
@@ -496,7 +670,12 @@ impl App {
                 }
             });
         if let Some(cp) = cp_pick {
-            self.docs[ai].set_codepage(cp);
+            // The vector diagram's angle reference follows its channel too.
+            for (old, new) in self.docs[ai].set_codepage(cp) {
+                if self.vec_angle_ref.as_deref() == Some(old.as_str()) {
+                    self.vec_angle_ref = Some(new);
+                }
+            }
         }
         // «Закрыть» is IDOK: Enter applies, Esc cancels.
         let keys = self.dialog_keys(ctx);
@@ -879,11 +1058,452 @@ mod tests {
         assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)), None, "still the file's name");
         d.set_codepage(Encoding::Cp1251);
         assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA БЛОКА 3", "UA I CШ"));
-        // A name renamed meanwhile is re-read from its own text.
+        // A name renamed meanwhile is its alias, kept as typed (`0x425960`;
+        // VM: «TokIA БЛОКА 3» stays, its file name re-decoded beside it).
         d.set_codepage(Encoding::Cp866);
         d.osc.analog[0].id = "Ток".into();
         d.set_codepage(Encoding::Cp1251);
-        assert_eq!(d.osc.analog[0].id, "’®Є");
+        assert_eq!(d.osc.analog[0].id, "Ток");
+        assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)).as_deref(), Some("IA БЛОКА 3"));
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("Ток", "UA I C+"));
+        assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)).as_deref(), Some("IA +T+¦L 3"));
+    }
+
+    /// The load's order: the guess switches the names before the keys are
+    /// taken (lossy for 866's pseudo-graphics); the user's 1251 still gives
+    /// the names back, and a rename made then is kept.
+    #[test]
+    fn a_record_read_as_866_at_load_comes_back_in_1251() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[0].id = "IA БЛОКА 3".into();
+        d.osc.analog[1].id = "UA I CШ".into();
+        d.set_codepage(Encoding::Cp866);
+        d.init_set_keys();
+        assert_eq!(d.osc.analog[0].id, "IA +T+¦L 3");
+        d.osc.analog[1].id = "Ток".into();
+        // An empty rename shows the file's name as read now, not the lossy
+        // key's («¦» kept), and stays the file's name.
+        assert_eq!(crate::chandlg::rename(d, crate::app::ChanKey::Analog(0), ""), Ok(()));
+        assert_eq!(d.osc.analog[0].id, "IA +T+¦L 3");
+        assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)), None);
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA БЛОКА 3", "Ток"));
+    }
+
+    /// A channel merged in before the record's own moves them: each still
+    /// takes its bytes back by the text last decoded from them.
+    #[test]
+    fn a_switch_after_a_merge_before_the_channels_gives_their_names_back() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[0].id = "IA БЛОКА 3".into();
+        d.osc.analog[1].id = "IB БЛОКА 3".into();
+        d.set_codepage(Encoding::Cp866);
+        d.init_set_keys();
+        d.selection = [ChanKey::Analog(2)].into();
+        app.copy_channels_for_merge();
+        app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = app.active_doc_mut().unwrap();
+        assert_eq!(d.osc.analog[1].id, "IA +T+¦L 3", "moved by the merge");
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!((d.osc.analog[1].id.as_str(), d.osc.analog[2].id.as_str()), ("IA БЛОКА 3", "IB БЛОКА 3"));
+    }
+
+    /// A pasted lane's name is re-decoded too (VM: «IA БЛОКА 3 (вст.)»
+    /// read as 866 lists «IA +T+¦L 3 (тёЄ.)»), and comes back.
+    #[test]
+    fn a_pasted_lane_is_re_decoded() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "IA БЛОКА 3".into();
+        d.init_set_keys();
+        d.selection = [ChanKey::Analog(3)].into();
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let pasted = d.computed[j].name.clone();
+        assert!(pasted.starts_with("IA БЛОКА 3"), "{pasted}");
+        d.set_codepage(Encoding::Cp866);
+        let want: String = comtrade::decode_bytes(&comtrade::encode_text(&pasted, Encoding::Cp1251), Encoding::Cp866).chars().map(comtrade::best_fit_1251).collect();
+        assert_eq!(d.computed[j].name, want);
+        assert!(d.pending_of(j).is_some(), "still linked");
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.computed[j].name, pasted);
+        // Renamed, it keeps its name.
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Computed(j), "Своё"), Ok(()));
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.computed[j].name, "Своё");
+    }
+
+    /// Pasted while the record shows 866, a lane's raw name is its name in
+    /// 866 bytes (VM: «IA +T+¦L 3 (вст.)» reads «IA +T+іL 3 (ўбв.)» back in
+    /// 1251, and itself again in 866).
+    #[test]
+    fn a_lane_pasted_while_866_is_shown_reads_its_866_bytes() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "IA БЛОКА 3".into();
+        d.init_set_keys();
+        d.set_codepage(Encoding::Cp866);
+        d.selection = [ChanKey::Analog(3)].into();
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        assert_eq!(d.computed[j].name, "IA +T+¦L 3 (вст.)");
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.computed[j].name, "IA +T+іL 3 (ўбв.)");
+        assert_eq!(d.osc.analog[3].id, "IA БЛОКА 3");
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.computed[j].name, "IA +T+¦L 3 (вст.)");
+    }
+
+    /// A pasted lane renamed before any «Кодировка» keeps its name (its raw
+    /// name is set at the paste); emptied, it shows its name as pasted.
+    #[test]
+    fn a_pasted_lane_renamed_first_keeps_its_name() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "IA БЛОКА 3".into();
+        d.init_set_keys();
+        d.selection = [ChanKey::Analog(3)].into();
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let pasted = d.computed[j].name.clone();
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Computed(j), "Своё"), Ok(()));
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.computed[j].name, "Своё");
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Computed(j), ""), Ok(()));
+        let want: String = comtrade::decode_bytes(&comtrade::encode_text(&pasted, Encoding::Cp1251), Encoding::Cp866).chars().map(comtrade::best_fit_1251).collect();
+        assert_eq!(d.computed[j].name, want, "its raw name, as read now");
+        assert!(d.pending_of(j).is_some());
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.computed[j].name, pasted);
+    }
+
+    /// A merged channel keeps its lane's name as read: the bytes as pasted
+    /// (866 → merge → 1251 gives the pasted name back), the alias of a
+    /// rename (kept across a switch).
+    #[test]
+    fn a_merged_lane_keeps_its_name_as_read() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "IA БЛОКА 3".into();
+        d.osc.analog[4].id = "IB БЛОКА 3".into();
+        d.init_set_keys();
+        d.selection = [ChanKey::Analog(3), ChanKey::Analog(4)].into();
+        app.copy_channels_for_merge();
+        app.active_doc_mut().unwrap().selection.clear();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let lanes: Vec<usize> = (0..d.computed.len()).filter(|&j| d.computed[j].formula == crate::merge_ui::PENDING).collect();
+        let pasted = d.computed[lanes[0]].name.clone();
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Computed(lanes[1]), "Своё"), Ok(()));
+        d.set_codepage(Encoding::Cp866);
+        let na = d.osc.analog.len();
+        app.merge_records();
+        let d = app.active_doc_mut().unwrap();
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!((d.osc.analog[na].id.as_str(), d.osc.analog[na + 1].id.as_str()), (pasted.as_str(), "Своё"));
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.osc.analog[na + 1].id, "Своё");
+    }
+
+    /// A rename on a document whose names as read were never taken (the
+    /// demo) takes them first: an empty rename brings the file's name back.
+    #[test]
+    fn an_empty_rename_brings_the_name_back_without_kept_names() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        let own = d.osc.analog[0].id.clone();
+        assert!(d.name_raw.is_empty());
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Analog(0), "X"), Ok(()));
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Analog(0), ""), Ok(()));
+        assert_eq!(d.osc.analog[0].id, own);
+    }
+
+    /// An alias typed equal to the file's name as shown is still an alias
+    /// (`+0x6c` non-empty): kept as typed across «Кодировка».
+    #[test]
+    fn an_alias_equal_to_the_file_name_is_kept() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[0].id = "Ток".into();
+        d.osc.analog[1].id = "Ток 2".into();
+        d.init_set_keys();
+        // «Каналы» renames it away and back to the same text.
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Analog(0), "X"), Ok(()));
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Analog(0), "Ток"), Ok(()));
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.osc.analog[0].id, "Ток", "the alias as typed");
+        assert_ne!(d.osc.analog[1].id, "Ток 2", "the file's name re-decoded");
+    }
+
+    /// Two pasted lanes whose names decode alike stay linked to their own
+    /// pasted channels (by the lane, not the name) and merge their own
+    /// values.
+    #[test]
+    fn pasted_lanes_named_alike_keep_their_own_channels() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "Ток фазы В".into();
+        d.osc.analog[4].id = "Ток фазы С".into();
+        d.init_set_keys();
+        let (b, c) = (d.osc.analog[3].samples.clone(), d.osc.analog[4].samples.clone());
+        d.selection = [ChanKey::Analog(3), ChanKey::Analog(4)].into();
+        app.copy_channels_for_merge();
+        app.active_doc_mut().unwrap().selection.clear();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let lanes: Vec<usize> = (0..d.computed.len()).filter(|&j| d.computed[j].formula == crate::merge_ui::PENDING).collect();
+        assert_eq!(lanes.len(), 2);
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.computed[lanes[0]].name, d.computed[lanes[1]].name, "alike in 866");
+        let own = |d: &Doc, j: usize| match &d.pending_of(j).unwrap().pasted.channel {
+            Ok(a) => a.samples.clone(),
+            Err(_) => Vec::new(),
+        };
+        assert_eq!((own(d, lanes[0]), own(d, lanes[1])), (b.clone(), c.clone()));
+        // An offset change redraws each lane from its own channel.
+        d.set_merge_offset(0.0);
+        let m = b.len() / 2;
+        assert!((d.computed[lanes[0]].samples[m] - b[m]).abs() < 1e-9 && (d.computed[lanes[1]].samples[m] - c[m]).abs() < 1e-9);
+        let na = d.osc.analog.len();
+        app.merge_records();
+        let d = app.active_doc().unwrap();
+        let k = d.osc.analog.len() - na;
+        assert_eq!(k, 2);
+        let mid = b.len() / 2;
+        let (mb, mc) = (&d.osc.analog[na].samples, &d.osc.analog[na + 1].samples);
+        assert!((mb[mid] - b[mid]).abs() < 1e-9 && (mc[mid] - c[mid]).abs() < 1e-9, "{} {} / {} {}", mb[mid], b[mid], mc[mid], c[mid]);
+    }
+
+    /// An undo past a merge takes the names' bytes back with the channels:
+    /// a merge elsewhere after it leaves each name its own.
+    #[test]
+    fn an_undo_past_a_merge_takes_the_bytes_back() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[0].id = "IA БЛОКА 3".into();
+        d.set_codepage(Encoding::Cp866);
+        d.init_set_keys();
+        d.selection = [ChanKey::Analog(2)].into();
+        app.copy_channels_for_merge();
+        app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        while !app.active_doc().unwrap().undo.is_empty() {
+            app.dispatch(Command::Undo);
+        }
+        let n = app.active_doc().unwrap().osc.analog.len();
+        app.active_doc_mut().unwrap().selection.clear();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = app.active_doc_mut().unwrap();
+        assert_eq!(d.osc.analog.len(), n + 1, "merged at the end");
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.osc.analog[0].id, "IA БЛОКА 3");
+    }
+
+    /// «В» and «С» read as 866 both show «T»: two names alike each take
+    /// their own bytes back, also after a channel merged in before them.
+    #[test]
+    fn names_that_decode_alike_keep_their_own_bytes() {
+        use crate::app::ChanKey;
+        for merge in [false, true] {
+            let mut app = demo_app();
+            let d = app.active_doc_mut().unwrap();
+            d.codepage = Encoding::Cp1251;
+            d.osc.analog[0].id = "Ток фазы В".into();
+            d.osc.analog[1].id = "Ток фазы С".into();
+            d.set_codepage(Encoding::Cp866);
+            d.init_set_keys();
+            assert_eq!(d.osc.analog[0].id, d.osc.analog[1].id);
+            if merge {
+                d.selection = [ChanKey::Analog(2)].into();
+                app.copy_channels_for_merge();
+                app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into();
+                app.paste_channels_for_merge();
+                app.merge_records();
+            }
+            let d = app.active_doc_mut().unwrap();
+            let k = usize::from(merge);
+            d.set_codepage(Encoding::Cp1251);
+            assert_eq!((d.osc.analog[k].id.as_str(), d.osc.analog[k + 1].id.as_str()), ("Ток фазы В", "Ток фазы С"), "merge: {merge}");
+            d.set_codepage(Encoding::Cp866);
+            // В renamed meanwhile: С still takes its own bytes.
+            d.osc.analog[k].id = "IB".into();
+            d.set_codepage(Encoding::Cp1251);
+            assert_eq!((d.osc.analog[k].id.as_str(), d.osc.analog[k + 1].id.as_str()), ("IB", "Ток фазы С"), "merge: {merge}");
+        }
+    }
+
+    /// Ours alone (#7): what named a channel before «Кодировка» names it
+    /// after — a quick-analysis channel's formula keeps computing, a level
+    /// stays on its channel, a page's pick and a pair follow (the original
+    /// keeps the old names: the next «Рассчитать» fails, the level no longer
+    /// draws). A renamed channel's level simply stays.
+    #[test]
+    fn references_follow_their_channel_across_a_code_page_switch() {
+        use crate::app::{AnalysisTab, ChanKey};
+        use crate::comments::{Comment, CommentKind};
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        for (i, n) in [(3, "IA БЛОКА 3"), (4, "IB БЛОКА 3"), (5, "IC БЛОКА 3")] {
+            d.osc.analog[i].id = n.into();
+        }
+        d.osc.analog[1].id = "Свой".into();
+        d.osc.digital[0].id = "Пуск БЛОКА".into();
+        d.init_set_keys();
+        d.osc.analog[1].id = "Другой".into();
+        d.omp.params.stations[0].ia = "IA БЛОКА 3".into();
+        for i in [3, 1] {
+            d.comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(i), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
+        }
+        d.dif_pairs.push(crate::diagram::ChanPair::new("IA БЛОКА 3", "IB БЛОКА 3"));
+        app.analysis_tab = AnalysisTab::Zero;
+        let z = crate::quick_ui::page_index(AnalysisTab::Zero).unwrap();
+        let q = &mut app.quick[z];
+        (q.ia, q.ib, q.ic) = ("IA БЛОКА 3".into(), "IB БЛОКА 3".into(), "IC БЛОКА 3".into());
+        q.zero_u_off = true;
+        let g = q.generate(AnalysisTab::Zero, &[]);
+        app.apply_quick(&g);
+        crate::quick_ui::save_page(z, &app.quick[z].clone(), app.active_doc_mut().unwrap().set.tree.section_mut(crate::quick_ui::PAGE_KEYS[z]));
+        assert!(app.append_computed(&[("D".into(), "\"Пуск БЛОКА\"*2".into())]).is_some(), "{:?}", app.dlg.alert());
+        let d = app.active_doc_mut().unwrap();
+        // A differential arm's pick follows; a text that only equals a name
+        // (an edit's) does not.
+        let dif = d.set.tree.section_mut(crate::quick_ui::PAGE_KEYS[4]);
+        dif.child_mut("Leg_0").set_str("IA", "IA БЛОКА 3");
+        dif.set_str("brakeCoeff", "IA БЛОКА 3");
+        let before = d.computed.iter().find(|c| c.name == "3I0").unwrap().samples.clone();
+        d.set_codepage(Encoding::Cp866);
+        let dif = d.set.tree.section(crate::quick_ui::PAGE_KEYS[4]).unwrap();
+        assert_eq!(dif.children["Leg_0"].attrs["IA"], d.osc.analog[3].id);
+        assert_eq!(dif.attrs["brakeCoeff"], "IA БЛОКА 3", "not a channel pick");
+        assert_eq!(d.omp.params.stations[0].ia, d.osc.analog[3].id, "ОМП's channel too");
+        let dig = d.osc.digital[0].id.clone();
+        assert!(d.computed.iter().find(|c| c.name == "D").unwrap().formula.contains(&format!("\"{dig}\"")), "a digital channel's reference too");
+        let ia = d.osc.analog[3].id.clone();
+        assert_eq!(ia, "IA +T+¦L 3");
+        let i0 = d.computed.iter().find(|c| c.name == "3I0").unwrap();
+        assert!(i0.formula.contains(&format!("\"{ia}\"")), "{}", i0.formula);
+        assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(3), .. }), "the level stays on IA");
+        assert!(matches!(d.comments[1].kind, CommentKind::Level { chan: ChanKey::Analog(1), .. }), "the alias's too");
+        assert_eq!(d.dif_pairs[0].a, ia);
+        let pick = d.set.tree.section(crate::quick_ui::PAGE_KEYS[z]).and_then(|s| s.children.get("IA")).and_then(|c| c.attrs.get("channelName")).cloned();
+        assert_eq!(pick.as_deref(), Some(ia.as_str()));
+        // A new calculation re-evaluates the old one: it still computes.
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some(), "{:?}", app.dlg.alert());
+        let d = app.active_doc_mut().unwrap();
+        assert_eq!(d.computed.iter().find(|c| c.name == "3I0").unwrap().samples, before);
+        d.set_codepage(Encoding::Cp1251);
+        assert!(d.computed.iter().find(|c| c.name == "3I0").unwrap().formula.contains("\"IA БЛОКА 3\""));
+    }
+
+    /// Names that decode alike are not followed: a formula on «Ток фазы С»
+    /// is not rewritten to the text it shares with «Ток фазы В» in 866
+    /// (it would read В) — it fails there as in the original, and works
+    /// again back in 1251; a level on С stays on С.
+    #[test]
+    fn names_that_decode_alike_are_not_followed() {
+        use crate::app::ChanKey;
+        use crate::comments::{Comment, CommentKind};
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "Ток фазы В".into();
+        d.osc.analog[4].id = "Ток фазы С".into();
+        d.init_set_keys();
+        d.comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(4), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
+        assert!(app.append_computed(&[("X".into(), "\"Ток фазы С\"*2".into())]).is_some());
+        let d = app.active_doc_mut().unwrap();
+        let before = d.computed[0].samples.clone();
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.osc.analog[3].id, d.osc.analog[4].id);
+        assert_eq!(d.computed[0].formula, "\"Ток фазы С\"*2", "not rewritten");
+        assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(4), .. }));
+        d.set_codepage(Encoding::Cp1251);
+        assert!(app.append_computed(&[("Y".into(), "1".into())]).is_some(), "{:?}", app.dlg.alert());
+        assert_eq!(app.active_doc().unwrap().computed[0].samples, before);
+    }
+
+    /// The formula editor resolves a renamed channel by its new name.
+    #[test]
+    fn the_formula_editor_takes_a_new_name() {
+        let mut app = demo_app();
+        assert_eq!(crate::chandlg::rename(app.active_doc_mut().unwrap(), crate::app::ChanKey::Analog(0), "Новое"), Ok(()));
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.rows.push(("X".into(), "Новое*2".into()));
+        app.formula_page.dirty = true;
+        app.quick_calc();
+        assert_eq!(app.dlg.alert(), None);
+        let d = app.active_doc().unwrap();
+        let x = d.computed.iter().find(|c| c.name == "X").expect("X computed");
+        assert_eq!(x.samples[10], d.flagged.analog[0].samples[10] * 2.0);
+    }
+
+    /// Issue #7: after «Кодировка» «Быстрый анализ» works on the names as
+    /// now shown — the original's formulas look the channels up by their
+    /// shown name (`+0x68`, `0x42edf0`), which `0x4543e0` → `0x425960`
+    /// re-decodes in place. A formula on the old names no longer resolves.
+    #[test]
+    fn quick_analysis_takes_the_names_of_a_new_code_page() {
+        use crate::app::AnalysisTab;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        // A 1251 record whose names were read as 866 (the guess, or the
+        // user's pick), and computed on.
+        d.codepage = Encoding::Cp1251;
+        for (i, n) in [(3, "IA БЛОКА 3"), (4, "IB БЛОКА 3"), (5, "IC БЛОКА 3")] {
+            d.osc.analog[i].id = n.into();
+        }
+        d.init_set_keys();
+        d.set_codepage(Encoding::Cp866);
+        d.recompute(false);
+        let old = d.osc.analog[3].id.clone();
+        assert_eq!(old, "IA +T+¦L 3");
+        d.set_codepage(Encoding::Cp1251);
+        app.analysis_tab = AnalysisTab::Zero;
+        let q = &mut app.quick[crate::quick_ui::page_index(AnalysisTab::Zero).unwrap()];
+        (q.ia, q.ib, q.ic) = ("IA БЛОКА 3".into(), "IB БЛОКА 3".into(), "IC БЛОКА 3".into());
+        (q.ua, q.ub, q.uc) = ("Ua".into(), "Ub".into(), "Uc".into());
+        let g = q.generate(AnalysisTab::Zero, &[]);
+        app.apply_quick(&g);
+        assert_eq!(app.dlg.alert(), None);
+        let d = app.active_doc().unwrap();
+        let i0 = d.computed.iter().find(|c| c.name == "3I0").expect("3I0 computed");
+        assert_eq!(i0.formula, "3I0: (\"IA БЛОКА 3\", \"IB БЛОКА 3\", \"IC БЛОКА 3\")");
+        // The formula editor alike; the old name is the record's no more.
+        assert!(app.append_computed(&[("X".into(), "\"IB БЛОКА 3\"*2".into())]).is_some());
+        assert!(app.append_computed(&[("Y".into(), format!("\"{old}\"*2"))]).is_none());
+        assert_eq!(app.dlg.alert(), Some("Имя канала задано неправильно."), "the bare 0x162 (VM)");
     }
 
     #[test]

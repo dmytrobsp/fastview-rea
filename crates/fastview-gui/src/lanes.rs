@@ -672,7 +672,7 @@ pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> Vec
             let c = &doc.computed[j];
             // A pasted lane read ×k in its copied mode (VM: «*K» on a
             // pasted 2000/1 channel shown secondary).
-            let scaled = c.formula == crate::merge_ui::PENDING && doc.pending.iter().find(|p| p.name() == c.name).is_some_and(|p| p.display_k() != 1.0);
+            let scaled = c.formula == crate::merge_ui::PENDING && doc.pending.iter().find(|p| p.lane == c.seq).is_some_and(|p| p.display_k() != 1.0);
             [(c.remove_dc, "DC"), (c.invert, "−"), (scaled, "*K"), (c.mode == ValueMode::Rms, "~"), (c.mode == ValueMode::FirstHarmonic, "1")]
                 .into_iter()
                 .filter_map(|(on, g)| on.then_some(g))
@@ -1881,6 +1881,7 @@ impl App {
                         _ => d.aux_cursor = s,
                     }
                     d.v_shown[k] = true;
+                    d.v1_placed |= k == 0;
                 }
                 Act::MoveV(k, s) => {
                     match k {
@@ -1889,6 +1890,7 @@ impl App {
                         _ => d.v3_cursor = s,
                     }
                     d.v_shown[k] = true;
+                    d.v1_placed |= k == 0;
                 }
                 Act::SetH(j, ch, v) => {
                     d.hviz[j] = crate::app::HVizir { shown: true, chan: Some(ch), value: v };
@@ -2019,16 +2021,24 @@ impl App {
             None => self.rename_edit = Some((i, text)),
             Some(false) => {}
             Some(true) => {
-                // `0x465df0`: the text as typed (no trim, empty allowed),
-                // refused when another channel has it (case-sensitive) with
-                // message box 397 (MB_OK, `0x4660ab`); the document is marked
-                // modified either way (`0x466062`).
+                // `0x465df0`: the text as typed (no trim) is the alias,
+                // refused when another channel has it as its name or its
+                // file's (case-sensitive) with message box 397 (MB_OK,
+                // `0x4660ab`); an empty one shows the file's name again
+                // (`0x425a30` → `0x425960`); the document is marked modified
+                // either way (`0x466062`).
                 let d = &mut self.docs[ai];
-                let taken = d.osc.analog.iter().enumerate().any(|(j, c)| j != i && c.id == text) || d.computed.iter().any(|c| c.name == text);
-                if taken {
+                let key = crate::app::ChanKey::Analog(i);
+                if crate::chandlg::name_taken(d, key, &text) {
                     self.dlg.push_alert(crate::chandlg::MSG_NAME_TAKEN.to_string());
                 } else {
-                    d.osc.analog[i].id = text;
+                    // The levels and areas keep the names they were made on,
+                    // as after a rename in «Каналы» (L9.227).
+                    let recs: Vec<_> = d.comments.iter().map(|c| d.comment_rec(c)).collect();
+                    d.ensure_name_raw();
+                    d.osc.analog[i].id = crate::chandlg::shown_after_rename(d, key, &text);
+                    d.mark_alias(key, !text.is_empty());
+                    d.comments = recs.iter().map(|r| d.comment_of(r)).collect();
                 }
                 d.set.modified = true;
             }
@@ -2819,7 +2829,7 @@ mod menu_tests {
         assert!(!h.doc().v_shown[0], "a new document shows no визир");
         let y = h.row(0).y;
         h.button(Pos2::new(500.0, y), egui::PointerButton::Primary);
-        assert!(h.doc().v_shown[0]);
+        assert!(h.doc().v_shown[0] && h.doc().v1_placed, "placed");
         let (v1, first) = (h.doc().main_cursor, h.doc().first);
         // Drag from 2 px off the визир to 80 px further right.
         let at = Pos2::new(502.0, y);
@@ -3423,6 +3433,7 @@ mod menu_tests {
     fn inline_rename_commits_as_typed_or_refuses_with_397() {
         let enter = || egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
         let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().init_set_keys();
         let commit = |h: &mut Harness, text: &str| {
             h.app.rename_edit = Some((0, text.to_string()));
             h.frame(vec![]);
@@ -3453,7 +3464,35 @@ mod menu_tests {
         h.frame(vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed: false, modifiers: Default::default() }]);
         assert_eq!(h.doc().osc.analog[0].id, "Ia 3", "committed by the press");
         commit(&mut h, "");
-        assert_eq!(h.doc().osc.analog[0].id, "", "an empty name is taken");
+        assert_eq!(h.doc().osc.analog[0].id, own, "an empty alias shows the file's name (VM)");
+        // Another channel's file name is refused too, though it shows
+        // another name now.
+        h.app.dlg.alerts.clear();
+        commit(&mut h, "Ia 4");
+        h.app.rename_edit = Some((1, own.clone()));
+        h.frame(vec![]);
+        h.frame(vec![enter()]);
+        h.frame(vec![]);
+        assert_eq!(h.app.dlg.alert(), Some(crate::chandlg::MSG_NAME_TAKEN));
+        assert_eq!(h.doc().osc.analog[1].id, other);
+    }
+
+    /// The inline rename as «Каналы»'s: a level keeps its channel's old name
+    /// (unbound, L9.227), and a formula takes the new one (issue #7).
+    #[test]
+    fn an_inline_rename_unbinds_a_level_and_feeds_the_formulas() {
+        use crate::comments::{Comment, CommentKind};
+        let enter = || egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        let mut h = Harness::new();
+        let old = h.doc().osc.analog[0].id.clone();
+        h.app.active_doc_mut().unwrap().comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(0), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
+        h.app.rename_edit = Some((0, "Новое".to_string()));
+        h.frame(vec![]);
+        h.frame(vec![enter()]);
+        h.frame(vec![]);
+        assert_eq!(h.doc().osc.analog[0].id, "Новое");
+        assert!(matches!(&h.doc().comments[0].kind, CommentKind::Kept(r) if matches!(&r.kind, fvb_core::recset::CommentKindRec::Level { channel, .. } if *channel == old)));
+        assert!(h.app.append_computed(&[("X".into(), "Новое*2".into())]).is_some(), "{:?}", h.app.dlg.alert());
     }
 
     /// `0x43eb40`: a level line goes on any analog-kind lane — a formula
@@ -3555,11 +3594,13 @@ mod menu_tests {
         h.frame_mod(vec![l(), l(), l()], egui::Modifiers::NONE);
         assert_eq!(h.doc().main_cursor, v1 + 1);
         // A hidden визир is shown by the key (`0x492f20`); Alt does nothing.
-        h.app.active_doc_mut().unwrap().v_shown[0] = false;
+        let d = h.app.active_doc_mut().unwrap();
+        (d.v_shown[0], d.v1_placed) = (false, false);
         h.frame_mod(vec![key(egui::Key::ArrowLeft, egui::Modifiers::ALT)], egui::Modifiers::ALT);
         assert!(!h.doc().v_shown[0], "Alt+← is a WM_SYSKEYDOWN");
         h.frame_mod(vec![key(egui::Key::ArrowLeft, egui::Modifiers::NONE)], egui::Modifiers::NONE);
         assert!(h.doc().v_shown[0] && h.doc().main_cursor == v1, "shown, moved back");
+        assert!(h.doc().v1_placed, "the key places В1 too");
         // With a diagram focused the keys are the pane's.
         h.app.copy_focus = crate::app::CopyFocus::Diagram(crate::app::Pane::Vector);
         h.frame_mod(vec![key(egui::Key::ArrowRight, egui::Modifiers::NONE)], egui::Modifiers::NONE);
