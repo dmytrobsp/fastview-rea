@@ -275,6 +275,34 @@ impl Doc {
             c.id = it.next().unwrap_or_default();
         }
         self.name_raw = kept;
+        // A pasted lane (bit 14) is re-decoded too — `0x425960` spares only
+        // the computed ones (bit 13): VM, «IA БЛОКА 3 (вст.)» pasted, then
+        // 866, lists «IA +T+¦L 3 (тёЄ.)». Its bytes go with the channel; a
+        // renamed one keeps its name.
+        let pasted: Vec<usize> = (0..self.computed.len()).filter(|&j| self.pending_of(j).is_some()).collect();
+        for j in pasted {
+            let c = &mut self.computed[j];
+            let (bytes, redecode) = match c.name_raw.take() {
+                Some((b, seen)) => {
+                    let same = seen == c.name;
+                    (b, same)
+                }
+                None => (comtrade::encode_text(&c.name, from), true),
+            };
+            let seen = decode(&bytes);
+            let old = c.name.clone();
+            if redecode {
+                c.name.clone_from(&seen);
+            }
+            c.name_raw = Some((bytes, seen));
+            let new = c.name.clone();
+            if let Some(p) = self.pending.iter_mut().find(|p| p.name() == old) {
+                match &mut p.pasted.channel {
+                    Ok(a) => a.id = new,
+                    Err(d) => d.id = new,
+                }
+            }
+        }
         self.codepage = cp;
         self.comments = recs.iter().map(|r| self.comment_of(r)).collect();
     }
@@ -991,6 +1019,35 @@ mod tests {
         assert_eq!(d.osc.analog[1].id, "IA +T+¦L 3", "moved by the merge");
         d.set_codepage(Encoding::Cp1251);
         assert_eq!((d.osc.analog[1].id.as_str(), d.osc.analog[2].id.as_str()), ("IA БЛОКА 3", "IB БЛОКА 3"));
+    }
+
+    /// A pasted lane's name is re-decoded too (VM: «IA БЛОКА 3 (вст.)»
+    /// read as 866 lists «IA +T+¦L 3 (тёЄ.)»), and comes back.
+    #[test]
+    fn a_pasted_lane_is_re_decoded() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "IA БЛОКА 3".into();
+        d.init_set_keys();
+        d.selection = [ChanKey::Analog(3)].into();
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let pasted = d.computed[j].name.clone();
+        assert!(pasted.starts_with("IA БЛОКА 3"), "{pasted}");
+        d.set_codepage(Encoding::Cp866);
+        let want: String = comtrade::decode_bytes(&comtrade::encode_text(&pasted, Encoding::Cp1251), Encoding::Cp866).chars().map(comtrade::best_fit_1251).collect();
+        assert_eq!(d.computed[j].name, want);
+        assert!(d.pending_of(j).is_some(), "still linked");
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.computed[j].name, pasted);
+        // Renamed, it keeps its name.
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Computed(j), "Своё"), Ok(()));
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.computed[j].name, "Своё");
     }
 
     /// An undo past a merge takes the names' bytes back with the channels:

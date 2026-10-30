@@ -374,6 +374,9 @@ pub struct Computed {
     /// minus its DC over its own period, negated; a digital one 1 / 0,
     /// inverted with the flag); `display` is then its cache per mode.
     pub pending_own: Vec<f64>,
+    /// A pasted lane's name bytes and the text last decoded from them, once
+    /// «Кодировка» has re-decoded it (`Doc::set_codepage`).
+    pub name_raw: Option<(Vec<u8>, String)>,
     /// A pending analog lane's phasor cache (`ch+0x38`) over
     /// [`Self::pending_own`] at its own N (`0x428490` → `0x426fc0` /
     /// `0x4267e0`); the vector diagram interpolates it by own time.
@@ -413,6 +416,7 @@ impl Computed {
             mode: ValueMode::Instant,
             display: Vec::new(),
             pending_own: Vec::new(),
+            name_raw: None,
             pending_phasors: Vec::new(),
             group: None,
             seq: NEXT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
