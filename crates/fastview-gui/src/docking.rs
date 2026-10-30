@@ -195,8 +195,10 @@ pub enum Place {
     AutoHide,
 }
 
-/// A caption drag detaches past the system drag distance (SM_CXDRAG, 4 px)
-/// once the pointer has left the pane (`0x10086f3a`).
+/// A caption drag detaches once the pointer is more than the system drag
+/// distance (SM_CXDRAG / SM_CYDRAG, 4 px at 100 %) from the press along an
+/// axis (`0x10086f3a`). The original does not ask for the pointer to leave
+/// the pane; ours once did (#90).
 pub const DRAG_PX: f32 = 4.0;
 /// Hovering a strip button this long shows the pane (timer 0xec00).
 pub const HOVER_S: f64 = 0.4;
@@ -295,11 +297,15 @@ impl Dockable {
         (self.out, self.slide, self.hover_since, self.show_req) = (false, 0.0, None, false);
     }
 
-    /// A caption drag of a docked unit: it detaches when the pointer has
-    /// moved past [`DRAG_PX`] from `press` and left `pane`; then it floats
-    /// with the caption still under the pointer. True when it detached.
+    /// A caption drag of a docked unit: it detaches when the pointer is more
+    /// than the drag distance ([`DRAG_PX`], grown with the display scale)
+    /// from `press` along either axis, wherever it is (`0x10086f3a`); then
+    /// it floats with the caption still under the pointer. `pane` is the
+    /// pane's rect, to keep the grab point. True when it detached.
     pub fn drag_detach(&mut self, press: Pos2, now: Pos2, pane: Rect, origin: Pos2) -> bool {
-        if self.place != Place::Docked || (now - press).length() <= DRAG_PX || pane.contains(now) {
+        let reach = crate::dpi::s(DRAG_PX);
+        let d = now - press;
+        if self.place != Place::Docked || (d.x.abs() <= reach && d.y.abs() <= reach) {
             return false;
         }
         let size = self.float_at(origin).size();
@@ -793,16 +799,27 @@ mod tests {
     }
 
     #[test]
-    fn a_drag_detaches_past_the_threshold_outside_the_pane() {
+    fn a_drag_detaches_past_the_drag_distance_wherever_the_pointer_is() {
         let pane = Rect::from_min_size(Pos2::new(800.0, 100.0), Vec2::new(500.0, 600.0));
-        let mut d = unit();
         let press = Pos2::new(900.0, 110.0);
-        assert!(!d.drag_detach(press, Pos2::new(903.0, 110.0), pane, Pos2::ZERO), "inside the drag distance");
-        assert!(!d.drag_detach(press, Pos2::new(850.0, 110.0), pane, Pos2::ZERO), "still over the pane");
-        assert!(d.drag_detach(press, Pos2::new(700.0, 105.0), pane, Pos2::ZERO));
-        assert_eq!(d.place, Place::Floating);
-        let r = d.float_rect.unwrap();
-        assert!(r.contains(Pos2::new(700.0, 105.0)), "the caption stays under the pointer: {r:?}");
+        for scale in [96, 120, 144] {
+            crate::dpi::set(scale);
+            let reach = crate::dpi::s(DRAG_PX);
+            let mut d = unit();
+            // Within the drag distance on both axes: not yet.
+            assert!(!d.drag_detach(press, press + Vec2::new(reach, 0.0), pane, Pos2::ZERO), "{scale}: x at the distance");
+            assert!(!d.drag_detach(press, press + Vec2::new(-reach, reach), pane, Pos2::ZERO), "{scale}: both at the distance");
+            // Past it on one axis, the pointer still over the pane.
+            assert!(d.drag_detach(press, press + Vec2::new(reach + 1.0, 0.0), pane, Pos2::ZERO), "{scale}: x past");
+            assert_eq!(d.place, Place::Floating);
+            let r = d.float_rect.unwrap();
+            assert!(r.contains(press + Vec2::new(reach + 1.0, 0.0)), "the caption stays under the pointer: {r:?}");
+            let mut d = unit();
+            assert!(d.drag_detach(press, press + Vec2::new(0.0, reach + 1.0), pane, Pos2::ZERO), "{scale}: y past");
+            // A floating one is never pulled out again.
+            assert!(!d.drag_detach(press, press + Vec2::new(500.0, 0.0), pane, Pos2::ZERO));
+        }
+        crate::dpi::set(96);
     }
 
     #[test]

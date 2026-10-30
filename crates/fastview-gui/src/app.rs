@@ -136,7 +136,8 @@ pub enum CopyFocus {
     Diagram(Pane),
     /// A circle / differential property grid (its untitled children are a
     /// scroll bar and a header, no diagram window): the document only. With
-    /// the group it lies in.
+    /// the pane that holds the grid, so that it loses the focus as the pane
+    /// closes.
     Grid(Pane),
     /// A group's pane window itself: its caption or its strip button
     /// pressed (`0x10086d23` / `0x10086f01`, `0x1005f612`).
