@@ -198,3 +198,20 @@ fn zl_loop_impedance() {
     assert_eq!(z("zl:(ia, ia, ib, 0.1)").0, None);
     assert!((at("mod:(zl:(ia, ia, ib, 0.1))", 0).unwrap() - (a / (a - b)).norm()).abs() < 1e-12);
 }
+
+/// A reference follows its channel's new name (ours, #7): quoted and bare
+/// names are rewritten as `"new"`; functions, numbers, `[...]` and other
+/// names stay as typed; the resolver sees the lower-cased name.
+#[test]
+fn channel_references_are_renamed() {
+    use fvb_core::expr::rename_channel_refs;
+    let map = |n: &str| match n {
+        "ia +t+¦l 3" => Some("IA БЛОКА 3".to_string()),
+        "ток" => Some("’®Є".to_string()),
+        _ => None,
+    };
+    assert_eq!(rename_channel_refs("3I0: (\"IA +T+¦L 3\", \"IB\", Ic)", &map), "3I0: (\"IA БЛОКА 3\", \"IB\", Ic)");
+    assert_eq!(rename_channel_refs("Ток*2[кА] + sin(Ток)", &map), "\"’®Є\"*2[кА] + sin(\"’®Є\")");
+    assert_eq!(rename_channel_refs("Ua*2", &map), "Ua*2");
+    assert_eq!(rename_channel_refs("\"Ток", &map), "\"Ток", "unterminated: as typed");
+}

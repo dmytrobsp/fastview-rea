@@ -1367,6 +1367,22 @@ mod tests {
         });
     }
 
+    /// The КЗ flags lead the digital list without a recompute: a formula
+    /// on a record's own digital channel still reads that channel.
+    #[test]
+    fn a_formula_reads_its_digital_channel_after_omp() {
+        let mut app = demo_app();
+        grounded(&mut app);
+        let d = app.active_doc().unwrap();
+        let name = d.osc.digital[0].id.clone();
+        let want: Vec<f64> = d.flagged.digital[0].samples.iter().map(|&b| if b { 2.0 } else { 0.0 }).collect();
+        app.run_omp();
+        assert!(app.active_doc().unwrap().osc.digital.len() > 1, "the flags went in");
+        assert!(app.append_computed(&[("X".into(), format!("\"{name}\"*2"))]).is_some(), "{:?}", app.dlg.alert());
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.computed.iter().find(|c| c.name == "X").unwrap().samples, want);
+    }
+
     #[test]
     fn defaults_are_method_1_and_a_1km_1_support_section() {
         let p = OmpParams::default();

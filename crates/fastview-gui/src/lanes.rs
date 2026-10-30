@@ -2019,16 +2019,22 @@ impl App {
             None => self.rename_edit = Some((i, text)),
             Some(false) => {}
             Some(true) => {
-                // `0x465df0`: the text as typed (no trim, empty allowed),
-                // refused when another channel has it (case-sensitive) with
-                // message box 397 (MB_OK, `0x4660ab`); the document is marked
-                // modified either way (`0x466062`).
+                // `0x465df0`: the text as typed (no trim) is the alias,
+                // refused when another channel has it as its name or its
+                // file's (case-sensitive) with message box 397 (MB_OK,
+                // `0x4660ab`); an empty one shows the file's name again
+                // (`0x425a30` → `0x425960`); the document is marked modified
+                // either way (`0x466062`).
                 let d = &mut self.docs[ai];
-                let taken = d.osc.analog.iter().enumerate().any(|(j, c)| j != i && c.id == text) || d.computed.iter().any(|c| c.name == text);
-                if taken {
+                let key = crate::app::ChanKey::Analog(i);
+                if crate::chandlg::name_taken(d, key, &text) {
                     self.dlg.push_alert(crate::chandlg::MSG_NAME_TAKEN.to_string());
                 } else {
-                    d.osc.analog[i].id = text;
+                    // The levels and areas keep the names they were made on,
+                    // as after a rename in «Каналы» (L9.227).
+                    let recs: Vec<_> = d.comments.iter().map(|c| d.comment_rec(c)).collect();
+                    d.osc.analog[i].id = crate::chandlg::shown_after_rename(d, key, &text);
+                    d.comments = recs.iter().map(|r| d.comment_of(r)).collect();
                 }
                 d.set.modified = true;
             }
@@ -3423,6 +3429,7 @@ mod menu_tests {
     fn inline_rename_commits_as_typed_or_refuses_with_397() {
         let enter = || egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
         let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().init_set_keys();
         let commit = |h: &mut Harness, text: &str| {
             h.app.rename_edit = Some((0, text.to_string()));
             h.frame(vec![]);
@@ -3453,7 +3460,35 @@ mod menu_tests {
         h.frame(vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed: false, modifiers: Default::default() }]);
         assert_eq!(h.doc().osc.analog[0].id, "Ia 3", "committed by the press");
         commit(&mut h, "");
-        assert_eq!(h.doc().osc.analog[0].id, "", "an empty name is taken");
+        assert_eq!(h.doc().osc.analog[0].id, own, "an empty alias shows the file's name (VM)");
+        // Another channel's file name is refused too, though it shows
+        // another name now.
+        h.app.dlg.alerts.clear();
+        commit(&mut h, "Ia 4");
+        h.app.rename_edit = Some((1, own.clone()));
+        h.frame(vec![]);
+        h.frame(vec![enter()]);
+        h.frame(vec![]);
+        assert_eq!(h.app.dlg.alert(), Some(crate::chandlg::MSG_NAME_TAKEN));
+        assert_eq!(h.doc().osc.analog[1].id, other);
+    }
+
+    /// The inline rename as «Каналы»'s: a level keeps its channel's old name
+    /// (unbound, L9.227), and a formula takes the new one (issue #7).
+    #[test]
+    fn an_inline_rename_unbinds_a_level_and_feeds_the_formulas() {
+        use crate::comments::{Comment, CommentKind};
+        let enter = || egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        let mut h = Harness::new();
+        let old = h.doc().osc.analog[0].id.clone();
+        h.app.active_doc_mut().unwrap().comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(0), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
+        h.app.rename_edit = Some((0, "Новое".to_string()));
+        h.frame(vec![]);
+        h.frame(vec![enter()]);
+        h.frame(vec![]);
+        assert_eq!(h.doc().osc.analog[0].id, "Новое");
+        assert!(matches!(&h.doc().comments[0].kind, CommentKind::Kept(r) if matches!(&r.kind, fvb_core::recset::CommentKindRec::Level { channel, .. } if *channel == old)));
+        assert!(h.app.append_computed(&[("X".into(), "Новое*2".into())]).is_some(), "{:?}", h.app.dlg.alert());
     }
 
     /// `0x43eb40`: a level line goes on any analog-kind lane — a formula

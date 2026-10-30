@@ -374,6 +374,9 @@ pub struct Computed {
     /// minus its DC over its own period, negated; a digital one 1 / 0,
     /// inverted with the flag); `display` is then its cache per mode.
     pub pending_own: Vec<f64>,
+    /// A pasted lane's name bytes and the text last decoded from them, once
+    /// «Кодировка» has re-decoded it (`Doc::set_codepage`).
+    pub name_raw: Option<(Vec<u8>, String)>,
     /// A pending analog lane's phasor cache (`ch+0x38`) over
     /// [`Self::pending_own`] at its own N (`0x428490` → `0x426fc0` /
     /// `0x4267e0`); the vector diagram interpolates it by own time.
@@ -413,6 +416,7 @@ impl Computed {
             mode: ValueMode::Instant,
             display: Vec::new(),
             pending_own: Vec::new(),
+            name_raw: None,
             pending_phasors: Vec::new(),
             group: None,
             seq: NEXT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
@@ -742,7 +746,8 @@ pub struct Doc {
     /// 866 / 1251: file parameters «Кодировка»; see `recdlg`).
     pub codepage: Encoding,
     /// The station, recorder and channel names' bytes as read, each with
-    /// the text last decoded from them (see `Doc::set_codepage`).
+    /// the text last decoded from them, found by that text (see
+    /// `Doc::set_codepage`; an alias has none).
     pub name_raw: Vec<(Vec<u8>, String)>,
     /// The record comment (`.hdr` text, 32805) and its code page.
     pub hdr: Option<String>,
@@ -853,15 +858,35 @@ impl Doc {
             self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i], k);
             self.rms[i] = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&self.osc), i, &self.flagged.analog[i].samples, n);
         }
-        // Digital channels as the accessor reads them: inverted with the flag.
+        self.flag_digital();
+        // The correction reads the frequency channel as stored (L9.65).
+        self.analysis = Analysis::compute_with(&self.flagged, fvb_core::freqcorr::of(&self.osc));
+        self.reevaluate_formulas(show_primary);
+    }
+
+    /// The formulas resolve a channel by its name as shown now (`0x42edf0`
+    /// compares `+0x68`; the original keeps no copy of the record): the
+    /// flagged copy takes the names a change left behind it — «Кодировка»
+    /// re-decodes them in place (`0x4543e0` → `0x425960`, issue #7), a
+    /// rename in «Каналы» or on the lane writes one — none of which
+    /// recomputes.
+    /// The digital list is copied anew: ОМП's КЗ flags come, go and take
+    /// new values with no recompute (`omp_compute` / `omp_clear`).
+    pub fn sync_flagged_names(&mut self) {
+        for (f, c) in self.flagged.analog.iter_mut().zip(&self.osc.analog) {
+            f.id.clone_from(&c.id);
+        }
+        self.flag_digital();
+    }
+
+    /// Digital channels as the accessor reads them: inverted with the flag.
+    fn flag_digital(&mut self) {
+        self.flagged.digital = self.osc.digital.clone();
         for (i, dch) in self.flagged.digital.iter_mut().enumerate() {
             if self.dig_flags.get(i).is_some_and(|f| f.invert) {
                 dch.samples.iter_mut().for_each(|v| *v = !*v);
             }
         }
-        // The correction reads the frequency channel as stored (L9.65).
-        self.analysis = Analysis::compute_with(&self.flagged, fvb_core::freqcorr::of(&self.osc));
-        self.reevaluate_formulas(show_primary);
     }
 
     /// Formula channels are evaluated again in order on the current values
@@ -876,6 +901,7 @@ impl Doc {
     /// keep their new values) and is returned; only a full success sweeps
     /// the groups (`0x415b97` → `0x455c70`).
     pub fn try_reevaluate_formulas(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
+        self.sync_flagged_names();
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
         for j in 0..self.computed.len() {
             let c = &mut self.computed[j];
@@ -1223,6 +1249,9 @@ pub struct DocSnapshot {
     pub selection: BTreeSet<ChanKey>,
     pub digital_visible: Vec<bool>,
     pub dig_flags: Vec<DigFlags>,
+    /// The names' bytes go with the channels (the original's snapshot is
+    /// its channel list, the raw names in it); the code page stays.
+    pub name_raw: Vec<(Vec<u8>, String)>,
 }
 
 /// Commands dispatched from the ribbon, QAT, keybinds and context menus. The
@@ -2647,6 +2676,7 @@ impl App {
             selection: d.selection.clone(),
             digital_visible: d.digital_visible.clone(),
             dig_flags: d.dig_flags.clone(),
+            name_raw: d.name_raw.clone(),
         }
     }
 
@@ -2661,6 +2691,7 @@ impl App {
         d.selection = s.selection;
         d.digital_visible = s.digital_visible;
         d.dig_flags = s.dig_flags;
+        d.name_raw = s.name_raw;
         d.sel_anchor = None;
         let last = d.osc.time.len().saturating_sub(1);
         for k in [&mut d.main_cursor, &mut d.aux_cursor, &mut d.v3_cursor, &mut d.first] {
@@ -3492,7 +3523,7 @@ mod tests {
         assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
         app.active_doc_mut().unwrap().computed[0].formula = "Нет*2".into();
         assert!(app.append_computed(&[("Y".into(), "Ub*2".into())]).is_none());
-        assert_eq!(app.dlg.alert(), Some("Нет*2: Имя канала задано неправильно."), "its box (0x162 in channel mode)");
+        assert_eq!(app.dlg.alert(), Some("Имя канала задано неправильно."), "its box (0x162, no formula: VM)");
         assert!(app.active_doc().unwrap().computed.iter().all(|c| c.name != "Y"), "nothing added");
     }
 
