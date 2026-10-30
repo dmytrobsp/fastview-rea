@@ -168,7 +168,10 @@ impl Doc {
     /// → `0x4543e0`); a saved `Oscillogram/Codepage` would override it (the
     /// `.set` file is not modelled). The `.hdr` text comes from the `.cff`
     /// section or the sibling `.hdr` file.
-    pub fn init_record_text(&mut self, enc: Encoding) {
+    pub fn init_record_text(&mut self, program: Encoding) {
+        // A `.cfg` that fixes its own encoding (UTF-8, `comtrade::cfg_utf8`)
+        // was decoded in it: that is the record's code page, not guessed.
+        let enc = self.osc.text_enc.unwrap_or(program);
         self.codepage = enc;
         let single = matches!(enc, Encoding::Cp1251 | Encoding::Cp866);
         if single {
@@ -182,12 +185,17 @@ impl Doc {
             }),
         };
         if let Some(b) = raw {
-            self.hdr_cp = if single { comtrade::detect_codepage(&b) } else { enc };
+            let guess = if matches!(program, Encoding::Cp1251 | Encoding::Cp866) { comtrade::detect_codepage(&b) } else { program };
+            // A UTF-8 record's `.hdr` (a 2013 export's header text) is read
+            // as UTF-8 when it is valid UTF-8 — kept byte for byte on save.
+            let utf8 = self.osc.text_enc == Some(Encoding::Utf8) && std::str::from_utf8(&b).is_ok();
+            self.hdr_cp = if utf8 { Encoding::Utf8 } else { guess };
             self.hdr = Some(comtrade::decode_bytes(&b, self.hdr_cp));
             // The reader keeps the `.hdr` bytes (`doc+0x1e0`, written back
             // on every save) and stores their guessed code page as
-            // `Comments/Codepage` (`0x450d1f`…`0x450d63`).
-            self.set.tree.section_mut("Comments").set_int("Codepage", crate::setfile::cp_code(self.hdr_cp));
+            // `Comments/Codepage` (`0x450d1f`…`0x450d63`) — the guess
+            // under the program encoding, as the original's.
+            self.set.tree.section_mut("Comments").set_int("Codepage", crate::setfile::cp_code(guess));
         }
     }
 
@@ -902,6 +910,35 @@ mod tests {
         d.init_record_text(Encoding::Cp1251);
         assert_eq!(d.codepage, Encoding::Cp1251);
         assert!(d.osc.station.starts_with("НТЦ"));
+    }
+
+    /// A record whose `.cfg` fixed UTF-8 (issue #8): that is its code page
+    /// under any program encoding — no guess re-decodes its names — and its
+    /// UTF-8 `.hdr` is read as UTF-8 and written back byte for byte, while
+    /// `Comments/Codepage` keeps the guess under the program encoding.
+    #[test]
+    fn a_utf8_record_keeps_utf8_names_and_hdr() {
+        let dir = std::env::temp_dir().join(format!("fv_utf8_hdr_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let hdr = "Коментар: синтетичний запис\r\nПримітка: тест\r\n";
+        std::fs::write(dir.join("rec.hdr"), hdr).unwrap();
+        let mut osc = comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
+        osc.text_enc = Some(Encoding::Utf8);
+        osc.station = "Підстанція".into();
+        osc.analog[0].id = "Струм фази А".into();
+        osc.analog[1].id = "Гр.\u{FFFD}.:Напруга".into();
+        let mut d = Doc::new(osc, "x".into());
+        d.path = Some(dir.join("rec.cfg"));
+        d.init_record_text(Encoding::Cp1251);
+        assert_eq!(d.codepage, Encoding::Utf8);
+        assert_eq!((d.osc.station.as_str(), d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("Підстанція", "Струм фази А", "Гр.\u{FFFD}.:Напруга"));
+        assert_eq!((d.hdr.as_deref(), d.hdr_cp), (Some(hdr), Encoding::Utf8));
+        assert_eq!(d.hdr_file_bytes().unwrap(), hdr.as_bytes());
+        let guess = crate::setfile::cp_code(comtrade::detect_codepage(hdr.as_bytes()));
+        assert_eq!(d.set.tree.section("Comments").unwrap().get_int("Codepage", -1), guess);
+        // «Кодировка» then re-reads the UTF-8 bytes in the code page picked.
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.osc.station, comtrade::decode_bytes("Підстанція".as_bytes(), Encoding::Cp1251));
     }
 
     #[test]

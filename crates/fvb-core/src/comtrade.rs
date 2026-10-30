@@ -143,6 +143,10 @@ pub struct Oscillogram {
     /// Frequency candidates that are not file channels (formula and pasted
     /// channels), in vector order. Kept by whoever holds them.
     pub extra_freq: Vec<ExtraFreq>,
+    /// The text encoding the `.cfg` fixes itself ([`cfg_utf8`]: a UTF-8
+    /// BOM, or valid UTF-8 in a revision-2013 file): its names are decoded
+    /// in it whatever the program encoding, which `None` leaves in charge.
+    pub text_enc: Option<Encoding>,
 }
 
 /// A frequency candidate outside the file's channels: a formula channel
@@ -309,8 +313,10 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
     }
     let (cfg_path, dat_path) = sibling_paths(path)?;
     let cfg_bytes = std::fs::read(&cfg_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
-    let cfg_text = decode_text_enc(&cfg_bytes, enc);
+    let fixed = cfg_utf8(&cfg_bytes, false);
+    let cfg_text = fixed.clone().unwrap_or_else(|| decode_text_enc(&cfg_bytes, enc));
     let (mut rec, fmt) = parse_cfg(&cfg_text)?;
+    rec.text_enc = fixed.map(|_| Encoding::Utf8);
     let dat = std::fs::read(&dat_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
     parse_dat(&mut rec, fmt, &dat, prog)?;
     check_samples(&rec, || crate::recset::record_base(path))?;
@@ -527,7 +533,8 @@ pub fn parse_cff(bytes: &[u8], enc: Encoding) -> Result<(Oscillogram, CffSection
 /// (`0x44fe30`), then the inner `.cfg` rule over the DAT part.
 pub fn parse_cff_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Result<(Oscillogram, CffSections), ComtradeError> {
     let nul = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
-    let text = decode_text_enc(&bytes[..nul], enc);
+    let fixed = cfg_utf8(&bytes[..nul], true);
+    let text = fixed.clone().unwrap_or_else(|| decode_text_enc(&bytes[..nul], enc));
     let cfg = cff_section(&text, "CFG").ok_or(ComtradeError::Format)?;
     let sections = CffSections {
         inf: cff_section(&text, "INF"),
@@ -563,6 +570,7 @@ pub fn parse_cff_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) 
     }
     let dat = dat.ok_or(ComtradeError::Format)?;
     let (mut rec, fmt) = parse_cfg(&cfg)?;
+    rec.text_enc = fixed.map(|_| Encoding::Utf8);
     parse_dat(&mut rec, fmt, dat, prog)?;
     check_samples(&rec, cff_temp_base)?;
     if let Some(p) = prog {
@@ -970,6 +978,7 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
         trigger_sample: (be_i16(info, 0xE).max(0) as usize) * n,
         freq_sel: 0,
         extra_freq: Vec::new(),
+        text_enc: None,
     };
     rec.rebuild_freq_track();
     Ok(rec)
@@ -1074,6 +1083,35 @@ fn decode_text_enc(bytes: &[u8], enc: Encoding) -> String {
         Encoding::Cp866 => bytes.iter().map(|&b| cp866_to_char(b)).collect(),
         Encoding::Koi8r => bytes.iter().map(|&b| koi8r_to_char(b)).collect(),
     }
+}
+
+/// A `.cfg` (or a whole `.cff`, `cff`) that fixes its own encoding as
+/// UTF-8, decoded; `None` leaves it to the program encoding. The original
+/// widens every `.cfg` token through the program encoding (`0x422300`:
+/// UTF-8 / 1251 / 866 / KOI8-R by `Display Encoding`, default 1251) and
+/// knows no BOM, so a UTF-8 export (C37.111-2013 prescribes UTF-8) shows
+/// mojibake and its BOM («п»ї», «?» under UTF-8) before the station unless
+/// the user switched the program to UTF-8. Ours reads such a file as
+/// UTF-8 whatever the setting — a deliberate divergence where the original
+/// visibly fails: a file starting with the UTF-8 BOM (stripped), or one of
+/// revision 2013 that is valid UTF-8 with at least one multi-byte character
+/// (Cyrillic in 1251 / 866 / KOI8-R practically never is). A sequence that
+/// is not UTF-8 after a BOM reads U+FFFD; a U+FFFD written by the exporter
+/// (a name cut mid-character) stays as it is, so a save writes it back.
+pub fn cfg_utf8(bytes: &[u8], cff: bool) -> Option<String> {
+    if let Some(rest) = bytes.strip_prefix(b"\xEF\xBB\xBF") {
+        return Some(String::from_utf8_lossy(rest).into_owned());
+    }
+    let text = std::str::from_utf8(bytes).ok().filter(|t| !t.is_ascii())?;
+    // The revision is the third field of the `.cfg`'s first line (in a
+    // `.cff`, the line after the CFG marker).
+    let cfg = if cff { &text[text.find("--- file type: CFG")?..] } else { text };
+    let mut lines = cfg.lines().filter(|l| !l.trim().is_empty());
+    if cff {
+        lines.next();
+    }
+    let rev = lines.next()?.split(',').nth(2)?.trim().parse::<i32>().ok()?;
+    (rev == 2013).then(|| text.to_string())
 }
 
 /// Decode bytes with an encoding (the public face of the loader's decoder).
@@ -1627,6 +1665,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         trigger_sample: 0,
         freq_sel: 0,
         extra_freq: Vec::new(),
+        text_enc: None,
     };
     // The loader rebuilds the frequency candidates (`0x45127d`), which
     // selects the first one.
