@@ -1991,7 +1991,7 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
     let cy = rect.center().y.floor() + 0.5;
     let on_button = ui.input(|i| i.pointer.press_origin()).is_some_and(|p| spots.iter().flatten().any(|&x| egui::Rect::from_center_size(egui::pos2(x, cy), egui::vec2(s(15.0), s(15.0))).contains(p)));
     act.armed = resp.is_pointer_button_down_on() && !on_button && ui.input(|i| i.pointer.primary_down());
-    act.dragging = resp.dragged() && !on_button;
+    act.dragging = resp.dragged_by(egui::PointerButton::Primary) && !on_button;
     act.pressed = resp.contains_pointer() && ui.input(|i| i.pointer.any_pressed());
     if resp.secondary_clicked() {
         act.menu = resp.interact_pointer_pos();

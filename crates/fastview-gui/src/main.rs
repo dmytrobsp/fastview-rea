@@ -1991,7 +1991,7 @@ mod window_tests {
                 let ids = m.areas().visible_layer_ids();
                 ids.iter().filter(|l| l.order >= egui::Order::Middle).filter_map(|l| m.area_rect(l.id)).filter(|r| r.width() < 1300.0).collect()
             });
-            let free = [Pos2::new(700.0, 470.0), Pos2::new(700.0, 330.0), Pos2::new(420.0, 470.0), Pos2::new(560.0, 330.0), Pos2::new(250.0, 600.0)]
+            let free = [Pos2::new(420.0, 470.0), Pos2::new(300.0, 780.0), Pos2::new(560.0, 330.0), Pos2::new(250.0, 600.0)]
                 .into_iter()
                 .find(|p| !windows.iter().any(|r| r.expand(4.0).contains(*p)))
                 .expect("a point of the view beside the dialogs");
@@ -2192,7 +2192,7 @@ mod window_tests {
         assert_eq!(w.app.copy_focus, app::CopyFocus::Pane(Unit::Vector), "the caption gives the pane the focus");
         for (what, p) in [("tab strip", tab), ("toolbar", toolbar)] {
             w.press(egui::PointerButton::Primary, p, p);
-            assert_ne!(w.app.copy_focus, app::CopyFocus::View, "{what}: the press reached the view");
+            assert_eq!(w.app.copy_focus, app::CopyFocus::Pane(Unit::Vector), "{what}: the press leaves the focus on the pane");
         }
         // The same from the view's focus: the window's caption takes it.
         w.press(egui::PointerButton::Primary, free, free);
@@ -2261,6 +2261,40 @@ mod window_tests {
             }
         }
         dpi::set(96);
+    }
+
+    /// Only the left button drags a caption (`0x10086f3a` reads the left
+    /// button): a right-drag floats nothing, shows no move cursor and
+    /// moves no floating window.
+    #[test]
+    fn a_right_drag_on_a_caption_does_nothing() {
+        use docking::{Place, Unit};
+        use egui::CursorIcon::Move;
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() };
+        let mut w = Win::new();
+        let pane = w.app.dock_rects[Unit::Vector as usize].expect("docked");
+        let at = Pos2::new(pane.left() + 60.0, pane.top() + 8.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true)]);
+        for k in 1..=6 {
+            assert_ne!(w.run(vec![egui::Event::PointerMoved(at + Vec2::new(10.0 * k as f32, 0.0))]), Move);
+        }
+        w.run(vec![ev(at + Vec2::new(60.0, 0.0), false)]);
+        w.idle(2);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "a right-drag floats nothing");
+        w.app.pane_menu = None;
+        w.app.docks.0[Unit::Vector as usize].double_click(Pos2::ZERO);
+        w.idle(3);
+        let win = w.app.docks[Unit::Vector].float_rect.expect("floating");
+        let at = Pos2::new(win.left() + 60.0, win.top() + 10.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true)]);
+        for k in 1..=6 {
+            assert_ne!(w.run(vec![egui::Event::PointerMoved(at + Vec2::new(10.0 * k as f32, 5.0))]), Move);
+        }
+        w.run(vec![ev(at + Vec2::new(60.0, 5.0), false)]);
+        w.idle(2);
+        assert_eq!(w.app.docks[Unit::Vector].float_rect, Some(win), "a right-drag moves no window");
     }
 
     /// The new drag rule leaves the other captions alone (#90): a floating

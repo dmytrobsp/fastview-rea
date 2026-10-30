@@ -127,20 +127,25 @@ misbehaves and the better behaviour is obvious (the maintainer,
 - **The lanes' names after «Кодировка» (#7).** The original's lanes keep
   the old names until their next layout (a missing repaint, ledger
   L9.350); ours shows the new names at once. Reason: a stale repaint.
-- **The caption drag of a docked pane shows the move cursor, and its
-  distance grows with the display scale (#90).** The original floats a
-  docked pane once the pointer is more than the system drag distance
-  (SM_CXDRAG / SM_CYDRAG, 4 px) from the press along an axis, wherever the
-  pointer is (`0x10086f3a`; clone: 4 px stays docked, 5 px floats the pane
-  with the pointer still on it), and keeps the arrow cursor from the press
-  through the drag (clone, 0 / 3 / 4 / 5 / 8 px). Ours floats at the same
-  distance at 100 % (an earlier build also asked the pointer to leave the
-  pane, so a large pane needed a long drag: a fix to match the original,
-  not an improvement), scales that distance with the display scale (5 px at
-  125 %, 6 px at 150 %: the original's stays at the system metric, not
-  checked in a clone at a scaled display), and shows the four-way move
-  cursor from the press on the caption (not on its pin or close
-  buttons) and while the pane is dragged, for a docked or a floating pane
-  (an auto-hidden pane's caption does nothing, so keeps the arrow). Reason:
-  the maintainer's request (2026-10-30): the arrow gave no hint that
-  dragging on would pull the pane out of its dock.
+- **The caption drag of a docked pane shows the move cursor (#90).** The
+  original floats a docked pane once the pointer is more than the system
+  drag distance (SM_CXDRAG / SM_CYDRAG, read once at start-up,
+  `0x1005a5fb`) from the press along an axis, wherever the pointer is
+  (`0x10086f3a`; clone at 100 %: 4 px stays docked, 5 px floats the pane
+  with the pointer still on it), and keeps the arrow cursor: the only
+  four-way move cursor in its docking code (`0x100d66dd`) is set in the
+  immediate, non-smart docking mode, which FastView does not use; the
+  clone showed the arrow at 0 / 3 / 4 / 5 px and, with the button held,
+  at 8 px (a reading under mouse capture, so the binary is the firmer
+  evidence). Ours floats at the same distance and shows the four-way move
+  cursor from the press on the caption (not on its pin or close buttons)
+  and while the pane is dragged, for a docked or a floating pane (an
+  auto-hidden pane's caption does nothing, so keeps the arrow); the left
+  button only. Reason: the maintainer's request (2026-10-30): the arrow
+  gave no hint that dragging on would pull the pane out of its dock.
+  The distance: ours grows it with the display scale (5 px at 125 %, 6 at
+  150 %), by the maintainer's decision; the original reads the system
+  metric once at start-up, and whether Windows scales that metric at a
+  scaled display was not checked, so this may be parity. (An earlier build
+  of ours also asked the pointer to leave the pane: a fix to match the
+  original, not an improvement.)
