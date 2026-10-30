@@ -339,7 +339,10 @@ impl Doc {
             ChanKey::Digital(d) => (self.osc.analog.len() + d, &self.osc.digital.get(d)?.id),
             ChanKey::Computed(_) => return None,
         };
-        let file = self.file_name(i);
+        // After a switch the name's bytes decoded now (the keys are lossy
+        // once an 866 reading best-fitted them: «¦» comes back as «?»).
+        let kept = (self.name_raw.len() == 2 + self.osc.analog.len() + self.osc.digital.len()).then(|| self.name_raw.get(2 + i)).flatten();
+        let file = kept.map_or_else(|| self.file_name(i), |(_, seen)| seen.clone());
         (file != *id).then_some(file)
     }
 

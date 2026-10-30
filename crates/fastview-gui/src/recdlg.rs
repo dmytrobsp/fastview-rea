@@ -207,9 +207,12 @@ impl Doc {
             return Vec::new();
         }
         let recs: Vec<_> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
-        // Every channel's name before (the formulas' resolver order: analog
-        // then computed, `OscChannels`; then every row for the rest).
-        let formula_names = |d: &Doc| -> Vec<String> { d.osc.analog.iter().map(|c| c.id.trim_end_matches(' ').to_string()).chain(d.computed.iter().map(|c| c.name.clone())).collect() };
+        // Every channel's name before (the formulas' resolver order: analog,
+        // computed, then digital, `OscChannels`; then every row for the rest).
+        let formula_names = |d: &Doc| -> Vec<String> {
+            let trim = |s: &String| s.trim_end_matches(' ').to_string();
+            d.osc.analog.iter().map(|c| trim(&c.id)).chain(d.computed.iter().map(|c| c.name.clone())).chain(d.osc.digital.iter().map(|c| trim(&c.id))).collect()
+        };
         let row_names = |d: &Doc| -> Vec<String> { crate::chandlg::rows(d).into_iter().map(|k| crate::chandlg::row_name(d, k)).collect() };
         let (old_f, old_rows) = (formula_names(self), row_names(self));
         // The file's names in `set.keys` are 1251 text: they stand for the
@@ -340,6 +343,13 @@ impl Doc {
         }
         for p in self.dif_pairs.iter_mut().chain(self.rx_pairs.iter_mut()) {
             for n in [&mut p.a, &mut p.b] {
+                if let Some(new) = by_row(n) {
+                    *n = new;
+                }
+            }
+        }
+        for st in &mut self.omp.params.stations {
+            for n in [&mut st.ia, &mut st.ib, &mut st.ic, &mut st.uab, &mut st.ubc, &mut st.uca, &mut st.ua, &mut st.ub, &mut st.uc] {
                 if let Some(new) = by_row(n) {
                     *n = new;
                 }
@@ -1077,6 +1087,11 @@ mod tests {
         d.init_set_keys();
         assert_eq!(d.osc.analog[0].id, "IA +T+¦L 3");
         d.osc.analog[1].id = "Ток".into();
+        // An empty rename shows the file's name as read now, not the lossy
+        // key's («¦» kept), and stays the file's name.
+        assert_eq!(crate::chandlg::rename(d, crate::app::ChanKey::Analog(0), ""), Ok(()));
+        assert_eq!(d.osc.analog[0].id, "IA +T+¦L 3");
+        assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)), None);
         d.set_codepage(Encoding::Cp1251);
         assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA БЛОКА 3", "Ток"));
     }
@@ -1211,8 +1226,10 @@ mod tests {
             d.osc.analog[i].id = n.into();
         }
         d.osc.analog[1].id = "Свой".into();
+        d.osc.digital[0].id = "Пуск БЛОКА".into();
         d.init_set_keys();
         d.osc.analog[1].id = "Другой".into();
+        d.omp.params.stations[0].ia = "IA БЛОКА 3".into();
         for i in [3, 1] {
             d.comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(i), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
         }
@@ -1225,9 +1242,13 @@ mod tests {
         let g = q.generate(AnalysisTab::Zero, &[]);
         app.apply_quick(&g);
         crate::quick_ui::save_page(z, &app.quick[z].clone(), app.active_doc_mut().unwrap().set.tree.section_mut(crate::quick_ui::PAGE_KEYS[z]));
+        assert!(app.append_computed(&[("D".into(), "\"Пуск БЛОКА\"*2".into())]).is_some(), "{:?}", app.dlg.alert());
         let d = app.active_doc_mut().unwrap();
         let before = d.computed.iter().find(|c| c.name == "3I0").unwrap().samples.clone();
         d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.omp.params.stations[0].ia, d.osc.analog[3].id, "ОМП's channel too");
+        let dig = d.osc.digital[0].id.clone();
+        assert!(d.computed.iter().find(|c| c.name == "D").unwrap().formula.contains(&format!("\"{dig}\"")), "a digital channel's reference too");
         let ia = d.osc.analog[3].id.clone();
         assert_eq!(ia, "IA +T+¦L 3");
         let i0 = d.computed.iter().find(|c| c.name == "3I0").unwrap();
