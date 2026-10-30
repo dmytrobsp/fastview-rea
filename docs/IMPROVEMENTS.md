@@ -127,3 +127,14 @@ misbehaves and the better behaviour is obvious (the maintainer,
 - **The lanes' names after «Кодировка» (#7).** The original's lanes keep
   the old names until their next layout (a missing repaint, ledger
   L9.350); ours shows the new names at once. Reason: a stale repaint.
+- **The fundamental's own label in «% of the fundamental» (#60).** The
+  original prints the label as `(v · 100) / v`, with the bar's value and
+  the norm both taken from the same spectrum call (the label at
+  `0x4704e7`–`0x4704f3`, the format by `0x46f5a0`). In doubles that is
+  exactly 100, or 100 plus an ulp (printed «100»), or 100 minus an ulp,
+  which its "%2.1f below 100" branch prints as «100.0» — wider, so it can
+  also rotate differently. Ours always prints «100» for the fundamental's own
+  bar (the bar at the number of periods, when the norm is the fundamental,
+  not the RMS); the other bars are computed as the original does. Reason:
+  the fundamental is 100 % of itself by definition; «100.0» is a rounding
+  accident of the format's branch, not a choice.
