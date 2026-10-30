@@ -993,6 +993,35 @@ mod tests {
         assert_eq!((d.osc.analog[1].id.as_str(), d.osc.analog[2].id.as_str()), ("IA БЛОКА 3", "IB БЛОКА 3"));
     }
 
+    /// An undo past a merge takes the names' bytes back with the channels:
+    /// a merge elsewhere after it leaves each name its own.
+    #[test]
+    fn an_undo_past_a_merge_takes_the_bytes_back() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[0].id = "IA БЛОКА 3".into();
+        d.set_codepage(Encoding::Cp866);
+        d.init_set_keys();
+        d.selection = [ChanKey::Analog(2)].into();
+        app.copy_channels_for_merge();
+        app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        while !app.active_doc().unwrap().undo.is_empty() {
+            app.dispatch(Command::Undo);
+        }
+        let n = app.active_doc().unwrap().osc.analog.len();
+        app.active_doc_mut().unwrap().selection.clear();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = app.active_doc_mut().unwrap();
+        assert_eq!(d.osc.analog.len(), n + 1, "merged at the end");
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.osc.analog[0].id, "IA БЛОКА 3");
+    }
+
     /// «В» and «С» read as 866 both show «T»: two names alike each take
     /// their own bytes back, also after a channel merged in before them.
     #[test]

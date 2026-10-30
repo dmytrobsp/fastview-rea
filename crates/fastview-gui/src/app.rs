@@ -1241,6 +1241,9 @@ pub struct DocSnapshot {
     pub selection: BTreeSet<ChanKey>,
     pub digital_visible: Vec<bool>,
     pub dig_flags: Vec<DigFlags>,
+    /// The names' bytes go with the channels (the original's snapshot is
+    /// its channel list, the raw names in it); the code page stays.
+    pub name_raw: Vec<(Vec<u8>, String)>,
 }
 
 /// Commands dispatched from the ribbon, QAT, keybinds and context menus. The
@@ -2665,6 +2668,7 @@ impl App {
             selection: d.selection.clone(),
             digital_visible: d.digital_visible.clone(),
             dig_flags: d.dig_flags.clone(),
+            name_raw: d.name_raw.clone(),
         }
     }
 
@@ -2679,6 +2683,7 @@ impl App {
         d.selection = s.selection;
         d.digital_visible = s.digital_visible;
         d.dig_flags = s.dig_flags;
+        d.name_raw = s.name_raw;
         d.sel_anchor = None;
         let last = d.osc.time.len().saturating_sub(1);
         for k in [&mut d.main_cursor, &mut d.aux_cursor, &mut d.v3_cursor, &mut d.first] {
