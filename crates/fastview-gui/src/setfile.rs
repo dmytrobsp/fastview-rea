@@ -248,7 +248,7 @@ fn save_dialog(filters: &[(&str, &str)], dir: Option<String>, name: &str) -> Opt
 
 impl Doc {
     /// The section key of file channel `i` (analog, then digital).
-    fn file_key(&self, i: usize) -> String {
+    pub(crate) fn file_key(&self, i: usize) -> String {
         if let Some(k) = self.set.keys.get(i) {
             return k.clone();
         }

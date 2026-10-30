@@ -321,8 +321,11 @@ impl Doc {
                 (raw[j].bytes.clone(), true, false)
             } else if let Some(f) = &file[p] {
                 // No bytes kept: the keys were taken from names read
-                // losslessly, and a name not the file's is an alias.
-                (name_bytes_of(f, read, from), false, true)
+                // losslessly, and a name not the file's is an alias. A
+                // record read in UTF-8 / KOI8-R has its key's bytes exact
+                // (the file name as shown may be best-fitted).
+                let bytes = if matches!(read, Encoding::Cp1251 | Encoding::Cp866) { name_bytes_of(f, read, from) } else { comtrade::encode_text(&self.file_key(p - 2), Encoding::Cp1251) };
+                (bytes, false, true)
             } else {
                 (name_bytes_of(n, read, from), true, false)
             });
@@ -1193,6 +1196,27 @@ mod tests {
         assert_eq!(d.osc.analog[1].id, "IA +T+¦L 3", "moved by the merge");
         d.set_codepage(Encoding::Cp1251);
         assert_eq!((d.osc.analog[1].id.as_str(), d.osc.analog[2].id.as_str()), ("IA БЛОКА 3", "IB БЛОКА 3"));
+    }
+
+    /// Out of step (no bytes kept: an undo past a merge), a renamed
+    /// channel of a UTF-8 record takes its file name's bytes from its key,
+    /// exactly — not from the best-fitted name shown under 1251.
+    #[test]
+    fn an_out_of_step_alias_keeps_its_file_name_exact() {
+        use crate::app::ChanKey;
+        let mut osc = comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
+        osc.text_enc = Some(Encoding::Utf8);
+        osc.analog[0].id = "U√3 ─".into();
+        let mut d = Doc::new(osc, "x".into());
+        d.init_record_text(Encoding::Cp1251);
+        d.init_set_keys();
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.osc.analog[0].id, "Uv3 -");
+        assert_eq!(crate::chandlg::rename(&mut d, ChanKey::Analog(0), "Своє"), Ok(()));
+        d.name_raw.clear();
+        d.set_codepage(Encoding::Utf8);
+        assert_eq!(d.osc.analog[0].id, "Своє", "the alias stays");
+        assert_eq!(d.original_name(ChanKey::Analog(0)).as_deref(), Some("U√3 ─"), "its file name exact");
     }
 
     /// On a UTF-8 / KOI8-R record a pasted lane's name follows «Кодировка»
