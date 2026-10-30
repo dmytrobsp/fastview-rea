@@ -182,7 +182,7 @@ impl<'a> FreqCorr<'a> {
         for j in 0..=k + 1 {
             let v = Self::weight(j, k, tau, dt) * x[idx - j];
             let a = j as f64 * th;
-            s += Complex64::new(-a.sin(), a.cos()) * v;
+            s += Complex64::new(-crate::trig::sin(a), crate::trig::cos(a)) * v;
         }
         s * (2f64.sqrt() * f / p)
     }

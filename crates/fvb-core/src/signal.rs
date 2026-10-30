@@ -10,6 +10,7 @@
 //! Symmetric components use the Fortescue transform with `a = 1∠120°`; loop
 //! impedances are `U_loop / I_loop`.
 
+use crate::trig::{cos, sin};
 use num_complex::Complex64;
 
 /// A phasor series: the fundamental-frequency complex value at each sample point
@@ -42,8 +43,8 @@ pub fn sliding_phasors(samples: &[f64], n: usize) -> Phasors {
         return out;
     }
     let tau = 2.0 * std::f64::consts::PI;
-    let sin_t: Vec<f64> = (1..=n).map(|k| (tau * k as f64 / n as f64).sin()).collect();
-    let cos_t: Vec<f64> = (1..=n).map(|k| (tau * k as f64 / n as f64).cos()).collect();
+    let sin_t: Vec<f64> = (1..=n).map(|k| sin(tau * k as f64 / n as f64)).collect();
+    let cos_t: Vec<f64> = (1..=n).map(|k| cos(tau * k as f64 / n as f64)).collect();
     let scale = 2f64.sqrt() / n as f64;
     for (i, slot) in out.iter_mut().enumerate().skip(n - 1) {
         let (mut re, mut im) = (0.0, 0.0);
@@ -67,15 +68,15 @@ pub fn phasor_at(samples: &[f64], i: usize, n: usize) -> Complex64 {
     for k in 1..=n {
         let x = samples[i + k - n];
         let th = tau * k as f64 / n as f64;
-        re += th.sin() * x;
-        im += th.cos() * x;
+        re += sin(th) * x;
+        im += cos(th) * x;
     }
     let scale = 2f64.sqrt() / n as f64;
     Complex64::new(re * scale, im * scale)
 }
 
 /// RMS magnitude of harmonic `h` at sample `i` over the phasor window
-/// (`fourie:`, `FUN_00426240`): `sqrt(C² + S²)·√2/N` with angles `k·h·2π/N`;
+/// (`fourie:`, `FUN_00426240`): `sqrt(C² + S²)·√2/N` with angles `k·(h·2π)/N`;
 /// `h = 0` is `|a0|`. Zero before a full window. (The original also scales
 /// `h = 1` by a per-record gain that only non-COMTRADE loaders set.)
 pub fn harmonic_rms(samples: &[f64], i: usize, n: usize, h: usize) -> f64 {
@@ -89,9 +90,9 @@ pub fn harmonic_rms(samples: &[f64], i: usize, n: usize, h: usize) -> f64 {
     let tau = 2.0 * std::f64::consts::PI;
     let (mut c, mut s) = (0.0, 0.0);
     for (k, x) in (1..=n).zip(window) {
-        let th = k as f64 * h as f64 * tau / n as f64;
-        c += x * th.cos();
-        s += x * th.sin();
+        let th = k as f64 * (h as f64 * tau) / n as f64;
+        c += x * cos(th);
+        s += x * sin(th);
     }
     (c * c + s * s).sqrt() * 2f64.sqrt() / n as f64
 }
@@ -168,7 +169,7 @@ pub fn fault_at(samples: &[f64], i: usize, n: usize) -> f64 {
 
 /// Frequency-diagram spectrum (`0x426510(k, idx, P)`): over the `n·periods`
 /// samples ending at `i`, bin `k` (frequency `k·f/periods`) =
-/// `√2·√(C²+S²)/W` with angles `j·k·2π/W`; bin 0 = |mean|; the record's
+/// `√2·√(C²+S²)/W` with angles `j·(k·2π)/W`; bin 0 = |mean|; the record's
 /// harmonic-1 gain multiplies bin 1 (even when `periods > 1`, as the original
 /// does). Bins `0..=k_max`; all 0 before a full window.
 pub fn spectrum(samples: &[f64], i: usize, n: usize, periods: usize, k_max: usize, gain1: f64) -> Vec<f64> {
@@ -185,9 +186,9 @@ pub fn spectrum(samples: &[f64], i: usize, n: usize, periods: usize, k_max: usiz
         } else {
             let (mut c, mut s) = (0.0, 0.0);
             for (j, x) in (1..=w).zip(window) {
-                let th = j as f64 * k as f64 * tau / w as f64;
-                c += x * th.cos();
-                s += x * th.sin();
+                let th = j as f64 * (k as f64 * tau) / w as f64;
+                c += x * cos(th);
+                s += x * sin(th);
             }
             2f64.sqrt() * (c * c + s * s).sqrt() / w as f64
         };
