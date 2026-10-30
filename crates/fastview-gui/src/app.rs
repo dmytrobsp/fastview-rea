@@ -849,12 +849,7 @@ impl Doc {
             self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i], k);
             self.rms[i] = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&self.osc), i, &self.flagged.analog[i].samples, n);
         }
-        // Digital channels as the accessor reads them: inverted with the flag.
-        for (i, dch) in self.flagged.digital.iter_mut().enumerate() {
-            if self.dig_flags.get(i).is_some_and(|f| f.invert) {
-                dch.samples.iter_mut().for_each(|v| *v = !*v);
-            }
-        }
+        self.flag_digital();
         // The correction reads the frequency channel as stored (L9.65).
         self.analysis = Analysis::compute_with(&self.flagged, fvb_core::freqcorr::of(&self.osc));
         self.reevaluate_formulas(show_primary);
@@ -866,12 +861,27 @@ impl Doc {
     /// re-decodes them in place (`0x4543e0` → `0x425960`, issue #7), a
     /// rename in «Каналы» or on the lane writes one — none of which
     /// recomputes.
+    /// The digital list is copied anew when channels came or went since
+    /// (ОМП's КЗ flags: `omp_compute` / `omp_clear` recompute nothing).
     pub fn sync_flagged_names(&mut self) {
         for (f, c) in self.flagged.analog.iter_mut().zip(&self.osc.analog) {
             f.id.clone_from(&c.id);
         }
+        if self.flagged.digital.len() != self.osc.digital.len() {
+            self.flag_digital();
+        }
         for (f, c) in self.flagged.digital.iter_mut().zip(&self.osc.digital) {
             f.id.clone_from(&c.id);
+        }
+    }
+
+    /// Digital channels as the accessor reads them: inverted with the flag.
+    fn flag_digital(&mut self) {
+        self.flagged.digital = self.osc.digital.clone();
+        for (i, dch) in self.flagged.digital.iter_mut().enumerate() {
+            if self.dig_flags.get(i).is_some_and(|f| f.invert) {
+                dch.samples.iter_mut().for_each(|v| *v = !*v);
+            }
         }
     }
 

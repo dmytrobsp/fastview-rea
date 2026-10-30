@@ -215,20 +215,19 @@ impl Doc {
             .collect();
         let mut raw = std::mem::take(&mut self.name_raw).into_iter();
         let mut alias = renamed.into_iter();
+        // A name is an alias when it is not the text last decoded from its
+        // bytes; with none kept (no switch yet, so the keys were taken from
+        // names read losslessly), when it is not the file's name.
         let mut rc = |s: &mut String| {
-            let (entry, alias) = (raw.next(), alias.next().unwrap_or(false));
-            if alias {
-                return match entry {
-                    Some((b, _)) => {
-                        let seen = comtrade::decode_bytes(&b, cp).chars().map(comtrade::best_fit_1251).collect();
-                        (b, seen)
-                    }
-                    None => (comtrade::encode_text(s, from), s.clone()),
-                };
-            }
+            let (entry, renamed) = (raw.next(), alias.next().unwrap_or(false));
             let bytes = match entry {
                 Some((b, seen)) if seen == *s => b,
-                _ => comtrade::encode_text(s, from),
+                Some((b, _)) => {
+                    let seen = comtrade::decode_bytes(&b, cp).chars().map(comtrade::best_fit_1251).collect();
+                    return (b, seen);
+                }
+                None if renamed => return (comtrade::encode_text(s, from), s.clone()),
+                None => comtrade::encode_text(s, from),
             };
             *s = comtrade::decode_bytes(&bytes, cp).chars().map(comtrade::best_fit_1251).collect();
             (bytes, s.clone())
@@ -912,6 +911,24 @@ mod tests {
         d.set_codepage(Encoding::Cp866);
         assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("Ток", "UA I C+"));
         assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)).as_deref(), Some("IA +T+¦L 3"));
+    }
+
+    /// The load's order: the guess switches the names before the keys are
+    /// taken (lossy for 866's pseudo-graphics); the user's 1251 still gives
+    /// the names back, and a rename made then is kept.
+    #[test]
+    fn a_record_read_as_866_at_load_comes_back_in_1251() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[0].id = "IA БЛОКА 3".into();
+        d.osc.analog[1].id = "UA I CШ".into();
+        d.set_codepage(Encoding::Cp866);
+        d.init_set_keys();
+        assert_eq!(d.osc.analog[0].id, "IA +T+¦L 3");
+        d.osc.analog[1].id = "Ток".into();
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA БЛОКА 3", "Ток"));
     }
 
     /// A level keeps the name it was made on across «Кодировка» as across a
