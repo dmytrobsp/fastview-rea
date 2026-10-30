@@ -2492,6 +2492,36 @@ mod tests {
         assert_eq!(d.shown_k(0), 1.0, "ADC codes are taken as is");
     }
 
+    /// With «Удалить постоянную» the accessor `0x426020` returns `x·k − dc·k` (negated by «Инвертировать»),
+    /// not `(x − dc)·k`: the sums read the former.
+    #[test]
+    fn remove_dc_follows_the_accessors_order() {
+        use fvb_core::signal::{phasor_at, rms_at};
+        let mut h = H::new(Pane::Circle);
+        let d = h.app.active_doc_mut().unwrap();
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1000.0, 1.0, true);
+        let mut z: u64 = 0x9e37_79b9_7f4a_7c15;
+        for v in d.osc.analog[0].samples.iter_mut() {
+            z ^= z << 13;
+            z ^= z >> 7;
+            z ^= z << 17;
+            *v = 700.0 + (z % 900_000) as f64 * 0.013;
+        }
+        d.chans[0].remove_dc = true;
+        d.chans[0].invert = true;
+        d.recompute(false);
+        let n = d.osc.samples_per_cycle().max(2);
+        let k = 1.0 / 1000.0;
+        let dc = crate::app::whole_period_mean(&d.osc.analog[0].samples, n);
+        let want: Vec<f64> = d.osc.analog[0].samples.iter().map(|x| -(x * k - dc * k)).collect();
+        let other: Vec<f64> = d.osc.analog[0].samples.iter().map(|x| -((x - dc) * k)).collect();
+        assert_ne!(want, other, "the synthetic record tells the two orders apart");
+        let i = d.osc.sample_count() - 1;
+        assert_eq!(d.shown_samples(0), &want[..]);
+        assert_eq!(d.analysis.phasors[0][i], phasor_at(&want, i, n));
+        assert_eq!(d.stat_rms(0, i).to_bits(), rms_at(&want, i, n).to_bits());
+    }
+
     #[test]
     fn frequency_settings_dialog_edits_a_copy_until_ok() {
         let mut h = H::new(Pane::Vector);
