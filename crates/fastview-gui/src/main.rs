@@ -1229,7 +1229,9 @@ mod window_tests {
     /// the picture at 100 %: text rasterised at its pixel size on whole
     /// pixels, 1 px lines one pixel wide, waveforms without gaps. Both from
     /// the start (`make_app`'s zoom) and after the window's monitor changes
-    /// scale (the next frame on).
+    /// scale (the next frame on). The chrome stays at a 96 dpi system here
+    /// (`dpi`): its growth with the system DPI is
+    /// `the_chrome_grows_with_the_system_dpi`.
     #[test]
     fn fractional_display_scales_paint_device_pixels() {
         let px = Vec2::new(1100.0, 700.0);

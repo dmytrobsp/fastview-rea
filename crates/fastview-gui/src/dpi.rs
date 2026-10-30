@@ -81,14 +81,10 @@ pub fn img(v: f32) -> f32 {
     }
 }
 
-/// The 9 pt UI font's scale: the system's menu font (Segoe UI 9 pt,
-/// MFC's `fontRegular`) is `MulDiv(9, dpi, 72)` px high — 12, 15, 18.
-pub fn ui_font_k() -> f32 {
-    mul_div(9, dpi() as i32, 72) as f32 / 12.0
-}
-
 /// A chrome font size given at 100 % (ours stand in for the 9 pt UI font
-/// and its bold / small kin), at the system DPI.
+/// and its bold / small kin), at the system DPI: the system's menu font
+/// (Segoe UI 9 pt, MFC's `fontRegular`) is `MulDiv(9, dpi, 72)` px high —
+/// 12, 15, 18.
 pub fn font(px: f32) -> f32 {
     if unscaled() {
         px
@@ -97,12 +93,8 @@ pub fn font(px: f32) -> f32 {
     }
 }
 
-/// The dialogs' 8 pt font's scale: `MulDiv(8, dpi, 72)` px — 11, 13, 16.
-pub fn dlg_font_k() -> f32 {
-    mul_div(8, dpi() as i32, 72) as f32 / 11.0
-}
-
-/// A dialog font size given at 100 %, at the system DPI.
+/// A dialog font size given at 100 %, at the system DPI: the dialogs' 8 pt
+/// font is `MulDiv(8, dpi, 72)` px — 11, 13, 16.
 pub fn dlg_font(px: f32) -> f32 {
     if unscaled() {
         px
