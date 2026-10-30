@@ -81,7 +81,8 @@ impl AnalogChannel {
     /// `a` (a 2013 export's float samples have `a` ≈ 1e‑37). The original
     /// then truncates to a 32-bit int, which a code beyond ±2³¹ (those
     /// float samples) turns into −2147483648; ours keeps the code whole,
-    /// as its writer does. A zero divisor gives the value back.
+    /// as its ASCII writer does (a binary one saturates it to 32 bits). A
+    /// zero divisor gives the value back.
     pub fn adc_code(&self, v: f64) -> f64 {
         let d = self.unit_mult * self.a;
         if d == 0.0 {

@@ -160,6 +160,26 @@ fn float32_range_samples_with_tiny_scale_factors() {
     assert!(rec.digital[0].samples == [false, true, true, false] && rec.digital[1].samples == [true, true, false, false]);
 }
 
+/// Codes beyond ±2³¹ are written whole to an ASCII `.dat`; a `.cff` (its
+/// data always binary int32) saturates them — the class of loss the
+/// original has there too (it writes −2147483648 for every one).
+#[test]
+fn float32_range_codes_in_the_ascii_and_binary_writers() {
+    let rec = load("wcodes", &with_bom(&cfg("2013")));
+    let (_, dat) = comtrade::write(&rec, Encoding::Utf8);
+    let first = String::from_utf8(dat).unwrap().lines().next().unwrap().to_string();
+    let f: Vec<&str> = first.split(", ").collect();
+    let code: f64 = f[1].parse().unwrap();
+    assert!((code - -3.0e38).abs() <= 3.0e38 * 1e-12, "whole in ASCII: {first}");
+    let file = comtrade::write_cff(&rec, &CffSections::default(), Encoding::Utf8).unwrap();
+    let marker = b"--- file type: DAT BINARY: ";
+    let at = file.windows(marker.len()).position(|w| w == marker).unwrap();
+    let data = &file[at + file[at..].iter().position(|b| *b == b'\n').unwrap() + 1..];
+    let i32_at = |o: usize| i32::from_le_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]]);
+    // Row 1: number, time, then the two analog codes (−3e38, 9e37).
+    assert_eq!((i32_at(8), i32_at(12)), (i32::MIN, i32::MAX), "saturated in a .cff");
+}
+
 /// A `.cff` holding a UTF-8 revision-2013 record is read as UTF-8 too.
 #[test]
 fn a_utf8_cff_reads_as_utf8() {

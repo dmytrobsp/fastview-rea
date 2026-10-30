@@ -49,8 +49,11 @@ is out of reach (those are listed in `notes/COMPLETION_PLAN.md`, W6).
 - **ADC codes beyond ±2³¹** (float32-range samples with a tiny `a`). The
   original truncates the code to a 32-bit int (`0x422250` → `0x411bf0`),
   every such code −2147483648; ours keeps it whole. Reason: the true raw
-  sample; ours' writer already writes such codes whole, the original's
-  saved file would hold −2147483648 throughout.
+  sample; ours' ASCII `.dat` writer already writes such codes whole,
+  where the original's saved file holds −2147483648 throughout. A binary
+  `.dat` or a `.cff` (always binary) stores 32-bit ints: there such codes
+  are lost in ours as in the original — ours saturates to the nearest
+  bound (±2147483647 / −2147483648), the original writes −2147483648.
 - **One compute at open.** The original recomputes every channel when
   applying the `.set` (`0x44f5b0`); ours spares that pass at an open when
   the settings change nothing it reads (the result is the same, tested).
