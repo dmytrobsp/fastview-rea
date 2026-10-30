@@ -200,6 +200,14 @@ fn a_utf8_record_saves_and_reads_back_as_utf8() {
         same(&rec, &back);
         assert_eq!(back.text_bom, bom);
     }
+    // A BOM-less record that gained a far character (a renamed channel):
+    // written with a BOM, as the BOM-less rule would not take it back.
+    let mut rec = load("rtfar", cyr("2013").as_bytes());
+    rec.analog[0].id = "U − √3·I".into();
+    let (c, _) = comtrade::write(&rec, Encoding::Utf8);
+    assert!(c.starts_with(b"\xEF\xBB\xBF"));
+    let back = load("rtfarb", &c);
+    same(&rec, &back);
     // `.cff`: the HDR section's Cyrillic in UTF-8 too.
     let rec = load("rtcff", &with_bom(&cyr("2013")));
     let sections = CffSections { hdr: Some(HDR.into()), ..Default::default() };

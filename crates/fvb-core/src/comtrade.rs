@@ -381,8 +381,15 @@ pub fn write(osc: &Oscillogram, names: Encoding) -> (Vec<u8>, Vec<u8>) {
 /// (the ОМП's flags) still count in the original's numbering (VM).
 pub fn write_numbered(osc: &Oscillogram, names: Encoding, dig_no: &[usize]) -> (Vec<u8>, Vec<u8>) {
     let (cfg, dat) = write_rows(osc, names, dig_no, osc.format != "ASCII");
-    let bom = if utf8_file(osc, names) && osc.text_bom { UTF8_BOM } else { b"" };
+    let bom = if utf8_file(osc, names) && needs_bom(osc, &cfg, false) { UTF8_BOM } else { b"" };
     ([bom, cfg.as_slice()].concat(), dat)
+}
+
+/// An all-UTF-8 file gets the BOM when it came with one, or when without
+/// it [`cfg_utf8`] would not take the text written (a name or section
+/// that gained a far character) — so it always reads back as UTF-8.
+fn needs_bom(osc: &Oscillogram, text: &[u8], cff: bool) -> bool {
+    osc.text_bom || cfg_utf8(text, cff).is_none()
 }
 
 /// The UTF-8 BOM.
@@ -684,8 +691,7 @@ pub fn write_cff_numbered(osc: &Oscillogram, sections: &CffSections, names: Enco
     let (cfg, dat) = write_rows(osc, names, dig_no, true);
     let utf8 = utf8_file(osc, names);
     let text = |t: &str| if utf8 { t.as_bytes().to_vec() } else { to_cp1251(t) };
-    let mut out = if utf8 && osc.text_bom { UTF8_BOM.to_vec() } else { Vec::new() };
-    out.extend(text("--- file type: CFG ---\r\n"));
+    let mut out = text("--- file type: CFG ---\r\n");
     out.extend(cfg);
     for (kind, body) in [("HDR", &sections.hdr), ("INF", &sections.inf), ("SET", &sections.set)] {
         if let Some(b) = body {
@@ -693,6 +699,9 @@ pub fn write_cff_numbered(osc: &Oscillogram, sections: &CffSections, names: Enco
         }
     }
     out.extend(text(&format!("--- file type: DAT BINARY: {}---\r\n", dat.len())));
+    if utf8 && needs_bom(osc, &out, true) {
+        out.splice(0..0, UTF8_BOM.iter().copied());
+    }
     out.extend(dat);
     Ok(out)
 }
