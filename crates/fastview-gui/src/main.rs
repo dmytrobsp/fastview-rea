@@ -1846,7 +1846,7 @@ mod window_tests {
         w.idle(2);
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(2);
-        assert_eq!((w.app.focus_unit, w.app.copy_focus), (None, app::CopyFocus::View), "the focus left the hidden pane");
+        assert_eq!(w.app.copy_focus, app::CopyFocus::View, "the focus left the hidden pane");
         w.run(vec![egui::Event::PointerMoved(on)]);
         w.idle(30);
         assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
@@ -1865,25 +1865,26 @@ mod window_tests {
         w.idle(2);
         let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
         w.app.docks.0[Unit::Vector as usize].out = true;
-        let mut seen = 0;
+        let (mut seen, mut out_frames) = (0, 0);
         for k in 0..14 {
             let t = w.ctx.input(|i| i.time) + 0.016;
             let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), events: if k == 0 { vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))] } else { vec![] }, ..Default::default() };
             let app = &mut w.app;
             let out = w.ctx.run(raw, |ctx| app.frame_ui(ctx));
             let Some(rect) = w.app.dock_areas[Unit::Vector as usize] else { continue };
+            out_frames += 1;
             let fill = w.ctx.style().visuals.panel_fill;
             // The pane's background: the shape filling its rect.
-            for s in &out.shapes {
-                if let egui::Shape::Rect(r) = &s.shape {
-                    if (r.rect.min - rect.min).length() < 1.0 && (r.rect.max - rect.max).length() < 1.0 {
-                        assert_eq!(r.fill, fill, "frame {k}: the pane faded");
-                        seen += 1;
-                    }
-                }
+            let bg = out.shapes.iter().find_map(|s| match &s.shape {
+                egui::Shape::Rect(r) if (r.rect.min - rect.min).length() < 1.0 && (r.rect.max - rect.max).length() < 1.0 => Some(r.fill),
+                _ => None,
+            });
+            if let Some(f) = bg {
+                assert_eq!(f, fill, "frame {k}: the pane faded");
+                seen += 1;
             }
         }
-        assert!(seen > 8, "the pane's background painted on the slide's frames: {seen}");
+        assert_eq!(seen, out_frames, "the pane's background painted on every frame it is out");
     }
 
     /// A press on a pane's caption gives that pane the focus (`0x10086d23`,
@@ -1951,6 +1952,177 @@ mod window_tests {
         assert!(!d.out && d.slide == 0.0, "in its strip: {d:?}");
     }
 
+    /// A strip press gives the pane window the focus, the one focus there
+    /// is (VM: after it → leaves В1 where it was, Copy holds a metafile and
+    /// no document; after a press in the view → moves В1): the view's keys
+    /// stop, Copy gives the pane's diagram; the pane opens on the press.
+    #[test]
+    fn a_pane_focus_takes_the_keys_and_copy_from_the_view() {
+        use docking::Unit;
+        let mut w = Win::new();
+        let view = w.app.view_rects.expect("the view").0;
+        let at = view.left_top() + Vec2::new(300.0, 60.0);
+        w.press(egui::PointerButton::Primary, at, at);
+        let b1 = |w: &Win| w.app.active_doc().unwrap().main_cursor;
+        let before = b1(&w);
+        w.key(egui::Key::ArrowRight);
+        assert_ne!(b1(&w), before, "the view has the keys");
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let ev = |pressed| egui::Event::PointerButton { pos: on, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(on), ev(true)]);
+        w.idle(1);
+        assert!(w.app.docks[Unit::Vector].out, "out on the press");
+        w.run(vec![ev(false)]);
+        w.idle(14);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Pane(Unit::Vector));
+        let before = b1(&w);
+        w.key(egui::Key::ArrowRight);
+        assert_eq!(b1(&w), before, "the pane has the keys");
+        w.app.dispatch(app::Command::Copy);
+        let canvas = w.app.pane_canvas.iter().rev().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r).expect("the vector diagram");
+        assert_eq!(w.app.clip.picture(), Some((canvas.width().round() as usize, canvas.height().round() as usize)), "the pane's diagram");
+        assert_eq!(w.app.clip.get(), None, "no document");
+    }
+
+    /// The focus stays with a pane that is still shown when its group
+    /// changes — Частотная focused, then tabbed into the vector group.
+    #[test]
+    fn the_focus_follows_a_pane_into_another_group() {
+        use docking::{Spot, Unit};
+        let mut w = Win::new();
+        let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Frequency).map(|(_, r)| *r).expect("Частотная");
+        w.press(egui::PointerButton::Primary, freq.center(), freq.center());
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Frequency));
+        w.app.docks.0[Unit::Frequency as usize].spot = Spot::Tab(Unit::Vector);
+        w.idle(3);
+        assert_eq!(w.app.docks.host(Unit::Frequency), Unit::Vector);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Frequency), "still shown: the focus stays");
+    }
+
+    /// Two slid-out groups over one another: a press goes to the one on
+    /// top (egui's order — the one shown last), not the other.
+    #[test]
+    fn a_press_goes_to_the_slid_out_pane_on_top() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.app.docks.0[Unit::Frequency as usize].pin();
+        w.idle(3);
+        let button = |w: &Win, u: Unit| {
+            let s = w.app.dock_strips[u as usize].expect("its strip");
+            Pos2::new(s.center().x, s.top() + 20.0)
+        };
+        // Частотная clicked out (it keeps the focus), then the vector group
+        // hovered out over it.
+        let f = button(&w, Unit::Frequency);
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(f), ev(f, true), ev(f, false)]);
+        w.idle(14);
+        let v = button(&w, Unit::Vector);
+        w.run(vec![egui::Event::PointerMoved(v)]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Frequency].out && w.app.docks[Unit::Vector].out, "both out");
+        let canvas = |w: &Win, p: app::Pane| w.app.pane_canvas.iter().rev().find(|(q, _)| *q == p).map(|(_, r)| *r);
+        let over = canvas(&w, app::Pane::Vector).expect("the vector diagram").intersect(canvas(&w, app::Pane::Frequency).expect("Частотная"));
+        assert!(over.is_positive(), "they overlap");
+        w.press(egui::PointerButton::Primary, over.center(), over.center());
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector), "the one on top");
+    }
+
+    /// Presses inside a slid-out pane stay in it: its property grid holds it
+    /// out; a press on it outside its windows reaches neither the docked
+    /// diagram nor the view under it.
+    #[test]
+    fn presses_in_a_slid_out_pane_stay_in_it() {
+        use docking::{Edge, Spot, Unit};
+        // Out, the circle diagram in front: its property grid.
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
+        w.run(vec![egui::Event::PointerMoved(on)]);
+        w.idle(30);
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.run(vec![egui::Event::PointerMoved(w.app.dock_areas[Unit::Vector as usize].expect("out").center())]);
+        w.idle(3);
+        let [_, _, g0, g1] = w.app.slid_ranges[Unit::Vector as usize].expect("drawn out");
+        assert!(g1 > g0, "its grid drawn");
+        let grid = w.app.pane_grid[g0];
+        w.press(egui::PointerButton::Primary, grid.center(), grid.center());
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Grid(Unit::Vector));
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(60);
+        assert!(w.app.docks[Unit::Vector].out, "the grid's focus holds it out");
+        w.press(egui::PointerButton::Primary, away, away);
+        w.idle(30);
+        // Over the docked Частотная: a press on the pane off its diagram.
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        w.run(vec![egui::Event::PointerMoved(on)]);
+        w.idle(30);
+        let area = w.app.dock_areas[Unit::Vector as usize].expect("out");
+        let [c0, c1, ..] = w.app.slid_ranges[Unit::Vector as usize].expect("drawn out");
+        let freq = w.app.pane_canvas[..c0].iter().find(|(p, _)| *p == app::Pane::Frequency).map(|(_, r)| *r).expect("Частотная docked");
+        let own = w.app.pane_canvas[c0..c1].to_vec();
+        let off = (0..200)
+            .flat_map(|i| (0..200).map(move |j| Pos2::new(freq.left() + freq.width() * i as f32 / 200.0, freq.top() + freq.height() * j as f32 / 200.0)))
+            .find(|&q| area.shrink(4.0).contains(q) && q.y > area.top() + 30.0 && !own.iter().any(|(_, r)| r.expand(2.0).contains(q)))
+            .expect("a point of the pane, off its diagram, over Частотная");
+        w.press(egui::PointerButton::Primary, off, off);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::View, "not Частотная's under it");
+        // Over the view: Частотная on the left edge, the pane over the view.
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: Edge::Left, outer: true };
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        w.run(vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))]);
+        w.idle(30);
+        let area = w.app.dock_areas[Unit::Vector as usize].expect("out");
+        let [c0, c1, ..] = w.app.slid_ranges[Unit::Vector as usize].expect("drawn out");
+        let own = w.app.pane_canvas[c0..c1].to_vec();
+        let view = w.app.view_rects.expect("the view").0;
+        let canvas = own.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r).expect("the vector diagram");
+        w.press(egui::PointerButton::Primary, canvas.center(), canvas.center());
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector));
+        let off = (0..200)
+            .flat_map(|i| (0..200).map(move |j| Pos2::new(area.left() + area.width() * i as f32 / 200.0, area.top() + area.height() * j as f32 / 200.0)))
+            .find(|&q| view.contains(q) && area.shrink(4.0).contains(q) && q.y > area.top() + 30.0 && !own.iter().any(|(_, r)| r.expand(2.0).contains(q)))
+            .expect("a point of the pane, off its diagram, over the view");
+        w.press(egui::PointerButton::Primary, off, off);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector), "not the view under it");
+    }
+
+    /// A press on a menu or other popup over a pane gives that pane no
+    /// focus.
+    #[test]
+    fn a_press_on_a_popup_reaches_no_pane_under_it() {
+        let mut w = Win::new();
+        let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Frequency).map(|(_, r)| *r).expect("Частотная");
+        let at = freq.center();
+        let cover = Rect::from_center_size(at, Vec2::splat(60.0));
+        for events in [vec![egui::Event::PointerMoved(at)], vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }], vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }], vec![]] {
+            let t = w.ctx.input(|i| i.time) + 0.05;
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), events, ..Default::default() };
+            let app = &mut w.app;
+            let _ = w.ctx.run(raw, |ctx| {
+                // A popup over Частотная, drawn before the frame's focus
+                // tracking (as the menus are).
+                egui::Area::new(egui::Id::new("test_popup")).order(egui::Order::Foreground).fixed_pos(cover.min).show(ctx, |ui| {
+                    ui.allocate_exact_size(cover.size(), egui::Sense::click());
+                });
+                app.frame_ui(ctx);
+            });
+        }
+        assert_eq!(w.app.copy_focus, app::CopyFocus::View, "the popup took the press");
+    }
+
     /// The focus belongs to the window pressed — the slid-out pane over a
     /// docked one takes the press, and a press in a docked pane that the
     /// slid-out pane covers later does not hold that one out.
@@ -1979,13 +2151,13 @@ mod window_tests {
         let at = over.center();
         // Pressed there while out: the vector diagram's.
         press(&mut w, at);
-        assert_eq!((w.app.copy_focus, w.app.focus_unit), (app::CopyFocus::Diagram(app::Pane::Vector), Some(Unit::Vector)));
+        assert_eq!((w.app.copy_focus, w.app.focus_group()), (app::CopyFocus::Diagram(app::Pane::Vector), Some(Unit::Vector)));
         press(&mut w, away);
         w.idle(30);
         assert!(!w.app.docks[Unit::Vector].out, "the focus in the view: back");
         // Pressed there while in: Частотная's; out again, away, it slides back.
         press(&mut w, at);
-        assert_eq!((w.app.copy_focus, w.app.focus_unit), (app::CopyFocus::Diagram(app::Pane::Frequency), Some(w.app.docks.host(Unit::Frequency))));
+        assert_eq!((w.app.copy_focus, w.app.focus_group()), (app::CopyFocus::Diagram(app::Pane::Frequency), Some(w.app.docks.host(Unit::Frequency))));
         w.run(vec![egui::Event::PointerMoved(on)]);
         w.idle(30);
         assert!(w.app.docks[Unit::Vector].out && w.app.dock_areas[Unit::Vector as usize].is_some_and(|a| a.contains(at)));
@@ -2048,6 +2220,11 @@ mod window_tests {
                 let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1056.0, 688.0))), time: Some(t), ..Default::default() };
                 let shapes = format!("{:?}", ctx.run(raw, |ctx| app.frame_ui(ctx)).shapes);
                 assert!(!shapes.contains("Double use"), "{edge:?}: frame {k}: an id clash");
+                // The rect the hide check and the presses use is the one drawn.
+                if let Some(r) = app.dock_areas[Unit::Vector as usize] {
+                    let drawn = ctx.memory(|m| m.area_rect(egui::Id::new(("fv_slide", Unit::Vector)))).expect("drawn");
+                    assert!((drawn.min - r.min).length() < 0.01 && (drawn.max - r.max).length() < 0.01, "{edge:?}: frame {k}: drawn {drawn:?}, kept {r:?}");
+                }
             }
         }
     }
@@ -2676,7 +2853,7 @@ mod window_tests {
         let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
         let at = grid.center();
         w.press(Primary, at, at);
-        assert_eq!(w.app.copy_focus, app::CopyFocus::Grid);
+        assert!(matches!(w.app.copy_focus, app::CopyFocus::Grid(_)), "{:?}", w.app.copy_focus);
         w.app.dispatch(app::Command::Copy);
         assert_eq!(w.app.clip.picture(), None, "no picture with the grid focused");
         assert!(w.app.clip.get().is_some_and(|t| t.contains("<channels")), "the document alone");

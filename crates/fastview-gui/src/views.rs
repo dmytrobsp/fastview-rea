@@ -340,7 +340,7 @@ impl App {
         // WM_LBUTTONDOWN `0x10086d23`: SetFocus on the pane or its one
         // child window; WM_RBUTTONDOWN `0x10086f01`: on the pane).
         if act.pressed {
-            self.focus_unit = Some(v.unit);
+            self.copy_focus = crate::app::CopyFocus::Pane(v.unit);
         }
         let ctx = ui.ctx().clone();
         if let Some(at) = act.menu {
@@ -607,13 +607,15 @@ impl App {
                 self.docks.0[u as usize].hide();
             }
         }
-        // The focus leaves a group that hides — closed, or auto-hidden and
-        // in its strip (Windows hands a hidden window's focus to its
-        // parent, the frame passes it on to the view).
-        if let Some(u) = self.focus_unit {
-            let d = self.docks[u];
-            if !views.iter().any(|v| v.unit == u) || (d.place == Place::AutoHide && !d.out && d.slide == 0.0) {
-                (self.copy_focus, self.focus_unit) = (crate::app::CopyFocus::View, None);
+        // The focus leaves a window that hides — its pane closed, its
+        // group closed or auto-hidden and in its strip (Windows hands a
+        // hidden window's focus to its parent, the frame passes it on to
+        // the view).
+        if let Some(g) = self.focus_group() {
+            let d = self.docks[g];
+            let pane_closed = matches!(self.copy_focus, crate::app::CopyFocus::Diagram(p) if !self.panes.visible(p));
+            if pane_closed || !views.iter().any(|v| v.unit == g) || (d.place == Place::AutoHide && !d.out && d.slide == 0.0) {
+                self.copy_focus = crate::app::CopyFocus::View;
             }
         }
         for v in pinned {
@@ -626,8 +628,10 @@ impl App {
                 for &t in &titles {
                     let r = strip_button(ui, pane_title(t), edge.vertical());
                     buttons.push(r.interact_rect);
-                    if r.hovered() || r.clicked() {
-                        hit = (true, hit.1 || r.clicked(), Some(t));
+                    // The strip acts on the press (WM_LBUTTONDOWN).
+                    let pressed = r.hovered() && ui.input(|i| i.pointer.primary_pressed());
+                    if r.hovered() || pressed {
+                        hit = (true, hit.1 || pressed, Some(t));
                     }
                 }
             };
@@ -645,7 +649,7 @@ impl App {
             // WM_LBUTTONDOWN, `0x1005f612`: SetFocus on the button's pane;
             // VM: clicked out, it stays out with the pointer over the view).
             if hit.1 {
-                self.focus_unit = Some(v.unit);
+                self.copy_focus = crate::app::CopyFocus::Pane(v.unit);
             }
             // The hide check tests the cursor against the pane's rect and
             // its button's by position (`0x10087a4a`: GetCursorPos, PtInRect
@@ -656,7 +660,7 @@ impl App {
             // while its active flag (+0x2c8) is set — at each idle update
             // the focus window is the pane or a child of it (`0x10089d7d`,
             // GetFocus / IsChild); a press in its diagram or grid gives it.
-            let focused = self.focus_unit == Some(v.unit);
+            let focused = self.focus_group() == Some(v.unit);
             self.docks[v.unit].auto_hide_frame(now, hit.0, hit.1, inside, menu_up || focused);
             if let Some(dt) = self.docks[v.unit].wake_in(now) {
                 wake = Some(wake.map_or(dt, |w| w.min(dt)));
@@ -676,10 +680,17 @@ impl App {
         // They slide out of their strip over everything else.
         let content = ctx.available_rect();
         self.dock_areas = [None; 4];
-        self.slid_from = (self.pane_canvas.len(), self.pane_grid.len());
+        self.slid_ranges = [None; 4];
         for v in views.iter().copied() {
             let d = self.docks[v.unit];
             if d.place != Place::AutoHide || d.slide <= 0.0 {
+                // egui lays a new area out once unseen (its sizing pass):
+                // that pass goes to an empty one off the screen, so the
+                // pane's first frame out is drawn.
+                let id = egui::Id::new(("fv_slide", v.unit));
+                if d.place == Place::AutoHide && ctx.memory(|m| m.area_rect(id)).is_none() {
+                    egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(egui::pos2(-1.0e4, -1.0e4)).constrain(false).default_size(egui::Vec2::ZERO).fade_in(false).show(ctx, |_| {});
+                }
                 continue;
             }
             let edge = self.docks.edge(v.unit);
@@ -708,8 +719,13 @@ impl App {
                     egui::Rect::from_min_max(egui::pos2(content.left(), top), egui::pos2(content.right(), top + h))
                 }
             };
+            // On a pixel, as egui places an area.
+            let ppp = ctx.pixels_per_point();
+            let rect = egui::Rect::from_min_size((rect.min.to_vec2() * ppp).round().to_pos2() / ppp, rect.size());
             self.dock_areas[v.unit as usize] = Some(rect);
+            let (c0, g0) = (self.pane_canvas.len(), self.pane_grid.len());
             self.slide_area(ctx, egui::Id::new(("fv_slide", v.unit)), rect, |app, ui| app.unit_body(ui, v));
+            self.slid_ranges[v.unit as usize] = Some([c0, self.pane_canvas.len(), g0, self.pane_grid.len()]);
         }
     }
 
@@ -718,10 +734,8 @@ impl App {
     /// its rect, and an area sized by its content (pushed back into the
     /// screen as it grows) would cover the strip and take its hover.
     fn slide_area(&mut self, ctx: &egui::Context, id: egui::Id, rect: egui::Rect, body: impl FnOnce(&mut App, &mut egui::Ui)) {
-        // On a pixel, as egui places an area; no fade-in (the pane only
-        // slides).
-        let ppp = ctx.pixels_per_point();
-        let rect = egui::Rect::from_min_size((rect.min.to_vec2() * ppp).round().to_pos2() / ppp, rect.size());
+        // `rect` on a pixel (as egui places an area); no fade-in (the pane
+        // only slides).
         egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(rect.min).constrain(false).default_size(rect.size()).fade_in(false).show(ctx, |ui| {
             // The area claims its rect for clicks before its content runs,
             // with the last frame's size: sliding in, a size that still

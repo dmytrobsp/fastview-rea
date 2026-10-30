@@ -559,27 +559,41 @@ impl App {
             return;
         }
         let Some(p) = ctx.input(|i| if i.pointer.any_pressed() { crate::lanes::press_pos(i) } else { None }) else { return };
-        // A slid-out pane lies over everything else: a press in it reaches
-        // only its windows; elsewhere the topmost window (drawn last).
-        let slid = crate::docking::UNITS.into_iter().rev().find(|&u| self.dock_areas[u as usize].is_some_and(|a| a.contains(p)));
-        let (canvas, grid) = match slid {
-            Some(_) => self.slid_from,
-            None => (0, 0),
+        // A slid-out pane lies over the rest: a press on it (egui's top
+        // layer there) reaches only its own windows; a press on a menu or
+        // another popup reaches no pane under it; elsewhere the topmost
+        // pane window (floating ones drawn after the docked).
+        let top = ctx.layer_id_at(p);
+        let slid = crate::docking::UNITS.into_iter().find(|&u| top == Some(egui::LayerId::new(egui::Order::Foreground, egui::Id::new(("fv_slide", u)))));
+        let popup = slid.is_none() && top.is_some_and(|l| l.order >= egui::Order::Foreground);
+        let [c0, c1, g0, g1] = match slid {
+            Some(u) => self.slid_ranges[u as usize].unwrap_or([0; 4]),
+            None if popup => [0; 4],
+            None => [0, self.pane_canvas.len(), 0, self.pane_grid.len()],
         };
-        // The group holding the focus: the slid-out one pressed, a
-        // diagram's own group, a grid's by where it lies.
-        if let Some(&(pane, _)) = self.pane_canvas[canvas.min(self.pane_canvas.len())..].iter().rev().find(|(_, r)| r.contains(p)) {
-            let owner = slid.or(Some(self.docks.host(crate::docking::UNITS[pane as usize])));
-            (self.copy_focus, self.focus_unit) = (CopyFocus::Diagram(pane), owner);
-        } else if self.pane_grid[grid.min(self.pane_grid.len())..].iter().any(|r| r.contains(p)) {
-            // Floating windows lie over the docked groups.
+        if let Some(&(pane, _)) = self.pane_canvas[c0..c1].iter().rev().find(|(_, r)| r.contains(p)) {
+            self.copy_focus = CopyFocus::Diagram(pane);
+        } else if self.pane_grid[g0..g1].iter().any(|r| r.contains(p)) {
+            // The grid's group: the slid-out one, else the floating window
+            // or docked group it lies in (floating ones over the docked).
             let floating = |u: crate::docking::Unit| self.docks[u].float_rect.filter(|_| self.docks[u].place == crate::docking::Place::Floating);
             let owner = slid
                 .or_else(|| crate::docking::UNITS.into_iter().find(|&u| floating(u).is_some_and(|r| r.contains(p))))
                 .or_else(|| crate::docking::UNITS.into_iter().find(|&u| self.dock_rects[u as usize].is_some_and(|r| r.contains(p))));
-            (self.copy_focus, self.focus_unit) = (CopyFocus::Grid, owner);
+            if let Some(u) = owner {
+                self.copy_focus = CopyFocus::Grid(u);
+            }
         } else if slid.is_none() && self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
-            (self.copy_focus, self.focus_unit) = (CopyFocus::View, None);
+            self.copy_focus = CopyFocus::View;
+        }
+    }
+
+    /// The group holding the keyboard focus, if a pane's window or one in
+    /// it has it.
+    pub fn focus_group(&self) -> Option<crate::docking::Unit> {
+        match self.copy_focus {
+            CopyFocus::View => None,
+            CopyFocus::Diagram(u) | CopyFocus::Grid(u) | CopyFocus::Pane(u) => Some(self.docks.host(u)),
         }
     }
 

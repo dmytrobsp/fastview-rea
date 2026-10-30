@@ -310,11 +310,10 @@ impl Dockable {
     /// One frame of an auto-hidden unit: hovering its button 400 ms or a
     /// click shows it; every 700 ms a shown one slides back when the pointer
     /// is outside it and its button (not while `held`: a menu up or the
-    /// focus in the pane); the slide
-    /// moves 1/12 per frame. Returns true while it is moving.
-    pub fn auto_hide_frame(&mut self, now: f64, on_button: bool, clicked: bool, in_pane: bool, held: bool) -> bool {
+    /// focus in the pane); the slide moves 1/12 per frame.
+    pub fn auto_hide_frame(&mut self, now: f64, on_button: bool, clicked: bool, in_pane: bool, held: bool) {
         if self.place != Place::AutoHide {
-            return false;
+            return;
         }
         if on_button {
             let since = *self.hover_since.get_or_insert(now);
@@ -339,7 +338,6 @@ impl Dockable {
         } else if self.slide > target {
             self.slide = (self.slide - step).max(0.0);
         }
-        self.slide != target || (on_button && !self.out)
     }
 }
 
@@ -771,7 +769,8 @@ mod tests {
             d.auto_hide_frame(0.5 + f64::from(k) * 0.016, false, false, true, false);
         }
         assert_eq!(d.slide, 1.0, "out in 12 steps");
-        assert!(!d.auto_hide_frame(0.7, false, false, true, false) && d.slide == 1.0, "out, it rests");
+        d.auto_hide_frame(0.7, false, false, true, false);
+        assert!(d.slide == 1.0 && d.wake_in(0.7).is_some_and(|t| t > 0.4), "out, it rests until the next check");
         // In the pane at the check: stays; outside at the next check: back.
         d.auto_hide_frame(1.2, false, false, true, false);
         assert!(d.out);
