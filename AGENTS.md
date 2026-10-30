@@ -20,6 +20,7 @@ holds this machine's specifics — the shared test boxes and the claim tool, the
 | [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md) | every deliberate improvement over the original, with its reason |
 | [docs/ACCEPTED-DIFFERENCES.md](docs/ACCEPTED-DIFFERENCES.md) | differences the maintainer accepted (hard to fix, little benefit, almost invisible) |
 | [docs/milestones/](docs/milestones/README.md) | each milestone's plan and committed ledger |
+| [docs/design/](docs/design/README.md) | designs of large issues, approved before they are built |
 | `docs/agents/` | for agents: [workflow.md](docs/agents/workflow.md), [review.md](docs/agents/review.md), [windows-testing.md](docs/agents/windows-testing.md) |
 | `docs/history/` | the old completion plan and the ledger's session notes |
 | `index/` | factual indexes of the original (addresses, ids, class / import names, our own symbol names) |
@@ -97,9 +98,12 @@ Full text: [docs/agents/workflow.md](docs/agents/workflow.md).
    answered, follow-ups listed for the controller to file as issues. Never report done with something known left.
    Every unit is reviewed by an independent reviewer the controller dispatches (never the implementer's own), in a
    fix loop of at most five rounds, each with a scoped re-review ([review.md](docs/agents/review.md)).
-5. **Build in small verified steps**: the test that fails without the fix first, `tools/gates.sh` green, one commit
+5. **Large issues are designed first** (`size:l`): brainstorm with the maintainer, a design in `docs/design/`, a fresh
+   builder's read, the maintainer's approval, then a plan with Global Constraints. Each dispatch names its model
+   (cheap for mechanical work, standard for judgment, the most capable for reviews and design).
+6. **Build in small verified steps**: the test that fails without the fix first, `tools/gates.sh` green, one commit
    each. Check the original in its binary and in a clone; say what was checked how (UNIT, VM, NOT).
-6. **Record**: what the original does goes into [docs/original/](docs/original/README.md); deliberate differences
+7. **Record**: what the original does goes into [docs/original/](docs/original/README.md); deliberate differences
    into [IMPROVEMENTS.md](docs/IMPROVEMENTS.md), accepted ones into [ACCEPTED-DIFFERENCES.md](docs/ACCEPTED-DIFFERENCES.md) (decisions live
    in docs; issues are their entry points); the milestone's events into its ledger. Anything left open is an issue,
    never a line in a file.

@@ -53,8 +53,11 @@ One controller session drives a milestone; implementers run at once in their own
 questions at the start and looks again at the end.
 
 - **A unit** is one issue, or a few related ones: its own branch `m/<milestone>/<unit>`, its own worktree with its
-  own `target/`, its own implementer, its own pull request into `milestone/<milestone>`. Tiny unrelated issues are
-  bundled into one unit.
+  own `target/`, its own implementer, its own pull request into `milestone/<milestone>`. Small same-shape items (a few
+  one-line fixes, several constants, a batch of dialogs) go to **one** implementer as one unit, never one agent each:
+  every unit costs a brief, a review, a gate and CI whatever its size.
+- **A `size:l` issue is designed before it is built** ([Designing a large issue](#designing-a-large-issue)): it gets
+  its own milestone, or its design is approved before the milestone's first dispatch.
 - **The controller** is the only agent that talks to the maintainer, pushes, opens or edits pull requests, files
   issues, or writes the record of the original, IMPROVEMENTS.md and the ledger. It plans units and their order, writes
   briefs, dispatches implementers and reviewers, answers implementers' questions, runs the merge gate, the final
@@ -63,15 +66,46 @@ questions at the start and looks again at the end.
   so a fix round, a conflict or a lost session can resume the agent with its context.
 - **How many at once**: three implementers that build; at most three Windows clones exist at once (each 6.5 GB of
   RAM; `<claim tool> slot status` shows the room), so units needing the original's runs are staggered.
+- **The model, chosen per dispatch and always named** (an omitted model silently inherits the session's most
+  expensive one):
+  - **mechanical** work — a clear spec, one or two files, constants, a batch of similar edits: the fast, cheap model;
+  - **integration and judgment** — several files, reading the original, debugging, clone runs: the standard model;
+  - **reviews, the final review, design and fix rounds 4–5**: the most capable model.
+  Fewer turns beat a cheaper token: escalate as soon as an implementer is stuck rather than letting it loop.
+- **Rulings, not stalls.** A decision the controller makes without the maintainer — a conflict, an ambiguity, a
+  question the maintainer's answers already cover — is made, not parked, and written to the ledger as
+  `Ruling: <what> — <why> — <what it costs if wrong>`. The milestone pull request lists every ruling. Only what
+  changes the product's behaviour beyond the agreed answers, an irreversible or outward-facing action, or a
+  security / user-data question goes to the maintainer.
 
 ### The start sitting
 
 1. Agree on the milestone's issues: proposed by the controller when none is open, decided by the maintainer.
 2. The controller reads every issue, its history and the code it touches, then brings, in one message, every question
    the milestone needs answered (behaviour, a deliberate improvement or not, `needs-user` items) and its batching:
-   which units run at once because they touch separate code, which wait for another, and why.
+   which units run at once because they touch separate code, which wait for another, which small items are bundled
+   into one unit, which model each unit gets, and why. A `size:l` issue is raised here: it moves to a milestone of its
+   own, or gets its design first.
 3. The answers and the batching go into the milestone's file in [docs/milestones/](../milestones/README.md),
    committed on `main` before the first dispatch.
+
+### Designing a large issue
+
+A `size:l` issue (a feature, a subsystem, anything the maintainer wants to shape) is designed before any code:
+
+1. **Brainstorm** with the maintainer: one question at a time, each with the controller's recommendation; a small
+   visual question gets one concrete proposal in prose rather than a list of options. Think through how a click or a
+   key reaches the behaviour before ruling on selection or focus. What the original does is read first (binary,
+   clone), so questions are about choices, not facts.
+2. **Design** in `docs/design/<date>-<topic>.md`: the intent in the maintainer's words, what the original does
+   (prose, addresses as references), goals, non-goals, constraints (the hard rules that bind it), how it will be
+   verified (UNIT, VM), and what is decided, what is guessed and what is open.
+3. **A builder's read**: a fresh agent, on the most capable model, reads the design as the one who would build it and
+   lists its questions and gaps; the answers go into the design under "Answers for the builder".
+4. **The maintainer approves** the design.
+5. **The plan**, in the milestone's file: Global Constraints (the hard rules and the design's binding values, copied
+   verbatim — every brief and every reviewer gets them), then units small enough for one implementer each, with the
+   files, the interfaces, the test to write first and the checks.
 
 ### Branches and worktrees
 
@@ -83,7 +117,10 @@ repository. Only the controller runs it. Pushes run from the main checkout, whic
 
 ### A unit, from brief to merge
 
-1. **Brief.** Written to the controller's scratch folder with the Write tool, then dispatched in the background. It
+1. **Brief.** A file, `<scratch>/<milestone>/<unit>/brief.md`, written with the Write tool, then dispatched in the
+   background with the model named; the dispatch message gives the brief's path and the **report file's** path
+   (`<scratch>/<milestone>/<unit>/report.md`), not the brief's text. The report file is the unit's memory: every round
+   appends to it, a resumed or replaced implementer reads it first, and the reviewer gets it with the brief. The brief
    holds: the issue(s) and the maintainer's answers; the worktree, branch and the main checkout's absolute path
    (`extracted/` and `CLAUDE.local.md` are only there); the hard rules of AGENTS.md (publishing, user data, shell,
    identity and trailer, guard); the clone rules of [windows-testing.md](windows-testing.md) with the unit's own
@@ -95,12 +132,20 @@ repository. Only the controller runs it. Pushes run from the main checkout, whic
    be matched; the test that fails without the fix (shown failing, by reverting the fix); `tools/gates.sh` →
    GATES-OK; one commit per logical step. The implementer reviews its own diff before reporting, but that never
    replaces the independent review.
-3. **The report** — written to a report file in the scratch folder (fix rounds append to it); the unit is not done
-   while anything below is open:
-   - **Status**: DONE, DONE_WITH_CONCERNS (with the concerns), or BLOCKED (with the question and its recommended
-     answer). The controller answers a question itself (a ruling in the ledger, with what it costs if wrong) or asks
-     the maintainer, then resumes the same implementer, which goes on.
-   - **Fixed**: what changed, commits, tests (which failed before the fix, and the command and output), gates.
+3. **The report** — appended to the report file (each round under its own heading); the message back to the
+   controller is only the status line and the file's path. The unit is not done while anything below is open:
+   - **Status**, one of four:
+     - **DONE**;
+     - **DONE_WITH_CONCERNS** — done, with doubts listed; the controller reads them before the review (doubts
+       about correctness or scope are settled first);
+     - **NEEDS_CONTEXT** — information the brief lacked (a file, a decision already made, a record); the controller
+       supplies it and resumes the implementer;
+     - **BLOCKED** — a question or an obstacle, with the recommended answer; the controller rules (ledger) or asks
+       the maintainer, or changes something — more context, a stronger model, a smaller task — and resumes; never
+       the same retry unchanged.
+   - **Fixed**: what changed, commits; the **evidence** — each test that failed before the fix with the command run
+     and its output (the failing line), and `tools/gates.sh`'s last lines. "Tests pass" without output is not
+     evidence.
    - **Follow-ups**: out-of-scope items found, each as a draft issue (title, a few lines, public wording).
    - **Dropped**: true nits only, one line each with why.
    - **Verified how**: UNIT (tests), VM (a clone run, what was seen), NOT (not exercised, and why).
@@ -126,7 +171,11 @@ repository. Only the controller runs it. Pushes run from the main checkout, whic
    re-review** (the findings list and the fix diff only, FIX_BASE..HEAD; each finding ADDRESSED or NOT ADDRESSED;
    new breakage in the fix diff joins the list; observations outside it go to the ledger). Rounds 1–3 resume the
    same implementer with the findings verbatim; rounds 4–5 go to a fresh implementer on a more capable model ("a
-   prior implementer tried N times; read the report file"). After round 5 the controller adjudicates each open
+   prior implementer tried N times; read the report file"). **The implementer checks each finding before acting
+   on it**: it verifies the claim against the code and, where it concerns the original, against the binary; a
+   finding it believes wrong it answers in its report — "not a defect, because …", with the evidence — instead of
+   complying. The controller rules on a disputed finding (a ledger line; the re-reviewer sees both sides); agreement
+   for its own sake is not a fix. After round 5 the controller adjudicates each open
    finding — parked with a ruling, or ruled on when later work builds on it — and every adjudication is a ledger
    line. The controller never fixes findings itself, and never ends the loop early by ruling. Each round goes to the
    ledger: `<unit>: fix round R/5 (X addressed, Y open — …; commits a..b)`.
