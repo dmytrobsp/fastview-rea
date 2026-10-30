@@ -575,7 +575,7 @@ impl App {
         let unit = v.unit;
         let r = self.docks[unit].float_at(origin);
         let resp = egui::Window::new(pane_title(v.front))
-            .id(egui::Id::new(("fv_floating_pane", unit)))
+            .id(floating_pane_id(unit))
             .title_bar(false)
             .resizable(true)
             .collapsible(false)
@@ -1794,6 +1794,22 @@ impl DockView {
             500.0
         }
     }
+}
+
+/// The egui window id of a floating group's mini-frame.
+fn floating_pane_id(unit: crate::docking::Unit) -> egui::Id {
+    egui::Id::new(("fv_floating_pane", unit))
+}
+
+/// The layer a floating group's window is on.
+pub fn floating_pane_layer(unit: crate::docking::Unit) -> egui::LayerId {
+    egui::LayerId::new(egui::Order::Middle, floating_pane_id(unit))
+}
+
+/// Whether `l` is a floating pane's window (an ordinary tool window, not a
+/// dialog).
+pub fn is_floating_pane_layer(l: egui::LayerId) -> bool {
+    crate::docking::UNITS.into_iter().any(|u| l == floating_pane_layer(u))
 }
 
 fn pane_dim(p: Pane) -> fvb_core::model::Dimension {

@@ -1991,7 +1991,7 @@ mod window_tests {
                 let ids = m.areas().visible_layer_ids();
                 ids.iter().filter(|l| l.order >= egui::Order::Middle).filter_map(|l| m.area_rect(l.id)).filter(|r| r.width() < 1300.0).collect()
             });
-            let free = [Pos2::new(420.0, 470.0), Pos2::new(300.0, 780.0), Pos2::new(560.0, 330.0), Pos2::new(250.0, 600.0)]
+            let free = [Pos2::new(700.0, 470.0), Pos2::new(700.0, 330.0), Pos2::new(420.0, 470.0), Pos2::new(560.0, 330.0), Pos2::new(250.0, 600.0)]
                 .into_iter()
                 .find(|p| !windows.iter().any(|r| r.expand(4.0).contains(*p)))
                 .expect("a point of the view beside the dialogs");
@@ -2154,6 +2154,52 @@ mod window_tests {
         assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
         w.idle(14);
         assert!(canvas(&w).is_some(), "drawn over the content");
+    }
+
+    /// A floating pane is an ordinary tool window, not a dialog (#70): the
+    /// frame keeps its shortcuts and its view takes input, and a press on
+    /// the window's caption, tab strip or toolbar over the view does not
+    /// hand the focus to the view.
+    #[test]
+    fn a_floating_pane_is_no_dialog() {
+        use docking::{Place, Unit};
+        let mut w = Win::new();
+        let canvas = |w: &Win| w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r);
+        let docked = canvas(&w).expect("the vector pane is drawn");
+        let at = Pos2::new(docked.left() + 60.0, docked.top() - 10.0);
+        let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, modifiers: Default::default(), pressed };
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(true), ev(false)]);
+        w.run(vec![ev(true), ev(false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        assert!(!w.app.modal_up, "a floating pane is no dialog");
+        let win = w.ctx.memory(|m| m.area_rect(egui::Id::new(("fv_floating_pane", Unit::Vector)))).expect("the floating window");
+        // The view takes input beside the window.
+        let view = w.app.view_rects.expect("the view").0;
+        let free = [Pos2::new(700.0, 470.0), Pos2::new(700.0, 330.0), Pos2::new(420.0, 470.0), Pos2::new(560.0, 330.0), Pos2::new(250.0, 600.0)]
+            .into_iter()
+            .find(|p| !win.expand(6.0).contains(*p))
+            .unwrap_or_else(|| panic!("a point of the view beside the window {win:?}"));
+        let before = w.view_state();
+        w.poke(free);
+        assert_ne!(w.view_state(), before, "input reaches the view: {free:?} {win:?} modal {} view {:?}", w.app.modal_up, w.app.view_rects);
+        // A press on the window's caption, tab strip or toolbar over the
+        // view leaves the focus off the view.
+        let tab = w.app.pane_tab_rects.iter().map(|(_, r)| r.center()).next().expect("the tab strip");
+        let toolbar = Pos2::new(win.right() - 12.0, win.center().y);
+        let caption = Pos2::new(win.left() + 60.0, win.top() + 10.0);
+        w.press(egui::PointerButton::Primary, caption, caption);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Pane(Unit::Vector), "the caption gives the pane the focus");
+        for (what, p) in [("tab strip", tab), ("toolbar", toolbar)] {
+            w.press(egui::PointerButton::Primary, p, p);
+            assert_ne!(w.app.copy_focus, app::CopyFocus::View, "{what}: the press reached the view");
+        }
+        // The same from the view's focus: the window's caption takes it.
+        w.press(egui::PointerButton::Primary, free, free);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::View);
+        w.press(egui::PointerButton::Primary, caption, caption);
+        assert_ne!(w.app.copy_focus, app::CopyFocus::View);
     }
 
     /// An auto-hidden group slid out by hovering its strip button stays
