@@ -20,7 +20,7 @@ pub fn dlg<'o>(ctx: &egui::Context, title: impl Into<String>) -> Dlg<'o> {
         sysmenu: true,
         open: None,
         tool: false,
-        margin: 11.0,
+        margin: crate::dpi::dlu_x(7),
     }
 }
 
@@ -46,7 +46,10 @@ pub struct Dlg<'o> {
 const DLG_CAPTION: Color32 = Color32::from_rgb(243, 243, 243);
 const DLG_FACE: Color32 = Color32::from_rgb(240, 240, 240);
 const DLG_BORDER: Color32 = Color32::from_rgba_premultiplied(45, 45, 45, 102);
-const DLG_CAPTION_H: f32 = 25.0;
+/// The caption: 25 px, 31 / 35 at 125 / 150 % (VM, «Печать»).
+fn caption_h() -> f32 {
+    crate::dpi::measured(25.0, 31.0, 35.0)
+}
 /// The controls' font: the templates' MS Shell Dlg 8 (Tahoma 8 pt, 11 px);
 /// the caption is the system's 9 pt (12 px).
 /// CenterWindow's last step (MFC): the window rect — the visible one with
@@ -69,7 +72,10 @@ pub fn work_area_fit(at: Pos2, size: Vec2, area: egui::Rect) -> Pos2 {
     Pos2::new(x + 2.0, y)
 }
 
-pub const DLG_FONT: egui::FontId = egui::FontId::new(11.0, egui::FontFamily::Proportional);
+pub fn dlg_font() -> egui::FontId {
+    // MS Shell Dlg 8 at the system DPI (13 / 16 px at 125 / 150 %).
+    egui::FontId::proportional(crate::dpi::dlg_font(11.0))
+}
 
 impl<'o> Dlg<'o> {
     pub fn collapsible(self, _: bool) -> Self {
@@ -122,9 +128,10 @@ impl<'o> Dlg<'o> {
         self.tool = true;
         self
     }
-    /// The client's margin (default 11 px, the templates' 7 dialog units).
+    /// The client's margin (default 11 px, the templates' 7 dialog units);
+    /// in 100 % pixels, at the system DPI's base units.
     pub fn margin(mut self, m: f32) -> Self {
-        self.margin = m;
+        self.margin = crate::dpi::dx(m);
         self
     }
 
@@ -313,11 +320,11 @@ impl<'o> Dlg<'o> {
         let r = win.title_bar(false).collapsible(false).frame(frame).show(ctx, |ui| {
             // The client's fill, under the content (set once its size is known).
             let face = ui.painter().add(egui::Shape::Noop);
-            let font = egui::FontId::proportional(12.0);
+            let font = egui::FontId::proportional(crate::dpi::font(12.0));
             let tw = ui.fonts(|f| f.layout_no_wrap(title.clone(), font.clone(), Color32::BLACK).size().x);
             let spacing = ui.spacing().item_spacing;
             ui.spacing_mut().item_spacing = Vec2::ZERO;
-            let (cap, _) = ui.allocate_exact_size(Vec2::new(5.0 + tw + if tool { 30.0 } else { 56.0 }, DLG_CAPTION_H), egui::Sense::hover());
+            let (cap, _) = ui.allocate_exact_size(Vec2::new(5.0 + tw + crate::dpi::s(if tool { 30.0 } else { 56.0 }), caption_h()), egui::Sense::hover());
             ui.spacing_mut().item_spacing = spacing;
             let msg_before = ui.ctx().data(|d| d.get_temp::<u64>(egui::Id::new("fv_msgbox_pass")));
             let outer_dlg = ui.ctx().data(|d| d.get_temp::<Option<egui::Id>>(egui::Id::new("fv_cur_dlg"))).flatten();
@@ -333,7 +340,7 @@ impl<'o> Dlg<'o> {
                     }
                     // The templates' MS Shell Dlg 8 (Tahoma 8 pt: 11 px).
                     for st in [egui::TextStyle::Body, egui::TextStyle::Button] {
-                        ui.style_mut().text_styles.insert(st, DLG_FONT);
+                        ui.style_mut().text_styles.insert(st, dlg_font());
                     }
                     add_contents(ui)
                 })
@@ -350,7 +357,7 @@ impl<'o> Dlg<'o> {
             let p = ui.painter();
             p.set(face, egui::Shape::rect_filled(Rect::from_min_max(Pos2::new(full.left(), cap.bottom()), full.max), 0.0, DLG_FACE));
             p.rect_filled(cap, 0.0, DLG_CAPTION);
-            p.text(Pos2::new(cap.left() + 4.0, cap.center().y), egui::Align2::LEFT_CENTER, &title, font, if inactive { Color32::from_gray(145) } else { Color32::BLACK });
+            p.text(Pos2::new(cap.left() + crate::dpi::s(4.0), cap.center().y), egui::Align2::LEFT_CENTER, &title, font, if inactive { Color32::from_gray(145) } else { Color32::BLACK });
             // The border: 1 px around the client and caption, as lines on
             // the pixel centres (a 1 px filled rect is feathered twice).
             let o = full.expand(1.0);
@@ -361,12 +368,13 @@ impl<'o> Dlg<'o> {
             p.vline(o.right() - 0.5, o.top() + 1.0..=o.bottom() - 1.0, b);
             // The close button (the right border is at o.right() − 1).
             let rb = o.right() - 1.0;
+            use crate::dpi::s;
             let (btn, glyph) = if tool {
-                let b = Rect::from_min_size(Pos2::new(rb - 20.0, cap.top() + 2.0), Vec2::splat(19.0));
-                (b, Rect::from_min_size(b.min + Vec2::splat(7.0), Vec2::splat(5.0)))
+                let b = Rect::from_min_size(Pos2::new(rb - s(20.0), cap.top() + 2.0), Vec2::splat(s(19.0)));
+                (b, Rect::from_min_size(b.min + Vec2::splat(s(7.0)), Vec2::splat(5.0)))
             } else {
-                let g = Rect::from_min_size(Pos2::new(rb - 21.0, cap.top() + 7.0), Vec2::splat(10.0));
-                (Rect::from_min_max(Pos2::new(rb - 46.0, cap.top()), Pos2::new(rb, cap.bottom())), g)
+                let g = Rect::from_min_size(Pos2::new(rb - s(21.0), cap.top() + ((cap.height() - s(10.0)) / 2.0).floor()), Vec2::splat(s(10.0)));
+                (Rect::from_min_max(Pos2::new(rb - s(46.0), cap.top()), Pos2::new(rb, cap.bottom())), g)
             };
             let drag = ui.interact(Rect::from_min_max(cap.min, Pos2::new(btn.left(), cap.bottom())), ui.id().with("fv_dlg_caption"), egui::Sense::drag());
             if drag.dragged() {
@@ -442,7 +450,7 @@ pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enab
         let p = ui.painter();
         p.rect_filled(face, 4.0, Color32::from_gray(229));
         p.rect_filled(face.shrink(1.0), 3.0, Color32::from_gray(245));
-        p.text(face.center(), egui::Align2::CENTER_CENTER, text, DLG_FONT, Color32::from_gray(160));
+        p.text(face.center(), egui::Align2::CENTER_CENTER, text, dlg_font(), Color32::from_gray(160));
         return resp;
     }
     let (fill, edge, bottom) = match (resp.is_pointer_button_down_on(), resp.hovered(), default) {
@@ -456,7 +464,7 @@ pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enab
     p.rect_filled(face, 4.0, bottom);
     p.rect_filled(Rect::from_min_max(face.min, Pos2::new(face.right(), face.bottom() - 1.0)), 4.0, edge);
     p.rect_filled(face.shrink(1.0), 3.0, fill);
-    p.text(face.center(), egui::Align2::CENTER_CENTER, text, DLG_FONT, Color32::BLACK);
+    p.text(face.center(), egui::Align2::CENTER_CENTER, text, dlg_font(), Color32::BLACK);
     if focused && cues(ui) {
         focus_rect(p, Rect::from_min_max(r.min + Vec2::new(4.0, 3.0), r.max - Vec2::new(4.0, 3.0)));
     }
@@ -468,8 +476,30 @@ pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enab
 /// a template's controls (VM: DIALOG 477's list at 7, 7, 327 × 221 DLU is
 /// 11, 11, 491 × 359 px).
 pub fn dlu(client: Rect, x: i32, y: i32, w: i32, h: i32) -> Rect {
+    // At the system DPI's base units (`dpi::base_units`).
+    let (bx, by) = crate::dpi::base_units();
     let md = |a: i32, b: i32, c: i32| ((a * b * 2 + c) / (2 * c)) as f32;
-    Rect::from_min_size(client.min + Vec2::new(md(x, 6, 4), md(y, 13, 8)), Vec2::new(md(w, 6, 4), md(h, 13, 8)))
+    Rect::from_min_size(client.min + Vec2::new(md(x, bx, 4), md(y, by, 8)), Vec2::new(md(w, bx, 4), md(h, by, 8)))
+}
+
+/// A template's client size in dialog units, in pixels at the system
+/// DPI's base units.
+pub fn dlu_size(w: i32, h: i32) -> Vec2 {
+    Vec2::new(crate::dpi::dlu_x(w), crate::dpi::dlu_y(h))
+}
+
+/// A client size given in 100 % pixels (6 × 13 base units), at the system
+/// DPI's base units.
+pub fn dp_size(w: f32, h: f32) -> Vec2 {
+    Vec2::new(crate::dpi::dx(w), crate::dpi::dy(h))
+}
+
+/// A rectangle laid out in 100 % pixels of the client (a template's
+/// controls at the 6 × 13 base units), at the system DPI's base units.
+pub fn dp(client: Rect, x: f32, y: f32, w: f32, h: f32) -> Rect {
+    use crate::dpi::{dx, dy};
+    let (x0, y0) = (dx(x), dy(y));
+    Rect::from_min_max(client.min + Vec2::new(x0, y0), client.min + Vec2::new(dx(x + w), dy(y + h)))
 }
 
 /// A static control's text: from its rectangle's top, word-wrapped to its
@@ -479,8 +509,8 @@ pub fn dlu(client: Rect, x: i32, y: i32, w: i32, h: i32) -> Rect {
 /// shows (W6).
 pub fn win_label(ui: &egui::Ui, r: Rect, text: &str, right: bool, enabled: bool) {
     let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
-    let one_line = r.height() < 26.0;
-    let mut job = egui::text::LayoutJob::simple(text.to_owned(), DLG_FONT, ink, if one_line { f32::INFINITY } else { r.width() });
+    let one_line = r.height() < crate::dpi::dy(26.0);
+    let mut job = egui::text::LayoutJob::simple(text.to_owned(), dlg_font(), ink, if one_line { f32::INFINITY } else { r.width() });
     job.halign = if right { egui::Align::RIGHT } else { egui::Align::LEFT };
     let g = ui.fonts(|f| f.layout_job(job));
     let at = if right { Pos2::new(r.right(), r.top()) } else { r.left_top() };
@@ -499,15 +529,15 @@ pub fn win_group(ui: &egui::Ui, r: Rect, title: &str) {
     group_break(ui);
     let p = ui.painter();
     let line = Stroke::new(1.0f32, Color32::from_gray(220));
-    let (x0, x1, y0, y1) = (r.left() + 0.5, r.right() - 0.5, r.top() + 6.5, r.bottom() - 1.5);
+    let (x0, x1, y0, y1) = (r.left() + 0.5, r.right() - 0.5, r.top() + crate::dpi::half(6.5), r.bottom() - 1.5);
     p.vline(x0, y0..=y1, line);
     p.vline(x1, y0..=y1, line);
     p.hline(x0..=x1, y1, line);
     if title.is_empty() {
         p.hline(x0..=x1, y0, line);
     } else {
-        let t = p.text(Pos2::new(r.left() + 9.0, r.top()), egui::Align2::LEFT_TOP, title, DLG_FONT, Color32::BLACK);
-        p.hline(x0..=r.left() + 7.0, y0, line);
+        let t = p.text(Pos2::new(r.left() + crate::dpi::s(9.0), r.top()), egui::Align2::LEFT_TOP, title, dlg_font(), Color32::BLACK);
+        p.hline(x0..=r.left() + crate::dpi::s(7.0), y0, line);
         p.hline(t.right() + 2.0..=x1, y0, line);
     }
 }
@@ -533,24 +563,26 @@ pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
         group_item(ui, resp.id, GroupKind::Radio);
     }
     let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled && (checked || pressed || held));
-    let c = Pos2::new(r.left() + 6.5, r.top() + (r.height() / 2.0).floor());
+    // The theme's 13 px disc, larger at > 100 %.
+    let (rad, dot) = (crate::dpi::half(6.5), (3.0 * crate::dpi::k()).round());
+    let c = Pos2::new(r.left() + rad, r.top() + (r.height() / 2.0).floor());
     let p = ui.painter();
     match (checked, enabled) {
         (true, true) => {
-            p.circle_filled(c, 6.5, Color32::from_rgb(0, 95, 184));
-            p.circle_filled(c, 3.0, Color32::WHITE);
+            p.circle_filled(c, rad, Color32::from_rgb(0, 95, 184));
+            p.circle_filled(c, dot, Color32::WHITE);
         }
         (true, false) => {
-            p.circle_filled(c, 6.5, Color32::from_gray(160));
-            p.circle_filled(c, 3.0, Color32::WHITE);
+            p.circle_filled(c, rad, Color32::from_gray(160));
+            p.circle_filled(c, dot, Color32::WHITE);
         }
         (false, _) => {
-            p.circle_filled(c, 6.5, Color32::from_gray(if enabled { 98 } else { 191 }));
-            p.circle_filled(c, 5.5, if resp.hovered() && enabled { Color32::from_gray(233) } else { Color32::from_gray(243) });
+            p.circle_filled(c, rad, Color32::from_gray(if enabled { 98 } else { 191 }));
+            p.circle_filled(c, rad - 1.0, if resp.hovered() && enabled { Color32::from_gray(233) } else { Color32::from_gray(243) });
         }
     }
     let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
-    let t = p.text(Pos2::new(r.left() + 16.0, c.y), egui::Align2::LEFT_CENTER, text, DLG_FONT, ink);
+    let t = p.text(Pos2::new(r.left() + crate::dpi::s(16.0), c.y), egui::Align2::LEFT_CENTER, text, dlg_font(), ink);
     if focused && cues(ui) {
         focus_rect(p, t.expand2(Vec2::new(1.0, 1.0)));
     }
@@ -637,7 +669,7 @@ pub fn win_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, foc
     if inactive {
         hide_focus(child.visuals_mut());
     }
-    let mut out = egui::TextEdit::singleline(text).id(id).frame(false).font(DLG_FONT).margin(egui::Margin::symmetric(1.0, 1.0)).desired_width(inner.width() - 2.0).show(&mut child);
+    let mut out = egui::TextEdit::singleline(text).id(id).frame(false).font(dlg_font()).margin(egui::Margin::symmetric(1.0, 1.0)).desired_width(inner.width() - 2.0).show(&mut child);
     tab_stop(ui, out.response.id, StopKind::Edit);
     if !inactive {
         selected_white(child.painter(), &out);
@@ -676,7 +708,7 @@ pub fn win_edit_en(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, 
     let p = ui.painter();
     p.rect_filled(r, 0.0, Color32::from_gray(234));
     p.rect_filled(r.shrink(1.0), 0.0, Color32::from_gray(250));
-    p.with_clip_rect(r.shrink(1.0)).text(Pos2::new(r.left() + 6.0, r.center().y), egui::Align2::LEFT_CENTER, text.as_str(), DLG_FONT, Color32::from_gray(109));
+    p.with_clip_rect(r.shrink(1.0)).text(Pos2::new(r.left() + 6.0, r.center().y), egui::Align2::LEFT_CENTER, text.as_str(), dlg_font(), Color32::from_gray(109));
 }
 
 /// A multi-line edit at its template rectangle (VM, Windows 11): white in a
@@ -697,7 +729,7 @@ pub fn win_edit_multiline(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut S
             if inactive {
                 hide_focus(ui.visuals_mut());
             }
-            let mut out = egui::TextEdit::multiline(text).id(id).frame(false).font(DLG_FONT).margin(egui::Margin::ZERO).desired_width(inner.width() - 16.0).desired_rows(1).min_size(inner.size() - Vec2::new(16.0, 0.0)).show(ui);
+            let mut out = egui::TextEdit::multiline(text).id(id).frame(false).font(dlg_font()).margin(egui::Margin::ZERO).desired_width(inner.width() - 16.0).desired_rows(1).min_size(inner.size() - Vec2::new(16.0, 0.0)).show(ui);
             tab_stop(ui, out.response.id, StopKind::Edit);
             if !inactive {
                 selected_white(ui.painter(), &out);
@@ -778,14 +810,17 @@ pub fn win_check_ex(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
         group_item(ui, resp.id, GroupKind::Check);
     }
     let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled);
-    let bx = if left { r.right() - 13.0 } else { r.left() };
-    let b = Rect::from_min_size(Pos2::new(bx, r.top() + ((r.height() - 13.0) / 2.0).floor()), Vec2::splat(13.0));
+    // The theme's 13 px box, larger at > 100 % (VM, 150 %: 20 px).
+    let side = crate::dpi::s(13.0);
+    let bx = if left { r.right() - side } else { r.left() };
+    let b = Rect::from_min_size(Pos2::new(bx, r.top() + ((r.height() - side) / 2.0).floor()), Vec2::splat(side));
     let p = ui.painter();
     match (checked, enabled) {
         (true, _) => {
             p.rect_filled(b, 2.5, if enabled { Color32::from_rgb(0, 95, 184) } else { Color32::from_gray(160) });
             let o = b.min;
-            p.add(egui::Shape::line(vec![o + Vec2::new(3.5, 6.5), o + Vec2::new(5.5, 8.5), o + Vec2::new(9.5, 4.5)], Stroke::new(1.0f32, Color32::WHITE)));
+            let k = side / 13.0;
+            p.add(egui::Shape::line(vec![o + Vec2::new(3.5, 6.5) * k, o + Vec2::new(5.5, 8.5) * k, o + Vec2::new(9.5, 4.5) * k], Stroke::new(1.0f32, Color32::WHITE)));
         }
         (false, _) => {
             p.rect_filled(b, 2.5, Color32::from_gray(if enabled { 98 } else { 191 }));
@@ -795,9 +830,9 @@ pub fn win_check_ex(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
     let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
     let t = if left {
         // BS_LEFTTEXT: the text right-aligned 3 px before the box (VM).
-        p.text(Pos2::new(b.left() - 3.0, b.center().y), egui::Align2::RIGHT_CENTER, text, DLG_FONT, ink)
+        p.text(Pos2::new(b.left() - 3.0, b.center().y), egui::Align2::RIGHT_CENTER, text, dlg_font(), ink)
     } else {
-        p.text(Pos2::new(r.left() + 16.0, b.center().y), egui::Align2::LEFT_CENTER, text, DLG_FONT, ink)
+        p.text(Pos2::new(r.left() + crate::dpi::s(16.0), b.center().y), egui::Align2::LEFT_CENTER, text, dlg_font(), ink)
     };
     if focused && cues(ui) {
         focus_rect(p, t.expand2(Vec2::new(1.0, 1.0)));
@@ -1178,7 +1213,7 @@ pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows:
                 }
                 let cell = Rect::from_min_size(Pos2::new(x + 11.0, top), Vec2::splat(16.0));
                 icon(&p, cell, i);
-                let g = ui.fonts(|f| f.layout_no_wrap(row.label.clone(), DLG_FONT, Color32::BLACK));
+                let g = ui.fonts(|f| f.layout_no_wrap(row.label.clone(), dlg_font(), Color32::BLACK));
                 let lr = Rect::from_min_size(Pos2::new(cell.left() + 19.0, top), Vec2::new(g.size().x + 5.0, 16.0));
                 if row.selected && (focused || sel_always) {
                     p.rect_filled(lr, 0.0, if focused { Color32::from_rgb(0, 120, 212) } else { Color32::from_gray(240) });
@@ -1319,7 +1354,7 @@ pub fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], curre
             } else {
                 Color32::BLACK
             };
-            text_p.text(row.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, t, DLG_FONT, ink);
+            text_p.text(row.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, t, dlg_font(), ink);
         }
         if ui.input(|i| i.pointer.primary_released()) && hover.is_some() {
             picked = hover;
@@ -1341,7 +1376,7 @@ pub fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], curre
 /// A drop-down list combo (CBS_DROPDOWNLIST) at its closed rectangle:
 /// returns the item picked from its list.
 pub fn win_combo_list(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[String], current: usize, enabled: bool) -> Option<usize> {
-    win_combo_list_in(ui, r, id, items, current, enabled, DLG_FONT)
+    win_combo_list_in(ui, r, id, items, current, enabled, dlg_font())
 }
 
 /// [`win_combo_list`] with its text in `font` (a control bar's 9 pt UI
@@ -1360,12 +1395,12 @@ pub fn win_combo_list_in(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[Stri
     }
     combo_face(ui, r, false, enabled, open, resp.hovered() && enabled);
     let ink = if enabled { Color32::BLACK } else { Color32::from_gray(109) };
-    let text_r = Rect::from_min_max(r.min + Vec2::new(4.0, 0.0), Pos2::new(r.right() - 17.0, r.bottom()));
+    let text_r = Rect::from_min_max(r.min + Vec2::new(4.0, 0.0), Pos2::new(r.right() - crate::dpi::s(17.0), r.bottom()));
     if let Some(t) = items.get(current) {
         ui.painter().with_clip_rect(text_r).text(text_r.left_center(), egui::Align2::LEFT_CENTER, t, font, ink);
     }
     if focused && cues(ui) && !open {
-        focus_rect(ui.painter(), Rect::from_min_max(r.min + Vec2::new(3.0, 3.0), Pos2::new(r.right() - 19.0, r.bottom() - 3.0)));
+        focus_rect(ui.painter(), Rect::from_min_max(r.min + Vec2::new(3.0, 3.0), Pos2::new(r.right() - crate::dpi::s(17.0) - 2.0, r.bottom() - 3.0)));
     }
     if open {
         return combo_popup(ui, r, id, items, (current < items.len()).then_some(current));
@@ -1390,7 +1425,7 @@ pub fn win_combo_list_in(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[Stri
 /// right opening the list; returns the item picked.
 pub fn win_combo_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut String, items: &[String], focus: bool) -> Option<usize> {
     let r = Rect::from_min_size(r.min, Vec2::new(r.width(), COMBO_H));
-    let button = Rect::from_min_max(Pos2::new(r.right() - 17.0, r.top()), r.max);
+    let button = Rect::from_min_max(Pos2::new(r.right() - crate::dpi::s(17.0), r.top()), r.max);
     let resp = ui.interact(button, id, egui::Sense::click());
     let open_id = id.with("open");
     let mut open = ui.data(|d| d.get_temp(open_id)).unwrap_or(false);
@@ -1401,7 +1436,7 @@ pub fn win_combo_edit(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut Strin
     let hover = ui.rect_contains_pointer(r);
     combo_face(ui, r, true, true, open, hover);
     let field = Rect::from_min_max(r.min + Vec2::new(3.0, 3.0), Pos2::new(button.left(), r.bottom() - 3.0));
-    let mut out = egui::TextEdit::singleline(text).frame(false).font(DLG_FONT).margin(egui::Margin::symmetric(1.0, 0.0)).desired_width(field.width()).show(&mut ui.new_child(egui::UiBuilder::new().max_rect(field)));
+    let mut out = egui::TextEdit::singleline(text).frame(false).font(dlg_font()).margin(egui::Margin::symmetric(1.0, 0.0)).desired_width(field.width()).show(&mut ui.new_child(egui::UiBuilder::new().max_rect(field)));
     tab_stop(ui, out.response.id, StopKind::Edit);
     if focus {
         out.response.request_focus();
@@ -1526,7 +1561,7 @@ pub fn message_box(ui: &mut egui::Ui, icon: MsgIcon, text: &str, buttons: &[&str
             let first: String = label.chars().take(1).collect();
             if cues {
                 let face = r.shrink(1.0);
-                let w = |t: &str| ui.fonts(|f| f.layout_no_wrap(t.to_owned(), DLG_FONT, Color32::BLACK).size());
+                let w = |t: &str| ui.fonts(|f| f.layout_no_wrap(t.to_owned(), dlg_font(), Color32::BLACK).size());
                 let (all, one) = (w(label), w(&first));
                 let x0 = (face.center().x - all.x / 2.0).round();
                 let y = (face.center().y - all.y / 2.0).round() + all.y - 2.0;

@@ -241,21 +241,23 @@ impl App {
         // gradient, its bottom edge (154, 187, 230); every label (21, 66,
         // 139), 6 px in.
         let brush = self.skin.splitter();
-        let strip = egui::TopBottomPanel::bottom(egui::Id::new(("pane_tabs", v.unit))).show_separator_line(false).exact_height(24.0).frame(egui::Frame::none().fill(brush)).show_inside(ui, |ui| {
+        // 24 px, 30 / 34 at 125 % / 150 % (VM), its tabs 4 px less.
+        let strip_h = crate::dpi::measured(24.0, 30.0, 34.0);
+        let strip = egui::TopBottomPanel::bottom(egui::Id::new(("pane_tabs", v.unit))).show_separator_line(false).exact_height(strip_h).frame(egui::Frame::none().fill(brush)).show_inside(ui, |ui| {
             let band = ui.max_rect();
             ui.painter().hline(band.x_range(), band.top() + 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_rgb(157, 189, 216)));
             ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
             ui.add_space(1.0);
             ui.horizontal(|ui| {
-                ui.add_space(4.0);
+                ui.add_space(crate::dpi::s(4.0));
                 let order = self.tab_order;
                 for p in order.into_iter().filter(|&p| v.mask[p as usize]) {
                     let on = p == v.front;
-                    let font = egui::FontId::proportional(12.0);
+                    let font = egui::FontId::proportional(crate::dpi::font(12.0));
                     let ink = egui::Color32::from_rgb(21, 66, 139);
                     let g = ui.painter().layout_no_wrap(pane_title(p).to_string(), font, ink);
                     // An id per pane: the drag follows the tab when it moves.
-                    let (rect, _) = ui.allocate_exact_size(egui::vec2(g.size().x + 12.0, 20.0), egui::Sense::hover());
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(g.size().x + crate::dpi::s(12.0), strip_h - 4.0), egui::Sense::hover());
                     let r = ui.interact(rect, ui.id().with(("fv_pane_tab", p as u8)), egui::Sense::click_and_drag());
                     let pnt = ui.painter();
                     if on {
@@ -284,7 +286,7 @@ impl App {
                         pnt.px_vline(rect.right() - 1.0, rect.top()..=rect.bottom() - 2.0, frame);
                         pnt.px_hline(rect.left() + 1.0..=rect.right() - 2.0, rect.bottom() - 1.0, frame);
                     }
-                    pnt.galley(egui::pos2(rect.left() + 6.0, rect.center().y - g.size().y / 2.0), g, ink);
+                    pnt.galley(egui::pos2(rect.left() + crate::dpi::s(6.0), rect.center().y - g.size().y / 2.0), g, ink);
                     tabs.push((p, r.rect));
                     // A press (or a drag) brings the tab to the front.
                     if (r.clicked() || r.drag_started()) && !on {
@@ -878,8 +880,10 @@ impl App {
         egui::Frame::none().fill(pal.ribbon_top).stroke(edge).inner_margin(egui::Margin::same(1.0)).show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+        // 20 px, 29 / 33 at 125 % / 150 % (VM: MFC's tab height from the
+        // system font).
         egui::TopBottomPanel::top(if g == 0 { egui::Id::new("fv_doc_tabs") } else { egui::Id::new(("fv_doc_tabs", g)) })
-            .exact_height(20.0)
+            .exact_height(crate::dpi::measured(20.0, 29.0, 33.0))
             .show_separator_line(false)
             .frame(egui::Frame::none())
             .show_inside(ui, |ui| {
@@ -1119,7 +1123,9 @@ impl App {
         // 233) with the focus, (213, 228, 242) without.
         let w = ui.available_width();
         let name_w = (w / 2.0).floor();
-        let row_h = 17.0;
+        // The rows follow the system font (MFC's from its height; VM, 150 %:
+        // 26 px), the font with them.
+        let row_h = crate::dpi::s(17.0);
         // Rows edge to edge (VM: a 17 px pitch).
         ui.spacing_mut().item_spacing.y = 0.0;
         let line = egui::Stroke::new(1.0f32, egui::Color32::from_rgb(185, 208, 237));
@@ -1142,7 +1148,7 @@ impl App {
             if ui.interact(egui::Rect::from_min_max(egui::pos2(nr.left() + indent, nr.top()), nr.max), key.with("name"), egui::Sense::click()).clicked() {
                 select.set(Some(key));
             }
-            let font = egui::FontId::proportional(12.0);
+            let font = egui::FontId::proportional(crate::dpi::font(12.0));
             let g = ui.painter().layout_no_wrap(name.to_string(), font, TEXT);
             let at = egui::pos2(nr.left() + indent, nr.center().y - g.size().y / 2.0);
             let clip = if group { body } else { nr };
@@ -1174,7 +1180,7 @@ impl App {
         let type_edit_id = ui.id().with("fv_grid_type_edit");
         let type_edit: Option<Option<String>> = ui.data(|d| d.get_temp(type_edit_id));
         let at_text = egui::pos2(vr.left() + 4.0, vr.center().y);
-        let font12 = egui::FontId::proportional(12.0);
+        let font12 = egui::FontId::proportional(crate::dpi::font(12.0));
         if type_edit.is_some() {
             let gal = ui.painter().layout_no_wrap(shown.clone(), font12.clone(), egui::Color32::WHITE);
             let r = egui::Align2::LEFT_CENTER.anchor_size(at_text, gal.size());
@@ -1189,7 +1195,7 @@ impl App {
             // → (196, 221, 255) down the row, a 5 / 3 / 1 px (86, 125, 177)
             // arrow 6 rows down; the other looks a grey box.
             let blue = self.skin.palette().bands.is_some_and(|b| b.panel_sep.is_some());
-            let bt = egui::Rect::from_min_max(egui::pos2(vr.right() - if blue { 14.0 } else { 15.0 }, vr.top()), vr.max);
+            let bt = egui::Rect::from_min_max(egui::pos2(vr.right() - crate::dpi::s(if blue { 14.0 } else { 15.0 }), vr.top()), vr.max);
             let hot = combo.hovered() && ui.ctx().pointer_hover_pos().is_some_and(|q| bt.contains(q));
             // Pressed (VM): while its list is down and after the list
             // closes by a key, until the next press — a (251, 140, 61)
@@ -1262,7 +1268,7 @@ impl App {
         for (ci, name, params) in &groups {
             let open_id = ui.id().with(("fv_grid_open", b, *ci));
             let open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(true);
-            let (r, _) = row(ui, sel_id.with(("group", *ci)), name, true, 22.0, true);
+            let (r, _) = row(ui, sel_id.with(("group", *ci)), name, true, crate::dpi::s(22.0), true);
             order.push((sel_id.with(("group", *ci)), GridRow::Group(open_id, open, *ci)));
             // The expand box (9 × 9 at +4, top + 3: a (145, 145, 145)
             // frame round a light gradient, the sign in (75, 99, 167)) and
@@ -1311,14 +1317,14 @@ impl App {
             }
             for (pi, p) in params.iter().enumerate() {
                 let key = sel_id.with(("param", *ci, pi));
-                let (_, vr) = row(ui, key, p, false, 22.0, false);
+                let (_, vr) = row(ui, key, p, false, crate::dpi::s(22.0), false);
                 if let Some(st) = self.chars.get_mut(&(b, *ci)) {
                     let text = st.settings.entry(p.clone()).or_default();
                     // The edit in its cell, its line centred 4 px in as
                     // «Тип блока»'s, on a child that leaves the row's
                     // 17 px allocation alone (`put` moved the next row to
                     // the edit's bottom: 16–19 px pitches, VM 17).
-                    let font = egui::FontId::proportional(12.0);
+                    let font = egui::FontId::proportional(crate::dpi::font(12.0));
                     let top = ((vr.height() - ui.fonts(|f| f.row_height(&font))) / 2.0).max(0.0);
                     let margin = egui::Margin { left: 4.0, right: 4.0, top, bottom: 0.0 };
                     let mut cell = ui.new_child(egui::UiBuilder::new().max_rect(vr));
@@ -1627,13 +1633,16 @@ struct CaptionAct {
 /// the title 4 px in in the 9 pt UI font, the close and pin glyphs flat
 /// 1 px drawings 11 / 26 px from the right edge.
 fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pinned: Option<bool>) -> CaptionAct {
-    const H: f32 = 20.0;
+    use crate::dpi::s;
+    // 29 / 33 px at 125 % / 150 % (VM: MFC's caption from the system
+    // font), its font, inset and buttons grown with it.
+    let h = crate::dpi::measured(20.0, 29.0, 33.0);
     let mut act = CaptionAct::default();
     // The caption takes double-clicks and drags; registered first, so its
     // buttons, drawn over it, keep their clicks.
     // The pane's window right under it (VM: no gap).
     ui.spacing_mut().item_spacing.y = 0.0;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::hover());
     let resp = ui.interact(rect, ui.id().with("fv_pane_caption"), egui::Sense::click_and_drag());
     // A double-click: two clicks within the system double-click time
     // (Windows' default 500 ms; WM_LBUTTONDBLCLK on the caption).
@@ -1664,12 +1673,12 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
             pal.text
         }
     };
-    let font = egui::FontId::proportional(12.0);
-    p.with_clip_rect(rect.shrink2(egui::vec2(0.0, 0.0)).with_max_x(rect.right() - 34.0))
-        .text(egui::pos2(rect.left() + 4.0, rect.center().y), egui::Align2::LEFT_CENTER, title, font, ink);
+    let font = egui::FontId::proportional(crate::dpi::font(12.0));
+    p.with_clip_rect(rect.shrink2(egui::vec2(0.0, 0.0)).with_max_x(rect.right() - s(34.0)))
+        .text(egui::pos2(rect.left() + s(4.0), rect.center().y), egui::Align2::LEFT_CENTER, title, font, ink);
     let glyph = egui::Color32::from_rgb(86, 125, 177);
     let button = |ui: &mut egui::Ui, centre: egui::Pos2, salt: &str| {
-        let r = egui::Rect::from_center_size(centre, egui::vec2(15.0, 15.0));
+        let r = egui::Rect::from_center_size(centre, egui::vec2(s(15.0), s(15.0)));
         let b = ui.interact(r, ui.id().with(("fv_pane_btn", salt)), egui::Sense::click());
         if b.hovered() {
             ui.painter().rect(r, 0.0, pal.accent_soft, egui::Stroke::new(1.0f32, pal.accent_border));
@@ -1678,27 +1687,28 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
     };
     let cy = rect.center().y.floor() + 0.5;
     // ✕: two 1 px diagonals in a 7 px box.
-    let c = egui::pos2(rect.right() - 11.0, cy);
+    let c = egui::pos2(rect.right() - s(11.0), cy);
     let close = button(ui, c, "close");
     let st = egui::Stroke::new(1.0f32, glyph);
-    ui.painter().line_segment([c + egui::vec2(-3.5, -3.5), c + egui::vec2(3.5, 3.5)], st);
-    ui.painter().line_segment([c + egui::vec2(-3.5, 3.5), c + egui::vec2(3.5, -3.5)], st);
+    let d = crate::dpi::half(3.5);
+    ui.painter().line_segment([c + egui::vec2(-d, -d), c + egui::vec2(d, d)], st);
+    ui.painter().line_segment([c + egui::vec2(-d, d), c + egui::vec2(d, -d)], st);
     // MFC's plain tips under the pointer (mfc120rus; VM «Close» / «Auto Hide»).
     crate::tips::pointer_tip(ui, &close, crate::tips::TipImage::None, "", "Закрыть", false);
     act.close = close.clicked();
     if let Some(auto_hide) = pinned {
         // The pin: upright while docked, on its side while auto-hidden.
-        let c = egui::pos2(rect.right() - 26.0, cy);
+        let c = egui::pos2(rect.right() - s(26.0), cy);
         let pin = button(ui, c, "pin");
         let pt = ui.painter();
         if auto_hide {
-            pt.px_rect_stroke(egui::Rect::from_min_max(c + egui::vec2(-1.0, -2.0), c + egui::vec2(3.0, 2.0)), 0.0, st);
-            pt.px_vline(c.x - 1.0, (c.y - 3.0)..=(c.y + 3.0), st);
-            pt.px_hline((c.x - 4.0)..=(c.x - 1.0), c.y, st);
+            pt.px_rect_stroke(egui::Rect::from_min_max(c + egui::vec2(-s(1.0), -s(2.0)), c + egui::vec2(s(3.0), s(2.0))), 0.0, st);
+            pt.px_vline(c.x - s(1.0), (c.y - s(3.0))..=(c.y + s(3.0)), st);
+            pt.px_hline((c.x - s(4.0))..=(c.x - s(1.0)), c.y, st);
         } else {
-            pt.px_rect_stroke(egui::Rect::from_min_max(c + egui::vec2(-2.0, -4.0), c + egui::vec2(2.0, 1.0)), 0.0, st);
-            pt.px_hline((c.x - 3.0)..=(c.x + 3.0), c.y + 1.0, st);
-            pt.px_vline(c.x, (c.y + 1.0)..=(c.y + 4.0), st);
+            pt.px_rect_stroke(egui::Rect::from_min_max(c + egui::vec2(-s(2.0), -s(4.0)), c + egui::vec2(s(2.0), s(1.0))), 0.0, st);
+            pt.px_hline((c.x - s(3.0))..=(c.x + s(3.0)), c.y + s(1.0), st);
+            pt.px_vline(c.x, (c.y + s(1.0))..=(c.y + s(4.0)), st);
         }
         let tip = if auto_hide { "Закрепить" } else { "Автоматически скрывать" };
         crate::tips::pointer_tip(ui, &pin, crate::tips::TipImage::None, "", tip, false);

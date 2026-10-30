@@ -760,11 +760,14 @@ impl App {
         // A 24 px strip, a horizontal gradient (VM: per style, Blue's (227,
         // 239, 255) flat for 6 px, then shading over 16 to (177, 211, 255),
         // flat for the last 2).
-        let bar = egui::SidePanel::right(egui::Id::new(("pane_toolbar", w as u8))).resizable(false).show_separator_line(false).frame(egui::Frame::none()).exact_width(24.0).show_inside(ui, |ui| {
+        // At > 100 % its images stretched (`dpi::img`), the buttons and the
+        // strip with them (VM, 150 %: 30 px buttons).
+        let side = crate::dpi::img(16.0) + 6.0;
+        let bar = egui::SidePanel::right(egui::Id::new(("pane_toolbar", w as u8))).resizable(false).show_separator_line(false).frame(egui::Frame::none()).exact_width(side + 2.0).show_inside(ui, |ui| {
             let r = ui.max_rect();
             let mut mesh = egui::Mesh::default();
             let [l, rr] = self.skin.palette().bands.map_or([Color32::from_rgb(227, 239, 255), Color32::from_rgb(177, 211, 255)], |b| b.toolbar);
-            for (k, (x0, x1, c0, c1)) in [(0.0, 6.0, l, l), (6.0, 22.0, l, rr), (22.0, r.width(), rr, rr)].into_iter().enumerate() {
+            for (k, (x0, x1, c0, c1)) in [(0.0, 6.0, l, l), (6.0, side, l, rr), (side, r.width(), rr, rr)].into_iter().enumerate() {
                 let (a, b) = (r.left() + x0, r.left() + x1);
                 for (x, y, c) in [(a, r.top(), c0), (b, r.top(), c1), (b, r.bottom(), c1), (a, r.bottom(), c0)] {
                     mesh.colored_vertex(egui::pos2(x, y), c);
@@ -782,20 +785,20 @@ impl App {
             // Buttons that do not fit are cut off (a short toolbar), never
             // grow the pane past its slot.
             for b in &buttons {
-                if ui.available_height() < 22.0 {
+                if ui.available_height() < side {
                     break;
                 }
                 let Some((tool, tip, cmd, checked)) = b else {
                     use crate::oscgeom::PixelLines;
-                    let (sep, _) = ui.allocate_exact_size(Vec2::new(24.0, 8.0), egui::Sense::hover());
-                    let x = sep.left() + 6.0..=sep.left() + 19.0;
+                    let (sep, _) = ui.allocate_exact_size(Vec2::new(side + 2.0, 8.0), egui::Sense::hover());
+                    let x = sep.left() + 6.0..=sep.left() + side - 3.0;
                     ui.painter().px_hline(x.clone(), sep.top() + 3.0, stroke(1.0, Color32::from_rgb(118, 161, 218)));
                     ui.painter().px_hline(x, sep.top() + 4.0, stroke(1.0, Color32::WHITE));
                     continue;
                 };
                 // The vector toolbar is enabled with a document (CMDUI 0x48f440).
                 let enabled = w != Window::Vector || doc;
-                let (rect, resp) = ui.allocate_exact_size(Vec2::splat(22.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+                let (rect, resp) = ui.allocate_exact_size(Vec2::splat(side), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
                 let vis = ui.visuals();
                 // Checked: CMFCToolBar's checked face (VM).
                 if checked == &Some(true) {
@@ -1725,13 +1728,13 @@ impl App {
         // DIALOG 554: 393 × 367 DLU (590 × 596 px), every control at its
         // rectangle (VM).
         crate::dialogs::dlg(ctx, title).margin(0.0).collapsible(false).resizable(false).show(ctx, |ui| {
-            use crate::dialogs::{dlu, win_button_en, win_combo_list, DLG_FONT};
+            use crate::dialogs::{dlu, win_button_en, win_combo_list, dlg_font};
             use egui::{Color32, Pos2, Rect, Stroke};
             let (client, _) = ui.allocate_exact_size(Vec2::new(590.0, 596.0), egui::Sense::hover());
             let r = |x, y, w, h| dlu(client, x, y, w, h);
             // The two SS_CENTER labels over the two lists.
             for (lr, t) in [(r(18, 18, 168, 8), ca), (r(204, 17, 168, 8), cb)] {
-                ui.painter().text(Pos2::new(lr.center().x, lr.top()), egui::Align2::CENTER_TOP, t, DLG_FONT, Color32::BLACK);
+                ui.painter().text(Pos2::new(lr.center().x, lr.top()), egui::Align2::CENTER_TOP, t, dlg_font(), Color32::BLACK);
             }
             // The template's order is the tab order: OK, Отмена, the right
             // combo, the left one, «Добавить», the list, «Удалить».
@@ -1779,7 +1782,7 @@ impl App {
                 let c = Rect::from_min_size(Pos2::new(inner.left() + x, hdr.top()), Vec2::new(w, 25.0));
                 p.vline(c.right() - 1.5, c.y_range(), edge);
                 p.vline(c.right() - 0.5, c.bottom()..=inner.bottom(), grid);
-                p.with_clip_rect(c).text(Pos2::new(c.left() + 7.0, c.center().y), egui::Align2::LEFT_CENTER, t, DLG_FONT, Color32::BLACK);
+                p.with_clip_rect(c).text(Pos2::new(c.left() + 7.0, c.center().y), egui::Align2::LEFT_CENTER, t, dlg_font(), Color32::BLACK);
             }
             let mut y = hdr.bottom() + 16.5;
             while y < inner.bottom() {
@@ -1803,7 +1806,7 @@ impl App {
                 }
                 for ((x, w, _), t) in cols.into_iter().zip([&pair.a, &pair.b]) {
                     let c = Rect::from_min_size(Pos2::new(inner.left() + x, top), Vec2::new(w - 1.0, 16.0));
-                    p.with_clip_rect(c).text(Pos2::new(c.left() + 6.0, c.center().y), egui::Align2::LEFT_CENTER, t, DLG_FONT, if lit { Color32::WHITE } else { Color32::BLACK });
+                    p.with_clip_rect(c).text(Pos2::new(c.left() + 6.0, c.center().y), egui::Align2::LEFT_CENTER, t, dlg_font(), if lit { Color32::WHITE } else { Color32::BLACK });
                 }
                 if ui.interact(row, ui.id().with(("pair_row", i)), egui::Sense::click()).clicked() {
                     dlg.sel = Some(i);

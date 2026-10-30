@@ -971,7 +971,7 @@ impl ParamsDialog {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, channels: &[String]) -> Option<DialogAction> {
-        use crate::dialogs::{win_button, win_combo_list, DLG_FONT};
+        use crate::dialogs::{win_button, win_combo_list, dlg_font};
         let mut action = None;
         // DIALOG 336: 475 × 275 DLU in MS Shell Dlg 8 — a 713 × 447 client;
         // OnInitDialog `0x4a7c50` places the method combo and the toolbar,
@@ -1104,7 +1104,7 @@ impl ParamsDialog {
             // Seen on the VM: the names left-aligned, a value changed since
             // the grid was built (not its name) bold.
             let modified = built.get(k).is_some_and(|b| b != v);
-            let font = DLG_FONT;
+            let font = dlg_font();
             ui.painter().with_clip_rect(name).text(egui::pos2(name.left() + 5.0, name.center().y), egui::Align2::LEFT_CENTER, ellipsize_to(ui, label, name.width() - 7.0), font.clone(), Color32::BLACK);
             // A click selects the row (CMFCPropertyGridCtrl, VM): its name
             // on (180, 201, 233) and its value in place — a number in a
@@ -1205,7 +1205,7 @@ impl ParamsDialog {
 /// A grid name cut to `width` with «...» (DT_END_ELLIPSIS), whole when it
 /// fits.
 fn ellipsize_to(ui: &egui::Ui, text: &str, width: f32) -> String {
-    let font = crate::dialogs::DLG_FONT;
+    let font = crate::dialogs::dlg_font();
     if ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::BLACK).size().x) <= width {
         return text.to_owned();
     }
@@ -1246,7 +1246,7 @@ fn tool_button(ui: &mut egui::Ui, r: egui::Rect, icon: ToolIcon, text: Option<&s
     let ink = if enabled { Color32::from_rgb(0, 21, 110) } else { Color32::from_gray(141) };
     paint_tool_icon(p, cell, icon, enabled);
     if let Some(t) = text {
-        p.text(egui::pos2(cell.right() + 3.0, r.center().y), egui::Align2::LEFT_CENTER, t, crate::dialogs::DLG_FONT, ink);
+        p.text(egui::pos2(cell.right() + 3.0, r.center().y), egui::Align2::LEFT_CENTER, t, crate::dialogs::dlg_font(), ink);
     }
     resp
 }

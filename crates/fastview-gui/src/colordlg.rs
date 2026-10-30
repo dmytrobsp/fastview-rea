@@ -4,7 +4,7 @@
 //! the drawing is ours.
 
 use crate::app::App;
-use crate::dialogs::{dlu, win_button, win_button_en, win_edit, DLG_FONT};
+use crate::dialogs::{dlu, win_button, win_button_en, win_edit, dlg_font};
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 /// The 127 cells of the colour hexagon, row by row from the top (7, 8,
@@ -94,19 +94,19 @@ impl App {
             let mut x = tabs.left();
             for (k, title) in ["Обычные", "Спектр"].into_iter().enumerate() {
                 let sel = st.spectrum == (k == 1);
-                let w = ui.fonts(|f| f.layout_no_wrap(title.to_owned(), DLG_FONT, Color32::BLACK).size().x).round() + 14.0;
+                let w = ui.fonts(|f| f.layout_no_wrap(title.to_owned(), dlg_font(), Color32::BLACK).size().x).round() + 14.0;
                 let top = tabs.top() + if sel { 1.0 } else { 3.0 };
                 let r = Rect::from_min_max(Pos2::new(x, top), Pos2::new(x + w + 1.0, page.top() + 1.0));
                 p.rect_filled(r, 0.0, line);
                 let fill = Rect::from_min_max(r.min + Vec2::splat(1.0), Pos2::new(r.right() - 1.0, if sel { page.top() + 1.0 } else { page.top() }));
                 p.rect_filled(fill, 0.0, Color32::from_gray(if sel { 249 } else { 243 }));
-                p.text(Pos2::new(r.center().x, r.top() + 10.0), egui::Align2::CENTER_CENTER, title, DLG_FONT, Color32::BLACK);
+                p.text(Pos2::new(r.center().x, r.top() + 10.0), egui::Align2::CENTER_CENTER, title, dlg_font(), Color32::BLACK);
                 if ui.interact(r, ui.id().with(("fv_color_tab", k)), egui::Sense::click()).clicked() {
                     st.spectrum = k == 1;
                 }
                 x += w;
             }
-            p.text(at(13.0, 36.0), egui::Align2::LEFT_TOP, "Цвета:", DLG_FONT, Color32::BLACK);
+            p.text(at(13.0, 36.0), egui::Align2::LEFT_TOP, "Цвета:", dlg_font(), Color32::BLACK);
             if st.spectrum {
                 spectrum_page(ui, &p, client, &mut st.new);
             } else {
@@ -195,7 +195,7 @@ impl App {
             // cannot read the screen: greyed.
             win_button_en(ui, dlu(client, 194, 65, 53, 14), "Выбор...", false, false);
             let new_l = dlu(client, 194, 110, 53, 9);
-            p.text(Pos2::new(new_l.center().x, new_l.top()), egui::Align2::CENTER_TOP, "Новый", DLG_FONT, Color32::BLACK);
+            p.text(Pos2::new(new_l.center().x, new_l.top()), egui::Align2::CENTER_TOP, "Новый", dlg_font(), Color32::BLACK);
             let sw = dlu(client, 194, 122, 53, 41);
             p.rect_filled(sw, 0.0, Color32::from_gray(105));
             let inner = sw.shrink(1.0);
@@ -203,7 +203,7 @@ impl App {
             p.rect_filled(Rect::from_min_max(inner.min, Pos2::new(inner.right(), mid)), 0.0, st.new);
             p.rect_filled(Rect::from_min_max(Pos2::new(inner.left(), mid), inner.max), 0.0, current);
             let cur_l = dlu(client, 194, 166, 53, 10);
-            p.text(Pos2::new(cur_l.center().x, cur_l.top()), egui::Align2::CENTER_TOP, "Текущий", DLG_FONT, Color32::BLACK);
+            p.text(Pos2::new(cur_l.center().x, cur_l.top()), egui::Align2::CENTER_TOP, "Текущий", dlg_font(), Color32::BLACK);
         });
         let done = done.or_else(|| self.dialog_keys(ctx));
         match done {

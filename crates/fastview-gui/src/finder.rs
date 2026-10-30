@@ -90,14 +90,14 @@ fn date_picker(ui: &mut egui::Ui, at: egui::Rect, id: &str, st: &mut Stamp) -> b
         p.rect_filled(at, 0.0, Color32::from_gray(141));
         p.rect_filled(at.shrink(1.0), 0.0, Color32::WHITE);
         let text = st.long_date();
-        let t = p.text(Pos2::new(at.left() + 4.0, at.center().y), egui::Align2::LEFT_CENTER, &text, crate::dialogs::DLG_FONT, Color32::BLACK);
+        let t = p.text(Pos2::new(at.left() + 4.0, at.center().y), egui::Align2::LEFT_CENTER, &text, crate::dialogs::dlg_font(), Color32::BLACK);
         // With the focus its day field is selected (VM: Tab onto «С:»).
         if focused {
             let day = text.split(' ').next().unwrap_or_default().to_owned();
-            let w = ui.fonts(|f| f.layout_no_wrap(day.clone(), crate::dialogs::DLG_FONT, Color32::BLACK).size().x);
+            let w = ui.fonts(|f| f.layout_no_wrap(day.clone(), crate::dialogs::dlg_font(), Color32::BLACK).size().x);
             let hl = Rect::from_min_max(Pos2::new(t.left() - 1.0, t.top()), Pos2::new(t.left() + w + 1.0, t.bottom()));
             p.rect_filled(hl, 0.0, Color32::from_rgb(0, 120, 215));
-            p.text(Pos2::new(at.left() + 4.0, at.center().y), egui::Align2::LEFT_CENTER, &day, crate::dialogs::DLG_FONT, Color32::WHITE);
+            p.text(Pos2::new(at.left() + 4.0, at.center().y), egui::Align2::LEFT_CENTER, &day, crate::dialogs::dlg_font(), Color32::WHITE);
         }
         let cal = Rect::from_min_size(Pos2::new(at.right() - 27.0, at.center().y - 6.0), Vec2::new(11.0, 12.0));
         p.rect_filled(cal, 0.0, Color32::from_rgb(119, 107, 104));
@@ -796,7 +796,7 @@ impl App {
             .resizable(false)
             .open(&mut open)
             .show(ctx, |ui| {
-                use crate::dialogs::{dlu, win_button, win_check, win_combo_list, win_label, win_tree, TreeRow, DLG_FONT};
+                use crate::dialogs::{dlu, win_button, win_check, win_combo_list, win_label, win_tree, TreeRow, dlg_font};
                 use egui::{Color32, Pos2, Rect, Stroke, Vec2};
                 let (client, _) = ui.allocate_exact_size(Vec2::new(1109.0, 575.0), egui::Sense::hover());
                 let r = |x, y, w, h| dlu(client, x, y, w, h);
@@ -873,7 +873,7 @@ impl App {
                     p.rect_filled(pr, 0.0, Color32::WHITE);
                     p.rect_filled(Rect::from_min_max(pr.min, pr.max - Vec2::splat(1.0)), 0.0, Color32::from_gray(160));
                     p.rect_filled(Rect::from_min_max(pr.min + Vec2::splat(1.0), pr.max - Vec2::splat(1.0)), 0.0, Color32::from_gray(240));
-                    p.with_clip_rect(pr.shrink(1.0)).text(Pos2::new(pr.left() + 3.0, pr.center().y), egui::Align2::LEFT_CENTER, f.folder.display().to_string(), DLG_FONT, Color32::BLACK);
+                    p.with_clip_rect(pr.shrink(1.0)).text(Pos2::new(pr.left() + 3.0, pr.center().y), egui::Align2::LEFT_CENTER, f.folder.display().to_string(), dlg_font(), Color32::BLACK);
                 }
                 for (k, (lr, cr)) in [((194, 36, 36, 11), (233, 34, 118, 265)), ((354, 36, 23, 11), (380, 34, 116, 265))].into_iter().enumerate() {
                     let (label, value) = if k == 0 { ("Станция:", &mut f.station) } else { ("Блок:", &mut f.block) };
@@ -917,7 +917,7 @@ impl App {
                     let p = ui.painter();
                     p.vline(h.right() - 1.5, h.y_range(), Stroke::new(1.0f32, Color32::from_gray(229)));
                     p.vline(h.right() - 0.5, h.bottom()..=inner.bottom(), grid);
-                    let t = p.with_clip_rect(h).text(Pos2::new(h.left() + 6.0, h.center().y), egui::Align2::LEFT_CENTER, label, DLG_FONT, Color32::BLACK);
+                    let t = p.with_clip_rect(h).text(Pos2::new(h.left() + 6.0, h.center().y), egui::Align2::LEFT_CENTER, label, dlg_font(), Color32::BLACK);
                     if f.sort.0 == col {
                         // The sort image (the original's own: a pale box
                         // with a pink triangle) after the text.
@@ -969,7 +969,7 @@ impl App {
                                 let (cx, cw) = xs[k];
                                 let cell = Rect::from_min_size(Pos2::new(cx, row.top()), Vec2::new(cw - 1.0, 16.0));
                                 let at = Pos2::new(cx + if k == 0 { 18.0 } else { 6.0 }, row.top() + 8.0);
-                                p.with_clip_rect(cell).text(at, egui::Align2::LEFT_CENTER, t, DLG_FONT, ink);
+                                p.with_clip_rect(cell).text(at, egui::Align2::LEFT_CENTER, t, dlg_font(), ink);
                             }
                             // NM_DBLCLK (`0x46e330`): with a selection, OnOK —
                             // every selected file opens (the first click of

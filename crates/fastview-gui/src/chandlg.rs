@@ -762,7 +762,7 @@ impl App {
                     let p = ui.painter();
                     p.vline(r.right() - 1.5, r.y_range(), Stroke::new(1.0f32, Color32::from_gray(229)));
                     if c == 0 {
-                        p.text(r.left_center() + Vec2::new(5.0, 0.0), egui::Align2::LEFT_CENTER, "Каналы", crate::dialogs::DLG_FONT, ink);
+                        p.text(r.left_center() + Vec2::new(5.0, 0.0), egui::Align2::LEFT_CENTER, "Каналы", crate::dialogs::dlg_font(), ink);
                     } else {
                         header_glyph(p, r, c, pal.accent);
                     }
@@ -784,7 +784,7 @@ impl App {
                                     if c == 0 {
                                         let p = ui.painter().with_clip_rect(r);
                                         row_icon(&p, r, if matches!(pr, PairRow::Dif(_)) { 4 } else { 3 }, pal.accent);
-                                        p.text(r.left_center() + Vec2::new(26.0, 0.0), egui::Align2::LEFT_CENTER, pair_name(doc, pr), crate::dialogs::DLG_FONT, ink);
+                                        p.text(r.left_center() + Vec2::new(26.0, 0.0), egui::Align2::LEFT_CENTER, pair_name(doc, pr), crate::dialogs::dlg_font(), ink);
                                     } else {
                                         let resp = ui.interact(r, ui.id().with(("fv_ch_pair", pr, c)), Sense::click());
                                         cell_mark(ui.painter(), r, pair_cell(doc, pr, c), pal.accent);
@@ -814,7 +814,7 @@ impl App {
                                     row_icon(&ui.painter().with_clip_rect(r), r, if digital_row(doc, k) { 9 } else { 8 }, pal.accent);
                                     ui.painter().rect_filled(er, 0.0, Color32::WHITE);
                                     if st.refused {
-                                        ui.painter().with_clip_rect(er).text(er.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, text.as_str(), crate::dialogs::DLG_FONT, ink);
+                                        ui.painter().with_clip_rect(er).text(er.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, text.as_str(), crate::dialogs::dlg_font(), ink);
                                         continue;
                                     }
                                     let te = ui.put(er, egui::TextEdit::singleline(text).id(egui::Id::new(("fv_ch_rename", k))).frame(false).margin(egui::Margin::symmetric(1.0, 0.0)).desired_width(er.width() - 2.0));
@@ -839,9 +839,9 @@ impl App {
                                 let p = ui.painter().with_clip_rect(r);
                                 row_icon(&p, r, if digital_row(doc, key) { 9 } else { 8 }, pal.accent);
                                 let at = r.left_center() + Vec2::new(26.0, 0.0);
-                                let name = p.text(at, egui::Align2::LEFT_CENTER, row_name(doc, key), crate::dialogs::DLG_FONT, ink);
+                                let name = p.text(at, egui::Align2::LEFT_CENTER, row_name(doc, key), crate::dialogs::dlg_font(), ink);
                                 if let Some(orig) = doc.original_name(key) {
-                                    p.text(Pos2::new(name.right() + 5.0, at.y), egui::Align2::LEFT_CENTER, format!("({orig})"), crate::dialogs::DLG_FONT, GREY);
+                                    p.text(Pos2::new(name.right() + 5.0, at.y), egui::Align2::LEFT_CENTER, format!("({orig})"), crate::dialogs::dlg_font(), GREY);
                                 }
                                 if resp.clicked() {
                                     match can_rename(doc, key) {
@@ -907,7 +907,7 @@ impl App {
                 let cols = [(0.0, 155.0), (155.0, 153.0), (308.0, 153.0)];
                 let grid = Stroke::new(1.0f32, Color32::from_gray(240));
                 let ink = Color32::BLACK;
-                let font = crate::dialogs::DLG_FONT;
+                let font = crate::dialogs::dlg_font();
                 for (x, w) in cols {
                     ui.painter().vline(inner.left() + x + w - 0.5, inner.top() + hdr_h..=inner.bottom(), grid);
                 }

@@ -102,7 +102,7 @@ pub fn ribbon_tip(ui: &egui::Ui, r: &egui::Response, img: TipImage, cmd: &Comman
 /// row (VM: y 31).
 pub fn qat_tip(ui: &egui::Ui, r: &egui::Response, img: TipImage, title: &str, desc: &str) {
     let x = ui.ctx().pointer_hover_pos().map_or(r.rect.left(), |p| p.x);
-    tip(ui, r, Pos2::new(x, ui.max_rect().top() + 31.0), img, title, desc, true, 2.0);
+    tip(ui, r, Pos2::new(x, ui.max_rect().top() + crate::dpi::measured(31.0, 37.0, 44.0)), img, title, desc, true, 2.0);
 }
 
 /// A toolbar button's tooltip: 18 px under the pointer, kept on the
@@ -116,7 +116,7 @@ pub fn pointer_tip(ui: &egui::Ui, r: &egui::Response, img: TipImage, title: &str
 /// tooltip the system places (the ОМП bar's button, VM) stops 8 px short,
 /// where CMFCToolBar's own placement leaves 2.
 pub fn pointer_tip_inset(ui: &egui::Ui, r: &egui::Response, img: TipImage, title: &str, desc: &str, bold: bool, inset: f32) {
-    let at = ui.ctx().pointer_hover_pos().unwrap_or(r.rect.left_bottom()) + Vec2::new(0.0, 18.0);
+    let at = ui.ctx().pointer_hover_pos().unwrap_or(r.rect.left_bottom()) + Vec2::new(0.0, crate::dpi::s(18.0));
     tip(ui, r, at, img, title, desc, bold, inset);
 }
 
@@ -169,21 +169,26 @@ fn wrap(ctx: &egui::Context, text: &str, font: &egui::FontId, max: f32) -> Vec<S
 }
 
 fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, bold_title: bool, inset: f32) {
+    use crate::dpi::{img as side, s};
     const INK: Color32 = Color32::from_rgb(76, 76, 76);
-    const PITCH: f32 = 13.0;
-    let font = egui::FontId::proportional(12.0);
-    let bold = if bold_title { ctx.fonts(|f| crate::lanes::bold_font(f, 12.0)).unwrap_or(font.clone()) } else { font.clone() };
+    // The font, its pitch, the wrap width and the images at the system
+    // DPI (VM, 125 %: the ribbon's tips 1.25 × as wide and tall).
+    let pitch = s(13.0);
+    let size = crate::dpi::font(12.0);
+    let font = egui::FontId::proportional(size);
+    let bold = if bold_title { ctx.fonts(|f| crate::lanes::bold_font(f, size)).unwrap_or(font.clone()) } else { font.clone() };
     let width = |t: &str, f: &egui::FontId| ctx.fonts(|fs| fs.layout_no_wrap(t.to_owned(), f.clone(), INK).size().x);
     // Segoe UI wraps near 190 px; Tahoma's letters are a little wider.
-    let lines = wrap(ctx, desc, &font, 195.0);
+    let lines = wrap(ctx, desc, &font, s(195.0));
     let plain = matches!(img, TipImage::None);
     let text_x = match img {
-        TipImage::Large(_) => 45.0,
-        TipImage::Small(_) | TipImage::Mini(_) | TipImage::Tool(_) | TipImage::OmpTool(_) | TipImage::Help => 29.0,
+        TipImage::Large(_) => side(32.0) + 13.0,
+        TipImage::Small(_) | TipImage::Mini(_) | TipImage::OmpTool(_) | TipImage::Help => side(16.0) + 13.0,
+        TipImage::Tool(_) => s(29.0),
         TipImage::None | TipImage::Blank => 6.0,
     };
     let text_w = lines.iter().map(|l| width(l, &font)).chain(std::iter::once(if plain { 0.0 } else { width(title, &bold) })).fold(0.0, f32::max);
-    let size = if plain { Vec2::new((text_x + text_w + 7.0).round(), 21.0) } else { Vec2::new((text_x + text_w + 10.0).round(), 24.0 + PITCH * lines.len() as f32 + 5.0) };
+    let size = if plain { Vec2::new((text_x + text_w + 7.0).round(), s(21.0)) } else { Vec2::new((text_x + text_w + 10.0).round(), s(24.0) + pitch * lines.len() as f32 + 5.0) };
     let screen = ctx.screen_rect();
     // Kept `inset` px inside the screen's right edge (VM).
     let at = Pos2::new(at.x.min(screen.right() - inset - size.x).max(screen.left()), at.y).round();
@@ -209,13 +214,13 @@ fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, 
         p.add(mesh);
         let accent = Color32::from_rgb(21, 66, 139);
         match img {
-            TipImage::Large(icon) => crate::icons::paint(p, Rect::from_min_size(r.min + Vec2::new(12.0, 5.0), Vec2::splat(32.0)).shrink(2.0), icon, accent),
-            TipImage::Small(icon) => crate::icons::paint(p, Rect::from_min_size(r.min + Vec2::new(9.0, 5.0), Vec2::splat(16.0)), icon, accent),
-            TipImage::Mini(m) => crate::ribbon::paint_mini(p, Rect::from_min_size(r.min + Vec2::new(9.0, 5.0), Vec2::splat(16.0)), m, accent),
+            TipImage::Large(icon) => crate::icons::paint(p, Rect::from_min_size(r.min + Vec2::new(12.0, 5.0), Vec2::splat(side(32.0))).shrink(2.0), icon, accent),
+            TipImage::Small(icon) => crate::icons::paint(p, Rect::from_min_size(r.min + Vec2::new(9.0, 5.0), Vec2::splat(side(16.0))), icon, accent),
+            TipImage::Mini(m) => crate::ribbon::paint_mini(p, Rect::from_min_size(r.min + Vec2::new(9.0, 5.0), Vec2::splat(side(16.0))), m, accent),
             // (the toolbar's 22 px cell, the glyph 4 px in)
-            TipImage::Tool(t) => crate::diagram_ui::paint_tool(p, Rect::from_min_size(r.min + Vec2::new(5.0, 2.0), Vec2::splat(22.0)), t, accent),
-            TipImage::OmpTool(t) => crate::omp_ui::paint_tool_icon(p, Rect::from_min_size(r.min + Vec2::new(9.0, 5.0), Vec2::splat(16.0)), t, true),
-            TipImage::Help => crate::ribbon::help_image(p, r.min + Vec2::new(17.0, 13.0)),
+            TipImage::Tool(t) => crate::diagram_ui::paint_tool(p, Rect::from_min_size(r.min + Vec2::new(5.0, 2.0), Vec2::splat(s(22.0))), t, accent),
+            TipImage::OmpTool(t) => crate::omp_ui::paint_tool_icon(p, Rect::from_min_size(r.min + Vec2::new(9.0, 5.0), Vec2::splat(side(16.0))), t, true),
+            TipImage::Help => crate::ribbon::help_image(p, r.min + Vec2::new(9.0 + side(16.0) / 2.0, 5.0 + side(16.0) / 2.0)),
             TipImage::None | TipImage::Blank => {}
         }
         if plain {
@@ -229,7 +234,7 @@ fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, 
         }
         for (k, l) in lines.iter().enumerate() {
             // (the glyphs from + 26, as the original's)
-            p.text(r.min + Vec2::new(text_x, 24.0 + PITCH * k as f32), egui::Align2::LEFT_TOP, l, font.clone(), INK);
+            p.text(r.min + Vec2::new(text_x, s(24.0) + pitch * k as f32), egui::Align2::LEFT_TOP, l, font.clone(), INK);
         }
     });
 }

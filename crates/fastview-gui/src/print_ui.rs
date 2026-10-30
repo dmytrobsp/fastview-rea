@@ -245,7 +245,7 @@ impl App {
             use crate::dialogs::{dlu, win_button, win_button_en, win_check, win_combo_list, win_group, win_label};
             // The 341 × 258 DLU template (512 × 419 px); «Печать в файл»
             // (1040) is hidden, edit 1154 off the client.
-            let (client, _) = ui.allocate_exact_size(Vec2::new(512.0, 419.0), egui::Sense::hover());
+            let (client, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(341, 258), egui::Sense::hover());
             win_group(ui, dlu(client, 8, 4, 323, 97), "Принтер");
             win_label(ui, dlu(client, 16, 20, 36, 8), "Имя:", false, true);
             if let Some(k) = win_combo_list(ui, dlu(client, 70, 18, 180, 152), egui::Id::new("print_name"), &names, dlg.printer.min(names.len() - 1), true) {
@@ -322,8 +322,8 @@ impl App {
         // in the dialog frame, placed as the others.
         crate::dialogs::dlg(ctx, "Параметры страницы").margin(0.0).collapsible(false).resizable(false).open(&mut open).order(egui::Order::Foreground).show(ctx, |ui| {
             use crate::dialogs::{win_button, win_combo_list, win_edit, win_group, win_label, win_radio};
-            let (client, _) = ui.allocate_exact_size(Vec2::new(360.0, 390.0), egui::Sense::hover());
-            let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(client.min + Vec2::new(x, y), Vec2::new(w, h));
+            let (client, _) = ui.allocate_exact_size(crate::dialogs::dp_size(360.0, 390.0), egui::Sense::hover());
+            let at = |x: f32, y: f32, w: f32, h: f32| crate::dialogs::dp(client, x, y, w, h);
             // The sample page: A4's 91 × 130 px at (134, 13) (VM), across
             // when landscape, centred in the same place; a (128) frame at
             // its left and top, black at its right and bottom, an 8 px

@@ -210,7 +210,7 @@ impl App {
     /// each column, columns 120 and 331 px, 17 px rows ruled in (240)
     /// down the whole list; the buttons at 218).
     pub(crate) fn formula_page_ui(&mut self, ui: &mut egui::Ui, o: egui::Pos2) {
-        use crate::dialogs::{dlu, win_button, DLG_FONT};
+        use crate::dialogs::{dlu, win_button, dlg_font};
         use egui::{Color32, Rect, Stroke};
         let origin = Rect::from_min_size(o, egui::Vec2::ZERO);
         let list = dlu(origin, 7, 7, 316, 203);
@@ -232,7 +232,7 @@ impl App {
         for ((x, w), t) in cols.into_iter().zip(["Название канала", "Формула"]) {
             let r = Rect::from_min_size(inner.min + egui::vec2(x, 0.0), egui::vec2(w, hdr_h));
             p.vline(r.right() - 1.5, r.y_range(), Stroke::new(1.0f32, Color32::from_gray(229)));
-            p.with_clip_rect(r).text(r.left_center() + egui::vec2(6.0, 0.0), egui::Align2::LEFT_CENTER, t, DLG_FONT, Color32::BLACK);
+            p.with_clip_rect(r).text(r.left_center() + egui::vec2(6.0, 0.0), egui::Align2::LEFT_CENTER, t, dlg_font(), Color32::BLACK);
         }
         let mut double = None;
         let mut pressed_outside = false;
@@ -267,7 +267,7 @@ impl App {
                 let editing = matches!(&fp.edit, Some((er, ec, _)) if *er == i && *ec == col);
                 if editing {
                     let Some((_, _, text)) = fp.edit.as_mut() else { continue };
-                    let resp = ui.put(r, egui::TextEdit::singleline(text).frame(false).font(DLG_FONT).margin(egui::Margin::symmetric(5.0, 1.0)));
+                    let resp = ui.put(r, egui::TextEdit::singleline(text).frame(false).font(dlg_font()).margin(egui::Margin::symmetric(5.0, 1.0)));
                     resp.request_focus();
                     if ui.input(|inp| inp.pointer.any_pressed()) && !resp.hovered() {
                         pressed_outside = true;
@@ -275,7 +275,7 @@ impl App {
                     continue;
                 }
                 let text = if col == 0 { &fp.rows[i].0 } else { &fp.rows[i].1 };
-                p.with_clip_rect(r).text(r.left_center() + egui::vec2(6.0, 0.0), egui::Align2::LEFT_CENTER, text, DLG_FONT, if sel { Color32::WHITE } else { Color32::BLACK });
+                p.with_clip_rect(r).text(r.left_center() + egui::vec2(6.0, 0.0), egui::Align2::LEFT_CENTER, text, dlg_font(), if sel { Color32::WHITE } else { Color32::BLACK });
                 let resp = ui.interact(r, ui.id().with(("fp_cell", i, col)), egui::Sense::click());
                 if resp.clicked() {
                     fp.selected = Some(i);

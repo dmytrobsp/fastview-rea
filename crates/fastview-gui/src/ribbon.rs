@@ -9,7 +9,55 @@ use crate::icons::{self, Icon};
 use crate::oscgeom::PixelLines;
 use crate::theme::Skin;
 use crate::tips::{self, TipImage};
+use crate::dpi::{img, s};
 use eframe::egui::{self, Color32, RichText};
+
+/// The ribbon's rows at the system DPI (#12; VM at 100 / 125 / 150 %): the
+/// caption row 30 / 36 / 43 px, the tab row 23 / 30 / 35, a panel's
+/// caption band 16 / 22 / 26.
+fn caption_h() -> f32 {
+    crate::dpi::measured(30.0, 36.0, 43.0)
+}
+
+fn tab_row_h() -> f32 {
+    crate::dpi::measured(23.0, 30.0, 35.0)
+}
+
+fn band_h() -> f32 {
+    crate::dpi::measured(16.0, 22.0, 26.0)
+}
+
+/// The large buttons' text line (our stand-in font's).
+fn line_h() -> f32 {
+    s(LINE_H)
+}
+
+/// A large button's height ([`LARGE_H`] at 100 %): the large image + 1 +
+/// max(two text lines, image + 1) (`0x10101ab9`) — 82 / 98 at 125 / 150 %.
+fn large_h() -> f32 {
+    if crate::dpi::unscaled() {
+        return LARGE_H;
+    }
+    let i = img(32.0);
+    i + 1.0 + (2.0 * line_h()).max(i + 1.0)
+}
+
+/// The category body's height inside its frame: a large button, the
+/// panel margins and its caption band (86 at 100 %).
+fn body_inner() -> f32 {
+    large_h() + 2.0 + band_h() + 2.0
+}
+
+/// The body's bottom line from the ribbon's top (143 at 100 %; VM: 178
+/// and 210 at 125 / 150 %).
+fn ribbon_bottom() -> f32 {
+    caption_h() + tab_row_h() + body_inner() + 4.0
+}
+
+/// A small button's side: its image + 6 (22 at 100 %).
+fn small_h() -> f32 {
+    img(16.0) + 6.0
+}
 
 impl App {
     /// The wheel over the ribbon steps its tabs (CMFCRibbonBar's
@@ -43,35 +91,36 @@ impl App {
         // below that the lighter `tab_active` fill.
         let full = ui.max_rect();
         // The body's bottom line (row 143, L9.225): the tooltips open under it.
-        crate::tips::set_ribbon_bottom(ui.ctx(), full.min.y + 143.0);
-        ui.painter().rect_filled(egui::Rect::from_min_size(full.min, egui::vec2(full.width(), 30.0)), 0.0, Color32::WHITE);
-        let band = egui::Rect::from_min_size(full.min + egui::vec2(0.0, 30.0), egui::vec2(full.width(), 23.0));
+        crate::tips::set_ribbon_bottom(ui.ctx(), full.min.y + ribbon_bottom());
+        ui.painter().rect_filled(egui::Rect::from_min_size(full.min, egui::vec2(full.width(), caption_h())), 0.0, Color32::WHITE);
+        let band = egui::Rect::from_min_size(full.min + egui::vec2(0.0, caption_h()), egui::vec2(full.width(), tab_row_h()));
         paint_v_gradient(ui, band, p.ribbon_top, p.ribbon_bottom);
 
         // The Office 2007 looks' round application button, 45 × 45 at the
         // top left over both rows (`SetApplicationButton` with (45, 45),
         // `0x472fef`; its image 570 is the original's — ours the logo).
         // The older looks' flat button is 41 px about the same centre (VM).
-        let orb_d = if p.orb_flat.is_some() { 41.0 } else { 45.0 };
+        let orb_d = s(if p.orb_flat.is_some() { 41.0 } else { 45.0 });
         // Maximised, the caption's content sits a pixel higher (VM).
         let max_up = if ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false)) { 1.0 } else { 0.0 };
-        let orb = p.app_orb.map(|c| (egui::Rect::from_center_size(full.min + egui::vec2(3.0 + 22.5, 2.0 + 22.5 - max_up), egui::vec2(orb_d, orb_d)), c));
+        let orb = p.app_orb.map(|c| (egui::Rect::from_center_size(full.min + egui::vec2(s(3.0) + s(45.0) / 2.0, s(2.0) + s(45.0) / 2.0 - max_up), egui::vec2(orb_d, orb_d)), c));
         // Office 2007's quick-access toolbar in the caption: its glass
         // frame (RIBBON_CAPTION_QA_GLASS, VM): from under the orb to x 131,
         // y 6–26, a (173, 176, 184) edge round a light face, the right
         // end rounded; a white disc 25.5 px about the orb's centre cuts its
         // left end, a grey arc along the cut.
         if orb.is_some() && p.orb_flat.is_none() {
-            let c = full.min + egui::vec2(22.0, 25.0 - max_up);
+            let c = full.min + egui::vec2(s(22.0), s(25.0) - max_up);
             // (the orb's centre, `paint_orb`)
-            let glass = egui::Rect::from_min_max(egui::pos2(c.x, full.min.y + 6.0 - max_up), egui::pos2(full.min.x + 132.0, full.min.y + 27.0 - max_up));
-            let round = egui::Rounding { nw: 0.0, sw: 0.0, ne: 10.5, se: 10.5 };
+            let glass = egui::Rect::from_min_max(egui::pos2(c.x, full.min.y + s(6.0) - max_up), egui::pos2(full.min.x + qat_glass_right(), full.min.y + s(27.0) - max_up));
+            let k = crate::dpi::k();
+            let round = egui::Rounding { nw: 0.0, sw: 0.0, ne: 10.5 * k, se: 10.5 * k };
             let painter = ui.painter();
             painter.rect_filled(glass, round, Color32::from_rgb(173, 176, 184));
-            painter.rect_filled(glass.shrink(1.0), egui::Rounding { ne: 9.5, se: 9.5, ..Default::default() }, Color32::from_rgb(232, 237, 241));
+            painter.rect_filled(glass.shrink(1.0), egui::Rounding { ne: 10.5 * k - 1.0, se: 10.5 * k - 1.0, ..Default::default() }, Color32::from_rgb(232, 237, 241));
             let cut = painter.with_clip_rect(glass);
-            cut.circle_filled(c, 25.5, Color32::WHITE);
-            cut.circle_stroke(c, 25.5, egui::Stroke::new(1.0f32, Color32::from_rgb(205, 207, 211)));
+            cut.circle_filled(c, 25.5 * k, Color32::WHITE);
+            cut.circle_stroke(c, 25.5 * k, egui::Stroke::new(1.0f32, Color32::from_rgb(205, 207, 211)));
         }
         // The rows touch: the caption 30 px, the tab strip 23 px, then the
         // body's frame (VM: rows 0–29, 30–52, the line at 53).
@@ -79,11 +128,11 @@ impl App {
         ui.spacing_mut().item_spacing.y = 0.0;
         // ---- Row 1: quick-access toolbar + title + style/help ----
         ui.horizontal(|ui| {
-            ui.set_height(30.0);
-            ui.add_space(4.0);
+            ui.set_height(caption_h());
+            ui.add_space(s(4.0));
             if orb.is_none() {
-                draw_logo(ui, 18.0, p.accent);
-                ui.add_space(2.0);
+                draw_logo(ui, s(18.0), p.accent);
+                ui.add_space(s(2.0));
             }
             // Application menu (0x472f30): the original's ten items, the
             // «Последние документы» list, and our own extras in a labelled
@@ -104,7 +153,7 @@ impl App {
                 // The orb's upper part anchors the menu (its lower part is
                 // in the tab row, below).
                 // (narrower than the orb: the QAT starts at x 49)
-                Some((r, _)) => egui::Button::new("").frame(false).min_size(egui::vec2(r.width() - 10.0, 20.0)),
+                Some((r, _)) => egui::Button::new("").frame(false).min_size(egui::vec2(r.width() - s(10.0), s(20.0))),
                 None => egui::Button::new(RichText::new(APP_MENU_TITLE).color(p.text).strong()),
             };
             // The main panel is MFC's Office 2007 one (VM, Blue): opened
@@ -123,7 +172,7 @@ impl App {
                 let state = egui::menu::BarState::load(ui.ctx(), bar_id);
                 let root: &Option<egui::menu::MenuRoot> = &state;
                 if let Some(root) = root {
-                    root.menu_state.write().rect.min = full.min + egui::vec2(0.0, 26.0);
+                    root.menu_state.write().rect.min = full.min + egui::vec2(0.0, s(26.0));
                 }
             }
             let app_button = egui::menu::menu_custom_button(ui, anchor, |ui| {
@@ -138,12 +187,12 @@ impl App {
                 ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                 // The top band: the outer line, white, the gradient, white,
                 // the inner line (25 rows).
-                ui.allocate_exact_size(egui::vec2(MAIN_W, 25.0), egui::Sense::hover());
+                ui.allocate_exact_size(egui::vec2(main_w(), s(25.0)), egui::Sense::hover());
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                     ui.add_space(7.0);
                     ui.vertical(|ui| {
-                        ui.set_width(MAIN_LEFT_W);
+                        ui.set_width(main_left_w());
                         ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                         let close_cmd = self.active.map(Command::CloseDoc);
                         // (label, its underlined letter, enabled, command, sub-items)
@@ -165,8 +214,8 @@ impl App {
                             // every later item (VM): its line from after the
                             // image column, 4 rows in all.
                             if k >= 3 {
-                                let (r, _) = ui.allocate_exact_size(egui::vec2(MAIN_LEFT_W, 4.0), egui::Sense::hover());
-                                let line = egui::Rect::from_min_max(egui::pos2(r.left() + 35.0, r.top()), egui::pos2(r.right(), r.top() + 1.0));
+                                let (r, _) = ui.allocate_exact_size(egui::vec2(main_left_w(), 4.0), egui::Sense::hover());
+                                let line = egui::Rect::from_min_max(egui::pos2(r.left() + img(32.0) + 3.0, r.top()), egui::pos2(r.right(), r.top() + 1.0));
                                 ui.painter().rect_filled(line, 0.0, MAIN_RULE);
                                 ui.painter().rect_filled(line.translate(egui::vec2(0.0, 1.0)), 0.0, MAIN_RULE_LIGHT);
                             }
@@ -194,7 +243,7 @@ impl App {
                     // The divider: a (197) and a (245) column.
                     ui.add_space(2.0);
                     ui.vertical(|ui| {
-                        ui.set_width(MAIN_RIGHT_W);
+                        ui.set_width(main_right_w());
                         ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
                         let title = match sub {
                             Some(AppSub::Print) => "Предварительный просмотр и печать документа",
@@ -272,7 +321,7 @@ impl App {
             let qat_spacing = ui.spacing().item_spacing.x;
             ui.spacing_mut().item_spacing.x = 0.0;
             if orb.is_some() {
-                let to = full.min.x + 49.0 - ui.cursor().min.x;
+                let to = full.min.x + s(49.0) - ui.cursor().min.x;
                 ui.add_space(to.max(0.0));
             } else {
                 ui.add_space(4.0);
@@ -311,7 +360,7 @@ impl App {
                     }
                 }
             }
-            ui.add_space(14.5);
+            ui.add_space(s(14.5));
             // The customise arrow: one item, «Свернуть ленту».
             let custom = qat_arrow(ui, p, true);
             // A plain one-line tip (mfc120rus 17096).
@@ -320,7 +369,7 @@ impl App {
             // Its menu right under the button's own 20 px (VM: the border at
             // y 24, under the pressed look's 18–23).
             if custom.clicked() || custom.secondary_clicked() {
-                open_min_menu(ui, custom.rect.left_bottom() - egui::vec2(0.0, 2.0));
+                open_min_menu(ui, custom.rect.left_bottom() - egui::vec2(0.0, s(2.0)));
             }
             // The caption row (the ribbon's own, `bReplaceFrameCaption`,
             // over DWM's frame — L9.150): the title centred in the free
@@ -339,15 +388,15 @@ impl App {
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
                     }
                     // Windows 11's caption font, Segoe UI 9 pt (12 px).
-                    let font = egui::FontId::proportional(12.0);
+                    let font = egui::FontId::proportional(crate::dpi::font(12.0));
                     let g = ui.painter().layout_no_wrap(self.window_title.clone(), font, Color32::BLACK);
                     let w = g.size().x.min(free.width());
                     // The style's TextCenter: off for Aqua (left-aligned);
                     // else 25 px right of the window's centre, maximised or
                     // not (VM: 1305.5 of 2560, 1193 of a 216–2120 window),
                     // a pixel lower when maximised (rows 11–22).
-                    let mid = ui.ctx().screen_rect().center().x + 25.0;
-                    let x = if self.skin == Skin::Aqua { free.left() + 4.0 } else { (mid - w / 2.0).min(free.right() - w).max(free.left()) };
+                    let mid = ui.ctx().screen_rect().center().x + s(25.0);
+                    let x = if self.skin == Skin::Aqua { free.left() + s(4.0) } else { (mid - w / 2.0).min(free.right() - w).max(free.left()) };
                     let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
                     let y = free.center().y - g.size().y / 2.0 + if max { 1.0 } else { 0.0 };
                     ui.painter().with_clip_rect(free).galley(egui::pos2(x, y), g, Color32::BLACK);
@@ -361,8 +410,8 @@ impl App {
         if self.print.preview.is_some() {
             // The application button and the QAT stay (VM).
             ui.horizontal(|ui| {
-                ui.set_height(24.0);
-                ui.add_space(6.0);
+                ui.set_height(tab_row_h() + 1.0);
+                ui.add_space(s(6.0));
                 self.orb_ui(ui, orb, p);
                 let r = ribbon_tab(ui, "Просмотр для печати", true, p);
                 self.kt_rects.push((crate::keytips::Target::PreviewTab, r.rect, true));
@@ -376,7 +425,7 @@ impl App {
                     .inner_margin(egui::Margin { left: 4.0, right: 6.0, top: 2.0, bottom: 2.0 })
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing.y = row_gap;
-                        ui.set_min_height(LARGE_H + 2.0 + 16.0 + 2.0);
+                        ui.set_min_height(body_inner());
                         ui.set_min_width(ui.available_width());
                         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                         ui.horizontal_top(|ui| {
@@ -393,8 +442,8 @@ impl App {
         }
         ui.horizontal(|ui| {
             // 23 px, and the body frame's stroke straddles its edge: 24.
-            ui.set_height(24.0);
-            ui.add_space(6.0);
+            ui.set_height(tab_row_h() + 1.0);
+            ui.add_space(s(6.0));
             self.orb_ui(ui, orb, p);
             // «Главная»'s frame from x 48, four pixels between the tabs'
             // frames (VM, 1280 × 800).
@@ -431,7 +480,7 @@ impl App {
                     // A constant height: expanded panels (a large button,
                     // the panel margins and its 15 px caption), across the
                     // whole window — 86 px inside, as on the VM.
-                    ui.set_min_height(LARGE_H + 2.0 + 16.0 + 2.0);
+                    ui.set_min_height(body_inner());
                     ui.set_min_width(ui.available_width());
                     // Never wrap a label: a group that does not fit is
                     // collapsed (below), not squeezed.
@@ -738,11 +787,12 @@ impl App {
             // 2521, the «?» image's centre at 2537).
             ui.spacing_mut().item_spacing.x = 0.0;
             // Help split button (57667): the arrow opens {Помощь, О программе...}.
-            let (hr, help) = ui.allocate_exact_size(egui::vec2(33.0, 22.0), egui::Sense::click());
+            let row = tab_row_h() - 1.0;
+            let (hr, help) = ui.allocate_exact_size(egui::vec2(s(33.0), row), egui::Sense::click());
             let open_menu = self.top_menu.as_ref().map(|(m, _)| *m);
             tab_row_hot(ui, &help, &p, open_menu == Some(TopMenu::Help));
-            help_image(ui.painter(), egui::pos2(hr.left() + 10.5, hr.center().y));
-            menu_arrow(ui.painter(), egui::pos2(hr.left() + 25.0, hr.center().y - 1.0));
+            help_image(ui.painter(), egui::pos2(hr.left() + crate::dpi::half(10.5), hr.center().y));
+            menu_arrow(ui.painter(), egui::pos2(hr.left() + s(25.0), hr.center().y - 1.0));
             // mfc120rus 57667, as the original's tip («Help Topics» on the VM).
             tips::pointer_tip(ui, &help, TipImage::Help, "Вызов справки", "Вывод оглавления справочной системы", true);
             if help.clicked() {
@@ -752,10 +802,10 @@ impl App {
             // «Стиль» (menu 200): the radio entry of the current look,
             // persisted as `ApplicationLook`.
             // 51 px (VM: its face from x 1196 to 1246 at 1280 wide).
-            let (sr, style) = ui.allocate_exact_size(egui::vec2(51.0, 22.0), egui::Sense::click());
+            let (sr, style) = ui.allocate_exact_size(egui::vec2(s(51.0), row), egui::Sense::click());
             tab_row_hot(ui, &style, &p, open_menu == Some(TopMenu::Style));
-            ui.painter().text(egui::pos2(sr.right() - 46.5, sr.center().y), egui::Align2::LEFT_CENTER, "Стиль", egui::FontId::proportional(12.0), p.text);
-            menu_arrow(ui.painter(), egui::pos2(sr.right() - 5.5, sr.center().y - 1.0));
+            ui.painter().text(egui::pos2(sr.right() - crate::dpi::half(46.5), sr.center().y), egui::Align2::LEFT_CENTER, "Стиль", egui::FontId::proportional(crate::dpi::font(12.0)), p.text);
+            menu_arrow(ui.painter(), egui::pos2(sr.right() - crate::dpi::half(5.5), sr.center().y - 1.0));
             // Its own tip and description (strings 287 / 288, VM).
             tips::pointer_tip(ui, &style, TipImage::Blank, "Изменить стиль оформления", "Выберите одну из тем Office 2007", true);
             if style.clicked() {
@@ -801,11 +851,13 @@ fn menu_arrow(p: &egui::Painter, at: egui::Pos2) {
 /// The help button's image (VM): a blue sphere with a white ring inside a
 /// (80, 113, 160) edge, a white «?».
 pub(crate) fn help_image(p: &egui::Painter, c: egui::Pos2) {
-    p.circle_filled(c, 7.5, Color32::from_rgb(80, 113, 160));
-    p.circle_filled(c, 6.5, Color32::WHITE);
-    p.circle_filled(c, 5.5, Color32::from_rgb(31, 95, 230));
-    p.circle_filled(c + egui::vec2(-1.5, -1.5), 3.0, Color32::from_rgb(79, 136, 250));
-    p.text(c + egui::vec2(0.0, 0.5), egui::Align2::CENTER_CENTER, "?", egui::FontId::proportional(10.0), Color32::WHITE);
+    // A 16 px image, stretched with the others at > 100 %.
+    let k = img(16.0) / 16.0;
+    p.circle_filled(c, 7.5 * k, Color32::from_rgb(80, 113, 160));
+    p.circle_filled(c, 7.5 * k - 1.0, Color32::WHITE);
+    p.circle_filled(c, 7.5 * k - 2.0, Color32::from_rgb(31, 95, 230));
+    p.circle_filled(c + egui::vec2(-1.5, -1.5) * k, 3.0 * k, Color32::from_rgb(79, 136, 250));
+    p.text(c + egui::vec2(0.0, 0.5), egui::Align2::CENTER_CENTER, "?", egui::FontId::proportional(10.0 * k), Color32::WHITE);
 }
 
 impl App {
@@ -960,7 +1012,7 @@ fn office2007(p: &crate::theme::Palette) -> bool {
 /// (246, 178, 109) → (235, 152, 84), (230, 131, 51) → (247, 196, 95). The
 /// older looks their flat selection colour.
 pub(crate) fn checked_bg(painter: &egui::Painter, rect: egui::Rect, p: &crate::theme::Palette, hot: bool) {
-    if office2007(p) && !hot && rect.height() <= 24.0 {
+    if office2007(p) && !hot && rect.height() <= small_h() + 2.0 {
         // A small button checked (VM, «Вторичные знач.»): a (167, 142,
         // 102) top edge, two shaded rows — (202, 179, 152), (233, 208,
         // 177) —, the face (247, 218, 182) → (250, 209, 146) down to its
@@ -1136,8 +1188,10 @@ fn paint_orb(painter: &egui::Painter, r: egui::Rect, colors: [Color32; 3], state
     let c = colors[state.min(2)];
     // The flat looks' button fills its 41 px; Office 2007's round image is
     // 36 px in the 45 px button, its centre at (22, 25) (VM).
-    // (The rim's stroke inside the 18 px radius.)
-    let (r, rad) = if flat.is_some() { (r, r.width() / 2.0) } else { (egui::Rect::from_center_size(r.min + egui::vec2(19.0, 23.0), egui::vec2(36.0, 36.0)), 17.25) };
+    // (The rim's stroke inside the 18 px radius.) Stretched with the
+    // button at > 100 %.
+    let k = r.width() / 45.0;
+    let (r, rad) = if flat.is_some() { (r, r.width() / 2.0) } else { (egui::Rect::from_center_size(r.min + egui::vec2(19.0, 23.0) * k, egui::vec2(36.0, 36.0) * k), 17.25 * k) };
     if let Some(line) = flat {
         // The older looks: the body colour, a 1 px outline, no gloss.
         painter.circle(r.center(), rad - 0.5, c, egui::Stroke::new(1.0f32, line));
@@ -1182,13 +1236,13 @@ pub(crate) fn paint_logo(painter: &egui::Painter, rect: egui::Rect, color: Color
 }
 
 fn qat_button(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(small_h(), small_h()), egui::Sense::click());
     let painter = ui.painter();
     // Hot: the small buttons' gold face, 20 px from 2 px down (VM: y 6–25).
     if resp.hovered() && ui.is_enabled() {
         hot_small(painter, egui::Rect::from_min_max(rect.min + egui::vec2(0.0, 2.0), rect.max), &p);
     }
-    let box_ = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0));
+    let box_ = egui::Rect::from_center_size(rect.center(), egui::vec2(img(16.0), img(16.0)));
     icons::paint(painter, box_, icon, if ui.is_enabled() { p.accent } else { disabled_ink(p) });
     resp
 }
@@ -1293,7 +1347,7 @@ impl App {
 /// The QAT's small drop-down arrow: the print split part, or the customise
 /// arrow (a bar over the triangle).
 fn qat_arrow(ui: &mut egui::Ui, p: crate::theme::Palette, customise: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(if customise { 13.0 } else { 9.0 }, 22.0), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(s(if customise { 13.0 } else { 9.0 }), small_h()), egui::Sense::click());
     let painter = ui.painter();
     if resp.hovered() && ui.is_enabled() {
         hot_small(painter, egui::Rect::from_min_max(rect.min + egui::vec2(0.0, 2.0), rect.max), &p);
@@ -1323,17 +1377,19 @@ fn active_tab_blue(painter: &egui::Painter, rect: egui::Rect) {
     let dot = |x: f32, y: f32, col: Color32| painter.rect_filled(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(1.0, 1.0)), 0.0, col);
     let col = |x: f32, y0: f32, y1: f32, a: Color32, b: Color32| painter.add(gradient_mesh(egui::Rect::from_min_max(egui::pos2(x, y0), egui::pos2(x + 1.0, y1)), &[(0.0, a), (y1 - y0 - 1.0, b)]));
     // The face, from under the top edge to the open row.
-    let face = egui::Rect::from_min_max(egui::pos2(l + 1.0, t + 1.0), egui::pos2(r - 1.0, t + 23.0));
-    painter.add(gradient_mesh(face, &[(0.0, c(242, 247, 255)), (1.0, c(243, 248, 254)), (2.0, c(247, 250, 255)), (3.0, c(237, 244, 254)), (21.0, c(222, 232, 245))]));
+    // Rows from the bottom count from the tab's height (23 at 100 %).
+    let h = rect.height();
+    let face = egui::Rect::from_min_max(egui::pos2(l + 1.0, t + 1.0), egui::pos2(r - 1.0, t + h));
+    painter.add(gradient_mesh(face, &[(0.0, c(242, 247, 255)), (1.0, c(243, 248, 254)), (2.0, c(247, 250, 255)), (3.0, c(237, 244, 254)), (h - 2.0, c(222, 232, 245))]));
     // Shadows outside, the frame's sides, the light columns inside.
-    col(l - 2.0, t + 3.0, t + 21.0, c(190, 217, 253), c(187, 215, 250));
-    col(l - 1.0, t + 3.0, t + 21.0, c(188, 216, 251), c(185, 212, 247));
-    col(r, t + 3.0, t + 21.0, c(178, 204, 238), c(173, 198, 231));
-    col(r + 1.0, t + 3.0, t + 21.0, c(189, 216, 252), c(183, 210, 244));
-    col(l, t + 3.0, t + 20.0, c(141, 178, 227), c(141, 178, 227));
-    col(r - 1.0, t + 3.0, t + 20.0, c(141, 178, 227), c(141, 178, 227));
-    col(l + 1.0, t + 3.0, t + 21.0, c(207, 251, 255), c(205, 251, 255));
-    col(r - 2.0, t + 3.0, t + 21.0, c(217, 245, 254), c(191, 250, 255));
+    col(l - 2.0, t + 3.0, t + h - 2.0, c(190, 217, 253), c(187, 215, 250));
+    col(l - 1.0, t + 3.0, t + h - 2.0, c(188, 216, 251), c(185, 212, 247));
+    col(r, t + 3.0, t + h - 2.0, c(178, 204, 238), c(173, 198, 231));
+    col(r + 1.0, t + 3.0, t + h - 2.0, c(189, 216, 252), c(183, 210, 244));
+    col(l, t + 3.0, t + h - 3.0, c(141, 178, 227), c(141, 178, 227));
+    col(r - 1.0, t + 3.0, t + h - 3.0, c(141, 178, 227), c(141, 178, 227));
+    col(l + 1.0, t + 3.0, t + h - 2.0, c(207, 251, 255), c(205, 251, 255));
+    col(r - 2.0, t + 3.0, t + h - 2.0, c(217, 245, 254), c(191, 250, 255));
     // The top edge and its corners.
     painter.add(gradient_mesh_h(egui::Rect::from_min_max(egui::pos2(l + 3.0, t), egui::pos2(r - 3.0, t + 1.0)), c(156, 188, 231), c(141, 178, 227)));
     for (x, y, k) in [(l + 1.0, t, c(179, 209, 248)), (l + 2.0, t, c(159, 193, 236)), (l, t + 1.0, c(181, 210, 249)), (l + 1.0, t + 1.0, c(148, 197, 235)), (l + 2.0, t + 1.0, c(217, 234, 249)), (l, t + 2.0, c(160, 193, 236)), (l + 1.0, t + 2.0, c(198, 237, 251))] {
@@ -1343,10 +1399,11 @@ fn active_tab_blue(painter: &egui::Painter, rect: egui::Rect) {
         dot(x, y, k);
     }
     // The flares into the body.
-    for (x, y, k) in [(l - 2.0, t + 21.0, c(184, 212, 248)), (l - 1.0, t + 21.0, c(159, 192, 235)), (l, t + 20.0, c(146, 185, 230)), (l, t + 21.0, c(173, 219, 243)), (l + 1.0, t + 21.0, c(217, 247, 253))] {
+    let (y20, y21) = (t + h - 3.0, t + h - 2.0);
+    for (x, y, k) in [(l - 2.0, y21, c(184, 212, 248)), (l - 1.0, y21, c(159, 192, 235)), (l, y20, c(146, 185, 230)), (l, y21, c(173, 219, 243)), (l + 1.0, y21, c(217, 247, 253))] {
         dot(x, y, k);
     }
-    for (x, y, k) in [(r - 2.0, t + 21.0, c(207, 245, 252)), (r - 1.0, t + 20.0, c(150, 189, 231)), (r - 1.0, t + 21.0, c(176, 223, 244)), (r, t + 21.0, c(150, 180, 220)), (r + 1.0, t + 21.0, c(181, 206, 241))] {
+    for (x, y, k) in [(r - 2.0, y21, c(207, 245, 252)), (r - 1.0, y20, c(150, 189, 231)), (r - 1.0, y21, c(176, 223, 244)), (r, y21, c(150, 180, 220)), (r + 1.0, y21, c(181, 206, 241))] {
         dot(x, y, k);
     }
     active_tab_open_row(painter, rect);
@@ -1359,11 +1416,12 @@ pub(crate) fn active_tab_open_row(painter: &egui::Painter, rect: egui::Rect) {
     let c = |r, g, b| Color32::from_rgb(r, g, b);
     let (l, r, t) = (rect.left(), rect.right(), rect.top());
     let dot = |x: f32, y: f32, col: Color32| painter.rect_filled(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(1.0, 1.0)), 0.0, col);
-    painter.rect_filled(egui::Rect::from_min_max(egui::pos2(l + 2.0, t + 22.0), egui::pos2(r - 2.0, t + 23.0)), 0.0, c(225, 234, 246));
-    for (x, y, k) in [(l - 3.0, t + 22.0, c(141, 178, 227)), (l - 2.0, t + 22.0, c(150, 190, 231)), (l - 1.0, t + 22.0, c(182, 227, 246)), (l, t + 22.0, c(220, 247, 253)), (l + 1.0, t + 22.0, c(229, 241, 249))] {
+    let y = t + rect.height() - 1.0;
+    painter.rect_filled(egui::Rect::from_min_max(egui::pos2(l + 2.0, y), egui::pos2(r - 2.0, y + 1.0)), 0.0, c(225, 234, 246));
+    for (x, k) in [(l - 3.0, c(141, 178, 227)), (l - 2.0, c(150, 190, 231)), (l - 1.0, c(182, 227, 246)), (l, c(220, 247, 253)), (l + 1.0, c(229, 241, 249))] {
         dot(x, y, k);
     }
-    for (x, y, k) in [(r - 2.0, t + 22.0, c(223, 237, 248)), (r - 1.0, t + 22.0, c(207, 245, 252)), (r, t + 22.0, c(175, 220, 243)), (r + 1.0, t + 22.0, c(141, 178, 220)), (r + 2.0, t + 22.0, c(141, 178, 227))] {
+    for (x, k) in [(r - 2.0, c(223, 237, 248)), (r - 1.0, c(207, 245, 252)), (r, c(175, 220, 243)), (r + 1.0, c(141, 178, 220)), (r + 2.0, c(141, 178, 227))] {
         dot(x, y, k);
     }
 }
@@ -1413,10 +1471,10 @@ fn active_tab_hot(painter: &egui::Painter, rect: egui::Rect) {
 /// the label in the 9 pt UI font, 12 px of padding each side; an inactive
 /// tab is its label alone.
 fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, p: crate::theme::Palette) -> egui::Response {
-    let font = egui::FontId::proportional(12.0);
+    let font = egui::FontId::proportional(crate::dpi::font(12.0));
     let text = if active { p.text } else { p.tab_text };
     let tw = ui.fonts(|f| f.layout_no_wrap(label.to_owned(), font.clone(), text).size().x);
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2((tw + 24.0).round(), 23.0), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2((tw + s(24.0)).round(), tab_row_h()), egui::Sense::click());
     // Centred in the 24 px row it would sit half a pixel down: on whole
     // pixels, its frame on the band's second row (VM).
     let rect = rect.translate(egui::vec2(0.0, rect.top().ceil() - rect.top()));
@@ -1449,19 +1507,20 @@ fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, p: crate::theme::Pal
         let (l, r, t) = (rect.left(), rect.right(), rect.top());
         let dot = |x: f32, y: f32, k: Color32| painter.rect_filled(egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(1.0, 1.0)), 0.0, k);
         let col = |x: f32, y0: f32, y1: f32, stops: &[(f32, Color32)]| painter.add(gradient_mesh(egui::Rect::from_min_max(egui::pos2(x, y0), egui::pos2(x + 1.0, y1)), stops));
-        let face = egui::Rect::from_min_max(egui::pos2(l + 1.0, t + 1.0), egui::pos2(r - 1.0, t + 22.0));
+        let y22 = t + rect.height() - 1.0;
+        let face = egui::Rect::from_min_max(egui::pos2(l + 1.0, t + 1.0), egui::pos2(r - 1.0, y22));
         let h = face.height();
         painter.add(gradient_mesh(face, &[(0.0, c(196, 221, 251)), (10.0, c(222, 233, 246)), (10.0, c(213, 227, 239)), (h, c(225, 210, 163))]));
         // Pixel by pixel (VM, «ОМП» under the pointer, rows 31–52): a glow
         // outside each side, the frame, a light column inside it.
         for x in [l - 1.0, r] {
-            col(x, t + 3.0, t + 22.0, &[(0.0, c(203, 225, 254)), (6.0, c(215, 233, 255)), (18.0, c(197, 222, 255))]);
+            col(x, t + 3.0, y22, &[(0.0, c(203, 225, 254)), (6.0, c(215, 233, 255)), (h - 3.0, c(197, 222, 255))]);
         }
         for x in [l, r - 1.0] {
-            col(x, t + 2.0, t + 22.0, &[(0.0, c(152, 187, 233))]);
+            col(x, t + 2.0, y22, &[(0.0, c(152, 187, 233))]);
         }
         for x in [l + 1.0, r - 2.0] {
-            col(x, t + 2.0, t + 22.0, &[(0.0, c(196, 220, 252)), (1.0, c(224, 238, 255)), (7.0, c(239, 246, 255)), (19.0, c(199, 224, 255))]);
+            col(x, t + 2.0, y22, &[(0.0, c(196, 220, 252)), (1.0, c(224, 238, 255)), (7.0, c(239, 246, 255)), (h - 2.0, c(199, 224, 255))]);
         }
         painter.rect_filled(egui::Rect::from_min_max(egui::pos2(l + 3.0, t), egui::pos2(r - 3.0, t + 1.0)), 0.0, c(162, 194, 238));
         for (dx, dy, k) in [(1.0, 0.0, c(182, 211, 249)), (2.0, 0.0, c(171, 202, 243)), (0.0, 1.0, c(179, 209, 248)), (1.0, 1.0, c(170, 202, 243)), (2.0, 1.0, c(190, 216, 250))] {
@@ -1497,9 +1556,9 @@ fn measure_id() -> egui::Id {
 /// button (`0x10120c93`: a 16 px image, the 9 px arrow always counted) is
 /// max(16 + 2 + 10, T + 5) + 2, T its balanced bottom text.
 fn collapsed_width(ui: &egui::Ui, title: &str) -> f32 {
-    let font = egui::FontId::proportional(10.5);
+    let font = egui::FontId::proportional(crate::dpi::font(10.5));
     let (_, t) = bottom_text(title, 9.0, |s| ui.fonts(|f| f.layout_no_wrap(s.to_owned(), font.clone(), Color32::BLACK).size().x));
-    large_width(18.0, t) + 2.0 + 6.0
+    large_width(img(16.0) + 2.0, t) + 2.0 + 6.0
 }
 
 /// The category's reduction (`CMFCRibbonCategory::RecalcLayout`
@@ -1538,24 +1597,27 @@ fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, lay
         // (`0x10124eab`); the panel opens below it. Office 2007 draws a
         // 38 × 38 frame from the top + 3, the 16 px image at + 10 and the
         // text from + 40 with the arrow (`0x10193c7b`).
-        let font = egui::FontId::proportional(10.5);
+        let font = egui::FontId::proportional(crate::dpi::font(10.5));
         let (lines, _) = bottom_text(title, 9.0, |s| ui.fonts(|f| f.layout_no_wrap(s.to_owned(), font.clone(), p.text).size().x));
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(collapsed_width(ui, title) - 6.0, 84.0), egui::Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(collapsed_width(ui, title) - 6.0, body_inner() - 2.0), egui::Sense::click());
         let painter = ui.painter();
         if resp.hovered() {
             painter.rect(rect, 3.0f32, p.accent_soft, egui::Stroke::new(1.0f32, p.accent_border));
         }
         let cx = rect.center().x.round();
-        let frame = egui::Rect::from_min_size(egui::pos2(cx - 19.0, rect.top() + 3.0), egui::vec2(38.0, 38.0));
+        // The frame round the 16 px image (its side + 22), the text under it.
+        let side = img(16.0) + 22.0;
+        let frame = egui::Rect::from_min_size(egui::pos2(cx - (side / 2.0).floor(), rect.top() + 3.0), egui::vec2(side, side));
         painter.rect(frame, 3.0f32, p.group_bg, egui::Stroke::new(1.0f32, p.group_border));
-        painter.rect_stroke(egui::Rect::from_min_size(egui::pos2(cx - 8.0, rect.top() + 10.0), egui::vec2(16.0, 16.0)).shrink(2.0), 1.0f32, egui::Stroke::new(1.0f32, p.accent));
+        painter.rect_stroke(egui::Rect::from_min_size(egui::pos2(cx - (img(16.0) / 2.0).floor(), rect.top() + 10.0), egui::vec2(img(16.0), img(16.0))).shrink(2.0), 1.0f32, egui::Stroke::new(1.0f32, p.accent));
+        let text_top = rect.top() + side + 2.0;
         for (i, line) in lines.iter().enumerate() {
-            painter.text(egui::pos2(cx, rect.top() + 40.0 + i as f32 * LINE_H), egui::Align2::CENTER_TOP, line, font.clone(), p.text);
+            painter.text(egui::pos2(cx, text_top + i as f32 * line_h()), egui::Align2::CENTER_TOP, line, font.clone(), p.text);
         }
         // The arrow after the last line (on line 2 when the text is one line).
         let last = lines.last().map(|l| ui.fonts(|f| f.layout_no_wrap(l.clone(), font.clone(), p.text).size().x)).unwrap_or(0.0);
-        let (ax, ay) = if lines.len() > 1 { (cx + last / 2.0 + 5.0, rect.top() + 40.0 + LINE_H + 2.0) } else { (cx, rect.top() + 40.0 + LINE_H + 2.0) };
-        painter.text(egui::pos2(ax, ay), egui::Align2::CENTER_TOP, "▾", egui::FontId::proportional(9.0), p.text);
+        let (ax, ay) = if lines.len() > 1 { (cx + last / 2.0 + 5.0, text_top + line_h() + 2.0) } else { (cx, text_top + line_h() + 2.0) };
+        painter.text(egui::pos2(ax, ay), egui::Align2::CENTER_TOP, "▾", egui::FontId::proportional(crate::dpi::font(9.0)), p.text);
         let popup = egui::Id::new(("fv_ribbon_group_popup", title));
         if resp.clicked() {
             ui.memory_mut(|m| m.toggle_popup(popup));
@@ -1603,16 +1665,17 @@ fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: 
                     });
                 });
             // The caption in the 9 pt UI font (12 px), centred.
-            let w = ui.fonts(|f| f.layout_no_wrap(title.to_owned(), egui::FontId::proportional(12.0), p.caption_text).size().x);
-            let (cap, _) = ui.allocate_exact_size(egui::vec2(ui.min_rect().width().max(w + 8.0).max(40.0), 16.0), egui::Sense::hover());
-            ui.painter().text(cap.center(), egui::Align2::CENTER_CENTER, title, egui::FontId::proportional(12.0), p.caption_text);
+            let font = egui::FontId::proportional(crate::dpi::font(12.0));
+            let w = ui.fonts(|f| f.layout_no_wrap(title.to_owned(), font.clone(), p.caption_text).size().x);
+            let (cap, _) = ui.allocate_exact_size(egui::vec2(ui.min_rect().width().max(w + 8.0).max(40.0), band_h()), egui::Sense::hover());
+            ui.painter().text(cap.center(), egui::Align2::CENTER_CENTER, title, font, p.caption_text);
         });
     });
     // Office 2007 (RIBBON_PANEL_BACK_T / _B): a white inner line, the
     // caption band 15 px at the bottom.
     if let Some([top, bottom]) = p.caption_band {
         let r = panel.response.rect;
-        let band = egui::Rect::from_min_max(egui::pos2(r.left(), r.bottom() - 16.0), r.max);
+        let band = egui::Rect::from_min_max(egui::pos2(r.left(), r.bottom() - band_h()), r.max);
         // Under the pointer (Office 2007, VM «Видимость» hot) the panel
         // lights up: a white frame, its face (229, 240, 255) → (231, 241,
         // 253) over the first 13 rows then (220, 234, 252) → (221, 233,
@@ -1661,13 +1724,15 @@ fn ribbon_group_expanded<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: 
 fn body_2007(r: egui::Rect) -> Vec<egui::Shape> {
     use egui::{pos2, Rect, Shape};
     let c = |r, g, b| Color32::from_rgb(r, g, b);
-    // Rows t … t + 88 (54–142 maximised), the line on t − 1.
+    // Rows t … t + 88 (54–142 maximised), the line on t − 1; the rows
+    // near the bottom count from it (taller at > 100 %).
     let (l, w, t) = (r.left().floor(), r.right().round() - 1.0, r.top().round());
-    let b = t + 89.0;
+    let b = t + body_inner() + 3.0;
+    let n = b - t;
     let px = |x0: f32, y0: f32, x1: f32, y1: f32, col: Color32| Shape::rect_filled(Rect::from_min_max(pos2(x0, y0), pos2(x1, y1)), 0.0, col);
     let col = |x: f32, y0: f32, y1: f32, stops: &[(f32, Color32)]| gradient_mesh(Rect::from_min_max(pos2(x, y0), pos2(x + 1.0, y1)), stops);
     let line = c(141, 178, 227);
-    let light = [(0.0, c(225, 238, 247)), (13.0, c(213, 235, 247)), (14.0, c(204, 232, 245)), (43.0, c(206, 244, 251)), (83.0, c(194, 249, 255))];
+    let light = [(0.0, c(225, 238, 247)), (13.0, c(213, 235, 247)), (14.0, c(204, 232, 245)), (43.0, c(206, 244, 251)), (body_inner() - 3.0, c(194, 249, 255))];
     let mut v = vec![
         gradient_mesh(
             Rect::from_min_max(pos2(l, t), pos2(w + 1.0, b - 1.0)),
@@ -1680,20 +1745,20 @@ fn body_2007(r: egui::Rect) -> Vec<egui::Shape> {
                 (4.0, c(222, 231, 245)),
                 (17.0, c(208, 223, 240)),
                 (17.0, c(199, 216, 237)),
-                (71.0, c(216, 232, 245)),
-                (87.0, c(227, 244, 255)),
-                (87.0, c(231, 242, 255)),
-                (88.0, c(231, 242, 255)),
+                (n - 18.0, c(216, 232, 245)),
+                (n - 2.0, c(227, 244, 255)),
+                (n - 2.0, c(231, 242, 255)),
+                (n - 1.0, c(231, 242, 255)),
             ],
         ),
         px(l, b - 1.0, w + 1.0, b, c(192, 249, 255)),
         // The brush outside the lines.
-        col(l, t, b + 1.0, &[(0.0, c(191, 219, 255)), (84.0, c(185, 212, 247)), (90.0, c(189, 216, 252))]),
-        col(w, t, b + 1.0, &[(0.0, c(191, 219, 255)), (84.0, c(185, 212, 247)), (90.0, c(189, 216, 252))]),
+        col(l, t, b + 1.0, &[(0.0, c(191, 219, 255)), (n - 5.0, c(185, 212, 247)), (n + 1.0, c(189, 216, 252))]),
+        col(w, t, b + 1.0, &[(0.0, c(191, 219, 255)), (n - 5.0, c(185, 212, 247)), (n + 1.0, c(189, 216, 252))]),
         // The lines and the light inside them.
         px(l + 5.0, t - 1.0, w - 3.0, t, line),
-        col(l + 1.0, t + 3.0, b - 1.0, &[(0.0, line), (82.0, line), (83.0, c(146, 181, 227)), (85.0, c(179, 205, 239))]),
-        col(w - 1.0, t + 3.0, b - 1.0, &[(0.0, c(148, 183, 229)), (80.0, c(153, 189, 231)), (82.0, c(140, 177, 225)), (85.0, c(180, 206, 240))]),
+        col(l + 1.0, t + 3.0, b - 1.0, &[(0.0, line), (n - 7.0, line), (n - 6.0, c(146, 181, 227)), (n - 4.0, c(179, 205, 239))]),
+        col(w - 1.0, t + 3.0, b - 1.0, &[(0.0, c(148, 183, 229)), (n - 9.0, c(153, 189, 231)), (n - 7.0, c(140, 177, 225)), (n - 4.0, c(180, 206, 240))]),
         col(l + 2.0, t + 3.0, b - 1.0, &light),
         col(w - 2.0, t + 3.0, b - 1.0, &light),
     ];
@@ -1727,25 +1792,25 @@ fn body_2007(r: egui::Rect) -> Vec<egui::Shape> {
         (w - 2.0, t + 2.0, c(226, 237, 247)),
         (w - 1.0, t + 2.0, c(142, 178, 227)),
         // The rounded bottom corners (rows 140–142).
-        (l + 1.0, t + 86.0, c(146, 181, 227)),
-        (l + 1.0, t + 87.0, c(160, 190, 229)),
-        (l + 2.0, t + 87.0, c(194, 243, 252)),
-        (l + 3.0, t + 87.0, c(207, 240, 252)),
-        (l + 4.0, t + 87.0, c(226, 240, 254)),
-        (l, t + 88.0, c(187, 215, 250)),
-        (l + 1.0, t + 88.0, c(179, 205, 239)),
-        (l + 2.0, t + 88.0, c(169, 199, 229)),
-        (l + 3.0, t + 88.0, c(191, 237, 248)),
-        (l + 4.0, t + 88.0, c(193, 247, 254)),
-        (w - 2.0, t + 86.0, c(196, 249, 255)),
-        (w - 1.0, t + 86.0, c(150, 183, 227)),
-        (w - 3.0, t + 87.0, c(202, 240, 252)),
-        (w - 2.0, t + 87.0, c(190, 236, 249)),
-        (w - 1.0, t + 87.0, c(165, 194, 231)),
-        (w - 3.0, t + 88.0, c(187, 229, 243)),
-        (w - 2.0, t + 88.0, c(164, 191, 224)),
-        (w - 1.0, t + 88.0, c(180, 206, 240)),
-        (w, t + 88.0, c(188, 216, 251)),
+        (l + 1.0, b - 3.0, c(146, 181, 227)),
+        (l + 1.0, b - 2.0, c(160, 190, 229)),
+        (l + 2.0, b - 2.0, c(194, 243, 252)),
+        (l + 3.0, b - 2.0, c(207, 240, 252)),
+        (l + 4.0, b - 2.0, c(226, 240, 254)),
+        (l, b - 1.0, c(187, 215, 250)),
+        (l + 1.0, b - 1.0, c(179, 205, 239)),
+        (l + 2.0, b - 1.0, c(169, 199, 229)),
+        (l + 3.0, b - 1.0, c(191, 237, 248)),
+        (l + 4.0, b - 1.0, c(193, 247, 254)),
+        (w - 2.0, b - 3.0, c(196, 249, 255)),
+        (w - 1.0, b - 3.0, c(150, 183, 227)),
+        (w - 3.0, b - 2.0, c(202, 240, 252)),
+        (w - 2.0, b - 2.0, c(190, 236, 249)),
+        (w - 1.0, b - 2.0, c(165, 194, 231)),
+        (w - 3.0, b - 1.0, c(187, 229, 243)),
+        (w - 2.0, b - 1.0, c(164, 191, 224)),
+        (w - 1.0, b - 1.0, c(180, 206, 240)),
+        (w, b - 1.0, c(188, 216, 251)),
     ] {
         v.push(px(x, y, x + 1.0, y + 1.0, k));
     }
@@ -1769,7 +1834,7 @@ fn panel_2007(r: egui::Rect, hot: bool) -> Vec<egui::Shape> {
     use egui::{pos2, Rect, Shape};
     let c = |r, g, b| Color32::from_rgb(r, g, b);
     let (l, rt, t, b) = (r.left(), r.right() - 1.0, r.top(), r.bottom());
-    let band = b - 15.0;
+    let band = b - band_h() + 1.0;
     let px = |x0: f32, y0: f32, x1: f32, y1: f32, col: Color32| Shape::rect_filled(Rect::from_min_max(pos2(x0, y0), pos2(x1, y1)), 0.0, col);
     let col = |x: f32, y0: f32, y1: f32, stops: &[(f32, Color32)]| gradient_mesh(Rect::from_min_max(pos2(x, y0), pos2(x + 1.0, y1)), stops);
     if hot {
@@ -1863,10 +1928,10 @@ fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label
     // The 9 pt UI font is Segoe UI's 12 px, between Tahoma's 11 and 12 for
     // these words; 11 (10.5 rounds up) lays the groups out closest (VM:
     // «Диаграммы» 232 px against 242; 12 gives 262).
-    let font = egui::FontId::proportional(10.5);
+    let font = egui::FontId::proportional(crate::dpi::font(10.5));
     let measure = |t: &str| ui.fonts(|f| f.layout_no_wrap(t.to_owned(), font.clone(), p.text).size().x);
     let (lines, text_w) = bottom_text(label, 0.0, measure);
-    let size = egui::vec2(large_width(32.0, text_w), LARGE_H);
+    let size = egui::vec2(large_width(img(32.0), text_w), large_h());
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
     let painter = &plain_painter(ui);
     let (ink, accent) = inks(ui, p);
@@ -1879,10 +1944,13 @@ fn big_button_sel(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label
     }
     // The 32 px image centred from the top + 3, the lines from + 38
     // (`OnDraw` `0x10100cae`); our drawings fill 28 px of it.
-    let img = egui::Rect::from_min_size(egui::pos2((rect.center().x - 16.0).round(), rect.top() + 3.0), egui::vec2(32.0, 32.0));
-    icons::paint(painter, img.shrink(2.0), icon, accent);
+    // At > 100 % the image stretched (`dpi::img`), the lines from its
+    // bottom + 6.
+    let side = img(32.0);
+    let image = egui::Rect::from_min_size(egui::pos2((rect.center().x - side / 2.0).round(), rect.top() + 3.0), egui::vec2(side, side));
+    icons::paint(painter, image.shrink(2.0 * side / 32.0), icon, accent);
     for (i, line) in lines.iter().enumerate() {
-        painter.text(egui::pos2(rect.center().x, rect.top() + 38.0 + i as f32 * LINE_H), egui::Align2::CENTER_TOP, line, font.clone(), ink);
+        painter.text(egui::pos2(rect.center().x, rect.top() + side + 6.0 + i as f32 * line_h()), egui::Align2::CENTER_TOP, line, font.clone(), ink);
     }
     resp
 }
@@ -1938,10 +2006,24 @@ pub enum AppSub {
 type MainItem<'a> = (&'a str, Option<usize>, bool, Option<Command>, Option<AppSub>);
 
 /// The application menu's main panel (Office 2007 Blue, VM): 490 px wide,
-/// the item column 174, the right column 298.
-const MAIN_W: f32 = 490.0;
-const MAIN_LEFT_W: f32 = 174.0;
-const MAIN_RIGHT_W: f32 = 298.0;
+/// the item column 174, the right column 298; 590 / 703 and 200 / 240 at
+/// 125 / 150 % (VM: its larger font and images).
+fn main_w() -> f32 {
+    crate::dpi::measured(490.0, 590.0, 703.0)
+}
+
+fn main_left_w() -> f32 {
+    crate::dpi::measured(174.0, 200.0, 240.0)
+}
+
+fn main_right_w() -> f32 {
+    main_w() - main_left_w() - 18.0
+}
+
+/// The QAT glass's right end (x 132 at 100 %): after the print arrow.
+fn qat_glass_right() -> f32 {
+    s(49.0) + 3.0 * small_h() + s(9.0) + 8.0
+}
 const MAIN_RULE: Color32 = Color32::from_rgb(197, 197, 197);
 const MAIN_RULE_LIGHT: Color32 = Color32::from_rgb(245, 245, 245);
 /// The items' and recent documents' ink, the header's, and disabled text.
@@ -1959,6 +2041,11 @@ const MAIN_DISABLED: Color32 = Color32::from_rgb(141, 141, 141);
 fn main_panel_ground(o: egui::Pos2, bottom: f32) -> egui::Shape {
     let px = |x0: f32, y0: f32, x1: f32, y1: f32, c: Color32| egui::Shape::rect_filled(egui::Rect::from_min_max(egui::pos2(o.x + x0, y0), egui::pos2(o.x + x1, y1)), 0.0, c);
     let (t, b) = (o.y, bottom);
+    #[allow(non_snake_case)]
+    let MAIN_W = main_w();
+    // The top band (25 rows at 100 %), the columns' divider and the right
+    // column's header under it.
+    let (top, div, hdr) = (s(25.0), 7.0 + main_left_w(), s(25.0));
     let outer = Color32::from_rgb(155, 175, 202);
     let blue = Color32::from_rgb(196, 214, 237);
     let mut v = Vec::new();
@@ -1984,15 +2071,15 @@ fn main_panel_ground(o: egui::Pos2, bottom: f32) -> egui::Shape {
     v.extend([
         // The bottom's middle row, then the white ring and the inner line.
         px(1.0, b - 2.0, MAIN_W - 1.0, b - 1.0, Color32::from_rgb(201, 238, 255)),
-        px(5.0, t + 23.0, MAIN_W - 7.0, b - 3.0, Color32::WHITE),
-        px(6.0, t + 24.0, MAIN_W - 8.0, b - 2.0, outer),
-        px(7.0, t + 25.0, 181.0, b - 3.0, Color32::from_gray(250)),
-        px(181.0, t + 25.0, 182.0, b - 3.0, MAIN_RULE),
-        px(182.0, t + 25.0, 183.0, b - 3.0, MAIN_RULE_LIGHT),
-        px(183.0, t + 25.0, 481.0, b - 3.0, Color32::from_rgb(233, 238, 238)),
-        px(183.0, t + 25.0, 481.0, t + 50.0, Color32::from_rgb(222, 232, 239)),
-        px(183.0, t + 50.0, 481.0, t + 51.0, MAIN_RULE),
-        px(183.0, t + 51.0, 481.0, t + 52.0, MAIN_RULE_LIGHT),
+        px(5.0, t + top - 2.0, MAIN_W - 7.0, b - 3.0, Color32::WHITE),
+        px(6.0, t + top - 1.0, MAIN_W - 8.0, b - 2.0, outer),
+        px(7.0, t + top, div, b - 3.0, Color32::from_gray(250)),
+        px(div, t + top, div + 1.0, b - 3.0, MAIN_RULE),
+        px(div + 1.0, t + top, div + 2.0, b - 3.0, MAIN_RULE_LIGHT),
+        px(div + 2.0, t + top, MAIN_W - 9.0, b - 3.0, Color32::from_rgb(233, 238, 238)),
+        px(div + 2.0, t + top, MAIN_W - 9.0, t + top + hdr, Color32::from_rgb(222, 232, 239)),
+        px(div + 2.0, t + top + hdr, MAIN_W - 9.0, t + top + hdr + 1.0, MAIN_RULE),
+        px(div + 2.0, t + top + hdr + 1.0, MAIN_W - 9.0, t + top + hdr + 2.0, MAIN_RULE_LIGHT),
     ]);
     egui::Shape::Vec(v)
 }
@@ -2000,7 +2087,7 @@ fn main_panel_ground(o: egui::Pos2, bottom: f32) -> egui::Shape {
 /// `label` at `at` (left, vertical centre) with its letter `ul` underlined
 /// (the main panel shows its mnemonics, VM).
 fn mnemonic_text(ui: &egui::Ui, at: egui::Pos2, label: &str, ul: Option<usize>, ink: Color32) {
-    let font = egui::FontId::proportional(12.0);
+    let font = egui::FontId::proportional(crate::dpi::font(12.0));
     let g = ui.fonts(|f| f.layout_no_wrap(label.to_owned(), font.clone(), ink));
     let top = (at.y - g.size().y / 2.0).round();
     if let Some(i) = ul {
@@ -2019,18 +2106,20 @@ fn mnemonic_text(ui: &egui::Ui, at: egui::Pos2, label: &str, ul: Option<usize>, 
 /// under the pointer, an arrow at the right for one with sub-items.
 #[allow(clippy::too_many_arguments)]
 fn main_entry(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Option<Icon>, label: &str, ul: Option<usize>, enabled: bool, selected: bool, arrow: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(MAIN_LEFT_W, 44.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    // The large image + 2 + 2 × 5 tall (44, 52, 60 px at 100, 125, 150 %).
+    let side = img(32.0);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(main_left_w(), side + 12.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     if selected || (enabled && resp.hovered()) {
         crate::popmenu::hot_bar(ui.painter(), rect);
     }
     let ink = if enabled { MAIN_INK } else { MAIN_DISABLED };
     if let Some(icon) = icon {
-        let img = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.center().y - 16.0), egui::vec2(32.0, 32.0));
-        crate::icons::paint(ui.painter(), img.shrink(4.0), icon, if enabled { p.text } else { disabled_ink(p) });
+        let image = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.center().y - side / 2.0), egui::vec2(side, side));
+        crate::icons::paint(ui.painter(), image.shrink(4.0 * side / 32.0), icon, if enabled { p.text } else { disabled_ink(p) });
     }
-    mnemonic_text(ui, egui::pos2(rect.left() + 38.0, rect.center().y), label, ul, ink);
+    mnemonic_text(ui, egui::pos2(rect.left() + side + 6.0, rect.center().y), label, ul, ink);
     if arrow {
-        let c = egui::pos2(rect.right() - 10.0, rect.center().y);
+        let c = egui::pos2(rect.right() - s(10.0), rect.center().y);
         ui.painter().add(egui::Shape::convex_polygon(vec![c + egui::vec2(-2.0, -4.0), c + egui::vec2(2.0, 0.0), c + egui::vec2(-2.0, 4.0)], Color32::from_rgb(86, 125, 177), egui::Stroke::NONE));
     }
     resp
@@ -2039,21 +2128,21 @@ fn main_entry(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Option<Icon>, l
 /// The right column's header: 25 px, its title bold from + 2, the rule
 /// under it painted with the panel.
 fn main_header(ui: &mut egui::Ui, title: &str) {
-    let (r, _) = ui.allocate_exact_size(egui::vec2(MAIN_RIGHT_W, 27.0), egui::Sense::hover());
-    let font = egui::FontId::proportional(12.0);
+    let (r, _) = ui.allocate_exact_size(egui::vec2(main_right_w(), s(25.0) + 2.0), egui::Sense::hover());
+    let font = egui::FontId::proportional(crate::dpi::font(12.0));
     let h = ui.fonts(|f| f.row_height(&font));
-    crate::lanes::bold_text(ui.painter(), egui::pos2(r.left() + 2.0, (r.top() + 12.5 - h / 2.0).round()), title, font, MAIN_TITLE_INK);
+    crate::lanes::bold_text(ui.painter(), egui::pos2(r.left() + 2.0, (r.top() + s(25.0) / 2.0 - h / 2.0).round()), title, font, MAIN_TITLE_INK);
 }
 
 /// A row of the right column (a recent document): 30 px, the text from
 /// + 3, MFC's hot bar under the pointer.
 fn recent_row(ui: &mut egui::Ui, text: &str, ul: Option<usize>) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(MAIN_RIGHT_W, 30.0), egui::Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(main_right_w(), s(30.0)), egui::Sense::click());
     if resp.hovered() {
         crate::popmenu::hot_bar(ui.painter(), rect);
     }
     let room = rect.width() - 6.0;
-    let font = egui::FontId::proportional(12.0);
+    let font = egui::FontId::proportional(crate::dpi::font(12.0));
     let shown = if ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font.clone(), MAIN_INK).size().x) <= room { text.to_owned() } else { crate::dialogs::ellipsize(ui, text, font, room) };
     mnemonic_text(ui, egui::pos2(rect.left() + 3.0, rect.center().y), &shown, ul, MAIN_INK);
     resp
@@ -2062,12 +2151,12 @@ fn recent_row(ui: &mut egui::Ui, text: &str, ul: Option<usize>) -> egui::Respons
 /// A small button with its text, or icon-only (a reduced panel; the text
 /// becomes the tooltip).
 fn small_button_mode(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, label: &str, selected: bool, icon_only: bool) -> egui::Response {
-    let font = egui::FontId::proportional(11.0);
+    let font = egui::FontId::proportional(crate::dpi::font(11.0));
     let text_w = ui.fonts(|f| f.layout_no_wrap(label.to_owned(), font.clone(), p.text).size().x);
     // `0x10101d6a` / `0x10101f92`: icon-only (image + 6)², with text the
     // text + image + 10 wide, max(16, image, text) + 6 tall.
-    let w = if icon_only { 22.0 } else { text_w + 16.0 + 10.0 };
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 22.0), egui::Sense::click());
+    let w = if icon_only { small_h() } else { text_w + img(16.0) + 10.0 };
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, small_h()), egui::Sense::click());
     // (Icon-only, its tooltip is still the command's: `tips`.)
     let painter = &plain_painter(ui);
     let (ink, accent) = inks(ui, p);
@@ -2077,10 +2166,10 @@ fn small_button_mode(ui: &mut egui::Ui, p: crate::theme::Palette, icon: Icon, la
     } else if resp.hovered() && ui.is_enabled() {
         hot_small(painter, rect, &p);
     }
-    let box_ = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.top() + 3.0), egui::vec2(16.0, 16.0)).shrink(1.0);
+    let box_ = egui::Rect::from_min_size(egui::pos2(rect.left() + 3.0, rect.top() + 3.0), egui::vec2(img(16.0), img(16.0))).shrink(1.0);
     icons::paint(painter, box_, icon, accent);
     if !icon_only {
-        painter.text(egui::pos2(rect.left() + 22.0, rect.center().y), egui::Align2::LEFT_CENTER, label, font, ink);
+        painter.text(egui::pos2(rect.left() + small_h(), rect.center().y), egui::Align2::LEFT_CENTER, label, font, ink);
     }
     resp
 }
@@ -2091,7 +2180,7 @@ fn group_separator(ui: &mut egui::Ui, p: crate::theme::Palette) {
     // As tall as the large buttons: a taller one stretched its panel. 8 px
     // (VM, Blue): a light column 1 px in and a dark one beside it, from 6
     // px under the buttons' top to 6 above their bottom.
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, LARGE_H), egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, large_h()), egui::Sense::hover());
     let [light, dark] = p.bands.and_then(|b| b.panel_sep).unwrap_or([crate::theme::alpha(255, 255, 255, 160), p.group_border]);
     let col = |dx: f32| egui::Rect::from_min_max(egui::pos2(rect.left() + dx, rect.top() + 6.0), egui::pos2(rect.left() + dx + 1.0, rect.bottom() - 5.0));
     ui.painter().rect_filled(col(1.0), 0.0, light);
@@ -2174,7 +2263,7 @@ fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, enabled
     // Icon-only: the small image + 6 tall (`0x10101d6a`), 26 wide with the
     // image 3 px in (VM: the hot and checked faces, «Видимость» and
     // «Вычисления»'s columns on a 26 px pitch).
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(26.0, 22.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(small_h() + 4.0, small_h()), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let painter = &plain_painter(ui);
     let enabled = enabled && ui.is_enabled();
     if on {
@@ -2183,7 +2272,7 @@ fn mini_button(ui: &mut egui::Ui, p: crate::theme::Palette, glyph: Mini, enabled
         hot_small(painter, rect, &p);
     }
     let col = if enabled { p.accent } else { disabled_ink(p) };
-    paint_mini(painter, egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 4.0), egui::vec2(14.0, 14.0)), glyph, col);
+    paint_mini(painter, egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 4.0), egui::vec2(img(16.0) - 2.0, img(16.0) - 2.0)), glyph, col);
     resp
 }
 
@@ -2201,8 +2290,10 @@ pub(crate) fn paint_mini(painter: &egui::Painter, r: egui::Rect, glyph: Mini, co
         line(b, b - d + n);
         line(b, b - d - n);
     };
+    // The glyphs' text grows with the images at > 100 %.
+    let fk = img(16.0) / 16.0;
     let text = |t: &str, size: f32| {
-        painter.text(r.center(), egui::Align2::CENTER_CENTER, t, egui::FontId::proportional(size), col);
+        painter.text(r.center(), egui::Align2::CENTER_CENTER, t, egui::FontId::proportional(size * fk), col);
     };
     let wave = |amp: f32| {
         let pts: Vec<egui::Pos2> = (0..=16).map(|i| {
@@ -2240,7 +2331,7 @@ pub(crate) fn paint_mini(painter: &egui::Painter, r: egui::Rect, glyph: Mini, co
             }
             let sign = if grow { "+" } else { "−" };
             let pos = if h { at(0.5, 0.18) } else { at(0.22, 0.5) };
-            painter.text(pos, egui::Align2::CENTER_CENTER, sign, egui::FontId::proportional(12.0), col);
+            painter.text(pos, egui::Align2::CENTER_CENTER, sign, egui::FontId::proportional(12.0 * fk), col);
         }
         Mini::RectZoom => {
             painter.add(egui::Shape::dashed_line(&[at(0.1, 0.1), at(0.9, 0.1), at(0.9, 0.9), at(0.1, 0.9), at(0.1, 0.1)], Stroke::new(1.0f32, col), 2.0, 2.0));
@@ -2255,7 +2346,7 @@ pub(crate) fn paint_mini(painter: &egui::Painter, r: egui::Rect, glyph: Mini, co
             } else {
                 painter.line_segment([at(0.0, 0.35), at(1.0, 0.35)], vs);
             }
-            painter.text(at(0.72, 0.72), egui::Align2::CENTER_CENTER, format!("{}", if k < 3 { k + 1 } else { k - 2 }), egui::FontId::proportional(10.0), col);
+            painter.text(at(0.72, 0.72), egui::Align2::CENTER_CENTER, format!("{}", if k < 3 { k + 1 } else { k - 2 }), egui::FontId::proportional(10.0 * fk), col);
         }
         Mini::Moment => {
             line(at(0.5, 0.3), at(0.5, 1.0));
@@ -2287,7 +2378,7 @@ pub(crate) fn paint_mini(painter: &egui::Painter, r: egui::Rect, glyph: Mini, co
         }
         Mini::Harm1 => {
             wave(0.25);
-            painter.text(at(0.85, 0.15), egui::Align2::CENTER_CENTER, "1", egui::FontId::proportional(9.0), col);
+            painter.text(at(0.85, 0.15), egui::Align2::CENTER_CENTER, "1", egui::FontId::proportional(9.0 * fk), col);
         }
     }
 }
@@ -2443,13 +2534,16 @@ pub const APP_MENU_TITLE: &str = "Файл ▾";
 /// second one 2 px up and right; minimise a 10 px line.
 fn caption_glyph(p: &egui::Painter, r: egui::Rect, k: u8, max: bool, col: Color32) {
     // The 10 px glyph box 16 px into the button, 6 px over its middle
-    // (VM: the boxes at x + 16, y 9 maximised; the dash at x + 17, y 14).
-    let o = egui::pos2(r.left() + 16.0, (r.center().y - 6.0).round());
+    // (VM: the boxes at x + 16, y 9 maximised; the dash at x + 17, y 14);
+    // at > 100 % Windows' larger glyphs.
+    let o = egui::pos2(r.left() + s(16.0), (r.center().y - s(6.0)).round());
+    let z = |v: f32| if crate::dpi::unscaled() { v } else { (v * crate::dpi::k()).round() };
     // A 1 px run from (x0, y0) to (x1, y1) inclusive, in the box.
     let run = |x0: f32, y0: f32, x1: f32, y1: f32| {
         p.rect_filled(egui::Rect::from_min_max(o + egui::vec2(x0, y0), o + egui::vec2(x1 + 1.0, y1 + 1.0)), 0.0, col);
     };
     let square = |x: f32, y: f32, n: f32| {
+        let (x, y, n) = (z(x), z(y), z(n));
         run(x, y, x + n, y);
         run(x, y + n, x + n, y + n);
         run(x, y, x, y + n);
@@ -2459,16 +2553,17 @@ fn caption_glyph(p: &egui::Painter, r: egui::Rect, k: u8, max: bool, col: Color3
         (0, _) => {
             // Pixel centre to pixel centre: a 10 × 10 cross.
             let s = egui::Stroke::new(1.0f32, col);
-            p.line_segment([o + egui::vec2(0.5, 0.5), o + egui::vec2(9.5, 9.5)], s);
-            p.line_segment([o + egui::vec2(9.5, 0.5), o + egui::vec2(0.5, 9.5)], s);
+            let e = z(9.0) + 0.5;
+            p.line_segment([o + egui::vec2(0.5, 0.5), o + egui::vec2(e, e)], s);
+            p.line_segment([o + egui::vec2(e, 0.5), o + egui::vec2(0.5, e)], s);
         }
         (1, false) => square(0.0, 0.0, 9.0),
         (1, true) => {
             square(0.0, 2.0, 7.0);
-            run(2.0, 0.0, 9.0, 0.0);
-            run(9.0, 0.0, 9.0, 7.0);
+            run(z(2.0), 0.0, z(9.0), 0.0);
+            run(z(9.0), 0.0, z(9.0), z(7.0));
         }
-        _ => run(1.0, 5.0, 10.0, 5.0),
+        _ => run(z(1.0), z(5.0), z(10.0), z(5.0)),
     }
 }
 
@@ -2476,20 +2571,20 @@ fn caption_glyph(p: &egui::Painter, r: egui::Rect, k: u8, max: bool, col: Color3
 /// frame (FastView's caption is DWM's with composition on, L9.150):
 /// minimise, maximise / restore, close (red when hot), 46 px wide each.
 fn caption_buttons(ui: &mut egui::Ui) {
-    let h = ui.available_height().max(22.0);
+    let h = ui.available_height().max(s(22.0));
     let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
     // The buttons edge to edge (VM: 46 px apart); their glyphs grey while
     // the window is inactive (VM: (163) against (25)).
     ui.spacing_mut().item_spacing.x = 0.0;
     let focused = ui.ctx().input(|i| i.viewport().focused.unwrap_or(true));
     for k in 0..3 {
-        let (r, resp) = ui.allocate_exact_size(egui::vec2(46.0, h), egui::Sense::click());
+        let (r, resp) = ui.allocate_exact_size(egui::vec2(s(46.0), h), egui::Sense::click());
         let close = k == 0;
         let hot = resp.hovered();
         // Under the pointer (VM, maximised): a 45 × 28 face from a pixel
         // left of the button — (245) or the close button's (196, 43, 28).
         if hot {
-            let face = egui::Rect::from_min_size(egui::pos2(r.left() - 1.0, r.top()), egui::vec2(45.0, 28.0));
+            let face = egui::Rect::from_min_size(egui::pos2(r.left() - 1.0, r.top()), egui::vec2(s(46.0) - 1.0, caption_h() - 2.0));
             ui.painter().rect_filled(face, 0.0, if close { Color32::from_rgb(196, 43, 28) } else { Color32::from_gray(245) });
         }
         let col = if close && hot { Color32::WHITE } else if focused || hot { Color32::BLACK } else { Color32::from_gray(163) };
