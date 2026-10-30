@@ -1705,18 +1705,22 @@ mod tests {
         grounded(&mut app);
         let d = app.active_doc_mut().unwrap();
         d.selection.insert(ChanKey::Analog(0));
+        // A fault on phase A only: its current up and its voltage down over
+        // the second half, so only the А flag has true samples.
         let n = d.osc.sample_count();
+        for (id, f) in [("Ia", 10.0), ("Ua", 0.3)] {
+            let c = d.osc.analog.iter_mut().find(|c| c.id == id).expect("the demo channel");
+            c.samples[n / 2..].iter_mut().for_each(|v| *v *= f);
+        }
+        d.recompute_signals();
         let own = d.osc.digital.len();
-        d.osc.digital.push(fvb_core::DigitalChannel { index: own as u32 + 1, id: KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples: vec![true; n] });
+        d.osc.digital.push(fvb_core::DigitalChannel { index: own as u32 + 1, id: KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples: vec![false; n] });
         d.digital_visible.resize(own + 1, true);
         app.dispatch(Command::OmpAnalysis);
         app.run_omp();
         let d = app.active_doc().unwrap();
-        for (k, name) in KZ_PHASES.iter().enumerate() {
-            let i = flag_slot(d, k).expect("the phase has a flag");
-            assert_eq!(d.osc.digital[i].id, *name, "phase {k}");
-            assert!(d.dig(i).omp);
-        }
+        let any = |name: &str| d.osc.digital.iter().find(|c| c.id == name).expect("the flag").samples.iter().any(|&b| b);
+        assert_eq!(KZ_PHASES.map(any), [true, false, false], "each phase in its own flag after a re-run");
         assert_eq!(d.osc.digital.iter().filter(|c| KZ_PHASES.contains(&c.id.as_str())).count(), 3);
     }
 
