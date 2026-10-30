@@ -282,6 +282,11 @@ impl Dockable {
         true
     }
 
+    /// Its panes hidden: an auto-hidden one is back in its strip.
+    pub fn hide(&mut self) {
+        (self.out, self.slide, self.hover_since) = (false, 0.0, None);
+    }
+
     /// When it next needs a frame, in seconds from `now`: at once while it
     /// slides, when the hover on its button reaches the open time, at the
     /// next hide check while it is out; None when resting in.

@@ -1505,9 +1505,12 @@ pub struct App {
     pub pane_grid: Vec<egui::Rect>,
     /// Where the keyboard focus is, as far as copy (`0x405160`) cares.
     pub copy_focus: CopyFocus,
-    /// The press that gave a diagram or grid the focus (a slid-out pane
-    /// holding it stays out).
-    pub focus_press: Option<egui::Pos2>,
+    /// The auto-hidden unit whose slid-out pane holds the focus (it stays
+    /// out).
+    pub focus_unit: Option<crate::docking::Unit>,
+    /// Where the slid-out panes' diagram windows and grids start in
+    /// `pane_canvas` / `pane_grid` (they are drawn last, over the rest).
+    pub slid_from: (usize, usize),
     /// Screen pixels per point, for pictures at the screen's resolution.
     pub ppp: f32,
     /// The merge bar (shown after a paste).
@@ -1693,7 +1696,8 @@ impl App {
             windows_dlg: None,
             next_serial: 1,
             copy_focus: CopyFocus::View,
-            focus_press: None,
+            focus_unit: None,
+            slid_from: (0, 0),
             ppp: 1.0,
             window_title: String::new(),
             min_size_ppp: 0.0,

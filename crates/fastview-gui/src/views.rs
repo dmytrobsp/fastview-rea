@@ -594,6 +594,22 @@ impl App {
         let mut wake: Option<f64> = None;
         self.dock_strips = [None; 4];
         let pinned: Vec<DockView> = views.iter().copied().filter(|v| self.docks[v.unit].place == Place::AutoHide).collect();
+        // A unit that no longer shows (its panes hidden) is back in its
+        // strip when it shows again.
+        for u in crate::docking::UNITS {
+            if !views.iter().any(|v| v.unit == u) {
+                self.docks.0[u as usize].hide();
+            }
+        }
+        // The focus leaves a group that hides — closed, or auto-hidden and
+        // in its strip (Windows hands a hidden window's focus to its
+        // parent, the frame passes it on to the view).
+        if let Some(u) = self.focus_unit {
+            let d = self.docks[u];
+            if !views.iter().any(|v| v.unit == u) || (d.place == Place::AutoHide && !d.out && d.slide == 0.0) {
+                (self.copy_focus, self.focus_unit) = (crate::app::CopyFocus::View, None);
+            }
+        }
         for v in pinned {
             let edge = self.docks.edge(v.unit);
             let titles: Vec<Pane> = self.tab_order.into_iter().filter(|&p| v.mask[p as usize]).collect();
@@ -619,6 +635,12 @@ impl App {
             if let Some(p) = hit.2.filter(|&p| p != v.front) {
                 self.dispatch(Command::ActivatePane(p));
             }
+            // A press on its button gives the pane the focus (the strip's
+            // WM_LBUTTONDOWN, `0x1005f612`: SetFocus on the button's pane;
+            // VM: clicked out, it stays out with the pointer over the view).
+            if hit.1 {
+                self.focus_unit = Some(v.unit);
+            }
             // The hide check tests the cursor against the pane's rect and
             // its button's by position (`0x10087a4a`: GetCursorPos, PtInRect
             // on the window rect and on the button rect), not by which
@@ -628,7 +650,7 @@ impl App {
             // while its active flag (+0x2c8) is set — at each idle update
             // the focus window is the pane or a child of it (`0x10089d7d`,
             // GetFocus / IsChild); a press in its diagram or grid gives it.
-            let focused = self.copy_focus != crate::app::CopyFocus::View && self.focus_press.is_some_and(|q| self.dock_areas[v.unit as usize].is_some_and(|a| a.contains(q)));
+            let focused = self.focus_unit == Some(v.unit);
             self.docks[v.unit].auto_hide_frame(now, hit.0, hit.1, inside, menu_up || focused);
             if let Some(dt) = self.docks[v.unit].wake_in(now) {
                 wake = Some(wake.map_or(dt, |w| w.min(dt)));
@@ -648,6 +670,7 @@ impl App {
         // They slide out of their strip over everything else.
         let content = ctx.available_rect();
         self.dock_areas = [None; 4];
+        self.slid_from = (self.pane_canvas.len(), self.pane_grid.len());
         for v in views.iter().copied() {
             let d = self.docks[v.unit];
             if d.place != Place::AutoHide || d.slide <= 0.0 {

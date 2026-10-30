@@ -559,12 +559,23 @@ impl App {
             return;
         }
         let Some(p) = ctx.input(|i| if i.pointer.any_pressed() { crate::lanes::press_pos(i) } else { None }) else { return };
-        if let Some((pane, _)) = self.pane_canvas.iter().find(|(_, r)| r.contains(p)) {
-            (self.copy_focus, self.focus_press) = (CopyFocus::Diagram(*pane), Some(p));
-        } else if self.pane_grid.iter().any(|r| r.contains(p)) {
-            (self.copy_focus, self.focus_press) = (CopyFocus::Grid, Some(p));
-        } else if self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
-            (self.copy_focus, self.focus_press) = (CopyFocus::View, None);
+        // A slid-out pane lies over everything else: a press in it reaches
+        // only its windows; elsewhere the topmost window (drawn last).
+        let slid = crate::docking::UNITS.into_iter().rev().find(|&u| self.dock_areas[u as usize].is_some_and(|a| a.contains(p)));
+        let (canvas, grid) = match slid {
+            Some(_) => self.slid_from,
+            None => (0, 0),
+        };
+        // The group holding the focus: the slid-out one pressed, a
+        // diagram's own group, a grid's by where it lies.
+        if let Some(&(pane, _)) = self.pane_canvas[canvas.min(self.pane_canvas.len())..].iter().rev().find(|(_, r)| r.contains(p)) {
+            let owner = slid.or(Some(self.docks.host(crate::docking::UNITS[pane as usize])));
+            (self.copy_focus, self.focus_unit) = (CopyFocus::Diagram(pane), owner);
+        } else if self.pane_grid[grid.min(self.pane_grid.len())..].iter().any(|r| r.contains(p)) {
+            let owner = slid.or_else(|| crate::docking::UNITS.into_iter().find(|&u| self.dock_rects[u as usize].or(self.docks[u].float_rect.filter(|_| self.docks[u].place == crate::docking::Place::Floating)).is_some_and(|r| r.contains(p))));
+            (self.copy_focus, self.focus_unit) = (CopyFocus::Grid, owner);
+        } else if slid.is_none() && self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
+            (self.copy_focus, self.focus_unit) = (CopyFocus::View, None);
         }
     }
 

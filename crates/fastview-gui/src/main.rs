@@ -1821,6 +1821,139 @@ mod window_tests {
         assert!(!w.app.docks[Unit::Vector].out && w.app.docks[Unit::Vector].slide == 0.0, "the focus gone, it slid back");
     }
 
+    /// A press on the strip button gives the pane the focus (`0x1005f612`;
+    /// VM: clicked out, the pointer over the view 4.5 s, still out); the
+    /// focus leaves a pane that hides — pinned to its edge and back in its
+    /// strip it slides back as soon as the pointer is away.
+    #[test]
+    fn a_pane_clicked_out_holds_the_focus_until_it_hides() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(on), ev(on, true), ev(on, false)]);
+        w.idle(2);
+        assert!(w.app.docks[Unit::Vector].out, "the click slid it out at once");
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(90);
+        assert!(w.app.docks[Unit::Vector].out, "the focus in the pane keeps it out");
+        // Pinned to its edge and back: hidden, the focus is gone.
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        assert_eq!((w.app.focus_unit, w.app.copy_focus), (None, app::CopyFocus::View), "the focus left the hidden pane");
+        w.run(vec![egui::Event::PointerMoved(on)]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(30);
+        assert!(!w.app.docks[Unit::Vector].out, "no focus: away, it slid back");
+    }
+
+    /// The slid-out pane only slides: from its first frame out it is
+    /// painted opaque (no fade-in).
+    #[test]
+    fn a_sliding_pane_is_opaque_from_its_first_frame() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        w.app.docks.0[Unit::Vector as usize].out = true;
+        let mut seen = 0;
+        for k in 0..14 {
+            let t = w.ctx.input(|i| i.time) + 0.016;
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), events: if k == 0 { vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))] } else { vec![] }, ..Default::default() };
+            let app = &mut w.app;
+            let out = w.ctx.run(raw, |ctx| app.frame_ui(ctx));
+            let Some(rect) = w.app.dock_areas[Unit::Vector as usize] else { continue };
+            let fill = w.ctx.style().visuals.panel_fill;
+            // The pane's background: the shape filling its rect.
+            for s in &out.shapes {
+                if let egui::Shape::Rect(r) = &s.shape {
+                    if (r.rect.min - rect.min).length() < 1.0 && (r.rect.max - rect.max).length() < 1.0 {
+                        assert_eq!(r.fill, fill, "frame {k}: the pane faded");
+                        seen += 1;
+                    }
+                }
+            }
+        }
+        assert!(seen > 8, "the pane's background painted on the slide's frames: {seen}");
+    }
+
+    /// An auto-hidden group whose panes are all hidden while it is out is
+    /// back in its strip when they show again (not fully out, sliding in).
+    #[test]
+    fn a_group_hidden_while_out_shows_in_its_strip() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        w.run(vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out);
+        let shown: Vec<app::Pane> = [app::Pane::Vector, app::Pane::Circle, app::Pane::Differential].into_iter().filter(|&p| w.app.panes.visible(p)).collect();
+        for &p in &shown {
+            w.app.dispatch(app::Command::TogglePane(p));
+        }
+        w.idle(2);
+        for &p in &shown {
+            w.app.dispatch(app::Command::TogglePane(p));
+        }
+        w.run(vec![egui::Event::PointerMoved(w.app.view_rects.expect("the view").0.center())]);
+        let d = w.app.docks[Unit::Vector];
+        assert!(!d.out && d.slide == 0.0, "in its strip: {d:?}");
+    }
+
+    /// The focus belongs to the window pressed — the slid-out pane over a
+    /// docked one takes the press, and a press in a docked pane that the
+    /// slid-out pane covers later does not hold that one out.
+    #[test]
+    fn the_focus_is_the_pressed_windows_group() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
+        let canvas = |w: &Win, p: app::Pane| w.app.pane_canvas.iter().rev().find(|(q, _)| *q == p).map(|(_, r)| *r);
+        let press = |w: &mut Win, at: Pos2| {
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(true)]);
+            w.run(vec![ev(false)]);
+        };
+        // Where the slid-out vector diagram will lie over the docked Частотная.
+        let freq = canvas(&w, app::Pane::Frequency).expect("Частотная docked");
+        w.run(vec![egui::Event::PointerMoved(on)]);
+        w.idle(30);
+        let over = canvas(&w, app::Pane::Vector).expect("the slid-out vector diagram").intersect(freq);
+        assert!(over.is_positive(), "the slid-out pane covers Частотная: {over:?}");
+        let at = over.center();
+        // Pressed there while out: the vector diagram's.
+        press(&mut w, at);
+        assert_eq!((w.app.copy_focus, w.app.focus_unit), (app::CopyFocus::Diagram(app::Pane::Vector), Some(Unit::Vector)));
+        press(&mut w, away);
+        w.idle(30);
+        assert!(!w.app.docks[Unit::Vector].out, "the focus in the view: back");
+        // Pressed there while in: Частотная's; out again, away, it slides back.
+        press(&mut w, at);
+        assert_eq!((w.app.copy_focus, w.app.focus_unit), (app::CopyFocus::Diagram(app::Pane::Frequency), Some(w.app.docks.host(Unit::Frequency))));
+        w.run(vec![egui::Event::PointerMoved(on)]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out && w.app.dock_areas[Unit::Vector as usize].is_some_and(|a| a.contains(at)));
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(30);
+        assert!(!w.app.docks[Unit::Vector].out, "Частотная's focus does not hold the vector pane");
+    }
+
     /// The hide check finds the pointer on the strip button by position
     /// (`0x10087a4a`: PtInRect on the button's rect, whatever window is on
     /// top there): with a window over the button the pane stays out,
