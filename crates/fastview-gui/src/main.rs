@@ -1886,6 +1886,46 @@ mod window_tests {
         assert!(seen > 8, "the pane's background painted on the slide's frames: {seen}");
     }
 
+    /// A press on a pane's caption gives that pane the focus (`0x10086d23`,
+    /// `0x10086f01`): the slid-out pane's own holds it out; another pane's
+    /// takes the focus, and the slid-out pane slides back.
+    #[test]
+    fn a_caption_press_gives_its_pane_the_focus() {
+        use docking::{Edge, Spot, Unit};
+        let mut w = Win::new();
+        // Частотная on the left edge, clear of the slid-out vector pane.
+        w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: Edge::Left, outer: true };
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        let away = w.app.view_rects.expect("the view").0.center();
+        let canvas = |w: &Win, p: app::Pane| w.app.pane_canvas.iter().rev().find(|(q, _)| *q == p).map(|(_, r)| *r);
+        let press = |w: &mut Win, at: Pos2, button| {
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button, pressed, modifiers: Default::default() };
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(true)]);
+            w.run(vec![ev(false)]);
+        };
+        let freq = canvas(&w, app::Pane::Frequency).expect("Частотная docked");
+        for button in [egui::PointerButton::Primary, egui::PointerButton::Secondary] {
+            w.run(vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))]);
+            w.idle(30);
+            let v = canvas(&w, app::Pane::Vector).expect("the slid-out vector diagram");
+            assert!(w.app.dock_areas[Unit::Vector as usize].is_some_and(|a| !a.contains(away) && !a.contains(freq.center())), "away and Частотная clear of the pane");
+            press(&mut w, Pos2::new(v.left() + 60.0, v.top() - 10.0), button);
+            w.run(vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+            w.run(vec![egui::Event::PointerMoved(away)]);
+            w.idle(60);
+            assert!(w.app.docks[Unit::Vector].out, "{button:?}: its caption pressed, it stays out");
+            // Частотная's caption: the focus goes there.
+            press(&mut w, Pos2::new(freq.left() + 60.0, freq.top() - 10.0), button);
+            w.run(vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+            w.run(vec![egui::Event::PointerMoved(away)]);
+            w.idle(30);
+            assert!(!w.app.docks[Unit::Vector].out, "{button:?}: another caption pressed, it slid back");
+        }
+    }
+
     /// An auto-hidden group whose panes are all hidden while it is out is
     /// back in its strip when they show again (not fully out, sliding in).
     #[test]

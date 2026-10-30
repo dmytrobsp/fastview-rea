@@ -572,7 +572,11 @@ impl App {
             let owner = slid.or(Some(self.docks.host(crate::docking::UNITS[pane as usize])));
             (self.copy_focus, self.focus_unit) = (CopyFocus::Diagram(pane), owner);
         } else if self.pane_grid[grid.min(self.pane_grid.len())..].iter().any(|r| r.contains(p)) {
-            let owner = slid.or_else(|| crate::docking::UNITS.into_iter().find(|&u| self.dock_rects[u as usize].or(self.docks[u].float_rect.filter(|_| self.docks[u].place == crate::docking::Place::Floating)).is_some_and(|r| r.contains(p))));
+            // Floating windows lie over the docked groups.
+            let floating = |u: crate::docking::Unit| self.docks[u].float_rect.filter(|_| self.docks[u].place == crate::docking::Place::Floating);
+            let owner = slid
+                .or_else(|| crate::docking::UNITS.into_iter().find(|&u| floating(u).is_some_and(|r| r.contains(p))))
+                .or_else(|| crate::docking::UNITS.into_iter().find(|&u| self.dock_rects[u as usize].is_some_and(|r| r.contains(p))));
             (self.copy_focus, self.focus_unit) = (CopyFocus::Grid, owner);
         } else if slid.is_none() && self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
             (self.copy_focus, self.focus_unit) = (CopyFocus::View, None);

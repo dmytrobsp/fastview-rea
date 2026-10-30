@@ -336,6 +336,12 @@ impl App {
         use crate::docking::Place;
         let place = self.docks[v.unit].place;
         let act = pane_caption(ui, &self.skin.palette(), pane_title(p), (place != Place::Floating).then_some(place == Place::AutoHide));
+        // A press on the caption gives the pane the focus (its
+        // WM_LBUTTONDOWN `0x10086d23`: SetFocus on the pane or its one
+        // child window; WM_RBUTTONDOWN `0x10086f01`: on the pane).
+        if act.pressed {
+            self.focus_unit = Some(v.unit);
+        }
         let ctx = ui.ctx().clone();
         if let Some(at) = act.menu {
             let next = self.tab_order.into_iter().find(|&q| q != p && v.mask[q as usize]);
@@ -1675,6 +1681,8 @@ struct CaptionAct {
     dragging: bool,
     /// A right-click: the pane menu at that point.
     menu: Option<egui::Pos2>,
+    /// A press on the caption or its buttons (any button).
+    pressed: bool,
 }
 
 /// A docking-pane caption: the title, the pin (`pinned` None when the pane
@@ -1702,6 +1710,7 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
         ui.data_mut(|d| if act.double { d.remove::<f64>(id) } else { d.insert_temp(id, now) });
     }
     act.dragging = resp.dragged();
+    act.pressed = resp.contains_pointer() && ui.input(|i| i.pointer.any_pressed());
     if resp.secondary_clicked() {
         act.menu = resp.interact_pointer_pos();
     }
