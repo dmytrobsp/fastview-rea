@@ -475,7 +475,8 @@ impl Doc {
     pub fn cff_sections(&self) -> comtrade::CffSections {
         let mut s = self.cff.clone();
         if self.hdr.is_some() {
-            s.hdr = self.hdr.clone();
+            // Without a `.hdr`'s BOM: it is not part of the section's text.
+            s.hdr = Some(self.hdr_text());
         }
         s
     }
@@ -1316,6 +1317,58 @@ mod tests {
         assert_eq!(d.osc.analog[3].id, "IA БЛОКА 3");
         d.set_codepage(Encoding::Cp866);
         assert_eq!(d.computed[j].name, "IA +T+¦L 3 (вст.)");
+    }
+
+    /// A lane pasted while 866 is shown into a UTF-8 record stores the name
+    /// as read (UTF-8), not 866 bytes: the next switch would show U+FFFD.
+    #[test]
+    fn a_lane_pasted_while_866_is_shown_into_a_utf8_record_keeps_its_name() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.osc.text_enc = Some(Encoding::Utf8);
+        d.osc.analog[3].id = "Ток фази В".into();
+        d.init_record_text(Encoding::Cp1251);
+        d.init_set_keys();
+        d.set_codepage(Encoding::Cp866);
+        d.selection = [ChanKey::Analog(3)].into();
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let under_866 = d.computed[j].name.clone();
+        d.set_codepage(Encoding::Cp1251);
+        let under_1251 = d.computed[j].name.clone();
+        assert!(!under_1251.contains('\u{FFFD}'), "{under_1251}");
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.computed[j].name, under_866, "866 → 1251 → 866");
+        d.set_codepage(Encoding::Utf8);
+        assert_eq!(d.computed[j].name, under_1251, "UTF-8 reads it as 1251 does");
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.computed[j].name, under_866, "and 866 again");
+    }
+
+    /// The record comment saved in a `.cff` is the text without a `.hdr`'s
+    /// BOM: not raw BOM bytes in a UTF-8 file, not a «?» in a 1251 one.
+    #[test]
+    fn a_boms_hdr_is_saved_in_a_cff_without_its_bom() {
+        for (utf8, enc) in [(true, Encoding::Utf8), (false, Encoding::Cp1251)] {
+            let mut osc = comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
+            osc.rev_year = 2013;
+            if utf8 {
+                osc.text_enc = Some(Encoding::Utf8);
+                osc.station = "Підстанція".into();
+            }
+            let mut d = Doc::new(osc, "x".into());
+            d.codepage = enc;
+            d.hdr = Some("\u{FEFF}Коментар".into());
+            let bytes = comtrade::write_cff(&d.osc, &d.cff_sections(), d.codepage).unwrap();
+            let mark = b"--- file type: HDR ---\r\n";
+            let at = bytes.windows(mark.len()).position(|w| w == mark).expect("an HDR section") + mark.len();
+            let body = &bytes[at..at + 16];
+            let want = if utf8 { "Коментар".as_bytes().to_vec() } else { comtrade::encode_text("Коментар", Encoding::Cp1251) };
+            assert!(body.starts_with(&want), "{enc:?}: {body:02x?}");
+        }
     }
 
     /// A pasted lane renamed before any «Кодировка» keeps its name (its raw

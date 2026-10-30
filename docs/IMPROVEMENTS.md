@@ -31,6 +31,11 @@ is out of reach (those are listed in `notes/COMPLETION_PLAN.md`, W6).
   original shows «?» (the ANSI narrowing of `0x422300`, under UTF-8 too);
   ours keeps the character. Reason: it is what the file says — lossless,
   saved back byte for byte, and it marks the cut.
+- **A `.hdr` beside a UTF-8 `.cfg`.** Ours reads it as UTF-8 too, whatever
+  the program encoding. The original reads the `.hdr` in the program
+  encoding or guesses 866 / 1251, so under 1251 a UTF-8 export's comment
+  (32805) is mojibake there. Reason: the comment of a UTF-8 record is
+  UTF-8 text, as its names are.
 - **Saving a record read as UTF-8.** The original never reads a record as
   UTF-8 by itself. Ours writes such a record — while its names go out in
   UTF-8 — all in UTF-8 (the `.cff` sections and markers too), with a BOM
@@ -46,7 +51,11 @@ is out of reach (those are listed in `notes/COMPLETION_PLAN.md`, W6).
   third entry, current at open (a stored `Codepage` other than 0 selects
   it), which gives the names back as read, nothing narrowed or
   best-fitted («√», box-drawing, U+FFFD kept). Reason: the combo shows the
-  record's real encoding, and coming back from 866 / 1251 loses nothing.
+  record's real encoding, and coming back from 866 / 1251 loses nothing of
+  the record's own names, which come back as read. A name pasted or merged
+  in comes back only as far as the shown encoding could hold it (KOI8-R has
+  no і ї є ґ; a lane pasted under 1251 into a UTF-8 record keeps only what
+  1251 holds).
 - **ADC codes beyond ±2³¹** (float32-range samples with a tiny `a`). The
   original truncates the code to a 32-bit int (`0x422250` → `0x411bf0`),
   every such code −2147483648; ours keeps it whole. Reason: the true raw
