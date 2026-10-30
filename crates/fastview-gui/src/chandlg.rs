@@ -378,8 +378,10 @@ pub fn name_taken(doc: &Doc, key: ChanKey, name: &str) -> bool {
 /// (`+0x6c`), and an empty alias shows the file's name (`0x425960`).
 pub fn shown_after_rename(doc: &Doc, key: ChanKey, name: &str) -> String {
     match key {
-        ChanKey::Analog(_) | ChanKey::Digital(_) if name.is_empty() => doc.original_name(key).unwrap_or_else(|| row_name(doc, key)),
-        _ => name.to_string(),
+        _ if !name.is_empty() => name.to_string(),
+        ChanKey::Analog(_) | ChanKey::Digital(_) => doc.original_name(key).unwrap_or_else(|| row_name(doc, key)),
+        // A pasted lane: its name as pasted, decoded now.
+        ChanKey::Computed(j) => doc.computed[j].name_raw.as_ref().map_or_else(|| row_name(doc, key), |r| r.seen.clone()),
     }
 }
 
@@ -394,6 +396,7 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
         return Err(MSG_NAME_TAKEN);
     }
     let shown = shown_after_rename(doc, key, name);
+    let alias = !name.is_empty();
     let name = shown.as_str();
     // A level or an area keeps the name it was made on: after a rename it
     // no longer resolves (nor is drawn) and is saved with that name; one
@@ -415,6 +418,7 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
             }
         }
     }
+    doc.mark_alias(key, alias);
     doc.comments = recs.iter().map(|r| doc.comment_of(r)).collect();
     doc.set.modified = true;
     Ok(())

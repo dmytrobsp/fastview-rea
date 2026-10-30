@@ -2034,6 +2034,7 @@ impl App {
                     // as after a rename in «Каналы» (L9.227).
                     let recs: Vec<_> = d.comments.iter().map(|c| d.comment_rec(c)).collect();
                     d.osc.analog[i].id = crate::chandlg::shown_after_rename(d, key, &text);
+                    d.mark_alias(key, !text.is_empty());
                     d.comments = recs.iter().map(|r| d.comment_of(r)).collect();
                 }
                 d.set.modified = true;

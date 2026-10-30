@@ -376,7 +376,7 @@ pub struct Computed {
     pub pending_own: Vec<f64>,
     /// A pasted lane's name bytes and the text last decoded from them, once
     /// «Кодировка» has re-decoded it (`Doc::set_codepage`).
-    pub name_raw: Option<(Vec<u8>, String)>,
+    pub name_raw: Option<RawName>,
     /// A pending analog lane's phasor cache (`ch+0x38`) over
     /// [`Self::pending_own`] at its own N (`0x428490` → `0x426fc0` /
     /// `0x4267e0`); the vector diagram interpolates it by own time.
@@ -745,10 +745,9 @@ pub struct Doc {
     /// The code page the record's names are currently decoded in (`doc+0x6e8`,
     /// 866 / 1251: file parameters «Кодировка»; see `recdlg`).
     pub codepage: Encoding,
-    /// The station, recorder and channel names' bytes as read, each with
-    /// the text last decoded from them, found by that text (see
-    /// `Doc::set_codepage`; an alias has none).
-    pub name_raw: Vec<(Vec<u8>, String)>,
+    /// The station's, the recorder's and each channel's name as read (see
+    /// [`RawName`]), in step with the channels (`Doc::ensure_name_raw`).
+    pub name_raw: Vec<RawName>,
     /// The record comment (`.hdr` text, 32805) and its code page.
     pub hdr: Option<String>,
     pub hdr_cp: Encoding,
@@ -1247,7 +1246,17 @@ pub struct DocSnapshot {
     pub dig_flags: Vec<DigFlags>,
     /// The names' bytes go with the channels (the original's snapshot is
     /// its channel list, the raw names in it); the code page stays.
-    pub name_raw: Vec<(Vec<u8>, String)>,
+    pub name_raw: Vec<RawName>,
+}
+
+/// A name as read (`+0x64`): its bytes, the text last decoded from them in
+/// the record's code page, and whether the channel shows an alias instead
+/// (`+0x6c` non-empty — kept as typed across «Кодировка», `0x425960`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RawName {
+    pub bytes: Vec<u8>,
+    pub seen: String,
+    pub alias: bool,
 }
 
 /// Commands dispatched from the ribbon, QAT, keybinds and context menus. The

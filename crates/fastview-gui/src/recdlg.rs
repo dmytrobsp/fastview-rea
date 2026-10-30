@@ -229,49 +229,49 @@ impl Doc {
             .chain(self.osc.analog.iter().map(|c| c.id.clone()))
             .chain(self.osc.digital.iter().map(|c| c.id.clone()))
             .collect();
-        // Each name's bytes as read, with the text last decoded from them,
-        // kept in step with the channels (`move_appended_keys`,
-        // `retain_digital_keys`): a name still that text is decoded again
-        // from them; one that is not is an alias, kept, with its bytes
-        // (`0x425960`). Out of step (an undo past a merge), a name takes the
-        // first entry with its text not yet taken, in order (two names can
-        // decode alike: «В» and «С» read as 866 both show «T»).
+        // Each name as read, in step with the channels (`move_appended_keys`,
+        // `retain_digital_keys`, undo): an alias is kept as typed, with its
+        // bytes (`0x425960`); a name still the text last decoded from its
+        // bytes is decoded again from them (a name changed otherwise is
+        // kept as well). Out of step, a name takes the first entry with its
+        // text not yet taken, in order (two names can decode alike: «В» and
+        // «С» read as 866 both show «T»).
         let raw = std::mem::take(&mut self.name_raw);
         let aligned = raw.len() == names.len();
         let mut used = vec![false; raw.len()];
-        let mut out: Vec<Option<(Vec<u8>, bool)>> = vec![None; names.len()];
+        // (bytes, decode again, alias)
+        let mut out: Vec<Option<(Vec<u8>, bool, bool)>> = vec![None; names.len()];
         for (p, n) in names.iter().enumerate() {
-            if aligned && raw[p].1 == *n {
-                used[p] = true;
-                out[p] = Some((raw[p].0.clone(), true));
+            if aligned {
+                let r = &raw[p];
+                let redo = !r.alias && r.seen == *n;
+                out[p] = Some((r.bytes.clone(), redo, !redo));
             }
         }
         for (p, n) in names.iter().enumerate() {
             if out[p].is_some() {
                 continue;
             }
-            out[p] = Some(if aligned {
-                (raw[p].0.clone(), false)
-            } else if let Some(j) = (0..raw.len()).find(|&j| !used[j] && raw[j].1 == *n) {
+            out[p] = Some(if let Some(j) = (0..raw.len()).find(|&j| !used[j] && !raw[j].alias && raw[j].seen == *n) {
                 used[j] = true;
-                (raw[j].0.clone(), true)
+                (raw[j].bytes.clone(), true, false)
             } else if let Some(f) = &file[p] {
-                // No switch yet: the keys were taken from names read
+                // No bytes kept: the keys were taken from names read
                 // losslessly, and a name not the file's is an alias.
-                (comtrade::encode_text(f, from), false)
+                (comtrade::encode_text(f, from), false, true)
             } else {
-                (comtrade::encode_text(n, from), true)
+                (comtrade::encode_text(n, from), true, false)
             });
         }
         let decode = |b: &[u8]| -> String { comtrade::decode_bytes(b, cp).chars().map(comtrade::best_fit_1251).collect() };
         let mut kept = Vec::with_capacity(names.len());
         for (n, o) in names.iter_mut().zip(out) {
-            let (bytes, redecode) = o.unwrap_or_default();
+            let (bytes, redecode, alias) = o.unwrap_or_default();
             let seen = decode(&bytes);
             if redecode {
                 n.clone_from(&seen);
             }
-            kept.push((bytes, seen));
+            kept.push(crate::app::RawName { bytes, seen, alias });
         }
         let mut it = names.into_iter();
         self.osc.station = it.next().unwrap_or_default();
@@ -291,17 +291,17 @@ impl Doc {
         for j in pasted {
             let c = &mut self.computed[j];
             let (bytes, redecode) = match c.name_raw.take() {
-                Some((b, seen)) => {
-                    let same = seen == c.name;
-                    (b, same)
+                Some(r) => {
+                    let redo = !r.alias && r.seen == c.name;
+                    (r.bytes, redo)
                 }
-                None => (comtrade::encode_text(&c.name, from), true),
+                None => (comtrade::encode_text(&c.name, Encoding::Cp1251), true),
             };
             let seen = decode(&bytes);
             if redecode {
                 c.name.clone_from(&seen);
             }
-            c.name_raw = Some((bytes, seen));
+            c.name_raw = Some(crate::app::RawName { bytes, seen, alias: !redecode });
             let new = c.name.clone();
             if let Some(p) = self.pending_of_mut(j) {
                 match &mut p.pasted.channel {
@@ -1145,6 +1145,52 @@ mod tests {
         assert_eq!(crate::chandlg::rename(d, ChanKey::Computed(j), "Своё"), Ok(()));
         d.set_codepage(Encoding::Cp866);
         assert_eq!(d.computed[j].name, "Своё");
+    }
+
+    /// A pasted lane renamed before any «Кодировка» keeps its name (its raw
+    /// name is set at the paste); emptied, it shows its name as pasted.
+    #[test]
+    fn a_pasted_lane_renamed_first_keeps_its_name() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "IA БЛОКА 3".into();
+        d.init_set_keys();
+        d.selection = [ChanKey::Analog(3)].into();
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let pasted = d.computed[j].name.clone();
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Computed(j), "Своё"), Ok(()));
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.computed[j].name, "Своё");
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Computed(j), ""), Ok(()));
+        let want: String = comtrade::decode_bytes(&comtrade::encode_text(&pasted, Encoding::Cp1251), Encoding::Cp866).chars().map(comtrade::best_fit_1251).collect();
+        assert_eq!(d.computed[j].name, want, "its raw name, as read now");
+        assert!(d.pending_of(j).is_some());
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.computed[j].name, pasted);
+    }
+
+    /// An alias typed equal to the file's name as shown is still an alias
+    /// (`+0x6c` non-empty): kept as typed across «Кодировка».
+    #[test]
+    fn an_alias_equal_to_the_file_name_is_kept() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[0].id = "Ток".into();
+        d.osc.analog[1].id = "Ток 2".into();
+        d.init_set_keys();
+        // «Каналы» renames it away and back to the same text.
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Analog(0), "X"), Ok(()));
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Analog(0), "Ток"), Ok(()));
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.osc.analog[0].id, "Ток", "the alias as typed");
+        assert_ne!(d.osc.analog[1].id, "Ток 2", "the file's name re-decoded");
     }
 
     /// Two pasted lanes whose names decode alike stay linked to their own
