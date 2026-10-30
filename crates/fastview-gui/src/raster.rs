@@ -242,10 +242,11 @@ pub fn render_input(size: Vec2, ppp: f32, fonts: Option<&egui::FontDefinitions>,
 /// [`render_input`] as a runner on a monitor at `native` pixels per point
 /// shows it: the window `px` device pixels, so each pass's screen is
 /// `px` / (zoom · native) points (egui-winit), the zoom what `setup` and
-/// then the app left it at; the last pass rasterised at its own pixels per
+/// then the app left it at, through the app's raw input `hook`; the last
+/// pass rasterised at its own pixels per
 /// point onto `px`.
 #[cfg(test)]
-pub fn render_native(px: Vec2, native: f32, setup: impl FnOnce(&egui::Context), fonts: Option<&egui::FontDefinitions>, passes: Vec<Vec<egui::Event>>, mut paint: impl FnMut(&egui::Context)) -> Canvas {
+pub fn render_native(px: Vec2, native: f32, setup: impl FnOnce(&egui::Context), hook: impl Fn(&egui::Context, &mut egui::RawInput), fonts: Option<&egui::FontDefinitions>, passes: Vec<Vec<egui::Event>>, mut paint: impl FnMut(&egui::Context)) -> Canvas {
     let ctx = egui::Context::default();
     if let Some(f) = fonts {
         ctx.set_fonts(f.clone());
@@ -262,6 +263,7 @@ pub fn render_native(px: Vec2, native: f32, setup: impl FnOnce(&egui::Context), 
             ..Default::default()
         };
         raw.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(native);
+        hook(&ctx, &mut raw);
         let full = ctx.run(raw, &mut paint);
         apply(&mut textures, &full.textures_delta);
         out = Some((full.shapes, full.pixels_per_point));

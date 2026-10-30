@@ -1521,6 +1521,9 @@ pub struct App {
     pub window_title: String,
     /// The scale the minimum window size was last sent for.
     pub min_size_ppp: f32,
+    /// The saved window placement (device pixels) to send again in the
+    /// first frame (`device_pixels`).
+    pub placement_px: Option<egui::Rect>,
     /// `-Dst <file>` (app+0x118): the `.dst` description the next `.sto`
     /// open uses as is (`0x45646b`); emptied by every open that gets past
     /// the `.sto` step (`0x44f05a`).
@@ -1693,6 +1696,7 @@ impl App {
             ppp: 1.0,
             window_title: String::new(),
             min_size_ppp: 0.0,
+            placement_px: None,
             finder: None,
             loading: Vec::new(),
             mru: Vec::new(),
