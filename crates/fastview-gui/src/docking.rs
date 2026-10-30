@@ -205,6 +205,11 @@ pub const HOVER_S: f64 = 0.4;
 pub const CHECK_S: f64 = 0.7;
 /// The slide moves 1/12 of the extent per step (`0x10088459`).
 pub const SLIDE_STEPS: f32 = 12.0;
+/// The divider beside a slid-out pane (the pane's splitter window, +0x33c
+/// of the pane; VM: the brush between the view and the pane, 4 px).
+pub const DIVIDER_PX: f32 = 4.0;
+/// The smallest a slid-out pane is dragged to by its divider.
+pub const SLIDE_MIN_PX: f32 = 60.0;
 
 /// One dockable unit's state.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -231,13 +236,19 @@ pub struct Dockable {
     /// start on its button and the next hide check.
     pub out: bool,
     pub slide: f32,
+    /// The size across its edge a divider drag left it (the slid-out
+    /// pane's own; the docked size is not touched); `None` the create size.
+    pub slide_extent: Option<f32>,
     hover_since: Option<f64>,
     next_check: f64,
+    /// A show with activation asked for (the ribbon's toggle): the next
+    /// frame slides the group out and starts the hide check's timer.
+    show_req: bool,
 }
 
 impl Dockable {
     pub fn new(create: Vec2, spot: Spot) -> Dockable {
-        Dockable { place: Place::Docked, spot, extent: None, gen: 0, order: 0, float_rect: None, create, out: false, slide: 0.0, hover_since: None, next_check: 0.0 }
+        Dockable { place: Place::Docked, spot, extent: None, gen: 0, order: 0, float_rect: None, create, out: false, slide: 0.0, slide_extent: None, hover_since: None, next_check: 0.0, show_req: false }
     }
 
     /// The recent floating rect, or the create rect at `origin`.
@@ -265,7 +276,7 @@ impl Dockable {
             Place::AutoHide => Place::Docked,
             p => p,
         };
-        (self.out, self.slide, self.hover_since) = (false, 0.0, None);
+        (self.out, self.slide, self.hover_since, self.show_req) = (false, 0.0, None, false);
     }
 
     /// A caption drag of a docked unit: it detaches when the pointer has
@@ -285,7 +296,25 @@ impl Dockable {
 
     /// Its panes hidden: an auto-hidden one is back in its strip.
     pub fn hide(&mut self) {
-        (self.out, self.slide, self.hover_since) = (false, 0.0, None);
+        (self.out, self.slide, self.hover_since, self.show_req) = (false, 0.0, None, false);
+    }
+
+    /// The ribbon's toggle on an auto-hidden group (`0x10089800`: the pane
+    /// shown with activation): it slides out, to be taken back by the next
+    /// hide check unless the pointer is on it or something holds it (VM:
+    /// toggled in or out, it never closes and the ribbon's button never
+    /// checks; a second later it is back in its strip). A group not
+    /// auto-hidden is left alone.
+    pub fn request_show(&mut self) {
+        if self.place == Place::AutoHide {
+            self.show_req = true;
+        }
+    }
+
+    /// Whether the group is in auto-hide mode (shown from its strip, not
+    /// docked): the ribbon's buttons for its panes do not check.
+    pub fn auto_hidden(&self) -> bool {
+        self.place == Place::AutoHide
     }
 
     /// When it next needs a frame, in seconds from `now`: at once while it
@@ -315,6 +344,10 @@ impl Dockable {
     pub fn auto_hide_frame(&mut self, now: f64, on_button: bool, clicked: bool, in_pane: bool, held: bool) {
         if self.place != Place::AutoHide {
             return;
+        }
+        if std::mem::take(&mut self.show_req) && !self.out {
+            self.out = true;
+            self.next_check = now + CHECK_S;
         }
         if on_button {
             let since = *self.hover_since.get_or_insert(now);
@@ -781,6 +814,48 @@ mod tests {
         assert!(!d.out);
         d.pin();
         assert_eq!((d.place, d.slide), (Place::Docked, 0.0));
+    }
+
+    /// The ribbon's toggle on an auto-hidden group (#64): it slides out and
+    /// the next hide check takes it back with the pointer elsewhere; a
+    /// docked group is left alone, a group already out stays out.
+    #[test]
+    fn a_shown_auto_hidden_group_is_taken_back_by_the_next_check() {
+        let mut docked = unit();
+        docked.request_show();
+        docked.auto_hide_frame(0.0, false, false, false, false);
+        assert!(!docked.out && docked.place == Place::Docked, "a docked group has no slide");
+        let mut d = unit();
+        d.pin();
+        assert!(d.auto_hidden());
+        d.request_show();
+        d.auto_hide_frame(0.0, false, false, false, false);
+        assert!(d.out, "shown at once");
+        for k in 1..14 {
+            d.auto_hide_frame(f64::from(k) * 0.016, false, false, false, false);
+        }
+        assert_eq!(d.slide, 1.0);
+        d.auto_hide_frame(0.5, false, false, false, false);
+        assert!(d.out, "not before the check's 700 ms");
+        d.auto_hide_frame(0.75, false, false, false, false);
+        assert!(!d.out, "taken back by the first check, nothing holding it");
+        // With the pointer on the pane, or the focus in it, it stays.
+        d.request_show();
+        d.auto_hide_frame(1.0, false, false, false, false);
+        d.auto_hide_frame(1.8, false, false, true, false);
+        d.auto_hide_frame(2.6, false, false, false, true);
+        assert!(d.out);
+        // The request is used once: asked while out it does not restart
+        // the timer.
+        d.request_show();
+        d.auto_hide_frame(2.7, false, false, false, false);
+        d.auto_hide_frame(3.35, false, false, false, false);
+        assert!(!d.out);
+        // A pin / hide drops a request not yet used.
+        d.request_show();
+        d.hide();
+        d.auto_hide_frame(4.0, false, false, false, false);
+        assert!(!d.out);
     }
 
     /// `FloatTab` (`0x1013a259`): a tab pulled out floats alone; the

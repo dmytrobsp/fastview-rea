@@ -1420,6 +1420,15 @@ pub struct App {
     pub dock_drag_hold: bool,
     pub dock_areas: [Option<egui::Rect>; 4],
     pub dock_strips: [Option<egui::Rect>; 4],
+    /// What each pinned group's strip buttons saw this frame.
+    pub strip_hits: [crate::views::StripHit; 4],
+    /// The width / height of the strips on the left, right, top and bottom
+    /// edges this frame (0: none): the ribbon, bars and status row make
+    /// room for them.
+    pub strip_inset: [f32; 4],
+    /// Each slid-out group's divider rect, and whether it is being dragged.
+    pub dock_dividers: [Option<egui::Rect>; 4],
+    pub divider_drag: [bool; 4],
     pub skin: Skin,
     pub time_unit: TimeUnit,
     pub show_grid: bool,
@@ -1682,6 +1691,10 @@ impl App {
             dock_drag_hold: false,
             dock_areas: [None; 4],
             dock_strips: [None; 4],
+            strip_hits: Default::default(),
+            strip_inset: [0.0; 4],
+            dock_dividers: [None; 4],
+            divider_drag: [false; 4],
             skin: Skin::Blue,
             time_unit: TimeUnit::Milli,
             show_grid: true,
@@ -1883,6 +1896,13 @@ impl App {
         }
     }
 
+    /// The ribbon's check on a pane's button: shown docked or floating — an
+    /// auto-hidden pane's never checks, slid out or not (VM, `0x475040`
+    /// asks the pane's window).
+    pub fn pane_checked(&self, p: Pane) -> bool {
+        self.panes.visible(p) && !self.docks[self.docks.host(p)].auto_hidden()
+    }
+
     // ---------- command dispatch ----------
     pub fn dispatch(&mut self, cmd: Command) {
         let mark = crate::setfile::marks_modified(&cmd).then_some(self.active).flatten();
@@ -1955,8 +1975,18 @@ impl App {
             // shows; hiding the front tab brings the nearest visible one on
             // its right in the strip, else on its left (`0x10067f1f`).
             Command::TogglePane(p) => {
-                let on = !self.panes.visible(p);
                 let host = self.docks.host(p);
+                // An auto-hidden pane is shown, never hidden, by the toggle
+                // (`0x10089800`, VM: in or out it stays in its strip; its
+                // ribbon button never checks): its group slides out with
+                // it in front, the next hide check takes it back.
+                if self.docks[host].auto_hidden() {
+                    self.panes.set(p, true);
+                    self.dispatch(Command::ActivatePane(p));
+                    self.docks[host].request_show();
+                    return;
+                }
+                let on = !self.panes.visible(p);
                 let strip: Vec<Pane> = self.tab_order.into_iter().filter(|&q| self.docks.host(q) == host).collect();
                 let was_front = self.panes.front(strip.iter().copied()) == Some(p);
                 self.panes.set(p, on);

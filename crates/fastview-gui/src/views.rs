@@ -28,7 +28,8 @@ impl App {
         self.dock_client = ctx.available_rect();
         let dim = self.current_dimension();
         let views = self.dock_views();
-        // The strips sit outermost, then the containers.
+        // The strips sit outermost (shown with the frame's bars), then the
+        // containers.
         self.auto_hide_strips(ctx, &views);
         self.dock_rects = [None; 4];
         let shown = self.groups_shown();
@@ -179,6 +180,12 @@ impl App {
             };
             for u in units {
                 if self.docks[u].place == Place::Docked {
+                    // The slid-out pane keeps the size its window had docked
+                    // (VM: pane and divider as wide as the docked pane).
+                    if let Some(r) = self.dock_rects[u as usize] {
+                        let across = if self.docks.edge(u).vertical() { r.width() } else { r.height() };
+                        self.docks[u].slide_extent = Some((across - crate::dpi::s(crate::docking::DIVIDER_PX)).max(crate::docking::SLIDE_MIN_PX));
+                    }
                     self.dock_leave(u);
                 }
                 self.docks[u].pin();
@@ -589,18 +596,130 @@ impl App {
         }
     }
 
-    /// The auto-hide strips: a button per visible pane of each pinned
-    /// group on its edge; hovering 400 ms or a click slides the group out
-    /// with that pane in front.
-    fn auto_hide_strips(&mut self, ctx: &egui::Context, views: &[DockView]) {
+    /// The auto-hide strips of the left, right and top edges, shown before
+    /// the ribbon and the bars so that they take the frame's outermost
+    /// space (VM, maximised): a side strip runs from under the caption row
+    /// to the window's bottom, beside the ribbon, the bars and the status
+    /// row; the top strip is the first row of the client, under the
+    /// caption's glass (so not seen) with the ribbon pushed down by it.
+    pub fn strips_outer(&mut self, ctx: &egui::Context) {
+        use crate::docking::Edge;
+        self.dock_strips = [None; 4];
+        self.strip_hits = Default::default();
+        self.strip_inset = [0.0; 4];
+        let views = self.dock_views();
+        for e in [Edge::Top, Edge::Left, Edge::Right] {
+            self.strip_edge(ctx, e, &views);
+        }
+    }
+
+    /// The bottom edge's strip, shown before the status row: the last row
+    /// of the client, below it (VM).
+    pub fn strip_bottom(&mut self, ctx: &egui::Context) {
+        let views = self.dock_views();
+        self.strip_edge(ctx, crate::docking::Edge::Bottom, &views);
+    }
+
+    /// One edge's strip: the buttons of every pinned group on it, one per
+    /// visible pane in the tab order, the group's front pane highlighted;
+    /// hovering one 400 ms or a click slides its group out with that pane
+    /// in front (the group's other panes are not shown with it).
+    fn strip_edge(&mut self, ctx: &egui::Context, edge: crate::docking::Edge, views: &[DockView]) {
         use crate::docking::{Edge, Place};
+        let groups: Vec<DockView> = views.iter().copied().filter(|v| self.docks[v.unit].place == Place::AutoHide && self.docks.edge(v.unit) == edge).collect();
+        if groups.is_empty() {
+            return;
+        }
+        let vertical = edge.vertical();
+        let brush = self.skin.splitter();
+        // The strip: 23 px across a side edge, 21 along the top / bottom
+        // one (VM); the buttons 2 px less across, on its outer side, 4 px
+        // in along it.
+        let across = crate::dpi::s(if vertical { 23.0 } else { 21.0 });
+        let cap = if vertical { crate::ribbon::caption_h() } else { 0.0 };
+        let front: Vec<(DockView, Vec<Pane>)> = groups.iter().map(|&v| (v, self.tab_order.into_iter().filter(|&p| v.mask[p as usize]).collect())).collect();
+        let id = egui::Id::new(("fv_strip", edge as u8));
+        let mut hits: Vec<(crate::docking::Unit, StripHit)> = Vec::new();
+        let draw = |ui: &mut egui::Ui| -> egui::Rect {
+            let full = ui.max_rect();
+            let strip = egui::Rect::from_min_max(full.min + egui::vec2(0.0, cap), full.max);
+            if vertical {
+                // Beside the ribbon's caption row: the window's glass.
+                ui.painter().rect_filled(egui::Rect::from_min_max(full.min, egui::pos2(full.max.x, strip.top())), 0.0, egui::Color32::WHITE);
+            }
+            // The top strip lies under the caption's glass: not seen.
+            let seen = edge != Edge::Top;
+            if seen {
+                ui.painter().rect_filled(strip, 0.0, brush);
+            } else {
+                ui.painter().rect_filled(full, 0.0, egui::Color32::WHITE);
+            }
+            let mut at = crate::dpi::s(4.0);
+            for (v, titles) in &front {
+                let mut hit = StripHit::default();
+                for &t in titles {
+                    let len = strip_button_len(ui, pane_title(t));
+                    let rect = match edge {
+                        Edge::Left => egui::Rect::from_min_size(egui::pos2(strip.left(), strip.top() + at), egui::vec2(across - crate::dpi::s(2.0), len)),
+                        Edge::Right => egui::Rect::from_min_size(egui::pos2(strip.left() + crate::dpi::s(2.0), strip.top() + at), egui::vec2(across - crate::dpi::s(2.0), len)),
+                        Edge::Top => egui::Rect::from_min_size(egui::pos2(strip.left() + at, strip.top()), egui::vec2(len, across - crate::dpi::s(2.0))),
+                        Edge::Bottom => egui::Rect::from_min_size(egui::pos2(strip.left() + at, strip.top() + crate::dpi::s(2.0)), egui::vec2(len, across - crate::dpi::s(2.0))),
+                    };
+                    at += len;
+                    let r = ui.interact(rect, id.with((v.unit as u8, t as u8)), egui::Sense::click());
+                    if seen {
+                        strip_button(ui, rect, pane_title(t), vertical, t == v.front, r.hovered());
+                    }
+                    // The strip acts on the press (WM_LBUTTONDOWN).
+                    let pressed = r.hovered() && ui.input(|i| i.pointer.primary_pressed());
+                    if r.hovered() || pressed {
+                        hit.on = true;
+                        hit.pressed |= pressed;
+                        hit.pane = Some(t);
+                    }
+                    hit.buttons.push(rect);
+                }
+                hits.push((v.unit, hit));
+                // A group's buttons are set apart from the next group's.
+                at += crate::dpi::s(8.0);
+            }
+            if edge == Edge::Top {
+                // The window's own buttons stay on this row (VM), the
+                // ribbon below having been pushed down.
+                let row = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), crate::ribbon::caption_h()));
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(row).layout(egui::Layout::right_to_left(egui::Align::Center)));
+                if self.own_caption {
+                    crate::ribbon::caption_buttons(&mut child);
+                }
+            }
+            strip
+        };
+        let frame = egui::Frame::none();
+        let rect = match edge {
+            Edge::Left => egui::SidePanel::left(id).resizable(false).exact_width(across).frame(frame).show(ctx, draw).inner,
+            Edge::Right => egui::SidePanel::right(id).resizable(false).exact_width(across).frame(frame).show(ctx, draw).inner,
+            Edge::Top => egui::TopBottomPanel::top(id).resizable(false).exact_height(across).show_separator_line(false).frame(frame).show(ctx, draw).inner,
+            Edge::Bottom => egui::TopBottomPanel::bottom(id).resizable(false).exact_height(across).show_separator_line(false).frame(frame).show(ctx, draw).inner,
+        };
+        self.strip_inset[edge_ix(edge)] = across;
+        for (u, h) in hits {
+            self.dock_strips[u as usize] = Some(rect);
+            self.strip_hits[u as usize] = h;
+        }
+    }
+
+    /// The hover, press and hide checks of the pinned groups, after their
+    /// strips are drawn: hovering a button 400 ms or a press slides the
+    /// group out with that pane in front; every 700 ms a slid-out group
+    /// slides back unless the pointer is on it.
+    fn auto_hide_strips(&mut self, ctx: &egui::Context, views: &[DockView]) {
+        use crate::docking::Place;
         let now = ctx.input(|i| i.time);
         let pointer = ctx.input(|i| i.pointer.latest_pos());
         let menu_up = ctx.memory(|m| m.any_popup_open()) || self.pane_menu.is_some();
         // The next frame any of them needs (the slide, the hover's open
         // time, the hide check's timer).
         let mut wake: Option<f64> = None;
-        self.dock_strips = [None; 4];
         let pinned: Vec<DockView> = views.iter().copied().filter(|v| self.docks[v.unit].place == Place::AutoHide).collect();
         // A unit that no longer shows (its panes hidden) is back in its
         // strip when it shows again.
@@ -621,50 +740,33 @@ impl App {
             }
         }
         for v in pinned {
-            let edge = self.docks.edge(v.unit);
-            let titles: Vec<Pane> = self.tab_order.into_iter().filter(|&p| v.mask[p as usize]).collect();
-            let mut hit = (false, false, None);
-            let mut buttons: Vec<egui::Rect> = Vec::new();
-            let id = egui::Id::new(("fv_strip", edge as u8, v.unit));
-            let mut draw = |ui: &mut egui::Ui| {
-                for &t in &titles {
-                    let r = strip_button(ui, pane_title(t), edge.vertical());
-                    buttons.push(r.interact_rect);
-                    // The strip acts on the press (WM_LBUTTONDOWN).
-                    let pressed = r.hovered() && ui.input(|i| i.pointer.primary_pressed());
-                    if r.hovered() || pressed {
-                        hit = (true, hit.1 || pressed, Some(t));
-                    }
-                }
-            };
-            let strip = match edge {
-                // CMFCAutoHideBar's strip, at the system DPI.
-                Edge::Left => egui::SidePanel::left(id).resizable(false).exact_width(crate::dpi::s(24.0)).show(ctx, |ui| draw(ui)),
-                Edge::Right => egui::SidePanel::right(id).resizable(false).exact_width(crate::dpi::s(24.0)).show(ctx, |ui| draw(ui)),
-                Edge::Top => egui::TopBottomPanel::top(id).resizable(false).exact_height(crate::dpi::s(24.0)).show(ctx, |ui| ui.horizontal(|ui| draw(ui)).inner),
-                Edge::Bottom => egui::TopBottomPanel::bottom(id).resizable(false).exact_height(crate::dpi::s(24.0)).show(ctx, |ui| ui.horizontal(|ui| draw(ui)).inner),
-            };
-            self.dock_strips[v.unit as usize] = Some(strip.response.rect);
-            if let Some(p) = hit.2.filter(|&p| p != v.front) {
+            let hit = self.strip_hits[v.unit as usize].clone();
+            if let Some(p) = hit.pane.filter(|&p| p != v.front) {
                 self.dispatch(Command::ActivatePane(p));
             }
             // A press on its button gives the pane the focus (the strip's
             // WM_LBUTTONDOWN, `0x1005f612`: SetFocus on the button's pane;
             // VM: clicked out, it stays out with the pointer over the view).
-            if hit.1 {
+            if hit.pressed {
                 self.copy_focus = crate::app::CopyFocus::Pane(v.unit);
             }
-            // The hide check tests the cursor against the pane's rect and
-            // its button's by position (`0x10087a4a`: GetCursorPos, PtInRect
-            // on the window rect and on the button rect), not by which
-            // window is on top there.
-            let inside = pointer.is_some_and(|q| self.dock_areas[v.unit as usize].is_some_and(|a| a.contains(q)) || buttons.iter().any(|b| b.contains(q)));
+            // The hide check tests the cursor against the pane's rect
+            // joined with its divider's and its button's by position
+            // (`0x10087a4a`: GetCursorPos, PtInRect), not by which window
+            // is on top there.
+            let (pane, divider) = (self.dock_areas[v.unit as usize], self.dock_dividers[v.unit as usize]);
+            let inside = pointer.is_some_and(|q| pane.is_some_and(|a| a.contains(q)) || divider.is_some_and(|a| a.contains(q)) || hit.buttons.iter().any(|b| b.contains(q)));
             // Nor while the pane holds the focus: the check returns at once
             // while its active flag (+0x2c8) is set — at each idle update
             // the focus window is the pane or a child of it (`0x10089d7d`,
             // GetFocus / IsChild); a press in its diagram or grid gives it.
             let focused = self.focus_group() == Some(v.unit);
-            self.docks[v.unit].auto_hide_frame(now, hit.0, hit.1, inside, menu_up || focused);
+            // Nor while its dock-bar tooltip is visible, nor a tooltip of
+            // its property grid (`0x10087a4a`); the divider being dragged
+            // holds it too (the cursor stays on the divider).
+            let tip = crate::tips::visible_anchor(ctx).is_some_and(|a| pane.is_some_and(|p| p.contains_rect(a)));
+            let held = menu_up || focused || tip || self.divider_drag[v.unit as usize];
+            self.docks[v.unit].auto_hide_frame(now, hit.on, hit.pressed, inside, held);
             if let Some(dt) = self.docks[v.unit].wake_in(now) {
                 wake = Some(wake.map_or(dt, |w| w.min(dt)));
             }
@@ -677,16 +779,28 @@ impl App {
         }
     }
 
-    /// Slid-out auto-hide groups, over the content beside their strip.
+    /// Slid-out auto-hide groups, over the content beside their strip: a
+    /// side pane spans the frame's whole height (its caption above the
+    /// window's top, under the caption row's glass), the top and bottom
+    /// ones its whole width; one pane of the group, with no tab strip, and
+    /// a divider on the side facing the content (VM).
     fn slid_out_units(&mut self, ctx: &egui::Context, views: &[DockView]) {
-        use crate::docking::{Edge, Place};
-        // They slide out of their strip over everything else.
-        let content = ctx.available_rect();
+        use crate::docking::{Edge, Place, DIVIDER_PX};
+        let screen = ctx.screen_rect();
+        // The window's top: a maximised frame's client starts 8 px above
+        // the screen (its invisible border).
+        let maximised = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        let top = screen.top() - if maximised { 8.0 } else { 0.0 };
+        let cap = screen.top() + crate::ribbon::caption_h();
+        let divider = crate::dpi::s(DIVIDER_PX);
         self.dock_areas = [None; 4];
+        self.dock_dividers = [None; 4];
         self.slid_ranges = [None; 4];
+        let mut glass: Vec<egui::Rect> = Vec::new();
         for v in views.iter().copied() {
             let d = self.docks[v.unit];
             if d.place != Place::AutoHide || d.slide <= 0.0 {
+                self.divider_drag[v.unit as usize] = false;
                 // egui lays a new area out once unseen (its sizing pass):
                 // that pass goes to an empty one off the screen, so the
                 // pane's first frame out is drawn.
@@ -697,45 +811,100 @@ impl App {
                 continue;
             }
             let edge = self.docks.edge(v.unit);
-            let ext = v.natural();
+            let ext = d.slide_extent.unwrap_or_else(|| v.natural());
             let s = self.dock_strips[v.unit as usize];
             let k = d.slide;
+            // Along the pane's edge it spans the frame; across it, up to
+            // its strip, as far as the frame leaves room.
             let rect = match edge {
                 Edge::Right => {
-                    let right = s.map_or(content.right(), |s| s.left());
-                    let w = ext.min(right - ctx.screen_rect().left()) * k;
-                    egui::Rect::from_min_max(egui::pos2(right - w, content.top()), egui::pos2(right, content.bottom()))
+                    let right = s.map_or(screen.right(), |s| s.left());
+                    let w = ext.min(right - screen.left() - divider) * k;
+                    egui::Rect::from_min_max(egui::pos2(right - w, top), egui::pos2(right, s.map_or(screen.bottom(), |s| s.bottom())))
                 }
                 Edge::Left => {
-                    let left = s.map_or(content.left(), |s| s.right());
-                    let w = ext.min(ctx.screen_rect().right() - left) * k;
-                    egui::Rect::from_min_max(egui::pos2(left, content.top()), egui::pos2(left + w, content.bottom()))
+                    let left = s.map_or(screen.left(), |s| s.right());
+                    let w = ext.min(screen.right() - left - divider) * k;
+                    egui::Rect::from_min_max(egui::pos2(left, top), egui::pos2(left + w, s.map_or(screen.bottom(), |s| s.bottom())))
                 }
                 Edge::Bottom => {
-                    let bottom = s.map_or(content.bottom(), |s| s.top());
-                    let h = ext.min(bottom - content.top()) * k;
-                    egui::Rect::from_min_max(egui::pos2(content.left(), bottom - h), egui::pos2(content.right(), bottom))
+                    let bottom = s.map_or(screen.bottom(), |s| s.top());
+                    let h = ext.min(bottom - cap - divider) * k;
+                    egui::Rect::from_min_max(egui::pos2(screen.left(), bottom - h), egui::pos2(screen.right(), bottom))
                 }
                 Edge::Top => {
-                    let top = s.map_or(content.top(), |s| s.bottom());
-                    let h = ext.min(content.bottom() - top) * k;
-                    egui::Rect::from_min_max(egui::pos2(content.left(), top), egui::pos2(content.right(), top + h))
+                    let h = ext.min(screen.bottom() - top - divider) * k;
+                    egui::Rect::from_min_max(egui::pos2(screen.left(), top), egui::pos2(screen.right(), top + h))
                 }
             };
             // On a pixel, as egui places an area.
             let ppp = ctx.pixels_per_point();
             let rect = egui::Rect::from_min_size((rect.min.to_vec2() * ppp).round().to_pos2() / ppp, rect.size());
+            let div = match edge {
+                Edge::Right => egui::Rect::from_min_max(egui::pos2(rect.left() - divider, rect.top()), egui::pos2(rect.left(), rect.bottom())),
+                Edge::Left => egui::Rect::from_min_max(egui::pos2(rect.right(), rect.top()), egui::pos2(rect.right() + divider, rect.bottom())),
+                Edge::Bottom => egui::Rect::from_min_max(egui::pos2(rect.left(), rect.top() - divider), egui::pos2(rect.right(), rect.top())),
+                Edge::Top => egui::Rect::from_min_max(egui::pos2(rect.left(), rect.bottom()), egui::pos2(rect.right(), rect.bottom() + divider)),
+            };
             self.dock_areas[v.unit as usize] = Some(rect);
+            self.dock_dividers[v.unit as usize] = Some(div);
+            // Its caption row under the glass: not painted over the window's
+            // own buttons.
+            if rect.top() < cap {
+                glass.push(rect);
+            }
             let (c0, g0) = (self.pane_canvas.len(), self.pane_grid.len());
-            self.slide_area(ctx, egui::Id::new(("fv_slide", v.unit)), rect, |app, ui| app.unit_body(ui, v));
+            let one = DockView { strip: false, ..v };
+            self.slide_area(ctx, egui::Id::new(("fv_slide", v.unit)), rect, |app, ui| app.unit_body(ui, one));
             self.slid_ranges[v.unit as usize] = Some([c0, self.pane_canvas.len(), g0, self.pane_grid.len()]);
+            // The divider: dragged, it resizes the pane (VM: the new size
+            // stays when the pane is shown again).
+            let r = self.slide_divider(ctx, egui::Id::new(("fv_slide_div", v.unit)), div, edge.vertical());
+            self.divider_drag[v.unit as usize] = r.dragged();
+            if r.dragged() {
+                let delta = r.drag_delta();
+                let grow = match edge {
+                    Edge::Right => -delta.x,
+                    Edge::Left => delta.x,
+                    Edge::Bottom => -delta.y,
+                    Edge::Top => delta.y,
+                };
+                let room = match edge {
+                    Edge::Right | Edge::Left => screen.width(),
+                    Edge::Bottom => screen.height() - crate::ribbon::caption_h(),
+                    Edge::Top => screen.height(),
+                } - divider - 2.0 * crate::dpi::s(23.0);
+                let now = d.slide_extent.unwrap_or_else(|| v.natural());
+                self.docks[v.unit].slide_extent = Some((now + grow).clamp(crate::docking::SLIDE_MIN_PX, room.max(crate::docking::SLIDE_MIN_PX)));
+                ctx.request_repaint();
+            }
+        }
+        // The caption row's glass over a pane reaching up into it: white,
+        // the pane's caption under it not seen (VM: only its toolbar's top
+        // shows faintly); the window's own buttons stay on top.
+        if !glass.is_empty() {
+            let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("fv_glass"));
+            let p = ctx.layer_painter(layer);
+            for r in glass {
+                p.rect_filled(egui::Rect::from_min_max(egui::pos2(r.left(), screen.top()), egui::pos2(r.right(), cap)), 0.0, egui::Color32::WHITE);
+            }
+            ctx.move_to_top(layer);
+            if self.own_caption {
+                let row = egui::Rect::from_min_max(egui::pos2(screen.right() - 3.0 * crate::dpi::s(46.0), screen.top()), egui::pos2(screen.right(), cap));
+                p.rect_filled(row, 0.0, egui::Color32::WHITE);
+                let modal = self.modal_up;
+                let area = egui::Area::new(egui::Id::new("fv_caption_buttons")).order(egui::Order::Foreground).fixed_pos(row.min).constrain(false).fade_in(false).show(ctx, |ui| {
+                    ui.allocate_ui_with_layout(row.size(), egui::Layout::right_to_left(egui::Align::Center), |ui| ui.add_enabled_ui(!modal, crate::ribbon::caption_buttons));
+                });
+                ctx.move_to_top(area.response.layer_id);
+            }
         }
     }
 
-    /// A slid-out pane: drawn over the content in `rect`, clipped to it.
-    /// The area is exactly `rect`: a pane part-way out lays out wider than
-    /// its rect, and an area sized by its content (pushed back into the
-    /// screen as it grows) would cover the strip and take its hover.
+    /// A slid-out pane: drawn over the content in `rect`. The area is exactly `rect`: a pane part-way out lays out
+    /// wider than its rect, and an area sized by its content (pushed back
+    /// into the screen as it grows) would cover the strip and take its
+    /// hover.
     fn slide_area(&mut self, ctx: &egui::Context, id: egui::Id, rect: egui::Rect, body: impl FnOnce(&mut App, &mut egui::Ui)) {
         // `rect` on a pixel (as egui places an area); no fade-in (the pane
         // only slides).
@@ -746,13 +915,34 @@ impl App {
             // (the last claim of an id wins; from the same corner, one rect
             // holds the other, so egui sees no clash).
             ui.interact(rect, id.with("move"), egui::Sense::click());
-            ui.set_clip_rect(rect);
             let v = ui.visuals();
             ui.painter().rect(rect, 0.0, v.panel_fill, v.window_stroke());
             let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(3.0)));
             body(self, &mut inner);
             ui.expand_to_include_rect(rect);
         });
+    }
+
+    /// The divider beside a slid-out pane: the splitter's brush, a drag
+    /// along the strip's axis across it.
+    fn slide_divider(&mut self, ctx: &egui::Context, id: egui::Id, rect: egui::Rect, vertical: bool) -> egui::Response {
+        let brush = self.skin.splitter();
+        egui::Area::new(id)
+            .order(egui::Order::Foreground)
+            .fixed_pos(rect.min)
+            .constrain(false)
+            .default_size(rect.size())
+            .fade_in(false)
+            .show(ctx, |ui| {
+                ui.painter().rect_filled(rect, 0.0, brush);
+                let r = ui.interact(rect, id.with("drag"), egui::Sense::drag());
+                if r.hovered() || r.dragged() {
+                    ctx.set_cursor_icon(if vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical });
+                }
+                ui.expand_to_include_rect(rect);
+                r
+            })
+            .inner
     }
 
     /// A dragged floating group follows the pointer while smart docking
@@ -1557,10 +1747,22 @@ impl App {
     // ---- Быстрый анализ ----
 }
 
+/// What an auto-hide strip's buttons of one pinned group saw this frame.
+#[derive(Debug, Clone, Default)]
+pub struct StripHit {
+    /// The pointer is on one of the group's buttons.
+    pub on: bool,
+    /// A press on one.
+    pub pressed: bool,
+    /// The pane whose button the pointer is on.
+    pub pane: Option<Pane>,
+    pub buttons: Vec<egui::Rect>,
+}
+
 /// A group as it shows: its own unit, its visible tabs (by pane), the
 /// front one, and whether it has a tab strip (more than one visible).
 #[derive(Debug, Clone, Copy)]
-struct DockView {
+pub(crate) struct DockView {
     unit: crate::docking::Unit,
     mask: [bool; 4],
     front: Pane,
@@ -1801,24 +2003,51 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
     act
 }
 
-/// An auto-hide strip button: the pane's title, written down the right
-/// strip or along the bottom one.
-fn strip_button(ui: &mut egui::Ui, title: &str, vertical: bool) -> egui::Response {
+/// The length of an auto-hide strip button along its strip: the title and
+/// 8 px each side (VM: «Частотная диаграмма», 144 px with its frame).
+fn strip_button_len(ui: &egui::Ui, title: &str) -> f32 {
     let font = egui::FontId::proportional(crate::dpi::font(11.0));
-    let galley = ui.painter().layout_no_wrap(title.to_owned(), font, ui.visuals().text_color());
-    let len = galley.size().x + 16.0;
-    let side = crate::dpi::s(20.0);
-    let size = if vertical { egui::vec2(side, len) } else { egui::vec2(len, side) };
-    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
-    let fill = if resp.hovered() { ui.visuals().widgets.hovered.bg_fill } else { ui.visuals().widgets.inactive.bg_fill };
-    ui.painter().rect(rect, 2.0, fill, ui.visuals().widgets.inactive.bg_stroke);
+    ui.painter().layout_no_wrap(title.to_owned(), font, egui::Color32::BLACK).size().x + 16.0
+}
+
+/// An auto-hide strip button in `rect`: the pane's title, written down a
+/// side strip or along a top / bottom one. The front pane of its group is
+/// the warm gradient (VM: (255, 243, 199) to (255, 220, 122), across a side
+/// strip left to right, down a bottom one bottom to top), the others the
+/// strip's own colour; every one framed (185, 208, 237).
+fn strip_button(ui: &mut egui::Ui, rect: egui::Rect, title: &str, vertical: bool, front: bool, hot: bool) {
+    use egui::epaint::{Mesh, Vertex, WHITE_UV};
+    let font = egui::FontId::proportional(crate::dpi::font(11.0));
+    let ink = egui::Color32::from_rgb(30, 30, 30);
+    let galley = ui.painter().layout_no_wrap(title.to_owned(), font, ink);
+    let frame = egui::Color32::from_rgb(185, 208, 237);
+    let (light, dark) = if front || hot { (egui::Color32::from_rgb(255, 243, 199), egui::Color32::from_rgb(255, 220, 122)) } else { (egui::Color32::from_rgb(213, 228, 242), egui::Color32::from_rgb(196, 220, 250)) };
+    let inner = rect.shrink(1.0);
+    let mut mesh = Mesh::default();
+    // The light end first: the left of a side strip, the bottom of the
+    // others.
+    let (c, pts) = if vertical {
+        ([light, dark, dark, light], [inner.left_top(), inner.right_top(), inner.right_bottom(), inner.left_bottom()])
+    } else {
+        ([dark, dark, light, light], [inner.left_top(), inner.right_top(), inner.right_bottom(), inner.left_bottom()])
+    };
+    for (pos, color) in pts.into_iter().zip(c) {
+        mesh.vertices.push(Vertex { pos, uv: WHITE_UV, color });
+    }
+    mesh.indices.extend([0, 1, 2, 0, 2, 3]);
+    ui.painter().add(mesh);
+    ui.painter().rect_stroke(rect, 0.0, egui::Stroke::new(1.0f32, frame));
     if vertical {
         let at = egui::pos2(rect.center().x + galley.size().y / 2.0, rect.top() + 8.0);
-        ui.painter().add(egui::epaint::TextShape::new(at, galley, ui.visuals().text_color()).with_angle(std::f32::consts::FRAC_PI_2));
+        ui.painter().add(egui::epaint::TextShape::new(at, galley, ink).with_angle(std::f32::consts::FRAC_PI_2));
     } else {
-        ui.painter().galley(rect.left_center() + egui::vec2(8.0, -galley.size().y / 2.0), galley, ui.visuals().text_color());
+        ui.painter().galley(rect.left_center() + egui::vec2(8.0, -galley.size().y / 2.0), galley, ink);
     }
-    resp
+}
+
+/// The index of an edge in the per-edge arrays: left, right, top, bottom.
+fn edge_ix(e: crate::docking::Edge) -> usize {
+    e as usize
 }
 
 /// A row of the parameter grid, for its keys.
