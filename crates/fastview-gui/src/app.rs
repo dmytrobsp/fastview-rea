@@ -853,10 +853,11 @@ impl Doc {
             self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i], k);
             self.rms[i] = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&self.osc), i, &self.flagged.analog[i].samples, n);
         }
-        self.flag_digital();
+        self.flag_digital(false);
         // The correction reads the frequency channel as stored (L9.65).
         self.analysis = Analysis::compute_with(&self.flagged, fvb_core::freqcorr::of(&self.osc));
-        self.reevaluate_formulas(show_primary);
+        // The copy was just taken: no name to bring over.
+        let _ = self.evaluate_formula_list(show_primary);
     }
 
     /// The formulas resolve a channel by its name as shown now (`0x42edf0`
@@ -871,12 +872,14 @@ impl Doc {
         for (f, c) in self.flagged.analog.iter_mut().zip(&self.osc.analog) {
             f.id.clone_from(&c.id);
         }
-        self.flag_digital();
+        self.flag_digital(true);
     }
 
     /// Digital channels as the accessor reads them: inverted with the flag.
-    fn flag_digital(&mut self) {
-        self.flagged.digital = self.osc.digital.clone();
+    fn flag_digital(&mut self, copy: bool) {
+        if copy {
+            self.flagged.digital.clone_from(&self.osc.digital);
+        }
         for (i, dch) in self.flagged.digital.iter_mut().enumerate() {
             if self.dig_flags.get(i).is_some_and(|f| f.invert) {
                 dch.samples.iter_mut().for_each(|v| *v = !*v);
@@ -884,19 +887,18 @@ impl Doc {
         }
     }
 
-    /// Formula channels are evaluated again in order on the current values
-    /// and correction (`0x415780` over the whole definition list; merged and
-    /// ОМП channels carry no formula to re-evaluate).
-    pub fn reevaluate_formulas(&mut self, show_primary: bool) {
-        let _ = self.try_reevaluate_formulas(show_primary);
-    }
-
-    /// The batch `0x415780` over the record's formula channels: in order,
+    /// The batch `0x415780` over the record's formula channels (merged and
+    /// ОМП channels carry no formula to re-evaluate): in order,
     /// each updated as it goes; the first failure stops it (the ones before
     /// keep their new values) and is returned; only a full success sweeps
     /// the groups (`0x415b97` → `0x455c70`).
     pub fn try_reevaluate_formulas(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
         self.sync_flagged_names();
+        self.evaluate_formula_list(show_primary)
+    }
+
+    /// [`Doc::try_reevaluate_formulas`] over the flagged copy as it is.
+    fn evaluate_formula_list(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
         for j in 0..self.computed.len() {
             let c = &mut self.computed[j];
