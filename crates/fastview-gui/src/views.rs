@@ -676,11 +676,15 @@ impl App {
     /// its rect, and an area sized by its content (pushed back into the
     /// screen as it grows) would cover the strip and take its hover.
     fn slide_area(&mut self, ctx: &egui::Context, id: egui::Id, rect: egui::Rect, body: impl FnOnce(&mut App, &mut egui::Ui)) {
+        // On a pixel, as egui places an area.
+        let ppp = ctx.pixels_per_point();
+        let rect = egui::Rect::from_min_size((rect.min.to_vec2() * ppp).round().to_pos2() / ppp, rect.size());
         egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(rect.min).constrain(false).default_size(rect.size()).show(ctx, |ui| {
             // The area claims its rect for clicks before its content runs,
-            // with the last frame's size — sliding in, a size that still
-            // reaches over the strip: claimed again with this frame's rect
-            // (the last claim of an id wins).
+            // with the last frame's size: sliding in, a size that still
+            // reaches over the strip — claimed again with this frame's rect
+            // (the last claim of an id wins; from the same corner, one rect
+            // holds the other, so egui sees no clash).
             ui.interact(rect, id.with("move"), egui::Sense::click());
             ui.set_clip_rect(rect);
             let v = ui.visuals();

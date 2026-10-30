@@ -1739,6 +1739,31 @@ mod window_tests {
         }
     }
 
+    /// The slid-out pane's area claims its click rect once per frame
+    /// without a clash at a fractional scale (debug builds flag a clash
+    /// on screen), sliding out and back on every edge.
+    #[test]
+    fn slid_out_pane_claims_its_rect_without_an_id_clash() {
+        use docking::{Edge, Spot, Unit};
+        for edge in [Edge::Left, Edge::Right, Edge::Top, Edge::Bottom] {
+            let ctx = egui::Context::default();
+            ctx.set_pixels_per_point(1.25);
+            let mut app = demo(&[]);
+            app.docks = docking::Docks::one_group();
+            app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+            app.docks.0[Unit::Vector as usize].pin();
+            for k in 0..60 {
+                // Out from frame 3 to 29 (no pointer: the check would close it).
+                let d = &mut app.docks.0[Unit::Vector as usize];
+                d.out = (3..30).contains(&k);
+                let t = ctx.input(|i| i.time) + 0.05;
+                let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1056.0, 688.0))), time: Some(t), ..Default::default() };
+                let shapes = format!("{:?}", ctx.run(raw, |ctx| app.frame_ui(ctx)).shapes);
+                assert!(!shapes.contains("Double use"), "{edge:?}: frame {k}: an id clash");
+            }
+        }
+    }
+
     /// The pin (mfc120u `0x100871c7`): a plain click slides the group shut
     /// in 12 steps; with Ctrl every shown group on the same edge goes at
     /// once, no slide, and Ctrl on an auto-hidden one brings them all back.
