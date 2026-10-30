@@ -317,32 +317,27 @@ impl Doc {
         // неправильно.», the whole batch with it) and the levels no longer
         // draw (L9.227).
         let (new_f, new_rows) = (formula_names(self), row_names(self));
-        let renamed: Vec<(String, String)> = old_rows.into_iter().zip(new_rows).filter(|(o, n)| o != n).collect();
+        // A name maps only while it stands for one channel before and one
+        // after: names that decode alike («В» and «С» read as 866 both show
+        // «T») are left as they were, so a reference fails as in the
+        // original rather than landing on the wrong channel.
+        let once = |v: &[String], n: &str| v.iter().filter(|x| *x == n).count() == 1;
+        let renamed: Vec<(String, String)> =
+            old_rows.iter().zip(&new_rows).filter(|(o, n)| o != n && once(&old_rows, o) && once(&new_rows, n)).map(|(o, n)| (o.clone(), n.clone())).collect();
         let by_row = |name: &str| renamed.iter().find(|(o, _)| o == name).map(|(_, n)| n.clone());
         if old_f.len() == new_f.len() {
+            // The channel the formula resolved (`OscChannels::resolve`:
+            // exact, else the first case-insensitive match), written as a
+            // name that resolves to it alone.
             let by_ref = |name: &str| {
                 let i = old_f.iter().position(|o| o == name).or_else(|| old_f.iter().position(|o| o.to_lowercase() == name.to_lowercase()))?;
-                (old_f[i] != new_f[i]).then(|| new_f[i].clone())
+                let unique = new_f.iter().filter(|n| n.to_lowercase() == new_f[i].to_lowercase()).count() == 1;
+                (old_f[i] != new_f[i] && unique).then(|| new_f[i].clone())
             };
             for c in self.computed.iter_mut().filter(|c| crate::setfile::is_formula(c)) {
                 c.formula = fvb_core::expr::rename_channel_refs(&c.formula, &by_ref);
             }
         }
-        let recs: Vec<_> = recs
-            .into_iter()
-            .map(|mut r| {
-                use fvb_core::recset::CommentKindRec as K;
-                match &mut r.kind {
-                    K::Level { channel, .. } => *channel = by_row(channel).unwrap_or(channel.clone()),
-                    K::Area { channel_from, channel_to, .. } => {
-                        *channel_from = by_row(channel_from).unwrap_or(channel_from.clone());
-                        *channel_to = by_row(channel_to).unwrap_or(channel_to.clone());
-                    }
-                    K::Moment { .. } => {}
-                }
-                r
-            })
-            .collect();
         for p in self.dif_pairs.iter_mut().chain(self.rx_pairs.iter_mut()) {
             for n in [&mut p.a, &mut p.b] {
                 if let Some(new) = by_row(n) {
@@ -365,7 +360,28 @@ impl Doc {
                 retarget(sec, &by_row);
             }
         }
-        self.comments = recs.iter().map(|r| self.comment_of(r)).collect();
+        // A level or area stays bound to its channel; one kept unbound
+        // (from a `.set`, or a rename) is tried again with the new names.
+        let comments = std::mem::take(&mut self.comments);
+        self.comments = comments
+            .into_iter()
+            .zip(recs)
+            .map(|(c, mut r)| {
+                if !matches!(c.kind, crate::comments::CommentKind::Kept(_)) {
+                    return c;
+                }
+                use fvb_core::recset::CommentKindRec as K;
+                match &mut r.kind {
+                    K::Level { channel, .. } => *channel = by_row(channel).unwrap_or(channel.clone()),
+                    K::Area { channel_from, channel_to, .. } => {
+                        *channel_from = by_row(channel_from).unwrap_or(channel_from.clone());
+                        *channel_to = by_row(channel_to).unwrap_or(channel_to.clone());
+                    }
+                    K::Moment { .. } => {}
+                }
+                self.comment_of(&r)
+            })
+            .collect();
         renamed
     }
 
@@ -1227,6 +1243,33 @@ mod tests {
         assert_eq!(d.computed.iter().find(|c| c.name == "3I0").unwrap().samples, before);
         d.set_codepage(Encoding::Cp1251);
         assert!(d.computed.iter().find(|c| c.name == "3I0").unwrap().formula.contains("\"IA БЛОКА 3\""));
+    }
+
+    /// Names that decode alike are not followed: a formula on «Ток фазы С»
+    /// is not rewritten to the text it shares with «Ток фазы В» in 866
+    /// (it would read В) — it fails there as in the original, and works
+    /// again back in 1251; a level on С stays on С.
+    #[test]
+    fn names_that_decode_alike_are_not_followed() {
+        use crate::app::ChanKey;
+        use crate::comments::{Comment, CommentKind};
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "Ток фазы В".into();
+        d.osc.analog[4].id = "Ток фазы С".into();
+        d.init_set_keys();
+        d.comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(4), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
+        assert!(app.append_computed(&[("X".into(), "\"Ток фазы С\"*2".into())]).is_some());
+        let d = app.active_doc_mut().unwrap();
+        let before = d.computed[0].samples.clone();
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.osc.analog[3].id, d.osc.analog[4].id);
+        assert_eq!(d.computed[0].formula, "\"Ток фазы С\"*2", "not rewritten");
+        assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(4), .. }));
+        d.set_codepage(Encoding::Cp1251);
+        assert!(app.append_computed(&[("Y".into(), "1".into())]).is_some(), "{:?}", app.dlg.alert());
+        assert_eq!(app.active_doc().unwrap().computed[0].samples, before);
     }
 
     /// The formula editor resolves a renamed channel by its new name.
