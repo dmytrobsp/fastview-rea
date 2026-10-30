@@ -760,11 +760,14 @@ impl App {
         // A 24 px strip, a horizontal gradient (VM: per style, Blue's (227,
         // 239, 255) flat for 6 px, then shading over 16 to (177, 211, 255),
         // flat for the last 2).
-        let bar = egui::SidePanel::right(egui::Id::new(("pane_toolbar", w as u8))).resizable(false).show_separator_line(false).frame(egui::Frame::none()).exact_width(24.0).show_inside(ui, |ui| {
+        // At > 100 % its images stretched (`dpi::img`), the buttons and the
+        // strip with them (VM, 150 %: 30 px buttons).
+        let side = crate::dpi::img(16.0) + 6.0;
+        let bar = egui::SidePanel::right(egui::Id::new(("pane_toolbar", w as u8))).resizable(false).show_separator_line(false).frame(egui::Frame::none()).exact_width(side + 2.0).show_inside(ui, |ui| {
             let r = ui.max_rect();
             let mut mesh = egui::Mesh::default();
             let [l, rr] = self.skin.palette().bands.map_or([Color32::from_rgb(227, 239, 255), Color32::from_rgb(177, 211, 255)], |b| b.toolbar);
-            for (k, (x0, x1, c0, c1)) in [(0.0, 6.0, l, l), (6.0, 22.0, l, rr), (22.0, r.width(), rr, rr)].into_iter().enumerate() {
+            for (k, (x0, x1, c0, c1)) in [(0.0, 6.0, l, l), (6.0, side, l, rr), (side, r.width(), rr, rr)].into_iter().enumerate() {
                 let (a, b) = (r.left() + x0, r.left() + x1);
                 for (x, y, c) in [(a, r.top(), c0), (b, r.top(), c1), (b, r.bottom(), c1), (a, r.bottom(), c0)] {
                     mesh.colored_vertex(egui::pos2(x, y), c);
@@ -782,20 +785,20 @@ impl App {
             // Buttons that do not fit are cut off (a short toolbar), never
             // grow the pane past its slot.
             for b in &buttons {
-                if ui.available_height() < 22.0 {
+                if ui.available_height() < side {
                     break;
                 }
                 let Some((tool, tip, cmd, checked)) = b else {
                     use crate::oscgeom::PixelLines;
-                    let (sep, _) = ui.allocate_exact_size(Vec2::new(24.0, 8.0), egui::Sense::hover());
-                    let x = sep.left() + 6.0..=sep.left() + 19.0;
+                    let (sep, _) = ui.allocate_exact_size(Vec2::new(side + 2.0, 8.0), egui::Sense::hover());
+                    let x = sep.left() + 6.0..=sep.left() + side - 3.0;
                     ui.painter().px_hline(x.clone(), sep.top() + 3.0, stroke(1.0, Color32::from_rgb(118, 161, 218)));
                     ui.painter().px_hline(x, sep.top() + 4.0, stroke(1.0, Color32::WHITE));
                     continue;
                 };
                 // The vector toolbar is enabled with a document (CMDUI 0x48f440).
                 let enabled = w != Window::Vector || doc;
-                let (rect, resp) = ui.allocate_exact_size(Vec2::splat(22.0), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+                let (rect, resp) = ui.allocate_exact_size(Vec2::splat(side), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
                 let vis = ui.visuals();
                 // Checked: CMFCToolBar's checked face (VM).
                 if checked == &Some(true) {
@@ -1059,7 +1062,7 @@ impl App {
         let view = *self.plane_view(diff);
         // Scroll bars take client area while zoomed (`0x437ca0`).
         let sb = dg::scroll_range(view.z);
-        let client = if sb.is_some() { Rect::from_min_max(full.min, full.max - Vec2::splat(SCROLL_W)) } else { full };
+        let client = if sb.is_some() { Rect::from_min_max(full.min, full.max - Vec2::splat(crate::dpi::s(SCROLL_W))) } else { full };
         let painter = ui.painter_at(full);
         // White below the splitter's 5 rows, which the window keeps.
         painter.rect_filled(Rect::from_min_max(full.min + Vec2::new(0.0, dpx(5.0)), full.max), 0.0, Color32::WHITE);
@@ -1413,6 +1416,11 @@ impl App {
         let angle_ref = self.vec_angle_ref.clone();
         let Some(d) = self.active_doc() else { return };
         let k = d.main_cursor;
+        // The table's value cells stay empty until В1 has been placed (VM:
+        // a record just opened, also after a quick-analysis run, shows the
+        // rows with empty cells; a click, the 32813 toggle or the keys
+        // place it and the values stay when it is hidden again).
+        let values = d.v1_placed || d.v_shown[0];
         let n = d.osc.samples_per_cycle().max(2);
         let phasor_of = |name: &str| -> Option<Complex64> {
             if let Some(i) = d.osc.analog.iter().position(|c| c.id == name) {
@@ -1559,7 +1567,7 @@ impl App {
                 painter.extend(egui::Shape::dashed_line(&[p0, p1], pen, 3.0, 2.0));
             }
             painter.add(egui::Shape::convex_polygon(vec![p1, p2, p3], *color, pen));
-            if lay.table {
+            if lay.table && values {
                 let y = lay.b + row as f32 * h + cy / 4.0;
                 painter.text(Pos2::new(full.left() + xoff + name_w + m, y), egui::Align2::LEFT_TOP, fvb_core::views::vector_value_text(z.norm(), unit_text), font(), ink);
                 painter.text(Pos2::new(full.right() - xoff - val_w + m, y), egui::Align2::LEFT_TOP, fvb_core::views::angle_text(ang, radians), font(), ink);
@@ -1725,13 +1733,13 @@ impl App {
         // DIALOG 554: 393 × 367 DLU (590 × 596 px), every control at its
         // rectangle (VM).
         crate::dialogs::dlg(ctx, title).margin(0.0).collapsible(false).resizable(false).show(ctx, |ui| {
-            use crate::dialogs::{dlu, win_button_en, win_combo_list, DLG_FONT};
+            use crate::dialogs::{dlu, win_button_en, win_combo_list, dlg_font};
             use egui::{Color32, Pos2, Rect, Stroke};
-            let (client, _) = ui.allocate_exact_size(Vec2::new(590.0, 596.0), egui::Sense::hover());
+            let (client, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(393, 367), egui::Sense::hover());
             let r = |x, y, w, h| dlu(client, x, y, w, h);
             // The two SS_CENTER labels over the two lists.
             for (lr, t) in [(r(18, 18, 168, 8), ca), (r(204, 17, 168, 8), cb)] {
-                ui.painter().text(Pos2::new(lr.center().x, lr.top()), egui::Align2::CENTER_TOP, t, DLG_FONT, Color32::BLACK);
+                ui.painter().text(Pos2::new(lr.center().x, lr.top()), egui::Align2::CENTER_TOP, t, dlg_font(), Color32::BLACK);
             }
             // The template's order is the tab order: OK, Отмена, the right
             // combo, the left one, «Добавить», the list, «Удалить».
@@ -1762,7 +1770,11 @@ impl App {
             let p = ui.painter().clone();
             p.rect_filled(lr, 0.0, Color32::from_rgb(130, 135, 144));
             p.rect_filled(inner, 0.0, Color32::WHITE);
-            let hdr = Rect::from_min_size(inner.min, Vec2::new(inner.width(), 25.0));
+            // At > 100 % the header and rows from the font's height (25 /
+            // 17 px at 100 %), the columns at the base units.
+            let by = crate::dpi::base_units().1 as f32;
+            let (hdr_h, row_h) = (by + 12.0, by + 4.0);
+            let hdr = Rect::from_min_size(inner.min, Vec2::new(inner.width(), hdr_h));
             let mut mesh = egui::Mesh::default();
             let g = Rect::from_min_max(Pos2::new(hdr.left(), hdr.top() + 1.0), Pos2::new(hdr.right(), hdr.bottom() - 1.0));
             for (pt, c) in [(g.left_top(), (247, 250, 252)), (g.right_top(), (247, 250, 252)), (g.right_bottom(), (212, 221, 233)), (g.left_bottom(), (212, 221, 233))] {
@@ -1774,36 +1786,37 @@ impl App {
             let edge = Stroke::new(1.0f32, Color32::from_rgb(158, 182, 206));
             p.hline(hdr.x_range(), hdr.bottom() - 0.5, edge);
             let grid = Stroke::new(1.0f32, Color32::from_gray(240));
-            let cols = [(0.0, 265.0, ca), (265.0, 263.0, cb)];
+            let (c1, c2) = (crate::dpi::dx(265.0), crate::dpi::dx(528.0));
+            let cols = [(0.0, c1, ca), (c1, c2 - c1, cb)];
             for (x, w, t) in cols {
-                let c = Rect::from_min_size(Pos2::new(inner.left() + x, hdr.top()), Vec2::new(w, 25.0));
+                let c = Rect::from_min_size(Pos2::new(inner.left() + x, hdr.top()), Vec2::new(w, hdr_h));
                 p.vline(c.right() - 1.5, c.y_range(), edge);
                 p.vline(c.right() - 0.5, c.bottom()..=inner.bottom(), grid);
-                p.with_clip_rect(c).text(Pos2::new(c.left() + 7.0, c.center().y), egui::Align2::LEFT_CENTER, t, DLG_FONT, Color32::BLACK);
+                p.with_clip_rect(c).text(Pos2::new(c.left() + 7.0, c.center().y), egui::Align2::LEFT_CENTER, t, dlg_font(), Color32::BLACK);
             }
-            let mut y = hdr.bottom() + 16.5;
+            let mut y = hdr.bottom() + row_h - 0.5;
             while y < inner.bottom() {
                 p.hline(inner.x_range(), y, grid);
-                y += 17.0;
+                y += row_h;
             }
             // The list is a tab stop; a press on it gives it the focus.
             let list_id = egui::Id::new("pair_list");
             ui.interact(Rect::from_min_max(Pos2::new(inner.left(), hdr.bottom()), inner.max), list_id, egui::Sense::click());
             dlg.list_focus = crate::dialogs::tab_stop(ui, list_id, crate::dialogs::StopKind::Other);
             for (i, pair) in dlg.pairs.iter().enumerate() {
-                let top = hdr.bottom() + 17.0 * i as f32;
-                if top + 17.0 > inner.bottom() {
+                let top = hdr.bottom() + row_h * i as f32;
+                if top + row_h > inner.bottom() {
                     break;
                 }
-                let row = Rect::from_min_size(Pos2::new(inner.left(), top), Vec2::new(cols[1].0 + cols[1].1 - 1.0, 16.0));
+                let row = Rect::from_min_size(Pos2::new(inner.left(), top), Vec2::new(cols[1].0 + cols[1].1 - 1.0, row_h - 1.0));
                 let sel = dlg.sel == Some(i);
                 let lit = sel && dlg.list_focus;
                 if sel {
                     p.rect_filled(row, 0.0, if lit { Color32::from_rgb(0, 120, 215) } else { Color32::from_gray(240) });
                 }
                 for ((x, w, _), t) in cols.into_iter().zip([&pair.a, &pair.b]) {
-                    let c = Rect::from_min_size(Pos2::new(inner.left() + x, top), Vec2::new(w - 1.0, 16.0));
-                    p.with_clip_rect(c).text(Pos2::new(c.left() + 6.0, c.center().y), egui::Align2::LEFT_CENTER, t, DLG_FONT, if lit { Color32::WHITE } else { Color32::BLACK });
+                    let c = Rect::from_min_size(Pos2::new(inner.left() + x, top), Vec2::new(w - 1.0, row_h - 1.0));
+                    p.with_clip_rect(c).text(Pos2::new(c.left() + 6.0, c.center().y), egui::Align2::LEFT_CENTER, t, dlg_font(), if lit { Color32::WHITE } else { Color32::BLACK });
                 }
                 if ui.interact(row, ui.id().with(("pair_row", i)), egui::Sense::click()).clicked() {
                     dlg.sel = Some(i);
@@ -1850,7 +1863,7 @@ impl App {
             use crate::dialogs::{dlu, win_button, win_edit, win_group, win_label, win_radio_en};
             // The 226 × 222 DLU template (339 × 361 px). The dialog opens
             // with the first edit focused, its text selected.
-            let (client, _) = ui.allocate_exact_size(Vec2::new(339.0, 361.0), egui::Sense::hover());
+            let (client, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(226, 222), egui::Sense::hover());
             let first = ui.memory(|m| m.focused().is_none());
             win_group(ui, dlu(client, 12, 12, 204, 54), "Расчет значений");
             win_label(ui, dlu(client, 24, 30, 121, 8), "Число обрабатываемых периодов:", true, true);
@@ -2184,6 +2197,39 @@ mod tests {
             self.frame(vec![ev(false)], Default::default());
             self.frame(vec![], Default::default());
         }
+    }
+
+    /// Follow-up of #7 (VM): the vector table's value cells are empty
+    /// until В1 has been placed; placed and hidden again, they stay.
+    #[test]
+    fn the_vector_table_values_wait_for_the_first_vizir() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        app.vec_show_values = true;
+        app.active_doc_mut().unwrap().chans[3].on_vector = true;
+        let texts = |app: &mut App| -> Vec<String> {
+            let ctx = egui::Context::default();
+            let out = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(500.0, 500.0))), ..Default::default() }, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| app.vector_ui(ui));
+            });
+            out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect()
+        };
+        // The row's angle cell, «%8.2fº» (the axis labels have no blanks).
+        let value = |t: &Vec<String>| t.iter().any(|s| s.starts_with(' ') && s.ends_with('º'));
+        let t = texts(&mut app);
+        assert!(t.iter().any(|s| s == "Ia") && !value(&t), "{t:?}");
+        let d = app.active_doc_mut().unwrap();
+        // 32813 places В1; moved onto sample 0 and hidden again by 32813,
+        // the values stay.
+        d.toggle_vizir(0, 500.0, 0.0);
+        assert!(d.v_shown[0] && d.v1_placed);
+        let t = texts(&mut app);
+        assert!(value(&t), "{t:?}");
+        let d = app.active_doc_mut().unwrap();
+        d.main_cursor = 0;
+        d.toggle_vizir(0, 500.0, 0.0);
+        assert!(!d.v_shown[0]);
+        assert!(value(&texts(&mut app)), "hidden again: the values stay");
     }
 
     #[test]

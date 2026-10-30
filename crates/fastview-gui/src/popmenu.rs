@@ -30,16 +30,19 @@ pub enum MenuImage {
 /// (140, 212, 240) face, a white eye (outline and pupil) in its upper
 /// half, the «+» / «−» at its lower left (VM, the original's images).
 fn paint_image(p: &egui::Painter, r: Rect, img: MenuImage) {
-    let r = Rect::from_min_size(r.min.round(), Vec2::splat(16.0));
+    // Stretched with the menus' images at > 100 %.
+    let side = crate::dpi::img(16.0);
+    let k = side / 16.0;
+    let r = Rect::from_min_size(r.min.round(), Vec2::splat(side));
     p.rect_filled(r, 0.0, Color32::from_rgb(52, 152, 200));
     p.rect_filled(r.shrink(1.0), 0.0, Color32::from_rgb(140, 212, 240));
     let white = Stroke::new(1.0f32, Color32::WHITE);
-    p.add(egui::Shape::ellipse_stroke(Pos2::new(r.left() + 9.0, r.top() + 6.5), Vec2::new(5.5, 2.5), white));
-    p.rect_filled(Rect::from_min_size(Pos2::new(r.left() + 8.0, r.top() + 5.0), Vec2::splat(2.0)), 0.0, Color32::WHITE);
-    let (y, x0, x1) = (r.bottom() - 3.5, r.left() + 1.0, r.left() + 6.0);
+    p.add(egui::Shape::ellipse_stroke(Pos2::new(r.left() + 9.0 * k, r.top() + 6.5 * k), Vec2::new(5.5, 2.5) * k, white));
+    p.rect_filled(Rect::from_min_size(Pos2::new(r.left() + 8.0 * k, r.top() + 5.0 * k), Vec2::splat(2.0 * k)), 0.0, Color32::WHITE);
+    let (y, x0, x1) = (r.bottom() - crate::dpi::half(3.5), r.left() + 1.0, r.left() + 6.0 * k);
     p.hline(x0..=x1, y, white);
     if img == MenuImage::EyePlus {
-        p.vline(r.left() + 3.5, y - 2.5..=y + 2.5, white);
+        p.vline(r.left() + crate::dpi::half(3.5), y - 2.5 * k..=y + 2.5 * k, white);
     }
 }
 
@@ -138,8 +141,16 @@ const MFC_COLUMN: Color32 = Color32::from_rgb(233, 238, 238);
 const MFC_RULE: Color32 = Color32::from_rgb(197, 197, 197);
 const MFC_TEXT: Color32 = Color32::from_rgb(0, 21, 110);
 const MFC_GREY: Color32 = Color32::from_rgb(141, 141, 141);
-/// The image column's width.
-const MFC_COL_W: f32 = 24.0;
+/// The image column's width: the 16 px image + 8, stretched at > 100 %.
+fn col_w() -> f32 {
+    crate::dpi::img(16.0) + 8.0
+}
+
+/// A menu row's pitch: 22 px, 24 / 28 at 125 / 150 % (VM: the rows of
+/// the view's menu; the images 20 / 24 px there).
+pub fn row_pitch() -> f32 {
+    crate::dpi::measured(22.0, 24.0, 28.0)
+}
 
 /// A popup menu's frame and image column around `add` (the rows).
 pub fn mfc_frame<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
@@ -181,7 +192,7 @@ pub fn mfc_frame_with<R>(ui: &mut egui::Ui, column: bool, pad: bool, add: impl F
             p.px_rect_stroke(c.expand(1.0), 0.0, Stroke::new(1.0f32, MFC_INNER));
             p.px_rect_stroke(c.expand(2.0), 0.0, Stroke::new(1.0f32, Color32::from_gray(134)));
             if column {
-                let col = Rect::from_min_max(Pos2::new(c.left(), c.top() + 1.0), Pos2::new(c.left() + MFC_COL_W, c.bottom() - 1.0));
+                let col = Rect::from_min_max(Pos2::new(c.left(), c.top() + 1.0), Pos2::new(c.left() + col_w(), c.bottom() - 1.0));
                 p.set(under, egui::Shape::rect_filled(col, 0.0, MFC_COLUMN));
                 p.px_vline(col.right(), col.y_range(), Stroke::new(1.0f32, MFC_RULE));
                 p.px_vline(col.right() + 1.0, col.y_range(), Stroke::new(1.0f32, MFC_INNER));
@@ -196,15 +207,17 @@ pub fn mfc_frame_with<R>(ui: &mut egui::Ui, column: bool, pad: bool, add: impl F
 pub fn title_band(ui: &mut egui::Ui, title: &str) {
     use crate::oscgeom::PixelLines;
     // The menu at least as wide as its title.
-    let tw = ui.fonts(|f| crate::lanes::bold_font(f, 12.0).map(|b| f.layout_no_wrap(title.to_string(), b, MFC_TEXT).size().x)).unwrap_or(0.0);
+    let size = crate::dpi::font(12.0);
+    let tw = ui.fonts(|f| crate::lanes::bold_font(f, size).map(|b| f.layout_no_wrap(title.to_string(), b, MFC_TEXT).size().x)).unwrap_or(0.0);
     ui.set_min_width(tw + 12.0);
     // The band 17 px, then the rule and its light line; the rows from
     // the band's top + 20 (VM, the status bar's menu).
-    let (r, _) = ui.allocate_exact_size(Vec2::new(1.0, 19.0), egui::Sense::hover());
+    let bh = crate::dpi::s(17.0);
+    let (r, _) = ui.allocate_exact_size(Vec2::new(1.0, bh + 2.0), egui::Sense::hover());
     let w = ui.max_rect().x_range();
-    let band = Rect::from_x_y_ranges(w, r.top()..=r.top() + 17.0);
+    let band = Rect::from_x_y_ranges(w, r.top()..=r.top() + bh);
     ui.painter().rect_filled(band, 0.0, Color32::from_rgb(222, 232, 239));
-    crate::lanes::bold_text(ui.painter(), Pos2::new(band.left() + 5.0, band.top() + 2.0), title, egui::FontId::proportional(12.0), MFC_TEXT);
+    crate::lanes::bold_text(ui.painter(), Pos2::new(band.left() + 5.0, band.top() + 2.0), title, egui::FontId::proportional(size), MFC_TEXT);
     ui.painter().px_hline(w, band.bottom(), Stroke::new(1.0f32, MFC_RULE));
     ui.painter().px_hline(w, band.bottom() + 1.0, Stroke::new(1.0f32, MFC_INNER));
 }
@@ -212,19 +225,22 @@ pub fn title_band(ui: &mut egui::Ui, title: &str) {
 /// A large item: its 32 px image, a bold title and the description under
 /// it (a ribbon menu's entries, VM).
 pub fn large_item(ui: &mut egui::Ui, label: &str, desc: &str, enabled: bool, icon: RowIcon) -> egui::Response {
-    let wrap = ui.max_rect().width() - 53.0;
-    let gal = ui.painter().layout(desc.to_string(), egui::FontId::proportional(12.0), Color32::from_rgb(21, 66, 139), wrap);
-    let h = (22.0 + gal.size().y + 6.0).max(48.0);
+    use crate::dpi::{img, s};
+    let side = img(32.0);
+    let font = egui::FontId::proportional(crate::dpi::font(12.0));
+    let wrap = ui.max_rect().width() - side - 21.0;
+    let gal = ui.painter().layout(desc.to_string(), font.clone(), Color32::from_rgb(21, 66, 139), wrap);
+    let h = (s(22.0) + gal.size().y + 6.0).max(side + 16.0);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(1.0, h), egui::Sense::hover());
     let row = Rect::from_x_y_ranges(ui.max_rect().x_range(), rect.y_range());
     let resp = ui.interact(row, ui.id().with(("fv_large_item", label)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     if enabled && ui.rect_contains_pointer(row) {
         hot_bar(ui.painter(), row);
     }
-    icon(ui.painter(), Rect::from_min_size(Pos2::new(row.left() + 6.0, row.top() + 3.0), Vec2::splat(32.0)), if enabled { Color32::from_rgb(40, 60, 130) } else { MFC_GREY });
+    icon(ui.painter(), Rect::from_min_size(Pos2::new(row.left() + 6.0, row.top() + 3.0), Vec2::splat(side)), if enabled { Color32::from_rgb(40, 60, 130) } else { MFC_GREY });
     let ink = if enabled { MFC_TEXT } else { MFC_GREY };
-    crate::lanes::bold_text(ui.painter(), Pos2::new(row.left() + 43.0, row.top() + 4.0), label, egui::FontId::proportional(12.0), ink);
-    ui.painter().galley(Pos2::new(row.left() + 43.0, row.top() + 20.0), gal, ink);
+    crate::lanes::bold_text(ui.painter(), Pos2::new(row.left() + side + 11.0, row.top() + 4.0), label, font, ink);
+    ui.painter().galley(Pos2::new(row.left() + side + 11.0, row.top() + s(20.0)), gal, ink);
     resp
 }
 
@@ -238,7 +254,7 @@ pub fn separator(ui: &mut egui::Ui) {
     // three clear (VM).
     let (r, _) = ui.allocate_exact_size(Vec2::new(1.0, 7.0), egui::Sense::hover());
     let w = ui.max_rect();
-    let x = (w.left() + MFC_COL_W + 5.0)..=w.right();
+    let x = (w.left() + col_w() + 5.0)..=w.right();
     ui.painter().px_hline(x.clone(), r.top() + 3.0, Stroke::new(1.0f32, MFC_RULE));
     ui.painter().px_hline(x, r.top() + 4.0, Stroke::new(1.0f32, MFC_INNER));
 }
@@ -249,7 +265,7 @@ pub fn panel_separator(ui: &mut egui::Ui) {
     use crate::oscgeom::PixelLines;
     let (r, _) = ui.allocate_exact_size(Vec2::new(1.0, 3.0), egui::Sense::hover());
     let w = ui.max_rect();
-    let x = (w.left() + MFC_COL_W + 5.0)..=w.right();
+    let x = (w.left() + col_w() + 5.0)..=w.right();
     ui.painter().px_hline(x.clone(), r.top(), Stroke::new(1.0f32, MFC_RULE));
     ui.painter().px_hline(x, r.top() + 1.0, Stroke::new(1.0f32, MFC_INNER));
 }
@@ -259,7 +275,7 @@ pub fn panel_separator(ui: &mut egui::Ui) {
 pub(crate) fn hot_bar(p: &egui::Painter, r: Rect) {
     use crate::oscgeom::PixelLines;
     let inner = r.shrink(1.0);
-    let mid = inner.top() + 10.0;
+    let mid = inner.top() + crate::dpi::s(10.0);
     crate::lanes::gradient(p, Rect::from_min_max(inner.min, Pos2::new(inner.right(), mid)), Color32::from_rgb(255, 253, 235), Color32::from_rgb(255, 235, 172));
     crate::lanes::gradient(p, Rect::from_min_max(Pos2::new(inner.left(), mid), Pos2::new(inner.right(), inner.bottom() - 1.0)), Color32::from_rgb(255, 213, 99), Color32::from_rgb(255, 227, 145));
     p.px_hline(inner.x_range(), inner.bottom() - 1.0, Stroke::new(1.0f32, Color32::from_rgb(255, 248, 181)));
@@ -275,7 +291,7 @@ pub(crate) fn hot_bar(p: &egui::Painter, r: Rect) {
 pub(crate) fn grey_bar(p: &egui::Painter, r: Rect) {
     use crate::oscgeom::PixelLines;
     let inner = r.shrink(1.0);
-    let mid = inner.top() + 10.0;
+    let mid = inner.top() + crate::dpi::s(10.0);
     crate::lanes::gradient(p, Rect::from_min_max(inner.min, Pos2::new(inner.right(), mid)), Color32::from_gray(250), Color32::from_gray(231));
     crate::lanes::gradient(p, Rect::from_min_max(Pos2::new(inner.left(), mid), Pos2::new(inner.right(), inner.bottom() - 1.0)), Color32::from_gray(210), Color32::from_gray(224));
     p.px_hline(inner.x_range(), inner.bottom() - 1.0, Stroke::new(1.0f32, Color32::from_gray(230)));
@@ -319,8 +335,11 @@ pub fn mark_item_keys(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enable
 /// [`mark_item_keys`] with the item's image in the column: a checked item
 /// shows its image in the amber box instead of a tick (VM).
 pub fn mark_item_icon(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enabled: bool, mark: Option<&str>, hot: bool, icon: Option<RowIcon>) -> egui::Response {
-    // The check / image column: the label 31 px in from the menu's edge (VM).
-    const COL: f32 = 29.0;
+    // The check / image column: the label 31 px in from the menu's edge
+    // (VM); the column, the row and the image grow at > 100 %.
+    let col_x = col_w() + 5.0;
+    let pitch = row_pitch();
+    let side = crate::dpi::img(16.0);
     let font = egui::TextStyle::Button.resolve(ui.style());
     // «&» marks the mnemonic: shown underlined (CMFCPopupMenu draws it
     // always, VM: the pane menu opened by the mouse).
@@ -328,19 +347,19 @@ pub fn mark_item_icon(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enable
     let label = label.as_str();
     let galley = ui.painter().layout_no_wrap(label.to_string(), font.clone(), Color32::PLACEHOLDER);
     let keys_w = keys.map_or(0.0, |k| ui.painter().layout_no_wrap(k.to_string(), font.clone(), Color32::PLACEHOLDER).size().x + 40.0);
-    let size = Vec2::new(COL + galley.size().x + 10.0 + keys_w, 21.0);
+    let size = Vec2::new(col_x + galley.size().x + 10.0 + keys_w, pitch - 1.0);
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { egui::Sense::click() } else { egui::Sense::hover() });
     let row = Rect::from_x_y_ranges(ui.max_rect().x_range(), rect.y_range());
     // A disabled row: the grey bar under the keyboard only, nothing under
     // the pointer (VM).
-    let bar = Rect::from_min_max(row.min, Pos2::new(row.right(), row.top() + 22.0));
+    let bar = Rect::from_min_max(row.min, Pos2::new(row.right(), row.top() + pitch));
     if enabled && (resp.hovered() || hot) {
         hot_bar(ui.painter(), bar);
     } else if !enabled && hot {
         grey_bar(ui.painter(), bar);
     }
     let col = if enabled { MFC_TEXT } else { MFC_GREY };
-    let bx = Rect::from_min_size(Pos2::new(row.left() + 2.0, rect.top() + 1.0), Vec2::splat(20.0));
+    let bx = Rect::from_min_size(Pos2::new(row.left() + 2.0, rect.top() + 1.0), Vec2::splat(pitch - 2.0));
     if let Some(m) = mark {
         // A checked item: its mark (or image) in a 20 px amber box.
         ui.painter().rect(bx.shrink(0.5), 0.0, Color32::from_rgb(255, 227, 149), Stroke::new(1.0f32, Color32::from_rgb(242, 149, 54)));
@@ -349,9 +368,9 @@ pub fn mark_item_icon(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enable
         }
     }
     if let Some(paint) = icon {
-        paint(ui.painter(), Rect::from_center_size(bx.center(), Vec2::splat(16.0)), if enabled { Color32::from_rgb(40, 60, 130) } else { MFC_GREY });
+        paint(ui.painter(), Rect::from_center_size(bx.center(), Vec2::splat(side)), if enabled { Color32::from_rgb(40, 60, 130) } else { MFC_GREY });
     }
-    let at = Pos2::new(rect.left() + COL, rect.center().y - galley.size().y / 2.0);
+    let at = Pos2::new(rect.left() + col_x, rect.center().y - galley.size().y / 2.0);
     if let Some(i) = ul {
         let w = |t: String| ui.painter().layout_no_wrap(t, font.clone(), col).size().x;
         let x0 = at.x + w(label.chars().take(i).collect());
@@ -363,11 +382,11 @@ pub fn mark_item_icon(ui: &mut egui::Ui, label: &str, keys: Option<&str>, enable
     match keys {
         // A submenu's arrow: a solid triangle (VM).
         Some("▸") => {
-            let c = Pos2::new(row.right() - 12.0, rect.center().y);
+            let c = Pos2::new(row.right() - crate::dpi::s(12.0), rect.center().y);
             ui.painter().add(egui::Shape::convex_polygon(vec![c + Vec2::new(-2.0, -4.0), c + Vec2::new(2.0, 0.0), c + Vec2::new(-2.0, 4.0)], col, Stroke::NONE));
         }
         Some(k) => {
-            ui.painter().text(Pos2::new(row.right() - 14.0, rect.center().y), egui::Align2::RIGHT_CENTER, k, font, col);
+            ui.painter().text(Pos2::new(row.right() - crate::dpi::s(14.0), rect.center().y), egui::Align2::RIGHT_CENTER, k, font, col);
         }
         None => {}
     }

@@ -90,22 +90,22 @@ fn date_picker(ui: &mut egui::Ui, at: egui::Rect, id: &str, st: &mut Stamp) -> b
         p.rect_filled(at, 0.0, Color32::from_gray(141));
         p.rect_filled(at.shrink(1.0), 0.0, Color32::WHITE);
         let text = st.long_date();
-        let t = p.text(Pos2::new(at.left() + 4.0, at.center().y), egui::Align2::LEFT_CENTER, &text, crate::dialogs::DLG_FONT, Color32::BLACK);
+        let t = p.text(Pos2::new(at.left() + 4.0, at.center().y), egui::Align2::LEFT_CENTER, &text, crate::dialogs::dlg_font(), Color32::BLACK);
         // With the focus its day field is selected (VM: Tab onto «С:»).
         if focused {
             let day = text.split(' ').next().unwrap_or_default().to_owned();
-            let w = ui.fonts(|f| f.layout_no_wrap(day.clone(), crate::dialogs::DLG_FONT, Color32::BLACK).size().x);
+            let w = ui.fonts(|f| f.layout_no_wrap(day.clone(), crate::dialogs::dlg_font(), Color32::BLACK).size().x);
             let hl = Rect::from_min_max(Pos2::new(t.left() - 1.0, t.top()), Pos2::new(t.left() + w + 1.0, t.bottom()));
             p.rect_filled(hl, 0.0, Color32::from_rgb(0, 120, 215));
-            p.text(Pos2::new(at.left() + 4.0, at.center().y), egui::Align2::LEFT_CENTER, &day, crate::dialogs::DLG_FONT, Color32::WHITE);
+            p.text(Pos2::new(at.left() + 4.0, at.center().y), egui::Align2::LEFT_CENTER, &day, crate::dialogs::dlg_font(), Color32::WHITE);
         }
-        let cal = Rect::from_min_size(Pos2::new(at.right() - 27.0, at.center().y - 6.0), Vec2::new(11.0, 12.0));
+        let cal = Rect::from_min_size(Pos2::new(at.right() - crate::dpi::s(27.0), at.center().y - 6.0), Vec2::new(11.0, 12.0));
         p.rect_filled(cal, 0.0, Color32::from_rgb(119, 107, 104));
         p.rect_filled(cal.shrink(1.0), 0.0, Color32::from_rgb(234, 239, 247));
         for k in 0..3 {
             p.hline(cal.left() + 2.0..=cal.right() - 2.0, cal.top() + 3.5 + 2.5 * k as f32, egui::Stroke::new(1.0f32, Color32::from_gray(190)));
         }
-        let c = Pos2::new(at.right() - 9.0, at.center().y);
+        let c = Pos2::new(at.right() - crate::dpi::s(9.0), at.center().y);
         p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(-3.0, -1.5), c + Vec2::new(3.0, -1.5), c + Vec2::new(0.0, 1.5)], Color32::from_rgb(77, 97, 133), egui::Stroke::NONE));
     }
     if r.clicked() {
@@ -796,9 +796,9 @@ impl App {
             .resizable(false)
             .open(&mut open)
             .show(ctx, |ui| {
-                use crate::dialogs::{dlu, win_button, win_check, win_combo_list, win_label, win_tree, TreeRow, DLG_FONT};
+                use crate::dialogs::{dlu, win_button, win_check, win_combo_list, win_label, win_tree, TreeRow, dlg_font};
                 use egui::{Color32, Pos2, Rect, Stroke, Vec2};
-                let (client, _) = ui.allocate_exact_size(Vec2::new(1109.0, 575.0), egui::Sense::hover());
+                let (client, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(739, 354), egui::Sense::hover());
                 let r = |x, y, w, h| dlu(client, x, y, w, h);
                 win_label(ui, r(12, 36, 174, 8), "Выберите папку для поиска", false, true);
                 // The shell tree (2167: lines, buttons, no lines at the
@@ -809,7 +809,7 @@ impl App {
                 let rows_t = f.tree.rows();
                 let rows: Vec<TreeRow> = rows_t.iter().map(|(node, depth, open, more)| TreeRow { depth: *depth, label: node.label(), has_children: *more, expanded: *open, selected: f.tree.selected == *node }).collect();
                 // 16 px rows inside the tree's 1 px frame.
-                let top_row = f.tree.take_reveal(((tr.shrink(4.0).height() - 2.0) / 16.0).floor() as usize);
+                let top_row = f.tree.take_reveal(((tr.shrink(4.0).height() - 2.0) / crate::dialogs::tree_row_h()).floor() as usize);
                 // The tab order is the template's (VM): «Открыть файлы»,
                 // «Закрыть», «Удалить файлы», С:, По:, Станция, Блок,
                 // «Выбрать», the list, the check box, the tree.
@@ -873,7 +873,7 @@ impl App {
                     p.rect_filled(pr, 0.0, Color32::WHITE);
                     p.rect_filled(Rect::from_min_max(pr.min, pr.max - Vec2::splat(1.0)), 0.0, Color32::from_gray(160));
                     p.rect_filled(Rect::from_min_max(pr.min + Vec2::splat(1.0), pr.max - Vec2::splat(1.0)), 0.0, Color32::from_gray(240));
-                    p.with_clip_rect(pr.shrink(1.0)).text(Pos2::new(pr.left() + 3.0, pr.center().y), egui::Align2::LEFT_CENTER, f.folder.display().to_string(), DLG_FONT, Color32::BLACK);
+                    p.with_clip_rect(pr.shrink(1.0)).text(Pos2::new(pr.left() + 3.0, pr.center().y), egui::Align2::LEFT_CENTER, f.folder.display().to_string(), dlg_font(), Color32::BLACK);
                 }
                 for (k, (lr, cr)) in [((194, 36, 36, 11), (233, 34, 118, 265)), ((354, 36, 23, 11), (380, 34, 116, 265))].into_iter().enumerate() {
                     let (label, value) = if k == 0 { ("Станция:", &mut f.station) } else { ("Блок:", &mut f.block) };
@@ -907,17 +907,22 @@ impl App {
                     p.rect_filled(lr, 0.0, Color32::from_gray(160));
                     p.rect_filled(inner, 0.0, Color32::WHITE);
                 }
-                let cols = [(Column::Name, "Название файла", 257.0), (Column::Station, "Станция", 256.0), (Column::Block, "Блок", 85.0), (Column::Date, "Дата", 85.0), (Column::Time, "Время", 85.0)];
+                // At > 100 % the columns at the base units, the header and
+                // rows from the font's height (24 / 17 px at 100 %).
+                use crate::dpi::dx;
+                let cols = [(Column::Name, "Название файла", dx(257.0)), (Column::Station, "Станция", dx(256.0)), (Column::Block, "Блок", dx(85.0)), (Column::Date, "Дата", dx(85.0)), (Column::Time, "Время", dx(85.0))];
+                let by = crate::dpi::base_units().1 as f32;
+                let (hdr_h, row_h) = (by + 11.0, by + 4.0);
                 let grid = Stroke::new(1.0f32, Color32::from_gray(240));
                 let mut x = inner.left();
                 let mut xs = Vec::new();
                 for (col, label, w) in cols {
-                    let h = Rect::from_min_size(Pos2::new(x, inner.top()), Vec2::new(w, 24.0));
+                    let h = Rect::from_min_size(Pos2::new(x, inner.top()), Vec2::new(w, hdr_h));
                     xs.push((x, w));
                     let p = ui.painter();
                     p.vline(h.right() - 1.5, h.y_range(), Stroke::new(1.0f32, Color32::from_gray(229)));
                     p.vline(h.right() - 0.5, h.bottom()..=inner.bottom(), grid);
-                    let t = p.with_clip_rect(h).text(Pos2::new(h.left() + 6.0, h.center().y), egui::Align2::LEFT_CENTER, label, DLG_FONT, Color32::BLACK);
+                    let t = p.with_clip_rect(h).text(Pos2::new(h.left() + 6.0, h.center().y), egui::Align2::LEFT_CENTER, label, dlg_font(), Color32::BLACK);
                     if f.sort.0 == col {
                         // The sort image (the original's own: a pale box
                         // with a pink triangle) after the text.
@@ -934,42 +939,42 @@ impl App {
                     }
                     x += w;
                 }
-                let mut y = inner.top() + 24.0 + 16.5;
+                let mut y = inner.top() + hdr_h + row_h - 0.5;
                 while y < inner.bottom() {
                     ui.painter().hline(inner.x_range(), y, grid);
-                    y += 17.0;
+                    y += row_h;
                 }
                 let list_id = egui::Id::new("finder_list");
-                ui.interact(Rect::from_min_max(Pos2::new(inner.left(), inner.top() + 24.0), inner.max), list_id, egui::Sense::click());
+                ui.interact(Rect::from_min_max(Pos2::new(inner.left(), inner.top() + hdr_h), inner.max), list_id, egui::Sense::click());
                 crate::dialogs::tab_index(ui, 8);
                 crate::dialogs::tab_stop(ui, list_id, crate::dialogs::StopKind::Other);
                 if f.busy() {
                     win_label(ui, r(431, 180, 60, 10), "Поиск файлов...", false, true);
                 }
                 let (ctrl, shift) = ui.input(|i| (i.modifiers.command || i.modifiers.ctrl, i.modifiers.shift));
-                let body = Rect::from_min_max(Pos2::new(inner.left(), inner.top() + 24.0), inner.max);
+                let body = Rect::from_min_max(Pos2::new(inner.left(), inner.top() + hdr_h), inner.max);
                 ui.allocate_new_ui(egui::UiBuilder::new().max_rect(body), |ui| {
                     egui::ScrollArea::vertical().id_salt("finder_list").show(ui, |ui| {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
                         for &i in &rows {
-                            let (row, resp) = ui.allocate_exact_size(Vec2::new(body.width(), 17.0), egui::Sense::click());
+                            let (row, resp) = ui.allocate_exact_size(Vec2::new(body.width(), row_h), egui::Sense::click());
                             let x = &f.files[i];
                             let sel = f.selected.contains(&i);
                             let p = ui.painter();
                             if sel {
-                                p.rect_filled(Rect::from_min_size(row.min, Vec2::new(xs[4].0 + xs[4].1 - inner.left() - 1.0, 16.0)), 0.0, Color32::from_rgb(0, 120, 215));
+                                p.rect_filled(Rect::from_min_size(row.min, Vec2::new(xs[4].0 + xs[4].1 - inner.left() - 1.0, row_h - 1.0)), 0.0, Color32::from_rgb(0, 120, 215));
                             }
                             let ink = if sel { Color32::WHITE } else { Color32::BLACK };
                             // The file's image (the original's own: ours a
                             // page, green for an oscillogram description).
-                            let ic = Rect::from_min_size(row.min + Vec2::new(4.0, 0.5), Vec2::new(12.0, 15.0));
+                            let ic = Rect::from_min_size(row.min + Vec2::new(4.0, 0.5 + ((row_h - 17.0) / 2.0).floor()), Vec2::new(12.0, 15.0));
                             p.rect(ic, 0.0, Color32::from_rgb(244, 252, 245), Stroke::new(1.0f32, if x.osc { Color32::from_rgb(53, 104, 48) } else { Color32::from_gray(120) }));
                             let texts = [x.name.clone(), x.station.clone(), x.block.clone(), x.time.date(), x.time.time()];
                             for (k, t) in texts.into_iter().enumerate() {
                                 let (cx, cw) = xs[k];
-                                let cell = Rect::from_min_size(Pos2::new(cx, row.top()), Vec2::new(cw - 1.0, 16.0));
-                                let at = Pos2::new(cx + if k == 0 { 18.0 } else { 6.0 }, row.top() + 8.0);
-                                p.with_clip_rect(cell).text(at, egui::Align2::LEFT_CENTER, t, DLG_FONT, ink);
+                                let cell = Rect::from_min_size(Pos2::new(cx, row.top()), Vec2::new(cw - 1.0, row_h - 1.0));
+                                let at = Pos2::new(cx + if k == 0 { 18.0 } else { 6.0 }, row.top() + ((row_h - 1.0) / 2.0).floor());
+                                p.with_clip_rect(cell).text(at, egui::Align2::LEFT_CENTER, t, dlg_font(), ink);
                             }
                             // NM_DBLCLK (`0x46e330`): with a selection, OnOK —
                             // every selected file opens (the first click of

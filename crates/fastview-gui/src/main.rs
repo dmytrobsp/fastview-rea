@@ -15,6 +15,7 @@ mod diagram_ui;
 mod dialogs;
 mod fontfix;
 mod docking;
+mod dpi;
 mod finder;
 mod formula_dlg;
 mod formula_page;
@@ -58,7 +59,172 @@ use eframe::egui;
 /// client. Physical pixels: the original is system-DPI aware.
 const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 
+/// One point is one device pixel at any display scale. The original is
+/// system-DPI aware (its manifest's `dpiAware`), so Windows does not
+/// stretch it, and it paints its views in device pixels: their fonts are
+/// cell heights (Tahoma 15 / 13, `0x404df9`) and their pens 1 px, at
+/// every scale (VM at 125 %: the lanes, rulers, waveforms and diagrams
+/// pixel for pixel as at 100 %). Ours lays out and paints in whole pixels
+/// too (fonts sized in pixels, pixel-snapped strokes, the aliased
+/// polylines): at egui's native fractional scale (1.25, 1.5) its 1 px
+/// strokes came out 1 or 2 px wide and its text resampled (#5, #6).
+/// Windows only: the original's platform (elsewhere egui's native scale
+/// stays, a Retina screen's 2 included).
+const DEVICE_PIXELS: bool = cfg!(any(windows, test));
+
+/// The zoom that makes egui's pixels per point (zoom · native) 1: exactly
+/// where an f32 does it, else just above (0.99999994 would floor a whole
+/// coordinate into the pixel before, 1.0000001 floors and rounds as 1).
+fn device_zoom(native: f32) -> f32 {
+    // A positive float's neighbours are a bit pattern apart.
+    let (up, down) = (|z: f32| f32::from_bits(z.to_bits() + 1), |z: f32| f32::from_bits(z.to_bits() - 1));
+    let mut z = 1.0 / native;
+    while z * native < 1.0 {
+        z = up(z);
+    }
+    while down(z) * native >= 1.0 {
+        z = down(z);
+    }
+    z
+}
+
+/// A dpi (None: the call is missing or failed) as a display scale (dpi / 96).
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn dpi_scale(dpi: Option<u32>) -> Option<f32> {
+    dpi.filter(|&d| d > 0).map(|d| d as f32 / 96.0)
+}
+
+/// The DPI calls resolved at run time, as winit does: Windows 10 before
+/// 1607 has no `GetDpiForSystem` / `GetDpiForWindow` /
+/// `SetProcessDpiAwarenessContext` and Windows before 8.1 no shcore's
+/// `GetDpiForMonitor`; a static import would stop the exe from starting
+/// there ("entry point not found"). A missing one is `None`: egui's native
+/// scale, as before they were used.
+#[cfg(windows)]
+mod dyn_dpi {
+    use windows_sys::Win32::Foundation::{HWND, POINT};
+    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+
+    /// `name` (NUL-terminated) in `module` (NUL-terminated), loaded if need be.
+    fn lookup(module: &[u8], name: &[u8]) -> Option<unsafe extern "system" fn() -> isize> {
+        debug_assert!(module.ends_with(&[0]) && name.ends_with(&[0]));
+        // SAFETY: NUL-terminated names; a loaded module stays loaded.
+        unsafe {
+            let m = LoadLibraryA(module.as_ptr());
+            if m.is_null() {
+                return None;
+            }
+            GetProcAddress(m, name.as_ptr())
+        }
+    }
+
+    #[cfg(test)]
+    pub fn find(module: &[u8], name: &[u8]) -> bool {
+        lookup(module, name).is_some()
+    }
+
+    /// SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2), when there is one.
+    pub fn set_per_monitor_aware() {
+        type F = unsafe extern "system" fn(isize) -> i32;
+        if let Some(f) = lookup(b"user32.dll\0", b"SetProcessDpiAwarenessContext\0") {
+            // SAFETY: the documented signature; -4 is DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2.
+            unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, F>(f)(-4) };
+        }
+    }
+
+    /// GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI).x
+    pub fn monitor_dpi(monitor: windows_sys::Win32::Graphics::Gdi::HMONITOR) -> Option<u32> {
+        type F = unsafe extern "system" fn(windows_sys::Win32::Graphics::Gdi::HMONITOR, i32, *mut u32, *mut u32) -> i32;
+        let f = lookup(b"shcore.dll\0", b"GetDpiForMonitor\0")?;
+        let (mut x, mut y) = (0u32, 0u32);
+        // SAFETY: the documented signature; two local u32s.
+        let hr = unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, F>(f)(monitor, 0, &mut x, &mut y) };
+        (hr == 0).then_some(x)
+    }
+
+    pub fn system_dpi() -> Option<u32> {
+        type F = unsafe extern "system" fn() -> u32;
+        let f = lookup(b"user32.dll\0", b"GetDpiForSystem\0")?;
+        // SAFETY: the documented signature.
+        Some(unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, F>(f)() })
+    }
+
+    pub fn window_dpi(hwnd: HWND) -> Option<u32> {
+        type F = unsafe extern "system" fn(HWND) -> u32;
+        let f = lookup(b"user32.dll\0", b"GetDpiForWindow\0")?;
+        // SAFETY: the documented signature; our own live window.
+        Some(unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, F>(f)(hwnd) })
+    }
+
+    #[allow(dead_code)]
+    pub fn point_origin() -> POINT {
+        POINT { x: 0, y: 0 }
+    }
+}
+
+/// The primary monitor's display scale (its effective dpi / 96, as winit
+/// sizes a new window by), the process made per-monitor DPI aware first —
+/// as winit makes it — so that Windows reports device pixels (the work
+/// area too).
+#[cfg(windows)]
+fn system_scale() -> Option<f32> {
+    use windows_sys::Win32::Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTOPRIMARY};
+    dyn_dpi::set_per_monitor_aware();
+    // SAFETY: a query with a plain point.
+    let monitor = unsafe { MonitorFromPoint(dyn_dpi::point_origin(), MONITOR_DEFAULTTOPRIMARY) };
+    dpi_scale(dyn_dpi::monitor_dpi(monitor))
+}
+
+#[cfg(not(windows))]
+fn system_scale() -> Option<f32> {
+    None
+}
+
+/// The runner's screen in whole points when they are device pixels: at a
+/// scale with no exact [`device_zoom`] (custom ones, 151 %) the pixels
+/// per point are 1.0000001 and the window 1280 px wide 1279.9999 points.
+fn device_screen(ctx: &egui::Context, raw: &mut egui::RawInput) {
+    let native = raw.viewports.get(&egui::ViewportId::ROOT).and_then(|v| v.native_pixels_per_point).or_else(|| ctx.input(|i| i.viewport().native_pixels_per_point));
+    if let (true, Some(native), Some(r)) = (DEVICE_PIXELS, native, raw.screen_rect) {
+        if ((ctx.zoom_factor() * native) - 1.0).abs() < 1e-6 {
+            raw.screen_rect = Some(egui::Rect::from_min_max(r.min.round(), r.max.round()));
+        }
+    }
+}
+
+/// Device pixels from the first frame at the system `scale` (each frame
+/// keeps them at the window's monitor's, `App::device_pixels`). No zoom by
+/// Ctrl + / − / 0: the original has none.
+fn device_options(ctx: &egui::Context, scale: Option<f32>) {
+    ctx.options_mut(|o| {
+        o.zoom_factor = scale.filter(|_| DEVICE_PIXELS).map_or(1.0, device_zoom);
+        o.zoom_with_keyboard = false;
+    });
+}
+
+/// The window made on a monitor at `native` (not necessarily the
+/// primary one the system scale is): device pixels there from its first
+/// frame. Ours is per-monitor DPI aware, 1:1 on every monitor — the
+/// original, system-DPI aware, is bitmap-stretched by Windows there
+/// (`docs/IMPROVEMENTS.md`).
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn device_window(ctx: &egui::Context, native: f32) {
+    if DEVICE_PIXELS {
+        ctx.options_mut(|o| o.zoom_factor = device_zoom(native));
+    }
+}
+
+/// The display scale of the monitor eframe's window is on (its dpi / 96).
+#[cfg(windows)]
+fn window_scale(w: &impl winit::raw_window_handle::HasWindowHandle) -> Option<f32> {
+    use winit::raw_window_handle::RawWindowHandle;
+    let RawWindowHandle::Win32(h) = w.window_handle().ok()?.as_raw() else { return None };
+    dpi_scale(dyn_dpi::window_dpi(h.hwnd.get() as windows_sys::Win32::Foundation::HWND))
+}
+
 fn main() -> eframe::Result<()> {
+    // Before the work area is read (`default_frame_size`).
+    let scale = system_scale();
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1320.0, 860.0])
         .with_min_inner_size(MIN_VISIBLE)
@@ -73,13 +239,24 @@ fn main() -> eframe::Result<()> {
     // run the frame is CW_USEDEFAULT's: placed by Windows, three quarters of
     // the work area less its invisible borders (VM: 1906 × 1016 shown of
     // a 2560 × 1392 work area).
+    let mut placement = None;
     if let Some((r, max)) = window_placement(&persist::Store::load()) {
         viewport = viewport.with_inner_size(r.size()).with_position(r.min).with_maximized(max);
+        placement = (!max).then_some(r);
     } else if let Some(size) = default_frame_size() {
         viewport = viewport.with_inner_size(size);
     }
+    // The software runner makes its window after `make_app` has set the
+    // device zoom (`device_zoom`): the builder's sizes are device pixels.
     #[cfg(windows)]
     let soft_viewport = viewport.clone();
+    // eframe makes its window before the app, at zoom 1 — in points of the
+    // system scale.
+    if let Some(s) = scale {
+        viewport.inner_size = viewport.inner_size.map(|v| v / s);
+        viewport.min_inner_size = viewport.min_inner_size.map(|v| v / s);
+        viewport.position = viewport.position.map(|p| (p.to_vec2() / s).to_pos2());
+    }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     // Command line (`InitInstance` 0x4483f0): `-Dst <dir>`, `-Find` (open
     // Проводник at start-up) and the file to open.
@@ -95,7 +272,7 @@ fn main() -> eframe::Result<()> {
     let soft = |why: &str| {
         softrun::trace(&format!("software rendering ({why})"));
         let ctx = egui::Context::default();
-        let app = make_app(&ctx, &args, inst_dir.as_deref(), own_caption);
+        let app = make_app(&ctx, &args, inst_dir.as_deref(), own_caption, scale, placement);
         softrun::trace("app made");
         softrun::run(app, soft_viewport.clone(), ctx).map_err(|e| eframe::Error::AppCreation(e.into()))
     };
@@ -103,7 +280,18 @@ fn main() -> eframe::Result<()> {
     if std::env::var_os("FV_SOFTWARE").is_some() {
         return soft("FV_SOFTWARE");
     }
-    let r = eframe::run_native("FastView", options, Box::new(|cc| Ok(Box::new(make_app(&cc.egui_ctx, &args, inst_dir.as_deref(), own_caption)))));
+    let r = eframe::run_native(
+        "FastView",
+        options,
+        Box::new(|cc| {
+            let app = make_app(&cc.egui_ctx, &args, inst_dir.as_deref(), own_caption, scale, placement);
+            #[cfg(windows)]
+            if let Some(native) = window_scale(cc) {
+                device_window(&cc.egui_ctx, native);
+            }
+            Ok(Box::new(app))
+        }),
+    );
     // winit makes one event loop a process: the software runner starts
     // over in a new process of its own.
     #[cfg(windows)]
@@ -116,11 +304,39 @@ fn main() -> eframe::Result<()> {
     r
 }
 
+/// The system DPI / 96 (GetDpiForSystem: the primary monitor's at
+/// sign-in), what a system-DPI-aware process — the original — lays its
+/// chrome out for, whichever monitor its window is on and after a live
+/// scale change until the next sign-in.
+#[cfg(windows)]
+fn system_dpi_scale() -> Option<f32> {
+    dpi_scale(dyn_dpi::system_dpi())
+}
+
+#[cfg(not(windows))]
+fn system_dpi_scale() -> Option<f32> {
+    None
+}
+
+/// MFC's chrome at the system DPI (`dpi`), where ours paints in device
+/// pixels (Windows); elsewhere egui's native scale already grows it all.
+/// Fixed for the process, as the original's: on a monitor at another
+/// scale ours keeps its content 1:1 (`device_window`) and the chrome at
+/// the system DPI — the original's picture without Windows' stretch
+/// (`docs/IMPROVEMENTS.md`).
+fn chrome_dpi(scale: Option<f32>) {
+    if let Some(s) = scale.filter(|_| DEVICE_PIXELS) {
+        dpi::set((s * 96.0).round() as u32);
+    }
+}
+
 /// The application as both runners start it: the fonts, the persisted
 /// state, the single-instance server, the command line.
-fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path::Path>, own_caption: bool) -> App {
+fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path::Path>, own_caption: bool, scale: Option<f32>, placement: Option<egui::Rect>) -> App {
     let fonts = app_fonts();
     ctx.set_fonts(fonts.clone());
+    device_options(ctx, scale);
+    chrome_dpi(system_dpi_scale().or(scale));
     // A double-click within Windows' default GetDoubleClickTime, 500 ms
     // (egui's own is 300 ms: a hand's double-click on the coefficient list
     // was missed on the VM).
@@ -133,6 +349,7 @@ fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path
     });
     let mut app = App::new().with_persistence();
     app.own_caption = own_caption;
+    app.placement_px = placement;
     app.splash_until = Some(2.0);
     app.print.fonts = fonts;
     let c = ctx.clone();
@@ -283,9 +500,12 @@ impl App {
         let members: Vec<usize> = (0..self.docs.len()).filter(|&i| self.docs[i].mdi_group == g).collect();
         ui.horizontal(|ui| {
             // Nothing in the row taller than the tabs (the ▾ button included).
-            ui.spacing_mut().interact_size.y = 19.0;
+            // At > 100 % the strip, its font and the tabs' parts grow with
+            // the system DPI (`dpi`; VM: the strip 22 / 31 / 35 px).
+            let tab_h = strip.height() - 1.0;
+            ui.spacing_mut().interact_size.y = tab_h;
             ui.spacing_mut().button_padding.y = 0.0;
-            ui.add_space(6.0);
+            ui.add_space(dpi::s(6.0));
             for (k, &i) in members.iter().enumerate() {
                 if self.docs[i].tab_color.is_none() {
                     let prev = k.checked_sub(1).and_then(|j| self.docs[members[j]].tab_color);
@@ -295,19 +515,20 @@ impl App {
                 let title = self.docs[i].title();
                 // MFC's tab font, 11 px (VM: «WIN_1999.cfg» 68 px); the
                 // active document's in the bold face (`0x1013b543`).
-                let font = if bold == Some(i) { ui.fonts(|f| crate::lanes::bold_font(f, 11.0)).unwrap_or(egui::FontId::proportional(11.0)) } else { egui::FontId::proportional(11.0) };
+                let size = dpi::font(11.0);
+                let font = if bold == Some(i) { ui.fonts(|f| crate::lanes::bold_font(f, size)).unwrap_or(egui::FontId::proportional(size)) } else { egui::FontId::proportional(size) };
                 let text_w = ui.fonts(|f| f.layout_no_wrap(title.clone(), font.clone(), egui::Color32::BLACK).size().x);
-                let w = text_w + 34.0 + if active { 20.0 } else { 0.0 };
+                let w = text_w + dpi::s(34.0) + if active { dpi::s(20.0) } else { 0.0 };
                 // An id per document: the drag follows the tab when it moves.
                 // 19 px, over the row's bottom line (VM).
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 19.0), egui::Sense::hover());
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(w, tab_h), egui::Sense::hover());
                 let resp = ui.interact(rect, egui::Id::new(("fv_doc_tab", self.docs[i].serial)), egui::Sense::click_and_drag());
                 tabs.push((i, rect));
                 let (r, g, b) = app::TAB_COLORS[self.docs[i].tab_color.unwrap_or(0)];
                 let base = egui::Color32::from_rgb(r, g, b);
                 let top = base.lerp_to_gamma(egui::Color32::WHITE, if active { 0.45 } else { 0.25 });
                 // Slanted left edge, square right edge (OneNote style).
-                let pts = [rect.left_bottom(), rect.left_top() + egui::vec2(16.0, 0.0), rect.right_top(), rect.right_bottom()];
+                let pts = [rect.left_bottom(), rect.left_top() + egui::vec2(dpi::s(16.0), 0.0), rect.right_top(), rect.right_bottom()];
                 let mut mesh = egui::Mesh::default();
                 for (p, c) in pts.iter().zip([base, top, top, base]) {
                     mesh.colored_vertex(*p, if active { c } else { c.gamma_multiply(0.85) });
@@ -316,10 +537,10 @@ impl App {
                 mesh.add_triangle(0, 2, 3);
                 ui.painter().add(egui::Shape::mesh(mesh));
                 ui.painter().add(egui::Shape::line(pts.to_vec(), egui::Stroke::new(1.0f32, egui::Color32::from_gray(140))));
-                let text_pos = egui::pos2(rect.left() + 20.0, rect.center().y);
+                let text_pos = egui::pos2(rect.left() + dpi::s(20.0), rect.center().y);
                 ui.painter().text(text_pos, egui::Align2::LEFT_CENTER, &title, font, egui::Color32::BLACK);
                 if active {
-                    let xr = egui::Rect::from_center_size(egui::pos2(rect.right() - 12.0, rect.center().y), egui::vec2(14.0, 14.0));
+                    let xr = egui::Rect::from_center_size(egui::pos2(rect.right() - dpi::s(12.0), rect.center().y), egui::vec2(dpi::s(14.0), dpi::s(14.0)));
                     let xresp = ui.interact(xr, ui.id().with(("tab_close", i)), egui::Sense::click());
                     // Two 2 px diagonals in the pane buttons' blue (VM: (86,
                     // 125, 177)). Hot: a 14 px box, a (255, 189, 105) frame
@@ -341,8 +562,9 @@ impl App {
                     crate::tips::pointer_tip(ui, &xresp, crate::tips::TipImage::None, "", "Закрыть", false);
                     let c = xr.center();
                     let st = egui::Stroke::new(2.0f32, col);
-                    ui.painter().line_segment([c + egui::vec2(-3.5, -3.0), c + egui::vec2(3.5, 3.0)], st);
-                    ui.painter().line_segment([c + egui::vec2(3.5, -3.0), c + egui::vec2(-3.5, 3.0)], st);
+                    let (dx, dy) = (3.5 * dpi::k(), 3.0 * dpi::k());
+                    ui.painter().line_segment([c + egui::vec2(-dx, -dy), c + egui::vec2(dx, dy)], st);
+                    ui.painter().line_segment([c + egui::vec2(dx, -dy), c + egui::vec2(-dx, dy)], st);
                     if xresp.clicked() {
                         close = Some(i);
                     }
@@ -360,14 +582,14 @@ impl App {
                 if resp.drag_stopped() {
                     released = Some(i);
                 }
-                ui.add_space(-6.0);
+                ui.add_space(-dpi::s(6.0));
             }
             // The document menu's button: a bare (86, 125, 177) triangle,
             // 9 px across its top row 8 px down the strip, 5 rows to its
             // point, its right end 7 px in from the strip's (VM).
-            let x0 = strip.right() - 15.0;
-            let y0 = strip.top() + 8.0;
-            let hit = egui::Rect::from_min_max(egui::pos2(x0 - 3.0, strip.top()), egui::pos2(x0 + 12.0, strip.bottom()));
+            let x0 = strip.right() - dpi::s(15.0);
+            let y0 = strip.top() + 8.0 + ((strip.height() - 20.0) / 2.0).floor();
+            let hit = egui::Rect::from_min_max(egui::pos2(x0 - 3.0, strip.top()), egui::pos2(x0 - 3.0 + dpi::s(15.0), strip.bottom()));
             let tri = egui::Color32::from_rgb(86, 125, 177);
             for k in 0..5 {
                 let row = egui::Rect::from_min_max(egui::pos2(x0 + k as f32, y0 + k as f32), egui::pos2(x0 + 9.0 - k as f32, y0 + k as f32 + 1.0));
@@ -384,7 +606,7 @@ impl App {
             if btn.clicked() {
                 open = if open.is_some() { None } else { Some(ui.ctx().cumulative_pass_nr()) };
             }
-            let lit = egui::Rect::from_min_size(egui::pos2(x0 - 3.0, strip.top() + 1.0), egui::vec2(15.0, 15.0));
+            let lit = egui::Rect::from_min_size(egui::pos2(x0 - 3.0, y0 + 1.0 - (dpi::s(15.0) / 2.0).ceil()), egui::vec2(dpi::s(15.0), dpi::s(15.0)));
             if let Some(serial) = open {
                 crate::lanes::gradient(ui.painter(), lit, egui::Color32::from_rgb(252, 151, 61), egui::Color32::from_rgb(254, 181, 91));
                 for k in 0..5 {
@@ -482,10 +704,13 @@ impl App {
             }
             mesh
         };
-        // A bitmap of rows, uniform along x: row i's colour at r.top() + i.
+        // A bitmap of rows, uniform along x: row i's colour at r.top() + i
+        // (stretched over a taller bar at > 100 %, `dpi::stretch_row`).
         let rows = |painter: &egui::Painter, r: egui::Rect, rows: &[u32; 24]| {
-            for (i, c) in rows.iter().enumerate() {
-                let col = egui::Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, *c as u8);
+            let h = r.height().round() as usize;
+            for i in 0..h {
+                let c = rows[dpi::stretch_row(i, h, rows.len())];
+                let col = egui::Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8);
                 painter.rect_filled(egui::Rect::from_min_size(egui::pos2(r.left(), r.top() + i as f32), egui::vec2(r.width(), 1.0)), 0.0, col);
             }
         };
@@ -505,18 +730,27 @@ impl App {
                 }
             },
         }
-        let font = egui::FontId::proportional(12.0);
+        // The panes' widths and the font at the system DPI (VM, 125 % and
+        // 150 %: the bar 30 / 36 px, its text and panes 1.25 / 1.5 ×).
+        let font = egui::FontId::proportional(dpi::font(12.0));
         let mut x = r.left();
-        // A hidden pane leaves no gap: the rest move left (VM).
+        let ext_w = dpi::s(if p.bands.is_some() { 135.0 } else { 155.0 });
+        let room = if self.status_hidden[6] { r.right() } else { r.right() - ext_w };
+        // A hidden pane leaves no gap: the rest move left (VM). A pane that
+        // does not fit before the extended one is not shown (VM, 150 % at
+        // 1280 px: «Гор. визир 2:» and on gone).
         for (i, text) in s.iter().enumerate().filter(|(i, _)| !self.status_hidden[*i]) {
-            let w = if i == 2 || i == 5 { 218.0 } else { 153.0 };
+            let w = dpi::s(if i == 2 || i == 5 { 218.0 } else { 153.0 });
+            if x + w > room {
+                break;
+            }
             let clip = egui::Rect::from_min_max(egui::pos2(x, r.top()), egui::pos2(x + w - 2.0, r.bottom()));
-            painter.with_clip_rect(clip).text(egui::pos2(x + 9.0, r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
+            painter.with_clip_rect(clip).text(egui::pos2(x + dpi::s(9.0), r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
             x += w;
         }
         // The last pane: 135 px at the right (VM), its own rows and a light
         // and a dark column at its left in the Office 2007 styles.
-        let ext = egui::Rect::from_min_max(egui::pos2(r.right() - if p.bands.is_some() { 135.0 } else { 155.0 }, r.top() + 1.0), r.right_bottom());
+        let ext = egui::Rect::from_min_max(egui::pos2(r.right() - ext_w, r.top() + 1.0), r.right_bottom());
         let ext_shown = !self.status_hidden[6];
         if !ext_shown {
             // Hidden from the menu: the bar's own face there.
@@ -531,7 +765,7 @@ impl App {
             painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.6)));
         }
         if ext_shown {
-            painter.text(egui::pos2((ext.left() + ext.right() - 12.0) / 2.0, ext.center().y), egui::Align2::CENTER_CENTER, "НТЦ Механотроника", font, p.status_text);
+            painter.text(egui::pos2((ext.left() + ext.right() - dpi::s(12.0)) / 2.0, ext.center().y), egui::Align2::CENTER_CENTER, "НТЦ Механотроника", font, p.status_text);
         }
         // CMFCRibbonStatusBar's right-click: its configuration menu.
         let bar = ui.allocate_rect(r, egui::Sense::click());
@@ -580,18 +814,35 @@ impl App {
         }
     }
 
-    /// A frameless window's edges resize it (the DWM frame's sizing border):
-    /// 5 px, corners 12 px along each edge; not while maximised.
-    /// [`MIN_VISIBLE`] in points at the monitor's scale, sent again when
-    /// the scale changes.
-    fn min_size(&mut self, ctx: &egui::Context) {
-        let Some(ppp) = ctx.input(|i| i.viewport().native_pixels_per_point) else { return };
-        if self.min_size_ppp != ppp {
-            self.min_size_ppp = ppp;
-            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::Vec2::from(MIN_VISIBLE) / ppp));
+    /// One point one device pixel at the window's monitor's scale
+    /// ([`device_zoom`], from the next frame when the scale changes), and
+    /// [`MIN_VISIBLE`] sent again then — in this frame's points, as the
+    /// runner converts it. The saved placement too, once: the runner
+    /// applied it at the scale of the monitor the window landed on, not
+    /// necessarily the primary one it was sized for.
+    fn device_pixels(&mut self, ctx: &egui::Context) {
+        let Some(native) = ctx.input(|i| i.viewport().native_pixels_per_point) else { return };
+        if DEVICE_PIXELS {
+            let zoom = device_zoom(native);
+            if ctx.zoom_factor() != zoom {
+                ctx.set_zoom_factor(zoom);
+            }
+            if let Some(r) = self.placement_px.take() {
+                let ppp = ctx.pixels_per_point();
+                // Moved first: a move onto a monitor of another dpi resizes
+                // the window by Windows' suggestion.
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition((r.min.to_vec2() / ppp).to_pos2()));
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(r.size() / ppp));
+            }
+        }
+        if self.min_size_ppp != native {
+            self.min_size_ppp = native;
+            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::Vec2::from(MIN_VISIBLE) / ctx.pixels_per_point()));
         }
     }
 
+    /// A frameless window's edges resize it (the DWM frame's sizing border):
+    /// 5 px, corners 12 px along each edge; not while maximised.
     fn resize_edges(&mut self, ctx: &egui::Context) {
         use egui::viewport::ResizeDirection as D;
         if !self.own_caption || ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
@@ -682,6 +933,7 @@ fn startup_args(args: impl Iterator<Item = String>) -> StartupArgs {
 
 impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        device_screen(ctx, raw);
         dialogs::take_dialog_tabs(ctx, raw);
     }
 
@@ -739,7 +991,7 @@ impl App {
     pub fn frame_ui(&mut self, ctx: &egui::Context) {
         dialogs::track_input(ctx);
         dialogs::route_combo_keys(ctx);
-        self.min_size(ctx);
+        self.device_pixels(ctx);
         self.run_deferred(ctx);
         // A click or a key acts after the frame that drew it (a command is
         // dispatched once its button is drawn): one more frame shows the
@@ -813,7 +1065,7 @@ impl App {
         // brush (VM).
         self.omp_sync_bar();
         if self.omp_ui.bar.is_some() {
-            egui::TopBottomPanel::top("fv_ompbar").exact_height(33.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |ui| self.omp_banner(ui));
+            egui::TopBottomPanel::top("fv_ompbar").exact_height(omp_ui::omp_bar_h()).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |ui| self.omp_banner(ui));
             egui::TopBottomPanel::top("fv_under_ompbar").exact_height(8.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
         }
         // A caption bar's face in the Office 2007 looks (VM): a box from 4 px
@@ -859,7 +1111,7 @@ impl App {
 
 
         egui::TopBottomPanel::bottom("status")
-            .exact_height(24.0)
+            .exact_height(dpi::s(24.0))
             .show_separator_line(false)
             .frame(egui::Frame::none().fill(pal.status_bg))
             .show(ctx, |ui| self.status_bar(ui));
@@ -967,6 +1219,25 @@ fn one_press_per_pass(mut raw: egui::RawInput) -> Vec<egui::RawInput> {
 mod tests {
     use super::*;
 
+    /// A missing or failed DPI call is no scale (egui's native one stays).
+    #[test]
+    fn missing_dpi_call_is_no_scale() {
+        assert_eq!(dpi_scale(None), None);
+        assert_eq!(dpi_scale(Some(0)), None);
+        assert_eq!(dpi_scale(Some(96)), Some(1.0));
+        assert_eq!(dpi_scale(Some(144)), Some(1.5));
+    }
+
+    /// The runtime resolver finds what exists and answers `None` for what
+    /// does not (an old Windows lacks the DPI calls), not a crash.
+    #[cfg(windows)]
+    #[test]
+    fn dyn_dpi_resolver_falls_back() {
+        assert!(dyn_dpi::find(b"user32.dll\0", b"GetWindowRect\0"));
+        assert!(!dyn_dpi::find(b"user32.dll\0", b"NoSuchDpiCall\0"));
+        assert!(!dyn_dpi::find(b"no-such-module.dll\0", b"GetDpiForSystem\0"));
+    }
+
     #[test]
     fn quick_key_presses_get_a_pass_each() {
         let key = |k, pressed, m| egui::Event::Key { key: k, physical_key: None, pressed, repeat: false, modifiers: m };
@@ -1000,6 +1271,23 @@ mod tests {
         // One press or none: a single pass as it came.
         let one = one_press_per_pass(egui::RawInput { events: vec![key(egui::Key::A, true, ctrl)], modifiers: none, ..Default::default() });
         assert_eq!((one.len(), one[0].modifiers), (1, none));
+    }
+
+    #[test]
+    fn device_zoom_makes_one_pixel_per_point() {
+        // Windows' steps exactly, the reporter's 154 dpi among them; every
+        // custom scale at 1 or just above (151 %: 145 dpi has no exact one).
+        for dpi in [96, 120, 144, 154, 168, 192, 216, 240, 288, 336, 384, 480] {
+            let native = dpi as f32 / 96.0;
+            assert_eq!(device_zoom(native) * native, 1.0, "{dpi} dpi");
+        }
+        for dpi in 96..=480 {
+            let native = dpi as f32 / 96.0;
+            let p = device_zoom(native) * native;
+            assert!((1.0..=1.0 + 2.0 * f32::EPSILON).contains(&p), "{dpi} dpi: {p}");
+            // A whole coordinate stays in its pixel, a centre at its centre.
+            assert_eq!(((500.0 * p).floor(), (500.5 * p).round()), (500.0, 501.0), "{dpi} dpi");
+        }
     }
 
     #[test]
@@ -1071,6 +1359,204 @@ mod window_tests {
             app.dispatch(c.clone());
         }
         app
+    }
+
+    /// #5, #6: on a monitor at 125 % or 150 % the window paints in device
+    /// pixels, as the original (system-DPI aware) does — pixel for pixel
+    /// the picture at 100 %: text rasterised at its pixel size on whole
+    /// pixels, 1 px lines one pixel wide, waveforms without gaps. Both from
+    /// the start (`make_app`'s zoom) and after the window's monitor changes
+    /// scale (the next frame on). The chrome stays at a 96 dpi system here
+    /// (`dpi`): its growth with the system DPI is
+    /// `the_chrome_grows_with_the_system_dpi`.
+    #[test]
+    fn fractional_display_scales_paint_device_pixels() {
+        let px = Vec2::new(1100.0, 700.0);
+        let fonts = app_fonts();
+        let shot = |native: f32, setup: &dyn Fn(&egui::Context)| {
+            let mut app = demo(&[]);
+            let mut ppp = 0.0;
+            let c = raster::render_native(px, native, setup, device_screen, Some(&fonts), vec![vec![]; 5], |ctx| {
+                app.frame_ui(ctx);
+                ppp = ctx.pixels_per_point();
+            });
+            (c, ppp)
+        };
+        let (base, _) = shot(1.0, &|ctx| device_options(ctx, Some(1.0)));
+        let differ = |c: &raster::Canvas| c.px.iter().zip(&base.px).filter(|(a, b)| a != b).count();
+        for native in [1.25, 1.5, 154.0 / 96.0, 145.0 / 96.0] {
+            let (c, ppp) = shot(native, &|ctx| device_options(ctx, Some(native)));
+            assert!((1.0..1.000001).contains(&ppp), "{native}: {ppp}");
+            if native * 96.0 == 145.0 {
+                // A custom 151 %: pixels per point 1.0000001 (no exact
+                // zoom), a few edge pixels off by a shade (< 0.2 %).
+                assert!(differ(&c) < c.px.len() / 500, "{native}: {} pixels differ from 100 %", differ(&c));
+            } else {
+                assert!(c.px == base.px, "{native}: {} pixels differ from 100 %", differ(&c));
+            }
+            // Started at another scale: the layout kept from the first
+            // frame (as after a resize), the pixels per point 1 again.
+            let (_, ppp) = shot(native, &|ctx| device_options(ctx, Some(1.0)));
+            assert!((1.0..1.000001).contains(&ppp), "{native} after a change: {ppp}");
+        }
+    }
+
+    /// #12: started at 125 % / 150 % (the system DPI), MFC's chrome grows
+    /// as the original's does on the VM — the ribbon body's bottom line at
+    /// row 178 / 210 (143 at 100 %), the status bar 30 / 36 px (24), the
+    /// pane captions 29 / 33 (20) — and at 150 % on a 1280 px window
+    /// «Диаграммы» takes its small buttons and «Вычисления» its icon-only
+    /// column, nothing collapses at 125 %.
+    #[test]
+    fn the_chrome_grows_with_the_system_dpi() {
+        let px = Vec2::new(1280.0, 722.0);
+        let fonts = app_fonts();
+        let rgb = |c: egui::Color32| [c.r(), c.g(), c.b()];
+        let (line, status, caption) = (rgb(egui::Color32::from_rgb(157, 179, 209)), rgb(egui::Color32::from_rgb(0x56, 0x7D, 0xB0)), rgb(egui::Color32::from_rgb(184, 207, 233)));
+        for (native, body, bar, cap, steps) in [(1.0, 143, 24, 20, [0, 0, 0, 0]), (1.25, 178, 30, 29, [0, 0, 0, 0]), (1.5, 210, 36, 33, [0, 1, 0, 1])] {
+            chrome_dpi(Some(native));
+            let mut app = demo(&[]);
+            let mut got = [9usize; 4];
+            let c = raster::render_native(px, native, |ctx| device_options(ctx, Some(native)), device_screen, Some(&fonts), vec![vec![]; 5], |ctx| {
+                app.frame_ui(ctx);
+                for (k, t) in ["Объединение", "Диаграммы", "Видимость", "Вычисления"].into_iter().enumerate() {
+                    got[k] = ctx.data(|d| d.get_temp::<usize>(ribbon::group_step_id(t))).unwrap_or(9);
+                }
+            });
+            let at = |x: usize, y: usize| c.px[y * c.w + x];
+            let first = |x: usize, k: [u8; 3]| (0..c.h).find(|&y| at(x, y) == k);
+            assert_eq!(first(1270, line), Some(body), "{native}: the ribbon's bottom line");
+            let near = |p: [u8; 3], k: [u8; 3]| p.iter().zip(k).all(|(a, b)| a.abs_diff(b) <= 2);
+            assert_eq!((0..c.h).rev().find(|&y| near(at(2, y), status)).map(|y| c.h - y), Some(bar), "{native}: the status bar");
+            // A pane caption: its top line, then its face.
+            let top = first(1100, caption).expect("a pane caption");
+            let face = (top..c.h).take_while(|&y| at(1100, y) == caption).count();
+            assert_eq!(face + 1, cap, "{native}: a pane caption");
+            assert_eq!(got, steps, "{native}: the ribbon's reduction steps");
+        }
+        dpi::set(96);
+    }
+
+    /// #12: the ОМП result bar is CMFCCaptionBar's own height (created with
+    /// −1, `0x474cbd`), 33 px at 100 % and its font's height more above —
+    /// 41 at 150 % — its face's lines on its first and last rows.
+    #[test]
+    fn the_omp_bar_takes_its_fonts_height() {
+        let px = Vec2::new(1280.0, 722.0);
+        let fonts = app_fonts();
+        let line = [157, 189, 216];
+        for (native, h) in [(1.0, 33), (1.25, 37), (1.5, 41)] {
+            dpi::set(96);
+            chrome_dpi(Some(native));
+            let mut app = demo(&[]);
+            (app.omp_ui.bar_doc, app.omp_ui.bar) = (app.active, Some("    КЗ".into()));
+            let c = raster::render_native(px, native, |ctx| device_options(ctx, Some(native)), device_screen, Some(&fonts), vec![vec![]; 5], |ctx| app.frame_ui(ctx));
+            // The first two face lines down column 600: the bar's.
+            let rows: Vec<usize> = (0..c.h).filter(|&y| c.px[y * c.w + 600] == line).take(2).collect();
+            assert_eq!(rows.len(), 2, "{native}");
+            assert_eq!(rows[1] - rows[0] + 1, h, "{native}: the ОМП bar");
+        }
+        dpi::set(96);
+    }
+
+    /// #12: «Параметры ОМП» places its tree and grid as OnInitDialog
+    /// (`0x4a7c50`) does, in pixels from its client: at 150 % (client 1069 ×
+    /// 653) from row 55 under the 34 px toolbar, 563 px tall — down past
+    /// its OK / Отмена row as on the VM — the grid from 356, 702 wide.
+    #[test]
+    fn the_omp_parameters_lay_out_from_their_client() {
+        for (dpi, client, tree, grid) in [
+            (96, (713.0, 447.0), (10.0, 44.0, 217.0, 357.0), (237.0, 44.0, 465.0, 357.0)),
+            (144, (1069.0, 653.0), (10.0, 55.0, 336.0, 563.0), (356.0, 55.0, 702.0, 563.0)),
+        ] {
+            dpi::set(dpi);
+            let size = dialogs::dlu_size(475, 275);
+            assert_eq!((size.x, size.y), client, "{dpi}");
+            let (t, g) = omp_ui::params_layout(egui::Rect::from_min_size(Pos2::ZERO, size));
+            assert_eq!((t.left(), t.top(), t.width(), t.height()), tree, "{dpi}: the tree");
+            assert_eq!((g.left(), g.top(), g.width(), g.height()), grid, "{dpi}: the grid");
+        }
+        dpi::set(96);
+    }
+
+    /// #12 on a monitor at another scale than the system's: the content
+    /// 1:1 there (`device_window`), the chrome at the system DPI — the
+    /// ribbon's bottom line on row 210 for a 150 % system on a 100 %
+    /// monitor, 143 for a 100 % system on a 150 % one.
+    #[test]
+    fn the_chrome_keeps_the_system_dpi_on_another_monitor() {
+        let px = Vec2::new(1280.0, 722.0);
+        let fonts = app_fonts();
+        let line = [157, 179, 209];
+        for (system, monitor, body) in [(1.5, 1.0, 210), (1.0, 1.5, 143), (1.25, 1.5, 178)] {
+            dpi::set(96);
+            chrome_dpi(Some(system));
+            let mut app = demo(&[]);
+            let mut ppp = 0.0;
+            let setup = |ctx: &egui::Context| {
+                device_options(ctx, Some(system));
+                device_window(ctx, monitor);
+            };
+            let c = raster::render_native(px, monitor, setup, device_screen, Some(&fonts), vec![vec![]; 5], |ctx| {
+                app.frame_ui(ctx);
+                ppp = ctx.pixels_per_point();
+            });
+            assert_eq!(ppp, 1.0, "system {system}, monitor {monitor}");
+            let row = (0..c.h).find(|&y| c.px[y * c.w + 1270] == line);
+            assert_eq!(row, Some(body), "system {system}, monitor {monitor}: the ribbon's bottom line");
+        }
+        dpi::set(96);
+    }
+
+    /// An improvement over the original (`docs/IMPROVEMENTS.md`): a window
+    /// on a monitor whose scale is not the system's (the primary one at
+    /// sign-in) paints 1:1 in that monitor's device pixels from its first
+    /// frame, where Windows bitmap-stretches the system-DPI-aware original
+    /// by the ratio of the two scales.
+    #[test]
+    fn a_monitor_at_another_scale_than_the_systems_paints_one_to_one() {
+        let px = Vec2::new(1100.0, 700.0);
+        let fonts = app_fonts();
+        let shot = |system: f32, monitor: f32| {
+            let mut app = demo(&[]);
+            let mut ppp = 0.0;
+            // As the runners start: the system scale, then the window's.
+            let setup = |ctx: &egui::Context| {
+                device_options(ctx, Some(system));
+                device_window(ctx, monitor);
+            };
+            let c = raster::render_native(px, monitor, setup, device_screen, Some(&fonts), vec![vec![]; 5], |ctx| {
+                app.frame_ui(ctx);
+                ppp = ctx.pixels_per_point();
+            });
+            (c, ppp)
+        };
+        let (base, _) = shot(1.0, 1.0);
+        for (system, monitor) in [(1.0, 1.5), (1.5, 1.0), (1.25, 1.75)] {
+            let (c, ppp) = shot(system, monitor);
+            assert_eq!(ppp, 1.0, "system {system}, monitor {monitor}");
+            assert!(c.px == base.px, "system {system}, monitor {monitor}: {} pixels differ", c.px.iter().zip(&base.px).filter(|(a, b)| a != b).count());
+        }
+    }
+
+    /// The saved placement (device pixels) sent again in the first frame's
+    /// points: the runner applied it at the scale of the monitor the window
+    /// landed on (here 1.5, the window sized for a primary one at 1.25).
+    #[test]
+    fn saved_placement_lands_in_device_pixels_on_another_monitor() {
+        let ctx = egui::Context::default();
+        device_options(&ctx, Some(1.25));
+        let mut app = App::new();
+        app.placement_px = Some(Rect::from_min_size(Pos2::new(2600.0, 40.0), Vec2::new(1906.0, 1016.0)));
+        let ppp = device_zoom(1.25) * 1.5;
+        let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1906.0, 1016.0) / ppp)), ..Default::default() };
+        raw.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(1.5);
+        let out = ctx.run(raw, |ctx| app.frame_ui(ctx));
+        let cmds = &out.viewport_output[&egui::ViewportId::ROOT].commands;
+        let size = cmds.iter().find_map(|c| if let egui::ViewportCommand::InnerSize(s) = c { Some(*s * ppp) } else { None }).expect("the size sent");
+        let at = cmds.iter().find_map(|c| if let egui::ViewportCommand::OuterPosition(p) = c { Some(p.to_vec2() * ppp) } else { None }).expect("the position sent");
+        assert!((size - Vec2::new(1906.0, 1016.0)).length() < 0.01 && (at - Vec2::new(2600.0, 40.0)).length() < 0.01, "{size:?} at {at:?}");
+        assert!(app.placement_px.is_none(), "once");
     }
 
     /// A tiling window manager ignores the minimum size: every window size
@@ -1664,6 +2150,569 @@ mod window_tests {
         assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
         w.idle(14);
         assert!(canvas(&w).is_some(), "drawn over the content");
+    }
+
+    /// An auto-hidden group slid out by hovering its strip button stays
+    /// out while the pointer rests there (issue #4): the slid-out pane
+    /// keeps to its rect beside the strip, so the button stays hovered
+    /// every frame and the 700 ms hide check finds the pointer on it — on
+    /// every edge, for a tabbed group, the pane beside it and that pane on
+    /// an edge of its own. Moved off both, it slides back; back on the
+    /// button while it slides in, the button is hovered at once.
+    #[test]
+    fn auto_hidden_pane_stays_out_while_its_button_is_hovered() {
+        use docking::{Edge, Spot, Unit};
+        let edge = |edge| Some(Spot::Edge { edge, outer: true });
+        let cases = [(Unit::Vector, edge(Edge::Right)), (Unit::Vector, edge(Edge::Left)), (Unit::Vector, edge(Edge::Top)), (Unit::Vector, edge(Edge::Bottom)), (Unit::Frequency, None), (Unit::Frequency, edge(Edge::Left))];
+        for (unit, spot) in cases {
+            let case = format!("{unit:?} {spot:?}");
+            let mut w = Win::new();
+            if let Some(spot) = spot {
+                w.app.docks.0[unit as usize].spot = spot;
+                w.idle(2);
+            }
+            w.app.docks.0[unit as usize].pin();
+            w.idle(2);
+            let strip = w.app.dock_strips[unit as usize].unwrap_or_else(|| panic!("{case}: its strip"));
+            let area = |w: &Win| w.ctx.memory(|m| m.area_rect(egui::Id::new(("fv_slide", unit))));
+            // On the first button.
+            let on = if w.app.docks.edge(unit).vertical() { Pos2::new(strip.center().x, strip.top() + 20.0) } else { Pos2::new(strip.left() + 20.0, strip.center().y) };
+            w.run(vec![egui::Event::PointerMoved(on)]);
+            let mut first = None;
+            for k in 0..80 {
+                w.run(vec![]);
+                let d = w.app.docks[unit];
+                assert!(d.on_button(), "{case}: frame {k}: the button lost its hover");
+                if d.out {
+                    first.get_or_insert(k);
+                    // The pane keeps to its rect: the strip stays uncovered.
+                    let (a, r) = (area(&w).expect("the slid-out pane"), w.app.dock_areas[unit as usize].expect("its rect"));
+                    assert!(r.expand(0.5).contains_rect(a) && !a.intersects(strip.shrink(0.5)), "{case}: frame {k}: area {a:?}, rect {r:?}, strip {strip:?}");
+                } else {
+                    assert!(first.is_none(), "{case}: frame {k}: it went back while the button was hovered");
+                }
+                if first.is_some_and(|f| k > f + 12) {
+                    assert_eq!(d.slide, 1.0, "{case}: frame {k}: out, it rests");
+                }
+            }
+            let first = first.unwrap_or_else(|| panic!("{case}: the hover slid it out"));
+            assert!(first * 50 <= 600, "{case}: out after {} ms", first * 50);
+            // Into the pane: still out; then away from both: it slides back.
+            let rect = w.app.dock_areas[unit as usize].expect("its rect");
+            w.run(vec![egui::Event::PointerMoved(rect.center())]);
+            w.idle(30);
+            assert!(w.app.docks[unit].out, "{case}: the pointer in the pane keeps it out");
+            let view = w.app.view_rects.expect("the view").0.shrink(10.0);
+            let away = [view.left_top(), view.right_top(), view.left_bottom(), view.right_bottom()].into_iter().find(|&q| !rect.contains(q) && !strip.contains(q)).expect("a point off both");
+            w.run(vec![egui::Event::PointerMoved(away)]);
+            for _ in 0..30 {
+                if !w.app.docks[unit].out {
+                    break;
+                }
+                w.run(vec![]);
+            }
+            // Sliding in, back on the button: hovered at once, out again.
+            w.idle(3);
+            assert!(!w.app.docks[unit].out && w.app.docks[unit].slide > 0.0, "{case}: sliding in");
+            w.run(vec![egui::Event::PointerMoved(on)]);
+            assert!(w.app.docks[unit].on_button(), "{case}: the button is hovered while the pane slides in");
+            w.idle(20);
+            assert!(w.app.docks[unit].out, "{case}: the hover slid it out again");
+            w.run(vec![egui::Event::PointerMoved(away)]);
+            w.idle(30);
+            let pane = w.app.dock_areas[unit as usize];
+            assert!(!w.app.docks[unit].out && pane.is_none(), "{case}: away from both it slid back ({pane:?})");
+        }
+    }
+
+    /// Auto-hide asks for frames only when it needs them — every frame of
+    /// a slide, the hover's open time, the hide check's 700 ms timer — and
+    /// keeps its timing with nothing else waking the window: frames run
+    /// only when the last one asked (the event loop with no input).
+    #[test]
+    fn auto_hide_wakes_only_for_its_slide_and_timers() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        // One frame with `events`, then frames only as asked, for `secs`;
+        // the frames' times and delays.
+        let run = |w: &mut Win, events: Vec<egui::Event>, secs: f64| {
+            let mut log = Vec::new();
+            let (start, mut events) = (w.ctx.input(|i| i.time) + 0.05, events);
+            let mut t = start;
+            while t < start + secs && log.len() < 400 {
+                let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), events: std::mem::take(&mut events), ..Default::default() };
+                let out = w.ctx.run(raw, |ctx| w.app.frame_ui(ctx));
+                let delay = out.viewport_output.get(&egui::ViewportId::ROOT).map_or(f64::INFINITY, |v| v.repaint_delay.as_secs_f64());
+                log.push((t - start, w.app.docks[Unit::Vector].out, w.app.docks[Unit::Vector].slide, delay));
+                // The delay less the frame time egui expects (a 60 Hz
+                // display): the next frame comes that much later.
+                t += (delay + 1.0 / 60.0).min(10.0);
+            }
+            log
+        };
+        // On the button: out at 400 ms, with no frames between.
+        let log = run(&mut w, vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))], 0.6);
+        let open = log.iter().find(|f| f.1).expect("the hover slid it out");
+        assert!((0.4..0.45).contains(&open.0), "out at {:.3} s: {log:?}", open.0);
+        assert!(log.len() < 5 + 12, "frames while hovering: {log:?}");
+        // Out and resting, the pointer on the button: one frame per check.
+        let log = run(&mut w, vec![], 3.0);
+        assert!(log.iter().all(|f| f.1), "it stays out");
+        let resting: Vec<_> = log.iter().filter(|f| f.2 == 1.0).collect();
+        assert!(resting.iter().skip(1).all(|f| f.3 > 0.1), "no 16 ms frames at rest: {log:?}");
+        assert!(log.len() < 12 + 6, "frames in 3 s: {}", log.len());
+        // Away from both: back at the next check, within 700 ms.
+        let view = w.app.view_rects.expect("the view").0;
+        let log = run(&mut w, vec![egui::Event::PointerMoved(view.left_bottom() + Vec2::new(20.0, -20.0))], 1.5);
+        let back = log.iter().find(|f| !f.1).expect("it slid back");
+        assert!(back.0 <= 0.75, "back at {:.3} s: {log:?}", back.0);
+        assert!(log.last().is_some_and(|f| f.2 == 0.0), "slid in: {log:?}");
+    }
+
+    /// A slid-out pane holding the focus stays out with the pointer
+    /// elsewhere (the check returns while its active flag is set,
+    /// `0x10087a4a` / `0x10089d7d`; VM: a click in the slid-out vector
+    /// diagram, the pointer away 4.5 s, still out); a press in the
+    /// oscillogram view takes the focus and it slides back at the next
+    /// check.
+    #[test]
+    fn a_focused_slid_out_pane_stays_out() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        w.run(vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r).expect("the slid-out vector diagram");
+        let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
+        let press = |w: &mut Win, at: Pos2| {
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(true)]);
+            w.run(vec![ev(false)]);
+        };
+        press(&mut w, canvas.center());
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector));
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(90);
+        assert!(w.app.docks[Unit::Vector].out, "the focus in the pane keeps it out");
+        press(&mut w, away);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::View);
+        w.idle(30);
+        assert!(!w.app.docks[Unit::Vector].out && w.app.docks[Unit::Vector].slide == 0.0, "the focus gone, it slid back");
+    }
+
+    /// A press on the strip button gives the pane the focus (`0x1005f612`;
+    /// VM: clicked out, the pointer over the view 4.5 s, still out); the
+    /// focus leaves a pane that hides — pinned to its edge and back in its
+    /// strip it slides back as soon as the pointer is away.
+    #[test]
+    fn a_pane_clicked_out_holds_the_focus_until_it_hides() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(on), ev(on, true), ev(on, false)]);
+        w.idle(2);
+        assert!(w.app.docks[Unit::Vector].out, "the click slid it out at once");
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(90);
+        assert!(w.app.docks[Unit::Vector].out, "the focus in the pane keeps it out");
+        // Pinned to its edge and back: hidden, the focus is gone.
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::View, "the focus left the hidden pane");
+        w.run(vec![egui::Event::PointerMoved(on)]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(30);
+        assert!(!w.app.docks[Unit::Vector].out, "no focus: away, it slid back");
+    }
+
+    /// The slid-out pane only slides: from its first frame out it is
+    /// painted opaque (no fade-in).
+    #[test]
+    fn a_sliding_pane_is_opaque_from_its_first_frame() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        w.app.docks.0[Unit::Vector as usize].out = true;
+        let (mut seen, mut out_frames) = (0, 0);
+        for k in 0..14 {
+            let t = w.ctx.input(|i| i.time) + 0.016;
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), events: if k == 0 { vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))] } else { vec![] }, ..Default::default() };
+            let app = &mut w.app;
+            let out = w.ctx.run(raw, |ctx| app.frame_ui(ctx));
+            let Some(rect) = w.app.dock_areas[Unit::Vector as usize] else { continue };
+            out_frames += 1;
+            let fill = w.ctx.style().visuals.panel_fill;
+            // The pane's background: the shape filling its rect.
+            let bg = out.shapes.iter().find_map(|s| match &s.shape {
+                egui::Shape::Rect(r) if (r.rect.min - rect.min).length() < 1.0 && (r.rect.max - rect.max).length() < 1.0 => Some(r.fill),
+                _ => None,
+            });
+            if let Some(f) = bg {
+                assert_eq!(f, fill, "frame {k}: the pane faded");
+                seen += 1;
+            }
+        }
+        assert_eq!(seen, out_frames, "the pane's background painted on every frame it is out");
+    }
+
+    /// A press on a pane's caption gives that pane the focus (`0x10086d23`,
+    /// `0x10086f01`): the slid-out pane's own holds it out; another pane's
+    /// takes the focus, and the slid-out pane slides back.
+    #[test]
+    fn a_caption_press_gives_its_pane_the_focus() {
+        use docking::{Edge, Spot, Unit};
+        let mut w = Win::new();
+        // Частотная on the left edge, clear of the slid-out vector pane.
+        w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: Edge::Left, outer: true };
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        let away = w.app.view_rects.expect("the view").0.center();
+        let canvas = |w: &Win, p: app::Pane| w.app.pane_canvas.iter().rev().find(|(q, _)| *q == p).map(|(_, r)| *r);
+        let press = |w: &mut Win, at: Pos2, button| {
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button, pressed, modifiers: Default::default() };
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(true)]);
+            w.run(vec![ev(false)]);
+        };
+        let freq = canvas(&w, app::Pane::Frequency).expect("Частотная docked");
+        for button in [egui::PointerButton::Primary, egui::PointerButton::Secondary] {
+            w.run(vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))]);
+            w.idle(30);
+            let v = canvas(&w, app::Pane::Vector).expect("the slid-out vector diagram");
+            assert!(w.app.dock_areas[Unit::Vector as usize].is_some_and(|a| !a.contains(away) && !a.contains(freq.center())), "away and Частотная clear of the pane");
+            press(&mut w, Pos2::new(v.left() + 60.0, v.top() - 10.0), button);
+            w.run(vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+            w.run(vec![egui::Event::PointerMoved(away)]);
+            w.idle(60);
+            assert!(w.app.docks[Unit::Vector].out, "{button:?}: its caption pressed, it stays out");
+            // Частотная's caption: the focus goes there.
+            press(&mut w, Pos2::new(freq.left() + 60.0, freq.top() - 10.0), button);
+            w.run(vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+            w.run(vec![egui::Event::PointerMoved(away)]);
+            w.idle(30);
+            assert!(!w.app.docks[Unit::Vector].out, "{button:?}: another caption pressed, it slid back");
+        }
+    }
+
+    /// An auto-hidden group whose panes are all hidden while it is out is
+    /// back in its strip when they show again (not fully out, sliding in).
+    #[test]
+    fn a_group_hidden_while_out_shows_in_its_strip() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        w.run(vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out);
+        let shown: Vec<app::Pane> = [app::Pane::Vector, app::Pane::Circle, app::Pane::Differential].into_iter().filter(|&p| w.app.panes.visible(p)).collect();
+        for &p in &shown {
+            w.app.dispatch(app::Command::TogglePane(p));
+        }
+        w.idle(2);
+        for &p in &shown {
+            w.app.dispatch(app::Command::TogglePane(p));
+        }
+        w.run(vec![egui::Event::PointerMoved(w.app.view_rects.expect("the view").0.center())]);
+        let d = w.app.docks[Unit::Vector];
+        assert!(!d.out && d.slide == 0.0, "in its strip: {d:?}");
+    }
+
+    /// A strip press gives the pane window the focus, the one focus there
+    /// is (VM: after it → leaves В1 where it was, Copy holds a metafile and
+    /// no document; after a press in the view → moves В1): the view's keys
+    /// stop, Copy gives the pane's diagram; the pane opens on the press.
+    #[test]
+    fn a_pane_focus_takes_the_keys_and_copy_from_the_view() {
+        use docking::Unit;
+        let mut w = Win::new();
+        let view = w.app.view_rects.expect("the view").0;
+        let at = view.left_top() + Vec2::new(300.0, 60.0);
+        w.press(egui::PointerButton::Primary, at, at);
+        let b1 = |w: &Win| w.app.active_doc().unwrap().main_cursor;
+        let before = b1(&w);
+        w.key(egui::Key::ArrowRight);
+        assert_ne!(b1(&w), before, "the view has the keys");
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let ev = |pressed| egui::Event::PointerButton { pos: on, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(on), ev(true)]);
+        w.idle(1);
+        assert!(w.app.docks[Unit::Vector].out, "out on the press");
+        w.run(vec![ev(false)]);
+        w.idle(14);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Pane(Unit::Vector));
+        let before = b1(&w);
+        w.key(egui::Key::ArrowRight);
+        assert_eq!(b1(&w), before, "the pane has the keys");
+        w.app.dispatch(app::Command::Copy);
+        let canvas = w.app.pane_canvas.iter().rev().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r).expect("the vector diagram");
+        assert_eq!(w.app.clip.picture(), Some((canvas.width().round() as usize, canvas.height().round() as usize)), "the pane's diagram");
+        assert_eq!(w.app.clip.get(), None, "no document");
+    }
+
+    /// The focus stays with a pane that is still shown when its group
+    /// changes — Частотная focused, then tabbed into the vector group.
+    #[test]
+    fn the_focus_follows_a_pane_into_another_group() {
+        use docking::{Spot, Unit};
+        let mut w = Win::new();
+        let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Frequency).map(|(_, r)| *r).expect("Частотная");
+        w.press(egui::PointerButton::Primary, freq.center(), freq.center());
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Frequency));
+        w.app.docks.0[Unit::Frequency as usize].spot = Spot::Tab(Unit::Vector);
+        w.idle(3);
+        assert_eq!(w.app.docks.host(Unit::Frequency), Unit::Vector);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Frequency), "still shown: the focus stays");
+    }
+
+    /// Two slid-out groups over one another: a press goes to the one on
+    /// top (egui's order — the one shown last), not the other.
+    #[test]
+    fn a_press_goes_to_the_slid_out_pane_on_top() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.app.docks.0[Unit::Frequency as usize].pin();
+        w.idle(3);
+        let button = |w: &Win, u: Unit| {
+            let s = w.app.dock_strips[u as usize].expect("its strip");
+            Pos2::new(s.center().x, s.top() + 20.0)
+        };
+        // Частотная clicked out (it keeps the focus), then the vector group
+        // hovered out over it.
+        let f = button(&w, Unit::Frequency);
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(f), ev(f, true), ev(f, false)]);
+        w.idle(14);
+        let v = button(&w, Unit::Vector);
+        w.run(vec![egui::Event::PointerMoved(v)]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Frequency].out && w.app.docks[Unit::Vector].out, "both out");
+        let canvas = |w: &Win, p: app::Pane| w.app.pane_canvas.iter().rev().find(|(q, _)| *q == p).map(|(_, r)| *r);
+        let over = canvas(&w, app::Pane::Vector).expect("the vector diagram").intersect(canvas(&w, app::Pane::Frequency).expect("Частотная"));
+        assert!(over.is_positive(), "they overlap");
+        w.press(egui::PointerButton::Primary, over.center(), over.center());
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector), "the one on top");
+    }
+
+    /// Presses inside a slid-out pane stay in it: its property grid holds it
+    /// out; a press on it outside its windows reaches neither the docked
+    /// diagram nor the view under it.
+    #[test]
+    fn presses_in_a_slid_out_pane_stay_in_it() {
+        use docking::{Edge, Spot, Unit};
+        // Out, the circle diagram in front: its property grid.
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
+        w.run(vec![egui::Event::PointerMoved(on)]);
+        w.idle(30);
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.run(vec![egui::Event::PointerMoved(w.app.dock_areas[Unit::Vector as usize].expect("out").center())]);
+        w.idle(3);
+        let [_, _, g0, g1] = w.app.slid_ranges[Unit::Vector as usize].expect("drawn out");
+        assert!(g1 > g0, "its grid drawn");
+        let grid = w.app.pane_grid[g0];
+        w.press(egui::PointerButton::Primary, grid.center(), grid.center());
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Grid(Unit::Vector));
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(60);
+        assert!(w.app.docks[Unit::Vector].out, "the grid's focus holds it out");
+        w.press(egui::PointerButton::Primary, away, away);
+        w.idle(30);
+        // Over the docked Частотная: a press on the pane off its diagram.
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        w.run(vec![egui::Event::PointerMoved(on)]);
+        w.idle(30);
+        let area = w.app.dock_areas[Unit::Vector as usize].expect("out");
+        let [c0, c1, ..] = w.app.slid_ranges[Unit::Vector as usize].expect("drawn out");
+        let freq = w.app.pane_canvas[..c0].iter().find(|(p, _)| *p == app::Pane::Frequency).map(|(_, r)| *r).expect("Частотная docked");
+        let own = w.app.pane_canvas[c0..c1].to_vec();
+        let off = (0..200)
+            .flat_map(|i| (0..200).map(move |j| Pos2::new(freq.left() + freq.width() * i as f32 / 200.0, freq.top() + freq.height() * j as f32 / 200.0)))
+            .find(|&q| area.shrink(4.0).contains(q) && q.y > area.top() + 30.0 && !own.iter().any(|(_, r)| r.expand(2.0).contains(q)))
+            .expect("a point of the pane, off its diagram, over Частотная");
+        w.press(egui::PointerButton::Primary, off, off);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::View, "not Частотная's under it");
+        // Over the view: Частотная on the left edge, the pane over the view.
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: Edge::Left, outer: true };
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        w.run(vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))]);
+        w.idle(30);
+        let area = w.app.dock_areas[Unit::Vector as usize].expect("out");
+        let [c0, c1, ..] = w.app.slid_ranges[Unit::Vector as usize].expect("drawn out");
+        let own = w.app.pane_canvas[c0..c1].to_vec();
+        let view = w.app.view_rects.expect("the view").0;
+        let canvas = own.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r).expect("the vector diagram");
+        w.press(egui::PointerButton::Primary, canvas.center(), canvas.center());
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector));
+        let off = (0..200)
+            .flat_map(|i| (0..200).map(move |j| Pos2::new(area.left() + area.width() * i as f32 / 200.0, area.top() + area.height() * j as f32 / 200.0)))
+            .find(|&q| view.contains(q) && area.shrink(4.0).contains(q) && q.y > area.top() + 30.0 && !own.iter().any(|(_, r)| r.expand(2.0).contains(q)))
+            .expect("a point of the pane, off its diagram, over the view");
+        w.press(egui::PointerButton::Primary, off, off);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector), "not the view under it");
+    }
+
+    /// A press on a menu or other popup over a pane gives that pane no
+    /// focus.
+    #[test]
+    fn a_press_on_a_popup_reaches_no_pane_under_it() {
+        let mut w = Win::new();
+        let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Frequency).map(|(_, r)| *r).expect("Частотная");
+        let at = freq.center();
+        let cover = Rect::from_center_size(at, Vec2::splat(60.0));
+        for events in [vec![egui::Event::PointerMoved(at)], vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }], vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }], vec![]] {
+            let t = w.ctx.input(|i| i.time) + 0.05;
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), events, ..Default::default() };
+            let app = &mut w.app;
+            let _ = w.ctx.run(raw, |ctx| {
+                // A popup over Частотная, drawn before the frame's focus
+                // tracking (as the menus are).
+                egui::Area::new(egui::Id::new("test_popup")).order(egui::Order::Foreground).fixed_pos(cover.min).show(ctx, |ui| {
+                    ui.allocate_exact_size(cover.size(), egui::Sense::click());
+                });
+                app.frame_ui(ctx);
+            });
+        }
+        assert_eq!(w.app.copy_focus, app::CopyFocus::View, "the popup took the press");
+    }
+
+    /// The focus belongs to the window pressed — the slid-out pane over a
+    /// docked one takes the press, and a press in a docked pane that the
+    /// slid-out pane covers later does not hold that one out.
+    #[test]
+    fn the_focus_is_the_pressed_windows_group() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
+        let canvas = |w: &Win, p: app::Pane| w.app.pane_canvas.iter().rev().find(|(q, _)| *q == p).map(|(_, r)| *r);
+        let press = |w: &mut Win, at: Pos2| {
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(true)]);
+            w.run(vec![ev(false)]);
+        };
+        // Where the slid-out vector diagram will lie over the docked Частотная.
+        let freq = canvas(&w, app::Pane::Frequency).expect("Частотная docked");
+        w.run(vec![egui::Event::PointerMoved(on)]);
+        w.idle(30);
+        let over = canvas(&w, app::Pane::Vector).expect("the slid-out vector diagram").intersect(freq);
+        assert!(over.is_positive(), "the slid-out pane covers Частотная: {over:?}");
+        let at = over.center();
+        // Pressed there while out: the vector diagram's.
+        press(&mut w, at);
+        assert_eq!((w.app.copy_focus, w.app.focus_group()), (app::CopyFocus::Diagram(app::Pane::Vector), Some(Unit::Vector)));
+        press(&mut w, away);
+        w.idle(30);
+        assert!(!w.app.docks[Unit::Vector].out, "the focus in the view: back");
+        // Pressed there while in: Частотная's; out again, away, it slides back.
+        press(&mut w, at);
+        assert_eq!((w.app.copy_focus, w.app.focus_group()), (app::CopyFocus::Diagram(app::Pane::Frequency), Some(w.app.docks.host(Unit::Frequency))));
+        w.run(vec![egui::Event::PointerMoved(on)]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out && w.app.dock_areas[Unit::Vector as usize].is_some_and(|a| a.contains(at)));
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(30);
+        assert!(!w.app.docks[Unit::Vector].out, "Частотная's focus does not hold the vector pane");
+    }
+
+    /// The hide check finds the pointer on the strip button by position
+    /// (`0x10087a4a`: PtInRect on the button's rect, whatever window is on
+    /// top there): with a window over the button the pane stays out,
+    /// though the button no longer has the hover.
+    #[test]
+    fn a_window_over_the_strip_button_keeps_the_pane_out() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        w.run(vec![egui::Event::PointerMoved(on)]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
+        // A window over the button (as a dialog or tooltip would be).
+        let cover = Rect::from_center_size(on, Vec2::splat(60.0));
+        for k in 0..40 {
+            let t = w.ctx.input(|i| i.time) + 0.05;
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), ..Default::default() };
+            let app = &mut w.app;
+            let _ = w.ctx.run(raw, |ctx| {
+                app.frame_ui(ctx);
+                egui::Area::new(egui::Id::new("test_cover")).order(egui::Order::Tooltip).fixed_pos(cover.min).show(ctx, |ui| {
+                    ui.allocate_exact_size(cover.size(), egui::Sense::click());
+                });
+            });
+            let d = w.app.docks[Unit::Vector];
+            assert!(k < 2 || !d.on_button(), "frame {k}: the cover takes the button's hover");
+            assert!(d.out, "frame {k}: the pointer on the button keeps it out");
+        }
+    }
+
+    /// The slid-out pane's area claims its click rect once per frame
+    /// without a clash at a fractional scale (debug builds flag a clash
+    /// on screen), sliding out and back on every edge.
+    #[test]
+    fn slid_out_pane_claims_its_rect_without_an_id_clash() {
+        use docking::{Edge, Spot, Unit};
+        for edge in [Edge::Left, Edge::Right, Edge::Top, Edge::Bottom] {
+            let ctx = egui::Context::default();
+            ctx.set_pixels_per_point(1.25);
+            let mut app = demo(&[]);
+            app.docks = docking::Docks::one_group();
+            app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+            app.docks.0[Unit::Vector as usize].pin();
+            for k in 0..60 {
+                // Out from frame 3 to 29 (no pointer: the check would close it).
+                let d = &mut app.docks.0[Unit::Vector as usize];
+                d.out = (3..30).contains(&k);
+                let t = ctx.input(|i| i.time) + 0.05;
+                let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1056.0, 688.0))), time: Some(t), ..Default::default() };
+                let shapes = format!("{:?}", ctx.run(raw, |ctx| app.frame_ui(ctx)).shapes);
+                assert!(!shapes.contains("Double use"), "{edge:?}: frame {k}: an id clash");
+                // The rect the hide check and the presses use is the one drawn.
+                if let Some(r) = app.dock_areas[Unit::Vector as usize] {
+                    let drawn = ctx.memory(|m| m.area_rect(egui::Id::new(("fv_slide", Unit::Vector)))).expect("drawn");
+                    assert!((drawn.min - r.min).length() < 0.01 && (drawn.max - r.max).length() < 0.01, "{edge:?}: frame {k}: drawn {drawn:?}, kept {r:?}");
+                }
+            }
+        }
     }
 
     /// The pin (mfc120u `0x100871c7`): a plain click slides the group shut
@@ -2290,7 +3339,7 @@ mod window_tests {
         let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
         let at = grid.center();
         w.press(Primary, at, at);
-        assert_eq!(w.app.copy_focus, app::CopyFocus::Grid);
+        assert!(matches!(w.app.copy_focus, app::CopyFocus::Grid(_)), "{:?}", w.app.copy_focus);
         w.app.dispatch(app::Command::Copy);
         assert_eq!(w.app.clip.picture(), None, "no picture with the grid focused");
         assert!(w.app.clip.get().is_some_and(|t| t.contains("<channels")), "the document alone");
@@ -2338,6 +3387,11 @@ mod window_tests {
             let (x, y) = s.split_once(',')?;
             Some(Pos2::new(x.trim().parse().ok()?, y.trim().parse().ok()?))
         };
+        // `FV_WINDOW_NATIVE=<scale>`: started on a monitor at that display
+        // scale (1.25 for 125 %) — the chrome at its DPI, the size in device
+        // pixels (below).
+        let native = std::env::var("FV_WINDOW_NATIVE").ok().and_then(|s| s.parse::<f32>().ok());
+        chrome_dpi(native);
         let at = pos("FV_WINDOW_CLICK").unwrap_or(Pos2::new(48.0, 12.0));
         let hover = pos("FV_WINDOW_HOVER").unwrap_or(at);
         // `FV_WINDOW_STATE=<name>` dispatches commands first.
@@ -2638,7 +3692,7 @@ mod window_tests {
         // `FV_WINDOW_LATE=preview`: the preview opened once the view is laid out.
         let late_preview = std::env::var("FV_WINDOW_LATE").is_ok_and(|v| v == "preview");
         let mut pass = 0;
-        let c = raster::render_input(size, 1.0, Some(&fonts), passes, |ctx| {
+        let paint = |ctx: &egui::Context| {
             if pass == 2 && late_preview {
                 app.dispatch(app::Command::PrintPreview);
             }
@@ -2653,7 +3707,11 @@ mod window_tests {
             }
             pass += 1;
             app.frame_ui(ctx)
-        });
+        };
+        let c = match native {
+            Some(native) => raster::render_native(size, native, |ctx| device_options(ctx, Some(native)), device_screen, Some(&fonts), passes, paint),
+            None => raster::render_input(size, 1.0, Some(&fonts), passes, paint),
+        };
         let rgba: Vec<u8> = c.px.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
         std::fs::write(path, util::png_rgba(c.w as u32, c.h as u32, &rgba)).unwrap();
     }

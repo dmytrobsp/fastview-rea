@@ -367,6 +367,24 @@ pub fn can_rename(doc: &Doc, key: ChanKey) -> Result<(), &'static str> {
     }
 }
 
+/// The text a rename refuses (397): another channel's name as shown or as
+/// in its file (`0x435da9`–`0x435e04`, the lane's `0x465f66`–`0x465faf`:
+/// `0x401bd0` and `0x4292e0` per channel), compared case-sensitively.
+pub fn name_taken(doc: &Doc, key: ChanKey, name: &str) -> bool {
+    rows(doc).into_iter().any(|k| k != key && (row_name(doc, k) == name || doc.original_name(k).is_some_and(|f| f == name)))
+}
+
+/// The name shown after a rename to `name`: it becomes the channel's alias
+/// (`+0x6c`), and an empty alias shows the file's name (`0x425960`).
+pub fn shown_after_rename(doc: &Doc, key: ChanKey, name: &str) -> String {
+    match key {
+        _ if !name.is_empty() => name.to_string(),
+        ChanKey::Analog(_) | ChanKey::Digital(_) => doc.original_name(key).unwrap_or_else(|| row_name(doc, key)),
+        // A pasted lane: its name as pasted, decoded now.
+        ChanKey::Computed(j) => doc.computed[j].name_raw.as_ref().map_or_else(|| row_name(doc, key), |r| r.seen.clone()),
+    }
+}
+
 /// Commit an in-place rename (`0x435c80`): unchanged text does nothing; a
 /// name another channel already has is refused with 397.
 pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static str> {
@@ -374,9 +392,14 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
     if name == row_name(doc, key) {
         return Ok(());
     }
-    if rows(doc).into_iter().any(|k| k != key && row_name(doc, k) == name) {
+    if name_taken(doc, key, name) {
         return Err(MSG_NAME_TAKEN);
     }
+    // The names as read are taken before the new one is written.
+    doc.ensure_name_raw();
+    let shown = shown_after_rename(doc, key, name);
+    let alias = !name.is_empty();
+    let name = shown.as_str();
     // A level or an area keeps the name it was made on: after a rename it
     // no longer resolves (nor is drawn) and is saved with that name; one
     // naming the new name now resolves (VM, L9.227 — the original's
@@ -388,8 +411,8 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
         // A pasted lane: its pasted channel is renamed along, so the paste
         // keeps its link (the original finds them by bit 14).
         ChanKey::Computed(j) => {
-            let old = std::mem::replace(&mut doc.computed[j].name, name.to_string());
-            if let Some(p) = doc.pending.iter_mut().find(|p| p.name() == old) {
+            doc.computed[j].name = name.to_string();
+            if let Some(p) = doc.pending_of_mut(j) {
                 match &mut p.pasted.channel {
                     Ok(a) => a.id = name.to_string(),
                     Err(d) => d.id = name.to_string(),
@@ -397,6 +420,7 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
             }
         }
     }
+    doc.mark_alias(key, alias);
     doc.comments = recs.iter().map(|r| doc.comment_of(r)).collect();
     doc.set.modified = true;
     Ok(())
@@ -461,10 +485,7 @@ fn coef_channel(doc: &Doc, k: ChanKey) -> Option<&fvb_core::comtrade::AnalogChan
 fn coef_channel_mut(doc: &mut Doc, k: ChanKey) -> Option<&mut fvb_core::comtrade::AnalogChannel> {
     match k {
         ChanKey::Analog(i) => doc.osc.analog.get_mut(i),
-        ChanKey::Computed(j) => {
-            let name = doc.computed.get(j).filter(|c| c.formula == crate::merge_ui::PENDING)?.name.clone();
-            doc.pending.iter_mut().find(|p| p.name() == name)?.pasted.channel.as_mut().ok()
-        }
+        ChanKey::Computed(j) => doc.pending_of_mut(j)?.pasted.channel.as_mut().ok(),
         ChanKey::Digital(_) => None,
     }
 }
@@ -736,11 +757,16 @@ impl App {
                 // a 24 px header, 17 px rows ruled in (240) across the whole
                 // list down to its bottom, the name column 172 px and the
                 // five image columns 32 px (VM).
-                let (list, _) = ui.allocate_exact_size(Vec2::new(356.0, 752.0), Sense::hover());
+                // At > 100 % the client in dialog units of the larger font,
+                // the rows and header from its height (the base unit's + 4
+                // and + 11), the columns with the client's width.
+                let (list, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(237, 463), Sense::hover());
                 ui.painter().rect_filled(list, 0.0, Color32::WHITE);
-                let (name_w, row_h, hdr_h) = (172.0, 17.0, 24.0);
-                let col_x = |c: usize| if c == 0 { 0.0 } else { name_w + 32.0 * (c - 1) as f32 };
-                let col_w = |c: usize| if c == 0 { name_w } else { 32.0 };
+                let by = crate::dpi::base_units().1 as f32;
+                let (name_w, row_h, hdr_h) = (crate::dpi::dx(172.0), by + 4.0, by + 11.0);
+                let img_w = crate::dpi::dx(32.0);
+                let col_x = |c: usize| if c == 0 { 0.0 } else { name_w + img_w * (c - 1) as f32 };
+                let col_w = |c: usize| if c == 0 { name_w } else { img_w };
                 let grid = Stroke::new(1.0f32, Color32::from_gray(240));
                 let ink = Color32::BLACK;
                 for c in 0..COLS {
@@ -762,7 +788,7 @@ impl App {
                     let p = ui.painter();
                     p.vline(r.right() - 1.5, r.y_range(), Stroke::new(1.0f32, Color32::from_gray(229)));
                     if c == 0 {
-                        p.text(r.left_center() + Vec2::new(5.0, 0.0), egui::Align2::LEFT_CENTER, "Каналы", crate::dialogs::DLG_FONT, ink);
+                        p.text(r.left_center() + Vec2::new(5.0, 0.0), egui::Align2::LEFT_CENTER, "Каналы", crate::dialogs::dlg_font(), ink);
                     } else {
                         header_glyph(p, r, c, pal.accent);
                     }
@@ -784,7 +810,7 @@ impl App {
                                     if c == 0 {
                                         let p = ui.painter().with_clip_rect(r);
                                         row_icon(&p, r, if matches!(pr, PairRow::Dif(_)) { 4 } else { 3 }, pal.accent);
-                                        p.text(r.left_center() + Vec2::new(26.0, 0.0), egui::Align2::LEFT_CENTER, pair_name(doc, pr), crate::dialogs::DLG_FONT, ink);
+                                        p.text(r.left_center() + Vec2::new(26.0, 0.0), egui::Align2::LEFT_CENTER, pair_name(doc, pr), crate::dialogs::dlg_font(), ink);
                                     } else {
                                         let resp = ui.interact(r, ui.id().with(("fv_ch_pair", pr, c)), Sense::click());
                                         cell_mark(ui.painter(), r, pair_cell(doc, pr, c), pal.accent);
@@ -814,7 +840,7 @@ impl App {
                                     row_icon(&ui.painter().with_clip_rect(r), r, if digital_row(doc, k) { 9 } else { 8 }, pal.accent);
                                     ui.painter().rect_filled(er, 0.0, Color32::WHITE);
                                     if st.refused {
-                                        ui.painter().with_clip_rect(er).text(er.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, text.as_str(), crate::dialogs::DLG_FONT, ink);
+                                        ui.painter().with_clip_rect(er).text(er.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, text.as_str(), crate::dialogs::dlg_font(), ink);
                                         continue;
                                     }
                                     let te = ui.put(er, egui::TextEdit::singleline(text).id(egui::Id::new(("fv_ch_rename", k))).frame(false).margin(egui::Margin::symmetric(1.0, 0.0)).desired_width(er.width() - 2.0));
@@ -839,9 +865,9 @@ impl App {
                                 let p = ui.painter().with_clip_rect(r);
                                 row_icon(&p, r, if digital_row(doc, key) { 9 } else { 8 }, pal.accent);
                                 let at = r.left_center() + Vec2::new(26.0, 0.0);
-                                let name = p.text(at, egui::Align2::LEFT_CENTER, row_name(doc, key), crate::dialogs::DLG_FONT, ink);
+                                let name = p.text(at, egui::Align2::LEFT_CENTER, row_name(doc, key), crate::dialogs::dlg_font(), ink);
                                 if let Some(orig) = doc.original_name(key) {
-                                    p.text(Pos2::new(name.right() + 5.0, at.y), egui::Align2::LEFT_CENTER, format!("({orig})"), crate::dialogs::DLG_FONT, GREY);
+                                    p.text(Pos2::new(name.right() + 5.0, at.y), egui::Align2::LEFT_CENTER, format!("({orig})"), crate::dialogs::dlg_font(), GREY);
                                 }
                                 if resp.clicked() {
                                     match can_rename(doc, key) {
@@ -898,16 +924,20 @@ impl App {
                 // its 25 px header, 19 px rows ruled in (240), columns 155 /
                 // 153 / 153 px; ОК and «Отмена» 110 × 23 px at (272, 380)
                 // and (392, 380) (VM).
-                let (client, _) = ui.allocate_exact_size(Vec2::new(512.0, 414.0), Sense::hover());
-                let list = Rect::from_min_size(client.min + Vec2::splat(11.0), Vec2::new(491.0, 359.0));
+                // At > 100 % in the larger font's base units, the rows and
+                // header from its height (+ 6, + 12).
+                use crate::dpi::dx;
+                let (client, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(341, 255), Sense::hover());
+                let list = crate::dialogs::dp(client, 11.0, 11.0, 491.0, 359.0);
                 let inner = list.shrink(1.0);
                 ui.painter().rect_filled(list, 0.0, Color32::from_rgb(130, 135, 144));
                 ui.painter().rect_filled(inner, 0.0, Color32::WHITE);
-                let (row_h, hdr_h) = (19.0, 25.0);
-                let cols = [(0.0, 155.0), (155.0, 153.0), (308.0, 153.0)];
+                let by = crate::dpi::base_units().1 as f32;
+                let (row_h, hdr_h) = (by + 6.0, by + 12.0);
+                let cols = [(0.0, dx(155.0)), (dx(155.0), dx(308.0) - dx(155.0)), (dx(308.0), dx(461.0) - dx(308.0))];
                 let grid = Stroke::new(1.0f32, Color32::from_gray(240));
                 let ink = Color32::BLACK;
-                let font = crate::dialogs::DLG_FONT;
+                let font = crate::dialogs::dlg_font();
                 for (x, w) in cols {
                     ui.painter().vline(inner.left() + x + w - 0.5, inner.top() + hdr_h..=inner.bottom(), grid);
                 }
@@ -992,7 +1022,7 @@ impl App {
                     }
                 });
                 });
-                let btn = |x: f32| Rect::from_min_size(client.min + Vec2::new(x, 380.0), Vec2::new(110.0, 23.0));
+                let btn = |x: f32| crate::dialogs::dp(client, x, 380.0, 110.0, 23.0);
                 if crate::dialogs::win_button(ui, btn(272.0), "ОК", true).clicked() {
                     result = Some(true);
                 }
@@ -1118,7 +1148,12 @@ mod tests {
         assert_eq!(d.original_name(ChanKey::Analog(0)), None);
         let old = d.osc.analog[0].id.clone();
         assert_eq!(rename(&mut d, ChanKey::Analog(0), "Новое"), Ok(()));
-        assert_eq!(d.original_name(ChanKey::Analog(0)), Some(old));
+        assert_eq!(d.original_name(ChanKey::Analog(0)), Some(old.clone()));
+        // Its file name stays taken; an empty alias shows it again
+        // (`0x425960`).
+        assert_eq!(rename(&mut d, ChanKey::Analog(1), &old), Err(MSG_NAME_TAKEN));
+        assert_eq!(rename(&mut d, ChanKey::Analog(0), ""), Ok(()));
+        assert_eq!((d.osc.analog[0].id.as_str(), d.original_name(ChanKey::Analog(0))), (old.as_str(), None));
     }
 
     /// `0x436d77`–`0x436e64`: the refresh keeps only Ohm / VA channels on

@@ -172,7 +172,7 @@ impl App {
             .open(&mut open)
             .show(ctx, |ui| {
                 use crate::dialogs::{dlu, win_button_en, win_edit, win_label, win_tree, TreeRow};
-                let (client, _) = ui.allocate_exact_size(Vec2::new(626.0, 504.0), egui::Sense::hover());
+                let (client, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(417, 310), egui::Sense::hover());
                 ui.scope(|ui| {
                     // The template tree (1039): lines, buttons and lines at
                     // the root; every group inserted expanded.
@@ -303,7 +303,7 @@ fn branch_icon(p: &egui::Painter, r: Rect, branch: &str) {
         _ => ("Δ", egui::Color32::from_rgb(20, 120, 130)),
     };
     p.rect(r.shrink(1.0), 2.0f32, color.gamma_multiply(0.15f32), egui::Stroke::new(1.0f32, color));
-    p.text(r.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(11.0), color);
+    p.text(r.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(11.0 * crate::dpi::img(16.0) / 16.0), color);
 }
 
 /// Where the individually laid-out forms (501–542) put their fields, at
@@ -534,7 +534,7 @@ fn template_form(ui: &mut egui::Ui, at: egui::Pos2, dialog: u16, st: &mut AddFor
 fn form_ui(ui: &mut egui::Ui, dialog: u16, st: &mut AddFormulaDlg) {
     let Some(form) = af::form(dialog) else { return };
     if form.fields.is_empty() {
-        ui.add_space(20.0);
+        ui.add_space(crate::dpi::dy(20.0));
         ui.label(af::NO_PARAMS);
         return;
     }
@@ -555,7 +555,7 @@ fn form_ui(ui: &mut egui::Ui, dialog: u16, st: &mut AddFormulaDlg) {
                 }
             } else {
                 ui.label(label);
-                field_ui(ui, id, kind, st, if pair { 90.0 } else { 200.0 });
+                field_ui(ui, id, kind, st, crate::dpi::dx(if pair { 90.0 } else { 200.0 }));
             }
             col += 1;
             if !pair || col % 2 == 0 {

@@ -61,7 +61,7 @@ pub fn tip_origin(target: Target, r: Rect, size: Vec2) -> Pos2 {
         Target::Help => Pos2::new(r.left() + 10.0, r.bottom() - half(size.y)),
         // A category tab: centred across it and on its bottom edge (VM).
         Target::Tab(_) => Pos2::new(cx - half(size.x), r.bottom() - half(size.y)),
-        Target::AppItem(_) | Target::PrintMain => Pos2::new(r.left() + 32.0 + 4.0 - size.x, r.bottom() - size.y - 4.0),
+        Target::AppItem(_) | Target::PrintMain => Pos2::new(r.left() + crate::dpi::img(32.0) + 4.0 - size.x, r.bottom() - size.y - 4.0),
         Target::PrintMenu => Pos2::new(r.right() - half(size.x), r.bottom() - size.y - 4.0),
         // A text-only menu row: at its left, centred on its middle (ours).
         Target::Recent(_) => Pos2::new(r.left() + 4.0, cy - half(size.y)),
