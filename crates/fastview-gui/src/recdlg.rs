@@ -930,6 +930,7 @@ mod tests {
         let mut d = Doc::new(osc, "x".into());
         d.path = Some(dir.join("rec.cfg"));
         d.init_record_text(Encoding::Cp1251);
+        let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(d.codepage, Encoding::Utf8);
         assert_eq!((d.osc.station.as_str(), d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("Підстанція", "Струм фази А", "Гр.\u{FFFD}.:Напруга"));
         assert_eq!((d.hdr.as_deref(), d.hdr_cp), (Some(hdr), Encoding::Utf8));

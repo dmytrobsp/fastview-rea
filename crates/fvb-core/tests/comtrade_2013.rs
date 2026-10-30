@@ -5,7 +5,7 @@
 //! samples spread over the whole float32 range and scale factors `a` near
 //! 1e‑37, and a UTF-8 `.hdr`. A small synthetic record, no real data.
 
-use fvb_core::comtrade::{self, Encoding};
+use fvb_core::comtrade::{self, CffSections, Encoding};
 
 /// The `.cfg` text (without BOM) with the given revision token.
 fn cfg(rev: &str) -> String {
@@ -37,18 +37,41 @@ const DAT: &[u8] = b"0000000001,0000000000000,-3.0e+38,9.0e+37,0,1\r\n\
 
 const HDR: &str = "Коментар: синтетичний запис для тесту\r\nПримітка: «Тест»\r\n";
 
-/// The record's three files in a fresh folder; returns the `.cfg` path.
-fn record(tag: &str, cfg: &[u8]) -> std::path::PathBuf {
+/// A record's files in a fresh temporary folder, removed when dropped.
+struct Record(std::path::PathBuf);
+
+impl Record {
+    fn cfg(&self) -> std::path::PathBuf {
+        self.0.join("rec.cfg")
+    }
+}
+
+impl Drop for Record {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The record's three files: this `.cfg`, [`DAT`], [`HDR`].
+fn record(tag: &str, cfg: &[u8]) -> Record {
+    record_with(tag, cfg, DAT)
+}
+
+fn record_with(tag: &str, cfg: &[u8], dat: &[u8]) -> Record {
     let dir = std::env::temp_dir().join(format!("fv_2013_{tag}_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("rec.cfg"), cfg).unwrap();
-    std::fs::write(dir.join("rec.dat"), DAT).unwrap();
+    std::fs::write(dir.join("rec.dat"), dat).unwrap();
     std::fs::write(dir.join("rec.hdr"), HDR).unwrap();
-    dir.join("rec.cfg")
+    Record(dir)
 }
 
 fn with_bom(text: &str) -> Vec<u8> {
     [b"\xEF\xBB\xBF".as_slice(), text.as_bytes()].concat()
+}
+
+fn load(tag: &str, cfg: &[u8]) -> comtrade::Oscillogram {
+    comtrade::load_with(record(tag, cfg).cfg(), Encoding::Cp1251).unwrap()
 }
 
 /// A BOM fixes the `.cfg` as UTF-8 whatever the program encoding (the
@@ -57,43 +80,50 @@ fn with_bom(text: &str) -> Vec<u8> {
 /// station; the exporter's U+FFFD stays in its name.
 #[test]
 fn a_bom_cfg_reads_as_utf8_whatever_the_program_encoding() {
-    let path = record("bom", &with_bom(&cfg("2013")));
+    let r = record("bom", &with_bom(&cfg("2013")));
     for enc in [Encoding::Cp1251, Encoding::Cp866, Encoding::Koi8r, Encoding::Utf8] {
-        let rec = comtrade::load_with(&path, enc).unwrap();
+        let rec = comtrade::load_with(r.cfg(), enc).unwrap();
         assert_eq!((rec.station.as_str(), rec.device.as_str()), ("Підстанція Тест", "Реєстратор 1"), "{enc:?}");
         assert_eq!(rec.analog[0].id, "Струм фази А");
         assert_eq!(rec.analog[1].id, "Гр.\u{FFFD}.:Напруга шин");
         assert_eq!(rec.digital[1].id, "Вимкнення");
-        assert_eq!(rec.text_enc, Some(Encoding::Utf8));
+        assert_eq!((rec.text_enc, rec.text_bom), (Some(Encoding::Utf8), true));
         assert_eq!((rec.rev_year, rec.rev_text.as_str()), (2013, "2013"));
     }
     // A BOM in front of a revision-1999 file counts as well.
-    let rec = comtrade::load_with(record("bom1999", &with_bom(&cfg("1999"))), Encoding::Cp1251).unwrap();
+    let rec = load("bom1999", &with_bom(&cfg("1999")));
     assert_eq!((rec.station.as_str(), rec.text_enc), ("Підстанція Тест", Some(Encoding::Utf8)));
 }
 
 /// Without a BOM a revision-2013 `.cfg` that is valid UTF-8 (with a
-/// multi-byte character) is UTF-8 too; an older revision, or bytes that are
-/// not UTF-8 (a 1251 file), stay with the program encoding as before.
+/// multi-byte character) is UTF-8 too; an older revision, bytes that are
+/// not UTF-8 (a 1251 file), or valid UTF-8 that only an accident makes so
+/// (a short 866 word reads as a CJK character) stay with the program
+/// encoding as before.
 #[test]
 fn a_bomless_2013_cfg_in_utf8_is_utf8_others_keep_the_program_encoding() {
-    let rec = comtrade::load_with(record("plain2013", cfg("2013").as_bytes()), Encoding::Cp1251).unwrap();
-    assert_eq!((rec.station.as_str(), rec.text_enc), ("Підстанція Тест", Some(Encoding::Utf8)));
-    let rec = comtrade::load_with(record("plain1999", cfg("1999").as_bytes()), Encoding::Cp1251).unwrap();
+    let rec = load("plain2013", cfg("2013").as_bytes());
+    assert_eq!((rec.station.as_str(), rec.text_enc, rec.text_bom), ("Підстанція Тест", Some(Encoding::Utf8), false));
+    let rec = load("plain1999", cfg("1999").as_bytes());
     assert_eq!(rec.text_enc, None);
     assert_eq!(rec.station, comtrade::decode_bytes("Підстанція Тест".as_bytes(), Encoding::Cp1251), "1251 as the original reads it");
     let text = cfg("2013").replace('\u{FFFD}', "?");
-    let rec = comtrade::load_with(record("cp1251", &comtrade::encode_text(&text, Encoding::Cp1251)), Encoding::Cp1251).unwrap();
+    let rec = load("cp1251", &comtrade::encode_text(&text, Encoding::Cp1251));
     assert_eq!((rec.analog[0].id.as_str(), rec.text_enc), ("Струм фази А", None));
     // Plain ASCII fixes nothing either.
     assert_eq!(comtrade::cfg_utf8(b"S,D,2013\r\n", false), None);
+    // «фаз» in 866 is valid UTF-8 (one CJK character): not taken.
+    let cp866 = comtrade::encode_text("фаз,D,2013\r\n", Encoding::Cp866);
+    assert!(std::str::from_utf8(&cp866).is_ok());
+    assert_eq!(comtrade::cfg_utf8(&cp866, false), None);
+    assert_eq!(comtrade::cfg_utf8("фаз,D,2013\r\n".as_bytes(), false).as_deref(), Some("фаз,D,2013\r\n"));
 }
 
 /// The 2013 lines: the multiplier, `time_code,local_code` (the local stamp
 /// adds the offset), `tmq_code,leapsec` ignored as in the original.
 #[test]
 fn the_2013_time_lines() {
-    let rec = comtrade::load_with(record("time", &with_bom(&cfg("2013"))), Encoding::Cp1251).unwrap();
+    let rec = load("time", &with_bom(&cfg("2013")));
     assert_eq!(rec.time_mult, 1.0);
     assert_eq!((rec.stamps.time_code.as_str(), rec.stamps.local_code.as_str()), ("+2h0", "+2h0"));
     let st = &rec.stamps;
@@ -109,7 +139,7 @@ fn the_2013_time_lines() {
 /// the raw sample back, `m` included, however small `a`.
 #[test]
 fn float32_range_samples_with_tiny_scale_factors() {
-    let rec = comtrade::load_with(record("float", &with_bom(&cfg("2013"))), Encoding::Cp1251).unwrap();
+    let rec = load("float", &with_bom(&cfg("2013")));
     let [ia, ur] = [&rec.analog[0], &rec.analog[1]];
     let v = |c: &comtrade::AnalogChannel, x: f64| c.unit_mult * c.a * x + c.b;
     assert_eq!(ia.samples, [v(ia, -3.0e+38), v(ia, 2.4e+38), v(ia, 3.4028235e+38), v(ia, -3.4028235e+38)]);
@@ -136,9 +166,53 @@ fn a_utf8_cff_reads_as_utf8() {
     let text = format!("--- file type: CFG ---\r\n{}--- file type: HDR ---\r\n{HDR}--- file type: DAT ASCII: {} ---\r\n", cfg("2013"), DAT.len());
     let file = [with_bom(&text), DAT.to_vec()].concat();
     let (rec, sections) = comtrade::parse_cff(&file, Encoding::Cp1251).unwrap();
-    assert_eq!((rec.station.as_str(), rec.analog[0].id.as_str(), rec.text_enc), ("Підстанція Тест", "Струм фази А", Some(Encoding::Utf8)));
+    assert_eq!((rec.station.as_str(), rec.analog[0].id.as_str(), rec.text_enc, rec.text_bom), ("Підстанція Тест", "Струм фази А", Some(Encoding::Utf8), true));
     assert_eq!(sections.hdr.as_deref(), Some(HDR));
     assert_eq!(rec.analog[0].samples.len(), 4);
     let (rec, _) = comtrade::parse_cff(&file[3..], Encoding::Cp1251).unwrap();
-    assert_eq!(rec.text_enc, Some(Encoding::Utf8), "no BOM: valid UTF-8, revision 2013");
+    assert_eq!((rec.text_enc, rec.text_bom), (Some(Encoding::Utf8), false), "no BOM: valid UTF-8, revision 2013");
+}
+
+/// A record read as UTF-8 is saved all in UTF-8 — Cyrillic phase and unit
+/// fields too, not a 1251 / UTF-8 mix — with the BOM it came with, so it
+/// reads back as it was under the 1251 default (a BOM-less 1999 file would
+/// not); `.cff` sections and markers likewise. Names switched to a
+/// single-byte code page («Кодировка») go out as before: that page for
+/// the names, 1251 for the rest.
+#[test]
+fn a_utf8_record_saves_and_reads_back_as_utf8() {
+    let cyr = |rev: &str| cfg(rev).replacen(",A,,A,", ",А,,кА,", 1).replacen(",,,kV,", ",В,,кВ,", 1);
+    let same = |a: &comtrade::Oscillogram, b: &comtrade::Oscillogram| {
+        assert_eq!((&a.station, &a.device), (&b.station, &b.device));
+        for (x, y) in a.analog.iter().zip(&b.analog) {
+            assert_eq!((&x.id, &x.phase, &x.raw_unit), (&y.id, &y.phase, &y.raw_unit));
+        }
+        assert_eq!(a.digital.iter().map(|d| &d.id).collect::<Vec<_>>(), b.digital.iter().map(|d| &d.id).collect::<Vec<_>>());
+        assert_eq!(b.text_enc, Some(Encoding::Utf8));
+    };
+    for (tag, bytes, bom) in [("rt1999", with_bom(&cyr("1999")), true), ("rt2013", cyr("2013").into_bytes(), false)] {
+        let rec = load(tag, &bytes);
+        assert_eq!((rec.analog[0].phase.as_str(), rec.analog[1].raw_unit.as_str()), ("А", "кВ"));
+        let (c, _) = comtrade::write(&rec, Encoding::Utf8);
+        assert_eq!(c.starts_with(b"\xEF\xBB\xBF"), bom, "{tag}");
+        assert!(std::str::from_utf8(&c).is_ok(), "{tag}: all UTF-8");
+        let back = load(&format!("{tag}b"), &c);
+        same(&rec, &back);
+        assert_eq!(back.text_bom, bom);
+    }
+    // `.cff`: the HDR section's Cyrillic in UTF-8 too.
+    let rec = load("rtcff", &with_bom(&cyr("2013")));
+    let sections = CffSections { hdr: Some(HDR.into()), ..Default::default() };
+    let file = comtrade::write_cff(&rec, &sections, Encoding::Utf8).unwrap();
+    assert!(file.starts_with(b"\xEF\xBB\xBF--- file type: CFG ---\r\n"));
+    // (Its data are int32 rows under the «ASCII» line, as the original
+    // writes them: only the text part is read back here.)
+    let nul = file.iter().position(|b| *b == 0).unwrap();
+    let text = comtrade::cfg_utf8(&file[..nul], true).expect("all UTF-8");
+    assert!(text.starts_with("--- file type: CFG ---\r\nПідстанція Тест,Реєстратор 1,2013\r\n4,2A,2D\r\n1,Струм фази А,А,,кА,"), "{text}");
+    assert!(text.contains(&format!("--- file type: HDR ---\r\n{HDR}--- file type: DAT BINARY: ")));
+    // Names switched to 1251: the file as before (no BOM, all 1251 here).
+    let (c, _) = comtrade::write(&rec, Encoding::Cp1251);
+    assert!(!c.starts_with(b"\xEF\xBB\xBF"));
+    assert!(comtrade::decode_bytes(&c, Encoding::Cp1251).starts_with("Підстанція Тест,Реєстратор 1,2013\r\n"));
 }

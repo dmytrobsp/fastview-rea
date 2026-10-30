@@ -162,7 +162,11 @@ pub struct Oscillogram {
     /// The text encoding the `.cfg` fixes itself ([`cfg_utf8`]: a UTF-8
     /// BOM, or valid UTF-8 in a revision-2013 file): its names are decoded
     /// in it whatever the program encoding, which `None` leaves in charge.
+    /// Such a record is written back all in UTF-8 while its names are
+    /// (see [`write`]).
     pub text_enc: Option<Encoding>,
+    /// The `.cfg` (`.cff`) began with the UTF-8 BOM: written back with it.
+    pub text_bom: bool,
 }
 
 /// A frequency candidate outside the file's channels: a formula channel
@@ -329,10 +333,16 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
     }
     let (cfg_path, dat_path) = sibling_paths(path)?;
     let cfg_bytes = std::fs::read(&cfg_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
-    let fixed = cfg_utf8(&cfg_bytes, false);
-    let cfg_text = fixed.clone().unwrap_or_else(|| decode_text_enc(&cfg_bytes, enc));
+    let (cfg_text, utf8) = match cfg_utf8(&cfg_bytes, false) {
+        Some(t) => (t, true),
+        None => (decode_text_enc(&cfg_bytes, enc), false),
+    };
     let (mut rec, fmt) = parse_cfg(&cfg_text)?;
-    rec.text_enc = fixed.map(|_| Encoding::Utf8);
+    drop(cfg_text);
+    if utf8 {
+        rec.text_enc = Some(Encoding::Utf8);
+        rec.text_bom = cfg_bytes.starts_with(UTF8_BOM);
+    }
     let dat = std::fs::read(&dat_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
     parse_dat(&mut rec, fmt, &dat, prog)?;
     check_samples(&rec, || crate::recset::record_base(path))?;
@@ -359,6 +369,9 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
 /// The record keeps its texts as the bytes read, the station, recorder and
 /// channel names shown through the record's code page (`0x4543e0`): so
 /// those go out in `names` (the record's code page), the rest in cp1251.
+/// A record read as UTF-8 by [`cfg_utf8`] (ours only) whose names still go
+/// out in UTF-8 is written all in UTF-8, with the BOM it came with, so it
+/// reads back as it was.
 pub fn write(osc: &Oscillogram, names: Encoding) -> (Vec<u8>, Vec<u8>) {
     write_numbered(osc, names, &[])
 }
@@ -367,7 +380,18 @@ pub fn write(osc: &Oscillogram, names: Encoding) -> (Vec<u8>, Vec<u8>) {
 /// channel i; empty = their places): channels left out of the record
 /// (the ОМП's flags) still count in the original's numbering (VM).
 pub fn write_numbered(osc: &Oscillogram, names: Encoding, dig_no: &[usize]) -> (Vec<u8>, Vec<u8>) {
-    write_rows(osc, names, dig_no, osc.format != "ASCII")
+    let (cfg, dat) = write_rows(osc, names, dig_no, osc.format != "ASCII");
+    let bom = if utf8_file(osc, names) && osc.text_bom { UTF8_BOM } else { b"" };
+    ([bom, cfg.as_slice()].concat(), dat)
+}
+
+/// The UTF-8 BOM.
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+
+/// The record is written all in UTF-8 ([`write`]): read as UTF-8 by
+/// [`cfg_utf8`], its names still in UTF-8.
+fn utf8_file(osc: &Oscillogram, names: Encoding) -> bool {
+    osc.text_enc == Some(Encoding::Utf8) && matches!(names, Encoding::Utf8 | Encoding::Auto)
 }
 
 /// The writer with the data's kind chosen: `binary` rows, or ASCII text.
@@ -467,9 +491,10 @@ fn write_rows(osc: &Oscillogram, names: Encoding, dig_no: &[usize], binary: bool
             }
         }
     }
+    let rest = if utf8_file(osc, names) { Encoding::Utf8 } else { Encoding::Cp1251 };
     let mut bytes = Vec::new();
     for (k, part) in cfg.split(['\u{1}', '\u{2}']).enumerate() {
-        bytes.extend(encode_text(part, if k % 2 == 1 { names } else { Encoding::Cp1251 }));
+        bytes.extend(encode_text(part, if k % 2 == 1 { names } else { rest }));
     }
     (bytes, dat)
 }
@@ -549,8 +574,10 @@ pub fn parse_cff(bytes: &[u8], enc: Encoding) -> Result<(Oscillogram, CffSection
 /// (`0x44fe30`), then the inner `.cfg` rule over the DAT part.
 pub fn parse_cff_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Result<(Oscillogram, CffSections), ComtradeError> {
     let nul = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
-    let fixed = cfg_utf8(&bytes[..nul], true);
-    let text = fixed.clone().unwrap_or_else(|| decode_text_enc(&bytes[..nul], enc));
+    let (text, utf8) = match cfg_utf8(&bytes[..nul], true) {
+        Some(t) => (t, true),
+        None => (decode_text_enc(&bytes[..nul], enc), false),
+    };
     let cfg = cff_section(&text, "CFG").ok_or(ComtradeError::Format)?;
     let sections = CffSections {
         inf: cff_section(&text, "INF"),
@@ -586,7 +613,10 @@ pub fn parse_cff_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) 
     }
     let dat = dat.ok_or(ComtradeError::Format)?;
     let (mut rec, fmt) = parse_cfg(&cfg)?;
-    rec.text_enc = fixed.map(|_| Encoding::Utf8);
+    if utf8 {
+        rec.text_enc = Some(Encoding::Utf8);
+        rec.text_bom = bytes.starts_with(UTF8_BOM);
+    }
     parse_dat(&mut rec, fmt, dat, prog)?;
     check_samples(&rec, cff_temp_base)?;
     if let Some(p) = prog {
@@ -637,7 +667,8 @@ pub struct CffRevisionError;
 /// Write a single-file COMTRADE (`0x44d0f0`): only records of revision ≥ 2013;
 /// `--- file type: CFG ---` + the cfg (CRLF lines), then the HDR, INF, SET
 /// sections that came with the record, then `--- file type: DAT BINARY: n---`
-/// and the data bytes. Text in CP1251.
+/// and the data bytes. Text in CP1251 (all UTF-8, BOM as read, for a
+/// record read as UTF-8 whose names still are: see [`write`]).
 pub fn write_cff(osc: &Oscillogram, sections: &CffSections, names: Encoding) -> Result<Vec<u8>, CffRevisionError> {
     write_cff_numbered(osc, sections, names, &[])
 }
@@ -651,14 +682,17 @@ pub fn write_cff_numbered(osc: &Oscillogram, sections: &CffSections, names: Enco
     // line as read); the data binary whatever that line says (VM: an
     // «ASCII» record saved as `.cff` has int32 rows).
     let (cfg, dat) = write_rows(osc, names, dig_no, true);
-    let mut out = to_cp1251("--- file type: CFG ---\r\n");
+    let utf8 = utf8_file(osc, names);
+    let text = |t: &str| if utf8 { t.as_bytes().to_vec() } else { to_cp1251(t) };
+    let mut out = if utf8 && osc.text_bom { UTF8_BOM.to_vec() } else { Vec::new() };
+    out.extend(text("--- file type: CFG ---\r\n"));
     out.extend(cfg);
     for (kind, body) in [("HDR", &sections.hdr), ("INF", &sections.inf), ("SET", &sections.set)] {
         if let Some(b) = body {
-            out.extend(to_cp1251(&format!("--- file type: {kind} ---\r\n{b}")));
+            out.extend(text(&format!("--- file type: {kind} ---\r\n{b}")));
         }
     }
-    out.extend(to_cp1251(&format!("--- file type: DAT BINARY: {}---\r\n", dat.len())));
+    out.extend(text(&format!("--- file type: DAT BINARY: {}---\r\n", dat.len())));
     out.extend(dat);
     Ok(out)
 }
@@ -995,6 +1029,7 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
         freq_sel: 0,
         extra_freq: Vec::new(),
         text_enc: None,
+        text_bom: false,
     };
     rec.rebuild_freq_track();
     Ok(rec)
@@ -1111,7 +1146,10 @@ fn decode_text_enc(bytes: &[u8], enc: Encoding) -> String {
 /// UTF-8 whatever the setting — a deliberate divergence where the original
 /// visibly fails: a file starting with the UTF-8 BOM (stripped), or one of
 /// revision 2013 that is valid UTF-8 with at least one multi-byte character
-/// (Cyrillic in 1251 / 866 / KOI8-R practically never is). A sequence that
+/// and nothing but Latin, Greek, Cyrillic, general punctuation, letterlike
+/// symbols and U+FFFD (Cyrillic in 1251 / KOI8-R practically never is
+/// valid UTF-8; a short 866 word may be, as a CJK or other far character,
+/// which the check refuses). A sequence that
 /// is not UTF-8 after a BOM reads U+FFFD; a U+FFFD written by the exporter
 /// (a name cut mid-character) stays as it is, so a save writes it back.
 pub fn cfg_utf8(bytes: &[u8], cff: bool) -> Option<String> {
@@ -1127,7 +1165,8 @@ pub fn cfg_utf8(bytes: &[u8], cff: bool) -> Option<String> {
         lines.next();
     }
     let rev = lines.next()?.split(',').nth(2)?.trim().parse::<i32>().ok()?;
-    (rev == 2013).then(|| text.to_string())
+    let plausible = |c: char| c < '\u{0530}' || ('\u{2000}'..='\u{214F}').contains(&c) || c == '\u{FFFD}';
+    (rev == 2013 && text.chars().all(plausible)).then(|| text.to_string())
 }
 
 /// Decode bytes with an encoding (the public face of the loader's decoder).
@@ -1682,6 +1721,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         freq_sel: 0,
         extra_freq: Vec::new(),
         text_enc: None,
+        text_bom: false,
     };
     // The loader rebuilds the frequency candidates (`0x45127d`), which
     // selects the first one.
