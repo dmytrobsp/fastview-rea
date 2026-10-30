@@ -742,7 +742,8 @@ pub struct Doc {
     /// 866 / 1251: file parameters «Кодировка»; see `recdlg`).
     pub codepage: Encoding,
     /// The station, recorder and channel names' bytes as read, each with
-    /// the text last decoded from them (see `Doc::set_codepage`).
+    /// the text last decoded from them, found by that text (see
+    /// `Doc::set_codepage`; an alias has none).
     pub name_raw: Vec<(Vec<u8>, String)>,
     /// The record comment (`.hdr` text, 32805) and its code page.
     pub hdr: Option<String>,
@@ -861,18 +862,13 @@ impl Doc {
     /// re-decodes them in place (`0x4543e0` → `0x425960`, issue #7), a
     /// rename in «Каналы» or on the lane writes one — none of which
     /// recomputes.
-    /// The digital list is copied anew when channels came or went since
-    /// (ОМП's КЗ flags: `omp_compute` / `omp_clear` recompute nothing).
+    /// The digital list is copied anew: ОМП's КЗ flags come, go and take
+    /// new values with no recompute (`omp_compute` / `omp_clear`).
     pub fn sync_flagged_names(&mut self) {
         for (f, c) in self.flagged.analog.iter_mut().zip(&self.osc.analog) {
             f.id.clone_from(&c.id);
         }
-        if self.flagged.digital.len() != self.osc.digital.len() {
-            self.flag_digital();
-        }
-        for (f, c) in self.flagged.digital.iter_mut().zip(&self.osc.digital) {
-            f.id.clone_from(&c.id);
-        }
+        self.flag_digital();
     }
 
     /// Digital channels as the accessor reads them: inverted with the flag.

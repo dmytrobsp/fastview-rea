@@ -213,28 +213,28 @@ impl Doc {
             .chain((0..na).map(|i| self.original_name(ChanKey::Analog(i)).is_some()))
             .chain((0..self.osc.digital.len()).map(|k| self.original_name(ChanKey::Digital(k)).is_some()))
             .collect();
-        let mut raw = std::mem::take(&mut self.name_raw).into_iter();
+        let raw = std::mem::take(&mut self.name_raw);
         let mut alias = renamed.into_iter();
-        // A name is an alias when it is not the text last decoded from its
-        // bytes; with none kept (no switch yet, so the keys were taken from
-        // names read losslessly), when it is not the file's name.
+        let mut kept = Vec::new();
+        // A name last decoded by a switch takes its bytes back (looked up by
+        // that text: channels merged or ОМП's flags may have moved them);
+        // else it is an alias when it is not the file's name (the keys are
+        // lossless then: no switch has re-decoded the names yet); else it
+        // is read from its text.
         let mut rc = |s: &mut String| {
-            let (entry, renamed) = (raw.next(), alias.next().unwrap_or(false));
-            let bytes = match entry {
-                Some((b, seen)) if seen == *s => b,
-                Some((b, _)) => {
-                    let seen = comtrade::decode_bytes(&b, cp).chars().map(comtrade::best_fit_1251).collect();
-                    return (b, seen);
-                }
-                None if renamed => return (comtrade::encode_text(s, from), s.clone()),
+            let renamed = alias.next().unwrap_or(false);
+            let bytes = match raw.iter().find(|(_, seen)| seen == s) {
+                Some((b, _)) => b.clone(),
+                None if renamed => return,
                 None => comtrade::encode_text(s, from),
             };
             *s = comtrade::decode_bytes(&bytes, cp).chars().map(comtrade::best_fit_1251).collect();
-            (bytes, s.clone())
+            kept.push((bytes, s.clone()));
         };
-        let mut kept = vec![rc(&mut self.osc.station), rc(&mut self.osc.device)];
-        kept.extend(self.osc.analog.iter_mut().map(|c| rc(&mut c.id)));
-        kept.extend(self.osc.digital.iter_mut().map(|c| rc(&mut c.id)));
+        rc(&mut self.osc.station);
+        rc(&mut self.osc.device);
+        self.osc.analog.iter_mut().for_each(|c| rc(&mut c.id));
+        self.osc.digital.iter_mut().for_each(|c| rc(&mut c.id));
         self.name_raw = kept;
         self.codepage = cp;
         self.comments = recs.iter().map(|r| self.comment_of(r)).collect();
@@ -929,6 +929,29 @@ mod tests {
         d.osc.analog[1].id = "Ток".into();
         d.set_codepage(Encoding::Cp1251);
         assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA БЛОКА 3", "Ток"));
+    }
+
+    /// A channel merged in before the record's own moves them: each still
+    /// takes its bytes back by the text last decoded from them.
+    #[test]
+    fn a_switch_after_a_merge_before_the_channels_gives_their_names_back() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[0].id = "IA БЛОКА 3".into();
+        d.osc.analog[1].id = "IB БЛОКА 3".into();
+        d.set_codepage(Encoding::Cp866);
+        d.init_set_keys();
+        d.selection = [ChanKey::Analog(2)].into();
+        app.copy_channels_for_merge();
+        app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = app.active_doc_mut().unwrap();
+        assert_eq!(d.osc.analog[1].id, "IA +T+¦L 3", "moved by the merge");
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!((d.osc.analog[1].id.as_str(), d.osc.analog[2].id.as_str()), ("IA БЛОКА 3", "IB БЛОКА 3"));
     }
 
     /// A level keeps the name it was made on across «Кодировка» as across a
