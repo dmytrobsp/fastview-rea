@@ -378,17 +378,25 @@ impl App {
         // VM: a 670 × 692 client whose left-top is where a sheet 144 px
         // narrower and 38 px taller would be centred (the Outlook bar is
         // added after; READ the place, INFERRED the cause): (1016, 317).
+        // At > 100 % (VM, 125 %) the Outlook bar keeps its 148 px and its
+        // 26 px images, its titles grow with the font (80 px for a
+        // two-line item); the page and the buttons are the sheet's dialog
+        // units (the page 604 px wide).
+        use crate::dpi::{dx, dy};
         crate::dialogs::dlg(ctx, "Быстрый анализ")
             .id(egui::Id::new("fv_quick_sheet"))
             .margin(0.0)
-            .nudge(egui::vec2(72.0, -19.0))
+            .nudge(egui::vec2(72.0, -dy(19.0)))
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(ctx, |ui| {
                 // Everything sits at its own place: no spacing after the client.
                 ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
-                let (client, _) = ui.allocate_exact_size(egui::vec2(670.0, 692.0), egui::Sense::hover());
+                // The page (520 × 658 at 100 %) right of the 150 px bar, the
+                // button strip (34) under it.
+                let (page_w, page_h) = (dx(520.0), dy(658.0));
+                let (client, _) = ui.allocate_exact_size(egui::vec2(150.0 + page_w, page_h + dy(34.0)), egui::Sense::hover());
                 let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(client.min + egui::vec2(x, y), egui::vec2(w, h));
                 ui.add_enabled_ui(enabled, |ui| {
                     // The Outlook bar (VM): (1, 1) 148 × 657 in a (185, 208,
@@ -398,7 +406,7 @@ impl App {
                     // original's) 7 px below the item's top, its title
                     // centred under it in (0, 21, 110), 13 px lines; items
                     // 42 px + the lines; no mark on the selected one.
-                    let bar = at(1.0, 1.0, 148.0, 657.0);
+                    let bar = at(1.0, 1.0, 148.0, page_h - 1.0);
                     let p = ui.painter().clone();
                     p.rect_filled(bar, 0.0, egui::Color32::from_rgb(185, 208, 237));
                     let inner = bar.shrink(1.0);
@@ -415,9 +423,11 @@ impl App {
                     let ink = egui::Color32::from_rgb(0, 21, 110);
                     let mut y = inner.top();
                     for (tab, glyph, title) in PAGES {
-                        let g = ui.fonts(|f| f.layout_job(bar_title(title, ink, inner.width())));
+                        let g = ui.fonts(|f| f.layout_job(bar_title(f, title, ink, inner.width())));
                         let lines = g.rows.len().max(1) as f32;
-                        let item = egui::Rect::from_min_size(egui::pos2(inner.left(), y), egui::vec2(inner.width(), 42.0 + 13.0 * lines));
+                        // (the line pitch 13 px, 19 at 125 %; 150 % along
+                        // that slope, not measured)
+                        let item = egui::Rect::from_min_size(egui::pos2(inner.left(), y), egui::vec2(inner.width(), 42.0 + crate::dpi::measured(13.0, 19.0, 25.0) * lines));
                         let icon = egui::Rect::from_center_size(egui::pos2(inner.center().x, y + 7.0 + 13.0), egui::vec2(26.0, 26.0));
                         if ui.rect_contains_pointer(item) {
                             // The Office 2007 hot face under the pointer (VM):
@@ -456,14 +466,14 @@ impl App {
                     // The page: (150, 0) to the client's right, (249) with a
                     // (229) line at its left and bottom; the strip below in
                     // COLOR_3DFACE with a (243) line at its top.
-                    let page = at(150.0, 0.0, 520.0, 658.0);
+                    let page = at(150.0, 0.0, page_w, page_h);
                     p.rect_filled(page, 0.0, egui::Color32::from_gray(249));
                     p.vline(page.left() + 0.5, page.y_range(), egui::Stroke::new(1.0f32, egui::Color32::from_gray(229)));
                     p.hline(page.x_range(), page.bottom() - 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_gray(229)));
                     p.hline(client.x_range(), page.bottom() + 0.5, egui::Stroke::new(1.0f32, egui::Color32::from_gray(243)));
                     // A page's template from (154, −1) in the client (VM:
                     // DIALOG 340's list at 7, 7 DLU lands at 1182, 353).
-                    let origin = client.min + egui::vec2(154.0, -1.0);
+                    let origin = client.min + egui::vec2(150.0 + dx(4.0), -1.0);
                     if self.analysis_tab == AnalysisTab::Formula {
                         self.formula_page_ui(ui, origin);
                     } else {
@@ -471,8 +481,9 @@ impl App {
                     }
                     let ok = page_index(self.analysis_tab).is_none_or(|i| self.quick[i].ok_enabled(self.analysis_tab));
                     ok_now = ok;
-                    calc = crate::dialogs::win_button_en(ui, at(509.0, 664.0, 75.0, 23.0), "Рассчитать", true, ok).clicked();
-                    cancel = crate::dialogs::win_button(ui, at(590.0, 664.0, 75.0, 23.0), "Отмена", false).clicked();
+                    let (bw, bh, by) = (dx(75.0), dy(23.0), page_h + dy(6.0));
+                    calc = crate::dialogs::win_button_en(ui, at(client.width() - dx(161.0), by, bw, bh), "Рассчитать", true, ok).clicked();
+                    cancel = crate::dialogs::win_button(ui, at(client.width() - dx(80.0), by, bw, bh), "Отмена", false).clicked();
                 });
             });
         if let Some(msg) = self.formula_page.alert {
@@ -1289,8 +1300,12 @@ const PAGES: [(AnalysisTab, &str, &str); 6] = [
 /// Tahoma at its 12 px, which wraps the titles where Segoe UI does —
 /// «Дифференциальные токи» on two lines, «Фазные сопротивления» on one),
 /// centred, wrapped 4 px in from each side.
-fn bar_title(title: &str, ink: egui::Color32, width: f32) -> egui::text::LayoutJob {
-    let mut job = egui::text::LayoutJob::simple(title.to_string(), egui::FontId::proportional(12.0), ink, width - 8.0);
+fn bar_title(fonts: &egui::epaint::Fonts, title: &str, ink: egui::Color32, width: f32) -> egui::text::LayoutJob {
+    // DrawText breaks between words only: a word wider than the bar (ours
+    // at > 100 %, «последовательность») keeps its line, centred.
+    let font = egui::FontId::proportional(crate::dpi::font(12.0));
+    let words = title.split(' ').map(|w| fonts.layout_no_wrap(w.to_string(), font.clone(), ink).size().x).fold(0.0, f32::max);
+    let mut job = egui::text::LayoutJob::simple(title.to_string(), font, ink, (width - 8.0).max(words.ceil()));
     job.halign = egui::Align::Center;
     job
 }
@@ -1306,7 +1321,7 @@ mod tests {
         let ctx = egui::Context::default();
         ctx.set_fonts(crate::app_fonts());
         let _ = ctx.run(Default::default(), |_| {});
-        let rows: Vec<usize> = PAGES.iter().map(|(_, _, t)| ctx.fonts(|f| f.layout_job(bar_title(t, egui::Color32::BLACK, 146.0))).rows.len()).collect();
+        let rows: Vec<usize> = PAGES.iter().map(|(_, _, t)| ctx.fonts(|f| f.layout_job(bar_title(f, t, egui::Color32::BLACK, 146.0))).rows.len()).collect();
         assert_eq!(rows, [2, 2, 2, 1, 2, 1], "{:?}", PAGES.map(|p| p.2));
     }
 

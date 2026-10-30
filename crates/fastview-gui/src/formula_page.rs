@@ -218,8 +218,11 @@ impl App {
         let p = ui.painter().clone();
         p.rect_filled(list, 0.0, Color32::from_rgb(130, 135, 144));
         p.rect_filled(inner, 0.0, Color32::WHITE);
-        let (hdr_h, row_h) = (25.0, 17.0);
-        let cols = [(0.0, 120.0), (120.0, 331.0)];
+        // At > 100 % the rows the font's height + 4 (VM, 125 %: 20 px; the
+        // header stays 25), the columns in dialog units (140 / 386 px).
+        let (hdr_h, row_h) = (25.0, crate::dpi::base_units().1 as f32 + 4.0);
+        let (c0, c1) = (crate::dpi::dx(120.0), crate::dpi::dx(331.0));
+        let cols = [(0.0, c0), (c0, c1)];
         let grid = Stroke::new(1.0f32, Color32::from_gray(240));
         for (x, w) in cols {
             p.vline(inner.left() + x + w - 0.5, inner.top() + hdr_h..=inner.bottom(), grid);
@@ -232,7 +235,7 @@ impl App {
         for ((x, w), t) in cols.into_iter().zip(["Название канала", "Формула"]) {
             let r = Rect::from_min_size(inner.min + egui::vec2(x, 0.0), egui::vec2(w, hdr_h));
             p.vline(r.right() - 1.5, r.y_range(), Stroke::new(1.0f32, Color32::from_gray(229)));
-            p.with_clip_rect(r).text(r.left_center() + egui::vec2(6.0, 0.0), egui::Align2::LEFT_CENTER, t, dlg_font(), Color32::BLACK);
+            p.with_clip_rect(r).text(r.left_center() + egui::vec2(crate::dpi::s(6.0), 0.0), egui::Align2::LEFT_CENTER, t, dlg_font(), Color32::BLACK);
         }
         let mut double = None;
         let mut pressed_outside = false;
@@ -267,7 +270,7 @@ impl App {
                 let editing = matches!(&fp.edit, Some((er, ec, _)) if *er == i && *ec == col);
                 if editing {
                     let Some((_, _, text)) = fp.edit.as_mut() else { continue };
-                    let resp = ui.put(r, egui::TextEdit::singleline(text).frame(false).font(dlg_font()).margin(egui::Margin::symmetric(5.0, 1.0)));
+                    let resp = ui.put(r, egui::TextEdit::singleline(text).frame(false).font(dlg_font()).margin(egui::Margin::symmetric(crate::dpi::s(5.0), 1.0)));
                     resp.request_focus();
                     if ui.input(|inp| inp.pointer.any_pressed()) && !resp.hovered() {
                         pressed_outside = true;
@@ -275,7 +278,7 @@ impl App {
                     continue;
                 }
                 let text = if col == 0 { &fp.rows[i].0 } else { &fp.rows[i].1 };
-                p.with_clip_rect(r).text(r.left_center() + egui::vec2(6.0, 0.0), egui::Align2::LEFT_CENTER, text, dlg_font(), if sel { Color32::WHITE } else { Color32::BLACK });
+                p.with_clip_rect(r).text(r.left_center() + egui::vec2(crate::dpi::s(6.0), 0.0), egui::Align2::LEFT_CENTER, text, dlg_font(), if sel { Color32::WHITE } else { Color32::BLACK });
                 let resp = ui.interact(r, ui.id().with(("fp_cell", i, col)), egui::Sense::click());
                 if resp.clicked() {
                     fp.selected = Some(i);
@@ -341,9 +344,12 @@ impl App {
 fn tri_button(ui: &mut egui::Ui, r: egui::Rect, up: bool) -> egui::Response {
     let resp = crate::dialogs::win_button(ui, r, "", false);
     let ink = egui::Color32::from_rgb(136, 0, 20);
+    // The bitmap's 9 × 5 triangle (unscaled), centred as on the 24 × 23
+    // button at 100 %.
+    let (cx, top) = ((r.left() + r.width() / 2.0 - 1.0).round(), (r.top() + r.height() / 2.0 - 2.5).round());
     for k in 0..5 {
         let half = if up { k } else { 4 - k } as f32;
-        let row = egui::Rect::from_min_size(egui::pos2(r.left() + 11.0 - half, r.top() + 9.0 + k as f32), egui::vec2(2.0 * half + 1.0, 1.0));
+        let row = egui::Rect::from_min_size(egui::pos2(cx - half, top + k as f32), egui::vec2(2.0 * half + 1.0, 1.0));
         ui.painter().rect_filled(row, 0.0, ink);
     }
     resp

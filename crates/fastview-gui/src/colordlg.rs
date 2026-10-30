@@ -30,6 +30,12 @@ const HEX_COLORS: [u32; 127] = [
 const GREYS_TOP: [u8; 8] = [0xF0, 0xD2, 0xB4, 0x96, 0x78, 0x5A, 0x3C, 0x1E];
 const GREYS_BOTTOM: [u8; 7] = [0xE1, 0xC0, 0xA5, 0x87, 0x69, 0x4B, 0x2D];
 
+/// The dialog's base units against 100 %'s (6 × 13): 1 at 96 dpi.
+fn base_ratios() -> (f32, f32) {
+    let (bx, by) = crate::dpi::base_units();
+    (bx as f32 / 6.0, by as f32 / 13.0)
+}
+
 fn rgb(c: u32) -> Color32 {
     Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8)
 }
@@ -80,27 +86,30 @@ impl App {
         let mut done: Option<bool> = None;
         // The «Цвета» template: 252 × 180 DLU (378 × 293 px).
         crate::dialogs::dlg(ctx, "Цвета").margin(0.0).collapsible(false).resizable(false).open(&mut open).show(ctx, |ui| {
-            let (client, _) = ui.allocate_exact_size(Vec2::new(378.0, 293.0), egui::Sense::hover());
-            let at = |x: f32, y: f32| client.min + Vec2::new(x, y);
+            let (client, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(252, 180), egui::Sense::hover());
+            // The tab control and the picker's cells grow with the template
+            // at > 100 % (its 100 % pixels times the base units' ratios).
+            let (fx, fy) = base_ratios();
+            let at = |x: f32, y: f32| client.min + Vec2::new(x * fx, y * fy);
             let p = ui.painter().clone();
             // The tab control (4, 4, 182 × 172 DLU) (VM): the page (249) in
             // a (229) frame from y 27; the selected tab (249) from y 7, open
             // into the page, the other (243) from y 9, both framed (229).
-            let tabs = Rect::from_min_size(at(6.0, 6.0), Vec2::new(273.0, 280.0));
-            let page = Rect::from_min_max(Pos2::new(tabs.left(), tabs.top() + 21.0), tabs.max);
+            let tabs = Rect::from_min_size(at(6.0, 6.0), Vec2::new(crate::dpi::dx(273.0), crate::dpi::dy(280.0)));
+            let page = Rect::from_min_max(Pos2::new(tabs.left(), tabs.top() + crate::dpi::dy(21.0)), tabs.max);
             let line = Color32::from_gray(229);
             p.rect_filled(page, 0.0, line);
             p.rect_filled(page.shrink(1.0), 0.0, Color32::from_gray(249));
             let mut x = tabs.left();
             for (k, title) in ["Обычные", "Спектр"].into_iter().enumerate() {
                 let sel = st.spectrum == (k == 1);
-                let w = ui.fonts(|f| f.layout_no_wrap(title.to_owned(), dlg_font(), Color32::BLACK).size().x).round() + 14.0;
+                let w = ui.fonts(|f| f.layout_no_wrap(title.to_owned(), dlg_font(), Color32::BLACK).size().x).round() + crate::dpi::s(14.0);
                 let top = tabs.top() + if sel { 1.0 } else { 3.0 };
                 let r = Rect::from_min_max(Pos2::new(x, top), Pos2::new(x + w + 1.0, page.top() + 1.0));
                 p.rect_filled(r, 0.0, line);
                 let fill = Rect::from_min_max(r.min + Vec2::splat(1.0), Pos2::new(r.right() - 1.0, if sel { page.top() + 1.0 } else { page.top() }));
                 p.rect_filled(fill, 0.0, Color32::from_gray(if sel { 249 } else { 243 }));
-                p.text(Pos2::new(r.center().x, r.top() + 10.0), egui::Align2::CENTER_CENTER, title, dlg_font(), Color32::BLACK);
+                p.text(Pos2::new(r.center().x, r.top() + crate::dpi::dy(10.0)), egui::Align2::CENTER_CENTER, title, dlg_font(), Color32::BLACK);
                 if ui.interact(r, ui.id().with(("fv_color_tab", k)), egui::Sense::click()).clicked() {
                     st.spectrum = k == 1;
                 }
@@ -117,20 +126,21 @@ impl App {
                 let mut hot = None;
                 for r in 0..13 {
                     let n = 7 + r.min(12 - r);
-                    let cy = 144.5 + 12.0 * (r as f32 - 6.0);
+                    let cy = (144.5 + 12.0 * (r as f32 - 6.0)) * fy;
                     for c in 0..n {
-                        let cx = 143.5 - 7.0 * (n as f32 - 1.0) + 14.0 * c as f32;
+                        let cx = (143.5 - 7.0 * (n as f32 - 1.0) + 14.0 * c as f32) * fx;
                         // Tiling the plane as GDI's cells do (no seams): 14
                         // wide, 16 tall, 4 px tips on 12 px rows.
                         // (0.6 px over: egui feathers every edge, which would
                         // show the page through between the cells.)
-                        let pts = hexagon(client.left() + cx - 7.6, client.top() + cy - 8.6, client.left() + cx + 7.6, client.top() + cy + 8.6, 4.3);
+                        let (hw, hh) = (7.0 * fx + 0.6, 8.0 * fy + 0.6);
+                        let pts = hexagon(client.left() + cx - hw, client.top() + cy - hh, client.left() + cx + hw, client.top() + cy + hh, 4.0 * fy + 0.3);
                         let col = rgb(HEX_COLORS[k]);
                         p.add(egui::Shape::convex_polygon(pts.clone(), col, Stroke::NONE));
                         if col == st.new {
-                            hot = Some((Rect::from_center_size(Pos2::new(client.left() + cx, client.top() + cy), Vec2::new(14.0, 16.0)), 4.0));
+                            hot = Some((Rect::from_center_size(Pos2::new(client.left() + cx, client.top() + cy), Vec2::new(14.0 * fx, 16.0 * fy)), 4.0 * fy));
                         }
-                        let cell = Rect::from_center_size(Pos2::new(client.left() + cx, client.top() + cy), Vec2::new(13.0, 12.0));
+                        let cell = Rect::from_center_size(Pos2::new(client.left() + cx, client.top() + cy), Vec2::new(13.0 * fx, 12.0 * fy));
                         if ui.interact(cell, ui.id().with(("fv_hex", k)), egui::Sense::click()).clicked() {
                             st.new = col;
                         }
@@ -140,14 +150,14 @@ impl App {
                 // The greys: the large white and black hexagons, the two rows
                 // of small ones between them (VM).
                 let mut greys: Vec<(Rect, f32, Color32)> = vec![
-                    (Rect::from_min_max(at(13.0, 244.0), at(54.0, 283.0)), 10.0, Color32::WHITE),
-                    (Rect::from_min_max(at(232.0, 244.0), at(273.0, 283.0)), 10.0, Color32::BLACK),
+                    (Rect::from_min_max(at(13.0, 244.0), at(54.0, 283.0)), 10.0 * fy, Color32::WHITE),
+                    (Rect::from_min_max(at(232.0, 244.0), at(273.0, 283.0)), 10.0 * fy, Color32::BLACK),
                 ];
                 for (i, g) in GREYS_TOP.iter().enumerate() {
-                    greys.push((Rect::from_min_size(at(63.0 + 20.0 * i as f32, 244.0), Vec2::new(20.0, 22.0)), 5.5, Color32::from_gray(*g)));
+                    greys.push((Rect::from_min_size(at(63.0 + 20.0 * i as f32, 244.0), Vec2::new(20.0 * fx, 22.0 * fy)), 5.5 * fy, Color32::from_gray(*g)));
                 }
                 for (i, g) in GREYS_BOTTOM.iter().enumerate() {
-                    greys.push((Rect::from_min_size(at(73.0 + 20.0 * i as f32, 261.0), Vec2::new(20.0, 22.0)), 5.5, Color32::from_gray(*g)));
+                    greys.push((Rect::from_min_size(at(73.0 + 20.0 * i as f32, 261.0), Vec2::new(20.0 * fx, 22.0 * fy)), 5.5 * fy, Color32::from_gray(*g)));
                 }
                 for (i, (r, tip, col)) in greys.into_iter().enumerate() {
                     let pts = hexagon(r.left() - 0.6, r.top() - 0.6, r.right() + 0.6, r.bottom() + 0.6, tip);
@@ -163,7 +173,7 @@ impl App {
                 // (VM pixels, 16 × 16 about the cell's centre: black and
                 // white steps along its outline).
                 // The greys' larger cells keep a three-line outline.
-                if let Some((r, tip)) = hot.filter(|(r, _)| r.width() > 15.0) {
+                if let Some((r, tip)) = hot.filter(|(r, _)| r.width() > 15.0 * fx) {
                     for (i, ink) in [Color32::BLACK, Color32::WHITE, Color32::BLACK].into_iter().enumerate() {
                         let d = 0.5 + i as f32;
                         p.add(egui::Shape::closed_line(hexagon(r.left() + d, r.top() + d, r.right() - d, r.bottom() - d, (tip - i as f32 * 0.5).max(1.0)), Stroke::new(1.0f32, ink)));
@@ -232,7 +242,7 @@ impl App {
 /// 18 × 80) and the six fields «Оттенок», «Насыщение», «Яркость»,
 /// «Красный», «Зеленый», «Синий» (0…255) — our drawing of MFC's.
 fn spectrum_page(ui: &mut egui::Ui, p: &egui::Painter, client: Rect, new: &mut Color32) {
-    let page = Rect::from_min_size(client.min + Vec2::new(10.0, 30.0), Vec2::ZERO);
+    let page = Rect::from_min_size(client.min + Vec2::new(crate::dpi::dx(10.0), crate::dpi::dy(30.0)), Vec2::ZERO);
     let spec = dlu(page, 2, 14, 120, 80);
     let n = 24;
     let mut mesh = egui::Mesh::default();
@@ -261,7 +271,7 @@ fn spectrum_page(ui: &mut egui::Ui, p: &egui::Painter, client: Rect, new: &mut C
         *new = hsl(hh, ss, l);
     }
     let mark = Pos2::new(spec.left() + spec.width() * h, spec.top() + spec.height() * (1.0 - s));
-    p.circle_stroke(mark, 4.0, Stroke::new(1.0f32, Color32::BLACK));
+    p.circle_stroke(mark, crate::dpi::s(4.0), Stroke::new(1.0f32, Color32::BLACK));
     let bar = dlu(page, 126, 14, 18, 80);
     let mut mesh = egui::Mesh::default();
     for i in 0..16 {
