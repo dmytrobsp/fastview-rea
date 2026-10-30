@@ -1543,7 +1543,7 @@ fn group_width_id(title: &str, step: usize) -> egui::Id {
     egui::Id::new(("fv_ribbon_group_w", title, step))
 }
 
-fn group_step_id(title: &str) -> egui::Id {
+pub(crate) fn group_step_id(title: &str) -> egui::Id {
     egui::Id::new(("fv_ribbon_group_step", title))
 }
 
@@ -2488,7 +2488,8 @@ impl App {
     pub fn keytips_paint(&self, ctx: &egui::Context) {
         let Some(level) = self.keytips.level else { return };
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("fv_keytips")));
-        let font = egui::FontId::proportional(11.0);
+        // The system font, larger at > 100 %.
+        let font = egui::FontId::proportional(crate::dpi::font(11.0));
         let o = painter.layout_no_wrap("O".into(), font.clone(), Color32::BLACK).size();
         let look = crate::keytips::office2007_box(self.skin);
         for (keys, target) in crate::keytips::tips(level) {

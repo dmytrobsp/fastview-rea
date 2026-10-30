@@ -1262,6 +1262,42 @@ mod window_tests {
         }
     }
 
+    /// #12: started at 125 % / 150 % (the system DPI), MFC's chrome grows
+    /// as the original's does on the VM — the ribbon body's bottom line at
+    /// row 178 / 210 (143 at 100 %), the status bar 30 / 36 px (24), the
+    /// pane captions 29 / 33 (20) — and at 150 % on a 1280 px window
+    /// «Диаграммы» takes its small buttons and «Вычисления» its icon-only
+    /// column, nothing collapses at 125 %.
+    #[test]
+    fn the_chrome_grows_with_the_system_dpi() {
+        let px = Vec2::new(1280.0, 722.0);
+        let fonts = app_fonts();
+        let rgb = |c: egui::Color32| [c.r(), c.g(), c.b()];
+        let (line, status, caption) = (rgb(egui::Color32::from_rgb(157, 179, 209)), rgb(egui::Color32::from_rgb(0x56, 0x7D, 0xB0)), rgb(egui::Color32::from_rgb(184, 207, 233)));
+        for (native, body, bar, cap, steps) in [(1.0, 143, 24, 20, [0, 0, 0, 0]), (1.25, 178, 30, 29, [0, 0, 0, 0]), (1.5, 210, 36, 33, [0, 1, 0, 1])] {
+            chrome_dpi(Some(native));
+            let mut app = demo(&[]);
+            let mut got = [9usize; 4];
+            let c = raster::render_native(px, native, |ctx| device_options(ctx, Some(native)), device_screen, Some(&fonts), vec![vec![]; 5], |ctx| {
+                app.frame_ui(ctx);
+                for (k, t) in ["Объединение", "Диаграммы", "Видимость", "Вычисления"].into_iter().enumerate() {
+                    got[k] = ctx.data(|d| d.get_temp::<usize>(ribbon::group_step_id(t))).unwrap_or(9);
+                }
+            });
+            let at = |x: usize, y: usize| c.px[y * c.w + x];
+            let first = |x: usize, k: [u8; 3]| (0..c.h).find(|&y| at(x, y) == k);
+            assert_eq!(first(1270, line), Some(body), "{native}: the ribbon's bottom line");
+            let near = |p: [u8; 3], k: [u8; 3]| p.iter().zip(k).all(|(a, b)| a.abs_diff(b) <= 2);
+            assert_eq!((0..c.h).rev().find(|&y| near(at(2, y), status)).map(|y| c.h - y), Some(bar), "{native}: the status bar");
+            // A pane caption: its top line, then its face.
+            let top = first(1100, caption).expect("a pane caption");
+            let face = (top..c.h).take_while(|&y| at(1100, y) == caption).count();
+            assert_eq!(face + 1, cap, "{native}: a pane caption");
+            assert_eq!(got, steps, "{native}: the ribbon's reduction steps");
+        }
+        dpi::set(96);
+    }
+
     /// The saved placement (device pixels) sent again in the first frame's
     /// points: the runner applied it at the scale of the monitor the window
     /// landed on (here 1.5, the window sized for a primary one at 1.25).
