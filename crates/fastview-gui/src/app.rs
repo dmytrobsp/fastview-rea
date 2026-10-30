@@ -1148,7 +1148,7 @@ impl Doc {
     /// carry bit 13 (`0x4245a0` → `0x425f90`), so the copy, its CMDUI and
     /// the rename treat them as computed channels (L9.188).
     pub fn dig_computed(&self, i: usize) -> bool {
-        self.osc.digital.get(i).is_some_and(|c| crate::omp_ui::KZ_PHASES.contains(&c.id.as_str()))
+        self.dig(i).omp
     }
 
     /// 32817..32819 (`FUN_0042f4b0`): when not every analog channel has the
@@ -1244,6 +1244,10 @@ pub struct DigFlags {
     /// A colour set by 33030 (`ch+0x140` / `ch+0x144`), else the table's by
     /// place.
     pub color: Option<egui::Color32>,
+    /// A flag the ОМП made (bit 13, `0x4245a0` from `0x42ead0`): found by
+    /// this, not by its name, since «Кодировка» shows it as stored while
+    /// the record's own names are re-decoded (#66).
+    pub omp: bool,
 }
 
 /// An undo/redo entry: the record's data model (`doc+0x180 … 0x27f`,

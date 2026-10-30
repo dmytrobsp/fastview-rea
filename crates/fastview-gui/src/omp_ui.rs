@@ -259,13 +259,18 @@ impl App {
         // in the order C, B, A (`0x4a158a`…`0x4a15f6`): they read А, B, C
         // above the record's own digital channels.
         let (na, nd) = (d.osc.analog.len(), d.osc.digital.len());
+        // The flags already there are those marked as the ОМП's (their
+        // names may read otherwise after «Кодировка»), in order.
+        let mut have = (0..d.osc.digital.len()).filter(|&i| d.dig(i).omp).collect::<Vec<_>>().into_iter();
         for k in [0, 1, 2] {
             let samples = flags[k].clone();
-            match d.osc.digital.iter_mut().find(|c| c.id == KZ_PHASES[k]) {
-                Some(c) => c.samples = samples,
+            match have.next() {
+                Some(i) => d.osc.digital[i].samples = samples,
                 None => {
                     let index = d.osc.digital.len() as u32 + 1;
                     d.osc.digital.push(fvb_core::DigitalChannel { index, id: KZ_PHASES[k].into(), phase: String::new(), normal: 0, samples });
+                    let i = d.osc.digital.len() - 1;
+                    d.dig_mut(i).omp = true;
                 }
             }
         }
@@ -289,13 +294,14 @@ impl App {
             d.computed.retain(|c| c.name != L_KZ);
             // The flags lead the digital list: their shown / value flags go
             // with them.
-            let keep: Vec<bool> = d.osc.digital.iter().map(|c| !KZ_PHASES.contains(&c.id.as_str())).collect();
+            let keep: Vec<bool> = (0..d.osc.digital.len()).map(|i| !d.dig(i).omp).collect();
             d.retain_digital_keys(&keep);
             let mut it = keep.iter();
             d.digital_visible.retain(|_| *it.next().unwrap_or(&true));
             let mut it = keep.iter();
             d.dig_flags.retain(|_| *it.next().unwrap_or(&true));
-            d.osc.digital.retain(|c| !KZ_PHASES.contains(&c.id.as_str()));
+            let mut it = keep.iter();
+            d.osc.digital.retain(|_| *it.next().unwrap_or(&true));
         });
         if removed {
             d.channels_changed();
@@ -1608,6 +1614,34 @@ mod tests {
         assert!(d.computed.iter().all(|c| c.name != L_KZ));
         assert!(d.osc.digital.iter().all(|c| !KZ_PHASES.contains(&c.id.as_str())));
         assert!(app.omp_result().is_none());
+    }
+
+    /// «Кодировка» spares the flags (bit 13: `0x425960` shows a computed
+    /// channel's name as stored), and the clear finds them again (#66): no
+    /// garbled flags left behind, no duplicates after a re-run.
+    #[test]
+    fn code_page_switch_keeps_the_flags_findable() {
+        let mut app = demo_app();
+        grounded(&mut app);
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app.dispatch(Command::OmpAnalysis);
+        let own = app.active_doc().unwrap().osc.digital.len() - 3;
+        let names = |app: &crate::app::App| -> Vec<String> { app.active_doc().unwrap().osc.digital.iter().take(3).map(|c| c.id.clone()).collect() };
+        assert_eq!(names(&app), KZ_PHASES);
+        for cp in [fvb_core::comtrade::Encoding::Cp866, fvb_core::comtrade::Encoding::Cp1251] {
+            app.active_doc_mut().unwrap().set_codepage(cp);
+            assert_eq!(names(&app), KZ_PHASES, "the flags keep their names across a switch");
+            assert!((0..3).all(|i| app.active_doc().unwrap().dig_computed(i)));
+        }
+        app.active_doc_mut().unwrap().set_codepage(fvb_core::comtrade::Encoding::Cp866);
+        // A re-run replaces the flags in place...
+        app.run_omp();
+        assert_eq!(app.active_doc().unwrap().osc.digital.len(), own + 3, "no duplicates");
+        // ...and the clear removes them whatever the code page.
+        app.dispatch(Command::OmpAnalysis);
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.osc.digital.len(), own, "no flags left");
+        assert!(!d.dig_computed(0));
     }
 
     #[test]

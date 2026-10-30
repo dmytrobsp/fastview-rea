@@ -732,7 +732,7 @@ impl App {
         d.digital_visible.resize(d.osc.digital.len(), true);
         for (i, p) in (nd..d.osc.digital.len()).zip(&pend_d) {
             if let Some((invert, remove_dc, mode)) = p.flags {
-                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode, color: None };
+                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode, color: None, omp: false };
             }
         }
         d.move_appended(at_a, nb, at_d, nd);
