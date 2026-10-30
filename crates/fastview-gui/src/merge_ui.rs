@@ -462,8 +462,10 @@ impl App {
             lane.before = if c.pasted.channel.is_ok() { at_analog } else { Some(at_digital) };
             c.lane = lane.seq;
             // Its name as pasted is its raw name (`+0x64`), read through the
-            // 1251 code page as `0x425960` narrows it.
-            lane.name_raw = Some(crate::app::RawName { bytes: fvb_core::comtrade::encode_text(&lane.name, fvb_core::comtrade::Encoding::Cp1251), seen: lane.name.clone(), alias: false });
+            // 1251 code page as `0x425960` narrows it — kept as bytes the
+            // way the record reads its own (`recdlg::name_bytes_of`).
+            let bytes = crate::recdlg::name_bytes_of(&lane.name, d.read_enc, fvb_core::comtrade::Encoding::Cp1251);
+            lane.name_raw = Some(crate::app::RawName { bytes, seen: lane.name.clone(), alias: false });
             d.computed.push(lane);
             d.selection.insert(ChanKey::Computed(d.computed.len() - 1));
             d.pending.push(c);

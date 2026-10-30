@@ -1195,6 +1195,36 @@ mod tests {
         assert_eq!((d.osc.analog[1].id.as_str(), d.osc.analog[2].id.as_str()), ("IA БЛОКА 3", "IB БЛОКА 3"));
     }
 
+    /// On a UTF-8 / KOI8-R record a pasted lane's name follows «Кодировка»
+    /// as the record's own names do: 1251 its ANSI, 866 its OEM, and the
+    /// record's own encoding the name as pasted.
+    #[test]
+    fn a_lane_pasted_into_a_utf8_record_keeps_its_name() {
+        use crate::app::ChanKey;
+        for read in [Encoding::Utf8, Encoding::Koi8r] {
+            let mut app = demo_app();
+            let d = app.active_doc_mut().unwrap();
+            d.osc.text_enc = Some(read);
+            d.osc.analog[3].id = "Ток фази В".into();
+            d.init_record_text(Encoding::Cp1251);
+            d.init_set_keys();
+            d.selection = [ChanKey::Analog(3)].into();
+            app.copy_channels_for_merge();
+            app.paste_channels_for_merge();
+            let d = app.active_doc_mut().unwrap();
+            let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+            let pasted = d.computed[j].name.clone();
+            assert!(pasted.starts_with("Ток фази В"), "{pasted}");
+            for cp in [Encoding::Cp1251, Encoding::Cp866, read] {
+                d.set_codepage(cp);
+                let want = decode_name(&comtrade::encode_text(&pasted, read), read, cp);
+                assert_eq!(d.computed[j].name, want, "{read:?} → {cp:?}");
+                assert!(d.computed[j].name.starts_with(&d.osc.analog[3].id), "{read:?} → {cp:?}: as the record's own channel");
+            }
+            assert_eq!(d.computed[j].name, pasted, "{read:?}: back as pasted");
+        }
+    }
+
     /// A pasted lane's name is re-decoded too (VM: «IA БЛОКА 3 (вст.)»
     /// read as 866 lists «IA +T+¦L 3 (тёЄ.)»), and comes back.
     #[test]
