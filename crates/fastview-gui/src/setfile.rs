@@ -571,7 +571,9 @@ impl Doc {
                 show_flags: Self::merged_flags(t, &key, self.digital_flags(k), known_d) & mask,
                 primary_mul: 1.0,
                 secondary_mul: 1.0,
-                alias: self.alias(na + k, &self.osc.digital[k].id),
+                // The ОМП's flags show their stored names: no alias, in any
+                // code page (#66).
+                alias: if self.dig(k).omp { String::new() } else { self.alias(na + k, &self.osc.digital[k].id) },
                 custom_color: self.dig(k).color.map(colorref),
             };
             recset::write_channel(t.section_mut(&key), &rec);

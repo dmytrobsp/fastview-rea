@@ -261,11 +261,17 @@ impl App {
         let (na, nd) = (d.osc.analog.len(), d.osc.digital.len());
         // The flags already there are those marked as the ОМП's (their
         // names may read otherwise after «Кодировка»), in order.
+        // As the original finds them: by the shown name (`0x42ecf0`), so a
+        // record's own channel named like a flag is taken as it.
         let mut have = (0..d.osc.digital.len()).filter(|&i| d.dig(i).omp).collect::<Vec<_>>().into_iter();
         for k in [0, 1, 2] {
             let samples = flags[k].clone();
-            match have.next() {
-                Some(i) => d.osc.digital[i].samples = samples,
+            let found = have.next().or_else(|| d.osc.digital.iter().position(|c| c.id == KZ_PHASES[k]).filter(|&i| !d.dig(i).omp));
+            match found {
+                Some(i) => {
+                    d.osc.digital[i].samples = samples;
+                    d.dig_mut(i).omp = true;
+                }
                 None => {
                     let index = d.osc.digital.len() as u32 + 1;
                     d.osc.digital.push(fvb_core::DigitalChannel { index, id: KZ_PHASES[k].into(), phase: String::new(), normal: 0, samples });
@@ -294,7 +300,7 @@ impl App {
             d.computed.retain(|c| c.name != L_KZ);
             // The flags lead the digital list: their shown / value flags go
             // with them.
-            let keep: Vec<bool> = (0..d.osc.digital.len()).map(|i| !d.dig(i).omp).collect();
+            let keep: Vec<bool> = (0..d.osc.digital.len()).map(|i| !d.dig(i).omp && !KZ_PHASES.contains(&d.osc.digital[i].id.as_str())).collect();
             d.retain_digital_keys(&keep);
             let mut it = keep.iter();
             d.digital_visible.retain(|_| *it.next().unwrap_or(&true));
@@ -1642,6 +1648,47 @@ mod tests {
         let d = app.active_doc().unwrap();
         assert_eq!(d.osc.digital.len(), own, "no flags left");
         assert!(!d.dig_computed(0));
+    }
+
+    /// The flags are saved with no alias whatever the code page: the
+    /// original writes an empty `AliasName` for them (#66).
+    #[test]
+    fn flags_are_stored_without_an_alias_after_a_code_page_switch() {
+        let mut app = demo_app();
+        grounded(&mut app);
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app.dispatch(Command::OmpAnalysis);
+        let d = app.active_doc_mut().unwrap();
+        d.init_set_keys();
+        d.set_codepage(fvb_core::comtrade::Encoding::Cp866);
+        let mut t = fvb_core::recset::SetTree::default();
+        d.store_settings(&mut t, false);
+        let na = d.osc.analog.len();
+        for k in 0..3 {
+            let sec = t.section(&d.file_key(na + k)).expect("the flag's section");
+            assert_eq!(sec.get_str("AliasName", "absent"), "", "flag {k}");
+        }
+    }
+
+    /// As in the original (`0x42ecf0`: by the shown name), a record's own
+    /// digital channel named like a flag is the one the run overwrites and
+    /// the clear deletes.
+    #[test]
+    fn an_own_channel_named_like_a_flag_is_taken_by_name() {
+        let mut app = demo_app();
+        grounded(&mut app);
+        let d = app.active_doc_mut().unwrap();
+        d.selection.insert(ChanKey::Analog(0));
+        let n = d.osc.sample_count();
+        let own = d.osc.digital.len();
+        d.osc.digital.push(fvb_core::DigitalChannel { index: own as u32 + 1, id: KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples: vec![true; n] });
+        d.digital_visible.resize(own + 1, true);
+        app.dispatch(Command::OmpAnalysis);
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.osc.digital.len(), own + 3, "the own channel is reused: two flags added, not three");
+        assert_eq!(d.osc.digital.iter().filter(|c| c.id == KZ_PHASES[0]).count(), 1);
+        app.dispatch(Command::OmpAnalysis);
+        assert_eq!(app.active_doc().unwrap().osc.digital.len(), own, "the clear deletes it by name too (the own channel included)");
     }
 
     #[test]
