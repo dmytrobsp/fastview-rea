@@ -1549,6 +1549,32 @@ mod tests {
         }
     }
 
+    /// A channel merged into a UTF-8 record while «866» shows keeps its
+    /// bytes as that record reads them: back in UTF-8 it shows what a 1251
+    /// record would, 866 shows it as merged again, and it is no rename.
+    #[test]
+    fn a_channel_merged_under_866_into_a_utf8_record_round_trips() {
+        use crate::app::ChanKey;
+        let mut osc = comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
+        osc.text_enc = Some(Encoding::Utf8);
+        let mut d = Doc::new(osc, "x".into());
+        d.init_record_text(Encoding::Cp1251);
+        d.init_set_keys();
+        d.set_codepage(Encoding::Cp866);
+        let (na, nd) = (d.osc.analog.len(), d.osc.digital.len());
+        let samples = vec![false; d.osc.sample_count()];
+        d.osc.digital.push(fvb_core::DigitalChannel { index: nd as u32 + 1, id: "Ток".into(), phase: String::new(), normal: 0, samples });
+        d.digital_visible.resize(nd + 1, true);
+        d.move_appended(na, na, nd, nd);
+        assert_eq!(d.original_name(ChanKey::Digital(nd)), None, "the file's name");
+        d.set_codepage(Encoding::Utf8);
+        let as_1251 = comtrade::recode("Ток", Encoding::Cp866, Encoding::Cp1251);
+        assert_eq!(d.osc.digital[nd].id, as_1251, "what a 1251 record shows, no U+FFFD");
+        assert_eq!(d.original_name(ChanKey::Digital(nd)), None);
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.osc.digital[nd].id, "Ток");
+    }
+
     /// A stored `Oscillogram/Codepage` applies to a UTF-8 record too
     /// (`0x44f808`): 0 = OEM (its bytes read as 866), 1 = ANSI, the names
     /// as read — UTF-8.

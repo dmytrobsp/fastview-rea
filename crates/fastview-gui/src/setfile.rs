@@ -253,7 +253,8 @@ impl Doc {
             return k.clone();
         }
         let id = if i < self.osc.analog.len() { &self.osc.analog[i].id } else { &self.osc.digital[i - self.osc.analog.len()].id };
-        comtrade::recode(id, self.codepage, Encoding::Cp1251)
+        // Its bytes as read (`recdlg::name_bytes_of`), as 1251 text.
+        comtrade::decode_bytes(&crate::recdlg::name_bytes_of(id, self.read_enc, self.codepage), Encoding::Cp1251)
     }
 
     /// A group member's name as the member set keeps it (`+0x64`, ANSI
@@ -274,12 +275,13 @@ impl Doc {
     /// its own name. Called before the channels move.
     pub fn move_appended_keys(&mut self, at_a: usize, nb: usize, at_d: usize, nd: usize) {
         // The names' bytes kept by «Кодировка» move alike (a new name's are
-        // its text's in the record's code page).
+        // its text shown in the record's code page taken back to the bytes
+        // as read, `recdlg::name_bytes_of`).
         if self.name_raw.len() == 2 + nb + nd {
             let mut old = std::mem::take(&mut self.name_raw);
             let mut d = old.split_off(2 + nb);
             let mut a = old.split_off(2);
-            let own = |id: &String| (comtrade::encode_text(id, self.codepage), id.clone());
+            let own = |id: &String| (crate::recdlg::name_bytes_of(id, self.read_enc, self.codepage), id.clone());
             a.extend(self.osc.analog[nb..].iter().map(|c| own(&c.id)));
             d.extend(self.osc.digital[nd..].iter().map(|c| own(&c.id)));
             a[at_a..].rotate_right(self.osc.analog.len() - nb);
@@ -292,7 +294,7 @@ impl Doc {
             return;
         }
         let old = std::mem::take(&mut self.set.keys);
-        let own = |id: &str| comtrade::recode(id, self.codepage, Encoding::Cp1251);
+        let own = |id: &str| comtrade::decode_bytes(&crate::recdlg::name_bytes_of(id, self.read_enc, self.codepage), Encoding::Cp1251);
         let mut a: Vec<String> = self.osc.analog.iter().enumerate().map(|(i, c)| old.get(i).filter(|_| i < nb).cloned().unwrap_or_else(|| own(&c.id))).collect();
         let mut d: Vec<String> = self.osc.digital.iter().enumerate().map(|(k, c)| old.get(nb + k).filter(|_| k < nd).cloned().unwrap_or_else(|| own(&c.id))).collect();
         let (ka, kd) = (a.len() - nb, d.len() - nd);
