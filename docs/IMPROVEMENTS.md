@@ -33,8 +33,8 @@ misbehaves and the better behaviour is obvious (the maintainer,
   original shows «?» (the ANSI narrowing of `0x422300`, under UTF-8 too);
   ours keeps the character. Reason: it is what the file says — lossless,
   saved back byte for byte, and it marks the cut.
-- **A `.hdr` beside a UTF-8 `.cfg`.** Ours reads it as UTF-8 too, whatever
-  the program encoding. The original reads the `.hdr` in the program
+- **A `.hdr` beside a UTF-8 `.cfg`.** Ours reads it as UTF-8 too when it is
+  valid UTF-8, whatever the program encoding (otherwise it guesses as before). The original reads the `.hdr` in the program
   encoding or guesses 866 / 1251, so under 1251 a UTF-8 export's comment
   (32805) is mojibake there. Reason: the comment of a UTF-8 record is
   UTF-8 text, as its names are.

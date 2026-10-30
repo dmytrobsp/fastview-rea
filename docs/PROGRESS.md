@@ -4,57 +4,55 @@ The current state, in short. This page is rewritten when things change, never ap
 What happened before is in the milestones' ledgers ([milestones/](milestones/README.md)), the record of the original
 ([original/](original/README.md)), [history/](history/) and `git log`.
 
-Last rewritten: 2026-10-30 (milestone 0.4.0 in flight; tracking moved to GitHub Issues).
+Last rewritten: 2026-10-30 (v0.4.0 released; milestone 0.4.0 closed).
 
 ## Latest release
 
-- **v0.3.0**, 2026-10-25: [release page](https://github.com/dmytrobsp/fastview-rea/releases/tag/v0.3.0). Builds for
-  Linux x86-64, Windows x86-64 and macOS (universal), each one flat archive, made by CI.
-- Since then on `main`: the runs of the original moved to throwaway Windows clones at 1280 × 800, which surfaced and
-  fixed a series of size-dependent differences (L9.392–L9.403).
+- **v0.4.0**, 2026-10-30: [release page](https://github.com/dmytrobsp/fastview-rea/releases/tag/v0.4.0). Linux x86-64,
+  Windows x86-64 and macOS (universal), each one flat archive, built by CI from the tag.
+- What it brought ([milestone 0.4.0](https://github.com/dmytrobsp/fastview-rea/milestone/1), merged by #87): the first
+  user feedback on v0.3.0 — auto-hidden panes that stay out (#4), crisp display scaling with MFC's chrome growing as
+  the original's (#5, #6, #12), quick analysis and every channel reference after «Кодировка» (#7) —, COMTRADE 2013
+  UTF-8 exports such as Siemens SIPROTEC 7KE85 (#8).
+- Checked: the whole suite on Linux (CI, gates) and on Windows in a throwaway clone (590 passed); the release exe
+  starts on Windows 10 before 1607 again (no statically imported DPI functions). Not run: the eframe GPU path on
+  Windows, two monitors at different scales on hardware.
+- Before it: v0.3.0 (2026-10-25), v0.2.0, v0.1.0.
 
 ## Where the reconstruction stands
 
-- Every engine (formulas, readers / writers, signal maths, ОМП, characteristics, analysis views) and the UI layer
-  read and reconciled: the record runs L1–L9.403 ([original/](original/README.md)); the program's own code is
-  91.8 % covered by cited functions (`tools/coverage.py`: 1118 of 1803 functions, none of the large or medium ones
-  uncited).
-- Ours runs on Linux, Windows (GPU or its software runner) and macOS. Deliberate improvements:
-  [IMPROVEMENTS.md](IMPROVEMENTS.md); differences the maintainer accepted: [ACCEPTED-DIFFERENCES.md](ACCEPTED-DIFFERENCES.md).
+- Every engine and the UI layer read and reconciled: the record runs L1–L9.408 ([original/](original/README.md)); 91.8 %
+  of the program's own code is in cited functions (`tools/coverage.py`).
+- Deliberate improvements: [IMPROVEMENTS.md](IMPROVEMENTS.md); differences the maintainer accepted:
+  [ACCEPTED-DIFFERENCES.md](ACCEPTED-DIFFERENCES.md).
 
 ## In flight
 
-- **Milestone [0.4.0](https://github.com/dmytrobsp/fastview-rea/milestone/1)** — the first user feedback on v0.3.0
-  (#1–#3) and a new record format (#8). Plan and ledger: [milestones/0.4.0.md](milestones/0.4.0.md). Pull requests
-  into `milestone/0.4.0`: #9 (auto-hide, #4), #10 (COMTRADE 2013 UTF-8 exports, #8), #11 (fractional display
-  scaling, #5 #6), #13 (quick analysis after «Кодировка», #7), #14 (the chrome at display scaling, #12; stacked on
-  #11).
-- **The workflow** moved to the milestone model on 2026-10-30: [AGENTS.md](../AGENTS.md),
-  [agents/workflow.md](agents/workflow.md), [agents/windows-testing.md](agents/windows-testing.md). The completion
-  plan's open items, the record's residuals, the old "out of reach" list and the units' follow-ups are filed as
-  issues #15–#66 (milestone `later`); the out-of-reach ones are being reviewed with the maintainer for acceptance.
+- Nothing: no milestone is open. The workflow ([AGENTS.md](../AGENTS.md), [agents/workflow.md](agents/workflow.md),
+  [agents/review.md](agents/review.md)) was run end to end for the first time in 0.4.0; its ledger has the retro.
 
 ## Next topics
 
-- Finish 0.4.0: the units' follow-ups, the merge gates, the final review, the milestone pull request, then a release
-  on the maintainer's word.
-- The backlog in `later`: the scenario checklist against the original, per-skin looks, the remaining residuals.
-  With no milestone open, the controller proposes the next one; the maintainer decides.
-
-List the queue: `gh issue list -S '-label:triage'`.
+- **The next milestone**, proposed to the maintainer: candidates are #60 + #72 (the display factor per sample and
+  the original's sin / cos bit for bit — a spike already matched them), #57 / #71 (own rates after a merge), #85 (the
+  pre-1607 DPI fallback), the drag-and-drop gaps #73–#76, and the 0.4.0 follow-ups (#61–#70, #77–#83, #86).
+- **Waiting for the maintainer:** #74 (a drop on another record's view: match the original or do nothing), #75
+  (accept the cross-instance drag difference?), #72's question (flat channels' harmonics as «0»?).
+- **Waiting for samples:** #49 (`.sto`), #59 (an OSC2 record), #72 (records at 2 / 4 kHz).
+- The rest of the queue: the `later` milestone (`gh issue list -m later -S '-label:triage'`).
 
 ## Where things live
 
 | What | Where |
 |---|---|
 | Agent instructions, hard rules | [AGENTS.md](../AGENTS.md) (start here); `CLAUDE.local.md` (main checkout) for this machine |
-| The workflow | [agents/workflow.md](agents/workflow.md); Windows runs: [agents/windows-testing.md](agents/windows-testing.md) |
+| The workflow | [agents/workflow.md](agents/workflow.md), reviews [agents/review.md](agents/review.md), Windows runs [agents/windows-testing.md](agents/windows-testing.md) |
 | The queue | [GitHub Issues](https://github.com/dmytrobsp/fastview-rea/issues), milestones and labels |
-| Milestones | [milestones/](milestones/README.md): plan and ledger per milestone |
+| Milestones, designs | [milestones/](milestones/README.md): plan and ledger per milestone; [design/](design/README.md) |
 | What the original does | [original/](original/README.md): L1–L9.x and the specs |
 | Deliberate differences | [IMPROVEMENTS.md](IMPROVEMENTS.md) (improvements), [ACCEPTED-DIFFERENCES.md](ACCEPTED-DIFFERENCES.md) (accepted by the maintainer) |
 | History | [history/](history/): the completion plan (to 2026-10-30), the ledger's session notes |
-| Tools | [tools/README.md](../tools/README.md); the milestone helper `tools/milestone/milestone.py` |
+| Tools | [tools/README.md](../tools/README.md); `tools/milestone/milestone.py`, `tools/review-package.sh` |
 
 ## Keeping this page
 
