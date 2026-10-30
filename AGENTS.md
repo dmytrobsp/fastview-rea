@@ -17,7 +17,8 @@ holds this machine's specifics — the shared test boxes and the claim tool, the
 | `crates/fastview-gui` | the egui application (`fastview`): views, ribbon, panes, dialogs, printing, the software runner |
 | [docs/PROGRESS.md](docs/PROGRESS.md) | where the project stands now: latest release, the milestone in flight, next topics |
 | [docs/original/](docs/original/README.md) | the record of what the original does, item by item (`L1`–`L9.x`), and the distilled specs |
-| [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md) | every deliberate difference from the original, with its reason |
+| [docs/IMPROVEMENTS.md](docs/IMPROVEMENTS.md) | every deliberate improvement over the original, with its reason |
+| [docs/ACCEPTED.md](docs/ACCEPTED.md) | differences the maintainer accepted (hard to fix, little benefit, almost invisible) |
 | [docs/milestones/](docs/milestones/README.md) | each milestone's plan and committed ledger |
 | `docs/agents/` | for agents: [workflow.md](docs/agents/workflow.md), [windows-testing.md](docs/agents/windows-testing.md) |
 | `docs/history/` | the old completion plan and the ledger's session notes |
@@ -72,7 +73,8 @@ Run `tools/gates.sh` as its own command, never chained with a commit.
 - **Behaviour first, then looks.** Behaviour identical to the original; looks generally the same — small visual
   differences (a pixel, a font width) are acceptable and noted, not chased. Deliberate improvements over the original
   are allowed where it visibly fails and the better behaviour is obvious; each one is documented in
-  [IMPROVEMENTS.md](docs/IMPROVEMENTS.md) with the original's behaviour and the reason.
+  [IMPROVEMENTS.md](docs/IMPROVEMENTS.md) with the original's behaviour and the reason. A difference left unfixed is
+  recorded in [ACCEPTED.md](docs/ACCEPTED.md) only when the maintainer accepts it; until then it is an open issue.
 - **A refused action** (a permission prompt, a safety check): stop, check `git status` for partial writes, explain,
   and give the maintainer the exact command. Never reword or retry it to get around the refusal.
 - **The maintainer's word** is needed for: tags and releases, force-pushes and history rewrites, deleting anything on
@@ -96,5 +98,6 @@ Full text: [docs/agents/workflow.md](docs/agents/workflow.md).
 5. **Build in small verified steps**: the test that fails without the fix first, `tools/gates.sh` green, one commit
    each. Check the original in its binary and in a clone; say what was checked how (UNIT, VM, NOT).
 6. **Record**: what the original does goes into [docs/original/](docs/original/README.md); deliberate differences
-   into [IMPROVEMENTS.md](docs/IMPROVEMENTS.md); the milestone's events into its ledger. Anything left open is an
-   issue, never a line in a file.
+   into [IMPROVEMENTS.md](docs/IMPROVEMENTS.md), accepted ones into [ACCEPTED.md](docs/ACCEPTED.md) (decisions live
+   in docs; issues are their entry points); the milestone's events into its ledger. Anything left open is an issue,
+   never a line in a file.

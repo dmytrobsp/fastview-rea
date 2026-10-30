@@ -28,15 +28,22 @@ Everything to do is an issue; nothing is queued in a file — not in the record 
   issues. When none is open, don't pick from `later` on your own: propose a milestone (a few related issues, and why
   they go together); the maintainer decides.
 - **Labels**: the kind (`bug`, `minor`, `feature`, `known-issue`, `improvement` — a deliberate difference from the
-  original); `area:*` (ui, diagrams, formats, omp, print, scaling, windows, tools, docs, ci); `size:s` / `size:m` /
+  original); `area:*` (ui, diagrams, formats, formulas, omp, print, scaling, windows, tools, docs, ci); `size:s` / `size:m` /
   `size:l` (`l` needs a design first); `needs-vm` (needs a run of the original in a Windows clone); `needs-user` (a
   decision only the maintainer can make); `process` (how the work gets done); `triage` (a report nobody has looked at
-  yet — the issue forms set it). `-label:triage` is the curated queue.
+  yet — the issue forms set it); `accepted` (closed: a difference the maintainer accepted, see below).
+  `-label:triage` is the curated queue.
 - **Commits that fix an issue** say `Fixes #N` (the pull request too).
 - **New items** — a residual difference from the original, a bug found on the way, a review finding outside the
   unit's scope, a wish the maintainer adds — become issues with public wording. Only the controller files them; for
   a batch, show the maintainer the drafts first. A residual is never left as a line in the record: the entry links
   the issue (`Residual: #N`).
+- **Decisions live in docs, issues are their entry points.** A deliberate improvement is recorded in
+  [IMPROVEMENTS.md](../IMPROVEMENTS.md) by the pull request that makes it (the original's behaviour, ours, the
+  reason, the issue). A difference the maintainer accepts — hard to fix for little benefit, almost invisible — is
+  recorded in [ACCEPTED.md](../ACCEPTED.md) (what differs, where it shows, why it isn't fixed, the decision with its
+  date), and its issue is closed as not planned with the `accepted` label and a link to the entry. Only the
+  maintainer accepts a difference; agents propose.
 - **User reports** (often in Ukrainian or Russian) stay open as filed; the controller splits them into issues it can
   work, links them, and doesn't close or comment on the reporter's issue without the maintainer.
 
@@ -81,8 +88,8 @@ repository. Only the controller runs it. Pushes run from the main checkout, whic
    (`extracted/` and `CLAUDE.local.md` are only there); the hard rules of AGENTS.md (publishing, user data, shell,
    identity and trailer, guard); the clone rules of [windows-testing.md](windows-testing.md) with the unit's own
    `FV_CLONE` file; and the limits: **never `git push`, never `gh pr` / `gh issue` writes, never edit the record of
-   the original, IMPROVEMENTS.md or the milestone ledger** (the report carries the drafts), never run
-   `milestone.py`.
+   the original, ACCEPTED.md or the milestone ledger** (the report carries the drafts), never run `milestone.py`. A
+   deliberate improvement adds its own IMPROVEMENTS.md entry in the unit.
 2. **Implementation.** Reproduce first (headless or in a clone); read the original in its binary where behaviour must
    be matched; the test that fails without the fix (shown failing, by reverting the fix); `tools/gates.sh` →
    GATES-OK; one commit per logical step.
@@ -111,8 +118,8 @@ repository. Only the controller runs it. Pushes run from the main checkout, whic
    1. the pull request's head equals the local unit branch; CI green on it;
    2. `milestone.py gate NAME UNIT`; `tools/gates.sh` in the gate worktree on the merge result;
    3. `git push origin milestone/NAME` from the main checkout (GitHub marks the pull request merged);
-   4. the record entry (`docs/original/`), IMPROVEMENTS.md entries and the ledger line, committed on `main`; the
-      follow-up issues filed; `milestone.py rm NAME UNIT`.
+   4. the record entry (`docs/original/`) and the ledger line, committed on `main`; the follow-up issues filed;
+      `milestone.py rm NAME UNIT`.
    A red gate: `ungate`, the unit goes back to its implementer (it merges the milestone tip into its branch and
    fixes it); a conflict the same way.
 
@@ -138,7 +145,8 @@ repository. Only the controller runs it. Pushes run from the main checkout, whic
 - Our own words only: no disassembly, no decompiler output, no resource text.
 - Entries come from the unit's pull request body and are written on `main` by the controller at the merge, so units
   never conflict over the record.
-- A deliberate difference goes into [IMPROVEMENTS.md](../IMPROVEMENTS.md) too, with the reason.
+- A deliberate improvement goes into [IMPROVEMENTS.md](../IMPROVEMENTS.md) too, with the reason; a difference the
+  maintainer accepted into [ACCEPTED.md](../ACCEPTED.md). Neither list is a task list.
 
 ## Making a change
 

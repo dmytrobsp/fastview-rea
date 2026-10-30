@@ -1,14 +1,16 @@
 # Deliberate differences from the original
 
 FastView-REA reproduces Fast View 5's behaviour; where it behaves
-differently on purpose, the difference is listed here. Each entry says what
-the original does (addresses in `FastView.exe` / `mfc120u.dll` as
-references), what ours does, and why. A difference that is not listed here
+differently on purpose — an improvement — the difference is listed here.
+Each entry says what the original does (addresses in `FastView.exe` /
+`mfc120u.dll` as references), what ours does, and why, with the issue or
+pull request it came from. Differences we know of and don't fix are a
+separate list: [ACCEPTED.md](ACCEPTED.md). A difference listed in neither
 is a bug.
 
-Ours departs from the original only where the original visibly fails or
-misbehaves and the better behaviour is obvious, or where reproducing it
-is out of reach (those are listed in `docs/history/completion-plan.md`, W6).
+Ours improves on the original only where the original visibly fails or
+misbehaves and the better behaviour is obvious (the maintainer,
+2026-10-30). The pull request that makes an improvement adds its entry.
 
 ## Extras
 
