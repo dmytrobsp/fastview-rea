@@ -58,7 +58,105 @@ use eframe::egui;
 /// client. Physical pixels: the original is system-DPI aware.
 const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 
+/// One point is one device pixel at any display scale. The original is
+/// system-DPI aware (its manifest's `dpiAware`), so Windows does not
+/// stretch it, and it paints its views in device pixels: their fonts are
+/// cell heights (Tahoma 15 / 13, `0x404df9`) and their pens 1 px, at
+/// every scale (VM at 125 %: the lanes, rulers, waveforms and diagrams
+/// pixel for pixel as at 100 %). Ours lays out and paints in whole pixels
+/// too (fonts sized in pixels, pixel-snapped strokes, the aliased
+/// polylines): at egui's native fractional scale (1.25, 1.5) its 1 px
+/// strokes came out 1 or 2 px wide and its text resampled (#5, #6).
+/// Windows only: the original's platform (elsewhere egui's native scale
+/// stays, a Retina screen's 2 included).
+const DEVICE_PIXELS: bool = cfg!(any(windows, test));
+
+/// The zoom that makes egui's pixels per point (zoom · native) 1: exactly
+/// where an f32 does it, else just above (0.99999994 would floor a whole
+/// coordinate into the pixel before, 1.0000001 floors and rounds as 1).
+fn device_zoom(native: f32) -> f32 {
+    // A positive float's neighbours are a bit pattern apart.
+    let (up, down) = (|z: f32| f32::from_bits(z.to_bits() + 1), |z: f32| f32::from_bits(z.to_bits() - 1));
+    let mut z = 1.0 / native;
+    while z * native < 1.0 {
+        z = up(z);
+    }
+    while down(z) * native >= 1.0 {
+        z = down(z);
+    }
+    z
+}
+
+/// The primary monitor's display scale (its effective dpi / 96, as winit
+/// sizes a new window by), the process made per-monitor DPI aware first —
+/// as winit makes it — so that Windows reports device pixels (the work
+/// area too).
+#[cfg(windows)]
+fn system_scale() -> Option<f32> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTOPRIMARY};
+    use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, MDT_EFFECTIVE_DPI};
+    let (mut x, mut y) = (0u32, 0u32);
+    // SAFETY: process-wide settings and queries into two local u32s.
+    let ok = unsafe {
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        GetDpiForMonitor(MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY), MDT_EFFECTIVE_DPI, &mut x, &mut y) == 0
+    };
+    (ok && x > 0).then(|| x as f32 / 96.0)
+}
+
+#[cfg(not(windows))]
+fn system_scale() -> Option<f32> {
+    None
+}
+
+/// The runner's screen in whole points when they are device pixels: at a
+/// scale with no exact [`device_zoom`] (custom ones, 151 %) the pixels
+/// per point are 1.0000001 and the window 1280 px wide 1279.9999 points.
+fn device_screen(ctx: &egui::Context, raw: &mut egui::RawInput) {
+    let native = raw.viewports.get(&egui::ViewportId::ROOT).and_then(|v| v.native_pixels_per_point).or_else(|| ctx.input(|i| i.viewport().native_pixels_per_point));
+    if let (true, Some(native), Some(r)) = (DEVICE_PIXELS, native, raw.screen_rect) {
+        if ((ctx.zoom_factor() * native) - 1.0).abs() < 1e-6 {
+            raw.screen_rect = Some(egui::Rect::from_min_max(r.min.round(), r.max.round()));
+        }
+    }
+}
+
+/// Device pixels from the first frame at the system `scale` (each frame
+/// keeps them at the window's monitor's, `App::device_pixels`). No zoom by
+/// Ctrl + / − / 0: the original has none.
+fn device_options(ctx: &egui::Context, scale: Option<f32>) {
+    ctx.options_mut(|o| {
+        o.zoom_factor = scale.filter(|_| DEVICE_PIXELS).map_or(1.0, device_zoom);
+        o.zoom_with_keyboard = false;
+    });
+}
+
+/// The window made on a monitor at `native` (not necessarily the
+/// primary one the system scale is): device pixels there from its first
+/// frame. Ours is per-monitor DPI aware, 1:1 on every monitor — the
+/// original, system-DPI aware, is bitmap-stretched by Windows there
+/// (`docs/IMPROVEMENTS.md`).
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn device_window(ctx: &egui::Context, native: f32) {
+    if DEVICE_PIXELS {
+        ctx.options_mut(|o| o.zoom_factor = device_zoom(native));
+    }
+}
+
+/// The display scale of the monitor eframe's window is on (its dpi / 96).
+#[cfg(windows)]
+fn window_scale(w: &impl winit::raw_window_handle::HasWindowHandle) -> Option<f32> {
+    use winit::raw_window_handle::RawWindowHandle;
+    let RawWindowHandle::Win32(h) = w.window_handle().ok()?.as_raw() else { return None };
+    // SAFETY: a query on our own live window.
+    let dpi = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(h.hwnd.get() as windows_sys::Win32::Foundation::HWND) };
+    (dpi > 0).then(|| dpi as f32 / 96.0)
+}
+
 fn main() -> eframe::Result<()> {
+    // Before the work area is read (`default_frame_size`).
+    let scale = system_scale();
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1320.0, 860.0])
         .with_min_inner_size(MIN_VISIBLE)
@@ -73,13 +171,24 @@ fn main() -> eframe::Result<()> {
     // run the frame is CW_USEDEFAULT's: placed by Windows, three quarters of
     // the work area less its invisible borders (VM: 1906 × 1016 shown of
     // a 2560 × 1392 work area).
+    let mut placement = None;
     if let Some((r, max)) = window_placement(&persist::Store::load()) {
         viewport = viewport.with_inner_size(r.size()).with_position(r.min).with_maximized(max);
+        placement = (!max).then_some(r);
     } else if let Some(size) = default_frame_size() {
         viewport = viewport.with_inner_size(size);
     }
+    // The software runner makes its window after `make_app` has set the
+    // device zoom (`device_zoom`): the builder's sizes are device pixels.
     #[cfg(windows)]
     let soft_viewport = viewport.clone();
+    // eframe makes its window before the app, at zoom 1 — in points of the
+    // system scale.
+    if let Some(s) = scale {
+        viewport.inner_size = viewport.inner_size.map(|v| v / s);
+        viewport.min_inner_size = viewport.min_inner_size.map(|v| v / s);
+        viewport.position = viewport.position.map(|p| (p.to_vec2() / s).to_pos2());
+    }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     // Command line (`InitInstance` 0x4483f0): `-Dst <dir>`, `-Find` (open
     // Проводник at start-up) and the file to open.
@@ -95,7 +204,7 @@ fn main() -> eframe::Result<()> {
     let soft = |why: &str| {
         softrun::trace(&format!("software rendering ({why})"));
         let ctx = egui::Context::default();
-        let app = make_app(&ctx, &args, inst_dir.as_deref(), own_caption);
+        let app = make_app(&ctx, &args, inst_dir.as_deref(), own_caption, scale, placement);
         softrun::trace("app made");
         softrun::run(app, soft_viewport.clone(), ctx).map_err(|e| eframe::Error::AppCreation(e.into()))
     };
@@ -103,7 +212,18 @@ fn main() -> eframe::Result<()> {
     if std::env::var_os("FV_SOFTWARE").is_some() {
         return soft("FV_SOFTWARE");
     }
-    let r = eframe::run_native("FastView", options, Box::new(|cc| Ok(Box::new(make_app(&cc.egui_ctx, &args, inst_dir.as_deref(), own_caption)))));
+    let r = eframe::run_native(
+        "FastView",
+        options,
+        Box::new(|cc| {
+            let app = make_app(&cc.egui_ctx, &args, inst_dir.as_deref(), own_caption, scale, placement);
+            #[cfg(windows)]
+            if let Some(native) = window_scale(cc) {
+                device_window(&cc.egui_ctx, native);
+            }
+            Ok(Box::new(app))
+        }),
+    );
     // winit makes one event loop a process: the software runner starts
     // over in a new process of its own.
     #[cfg(windows)]
@@ -118,9 +238,10 @@ fn main() -> eframe::Result<()> {
 
 /// The application as both runners start it: the fonts, the persisted
 /// state, the single-instance server, the command line.
-fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path::Path>, own_caption: bool) -> App {
+fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path::Path>, own_caption: bool, scale: Option<f32>, placement: Option<egui::Rect>) -> App {
     let fonts = app_fonts();
     ctx.set_fonts(fonts.clone());
+    device_options(ctx, scale);
     // A double-click within Windows' default GetDoubleClickTime, 500 ms
     // (egui's own is 300 ms: a hand's double-click on the coefficient list
     // was missed on the VM).
@@ -133,6 +254,7 @@ fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path
     });
     let mut app = App::new().with_persistence();
     app.own_caption = own_caption;
+    app.placement_px = placement;
     app.splash_until = Some(2.0);
     app.print.fonts = fonts;
     let c = ctx.clone();
@@ -580,18 +702,35 @@ impl App {
         }
     }
 
-    /// A frameless window's edges resize it (the DWM frame's sizing border):
-    /// 5 px, corners 12 px along each edge; not while maximised.
-    /// [`MIN_VISIBLE`] in points at the monitor's scale, sent again when
-    /// the scale changes.
-    fn min_size(&mut self, ctx: &egui::Context) {
-        let Some(ppp) = ctx.input(|i| i.viewport().native_pixels_per_point) else { return };
-        if self.min_size_ppp != ppp {
-            self.min_size_ppp = ppp;
-            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::Vec2::from(MIN_VISIBLE) / ppp));
+    /// One point one device pixel at the window's monitor's scale
+    /// ([`device_zoom`], from the next frame when the scale changes), and
+    /// [`MIN_VISIBLE`] sent again then — in this frame's points, as the
+    /// runner converts it. The saved placement too, once: the runner
+    /// applied it at the scale of the monitor the window landed on, not
+    /// necessarily the primary one it was sized for.
+    fn device_pixels(&mut self, ctx: &egui::Context) {
+        let Some(native) = ctx.input(|i| i.viewport().native_pixels_per_point) else { return };
+        if DEVICE_PIXELS {
+            let zoom = device_zoom(native);
+            if ctx.zoom_factor() != zoom {
+                ctx.set_zoom_factor(zoom);
+            }
+            if let Some(r) = self.placement_px.take() {
+                let ppp = ctx.pixels_per_point();
+                // Moved first: a move onto a monitor of another dpi resizes
+                // the window by Windows' suggestion.
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition((r.min.to_vec2() / ppp).to_pos2()));
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(r.size() / ppp));
+            }
+        }
+        if self.min_size_ppp != native {
+            self.min_size_ppp = native;
+            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::Vec2::from(MIN_VISIBLE) / ctx.pixels_per_point()));
         }
     }
 
+    /// A frameless window's edges resize it (the DWM frame's sizing border):
+    /// 5 px, corners 12 px along each edge; not while maximised.
     fn resize_edges(&mut self, ctx: &egui::Context) {
         use egui::viewport::ResizeDirection as D;
         if !self.own_caption || ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
@@ -682,6 +821,7 @@ fn startup_args(args: impl Iterator<Item = String>) -> StartupArgs {
 
 impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        device_screen(ctx, raw);
         dialogs::take_dialog_tabs(ctx, raw);
     }
 
@@ -739,7 +879,7 @@ impl App {
     pub fn frame_ui(&mut self, ctx: &egui::Context) {
         dialogs::track_input(ctx);
         dialogs::route_combo_keys(ctx);
-        self.min_size(ctx);
+        self.device_pixels(ctx);
         self.run_deferred(ctx);
         // A click or a key acts after the frame that drew it (a command is
         // dispatched once its button is drawn): one more frame shows the
@@ -1003,6 +1143,23 @@ mod tests {
     }
 
     #[test]
+    fn device_zoom_makes_one_pixel_per_point() {
+        // Windows' steps exactly, the reporter's 154 dpi among them; every
+        // custom scale at 1 or just above (151 %: 145 dpi has no exact one).
+        for dpi in [96, 120, 144, 154, 168, 192, 216, 240, 288, 336, 384, 480] {
+            let native = dpi as f32 / 96.0;
+            assert_eq!(device_zoom(native) * native, 1.0, "{dpi} dpi");
+        }
+        for dpi in 96..=480 {
+            let native = dpi as f32 / 96.0;
+            let p = device_zoom(native) * native;
+            assert!((1.0..=1.0 + 2.0 * f32::EPSILON).contains(&p), "{dpi} dpi: {p}");
+            // A whole coordinate stays in its pixel, a centre at its centre.
+            assert_eq!(((500.0 * p).floor(), (500.5 * p).round()), (500.0, 501.0), "{dpi} dpi");
+        }
+    }
+
+    #[test]
     fn command_line_switches() {
         let args = |v: &[&str]| startup_args(v.iter().map(|s| s.to_string()));
         assert_eq!(args(&["x.sto", "-dst", "d.dst", "-Find", "y.cfg"]), StartupArgs { dst: Some("d.dst".into()), find: true, files: vec!["x.sto".into()] });
@@ -1071,6 +1228,95 @@ mod window_tests {
             app.dispatch(c.clone());
         }
         app
+    }
+
+    /// #5, #6: on a monitor at 125 % or 150 % the window paints in device
+    /// pixels, as the original (system-DPI aware) does — pixel for pixel
+    /// the picture at 100 %: text rasterised at its pixel size on whole
+    /// pixels, 1 px lines one pixel wide, waveforms without gaps. Both from
+    /// the start (`make_app`'s zoom) and after the window's monitor changes
+    /// scale (the next frame on).
+    #[test]
+    fn fractional_display_scales_paint_device_pixels() {
+        let px = Vec2::new(1100.0, 700.0);
+        let fonts = app_fonts();
+        let shot = |native: f32, setup: &dyn Fn(&egui::Context)| {
+            let mut app = demo(&[]);
+            let mut ppp = 0.0;
+            let c = raster::render_native(px, native, setup, device_screen, Some(&fonts), vec![vec![]; 5], |ctx| {
+                app.frame_ui(ctx);
+                ppp = ctx.pixels_per_point();
+            });
+            (c, ppp)
+        };
+        let (base, _) = shot(1.0, &|ctx| device_options(ctx, Some(1.0)));
+        let differ = |c: &raster::Canvas| c.px.iter().zip(&base.px).filter(|(a, b)| a != b).count();
+        for native in [1.25, 1.5, 154.0 / 96.0, 145.0 / 96.0] {
+            let (c, ppp) = shot(native, &|ctx| device_options(ctx, Some(native)));
+            assert!((1.0..1.000001).contains(&ppp), "{native}: {ppp}");
+            if native * 96.0 == 145.0 {
+                // A custom 151 %: pixels per point 1.0000001 (no exact
+                // zoom), a few edge pixels off by a shade (< 0.2 %).
+                assert!(differ(&c) < c.px.len() / 500, "{native}: {} pixels differ from 100 %", differ(&c));
+            } else {
+                assert!(c.px == base.px, "{native}: {} pixels differ from 100 %", differ(&c));
+            }
+            // Started at another scale: the layout kept from the first
+            // frame (as after a resize), the pixels per point 1 again.
+            let (_, ppp) = shot(native, &|ctx| device_options(ctx, Some(1.0)));
+            assert!((1.0..1.000001).contains(&ppp), "{native} after a change: {ppp}");
+        }
+    }
+
+    /// An improvement over the original (`docs/IMPROVEMENTS.md`): a window
+    /// on a monitor whose scale is not the system's (the primary one at
+    /// sign-in) paints 1:1 in that monitor's device pixels from its first
+    /// frame, where Windows bitmap-stretches the system-DPI-aware original
+    /// by the ratio of the two scales.
+    #[test]
+    fn a_monitor_at_another_scale_than_the_systems_paints_one_to_one() {
+        let px = Vec2::new(1100.0, 700.0);
+        let fonts = app_fonts();
+        let shot = |system: f32, monitor: f32| {
+            let mut app = demo(&[]);
+            let mut ppp = 0.0;
+            // As the runners start: the system scale, then the window's.
+            let setup = |ctx: &egui::Context| {
+                device_options(ctx, Some(system));
+                device_window(ctx, monitor);
+            };
+            let c = raster::render_native(px, monitor, setup, device_screen, Some(&fonts), vec![vec![]; 5], |ctx| {
+                app.frame_ui(ctx);
+                ppp = ctx.pixels_per_point();
+            });
+            (c, ppp)
+        };
+        let (base, _) = shot(1.0, 1.0);
+        for (system, monitor) in [(1.0, 1.5), (1.5, 1.0), (1.25, 1.75)] {
+            let (c, ppp) = shot(system, monitor);
+            assert_eq!(ppp, 1.0, "system {system}, monitor {monitor}");
+            assert!(c.px == base.px, "system {system}, monitor {monitor}: {} pixels differ", c.px.iter().zip(&base.px).filter(|(a, b)| a != b).count());
+        }
+    }
+
+    /// The saved placement (device pixels) sent again in the first frame's
+    /// points: the runner applied it at the scale of the monitor the window
+    /// landed on (here 1.5, the window sized for a primary one at 1.25).
+    #[test]
+    fn saved_placement_lands_in_device_pixels_on_another_monitor() {
+        let ctx = egui::Context::default();
+        device_options(&ctx, Some(1.25));
+        let mut app = App::new();
+        app.placement_px = Some(Rect::from_min_size(Pos2::new(2600.0, 40.0), Vec2::new(1906.0, 1016.0)));
+        let ppp = device_zoom(1.25) * 1.5;
+        let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1906.0, 1016.0) / ppp)), ..Default::default() };
+        raw.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(1.5);
+        let out = ctx.run(raw, |ctx| app.frame_ui(ctx));
+        let cmds = &out.viewport_output[&egui::ViewportId::ROOT].commands;
+        let size = cmds.iter().find_map(|c| if let egui::ViewportCommand::InnerSize(s) = c { Some(*s * ppp) } else { None }).expect("the size sent");
+        let at = cmds.iter().find_map(|c| if let egui::ViewportCommand::OuterPosition(p) = c { Some(p.to_vec2() * ppp) } else { None }).expect("the position sent");
+        assert!((size - Vec2::new(1906.0, 1016.0)).length() < 0.01 && (at - Vec2::new(2600.0, 40.0)).length() < 0.01, "{size:?} at {at:?}");
+        assert!(app.placement_px.is_none(), "once");
     }
 
     /// A tiling window manager ignores the minimum size: every window size
@@ -3201,7 +3447,7 @@ mod window_tests {
         // `FV_WINDOW_LATE=preview`: the preview opened once the view is laid out.
         let late_preview = std::env::var("FV_WINDOW_LATE").is_ok_and(|v| v == "preview");
         let mut pass = 0;
-        let c = raster::render_input(size, 1.0, Some(&fonts), passes, |ctx| {
+        let paint = |ctx: &egui::Context| {
             if pass == 2 && late_preview {
                 app.dispatch(app::Command::PrintPreview);
             }
@@ -3216,7 +3462,13 @@ mod window_tests {
             }
             pass += 1;
             app.frame_ui(ctx)
-        });
+        };
+        // `FV_WINDOW_NATIVE=<scale>`: on a monitor at that display scale
+        // (1.25 for 125 %), the size in device pixels.
+        let c = match std::env::var("FV_WINDOW_NATIVE").ok().and_then(|s| s.parse::<f32>().ok()) {
+            Some(native) => raster::render_native(size, native, |ctx| device_options(ctx, Some(native)), device_screen, Some(&fonts), passes, paint),
+            None => raster::render_input(size, 1.0, Some(&fonts), passes, paint),
+        };
         let rgba: Vec<u8> = c.px.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
         std::fs::write(path, util::png_rgba(c.w as u32, c.h as u32, &rgba)).unwrap();
     }

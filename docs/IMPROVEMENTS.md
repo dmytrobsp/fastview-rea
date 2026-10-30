@@ -38,6 +38,21 @@ is out of reach (those are listed in `notes/COMPLETION_PLAN.md`, W6).
   followed: that reference fails as in the original instead of reading the
   wrong channel. Reason: the channel is the same, only its decoding
   changed; the user's work on it should not break.
+- **Display scaling on a monitor other than the primary one, and after a
+  live scale change (#5, #6).** The original is system-DPI aware (its
+  manifest's `dpiAware`): its dpi is fixed at sign-in to the primary
+  monitor's, and it paints in device pixels at that dpi. On a monitor at
+  another scale, or after the scale is changed without signing out,
+  Windows bitmap-stretches its window by the ratio of the two scales —
+  blurry, and larger or smaller than 1:1. Ours is per-monitor DPI aware
+  and keeps one point per device pixel on whichever monitor its window is
+  (from the window's first frame, and again each time its monitor's scale
+  changes): crisp and 1:1 there, so smaller than the original's stretched
+  picture on a 150 % monitor beside a 100 % primary, larger the other way;
+  on a scale change Windows resizes the window while its content stays
+  1:1. On the primary monitor at the sign-in scale both are the same
+  (device pixels; see `device_zoom` in `crates/fastview-gui/src/main.rs`).
+  Reason: the stretched picture is the blur #5 / #6 report.
 - **The lanes' names after «Кодировка» (#7).** The original's lanes keep
   the old names until their next layout (a missing repaint, ledger
   L9.350); ours shows the new names at once. Reason: a stale repaint.
