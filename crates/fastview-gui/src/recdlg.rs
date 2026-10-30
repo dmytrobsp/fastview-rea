@@ -184,8 +184,20 @@ pub fn name_bytes_of(name: &str, read: Encoding, from: Encoding) -> Vec<u8> {
     if matches!(read, Encoding::Cp1251 | Encoding::Cp866) {
         return comtrade::encode_text(name, from);
     }
-    let as_read = if from == Encoding::Cp866 { comtrade::recode(name, Encoding::Cp866, Encoding::Cp1251) } else { name.to_string() };
+    let as_read = if from == Encoding::Cp866 { comtrade::decode_bytes(&comtrade::encode_shown(name, Encoding::Cp866), Encoding::Cp1251) } else { name.to_string() };
     comtrade::encode_text(&as_read, read)
+}
+
+/// The raw bytes of a name taken as shown now in `shown` (a pasted lane,
+/// #7): for a record read in 1251 / 866 the shown text's bytes in that
+/// code page, a best-fitted pseudo-graphic as the 866 byte read so
+/// ([`comtrade::encode_shown`]); for one read in UTF-8 / KOI8-R the bytes
+/// as read ([`name_bytes_of`]).
+pub fn shown_bytes_of(name: &str, read: Encoding, shown: Encoding) -> Vec<u8> {
+    if matches!(read, Encoding::Cp1251 | Encoding::Cp866) {
+        return comtrade::encode_shown(name, shown);
+    }
+    name_bytes_of(name, read, shown)
 }
 
 impl Doc {
@@ -362,7 +374,7 @@ impl Doc {
                     let redo = !r.alias && r.seen == c.name;
                     (r.bytes, redo)
                 }
-                None => (name_bytes_of(&c.name, read, Encoding::Cp1251), true),
+                None => (shown_bytes_of(&c.name, read, from), true),
             };
             let seen = decode(&bytes);
             if redecode {
@@ -1276,6 +1288,31 @@ mod tests {
         assert_eq!(crate::chandlg::rename(d, ChanKey::Computed(j), "Своё"), Ok(()));
         d.set_codepage(Encoding::Cp866);
         assert_eq!(d.computed[j].name, "Своё");
+    }
+
+    /// Pasted while the record shows 866, a lane's raw name is its name in
+    /// 866 bytes (VM: «IA +T+¦L 3 (вст.)» reads «IA +T+іL 3 (ўбв.)» back in
+    /// 1251, and itself again in 866).
+    #[test]
+    fn a_lane_pasted_while_866_is_shown_reads_its_866_bytes() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "IA БЛОКА 3".into();
+        d.init_set_keys();
+        d.set_codepage(Encoding::Cp866);
+        d.selection = [ChanKey::Analog(3)].into();
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        assert_eq!(d.computed[j].name, "IA +T+¦L 3 (вст.)");
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.computed[j].name, "IA +T+іL 3 (ўбв.)");
+        assert_eq!(d.osc.analog[3].id, "IA БЛОКА 3");
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.computed[j].name, "IA +T+¦L 3 (вст.)");
     }
 
     /// A pasted lane renamed before any «Кодировка» keeps its name (its raw

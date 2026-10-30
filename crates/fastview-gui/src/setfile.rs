@@ -349,8 +349,9 @@ impl Doc {
             ChanKey::Analog(i) => 2 + i,
             ChanKey::Digital(d) => 2 + self.osc.analog.len() + d,
             ChanKey::Computed(j) => {
+                let cp = self.codepage;
                 if let Some(c) = self.computed.get_mut(j).filter(|c| c.formula == crate::merge_ui::PENDING) {
-                    c.name_raw.get_or_insert_with(|| crate::app::RawName { bytes: crate::recdlg::name_bytes_of(&c.name, read, Encoding::Cp1251), seen: c.name.clone(), alias: false }).alias = on;
+                    c.name_raw.get_or_insert_with(|| crate::app::RawName { bytes: crate::recdlg::shown_bytes_of(&c.name, read, cp), seen: c.name.clone(), alias: false }).alias = on;
                 }
                 return;
             }

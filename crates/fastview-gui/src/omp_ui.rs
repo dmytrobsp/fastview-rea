@@ -1377,8 +1377,10 @@ mod tests {
         let d = app.active_doc().unwrap();
         let name = d.osc.digital[0].id.clone();
         let want: Vec<f64> = d.flagged.digital[0].samples.iter().map(|&b| if b { 2.0 } else { 0.0 }).collect();
+        assert!(!app.active_doc().unwrap().v1_placed);
         app.run_omp();
         assert!(app.active_doc().unwrap().osc.digital.len() > 1, "the flags went in");
+        assert!(app.active_doc().unwrap().v1_placed, "ОМП places В1 on its window");
         assert!(app.append_computed(&[("X".into(), format!("\"{name}\"*2"))]).is_some(), "{:?}", app.dlg.alert());
         let d = app.active_doc().unwrap();
         assert_eq!(d.computed.iter().find(|c| c.name == "X").unwrap().samples, want);

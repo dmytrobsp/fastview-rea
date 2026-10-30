@@ -2829,7 +2829,7 @@ mod menu_tests {
         assert!(!h.doc().v_shown[0], "a new document shows no визир");
         let y = h.row(0).y;
         h.button(Pos2::new(500.0, y), egui::PointerButton::Primary);
-        assert!(h.doc().v_shown[0]);
+        assert!(h.doc().v_shown[0] && h.doc().v1_placed, "placed");
         let (v1, first) = (h.doc().main_cursor, h.doc().first);
         // Drag from 2 px off the визир to 80 px further right.
         let at = Pos2::new(502.0, y);
@@ -3594,11 +3594,13 @@ mod menu_tests {
         h.frame_mod(vec![l(), l(), l()], egui::Modifiers::NONE);
         assert_eq!(h.doc().main_cursor, v1 + 1);
         // A hidden визир is shown by the key (`0x492f20`); Alt does nothing.
-        h.app.active_doc_mut().unwrap().v_shown[0] = false;
+        let d = h.app.active_doc_mut().unwrap();
+        (d.v_shown[0], d.v1_placed) = (false, false);
         h.frame_mod(vec![key(egui::Key::ArrowLeft, egui::Modifiers::ALT)], egui::Modifiers::ALT);
         assert!(!h.doc().v_shown[0], "Alt+← is a WM_SYSKEYDOWN");
         h.frame_mod(vec![key(egui::Key::ArrowLeft, egui::Modifiers::NONE)], egui::Modifiers::NONE);
         assert!(h.doc().v_shown[0] && h.doc().main_cursor == v1, "shown, moved back");
+        assert!(h.doc().v1_placed, "the key places В1 too");
         // With a diagram focused the keys are the pane's.
         h.app.copy_focus = crate::app::CopyFocus::Diagram(crate::app::Pane::Vector);
         h.frame_mod(vec![key(egui::Key::ArrowRight, egui::Modifiers::NONE)], egui::Modifiers::NONE);
