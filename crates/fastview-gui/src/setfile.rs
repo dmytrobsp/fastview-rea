@@ -273,6 +273,21 @@ impl Doc {
     /// the ОМП's flags): each key follows its channel, a new one keyed by
     /// its own name. Called before the channels move.
     pub fn move_appended_keys(&mut self, at_a: usize, nb: usize, at_d: usize, nd: usize) {
+        // The names' bytes kept by «Кодировка» move alike (a new name's are
+        // its text's in the record's code page).
+        if self.name_raw.len() == 2 + nb + nd {
+            let mut old = std::mem::take(&mut self.name_raw);
+            let mut d = old.split_off(2 + nb);
+            let mut a = old.split_off(2);
+            let own = |id: &String| (comtrade::encode_text(id, self.codepage), id.clone());
+            a.extend(self.osc.analog[nb..].iter().map(|c| own(&c.id)));
+            d.extend(self.osc.digital[nd..].iter().map(|c| own(&c.id)));
+            a[at_a..].rotate_right(self.osc.analog.len() - nb);
+            d[at_d..].rotate_right(self.osc.digital.len() - nd);
+            old.extend(a);
+            old.extend(d);
+            self.name_raw = old;
+        }
         if self.set.keys.is_empty() {
             return;
         }
@@ -290,6 +305,11 @@ impl Doc {
     /// Drop the keys of the digital channels not kept (the ОМП's clear).
     pub fn retain_digital_keys(&mut self, keep: &[bool]) {
         let na = self.osc.analog.len();
+        if self.name_raw.len() == 2 + na + keep.len() {
+            let mut it = keep.iter();
+            let digital: Vec<_> = self.name_raw.split_off(2 + na).into_iter().filter(|_| *it.next().unwrap_or(&true)).collect();
+            self.name_raw.extend(digital);
+        }
         if self.set.keys.len() <= na {
             return;
         }

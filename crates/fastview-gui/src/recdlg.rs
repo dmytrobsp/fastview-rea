@@ -211,40 +211,69 @@ impl Doc {
         // bytes only while the names were read in a single-byte code page.
         let single = matches!(from, Encoding::Cp1251 | Encoding::Cp866);
         let na = self.osc.analog.len();
-        let renamed: Vec<bool> = [false, false]
+        let file: Vec<Option<String>> = [None, None]
             .into_iter()
-            .chain((0..na).map(|i| single && self.original_name(ChanKey::Analog(i)).is_some()))
-            .chain((0..self.osc.digital.len()).map(|k| single && self.original_name(ChanKey::Digital(k)).is_some()))
+            .chain((0..na).map(|i| self.original_name(ChanKey::Analog(i)).filter(|_| single)))
+            .chain((0..self.osc.digital.len()).map(|k| self.original_name(ChanKey::Digital(k)).filter(|_| single)))
             .collect();
+        let mut names: Vec<String> = [self.osc.station.clone(), self.osc.device.clone()]
+            .into_iter()
+            .chain(self.osc.analog.iter().map(|c| c.id.clone()))
+            .chain(self.osc.digital.iter().map(|c| c.id.clone()))
+            .collect();
+        // Each name's bytes as read, with the text last decoded from them,
+        // kept in step with the channels (`move_appended_keys`,
+        // `retain_digital_keys`): a name still that text is decoded again
+        // from them; one that is not is an alias, kept, with its bytes
+        // (`0x425960`). Out of step (an undo past a merge), a name takes the
+        // first entry with its text not yet taken, in order (two names can
+        // decode alike: «В» and «С» read as 866 both show «T»).
         let raw = std::mem::take(&mut self.name_raw);
+        let aligned = raw.len() == names.len();
         let mut used = vec![false; raw.len()];
-        let mut alias = renamed.into_iter();
-        let mut kept = Vec::new();
-        // A name last decoded by a switch takes its bytes back: the first
-        // entry not yet taken with that text, in order (channels merged in or
-        // ОМП's flags may have moved the names, never reordered them; two
-        // names can decode alike — В and С read as 866 both give «T»); else
-        // it is an alias when it is not the file's name (the keys are
-        // lossless then: no switch has re-decoded the names yet); else it
-        // is read from its text.
-        let mut rc = |s: &mut String| {
-            let renamed = alias.next().unwrap_or(false);
-            let entry = (0..raw.len()).find(|&j| !used[j] && raw[j].1 == *s);
-            let bytes = match entry {
-                Some(j) => {
-                    used[j] = true;
-                    raw[j].0.clone()
-                }
-                None if renamed => return,
-                None => comtrade::encode_text(s, from),
-            };
-            *s = comtrade::decode_bytes(&bytes, cp).chars().map(comtrade::best_fit_1251).collect();
-            kept.push((bytes, s.clone()));
-        };
-        rc(&mut self.osc.station);
-        rc(&mut self.osc.device);
-        self.osc.analog.iter_mut().for_each(|c| rc(&mut c.id));
-        self.osc.digital.iter_mut().for_each(|c| rc(&mut c.id));
+        let mut out: Vec<Option<(Vec<u8>, bool)>> = vec![None; names.len()];
+        for (p, n) in names.iter().enumerate() {
+            if aligned && raw[p].1 == *n {
+                used[p] = true;
+                out[p] = Some((raw[p].0.clone(), true));
+            }
+        }
+        for (p, n) in names.iter().enumerate() {
+            if out[p].is_some() {
+                continue;
+            }
+            out[p] = Some(if aligned {
+                (raw[p].0.clone(), false)
+            } else if let Some(j) = (0..raw.len()).find(|&j| !used[j] && raw[j].1 == *n) {
+                used[j] = true;
+                (raw[j].0.clone(), true)
+            } else if let Some(f) = &file[p] {
+                // No switch yet: the keys were taken from names read
+                // losslessly, and a name not the file's is an alias.
+                (comtrade::encode_text(f, from), false)
+            } else {
+                (comtrade::encode_text(n, from), true)
+            });
+        }
+        let decode = |b: &[u8]| -> String { comtrade::decode_bytes(b, cp).chars().map(comtrade::best_fit_1251).collect() };
+        let mut kept = Vec::with_capacity(names.len());
+        for (n, o) in names.iter_mut().zip(out) {
+            let (bytes, redecode) = o.unwrap_or_default();
+            let seen = decode(&bytes);
+            if redecode {
+                n.clone_from(&seen);
+            }
+            kept.push((bytes, seen));
+        }
+        let mut it = names.into_iter();
+        self.osc.station = it.next().unwrap_or_default();
+        self.osc.device = it.next().unwrap_or_default();
+        for c in &mut self.osc.analog {
+            c.id = it.next().unwrap_or_default();
+        }
+        for c in &mut self.osc.digital {
+            c.id = it.next().unwrap_or_default();
+        }
         self.name_raw = kept;
         self.codepage = cp;
         self.comments = recs.iter().map(|r| self.comment_of(r)).collect();
@@ -990,8 +1019,10 @@ mod tests {
             d.set_codepage(Encoding::Cp1251);
             assert_eq!((d.osc.analog[k].id.as_str(), d.osc.analog[k + 1].id.as_str()), ("Ток фазы В", "Ток фазы С"), "merge: {merge}");
             d.set_codepage(Encoding::Cp866);
+            // В renamed meanwhile: С still takes its own bytes.
+            d.osc.analog[k].id = "IB".into();
             d.set_codepage(Encoding::Cp1251);
-            assert_eq!(d.osc.analog[k + 1].id, "Ток фазы С", "merge: {merge}");
+            assert_eq!((d.osc.analog[k].id.as_str(), d.osc.analog[k + 1].id.as_str()), ("IB", "Ток фазы С"), "merge: {merge}");
         }
     }
 
