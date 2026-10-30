@@ -570,9 +570,9 @@ pub fn loading_shown(path: &std::path::Path) -> bool {
     }
 }
 
-/// ADC codes of a channel (`(raw − b) / a`, rounded).
+/// ADC codes of a channel ([`fvb_core::comtrade::AnalogChannel::adc_code`]).
 fn adc_codes(c: &fvb_core::comtrade::AnalogChannel) -> Vec<f64> {
-    c.samples.iter().map(|&v| if c.a.abs() > 1e-12 { ((v - c.b) / c.a).round() } else { v }).collect()
+    c.samples.iter().map(|&v| c.adc_code(v)).collect()
 }
 
 /// Mean over the largest whole number of periods from the start: the first

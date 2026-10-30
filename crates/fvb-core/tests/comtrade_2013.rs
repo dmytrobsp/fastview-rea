@@ -105,7 +105,8 @@ fn the_2013_time_lines() {
 
 /// Float samples over the whole float32 range with `a` ≈ 1e‑37: the value
 /// is `m·a·x + b` in f64 (`0x451904`) — a few tens of volts here; the cfg's
-/// min / max (±3.40282e+38) are not used.
+/// min / max (±3.40282e+38) are not used; the ADC code (`0x422250`) gives
+/// the raw sample back, `m` included, however small `a`.
 #[test]
 fn float32_range_samples_with_tiny_scale_factors() {
     let rec = comtrade::load_with(record("float", &with_bom(&cfg("2013"))), Encoding::Cp1251).unwrap();
@@ -116,6 +117,16 @@ fn float32_range_samples_with_tiny_scale_factors() {
     assert_eq!(ur.unit_mult, 1000.0, "kV");
     assert_eq!(ur.samples[1], 1000.0 * ur.a * -3.2e+38 + ur.b, "kV: × 1000");
     assert!((ur.samples[1] - -63999.99).abs() < 0.01, "{}", ur.samples[1]);
+    for (c, raw) in [(ia, [-3.0e+38, 2.4e+38, 3.4028235e+38, -3.4028235e+38]), (ur, [9.0e+37, -3.2e+38, 1.0e-3, 0.0])] {
+        for (s, x) in c.samples.iter().zip(raw as [f64; 4]) {
+            let code = c.adc_code(*s);
+            assert!((code - x.round()).abs() <= 1e-9 * x.abs().max(1.0), "{} {code} {x}", c.id);
+        }
+    }
+    // The original's rounding: down unless at least half-way.
+    let mut c = ia.clone();
+    (c.a, c.b, c.unit_mult) = (1.0, 0.0, 1.0);
+    assert_eq!([c.adc_code(-2.5), c.adc_code(2.5), c.adc_code(-2.6)], [-2.0, 3.0, -3.0]);
     assert!(rec.digital[0].samples == [false, true, true, false] && rec.digital[1].samples == [true, true, false, false]);
 }
 

@@ -75,6 +75,22 @@ impl AnalogChannel {
         crate::units::Shown::file(&self.unit, self.per_second)
     }
 
+    /// The ADC code of a stored value (`0x422250`): `(v − b) / (m·a)`, the
+    /// unit multiplier `m` with `a` — the raw sample back —, rounded as
+    /// `0x411bf0` (down unless at least half-way), whatever the size of
+    /// `a` (a 2013 export's float samples have `a` ≈ 1e‑37). The original
+    /// then truncates to a 32-bit int, which a code beyond ±2³¹ (those
+    /// float samples) turns into −2147483648; ours keeps the code whole,
+    /// as its writer does. A zero divisor gives the value back.
+    pub fn adc_code(&self, v: f64) -> f64 {
+        let d = self.unit_mult * self.a;
+        if d == 0.0 {
+            v
+        } else {
+            round_fv((v - self.b) / d)
+        }
+    }
+
     /// The unit to write to a file: as read, else the canonical one.
     pub fn file_unit(&self) -> &str {
         if self.raw_unit.is_empty() {
