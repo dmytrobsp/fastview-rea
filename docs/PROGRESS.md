@@ -4,7 +4,7 @@ The current state, in short. This page is rewritten when things change, never ap
 What happened before is in the milestones' ledgers ([milestones/](milestones/README.md)), the record of the original
 ([original/](original/README.md)), [history/](history/) and `git log`.
 
-Last rewritten: 2026-10-30 (v0.4.0 released; milestone 0.4.0 closed; the maintainer's new issues #88–#93 filed).
+Last rewritten: 2026-10-30 (milestone 0.5.0 started: calculation fidelity and panes).
 
 ## Latest release
 
@@ -28,14 +28,16 @@ Last rewritten: 2026-10-30 (v0.4.0 released; milestone 0.4.0 closed; the maintai
 
 ## In flight
 
-- Nothing: no milestone is open. The workflow ([AGENTS.md](../AGENTS.md), [agents/workflow.md](agents/workflow.md),
-  [agents/review.md](agents/review.md)) was run end to end for the first time in 0.4.0; its ledger has the retro.
+- **Milestone 0.5.0** ([GitHub](https://github.com/dmytrobsp/fastview-rea/milestone/3), plan and ledger:
+  [milestones/0.5.0.md](milestones/0.5.0.md)): calculation fidelity — the original's sin / cos bit for bit (#72), the
+  display factor per sample (#60), own rates after a merge (#57, #71), the ОМП flags after «Кодировка» (#66), kV units
+  in the stats rows (#86) — and panes — auto-hide (#61–#64), floating panes (#70), focus (#77), a short drag to float
+  (#90). Five units in two waves.
 
 ## Next topics
 
-- **The next milestone**, proposed to the maintainer: candidates are #60 + #72 (the display factor per sample and
-  the original's sin / cos bit for bit — a spike already matched them), #57 / #71 (own rates after a merge), #85 (the
-  pre-1607 DPI fallback), the drag-and-drop gaps #73–#76, and the 0.4.0 follow-ups (#61–#70, #77–#83, #86).
+- **After 0.5.0**, candidates: the drag-and-drop gaps #73–#76 (#74 / #75 need the maintainer), #85 (the pre-1607
+  DPI fallback), the 0.4.0 follow-ups (#65, #67–#69, #78–#83).
 - **The maintainer's new direction (filed 2026-10-30, all `improvement`):** translations (#88), anti-aliased
   waveforms keeping every sample exact (#89), a short drag to float a pane with a grab cursor (#90), and — designed
   together, `size:l` — light / dark themes replacing the nine «Стиль» skins (#91) with a simpler modern look (#92);
