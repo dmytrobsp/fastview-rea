@@ -1666,6 +1666,53 @@ mod window_tests {
         assert!(canvas(&w).is_some(), "drawn over the content");
     }
 
+    /// An auto-hidden group slid out by hovering its strip button stays
+    /// out while the pointer rests there (issue #4): the slid-out pane
+    /// keeps to its rect beside the strip, so the button stays hovered and
+    /// the 700 ms hide check finds the pointer on it — on every edge, for
+    /// a tabbed group and a pane beside it. Moved off both, it slides back.
+    #[test]
+    fn auto_hidden_pane_stays_out_while_its_button_is_hovered() {
+        use docking::{Edge, Spot, Unit};
+        let cases = [(Unit::Vector, Some(Edge::Right)), (Unit::Vector, Some(Edge::Left)), (Unit::Vector, Some(Edge::Top)), (Unit::Vector, Some(Edge::Bottom)), (Unit::Frequency, None)];
+        for (unit, edge) in cases {
+            let mut w = Win::new();
+            if let Some(edge) = edge {
+                w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+                w.idle(2);
+            }
+            w.app.docks.0[unit as usize].pin();
+            w.idle(2);
+            let strip = w.app.dock_strips[unit as usize].unwrap_or_else(|| panic!("{unit:?} {edge:?}: its strip"));
+            // The first button, 2 px into the strip's start.
+            let on = if w.app.docks.edge(unit).vertical() { Pos2::new(strip.center().x, strip.top() + 20.0) } else { Pos2::new(strip.left() + 20.0, strip.center().y) };
+            w.run(vec![egui::Event::PointerMoved(on)]);
+            let mut outs = Vec::new();
+            for _ in 0..80 {
+                w.run(vec![]);
+                outs.push(w.app.docks[unit].out);
+            }
+            let first = outs.iter().position(|&o| o).unwrap_or_else(|| panic!("{unit:?} {edge:?}: the hover slid it out"));
+            assert!(first * 50 <= 600, "{unit:?} {edge:?}: out after {} ms", first * 50);
+            assert!(outs[first..].iter().all(|&o| o), "{unit:?} {edge:?}: it went back while the button was hovered: {outs:?}");
+            // The pane keeps to its rect: the strip stays uncovered.
+            let area = w.ctx.memory(|m| m.area_rect(egui::Id::new(("fv_slide", unit)))).expect("the slid-out pane");
+            let rect = w.app.dock_areas[unit as usize].expect("its rect");
+            assert!(rect.expand(0.5).contains_rect(area), "{unit:?} {edge:?}: area {area:?} past {rect:?}");
+            assert!(!area.intersects(strip.shrink(0.5)), "{unit:?} {edge:?}: area {area:?} over the strip {strip:?}");
+            // Into the pane: still out; then away from both: it slides back.
+            w.run(vec![egui::Event::PointerMoved(rect.center())]);
+            w.idle(30);
+            assert!(w.app.docks[unit].out, "{unit:?} {edge:?}: the pointer in the pane keeps it out");
+            let view = w.app.view_rects.expect("the view").0.shrink(10.0);
+            let away = [view.left_top(), view.right_top(), view.left_bottom(), view.right_bottom()].into_iter().find(|&q| !rect.contains(q) && !strip.contains(q)).expect("a point off both");
+            w.run(vec![egui::Event::PointerMoved(away)]);
+            w.idle(30);
+            let pane = w.app.dock_areas[unit as usize];
+            assert!(!w.app.docks[unit].out && pane.is_none(), "{unit:?} {edge:?}: away from both it slid back ({pane:?})");
+        }
+    }
+
     /// The pin (mfc120u `0x100871c7`): a plain click slides the group shut
     /// in 12 steps; with Ctrl every shown group on the same edge goes at
     /// once, no slide, and Ctrl on an auto-hidden one brings them all back.

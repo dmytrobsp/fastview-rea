@@ -596,10 +596,12 @@ impl App {
             let edge = self.docks.edge(v.unit);
             let titles: Vec<Pane> = self.tab_order.into_iter().filter(|&p| v.mask[p as usize]).collect();
             let mut hit = (false, false, None);
+            let mut buttons: Vec<egui::Rect> = Vec::new();
             let id = egui::Id::new(("fv_strip", edge as u8, v.unit));
             let mut draw = |ui: &mut egui::Ui| {
                 for &t in &titles {
                     let r = strip_button(ui, pane_title(t), edge.vertical());
+                    buttons.push(r.rect);
                     if r.hovered() || r.clicked() {
                         hit = (true, hit.1 || r.clicked(), Some(t));
                     }
@@ -615,8 +617,12 @@ impl App {
             if let Some(p) = hit.2.filter(|&p| p != v.front) {
                 self.dispatch(Command::ActivatePane(p));
             }
-            let in_pane = pointer.is_some_and(|q| self.dock_areas[v.unit as usize].is_some_and(|a| a.contains(q)));
-            moving |= self.docks[v.unit].auto_hide_frame(now, hit.0, hit.1, in_pane, menu_up);
+            // The hide check tests the cursor against the pane's rect and
+            // its button's by position (`0x10087a4a`: GetCursorPos, PtInRect
+            // on the window rect and on the button rect), not by which
+            // window is on top there.
+            let inside = pointer.is_some_and(|q| self.dock_areas[v.unit as usize].is_some_and(|a| a.contains(q)) || buttons.iter().any(|b| b.contains(q)));
+            moving |= self.docks[v.unit].auto_hide_frame(now, hit.0, hit.1, inside, menu_up);
         }
         if moving || self.docks.0.iter().any(|d| d.out) {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
@@ -666,12 +672,17 @@ impl App {
     }
 
     /// A slid-out pane: drawn over the content in `rect`, clipped to it.
+    /// The area is exactly `rect`: a pane part-way out lays out wider than
+    /// its rect, and an area sized by its content (pushed back into the
+    /// screen as it grows) would cover the strip and take its hover.
     fn slide_area(&mut self, ctx: &egui::Context, id: egui::Id, rect: egui::Rect, body: impl FnOnce(&mut App, &mut egui::Ui)) {
-        egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(rect.min).show(ctx, |ui| {
+        egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(rect.min).constrain(false).default_size(rect.size()).show(ctx, |ui| {
             ui.set_clip_rect(rect);
             let v = ui.visuals();
             ui.painter().rect(rect, 0.0, v.panel_fill, v.window_stroke());
-            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rect.shrink(3.0)), |ui| body(self, ui));
+            let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(3.0)));
+            body(self, &mut inner);
+            ui.expand_to_include_rect(rect);
         });
     }
 
