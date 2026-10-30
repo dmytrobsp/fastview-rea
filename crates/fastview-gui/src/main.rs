@@ -132,6 +132,28 @@ fn device_options(ctx: &egui::Context, scale: Option<f32>) {
     });
 }
 
+/// The window made on a monitor at `native` (not necessarily the
+/// primary one the system scale is): device pixels there from its first
+/// frame. Ours is per-monitor DPI aware, 1:1 on every monitor — the
+/// original, system-DPI aware, is bitmap-stretched by Windows there
+/// (`docs/IMPROVEMENTS.md`).
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn device_window(ctx: &egui::Context, native: f32) {
+    if DEVICE_PIXELS {
+        ctx.options_mut(|o| o.zoom_factor = device_zoom(native));
+    }
+}
+
+/// The display scale of the monitor eframe's window is on (its dpi / 96).
+#[cfg(windows)]
+fn window_scale(w: &impl winit::raw_window_handle::HasWindowHandle) -> Option<f32> {
+    use winit::raw_window_handle::RawWindowHandle;
+    let RawWindowHandle::Win32(h) = w.window_handle().ok()?.as_raw() else { return None };
+    // SAFETY: a query on our own live window.
+    let dpi = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(h.hwnd.get() as windows_sys::Win32::Foundation::HWND) };
+    (dpi > 0).then(|| dpi as f32 / 96.0)
+}
+
 fn main() -> eframe::Result<()> {
     // Before the work area is read (`default_frame_size`).
     let scale = system_scale();
@@ -190,7 +212,18 @@ fn main() -> eframe::Result<()> {
     if std::env::var_os("FV_SOFTWARE").is_some() {
         return soft("FV_SOFTWARE");
     }
-    let r = eframe::run_native("FastView", options, Box::new(|cc| Ok(Box::new(make_app(&cc.egui_ctx, &args, inst_dir.as_deref(), own_caption, scale, placement)))));
+    let r = eframe::run_native(
+        "FastView",
+        options,
+        Box::new(|cc| {
+            let app = make_app(&cc.egui_ctx, &args, inst_dir.as_deref(), own_caption, scale, placement);
+            #[cfg(windows)]
+            if let Some(native) = window_scale(cc) {
+                device_window(&cc.egui_ctx, native);
+            }
+            Ok(Box::new(app))
+        }),
+    );
     // winit makes one event loop a process: the software runner starts
     // over in a new process of its own.
     #[cfg(windows)]
@@ -1232,6 +1265,37 @@ mod window_tests {
             // frame (as after a resize), the pixels per point 1 again.
             let (_, ppp) = shot(native, &|ctx| device_options(ctx, Some(1.0)));
             assert!((1.0..1.000001).contains(&ppp), "{native} after a change: {ppp}");
+        }
+    }
+
+    /// An improvement over the original (`docs/IMPROVEMENTS.md`): a window
+    /// on a monitor whose scale is not the system's (the primary one at
+    /// sign-in) paints 1:1 in that monitor's device pixels from its first
+    /// frame, where Windows bitmap-stretches the system-DPI-aware original
+    /// by the ratio of the two scales.
+    #[test]
+    fn a_monitor_at_another_scale_than_the_systems_paints_one_to_one() {
+        let px = Vec2::new(1100.0, 700.0);
+        let fonts = app_fonts();
+        let shot = |system: f32, monitor: f32| {
+            let mut app = demo(&[]);
+            let mut ppp = 0.0;
+            // As the runners start: the system scale, then the window's.
+            let setup = |ctx: &egui::Context| {
+                device_options(ctx, Some(system));
+                device_window(ctx, monitor);
+            };
+            let c = raster::render_native(px, monitor, setup, device_screen, Some(&fonts), vec![vec![]; 5], |ctx| {
+                app.frame_ui(ctx);
+                ppp = ctx.pixels_per_point();
+            });
+            (c, ppp)
+        };
+        let (base, _) = shot(1.0, 1.0);
+        for (system, monitor) in [(1.0, 1.5), (1.5, 1.0), (1.25, 1.75)] {
+            let (c, ppp) = shot(system, monitor);
+            assert_eq!(ppp, 1.0, "system {system}, monitor {monitor}");
+            assert!(c.px == base.px, "system {system}, monitor {monitor}: {} pixels differ", c.px.iter().zip(&base.px).filter(|(a, b)| a != b).count());
         }
     }
 

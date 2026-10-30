@@ -66,6 +66,7 @@ impl ApplicationHandler for Soft {
             window.set_maximized(true);
         }
         crate::minsize::install_on(&window);
+        crate::device_window(&self.ctx, window.scale_factor() as f32);
         trace(&format!("window {:?} visible {:?}", window.inner_size(), window.is_visible()));
         let state = egui_winit::State::new(self.ctx.clone(), egui::ViewportId::ROOT, &window, Some(window.scale_factor() as f32), None, Some(16384));
         egui_winit::update_viewport_info(&mut self.info, &self.ctx, &window, true);
