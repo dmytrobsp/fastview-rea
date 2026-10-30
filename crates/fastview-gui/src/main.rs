@@ -88,22 +88,91 @@ fn device_zoom(native: f32) -> f32 {
     z
 }
 
+/// A dpi (None: the call is missing or failed) as a display scale (dpi / 96).
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn dpi_scale(dpi: Option<u32>) -> Option<f32> {
+    dpi.filter(|&d| d > 0).map(|d| d as f32 / 96.0)
+}
+
+/// The DPI calls resolved at run time, as winit does: Windows 10 before
+/// 1607 has no `GetDpiForSystem` / `GetDpiForWindow` /
+/// `SetProcessDpiAwarenessContext` and Windows before 8.1 no shcore's
+/// `GetDpiForMonitor`; a static import would stop the exe from starting
+/// there ("entry point not found"). A missing one is `None`: egui's native
+/// scale, as before they were used.
+#[cfg(windows)]
+mod dyn_dpi {
+    use windows_sys::Win32::Foundation::{HWND, POINT};
+    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+
+    /// `name` (NUL-terminated) in `module` (NUL-terminated), loaded if need be.
+    fn lookup(module: &[u8], name: &[u8]) -> Option<unsafe extern "system" fn() -> isize> {
+        debug_assert!(module.ends_with(&[0]) && name.ends_with(&[0]));
+        // SAFETY: NUL-terminated names; a loaded module stays loaded.
+        unsafe {
+            let m = LoadLibraryA(module.as_ptr());
+            if m.is_null() {
+                return None;
+            }
+            GetProcAddress(m, name.as_ptr())
+        }
+    }
+
+    #[cfg(test)]
+    pub fn find(module: &[u8], name: &[u8]) -> bool {
+        lookup(module, name).is_some()
+    }
+
+    /// SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2), when there is one.
+    pub fn set_per_monitor_aware() {
+        type F = unsafe extern "system" fn(isize) -> i32;
+        if let Some(f) = lookup(b"user32.dll\0", b"SetProcessDpiAwarenessContext\0") {
+            // SAFETY: the documented signature; -4 is DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2.
+            unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, F>(f)(-4) };
+        }
+    }
+
+    /// GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI).x
+    pub fn monitor_dpi(monitor: windows_sys::Win32::Graphics::Gdi::HMONITOR) -> Option<u32> {
+        type F = unsafe extern "system" fn(windows_sys::Win32::Graphics::Gdi::HMONITOR, i32, *mut u32, *mut u32) -> i32;
+        let f = lookup(b"shcore.dll\0", b"GetDpiForMonitor\0")?;
+        let (mut x, mut y) = (0u32, 0u32);
+        // SAFETY: the documented signature; two local u32s.
+        let hr = unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, F>(f)(monitor, 0, &mut x, &mut y) };
+        (hr == 0).then_some(x)
+    }
+
+    pub fn system_dpi() -> Option<u32> {
+        type F = unsafe extern "system" fn() -> u32;
+        let f = lookup(b"user32.dll\0", b"GetDpiForSystem\0")?;
+        // SAFETY: the documented signature.
+        Some(unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, F>(f)() })
+    }
+
+    pub fn window_dpi(hwnd: HWND) -> Option<u32> {
+        type F = unsafe extern "system" fn(HWND) -> u32;
+        let f = lookup(b"user32.dll\0", b"GetDpiForWindow\0")?;
+        // SAFETY: the documented signature; our own live window.
+        Some(unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, F>(f)(hwnd) })
+    }
+
+    #[allow(dead_code)]
+    pub fn point_origin() -> POINT {
+        POINT { x: 0, y: 0 }
+    }
+}
+
 /// The primary monitor's display scale (its effective dpi / 96, as winit
 /// sizes a new window by), the process made per-monitor DPI aware first —
 /// as winit makes it — so that Windows reports device pixels (the work
 /// area too).
 #[cfg(windows)]
 fn system_scale() -> Option<f32> {
-    use windows_sys::Win32::Foundation::POINT;
     use windows_sys::Win32::Graphics::Gdi::{MonitorFromPoint, MONITOR_DEFAULTTOPRIMARY};
-    use windows_sys::Win32::UI::HiDpi::{GetDpiForMonitor, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, MDT_EFFECTIVE_DPI};
-    let (mut x, mut y) = (0u32, 0u32);
-    // SAFETY: process-wide settings and queries into two local u32s.
-    let ok = unsafe {
-        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        GetDpiForMonitor(MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY), MDT_EFFECTIVE_DPI, &mut x, &mut y) == 0
-    };
-    (ok && x > 0).then(|| x as f32 / 96.0)
+    dyn_dpi::set_per_monitor_aware();
+    // SAFETY: a query with a plain point.
+    let monitor = unsafe { MonitorFromPoint(dyn_dpi::point_origin(), MONITOR_DEFAULTTOPRIMARY) };
+    dpi_scale(dyn_dpi::monitor_dpi(monitor))
 }
 
 #[cfg(not(windows))]
@@ -150,9 +219,7 @@ fn device_window(ctx: &egui::Context, native: f32) {
 fn window_scale(w: &impl winit::raw_window_handle::HasWindowHandle) -> Option<f32> {
     use winit::raw_window_handle::RawWindowHandle;
     let RawWindowHandle::Win32(h) = w.window_handle().ok()?.as_raw() else { return None };
-    // SAFETY: a query on our own live window.
-    let dpi = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(h.hwnd.get() as windows_sys::Win32::Foundation::HWND) };
-    (dpi > 0).then(|| dpi as f32 / 96.0)
+    dpi_scale(dyn_dpi::window_dpi(h.hwnd.get() as windows_sys::Win32::Foundation::HWND))
 }
 
 fn main() -> eframe::Result<()> {
@@ -243,9 +310,7 @@ fn main() -> eframe::Result<()> {
 /// scale change until the next sign-in.
 #[cfg(windows)]
 fn system_dpi_scale() -> Option<f32> {
-    // SAFETY: a query without arguments.
-    let dpi = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForSystem() };
-    (dpi > 0).then(|| dpi as f32 / 96.0)
+    dpi_scale(dyn_dpi::system_dpi())
 }
 
 #[cfg(not(windows))]
@@ -1153,6 +1218,25 @@ fn one_press_per_pass(mut raw: egui::RawInput) -> Vec<egui::RawInput> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A missing or failed DPI call is no scale (egui's native one stays).
+    #[test]
+    fn missing_dpi_call_is_no_scale() {
+        assert_eq!(dpi_scale(None), None);
+        assert_eq!(dpi_scale(Some(0)), None);
+        assert_eq!(dpi_scale(Some(96)), Some(1.0));
+        assert_eq!(dpi_scale(Some(144)), Some(1.5));
+    }
+
+    /// The runtime resolver finds what exists and answers `None` for what
+    /// does not (an old Windows lacks the DPI calls), not a crash.
+    #[cfg(windows)]
+    #[test]
+    fn dyn_dpi_resolver_falls_back() {
+        assert!(dyn_dpi::find(b"user32.dll\0", b"GetWindowRect\0"));
+        assert!(!dyn_dpi::find(b"user32.dll\0", b"NoSuchDpiCall\0"));
+        assert!(!dyn_dpi::find(b"no-such-module.dll\0", b"GetDpiForSystem\0"));
+    }
 
     #[test]
     fn quick_key_presses_get_a_pass_each() {
