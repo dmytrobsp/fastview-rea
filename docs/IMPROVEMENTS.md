@@ -45,7 +45,7 @@ is out of reach (those are listed in `notes/COMPLETION_PLAN.md`, W6).
   third entry, current at open (a stored `Codepage` other than 0 selects
   it), which gives the names back as read, nothing narrowed or
   best-fitted («√», box-drawing, U+FFFD kept). Reason: the combo shows the
-  record's real encoding, and a look at 866 / 1251 loses nothing.
+  record's real encoding, and coming back from 866 / 1251 loses nothing.
 - **ADC codes beyond ±2³¹** (float32-range samples with a tiny `a`). The
   original truncates the code to a 32-bit int (`0x422250` → `0x411bf0`),
   every such code −2147483648; ours keeps it whole. Reason: the true raw

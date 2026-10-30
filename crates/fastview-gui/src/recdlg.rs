@@ -276,8 +276,11 @@ impl Doc {
         let row_names = |d: &Doc| -> Vec<String> { crate::chandlg::rows(d).into_iter().map(|k| crate::chandlg::row_name(d, k)).collect() };
         let (old_f, old_rows) = (formula_names(self), row_names(self));
         // The file's names in `set.keys` are 1251 text: they stand for the
-        // bytes only while the names were read in a single-byte code page.
-        let single = matches!(from, Encoding::Cp1251 | Encoding::Cp866);
+        // bytes only while the names were read in a single-byte code page —
+        // or always for a record read in UTF-8 / KOI8-R, whose keys are its
+        // bytes as read (1251 maps every byte) and whose file names
+        // `decode_name` gives in any code page.
+        let single = matches!(from, Encoding::Cp1251 | Encoding::Cp866) || !matches!(self.read_enc, Encoding::Cp1251 | Encoding::Cp866);
         let na = self.osc.analog.len();
         let file: Vec<Option<String>> = [None, None]
             .into_iter()
@@ -1524,6 +1527,26 @@ mod tests {
         assert_eq!(d.osc.analog[0].id, "Uл√3");
         assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(0), .. }));
         assert_eq!(formula(&app), "\"Uл√3\"*2");
+    }
+
+    /// A channel renamed on a UTF-8 / KOI8-R record before any «Кодировка»
+    /// switch keeps its name through 866 and back (as on a 1251 record).
+    #[test]
+    fn a_utf8_record_s_alias_survives_the_first_switch() {
+        for read in [Encoding::Utf8, Encoding::Koi8r] {
+            let mut osc = comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
+            osc.text_enc = Some(read);
+            osc.analog[0].id = "Струм".into();
+            let mut d = Doc::new(osc, "x".into());
+            d.init_record_text(Encoding::Cp1251);
+            d.init_set_keys();
+            crate::chandlg::rename(&mut d, crate::app::ChanKey::Analog(0), "Ток").unwrap();
+            d.set_codepage(Encoding::Cp866);
+            assert_eq!(d.osc.analog[0].id, "Ток", "{read:?}: 866");
+            d.set_codepage(read);
+            assert_eq!(d.osc.analog[0].id, "Ток", "{read:?}: back");
+            assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)).as_deref(), Some("Струм"), "{read:?}");
+        }
     }
 
     /// A stored `Oscillogram/Codepage` applies to a UTF-8 record too
