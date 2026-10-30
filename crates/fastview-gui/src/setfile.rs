@@ -642,9 +642,13 @@ impl App {
             d.selection.retain(|k| !matches!(k, ChanKey::Computed(_)));
             d.channels_changed();
         }
-        if matches!(d.codepage, Encoding::Cp1251 | Encoding::Cp866) {
-            if let Some(cp) = osc.attrs.get("Codepage").map(|v| recset::wtoi(v)) {
+        if let Some(cp) = osc.attrs.get("Codepage").map(|v| recset::wtoi(v)) {
+            // 1 is ANSI, the names as read: for a record read in UTF-8 or
+            // KOI8-R (ours keeps it, `Doc::init_record_text`) that encoding.
+            if matches!(d.read_enc, Encoding::Cp1251 | Encoding::Cp866) {
                 d.set_codepage(cp_of(cp));
+            } else {
+                d.set_codepage(if cp == 1 { d.read_enc } else { cp_of(cp) });
             }
         }
         // File channels.

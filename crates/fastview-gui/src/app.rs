@@ -747,6 +747,9 @@ pub struct Doc {
     /// The record comment (`.hdr` text, 32805) and its code page.
     pub hdr: Option<String>,
     pub hdr_cp: Encoding,
+    /// The encoding the names were read in (the program's, or the UTF-8 a
+    /// `.cfg` fixes): «Кодировка»'s ANSI — the names as read.
+    pub read_enc: Encoding,
     /// The record settings tree and the modified flag (`setfile`).
     pub set: crate::setfile::DocSet,
     /// This document's history (`doc+0x6ec` undo / `doc+0x700` redo deques,
@@ -823,6 +826,7 @@ impl Doc {
             name_raw: Vec::new(),
             hdr: None,
             hdr_cp: Encoding::Cp1251,
+            read_enc: Encoding::Cp1251,
             omp: Default::default(),
             pending: Vec::new(),
             merge_offset: 0.0,

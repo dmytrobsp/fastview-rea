@@ -139,6 +139,19 @@ pub fn stamp_texts(osc: &comtrade::Oscillogram, utc: bool) -> (String, String) {
 /// Code-page combo of DIALOG 392 / 332 (DLGINIT: 0 «866 MS-DOS», 1 «Windows-1251»).
 const CODEPAGES: [(Encoding, &str); 2] = [(Encoding::Cp866, "866 MS-DOS"), (Encoding::Cp1251, "Windows-1251")];
 
+/// DIALOG 392's «Кодировка» entries for a record read in `read`: the
+/// original's two (the combo index is `doc+0x6e8`, `0x44a112` / `0x44a330`)
+/// and, ours, the encoding of a record read in UTF-8 or KOI8-R as a third,
+/// so it shows as current and a switch away can come back (the names
+/// re-decoded from their bytes as read).
+pub fn codepage_items(read: Encoding) -> Vec<(Encoding, &'static str)> {
+    let mut v = CODEPAGES.to_vec();
+    if let Some(e) = ENCODINGS.iter().find(|(e, _)| *e == read && !matches!(read, Encoding::Cp1251 | Encoding::Cp866)) {
+        v.push(*e);
+    }
+    v
+}
+
 
 impl Doc {
     /// 32867/32868 CMDUI (`0x42ffb0`): the radio follows channel 0.
@@ -162,19 +175,23 @@ impl Doc {
         names.flat_map(|n| comtrade::encode_text(n, self.codepage)).collect()
     }
 
-    /// After a file is read: the names are decoded with the program encoding;
-    /// for the two single-byte code pages the record code page is then
-    /// guessed from the channel names and applied (`0x44f5b0` → `0x459e60`
-    /// → `0x4543e0`); a saved `Oscillogram/Codepage` would override it (the
-    /// `.set` file is not modelled). The `.hdr` text comes from the `.cff`
+    /// After a file is read: the names are decoded with the program encoding
+    /// (or the UTF-8 a `.cfg` fixes itself, `comtrade::cfg_utf8`). The
+    /// original's record code page is OEM / ANSI (`doc+0x6e8`, 0 / 1: «866
+    /// MS-DOS» / «Windows-1251»; ANSI the names as read, OEM their ANSI
+    /// bytes read as 866), guessed from the names at every open (`0x44f5b0`:
+    /// `0x459e60` at `0x44f7eb`, applied by `0x4543e0`), the `.set`'s
+    /// `Oscillogram/Codepage` winning (`0x44f808`). Ours guesses for a
+    /// record read in 1251 or 866; one read in UTF-8 or KOI8-R keeps that
+    /// encoding — its real one, which «Кодировка» shows and can pick back
+    /// (`codepage_items`; the original's guess would say ANSI, the names as
+    /// read, for Cyrillic names). The `.hdr` text comes from the `.cff`
     /// section or the sibling `.hdr` file.
     pub fn init_record_text(&mut self, program: Encoding) {
-        // A `.cfg` that fixes its own encoding (UTF-8, `comtrade::cfg_utf8`)
-        // was decoded in it: that is the record's code page, not guessed.
         let enc = self.osc.text_enc.unwrap_or(program);
         self.codepage = enc;
-        let single = matches!(enc, Encoding::Cp1251 | Encoding::Cp866);
-        if single {
+        self.read_enc = enc;
+        if matches!(enc, Encoding::Cp1251 | Encoding::Cp866) {
             let cp = comtrade::detect_codepage(&self.name_bytes());
             self.set_codepage(cp);
         }
@@ -488,10 +505,11 @@ impl App {
                 let rates: Vec<String> = rate_list(o.line_freq).iter().map(|r| r.to_string()).collect();
                 crate::dialogs::no_tab_stop(ui, |ui| crate::dialogs::win_combo_edit(ui, dlu(client, 120, 102, 80, 12), egui::Id::new("fv_rate"), &mut st.rate_text, &rates, focus));
                 win_label(ui, dlu(client, 12, 234, 96, 9), "Кодировка:", true, true);
-                let cps: Vec<String> = CODEPAGES.iter().map(|(_, l)| l.to_string()).collect();
-                let cur = CODEPAGES.iter().position(|(e, _)| *e == d.codepage).unwrap_or(0);
+                let items = codepage_items(d.read_enc);
+                let cps: Vec<String> = items.iter().map(|(_, l)| l.to_string()).collect();
+                let cur = items.iter().position(|(e, _)| *e == d.codepage).unwrap_or(0);
                 if let Some(k) = crate::dialogs::win_combo_list(ui, dlu(client, 121, 233, 80, 70), egui::Id::new("fv_codepage"), &cps, cur, true) {
-                    cp_pick = Some(CODEPAGES[k].0);
+                    cp_pick = Some(items[k].0);
                 }
                 win_label(ui, dlu(client, 12, 123, 96, 17), "Частота для коррекции расчётных значений:", true, true);
                 // «Не корректировать», then each frequency candidate by
@@ -913,7 +931,9 @@ mod tests {
     }
 
     /// A record whose `.cfg` fixed UTF-8 (issue #8): that is its code page
-    /// under any program encoding — no guess re-decodes its names — and its
+    /// under any program encoding — no guess re-decodes its names, a U+FFFD
+    /// kept —, «Кодировка» lists it as a third entry, current, and a switch
+    /// to 866 or 1251 (its bytes read so) comes back to the same names; its
     /// UTF-8 `.hdr` is read as UTF-8 and written back byte for byte, while
     /// `Comments/Codepage` keeps the guess under the program encoding.
     #[test]
@@ -931,15 +951,58 @@ mod tests {
         d.path = Some(dir.join("rec.cfg"));
         d.init_record_text(Encoding::Cp1251);
         let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(d.codepage, Encoding::Utf8);
-        assert_eq!((d.osc.station.as_str(), d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("Підстанція", "Струм фази А", "Гр.\u{FFFD}.:Напруга"));
+        let names = |d: &Doc| [d.osc.station.clone(), d.osc.analog[0].id.clone(), d.osc.analog[1].id.clone()];
+        let read = ["Підстанція", "Струм фази А", "Гр.\u{FFFD}.:Напруга"].map(String::from);
+        assert_eq!((d.codepage, d.read_enc, names(&d)), (Encoding::Utf8, Encoding::Utf8, read.clone()));
         assert_eq!((d.hdr.as_deref(), d.hdr_cp), (Some(hdr), Encoding::Utf8));
         assert_eq!(d.hdr_file_bytes().unwrap(), hdr.as_bytes());
         let guess = crate::setfile::cp_code(comtrade::detect_codepage(hdr.as_bytes()));
         assert_eq!(d.set.tree.section("Comments").unwrap().get_int("Codepage", -1), guess);
-        // «Кодировка» then re-reads the UTF-8 bytes in the code page picked.
-        d.set_codepage(Encoding::Cp1251);
-        assert_eq!(d.osc.station, comtrade::decode_bytes("Підстанція".as_bytes(), Encoding::Cp1251));
+        // «Кодировка»: the original's two, then UTF-8 — current.
+        let items = codepage_items(d.read_enc);
+        assert_eq!(items, [(Encoding::Cp866, "866 MS-DOS"), (Encoding::Cp1251, "Windows-1251"), (Encoding::Utf8, "UTF-8")]);
+        assert_eq!(items.iter().position(|(e, _)| *e == d.codepage), Some(2));
+        assert_eq!(codepage_items(Encoding::Cp1251).len(), 2, "a 1251 / 866 record: the original's two");
+        // 866 / 1251 read the UTF-8 bytes so; UTF-8 gives the names back.
+        for cp in [Encoding::Cp866, Encoding::Cp1251] {
+            d.set_codepage(cp);
+            let as_cp: String = comtrade::decode_bytes("Підстанція".as_bytes(), cp).chars().map(comtrade::best_fit_1251).collect();
+            assert_eq!(d.osc.station, as_cp, "{cp:?}");
+            d.set_codepage(Encoding::Utf8);
+            assert_eq!(names(&d), read, "{cp:?} and back");
+        }
+        // Read under the program's UTF-8 or KOI8-R: that encoding, listed.
+        for program in [Encoding::Utf8, Encoding::Koi8r] {
+            let mut d = Doc::new(comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap(), "y".into());
+            d.init_record_text(program);
+            assert_eq!((d.codepage, d.read_enc), (program, program));
+            assert_eq!(codepage_items(d.read_enc).last().map(|e| e.0), Some(program));
+        }
+    }
+
+    /// A stored `Oscillogram/Codepage` applies to a UTF-8 record too
+    /// (`0x44f808`): 0 = OEM (its bytes read as 866), 1 = ANSI, the names
+    /// as read — UTF-8.
+    #[test]
+    fn a_stored_code_page_applies_to_a_utf8_record() {
+        let mut app = demo_app();
+        let ai = app.active.unwrap();
+        let d = &mut app.docs[ai];
+        d.osc.text_enc = Some(Encoding::Utf8);
+        d.osc.analog[0].id = "Струм".into();
+        d.init_record_text(Encoding::Cp1251);
+        d.init_set_keys();
+        d.set.tree.section_mut("Oscillogram").set_int("Codepage", 0);
+        app.apply_record_settings(ai, false);
+        let d = &mut app.docs[ai];
+        let oem: String = comtrade::decode_bytes("Струм".as_bytes(), Encoding::Cp866).chars().map(comtrade::best_fit_1251).collect();
+        assert_eq!((d.codepage, d.osc.analog[0].id.as_str()), (Encoding::Cp866, oem.as_str()));
+        assert_eq!(crate::setfile::cp_code(d.codepage), 0, "saved back as 0");
+        d.set.tree.section_mut("Oscillogram").set_int("Codepage", 1);
+        app.apply_record_settings(ai, false);
+        let d = &app.docs[ai];
+        assert_eq!((d.codepage, d.osc.analog[0].id.as_str()), (Encoding::Utf8, "Струм"));
+        assert_eq!(crate::setfile::cp_code(d.codepage), 1, "saved back as 1");
     }
 
     #[test]
