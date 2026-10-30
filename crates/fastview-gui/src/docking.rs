@@ -304,9 +304,10 @@ impl Dockable {
 
     /// One frame of an auto-hidden unit: hovering its button 400 ms or a
     /// click shows it; every 700 ms a shown one slides back when the pointer
-    /// is outside it and its button (not while a menu is up); the slide
+    /// is outside it and its button (not while `held`: a menu up or the
+    /// focus in the pane); the slide
     /// moves 1/12 per frame. Returns true while it is moving.
-    pub fn auto_hide_frame(&mut self, now: f64, on_button: bool, clicked: bool, in_pane: bool, menu_up: bool) -> bool {
+    pub fn auto_hide_frame(&mut self, now: f64, on_button: bool, clicked: bool, in_pane: bool, held: bool) -> bool {
         if self.place != Place::AutoHide {
             return false;
         }
@@ -321,7 +322,7 @@ impl Dockable {
         }
         if self.out && now >= self.next_check {
             self.next_check = now + CHECK_S;
-            if !in_pane && !on_button && !menu_up {
+            if !in_pane && !on_button && !held {
                 self.out = false;
             }
         }

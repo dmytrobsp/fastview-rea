@@ -1786,6 +1786,41 @@ mod window_tests {
         assert!(log.last().is_some_and(|f| f.2 == 0.0), "slid in: {log:?}");
     }
 
+    /// A slid-out pane holding the focus stays out with the pointer
+    /// elsewhere (the check returns while its active flag is set,
+    /// `0x10087a4a` / `0x10089d7d`; VM: a click in the slid-out vector
+    /// diagram, the pointer away 4.5 s, still out); a press in the
+    /// oscillogram view takes the focus and it slides back at the next
+    /// check.
+    #[test]
+    fn a_focused_slid_out_pane_stays_out() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        w.run(vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r).expect("the slid-out vector diagram");
+        let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
+        let press = |w: &mut Win, at: Pos2| {
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(true)]);
+            w.run(vec![ev(false)]);
+        };
+        press(&mut w, canvas.center());
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector));
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(90);
+        assert!(w.app.docks[Unit::Vector].out, "the focus in the pane keeps it out");
+        press(&mut w, away);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::View);
+        w.idle(30);
+        assert!(!w.app.docks[Unit::Vector].out && w.app.docks[Unit::Vector].slide == 0.0, "the focus gone, it slid back");
+    }
+
     /// The hide check finds the pointer on the strip button by position
     /// (`0x10087a4a`: PtInRect on the button's rect, whatever window is on
     /// top there): with a window over the button the pane stays out,

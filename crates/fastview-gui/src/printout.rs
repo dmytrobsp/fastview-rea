@@ -560,11 +560,11 @@ impl App {
         }
         let Some(p) = ctx.input(|i| if i.pointer.any_pressed() { crate::lanes::press_pos(i) } else { None }) else { return };
         if let Some((pane, _)) = self.pane_canvas.iter().find(|(_, r)| r.contains(p)) {
-            self.copy_focus = CopyFocus::Diagram(*pane);
+            (self.copy_focus, self.focus_press) = (CopyFocus::Diagram(*pane), Some(p));
         } else if self.pane_grid.iter().any(|r| r.contains(p)) {
-            self.copy_focus = CopyFocus::Grid;
+            (self.copy_focus, self.focus_press) = (CopyFocus::Grid, Some(p));
         } else if self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
-            self.copy_focus = CopyFocus::View;
+            (self.copy_focus, self.focus_press) = (CopyFocus::View, None);
         }
     }
 

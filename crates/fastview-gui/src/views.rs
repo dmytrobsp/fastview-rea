@@ -624,7 +624,12 @@ impl App {
             // on the window rect and on the button rect), not by which
             // window is on top there.
             let inside = pointer.is_some_and(|q| self.dock_areas[v.unit as usize].is_some_and(|a| a.contains(q)) || buttons.iter().any(|b| b.contains(q)));
-            self.docks[v.unit].auto_hide_frame(now, hit.0, hit.1, inside, menu_up);
+            // Nor while the pane holds the focus: the check returns at once
+            // while its active flag (+0x2c8) is set — at each idle update
+            // the focus window is the pane or a child of it (`0x10089d7d`,
+            // GetFocus / IsChild); a press in its diagram or grid gives it.
+            let focused = self.copy_focus != crate::app::CopyFocus::View && self.focus_press.is_some_and(|q| self.dock_areas[v.unit as usize].is_some_and(|a| a.contains(q)));
+            self.docks[v.unit].auto_hide_frame(now, hit.0, hit.1, inside, menu_up || focused);
             if let Some(dt) = self.docks[v.unit].wake_in(now) {
                 wake = Some(wake.map_or(dt, |w| w.min(dt)));
             }

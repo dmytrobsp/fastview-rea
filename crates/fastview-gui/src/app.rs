@@ -1505,6 +1505,9 @@ pub struct App {
     pub pane_grid: Vec<egui::Rect>,
     /// Where the keyboard focus is, as far as copy (`0x405160`) cares.
     pub copy_focus: CopyFocus,
+    /// The press that gave a diagram or grid the focus (a slid-out pane
+    /// holding it stays out).
+    pub focus_press: Option<egui::Pos2>,
     /// Screen pixels per point, for pictures at the screen's resolution.
     pub ppp: f32,
     /// The merge bar (shown after a paste).
@@ -1690,6 +1693,7 @@ impl App {
             windows_dlg: None,
             next_serial: 1,
             copy_focus: CopyFocus::View,
+            focus_press: None,
             ppp: 1.0,
             window_title: String::new(),
             min_size_ppp: 0.0,
