@@ -127,3 +127,20 @@ misbehaves and the better behaviour is obvious (the maintainer,
 - **The lanes' names after «Кодировка» (#7).** The original's lanes keep
   the old names until their next layout (a missing repaint, ledger
   L9.350); ours shows the new names at once. Reason: a stale repaint.
+- **The caption drag of a docked pane shows the move cursor, and its
+  distance grows with the display scale (#90).** The original floats a
+  docked pane once the pointer is more than the system drag distance
+  (SM_CXDRAG / SM_CYDRAG, 4 px) from the press along an axis, wherever the
+  pointer is (`0x10086f3a`; clone: 4 px stays docked, 5 px floats the pane
+  with the pointer still on it), and keeps the arrow cursor from the press
+  through the drag (clone, 0 / 3 / 4 / 5 / 8 px). Ours floats at the same
+  distance at 100 % (an earlier build also asked the pointer to leave the
+  pane, so a large pane needed a long drag: a fix to match the original,
+  not an improvement), scales that distance with the display scale (5 px at
+  125 %, 6 px at 150 %: the original's stays at the system metric, not
+  checked in a clone at a scaled display), and shows the four-way move
+  cursor from the press on the caption (not on its pin or close
+  buttons) and while the pane is dragged, for a docked or a floating pane
+  (an auto-hidden pane's caption does nothing, so keeps the arrow). Reason:
+  the maintainer's request (2026-10-30): the arrow gave no hint that
+  dragging on would pull the pane out of its dock.

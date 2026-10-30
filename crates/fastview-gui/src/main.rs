@@ -2176,14 +2176,13 @@ mod window_tests {
         assert!(!w.app.modal_up, "a floating pane is no dialog");
         let win = w.ctx.memory(|m| m.area_rect(egui::Id::new(("fv_floating_pane", Unit::Vector)))).expect("the floating window");
         // The view takes input beside the window.
-        let view = w.app.view_rects.expect("the view").0;
         let free = [Pos2::new(700.0, 470.0), Pos2::new(700.0, 330.0), Pos2::new(420.0, 470.0), Pos2::new(560.0, 330.0), Pos2::new(250.0, 600.0)]
             .into_iter()
             .find(|p| !win.expand(6.0).contains(*p))
             .unwrap_or_else(|| panic!("a point of the view beside the window {win:?}"));
         let before = w.view_state();
         w.poke(free);
-        assert_ne!(w.view_state(), before, "input reaches the view: {free:?} {win:?} modal {} view {:?}", w.app.modal_up, w.app.view_rects);
+        assert_ne!(w.view_state(), before, "input reaches the view at {free:?} (window {win:?})");
         // A press on the window's caption, tab strip or toolbar over the
         // view leaves the focus off the view.
         let tab = w.app.pane_tab_rects.iter().map(|(_, r)| r.center()).next().expect("the tab strip");
@@ -2200,6 +2199,112 @@ mod window_tests {
         assert_eq!(w.app.copy_focus, app::CopyFocus::View);
         w.press(egui::PointerButton::Primary, caption, caption);
         assert_ne!(w.app.copy_focus, app::CopyFocus::View);
+    }
+
+    /// A docked pane's caption drag floats it once the pointer is past the
+    /// drag distance from the press — 4 px at 100 %, grown with the display
+    /// scale — wherever the pointer is, with the four-way move cursor from
+    /// the press on (#90); the caption's buttons never start a drag.
+    #[test]
+    fn a_short_caption_drag_floats_a_docked_pane_with_the_move_cursor() {
+        use docking::{Place, Unit};
+        use egui::CursorIcon::{Default as Arrow, Move};
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        for dpi in [96, 120, 144] {
+            dpi::set(dpi);
+            let reach = dpi::s(docking::DRAG_PX);
+            let fresh = || {
+                let mut w = Win::new();
+                w.idle(3);
+                let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+                (w, pane)
+            };
+            // The press on the caption body, 60 px in from the pane's left.
+            let (mut w, pane) = fresh();
+            let at = Pos2::new(pane.left() + 60.0, pane.top() + 8.0);
+            assert_eq!(w.run(vec![egui::Event::PointerMoved(at)]), Arrow, "{dpi}: hovering the caption leaves the arrow");
+            assert_eq!(w.run(vec![ev(at, true)]), Move, "{dpi}: the press arms the drag: move cursor");
+            // Up to the distance: still docked, still armed.
+            assert_eq!(w.run(vec![egui::Event::PointerMoved(at + Vec2::new(reach, 0.0))]), Move);
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "{dpi}: {reach} px is not past the distance");
+            // One more px, the pointer still over the pane: it floats.
+            let to = at + Vec2::new(reach + 1.0, 0.0);
+            assert!(w.app.dock_rects[Unit::Vector as usize].is_some_and(|r| r.contains(to)));
+            assert_eq!(w.run(vec![egui::Event::PointerMoved(to)]), Move, "{dpi}: the cursor goes on while dragging");
+            w.idle(1);
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating, "{dpi}: past the drag distance");
+            assert_eq!(w.run(vec![egui::Event::PointerMoved(to + Vec2::new(3.0, 3.0))]), Move, "{dpi}: moving the floated pane");
+            w.run(vec![ev(to, false)]);
+            w.idle(3);
+            assert_eq!(w.run(vec![egui::Event::PointerMoved(Pos2::new(5.0, 5.0))]), Arrow, "{dpi}: released: the arrow");
+            // A vertical drag counts the same.
+            let (mut w, pane) = fresh();
+            let at = Pos2::new(pane.left() + 60.0, pane.top() + 8.0);
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true)]);
+            w.run(vec![egui::Event::PointerMoved(at + Vec2::new(0.0, reach))]);
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked);
+            w.run(vec![egui::Event::PointerMoved(at + Vec2::new(0.0, reach + 1.0))]);
+            w.idle(1);
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating, "{dpi}: down past the distance");
+            // The caption's buttons (close at 11 px from the right edge, pin
+            // at 26) never start a drag, however far the pointer goes.
+            for from_right in [11.0, 26.0] {
+                let (mut w, pane) = fresh();
+                let btn = Pos2::new(pane.right() - dpi::s(from_right), pane.top() + dpi::s(10.0));
+                w.run(vec![egui::Event::PointerMoved(btn)]);
+                assert_eq!(w.run(vec![ev(btn, true)]), Arrow, "{dpi}: a press on a button: the arrow");
+                for k in 1..=6 {
+                    w.run(vec![egui::Event::PointerMoved(btn + Vec2::new(-20.0 * k as f32, 3.0 * k as f32))]);
+                }
+                assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "{dpi}: a drag from the button at {from_right} did not float it");
+            }
+        }
+        dpi::set(96);
+    }
+
+    /// The new drag rule leaves the other captions alone (#90): a floating
+    /// pane's caption press shows the move cursor and a click on it moves
+    /// nothing; a slid-out pane's caption keeps the arrow and is never
+    /// floated by a drag.
+    #[test]
+    fn floating_and_slid_out_captions_under_the_short_drag_rule() {
+        use docking::{Place, Unit};
+        use egui::CursorIcon::Move;
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        // Slid out.
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out);
+        let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+        let at = Pos2::new(area.left() + 60.0, area.top() + 8.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        assert_ne!(w.run(vec![ev(at, true)]), Move, "a slid-out caption keeps the arrow");
+        w.run(vec![egui::Event::PointerMoved(at + Vec2::new(30.0, 10.0))]);
+        w.run(vec![ev(at + Vec2::new(30.0, 10.0), false)]);
+        w.idle(2);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::AutoHide, "no float from a drag");
+        // Floating: a click (press and release in place) changes nothing,
+        // the press shows the move cursor.
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r).expect("drawn");
+        let dbl = Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0);
+        w.run(vec![egui::Event::PointerMoved(dbl)]);
+        w.run(vec![ev(dbl, true), ev(dbl, false)]);
+        w.run(vec![ev(dbl, true), ev(dbl, false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        let win = w.app.docks[Unit::Vector].float_rect.expect("floating");
+        let at = Pos2::new(win.left() + 60.0, win.top() + 10.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        assert_eq!(w.run(vec![ev(at, true)]), Move);
+        w.run(vec![ev(at, false)]);
+        w.idle(2);
+        assert_eq!(w.app.docks[Unit::Vector].float_rect, Some(win), "a click moves nothing");
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
     }
 
     /// An auto-hidden group slid out by hovering its strip button stays

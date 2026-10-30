@@ -201,12 +201,23 @@ impl App {
             self.docks[unit].double_click(origin);
             return;
         }
-        if act.dragging {
+        // The four-way move cursor from the press on the caption of a pane
+        // that a drag moves (docked: out of its dock; floating: its window),
+        // and while it is dragged. An auto-hidden one's caption drag does
+        // nothing: the arrow stays.
+        let place = self.docks[unit].place;
+        if (act.armed || act.dragging) && matches!(place, Place::Docked | Place::Floating) {
+            ctx.set_cursor_icon(egui::CursorIcon::Move);
+        }
+        if act.armed || act.dragging {
             let (press, now, delta) = ctx.input(|i| (i.pointer.press_origin(), i.pointer.latest_pos(), i.pointer.delta()));
             let (Some(press), Some(now)) = (press, now) else { return };
             let dragging = self.dock_drag.is_some();
-            match self.docks[unit].place {
-                Place::Docked => {
+            match place {
+                // Past the drag distance from the press, wherever the
+                // pointer is (the drag has not yet reached egui's own
+                // click-or-drag decision).
+                Place::Docked if act.armed => {
                     if self.docks[unit].drag_detach(press, now, pane, origin) {
                         // A group beside it takes its slot.
                         self.dock_leave(unit);
@@ -215,7 +226,7 @@ impl App {
                     }
                 }
                 // A floating pane's drag shows the markers too.
-                Place::Floating if !dragging => {
+                Place::Floating if act.dragging && !dragging => {
                     let d = &mut self.docks[unit];
                     d.float_rect = d.float_rect.map(|r| r.translate(delta));
                     let r = self.docks[unit].float_at(origin);
@@ -1031,6 +1042,7 @@ impl App {
             dock_marker(&painter, *r, *d, on);
         }
         if down {
+            ctx.set_cursor_icon(egui::CursorIcon::Move);
             // While a marker is hot only the preview moves.
             if let (Some(p), None) = (pos, hot) {
                 let d = &mut self.docks[unit];
@@ -1937,6 +1949,9 @@ struct CaptionAct {
     pin: bool,
     double: bool,
     dragging: bool,
+    /// The primary button is held, pressed on the caption itself (not on
+    /// one of its buttons): a drag that has not moved far yet counts.
+    armed: bool,
     /// A right-click: the pane menu at that point.
     menu: Option<egui::Pos2>,
     /// A press on the caption or its buttons (any button).
@@ -1970,7 +1985,13 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
         act.double = last.is_some_and(|t| now - t <= 0.5);
         ui.data_mut(|d| if act.double { d.remove::<f64>(id) } else { d.insert_temp(id, now) });
     }
-    act.dragging = resp.dragged();
+    // The buttons (the close at 11 px from the right edge, the pin at 26)
+    // never start a drag: a press that began on one is no caption press.
+    let spots = [Some(rect.right() - s(11.0)), pinned.map(|_| rect.right() - s(26.0))];
+    let cy = rect.center().y.floor() + 0.5;
+    let on_button = ui.input(|i| i.pointer.press_origin()).is_some_and(|p| spots.iter().flatten().any(|&x| egui::Rect::from_center_size(egui::pos2(x, cy), egui::vec2(s(15.0), s(15.0))).contains(p)));
+    act.armed = resp.is_pointer_button_down_on() && !on_button && ui.input(|i| i.pointer.primary_down());
+    act.dragging = resp.dragged() && !on_button;
     act.pressed = resp.contains_pointer() && ui.input(|i| i.pointer.any_pressed());
     if resp.secondary_clicked() {
         act.menu = resp.interact_pointer_pos();
@@ -2003,7 +2024,6 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
         }
         b
     };
-    let cy = rect.center().y.floor() + 0.5;
     // ✕: two 1 px diagonals in a 7 px box.
     let c = egui::pos2(rect.right() - s(11.0), cy);
     let close = button(ui, c, "close");
