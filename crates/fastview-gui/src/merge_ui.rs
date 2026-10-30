@@ -812,8 +812,11 @@ impl App {
         sync = win_button(ui, at(w - 220.0, 9.0, 100.0, 23.0), "Синхронизация", false).clicked() || sync;
         join = win_button(ui, at(w - 110.0, 9.0, 100.0, 23.0), "Объединить", false).clicked() || join;
         let text = r.shrink2(egui::vec2(15.0, 14.0));
-        for (x, t) in [(15.0, "Синхронизация"), (290.0, "Канал 1"), (450.0, "Канал 2")] {
-            ui.painter().text(egui::pos2(r.left() + x, text.top()), egui::Align2::LEFT_TOP, t, font.clone(), ink);
+        // Each static cut at the control after it (VM, 150 %: «Синхрониза»
+        // under the larger font).
+        for (x, end, t) in [(15.0, 110.0, "Синхронизация"), (290.0, 350.0, "Канал 1"), (450.0, 510.0, "Канал 2")] {
+            let clip = egui::Rect::from_min_max(egui::pos2(r.left() + x, r.top()), egui::pos2(r.left() + end, r.bottom())).intersect(ui.clip_rect());
+            ui.painter().with_clip_rect(clip).text(egui::pos2(r.left() + x, text.top()), egui::Align2::LEFT_TOP, t, font.clone(), ink);
         }
         ui.painter().text(egui::pos2(text.left(), text.bottom()), egui::Align2::LEFT_BOTTOM, &bar.status, font, ink);
         let close = crate::dialogs::caption_close(ui, ui.max_rect(), ui.id().with("fv_merge_close"));

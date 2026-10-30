@@ -464,7 +464,9 @@ pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enab
     p.rect_filled(face, 4.0, bottom);
     p.rect_filled(Rect::from_min_max(face.min, Pos2::new(face.right(), face.bottom() - 1.0)), 4.0, edge);
     p.rect_filled(face.shrink(1.0), 3.0, fill);
-    p.text(face.center(), egui::Align2::CENTER_CENTER, text, dlg_font(), Color32::BLACK);
+    // Its text cut at the face (VM, 150 %: the merge bar's 100 px
+    // «Синхронизация» under the larger font).
+    p.with_clip_rect(face.intersect(ui.clip_rect())).text(face.center(), egui::Align2::CENTER_CENTER, text, dlg_font(), Color32::BLACK);
     if focused && cues(ui) {
         focus_rect(p, Rect::from_min_max(r.min + Vec2::new(4.0, 3.0), r.max - Vec2::new(4.0, 3.0)));
     }
