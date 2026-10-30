@@ -298,13 +298,12 @@ impl Doc {
                 None => (comtrade::encode_text(&c.name, from), true),
             };
             let seen = decode(&bytes);
-            let old = c.name.clone();
             if redecode {
                 c.name.clone_from(&seen);
             }
             c.name_raw = Some((bytes, seen));
             let new = c.name.clone();
-            if let Some(p) = self.pending.iter_mut().find(|p| p.name() == old) {
+            if let Some(p) = self.pending_of_mut(j) {
                 match &mut p.pasted.channel {
                     Ok(a) => a.id = new,
                     Err(d) => d.id = new,
@@ -1146,6 +1145,43 @@ mod tests {
         assert_eq!(crate::chandlg::rename(d, ChanKey::Computed(j), "Своё"), Ok(()));
         d.set_codepage(Encoding::Cp866);
         assert_eq!(d.computed[j].name, "Своё");
+    }
+
+    /// Two pasted lanes whose names decode alike stay linked to their own
+    /// pasted channels (by the lane, not the name) and merge their own
+    /// values.
+    #[test]
+    fn pasted_lanes_named_alike_keep_their_own_channels() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "Ток фазы В".into();
+        d.osc.analog[4].id = "Ток фазы С".into();
+        d.init_set_keys();
+        let (b, c) = (d.osc.analog[3].samples.clone(), d.osc.analog[4].samples.clone());
+        d.selection = [ChanKey::Analog(3), ChanKey::Analog(4)].into();
+        app.copy_channels_for_merge();
+        app.active_doc_mut().unwrap().selection.clear();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let lanes: Vec<usize> = (0..d.computed.len()).filter(|&j| d.computed[j].formula == crate::merge_ui::PENDING).collect();
+        assert_eq!(lanes.len(), 2);
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!(d.computed[lanes[0]].name, d.computed[lanes[1]].name, "alike in 866");
+        let own = |d: &Doc, j: usize| match &d.pending_of(j).unwrap().pasted.channel {
+            Ok(a) => a.samples.clone(),
+            Err(_) => Vec::new(),
+        };
+        assert_eq!((own(d, lanes[0]), own(d, lanes[1])), (b.clone(), c.clone()));
+        let na = d.osc.analog.len();
+        app.merge_records();
+        let d = app.active_doc().unwrap();
+        let k = d.osc.analog.len() - na;
+        assert_eq!(k, 2);
+        let mid = b.len() / 2;
+        let (mb, mc) = (&d.osc.analog[na].samples, &d.osc.analog[na + 1].samples);
+        assert!((mb[mid] - b[mid]).abs() < 1e-9 && (mc[mid] - c[mid]).abs() < 1e-9, "{} {} / {} {}", mb[mid], b[mid], mc[mid], c[mid]);
     }
 
     /// An undo past a merge takes the names' bytes back with the channels:

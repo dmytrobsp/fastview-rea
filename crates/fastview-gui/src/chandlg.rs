@@ -406,8 +406,8 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
         // A pasted lane: its pasted channel is renamed along, so the paste
         // keeps its link (the original finds them by bit 14).
         ChanKey::Computed(j) => {
-            let old = std::mem::replace(&mut doc.computed[j].name, name.to_string());
-            if let Some(p) = doc.pending.iter_mut().find(|p| p.name() == old) {
+            doc.computed[j].name = name.to_string();
+            if let Some(p) = doc.pending_of_mut(j) {
                 match &mut p.pasted.channel {
                     Ok(a) => a.id = name.to_string(),
                     Err(d) => d.id = name.to_string(),
@@ -479,10 +479,7 @@ fn coef_channel(doc: &Doc, k: ChanKey) -> Option<&fvb_core::comtrade::AnalogChan
 fn coef_channel_mut(doc: &mut Doc, k: ChanKey) -> Option<&mut fvb_core::comtrade::AnalogChannel> {
     match k {
         ChanKey::Analog(i) => doc.osc.analog.get_mut(i),
-        ChanKey::Computed(j) => {
-            let name = doc.computed.get(j).filter(|c| c.formula == crate::merge_ui::PENDING)?.name.clone();
-            doc.pending.iter_mut().find(|p| p.name() == name)?.pasted.channel.as_mut().ok()
-        }
+        ChanKey::Computed(j) => doc.pending_of_mut(j)?.pasted.channel.as_mut().ok(),
         ChanKey::Digital(_) => None,
     }
 }

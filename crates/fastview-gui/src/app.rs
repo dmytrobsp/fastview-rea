@@ -931,7 +931,7 @@ impl Doc {
         if c.formula == crate::merge_ui::PENDING {
             // A pasted channel (bit 14) over its own samples: N from its own
             // rate ÷ 50 (`0x427315`), its own rate for the correction.
-            let Some(p) = self.pending.iter().find(|p| p.name() == c.name) else { return };
+            let Some(p) = self.pending.iter().find(|p| p.lane == c.seq) else { return };
             match &p.pasted.channel {
                 Ok(a) => {
                     let pn = if p.pasted.rate == 0.0 { n } else { (p.pasted.rate / 50.0).round().max(1.0) as usize };

@@ -22,6 +22,11 @@ pub struct ClipChan {
     /// «IA БЛОКА 3», 2000/1 primary values shown secondary, pastes at
     /// «454.087 мА», not 908 A).
     pub primary_mode: bool,
+    /// Its lane's `Computed::seq` once pasted (0 on the clipboard): the
+    /// link between the two, as the original's lane is the channel itself
+    /// (bit 14) — not its name, which «Кодировка» or a rename may make
+    /// another lane's too.
+    pub lane: u64,
 }
 
 impl ClipChan {
@@ -181,7 +186,7 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
                     own_freq: net_freq.clone(),
                 })
             };
-            ClipChan { pasted: Pasted { channel, times, rate: rec.rate, pad: 0.0 }, color: c.color.map_or(egui::Color32::TRANSPARENT, from_colorref), start, primary_mode: c.primary_mode }
+            ClipChan { pasted: Pasted { channel, times, rate: rec.rate, pad: 0.0 }, color: c.color.map_or(egui::Color32::TRANSPARENT, from_colorref), start, primary_mode: c.primary_mode, lane: 0 }
         })
         .collect()
 }
@@ -284,7 +289,13 @@ impl Doc {
     /// The pasted channel behind computed lane `j`, if it is pending.
     pub fn pending_of(&self, j: usize) -> Option<&ClipChan> {
         let c = self.computed.get(j).filter(|c| c.formula == PENDING)?;
-        self.pending.iter().find(|p| p.name() == c.name)
+        self.pending.iter().find(|p| p.lane == c.seq)
+    }
+
+    /// [`Doc::pending_of`], mutable.
+    pub fn pending_of_mut(&mut self, j: usize) -> Option<&mut ClipChan> {
+        let seq = self.computed.get(j).filter(|c| c.formula == PENDING)?.seq;
+        self.pending.iter_mut().find(|p| p.lane == seq)
     }
 
     /// The time mapping of pending lane `j` against the record and its
@@ -293,11 +304,6 @@ impl Doc {
         let p = self.pending_of(j)?;
         let t = crate::oscgeom::PastedTimes { own: &p.pasted.times, own_rate: p.pasted.rate, rec: &self.osc.time, rec_rate: self.osc.sample_rate, offset: self.merge_offset };
         Some((t, p))
-    }
-
-    /// Is the pending lane named `name` a pasted digital channel?
-    fn pending_digital_named(&self, name: &str) -> bool {
-        self.pending.iter().any(|p| p.name() == name && p.pasted.channel.is_err())
     }
 
     /// Is computed lane `j` a pasted digital channel (drawn as a digital
@@ -309,8 +315,8 @@ impl Doc {
     /// Keep only pending channels that still have their lane (an undo of the
     /// paste removes the lanes).
     pub fn prune_pending(&mut self) {
-        let names: Vec<String> = self.computed.iter().filter(|c| c.formula == PENDING).map(|c| c.name.clone()).collect();
-        self.pending.retain(|p| names.iter().any(|n| n == p.name()));
+        let lanes: Vec<u64> = self.computed.iter().filter(|c| c.formula == PENDING).map(|c| c.seq).collect();
+        self.pending.retain(|p| lanes.contains(&p.lane));
         if self.pending.is_empty() {
             self.merge_offset = 0.0;
         }
@@ -458,6 +464,7 @@ impl App {
                 lane.unit = a.unit.clone();
             }
             lane.before = if c.pasted.channel.is_ok() { at_analog } else { Some(at_digital) };
+            c.lane = lane.seq;
             d.computed.push(lane);
             d.selection.insert(ChanKey::Computed(d.computed.len() - 1));
             d.pending.push(c);
@@ -580,7 +587,7 @@ impl App {
         // Pending channels are read through the accessor too (`0x47e3fb`,
         // `0x47e6a9`): their flags baked in (k = 1), and kept on the merged
         // channels below — applied a second time, as in the original.
-        let lane_of = |p: &ClipChan| d.computed.iter().find(|c| c.formula == PENDING && c.name == p.name());
+        let lane_of = |p: &ClipChan| d.computed.iter().find(|c| c.formula == PENDING && c.seq == p.lane);
         let pasted: Vec<Pasted> = d
             .pending
             .iter()
@@ -607,9 +614,42 @@ impl App {
                 q
             })
             .collect();
-        let flags: Vec<(String, bool, bool, ValueMode)> = d.pending.iter().filter_map(|p| lane_of(p).map(|c| (c.name.clone(), c.invert, c.remove_dc, c.mode))).collect();
-        // The pasted channels' display modes (`primary_mode`, `ch+0x89`).
-        let modes: Vec<(String, bool)> = d.pending.iter().map(|p| (p.name().to_string(), p.primary_mode)).collect();
+        // Each pending channel's lane, by its link: the merged channels come
+        // out in the pending order (analog ones, then digital ones), so the
+        // k-th new channel of a kind is the k-th pending one of that kind —
+        // names may coincide.
+        struct Pend {
+            flags: Option<(bool, bool, ValueMode)>,
+            color: Option<(egui::Color32, bool)>,
+            // The pasted channels' display modes (`primary_mode`, `ch+0x89`).
+            mode: bool,
+            /// Pasted at the block's end or before a formula channel.
+            after: Option<(Option<String>, u64)>,
+            picked: bool,
+        }
+        let pend = |p: &ClipChan| {
+            let j = d.computed.iter().position(|c| c.formula == PENDING && c.seq == p.lane);
+            let c = j.map(|j| &d.computed[j]);
+            let after = c.and_then(|c| {
+                let at = match c.before {
+                    Some(ChanKey::Analog(_)) => None,
+                    Some(ChanKey::Computed(f)) => Some(d.computed.get(f).map(|c| c.name.clone())),
+                    _ => Some(None),
+                };
+                at.map(|at| (at, c.seq))
+            });
+            Pend {
+                flags: c.map(|c| (c.invert, c.remove_dc, c.mode)),
+                color: c.map(|c| (c.color, c.custom_color)),
+                mode: p.primary_mode,
+                after,
+                picked: j.is_some_and(|j| d.selection.contains(&ChanKey::Computed(j))),
+            }
+        };
+        let (pend_a, pend_d): (Vec<Pend>, Vec<Pend>) = {
+            let (a, dg): (Vec<&ClipChan>, Vec<&ClipChan>) = d.pending.iter().partition(|p| p.pasted.channel.is_ok());
+            (a.into_iter().map(pend).collect(), dg.into_iter().map(pend).collect())
+        };
         // Every channel is resampled as the accessor reads it (`0x426020`:
         // ADC code, minus the DC, inverted, ×k, NaN as 0), then divided by
         // k (`0x47e598`): the flags' transforms are baked into the data
@@ -661,39 +701,24 @@ impl App {
             })
         };
         let (at_a, at_d) = (anchor(false).unwrap_or(nb).min(nb), anchor(true).unwrap_or(nd).min(nd));
-        // Pasted at the block's end or before a formula channel: the merged
-        // channels stay there, among the formula channels.
-        let lanes: Vec<(String, Option<Option<String>>, u64)> = d
-            .computed
-            .iter()
-            .filter(|c| c.formula == PENDING && !d.pending_digital_named(&c.name))
-            .map(|c| {
-                let at = match c.before {
-                    Some(ChanKey::Analog(_)) => None,
-                    Some(ChanKey::Computed(f)) => Some(d.computed.get(f).map(|c| c.name.clone())),
-                    _ => Some(None),
-                };
-                (c.name.clone(), at, c.seq)
-            })
-            .collect();
         d.osc = merged;
-        for i in nb..d.osc.analog.len() {
+        for (i, p) in (nb..d.osc.analog.len()).zip(&pend_a) {
             let mut v = ChanView::new(&d.osc.analog[i], i);
-            if let Some(c) = d.computed.iter().find(|c| c.formula == PENDING && c.name == d.osc.analog[i].id) {
-                (v.color, v.custom_color) = (c.color, c.custom_color);
+            if let Some((color, custom)) = p.color {
+                (v.color, v.custom_color) = (color, custom);
             }
-            if let Some(&(_, inv, dc, mode)) = flags.iter().find(|f| f.0 == d.osc.analog[i].id) {
+            if let Some((inv, dc, mode)) = p.flags {
                 (v.invert, v.remove_dc, v.mode) = (inv, dc, mode);
             }
-            if let Some(&(_, m)) = modes.iter().find(|m| m.0 == d.osc.analog[i].id) {
-                v.primary = m;
-            }
-            v.merged_after = lanes.iter().find(|l| l.0 == d.osc.analog[i].id).and_then(|l| l.1.clone().map(|at| (at, l.2)));
+            v.primary = p.mode;
+            // Pasted at the block's end or before a formula channel: the
+            // merged channel stays there, among the formula channels.
+            v.merged_after = p.after.clone();
             d.chans.push(v);
         }
         d.digital_visible.resize(d.osc.digital.len(), true);
-        for i in nd..d.osc.digital.len() {
-            if let Some(&(_, invert, remove_dc, mode)) = flags.iter().find(|f| f.0 == d.osc.digital[i].id) {
+        for (i, p) in (nd..d.osc.digital.len()).zip(&pend_d) {
+            if let Some((invert, remove_dc, mode)) = p.flags {
                 *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode, color: None };
             }
         }
@@ -701,7 +726,6 @@ impl App {
         // A selected pending lane stays selected as its merged channel (VM:
         // «IA БЛОКА 3 (вст.)» still highlighted after «Объединить»); the
         // formula channels' keys follow their new places.
-        let picked: Vec<String> = d.computed.iter().enumerate().filter(|(j, c)| c.formula == PENDING && d.selection.contains(&ChanKey::Computed(*j))).map(|(_, c)| c.name.clone()).collect();
         let mut kept = 0;
         let new_at: Vec<Option<usize>> = d
             .computed
@@ -720,13 +744,13 @@ impl App {
         d.selection = d.selection.iter().filter_map(|&k| remap(k)).collect();
         d.sel_anchor = d.sel_anchor.and_then(remap);
         let (ka, kd) = (d.osc.analog.len() - nb, d.osc.digital.len() - nd);
-        for i in at_a..at_a + ka {
-            if picked.contains(&d.osc.analog[i].id) {
+        for (i, p) in (at_a..at_a + ka).zip(&pend_a) {
+            if p.picked {
                 d.selection.insert(ChanKey::Analog(i));
             }
         }
-        for i in at_d..at_d + kd {
-            if picked.contains(&d.osc.digital[i].id) {
+        for (i, p) in (at_d..at_d + kd).zip(&pend_d) {
+            if p.picked {
                 d.selection.insert(ChanKey::Digital(i));
             }
         }
