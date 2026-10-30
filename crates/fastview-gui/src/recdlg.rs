@@ -195,16 +195,38 @@ impl Doc {
     /// recorder and every channel name in the new code page — from the
     /// bytes as read, so 1251 → 866 → 1251 gives the names back (VM) —
     /// into the original's ANSI strings (`comtrade::best_fit_1251`: «БЛОКА»
-    /// read as 866 shows «+T+¦L»). A name edited since is taken as its
-    /// text in the old code page.
+    /// read as 866 shows «+T+¦L»). A renamed channel keeps its name: the
+    /// shown name is the alias while there is one, else the file's name
+    /// decoded (`0x425960`). The levels and areas keep the names they were
+    /// made on, as after a rename (`chandlg::rename`): the original's
+    /// painters look them up among the shown names.
     pub fn set_codepage(&mut self, cp: Encoding) {
+        use crate::app::ChanKey;
         let from = self.codepage;
         if from == cp {
             return;
         }
+        let recs: Vec<_> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
+        let na = self.osc.analog.len();
+        let renamed: Vec<bool> = [false, false]
+            .into_iter()
+            .chain((0..na).map(|i| self.original_name(ChanKey::Analog(i)).is_some()))
+            .chain((0..self.osc.digital.len()).map(|k| self.original_name(ChanKey::Digital(k)).is_some()))
+            .collect();
         let mut raw = std::mem::take(&mut self.name_raw).into_iter();
+        let mut alias = renamed.into_iter();
         let mut rc = |s: &mut String| {
-            let bytes = match raw.next() {
+            let (entry, alias) = (raw.next(), alias.next().unwrap_or(false));
+            if alias {
+                return match entry {
+                    Some((b, _)) => {
+                        let seen = comtrade::decode_bytes(&b, cp).chars().map(comtrade::best_fit_1251).collect();
+                        (b, seen)
+                    }
+                    None => (comtrade::encode_text(s, from), s.clone()),
+                };
+            }
+            let bytes = match entry {
                 Some((b, seen)) if seen == *s => b,
                 _ => comtrade::encode_text(s, from),
             };
@@ -216,6 +238,7 @@ impl Doc {
         kept.extend(self.osc.digital.iter_mut().map(|c| rc(&mut c.id)));
         self.name_raw = kept;
         self.codepage = cp;
+        self.comments = recs.iter().map(|r| self.comment_of(r)).collect();
     }
 
     /// The `.cff` text sections to write, with the edited record comment.
@@ -879,11 +902,55 @@ mod tests {
         assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)), None, "still the file's name");
         d.set_codepage(Encoding::Cp1251);
         assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA БЛОКА 3", "UA I CШ"));
-        // A name renamed meanwhile is re-read from its own text.
+        // A name renamed meanwhile is its alias, kept as typed (`0x425960`;
+        // VM: «TokIA БЛОКА 3» stays, its file name re-decoded beside it).
         d.set_codepage(Encoding::Cp866);
         d.osc.analog[0].id = "Ток".into();
         d.set_codepage(Encoding::Cp1251);
-        assert_eq!(d.osc.analog[0].id, "’®Є");
+        assert_eq!(d.osc.analog[0].id, "Ток");
+        assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)).as_deref(), Some("IA БЛОКА 3"));
+        d.set_codepage(Encoding::Cp866);
+        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("Ток", "UA I C+"));
+        assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)).as_deref(), Some("IA +T+¦L 3"));
+    }
+
+    /// A level keeps the name it was made on across «Кодировка» as across a
+    /// rename (L9.227): unbound in the other code page, bound again back;
+    /// one on a renamed channel stays.
+    #[test]
+    fn a_code_page_switch_unbinds_a_level_by_name() {
+        use crate::app::ChanKey;
+        use crate::comments::{Comment, CommentKind};
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[0].id = "IA БЛОКА 3".into();
+        d.osc.analog[1].id = "Свой".into();
+        d.init_set_keys();
+        d.osc.analog[1].id = "Другой".into();
+        for i in 0..2 {
+            d.comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(i), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
+        }
+        d.set_codepage(Encoding::Cp866);
+        assert!(matches!(&d.comments[0].kind, CommentKind::Kept(r) if matches!(&r.kind, fvb_core::recset::CommentKindRec::Level { channel, .. } if channel == "IA БЛОКА 3")));
+        assert!(matches!(d.comments[1].kind, CommentKind::Level { chan: ChanKey::Analog(1), .. }), "the alias stays");
+        d.set_codepage(Encoding::Cp1251);
+        assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(0), .. }));
+    }
+
+    /// The formula editor resolves a renamed channel by its new name.
+    #[test]
+    fn the_formula_editor_takes_a_new_name() {
+        let mut app = demo_app();
+        assert_eq!(crate::chandlg::rename(app.active_doc_mut().unwrap(), crate::app::ChanKey::Analog(0), "Новое"), Ok(()));
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.rows.push(("X".into(), "Новое*2".into()));
+        app.formula_page.dirty = true;
+        app.quick_calc();
+        assert_eq!(app.dlg.alert(), None);
+        let d = app.active_doc().unwrap();
+        let x = d.computed.iter().find(|c| c.name == "X").expect("X computed");
+        assert_eq!(x.samples[10], d.flagged.analog[0].samples[10] * 2.0);
     }
 
     /// Issue #7: after «Кодировка» «Быстрый анализ» works on the names as
@@ -921,21 +988,6 @@ mod tests {
         assert!(app.append_computed(&[("X".into(), "\"IB БЛОКА 3\"*2".into())]).is_some());
         assert!(app.append_computed(&[("Y".into(), format!("\"{old}\"*2"))]).is_none());
         assert_eq!(app.dlg.alert(), Some("Имя канала задано неправильно."), "the bare 0x162 (VM)");
-    }
-
-    /// The formula editor resolves a renamed channel by its new name.
-    #[test]
-    fn the_formula_editor_takes_a_new_name() {
-        let mut app = demo_app();
-        assert_eq!(crate::chandlg::rename(app.active_doc_mut().unwrap(), crate::app::ChanKey::Analog(0), "Новое"), Ok(()));
-        app.dispatch(Command::QuickAnalysis);
-        app.formula_page.rows.push(("X".into(), "Новое*2".into()));
-        app.formula_page.dirty = true;
-        app.quick_calc();
-        assert_eq!(app.dlg.alert(), None);
-        let d = app.active_doc().unwrap();
-        let x = d.computed.iter().find(|c| c.name == "X").expect("X computed");
-        assert_eq!(x.samples[10], d.flagged.analog[0].samples[10] * 2.0);
     }
 
     #[test]

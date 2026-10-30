@@ -2028,7 +2028,11 @@ impl App {
                 if taken {
                     self.dlg.push_alert(crate::chandlg::MSG_NAME_TAKEN.to_string());
                 } else {
+                    // The levels and areas keep the names they were made on,
+                    // as after a rename in «Каналы» (L9.227).
+                    let recs: Vec<_> = d.comments.iter().map(|c| d.comment_rec(c)).collect();
                     d.osc.analog[i].id = text;
+                    d.comments = recs.iter().map(|r| d.comment_of(r)).collect();
                 }
                 d.set.modified = true;
             }
@@ -3454,6 +3458,24 @@ mod menu_tests {
         assert_eq!(h.doc().osc.analog[0].id, "Ia 3", "committed by the press");
         commit(&mut h, "");
         assert_eq!(h.doc().osc.analog[0].id, "", "an empty name is taken");
+    }
+
+    /// The inline rename as «Каналы»'s: a level keeps its channel's old name
+    /// (unbound, L9.227), and a formula takes the new one (issue #7).
+    #[test]
+    fn an_inline_rename_unbinds_a_level_and_feeds_the_formulas() {
+        use crate::comments::{Comment, CommentKind};
+        let enter = || egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        let mut h = Harness::new();
+        let old = h.doc().osc.analog[0].id.clone();
+        h.app.active_doc_mut().unwrap().comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(0), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
+        h.app.rename_edit = Some((0, "Новое".to_string()));
+        h.frame(vec![]);
+        h.frame(vec![enter()]);
+        h.frame(vec![]);
+        assert_eq!(h.doc().osc.analog[0].id, "Новое");
+        assert!(matches!(&h.doc().comments[0].kind, CommentKind::Kept(r) if matches!(&r.kind, fvb_core::recset::CommentKindRec::Level { channel, .. } if *channel == old)));
+        assert!(h.app.append_computed(&[("X".into(), "Новое*2".into())]).is_some(), "{:?}", h.app.dlg.alert());
     }
 
     /// `0x43eb40`: a level line goes on any analog-kind lane — a formula
