@@ -672,7 +672,7 @@ pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> Vec
             let c = &doc.computed[j];
             // A pasted lane read ×k in its copied mode (VM: «*K» on a
             // pasted 2000/1 channel shown secondary).
-            let scaled = c.formula == crate::merge_ui::PENDING && doc.pending.iter().find(|p| p.name() == c.name).is_some_and(|p| p.display_k() != 1.0);
+            let scaled = c.formula == crate::merge_ui::PENDING && doc.pending.iter().find(|p| p.lane == c.seq).is_some_and(|p| p.display_k() != 1.0);
             [(c.remove_dc, "DC"), (c.invert, "−"), (scaled, "*K"), (c.mode == ValueMode::Rms, "~"), (c.mode == ValueMode::FirstHarmonic, "1")]
                 .into_iter()
                 .filter_map(|(on, g)| on.then_some(g))
@@ -1881,6 +1881,7 @@ impl App {
                         _ => d.aux_cursor = s,
                     }
                     d.v_shown[k] = true;
+                    d.v1_placed |= k == 0;
                 }
                 Act::MoveV(k, s) => {
                     match k {
@@ -1889,6 +1890,7 @@ impl App {
                         _ => d.v3_cursor = s,
                     }
                     d.v_shown[k] = true;
+                    d.v1_placed |= k == 0;
                 }
                 Act::SetH(j, ch, v) => {
                     d.hviz[j] = crate::app::HVizir { shown: true, chan: Some(ch), value: v };
@@ -2033,7 +2035,9 @@ impl App {
                     // The levels and areas keep the names they were made on,
                     // as after a rename in «Каналы» (L9.227).
                     let recs: Vec<_> = d.comments.iter().map(|c| d.comment_rec(c)).collect();
+                    d.ensure_name_raw();
                     d.osc.analog[i].id = crate::chandlg::shown_after_rename(d, key, &text);
+                    d.mark_alias(key, !text.is_empty());
                     d.comments = recs.iter().map(|r| d.comment_of(r)).collect();
                 }
                 d.set.modified = true;

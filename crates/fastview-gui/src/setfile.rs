@@ -281,7 +281,7 @@ impl Doc {
             let mut old = std::mem::take(&mut self.name_raw);
             let mut d = old.split_off(2 + nb);
             let mut a = old.split_off(2);
-            let own = |id: &String| (crate::recdlg::name_bytes_of(id, self.read_enc, self.codepage), id.clone());
+            let own = |id: &String| crate::app::RawName { bytes: crate::recdlg::name_bytes_of(id, self.read_enc, self.codepage), seen: id.clone(), alias: false };
             a.extend(self.osc.analog[nb..].iter().map(|c| own(&c.id)));
             d.extend(self.osc.digital[nd..].iter().map(|c| own(&c.id)));
             a[at_a..].rotate_right(self.osc.analog.len() - nb);
@@ -325,6 +325,40 @@ impl Doc {
         self.set.keys.clear();
         let keys: Vec<String> = (0..self.osc.analog.len() + self.osc.digital.len()).map(|i| self.file_key(i)).collect();
         self.set.keys = keys;
+        self.ensure_name_raw();
+    }
+
+    /// The names as read, taken from the names shown now when none were
+    /// kept yet (no «Кодировка» so far: they are the file's, in the
+    /// record's code page).
+    pub fn ensure_name_raw(&mut self) {
+        if !self.name_raw.is_empty() {
+            return;
+        }
+        let (read, cp) = (self.read_enc, self.codepage);
+        let own = |s: &String| crate::app::RawName { bytes: crate::recdlg::name_bytes_of(s, read, cp), seen: s.clone(), alias: false };
+        let v: Vec<_> = [&self.osc.station, &self.osc.device].into_iter().chain(self.osc.analog.iter().map(|c| &c.id)).chain(self.osc.digital.iter().map(|c| &c.id)).map(own).collect();
+        self.name_raw = v;
+    }
+
+    /// Channel `k` now shows an alias (a rename, `AliasName`) or, `on`
+    /// false, its file's name again.
+    pub fn mark_alias(&mut self, k: ChanKey, on: bool) {
+        let read = self.read_enc;
+        let p = match k {
+            ChanKey::Analog(i) => 2 + i,
+            ChanKey::Digital(d) => 2 + self.osc.analog.len() + d,
+            ChanKey::Computed(j) => {
+                if let Some(c) = self.computed.get_mut(j).filter(|c| c.formula == crate::merge_ui::PENDING) {
+                    c.name_raw.get_or_insert_with(|| crate::app::RawName { bytes: crate::recdlg::name_bytes_of(&c.name, read, Encoding::Cp1251), seen: c.name.clone(), alias: false }).alias = on;
+                }
+                return;
+            }
+        };
+        self.ensure_name_raw();
+        if self.name_raw.len() == 2 + self.osc.analog.len() + self.osc.digital.len() {
+            self.name_raw[p].alias = on;
+        }
     }
 
     /// File channel `i`'s name as read, in the record's code page (as
@@ -347,7 +381,7 @@ impl Doc {
         // After a switch the name's bytes decoded now (the keys are lossy
         // once an 866 reading best-fitted them: «¦» comes back as «?»).
         let kept = (self.name_raw.len() == 2 + self.osc.analog.len() + self.osc.digital.len()).then(|| self.name_raw.get(2 + i)).flatten();
-        let file = kept.map_or_else(|| self.file_name(i), |(_, seen)| seen.clone());
+        let file = kept.map_or_else(|| self.file_name(i), |r| r.seen.clone());
         (file != *id).then_some(file)
     }
 
@@ -733,6 +767,7 @@ impl App {
                 a.secondary = r.secondary_mul;
                 if !r.alias.is_empty() {
                     a.id = r.alias;
+                    d.mark_alias(ChanKey::Analog(i), true);
                 }
                 if let Some(c) = r.custom_color {
                     (d.chans[i].color, d.chans[i].custom_color) = (from_colorref(c), true);
@@ -751,6 +786,7 @@ impl App {
                 *d.dig_mut(k) = crate::app::DigFlags { invert: r.show_flags & flag::INVERT != 0, remove_dc: r.show_flags & flag::REMOVE_DC != 0, mode: mode_of(r.show_flags), color: r.custom_color.map(from_colorref) };
                 if !r.alias.is_empty() {
                     d.osc.digital[k].id = r.alias;
+                    d.mark_alias(ChanKey::Digital(k), true);
                 }
             }
         }

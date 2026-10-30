@@ -242,6 +242,7 @@ impl App {
         d.aux_cursor = result.window.1;
         d.v_shown[0] = true;
         d.v_shown[1] = true;
+        d.v1_placed = true;
         // Same-named channels are replaced in place, others appended.
         match d.computed.iter().position(|c| c.name == L_KZ) {
             Some(j) => {
@@ -1381,6 +1382,18 @@ mod tests {
         assert!(app.append_computed(&[("X".into(), format!("\"{name}\"*2"))]).is_some(), "{:?}", app.dlg.alert());
         let d = app.active_doc().unwrap();
         assert_eq!(d.computed.iter().find(|c| c.name == "X").unwrap().samples, want);
+        // A formula on a КЗ flag itself reads it, also after a re-run gave
+        // the flags new values in place (`omp_compute`, no recompute).
+        let flag = |d: &Doc| -> Vec<f64> { d.osc.digital.iter().find(|c| c.id == KZ_PHASES[0]).unwrap().samples.iter().map(|&b| f64::from(u8::from(b))).collect() };
+        let first = flag(d);
+        assert!(app.append_computed(&[("K".into(), format!("\"{}\"*1", KZ_PHASES[0]))]).is_some(), "{:?}", app.dlg.alert());
+        assert_eq!(app.active_doc().unwrap().computed.iter().find(|c| c.name == "K").unwrap().samples, first);
+        let d = app.active_doc_mut().unwrap();
+        let k = d.osc.digital.iter().position(|c| c.id == KZ_PHASES[0]).unwrap();
+        d.osc.digital[k].samples.iter_mut().for_each(|v| *v = !*v);
+        let flipped = flag(d);
+        assert!(app.append_computed(&[("K2".into(), format!("\"{}\"*1", KZ_PHASES[0]))]).is_some());
+        assert_eq!(app.active_doc().unwrap().computed.iter().find(|c| c.name == "K2").unwrap().samples, flipped);
     }
 
     #[test]
