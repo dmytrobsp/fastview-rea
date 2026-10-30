@@ -182,15 +182,17 @@ cargo build -p fastview-gui --release --target x86_64-pc-windows-gnu
 
 ## Scope & fidelity
 
-What is done, what is approximate and what is not determined is tracked item
-by item in the ledger (`docs/original/`, L1–L9.x) and the
-ranked backlog in `docs/original/specs/ui-behaviour.md` §9. Known gaps include: native
-`.sto` reading (no sample file ships), the original's bitmaps (logo, icons —
-replaced by our own drawings), the non-Office-2007 looks, and floating /
-re-docking of panes. Every change keeps `cargo build` and `cargo clippy`
-warning-free and `cargo test --workspace` green (290+ tests, including
-headless tests of the whole window); CI runs them on Linux, Windows and
-macOS.
+What the original does, what ours does and how it was checked is recorded
+item by item in [`docs/original/`](docs/original/README.md) (L1–L9.x);
+where ours differs on purpose, [`docs/IMPROVEMENTS.md`](docs/IMPROVEMENTS.md)
+says why. What is left — known differences, residuals, new work — is in
+[GitHub Issues](https://github.com/dmytrobsp/fastview-rea/issues); the
+current state is [`docs/PROGRESS.md`](docs/PROGRESS.md). Known gaps include:
+native `.sto` reading (no sample file ships), the original's bitmaps (logo,
+icons — replaced by our own drawings) and GDI's exact glyphs. Every change
+keeps `cargo clippy` warning-free on Linux and the Windows target and
+`cargo test --workspace` green (`tools/gates.sh`), including headless tests
+of the whole window; CI builds Linux, Windows and macOS.
 
 ## Contributing
 
@@ -198,9 +200,11 @@ Enable the repository's hooks once per clone: `git config core.hooksPath
 tools/git-hooks`. They run `tools/publish_guard.py`, which keeps the original
 program and raw decompilation / disassembly output out of the history; CI
 runs the same check. Analysis is published as specs in our own words
-(`notes/`), as factual indexes (`index/`: addresses, ids and names, no code)
+(`docs/original/`), as factual indexes (`index/`: addresses, ids and names, no code)
 and as tools that regenerate the raw data from your own copy
-(`tools/README.md`).
+(`tools/README.md`). How the work is organised — milestones, issues, the
+rules for agents — is in [`AGENTS.md`](AGENTS.md) and
+[`docs/agents/workflow.md`](docs/agents/workflow.md).
 
 ## License
 
