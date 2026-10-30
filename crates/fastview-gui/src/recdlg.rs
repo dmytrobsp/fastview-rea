@@ -197,16 +197,21 @@ impl Doc {
     /// into the original's ANSI strings (`comtrade::best_fit_1251`: «БЛОКА»
     /// read as 866 shows «+T+¦L»). A renamed channel keeps its name: the
     /// shown name is the alias while there is one, else the file's name
-    /// decoded (`0x425960`). The levels and areas keep the names they were
-    /// made on, as after a rename (`chandlg::rename`): the original's
-    /// painters look them up among the shown names.
-    pub fn set_codepage(&mut self, cp: Encoding) {
+    /// decoded (`0x425960`). Ours alone: whatever named a channel before
+    /// names it after (formulas, quick-analysis picks, levels and areas,
+    /// pairs); the names changed are returned (old, new).
+    pub fn set_codepage(&mut self, cp: Encoding) -> Vec<(String, String)> {
         use crate::app::ChanKey;
         let from = self.codepage;
         if from == cp {
-            return;
+            return Vec::new();
         }
         let recs: Vec<_> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
+        // Every channel's name before (the formulas' resolver order: analog
+        // then computed, `OscChannels`; then every row for the rest).
+        let formula_names = |d: &Doc| -> Vec<String> { d.osc.analog.iter().map(|c| c.id.trim_end_matches(' ').to_string()).chain(d.computed.iter().map(|c| c.name.clone())).collect() };
+        let row_names = |d: &Doc| -> Vec<String> { crate::chandlg::rows(d).into_iter().map(|k| crate::chandlg::row_name(d, k)).collect() };
+        let (old_f, old_rows) = (formula_names(self), row_names(self));
         // The file's names in `set.keys` are 1251 text: they stand for the
         // bytes only while the names were read in a single-byte code page.
         let single = matches!(from, Encoding::Cp1251 | Encoding::Cp866);
@@ -304,7 +309,64 @@ impl Doc {
             }
         }
         self.codepage = cp;
+        // Ours alone (#7, the maintainer's call): what named a channel
+        // before the switch names it after — the formulas (the quick
+        // analysis's among them), the quick-analysis pages' picks, the
+        // levels and areas, the diagram pairs. The original keeps the old
+        // names, so a formula on them fails («Имя канала задано
+        // неправильно.», the whole batch with it) and the levels no longer
+        // draw (L9.227).
+        let (new_f, new_rows) = (formula_names(self), row_names(self));
+        let renamed: Vec<(String, String)> = old_rows.into_iter().zip(new_rows).filter(|(o, n)| o != n).collect();
+        let by_row = |name: &str| renamed.iter().find(|(o, _)| o == name).map(|(_, n)| n.clone());
+        if old_f.len() == new_f.len() {
+            let by_ref = |name: &str| {
+                let i = old_f.iter().position(|o| o == name).or_else(|| old_f.iter().position(|o| o.to_lowercase() == name.to_lowercase()))?;
+                (old_f[i] != new_f[i]).then(|| new_f[i].clone())
+            };
+            for c in self.computed.iter_mut().filter(|c| crate::setfile::is_formula(c)) {
+                c.formula = fvb_core::expr::rename_channel_refs(&c.formula, &by_ref);
+            }
+        }
+        let recs: Vec<_> = recs
+            .into_iter()
+            .map(|mut r| {
+                use fvb_core::recset::CommentKindRec as K;
+                match &mut r.kind {
+                    K::Level { channel, .. } => *channel = by_row(channel).unwrap_or(channel.clone()),
+                    K::Area { channel_from, channel_to, .. } => {
+                        *channel_from = by_row(channel_from).unwrap_or(channel_from.clone());
+                        *channel_to = by_row(channel_to).unwrap_or(channel_to.clone());
+                    }
+                    K::Moment { .. } => {}
+                }
+                r
+            })
+            .collect();
+        for p in self.dif_pairs.iter_mut().chain(self.rx_pairs.iter_mut()) {
+            for n in [&mut p.a, &mut p.b] {
+                if let Some(new) = by_row(n) {
+                    *n = new;
+                }
+            }
+        }
+        fn retarget(node: &mut fvb_core::recset::SetNode, by_row: &dyn Fn(&str) -> Option<String>) {
+            for v in node.attrs.values_mut() {
+                if let Some(new) = by_row(v) {
+                    *v = new;
+                }
+            }
+            for c in node.children.values_mut() {
+                retarget(c, by_row);
+            }
+        }
+        for k in &crate::quick_ui::PAGE_KEYS[..5] {
+            if let Some(sec) = self.set.tree.sections.get_mut(*k) {
+                retarget(sec, &by_row);
+            }
+        }
         self.comments = recs.iter().map(|r| self.comment_of(r)).collect();
+        renamed
     }
 
     /// The `.cff` text sections to write, with the edited record comment.
@@ -585,7 +647,12 @@ impl App {
                 }
             });
         if let Some(cp) = cp_pick {
-            self.docs[ai].set_codepage(cp);
+            // The vector diagram's angle reference follows its channel too.
+            for (old, new) in self.docs[ai].set_codepage(cp) {
+                if self.vec_angle_ref.as_deref() == Some(old.as_str()) {
+                    self.vec_angle_ref = Some(new);
+                }
+            }
         }
         // «Закрыть» is IDOK: Enter applies, Esc cancels.
         let keys = self.dialog_keys(ctx);
@@ -1112,28 +1179,54 @@ mod tests {
         }
     }
 
-    /// A level keeps the name it was made on across «Кодировка» as across a
-    /// rename (L9.227): unbound in the other code page, bound again back;
-    /// one on a renamed channel stays.
+    /// Ours alone (#7): what named a channel before «Кодировка» names it
+    /// after — a quick-analysis channel's formula keeps computing, a level
+    /// stays on its channel, a page's pick and a pair follow (the original
+    /// keeps the old names: the next «Рассчитать» fails, the level no longer
+    /// draws). A renamed channel's level simply stays.
     #[test]
-    fn a_code_page_switch_unbinds_a_level_by_name() {
-        use crate::app::ChanKey;
+    fn references_follow_their_channel_across_a_code_page_switch() {
+        use crate::app::{AnalysisTab, ChanKey};
         use crate::comments::{Comment, CommentKind};
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         d.codepage = Encoding::Cp1251;
-        d.osc.analog[0].id = "IA БЛОКА 3".into();
+        for (i, n) in [(3, "IA БЛОКА 3"), (4, "IB БЛОКА 3"), (5, "IC БЛОКА 3")] {
+            d.osc.analog[i].id = n.into();
+        }
         d.osc.analog[1].id = "Свой".into();
         d.init_set_keys();
         d.osc.analog[1].id = "Другой".into();
-        for i in 0..2 {
+        for i in [3, 1] {
             d.comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(i), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
         }
+        d.dif_pairs.push(crate::diagram::ChanPair::new("IA БЛОКА 3", "IB БЛОКА 3"));
+        app.analysis_tab = AnalysisTab::Zero;
+        let z = crate::quick_ui::page_index(AnalysisTab::Zero).unwrap();
+        let q = &mut app.quick[z];
+        (q.ia, q.ib, q.ic) = ("IA БЛОКА 3".into(), "IB БЛОКА 3".into(), "IC БЛОКА 3".into());
+        q.zero_u_off = true;
+        let g = q.generate(AnalysisTab::Zero, &[]);
+        app.apply_quick(&g);
+        crate::quick_ui::save_page(z, &app.quick[z].clone(), app.active_doc_mut().unwrap().set.tree.section_mut(crate::quick_ui::PAGE_KEYS[z]));
+        let d = app.active_doc_mut().unwrap();
+        let before = d.computed.iter().find(|c| c.name == "3I0").unwrap().samples.clone();
         d.set_codepage(Encoding::Cp866);
-        assert!(matches!(&d.comments[0].kind, CommentKind::Kept(r) if matches!(&r.kind, fvb_core::recset::CommentKindRec::Level { channel, .. } if channel == "IA БЛОКА 3")));
-        assert!(matches!(d.comments[1].kind, CommentKind::Level { chan: ChanKey::Analog(1), .. }), "the alias stays");
+        let ia = d.osc.analog[3].id.clone();
+        assert_eq!(ia, "IA +T+¦L 3");
+        let i0 = d.computed.iter().find(|c| c.name == "3I0").unwrap();
+        assert!(i0.formula.contains(&format!("\"{ia}\"")), "{}", i0.formula);
+        assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(3), .. }), "the level stays on IA");
+        assert!(matches!(d.comments[1].kind, CommentKind::Level { chan: ChanKey::Analog(1), .. }), "the alias's too");
+        assert_eq!(d.dif_pairs[0].a, ia);
+        let pick = d.set.tree.section(crate::quick_ui::PAGE_KEYS[z]).and_then(|s| s.children.get("IA")).and_then(|c| c.attrs.get("channelName")).cloned();
+        assert_eq!(pick.as_deref(), Some(ia.as_str()));
+        // A new calculation re-evaluates the old one: it still computes.
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some(), "{:?}", app.dlg.alert());
+        let d = app.active_doc_mut().unwrap();
+        assert_eq!(d.computed.iter().find(|c| c.name == "3I0").unwrap().samples, before);
         d.set_codepage(Encoding::Cp1251);
-        assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(0), .. }));
+        assert!(d.computed.iter().find(|c| c.name == "3I0").unwrap().formula.contains("\"IA БЛОКА 3\""));
     }
 
     /// The formula editor resolves a renamed channel by its new name.

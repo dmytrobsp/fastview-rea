@@ -478,6 +478,68 @@ pub fn formula_unit(src: &str, chans: &dyn Channels) -> String {
     }
 }
 
+/// `src` with each channel reference that `rename` maps — given the name
+/// as the tokenizer passes it to the resolver (lower-cased) — written as
+/// `"new"`; everything else is kept as typed. The scan is the
+/// tokenizer's (functions, numbers, `[...]`, quoted and bare names); a
+/// formula it rejects comes back unchanged. Ours alone (no counterpart in
+/// the original): a reference follows its channel across «Кодировка».
+pub fn rename_channel_refs(src: &str, rename: &dyn Fn(&str) -> Option<String>) -> String {
+    // The lower-cased text as the tokenizer scans it, with each of its
+    // char boundaries' place in `src`.
+    let mut low = String::with_capacity(src.len());
+    let mut at = Vec::with_capacity(src.len() + 1);
+    let mut in_dim = false;
+    for (o, c) in src.char_indices() {
+        match c {
+            '[' => in_dim = true,
+            ']' => in_dim = false,
+            _ => {}
+        }
+        at.push((low.len(), o));
+        if in_dim {
+            low.push(c);
+        } else {
+            low.extend(c.to_lowercase());
+        }
+    }
+    at.push((low.len(), src.len()));
+    let orig = |l: usize| at.iter().find(|(lo, _)| *lo == l).map(|&(_, o)| o);
+    let (mut out, mut copied, mut pos) = (String::with_capacity(src.len()), 0, 0);
+    while pos < low.len() {
+        let rest = &low[pos..];
+        let Some(c) = rest.chars().next() else { break };
+        let (name, len) = if c == ' ' {
+            (None, 1)
+        } else if let Some((n, _)) = TABLE.iter().find(|(n, _)| rest.starts_with(n)) {
+            (None, n.len())
+        } else if c.is_ascii_digit() {
+            (None, rest.find(|ch: char| !(ch.is_ascii_digit() || ch == '.')).unwrap_or(rest.len()))
+        } else if c == '"' {
+            let Some(end) = rest[1..].find('"') else { return src.to_string() };
+            (Some(&rest[1..1 + end]), end + 2)
+        } else if c == '_' || c.is_alphabetic() {
+            let len = rest.find(|ch: char| !(ch == '_' || ch.is_alphanumeric())).unwrap_or(rest.len());
+            (Some(&rest[..len]), len)
+        } else if c == '[' {
+            (None, rest.find(']').map(|i| i + 1).unwrap_or(rest.len()))
+        } else {
+            return src.to_string();
+        };
+        if let Some(new) = name.and_then(rename) {
+            let (Some(a), Some(b)) = (orig(pos), orig(pos + len)) else { return src.to_string() };
+            out.push_str(&src[copied..a]);
+            out.push('"');
+            out.push_str(&new);
+            out.push('"');
+            copied = b;
+        }
+        pos += len;
+    }
+    out.push_str(&src[copied..]);
+    out
+}
+
 /// Convenience: parse and evaluate in one step.
 pub fn eval_str(src: &str, ctx: &Context) -> Result<f64, ExprError> {
     Expr::parse(src)?.eval(ctx)
