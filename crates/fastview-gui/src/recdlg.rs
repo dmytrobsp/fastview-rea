@@ -207,24 +207,34 @@ impl Doc {
             return;
         }
         let recs: Vec<_> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
+        // The file's names in `set.keys` are 1251 text: they stand for the
+        // bytes only while the names were read in a single-byte code page.
+        let single = matches!(from, Encoding::Cp1251 | Encoding::Cp866);
         let na = self.osc.analog.len();
         let renamed: Vec<bool> = [false, false]
             .into_iter()
-            .chain((0..na).map(|i| self.original_name(ChanKey::Analog(i)).is_some()))
-            .chain((0..self.osc.digital.len()).map(|k| self.original_name(ChanKey::Digital(k)).is_some()))
+            .chain((0..na).map(|i| single && self.original_name(ChanKey::Analog(i)).is_some()))
+            .chain((0..self.osc.digital.len()).map(|k| single && self.original_name(ChanKey::Digital(k)).is_some()))
             .collect();
         let raw = std::mem::take(&mut self.name_raw);
+        let mut used = vec![false; raw.len()];
         let mut alias = renamed.into_iter();
         let mut kept = Vec::new();
-        // A name last decoded by a switch takes its bytes back (looked up by
-        // that text: channels merged or ОМП's flags may have moved them);
-        // else it is an alias when it is not the file's name (the keys are
+        // A name last decoded by a switch takes its bytes back: the first
+        // entry not yet taken with that text, in order (channels merged in or
+        // ОМП's flags may have moved the names, never reordered them; two
+        // names can decode alike — В and С read as 866 both give «T»); else
+        // it is an alias when it is not the file's name (the keys are
         // lossless then: no switch has re-decoded the names yet); else it
         // is read from its text.
         let mut rc = |s: &mut String| {
             let renamed = alias.next().unwrap_or(false);
-            let bytes = match raw.iter().find(|(_, seen)| seen == s) {
-                Some((b, _)) => b.clone(),
+            let entry = (0..raw.len()).find(|&j| !used[j] && raw[j].1 == *s);
+            let bytes = match entry {
+                Some(j) => {
+                    used[j] = true;
+                    raw[j].0.clone()
+                }
                 None if renamed => return,
                 None => comtrade::encode_text(s, from),
             };
@@ -952,6 +962,37 @@ mod tests {
         assert_eq!(d.osc.analog[1].id, "IA +T+¦L 3", "moved by the merge");
         d.set_codepage(Encoding::Cp1251);
         assert_eq!((d.osc.analog[1].id.as_str(), d.osc.analog[2].id.as_str()), ("IA БЛОКА 3", "IB БЛОКА 3"));
+    }
+
+    /// «В» and «С» read as 866 both show «T»: two names alike each take
+    /// their own bytes back, also after a channel merged in before them.
+    #[test]
+    fn names_that_decode_alike_keep_their_own_bytes() {
+        use crate::app::ChanKey;
+        for merge in [false, true] {
+            let mut app = demo_app();
+            let d = app.active_doc_mut().unwrap();
+            d.codepage = Encoding::Cp1251;
+            d.osc.analog[0].id = "Ток фазы В".into();
+            d.osc.analog[1].id = "Ток фазы С".into();
+            d.set_codepage(Encoding::Cp866);
+            d.init_set_keys();
+            assert_eq!(d.osc.analog[0].id, d.osc.analog[1].id);
+            if merge {
+                d.selection = [ChanKey::Analog(2)].into();
+                app.copy_channels_for_merge();
+                app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into();
+                app.paste_channels_for_merge();
+                app.merge_records();
+            }
+            let d = app.active_doc_mut().unwrap();
+            let k = usize::from(merge);
+            d.set_codepage(Encoding::Cp1251);
+            assert_eq!((d.osc.analog[k].id.as_str(), d.osc.analog[k + 1].id.as_str()), ("Ток фазы В", "Ток фазы С"), "merge: {merge}");
+            d.set_codepage(Encoding::Cp866);
+            d.set_codepage(Encoding::Cp1251);
+            assert_eq!(d.osc.analog[k + 1].id, "Ток фазы С", "merge: {merge}");
+        }
     }
 
     /// A level keeps the name it was made on across «Кодировка» as across a
