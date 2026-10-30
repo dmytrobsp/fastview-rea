@@ -768,7 +768,7 @@ pub fn win_edit_multiline(ui: &mut egui::Ui, r: Rect, id: egui::Id, text: &mut S
 /// focus whenever no other control has (a dialog always has one).
 /// Returns the button pressed.
 pub fn comment_dialog_body(ui: &mut egui::Ui, id: egui::Id, text: &mut String) -> Option<bool> {
-    let (client, _) = ui.allocate_exact_size(Vec2::new(569.0, 499.0), egui::Sense::hover());
+    let (client, _) = ui.allocate_exact_size(dlu_size(379, 307), egui::Sense::hover());
     let focus = ui.memory(|m| m.focused().is_none());
     win_edit_multiline(ui, dlu(client, 6, 6, 366, 276), id, text, focus);
     if win_button(ui, dlu(client, 244, 288, 62, 14), "OK", true).clicked() {
