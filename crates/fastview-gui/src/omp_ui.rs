@@ -242,6 +242,7 @@ impl App {
         d.aux_cursor = result.window.1;
         d.v_shown[0] = true;
         d.v_shown[1] = true;
+        d.v1_placed = true;
         // Same-named channels are replaced in place, others appended.
         match d.computed.iter().position(|c| c.name == L_KZ) {
             Some(j) => {

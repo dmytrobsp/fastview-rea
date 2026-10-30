@@ -1881,6 +1881,7 @@ impl App {
                         _ => d.aux_cursor = s,
                     }
                     d.v_shown[k] = true;
+                    d.v1_placed |= k == 0;
                 }
                 Act::MoveV(k, s) => {
                     match k {
@@ -1889,6 +1890,7 @@ impl App {
                         _ => d.v3_cursor = s,
                     }
                     d.v_shown[k] = true;
+                    d.v1_placed |= k == 0;
                 }
                 Act::SetH(j, ch, v) => {
                     d.hviz[j] = crate::app::HVizir { shown: true, chan: Some(ch), value: v };

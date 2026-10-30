@@ -1416,9 +1416,8 @@ impl App {
         // The table's value cells stay empty until В1 has been placed (VM:
         // a record just opened, also after a quick-analysis run, shows the
         // rows with empty cells; a click, the 32813 toggle or the keys
-        // place it and the values stay when it is hidden again; INFERRED
-        // gate: the never-placed test of `0x45c120`).
-        let values = d.v_shown[0] || k != 0;
+        // place it and the values stay when it is hidden again).
+        let values = d.v1_placed || d.v_shown[0];
         let n = d.osc.samples_per_cycle().max(2);
         let phasor_of = |name: &str| -> Option<Complex64> {
             if let Some(i) = d.osc.analog.iter().position(|c| c.id == name) {
@@ -2212,7 +2211,8 @@ mod tests {
         let t = texts(&mut app);
         assert!(t.iter().any(|s| s == "Ia") && !value(&t), "{t:?}");
         let d = app.active_doc_mut().unwrap();
-        (d.main_cursor, d.v_shown[0]) = (100, true);
+        // Placed on sample 0, as a click there does.
+        (d.main_cursor, d.v_shown[0], d.v1_placed) = (0, true, true);
         let t = texts(&mut app);
         assert!(value(&t), "{t:?}");
         app.active_doc_mut().unwrap().v_shown[0] = false;

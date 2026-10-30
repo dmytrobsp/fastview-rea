@@ -662,6 +662,10 @@ pub struct Doc {
     pub v3_cursor: usize,
     /// Shown flags of В1 / В2 / В3; a new document shows none (`0x449170`).
     pub v_shown: [bool; 3],
+    /// В1 has been shown in this document (placed by a click, 32813, the
+    /// keys or ОМП): the vector table's value cells wait for it (VM; they
+    /// stay when it is hidden again).
+    pub v1_placed: bool,
     /// Horizontal визиры ГВ1 / ГВ2, each on one analog channel's scale.
     pub hviz: [HVizir; 2],
     pub chans: Vec<ChanView>,
@@ -795,6 +799,7 @@ impl Doc {
             aux_cursor: 0,
             v3_cursor: 0,
             v_shown: [false; 3],
+            v1_placed: false,
             hviz: [HVizir::default(); 2],
             chans,
             computed: Vec::new(),
@@ -1072,6 +1077,7 @@ impl Doc {
                 *s = crate::oscgeom::sample_at(x, self.first, f, left).clamp(0, n as i64 - 1) as usize;
             }
             self.v_shown[k] = !self.v_shown[k];
+            self.v1_placed |= k == 0 && self.v_shown[k];
         } else if k < 5 {
             let h = &mut self.hviz[k - 3];
             if h.chan.is_none() {
