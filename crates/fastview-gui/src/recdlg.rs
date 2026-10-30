@@ -448,7 +448,7 @@ impl App {
                 let (start, trig) = stamp_texts(o, utc);
                 // The 347 × 277 DLU template (521 × 450 px): right-aligned
                 // labels at x 12–13, the values as static text at 120–121.
-                let (client, _) = ui.allocate_exact_size(egui::vec2(521.0, 450.0), egui::Sense::hover());
+                let (client, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(347, 277), egui::Sense::hover());
                 let rows: [(i32, i32, &str, Option<String>); 10] = [
                     (12, 12, "Число каналов:", Some((o.analog.len() + o.digital.len()).to_string())),
                     (12, 30, "Число аналоговых каналов:", Some(o.analog.len().to_string())),
@@ -580,7 +580,7 @@ impl App {
             .show(ctx, |ui| {
                 use crate::dialogs::{dlu, win_button, win_group, win_label, win_radio};
                 // The 419 × 259 DLU template (629 × 421 px).
-                let (client, _) = ui.allocate_exact_size(egui::vec2(629.0, 421.0), egui::Sense::hover());
+                let (client, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(419, 259), egui::Sense::hover());
                 // The template's order is the tab order: OK, Cancel, the
                 // link, «...», then each group's checked radio (an auto radio
                 // button takes WS_TABSTOP while checked; VM: Tab after «...»
