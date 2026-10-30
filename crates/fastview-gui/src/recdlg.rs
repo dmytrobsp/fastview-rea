@@ -322,6 +322,10 @@ impl Doc {
             self.set_codepage(cp);
             return;
         }
+        // The levels and areas name their channels: taken by name before
+        // and bound again by the names finally shown (one whose name no
+        // longer resolves is kept by name, as after a rename).
+        let recs: Vec<_> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
         // Back to the names as read (their bytes decoded in `read`), each
         // kept with its bytes; then shown in `cp`.
         self.set_codepage(read);
@@ -338,6 +342,7 @@ impl Doc {
             }
         }
         self.codepage = cp;
+        self.comments = recs.iter().map(|r| self.comment_of(r)).collect();
     }
 }
 
@@ -1041,6 +1046,28 @@ mod tests {
             assert_eq!((d.codepage, d.read_enc), (program, program));
             assert_eq!(codepage_items(d.read_enc).last().map(|e| e.0), Some(program));
         }
+    }
+
+    /// A level on a UTF-8 record's channel follows «Кодировка» by name: it
+    /// comes loose under 866 (the name no longer resolves) and is bound
+    /// again back in UTF-8.
+    #[test]
+    fn a_level_on_a_utf8_record_follows_the_code_page_by_name() {
+        use crate::app::ChanKey;
+        use crate::comments::{Comment, CommentKind};
+        let mut osc = comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
+        osc.text_enc = Some(Encoding::Utf8);
+        osc.analog[0].id = "Струм фази А".into();
+        let mut d = Doc::new(osc, "x".into());
+        d.init_record_text(Encoding::Cp1251);
+        d.init_set_keys();
+        d.comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(0), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
+        d.pick_codepage(Encoding::Cp866);
+        assert!(matches!(d.comments[0].kind, CommentKind::Kept(_)), "loose under 866");
+        d.pick_codepage(Encoding::Utf8);
+        assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(0), .. }), "bound again");
+        d.pick_codepage(Encoding::Cp1251);
+        assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(0), .. }), "1251 shows the same Cyrillic name");
     }
 
     /// A stored `Oscillogram/Codepage` applies to a UTF-8 record too

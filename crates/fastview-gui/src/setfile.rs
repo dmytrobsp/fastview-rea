@@ -309,7 +309,9 @@ impl Doc {
     /// `Doc::set_codepage` decodes the names).
     fn file_name(&self, i: usize) -> String {
         if !matches!(self.read_enc, Encoding::Cp1251 | Encoding::Cp866) {
-            // Read in UTF-8 / KOI8-R: as `Doc::pick_codepage` shows it.
+            // Read in UTF-8 / KOI8-R: as `Doc::pick_codepage` shows it —
+            // from the keys `init_set_keys` took at the open, while the
+            // names were shown in that encoding.
             let as_read = comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.read_enc);
             return crate::recdlg::name_in(&as_read, self.read_enc, self.codepage);
         }
