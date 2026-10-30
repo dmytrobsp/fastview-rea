@@ -179,9 +179,11 @@ fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, 
     let bold = if bold_title { ctx.fonts(|f| crate::lanes::bold_font(f, size)).unwrap_or(font.clone()) } else { font.clone() };
     let width = |t: &str, f: &egui::FontId| ctx.fonts(|fs| fs.layout_no_wrap(t.to_owned(), f.clone(), INK).size().x);
     // Segoe UI wraps near 190 px; Tahoma's letters are a little wider.
-    // The description's width limit stays in pixels (VM, 150 %: three
-    // lines where 100 % and 125 % have two).
-    let lines = wrap(ctx, desc, &font, 195.0);
+    // The description's width limit stays near 190 px at every scale (VM:
+    // «Показать или скрыть панель параметров осциллограммы» on two lines
+    // at 100 % and 125 %, three at 150 %); ours a little more at > 100 %
+    // for Tahoma's wider letters at the larger size.
+    let lines = wrap(ctx, desc, &font, crate::dpi::measured(195.0, 205.0, 205.0));
     let plain = matches!(img, TipImage::None);
     let text_x = match img {
         TipImage::Large(_) => side(32.0) + 13.0,
