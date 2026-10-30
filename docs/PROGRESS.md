@@ -19,27 +19,27 @@ Last rewritten: 2026-10-30 (milestone 0.4.0 in flight; tracking moved to GitHub 
   read and reconciled: the record runs L1–L9.403 ([original/](original/README.md)); the program's own code is
   91.8 % covered by cited functions (`tools/coverage.py`: 1118 of 1803 functions, none of the large or medium ones
   uncited).
-- Ours runs on Linux, Windows (GPU or its software runner) and macOS. Deliberate differences:
-  [IMPROVEMENTS.md](IMPROVEMENTS.md). Out of reach (no sample, proprietary assets, GDI's exact glyphs): the W6 list in
-  [history/completion-plan.md](history/completion-plan.md), to be moved into issues.
+- Ours runs on Linux, Windows (GPU or its software runner) and macOS. Deliberate improvements:
+  [IMPROVEMENTS.md](IMPROVEMENTS.md); differences the maintainer accepted: [ACCEPTED.md](ACCEPTED.md).
 
 ## In flight
 
 - **Milestone [0.4.0](https://github.com/dmytrobsp/fastview-rea/milestone/1)** — the first user feedback on v0.3.0
   (#1–#3) and a new record format (#8). Plan and ledger: [milestones/0.4.0.md](milestones/0.4.0.md). Pull requests
   into `milestone/0.4.0`: #9 (auto-hide, #4), #10 (COMTRADE 2013 UTF-8 exports, #8), #11 (fractional display
-  scaling, #5 #6), #13 (quick analysis after «Кодировка», #7); #12 (the chrome at display scaling) in progress,
-  stacked on #11.
+  scaling, #5 #6), #13 (quick analysis after «Кодировка», #7), #14 (the chrome at display scaling, #12; stacked on
+  #11).
 - **The workflow** moved to the milestone model on 2026-10-30: [AGENTS.md](../AGENTS.md),
   [agents/workflow.md](agents/workflow.md), [agents/windows-testing.md](agents/windows-testing.md). The completion
-  plan's open items and the record's residuals are being filed as issues.
+  plan's open items, the record's residuals, the old "out of reach" list and the units' follow-ups are filed as
+  issues #15–#66 (milestone `later`); the out-of-reach ones are being reviewed with the maintainer for acceptance.
 
 ## Next topics
 
 - Finish 0.4.0: the units' follow-ups, the merge gates, the final review, the milestone pull request, then a release
   on the maintainer's word.
-- The backlog, once filed: the old plan's open items (the scenario checklist against the original, per-skin looks,
-  the remaining residuals). With no milestone open, the controller proposes the next one; the maintainer decides.
+- The backlog in `later`: the scenario checklist against the original, per-skin looks, the remaining residuals.
+  With no milestone open, the controller proposes the next one; the maintainer decides.
 
 List the queue: `gh issue list -S '-label:triage'`.
 
@@ -52,7 +52,7 @@ List the queue: `gh issue list -S '-label:triage'`.
 | The queue | [GitHub Issues](https://github.com/dmytrobsp/fastview-rea/issues), milestones and labels |
 | Milestones | [milestones/](milestones/README.md): plan and ledger per milestone |
 | What the original does | [original/](original/README.md): L1–L9.x and the specs |
-| Deliberate differences | [IMPROVEMENTS.md](IMPROVEMENTS.md) |
+| Deliberate differences | [IMPROVEMENTS.md](IMPROVEMENTS.md) (improvements), [ACCEPTED.md](ACCEPTED.md) (accepted by the maintainer) |
 | History | [history/](history/): the completion plan (to 2026-10-30), the ledger's session notes |
 | Tools | [tools/README.md](../tools/README.md); the milestone helper `tools/milestone/milestone.py` |
 
