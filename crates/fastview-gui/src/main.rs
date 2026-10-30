@@ -1739,6 +1739,53 @@ mod window_tests {
         }
     }
 
+    /// Auto-hide asks for frames only when it needs them — every frame of
+    /// a slide, the hover's open time, the hide check's 700 ms timer — and
+    /// keeps its timing with nothing else waking the window: frames run
+    /// only when the last one asked (the event loop with no input).
+    #[test]
+    fn auto_hide_wakes_only_for_its_slide_and_timers() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        // One frame with `events`, then frames only as asked, for `secs`;
+        // the frames' times and delays.
+        let run = |w: &mut Win, events: Vec<egui::Event>, secs: f64| {
+            let mut log = Vec::new();
+            let (start, mut events) = (w.ctx.input(|i| i.time) + 0.05, events);
+            let mut t = start;
+            while t < start + secs && log.len() < 400 {
+                let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), events: std::mem::take(&mut events), ..Default::default() };
+                let out = w.ctx.run(raw, |ctx| w.app.frame_ui(ctx));
+                let delay = out.viewport_output.get(&egui::ViewportId::ROOT).map_or(f64::INFINITY, |v| v.repaint_delay.as_secs_f64());
+                log.push((t - start, w.app.docks[Unit::Vector].out, w.app.docks[Unit::Vector].slide, delay));
+                // The delay less the frame time egui expects (a 60 Hz
+                // display): the next frame comes that much later.
+                t += (delay + 1.0 / 60.0).min(10.0);
+            }
+            log
+        };
+        // On the button: out at 400 ms, with no frames between.
+        let log = run(&mut w, vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))], 0.6);
+        let open = log.iter().find(|f| f.1).expect("the hover slid it out");
+        assert!((0.4..0.45).contains(&open.0), "out at {:.3} s: {log:?}", open.0);
+        assert!(log.len() < 5 + 12, "frames while hovering: {log:?}");
+        // Out and resting, the pointer on the button: one frame per check.
+        let log = run(&mut w, vec![], 3.0);
+        assert!(log.iter().all(|f| f.1), "it stays out");
+        let resting: Vec<_> = log.iter().filter(|f| f.2 == 1.0).collect();
+        assert!(resting.iter().skip(1).all(|f| f.3 > 0.1), "no 16 ms frames at rest: {log:?}");
+        assert!(log.len() < 12 + 6, "frames in 3 s: {}", log.len());
+        // Away from both: back at the next check, within 700 ms.
+        let view = w.app.view_rects.expect("the view").0;
+        let log = run(&mut w, vec![egui::Event::PointerMoved(view.left_bottom() + Vec2::new(20.0, -20.0))], 1.5);
+        let back = log.iter().find(|f| !f.1).expect("it slid back");
+        assert!(back.0 <= 0.75, "back at {:.3} s: {log:?}", back.0);
+        assert!(log.last().is_some_and(|f| f.2 == 0.0), "slid in: {log:?}");
+    }
+
     /// The hide check finds the pointer on the strip button by position
     /// (`0x10087a4a`: PtInRect on the button's rect, whatever window is on
     /// top there): with a window over the button the pane stays out,

@@ -282,6 +282,20 @@ impl Dockable {
         true
     }
 
+    /// When it next needs a frame, in seconds from `now`: at once while it
+    /// slides, when the hover on its button reaches the open time, at the
+    /// next hide check while it is out; None when resting in.
+    pub fn wake_in(&self, now: f64) -> Option<f64> {
+        if self.place != Place::AutoHide {
+            return None;
+        }
+        if self.slide != if self.out { 1.0 } else { 0.0 } {
+            return Some(0.0);
+        }
+        let at = if self.out { Some(self.next_check) } else { self.hover_since.map(|s| s + HOVER_S) };
+        at.map(|t| (t - now).max(0.0))
+    }
+
     /// Whether the pointer was on its strip button in the last frame.
     #[cfg(test)]
     pub fn on_button(&self) -> bool {

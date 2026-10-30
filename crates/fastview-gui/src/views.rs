@@ -589,7 +589,9 @@ impl App {
         let now = ctx.input(|i| i.time);
         let pointer = ctx.input(|i| i.pointer.latest_pos());
         let menu_up = ctx.memory(|m| m.any_popup_open()) || self.pane_menu.is_some();
-        let mut moving = false;
+        // The next frame any of them needs (the slide, the hover's open
+        // time, the hide check's timer).
+        let mut wake: Option<f64> = None;
         self.dock_strips = [None; 4];
         let pinned: Vec<DockView> = views.iter().copied().filter(|v| self.docks[v.unit].place == Place::AutoHide).collect();
         for v in pinned {
@@ -622,10 +624,16 @@ impl App {
             // on the window rect and on the button rect), not by which
             // window is on top there.
             let inside = pointer.is_some_and(|q| self.dock_areas[v.unit as usize].is_some_and(|a| a.contains(q)) || buttons.iter().any(|b| b.contains(q)));
-            moving |= self.docks[v.unit].auto_hide_frame(now, hit.0, hit.1, inside, menu_up);
+            self.docks[v.unit].auto_hide_frame(now, hit.0, hit.1, inside, menu_up);
+            if let Some(dt) = self.docks[v.unit].wake_in(now) {
+                wake = Some(wake.map_or(dt, |w| w.min(dt)));
+            }
         }
-        if moving || self.docks.0.iter().any(|d| d.out) {
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        // egui starts a requested frame a frame's time early: the frame
+        // after a timer comes at its time, not just before it.
+        if let Some(dt) = wake {
+            let lead = ctx.input(|i| f64::from(i.predicted_dt));
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(dt + lead));
         }
     }
 
@@ -676,10 +684,11 @@ impl App {
     /// its rect, and an area sized by its content (pushed back into the
     /// screen as it grows) would cover the strip and take its hover.
     fn slide_area(&mut self, ctx: &egui::Context, id: egui::Id, rect: egui::Rect, body: impl FnOnce(&mut App, &mut egui::Ui)) {
-        // On a pixel, as egui places an area.
+        // On a pixel, as egui places an area; no fade-in (the pane only
+        // slides).
         let ppp = ctx.pixels_per_point();
         let rect = egui::Rect::from_min_size((rect.min.to_vec2() * ppp).round().to_pos2() / ppp, rect.size());
-        egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(rect.min).constrain(false).default_size(rect.size()).show(ctx, |ui| {
+        egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(rect.min).constrain(false).default_size(rect.size()).fade_in(false).show(ctx, |ui| {
             // The area claims its rect for clicks before its content runs,
             // with the last frame's size: sliding in, a size that still
             // reaches over the strip — claimed again with this frame's rect
