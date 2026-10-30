@@ -134,7 +134,9 @@ pub enum ExprError {
 /// An [`ExprError`] together with the formula text it came from, displayed
 /// as the original's message box does: "<formula>: <message>", except
 /// 0x430 / 0x431, built as "<message>: '<formula>'" (`0x41fd00`,
-/// `0x41fe80`).
+/// `0x41fe80`), and 0x162, the bare message (the resolver throws it with
+/// no text, `0x42ef9f` / `0x42f1cf` → `0x42dfe0`; VM: «Быстрый анализ»
+/// with a formula on a name the record no longer has).
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub struct FormulaError {
     pub formula: String,
@@ -145,6 +147,7 @@ impl std::fmt::Display for FormulaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.error {
             ExprError::ArgCount(..) | ExprError::NeedsChannel(_) => write!(f, "{}: '{}'", self.error, self.formula),
+            ExprError::BadChannelName(_) => write!(f, "{}", self.error),
             _ => write!(f, "{}: {}", self.formula, self.error),
         }
     }

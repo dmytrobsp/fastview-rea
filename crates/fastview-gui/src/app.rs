@@ -860,6 +860,21 @@ impl Doc {
         self.reevaluate_formulas(show_primary);
     }
 
+    /// The formulas resolve a channel by its name as shown now (`0x42edf0`
+    /// compares `+0x68`; the original keeps no copy of the record): the
+    /// flagged copy takes the names a change left behind it — «Кодировка»
+    /// re-decodes them in place (`0x4543e0` → `0x425960`, issue #7), a
+    /// rename in «Каналы» or on the lane writes one — none of which
+    /// recomputes.
+    pub fn sync_flagged_names(&mut self) {
+        for (f, c) in self.flagged.analog.iter_mut().zip(&self.osc.analog) {
+            f.id.clone_from(&c.id);
+        }
+        for (f, c) in self.flagged.digital.iter_mut().zip(&self.osc.digital) {
+            f.id.clone_from(&c.id);
+        }
+    }
+
     /// Formula channels are evaluated again in order on the current values
     /// and correction (`0x415780` over the whole definition list; merged and
     /// ОМП channels carry no formula to re-evaluate).
@@ -872,6 +887,7 @@ impl Doc {
     /// keep their new values) and is returned; only a full success sweeps
     /// the groups (`0x415b97` → `0x455c70`).
     pub fn try_reevaluate_formulas(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
+        self.sync_flagged_names();
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
         for j in 0..self.computed.len() {
             let c = &mut self.computed[j];
@@ -3488,7 +3504,7 @@ mod tests {
         assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
         app.active_doc_mut().unwrap().computed[0].formula = "Нет*2".into();
         assert!(app.append_computed(&[("Y".into(), "Ub*2".into())]).is_none());
-        assert_eq!(app.dlg.alert(), Some("Нет*2: Имя канала задано неправильно."), "its box (0x162 in channel mode)");
+        assert_eq!(app.dlg.alert(), Some("Имя канала задано неправильно."), "its box (0x162, no formula: VM)");
         assert!(app.active_doc().unwrap().computed.iter().all(|c| c.name != "Y"), "nothing added");
     }
 

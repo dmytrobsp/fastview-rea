@@ -886,6 +886,58 @@ mod tests {
         assert_eq!(d.osc.analog[0].id, "’®Є");
     }
 
+    /// Issue #7: after «Кодировка» «Быстрый анализ» works on the names as
+    /// now shown — the original's formulas look the channels up by their
+    /// shown name (`+0x68`, `0x42edf0`), which `0x4543e0` → `0x425960`
+    /// re-decodes in place. A formula on the old names no longer resolves.
+    #[test]
+    fn quick_analysis_takes_the_names_of_a_new_code_page() {
+        use crate::app::AnalysisTab;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        // A 1251 record whose names were read as 866 (the guess, or the
+        // user's pick), and computed on.
+        d.codepage = Encoding::Cp1251;
+        for (i, n) in [(3, "IA БЛОКА 3"), (4, "IB БЛОКА 3"), (5, "IC БЛОКА 3")] {
+            d.osc.analog[i].id = n.into();
+        }
+        d.init_set_keys();
+        d.set_codepage(Encoding::Cp866);
+        d.recompute(false);
+        let old = d.osc.analog[3].id.clone();
+        assert_eq!(old, "IA +T+¦L 3");
+        d.set_codepage(Encoding::Cp1251);
+        app.analysis_tab = AnalysisTab::Zero;
+        let q = &mut app.quick[crate::quick_ui::page_index(AnalysisTab::Zero).unwrap()];
+        (q.ia, q.ib, q.ic) = ("IA БЛОКА 3".into(), "IB БЛОКА 3".into(), "IC БЛОКА 3".into());
+        (q.ua, q.ub, q.uc) = ("Ua".into(), "Ub".into(), "Uc".into());
+        let g = q.generate(AnalysisTab::Zero, &[]);
+        app.apply_quick(&g);
+        assert_eq!(app.dlg.alert(), None);
+        let d = app.active_doc().unwrap();
+        let i0 = d.computed.iter().find(|c| c.name == "3I0").expect("3I0 computed");
+        assert_eq!(i0.formula, "3I0: (\"IA БЛОКА 3\", \"IB БЛОКА 3\", \"IC БЛОКА 3\")");
+        // The formula editor alike; the old name is the record's no more.
+        assert!(app.append_computed(&[("X".into(), "\"IB БЛОКА 3\"*2".into())]).is_some());
+        assert!(app.append_computed(&[("Y".into(), format!("\"{old}\"*2"))]).is_none());
+        assert_eq!(app.dlg.alert(), Some("Имя канала задано неправильно."), "the bare 0x162 (VM)");
+    }
+
+    /// The formula editor resolves a renamed channel by its new name.
+    #[test]
+    fn the_formula_editor_takes_a_new_name() {
+        let mut app = demo_app();
+        assert_eq!(crate::chandlg::rename(app.active_doc_mut().unwrap(), crate::app::ChanKey::Analog(0), "Новое"), Ok(()));
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.rows.push(("X".into(), "Новое*2".into()));
+        app.formula_page.dirty = true;
+        app.quick_calc();
+        assert_eq!(app.dlg.alert(), None);
+        let d = app.active_doc().unwrap();
+        let x = d.computed.iter().find(|c| c.name == "X").expect("X computed");
+        assert_eq!(x.samples[10], d.flagged.analog[0].samples[10] * 2.0);
+    }
+
     #[test]
     fn init_guesses_the_code_page_from_the_names() {
         let osc = comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap();
