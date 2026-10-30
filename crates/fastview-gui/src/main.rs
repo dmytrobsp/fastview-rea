@@ -1000,7 +1000,7 @@ impl App {
         // brush (VM).
         self.omp_sync_bar();
         if self.omp_ui.bar.is_some() {
-            egui::TopBottomPanel::top("fv_ompbar").exact_height(33.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |ui| self.omp_banner(ui));
+            egui::TopBottomPanel::top("fv_ompbar").exact_height(omp_ui::omp_bar_h()).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |ui| self.omp_banner(ui));
             egui::TopBottomPanel::top("fv_under_ompbar").exact_height(8.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
         }
         // A caption bar's face in the Office 2007 looks (VM): a box from 4 px
@@ -1349,6 +1349,48 @@ mod window_tests {
             let face = (top..c.h).take_while(|&y| at(1100, y) == caption).count();
             assert_eq!(face + 1, cap, "{native}: a pane caption");
             assert_eq!(got, steps, "{native}: the ribbon's reduction steps");
+        }
+        dpi::set(96);
+    }
+
+    /// #12: the ОМП result bar is CMFCCaptionBar's own height (created with
+    /// −1, `0x474cbd`), 33 px at 100 % and its font's height more above —
+    /// 41 at 150 % — its face's lines on its first and last rows.
+    #[test]
+    fn the_omp_bar_takes_its_fonts_height() {
+        let px = Vec2::new(1280.0, 722.0);
+        let fonts = app_fonts();
+        let line = [157, 189, 216];
+        for (native, h) in [(1.0, 33), (1.25, 37), (1.5, 41)] {
+            dpi::set(96);
+            chrome_dpi(Some(native));
+            let mut app = demo(&[]);
+            (app.omp_ui.bar_doc, app.omp_ui.bar) = (app.active, Some("    КЗ".into()));
+            let c = raster::render_native(px, native, |ctx| device_options(ctx, Some(native)), device_screen, Some(&fonts), vec![vec![]; 5], |ctx| app.frame_ui(ctx));
+            // The first two face lines down column 600: the bar's.
+            let rows: Vec<usize> = (0..c.h).filter(|&y| c.px[y * c.w + 600] == line).take(2).collect();
+            assert_eq!(rows.len(), 2, "{native}");
+            assert_eq!(rows[1] - rows[0] + 1, h, "{native}: the ОМП bar");
+        }
+        dpi::set(96);
+    }
+
+    /// #12: «Параметры ОМП» places its tree and grid as OnInitDialog
+    /// (`0x4a7c50`) does, in pixels from its client: at 150 % (client 1069 ×
+    /// 653) from row 55 under the 34 px toolbar, 563 px tall — down past
+    /// its OK / Отмена row as on the VM — the grid from 356, 702 wide.
+    #[test]
+    fn the_omp_parameters_lay_out_from_their_client() {
+        for (dpi, client, tree, grid) in [
+            (96, (713.0, 447.0), (10.0, 44.0, 217.0, 357.0), (237.0, 44.0, 465.0, 357.0)),
+            (144, (1069.0, 653.0), (10.0, 55.0, 336.0, 563.0), (356.0, 55.0, 702.0, 563.0)),
+        ] {
+            dpi::set(dpi);
+            let size = dialogs::dlu_size(475, 275);
+            assert_eq!((size.x, size.y), client, "{dpi}");
+            let (t, g) = omp_ui::params_layout(egui::Rect::from_min_size(Pos2::ZERO, size));
+            assert_eq!((t.left(), t.top(), t.width(), t.height()), tree, "{dpi}: the tree");
+            assert_eq!((g.left(), g.top(), g.width(), g.height()), grid, "{dpi}: the grid");
         }
         dpi::set(96);
     }
