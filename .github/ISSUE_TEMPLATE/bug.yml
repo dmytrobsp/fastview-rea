@@ -1,0 +1,42 @@
+name: Bug report / Помилка
+description: Something in FastView-REA works wrong, or differently from Fast View 5 / Щось працює неправильно або інакше, ніж у Fast View 5
+labels: ["triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting — English, Ukrainian or Russian are all fine. / Дякуємо! Можна писати українською.
+        Issues are public: attach a record only if it may be shared publicly. / Задачі публічні: додавайте осцилограму, лише якщо її можна публікувати.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / Що сталося
+      description: What you did, what you expected, and what FastView-REA did instead. / Що ви робили, що очікували і що сталося.
+    validations:
+      required: true
+  - type: textarea
+    id: original
+    attributes:
+      label: What Fast View 5 does / Як це робить Fast View 5
+      description: If you know how the original behaves here. / Якщо знаєте, як поводиться оригінал.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Кроки
+      placeholder: |
+        1. …
+        2. …
+  - type: input
+    id: version
+    attributes:
+      label: Version / Версія
+      description: The release or build you ran (e.g. v0.3.0). / Реліз або збірка.
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System / Система
+      placeholder: "e.g. Windows 11, 150 % display scaling · Ubuntu 24.04 · macOS 26"
+    validations:
+      required: true

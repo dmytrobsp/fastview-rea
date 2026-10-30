@@ -1,0 +1,20 @@
+name: Feature request / Пропозиція
+description: Something FastView-REA doesn't do yet, or could do better / Чого ще немає або що можна зробити краще
+labels: ["triage"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you'd like / Що потрібно
+      description: What you want to do, and how you'd expect it to work. / Що ви хочете зробити і як це мало б працювати.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why / Навіщо
+      description: What you do today instead, or what Fast View 5 does. / Як ви робите це зараз або як це робить Fast View 5.
+  - type: input
+    id: system
+    attributes:
+      label: System (if it matters) / Система
