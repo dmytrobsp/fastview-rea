@@ -631,6 +631,7 @@ impl App {
             return;
         }
         let vertical = edge.vertical();
+        let screen = ctx.screen_rect();
         let brush = self.skin.splitter();
         // The strip: 23 px across a side edge, 21 along the top / bottom
         // one (VM); the buttons 2 px less across, on its outer side, 4 px
@@ -654,11 +655,19 @@ impl App {
             } else {
                 ui.painter().rect_filled(full, 0.0, egui::Color32::WHITE);
             }
-            let mut at = crate::dpi::s(4.0);
+            // Along a side strip the buttons start 4 px under the window's
+            // top, behind the caption row's glass (VM: the first button's
+            // title is cut by it); along the others 4 px in.
+            let maximised = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+            let origin = if vertical { screen.top() - if maximised { 8.0 } else { 0.0 } - strip.top() } else { 0.0 };
+            let mut at = origin + crate::dpi::s(4.0);
+            let paint = ui.painter().with_clip_rect(strip);
             for (v, titles) in &front {
                 let mut hit = StripHit::default();
                 for &t in titles {
-                    let len = strip_button_len(ui, pane_title(t));
+                    let title = pane_title(t);
+                    let is_front = t == v.front;
+                    let len = crate::dpi::s(crate::docking::strip_button_len(title.chars().count(), is_front, vertical));
                     let rect = match edge {
                         Edge::Left => egui::Rect::from_min_size(egui::pos2(strip.left(), strip.top() + at), egui::vec2(across - crate::dpi::s(2.0), len)),
                         Edge::Right => egui::Rect::from_min_size(egui::pos2(strip.left() + crate::dpi::s(2.0), strip.top() + at), egui::vec2(across - crate::dpi::s(2.0), len)),
@@ -666,9 +675,15 @@ impl App {
                         Edge::Bottom => egui::Rect::from_min_size(egui::pos2(strip.left() + at, strip.top() + crate::dpi::s(2.0)), egui::vec2(len, across - crate::dpi::s(2.0))),
                     };
                     at += len;
-                    let r = ui.interact(rect, id.with((v.unit as u8, t as u8)), egui::Sense::click());
+                    // Only what the strip shows can be hovered (the part
+                    // under the glass is not the strip).
+                    let vis = rect.intersect(strip);
+                    if vis.width() <= 0.0 || vis.height() <= 0.0 {
+                        continue;
+                    }
+                    let r = ui.interact(vis, id.with((v.unit as u8, t as u8)), egui::Sense::click());
                     if seen {
-                        strip_button(ui, rect, pane_title(t), vertical, t == v.front, r.hovered());
+                        strip_button(&paint, rect, title, vertical, is_front, r.hovered());
                     }
                     // The strip acts on the press (WM_LBUTTONDOWN).
                     let pressed = r.hovered() && ui.input(|i| i.pointer.primary_pressed());
@@ -677,27 +692,18 @@ impl App {
                         hit.pressed |= pressed;
                         hit.pane = Some(t);
                     }
-                    hit.buttons.push(rect);
+                    hit.buttons.push(vis);
                 }
                 hits.push((v.unit, hit));
                 // A group's buttons are set apart from the next group's.
                 at += crate::dpi::s(8.0);
             }
-            if edge == Edge::Top {
-                // The window's own buttons stay on this row (VM), the
-                // ribbon below having been pushed down.
-                let row = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), crate::ribbon::caption_h()));
-                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(row).layout(egui::Layout::right_to_left(egui::Align::Center)));
-                if self.own_caption {
-                    crate::ribbon::caption_buttons(&mut child);
-                }
-            }
             strip
         };
         let frame = egui::Frame::none();
         let rect = match edge {
-            Edge::Left => egui::SidePanel::left(id).resizable(false).exact_width(across).frame(frame).show(ctx, draw).inner,
-            Edge::Right => egui::SidePanel::right(id).resizable(false).exact_width(across).frame(frame).show(ctx, draw).inner,
+            Edge::Left => egui::SidePanel::left(id).resizable(false).exact_width(across).show_separator_line(false).frame(frame).show(ctx, draw).inner,
+            Edge::Right => egui::SidePanel::right(id).resizable(false).exact_width(across).show_separator_line(false).frame(frame).show(ctx, draw).inner,
             Edge::Top => egui::TopBottomPanel::top(id).resizable(false).exact_height(across).show_separator_line(false).frame(frame).show(ctx, draw).inner,
             Edge::Bottom => egui::TopBottomPanel::bottom(id).resizable(false).exact_height(across).show_separator_line(false).frame(frame).show(ctx, draw).inner,
         };
@@ -882,23 +888,33 @@ impl App {
         // The caption row's glass over a pane reaching up into it: white,
         // the pane's caption under it not seen (VM: only its toolbar's top
         // shows faintly); the window's own buttons stay on top.
-        if !glass.is_empty() {
+        let glass_any = !glass.is_empty();
+        if glass_any {
             let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("fv_glass"));
             let p = ctx.layer_painter(layer);
             for r in glass {
                 p.rect_filled(egui::Rect::from_min_max(egui::pos2(r.left(), screen.top()), egui::pos2(r.right(), cap)), 0.0, egui::Color32::WHITE);
             }
             ctx.move_to_top(layer);
-            if self.own_caption {
-                let row = egui::Rect::from_min_max(egui::pos2(screen.right() - 3.0 * crate::dpi::s(46.0), screen.top()), egui::pos2(screen.right(), cap));
-                p.rect_filled(row, 0.0, egui::Color32::WHITE);
-                let modal = self.modal_up;
-                let area = egui::Area::new(egui::Id::new("fv_caption_buttons")).order(egui::Order::Foreground).fixed_pos(row.min).constrain(false).fade_in(false).show(ctx, |ui| {
-                    ui.allocate_ui_with_layout(row.size(), egui::Layout::right_to_left(egui::Align::Center), |ui| ui.add_enabled_ui(!modal, crate::ribbon::caption_buttons));
-                });
-                ctx.move_to_top(area.response.layer_id);
-            }
+            p.rect_filled(self.caption_buttons_row(ctx), 0.0, egui::Color32::WHITE);
         }
+        // The window's own buttons stay at the window's edge (VM) beside a
+        // right strip, on the caption row under a top strip, and over a pane
+        // reaching up into it: drawn here, where no panel clips them.
+        if self.own_caption && (glass_any || self.strip_inset[1] > 0.0 || self.strip_inset[2] > 0.0) {
+            let row = self.caption_buttons_row(ctx);
+            let modal = self.modal_up;
+            let area = egui::Area::new(egui::Id::new("fv_caption_buttons")).order(egui::Order::Foreground).fixed_pos(row.min).constrain(false).fade_in(false).show(ctx, |ui| {
+                ui.allocate_ui_with_layout(row.size(), egui::Layout::right_to_left(egui::Align::Center), |ui| ui.add_enabled_ui(!modal, crate::ribbon::caption_buttons));
+            });
+            ctx.move_to_top(area.response.layer_id);
+        }
+    }
+
+    /// The window's three buttons' row: the caption row at the right edge.
+    fn caption_buttons_row(&self, ctx: &egui::Context) -> egui::Rect {
+        let screen = ctx.screen_rect();
+        egui::Rect::from_min_max(egui::pos2(screen.right() - 3.0 * crate::dpi::s(46.0), screen.top()), egui::pos2(screen.right(), screen.top() + crate::ribbon::caption_h()))
     }
 
     /// A slid-out pane: drawn over the content in `rect`. The area is exactly `rect`: a pane part-way out lays out
@@ -2003,23 +2019,16 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
     act
 }
 
-/// The length of an auto-hide strip button along its strip: the title and
-/// 8 px each side (VM: «Частотная диаграмма», 144 px with its frame).
-fn strip_button_len(ui: &egui::Ui, title: &str) -> f32 {
-    let font = egui::FontId::proportional(crate::dpi::font(11.0));
-    ui.painter().layout_no_wrap(title.to_owned(), font, egui::Color32::BLACK).size().x + 16.0
-}
-
 /// An auto-hide strip button in `rect`: the pane's title, written down a
 /// side strip or along a top / bottom one. The front pane of its group is
 /// the warm gradient (VM: (255, 243, 199) to (255, 220, 122), across a side
 /// strip left to right, down a bottom one bottom to top), the others the
 /// strip's own colour; every one framed (185, 208, 237).
-fn strip_button(ui: &mut egui::Ui, rect: egui::Rect, title: &str, vertical: bool, front: bool, hot: bool) {
+fn strip_button(p: &egui::Painter, rect: egui::Rect, title: &str, vertical: bool, front: bool, hot: bool) {
     use egui::epaint::{Mesh, Vertex, WHITE_UV};
     let font = egui::FontId::proportional(crate::dpi::font(11.0));
     let ink = egui::Color32::from_rgb(30, 30, 30);
-    let galley = ui.painter().layout_no_wrap(title.to_owned(), font, ink);
+    let galley = p.layout_no_wrap(title.to_owned(), font, ink);
     let frame = egui::Color32::from_rgb(185, 208, 237);
     let (light, dark) = if front || hot { (egui::Color32::from_rgb(255, 243, 199), egui::Color32::from_rgb(255, 220, 122)) } else { (egui::Color32::from_rgb(213, 228, 242), egui::Color32::from_rgb(196, 220, 250)) };
     let inner = rect.shrink(1.0);
@@ -2035,13 +2044,16 @@ fn strip_button(ui: &mut egui::Ui, rect: egui::Rect, title: &str, vertical: bool
         mesh.vertices.push(Vertex { pos, uv: WHITE_UV, color });
     }
     mesh.indices.extend([0, 1, 2, 0, 2, 3]);
-    ui.painter().add(mesh);
-    ui.painter().rect_stroke(rect, 0.0, egui::Stroke::new(1.0f32, frame));
+    p.add(mesh);
+    p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0f32, frame));
+    // A stub's title starts at its edge and is cut by it.
+    let text = p.with_clip_rect(rect);
+    let lead = if front { 8.0 } else { 3.0 };
     if vertical {
-        let at = egui::pos2(rect.center().x + galley.size().y / 2.0, rect.top() + 8.0);
-        ui.painter().add(egui::epaint::TextShape::new(at, galley, ink).with_angle(std::f32::consts::FRAC_PI_2));
+        let at = egui::pos2(rect.center().x + galley.size().y / 2.0, rect.top() + lead);
+        text.add(egui::epaint::TextShape::new(at, galley, ink).with_angle(std::f32::consts::FRAC_PI_2));
     } else {
-        ui.painter().galley(rect.left_center() + egui::vec2(8.0, -galley.size().y / 2.0), galley, ink);
+        text.galley(rect.left_center() + egui::vec2(lead, -galley.size().y / 2.0), galley, ink);
     }
 }
 

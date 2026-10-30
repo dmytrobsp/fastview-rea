@@ -2498,38 +2498,73 @@ mod window_tests {
         }
     }
 
-    /// An auto-hidden tabbed group has a strip button per visible tab, the
-    /// front one highlighted by being first in front; hovering one slides
-    /// the group out with only that pane, no tab strip (#62; VM).
+    /// The window's own buttons stay whole at the window's edge beside a
+    /// right strip and under a top strip (VM; the review of #61): a click
+    /// at the right edge in the caption row's top, middle and bottom closes
+    /// the window — not clipped by the strip's or the ribbon's panel.
     #[test]
-    fn an_auto_hidden_tabbed_group_slides_out_one_pane_without_its_tabs() {
+    fn the_window_buttons_stay_live_beside_a_right_and_a_top_strip() {
+        use docking::{Edge, Spot, Unit};
+        let screen = Vec2::new(1320.0, 860.0);
+        for edge in [Edge::Right, Edge::Top] {
+            let mut w = Win::new();
+            w.app.own_caption = true;
+            w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+            w.app.docks.0[Unit::Vector as usize].pin();
+            w.idle(3);
+            for y in [2.0, 15.0, ribbon::caption_h() - 3.0] {
+                for dx in [2.0, 10.0] {
+                    let at = Pos2::new(screen.x - dx, y);
+                    let mut closed = false;
+                    for events in [vec![egui::Event::PointerMoved(at)], vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }], vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }]] {
+                        let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, screen)), time: Some(w.ctx.input(|i| i.time) + 0.05), events, ..Default::default() };
+                        let out = w.ctx.run(raw, |ctx| w.app.frame_ui(ctx));
+                        closed |= out.viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.commands.iter().any(|c| matches!(c, egui::ViewportCommand::Close)));
+                    }
+                    assert!(closed, "{edge:?}: a click at {at:?} closes the window");
+                    w.idle(2);
+                }
+            }
+        }
+    }
+
+    /// An auto-hidden tabbed group has a strip button per visible tab (#62;
+    /// VM, three tabs): the front pane's full length, the others' stubs of
+    /// 24 px, the buttons laid out in the tab order from 4 px under the
+    /// window's top (so the first ones' ends lie under the caption glass);
+    /// hovering a stub slides the group out with that pane alone, no tab
+    /// strip, and the pane becomes the front one with the full length.
+    #[test]
+    fn an_auto_hidden_tabbed_group_has_a_full_front_button_and_stubs() {
         use docking::Unit;
         let mut w = Win::new();
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(2);
-        let buttons = w.app.strip_hits[Unit::Vector as usize].buttons.clone();
-        assert_eq!(buttons.len(), 3, "a button per visible tab: {buttons:?}");
-        assert!(buttons.windows(2).all(|b| b[0].bottom() <= b[1].top()), "one below the other");
+        let long_stub = |w: &Win| {
+            let b = &w.app.strip_hits[Unit::Vector as usize].buttons;
+            (b.iter().filter(|r| r.height() > 100.0).count(), b.iter().filter(|r| r.height() <= 24.5).count(), b.clone())
+        };
+        let (long, stubs, buttons) = long_stub(&w);
+        assert_eq!((long, stubs), (1, buttons.len() - 1), "one full button, the rest stubs: {buttons:?}");
+        assert!(buttons.windows(2).all(|b| (b[0].bottom() - b[1].top()).abs() < 0.5), "one after the other");
         let shown = |w: &Win| w.app.pane_canvas.iter().filter(|(p, _)| *p != app::Pane::Frequency).map(|(p, _)| *p).collect::<Vec<_>>();
         assert!(shown(&w).is_empty(), "in its strip nothing of it is drawn");
-        // The third button: that pane in front, alone in the pane.
-        let third = buttons[2].center();
-        w.run(vec![egui::Event::PointerMoved(third)]);
+        // A stub: its pane in front, alone in the pane, the button long now.
+        let front = w.app.panes.front(w.app.docks.members(Unit::Vector));
+        let stub = buttons.iter().find(|r| r.height() <= 24.5).expect("a visible stub").center();
+        w.run(vec![egui::Event::PointerMoved(stub)]);
         w.idle(30);
         assert!(w.app.docks[Unit::Vector].out);
-        let front = w.app.panes.front(w.app.docks.members(Unit::Vector));
-        assert_eq!(front, Some(app::Pane::Differential), "its pane in front");
+        let now = w.app.panes.front(w.app.docks.members(Unit::Vector));
+        assert_ne!(now, front, "the stub's pane came to the front");
         assert!(w.app.pane_tab_rects.is_empty(), "no tab strip in the slid-out pane: {:?}", w.app.pane_tab_rects);
-        // The first: the same, its own pane.
-        w.run(vec![egui::Event::PointerMoved(Pos2::new(600.0, 400.0))]);
-        w.idle(30);
-        assert!(!w.app.docks[Unit::Vector].out);
-        let first = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
-        w.run(vec![egui::Event::PointerMoved(first)]);
-        w.idle(30);
-        assert_eq!(w.app.panes.front(w.app.docks.members(Unit::Vector)), Some(app::Pane::Vector));
-        assert!(w.app.pane_tab_rects.is_empty());
-        assert!(shown(&w).iter().all(|&p| p == app::Pane::Vector), "only the front pane is drawn: {:?}", shown(&w));
+        assert!(shown(&w).iter().all(|&p| Some(p) == now), "only the front pane is drawn: {:?}", shown(&w));
+        let (long, _, after) = long_stub(&w);
+        assert_eq!(long, 1, "one full button again: {after:?}");
+        let long_rect = after.iter().find(|r| r.height() > 100.0).expect("the front's button");
+        assert!(long_rect.contains(w.app.strip_hits[Unit::Vector as usize].buttons.iter().find(|r| r.height() > 100.0).unwrap().center()));
+        // The stub's top is where it lay: the hit was on a button of the same slot.
+        assert!(after.iter().any(|r| r.height() <= 24.5), "the former front is a stub now: {after:?}");
     }
 
     /// A divider beside a slid-out pane (#63; VM, `0x10087a4a`): the pointer
@@ -2668,7 +2703,9 @@ mod window_tests {
         let at = Pos2::new(240.0, 90.0);
         let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         let log = run(&mut w, vec![egui::Event::PointerMoved(at), ev(true), ev(false)], 2.0);
+        assert!(log[0].1, "still out right after the press (the toggle shows it, never hides it): {log:?}");
         assert!(log.iter().any(|f| !f.1), "taken back within 2 s: {log:?}");
+        assert!(w.app.panes.visible(app::Pane::Vector) && w.app.docks[Unit::Vector].place == docking::Place::AutoHide, "still open and auto-hidden");
     }
 
     /// A strip press gives the pane window the focus, the one focus there

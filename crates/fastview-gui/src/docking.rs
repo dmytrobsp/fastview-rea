@@ -208,6 +208,22 @@ pub const SLIDE_STEPS: f32 = 12.0;
 /// The divider beside a slid-out pane (the pane's splitter window, +0x33c
 /// of the pane; VM: the brush between the view and the pane, 4 px).
 pub const DIVIDER_PX: f32 = 4.0;
+/// An auto-hide strip button's length along its strip at 100 % (VM, the
+/// original; three tabs pinned): the group's front pane's button is full
+/// length — about 7.86 px per character of its title plus 5 on a side
+/// strip (19 characters 154, 26 characters 209), 7.58 per character along
+/// a top / bottom one (19 characters 144, one datum) —, every other tab's
+/// a stub of 24 px with its title clipped. Hovering a stub shows its pane,
+/// which becomes the front one and takes the full length.
+pub fn strip_button_len(chars: usize, front: bool, vertical: bool) -> f32 {
+    let n = chars as f32;
+    match (front, vertical) {
+        (false, _) => 24.0,
+        (true, true) => (7.86 * n + 5.0).round(),
+        (true, false) => (7.58 * n).round(),
+    }
+}
+
 /// The smallest a slid-out pane is dragged to by its divider.
 pub const SLIDE_MIN_PX: f32 = 60.0;
 
@@ -787,6 +803,16 @@ mod tests {
         assert_eq!(d.place, Place::Floating);
         let r = d.float_rect.unwrap();
         assert!(r.contains(Pos2::new(700.0, 105.0)), "the caption stays under the pointer: {r:?}");
+    }
+
+    #[test]
+    fn strip_buttons_are_full_length_for_the_front_pane_only() {
+        let title = |t: &str| t.chars().count();
+        assert_eq!(strip_button_len(title("Векторная диаграмма"), true, true), 154.0);
+        assert_eq!(strip_button_len(title("Дифференциальная диаграмма"), true, true), 209.0);
+        assert_eq!(strip_button_len(title("Частотная диаграмма"), true, false), 144.0);
+        assert_eq!(strip_button_len(title("Круговая диаграмма"), false, true), 24.0);
+        assert_eq!(strip_button_len(title("Круговая диаграмма"), false, false), 24.0);
     }
 
     #[test]

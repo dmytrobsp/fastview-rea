@@ -381,14 +381,8 @@ impl App {
                     // The window's buttons are the frame's, not the ribbon's:
                     // beside a side strip they stay at the window's edge
                     // (VM), under a top strip on its row.
-                    let (right, top) = (self.strip_inset[1], self.strip_inset[2]);
-                    if top > 0.0 {
-                        ui.add_space(3.0 * s(46.0));
-                    } else if right > 0.0 {
-                        let free = ui.available_rect_before_wrap();
-                        let edge = egui::Rect::from_min_max(free.min, egui::pos2(free.right() + right, free.bottom()));
-                        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(edge).layout(egui::Layout::right_to_left(egui::Align::Center)));
-                        caption_buttons(&mut child);
+                    // Drawn by the frame, unclipped, in `caption_buttons_area`.
+                    if self.strip_inset[1] > 0.0 || self.strip_inset[2] > 0.0 {
                         ui.add_space(3.0 * s(46.0));
                     } else {
                         caption_buttons(ui);
