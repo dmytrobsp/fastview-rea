@@ -197,6 +197,26 @@ pub fn group_stats_line(minmax: Option<(f64, f64)>, rms: Option<f64>, a1: Option
 mod tests {
     use super::*;
 
+    /// A kV / kA channel's unit in every readout (#86): the value column,
+    /// the single-lane rows and the group line all take the SI prefix from
+    /// the magnitude (`0x43d960`) and the unit text through `0x42bc50`, so
+    /// 354 V of a kV channel reads «В» and 70 kV «кВ» in all of them.
+    #[test]
+    fn kilovolt_and_kiloampere_units_in_every_row() {
+        let kv = crate::units::normalize("kV");
+        let ka = crate::units::normalize("кА");
+        // The channel's values are in volts / amperes (the unit multiplier is applied).
+        for (n, big, small, big_t, small_t) in [(&kv, 100_000.0, 353.5, "кВ", "В"), (&ka, 35_000.0, 0.25, "кА", "мА")] {
+            let unit = crate::units::Shown::file(&n.unit, n.per_second);
+            for (v, t) in [(big, big_t), (small, small_t)] {
+                assert!(readout_text(v, &unit).ends_with(t), "row {v}");
+                assert!(stats_value_text(v, &unit).unwrap().ends_with(t), "value column {v}");
+                assert!(group_stats_line(None, Some(v), Some(v), &unit).split('|').all(|i| i.ends_with(t)), "group line {v}");
+            }
+        }
+        assert_eq!(readout_text(70_710.2, crate::units::Shown::file("V", false)), " 70.7102  кВ");
+    }
+
     #[test]
     fn group_line() {
         assert_eq!(group_stats_line(Some((1500.0, -0.125)), None, Some(10.004), "A"), "Max:1.5кА|Min:-125мА|A1:10.А", "a bare dot can stay");
