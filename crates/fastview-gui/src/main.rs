@@ -1739,6 +1739,39 @@ mod window_tests {
         }
     }
 
+    /// The hide check finds the pointer on the strip button by position
+    /// (`0x10087a4a`: PtInRect on the button's rect, whatever window is on
+    /// top there): with a window over the button the pane stays out,
+    /// though the button no longer has the hover.
+    #[test]
+    fn a_window_over_the_strip_button_keeps_the_pane_out() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
+        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        w.run(vec![egui::Event::PointerMoved(on)]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
+        // A window over the button (as a dialog or tooltip would be).
+        let cover = Rect::from_center_size(on, Vec2::splat(60.0));
+        for k in 0..40 {
+            let t = w.ctx.input(|i| i.time) + 0.05;
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), ..Default::default() };
+            let app = &mut w.app;
+            let _ = w.ctx.run(raw, |ctx| {
+                app.frame_ui(ctx);
+                egui::Area::new(egui::Id::new("test_cover")).order(egui::Order::Tooltip).fixed_pos(cover.min).show(ctx, |ui| {
+                    ui.allocate_exact_size(cover.size(), egui::Sense::click());
+                });
+            });
+            let d = w.app.docks[Unit::Vector];
+            assert!(k < 2 || !d.on_button(), "frame {k}: the cover takes the button's hover");
+            assert!(d.out, "frame {k}: the pointer on the button keeps it out");
+        }
+    }
+
     /// The slid-out pane's area claims its click rect once per frame
     /// without a clash at a fractional scale (debug builds flag a clash
     /// on screen), sliding out and back on every edge.
