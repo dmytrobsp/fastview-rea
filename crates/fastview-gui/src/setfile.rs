@@ -308,6 +308,11 @@ impl Doc {
     /// File channel `i`'s name as read, in the record's code page (as
     /// `Doc::set_codepage` decodes the names).
     fn file_name(&self, i: usize) -> String {
+        if !matches!(self.read_enc, Encoding::Cp1251 | Encoding::Cp866) {
+            // Read in UTF-8 / KOI8-R: as `Doc::pick_codepage` shows it.
+            let as_read = comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.read_enc);
+            return crate::recdlg::name_in(&as_read, self.read_enc, self.codepage);
+        }
         comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.codepage).chars().map(comtrade::best_fit_1251).collect()
     }
 
@@ -637,10 +642,15 @@ impl App {
     /// Read the settings for document `di` (`0x44f5b0`); `from_command` =
     /// 32860 (comments are not re-read).
     pub fn apply_record_settings(&mut self, di: usize, from_command: bool) {
+        self.apply_settings(di, from_command, false);
+    }
+
+    /// [`App::apply_record_settings`]; `fresh`: the document holds exactly
+    /// what `Doc::new` computed from the record as read (an open, on the
+    /// loader's thread), so the recompute may be spared.
+    fn apply_settings(&mut self, di: usize, from_command: bool, fresh: bool) {
         let Some(d) = self.docs.get_mut(di) else { return };
-        // At an open the document holds what `Doc::new` computed from the
-        // record as read (on the loader's thread).
-        let as_read = if from_command { None } else { recompute_inputs(d) };
+        let as_read = if fresh { recompute_inputs(d) } else { None };
         // The review elements name their channels; the painters resolve
         // those names among the shown ones (aliases included) — bound here
         // once every channel is in place (VM, L9.227).
@@ -668,12 +678,13 @@ impl App {
             d.channels_changed();
         }
         if let Some(cp) = osc.attrs.get("Codepage").map(|v| recset::wtoi(v)) {
-            // 1 is ANSI, the names as read: for a record read in UTF-8 or
-            // KOI8-R (ours keeps it, `Doc::init_record_text`) that encoding.
+            // 0 is OEM; anything else for a record read in UTF-8 or KOI8-R
+            // (ours keeps it, `Doc::init_record_text`) its own encoding —
+            // 1, ANSI, the names as read.
             if matches!(d.read_enc, Encoding::Cp1251 | Encoding::Cp866) {
                 d.set_codepage(cp_of(cp));
             } else {
-                d.set_codepage(if cp == 1 { d.read_enc } else { cp_of(cp) });
+                d.pick_codepage(if cp == 0 { Encoding::Cp866 } else { d.read_enc });
             }
         }
         // File channels.
@@ -793,7 +804,7 @@ impl App {
         if let Some(p) = d.path.clone() {
             d.set.tree.load_path(&recset::set_path(&p));
         }
-        self.apply_record_settings(di, false);
+        self.apply_settings(di, false, true);
         self.docs[di].set.modified = false;
     }
 

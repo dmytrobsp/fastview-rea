@@ -308,6 +308,52 @@ impl Doc {
         self.recompute(primary);
         (self.analysis.u_abc, self.analysis.i_abc, self.analysis.calc_ib) = roles;
     }
+
+    /// «Кодировка» picked (DIALOG 392, `0x44a330` → `0x4543e0`) or stored
+    /// (`Oscillogram/Codepage`, `0x44f808`). A record read in 1251 / 866
+    /// re-decodes its name bytes in `cp` ([`Doc::set_codepage`]). One read
+    /// in UTF-8 / KOI8-R (`read_enc`) shows [`name_in`] of its names as
+    /// read: its own encoding them losslessly, 1251 / 866 the original's
+    /// ANSI / OEM. A renamed channel's name is left as `set_codepage`
+    /// leaves it.
+    pub fn pick_codepage(&mut self, cp: Encoding) {
+        let read = self.read_enc;
+        if matches!(read, Encoding::Cp1251 | Encoding::Cp866) {
+            self.set_codepage(cp);
+            return;
+        }
+        // Back to the names as read (their bytes decoded in `read`), each
+        // kept with its bytes; then shown in `cp`.
+        self.set_codepage(read);
+        let mut names: Vec<&mut String> = vec![&mut self.osc.station, &mut self.osc.device];
+        names.extend(self.osc.analog.iter_mut().map(|c| &mut c.id));
+        names.extend(self.osc.digital.iter_mut().map(|c| &mut c.id));
+        if self.name_raw.len() != names.len() {
+            self.name_raw = names.iter().map(|n| (comtrade::encode_text(n, read), n.to_string())).collect();
+        }
+        for (n, (bytes, seen)) in names.into_iter().zip(self.name_raw.iter_mut()) {
+            if *n == *seen {
+                *n = name_in(&comtrade::decode_bytes(bytes, read), read, cp);
+                seen.clone_from(n);
+            }
+        }
+        self.codepage = cp;
+    }
+}
+
+/// A name read in `read` (UTF-8 / KOI8-R) as «Кодировка» `cp` shows it:
+/// `read` itself as read (ours: lossless); 1251 the original's ANSI string
+/// — the text narrowed to 1251 (`0x422300`), a character 1251 lacks «?»;
+/// 866 the OEM reading of those bytes (`0x4543e0`), the pseudo-graphics
+/// best-fitted ([`comtrade::best_fit_1251`]).
+pub fn name_in(as_read: &str, read: Encoding, cp: Encoding) -> String {
+    let ansi = || comtrade::recode(as_read, Encoding::Cp1251, Encoding::Cp1251);
+    match cp {
+        Encoding::Cp1251 => ansi(),
+        Encoding::Cp866 => comtrade::recode(&ansi(), Encoding::Cp1251, Encoding::Cp866).chars().map(comtrade::best_fit_1251).collect(),
+        _ if cp == read => as_read.to_string(),
+        _ => comtrade::recode(as_read, read, cp),
+    }
 }
 
 #[cfg(test)]
@@ -530,7 +576,7 @@ impl App {
                 }
             });
         if let Some(cp) = cp_pick {
-            self.docs[ai].set_codepage(cp);
+            self.docs[ai].pick_codepage(cp);
         }
         // «Закрыть» is IDOK: Enter applies, Esc cancels.
         let keys = self.dialog_keys(ctx);
@@ -971,12 +1017,21 @@ mod tests {
         assert_eq!(items, [(Encoding::Cp866, "866 MS-DOS"), (Encoding::Cp1251, "Windows-1251"), (Encoding::Utf8, "UTF-8")]);
         assert_eq!(items.iter().position(|(e, _)| *e == d.codepage), Some(2));
         assert_eq!(codepage_items(Encoding::Cp1251).len(), 2, "a 1251 / 866 record: the original's two");
-        // 866 / 1251 read the UTF-8 bytes so; UTF-8 gives the names back.
-        for cp in [Encoding::Cp866, Encoding::Cp1251] {
-            d.set_codepage(cp);
-            let as_cp: String = comtrade::decode_bytes("Підстанція".as_bytes(), cp).chars().map(comtrade::best_fit_1251).collect();
-            assert_eq!(d.osc.station, as_cp, "{cp:?}");
-            d.set_codepage(Encoding::Utf8);
+        // 1251 is the original's ANSI (the names narrowed: «?»), 866 its
+        // OEM over those bytes; UTF-8 gives the names back as read, a
+        // character 1251 lacks included; none counts as renamed.
+        d.osc.analog[2].id = "U√3 ─ Ia".into();
+        d.name_raw.clear();
+        d.init_set_keys();
+        let read = [read[0].clone(), read[1].clone(), read[2].clone(), "U√3 ─ Ia".into()];
+        let names = |d: &Doc| [d.osc.station.clone(), d.osc.analog[0].id.clone(), d.osc.analog[1].id.clone(), d.osc.analog[2].id.clone()];
+        let ansi = ["Підстанція", "Струм фази А", "Гр.?.:Напруга", "U?3 ? Ia"].map(String::from);
+        let oem = ansi.clone().map(|s| comtrade::recode(&s, Encoding::Cp1251, Encoding::Cp866).chars().map(comtrade::best_fit_1251).collect::<String>());
+        for (cp, shown) in [(Encoding::Cp1251, &ansi), (Encoding::Cp866, &oem), (Encoding::Cp1251, &ansi)] {
+            d.pick_codepage(cp);
+            assert_eq!((d.codepage, &names(&d)), (cp, shown), "{cp:?}");
+            assert_eq!(d.original_name(crate::app::ChanKey::Analog(2)), None, "{cp:?}: the file's name");
+            d.pick_codepage(Encoding::Utf8);
             assert_eq!(names(&d), read, "{cp:?} and back");
         }
         // Read under the program's UTF-8 or KOI8-R: that encoding, listed.
@@ -989,8 +1044,8 @@ mod tests {
     }
 
     /// A stored `Oscillogram/Codepage` applies to a UTF-8 record too
-    /// (`0x44f808`): 0 = OEM (its bytes read as 866), 1 = ANSI, the names
-    /// as read — UTF-8.
+    /// (`0x44f808`): 0 = OEM (the original's: the names' ANSI bytes read as
+    /// 866), anything else its own encoding — 1, ANSI, the names as read.
     #[test]
     fn a_stored_code_page_applies_to_a_utf8_record() {
         let mut app = demo_app();
@@ -1000,17 +1055,13 @@ mod tests {
         d.osc.analog[0].id = "Струм".into();
         d.init_record_text(Encoding::Cp1251);
         d.init_set_keys();
-        d.set.tree.section_mut("Oscillogram").set_int("Codepage", 0);
-        app.apply_record_settings(ai, false);
-        let d = &mut app.docs[ai];
-        let oem: String = comtrade::decode_bytes("Струм".as_bytes(), Encoding::Cp866).chars().map(comtrade::best_fit_1251).collect();
-        assert_eq!((d.codepage, d.osc.analog[0].id.as_str()), (Encoding::Cp866, oem.as_str()));
-        assert_eq!(crate::setfile::cp_code(d.codepage), 0, "saved back as 0");
-        d.set.tree.section_mut("Oscillogram").set_int("Codepage", 1);
-        app.apply_record_settings(ai, false);
-        let d = &app.docs[ai];
-        assert_eq!((d.codepage, d.osc.analog[0].id.as_str()), (Encoding::Utf8, "Струм"));
-        assert_eq!(crate::setfile::cp_code(d.codepage), 1, "saved back as 1");
+        for (stored, cp) in [(0, Encoding::Cp866), (1, Encoding::Utf8), (0, Encoding::Cp866), (20866, Encoding::Utf8)] {
+            app.docs[ai].set.tree.section_mut("Oscillogram").set_int("Codepage", stored);
+            app.apply_record_settings(ai, false);
+            let d = &app.docs[ai];
+            assert_eq!((d.codepage, d.osc.analog[0].id.clone()), (cp, name_in("Струм", Encoding::Utf8, cp)), "{stored}");
+            assert_eq!(crate::setfile::cp_code(d.codepage), i32::from(cp != Encoding::Cp866), "saved back");
+        }
     }
 
     #[test]
