@@ -308,13 +308,6 @@ impl Doc {
     /// File channel `i`'s name as read, in the record's code page (as
     /// `Doc::set_codepage` decodes the names).
     fn file_name(&self, i: usize) -> String {
-        if !matches!(self.read_enc, Encoding::Cp1251 | Encoding::Cp866) {
-            // Read in UTF-8 / KOI8-R: as `Doc::pick_codepage` shows it —
-            // from the keys `init_set_keys` took at the open, while the
-            // names were shown in that encoding.
-            let as_read = comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.read_enc);
-            return crate::recdlg::name_in(&as_read, self.read_enc, self.codepage);
-        }
         comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.codepage).chars().map(comtrade::best_fit_1251).collect()
     }
 
@@ -683,11 +676,12 @@ impl App {
             // 0 is OEM; anything else for a record read in UTF-8 or KOI8-R
             // (ours keeps it, `Doc::init_record_text`) its own encoding —
             // 1, ANSI, the names as read.
-            if matches!(d.read_enc, Encoding::Cp1251 | Encoding::Cp866) {
-                d.set_codepage(cp_of(cp));
-            } else {
-                d.pick_codepage(if cp == 0 { Encoding::Cp866 } else { d.read_enc });
-            }
+            let cp = match d.read_enc {
+                Encoding::Cp1251 | Encoding::Cp866 => cp_of(cp),
+                _ if cp == 0 => Encoding::Cp866,
+                read => read,
+            };
+            d.set_codepage(cp);
         }
         // File channels.
         let na = d.osc.analog.len();
