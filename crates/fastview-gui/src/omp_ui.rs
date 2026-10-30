@@ -376,8 +376,11 @@ impl App {
         p.circle_filled(ic, 6.5, Color32::from_rgb(254, 200, 153));
         p.circle_filled(ic + egui::vec2(0.0, 1.0), 5.5, Color32::from_rgb(253, 175, 120));
         p.text(ic, egui::Align2::CENTER_CENTER, "i", egui::FontId::proportional(12.0), Color32::from_rgb(120, 60, 20));
-        let br = egui::Rect::from_min_size(egui::pos2(face.right() - 97.0, mid - 11.0), egui::vec2(93.0, 22.0));
-        p.with_clip_rect(egui::Rect::from_min_max(face.min, egui::pos2(br.left() - 4.0, face.bottom()))).text(egui::pos2(face.left() + 25.0, mid), egui::Align2::LEFT_CENTER, &text, egui::FontId::proportional(11.0), Color32::from_rgb(30, 57, 91));
+        // The bar keeps its 33 px at > 100 %; its text and button follow the
+        // system font (as the parameters bar's).
+        use crate::dpi::s;
+        let br = egui::Rect::from_min_size(egui::pos2(face.right() - s(93.0) - 4.0, mid - (s(22.0) / 2.0).floor()), egui::vec2(s(93.0), s(22.0)));
+        p.with_clip_rect(egui::Rect::from_min_max(face.min, egui::pos2(br.left() - 4.0, face.bottom()))).text(egui::pos2(face.left() + 25.0, mid), egui::Align2::LEFT_CENTER, &text, egui::FontId::proportional(crate::dpi::font(11.0)), Color32::from_rgb(30, 57, 91));
         let bresp = ui.interact(br, ui.id().with("fv_omp_save"), egui::Sense::click());
         // Its tip (CMFCCaptionBar's, VM): the plain Office box 18 px under
         // the pointer, 8 px inside the screen's right edge.
@@ -388,7 +391,7 @@ impl App {
             p.rect_filled(br, 0.0, Color32::WHITE);
             p.px_rect_stroke(br, 0.0, egui::Stroke::new(1.0f32, Color32::from_rgb(157, 189, 216)));
         }
-        p.text(br.center(), egui::Align2::CENTER_CENTER, "Сохранить...", egui::FontId::proportional(12.0), Color32::from_rgb(30, 57, 91));
+        p.text(br.center(), egui::Align2::CENTER_CENTER, "Сохранить...", egui::FontId::proportional(crate::dpi::font(12.0)), Color32::from_rgb(30, 57, 91));
         let save = bresp.clicked();
         let close = crate::dialogs::caption_close(ui, full, ui.id().with("fv_omp_close"));
         self.omp_ui.close_rect = Some(egui::Rect::from_min_size(egui::pos2(full.right() - 20.0, full.top()), egui::vec2(17.0, 17.0)));
@@ -979,11 +982,13 @@ impl ParamsDialog {
         // tree at (10, 44), W/3 − 20 × H − 90; the grid at (W/3, 44),
         // 2W/3 − 10 wide, the thirds whole pixels); OK / Cancel stay at the
         // template's (310, 254) / (392, 254), 76 × 14 DLU.
+        // At > 100 % the client in the larger font's dialog units and the
+        // places below (100 % pixels) at its base units (`dialogs::dp`).
         const W: f32 = 713.0;
         const H: f32 = 447.0;
         let third = (W / 3.0).floor();
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(W, H), egui::Sense::hover());
-        let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(rect.min + egui::vec2(x, y), egui::vec2(w, h));
+        let (rect, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(475, 275), egui::Sense::hover());
+        let at = |x: f32, y: f32, w: f32, h: f32| crate::dialogs::dp(rect, x, y, w, h);
         let cur = METHODS.iter().position(|(m, _)| *m == self.work.method).unwrap_or(0);
         let methods: Vec<String> = METHODS.iter().map(|(_, l)| l.to_string()).collect();
         // The method combo is the toolbar's, no tab stop of the dialog; the
@@ -1027,6 +1032,7 @@ impl ParamsDialog {
         }
         for x in [593.0, 645.0] {
             let r = at(x, 11.0, 1.0, 22.0);
+            let r = egui::Rect::from_min_size(r.min, egui::vec2(1.0, r.height()));
             ui.painter().rect_filled(r, 0.0, Color32::from_gray(197));
             ui.painter().rect_filled(r.translate(egui::vec2(1.0, 0.0)), 0.0, Color32::WHITE);
         }
@@ -1077,7 +1083,9 @@ impl ParamsDialog {
         ui.painter().rect_filled(grid, 0.0, Color32::from_rgb(171, 173, 179));
         let inner = grid.shrink(1.0);
         ui.painter().rect_filled(inner, 0.0, Color32::WHITE);
-        let split = inner.left() + 231.0;
+        let split = inner.left() + crate::dpi::dx(231.0);
+        // The rows from the font's height (17 px at 100 %).
+        let row_h = crate::dpi::base_units().1 as f32 + 4.0;
         let rule = egui::Stroke::new(1.0f32, Color32::from_gray(240));
         ui.painter().vline(split - 0.5, inner.y_range(), rule);
         let node = self.sel;
@@ -1096,8 +1104,8 @@ impl ParamsDialog {
         let mut y = inner.top();
         for (k, (label, f, is_chan)) in rows.into_iter().enumerate() {
             let Some(v) = field_mut(&mut self.work, node, f) else { continue };
-            let row = egui::Rect::from_min_max(egui::pos2(inner.left(), y), egui::pos2(inner.right(), y + 17.0));
-            y += 17.0;
+            let row = egui::Rect::from_min_max(egui::pos2(inner.left(), y), egui::pos2(inner.right(), y + row_h));
+            y += row_h;
             ui.painter().hline(inner.left() + 1.0..=inner.right() - 1.0, row.bottom() - 0.5, rule);
             let name = egui::Rect::from_min_max(row.min, egui::pos2(split - 1.0, row.bottom() - 1.0));
             let cell = egui::Rect::from_min_max(egui::pos2(split, row.top()), egui::pos2(row.right(), row.bottom() - 1.0));
@@ -1143,7 +1151,7 @@ impl ParamsDialog {
                 continue;
             }
             if editing {
-                let btn = egui::Rect::from_min_max(egui::pos2(inner.right() - 14.0, cell.top()), egui::pos2(inner.right(), cell.bottom()));
+                let btn = egui::Rect::from_min_max(egui::pos2(inner.right() - crate::dpi::s(14.0), cell.top()), egui::pos2(inner.right(), cell.bottom()));
                 let mut mesh = egui::Mesh::default();
                 for (pt, c) in [(btn.left_top(), (226, 238, 255)), (btn.right_top(), (226, 238, 255)), (btn.right_bottom(), (196, 221, 255)), (btn.left_bottom(), (196, 221, 255))] {
                     mesh.colored_vertex(pt, Color32::from_rgb(c.0, c.1, c.2));
@@ -1242,7 +1250,8 @@ fn tool_button(ui: &mut egui::Ui, r: egui::Rect, icon: ToolIcon, text: Option<&s
         p.rect_filled(r, 2.0, Color32::from_rgb(255, 189, 105));
         p.rect_filled(r.shrink(1.0), 2.0, Color32::from_rgb(255, 231, 162));
     }
-    let cell = egui::Rect::from_min_size(egui::pos2(r.left() + 3.0, r.center().y - 8.0), egui::vec2(16.0, 16.0));
+    let side = crate::dpi::img(16.0);
+    let cell = egui::Rect::from_min_size(egui::pos2(r.left() + 3.0, r.center().y - side / 2.0), egui::vec2(side, side));
     let ink = if enabled { Color32::from_rgb(0, 21, 110) } else { Color32::from_gray(141) };
     paint_tool_icon(p, cell, icon, enabled);
     if let Some(t) = text {

@@ -1730,7 +1730,7 @@ impl App {
         crate::dialogs::dlg(ctx, title).margin(0.0).collapsible(false).resizable(false).show(ctx, |ui| {
             use crate::dialogs::{dlu, win_button_en, win_combo_list, dlg_font};
             use egui::{Color32, Pos2, Rect, Stroke};
-            let (client, _) = ui.allocate_exact_size(Vec2::new(590.0, 596.0), egui::Sense::hover());
+            let (client, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(393, 367), egui::Sense::hover());
             let r = |x, y, w, h| dlu(client, x, y, w, h);
             // The two SS_CENTER labels over the two lists.
             for (lr, t) in [(r(18, 18, 168, 8), ca), (r(204, 17, 168, 8), cb)] {
@@ -1765,7 +1765,11 @@ impl App {
             let p = ui.painter().clone();
             p.rect_filled(lr, 0.0, Color32::from_rgb(130, 135, 144));
             p.rect_filled(inner, 0.0, Color32::WHITE);
-            let hdr = Rect::from_min_size(inner.min, Vec2::new(inner.width(), 25.0));
+            // At > 100 % the header and rows from the font's height (25 /
+            // 17 px at 100 %), the columns at the base units.
+            let by = crate::dpi::base_units().1 as f32;
+            let (hdr_h, row_h) = (by + 12.0, by + 4.0);
+            let hdr = Rect::from_min_size(inner.min, Vec2::new(inner.width(), hdr_h));
             let mut mesh = egui::Mesh::default();
             let g = Rect::from_min_max(Pos2::new(hdr.left(), hdr.top() + 1.0), Pos2::new(hdr.right(), hdr.bottom() - 1.0));
             for (pt, c) in [(g.left_top(), (247, 250, 252)), (g.right_top(), (247, 250, 252)), (g.right_bottom(), (212, 221, 233)), (g.left_bottom(), (212, 221, 233))] {
@@ -1777,35 +1781,36 @@ impl App {
             let edge = Stroke::new(1.0f32, Color32::from_rgb(158, 182, 206));
             p.hline(hdr.x_range(), hdr.bottom() - 0.5, edge);
             let grid = Stroke::new(1.0f32, Color32::from_gray(240));
-            let cols = [(0.0, 265.0, ca), (265.0, 263.0, cb)];
+            let (c1, c2) = (crate::dpi::dx(265.0), crate::dpi::dx(528.0));
+            let cols = [(0.0, c1, ca), (c1, c2 - c1, cb)];
             for (x, w, t) in cols {
-                let c = Rect::from_min_size(Pos2::new(inner.left() + x, hdr.top()), Vec2::new(w, 25.0));
+                let c = Rect::from_min_size(Pos2::new(inner.left() + x, hdr.top()), Vec2::new(w, hdr_h));
                 p.vline(c.right() - 1.5, c.y_range(), edge);
                 p.vline(c.right() - 0.5, c.bottom()..=inner.bottom(), grid);
                 p.with_clip_rect(c).text(Pos2::new(c.left() + 7.0, c.center().y), egui::Align2::LEFT_CENTER, t, dlg_font(), Color32::BLACK);
             }
-            let mut y = hdr.bottom() + 16.5;
+            let mut y = hdr.bottom() + row_h - 0.5;
             while y < inner.bottom() {
                 p.hline(inner.x_range(), y, grid);
-                y += 17.0;
+                y += row_h;
             }
             // The list is a tab stop; a press on it gives it the focus.
             let list_id = egui::Id::new("pair_list");
             ui.interact(Rect::from_min_max(Pos2::new(inner.left(), hdr.bottom()), inner.max), list_id, egui::Sense::click());
             dlg.list_focus = crate::dialogs::tab_stop(ui, list_id, crate::dialogs::StopKind::Other);
             for (i, pair) in dlg.pairs.iter().enumerate() {
-                let top = hdr.bottom() + 17.0 * i as f32;
-                if top + 17.0 > inner.bottom() {
+                let top = hdr.bottom() + row_h * i as f32;
+                if top + row_h > inner.bottom() {
                     break;
                 }
-                let row = Rect::from_min_size(Pos2::new(inner.left(), top), Vec2::new(cols[1].0 + cols[1].1 - 1.0, 16.0));
+                let row = Rect::from_min_size(Pos2::new(inner.left(), top), Vec2::new(cols[1].0 + cols[1].1 - 1.0, row_h - 1.0));
                 let sel = dlg.sel == Some(i);
                 let lit = sel && dlg.list_focus;
                 if sel {
                     p.rect_filled(row, 0.0, if lit { Color32::from_rgb(0, 120, 215) } else { Color32::from_gray(240) });
                 }
                 for ((x, w, _), t) in cols.into_iter().zip([&pair.a, &pair.b]) {
-                    let c = Rect::from_min_size(Pos2::new(inner.left() + x, top), Vec2::new(w - 1.0, 16.0));
+                    let c = Rect::from_min_size(Pos2::new(inner.left() + x, top), Vec2::new(w - 1.0, row_h - 1.0));
                     p.with_clip_rect(c).text(Pos2::new(c.left() + 6.0, c.center().y), egui::Align2::LEFT_CENTER, t, dlg_font(), if lit { Color32::WHITE } else { Color32::BLACK });
                 }
                 if ui.interact(row, ui.id().with(("pair_row", i)), egui::Sense::click()).clicked() {
@@ -1853,7 +1858,7 @@ impl App {
             use crate::dialogs::{dlu, win_button, win_edit, win_group, win_label, win_radio_en};
             // The 226 × 222 DLU template (339 × 361 px). The dialog opens
             // with the first edit focused, its text selected.
-            let (client, _) = ui.allocate_exact_size(Vec2::new(339.0, 361.0), egui::Sense::hover());
+            let (client, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(226, 222), egui::Sense::hover());
             let first = ui.memory(|m| m.focused().is_none());
             win_group(ui, dlu(client, 12, 12, 204, 54), "Расчет значений");
             win_label(ui, dlu(client, 24, 30, 121, 8), "Число обрабатываемых периодов:", true, true);
