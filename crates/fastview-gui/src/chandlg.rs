@@ -367,6 +367,22 @@ pub fn can_rename(doc: &Doc, key: ChanKey) -> Result<(), &'static str> {
     }
 }
 
+/// The text a rename refuses (397): another channel's name as shown or as
+/// in its file (`0x435da9`–`0x435e04`, the lane's `0x465f66`–`0x465faf`:
+/// `0x401bd0` and `0x4292e0` per channel), compared case-sensitively.
+pub fn name_taken(doc: &Doc, key: ChanKey, name: &str) -> bool {
+    rows(doc).into_iter().any(|k| k != key && (row_name(doc, k) == name || doc.original_name(k).is_some_and(|f| f == name)))
+}
+
+/// The name shown after a rename to `name`: it becomes the channel's alias
+/// (`+0x6c`), and an empty alias shows the file's name (`0x425960`).
+pub fn shown_after_rename(doc: &Doc, key: ChanKey, name: &str) -> String {
+    match key {
+        ChanKey::Analog(_) | ChanKey::Digital(_) if name.is_empty() => doc.original_name(key).unwrap_or_else(|| row_name(doc, key)),
+        _ => name.to_string(),
+    }
+}
+
 /// Commit an in-place rename (`0x435c80`): unchanged text does nothing; a
 /// name another channel already has is refused with 397.
 pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static str> {
@@ -374,9 +390,11 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
     if name == row_name(doc, key) {
         return Ok(());
     }
-    if rows(doc).into_iter().any(|k| k != key && row_name(doc, k) == name) {
+    if name_taken(doc, key, name) {
         return Err(MSG_NAME_TAKEN);
     }
+    let shown = shown_after_rename(doc, key, name);
+    let name = shown.as_str();
     // A level or an area keeps the name it was made on: after a rename it
     // no longer resolves (nor is drawn) and is saved with that name; one
     // naming the new name now resolves (VM, L9.227 — the original's
@@ -1118,7 +1136,12 @@ mod tests {
         assert_eq!(d.original_name(ChanKey::Analog(0)), None);
         let old = d.osc.analog[0].id.clone();
         assert_eq!(rename(&mut d, ChanKey::Analog(0), "Новое"), Ok(()));
-        assert_eq!(d.original_name(ChanKey::Analog(0)), Some(old));
+        assert_eq!(d.original_name(ChanKey::Analog(0)), Some(old.clone()));
+        // Its file name stays taken; an empty alias shows it again
+        // (`0x425960`).
+        assert_eq!(rename(&mut d, ChanKey::Analog(1), &old), Err(MSG_NAME_TAKEN));
+        assert_eq!(rename(&mut d, ChanKey::Analog(0), ""), Ok(()));
+        assert_eq!((d.osc.analog[0].id.as_str(), d.original_name(ChanKey::Analog(0))), (old.as_str(), None));
     }
 
     /// `0x436d77`–`0x436e64`: the refresh keeps only Ohm / VA channels on
