@@ -135,8 +135,12 @@ pub enum CopyFocus {
     /// A diagram pane (a click in its window): that diagram's picture only.
     Diagram(Pane),
     /// A circle / differential property grid (its untitled children are a
-    /// scroll bar and a header, no diagram window): the document only.
-    Grid,
+    /// scroll bar and a header, no diagram window): the document only. With
+    /// the group it lies in.
+    Grid(Pane),
+    /// A group's pane window itself: its caption or its strip button
+    /// pressed (`0x10086d23` / `0x10086f01`, `0x1005f612`).
+    Pane(Pane),
 }
 
 /// Visibility of the four diagram panes (all created visible) and the active
@@ -374,6 +378,9 @@ pub struct Computed {
     /// minus its DC over its own period, negated; a digital one 1 / 0,
     /// inverted with the flag); `display` is then its cache per mode.
     pub pending_own: Vec<f64>,
+    /// A pasted lane's name bytes and the text last decoded from them, once
+    /// «Кодировка» has re-decoded it (`Doc::set_codepage`).
+    pub name_raw: Option<RawName>,
     /// A pending analog lane's phasor cache (`ch+0x38`) over
     /// [`Self::pending_own`] at its own N (`0x428490` → `0x426fc0` /
     /// `0x4267e0`); the vector diagram interpolates it by own time.
@@ -413,6 +420,7 @@ impl Computed {
             mode: ValueMode::Instant,
             display: Vec::new(),
             pending_own: Vec::new(),
+            name_raw: None,
             pending_phasors: Vec::new(),
             group: None,
             seq: NEXT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
@@ -658,6 +666,10 @@ pub struct Doc {
     pub v3_cursor: usize,
     /// Shown flags of В1 / В2 / В3; a new document shows none (`0x449170`).
     pub v_shown: [bool; 3],
+    /// В1 has been shown in this document (placed by a click, 32813, the
+    /// keys or ОМП): the vector table's value cells wait for it (VM; they
+    /// stay when it is hidden again).
+    pub v1_placed: bool,
     /// Horizontal визиры ГВ1 / ГВ2, each on one analog channel's scale.
     pub hviz: [HVizir; 2],
     pub chans: Vec<ChanView>,
@@ -741,9 +753,9 @@ pub struct Doc {
     /// The code page the record's names are currently decoded in (`doc+0x6e8`,
     /// 866 / 1251: file parameters «Кодировка»; see `recdlg`).
     pub codepage: Encoding,
-    /// The station, recorder and channel names' bytes as read, each with
-    /// the text last decoded from them (see `Doc::set_codepage`).
-    pub name_raw: Vec<(Vec<u8>, String)>,
+    /// The station's, the recorder's and each channel's name as read (see
+    /// [`RawName`]), in step with the channels (`Doc::ensure_name_raw`).
+    pub name_raw: Vec<RawName>,
     /// The record comment (`.hdr` text, 32805) and its code page.
     pub hdr: Option<String>,
     pub hdr_cp: Encoding,
@@ -791,6 +803,7 @@ impl Doc {
             aux_cursor: 0,
             v3_cursor: 0,
             v_shown: [false; 3],
+            v1_placed: false,
             hviz: [HVizir::default(); 2],
             chans,
             computed: Vec::new(),
@@ -849,29 +862,52 @@ impl Doc {
             self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i], k);
             self.rms[i] = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&self.osc), i, &self.flagged.analog[i].samples, n);
         }
-        // Digital channels as the accessor reads them: inverted with the flag.
+        self.flag_digital(false);
+        // The correction reads the frequency channel as stored (L9.65).
+        self.analysis = Analysis::compute_with(&self.flagged, fvb_core::freqcorr::of(&self.osc));
+        // The copy was just taken: no name to bring over.
+        let _ = self.evaluate_formula_list(show_primary);
+    }
+
+    /// The formulas resolve a channel by its name as shown now (`0x42edf0`
+    /// compares `+0x68`; the original keeps no copy of the record): the
+    /// flagged copy takes the names a change left behind it — «Кодировка»
+    /// re-decodes them in place (`0x4543e0` → `0x425960`, issue #7), a
+    /// rename in «Каналы» or on the lane writes one — none of which
+    /// recomputes.
+    /// The digital list is copied anew: ОМП's КЗ flags come, go and take
+    /// new values with no recompute (`omp_compute` / `omp_clear`).
+    pub fn sync_flagged_names(&mut self) {
+        for (f, c) in self.flagged.analog.iter_mut().zip(&self.osc.analog) {
+            f.id.clone_from(&c.id);
+        }
+        self.flag_digital(true);
+    }
+
+    /// Digital channels as the accessor reads them: inverted with the flag.
+    fn flag_digital(&mut self, copy: bool) {
+        if copy {
+            self.flagged.digital.clone_from(&self.osc.digital);
+        }
         for (i, dch) in self.flagged.digital.iter_mut().enumerate() {
             if self.dig_flags.get(i).is_some_and(|f| f.invert) {
                 dch.samples.iter_mut().for_each(|v| *v = !*v);
             }
         }
-        // The correction reads the frequency channel as stored (L9.65).
-        self.analysis = Analysis::compute_with(&self.flagged, fvb_core::freqcorr::of(&self.osc));
-        self.reevaluate_formulas(show_primary);
     }
 
-    /// Formula channels are evaluated again in order on the current values
-    /// and correction (`0x415780` over the whole definition list; merged and
-    /// ОМП channels carry no formula to re-evaluate).
-    pub fn reevaluate_formulas(&mut self, show_primary: bool) {
-        let _ = self.try_reevaluate_formulas(show_primary);
-    }
-
-    /// The batch `0x415780` over the record's formula channels: in order,
+    /// The batch `0x415780` over the record's formula channels (merged and
+    /// ОМП channels carry no formula to re-evaluate): in order,
     /// each updated as it goes; the first failure stops it (the ones before
     /// keep their new values) and is returned; only a full success sweeps
     /// the groups (`0x415b97` → `0x455c70`).
     pub fn try_reevaluate_formulas(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
+        self.sync_flagged_names();
+        self.evaluate_formula_list(show_primary)
+    }
+
+    /// [`Doc::try_reevaluate_formulas`] over the flagged copy as it is.
+    fn evaluate_formula_list(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
         for j in 0..self.computed.len() {
             let c = &mut self.computed[j];
@@ -905,7 +941,7 @@ impl Doc {
         if c.formula == crate::merge_ui::PENDING {
             // A pasted channel (bit 14) over its own samples: N from its own
             // rate ÷ 50 (`0x427315`), its own rate for the correction.
-            let Some(p) = self.pending.iter().find(|p| p.name() == c.name) else { return };
+            let Some(p) = self.pending.iter().find(|p| p.lane == c.seq) else { return };
             match &p.pasted.channel {
                 Ok(a) => {
                     let pn = if p.pasted.rate == 0.0 { n } else { (p.pasted.rate / 50.0).round().max(1.0) as usize };
@@ -1045,6 +1081,7 @@ impl Doc {
                 *s = crate::oscgeom::sample_at(x, self.first, f, left).clamp(0, n as i64 - 1) as usize;
             }
             self.v_shown[k] = !self.v_shown[k];
+            self.v1_placed |= k == 0 && self.v_shown[k];
         } else if k < 5 {
             let h = &mut self.hviz[k - 3];
             if h.chan.is_none() {
@@ -1219,6 +1256,19 @@ pub struct DocSnapshot {
     pub selection: BTreeSet<ChanKey>,
     pub digital_visible: Vec<bool>,
     pub dig_flags: Vec<DigFlags>,
+    /// The names' bytes go with the channels (the original's snapshot is
+    /// its channel list, the raw names in it); the code page stays.
+    pub name_raw: Vec<RawName>,
+}
+
+/// A name as read (`+0x64`): its bytes, the text last decoded from them in
+/// the record's code page, and whether the channel shows an alias instead
+/// (`+0x6c` non-empty — kept as typed across «Кодировка», `0x425960`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RawName {
+    pub bytes: Vec<u8>,
+    pub seen: String,
+    pub alias: bool,
 }
 
 /// Commands dispatched from the ribbon, QAT, keybinds and context menus. The
@@ -1505,6 +1555,9 @@ pub struct App {
     pub pane_grid: Vec<egui::Rect>,
     /// Where the keyboard focus is, as far as copy (`0x405160`) cares.
     pub copy_focus: CopyFocus,
+    /// Each slid-out group's diagram windows and grids in `pane_canvas` /
+    /// `pane_grid`: [canvas from, to, grid from, to] (drawn last).
+    pub slid_ranges: [Option<[usize; 4]>; 4],
     /// Screen pixels per point, for pictures at the screen's resolution.
     pub ppp: f32,
     /// The merge bar (shown after a paste).
@@ -1693,6 +1746,7 @@ impl App {
             windows_dlg: None,
             next_serial: 1,
             copy_focus: CopyFocus::View,
+            slid_ranges: [None; 4],
             ppp: 1.0,
             window_title: String::new(),
             min_size_ppp: 0.0,
@@ -2647,6 +2701,7 @@ impl App {
             selection: d.selection.clone(),
             digital_visible: d.digital_visible.clone(),
             dig_flags: d.dig_flags.clone(),
+            name_raw: d.name_raw.clone(),
         }
     }
 
@@ -2661,6 +2716,7 @@ impl App {
         d.selection = s.selection;
         d.digital_visible = s.digital_visible;
         d.dig_flags = s.dig_flags;
+        d.name_raw = s.name_raw;
         d.sel_anchor = None;
         let last = d.osc.time.len().saturating_sub(1);
         for k in [&mut d.main_cursor, &mut d.aux_cursor, &mut d.v3_cursor, &mut d.first] {
@@ -3492,7 +3548,7 @@ mod tests {
         assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
         app.active_doc_mut().unwrap().computed[0].formula = "Нет*2".into();
         assert!(app.append_computed(&[("Y".into(), "Ub*2".into())]).is_none());
-        assert_eq!(app.dlg.alert(), Some("Нет*2: Имя канала задано неправильно."), "its box (0x162 in channel mode)");
+        assert_eq!(app.dlg.alert(), Some("Имя канала задано неправильно."), "its box (0x162, no formula: VM)");
         assert!(app.active_doc().unwrap().computed.iter().all(|c| c.name != "Y"), "nothing added");
     }
 

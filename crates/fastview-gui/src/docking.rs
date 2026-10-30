@@ -283,13 +283,38 @@ impl Dockable {
         true
     }
 
+    /// Its panes hidden: an auto-hidden one is back in its strip.
+    pub fn hide(&mut self) {
+        (self.out, self.slide, self.hover_since) = (false, 0.0, None);
+    }
+
+    /// When it next needs a frame, in seconds from `now`: at once while it
+    /// slides, when the hover on its button reaches the open time, at the
+    /// next hide check while it is out; None when resting in.
+    pub fn wake_in(&self, now: f64) -> Option<f64> {
+        if self.place != Place::AutoHide {
+            return None;
+        }
+        if self.slide != if self.out { 1.0 } else { 0.0 } {
+            return Some(0.0);
+        }
+        let at = if self.out { Some(self.next_check) } else { self.hover_since.map(|s| s + HOVER_S) };
+        at.map(|t| (t - now).max(0.0))
+    }
+
+    /// Whether the pointer was on its strip button in the last frame.
+    #[cfg(test)]
+    pub fn on_button(&self) -> bool {
+        self.hover_since.is_some()
+    }
+
     /// One frame of an auto-hidden unit: hovering its button 400 ms or a
     /// click shows it; every 700 ms a shown one slides back when the pointer
-    /// is outside it and its button (not while a menu is up); the slide
-    /// moves 1/12 per frame. Returns true while it is moving.
-    pub fn auto_hide_frame(&mut self, now: f64, on_button: bool, clicked: bool, in_pane: bool, menu_up: bool) -> bool {
+    /// is outside it and its button (not while `held`: a menu up or the
+    /// focus in the pane); the slide moves 1/12 per frame.
+    pub fn auto_hide_frame(&mut self, now: f64, on_button: bool, clicked: bool, in_pane: bool, held: bool) {
         if self.place != Place::AutoHide {
-            return false;
+            return;
         }
         if on_button {
             let since = *self.hover_since.get_or_insert(now);
@@ -302,14 +327,18 @@ impl Dockable {
         }
         if self.out && now >= self.next_check {
             self.next_check = now + CHECK_S;
-            if !in_pane && !on_button && !menu_up {
+            if !in_pane && !on_button && !held {
                 self.out = false;
             }
         }
         let target = if self.out { 1.0 } else { 0.0 };
         let step = 1.0 / SLIDE_STEPS;
-        self.slide = if self.slide < target { (self.slide + step).min(1.0) } else { (self.slide - step).max(0.0) };
-        self.slide != target || (on_button && !self.out)
+        // Fully out or in, it rests there.
+        if self.slide < target {
+            self.slide = (self.slide + step).min(1.0);
+        } else if self.slide > target {
+            self.slide = (self.slide - step).max(0.0);
+        }
     }
 }
 
@@ -741,6 +770,8 @@ mod tests {
             d.auto_hide_frame(0.5 + f64::from(k) * 0.016, false, false, true, false);
         }
         assert_eq!(d.slide, 1.0, "out in 12 steps");
+        d.auto_hide_frame(0.7, false, false, true, false);
+        assert!(d.slide == 1.0 && d.wake_in(0.7).is_some_and(|t| t > 0.4), "out, it rests until the next check");
         // In the pane at the check: stays; outside at the next check: back.
         d.auto_hide_frame(1.2, false, false, true, false);
         assert!(d.out);

@@ -157,6 +157,7 @@ impl App {
         let rows = self.formula_page.rows.clone();
         let show_primary = self.active_doc().is_some_and(crate::app::Doc::primary_values);
         let Some(d) = self.active_doc_mut() else { return };
+        d.sync_flagged_names();
         let before = d.computed.clone();
         for (name, formula) in &rows {
             let found = d.computed.iter().position(|c| c.name == *name).or_else(|| {

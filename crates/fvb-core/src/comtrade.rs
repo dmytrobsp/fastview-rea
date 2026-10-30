@@ -1124,6 +1124,26 @@ pub fn best_fit_1251(c: char) -> char {
     }
 }
 
+/// The bytes a name shown in `enc` stands for: [`encode_text`], with a
+/// character 866 lacks but its reading shows ([`best_fit_1251`]: «¦»)
+/// taken as the first 866 byte read so — as Windows' best fit narrows it
+/// (VM: «IA +T+¦L 3 (вст.)» pasted while the record shows 866 reads
+/// «IA +T+іL 3 (ўбв.)» back in 1251: «¦» went to 0xB3).
+pub fn encode_shown(text: &str, enc: Encoding) -> Vec<u8> {
+    if enc != Encoding::Cp866 {
+        return encode_text(text, enc);
+    }
+    text.chars()
+        .map(|c| {
+            if (c as u32) < 0x80 {
+                return c as u8;
+            }
+            let read = |b: &u8| cp866_to_char(*b);
+            (0x80..=0xFFu8).find(|b| read(b) == c).or_else(|| (0x80..=0xFFu8).find(|b| best_fit_1251(read(b)) == c)).unwrap_or(b'?')
+        })
+        .collect()
+}
+
 /// The record code page guessed from the raw channel-name bytes
 /// (`0x459e60`, run by the settings loader `0x44f5b0` at every open): count
 /// the bytes that are Cyrillic letters read as Windows-1251 (0xC0..0xFF) and

@@ -367,6 +367,24 @@ pub fn can_rename(doc: &Doc, key: ChanKey) -> Result<(), &'static str> {
     }
 }
 
+/// The text a rename refuses (397): another channel's name as shown or as
+/// in its file (`0x435da9`–`0x435e04`, the lane's `0x465f66`–`0x465faf`:
+/// `0x401bd0` and `0x4292e0` per channel), compared case-sensitively.
+pub fn name_taken(doc: &Doc, key: ChanKey, name: &str) -> bool {
+    rows(doc).into_iter().any(|k| k != key && (row_name(doc, k) == name || doc.original_name(k).is_some_and(|f| f == name)))
+}
+
+/// The name shown after a rename to `name`: it becomes the channel's alias
+/// (`+0x6c`), and an empty alias shows the file's name (`0x425960`).
+pub fn shown_after_rename(doc: &Doc, key: ChanKey, name: &str) -> String {
+    match key {
+        _ if !name.is_empty() => name.to_string(),
+        ChanKey::Analog(_) | ChanKey::Digital(_) => doc.original_name(key).unwrap_or_else(|| row_name(doc, key)),
+        // A pasted lane: its name as pasted, decoded now.
+        ChanKey::Computed(j) => doc.computed[j].name_raw.as_ref().map_or_else(|| row_name(doc, key), |r| r.seen.clone()),
+    }
+}
+
 /// Commit an in-place rename (`0x435c80`): unchanged text does nothing; a
 /// name another channel already has is refused with 397.
 pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static str> {
@@ -374,9 +392,14 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
     if name == row_name(doc, key) {
         return Ok(());
     }
-    if rows(doc).into_iter().any(|k| k != key && row_name(doc, k) == name) {
+    if name_taken(doc, key, name) {
         return Err(MSG_NAME_TAKEN);
     }
+    // The names as read are taken before the new one is written.
+    doc.ensure_name_raw();
+    let shown = shown_after_rename(doc, key, name);
+    let alias = !name.is_empty();
+    let name = shown.as_str();
     // A level or an area keeps the name it was made on: after a rename it
     // no longer resolves (nor is drawn) and is saved with that name; one
     // naming the new name now resolves (VM, L9.227 — the original's
@@ -388,8 +411,8 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
         // A pasted lane: its pasted channel is renamed along, so the paste
         // keeps its link (the original finds them by bit 14).
         ChanKey::Computed(j) => {
-            let old = std::mem::replace(&mut doc.computed[j].name, name.to_string());
-            if let Some(p) = doc.pending.iter_mut().find(|p| p.name() == old) {
+            doc.computed[j].name = name.to_string();
+            if let Some(p) = doc.pending_of_mut(j) {
                 match &mut p.pasted.channel {
                     Ok(a) => a.id = name.to_string(),
                     Err(d) => d.id = name.to_string(),
@@ -397,6 +420,7 @@ pub fn rename(doc: &mut Doc, key: ChanKey, name: &str) -> Result<(), &'static st
             }
         }
     }
+    doc.mark_alias(key, alias);
     doc.comments = recs.iter().map(|r| doc.comment_of(r)).collect();
     doc.set.modified = true;
     Ok(())
@@ -461,10 +485,7 @@ fn coef_channel(doc: &Doc, k: ChanKey) -> Option<&fvb_core::comtrade::AnalogChan
 fn coef_channel_mut(doc: &mut Doc, k: ChanKey) -> Option<&mut fvb_core::comtrade::AnalogChannel> {
     match k {
         ChanKey::Analog(i) => doc.osc.analog.get_mut(i),
-        ChanKey::Computed(j) => {
-            let name = doc.computed.get(j).filter(|c| c.formula == crate::merge_ui::PENDING)?.name.clone();
-            doc.pending.iter_mut().find(|p| p.name() == name)?.pasted.channel.as_mut().ok()
-        }
+        ChanKey::Computed(j) => doc.pending_of_mut(j)?.pasted.channel.as_mut().ok(),
         ChanKey::Digital(_) => None,
     }
 }
@@ -1127,7 +1148,12 @@ mod tests {
         assert_eq!(d.original_name(ChanKey::Analog(0)), None);
         let old = d.osc.analog[0].id.clone();
         assert_eq!(rename(&mut d, ChanKey::Analog(0), "Новое"), Ok(()));
-        assert_eq!(d.original_name(ChanKey::Analog(0)), Some(old));
+        assert_eq!(d.original_name(ChanKey::Analog(0)), Some(old.clone()));
+        // Its file name stays taken; an empty alias shows it again
+        // (`0x425960`).
+        assert_eq!(rename(&mut d, ChanKey::Analog(1), &old), Err(MSG_NAME_TAKEN));
+        assert_eq!(rename(&mut d, ChanKey::Analog(0), ""), Ok(()));
+        assert_eq!((d.osc.analog[0].id.as_str(), d.original_name(ChanKey::Analog(0))), (old.as_str(), None));
     }
 
     /// `0x436d77`–`0x436e64`: the refresh keeps only Ohm / VA channels on
