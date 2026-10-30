@@ -1413,6 +1413,11 @@ impl App {
         let angle_ref = self.vec_angle_ref.clone();
         let Some(d) = self.active_doc() else { return };
         let k = d.main_cursor;
+        // The table's value cells stay empty until В1 has been placed (VM:
+        // a record just opened, also after a quick-analysis run, shows the
+        // rows with empty cells; a click, the 32813 toggle or the keys
+        // place it and the values stay when it is hidden again).
+        let values = d.v1_placed || d.v_shown[0];
         let n = d.osc.samples_per_cycle().max(2);
         let phasor_of = |name: &str| -> Option<Complex64> {
             if let Some(i) = d.osc.analog.iter().position(|c| c.id == name) {
@@ -1559,7 +1564,7 @@ impl App {
                 painter.extend(egui::Shape::dashed_line(&[p0, p1], pen, 3.0, 2.0));
             }
             painter.add(egui::Shape::convex_polygon(vec![p1, p2, p3], *color, pen));
-            if lay.table {
+            if lay.table && values {
                 let y = lay.b + row as f32 * h + cy / 4.0;
                 painter.text(Pos2::new(full.left() + xoff + name_w + m, y), egui::Align2::LEFT_TOP, fvb_core::views::vector_value_text(z.norm(), unit_text), font(), ink);
                 painter.text(Pos2::new(full.right() - xoff - val_w + m, y), egui::Align2::LEFT_TOP, fvb_core::views::angle_text(ang, radians), font(), ink);
@@ -2184,6 +2189,39 @@ mod tests {
             self.frame(vec![ev(false)], Default::default());
             self.frame(vec![], Default::default());
         }
+    }
+
+    /// Follow-up of #7 (VM): the vector table's value cells are empty
+    /// until В1 has been placed; placed and hidden again, they stay.
+    #[test]
+    fn the_vector_table_values_wait_for_the_first_vizir() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        app.vec_show_values = true;
+        app.active_doc_mut().unwrap().chans[3].on_vector = true;
+        let texts = |app: &mut App| -> Vec<String> {
+            let ctx = egui::Context::default();
+            let out = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(500.0, 500.0))), ..Default::default() }, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| app.vector_ui(ui));
+            });
+            out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect()
+        };
+        // The row's angle cell, «%8.2fº» (the axis labels have no blanks).
+        let value = |t: &Vec<String>| t.iter().any(|s| s.starts_with(' ') && s.ends_with('º'));
+        let t = texts(&mut app);
+        assert!(t.iter().any(|s| s == "Ia") && !value(&t), "{t:?}");
+        let d = app.active_doc_mut().unwrap();
+        // 32813 places В1; moved onto sample 0 and hidden again by 32813,
+        // the values stay.
+        d.toggle_vizir(0, 500.0, 0.0);
+        assert!(d.v_shown[0] && d.v1_placed);
+        let t = texts(&mut app);
+        assert!(value(&t), "{t:?}");
+        let d = app.active_doc_mut().unwrap();
+        d.main_cursor = 0;
+        d.toggle_vizir(0, 500.0, 0.0);
+        assert!(!d.v_shown[0]);
+        assert!(value(&texts(&mut app)), "hidden again: the values stay");
     }
 
     #[test]
