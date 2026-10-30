@@ -28,6 +28,17 @@ const ROW_H: f32 = 15.0;
 /// the view's window scroll bars, at the default system metric (96 dpi).
 const HSCROLL_H: f32 = 17.0;
 const VSCROLL_W: f32 = 17.0;
+
+/// The view's window scroll bars at the system DPI: SM_CXVSCROLL / SM_CYHSCROLL
+/// grow for a system-DPI-aware window (VM: 17, 21, 26 px at 100, 125,
+/// 150 %); what the view paints in them stays its own.
+fn scroll_w() -> f32 {
+    crate::dpi::measured(VSCROLL_W, 21.0, 26.0)
+}
+
+fn scroll_h() -> f32 {
+    crate::dpi::measured(HSCROLL_H, 21.0, 26.0)
+}
 /// The V scroll bar's line step (`0x45d6d0`: SB_LINEUP/DOWN = 100 px).
 const VSCROLL_LINE: f32 = 100.0;
 /// A group member's stats line height (`view+0x88`: "Ay" in the row font,
@@ -1306,12 +1317,12 @@ impl App {
         // Without the H bar: if the record fits, that layout stands.
         let hbar_on = {
             let vbar = content_h + band + 2.0 > full.height();
-            let plot_w = full.width() - if vbar { VSCROLL_W } else { 0.0 };
+            let plot_w = full.width() - if vbar { scroll_w() } else { 0.0 };
             g::max_first(n, g::visible_count(plot_w, left_w, f)) > 0
         };
-        let client = Rect::from_min_max(full.min, Pos2::new(full.right(), full.bottom() - if hbar_on { HSCROLL_H } else { 0.0 }));
+        let client = Rect::from_min_max(full.min, Pos2::new(full.right(), full.bottom() - if hbar_on { scroll_h() } else { 0.0 }));
         let vbar = content_h + band + 2.0 > client.height();
-        let plot_right = client.right() - if vbar { VSCROLL_W } else { 0.0 };
+        let plot_right = client.right() - if vbar { scroll_w() } else { 0.0 };
         self.view_rects = Some((full, Rect::from_min_max(client.min, Pos2::new(plot_right, client.bottom()))));
         let left = client.left() + left_w;
         let plot_bottom = client.bottom() - band;

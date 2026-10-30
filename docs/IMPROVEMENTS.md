@@ -95,6 +95,11 @@ is out of reach (those are listed in `notes/COMPLETION_PLAN.md`, W6).
   on a scale change Windows resizes the window while its content stays
   1:1. On the primary monitor at the sign-in scale both are the same
   (device pixels; see `device_zoom` in `crates/fastview-gui/src/main.rs`).
+  MFC's chrome — ribbon, captions, tab strips, status bar, menus,
+  tooltips, dialogs — is laid out for the system dpi in both (#12): there
+  ours shows it unstretched like the rest, at its system-dpi size (the
+  ribbon of a 100 % sign-in stays 100 %-sized on a 150 % monitor, where
+  the original's is stretched to 1.5 ×; `crates/fastview-gui/src/dpi.rs`).
   Reason: the stretched picture is the blur #5 / #6 report.
 - **The lanes' names after «Кодировка» (#7).** The original's lanes keep
   the old names until their next layout (a missing repaint, ledger

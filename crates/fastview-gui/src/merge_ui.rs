@@ -829,12 +829,15 @@ impl App {
         // a pasted channel is pending (`0x479960`, 57643). The layout is in
         // the bar window's coordinates, 4 px above and below the box.
         let r = ui.max_rect().expand2(egui::vec2(0.0, 4.0));
-        // The bar's controls in the 9 pt UI font (12 px).
+        // The bar's controls in the 9 pt UI font (12 px). At > 100 % the
+        // places stay the app's pixels; the font and the combos' height
+        // (Windows' from the font) follow the system DPI.
+        let size = crate::dpi::font(12.0);
         for st in [egui::TextStyle::Body, egui::TextStyle::Button] {
-            ui.style_mut().text_styles.insert(st, egui::FontId::proportional(12.0));
+            ui.style_mut().text_styles.insert(st, egui::FontId::proportional(size));
         }
-        let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(r.min + egui::vec2(x, y), egui::vec2(w, h));
-        let font = egui::FontId::proportional(12.0);
+        let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(r.min + egui::vec2(x, y), egui::vec2(w, if h == 21.0 { crate::dpi::s(21.0) } else { h }));
+        let font = egui::FontId::proportional(size);
         let ink = ui.visuals().text_color();
         // Win32 drop-down lists (VM: the text clipped at the button, no
         // ellipsis) and push buttons.
@@ -861,8 +864,11 @@ impl App {
         sync = win_button(ui, at(w - 220.0, 9.0, 100.0, 23.0), "Синхронизация", false).clicked() || sync;
         join = win_button(ui, at(w - 110.0, 9.0, 100.0, 23.0), "Объединить", false).clicked() || join;
         let text = r.shrink2(egui::vec2(15.0, 14.0));
-        for (x, t) in [(15.0, "Синхронизация"), (290.0, "Канал 1"), (450.0, "Канал 2")] {
-            ui.painter().text(egui::pos2(r.left() + x, text.top()), egui::Align2::LEFT_TOP, t, font.clone(), ink);
+        // Each static cut at the control after it (VM, 150 %: «Синхрониза»
+        // under the larger font).
+        for (x, end, t) in [(15.0, 110.0, "Синхронизация"), (290.0, 350.0, "Канал 1"), (450.0, 510.0, "Канал 2")] {
+            let clip = egui::Rect::from_min_max(egui::pos2(r.left() + x, r.top()), egui::pos2(r.left() + end, r.bottom())).intersect(ui.clip_rect());
+            ui.painter().with_clip_rect(clip).text(egui::pos2(r.left() + x, text.top()), egui::Align2::LEFT_TOP, t, font.clone(), ink);
         }
         ui.painter().text(egui::pos2(text.left(), text.bottom()), egui::Align2::LEFT_BOTTOM, &bar.status, font, ink);
         let close = crate::dialogs::caption_close(ui, ui.max_rect(), ui.id().with("fv_merge_close"));

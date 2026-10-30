@@ -348,6 +348,7 @@ impl App {
     /// px in, the text (its four leading spaces kept) from 25, a flat
     /// «Сохранить...» 93 × 22 at the face's right.
     pub fn omp_banner(&mut self, ui: &mut egui::Ui) {
+        // (`omp_bar_h`: 33 px at 100 %)
         use crate::oscgeom::PixelLines;
         self.omp_sync_bar();
         let Some(text) = self.omp_ui.bar.clone() else {
@@ -355,7 +356,7 @@ impl App {
             return;
         };
         let pal = self.skin.palette();
-        let full = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(ui.available_width(), 33.0));
+        let full = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(ui.available_width(), omp_bar_h()));
         ui.allocate_rect(full, egui::Sense::hover());
         // 4 px of the brush at the left, the face framed on three sides.
         let face = egui::Rect::from_min_max(full.min + egui::vec2(4.0, 0.0), egui::pos2(full.right() - 21.0, full.bottom()));
@@ -372,13 +373,18 @@ impl App {
             }
         }
         let mid = face.center().y;
-        let ic = egui::pos2(face.left() + 13.0, mid);
-        // Bitmap 230 (VM): a light orange disc, darker below, a brown «i».
-        p.circle_filled(ic, 6.5, Color32::from_rgb(254, 200, 153));
-        p.circle_filled(ic + egui::vec2(0.0, 1.0), 5.5, Color32::from_rgb(253, 175, 120));
-        p.text(ic, egui::Align2::CENTER_CENTER, "i", egui::FontId::proportional(12.0), Color32::from_rgb(120, 60, 20));
-        let br = egui::Rect::from_min_size(egui::pos2(face.right() - 97.0, mid - 11.0), egui::vec2(93.0, 22.0));
-        p.with_clip_rect(egui::Rect::from_min_max(face.min, egui::pos2(br.left() - 4.0, face.bottom()))).text(egui::pos2(face.left() + 25.0, mid), egui::Align2::LEFT_CENTER, &text, egui::FontId::proportional(11.0), Color32::from_rgb(30, 57, 91));
+        // Bitmap 230 (VM): a light orange disc, darker below, a brown «i» —
+        // stretched with the images at > 100 %.
+        let k = crate::dpi::img(16.0) / 16.0;
+        let ic = egui::pos2(face.left() + 13.0 * k, mid);
+        p.circle_filled(ic, 6.5 * k, Color32::from_rgb(254, 200, 153));
+        p.circle_filled(ic + egui::vec2(0.0, k), 5.5 * k, Color32::from_rgb(253, 175, 120));
+        p.text(ic, egui::Align2::CENTER_CENTER, "i", egui::FontId::proportional(12.0 * k), Color32::from_rgb(120, 60, 20));
+        // Its text and button follow the system font (as the parameters
+        // bar's), the bar's height with them (`omp_bar_h`).
+        use crate::dpi::s;
+        let br = egui::Rect::from_min_size(egui::pos2(face.right() - s(93.0) - 4.0, mid - (s(22.0) / 2.0).floor()), egui::vec2(s(93.0), s(22.0)));
+        p.with_clip_rect(egui::Rect::from_min_max(face.min, egui::pos2(br.left() - 4.0, face.bottom()))).text(egui::pos2(face.left() + 25.0 * k, mid), egui::Align2::LEFT_CENTER, &text, egui::FontId::proportional(crate::dpi::font(11.0)), Color32::from_rgb(30, 57, 91));
         let bresp = ui.interact(br, ui.id().with("fv_omp_save"), egui::Sense::click());
         // Its tip (CMFCCaptionBar's, VM): the plain Office box 18 px under
         // the pointer, 8 px inside the screen's right edge.
@@ -389,10 +395,10 @@ impl App {
             p.rect_filled(br, 0.0, Color32::WHITE);
             p.px_rect_stroke(br, 0.0, egui::Stroke::new(1.0f32, Color32::from_rgb(157, 189, 216)));
         }
-        p.text(br.center(), egui::Align2::CENTER_CENTER, "Сохранить...", egui::FontId::proportional(12.0), Color32::from_rgb(30, 57, 91));
+        p.text(br.center(), egui::Align2::CENTER_CENTER, "Сохранить...", egui::FontId::proportional(crate::dpi::font(12.0)), Color32::from_rgb(30, 57, 91));
         let save = bresp.clicked();
         let close = crate::dialogs::caption_close(ui, full, ui.id().with("fv_omp_close"));
-        self.omp_ui.close_rect = Some(egui::Rect::from_min_size(egui::pos2(full.right() - 20.0, full.top()), egui::vec2(17.0, 17.0)));
+        self.omp_ui.close_rect = Some(egui::Rect::from_min_size(egui::pos2(full.right() - crate::dpi::s(20.0), full.top()), egui::vec2(crate::dpi::s(17.0), crate::dpi::s(17.0))));
 
         if save {
             self.omp_save_report();
@@ -972,7 +978,7 @@ impl ParamsDialog {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, channels: &[String]) -> Option<DialogAction> {
-        use crate::dialogs::{win_button, win_combo_list, DLG_FONT};
+        use crate::dialogs::{win_button, win_combo_list, dlg_font};
         let mut action = None;
         // DIALOG 336: 475 × 275 DLU in MS Shell Dlg 8 — a 713 × 447 client;
         // OnInitDialog `0x4a7c50` places the method combo and the toolbar,
@@ -980,16 +986,28 @@ impl ParamsDialog {
         // tree at (10, 44), W/3 − 20 × H − 90; the grid at (W/3, 44),
         // 2W/3 − 10 wide, the thirds whole pixels); OK / Cancel stay at the
         // template's (310, 254) / (392, 254), 76 × 14 DLU.
-        const W: f32 = 713.0;
-        const H: f32 = 447.0;
-        let third = (W / 3.0).floor();
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(W, H), egui::Sense::hover());
-        let at = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(rect.min + egui::vec2(x, y), egui::vec2(w, h));
+        // At > 100 % the client in the larger font's dialog units; the tree
+        // and the grid from it as OnInitDialog sizes them, in pixels: under
+        // the toolbar (10, 10, W − 20, its height) by 21, H − 90 tall.
+        let (rect, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(475, 275), egui::Sense::hover());
+        // The toolbar's height follows its combo's (VM: 23 / 29 / 34 px, the
+        // combo 21 / 27 / 31 at 100 / 125 / 150 %); the combo keeps its 278
+        // px, the buttons follow it, their offsets from the combo's end and
+        // the text buttons' widths at the system DPI, the icon-only ones the
+        // image + 6 (VM, 150 %: «Участок», «Параллельная линия», «Отпайка»
+        // from 294, 397, 602).
+        let tool_h = crate::dpi::measured(23.0, 29.0, 34.0);
+        let combo_h = crate::dpi::measured(21.0, 27.0, 31.0);
+        let btn_h = crate::dpi::img(16.0) + 6.0;
+        let (tree, grid) = params_layout(rect);
+        let tool_x = |x: f32| 292.0 + crate::dpi::s(x - 292.0);
+        let tool_y = 10.0 + tool_h - btn_h + 1.0;
+        let px = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(rect.min + egui::vec2(x, y), egui::vec2(w, h));
         let cur = METHODS.iter().position(|(m, _)| *m == self.work.method).unwrap_or(0);
         let methods: Vec<String> = METHODS.iter().map(|(_, l)| l.to_string()).collect();
         // The method combo is the toolbar's, no tab stop of the dialog; the
         // tree comes first in the tab order, then OK and Отмена.
-        if let Some(k) = crate::dialogs::no_tab_stop(ui, |ui| win_combo_list(ui, at(13.0, 12.0, 278.0, 21.0), egui::Id::new("omp_method"), &methods, cur, true)) {
+        if let Some(k) = crate::dialogs::no_tab_stop(ui, |ui| win_combo_list(ui, px(13.0, 10.0 + tool_h - combo_h, 278.0, combo_h), egui::Id::new("omp_method"), &methods, cur, true)) {
             if k != cur {
                 self.set_method(METHODS[k].0);
             }
@@ -1010,7 +1028,8 @@ impl ParamsDialog {
         ];
         for (k, (x, w, icon, text, tip, enabled)) in items.into_iter().enumerate() {
             // Its tip CMFCToolBar's: the prompt's title and description.
-            let r = tool_button(ui, at(x, 12.0, w, 22.0), icon, text, enabled);
+            let w = if text.is_some() { crate::dpi::s(w) } else { btn_h };
+            let r = tool_button(ui, px(tool_x(x), tool_y, w, btn_h), icon, text, enabled);
             let (desc, title) = tip.split_once('\n').unwrap_or((tip, tip));
             crate::tips::pointer_tip(ui, &r, crate::tips::TipImage::OmpTool(icon), title, desc, true);
             if r.clicked() && enabled {
@@ -1027,7 +1046,7 @@ impl ParamsDialog {
             }
         }
         for x in [593.0, 645.0] {
-            let r = at(x, 11.0, 1.0, 22.0);
+            let r = px(tool_x(x), tool_y - 1.0, 1.0, btn_h);
             ui.painter().rect_filled(r, 0.0, Color32::from_gray(197));
             ui.painter().rect_filled(r.translate(egui::vec2(1.0, 0.0)), 0.0, Color32::WHITE);
         }
@@ -1036,7 +1055,6 @@ impl ParamsDialog {
         // toggles it); 16 px rows, each the image of its kind (BITMAP 476:
         // our own drawings) at +3, the label from +22, the selection white
         // on (0, 120, 212) (VM).
-        let tree = at(10.0, 44.0, third - 20.0, H - 90.0);
         let all = self.rows();
         let mut shown = Vec::new();
         let mut hidden_below: Option<usize> = None;
@@ -1074,11 +1092,12 @@ impl ParamsDialog {
         // in (240) below each, the names and the values 5 px into their
         // columns, the value column from 231 px; a modified value bold. A
         // click on a value edits it in place: an edit, or the channel list.
-        let grid = at(third, 44.0, (2.0 * W / 3.0).floor() - 10.0, H - 90.0);
         ui.painter().rect_filled(grid, 0.0, Color32::from_rgb(171, 173, 179));
         let inner = grid.shrink(1.0);
         ui.painter().rect_filled(inner, 0.0, Color32::WHITE);
-        let split = inner.left() + 231.0;
+        let split = inner.left() + crate::dpi::dx(231.0);
+        // The rows from the font's height (17 px at 100 %).
+        let row_h = crate::dpi::base_units().1 as f32 + 4.0;
         let rule = egui::Stroke::new(1.0f32, Color32::from_gray(240));
         ui.painter().vline(split - 0.5, inner.y_range(), rule);
         let node = self.sel;
@@ -1097,15 +1116,15 @@ impl ParamsDialog {
         let mut y = inner.top();
         for (k, (label, f, is_chan)) in rows.into_iter().enumerate() {
             let Some(v) = field_mut(&mut self.work, node, f) else { continue };
-            let row = egui::Rect::from_min_max(egui::pos2(inner.left(), y), egui::pos2(inner.right(), y + 17.0));
-            y += 17.0;
+            let row = egui::Rect::from_min_max(egui::pos2(inner.left(), y), egui::pos2(inner.right(), y + row_h));
+            y += row_h;
             ui.painter().hline(inner.left() + 1.0..=inner.right() - 1.0, row.bottom() - 0.5, rule);
             let name = egui::Rect::from_min_max(row.min, egui::pos2(split - 1.0, row.bottom() - 1.0));
             let cell = egui::Rect::from_min_max(egui::pos2(split, row.top()), egui::pos2(row.right(), row.bottom() - 1.0));
             // Seen on the VM: the names left-aligned, a value changed since
             // the grid was built (not its name) bold.
             let modified = built.get(k).is_some_and(|b| b != v);
-            let font = DLG_FONT;
+            let font = dlg_font();
             ui.painter().with_clip_rect(name).text(egui::pos2(name.left() + 5.0, name.center().y), egui::Align2::LEFT_CENTER, ellipsize_to(ui, label, name.width() - 7.0), font.clone(), Color32::BLACK);
             // A click selects the row (CMFCPropertyGridCtrl, VM): its name
             // on (180, 201, 233) and its value in place — a number in a
@@ -1144,7 +1163,7 @@ impl ParamsDialog {
                 continue;
             }
             if editing {
-                let btn = egui::Rect::from_min_max(egui::pos2(inner.right() - 14.0, cell.top()), egui::pos2(inner.right(), cell.bottom()));
+                let btn = egui::Rect::from_min_max(egui::pos2(inner.right() - crate::dpi::s(14.0), cell.top()), egui::pos2(inner.right(), cell.bottom()));
                 let mut mesh = egui::Mesh::default();
                 for (pt, c) in [(btn.left_top(), (226, 238, 255)), (btn.right_top(), (226, 238, 255)), (btn.right_bottom(), (196, 221, 255)), (btn.left_bottom(), (196, 221, 255))] {
                     mesh.colored_vertex(pt, Color32::from_rgb(c.0, c.1, c.2));
@@ -1193,10 +1212,10 @@ impl ParamsDialog {
                 self.row_sel = Some((node, k));
             }
         }
-        if win_button(ui, at(465.0, 413.0, 114.0, 23.0), "OK", true).clicked() {
+        if win_button(ui, crate::dialogs::dlu(rect, 310, 254, 76, 14), "OK", true).clicked() {
             action = Some(DialogAction::Ok);
         }
-        if win_button(ui, at(588.0, 413.0, 114.0, 23.0), "Отмена", false).clicked() {
+        if win_button(ui, crate::dialogs::dlu(rect, 392, 254, 76, 14), "Отмена", false).clicked() {
             action = Some(DialogAction::Cancel);
         }
         action
@@ -1206,7 +1225,7 @@ impl ParamsDialog {
 /// A grid name cut to `width` with «...» (DT_END_ELLIPSIS), whole when it
 /// fits.
 fn ellipsize_to(ui: &egui::Ui, text: &str, width: f32) -> String {
-    let font = crate::dialogs::DLG_FONT;
+    let font = crate::dialogs::dlg_font();
     if ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::BLACK).size().x) <= width {
         return text.to_owned();
     }
@@ -1243,11 +1262,12 @@ fn tool_button(ui: &mut egui::Ui, r: egui::Rect, icon: ToolIcon, text: Option<&s
         p.rect_filled(r, 2.0, Color32::from_rgb(255, 189, 105));
         p.rect_filled(r.shrink(1.0), 2.0, Color32::from_rgb(255, 231, 162));
     }
-    let cell = egui::Rect::from_min_size(egui::pos2(r.left() + 3.0, r.center().y - 8.0), egui::vec2(16.0, 16.0));
+    let side = crate::dpi::img(16.0);
+    let cell = egui::Rect::from_min_size(egui::pos2(r.left() + 3.0, r.center().y - side / 2.0), egui::vec2(side, side));
     let ink = if enabled { Color32::from_rgb(0, 21, 110) } else { Color32::from_gray(141) };
     paint_tool_icon(p, cell, icon, enabled);
     if let Some(t) = text {
-        p.text(egui::pos2(cell.right() + 3.0, r.center().y), egui::Align2::LEFT_CENTER, t, crate::dialogs::DLG_FONT, ink);
+        p.text(egui::pos2(cell.right() + 3.0, r.center().y), egui::Align2::LEFT_CENTER, t, crate::dialogs::dlg_font(), ink);
     }
     resp
 }
@@ -1321,6 +1341,29 @@ fn tree_icon_ink(p: &egui::Painter, r: egui::Rect, node: &Node, grey: Option<Col
             p.line_segment([v(-2.0, 0.0), v(5.0, 0.0)], st(1.5, ink(Color32::from_rgb(90, 90, 90))));
         }
     }
+}
+
+/// The ОМП result bar's height. The app creates bar 221 with height −1 in
+/// message-bar mode (`0x474cbd`), so CMFCCaptionBar sizes it from its
+/// font's height (mfc120u `0x1006fd4c`: its margins + the text height,
+/// the image's if taller): 33 px at 100 % (VM), the 9 pt font's height
+/// 16 / 20 / 24 px adding 4 / 8 at 125 / 150 %.
+pub fn omp_bar_h() -> f32 {
+    crate::dpi::measured(33.0, 37.0, 41.0)
+}
+
+/// «Параметры ОМП»'s tree and grid in its client `rect` (OnInitDialog
+/// `0x4a7c50`, in pixels from the client): from the toolbar's bottom + 11
+/// (the toolbar at 10, its height following its combo's: 23 / 29 / 34 px
+/// at 100 / 125 / 150 %, VM), H − 90 tall; the tree from 10, W/3 − 20
+/// wide, the grid from W/3, 2W/3 − 10 wide (the thirds whole pixels).
+pub(crate) fn params_layout(rect: egui::Rect) -> (egui::Rect, egui::Rect) {
+    let (w, h) = (rect.width(), rect.height());
+    let third = (w / 3.0).floor();
+    let top = 10.0 + crate::dpi::measured(23.0, 29.0, 34.0) + 11.0;
+    let tree = egui::Rect::from_min_size(rect.min + egui::vec2(10.0, top), egui::vec2(third - 20.0, h - 90.0));
+    let grid = egui::Rect::from_min_size(rect.min + egui::vec2(third, top), egui::vec2((2.0 * w / 3.0).floor() - 10.0, h - 90.0));
+    (tree, grid)
 }
 
 #[cfg(test)]
@@ -1817,3 +1860,4 @@ mod tests {
         assert!(t.contains(&format!("Канал Ia:  Ia         Ктр = {}/", fvb_core::views::fmt_g(ia.primary).replace("e+0", "e+00"))), "{t}");
     }
 }
+

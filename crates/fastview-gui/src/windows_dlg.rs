@@ -131,20 +131,23 @@ impl App {
                     ui.vertical(|ui| {
                         ui.label("Выбрать окно:");
                         egui::Frame::none().stroke(egui::Stroke::new(1.0f32, egui::Color32::from_gray(130))).show(ui, |ui| {
-                            ui.set_min_size(egui::vec2(330.0, 234.0));
-                            ui.set_max_width(330.0);
-                            egui::ScrollArea::vertical().max_height(234.0).show(ui, |ui| {
+                            // The list's 100 % pixels at the system DPI's
+                            // base units, its font with them.
+                            use crate::dpi::{dx, dy};
+                            ui.set_min_size(egui::vec2(dx(330.0), dy(234.0)));
+                            ui.set_max_width(dx(330.0));
+                            egui::ScrollArea::vertical().max_height(dy(234.0)).show(ui, |ui| {
                                 let order: Vec<u64> = rows.iter().map(|r| r.0).collect();
                                 for (s, title) in &rows {
                                     // A list-box row: the full width, the
                                     // system highlight when selected.
-                                    let (rect, r) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 18.0), egui::Sense::click());
+                                    let (rect, r) = ui.allocate_exact_size(egui::vec2(ui.available_width(), dy(18.0)), egui::Sense::click());
                                     let on = dlg.sel.contains(s);
                                     if on {
                                         ui.painter().rect_filled(rect, 0.0, egui::Color32::from_rgb(0, 120, 215));
                                     }
                                     let color = if on { egui::Color32::WHITE } else { egui::Color32::BLACK };
-                                    ui.painter().text(rect.left_center() + egui::vec2(3.0, 0.0), egui::Align2::LEFT_CENTER, title, egui::FontId::proportional(13.0), color);
+                                    ui.painter().text(rect.left_center() + egui::vec2(dx(3.0), 0.0), egui::Align2::LEFT_CENTER, title, egui::FontId::proportional(crate::dpi::dlg_font(13.0)), color);
                                     if r.clicked() {
                                         click(&mut dlg, &order, *s, ctrl, shift);
                                     }
@@ -158,7 +161,7 @@ impl App {
                         });
                     });
                     ui.vertical(|ui| {
-                        let size = egui::vec2(120.0, 22.0);
+                        let size = egui::vec2(crate::dpi::dx(120.0), crate::dpi::dy(22.0));
                         let button = |ui: &mut egui::Ui, on: bool, text: &str| ui.add_enabled(on, egui::Button::new(text).wrap_mode(egui::TextWrapMode::Extend).min_size(size)).clicked();
                         activate |= button(ui, b.activate, "Активировать");
                         done |= button(ui, true, "ОК");

@@ -15,6 +15,7 @@ mod diagram_ui;
 mod dialogs;
 mod fontfix;
 mod docking;
+mod dpi;
 mod finder;
 mod formula_dlg;
 mod formula_page;
@@ -236,12 +237,41 @@ fn main() -> eframe::Result<()> {
     r
 }
 
+/// The system DPI / 96 (GetDpiForSystem: the primary monitor's at
+/// sign-in), what a system-DPI-aware process — the original — lays its
+/// chrome out for, whichever monitor its window is on and after a live
+/// scale change until the next sign-in.
+#[cfg(windows)]
+fn system_dpi_scale() -> Option<f32> {
+    // SAFETY: a query without arguments.
+    let dpi = unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForSystem() };
+    (dpi > 0).then(|| dpi as f32 / 96.0)
+}
+
+#[cfg(not(windows))]
+fn system_dpi_scale() -> Option<f32> {
+    None
+}
+
+/// MFC's chrome at the system DPI (`dpi`), where ours paints in device
+/// pixels (Windows); elsewhere egui's native scale already grows it all.
+/// Fixed for the process, as the original's: on a monitor at another
+/// scale ours keeps its content 1:1 (`device_window`) and the chrome at
+/// the system DPI — the original's picture without Windows' stretch
+/// (`docs/IMPROVEMENTS.md`).
+fn chrome_dpi(scale: Option<f32>) {
+    if let Some(s) = scale.filter(|_| DEVICE_PIXELS) {
+        dpi::set((s * 96.0).round() as u32);
+    }
+}
+
 /// The application as both runners start it: the fonts, the persisted
 /// state, the single-instance server, the command line.
 fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path::Path>, own_caption: bool, scale: Option<f32>, placement: Option<egui::Rect>) -> App {
     let fonts = app_fonts();
     ctx.set_fonts(fonts.clone());
     device_options(ctx, scale);
+    chrome_dpi(system_dpi_scale().or(scale));
     // A double-click within Windows' default GetDoubleClickTime, 500 ms
     // (egui's own is 300 ms: a hand's double-click on the coefficient list
     // was missed on the VM).
@@ -405,9 +435,12 @@ impl App {
         let members: Vec<usize> = (0..self.docs.len()).filter(|&i| self.docs[i].mdi_group == g).collect();
         ui.horizontal(|ui| {
             // Nothing in the row taller than the tabs (the ▾ button included).
-            ui.spacing_mut().interact_size.y = 19.0;
+            // At > 100 % the strip, its font and the tabs' parts grow with
+            // the system DPI (`dpi`; VM: the strip 22 / 31 / 35 px).
+            let tab_h = strip.height() - 1.0;
+            ui.spacing_mut().interact_size.y = tab_h;
             ui.spacing_mut().button_padding.y = 0.0;
-            ui.add_space(6.0);
+            ui.add_space(dpi::s(6.0));
             for (k, &i) in members.iter().enumerate() {
                 if self.docs[i].tab_color.is_none() {
                     let prev = k.checked_sub(1).and_then(|j| self.docs[members[j]].tab_color);
@@ -417,19 +450,20 @@ impl App {
                 let title = self.docs[i].title();
                 // MFC's tab font, 11 px (VM: «WIN_1999.cfg» 68 px); the
                 // active document's in the bold face (`0x1013b543`).
-                let font = if bold == Some(i) { ui.fonts(|f| crate::lanes::bold_font(f, 11.0)).unwrap_or(egui::FontId::proportional(11.0)) } else { egui::FontId::proportional(11.0) };
+                let size = dpi::font(11.0);
+                let font = if bold == Some(i) { ui.fonts(|f| crate::lanes::bold_font(f, size)).unwrap_or(egui::FontId::proportional(size)) } else { egui::FontId::proportional(size) };
                 let text_w = ui.fonts(|f| f.layout_no_wrap(title.clone(), font.clone(), egui::Color32::BLACK).size().x);
-                let w = text_w + 34.0 + if active { 20.0 } else { 0.0 };
+                let w = text_w + dpi::s(34.0) + if active { dpi::s(20.0) } else { 0.0 };
                 // An id per document: the drag follows the tab when it moves.
                 // 19 px, over the row's bottom line (VM).
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 19.0), egui::Sense::hover());
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(w, tab_h), egui::Sense::hover());
                 let resp = ui.interact(rect, egui::Id::new(("fv_doc_tab", self.docs[i].serial)), egui::Sense::click_and_drag());
                 tabs.push((i, rect));
                 let (r, g, b) = app::TAB_COLORS[self.docs[i].tab_color.unwrap_or(0)];
                 let base = egui::Color32::from_rgb(r, g, b);
                 let top = base.lerp_to_gamma(egui::Color32::WHITE, if active { 0.45 } else { 0.25 });
                 // Slanted left edge, square right edge (OneNote style).
-                let pts = [rect.left_bottom(), rect.left_top() + egui::vec2(16.0, 0.0), rect.right_top(), rect.right_bottom()];
+                let pts = [rect.left_bottom(), rect.left_top() + egui::vec2(dpi::s(16.0), 0.0), rect.right_top(), rect.right_bottom()];
                 let mut mesh = egui::Mesh::default();
                 for (p, c) in pts.iter().zip([base, top, top, base]) {
                     mesh.colored_vertex(*p, if active { c } else { c.gamma_multiply(0.85) });
@@ -438,10 +472,10 @@ impl App {
                 mesh.add_triangle(0, 2, 3);
                 ui.painter().add(egui::Shape::mesh(mesh));
                 ui.painter().add(egui::Shape::line(pts.to_vec(), egui::Stroke::new(1.0f32, egui::Color32::from_gray(140))));
-                let text_pos = egui::pos2(rect.left() + 20.0, rect.center().y);
+                let text_pos = egui::pos2(rect.left() + dpi::s(20.0), rect.center().y);
                 ui.painter().text(text_pos, egui::Align2::LEFT_CENTER, &title, font, egui::Color32::BLACK);
                 if active {
-                    let xr = egui::Rect::from_center_size(egui::pos2(rect.right() - 12.0, rect.center().y), egui::vec2(14.0, 14.0));
+                    let xr = egui::Rect::from_center_size(egui::pos2(rect.right() - dpi::s(12.0), rect.center().y), egui::vec2(dpi::s(14.0), dpi::s(14.0)));
                     let xresp = ui.interact(xr, ui.id().with(("tab_close", i)), egui::Sense::click());
                     // Two 2 px diagonals in the pane buttons' blue (VM: (86,
                     // 125, 177)). Hot: a 14 px box, a (255, 189, 105) frame
@@ -463,8 +497,9 @@ impl App {
                     crate::tips::pointer_tip(ui, &xresp, crate::tips::TipImage::None, "", "Закрыть", false);
                     let c = xr.center();
                     let st = egui::Stroke::new(2.0f32, col);
-                    ui.painter().line_segment([c + egui::vec2(-3.5, -3.0), c + egui::vec2(3.5, 3.0)], st);
-                    ui.painter().line_segment([c + egui::vec2(3.5, -3.0), c + egui::vec2(-3.5, 3.0)], st);
+                    let (dx, dy) = (3.5 * dpi::k(), 3.0 * dpi::k());
+                    ui.painter().line_segment([c + egui::vec2(-dx, -dy), c + egui::vec2(dx, dy)], st);
+                    ui.painter().line_segment([c + egui::vec2(dx, -dy), c + egui::vec2(-dx, dy)], st);
                     if xresp.clicked() {
                         close = Some(i);
                     }
@@ -482,14 +517,14 @@ impl App {
                 if resp.drag_stopped() {
                     released = Some(i);
                 }
-                ui.add_space(-6.0);
+                ui.add_space(-dpi::s(6.0));
             }
             // The document menu's button: a bare (86, 125, 177) triangle,
             // 9 px across its top row 8 px down the strip, 5 rows to its
             // point, its right end 7 px in from the strip's (VM).
-            let x0 = strip.right() - 15.0;
-            let y0 = strip.top() + 8.0;
-            let hit = egui::Rect::from_min_max(egui::pos2(x0 - 3.0, strip.top()), egui::pos2(x0 + 12.0, strip.bottom()));
+            let x0 = strip.right() - dpi::s(15.0);
+            let y0 = strip.top() + 8.0 + ((strip.height() - 20.0) / 2.0).floor();
+            let hit = egui::Rect::from_min_max(egui::pos2(x0 - 3.0, strip.top()), egui::pos2(x0 - 3.0 + dpi::s(15.0), strip.bottom()));
             let tri = egui::Color32::from_rgb(86, 125, 177);
             for k in 0..5 {
                 let row = egui::Rect::from_min_max(egui::pos2(x0 + k as f32, y0 + k as f32), egui::pos2(x0 + 9.0 - k as f32, y0 + k as f32 + 1.0));
@@ -506,7 +541,7 @@ impl App {
             if btn.clicked() {
                 open = if open.is_some() { None } else { Some(ui.ctx().cumulative_pass_nr()) };
             }
-            let lit = egui::Rect::from_min_size(egui::pos2(x0 - 3.0, strip.top() + 1.0), egui::vec2(15.0, 15.0));
+            let lit = egui::Rect::from_min_size(egui::pos2(x0 - 3.0, y0 + 1.0 - (dpi::s(15.0) / 2.0).ceil()), egui::vec2(dpi::s(15.0), dpi::s(15.0)));
             if let Some(serial) = open {
                 crate::lanes::gradient(ui.painter(), lit, egui::Color32::from_rgb(252, 151, 61), egui::Color32::from_rgb(254, 181, 91));
                 for k in 0..5 {
@@ -604,10 +639,13 @@ impl App {
             }
             mesh
         };
-        // A bitmap of rows, uniform along x: row i's colour at r.top() + i.
+        // A bitmap of rows, uniform along x: row i's colour at r.top() + i
+        // (stretched over a taller bar at > 100 %, `dpi::stretch_row`).
         let rows = |painter: &egui::Painter, r: egui::Rect, rows: &[u32; 24]| {
-            for (i, c) in rows.iter().enumerate() {
-                let col = egui::Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, *c as u8);
+            let h = r.height().round() as usize;
+            for i in 0..h {
+                let c = rows[dpi::stretch_row(i, h, rows.len())];
+                let col = egui::Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8);
                 painter.rect_filled(egui::Rect::from_min_size(egui::pos2(r.left(), r.top() + i as f32), egui::vec2(r.width(), 1.0)), 0.0, col);
             }
         };
@@ -627,18 +665,27 @@ impl App {
                 }
             },
         }
-        let font = egui::FontId::proportional(12.0);
+        // The panes' widths and the font at the system DPI (VM, 125 % and
+        // 150 %: the bar 30 / 36 px, its text and panes 1.25 / 1.5 ×).
+        let font = egui::FontId::proportional(dpi::font(12.0));
         let mut x = r.left();
-        // A hidden pane leaves no gap: the rest move left (VM).
+        let ext_w = dpi::s(if p.bands.is_some() { 135.0 } else { 155.0 });
+        let room = if self.status_hidden[6] { r.right() } else { r.right() - ext_w };
+        // A hidden pane leaves no gap: the rest move left (VM). A pane that
+        // does not fit before the extended one is not shown (VM, 150 % at
+        // 1280 px: «Гор. визир 2:» and on gone).
         for (i, text) in s.iter().enumerate().filter(|(i, _)| !self.status_hidden[*i]) {
-            let w = if i == 2 || i == 5 { 218.0 } else { 153.0 };
+            let w = dpi::s(if i == 2 || i == 5 { 218.0 } else { 153.0 });
+            if x + w > room {
+                break;
+            }
             let clip = egui::Rect::from_min_max(egui::pos2(x, r.top()), egui::pos2(x + w - 2.0, r.bottom()));
-            painter.with_clip_rect(clip).text(egui::pos2(x + 9.0, r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
+            painter.with_clip_rect(clip).text(egui::pos2(x + dpi::s(9.0), r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
             x += w;
         }
         // The last pane: 135 px at the right (VM), its own rows and a light
         // and a dark column at its left in the Office 2007 styles.
-        let ext = egui::Rect::from_min_max(egui::pos2(r.right() - if p.bands.is_some() { 135.0 } else { 155.0 }, r.top() + 1.0), r.right_bottom());
+        let ext = egui::Rect::from_min_max(egui::pos2(r.right() - ext_w, r.top() + 1.0), r.right_bottom());
         let ext_shown = !self.status_hidden[6];
         if !ext_shown {
             // Hidden from the menu: the bar's own face there.
@@ -653,7 +700,7 @@ impl App {
             painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.6)));
         }
         if ext_shown {
-            painter.text(egui::pos2((ext.left() + ext.right() - 12.0) / 2.0, ext.center().y), egui::Align2::CENTER_CENTER, "НТЦ Механотроника", font, p.status_text);
+            painter.text(egui::pos2((ext.left() + ext.right() - dpi::s(12.0)) / 2.0, ext.center().y), egui::Align2::CENTER_CENTER, "НТЦ Механотроника", font, p.status_text);
         }
         // CMFCRibbonStatusBar's right-click: its configuration menu.
         let bar = ui.allocate_rect(r, egui::Sense::click());
@@ -953,7 +1000,7 @@ impl App {
         // brush (VM).
         self.omp_sync_bar();
         if self.omp_ui.bar.is_some() {
-            egui::TopBottomPanel::top("fv_ompbar").exact_height(33.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |ui| self.omp_banner(ui));
+            egui::TopBottomPanel::top("fv_ompbar").exact_height(omp_ui::omp_bar_h()).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |ui| self.omp_banner(ui));
             egui::TopBottomPanel::top("fv_under_ompbar").exact_height(8.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
         }
         // A caption bar's face in the Office 2007 looks (VM): a box from 4 px
@@ -999,7 +1046,7 @@ impl App {
 
 
         egui::TopBottomPanel::bottom("status")
-            .exact_height(24.0)
+            .exact_height(dpi::s(24.0))
             .show_separator_line(false)
             .frame(egui::Frame::none().fill(pal.status_bg))
             .show(ctx, |ui| self.status_bar(ui));
@@ -1235,7 +1282,9 @@ mod window_tests {
     /// the picture at 100 %: text rasterised at its pixel size on whole
     /// pixels, 1 px lines one pixel wide, waveforms without gaps. Both from
     /// the start (`make_app`'s zoom) and after the window's monitor changes
-    /// scale (the next frame on).
+    /// scale (the next frame on). The chrome stays at a 96 dpi system here
+    /// (`dpi`): its growth with the system DPI is
+    /// `the_chrome_grows_with_the_system_dpi`.
     #[test]
     fn fractional_display_scales_paint_device_pixels() {
         let px = Vec2::new(1100.0, 700.0);
@@ -1266,6 +1315,113 @@ mod window_tests {
             let (_, ppp) = shot(native, &|ctx| device_options(ctx, Some(1.0)));
             assert!((1.0..1.000001).contains(&ppp), "{native} after a change: {ppp}");
         }
+    }
+
+    /// #12: started at 125 % / 150 % (the system DPI), MFC's chrome grows
+    /// as the original's does on the VM — the ribbon body's bottom line at
+    /// row 178 / 210 (143 at 100 %), the status bar 30 / 36 px (24), the
+    /// pane captions 29 / 33 (20) — and at 150 % on a 1280 px window
+    /// «Диаграммы» takes its small buttons and «Вычисления» its icon-only
+    /// column, nothing collapses at 125 %.
+    #[test]
+    fn the_chrome_grows_with_the_system_dpi() {
+        let px = Vec2::new(1280.0, 722.0);
+        let fonts = app_fonts();
+        let rgb = |c: egui::Color32| [c.r(), c.g(), c.b()];
+        let (line, status, caption) = (rgb(egui::Color32::from_rgb(157, 179, 209)), rgb(egui::Color32::from_rgb(0x56, 0x7D, 0xB0)), rgb(egui::Color32::from_rgb(184, 207, 233)));
+        for (native, body, bar, cap, steps) in [(1.0, 143, 24, 20, [0, 0, 0, 0]), (1.25, 178, 30, 29, [0, 0, 0, 0]), (1.5, 210, 36, 33, [0, 1, 0, 1])] {
+            chrome_dpi(Some(native));
+            let mut app = demo(&[]);
+            let mut got = [9usize; 4];
+            let c = raster::render_native(px, native, |ctx| device_options(ctx, Some(native)), device_screen, Some(&fonts), vec![vec![]; 5], |ctx| {
+                app.frame_ui(ctx);
+                for (k, t) in ["Объединение", "Диаграммы", "Видимость", "Вычисления"].into_iter().enumerate() {
+                    got[k] = ctx.data(|d| d.get_temp::<usize>(ribbon::group_step_id(t))).unwrap_or(9);
+                }
+            });
+            let at = |x: usize, y: usize| c.px[y * c.w + x];
+            let first = |x: usize, k: [u8; 3]| (0..c.h).find(|&y| at(x, y) == k);
+            assert_eq!(first(1270, line), Some(body), "{native}: the ribbon's bottom line");
+            let near = |p: [u8; 3], k: [u8; 3]| p.iter().zip(k).all(|(a, b)| a.abs_diff(b) <= 2);
+            assert_eq!((0..c.h).rev().find(|&y| near(at(2, y), status)).map(|y| c.h - y), Some(bar), "{native}: the status bar");
+            // A pane caption: its top line, then its face.
+            let top = first(1100, caption).expect("a pane caption");
+            let face = (top..c.h).take_while(|&y| at(1100, y) == caption).count();
+            assert_eq!(face + 1, cap, "{native}: a pane caption");
+            assert_eq!(got, steps, "{native}: the ribbon's reduction steps");
+        }
+        dpi::set(96);
+    }
+
+    /// #12: the ОМП result bar is CMFCCaptionBar's own height (created with
+    /// −1, `0x474cbd`), 33 px at 100 % and its font's height more above —
+    /// 41 at 150 % — its face's lines on its first and last rows.
+    #[test]
+    fn the_omp_bar_takes_its_fonts_height() {
+        let px = Vec2::new(1280.0, 722.0);
+        let fonts = app_fonts();
+        let line = [157, 189, 216];
+        for (native, h) in [(1.0, 33), (1.25, 37), (1.5, 41)] {
+            dpi::set(96);
+            chrome_dpi(Some(native));
+            let mut app = demo(&[]);
+            (app.omp_ui.bar_doc, app.omp_ui.bar) = (app.active, Some("    КЗ".into()));
+            let c = raster::render_native(px, native, |ctx| device_options(ctx, Some(native)), device_screen, Some(&fonts), vec![vec![]; 5], |ctx| app.frame_ui(ctx));
+            // The first two face lines down column 600: the bar's.
+            let rows: Vec<usize> = (0..c.h).filter(|&y| c.px[y * c.w + 600] == line).take(2).collect();
+            assert_eq!(rows.len(), 2, "{native}");
+            assert_eq!(rows[1] - rows[0] + 1, h, "{native}: the ОМП bar");
+        }
+        dpi::set(96);
+    }
+
+    /// #12: «Параметры ОМП» places its tree and grid as OnInitDialog
+    /// (`0x4a7c50`) does, in pixels from its client: at 150 % (client 1069 ×
+    /// 653) from row 55 under the 34 px toolbar, 563 px tall — down past
+    /// its OK / Отмена row as on the VM — the grid from 356, 702 wide.
+    #[test]
+    fn the_omp_parameters_lay_out_from_their_client() {
+        for (dpi, client, tree, grid) in [
+            (96, (713.0, 447.0), (10.0, 44.0, 217.0, 357.0), (237.0, 44.0, 465.0, 357.0)),
+            (144, (1069.0, 653.0), (10.0, 55.0, 336.0, 563.0), (356.0, 55.0, 702.0, 563.0)),
+        ] {
+            dpi::set(dpi);
+            let size = dialogs::dlu_size(475, 275);
+            assert_eq!((size.x, size.y), client, "{dpi}");
+            let (t, g) = omp_ui::params_layout(egui::Rect::from_min_size(Pos2::ZERO, size));
+            assert_eq!((t.left(), t.top(), t.width(), t.height()), tree, "{dpi}: the tree");
+            assert_eq!((g.left(), g.top(), g.width(), g.height()), grid, "{dpi}: the grid");
+        }
+        dpi::set(96);
+    }
+
+    /// #12 on a monitor at another scale than the system's: the content
+    /// 1:1 there (`device_window`), the chrome at the system DPI — the
+    /// ribbon's bottom line on row 210 for a 150 % system on a 100 %
+    /// monitor, 143 for a 100 % system on a 150 % one.
+    #[test]
+    fn the_chrome_keeps_the_system_dpi_on_another_monitor() {
+        let px = Vec2::new(1280.0, 722.0);
+        let fonts = app_fonts();
+        let line = [157, 179, 209];
+        for (system, monitor, body) in [(1.5, 1.0, 210), (1.0, 1.5, 143), (1.25, 1.5, 178)] {
+            dpi::set(96);
+            chrome_dpi(Some(system));
+            let mut app = demo(&[]);
+            let mut ppp = 0.0;
+            let setup = |ctx: &egui::Context| {
+                device_options(ctx, Some(system));
+                device_window(ctx, monitor);
+            };
+            let c = raster::render_native(px, monitor, setup, device_screen, Some(&fonts), vec![vec![]; 5], |ctx| {
+                app.frame_ui(ctx);
+                ppp = ctx.pixels_per_point();
+            });
+            assert_eq!(ppp, 1.0, "system {system}, monitor {monitor}");
+            let row = (0..c.h).find(|&y| c.px[y * c.w + 1270] == line);
+            assert_eq!(row, Some(body), "system {system}, monitor {monitor}: the ribbon's bottom line");
+        }
+        dpi::set(96);
     }
 
     /// An improvement over the original (`docs/IMPROVEMENTS.md`): a window
@@ -3147,6 +3303,11 @@ mod window_tests {
             let (x, y) = s.split_once(',')?;
             Some(Pos2::new(x.trim().parse().ok()?, y.trim().parse().ok()?))
         };
+        // `FV_WINDOW_NATIVE=<scale>`: started on a monitor at that display
+        // scale (1.25 for 125 %) — the chrome at its DPI, the size in device
+        // pixels (below).
+        let native = std::env::var("FV_WINDOW_NATIVE").ok().and_then(|s| s.parse::<f32>().ok());
+        chrome_dpi(native);
         let at = pos("FV_WINDOW_CLICK").unwrap_or(Pos2::new(48.0, 12.0));
         let hover = pos("FV_WINDOW_HOVER").unwrap_or(at);
         // `FV_WINDOW_STATE=<name>` dispatches commands first.
@@ -3463,9 +3624,7 @@ mod window_tests {
             pass += 1;
             app.frame_ui(ctx)
         };
-        // `FV_WINDOW_NATIVE=<scale>`: on a monitor at that display scale
-        // (1.25 for 125 %), the size in device pixels.
-        let c = match std::env::var("FV_WINDOW_NATIVE").ok().and_then(|s| s.parse::<f32>().ok()) {
+        let c = match native {
             Some(native) => raster::render_native(size, native, |ctx| device_options(ctx, Some(native)), device_screen, Some(&fonts), passes, paint),
             None => raster::render_input(size, 1.0, Some(&fonts), passes, paint),
         };
