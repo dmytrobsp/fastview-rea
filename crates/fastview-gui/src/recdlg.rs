@@ -157,7 +157,8 @@ pub fn codepage_items(read: Encoding) -> Vec<(Encoding, &'static str)> {
 /// the pseudo-graphics best-fitted (`0x4543e0`). Read in UTF-8 / KOI8-R
 /// (ours keeps the encoding, `Doc::init_record_text`): the original's
 /// strings over the names as read (VM) — 1251 its ANSI, the text narrowed
-/// to 1251 (`0x422300`: a character 1251 lacks «?»), 866 its OEM, those
+/// to 1251 (`0x422300`: Windows' best fit, «√» → «v», then «?» for a
+/// character with none), 866 its OEM, those
 /// bytes read as 866 —, and the record's own encoding the names as read,
 /// nothing best-fitted (ours: the original has no such entry).
 pub fn decode_name(bytes: &[u8], read: Encoding, cp: Encoding) -> String {
@@ -166,7 +167,7 @@ pub fn decode_name(bytes: &[u8], read: Encoding, cp: Encoding) -> String {
         return fit(comtrade::decode_bytes(bytes, cp));
     }
     let as_read = comtrade::decode_bytes(bytes, read);
-    let ansi = || comtrade::recode(&as_read, Encoding::Cp1251, Encoding::Cp1251);
+    let ansi = || comtrade::recode(&fit(as_read.clone()), Encoding::Cp1251, Encoding::Cp1251);
     match cp {
         _ if cp == read => as_read.clone(),
         Encoding::Cp1251 => ansi(),
@@ -1614,15 +1615,16 @@ mod tests {
         assert_eq!(items, [(Encoding::Cp866, "866 MS-DOS"), (Encoding::Cp1251, "Windows-1251"), (Encoding::Utf8, "UTF-8")]);
         assert_eq!(items.iter().position(|(e, _)| *e == d.codepage), Some(2));
         assert_eq!(codepage_items(Encoding::Cp1251).len(), 2, "a 1251 / 866 record: the original's two");
-        // 1251 is the original's ANSI (the names narrowed: «?»), 866 its OEM
-        // over those bytes (VM); UTF-8 gives the names back as read, «√» and
-        // box-drawing included; none counts as renamed.
-        d.osc.analog[2].id = "U√3 ─ Ia".into();
+        // 1251 is the original's ANSI — the names narrowed with Windows' best
+        // fit, «?» where there is none (VM: «√ ─ ä ∆» show «v - a ?») —, 866
+        // its OEM over those bytes; UTF-8 gives the names back as read, «√»
+        // and box-drawing included; none counts as renamed.
+        d.osc.analog[2].id = "U√3 ─ Iä ∆".into();
         d.name_raw.clear();
         d.init_set_keys();
-        let read = [read[0].clone(), read[1].clone(), read[2].clone(), "U√3 ─ Ia".into()];
+        let read = [read[0].clone(), read[1].clone(), read[2].clone(), "U√3 ─ Iä ∆".into()];
         let names = |d: &Doc| [d.osc.station.clone(), d.osc.analog[0].id.clone(), d.osc.analog[1].id.clone(), d.osc.analog[2].id.clone()];
-        let ansi = ["Підстанція", "Струм фази А", "Шина 2 напр?", "U?3 ? Ia"].map(String::from);
+        let ansi = ["Підстанція", "Струм фази А", "Шина 2 напр?", "Uv3 - Ia ?"].map(String::from);
         let oem = ansi.clone().map(|s| comtrade::recode(&s, Encoding::Cp1251, Encoding::Cp866).chars().map(comtrade::best_fit_1251).collect::<String>());
         for (cp, shown) in [(Encoding::Cp1251, &ansi), (Encoding::Cp866, &oem), (Encoding::Cp1251, &ansi)] {
             d.set_codepage(cp);

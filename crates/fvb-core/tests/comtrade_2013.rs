@@ -113,6 +113,9 @@ fn a_bomless_2013_cfg_in_utf8_is_utf8_others_keep_the_program_encoding() {
     // Arrows and mathematical operators are plausible (U+2190–U+22FF).
     let rec = load("maths2013", cfg("2013").replacen("Струм фази А", "Uл−√3∠∆", 1).as_bytes());
     assert_eq!((rec.analog[0].id.as_str(), rec.text_enc), ("Uл−√3∠∆", Some(Encoding::Utf8)));
+    // Windows' best fit to 1251, as the original's narrowing shows it (VM).
+    let fit: String = "√─äÃ∆−".chars().map(comtrade::best_fit_1251).collect();
+    assert_eq!(fit, "v-aA∆−", "∆ and − have no fit: «?» once narrowed");
     // Plain ASCII fixes nothing either.
     assert_eq!(comtrade::cfg_utf8(b"S,D,2013\r\n", false), None);
     // «фаз» in 866 is valid UTF-8 (one CJK character): not taken.

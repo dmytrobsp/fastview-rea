@@ -38,10 +38,11 @@ is out of reach (those are listed in `notes/COMPLETION_PLAN.md`, W6).
   Reason: the saved file reads back as it was, with no 1251 / UTF-8 mix.
 - **«Кодировка» on a record read in UTF-8 / KOI8-R.** The original offers
   OEM / ANSI only (`doc+0x6e8`, `0x44a112`, `0x44a330` → `0x4543e0`); its
-  names exist only as ANSI strings, so the way back from 866 is
-  «Windows-1251» with «?» for every character 1251 lacks (VM). Ours gives
-  the same two entries the same results — ANSI the names narrowed to 1251,
-  OEM those bytes read as 866 — and lists the record's own encoding as a
+  names exist only as ANSI strings — narrowed with Windows' best fit, «?»
+  where 1251 has none («√ ─ ä ∆» show «v - a ?», VM) — so that is all the
+  way back from 866 gives. Ours gives the same two entries the same
+  results — ANSI those narrowed names, OEM their bytes read as 866 — and
+  lists the record's own encoding as a
   third entry, current at open (a stored `Codepage` other than 0 selects
   it), which gives the names back as read, nothing narrowed or
   best-fitted («√», box-drawing, U+FFFD kept). Reason: the combo shows the
