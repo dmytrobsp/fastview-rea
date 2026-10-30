@@ -88,7 +88,7 @@ pub fn clip_record(d: &Doc) -> ClipRecord {
         block_id: d.osc.device.clone(),
         // The document's title, its extension kept (seen on the VM).
         title: d.title(),
-        hdr_file: d.hdr.clone().unwrap_or_default(),
+        hdr_file: d.hdr_text(),
         start_time: format!("{}, {}", s.start_date, s.start_time),
         channels: Vec::new(),
         valid: true,
@@ -470,8 +470,10 @@ impl App {
             c.lane = lane.seq;
             // Its raw name (`+0x64`) is the name as shown now, in the record's
             // code page (VM: pasted while the record shows 866, it reads back
-            // in 1251 as its 866 bytes do — «(вст.)» → «(ўбв.)»).
-            let bytes = fvb_core::comtrade::encode_shown(&lane.name, d.codepage);
+            // in 1251 as its 866 bytes do — «(вст.)» → «(ўбв.)»); a record
+            // read in UTF-8 / KOI8-R keeps it as bytes the way it reads its
+            // own (`recdlg::shown_bytes_of`).
+            let bytes = crate::recdlg::shown_bytes_of(&lane.name, d.read_enc, d.codepage);
             lane.name_raw = Some(crate::app::RawName { bytes, seen: lane.name.clone(), alias: false });
             d.computed.push(lane);
             d.selection.insert(ChanKey::Computed(d.computed.len() - 1));
@@ -482,7 +484,7 @@ impl App {
         // Codepage` = 1).
         let s = &d.osc.stamps;
         let own_start = format!("{}, {}", s.start_date, s.start_time);
-        let own_hdr = d.hdr.clone().unwrap_or_default();
+        let own_hdr = d.hdr_text();
         let own = HeaderSide { title: &d.name, station: &d.osc.station, block: &d.osc.device, start: &own_start, comment: &own_hdr };
         let other = HeaderSide { title: &rec.title, station: &rec.station_id, block: &rec.block_id, start: &rec.start_time, comment: &rec.hdr_file };
         d.hdr = Some(merged_header(&own, &other));

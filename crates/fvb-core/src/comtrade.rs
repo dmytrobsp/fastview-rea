@@ -75,6 +75,23 @@ impl AnalogChannel {
         crate::units::Shown::file(&self.unit, self.per_second)
     }
 
+    /// The ADC code of a stored value (`0x422250`): `(v − b) / (m·a)`, the
+    /// unit multiplier `m` with `a` — the raw sample back —, rounded as
+    /// `0x411bf0` (down unless at least half-way), whatever the size of
+    /// `a` (a 2013 export's float samples have `a` ≈ 1e‑37). The original
+    /// then truncates to a 32-bit int, which a code beyond ±2³¹ (those
+    /// float samples) turns into −2147483648; ours keeps the code whole,
+    /// as its ASCII writer does (a binary one saturates it to 32 bits). A
+    /// zero divisor gives the value back.
+    pub fn adc_code(&self, v: f64) -> f64 {
+        let d = self.unit_mult * self.a;
+        if d == 0.0 {
+            v
+        } else {
+            round_fv((v - self.b) / d)
+        }
+    }
+
     /// The unit to write to a file: as read, else the canonical one.
     pub fn file_unit(&self) -> &str {
         if self.raw_unit.is_empty() {
@@ -143,6 +160,14 @@ pub struct Oscillogram {
     /// Frequency candidates that are not file channels (formula and pasted
     /// channels), in vector order. Kept by whoever holds them.
     pub extra_freq: Vec<ExtraFreq>,
+    /// The text encoding the `.cfg` fixes itself ([`cfg_utf8`]: a UTF-8
+    /// BOM, or valid UTF-8 in a revision-2013 file): its names are decoded
+    /// in it whatever the program encoding, which `None` leaves in charge.
+    /// Such a record is written back all in UTF-8 while its names are
+    /// (see [`write`]).
+    pub text_enc: Option<Encoding>,
+    /// The `.cfg` (`.cff`) began with the UTF-8 BOM: written back with it.
+    pub text_bom: bool,
 }
 
 /// A frequency candidate outside the file's channels: a formula channel
@@ -309,8 +334,16 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
     }
     let (cfg_path, dat_path) = sibling_paths(path)?;
     let cfg_bytes = std::fs::read(&cfg_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
-    let cfg_text = decode_text_enc(&cfg_bytes, enc);
+    let (cfg_text, utf8) = match cfg_utf8(&cfg_bytes, false) {
+        Some(t) => (t, true),
+        None => (decode_text_enc(&cfg_bytes, enc), false),
+    };
     let (mut rec, fmt) = parse_cfg(&cfg_text)?;
+    drop(cfg_text);
+    if utf8 {
+        rec.text_enc = Some(Encoding::Utf8);
+        rec.text_bom = cfg_bytes.starts_with(UTF8_BOM);
+    }
     let dat = std::fs::read(&dat_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
     parse_dat(&mut rec, fmt, &dat, prog)?;
     check_samples(&rec, || crate::recset::record_base(path))?;
@@ -337,6 +370,9 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
 /// The record keeps its texts as the bytes read, the station, recorder and
 /// channel names shown through the record's code page (`0x4543e0`): so
 /// those go out in `names` (the record's code page), the rest in cp1251.
+/// A record read as UTF-8 by [`cfg_utf8`] (ours only) whose names still go
+/// out in UTF-8 is written all in UTF-8, with the BOM it came with, so it
+/// reads back as it was.
 pub fn write(osc: &Oscillogram, names: Encoding) -> (Vec<u8>, Vec<u8>) {
     write_numbered(osc, names, &[])
 }
@@ -345,7 +381,25 @@ pub fn write(osc: &Oscillogram, names: Encoding) -> (Vec<u8>, Vec<u8>) {
 /// channel i; empty = their places): channels left out of the record
 /// (the ОМП's flags) still count in the original's numbering (VM).
 pub fn write_numbered(osc: &Oscillogram, names: Encoding, dig_no: &[usize]) -> (Vec<u8>, Vec<u8>) {
-    write_rows(osc, names, dig_no, osc.format != "ASCII")
+    let (cfg, dat) = write_rows(osc, names, dig_no, osc.format != "ASCII");
+    let bom = if utf8_file(osc, names) && needs_bom(osc, &cfg, false) { UTF8_BOM } else { b"" };
+    ([bom, cfg.as_slice()].concat(), dat)
+}
+
+/// An all-UTF-8 file gets the BOM when it came with one, or when without
+/// it [`cfg_utf8`] would not take the text written (a name or section
+/// that gained a far character) — so it always reads back as UTF-8.
+fn needs_bom(osc: &Oscillogram, text: &[u8], cff: bool) -> bool {
+    osc.text_bom || cfg_utf8(text, cff).is_none()
+}
+
+/// The UTF-8 BOM.
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+
+/// The record is written all in UTF-8 ([`write`]): read as UTF-8 by
+/// [`cfg_utf8`], its names still in UTF-8.
+fn utf8_file(osc: &Oscillogram, names: Encoding) -> bool {
+    osc.text_enc == Some(Encoding::Utf8) && matches!(names, Encoding::Utf8 | Encoding::Auto)
 }
 
 /// The writer with the data's kind chosen: `binary` rows, or ASCII text.
@@ -445,9 +499,10 @@ fn write_rows(osc: &Oscillogram, names: Encoding, dig_no: &[usize], binary: bool
             }
         }
     }
+    let rest = if utf8_file(osc, names) { Encoding::Utf8 } else { Encoding::Cp1251 };
     let mut bytes = Vec::new();
     for (k, part) in cfg.split(['\u{1}', '\u{2}']).enumerate() {
-        bytes.extend(encode_text(part, if k % 2 == 1 { names } else { Encoding::Cp1251 }));
+        bytes.extend(encode_text(part, if k % 2 == 1 { names } else { rest }));
     }
     (bytes, dat)
 }
@@ -527,7 +582,10 @@ pub fn parse_cff(bytes: &[u8], enc: Encoding) -> Result<(Oscillogram, CffSection
 /// (`0x44fe30`), then the inner `.cfg` rule over the DAT part.
 pub fn parse_cff_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Result<(Oscillogram, CffSections), ComtradeError> {
     let nul = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
-    let text = decode_text_enc(&bytes[..nul], enc);
+    let (text, utf8) = match cfg_utf8(&bytes[..nul], true) {
+        Some(t) => (t, true),
+        None => (decode_text_enc(&bytes[..nul], enc), false),
+    };
     let cfg = cff_section(&text, "CFG").ok_or(ComtradeError::Format)?;
     let sections = CffSections {
         inf: cff_section(&text, "INF"),
@@ -563,6 +621,10 @@ pub fn parse_cff_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) 
     }
     let dat = dat.ok_or(ComtradeError::Format)?;
     let (mut rec, fmt) = parse_cfg(&cfg)?;
+    if utf8 {
+        rec.text_enc = Some(Encoding::Utf8);
+        rec.text_bom = bytes.starts_with(UTF8_BOM);
+    }
     parse_dat(&mut rec, fmt, dat, prog)?;
     check_samples(&rec, cff_temp_base)?;
     if let Some(p) = prog {
@@ -613,7 +675,8 @@ pub struct CffRevisionError;
 /// Write a single-file COMTRADE (`0x44d0f0`): only records of revision ≥ 2013;
 /// `--- file type: CFG ---` + the cfg (CRLF lines), then the HDR, INF, SET
 /// sections that came with the record, then `--- file type: DAT BINARY: n---`
-/// and the data bytes. Text in CP1251.
+/// and the data bytes. Text in CP1251 (all UTF-8, BOM as read, for a
+/// record read as UTF-8 whose names still are: see [`write`]).
 pub fn write_cff(osc: &Oscillogram, sections: &CffSections, names: Encoding) -> Result<Vec<u8>, CffRevisionError> {
     write_cff_numbered(osc, sections, names, &[])
 }
@@ -627,14 +690,19 @@ pub fn write_cff_numbered(osc: &Oscillogram, sections: &CffSections, names: Enco
     // line as read); the data binary whatever that line says (VM: an
     // «ASCII» record saved as `.cff` has int32 rows).
     let (cfg, dat) = write_rows(osc, names, dig_no, true);
-    let mut out = to_cp1251("--- file type: CFG ---\r\n");
+    let utf8 = utf8_file(osc, names);
+    let text = |t: &str| if utf8 { t.as_bytes().to_vec() } else { to_cp1251(t) };
+    let mut out = text("--- file type: CFG ---\r\n");
     out.extend(cfg);
     for (kind, body) in [("HDR", &sections.hdr), ("INF", &sections.inf), ("SET", &sections.set)] {
         if let Some(b) = body {
-            out.extend(to_cp1251(&format!("--- file type: {kind} ---\r\n{b}")));
+            out.extend(text(&format!("--- file type: {kind} ---\r\n{b}")));
         }
     }
-    out.extend(to_cp1251(&format!("--- file type: DAT BINARY: {}---\r\n", dat.len())));
+    out.extend(text(&format!("--- file type: DAT BINARY: {}---\r\n", dat.len())));
+    if utf8 && needs_bom(osc, &out, true) {
+        out.splice(0..0, UTF8_BOM.iter().copied());
+    }
     out.extend(dat);
     Ok(out)
 }
@@ -970,6 +1038,8 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
         trigger_sample: (be_i16(info, 0xE).max(0) as usize) * n,
         freq_sel: 0,
         extra_freq: Vec::new(),
+        text_enc: None,
+        text_bom: false,
     };
     rec.rebuild_freq_track();
     Ok(rec)
@@ -1076,6 +1146,40 @@ fn decode_text_enc(bytes: &[u8], enc: Encoding) -> String {
     }
 }
 
+/// A `.cfg` (or a whole `.cff`, `cff`) that fixes its own encoding as
+/// UTF-8, decoded; `None` leaves it to the program encoding. The original
+/// widens every `.cfg` token through the program encoding (`0x422300`:
+/// UTF-8 / 1251 / 866 / KOI8-R by `Display Encoding`, default 1251) and
+/// knows no BOM, so a UTF-8 export (C37.111-2013 prescribes UTF-8) shows
+/// mojibake and its BOM («п»ї», «?» under UTF-8) before the station unless
+/// the user switched the program to UTF-8. Ours reads such a file as
+/// UTF-8 whatever the setting — a deliberate divergence where the original
+/// visibly fails: a file starting with the UTF-8 BOM (stripped), or one of
+/// revision 2013 that is valid UTF-8 with at least one multi-byte character
+/// and nothing but Latin, Greek, Cyrillic, general punctuation, letterlike
+/// symbols, arrows, mathematical operators (−, √, ∆, ∠) and U+FFFD
+/// (Cyrillic in 1251 / KOI8-R practically never is valid UTF-8; a short
+/// 866 word may be, as a CJK or other far character, which the check
+/// refuses). A sequence that is not UTF-8 after a BOM reads U+FFFD; a
+/// U+FFFD written by the exporter (a name cut mid-character) stays as it
+/// is, so a save writes it back.
+pub fn cfg_utf8(bytes: &[u8], cff: bool) -> Option<String> {
+    if let Some(rest) = bytes.strip_prefix(b"\xEF\xBB\xBF") {
+        return Some(String::from_utf8_lossy(rest).into_owned());
+    }
+    let text = std::str::from_utf8(bytes).ok().filter(|t| !t.is_ascii())?;
+    // The revision is the third field of the `.cfg`'s first line (in a
+    // `.cff`, the line after the CFG marker).
+    let cfg = if cff { &text[text.find("--- file type: CFG")?..] } else { text };
+    let mut lines = cfg.lines().filter(|l| !l.trim().is_empty());
+    if cff {
+        lines.next();
+    }
+    let rev = lines.next()?.split(',').nth(2)?.trim().parse::<i32>().ok()?;
+    let plausible = |c: char| c < '\u{0530}' || ('\u{2000}'..='\u{22FF}').contains(&c) || c == '\u{FFFD}';
+    (rev == 2013 && text.chars().all(plausible)).then(|| text.to_string())
+}
+
 /// Decode bytes with an encoding (the public face of the loader's decoder).
 pub fn decode_bytes(bytes: &[u8], enc: Encoding) -> String {
     decode_text_enc(bytes, enc)
@@ -1105,24 +1209,95 @@ pub fn recode(text: &str, from: Encoding, to: Encoding) -> String {
 }
 
 /// A character as the original's ANSI strings keep it (Windows-1251, the
-/// system code page it runs under): IBM866's pseudo-graphics, which 1251
-/// lacks, take Windows' best fit (VM: `WideCharToMultiByte` on each 866
-/// byte); everything else is kept.
+/// system code page it runs under): one 1251 lacks takes Windows' best fit
+/// (`WideCharToMultiByte` with no flags, as `0x422300` narrows; VM: «√»
+/// «─» «ä» show «v» «-» «a», and IBM866's pseudo-graphics as listed);
+/// everything else is kept (narrowed to bytes, a character without a fit
+/// is «?»).
 pub fn best_fit_1251(c: char) -> char {
-    match c as u32 {
-        0x2500 | 0x2518 | 0x250C | 0x2552 | 0x255B..=0x255D | 0x2580 | 0x2584 | 0x2588 | 0x2591..=0x2593 => '-',
-        0x2502 | 0x2551 | 0x255E..=0x2563 | 0x2567..=0x2569 | 0x258C | 0x2590 | 0x25A0 => '¦',
-        0x251C | 0x2524 | 0x2534 | 0x253C | 0x256A..=0x256C => '+',
-        0x252C | 0x2564..=0x2566 => 'T',
-        0x2514 | 0x2558 | 0x2559 | 0x255A => 'L',
-        0x2510 | 0x2555..=0x2557 => '¬',
-        0x2553 | 0x2554 => 'г',
-        0x2550 => '=',
-        0x2219 => '•',
-        0x221A => 'v',
-        _ => c,
+    let u = c as u32;
+    match BEST_FIT_1251.binary_search_by_key(&u, |&(w, _)| u32::from(w)) {
+        Ok(k) => cp1251_to_char(BEST_FIT_1251[k].1),
+        Err(_) => c,
     }
 }
+
+/// Windows' best fit to code page 1251 (WideCharToMultiByte, no flags,
+/// read off a Windows 11 clone for every BMP character; Microsoft publishes
+/// the same mapping as `WindowsBestFit/bestfit1251.txt` at unicode.org):
+/// the characters 1251 lacks that map to a byte other than «?», by code
+/// point.
+const BEST_FIT_1251: &[(u16, u8)] = &[
+    (0x00C0, 0x41), (0x00C1, 0x41), (0x00C2, 0x41), (0x00C3, 0x41), (0x00C4, 0x41),
+    (0x00C5, 0x41), (0x00C7, 0x43), (0x00C8, 0x45), (0x00C9, 0x45), (0x00CA, 0x45), (0x00CB, 0x45),
+    (0x00CC, 0x49), (0x00CD, 0x49), (0x00CE, 0x49), (0x00CF, 0x49), (0x00D1, 0x4E), (0x00D2, 0x4F),
+    (0x00D3, 0x4F), (0x00D4, 0x4F), (0x00D5, 0x4F), (0x00D6, 0x4F), (0x00D8, 0x4F), (0x00D9, 0x55),
+    (0x00DA, 0x55), (0x00DB, 0x55), (0x00DC, 0x55), (0x00DD, 0x59), (0x00E0, 0x61), (0x00E1, 0x61),
+    (0x00E2, 0x61), (0x00E3, 0x61), (0x00E4, 0x61), (0x00E5, 0x61), (0x00E7, 0x63), (0x00E8, 0x65),
+    (0x00E9, 0x65), (0x00EA, 0x65), (0x00EB, 0x65), (0x00EC, 0x69), (0x00ED, 0x69), (0x00EE, 0x69),
+    (0x00EF, 0x69), (0x00F1, 0x6E), (0x00F2, 0x6F), (0x00F3, 0x6F), (0x00F4, 0x6F), (0x00F5, 0x6F),
+    (0x00F6, 0x6F), (0x00F8, 0x6F), (0x00F9, 0x75), (0x00FA, 0x75), (0x00FB, 0x75), (0x00FC, 0x75),
+    (0x00FD, 0x79), (0x00FF, 0x79), (0x0100, 0x41), (0x0101, 0x61), (0x0102, 0x41), (0x0103, 0x61),
+    (0x0104, 0x41), (0x0105, 0x61), (0x0106, 0x43), (0x0107, 0x63), (0x0108, 0x43), (0x0109, 0x63),
+    (0x010A, 0x43), (0x010B, 0x63), (0x010C, 0x43), (0x010D, 0x63), (0x010E, 0x44), (0x010F, 0x64),
+    (0x0110, 0x44), (0x0111, 0x64), (0x0112, 0x45), (0x0113, 0x65), (0x0114, 0x45), (0x0115, 0x65),
+    (0x0116, 0x45), (0x0117, 0x65), (0x0118, 0x45), (0x0119, 0x65), (0x011A, 0x45), (0x011B, 0x65),
+    (0x011C, 0x47), (0x011D, 0x67), (0x011E, 0x47), (0x011F, 0x67), (0x0120, 0x47), (0x0121, 0x67),
+    (0x0122, 0x47), (0x0123, 0x67), (0x0124, 0x48), (0x0125, 0x68), (0x0126, 0x48), (0x0127, 0x68),
+    (0x0128, 0x49), (0x0129, 0x69), (0x012A, 0x49), (0x012B, 0x69), (0x012C, 0x49), (0x012D, 0x69),
+    (0x012E, 0x49), (0x012F, 0x69), (0x0130, 0x49), (0x0134, 0x4A), (0x0135, 0x6A), (0x0136, 0x4B),
+    (0x0137, 0x6B), (0x0139, 0x4C), (0x013A, 0x6C), (0x013B, 0x4C), (0x013C, 0x6C), (0x013D, 0x4C),
+    (0x013E, 0x6C), (0x0141, 0x4C), (0x0142, 0x6C), (0x0143, 0x4E), (0x0144, 0x6E), (0x0145, 0x4E),
+    (0x0146, 0x6E), (0x0147, 0x4E), (0x0148, 0x6E), (0x014C, 0x4F), (0x014D, 0x6F), (0x014E, 0x4F),
+    (0x014F, 0x6F), (0x0150, 0x4F), (0x0151, 0x6F), (0x0154, 0x52), (0x0155, 0x72), (0x0156, 0x52),
+    (0x0157, 0x72), (0x0158, 0x52), (0x0159, 0x72), (0x015A, 0x53), (0x015B, 0x73), (0x015C, 0x53),
+    (0x015D, 0x73), (0x015E, 0x53), (0x015F, 0x73), (0x0160, 0x53), (0x0161, 0x73), (0x0162, 0x54),
+    (0x0163, 0x74), (0x0164, 0x54), (0x0165, 0x74), (0x0166, 0x54), (0x0167, 0x74), (0x0168, 0x55),
+    (0x0169, 0x75), (0x016A, 0x55), (0x016B, 0x75), (0x016C, 0x55), (0x016D, 0x75), (0x016E, 0x55),
+    (0x016F, 0x75), (0x0170, 0x55), (0x0171, 0x75), (0x0172, 0x55), (0x0173, 0x75), (0x0174, 0x57),
+    (0x0175, 0x77), (0x0176, 0x59), (0x0177, 0x79), (0x0178, 0x59), (0x0179, 0x5A), (0x017A, 0x7A),
+    (0x017B, 0x5A), (0x017C, 0x7A), (0x017D, 0x5A), (0x017E, 0x7A), (0x0180, 0x62), (0x0197, 0x49),
+    (0x019A, 0x6C), (0x019F, 0x4F), (0x01A0, 0x4F), (0x01A1, 0x6F), (0x01AB, 0x74), (0x01AE, 0x54),
+    (0x01AF, 0x55), (0x01B0, 0x75), (0x01CD, 0x41), (0x01CE, 0x61), (0x01CF, 0x49), (0x01D0, 0x69),
+    (0x01D1, 0x4F), (0x01D2, 0x6F), (0x01D3, 0x55), (0x01D4, 0x75), (0x01D5, 0x55), (0x01D6, 0x75),
+    (0x01D7, 0x55), (0x01D8, 0x75), (0x01D9, 0x55), (0x01DA, 0x75), (0x01DB, 0x55), (0x01DC, 0x75),
+    (0x01DE, 0x41), (0x01DF, 0x61), (0x01E4, 0x47), (0x01E5, 0x67), (0x01E6, 0x47), (0x01E7, 0x67),
+    (0x01E8, 0x4B), (0x01E9, 0x6B), (0x01EA, 0x4F), (0x01EB, 0x6F), (0x01EC, 0x4F), (0x01ED, 0x6F),
+    (0x01F0, 0x6A), (0x2000, 0x20), (0x2001, 0x20), (0x2002, 0x20), (0x2003, 0x20), (0x2004, 0x20),
+    (0x2005, 0x20), (0x2006, 0x20), (0x2007, 0xA0), (0x2008, 0x20), (0x2009, 0x20), (0x200A, 0x20),
+    (0x2010, 0x2D), (0x2011, 0x2D), (0x2012, 0x2D), (0x2015, 0x2D), (0x201B, 0x27), (0x201F, 0x22),
+    (0x2024, 0x2E), (0x202F, 0xA0), (0x2032, 0x27), (0x2033, 0x22), (0x2035, 0x27), (0x2036, 0x22),
+    (0x203C, 0x21), (0x2044, 0x2F), (0x2190, 0x3C), (0x2191, 0x5E), (0x2192, 0x3E), (0x2193, 0x76),
+    (0x2194, 0x2D), (0x2195, 0xA6), (0x21A8, 0xA6), (0x2219, 0x95), (0x221A, 0x76), (0x221F, 0x4C),
+    (0x2236, 0x3A), (0x2302, 0xA6), (0x2500, 0x2D), (0x2502, 0xA6), (0x250C, 0x2D), (0x2510, 0xAC),
+    (0x2514, 0x4C), (0x2518, 0x2D), (0x251C, 0x2B), (0x2524, 0x2B), (0x252C, 0x54), (0x2534, 0x2B),
+    (0x253C, 0x2B), (0x2550, 0x3D), (0x2551, 0xA6), (0x2552, 0x2D), (0x2553, 0xE3), (0x2554, 0xE3),
+    (0x2555, 0xAC), (0x2556, 0xAC), (0x2557, 0xAC), (0x2558, 0x4C), (0x2559, 0x4C), (0x255A, 0x4C),
+    (0x255B, 0x2D), (0x255C, 0x2D), (0x255D, 0x2D), (0x255E, 0xA6), (0x255F, 0xA6), (0x2560, 0xA6),
+    (0x2561, 0xA6), (0x2562, 0xA6), (0x2563, 0xA6), (0x2564, 0x54), (0x2565, 0x54), (0x2566, 0x54),
+    (0x2567, 0xA6), (0x2568, 0xA6), (0x2569, 0xA6), (0x256A, 0x2B), (0x256B, 0x2B), (0x256C, 0x2B),
+    (0x2580, 0x2D), (0x2584, 0x2D), (0x2588, 0x2D), (0x258C, 0xA6), (0x2590, 0xA6), (0x2591, 0x2D),
+    (0x2592, 0x2D), (0x2593, 0x2D), (0x25A0, 0xA6), (0x25AC, 0x2D), (0x25B2, 0x5E), (0x25BA, 0x3E),
+    (0x25BC, 0xA1), (0x25C4, 0x3C), (0x25CB, 0x30), (0x25D8, 0x95), (0x25D9, 0x30), (0x263A, 0x4F),
+    (0x263B, 0x4F), (0x263C, 0x30), (0x2640, 0x2B), (0x2642, 0x3E), (0x2660, 0xA6), (0x2663, 0xA6),
+    (0x2665, 0xA6), (0x2666, 0xA6), (0x266A, 0x64), (0x266B, 0x64), (0xFF01, 0x21), (0xFF02, 0x22),
+    (0xFF03, 0x23), (0xFF04, 0x24), (0xFF05, 0x25), (0xFF06, 0x26), (0xFF07, 0x27), (0xFF08, 0x28),
+    (0xFF09, 0x29), (0xFF0A, 0x2A), (0xFF0B, 0x2B), (0xFF0C, 0x2C), (0xFF0D, 0x2D), (0xFF0E, 0x2E),
+    (0xFF0F, 0x2F), (0xFF10, 0x30), (0xFF11, 0x31), (0xFF12, 0x32), (0xFF13, 0x33), (0xFF14, 0x34),
+    (0xFF15, 0x35), (0xFF16, 0x36), (0xFF17, 0x37), (0xFF18, 0x38), (0xFF19, 0x39), (0xFF1A, 0x3A),
+    (0xFF1B, 0x3B), (0xFF1C, 0x3C), (0xFF1D, 0x3D), (0xFF1E, 0x3E), (0xFF20, 0x40), (0xFF21, 0x41),
+    (0xFF22, 0x42), (0xFF23, 0x43), (0xFF24, 0x44), (0xFF25, 0x45), (0xFF26, 0x46), (0xFF27, 0x47),
+    (0xFF28, 0x48), (0xFF29, 0x49), (0xFF2A, 0x4A), (0xFF2B, 0x4B), (0xFF2C, 0x4C), (0xFF2D, 0x4D),
+    (0xFF2E, 0x4E), (0xFF2F, 0x4F), (0xFF30, 0x50), (0xFF31, 0x51), (0xFF32, 0x52), (0xFF33, 0x53),
+    (0xFF34, 0x54), (0xFF35, 0x55), (0xFF36, 0x56), (0xFF37, 0x57), (0xFF38, 0x58), (0xFF39, 0x59),
+    (0xFF3A, 0x5A), (0xFF3B, 0x5B), (0xFF3C, 0x5C), (0xFF3D, 0x5D), (0xFF3E, 0x5E), (0xFF3F, 0x5F),
+    (0xFF40, 0x60), (0xFF41, 0x61), (0xFF42, 0x62), (0xFF43, 0x63), (0xFF44, 0x64), (0xFF45, 0x65),
+    (0xFF46, 0x66), (0xFF47, 0x67), (0xFF48, 0x68), (0xFF49, 0x69), (0xFF4A, 0x6A), (0xFF4B, 0x6B),
+    (0xFF4C, 0x6C), (0xFF4D, 0x6D), (0xFF4E, 0x6E), (0xFF4F, 0x6F), (0xFF50, 0x70), (0xFF51, 0x71),
+    (0xFF52, 0x72), (0xFF53, 0x73), (0xFF54, 0x74), (0xFF55, 0x75), (0xFF56, 0x76), (0xFF57, 0x77),
+    (0xFF58, 0x78), (0xFF59, 0x79), (0xFF5A, 0x7A), (0xFF5B, 0x7B), (0xFF5C, 0x7C), (0xFF5D, 0x7D),
+    (0xFF5E, 0x7E),
+];
 
 /// The bytes a name shown in `enc` stands for: [`encode_text`], with a
 /// character 866 lacks but its reading shows ([`best_fit_1251`]: «¦»)
@@ -1647,6 +1822,8 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         trigger_sample: 0,
         freq_sel: 0,
         extra_freq: Vec::new(),
+        text_enc: None,
+        text_bom: false,
     };
     // The loader rebuilds the frequency candidates (`0x45127d`), which
     // selects the first one.

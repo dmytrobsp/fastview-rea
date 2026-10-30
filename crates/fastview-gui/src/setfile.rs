@@ -248,12 +248,13 @@ fn save_dialog(filters: &[(&str, &str)], dir: Option<String>, name: &str) -> Opt
 
 impl Doc {
     /// The section key of file channel `i` (analog, then digital).
-    fn file_key(&self, i: usize) -> String {
+    pub(crate) fn file_key(&self, i: usize) -> String {
         if let Some(k) = self.set.keys.get(i) {
             return k.clone();
         }
         let id = if i < self.osc.analog.len() { &self.osc.analog[i].id } else { &self.osc.digital[i - self.osc.analog.len()].id };
-        comtrade::recode(id, self.codepage, Encoding::Cp1251)
+        // Its bytes as read (`recdlg::name_bytes_of`), as 1251 text.
+        comtrade::decode_bytes(&crate::recdlg::name_bytes_of(id, self.read_enc, self.codepage), Encoding::Cp1251)
     }
 
     /// A group member's name as the member set keeps it (`+0x64`, ANSI
@@ -274,12 +275,13 @@ impl Doc {
     /// its own name. Called before the channels move.
     pub fn move_appended_keys(&mut self, at_a: usize, nb: usize, at_d: usize, nd: usize) {
         // The names' bytes kept by «Кодировка» move alike (a new name's are
-        // its text's in the record's code page).
+        // its text shown in the record's code page taken back to the bytes
+        // as read, `recdlg::name_bytes_of`).
         if self.name_raw.len() == 2 + nb + nd {
             let mut old = std::mem::take(&mut self.name_raw);
             let mut d = old.split_off(2 + nb);
             let mut a = old.split_off(2);
-            let own = |id: &String| crate::app::RawName { bytes: comtrade::encode_text(id, self.codepage), seen: id.clone(), alias: false };
+            let own = |id: &String| crate::app::RawName { bytes: crate::recdlg::name_bytes_of(id, self.read_enc, self.codepage), seen: id.clone(), alias: false };
             a.extend(self.osc.analog[nb..].iter().map(|c| own(&c.id)));
             d.extend(self.osc.digital[nd..].iter().map(|c| own(&c.id)));
             a[at_a..].rotate_right(self.osc.analog.len() - nb);
@@ -292,7 +294,7 @@ impl Doc {
             return;
         }
         let old = std::mem::take(&mut self.set.keys);
-        let own = |id: &str| comtrade::recode(id, self.codepage, Encoding::Cp1251);
+        let own = |id: &str| comtrade::decode_bytes(&crate::recdlg::name_bytes_of(id, self.read_enc, self.codepage), Encoding::Cp1251);
         let mut a: Vec<String> = self.osc.analog.iter().enumerate().map(|(i, c)| old.get(i).filter(|_| i < nb).cloned().unwrap_or_else(|| own(&c.id))).collect();
         let mut d: Vec<String> = self.osc.digital.iter().enumerate().map(|(k, c)| old.get(nb + k).filter(|_| k < nd).cloned().unwrap_or_else(|| own(&c.id))).collect();
         let (ka, kd) = (a.len() - nb, d.len() - nd);
@@ -333,8 +335,8 @@ impl Doc {
         if !self.name_raw.is_empty() {
             return;
         }
-        let cp = self.codepage;
-        let own = |s: &String| crate::app::RawName { bytes: comtrade::encode_text(s, cp), seen: s.clone(), alias: false };
+        let (read, cp) = (self.read_enc, self.codepage);
+        let own = |s: &String| crate::app::RawName { bytes: crate::recdlg::name_bytes_of(s, read, cp), seen: s.clone(), alias: false };
         let v: Vec<_> = [&self.osc.station, &self.osc.device].into_iter().chain(self.osc.analog.iter().map(|c| &c.id)).chain(self.osc.digital.iter().map(|c| &c.id)).map(own).collect();
         self.name_raw = v;
     }
@@ -342,13 +344,14 @@ impl Doc {
     /// Channel `k` now shows an alias (a rename, `AliasName`) or, `on`
     /// false, its file's name again.
     pub fn mark_alias(&mut self, k: ChanKey, on: bool) {
+        let read = self.read_enc;
         let p = match k {
             ChanKey::Analog(i) => 2 + i,
             ChanKey::Digital(d) => 2 + self.osc.analog.len() + d,
             ChanKey::Computed(j) => {
                 let cp = self.codepage;
                 if let Some(c) = self.computed.get_mut(j).filter(|c| c.formula == crate::merge_ui::PENDING) {
-                    c.name_raw.get_or_insert_with(|| crate::app::RawName { bytes: comtrade::encode_shown(&c.name, cp), seen: c.name.clone(), alias: false }).alias = on;
+                    c.name_raw.get_or_insert_with(|| crate::app::RawName { bytes: crate::recdlg::shown_bytes_of(&c.name, read, cp), seen: c.name.clone(), alias: false }).alias = on;
                 }
                 return;
             }
@@ -362,7 +365,10 @@ impl Doc {
     /// File channel `i`'s name as read, in the record's code page (as
     /// `Doc::set_codepage` decodes the names).
     fn file_name(&self, i: usize) -> String {
-        comtrade::recode(&self.file_key(i), Encoding::Cp1251, self.codepage).chars().map(comtrade::best_fit_1251).collect()
+        // The keys are the names' bytes as read, as 1251 text (taken at the
+        // open, `init_set_keys`, while the names showed as read).
+        let bytes = comtrade::encode_text(&self.file_key(i), Encoding::Cp1251);
+        crate::recdlg::decode_name(&bytes, self.read_enc, self.codepage)
     }
 
     /// A renamed file channel's original name (`+0x64`, decoded,
@@ -668,11 +674,41 @@ fn mode_of(f: u32) -> ValueMode {
     }
 }
 
+/// A file analog channel's inputs to a recompute besides its samples:
+/// a, b, the unit multiplier, primary, secondary, P / S, its own
+/// frequencies, the sample count, the unit.
+type ChanInputs = (f64, f64, f64, f64, f64, bool, Vec<f64>, usize, String);
+
+/// What a full recompute (`Doc::recompute`) reads besides the samples —
+/// the window, rate, nominal frequency, correction choice and candidates,
+/// the fundamental's gain and each channel's coefficients — when its
+/// values would be the file's as read, as `Doc::new` computes them: no
+/// channel or discrete flag that changes a value, no computed channel, no
+/// group. `None` otherwise.
+#[allow(clippy::type_complexity)]
+fn recompute_inputs(d: &Doc) -> Option<(usize, f64, f64, i32, Vec<fvb_core::comtrade::ExtraFreq>, f64, Vec<ChanInputs>)> {
+    let flagged = d.chans.iter().any(|c| c.adc_counts || c.remove_dc || c.invert) || d.dig_flags.iter().any(|f| f.invert);
+    if flagged || !d.computed.is_empty() || !d.group_names.is_empty() {
+        return None;
+    }
+    let o = &d.osc;
+    let chans = o.analog.iter().map(|c| (c.a, c.b, c.unit_mult, c.primary, c.secondary, c.is_primary, c.own_freq.clone(), c.samples.len(), c.unit.clone())).collect();
+    Some((o.samples_per_cycle(), o.rate_r, o.line_freq, o.freq_sel, o.extra_freq.clone(), o.harmonic1_gain, chans))
+}
+
 impl App {
     /// Read the settings for document `di` (`0x44f5b0`); `from_command` =
     /// 32860 (comments are not re-read).
     pub fn apply_record_settings(&mut self, di: usize, from_command: bool) {
+        self.apply_settings(di, from_command, false);
+    }
+
+    /// [`App::apply_record_settings`]; `fresh`: the document holds exactly
+    /// what `Doc::new` computed from the record as read (an open, on the
+    /// loader's thread), so the recompute may be spared.
+    fn apply_settings(&mut self, di: usize, from_command: bool, fresh: bool) {
         let Some(d) = self.docs.get_mut(di) else { return };
+        let as_read = if fresh { recompute_inputs(d) } else { None };
         // The review elements name their channels; the painters resolve
         // those names among the shown ones (aliases included) — bound here
         // once every channel is in place (VM, L9.227).
@@ -699,10 +735,16 @@ impl App {
             d.selection.retain(|k| !matches!(k, ChanKey::Computed(_)));
             d.channels_changed();
         }
-        if matches!(d.codepage, Encoding::Cp1251 | Encoding::Cp866) {
-            if let Some(cp) = osc.attrs.get("Codepage").map(|v| recset::wtoi(v)) {
-                d.set_codepage(cp_of(cp));
-            }
+        if let Some(cp) = osc.attrs.get("Codepage").map(|v| recset::wtoi(v)) {
+            // 0 is OEM; anything else for a record read in UTF-8 or KOI8-R
+            // (ours keeps it, `Doc::init_record_text`) its own encoding —
+            // 1, ANSI, the names as read.
+            let cp = match d.read_enc {
+                Encoding::Cp1251 | Encoding::Cp866 => cp_of(cp),
+                _ if cp == 0 => Encoding::Cp866,
+                read => read,
+            };
+            d.set_codepage(cp);
         }
         // File channels.
         let na = d.osc.analog.len();
@@ -763,7 +805,18 @@ impl App {
         if let Some(x) = recset::read_view(d.set.tree.section("View")).xscale.filter(|f| *f > 0.0 && *f <= 1.0) {
             d.xscale = Some(x);
         }
-        self.recompute_doc(di);
+        // The original recomputes here (`0x44f5b0`, per channel); when the
+        // settings changed nothing a recompute reads, it would give back
+        // what the open computed: ours keeps that (2 × the time on the UI
+        // thread for a big record otherwise) and only takes the flagged
+        // copy anew, for the names.
+        let d = &mut self.docs[di];
+        if as_read.is_some() && as_read == recompute_inputs(d) && !d.omp.shown {
+            d.flagged = d.osc.clone();
+            d.series_gen += 1;
+        } else {
+            self.recompute_doc(di);
+        }
         if !calc.is_empty() {
             let (active, status) = (self.active, self.status.clone());
             self.active = Some(di);
@@ -812,7 +865,7 @@ impl App {
         if let Some(p) = d.path.clone() {
             d.set.tree.load_path(&recset::set_path(&p));
         }
-        self.apply_record_settings(di, false);
+        self.apply_settings(di, false, true);
         self.docs[di].set.modified = false;
     }
 
@@ -1439,6 +1492,66 @@ mod tests {
         // First frame: the view / diagram sections are read.
         app.track_settings();
         ai
+    }
+
+    /// What a recompute leaves in a document: the phasors and roles, the
+    /// RMS and DC, the flagged copy's values and names.
+    fn computed_state(d: &Doc) -> String {
+        let a = &d.analysis;
+        let analog: Vec<_> = d.flagged.analog.iter().map(|c| (&c.id, &c.samples)).collect();
+        let digital: Vec<_> = d.flagged.digital.iter().map(|c| (&c.id, &c.samples)).collect();
+        format!("{:?}", (&a.phasors, a.u_abc, a.i_abc, a.calc_ib, a.n, &d.rms, &d.dc_mean, analog, digital, &d.flagged.station))
+    }
+
+    /// Opened, then recomputed in full once more: the same state; and how
+    /// many full recomputes the open ran.
+    fn open_and_recompute(cfg: &Path) -> (usize, String, String) {
+        let mut app = App::new();
+        app.persist = false;
+        crate::recdlg::RECOMPUTES.with(|c| c.set(0));
+        let di = open(&mut app, cfg);
+        let runs = crate::recdlg::RECOMPUTES.with(|c| c.get());
+        let opened = computed_state(&app.docs[di]);
+        app.recompute_doc(di);
+        (runs, opened, computed_state(&app.docs[di]))
+    }
+
+    /// An open computes the record once (`Doc::new`, on the loader's
+    /// thread): the settings apply recomputes only when they changed what
+    /// a recompute reads — the result the same as a full recompute either
+    /// way, names from the `.set` (an alias) included.
+    #[test]
+    fn an_open_recomputes_only_when_the_settings_change_the_values() {
+        let dir = temp_dir("once");
+        let cfg = write_record(&dir);
+        let (runs, opened, again) = open_and_recompute(&cfg);
+        assert_eq!(runs, 0, "no .set: nothing to recompute");
+        assert_eq!(opened, again);
+        // A rename in the `.set`: the names change, not the values.
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        crate::chandlg::rename(&mut app.docs[di], ChanKey::Analog(0), "Ua'").unwrap();
+        app.track_settings();
+        assert!(app.save_active());
+        drop(app);
+        let (runs, opened, again) = open_and_recompute(&cfg);
+        assert_eq!(runs, 0, "an alias: no recompute");
+        assert_eq!(opened, again);
+        assert!(opened.contains("\"Ua'\""), "the flagged copy has the alias");
+        // An inverted channel: recomputed, once.
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        app.docs[di].chans[1].invert = true;
+        app.recompute_doc(di);
+        app.track_settings();
+        assert!(app.save_active());
+        drop(app);
+        let (runs, opened, again) = open_and_recompute(&cfg);
+        assert_eq!(runs, 1);
+        assert_eq!(opened, again);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
