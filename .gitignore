@@ -7,7 +7,7 @@ Cargo.lock.bak
 /extracted/
 
 # Raw decompilation / tool dumps (derivative of proprietary code). The distilled,
-# original findings live in notes/FINDINGS.md which IS tracked.
+# original findings live in docs/original/findings.md which IS tracked.
 /notes/*.txt
 /notes/*.json
 /notes/*.log

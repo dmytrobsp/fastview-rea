@@ -1,4 +1,4 @@
-//! Quick analysis as a channel generator (ledger L8, `notes/VIEWS_SPEC.md`).
+//! Quick analysis as a channel generator (ledger L8, `docs/original/specs/views.md`).
 
 use fvb_core::comtrade;
 use fvb_core::quick::*;

@@ -70,7 +70,7 @@ UTF-16 XML. Structure:
 - `<ellipse>`: centre (xcenter,ycenter), axes (width,height), rotation `angle` degrees.
 - `<polypoint closed>`: explicit vertex list (x,y expressions). `closed="off"` is still a
   filled region, closed through a box around the view (ДЗТ restraint curves → operate region
-  above the curve) — superseded by the decompiled behaviour in RECONSTRUCTION_LEDGER L4.
+  above the curve) — superseded by the decompiled behaviour in the record's L4 ([L4-geometry.md](L4-geometry.md)).
 - `dimension`: `OHM` → impedance plane (R on x, jX on y); `DIF` → differential plane
   (I_brake on x, I_diff on y). Same renderer, different axis labels/units.
 

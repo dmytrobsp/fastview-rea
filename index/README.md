@@ -10,7 +10,7 @@ resource strings. They describe `FastView.exe` with sha256
 
 | file | what | made by |
 |---|---|---|
-| `names.tsv` | the functions (and a few data items) our notes describe, named in our own words, with the note that describes each (`address kind name ref`; kind `func` = entry, `code` = a point inside a function, `data`) | by hand, from `../notes/` |
+| `names.tsv` | the functions (and a few data items) our notes describe, named in our own words, with the note that describes each (`address kind name ref`; kind `func` = entry, `code` = a point inside a function, `data`) | by hand, from `../docs/original/` |
 | `msgmaps.json` | every MFC message map: class(es), map and getter addresses, entries (message / command / update-UI / notify, id range, handler address) | `tools/msgmaps.py` |
 | `vtables.tsv` | RTTI classes, primary vtable address, the slot addresses | `tools/index.py` |
 | `imports.tsv` | import address table: slot, DLL, function name or `#ordinal` (MFC 12 imports by ordinal) | `tools/peimports.py` |
@@ -33,4 +33,4 @@ python3 -I tools/symbols_export.py r2     > fastview_symbols.r2   # rizin / rada
 The generated scripts use each tool's standard naming calls; they were
 checked for syntax here, not run in every tool — report what breaks.
 Command ids in the handler names can be looked up in the notes
-(`../notes/UI_BEHAVIOUR_SPEC.md`).
+(`docs/original/specs/ui-behaviour.md`).

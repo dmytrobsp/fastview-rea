@@ -2,7 +2,7 @@
 //! groups. Layout mirrors the original (QAT: open/save/print/undo/redo; tabs
 //! Главная / ОМП; groups Объединение · Диаграммы · Видимость · Вычисления ·
 //! Осциллограмма; ОМП tab: Параметры · Анализ — a toggle with the result bar,
-//! `omp_ui.rs`). See `notes/UI_SPEC.md`.
+//! `omp_ui.rs`). See `docs/original/specs/ui.md`.
 
 use crate::app::{App, Command, Pane, RibbonTab, ValueMode};
 use crate::icons::{self, Icon};

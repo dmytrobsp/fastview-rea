@@ -1,6 +1,6 @@
 # Running the original on a Windows VM
 
-Helpers for COMPLETION_PLAN W4 / W5: run the original Fast View (installed
+Helpers for the runs of the original on Windows (formerly COMPLETION_PLAN W4 / W5): run the original Fast View (installed
 from your own copy) and ours side by side on a Windows machine reached by
 `ssh`, and capture what they show. Nothing here contains any part of the
 original.

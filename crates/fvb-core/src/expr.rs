@@ -1,7 +1,7 @@
 //! Expression evaluator for the FastView formula language (`Calculator`).
 //!
 //! Reconstructed from the decompiled original (`FastView.exe`, see
-//! `notes/RECONSTRUCTION_LEDGER.md` L1/L2), not inferred from the data:
+//! `docs/original/` L1/L2), not inferred from the data:
 //!
 //! * **Tokenizer** (`FUN_00418c40`): the formula is lowercased (text inside
 //!   `[...]` keeps its case), only U+0020 is skipped, and at each position the
@@ -1055,7 +1055,7 @@ fn round_fv(x: f64) -> f64 {
     }
 }
 
-/// The channel/analysis accessors (ledger L6, `notes/CALC_CHANNELS_SPEC.md`).
+/// The channel/analysis accessors (ledger L6, `docs/original/specs/calc-channels.md`).
 fn channel_func(name: &'static str, a: &[Value], env: Env) -> Result<Value, ExprError> {
     let idx = env.idx;
     let x = first(a)?;

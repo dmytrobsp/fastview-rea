@@ -1,5 +1,5 @@
 //! Pure computations of the original's analysis views (ledger L8,
-//! `notes/VIEWS_SPEC.md`), kept here so they can be tested without a GUI.
+//! `docs/original/specs/views.md`), kept here so they can be tested without a GUI.
 
 use num_complex::Complex64;
 use std::f64::consts::PI;

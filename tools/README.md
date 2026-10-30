@@ -3,10 +3,10 @@
 Everything here is our own code. None of it ships any part of the original
 program: you supply your own copy of the Fast View 5 installer, and the
 scripts regenerate the analysis inputs locally. The findings drawn from them
-are written up in our own words in [`../notes/`](../notes/): the
-reconstruction ledger (`RECONSTRUCTION_LEDGER.md`, item by item with the
-original's addresses) and the behavioural specs (`UI_BEHAVIOUR_SPEC.md`,
-`VIEWS_SPEC.md`, `OMP_SPEC.md`, `FORMATS_SPEC.md`, `CALC_CHANNELS_SPEC.md`).
+are written up in our own words in [`../docs/original/`](../docs/original/README.md): the
+reconstruction record (item by item with the original's addresses) and the
+behavioural specs in `specs/` (UI behaviour, views, ОМП, file formats,
+computed channels).
 Any address cited there can be checked against your own copy.
 
 ## 1. Get the original program
@@ -43,9 +43,8 @@ message map with command ids resolved to their strings. `dumps/` is
 git-ignored.
 
 `python3 -I tools/coverage.py` measures how much of the program's own code
-the notes cite (functions, instructions, the uncited ones by class) — the
-measure of [`../notes/COMPLETION_PLAN.md`](../notes/COMPLETION_PLAN.md). It
-prints counts and addresses only.
+the record in `docs/original/` cites (functions, instructions, the uncited
+ones by class). It prints counts and addresses only.
 
 MFC's own resources (e.g. the Russian labels of the print-preview ribbon
 category) live in the redistributable: `tools/carve_cabs.py

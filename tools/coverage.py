@@ -58,7 +58,7 @@ def size(i):
 
 
 # The plan lists what is still uncited: it is not a note.
-notes = ''.join(open(f, encoding='utf-8').read() for f in glob.glob(os.path.join(ROOT, 'notes', '*.md')) if not f.endswith('COMPLETION_PLAN.md'))
+notes = ''.join(open(f, encoding='utf-8').read() for f in glob.glob(os.path.join(ROOT, 'docs', 'original', '**', '*.md'), recursive=True))
 refs = re.findall(r'0x(4[0-9a-f]{5})\b', notes) + re.findall(r'FUN_00(4[0-9a-f]{5})\b', notes)
 cited = {owner(int(x, 16)) for x in refs if APP_LO <= int(x, 16) < 0x4c0000}
 cited.discard(None)

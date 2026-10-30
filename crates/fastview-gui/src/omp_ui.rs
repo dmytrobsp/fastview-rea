@@ -1,5 +1,5 @@
 //! ОМП (fault location) user interface, as the original presents it
-//! (`notes/UI_BEHAVIOUR_SPEC.md` §8): the ribbon's «Анализ» is a toggle
+//! (`docs/original/specs/ui-behaviour.md` §8): the ribbon's «Анализ» is a toggle
 //! (32806, `0x449890`), the result is a message bar under the ribbon
 //! (CMsgCaptionBar 221) whose text follows В1/В2 live and whose «Сохранить...»
 //! (32879, `0x4a1930`) writes the `.txt` report; hiding the bar clears the

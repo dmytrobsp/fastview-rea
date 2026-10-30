@@ -20,10 +20,10 @@ on Linux, Windows and macOS.
 The goal is **behavioural identity with the original, proven against its
 decompiled code**, not a look-alike built from screenshots. Every engine *and*
 the whole UI layer were reversed with REA + Ghidra and reconciled; the record
-is `notes/RECONSTRUCTION_LEDGER.md` (addresses, what was read, what we do,
+is `docs/original/` (addresses, what was read, what we do,
 what is still not determined), with distilled behavioural specs in
-`notes/UI_BEHAVIOUR_SPEC.md`, `VIEWS_SPEC.md`, `OMP_SPEC.md`,
-`FORMATS_SPEC.md` and `CALC_CHANNELS_SPEC.md`.
+`docs/original/specs/` (UI behaviour, views, ОМП, file formats, computed
+channels).
 
 - **UI inventory**: `tools/msgmaps.py` lists every MFC message map of
   `FastView.exe` (34 maps, ~350 handlers); each handler's behaviour was then
@@ -74,7 +74,7 @@ On Linux the app needs GTK 3 (file dialogs) and a Wayland or X11 session.
 
 Tooling: **REA** (Reverse Engineer Anything) driving **Ghidra 12.1.3** for native
 decompilation, plus `7z`/`iconv` for the installer. Full notes:
-[`notes/FINDINGS.md`](notes/FINDINGS.md). The scripts that regenerate every
+[`docs/original/findings.md`](docs/original/findings.md). The scripts that regenerate every
 analysis input from your own copy of the program (disassembly, imports,
 string table, MFC message maps, RTTI vtables) and the method are in
 [`tools/README.md`](tools/README.md). [`index/`](index/README.md) publishes
@@ -183,8 +183,8 @@ cargo build -p fastview-gui --release --target x86_64-pc-windows-gnu
 ## Scope & fidelity
 
 What is done, what is approximate and what is not determined is tracked item
-by item in the ledger (`notes/RECONSTRUCTION_LEDGER.md`, L1–L9.x) and the
-ranked backlog in `notes/UI_BEHAVIOUR_SPEC.md` §9. Known gaps include: native
+by item in the ledger (`docs/original/`, L1–L9.x) and the
+ranked backlog in `docs/original/specs/ui-behaviour.md` §9. Known gaps include: native
 `.sto` reading (no sample file ships), the original's bitmaps (logo, icons —
 replaced by our own drawings), the non-Office-2007 looks, and floating /
 re-docking of panes. Every change keeps `cargo build` and `cargo clippy`

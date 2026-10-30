@@ -39,8 +39,8 @@ own «Дополнительно» submenu (our extras) stays.
 
 ```bash
 python3 -I tools/coverage.py            # needs dumps/ from tools/regen-dumps.sh
-grep '^### ' notes/RECONSTRUCTION_LEDGER.md | grep -c '🟡'
-grep -o 'NOT DETERMINED' notes/RECONSTRUCTION_LEDGER.md | wc -l
+grep '^### ' docs/original/ | grep -c '🟡'
+grep -o 'NOT DETERMINED' docs/original/ | wc -l
 ```
 
 `coverage.py` counts call targets and vtable slots below the library code

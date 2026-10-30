@@ -1,4 +1,4 @@
-//! «Объединение» in the GUI (ledger L9.15, `notes/UI_BEHAVIOUR_SPEC.md`
+//! «Объединение» in the GUI (ledger L9.15, `docs/original/specs/ui-behaviour.md`
 //! §7.8, §4): 57634 copies the selected channels with their own time base,
 //! 57637 pastes them as *pending* channels (bit 14) shown at the merge offset,
 //! the merge bar (CMergeBar, 70 px) synchronises them by start time, fault

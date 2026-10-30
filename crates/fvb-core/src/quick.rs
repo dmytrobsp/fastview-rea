@@ -1,5 +1,5 @@
 //! "Быстрый анализ" — the original's quick-analysis property sheet
-//! (`CQAnPropSheet`, ledger L8, `notes/VIEWS_SPEC.md`) is a *channel
+//! (`CQAnPropSheet`, ledger L8, `docs/original/specs/views.md`) is a *channel
 //! generator*: the active tab turns its controls into a list of computed
 //! channels (name + formula in the formula language), plus which of them to
 //! toggle on the vector / circle diagrams, a vector-diagram angle reference

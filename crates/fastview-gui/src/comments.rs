@@ -1,5 +1,5 @@
 //! Review elements of an oscillogram («Рецензирование осциллограммы», ledger
-//! L9.6, `notes/UI_BEHAVIOUR_SPEC.md` §5): moments, level lines and areas,
+//! L9.6, `docs/original/specs/ui-behaviour.md` §5): moments, level lines and areas,
 //! each with a text, a lock and a "text hidden" flag. Placement is a one-shot
 //! ribbon tool (155 / 156 / 157, `0x43eb40`), dragging moves the grabbed part
 //! (`0x43efa0`), painting follows `0x43f630` and the info box `0x43df90`.

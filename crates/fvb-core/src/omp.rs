@@ -1,5 +1,5 @@
 //! Fault location (ОМП — определение места повреждения), reproducing the
-//! original's per-sample engine (`0x4a00b0`; ledger L7, `notes/OMP_SPEC.md`):
+//! original's per-sample engine (`0x4a00b0`; ledger L7, `docs/original/specs/omp.md`):
 //! phasors over the period before each sample, fault-type detection with
 //! hysteresis and debounce, phase selection and loop choice, a distance per
 //! sample walking the line's sections, then a one-period window chosen by the
@@ -391,7 +391,7 @@ pub fn single_ended(inp: &SingleEnded) -> Trace {
 }
 
 /// `0x49a670` for one sample: walk the sections, dropping the voltage across
-/// every section the fault lies beyond (§6 of `notes/OMP_SPEC.md`).
+/// every section the fault lies beyond (§6 of `docs/original/specs/omp.md`).
 fn grounded_distance(t: &Trace, k: usize, mut u0: Complex64, mut i0: Complex64, secs: &[Section], theta: f64) -> f64 {
     let (mut u, mut iph, mut iref) = (t.uloop[k], t.iloop[k], t.iref[k]);
     let earth = t.e[k];
@@ -432,7 +432,7 @@ fn grounded_distance(t: &Trace, k: usize, mut u0: Complex64, mut i0: Complex64, 
     d + acc
 }
 
-/// `0x49a430` for one sample (§7 of `notes/OMP_SPEC.md`).
+/// `0x49a430` for one sample (§7 of `docs/original/specs/omp.md`).
 fn isolated_distance(uloop: Complex64, iloop: Complex64, secs: &[Section]) -> f64 {
     let mut zacc = Complex64::default();
     let mut acc = 0.0;

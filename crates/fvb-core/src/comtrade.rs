@@ -4,7 +4,7 @@
 //! Supports the 1991 and 1999 revisions (and the common 2013 layout) with the
 //! data-file types the original accepts — exactly `ASCII`, `BINARY` (int16) and
 //! `binary32` — plus the single-file `.cff` container (ledger L3,
-//! `notes/FORMATS_SPEC.md`).
+//! `docs/original/specs/formats.md`).
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -737,7 +737,7 @@ fn snap_rate(fs: f64, fnom: f64) -> f64 {
 }
 
 /// Read an OSC2 oscillogram (`.osc`, `0x4524b0`; layout in
-/// `notes/FORMATS_SPEC.md`): big-endian 128-byte blocks — header, calibration,
+/// `docs/original/specs/formats.md`): big-endian 128-byte blocks — header, calibration,
 /// channel-table text, info, then fixed-size data blocks with a per-block
 /// sample-rate code.
 pub fn parse_osc(bytes: &[u8], enc: Encoding) -> Result<Oscillogram, ComtradeError> {

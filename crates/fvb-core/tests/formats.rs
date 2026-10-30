@@ -1,5 +1,5 @@
 //! Oscillogram file formats pinned to the original (ledger L3,
-//! `notes/FORMATS_SPEC.md`).
+//! `docs/original/specs/formats.md`).
 
 use fvb_core::comtrade::{self, parse_cff, write_cff, CffSections, ComtradeError, Encoding};
 

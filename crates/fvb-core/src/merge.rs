@@ -1,5 +1,5 @@
 //! Merging oscillograms («Объединение», ledger L9.15,
-//! `notes/UI_BEHAVIOUR_SPEC.md` §7.8): synchronising a pasted record against
+//! `docs/original/specs/ui-behaviour.md` §7.8): synchronising a pasted record against
 //! the document (`0x47bb90`: by start time `0x47ce10`, by the fault component
 //! `0x47bc00`, by the pre-fault mode `0x47c440`) and resampling both onto one
 //! grid («Объединить», `0x47d990`).

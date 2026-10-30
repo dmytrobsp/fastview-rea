@@ -3,7 +3,7 @@
 //! node with attributes and named children, both kept ordered by name
 //! (`CString::Compare`). Loader `0x48e470`, writer `0x48e1c0`; the record
 //! settings are read by `0x44f5b0` and written by `0x44cbc0`. See
-//! `notes/UI_BEHAVIOUR_SPEC.md` §5.6 / §6.7 and the ledger (track S).
+//! `docs/original/specs/ui-behaviour.md` §5.6 / §6.7 and the ledger (track S).
 //!
 //! On disk the tree is the in-house XML ([`crate::settree`]): a root
 //! `<settings>` whose every section and child is a `<category name="KEY" …>`

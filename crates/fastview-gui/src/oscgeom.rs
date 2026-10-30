@@ -1,5 +1,5 @@
 //! Geometry of the oscillogram view, as the original computes it (ledger
-//! L9.4, `notes/UI_BEHAVIOUR_SPEC.md` §3): a sample-indexed horizontal scale
+//! L9.4, `docs/original/specs/ui-behaviour.md` §3): a sample-indexed horizontal scale
 //! (first visible sample, power-of-two `f`, 25 px per sample at `f = 1`),
 //! fixed lane heights, the per-channel min..max amplitude mapping, the time
 //! ruler and the wheel zoom steps.

@@ -8,7 +8,7 @@ data or resources; **[I]** = inferred (MFC idiom, argument shape, help page or
 screenshot). MFC ordinals were resolved by call shape only, so every MFC API
 name is [I] even where its arguments are [R]. String ids refer to
 `notes/ui/strings.txt`. Engine math lives elsewhere: views/loci/spectrum in
-`VIEWS_SPEC.md`, ОМП in `OMP_SPEC.md`, files in `FORMATS_SPEC.md`.
+`views.md`, ОМП in `omp.md`, files in `formats.md`.
 
 Notation. `doc` = CFastViewDoc, `view` = CFastViewView (`view+0x74` = doc),
 `ch` = a channel record (stride 0x160 in `doc+0x184..0x188`), `N` = record

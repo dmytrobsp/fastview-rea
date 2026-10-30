@@ -1,5 +1,5 @@
 //! The per-sample ОМП engine pinned to the original's behaviour
-//! (`notes/OMP_SPEC.md`, ledger L7).
+//! (`docs/original/specs/omp.md`, ledger L7).
 
 use fvb_core::omp::*;
 use num_complex::Complex64;

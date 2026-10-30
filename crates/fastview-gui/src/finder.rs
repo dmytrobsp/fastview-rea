@@ -1,5 +1,5 @@
 //! «Проводник» — the oscillogram finder (FileFinder22Dlg, DIALOG 558; ledger
-//! L9.9, `notes/UI_BEHAVIOUR_SPEC.md` §7.5): a modal dialog that scans a
+//! L9.9, `docs/original/specs/ui-behaviour.md` §7.5): a modal dialog that scans a
 //! folder (optionally with subfolders) on a worker thread for `.cfg`, `.cff`,
 //! `.osc` and `.sto` files, lists them with station, block and start time,
 //! filters them live and opens or deletes the selected ones.

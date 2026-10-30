@@ -3,7 +3,7 @@
 //! grid and is read with `_wtof` only when the analysis runs. Also the `.omp`
 //! settings file (`0x4a2620` / `0x4a2740` writer, `0x4a3050` / `0x4a38c0`
 //! reader, serializer `0x48e1c0` / `0x4aa750`), the OK validation of the
-//! dialog and the `.txt` report (`0x49dbf0`). See `notes/UI_BEHAVIOUR_SPEC.md`
+//! dialog and the `.txt` report (`0x49dbf0`). See `docs/original/specs/ui-behaviour.md`
 //! §8.
 
 use crate::omp::{OmpResult, ParallelLine, Section, Tap};

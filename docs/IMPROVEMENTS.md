@@ -8,7 +8,7 @@ is a bug.
 
 Ours departs from the original only where the original visibly fails or
 misbehaves and the better behaviour is obvious, or where reproducing it
-is out of reach (those are listed in `notes/COMPLETION_PLAN.md`, W6).
+is out of reach (those are listed in `docs/history/completion-plan.md`, W6).
 
 ## Extras
 
