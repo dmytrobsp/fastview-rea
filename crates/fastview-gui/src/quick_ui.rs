@@ -425,9 +425,9 @@ impl App {
                     for (tab, glyph, title) in PAGES {
                         let g = ui.fonts(|f| f.layout_job(bar_title(f, title, ink, inner.width())));
                         let lines = g.rows.len().max(1) as f32;
-                        // (the line pitch 13 px, 19 at 125 %; 150 % along
-                        // that slope, not measured)
-                        let item = egui::Rect::from_min_size(egui::pos2(inner.left(), y), egui::vec2(inner.width(), 42.0 + crate::dpi::measured(13.0, 19.0, 25.0) * lines));
+                        // (the line pitch 13 px, 19 / 23 at 125 / 150 %: VM,
+                        // the items 88 px apart at 150 %)
+                        let item = egui::Rect::from_min_size(egui::pos2(inner.left(), y), egui::vec2(inner.width(), 42.0 + crate::dpi::measured(13.0, 19.0, 23.0) * lines));
                         let icon = egui::Rect::from_center_size(egui::pos2(inner.center().x, y + 7.0 + 13.0), egui::vec2(26.0, 26.0));
                         if ui.rect_contains_pointer(item) {
                             // The Office 2007 hot face under the pointer (VM):
@@ -453,7 +453,8 @@ impl App {
                         p.rect_filled(icon, 0.0, egui::Color32::from_rgb(149, 153, 173));
                         p.rect_filled(icon.shrink(1.0), 0.0, egui::Color32::from_rgb(242, 239, 250));
                         p.text(icon.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(9.0), ink);
-                        p.galley(egui::pos2(inner.center().x, icon.bottom() + 8.0), g, ink);
+                        // Cut at the bar's edges (VM, 150 %: «Дифференциальны»).
+                        p.with_clip_rect(p.clip_rect().intersect(inner)).galley(egui::pos2(inner.center().x, icon.bottom() + 8.0), g, ink);
                         if ui.interact(item, ui.id().with(("fv_quick_page", title)), egui::Sense::click()).clicked() && self.analysis_tab != tab {
                             if self.analysis_tab == AnalysisTab::Formula {
                                 self.fp_kill_active();
