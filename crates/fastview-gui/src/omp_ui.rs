@@ -105,6 +105,13 @@ fn chan_samples(d: &Doc, name: &str) -> Option<Vec<f64>> {
     }
 }
 
+/// The digital channel holding phase `k`'s flag: a marked one named so,
+/// else an unmarked one (a record's own channel the run takes over).
+fn flag_slot(d: &Doc, k: usize) -> Option<usize> {
+    let named = |marked: bool| (0..d.osc.digital.len()).find(|&i| d.dig(i).omp == marked && d.osc.digital[i].id == KZ_PHASES[k]);
+    named(true).or_else(|| named(false))
+}
+
 impl App {
     /// 32806 «Анализ»: clear a shown result, else run interactively.
     pub fn omp_toggle(&mut self) {
@@ -259,14 +266,12 @@ impl App {
         // in the order C, B, A (`0x4a158a`…`0x4a15f6`): they read А, B, C
         // above the record's own digital channels.
         let (na, nd) = (d.osc.analog.len(), d.osc.digital.len());
-        // The flags already there are those marked as the ОМП's (their
-        // names may read otherwise after «Кодировка»), in order.
-        // As the original finds them: by the shown name (`0x42ecf0`), so a
-        // record's own channel named like a flag is taken as it.
-        let mut have = (0..d.osc.digital.len()).filter(|&i| d.dig(i).omp).collect::<Vec<_>>().into_iter();
+        // As the original finds them: each phase by its shown name
+        // (`0x42ecf0`), so a record's own channel named like a flag is
+        // taken as it and a re-run never crosses the phases.
         for k in [0, 1, 2] {
             let samples = flags[k].clone();
-            let found = have.next().or_else(|| d.osc.digital.iter().position(|c| c.id == KZ_PHASES[k]).filter(|&i| !d.dig(i).omp));
+            let found = flag_slot(d, k);
             match found {
                 Some(i) => {
                     d.osc.digital[i].samples = samples;
@@ -1689,6 +1694,30 @@ mod tests {
         assert_eq!(d.osc.digital.iter().filter(|c| c.id == KZ_PHASES[0]).count(), 1);
         app.dispatch(Command::OmpAnalysis);
         assert_eq!(app.active_doc().unwrap().osc.digital.len(), own, "the clear deletes it by name too (the own channel included)");
+    }
+
+    /// After the run took over a record's own channel the list reads
+    /// [B, C, own, А]: a re-run must still put each phase in its own flag
+    /// (found by name), never shifted along the list.
+    #[test]
+    fn a_rerun_after_a_take_over_keeps_the_phases_apart() {
+        let mut app = demo_app();
+        grounded(&mut app);
+        let d = app.active_doc_mut().unwrap();
+        d.selection.insert(ChanKey::Analog(0));
+        let n = d.osc.sample_count();
+        let own = d.osc.digital.len();
+        d.osc.digital.push(fvb_core::DigitalChannel { index: own as u32 + 1, id: KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples: vec![true; n] });
+        d.digital_visible.resize(own + 1, true);
+        app.dispatch(Command::OmpAnalysis);
+        app.run_omp();
+        let d = app.active_doc().unwrap();
+        for (k, name) in KZ_PHASES.iter().enumerate() {
+            let i = flag_slot(d, k).expect("the phase has a flag");
+            assert_eq!(d.osc.digital[i].id, *name, "phase {k}");
+            assert!(d.dig(i).omp);
+        }
+        assert_eq!(d.osc.digital.iter().filter(|c| KZ_PHASES.contains(&c.id.as_str())).count(), 3);
     }
 
     #[test]
