@@ -15,7 +15,7 @@ use eframe::egui::{self, Color32, RichText};
 /// The ribbon's rows at the system DPI (#12; VM at 100 / 125 / 150 %): the
 /// caption row 30 / 36 / 43 px, the tab row 23 / 30 / 35, a panel's
 /// caption band 16 / 22 / 26.
-fn caption_h() -> f32 {
+pub(crate) fn caption_h() -> f32 {
     crate::dpi::measured(30.0, 36.0, 43.0)
 }
 
@@ -378,7 +378,15 @@ impl App {
             // maximises / restores.
             if self.own_caption {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    caption_buttons(ui);
+                    // The window's buttons are the frame's, not the ribbon's:
+                    // beside a side strip they stay at the window's edge
+                    // (VM), under a top strip on its row.
+                    // Drawn by the frame, unclipped, in `caption_buttons_area`.
+                    if self.strip_inset[1] > 0.0 || self.strip_inset[2] > 0.0 {
+                        ui.add_space(3.0 * s(46.0));
+                    } else {
+                        caption_buttons(ui);
+                    }
                     let free = ui.available_rect_before_wrap();
                     let hit = ui.interact(free, ui.id().with("fv_caption_drag"), egui::Sense::click_and_drag());
                     if hit.double_clicked() {
@@ -605,7 +613,7 @@ impl App {
                 if k > 0 && step > 0 {
                     continue;
                 }
-                let r = big_button_sel(ui, p, icon, label, self.panes.visible(pane));
+                let r = big_button_sel(ui, p, icon, label, self.pane_checked(pane));
                 tips::ribbon_tip(ui, &r, TipImage::Large(icon), &Command::TogglePane(pane));
                 if r.clicked() {
                     cmds.push(Command::TogglePane(pane));
@@ -615,7 +623,7 @@ impl App {
                 ui.vertical(|ui| {
                     for (icon, label, pane) in buttons.into_iter().skip(1) {
                         let label = label.replace("-\n", "");
-                        let r = small_button_mode(ui, p, icon, &label, self.panes.visible(pane), step >= 2);
+                        let r = small_button_mode(ui, p, icon, &label, self.pane_checked(pane), step >= 2);
                         tips::ribbon_tip(ui, &r, TipImage::Small(icon), &Command::TogglePane(pane));
                         if r.clicked() {
                             cmds.push(Command::TogglePane(pane));
@@ -2571,7 +2579,7 @@ fn caption_glyph(p: &egui::Painter, r: egui::Rect, k: u8, max: bool, col: Color3
 /// The system's caption buttons as Windows 10 / 11 draw them on the DWM
 /// frame (FastView's caption is DWM's with composition on, L9.150):
 /// minimise, maximise / restore, close (red when hot), 46 px wide each.
-fn caption_buttons(ui: &mut egui::Ui) {
+pub(crate) fn caption_buttons(ui: &mut egui::Ui) {
     let h = ui.available_height().max(s(22.0));
     let max = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
     // The buttons edge to edge (VM: 46 px apart); their glyphs grey while
