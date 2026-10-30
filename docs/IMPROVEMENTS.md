@@ -21,6 +21,18 @@ misbehaves and the better behaviour is obvious (the maintainer,
 
 ## Behaviour
 
+- **Channels that share a name (#58).** The original finds a channel's
+  group by its name (`0x455b30` compares names exactly, and so do the
+  group lookups in its 20 callers, ledger L9.395): in a record with two
+  channels of the same exact name, or a digital channel named like an
+  analog group member, the namesake is taken into the group — its lane
+  paints the group's members instead of its own samples, and hiding or
+  flagging it acts on them. Ours keeps groups per channel, so each lane
+  shows its own channel. Reason: a lane that shows another channel's data
+  is wrong whatever the record; only records with duplicate names (which
+  COMTRADE discourages but allows) are affected. The maintainer,
+  2026-10-30.
+
 - **A level or area whose channel name no longer resolves.** The original
   blanks its whole oscillogram view (VM run, ledger L9.227); ours leaves
   that one element out. Reason: the blank view is a paint failure, not a
