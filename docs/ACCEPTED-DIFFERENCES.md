@@ -101,3 +101,15 @@ maintainer), **issue**.
   under its licence for a difference nobody can see; the same bound was accepted for sin / cos (#116).
 - **Decided**: 2026-10-31, the maintainer ("accept it").
 - **Issue**: [#131](https://github.com/dmytrobsp/fastview-rea/issues/131).
+
+## A channel drag out of the window
+
+- **What differs**: the original's channel drag is an OLE drag carrying channel numbers only: dropped on another
+  running Fast View, that instance applies *its own* channels with the same numbers (clone: its own channel 0 on its
+  vector diagram, its own channels combined on its view); dropped in another program it offers an embedded object whose
+  picture can't be drawn (`0x42bd50`, OnDraw `0x45a7c0` returns FALSE). Ours ends a channel drag at the window's edge.
+- **Where it shows**: only when a channel is dragged out of the window.
+- **Why it isn't fixed**: the original's results there are wrong (another instance's channels, a broken object);
+  Copy / Paste moves channels between records in both programs.
+- **Decided**: 2026-10-31, the maintainer.
+- **Issue**: [#75](https://github.com/dmytrobsp/fastview-rea/issues/75).
