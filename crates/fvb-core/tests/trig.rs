@@ -88,3 +88,10 @@ fn agrees_with_std_within_an_ulp() {
         x += 0.0137;
     }
 }
+
+/// #108: the crate contains Intel's BSD-3-Clause code (`fvb_core::trig`), so its licence field says so.
+#[test]
+fn the_licence_field_names_intels_bsd_code() {
+    let manifest = include_str!("../Cargo.toml");
+    assert!(manifest.lines().any(|l| l.trim() == r#"license = "(MIT OR Apache-2.0) AND BSD-3-Clause""#), "{manifest}");
+}
