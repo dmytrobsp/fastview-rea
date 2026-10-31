@@ -37,10 +37,14 @@ pub fn fit_scale(width: f32, n: usize) -> f64 {
 /// caption's 23 px and the frame's 4, less 1: 26 px; Wine's
 /// `MDI_CalcDefaultChildPos`), less its two 8 px borders (INFERRED; VM: synthetic records of 388 samples open at
 /// 0.25 and of 392 at 0.125 on a 1552 × 955 MDI area → a width in
-/// 1212.5…1225; this gives 1224).
+/// 1212.5…1225). The borders total 21: a first run's default frame (L9.349)
+/// has a 231 × 142 MDI area, where 235 samples at 1250 Hz open at 0.0625 and
+/// 236 at 0.03125 on the original (VM, a width of 183.6…184.4); 21 gives 184
+/// (16 gave 189, one zoom step further in for 235…239 samples) and keeps the
+/// 1552 × 955 area's bracket (1219).
 pub fn mdi_default_client_width(area_w: f32, area_h: f32) -> f32 {
     let step = 26.0;
-    (area_w - step * (area_h / (3.0 * step)).floor() - 16.0).max(1.0)
+    (area_w - step * (area_h / (3.0 * step)).floor() - 21.0).max(1.0)
 }
 
 /// Initial scale of a new view (`0x45ab70`): the stored `View/XScale`, by
@@ -357,8 +361,18 @@ mod tests {
         // VM: on a 1552 × 955 MDI area the view measures 1224 px at its
         // creation: 388 samples open at 0.25, 392 at 0.125.
         let w = mdi_default_client_width(1552.0, 955.0);
-        assert_eq!(w, 1224.0);
+        assert_eq!(w, 1219.0);
         assert_eq!((initial_scale(None, w, 388), initial_scale(None, w, 392)), (0.25, 0.125));
+    }
+
+    /// A first run's default frame (231 × 142 MDI area, VM, synthetic records of 1250 Hz): 235 samples
+    /// open at 0.0625, 236 at 0.03125 — the width is 184, not 189 (#69: the original's view showed the
+    /// record half as wide, so a click at the same point put В1 twice as far in ours).
+    #[test]
+    fn a_default_frames_first_view_zoom_matches_the_originals() {
+        let w = mdi_default_client_width(231.0, 142.0);
+        assert_eq!(w, 184.0);
+        assert_eq!((initial_scale(None, w, 235), initial_scale(None, w, 236)), (0.0625, 0.03125));
     }
 
     #[test]
