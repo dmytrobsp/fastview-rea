@@ -274,6 +274,13 @@ impl App {
             match found {
                 Some(i) => {
                     d.osc.digital[i].samples = samples;
+                    // The channel keeps its alias (`0x425f90` sets bit 13
+                    // and the samples only): a first take-over notes
+                    // whether it showed one (#114).
+                    if !d.dig(i).omp {
+                        let had = d.digital_shows_alias(i);
+                        d.dig_mut(i).omp_alias = had;
+                    }
                     d.dig_mut(i).omp = true;
                 }
                 None => {
@@ -1742,6 +1749,70 @@ mod tests {
         assert_eq!(d.osc.digital.iter().filter(|c| c.id == KZ_PHASES[0]).count(), 1);
         app.dispatch(Command::OmpAnalysis);
         assert_eq!(app.active_doc().unwrap().osc.digital.len(), own, "the clear deletes it by name too (the own channel included)");
+    }
+
+    /// The clear's by-name branch (`0x42ecf0`): a record's own digital
+    /// channel named like a flag that no run has marked is deleted by the
+    /// clear too (#114).
+    #[test]
+    fn the_clear_deletes_an_unmarked_channel_named_like_a_flag() {
+        let mut app = demo_app();
+        grounded(&mut app);
+        let d = app.active_doc_mut().unwrap();
+        let n = d.osc.sample_count();
+        let own = d.osc.digital.len();
+        d.osc.digital.push(fvb_core::DigitalChannel { index: own as u32 + 1, id: KZ_PHASES[1].into(), phase: String::new(), normal: 0, own_rate: 0.0, samples: vec![true; n] });
+        d.digital_visible.resize(own + 1, true);
+        assert!(!d.dig(own).omp);
+        app.omp_clear(0);
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.osc.digital.len(), own, "deleted by its name alone");
+        assert!(d.osc.digital.iter().all(|c| c.id != KZ_PHASES[1]));
+    }
+
+    /// A record channel the run takes over keeps its alias (`0x425f90` sets
+    /// bit 13 and the samples, nothing else): written on save when its name
+    /// came from a user alias, none when it was the channel's own name
+    /// (#114). A flag the run made has none.
+    #[test]
+    fn a_taken_over_channel_keeps_its_alias_on_save() {
+        let alias_of = |d: &crate::app::Doc, k: usize| {
+            let mut t = fvb_core::recset::SetTree::default();
+            d.store_settings(&mut t, false);
+            let na = d.osc.analog.len();
+            t.section(&d.file_key(na + k)).expect("the section").get_str("AliasName", "absent").to_string()
+        };
+        let mut app = demo_app();
+        grounded(&mut app);
+        let d = app.active_doc_mut().unwrap();
+        d.selection.insert(ChanKey::Analog(0));
+        let n = d.osc.sample_count();
+        let own = d.osc.digital.len();
+        for (k, id) in [(own, "Мой сигнал"), (own + 1, KZ_PHASES[1])] {
+            d.osc.digital.push(fvb_core::DigitalChannel { index: k as u32 + 1, id: id.into(), phase: String::new(), normal: 0, own_rate: 0.0, samples: vec![false; n] });
+        }
+        d.digital_visible.resize(own + 2, true);
+        d.init_set_keys();
+        // The first is renamed to a flag's name by the user: an alias.
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Digital(own), KZ_PHASES[0]), Ok(()));
+        app.dispatch(Command::OmpAnalysis);
+        let d = app.active_doc_mut().unwrap();
+        let slot = |d: &crate::app::Doc, name: &str| d.osc.digital.iter().position(|c| c.id == name).unwrap();
+        let (a, b, c) = (slot(d, KZ_PHASES[0]), slot(d, KZ_PHASES[1]), slot(d, KZ_PHASES[2]));
+        assert!([a, b, c].iter().all(|&k| d.dig(k).omp));
+        assert_eq!(alias_of(d, a), KZ_PHASES[0], "the user's alias stays");
+        assert_eq!(alias_of(d, b), "", "an own channel of that name has none");
+        assert_eq!(alias_of(d, c), "", "a flag the run made has none");
+        // Across a «Кодировка» switch and a re-run too.
+        d.set_codepage(fvb_core::comtrade::Encoding::Cp866);
+        assert_eq!(alias_of(d, a), KZ_PHASES[0]);
+        assert_eq!(alias_of(d, b), "");
+        assert_eq!(alias_of(d, c), "");
+        // A re-run leaves each as it was.
+        app.run_omp();
+        let d = app.active_doc().unwrap();
+        let (a, b, c) = (slot(d, KZ_PHASES[0]), slot(d, KZ_PHASES[1]), slot(d, KZ_PHASES[2]));
+        assert_eq!((alias_of(d, a), alias_of(d, b), alias_of(d, c)), (KZ_PHASES[0].to_string(), String::new(), String::new()));
     }
 
     /// After the run took over a record's own channel the list reads
