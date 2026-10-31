@@ -556,7 +556,7 @@ impl App {
     /// every created page saves and the sheet closes.
     pub fn quick_calc(&mut self) {
         if let Some(i) = page_index(self.analysis_tab) {
-            let taken: Vec<String> = self.active_doc().map(|d| fvb_core::quick::taken_names(&d.osc, d.computed.iter().map(|c| c.name.as_str()))).unwrap_or_default();
+            let taken: Vec<String> = self.active_doc().map(|d| fvb_core::quick::taken_names(&d.osc, d.computed.iter().map(|c| c.name.as_str()).chain(d.loose_defs.iter().map(|l| l.0.as_str())))).unwrap_or_default();
             let g = self.quick[i].generate(self.analysis_tab, &taken);
             self.apply_quick(&g);
         } else {

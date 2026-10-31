@@ -566,7 +566,8 @@ impl Doc {
         for k in ["Circle Chart", "Diff Chart"] {
             t.section_mut(k).child_mut("Selected Block");
         }
-        let calc: Vec<(String, String)> = self.computed.iter().filter(|c| is_formula(c)).map(|c| (c.name.clone(), c.formula.clone())).collect();
+        // The calculation manager's list (kill-active's rows and their order included, `0x4153a0`).
+        let calc = self.definition_pairs();
         recset::write_calculated(t.section_mut("CalculatedChannels"), &calc);
         recset::write_omp(t.section_mut("WrongPlaceFinding"), &self.omp.params);
         let mask = if print { !flag::VISIBLE } else { u32::MAX };
@@ -1802,5 +1803,36 @@ mod tests {
         assert_eq!(save_kind(Path::new("/a/b.dat")), None);
         assert_eq!((cp_code(Encoding::Cp866), cp_code(Encoding::Cp1251)), (0, 1));
         assert_eq!((cp_of(0), cp_of(1)), (Encoding::Cp866, Encoding::Cp1251));
+    }
+
+    /// #31: the definition list kill-active writes — rows without a channel and the order ↑ / ↓ gave — is what the
+    /// `.set` saves as `CalculatedChannels` (`0x4153a0`): a reopened record has them as channels, in that order.
+    #[test]
+    fn the_definition_list_is_saved_in_its_order() {
+        let dir = temp_dir("deflist");
+        let cfg = write_record(&dir);
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        app.active = Some(di);
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into()), ("Y".into(), "Ub*2".into())]).is_some());
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.selected = Some(1);
+        app.fp_move(true);
+        app.fp_add_row("Z1".into(), "Uc*2".into());
+        app.formula_page.selected = Some(2);
+        app.fp_move(true);
+        app.fp_kill_active();
+        app.quick_open = false;
+        app.docs[di].set.modified = true;
+        assert_eq!(app.docs[di].definition_pairs().iter().map(|p| p.0.as_str()).collect::<Vec<_>>(), ["Y", "Z1", "X"]);
+        assert!(app.save_active());
+        drop(app);
+        let mut back = App::new();
+        back.persist = false;
+        let bi = open(&mut back, &cfg);
+        let names: Vec<_> = back.docs[bi].computed.iter().map(|c| (c.name.as_str(), c.formula.as_str())).collect();
+        assert_eq!(names, [("Y", "Ub*2"), ("Z1", "Uc*2"), ("X", "Ua*2")]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

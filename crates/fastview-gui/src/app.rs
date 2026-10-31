@@ -1001,32 +1001,111 @@ impl Doc {
     /// formula naming one of them, itself or a later one is the error 0x1d4 (#30).
     pub fn try_reevaluate_formulas_before(&mut self, show_primary: bool, new_names: &[String]) -> Result<(), fvb_core::expr::FormulaError> {
         self.sync_flagged_names();
-        self.evaluate_formula_list_before(show_primary, new_names)
+        self.evaluate_formula_list_before(show_primary, new_names, true)
     }
 
     /// [`Doc::try_reevaluate_formulas`] over the flagged copy as it is.
     fn evaluate_formula_list(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
-        self.evaluate_formula_list_before(show_primary, &[])
+        self.evaluate_formula_list_before(show_primary, &[], false)
     }
 
-    fn evaluate_formula_list_before(&mut self, show_primary: bool, new_names: &[String]) -> Result<(), fvb_core::expr::FormulaError> {
+    /// The record's definition list (the calculation manager's, `doc+0x190`) in its own order: the formula channels
+    /// and the rows kill-active kept without a channel, ordered by [`Doc::def_order`] (what it does not know follows
+    /// in the present order: the channels, then the rows).
+    pub fn definition_list(&self) -> Vec<Def> {
+        let mut v: Vec<Def> = (0..self.computed.len()).filter(|&j| crate::setfile::is_formula(&self.computed[j])).map(Def::Chan).collect();
+        v.extend((0..self.loose_defs.len()).filter(|&i| !self.computed.iter().any(|c| c.name == self.loose_defs[i].0)).map(Def::Loose));
+        let pos = |d: &Def| {
+            let n = match d {
+                Def::Chan(j) => &self.computed[*j].name,
+                Def::Loose(i) => &self.loose_defs[*i].0,
+            };
+            self.def_order.iter().position(|o| o == n).unwrap_or(usize::MAX)
+        };
+        v.sort_by_key(|d| pos(d));
+        v
+    }
+
+    /// The list as (name, formula) pairs, in order: what the `.set` saves as `CalculatedChannels` (`0x4153a0`).
+    pub fn definition_pairs(&self) -> Vec<(String, String)> {
+        self.definition_list()
+            .into_iter()
+            .map(|d| match d {
+                Def::Chan(j) => (self.computed[j].name.clone(), self.computed[j].formula.clone()),
+                Def::Loose(i) => self.loose_defs[i].clone(),
+            })
+            .collect()
+    }
+
+    /// `0x415780` over the definition list in the list's order: each formula channel is recomputed in place; with
+    /// `create_loose` the rows without a channel become channels (at the block's end, as a new formula is). A
+    /// definition's name guard (`0x419074`) covers the names after it in the list, then `new_names`. A failure ends
+    /// the walk (the ones before keep their new values, the channels it created go again, `0x416f1b`).
+    fn evaluate_formula_list_before(&mut self, show_primary: bool, new_names: &[String], create_loose: bool) -> Result<(), fvb_core::expr::FormulaError> {
+        let is_def = |c: &Computed| crate::setfile::is_formula(c);
+        let seq = self.definition_list();
+        let names: Vec<String> = seq
+            .iter()
+            .map(|d| match d {
+                Def::Chan(j) => self.computed[*j].name.clone(),
+                Def::Loose(i) => self.loose_defs[*i].0.clone(),
+            })
+            .collect();
+        // Channels that carry no formula (ОМП, merged) are always there to read.
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
-        let is_def = |c: &Computed| c.formula != "ОМП" && c.formula != "объединение" && c.formula != crate::merge_ui::PENDING;
         for j in 0..self.computed.len() {
-            let c = &self.computed[j];
-            if is_def(c) {
-                let batch = [(c.name.clone(), c.formula.clone())];
-                // The definitions after this one: the later formula channels, then the new batch.
-                let tail: Vec<String> = self.computed[j + 1..].iter().filter(|c| is_def(c)).map(|c| c.name.clone()).chain(new_names.iter().cloned()).collect();
-                let mut out = self.eval_formulas_before(&done, &batch, &tail, show_primary)?;
-                if let Some(new) = out.pop() {
-                    self.computed[j].set_values(new.samples, new.phasors);
+            if !is_def(&self.computed[j]) {
+                self.reflag_computed(j);
+                done.push(self.computed[j].as_core());
+            }
+        }
+        let (len0, loose0) = (self.computed.len(), self.loose_defs.clone());
+        let mut created: Vec<String> = Vec::new();
+        let mut walk = || -> Result<(), fvb_core::expr::FormulaError> {
+            for (si, def) in seq.iter().enumerate() {
+                let tail: Vec<String> = names[si + 1..].iter().cloned().chain(new_names.iter().cloned()).collect();
+                match def {
+                    Def::Chan(j) => {
+                        let batch = [(self.computed[*j].name.clone(), self.computed[*j].formula.clone())];
+                        let mut out = self.eval_formulas_before(&done, &batch, &tail, show_primary)?;
+                        if let Some(new) = out.pop() {
+                            self.computed[*j].set_values(new.samples, new.phasors);
+                        }
+                        // A later formula reads this one through the accessor and the phasor cache: flagged.
+                        self.reflag_computed(*j);
+                        done.push(self.computed[*j].as_core());
+                    }
+                    Def::Loose(i) if create_loose => {
+                        let (name, formula) = self.loose_defs[*i].clone();
+                        let mut out = self.eval_formulas_before(&done, &[(name, formula)], &tail, show_primary)?;
+                        let Some(c) = out.pop() else { continue };
+                        let place = self.kind0_order().len();
+                        let color = channel_color(&c.name, "", place);
+                        let mut cc = Computed::new(c.name.clone(), c.formula, Vec::new(), color);
+                        cc.unit = c.unit;
+                        cc.set_values(c.samples, c.phasors);
+                        self.computed.push(cc);
+                        created.push(c.name);
+                        let j = self.computed.len() - 1;
+                        self.reflag_computed(j);
+                        done.push(self.computed[j].as_core());
+                    }
+                    Def::Loose(_) => {}
                 }
             }
-            // A later formula reads this one through the accessor and the
-            // phasor cache: flagged.
-            self.reflag_computed(j);
-            done.push(self.computed[j].as_core());
+            Ok(())
+        };
+        if let Err(e) = walk() {
+            if !created.is_empty() {
+                self.computed.truncate(len0);
+                self.loose_defs = loose0;
+                self.channels_changed();
+            }
+            return Err(e);
+        }
+        if !created.is_empty() {
+            self.loose_defs.retain(|(n, _)| !created.contains(n));
+            self.channels_changed();
         }
         self.prune_groups();
         Ok(())
@@ -1404,6 +1483,13 @@ pub struct DocSnapshot {
     /// The formula editor's definitions without a channel and the list's row order (#31).
     pub loose_defs: Vec<(String, String)>,
     pub def_order: Vec<String>,
+}
+
+/// An entry of the definition list: a formula channel, or a row without a channel yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Def {
+    Chan(usize),
+    Loose(usize),
 }
 
 /// A name as read (`+0x64`): its bytes, the text last decoded from them in
@@ -3008,7 +3094,8 @@ impl App {
         // whole list: the older formula channels take the current values
         // and correction too (L9.103); an old one failing aborts the batch
         // — its box, nothing added (`0x416ed6`–`0x416f69`).
-        let new_names = fvb_core::quick::batch_names(&d.osc, d.computed.iter().map(|c| c.name.as_str()), batch);
+        let new_names = fvb_core::quick::batch_names(&d.osc, d.computed.iter().map(|c| c.name.as_str()).chain(d.loose_defs.iter().map(|l| l.0.as_str())), batch);
+        let before = (d.computed.len(), d.loose_defs.clone());
         if let Err(e) = d.try_reevaluate_formulas_before(show_primary, &new_names) {
             self.dlg.push_alert(e.to_string());
             return None;
@@ -3032,6 +3119,14 @@ impl App {
             // A computed channel's evaluation failure is a box (`0x415780`
             // → `0x475680`).
             Err(e) => {
+                // The rows made into channels by the walk go again with the batch (`0x416f1b`).
+                if let Some(d) = self.active_doc_mut() {
+                    if d.computed.len() > before.0 {
+                        d.computed.truncate(before.0);
+                        d.loose_defs = before.1;
+                        d.channels_changed();
+                    }
+                }
                 self.dlg.push_alert(e.to_string());
                 None
             }
@@ -3044,9 +3139,8 @@ impl App {
     /// differential pairs.
     pub fn apply_quick(&mut self, g: &fvb_core::quick::Generated) {
         // The batch `0x415780` runs over the record's whole definition list, the formula editor's rows that have
-        // no channel yet included (#31): they become channels in front of the page's own.
-        let loose = self.active_doc().map(|d| d.loose_defs.clone()).unwrap_or_default();
-        let batch: Vec<(String, String)> = loose.iter().cloned().chain(g.channels.iter().cloned()).collect();
+        // no channel yet included (#31): `append_computed` makes them channels in front of the page's own.
+        let batch = g.channels.clone();
         let Some(names) = self.append_computed(&batch) else {
             // The original has added the batch's channels by then and deletes them again when the recompute fails
             // (`0x416f1b`), each deletion sweeping the review list (`0x42ecf0`, #31).
@@ -3055,10 +3149,6 @@ impl App {
             }
             return;
         };
-        let names = names[loose.len().min(names.len())..].to_vec();
-        if let Some(d) = self.active_doc_mut() {
-            d.loose_defs.clear();
-        }
         // Map generated names to the names actually given; a name generated
         // twice is its first line's (the original uniq's the flag and pair
         // names against the state before the batch, `0x41699d`).
@@ -4440,5 +4530,69 @@ mod tests {
         app.redo();
         let d = app.active_doc().unwrap();
         assert!(d.loose_defs.is_empty() && d.def_order.is_empty());
+    }
+
+    /// #31: the definitions are evaluated in the list's order, each one's name guard covering the names after it
+    /// in that order: with Y moved above X, X may name y; with X above Y it may not.
+    #[test]
+    fn definitions_are_evaluated_in_the_lists_order() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into()), ("Y".into(), "Ub*2".into())]).is_some());
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.selected = Some(1);
+        app.fp_move(true);
+        app.formula_page.rows[1].1 = "y+1".into();
+        app.formula_page.dirty = true;
+        app.fp_kill_active();
+        app.quick_open = false;
+        let g = fvb_core::quick::Generated { channels: vec![("Z".into(), "Uc*2".into())], ..Default::default() };
+        app.apply_quick(&g);
+        assert!(app.dlg.alert().is_none(), "Y first, then X naming y: {:?}", app.dlg.alert());
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["X", "Y", "Z"]);
+        assert_eq!(d.computed[0].formula, "y+1");
+        // Moved back (X above Y), the same formula is refused.
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.selected = Some(1);
+        app.fp_move(true);
+        app.fp_kill_active();
+        app.quick_open = false;
+        app.apply_quick(&g);
+        assert_eq!(app.dlg.alert(), Some("X: 'y' -  не определен"));
+        // A row without a channel above a channel naming it works too.
+        app.dlg.alerts.clear();
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        app.dispatch(Command::QuickAnalysis);
+        app.fp_add_row("L1".into(), "Ub*2".into());
+        app.formula_page.selected = Some(1);
+        app.fp_move(true);
+        app.formula_page.rows[1].1 = "l1+1".into();
+        app.formula_page.dirty = true;
+        app.fp_kill_active();
+        app.quick_open = false;
+        app.apply_quick(&g);
+        assert!(app.dlg.alert().is_none(), "{:?}", app.dlg.alert());
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["X", "L1", "Z"]);
+    }
+
+    /// #31: the quick-analysis pages avoid the names of the rows kill-active kept.
+    #[test]
+    fn generated_names_avoid_the_loose_rows() {
+        let mut app = demo_app();
+        app.active_doc_mut().unwrap().loose_defs = vec![("I1".into(), "Ia*1".into())];
+        app.analysis_tab = AnalysisTab::Symmetric;
+        let q = &mut app.quick[crate::quick_ui::page_index(AnalysisTab::Symmetric).unwrap()];
+        q.ia = "Ia".into();
+        q.ib = "Ib".into();
+        q.ic = "Ic".into();
+        q.ua = "Ua".into();
+        q.ub = "Ub".into();
+        q.uc = "Uc".into();
+        app.quick_calc();
+        let d = app.active_doc().unwrap();
+        let names: Vec<_> = d.computed.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"I1") && names.contains(&"I1_2"), "{names:?}");
     }
 }
