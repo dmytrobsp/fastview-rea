@@ -285,7 +285,7 @@ impl App {
                 }
                 None => {
                     let index = d.osc.digital.len() as u32 + 1;
-                    d.osc.digital.push(fvb_core::DigitalChannel { index, id: KZ_PHASES[k].into(), phase: String::new(), normal: 0, samples });
+                    d.osc.digital.push(fvb_core::DigitalChannel { index, id: KZ_PHASES[k].into(), phase: String::new(), normal: 0, samples, own_rate: 0.0 });
                     let i = d.osc.digital.len() - 1;
                     d.dig_mut(i).omp = true;
                 }
@@ -1692,7 +1692,7 @@ mod tests {
         d.selection.insert(ChanKey::Analog(0));
         let n = d.osc.sample_count();
         let own = d.osc.digital.len();
-        d.osc.digital.push(fvb_core::DigitalChannel { index: own as u32 + 1, id: KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples: vec![true; n] });
+        d.osc.digital.push(fvb_core::DigitalChannel { index: own as u32 + 1, id: KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples: vec![true; n], own_rate: 0.0 });
         d.digital_visible.resize(own + 1, true);
         app.dispatch(Command::OmpAnalysis);
         let d = app.active_doc().unwrap();
@@ -1784,7 +1784,7 @@ mod tests {
         }
         d.recompute_signals();
         let own = d.osc.digital.len();
-        d.osc.digital.push(fvb_core::DigitalChannel { index: own as u32 + 1, id: KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples: vec![false; n] });
+        d.osc.digital.push(fvb_core::DigitalChannel { index: own as u32 + 1, id: KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples: vec![false; n], own_rate: 0.0 });
         d.digital_visible.resize(own + 1, true);
         app.dispatch(Command::OmpAnalysis);
         app.run_omp();

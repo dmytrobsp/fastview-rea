@@ -180,3 +180,26 @@ misbehaves and the better behaviour is obvious (the maintainer,
   scaled display was not checked, so this may be parity. (An earlier build
   of ours also asked the pointer to leave the pane: a fix to match the
   original, not an improvement.)
+- **A slid-out side or top pane starts below the caption row (#110).** The
+  original lays a slid-out auto-hidden pane over the window's whole height
+  (a side pane) or width (a top one) from the window's top, its caption
+  under the window's caption glass (L9.410); a pin or
+  close pressed there still acts (clone, a left pane: the pin docks it
+  back, the close hides it, the ribbon button then unchecked), but the
+  buttons are invisible, and on a right or top pane they lie under the
+  window's own buttons, so they can't be reached at all. Ours starts the
+  pane below the caption row, so its caption shows and its pin and close
+  work on every edge; the pane is that much shorter. Reason: the
+  maintainer's decision (2026-10-31): a pane's pin and close should be in
+  reach. The hide check still covers the band above the pane up to the
+  window's top, as the original's pane does, so the pointer resting
+  between a top strip and its pane keeps it out. A strip button under the glass (a left strip's first stub) is
+  hovered as in the original, which is parity, not an improvement.
+- **A pane's tab dragged out of its strip shows the move cursor (#111).**
+  The original keeps the arrow while a tab is pressed and pulled out of
+  the strip (`0x100690b4`, `0x10068657`; clone, 100 %: the arrow before
+  and after the tab leaves the strip). Ours shows the four-way move
+  cursor from the press on a tab of a strip with several tabs (left
+  button) and while it is dragged, as for a caption drag (the entry
+  above). The distance is the caption's, grown with the display scale.
+  Reason: as for the caption, it hints that dragging on pulls the pane out.
