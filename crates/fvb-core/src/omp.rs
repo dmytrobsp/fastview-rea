@@ -8,6 +8,7 @@
 //! neutral the loop impedance against R, X per km; the double-ended method
 //! matches the fault-point sequence voltage magnitudes seen from both ends.
 
+use crate::trig::{cos, sin};
 use num_complex::Complex64;
 
 /// Network neutral treatment for the single-ended methods.
@@ -93,8 +94,8 @@ pub fn omp_phasors(x: &[f64], p: usize) -> Vec<Complex64> {
         for j in 0..p {
             let th = j as f64 * tau / p as f64;
             let v = x[k - p + j];
-            re += th.sin() * v;
-            im += th.cos() * v;
+            re += sin(th) * v;
+            im += cos(th) * v;
         }
         let scale = 2.0 / p as f64;
         *slot = Complex64::new(re * scale, im * scale);
@@ -126,7 +127,7 @@ pub fn omp_phasors_tracked(x: &[f64], n: usize, t_us: &[i64], own: &[f64], track
             let dt = (t(s) - t(s - 1)) * 1e-6;
             let th = tau * phase;
             let xs = x.get(s).copied().unwrap_or(0.0);
-            sum += Complex64::new(-th.sin() * xs, th.cos() * xs) * dt;
+            sum += Complex64::new(-sin(th) * xs, cos(th) * xs) * dt;
             let f = freq(s - 1);
             last = Some((s, th, phase, dt));
             phase += dt * f;
@@ -136,7 +137,7 @@ pub fn omp_phasors_tracked(x: &[f64], n: usize, t_us: &[i64], own: &[f64], track
         }
         if let Some((sl, th, before, dt)) = last {
             let xs = x.get(sl).copied().unwrap_or(0.0);
-            let unit = Complex64::new(-th.sin() * xs, th.cos() * xs);
+            let unit = Complex64::new(-sin(th) * xs, cos(th) * xs);
             sum += unit * ((1.0 - before) / freq(sl) - dt);
         }
         *slot = if count == 0 { Complex64::default() } else { sum * (2.0 / (inv / count as f64)) };
@@ -409,7 +410,7 @@ fn grounded_distance(t: &Trace, k: usize, mut u0: Complex64, mut i0: Complex64, 
         } else {
             (Complex64::default(), Complex64::default())
         };
-        let iref_r = iref * Complex64::from_polar(1.0, theta);
+        let iref_r = iref * Complex64::new(cos(theta), sin(theta));
         let ii = iph + kk * i0 + pp;
         d = cdiv(u, iref_r).im / cdiv(z1 * ii, iref_r).im;
         if sec.length_km >= d {
@@ -850,7 +851,7 @@ fn refine_theta(t: &Trace, secs: &[Section], win: (usize, usize), d: f64) -> Opt
         v3.push(b.norm());
     }
     let (ma, mb, mc) = (median(&v1), median(&v2), median(&v3));
-    Some((-mc * ma.sin()).atan2(mb - mc * ma.cos()))
+    Some((-mc * sin(ma)).atan2(mb - mc * cos(ma)))
 }
 
 /// Inputs of a double-ended analysis: phase voltages and currents at both

@@ -2577,6 +2577,16 @@ fn mode_raw(doc: &crate::app::Doc, i: usize, k: usize) -> f64 {
     }
 }
 
+/// The factor a channel's display series in its mode still waits for: the RMS and the first harmonic
+/// are summed over samples already read through `k` (`0x426020`), an instantaneous value is `k` times
+/// the one sample.
+fn mode_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
+    match doc.chans[i].mode {
+        ValueMode::Instant => value_scale(doc, i, primary),
+        ValueMode::Rms | ValueMode::FirstHarmonic => 1.0,
+    }
+}
+
 /// [finite min, finite max, min, max] of channel `i`'s display series, the
 /// scan cached per (channel, mode, `series_gen`) and the scale applied.
 fn scaled_minmax(doc: &crate::app::Doc, i: usize, primary: bool) -> [f64; 4] {
@@ -2596,7 +2606,7 @@ fn scaled_minmax(doc: &crate::app::Doc, i: usize, primary: bool) -> [f64; 4] {
         doc.minmax_cache.borrow_mut().insert(key, (doc.series_gen, m));
         m
     });
-    let s = value_scale(doc, i, primary);
+    let s = mode_scale(doc, i, primary);
     let pair = |a: f64, b: f64| if s >= 0.0 { (a * s, b * s) } else { (b * s, a * s) };
     let (lo, hi) = pair(raw[0], raw[1]);
     let (mn, mx) = pair(raw[2], raw[3]);
@@ -2607,8 +2617,8 @@ fn mode_disp(doc: &crate::app::Doc, i: usize, k: usize, primary: bool) -> f64 {
     let scale = value_scale(doc, i, primary);
     match doc.chans[i].mode {
         ValueMode::Instant => doc.sample(i, k) * scale,
-        ValueMode::Rms => doc.rms_at(i, k) * scale,
-        ValueMode::FirstHarmonic => doc.harmonic_at(i, k) * doc.osc.harmonic1_gain * scale,
+        ValueMode::Rms => doc.rms_at(i, k),
+        ValueMode::FirstHarmonic => doc.harmonic_at(i, k) * doc.osc.harmonic1_gain,
     }
 }
 
@@ -2640,12 +2650,11 @@ fn lane_stats(
     match lane {
         Lane::Analog(i) => {
             let ch = &doc.osc.analog[*i];
-            let scale = value_scale(doc, *i, primary);
             // Value at the cursor and Max/Min follow the display mode; СКЗ
             // and A1 are always the one-period RMS and first harmonic.
             let [.., mn, mx] = scaled_minmax(doc, *i, primary);
-            let rms = doc.stat_rms(*i, k_main) * scale;
-            let a1 = doc.stat_a1(*i, k_main) * doc.osc.harmonic1_gain * scale;
+            let rms = doc.stat_rms(*i, k_main);
+            let a1 = doc.stat_a1(*i, k_main) * doc.osc.harmonic1_gain;
             let val = mode_disp(doc, *i, k_main, primary);
             (ch.id.clone(), analog_unit(doc, *i), doc.chans[*i].color, mx, mn, rms, a1, val)
         }

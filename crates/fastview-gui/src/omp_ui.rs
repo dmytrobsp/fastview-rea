@@ -98,8 +98,7 @@ fn chan_samples(d: &Doc, name: &str) -> Option<Vec<f64>> {
     // «КЗ отсутствует.».
     match find_chan(d, name)? {
         Ok(i) => {
-            let k = d.shown_k(i);
-            d.flagged.analog.get(i).map(|c| c.samples.iter().map(|x| x * k).collect())
+            (i < d.flagged.analog.len()).then(|| d.shown_samples(i).to_vec())
         }
         Err(j) => Some(d.computed[j].samples.clone()),
     }

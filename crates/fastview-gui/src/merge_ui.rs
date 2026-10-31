@@ -541,8 +541,8 @@ impl App {
                 // flagged values (`0x47a1b0` → `0x42edf0` by display name).
                 let corr = fvb_core::freqcorr::of(&d.osc);
                 let (x1, corr1) = match c1 {
-                    ChanKey::Computed(j) => (&d.computed[j].samples, d.computed_corr(j).map(|c| fvb_core::freqcorr::FreqCorr { chan: fvb_core::freqcorr::OTHER, ..c })),
-                    ChanKey::Analog(i) | ChanKey::Digital(i) => (&d.flagged.analog[i].samples, corr.and_then(|c| c.for_chan(i))),
+                    ChanKey::Computed(j) => (&d.computed[j].samples[..], d.computed_corr(j).map(|c| fvb_core::freqcorr::FreqCorr { chan: fvb_core::freqcorr::OTHER, ..c })),
+                    ChanKey::Analog(i) | ChanKey::Digital(i) => (d.shown_samples(i), corr.and_then(|c| c.for_chan(i))),
                 };
                 let s1 = SyncChan { times: &t1, x: x1, n: n1, corr: corr1 };
                 let corr2 = corr.map(|c| fvb_core::freqcorr::FreqCorr { chan: fvb_core::freqcorr::OTHER, fs: if p.pasted.rate > 0.0 { p.pasted.rate } else { c.fs }, ..c });

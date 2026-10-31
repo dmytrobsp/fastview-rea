@@ -627,6 +627,41 @@ pub fn display_k(ch: &fvb_core::comtrade::AnalogChannel, show_primary: bool) -> 
     }
 }
 
+/// The factor channel `ch` is read with (`ch+0xf0`): [`display_k`], an ADC code is taken as is.
+pub fn shown_factor(ch: &fvb_core::comtrade::AnalogChannel, v: &ChanView) -> f64 {
+    if v.adc_counts {
+        1.0
+    } else {
+        display_k(ch, v.primary)
+    }
+}
+
+/// Channel `c`'s values as the accessor `0x426020` computes them when the factor `k` is not 1: each
+/// stored sample times `k`, then minus `dc·k` with «Удалить постоянную» (`dc` the mean of the stored
+/// samples, `ch+0xf8`), then negated with «Инвертировать» — `x·k − dc·k`, not `(x − dc)·k`, which
+/// differs in the last bits. `None` where the flagged series is the accessor's already (k = 1, or
+/// ADC codes, which the accessor does not scale).
+pub fn shown_series(c: &fvb_core::comtrade::AnalogChannel, v: &ChanView, dc: f64, k: f64) -> Option<Vec<f64>> {
+    if k == 1.0 || v.adc_counts {
+        return None;
+    }
+    let dck = dc * k;
+    Some(
+        c.samples
+            .iter()
+            .map(|x| {
+                let y = x * k;
+                let y = if v.remove_dc { y - dck } else { y };
+                if v.invert {
+                    -y
+                } else {
+                    y
+                }
+            })
+            .collect(),
+    )
+}
+
 /// A horizontal визир (`doc+0x2c8` / `+0x2e0`): shown, the analog channel
 /// whose scale it is on (`None` = never placed), and its value in that
 /// channel's units.
@@ -727,6 +762,11 @@ pub struct Doc {
     pub diff_band: bool,
     /// Per-channel one-cycle RMS of the flagged values.
     pub rms: Vec<Vec<f64>>,
+    /// Each analog channel's flagged values times the shown factor `k`, per sample, where `k` is not 1
+    /// (`0x426020`, the accessor every readout reads through: the DFT, phasor, RMS and a0 sum the
+    /// scaled samples, they do not scale their result). `None`: the flagged series itself. Rebuilt with
+    /// the series by [`Doc::recompute`]; read through [`Doc::shown_samples`].
+    pub shown: Vec<Option<Vec<f64>>>,
     /// The record as the channel math sees it: each analog channel's samples
     /// with its ADC / remove-DC / invert flags applied (`0x426020`).
     pub flagged: Oscillogram,
@@ -784,18 +824,16 @@ impl Doc {
     }
 
     pub fn new(osc: Oscillogram, name: String) -> Self {
-        let analysis = Analysis::compute(&osc);
         let n = osc.samples_per_cycle().max(2);
         let corr = fvb_core::freqcorr::of(&osc);
-        let rms: Vec<Vec<f64>> = osc
-            .analog
-            .iter()
-            .enumerate()
-            .map(|(i, c)| fvb_core::freqcorr::sliding_rms(corr, i, &c.samples, n))
-            .collect();
+        let chans: Vec<ChanView> = (0..osc.analog.len()).map(|i| ChanView::new(&osc.analog[i], i)).collect();
+        // The channels read through the accessor: the shown factor per sample.
+        let shown: Vec<Option<Vec<f64>>> = (0..osc.analog.len()).map(|i| shown_series(&osc.analog[i], &chans[i], whole_period_mean(&osc.analog[i].samples, n), shown_factor(&osc.analog[i], &chans[i]))).collect();
+        let series: Vec<&[f64]> = (0..osc.analog.len()).map(|i| shown[i].as_deref().unwrap_or(&osc.analog[i].samples)).collect();
+        let analysis = Analysis::compute_over(&osc, &series, corr);
+        let rms: Vec<Vec<f64>> = series.iter().enumerate().map(|(i, x)| fvb_core::freqcorr::sliding_rms(corr, i, x, n)).collect();
         let dc_mean = osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
         let flagged = osc.clone();
-        let chans = (0..osc.analog.len()).map(|i| ChanView::new(&osc.analog[i], i)).collect();
         let digital_visible = vec![true; osc.digital.len()];
         Doc {
             osc,
@@ -830,6 +868,7 @@ impl Doc {
             vscroll: 0.0,
             diff_band: true,
             rms,
+            shown,
             flagged,
             series_gen: 0,
             minmax_cache: Default::default(),
@@ -862,14 +901,19 @@ impl Doc {
         self.series_gen += 1;
         self.dc_mean = self.osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
         self.rms.resize(self.osc.analog.len(), Vec::new());
+        self.shown.resize(self.osc.analog.len(), None);
         for i in 0..self.osc.analog.len() {
             let k = display_k(&self.osc.analog[i], self.chans[i].primary);
             self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i], k);
-            self.rms[i] = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&self.osc), i, &self.flagged.analog[i].samples, n);
+            // Every readout sums the samples as the accessor returns them: times the shown factor.
+            self.shown[i] = shown_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i].0, shown_factor(&self.osc.analog[i], &self.chans[i]));
+            self.rms[i] = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&self.osc), i, self.shown_samples(i), n);
         }
         self.flag_digital(false);
         // The correction reads the frequency channel as stored (L9.65).
-        self.analysis = Analysis::compute_with(&self.flagged, fvb_core::freqcorr::of(&self.osc));
+        let series: Vec<&[f64]> = (0..self.osc.analog.len()).map(|i| self.shown_samples(i)).collect();
+        let analysis = Analysis::compute_over(&self.flagged, &series, fvb_core::freqcorr::of(&self.osc));
+        self.analysis = analysis;
         // The copy was just taken: no name to bring over.
         let _ = self.evaluate_formula_list(show_primary);
     }
@@ -991,11 +1035,13 @@ impl Doc {
     /// sample accessor `0x426020` and the phasor cache `0x428490` apply it
     /// before any painter runs (an ADC code is taken as is).
     pub fn shown_k(&self, i: usize) -> f64 {
-        if self.chans[i].adc_counts {
-            1.0
-        } else {
-            display_k(&self.osc.analog[i], self.chans[i].primary)
-        }
+        shown_factor(&self.osc.analog[i], &self.chans[i])
+    }
+
+    /// Channel `i`'s values as the accessor `0x426020` returns them: the flagged samples times
+    /// [`Doc::shown_k`], each one on its own.
+    pub fn shown_samples(&self, i: usize) -> &[f64] {
+        self.shown.get(i).and_then(Option::as_deref).unwrap_or(&self.flagged.analog[i].samples)
     }
 
     pub fn rms_at(&self, i: usize, k: usize) -> f64 {
@@ -1008,12 +1054,18 @@ impl Doc {
     /// keep the correction they were built with until a full recompute.
     pub fn stat_rms(&self, i: usize, k: usize) -> f64 {
         let n = self.osc.samples_per_cycle().max(2);
-        self.flagged.analog.get(i).map_or(0.0, |c| fvb_core::freqcorr::rms_at(fvb_core::freqcorr::of(&self.osc), i, &c.samples, k, n, 1))
+        if i >= self.flagged.analog.len() {
+            return 0.0;
+        }
+        fvb_core::freqcorr::rms_at(fvb_core::freqcorr::of(&self.osc), i, self.shown_samples(i), k, n, 1)
     }
 
     pub fn stat_a1(&self, i: usize, k: usize) -> f64 {
         let n = self.osc.samples_per_cycle().max(2);
-        self.flagged.analog.get(i).map_or(0.0, |c| fvb_core::freqcorr::fundamental_at(fvb_core::freqcorr::of(&self.osc), i, &c.samples, k, n))
+        if i >= self.flagged.analog.len() {
+            return 0.0;
+        }
+        fvb_core::freqcorr::fundamental_at(fvb_core::freqcorr::of(&self.osc), i, self.shown_samples(i), k, n)
     }
 
     pub fn harmonic_at(&self, i: usize, k: usize) -> f64 {
