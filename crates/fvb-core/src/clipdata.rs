@@ -299,8 +299,8 @@ mod tests {
         assert!(h.contains("Комментарий: \r\nc1\r\n\r\n2) Осциллограмма 2\r\n"));
         assert!(h.ends_with("Комментарий: \r\n\r\n"));
         // The VM's merge of a record with no comment into itself, as saved.
-        let s = HeaderSide { title: "DOC_1999.cfg", station: "PC1-1", block: "1", start: "03/05/2025, 06:55:36.265000", comment: "" };
-        let side = |n: u8| format!("{n}) Осциллограмма {n}\r\nИмя осциллограммы: DOC_1999.cfg\r\nСтанция:PC1-1\r\nНомер регистратора: 1\r\nНачало записи: 03/05/2025, 06:55:36.265000\r\nКомментарий: \r\n\r\n");
+        let s = HeaderSide { title: "DOC_1999.cfg", station: "PS4-2", block: "1", start: "19/08/2024, 10:27:43.518000", comment: "" };
+        let side = |n: u8| format!("{n}) Осциллограмма {n}\r\nИмя осциллограммы: DOC_1999.cfg\r\nСтанция:PS4-2\r\nНомер регистратора: 1\r\nНачало записи: 19/08/2024, 10:27:43.518000\r\nКомментарий: \r\n\r\n");
         let want = format!("Механотроника. FastView, Объединенная осциллограмма\r\nИсходные осциллограммы: \r\n{}\r\n{}", side(1), side(2));
         assert_eq!(merged_header(&s, &s), want);
     }

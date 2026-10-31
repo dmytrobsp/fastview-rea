@@ -206,11 +206,11 @@ fn zl_loop_impedance() {
 fn channel_references_are_renamed() {
     use fvb_core::expr::rename_channel_refs;
     let map = |n: &str| match n {
-        "ia +t+¦l 3" => Some("IA БЛОКА 3".to_string()),
+        "ia -+¦=l 6" => Some("IA ДОМНА 6".to_string()),
         "ток" => Some("’®Є".to_string()),
         _ => None,
     };
-    assert_eq!(rename_channel_refs("3I0: (\"IA +T+¦L 3\", \"IB\", Ic)", &map), "3I0: (\"IA БЛОКА 3\", \"IB\", Ic)");
+    assert_eq!(rename_channel_refs("3I0: (\"IA -+¦=L 6\", \"IB\", Ic)", &map), "3I0: (\"IA ДОМНА 6\", \"IB\", Ic)");
     assert_eq!(rename_channel_refs("Ток*2[кА] + sin(Ток)", &map), "\"’®Є\"*2[кА] + sin(\"’®Є\")");
     assert_eq!(rename_channel_refs("Ua*2", &map), "Ua*2");
     assert_eq!(rename_channel_refs("\"Ток", &map), "\"Ток", "unterminated: as typed");

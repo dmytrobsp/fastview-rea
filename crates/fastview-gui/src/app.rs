@@ -3912,11 +3912,11 @@ mod tests {
         let d = app.active_doc().unwrap();
         let mut ch = d.osc.analog[0].clone();
         let view = d.chans[0].clone();
-        (ch.primary, ch.secondary, ch.is_primary) = (2000.0, 1.0, true);
-        assert_eq!(display_k(&ch, false), 1.0 / 2000.0);
+        (ch.primary, ch.secondary, ch.is_primary) = (2380.0, 1.0, true);
+        assert_eq!(display_k(&ch, false), 1.0 / 2380.0);
         assert_eq!(display_k(&ch, true), 1.0);
         ch.is_primary = false;
-        assert_eq!(display_k(&ch, true), 2000.0);
+        assert_eq!(display_k(&ch, true), 2380.0);
         assert_eq!(display_k(&ch, false), 1.0);
         ch.samples = vec![1.0, 3.0];
         let v = ChanView { adc_counts: false, remove_dc: true, invert: false, ..view.clone() };

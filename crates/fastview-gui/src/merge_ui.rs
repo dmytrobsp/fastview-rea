@@ -19,8 +19,8 @@ pub struct ClipChan {
     pub start: Option<f64>,
     /// The copied channel's display mode (`primary_mode`, `ch+0x89`): the
     /// pasted lane reads its values ×k as the channel did (VM: a copied
-    /// «IA БЛОКА 3», 2000/1 primary values shown secondary, pastes at
-    /// «454.087 мА», not 908 A).
+    /// channel with a ratio, primary values shown secondary, pastes at the
+    /// shown value, not multiplied by the ratio).
     pub primary_mode: bool,
     /// Its lane's `Computed::seq` once pasted (0 on the clipboard): the
     /// link between the two, as the original's lane is the channel itself
@@ -75,7 +75,7 @@ pub fn clip_record(d: &Doc) -> ClipRecord {
     let s = &d.osc.stamps;
     let n = d.osc.time.len();
     // `duration_milli_sec` holds microseconds, `%g` (seen on the VM: a
-    // 10.999 s record writes "1.0999e+007").
+    // record of several seconds writes its duration in exponent form).
     let dur_ms = fvb_core::views::fmt_g((duration(&d.osc.time) * 1e6).round());
     let mut rec = ClipRecord {
         rate: d.osc.rate_r,
@@ -177,7 +177,7 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
                     primary: c.primary_value,
                     secondary: c.secondary_value,
                     // Written back as `%g` (VM: a pasted channel saved with
-                    // «2000,1», the record's own «2000.000000,1.000000»).
+                    // short ratio tokens, unlike the record's own padded ones).
                     primary_tok: fvb_core::views::fmt_g(c.primary_value),
                     secondary_tok: fvb_core::views::fmt_g(c.secondary_value),
                     is_primary: c.primary_values,
@@ -669,9 +669,9 @@ impl App {
         // while the flags stay set. Ours' flagged series has the DC and
         // the invert but not ×k, so a value comes back as it is; only an
         // ADC-mode code (which the accessor does not scale) ends ÷k. (A
-        // plain ÷k multiplied a 2000/1 channel shown secondary by 2000 —
-        // VM: «IA БЛОКА 3» at 908.174 A after a merge, 454.087 мА in the
-        // original.)
+        // plain ÷k multiplied a channel shown secondary by its ratio —
+        // VM: after a merge such a channel came out multiplied, the shown
+        // value in the original.)
         let unscale = |i: usize, v: f64| {
             let k = crate::app::display_k(&d.osc.analog[i], d.chans[i].primary);
             if !v.is_finite() {
@@ -760,7 +760,7 @@ impl App {
             }
         }
         // A selected pending lane stays selected as its merged channel (VM:
-        // «IA БЛОКА 3 (вст.)» still highlighted after «Объединить»); the
+        // a pasted channel still highlighted after «Объединить»); the
         // formula channels' keys follow their new places.
         let mut kept = 0;
         let new_at: Vec<Option<usize>> = d
@@ -1078,15 +1078,15 @@ mod tests {
         assert!(app.merge.is_none(), "the bar is hidden");
     }
 
-    /// A pasted channel is read in its copied display mode (VM: 2000/1
-    /// primary values shown secondary paste as the source shows them); the
+    /// A pasted channel is read in its copied display mode (VM: primary
+    /// values with a ratio, shown secondary, paste as the source shows them); the
     /// merge writes the file values back.
     #[test]
     fn a_pasted_lane_shows_values_as_its_channel_did() {
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         let a = &mut d.osc.analog[0];
-        (a.primary, a.secondary, a.is_primary) = (2000.0, 1.0, true);
+        (a.primary, a.secondary, a.is_primary) = (2380.0, 1.0, true);
         d.chans[0].primary = false;
         let src = d.osc.analog[0].samples.clone();
         d.selection.insert(ChanKey::Analog(0));
@@ -1095,16 +1095,16 @@ mod tests {
         let d = app.active_doc().unwrap();
         let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
         let own = &d.computed[j].pending_own;
-        assert!(own.iter().zip(&src).all(|(o, s)| (o - s / 2000.0).abs() < 1e-9), "shown ÷2000, secondary");
+        assert!(own.iter().zip(&src).all(|(o, s)| (o - s / 2380.0).abs() < 1e-9), "shown ÷2380, secondary");
         assert!(crate::lanes::key_icons(d, ChanKey::Computed(j)).contains(&"*K"), "the ratio's icon");
         app.merge_records();
         let d = app.active_doc().unwrap();
         let merged = d.osc.analog.iter().find(|a| a.id.ends_with("(вст.)")).expect("the merged channel");
         assert!(merged.samples.iter().zip(&src).all(|(m, s)| (m - s).abs() < 1e-6 * s.abs().max(1.0)), "the file values merged");
         // The copied channel itself stays shown secondary (VM).
-        let i = d.osc.analog.iter().position(|a| !a.id.ends_with("(вст.)") && a.primary == 2000.0).expect("the source");
+        let i = d.osc.analog.iter().position(|a| !a.id.ends_with("(вст.)") && a.primary == 2380.0).expect("the source");
         let a = &d.osc.analog[i];
-        assert_eq!((a.is_primary, a.primary, a.secondary, d.chans[i].primary), (true, 2000.0, 1.0, false), "the source's ratio and mode kept");
+        assert_eq!((a.is_primary, a.primary, a.secondary, d.chans[i].primary), (true, 2380.0, 1.0, false), "the source's ratio and mode kept");
         assert!(a.samples.iter().zip(&src).all(|(m, s)| (m - s).abs() < 1e-6 * s.abs().max(1.0)), "the source's file values kept: {} vs {}", a.samples[5], src[5]);
         // The merged channel, now first, keeps the copied mode: the
         // document stays secondary (VM).

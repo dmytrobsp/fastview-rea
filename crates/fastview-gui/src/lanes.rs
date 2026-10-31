@@ -19,8 +19,8 @@ pub const LEFT_W_DEFAULT: f32 = 125.0;
 const NAME_CHARS: usize = 25;
 /// Name / value font (Tahoma 15 bold / heavy in the original) and the row
 /// font (Tahoma 13); `ROW_H` is the name font's line height ("Ay").
-/// The lane names and values: Tahoma Bold 12 px (VM: «IA БЛОКА 3» 73 px,
-/// «454.087 мА» 72 px).
+/// The lane names and values: Tahoma Bold 12 px (measured on the VM with a
+/// typical lane name and a milliamp value).
 const NAME_FONT: FontId = FontId::proportional(12.0);
 const ROW_FONT: FontId = FontId::proportional(11.0);
 const ROW_H: f32 = 15.0;
@@ -684,7 +684,7 @@ pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey) -> Vec<&'static str> 
         Lane::Computed(j) if !doc.pending_digital(j) => {
             let c = &doc.computed[j];
             // A pasted lane read ×k in its copied mode (VM: «*K» on a
-            // pasted 2000/1 channel shown secondary).
+            // pasted channel with a ratio, shown secondary).
             let scaled = c.formula == crate::merge_ui::PENDING && doc.pending.iter().find(|p| p.lane == c.seq).is_some_and(|p| p.display_k() != 1.0);
             [(c.remove_dc, "DC"), (c.invert, "−"), (scaled, "*K"), (c.mode == ValueMode::Rms, "~"), (c.mode == ValueMode::FirstHarmonic, "1")]
                 .into_iter()
@@ -699,8 +699,8 @@ pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey) -> Vec<&'static str> 
 /// (Shift+wheel, `0x45d990`). The bar runs 0…10000, its position read back
 /// from the first sample: a page is ⌊V·10000 / N⌋ (V the samples shown, N
 /// the record's), the first sample ⌊(N − V)·pos / 10000⌋, never past the
-/// last screen (VM: two notches from 0 → 2913 of 11000 with 1730 shown, not
-/// 3460).
+/// last screen (VM: two notches from 0 land on the bar's second page, short of
+/// two visible widths).
 pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool) -> usize {
     let range = n.saturating_sub(visible);
     if n == 0 || range == 0 {
@@ -3245,11 +3245,12 @@ mod menu_tests {
         assert_eq!(h.app.y_analog, 121.0, "Alt+wheel: lane height ×1.3");
         h.wheel(at, -1.0, egui::Modifiers::NONE);
         assert!(h.doc().vscroll < 0.0, "plain wheel scrolls the lanes");
-        // The bar's page (VM: 11000 samples, 1730 shown: 0 → 1457 → 2913).
-        assert_eq!(hscroll_page(0, 11000, 1730, false), 1457);
-        assert_eq!(hscroll_page(1457, 11000, 1730, false), 2913);
-        assert_eq!(hscroll_page(2913, 11000, 1730, true), 1455);
-        assert_eq!(hscroll_page(9000, 11000, 1730, false), 9270, "the last screen");
+        // The bar's page, by the rule on a synthetic record (9746 samples, 1523
+        // shown: page 1562 of 10000, the bar spans 8223 samples).
+        assert_eq!(hscroll_page(0, 9746, 1523, false), 1284);
+        assert_eq!(hscroll_page(1284, 9746, 1523, false), 2568);
+        assert_eq!(hscroll_page(2568, 9746, 1523, true), 1282);
+        assert_eq!(hscroll_page(8000, 9746, 1523, false), 8223, "the last screen");
         // Shift+wheel: a page sideways (zoomed in so there is room).
         h.wheel(at, 1.0, egui::Modifiers::CTRL);
         h.wheel(at, 1.0, egui::Modifiers::CTRL);

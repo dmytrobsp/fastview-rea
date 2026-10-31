@@ -88,10 +88,10 @@ fn code_page_tables_round_trip_and_recode() {
         assert_eq!(encode_text(&text, enc), all, "{enc:?}");
     }
     // An 866 name read as 1251 is restored by switching to 866.
-    let raw = encode_text("Ток фазы А", Encoding::Cp866);
+    let raw = encode_text("Ток линии А", Encoding::Cp866);
     let wrong = comtrade::decode_bytes(&raw, Encoding::Cp1251);
-    assert_ne!(wrong, "Ток фазы А");
-    assert_eq!(recode(&wrong, Encoding::Cp1251, Encoding::Cp866), "Ток фазы А");
+    assert_ne!(wrong, "Ток линии А");
+    assert_eq!(recode(&wrong, Encoding::Cp1251, Encoding::Cp866), "Ток линии А");
 }
 
 #[test]

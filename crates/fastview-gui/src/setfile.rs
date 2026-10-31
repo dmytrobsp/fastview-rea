@@ -522,7 +522,7 @@ impl Doc {
     /// The record as the `.cfg` / `.cff` writers see it: the ОМП's flag
     /// channels (bit 13) left out (VM: `7,6A,1D` after a run), the others
     /// numbered by their place among all digital channels (VM: «4,
-    /// Несправн. …» after the three flags).
+    /// <name> …» after the three flags).
     fn file_record(&self) -> (std::borrow::Cow<'_, fvb_core::Oscillogram>, Vec<usize>) {
         if !(0..self.osc.digital.len()).any(|k| self.dig_computed(k)) {
             return (std::borrow::Cow::Borrowed(&self.osc), Vec::new());

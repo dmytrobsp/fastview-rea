@@ -1322,8 +1322,8 @@ const BEST_FIT_1251: &[(u16, u8)] = &[
 /// The bytes a name shown in `enc` stands for: [`encode_text`], with a
 /// character 866 lacks but its reading shows ([`best_fit_1251`]: «¦»)
 /// taken as the first 866 byte read so — as Windows' best fit narrows it
-/// (VM: «IA +T+¦L 3 (вст.)» pasted while the record shows 866 reads
-/// «IA +T+іL 3 (ўбв.)» back in 1251: «¦» went to 0xB3).
+/// (VM: a best-fit name with the «(вст.)» suffix pasted while the record
+/// shows 866 reads back in 1251 with «¦» turned to 0xB3).
 pub fn encode_shown(text: &str, enc: Encoding) -> Vec<u8> {
     if enc != Encoding::Cp866 {
         return encode_text(text, enc);
@@ -2101,15 +2101,15 @@ mod stamp_seconds_tests {
     fn moment_time() {
         let st = |date: &str, time: &str| super::Stamps { start_date: date.into(), start_time: time.into(), ..Default::default() };
         let t = |s: &super::Stamps, us| super::moment_time_text(s, 1999, us);
-        let s = st("06/27/2023", "13:29:11.933000");
-        // The start's 933 ms are added as 933 µs: they vanish.
-        assert_eq!(t(&s, 0).as_deref(), Some("27.06.2023 13:29:11.000"));
-        assert_eq!(t(&s, 200_500).as_deref(), Some("27.06.2023 13:29:11.201"));
-        assert_eq!(t(&s, 49_000_000).as_deref(), Some("27.06.2023 13:30:00.000"));
+        let s = st("04/19/2023", "16:52:11.614000");
+        // The start's 614 ms are added as 933 µs: they vanish.
+        assert_eq!(t(&s, 0).as_deref(), Some("19.04.2023 16:52:11.000"));
+        assert_eq!(t(&s, 200_500).as_deref(), Some("19.04.2023 16:52:11.201"));
+        assert_eq!(t(&s, 49_000_000).as_deref(), Some("19.04.2023 16:53:00.000"));
         // Midnight prints the date alone; no date prints the time alone.
         assert_eq!(t(&st("01/01/2024", "00:00:00.000000"), 30_000).as_deref(), Some("01.01.2024.030"));
         assert_eq!(t(&st("", "09:05:03.5"), 0).as_deref(), Some("9:05:03.000"));
-        assert_eq!(t(&st("06/27/2023", "25:00:00.0"), 0), None);
+        assert_eq!(t(&st("04/19/2023", "25:00:00.0"), 0), None);
         assert_eq!(t(&st("", ""), 0), None);
     }
 }

@@ -912,7 +912,7 @@ impl App {
                 let shift = ui.input(|i| i.modifiers.shift);
                 // Any press not on the open edit commits it (the dialog's
                 // PreTranslateMessage → `0x47b3d0`; VM: «5» typed, a click
-                // below the rows → «52000» kept).
+                // below the rows → the typed text kept in front of the ratio).
                 if let (Some(er), Some(p)) = (st.edit_rect, ui.input(|i| i.pointer.any_pressed().then(|| crate::lanes::press_pos(i)).flatten())) {
                     if st.edit.is_some() && !er.contains(p) {
                         st.press(shift);
@@ -974,7 +974,7 @@ impl App {
                             if let Some((_, text)) = st.edit.as_mut().filter(|(at, _)| *at == (row, col)) {
                                 // A borderless edit at the cell's left + 3, top
                                 // + 1, bottom − 1, its caret at the start as
-                                // SetWindowText leaves it (VM: «5» → «52000»).
+                                // SetWindowText leaves it (VM: a typed «5» lands in front of the old text).
                                 st.edit_rect = Some(r);
                                 ui.painter().rect_filled(r, 0.0, Color32::WHITE);
                                 let er = Rect::from_min_max(r.min + Vec2::new(3.0, 1.0), r.max - Vec2::new(0.0, 1.0));
@@ -1444,7 +1444,7 @@ mod ui_tests {
     }
 
     /// The edit opens with its caret at the start; a press below the rows
-    /// commits it (VM: «5» typed into «2000» → «52000»).
+    /// commits it (VM: a «5» typed in front of the old ratio text stays there).
     #[test]
     fn a_coefficient_edit_types_at_the_start_and_a_press_elsewhere_commits() {
         let mut h = Harness::new();
