@@ -1055,8 +1055,8 @@ fn call(f: Func, name: &'static str, a: &[Value], env: Env) -> Result<Value, Exp
     Ok(match f {
         Func::Sin => x.scalar(crate::trig::sin(rad(x.v))),
         Func::Cos => x.scalar(crate::trig::cos(rad(x.v))),
-        Func::Tg => x.scalar(rad(x.v).tan()),
-        Func::Ctg => x.scalar(1.0 / rad(x.v).tan()),
+        Func::Tg => x.scalar(crate::trig::tan(rad(x.v))),
+        Func::Ctg => x.scalar(1.0 / crate::trig::tan(rad(x.v))),
         Func::Sqrt => x.scalar(x.v.sqrt()),
         Func::Exp => x.scalar(x.v.exp()),
         Func::Re => x.scalar(x.re),

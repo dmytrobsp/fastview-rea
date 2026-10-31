@@ -414,3 +414,20 @@ fn formula_sin_and_cos_use_both_halves() {
         assert_eq!(eval_str(&format!("cos:{d}"), &ctx).unwrap().to_bits(), trig::cos(rad(d)).to_bits(), "cos:{d}");
     }
 }
+
+/// `tg:` and `ctg:` (#107) call the runtime's tan: `tan(v·π/180)` and `1 / tan(v·π/180)`.
+#[test]
+fn formula_tg_and_ctg_use_the_runtime_tan() {
+    let rad = |d: f64| d * std::f64::consts::PI / 180.0;
+    let ctx = Context::new();
+    let (mut dt, mut dc) = (0, 0);
+    for d in 1..=14_400 {
+        let d = d as f64 * 0.05;
+        let (a, b) = (eval_str(&format!("tg:{d}"), &ctx).unwrap(), eval_str(&format!("ctg:{d}"), &ctx).unwrap());
+        assert_eq!(a.to_bits(), trig::tan(rad(d)).to_bits(), "tg:{d}");
+        assert_eq!(b.to_bits(), (1.0 / trig::tan(rad(d))).to_bits(), "ctg:{d}");
+        dt += usize::from(trig::tan(rad(d)).to_bits() != rad(d).tan().to_bits());
+        dc += usize::from((1.0 / trig::tan(rad(d))).to_bits() != (1.0 / rad(d).tan()).to_bits());
+    }
+    assert!(dt > 0 && dc > 0, "std's tan differs from the runtime's at some angle ({dt}, {dc})");
+}

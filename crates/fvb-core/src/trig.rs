@@ -1,4 +1,4 @@
-//! The sin / cos of the signal maths, bit for bit as the original's runtime computes them (#72).
+//! The sin / cos / tan of the signal maths and the formulas, bit for bit as the original's runtime computes them (#72, #107).
 //!
 //! The original's DFT, phasors, RMS and harmonics call the C runtime's `sin` / `cos` (msvcr120's
 //! `_libm_sse2_sin_precise` / `_libm_sse2_cos_precise`). Those differ in the last bit from glibc's
@@ -14,6 +14,13 @@
 //! msvcr120's own reduction is less accurate and matches nothing else, so those arguments, and
 //! non-finite ones, fall back to `std`. Plain Rust never contracts into FMA, so the result is the
 //! same on every target.
+//!
+//! `tan` (the formulas' `tg:` / `ctg:`, msvcr120's `_libm_sse2_tan_precise`) is the same kind of port of
+//! `s_tan.S`: its main path serves |x| < 12 800, where it matches msvcr120 on every angle measured
+//! (about 3.4 million: degree grids, random angles, the poles' neighbourhoods, and 1.08 million
+//! angles where either of its two table indices, x·2/π and x·32/π, is exactly k + ½ in doubles), once
+//! both indices round to nearest, ties to even; Intel's ties away from zero differ at 610 of those.
+//! From 12 800 msvcr120's reduction matches nothing else, so those arguments fall back to `std`.
 //!
 //! The tables and the sequence of operations are Intel's. Their notice, verbatim:
 //!
@@ -48,7 +55,7 @@
 //! ```
 
 mod tables;
-use tables::{COS_TAB, SIN_TAB};
+use tables::{COS_TAB, SIN_TAB, TAN_TAB};
 
 #[inline(always)]
 fn t(tab: &[u64], off: usize) -> f64 {
@@ -161,4 +168,124 @@ pub fn cos(x: f64) -> f64 {
         return x * t(&COS_TAB, 2208);
     }
     t(&COS_TAB, 2192) - f64::from_bits(x.to_bits() & 0x7fff_ffff_ffff_ffff)
+}
+
+/// Intel's main path of `tan` (2⁻¹²⁵ ≲ |x| < 12 800) over the table `tab`; the xmm registers of the
+/// assembly are kept as `[low, high]` pairs, every operation in the assembly's order. Lane 0 of the
+/// reduction works modulo π/2 (for the reciprocal), lane 1 modulo π/32 (for the polynomial).
+#[inline(always)]
+fn tan_main(tab: &[u64], x: f64) -> f64 {
+    #[inline(always)]
+    fn band(a: f64, b: f64) -> f64 {
+        f64::from_bits(a.to_bits() & b.to_bits())
+    }
+    let (mut x1, mut x2, mut x3, mut x4, mut x5, mut x7);
+    let mut x6 = [t(tab, 5856), t(tab, 5864)];
+    let mut x0 = [x, x];
+    // The two table indices: lane 0 counts quarter periods (x·2/π), lane 1 counts π/32 steps
+    // (x·32/π). Intel adds ±0.5 and truncates (ties away from zero); msvcr120 rounds to nearest,
+    // ties to even (the 1.5·2⁵² shifter, which sits in Intel's table at 5656).
+    let sh = t(tab, 5656);
+    let n0 = (((x * t(tab, 5632)) + sh) - sh) as i32;
+    let n1 = (((x * t(tab, 5640)) + sh) - sh) as i32;
+    x1 = [f64::from(n0), f64::from(n1)];
+    let e = (n1.wrapping_add(469248) & 31) as usize * 176;
+    x1 = [x1[0] * x6[0], x1[1] * x6[1]];
+    x3 = [t(tab, 5664), t(tab, 5672)];
+    x5 = [t(tab, 5728), 0.0];
+    x4 = [t(tab, 5680), t(tab, 5688)];
+    x3 = [x3[0] * x1[0], x3[1] * x1[1]];
+    x5[0] *= x1[0];
+    x4 = [x4[0] * x1[0], x4[1] * x1[1]];
+    x0 = [x0[0] - x3[0], x0[1] - x3[1]];
+    { let m = [t(tab, 5696), t(tab, 5704)]; x1 = [x1[0] * m[0], x1[1] * m[1]]; }
+    x5[0] += x0[0];
+    x2 = x0;
+    x0 = [x0[0] - x4[0], x0[1] - x4[1]];
+    x6 = [t(tab, 5744), 0.0];
+    { let m = [t(tab, 5776), t(tab, 5784)]; x5 = [band(x5[0], m[0]), band(x5[1], m[1])]; }
+    x3 = x0;
+    x2 = [x2[0] - x0[0], x2[1] - x0[1]];
+    x0 = [x0[1], x0[1]];
+    x6[0] /= x5[0];
+    x2 = [x2[0] - x4[0], x2[1] - x4[1]];
+    x7 = [t(tab, e + 16), t(tab, e + 24)];
+    x3[0] -= x5[0];
+    x7 = [x7[0] * x0[0], x7[1] * x0[1]];
+    x2 = [x2[0] - x1[0], x2[1] - x1[1]];
+    x1 = [t(tab, e + 48), t(tab, e + 56)];
+    x1 = [x1[0] * x0[0], x1[1] * x0[1]];
+    x4 = [t(tab, e + 96), t(tab, e + 104)];
+    x4 = [x4[0] * x0[0], x4[1] * x0[1]];
+    x2[0] += x3[0];
+    x3 = x0;
+    x0 = [x0[0] * x0[0], x0[1] * x0[1]];
+    { let m = [t(tab, e + 0), t(tab, e + 8)]; x7 = [x7[0] + m[0], x7[1] + m[1]]; }
+    { let m = [t(tab, e + 32), t(tab, e + 40)]; x1 = [x1[0] + m[0], x1[1] + m[1]]; }
+    x1 = [x1[0] * x0[0], x1[1] * x0[1]];
+    { let m = [t(tab, e + 80), t(tab, e + 88)]; x4 = [x4[0] + m[0], x4[1] + m[1]]; }
+    x7 = [x7[0] + x1[0], x7[1] + x1[1]];
+    x1 = [t(tab, e + 112), t(tab, e + 120)];
+    x1 = [x1[0] * x0[0], x1[1] * x0[1]];
+    x0 = [x0[0] * x0[0], x0[1] * x0[1]];
+    x4 = [x4[0] + x1[0], x4[1] + x1[1]];
+    x1 = [t(tab, e + 64), t(tab, e + 72)];
+    x1 = [x1[0] * x0[0], x1[1] * x0[1]];
+    x7 = [x7[0] + x1[0], x7[1] + x1[1]];
+    x1 = x3;
+    x3 = [x3[0] * x0[0], x3[1] * x0[1]];
+    x0[0] *= x0[0];
+    { let m = [t(tab, e + 144), t(tab, e + 152)]; x1 = [x1[0] * m[0], x1[1] * m[1]]; }
+    x4 = [x4[0] * x3[0], x4[1] * x3[1]];
+    x3 = x1;
+    x7 = [x7[0] + x4[0], x7[1] + x4[1]];
+    x4 = x1;
+    x0[0] *= x7[0];
+    x7 = [x7[1], x7[1]];
+    x0[0] += x7[0];
+    x1 = [x1[1], x1[1]];
+    x3[0] += x1[0];
+    x4[0] -= x3[0];
+    x1[0] += x4[0];
+    x4 = x2;
+    x7 = [t(tab, e + 144), 0.0];
+    x2 = [x2[1], x2[1]];
+    x7[0] += t(tab, e + 152);
+    x7[0] *= x2[0];
+    x7[0] += t(tab, e + 136);
+    x7[0] += x1[0];
+    x0[0] += x7[0];
+    x7 = [t(tab, 5744), 0.0];
+    x4[0] *= x6[0];
+    x2 = [t(tab, e + 168), 0.0];
+    x2 = [band(x2[0], x6[0]), band(x2[1], x6[1])];
+    x5[0] *= x2[0];
+    x6[0] *= t(tab, e + 160);
+    x7[0] -= x5[0];
+    x2[0] -= t(tab, e + 128);
+    x7[0] -= x4[0];
+    x7[0] *= x6[0];
+    x4 = x3;
+    x3[0] -= x2[0];
+    x2[0] += x3[0];
+    x4[0] -= x2[0];
+    x0[0] += x4[0];
+    x0[0] -= x7[0];
+    x0[0] += x3[0];
+    x0[0]
+}
+
+/// `tan(x)` as msvcr120 computes it (std's from |x| ≥ 12 800 and for non-finite `x`).
+pub fn tan(x: f64) -> f64 {
+    let k = ((x.to_bits() >> 48) as u32 & 0x7fff).wrapping_sub(14368);
+    if k <= 2216 {
+        return tan_main(&TAN_TAB, x);
+    }
+    if (k as i32) > 2216 {
+        if x.is_finite() {
+            return x.tan();
+        }
+        return x - x;
+    }
+    ((t(&TAN_TAB, 5792) * x) + x) * t(&TAN_TAB, 5808)
 }
