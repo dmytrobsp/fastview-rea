@@ -716,7 +716,7 @@ pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool) -> 
 }
 
 /// The status icons of analog channel `i`.
-fn chan_icons(doc: &crate::app::Doc, i: usize, ) -> Vec<&'static str> {
+fn chan_icons(doc: &crate::app::Doc, i: usize) -> Vec<&'static str> {
     let (c, ch) = (&doc.chans[i], &doc.osc.analog[i]);
     // The channel's own flags (`+0x88` / `+0x89`) and ratio decide, not the document's mode.
     let scaled = crate::app::display_k(ch, c.primary) != 1.0;
@@ -1313,13 +1313,16 @@ impl App {
         self.view_width = full.width();
         {
             let pref = self.xscale_pref;
-            let d = &mut self.docs[ai];
-            if d.xscale.is_none() {
+            if self.docs[ai].xscale.is_none() {
                 // Measured as a default-sized MDI child (see
-                // `mdi_default_client_width`), not at its final size.
+                // `view_width_at_creation`), not at its final size.
                 let area = self.mdi_area;
-                let w = if area.width() > 0.0 { g::mdi_default_client_width(area.width(), area.height()) } else { full.width() };
-                d.xscale = Some(g::initial_scale(pref, w, d.osc.sample_count()));
+                let d = &self.docs[ai];
+                let band = g::RULER_H + if d.diff_band { g::DIFF_BAND_H } else { 0.0 };
+                let content_h: f32 = lane_layout(d, y_analog).iter().map(|r| r.h).sum::<f32>() + band + 2.0;
+                let w = if area.width() > 0.0 { g::view_width_at_creation(area.width(), area.height(), content_h) } else { full.width() };
+                let n = d.osc.sample_count();
+                self.docs[ai].xscale = Some(g::initial_scale(pref, w, n));
             }
         }
         let mut actions: Vec<Act> = Vec::new();
@@ -3462,11 +3465,13 @@ mod menu_tests {
         let mut h = Harness::new();
         let d = h.app.active_doc_mut().unwrap();
         (d.osc.analog[1].primary, d.osc.analog[1].secondary, d.osc.analog[1].is_primary) = (1234.0, 1.0, true);
-        d.chans[1].primary = false;
-        // The channel (stored primary) shows secondary values: its ratio applies, whatever the document's mode.
+        // The document (channel 0) shows primary values, this channel (stored primary) secondary: its
+        // ratio applies. Without the fix the document's mode decided and the icon was missing.
+        (d.chans[0].primary, d.chans[1].primary) = (true, false);
         assert!(key_icons(d, Lane::Analog(1)).contains(&"*K"), "the channel's own mode scales it");
-        d.chans[1].primary = true;
-        // This channel shows primary values (as stored): no ratio.
+        // The document shows secondary values, this channel primary (as stored): no ratio. Without the
+        // fix the icon was wrongly there.
+        (d.chans[0].primary, d.chans[1].primary) = (false, true);
         assert!(!key_icons(d, Lane::Analog(1)).contains(&"*K"), "the channel's own mode leaves it as stored");
     }
 
