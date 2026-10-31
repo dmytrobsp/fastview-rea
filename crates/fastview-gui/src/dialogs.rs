@@ -507,8 +507,8 @@ pub fn dp_size(w: f32, h: f32) -> Vec2 {
 /// controls at the 6 × 13 base units), at the system DPI's base units.
 pub fn dp(client: Rect, x: f32, y: f32, w: f32, h: f32) -> Rect {
     use crate::dpi::{dlg_x, dlg_y};
-    let (x0, y0) = (dlg_x(x), dlg_y(y));
-    Rect::from_min_max(client.min + Vec2::new(x0, y0), client.min + Vec2::new(dlg_x(x + w), dlg_y(y + h)))
+    // The size is a length of its own, as the dialog manager maps cx / cy.
+    Rect::from_min_size(client.min + Vec2::new(dlg_x(x), dlg_y(y)), Vec2::new(dlg_x(w), dlg_y(h)))
 }
 
 /// A static control's text: from its rectangle's top, word-wrapped to its
@@ -2349,6 +2349,44 @@ mod tests {
             crate::dpi::set(dpi);
             assert_eq!((default_margin().x, default_margin().y), want, "{dpi}");
         }
+        crate::dpi::set(96);
+    }
+
+    /// #78 at 150 %: `dp` maps a control's position and size each as the
+    /// dialog manager does (MulDiv of x, y, cx, cy on their own, not of the
+    /// far edge): «Коэффициенты трансформации»' OK (181, 234, 73 × 14 DLU)
+    /// and list (7, 7, 327 × 221), «Параметры страницы»' buttons.
+    #[test]
+    fn dp_maps_sizes_as_lengths() {
+        crate::dpi::set(144);
+        let client = Rect::from_min_size(Pos2::ZERO, Vec2::new(900.0, 700.0));
+        let r = dp(client, 272.0, 380.0, 110.0, 23.0);
+        assert_eq!((r.min.x, r.min.y, r.width(), r.height()), (407.0, 556.0, 164.0, 33.0));
+        let r = dp(client, 11.0, 11.0, 491.0, 359.0);
+        assert_eq!((r.min.x, r.min.y, r.width(), r.height()), (16.0, 17.0, 736.0, 525.0));
+        crate::dpi::set(96);
+    }
+
+    /// #78 through `dlg()`: a dialog that keeps the default margin has the
+    /// 7 dialog units each way in the client's own units around its
+    /// content (120 dpi: 12 across, 14 down) inside the 1 px frame and the
+    /// 31 px caption.
+    #[test]
+    fn a_default_margin_dialog_insets_its_client_by_seven_units() {
+        crate::dpi::set(120);
+        let ctx = egui::Context::default();
+        let mut area = None;
+        for pass in 0..3 {
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 800.0))), time: Some(pass as f64 * 0.1), ..Default::default() };
+            let _ = ctx.run(raw, |ctx| {
+                dlg(ctx, "Поле").collapsible(false).resizable(false).show(ctx, |ui| {
+                    ui.allocate_exact_size(Vec2::new(200.0, 60.0), egui::Sense::hover());
+                });
+            });
+            area = ctx.memory(|m| m.area_rect(egui::Id::new("Поле")));
+        }
+        let a = area.expect("the dialog is up");
+        assert_eq!((a.width(), a.height()), (200.0 + 24.0 + 2.0, 31.0 + 60.0 + 28.0 + 2.0));
         crate::dpi::set(96);
     }
 }

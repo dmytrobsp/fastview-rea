@@ -4706,6 +4706,59 @@ mod window_tests {
         let rgba: Vec<u8> = c.px.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
         std::fs::write(path, util::png_rgba(c.w as u32, c.h as u32, &rgba)).unwrap();
     }
+
+    /// #78 through the call site: a zoomed plane's scroll bar is the
+    /// system's 26 px at 150 % (its grey track across the window's right
+    /// edge), not the 100 % width scaled (24).
+    #[test]
+    fn a_zoomed_planes_scroll_bar_is_the_system_width() {
+        let fonts = app_fonts();
+        for (dpi_v, native, bar) in [(96u32, 1.0f32, 16usize), (120, 1.25, 21), (144, 1.5, 26)] {
+            dpi::set(dpi_v);
+            let mut app = demo(&[]);
+            app.diag.circle.z = 2.0;
+            let c = raster::render_native(Vec2::new(700.0, 500.0), native, |ctx| device_options_on(true, ctx, Some(native)), device_screen, Some(&fonts), vec![vec![]; 3], |ctx| {
+                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| app.plane_ui(ui));
+            });
+            let y = 250;
+            let run = (0..c.w).rev().take_while(|&x| c.px[y * c.w + x] == [235, 235, 235] || c.px[y * c.w + x] == [190, 190, 190]).count();
+            assert_eq!(run, bar, "{dpi_v}: the scroll bar's width");
+        }
+        dpi::set(96);
+    }
+
+    /// #78 through the strip layout: an inactive tab is its text in the
+    /// whole 8 pt font (16 px at 150 %) plus 34 px scaled (51).
+    #[test]
+    fn a_tab_is_laid_out_in_the_whole_8_pt_font() {
+        let fonts = app_fonts();
+        dpi::set(144);
+        let mut app = demo(&[app::Command::Demo]);
+        let mut got = None;
+        raster::render_native(Vec2::new(1280.0, 722.0), 1.5, |ctx| device_options_on(true, ctx, Some(1.5)), device_screen, Some(&fonts), vec![vec![]; 3], |ctx| {
+            app.frame_ui(ctx);
+            let other = (0..app.docs.len()).find(|&i| app.active != Some(i));
+            got = other.and_then(|i| {
+                let title = app.docs[i].title();
+                let w = ctx.read_response(egui::Id::new(("fv_doc_tab", app.docs[i].serial)))?.rect.width();
+                let text = ctx.fonts(|f| f.layout_no_wrap(title, egui::FontId::proportional(16.0), egui::Color32::BLACK).size().x);
+                Some((w, text + 51.0))
+            });
+        });
+        dpi::set(96);
+        let (w, want) = got.expect("an inactive tab");
+        assert_eq!(w, want, "the tab's width");
+    }
+
+    /// `make_app` takes the chrome's dpi from GetDpiForSystem
+    /// (`system_dpi_scale`) before the monitor's scale; its source line is
+    /// the call pinned here.
+    #[test]
+    fn make_app_passes_the_system_dpi_to_the_chrome() {
+        // `make_app` takes the chrome's dpi from GetDpiForSystem
+        // (`system_dpi_scale`) before the monitor's scale; its source line is
+        // the call pinned here.
+        let src = include_str!("main.rs");
+        assert!(src.contains(concat!("start_scaling(DEVICE_PIXELS, ctx, scale, ", "system_dpi_scale());")));
+    }
 }
-
-

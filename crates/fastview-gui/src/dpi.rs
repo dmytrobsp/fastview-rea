@@ -75,7 +75,10 @@ pub fn half(v: f32) -> f32 {
 /// at 150 % on the VM), to the nearest pixel (MFC rounds the scaled side;
 /// it only shows at scales between, 154 dpi: 16 px is 26).
 pub fn img(v: f32) -> f32 {
-    if unscaled() {
+    // MFC sets the ribbon image scale to dpi / 96 and back to 1.0 when it
+    // is above 1 and below 1.1 (`0x100a6ee6`–`0x100a6f14`): 97–105 dpi
+    // keep the images at 100 %.
+    if unscaled() || (k() > 1.0 && k() < 1.1) {
         v
     } else {
         (v * k()).round()
@@ -268,6 +271,13 @@ mod tests {
         assert_eq!(dlg_font(13.0), 15.0);
         set(154);
         assert_eq!((img(16.0), img(32.0)), (26.0, 51.0));
+        // 104 dpi (108 %): MFC keeps its images unscaled, fonts and
+        // dialog units follow.
+        set(104);
+        assert_eq!((img(16.0), img(32.0)), (16.0, 32.0));
+        assert_eq!(dlg_font(11.0), mul_div(8, 104, 72) as f32);
+        set(106);
+        assert_eq!(img(16.0), 18.0);
         set(96);
     }
 }

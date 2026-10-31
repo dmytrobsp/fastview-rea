@@ -1015,10 +1015,7 @@ impl ParamsDialog {
         let (rect, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(475, 275), egui::Sense::hover());
         // The toolbar's height follows its combo's (VM: 23 / 29 / 34 px, the
         // combo 21 / 27 / 31 at 100 / 125 / 150 %); the combo keeps its 278
-        // px, the buttons follow it, their offsets from the combo's end and
-        // the text buttons' widths at the system DPI, the icon-only ones the
-        // image + 6 (VM, 150 %: «Участок», «Параллельная линия», «Отпайка»
-        // from 294, 397, 602).
+        // px, the buttons' places are `toolbar_lefts`'s.
         let tool_h = crate::dpi::measured(23.0, 29.0, 34.0);
         let combo_h = crate::dpi::measured(21.0, 27.0, 31.0);
         let btn_h = crate::dpi::img(16.0) + 6.0;
@@ -2164,38 +2161,72 @@ mod tests {
         crate::dpi::set(96);
     }
 
-    /// #78 (VM, 150 %): the tree and the grid end below the top rows of OK /
+    /// #78 (VM, 125 % and 150 %): the tree and the grid end below the top rows of OK /
     /// Отмена and are above them: a press on the hidden rows reaches the
     /// grid, one below its bottom edge the button.
     #[test]
     fn the_grid_covers_the_top_of_ok_and_cancel_at_150_percent() {
-        crate::dpi::set(144);
-        let mut d = ParamsDialog::new(0, OmpParams { method: ISOLATED, ..Default::default() });
-        let ctx = egui::Context::default();
-        let mut t = 0.0;
-        let mut pass = |d: &mut ParamsDialog, events: Vec<egui::Event>| {
-            t += 0.05;
-            let raw = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0))), time: Some(t), events, ..Default::default() };
-            let mut out = None;
-            let _ = ctx.run(raw, |ctx| {
-                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| out = d.ui(ui, &[]));
-            });
-            out
-        };
-        let click = |p: egui::Pos2| {
-            let b = |pressed| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
-            [vec![egui::Event::PointerMoved(p), b(true)], vec![b(false)]]
-        };
-        pass(&mut d, vec![]);
-        pass(&mut d, vec![]);
-        // OK at 310 DLU × 254 DLU: x 698.., y 603..636; the grid ends on 618.
-        for (y, answers) in [(610.0, false), (628.0, true)] {
-            let mut got = None;
-            for e in click(egui::pos2(750.0, y)) {
-                got = got.or(pass(&mut d, e));
+        // 150 %: OK at 310 DLU × 254 DLU is x 698.., y 603..636 and the grid
+        // ends on 618 (15 rows hidden); 125 %: x 543.., y 508..536, the grid
+        // ends on 510 (2 rows hidden).
+        for (dpi, x, hidden, shown) in [(144, 750.0, 610.0, 628.0), (120, 600.0, 509.0, 520.0)] {
+            crate::dpi::set(dpi);
+            let mut d = ParamsDialog::new(0, OmpParams { method: ISOLATED, ..Default::default() });
+            let ctx = egui::Context::default();
+            // egui's hit test reaches 5 px past a widget; two rows need none.
+            ctx.style_mut(|s| s.interaction.interact_radius = 0.0);
+            let mut t = 0.0;
+            let mut pass = |d: &mut ParamsDialog, events: Vec<egui::Event>| {
+                t += 0.05;
+                let raw = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0))), time: Some(t), events, ..Default::default() };
+                let mut out = None;
+                let _ = ctx.run(raw, |ctx| {
+                    egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| out = d.ui(ui, &[]));
+                });
+                out
+            };
+            let click = |p: egui::Pos2| {
+                let b = |pressed| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+                [vec![egui::Event::PointerMoved(p), b(true)], vec![b(false)]]
+            };
+            pass(&mut d, vec![]);
+            pass(&mut d, vec![]);
+            for (y, answers) in [(hidden, false), (shown, true)] {
+                let mut got = None;
+                for e in click(egui::pos2(x, y)) {
+                    got = got.or(pass(&mut d, e));
+                }
+                assert_eq!(matches!(got, Some(DialogAction::Ok)), answers, "{dpi}: a press at y {y}");
             }
-            assert_eq!(matches!(got, Some(DialogAction::Ok)), answers, "a press at y {y}");
         }
         crate::dpi::set(96);
     }
+
+    /// #78 through the call site: the toolbar's text is the 9 pt font, 17
+    /// px at 150 % (VM: «Участок» 60 px wide; the 8 pt font's 16 px is
+    /// narrower): the dark ink of «Участок» is closer to the 17 px layout.
+    #[test]
+    fn the_toolbar_text_is_the_9_pt_font() {
+        crate::dpi::set(144);
+        let fonts = crate::app_fonts();
+        let mut d = ParamsDialog::new(0, OmpParams { method: ISOLATED, ..Default::default() });
+        let (mut w17, mut w16) = (0.0, 0.0);
+        let c = crate::raster::render_native(egui::vec2(1200.0, 800.0), 1.0, |_| {}, |_, _| {}, Some(&fonts), vec![vec![]; 3], |ctx| {
+            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                d.ui(ui, &[]);
+            });
+            let width = |px: f32| ctx.fonts(|f| f.layout_no_wrap("Участок".into(), egui::FontId::proportional(px), Color32::BLACK).size().x);
+            (w17, w16) = (width(17.0), width(16.0));
+        });
+        crate::dpi::set(96);
+        let ink = |x: usize, y: usize| {
+            let p = c.px[y * c.w + x];
+            p[0] < 90 && p[2] > p[0] + 30
+        };
+        // «Участок»'s text starts 3 px after its 24 px image, 3 in.
+        let xs: Vec<usize> = (318..392).filter(|&x| (10..50).any(|y| ink(x, y))).collect();
+        let width = (xs.last().unwrap() - xs.first().unwrap() + 1) as f32;
+        assert!((width - w17).abs() < (width - w16).abs(), "ink {width} against {w17} at 17 px and {w16} at 16");
+    }
 }
+
