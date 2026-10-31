@@ -3415,6 +3415,77 @@ mod tests {
         assert!(d.chans[3].group.is_some() && d.chans[3].group == d.chans[4].group);
     }
 
+    /// «Объединить» takes each channel's own rate, else the record's integer
+    /// rate, for R and the pads (`0x47db30`, `0x47dd2e`, `0x47df76`, #101):
+    /// a record whose rate was changed in «Параметры файла» before the merge
+    /// merges at the new one; a second merge after a rate change keeps the
+    /// channels' own rate.
+    #[test]
+    fn a_merge_after_a_rate_change_takes_the_records_integer_rate_then_the_own_rates() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        assert_eq!(app.apply_file_rate(0, "2450"), Ok(()));
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = &app.docs[0];
+        assert_eq!(d.osc.sample_rate, 2450.0, "R from the record's integer rate, not the first rate line");
+        assert!(d.osc.analog.iter().all(|c| c.own_rate == 2450.0));
+        // Another rate change, then another merge: the channels keep theirs.
+        assert_eq!(app.apply_file_rate(0, "1250"), Ok(()));
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = &app.docs[0];
+        assert_eq!(d.osc.sample_rate, 2450.0, "the own rates, not the record's new 1250");
+        assert!(d.osc.analog.iter().all(|c| c.own_rate == 2450.0));
+    }
+
+    /// After «Объединить» a rate change in «Параметры файла» sets only the
+    /// record's rate; the lane painters scale the visited count by the
+    /// record's rate ÷ the channel's own (`0x4295dc`, `0x429cf1`) and a
+    /// digital lane's base bar by the same (`0x463e2d`) — #100.
+    #[test]
+    fn a_merged_lane_is_painted_by_the_records_rate_over_its_own() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let own = app.docs[0].osc.analog[3].own_rate;
+        assert_eq!(app.docs[0].lane_ratio(ChanKey::Analog(3)), 1.0, "right after the merge");
+        let faster = (own * 2.0) as i32;
+        assert_eq!(app.apply_file_rate(0, &faster.to_string()), Ok(()));
+        let d = &app.docs[0];
+        assert_eq!(d.lane_ratio(ChanKey::Analog(3)), 2.0, "the record's rate over the channel's");
+        assert_eq!(d.lane_ratio(ChanKey::Digital(0)), 2.0, "digital lanes carry the own rate too");
+        // 480 samples in a 100 px window at 25 px each: 4 samples, 2 visited.
+        assert_eq!(crate::oscgeom::drawn_last(480, 10, 1.0, 100.0, d.lane_ratio(ChanKey::Analog(3))), Some(11));
+        assert_eq!(crate::oscgeom::base_bar_len(100, 1.0, d.lane_ratio(ChanKey::Digital(0))), 5000.0);
+    }
+
+    /// The frequency diagram's period and harmonic caps (`0x46ee20`) follow the
+    /// record's integer rate and sample count, not a merged channel's own
+    /// window — read in the binary and seen in a clone (the demo record,
+    /// merged, then set to 2450 Hz: «от 1 до 9» periods, «от 1 до 24»
+    /// harmonics) — #104.
+    #[test]
+    fn the_frequency_dialog_caps_follow_the_records_rate_after_a_merge_and_a_rate_change() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(0)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        assert_eq!(app.apply_file_rate(0, "2450"), Ok(()));
+        let o = &app.docs[0].osc;
+        let (n, r, f) = (o.sample_count(), o.rate_r, o.line_freq);
+        assert_eq!(n, 475, "the merged grid");
+        assert_eq!(crate::diagram_ui::freq_exchange_field("0", "10", n, r, f), Err((0, "Введите целое число от 1 до 9.".into())));
+        assert_eq!(crate::diagram_ui::freq_exchange_field("1", "999", n, r, f), Err((1, "Введите целое число от 1 до 24.".into())));
+        assert_eq!(crate::diagram_ui::freq_exchange_field("9", "10", n, r, f), Ok((9, 10)));
+    }
+
     /// Every reader of a channel's period gives an own rate its window
     /// (L9.142): the formula functions, the frequency diagram's bins, a
     /// formula channel's phasors, statistics and correction (#71).
