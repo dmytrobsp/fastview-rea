@@ -88,6 +88,14 @@ fn device_zoom(native: f32) -> f32 {
     z
 }
 
+/// The document tabs' font size: MFC's tab font is the 8 pt one, whole
+/// pixels at the system DPI (11, 13, 16 px; VM at 150 %: «WIN_1999.cfg»
+/// bold 112 px wide, ours at 16 px 114, at 16.5 118), where the ribbon's
+/// 9 pt text is [`dpi::font`].
+fn tab_font_px() -> f32 {
+    dpi::dlg_font(11.0)
+}
+
 /// A dpi (None: the call is missing or failed) as a display scale (dpi / 96).
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
 fn dpi_scale(dpi: Option<u32>) -> Option<f32> {
@@ -184,8 +192,14 @@ fn system_scale() -> Option<f32> {
 /// scale with no exact [`device_zoom`] (custom ones, 151 %) the pixels
 /// per point are 1.0000001 and the window 1280 px wide 1279.9999 points.
 fn device_screen(ctx: &egui::Context, raw: &mut egui::RawInput) {
+    device_screen_on(DEVICE_PIXELS, ctx, raw);
+}
+
+/// [`device_screen`] for a platform that does (`device`) or does not paint
+/// in device pixels.
+fn device_screen_on(device: bool, ctx: &egui::Context, raw: &mut egui::RawInput) {
     let native = raw.viewports.get(&egui::ViewportId::ROOT).and_then(|v| v.native_pixels_per_point).or_else(|| ctx.input(|i| i.viewport().native_pixels_per_point));
-    if let (true, Some(native), Some(r)) = (DEVICE_PIXELS, native, raw.screen_rect) {
+    if let (true, Some(native), Some(r)) = (device, native, raw.screen_rect) {
         if ((ctx.zoom_factor() * native) - 1.0).abs() < 1e-6 {
             raw.screen_rect = Some(egui::Rect::from_min_max(r.min.round(), r.max.round()));
         }
@@ -195,9 +209,14 @@ fn device_screen(ctx: &egui::Context, raw: &mut egui::RawInput) {
 /// Device pixels from the first frame at the system `scale` (each frame
 /// keeps them at the window's monitor's, `App::device_pixels`). No zoom by
 /// Ctrl + / − / 0: the original has none.
+#[cfg(test)]
 fn device_options(ctx: &egui::Context, scale: Option<f32>) {
+    device_options_on(DEVICE_PIXELS, ctx, scale);
+}
+
+fn device_options_on(device: bool, ctx: &egui::Context, scale: Option<f32>) {
     ctx.options_mut(|o| {
-        o.zoom_factor = scale.filter(|_| DEVICE_PIXELS).map_or(1.0, device_zoom);
+        o.zoom_factor = scale.filter(|_| device).map_or(1.0, device_zoom);
         o.zoom_with_keyboard = false;
     });
 }
@@ -209,8 +228,25 @@ fn device_options(ctx: &egui::Context, scale: Option<f32>) {
 /// (`docs/IMPROVEMENTS.md`).
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
 fn device_window(ctx: &egui::Context, native: f32) {
-    if DEVICE_PIXELS {
+    device_window_on(DEVICE_PIXELS, ctx, native);
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn device_window_on(device: bool, ctx: &egui::Context, native: f32) {
+    if device {
         ctx.options_mut(|o| o.zoom_factor = device_zoom(native));
+    }
+}
+
+/// A frame's zoom for the monitor the window is on (`native` pixels per
+/// point there): one point one device pixel where the platform paints in
+/// them, else egui's own (a Retina screen's 2) untouched.
+fn follow_monitor(device: bool, ctx: &egui::Context, native: f32) {
+    if device {
+        let zoom = device_zoom(native);
+        if ctx.zoom_factor() != zoom {
+            ctx.set_zoom_factor(zoom);
+        }
     }
 }
 
@@ -324,10 +360,24 @@ fn system_dpi_scale() -> Option<f32> {
 /// scale ours keeps its content 1:1 (`device_window`) and the chrome at
 /// the system DPI — the original's picture without Windows' stretch
 /// (`docs/IMPROVEMENTS.md`).
+#[cfg(test)]
 fn chrome_dpi(scale: Option<f32>) {
-    if let Some(s) = scale.filter(|_| DEVICE_PIXELS) {
+    chrome_dpi_on(DEVICE_PIXELS, scale);
+}
+
+fn chrome_dpi_on(device: bool, scale: Option<f32>) {
+    if let Some(s) = scale.filter(|_| device) {
         dpi::set((s * 96.0).round() as u32);
     }
+}
+
+/// What `make_app` does about scaling: egui's pixels per point from the
+/// window's monitor `scale` ([`device_options_on`]), the chrome from the
+/// system DPI (`system`, GetDpiForSystem) where there is one, else from
+/// that same monitor scale.
+fn start_scaling(device: bool, ctx: &egui::Context, scale: Option<f32>, system: Option<f32>) {
+    device_options_on(device, ctx, scale);
+    chrome_dpi_on(device, system.or(scale));
 }
 
 /// The application as both runners start it: the fonts, the persisted
@@ -335,8 +385,7 @@ fn chrome_dpi(scale: Option<f32>) {
 fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path::Path>, own_caption: bool, scale: Option<f32>, placement: Option<egui::Rect>) -> App {
     let fonts = app_fonts();
     ctx.set_fonts(fonts.clone());
-    device_options(ctx, scale);
-    chrome_dpi(system_dpi_scale().or(scale));
+    start_scaling(DEVICE_PIXELS, ctx, scale, system_dpi_scale());
     // A double-click within Windows' default GetDoubleClickTime, 500 ms
     // (egui's own is 300 ms: a hand's double-click on the coefficient list
     // was missed on the VM).
@@ -515,7 +564,7 @@ impl App {
                 let title = self.docs[i].title();
                 // MFC's tab font, 11 px (VM: «WIN_1999.cfg» 68 px); the
                 // active document's in the bold face (`0x1013b543`).
-                let size = dpi::font(11.0);
+                let size = tab_font_px();
                 let font = if bold == Some(i) { ui.fonts(|f| crate::lanes::bold_font(f, size)).unwrap_or(egui::FontId::proportional(size)) } else { egui::FontId::proportional(size) };
                 let text_w = ui.fonts(|f| f.layout_no_wrap(title.clone(), font.clone(), egui::Color32::BLACK).size().x);
                 let w = text_w + dpi::s(34.0) + if active { dpi::s(20.0) } else { 0.0 };
@@ -822,11 +871,8 @@ impl App {
     /// necessarily the primary one it was sized for.
     fn device_pixels(&mut self, ctx: &egui::Context) {
         let Some(native) = ctx.input(|i| i.viewport().native_pixels_per_point) else { return };
+        follow_monitor(DEVICE_PIXELS, ctx, native);
         if DEVICE_PIXELS {
-            let zoom = device_zoom(native);
-            if ctx.zoom_factor() != zoom {
-                ctx.set_zoom_factor(zoom);
-            }
             if let Some(r) = self.placement_px.take() {
                 let ppp = ctx.pixels_per_point();
                 // Moved first: a move onto a monitor of another dpi resizes
@@ -1224,6 +1270,16 @@ fn one_press_per_pass(mut raw: egui::RawInput) -> Vec<egui::RawInput> {
 mod tests {
     use super::*;
 
+    /// #78: the document tabs' font is whole pixels at every scale.
+    #[test]
+    fn the_tab_font_is_whole_pixels() {
+        for (d, px) in [(96, 11.0), (120, 13.0), (144, 16.0)] {
+            dpi::set(d);
+            assert_eq!(tab_font_px(), px, "{d}");
+        }
+        dpi::set(96);
+    }
+
     /// A missing or failed DPI call is no scale (egui's native one stays).
     #[test]
     fn missing_dpi_call_is_no_scale() {
@@ -1472,6 +1528,7 @@ mod window_tests {
     fn the_omp_parameters_lay_out_from_their_client() {
         for (dpi, client, tree, grid) in [
             (96, (713.0, 447.0), (10.0, 44.0, 217.0, 357.0), (237.0, 44.0, 465.0, 357.0)),
+            (120, (831.0, 550.0), (10.0, 50.0, 257.0, 460.0), (277.0, 50.0, 544.0, 460.0)),
             (144, (1069.0, 653.0), (10.0, 55.0, 336.0, 563.0), (356.0, 55.0, 702.0, 563.0)),
         ] {
             dpi::set(dpi);
@@ -1509,6 +1566,105 @@ mod window_tests {
             assert_eq!(ppp, 1.0, "system {system}, monitor {monitor}");
             let row = (0..c.h).find(|&y| c.px[y * c.w + 1270] == line);
             assert_eq!(row, Some(body), "system {system}, monitor {monitor}: the ribbon's bottom line");
+        }
+        dpi::set(96);
+    }
+
+    /// #80: off Windows (`DEVICE_PIXELS` false: a Mac's Retina 2×, a Linux
+    /// HiDPI screen) egui keeps its native scale and the chrome its 100 %
+    /// sizes: no device zoom, the screen not rounded, no chrome dpi, the
+    /// window's monitor changing nothing. On Windows (true) the same calls
+    /// give one pixel per point. `DEVICE_PIXELS` is true in the test build,
+    /// so the other branch is reached through the `_on` functions.
+    #[test]
+    fn off_windows_egui_keeps_its_native_scale() {
+        let px = Vec2::new(1100.0, 700.0);
+        for native in [1.25, 2.0] {
+            dpi::set(96);
+            let ctx = egui::Context::default();
+            start_scaling(false, &ctx, Some(native), Some(native));
+            assert_eq!((ctx.zoom_factor(), dpi::dpi()), (1.0, 96), "{native}: nothing started");
+            device_window_on(false, &ctx, native);
+            follow_monitor(false, &ctx, native);
+            assert_eq!(ctx.zoom_factor(), 1.0, "{native}: nothing followed");
+            let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(549.7, 350.3))), ..Default::default() };
+            raw.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(native);
+            device_screen_on(false, &ctx, &mut raw);
+            assert_eq!(raw.screen_rect, Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(549.7, 350.3))), "{native}: the screen as given");
+            // A frame: egui's own pixels per point.
+            let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, px / native)), ..Default::default() };
+            raw.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(native);
+            let ppp = ctx.run(raw, |_| {}).pixels_per_point;
+            assert_eq!(ppp, native, "{native}: egui's scale");
+            // The same calls on Windows: one pixel per point, the chrome grown.
+            start_scaling(true, &ctx, Some(native), Some(native));
+            assert_eq!(ctx.zoom_factor(), device_zoom(native), "{native}: device pixels");
+            assert_eq!(dpi::dpi(), (native * 96.0).round() as u32);
+        }
+        dpi::set(96);
+    }
+
+    /// #80: `make_app`'s scaling — device pixels at the window's monitor's
+    /// scale, the chrome at GetDpiForSystem's (the system's, whichever
+    /// monitor the window opens on), the monitor's own when the call is
+    /// missing (Windows 10 before 1607) and 100 % when both are.
+    #[test]
+    fn make_app_takes_the_chrome_dpi_from_the_system() {
+        for (monitor, system, dpi_want, zoom_of) in [
+            (Some(1.0), Some(1.5), 144, 1.0),
+            (Some(1.75), Some(1.25), 120, 1.75),
+            (Some(1.25), None, 120, 1.25),
+            (None, Some(1.5), 144, 0.0),
+            (None, None, 96, 0.0),
+        ] {
+            dpi::set(96);
+            let ctx = egui::Context::default();
+            start_scaling(true, &ctx, monitor, system);
+            assert_eq!(dpi::dpi(), dpi_want, "monitor {monitor:?}, system {system:?}");
+            let zoom = if zoom_of == 0.0 { 1.0 } else { device_zoom(zoom_of) };
+            assert_eq!(ctx.zoom_factor(), zoom, "monitor {monitor:?}, system {system:?}: the zoom follows the monitor");
+        }
+        dpi::set(96);
+    }
+
+    /// #80: a live change — the window dragged to a monitor at another
+    /// scale (or the scale changed), the runner reporting the new native
+    /// scale and Windows resizing the window to keep its size in points —
+    /// settles within a frame to device pixels again (one pixel per
+    /// point), the chrome staying at the system DPI (fixed for the
+    /// process: the ribbon's bottom line on row 143 / 178 / 210), and
+    /// stays there: a further frame paints the same picture. Headless this
+    /// is the egui side only: the real WM_DPICHANGED resize and a
+    /// monitor's own rendering need hardware.
+    #[test]
+    fn a_live_monitor_change_settles_to_device_pixels_and_the_system_chrome() {
+        let px = Vec2::new(1100.0, 700.0);
+        let fonts = app_fonts();
+        let line = [157, 179, 209];
+        for (system, from, to, body) in [(1.0, 1.0, 1.5, 143), (1.25, 1.25, 1.75, 178), (1.5, 1.5, 1.0, 210), (1.0, 1.5, 1.25, 143)] {
+            dpi::set(96);
+            chrome_dpi(Some(system));
+            let after = (px * (to / from)).round();
+            let shot = |frames_after: usize| {
+                let setup = |ctx: &egui::Context| {
+                    device_options(ctx, Some(system));
+                    device_window(ctx, from);
+                };
+                let passes: Vec<(f32, Vec2, Vec<egui::Event>)> = [(from, px), (from, px)].into_iter().chain(std::iter::repeat_n((to, after), frames_after)).map(|(n, p)| (n, p, vec![])).collect();
+                let (mut ppp, mut app) = (0.0, demo(&[]));
+                let c = raster::render_natives(setup, device_screen, Some(&fonts), passes, |ctx| {
+                    app.frame_ui(ctx);
+                    ppp = ctx.pixels_per_point();
+                });
+                (c, ppp)
+            };
+            let (c, ppp) = shot(3);
+            assert_eq!(ppp, 1.0, "{from} -> {to}: device pixels again");
+            assert_eq!((c.w, c.h), (after.x as usize, after.y as usize));
+            let row = (0..c.h).find(|&y| c.px[y * c.w + c.w - 10] == line);
+            assert_eq!(row, Some(body), "system {system}, {from} -> {to}: the ribbon's bottom line");
+            let (later, _) = shot(6);
+            assert!(later.px == c.px, "system {system}, {from} -> {to}: the picture moves after it settled");
         }
         dpi::set(96);
     }
@@ -4550,6 +4706,59 @@ mod window_tests {
         let rgba: Vec<u8> = c.px.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
         std::fs::write(path, util::png_rgba(c.w as u32, c.h as u32, &rgba)).unwrap();
     }
+
+    /// #78 through the call site: a zoomed plane's scroll bar is the
+    /// system's 26 px at 150 % (its grey track across the window's right
+    /// edge), not the 100 % width scaled (24).
+    #[test]
+    fn a_zoomed_planes_scroll_bar_is_the_system_width() {
+        let fonts = app_fonts();
+        for (dpi_v, native, bar) in [(96u32, 1.0f32, 16usize), (120, 1.25, 21), (144, 1.5, 26)] {
+            dpi::set(dpi_v);
+            let mut app = demo(&[]);
+            app.diag.circle.z = 2.0;
+            let c = raster::render_native(Vec2::new(700.0, 500.0), native, |ctx| device_options_on(true, ctx, Some(native)), device_screen, Some(&fonts), vec![vec![]; 3], |ctx| {
+                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| app.plane_ui(ui));
+            });
+            let y = 250;
+            let run = (0..c.w).rev().take_while(|&x| c.px[y * c.w + x] == [235, 235, 235] || c.px[y * c.w + x] == [190, 190, 190]).count();
+            assert_eq!(run, bar, "{dpi_v}: the scroll bar's width");
+        }
+        dpi::set(96);
+    }
+
+    /// #78 through the strip layout: an inactive tab is its text in the
+    /// whole 8 pt font (16 px at 150 %) plus 34 px scaled (51).
+    #[test]
+    fn a_tab_is_laid_out_in_the_whole_8_pt_font() {
+        let fonts = app_fonts();
+        dpi::set(144);
+        let mut app = demo(&[app::Command::Demo]);
+        let mut got = None;
+        raster::render_native(Vec2::new(1280.0, 722.0), 1.5, |ctx| device_options_on(true, ctx, Some(1.5)), device_screen, Some(&fonts), vec![vec![]; 3], |ctx| {
+            app.frame_ui(ctx);
+            let other = (0..app.docs.len()).find(|&i| app.active != Some(i));
+            got = other.and_then(|i| {
+                let title = app.docs[i].title();
+                let w = ctx.read_response(egui::Id::new(("fv_doc_tab", app.docs[i].serial)))?.rect.width();
+                let text = ctx.fonts(|f| f.layout_no_wrap(title, egui::FontId::proportional(16.0), egui::Color32::BLACK).size().x);
+                Some((w, text + 51.0))
+            });
+        });
+        dpi::set(96);
+        let (w, want) = got.expect("an inactive tab");
+        assert_eq!(w, want, "the tab's width");
+    }
+
+    /// `make_app` takes the chrome's dpi from GetDpiForSystem
+    /// (`system_dpi_scale`) before the monitor's scale; its source line is
+    /// the call pinned here.
+    #[test]
+    fn make_app_passes_the_system_dpi_to_the_chrome() {
+        // `make_app` takes the chrome's dpi from GetDpiForSystem
+        // (`system_dpi_scale`) before the monitor's scale; its source line is
+        // the call pinned here.
+        let src = include_str!("main.rs");
+        assert!(src.contains(concat!("start_scaling(DEVICE_PIXELS, ctx, scale, ", "system_dpi_scale());")));
+    }
 }
-
-

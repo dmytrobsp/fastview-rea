@@ -177,6 +177,11 @@ fn wrap(ctx: &egui::Context, text: &str, font: &egui::FontId, max: f32) -> Vec<S
     lines
 }
 
+/// The description's wrap width at the system DPI.
+fn wrap_width() -> f32 {
+    crate::dpi::measured(195.0, 205.0, 205.0)
+}
+
 fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, bold_title: bool, inset: f32) {
     use crate::dpi::{img as side, s};
     const INK: Color32 = Color32::from_rgb(76, 76, 76);
@@ -192,7 +197,7 @@ fn paint(ctx: &egui::Context, at: Pos2, img: TipImage, title: &str, desc: &str, 
     // «Показать или скрыть панель параметров осциллограммы» on two lines
     // at 100 % and 125 %, three at 150 %); ours a little more at > 100 %
     // for Tahoma's wider letters at the larger size.
-    let lines = wrap(ctx, desc, &font, crate::dpi::measured(195.0, 205.0, 205.0));
+    let lines = wrap(ctx, desc, &font, wrap_width());
     let plain = matches!(img, TipImage::None);
     let text_x = match img {
         TipImage::Large(_) => side(32.0) + 13.0,
@@ -273,5 +278,24 @@ mod tests {
         let lines = wrap(&ctx, "Удалить постоянную составляющую осциллограммы", &font, 195.0);
         assert_eq!(lines, vec!["Удалить постоянную", "составляющую осциллограммы"]);
         assert_eq!(wrap(&ctx, "Комментирование уровня сигнала", &font, 195.0).len(), 1);
+    }
+
+    /// #80: the description wraps at the same width in lines at every
+    /// scale (VM: «Показать или скрыть панель параметров осциллограммы» on
+    /// two lines at 100 % and 125 %, three at 150 %), the font growing with
+    /// the system DPI.
+    #[test]
+    fn descriptions_wrap_at_the_same_width_at_every_scale() {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(crate::app_fonts());
+        let _ = ctx.run(Default::default(), |_| {});
+        for (dpi, widths, lines) in [(96, 195.0, 2), (120, 205.0, 2), (144, 205.0, 3)] {
+            crate::dpi::set(dpi);
+            assert_eq!(wrap_width(), widths, "{dpi}");
+            let font = egui::FontId::proportional(crate::dpi::font(12.0));
+            let got = wrap(&ctx, "Показать или скрыть панель параметров осциллограммы", &font, wrap_width());
+            assert_eq!(got.len(), lines, "{dpi}: {got:?}");
+        }
+        crate::dpi::set(96);
     }
 }

@@ -585,4 +585,24 @@ mod tests {
         run(&mut app, PreviewCmd::Close);
         assert!(app.print.preview.is_none());
     }
+
+    /// #80: «Печать» is its template's 341 × 258 DLU client in the units of
+    /// the system DPI's dialog font — 512 × 419, 597 × 516 and 767 × 613 px
+    /// (VM, 100 / 125 / 150 %) — in the 1 px frame and the caption of that
+    /// scale (25 / 31 / 35 px).
+    #[test]
+    fn the_print_dialogs_client_follows_the_system_dpi() {
+        for (dpi, client, caption) in [(96, (512.0, 419.0), 25.0), (120, (597.0, 516.0), 31.0), (144, (767.0, 613.0), 35.0)] {
+            crate::dpi::set(dpi);
+            let mut app = App::new();
+            app.dispatch(Command::Demo);
+            app.dispatch(Command::Print);
+            let ctx = egui::Context::default();
+            frame(&ctx, &mut app, vec![]);
+            frame(&ctx, &mut app, vec![]);
+            let area = ctx.memory(|m| m.area_rect(egui::Id::new("Печать"))).expect("the dialog is up");
+            assert_eq!((area.width(), area.height()), (client.0 + 2.0, client.1 + caption + 2.0), "{dpi}: the dialog");
+        }
+        crate::dpi::set(96);
+    }
 }
