@@ -2703,7 +2703,9 @@ fn mode_disp(doc: &crate::app::Doc, i: usize, k: usize) -> f64 {
 
 fn analog_unit(doc: &crate::app::Doc, i: usize) -> fvb_core::units::Shown {
     if doc.chans[i].adc_counts {
-        fvb_core::units::Shown { canon: "отсч.".into(), text: "отсч.".into() }
+        // No unit in ADC mode (`0x414c30`; the stats readout shows the bare
+        // number — a clone run, #42: ours had «отсч.»).
+        fvb_core::units::Shown::default()
     } else {
         doc.osc.analog[i].shown_unit()
     }
@@ -2760,7 +2762,8 @@ pub(crate) fn lane_stats(
                 let val = t.value_at(k_main, len, &|m| c.own_shown(m));
                 let finite = c.own_series().iter().copied().filter(|v| v.is_finite());
                 let (mx, mn) = finite.fold((f64::MIN, f64::MAX), |(hi, lo), v| (hi.max(v), lo.min(v)));
-                return (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, val);
+                let unit = if c.adc_counts { fvb_core::units::Shown::default() } else { fvb_core::units::Shown::computed(&c.unit) };
+                return (c.name.clone(), unit, c.color, mx, mn, rms, a1, val);
             }
             let rms = fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n_own, 1);
             let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n_own) * gain;

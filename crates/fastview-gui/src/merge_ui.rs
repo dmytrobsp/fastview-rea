@@ -1165,6 +1165,14 @@ mod tests {
         assert_eq!(d.flag_state(ChanFlag::Adc), crate::chansel::ItemState { enabled: true, checked: true });
         let codes: Vec<f64> = d.osc.analog[0].samples.iter().map(|&v| d.osc.analog[0].adc_code(v)).collect();
         assert_eq!(d.computed[j].pending_own, codes, "the lane reads the codes");
+        // The readout shows the bare code: no unit in ADC mode, for a pasted
+        // lane and a file channel alike (a clone run; ours had «отсч.»).
+        let (_, unit, ..) = crate::lanes::lane_stats(d, &ChanKey::Computed(j), 10);
+        assert_eq!(unit.text, "");
+        d.chans[0].adc_counts = true;
+        let (_, unit, ..) = crate::lanes::lane_stats(d, &ChanKey::Analog(0), 10);
+        assert_eq!(unit.text, "");
+        d.chans[0].adc_counts = false;
         // A formula channel in the selection is counted, never set: unchecked.
         let mut f = crate::app::Computed::new("F1".into(), "1".into(), vec![0.0; d.osc.time.len()], eframe::egui::Color32::RED);
         f.unit = String::new();

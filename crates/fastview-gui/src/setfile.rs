@@ -1334,6 +1334,26 @@ mod tests {
                 "invert" => app.dispatch(crate::app::Command::ToggleFlag(crate::chansel::ChanFlag::Invert)),
                 "dc" => app.dispatch(crate::app::Command::ToggleFlag(crate::chansel::ChanFlag::RemoveDc)),
                 "rms" => app.dispatch(crate::app::Command::SetValueMode(crate::app::ValueMode::Rms)),
+                // A formula channel X = Ua shown on the frequency diagram.
+                "calc" => {
+                    assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
+                    app.docs[di].computed[0].on_freq = true;
+                }
+                // Copy the digital channel and paste it in front of itself.
+                "pastedig" => {
+                    app.docs[di].selection = [ChanKey::Digital(0)].into();
+                    app.copy_channels_for_merge();
+                    app.docs[di].selection = [ChanKey::Digital(0)].into();
+                    app.paste_channels_for_merge();
+                }
+                // ADC on a pasted lane: copy the second channel, paste it in front of the first, ADC.
+                "pasteadc" => {
+                    app.docs[di].selection = [ChanKey::Analog(1)].into();
+                    app.copy_channels_for_merge();
+                    app.docs[di].selection = [ChanKey::Analog(0)].into();
+                    app.paste_channels_for_merge();
+                    app.dispatch(crate::app::Command::ToggleFlag(crate::chansel::ChanFlag::Adc));
+                }
                 // Copy the second channel and paste it in front of the first
                 // (a pending lane among the file channels), then save.
                 "paste" => {
@@ -1608,6 +1628,32 @@ mod tests {
         assert_eq!((flags >> 13) & 3, 2, "bit 14 only: {flags}");
         assert_eq!(sec.get_str("NetFreq", "").split(',').count(), d.osc.sample_count());
         assert_eq!(t.section("Comments").unwrap().get_str("Codepage", ""), "1");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pasted DIGITAL lane in front of a digital channel (a clone run, byte for
+    /// byte): the channel after it is numbered 2, the lane's `.set` section has
+    /// bit 14 and no `NetFreq` (#28).
+    #[test]
+    fn a_pending_digital_lane_counts_in_the_digital_numbering_and_has_no_net_freq() {
+        let dir = temp_dir("penddig");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        let nd = app.docs[di].osc.digital.len();
+        app.docs[di].selection = [ChanKey::Digital(0)].into();
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = &app.docs[di];
+        let (rec, no) = d.file_record();
+        assert_eq!(rec.digital.len(), nd);
+        assert_eq!(no.digital, (2..=nd + 1).collect::<Vec<_>>());
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let sec = t.section(&d.computed[j].name).expect("the lane's section");
+        assert_eq!(sec.get_str("ShowFlags", "0"), "16609");
+        assert!(!sec.attrs.contains_key("NetFreq"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
