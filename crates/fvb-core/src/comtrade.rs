@@ -2097,12 +2097,19 @@ mod stamp_seconds_tests {
         assert_eq!(super::stamp_seconds("03/01/2000", "00:00:00", 1999), Some(951_868_800.0), "1999: month first");
     }
 
+    /// Windows' best fit of 866's pseudo-graphics to ASCII (the table's entries).
+    #[test]
+    fn best_fit_of_box_characters() {
+        let got: String = ['─', '═', '╠', '╬', '┴', '╦', '╩', '└'].into_iter().map(super::best_fit_1251).collect();
+        assert_eq!(got, "-=¦++T¦L");
+    }
+
     #[test]
     fn moment_time() {
         let st = |date: &str, time: &str| super::Stamps { start_date: date.into(), start_time: time.into(), ..Default::default() };
         let t = |s: &super::Stamps, us| super::moment_time_text(s, 1999, us);
         let s = st("04/19/2023", "16:52:11.614000");
-        // The start's 614 ms are added as 933 µs: they vanish.
+        // The start's milliseconds are added as microseconds: they vanish.
         assert_eq!(t(&s, 0).as_deref(), Some("19.04.2023 16:52:11.000"));
         assert_eq!(t(&s, 200_500).as_deref(), Some("19.04.2023 16:52:11.201"));
         assert_eq!(t(&s, 49_000_000).as_deref(), Some("19.04.2023 16:53:00.000"));

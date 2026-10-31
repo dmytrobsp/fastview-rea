@@ -3852,7 +3852,7 @@ mod tests {
         assert_eq!(phase_class("X", "б"), 2);
         assert_eq!(phase_class("X", "CA"), 7);
         assert_eq!(phase_class("Uab", ""), 5, "uab before ua");
-        assert_eq!(phase_class("IC БЛОКА", ""), 3);
+        assert_eq!(phase_class("IC ДОМНА", ""), 3);
         assert_eq!(phase_class("3I0", ""), 4);
         assert_eq!(phase_class("Uп", ""), 4, "Cyrillic п for n");
         assert_eq!(phase_class("Pin 7", ""), 4, "any «in» left over");

@@ -1832,7 +1832,7 @@ mod tests {
             d.osc.analog[i].id = n.into();
         }
         d.osc.analog[1].id = "Свой".into();
-        d.osc.digital[0].id = "Пуск БЛОКА".into();
+        d.osc.digital[0].id = "Пуск ДОМНА".into();
         d.init_set_keys();
         d.osc.analog[1].id = "Другой".into();
         d.omp.params.stations[0].ia = "IA ДОМНА 6".into();
@@ -1848,7 +1848,7 @@ mod tests {
         let g = q.generate(AnalysisTab::Zero, &[]);
         app.apply_quick(&g);
         crate::quick_ui::save_page(z, &app.quick[z].clone(), app.active_doc_mut().unwrap().set.tree.section_mut(crate::quick_ui::PAGE_KEYS[z]));
-        assert!(app.append_computed(&[("D".into(), "\"Пуск БЛОКА\"*2".into())]).is_some(), "{:?}", app.dlg.alert());
+        assert!(app.append_computed(&[("D".into(), "\"Пуск ДОМНА\"*2".into())]).is_some(), "{:?}", app.dlg.alert());
         let d = app.active_doc_mut().unwrap();
         // A differential arm's pick follows; a text that only equals a name
         // (an edit's) does not.
