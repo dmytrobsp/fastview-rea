@@ -139,31 +139,166 @@ def src_e(d):
         f.write(("\n".join(rows) + "\n").encode())
 
 
-SOURCES = [("a", src_a), ("b", src_b), ("c", src_c), ("d", src_d)]
-SEED = {"a": 11, "b": 22, "c": 33, "d": 44}
+def src_f(d):
+    """1999, Latin ASCII, CRLF, timestamp-only (`0` then `0,N`, irregular instants), a time multiplier, no .hdr."""
+    lines = ["Station Quill,Recorder P4,1999", "5,2A,3D",
+             "1,Volt Rho,A,,V,0.0731,0,0,-32767,32767,1370,3,P",
+             "2,Amp Sigma,B,,A,0.0417,0,0,-32767,32767,225,1,P",
+             "1,Kilo Tau,0", "2,Block Upsi,0", "3,Alarm Phi,1",
+             "50", "0", "0,17", "14/06/2022,08:15:42.318000", "14/06/2022,08:15:42.331000", "ASCII", "0.5"]
+    with open(os.path.join(d, "f.cfg"), "wb") as f:
+        f.write((CRLF.join(lines) + CRLF).encode())
+    gaps = [0, 413, 788, 1203, 1598, 2022, 2417, 3902, 4311, 4707, 5121, 5504, 5933, 6347, 8836, 9244, 9650]
+    rows = [f"{i + 1},{gaps[i]},{(i * 307) % 1900 - 800},{(i * 113) % 1200 - 500},{i % 2},0,{1 if i > 9 else 0}" for i in range(17)]
+    with open(os.path.join(d, "f.dat"), "wb") as f:
+        f.write((CRLF.join(rows) + CRLF).encode())
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--check", action="store_true")
-    a = ap.parse_args()
+def cff(sections, dat_kind, dat, bom=False):
+    """A single-file record: `--- file type: KIND ---` sections, then the data section with its byte count."""
+    out = b"\xef\xbb\xbf" if bom else b""
+    for kind, body in sections:
+        out += f"--- file type: {kind} ---\r\n".encode() + body
+    return out + f"--- file type: DAT {dat_kind}: {len(dat)} ---\r\n".encode() + dat
+
+
+def src_g(d):
+    """2013 single file (.cff), UTF-8 with a BOM, Cyrillic, INF and HDR sections, ASCII data with a byte count."""
+    cfg = CRLF.join([
+        "Підстанція Ліра,Фіксатор Т3,2013",
+        "3,2A,1D",
+        "1,Фідер Нота,A,,A,0.1273,0,0,-32767,32767,2310,5,P",
+        "2,Шина Серпа,B,,kV,0.0891,0,0,-32767,32767,11700,100,P",
+        "1,Вимикач Ронда,0",
+        "50",
+        "1",
+        "1450.000000,21",
+        "19/08/2023,16:27:03.512000",
+        "19/08/2023,16:27:03.526600",
+        "ASCII",
+        "1.000000",
+        "+3h30,+3h30",
+        "C,1",
+        "",
+    ])
+    inf = CRLF.join(["Мова: укр", "Версія файлу 4.2 від 2023", ""])
+    hdr = CRLF.join(["Примітка: перевірка зв'язку Ліра 12", "Пристрій «Фіксатор» Т3", ""])
+    rows = CRLF.join(f"{i + 1},{i * 690},{(i * 421) % 3000 - 1400},{(i * 173) % 2000 - 900},{(i // 7) % 2}" for i in range(21)) + CRLF
+    with open(os.path.join(d, "g.cff"), "wb") as f:
+        f.write(cff([("CFG", cfg.encode()), ("INF", inf.encode()), ("HDR", hdr.encode())], "ASCII", rows.encode(), bom=True))
+
+
+def osc_bytes(version, texts, cal, ratios, trigger, pretrig, n, rows_by_block, codes, nd=16):
+    """An OSC2 oscillogram: header, one calibration block, the text blocks, info, data blocks (big-endian)."""
+    B = 128
+    head = bytearray(B)
+    head[0], head[1], head[2] = version[0], version[1], 2 + len(texts)
+    blocks = [head]
+    cb = bytearray(B)
+    for j, (f1, s1, f2, s2) in enumerate(cal):
+        struct.pack_into(">f", cb, 4 * j, f1)
+        struct.pack_into(">h", cb, 0x20 + 2 * j, s1)
+        struct.pack_into(">f", cb, 0x30 + 4 * j, f2)
+        struct.pack_into(">h", cb, 0x50 + 2 * j, s2)
+    blocks.append(cb)
+    for t in texts:
+        blocks.append(bytearray(t + bytes(B - len(t))))
+    info = bytearray(B)
+    struct.pack_into(">h", info, 2, len(rows_by_block))
+    struct.pack_into(">h", info, 0xE, pretrig)
+    for at, v in zip((5, 6, 7, 8, 9, 0xA, 0xB), trigger):
+        info[at] = (v // 10) << 4 | v % 10
+    for i, x in enumerate(ratios):
+        struct.pack_into(">f", info, 0x40 + 4 * i, x)
+    blocks.append(info)
+    for blk_rows, code in zip(rows_by_block, codes):
+        blk = bytearray(B)
+        for s_, (a, word) in enumerate(blk_rows):
+            struct.pack_into(">" + "h" * len(a) + "H", blk, s_ * (2 * len(a) + 2), *a, word)
+        struct.pack_into(">h", blk, 0x7C, code)
+        blocks.append(blk)
+    return b"".join(bytes(b) for b in blocks)
+
+
+def src_h(d):
+    """An OSC2 oscillogram (.osc): version 2.4, cp1251 names, three analog channels (one with a ccbm field),
+    sixteen digital in two text blocks, 14 samples per block, six data blocks with two timing codes."""
+    import math
+    CR = "\r\n"
+    texts = [
+        ("nnA,003" + CR + "1,Потік Орса,A,А" + CR + "2,Вольтаж Нерун,B,Т7,кВ" + CR + "3,Потік Кала,C,А" + CR).encode("cp1251"),
+        ("nnD,008" + CR + "".join(f"{i},Рл Ка{i},{i % 2}" + CR for i in range(1, 9))).encode("cp1251"),
+        ("nnD,008" + CR + "".join(f"{i},Рл Ко{i},{i % 2}" + CR for i in range(9, 17))).encode("cp1251"),
+        b"nnF,14" + CR.encode(),
+    ]
+    cal = [(1357.3, 238, 0.4167, -157), (2417.9, -311, 0.3871, 129), (1119.7, 87, 0.4293, 405)]
+    rows = []
+    for b in range(6):
+        rows.append([([int(7000 * math.sin((b * 14 + s) / 4.0 + k)) for k in range(3)], ((b * 14 + s) * 37 + (s % 5)) & 0xFFFF)
+                     for s in range(14)])
+    data = osc_bytes((2, 4), texts, cal, [1478.0, 87.5, 342.5], (31, 17, 42, 11, 12, 4, 21), 1, 14, rows,
+                     [9421, 9421, 9421, 9421, 4711, 4711])
+    with open(os.path.join(d, "h.osc"), "wb") as f:
+        f.write(data)
+
+
+SOURCES = [("a", src_a), ("b", src_b), ("c", src_c), ("d", src_d), ("f", src_f), ("g", src_g), ("h", src_h)]
+SEED = {"a": 11, "b": 22, "c": 33, "d": 44, "f": 66, "g": 77, "h": 88}
+
+
+def main_file(d):
+    """The record's own file in a folder: its .cfg or .cff."""
+    return next(os.path.join(d, n) for n in sorted(os.listdir(d)) if n.lower().endswith((".cfg", ".cff", ".osc")))
+
+
+def against(user_records):
+    """Each hand-written source of this script, as an output, against the given user records."""
+    inventories = [userdata_check.inventory(recfmt.open_record(p), 10**6) for p in user_records]
     bad = 0
     with tempfile.TemporaryDirectory() as tmp:
         for name, mk in SOURCES:
             sd = os.path.join(tmp, "src_" + name)
             os.makedirs(sd)
             mk(sd)
-            src = recfmt.Record(next(os.path.join(sd, n) for n in os.listdir(sd) if n.lower().endswith(".cfg")))
+            rec = recfmt.open_record(main_file(sd))
+            total = sum(sum(userdata_check.check(inv, rec, 10**6)[0].values()) for inv in inventories)
+            print(f"{'FAIL' if total else 'ok'}: source {name}: {total} matches against {len(inventories)} records")
+            bad += total
+    return 1 if bad else 0
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--check", action="store_true")
+    ap.add_argument("--against", nargs="+", metavar="SRC", help="check each hand-written source (not the fixtures) against "
+                    "these user records' .cfg / .cff / .osc: counts only, exit 1 on any match")
+    a = ap.parse_args()
+    if a.against:
+        return against(a.against)
+    bad = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, mk in SOURCES:
+            sd = os.path.join(tmp, "src_" + name)
+            os.makedirs(sd)
+            mk(sd)
+            src = recfmt.open_record(main_file(sd))
             od = os.path.join(tmp if a.check else FIXTURES, "out_" + name if a.check else name)
-            seed = synth_record.write_record(src, od, name, SEED[name], 96 if name != "d" else 30)
+            seed = synth_record.write_record(src, od, name, SEED[name], 30 if name in ("d", "f") else 96)
             print(f"{name}: seed {seed}")
-            for n in sorted(os.listdir(od)):
-                if a.check:
-                    with open(os.path.join(od, n), "rb") as f1, open(os.path.join(FIXTURES, name, n), "rb") as f2:
-                        if f1.read() != f2.read():
-                            print("DIFFERS:", name, n)
-                            bad += 1
-            out = recfmt.Record(os.path.join(od, next(n for n in os.listdir(od) if n.lower().endswith(".cfg"))))
+            if a.check:
+                committed = os.path.join(FIXTURES, name)
+                have = set(os.listdir(committed)) if os.path.isdir(committed) else set()
+                for n in sorted(set(os.listdir(od)) | have):
+                    if n not in have:
+                        print("MISSING (generated, not committed):", name, n)
+                        bad += 1
+                    elif n not in os.listdir(od):
+                        print("EXTRA (committed, not generated):", name, n)
+                        bad += 1
+                    elif open(os.path.join(od, n), "rb").read() != open(os.path.join(committed, n), "rb").read():
+                        print("DIFFERS:", name, n)
+                        bad += 1
+            out = recfmt.open_record(main_file(od))
             hits, _ = userdata_check.check(userdata_check.inventory(src, 10**6), out, 10**6)
             if sum(hits.values()):
                 print("CLASH:", name, hits)

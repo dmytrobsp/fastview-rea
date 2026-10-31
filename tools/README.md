@@ -106,7 +106,10 @@ name) and words of four letters or more, case-folded; identifying numbers by val
 whole `.cfg` / `.hdr` lines; the rate-segment lines and the time-code / quality lines as whole lines, short as they
 are (a record's time code is its own value, not structure); phase and ccbm fields by channel position (apart from
 format phases such as A, B, C, N, L1); and four-row windows of the analog samples, both of whole rows and of each
-channel alone (a copied column shows). It prints counts only, never a value, and exits 1 on any match. It reads at
+channel alone (six consecutive values of one channel, a spread of 16 or more for whole numbers, so that a copied
+column shows even at a moderate amplitude while small whole-number samples of unrelated records do not meet by
+chance), and, for a timestamp-only record, four consecutive steps of its time column (differences, so an offset does
+not hide a copy). It prints counts only, never a value, and exits 1 on any match. It reads at
 most `--max-rows` data rows of a record (default 2 000 000) and indexes at most 2 000 000 per-channel windows of it;
 the generator's own check after each draw reads at most 200 000 rows of the source.
 
@@ -116,12 +119,27 @@ frequency line, the number of rate segments and the approximate ratios of their 
 of the tokens in names and the punctuation of the `.hdr`, and the data type. A clean check therefore shows that no
 value of the source was copied; it does not show that the *structure* is unrecognisable. **A record generated from a
 user record stays local** (it is for local runs and for comparing readers); whether such an output may be committed
-is the maintainer's decision. Committed fixtures come from hand-written sources, checked against the user records.
-Records without rate segments (timestamp-only), `.cff` and `.osc` are not supported (the tools say so and stop).
+is the maintainer's decision. Committed fixtures come from hand-written sources, checked against the user records; the sources are committed too, so
+`python3 -I tools/records/make_fixtures.py --against USER.cfg [USER2.cfg ...]` checks each hand-written source against the
+user records (counts only) and has to be run, with every user record, before a source is changed or added.
+Besides a `.cfg` with its `.dat` / `.hdr`, a source may be a **timestamp-only** record (`0` rate segments, one `0,N`
+line: the output has the same two lines with an invented count and invented, irregular, increasing instants), a
+single-file **`.cff`** (the sections `--- file type: KIND ---` in the source's order, the data section last with its
+byte count after a colon or running to the end of the file; every text section, INF and SET too, is invented like a
+`.hdr` and checked like one; the BOM, encoding and line endings are kept; the data marker gets the new byte count),
+or an OSC2 **`.osc`** (128-byte big-endian blocks; the version, block geometry, tags, channel counts, line layout,
+samples per block and number of timing codes are kept, and every name, phase, unit, calibration number, ratio, timing
+code, the trigger moment and every sample is invented; bytes the format description does not name are written as
+zeros; the pre-trigger block count and the ratios between the timing codes stay, as the rate segments' ratios do for a `.cfg`; a ratio outside the reader's range is written as 1). Marker lines of a `.cff` and tag lines of an `.osc` are written in their plain form, whatever else the source's line held is not copied. The check indexes an `.osc`'s names, calibration numbers, ratios, timing codes, trigger moment and sample
+windows like the fields of a `.cfg`. Layouts the tools cannot take (a `.cff` without a CFG or DAT section, with text
+before its first section or a section after the data; an `.osc` with an unknown text tag, no samples-per-block block,
+sample records that do not fit a data block, or channel lines of another shape) are refused with a message.
 
-`tools/records/make_fixtures.py [--check]` rebuilds `crates/fvb-core/tests/data/generated/` from four hand-written
-sources (invented, in the script) with fixed seeds; `crates/fvb-core/tests/generated_records.rs` reads them. The
-tools' tests: `python3 -I -m unittest discover -s tools/records -p 'test_*.py'` (CI runs them).
+`tools/records/make_fixtures.py [--check]` rebuilds `crates/fvb-core/tests/data/generated/` from seven hand-written
+sources (invented, in the script: a 2013 record with a BOM, a 1999 BINARY one, a cut-name binary32 one, a 1991 one,
+a timestamp-only one, a `.cff`, an `.osc`) with fixed seeds; `crates/fvb-core/tests/generated_records.rs` reads them (the fixtures are compiled into the
+test executable and written to the temporary directory on first use, so an executable cross-built for Windows runs on a
+clone as it is). The tools' tests: `python3 -I -m unittest discover -s tools/records -p 'test_*.py'` (CI runs them).
 
 ## The milestone helper
 
