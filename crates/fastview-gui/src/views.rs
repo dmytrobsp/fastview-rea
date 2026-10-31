@@ -154,14 +154,43 @@ impl App {
             },
             Some(Cmd::Dock) if place == Place::Floating => self.docks[unit].double_click(origin),
             Some(Cmd::AutoHide) => {
-                if place == Place::Docked {
-                    self.dock_leave(unit);
-                }
+                self.pin_prepare(unit);
                 self.docks[unit].pin();
             }
             Some(Cmd::Hide) => self.dispatch(Command::TogglePane(pane)),
             _ => {}
         }
+    }
+
+    /// What every way of auto-hiding a docked group does first (the caption
+    /// pin, Ctrl + pin, the pane menu's «Автоматически скрывать»; MFC has one
+    /// toggle): the slid-out pane's window is as large as its docked one
+    /// (#126, VM): a lone pane (the bottom Частотная, the right
+    /// Дифференциальная) the same size, its divider outside it, over the
+    /// view; a tabbed group without the frame its tab control drew (3 px)
+    /// and without a place for the divider (4 px; L9.410); then the group
+    /// leaves its slot.
+    fn pin_prepare(&mut self, u: crate::docking::Unit) {
+        if self.docks[u].place != crate::docking::Place::Docked {
+            return;
+        }
+        if let Some(r) = self.dock_rects[u as usize] {
+            let across = if self.docks.edge(u).vertical() { r.width() } else { r.height() };
+            let grouped = self.dock_views().iter().any(|g| g.unit == u && g.strip);
+            // On a top / bottom edge the group's tab strip lies across the
+            // extent: VM, a bottom group slid out is 48 px lower than docked
+            // at two docked heights (100 %; 125 / 150 % not run: the strip's
+            // height twice, a reading of the one constant).
+            let lost = if !grouped {
+                0.0
+            } else if self.docks.edge(u).vertical() {
+                crate::dpi::s(crate::docking::GROUP_FRAME_PX + crate::docking::DIVIDER_PX)
+            } else {
+                2.0 * crate::dpi::measured(24.0, 30.0, 34.0)
+            };
+            self.docks[u].slide_extent = Some((across - lost).max(crate::docking::SLIDE_MIN_PX));
+        }
+        self.dock_leave(u);
     }
 
     fn caption_acts(&mut self, ctx: &egui::Context, unit: crate::docking::Unit, shown: Pane, act: CaptionAct, pane: egui::Rect) {
@@ -187,21 +216,7 @@ impl App {
                 vec![unit]
             };
             for u in units {
-                if self.docks[u].place == Place::Docked {
-                    // The slid-out pane's window is as large as its docked
-                    // one (#126, VM): a lone pane (the bottom Частотная, the
-                    // right Дифференциальная) the same size, its divider
-                    // outside it, over the view; a tabbed group without the
-                    // frame its tab control drew (3 px) and without a place
-                    // for the divider (4 px; L9.410).
-                    if let Some(r) = self.dock_rects[u as usize] {
-                        let across = if self.docks.edge(u).vertical() { r.width() } else { r.height() };
-                        let grouped = self.dock_views().iter().any(|g| g.unit == u && g.strip);
-                        let lost = if grouped { crate::docking::GROUP_FRAME_PX + crate::docking::DIVIDER_PX } else { 0.0 };
-                        self.docks[u].slide_extent = Some((across - crate::dpi::s(lost)).max(crate::docking::SLIDE_MIN_PX));
-                    }
-                    self.dock_leave(u);
-                }
+                self.pin_prepare(u);
                 self.docks[u].pin();
                 if !ctrl && self.docks[u].place == Place::AutoHide {
                     self.docks[u].slide = 1.0;
@@ -386,6 +401,9 @@ impl App {
                 let next = self.tab_order.into_iter().find(|&q| q != p && v.mask[q as usize]).unwrap_or(v.unit);
                 let rect = self.docks[p].float_at(Self::float_origin(ui.ctx()));
                 self.docks.float_tab(p, v.unit, next, rect);
+                // Clone (FOCUS): the keyboard focus is the floated pane's own
+                // window, in its mini-frame, whichever tab it was.
+                self.copy_focus = crate::app::CopyFocus::Pane(p);
             }
         }
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
@@ -568,6 +586,12 @@ impl App {
                 // to 4 px.
                 let range = 6.0..=(ctx.available_rect().width() - 4.0).max(6.0);
                 let size = grip_size(ctx, id, ext + 4.0, range.clone());
+                // A dragged divider is kept in the group's own extent (the
+                // grip's size lives under this panel's id, which changes when
+                // the neighbour takes the block over: #127).
+                if (size - 4.0 - ext).abs() > 0.01 {
+                    self.docks[h.unit].extent = Some(size - 4.0);
+                }
                 p.resizable(false).show_separator_line(false).frame(dock_frame(strip, edge)).exact_width(size).show(ctx, |ui| {
                     grip(ui, id, edge, size, range);
                     body(self, ui)
@@ -577,6 +601,12 @@ impl App {
                 let p = if edge == Edge::Top { egui::TopBottomPanel::top(id) } else { egui::TopBottomPanel::bottom(id) };
                 let range = 6.0..=(ctx.available_rect().height() - 4.0).max(6.0);
                 let size = grip_size(ctx, id, ext + 4.0, range.clone());
+                // A dragged divider is kept in the group's own extent (the
+                // grip's size lives under this panel's id, which changes when
+                // the neighbour takes the block over: #127).
+                if (size - 4.0 - ext).abs() > 0.01 {
+                    self.docks[h.unit].extent = Some(size - 4.0);
+                }
                 p.resizable(false).show_separator_line(false).frame(dock_frame(strip, edge)).exact_height(size).show(ctx, |ui| {
                     grip(ui, id, edge, size, range);
                     body(self, ui)
@@ -844,7 +874,7 @@ impl App {
             // covers that too: a side or top pane's region reaches up there
             // although ours is drawn from the caption row's bottom. With a
             // top strip beside a side pane the original's starts at the
-            // strip's top, the caption row's bottom (#128, VM: the pointer
+            // caption row's bottom, not the window's top (#128, VM: the pointer
             // resting in the caption row above the pane lets it slide in).
             let edge = self.docks.edge(v.unit);
             let top_strip = self.strip_inset[crate::docking::Edge::Top as usize] > 0.0;
