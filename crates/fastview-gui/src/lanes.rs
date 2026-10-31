@@ -1798,10 +1798,10 @@ impl App {
         // channels, joins them; a pasted one is refused by 33035's enable
         // check (`0x468c80`): message 1086.
         // The window under the pointer takes the drop, not the lane under
-        // it: a floating pane's window over the view (its caption, tab
-        // strip, toolbar; a diagram of it takes the drop as a pane's)
-        // leaves the lane out (clone).
-        let over_float = |p: Pos2| ctx.layer_id_at(p).is_some_and(crate::views::is_floating_pane_layer);
+        // it: a floating or slid-out pane's window over the view (its
+        // caption, tab strip, toolbar; a diagram of it takes the drop as a
+        // pane's) leaves the lane out (clone).
+        let over_float = |p: Pos2| ctx.layer_id_at(p).is_some_and(|l| crate::views::is_floating_pane_layer(l) || crate::views::is_slid_pane_layer(l));
         if released && !self.modal_up {
             if let Some(p) = now.filter(|p| in_view(*p) && p.y < plot_bottom && !over_float(*p)) {
                 let lane = rows.iter().zip(&tops).find(|(r, &t)| p.y >= t && p.y < t + r.h).map(|(r, _)| r.key);
@@ -2739,13 +2739,15 @@ mod menu_tests {
         shapes: Vec<egui::epaint::ClippedShape>,
         /// The last frame's cursor.
         cursor: egui::CursorIcon,
+        /// A window drawn over the lanes (its area id, order, rect).
+        cover: Option<(egui::Id, egui::Order, Rect)>,
     }
 
     impl Harness {
         fn new() -> Harness {
             let mut app = App::new();
             app.dispatch(Command::Demo);
-            let mut h = Harness { ctx: egui::Context::default(), app, t: 0.0, shapes: vec![], cursor: egui::CursorIcon::Default };
+            let mut h = Harness { ctx: egui::Context::default(), app, t: 0.0, shapes: vec![], cursor: egui::CursorIcon::Default, cover: None };
             h.frame(vec![]);
             h.frame(vec![]);
             h
@@ -2765,8 +2767,14 @@ mod menu_tests {
                 ..Default::default()
             };
             let app = &mut self.app;
+            let cover = self.cover;
             let out = self.ctx.run(raw, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| app.lanes_ui(ui));
+                if let Some((id, order, r)) = cover {
+                    egui::Area::new(id).order(order).fixed_pos(r.min).show(ctx, |ui| {
+                        ui.allocate_exact_size(r.size(), egui::Sense::click_and_drag());
+                    });
+                }
             });
             self.cursor = out.platform_output.cursor_icon;
             self.shapes = out.shapes;
@@ -2957,6 +2965,42 @@ mod menu_tests {
         let d = h.doc();
         assert!(d.chans[c0].group.is_some() && d.chans[c0].group == d.chans[cs].group, "one lane now");
         assert!(!egui::DragAndDrop::has_any_payload(&h.ctx));
+    }
+
+    /// A lane dragged and released on a slid-out pane's window over the view
+    /// drops nowhere, as on a floating one (clone: the pane out, the release
+    /// on its caption over another lane of the unit: nothing grouped).
+    #[test]
+    fn a_channel_dropped_on_a_slid_out_pane_over_the_view_drops_nowhere() {
+        let unit = |h: &Harness, li: usize| match lane_layout(h.doc(), h.app.y_analog, false)[li].key {
+            Lane::Analog(i) => Some(h.doc().osc.analog[i].unit.clone()),
+            _ => None,
+        };
+        for covered in [false, true] {
+            let mut h = Harness::new();
+            let same = (1..h.rows()).find(|&li| unit(&h, li).is_some() && unit(&h, li) == unit(&h, 0)).expect("a lane with the same unit");
+            let to = h.row(same);
+            if covered {
+                let id = egui::Id::new(("fv_slide", crate::docking::Unit::Frequency));
+                h.cover = Some((id, egui::Order::Foreground, Rect::from_min_size(Pos2::new(to.x + 100.0, to.y - 20.0), Vec2::new(300.0, 40.0))));
+                h.frame(vec![]);
+            }
+            let (Lane::Analog(c0), Lane::Analog(cs)) = (lane_layout(h.doc(), h.app.y_analog, false)[0].key, lane_layout(h.doc(), h.app.y_analog, false)[same].key) else { unreachable!() };
+            // Release at x 200 past the stats panel, over the cover when there is one.
+            let b = Pos2::new(to.x + 200.0, to.y);
+            let a = h.row(0);
+            let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, modifiers: Default::default(), pressed };
+            h.frame(vec![egui::Event::PointerMoved(a), ev(a, true)]);
+            let steps = ((b - a).length() / 5.0).ceil().max(1.0) as usize;
+            for k in 1..=steps {
+                h.frame(vec![egui::Event::PointerMoved(a + (b - a) * (k as f32 / steps as f32))]);
+            }
+            h.frame(vec![ev(b, false)]);
+            h.frame(vec![]);
+            let d = h.doc();
+            let grouped = d.chans[c0].group.is_some() && d.chans[c0].group == d.chans[cs].group;
+            assert_eq!(grouped, !covered, "covered by a slid-out pane: {covered}");
+        }
     }
 
     /// The drop works for formula channels too (#57): a formula added after

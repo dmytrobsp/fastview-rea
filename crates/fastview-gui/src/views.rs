@@ -1870,6 +1870,12 @@ pub fn is_floating_pane_layer(l: egui::LayerId) -> bool {
     crate::docking::UNITS.into_iter().any(|u| l == floating_pane_layer(u))
 }
 
+/// Whether `l` is a slid-out auto-hidden group's window (it lies over the
+/// view like a floating one).
+pub fn is_slid_pane_layer(l: egui::LayerId) -> bool {
+    crate::docking::UNITS.into_iter().any(|u| l == egui::LayerId::new(egui::Order::Foreground, egui::Id::new(("fv_slide", u))))
+}
+
 fn pane_dim(p: Pane) -> fvb_core::model::Dimension {
     if p == Pane::Differential {
         fvb_core::model::Dimension::Dif

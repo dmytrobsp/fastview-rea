@@ -4543,6 +4543,32 @@ mod window_tests {
         }
     }
 
+    /// The merge bar's button keeps the focus when the merge hides the bar
+    /// (clone: «Объединить» pressed, the bar gone: GetFocus still names the
+    /// hidden button): the view's keys stay dead and copy takes the view's
+    /// picture and the document (#65).
+    #[test]
+    fn the_focus_stays_on_the_merge_button_when_the_bar_hides() {
+        use app::{ChanKey, CopyFocus};
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        let join = w.app.focus_other[2];
+        w.press(Primary, join.center(), join.center());
+        w.idle(3);
+        assert!(w.app.merge.is_none(), "the bar is gone");
+        assert_eq!(w.app.copy_focus, CopyFocus::Other, "the hidden button holds the focus");
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_eq!(w.view_state(), before, "the view's keys are dead");
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.dispatch(app::Command::Copy);
+        assert!(w.app.clip.picture().is_some() && w.app.clip.get().is_some());
+    }
+
     /// `FV_FRAME_BENCH=<file.cfg> cargo test --release frame_bench -- --nocapture`
     /// prints the mean whole-window frame time on that record.
     #[test]
