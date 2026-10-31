@@ -1626,7 +1626,13 @@ impl App {
         let chans: Vec<FreqChan> = (0..d.osc.analog.len())
             .filter(|i| d.chans[*i].on_freq)
             .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: d.shown_samples(i), file: Some(i), own_rate: d.osc.analog[i].own_rate })
-            .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && d.pending_of(*j).is_none()).map(|(_, c)| FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: None, own_rate: c.own_rate }))
+            .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && !d.pending_digital(*j)).map(|(j, c)| match d.pending_of(j) {
+                // A pasted analog lane too (`0x46fb1c` tests bit 1 only; clone,
+                // #133): the spectrum at the record's cursor index over the
+                // lane's own samples, its own rate's period.
+                Some(p) => FreqChan { name: &c.name, color: c.color, samples: &c.pending_own, file: None, own_rate: p.pasted.rate },
+                None => FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: None, own_rate: c.own_rate },
+            }))
             .collect();
         let s = print_s().unwrap_or(1.0);
         let si = s as i32;
@@ -2278,6 +2284,40 @@ mod tests {
         let texts: Vec<String> = out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
         assert!(texts.iter().any(|t| t == "100"), "the fundamental reads 100: {texts:?}");
         assert!(!texts.iter().any(|t| t == "100.0"), "never 100.0: {texts:?}");
+    }
+
+    /// A pasted analog lane with the pane's bit is drawn on the frequency
+    /// diagram like any other channel (clone, #133: `0x46fb1c` tests bit 1
+    /// and nothing else): its legend entry and its bars.
+    #[test]
+    fn a_pasted_analog_lane_is_drawn_on_the_frequency_diagram() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        d.chans.iter_mut().for_each(|c| c.on_freq = false);
+        d.selection.insert(crate::app::ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let periods = app.freq_periods.max(1);
+        let d = app.active_doc_mut().unwrap();
+        let n = d.osc.samples_per_cycle().max(2);
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).expect("the pasted lane");
+        d.computed[j].on_freq = true;
+        let name = format!("{}, %", d.computed[j].name);
+        // A cursor position where the lane's spectrum is not empty.
+        let k_max = app.freq_harmonics.min(n * periods / 2).max(periods);
+        let d = app.active_doc().unwrap();
+        let pos = (n * periods..d.osc.sample_count())
+            .find(|&pos| super::freq_bins(d, &d.computed[j].pending_own, None, d.pending_of(j).unwrap().pasted.rate, pos, periods, k_max)[periods] != 0.0)
+            .expect("a window with a spectrum");
+        app.active_doc_mut().unwrap().main_cursor = pos;
+        let ctx = egui::Context::default();
+        let out = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(900.0, 500.0))), ..Default::default() }, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| app.frequency_ui(ui));
+        });
+        let texts: Vec<String> = out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
+        assert!(texts.iter().any(|t| *t == name), "the pasted lane's legend entry {name:?}: {texts:?}");
+        assert!(texts.iter().any(|t| t == "100"), "its fundamental reads 100: {texts:?}");
     }
 
     #[test]
