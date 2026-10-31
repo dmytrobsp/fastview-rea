@@ -242,10 +242,13 @@ impl Channels for OscChannels {
 
 /// A channel's values as `FUN_00426120` returns them (a channel reference after an analysis function, #30), for
 /// a channel whose data is stored in primary values (`+0x88`); `None` for the others, where it is the accessor
-/// `0x426020` (and for an ADC code, which both return as is). Where the accessor multiplies each stored sample by
-/// `ch+0xf0` (`k`, `shown_k`), this one multiplies it by secondary / primary when primary values are shown
-/// (`+0x89`, `show_primary`) and by 1 otherwise — the division is not guarded — then, as the accessor does,
-/// subtracts `dc·k` with «Удалить постоянную» (`dc` = `ch+0xf8`) and negates with «Инвертировать».
+/// `0x426020` (and for an ADC code, which both return as is). It reads the channel's converted series (`ch+0x20`:
+/// the stored samples times `ch+0xf0` = `k`, `shown_k`) and, when primary values are shown (`+0x89`,
+/// `show_primary`), multiplies it by secondary / primary (the division is not guarded); then, as the accessor
+/// does, subtracts `dc·k` with «Удалить постоянную» (`dc` = `ch+0xf8`) and negates with «Инвертировать». So it
+/// equals the accessor except for primary-stored data shown as primary values, where it is secondary / primary
+/// times the accessor (a clone run: the formula `coeffpriv:(Ch,1)+Ch` reads the second `Ch` as the secondary value
+/// while primary values are shown, and as the shown value otherwise).
 pub fn late_series(ch: &crate::comtrade::AnalogChannel, show_primary: bool, adc_counts: bool, remove_dc: bool, invert: bool, dc: f64, k: f64) -> Option<Vec<f64>> {
     if !ch.is_primary || adc_counts {
         return None;
@@ -256,7 +259,7 @@ pub fn late_series(ch: &crate::comtrade::AnalogChannel, show_primary: bool, adc_
         ch.samples
             .iter()
             .map(|x| {
-                let y = f * x;
+                let y = f * (x * k);
                 let y = if remove_dc { y - dck } else { y };
                 if invert {
                     -y

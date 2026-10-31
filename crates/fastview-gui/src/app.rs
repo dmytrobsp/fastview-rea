@@ -4357,9 +4357,10 @@ mod tests {
             let name = d.osc.analog[0].id.clone();
             let raw = d.osc.analog[0].samples.clone();
             let (k, f) = if show_primary { (1.0, s / p) } else { (s / p, 1.0) };
+            let f = if show_primary { s / p } else { 1.0 };
             let dck = d.dc_mean[0].0 * k;
             let want = |x: f64, f: f64| {
-                let y = f * x;
+                let y = f * (x * k);
                 let y = if remove_dc { y - dck } else { y };
                 if invert { -y } else { y }
             };

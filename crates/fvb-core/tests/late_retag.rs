@@ -75,7 +75,8 @@ fn a_primary_stored_channel_reads_its_late_series() {
     let name = osc.analog[0].id.clone();
     let raw = osc.analog[0].samples.clone();
     let late = |show_primary: bool| {
-        let l: Vec<Option<Vec<f64>>> = (0..osc.analog.len()).map(|i| fvb_core::channels::late_series(&osc.analog[i], show_primary, false, false, false, 0.0, 1.0)).collect();
+        let k = if show_primary { 1.0 } else { 5.5 / 1234.0 };
+        let l: Vec<Option<Vec<f64>>> = (0..osc.analog.len()).map(|i| fvb_core::channels::late_series(&osc.analog[i], show_primary, false, false, false, 0.0, k)).collect();
         assert!(l[1..].iter().all(Option::is_none), "only primary-stored data differs");
         Some(l)
     };
@@ -83,9 +84,9 @@ fn a_primary_stored_channel_reads_its_late_series() {
     for show_primary in [false, true] {
         let out = evaluate_batch_late(&osc, None, late(show_primary), None, &[], &batch, &[], show_primary).unwrap();
         let (x, p) = (&out[0].samples, &out[1].samples);
-        // Shown secondary: the accessor gives secondary / primary · raw, the late value the stored one;
-        // shown primary: the other way round.
-        let (acc, lat) = if show_primary { (1.0, 5.5 / 1234.0) } else { (5.5 / 1234.0, 1.0) };
+        // Shown secondary: both give secondary / primary · raw; shown primary: the accessor the stored value,
+        // the late series secondary / primary of it (clone: `coeffpriv:(Ua,1)+Ua` read twice the shown value).
+        let (acc, lat) = if show_primary { (1.0, 5.5 / 1234.0) } else { (5.5 / 1234.0, 5.5 / 1234.0) };
         for i in [10, 77, 150] {
             assert_eq!(p[i], raw[i] * acc, "accessor, shown primary {show_primary}");
             assert_eq!(x[i], raw[i] * lat, "late, shown primary {show_primary}");
