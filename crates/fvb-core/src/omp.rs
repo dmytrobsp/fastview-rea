@@ -1216,8 +1216,7 @@ mod trig_site_tests {
         let d = 4.0;
         let build = |phase: f64| {
             let i0 = Complex64::from_polar(23.0, phase);
-            let t = Trace { e: vec![true; 3], dist: vec![d; 3], u0: vec![Complex64::new(1000.0, 200.0); 3], i0: vec![i0; 3], ..Default::default() };
-            t
+            Trace { e: vec![true; 3], dist: vec![d; 3], u0: vec![Complex64::new(1000.0, 200.0); 3], i0: vec![i0; 3], ..Default::default() }
         };
         let reference = |phase: f64, f: Fns| {
             let t = build(phase);

@@ -220,7 +220,7 @@ fn tan_main(tab: &[u64], x: f64) -> f64 {
     x2[0] += x3[0];
     x3 = x0;
     x0 = [x0[0] * x0[0], x0[1] * x0[1]];
-    { let m = [t(tab, e + 0), t(tab, e + 8)]; x7 = [x7[0] + m[0], x7[1] + m[1]]; }
+    { let m = [t(tab, e), t(tab, e + 8)]; x7 = [x7[0] + m[0], x7[1] + m[1]]; }
     { let m = [t(tab, e + 32), t(tab, e + 40)]; x1 = [x1[0] + m[0], x1[1] + m[1]]; }
     x1 = [x1[0] * x0[0], x1[1] * x0[1]];
     { let m = [t(tab, e + 80), t(tab, e + 88)]; x4 = [x4[0] + m[0], x4[1] + m[1]]; }
@@ -285,7 +285,8 @@ pub fn tan(x: f64) -> f64 {
         if x.is_finite() {
             return x.tan();
         }
-        return x - x;
+        // inf − inf: x86's default NaN (a NaN argument stays as it is).
+        return if x.is_nan() { x } else { f64::from_bits(0xfff8_0000_0000_0000) };
     }
     ((t(&TAN_TAB, 5792) * x) + x) * t(&TAN_TAB, 5808)
 }
