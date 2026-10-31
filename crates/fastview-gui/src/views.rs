@@ -586,31 +586,35 @@ impl App {
                 // to 4 px.
                 let range = 6.0..=(ctx.available_rect().width() - 4.0).max(6.0);
                 let size = grip_size(ctx, id, ext + 4.0, range.clone());
-                // A dragged divider is kept in the group's own extent (the
-                // grip's size lives under this panel's id, which changes when
-                // the neighbour takes the block over: #127).
-                if (size - 4.0 - ext).abs() > 0.01 {
-                    self.docks[h.unit].extent = Some(size - 4.0);
-                }
+                let mut dragged = None;
                 p.resizable(false).show_separator_line(false).frame(dock_frame(strip, edge)).exact_width(size).show(ctx, |ui| {
-                    grip(ui, id, edge, size, range);
+                    dragged = grip(ui, id, edge, size, range);
                     body(self, ui)
                 });
+                // Only what a drag of the divider gives the block is kept in
+                // the group's extent (its size lives under this panel's id,
+                // which changes when the neighbour takes the block over:
+                // #127) — never a clamp to the room the frame leaves.
+                if let Some(n) = dragged {
+                    self.docks[h.unit].extent = Some(n - 4.0);
+                }
             }
             Edge::Top | Edge::Bottom => {
                 let p = if edge == Edge::Top { egui::TopBottomPanel::top(id) } else { egui::TopBottomPanel::bottom(id) };
                 let range = 6.0..=(ctx.available_rect().height() - 4.0).max(6.0);
                 let size = grip_size(ctx, id, ext + 4.0, range.clone());
-                // A dragged divider is kept in the group's own extent (the
-                // grip's size lives under this panel's id, which changes when
-                // the neighbour takes the block over: #127).
-                if (size - 4.0 - ext).abs() > 0.01 {
-                    self.docks[h.unit].extent = Some(size - 4.0);
-                }
+                let mut dragged = None;
                 p.resizable(false).show_separator_line(false).frame(dock_frame(strip, edge)).exact_height(size).show(ctx, |ui| {
-                    grip(ui, id, edge, size, range);
+                    dragged = grip(ui, id, edge, size, range);
                     body(self, ui)
                 });
+                // Only what a drag of the divider gives the block is kept in
+                // the group's extent (its size lives under this panel's id,
+                // which changes when the neighbour takes the block over:
+                // #127) — never a clamp to the room the frame leaves.
+                if let Some(n) = dragged {
+                    self.docks[h.unit].extent = Some(n - 4.0);
+                }
             }
         }
     }
@@ -2031,8 +2035,9 @@ fn grip_size(ctx: &egui::Context, id: egui::Id, default: f32, range: std::ops::R
 /// on `edge` of its slot — as its only resize grip: MFC's pane divider is
 /// that strip (L9.109); egui's own grab reaches 5 px past the edge, into
 /// the neighbour (VM: a press 2 px inside the oscillogram view starts a
-/// lane drag in the original, not a resize). Call first in the panel.
-fn grip(ui: &mut egui::Ui, id: egui::Id, edge: crate::docking::Edge, size: f32, range: std::ops::RangeInclusive<f32>) {
+/// lane drag in the original, not a resize). Call first in the panel;
+/// returns the size a drag just gave the panel.
+fn grip(ui: &mut egui::Ui, id: egui::Id, edge: crate::docking::Edge, size: f32, range: std::ops::RangeInclusive<f32>) -> Option<f32> {
     use crate::docking::Edge;
     let c = ui.max_rect();
     let (strip, sign) = match edge {
@@ -2049,7 +2054,9 @@ fn grip(ui: &mut egui::Ui, id: egui::Id, edge: crate::docking::Edge, size: f32, 
         let d = resp.drag_delta() * sign;
         let new = (size + d.x + d.y).clamp(*range.start(), *range.end());
         ui.ctx().data_mut(|m| m.insert_temp(id.with("size"), new));
+        return Some(new);
     }
+    None
 }
 
 /// A smart-docking marker in the VS2008 look (VM): a rounded box, white

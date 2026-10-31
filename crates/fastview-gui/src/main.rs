@@ -4095,6 +4095,23 @@ mod window_tests {
         assert!((back - h1).abs() < 2.0, "it docks back at {back}, was {h1}");
     }
 
+    /// #127: the frame shrunk and grown back leaves the blocks' stored
+    /// extents alone (only a grip drag writes one).
+    #[test]
+    fn a_frame_shrunk_and_grown_back_keeps_the_extents() {
+        let mut w = Win::new();
+        w.app.docks = docking::Docks::default();
+        w.idle(4);
+        let before: Vec<Option<f32>> = docking::UNITS.iter().map(|&u| w.app.docks[u].extent).collect();
+        for size in [Vec2::new(420.0, 360.0), Vec2::new(1320.0, 860.0)] {
+            for _ in 0..3 {
+                frames_held(&mut w.app, &w.ctx, size, vec![vec![]], w.held);
+            }
+        }
+        let after: Vec<Option<f32>> = docking::UNITS.iter().map(|&u| w.app.docks[u].extent).collect();
+        assert_eq!(before, after, "no clamp is stored");
+    }
+
     /// #126 through the pane menu: «Автоматически скрывать» shares the
     /// caption pin's rule: the slid-out pane is as large as it was docked.
     #[test]
