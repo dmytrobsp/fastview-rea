@@ -72,34 +72,36 @@ pub fn half(v: f32) -> f32 {
 /// An MFC image side at the system DPI: the ribbon's, toolbars' and
 /// menus' images are stretched by `dpi / 96` (CMFCToolBarImages with
 /// `GetRibbonImageScale`, the 16 / 32 px images 20 / 40 at 125 %, 24 / 48
-/// at 150 % on the VM).
+/// at 150 % on the VM), to the nearest pixel (MFC rounds the scaled side;
+/// it only shows at scales between, 154 dpi: 16 px is 26).
 pub fn img(v: f32) -> f32 {
     if unscaled() {
         v
     } else {
-        (v * k()).floor()
+        (v * k()).round()
     }
 }
 
 /// A chrome font size given at 100 % (ours stand in for the 9 pt UI font
 /// and its bold / small kin), at the system DPI: the system's menu font
 /// (Segoe UI 9 pt, MFC's `fontRegular`) is `MulDiv(9, dpi, 72)` px high —
-/// 12, 15, 18.
+/// 12, 15, 18; other sizes on whole pixels too (a font's cell height is).
 pub fn font(px: f32) -> f32 {
     if unscaled() {
         px
     } else {
-        px * mul_div(9, dpi() as i32, 72) as f32 / 12.0
+        (px * mul_div(9, dpi() as i32, 72) as f32 / 12.0).round()
     }
 }
 
 /// A dialog font size given at 100 %, at the system DPI: the dialogs' 8 pt
-/// font is `MulDiv(8, dpi, 72)` px — 11, 13, 16.
+/// font is `MulDiv(8, dpi, 72)` px — 11, 13, 16 (11 px at 100 % is the 8 pt
+/// font itself; other sizes scale from it, on whole pixels).
 pub fn dlg_font(px: f32) -> f32 {
     if unscaled() {
         px
     } else {
-        px * mul_div(8, dpi() as i32, 72) as f32 / 11.0
+        (px * mul_div(8, dpi() as i32, 72) as f32 / 11.0).round()
     }
 }
 
@@ -137,6 +139,37 @@ pub fn dx(px: f32) -> f32 {
     } else {
         (px * base_units().0 as f32 / 6.0).round()
     }
+}
+
+/// A dialog length measured in pixels at 100 % (the 6 × 13 base units) on
+/// the x axis, at the system DPI as MapDialogRect gives it: a template
+/// coordinate in dialog units maps to whole pixels by `dlu · bx / 4`
+/// rounded, so a 100 % pixel that some dialog unit maps to is that unit
+/// mapped again at the system DPI's base units (11 px is 7 DLU: 12, not
+/// 11 · 7 / 6 = 13, at 125 %); a pixel no unit maps to (a length not in
+/// the template) scales by the base-unit ratio, as [`dx`].
+pub fn dlg_x(px: f32) -> f32 {
+    dlg_axis(px, 6, base_units().0, 4)
+}
+
+/// The same vertically (`dlu · by / 8`).
+pub fn dlg_y(px: f32) -> f32 {
+    dlg_axis(px, 13, base_units().1, 8)
+}
+
+fn dlg_axis(px: f32, b96: i32, b: i32, per: i32) -> f32 {
+    if unscaled() {
+        return px;
+    }
+    if px.fract() == 0.0 && px.abs() < 4096.0 {
+        let p = px as i32;
+        // The unit nearest `px · per / b96`, if it maps back to `px`.
+        let dlu = mul_div(p, per, b96);
+        if mul_div(dlu, b96, per) == p {
+            return mul_div(dlu, b, per) as f32;
+        }
+    }
+    (px * b as f32 / b96 as f32).round()
 }
 
 /// The same vertically.
@@ -190,6 +223,51 @@ mod tests {
         // The reporter's 154 dpi: past 150 % along the 125–150 % slope.
         set(154);
         assert_eq!(measured(30.0, 36.0, 43.0), 46.0);
+        set(96);
+    }
+
+    /// #78: a template length goes through MapDialogRect at the system
+    /// DPI's units (`dlu · bx / 4` rounded), not through the ratio of the
+    /// base units: every dialog unit's 100 % pixels map to the unit's own
+    /// pixels at 125 / 150 %; a length no unit gives scales by the ratio.
+    #[test]
+    fn template_lengths_map_as_mapdialogrect() {
+        for d in [120, 144] {
+            set(d);
+            let mut off = 0;
+            for dlu in 0..700 {
+                let at96 = mul_div(dlu, 6, 4) as f32;
+                assert_eq!(dlg_x(at96), dlu_x(dlu), "{d}: {dlu} DLU wide");
+                off += usize::from(dx(at96) != dlu_x(dlu));
+                let at96 = mul_div(dlu, 13, 8) as f32;
+                assert_eq!(dlg_y(at96), dlu_y(dlu), "{d}: {dlu} DLU high");
+            }
+            assert!(off > 0, "{d}: the ratio is off by a pixel for some units");
+        }
+        // 7 DLU: 11 px at 100 %, 12 at 125 % (11 · 7 / 6 would say 13).
+        set(120);
+        assert_eq!((dlg_x(11.0), dx(11.0), dlu_y(7)), (12.0, 13.0, 14.0));
+        // A length no unit maps to (10 px) keeps the ratio.
+        assert_eq!(dlg_x(10.0), dx(10.0));
+        set(96);
+        assert_eq!((dlg_x(11.0), dlg_y(7.5)), (11.0, 7.5));
+    }
+
+    /// #78: the 8 pt fonts are whole pixels at every scale (13 / 16), and
+    /// MFC rounds an image side where it scales it (a custom 154 dpi).
+    #[test]
+    fn fonts_are_whole_pixels_and_images_round() {
+        for (d, f8, f9) in [(120, 13.0, 15.0), (144, 16.0, 18.0), (154, 17.0, 19.0)] {
+            set(d);
+            assert_eq!((dlg_font(11.0), font(12.0)), (f8, f9), "{d}");
+            for px in [9.0, 10.5, 11.0, 13.0, 14.0] {
+                assert_eq!(font(px).fract() + dlg_font(px).fract(), 0.0, "{d}: {px}");
+            }
+        }
+        set(120);
+        assert_eq!(dlg_font(13.0), 15.0);
+        set(154);
+        assert_eq!((img(16.0), img(32.0)), (26.0, 51.0));
         set(96);
     }
 }

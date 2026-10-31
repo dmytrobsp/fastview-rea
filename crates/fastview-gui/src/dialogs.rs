@@ -20,8 +20,15 @@ pub fn dlg<'o>(ctx: &egui::Context, title: impl Into<String>) -> Dlg<'o> {
         sysmenu: true,
         open: None,
         tool: false,
-        margin: crate::dpi::dlu_x(7),
+        margin: default_margin(),
     }
+}
+
+/// The client's default margin: the templates' 7 dialog units, each way in
+/// its own unit (x by the base unit's width / 4, y by its height / 8: 11 px
+/// both at 100 %, 12 × 14 at 125 %, 16 × 17 at 150 %).
+pub fn default_margin() -> Vec2 {
+    Vec2::new(crate::dpi::dlu_x(7), crate::dpi::dlu_y(7))
 }
 
 /// A dialog window drawn in the frame Windows gives the original's dialogs
@@ -39,7 +46,7 @@ pub struct Dlg<'o> {
     sysmenu: bool,
     open: Option<&'o mut bool>,
     tool: bool,
-    margin: f32,
+    margin: Vec2,
 }
 
 /// The frame's colours (VM): the caption, the client, the border.
@@ -128,10 +135,10 @@ impl<'o> Dlg<'o> {
         self.tool = true;
         self
     }
-    /// The client's margin (default 11 px, the templates' 7 dialog units);
-    /// in 100 % pixels, at the system DPI's base units.
+    /// The client's margin (default [`default_margin`], the templates' 7
+    /// dialog units); in 100 % pixels, at the system DPI's base units.
     pub fn margin(mut self, m: f32) -> Self {
-        self.margin = crate::dpi::dx(m);
+        self.margin = Vec2::new(crate::dpi::dlg_x(m), crate::dpi::dlg_y(m));
         self
     }
 
@@ -330,12 +337,12 @@ impl<'o> Dlg<'o> {
             let outer_dlg = ui.ctx().data(|d| d.get_temp::<Option<egui::Id>>(egui::Id::new("fv_cur_dlg"))).flatten();
             ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_cur_dlg"), Some(id)));
             let inner = egui::Frame::none()
-                .inner_margin(margin)
+                .inner_margin(egui::Margin::symmetric(margin.x, margin.y))
                 .show(ui, |ui| {
                     ui.visuals_mut().override_text_color = Some(Color32::BLACK);
                     // A client laid out on its template places every control
                     // itself: no spacing after any of them.
-                    if margin == 0.0 {
+                    if margin == Vec2::ZERO {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
                     }
                     // The templates' MS Shell Dlg 8 (Tahoma 8 pt: 11 px).
@@ -493,15 +500,15 @@ pub fn dlu_size(w: i32, h: i32) -> Vec2 {
 /// A client size given in 100 % pixels (6 × 13 base units), at the system
 /// DPI's base units.
 pub fn dp_size(w: f32, h: f32) -> Vec2 {
-    Vec2::new(crate::dpi::dx(w), crate::dpi::dy(h))
+    Vec2::new(crate::dpi::dlg_x(w), crate::dpi::dlg_y(h))
 }
 
 /// A rectangle laid out in 100 % pixels of the client (a template's
 /// controls at the 6 × 13 base units), at the system DPI's base units.
 pub fn dp(client: Rect, x: f32, y: f32, w: f32, h: f32) -> Rect {
-    use crate::dpi::{dx, dy};
-    let (x0, y0) = (dx(x), dy(y));
-    Rect::from_min_max(client.min + Vec2::new(x0, y0), client.min + Vec2::new(dx(x + w), dy(y + h)))
+    use crate::dpi::{dlg_x, dlg_y};
+    let (x0, y0) = (dlg_x(x), dlg_y(y));
+    Rect::from_min_max(client.min + Vec2::new(x0, y0), client.min + Vec2::new(dlg_x(x + w), dlg_y(y + h)))
 }
 
 /// A static control's text: from its rectangle's top, word-wrapped to its
@@ -2331,5 +2338,17 @@ mod tests {
         pass(press(Pos2::new(300.0, 200.0)));
         pass(release(Pos2::new(300.0, 200.0)));
         assert_eq!(focused(&ctx), Some(false), "a press elsewhere does");
+    }
+
+    /// #78: the client's margin is 7 dialog units each way in its own unit
+    /// (x by the width unit, y by the height unit): 11 × 11 px at 100 %,
+    /// 12 × 14 at 125 %, 16 × 17 at 150 %.
+    #[test]
+    fn the_default_margin_is_seven_units_each_way() {
+        for (dpi, want) in [(96, (11.0, 11.0)), (120, (12.0, 14.0)), (144, (16.0, 17.0))] {
+            crate::dpi::set(dpi);
+            assert_eq!((default_margin().x, default_margin().y), want, "{dpi}");
+        }
+        crate::dpi::set(96);
     }
 }

@@ -169,6 +169,13 @@ const FRAME: Color32 = Color32::from_rgb(200, 200, 200);
 const AXES: Color32 = Color32::from_rgb(150, 150, 150);
 const SCROLL_W: f32 = 16.0;
 
+/// The plane windows' scroll bars at the system DPI: the same system
+/// metric as the lanes' (SM_CXVSCROLL, VM: 21 / 26 px at 125 / 150 %), not
+/// the 100 % width scaled (20 / 24).
+pub(crate) fn scroll_w() -> f32 {
+    crate::dpi::measured(SCROLL_W, 21.0, 26.0)
+}
+
 fn stroke(w: f32, c: Color32) -> Stroke {
     Stroke::new(w.max(PIXEL.with(std::cell::Cell::get)), c)
 }
@@ -1071,7 +1078,7 @@ impl App {
         let view = *self.plane_view(diff);
         // Scroll bars take client area while zoomed (`0x437ca0`).
         let sb = dg::scroll_range(view.z);
-        let client = if sb.is_some() { Rect::from_min_max(full.min, full.max - Vec2::splat(crate::dpi::s(SCROLL_W))) } else { full };
+        let client = if sb.is_some() { Rect::from_min_max(full.min, full.max - Vec2::splat(scroll_w())) } else { full };
         let painter = ui.painter_at(full);
         // White below the splitter's 5 rows, which the window keeps.
         painter.rect_filled(Rect::from_min_max(full.min + Vec2::new(0.0, dpx(5.0)), full.max), 0.0, Color32::WHITE);
@@ -2614,5 +2621,16 @@ mod tests {
         // Values are in base units: kV scaled by 1000.
         let raw = fvb_core::comtrade::parse(include_str!("../../../assets/demo/demo_fault.cfg"), include_bytes!("../../../assets/demo/demo_fault.dat")).unwrap();
         assert!((d.osc.analog[1].samples[1] - 1000.0 * raw.analog[1].samples[1]).abs() < 1e-6);
+    }
+
+    /// #78: the plane windows' scroll bars are the system's metric, 21 / 26
+    /// px at 125 / 150 % (the lanes' too), not the 100 % width scaled.
+    #[test]
+    fn the_plane_scroll_bars_follow_the_system_metric() {
+        for (dpi, w) in [(96, 16.0), (120, 21.0), (144, 26.0)] {
+            crate::dpi::set(dpi);
+            assert_eq!(scroll_w(), w, "{dpi}");
+        }
+        crate::dpi::set(96);
     }
 }
