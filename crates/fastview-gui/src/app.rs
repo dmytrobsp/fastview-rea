@@ -1585,7 +1585,7 @@ pub struct App {
     pub rename_edit: Option<(usize, String)>,
     /// A stats-panel drag waiting to start (MFC's OnBeginDrag loop): where
     /// the pointer was, when, and the channels.
-    pub stats_drag_arm: Option<(egui::Pos2, f64, Vec<usize>)>,
+    pub stats_drag_arm: Option<(egui::Pos2, f64, Vec<ChanKey>)>,
     /// A channel drag in the view's 11 px scroll inset: its scroll code
     /// (vertical part high, horizontal low) and when the delay last
     /// restarted or it last scrolled.
@@ -3427,6 +3427,50 @@ mod tests {
         d.computed[0].own_rate = own;
         assert_eq!(d.computed_period(0), n_own);
         assert_eq!(d.computed_period(1), n_rec);
+    }
+
+    /// The original's readings on a synthetic record (VM, 2026-10-31): a
+    /// merged channel keeps its window after the rate drops to half, a formula
+    /// added later takes the record's; at one sample both read the same СКЗ
+    /// and the formula's A1 is the half-window one.
+    #[test]
+    fn a_merged_channel_keeps_its_window_after_a_rate_change() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(0)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        assert_eq!(app.apply_file_rate(0, "1000"), Ok(()));
+        assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
+        let d = &app.docs[0];
+        let (k, j) = (246, d.computed.len() - 1);
+        let r4 = |v: f64| (v * 1e4).round() / 1e4;
+        for i in [0, 1] {
+            assert_eq!((r4(d.stat_rms(i, k)), r4(d.stat_a1(i, k))), (20.209, 20.209), "the merged channel {i} and the record's own: their own window");
+        }
+        let (rms, a1) = (fvb_core::signal::rms_at(&d.computed[j].samples, k, d.computed_period(j)), fvb_core::signal::harmonic_rms(&d.computed[j].samples, k, d.computed_period(j), 1));
+        assert_eq!((r4(rms), r4(a1)), (20.209, 15.3366), "the later formula: the record's window");
+    }
+
+    /// The frequency diagram after the same steps (VM, 2026-10-31, the
+    /// original at the vizir over sample 236): the merged channel's bars are
+    /// clean, the later formula's — its window half a period of the signal —
+    /// read 134 / 100 / 33.8 / 21.3 / 16.0 / 13.1 / 11.4 / 10.3 / 9.6 / 9.3 / 9.2 %.
+    #[test]
+    fn the_frequency_diagram_keeps_a_merged_channels_window() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(0)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        assert_eq!(app.apply_file_rate(0, "1000"), Ok(()));
+        assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
+        let d = &app.docs[0];
+        let pct = |b: Vec<f64>| b.iter().map(|v| (v / b[1] * 1000.0).round() / 10.0).collect::<Vec<_>>();
+        let x = pct(crate::diagram_ui::freq_bins(d, &d.computed[0].samples, None, 0.0, 236, 1, 10));
+        assert_eq!(x, [134.2, 100.0, 33.8, 21.3, 16.0, 13.1, 11.4, 10.3, 9.6, 9.3, 9.2]);
+        let m = pct(crate::diagram_ui::freq_bins(d, d.shown_samples(0), Some(0), d.osc.analog[0].own_rate, 236, 1, 10));
+        assert_eq!(m, [0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
     }
 
     /// Without the rate change a formula after a merge groups with the
