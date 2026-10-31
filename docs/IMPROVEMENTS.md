@@ -173,3 +173,11 @@ misbehaves and the better behaviour is obvious (the maintainer,
   maintainer's decision (2026-10-31): a pane's pin and close should be in
   reach. A strip button under the glass (a left strip's first stub) is
   hovered as in the original, which is parity, not an improvement.
+- **A pane's tab dragged out of its strip shows the move cursor (#111).**
+  The original keeps the arrow while a tab is pressed and pulled out of
+  the strip (`0x100690b4`, `0x10068657`; clone, 100 %: the arrow before
+  and after the tab leaves the strip). Ours shows the four-way move
+  cursor from the press on a tab of a strip with several tabs (left
+  button) and while it is dragged, as for a caption drag (the entry
+  above). The distance is the caption's, grown with the display scale.
+  Reason: as for the caption, it hints that dragging on pulls the pane out.

@@ -252,6 +252,9 @@ impl App {
         let outer = ui.max_rect();
         // A tab pulled out of the strip (`0x10068d0b` / `0x100690b4`).
         let mut dragged: Option<Pane> = None;
+        // The tab a left press is held on (the detach's arming: the original
+        // tracks the press itself, not egui's drag decision).
+        let mut armed: Option<Pane> = None;
         let mut tabs: Vec<(Pane, egui::Rect)> = Vec::new();
         // The tab strip (VM, Office 2007 Blue): a (157, 189, 216) line over
         // the brush (191, 219, 255), 20 px tabs from 4 px in; the front tab
@@ -323,6 +326,9 @@ impl App {
                     if r.dragged() {
                         dragged = Some(p);
                     }
+                    if r.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
+                        armed = Some(p);
+                    }
                 }
             });
         });
@@ -339,8 +345,12 @@ impl App {
                 }
             }
         }
-        if let (Some(p), true) = (dragged, tabs.len() > 1) {
+        if let (Some(p), true) = (armed, tabs.len() > 1) {
             let ctx = ui.ctx().clone();
+            // The four-way move cursor from the press on and while it is
+            // dragged, as a caption's (L9.411; an improvement: the original
+            // keeps the arrow).
+            ctx.set_cursor_icon(egui::CursorIcon::Move);
             self.tab_drag_out(&ctx, v, p, strip.response.rect);
         }
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
@@ -445,8 +455,10 @@ impl App {
         grid_menu
     }
 
-    /// A tab dragged out of a group's strip: past the system drag distance
-    /// (SM_CXDRAG / SM_CYDRAG, 4 px, `0x10068657`) and outside the strip,
+    /// A tab dragged out of a group's strip: at the system drag distance
+    /// (SM_CXDRAG / SM_CYDRAG, 4 px on either axis, `>=`, `0x10068657`; grown
+    /// with the display scale as the caption's, L9.411) and outside the strip
+    /// (`0x100690b4` tries the detach only with the pointer off the tab area),
     /// `CTabbedPane::FloatTab` (`0x1013a259`) floats that pane alone under
     /// the pointer (the group's own pane hands the group to the next tab);
     /// the drag then goes on as a floating caption drag (the markers). The
@@ -458,7 +470,8 @@ impl App {
         let (press, now) = ctx.input(|i| (i.pointer.press_origin(), i.pointer.latest_pos()));
         let (Some(press), Some(now)) = (press, now) else { return };
         let d = now - press;
-        if (d.x.abs() < crate::docking::DRAG_PX && d.y.abs() < crate::docking::DRAG_PX) || strip.contains(now) || self.dock_drag.is_some() {
+        let reach = crate::dpi::s(crate::docking::DRAG_PX);
+        if (d.x.abs() < reach && d.y.abs() < reach) || strip.contains(now) || self.dock_drag.is_some() {
             return;
         }
         let next = self.tab_order.into_iter().find(|&q| q != pulled && v.mask[q as usize]).unwrap_or(v.unit);

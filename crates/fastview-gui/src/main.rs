@@ -3602,6 +3602,63 @@ mod window_tests {
         assert!((at - Pos2::new(496.0, 373.0)).length() < 1.0, "{at:?}");
     }
 
+    /// A tab pulled out of a tab strip follows the caption drag's distance rule
+    /// (#111; `0x10068657` reads the metric once, `>=` on either axis, as
+    /// `0x10086f3a` does for a caption — scaled with the display by the
+    /// maintainer's decision, L9.411) once the pointer has left the strip (the
+    /// original needs that: `0x100690b4` calls the detach only outside the tab
+    /// area; VM: 5 and 8 px up inside the strip float nothing, 14 px up out of it
+    /// floats the pane), with the caption drag's move cursor from the press on.
+    #[test]
+    fn a_tab_pulled_out_follows_the_drag_distance_and_shows_the_move_cursor() {
+        use docking::{Place, Unit};
+        use egui::CursorIcon::{Default as Arrow, Move};
+        let ev = |pos, pressed, button| egui::Event::PointerButton { pos, button, pressed, modifiers: Default::default() };
+        let primary = egui::PointerButton::Primary;
+        for dpi in [96, 120, 144] {
+            dpi::set(dpi);
+            let reach = dpi::s(docking::DRAG_PX);
+            // Pressed on the tab's top row, dragged straight up out of the strip
+            // (whose top is the tab's less 1 px) by `dist` px.
+            let pull = |dist: f32| {
+                let mut w = Win::new();
+                w.idle(2);
+                let tab = w.app.pane_tab_rects.iter().find(|(p, _)| *p == app::Pane::Circle).map(|(_, r)| *r).expect("the Круговая tab");
+                let at = Pos2::new(tab.center().x, tab.top() + 0.5);
+                assert_eq!(w.run(vec![egui::Event::PointerMoved(at)]), Arrow, "{dpi}: hovering a tab leaves the arrow");
+                assert_eq!(w.run(vec![ev(at, true, primary)]), Move, "{dpi}: the press arms the drag: move cursor");
+                let to = at - Vec2::new(0.0, dist);
+                assert_eq!(w.run(vec![egui::Event::PointerMoved(to)]), Move, "{dpi}: still");
+                w.idle(2);
+                let floated = w.app.docks[Unit::Circle].place == Place::Floating;
+                w.run(vec![ev(to, false, primary)]);
+                w.idle(3);
+                assert_eq!(w.run(vec![egui::Event::PointerMoved(Pos2::new(5.0, 5.0))]), Arrow, "{dpi}: released: the arrow");
+                floated
+            };
+            assert!(!pull(reach - 0.5), "{dpi}: {} px up is short of the distance {reach}", reach - 0.5);
+            assert!(pull(reach), "{dpi}: {reach} px up, out of the strip: floated (the rule is >=)");
+        }
+        dpi::set(96);
+        // Inside the strip nothing floats, however far (the pointer must leave the
+        // tab area), and only the left button arms the drag.
+        let mut w = Win::new();
+        w.idle(2);
+        let tab = w.app.pane_tab_rects.iter().find(|(p, _)| *p == app::Pane::Circle).map(|(_, r)| *r).expect("the Круговая tab");
+        let at = Pos2::new(tab.center().x, tab.top() + 8.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true, primary)]);
+        w.run(vec![egui::Event::PointerMoved(at - Vec2::new(0.0, 7.0))]);
+        w.idle(2);
+        assert_eq!(w.app.docks[Unit::Circle].place, Place::Docked, "7 px up inside the strip floats nothing");
+        w.run(vec![ev(at, false, primary)]);
+        w.idle(2);
+        let sec = egui::PointerButton::Secondary;
+        w.app.pane_menu = None;
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        assert_ne!(w.run(vec![ev(at, true, sec)]), Move, "a right press arms nothing");
+    }
+
     /// Table 128 as egui-winit delivers it: Ctrl+C arrives as `Event::Copy`
     /// and Ctrl+V as `Event::Paste` (only with text on the OS clipboard) or
     /// nothing but its key-up; Ctrl+Shift does not match; a disabled
