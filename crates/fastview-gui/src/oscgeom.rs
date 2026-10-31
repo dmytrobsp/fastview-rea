@@ -33,18 +33,19 @@ pub fn fit_scale(width: f32, n: usize) -> f64 {
 /// The client width of a new MDI child at Windows' default size: the view
 /// measures itself (`0x45c430`, `GetClientRect`) when it is created, before
 /// the child is shown maximised in its tab. The default child is the MDI
-/// client less one cascade step per three of its height (a step is the
-/// caption's 23 px and the frame's 4, less 1: 26 px; Wine's
-/// `MDI_CalcDefaultChildPos`), less its two 8 px borders (INFERRED; VM: synthetic records of 388 samples open at
-/// 0.25 and of 392 at 0.125 on a 1552 × 955 MDI area → a width in
-/// 1212.5…1225). The borders total 21: a first run's default frame (L9.349)
-/// has a 231 × 142 MDI area, where 235 samples at 1250 Hz open at 0.0625 and
-/// 236 at 0.03125 on the original (VM, a width of 183.6…184.4); 21 gives 184
-/// (16 gave 189, one zoom step further in for 235…239 samples) and keeps the
-/// 1552 × 955 area's bracket (1219).
+/// client less one cascade step of 32 px per three steps of its height
+/// (Wine's `MDI_CalcDefaultChildPos`), less 15 px of borders. INFERRED from
+/// three VM brackets of the original (synthetic records of 1250 Hz or 1 kHz,
+/// the width read from the sample count where the first zoom steps over):
+/// a first run's default frame (our MDI area 231 × 142) gives 183.6…184.4,
+/// a frame restored maximised on 1280 × 800 (565 × 358) 415.6…428.1, a
+/// 1552 × 955 area 1212.5…1225. No rule with our areas as they are fits all
+/// three; the area at creation is taller than ours by 26…49 px (the status
+/// bar and the like are not laid out yet), so the height gets 32 px more:
+/// 184, 422 and 1217.
 pub fn mdi_default_client_width(area_w: f32, area_h: f32) -> f32 {
-    let step = 26.0;
-    (area_w - step * (area_h / (3.0 * step)).floor() - 21.0).max(1.0)
+    let step = 32.0;
+    (area_w - step * ((area_h + step) / (3.0 * step)).floor() - 15.0).max(1.0)
 }
 
 /// Initial scale of a new view (`0x45ab70`): the stored `View/XScale`, by
@@ -361,7 +362,7 @@ mod tests {
         // VM: on a 1552 × 955 MDI area the view measures 1224 px at its
         // creation: 388 samples open at 0.25, 392 at 0.125.
         let w = mdi_default_client_width(1552.0, 955.0);
-        assert_eq!(w, 1219.0);
+        assert_eq!(w, 1217.0);
         assert_eq!((initial_scale(None, w, 388), initial_scale(None, w, 392)), (0.25, 0.125));
     }
 
@@ -373,6 +374,15 @@ mod tests {
         let w = mdi_default_client_width(231.0, 142.0);
         assert_eq!(w, 184.0);
         assert_eq!((initial_scale(None, w, 235), initial_scale(None, w, 236)), (0.0625, 0.03125));
+    }
+
+    /// #69, a frame restored maximised on 1280 × 800 (our MDI area 565 × 358, VM): 266 samples open at
+    /// 0.125, 274 at 0.0625 on the original (a width of 415.6…428.1); 445 px (ours before) opened 274 at 0.125.
+    #[test]
+    fn a_maximised_starts_first_view_zoom_matches_the_originals() {
+        let w = mdi_default_client_width(565.0, 358.0);
+        assert!((415.6..428.1).contains(&w), "{w}");
+        assert_eq!((initial_scale(None, w, 266), initial_scale(None, w, 274)), (0.125, 0.0625));
     }
 
     #[test]
