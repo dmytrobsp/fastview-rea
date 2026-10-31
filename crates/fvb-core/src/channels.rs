@@ -33,6 +33,9 @@ pub struct OscChannels {
     /// The frequency correction: the frequency channel, its stored samples
     /// and the rate (ledger L9.65).
     corr: Option<(usize, Vec<f64>, f64)>,
+    /// Per analog channel, its values as `0x426120` returns them where they differ from the accessor's
+    /// (primary-stored data): what a channel reference after an analysis function reads (#30).
+    late: Vec<Option<Vec<f64>>>,
 }
 
 impl OscChannels {
@@ -119,7 +122,14 @@ impl OscChannels {
             freq: osc.freq_track.clone(),
             gain1: osc.harmonic1_gain,
             corr: corr.map(|c| (c.chan, c.freq.to_vec(), c.fs)),
+            late: Vec::new(),
         }
+    }
+
+    /// The values `0x426120` returns for the analog channels that need their own series ([`late_series`]).
+    pub fn with_late(mut self, late: Vec<Option<Vec<f64>>>) -> OscChannels {
+        self.late = late;
+        self
     }
 
     /// The correction for channel `ch`, if any.
@@ -168,6 +178,12 @@ impl Channels for OscChannels {
     }
     fn sample(&self, ch: usize, idx: usize) -> f64 {
         self.samples[ch].get(idx).copied().unwrap_or(0.0)
+    }
+    fn sample_late(&self, ch: usize, idx: usize) -> f64 {
+        match self.late.get(ch).and_then(Option::as_deref) {
+            Some(s) => s.get(idx).copied().unwrap_or(0.0),
+            None => self.sample(ch, idx),
+        }
     }
     fn phasor(&self, ch: usize, idx: usize) -> Complex64 {
         self.phasors[ch].get(idx).copied().unwrap_or_default()
@@ -222,4 +238,32 @@ impl Channels for OscChannels {
     fn warmup(&self) -> usize {
         self.n
     }
+}
+
+/// A channel's values as `FUN_00426120` returns them (a channel reference after an analysis function, #30), for
+/// a channel whose data is stored in primary values (`+0x88`); `None` for the others, where it is the accessor
+/// `0x426020` (and for an ADC code, which both return as is). Where the accessor multiplies each stored sample by
+/// `ch+0xf0` (`k`, `shown_k`), this one multiplies it by secondary / primary when primary values are shown
+/// (`+0x89`, `show_primary`) and by 1 otherwise — the division is not guarded — then, as the accessor does,
+/// subtracts `dc·k` with «Удалить постоянную» (`dc` = `ch+0xf8`) and negates with «Инвертировать».
+pub fn late_series(ch: &crate::comtrade::AnalogChannel, show_primary: bool, adc_counts: bool, remove_dc: bool, invert: bool, dc: f64, k: f64) -> Option<Vec<f64>> {
+    if !ch.is_primary || adc_counts {
+        return None;
+    }
+    let f = if show_primary { ch.secondary / ch.primary } else { 1.0 };
+    let dck = dc * k;
+    Some(
+        ch.samples
+            .iter()
+            .map(|x| {
+                let y = f * x;
+                let y = if remove_dc { y - dck } else { y };
+                if invert {
+                    -y
+                } else {
+                    y
+                }
+            })
+            .collect(),
+    )
 }

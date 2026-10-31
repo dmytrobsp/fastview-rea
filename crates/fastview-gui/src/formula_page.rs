@@ -180,14 +180,16 @@ impl App {
         let Some(d) = self.active_doc_mut() else { return };
         d.sync_flagged_names();
         let before = d.computed.clone();
-        for (name, formula) in &rows {
+        for (ri, (name, formula)) in rows.iter().enumerate() {
             let found = d.computed.iter().position(|c| c.name == *name).or_else(|| {
                 let l = name.to_lowercase();
                 d.computed.iter().position(|c| c.name.to_lowercase() == l)
             });
             let existing: Vec<_> = d.computed.iter().enumerate().filter(|(i, _)| Some(*i) != found).map(|(_, c)| c.as_core()).collect();
             let batch = [(name.clone(), formula.clone())];
-            match d.eval_formulas(&existing, &batch, show_primary) {
+            // The list's later rows follow this definition (`0x419074`, #30).
+            let tail: Vec<String> = rows[ri + 1..].iter().map(|r| r.0.clone()).collect();
+            match d.eval_formulas_before(&existing, &batch, &tail, show_primary) {
                 Ok(mut added) => {
                     let c = added.remove(0);
                     match found {

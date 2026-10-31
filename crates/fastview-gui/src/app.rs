@@ -992,20 +992,29 @@ impl Doc {
     /// ОМП channels carry no formula to re-evaluate): in order,
     /// each updated as it goes; the first failure stops it (the ones before
     /// keep their new values) and is returned; only a full success sweeps
-    /// the groups (`0x415b97` → `0x455c70`).
-    pub fn try_reevaluate_formulas(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
+    /// the groups (`0x415b97` → `0x455c70`). `new_names`: the definitions that follow the record's in the list
+    /// (the batch of a quick analysis or a new formula, evaluated together with the old ones, `0x416ed6`); a
+    /// formula naming one of them, itself or a later one is the error 0x1d4 (#30).
+    pub fn try_reevaluate_formulas_before(&mut self, show_primary: bool, new_names: &[String]) -> Result<(), fvb_core::expr::FormulaError> {
         self.sync_flagged_names();
-        self.evaluate_formula_list(show_primary)
+        self.evaluate_formula_list_before(show_primary, new_names)
     }
 
     /// [`Doc::try_reevaluate_formulas`] over the flagged copy as it is.
     fn evaluate_formula_list(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
+        self.evaluate_formula_list_before(show_primary, &[])
+    }
+
+    fn evaluate_formula_list_before(&mut self, show_primary: bool, new_names: &[String]) -> Result<(), fvb_core::expr::FormulaError> {
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
+        let is_def = |c: &Computed| c.formula != "ОМП" && c.formula != "объединение" && c.formula != crate::merge_ui::PENDING;
         for j in 0..self.computed.len() {
             let c = &self.computed[j];
-            if c.formula != "ОМП" && c.formula != "объединение" && c.formula != crate::merge_ui::PENDING {
+            if is_def(c) {
                 let batch = [(c.name.clone(), c.formula.clone())];
-                let mut out = self.eval_formulas(&done, &batch, show_primary)?;
+                // The definitions after this one: the later formula channels, then the new batch.
+                let tail: Vec<String> = self.computed[j + 1..].iter().filter(|c| is_def(c)).map(|c| c.name.clone()).chain(new_names.iter().cloned()).collect();
+                let mut out = self.eval_formulas_before(&done, &batch, &tail, show_primary)?;
                 if let Some(new) = out.pop() {
                     self.computed[j].set_values(new.samples, new.phasors);
                 }
@@ -1022,8 +1031,22 @@ impl Doc {
     /// The formula batch `0x415780` over the record's channels as the accessor `0x426020` returns them
     /// ([`Doc::shown_samples`]: x·k − dc·k, not `(x − dc)·k`, #105).
     pub fn eval_formulas(&self, existing: &[fvb_core::quick::ComputedChannel], batch: &[(String, String)], show_primary: bool) -> Result<Vec<fvb_core::quick::ComputedChannel>, fvb_core::expr::FormulaError> {
+        self.eval_formulas_before(existing, batch, &[], show_primary)
+    }
+
+    /// [`Doc::eval_formulas`] when the definitions `tail` follow the batch in the definition list: a formula
+    /// naming its own definition, a later one of the batch or one of `tail` fails with 0x1d4 (`0x419074`), and
+    /// a channel reference after an analysis function reads its value through `0x426120` (#30).
+    pub fn eval_formulas_before(&self, existing: &[fvb_core::quick::ComputedChannel], batch: &[(String, String)], tail: &[String], show_primary: bool) -> Result<Vec<fvb_core::quick::ComputedChannel>, fvb_core::expr::FormulaError> {
         let shown: Vec<&[f64]> = (0..self.flagged.analog.len()).map(|i| self.shown_samples(i)).collect();
-        fvb_core::quick::evaluate_batch_shown(&self.flagged, Some(&shown), fvb_core::freqcorr::of(&self.osc), existing, batch, show_primary)
+        let late: Vec<Option<Vec<f64>>> = (0..self.osc.analog.len())
+            .map(|i| {
+                let (c, v) = (&self.osc.analog[i], &self.chans[i]);
+                fvb_core::channels::late_series(c, v.primary, v.adc_counts, v.remove_dc, v.invert, self.dc_mean[i].0, shown_factor(c, v))
+            })
+            .collect();
+        let late = late.iter().any(Option::is_some).then_some(late);
+        fvb_core::quick::evaluate_batch_late(&self.flagged, Some(&shown), late, fvb_core::freqcorr::of(&self.osc), existing, batch, tail, show_primary)
     }
 
     /// Computed channel `j`'s flags over its evaluation (`0x428490` for a
@@ -2974,7 +2997,8 @@ impl App {
         // whole list: the older formula channels take the current values
         // and correction too (L9.103); an old one failing aborts the batch
         // — its box, nothing added (`0x416ed6`–`0x416f69`).
-        if let Err(e) = d.try_reevaluate_formulas(show_primary) {
+        let new_names = fvb_core::quick::batch_names(&d.osc, d.computed.iter().map(|c| c.name.as_str()), batch);
+        if let Err(e) = d.try_reevaluate_formulas_before(show_primary, &new_names) {
             self.dlg.push_alert(e.to_string());
             return None;
         }
@@ -4301,5 +4325,65 @@ mod tests {
         d.comment_hot = Some(0);
         app.apply_quick(&fvb_core::quick::Generated::default());
         assert_eq!(app.active_doc().unwrap().comment_hot, Some(0));
+    }
+
+    /// #30: a channel reference after an analysis function (`coeffpriv:` …) reads its value through `0x426120`:
+    /// for a primary-stored channel the stored value times secondary / primary only when primary values are shown,
+    /// then the DC and the inversion as the accessor applies them.
+    #[test]
+    fn a_reference_after_an_analysis_function_reads_the_late_value() {
+        for (show_primary, remove_dc, invert) in [(false, false, false), (true, false, false), (false, true, true), (true, true, false)] {
+            let mut app = demo_app();
+            let d = app.active_doc_mut().unwrap();
+            let (p, s) = (1234.0, 5.5);
+            d.osc.analog[0].is_primary = true;
+            d.osc.analog[0].primary = p;
+            d.osc.analog[0].secondary = s;
+            d.chans[0].primary = show_primary;
+            d.chans[0].remove_dc = remove_dc;
+            d.chans[0].invert = invert;
+            d.recompute(show_primary);
+            let name = d.osc.analog[0].id.clone();
+            let raw = d.osc.analog[0].samples.clone();
+            let (k, f) = if show_primary { (1.0, s / p) } else { (s / p, 1.0) };
+            let dck = d.dc_mean[0].0 * k;
+            let want = |x: f64, f: f64| {
+                let y = f * x;
+                let y = if remove_dc { y - dck } else { y };
+                if invert { -y } else { y }
+            };
+            assert!(app.append_computed(&[("P".into(), format!("{name} * 1")), ("X".into(), format!("coeffpriv:({name}, 1)"))]).is_some(), "{:?}", app.dlg.alert());
+            let d = app.active_doc().unwrap();
+            for i in [20, 111, 190] {
+                let acc = if remove_dc { raw[i] * k - dck } else { raw[i] * k };
+                let acc = if invert { -acc } else { acc };
+                assert_eq!(d.computed[0].samples[i], acc, "accessor {show_primary} {remove_dc} {invert}");
+                assert_eq!(d.computed[1].samples[i], want(raw[i], f), "late {show_primary} {remove_dc} {invert}");
+            }
+        }
+    }
+
+    /// #30: the name guard (error 0x1d4) in the formula editor: a row naming its own definition or a later row
+    /// fails with "<row>: '<name>' -  не определен", whether or not a channel of that name exists.
+    #[test]
+    fn the_formula_page_refuses_a_row_naming_itself_or_a_later_one() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into()), ("Y".into(), "Ub*2".into())]).is_some());
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.rows[0].1 = "y + 1".into();
+        app.formula_page.dirty = true;
+        app.fp_apply();
+        assert_eq!(app.dlg.alert(), Some("X: 'y' -  не определен"), "a later row, though a channel Y exists");
+        assert_eq!(app.active_doc().unwrap().computed[0].formula, "Ua*2");
+        app.dlg.alerts.clear();
+        app.formula_page.rows[0].1 = "Ua*3".into();
+        app.formula_page.rows[1].1 = "x + y".into();
+        app.fp_apply();
+        assert_eq!(app.dlg.alert(), Some("Y: 'y' -  не определен"), "its own name");
+        app.dlg.alerts.clear();
+        app.formula_page.rows[1].1 = "x + 1".into();
+        app.fp_apply();
+        assert!(app.dlg.alert().is_none(), "an earlier row is fine: {:?}", app.dlg.alert());
+        assert_eq!(app.active_doc().unwrap().computed[1].formula, "x + 1");
     }
 }
