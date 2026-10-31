@@ -866,6 +866,11 @@ impl App {
             bar.ch2 = Some(analog[k]);
         }
         let w = r.width() - 20.0;
+        // The enabled ones take the focus when pressed (`track_copy_focus`).
+        self.focus_other.extend([at(110.0, 10.0, 170.0, 21.0), at(w - 220.0, 9.0, 100.0, 23.0), at(w - 110.0, 9.0, 100.0, 23.0)]);
+        if on {
+            self.focus_other.extend([at(350.0, 10.0, 90.0, 21.0), at(510.0, 10.0, 90.0, 21.0)]);
+        }
         sync = win_button(ui, at(w - 220.0, 9.0, 100.0, 23.0), "Синхронизация", false).clicked() || sync;
         join = win_button(ui, at(w - 110.0, 9.0, 100.0, 23.0), "Объединить", false).clicked() || join;
         let text = r.shrink2(egui::vec2(15.0, 14.0));

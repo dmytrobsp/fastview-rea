@@ -602,6 +602,7 @@ impl App {
             // 151, 61) → (254, 181, 91)) while it is open (VM).
             let list_id = ui.id().with("fv_doc_list");
             let btn = ui.interact(hit, list_id.with("btn"), egui::Sense::click());
+            self.focus_other.push(hit);
             let mut open: Option<u64> = ui.data(|d| d.get_temp(list_id));
             if btn.clicked() {
                 open = if open.is_some() { None } else { Some(ui.ctx().cumulative_pass_nr()) };
@@ -1027,6 +1028,7 @@ impl App {
         self.ppp = ctx.pixels_per_point();
         // Every dialog is modal: while one is up, a backdrop between the
         // panels and the windows takes the pointer, and no shortcuts run.
+        self.focus_other.clear();
         let was_modal = std::mem::replace(&mut self.modal_up, dialogs::window_up(ctx));
         // A closed dialog gives the activation back to the frame, which
         // hands the focus to its view (clone: a pane's or a window's focus
@@ -4249,6 +4251,57 @@ mod window_tests {
             let at = w.view_state();
             w.key(egui::Key::ArrowRight);
             assert_ne!(w.view_state(), at, "{before:?}: the view's keys work again");
+        }
+    }
+
+    /// The frame's own windows that take the focus (clone: the merge bar's
+    /// combo box and buttons, the document tabs' ▾ button — each a window
+    /// without an untitled child, so copy puts the view's picture and the
+    /// document, while the view's keys go to that window), and the
+    /// document's tab, which gives it to the view (#65).
+    #[test]
+    fn the_frames_own_windows_take_the_copy_focus() {
+        use app::{ChanKey, CopyFocus, Pane};
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        let focus_diagram = |w: &mut Win| {
+            w.press(Primary, canvas.center(), canvas.center());
+            assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
+        };
+        // The tab list's button at the strip's right end.
+        let strip = w.app.mdi_strips[0];
+        let list = Pos2::new(strip.right() - 10.0, strip.center().y);
+        focus_diagram(&mut w);
+        w.press(Primary, list, list);
+        assert_eq!(w.app.copy_focus, CopyFocus::Other, "the tab list's button");
+        // Copy asks that window: no diagram, the view's picture and the document.
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.dispatch(app::Command::Copy);
+        assert!(w.app.clip.picture().is_some() && w.app.clip.get().is_some_and(|t| t.contains("<channels")));
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_eq!(w.view_state(), before, "the arrow key goes to that window, not the view");
+        // The list's popup is closed again by a press elsewhere; a document's tab gives the view the focus.
+        w.key(egui::Key::Escape);
+        let tab = w.app.doc_tab_rects[0].center();
+        focus_diagram(&mut w);
+        w.press(Primary, tab, tab);
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the document's tab");
+        // The merge bar after a paste: the combo box and the two buttons that are enabled.
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        assert!(w.app.merge.is_some(), "the merge bar is up");
+        let controls = w.app.focus_other.clone();
+        assert_eq!(controls.len(), 4, "the method combo, «Синхронизация», «Объединить», the tab list's button: {controls:?}");
+        // (The last one is the tab list's; «Объединить» takes the bar away.)
+        for r in controls.into_iter().take(3) {
+            w.app.copy_focus = CopyFocus::Diagram(Pane::Vector);
+            w.press(Primary, r.center(), r.center());
+            assert_eq!(w.app.copy_focus, CopyFocus::Other, "{r:?}");
         }
     }
 

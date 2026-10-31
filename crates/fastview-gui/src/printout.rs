@@ -575,6 +575,21 @@ impl App {
         // else (caption, tab strip, toolbar) the press keeps the focus
         // where it is — it is a window of its own, not the view under it.
         let on_float = if slid.is_none() && !popup { crate::docking::UNITS.into_iter().find(|&u| top == Some(crate::views::floating_pane_layer(u))) } else { None };
+        // The frame's own windows lie under any pane window or popup: a
+        // press on the merge bar's combo box or buttons or the tab list's
+        // button gives that window the focus (no untitled child: copy takes
+        // the view's picture and the document); on a document's tab, the
+        // view's (clone).
+        if slid.is_none() && !popup && on_float.is_none() {
+            if self.focus_other.iter().any(|r| r.contains(p)) {
+                self.copy_focus = CopyFocus::Other;
+                return;
+            }
+            if self.doc_tab_rects.iter().any(|r| r.contains(p)) {
+                self.copy_focus = CopyFocus::View;
+                return;
+            }
+        }
         let own = |pane: Pane| on_float.is_none_or(|u| self.docks.members(u).any(|m| m == pane));
         if let Some(&(pane, _)) = self.pane_canvas[c0..c1].iter().rev().find(|(q, r)| own(*q) && r.contains(p)) {
             self.copy_focus = CopyFocus::Diagram(pane);
