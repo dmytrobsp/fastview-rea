@@ -78,7 +78,9 @@ misbehaves and the better behaviour is obvious (the maintainer,
     typed instead of turning into «?».
   - *Record read in 1251 / 866, shown in its own code page*: a name with
     letters that page lacks (copied from a UTF-8 / KOI8-R record: «√», «ä»,
-    і under 866) is kept as typed, where the original shows «?» for them.
+    і under 866) is kept as typed. The original cannot hold those letters
+    at all: it has no UTF-8 view, its copy of such a name is already
+    best-fitted («a», «v»), and only і under 866 would show «?».
   - *Record read in UTF-8*: the bytes hold every letter, so a name is an
     alias only while 866 is shown and the name has a letter 866 cannot hold
     (і); otherwise it follows «Кодировка» as the record's own names do (1251

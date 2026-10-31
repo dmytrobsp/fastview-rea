@@ -4646,6 +4646,20 @@ mod window_tests {
         assert!(w.app.panes.visible(Pane::Vector), "a press on the pane's caption button does nothing");
         let top = w.ctx.memory(|m| m.areas().top_layer_id(egui::Order::Middle));
         assert_eq!(top.map(|l| l.id), Some(egui::Id::new("Цвета")), "the dialog stays on top");
+        // Its divider takes no drag either.
+        // A point of it clear of the dialog (the dialog lies over its middle).
+        let strip = w.app.dock_dividers[Unit::Vector as usize].expect("its divider");
+        let div = [strip.top() + 30.0, strip.bottom() - 30.0].into_iter().map(|y| Pos2::new(strip.center().x, y)).find(|p| !dialog.contains(*p)).expect("a divider point clear of the dialog");
+        let extent = w.app.docks[Unit::Vector].slide_extent;
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(div)]);
+        w.run(vec![ev(div, true)]);
+        w.run(vec![egui::Event::PointerMoved(div - Vec2::new(60.0, 0.0))]);
+        w.run(vec![egui::Event::PointerMoved(div - Vec2::new(120.0, 0.0))]);
+        w.idle(2);
+        w.run(vec![ev(div - Vec2::new(120.0, 0.0), false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].slide_extent, extent, "a drag of the divider does nothing");
         // The dialog gone, the same press closes the pane.
         w.app.color_dialog = None;
         w.idle(3);
