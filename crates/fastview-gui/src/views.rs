@@ -1110,12 +1110,15 @@ impl App {
     pub fn pane_drop(&mut self, ui: &egui::Ui, pane: Pane) {
         let ctx = ui.ctx();
         let (released, pos) = ctx.input(|i| (i.pointer.primary_released(), i.pointer.latest_pos()));
-        if !released || !pos.is_some_and(|p| ui.max_rect().contains(p)) || !egui::DragAndDrop::has_payload_of_type::<crate::lanes::ChanDrag>(ctx) {
-            return;
-        }
+        let Some(drag) = egui::DragAndDrop::payload::<crate::lanes::ChanDrag>(ctx) else { return };
         // The window under the pointer takes the drop: not a diagram that a
         // floating or slid-out window lies over (clone).
-        if pos.is_some_and(|p| ctx.layer_id_at(p).is_some_and(|l| l != ui.layer_id() && is_pane_window_layer(l))) {
+        let over = pos.filter(|p| ui.max_rect().contains(*p) && !ctx.layer_id_at(*p).is_some_and(|l| l != ui.layer_id() && is_pane_window_layer(l)));
+        let Some(_) = over else { return };
+        // Another record's channel numbers mean nothing here (#74).
+        let mine = self.active_doc().is_some_and(|d| d.serial == drag.doc);
+        self.drag_cursor = Some(if mine { crate::lanes::MOVE_DROP_CURSOR } else { egui::CursorIcon::NoDrop });
+        if !released || !mine {
             return;
         }
         let Some(drag) = egui::DragAndDrop::take_payload::<crate::lanes::ChanDrag>(ctx) else { return };

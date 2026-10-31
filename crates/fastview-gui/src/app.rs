@@ -1665,6 +1665,10 @@ pub struct App {
     pub mdi_strips: Vec<egui::Rect>,
     /// A document tab let go off its strip (its document's serial, where).
     pub mdi_drop: Option<(u64, egui::Pos2)>,
+    /// The cursor a channel drag shows over a drop target this frame (the
+    /// view, the frequency / vector / circle diagram); [`App::finish_drag_cursor`]
+    /// applies it, "no-drop" where nothing set it (#73).
+    pub drag_cursor: Option<egui::CursorIcon>,
     /// The counter behind `Doc::front_stamp`.
     pub front_counter: u64,
     /// «Окна» (MFC's windows dialog), when open.
@@ -1869,6 +1873,7 @@ impl App {
             mdi_rects: Vec::new(),
             mdi_strips: Vec::new(),
             mdi_drop: None,
+            drag_cursor: None,
             front_counter: 0,
             windows_dlg: None,
             next_serial: 1,
