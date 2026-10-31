@@ -879,8 +879,7 @@ impl App {
     fn status_config_menu(&mut self, ctx: &egui::Context, texts: &[String; 6]) {
         let Some((at, opened)) = self.status_menu else { return };
         let id = egui::Id::new("fv_status_menu");
-        let h = ctx.memory(|m| m.area_rect(id)).map_or(0.0, |r| r.height());
-        let pos = if at.y + h > ctx.screen_rect().bottom() { egui::pos2(at.x, at.y - h) } else { at };
+        let pos = crate::popmenu::menu_pos(ctx, id, at);
         let mut toggle = None;
         let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain(true).show(ctx, |ui| {
             crate::popmenu::mfc_frame_with(ui, true, false, |ui| {

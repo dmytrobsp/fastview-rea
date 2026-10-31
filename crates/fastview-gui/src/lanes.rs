@@ -2248,10 +2248,11 @@ impl App {
             k.count = 0;
             k.enabled.clear();
         });
-        let area = egui::Area::new(egui::Id::new("fv_lane_menu").with(menu.serial))
+        let menu_id = egui::Id::new("fv_lane_menu").with(menu.serial);
+        let area = egui::Area::new(menu_id)
             .kind(egui::UiKind::Menu)
             .order(egui::Order::Foreground)
-            .fixed_pos(menu.pos)
+            .fixed_pos(crate::popmenu::menu_pos(ctx, menu_id, menu.pos))
             .constrain(true)
             .show(ctx, |ui| {
                 crate::popmenu::mfc_frame(ui, |ui| {
