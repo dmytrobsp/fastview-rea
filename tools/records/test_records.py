@@ -24,7 +24,7 @@ def wb(path, data):
 
 
 def cfg_of(d):
-    return next(os.path.join(d, n) for n in sorted(os.listdir(d)) if n.lower().endswith(".cfg"))
+    return next(os.path.join(d, n) for n in sorted(os.listdir(d)) if n.lower().endswith((".cfg", ".cff")))
 
 
 class Base(unittest.TestCase):
@@ -115,7 +115,7 @@ class Generator(Base):
         # Regenerate into a temp folder and compare with the committed ones.
         for name, mk in make_fixtures.SOURCES:
             src = self.source(mk)
-            rows = 30 if name in "df" else 96
+            rows = 30 if name in ("d", "f") else 96
             od = os.path.join(self.tmp, "fx_" + name)
             synth_record.write_record(src, od, name, make_fixtures.SEED[name], rows)
             for n in os.listdir(od):
@@ -300,6 +300,78 @@ class Check(Base):
             self.assertTrue(all(x > 0 for x in steps), "the instants increase")
             self.assertGreater(len(set(steps)), 5, "the steps are irregular")
             self.assertEqual(self.hits(src, out), {k: 0 for k in self.hits(src, out)})
+
+    def binary_cff(self):
+        """A single-file record with int16 BINARY data (src_b's cfg and data) and no other section."""
+        src = self.source(make_fixtures.src_b)
+        d = os.path.join(self.tmp, "bcff")
+        os.makedirs(d)
+        wb(os.path.join(d, "b.cff"), make_fixtures.cff([("CFG", rb(src.cfg_path))], "BINARY", rb(src.dat_path)))
+        return recfmt.Record(os.path.join(d, "b.cff")), src
+
+    def test_a_cff_source_is_generated_with_its_structure(self):
+        src = self.source(make_fixtures.src_g)
+        self.assertTrue(src.is_cff)
+        self.assertEqual([k for k, _, _ in src.sections], ["CFG", "INF", "HDR"])
+        self.assertEqual(len(list(src.rows(10**6))), 21)
+        for seed in (1, 2, 3):
+            out = self.synth(src, seed, rows=40)
+            raw = rb(out.cfg_path)
+            self.assertEqual(raw[:3], b"\xef\xbb\xbf")
+            self.assertEqual([k for k, _, _ in out.sections], ["CFG", "INF", "HDR"], "the sections keep their order")
+            self.assertEqual((out.cfg.enc, out.cfg.eol, out.rev, out.n_analog, out.n_digital, out.ftype), ("utf-8", "\r\n", "2013", 2, 1, "ASCII"))
+            self.assertEqual(out.total_samples, 40)
+            n = len(out.dat_bytes)
+            self.assertTrue(raw.endswith(out.dat_bytes))
+            self.assertIn(f"--- file type: DAT ASCII: {n} ---".encode(), raw, "the data section's byte count is the new one")
+            self.assertEqual(len(list(out.rows(10**6))), 40)
+            self.assertEqual(sum(self.hits(src, out).values()), 0)
+            for (_, _, a), (_, _, b) in zip(src.sections, out.sections):
+                self.assertNotEqual(a.text, b.text)
+
+    def test_a_binary_cff_is_generated_and_its_count_follows_the_data(self):
+        src, plain = self.binary_cff()
+        out = self.synth(src, 4, rows=50)
+        self.assertEqual((out.n_analog, out.n_digital, out.ftype, out.cfg.enc), (6, 20, "BINARY", "cp1251"))
+        size = 8 + 2 * 6 + 2 * 2
+        self.assertEqual(len(out.dat_bytes), size * out.total_samples)
+        self.assertIn(f"DAT BINARY: {len(out.dat_bytes)} ---".encode(), rb(out.cfg_path))
+        self.assertEqual(len(list(out.rows(10**6))), out.total_samples)
+        self.assertEqual(sum(self.hits(src, out).values()), 0)
+        # the same data as the sibling-file source gives, so the two layouts are checked alike
+        self.assertEqual(list(src.rows(10**6)), list(plain.rows(10**6)))
+
+    def test_a_copied_cff_section_or_data_stretch_is_found(self):
+        src = self.source(make_fixtures.src_g)
+        out = self.synth(src, 2, rows=40)
+        raw = rb(out.cfg_path)
+        # the source's HDR section in place of the output's
+        mod = os.path.join(self.tmp, "m_hdr")
+        os.makedirs(mod)
+        (_, _, hs), (_, _, ho) = src.sections[2], out.sections[2]
+        wb(os.path.join(mod, "x.cff"), raw.replace(ho.raw, hs.raw))
+        self.assertGreater(self.hits(src, recfmt.Record(os.path.join(mod, "x.cff")))["text"], 0)
+        # the source's data rows in place of the output's
+        mod2 = os.path.join(self.tmp, "m_dat")
+        os.makedirs(mod2)
+        wb(os.path.join(mod2, "x.cff"), raw.replace(out.dat_bytes, src.dat_bytes))
+        self.assertGreater(self.hits(src, recfmt.Record(os.path.join(mod2, "x.cff")))["windows"], 0)
+
+    def test_cff_layouts_the_tools_do_not_take_are_refused(self):
+        d = os.path.join(self.tmp, "badcff")
+        os.makedirs(d)
+        cfg = rb(self.source(make_fixtures.src_f).cfg_path)
+        good = make_fixtures.cff([("CFG", cfg)], "ASCII", b"1,2,3\r\n")
+        for name, data in (("nodat", b"--- file type: CFG ---\r\n" + cfg),
+                           ("nocfg", b"--- file type: DAT ASCII: 3 ---\r\n1,2"),
+                           ("after", good + b"--- file type: HDR ---\r\nx\r\n"),
+                           ("before", b"stray\r\n" + good)):
+            wb(os.path.join(d, name + ".cff"), data)
+            with self.assertRaises(recfmt.UnsupportedRecord, msg=name):
+                recfmt.Record(os.path.join(d, name + ".cff"))
+        with self.assertRaises(SystemExit) as cm:
+            synth_record.main([os.path.join(d, "nodat.cff"), os.path.join(d, "o")])
+        self.assertIn("error:", str(cm.exception))
 
     def test_a_failed_draw_leaves_no_files(self):
         src = self.source(make_fixtures.src_d)

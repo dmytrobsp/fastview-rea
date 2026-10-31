@@ -8,6 +8,7 @@ text encoding found (BOM, UTF-8, 1251, 866, bytes cut mid-character), the siblin
 
 The module never prints a value of a record.
 """
+import io
 import math
 import os
 import re
@@ -88,13 +89,14 @@ class UnsupportedRecord(ValueError):
 class Text:
     """A text file: its decoded lines and what is needed to write it the same way."""
 
-    def __init__(self, raw):
+    def __init__(self, raw, enc=None):
+        """`enc` fixes the encoding (a section of a `.cff`, whose encoding is the whole file's)."""
         self.raw = raw
-        self.bom = raw.startswith(b"\xef\xbb\xbf")
+        self.bom = enc is None and raw.startswith(b"\xef\xbb\xbf")
         body = raw[3:] if self.bom else raw
         self.eol = "\r\n" if b"\r\n" in body else "\n"
         self.final_eol = body.endswith(b"\n")
-        self.enc, self.cut = self._detect(body)
+        self.enc, self.cut = self._detect(body) if enc is None else (enc, False)
         self.raw_lines = re.split(rb"\r?\n", body)
         if self.final_eol:
             self.raw_lines = self.raw_lines[:-1]
@@ -141,24 +143,90 @@ class Text:
 
 # ---- the record -------------------------------------------------------------
 
+CFF_MARKER = re.compile(rb"--- file type: ([A-Za-z]+)[^\r\n]*?(\r?\n)")
+
+
 class Record:
-    """A record read from its `.cfg` path: the cfg, its siblings, the layout."""
+    """A record read from its `.cfg` (or single-file `.cff`) path: the cfg, its siblings, the layout.
+
+    For a `.cff` the sections are taken apart the way the standard writes them (`--- file type: KIND ---`
+    lines; the data section last, its byte count after a colon, or to the end of the file when it has none):
+    `cfg` is the CFG section, `others` the text sections apart from CFG and DAT in file order (`hdr` is the HDR
+    one), `dat_bytes` the data."""
 
     def __init__(self, cfg_path):
         self.cfg_path = cfg_path
         d, name = os.path.split(cfg_path)
         self.stem, self.cfg_ext = os.path.splitext(name)
         self.dir = d or "."
-        self.dat_path = self._sibling(".dat")
-        self.hdr_path = self._sibling(".hdr")
-        with open(cfg_path, "rb") as f:
-            self.cfg = Text(f.read())
+        self.is_cff = self.cfg_ext.lower() == ".cff"
+        self.dat_path = self.hdr_path = None
+        self.dat_bytes = None
+        self.sections = None
+        self.file_bom = False
         self.hdr = None
-        if self.hdr_path:
-            with open(self.hdr_path, "rb") as f:
-                self.hdr = Text(f.read())
+        self.others = []
+        with open(cfg_path, "rb") as f:
+            raw = f.read()
+        if self.is_cff:
+            self._load_cff(raw)
+        else:
+            self.dat_path = self._sibling(".dat")
+            self.hdr_path = self._sibling(".hdr")
+            self.cfg = Text(raw)
+            if self.hdr_path:
+                with open(self.hdr_path, "rb") as f:
+                    self.hdr = Text(f.read())
+                self.others = [self.hdr]
         self.fields = [l.split(",") for l in self.cfg.lines]
         self._layout()
+
+    def _load_cff(self, raw):
+        self.file_bom = raw.startswith(b"\xef\xbb\xbf")
+        body = raw[3:] if self.file_bom else raw
+        marks = list(CFF_MARKER.finditer(body))
+        dat = next((m for m in marks if m.group(1) == b"DAT"), None)
+        if dat is None or not any(m.group(1) == b"CFG" for m in marks):
+            raise UnsupportedRecord("a .cff without a CFG or a DAT section")
+        line = dat.group(0)
+        counts = re.findall(rb":\s*(\d+)", line)
+        start = dat.end()
+        payload = body[start:start + int(counts[-1])] if counts else body[start:]
+        if counts and body[start + int(counts[-1]):].strip():
+            raise UnsupportedRecord("a .cff with something after its data section is not supported")
+        if any(m.start() > dat.start() for m in marks):
+            raise UnsupportedRecord("a .cff with a section after its data is not supported")
+        head = body[:dat.start()]
+        if head[:marks[0].start()].strip():
+            raise UnsupportedRecord("a .cff with text before its first section is not supported")
+        enc = Text(head).enc
+        self.sections = []
+        heads = [m for m in marks if m is not dat]
+        for k, m in enumerate(heads):
+            end = heads[k + 1].start() if k + 1 < len(heads) else dat.start()
+            kind = m.group(1).decode()
+            text = Text(body[m.end():end], enc=enc)
+            self.sections.append((kind, m.group(0), text))
+            if kind == "CFG":
+                self.cfg = text
+            else:
+                self.others.append(text)
+                if kind == "HDR":
+                    self.hdr = text
+        self.dat_marker = line
+        self.dat_bytes = payload
+
+    @property
+    def has_dat(self):
+        return self.dat_bytes is not None or bool(self.dat_path)
+
+    @property
+    def others_text(self):
+        """The text of the hdr and of the other text sections (a `.cff`'s INF / SET), for the checks."""
+        return "\n".join(t.text for t in self.others)
+
+    def _open_dat(self):
+        return io.BytesIO(self.dat_bytes) if self.dat_bytes is not None else open(self.dat_path, "rb")
 
     def _sibling(self, ext):
         for n in os.listdir(self.dir):
@@ -206,13 +274,13 @@ class Record:
 
     def rows(self, limit):
         """Up to `limit` data rows as (analog values, digital values) lists of numbers."""
-        if not self.dat_path:
+        if not self.has_dat:
             return
         ab, words = self.row_layout()
         na, nd = self.n_analog, self.n_digital
         if ab == 0:
             n = 0
-            with open(self.dat_path, "rb") as f:
+            with self._open_dat() as f:
                 for line in f:
                     t = line.replace(b"\x1a", b"").strip().split(b",")
                     if len(t) < 2 + na + nd:
@@ -230,7 +298,7 @@ class Record:
         fmt = "<ii" + ("h" if ab == 2 else "i") * na + "H" * words
         size = struct.calcsize(fmt)
         n = 0
-        with open(self.dat_path, "rb") as f:
+        with self._open_dat() as f:
             while n < limit:
                 buf = f.read(size * min(4096, limit - n))
                 if len(buf) < size:
@@ -246,9 +314,9 @@ class Record:
 
     def ascii_style(self):
         """How the first ASCII row is written: widths, separators, number styles."""
-        if not self.dat_path or self.row_layout()[0] != 0:
+        if not self.has_dat or self.row_layout()[0] != 0:
             return None
-        with open(self.dat_path, "rb") as f:
+        with self._open_dat() as f:
             raw = f.read(65536)
             f.seek(0, os.SEEK_END)
             size = f.tell()

@@ -23,6 +23,7 @@ const FIXTURES: &[(&str, &str, &[u8])] = &[
     ("c", "c.hdr", include_bytes!("data/generated/c/c.hdr")),
     ("d", "d.cfg", include_bytes!("data/generated/d/d.cfg")),
     ("d", "d.dat", include_bytes!("data/generated/d/d.dat")),
+    ("g", "g.cff", include_bytes!("data/generated/g/g.cff")),
     ("f", "f.cfg", include_bytes!("data/generated/f/f.cfg")),
     ("f", "f.dat", include_bytes!("data/generated/f/f.dat")),
 ];
@@ -116,6 +117,20 @@ fn timestamp_only_record_uses_its_own_instants() {
     assert!(rec.time.windows(2).all(|w| w[1] > w[0]), "the instants increase");
     let steps: Vec<i64> = rec.time.windows(2).map(|w| ((w[1] - w[0]) * 1e9).round() as i64).collect();
     assert!(steps.iter().any(|s| *s != steps[0]), "the steps are irregular");
+}
+
+/// 2013 single file (`.cff`): a UTF-8 BOM, INF and HDR sections, ASCII data with its byte count.
+#[test]
+fn single_file_record_with_inf_and_hdr_sections() {
+    let raw = std::fs::read(fixture("g", "g.cff")).unwrap();
+    assert_eq!(&raw[..3], b"\xEF\xBB\xBF");
+    let rec = comtrade::load_with(fixture("g", "g.cff"), Encoding::Cp1251).unwrap();
+    assert_eq!((rec.text_enc, rec.text_bom, rec.rev_year, rec.format.as_str()), (Some(Encoding::Utf8), true, 2013, "ASCII"));
+    assert_eq!((rec.analog.len(), rec.digital.len(), rec.sample_count()), (2, 1, 96));
+    assert!(rec.analog.iter().all(|c| c.samples.len() == 96) && rec.analog[0].samples.iter().any(|v| *v != 0.0));
+    let (_, sections) = comtrade::parse_cff(&raw, Encoding::Cp1251).unwrap();
+    assert!(sections.inf.is_some_and(|t| !t.trim().is_empty()) && sections.hdr.is_some_and(|t| !t.trim().is_empty()));
+    assert!(sections.set.is_none());
 }
 
 /// The reader's own writer reproduces the structure it was given (names are invented, kept).

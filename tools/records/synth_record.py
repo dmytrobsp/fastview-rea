@@ -46,8 +46,8 @@ class Gen:
         self.src = src
         self.rng = random.Random(seed)
         self.rows = rows
-        self.cyr = bool(recfmt.CYR.search(src.cfg.text)) or bool(src.hdr and recfmt.CYR.search(src.hdr.text))
-        self.avoid_words = recfmt.words_of(src.cfg.text + "\n" + (src.hdr.text if src.hdr else ""))
+        self.cyr = bool(recfmt.CYR.search(src.cfg.text + src.others_text))
+        self.avoid_words = recfmt.words_of(src.cfg.text + "\n" + src.others_text)
         self.avoid_texts = set()
         self.avoid_nums = set()
         for f, _ in userdata_check._iter_texts(src):
@@ -395,13 +395,11 @@ def generate(src, seed, rows):
 
     # -- data
     dat = None
-    if src.dat_path:
+    if src.has_dat:
         dat = make_dat(g, src, ts, rows, mult)
 
-    hdr = None
-    if src.hdr:
-        hdr = make_hdr(g, src.hdr)
-    return cfg_bytes, dat, hdr
+    others = [make_hdr(g, t) for t in src.others]  # the .hdr, or a .cff's HDR / INF / SET sections
+    return cfg_bytes, dat, others
 
 
 def encode_cfg(t, out):
@@ -427,6 +425,20 @@ def encode_cfg(t, out):
     eol = t.eol.encode()
     body = eol.join(parts) + (eol if t.final_eol else b"")
     return (b"\xef\xbb\xbf" if t.bom else b"") + body
+
+
+def build_cff(src, cfg, dat, others):
+    """The single file: the sections in the source's order, the data section last with its byte count."""
+    parts, extra = [], iter(others)
+    for kind, marker, _ in src.sections:
+        parts.append(marker)
+        parts.append(cfg if kind == "CFG" else next(extra))
+    marker = src.dat_marker
+    if re.search(rb":\s*\d+", marker):
+        marker = re.sub(rb"(:\s*)\d+", lambda m: m.group(1) + str(len(dat)).encode(), marker, count=1)
+    parts += [marker, dat]
+    return (b"\xef\xbb\xbf" if src.file_bom else b"") + b"".join(parts)
+
 
 
 def make_hdr(g, t):
@@ -551,15 +563,18 @@ def fmt_like(tok, v):
 def write_record(src, outdir, stem, seed, rows, tries=50, check_rows=200_000):
     sidx = userdata_check.inventory(src, check_rows)
     for k in range(tries):
-        cfg, dat, hdr = generate(src, seed + k, rows)
+        cfg, dat, others = generate(src, seed + k, rows)
         os.makedirs(outdir, exist_ok=True)
         ext = src.cfg_ext
         paths = {}
-        paths[ext] = cfg
-        if dat is not None:
-            paths[_case(".dat", ext)] = dat
-        if hdr is not None:
-            paths[_case(".hdr", ext)] = hdr
+        if src.is_cff:
+            paths[ext] = build_cff(src, cfg, dat, others)
+        else:
+            paths[ext] = cfg
+            if dat is not None:
+                paths[_case(".dat", ext)] = dat
+            if others:
+                paths[_case(".hdr", ext)] = others[0]
         for e, data in paths.items():
             with open(os.path.join(outdir, stem + e), "wb") as f:
                 f.write(data)

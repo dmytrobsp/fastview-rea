@@ -154,8 +154,47 @@ def src_f(d):
         f.write((CRLF.join(rows) + CRLF).encode())
 
 
-SOURCES = [("a", src_a), ("b", src_b), ("c", src_c), ("d", src_d), ("f", src_f)]
-SEED = {"a": 11, "b": 22, "c": 33, "d": 44, "f": 66}
+def cff(sections, dat_kind, dat, bom=False):
+    """A single-file record: `--- file type: KIND ---` sections, then the data section with its byte count."""
+    out = b"\xef\xbb\xbf" if bom else b""
+    for kind, body in sections:
+        out += f"--- file type: {kind} ---\r\n".encode() + body
+    return out + f"--- file type: DAT {dat_kind}: {len(dat)} ---\r\n".encode() + dat
+
+
+def src_g(d):
+    """2013 single file (.cff), UTF-8 with a BOM, Cyrillic, INF and HDR sections, ASCII data with a byte count."""
+    cfg = CRLF.join([
+        "Підстанція Ліра,Реєстратор Т3,2013",
+        "3,2A,1D",
+        "1,Фідер Нота,A,,A,0.1273,0,0,-32767,32767,2310,5,P",
+        "2,Шина Серпа,B,,kV,0.0891,0,0,-32767,32767,11700,100,P",
+        "1,Вимикач Ронда,0",
+        "50",
+        "1",
+        "1450.000000,21",
+        "19/08/2023,16:27:03.512000",
+        "19/08/2023,16:27:03.526600",
+        "ASCII",
+        "1.000000",
+        "+3h30,+3h30",
+        "C,1",
+        "",
+    ])
+    inf = CRLF.join(["Мова: укр", "Версія файлу 4.2 від 2023", ""])
+    hdr = CRLF.join(["Примітка: перевірка зв'язку Ліра 12", "Пристрій «Реєстратор» Т3", ""])
+    rows = CRLF.join(f"{i + 1},{i * 690},{(i * 421) % 3000 - 1400},{(i * 173) % 2000 - 900},{(i // 7) % 2}" for i in range(21)) + CRLF
+    with open(os.path.join(d, "g.cff"), "wb") as f:
+        f.write(cff([("CFG", cfg.encode()), ("INF", inf.encode()), ("HDR", hdr.encode())], "ASCII", rows.encode(), bom=True))
+
+
+SOURCES = [("a", src_a), ("b", src_b), ("c", src_c), ("d", src_d), ("f", src_f), ("g", src_g)]
+SEED = {"a": 11, "b": 22, "c": 33, "d": 44, "f": 66, "g": 77}
+
+
+def main_file(d):
+    """The record's own file in a folder: its .cfg or .cff."""
+    return next(os.path.join(d, n) for n in sorted(os.listdir(d)) if n.lower().endswith((".cfg", ".cff")))
 
 
 def main():
@@ -168,9 +207,9 @@ def main():
             sd = os.path.join(tmp, "src_" + name)
             os.makedirs(sd)
             mk(sd)
-            src = recfmt.Record(next(os.path.join(sd, n) for n in os.listdir(sd) if n.lower().endswith(".cfg")))
+            src = recfmt.Record(main_file(sd))
             od = os.path.join(tmp if a.check else FIXTURES, "out_" + name if a.check else name)
-            seed = synth_record.write_record(src, od, name, SEED[name], 30 if name in "df" else 96)
+            seed = synth_record.write_record(src, od, name, SEED[name], 30 if name in ("d", "f") else 96)
             print(f"{name}: seed {seed}")
             for n in sorted(os.listdir(od)):
                 if a.check:
@@ -178,7 +217,7 @@ def main():
                         if f1.read() != f2.read():
                             print("DIFFERS:", name, n)
                             bad += 1
-            out = recfmt.Record(os.path.join(od, next(n for n in os.listdir(od) if n.lower().endswith(".cfg"))))
+            out = recfmt.Record(main_file(od))
             hits, _ = userdata_check.check(userdata_check.inventory(src, 10**6), out, 10**6)
             if sum(hits.values()):
                 print("CLASH:", name, hits)

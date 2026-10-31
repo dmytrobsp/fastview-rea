@@ -64,8 +64,8 @@ def _iter_texts(rec):
             if k == 0 and rec.analog_at <= i < rec.freq_at:
                 continue  # a channel's number
             yield f, line
-    if rec.hdr:
-        for line in rec.hdr.lines:
+    for part in rec.others:  # the .hdr, a .cff's HDR / INF / SET sections
+        for line in part.lines:
             yield line, line
             for f in line.replace(":", " ").split():
                 yield f, line
@@ -106,7 +106,7 @@ def inventory(rec, max_rows):
     stem = recfmt.identifying_text(rec.stem)  # a name that is also a structure word ("binary") is no identity
     if stem:
         texts.add(stem)
-    words = recfmt.words_of(rec.cfg.text + "\n" + (rec.hdr.text if rec.hdr else ""))
+    words = recfmt.words_of(rec.cfg.text + "\n" + rec.others_text)
     windows, columns = set(), set()
     ring = []
     for a, d in rec.rows(max_rows):
@@ -133,7 +133,7 @@ def inventory(rec, max_rows):
 def check(src, rec, max_rows):
     """Counts of source items found in the record `rec` (all 0 means clean) and how much was checked."""
     out = inventory(rec, max_rows)
-    blob = (rec.cfg.text + "\n" + (rec.hdr.text if rec.hdr else "")).casefold()
+    blob = (rec.cfg.text + "\n" + rec.others_text).casefold()
     fields = set()
     for f, _ in _iter_texts(rec):
         fields.add(f.strip().strip("�").strip().casefold())
