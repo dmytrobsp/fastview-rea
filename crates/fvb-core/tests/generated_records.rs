@@ -10,8 +10,9 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 /// The fixtures are compiled into the test executable and written to a folder of the system's temporary
-/// directory on first use, so that an executable cross-built on one machine (a Windows test executable run
-/// on a clone) runs as it is: no path of the build machine is looked up at run time.
+/// directory on first use (a file already there with the same bytes is left alone), so that an executable
+/// cross-built on one machine (a Windows test executable run on a clone) runs as it is: no path of the
+/// build machine is looked up at run time.
 const FIXTURES: &[(&str, &str, &[u8])] = &[
     ("a", "a.cfg", include_bytes!("data/generated/a/a.cfg")),
     ("a", "a.dat", include_bytes!("data/generated/a/a.dat")),
@@ -23,18 +24,25 @@ const FIXTURES: &[(&str, &str, &[u8])] = &[
     ("c", "c.hdr", include_bytes!("data/generated/c/c.hdr")),
     ("d", "d.cfg", include_bytes!("data/generated/d/d.cfg")),
     ("d", "d.dat", include_bytes!("data/generated/d/d.dat")),
-    ("g", "g.cff", include_bytes!("data/generated/g/g.cff")),
     ("f", "f.cfg", include_bytes!("data/generated/f/f.cfg")),
     ("f", "f.dat", include_bytes!("data/generated/f/f.dat")),
+    ("g", "g.cff", include_bytes!("data/generated/g/g.cff")),
+    ("h", "h.osc", include_bytes!("data/generated/h/h.osc")),
 ];
 
 fn fixture(dir: &str, file: &str) -> PathBuf {
     static ROOT: OnceLock<PathBuf> = OnceLock::new();
     let root = ROOT.get_or_init(|| {
-        let root = std::env::temp_dir().join(format!("fvb-generated-records-{}", std::process::id()));
+        let root = std::env::temp_dir().join("fvb-generated-records");
         for (d, f, bytes) in FIXTURES {
             std::fs::create_dir_all(root.join(d)).unwrap();
-            std::fs::write(root.join(d).join(f), bytes).unwrap();
+            let path = root.join(d).join(f);
+            if std::fs::read(&path).ok().as_deref() != Some(bytes) {
+                // Written beside and renamed, so that a test process running at the same time never reads half a file.
+                let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+                std::fs::write(&tmp, bytes).unwrap();
+                std::fs::rename(&tmp, &path).unwrap();
+            }
         }
         root
     });
@@ -131,6 +139,25 @@ fn single_file_record_with_inf_and_hdr_sections() {
     let (_, sections) = comtrade::parse_cff(&raw, Encoding::Cp1251).unwrap();
     assert!(sections.inf.is_some_and(|t| !t.trim().is_empty()) && sections.hdr.is_some_and(|t| !t.trim().is_empty()));
     assert!(sections.set.is_none());
+}
+
+/// An OSC2 oscillogram (`.osc`): cp1251 names, one ccbm field, sixteen digital channels in two text blocks, 14
+/// samples per data block, two timing codes.
+#[test]
+fn osc2_oscillogram_with_two_timing_codes() {
+    let rec = comtrade::load_with(fixture("h", "h.osc"), Encoding::Cp1251).unwrap();
+    assert_eq!((rec.analog.len(), rec.digital.len(), rec.sample_count()), (3, 16, 7 * 14));
+    assert!(rec.device.starts_with("OSC") && rec.device.contains("2.4"), "{}", rec.device);
+    assert!(rec.analog.iter().all(|c| c.samples.len() == 98 && c.samples.iter().any(|v| *v != 0.0)));
+    assert!(rec.analog.iter().all(|c| c.a > 0.0 && c.a.is_finite()), "the calibration gives a positive scale");
+    assert!(!rec.analog[1].ccbm.is_empty() && rec.analog[0].ccbm.is_empty(), "the second analog line has five fields");
+    assert!(rec.analog.iter().all(|c| !c.id.is_empty() && c.id != "Резерв."));
+    // The first block's rate is snapped to a standard one, the later blocks' are not, so the first block is a
+    // segment of its own; then one segment per timing code.
+    let ends: Vec<usize> = rec.rate_segs.iter().map(|s| s.1).collect();
+    assert_eq!(ends, vec![14, 5 * 14, 7 * 14]);
+    assert!(rec.rate_segs[1].0 > rec.rate_segs[2].0, "the second code is the slower rate");
+    assert!(!rec.stamps.trigger_date.is_empty(), "the trigger moment is read");
 }
 
 /// The reader's own writer reproduces the structure it was given (names are invented, kept).

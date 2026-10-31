@@ -154,6 +154,8 @@ class Record:
     `cfg` is the CFG section, `others` the text sections apart from CFG and DAT in file order (`hdr` is the HDR
     one), `dat_bytes` the data."""
 
+    is_osc = False
+
     def __init__(self, cfg_path):
         self.cfg_path = cfg_path
         d, name = os.path.split(cfg_path)
@@ -328,3 +330,184 @@ class Record:
         t = [x.strip().decode("latin-1") for x in line.strip().split(b",")]
         return {"eol": eol, "sep": sep, "tokens": t,
                 "final_eol": tail.rstrip(b"\x1a").endswith(b"\n"), "ctrl_z": tail.endswith(b"\x1a")}
+
+
+# ---- OSC2 oscillograms (`.osc`) ----------------------------------------------------
+
+OSC_BLOCK = 128
+
+
+def _bcd(b):
+    return (b >> 4) * 10 + (b & 15)
+
+
+class _Lines:
+    """The lines of an `.osc`'s channel table as the checks see a text file (`lines`, `text`)."""
+
+    def __init__(self, lines):
+        self.lines = lines
+        self.text = "\n".join(lines)
+
+
+class OscRecord:
+    """An OSC2 oscillogram, read for the generator and the check (layout: docs/original/specs/formats.md).
+
+    Big-endian 128-byte blocks: a header (version, the number H of header blocks, K calibration blocks), the
+    calibration (four numbers per analog channel), text blocks (`nnA` analog / `nnD` digital / `nnF` samples
+    per block, one tag line then the channel lines), an info block (trigger moment, the count of data blocks,
+    the pre-trigger blocks, a ratio per channel) and the data blocks (N sample records and a timing code).
+    What the format keeps in bytes the tools do not name is not read and is written as zeros."""
+
+    is_osc = True
+    is_cff = False
+    timestamp_only = False
+    has_dat = True
+    others = ()
+    others_text = ""
+    hdr = None
+    dat_path = None
+
+    def __init__(self, path):
+        self.cfg_path = path
+        d, name = os.path.split(path)
+        self.stem, self.cfg_ext = os.path.splitext(name)
+        self.dir = d or "."
+        with open(path, "rb") as f:
+            self.raw = raw = f.read()
+        B = OSC_BLOCK
+        if len(raw) < 3 * B:
+            raise UnsupportedRecord("an .osc shorter than three blocks")
+        self.major, self.minor, self.H = raw[0], raw[1], raw[2]
+        self.K = 2 if raw[0x7D] else 1
+        if self.H < self.K + 2 or (self.H + 1) * B > len(raw):
+            raise UnsupportedRecord("an .osc whose header blocks do not fit the file")
+        # text blocks: zeros dropped, the encoding found over all of them
+        texts = [bytes(b for b in raw[i * B:(i + 1) * B] if b) for i in range(self.K + 1, self.H)]
+        self.enc = Text._detect(b"".join(texts))[0]
+        self.blocks = []  # dicts: tag, count, tagline (bytes), eol, trailing, lines (str) after the tag line
+        self.n_analog = self.n_digital = 0
+        self.n_per_block = None
+        for t in texts:
+            tag, count = t[:3].decode("latin-1"), self._wtoi(t[4:7])
+            if tag not in ("nnA", "nnD", "nnF"):
+                raise UnsupportedRecord("an .osc text block with an unknown tag")
+            eol = "\r\n" if b"\r\n" in t else ("\r" if b"\r" in t else "\n")
+            parts = [p for p in re.split(rb"[\r\n]+", t) if p]
+            lines = [p.decode(self.enc if self.enc != "ascii" else "utf-8", errors="replace") for p in parts[1:]]
+            self.blocks.append({"tag": tag, "count": count, "tagline": parts[0], "eol": eol,
+                                "trailing": t.endswith((b"\r", b"\n")), "lines": lines})
+            if tag == "nnA":
+                self.n_analog += count
+            elif tag == "nnD":
+                self.n_digital += count
+            else:
+                self.n_per_block = self._wtoi(t[t.find(b",") + 1:]) if b"," in t else 0
+        if not self.n_per_block or self.n_per_block <= 0:
+            raise UnsupportedRecord("an .osc without a samples-per-block (nnF) block")
+        self.words = self.n_digital // 16
+        self.rec_len = (self.n_analog + self.words) * 2
+        if self.n_per_block * self.rec_len > 124:
+            raise UnsupportedRecord("an .osc whose sample records do not fit a data block")
+        for b in self.blocks:
+            if b["tag"] == "nnA" and any(len(l.split(",")) not in (4, 5) for l in b["lines"]):
+                raise UnsupportedRecord("an .osc analog line that is not index,name,phase,[ccbm,]unit")
+            if b["tag"] == "nnD" and any(len(l.split(",")) != 3 for l in b["lines"]):
+                raise UnsupportedRecord("an .osc digital line that is not index,name,normal")
+        # calibration, info
+        self.cal = []
+        for i in range(self.n_analog):
+            if i // 8 >= self.K:
+                self.cal.append(None)
+                continue
+            blk = raw[(1 + i // 8) * B:(2 + i // 8) * B]
+            j = i % 8
+            self.cal.append((struct.unpack_from(">f", blk, 4 * j)[0], struct.unpack_from(">h", blk, 0x20 + 2 * j)[0],
+                             struct.unpack_from(">f", blk, 0x30 + 4 * j)[0], struct.unpack_from(">h", blk, 0x50 + 2 * j)[0]))
+        info = raw[self.H * B:(self.H + 1) * B]
+        self.max_blocks = struct.unpack_from(">h", info, 2)[0]
+        self.pretrig = struct.unpack_from(">h", info, 0xE)[0]
+        self.trigger = tuple(_bcd(info[i]) for i in (5, 6, 7, 8, 9, 0xA, 0xB))  # ms/10, s, min, h, day, month, year-2000
+        self.ratios = [struct.unpack_from(">f", info, 0x40 + 4 * i)[0] if 0x40 + 4 * i + 4 <= B else 1.0 for i in range(self.n_analog)]
+        self.data_at = (self.H + 1) * B
+        avail = (len(raw) - self.data_at) // B
+        self.n_blocks = avail if self.max_blocks <= 0 else min(avail, self.max_blocks)
+        self.codes_by_block = [struct.unpack_from(">h", raw, self.data_at + b * B + 0x7C)[0] for b in range(self.n_blocks)]
+        self.total_samples = self.n_blocks * self.n_per_block
+        self.ftype = "OSC"
+        self.rev = ""
+        self.cfg = _Lines(self.channel_lines() + [self.trigger_text()])
+
+    @staticmethod
+    def _wtoi(b):
+        m = re.match(rb"\s*([+-]?\d+)", b)
+        return int(m.group(1)) if m else 0
+
+    def trigger_text(self):
+        ms, s, mi, h, d, mo, y = self.trigger
+        return f"{d:02d}.{mo:02d}.{2000 + y} {h:02d}:{mi:02d}:{s:02d}.{ms:02d}0"
+
+    def analog_lines(self):
+        return [l for b in self.blocks if b["tag"] == "nnA" for l in b["lines"]]
+
+    def digital_lines(self):
+        return [l for b in self.blocks if b["tag"] == "nnD" for l in b["lines"]]
+
+    def channel_lines(self):
+        return self.analog_lines() + self.digital_lines()
+
+    def iter_texts(self):
+        """(field, line) of everything that identifies a record: names, phases, units, calibration, ratios, the
+        timing codes and the trigger moment (the channel numbers and counts are structure)."""
+        for l in self.analog_lines() + self.digital_lines():
+            for f in l.split(",")[1:]:
+                yield f, l
+        for i, c in enumerate(self.cal):
+            if c is None:
+                continue
+            line = "cal %d %s" % (i, " ".join("%.6g" % x for x in c))
+            for x in c:
+                yield "%.6g" % x, line
+        for i, r in enumerate(self.ratios):
+            yield "%.6g" % r, "ratio %d %.6g" % (i, r)
+        for c in sorted(set(self.codes_by_block)):
+            yield str(c), "code %d" % c
+        yield self.trigger_text(), self.trigger_text()
+
+    def code_lines(self):
+        """Lines that are a record's own values even when short: the timing codes, the trigger moment."""
+        return {"code%d" % c for c in set(self.codes_by_block)} | {self.trigger_text().casefold().replace(" ", "")}
+
+    def label_items(self):
+        got = set()
+        c = 0
+        for b in self.blocks:
+            if b["tag"] != "nnA":
+                continue
+            for l in b["lines"]:
+                f = l.split(",")
+                phase, ccbm = f[2].strip().casefold(), (f[3].strip().casefold() if len(f) == 5 else "")
+                if phase and phase not in SAFE_PHASES:
+                    got.add(("a", c, 2, phase))
+                if ccbm:
+                    got.add(("a", c, 3, ccbm))
+                c += 1
+        return got
+
+    def rows(self, limit):
+        """Up to `limit` sample records as (raw analog values, digital bits) lists."""
+        na, nd, words, n = self.n_analog, self.n_digital, self.words, 0
+        fmt = ">" + "h" * na + "H" * words
+        for b in range(self.n_blocks):
+            base = self.data_at + b * OSC_BLOCK
+            for s in range(self.n_per_block):
+                t = struct.unpack_from(fmt, self.raw, base + s * self.rec_len)
+                ws = t[na:]
+                yield list(t[:na]), [(ws[k // 16] >> (k % 16)) & 1 if k < 16 * words else 0 for k in range(nd)]
+                n += 1
+                if n >= limit:
+                    return
+
+
+def open_record(path):
+    """The record at `path`: an OSC2 oscillogram for `.osc`, else a COMTRADE `.cfg` / `.cff`."""
+    return OscRecord(path) if os.path.splitext(path)[1].lower() == ".osc" else Record(path)

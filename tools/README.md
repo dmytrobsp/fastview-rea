@@ -119,11 +119,24 @@ of the tokens in names and the punctuation of the `.hdr`, and the data type. A c
 value of the source was copied; it does not show that the *structure* is unrecognisable. **A record generated from a
 user record stays local** (it is for local runs and for comparing readers); whether such an output may be committed
 is the maintainer's decision. Committed fixtures come from hand-written sources, checked against the user records.
-Records without rate segments (timestamp-only), `.cff` and `.osc` are not supported (the tools say so and stop).
+Besides a `.cfg` with its `.dat` / `.hdr`, a source may be a **timestamp-only** record (`0` rate segments, one `0,N`
+line: the output has the same two lines with an invented count and invented, irregular, increasing instants), a
+single-file **`.cff`** (the sections `--- file type: KIND ---` in the source's order, the data section last with its
+byte count after a colon or running to the end of the file; every text section, INF and SET too, is invented like a
+`.hdr` and checked like one; the BOM, encoding and line endings are kept; the data marker gets the new byte count),
+or an OSC2 **`.osc`** (128-byte big-endian blocks; the version, block geometry, tags, channel counts, line layout,
+samples per block and number of timing codes are kept, and every name, phase, unit, calibration number, ratio, timing
+code, the trigger moment and every sample is invented; bytes the format description does not name are written as
+zeros). The check indexes an `.osc`'s names, calibration numbers, ratios, timing codes, trigger moment and sample
+windows like the fields of a `.cfg`. Layouts the tools cannot take (a `.cff` without a CFG or DAT section, with text
+before its first section or a section after the data; an `.osc` with an unknown text tag, no samples-per-block block,
+sample records that do not fit a data block, or channel lines of another shape) are refused with a message.
 
-`tools/records/make_fixtures.py [--check]` rebuilds `crates/fvb-core/tests/data/generated/` from four hand-written
-sources (invented, in the script) with fixed seeds; `crates/fvb-core/tests/generated_records.rs` reads them. The
-tools' tests: `python3 -I -m unittest discover -s tools/records -p 'test_*.py'` (CI runs them).
+`tools/records/make_fixtures.py [--check]` rebuilds `crates/fvb-core/tests/data/generated/` from seven hand-written
+sources (invented, in the script: a 2013 record with a BOM, a 1999 BINARY one, a cut-name binary32 one, a 1991 one,
+a timestamp-only one, a `.cff`, an `.osc`) with fixed seeds; `crates/fvb-core/tests/generated_records.rs` reads them (the fixtures are compiled into the
+test executable and written to the temporary directory on first use, so an executable cross-built for Windows runs on a
+clone as it is). The tools' tests: `python3 -I -m unittest discover -s tools/records -p 'test_*.py'` (CI runs them).
 
 ## The milestone helper
 

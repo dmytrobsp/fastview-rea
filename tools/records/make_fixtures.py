@@ -188,13 +188,67 @@ def src_g(d):
         f.write(cff([("CFG", cfg.encode()), ("INF", inf.encode()), ("HDR", hdr.encode())], "ASCII", rows.encode(), bom=True))
 
 
-SOURCES = [("a", src_a), ("b", src_b), ("c", src_c), ("d", src_d), ("f", src_f), ("g", src_g)]
-SEED = {"a": 11, "b": 22, "c": 33, "d": 44, "f": 66, "g": 77}
+def osc_bytes(version, texts, cal, ratios, trigger, pretrig, n, rows_by_block, codes, nd=16):
+    """An OSC2 oscillogram: header, one calibration block, the text blocks, info, data blocks (big-endian)."""
+    B = 128
+    head = bytearray(B)
+    head[0], head[1], head[2] = version[0], version[1], 2 + len(texts)
+    blocks = [head]
+    cb = bytearray(B)
+    for j, (f1, s1, f2, s2) in enumerate(cal):
+        struct.pack_into(">f", cb, 4 * j, f1)
+        struct.pack_into(">h", cb, 0x20 + 2 * j, s1)
+        struct.pack_into(">f", cb, 0x30 + 4 * j, f2)
+        struct.pack_into(">h", cb, 0x50 + 2 * j, s2)
+    blocks.append(cb)
+    for t in texts:
+        blocks.append(bytearray(t + bytes(B - len(t))))
+    info = bytearray(B)
+    struct.pack_into(">h", info, 2, len(rows_by_block))
+    struct.pack_into(">h", info, 0xE, pretrig)
+    for at, v in zip((5, 6, 7, 8, 9, 0xA, 0xB), trigger):
+        info[at] = (v // 10) << 4 | v % 10
+    for i, x in enumerate(ratios):
+        struct.pack_into(">f", info, 0x40 + 4 * i, x)
+    blocks.append(info)
+    for blk_rows, code in zip(rows_by_block, codes):
+        blk = bytearray(B)
+        for s_, (a, word) in enumerate(blk_rows):
+            struct.pack_into(">" + "h" * len(a) + "H", blk, s_ * (2 * len(a) + 2), *a, word)
+        struct.pack_into(">h", blk, 0x7C, code)
+        blocks.append(blk)
+    return b"".join(bytes(b) for b in blocks)
+
+
+def src_h(d):
+    """An OSC2 oscillogram (.osc): version 2.4, cp1251 names, three analog channels (one with a ccbm field),
+    sixteen digital in two text blocks, 14 samples per block, six data blocks with two timing codes."""
+    import math
+    CR = "\r\n"
+    texts = [
+        ("nnA,003" + CR + "1,Струм Орса,A,А" + CR + "2,Напруга Нерун,B,Т7,кВ" + CR + "3,Струм Кала,C,А" + CR).encode("cp1251"),
+        ("nnD,008" + CR + "".join(f"{i},Рл Ка{i},{i % 2}" + CR for i in range(1, 9))).encode("cp1251"),
+        ("nnD,008" + CR + "".join(f"{i},Рл Ко{i},{i % 2}" + CR for i in range(9, 17))).encode("cp1251"),
+        b"nnF,14" + CR.encode(),
+    ]
+    cal = [(1357.3, 213, 0.4167, -157), (2417.9, -311, 0.3871, 129), (1119.7, 87, 0.4293, 405)]
+    rows = []
+    for b in range(6):
+        rows.append([([int(7000 * math.sin((b * 14 + s) / 4.0 + k)) for k in range(3)], ((b * 14 + s) * 37 + (s % 5)) & 0xFFFF)
+                     for s in range(14)])
+    data = osc_bytes((2, 4), texts, cal, [1234.0, 87.5, 342.5], (31, 17, 42, 11, 12, 4, 21), 1, 14, rows,
+                     [9421, 9421, 9421, 9421, 4711, 4711])
+    with open(os.path.join(d, "h.osc"), "wb") as f:
+        f.write(data)
+
+
+SOURCES = [("a", src_a), ("b", src_b), ("c", src_c), ("d", src_d), ("f", src_f), ("g", src_g), ("h", src_h)]
+SEED = {"a": 11, "b": 22, "c": 33, "d": 44, "f": 66, "g": 77, "h": 88}
 
 
 def main_file(d):
     """The record's own file in a folder: its .cfg or .cff."""
-    return next(os.path.join(d, n) for n in sorted(os.listdir(d)) if n.lower().endswith((".cfg", ".cff")))
+    return next(os.path.join(d, n) for n in sorted(os.listdir(d)) if n.lower().endswith((".cfg", ".cff", ".osc")))
 
 
 def main():
@@ -207,7 +261,7 @@ def main():
             sd = os.path.join(tmp, "src_" + name)
             os.makedirs(sd)
             mk(sd)
-            src = recfmt.Record(main_file(sd))
+            src = recfmt.open_record(main_file(sd))
             od = os.path.join(tmp if a.check else FIXTURES, "out_" + name if a.check else name)
             seed = synth_record.write_record(src, od, name, SEED[name], 30 if name in ("d", "f") else 96)
             print(f"{name}: seed {seed}")
@@ -217,7 +271,7 @@ def main():
                         if f1.read() != f2.read():
                             print("DIFFERS:", name, n)
                             bad += 1
-            out = recfmt.Record(main_file(od))
+            out = recfmt.open_record(main_file(od))
             hits, _ = userdata_check.check(userdata_check.inventory(src, 10**6), out, 10**6)
             if sum(hits.values()):
                 print("CLASH:", name, hits)

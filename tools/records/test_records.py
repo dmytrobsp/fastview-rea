@@ -24,7 +24,7 @@ def wb(path, data):
 
 
 def cfg_of(d):
-    return next(os.path.join(d, n) for n in sorted(os.listdir(d)) if n.lower().endswith((".cfg", ".cff")))
+    return next(os.path.join(d, n) for n in sorted(os.listdir(d)) if n.lower().endswith((".cfg", ".cff", ".osc")))
 
 
 class Base(unittest.TestCase):
@@ -36,12 +36,12 @@ class Base(unittest.TestCase):
         d = os.path.join(self.tmp, "src_" + mk.__name__)
         os.makedirs(d, exist_ok=True)
         mk(d)
-        return recfmt.Record(cfg_of(d))
+        return recfmt.open_record(cfg_of(d))
 
     def synth(self, src, seed=5, rows=40, name="o"):
         d = tempfile.mkdtemp(dir=self.tmp)
         synth_record.write_record(src, d, name, seed, rows)
-        return recfmt.Record(cfg_of(d))
+        return recfmt.open_record(cfg_of(d))
 
     def hits(self, src, out):
         h, _ = userdata_check.check(userdata_check.inventory(src, 10**6), out, 10**6)
@@ -371,6 +371,105 @@ class Check(Base):
                 recfmt.Record(os.path.join(d, name + ".cff"))
         with self.assertRaises(SystemExit) as cm:
             synth_record.main([os.path.join(d, "nodat.cff"), os.path.join(d, "o")])
+        self.assertIn("error:", str(cm.exception))
+
+    def test_an_osc_source_is_generated_with_its_structure(self):
+        src = self.source(make_fixtures.src_h)
+        self.assertTrue(src.is_osc)
+        self.assertEqual((src.n_analog, src.n_digital, src.n_per_block, src.n_blocks, src.enc), (3, 16, 14, 6, "cp1251"))
+        self.assertEqual(sorted(set(src.codes_by_block)), [4711, 9421])
+        for seed in (1, 2, 3, 4):
+            out = self.synth(src, seed, rows=60)
+            self.assertEqual((out.major, out.minor, out.H, out.K), (2, 4, src.H, 1), "version and block geometry")
+            self.assertEqual((out.n_analog, out.n_digital, out.n_per_block, out.enc), (3, 16, 14, "cp1251"))
+            self.assertEqual([(b["tag"], b["count"], len(b["lines"]), b["eol"]) for b in out.blocks],
+                             [(b["tag"], b["count"], len(b["lines"]), b["eol"]) for b in src.blocks])
+            self.assertEqual([b["tagline"] for b in out.blocks if b["tag"] == "nnF"], [b"nnF,14"])
+            self.assertEqual((out.n_blocks, out.max_blocks, out.total_samples), (5, 5, 70))
+            self.assertEqual(len(list(out.rows(10**6))), 70)
+            self.assertEqual(len(set(out.codes_by_block)), 2, "two timing codes, as in the source")
+            self.assertTrue(all(0 < c < 32768 for c in out.codes_by_block))
+            self.assertEqual(len(out.raw) % 128, 0)
+            self.assertEqual(len(out.analog_lines()[1].split(",")), 5, "the line with a ccbm field keeps its shape")
+            self.assertTrue(all(c is not None for c in out.cal))
+            self.assertNotEqual(out.trigger, src.trigger)
+            self.assertEqual(sum(self.hits(src, out).values()), 0)
+        a, b = self.synth(src, 5, name="x"), self.synth(src, 5, name="y")
+        self.assertEqual(a.raw, b.raw, "deterministic")
+        self.assertNotEqual(a.raw, self.synth(src, 6, name="z").raw)
+
+    def test_osc_rates_are_not_round_ones(self):
+        src = self.source(make_fixtures.src_h)
+        m = 2  # the analog channels whose unit is V / A / empty
+        for seed in range(1, 25):
+            out = self.synth(src, seed)
+            for c in out.codes_by_block:
+                fs = 1e6 / (c * 0.03125 * m)
+                for n in (1000, 2000, 4000, 5000):
+                    self.assertGreater(abs(fs / n - 1), 0.03, (seed, c))
+
+    def test_a_copied_osc_part_is_found(self):
+        src = self.source(make_fixtures.src_h)
+        out = self.synth(src, 2, rows=60)
+        B = 128
+
+        def altered(name, edit):
+            raw = bytearray(out.raw)
+            edit(raw)
+            p = os.path.join(self.tmp, name + ".osc")
+            wb(p, bytes(raw))
+            return self.hits(src, recfmt.open_record(p))
+
+        s = src.raw
+        text_at = (src.K + 1) * B
+        h = altered("name", lambda r: r.__setitem__(slice(text_at, text_at + B), s[text_at:text_at + B]))
+        self.assertGreater(h["text"], 0, "a copied text block (names)")
+        self.assertGreater(h["labels"], 0)
+        h = altered("cal", lambda r: r.__setitem__(slice(B, 2 * B), s[B:2 * B]))
+        self.assertGreater(h["numbers"], 0, "copied calibration")
+        info = src.H * B
+
+        def copy_info(r):
+            r[info:info + B] = s[info:info + B]
+
+        h = altered("info", copy_info)
+        self.assertGreater(h["numbers"] + h["text"] + h["codes"], 0, "copied trigger moment and ratios")
+        d0 = src.data_at
+
+        def copy_code(r):
+            struct_code = s[d0 + 0x7C:d0 + 0x7E]
+            for b in range(out.n_blocks):
+                r[out.data_at + b * B + 0x7C:out.data_at + b * B + 0x7E] = struct_code
+
+        self.assertGreater(altered("code", copy_code)["codes"], 0, "a copied timing code")
+
+        def copy_data(r):
+            r[out.data_at:out.data_at + 2 * B] = s[d0:d0 + 2 * B]
+            for b in range(2):  # keep the output's own timing codes
+                r[out.data_at + b * B + 0x7C:out.data_at + b * B + 0x7E] = out.raw[out.data_at + b * B + 0x7C:out.data_at + b * B + 0x7E]
+
+        h = altered("data", copy_data)
+        self.assertGreater(h["windows"], 0, "copied sample rows")
+        self.assertGreater(h["columns"], 0)
+
+    def test_osc_layouts_the_tools_do_not_take_are_refused(self):
+        src = self.source(make_fixtures.src_h)
+        d = os.path.join(self.tmp, "badosc")
+        os.makedirs(d)
+        raw = bytearray(src.raw)
+        cases = {"short": bytes(raw[:200]), "nodata_header": bytes(raw[:3]) + bytes(300)}
+        bad_tag = bytearray(raw)
+        bad_tag[(src.K + 1) * 128:(src.K + 1) * 128 + 3] = b"xyz"
+        cases["tag"] = bytes(bad_tag)
+        wide = bytearray(raw)
+        wide[(src.H - 1) * 128 + 4:(src.H - 1) * 128 + 6] = b"99"  # nnF,14 -> nnF,99: 99 records do not fit a block
+        cases["wide"] = bytes(wide)
+        for name, data in cases.items():
+            wb(os.path.join(d, name + ".osc"), data)
+            with self.assertRaises(recfmt.UnsupportedRecord, msg=name):
+                recfmt.open_record(os.path.join(d, name + ".osc"))
+        with self.assertRaises(SystemExit) as cm:
+            synth_record.main([os.path.join(d, "tag.osc"), os.path.join(d, "o")])
         self.assertIn("error:", str(cm.exception))
 
     def test_a_failed_draw_leaves_no_files(self):

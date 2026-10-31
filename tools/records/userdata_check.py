@@ -3,7 +3,8 @@
 
     python3 -I tools/records/userdata_check.py --source SRC.cfg [--source SRC2.cfg ...] OUT.cfg [OUT2.cfg ...]
 
-Every source record (its `.cfg`, and the `.dat` / `.hdr` beside it) is indexed in memory:
+Every source record (its `.cfg`, and the `.dat` / `.hdr` beside it; a single-file `.cff` with all its text sections;
+an OSC2 `.osc` through its channel lines, calibration, ratios, timing codes and trigger moment) is indexed in memory:
 
 - text: every text field of the `.cfg` and `.hdr` (names, station, device, dates and times, comment
   lines) and the source's file name, case-folded, apart from structure (standard units, phase letters,
@@ -57,6 +58,9 @@ def _data_float(v):
 
 def _iter_texts(rec):
     """(line, kind) text of the cfg fields and hdr; yields (field text, whole line text)."""
+    if rec.is_osc:
+        yield from rec.iter_texts()
+        return
     for i, line in enumerate(rec.cfg.lines):
         if i == 1:  # the channel-count line is structure
             continue
@@ -73,6 +77,8 @@ def _iter_texts(rec):
 
 def codes(rec):
     """Whole lines that are a record's own values even when short: rate segments, time/quality codes."""
+    if rec.is_osc:
+        return rec.code_lines()
     ls = rec.cfg.lines
     pick = list(range(rec.rates_at, rec.rates_at + max(rec.n_rates, 1))) + list(range(rec.tail_at + 1, len(ls)))
     return {"".join(ls[i].split()).casefold() for i in pick if i < len(ls) and any(c.isalnum() for c in ls[i])}
@@ -80,6 +86,8 @@ def codes(rec):
 
 def labels(rec):
     """Phase and ccbm fields by channel position: a record's own labels, unless a format phase."""
+    if rec.is_osc:
+        return rec.label_items()
     got = set()
     for kind, at, n in (("a", rec.analog_at, rec.n_analog), ("d", rec.digital_at, rec.n_digital)):
         for c in range(n):
@@ -164,13 +172,13 @@ def main(argv=None):
     sources = []
     for p in a.source:
         try:
-            r = recfmt.Record(p)
+            r = recfmt.open_record(p)
         except recfmt.UnsupportedRecord as e:
             raise SystemExit(f"error: {e}")
         sources.append(inventory(r, a.max_rows))
     bad = 0
     for o in a.outputs:
-        rec = recfmt.Record(o)
+        rec = recfmt.open_record(o)
         for i, src in enumerate(sources, 1):
             hits, seen = check(src, rec, a.max_rows)
             total = sum(hits.values())
