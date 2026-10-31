@@ -134,3 +134,13 @@ fn dft_angles_and_trig_are_the_originals() {
     let want = num_complex::Complex64::new(re * (2f64.sqrt() / 40.0), im * (2f64.sqrt() / 40.0));
     assert_eq!(phasor_at(&x, 79, 40), want);
 }
+
+/// #107: the operator `a` is (−0.5, √3·0.5) with the root taken by `sqrt` (`0x41d800`, `0x420650`), not the polar
+/// `1∠120°`, whose cosine and sine round differently.
+#[test]
+fn the_operator_a_is_the_originals_pair() {
+    let a = fvb_core::signal::operator_a();
+    assert_eq!((a.re.to_bits(), a.im.to_bits()), ((-0.5f64).to_bits(), (3f64.sqrt() * 0.5).to_bits()));
+    let polar = num_complex::Complex64::from_polar(1.0, 120f64.to_radians());
+    assert_ne!((a.re.to_bits(), a.im.to_bits()), (polar.re.to_bits(), polar.im.to_bits()), "the test tells the two forms apart");
+}
