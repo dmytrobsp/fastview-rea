@@ -1020,16 +1020,25 @@ fn binary(op: u8, x: Value, y: Value) -> Result<Value, ExprError> {
     })
 }
 
-/// `FUN_00420ca0`: complex division (Smith's scaled form, as MSVC `<complex>`).
+/// `FUN_00420ca0`: complex division (Smith's scaled form, as MSVC `<complex>`): w = im/re where |re| > |im|
+/// strictly, else re/im; a NaN part, a zero divisor or a zero / NaN scaled denominator give NaN in both parts.
 fn complex_div(ar: f64, ai: f64, br: f64, bi: f64) -> (f64, f64) {
-    if br.abs() < bi.abs() {
-        let w = br / bi;
-        let d = bi + w * br;
-        ((ar * w + ai) / d, (ai * w - ar) / d)
-    } else {
-        let w = bi / br;
-        let d = br + w * bi;
+    if br.is_nan() || bi.is_nan() {
+        return (f64::NAN, f64::NAN);
+    }
+    let big = br.abs() > bi.abs();
+    if !big && bi == 0.0 {
+        return (f64::NAN, f64::NAN);
+    }
+    let w = if big { bi / br } else { br / bi };
+    let d = if big { w * bi + br } else { w * br + bi };
+    if d.is_nan() || d == 0.0 {
+        return (f64::NAN, f64::NAN);
+    }
+    if big {
         ((ar + ai * w) / d, (ai - ar * w) / d)
+    } else {
+        ((ar * w + ai) / d, (ai * w - ar) / d)
     }
 }
 
@@ -1055,8 +1064,8 @@ fn call(f: Func, name: &'static str, a: &[Value], env: Env) -> Result<Value, Exp
     Ok(match f {
         Func::Sin => x.scalar(crate::trig::sin(rad(x.v))),
         Func::Cos => x.scalar(crate::trig::cos(rad(x.v))),
-        Func::Tg => x.scalar(rad(x.v).tan()),
-        Func::Ctg => x.scalar(1.0 / rad(x.v).tan()),
+        Func::Tg => x.scalar(crate::trig::tan(rad(x.v))),
+        Func::Ctg => x.scalar(1.0 / crate::trig::tan(rad(x.v))),
         Func::Sqrt => x.scalar(x.v.sqrt()),
         Func::Exp => x.scalar(x.v.exp()),
         Func::Re => x.scalar(x.re),

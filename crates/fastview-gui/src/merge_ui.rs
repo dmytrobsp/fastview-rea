@@ -158,7 +158,7 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
             }
             times.truncate(c.data.len());
             let channel = if c.discrete {
-                Err(fvb_core::comtrade::DigitalChannel { index: 0, id: c.name.clone(), phase: c.desc2.clone(), normal: 0, samples: c.data.iter().map(|&v| v != 0.0).collect() })
+                Err(fvb_core::comtrade::DigitalChannel { index: 0, id: c.name.clone(), phase: c.desc2.clone(), normal: 0, samples: c.data.iter().map(|&v| v != 0.0).collect(), own_rate: 0.0 })
             } else {
                 Ok(fvb_core::comtrade::AnalogChannel {
                     index: 0,
@@ -475,7 +475,7 @@ impl App {
             // read in UTF-8 / KOI8-R keeps it as bytes the way it reads its
             // own (`recdlg::shown_bytes_of`).
             let bytes = crate::recdlg::shown_bytes_of(&lane.name, d.read_enc, d.codepage);
-            lane.name_raw = Some(crate::app::RawName { bytes, seen: lane.name.clone(), alias: false });
+            lane.name_raw = Some(crate::recdlg::added_name(&lane.name, bytes, d.read_enc, d.codepage));
             d.computed.push(lane);
             d.selection.insert(ChanKey::Computed(d.computed.len() - 1));
             d.pending.push(c);
@@ -704,7 +704,10 @@ impl App {
             })
             .collect();
         let dig_pads: Vec<bool> = (0..d.osc.digital.len()).map(|i| d.dig(i).invert).collect();
-        let merged = merge::merge(&src, &pasted, d.merge_offset, &pads, &dig_pads);
+        // The formula channels present count in R with their own rates
+        // (`0x47db30`), else the record's.
+        let formula_rates: Vec<f64> = d.computed.iter().filter(|c| c.formula != PENDING).map(|c| c.own_rate).collect();
+        let merged = merge::merge_with(&src, &pasted, d.merge_offset, &pads, &dig_pads, &formula_rates);
         let old_rate = d.osc.sample_rate;
         let (nb, nd) = (d.osc.analog.len(), d.osc.digital.len());
         let anchor = |digital: bool| {
@@ -737,7 +740,7 @@ impl App {
         d.digital_visible.resize(d.osc.digital.len(), true);
         for (i, p) in (nd..d.osc.digital.len()).zip(&pend_d) {
             if let Some((invert, remove_dc, mode)) = p.flags {
-                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode, color: None, omp: false };
+                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode, color: None, omp: false, omp_alias: false };
             }
         }
         d.move_appended(at_a, nb, at_d, nd);
