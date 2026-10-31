@@ -526,15 +526,31 @@ impl Doc {
     /// The record as the `.cfg` / `.cff` writers see it: the ОМП's flag
     /// channels (bit 13) left out (VM: `7,6A,1D` after a run), the others
     /// numbered by their place among all digital channels (VM: «4,
-    /// <name> …» after the three flags).
-    fn file_record(&self) -> (std::borrow::Cow<'_, fvb_core::Oscillogram>, Vec<usize>) {
+    /// <name> …» after the three flags); likewise the analog channels by
+    /// their place among all analog-kind records, a pasted lane before them
+    /// counting (VM, #28).
+    fn file_record(&self) -> (std::borrow::Cow<'_, fvb_core::Oscillogram>, comtrade::Numbers) {
+        let pending_before = |analog: bool| -> Vec<usize> {
+            (0..self.computed.len())
+                .filter(|&j| self.computed[j].formula == crate::merge_ui::PENDING && self.pending_digital(j) != analog)
+                .filter_map(|j| match (self.computed[j].before, analog) {
+                    (Some(ChanKey::Analog(a)), true) => Some(a),
+                    (Some(ChanKey::Digital(k)), false) => Some(k),
+                    _ => None,
+                })
+                .collect()
+        };
+        let (pa, pd) = (pending_before(true), pending_before(false));
+        let analog: Vec<usize> = (0..self.osc.analog.len()).map(|i| i + 1 + pa.iter().filter(|&&a| a <= i).count()).collect();
+        let place = |k: usize| k + 1 + pd.iter().filter(|&&d| d <= k).count();
         if !(0..self.osc.digital.len()).any(|k| self.dig_computed(k)) {
-            return (std::borrow::Cow::Borrowed(&self.osc), Vec::new());
+            let digital = if pd.is_empty() { Vec::new() } else { (0..self.osc.digital.len()).map(place).collect() };
+            return (std::borrow::Cow::Borrowed(&self.osc), comtrade::Numbers { analog: if pa.is_empty() { Vec::new() } else { analog }, digital });
         }
         let keep: Vec<usize> = (0..self.osc.digital.len()).filter(|&k| !self.dig_computed(k)).collect();
         let mut osc = self.osc.clone();
         osc.digital = keep.iter().map(|&k| self.osc.digital[k].clone()).collect();
-        (std::borrow::Cow::Owned(osc), keep.iter().map(|k| k + 1).collect())
+        (std::borrow::Cow::Owned(osc), comtrade::Numbers { analog: if pa.is_empty() { Vec::new() } else { analog }, digital: keep.iter().map(|&k| place(k)).collect() })
     }
 
     /// The modelled bits replace their stored values; the others (bits we
@@ -1301,6 +1317,14 @@ mod tests {
                 "invert" => app.dispatch(crate::app::Command::ToggleFlag(crate::chansel::ChanFlag::Invert)),
                 "dc" => app.dispatch(crate::app::Command::ToggleFlag(crate::chansel::ChanFlag::RemoveDc)),
                 "rms" => app.dispatch(crate::app::Command::SetValueMode(crate::app::ValueMode::Rms)),
+                // Copy the second channel and paste it in front of the first
+                // (a pending lane among the file channels), then save.
+                "paste" => {
+                    app.docs[di].selection = [ChanKey::Analog(1)].into();
+                    app.copy_channels_for_merge();
+                    app.docs[di].selection = [ChanKey::Analog(0)].into();
+                    app.paste_channels_for_merge();
+                }
                 // Quick analysis, «Симметричные составляющие»: Ia / Ib / Ic =
                 // the first three analog channels, voltages «Отключить».
                 "symm" => {
@@ -1517,11 +1541,31 @@ mod tests {
         assert_eq!(d.file_key(na + 1), first);
         let (rec, no) = d.file_record();
         assert_eq!(rec.digital.len(), nd);
-        assert_eq!(no, (2..=nd + 1).collect::<Vec<_>>());
+        assert_eq!(no.digital, (2..=nd + 1).collect::<Vec<_>>());
         let keep: Vec<bool> = (0..=nd).map(|k| k > 0).collect();
         d.retain_digital_keys(&keep);
         d.osc.digital.remove(0);
         assert_eq!(d.file_key(na), first);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pasted lane in front of the file channels is left out of the record
+    /// files and still counts in the analog numbering (a clone run: the first
+    /// file channel is «2»; #28, L9.217's residual).
+    #[test]
+    fn a_pending_lane_counts_in_the_analog_numbering() {
+        let dir = temp_dir("pendnum");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        let n = app.docs[di].osc.analog.len();
+        app.docs[di].selection = [ChanKey::Analog(1)].into();
+        app.copy_channels_for_merge();
+        app.docs[di].selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        let (rec, no) = app.docs[di].file_record();
+        assert_eq!(rec.analog.len(), n, "the lane is not a record of the file");
+        assert_eq!(no.analog, (2..=n + 1).collect::<Vec<_>>());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

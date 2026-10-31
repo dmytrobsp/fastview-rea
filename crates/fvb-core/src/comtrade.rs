@@ -393,14 +393,22 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
 /// out in UTF-8 is written all in UTF-8, with the BOM it came with, so it
 /// reads back as it was.
 pub fn write(osc: &Oscillogram, names: Encoding) -> (Vec<u8>, Vec<u8>) {
-    write_numbered(osc, names, &[])
+    write_numbered(osc, names, &Numbers::default())
 }
 
-/// [`write`] with the digital channels' numbers given (`dig_no[i]` for
-/// channel i; empty = their places): channels left out of the record
-/// (the ОМП's flags) still count in the original's numbering (VM).
-pub fn write_numbered(osc: &Oscillogram, names: Encoding, dig_no: &[usize]) -> (Vec<u8>, Vec<u8>) {
-    let (cfg, dat) = write_rows(osc, names, dig_no, osc.format != "ASCII");
+/// The numbers the channel lines carry when records left out of the file
+/// (the ОМП's flags, pasted lanes) still count in them: `analog[i]` /
+/// `digital[i]` for channel i, empty = its place among those written.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Numbers {
+    pub analog: Vec<usize>,
+    pub digital: Vec<usize>,
+}
+
+/// [`write`] with the channels' numbers given: channels left out of the
+/// record still count in the original's numbering (VM).
+pub fn write_numbered(osc: &Oscillogram, names: Encoding, nums: &Numbers) -> (Vec<u8>, Vec<u8>) {
+    let (cfg, dat) = write_rows(osc, names, nums, osc.format != "ASCII");
     let bom = if utf8_file(osc, names) && needs_bom(osc, &cfg, false) { UTF8_BOM } else { b"" };
     ([bom, cfg.as_slice()].concat(), dat)
 }
@@ -422,7 +430,7 @@ fn utf8_file(osc: &Oscillogram, names: Encoding) -> bool {
 }
 
 /// The writer with the data's kind chosen: `binary` rows, or ASCII text.
-fn write_rows(osc: &Oscillogram, names: Encoding, dig_no: &[usize], binary: bool) -> (Vec<u8>, Vec<u8>) {
+fn write_rows(osc: &Oscillogram, names: Encoding, nums: &Numbers, binary: bool) -> (Vec<u8>, Vec<u8>) {
     use crate::views::fmt_g;
     // Names are wrapped in \u{1} … \u{2} and encoded on their own below.
     let nm = |s: &str| format!("\u{1}{s}\u{2}");
@@ -448,7 +456,7 @@ fn write_rows(osc: &Oscillogram, names: Encoding, dig_no: &[usize], binary: bool
         let ext = |v: f64| if ch.samples.is_empty() { 0.0 } else { round_fv((v - ch.b) / ch.a) };
         cfg.push_str(&format!(
             "{},{},{},{},{},{},{},{},{},{}",
-            i + 1, nm(&ch.id), ch.phase, ch.ccbm, ch.file_unit(), fmt_g(ch.a), fmt_g(ch.b), fmt_g(ch.skew), ext(lo), ext(hi),
+            nums.analog.get(i).copied().unwrap_or(i + 1), nm(&ch.id), ch.phase, ch.ccbm, ch.file_unit(), fmt_g(ch.a), fmt_g(ch.b), fmt_g(ch.skew), ext(lo), ext(hi),
         ));
         if rev {
             let tok = |t: &str, v: f64| if t.is_empty() { format!("{v:.6}") } else { t.to_string() };
@@ -457,7 +465,7 @@ fn write_rows(osc: &Oscillogram, names: Encoding, dig_no: &[usize], binary: bool
         cfg.push_str("\r\n");
     }
     for (i, ch) in osc.digital.iter().enumerate() {
-        let no = dig_no.get(i).copied().unwrap_or(i + 1);
+        let no = nums.digital.get(i).copied().unwrap_or(i + 1);
         if rev {
             cfg.push_str(&format!("{},{},,,{}\r\n", no, nm(&ch.id), ch.normal));
         } else {
@@ -699,18 +707,18 @@ pub struct CffRevisionError;
 /// and the data bytes. Text in CP1251 (all UTF-8, BOM as read, for a
 /// record read as UTF-8 whose names still are: see [`write`]).
 pub fn write_cff(osc: &Oscillogram, sections: &CffSections, names: Encoding) -> Result<Vec<u8>, CffRevisionError> {
-    write_cff_numbered(osc, sections, names, &[])
+    write_cff_numbered(osc, sections, names, &Numbers::default())
 }
 
 /// [`write_cff`] with the digital channels' numbers (see [`write_numbered`]).
-pub fn write_cff_numbered(osc: &Oscillogram, sections: &CffSections, names: Encoding, dig_no: &[usize]) -> Result<Vec<u8>, CffRevisionError> {
+pub fn write_cff_numbered(osc: &Oscillogram, sections: &CffSections, names: Encoding, nums: &Numbers) -> Result<Vec<u8>, CffRevisionError> {
     if osc.rev_year < 2013 {
         return Err(CffRevisionError);
     }
     // The `.cfg` writer's bytes (cp1251, CR LF, the revision and format
     // line as read); the data binary whatever that line says (VM: an
     // «ASCII» record saved as `.cff` has int32 rows).
-    let (cfg, dat) = write_rows(osc, names, dig_no, true);
+    let (cfg, dat) = write_rows(osc, names, nums, true);
     let utf8 = utf8_file(osc, names);
     let text = |t: &str| if utf8 { t.as_bytes().to_vec() } else { to_cp1251(t) };
     let mut out = text("--- file type: CFG ---\r\n");
