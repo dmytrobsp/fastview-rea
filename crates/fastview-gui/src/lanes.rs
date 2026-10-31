@@ -2012,7 +2012,10 @@ impl App {
                     // selections stay), then 33035 or message 1086.
                     d.selection.extend(chans.iter().chain([&target]).copied());
                     if d.can_combine() {
-                        if !d.combine_selected() {
+                        if d.combine_selected() {
+                            // 33035 reaches the refresh-all (`0x42f4b0` from `0x467a62`).
+                            self.refresh_blocks();
+                        } else {
                             // VM: after the box (and a repaint) the target stays selected beside the dragged lane.
                             self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
                         }
@@ -2256,6 +2259,17 @@ impl App {
     }
 
     fn run_menu_cmd(&mut self, ai: usize, cmd: MenuCmd) {
+        // The picks whose handlers end in the refresh-all `0x475420`: the flags and value modes (the same
+        // commands as the ribbon's, which `dispatch` refreshes), 33037 (`0x467e94`) and 33033 (`0x4557d0`); 33035
+        // too, once it has combined (below). «Цвет канала» refreshes when its dialog is accepted.
+        let refresh = matches!(cmd, MenuCmd::Flag(_) | MenuCmd::Mode(_) | MenuCmd::Split | MenuCmd::DiffBand);
+        self.run_menu_cmd_inner(ai, cmd);
+        if refresh {
+            self.refresh_blocks();
+        }
+    }
+
+    fn run_menu_cmd_inner(&mut self, ai: usize, cmd: MenuCmd) {
         match cmd {
             MenuCmd::CopyMerge => self.copy_channels_for_merge(),
             MenuCmd::PasteMerge => self.paste_channels_for_merge(),
@@ -2305,7 +2319,12 @@ impl App {
                     MenuCmd::Mode(m) => d.set_mode_selected(m),
                     MenuCmd::ResetZoom => d.reset_zoom_selected(),
                     MenuCmd::Combine => {
-                        if !d.combine_selected() {
+                        let enabled = d.can_combine();
+                        if d.combine_selected() {
+                            if enabled {
+                                self.refresh_blocks();
+                            }
+                        } else {
                             self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
                         }
                     }
@@ -4106,5 +4125,53 @@ mod menu_tests {
         h.button(Pos2::new(900.0, 300.0), egui::PointerButton::Primary);
         assert!(h.app.lane_menu.is_none());
         assert_eq!(h.app.active_doc().unwrap().main_cursor, main, "the dismissing click is swallowed");
+    }
+
+    /// #23: the lane menu's picks that reach the refresh-all in the original (33030's dialog aside) — the flags,
+    /// the value modes, 33033 and 33037 — clear a stale circle / vector flag.
+    #[test]
+    fn lane_menu_picks_end_in_the_refresh_all() {
+        let picks: [(&str, MenuCmd); 4] = [
+            ("flag", MenuCmd::Flag(ChanFlag::OnFreq)),
+            ("mode", MenuCmd::Mode(ValueMode::Rms)),
+            ("33033", MenuCmd::DiffBand),
+            ("33037", MenuCmd::Split),
+        ];
+        for (what, cmd) in picks {
+            let mut app = App::new();
+            app.dispatch(crate::app::Command::Demo);
+            let d = app.active_doc_mut().unwrap();
+            d.selection = std::collections::BTreeSet::from([ChanKey::Analog(1)]);
+            crate::app::stale_flags::make(&mut app);
+            assert!(crate::app::stale_flags::is_stale(&app), "{what}");
+            app.run_menu_cmd(0, cmd);
+            assert!(crate::app::stale_flags::swept(&app), "{what}");
+        }
+    }
+
+    /// 33035 (`0x467a62` → `0x42f4b0`) ends in the refresh-all once it has combined; a refused one does not.
+    #[test]
+    fn combining_lanes_ends_in_the_refresh_all() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        app.active_doc_mut().unwrap().selection = std::collections::BTreeSet::from([ChanKey::Analog(0), ChanKey::Analog(1)]);
+        crate::app::stale_flags::make(&mut app);
+        app.active_doc_mut().unwrap().osc.analog[1].unit = "Hz".into();
+        assert!(app.active_doc().unwrap().can_combine());
+        app.run_menu_cmd(0, MenuCmd::Combine);
+        let d = app.active_doc().unwrap();
+        assert!(d.group_of(ChanKey::Analog(0)).is_some(), "combined");
+        assert!(crate::app::stale_flags::swept(&app));
+        // Refused for different rates: nothing changes, no refresh.
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        d.osc.analog[0].unit = "Hz".into();
+        d.osc.analog[1].unit = "Hz".into();
+        d.osc.analog[1].own_rate = 1234.5;
+        d.selection = std::collections::BTreeSet::from([ChanKey::Analog(0), ChanKey::Analog(1)]);
+        d.chans[0].on_circle = true;
+        app.run_menu_cmd(0, MenuCmd::Combine);
+        assert!(app.active_doc().unwrap().chans[0].on_circle, "a refused 33035 stops before the refresh");
     }
 }

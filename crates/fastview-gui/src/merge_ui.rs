@@ -893,11 +893,19 @@ impl App {
             }
             return;
         }
+        self.merge_bar_buttons(sync, join);
+    }
+
+    /// The bar's «Синхронизация» (1091, `0x449930`) and «Объединить» (1092, `0x449960`): both end in the
+    /// refresh-all whatever the merge did.
+    pub(crate) fn merge_bar_buttons(&mut self, sync: bool, join: bool) {
         if sync {
             self.synchronise();
+            self.refresh_blocks();
         }
         if join {
             self.merge_records();
+            self.refresh_blocks();
         }
     }
 }
@@ -1291,5 +1299,17 @@ mod tests {
         d.prune_pending();
         assert!(d.pending.is_empty());
         assert!(!crate::omp_ui::has_pending_paste(d));
+    }
+
+    /// #23: the merge bar's buttons 1091 / 1092 (`0x449930`, `0x449960`) end in the refresh-all.
+    #[test]
+    fn the_merge_bars_buttons_end_in_the_refresh_all() {
+        for (sync, join) in [(true, false), (false, true)] {
+            let mut app = demo_app();
+            crate::app::stale_flags::make(&mut app);
+            assert!(crate::app::stale_flags::is_stale(&app));
+            app.merge_bar_buttons(sync, join);
+            assert!(crate::app::stale_flags::swept(&app), "sync {sync}, join {join}");
+        }
     }
 }

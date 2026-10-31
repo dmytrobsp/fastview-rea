@@ -2540,6 +2540,17 @@ impl App {
         }
     }
 
+    /// The refresh-all after a command that ran on document `di` (the OMP run, which may be a silent one on a
+    /// document that is not the active one): the active document goes through [`Self::refresh_blocks`]; another
+    /// one only has its circle / vector flags swept, the diagrams being bound to the active document.
+    pub fn refresh_blocks_of(&mut self, di: usize) {
+        if self.active == Some(di) {
+            self.refresh_blocks();
+        } else if let Some(d) = self.docs.get_mut(di) {
+            crate::chandlg::circle_refresh_flags(d);
+        }
+    }
+
     fn refresh_live_block(&mut self) {
         let gi = usize::from(self.diagram_dim == Dimension::Dif);
         let Some(d) = self.active_doc() else { return };
@@ -3024,6 +3035,29 @@ impl App {
                 d.set.modified = true;
             }
         }
+    }
+}
+
+/// Test support for the commands that end in the diagrams' refresh-all (#23): a flag the sweeps would clear.
+#[cfg(test)]
+pub(crate) mod stale_flags {
+    use super::App;
+
+    /// The first channel is left on the circle and vector diagrams with a unit neither accepts.
+    pub fn make(app: &mut App) {
+        let d = app.active_doc_mut().unwrap();
+        d.osc.analog[0].unit = "Hz".into();
+        d.chans[0].on_circle = true;
+        d.chans[0].on_vector = true;
+    }
+
+    pub fn swept(app: &App) -> bool {
+        let c = &app.active_doc().unwrap().chans[0];
+        !c.on_circle && !c.on_vector
+    }
+
+    pub fn is_stale(app: &App) -> bool {
+        !swept(app)
     }
 }
 
@@ -4126,5 +4160,49 @@ mod tests {
         assert_eq!((s[3].as_str(), s[5].as_str()), ("Гор. визир 1:    5 ", "Разница г. визиров: 2000 "));
         // No document: the panes keep what they showed.
         assert!(App::new().cursor_status().is_none());
+    }
+
+    fn enter_key() -> egui::RawInput {
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        raw
+    }
+
+    /// #23 / L9.208: the quick analysis (137, `0x4543a0`) ends in the diagrams' refresh-all, which clears a circle /
+    /// vector flag the unit no longer allows.
+    #[test]
+    fn quick_analysis_ends_in_the_refresh_all() {
+        let mut app = demo_app();
+        app.dispatch(Command::QuickAnalysis);
+        crate::app::stale_flags::make(&mut app);
+        assert!(crate::app::stale_flags::is_stale(&app));
+        app.quick_calc();
+        assert!(crate::app::stale_flags::swept(&app));
+    }
+
+    /// 33030 «Цвет канала» (`0x465879`): the accepted dialog ends in the refresh-all.
+    #[test]
+    fn the_channel_colour_dialog_ends_in_the_refresh_all() {
+        let mut app = demo_app();
+        app.active_doc_mut().unwrap().selection = std::collections::BTreeSet::from([ChanKey::Analog(0)]);
+        app.color_dialog = Some(egui::Color32::from_rgb(10, 20, 30));
+        crate::app::stale_flags::make(&mut app);
+        let ctx = egui::Context::default();
+        let _ = ctx.run(enter_key(), |ctx| app.color_window(ctx));
+        assert!(app.color_dialog.is_none(), "Enter accepted the dialog");
+        assert!(crate::app::stale_flags::swept(&app));
+    }
+
+    /// The file-info dialog's «Закрыть» (`0x449f40`, `0x44a294`, `0x44a2ed`) ends in the refresh-all.
+    #[test]
+    fn the_file_info_ok_ends_in_the_refresh_all() {
+        let mut app = demo_app();
+        app.show_file_params = true;
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.record_dialogs_ui(ctx));
+        crate::app::stale_flags::make(&mut app);
+        let _ = ctx.run(enter_key(), |ctx| app.record_dialogs_ui(ctx));
+        assert!(!app.show_file_params, "Enter closed the dialog");
+        assert!(crate::app::stale_flags::swept(&app));
     }
 }

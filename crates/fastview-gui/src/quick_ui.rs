@@ -565,6 +565,8 @@ impl App {
         }
         self.quick_save_pages();
         self.quick_open = false;
+        // The command (137, `0x4543a0`) ends in the refresh-all when the sheet is accepted.
+        self.refresh_blocks();
     }
 
     /// The form of the active quick-analysis page.
