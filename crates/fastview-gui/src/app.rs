@@ -769,7 +769,8 @@ pub struct Doc {
     pub rms: Vec<Vec<f64>>,
     /// Each analog channel's flagged values times the shown factor `k`, per sample, where `k` is not 1
     /// (`0x426020`, the accessor every readout reads through: the DFT, phasor, RMS and a0 sum the
-    /// scaled samples, they do not scale their result). `None`: the flagged series itself. Rebuilt with
+    /// scaled samples, they do not scale their result; a NaN sample stays NaN here where the accessor
+    /// returns 0 — no loader produces NaN today). `None`: the flagged series itself. Rebuilt with
     /// the series by [`Doc::recompute`]; read through [`Doc::shown_samples`].
     pub shown: Vec<Option<Vec<f64>>>,
     /// The record as the channel math sees it: each analog channel's samples
@@ -1055,7 +1056,8 @@ impl Doc {
     }
 
     /// Channel `i`'s values as the accessor `0x426020` returns them: the flagged samples times
-    /// [`Doc::shown_k`], each one on its own.
+    /// [`Doc::shown_k`], each one on its own. (The accessor `0x426020` returns 0 for a NaN sample; this
+    /// series keeps the NaN. No loader produces NaN today.)
     pub fn shown_samples(&self, i: usize) -> &[f64] {
         self.shown.get(i).and_then(Option::as_deref).unwrap_or(&self.flagged.analog[i].samples)
     }
