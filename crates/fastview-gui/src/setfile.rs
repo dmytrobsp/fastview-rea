@@ -301,7 +301,11 @@ impl Doc {
         let old = std::mem::take(&mut self.set.keys);
         let own = |id: &str| comtrade::decode_bytes(&crate::recdlg::shown_bytes_of(id, self.read_enc, self.codepage), Encoding::Cp1251);
         let mut a: Vec<String> = self.osc.analog.iter().enumerate().map(|(i, c)| old.get(i).filter(|_| i < nb).cloned().unwrap_or_else(|| own(&c.id))).collect();
-        let mut d: Vec<String> = self.osc.digital.iter().enumerate().map(|(k, c)| old.get(nb + k).filter(|_| k < nd).cloned().unwrap_or_else(|| own(&c.id))).collect();
+        // The ОМП's flags are named from the program's own strings, 1251
+        // text in any record (a UTF-8 record's `.set` still has «КЗ фазы»,
+        // not the UTF-8 bytes read as 1251; a clone run, #28).
+        let omp = |k: usize| self.dig_flags.get(k).is_some_and(|f| f.omp);
+        let mut d: Vec<String> = self.osc.digital.iter().enumerate().map(|(k, c)| old.get(nb + k).filter(|_| k < nd).cloned().unwrap_or_else(|| if omp(k) { c.id.clone() } else { own(&c.id) })).collect();
         let (ka, kd) = (a.len() - nb, d.len() - nd);
         a[at_a..].rotate_right(ka);
         d[at_d..].rotate_right(kd);
@@ -1518,6 +1522,32 @@ mod tests {
         d.retain_digital_keys(&keep);
         d.osc.digital.remove(0);
         assert_eq!(d.file_key(na), first);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A UTF-8 record keeps the ОМП flags' section names as the program's own
+    /// text in the `.set` (the original's, in a clone run); the UTF-8 bytes
+    /// of a name read as 1251 are only the file's own channels' keys (#28).
+    #[test]
+    fn omp_flags_in_a_utf8_record_keep_their_own_names_as_keys() {
+        let dir = temp_dir("flags8");
+        let cfg = dir.join("rec.cfg");
+        let text = DEMO_CFG.replacen(",1999", ",2013", 1);
+        std::fs::write(&cfg, text).unwrap();
+        std::fs::write(dir.join("rec.dat"), DEMO_DAT).unwrap();
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        let d = &mut app.docs[di];
+        assert_eq!(d.read_enc, Encoding::Utf8, "the demo is UTF-8");
+        let (na, nd) = (d.osc.analog.len(), d.osc.digital.len());
+        let samples = vec![false; d.osc.sample_count()];
+        d.osc.digital.push(fvb_core::DigitalChannel { index: nd as u32 + 1, id: crate::omp_ui::KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples, own_rate: 0.0 });
+        d.digital_visible.resize(nd + 1, true);
+        d.dig_flags.resize(nd + 1, Default::default());
+        d.dig_mut(nd).omp = true;
+        d.move_appended(na, na, 0, nd);
+        assert_eq!(d.file_key(na), crate::omp_ui::KZ_PHASES[0]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
