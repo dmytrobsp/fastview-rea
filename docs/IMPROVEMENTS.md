@@ -163,7 +163,7 @@ misbehaves and the better behaviour is obvious (the maintainer,
 - **A slid-out side or top pane starts below the caption row (#110).** The
   original lays a slid-out auto-hidden pane over the window's whole height
   (a side pane) or width (a top one) from the window's top, its caption
-  under the window's caption glass (`0x10087a4a`'s pane, L9.410); a pin or
+  under the window's caption glass (L9.410); a pin or
   close pressed there still acts (clone, a left pane: the pin docks it
   back, the close hides it, the ribbon button then unchecked), but the
   buttons are invisible, and on a right or top pane they lie under the
@@ -171,7 +171,9 @@ misbehaves and the better behaviour is obvious (the maintainer,
   pane below the caption row, so its caption shows and its pin and close
   work on every edge; the pane is that much shorter. Reason: the
   maintainer's decision (2026-10-31): a pane's pin and close should be in
-  reach. A strip button under the glass (a left strip's first stub) is
+  reach. The hide check still covers the band above the pane up to the
+  window's top, as the original's pane does, so the pointer resting
+  between a top strip and its pane keeps it out. A strip button under the glass (a left strip's first stub) is
   hovered as in the original, which is parity, not an improvement.
 - **A pane's tab dragged out of its strip shows the move cursor (#111).**
   The original keeps the arrow while a tab is pressed and pulled out of

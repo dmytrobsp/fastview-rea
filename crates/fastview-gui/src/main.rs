@@ -3305,6 +3305,30 @@ mod window_tests {
         }
     }
 
+    /// The hide check keeps the original's region (#110): a side or top pane
+    /// is checked from the window's top, so the pointer resting between a top
+    /// strip and its pane, or in the caption row above a side pane, keeps it out.
+    #[test]
+    fn the_hide_check_covers_the_band_above_a_slid_out_pane() {
+        use docking::{Edge, Spot, Unit};
+        for (edge, y) in [(Edge::Top, 23.0), (Edge::Right, 5.0), (Edge::Left, 5.0)] {
+            let mut w = Win::new();
+            w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+            w.app.docks.0[Unit::Vector as usize].pin();
+            w.idle(3);
+            w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+            w.idle(30);
+            let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+            assert!(y < area.top(), "{edge:?}: the probe lies above the pane");
+            let at = Pos2::new(area.center().x, y);
+            let button = w.app.strip_hits[Unit::Vector as usize].buttons.iter().any(|b| b.contains(at));
+            assert!(!button, "{edge:?}: the probe is on no button");
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.idle(60);
+            assert!(w.app.docks[Unit::Vector].out, "{edge:?}: resting above the pane keeps it out");
+        }
+    }
+
     /// A strip button lying wholly under the caption glass is hovered like any
     /// other (#110; VM, the original, a left strip with the second tab in front:
     /// the first tab's 24 px stub, 4 px under the window's top, slides its pane
@@ -3603,9 +3627,9 @@ mod window_tests {
     }
 
     /// A tab pulled out of a tab strip follows the caption drag's distance rule
-    /// (#111; `0x10068657` reads the metric once, `>=` on either axis, as
-    /// `0x10086f3a` does for a caption — scaled with the display by the
-    /// maintainer's decision, L9.411) once the pointer has left the strip (the
+    /// (#111; `0x10068657` reads the metric once, `>=` on either axis — the
+    /// caption's rule `0x10086f3a` is a strict `>` — the distance scaled with
+    /// the display as the caption's, by the maintainer's decision, L9.411) once the pointer has left the strip (the
     /// original needs that: `0x100690b4` calls the detach only outside the tab
     /// area; VM: 5 and 8 px up inside the strip float nothing, 14 px up out of it
     /// floats the pane), with the caption drag's move cursor from the press on.
