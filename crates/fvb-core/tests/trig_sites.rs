@@ -51,7 +51,22 @@ fn phasors_use_the_runtime_sin_cos() {
         assert_eq!(phasor_at(&x, i, n), a, "phasor_at n={n}");
         assert_eq!(sliding_phasors(&x, n)[i], a, "sliding_phasors n={n}");
     }
-    assert!(dre > 0 && dim > 0, "the std-built reference differs in both parts at some n ({dre}, {dim})");
+    // A site reverted to std must fail somewhere: the sin part (re) and the cos part (im) each need a
+    // grid angle where std's result differs from the runtime's. The phasor sums of the 8..260 scan
+    // above show it in the sin part only on some libms (mingw's cos agrees with the port at every
+    // one of those angles, though not on the grid at large), so the guard scans the DFT's angle grid
+    // for n up to 1500 directly, not through the sums, and asks the sums only for one part.
+    let tau = 2.0 * std::f64::consts::PI;
+    let (mut gs, mut gc) = (0, 0);
+    for n in 8..1500usize {
+        for k in 1..=n {
+            let th = tau * k as f64 / n as f64;
+            gs += usize::from(trig::sin(th).to_bits() != th.sin().to_bits());
+            gc += usize::from(trig::cos(th).to_bits() != th.cos().to_bits());
+        }
+    }
+    assert!(gs > 0 && gc > 0, "std differs from the runtime's sin and cos on the DFT's angle grid ({gs}, {gc}); phasor sums ({dre}, {dim})");
+    assert!(dre + dim > 0, "the std-built reference differs in at least one part at some n ({dre}, {dim})");
 }
 
 #[test]
