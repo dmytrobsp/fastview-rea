@@ -3442,6 +3442,29 @@ mod tests {
         assert!(d.osc.analog.iter().all(|c| c.own_rate == 2450.0));
     }
 
+    /// After «Объединить» a rate change in «Параметры файла» sets only the
+    /// record's rate; the lane painters scale the visited count by the
+    /// record's rate ÷ the channel's own (`0x4295dc`, `0x429cf1`) and a
+    /// digital lane's base bar by the same (`0x463e2d`) — #100.
+    #[test]
+    fn a_merged_lane_is_painted_by_the_records_rate_over_its_own() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let own = app.docs[0].osc.analog[3].own_rate;
+        assert_eq!(app.docs[0].lane_ratio(ChanKey::Analog(3)), 1.0, "right after the merge");
+        let faster = (own * 2.0) as i32;
+        assert_eq!(app.apply_file_rate(0, &faster.to_string()), Ok(()));
+        let d = &app.docs[0];
+        assert_eq!(d.lane_ratio(ChanKey::Analog(3)), 2.0, "the record's rate over the channel's");
+        assert_eq!(d.lane_ratio(ChanKey::Digital(0)), 2.0, "digital lanes carry the own rate too");
+        // 480 samples in a 100 px window at 25 px each: 4 samples, 2 visited.
+        assert_eq!(crate::oscgeom::drawn_last(480, 10, 1.0, 100.0, d.lane_ratio(ChanKey::Analog(3))), Some(11));
+        assert_eq!(crate::oscgeom::base_bar_len(100, 1.0, d.lane_ratio(ChanKey::Digital(0))), 5000.0);
+    }
+
     /// Every reader of a channel's period gives an own rate its window
     /// (L9.142): the formula functions, the frequency diagram's bins, a
     /// formula channel's phasors, statistics and correction (#71).

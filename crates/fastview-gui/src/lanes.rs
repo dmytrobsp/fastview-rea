@@ -328,7 +328,7 @@ impl OscView<'_> {
                 let mid = top + 10.0;
                 // The base bar (`0x463e9a`): N·25f from the plot left,
                 // whatever the scroll position.
-                let end_x = (left + g::base_bar_len(s.len(), f, 1.0)).min(plot_right);
+                let end_x = (left + g::base_bar_len(s.len(), f, doc.lane_ratio(*lane))).min(plot_right);
                 pp.rect_filled(Rect::from_min_max(Pos2::new(left, mid - 2.0), Pos2::new(end_x, mid + 2.0)), 0.0, Color32::from_rgb(150, 150, 255));
                 let fill = if r.selected(doc) { Color32::from_rgb(253, 219, 102) } else { digital_fill(doc.dig(*i).omp) };
                 let red = Color32::from_rgb(200, 0, 0);
@@ -362,9 +362,12 @@ impl OscView<'_> {
                     let zy = g::value_y(0.0, top, h, lo, hi);
                     painter_for(order.first().copied()).px_hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
                 }
-                // Offsets 0..min(⌈W/k⌉, len − first) (`0x4295fc`).
-                let last = g::drawn_last(n, first, f, plot_right - left).unwrap_or(first.saturating_sub(1));
+                // Offsets 0..min(⌈W/(k·R/r)⌉, len − first) (`0x4295fc`,
+                // `0x429d24`), R the record's integer rate and r the lane's
+                // own rate, if it has one.
+                let last_of = |m: ChanKey| g::drawn_last(n, first, f, plot_right - left, doc.lane_ratio(m)).unwrap_or(first.saturating_sub(1));
                 for &m in &order {
+                    let last = last_of(m);
                     match m {
                         Lane::Analog(i) => {
                             let c = doc.chans[i].color;
