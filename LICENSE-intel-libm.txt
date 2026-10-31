@@ -1,6 +1,6 @@
-Intel's SSE2 sin / cos (the 2014 libm for x86 in Android's bionic, libm/x86/s_sin.S and s_cos.S), which
+Intel's SSE2 sin / cos / tan (the 2014 libm for x86 in Android's bionic, libm/x86/s_sin.S, s_cos.S and s_tan.S), which
 FastView-REA's crates/fvb-core/src/trig.rs transliterates into Rust, with one change: the table index is
-rounded to nearest, ties to even. The source files carry this notice:
+rounded to nearest, ties to even (for tan, both of its table indices). The source files carry this notice:
 
 Copyright (c) 2014, Intel Corporation
 All rights reserved.

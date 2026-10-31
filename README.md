@@ -217,7 +217,7 @@ own licences — the GNU LGPL 2.1 or later and the Bitstream Vera licence —
 in [assets/fonts/LICENSE-tahoma.txt](assets/fonts/LICENSE-tahoma.txt); and DejaVu Sans for the
 symbols Tahoma lacks ([assets/fonts/LICENSE-dejavu.txt](assets/fonts/LICENSE-dejavu.txt)).
 
-The signal maths' sine and cosine (`crates/fvb-core/src/trig.rs`) are a Rust port of Intel's SSE2 libm routines
+The signal maths' sine, cosine and tangent (`crates/fvb-core/src/trig.rs`) are a Rust port of Intel's SSE2 libm routines
 for x86, BSD-3-Clause, Copyright (c) 2014, Intel Corporation
 ([LICENSE-intel-libm.txt](LICENSE-intel-libm.txt)).
 

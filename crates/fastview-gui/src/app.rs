@@ -975,12 +975,12 @@ impl Doc {
     fn evaluate_formula_list(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
         for j in 0..self.computed.len() {
-            let c = &mut self.computed[j];
+            let c = &self.computed[j];
             if c.formula != "ОМП" && c.formula != "объединение" && c.formula != crate::merge_ui::PENDING {
                 let batch = [(c.name.clone(), c.formula.clone())];
-                let mut out = fvb_core::quick::evaluate_batch_with(&self.flagged, fvb_core::freqcorr::of(&self.osc), &done, &batch, show_primary)?;
+                let mut out = self.eval_formulas(&done, &batch, show_primary)?;
                 if let Some(new) = out.pop() {
-                    c.set_values(new.samples, new.phasors);
+                    self.computed[j].set_values(new.samples, new.phasors);
                 }
             }
             // A later formula reads this one through the accessor and the
@@ -990,6 +990,13 @@ impl Doc {
         }
         self.prune_groups();
         Ok(())
+    }
+
+    /// The formula batch `0x415780` over the record's channels as the accessor `0x426020` returns them
+    /// ([`Doc::shown_samples`]: x·k − dc·k, not `(x − dc)·k`, #105).
+    pub fn eval_formulas(&self, existing: &[fvb_core::quick::ComputedChannel], batch: &[(String, String)], show_primary: bool) -> Result<Vec<fvb_core::quick::ComputedChannel>, fvb_core::expr::FormulaError> {
+        let shown: Vec<&[f64]> = (0..self.flagged.analog.len()).map(|i| self.shown_samples(i)).collect();
+        fvb_core::quick::evaluate_batch_shown(&self.flagged, Some(&shown), fvb_core::freqcorr::of(&self.osc), existing, batch, show_primary)
     }
 
     /// Computed channel `j`'s flags over its evaluation (`0x428490` for a
@@ -2909,7 +2916,7 @@ impl App {
             return None;
         }
         let existing: Vec<_> = d.computed.iter().map(Computed::as_core).collect();
-        match fvb_core::quick::evaluate_batch_with(&d.flagged, fvb_core::freqcorr::of(&d.osc), &existing, batch, show_primary) {
+        match d.eval_formulas(&existing, batch, show_primary) {
             Ok(added) => {
                 let d = self.active_doc_mut()?;
                 let n0 = d.computed.len();
@@ -3265,6 +3272,50 @@ mod tests {
         app.dispatch(Command::ToggleFlag(crate::chansel::ChanFlag::Invert));
         let d = app.active_doc().unwrap();
         assert!(d.computed[0].samples.iter().zip(&raw).all(|(v, r)| *v == 2.0 * (1.0 - r)), "inverted");
+    }
+
+    /// #105: with «Удалить постоянную» a formula reads a channel as the accessor `0x426020` returns it
+    /// (x·k − dc·k), not as `(x − dc)·k`, which differs in the last bits.
+    #[test]
+    fn a_formula_input_follows_the_accessors_remove_dc_order() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1234.0, 7.0, false);
+        d.chans[0].primary = true;
+        d.chans[0].remove_dc = true;
+        d.recompute(true);
+        let name = d.osc.analog[0].id.clone();
+        assert!(app.append_computed(&[("same".into(), format!("\"{name}\""))]).is_some());
+        let d = app.active_doc().unwrap();
+        let (k, dc) = (d.shown_k(0), d.dc_mean[0].0);
+        assert_eq!(k, 1234.0 / 7.0);
+        let mut differs = false;
+        for j in 0..d.osc.sample_count() {
+            let x = d.osc.analog[0].samples[j];
+            differs |= (x * k - dc * k).to_bits() != ((x - dc) * k).to_bits();
+            assert_eq!(d.computed[0].samples[j].to_bits(), (x * k - dc * k).to_bits(), "sample {j}");
+        }
+        assert!(differs, "the record must tell the two orders apart");
+    }
+
+    /// #105 (clone): a «P» record shown «Вторичные», one channel in ADC codes: a formula naming it reads the code as
+    /// the accessor returns it, not times the display factor (the original: «Ia» lane −1878, formula lane −1878).
+    #[test]
+    fn a_formula_reads_an_adc_channel_as_the_accessor_does() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1234.0, 5.0, true);
+        d.chans[0].adc_counts = true;
+        d.recompute(false);
+        let name = d.osc.analog[0].id.clone();
+        assert!(app.append_computed(&[("same".into(), format!("\"{name}\""))]).is_some());
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.shown_k(0), 1.0, "the codes are not scaled");
+        let k = display_k(&d.osc.analog[0], false);
+        assert_ne!(k, 1.0);
+        let codes = d.shown_samples(0);
+        assert!(codes.iter().any(|c| *c != 0.0));
+        assert_eq!(d.computed[0].samples, codes);
     }
 
     /// A computed channel carries invert / DC / the display mode like a file
