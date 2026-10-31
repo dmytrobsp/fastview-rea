@@ -1243,20 +1243,33 @@ enum Act {
     Cmd(Command),
 }
 
-/// The drag payload of the stats panel (`0x42be30`): channel indices of the
-/// active document, ascending.
+/// The drag payload of the stats panel (`0x42be30`): every selected channel
+/// of the active document (`ch+0x100` set, `0x45ea70`) — file, formula,
+/// pasted (pending) and digital ones alike, whatever the drop then makes of
+/// them (#102).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChanDrag {
     pub chans: Vec<usize>,
-    /// The formula channels among them (analog-kind records of the same
-    /// vector, `0x4415b0` walks them all).
+    /// The formula channels among them, pasted (pending) lanes too
+    /// (analog-kind records of the same vector, `0x4415b0` walks them all).
     pub computed: Vec<usize>,
+    pub digital: Vec<usize>,
 }
 
 impl ChanDrag {
     fn of(keys: Vec<ChanKey>) -> ChanDrag {
         let pick = |f: fn(&ChanKey) -> Option<usize>| keys.iter().filter_map(f).collect::<Vec<_>>();
-        ChanDrag { chans: pick(|k| if let ChanKey::Analog(i) = k { Some(*i) } else { None }), computed: pick(|k| if let ChanKey::Computed(j) = k { Some(*j) } else { None }) }
+        ChanDrag {
+            chans: pick(|k| if let ChanKey::Analog(i) = k { Some(*i) } else { None }),
+            computed: pick(|k| if let ChanKey::Computed(j) = k { Some(*j) } else { None }),
+            digital: pick(|k| if let ChanKey::Digital(i) = k { Some(*i) } else { None }),
+        }
+    }
+
+    /// The dragged channels as keys.
+    pub fn keys(&self) -> Vec<ChanKey> {
+        let a = self.chans.iter().map(|&i| ChanKey::Analog(i));
+        a.chain(self.computed.iter().map(|&j| ChanKey::Computed(j))).chain(self.digital.iter().map(|&i| ChanKey::Digital(i))).collect()
     }
 }
 
@@ -1736,7 +1749,15 @@ impl App {
         } else if moved && !ctrl && !menu_busy && self.rename_edit.is_none() && resp.is_pointer_button_down_on() {
             let mode0 = self.vizir_drag.is_none() && self.comment_drag.is_none() && self.merge_drag.is_none() && !matches!(self.rect_zoom, RectZoom::Dragging { .. });
             if let (Some(o), Some(p)) = (origin, now) {
-                let sel: Vec<ChanKey> = doc.selected_analog().into_iter().map(ChanKey::Analog).chain(doc.selected_computed().into_iter().filter(|&j| doc.pending_of(j).is_none()).map(ChanKey::Computed)).collect();
+                // Every selected channel goes (`0x45edd0`: the selected byte
+                // of each record), pasted and digital ones too.
+                let sel: Vec<ChanKey> = doc
+                    .selected_analog()
+                    .into_iter()
+                    .map(ChanKey::Analog)
+                    .chain(doc.selected_computed().into_iter().map(ChanKey::Computed))
+                    .chain(doc.selected_digital().into_iter().map(ChanKey::Digital))
+                    .collect();
                 if mode0 && in_view(o) && p.x < left && !sel.is_empty() {
                     self.stats_drag_arm = Some((p, t, sel));
                 }
@@ -1775,21 +1796,18 @@ impl App {
             }
             None => self.drag_scroll = None,
         }
-        // Drop on a lane (`0x4415b0`, kind 1): x is ignored; the analog lane
-        // under y, unless it is one of the dragged channels, joins them.
+        // Drop on a lane (`0x4415b0`, kind 1): x is ignored; the lane under
+        // y, whatever its kind, unless it is one of the dragged channels,
+        // joins them (a digital or pasted one is refused by 33035's enable
+        // check: message 1086).
         if released && !self.modal_up {
             if let Some(p) = now.filter(|p| in_view(*p) && p.y < plot_bottom) {
                 let lane = rows.iter().zip(&tops).find(|(r, &t)| p.y >= t && p.y < t + r.h).map(|(r, _)| r.key);
                 if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
                     if let Some(drag) = egui::DragAndDrop::take_payload::<ChanDrag>(&ctx) {
-                        let target = lane.and_then(|k| match k {
-                            Lane::Analog(i) if !drag.chans.contains(&i) => Some(ChanKey::Analog(i)),
-                            Lane::Computed(j) if !drag.computed.contains(&j) && doc.pending_of(j).is_none() => Some(ChanKey::Computed(j)),
-                            _ => None,
-                        });
+                        let target = lane.filter(|k| !drag.keys().contains(k));
                         if let Some(target) = target {
-                            let keys = drag.chans.iter().map(|&i| ChanKey::Analog(i)).chain(drag.computed.iter().map(|&j| ChanKey::Computed(j))).collect();
-                            actions.push(Act::DropCombine(keys, target));
+                            actions.push(Act::DropCombine(drag.keys(), target));
                         }
                     }
                 }
@@ -2959,6 +2977,71 @@ mod menu_tests {
         assert!(h.doc().computed[0].group.is_some() && h.doc().computed[0].group == h.doc().chans[1].group, "one lane now");
     }
 
+    /// A pasted (pending) lane and a digital one are dragged like any other
+    /// selected channel and dropped on any lane (`0x45ea70`, `0x4415b0`): the
+    /// drop selects them with the target and 33035's enable check (`0x468c80`)
+    /// refuses them with message 1086 (#102).
+    #[test]
+    fn pasted_and_digital_lanes_take_part_in_a_drag_and_the_drop_is_refused() {
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(1)].into_iter().collect();
+        h.app.copy_channels_for_merge();
+        h.app.paste_channels_for_merge();
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let pend = rows.iter().position(|r| matches!(r.key, Lane::Computed(j) if h.doc().pending_of(j).is_some())).expect("the pasted lane");
+        let file = rows.iter().position(|r| matches!(r.key, Lane::Analog(_))).expect("a file lane");
+        let (pk, fk) = (rows[pend].key, rows[file].key);
+        // The pasted lane dragged onto a file lane.
+        h.app.active_doc_mut().unwrap().selection = [pk].into_iter().collect();
+        drag_rows(&mut h, pend, file);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "message 1086");
+        assert!(h.doc().selection.contains(&pk) && h.doc().selection.contains(&fk), "the drop selected both");
+        h.app.dlg.alerts.clear();
+        // A file lane dragged onto the pasted one.
+        h.app.active_doc_mut().unwrap().selection = [fk].into_iter().collect();
+        drag_rows(&mut h, file, pend);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "a drop on a pasted lane: message 1086");
+        h.app.dlg.alerts.clear();
+        // A digital lane, both ways.
+        let dig = rows.iter().position(|r| matches!(r.key, Lane::Digital(_))).expect("a digital lane");
+        let dk = rows[dig].key;
+        h.app.active_doc_mut().unwrap().selection = [dk].into_iter().collect();
+        drag_rows(&mut h, dig, file);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "a digital lane dragged: message 1086");
+        h.app.dlg.alerts.clear();
+        h.app.active_doc_mut().unwrap().selection = [fk].into_iter().collect();
+        drag_rows(&mut h, file, dig);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "a drop on a digital lane: message 1086");
+    }
+
+    /// The drop on a diagram pane takes formula channels too (#103): the
+    /// pane's command 35000+i sets the channel's bit for every record
+    /// (`0x46f100`, `0x48f590`); the circle diagram only an Ohm / VA channel
+    /// that is not pending.
+    #[test]
+    fn dropping_formula_channels_on_diagram_panes() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        assert!(app.append_computed(&[("X".into(), "Ub".into())]).is_some());
+        let d = app.active_doc_mut().unwrap();
+        d.computed[0].unit = "Ohm".into();
+        (d.computed[0].on_freq, d.computed[0].on_vector, d.computed[0].on_circle) = (false, false, false);
+        app.drop_channels(&[ChanKey::Computed(0)], crate::app::Pane::Frequency);
+        app.drop_channels(&[ChanKey::Computed(0)], crate::app::Pane::Vector);
+        app.drop_channels(&[ChanKey::Computed(0)], crate::app::Pane::Circle);
+        let d = app.active_doc().unwrap();
+        assert!(d.computed[0].on_freq && d.computed[0].on_vector && d.computed[0].on_circle);
+        assert!(d.set.modified);
+        // Another unit: not on the circle diagram.
+        let d = app.active_doc_mut().unwrap();
+        d.computed[0].unit = "A".into();
+        d.computed[0].on_circle = false;
+        app.drop_channels(&[ChanKey::Computed(0)], crate::app::Pane::Circle);
+        assert!(!app.active_doc().unwrap().computed[0].on_circle);
+    }
+
     #[test]
     fn dropping_on_diagram_panes_adds_the_channels() {
         let mut app = App::new();
@@ -2968,10 +3051,10 @@ mod menu_tests {
             (c.on_freq, c.on_vector, c.on_circle) = (false, false, false);
         }
         let ohm = d.osc.analog.iter().position(|a| a.unit.eq_ignore_ascii_case("ohm"));
-        app.drop_channels(&[0, 1], crate::app::Pane::Frequency);
-        app.drop_channels(&[0], crate::app::Pane::Vector);
-        app.drop_channels(&[0], crate::app::Pane::Circle);
-        app.drop_channels(&[0], crate::app::Pane::Differential);
+        app.drop_channels(&[ChanKey::Analog(0), ChanKey::Analog(1)], crate::app::Pane::Frequency);
+        app.drop_channels(&[ChanKey::Analog(0)], crate::app::Pane::Vector);
+        app.drop_channels(&[ChanKey::Analog(0)], crate::app::Pane::Circle);
+        app.drop_channels(&[ChanKey::Analog(0)], crate::app::Pane::Differential);
         let d = app.active_doc().unwrap();
         assert!(d.chans[0].on_freq && d.chans[1].on_freq && d.chans[0].on_vector);
         assert_eq!(d.chans[0].on_circle, ohm == Some(0) || d.osc.analog[0].unit.eq_ignore_ascii_case("va"), "the circle diagram takes Ohm / VA only");
