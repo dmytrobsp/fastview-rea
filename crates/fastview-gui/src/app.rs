@@ -3060,6 +3060,31 @@ mod tests {
         }
     }
 
+    /// A formula channel is an analog record like the file's: its frequency
+    /// diagram bins go through the record's selected frequency channel
+    /// (`0x426510` → `0x4267e0`; the test there is on the channel being
+    /// measured, not on its kind), not through a vector of their own
+    /// (L9.189's open question, #42).
+    #[test]
+    fn a_formula_channels_spectrum_is_corrected_by_the_records_frequency_channel() {
+        let cfg = DEMO_CFG.replacen("2,Ub,B,,V,", "2,Ub,B,,Гц,", 1);
+        let osc = fvb_core::comtrade::parse(&cfg, DEMO_DAT).unwrap();
+        let mut app = App::new();
+        app.docs.push(Doc::new(osc, "f".into()));
+        app.active = Some(0);
+        assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
+        let d = &app.docs[0];
+        assert_eq!(d.osc.freq_sel, 1, "the frequency channel is selected");
+        let n = d.osc.samples_per_cycle().max(2);
+        let x = &d.computed[0].samples;
+        let k = 300;
+        let plain = fvb_core::signal::spectrum(x, k, n, 1, 5, d.osc.harmonic1_gain);
+        let corrected = crate::diagram_ui::freq_bins(d, x, Some(ChanKey::Computed(0)), 0.0, k, 1, 5);
+        let want = fvb_core::freqcorr::spectrum(d.computed_corr(0), x, k, n, 1, 5, d.osc.harmonic1_gain);
+        assert_eq!(corrected, want);
+        assert_ne!(corrected, plain, "the correction reaches a formula channel");
+    }
+
     #[test]
     fn frequency_correction_on_load_off_and_back() {
         let cfg = DEMO_CFG.replacen("2,Ub,B,,V,", "2,Ub,B,,Гц,", 1);
@@ -3604,7 +3629,7 @@ mod tests {
         let want_b = fvb_core::signal::rms_at(d.shown_samples(4), k, n_rec);
         assert!((d.computed[1].samples[k] - want_b).abs() < 1e-9, "a channel without one keeps the record's");
         // The frequency diagram's bins.
-        let bins = crate::diagram_ui::freq_bins(d, d.shown_samples(3), Some(3), own, k, 1, 5);
+        let bins = crate::diagram_ui::freq_bins(d, d.shown_samples(3), Some(ChanKey::Analog(3)), own, k, 1, 5);
         assert_eq!(bins, fvb_core::signal::spectrum(d.shown_samples(3), k, n_own, 1, 5, d.osc.harmonic1_gain));
         // A formula channel with an own rate: its window.
         let d = &mut app.docs[0];
@@ -3653,9 +3678,9 @@ mod tests {
         assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
         let d = &app.docs[0];
         let pct = |b: Vec<f64>| b.iter().map(|v| (v / b[1] * 1000.0).round() / 10.0).collect::<Vec<_>>();
-        let x = pct(crate::diagram_ui::freq_bins(d, &d.computed[0].samples, None, 0.0, 236, 1, 10));
+        let x = pct(crate::diagram_ui::freq_bins(d, &d.computed[0].samples, Some(ChanKey::Computed(0)), 0.0, 236, 1, 10));
         assert_eq!(x, [45.6, 100.0, 31.8, 20.0, 14.9, 12.1, 10.3, 9.1, 8.3, 7.7, 7.4]);
-        let m = pct(crate::diagram_ui::freq_bins(d, d.shown_samples(0), Some(0), d.osc.analog[0].own_rate, 236, 1, 10));
+        let m = pct(crate::diagram_ui::freq_bins(d, d.shown_samples(0), Some(ChanKey::Analog(0)), d.osc.analog[0].own_rate, 236, 1, 10));
         assert_eq!(m, [0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
     }
 

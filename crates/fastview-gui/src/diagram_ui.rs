@@ -7,7 +7,7 @@
 //! frequency settings dialog 353. Painted with egui's painter: no free pan,
 //! box zoom or egui legend — only the original's (z, ox, oy) model.
 
-use crate::app::{App, Doc};
+use crate::app::{App, ChanKey, Doc};
 use crate::diagram::{self as dg, ChanPair, DiagCmd, MenuChan, PlaneView, WheelAct};
 use crate::popmenu::{self, Entry, PopMenu};
 use crate::oscgeom::PixelLines;
@@ -388,9 +388,15 @@ fn shown_by_name(d: &Doc, name: &str) -> fvb_core::units::Shown {
 /// A channel's bins in the frequency diagram (`0x426510`): its window is
 /// round(own rate / 50) with an own rate (`ch+0x108`), else the record's, and
 /// the correction runs at that rate too.
-pub(crate) fn freq_bins(d: &Doc, samples: &[f64], file: Option<usize>, own_rate: f64, pos: usize, periods: usize, k_max: usize) -> Vec<f64> {
-    let corr = fvb_core::freqcorr::of(&d.osc);
-    let mine = file.and_then(|i| corr.and_then(|cr| cr.for_chan(i))).map(|c| c.at_rate(own_rate));
+pub(crate) fn freq_bins(d: &Doc, samples: &[f64], who: Option<ChanKey>, own_rate: f64, pos: usize, periods: usize, k_max: usize) -> Vec<f64> {
+    let mine = match who {
+        Some(ChanKey::Analog(i)) => fvb_core::freqcorr::of(&d.osc).and_then(|cr| cr.for_chan(i)).map(|c| c.at_rate(own_rate)),
+        // A formula channel is an analog record like the others: `0x426510`
+        // reads the record's selected frequency channel for it too (not its
+        // own `ch+0x50`), unless it is that channel itself.
+        Some(ChanKey::Computed(j)) => d.computed_corr(j),
+        _ => None,
+    };
     fvb_core::freqcorr::spectrum(mine, samples, pos, d.osc.period_of(own_rate).max(2), periods, k_max, d.osc.harmonic1_gain)
 }
 
@@ -1618,15 +1624,15 @@ impl App {
             name: &'a str,
             color: Color32,
             samples: &'a [f64],
-            /// The file channel (its frequency correction and k).
-            file: Option<usize>,
+            /// The channel (its frequency correction and k).
+            file: Option<ChanKey>,
             /// Its own rate (`ch+0x108`): the window and the correction's rate.
             own_rate: f64,
         }
         let chans: Vec<FreqChan> = (0..d.osc.analog.len())
             .filter(|i| d.chans[*i].on_freq)
-            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: d.shown_samples(i), file: Some(i), own_rate: d.osc.analog[i].own_rate })
-            .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && d.pending_of(*j).is_none()).map(|(_, c)| FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: None, own_rate: c.own_rate }))
+            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: d.shown_samples(i), file: Some(ChanKey::Analog(i)), own_rate: d.osc.analog[i].own_rate })
+            .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && d.pending_of(*j).is_none()).map(|(j, c)| FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: Some(ChanKey::Computed(j)), own_rate: c.own_rate }))
             .collect();
         let s = print_s().unwrap_or(1.0);
         let si = s as i32;
@@ -1674,7 +1680,13 @@ impl App {
             let sp: Vec<f64> = freq_bins(d, samples, ch.file, ch.own_rate, pos, periods, k_max.max(periods));
             let max = sp[..=k_max].iter().copied().fold(0.0, f64::max);
             let max = if max == 0.0 { 1.0 } else { max };
-            let norm = if use_rms { fvb_core::freqcorr::rms_at(ch.file.and(corr).map(|c| c.at_rate(ch.own_rate)), ch.file.unwrap_or(0), samples, pos, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
+            let norm = if use_rms {
+                match ch.file {
+                    Some(ChanKey::Computed(j)) => fvb_core::freqcorr::rms_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, samples, pos, n, periods),
+                    Some(ChanKey::Analog(i)) => fvb_core::freqcorr::rms_at(corr.map(|c| c.at_rate(ch.own_rate)), i, samples, pos, n, periods),
+                    _ => fvb_core::freqcorr::rms_at(None, 0, samples, pos, n, periods),
+                }
+            } else { sp.get(periods).copied().unwrap_or(0.0) };
             let color = ch.color;
             if g.plot_h() - 30 * si - g.h <= 0 {
                 continue;
@@ -2261,7 +2273,7 @@ mod tests {
             let n = d.osc.samples_per_cycle().max(2);
             let found = (0..d.osc.analog.len()).find_map(|i| {
                 (n * periods..d.osc.sample_count()).find_map(|pos| {
-                    let v = super::freq_bins(d, d.shown_samples(i), Some(i), d.osc.analog[i].own_rate, pos, periods, k_max.min(n * periods / 2).max(periods))[periods];
+                    let v = super::freq_bins(d, d.shown_samples(i), Some(ChanKey::Analog(i)), d.osc.analog[i].own_rate, pos, periods, k_max.min(n * periods / 2).max(periods))[periods];
                     (v != 0.0 && fvb_core::views::freq_label(100.0 * v / v).trim() == "100.0").then_some((i, pos))
                 })
             });
