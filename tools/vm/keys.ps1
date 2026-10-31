@@ -11,7 +11,16 @@
 # "CLOSE" (WM_CLOSE to the front window), "SHOT name.png" (a capture now),
 # "WINS name.txt" (the program's top-level windows: handle, owner, visible,
 # enabled, class, title — into shots/), "CURSOR name.txt" (the cursor now
-# shown, by its IDC_ name when it is a system one — appended to shots/).
+# shown, by its IDC_ name when it is a system one — appended to shots/),
+# "FOCUS name.txt" (the keyboard focus of the front window's thread: the
+# focus window's handle, class, visibility and its ancestors, and its
+# untitled children — appended to shots/), "CLIP name.txt" (the clipboard's
+# formats now, by number or registered name — appended to shots/), "TREE
+# name.txt" (the front window's descendants, indented: class, title, visible,
+# enabled, rectangle — into shots/), "FLOATAT x,y" (the first visible
+# floating pane's mini-frame moved so that its top-left corner is at x,y,
+# its size kept), "CLIPEMF name.emf" (the clipboard's enhanced metafile
+# saved into shots/).
 # Logs next to itself.
 param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave, [switch]$Soft, [string]$SoftLog = '')
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -57,6 +66,83 @@ public static class In {
     var names = new System.Collections.Generic.Dictionary<int, string> { {32512, "ARROW"}, {32513, "IBEAM"}, {32514, "WAIT"}, {32515, "CROSS"}, {32516, "UPARROW"}, {32642, "SIZENWSE"}, {32643, "SIZENESW"}, {32644, "SIZEWE"}, {32645, "SIZENS"}, {32646, "SIZEALL"}, {32648, "NO"}, {32649, "HAND"}, {32650, "APPSTARTING"}, {32651, "HELP"} };
     foreach (var kv in names) if (LoadCursor(IntPtr.Zero, (IntPtr)kv.Key) == ci.hCursor) return kv.Value + " at " + ci.x + "," + ci.y;
     return string.Format("{0:X} at {1},{2}", (long)ci.hCursor, ci.x, ci.y);
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int l, t, r, b; }
+  [StructLayout(LayoutKind.Sequential)] public struct GTI { public int cb; public int flags; public IntPtr active, focus, capture, menu, move, caret; public RECT rc; }
+  [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint tid, ref GTI gti);
+  [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr after, string cls, string title);
+  [DllImport("user32.dll")] public static extern bool OpenClipboard(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool CloseClipboard();
+  [DllImport("user32.dll")] public static extern uint EnumClipboardFormats(uint f);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClipboardFormatName(uint f, System.Text.StringBuilder s, int n);
+  static string Desc(IntPtr h) {
+    if (h == IntPtr.Zero) return "(none)";
+    var c = new System.Text.StringBuilder(256); GetClassName(h, c, 256);
+    var t = new System.Text.StringBuilder(256); GetWindowText(h, t, 256);
+    return string.Format("{0:X} class={1} title={2} vis={3} en={4}", (long)h, c, t, IsWindowVisible(h), IsWindowEnabled(h));
+  }
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int ht, uint flags);
+  public static string FloatAt(uint pid, int x, int y) {
+    string res = "no mini-frame";
+    EnumWindows((h, l) => {
+      uint p; GetWindowThreadProcessId(h, out p);
+      var c = new System.Text.StringBuilder(256); GetClassName(h, c, 256);
+      if (p == pid && c.ToString().StartsWith("Afx:MiniFrame") && IsWindowVisible(h)) {
+        RECT r; GetWindowRect(h, out r);
+        SetWindowPos(h, IntPtr.Zero, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010);
+        GetWindowRect(h, out r);
+        res = string.Format("mini-frame now at {0},{1},{2},{3}", r.l, r.t, r.r, r.b);
+        return false;
+      }
+      return true;
+    }, IntPtr.Zero);
+    return res;
+  }
+  public static string Focus() {
+    var o = new System.Text.StringBuilder();
+    IntPtr fg = GetForegroundWindow();
+    uint pid; uint tid = GetWindowThreadProcessId(fg, out pid);
+    var g = new GTI(); g.cb = Marshal.SizeOf(typeof(GTI));
+    if (!GetGUIThreadInfo(tid, ref g)) return "no thread info\n";
+    o.AppendFormat("foreground: {0}\nactive: {1}\nfocus: {2}\n", Desc(fg), Desc(g.active), Desc(g.focus));
+    for (IntPtr p = GetParent(g.focus); p != IntPtr.Zero; p = GetParent(p)) o.AppendFormat("  parent: {0}\n", Desc(p));
+    if (g.focus != IntPtr.Zero) {
+      IntPtr c = IntPtr.Zero;
+      while ((c = FindWindowEx(g.focus, c, null, "")) != IntPtr.Zero) o.AppendFormat("  untitled child: {0}\n", Desc(c));
+    }
+    return o.ToString();
+  }
+  static void Tree(IntPtr h, int depth, System.Text.StringBuilder o) {
+    RECT r; GetWindowRect(h, out r);
+    o.AppendFormat("{0}{1} [{2},{3},{4},{5}]\n", new string(' ', depth * 2), Desc(h), r.l, r.t, r.r, r.b);
+    for (IntPtr c = GetWindow(h, 5); c != IntPtr.Zero; c = GetWindow(c, 2)) Tree(c, depth + 1, o);
+  }
+  public static string Tree() {
+    var o = new System.Text.StringBuilder(); Tree(GetForegroundWindow(), 0, o); return o.ToString();
+  }
+  [DllImport("user32.dll")] public static extern IntPtr GetClipboardData(uint f);
+  [DllImport("gdi32.dll")] public static extern uint GetEnhMetaFileBits(IntPtr h, uint n, byte[] buf);
+  public static byte[] ClipEmf() {
+    if (!OpenClipboard(IntPtr.Zero)) return null;
+    try {
+      IntPtr h = GetClipboardData(14);
+      if (h == IntPtr.Zero) return null;
+      uint n = GetEnhMetaFileBits(h, 0, null);
+      var b = new byte[n]; GetEnhMetaFileBits(h, n, b); return b;
+    } finally { CloseClipboard(); }
+  }
+  public static string Clip() {
+    if (!OpenClipboard(IntPtr.Zero)) return "clipboard busy\n";
+    var o = new System.Text.StringBuilder();
+    for (uint f = EnumClipboardFormats(0); f != 0; f = EnumClipboardFormats(f)) {
+      var n = new System.Text.StringBuilder(256);
+      int k = GetClipboardFormatName(f, n, 256);
+      o.AppendFormat("{0} {1}\n", f, k > 0 ? n.ToString() : "");
+    }
+    CloseClipboard();
+    return o.Length == 0 ? "(empty)\n" : o.ToString();
   }
   public static string List(uint pid) {
     var o = new System.Text.StringBuilder();
@@ -153,6 +239,18 @@ foreach ($k in ($Keys -split ';')) {
             $dc = $g.GetHdc(); [In]::DrawIconEx($dc, 0, 0, [IntPtr][Convert]::ToInt64($Matches[1], 16), 32, 32, 0, [IntPtr]::Zero, 3) | Out-Null; $g.ReleaseHdc($dc)
             $g.Dispose(); $bmp.Save((Join-Path (Join-Path $here 'shots') ("cursor_" + $Matches[1] + ".png"))); $bmp.Dispose()
         }
+    } elseif ($k -match '^FLOATAT (\d+),(\d+)$') {
+        $r = [In]::FloatAt([uint32]$p.Id, [int]$Matches[1], [int]$Matches[2])
+        "$k -> $r" | Out-File $log -Append -Encoding utf8
+    } elseif ($k -match '^FOCUS (.+)$') {
+        "--- after step $($k)`n" + [In]::Focus() | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Append -Encoding utf8
+    } elseif ($k -match '^CLIPEMF (.+)$') {
+        $b = [In]::ClipEmf()
+        if ($b) { [IO.File]::WriteAllBytes((Join-Path (Join-Path $here 'shots') $Matches[1]), $b) } else { "no EMF" | Out-File $log -Append -Encoding utf8 }
+    } elseif ($k -match '^CLIP (.+)$') {
+        "--- after step $($k)`n" + [In]::Clip() | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Append -Encoding utf8
+    } elseif ($k -match '^TREE (.+)$') {
+        [In]::Tree() | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Encoding utf8
     } elseif ($k -match '^WINS (.+)$') {
         [In]::List([uint32]$p.Id) | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Encoding utf8
     } elseif ($k -match '^SHOT (.+)$') {
