@@ -3640,6 +3640,29 @@ mod window_tests {
         }
     }
 
+    /// #128 (clone, the original): with a top strip as well, a slid-out side
+    /// pane starts at the strip's top, the caption row's bottom, and its hide
+    /// region with it: the pointer resting in the caption row above the pane
+    /// no longer keeps it out.
+    #[test]
+    fn a_side_pane_beside_a_top_strip_is_not_held_from_the_windows_top() {
+        use docking::{Edge, Spot, Unit};
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Right, outer: true };
+        w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: Edge::Top, outer: true };
+        w.app.docks.0[Unit::Frequency as usize].pin();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+        w.idle(30);
+        let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+        let at = Pos2::new(area.center().x, 5.0);
+        assert!(at.y < area.top());
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.idle(60);
+        assert!(!w.app.docks[Unit::Vector].out, "resting in the caption row above the pane lets it slide in");
+    }
+
     /// A strip button lying wholly under the caption glass is hovered like any
     /// other (#110; VM, the original, a left strip with the second tab in front:
     /// the first tab's 24 px stub, 4 px under the window's top, slides its pane

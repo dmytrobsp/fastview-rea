@@ -838,8 +838,14 @@ impl App {
             let (pane, divider) = (self.dock_areas[v.unit as usize], self.dock_dividers[v.unit as usize]);
             // The original's pane starts at the window's top, so its check
             // covers that too: a side or top pane's region reaches up there
-            // although ours is drawn from the caption row's bottom.
-            let pane = pane.map(|a| if self.docks.edge(v.unit) == crate::docking::Edge::Bottom { a } else { egui::Rect::from_min_max(egui::pos2(a.left(), ctx.screen_rect().top().min(a.top())), a.max) });
+            // although ours is drawn from the caption row's bottom. With a
+            // top strip beside a side pane the original's starts at the
+            // strip's top, the caption row's bottom (#128, VM: the pointer
+            // resting in the caption row above the pane lets it slide in).
+            let edge = self.docks.edge(v.unit);
+            let top_strip = self.strip_inset[crate::docking::Edge::Top as usize] > 0.0;
+            let from_top = !(edge == crate::docking::Edge::Bottom || (top_strip && edge.vertical()));
+            let pane = pane.map(|a| if from_top { egui::Rect::from_min_max(egui::pos2(a.left(), ctx.screen_rect().top().min(a.top())), a.max) } else { a });
             let inside = pointer.is_some_and(|q| pane.is_some_and(|a| a.contains(q)) || divider.is_some_and(|a| a.contains(q)) || hit.buttons.iter().any(|b| b.contains(q)));
             // Nor while the pane holds the focus: the check returns at once
             // while its active flag (+0x2c8) is set — at each idle update
