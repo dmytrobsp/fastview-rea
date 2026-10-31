@@ -23,6 +23,7 @@ impl App {
     pub fn diagram_panes(&mut self, ctx: &egui::Context) {
         use crate::docking::Place;
         self.pane_canvas.clear();
+        self.drop_targets.clear();
         self.pane_tab_rects.clear();
         self.pane_grid.clear();
         self.dock_client = ctx.available_rect();
@@ -462,7 +463,7 @@ impl App {
                 egui::CentralPanel::default().frame(egui::Frame::none().inner_margin(egui::Margin { left: 1.0, right: 2.0, top: 1.0, bottom: 1.0 })).show_inside(ui, |ui| {
                     self.pane_canvas.push((Pane::Vector, ui.available_rect_before_wrap()));
                     self.vector_ui(ui);
-                    self.pane_drop(ui, Pane::Vector);
+                    self.pane_drop(ui, ui.max_rect(), Pane::Vector);
                     // A white column before the toolbar, as the plane's.
                     let m = ui.max_rect();
                     let w = egui::Rect::from_min_max(m.min - egui::vec2(1.0, 1.0), m.max + egui::vec2(2.0, 1.0));
@@ -475,16 +476,19 @@ impl App {
                 // pane's is brought in.
                 self.switch_diagram(pane_dim(p));
                 self.pane_toolbar(ui, if p == Pane::Circle { Window::Circle } else { Window::Diff });
+                // The circle window (grid and diagram, `0x437560`) is the drop
+                // target, not the toolbar of the pane around it.
+                let window = ui.available_rect_before_wrap();
                 grid_menu = self.char_ui(ui, p);
                 // The differential diagram has no drop target.
                 if p == Pane::Circle {
-                    self.pane_drop(ui, Pane::Circle);
+                    self.pane_drop(ui, window, Pane::Circle);
                 }
             }
             Pane::Frequency => {
                 self.pane_canvas.push((Pane::Frequency, ui.available_rect_before_wrap()));
                 self.frequency_ui(ui);
-                self.pane_drop(ui, Pane::Frequency);
+                self.pane_drop(ui, ui.max_rect(), Pane::Frequency);
             }
         }
         grid_menu
@@ -1137,15 +1141,19 @@ impl App {
     /// 2 / 4 / 8): each dragged channel not on the diagram is put on it
     /// (35000+i; the circle diagram only takes Ohm / VA channels,
     /// CompareNoCase) and the document is marked modified.
-    pub fn pane_drop(&mut self, ui: &egui::Ui, pane: Pane) {
+    pub fn pane_drop(&mut self, ui: &egui::Ui, rect: egui::Rect, pane: Pane) {
         let ctx = ui.ctx();
+        self.drop_targets.push((pane, rect));
         let (released, pos) = ctx.input(|i| (i.pointer.primary_released(), i.pointer.latest_pos()));
-        if !released || !pos.is_some_and(|p| ui.max_rect().contains(p)) || !egui::DragAndDrop::has_payload_of_type::<crate::lanes::ChanDrag>(ctx) {
-            return;
-        }
+        let Some(drag) = egui::DragAndDrop::payload::<crate::lanes::ChanDrag>(ctx) else { return };
         // The window under the pointer takes the drop: not a diagram that a
         // floating or slid-out window lies over (clone).
-        if pos.is_some_and(|p| ctx.layer_id_at(p).is_some_and(|l| l != ui.layer_id() && is_pane_window_layer(l))) {
+        let over = pos.filter(|p| rect.contains(*p) && !ctx.layer_id_at(*p).is_some_and(|l| l != ui.layer_id() && is_pane_window_layer(l)));
+        let Some(_) = over else { return };
+        // Another record's channel numbers mean nothing here (#74).
+        let mine = self.active_doc().is_some_and(|d| d.serial == drag.doc);
+        self.drag_cursor = Some(if mine { crate::lanes::MOVE_DROP_CURSOR } else { egui::CursorIcon::NoDrop });
+        if !released || !mine {
             return;
         }
         let Some(drag) = egui::DragAndDrop::take_payload::<crate::lanes::ChanDrag>(ctx) else { return };
