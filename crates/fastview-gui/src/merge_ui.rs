@@ -1111,6 +1111,37 @@ mod tests {
         assert!(!d.primary_values(), "the document's mode is its first channel's");
     }
 
+    /// 32852 skips bit 13 only (`0x430340`, `0x430650`): a pasted analog lane
+    /// takes «Отображать в отсчетах АЦП» and then reads its ADC codes; a
+    /// formula channel selected with it is counted but never set, so the
+    /// item is unchecked and a click sets (#42, L9.197).
+    #[test]
+    fn adc_applies_to_pending_lanes() {
+        use crate::chansel::ChanFlag;
+        let mut app = demo_app();
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
+        d.selection = std::collections::BTreeSet::from([ChanKey::Computed(j)]);
+        assert_eq!(d.flag_state(ChanFlag::Adc), crate::chansel::ItemState { enabled: true, checked: false });
+        d.toggle_flag_selected(ChanFlag::Adc);
+        assert!(d.computed[j].adc_counts);
+        assert_eq!(d.flag_state(ChanFlag::Adc), crate::chansel::ItemState { enabled: true, checked: true });
+        let codes: Vec<f64> = d.osc.analog[0].samples.iter().map(|&v| d.osc.analog[0].adc_code(v)).collect();
+        assert_eq!(d.computed[j].pending_own, codes, "the lane reads the codes");
+        // A formula channel in the selection is counted, never set: unchecked.
+        let mut f = crate::app::Computed::new("F1".into(), "1".into(), vec![0.0; d.osc.time.len()], eframe::egui::Color32::RED);
+        f.unit = String::new();
+        d.computed.push(f);
+        let fj = d.computed.len() - 1;
+        d.selection.insert(ChanKey::Computed(fj));
+        assert!(!d.flag_state(ChanFlag::Adc).checked);
+        d.toggle_flag_selected(ChanFlag::Adc);
+        assert!(d.computed[j].adc_counts && !d.computed[fj].adc_counts);
+    }
+
     /// A pending lane's flags (L9.111's residual; `0x428490` with bit 14):
     /// invert / DC over its own samples, shown before the merge; the merge
     /// reads it through the accessor (baked) and the merged channel keeps

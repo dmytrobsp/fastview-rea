@@ -376,6 +376,10 @@ pub struct Computed {
     pub raw_phasors: Option<Vec<Complex64>>,
     pub invert: bool,
     pub remove_dc: bool,
+    /// «Отображать в отсчетах АЦП» (bit 12) on a pasted analog lane: 32852
+    /// skips bit 13 only, so pending lanes take it (`0x430407`, `0x4304f5`);
+    /// the lane then reads its ADC codes (`0x426020` → `0x422250`).
+    pub adc_counts: bool,
     /// The display mode (bits 7–9): the lane, its value and Max / Min read
     /// `display` (`ch+0x2c`), the RMS / first-harmonic series of `samples`.
     pub mode: ValueMode,
@@ -426,6 +430,7 @@ impl Computed {
             raw_phasors: None,
             invert: false,
             remove_dc: false,
+            adc_counts: false,
             mode: ValueMode::Instant,
             display: Vec::new(),
             pending_own: Vec::new(),
@@ -1030,7 +1035,12 @@ impl Doc {
                     let own_corr = corr.map(|q| fvb_core::freqcorr::FreqCorr { fs: if p.pasted.rate == 0.0 { q.fs } else { p.pasted.rate }, ..q });
                     // Read ×k in the copied channel's display mode.
                     let k = p.display_k();
-                    let x: Vec<f64> = a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v * k }).collect();
+                    let x: Vec<f64> = if c.adc_counts {
+                        // The code is not scaled by k (`0x426020`).
+                        a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { a.adc_code(*v) }).collect()
+                    } else {
+                        a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v * k }).collect()
+                    };
                     let dc = if c.remove_dc { whole_period_mean(&x, pn) } else { 0.0 };
                     c.pending_own = x.iter().map(|v| sign * (v - dc)).collect();
                     c.pending_phasors = fvb_core::freqcorr::sliding_phasors(own_corr, fvb_core::freqcorr::OTHER, &c.pending_own, pn);

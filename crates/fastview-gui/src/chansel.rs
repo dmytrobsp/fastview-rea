@@ -236,7 +236,27 @@ impl Doc {
     }
 
 
+    /// 32852's targets (`0x430650`, `0x430340`): the selected analog-kind
+    /// records — file, formula (bit 13, counted but never set) and pasted
+    /// analog lanes (bit 14, which take the mode). Returns (file indices,
+    /// pending lanes, formula channels).
+    fn adc_targets(&self) -> (Vec<usize>, Vec<usize>, usize) {
+        let comp = self.selected_computed();
+        let pend: Vec<usize> = comp.iter().copied().filter(|&j| self.computed[j].formula == crate::merge_ui::PENDING && !self.pending_digital(j)).collect();
+        let formulas = comp.iter().filter(|&&j| self.computed[j].formula != crate::merge_ui::PENDING).count();
+        (self.selected_analog(), pend, formulas)
+    }
+
     pub fn flag_state(&self, f: ChanFlag) -> ItemState {
+        if f == ChanFlag::Adc {
+            // Checked iff every selected analog-kind record has the bit, a
+            // formula channel never (`0x430a31`: set count = selected
+            // count); enabled while the record has any analog channel.
+            let (a, p, formulas) = self.adc_targets();
+            let set = a.iter().filter(|&&i| self.chans[i].adc_counts).count() + p.iter().filter(|&&j| self.computed[j].adc_counts).count();
+            let count = a.len() + p.len() + formulas;
+            return ItemState { enabled: !self.chans.is_empty(), checked: count > 0 && set == count };
+        }
         let comp = self.computed_flag_targets(f);
         let cflag = |j: usize| match f {
             ChanFlag::OnFreq => self.computed[j].on_freq,
@@ -271,13 +291,6 @@ impl Doc {
                 });
             st.enabled = !self.chans.is_empty() && !bad;
         }
-        // «Отображать в отсчетах АЦП» counts the selected formula channels
-        // (analog records) for its enabling, but they never take the mode:
-        // with only those selected it is enabled, unchecked, and does
-        // nothing (VM).
-        if f == ChanFlag::Adc && !self.selected_computed().is_empty() {
-            st.enabled = true;
-        }
         st
     }
 
@@ -289,6 +302,19 @@ impl Doc {
             return;
         }
         let v = !st.checked;
+        if f == ChanFlag::Adc {
+            // Formula channels are skipped (VM: with only those selected
+            // nothing changes); pasted lanes take the bit and recompute.
+            let (a, p, _) = self.adc_targets();
+            for i in a {
+                self.set_flag(i, f, v);
+            }
+            for j in p {
+                self.computed[j].adc_counts = v;
+                self.reflag_computed(j);
+            }
+            return;
+        }
         for i in self.selected_analog() {
             self.set_flag(i, f, v);
         }
