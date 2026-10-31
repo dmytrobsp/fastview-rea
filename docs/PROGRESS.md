@@ -24,8 +24,8 @@ Last rewritten: 2026-10-31 (v0.6.0 released: milestone 0.6.0, the follow-ups of 
 
 - **Milestone 0.7.0** ([GitHub](https://github.com/dmytrobsp/fastview-rea/milestone/5), plan and ledger:
   [milestones/0.7.0.md](milestones/0.7.0.md)): the 0.6.0 follow-ups, older bugs and gaps (drag and drop, keyboard,
-  formulas, the Windows frame) and verification debt (file round-trips, UI and print runs side by side) — 38 issues,
-  ten units in three waves.
+  formulas, the Windows frame) and verification debt (file round-trips, UI and print runs side by side), the graph at display scaling above 100 % — 41 issues,
+  eleven units in three waves.
 - **The forward-only scrub is done** (PR #152, 2026-10-31): no value of the clone test records or of a user's record is
   left in the current tree (code comments / tests, docs) or in the current bodies of #7, #9, #13, #27 — the maintainer's
   choice; history, tags and edit histories stay as they are.
