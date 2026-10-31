@@ -1981,14 +1981,10 @@ impl App {
                 Act::DropCombine(chans, target) => {
                     // The dragged channels and the target are selected (other
                     // selections stay), then 33035 or message 1086.
-                    let had_target = d.selection.contains(&target);
                     d.selection.extend(chans.iter().chain([&target]).copied());
                     if d.can_combine() {
                         if !d.combine_selected() {
-                            // VM: after the box only the dragged lane stays selected.
-                            if !had_target {
-                                d.selection.remove(&target);
-                            }
+                            // VM: after the box (and a repaint) the target stays selected beside the dragged lane.
                             self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
                         }
                     } else {
@@ -2988,7 +2984,7 @@ mod menu_tests {
         drag_rows(&mut h, from, to);
         assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_RATES), "message 239");
         assert!(h.doc().computed[0].group.is_none() && h.doc().chans[1].group.is_none());
-        assert!(!h.doc().selection.contains(&Lane::Analog(1)), "the target is not selected by a refused drop (VM)");
+        assert!(h.doc().selection.contains(&Lane::Analog(1)) && h.doc().selection.contains(&Lane::Computed(0)), "both stay selected after a refused drop (VM)");
         h.app.dlg.alerts.clear();
         h.app.active_doc_mut().unwrap().osc.analog[1].own_rate = 0.0;
         h.app.active_doc_mut().unwrap().selection.clear();
