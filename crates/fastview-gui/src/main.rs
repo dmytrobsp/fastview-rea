@@ -3979,6 +3979,40 @@ mod window_tests {
         assert_eq!(area.width(), docked.width() - docking::GROUP_FRAME_PX - docking::DIVIDER_PX, "the group's pane: {area:?} vs {docked:?}");
     }
 
+    /// #127: a pane that shares its docking slot with a neighbour docks back
+    /// at the size it had when it was pinned and unpinned (clone: the original
+    /// keeps it to within a few px; ours handed it the neighbour's share, and
+    /// a bottom Частотная beside Дифференциальной grew or shrank by the
+    /// difference of the two). The owner of the slot, Частотная, is the one
+    /// whose share the container did not store.
+    #[test]
+    fn a_pane_sharing_its_slot_docks_back_at_its_size() {
+        use docking::{Edge, Place, Spot, Unit};
+        for (neighbour_share, resize) in [(500.0, None), (500.0, Some(280.0)), (250.0, None)] {
+            let mut w = Win::new();
+            w.app.docks = docking::Docks::default();
+            w.app.docks.0[Unit::Differential as usize].spot = Spot::Beside(Unit::Frequency, Edge::Right);
+            w.app.docks.0[Unit::Differential as usize].extent = Some(neighbour_share);
+            w.idle(4);
+            if let Some(e) = resize {
+                w.app.docks.0[Unit::Differential as usize].extent = Some(e);
+                w.idle(3);
+            }
+            let before = w.app.dock_rects[Unit::Frequency as usize].expect("docked").width();
+            let r = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Frequency).map(|(_, r)| *r).expect("the pane");
+            let at = Pos2::new(w.app.dock_rects[Unit::Frequency as usize].unwrap().right() - 26.0, r.top() - 10.0);
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(true), ev(false)]);
+            w.idle(3);
+            assert_eq!(w.app.docks[Unit::Frequency].place, Place::AutoHide, "pinned");
+            w.app.docks.0[Unit::Frequency as usize].pin();
+            w.idle(4);
+            let after = w.app.dock_rects[Unit::Frequency as usize].expect("docked again").width();
+            assert!((after - before).abs() < 1.0, "share {neighbour_share} {resize:?}: it docks back at {after}, was {before}");
+        }
+    }
+
     /// #124 (clone, the original): a double-click on a tab of a docked
     /// group's strip floats that pane alone, the front one or not (mfc120u's
     /// tab double-click `0x10068d99` calls the detach `0x10068657` in mode 2

@@ -95,7 +95,8 @@ impl App {
     /// The group `unit` leaves its slot: a group beside it takes it.
     fn dock_leave(&mut self, unit: crate::docking::Unit) {
         let shown = self.groups_shown();
-        self.docks.leave(unit, |u| shown[u as usize]);
+        let own = self.dock_rects[unit as usize].map(|r| r.size());
+        self.docks.leave_sized(unit, |u| shown[u as usize], own);
     }
 
     /// The frame client's top-left, where a first float opens.
@@ -593,7 +594,7 @@ impl App {
             match side {
                 Edge::Top | Edge::Bottom => {
                     let p = if side == Edge::Top { egui::TopBottomPanel::top(inner) } else { egui::TopBottomPanel::bottom(inner) };
-                    let d = wd.extent.unwrap_or(w.natural()).min(full.y / 2.0);
+                    let d = wd.extent.unwrap_or_else(|| w.natural().min(full.y / 2.0));
                     let gap = if side == Edge::Top { egui::Margin { bottom: 4.0, ..Default::default() } } else { egui::Margin { top: 4.0, ..Default::default() } };
                     let range = 80.0..=(full.y - 120.0).max(80.0);
                     let size = grip_size(ui.ctx(), inner, d, range.clone());
@@ -604,7 +605,7 @@ impl App {
                 }
                 Edge::Left | Edge::Right => {
                     let p = if side == Edge::Left { egui::SidePanel::left(inner) } else { egui::SidePanel::right(inner) };
-                    let d = wd.extent.unwrap_or(full.x / 2.0).min(full.x / 2.0);
+                    let d = wd.extent.unwrap_or(full.x / 2.0);
                     // The panes beside each other: 4 px of the splitter brush
                     // between them (VM).
                     let gap = if side == Edge::Left { egui::Margin { right: 4.0, ..Default::default() } } else { egui::Margin { left: 4.0, ..Default::default() } };

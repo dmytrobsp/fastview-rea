@@ -213,6 +213,8 @@ pub const DIVIDER_PX: f32 = 4.0;
 /// The frame a tab control draws around its pane inside a docked group
 /// (VM: 3 px on the side facing the view; a slid-out pane has none).
 pub const GROUP_FRAME_PX: f32 = 3.0;
+/// The splitter brush between two panes docked beside each other (VM, 4 px).
+pub const SLOT_GAP_PX: f32 = 4.0;
 /// An auto-hide strip button's length along its strip at 100 % (VM, the
 /// original; three tabs pinned): the group's front pane's button is full
 /// length — about 7.86 px per character of its title plus 5 on a side
@@ -545,6 +547,15 @@ impl Docks {
     /// info); groups beside a split slot go to the slot's parent. Its tabs
     /// go along (the tabbed pane moves whole).
     pub fn leave(&mut self, u: Unit, shown: impl Fn(Unit) -> bool) {
+        self.leave_sized(u, shown, None);
+    }
+
+    /// [`Docks::leave`] with `own`: the size `u`'s slot has now (what it
+    /// leaves of its container). A group that takes the container's place
+    /// keeps `u` beside it at that share, so a redock gives `u` the size it
+    /// had (#127; the neighbour's share, taken before, grew or shrank it by
+    /// the difference). Without it the neighbour's share stands in.
+    pub fn leave_sized(&mut self, u: Unit, shown: impl Fn(Unit) -> bool, own: Option<Vec2>) {
         let beside: Vec<Unit> = UNITS.into_iter().filter(|&c| c != u && matches!(self[c].spot, Spot::Beside(t, _) if self.host(t) == u)).collect();
         match self[u].spot {
             Spot::Edge { edge, .. } => {
@@ -552,7 +563,12 @@ impl Docks {
                 let Some(&taker) = beside.iter().filter(docked).find(|&&c| shown(c)).or_else(|| beside.iter().find(docked)) else { return };
                 let Spot::Beside(_, side) = self[taker].spot else { return };
                 let size = |d: &Dockable, vertical: bool| d.extent.unwrap_or(if vertical { d.create.x } else { d.create.y });
-                let (container, share) = (size(&self[u], edge.vertical()), size(&self[taker], side.vertical()));
+                let (container, mut share) = (size(&self[u], edge.vertical()), size(&self[taker], side.vertical()));
+                // The slot's gap to its neighbour is part of the share
+                // (`SLOT_GAP_PX`).
+                if let Some(o) = own {
+                    share = (if side.vertical() { o.x } else { o.y }) + SLOT_GAP_PX;
+                }
                 for c in beside.iter().copied().filter(|&c| c != taker) {
                     if let Spot::Beside(_, s) = self[c].spot {
                         self[c].spot = Spot::Beside(taker, s);
