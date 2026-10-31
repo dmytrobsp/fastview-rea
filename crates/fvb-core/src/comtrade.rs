@@ -2041,8 +2041,8 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
                     // 16)` bytes, one too many for nd = 8..15 mod 16 —; when
                     // the numbers do not read 1, 2, 3, 4 at that size it
                     // takes the digital part as `ceil(nd/8)` bytes.
-                    let first = nd / 8 + if nd % 16 != 0 { 2 } else { 0 } + (na + 4) * 2;
-                    let packed = nd / 8 + usize::from(nd % 16 != 0) + 8 + na * 2;
+                    let first = nd / 8 + if nd.is_multiple_of(16) { 0 } else { 2 } + (na + 4) * 2;
+                    let packed = nd / 8 + usize::from(!nd.is_multiple_of(16)) + 8 + na * 2;
                     rec_len = if dat.len() < 4 * first || numbered(first) { first } else { packed };
                 }
                 DataFormat::Int32 => {
