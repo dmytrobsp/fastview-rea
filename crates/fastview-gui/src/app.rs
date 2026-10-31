@@ -478,6 +478,7 @@ impl Computed {
             formula: self.formula.clone(),
             samples: self.samples.clone(),
             phasors: self.phasors.clone(),
+            own_rate: self.own_rate,
         }
     }
 }
@@ -3385,6 +3386,47 @@ mod tests {
         d.selection = BTreeSet::from([ChanKey::Analog(3), ChanKey::Analog(4)]);
         assert!(d.combine_selected());
         assert!(d.chans[3].group.is_some() && d.chans[3].group == d.chans[4].group);
+    }
+
+    /// Every reader of a channel's period gives an own rate its window
+    /// (L9.142): the formula functions, the frequency diagram's bins, a
+    /// formula channel's phasors, statistics and correction (#71).
+    #[test]
+    fn the_readers_take_a_channels_own_rate() {
+        let mut app = demo_app();
+        let d = &mut app.docs[0];
+        // The plain windows (the correction has its own: `FreqCorr::at_rate`).
+        d.osc.freq_sel = 0;
+        let n_rec = d.osc.samples_per_cycle();
+        let own = f64::from(d.osc.rate_r as i32) / 2.0;
+        d.osc.analog[3].own_rate = own;
+        let n_own = d.osc.period_of(own);
+        assert_eq!(n_own * 2, n_rec);
+        d.recompute(false);
+        // A sample where the two windows disagree (the fault's onset).
+        let x = d.shown_samples(3).to_vec();
+        let k = (0..x.len()).max_by(|&a, &b| {
+            let gap = |k: usize| (fvb_core::signal::rms_at(&x, k, n_own) - fvb_core::signal::rms_at(&x, k, n_rec)).abs();
+            gap(a).total_cmp(&gap(b))
+        });
+        let k = k.unwrap();
+        // The formula function reads the channel at its window.
+        assert!(app.append_computed(&[("X".into(), "rms:(Ia)".into()), ("Y".into(), "rms:(Ib)".into())]).is_some());
+        let d = &app.docs[0];
+        let want = fvb_core::signal::rms_at(d.shown_samples(3), k, n_own);
+        let record = fvb_core::signal::rms_at(d.shown_samples(3), k, n_rec);
+        assert!((want - record).abs() > 1e-3, "the record tells the windows apart: {want} {record}");
+        assert!((d.computed[0].samples[k] - want).abs() < 1e-9, "own window");
+        let want_b = fvb_core::signal::rms_at(d.shown_samples(4), k, n_rec);
+        assert!((d.computed[1].samples[k] - want_b).abs() < 1e-9, "a channel without one keeps the record's");
+        // The frequency diagram's bins.
+        let bins = crate::diagram_ui::freq_bins(d, d.shown_samples(3), Some(3), own, k, 1, 5);
+        assert_eq!(bins, fvb_core::signal::spectrum(d.shown_samples(3), k, n_own, 1, 5, d.osc.harmonic1_gain));
+        // A formula channel with an own rate: its window.
+        let d = &mut app.docs[0];
+        d.computed[0].own_rate = own;
+        assert_eq!(d.computed_period(0), n_own);
+        assert_eq!(d.computed_period(1), n_rec);
     }
 
     /// Without the rate change a formula after a merge groups with the

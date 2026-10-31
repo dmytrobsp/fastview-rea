@@ -2671,6 +2671,7 @@ fn lane_stats(
             // A computed channel is read out like any other channel.
             let c = &doc.computed[*i];
             let n = doc.osc.samples_per_cycle().max(2);
+            let n_own = doc.computed_period(*i);
             // Value and Max / Min from the display cache (mode, invert, DC).
             let series = |k: usize| c.shown(k);
             let (mut mx, mut mn) = (f64::MIN, f64::MAX);
@@ -2702,8 +2703,8 @@ fn lane_stats(
                 let (mx, mn) = finite.fold((f64::MIN, f64::MAX), |(hi, lo), v| (hi.max(v), lo.min(v)));
                 return (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, val);
             }
-            let rms = fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n, 1);
-            let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n) * gain;
+            let rms = fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n_own, 1);
+            let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n_own) * gain;
             (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, series(k_main))
         }
         Lane::Digital(i) => {

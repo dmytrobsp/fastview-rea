@@ -544,7 +544,12 @@ impl Doc {
     /// The correction for computed channel `j`: none for the frequency
     /// channel itself (the gate compares the channel, `0x4262b6`).
     pub fn computed_corr(&self, j: usize) -> Option<fvb_core::freqcorr::FreqCorr<'_>> {
-        fvb_core::freqcorr::of(&self.osc).filter(|_| fvb_core::freqcorr::selected_extra(&self.osc) != Some(j))
+        fvb_core::freqcorr::of(&self.osc).filter(|_| fvb_core::freqcorr::selected_extra(&self.osc) != Some(j)).map(|c| c.at_rate(self.computed.get(j).map_or(0.0, |c| c.own_rate)))
+    }
+
+    /// Formula channel `j`'s window (`0x428490`): its own rate ÷ 50 when it has one.
+    pub fn computed_period(&self, j: usize) -> usize {
+        self.osc.period_of(self.computed.get(j).map_or(0.0, |c| c.own_rate)).max(2)
     }
 
     pub fn recompute_signals(&mut self) {
