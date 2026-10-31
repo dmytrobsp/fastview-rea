@@ -167,7 +167,7 @@ repository. Only the controller runs it. Pushes run from the main checkout, whic
    the body (`git log -p` of the range and the body in a scratch folder, compared field by field and line by line
    against the users' records — any value taken from one is a finding, however generic it looks), then pushes
    (`git push -u origin <unit branch>`) and opens or updates the pull request (`--base milestone/NAME`, `Fixes #N`,
-   milestone set). CI runs on it. The controller doesn't judge the code here: that is the review's job.
+   milestone set). CI runs on it, and the controller reads that run's result before each review and re-review (`gh pr checks`; a conflicting pull request runs no CI — merge the milestone tip first): a red platform the unit's own Linux gates can't show (a Windows runtime difference, once) goes into the next fix round. The controller doesn't judge the code here: that is the review's job.
 5. **Task review** by an independent reviewer — never the implementer, never a reviewer the implementer dispatched,
    never the controller ([review.md](review.md) has the prompts):
    - The controller writes a **review package** (the commit list, `git diff --stat` and `git diff -U10` for
