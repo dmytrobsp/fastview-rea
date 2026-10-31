@@ -112,7 +112,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --workspace --all-targets
       - run: cargo clippy --workspace --all-targets
-      - run: cargo test --workspace
+      - run: cargo test --workspace --no-fail-fast
 
   build:
     name: Build ${{ matrix.name }}

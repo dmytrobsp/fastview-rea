@@ -17,5 +17,7 @@ cargo test --workspace >"$L/test.log" 2>&1 || { grep -E '^error|FAILED|panicked'
 if grep -qE '^error|FAILED' "$L/test.log"; then grep -E '^error|FAILED' "$L/test.log" | head; echo GATES-FAIL tests; exit 1; fi
 passed=$(grep -o '[0-9]* passed' "$L/test.log" | awk '{s+=$1} END {print s}')
 python3 -I tools/publish_guard.py --all >/dev/null || { echo GATES-FAIL guard; exit 1; }
+# A conflict marker left by a merge passes every other check (it did once, in a Markdown file).
+if git grep -nE '^(<<<<<<<|\|\|\|\|\|\|\||>>>>>>>)( |$)|^=======$' -- . >"$L/markers.log"; then head "$L/markers.log"; echo GATES-FAIL conflict-markers; exit 1; fi
 echo "tests passed: $passed"
 echo GATES-OK
