@@ -1015,15 +1015,12 @@ impl ParamsDialog {
         let (rect, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(475, 275), egui::Sense::hover());
         // The toolbar's height follows its combo's (VM: 23 / 29 / 34 px, the
         // combo 21 / 27 / 31 at 100 / 125 / 150 %); the combo keeps its 278
-        // px, the buttons follow it, their offsets from the combo's end and
-        // the text buttons' widths at the system DPI, the icon-only ones the
-        // image + 6 (VM, 150 %: «Участок», «Параллельная линия», «Отпайка»
-        // from 294, 397, 602).
+        // px, the buttons' places are `toolbar_lefts`'s.
         let tool_h = crate::dpi::measured(23.0, 29.0, 34.0);
         let combo_h = crate::dpi::measured(21.0, 27.0, 31.0);
         let btn_h = crate::dpi::img(16.0) + 6.0;
         let (tree, grid) = params_layout(rect);
-        let tool_x = |x: f32| 292.0 + crate::dpi::s(x - 292.0);
+        let lefts = toolbar_lefts();
         let tool_y = 10.0 + tool_h - btn_h + 1.0;
         let px = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(rect.min + egui::vec2(x, y), egui::vec2(w, h));
         let cur = METHODS.iter().position(|(m, _)| *m == self.work.method).unwrap_or(0);
@@ -1049,10 +1046,10 @@ impl ParamsDialog {
             (650.0, 22.0, ToolIcon::Open, None, "Загрузить настройки в отдельном файле\nЗагрузить настройки", true),
             (672.0, 22.0, ToolIcon::Save, None, "Сохранить настройки в отдельном файле\nСохранить настройки", true),
         ];
-        for (k, (x, w, icon, text, tip, enabled)) in items.into_iter().enumerate() {
+        for (k, (_, w, icon, text, tip, enabled)) in items.into_iter().enumerate() {
             // Its tip CMFCToolBar's: the prompt's title and description.
-            let w = if text.is_some() { crate::dpi::s(w) } else { btn_h };
-            let r = tool_button(ui, px(tool_x(x), tool_y, w, btn_h), icon, text, enabled);
+            let w = if text.is_some() { if crate::dpi::unscaled() { w } else { lefts[k + 1] - lefts[k] - 3.0 } } else { btn_h };
+            let r = tool_button(ui, px(lefts[k], tool_y, w, btn_h), icon, text, enabled);
             let (desc, title) = tip.split_once('\n').unwrap_or((tip, tip));
             crate::tips::pointer_tip(ui, &r, crate::tips::TipImage::OmpTool(icon), title, desc, true);
             if r.clicked() && enabled {
@@ -1068,8 +1065,8 @@ impl ParamsDialog {
                 }
             }
         }
-        for x in [593.0, 645.0] {
-            let r = px(tool_x(x), tool_y - 1.0, 1.0, btn_h);
+        for x in [lefts[4] - toolbar_sep_back(0), lefts[6] - toolbar_sep_back(1)] {
+            let r = px(x, tool_y - 1.0, 1.0, btn_h);
             ui.painter().rect_filled(r, 0.0, Color32::from_gray(197));
             ui.painter().rect_filled(r.translate(egui::vec2(1.0, 0.0)), 0.0, Color32::WHITE);
         }
@@ -1235,10 +1232,23 @@ impl ParamsDialog {
                 self.row_sel = Some((node, k));
             }
         }
-        if win_button(ui, crate::dialogs::dlu(rect, 310, 254, 76, 14), "OK", true).clicked() {
+        // The tree and the grid are above OK / Отмена (OnInitDialog sizes
+        // them H − 90 tall regardless of the buttons at 254 DLU: at 150 %
+        // their bottom edge covers the buttons' top rows, VM): the buttons
+        // show below it, and answer there only.
+        let (ok, cancel) = ui
+            .scope(|ui| {
+                let mut clip = ui.clip_rect();
+                clip.min.y = clip.min.y.max(grid.bottom());
+                ui.set_clip_rect(clip);
+                let ok = win_button(ui, crate::dialogs::dlu(rect, 310, 254, 76, 14), "OK", true).clicked();
+                (ok, win_button(ui, crate::dialogs::dlu(rect, 392, 254, 76, 14), "Отмена", false).clicked())
+            })
+            .inner;
+        if ok {
             action = Some(DialogAction::Ok);
         }
-        if win_button(ui, crate::dialogs::dlu(rect, 392, 254, 76, 14), "Отмена", false).clicked() {
+        if cancel {
             action = Some(DialogAction::Cancel);
         }
         action
@@ -1272,6 +1282,44 @@ pub(crate) enum ToolIcon {
     Save,
 }
 
+/// How far left of the next button a toolbar separator's grey line is: 4
+/// and 5 px at 100 % (593 before 597, 645 before 650), 5 both at 125 /
+/// 150 % (VM).
+fn toolbar_sep_back(k: usize) -> f32 {
+    if crate::dpi::unscaled() {
+        4.0 + k as f32
+    } else {
+        5.0
+    }
+}
+
+/// TOOLBAR 475's buttons' left edges in the client (the combo ends at
+/// 291): at 100 % the template's (292, 362, 498 | 567, 597, 619, 650,
+/// 672). Above, the three text buttons' pitch follows their texts in the
+/// system font (VM: the texts 53 / 137 / 55 px wide at 125 %, 60 / 161 /
+/// 64 at 150 %, the buttons 88, 171 and 92 / 101, 202 and 105 px apart,
+/// along the line from 100 %'s 70, 136 and 69), and the images-only ones
+/// follow at a pitch of 22 px scaled (28, 33) with the separators' 8 px
+/// unscaled between delete | down and up | open (125 %: 36 / 28 / 36 / 28
+/// apart, 150 %: 41 / 33 / 41 / 33). The strings are the toolbar's own, so
+/// the widths are the original's, not our font's.
+pub(crate) fn toolbar_lefts() -> [f32; 8] {
+    use crate::dpi::{measured, s};
+    let pitch = s(22.0);
+    let mut x = [292.0f32; 8];
+    x[1] = x[0] + measured(70.0, 88.0, 101.0);
+    x[2] = x[1] + measured(136.0, 171.0, 202.0);
+    x[3] = x[2] + measured(69.0, 92.0, 105.0);
+    if crate::dpi::unscaled() {
+        return [292.0, 362.0, 498.0, 567.0, 597.0, 619.0, 650.0, 672.0];
+    }
+    x[4] = x[3] + pitch + 8.0;
+    x[5] = x[4] + pitch;
+    x[6] = x[5] + pitch + 8.0;
+    x[7] = x[6] + pitch;
+    x
+}
+
 /// A flat toolbar button (VM): the 16 px image 3 px in, the text after it
 /// in (0, 21, 110) — (141) and a pale image when disabled; under the
 /// pointer the Office 2007 hot face (approximated).
@@ -1290,7 +1338,9 @@ fn tool_button(ui: &mut egui::Ui, r: egui::Rect, icon: ToolIcon, text: Option<&s
     let ink = if enabled { Color32::from_rgb(0, 21, 110) } else { Color32::from_gray(141) };
     paint_tool_icon(p, cell, icon, enabled);
     if let Some(t) = text {
-        p.text(egui::pos2(cell.right() + 3.0, r.center().y), egui::Align2::LEFT_CENTER, t, crate::dialogs::dlg_font(), ink);
+        // The 9 pt font (VM, 150 %: «Параллельная линия» 161 px, the 8 pt
+        // dialog font's 151).
+        p.text(egui::pos2(cell.right() + 3.0, r.center().y), egui::Align2::LEFT_CENTER, t, egui::FontId::proportional(crate::dpi::font(11.0)), ink);
     }
     resp
 }
@@ -2091,6 +2141,92 @@ mod tests {
         let d = app.active_doc().unwrap();
         let ia = d.osc.analog.iter().find(|c| c.id == "Ia").unwrap();
         assert!(t.contains(&format!("Канал Ia:  Ia         Ктр = {}/", fvb_core::views::fmt_g(ia.primary).replace("e+0", "e+00"))), "{t}");
+    }
+
+    /// #78 (VM, 125 % / 150 %): the toolbar's text buttons follow each other
+    /// by their text and a margin that grows with the scale, the
+    /// images-only ones sit at a pitch of 22 px scaled with the
+    /// separators' 8 px between unscaled (36 / 28 / 36 / 28 at 125 %, 41 /
+    /// 33 / 41 / 33 at 150 %); at 100 % the template's own positions.
+    #[test]
+    fn the_toolbars_buttons_keep_their_pitch_and_unscaled_separators() {
+        crate::dpi::set(96);
+        assert_eq!(toolbar_lefts(), [292.0, 362.0, 498.0, 567.0, 597.0, 619.0, 650.0, 672.0]);
+        for (dpi, gaps, first) in [(120, [36.0, 28.0, 36.0, 28.0], [88.0, 171.0, 92.0]), (144, [41.0, 33.0, 41.0, 33.0], [101.0, 202.0, 105.0])] {
+            crate::dpi::set(dpi);
+            let x = toolbar_lefts();
+            assert_eq!([x[1] - x[0], x[2] - x[1], x[3] - x[2]], first, "{dpi}: the text buttons' pitch");
+            assert_eq!([x[4] - x[3], x[5] - x[4], x[6] - x[5], x[7] - x[6]], gaps, "{dpi}: the images-only buttons' pitch");
+        }
+        crate::dpi::set(96);
+    }
+
+    /// #78 (VM, 125 % and 150 %): the tree and the grid end below the top rows of OK /
+    /// Отмена and are above them: a press on the hidden rows reaches the
+    /// grid, one below its bottom edge the button.
+    #[test]
+    fn the_grid_covers_the_top_of_ok_and_cancel_at_150_percent() {
+        // 150 %: OK at 310 DLU × 254 DLU is x 698.., y 603..636 and the grid
+        // ends on 618 (15 rows hidden); 125 %: x 543.., y 508..536, the grid
+        // ends on 510 (2 rows hidden).
+        for (dpi, x, hidden, shown) in [(144, 750.0, 610.0, 628.0), (120, 600.0, 509.0, 520.0)] {
+            crate::dpi::set(dpi);
+            let mut d = ParamsDialog::new(0, OmpParams { method: ISOLATED, ..Default::default() });
+            let ctx = egui::Context::default();
+            // egui's hit test reaches 5 px past a widget; two rows need none.
+            ctx.style_mut(|s| s.interaction.interact_radius = 0.0);
+            let mut t = 0.0;
+            let mut pass = |d: &mut ParamsDialog, events: Vec<egui::Event>| {
+                t += 0.05;
+                let raw = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0))), time: Some(t), events, ..Default::default() };
+                let mut out = None;
+                let _ = ctx.run(raw, |ctx| {
+                    egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| out = d.ui(ui, &[]));
+                });
+                out
+            };
+            let click = |p: egui::Pos2| {
+                let b = |pressed| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+                [vec![egui::Event::PointerMoved(p), b(true)], vec![b(false)]]
+            };
+            pass(&mut d, vec![]);
+            pass(&mut d, vec![]);
+            for (y, answers) in [(hidden, false), (shown, true)] {
+                let mut got = None;
+                for e in click(egui::pos2(x, y)) {
+                    got = got.or(pass(&mut d, e));
+                }
+                assert_eq!(matches!(got, Some(DialogAction::Ok)), answers, "{dpi}: a press at y {y}");
+            }
+        }
+        crate::dpi::set(96);
+    }
+
+    /// #78 through the call site: the toolbar's text is the 9 pt font, 17
+    /// px at 150 % (VM: «Участок» 60 px wide; the 8 pt font's 16 px is
+    /// narrower): the dark ink of «Участок» is closer to the 17 px layout.
+    #[test]
+    fn the_toolbar_text_is_the_9_pt_font() {
+        crate::dpi::set(144);
+        let fonts = crate::app_fonts();
+        let mut d = ParamsDialog::new(0, OmpParams { method: ISOLATED, ..Default::default() });
+        let (mut w17, mut w16) = (0.0, 0.0);
+        let c = crate::raster::render_native(egui::vec2(1200.0, 800.0), 1.0, |_| {}, |_, _| {}, Some(&fonts), vec![vec![]; 3], |ctx| {
+            egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                d.ui(ui, &[]);
+            });
+            let width = |px: f32| ctx.fonts(|f| f.layout_no_wrap("Участок".into(), egui::FontId::proportional(px), Color32::BLACK).size().x);
+            (w17, w16) = (width(17.0), width(16.0));
+        });
+        crate::dpi::set(96);
+        let ink = |x: usize, y: usize| {
+            let p = c.px[y * c.w + x];
+            p[0] < 90 && p[2] > p[0] + 30
+        };
+        // «Участок»'s text starts 3 px after its 24 px image, 3 in.
+        let xs: Vec<usize> = (318..392).filter(|&x| (10..50).any(|y| ink(x, y))).collect();
+        let width = (xs.last().unwrap() - xs.first().unwrap() + 1) as f32;
+        assert!((width - w17).abs() < (width - w16).abs(), "ink {width} against {w17} at 17 px and {w16} at 16");
     }
 }
 
