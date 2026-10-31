@@ -32,8 +32,9 @@ Last rewritten: 2026-10-31 (v0.5.0 released; milestone 0.6.0 started: the follow
 
 - **Milestone 0.6.0 merged into main** (2026-10-31, PR #151; [ledger](milestones/0.6.0.md)): the follow-ups of 0.5.0
   and 0.4.0 — 27 issues, record L9.414–L9.420. The release is on hold (the maintainer).
-- **A forward-only scrub** of clone test-record values published before 0.6.0 (code comments / tests, docs/original/,
-  issue bodies) — the maintainer's choice; history stays as it is.
+- **The forward-only scrub is done** (PR #152, 2026-10-31): no value of the clone test records or of a user's record is
+  left in the current tree (code comments / tests, docs) or in the current bodies of #7, #9, #13, #27 — the maintainer's
+  choice; history, tags and edit histories stay as they are.
 
 ## Next topics
 
