@@ -85,6 +85,44 @@ turns the symbol list into a Ghidra, IDA or rizin / radare2 script; see
 Other helpers: `pngcrop.py` (crop help screenshots), `msgmaps.py` (used by
 `vt.py`, `index.py` and `regen-dumps.sh`).
 
+## Synthetic records
+
+Users' records never go into the repository, so tests need records with the same *structure* and made-up
+contents. `python3 -I tools/records/synth_record.py SRC.cfg OUTDIR [--seed N] [--stem NAME] [--rows N]` reads a
+record (the `.cfg` and the `.dat` / `.hdr` beside it) as input only and writes a new one with the same COMTRADE
+revision and extra lines, text encoding, BOM and line endings, channel counts and kinds (primary / secondary / P-S
+fields, digital channels), rate segments (their number and ratios), data type (ASCII with the source's widths and
+number styles, BINARY, binary32), analog scaling shape (the exponent of `a`, the range fields, samples spread
+over the float32 range), `.hdr` presence and shape, and names cut mid-character (a U+FFFD, or half a UTF-8
+sequence at a byte limit) — with every name, text, date, time, rate, time code (its sign and `h` shape kept, the offsets
+invented), time-quality / leap-second symbol, factor and sample invented from the seed
+(deterministic). It then runs the check below and draws again with the next seed on a clash (up to 50 times). The
+source is read at run time; nothing about any source is in the code.
+
+`python3 -I tools/records/userdata_check.py --source SRC.cfg [--source ...] [--max-rows N] OUT.cfg [OUT.cfg ...]` looks
+for the source's own values in an output: text fields (names, station, device, dates, times, header lines, the file
+name) and words of four letters or more, case-folded; identifying numbers by value (not 0, +-1, whole numbers up to
+100, revision years, ADC and float32 ranges) in the `.cfg` / `.hdr` and non-whole data values of six or more digits;
+whole `.cfg` / `.hdr` lines; the rate-segment lines and the time-code / quality lines as whole lines, short as they
+are (a record's time code is its own value, not structure); phase and ccbm fields by channel position (apart from
+format phases such as A, B, C, N, L1); and four-row windows of the analog samples, both of whole rows and of each
+channel alone (a copied column shows). It prints counts only, never a value, and exits 1 on any match. It reads at
+most `--max-rows` data rows of a record (default 2 000 000) and indexes at most 2 000 000 per-channel windows of it;
+the generator's own check after each draw reads at most 200 000 rows of the source.
+
+What the tools keep on purpose, and the check does not compare: the channel-count line and the channel numbers,
+digital normal states and the first data row's digital states, format phases, standard units, the P/S flag, the
+frequency line, the number of rate segments and the approximate ratios of their rates and sample counts, the layout
+of the tokens in names and the punctuation of the `.hdr`, and the data type. A clean check therefore shows that no
+value of the source was copied; it does not show that the *structure* is unrecognisable. **A record generated from a
+user record stays local** (it is for local runs and for comparing readers); whether such an output may be committed
+is the maintainer's decision. Committed fixtures come from hand-written sources, checked against the user records.
+Records without rate segments (timestamp-only), `.cff` and `.osc` are not supported (the tools say so and stop).
+
+`tools/records/make_fixtures.py [--check]` rebuilds `crates/fvb-core/tests/data/generated/` from four hand-written
+sources (invented, in the script) with fixed seeds; `crates/fvb-core/tests/generated_records.rs` reads them. The
+tools' tests: `python3 -I -m unittest discover -s tools/records -p 'test_*.py'` (CI runs them).
+
 ## The milestone helper
 
 `python3 tools/milestone/milestone.py start|add|gate|ungate|rm|end|ls` does

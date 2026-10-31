@@ -475,7 +475,7 @@ impl App {
             // read in UTF-8 / KOI8-R keeps it as bytes the way it reads its
             // own (`recdlg::shown_bytes_of`).
             let bytes = crate::recdlg::shown_bytes_of(&lane.name, d.read_enc, d.codepage);
-            lane.name_raw = Some(crate::app::RawName { bytes, seen: lane.name.clone(), alias: false });
+            lane.name_raw = Some(crate::recdlg::added_name(&lane.name, bytes, d.read_enc, d.codepage));
             d.computed.push(lane);
             d.selection.insert(ChanKey::Computed(d.computed.len() - 1));
             d.pending.push(c);
@@ -740,7 +740,7 @@ impl App {
         d.digital_visible.resize(d.osc.digital.len(), true);
         for (i, p) in (nd..d.osc.digital.len()).zip(&pend_d) {
             if let Some((invert, remove_dc, mode)) = p.flags {
-                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode, color: None, omp: false };
+                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode, color: None, omp: false, omp_alias: false };
             }
         }
         d.move_appended(at_a, nb, at_d, nd);

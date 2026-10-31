@@ -50,8 +50,8 @@ fn trig_conversion_order_is_bit_exact() {
         let r = v * std::f64::consts::PI / 180.0;
         assert_eq!(ev(&format!("sin:({v})")), fvb_core::trig::sin(r));
         assert_eq!(ev(&format!("cos:({v})")), fvb_core::trig::cos(r));
-        assert_eq!(ev(&format!("tg:({v})")), r.tan());
-        assert_eq!(ev(&format!("ctg:({v})")), 1.0 / r.tan());
+        assert_eq!(ev(&format!("tg:({v})")), fvb_core::trig::tan(r));
+        assert_eq!(ev(&format!("ctg:({v})")), 1.0 / fvb_core::trig::tan(r));
     }
 }
 

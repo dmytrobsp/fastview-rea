@@ -100,11 +100,12 @@ pub fn cp_code(e: Encoding) -> i32 {
     i32::from(e != Encoding::Cp866)
 }
 
+/// The record code page a stored `Oscillogram/Codepage` selects on a record
+/// read in 1251 / 866: 0 is OEM, any other value ANSI (`0x4543e0` tests
+/// the value against 0 only, so 65001 / 20866 are ANSI too, #82).
 pub fn cp_of(code: i32) -> Encoding {
     match code {
-        0 | 866 => Encoding::Cp866,
-        20866 => Encoding::Koi8r,
-        65001 => Encoding::Utf8,
+        0 => Encoding::Cp866,
         _ => Encoding::Cp1251,
     }
 }
@@ -281,7 +282,8 @@ impl Doc {
             let mut old = std::mem::take(&mut self.name_raw);
             let mut d = old.split_off(2 + nb);
             let mut a = old.split_off(2);
-            let own = |id: &String| crate::app::RawName { bytes: crate::recdlg::name_bytes_of(id, self.read_enc, self.codepage), seen: id.clone(), alias: false };
+            let (read, cp) = (self.read_enc, self.codepage);
+            let own = |id: &String| crate::recdlg::added_name(id, crate::recdlg::name_bytes_of(id, read, cp), read, cp);
             a.extend(self.osc.analog[nb..].iter().map(|c| own(&c.id)));
             d.extend(self.osc.digital[nd..].iter().map(|c| own(&c.id)));
             a[at_a..].rotate_right(self.osc.analog.len() - nb);
@@ -351,7 +353,7 @@ impl Doc {
             ChanKey::Computed(j) => {
                 let cp = self.codepage;
                 if let Some(c) = self.computed.get_mut(j).filter(|c| c.formula == crate::merge_ui::PENDING) {
-                    c.name_raw.get_or_insert_with(|| crate::app::RawName { bytes: crate::recdlg::shown_bytes_of(&c.name, read, cp), seen: c.name.clone(), alias: false }).alias = on;
+                    c.name_raw.get_or_insert_with(|| crate::recdlg::added_name(&c.name, crate::recdlg::shown_bytes_of(&c.name, read, cp), read, cp)).alias = on;
                 }
                 return;
             }
@@ -437,6 +439,16 @@ impl Doc {
             .collect();
         self.comment_hot = None;
         true
+    }
+
+    /// Digital channel `k` shows an alias now (`+0x6c` non-empty): kept as
+    /// typed across «Кодировка», or a name that differs from the file's.
+    pub(crate) fn digital_shows_alias(&self, k: usize) -> bool {
+        let p = 2 + self.osc.analog.len() + k;
+        match self.name_raw.get(p).filter(|_| self.name_raw.len() == 2 + self.osc.analog.len() + self.osc.digital.len()) {
+            Some(r) => r.alias,
+            None => !self.alias(self.osc.analog.len() + k, &self.osc.digital[k].id).is_empty(),
+        }
     }
 
     /// `AliasName`: the displayed name when it differs from the file's.
@@ -573,7 +585,13 @@ impl Doc {
                 secondary_mul: 1.0,
                 // The ОМП's flags show their stored names: no alias, in any
                 // code page (#66).
-                alias: if self.dig(k).omp { String::new() } else { self.alias(na + k, &self.osc.digital[k].id) },
+                // A flag the run made has none (#66); one that took over a
+                // channel showing a user alias keeps it (`0x425f90`, #114).
+                alias: match self.dig(k) {
+                    f if f.omp && f.omp_alias => self.osc.digital[k].id.clone(),
+                    f if f.omp => String::new(),
+                    _ => self.alias(na + k, &self.osc.digital[k].id),
+                },
                 custom_color: self.dig(k).color.map(colorref),
             };
             recset::write_channel(t.section_mut(&key), &rec);
@@ -595,7 +613,9 @@ impl Doc {
             recset::write_channel(t.section_mut(&c.name), &rec);
         }
         let o = t.section_mut("Oscillogram");
-        o.set_int("Codepage", cp_code(self.codepage));
+        // The stored value as loaded while «Кодировка» was not used since
+        // (`+0x6e8` is written back as it is, `0x44ccf2`).
+        o.set_int("Codepage", self.cp_raw.unwrap_or_else(|| cp_code(self.codepage)));
         // rec+0x228, `%i` (`0x44cbc0`).
         o.set_int("DiscretisationFrequensy", self.osc.rate_r as i32);
         let pairs = |v: &[crate::diagram::ChanPair]| -> Vec<PairRec> { v.iter().map(|p| PairRec { a: p.a.clone(), b: p.b.clone(), visible: p.on }).collect() };
@@ -737,16 +757,21 @@ impl App {
             d.selection.retain(|k| !matches!(k, ChanKey::Computed(_)));
             d.channels_changed();
         }
-        if let Some(cp) = osc.attrs.get("Codepage").map(|v| recset::wtoi(v)) {
+        if let Some(cp_raw) = osc.attrs.get("Codepage").map(|v| recset::wtoi(v)) {
             // 0 is OEM; anything else for a record read in UTF-8 or KOI8-R
             // (ours keeps it, `Doc::init_record_text`) its own encoding —
             // 1, ANSI, the names as read.
             let cp = match d.read_enc {
-                Encoding::Cp1251 | Encoding::Cp866 => cp_of(cp),
-                _ if cp == 0 => Encoding::Cp866,
+                Encoding::Cp1251 | Encoding::Cp866 => cp_of(cp_raw),
+                _ if cp_raw == 0 => Encoding::Cp866,
                 read => read,
             };
             d.set_codepage(cp);
+            // The original keeps the value itself (`+0x6e8`, `0x44f808`) and
+            // writes it back; only 0 and 1 are its combo's entries.
+            // Only on a record read in 1251 / 866: for one read in UTF-8 /
+            // KOI8-R the combo has a third entry of ours, the current one.
+            d.cp_raw = (!matches!(cp_raw, 0 | 1) && matches!(d.read_enc, Encoding::Cp1251 | Encoding::Cp866)).then_some(cp_raw);
         }
         // File channels.
         let na = d.osc.analog.len();
@@ -786,7 +811,7 @@ impl App {
                 };
                 let r = recset::read_channel(&sec, &cur);
                 d.digital_visible[k] = r.show_flags & flag::VISIBLE != 0;
-                *d.dig_mut(k) = crate::app::DigFlags { invert: r.show_flags & flag::INVERT != 0, remove_dc: r.show_flags & flag::REMOVE_DC != 0, mode: mode_of(r.show_flags), color: r.custom_color.map(from_colorref), omp: d.dig(k).omp };
+                *d.dig_mut(k) = crate::app::DigFlags { invert: r.show_flags & flag::INVERT != 0, remove_dc: r.show_flags & flag::REMOVE_DC != 0, mode: mode_of(r.show_flags), color: r.custom_color.map(from_colorref), omp: d.dig(k).omp, omp_alias: d.dig(k).omp_alias };
                 if !r.alias.is_empty() {
                     d.osc.digital[k].id = r.alias;
                     d.mark_alias(ChanKey::Digital(k), true);

@@ -274,6 +274,13 @@ impl App {
             match found {
                 Some(i) => {
                     d.osc.digital[i].samples = samples;
+                    // The channel keeps its alias (`0x425f90` sets bit 13
+                    // and the samples only): a first take-over notes
+                    // whether it showed one (#114).
+                    if !d.dig(i).omp {
+                        let had = d.digital_shows_alias(i);
+                        d.dig_mut(i).omp_alias = had;
+                    }
                     d.dig_mut(i).omp = true;
                 }
                 None => {
@@ -1457,6 +1464,55 @@ mod tests {
         assert_eq!(app.active_doc().unwrap().computed.iter().find(|c| c.name == "K2").unwrap().samples, flipped);
     }
 
+    /// A noise-free B–C fault (1250 Hz, 25 samples a period, the fault at 7.3 km of 0.1 + j0.4 Ω/km, values
+    /// quantised to 0.001), isolated neutral, one 10 km section. The window search runs on distances equal to the
+    /// rounding noise (σ about 1e-14), so it follows the original's arithmetic to the last bit: the complex division
+    /// of `0x420ca0` and the order of the score `(σ − m·step) + eps` (`0x477a20`). Clone: the original puts В1 / В2
+    /// on samples 556 / 580 (445 / 464 ms), ours had 555 / 579.
+    #[test]
+    fn the_window_on_a_noise_free_record_is_the_originals() {
+        use fvb_core::trig::{cos, sin};
+        use num_complex::Complex64 as C;
+        let (fs, n, tau) = (1250.0f64, 750usize, 2.0 * std::f64::consts::PI);
+        let ph = |a: f64| C::new(cos(a), sin(a));
+        let e = 57.7 * 2f64.sqrt();
+        let (ea, eb, ec) = (ph(0.0) * e, ph(-tau / 3.0) * e, ph(tau / 3.0) * e);
+        let z = C::new(0.1, 0.4) * 7.3;
+        let i_load = ph(-0.35) * (4.0 * 2f64.sqrt());
+        let i_fault = ph(-1.35 - tau / 3.0) * (31.0 * 2f64.sqrt());
+        let mut dat = String::new();
+        for k in 0..n {
+            let r = ph(tau * 50.0 * (k as f64 / fs));
+            let faulted = (300..600).contains(&k);
+            let (ua, ub, uc, ia, ib, ic) = if faulted {
+                (ea, -ea * 0.5 + z * i_fault, -ea * 0.5 - z * i_fault, i_load, i_fault, -i_fault)
+            } else {
+                (ea, eb, ec, i_load, i_load * ph(-tau / 3.0), i_load * ph(tau / 3.0))
+            };
+            let v = |x: C| (x * r).im;
+            let q = |x: f64| (x * 1000.0).round() as i64;
+            dat += &format!("{},{},{},{},{},{},{},{}\n", k + 1, (k as f64 * 1e6 / fs).round() as i64, q(v(ia)), q(v(ib)), q(v(ic)), q(v(ua) - v(ub)), q(v(ub) - v(uc)), q(v(uc) - v(ua)));
+        }
+        let mut cfg = String::from("Synthetic,synth,1999\n6,6A,0D\n");
+        for (i, (name, ph_, unit)) in [("Ia", "A", "A"), ("Ib", "B", "A"), ("Ic", "C", "A"), ("Uab", "A", "V"), ("Ubc", "B", "V"), ("Uca", "C", "V")].iter().enumerate() {
+            cfg += &format!("{},{name},{ph_},,{unit},0.001,0.0,0.0,-1000000,1000000,1.0,1.0,S\n", i + 1);
+        }
+        cfg += &format!("50\n1\n{fs},{n}\n01/01/2024,00:00:00.000000\n01/01/2024,00:00:00.000000\nASCII\n1\n");
+        let osc = fvb_core::comtrade::parse(&cfg, dat.as_bytes()).expect("record");
+        let mut app = App::new();
+        app.add_doc(crate::app::Doc::new(osc, "noise_free".into()));
+        let p = &mut app.active_doc_mut().unwrap().omp.params;
+        let st = &mut p.stations[0];
+        st.inom = "10".into();
+        (st.ia, st.ib, st.ic) = ("Ia".into(), "Ib".into(), "Ic".into());
+        (st.uab, st.ubc, st.uca) = ("Uab".into(), "Ubc".into(), "Uca".into());
+        st.sections.push(SectionParams { length: "10".into(), supports: "30".into(), r: "0.1".into(), x: "0.4".into(), ..Default::default() });
+        app.run_omp();
+        let d = app.active_doc().unwrap();
+        assert!(app.omp_ui.bar.as_deref().is_some_and(|t| t.contains("7.30")), "{:?}", app.omp_ui.bar);
+        assert_eq!((d.main_cursor, d.aux_cursor), (556, 580));
+    }
+
     #[test]
     fn defaults_are_method_1_and_a_1km_1_support_section() {
         let p = OmpParams::default();
@@ -1693,6 +1749,70 @@ mod tests {
         assert_eq!(d.osc.digital.iter().filter(|c| c.id == KZ_PHASES[0]).count(), 1);
         app.dispatch(Command::OmpAnalysis);
         assert_eq!(app.active_doc().unwrap().osc.digital.len(), own, "the clear deletes it by name too (the own channel included)");
+    }
+
+    /// The clear's by-name branch (`0x42ecf0`): a record's own digital
+    /// channel named like a flag that no run has marked is deleted by the
+    /// clear too (#114).
+    #[test]
+    fn the_clear_deletes_an_unmarked_channel_named_like_a_flag() {
+        let mut app = demo_app();
+        grounded(&mut app);
+        let d = app.active_doc_mut().unwrap();
+        let n = d.osc.sample_count();
+        let own = d.osc.digital.len();
+        d.osc.digital.push(fvb_core::DigitalChannel { index: own as u32 + 1, id: KZ_PHASES[1].into(), phase: String::new(), normal: 0, own_rate: 0.0, samples: vec![true; n] });
+        d.digital_visible.resize(own + 1, true);
+        assert!(!d.dig(own).omp);
+        app.omp_clear(0);
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.osc.digital.len(), own, "deleted by its name alone");
+        assert!(d.osc.digital.iter().all(|c| c.id != KZ_PHASES[1]));
+    }
+
+    /// A record channel the run takes over keeps its alias (`0x425f90` sets
+    /// bit 13 and the samples, nothing else): written on save when its name
+    /// came from a user alias, none when it was the channel's own name
+    /// (#114). A flag the run made has none.
+    #[test]
+    fn a_taken_over_channel_keeps_its_alias_on_save() {
+        let alias_of = |d: &crate::app::Doc, k: usize| {
+            let mut t = fvb_core::recset::SetTree::default();
+            d.store_settings(&mut t, false);
+            let na = d.osc.analog.len();
+            t.section(&d.file_key(na + k)).expect("the section").get_str("AliasName", "absent").to_string()
+        };
+        let mut app = demo_app();
+        grounded(&mut app);
+        let d = app.active_doc_mut().unwrap();
+        d.selection.insert(ChanKey::Analog(0));
+        let n = d.osc.sample_count();
+        let own = d.osc.digital.len();
+        for (k, id) in [(own, "Мой сигнал"), (own + 1, KZ_PHASES[1])] {
+            d.osc.digital.push(fvb_core::DigitalChannel { index: k as u32 + 1, id: id.into(), phase: String::new(), normal: 0, own_rate: 0.0, samples: vec![false; n] });
+        }
+        d.digital_visible.resize(own + 2, true);
+        d.init_set_keys();
+        // The first is renamed to a flag's name by the user: an alias.
+        assert_eq!(crate::chandlg::rename(d, ChanKey::Digital(own), KZ_PHASES[0]), Ok(()));
+        app.dispatch(Command::OmpAnalysis);
+        let d = app.active_doc_mut().unwrap();
+        let slot = |d: &crate::app::Doc, name: &str| d.osc.digital.iter().position(|c| c.id == name).unwrap();
+        let (a, b, c) = (slot(d, KZ_PHASES[0]), slot(d, KZ_PHASES[1]), slot(d, KZ_PHASES[2]));
+        assert!([a, b, c].iter().all(|&k| d.dig(k).omp));
+        assert_eq!(alias_of(d, a), KZ_PHASES[0], "the user's alias stays");
+        assert_eq!(alias_of(d, b), "", "an own channel of that name has none");
+        assert_eq!(alias_of(d, c), "", "a flag the run made has none");
+        // Across a «Кодировка» switch and a re-run too.
+        d.set_codepage(fvb_core::comtrade::Encoding::Cp866);
+        assert_eq!(alias_of(d, a), KZ_PHASES[0]);
+        assert_eq!(alias_of(d, b), "");
+        assert_eq!(alias_of(d, c), "");
+        // A re-run leaves each as it was.
+        app.run_omp();
+        let d = app.active_doc().unwrap();
+        let (a, b, c) = (slot(d, KZ_PHASES[0]), slot(d, KZ_PHASES[1]), slot(d, KZ_PHASES[2]));
+        assert_eq!((alias_of(d, a), alias_of(d, b), alias_of(d, c)), (KZ_PHASES[0].to_string(), String::new(), String::new()));
     }
 
     /// After the run took over a record's own channel the list reads
