@@ -201,14 +201,23 @@ pub fn shown_bytes_of(name: &str, read: Encoding, shown: Encoding) -> Vec<u8> {
 }
 
 /// The kept name of one added to a record (a pasted lane, a merged channel):
-/// `bytes` is the name taken to the record's bytes. A name whose text does
-/// not come back from them in the code page it is shown in (KOI8-R has no
-/// і ї є ґ, 866 lacks some, 1251 lacks more) is kept as an alias, so it
-/// survives «Кодировка» as typed (ours: the original keeps such a name as
-/// bytes, so the letters turn into «?», #81); one that round-trips stays a
-/// plain stored name, re-decoded with the code page like the record's own.
+/// `bytes` is the name taken to the record's bytes. A name that does not
+/// come back from them is kept as an alias, so it survives «Кодировка» as
+/// typed (ours, #81; the original keeps the bytes only, so such letters turn
+/// into «?»). What "come back" means depends on the record: read in UTF-8 /
+/// KOI8-R, the bytes are the record's own encoding, so the name must decode
+/// from them in that encoding (KOI8-R has no і ї є ґ; UTF-8 holds all);
+/// read in 1251 / 866, the bytes are in the code page shown now, so the
+/// name must decode from them there (shown in 866: no і; a name it holds
+/// stays a plain name and reads back as the original's bytes do).
 pub fn added_name(name: &str, bytes: Vec<u8>, read: Encoding, shown: Encoding) -> crate::app::RawName {
-    let alias = decode_name(&bytes, read, shown) != name;
+    let alias = if matches!(read, Encoding::Cp1251 | Encoding::Cp866) {
+        decode_name(&bytes, read, shown) != name
+    } else {
+        // The name as read: shown in 866 it is the OEM view of the names.
+        let as_read = if shown == Encoding::Cp866 { comtrade::decode_bytes(&comtrade::encode_shown(name, Encoding::Cp866), Encoding::Cp1251) } else { name.to_string() };
+        comtrade::decode_bytes(&bytes, read) != as_read
+    };
     crate::app::RawName { bytes, seen: name.to_string(), alias }
 }
 
@@ -1340,6 +1349,118 @@ mod tests {
         }
     }
 
+    /// #81 on a record read in 1251 shown in 866 (what the improvement does
+    /// and the original does there): a pasted name 866 cannot hold (і) is
+    /// kept as typed; a sibling it can hold reads back in 1251 as its 866
+    /// bytes, garbled, as the original's.
+    #[test]
+    fn on_a_1251_record_shown_in_866_only_the_name_866_cannot_hold_is_kept() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.osc.analog[3].id = "Струм фази і".into();
+        d.osc.analog[4].id = "Струм фази".into();
+        d.init_set_keys();
+        d.selection = [ChanKey::Analog(3), ChanKey::Analog(4)].into();
+        app.copy_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        d.set_codepage(Encoding::Cp866);
+        d.selection.clear();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let lanes: Vec<usize> = (0..d.computed.len()).filter(|&j| d.computed[j].formula == crate::merge_ui::PENDING).collect();
+        assert_eq!(lanes.len(), 2);
+        let typed: Vec<String> = lanes.iter().map(|&j| d.computed[j].name.clone()).collect();
+        let (with_i, plain) = (lanes.iter().position(|&j| d.computed[j].name.contains('і')).unwrap(), lanes.iter().position(|&j| !d.computed[j].name.contains('і')).unwrap());
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.computed[lanes[with_i]].name, typed[with_i], "kept as typed");
+        let garbled: String = comtrade::decode_bytes(&comtrade::encode_shown(&typed[plain], Encoding::Cp866), Encoding::Cp1251).chars().map(comtrade::best_fit_1251).collect();
+        assert_ne!(garbled, typed[plain]);
+        assert_eq!(d.computed[lanes[plain]].name, garbled, "as the original's 866 bytes read in 1251");
+    }
+
+    /// #81 on a UTF-8 record: the bytes are lossless, so a name with letters
+    /// 1251 lacks («√», «ä») is not an alias.
+    #[test]
+    fn a_name_a_utf8_record_holds_is_not_an_alias() {
+        for shown in [Encoding::Utf8, Encoding::Cp1251, Encoding::Cp866] {
+            let name = "Струм √ ä";
+            let bytes = name_bytes_of(name, Encoding::Utf8, shown);
+            // Shown in 1251 / UTF-8 the name is the bytes as read.
+            if shown != Encoding::Cp866 {
+                assert!(!added_name(name, bytes, Encoding::Utf8, shown).alias, "{shown:?}");
+            }
+        }
+    }
+
+    /// The out-of-step fallback of a switch (also the station and the
+    /// recorder, which have no file name): a name KOI8-R cannot hold is kept
+    /// as typed (#81).
+    #[test]
+    fn an_out_of_step_name_the_encoding_cannot_hold_survives_switches() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.osc.text_enc = Some(Encoding::Koi8r);
+        d.init_record_text(Encoding::Cp1251);
+        d.init_set_keys();
+        d.osc.station = "Ї станція".into();
+        d.name_raw.clear();
+        for cp in [Encoding::Cp1251, Encoding::Cp866, Encoding::Koi8r] {
+            d.set_codepage(cp);
+        }
+        assert_eq!(d.osc.station, "Ї станція");
+    }
+
+    /// A channel appended past the kept names (`move_appended_keys`, merge)
+    /// whose name KOI8-R cannot hold is an alias (#81).
+    #[test]
+    fn an_appended_channel_the_encoding_cannot_hold_is_an_alias() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.osc.text_enc = Some(Encoding::Koi8r);
+        d.init_record_text(Encoding::Cp1251);
+        d.init_set_keys();
+        let (nb, nd) = (d.osc.analog.len(), d.osc.digital.len());
+        let mut c = d.osc.analog[0].clone();
+        c.id = "Струм ї".into();
+        d.osc.analog.push(c);
+        let mut plain = d.osc.analog[0].clone();
+        plain.id = "Струм".into();
+        d.osc.analog.push(plain);
+        d.move_appended_keys(nb, nb, nd, nd);
+        assert!(d.name_raw[2 + nb].alias);
+        assert!(!d.name_raw[2 + nb + 1].alias);
+    }
+
+    /// A pasted lane with no kept bytes whose name KOI8-R cannot hold keeps
+    /// it across a switch (#81).
+    #[test]
+    fn a_pasted_lane_without_kept_bytes_keeps_a_letter_the_encoding_lacks() {
+        use crate::app::ChanKey;
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.codepage = Encoding::Cp1251;
+        d.init_set_keys();
+        d.selection = [ChanKey::Analog(3)].into();
+        app.copy_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        d.osc.text_enc = Some(Encoding::Koi8r);
+        d.name_raw.clear();
+        d.init_record_text(Encoding::Cp1251);
+        d.init_set_keys();
+        d.selection.clear();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        d.computed[j].name = "Ї лінія".into();
+        d.computed[j].name_raw = None;
+        for cp in [Encoding::Cp1251, Encoding::Cp866, Encoding::Koi8r] {
+            d.set_codepage(cp);
+        }
+        assert_eq!(d.computed[j].name, "Ї лінія");
+    }
+
     /// A pasted lane's name is re-decoded too (VM: «IA БЛОКА 3 (вст.)»
     /// read as 866 lists «IA +T+¦L 3 (тёЄ.)»), and comes back.
     #[test]
@@ -1974,6 +2095,13 @@ mod tests {
         d.set.tree.section_mut("Oscillogram").set_int("Codepage", 20866);
         app.apply_record_settings(ai, false);
         assert_eq!(app.docs[ai].codepage, Encoding::Utf8);
+        // The combo's third entry is current for it, so the stored value is
+        // not kept as a raw one (ours, #82): 1 is written back.
+        let d = &app.docs[ai];
+        assert_eq!(d.cp_raw, None);
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        assert_eq!(t.section("Oscillogram").unwrap().get_int("Codepage", -1), 1);
     }
 
     /// #82: a stored `Oscillogram/Codepage` other than 0 / 1 (65001, 20866,

@@ -769,7 +769,9 @@ impl App {
             d.set_codepage(cp);
             // The original keeps the value itself (`+0x6e8`, `0x44f808`) and
             // writes it back; only 0 and 1 are its combo's entries.
-            d.cp_raw = (!matches!(cp_raw, 0 | 1)).then_some(cp_raw);
+            // Only on a record read in 1251 / 866: for one read in UTF-8 /
+            // KOI8-R the combo has a third entry of ours, the current one.
+            d.cp_raw = (!matches!(cp_raw, 0 | 1) && matches!(d.read_enc, Encoding::Cp1251 | Encoding::Cp866)).then_some(cp_raw);
         }
         // File channels.
         let na = d.osc.analog.len();

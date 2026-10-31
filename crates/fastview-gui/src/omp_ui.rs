@@ -1759,6 +1759,11 @@ mod tests {
         assert_eq!(alias_of(d, a), KZ_PHASES[0]);
         assert_eq!(alias_of(d, b), "");
         assert_eq!(alias_of(d, c), "");
+        // A re-run leaves each as it was.
+        app.run_omp();
+        let d = app.active_doc().unwrap();
+        let (a, b, c) = (slot(d, KZ_PHASES[0]), slot(d, KZ_PHASES[1]), slot(d, KZ_PHASES[2]));
+        assert_eq!((alias_of(d, a), alias_of(d, b), alias_of(d, c)), (KZ_PHASES[0].to_string(), String::new(), String::new()));
     }
 
     /// After the run took over a record's own channel the list reads
