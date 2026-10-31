@@ -801,6 +801,9 @@ pub struct Doc {
     /// whole list into the record's definitions without computing it, #31): a row added or loaded and not yet
     /// calculated. A formula channel's own `formula` is its definition.
     pub loose_defs: Vec<(String, String)>,
+    /// The definition list's row order as kill-active last wrote it (↑ / ↓ move rows, `0x487210` / `0x4873a0`):
+    /// the formula page lists its rows in it.
+    pub def_order: Vec<String>,
     pub merge_offset: f64,
     /// Shown flag of each digital channel (bit 0; «Каналы» dialog column 1; 32845 / 32846 / 32847).
     pub digital_visible: Vec<bool>,
@@ -903,6 +906,7 @@ impl Doc {
             omp: Default::default(),
             pending: Vec::new(),
             loose_defs: Vec::new(),
+            def_order: Vec::new(),
             merge_offset: 0.0,
             set: Default::default(),
             undo: Vec::new(),
@@ -1397,6 +1401,9 @@ pub struct DocSnapshot {
     /// The names' bytes go with the channels (the original's snapshot is
     /// its channel list, the raw names in it); the code page stays.
     pub name_raw: Vec<RawName>,
+    /// The formula editor's definitions without a channel and the list's row order (#31).
+    pub loose_defs: Vec<(String, String)>,
+    pub def_order: Vec<String>,
 }
 
 /// A name as read (`+0x64`): its bytes, the text last decoded from them in
@@ -2927,6 +2934,8 @@ impl App {
             digital_visible: d.digital_visible.clone(),
             dig_flags: d.dig_flags.clone(),
             name_raw: d.name_raw.clone(),
+            loose_defs: d.loose_defs.clone(),
+            def_order: d.def_order.clone(),
         }
     }
 
@@ -2942,6 +2951,8 @@ impl App {
         d.digital_visible = s.digital_visible;
         d.dig_flags = s.dig_flags;
         d.name_raw = s.name_raw;
+        d.loose_defs = s.loose_defs;
+        d.def_order = s.def_order;
         d.sel_anchor = None;
         let last = d.osc.time.len().saturating_sub(1);
         for k in [&mut d.main_cursor, &mut d.aux_cursor, &mut d.v3_cursor, &mut d.first] {
@@ -4385,5 +4396,48 @@ mod tests {
         app.fp_apply();
         assert!(app.dlg.alert().is_none(), "an earlier row is fine: {:?}", app.dlg.alert());
         assert_eq!(app.active_doc().unwrap().computed[1].formula, "x + 1");
+    }
+
+    /// #31: the formula page keeps its rows in the order ↑ / ↓ gave them (the definition list's, written by
+    /// kill-active), not the channels'.
+    #[test]
+    fn the_definition_order_is_the_pages() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into()), ("Y".into(), "Ub*2".into())]).is_some());
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.selected = Some(1);
+        app.fp_move(true);
+        app.fp_add_row("Z1".into(), "Uc*2".into());
+        app.formula_page.selected = Some(2);
+        app.fp_move(true);
+        let order = |app: &App| app.formula_page.rows.iter().map(|r| r.0.clone()).collect::<Vec<_>>();
+        assert_eq!(order(&app), ["Y", "Z1", "X"]);
+        app.fp_kill_active();
+        app.quick_open = false;
+        app.dispatch(Command::QuickAnalysis);
+        assert_eq!(order(&app), ["Y", "Z1", "X"]);
+        let names: Vec<_> = app.active_doc().unwrap().computed.iter().map(|c| c.name.clone()).collect();
+        assert_eq!(names, ["X", "Y"], "the channels keep their places");
+    }
+
+    /// #31: undo and redo restore the definitions without a channel and the list's order with the channels.
+    #[test]
+    fn undo_and_redo_carry_the_definitions() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        let d = app.active_doc_mut().unwrap();
+        d.loose_defs = vec![("Z1".into(), "Ub".into())];
+        d.def_order = vec!["Z1".into(), "X".into()];
+        let snap = App::snapshot_of_doc(d);
+        App::push_undo(d, snap);
+        d.loose_defs.clear();
+        d.def_order.clear();
+        app.undo();
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.loose_defs, [("Z1".to_string(), "Ub".to_string())]);
+        assert_eq!(d.def_order, ["Z1", "X"]);
+        app.redo();
+        let d = app.active_doc().unwrap();
+        assert!(d.loose_defs.is_empty() && d.def_order.is_empty());
     }
 }

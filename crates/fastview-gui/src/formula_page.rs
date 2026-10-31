@@ -37,6 +37,9 @@ impl App {
                 let mut rows: Vec<(String, String)> = d.computed.iter().filter(|c| crate::setfile::is_formula(c)).map(|c| (c.name.clone(), c.formula.clone())).collect();
                 let loose = d.loose_defs.iter().filter(|(n, _)| !rows.iter().any(|r| r.0 == *n)).cloned().collect::<Vec<_>>();
                 rows.extend(loose);
+                // In the order the list was last written in (rows it does not know keep theirs, after).
+                let pos = |n: &String| d.def_order.iter().position(|o| o == n).unwrap_or(usize::MAX);
+                rows.sort_by_key(|r| pos(&r.0));
                 rows
             })
             .unwrap_or_default();
@@ -102,6 +105,7 @@ impl App {
             return;
         }
         let rows = self.formula_page.rows.clone();
+        let names: Vec<String> = rows.iter().map(|r| r.0.clone()).collect();
         let Some(d) = self.active_doc_mut() else { return };
         let mut loose = Vec::new();
         for (name, formula) in rows {
@@ -111,6 +115,7 @@ impl App {
             }
         }
         d.loose_defs = loose;
+        d.def_order = names;
     }
 
     /// ↑ (`0x487210`) / ↓ (`0x4873a0`): move the selected row, keep it selected.
