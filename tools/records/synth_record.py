@@ -9,10 +9,17 @@ endings, the channel counts and kinds (analog with or without primary / secondar
 the rate segments (their number and proportions), the data type (ASCII with the source's widths and
 number styles, BINARY, binary32), the shape of the analog scaling (the exponent of `a`, the range
 fields, samples spread over the float32 range), the presence and shape of the `.hdr`, and names cut
-mid-character. Every name, text, date, time, rate, time code and quality symbol (shape kept), factor and sample is invented from the seed
-(deterministic: the same source structure and seed give the same bytes), then the result is
+mid-character (the invented name is built so the cut really leaves half a character). Every name, text,
+non-format phase / ccbm label, date, time, rate, time code and quality symbol (shape kept), factor and sample
+is invented from the seed (deterministic: the same source structure and seed give the same bytes), then the result is
 checked against the source by `userdata_check.py`'s rules; a clash makes it draw again with the next
-seed (up to 50 times) and the seed used is printed.
+seed (up to 50 times; a clashing draw's files are removed) and the seed used is printed.
+
+Kept on purpose, and not compared by the check: the channel-count line and channel numbers, digital normal
+states and the first row's digital states, format phases, standard units, P/S, the frequency line, the number of
+rate segments and the approximate ratios of their rates and sample counts, the layout of name tokens, the
+.hdr's punctuation, the data type. So an output made from a user record is local data; commit only fixtures
+made from hand-written sources. Records without rate segments (timestamp-only) are refused.
 """
 import argparse
 import math
@@ -81,6 +88,19 @@ class Gen:
                 out.append(self.word(max(3, len(tok) - 2), len(tok) + 1))
         return " ".join(out)
 
+    def cuttable(self, like, limit):
+        """An invented name (of `like`'s kind) whose UTF-8 is longer than `limit` and in which byte `limit`
+        is inside a multi-byte character, so that cutting at `limit` leaves half a character."""
+        for n in range(400):
+            nm = self.name(like)
+            for extra in range(n % 5):  # longer names for the later tries
+                nm += " " + self.word(3, 8)
+            for pre in ("", "A", "Ab", "Abc"):
+                b = (pre + nm).encode("utf-8")
+                if len(b) > limit + 1 and 0x80 <= b[limit] < 0xC0:
+                    return pre + nm
+        raise SystemExit("cannot invent a name that a cut at byte %d leaves in half" % limit)
+
     def scramble(self, tok):
         """`tok` with every digit and letter replaced (same kind, same case), other characters kept."""
         r = self.rng
@@ -110,16 +130,37 @@ class Gen:
                 return new
         return tok
 
-    def symbol(self, tok):
+    def symbol(self, tok, pool=None):
         """A different symbol of the same kind (a digit, a hex letter) for the quality / leap fields."""
         t = tok.strip()
         if len(t) != 1 or not t.isalnum():
             return tok
-        pool = "0123456789" if t.isdigit() else "ABCDEF" if t.isalpha() and t.isupper() else "abcdef"
+        if pool is None:
+            pool = "0123456789" if t.isdigit() else "ABCDEF" if t.isalpha() and t.isupper() else "abcdef"
         return self.rng.choice([c for c in pool if c != t])
 
     def unit(self, u):
         return u if u.strip().casefold() in KEEP_UNITS else self.word(2, 3).lower()
+
+    def label(self, s, phase):
+        """A phase or ccbm field: a phase from the format whitelist is kept; any other non-empty field is
+        invented with its shape (every letter and digit replaced by a different one of its kind)."""
+        t = s.strip()
+        if not t or (phase and t.casefold() in recfmt.SAFE_PHASES):
+            return s
+        cons, vow = (CONS_CYR, VOW_CYR) if self.cyr else (CONS_LAT, VOW_LAT)
+        out = []
+        for c in t:
+            if c.isdigit():
+                out.append(self.rng.choice([d for d in "0123456789" if d != c]))
+            elif c.isalpha():
+                pool = recfmt.CYR.search(c) and CONS_CYR + VOW_CYR or CONS_LAT + VOW_LAT
+                x = self.rng.choice([d for d in pool if d != c.lower()])
+                out.append(x.upper() if c.isupper() else x)
+            else:
+                out.append(c)
+        del cons, vow
+        return s.replace(t, "".join(out))
 
     def short(self, s):
         """A phase / ccbm field: kept when it is a plain letter or digit, else invented."""
@@ -183,7 +224,7 @@ class Gen:
         return tok
 
     def date(self, tok, rev):
-        """An invented date written like `tok` (day 13..28 so the order is unambiguous)."""
+        """An invented date written like `tok` (day 13..27 so the order is unambiguous)."""
         if not tok.strip():
             return tok
         d, m, y = self.rng.randrange(13, 28), self.rng.randrange(1, 13), self.rng.randrange(2011, 2031)
@@ -239,7 +280,7 @@ def generate(src, seed, rows):
             return val
         nm = g.name(val)
         if (i, k) in cut_len:
-            return ("CUT", nm, cut_len[(i, k)])
+            return ("CUT", g.cuttable(val, cut_len[(i, k)]), cut_len[(i, k)])
         if "�" in val:
             return nm[:-1] + "�" if len(nm) > 1 else nm + "�"
         return nm
@@ -255,7 +296,7 @@ def generate(src, seed, rows):
             elif k == 1:
                 f[k] = text_field(i, k, f[k])
             elif k in (2, 3):
-                f[k] = g.short(f[k]) if k == 2 else g.short(f[k])
+                f[k] = g.label(f[k], phase=k == 2)
             elif k == 4:
                 f[k] = g.unit(f[k])
             elif k in (5, 6, 7, 8, 9, 10, 11):
@@ -268,7 +309,7 @@ def generate(src, seed, rows):
             f[1] = text_field(i, 1, f[1])
         for k in (2, 3):
             if len(f) > k:
-                f[k] = g.short(f[k])
+                f[k] = g.label(f[k], phase=k == 2)
         out.append(f)
 
     out.append(list(L[src.freq_at]))
@@ -311,7 +352,7 @@ def generate(src, seed, rows):
                 new[1:] = [new[0]] * (len(line) - 1)
             tail.append(new)
         elif n == 2:  # tmq_code, leapsec: other symbols of the same kind
-            tail.append([g.symbol(t) for t in line])
+            tail.append([g.symbol(t, "0123" if k and t.strip().isdigit() else None) for k, t in enumerate(line)])
         else:
             tail.append([g.fresh(t) if recfmt.identifying_number(t.strip()) is not None else
                          (g.short(t) if recfmt.identifying_text(t) else t) for t in line])
@@ -350,6 +391,11 @@ def encode_cfg(t, out):
                 b = nm.encode("utf-8")
                 # a name cut by an exporter at a byte limit, leaving half a character
                 b = b[:ln] if len(b) >= ln else b
+                try:
+                    b.decode("utf-8")
+                    raise SystemExit("internal error: a cut name came out whole")
+                except UnicodeDecodeError:
+                    pass
                 cells.append(b)
             else:
                 cells.append(c.encode(enc, errors="replace"))
@@ -494,6 +540,8 @@ def write_record(src, outdir, stem, seed, rows, tries=50, check_rows=200_000):
         hits, _ = userdata_check.check(sidx, out, check_rows)
         if not sum(hits.values()):
             return seed + k
+        for e in paths:  # a clashing draw is never left behind
+            os.remove(os.path.join(outdir, stem + e))
     raise SystemExit("no seed in %d draws gave a record without a clash" % tries)
 
 
@@ -509,7 +557,10 @@ def main(argv=None):
     ap.add_argument("--stem", default="synthetic")
     ap.add_argument("--rows", type=int, default=96, help="data rows to write (default 96)")
     a = ap.parse_args(argv)
-    src = recfmt.Record(a.source)
+    try:
+        src = recfmt.Record(a.source)
+    except recfmt.UnsupportedRecord as e:
+        raise SystemExit(f"error: {e}")
     used = write_record(src, a.outdir, a.stem, a.seed, a.rows)
     print(f"wrote {a.stem} (seed {used}) to {a.outdir}")
 

@@ -24,6 +24,9 @@ SAFE_TEXT = {
 }
 SAFE_WORDS = SAFE_TEXT | {"ascii", "binary", "binary32", "float32", "local", "utc"}
 SAFE_NUMBERS = (1991, 1999, 2013, 32767, 32768, 65535, 65536, 4095, 4096, 2047, 2048, 1023, 1024, 255, 256, 127, 128)
+# Phase fields that are format, not identity; any other phase or ccbm field is a record's own label.
+SAFE_PHASES = {"", "a", "b", "c", "n", "r", "s", "t", "l1", "l2", "l3", "ab", "bc", "ca", "ba", "cb", "ac", "an", "bn",
+               "cn", "abc", "1", "2", "3", "0", "а", "в", "с"}
 FLOAT32_MAX = 3.4028235e38
 COUNT = re.compile(r"^\d+\s*[AaDd]$")  # the channel-count line: 4A, 2D
 
@@ -77,6 +80,10 @@ def words_of(text):
 
 
 # ---- text files -----------------------------------------------------------
+
+class UnsupportedRecord(ValueError):
+    """A record layout the tools do not handle (reported to the user, not a crash)."""
+
 
 class Text:
     """A text file: its decoded lines and what is needed to write it the same way."""
@@ -174,6 +181,8 @@ class Record:
         self.freq_at = i
         self.nrates_at = i + 1
         nr = int(float(L[self.nrates_at][0])) if L[self.nrates_at][0].strip() else 0
+        if nr == 0:
+            raise UnsupportedRecord("a record without rate segments (timestamp-only) is not supported")
         self.n_rates = nr
         self.rates_at = i + 2
         i = self.rates_at + nr

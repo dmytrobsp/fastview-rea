@@ -24,7 +24,7 @@ fn utf8_bom_ascii_over_the_float32_range() {
         assert!(rec.analog[1].id.ends_with('\u{FFFD}'), "the cut name keeps its replacement character");
         assert!(rec.analog.iter().all(|c| c.a > 0.0 && c.a < 1e-35), "a tiny scale factor");
         let top = rec.analog[0].samples.iter().fold(0f64, |m, v| m.max(v.abs()));
-        assert!(top > 0.0 && top.is_finite(), "scaled samples stay finite");
+        assert!(top > 1e-6 && top < 1e6, "samples over the float32 range scaled by a ~1e-37 stay finite and non-zero: {top:e}");
         assert!(rec.analog[0].primary > 0.0 && rec.analog[0].secondary > 0.0);
     }
     assert!(std::fs::read(fixture("a", "a.hdr")).unwrap().len() > 20, "the .hdr is there");
@@ -53,7 +53,16 @@ fn bomless_utf8_with_a_name_cut_mid_character() {
     let raw = std::fs::read(fixture("c", "c.cfg")).unwrap();
     assert_ne!(&raw[..3], b"\xEF\xBB\xBF");
     assert!(std::str::from_utf8(&raw).is_err(), "the cut leaves invalid UTF-8");
-    let rec = comtrade::load_with(fixture("c", "c.cfg"), Encoding::Cp1251).unwrap();
+    // Invalid UTF-8 keeps the program encoding in charge (as for any non-UTF-8 file): read as 1251 the cut name is
+    // 20 characters (one per byte, nothing replaced); read as UTF-8 it is 11 whole characters and a replacement
+    // character for the half one.
+    let as_1251 = comtrade::load_with(fixture("c", "c.cfg"), Encoding::Cp1251).unwrap();
+    assert_eq!((as_1251.text_enc, as_1251.analog[0].id.chars().count()), (None, 20));
+    assert!(!as_1251.analog[0].id.contains('\u{FFFD}'));
+    let as_utf8 = comtrade::load_with(fixture("c", "c.cfg"), Encoding::Utf8).unwrap();
+    assert_eq!(as_utf8.analog[0].id.chars().count(), 12);
+    assert!(as_utf8.analog[0].id.ends_with('\u{FFFD}'), "the half character reads as a replacement character");
+    let rec = as_1251;
     assert_eq!((rec.analog.len(), rec.digital.len(), rec.format.as_str()), (3, 2, "binary32"));
     assert_eq!(rec.sample_count(), 96);
     assert!(rec.analog[0].samples.iter().any(|v| *v != 0.0));

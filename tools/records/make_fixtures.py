@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate the committed generated fixtures: `crates/fvb-core/mogus/data/generated/`.
+"""Regenerate the committed generated fixtures: `crates/fvb-core/tests/data/generated/`.
 
     python3 -I tools/records/make_fixtures.py [--check]
 
@@ -21,7 +21,7 @@ import synth_record  # noqa: E402
 import userdata_check  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
-FIXTURES = os.path.join(ROOT, "crates", "fvb-core", "mogus", "data", "generated")
+FIXTURES = os.path.join(ROOT, "crates", "fvb-core", "tests", "data", "generated")
 CRLF = "\r\n"
 
 
@@ -121,6 +121,21 @@ def src_d(d):
     for i in range(12):
         rows.append(f"{i + 1},{i * 526},{(i * 211) % 2000 - 1000},{(i * 97) % 700 - 350},{(i * 59) % 500 - 250},{i % 2},0,1")
     with open(os.path.join(d, "d.dat"), "wb") as f:
+        f.write(("\n".join(rows) + "\n").encode())
+
+
+def src_e(d):
+    """Not a fixture: short and numeric phase / ccbm labels (bay numbers, component tags), for the tests."""
+    lines = ["Plant Orbis,Unit K8,1999", "5,3A,2D"]
+    for i, (ph, cc) in enumerate([("Q1", "12"), ("R", "T2"), ("47", "B9")], 1):
+        lines.append(f"{i},Line {i}x,{ph},{cc},A,0.3141,0,0,-32767,32767,{4000 + 37 * i},1,S")
+    lines.append("1,Relay one,K1,7,0")
+    lines.append("2,Relay two,,W3,1")
+    lines += ["50", "1", "1850.0,20", "03/05/2020,10:11:12.131415", "03/05/2020,10:11:12.141415", "ASCII", "1"]
+    with open(os.path.join(d, "e.cfg"), "wb") as f:
+        f.write(("\n".join(lines) + "\n").encode())
+    rows = [f"{i + 1},{i * 541},{(i * 313) % 3000 - 1500},{(i * 171) % 2000 - 900},{(i * 83) % 900 - 400},{i % 2},1" for i in range(20)]
+    with open(os.path.join(d, "e.dat"), "wb") as f:
         f.write(("\n".join(rows) + "\n").encode())
 
 

@@ -183,6 +183,112 @@ class Check(Base):
             self.assertEqual([shape(x) for x in a], [shape(x) for x in b])
             self.assertNotEqual(src.fields[src.tail_at + 2], out.fields[out.tail_at + 2])
 
+    def test_phase_and_ccbm_labels_are_invented_and_compared(self):
+        src = self.source(make_fixtures.src_e)
+        for seed in range(1, 6):
+            out = self.synth(src, seed)
+            for c in range(3):
+                a, b = src.fields[src.analog_at + c], out.fields[out.analog_at + c]
+                if c != 1:
+                    self.assertNotEqual(a[2], b[2], "a non-format phase is invented")
+                    self.assertEqual(a[2].isdigit(), b[2].isdigit(), "the shape is kept")
+                self.assertNotEqual(a[3], b[3])
+                self.assertEqual(a[3].isdigit(), b[3].isdigit())
+            self.assertEqual(out.fields[out.analog_at + 1][2], "R", "a format phase is kept")
+            self.assertNotEqual(src.fields[src.digital_at][2:4], out.fields[out.digital_at][2:4])
+            self.assertEqual(self.hits(src, out)["labels"], 0)
+        # a copied label is a hit
+        mod = tempfile.mkdtemp(dir=self.tmp)
+        for n in os.listdir(os.path.dirname(out.cfg_path)):
+            shutil.copy(os.path.join(os.path.dirname(out.cfg_path), n), mod)
+        p = cfg_of(mod)
+        lines = rb(p).split(b"\n")
+        lines[out.analog_at] = b",".join(lines[out.analog_at].split(b",")[:3] + [b"12"] + lines[out.analog_at].split(b",")[4:])
+        wb(p, b"\n".join(lines))
+        self.assertGreater(self.hits(src, recfmt.Record(p))["labels"], 0)
+
+    def copy_column(self, mk, name):
+        """Generate from `mk`'s source, then overwrite one analog column of the output with the source's."""
+        src = self.source(mk)
+        out = self.synth(src, 4, rows=60)
+        ab, words = src.row_layout()
+        if ab:
+            size = 8 + ab * src.n_analog + 2 * words
+            s, o = bytearray(rb(src.dat_path)), bytearray(rb(out.dat_path))
+            for r in range(min(len(s) // size, len(o) // size)):
+                o[r * size + 8: r * size + 8 + ab] = s[r * size + 8: r * size + 8 + ab]
+            wb(out.dat_path, bytes(o))
+        else:
+            s, o = rb(src.dat_path).split(b"\n"), rb(out.dat_path).split(b"\n")
+            for r in range(min(len(s), len(o)) - 1):
+                st, ot = s[r].split(b","), o[r].split(b",")
+                ot[2] = st[2]
+                o[r] = b",".join(ot)
+            wb(out.dat_path, b"\n".join(o))
+        return self.hits(src, recfmt.Record(out.cfg_path)), None
+
+    def test_one_copied_sample_column_is_found(self):
+        for mk in (make_fixtures.src_b, make_fixtures.src_d, make_fixtures.src_e):
+            h, _ = self.copy_column(mk, mk.__name__)
+            self.assertGreater(h["columns"], 0, mk.__name__)
+            self.assertEqual(h["windows"], 0, "whole rows differ: only the per-channel windows see it")
+
+    def test_a_cut_name_stays_cut_for_many_geometries(self):
+        import random
+        rng = random.Random(7)
+        cyr = "бвгдзклмнпрстфхаеиоуы"
+        tested = 0
+        for limit in (15, 16, 17, 20, 21, 23, 25, 28, 31):
+            d = os.path.join(self.tmp, f"cut{limit}")
+            os.makedirs(d)
+            name = " ".join("".join(rng.choice(cyr) for _ in range(rng.randrange(3, 8))) for _ in range(6))
+            full = name.encode()
+            while 0x80 > full[limit] or full[limit] >= 0xC0:  # the source itself is cut mid-character
+                name = name[1:]
+                full = name.encode()
+            lines = [b"Plant Zed,Unit 4,2013", b"2,1A,1D", b"1," + full[:limit] + b",A,,A,0.5123,0,0,-32767,32767,3100,3,S",
+                     b"1,Dig one,,,0", b"50", b"1", b"1700.0,30", b"01/02/2021,03:04:05.600000", b"01/02/2021,03:04:05.700000", b"ASCII", b"1",
+                     b"+4h0,+4h0", b"2,1"]
+            wb(os.path.join(d, "g.cfg"), b"\n".join(lines) + b"\n")
+            wb(os.path.join(d, "g.dat"), b"\n".join(f"{i + 1},{i * 588},{i * 31 - 40},{i % 2}".encode() for i in range(30)) + b"\n")
+            src = recfmt.Record(os.path.join(d, "g.cfg"))
+            for seed in range(1, 31):
+                out = self.synth(src, seed, rows=20)
+                field = out.cfg.raw_lines[out.analog_at].split(b",")[1]
+                self.assertEqual(len(field), limit)
+                with self.assertRaises(UnicodeDecodeError):
+                    field.decode("utf-8")
+                tested += 1
+        self.assertEqual(tested, 9 * 30)
+
+    def test_unsupported_layouts_are_refused_with_a_message(self):
+        d = os.path.join(self.tmp, "ts")
+        os.makedirs(d)
+        wb(os.path.join(d, "t.cfg"), b"S,D,1999\n1,1A,0D\n1,I,A,,A,1,0,0,-1,1,1,1,S\n50\n0\n0,5\n01/01/2020,00:00:00.0\n01/01/2020,00:00:00.1\nASCII\n1\n")
+        with self.assertRaises(recfmt.UnsupportedRecord):
+            recfmt.Record(os.path.join(d, "t.cfg"))
+        with self.assertRaises(SystemExit) as cm:
+            synth_record.main([os.path.join(d, "t.cfg"), os.path.join(d, "o")])
+        self.assertIn("not supported", str(cm.exception))
+
+    def test_a_failed_draw_leaves_no_files(self):
+        src = self.source(make_fixtures.src_d)
+        out = os.path.join(self.tmp, "fail")
+        orig = userdata_check.check
+        userdata_check.check = lambda *a, **k: ({"text": 1}, {})
+        self.addCleanup(setattr, userdata_check, "check", orig)
+        with self.assertRaises(SystemExit):
+            synth_record.write_record(src, out, "z", 1, 20, tries=3)
+        self.assertEqual(os.listdir(out), [])
+
+    def test_leap_seconds_stay_within_0_to_3_and_differ(self):
+        src = self.source(make_fixtures.src_a)
+        for seed in range(1, 40):
+            out = self.synth(src, seed)
+            leap = out.fields[out.tail_at + 2][1]
+            self.assertIn(leap, "0123")
+            self.assertNotEqual(leap, src.fields[src.tail_at + 2][1])
+
     def test_the_cli_exits_one_on_a_match_and_prints_no_value(self):
         import contextlib
         import io

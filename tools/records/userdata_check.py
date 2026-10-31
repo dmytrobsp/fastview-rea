@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove that a generated record carries nothing of the record it was made from.
+"""Look for the values of a source record in a generated record (counts only).
 
     python3 -I tools/records/userdata_check.py --source SRC.cfg [--source SRC2.cfg ...] OUT.cfg [OUT2.cfg ...]
 
@@ -15,8 +15,15 @@ Every source record (its `.cfg`, and the `.dat` / `.hdr` beside it) is indexed i
 - lines: every `.cfg` / `.hdr` line holding one of those, compared whole;
 - codes: the rate-segment lines and the lines after the multiplier (time code / local code, time quality /
   leap second) as whole lines, however short their fields;
-- windows: four consecutive data rows of the analog channels (a row that is not constant), compared
-  as numbers, so a copied stretch of samples shows even where single samples are small whole numbers.
+- labels: the phase and ccbm fields by channel position, apart from format phases (A, B, C, N, L1 ...);
+- windows: four consecutive data rows of the analog channels (not constant), and columns: four consecutive
+  values of one channel (three distinct values, a spread of 16 or more), compared as numbers, so a copied
+  stretch of samples or a copied channel shows even where single samples are small whole numbers.
+
+Not compared, because the generator keeps them on purpose: the channel-count line and channel numbers, digital
+normal states and states, format phases, standard units, P/S, the frequency line, the rate-segment count and the
+approximate ratios, the layout of name tokens, the .hdr's punctuation, the data type. A clean result means no value
+was copied, not that the structure is unrecognisable: an output made from a user record stays local.
 
 Each output record is then searched for all of them. The tool prints counts only, never a value of any
 record, and exits 1 when anything matched. At most --max-rows data rows of each record are read (a
@@ -30,6 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import recfmt  # noqa: E402
 
 WINDOW = 4
+COLUMN_CAP = 2_000_000  # at most this many per-channel windows of a record are indexed
 
 
 def _whole(v):
@@ -68,6 +76,19 @@ def codes(rec):
     return {"".join(ls[i].split()).casefold() for i in pick if i < len(ls) and any(c.isalnum() for c in ls[i])}
 
 
+def labels(rec):
+    """Phase and ccbm fields by channel position: a record's own labels, unless a format phase."""
+    got = set()
+    for kind, at, n in (("a", rec.analog_at, rec.n_analog), ("d", rec.digital_at, rec.n_digital)):
+        for c in range(n):
+            f = rec.cfg.lines[at + c].split(",")
+            for k in (2, 3):
+                v = f[k].strip().casefold() if len(f) > k else ""
+                if v and not (k == 2 and v in recfmt.SAFE_PHASES):
+                    got.add((kind, c, k, v))
+    return got
+
+
 def inventory(rec, max_rows):
     """What identifies a record: sets of texts, words, numbers, lines, data windows."""
     texts, nums, lines = set(), set(), set()
@@ -84,7 +105,7 @@ def inventory(rec, max_rows):
     if stem:
         texts.add(stem)
     words = recfmt.words_of(rec.cfg.text + "\n" + (rec.hdr.text if rec.hdr else ""))
-    windows = set()
+    windows, columns = set(), set()
     ring = []
     for a, d in rec.rows(max_rows):
         row = tuple(recfmt.sig6(x) for x in a) if a else tuple(d)
@@ -97,8 +118,14 @@ def inventory(rec, max_rows):
             w = tuple(x for r in ring for x in r)
             if len(set(w)) > 2:
                 windows.add(hash(w))
+            if len(columns) < COLUMN_CAP:
+                for j in range(len(row) if a else 0):
+                    c = (ring[0][j], ring[1][j], ring[2][j], ring[3][j])
+                    if len(set(c)) >= 3 and (max(c) - min(c) >= 16 or any(x != int(x) for x in c)):
+                        columns.add(hash(c))
             ring.pop(0)
-    return {"texts": texts, "words": words, "nums": nums, "lines": lines, "windows": windows, "codes": codes(rec)}
+    return {"texts": texts, "words": words, "nums": nums, "lines": lines, "windows": windows, "columns": columns,
+            "codes": codes(rec), "labels": labels(rec)}
 
 
 def check(src, rec, max_rows):
@@ -120,8 +147,10 @@ def check(src, rec, max_rows):
         "lines": len(src["lines"] & out["lines"]),
         "windows": len(src["windows"] & out["windows"]),
         "codes": len(src["codes"] & out["codes"]),
+        "columns": len(src["columns"] & out["columns"]),
+        "labels": len(src["labels"] & out["labels"]),
     }, {"texts": len(src["texts"]), "words": len(src["words"]), "numbers": len(src["nums"]),
-        "lines": len(src["lines"]), "windows": len(src["windows"]), "out_windows": len(out["windows"]), "codes": len(src["codes"])}
+        "lines": len(src["lines"]), "windows": len(src["windows"]), "out_windows": len(out["windows"]), "codes": len(src["codes"]), "columns": len(src["columns"]), "labels": len(src["labels"])}
 
 
 def main(argv=None):
@@ -132,7 +161,10 @@ def main(argv=None):
     a = ap.parse_args(argv)
     sources = []
     for p in a.source:
-        r = recfmt.Record(p)
+        try:
+            r = recfmt.Record(p)
+        except recfmt.UnsupportedRecord as e:
+            raise SystemExit(f"error: {e}")
         sources.append(inventory(r, a.max_rows))
     bad = 0
     for o in a.outputs:
@@ -143,7 +175,7 @@ def main(argv=None):
             tag = "FAIL" if total else "ok"
             print(f"{tag}: output {os.path.basename(o)} vs source {i}: matches {hits}; "
                   f"checked {seen['texts']} texts, {seen['words']} words, {seen['numbers']} numbers, "
-                  f"{seen['lines']} lines, {seen['codes']} code lines, {seen['windows']} source windows")
+                  f"{seen['lines']} lines, {seen['codes']} code lines, {seen['labels']} labels, {seen['windows']} row windows, {seen['columns']} column windows")
             bad += total
     return 1 if bad else 0
 
