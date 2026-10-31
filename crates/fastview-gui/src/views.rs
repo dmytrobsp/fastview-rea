@@ -1088,8 +1088,8 @@ impl App {
     /// formula channels alike, the vector and frequency panes without any
     /// test of the channel (#103). The circle diagram only takes channels of
     /// an Ohm / VA unit that are not pending (CompareNoCase on the canonical
-    /// unit, `0x414c30`; none in ADC mode). A digital channel never reaches a pane: the drag payload stops
-    /// at `doc+0x1d8` (analog-kind records).
+    /// unit, `0x414c30`; none in ADC mode). A digital channel never reaches a
+    /// pane: the drag payload stops at `doc+0x1d8` (analog-kind records).
     pub fn drop_channels(&mut self, keys: &[ChanKey], pane: Pane) {
         let Some(d) = self.active_doc_mut() else { return };
         let mut changed = false;

@@ -1259,10 +1259,7 @@ pub struct ChanDrag {
 impl ChanDrag {
     fn of(keys: Vec<ChanKey>) -> ChanDrag {
         let pick = |f: fn(&ChanKey) -> Option<usize>| keys.iter().filter_map(f).collect::<Vec<_>>();
-        ChanDrag {
-            chans: pick(|k| if let ChanKey::Analog(i) = k { Some(*i) } else { None }),
-            computed: pick(|k| if let ChanKey::Computed(j) = k { Some(*j) } else { None }),
-        }
+        ChanDrag { chans: pick(|k| if let ChanKey::Analog(i) = k { Some(*i) } else { None }), computed: pick(|k| if let ChanKey::Computed(j) = k { Some(*j) } else { None }) }
     }
 
     /// The dragged channels as keys.
@@ -2981,8 +2978,6 @@ mod menu_tests {
         assert!(h.doc().computed[0].group.is_some() && h.doc().computed[0].group == h.doc().chans[1].group, "one lane now");
     }
 
-    /// A pasted (pending) lane and a digital one are dragged like any other
-    /// selected channel and dropped on any lane (`0x45ea70`, `0x4415b0`): the
     /// After «Объединить» and a rate change the record's rate is above the
     /// channels' own: the analog painters visit ⌈W/(25f·R/r)⌉ samples, so a
     /// lane stops short of the plot's right edge, at W·r/R from its left
@@ -3086,6 +3081,46 @@ mod menu_tests {
         h.frame(vec![ev(pb, false)]);
         h.frame(vec![]);
         assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "message 1086 through the enable check");
+        h.app.dlg.alerts.clear();
+        // A pasted digital lane: the same, and it never reaches a pane.
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Digital(0)].into_iter().collect();
+        h.app.copy_channels_for_merge();
+        h.app.paste_channels_for_merge();
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let pd = rows.iter().position(|r| matches!(r.key, Lane::Computed(j) if h.doc().pending_digital(j))).expect("a pasted digital lane");
+        let file = rows.iter().position(|r| matches!(r.key, Lane::Analog(_))).unwrap();
+        let (pdk, fk) = (rows[pd].key, rows[file].key);
+        let started = |h: &Harness| egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&h.ctx);
+        let hold = |h: &mut Harness, from: usize| {
+            let (pa, pb) = (h.row(from), h.row(from) + Vec2::new(0.0, 12.0));
+            let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            h.frame(vec![egui::Event::PointerMoved(pa), ev(pa, true)]);
+            h.frame(vec![egui::Event::PointerMoved(pb)]);
+            h.t += 0.3;
+            h.frame(vec![egui::Event::PointerMoved(pb + Vec2::new(0.0, 3.0))]);
+            started(h)
+        };
+        h.app.active_doc_mut().unwrap().selection = [pdk].into_iter().collect();
+        assert!(!hold(&mut h, pd), "a pasted digital lane alone starts no drag");
+        assert!(h.app.dlg.alert().is_none());
+        h.frame(vec![egui::Event::PointerButton { pos: h.row(pd), button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }]);
+        let dig = rows.iter().position(|r| matches!(r.key, Lane::Digital(_))).unwrap();
+        h.app.active_doc_mut().unwrap().selection = [rows[dig].key].into_iter().collect();
+        assert!(!hold(&mut h, dig), "a file digital lane alone starts no drag");
+        h.frame(vec![egui::Event::PointerButton { pos: h.row(dig), button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }]);
+        // A drop on the pasted digital lane does nothing.
+        h.app.active_doc_mut().unwrap().selection = [fk].into_iter().collect();
+        drag_rows(&mut h, file, pd);
+        assert!(h.app.dlg.alert().is_none(), "a pasted digital lane is no target");
+        assert_eq!(h.doc().selection, [fk].into_iter().collect(), "the selection is unchanged");
+        // In a pane drop it is skipped.
+        let j = match pdk { Lane::Computed(j) => j, _ => unreachable!() };
+        h.app.active_doc_mut().unwrap().computed[j].on_freq = false;
+        h.app.drop_channels(&[pdk], crate::app::Pane::Frequency);
+        assert!(!h.doc().computed[j].on_freq, "a pasted digital lane never reaches a pane");
     }
 
     /// The drop on a diagram pane takes formula channels too (#103): the
