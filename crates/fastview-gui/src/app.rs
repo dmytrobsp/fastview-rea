@@ -3298,6 +3298,26 @@ mod tests {
         assert!(differs, "the record must tell the two orders apart");
     }
 
+    /// #105 (clone): a «P» record shown «Вторичные», one channel in ADC codes: a formula naming it reads the code as
+    /// the accessor returns it, not times the display factor (the original: «Ia» lane −1878, formula lane −1878).
+    #[test]
+    fn a_formula_reads_an_adc_channel_as_the_accessor_does() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1234.0, 5.0, true);
+        d.chans[0].adc_counts = true;
+        d.recompute(false);
+        let name = d.osc.analog[0].id.clone();
+        assert!(app.append_computed(&[("same".into(), format!("\"{name}\""))]).is_some());
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.shown_k(0), 1.0, "the codes are not scaled");
+        let k = display_k(&d.osc.analog[0], false);
+        assert_ne!(k, 1.0);
+        let codes = d.shown_samples(0);
+        assert!(codes.iter().any(|c| *c != 0.0));
+        assert_eq!(d.computed[0].samples, codes);
+    }
+
     /// A computed channel carries invert / DC / the display mode like a file
     /// channel (`0x428490` with bit 13): its values negated / DC-removed,
     /// its stored phasor negated by invert, a later formula reading it
