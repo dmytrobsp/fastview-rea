@@ -15,6 +15,11 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::{Window, WindowId};
 
+/// Whether `FV_SOFTLOG` names a file (the trace lines are only worth building then).
+fn tracing() -> bool {
+    std::env::var_os("FV_SOFTLOG").is_some()
+}
+
 /// A line in the file `FV_SOFTLOG` names (a release build has no console).
 pub fn trace(msg: &str) {
     if let Some(p) = std::env::var_os("FV_SOFTLOG") {
@@ -85,6 +90,9 @@ impl ApplicationHandler for Soft {
                 window.request_redraw();
             }
             event => {
+                if tracing() && !matches!(event, WindowEvent::CursorMoved { .. }) {
+                    trace(&format!("event {:.70}", format!("{event:?}")));
+                }
                 if matches!(event, WindowEvent::CursorMoved { .. } | WindowEvent::CursorEntered { .. } | WindowEvent::CursorLeft { .. } | WindowEvent::MouseInput { .. }) {
                     trace(&format!("event {event:?}"));
                 }
@@ -148,6 +156,10 @@ impl Soft {
                 app.frame_ui(ctx);
                 app.splash(ctx);
             });
+            if tracing() {
+                let delay = out.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.repaint_delay);
+                trace(&format!("pass: repaint in {delay:?} causes {:?}", self.ctx.repaint_causes().iter().map(|c| c.to_string()).collect::<Vec<_>>()));
+            }
             state.handle_platform_output(window, std::mem::take(&mut out.platform_output));
             textures.append(std::mem::take(&mut out.textures_delta));
             if let Some(vp) = out.viewport_output.get(&egui::ViewportId::ROOT) {
