@@ -70,7 +70,13 @@ impl Analysis {
     /// per sample.
     pub fn compute_over(osc: &Oscillogram, series: &[&[f64]], corr: Option<crate::freqcorr::FreqCorr<'_>>) -> Analysis {
         let n = osc.samples_per_cycle().max(2);
-        let phasors: Vec<Phasors> = series.iter().enumerate().map(|(i, x)| crate::freqcorr::sliding_phasors(corr, i, x, n)).collect();
+        // Each channel at its own period (`ch+0x108`, else the record's).
+        let own = |i: usize| osc.analog.get(i).map_or(0.0, |c| c.own_rate);
+        let phasors: Vec<Phasors> = series
+            .iter()
+            .enumerate()
+            .map(|(i, x)| crate::freqcorr::sliding_phasors(corr.map(|c| c.at_rate(own(i))), i, x, osc.period_of(own(i)).max(2)))
+            .collect();
 
         let mut u_abc = [None, None, None];
         let mut i_abc = [None, None, None];

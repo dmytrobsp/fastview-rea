@@ -460,6 +460,7 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
     };
     for dst in out.analog.iter_mut().take(na) {
         (dst.samples, dst.own_freq) = it.next().map(analog).unwrap_or_default();
+        dst.own_rate = r;
     }
     for dst in out.digital.iter_mut().take(nd) {
         dst.samples = it.next().map(digital).unwrap_or_default();
@@ -469,6 +470,7 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
             Ok(a) => {
                 let mut c = a.clone();
                 (c.samples, c.own_freq) = analog(lane);
+                c.own_rate = r;
                 out.analog.push(c);
             }
             Err(d) => {

@@ -67,6 +67,10 @@ pub struct AnalogChannel {
     /// file's channel; a pasted one's `net_frequency`, a merged one's
     /// resampled (`0x47e4b5`) — what the ОМП's tracked phasor reads.
     pub own_freq: Vec<f64>,
+    /// The channel's own sample rate (`ch+0x108`): 0 for a channel of the
+    /// file; «Объединить» (`0x47d990`) gives every channel present the merged
+    /// rate R. The rate dialog and the settings load leave it alone.
+    pub own_rate: f64,
 }
 
 impl AnalogChannel {
@@ -210,6 +214,18 @@ impl Oscillogram {
             self.rate_r
         } else {
             self.sample_rate
+        }
+    }
+
+    /// The window of a channel's statistics and phasors (`0x428490`, every
+    /// signal function, L9.142): round(own rate / 50) for a channel with an
+    /// own rate (`ch+0x108`, a fixed 50), else the record's
+    /// [`Oscillogram::samples_per_cycle`].
+    pub fn period_of(&self, own_rate: f64) -> usize {
+        if own_rate != 0.0 {
+            (own_rate / 50.0).round() as usize
+        } else {
+            self.samples_per_cycle()
         }
     }
 
@@ -940,6 +956,7 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
             is_primary: false,
             samples: Vec::new(),
             own_freq: Vec::new(),
+            own_rate: 0.0,
         })
         .collect();
     let mut digital: Vec<DigitalChannel> = digital_defs
@@ -1720,6 +1737,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
             is_primary: g(12).eq_ignore_ascii_case("p"),
             samples: Vec::new(),
             own_freq: Vec::new(),
+            own_rate: 0.0,
         });
     }
 

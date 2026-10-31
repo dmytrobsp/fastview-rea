@@ -394,6 +394,9 @@ pub struct Computed {
     pub seq: u64,
     /// The colour was set by 33030 or a `.set` (`ch+0x140`).
     pub custom_color: bool,
+    /// The channel's own rate (`ch+0x108`): set only by «Объединить» on the
+    /// formula channels present; a later formula has none.
+    pub own_rate: f64,
 }
 
 static NEXT_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -426,6 +429,7 @@ impl Computed {
             group: None,
             seq: NEXT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             custom_color: false,
+            own_rate: 0.0,
         }
     }
 
@@ -824,15 +828,15 @@ impl Doc {
     }
 
     pub fn new(osc: Oscillogram, name: String) -> Self {
-        let n = osc.samples_per_cycle().max(2);
         let corr = fvb_core::freqcorr::of(&osc);
+        let np = |i: usize| osc.period_of(osc.analog[i].own_rate).max(2);
         let chans: Vec<ChanView> = (0..osc.analog.len()).map(|i| ChanView::new(&osc.analog[i], i)).collect();
         // The channels read through the accessor: the shown factor per sample.
-        let shown: Vec<Option<Vec<f64>>> = (0..osc.analog.len()).map(|i| shown_series(&osc.analog[i], &chans[i], whole_period_mean(&osc.analog[i].samples, n), shown_factor(&osc.analog[i], &chans[i]))).collect();
+        let shown: Vec<Option<Vec<f64>>> = (0..osc.analog.len()).map(|i| shown_series(&osc.analog[i], &chans[i], whole_period_mean(&osc.analog[i].samples, np(i)), shown_factor(&osc.analog[i], &chans[i]))).collect();
         let series: Vec<&[f64]> = (0..osc.analog.len()).map(|i| shown[i].as_deref().unwrap_or(&osc.analog[i].samples)).collect();
         let analysis = Analysis::compute_over(&osc, &series, corr);
-        let rms: Vec<Vec<f64>> = series.iter().enumerate().map(|(i, x)| fvb_core::freqcorr::sliding_rms(corr, i, x, n)).collect();
-        let dc_mean = osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
+        let rms: Vec<Vec<f64>> = series.iter().enumerate().map(|(i, x)| fvb_core::freqcorr::sliding_rms(corr.map(|c| c.at_rate(osc.analog[i].own_rate)), i, x, np(i))).collect();
+        let dc_mean = osc.analog.iter().enumerate().map(|(i, c)| (whole_period_mean(&c.samples, np(i)), whole_period_mean(&adc_codes(c), np(i)))).collect();
         let flagged = osc.clone();
         let digital_visible = vec![true; osc.digital.len()];
         Doc {
@@ -894,12 +898,11 @@ impl Doc {
     /// change (the original's full recompute, `FUN_00428490` per channel):
     /// the flagged record, its RMS and phasors, and the formula channels.
     pub fn recompute(&mut self, show_primary: bool) {
-        let n = self.osc.samples_per_cycle().max(2);
         // The record may have been re-timed or re-scaled (file parameters,
         // coefficients): rebuild the copy and the whole-period DC from it.
         self.flagged = self.osc.clone();
         self.series_gen += 1;
-        self.dc_mean = self.osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
+        self.dc_mean = self.osc.analog.iter().enumerate().map(|(i, c)| (whole_period_mean(&c.samples, self.period_of(i)), whole_period_mean(&adc_codes(c), self.period_of(i)))).collect();
         self.rms.resize(self.osc.analog.len(), Vec::new());
         self.shown.resize(self.osc.analog.len(), None);
         for i in 0..self.osc.analog.len() {
@@ -907,7 +910,7 @@ impl Doc {
             self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i], k);
             // Every readout sums the samples as the accessor returns them: times the shown factor.
             self.shown[i] = shown_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i].0, shown_factor(&self.osc.analog[i], &self.chans[i]));
-            self.rms[i] = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&self.osc), i, self.shown_samples(i), n);
+            self.rms[i] = fvb_core::freqcorr::sliding_rms(self.corr_of(i), i, self.shown_samples(i), self.period_of(i));
         }
         self.flag_digital(false);
         // The correction reads the frequency channel as stored (L9.65).
@@ -916,6 +919,17 @@ impl Doc {
         self.analysis = analysis;
         // The copy was just taken: no name to bring over.
         let _ = self.evaluate_formula_list(show_primary);
+    }
+
+    /// Analog channel `i`'s window of statistics and phasors: its own rate
+    /// ÷ 50 when it has one (`0x428490`), else the record's.
+    pub fn period_of(&self, i: usize) -> usize {
+        self.osc.period_of(self.osc.analog.get(i).map_or(0.0, |c| c.own_rate)).max(2)
+    }
+
+    /// The record's frequency correction at analog channel `i`'s own rate.
+    fn corr_of(&self, i: usize) -> Option<fvb_core::freqcorr::FreqCorr<'_>> {
+        fvb_core::freqcorr::of(&self.osc).map(|c| c.at_rate(self.osc.analog.get(i).map_or(0.0, |a| a.own_rate)))
     }
 
     /// The formulas resolve a channel by its name as shown now (`0x42edf0`
@@ -1015,6 +1029,7 @@ impl Doc {
             }
             return;
         }
+        let (n, corr) = if c.own_rate != 0.0 { (self.osc.period_of(c.own_rate).max(2), corr.map(|q| q.at_rate(c.own_rate))) } else { (n, corr) };
         let dc = if c.remove_dc { whole_period_mean(&c.raw, n) } else { 0.0 };
         c.samples = c.raw.iter().map(|x| sign * (x - dc)).collect();
         c.phasors = c.raw_phasors.as_ref().map(|p| p.iter().map(|z| z * sign).collect());
@@ -1053,19 +1068,17 @@ impl Doc {
     /// `0x426240` read `rec+0x874` live) — unlike the cached series, which
     /// keep the correction they were built with until a full recompute.
     pub fn stat_rms(&self, i: usize, k: usize) -> f64 {
-        let n = self.osc.samples_per_cycle().max(2);
         if i >= self.flagged.analog.len() {
             return 0.0;
         }
-        fvb_core::freqcorr::rms_at(fvb_core::freqcorr::of(&self.osc), i, self.shown_samples(i), k, n, 1)
+        fvb_core::freqcorr::rms_at(self.corr_of(i), i, self.shown_samples(i), k, self.period_of(i), 1)
     }
 
     pub fn stat_a1(&self, i: usize, k: usize) -> f64 {
-        let n = self.osc.samples_per_cycle().max(2);
         if i >= self.flagged.analog.len() {
             return 0.0;
         }
-        fvb_core::freqcorr::fundamental_at(fvb_core::freqcorr::of(&self.osc), i, self.shown_samples(i), k, n)
+        fvb_core::freqcorr::fundamental_at(self.corr_of(i), i, self.shown_samples(i), k, self.period_of(i))
     }
 
     pub fn harmonic_at(&self, i: usize, k: usize) -> f64 {
@@ -3331,6 +3344,64 @@ mod tests {
         let merged = d.osc.analog.iter().position(|c| c.id.contains("(вст.)")).expect("the merged channel");
         assert!(d.selection.contains(&ChanKey::Analog(merged)), "still selected after the merge");
         assert!(!d.selection.iter().any(|k| matches!(k, ChanKey::Computed(_))));
+    }
+
+    /// «Объединить» gives every channel present its own rate R (`0x47d990`);
+    /// a later rate change sets only the record's, so the merged channels
+    /// keep their window (#71) and «Совместить каналы» refuses a later
+    /// formula (message 239, #57).
+    #[test]
+    fn a_merge_gives_the_channels_an_own_rate_the_rate_dialog_leaves_alone() {
+        let mut app = demo_app();
+        let r = app.docs[0].osc.rate_r;
+        assert!(app.docs[0].osc.analog.iter().all(|c| c.own_rate == 0.0), "a file's channels have none");
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = &app.docs[0];
+        assert!(d.osc.analog.iter().all(|c| c.own_rate == r), "every channel present, the pasted one too");
+        // The rate dialog sets only the record's.
+        assert_eq!(app.apply_file_rate(0, &((r / 2.0) as i32).to_string()), Ok(()));
+        let d = &app.docs[0];
+        assert!(d.osc.analog.iter().all(|c| c.own_rate == r), "the dialog leaves the own rate alone");
+        // The merged channel keeps its period, the record's follows the new rate (#71).
+        assert_eq!(d.osc.samples_per_cycle() * 2, d.period_of(3));
+        let want = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&d.osc).map(|c| c.at_rate(r)), 3, d.shown_samples(3), d.period_of(3));
+        assert_eq!(d.rms[3], want, "the RMS window is the own rate / 50");
+        assert_ne!(d.period_of(3), d.osc.samples_per_cycle());
+        // A formula added now has none: it follows the record's rate.
+        assert!(app.append_computed(&[("X".into(), "Ib".into())]).is_some());
+        let d = &app.docs[0];
+        assert_eq!(d.computed.last().unwrap().own_rate, 0.0);
+        // 33035 over the merged Ib and the new formula: rates differ.
+        let j = d.computed.len() - 1;
+        let d = &mut app.docs[0];
+        d.selection = BTreeSet::from([ChanKey::Analog(4), ChanKey::Computed(j)]);
+        assert!(d.can_combine(), "the enable check passes");
+        assert!(!d.combine_selected(), "message 239: nothing changed");
+        assert!(d.chans[4].group.is_none() && d.computed[j].group.is_none());
+        // Two merged channels group normally.
+        d.selection = BTreeSet::from([ChanKey::Analog(3), ChanKey::Analog(4)]);
+        assert!(d.combine_selected());
+        assert!(d.chans[3].group.is_some() && d.chans[3].group == d.chans[4].group);
+    }
+
+    /// Without the rate change a formula after a merge groups with the
+    /// merged channels (the record's rate equals R).
+    #[test]
+    fn a_later_formula_groups_while_the_rates_agree() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        assert!(app.append_computed(&[("X".into(), "Ib".into())]).is_some());
+        let d = &mut app.docs[0];
+        let j = d.computed.len() - 1;
+        d.selection = BTreeSet::from([ChanKey::Analog(4), ChanKey::Computed(j)]);
+        assert!(d.combine_selected());
+        assert!(d.chans[4].group.is_some() && d.chans[4].group == d.computed[j].group);
     }
 
     /// The ribbon's update rules (`0x45c8c0`, `0x42fc60`, `0x475750`,

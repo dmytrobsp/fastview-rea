@@ -1257,6 +1257,9 @@ const DRAG_SCROLL_S: f64 = 0.05;
 /// Message 1086.
 pub const MSG_COMBINE_UNITS: &str = "Совмещение невозможно.\nУ каналов разные единицы измерения.";
 
+/// Message 239 (error icon), «Совместить каналы» with channels of different rates.
+pub const MSG_COMBINE_RATES: &str = "Выбранные каналы имеют разную частоту";
+
 /// A command chosen in one of the context menus.
 enum MenuCmd {
     Flag(ChanFlag),
@@ -1964,7 +1967,9 @@ impl App {
                     // selections stay), then 33035 or message 1086.
                     d.selection.extend(chans.iter().chain([&target]).map(|&i| Lane::Analog(i)));
                     if d.can_combine() {
-                        d.combine_selected();
+                        if !d.combine_selected() {
+                            self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
+                        }
                     } else {
                         self.dlg.push_alert(MSG_COMBINE_UNITS.to_string());
                     }
@@ -2254,7 +2259,11 @@ impl App {
                     MenuCmd::Hide => d.hide_selected(),
                     MenuCmd::Mode(m) => d.set_mode_selected(m),
                     MenuCmd::ResetZoom => d.reset_zoom_selected(),
-                    MenuCmd::Combine => d.combine_selected(),
+                    MenuCmd::Combine => {
+                        if !d.combine_selected() {
+                            self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
+                        }
+                    }
                     MenuCmd::Split => d.split_selected(),
                     MenuCmd::LockComment(i) => d.comments[i].locked = !d.comments[i].locked,
                     MenuCmd::DeleteComment(i) => {
@@ -2926,6 +2935,15 @@ mod menu_tests {
         assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "different units: message 1086");
         assert!(h.doc().chans[c0].group.is_none() && h.doc().chans[co].group.is_none());
         h.app.dlg.alerts.clear();
+        h.app.active_doc_mut().unwrap().selection.clear();
+        // Another own rate on the dragged channel: message 239 (error
+        // icon), nothing changed (#57).
+        h.app.active_doc_mut().unwrap().osc.analog[c0].own_rate = 1234.0;
+        drag_rows(&mut h, 0, same);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_RATES), "different rates: message 239");
+        assert!(h.doc().chans[c0].group.is_none() && h.doc().chans[cs].group.is_none());
+        h.app.dlg.alerts.clear();
+        h.app.active_doc_mut().unwrap().osc.analog[c0].own_rate = 0.0;
         h.app.active_doc_mut().unwrap().selection.clear();
         drag_rows(&mut h, 0, same);
         let d = h.doc();

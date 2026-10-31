@@ -438,12 +438,38 @@ impl Doc {
         ok
     }
 
+    /// A channel's rate as 33035 compares it (`0x467370`): its own rate when
+    /// non-zero, else the record's integer rate (`rec+0x228`).
+    fn rate_of(&self, k: ChanKey) -> f64 {
+        let own = match k {
+            ChanKey::Analog(i) => self.osc.analog[i].own_rate,
+            ChanKey::Computed(j) => self.computed[j].own_rate,
+            ChanKey::Digital(_) => 0.0,
+        };
+        if own != 0.0 {
+            own
+        } else {
+            self.osc.int_rate_hz()
+        }
+    }
+
+    /// 33035's rate test: the directly selected visible analog channels
+    /// (formula channels too) have exactly the same rate.
+    pub fn combine_rates_match(&self) -> bool {
+        let mut rates = self.selected_visible_kind0().into_iter().map(|k| self.rate_of(k));
+        rates.next().is_none_or(|first| rates.all(|r| r == first))
+    }
+
     /// 33035 «Совместить каналы»: one new group of the selection (and the
     /// groups it touches); members lose their vertical zoom and switch to
-    /// instantaneous values.
-    pub fn combine_selected(&mut self) {
+    /// instantaneous values. `false` when the rates differ (message 239:
+    /// nothing changed, no group dissolved).
+    pub fn combine_selected(&mut self) -> bool {
         if !self.can_combine() {
-            return;
+            return true;
+        }
+        if !self.combine_rates_match() {
+            return false;
         }
         let members = self.with_groups(&self.selected_visible_kind0());
         // The old groups are dissolved first (`0x467796`).
@@ -459,6 +485,7 @@ impl Doc {
         let names = members.iter().map(|&k| self.member_name(k)).collect();
         self.group_names.insert(g, names);
         self.set_mode_selected(ValueMode::Instant);
+        true
     }
 
     /// CMDUI 33037: some selected visible channel is in a group.
