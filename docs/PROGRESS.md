@@ -15,7 +15,7 @@ Last rewritten: 2026-10-31 (v0.6.0 released: milestone 0.6.0, the follow-ups of 
 
 ## Where the reconstruction stands
 
-- Every engine and the UI layer read and reconciled: the record runs L1–L9.413 ([original/](original/README.md)); 91.8 %
+- Every engine and the UI layer read and reconciled: the record runs L1–L9.420 ([original/](original/README.md)); 91.8 %
   of the program's own code is in cited functions (`tools/coverage.py`).
 - Deliberate improvements: [IMPROVEMENTS.md](IMPROVEMENTS.md); differences the maintainer accepted:
   [ACCEPTED-DIFFERENCES.md](ACCEPTED-DIFFERENCES.md).
