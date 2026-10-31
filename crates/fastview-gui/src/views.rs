@@ -48,6 +48,12 @@ impl App {
         self.dock_drag_frame(ctx);
         self.pane_menu_frame(ctx);
         self.diagram_overlays(ctx);
+        for &(p, r) in &self.pane_canvas {
+            match self.canvas_memo.iter_mut().find(|(q, _)| *q == p) {
+                Some(m) => m.1 = r,
+                None => self.canvas_memo.push((p, r)),
+            }
+        }
         // The circle / differential state stays the last activated one's.
         self.switch_diagram(match self.panes.active {
             Pane::Circle | Pane::Differential => pane_dim(self.panes.active),
@@ -770,10 +776,15 @@ impl App {
         // group closed or auto-hidden and in its strip (Windows hands a
         // hidden window's focus to its parent, the frame passes it on to
         // the view).
+        // A pane of a tabbed group keeps the focus window it was when it
+        // or its group hides (clone: GetFocus still names the hidden pane
+        // after the ribbon toggle or the caption «×»); only a group slid
+        // back into its strip takes it off.
         if let Some(g) = self.focus_group() {
             let d = self.docks[g];
-            let pane_closed = matches!(self.copy_focus, crate::app::CopyFocus::Diagram(p) | crate::app::CopyFocus::Grid(p) if !self.panes.visible(p));
-            if pane_closed || !views.iter().any(|v| v.unit == g) || (d.place == Place::AutoHide && !d.out && d.slide == 0.0) {
+            let tabbed = self.docks.members(g).count() > 1;
+            let hidden = !views.iter().any(|v| v.unit == g);
+            if (hidden && !tabbed) || (d.place == Place::AutoHide && !d.out && d.slide == 0.0) {
                 self.copy_focus = crate::app::CopyFocus::View;
             }
         }

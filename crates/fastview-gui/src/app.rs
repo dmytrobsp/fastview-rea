@@ -1609,6 +1609,10 @@ pub struct App {
     /// The diagram windows (the canvas, without toolbar or property grid)
     /// as last drawn.
     pub pane_canvas: Vec<(Pane, egui::Rect)>,
+    /// Each diagram window's rect as it was last drawn, kept while its pane
+    /// is hidden (a hidden window keeps its size; copy of a focused hidden
+    /// diagram takes its picture).
+    pub canvas_memo: Vec<(Pane, egui::Rect)>,
     /// The diagram tab strips' tabs this frame.
     pub pane_tab_rects: Vec<(Pane, egui::Rect)>,
     /// The document tabs this frame, in strip order.
@@ -1830,6 +1834,7 @@ impl App {
             view_left: crate::lanes::LEFT_W_DEFAULT,
             view_rects: None,
             pane_canvas: Vec::new(),
+            canvas_memo: Vec::new(),
             pane_tab_rects: Vec::new(),
             doc_tab_rects: Vec::new(),
             focus_other: Vec::new(),
@@ -1992,8 +1997,8 @@ impl App {
     /// Hides pane `p` if it shows: the nearest visible tab of its group
     /// comes to the front when `p` was, and a focus the group's window
     /// holds (a caption or strip press gave it) goes back to the view
-    /// (#77) when `p` was the pane shown; a tabbed group stays shown, so
-    /// the frame's rule would not.
+    /// (#77) when `p` was the pane shown and has a control bar of its own;
+    /// a pane of a tabbed group keeps it (#112).
     pub fn close_pane(&mut self, p: Pane) {
         if !self.panes.visible(p) {
             return;
@@ -2003,8 +2008,15 @@ impl App {
         let was_front = self.panes.front(strip.iter().copied()) == Some(p);
         self.panes.set(p, false);
         if was_front {
+            // A pane of a tabbed group (a tab control's window) that hides
+            // keeps the focus window it was (clone: GetFocus still returns
+            // the hidden pane, copy takes its diagram); one with a control
+            // bar of its own hands the focus to the view.
             if matches!(self.copy_focus, CopyFocus::Pane(u) if u == host || u == p) {
-                self.copy_focus = CopyFocus::View;
+                // (An auto-hidden group's slid-out pane was not run on a
+                // clone: it keeps the view.)
+                let tabbed = strip.len() > 1 && !self.docks[host].auto_hidden();
+                self.copy_focus = if tabbed { CopyFocus::Diagram(p) } else { CopyFocus::View };
             }
             let i = strip.iter().position(|&q| q == p).unwrap_or(0);
             let next = strip[i + 1..].iter().find(|&&q| self.panes.visible(q)).or_else(|| strip[..i].iter().rev().find(|&&q| self.panes.visible(q)));

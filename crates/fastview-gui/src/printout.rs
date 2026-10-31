@@ -545,7 +545,7 @@ impl App {
     /// no toolbar or property grid) as last drawn, at the screen's
     /// resolution.
     pub fn diagram_picture(&mut self, pane: Pane) -> Option<Canvas> {
-        let rect = self.pane_canvas.iter().find(|(p, _)| *p == pane)?.1;
+        let rect = self.pane_canvas.iter().chain(&self.canvas_memo).find(|(p, _)| *p == pane)?.1;
         let (di, fonts, ppp) = (self.active?, self.print.fonts.clone(), self.ppp);
         Some(self.render_diagram(&fonts, di, pane, rect.size(), ppp))
     }

@@ -391,8 +391,7 @@ impl App {
             f => f,
         };
         let focus = match focus {
-            CopyFocus::Diagram(p) if !self.pane_canvas.iter().any(|(q, _)| *q == p) => CopyFocus::View,
-            CopyFocus::Grid(_) if self.pane_grid.is_empty() => CopyFocus::View,
+            CopyFocus::Diagram(p) if !self.pane_canvas.iter().chain(&self.canvas_memo).any(|(q, _)| *q == p) => CopyFocus::View,
             f => f,
         };
         if let CopyFocus::Diagram(pane) = focus {

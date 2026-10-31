@@ -3081,28 +3081,30 @@ mod window_tests {
         assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector), "not the view under it");
     }
 
-    /// The focus leaves a pane that closes (#77): a focused diagram's, and
-    /// a focused property grid's (Windows hands a hidden window's focus to
-    /// its parent, the frame passes it on to the view), so the view's arrow
-    /// keys work again at once.
+    /// The focus leaves a standalone pane that closes (#77; clone: Частотная's
+    /// «×» with its diagram focused, the frame's view holds the focus): a
+    /// focused diagram's, and a focused property grid's (the start-up
+    /// layout's Дифференциальная), so the view's arrow keys work again at
+    /// once.
     #[test]
     fn closing_the_pane_that_holds_the_focus_returns_it_to_the_view() {
         use app::{Command, CopyFocus, Pane};
-        let mut w = Win::new();
         // A focused diagram.
-        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the frequency diagram").1;
         w.press(egui::PointerButton::Primary, canvas.center(), canvas.center());
-        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
-        w.app.dispatch(Command::TogglePane(Pane::Vector));
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Frequency));
+        w.app.dispatch(Command::TogglePane(Pane::Frequency));
         w.idle(3);
         assert_eq!(w.app.copy_focus, CopyFocus::View, "the diagram's pane closed");
-        // A focused property grid, its group's other panes still shown.
-        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        // A focused property grid, in a pane of its own.
+        let mut w = Win::new();
+        w.app.docks = docking::Docks::default();
         w.idle(3);
-        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let grid = *w.app.pane_grid.first().expect("the differential pane's grid");
         w.press(egui::PointerButton::Primary, grid.center(), grid.center());
-        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
-        w.app.dispatch(Command::TogglePane(Pane::Circle));
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Differential));
+        w.app.dispatch(Command::TogglePane(Pane::Differential));
         w.idle(3);
         assert_eq!(w.app.copy_focus, CopyFocus::View, "the grid's pane closed");
         // The view's keys work again without a press in it.
@@ -3111,55 +3113,110 @@ mod window_tests {
         assert_ne!(w.view_state(), before, "the arrow key reaches the view");
     }
 
+    /// A pane of a tabbed group that closes keeps the focus it held (clone,
+    /// the start-up layout: the vector diagram focused, its «×» pressed and
+    /// the ribbon's toggle, the circle tab still there or not: the hidden
+    /// pane's window is still the focus window — copy took its diagram's
+    /// picture at its last size, and no document): only a pane of its
+    /// own, whose control bar hides, hands the focus to the view (#112).
+    #[test]
+    fn a_tabbed_pane_that_closes_keeps_the_focus() {
+        use app::{Command, CopyFocus, Pane};
+        use egui::PointerButton::Primary;
+        // The focused diagram of the front tab.
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(app::ChanKey::Analog(0));
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        w.press(Primary, canvas.center(), canvas.center());
+        w.app.dispatch(Command::TogglePane(Pane::Vector));
+        w.idle(3);
+        assert_eq!(w.app.panes.front(w.app.docks.members(docking::Unit::Vector)), Some(Pane::Circle), "the next tab came to the front");
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector), "the hidden pane keeps the focus");
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_eq!(w.view_state(), before, "the view's keys stay dead");
+        w.app.dispatch(Command::Copy);
+        assert_eq!(w.app.clip.picture(), Some((canvas.width().round() as usize, canvas.height().round() as usize)), "the hidden diagram's picture at its last size");
+        assert_eq!(w.app.clip.get(), None, "a diagram copy leaves no document");
+        // Pressing the pane's caption gave its group the focus: closing the
+        // front pane leaves it on that pane.
+        let mut w = Win::new();
+        let at = Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0);
+        w.press(Primary, at, at);
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector));
+        w.app.dispatch(Command::TogglePane(Pane::Vector));
+        w.idle(3);
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector), "the caption's window, hidden, keeps the focus");
+        // A property grid, the whole group hidden: the grid's window keeps it and copy takes the document alone.
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(app::ChanKey::Analog(0));
+        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        w.idle(3);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        w.press(Primary, grid.center(), grid.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
+        for p in [Pane::Circle, Pane::Vector, Pane::Differential] {
+            w.app.dispatch(Command::TogglePane(p));
+        }
+        w.idle(3);
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle), "the group is gone, the grid's window keeps the focus");
+        w.app.dispatch(Command::Copy);
+        assert_eq!(w.app.clip.picture(), None);
+        assert!(w.app.clip.get().is_some_and(|t| t.contains("<channels")), "the document alone");
+        // Shown again, the same window: the focus is still on it.
+        w.app.dispatch(Command::TogglePane(Pane::Circle));
+        w.idle(3);
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
+    }
+
     /// The same through the pane's caption «×» (#77): the press on the
     /// button first gives the pane the focus, and closing takes it back.
     #[test]
     fn closing_a_pane_with_its_caption_button_returns_the_focus_to_the_view() {
-        use app::{Command, CopyFocus, Pane};
+        use app::{CopyFocus, Pane};
         use docking::Unit;
         // The caption sits right over the pane's window, its «×» 11 px in from the group's right edge.
-        let close_button = |w: &Win, window_top: f32| {
-            let r = w.app.dock_rects[Unit::Vector as usize].expect("the group's rect");
+        let close_button = |w: &Win, unit: Unit, window_top: f32| {
+            let r = w.app.dock_rects[unit as usize].expect("the group's rect");
             Pos2::new(r.right() - dpi::s(11.0), window_top - dpi::s(10.0))
         };
         // A focused diagram.
         let mut w = Win::new();
-        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the frequency diagram").1;
         w.press(egui::PointerButton::Primary, canvas.center(), canvas.center());
-        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
-        let at = close_button(&w, canvas.top());
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Frequency));
+        let at = close_button(&w, Unit::Frequency, canvas.top());
         w.press(egui::PointerButton::Primary, at, at);
-        assert!(!w.app.panes.visible(Pane::Vector), "the caption button closed the pane");
+        assert!(!w.app.panes.visible(Pane::Frequency), "the caption button closed the pane");
         assert_eq!(w.app.copy_focus, CopyFocus::View, "the diagram's pane closed");
         let before = w.view_state();
         w.key(egui::Key::ArrowRight);
         assert_ne!(w.view_state(), before, "the arrow key reaches the view");
         // A focused property grid.
         let mut w = Win::new();
-        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        w.app.docks = docking::Docks::default();
         w.idle(3);
-        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let grid = *w.app.pane_grid.first().expect("the differential pane's grid");
         w.press(egui::PointerButton::Primary, grid.center(), grid.center());
-        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
-        let at = close_button(&w, grid.top());
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Differential));
+        let at = close_button(&w, Unit::Differential, grid.top());
         w.press(egui::PointerButton::Primary, at, at);
-        assert!(!w.app.panes.visible(Pane::Circle), "the caption button closed the pane");
+        assert!(!w.app.panes.visible(Pane::Differential), "the caption button closed the pane");
         assert_eq!(w.app.copy_focus, CopyFocus::View, "the grid's pane closed");
         let before = w.view_state();
         w.key(egui::Key::ArrowRight);
         assert_ne!(w.view_state(), before, "the arrow key reaches the view");
     }
 
-    /// The other ways to close a pane after a caption press gave its group
-    /// the focus (#77): the pane menu's «Скрыть» (the right-click that opens
-    /// the menu gives the focus), and the ribbon's toggle. The group is
-    /// tabbed, so closing the front tab leaves the group shown.
+    /// The other ways to close a pane after a caption press gave it the
+    /// focus (#77): the pane menu's «Скрыть» (the right-click that opens the
+    /// menu gives the focus), and the ribbon's toggle.
     #[test]
-    fn closing_a_tab_by_the_menu_or_the_ribbon_after_a_caption_press_returns_the_focus() {
+    fn closing_a_pane_by_the_menu_or_the_ribbon_after_a_caption_press_returns_the_focus() {
         use app::{Command, CopyFocus, Pane};
         use egui::PointerButton::{Primary, Secondary};
         let caption = |w: &Win| {
-            let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+            let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the frequency diagram").1;
             Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0)
         };
         // The pane menu's last entry, «Скрыть».
@@ -3167,13 +3224,13 @@ mod window_tests {
         let at = caption(&w);
         w.press(Secondary, at, at);
         assert!(w.app.pane_menu.is_some(), "the pane menu opens");
-        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the right-click gave the pane the focus");
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Frequency), "the right-click gave the pane the focus");
         for _ in 0..5 {
             w.key(egui::Key::ArrowDown);
         }
         w.key(egui::Key::Enter);
         w.idle(3);
-        assert!(!w.app.panes.visible(Pane::Vector), "the menu hid the pane");
+        assert!(!w.app.panes.visible(Pane::Frequency), "the menu hid the pane");
         assert_eq!(w.app.copy_focus, CopyFocus::View, "the menu's Скрыть");
         let before = w.view_state();
         w.key(egui::Key::ArrowRight);
@@ -3182,8 +3239,8 @@ mod window_tests {
         let mut w = Win::new();
         let at = caption(&w);
         w.press(Primary, at, at);
-        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector));
-        w.app.dispatch(Command::TogglePane(Pane::Vector));
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Frequency));
+        w.app.dispatch(Command::TogglePane(Pane::Frequency));
         w.idle(3);
         assert_eq!(w.app.copy_focus, CopyFocus::View, "the ribbon toggle");
         let before = w.view_state();
