@@ -1712,7 +1712,7 @@ mod tests {
         let d = app.active_doc_mut().unwrap();
         let n = d.osc.sample_count();
         let own = d.osc.digital.len();
-        d.osc.digital.push(fvb_core::DigitalChannel { index: own as u32 + 1, id: KZ_PHASES[1].into(), phase: String::new(), normal: 0, samples: vec![true; n] });
+        d.osc.digital.push(fvb_core::DigitalChannel { index: own as u32 + 1, id: KZ_PHASES[1].into(), phase: String::new(), normal: 0, own_rate: 0.0, samples: vec![true; n] });
         d.digital_visible.resize(own + 1, true);
         assert!(!d.dig(own).omp);
         app.omp_clear(0);
@@ -1740,7 +1740,7 @@ mod tests {
         let n = d.osc.sample_count();
         let own = d.osc.digital.len();
         for (k, id) in [(own, "Мой сигнал"), (own + 1, KZ_PHASES[1])] {
-            d.osc.digital.push(fvb_core::DigitalChannel { index: k as u32 + 1, id: id.into(), phase: String::new(), normal: 0, samples: vec![false; n] });
+            d.osc.digital.push(fvb_core::DigitalChannel { index: k as u32 + 1, id: id.into(), phase: String::new(), normal: 0, own_rate: 0.0, samples: vec![false; n] });
         }
         d.digital_visible.resize(own + 2, true);
         d.init_set_keys();
