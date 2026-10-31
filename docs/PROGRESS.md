@@ -4,22 +4,14 @@ The current state, in short. This page is rewritten when things change, never ap
 What happened before is in the milestones' ledgers ([milestones/](milestones/README.md)), the record of the original
 ([original/](original/README.md)), [history/](history/) and `git log`.
 
-Last rewritten: 2026-10-31 (v0.5.0 released; milestone 0.6.0 started: the follow-ups of 0.5.0 and 0.4.0).
+Last rewritten: 2026-10-31 (v0.6.0 released: milestone 0.6.0, the follow-ups of 0.5.0 and 0.4.0; the forward-only scrub).
 
 ## Latest release
 
-- **v0.5.0**, 2026-10-31: [release page](https://github.com/dmytrobsp/fastview-rea/releases/tag/v0.5.0). Linux x86-64,
-  Windows x86-64 and macOS (universal), each one flat archive (now with `LICENSE-intel-libm.txt`), built by CI from
-  the tag.
-- What it brought ([milestone 0.5.0](https://github.com/dmytrobsp/fastview-rea/milestone/3), merged by #122):
-  calculations to the original's last digit — its sin / cos bit for bit through a port of Intel's BSD SSE2 code (#72),
-  the display factor per sample (#60), own rates after «Объединить» and message 239 (#57, #71), the ОМП flags after
-  «Кодировка» (#66) — and panes — auto-hide strips, tab buttons, divider and toggle as the original's (#61–#64),
-  floating panes as tool windows (#70), the focus back after any close (#77), a short drag to float with a move
-  cursor (#90).
-- Checked: the whole suite on Linux, Windows and macOS (CI, gates, 633 tests) and the Windows test executables in a
-  throwaway clone (630 passed); smoke runs of each fixed issue in a clone. Not run: #66 end to end on a clone (#114).
-- Before it: v0.4.0 (2026-10-30), v0.3.0, v0.2.0, v0.1.0.
+- **v0.6.0**, 2026-10-31: [release page](https://github.com/dmytrobsp/fastview-rea/releases/tag/v0.6.0). Linux x86-64,
+  Windows x86-64 and macOS (universal) archives. Milestone 0.6.0: calculations to the last digit (formula inputs, tan,
+  ОМП's arithmetic), merged channels' own rates, auto-hidden and floating panes, the keyboard focus behind Copy, code
+  pages, display scaling above 100 %, the view's first zoom, synthetic test records.
 
 ## Where the reconstruction stands
 
@@ -30,8 +22,8 @@ Last rewritten: 2026-10-31 (v0.5.0 released; milestone 0.6.0 started: the follow
 
 ## In flight
 
-- **Milestone 0.6.0 merged into main** (2026-10-31, PR #151; [ledger](milestones/0.6.0.md)): the follow-ups of 0.5.0
-  and 0.4.0 — 27 issues, record L9.414–L9.420. The release is on hold (the maintainer).
+- Nothing in flight: milestone 0.6.0 merged (PR #151) and released as v0.6.0; the next milestone is the maintainer's
+  choice ([ledger](milestones/0.6.0.md)).
 - **The forward-only scrub is done** (PR #152, 2026-10-31): no value of the clone test records or of a user's record is
   left in the current tree (code comments / tests, docs) or in the current bodies of #7, #9, #13, #27 — the maintainer's
   choice; history, tags and edit histories stay as they are.
