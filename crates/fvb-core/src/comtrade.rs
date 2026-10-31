@@ -591,8 +591,10 @@ fn cff_section(text: &str, kind: &str) -> Option<String> {
 /// first NUL byte; the DAT payload located on the raw bytes — the byte count
 /// is the first run of digits on the first line containing
 /// `--- file type: DAT`, and the payload starts **one byte after** that
-/// line's terminator (the LF of a CRLF pair: a one-byte shift, harmless for
-/// ASCII data and reproduced as is). Missing CFG or DAT → error 330.
+/// line's terminator: the line reader consumes the terminator (CR or LF) and
+/// the caller steps over one more byte — so a CRLF file's payload is exact and
+/// an LF-only file loses its first byte (`0x476f30`, `0x4771f0`, `0x450284`;
+/// a clone run reading a binary `.cff` aligned). Missing CFG or DAT → error 330.
 pub fn parse_cff(bytes: &[u8], enc: Encoding) -> Result<(Oscillogram, CffSections), ComtradeError> {
     parse_cff_progress(bytes, enc, None)
 }
@@ -633,7 +635,7 @@ pub fn parse_cff_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) 
                 .copied()
                 .collect();
             let n: usize = std::str::from_utf8(&digits).ok().and_then(|d| d.parse().ok()).unwrap_or(0);
-            let from = (pos + 1).min(bytes.len());
+            let from = (pos + 2).min(bytes.len());
             dat = Some(&bytes[from..(from + n).min(bytes.len())]);
             break;
         }
@@ -2010,13 +2012,39 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
             rec.time = stamps_us.iter().map(|t| round_fv(t * rec.time_mult) / 1e6).collect();
         }
         DataFormat::Int16 | DataFormat::Int32 => {
-            let (abytes, dwords) = match fmt {
-                DataFormat::Int16 => (2usize, nd.div_ceil(16)),
-                DataFormat::Int32 => (4usize, nd.div_ceil(16)),
+            let abytes = match fmt {
+                DataFormat::Int16 => 2usize,
+                DataFormat::Int32 => 4usize,
                 DataFormat::Ascii => unreachable!(),
             };
-            // record = 4 (sample#) + 4 (timestamp) + na*abytes + dwords*2
-            let rec_len = 8 + na * abytes + dwords * 2;
+            // record = 4 (sample#) + 4 (timestamp) + na*abytes + the digital words.
+            let words = nd.div_ceil(16);
+            let mut rec_len = 8 + na * abytes + words * 2;
+            let sample_no = |at: usize| -> Option<i32> { dat.get(at..at + 4).map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]])) };
+            // The readers test the record size against the data (BINARY
+            // `0x451c32`–`0x451cea`, binary32 `0x4521bd`–`0x4521dc`): the
+            // sample numbers of the first four records, `size` apart, must
+            // read 1, 2, 3, 4.
+            let numbered = |size: usize| (0..4).all(|k| k + 1 == sample_no(k * size).filter(|_| (k + 1) * size <= dat.len()).unwrap_or(0) as usize);
+            match fmt {
+                DataFormat::Int16 => {
+                    // BINARY: the size the reader computes first has a slip
+                    // — a digital part of `nd/8 + 2 (nd not a multiple of
+                    // 16)` bytes, one too many for nd = 8..15 mod 16 —; when
+                    // the numbers do not read 1, 2, 3, 4 at that size it
+                    // takes the digital part as `ceil(nd/8)` bytes.
+                    let first = nd / 8 + if nd % 16 != 0 { 2 } else { 0 } + (na + 4) * 2;
+                    let packed = nd / 8 + usize::from(nd % 16 != 0) + 8 + na * 2;
+                    rec_len = if dat.len() < 4 * first || numbered(first) { first } else { packed };
+                }
+                DataFormat::Int32 => {
+                    // binary32 has no fallback: the check failing is error 330.
+                    if dat.len() >= 4 * rec_len && !numbered(rec_len) {
+                        return Err(ComtradeError::Format);
+                    }
+                }
+                DataFormat::Ascii => unreachable!(),
+            }
             if rec_len == 0 {
                 return Err(ComtradeError::Dat("zero record length".into()));
             }
@@ -2058,15 +2086,11 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
                     ch.samples.push(ch.unit_mult * ch.a * raw + ch.b);
                     off += abytes;
                 }
-                for w in 0..dwords {
-                    let word = u16::from_le_bytes([dat[off], dat[off + 1]]);
-                    off += 2;
-                    for bit in 0..16 {
-                        let di = w * 16 + bit;
-                        if di < nd {
-                            rec.digital[di].samples.push((word >> bit) & 1 == 1);
-                        }
-                    }
+                // The digital bits, byte by byte (`0x451ea3`: byte b / 8,
+                // bit b mod 8 — the words' own order).
+                for di in 0..nd {
+                    let byte = dat.get(off + di / 8).copied().unwrap_or(0);
+                    rec.digital[di].samples.push(byte >> (di % 8) & 1 == 1);
                 }
                 if let Some(p) = prog {
                     p.set_remaining(dat.len() - (base + rec_len));
