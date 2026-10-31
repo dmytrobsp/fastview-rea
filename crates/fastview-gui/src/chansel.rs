@@ -666,7 +666,7 @@ mod tests {
         d.selection.remove(&Digital(0));
         d.combine_selected();
         assert!(d.group_of(Analog(0)).is_some() && d.group_of(Analog(0)) == d.group_of(ChanKey::Computed(j)));
-        let rows = crate::lanes::lane_layout(d, 93.0, false);
+        let rows = crate::lanes::lane_layout(d, 93.0);
         let row = rows.iter().find(|r| r.key == Analog(0)).unwrap();
         assert_eq!(row.members, [Analog(0), ChanKey::Computed(j)], "one lane, the stats in channel order");
         assert!(!rows.iter().any(|r| r.key == ChanKey::Computed(j)));

@@ -59,6 +59,41 @@ use eframe::egui;
 /// client. Physical pixels: the original is system-DPI aware.
 const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 
+/// The size grip of a normal (not maximised) window, at 100 % in px, as the original's last status pane
+/// holds it: 20 px beyond the extended pane's own width (VM: «Гор. визир 2:» shows from 988 px of client,
+/// not 984).
+const STATUS_GRIP: f32 = 20.0;
+/// What a normal window reserves at its right edge for the grip when the extended pane is hidden: the
+/// sixth pane shows from 1078 px of client, not 1074 (VM; 1048 of panes + 26…30).
+const STATUS_GRIP_ALONE: f32 = 28.0;
+
+/// The status bar's right end at `right` (the extended pane's width `ext` at this scale, its grip
+/// not included): `(the extended pane's width with its grip, where the panes must end)`.
+fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f32, f32) {
+    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::s(STATUS_GRIP), dpi::s(STATUS_GRIP_ALONE)) };
+    if ext_hidden {
+        (ext, right - alone)
+    } else {
+        (ext + grip, right - ext - grip)
+    }
+}
+
+/// The status bar's six panes from `left` to `room` (the first that does not fit ends the row, a hidden
+/// pane leaves no gap): `(index, x, width)` of each shown one.
+fn status_pane_places(left: f32, room: f32, hidden: &[bool; 7]) -> Vec<(usize, f32, f32)> {
+    let mut x = left;
+    let mut out = Vec::new();
+    for i in (0..6).filter(|&i| !hidden[i]) {
+        let w = dpi::s(if i == 2 || i == 5 { 218.0 } else { 153.0 });
+        if x + w > room {
+            break;
+        }
+        out.push((i, x, w));
+        x += w;
+    }
+    out
+}
+
 /// One point is one device pixel at any display scale. The original is
 /// system-DPI aware (its manifest's `dpiAware`), so Windows does not
 /// stretch it, and it paints its views in device pixels: their fonts are
@@ -791,20 +826,18 @@ impl App {
         // The panes' widths and the font at the system DPI (VM, 125 % and
         // 150 %: the bar 30 / 36 px, its text and panes 1.25 / 1.5 ×).
         let font = egui::FontId::proportional(dpi::font(12.0));
-        let mut x = r.left();
-        let ext_w = dpi::s(if p.bands.is_some() { 135.0 } else { 155.0 });
-        let room = if self.status_hidden[6] { r.right() } else { r.right() - ext_w };
+        // A normal (not maximised) window's last pane also holds the size grip
+        // (see [`status_reserve`]).
+        let maximised = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+        let (ext_w, room) = status_reserve(r.right(), dpi::s(if p.bands.is_some() { 135.0 } else { 155.0 }), maximised, self.status_hidden[6]);
+        let hidden = self.status_hidden;
         // A hidden pane leaves no gap: the rest move left (VM). A pane that
         // does not fit before the extended one is not shown (VM, 150 % at
         // 1280 px: «Гор. визир 2:» and on gone).
-        for (i, text) in s.iter().enumerate().filter(|(i, _)| !self.status_hidden[*i]) {
-            let w = dpi::s(if i == 2 || i == 5 { 218.0 } else { 153.0 });
-            if x + w > room {
-                break;
-            }
+        for (i, x, w) in status_pane_places(r.left(), room, &hidden) {
+            let text = &s[i];
             let clip = egui::Rect::from_min_max(egui::pos2(x, r.top()), egui::pos2(x + w - 2.0, r.bottom()));
             painter.with_clip_rect(clip).text(egui::pos2(x + dpi::s(9.0), r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
-            x += w;
         }
         // The last pane: 135 px at the right (VM), its own rows and a light
         // and a dark column at its left in the Office 2007 styles.
@@ -1293,6 +1326,36 @@ fn one_press_per_pass(mut raw: egui::RawInput) -> Vec<egui::RawInput> {
 
 #[cfg(test)]
 mod tests {
+    /// #79 (VM, 100 %): in a narrow window the panes that fit before the last one stay, in order, and
+    /// the rest are gone; a normal window's last pane holds the size grip (20 px beyond its own 135, and 28 when
+    /// that pane is hidden), so «Гор. визир 2:» shows from 988 px of client (the original's 1004 px frame; not
+    /// from 984, its 1000 px one) and «Разница г. визиров:» from 1078 with the last pane hidden (not 1074);
+    /// a maximised window has no grip.
+    #[test]
+    fn a_narrow_status_bar_keeps_the_panes_that_fit() {
+        let none = [false; 7];
+        let count = |w: f32, maximised: bool, ext_hidden: bool| {
+            let mut h = none;
+            h[6] = ext_hidden;
+            let (_, room) = status_reserve(w, 135.0, maximised, ext_hidden);
+            status_pane_places(0.0, room, &h).len()
+        };
+        assert_eq!(count(1280.0, true, false), 6, "wide: all six");
+        assert_eq!(count(850.0, false, false), 4, "the narrowest window: four");
+        assert_eq!(count(984.0, false, false), 4, "the original's 1000 px frame (984 visible): the fifth is not there");
+        assert_eq!(count(988.0, false, false), 5, "its 1004 px frame (988 visible): it is");
+        assert_eq!(count(964.0, true, false), 4);
+        assert_eq!(count(966.0, true, false), 5, "a maximised window has no grip");
+        assert_eq!(count(1074.0, false, true), 5, "the last pane hidden: the grip is still there (1090 px frame)");
+        assert_eq!(count(1078.0, false, true), 6, "its 1094 px frame");
+        assert_eq!(count(1048.0, true, true), 6, "maximised: no grip");
+        // A hidden pane leaves no gap.
+        let mut hid = none;
+        hid[1] = true;
+        let (_, room) = status_reserve(850.0, 135.0, false, false);
+        assert_eq!(status_pane_places(0.0, room, &hid)[1].1, 153.0);
+    }
+
     use super::*;
 
     /// #78: the document tabs' font is whole pixels at every scale.
@@ -4613,7 +4676,7 @@ mod window_tests {
             let mut w = Win::new();
             let (rows, same) = {
                 let d = w.app.active_doc().unwrap();
-                let rows = lanes::lane_layout(d, w.app.y_analog, false);
+                let rows = lanes::lane_layout(d, w.app.y_analog);
                 let unit = |li: usize| match rows[li].key {
                     app::ChanKey::Analog(i) => Some(d.osc.analog[i].unit.clone()),
                     _ => None,
@@ -4773,7 +4836,7 @@ mod window_tests {
             };
             assert!(freq.contains(to), "the window lies over the frequency diagram");
             let client = w.app.view_rects.expect("the view").1;
-            let rows = lanes::lane_layout(w.app.active_doc().unwrap(), w.app.y_analog, false);
+            let rows = lanes::lane_layout(w.app.active_doc().unwrap(), w.app.y_analog);
             let a = Pos2::new(client.left() + 40.0, client.top() + rows[0].h / 2.0);
             w.run(vec![egui::Event::PointerMoved(a), ev(a, true)]);
             let steps = ((to - a).length() / 6.0).ceil().max(1.0) as usize;
