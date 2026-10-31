@@ -3363,11 +3363,11 @@ mod tests {
         let d = &app.docs[0];
         assert!(d.osc.analog.iter().all(|c| c.own_rate == r), "every channel present, the pasted one too");
         // The rate dialog sets only the record's.
-        assert_eq!(app.apply_file_rate(0, &((r / 2.0) as i32).to_string()), Ok(()));
+        assert_eq!(app.apply_file_rate(0, "1250"), Ok(()));
         let d = &app.docs[0];
         assert!(d.osc.analog.iter().all(|c| c.own_rate == r), "the dialog leaves the own rate alone");
         // The merged channel keeps its period, the record's follows the new rate (#71).
-        assert_eq!(d.osc.samples_per_cycle() * 2, d.period_of(3));
+        assert_eq!((d.osc.samples_per_cycle(), d.period_of(3)), (25, 40));
         let want = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&d.osc).map(|c| c.at_rate(r)), 3, d.shown_samples(3), d.period_of(3));
         assert_eq!(d.rms[3], want, "the RMS window is the own rate / 50");
         assert_ne!(d.period_of(3), d.osc.samples_per_cycle());
@@ -3398,10 +3398,10 @@ mod tests {
         // The plain windows (the correction has its own: `FreqCorr::at_rate`).
         d.osc.freq_sel = 0;
         let n_rec = d.osc.samples_per_cycle();
-        let own = f64::from(d.osc.rate_r as i32) / 2.0;
+        let own = 1250.0;
         d.osc.analog[3].own_rate = own;
         let n_own = d.osc.period_of(own);
-        assert_eq!(n_own * 2, n_rec);
+        assert_eq!((n_own, n_rec), (25, 40));
         d.recompute(false);
         // A sample where the two windows disagree (the fault's onset).
         let x = d.shown_samples(3).to_vec();
@@ -3430,9 +3430,10 @@ mod tests {
     }
 
     /// The original's readings on a synthetic record (VM, 2026-10-31): a
-    /// merged channel keeps its window after the rate drops to half, a formula
-    /// added later takes the record's; at one sample both read the same СКЗ
-    /// and the formula's A1 is the half-window one.
+    /// merged channel keeps its window (2000 Hz / 50 = 40) after the record's
+    /// rate drops to 1250 Hz, a formula added later takes the record's (25); at
+    /// one sample the merged ones read 20.209 / 20.209, the formula 20.7659 /
+    /// 17.3493 (СКЗ / A1).
     #[test]
     fn a_merged_channel_keeps_its_window_after_a_rate_change() {
         let mut app = demo_app();
@@ -3440,22 +3441,23 @@ mod tests {
         app.copy_channels_for_merge();
         app.paste_channels_for_merge();
         app.merge_records();
-        assert_eq!(app.apply_file_rate(0, "1000"), Ok(()));
+        assert_eq!(app.apply_file_rate(0, "1250"), Ok(()));
         assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
         let d = &app.docs[0];
-        let (k, j) = (246, d.computed.len() - 1);
+        let (k, j) = (236, d.computed.len() - 1);
         let r4 = |v: f64| (v * 1e4).round() / 1e4;
         for i in [0, 1] {
             assert_eq!((r4(d.stat_rms(i, k)), r4(d.stat_a1(i, k))), (20.209, 20.209), "the merged channel {i} and the record's own: their own window");
         }
         let (rms, a1) = (fvb_core::signal::rms_at(&d.computed[j].samples, k, d.computed_period(j)), fvb_core::signal::harmonic_rms(&d.computed[j].samples, k, d.computed_period(j), 1));
-        assert_eq!((r4(rms), r4(a1)), (20.209, 15.3366), "the later formula: the record's window");
+        assert_eq!((r4(rms), r4(a1)), (20.7659, 17.3493), "the later formula: the record's window");
     }
 
     /// The frequency diagram after the same steps (VM, 2026-10-31, the
     /// original at the vizir over sample 236): the merged channel's bars are
-    /// clean, the later formula's — its window half a period of the signal —
-    /// read 134 / 100 / 33.8 / 21.3 / 16.0 / 13.1 / 11.4 / 10.3 / 9.6 / 9.3 / 9.2 %.
+    /// clean, the later formula's — a window of 25 samples (the record's
+    /// new 1250 Hz / 50) — reads 45.6 / 100 / 31.8 / 20.0 / 14.9 / 12.1 / 10.3 / 9.1 / 8.3 / 7.7 / 7.4 %
+    /// in the original.
     #[test]
     fn the_frequency_diagram_keeps_a_merged_channels_window() {
         let mut app = demo_app();
@@ -3463,12 +3465,12 @@ mod tests {
         app.copy_channels_for_merge();
         app.paste_channels_for_merge();
         app.merge_records();
-        assert_eq!(app.apply_file_rate(0, "1000"), Ok(()));
+        assert_eq!(app.apply_file_rate(0, "1250"), Ok(()));
         assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
         let d = &app.docs[0];
         let pct = |b: Vec<f64>| b.iter().map(|v| (v / b[1] * 1000.0).round() / 10.0).collect::<Vec<_>>();
         let x = pct(crate::diagram_ui::freq_bins(d, &d.computed[0].samples, None, 0.0, 236, 1, 10));
-        assert_eq!(x, [134.2, 100.0, 33.8, 21.3, 16.0, 13.1, 11.4, 10.3, 9.6, 9.3, 9.2]);
+        assert_eq!(x, [45.6, 100.0, 31.8, 20.0, 14.9, 12.1, 10.3, 9.1, 8.3, 7.7, 7.4]);
         let m = pct(crate::diagram_ui::freq_bins(d, d.shown_samples(0), Some(0), d.osc.analog[0].own_rate, 236, 1, 10));
         assert_eq!(m, [0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
     }
