@@ -546,6 +546,7 @@ impl Docks {
     /// that one, so a redock rebuilds the same container (MFC's recent dock
     /// info); groups beside a split slot go to the slot's parent. Its tabs
     /// go along (the tabbed pane moves whole).
+    #[cfg(test)]
     pub fn leave(&mut self, u: Unit, shown: impl Fn(Unit) -> bool) {
         self.leave_sized(u, shown, None);
     }
