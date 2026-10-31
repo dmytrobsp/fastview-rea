@@ -504,7 +504,9 @@ class OscRecord:
             yield "%.6g" % r, "ratio %d %.6g" % (i, r)
         for c in sorted(set(self.codes_by_block)):
             yield str(c), "code %d" % c
-        yield self.trigger_text(), self.trigger_text()
+        date, clock = self.trigger_text().split(" ")
+        yield date, self.trigger_text()
+        yield clock, self.trigger_text()
 
     def code_lines(self):
         """Lines that are a record's own values even when short: the timing codes, the trigger moment."""

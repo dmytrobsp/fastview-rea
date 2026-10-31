@@ -119,7 +119,9 @@ frequency line, the number of rate segments and the approximate ratios of their 
 of the tokens in names and the punctuation of the `.hdr`, and the data type. A clean check therefore shows that no
 value of the source was copied; it does not show that the *structure* is unrecognisable. **A record generated from a
 user record stays local** (it is for local runs and for comparing readers); whether such an output may be committed
-is the maintainer's decision. Committed fixtures come from hand-written sources, checked against the user records.
+is the maintainer's decision. Committed fixtures come from hand-written sources, checked against the user records; the sources are committed too, so
+`python3 -I tools/records/make_fixtures.py --against USER.cfg [USER2.cfg ...]` checks each hand-written source against the
+user records (counts only) and has to be run, with every user record, before a source is changed or added.
 Besides a `.cfg` with its `.dat` / `.hdr`, a source may be a **timestamp-only** record (`0` rate segments, one `0,N`
 line: the output has the same two lines with an invented count and invented, irregular, increasing instants), a
 single-file **`.cff`** (the sections `--- file type: KIND ---` in the source's order, the data section last with its
@@ -128,7 +130,7 @@ byte count after a colon or running to the end of the file; every text section, 
 or an OSC2 **`.osc`** (128-byte big-endian blocks; the version, block geometry, tags, channel counts, line layout,
 samples per block and number of timing codes are kept, and every name, phase, unit, calibration number, ratio, timing
 code, the trigger moment and every sample is invented; bytes the format description does not name are written as
-zeros). The check indexes an `.osc`'s names, calibration numbers, ratios, timing codes, trigger moment and sample
+zeros; the pre-trigger block count and the ratios between the timing codes stay, as the rate segments' ratios do for a `.cfg`; a ratio outside the reader's range is written as 1). Marker lines of a `.cff` and tag lines of an `.osc` are written in their plain form, whatever else the source's line held is not copied. The check indexes an `.osc`'s names, calibration numbers, ratios, timing codes, trigger moment and sample
 windows like the fields of a `.cfg`. Layouts the tools cannot take (a `.cff` without a CFG or DAT section, with text
 before its first section or a section after the data; an `.osc` with an unknown text tag, no samples-per-block block,
 sample records that do not fit a data block, or channel lines of another shape) are refused with a message.

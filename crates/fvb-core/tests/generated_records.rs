@@ -1,11 +1,13 @@
-//! Records made by `tools/records/synth_record.py` from four hand-written sources
+//! Records made by `tools/records/synth_record.py` from seven hand-written sources
 //! (`tools/records/make_fixtures.py`): every name, number and sample in them is invented, and
 //! the structure of each source is kept. They pin that our readers take the features a real
 //! recorder's files have: a UTF-8 BOM with a name cut by U+FFFD, the float32 range with a tiny
 //! factor `a`, int16 and int32 data with two rate segments and twenty digital channels, a name cut
-//! mid-character (invalid UTF-8) at a byte limit, a revision-1991 layout.
+//! mid-character (invalid UTF-8) at a byte limit, a revision-1991 layout, a timestamp-only record, a
+//! single-file `.cff` with INF and HDR sections, and an OSC2 `.osc`.
 
 use fvb_core::comtrade::{self, Encoding};
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -33,7 +35,14 @@ const FIXTURES: &[(&str, &str, &[u8])] = &[
 fn fixture(dir: &str, file: &str) -> PathBuf {
     static ROOT: OnceLock<PathBuf> = OnceLock::new();
     let root = ROOT.get_or_init(|| {
-        let root = std::env::temp_dir().join("fvb-generated-records");
+        // Named after the bytes (and the user), so that checkouts with other fixtures, or other users, never share a folder.
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for (d, f, bytes) in FIXTURES {
+            (d, f, bytes).hash(&mut hasher);
+        }
+        let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default();
+        let user: String = user.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+        let root = std::env::temp_dir().join(format!("fvb-generated-records-{user}-{:016x}", hasher.finish()));
         for (d, f, bytes) in FIXTURES {
             std::fs::create_dir_all(root.join(d)).unwrap();
             let path = root.join(d).join(f);

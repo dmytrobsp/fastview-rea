@@ -475,11 +475,17 @@ class Check(Base):
         self.assertGreater(h["numbers"], 0, "copied calibration")
         info = src.H * B
 
-        def copy_info(r):
-            r[info:info + B] = s[info:info + B]
+        def copy_trigger(r):
+            r[info + 5:info + 0xC] = s[info + 5:info + 0xC]
 
-        h = altered("info", copy_info)
-        self.assertGreater(h["numbers"] + h["text"] + h["codes"], 0, "copied trigger moment and ratios")
+        def copy_ratios(r):
+            r[info + 0x40:info + 0x40 + 4 * src.n_analog] = s[info + 0x40:info + 0x40 + 4 * src.n_analog]
+
+        h = altered("trigger", copy_trigger)
+        self.assertGreater(h["text"] + h["codes"], 0, "a copied trigger moment")
+        self.assertGreater(altered("ratios", copy_ratios)["numbers"], 0, "copied ratios")
+        date_only = altered("date", lambda r: r.__setitem__(slice(info + 9, info + 0xC), s[info + 9:info + 0xC]))
+        self.assertGreater(date_only["text"], 0, "a copied trigger date")
         d0 = src.data_at
 
         def copy_code(r):
@@ -497,6 +503,44 @@ class Check(Base):
         h = altered("data", copy_data)
         self.assertGreater(h["windows"], 0, "copied sample rows")
         self.assertGreater(h["columns"], 0)
+
+    def test_free_text_on_marker_and_tag_lines_is_not_copied(self):
+        d = os.path.join(self.tmp, "free")
+        os.makedirs(d)
+        g = self.source(make_fixtures.src_g)
+        raw = rb(g.cfg_path).replace(b"--- file type: HDR ---", b"--- file type: HDR --- Qzxvb Notez ---").replace(
+            b"--- file type: DAT ASCII:", b"--- file type: DAT ASCII Wqxyz Pleno:")
+        wb(os.path.join(d, "g.cff"), raw)
+        out = self.synth(recfmt.open_record(os.path.join(d, "g.cff")), 2, rows=30)
+        for w in (b"Notez", b"Pleno", b"Qzxvb", b"Wqxyz"):
+            self.assertNotIn(w, rb(out.cfg_path))
+        self.assertIn(b"--- file type: HDR ---\r\n", rb(out.cfg_path))
+        h = self.source(make_fixtures.src_h)
+        raw = bytearray(h.raw)
+        at = (h.K + 1) * 128
+        blk = bytes(raw[at:at + 128]).rstrip(b"\0").replace(b"nnA,003", b"nnA,003 Tzqwx", 1)
+        self.assertLessEqual(len(blk), 128)
+        raw[at:at + 128] = blk + bytes(128 - len(blk))
+        wb(os.path.join(d, "h.osc"), bytes(raw))
+        out = self.synth(recfmt.open_record(os.path.join(d, "h.osc")), 2)
+        self.assertNotIn(b"Tzqwx", out.raw)
+        self.assertIn(b"nnA,003\r\n", out.raw)
+
+    def test_osc_small_offsets_are_invented_and_a_bad_ratio_is_written_as_one(self):
+        import struct
+        src = self.source(make_fixtures.src_h)
+        raw = bytearray(src.raw)
+        struct.pack_into(">f", raw, src.H * 128 + 0x40, 0.0)  # a ratio the reader reads as 1
+        p = os.path.join(self.tmp, "ratio.osc")
+        wb(p, bytes(raw))
+        bad = recfmt.open_record(p)
+        for seed in range(1, 6):
+            out = self.synth(bad, seed)  # does not run out of draws
+            self.assertEqual(out.ratios[0], 1.0)
+            for a, b in zip(bad.cal, out.cal):
+                self.assertNotEqual(a[1], b[1])
+                self.assertNotEqual(a[3], b[3])
+            self.assertTrue(any(abs(c[1]) <= 100 or abs(c[3]) <= 100 for c in bad.cal), "the source has small offsets")
 
     def test_osc_layouts_the_tools_do_not_take_are_refused(self):
         src = self.source(make_fixtures.src_h)

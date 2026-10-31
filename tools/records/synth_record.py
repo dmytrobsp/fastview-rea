@@ -18,7 +18,8 @@ seed (up to 50 times; a clashing draw's files are removed) and the seed used is 
 Kept on purpose, and not compared by the check: the channel-count line and channel numbers, digital normal
 states and the first row's digital states, format phases, standard units, P/S, the frequency line, the number of
 rate segments and the approximate ratios of their rates and sample counts, the layout of name tokens, the
-.hdr's punctuation, the data type. So an output made from a user record is local data; commit only fixtures
+.hdr's punctuation, the data type; for an .osc also the pre-trigger block count, the ratios between its timing
+codes and the block geometry. So an output made from a user record is local data; commit only fixtures
 made from hand-written sources. A source may also be timestamp-only, a single-file .cff or an OSC2 .osc (see
 README); layouts the tools cannot take are refused with a message.
 """
@@ -406,6 +407,12 @@ def generate(src, seed, rows):
 OSC_BANNED_NEAR = (1000, 2000, 4000, 5000)
 
 
+def canonical_tag(tagline):
+    """A text block's tag line as `tag`, one separator and the digits of the count; whatever follows is dropped."""
+    m = re.match(rb"(nn[ADF].)(\d*)", tagline)
+    return (m.group(1) + m.group(2)).decode("latin-1")
+
+
 def generate_osc(src, seed, rows):
     """An invented OSC2 oscillogram with the structure of `src` (see recfmt.OscRecord): the same blocks, tags,
     channel counts, line layout, samples per block and block geometry; every name, phase, unit, calibration
@@ -429,7 +436,7 @@ def generate_osc(src, seed, rows):
     for b in src.blocks:
         for _ in range(200):
             lines = [invent(l, b["tag"]) for l in b["lines"]] if b["tag"] != "nnF" else []
-            raw = (b["eol"].join([b["tagline"].decode("latin-1")] + lines) + (b["eol"] if b["trailing"] else "")).encode(enc, errors="replace")
+            raw = (b["eol"].join([canonical_tag(b["tagline"])] + lines) + (b["eol"] if b["trailing"] else "")).encode(enc, errors="replace")
             if len(raw) <= B:
                 break
         else:
@@ -474,13 +481,14 @@ def generate_osc(src, seed, rows):
         return v
 
     def i16(v):
-        if abs(v) <= 100 or recfmt.is_structural_number(v):
+        if recfmt.is_structural_number(v):
             return v
         d = len(str(abs(v)))
         for _ in range(200):
-            x = max(-32767, min(32767, r.choice((-1, 1)) * r.randrange(10 ** (d - 1), min(10 ** d, 32768)) if v else 0))
-            if x != v and abs(x) > 100 and recfmt.sig6(x) not in g.avoid_nums:
-                g.avoid_nums.add(recfmt.sig6(x))
+            x = r.choice((-1, 1)) * r.randrange(10 ** (d - 1) if d > 1 else 2, min(10 ** d, 32768))
+            if x != v and not recfmt.is_structural_number(x) and (abs(x) <= 100 or recfmt.sig6(x) not in g.avoid_nums):
+                if abs(x) > 100:
+                    g.avoid_nums.add(recfmt.sig6(x))
                 return x
         return v
 
@@ -508,7 +516,7 @@ def generate_osc(src, seed, rows):
         info[at] = (v // 10) << 4 | v % 10
     for i, x in enumerate(src.ratios):
         if 0x40 + 4 * i + 4 <= B:
-            struct.pack_into(">f", info, 0x40 + 4 * i, f32(x) if 0.1 < x < 100000.0 else x)
+            struct.pack_into(">f", info, 0x40 + 4 * i, f32(x) if 0.1 < x < 100000.0 else 1.0)  # out of range reads as 1
 
     # data: what the source's channels look like (largest sample, first digital states), then invented samples
     na, nd, words, n = src.n_analog, src.n_digital, src.words, src.n_per_block
@@ -571,11 +579,14 @@ def build_cff(src, cfg, dat, others):
     """The single file: the sections in the source's order, the data section last with its byte count."""
     parts, extra = [], iter(others)
     for kind, marker, _ in src.sections:
-        parts.append(marker)
+        eol = b"\r\n" if marker.endswith(b"\r\n") else b"\n"
+        parts.append(b"--- file type: " + kind.encode() + b" ---" + eol)  # whatever else the source's line held is not copied
         parts.append(cfg if kind == "CFG" else next(extra))
-    marker = src.dat_marker
-    if re.search(rb":\s*\d+", marker):
-        marker = re.sub(rb"(:\s*)\d+", lambda m: m.group(1) + str(len(dat)).encode(), marker, count=1)
+    eol = b"\r\n" if src.dat_marker.endswith(b"\r\n") else b"\n"
+    word = re.search(rb"DAT\s+([A-Za-z0-9]+)", src.dat_marker)
+    word = word.group(1) if word and word.group(1).upper() in (b"ASCII", b"BINARY", b"BINARY32", b"FLOAT32") else b""
+    has_count = re.search(rb":\s*\d+", src.dat_marker)
+    marker = b"--- file type: DAT" + (b" " + word if word else b"") + (b": " + str(len(dat)).encode() if has_count else b"") + b" ---" + eol
     parts += [marker, dat]
     return (b"\xef\xbb\xbf" if src.file_bom else b"") + b"".join(parts)
 

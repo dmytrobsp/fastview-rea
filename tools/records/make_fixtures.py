@@ -144,7 +144,7 @@ def src_f(d):
     lines = ["Station Quill,Recorder P4,1999", "5,2A,3D",
              "1,Volt Rho,A,,V,0.0731,0,0,-32767,32767,1370,3,P",
              "2,Amp Sigma,B,,A,0.0417,0,0,-32767,32767,225,1,P",
-             "1,Trip Tau,0", "2,Block Upsi,0", "3,Alarm Phi,1",
+             "1,Kilo Tau,0", "2,Block Upsi,0", "3,Alarm Phi,1",
              "50", "0", "0,17", "14/06/2022,08:15:42.318000", "14/06/2022,08:15:42.331000", "ASCII", "0.5"]
     with open(os.path.join(d, "f.cfg"), "wb") as f:
         f.write((CRLF.join(lines) + CRLF).encode())
@@ -236,7 +236,7 @@ def src_h(d):
     for b in range(6):
         rows.append([([int(7000 * math.sin((b * 14 + s) / 4.0 + k)) for k in range(3)], ((b * 14 + s) * 37 + (s % 5)) & 0xFFFF)
                      for s in range(14)])
-    data = osc_bytes((2, 4), texts, cal, [1234.0, 87.5, 342.5], (31, 17, 42, 11, 12, 4, 21), 1, 14, rows,
+    data = osc_bytes((2, 4), texts, cal, [1478.0, 87.5, 342.5], (31, 17, 42, 11, 12, 4, 21), 1, 14, rows,
                      [9421, 9421, 9421, 9421, 4711, 4711])
     with open(os.path.join(d, "h.osc"), "wb") as f:
         f.write(data)
@@ -251,10 +251,30 @@ def main_file(d):
     return next(os.path.join(d, n) for n in sorted(os.listdir(d)) if n.lower().endswith((".cfg", ".cff", ".osc")))
 
 
+def against(user_records):
+    """Each hand-written source of this script, as an output, against the given user records."""
+    inventories = [userdata_check.inventory(recfmt.open_record(p), 10**6) for p in user_records]
+    bad = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, mk in SOURCES:
+            sd = os.path.join(tmp, "src_" + name)
+            os.makedirs(sd)
+            mk(sd)
+            rec = recfmt.open_record(main_file(sd))
+            total = sum(sum(userdata_check.check(inv, rec, 10**6)[0].values()) for inv in inventories)
+            print(f"{'FAIL' if total else 'ok'}: source {name}: {total} matches against {len(inventories)} records")
+            bad += total
+    return 1 if bad else 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--against", nargs="+", metavar="SRC", help="check each hand-written source (not the fixtures) against "
+                    "these user records' .cfg / .cff / .osc: counts only, exit 1 on any match")
     a = ap.parse_args()
+    if a.against:
+        return against(a.against)
     bad = 0
     with tempfile.TemporaryDirectory() as tmp:
         for name, mk in SOURCES:
@@ -265,12 +285,19 @@ def main():
             od = os.path.join(tmp if a.check else FIXTURES, "out_" + name if a.check else name)
             seed = synth_record.write_record(src, od, name, SEED[name], 30 if name in ("d", "f") else 96)
             print(f"{name}: seed {seed}")
-            for n in sorted(os.listdir(od)):
-                if a.check:
-                    with open(os.path.join(od, n), "rb") as f1, open(os.path.join(FIXTURES, name, n), "rb") as f2:
-                        if f1.read() != f2.read():
-                            print("DIFFERS:", name, n)
-                            bad += 1
+            if a.check:
+                committed = os.path.join(FIXTURES, name)
+                have = set(os.listdir(committed)) if os.path.isdir(committed) else set()
+                for n in sorted(set(os.listdir(od)) | have):
+                    if n not in have:
+                        print("MISSING (generated, not committed):", name, n)
+                        bad += 1
+                    elif n not in os.listdir(od):
+                        print("EXTRA (committed, not generated):", name, n)
+                        bad += 1
+                    elif open(os.path.join(od, n), "rb").read() != open(os.path.join(committed, n), "rb").read():
+                        print("DIFFERS:", name, n)
+                        bad += 1
             out = recfmt.open_record(main_file(od))
             hits, _ = userdata_check.check(userdata_check.inventory(src, 10**6), out, 10**6)
             if sum(hits.values()):
