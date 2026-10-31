@@ -4356,7 +4356,7 @@ mod tests {
             d.recompute(show_primary);
             let name = d.osc.analog[0].id.clone();
             let raw = d.osc.analog[0].samples.clone();
-            let (k, f) = if show_primary { (1.0, s / p) } else { (s / p, 1.0) };
+            let k = if show_primary { 1.0 } else { s / p };
             let f = if show_primary { s / p } else { 1.0 };
             let dck = d.dc_mean[0].0 * k;
             let want = |x: f64, f: f64| {
