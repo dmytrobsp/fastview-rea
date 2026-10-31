@@ -3101,6 +3101,45 @@ mod window_tests {
         assert_ne!(w.view_state(), before, "the arrow key reaches the view");
     }
 
+    /// The same through the pane's caption «×» (#77): the press on the
+    /// button first gives the pane the focus, and closing takes it back.
+    #[test]
+    fn closing_a_pane_with_its_caption_button_returns_the_focus_to_the_view() {
+        use app::{Command, CopyFocus, Pane};
+        use docking::Unit;
+        // The caption sits right over the pane's window, its «×» 11 px in from the group's right edge.
+        let close_button = |w: &Win, window_top: f32| {
+            let r = w.app.dock_rects[Unit::Vector as usize].expect("the group's rect");
+            Pos2::new(r.right() - dpi::s(11.0), window_top - dpi::s(10.0))
+        };
+        // A focused diagram.
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        w.press(egui::PointerButton::Primary, canvas.center(), canvas.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
+        let at = close_button(&w, canvas.top());
+        w.press(egui::PointerButton::Primary, at, at);
+        assert!(!w.app.panes.visible(Pane::Vector), "the caption button closed the pane");
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the diagram's pane closed");
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_ne!(w.view_state(), before, "the arrow key reaches the view");
+        // A focused property grid.
+        let mut w = Win::new();
+        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        w.idle(3);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        w.press(egui::PointerButton::Primary, grid.center(), grid.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
+        let at = close_button(&w, grid.top());
+        w.press(egui::PointerButton::Primary, at, at);
+        assert!(!w.app.panes.visible(Pane::Circle), "the caption button closed the pane");
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the grid's pane closed");
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_ne!(w.view_state(), before, "the arrow key reaches the view");
+    }
+
     /// A press on a menu or other popup over a pane gives that pane no
     /// focus.
     #[test]
