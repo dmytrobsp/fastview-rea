@@ -34,6 +34,9 @@ Last rewritten: 2026-10-31 (v0.5.0 released; milestone 0.6.0 started: the follow
   [milestones/0.6.0.md](milestones/0.6.0.md)): the follow-ups of 0.5.0 (#100–#115, #118, #119, #121) and of 0.4.0
   (#65, #67–#69, #78–#83) — own rates' remaining readers, sin / cos / tan parity, auto-hide and focus leftovers, code
   pages, the view's clipboard picture and В1, scaling residuals, synthetic test records. Eight units in three waves.
+  **Status (2026-10-31):** all eight units, the final review and its fix wave merged into `milestone/0.6.0` (723 tests,
+  GATES-OK); awaiting the maintainer's merge into main. Open for the maintainer: the published test-record values
+  (a local inventory; scrub forward or rewrite history), #131.
 
 ## Next topics
 
