@@ -3140,6 +3140,47 @@ mod window_tests {
         assert_ne!(w.view_state(), before, "the arrow key reaches the view");
     }
 
+    /// The other ways to close a pane after a caption press gave its group
+    /// the focus (#77): the pane menu's «Скрыть» (the right-click that opens
+    /// the menu gives the focus), and the ribbon's toggle. The group is
+    /// tabbed, so closing the front tab leaves the group shown.
+    #[test]
+    fn closing_a_tab_by_the_menu_or_the_ribbon_after_a_caption_press_returns_the_focus() {
+        use app::{Command, CopyFocus, Pane};
+        use egui::PointerButton::{Primary, Secondary};
+        let caption = |w: &Win| {
+            let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+            Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0)
+        };
+        // The pane menu's last entry, «Скрыть».
+        let mut w = Win::new();
+        let at = caption(&w);
+        w.press(Secondary, at, at);
+        assert!(w.app.pane_menu.is_some(), "the pane menu opens");
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the right-click gave the pane the focus");
+        for _ in 0..5 {
+            w.key(egui::Key::ArrowDown);
+        }
+        w.key(egui::Key::Enter);
+        w.idle(3);
+        assert!(!w.app.panes.visible(Pane::Vector), "the menu hid the pane");
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the menu's Скрыть");
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_ne!(w.view_state(), before, "the arrow key reaches the view");
+        // The ribbon's toggle.
+        let mut w = Win::new();
+        let at = caption(&w);
+        w.press(Primary, at, at);
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector));
+        w.app.dispatch(Command::TogglePane(Pane::Vector));
+        w.idle(3);
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the ribbon toggle");
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_ne!(w.view_state(), before, "the arrow key reaches the view");
+    }
+
     /// A press on a menu or other popup over a pane gives that pane no
     /// focus.
     #[test]

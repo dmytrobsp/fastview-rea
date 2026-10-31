@@ -2063,6 +2063,13 @@ impl App {
                 let strip: Vec<Pane> = self.tab_order.into_iter().filter(|&q| self.docks.host(q) == host).collect();
                 let was_front = self.panes.front(strip.iter().copied()) == Some(p);
                 self.panes.set(p, on);
+                // Whatever way a pane closes (caption button, pane menu,
+                // ribbon), a focus its group's window holds (a caption or
+                // strip press gave it) goes back to the view (#77); a
+                // tabbed group stays shown, so the frame's rule would not.
+                if !on && matches!(self.copy_focus, CopyFocus::Pane(u) if u == host || u == p) {
+                    self.copy_focus = CopyFocus::View;
+                }
                 if !on && was_front {
                     let i = strip.iter().position(|&q| q == p).unwrap_or(0);
                     let next = strip[i + 1..].iter().find(|&&q| self.panes.visible(q)).or_else(|| strip[..i].iter().rev().find(|&&q| self.panes.visible(q)));
