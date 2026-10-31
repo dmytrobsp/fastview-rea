@@ -1911,8 +1911,10 @@ impl AsciiScan<'_> {
 }
 
 /// C's `atof` over bytes: blanks, then the longest sign / digits / point /
-/// exponent prefix (up to a NUL or anything else); none gives 0.
-fn c_atof(f: &[u8]) -> f64 {
+/// exponent prefix (up to a NUL or anything else); none gives 0. MSVCR120's
+/// reads «d» / «D» as an exponent letter like «e» («1d5» is 100000; a clone
+/// run, #42); «inf» / «nan» and the hexadecimal forms give 0 (the same run).
+pub(crate) fn c_atof(f: &[u8]) -> f64 {
     let mut i = f.iter().take_while(|c| matches!(c, 9..=13 | 32)).count();
     let start = i;
     if matches!(f.get(i), Some(b'+' | b'-')) {
@@ -1934,7 +1936,7 @@ fn c_atof(f: &[u8]) -> f64 {
         return 0.0;
     }
     let mantissa = i;
-    if matches!(f.get(i), Some(b'e' | b'E')) {
+    if matches!(f.get(i), Some(b'e' | b'E' | b'd' | b'D')) {
         let mut j = i + 1;
         if matches!(f.get(j), Some(b'+' | b'-')) {
             j += 1;
@@ -1943,7 +1945,7 @@ fn c_atof(f: &[u8]) -> f64 {
             i = j;
         }
     }
-    let text = std::str::from_utf8(&f[start..i]).unwrap_or("0");
+    let text = std::str::from_utf8(&f[start..i]).unwrap_or("0").replace(['d', 'D'], "e");
     text.parse().or_else(|_| std::str::from_utf8(&f[start..mantissa]).unwrap_or("0").parse()).unwrap_or(0.0)
 }
 
@@ -2202,5 +2204,28 @@ mod freq_track_tests {
         assert_eq!(one("1234", "50"), 25);
         assert_eq!(one("1000", "60"), 17);
         assert_eq!(rec.time, vec![0.0, 0.000625, 0.00125, 0.001875], "k·1e6/1600 µs");
+    }
+}
+
+#[cfg(test)]
+mod atof_tests {
+    use super::c_atof;
+
+    /// MSVCR120's `atof` (a clone run of its DLL under the application's
+    /// locale): «d» / «D» is an exponent letter; inf / nan, hexadecimal
+    /// forms and a bare exponent give 0; a dangling exponent is dropped.
+    #[test]
+    fn atof_takes_d_as_an_exponent_letter_and_no_inf_nan() {
+        assert_eq!(c_atof(b"1d5"), 1e5);
+        assert_eq!(c_atof(b"2.5D2"), 250.0);
+        assert_eq!(c_atof(b"1d-5"), 1e-5);
+        assert_eq!(c_atof(b"1d"), 1.0);
+        assert_eq!(c_atof(b"1d+"), 1.0);
+        assert_eq!(c_atof(b"d5"), 0.0);
+        for s in [&b"inf"[..], b"-inf", b"Infinity", b"nan", b"0x10", b"1_0e"] {
+            let v = c_atof(s);
+            assert!(v == 0.0 || s == b"1_0e", "{s:?}");
+        }
+        assert_eq!(c_atof(b"1.#INF"), 1.0);
     }
 }
