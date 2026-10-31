@@ -1932,6 +1932,8 @@ impl App {
             }
         }
         let v_before = self.docs.get(ai).map(|d| d.vscroll);
+        let sel_before = self.docs.get(ai).map(|d| d.selection.clone());
+        let vizir_drag_ended = actions.iter().any(|a| matches!(a, Act::EndDrag));
         for a in actions {
             let d = &mut self.docs[ai];
             match a {
@@ -2035,8 +2037,10 @@ impl App {
             d.first = d.first.min(hmax_c);
             d.vscroll = d.vscroll.clamp(vmin_c, 0.0);
         }
-        // The view's OnScrollBy (`0x468f00`) ends in the refresh-all (`0x468f3d`).
-        if self.docs.get(ai).map(|d| d.vscroll) != v_before {
+        // The view's OnScrollBy (`0x468f00`) ends in the refresh-all (`0x468f3d`), as does its mouse routine
+        // `0x45dc10` once a click has selected a channel (`0x45e312`) and a mouse-move branch after `0x45a820`
+        // (`0x45ec2a`; taken here for the end of a визир drag, which is inferred).
+        if self.docs.get(ai).map(|d| d.vscroll) != v_before || self.docs.get(ai).map(|d| d.selection.clone()) != sel_before || vizir_drag_ended {
             self.refresh_blocks();
         }
 
@@ -2089,7 +2093,8 @@ impl App {
         }
         match done {
             None => self.rename_edit = Some((i, text)),
-            Some(false) => {}
+            // Esc reaches the common tail of `0x465df0` (`0x46607c`): the refresh, no modified mark.
+            Some(false) => self.refresh_blocks(),
             Some(true) => {
                 // `0x465df0`: the text as typed (no trim) is the alias,
                 // refused when another channel has it as its name or its
@@ -4212,5 +4217,29 @@ mod menu_tests {
         h.frame(vec![]);
         assert_eq!(h.doc().osc.analog[1].id, "Zz9");
         assert!(crate::app::stale_flags::swept(&h.app), "rename");
+    }
+
+    /// #23: Esc on a rename (`0x465df0` → `0x46607c`) and a click that selects a channel (`0x45dc10` → `0x45e312`)
+    /// reach the refresh-all too.
+    #[test]
+    fn rename_escape_and_a_selecting_click_refresh() {
+        let mut h = Harness::new();
+        crate::app::stale_flags::make(&mut h.app);
+        h.app.rename_edit = Some((1, "Zz9".to_string()));
+        h.frame(vec![]);
+        h.frame(vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+        h.frame(vec![]);
+        assert!(h.app.rename_edit.is_none());
+        assert!(crate::app::stale_flags::swept(&h.app), "Esc");
+        let mut h = Harness::new();
+        h.frame(vec![]);
+        h.app.active_doc_mut().unwrap().selection.clear();
+        crate::app::stale_flags::make(&mut h.app);
+        let o = h.row(0);
+        let ev = |pressed| egui::Event::PointerButton { pos: o, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(o), ev(true)]);
+        h.frame(vec![ev(false)]);
+        assert!(!h.doc().selection.is_empty(), "the click selected the lane");
+        assert!(crate::app::stale_flags::swept(&h.app), "click");
     }
 }

@@ -120,6 +120,8 @@ impl App {
         } else if !has_pending_paste(&self.docs[di]) {
             self.run_omp();
         }
+        // `0x454310` refreshes on both branches (`0x454350`, `0x454371`), whatever the run gave.
+        self.refresh_blocks();
     }
 
     /// Interactive run (`0x4a00b0(0)`) on the active document; an error is
@@ -132,7 +134,7 @@ impl App {
                 self.omp_ui.bar_doc = Some(di);
                 self.omp_ui.bar = self.omp_result().map(|r| r.text);
                 // The run ends in the refresh-all (`0x4a1611`).
-                self.refresh_blocks_of(di);
+                self.refresh_blocks();
             }
             Err(id) => {
                 self.docs[di].omp.shown = false;
@@ -155,7 +157,7 @@ impl App {
                 self.active = Some(di);
                 self.omp_ui.bar = self.omp_result().map(|r| r.text);
                 self.active = active;
-                self.refresh_blocks_of(di);
+                self.refresh_blocks();
             }
             Err(_) => self.docs[di].omp.shown = false,
         }
@@ -333,7 +335,7 @@ impl App {
             self.omp_ui.bar = None;
         }
         // 32830 and the clearing toggle end in the refresh-all (`0x475210`, `0x454350`).
-        self.refresh_blocks_of(di);
+        self.refresh_blocks();
     }
 
     /// The ОМП result of the active document over its current В1/В2 interval
@@ -2248,13 +2250,22 @@ mod tests {
         let di = app.active.unwrap();
         app.omp_clear(di);
         assert!(crate::app::stale_flags::swept(&app), "after the clearing");
-        // A silent run on a document that is not the active one.
+        // A silent run on a document that is not the active one: the refresh-all is the frame's, so it is the
+        // active document's flags that are swept (`0x475420`).
         app.dispatch(Command::Demo);
         grounded(&mut app);
-        app.active = Some(0);
         crate::app::stale_flags::make(&mut app);
-        app.active = Some(1);
         app.run_omp_silent(0);
-        assert!(!app.docs[0].chans[0].on_circle && !app.docs[0].chans[0].on_vector);
+        assert!(crate::app::stale_flags::swept(&app));
+    }
+
+    /// The ОМП toggle `0x454310` refreshes on both branches, also when the run fails.
+    #[test]
+    fn the_omp_toggle_refreshes_when_the_run_fails() {
+        let mut app = demo_app();
+        crate::app::stale_flags::make(&mut app);
+        app.omp_toggle();
+        assert!(!app.active_doc().unwrap().omp.shown, "no settings: the run failed");
+        assert!(crate::app::stale_flags::swept(&app));
     }
 }

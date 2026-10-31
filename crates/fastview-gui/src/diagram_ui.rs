@@ -388,6 +388,11 @@ fn shown_by_name(d: &Doc, name: &str) -> fvb_core::units::Shown {
 /// A channel's bins in the frequency diagram (`0x426510`): its window is
 /// round(own rate / 50) with an own rate (`ch+0x108`), else the record's, and
 /// the correction runs at that rate too.
+/// The scale the frequency diagram's noise threshold is taken against (#93): the window's largest |sample|.
+pub(crate) fn freq_magnitude(samples: &[f64], pos: usize, n: usize, periods: usize) -> f64 {
+    fvb_core::views::window_magnitude(samples, pos, n * periods)
+}
+
 pub(crate) fn freq_bins(d: &Doc, samples: &[f64], file: Option<usize>, own_rate: f64, pos: usize, periods: usize, k_max: usize) -> Vec<f64> {
     let corr = fvb_core::freqcorr::of(&d.osc);
     let mine = file.and_then(|i| corr.and_then(|cr| cr.for_chan(i))).map(|c| c.at_rate(own_rate));
@@ -1675,7 +1680,7 @@ impl App {
             let max = sp[..=k_max].iter().copied().fold(0.0, f64::max);
             let max = if max == 0.0 { 1.0 } else { max };
             let norm = if use_rms { fvb_core::freqcorr::rms_at(ch.file.and(corr).map(|c| c.at_rate(ch.own_rate)), ch.file.unwrap_or(0), samples, pos, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
-            let magnitude = fvb_core::views::window_magnitude(samples, pos, n * periods);
+            let magnitude = freq_magnitude(samples, pos, n, periods);
             let color = ch.color;
             if g.plot_h() - 30 * si - g.h <= 0 {
                 continue;
@@ -2668,5 +2673,27 @@ mod tests {
             assert_eq!(scroll_w(), w, "{dpi}");
         }
         crate::dpi::set(96);
+    }
+
+    /// #93 at the diagram's wiring: a constant channel's window gives a magnitude, and with it every «%» label
+    /// reads 0; a magnitude of 0 (the wiring dropped) would print the noise.
+    #[test]
+    fn a_constant_channel_prints_zero_percent_labels() {
+        let mut app = crate::app::App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        let n = d.osc.samples_per_cycle().max(2);
+        let len = d.osc.analog[0].samples.len();
+        d.osc.analog[0].samples = vec![220.5; len];
+        d.recompute(false);
+        let d = app.active_doc().unwrap();
+        let (pos, periods, k_max) = (len - 1, 1usize, 5usize);
+        let samples = d.shown_samples(0);
+        let sp = freq_bins(d, samples, Some(0), d.osc.analog[0].own_rate, pos, periods, k_max);
+        let magnitude = freq_magnitude(samples, pos, n, periods);
+        assert!(magnitude > 200.0, "the window's magnitude is the level");
+        let labels = |m: f64| -> Vec<String> { sp.iter().enumerate().map(|(k, &v)| fvb_core::views::freq_label(fvb_core::views::percent_bar_value(v, sp[periods], k == periods, m)).trim().to_string()).collect() };
+        assert_eq!(labels(magnitude), vec!["0"; k_max + 1]);
+        assert_ne!(labels(0.0), vec!["0"; k_max + 1], "without the magnitude the noise is printed");
     }
 }

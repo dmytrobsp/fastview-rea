@@ -2673,17 +2673,6 @@ impl App {
         }
     }
 
-    /// The refresh-all after a command that ran on document `di` (the OMP run, which may be a silent one on a
-    /// document that is not the active one): the active document goes through [`Self::refresh_blocks`]; another
-    /// one only has its circle / vector flags swept, the diagrams being bound to the active document.
-    pub fn refresh_blocks_of(&mut self, di: usize) {
-        if self.active == Some(di) {
-            self.refresh_blocks();
-        } else if let Some(d) = self.docs.get_mut(di) {
-            crate::chandlg::circle_refresh_flags(d);
-        }
-    }
-
     fn refresh_live_block(&mut self) {
         let gi = usize::from(self.diagram_dim == Dimension::Dif);
         let Some(d) = self.active_doc() else { return };
@@ -4577,13 +4566,14 @@ mod tests {
         assert_eq!(d.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["X", "L1", "Z"]);
     }
 
-    /// #31: the quick-analysis pages avoid the names of the rows kill-active kept.
+    /// #31: the quick-analysis pages avoid the names of the rows kill-active kept: the generated channel is renamed
+    /// up front, so a formula of the batch that names it names the renamed one, not the row.
     #[test]
     fn generated_names_avoid_the_loose_rows() {
         let mut app = demo_app();
-        app.active_doc_mut().unwrap().loose_defs = vec![("I1".into(), "Ia*1".into())];
-        app.analysis_tab = AnalysisTab::Symmetric;
-        let q = &mut app.quick[crate::quick_ui::page_index(AnalysisTab::Symmetric).unwrap()];
+        app.active_doc_mut().unwrap().loose_defs = vec![("3I0".into(), "Ia*1".into())];
+        app.analysis_tab = AnalysisTab::Zero;
+        let q = &mut app.quick[crate::quick_ui::page_index(AnalysisTab::Zero).unwrap()];
         q.ia = "Ia".into();
         q.ib = "Ib".into();
         q.ic = "Ic".into();
@@ -4593,6 +4583,21 @@ mod tests {
         app.quick_calc();
         let d = app.active_doc().unwrap();
         let names: Vec<_> = d.computed.iter().map(|c| c.name.as_str()).collect();
-        assert!(names.contains(&"I1") && names.contains(&"I1_2"), "{names:?}");
+        assert!(names.contains(&"3I0") && names.contains(&"3I0_2"), "{names:?}");
+        let s0 = d.computed.iter().find(|c| c.name.starts_with("S0")).unwrap();
+        assert!(s0.formula.to_lowercase().contains("3i0_2"), "{}", s0.formula);
+    }
+
+    /// 33030 refreshes whatever the colour dialog returned (`0x465850`): also on Esc.
+    #[test]
+    fn the_colour_dialog_refreshes_on_cancel_too() {
+        let mut app = demo_app();
+        app.color_dialog = Some(egui::Color32::from_rgb(10, 20, 30));
+        crate::app::stale_flags::make(&mut app);
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        let _ = egui::Context::default().run(raw, |ctx| app.color_window(ctx));
+        assert!(app.color_dialog.is_none());
+        assert!(crate::app::stale_flags::swept(&app));
     }
 }
