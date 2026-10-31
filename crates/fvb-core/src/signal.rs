@@ -28,9 +28,12 @@ pub fn samples_per_period(sample_rate: f64, line_freq: f64) -> Option<usize> {
     (f >= 1.0).then(|| (rate / f as u64) as usize)
 }
 
-/// The 120° rotation operator used by the symmetric-component transform.
+/// The 120° rotation operator `a` of the symmetric-component transform, as the original forms it
+/// (`0x41d800`, `0x41d593`): the pair (−0.5, √3 · 0.5), the root taken by the runtime's correctly rounded
+/// `sqrt` (`0x420650` calls `_libm_sse2_sqrt_precise` on 3.0) — no sin / cos and no angle (#107). The polar
+/// form `1∠120°` differs from it in the last bits.
 pub fn operator_a() -> Complex64 {
-    Complex64::from_polar(1.0, 120f64.to_radians())
+    Complex64::new(-0.5, 3f64.sqrt() * 0.5)
 }
 
 /// Fundamental phasor at every sample (`FUN_00426fc0`):

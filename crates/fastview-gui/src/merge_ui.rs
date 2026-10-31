@@ -158,7 +158,7 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
             }
             times.truncate(c.data.len());
             let channel = if c.discrete {
-                Err(fvb_core::comtrade::DigitalChannel { index: 0, id: c.name.clone(), phase: c.desc2.clone(), normal: 0, samples: c.data.iter().map(|&v| v != 0.0).collect() })
+                Err(fvb_core::comtrade::DigitalChannel { index: 0, id: c.name.clone(), phase: c.desc2.clone(), normal: 0, samples: c.data.iter().map(|&v| v != 0.0).collect(), own_rate: 0.0 })
             } else {
                 Ok(fvb_core::comtrade::AnalogChannel {
                     index: 0,
@@ -391,8 +391,7 @@ impl App {
             f => f,
         };
         let focus = match focus {
-            CopyFocus::Diagram(p) if !self.pane_canvas.iter().any(|(q, _)| *q == p) => CopyFocus::View,
-            CopyFocus::Grid(_) if self.pane_grid.is_empty() => CopyFocus::View,
+            CopyFocus::Diagram(p) if !self.pane_canvas.iter().chain(&self.canvas_memo).any(|(q, _)| *q == p) => CopyFocus::View,
             f => f,
         };
         if let CopyFocus::Diagram(pane) = focus {
@@ -409,7 +408,7 @@ impl App {
             self.status = "Не выбраны каналы для копирования.".into();
             return;
         }
-        let picture = if focus == CopyFocus::View { self.view_picture() } else { None };
+        let picture = if matches!(focus, CopyFocus::View | CopyFocus::Other) { self.view_picture() } else { None };
         if !self.clip.put(Some(&rec.to_text()), picture.as_ref()) {
             self.status = "Не удалось записать в буфер обмена.".into();
         }
@@ -475,7 +474,7 @@ impl App {
             // read in UTF-8 / KOI8-R keeps it as bytes the way it reads its
             // own (`recdlg::shown_bytes_of`).
             let bytes = crate::recdlg::shown_bytes_of(&lane.name, d.read_enc, d.codepage);
-            lane.name_raw = Some(crate::app::RawName { bytes, seen: lane.name.clone(), alias: false });
+            lane.name_raw = Some(crate::recdlg::added_name(&lane.name, bytes, d.read_enc, d.codepage));
             d.computed.push(lane);
             d.selection.insert(ChanKey::Computed(d.computed.len() - 1));
             d.pending.push(c);
@@ -704,7 +703,10 @@ impl App {
             })
             .collect();
         let dig_pads: Vec<bool> = (0..d.osc.digital.len()).map(|i| d.dig(i).invert).collect();
-        let merged = merge::merge(&src, &pasted, d.merge_offset, &pads, &dig_pads);
+        // The formula channels present count in R with their own rates
+        // (`0x47db30`), else the record's.
+        let formula_rates: Vec<f64> = d.computed.iter().filter(|c| c.formula != PENDING).map(|c| c.own_rate).collect();
+        let merged = merge::merge_with(&src, &pasted, d.merge_offset, &pads, &dig_pads, &formula_rates);
         let old_rate = d.osc.sample_rate;
         let (nb, nd) = (d.osc.analog.len(), d.osc.digital.len());
         let anchor = |digital: bool| {
@@ -737,7 +739,7 @@ impl App {
         d.digital_visible.resize(d.osc.digital.len(), true);
         for (i, p) in (nd..d.osc.digital.len()).zip(&pend_d) {
             if let Some((invert, remove_dc, mode)) = p.flags {
-                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode, color: None, omp: false };
+                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode, color: None, omp: false, omp_alias: false };
             }
         }
         d.move_appended(at_a, nb, at_d, nd);
@@ -866,6 +868,11 @@ impl App {
             bar.ch2 = Some(analog[k]);
         }
         let w = r.width() - 20.0;
+        // The enabled ones take the focus when pressed (`track_copy_focus`).
+        self.focus_other.extend([at(110.0, 10.0, 170.0, 21.0), at(w - 220.0, 9.0, 100.0, 23.0), at(w - 110.0, 9.0, 100.0, 23.0)]);
+        if on {
+            self.focus_other.extend([at(350.0, 10.0, 90.0, 21.0), at(510.0, 10.0, 90.0, 21.0)]);
+        }
         sync = win_button(ui, at(w - 220.0, 9.0, 100.0, 23.0), "Синхронизация", false).clicked() || sync;
         join = win_button(ui, at(w - 110.0, 9.0, 100.0, 23.0), "Объединить", false).clicked() || join;
         let text = r.shrink2(egui::vec2(15.0, 14.0));
@@ -916,13 +923,13 @@ mod tests {
         app.copy_channels_for_merge();
         app.paste_channels_for_merge();
         let d = app.active_doc().unwrap();
-        let rows = crate::lanes::lane_layout(d, 93.0, false);
+        let rows = crate::lanes::lane_layout(d, 93.0);
         let lane = |digital: bool| rows.iter().find(|r| matches!(r.key, ChanKey::Computed(j) if d.pending_of(j).is_some_and(|p| p.pasted.channel.is_err() == digital))).unwrap();
         assert_eq!(lane(true).h, crate::oscgeom::DIGITAL_H);
         assert!(lane(false).h >= 93.0);
         let Ok(a) = &d.pending_of(match lane(false).key { ChanKey::Computed(j) => j, _ => unreachable!() }).unwrap().pasted.channel else { unreachable!() };
         let own = a.samples.iter().copied().fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), v| (l.min(v), h.max(v)));
-        assert_eq!(crate::lanes::row_range(d, lane(false), false), own);
+        assert_eq!(crate::lanes::row_range(d, lane(false)), own);
         // The analog one carries its own phasor cache (`0x490120`'s
         // source), the digital one none.
         let cj = |digital: bool| match lane(digital).key { ChanKey::Computed(j) => &d.computed[j], _ => unreachable!() };
@@ -950,7 +957,7 @@ mod tests {
         let n = d.osc.analog.len();
         assert_eq!(order[n..], [ChanKey::Computed(j), ChanKey::Computed(0)]);
         assert_eq!(crate::chandlg::rows(d)[n..n + 2], [ChanKey::Computed(j), ChanKey::Computed(0)]);
-        let lanes: Vec<ChanKey> = crate::lanes::lane_layout(d, 93.0, false).into_iter().map(|r| r.key).collect();
+        let lanes: Vec<ChanKey> = crate::lanes::lane_layout(d, 93.0).into_iter().map(|r| r.key).collect();
         let at = |k| lanes.iter().position(|&x| x == k).unwrap();
         assert!(at(ChanKey::Computed(j)) + 1 == at(ChanKey::Computed(0)));
     }
@@ -1089,7 +1096,7 @@ mod tests {
         let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
         let own = &d.computed[j].pending_own;
         assert!(own.iter().zip(&src).all(|(o, s)| (o - s / 2000.0).abs() < 1e-9), "shown ÷2000, secondary");
-        assert!(crate::lanes::key_icons(d, ChanKey::Computed(j), false).contains(&"*K"), "the ratio's icon");
+        assert!(crate::lanes::key_icons(d, ChanKey::Computed(j)).contains(&"*K"), "the ratio's icon");
         app.merge_records();
         let d = app.active_doc().unwrap();
         let merged = d.osc.analog.iter().find(|a| a.id.ends_with("(вст.)")).expect("the merged channel");
@@ -1251,7 +1258,7 @@ mod tests {
         d.hviz[0].chan = Some(1);
         app.paste_channels_for_merge();
         let d = app.active_doc().unwrap();
-        let rows = crate::lanes::lane_layout(d, 93.0, false);
+        let rows = crate::lanes::lane_layout(d, 93.0);
         let pos = rows.iter().position(|r| matches!(r.key, ChanKey::Computed(_))).unwrap();
         assert!(matches!(rows[pos - 1].key, ChanKey::Analog(0)) && matches!(rows[pos + 1].key, ChanKey::Analog(1)), "shown in front of channel 1");
         assert!(d.selection.iter().all(|k| matches!(k, ChanKey::Computed(_))) && d.selection.len() == 1, "the pasted lane comes in selected");

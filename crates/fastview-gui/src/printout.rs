@@ -282,7 +282,7 @@ impl App {
         let r = w_scr / client_w;
         let page_h = (h_scr / r).floor().max(1.0);
         let band = g::RULER_H + if d.diff_band { g::DIFF_BAND_H } else { 0.0 };
-        let rows = lanes::lane_layout(d, self.y_analog, d.primary_values());
+        let rows = lanes::lane_layout(d, self.y_analog);
         let heights: Vec<f32> = rows.iter().map(|r| r.h).collect();
         OscPlan { client_w, page_h, pages: osc_page_count(&heights, band, page_h) }
     }
@@ -297,13 +297,12 @@ impl App {
     /// with `Draw` in print mode) on a `client_w` × `page_h` screen.
     fn paint_osc_slice(&self, ctx: &egui::Context, di: usize, plan: &OscPlan, slice: usize) {
         let doc = &self.docs[di];
-        let primary = doc.primary_values();
         let painter = ctx.layer_painter(egui::LayerId::background());
         let dy = -(slice as f32) * plan.page_h;
         let total = plan.pages as f32 * plan.page_h;
-        let rows: Vec<Row> = lanes::lane_layout(doc, self.y_analog, primary);
+        let rows: Vec<Row> = lanes::lane_layout(doc, self.y_analog);
         let abs_time = self.time_unit == crate::app::TimeUnit::Absolute;
-        let (label_col, left_w) = ctx.fonts(|fo| lanes::stats_columns(fo, doc, &rows, primary, abs_time));
+        let (label_col, left_w) = ctx.fonts(|fo| lanes::stats_columns(fo, doc, &rows, abs_time));
         let n = doc.osc.sample_count();
         let f = doc.xscale.unwrap_or(1.0);
         let (x0, right) = (0.0, plan.client_w);
@@ -334,12 +333,12 @@ impl App {
             }
         }
         painter.vline(left, dy..=grid_bottom, Stroke::new(1.0f32, Color32::from_rgb(100, 100, 100)));
-        let ov = OscView { doc, primary, unit: self.time_unit, f, first, n, left, right, x0, label_col };
+        let ov = OscView { doc, unit: self.time_unit, f, first, n, left, right, x0, label_col };
         for (li, r) in rows.iter().enumerate() {
             if let Some(bottom) = paged.ruler_before[li] {
                 ov.ruler(&painter, dy + bottom, right, g::RULER_H);
             }
-            let range = lanes::row_range(doc, r, primary);
+            let range = lanes::row_range(doc, r);
             ov.row(&lp, &pp, r, dy + paged.tops[li], range);
         }
         ov.ruler(&painter, dy + total, right, g::RULER_H + if doc.diff_band { g::DIFF_BAND_H } else { 0.0 });
@@ -351,7 +350,7 @@ impl App {
         let v_bottom = if doc.diff_band { ruler_top - 25.0 } else { ruler_top };
         ov.vizirs(&painter, dy, v_bottom, true);
         let tops: Vec<f32> = paged.tops.iter().map(|t| t + dy).collect();
-        let ranges: Vec<(f64, f64)> = rows.iter().map(|r| lanes::row_range(doc, r, primary)).collect();
+        let ranges: Vec<(f64, f64)> = rows.iter().map(|r| lanes::row_range(doc, r)).collect();
         // Horizontal визиры: the screen Draw `0x45f950` calls `0x493110` in
         // print as well (lines and the out-of-view labels).
         let ys = [0, 1].map(|j| {
@@ -368,7 +367,7 @@ impl App {
                 .map(|li| (tops[li], rows[li].h))
         };
         // As on screen: the line's own channel range, nothing outside it.
-        let level_y = |k: crate::app::ChanKey, v: f64| lanes::level_place(doc, (&rows, &tops, &ranges), primary, k, v);
+        let level_y = |k: crate::app::ChanKey, v: f64| lanes::level_place(doc, (&rows, &tops, &ranges), k, v);
         let t0 = doc.osc.time.first().copied().unwrap_or(0.0);
         let time_at = |k: usize| doc.osc.time.get(k).copied().unwrap_or(0.0) - t0;
         let us_at = |k: usize| crate::oscgeom::micros(time_at(k));
@@ -545,7 +544,7 @@ impl App {
     /// no toolbar or property grid) as last drawn, at the screen's
     /// resolution.
     pub fn diagram_picture(&mut self, pane: Pane) -> Option<Canvas> {
-        let rect = self.pane_canvas.iter().find(|(p, _)| *p == pane)?.1;
+        let rect = self.pane_canvas.iter().chain(&self.canvas_memo).find(|(p, _)| *p == pane)?.1;
         let (di, fonts, ppp) = (self.active?, self.print.fonts.clone(), self.ppp);
         Some(self.render_diagram(&fonts, di, pane, rect.size(), ppp))
     }
@@ -564,8 +563,12 @@ impl App {
         // another popup reaches no pane under it; elsewhere the topmost
         // pane window (floating ones drawn after the docked).
         let top = ctx.layer_id_at(p);
-        let slid = crate::docking::UNITS.into_iter().find(|&u| top == Some(egui::LayerId::new(egui::Order::Foreground, egui::Id::new(("fv_slide", u)))));
+        let slid = top.and_then(crate::views::slid_pane_unit);
         let popup = slid.is_none() && top.is_some_and(|l| l.order >= egui::Order::Foreground);
+        let editor = top.is_some_and(|l| {
+            let at = |name: &str, i: usize| egui::LayerId::new(egui::Order::Foreground, egui::Id::new(name).with(i));
+            self.rename_edit.as_ref().is_some_and(|(i, _)| l == at("fv_rename", *i)) || self.level_edit.as_ref().is_some_and(|(i, _)| l == at("fv_level_edit", *i))
+        });
         let [c0, c1, g0, g1] = match slid {
             Some(u) => self.slid_ranges[u as usize].unwrap_or([0; 4]),
             None if popup => [0; 4],
@@ -575,6 +578,21 @@ impl App {
         // else (caption, tab strip, toolbar) the press keeps the focus
         // where it is — it is a window of its own, not the view under it.
         let on_float = if slid.is_none() && !popup { crate::docking::UNITS.into_iter().find(|&u| top == Some(crate::views::floating_pane_layer(u))) } else { None };
+        // The frame's own windows lie under any pane window or popup: a
+        // press on the merge bar's combo box or buttons or the tab list's
+        // button gives that window the focus (no untitled child: copy takes
+        // the view's picture and the document); on a document's tab, the
+        // view's (clone).
+        if slid.is_none() && !popup && on_float.is_none() {
+            if self.focus_other.iter().any(|r| r.contains(p)) {
+                self.copy_focus = CopyFocus::Other;
+                return;
+            }
+            if self.doc_tab_rects.iter().any(|r| r.contains(p)) {
+                self.copy_focus = CopyFocus::View;
+                return;
+            }
+        }
         let own = |pane: Pane| on_float.is_none_or(|u| self.docks.members(u).any(|m| m == pane));
         if let Some(&(pane, _)) = self.pane_canvas[c0..c1].iter().rev().find(|(q, r)| own(*q) && r.contains(p)) {
             self.copy_focus = CopyFocus::Diagram(pane);
@@ -589,7 +607,10 @@ impl App {
             if let Some(pane) = owner.and_then(|u| self.panes.front(self.docks.members(u))) {
                 self.copy_focus = CopyFocus::Grid(pane);
             }
-        } else if slid.is_none() && on_float.is_none() && self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
+        } else if slid.is_none() && on_float.is_none() && (!popup || editor) && self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
+            // A menu or a combo box's list takes no focus (the window that
+            // has it keeps it); the lane's rename box and the level editor
+            // are windows of the view.
             self.copy_focus = CopyFocus::View;
         }
     }
@@ -598,7 +619,7 @@ impl App {
     /// it has it.
     pub fn focus_group(&self) -> Option<crate::docking::Unit> {
         match self.copy_focus {
-            CopyFocus::View => None,
+            CopyFocus::View | CopyFocus::Other => None,
             CopyFocus::Diagram(u) | CopyFocus::Grid(u) | CopyFocus::Pane(u) => Some(self.docks.host(u)),
         }
     }
@@ -747,7 +768,7 @@ mod hviz_tests {
         app.dispatch(Command::Demo);
         let without = reddest_row(&mut app);
         let d = &mut app.docs[0];
-        let (lo, hi) = crate::lanes::chan_range(d, 0, false);
+        let (lo, hi) = crate::lanes::chan_range(d, 0);
         d.hviz[0] = crate::app::HVizir { shown: true, chan: Some(0), value: (lo + hi) / 2.0 };
         let with = reddest_row(&mut app);
         assert!(with > without + 200, "a red line across the plot: {with} vs {without}");

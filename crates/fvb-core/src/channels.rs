@@ -46,6 +46,14 @@ impl OscChannels {
     /// [`OscChannels::new`] with the frequency correction `corr`; every
     /// channel but the frequency one, computed ones included, is corrected.
     pub fn new_with(osc: &Oscillogram, extra: &[crate::quick::ComputedChannel], show_primary: bool, corr: Option<FreqCorr<'_>>) -> OscChannels {
+        OscChannels::new_shown(osc, None, extra, show_primary, corr)
+    }
+
+    /// [`OscChannels::new_with`] over analog values the caller already read through the accessor
+    /// `0x426020` (`shown[i]` is channel `i` as it returns it: x·k − dc·k, negated for «Инвертировать»,
+    /// #105). Without them the stored values are multiplied by k here, which is `(x − dc)·k` once the
+    /// DC is removed and differs from the accessor's order in the last bits.
+    pub fn new_shown(osc: &Oscillogram, shown: Option<&[&[f64]]>, extra: &[crate::quick::ComputedChannel], show_primary: bool, corr: Option<FreqCorr<'_>>) -> OscChannels {
         let n = osc.samples_per_cycle().max(2);
         // Channel names are the COMTRADE ids with trailing spaces trimmed (+0x68).
         let mut names: Vec<String> = osc.analog.iter().map(|c| c.id.trim_end_matches(' ').to_string()).collect();
@@ -71,7 +79,11 @@ impl OscChannels {
             .analog
             .iter()
             .zip(&ratios)
-            .map(|(c, (k, _, _))| c.samples.iter().map(|v| v * k).collect())
+            .enumerate()
+            .map(|(i, (c, (k, _, _)))| match shown.and_then(|s| s.get(i)) {
+                Some(x) => x.to_vec(),
+                None => c.samples.iter().map(|v| v * k).collect(),
+            })
             .collect();
         let mut rates: Vec<f64> = osc.analog.iter().map(|c| c.own_rate).collect();
         let np = |r: f64| osc.period_of(r).max(2);

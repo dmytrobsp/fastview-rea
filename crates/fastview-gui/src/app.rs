@@ -140,8 +140,13 @@ pub enum CopyFocus {
     /// closes.
     Grid(Pane),
     /// A group's pane window itself: its caption or its strip button
-    /// pressed (`0x10086d23` / `0x10086f01`, `0x1005f612`).
+    /// pressed (`0x10086d23` / `0x10086f01`, `0x1005f612`), or its tab.
     Pane(Pane),
+    /// A window of the frame that takes the focus and is neither the view
+    /// nor a pane's (a button or combo box of the merge bar, the document
+    /// tabs' ▾ button): no untitled child, so copy puts the view's picture
+    /// and the document, but the view's keys go to that window.
+    Other,
 }
 
 /// Visibility of the four diagram panes (all created visible) and the active
@@ -800,6 +805,10 @@ pub struct Doc {
     /// The code page the record's names are currently decoded in (`doc+0x6e8`,
     /// 866 / 1251: file parameters «Кодировка»; see `recdlg`).
     pub codepage: Encoding,
+    /// A stored `Oscillogram/Codepage` other than 0 / 1 (65001, 20866 …),
+    /// kept as it is until «Кодировка» is used (#82; the original's
+    /// `doc+0x6e8` holds any int, ANSI for non-zero, and writes it back).
+    pub cp_raw: Option<i32>,
     /// The station's, the recorder's and each channel's name as read (see
     /// [`RawName`]), in step with the channels (`Doc::ensure_name_raw`).
     pub name_raw: Vec<RawName>,
@@ -882,6 +891,7 @@ impl Doc {
             digital_visible,
             dig_flags: Vec::new(),
             codepage: Encoding::Cp1251,
+            cp_raw: None,
             name_raw: Vec::new(),
             hdr: None,
             hdr_cp: Encoding::Cp1251,
@@ -975,12 +985,12 @@ impl Doc {
     fn evaluate_formula_list(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
         for j in 0..self.computed.len() {
-            let c = &mut self.computed[j];
+            let c = &self.computed[j];
             if c.formula != "ОМП" && c.formula != "объединение" && c.formula != crate::merge_ui::PENDING {
                 let batch = [(c.name.clone(), c.formula.clone())];
-                let mut out = fvb_core::quick::evaluate_batch_with(&self.flagged, fvb_core::freqcorr::of(&self.osc), &done, &batch, show_primary)?;
+                let mut out = self.eval_formulas(&done, &batch, show_primary)?;
                 if let Some(new) = out.pop() {
-                    c.set_values(new.samples, new.phasors);
+                    self.computed[j].set_values(new.samples, new.phasors);
                 }
             }
             // A later formula reads this one through the accessor and the
@@ -990,6 +1000,13 @@ impl Doc {
         }
         self.prune_groups();
         Ok(())
+    }
+
+    /// The formula batch `0x415780` over the record's channels as the accessor `0x426020` returns them
+    /// ([`Doc::shown_samples`]: x·k − dc·k, not `(x − dc)·k`, #105).
+    pub fn eval_formulas(&self, existing: &[fvb_core::quick::ComputedChannel], batch: &[(String, String)], show_primary: bool) -> Result<Vec<fvb_core::quick::ComputedChannel>, fvb_core::expr::FormulaError> {
+        let shown: Vec<&[f64]> = (0..self.flagged.analog.len()).map(|i| self.shown_samples(i)).collect();
+        fvb_core::quick::evaluate_batch_shown(&self.flagged, Some(&shown), fvb_core::freqcorr::of(&self.osc), existing, batch, show_primary)
     }
 
     /// Computed channel `j`'s flags over its evaluation (`0x428490` for a
@@ -1317,6 +1334,10 @@ pub struct DigFlags {
     /// this, not by its name, since «Кодировка» shows it as stored while
     /// the record's own names are re-decoded (#66).
     pub omp: bool,
+    /// The run took over a record channel that showed a user alias: the
+    /// original's `0x425f90` sets bit 13 and the samples only, so the alias
+    /// (`+0x6c`) stays and is written on save (#114).
+    pub omp_alias: bool,
 }
 
 /// An undo/redo entry: the record's data model (`doc+0x180 … 0x27f`,
@@ -1604,10 +1625,21 @@ pub struct App {
     /// The diagram windows (the canvas, without toolbar or property grid)
     /// as last drawn.
     pub pane_canvas: Vec<(Pane, egui::Rect)>,
+    /// Each diagram window's rect as it was last drawn, kept while its pane
+    /// is hidden (a hidden window keeps its size; copy of a focused hidden
+    /// diagram takes its picture).
+    pub canvas_memo: Vec<(Pane, egui::Rect)>,
     /// The diagram tab strips' tabs this frame.
     pub pane_tab_rects: Vec<(Pane, egui::Rect)>,
     /// The document tabs this frame, in strip order.
     pub doc_tab_rects: Vec<egui::Rect>,
+    /// The frame's own windows that take the copy focus when pressed (the
+    /// enabled combo boxes and buttons of the merge bar, the document
+    /// tabs' ▾ button) this frame: `CopyFocus::Other`.
+    pub focus_other: Vec<egui::Rect>,
+    /// The active document (its serial) the copy focus was last settled
+    /// for: a change is an MDI activation, which focuses its view.
+    pub focus_doc: Option<u64>,
     /// The pointer over the view's client area at the last frame it was
     /// there: a change is the original's WM_MOUSEMOVE.
     pub view_pointer: Option<egui::Pos2>,
@@ -1821,8 +1853,11 @@ impl App {
             view_left: crate::lanes::LEFT_W_DEFAULT,
             view_rects: None,
             pane_canvas: Vec::new(),
+            canvas_memo: Vec::new(),
             pane_tab_rects: Vec::new(),
             doc_tab_rects: Vec::new(),
+            focus_other: Vec::new(),
+            focus_doc: None,
             pane_grid: Vec::new(),
             view_pointer: None,
             tab_auto: TabAuto::default(),
@@ -1982,8 +2017,8 @@ impl App {
     /// Hides pane `p` if it shows: the nearest visible tab of its group
     /// comes to the front when `p` was, and a focus the group's window
     /// holds (a caption or strip press gave it) goes back to the view
-    /// (#77) when `p` was the pane shown; a tabbed group stays shown, so
-    /// the frame's rule would not.
+    /// (#77) when `p` was the pane shown and has a control bar of its own;
+    /// a pane of a tabbed group keeps it (#112).
     pub fn close_pane(&mut self, p: Pane) {
         if !self.panes.visible(p) {
             return;
@@ -1993,8 +2028,15 @@ impl App {
         let was_front = self.panes.front(strip.iter().copied()) == Some(p);
         self.panes.set(p, false);
         if was_front {
+            // A pane of a tabbed group (a tab control's window) that hides
+            // keeps the focus window it was (clone: GetFocus still returns
+            // the hidden pane, copy takes its diagram); one with a control
+            // bar of its own hands the focus to the view.
             if matches!(self.copy_focus, CopyFocus::Pane(u) if u == host || u == p) {
-                self.copy_focus = CopyFocus::View;
+                // (An auto-hidden group's slid-out pane was not run on a
+                // clone: it keeps the view.)
+                let tabbed = strip.len() > 1 && !self.docks[host].auto_hidden();
+                self.copy_focus = if tabbed { CopyFocus::Diagram(p) } else { CopyFocus::View };
             }
             let i = strip.iter().position(|&q| q == p).unwrap_or(0);
             let next = strip[i + 1..].iter().find(|&&q| self.panes.visible(q)).or_else(|| strip[..i].iter().rev().find(|&&q| self.panes.visible(q)));
@@ -2909,7 +2951,7 @@ impl App {
             return None;
         }
         let existing: Vec<_> = d.computed.iter().map(Computed::as_core).collect();
-        match fvb_core::quick::evaluate_batch_with(&d.flagged, fvb_core::freqcorr::of(&d.osc), &existing, batch, show_primary) {
+        match d.eval_formulas(&existing, batch, show_primary) {
             Ok(added) => {
                 let d = self.active_doc_mut()?;
                 let n0 = d.computed.len();
@@ -3267,6 +3309,50 @@ mod tests {
         assert!(d.computed[0].samples.iter().zip(&raw).all(|(v, r)| *v == 2.0 * (1.0 - r)), "inverted");
     }
 
+    /// #105: with «Удалить постоянную» a formula reads a channel as the accessor `0x426020` returns it
+    /// (x·k − dc·k), not as `(x − dc)·k`, which differs in the last bits.
+    #[test]
+    fn a_formula_input_follows_the_accessors_remove_dc_order() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1234.0, 7.0, false);
+        d.chans[0].primary = true;
+        d.chans[0].remove_dc = true;
+        d.recompute(true);
+        let name = d.osc.analog[0].id.clone();
+        assert!(app.append_computed(&[("same".into(), format!("\"{name}\""))]).is_some());
+        let d = app.active_doc().unwrap();
+        let (k, dc) = (d.shown_k(0), d.dc_mean[0].0);
+        assert_eq!(k, 1234.0 / 7.0);
+        let mut differs = false;
+        for j in 0..d.osc.sample_count() {
+            let x = d.osc.analog[0].samples[j];
+            differs |= (x * k - dc * k).to_bits() != ((x - dc) * k).to_bits();
+            assert_eq!(d.computed[0].samples[j].to_bits(), (x * k - dc * k).to_bits(), "sample {j}");
+        }
+        assert!(differs, "the record must tell the two orders apart");
+    }
+
+    /// #105 (clone): a «P» record shown «Вторичные», one channel in ADC codes: a formula naming it reads the code as
+    /// the accessor returns it, not times the display factor (the original: «Ia» lane −1878, formula lane −1878).
+    #[test]
+    fn a_formula_reads_an_adc_channel_as_the_accessor_does() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1234.0, 5.0, true);
+        d.chans[0].adc_counts = true;
+        d.recompute(false);
+        let name = d.osc.analog[0].id.clone();
+        assert!(app.append_computed(&[("same".into(), format!("\"{name}\""))]).is_some());
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.shown_k(0), 1.0, "the codes are not scaled");
+        let k = display_k(&d.osc.analog[0], false);
+        assert_ne!(k, 1.0);
+        let codes = d.shown_samples(0);
+        assert!(codes.iter().any(|c| *c != 0.0));
+        assert_eq!(d.computed[0].samples, codes);
+    }
+
     /// A computed channel carries invert / DC / the display mode like a file
     /// channel (`0x428490` with bit 13): its values negated / DC-removed,
     /// its stored phasor negated by invert, a later formula reading it
@@ -3413,6 +3499,77 @@ mod tests {
         d.selection = BTreeSet::from([ChanKey::Analog(3), ChanKey::Analog(4)]);
         assert!(d.combine_selected());
         assert!(d.chans[3].group.is_some() && d.chans[3].group == d.chans[4].group);
+    }
+
+    /// «Объединить» takes each channel's own rate, else the record's integer
+    /// rate, for R and the pads (`0x47db30`, `0x47dd2e`, `0x47df76`, #101):
+    /// a record whose rate was changed in «Параметры файла» before the merge
+    /// merges at the new one; a second merge after a rate change keeps the
+    /// channels' own rate.
+    #[test]
+    fn a_merge_after_a_rate_change_takes_the_records_integer_rate_then_the_own_rates() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        assert_eq!(app.apply_file_rate(0, "2450"), Ok(()));
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = &app.docs[0];
+        assert_eq!(d.osc.sample_rate, 2450.0, "R from the record's integer rate, not the first rate line");
+        assert!(d.osc.analog.iter().all(|c| c.own_rate == 2450.0));
+        // Another rate change, then another merge: the channels keep theirs.
+        assert_eq!(app.apply_file_rate(0, "1250"), Ok(()));
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = &app.docs[0];
+        assert_eq!(d.osc.sample_rate, 2450.0, "the own rates, not the record's new 1250");
+        assert!(d.osc.analog.iter().all(|c| c.own_rate == 2450.0));
+    }
+
+    /// After «Объединить» a rate change in «Параметры файла» sets only the
+    /// record's rate; the lane painters scale the visited count by the
+    /// record's rate ÷ the channel's own (`0x4295dc`, `0x429cf1`) and a
+    /// digital lane's base bar by the same (`0x463e2d`) — #100.
+    #[test]
+    fn a_merged_lane_is_painted_by_the_records_rate_over_its_own() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let own = app.docs[0].osc.analog[3].own_rate;
+        assert_eq!(app.docs[0].lane_ratio(ChanKey::Analog(3)), 1.0, "right after the merge");
+        let faster = (own * 2.0) as i32;
+        assert_eq!(app.apply_file_rate(0, &faster.to_string()), Ok(()));
+        let d = &app.docs[0];
+        assert_eq!(d.lane_ratio(ChanKey::Analog(3)), 2.0, "the record's rate over the channel's");
+        assert_eq!(d.lane_ratio(ChanKey::Digital(0)), 2.0, "digital lanes carry the own rate too");
+        // 480 samples in a 100 px window at 25 px each: 4 samples, 2 visited.
+        assert_eq!(crate::oscgeom::drawn_last(480, 10, 1.0, 100.0, d.lane_ratio(ChanKey::Analog(3))), Some(11));
+        assert_eq!(crate::oscgeom::base_bar_len(100, 1.0, d.lane_ratio(ChanKey::Digital(0))), 5000.0);
+    }
+
+    /// The frequency diagram's period and harmonic caps (`0x46ee20`) follow the
+    /// record's integer rate and sample count, not a merged channel's own
+    /// window — read in the binary and seen in a clone (the demo record,
+    /// merged, then set to 2450 Hz: «от 1 до 9» periods, «от 1 до 24»
+    /// harmonics) — #104.
+    #[test]
+    fn the_frequency_dialog_caps_follow_the_records_rate_after_a_merge_and_a_rate_change() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(0)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        assert_eq!(app.apply_file_rate(0, "2450"), Ok(()));
+        let o = &app.docs[0].osc;
+        let (n, r, f) = (o.sample_count(), o.rate_r, o.line_freq);
+        assert_eq!(n, 475, "the merged grid");
+        assert_eq!(crate::diagram_ui::freq_exchange_field("0", "10", n, r, f), Err((0, "Введите целое число от 1 до 9.".into())));
+        assert_eq!(crate::diagram_ui::freq_exchange_field("1", "999", n, r, f), Err((1, "Введите целое число от 1 до 24.".into())));
+        assert_eq!(crate::diagram_ui::freq_exchange_field("9", "10", n, r, f), Ok((9, 10)));
     }
 
     /// Every reader of a channel's period gives an own rate its window

@@ -2,7 +2,7 @@
 //! over the active document (ОМП lives in `omp_ui.rs`). The oscillogram (lane) view lives in
 //! `lanes.rs`.
 
-use crate::app::{App, Command, Pane, View};
+use crate::app::{App, ChanKey, Command, Pane, View};
 use crate::diagram_ui::Window;
 use crate::oscgeom::PixelLines;
 use eframe::egui;
@@ -48,6 +48,12 @@ impl App {
         self.dock_drag_frame(ctx);
         self.pane_menu_frame(ctx);
         self.diagram_overlays(ctx);
+        for &(p, r) in &self.pane_canvas {
+            match self.canvas_memo.iter_mut().find(|(q, _)| *q == p) {
+                Some(m) => m.1 = r,
+                None => self.canvas_memo.push((p, r)),
+            }
+        }
         // The circle / differential state stays the last activated one's.
         self.switch_diagram(match self.panes.active {
             Pane::Circle | Pane::Differential => pane_dim(self.panes.active),
@@ -252,6 +258,9 @@ impl App {
         let outer = ui.max_rect();
         // A tab pulled out of the strip (`0x10068d0b` / `0x100690b4`).
         let mut dragged: Option<Pane> = None;
+        // The tab a left press is held on (the detach's arming: the original
+        // tracks the press itself, not egui's drag decision).
+        let mut armed: Option<Pane> = None;
         let mut tabs: Vec<(Pane, egui::Rect)> = Vec::new();
         // The tab strip (VM, Office 2007 Blue): a (157, 189, 216) line over
         // the brush (191, 219, 255), 20 px tabs from 4 px in; the front tab
@@ -277,6 +286,12 @@ impl App {
                     // An id per pane: the drag follows the tab when it moves.
                     let (rect, _) = ui.allocate_exact_size(egui::vec2(g.size().x + crate::dpi::s(12.0), strip_h - 4.0), egui::Sense::hover());
                     let r = ui.interact(rect, ui.id().with(("fv_pane_tab", p as u8)), egui::Sense::click_and_drag());
+                    // A press on a tab (either button, the front one too)
+                    // gives the group's pane the focus (clone: the tab
+                    // control focuses the pane it shows).
+                    if r.hovered() && ui.input(|i| i.pointer.primary_pressed() || i.pointer.secondary_pressed()) {
+                        self.copy_focus = crate::app::CopyFocus::Pane(v.unit);
+                    }
                     let pnt = ui.painter();
                     if on {
                         crate::lanes::gradient(pnt, rect, egui::Color32::from_rgb(224, 233, 246), egui::Color32::from_rgb(247, 251, 255));
@@ -323,6 +338,9 @@ impl App {
                     if r.dragged() {
                         dragged = Some(p);
                     }
+                    if r.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
+                        armed = Some(p);
+                    }
                 }
             });
         });
@@ -339,8 +357,12 @@ impl App {
                 }
             }
         }
-        if let (Some(p), true) = (dragged, tabs.len() > 1) {
+        if let (Some(p), true) = (armed, tabs.len() > 1) {
             let ctx = ui.ctx().clone();
+            // The four-way move cursor from the press on and while it is
+            // dragged, as a caption's (L9.411; an improvement: the original
+            // keeps the arrow).
+            ctx.set_cursor_icon(egui::CursorIcon::Move);
             self.tab_drag_out(&ctx, v, p, strip.response.rect);
         }
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
@@ -359,7 +381,8 @@ impl App {
         // A press on the caption gives the pane the focus (its
         // WM_LBUTTONDOWN `0x10086d23`: SetFocus on the pane or its one
         // child window; WM_RBUTTONDOWN `0x10086f01`: on the pane).
-        if act.pressed {
+        // (Not in a floating window under a modal dialog: it is disabled.)
+        if act.pressed && !(place == Place::Floating && self.modal_up) {
             self.copy_focus = crate::app::CopyFocus::Pane(v.unit);
         }
         let ctx = ui.ctx().clone();
@@ -445,8 +468,10 @@ impl App {
         grid_menu
     }
 
-    /// A tab dragged out of a group's strip: past the system drag distance
-    /// (SM_CXDRAG / SM_CYDRAG, 4 px, `0x10068657`) and outside the strip,
+    /// A tab dragged out of a group's strip: at the system drag distance
+    /// (SM_CXDRAG / SM_CYDRAG, 4 px on either axis, `>=`, `0x10068657`; grown
+    /// with the display scale as the caption's, L9.411) and outside the strip
+    /// (`0x100690b4` tries the detach only with the pointer off the tab area),
     /// `CTabbedPane::FloatTab` (`0x1013a259`) floats that pane alone under
     /// the pointer (the group's own pane hands the group to the next tab);
     /// the drag then goes on as a floating caption drag (the markers). The
@@ -458,7 +483,8 @@ impl App {
         let (press, now) = ctx.input(|i| (i.pointer.press_origin(), i.pointer.latest_pos()));
         let (Some(press), Some(now)) = (press, now) else { return };
         let d = now - press;
-        if (d.x.abs() < crate::docking::DRAG_PX && d.y.abs() < crate::docking::DRAG_PX) || strip.contains(now) || self.dock_drag.is_some() {
+        let reach = crate::dpi::s(crate::docking::DRAG_PX);
+        if (d.x.abs() < reach && d.y.abs() < reach) || strip.contains(now) || self.dock_drag.is_some() {
             return;
         }
         let next = self.tab_order.into_iter().find(|&q| q != pulled && v.mask[q as usize]).unwrap_or(v.unit);
@@ -588,7 +614,8 @@ impl App {
         let resp = egui::Window::new(pane_title(v.front))
             .id(floating_pane_id(unit))
             .title_bar(false)
-            .resizable(true)
+            .interactable(!self.modal_up)
+            .resizable(!self.modal_up)
             .collapsible(false)
             .current_pos(r.min)
             .default_size(r.size())
@@ -596,6 +623,14 @@ impl App {
             .show(ctx, |ui| {
                 ui.set_min_size(ui.available_size());
                 self.unit_body(ui, v);
+                // MFC's frame disables its floating windows while a modal
+                // dialog is up (clone: «Каналы» open, the mini-frame reads
+                // as disabled): a widget over the whole window, the last
+                // of its layer, takes every click and drag (an egui
+                // disabled window would fade).
+                if self.modal_up {
+                    ui.interact(ui.max_rect(), ui.id().with("fv_float_disabled"), egui::Sense::click_and_drag());
+                }
             });
         if let Some(resp) = resp {
             // Its size as the user leaves it; the position the caption sets.
@@ -686,9 +721,11 @@ impl App {
                         Edge::Bottom => egui::Rect::from_min_size(egui::pos2(strip.left() + at, strip.top() + crate::dpi::s(2.0)), egui::vec2(len, across - crate::dpi::s(2.0))),
                     };
                     at += len;
-                    // Only what the strip shows can be hovered (the part
-                    // under the glass is not the strip).
-                    let vis = rect.intersect(strip);
+                    // A button is hovered where it lies, under the caption's
+                    // glass too (VM: the stub of a left strip's first tab, 4 px
+                    // under the window's top, slides its pane out); the window's
+                    // own buttons, above the strip, take theirs.
+                    let vis = rect.intersect(full);
                     if vis.width() <= 0.0 || vis.height() <= 0.0 {
                         continue;
                     }
@@ -749,10 +786,15 @@ impl App {
         // group closed or auto-hidden and in its strip (Windows hands a
         // hidden window's focus to its parent, the frame passes it on to
         // the view).
+        // A pane of a tabbed group keeps the focus window it was when it
+        // or its group hides (clone: GetFocus still names the hidden pane
+        // after the ribbon toggle or the caption «×»); only a group slid
+        // back into its strip takes it off.
         if let Some(g) = self.focus_group() {
             let d = self.docks[g];
-            let pane_closed = matches!(self.copy_focus, crate::app::CopyFocus::Diagram(p) | crate::app::CopyFocus::Grid(p) if !self.panes.visible(p));
-            if pane_closed || !views.iter().any(|v| v.unit == g) || (d.place == Place::AutoHide && !d.out && d.slide == 0.0) {
+            let tabbed = self.docks.members(g).count() > 1;
+            let hidden = !views.iter().any(|v| v.unit == g);
+            if (hidden && !tabbed) || (d.place == Place::AutoHide && !d.out && d.slide == 0.0) {
                 self.copy_focus = crate::app::CopyFocus::View;
             }
         }
@@ -772,6 +814,10 @@ impl App {
             // (`0x10087a4a`: GetCursorPos, PtInRect), not by which window
             // is on top there.
             let (pane, divider) = (self.dock_areas[v.unit as usize], self.dock_dividers[v.unit as usize]);
+            // The original's pane starts at the window's top, so its check
+            // covers that too: a side or top pane's region reaches up there
+            // although ours is drawn from the caption row's bottom.
+            let pane = pane.map(|a| if self.docks.edge(v.unit) == crate::docking::Edge::Bottom { a } else { egui::Rect::from_min_max(egui::pos2(a.left(), ctx.screen_rect().top().min(a.top())), a.max) });
             let inside = pointer.is_some_and(|q| pane.is_some_and(|a| a.contains(q)) || divider.is_some_and(|a| a.contains(q)) || hit.buttons.iter().any(|b| b.contains(q)));
             // Nor while the pane holds the focus: the check returns at once
             // while its active flag (+0x2c8) is set — at each idle update
@@ -797,23 +843,21 @@ impl App {
     }
 
     /// Slid-out auto-hide groups, over the content beside their strip: a
-    /// side pane spans the frame's whole height (its caption above the
-    /// window's top, under the caption row's glass), the top and bottom
-    /// ones its whole width; one pane of the group, with no tab strip, and
-    /// a divider on the side facing the content (VM).
+    /// side pane spans the frame's height below the caption row (the
+    /// original's starts under its glass), the top and bottom ones its whole
+    /// width; one pane of the group, with no tab strip, and a divider on the
+    /// side facing the content (VM).
     fn slid_out_units(&mut self, ctx: &egui::Context, views: &[DockView]) {
         use crate::docking::{Edge, Place, DIVIDER_PX};
         let screen = ctx.screen_rect();
-        // The window's top: a maximised frame's client starts 8 px above
-        // the screen (its invisible border).
-        let maximised = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-        let top = screen.top() - if maximised { 8.0 } else { 0.0 };
+        // A side or top pane starts below the caption row, not under its glass
+        // as the original's does (its caption's pin and close would lie under
+        // the window's own buttons): an improvement, docs/IMPROVEMENTS.md.
         let cap = screen.top() + crate::ribbon::caption_h();
         let divider = crate::dpi::s(DIVIDER_PX);
         self.dock_areas = [None; 4];
         self.dock_dividers = [None; 4];
         self.slid_ranges = [None; 4];
-        let mut glass: Vec<egui::Rect> = Vec::new();
         for v in views.iter().copied() {
             let d = self.docks[v.unit];
             if d.place != Place::AutoHide || d.slide <= 0.0 {
@@ -837,12 +881,12 @@ impl App {
                 Edge::Right => {
                     let right = s.map_or(screen.right(), |s| s.left());
                     let w = ext.min(right - screen.left() - divider) * k;
-                    egui::Rect::from_min_max(egui::pos2(right - w, top), egui::pos2(right, s.map_or(screen.bottom(), |s| s.bottom())))
+                    egui::Rect::from_min_max(egui::pos2(right - w, cap), egui::pos2(right, s.map_or(screen.bottom(), |s| s.bottom())))
                 }
                 Edge::Left => {
                     let left = s.map_or(screen.left(), |s| s.right());
                     let w = ext.min(screen.right() - left - divider) * k;
-                    egui::Rect::from_min_max(egui::pos2(left, top), egui::pos2(left + w, s.map_or(screen.bottom(), |s| s.bottom())))
+                    egui::Rect::from_min_max(egui::pos2(left, cap), egui::pos2(left + w, s.map_or(screen.bottom(), |s| s.bottom())))
                 }
                 Edge::Bottom => {
                     let bottom = s.map_or(screen.bottom(), |s| s.top());
@@ -850,8 +894,8 @@ impl App {
                     egui::Rect::from_min_max(egui::pos2(screen.left(), bottom - h), egui::pos2(screen.right(), bottom))
                 }
                 Edge::Top => {
-                    let h = ext.min(screen.bottom() - top - divider) * k;
-                    egui::Rect::from_min_max(egui::pos2(screen.left(), top), egui::pos2(screen.right(), top + h))
+                    let h = ext.min(screen.bottom() - cap - divider) * k;
+                    egui::Rect::from_min_max(egui::pos2(screen.left(), cap), egui::pos2(screen.right(), cap + h))
                 }
             };
             // On a pixel, as egui places an area.
@@ -865,11 +909,6 @@ impl App {
             };
             self.dock_areas[v.unit as usize] = Some(rect);
             self.dock_dividers[v.unit as usize] = Some(div);
-            // Its caption row under the glass: not painted over the window's
-            // own buttons.
-            if rect.top() < cap {
-                glass.push(rect);
-            }
             let (c0, g0) = (self.pane_canvas.len(), self.pane_grid.len());
             let one = DockView { strip: false, ..v };
             self.slide_area(ctx, egui::Id::new(("fv_slide", v.unit)), rect, |app, ui| app.unit_body(ui, one));
@@ -896,23 +935,10 @@ impl App {
                 ctx.request_repaint();
             }
         }
-        // The caption row's glass over a pane reaching up into it: white,
-        // the pane's caption under it not seen (VM: only its toolbar's top
-        // shows faintly); the window's own buttons stay on top.
-        let glass_any = !glass.is_empty();
-        if glass_any {
-            let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("fv_glass"));
-            let p = ctx.layer_painter(layer);
-            for r in glass {
-                p.rect_filled(egui::Rect::from_min_max(egui::pos2(r.left(), screen.top()), egui::pos2(r.right(), cap)), 0.0, egui::Color32::WHITE);
-            }
-            ctx.move_to_top(layer);
-            p.rect_filled(self.caption_buttons_row(ctx), 0.0, egui::Color32::WHITE);
-        }
         // The window's own buttons stay at the window's edge (VM) beside a
-        // right strip, on the caption row under a top strip, and over a pane
-        // reaching up into it: drawn here, where no panel clips them.
-        if self.own_caption && (glass_any || self.strip_inset[1] > 0.0 || self.strip_inset[2] > 0.0) {
+        // right strip and on the caption row under a top strip: drawn here,
+        // where no panel clips them.
+        if self.own_caption && (self.strip_inset[1] > 0.0 || self.strip_inset[2] > 0.0) {
             let row = self.caption_buttons_row(ctx);
             let modal = self.modal_up;
             let area = egui::Area::new(egui::Id::new("fv_caption_buttons")).order(egui::Order::Foreground).fixed_pos(row.min).constrain(false).fade_in(false).show(ctx, |ui| {
@@ -935,7 +961,8 @@ impl App {
     fn slide_area(&mut self, ctx: &egui::Context, id: egui::Id, rect: egui::Rect, body: impl FnOnce(&mut App, &mut egui::Ui)) {
         // `rect` on a pixel (as egui places an area); no fade-in (the pane
         // only slides).
-        egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(rect.min).constrain(false).default_size(rect.size()).fade_in(false).show(ctx, |ui| {
+        let modal = self.modal_up;
+        egui::Area::new(id).order(slid_order(modal)).fixed_pos(rect.min).constrain(false).default_size(rect.size()).fade_in(false).show(ctx, |ui| {
             // The area claims its rect for clicks before its content runs,
             // with the last frame's size: sliding in, a size that still
             // reaches over the strip — claimed again with this frame's rect
@@ -947,6 +974,13 @@ impl App {
             let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(3.0)));
             body(self, &mut inner);
             ui.expand_to_include_rect(rect);
+            // MFC's frame, which a modal dialog disables, is the pane's
+            // parent: a widget over the whole pane, the last of its layer,
+            // takes every click and drag while the dialog is up (as the
+            // floating window's).
+            if modal {
+                ui.interact(rect, id.with("fv_slide_disabled"), egui::Sense::click_and_drag());
+            }
         });
     }
 
@@ -954,15 +988,16 @@ impl App {
     /// along the strip's axis across it.
     fn slide_divider(&mut self, ctx: &egui::Context, id: egui::Id, rect: egui::Rect, vertical: bool) -> egui::Response {
         let brush = self.skin.splitter();
+        let modal = self.modal_up;
         egui::Area::new(id)
-            .order(egui::Order::Foreground)
+            .order(slid_order(modal))
             .fixed_pos(rect.min)
             .constrain(false)
             .default_size(rect.size())
             .fade_in(false)
             .show(ctx, |ui| {
                 ui.painter().rect_filled(rect, 0.0, brush);
-                let r = ui.interact(rect, id.with("drag"), egui::Sense::drag());
+                let r = ui.interact(rect, id.with("drag"), if modal { egui::Sense::hover() } else { egui::Sense::drag() });
                 if r.hovered() || r.dragged() {
                     ctx.set_cursor_icon(if vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical });
                 }
@@ -1078,21 +1113,45 @@ impl App {
         if !released || !pos.is_some_and(|p| ui.max_rect().contains(p)) || !egui::DragAndDrop::has_payload_of_type::<crate::lanes::ChanDrag>(ctx) {
             return;
         }
+        // The window under the pointer takes the drop: not a diagram that a
+        // floating or slid-out window lies over (clone).
+        if pos.is_some_and(|p| ctx.layer_id_at(p).is_some_and(|l| l != ui.layer_id() && is_pane_window_layer(l))) {
+            return;
+        }
         let Some(drag) = egui::DragAndDrop::take_payload::<crate::lanes::ChanDrag>(ctx) else { return };
-        self.drop_channels(&drag.chans, pane);
+        self.drop_channels(&drag.keys(), pane);
     }
 
-    pub fn drop_channels(&mut self, chans: &[usize], pane: Pane) {
+    /// The drop's work on a pane (`0x4415b0`): every dragged channel whose
+    /// bit for the pane is clear gets the pane's command 35000+i, which sets
+    /// it (`0x46f100`, `0x48f590`; recompute, modified mark) — file and
+    /// formula channels alike, the vector and frequency panes without any
+    /// test of the channel (#103). The circle diagram only takes channels of
+    /// an Ohm / VA unit that are not pending (CompareNoCase on the canonical
+    /// unit, `0x414c30`; none in ADC mode). A digital channel never reaches a
+    /// pane: the drag payload stops at `doc+0x1d8` (analog-kind records).
+    pub fn drop_channels(&mut self, keys: &[ChanKey], pane: Pane) {
         let Some(d) = self.active_doc_mut() else { return };
-        let (mut changed, n) = (false, d.chans.len());
-        for &i in chans.iter().filter(|&&i| i < n) {
-            // The canonical unit, none in ADC mode (`0x414c30`).
-            let unit = if d.chans[i].adc_counts { String::new() } else { d.osc.analog[i].unit.to_lowercase() };
-            let c = &mut d.chans[i];
+        let mut changed = false;
+        for &k in keys {
+            let (pending, unit, flag) = match k {
+                ChanKey::Analog(i) if i < d.chans.len() => {
+                    let unit = if d.chans[i].adc_counts { String::new() } else { d.osc.analog[i].unit.to_lowercase() };
+                    let c = &mut d.chans[i];
+                    (false, unit, [&mut c.on_freq, &mut c.on_vector, &mut c.on_circle])
+                }
+                ChanKey::Computed(j) if j < d.computed.len() && !d.pending_digital(j) => {
+                    let pending = d.computed[j].formula == crate::merge_ui::PENDING;
+                    let c = &mut d.computed[j];
+                    (pending, c.unit.trim().to_lowercase(), [&mut c.on_freq, &mut c.on_vector, &mut c.on_circle])
+                }
+                _ => continue,
+            };
+            let [freq, vector, circle] = flag;
             let flag = match pane {
-                Pane::Frequency => &mut c.on_freq,
-                Pane::Vector => &mut c.on_vector,
-                Pane::Circle if unit == "ohm" || unit == "va" => &mut c.on_circle,
+                Pane::Frequency => freq,
+                Pane::Vector => vector,
+                Pane::Circle if !pending && (unit == "ohm" || unit == "va") => circle,
                 _ => continue,
             };
             if !*flag {
@@ -1822,6 +1881,34 @@ pub fn floating_pane_layer(unit: crate::docking::Unit) -> egui::LayerId {
 /// dialog).
 pub fn is_floating_pane_layer(l: egui::LayerId) -> bool {
     crate::docking::UNITS.into_iter().any(|u| l == floating_pane_layer(u))
+}
+
+/// The group whose slid-out window `l` is (it lies over the view like a
+/// floating one).
+pub fn slid_pane_unit(l: egui::LayerId) -> Option<crate::docking::Unit> {
+    crate::docking::UNITS.into_iter().find(|&u| [slid_order(false), slid_order(true)].into_iter().any(|o| l == egui::LayerId::new(o, egui::Id::new(("fv_slide", u)))))
+}
+
+/// The order a slid-out pane's window is drawn in: over the view; under a
+/// modal dialog (the Middle order) while one is up, so the dialog lies above
+/// it.
+fn slid_order(modal: bool) -> egui::Order {
+    if modal {
+        egui::Order::PanelResizeLine
+    } else {
+        egui::Order::Foreground
+    }
+}
+
+/// Whether `l` is a floating group's window or a slid-out one's (a pane's own
+/// window, over the view).
+pub fn is_pane_window_layer(l: egui::LayerId) -> bool {
+    is_floating_pane_layer(l) || is_slid_pane_layer(l)
+}
+
+/// Whether `l` is a slid-out auto-hidden group's window.
+pub fn is_slid_pane_layer(l: egui::LayerId) -> bool {
+    slid_pane_unit(l).is_some()
 }
 
 fn pane_dim(p: Pane) -> fvb_core::model::Dimension {

@@ -30,17 +30,35 @@ pub fn fit_scale(width: f32, n: usize) -> f64 {
     f
 }
 
-/// The client width of a new MDI child at Windows' default size: the view
-/// measures itself (`0x45c430`, `GetClientRect`) when it is created, before
-/// the child is shown maximised in its tab. The default child is the MDI
-/// client less one cascade step per three of its height (a step is the
-/// caption's 23 px and the frame's 4, less 1: 26 px; Wine's
-/// `MDI_CalcDefaultChildPos`), less its two 8 px borders (INFERRED; VM: synthetic records of 388 samples open at
-/// 0.25 and of 392 at 0.125 on a 1552 × 955 MDI area → a width in
-/// 1212.5…1225; this gives 1224).
-pub fn mdi_default_client_width(area_w: f32, area_h: f32) -> f32 {
+/// The width the view measures for its first zoom (`0x45c430`, `GetClientRect` of the view, in its
+/// `OnInitialUpdate` `0x45ab70`), from the MDI client `area_w` × `area_h` and the lanes'
+/// `content_h` (the lanes and the ruler band).
+///
+/// Windows places a new MDI child with CW_USEDEFAULT at the MDI client less one cascade step of 26 px
+/// (the caption's 23 + the frame's 4 − 1: Wine's `MDI_CalcDefaultChildPos`, and measured on a clone with
+/// a plain MDICLIENT) per three steps of its height; the child's frame takes 16 px, the view's own edge
+/// 4. The view's vertical scroll bar (17 px) is already there when the zoom is measured if it has
+/// something to scroll: measured with a window-event log of the original, the view's client went
+/// 442 → 442 × 195 (the horizontal bar) → 425 (the vertical one) on a maximised start, and
+/// 184 → 184 × 54 (the horizontal bar only) on a first run's small frame. Its height there, 54 px, is
+/// under the 70 px of the smallest lane; the bar's rule below is that, INFERRED from those two cases.
+///
+/// Fitted to what the original opens: the borders total 21 (16 + 4 + 1) against our MDI areas, which
+/// differ from the original's by one or two px (first run: 230 × 140 in the original, 231 × 142 ours;
+/// maximised on 1280 × 800: 566 × 359, 565 × 358). Brackets of the width from synthetic records
+/// (1250 Hz, the sample count where the first zoom steps over): a first run's default frame
+/// 183.6…184.4, a frame restored maximised 415.6…428.1 (with the record on the command line or opened
+/// in the running program: the same), a 1552 × 955 area 1212.5…1225; this gives 184, 423 and 1219.
+/// Not measured: 125 / 150 % (the metrics are physical px), other pane layouts, a lane taller than
+/// the view with its bar shown at other heights.
+pub fn view_width_at_creation(area_w: f32, area_h: f32, content_h: f32) -> f32 {
     let step = 26.0;
-    (area_w - step * (area_h / (3.0 * step)).floor() - 16.0).max(1.0)
+    let k = (area_h / (3.0 * step)).floor();
+    let child_h = area_h - step * k;
+    // The view: the child's frame (16 + 23 caption) and its own edge (4), then the horizontal bar.
+    let view_h = child_h - 43.0 - 17.0;
+    let vbar = view_h >= 70.0 && content_h > view_h;
+    (area_w - step * k - 21.0 - if vbar { 17.0 } else { 0.0 }).max(1.0)
 }
 
 /// Initial scale of a new view (`0x45ab70`): the stored `View/XScale`, by
@@ -354,11 +372,34 @@ mod tests {
         assert_eq!(fit_scale(1000.0, 10), 1.0);
         assert_eq!(initial_scale(None, 1000.0, 400), 0.125);
         assert_eq!(initial_scale(Some(0.5), 1000.0, 400), 0.5);
-        // VM: on a 1552 × 955 MDI area the view measures 1224 px at its
-        // creation: 388 samples open at 0.25, 392 at 0.125.
-        let w = mdi_default_client_width(1552.0, 955.0);
-        assert_eq!(w, 1224.0);
+        // VM: on a 1552 × 955 MDI area (one lane: no vertical bar) the view measured 1212.5…1225 px at
+        // its creation (388 samples open at 0.25, 392 at 0.125); the rule gives 1219.
+        let w = view_width_at_creation(1552.0, 955.0, 200.0);
+        assert_eq!(w, 1219.0);
         assert_eq!((initial_scale(None, w, 388), initial_scale(None, w, 392)), (0.25, 0.125));
+    }
+
+    /// A first run's default frame (231 × 142 MDI area, VM, synthetic records of 1250 Hz): 235 samples
+    /// open at 0.0625, 236 at 0.03125 — the width is 184, not 189 (#69: the original's view showed the
+    /// record half as wide, so a click at the same point put В1 twice as far in ours).
+    #[test]
+    fn a_default_frames_first_view_zoom_matches_the_originals() {
+        let w = view_width_at_creation(231.0, 142.0, 700.0);
+        assert_eq!(w, 184.0, "a 54 px view shows no vertical bar");
+        assert_eq!((initial_scale(None, w, 235), initial_scale(None, w, 236)), (0.0625, 0.03125));
+    }
+
+    /// #69, a frame restored maximised on 1280 × 800 (our MDI area 565 × 358, VM, the record
+    /// on the command line or opened in the running program): 266 samples open at 0.125, 274 at 0.0625
+    /// on the original (a width of 415.6…428.1, the view's vertical bar included); 445 px (ours before)
+    /// opened 274 at 0.125.
+    #[test]
+    fn a_maximised_starts_first_view_zoom_matches_the_originals() {
+        let w = view_width_at_creation(565.0, 358.0, 700.0);
+        assert!((415.6..428.1).contains(&w), "{w}");
+        // A record that fits the view's height has no bar: 17 px wider.
+        assert_eq!(view_width_at_creation(565.0, 358.0, 100.0), w + 17.0);
+        assert_eq!((initial_scale(None, w, 266), initial_scale(None, w, 274)), (0.125, 0.0625));
     }
 
     #[test]
@@ -617,12 +658,28 @@ mod vizir_tests {
     }
 }
 
-/// The last sample the analog painter draws (`0x4295fc`): offsets
-/// 0..min(⌈W/k⌉, len − first) from `first`, W the plot width, k = 25·f.
-pub fn drawn_last(len: usize, first: usize, f: f64, plot_w: f32) -> Option<usize> {
-    let k = PX_PER_SAMPLE * f;
+/// The last sample the analog painter draws (`0x4295fc`, `0x429d24`):
+/// offsets 0..min(⌈W/(k·ratio)⌉, len − first) from `first`, W the plot
+/// width, k = 25·f, `ratio` the lane's [`lane_ratio`].
+pub fn drawn_last(len: usize, first: usize, f: f64, plot_w: f32, ratio: f64) -> Option<usize> {
+    let k = PX_PER_SAMPLE * f * ratio;
     let count = ((f64::from(plot_w.max(0.0)) / k).ceil() as usize).min(len.saturating_sub(first));
     (count > 0).then(|| first + count - 1)
+}
+
+/// The painters' scale of a channel with an own rate (`0x4295dc`,
+/// `0x429cf1`, `0x463e2d`): the record's integer rate ÷ the channel's own
+/// rate, 1 when it has none. After «Объединить» and a rate change in
+/// «Параметры файла» (which sets only the record's) it is not 1: the analog
+/// painters visit ⌈W/(25f·ratio)⌉ samples — a lane of a record whose rate
+/// was raised stops short of the right edge — and a digital lane's base bar
+/// is ratio times as long.
+pub fn lane_ratio(rec_rate: f64, own_rate: f64) -> f64 {
+    if own_rate == 0.0 {
+        1.0
+    } else {
+        rec_rate / own_rate
+    }
 }
 
 /// GDI draws a pen on whole pixels; egui centres a stroke on its
@@ -1142,9 +1199,13 @@ mod draw_tests {
     #[test]
     fn analog_draws_ceil_w_over_k_samples() {
         // 25 px per sample, 100 px plot: offsets 0..3 (no point at R).
-        assert_eq!(drawn_last(480, 10, 1.0, 100.0), Some(13));
-        assert_eq!(drawn_last(12, 10, 1.0, 100.0), Some(11), "the data end");
-        assert_eq!(drawn_last(10, 10, 1.0, 100.0), None);
+        assert_eq!(drawn_last(480, 10, 1.0, 100.0, 1.0), Some(13));
+        assert_eq!(drawn_last(12, 10, 1.0, 100.0, 1.0), Some(11), "the data end");
+        // A lane whose own rate is half the record's: twice as few samples visited.
+        assert_eq!(drawn_last(480, 10, 1.0, 100.0, 2.0), Some(11));
+        assert_eq!(drawn_last(480, 10, 1.0, 100.0, 0.5), Some(17));
+        assert_eq!((lane_ratio(2450.0, 0.0), lane_ratio(2450.0, 1225.0)), (1.0, 2.0));
+        assert_eq!(drawn_last(10, 10, 1.0, 100.0, 1.0), None);
     }
 
     #[test]

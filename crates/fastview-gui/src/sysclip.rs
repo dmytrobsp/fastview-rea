@@ -258,6 +258,8 @@ mod windows_tests {
         assert!(clip.put(Some("<channels/>"), Some(&picture)), "put");
         // SAFETY: a plain query of the clipboard's formats.
         assert!(unsafe { IsClipboardFormatAvailable(14) } != 0, "CF_ENHMETAFILE present");
+        // Windows synthesises CF_METAFILEPICT (3) from the EMF, as it does for the original's copy.
+        assert!(unsafe { IsClipboardFormatAvailable(3) } != 0, "CF_METAFILEPICT synthesised");
         assert!(clip.available(), "the registered format is present");
         assert_eq!(clip.get().as_deref(), Some("<channels/>"));
         // The metafile's records: header, one EMR_BITBLT (76), EOF — no

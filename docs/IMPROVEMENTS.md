@@ -54,10 +54,39 @@ misbehaves and the better behaviour is obvious (the maintainer,
   it), which gives the names back as read, nothing narrowed or
   best-fitted («√», box-drawing, U+FFFD kept). Reason: the combo shows the
   record's real encoding, and coming back from 866 / 1251 loses nothing of
-  the record's own names, which come back as read. A name pasted or merged
-  in comes back only as far as the shown encoding could hold it (KOI8-R has
-  no і ї є ґ; a lane pasted under 1251 into a UTF-8 record keeps only what
-  1251 holds).
+  the record's own names, which come back as read. A stored `Codepage`
+  other than 0 / 1 on such a record is not kept raw (the third entry is
+  current for it); on a 1251 / 866 record the original's rule applies (ANSI,
+  written back).
+- **A name pasted or merged into a record that cannot hold its letters is
+  kept as typed (#81, the maintainer's decision 2026-10-31).** The original
+  keeps a pasted or merged name as the bytes of the record's code page only.
+  Ours keeps the name as an alias, shown as typed across every «Кодировка»
+  switch, when its text does not come back from those bytes:
+  - *Record read in KOI8-R* (no і ї є ґ; the original has no KOI8-R record
+    mode, ours before kept such a name as KOI8-R bytes, so the letters came
+    back as «?» after a switch away and back): ours keeps the name as typed.
+    A name KOI8-R holds stays a plain stored name, re-decoded like the
+    record's own, except while 866 is shown: there the names are the OEM
+    view of the bytes, which KOI8-R cannot give back, so every Cyrillic name
+    pasted under 866 is kept as typed.
+  - *Record read in 1251 / 866, shown in the other one at the paste*: the
+    original keeps the name as the shown code page's bytes, so back in the
+    first it reads as those bytes (every pasted name is garbled, «(вст.)»
+    becomes «(ўбв.)», L9.404, clone). Ours does the same for a name the
+    shown code page can hold; a name it cannot hold (і under 866) is kept as
+    typed instead of turning into «?».
+  - *Record read in 1251 / 866, shown in its own code page*: a name with
+    letters that page lacks (copied from a UTF-8 / KOI8-R record: «√», «ä»,
+    і under 866) is kept as typed. The original cannot hold those letters
+    at all: it has no UTF-8 view, its copy of such a name is already
+    best-fitted («a», «v»), and only і under 866 would show «?».
+  - *Record read in UTF-8*: the bytes hold every letter, so a name is an
+    alias only while 866 is shown and the name has a letter 866 cannot hold
+    (і); otherwise it follows «Кодировка» as the record's own names do (1251
+    its ANSI narrowing, 866 its OEM view).
+  Reason: a name that cannot survive its own bytes is lost for good in the
+  original; keeping it as typed costs nothing.
 - **ADC codes beyond ±2³¹** (float32-range samples with a tiny `a`). The
   original truncates the code to a 32-bit int (`0x422250` → `0x411bf0`),
   every such code −2147483648; ours keeps it whole. Reason: the true raw
@@ -160,3 +189,26 @@ misbehaves and the better behaviour is obvious (the maintainer,
   scaled display was not checked, so this may be parity. (An earlier build
   of ours also asked the pointer to leave the pane: a fix to match the
   original, not an improvement.)
+- **A slid-out side or top pane starts below the caption row (#110).** The
+  original lays a slid-out auto-hidden pane over the window's whole height
+  (a side pane) or width (a top one) from the window's top, its caption
+  under the window's caption glass (L9.410); a pin or
+  close pressed there still acts (clone, a left pane: the pin docks it
+  back, the close hides it, the ribbon button then unchecked), but the
+  buttons are invisible, and on a right or top pane they lie under the
+  window's own buttons, so they can't be reached at all. Ours starts the
+  pane below the caption row, so its caption shows and its pin and close
+  work on every edge; the pane is that much shorter. Reason: the
+  maintainer's decision (2026-10-31): a pane's pin and close should be in
+  reach. The hide check still covers the band above the pane up to the
+  window's top, as the original's pane does, so the pointer resting
+  between a top strip and its pane keeps it out. A strip button under the glass (a left strip's first stub) is
+  hovered as in the original, which is parity, not an improvement.
+- **A pane's tab dragged out of its strip shows the move cursor (#111).**
+  The original keeps the arrow while a tab is pressed and pulled out of
+  the strip (`0x100690b4`, `0x10068657`; clone, 100 %: the arrow before
+  and after the tab leaves the strip). Ours shows the four-way move
+  cursor from the press on a tab of a strip with several tabs (left
+  button) and while it is dragged, as for a caption drag (the entry
+  above). The distance is the caption's, grown with the display scale.
+  Reason: as for the caption, it hints that dragging on pulls the pane out.

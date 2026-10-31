@@ -453,6 +453,18 @@ impl Doc {
         }
     }
 
+    /// The scale the lane painters apply to a channel with an own rate
+    /// (`0x4295dc`, `0x463e2d`): the record's integer rate ÷ the channel's
+    /// own, 1 without one. A pasted lane has its own model.
+    pub fn lane_ratio(&self, k: ChanKey) -> f64 {
+        let own = match k {
+            ChanKey::Analog(i) => self.osc.analog.get(i).map_or(0.0, |c| c.own_rate),
+            ChanKey::Computed(j) => self.computed.get(j).map_or(0.0, |c| c.own_rate),
+            ChanKey::Digital(i) => self.osc.digital.get(i).map_or(0.0, |c| c.own_rate),
+        };
+        crate::oscgeom::lane_ratio(self.osc.int_rate_hz(), own)
+    }
+
     /// 33035's rate test: the directly selected visible analog channels
     /// (formula channels too) have exactly the same rate.
     pub fn combine_rates_match(&self) -> bool {
@@ -654,7 +666,7 @@ mod tests {
         d.selection.remove(&Digital(0));
         d.combine_selected();
         assert!(d.group_of(Analog(0)).is_some() && d.group_of(Analog(0)) == d.group_of(ChanKey::Computed(j)));
-        let rows = crate::lanes::lane_layout(d, 93.0, false);
+        let rows = crate::lanes::lane_layout(d, 93.0);
         let row = rows.iter().find(|r| r.key == Analog(0)).unwrap();
         assert_eq!(row.members, [Analog(0), ChanKey::Computed(j)], "one lane, the stats in channel order");
         assert!(!rows.iter().any(|r| r.key == ChanKey::Computed(j)));

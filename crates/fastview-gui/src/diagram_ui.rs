@@ -169,6 +169,13 @@ const FRAME: Color32 = Color32::from_rgb(200, 200, 200);
 const AXES: Color32 = Color32::from_rgb(150, 150, 150);
 const SCROLL_W: f32 = 16.0;
 
+/// The plane windows' scroll bars at the system DPI: the same system
+/// metric as the lanes' (SM_CXVSCROLL, VM: 21 / 26 px at 125 / 150 %), not
+/// the 100 % width scaled (20 / 24).
+pub(crate) fn scroll_w() -> f32 {
+    crate::dpi::measured(SCROLL_W, 21.0, 26.0)
+}
+
 fn stroke(w: f32, c: Color32) -> Stroke {
     Stroke::new(w.max(PIXEL.with(std::cell::Cell::get)), c)
 }
@@ -1071,7 +1078,7 @@ impl App {
         let view = *self.plane_view(diff);
         // Scroll bars take client area while zoomed (`0x437ca0`).
         let sb = dg::scroll_range(view.z);
-        let client = if sb.is_some() { Rect::from_min_max(full.min, full.max - Vec2::splat(crate::dpi::s(SCROLL_W))) } else { full };
+        let client = if sb.is_some() { Rect::from_min_max(full.min, full.max - Vec2::splat(scroll_w())) } else { full };
         let painter = ui.painter_at(full);
         // White below the splitter's 5 rows, which the window keeps.
         painter.rect_filled(Rect::from_min_max(full.min + Vec2::new(0.0, dpx(5.0)), full.max), 0.0, Color32::WHITE);
@@ -2238,6 +2245,41 @@ mod tests {
         assert!(value(&texts(&mut app)), "hidden again: the values stay");
     }
 
+    /// #115: the frequency diagram's painter prints the fundamental bar's label as «100» in «% of the
+    /// fundamental» mode, also where the original's `(v·100)/v` lands one bit under 100 and prints «100.0».
+    #[test]
+    fn the_fundamentals_percent_label_is_painted_100() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        app.freq_percent = true;
+        app.freq_use_rms = false;
+        let periods = app.freq_periods.max(1);
+        let k_max = app.freq_harmonics;
+        // A channel and a cursor position where the original's label would read «100.0».
+        let (i, pos) = {
+            let d = app.active_doc().unwrap();
+            let n = d.osc.samples_per_cycle().max(2);
+            let found = (0..d.osc.analog.len()).find_map(|i| {
+                (n * periods..d.osc.sample_count()).find_map(|pos| {
+                    let v = super::freq_bins(d, d.shown_samples(i), Some(i), d.osc.analog[i].own_rate, pos, periods, k_max.min(n * periods / 2).max(periods))[periods];
+                    (v != 0.0 && fvb_core::views::freq_label(100.0 * v / v).trim() == "100.0").then_some((i, pos))
+                })
+            });
+            found.expect("a window where (v·100)/v lands under 100")
+        };
+        let d = app.active_doc_mut().unwrap();
+        d.chans.iter_mut().for_each(|c| c.on_freq = false);
+        d.chans[i].on_freq = true;
+        d.main_cursor = pos;
+        let ctx = egui::Context::default();
+        let out = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(900.0, 500.0))), ..Default::default() }, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| app.frequency_ui(ui));
+        });
+        let texts: Vec<String> = out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
+        assert!(texts.iter().any(|t| t == "100"), "the fundamental reads 100: {texts:?}");
+        assert!(!texts.iter().any(|t| t == "100.0"), "never 100.0: {texts:?}");
+    }
+
     #[test]
     fn the_vector_grid_lies_on_gdis_pixels() {
         // VM: the 227 px ring about pixel (2297, 802) spans 2070…2523 and
@@ -2614,5 +2656,16 @@ mod tests {
         // Values are in base units: kV scaled by 1000.
         let raw = fvb_core::comtrade::parse(include_str!("../../../assets/demo/demo_fault.cfg"), include_bytes!("../../../assets/demo/demo_fault.dat")).unwrap();
         assert!((d.osc.analog[1].samples[1] - 1000.0 * raw.analog[1].samples[1]).abs() < 1e-6);
+    }
+
+    /// #78: the plane windows' scroll bars are the system's metric, 21 / 26
+    /// px at 125 / 150 % (the lanes' too), not the 100 % width scaled.
+    #[test]
+    fn the_plane_scroll_bars_follow_the_system_metric() {
+        for (dpi, w) in [(96, 16.0), (120, 21.0), (144, 26.0)] {
+            crate::dpi::set(dpi);
+            assert_eq!(scroll_w(), w, "{dpi}");
+        }
+        crate::dpi::set(96);
     }
 }

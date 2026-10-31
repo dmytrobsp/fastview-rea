@@ -59,6 +59,41 @@ use eframe::egui;
 /// client. Physical pixels: the original is system-DPI aware.
 const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 
+/// The size grip of a normal (not maximised) window, at 100 % in px, as the original's last status pane
+/// holds it: 20 px beyond the extended pane's own width (VM: «Гор. визир 2:» shows from 988 px of client,
+/// not 984).
+const STATUS_GRIP: f32 = 20.0;
+/// What a normal window reserves at its right edge for the grip when the extended pane is hidden: the
+/// sixth pane shows from 1078 px of client, not 1074 (VM; 1048 of panes + 26…30).
+const STATUS_GRIP_ALONE: f32 = 28.0;
+
+/// The status bar's right end at `right` (the extended pane's width `ext` at this scale, its grip
+/// not included): `(the extended pane's width with its grip, where the panes must end)`.
+fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f32, f32) {
+    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::s(STATUS_GRIP), dpi::s(STATUS_GRIP_ALONE)) };
+    if ext_hidden {
+        (ext, right - alone)
+    } else {
+        (ext + grip, right - ext - grip)
+    }
+}
+
+/// The status bar's six panes from `left` to `room` (the first that does not fit ends the row, a hidden
+/// pane leaves no gap): `(index, x, width)` of each shown one.
+fn status_pane_places(left: f32, room: f32, hidden: &[bool; 7]) -> Vec<(usize, f32, f32)> {
+    let mut x = left;
+    let mut out = Vec::new();
+    for i in (0..6).filter(|&i| !hidden[i]) {
+        let w = dpi::s(if i == 2 || i == 5 { 218.0 } else { 153.0 });
+        if x + w > room {
+            break;
+        }
+        out.push((i, x, w));
+        x += w;
+    }
+    out
+}
+
 /// One point is one device pixel at any display scale. The original is
 /// system-DPI aware (its manifest's `dpiAware`), so Windows does not
 /// stretch it, and it paints its views in device pixels: their fonts are
@@ -71,6 +106,14 @@ const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 /// Windows only: the original's platform (elsewhere egui's native scale
 /// stays, a Retina screen's 2 included).
 const DEVICE_PIXELS: bool = cfg!(any(windows, test));
+
+/// The saved window placement the first frame sends again: only where
+/// the frame lays out in device pixels (`device_pixels` is its one reader;
+/// elsewhere the runner's own placement in points stands, and the rect
+/// would only sit in the app unused).
+fn placement_to_resend(saved: Option<egui::Rect>, device_pixels: bool) -> Option<egui::Rect> {
+    saved.filter(|_| device_pixels)
+}
 
 /// The zoom that makes egui's pixels per point (zoom · native) 1: exactly
 /// where an f32 does it, else just above (0.99999994 would floor a whole
@@ -86,6 +129,14 @@ fn device_zoom(native: f32) -> f32 {
         z = down(z);
     }
     z
+}
+
+/// The document tabs' font size: MFC's tab font is the 8 pt one, whole
+/// pixels at the system DPI (11, 13, 16 px; VM at 150 %: «WIN_1999.cfg»
+/// bold 112 px wide, ours at 16 px 114, at 16.5 118), where the ribbon's
+/// 9 pt text is [`dpi::font`].
+fn tab_font_px() -> f32 {
+    dpi::dlg_font(11.0)
 }
 
 /// A dpi (None: the call is missing or failed) as a display scale (dpi / 96).
@@ -184,8 +235,14 @@ fn system_scale() -> Option<f32> {
 /// scale with no exact [`device_zoom`] (custom ones, 151 %) the pixels
 /// per point are 1.0000001 and the window 1280 px wide 1279.9999 points.
 fn device_screen(ctx: &egui::Context, raw: &mut egui::RawInput) {
+    device_screen_on(DEVICE_PIXELS, ctx, raw);
+}
+
+/// [`device_screen`] for a platform that does (`device`) or does not paint
+/// in device pixels.
+fn device_screen_on(device: bool, ctx: &egui::Context, raw: &mut egui::RawInput) {
     let native = raw.viewports.get(&egui::ViewportId::ROOT).and_then(|v| v.native_pixels_per_point).or_else(|| ctx.input(|i| i.viewport().native_pixels_per_point));
-    if let (true, Some(native), Some(r)) = (DEVICE_PIXELS, native, raw.screen_rect) {
+    if let (true, Some(native), Some(r)) = (device, native, raw.screen_rect) {
         if ((ctx.zoom_factor() * native) - 1.0).abs() < 1e-6 {
             raw.screen_rect = Some(egui::Rect::from_min_max(r.min.round(), r.max.round()));
         }
@@ -195,9 +252,14 @@ fn device_screen(ctx: &egui::Context, raw: &mut egui::RawInput) {
 /// Device pixels from the first frame at the system `scale` (each frame
 /// keeps them at the window's monitor's, `App::device_pixels`). No zoom by
 /// Ctrl + / − / 0: the original has none.
+#[cfg(test)]
 fn device_options(ctx: &egui::Context, scale: Option<f32>) {
+    device_options_on(DEVICE_PIXELS, ctx, scale);
+}
+
+fn device_options_on(device: bool, ctx: &egui::Context, scale: Option<f32>) {
     ctx.options_mut(|o| {
-        o.zoom_factor = scale.filter(|_| DEVICE_PIXELS).map_or(1.0, device_zoom);
+        o.zoom_factor = scale.filter(|_| device).map_or(1.0, device_zoom);
         o.zoom_with_keyboard = false;
     });
 }
@@ -209,8 +271,25 @@ fn device_options(ctx: &egui::Context, scale: Option<f32>) {
 /// (`docs/IMPROVEMENTS.md`).
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
 fn device_window(ctx: &egui::Context, native: f32) {
-    if DEVICE_PIXELS {
+    device_window_on(DEVICE_PIXELS, ctx, native);
+}
+
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn device_window_on(device: bool, ctx: &egui::Context, native: f32) {
+    if device {
         ctx.options_mut(|o| o.zoom_factor = device_zoom(native));
+    }
+}
+
+/// A frame's zoom for the monitor the window is on (`native` pixels per
+/// point there): one point one device pixel where the platform paints in
+/// them, else egui's own (a Retina screen's 2) untouched.
+fn follow_monitor(device: bool, ctx: &egui::Context, native: f32) {
+    if device {
+        let zoom = device_zoom(native);
+        if ctx.zoom_factor() != zoom {
+            ctx.set_zoom_factor(zoom);
+        }
     }
 }
 
@@ -324,10 +403,24 @@ fn system_dpi_scale() -> Option<f32> {
 /// scale ours keeps its content 1:1 (`device_window`) and the chrome at
 /// the system DPI — the original's picture without Windows' stretch
 /// (`docs/IMPROVEMENTS.md`).
+#[cfg(test)]
 fn chrome_dpi(scale: Option<f32>) {
-    if let Some(s) = scale.filter(|_| DEVICE_PIXELS) {
+    chrome_dpi_on(DEVICE_PIXELS, scale);
+}
+
+fn chrome_dpi_on(device: bool, scale: Option<f32>) {
+    if let Some(s) = scale.filter(|_| device) {
         dpi::set((s * 96.0).round() as u32);
     }
+}
+
+/// What `make_app` does about scaling: egui's pixels per point from the
+/// window's monitor `scale` ([`device_options_on`]), the chrome from the
+/// system DPI (`system`, GetDpiForSystem) where there is one, else from
+/// that same monitor scale.
+fn start_scaling(device: bool, ctx: &egui::Context, scale: Option<f32>, system: Option<f32>) {
+    device_options_on(device, ctx, scale);
+    chrome_dpi_on(device, system.or(scale));
 }
 
 /// The application as both runners start it: the fonts, the persisted
@@ -335,8 +428,7 @@ fn chrome_dpi(scale: Option<f32>) {
 fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path::Path>, own_caption: bool, scale: Option<f32>, placement: Option<egui::Rect>) -> App {
     let fonts = app_fonts();
     ctx.set_fonts(fonts.clone());
-    device_options(ctx, scale);
-    chrome_dpi(system_dpi_scale().or(scale));
+    start_scaling(DEVICE_PIXELS, ctx, scale, system_dpi_scale());
     // A double-click within Windows' default GetDoubleClickTime, 500 ms
     // (egui's own is 300 ms: a hand's double-click on the coefficient list
     // was missed on the VM).
@@ -349,7 +441,7 @@ fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path
     });
     let mut app = App::new().with_persistence();
     app.own_caption = own_caption;
-    app.placement_px = placement;
+    app.placement_px = placement_to_resend(placement, DEVICE_PIXELS);
     app.splash_until = Some(2.0);
     app.print.fonts = fonts;
     let c = ctx.clone();
@@ -515,7 +607,7 @@ impl App {
                 let title = self.docs[i].title();
                 // MFC's tab font, 11 px (VM: «WIN_1999.cfg» 68 px); the
                 // active document's in the bold face (`0x1013b543`).
-                let size = dpi::font(11.0);
+                let size = tab_font_px();
                 let font = if bold == Some(i) { ui.fonts(|f| crate::lanes::bold_font(f, size)).unwrap_or(egui::FontId::proportional(size)) } else { egui::FontId::proportional(size) };
                 let text_w = ui.fonts(|f| f.layout_no_wrap(title.clone(), font.clone(), egui::Color32::BLACK).size().x);
                 let w = text_w + dpi::s(34.0) + if active { dpi::s(20.0) } else { 0.0 };
@@ -602,6 +694,7 @@ impl App {
             // 151, 61) → (254, 181, 91)) while it is open (VM).
             let list_id = ui.id().with("fv_doc_list");
             let btn = ui.interact(hit, list_id.with("btn"), egui::Sense::click());
+            self.focus_other.push(hit);
             let mut open: Option<u64> = ui.data(|d| d.get_temp(list_id));
             if btn.clicked() {
                 open = if open.is_some() { None } else { Some(ui.ctx().cumulative_pass_nr()) };
@@ -733,20 +826,18 @@ impl App {
         // The panes' widths and the font at the system DPI (VM, 125 % and
         // 150 %: the bar 30 / 36 px, its text and panes 1.25 / 1.5 ×).
         let font = egui::FontId::proportional(dpi::font(12.0));
-        let mut x = r.left();
-        let ext_w = dpi::s(if p.bands.is_some() { 135.0 } else { 155.0 });
-        let room = if self.status_hidden[6] { r.right() } else { r.right() - ext_w };
+        // A normal (not maximised) window's last pane also holds the size grip
+        // (see [`status_reserve`]).
+        let maximised = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+        let (ext_w, room) = status_reserve(r.right(), dpi::s(if p.bands.is_some() { 135.0 } else { 155.0 }), maximised, self.status_hidden[6]);
+        let hidden = self.status_hidden;
         // A hidden pane leaves no gap: the rest move left (VM). A pane that
         // does not fit before the extended one is not shown (VM, 150 % at
         // 1280 px: «Гор. визир 2:» and on gone).
-        for (i, text) in s.iter().enumerate().filter(|(i, _)| !self.status_hidden[*i]) {
-            let w = dpi::s(if i == 2 || i == 5 { 218.0 } else { 153.0 });
-            if x + w > room {
-                break;
-            }
+        for (i, x, w) in status_pane_places(r.left(), room, &hidden) {
+            let text = &s[i];
             let clip = egui::Rect::from_min_max(egui::pos2(x, r.top()), egui::pos2(x + w - 2.0, r.bottom()));
             painter.with_clip_rect(clip).text(egui::pos2(x + dpi::s(9.0), r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
-            x += w;
         }
         // The last pane: 135 px at the right (VM), its own rows and a light
         // and a dark column at its left in the Office 2007 styles.
@@ -822,11 +913,8 @@ impl App {
     /// necessarily the primary one it was sized for.
     fn device_pixels(&mut self, ctx: &egui::Context) {
         let Some(native) = ctx.input(|i| i.viewport().native_pixels_per_point) else { return };
+        follow_monitor(DEVICE_PIXELS, ctx, native);
         if DEVICE_PIXELS {
-            let zoom = device_zoom(native);
-            if ctx.zoom_factor() != zoom {
-                ctx.set_zoom_factor(zoom);
-            }
             if let Some(r) = self.placement_px.take() {
                 let ppp = ctx.pixels_per_point();
                 // Moved first: a move onto a monitor of another dpi resizes
@@ -1027,7 +1115,23 @@ impl App {
         self.ppp = ctx.pixels_per_point();
         // Every dialog is modal: while one is up, a backdrop between the
         // panels and the windows takes the pointer, and no shortcuts run.
-        self.modal_up = dialogs::window_up(ctx);
+        self.focus_other.clear();
+        let was_modal = std::mem::replace(&mut self.modal_up, dialogs::window_up(ctx));
+        // A closed dialog gives the activation back to the frame, which
+        // hands the focus to its view (clone: a pane's or a window's focus
+        // is the view's after the dialog; copy asks the focus window).
+        if was_modal && !self.modal_up {
+            self.copy_focus = app::CopyFocus::View;
+        }
+        // An MDI activation — a document picked from the ▾ list, opened or
+        // closed — focuses the activated child's view (clone: a document's
+        // tab, the list's pick, an Open). A system file dialog closed
+        // unanswered leaves the focus where it was (clone: Ctrl+O, Esc).
+        let doc = self.active_doc().map(|d| d.serial);
+        if doc != self.focus_doc {
+            self.copy_focus = app::CopyFocus::View;
+        }
+        self.focus_doc = doc;
         if self.modal_up {
             dialogs::backdrop(ctx, "fv_modal_backdrop", egui::Order::PanelResizeLine);
             self.keytips.exit();
@@ -1222,7 +1326,47 @@ fn one_press_per_pass(mut raw: egui::RawInput) -> Vec<egui::RawInput> {
 
 #[cfg(test)]
 mod tests {
+    /// #79 (VM, 100 %): in a narrow window the panes that fit before the last one stay, in order, and
+    /// the rest are gone; a normal window's last pane holds the size grip (20 px beyond its own 135, and 28 when
+    /// that pane is hidden), so «Гор. визир 2:» shows from 988 px of client (the original's 1004 px frame; not
+    /// from 984, its 1000 px one) and «Разница г. визиров:» from 1078 with the last pane hidden (not 1074);
+    /// a maximised window has no grip.
+    #[test]
+    fn a_narrow_status_bar_keeps_the_panes_that_fit() {
+        let none = [false; 7];
+        let count = |w: f32, maximised: bool, ext_hidden: bool| {
+            let mut h = none;
+            h[6] = ext_hidden;
+            let (_, room) = status_reserve(w, 135.0, maximised, ext_hidden);
+            status_pane_places(0.0, room, &h).len()
+        };
+        assert_eq!(count(1280.0, true, false), 6, "wide: all six");
+        assert_eq!(count(850.0, false, false), 4, "the narrowest window: four");
+        assert_eq!(count(984.0, false, false), 4, "the original's 1000 px frame (984 visible): the fifth is not there");
+        assert_eq!(count(988.0, false, false), 5, "its 1004 px frame (988 visible): it is");
+        assert_eq!(count(964.0, true, false), 4);
+        assert_eq!(count(966.0, true, false), 5, "a maximised window has no grip");
+        assert_eq!(count(1074.0, false, true), 5, "the last pane hidden: the grip is still there (1090 px frame)");
+        assert_eq!(count(1078.0, false, true), 6, "its 1094 px frame");
+        assert_eq!(count(1048.0, true, true), 6, "maximised: no grip");
+        // A hidden pane leaves no gap.
+        let mut hid = none;
+        hid[1] = true;
+        let (_, room) = status_reserve(850.0, 135.0, false, false);
+        assert_eq!(status_pane_places(0.0, room, &hid)[1].1, 153.0);
+    }
+
     use super::*;
+
+    /// #78: the document tabs' font is whole pixels at every scale.
+    #[test]
+    fn the_tab_font_is_whole_pixels() {
+        for (d, px) in [(96, 11.0), (120, 13.0), (144, 16.0)] {
+            dpi::set(d);
+            assert_eq!(tab_font_px(), px, "{d}");
+        }
+        dpi::set(96);
+    }
 
     /// A missing or failed DPI call is no scale (egui's native one stays).
     #[test]
@@ -1472,6 +1616,7 @@ mod window_tests {
     fn the_omp_parameters_lay_out_from_their_client() {
         for (dpi, client, tree, grid) in [
             (96, (713.0, 447.0), (10.0, 44.0, 217.0, 357.0), (237.0, 44.0, 465.0, 357.0)),
+            (120, (831.0, 550.0), (10.0, 50.0, 257.0, 460.0), (277.0, 50.0, 544.0, 460.0)),
             (144, (1069.0, 653.0), (10.0, 55.0, 336.0, 563.0), (356.0, 55.0, 702.0, 563.0)),
         ] {
             dpi::set(dpi);
@@ -1509,6 +1654,105 @@ mod window_tests {
             assert_eq!(ppp, 1.0, "system {system}, monitor {monitor}");
             let row = (0..c.h).find(|&y| c.px[y * c.w + 1270] == line);
             assert_eq!(row, Some(body), "system {system}, monitor {monitor}: the ribbon's bottom line");
+        }
+        dpi::set(96);
+    }
+
+    /// #80: off Windows (`DEVICE_PIXELS` false: a Mac's Retina 2×, a Linux
+    /// HiDPI screen) egui keeps its native scale and the chrome its 100 %
+    /// sizes: no device zoom, the screen not rounded, no chrome dpi, the
+    /// window's monitor changing nothing. On Windows (true) the same calls
+    /// give one pixel per point. `DEVICE_PIXELS` is true in the test build,
+    /// so the other branch is reached through the `_on` functions.
+    #[test]
+    fn off_windows_egui_keeps_its_native_scale() {
+        let px = Vec2::new(1100.0, 700.0);
+        for native in [1.25, 2.0] {
+            dpi::set(96);
+            let ctx = egui::Context::default();
+            start_scaling(false, &ctx, Some(native), Some(native));
+            assert_eq!((ctx.zoom_factor(), dpi::dpi()), (1.0, 96), "{native}: nothing started");
+            device_window_on(false, &ctx, native);
+            follow_monitor(false, &ctx, native);
+            assert_eq!(ctx.zoom_factor(), 1.0, "{native}: nothing followed");
+            let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(549.7, 350.3))), ..Default::default() };
+            raw.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(native);
+            device_screen_on(false, &ctx, &mut raw);
+            assert_eq!(raw.screen_rect, Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(549.7, 350.3))), "{native}: the screen as given");
+            // A frame: egui's own pixels per point.
+            let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, px / native)), ..Default::default() };
+            raw.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(native);
+            let ppp = ctx.run(raw, |_| {}).pixels_per_point;
+            assert_eq!(ppp, native, "{native}: egui's scale");
+            // The same calls on Windows: one pixel per point, the chrome grown.
+            start_scaling(true, &ctx, Some(native), Some(native));
+            assert_eq!(ctx.zoom_factor(), device_zoom(native), "{native}: device pixels");
+            assert_eq!(dpi::dpi(), (native * 96.0).round() as u32);
+        }
+        dpi::set(96);
+    }
+
+    /// #80: `make_app`'s scaling — device pixels at the window's monitor's
+    /// scale, the chrome at GetDpiForSystem's (the system's, whichever
+    /// monitor the window opens on), the monitor's own when the call is
+    /// missing (Windows 10 before 1607) and 100 % when both are.
+    #[test]
+    fn make_app_takes_the_chrome_dpi_from_the_system() {
+        for (monitor, system, dpi_want, zoom_of) in [
+            (Some(1.0), Some(1.5), 144, 1.0),
+            (Some(1.75), Some(1.25), 120, 1.75),
+            (Some(1.25), None, 120, 1.25),
+            (None, Some(1.5), 144, 0.0),
+            (None, None, 96, 0.0),
+        ] {
+            dpi::set(96);
+            let ctx = egui::Context::default();
+            start_scaling(true, &ctx, monitor, system);
+            assert_eq!(dpi::dpi(), dpi_want, "monitor {monitor:?}, system {system:?}");
+            let zoom = if zoom_of == 0.0 { 1.0 } else { device_zoom(zoom_of) };
+            assert_eq!(ctx.zoom_factor(), zoom, "monitor {monitor:?}, system {system:?}: the zoom follows the monitor");
+        }
+        dpi::set(96);
+    }
+
+    /// #80: a live change — the window dragged to a monitor at another
+    /// scale (or the scale changed), the runner reporting the new native
+    /// scale and Windows resizing the window to keep its size in points —
+    /// settles within a frame to device pixels again (one pixel per
+    /// point), the chrome staying at the system DPI (fixed for the
+    /// process: the ribbon's bottom line on row 143 / 178 / 210), and
+    /// stays there: a further frame paints the same picture. Headless this
+    /// is the egui side only: the real WM_DPICHANGED resize and a
+    /// monitor's own rendering need hardware.
+    #[test]
+    fn a_live_monitor_change_settles_to_device_pixels_and_the_system_chrome() {
+        let px = Vec2::new(1100.0, 700.0);
+        let fonts = app_fonts();
+        let line = [157, 179, 209];
+        for (system, from, to, body) in [(1.0, 1.0, 1.5, 143), (1.25, 1.25, 1.75, 178), (1.5, 1.5, 1.0, 210), (1.0, 1.5, 1.25, 143)] {
+            dpi::set(96);
+            chrome_dpi(Some(system));
+            let after = (px * (to / from)).round();
+            let shot = |frames_after: usize| {
+                let setup = |ctx: &egui::Context| {
+                    device_options(ctx, Some(system));
+                    device_window(ctx, from);
+                };
+                let passes: Vec<(f32, Vec2, Vec<egui::Event>)> = [(from, px), (from, px)].into_iter().chain(std::iter::repeat_n((to, after), frames_after)).map(|(n, p)| (n, p, vec![])).collect();
+                let (mut ppp, mut app) = (0.0, demo(&[]));
+                let c = raster::render_natives(setup, device_screen, Some(&fonts), passes, |ctx| {
+                    app.frame_ui(ctx);
+                    ppp = ctx.pixels_per_point();
+                });
+                (c, ppp)
+            };
+            let (c, ppp) = shot(3);
+            assert_eq!(ppp, 1.0, "{from} -> {to}: device pixels again");
+            assert_eq!((c.w, c.h), (after.x as usize, after.y as usize));
+            let row = (0..c.h).find(|&y| c.px[y * c.w + c.w - 10] == line);
+            assert_eq!(row, Some(body), "system {system}, {from} -> {to}: the ribbon's bottom line");
+            let (later, _) = shot(6);
+            assert!(later.px == c.px, "system {system}, {from} -> {to}: the picture moves after it settled");
         }
         dpi::set(96);
     }
@@ -1562,6 +1806,16 @@ mod window_tests {
         let at = cmds.iter().find_map(|c| if let egui::ViewportCommand::OuterPosition(p) = c { Some(p.to_vec2() * ppp) } else { None }).expect("the position sent");
         assert!((size - Vec2::new(1906.0, 1016.0)).length() < 0.01 && (at - Vec2::new(2600.0, 40.0)).length() < 0.01, "{size:?} at {at:?}");
         assert!(app.placement_px.is_none(), "once");
+    }
+
+    /// The saved placement is kept for the first frame only where device
+    /// pixels are used; elsewhere nothing reads it (#83).
+    #[test]
+    fn the_saved_placement_is_kept_only_where_it_is_read() {
+        let r = Rect::from_min_size(Pos2::new(40.0, 30.0), Vec2::new(900.0, 700.0));
+        assert_eq!(placement_to_resend(Some(r), true), Some(r));
+        assert_eq!(placement_to_resend(Some(r), false), None);
+        assert_eq!(placement_to_resend(None, true), None);
     }
 
     /// A tiling window manager ignores the minimum size: every window size
@@ -2669,16 +2923,18 @@ mod window_tests {
                     assert!((after.top() - base.top() - 21.0).abs() < 0.5, "{edge:?}: the ribbon is pushed down: {base:?} → {after:?}");
                 }
             }
-            // Out: the pane against its strip, over the whole extent along it.
+            // Out: the pane against its strip, over the whole extent along it,
+            // from below the caption row (not from the window's top, as the
+            // original's: its caption's buttons would lie under the window's).
             let button = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
             w.run(vec![egui::Event::PointerMoved(button)]);
             w.idle(30);
             let pane = w.app.dock_areas[Unit::Vector as usize].unwrap_or_else(|| panic!("{edge:?}: slid out"));
             match edge {
-                Edge::Right => assert_eq!((pane.right(), pane.top(), pane.bottom()), (strip.left(), 0.0, screen.bottom()), "{edge:?}: {pane:?}"),
-                Edge::Left => assert_eq!((pane.left(), pane.top(), pane.bottom()), (strip.right(), 0.0, screen.bottom()), "{edge:?}: {pane:?}"),
+                Edge::Right => assert_eq!((pane.right(), pane.top(), pane.bottom()), (strip.left(), cap, screen.bottom()), "{edge:?}: {pane:?}"),
+                Edge::Left => assert_eq!((pane.left(), pane.top(), pane.bottom()), (strip.right(), cap, screen.bottom()), "{edge:?}: {pane:?}"),
                 Edge::Bottom => assert_eq!((pane.left(), pane.right(), pane.bottom()), (0.0, screen.right(), strip.top()), "{edge:?}: {pane:?}"),
-                Edge::Top => assert_eq!((pane.left(), pane.right(), pane.top()), (0.0, screen.right(), 0.0), "{edge:?}: {pane:?}"),
+                Edge::Top => assert_eq!((pane.left(), pane.right(), pane.top()), (0.0, screen.right(), cap), "{edge:?}: {pane:?}"),
             }
         }
     }
@@ -2783,7 +3039,7 @@ mod window_tests {
         assert!((front_slot.bottom() - (4.0 + len(front.unwrap(), true))).abs() < 0.5, "the front pane was first in the column: {front_slot:?}");
         assert!((long_rect.bottom() - (4.0 + len(front.unwrap(), false) + len(now.unwrap(), true))).abs() < 0.5, "the former front's slot is a 24 px stub, the new long button after it: {long_rect:?}");
         assert!((stub_rect.top() - front_slot.bottom()).abs() < 0.5, "the hovered stub lay right after the former front's button");
-        let stub_after = after.iter().find(|r| r.height() <= 24.5).expect("the stub that followed");
+        let stub_after = after.iter().find(|r| r.height() <= 24.5 && r.top() >= long_rect.bottom() - 0.5).expect("the stub that followed");
         assert!((stub_after.top() - long_rect.bottom()).abs() < 0.5 && stub_after.height() == 24.0, "the stubs follow the long button: {stub_after:?}");
     }
 
@@ -3071,28 +3327,30 @@ mod window_tests {
         assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector), "not the view under it");
     }
 
-    /// The focus leaves a pane that closes (#77): a focused diagram's, and
-    /// a focused property grid's (Windows hands a hidden window's focus to
-    /// its parent, the frame passes it on to the view), so the view's arrow
-    /// keys work again at once.
+    /// The focus leaves a standalone pane that closes (#77; clone: Частотная's
+    /// «×» with its diagram focused, the frame's view holds the focus): a
+    /// focused diagram's, and a focused property grid's (the start-up
+    /// layout's Дифференциальная), so the view's arrow keys work again at
+    /// once.
     #[test]
     fn closing_the_pane_that_holds_the_focus_returns_it_to_the_view() {
         use app::{Command, CopyFocus, Pane};
-        let mut w = Win::new();
         // A focused diagram.
-        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the frequency diagram").1;
         w.press(egui::PointerButton::Primary, canvas.center(), canvas.center());
-        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
-        w.app.dispatch(Command::TogglePane(Pane::Vector));
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Frequency));
+        w.app.dispatch(Command::TogglePane(Pane::Frequency));
         w.idle(3);
         assert_eq!(w.app.copy_focus, CopyFocus::View, "the diagram's pane closed");
-        // A focused property grid, its group's other panes still shown.
-        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        // A focused property grid, in a pane of its own.
+        let mut w = Win::new();
+        w.app.docks = docking::Docks::default();
         w.idle(3);
-        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let grid = *w.app.pane_grid.first().expect("the differential pane's grid");
         w.press(egui::PointerButton::Primary, grid.center(), grid.center());
-        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
-        w.app.dispatch(Command::TogglePane(Pane::Circle));
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Differential));
+        w.app.dispatch(Command::TogglePane(Pane::Differential));
         w.idle(3);
         assert_eq!(w.app.copy_focus, CopyFocus::View, "the grid's pane closed");
         // The view's keys work again without a press in it.
@@ -3101,55 +3359,110 @@ mod window_tests {
         assert_ne!(w.view_state(), before, "the arrow key reaches the view");
     }
 
+    /// A pane of a tabbed group that closes keeps the focus it held (clone,
+    /// the start-up layout: the vector diagram focused, its «×» pressed and
+    /// the ribbon's toggle, the circle tab still there or not: the hidden
+    /// pane's window is still the focus window — copy took its diagram's
+    /// picture at its last size, and no document): only a pane of its
+    /// own, whose control bar hides, hands the focus to the view (#112).
+    #[test]
+    fn a_tabbed_pane_that_closes_keeps_the_focus() {
+        use app::{Command, CopyFocus, Pane};
+        use egui::PointerButton::Primary;
+        // The focused diagram of the front tab.
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(app::ChanKey::Analog(0));
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        w.press(Primary, canvas.center(), canvas.center());
+        w.app.dispatch(Command::TogglePane(Pane::Vector));
+        w.idle(3);
+        assert_eq!(w.app.panes.front(w.app.docks.members(docking::Unit::Vector)), Some(Pane::Circle), "the next tab came to the front");
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector), "the hidden pane keeps the focus");
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_eq!(w.view_state(), before, "the view's keys stay dead");
+        w.app.dispatch(Command::Copy);
+        assert_eq!(w.app.clip.picture(), Some((canvas.width().round() as usize, canvas.height().round() as usize)), "the hidden diagram's picture at its last size");
+        assert_eq!(w.app.clip.get(), None, "a diagram copy leaves no document");
+        // Pressing the pane's caption gave its group the focus: closing the
+        // front pane leaves it on that pane.
+        let mut w = Win::new();
+        let at = Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0);
+        w.press(Primary, at, at);
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector));
+        w.app.dispatch(Command::TogglePane(Pane::Vector));
+        w.idle(3);
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector), "the caption's window, hidden, keeps the focus");
+        // A property grid, the whole group hidden: the grid's window keeps it and copy takes the document alone.
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(app::ChanKey::Analog(0));
+        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        w.idle(3);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        w.press(Primary, grid.center(), grid.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
+        for p in [Pane::Circle, Pane::Vector, Pane::Differential] {
+            w.app.dispatch(Command::TogglePane(p));
+        }
+        w.idle(3);
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle), "the group is gone, the grid's window keeps the focus");
+        w.app.dispatch(Command::Copy);
+        assert_eq!(w.app.clip.picture(), None);
+        assert!(w.app.clip.get().is_some_and(|t| t.contains("<channels")), "the document alone");
+        // Shown again, the same window: the focus is still on it.
+        w.app.dispatch(Command::TogglePane(Pane::Circle));
+        w.idle(3);
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
+    }
+
     /// The same through the pane's caption «×» (#77): the press on the
     /// button first gives the pane the focus, and closing takes it back.
     #[test]
     fn closing_a_pane_with_its_caption_button_returns_the_focus_to_the_view() {
-        use app::{Command, CopyFocus, Pane};
+        use app::{CopyFocus, Pane};
         use docking::Unit;
         // The caption sits right over the pane's window, its «×» 11 px in from the group's right edge.
-        let close_button = |w: &Win, window_top: f32| {
-            let r = w.app.dock_rects[Unit::Vector as usize].expect("the group's rect");
+        let close_button = |w: &Win, unit: Unit, window_top: f32| {
+            let r = w.app.dock_rects[unit as usize].expect("the group's rect");
             Pos2::new(r.right() - dpi::s(11.0), window_top - dpi::s(10.0))
         };
         // A focused diagram.
         let mut w = Win::new();
-        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the frequency diagram").1;
         w.press(egui::PointerButton::Primary, canvas.center(), canvas.center());
-        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
-        let at = close_button(&w, canvas.top());
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Frequency));
+        let at = close_button(&w, Unit::Frequency, canvas.top());
         w.press(egui::PointerButton::Primary, at, at);
-        assert!(!w.app.panes.visible(Pane::Vector), "the caption button closed the pane");
+        assert!(!w.app.panes.visible(Pane::Frequency), "the caption button closed the pane");
         assert_eq!(w.app.copy_focus, CopyFocus::View, "the diagram's pane closed");
         let before = w.view_state();
         w.key(egui::Key::ArrowRight);
         assert_ne!(w.view_state(), before, "the arrow key reaches the view");
         // A focused property grid.
         let mut w = Win::new();
-        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        w.app.docks = docking::Docks::default();
         w.idle(3);
-        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let grid = *w.app.pane_grid.first().expect("the differential pane's grid");
         w.press(egui::PointerButton::Primary, grid.center(), grid.center());
-        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
-        let at = close_button(&w, grid.top());
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Differential));
+        let at = close_button(&w, Unit::Differential, grid.top());
         w.press(egui::PointerButton::Primary, at, at);
-        assert!(!w.app.panes.visible(Pane::Circle), "the caption button closed the pane");
+        assert!(!w.app.panes.visible(Pane::Differential), "the caption button closed the pane");
         assert_eq!(w.app.copy_focus, CopyFocus::View, "the grid's pane closed");
         let before = w.view_state();
         w.key(egui::Key::ArrowRight);
         assert_ne!(w.view_state(), before, "the arrow key reaches the view");
     }
 
-    /// The other ways to close a pane after a caption press gave its group
-    /// the focus (#77): the pane menu's «Скрыть» (the right-click that opens
-    /// the menu gives the focus), and the ribbon's toggle. The group is
-    /// tabbed, so closing the front tab leaves the group shown.
+    /// The other ways to close a pane after a caption press gave it the
+    /// focus (#77): the pane menu's «Скрыть» (the right-click that opens the
+    /// menu gives the focus), and the ribbon's toggle.
     #[test]
-    fn closing_a_tab_by_the_menu_or_the_ribbon_after_a_caption_press_returns_the_focus() {
+    fn closing_a_pane_by_the_menu_or_the_ribbon_after_a_caption_press_returns_the_focus() {
         use app::{Command, CopyFocus, Pane};
         use egui::PointerButton::{Primary, Secondary};
         let caption = |w: &Win| {
-            let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+            let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the frequency diagram").1;
             Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0)
         };
         // The pane menu's last entry, «Скрыть».
@@ -3157,13 +3470,13 @@ mod window_tests {
         let at = caption(&w);
         w.press(Secondary, at, at);
         assert!(w.app.pane_menu.is_some(), "the pane menu opens");
-        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the right-click gave the pane the focus");
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Frequency), "the right-click gave the pane the focus");
         for _ in 0..5 {
             w.key(egui::Key::ArrowDown);
         }
         w.key(egui::Key::Enter);
         w.idle(3);
-        assert!(!w.app.panes.visible(Pane::Vector), "the menu hid the pane");
+        assert!(!w.app.panes.visible(Pane::Frequency), "the menu hid the pane");
         assert_eq!(w.app.copy_focus, CopyFocus::View, "the menu's Скрыть");
         let before = w.view_state();
         w.key(egui::Key::ArrowRight);
@@ -3172,8 +3485,8 @@ mod window_tests {
         let mut w = Win::new();
         let at = caption(&w);
         w.press(Primary, at, at);
-        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector));
-        w.app.dispatch(Command::TogglePane(Pane::Vector));
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Frequency));
+        w.app.dispatch(Command::TogglePane(Pane::Frequency));
         w.idle(3);
         assert_eq!(w.app.copy_focus, CopyFocus::View, "the ribbon toggle");
         let before = w.view_state();
@@ -3202,6 +3515,150 @@ mod window_tests {
             assert!(!w.app.panes.visible(Pane::Vector), "{edge:?}: the caption button closed the pane");
             assert_eq!(w.app.copy_focus, CopyFocus::View, "{edge:?}");
         }
+    }
+
+    /// A divider resize of a slid-out pane is the slid state's own (#109; VM,
+    /// the original, a bottom pane): unpinned, the pane docks back at the size it
+    /// had before it was pinned, and pinned again it slides out at the docked
+    /// size (the resize is forgotten) — it only survives hiding and showing from
+    /// the strip.
+    #[test]
+    fn a_divider_resize_is_forgotten_when_the_pane_docks_back() {
+        use docking::{Edge, Place, Spot, Unit};
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        for edge in [Edge::Bottom, Edge::Right] {
+            // pin, slide out (resized by `drag` px or not), unpin, pin again,
+            // slide out: the docked size after unpinning and the second slid
+            // size, with the first one.
+            let run = |drag: f32| {
+                let mut w = Win::new();
+                w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+                // On its own: no pane beside it to share its slot.
+                w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: edge.opposite(), outer: true };
+                w.idle(3);
+                let across = |r: Rect| if edge.vertical() { r.width() } else { r.height() };
+                let pin = |w: &mut Win, pane: Rect| {
+                    let at = Pos2::new(pane.right() - dpi::s(26.0), pane.top() + dpi::s(10.0));
+                    w.press(egui::PointerButton::Primary, at, at);
+                    w.idle(3);
+                };
+                let slid = |w: &mut Win| {
+                    w.run(vec![egui::Event::PointerMoved(Pos2::new(300.0, 300.0))]);
+                    w.idle(40);
+                    let button = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
+                    w.run(vec![egui::Event::PointerMoved(button)]);
+                    w.idle(30);
+                    w.app.dock_areas[Unit::Vector as usize].expect("slid out")
+                };
+                let pane = w.app.dock_rects[Unit::Vector as usize].expect("docked");
+                pin(&mut w, pane);
+                assert_eq!(w.app.docks[Unit::Vector].place, Place::AutoHide);
+                let first = across(slid(&mut w));
+                let mut area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+                if drag != 0.0 {
+                    let div = w.app.dock_dividers[Unit::Vector as usize].expect("its divider");
+                    let by = if edge.vertical() { Vec2::new(-drag, 0.0) } else { Vec2::new(0.0, -drag) };
+                    w.run(vec![egui::Event::PointerMoved(div.center())]);
+                    w.run(vec![ev(div.center(), true)]);
+                    w.run(vec![egui::Event::PointerMoved(div.center() + by * 0.5)]);
+                    w.run(vec![egui::Event::PointerMoved(div.center() + by)]);
+                    w.idle(2);
+                    w.run(vec![ev(div.center() + by, false)]);
+                    w.idle(3);
+                    area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+                    assert!((across(area) - first - drag).abs() <= 2.0, "{edge:?}: wider by the drag: {first} → {}", across(area));
+                }
+                pin(&mut w, area);
+                assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "{edge:?}: docked again");
+                let back = across(w.app.dock_rects[Unit::Vector as usize].expect("docked"));
+                let pane = w.app.dock_rects[Unit::Vector as usize].expect("docked");
+                pin(&mut w, pane);
+                (first, back, across(slid(&mut w)))
+            };
+            let (first, back, again) = run(0.0);
+            let (first2, back2, again2) = run(100.0);
+            assert_eq!(first, first2, "{edge:?}: the same first slid size");
+            assert!((back2 - back).abs() <= 1.0, "{edge:?}: docked back at {back2}, as with no resize ({back})");
+            assert!((again - first).abs() <= 1.0 && (again2 - first).abs() <= 1.0, "{edge:?}: pinned again it slides at {again2}, as the first time {first} ({again})");
+        }
+    }
+
+    /// A slid-out side or top pane starts below the caption row, so its caption's
+    /// pin and close are in reach (#110, the maintainer's decision; the original
+    /// puts the pane's caption under the window's caption glass, where its
+    /// buttons lie under the window's own buttons): a press on each acts, with
+    /// the window's buttons present.
+    #[test]
+    fn a_slid_out_pane_lies_below_the_caption_row_with_its_caption_in_reach() {
+        use docking::{Edge, Place, Spot, Unit};
+        let cap = ribbon::caption_h();
+        for edge in [Edge::Right, Edge::Left, Edge::Top] {
+            for close in [false, true] {
+                let case = format!("{edge:?} close={close}");
+                let mut w = Win::new();
+                w.app.own_caption = true;
+                w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+                w.app.docks.0[Unit::Vector as usize].pin();
+                w.idle(3);
+                w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+                w.idle(30);
+                let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+                assert!(area.top() >= cap, "{case}: below the caption row: {area:?}");
+                let at = Pos2::new(area.right() - dpi::s(if close { 11.0 } else { 26.0 }), area.top() + dpi::s(10.0));
+                w.press(egui::PointerButton::Primary, at, at);
+                w.idle(30);
+                if close {
+                    assert!(!w.app.panes.visible(app::Pane::Vector), "{case}: the close acts");
+                } else {
+                    assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "{case}: the pin acts");
+                }
+            }
+        }
+    }
+
+    /// The hide check keeps the original's region (#110): a side or top pane
+    /// is checked from the window's top, so the pointer resting between a top
+    /// strip and its pane, or in the caption row above a side pane, keeps it out.
+    #[test]
+    fn the_hide_check_covers_the_band_above_a_slid_out_pane() {
+        use docking::{Edge, Spot, Unit};
+        for (edge, y) in [(Edge::Top, 23.0), (Edge::Right, 5.0), (Edge::Left, 5.0)] {
+            let mut w = Win::new();
+            w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+            w.app.docks.0[Unit::Vector as usize].pin();
+            w.idle(3);
+            w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+            w.idle(30);
+            let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+            assert!(y < area.top(), "{edge:?}: the probe lies above the pane");
+            let at = Pos2::new(area.center().x, y);
+            let button = w.app.strip_hits[Unit::Vector as usize].buttons.iter().any(|b| b.contains(at));
+            assert!(!button, "{edge:?}: the probe is on no button");
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.idle(60);
+            assert!(w.app.docks[Unit::Vector].out, "{edge:?}: resting above the pane keeps it out");
+        }
+    }
+
+    /// A strip button lying wholly under the caption glass is hovered like any
+    /// other (#110; VM, the original, a left strip with the second tab in front:
+    /// the first tab's 24 px stub, 4 px under the window's top, slides its pane
+    /// out when the pointer rests on it).
+    #[test]
+    fn a_stub_under_the_caption_glass_can_be_hovered() {
+        use docking::{Edge, Spot, Unit};
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Left, outer: true };
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let cap = ribbon::caption_h();
+        let stub = w.app.strip_hits[Unit::Vector as usize].buttons.iter().copied().find(|r| r.bottom() <= cap).expect("a button wholly under the glass");
+        assert!(stub.height() <= 24.5, "a stub: {stub:?}");
+        w.run(vec![egui::Event::PointerMoved(stub.center())]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid the group out");
+        assert_eq!(w.app.panes.front(w.app.docks.members(Unit::Vector)), Some(app::Pane::Vector), "with the stub's pane in front");
     }
 
     /// Hiding a background tab of the focused pane's group leaves the focus.
@@ -3478,6 +3935,63 @@ mod window_tests {
         assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked);
         let at = w.app.docks[Unit::Circle].float_rect.expect("floating").min;
         assert!((at - Pos2::new(496.0, 373.0)).length() < 1.0, "{at:?}");
+    }
+
+    /// A tab pulled out of a tab strip follows the caption drag's distance rule
+    /// (#111; `0x10068657` reads the metric once, `>=` on either axis — the
+    /// caption's rule `0x10086f3a` is a strict `>` — the distance scaled with
+    /// the display as the caption's, by the maintainer's decision, L9.411) once the pointer has left the strip (the
+    /// original needs that: `0x100690b4` calls the detach only outside the tab
+    /// area; VM: 5 and 8 px up inside the strip float nothing, 14 px up out of it
+    /// floats the pane), with the caption drag's move cursor from the press on.
+    #[test]
+    fn a_tab_pulled_out_follows_the_drag_distance_and_shows_the_move_cursor() {
+        use docking::{Place, Unit};
+        use egui::CursorIcon::{Default as Arrow, Move};
+        let ev = |pos, pressed, button| egui::Event::PointerButton { pos, button, pressed, modifiers: Default::default() };
+        let primary = egui::PointerButton::Primary;
+        for dpi in [96, 120, 144] {
+            dpi::set(dpi);
+            let reach = dpi::s(docking::DRAG_PX);
+            // Pressed on the tab's top row, dragged straight up out of the strip
+            // (whose top is the tab's less 1 px) by `dist` px.
+            let pull = |dist: f32| {
+                let mut w = Win::new();
+                w.idle(2);
+                let tab = w.app.pane_tab_rects.iter().find(|(p, _)| *p == app::Pane::Circle).map(|(_, r)| *r).expect("the Круговая tab");
+                let at = Pos2::new(tab.center().x, tab.top() + 0.5);
+                assert_eq!(w.run(vec![egui::Event::PointerMoved(at)]), Arrow, "{dpi}: hovering a tab leaves the arrow");
+                assert_eq!(w.run(vec![ev(at, true, primary)]), Move, "{dpi}: the press arms the drag: move cursor");
+                let to = at - Vec2::new(0.0, dist);
+                assert_eq!(w.run(vec![egui::Event::PointerMoved(to)]), Move, "{dpi}: still");
+                w.idle(2);
+                let floated = w.app.docks[Unit::Circle].place == Place::Floating;
+                w.run(vec![ev(to, false, primary)]);
+                w.idle(3);
+                assert_eq!(w.run(vec![egui::Event::PointerMoved(Pos2::new(5.0, 5.0))]), Arrow, "{dpi}: released: the arrow");
+                floated
+            };
+            assert!(!pull(reach - 0.5), "{dpi}: {} px up is short of the distance {reach}", reach - 0.5);
+            assert!(pull(reach), "{dpi}: {reach} px up, out of the strip: floated (the rule is >=)");
+        }
+        dpi::set(96);
+        // Inside the strip nothing floats, however far (the pointer must leave the
+        // tab area), and only the left button arms the drag.
+        let mut w = Win::new();
+        w.idle(2);
+        let tab = w.app.pane_tab_rects.iter().find(|(p, _)| *p == app::Pane::Circle).map(|(_, r)| *r).expect("the Круговая tab");
+        let at = Pos2::new(tab.center().x, tab.top() + 8.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true, primary)]);
+        w.run(vec![egui::Event::PointerMoved(at - Vec2::new(0.0, 7.0))]);
+        w.idle(2);
+        assert_eq!(w.app.docks[Unit::Circle].place, Place::Docked, "7 px up inside the strip floats nothing");
+        w.run(vec![ev(at, false, primary)]);
+        w.idle(2);
+        let sec = egui::PointerButton::Secondary;
+        w.app.pane_menu = None;
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        assert_ne!(w.run(vec![ev(at, true, sec)]), Move, "a right press arms nothing");
     }
 
     /// Table 128 as egui-winit delivers it: Ctrl+C arrives as `Event::Copy`
@@ -3981,6 +4495,503 @@ mod window_tests {
         assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Circle));
     }
 
+    /// A press on a pane's tab — the front one's too, with either button —
+    /// gives the group's front pane the focus (clone: a grid focused in the
+    /// circle pane, the vector tab pressed: the vector pane's window holds
+    /// the focus, not the hidden circle pane's grid; #112, #65).
+    #[test]
+    fn a_press_on_a_tab_gives_the_front_pane_the_focus() {
+        use app::{Command, CopyFocus, Pane};
+        use egui::PointerButton::{Primary, Secondary};
+        let tab = |w: &Win, p| w.app.pane_tab_rects.iter().find(|(q, _)| *q == p).map(|(_, r)| r.center()).expect("the tab");
+        let mut w = Win::new();
+        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        w.idle(3);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        w.press(Primary, grid.center(), grid.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
+        let at = tab(&w, Pane::Vector);
+        w.press(Primary, at, at);
+        assert_eq!(w.app.panes.front(w.app.docks.members(docking::Unit::Vector)), Some(Pane::Vector), "the tab came to the front");
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the shown pane holds the focus");
+        // Copy now takes the shown pane's diagram, not the hidden grid's document.
+        w.app.dispatch(Command::Copy);
+        assert!(w.app.clip.picture().is_some() && w.app.clip.get().is_none(), "the vector diagram's picture alone");
+        // The front tab, pressed while a diagram of the group holds the focus.
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        w.press(Primary, canvas.center(), canvas.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
+        let at = tab(&w, Pane::Vector);
+        w.press(Primary, at, at);
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the front tab too");
+        // A right press activates the tab and gives the pane the focus.
+        w.app.copy_focus = CopyFocus::View;
+        let at = tab(&w, Pane::Circle);
+        w.press(Secondary, at, at);
+        assert_eq!(w.app.panes.front(w.app.docks.members(docking::Unit::Vector)), Some(Pane::Circle));
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the right press");
+    }
+
+    /// Every dialog is modal, and the frame it gives the activation back to
+    /// hands the focus to its view (clone: a diagram's pane focused, «Каналы»
+    /// opened and closed: the view holds it; the ОМП parameters' tree held it
+    /// while up): a focus held by a pane or by another window is the view's
+    /// again once the dialog is gone (#65).
+    #[test]
+    fn a_dialog_that_closes_hands_the_focus_to_the_view() {
+        use app::CopyFocus;
+        for before in [CopyFocus::Diagram(app::Pane::Vector), CopyFocus::Grid(app::Pane::Circle), CopyFocus::Pane(app::Pane::Vector), CopyFocus::Other] {
+            let mut w = Win::new();
+            w.app.copy_focus = before;
+            w.app.color_dialog = Some(egui::Color32::RED);
+            w.idle(3);
+            assert!(w.app.modal_up);
+            assert_eq!(w.app.copy_focus, before, "{before:?}: while the dialog is up it is the dialog's, not changed");
+            w.app.color_dialog = None;
+            w.idle(3);
+            assert!(!w.app.modal_up);
+            assert_eq!(w.app.copy_focus, CopyFocus::View, "{before:?}: the dialog closed");
+            let at = w.view_state();
+            w.key(egui::Key::ArrowRight);
+            assert_ne!(w.view_state(), at, "{before:?}: the view's keys work again");
+        }
+    }
+
+    /// The frame's own windows that take the focus (clone: the merge bar's
+    /// combo box and buttons, the document tabs' ▾ button — each a window
+    /// without an untitled child, so copy puts the view's picture and the
+    /// document, while the view's keys go to that window), and the
+    /// document's tab, which gives it to the view (#65).
+    #[test]
+    fn the_frames_own_windows_take_the_copy_focus() {
+        use app::{ChanKey, CopyFocus, Pane};
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        let focus_diagram = |w: &mut Win| {
+            w.press(Primary, canvas.center(), canvas.center());
+            assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
+        };
+        // The tab list's button at the strip's right end.
+        let strip = w.app.mdi_strips[0];
+        let list = Pos2::new(strip.right() - 10.0, strip.center().y);
+        focus_diagram(&mut w);
+        w.press(Primary, list, list);
+        assert_eq!(w.app.copy_focus, CopyFocus::Other, "the tab list's button");
+        // Copy asks that window: no diagram, the view's picture and the document.
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.dispatch(app::Command::Copy);
+        assert!(w.app.clip.picture().is_some() && w.app.clip.get().is_some_and(|t| t.contains("<channels")));
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_eq!(w.view_state(), before, "the arrow key goes to that window, not the view");
+        // The list's popup is closed again by a press elsewhere; a document's tab gives the view the focus.
+        w.key(egui::Key::Escape);
+        let tab = w.app.doc_tab_rects[0].center();
+        focus_diagram(&mut w);
+        w.press(Primary, tab, tab);
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the document's tab");
+        // The merge bar after a paste: the combo box and the two buttons that are enabled.
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        assert!(w.app.merge.is_some(), "the merge bar is up");
+        let controls = w.app.focus_other.clone();
+        assert_eq!(controls.len(), 4, "the method combo, «Синхронизация», «Объединить», the tab list's button: {controls:?}");
+        // (The last one is the tab list's; «Объединить» takes the bar away.)
+        for r in controls.into_iter().take(3) {
+            w.app.copy_focus = CopyFocus::Diagram(Pane::Vector);
+            w.press(Primary, r.center(), r.center());
+            assert_eq!(w.app.copy_focus, CopyFocus::Other, "{r:?}");
+        }
+    }
+
+    /// A slid-out auto-hidden pane is a child of the frame, which a modal
+    /// dialog disables, and the dialog lies above it: the pane takes no
+    /// input under the dialog (its caption «×», its pin, the divider) and
+    /// does not cover it (final review, Important 1; #113).
+    #[test]
+    fn a_slid_out_pane_takes_no_input_while_a_dialog_is_up() {
+        use app::{CopyFocus, Pane};
+        use docking::{Edge, Spot, Unit};
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Right, outer: true };
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+        w.idle(30);
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).map(|(_, r)| *r).expect("the slid-out diagram");
+        // A press in its diagram: it holds the focus, so it stays out.
+        w.press(Primary, canvas.center(), canvas.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
+        let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(5);
+        w.app.color_dialog = Some(egui::Color32::RED);
+        w.idle(3);
+        assert!(w.app.modal_up);
+        assert!(w.app.docks[Unit::Vector].out, "the pane is still out under the dialog");
+        let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+        let close = Pos2::new(area.right() - dpi::s(11.0), area.top() + dpi::s(10.0));
+        let dialog = w.ctx.memory(|m| m.area_rect(egui::Id::new("Цвета"))).expect("the colour dialog");
+        // Wherever the dialog lies, it is the window on top there.
+        for at in [dialog.center(), Pos2::new(dialog.right() - 3.0, dialog.top() + 3.0)] {
+            let layer = w.ctx.layer_id_at(at).expect("a layer");
+            assert!(!crate::views::is_slid_pane_layer(layer), "{at:?}: the dialog is above the slid-out pane");
+        }
+        w.press(Primary, close, close);
+        assert!(w.app.panes.visible(Pane::Vector), "a press on the pane's caption button does nothing");
+        let top = w.ctx.memory(|m| m.areas().top_layer_id(egui::Order::Middle));
+        assert_eq!(top.map(|l| l.id), Some(egui::Id::new("Цвета")), "the dialog stays on top");
+        // Its divider takes no drag either.
+        // A point of it clear of the dialog (the dialog lies over its middle).
+        let strip = w.app.dock_dividers[Unit::Vector as usize].expect("its divider");
+        let div = [strip.top() + 30.0, strip.bottom() - 30.0].into_iter().map(|y| Pos2::new(strip.center().x, y)).find(|p| !dialog.contains(*p)).expect("a divider point clear of the dialog");
+        let extent = w.app.docks[Unit::Vector].slide_extent;
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(div)]);
+        w.run(vec![ev(div, true)]);
+        w.run(vec![egui::Event::PointerMoved(div - Vec2::new(60.0, 0.0))]);
+        w.run(vec![egui::Event::PointerMoved(div - Vec2::new(120.0, 0.0))]);
+        w.idle(2);
+        w.run(vec![ev(div - Vec2::new(120.0, 0.0), false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].slide_extent, extent, "a drag of the divider does nothing");
+        // The dialog gone, the same press closes the pane.
+        w.app.color_dialog = None;
+        w.idle(3);
+        w.press(Primary, close, close);
+        w.idle(30);
+        assert!(!w.app.panes.visible(Pane::Vector), "the dialog gone, the caption button works");
+    }
+
+    /// MFC's frame disables its floating windows while a modal dialog is up
+    /// (clone: «Каналы» open, the floating pane's mini-frame reads as
+    /// disabled): a press, a double-click or a drag on the floating pane's
+    /// caption, or a press on its tab, does nothing until the dialog is gone
+    /// (#113).
+    #[test]
+    fn a_floating_pane_takes_no_input_while_a_dialog_is_up() {
+        use app::{CopyFocus, Pane};
+        use docking::{Place, Unit};
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector pane").1;
+        let at = Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0);
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: Primary, modifiers: Default::default(), pressed };
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        let id = egui::Id::new(("fv_floating_pane", Unit::Vector));
+        let win = |w: &Win| w.ctx.memory(|m| m.area_rect(id)).expect("the floating window");
+        let (caption, tab) = (Pos2::new(win(&w).left() + 60.0, win(&w).top() + 10.0), w.app.pane_tab_rects.iter().find(|(p, _)| *p == Pane::Circle).map(|(_, r)| r.center()).expect("the circle tab"));
+        let shown = win(&w);
+        w.app.copy_focus = CopyFocus::View;
+        w.app.color_dialog = Some(egui::Color32::RED);
+        w.idle(3);
+        assert!(w.app.modal_up);
+        let dialog = w.ctx.memory(|m| m.area_rect(egui::Id::new("Цвета"))).expect("the colour dialog");
+        assert!(!dialog.contains(caption) && !dialog.contains(tab), "the dialog stays clear of the window's caption and tab");
+        let (rect, front) = (win(&w), w.app.panes.front(w.app.docks.members(Unit::Vector)));
+        w.press(Primary, caption, caption);
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the caption's press");
+        w.press(Primary, tab, tab);
+        assert_eq!(w.app.panes.front(w.app.docks.members(Unit::Vector)), front, "the tab's press");
+        w.run(vec![egui::Event::PointerMoved(caption)]);
+        w.run(vec![ev(caption, true), ev(caption, false)]);
+        w.run(vec![ev(caption, true), ev(caption, false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating, "the double-click on the caption");
+        w.press(Primary, caption, caption + Vec2::new(90.0, 70.0));
+        assert_eq!(win(&w), rect, "a drag of the caption");
+        // A press on it does not raise it over the dialog.
+        let top = w.ctx.memory(|m| m.areas().top_layer_id(egui::Order::Middle));
+        assert_eq!(top.map(|l| l.id), Some(egui::Id::new("Цвета")), "the dialog stays above the floating window");
+        // The dialog gone, the same press is the pane's again.
+        w.app.color_dialog = None;
+        w.idle(3);
+        w.press(Primary, caption, caption);
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the dialog gone");
+        assert_eq!(win(&w).size(), shown.size(), "the window keeps its size");
+    }
+
+    /// A channel drag let go over a floating pane's window that lies over the
+    /// view drops nowhere unless it is on its diagram (clone: the dragged
+    /// lane released on the mini-frame's caption over another lane of the
+    /// same unit: nothing grouped; released beside the window the same drag
+    /// groups them): the window under the pointer is the drop target, not
+    /// the lane under it (#113).
+    #[test]
+    fn a_channel_dropped_on_a_floating_window_over_the_view_drops_nowhere() {
+        use docking::{Place, Unit};
+        use egui::PointerButton::Primary;
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: Primary, modifiers: Default::default(), pressed };
+        // The lane under `to` is the first one after lane 0 of its unit.
+        let setup = |floating: bool| {
+            let mut w = Win::new();
+            let (rows, same) = {
+                let d = w.app.active_doc().unwrap();
+                let rows = lanes::lane_layout(d, w.app.y_analog);
+                let unit = |li: usize| match rows[li].key {
+                    app::ChanKey::Analog(i) => Some(d.osc.analog[i].unit.clone()),
+                    _ => None,
+                };
+                let same = (1..rows.len()).find(|&li| unit(li).is_some() && unit(li) == unit(0)).expect("a lane with the same unit");
+                (rows, same)
+            };
+            let client = w.app.view_rects.expect("the view").1;
+            let from = Pos2::new(client.left() + 40.0, client.top() + rows[0].h / 2.0);
+            let to = Pos2::new(client.left() + 320.0, client.top() + rows[..same].iter().map(|r| r.h).sum::<f32>() + rows[same].h / 2.0);
+            if floating {
+                // The window's caption (its top 20 px) over `to`.
+                let d = &mut w.app.docks.0[Unit::Vector as usize];
+                d.float_rect = Some(Rect::from_min_size(Pos2::new(to.x - 90.0, to.y - 8.0), Vec2::new(260.0, 220.0)));
+                d.place = Place::Floating;
+                w.idle(3);
+            }
+            let (app::ChanKey::Analog(c0), app::ChanKey::Analog(cs)) = (rows[0].key, rows[same].key) else { unreachable!() };
+            (w, from, to, c0, cs)
+        };
+        let drag = |w: &mut Win, a: Pos2, b: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(a), ev(a, true)]);
+            let steps = (((b - a).length()) / 6.0).ceil().max(1.0) as usize;
+            for k in 1..=steps {
+                w.run(vec![egui::Event::PointerMoved(a + (b - a) * (k as f32 / steps as f32))]);
+            }
+            w.run(vec![ev(b, false)]);
+            w.idle(3);
+        };
+        // Beside any window: the drop groups the two lanes (the geometry is right).
+        let (mut w, from, to, c0, cs) = setup(false);
+        drag(&mut w, from, to);
+        let d = w.app.active_doc().unwrap();
+        assert!(d.chans[c0].group.is_some() && d.chans[c0].group == d.chans[cs].group, "dropped on the lane");
+        // On the floating window's caption lying over that lane: nothing.
+        let (mut w, from, to, c0, cs) = setup(true);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        drag(&mut w, from, to);
+        let d = w.app.active_doc().unwrap();
+        assert!(d.chans[c0].group.is_none() && d.chans[cs].group.is_none(), "dropped on the window over the lane");
+        assert!(!egui::DragAndDrop::has_any_payload(&w.ctx), "the drag is over");
+    }
+
+    /// The lane's rename box and the level editor are windows over the view
+    /// (children of it): a press in one is a press in the view, which holds
+    /// the focus then — not in a popup that leaves it where it was (#83).
+    #[test]
+    fn a_press_in_an_editor_over_the_view_gives_the_view_the_focus() {
+        use app::{CopyFocus, Pane};
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        let mut seen = 0;
+        for edit in ["fv_rename", "fv_level_edit"] {
+            w.press(Primary, canvas.center(), canvas.center());
+            assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
+            if edit == "fv_rename" {
+                w.app.rename_edit = Some((0, "Ia".into()));
+            } else {
+                w.app.rename_edit = None;
+                w.app.level_edit = Some((0, "1.00".into()));
+            }
+            w.idle(3);
+            let Some(r) = w.ctx.memory(|m| m.area_rect(egui::Id::new(edit).with(0usize))) else { continue };
+            seen += 1;
+            w.press(Primary, r.center(), r.center());
+            assert_eq!(w.app.copy_focus, CopyFocus::View, "{edit}: the press in the editor");
+            w.app.rename_edit = None;
+            w.app.level_edit = None;
+        }
+        assert!(seen > 0, "an editor was up");
+        // A menu or a combo box's list over the view takes no focus: the
+        // window that holds it keeps it.
+        let (full, _) = w.app.view_rects.expect("the view");
+        let at = full.min + Vec2::new(180.0, 200.0);
+        let cover = Rect::from_center_size(at, Vec2::splat(60.0));
+        for before in [CopyFocus::Other, CopyFocus::Diagram(Pane::Vector)] {
+            w.app.copy_focus = before;
+            for pressed in [None, Some(true), Some(false), None] {
+                let events = match pressed {
+                    None => vec![egui::Event::PointerMoved(at)],
+                    Some(pressed) => vec![egui::Event::PointerButton { pos: at, button: Primary, pressed, modifiers: Default::default() }],
+                };
+                let t = w.ctx.input(|i| i.time) + 0.05;
+                let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), events, ..Default::default() };
+                let app = &mut w.app;
+                let _ = w.ctx.run(raw, |ctx| {
+                    egui::Area::new(egui::Id::new("test_popup")).order(egui::Order::Foreground).fixed_pos(cover.min).show(ctx, |ui| {
+                        ui.allocate_exact_size(cover.size(), egui::Sense::click());
+                    });
+                    app.frame_ui(ctx);
+                });
+            }
+            assert_eq!(w.app.copy_focus, before, "a popup over the view took the press");
+        }
+    }
+
+    /// The merge bar's button keeps the focus when the merge hides the bar
+    /// (clone: «Объединить» pressed, the bar gone: GetFocus still names the
+    /// hidden button): the view's keys stay dead and copy takes the view's
+    /// picture and the document (#65).
+    #[test]
+    fn the_focus_stays_on_the_merge_button_when_the_bar_hides() {
+        use app::{ChanKey, CopyFocus};
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        let join = w.app.focus_other[2];
+        w.press(Primary, join.center(), join.center());
+        w.idle(3);
+        assert!(w.app.merge.is_none(), "the bar is gone");
+        assert_eq!(w.app.copy_focus, CopyFocus::Other, "the hidden button holds the focus");
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_eq!(w.view_state(), before, "the view's keys are dead");
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.dispatch(app::Command::Copy);
+        assert!(w.app.clip.picture().is_some() && w.app.clip.get().is_some());
+    }
+
+    /// A channel let go on a floating window that lies over a docked diagram
+    /// goes to the window's diagram (or nowhere, on its caption), never to
+    /// the docked diagram beneath it (#113; the window under the pointer
+    /// takes the drop).
+    #[test]
+    fn a_channel_dropped_on_a_floating_window_over_a_docked_diagram_misses_the_docked_one() {
+        use app::{ChanKey, Pane};
+        use docking::{Place, Unit};
+        use egui::PointerButton::Primary;
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: Primary, modifiers: Default::default(), pressed };
+        let run = |onto_diagram: bool| {
+            let mut w = Win::new();
+            let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the frequency diagram").1;
+            let d = &mut w.app.docks.0[Unit::Vector as usize];
+            d.float_rect = Some(Rect::from_min_size(freq.min + Vec2::new(40.0, 4.0), Vec2::new(300.0, 200.0)));
+            d.place = Place::Floating;
+            w.idle(3);
+            // The docked layout changed as the group left: place the window over where Частотная is now.
+            let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the frequency diagram").1;
+            w.app.docks.0[Unit::Vector as usize].float_rect = Some(Rect::from_min_size(freq.min + Vec2::new(40.0, 4.0), Vec2::new(300.0, 200.0)));
+            w.idle(3);
+            {
+                let d = w.app.active_doc_mut().unwrap();
+                d.chans[0].on_freq = false;
+                d.chans[0].on_vector = false;
+            }
+            let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the frequency diagram").1;
+            let win = w.ctx.memory(|m| m.area_rect(egui::Id::new(("fv_floating_pane", Unit::Vector)))).expect("the floating window");
+            let to = if onto_diagram {
+                let v = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the floating vector diagram").1;
+                Pos2::new(freq.left() + 60.0, v.center().y)
+            } else {
+                Pos2::new(freq.left() + 30.0, win.top() + 10.0)
+            };
+            assert!(freq.contains(to), "the window lies over the frequency diagram");
+            let client = w.app.view_rects.expect("the view").1;
+            let rows = lanes::lane_layout(w.app.active_doc().unwrap(), w.app.y_analog);
+            let a = Pos2::new(client.left() + 40.0, client.top() + rows[0].h / 2.0);
+            w.run(vec![egui::Event::PointerMoved(a), ev(a, true)]);
+            let steps = ((to - a).length() / 6.0).ceil().max(1.0) as usize;
+            for k in 1..=steps {
+                w.run(vec![egui::Event::PointerMoved(a + (to - a) * (k as f32 / steps as f32))]);
+            }
+            w.run(vec![ev(to, false)]);
+            w.idle(3);
+            let d = w.app.active_doc().unwrap();
+            assert!(matches!(rows[0].key, ChanKey::Analog(0)));
+            (d.chans[0].on_freq, d.chans[0].on_vector)
+        };
+        assert_eq!(run(true), (false, true), "on the floating diagram: it takes the channel, not the frequency diagram");
+        assert_eq!(run(false), (false, false), "on the floating caption: nobody does");
+    }
+
+    /// The same for a slid-out pane over a docked group on the same edge: a
+    /// channel let go on the slid-out diagram goes to it, not to the docked
+    /// diagram under it (#113).
+    #[test]
+    fn a_channel_dropped_on_a_slid_out_pane_over_a_docked_diagram_misses_the_docked_one() {
+        use app::Pane;
+        use docking::{Edge, Spot, Unit};
+        use egui::PointerButton::Primary;
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: Primary, modifiers: Default::default(), pressed };
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: Edge::Right, outer: true };
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Right, outer: true };
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+        w.idle(30);
+        let [c0, c1, ..] = w.app.slid_ranges[Unit::Vector as usize].expect("slid out");
+        let slid = w.app.pane_canvas[c0..c1].iter().find(|(p, _)| *p == Pane::Vector).expect("the slid-out vector diagram").1;
+        let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the docked frequency diagram").1;
+        let to = Pos2::new(freq.center().x, slid.center().y);
+        {
+            let d = w.app.active_doc_mut().unwrap();
+            d.chans[0].on_freq = false;
+            d.chans[0].on_vector = false;
+        }
+        assert!(freq.contains(to) && slid.contains(to), "the slid-out pane lies over the docked diagram: {freq:?} {slid:?}");
+        {
+            let d = w.app.active_doc_mut().unwrap();
+            d.chans[0].on_freq = false;
+            d.chans[0].on_vector = false;
+        }
+        // The pane holds the focus (so it stays out) and a drag from the lanes is in flight.
+        w.press(Primary, to, to);
+        egui::DragAndDrop::set_payload(&w.ctx, lanes::ChanDrag { chans: vec![0], computed: vec![] });
+        w.run(vec![egui::Event::PointerMoved(to)]);
+        w.run(vec![ev(to, true)]);
+        w.run(vec![ev(to, false)]);
+        w.idle(3);
+        let d = w.app.active_doc().unwrap();
+        assert_eq!((d.chans[0].on_freq, d.chans[0].on_vector), (false, true), "the slid-out diagram takes it");
+    }
+
+    /// Every way the active document changes — the tab list's pick (the ▾
+    /// button leaves `Other` until then), opening, closing — focuses the
+    /// activated document's view (clone: MDI activation); a system file dialog
+    /// closed unanswered does not (#65).
+    #[test]
+    fn a_new_active_document_gives_the_view_the_focus() {
+        use app::{Command, CopyFocus, Pane};
+        let mut w = Win::new();
+        w.app.dispatch(Command::Demo);
+        w.idle(3);
+        assert_eq!(w.app.docs.len(), 2);
+        for before in [CopyFocus::Other, CopyFocus::Diagram(Pane::Vector), CopyFocus::Pane(Pane::Vector), CopyFocus::Grid(Pane::Circle)] {
+            // The tab list's pick: the other document.
+            let other = 1 - w.app.active.unwrap();
+            w.app.copy_focus = before;
+            w.app.dispatch(Command::ActivateDoc(other));
+            w.idle(2);
+            assert_eq!(w.app.copy_focus, CopyFocus::View, "{before:?}: activated");
+            // Closing the active one.
+            w.app.copy_focus = before;
+            w.app.dispatch(Command::CloseDoc(w.app.active.unwrap()));
+            w.idle(2);
+            assert_eq!(w.app.copy_focus, CopyFocus::View, "{before:?}: closed");
+            // Opening one.
+            w.app.copy_focus = before;
+            w.app.dispatch(Command::Demo);
+            w.idle(2);
+            assert_eq!(w.app.copy_focus, CopyFocus::View, "{before:?}: opened");
+            // Nothing else does it. (A system file dialog closed
+            // unanswered leaves the focus where it was, clone; it cannot be
+            // driven headless, so the rule is not tested here.)
+            w.app.copy_focus = before;
+            w.idle(3);
+            assert_eq!(w.app.copy_focus, before, "{before:?}: left alone");
+        }
+    }
+
     /// `FV_FRAME_BENCH=<file.cfg> cargo test --release frame_bench -- --nocapture`
     /// prints the mean whole-window frame time on that record.
     #[test]
@@ -4347,6 +5358,56 @@ mod window_tests {
         let rgba: Vec<u8> = c.px.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
         std::fs::write(path, util::png_rgba(c.w as u32, c.h as u32, &rgba)).unwrap();
     }
+
+    /// #78 through the call site: a zoomed plane's scroll bar is the
+    /// system's 26 px at 150 % (its grey track across the window's right
+    /// edge), not the 100 % width scaled (24).
+    #[test]
+    fn a_zoomed_planes_scroll_bar_is_the_system_width() {
+        let fonts = app_fonts();
+        for (dpi_v, native, bar) in [(96u32, 1.0f32, 16usize), (120, 1.25, 21), (144, 1.5, 26)] {
+            dpi::set(dpi_v);
+            let mut app = demo(&[]);
+            app.diag.circle.z = 2.0;
+            let c = raster::render_native(Vec2::new(700.0, 500.0), native, |ctx| device_options_on(true, ctx, Some(native)), device_screen, Some(&fonts), vec![vec![]; 3], |ctx| {
+                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| app.plane_ui(ui));
+            });
+            let y = 250;
+            let run = (0..c.w).rev().take_while(|&x| c.px[y * c.w + x] == [235, 235, 235] || c.px[y * c.w + x] == [190, 190, 190]).count();
+            assert_eq!(run, bar, "{dpi_v}: the scroll bar's width");
+        }
+        dpi::set(96);
+    }
+
+    /// #78 through the strip layout: an inactive tab is its text in the
+    /// whole 8 pt font (16 px at 150 %) plus 34 px scaled (51).
+    #[test]
+    fn a_tab_is_laid_out_in_the_whole_8_pt_font() {
+        let fonts = app_fonts();
+        dpi::set(144);
+        let mut app = demo(&[app::Command::Demo]);
+        let mut got = None;
+        raster::render_native(Vec2::new(1280.0, 722.0), 1.5, |ctx| device_options_on(true, ctx, Some(1.5)), device_screen, Some(&fonts), vec![vec![]; 3], |ctx| {
+            app.frame_ui(ctx);
+            let other = (0..app.docs.len()).find(|&i| app.active != Some(i));
+            got = other.and_then(|i| {
+                let title = app.docs[i].title();
+                let w = ctx.read_response(egui::Id::new(("fv_doc_tab", app.docs[i].serial)))?.rect.width();
+                let text = ctx.fonts(|f| f.layout_no_wrap(title, egui::FontId::proportional(16.0), egui::Color32::BLACK).size().x);
+                Some((w, text + 51.0))
+            });
+        });
+        dpi::set(96);
+        let (w, want) = got.expect("an inactive tab");
+        assert_eq!(w, want, "the tab's width");
+    }
+
+    /// `make_app` takes the chrome's dpi from GetDpiForSystem
+    /// (`system_dpi_scale`) before the monitor's scale; its source line is
+    /// the call pinned here.
+    #[test]
+    fn make_app_passes_the_system_dpi_to_the_chrome() {
+        let src = include_str!("main.rs");
+        assert!(src.contains(concat!("start_scaling(DEVICE_PIXELS, ctx, scale, ", "system_dpi_scale());")));
+    }
 }
-
-

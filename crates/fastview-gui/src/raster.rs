@@ -246,7 +246,17 @@ pub fn render_input(size: Vec2, ppp: f32, fonts: Option<&egui::FontDefinitions>,
 /// pass rasterised at its own pixels per
 /// point onto `px`.
 #[cfg(test)]
-pub fn render_native(px: Vec2, native: f32, setup: impl FnOnce(&egui::Context), hook: impl Fn(&egui::Context, &mut egui::RawInput), fonts: Option<&egui::FontDefinitions>, passes: Vec<Vec<egui::Event>>, mut paint: impl FnMut(&egui::Context)) -> Canvas {
+pub fn render_native(px: Vec2, native: f32, setup: impl FnOnce(&egui::Context), hook: impl Fn(&egui::Context, &mut egui::RawInput), fonts: Option<&egui::FontDefinitions>, passes: Vec<Vec<egui::Event>>, paint: impl FnMut(&egui::Context)) -> Canvas {
+    render_natives(setup, hook, fonts, passes.into_iter().map(|events| (native, px, events)).collect(), paint)
+}
+
+/// [`render_native`] with the monitor's `native` scale and the window's
+/// size in device pixels given per pass: the window dragged to another
+/// monitor, or the scale changed live, between two passes (the screen of
+/// a pass follows the zoom the app left); the last pass's size is the
+/// canvas's.
+#[cfg(test)]
+pub fn render_natives(setup: impl FnOnce(&egui::Context), hook: impl Fn(&egui::Context, &mut egui::RawInput), fonts: Option<&egui::FontDefinitions>, passes: Vec<(f32, Vec2, Vec<egui::Event>)>, mut paint: impl FnMut(&egui::Context)) -> Canvas {
     let ctx = egui::Context::default();
     if let Some(f) = fonts {
         ctx.set_fonts(f.clone());
@@ -254,7 +264,9 @@ pub fn render_native(px: Vec2, native: f32, setup: impl FnOnce(&egui::Context), 
     setup(&ctx);
     let mut textures = HashMap::new();
     let mut out = None;
-    for (pass, events) in passes.into_iter().enumerate() {
+    let mut size = Vec2::ZERO;
+    for (pass, (native, px, events)) in passes.into_iter().enumerate() {
+        size = px;
         let mut raw = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, px / (ctx.zoom_factor() * native))),
             max_texture_side: Some(16384),
@@ -269,7 +281,7 @@ pub fn render_native(px: Vec2, native: f32, setup: impl FnOnce(&egui::Context), 
         out = Some((full.shapes, full.pixels_per_point));
     }
     let (shapes, ppp) = out.expect("a pass ran");
-    rasterise(&ctx, shapes, ppp, &textures, px.x.round() as usize, px.y.round() as usize)
+    rasterise(&ctx, shapes, ppp, &textures, size.x.round() as usize, size.y.round() as usize)
 }
 
 /// egui's shapes tessellated at `ppp` and drawn onto a white `w` × `h`.

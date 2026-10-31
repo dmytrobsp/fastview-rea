@@ -2,7 +2,7 @@
 name = "fvb-core"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license = "(MIT OR Apache-2.0) AND BSD-3-Clause"
 description = "Parser, expression evaluator and geometry engine for FastView .fvb relay-protection characteristic libraries"
 
 [dependencies]

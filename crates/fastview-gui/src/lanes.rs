@@ -124,7 +124,7 @@ impl Row {
 /// channels, then digital channels; pending pasted lanes sit at their
 /// insertion point (`Computed::before`). Analog lanes `YAnalogSize` high (a
 /// group at least one name row per member), digital lanes 20 px. No stretch.
-pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<Row> {
+pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32) -> Vec<Row> {
     let mut rows: Vec<Row> = Vec::new();
     let mut groups: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
     // A visible analog-kind channel: its own lane, or a member of its
@@ -163,7 +163,7 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
     // need = name row + 10 + one row per enabled stat (Max/Min two) + 23
     // when any status icon shows; a group lane one name row (+33) per member.
     for r in rows.iter_mut().filter(|r| !matches!(r.key, Lane::Digital(_)) && !matches!(r.key, Lane::Computed(j) if doc.pending_digital(j))) {
-        let icons = if status_icons(doc, r, primary).is_empty() { 0.0 } else { 23.0 };
+        let icons = if status_icons(doc, r).is_empty() { 0.0 } else { 23.0 };
         let need = if r.members.len() > 1 {
             // `0x460290`: N × the owner's stride (each member is painted
             // with its own — the original's mismatch, kept).
@@ -180,7 +180,6 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
 /// screen (`lanes_ui`) and the printout (`printout`) paint through it.
 pub struct OscView<'a> {
     pub doc: &'a crate::app::Doc,
-    pub primary: bool,
     pub unit: TimeUnit,
     /// Horizontal scale, first drawn sample, sample count.
     pub f: f64,
@@ -220,7 +219,7 @@ impl OscView<'_> {
     /// One lane's stats text (`0x461440`) and waveforms (`0x45fbe0`);
     /// returns the name badge rectangle.
     pub fn row(&self, lp: &egui::Painter, pp: &egui::Painter, r: &Row, top: f32, (lo, hi): (f64, f64)) -> Rect {
-        let (doc, primary, left, plot_right) = (self.doc, self.primary, self.left, self.right);
+        let (doc, left, plot_right) = (self.doc, self.left, self.right);
         let (first, n, f) = (self.first, self.n, self.f);
         let h = r.h;
         let k_main = doc.main_cursor;
@@ -290,7 +289,7 @@ impl OscView<'_> {
                     let band = Rect::from_min_size(Pos2::new(self.x0 + 5.0, top + 8.0 + k as f32 * stride + GROUP_STATS_H), Vec2::new(left - self.x0 - 5.0, GROUP_STATS_H));
                     lp.with_clip_rect(band.intersect(lp.clip_rect())).text(band.left_center(), Align2::LEFT_CENTER, line, ROW_FONT, row_col);
                 }
-                icons(key_icons(doc, m, primary), top - 21.0 + (k + 1) as f32 * stride);
+                icons(key_icons(doc, m), top - 21.0 + (k + 1) as f32 * stride);
             }
             first.expect("a group has members")
         } else {
@@ -316,7 +315,7 @@ impl OscView<'_> {
                     yy += GROUP_STATS_H;
                 }
             }
-            icons(status_icons(doc, r, primary), top + h - 21.0);
+            icons(status_icons(doc, r), top + h - 21.0);
             name_rect
         };
 
@@ -328,7 +327,7 @@ impl OscView<'_> {
                 let mid = top + 10.0;
                 // The base bar (`0x463e9a`): N·25f from the plot left,
                 // whatever the scroll position.
-                let end_x = (left + g::base_bar_len(s.len(), f, 1.0)).min(plot_right);
+                let end_x = (left + g::base_bar_len(s.len(), f, doc.lane_ratio(*lane))).min(plot_right);
                 pp.rect_filled(Rect::from_min_max(Pos2::new(left, mid - 2.0), Pos2::new(end_x, mid + 2.0)), 0.0, Color32::from_rgb(150, 150, 255));
                 let fill = if r.selected(doc) { Color32::from_rgb(253, 219, 102) } else { digital_fill(doc.dig(*i).omp) };
                 let red = Color32::from_rgb(200, 0, 0);
@@ -362,9 +361,12 @@ impl OscView<'_> {
                     let zy = g::value_y(0.0, top, h, lo, hi);
                     painter_for(order.first().copied()).px_hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
                 }
-                // Offsets 0..min(⌈W/k⌉, len − first) (`0x4295fc`).
-                let last = g::drawn_last(n, first, f, plot_right - left).unwrap_or(first.saturating_sub(1));
+                // Offsets 0..min(⌈W/(k·R/r)⌉, len − first) (`0x4295fc`,
+                // `0x429d24`), R the record's integer rate and r the lane's
+                // own rate, if it has one.
+                let last_of = |m: ChanKey| g::drawn_last(n, first, f, plot_right - left, doc.lane_ratio(m)).unwrap_or(first.saturating_sub(1));
                 for &m in &order {
+                    let last = last_of(m);
                     match m {
                         Lane::Analog(i) => {
                             let c = doc.chans[i].color;
@@ -669,14 +671,14 @@ fn stat_rows(doc: &crate::app::Doc, key: &ChanKey) -> Option<crate::app::StatRow
 /// Status icons of a lane (bitmap 0x136 in the original; our own glyphs):
 /// window zoom, remove DC, invert, primary/secondary scaling, RMS mode,
 /// harmonic mode, ADC counts.
-fn status_icons(doc: &crate::app::Doc, r: &Row, primary: bool) -> Vec<&'static str> {
-    key_icons(doc, r.key, primary)
+fn status_icons(doc: &crate::app::Doc, r: &Row) -> Vec<&'static str> {
+    key_icons(doc, r.key)
 }
 
 /// The status icons of one channel.
-pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> Vec<&'static str> {
+pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey) -> Vec<&'static str> {
     match k {
-        Lane::Analog(i) => chan_icons(doc, i, primary),
+        Lane::Analog(i) => chan_icons(doc, i),
         // A computed or pasted channel's icons: no bit-13 / 14 gate but the
         // ratio's (`0x462b15`).
         Lane::Computed(j) if !doc.pending_digital(j) => {
@@ -714,9 +716,10 @@ pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool) -> 
 }
 
 /// The status icons of analog channel `i`.
-fn chan_icons(doc: &crate::app::Doc, i: usize, primary: bool) -> Vec<&'static str> {
+fn chan_icons(doc: &crate::app::Doc, i: usize) -> Vec<&'static str> {
     let (c, ch) = (&doc.chans[i], &doc.osc.analog[i]);
-    let scaled = crate::app::display_k(ch, primary) != 1.0;
+    // The channel's own flags (`+0x88` / `+0x89`) and ratio decide, not the document's mode.
+    let scaled = crate::app::display_k(ch, c.primary) != 1.0;
     [
         (c.window.is_some(), "↕"),
         (c.remove_dc, "DC"),
@@ -743,7 +746,7 @@ fn chan_icons(doc: &crate::app::Doc, i: usize, primary: bool) -> Vec<&'static st
 /// `0x46121c`): «Max:000.00mV|Min:000.00mV», «СКЗ:000.00mV», «A1:000.00mV»
 /// for the rows it shows, `|`-joined.
 /// Returns (label column, panel width).
-pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], _primary: bool, abs_time: bool) -> (f32, f32) {
+pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], abs_time: bool) -> (f32, f32) {
     // The names are drawn bold: measured so.
     let name_font = bold_font(fonts, NAME_FONT.size).unwrap_or(NAME_FONT);
     let w = |s: &str, f: &FontId| {
@@ -831,7 +834,7 @@ pub(crate) fn bold_text(p: &egui::Painter, pos: Pos2, text: &str, font: FontId, 
 
 /// The amplitude range of a lane: min..max of the displayed series over the
 /// whole record (a group: min of mins, max of maxes).
-pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, f64) {
+pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row) -> (f64, f64) {
     let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
     let mut take = |v: f64| {
         if v.is_finite() {
@@ -842,13 +845,13 @@ pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, 
     match r.key {
         _ if r.members.len() > 1 => {
             for &m in &r.members {
-                let (a, b) = member_range(doc, m, primary);
+                let (a, b) = member_range(doc, m);
                 take(a);
                 take(b);
             }
         }
         Lane::Analog(i) => {
-            let (a, b) = chan_range(doc, i, primary);
+            let (a, b) = chan_range(doc, i);
             take(a);
             take(b);
         }
@@ -871,10 +874,10 @@ pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, 
 /// the whole record, or its window zoom (`0x42b640`).
 /// A level's channel range for 33042's commit (ch+0xb0 / ch+0xa8, the
 /// whole record): `None` when the channel does not resolve.
-fn level_range(doc: &crate::app::Doc, chan: crate::app::ChanKey, primary: bool) -> Option<(f64, f64)> {
+fn level_range(doc: &crate::app::Doc, chan: crate::app::ChanKey) -> Option<(f64, f64)> {
     use crate::app::ChanKey;
     match chan {
-        ChanKey::Analog(i) if i < doc.osc.analog.len() => Some(chan_range(doc, i, primary)),
+        ChanKey::Analog(i) if i < doc.osc.analog.len() => Some(chan_range(doc, i)),
         ChanKey::Computed(j) => doc.computed.get(j).map(|c| c.samples.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| (lo.min(v), hi.max(v)))),
         ChanKey::Digital(k) if k < doc.osc.digital.len() => Some((0.0, 1.0)),
         _ => None,
@@ -883,9 +886,9 @@ fn level_range(doc: &crate::app::Doc, chan: crate::app::ChanKey, primary: bool) 
 
 /// A group member's own range (`0x42b640` over its `+0xa8` / `+0xb0`): a
 /// file channel's [`chan_range`], a computed one's displayed series.
-fn member_range(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> (f64, f64) {
+fn member_range(doc: &crate::app::Doc, k: ChanKey) -> (f64, f64) {
     match k {
-        Lane::Analog(i) => chan_range(doc, i, primary),
+        Lane::Analog(i) => chan_range(doc, i),
         Lane::Computed(j) => {
             let v = doc.computed[j].shown_series().iter().copied().filter(|v| v.is_finite());
             let (lo, hi) = v.fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), x| (l.min(x), h.max(x)));
@@ -899,7 +902,7 @@ fn member_range(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> (f64, f64) 
     }
 }
 
-pub fn chan_range(doc: &crate::app::Doc, i: usize, _primary: bool) -> (f64, f64) {
+pub fn chan_range(doc: &crate::app::Doc, i: usize) -> (f64, f64) {
     let [mut lo, mut hi, ..] = scaled_minmax(doc, i);
     if lo > hi {
         (lo, hi) = (0.0, 0.0);
@@ -994,11 +997,11 @@ pub struct RowGeo<'a> {
 /// The analog lane under `y` and the value there on its scale.
 /// A level line's place (`0x471020`): the lane of channel `k` and its
 /// current range — a digital channel its raw 0 / 1 window, drawn snapped.
-pub fn level_place(doc: &crate::app::Doc, (rows, tops, ranges): (&[Row], &[f32], &[(f64, f64)]), primary: bool, k: Lane, v: f64) -> Option<g::LevelY> {
+pub fn level_place(doc: &crate::app::Doc, (rows, tops, ranges): (&[Row], &[f32], &[(f64, f64)]), k: Lane, v: f64) -> Option<g::LevelY> {
     let li = rows.iter().position(|r| r.has(k))?;
     let ((lo, hi), digital) = match k {
         Lane::Digital(j) => (g::digital_window(&doc.osc.digital.get(j)?.samples), true),
-        _ if rows[li].members.len() > 1 => (member_range(doc, k, primary), false),
+        _ if rows[li].members.len() > 1 => (member_range(doc, k), false),
         _ => (ranges[li], false),
     };
     g::level_y(v, tops[li], rows[li].h, lo, hi, digital)
@@ -1240,13 +1243,16 @@ enum Act {
     Cmd(Command),
 }
 
-/// The drag payload of the stats panel (`0x42be30`): channel indices of the
-/// active document, ascending.
+/// The drag payload of the stats panel (`0x42be30`): every selected
+/// analog-kind channel of the active document (`ch+0x100` set; the collector
+/// `0x45edc4` loops to `doc+0x1d8`, which counts file analog, formula and
+/// pasted analog records only) — pasted lanes included, digital ones never
+/// (#102).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChanDrag {
     pub chans: Vec<usize>,
-    /// The formula channels among them (analog-kind records of the same
-    /// vector, `0x4415b0` walks them all).
+    /// The formula channels among them, pasted (pending) lanes too
+    /// (analog-kind records of the same vector, `0x4415b0` walks them all).
     pub computed: Vec<usize>,
 }
 
@@ -1254,6 +1260,12 @@ impl ChanDrag {
     fn of(keys: Vec<ChanKey>) -> ChanDrag {
         let pick = |f: fn(&ChanKey) -> Option<usize>| keys.iter().filter_map(f).collect::<Vec<_>>();
         ChanDrag { chans: pick(|k| if let ChanKey::Analog(i) = k { Some(*i) } else { None }), computed: pick(|k| if let ChanKey::Computed(j) = k { Some(*j) } else { None }) }
+    }
+
+    /// The dragged channels as keys.
+    pub fn keys(&self) -> Vec<ChanKey> {
+        let a = self.chans.iter().map(|&i| ChanKey::Analog(i));
+        a.chain(self.computed.iter().map(|&j| ChanKey::Computed(j))).collect()
     }
 }
 
@@ -1295,20 +1307,22 @@ impl App {
     pub fn lanes_ui(&mut self, ui: &mut egui::Ui) {
         // No document: the MDI client's bare ground (`view_oscillogram`).
         let Some(ai) = self.active else { return };
-        let primary = self.docs[ai].primary_values();
         let (time_unit, show_grid, y_analog) = (self.time_unit, self.show_grid, self.y_analog);
         let full = ui.available_rect_before_wrap();
         let resp = ui.allocate_rect(full, Sense::click_and_drag());
         self.view_width = full.width();
         {
             let pref = self.xscale_pref;
-            let d = &mut self.docs[ai];
-            if d.xscale.is_none() {
+            if self.docs[ai].xscale.is_none() {
                 // Measured as a default-sized MDI child (see
-                // `mdi_default_client_width`), not at its final size.
+                // `view_width_at_creation`), not at its final size.
                 let area = self.mdi_area;
-                let w = if area.width() > 0.0 { g::mdi_default_client_width(area.width(), area.height()) } else { full.width() };
-                d.xscale = Some(g::initial_scale(pref, w, d.osc.sample_count()));
+                let d = &self.docs[ai];
+                let band = g::RULER_H + if d.diff_band { g::DIFF_BAND_H } else { 0.0 };
+                let content_h: f32 = lane_layout(d, y_analog).iter().map(|r| r.h).sum::<f32>() + band + 2.0;
+                let w = if area.width() > 0.0 { g::view_width_at_creation(area.width(), area.height(), content_h) } else { full.width() };
+                let n = d.osc.sample_count();
+                self.docs[ai].xscale = Some(g::initial_scale(pref, w, n));
             }
         }
         let mut actions: Vec<Act> = Vec::new();
@@ -1319,9 +1333,9 @@ impl App {
 
         // ---- layout (`0x460290`, `0x45d4a0`) ----
         let band = g::RULER_H + if doc.diff_band { g::DIFF_BAND_H } else { 0.0 };
-        let rows = lane_layout(doc, y_analog, primary);
+        let rows = lane_layout(doc, y_analog);
         let abs_time = self.time_unit == crate::app::TimeUnit::Absolute;
-        let (label_col, left_w) = ui.fonts(|fo| stats_columns(fo, doc, &rows, primary, abs_time));
+        let (label_col, left_w) = ui.fonts(|fo| stats_columns(fo, doc, &rows, abs_time));
         self.view_left = left_w;
         let content_h: f32 = rows.iter().map(|r| r.h).sum();
         // Each window scroll bar only while there is something to scroll
@@ -1352,7 +1366,7 @@ impl App {
             tops.push(y);
             y += r.h;
         }
-        let ranges: Vec<(f64, f64)> = rows.iter().map(|r| row_range(doc, r, primary)).collect();
+        let ranges: Vec<(f64, f64)> = rows.iter().map(|r| row_range(doc, r)).collect();
         let grid_bottom = client.bottom() - g::RULER_H;
         let lanes_clip = Rect::from_min_max(client.min, Pos2::new(plot_right, plot_bottom));
         let painter = ui.painter_at(client);
@@ -1384,7 +1398,7 @@ impl App {
         let mut rename_rect = None;
         let mut cut_hover: Option<String> = None;
         let hover = resp.hover_pos();
-        let ov = OscView { doc, primary, unit: time_unit, f, first, n, left, right: plot_right, x0: client.left(), label_col };
+        let ov = OscView { doc, unit: time_unit, f, first, n, left, right: plot_right, x0: client.left(), label_col };
         for (li, r) in rows.iter().enumerate() {
             let (top, h) = (tops[li], r.h);
             if top > plot_bottom || top + h < client.top() {
@@ -1447,7 +1461,7 @@ impl App {
         // A level line (`0x471020` / `0x470e4a`) uses its channel's current
         // range — a digital channel its raw 0 / 1 window, the line snapped —
         // outside it the line is neither drawn nor hit.
-        let level_y = |k: ChanKey, v: f64| level_place(doc, (&rows, &tops, &ranges), primary, k, v);
+        let level_y = |k: ChanKey, v: f64| level_place(doc, (&rows, &tops, &ranges), k, v);
         let us_at = |k: usize| g::micros(time_at(k));
         let abs_at = |dt: i64| fvb_core::comtrade::moment_time_text(&doc.osc.stamps, doc.osc.rev_year, dt);
         let cgeo = crate::comments::Geo { x_of: &x_of, lane: &lane_of, value_y: &level_y, top: client.top(), v_bottom, us: &us_at, abs: &abs_at };
@@ -1733,7 +1747,15 @@ impl App {
         } else if moved && !ctrl && !menu_busy && self.rename_edit.is_none() && resp.is_pointer_button_down_on() {
             let mode0 = self.vizir_drag.is_none() && self.comment_drag.is_none() && self.merge_drag.is_none() && !matches!(self.rect_zoom, RectZoom::Dragging { .. });
             if let (Some(o), Some(p)) = (origin, now) {
-                let sel: Vec<ChanKey> = doc.selected_analog().into_iter().map(ChanKey::Analog).chain(doc.selected_computed().into_iter().filter(|&j| doc.pending_of(j).is_none()).map(ChanKey::Computed)).collect();
+                // Every selected analog-kind record goes (`0x45edc4`, bound
+                // `doc+0x1d8`), pasted analog lanes too; digital ones lie
+                // past the bound.
+                let sel: Vec<ChanKey> = doc
+                    .selected_analog()
+                    .into_iter()
+                    .map(ChanKey::Analog)
+                    .chain(doc.selected_computed().into_iter().filter(|&j| !doc.pending_digital(j)).map(ChanKey::Computed))
+                    .collect();
                 if mode0 && in_view(o) && p.x < left && !sel.is_empty() {
                     self.stats_drag_arm = Some((p, t, sel));
                 }
@@ -1772,21 +1794,28 @@ impl App {
             }
             None => self.drag_scroll = None,
         }
-        // Drop on a lane (`0x4415b0`, kind 1): x is ignored; the analog lane
-        // under y, unless it is one of the dragged channels, joins them.
+        // Drop on a lane (`0x4415b0`, kind 1): x is ignored; the analog-kind
+        // lane under y (the search stops at `doc+0x1d8`: a digital lane is
+        // no target and nothing happens), unless it is one of the dragged
+        // channels, joins them; a pasted one is refused by 33035's enable
+        // check (`0x468c80`): message 1086.
+        // The window under the pointer takes the drop, not the lane under
+        // it: a floating or slid-out pane's window over the view (its
+        // caption, tab strip, toolbar; a diagram of it takes the drop as a
+        // pane's) leaves the lane out (clone).
+        let over_float = |p: Pos2| ctx.layer_id_at(p).is_some_and(crate::views::is_pane_window_layer);
         if released && !self.modal_up {
-            if let Some(p) = now.filter(|p| in_view(*p) && p.y < plot_bottom) {
+            if let Some(p) = now.filter(|p| in_view(*p) && p.y < plot_bottom && !over_float(*p)) {
                 let lane = rows.iter().zip(&tops).find(|(r, &t)| p.y >= t && p.y < t + r.h).map(|(r, _)| r.key);
                 if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
                     if let Some(drag) = egui::DragAndDrop::take_payload::<ChanDrag>(&ctx) {
-                        let target = lane.and_then(|k| match k {
-                            Lane::Analog(i) if !drag.chans.contains(&i) => Some(ChanKey::Analog(i)),
-                            Lane::Computed(j) if !drag.computed.contains(&j) && doc.pending_of(j).is_none() => Some(ChanKey::Computed(j)),
-                            _ => None,
+                        let target = lane.filter(|k| match k {
+                            Lane::Digital(_) => false,
+                            Lane::Computed(j) if doc.pending_digital(*j) => false,
+                            _ => !drag.keys().contains(k),
                         });
                         if let Some(target) = target {
-                            let keys = drag.chans.iter().map(|&i| ChanKey::Analog(i)).chain(drag.computed.iter().map(|&j| ChanKey::Computed(j))).collect();
-                            actions.push(Act::DropCombine(keys, target));
+                            actions.push(Act::DropCombine(drag.keys(), target));
                         }
                     }
                 }
@@ -1945,7 +1974,7 @@ impl App {
                 Act::MergeOffset(o) => d.set_merge_offset(o),
                 Act::WindowZoom(chan, a, b) => {
                     let dd: &crate::app::Doc = d;
-                    let cur: Vec<(f64, f64)> = (0..dd.chans.len()).map(|i| chan_range(dd, i, primary)).collect();
+                    let cur: Vec<(f64, f64)> = (0..dd.chans.len()).map(|i| chan_range(dd, i)).collect();
                     d.apply_window_zoom(chan, a, b, &|i| cur[i]);
                     self.rect_zoom = RectZoom::Off;
                 }
@@ -2124,10 +2153,9 @@ impl App {
             Some(true) => {
                 let v = crate::chandlg::wtof(&text);
                 let d = &mut self.docs[ai];
-                let primary = d.primary_values();
                 let target = d.comment_hot;
                 let range = target.and_then(|t| d.comments.get(t)).and_then(|c| match c.kind {
-                    crate::comments::CommentKind::Level { chan, .. } => level_range(d, chan, primary),
+                    crate::comments::CommentKind::Level { chan, .. } => level_range(d, chan),
                     _ => None,
                 });
                 if let (Some(t), Some((lo, hi))) = (target, range) {
@@ -2712,13 +2740,15 @@ mod menu_tests {
         shapes: Vec<egui::epaint::ClippedShape>,
         /// The last frame's cursor.
         cursor: egui::CursorIcon,
+        /// A window drawn over the lanes (its area id, order, rect).
+        cover: Option<(egui::Id, egui::Order, Rect)>,
     }
 
     impl Harness {
         fn new() -> Harness {
             let mut app = App::new();
             app.dispatch(Command::Demo);
-            let mut h = Harness { ctx: egui::Context::default(), app, t: 0.0, shapes: vec![], cursor: egui::CursorIcon::Default };
+            let mut h = Harness { ctx: egui::Context::default(), app, t: 0.0, shapes: vec![], cursor: egui::CursorIcon::Default, cover: None };
             h.frame(vec![]);
             h.frame(vec![]);
             h
@@ -2738,8 +2768,14 @@ mod menu_tests {
                 ..Default::default()
             };
             let app = &mut self.app;
+            let cover = self.cover;
             let out = self.ctx.run(raw, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| app.lanes_ui(ui));
+                if let Some((id, order, r)) = cover {
+                    egui::Area::new(id).order(order).fixed_pos(r.min).show(ctx, |ui| {
+                        ui.allocate_exact_size(r.size(), egui::Sense::click_and_drag());
+                    });
+                }
             });
             self.cursor = out.platform_output.cursor_icon;
             self.shapes = out.shapes;
@@ -2761,7 +2797,7 @@ mod menu_tests {
         /// Centre of stats-panel row `li`, from the layout `lanes_ui` uses
         /// (central panel margin 8 px, no scroll).
         fn row(&self, li: usize) -> Pos2 {
-            let rows = lane_layout(self.app.active_doc().unwrap(), self.app.y_analog, false);
+            let rows = lane_layout(self.app.active_doc().unwrap(), self.app.y_analog);
             let top: f32 = 8.0 + rows[..li].iter().map(|r| r.h).sum::<f32>();
             Pos2::new(40.0, top + rows[li].h / 2.0)
         }
@@ -2774,7 +2810,7 @@ mod menu_tests {
 
         /// Rows whose centre is above the bottom band.
         fn rows(&self) -> usize {
-            let n = lane_layout(self.app.active_doc().unwrap(), self.app.y_analog, false).len();
+            let n = lane_layout(self.app.active_doc().unwrap(), self.app.y_analog).len();
             (0..n).take_while(|&li| self.row(li).y < self.plot_bottom()).count()
         }
 
@@ -2806,7 +2842,7 @@ mod menu_tests {
     #[test]
     fn lanes_are_fixed_height_analog_93_digital_20() {
         let h = Harness::new();
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         for r in &rows {
             let want = if matches!(r.key, ChanKey::Digital(_)) { 20.0 } else { 93.0 };
             assert_eq!(r.h, want, "{:?}", r.key);
@@ -2821,12 +2857,12 @@ mod menu_tests {
         let d = h.app.active_doc_mut().unwrap();
         d.chans[0].group = Some(7);
         d.chans[1].group = Some(7);
-        let n = lane_layout(h.doc(), h.app.y_analog, false).len();
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let n = lane_layout(h.doc(), h.app.y_analog).len();
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         assert_eq!(rows[0].members, [ChanKey::Analog(0), ChanKey::Analog(1)]);
         assert_eq!(rows[0].h, 2.0 * (ROW_H + 33.0 + GROUP_STATS_H), "default СКЗ + A1 rows");
         h.app.active_doc_mut().unwrap().chans[0].stats = crate::app::StatRows { minmax: false, rms: false, a1: false };
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         assert_eq!(rows[0].h, h.app.y_analog.max(2.0 * (ROW_H + 33.0)), "the owner's flags decide");
         assert_eq!(rows.len(), n);
     }
@@ -2876,7 +2912,7 @@ mod menu_tests {
     #[test]
     fn a_plot_drag_into_the_stats_panel_drops_after_the_delay() {
         let mut h = Harness::new();
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         let unit = |li: usize| match rows[li].key {
             Lane::Analog(i) => Some(h.doc().osc.analog[i].unit.clone()),
             _ => None,
@@ -2899,7 +2935,7 @@ mod menu_tests {
     #[test]
     fn dragging_a_channel_onto_another_lane_combines_them() {
         let mut h = Harness::new();
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         let unit = |li: usize| match rows[li].key {
             Lane::Analog(i) => Some(h.doc().osc.analog[i].unit.clone()),
             _ => None,
@@ -2932,6 +2968,42 @@ mod menu_tests {
         assert!(!egui::DragAndDrop::has_any_payload(&h.ctx));
     }
 
+    /// A lane dragged and released on a slid-out pane's window over the view
+    /// drops nowhere, as on a floating one (clone: the pane out, the release
+    /// on its caption over another lane of the unit: nothing grouped).
+    #[test]
+    fn a_channel_dropped_on_a_slid_out_pane_over_the_view_drops_nowhere() {
+        let unit = |h: &Harness, li: usize| match lane_layout(h.doc(), h.app.y_analog)[li].key {
+            Lane::Analog(i) => Some(h.doc().osc.analog[i].unit.clone()),
+            _ => None,
+        };
+        for covered in [false, true] {
+            let mut h = Harness::new();
+            let same = (1..h.rows()).find(|&li| unit(&h, li).is_some() && unit(&h, li) == unit(&h, 0)).expect("a lane with the same unit");
+            let to = h.row(same);
+            if covered {
+                let id = egui::Id::new(("fv_slide", crate::docking::Unit::Frequency));
+                h.cover = Some((id, egui::Order::Foreground, Rect::from_min_size(Pos2::new(to.x + 100.0, to.y - 20.0), Vec2::new(300.0, 40.0))));
+                h.frame(vec![]);
+            }
+            let (Lane::Analog(c0), Lane::Analog(cs)) = (lane_layout(h.doc(), h.app.y_analog)[0].key, lane_layout(h.doc(), h.app.y_analog)[same].key) else { unreachable!() };
+            // Release at x 200 past the stats panel, over the cover when there is one.
+            let b = Pos2::new(to.x + 200.0, to.y);
+            let a = h.row(0);
+            let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, modifiers: Default::default(), pressed };
+            h.frame(vec![egui::Event::PointerMoved(a), ev(a, true)]);
+            let steps = ((b - a).length() / 5.0).ceil().max(1.0) as usize;
+            for k in 1..=steps {
+                h.frame(vec![egui::Event::PointerMoved(a + (b - a) * (k as f32 / steps as f32))]);
+            }
+            h.frame(vec![ev(b, false)]);
+            h.frame(vec![]);
+            let d = h.doc();
+            let grouped = d.chans[c0].group.is_some() && d.chans[c0].group == d.chans[cs].group;
+            assert_eq!(grouped, !covered, "covered by a slid-out pane: {covered}");
+        }
+    }
+
     /// The drop works for formula channels too (#57): a formula added after
     /// the rate changed has no own rate while the merged lane has one, so the
     /// drop shows message 239 and changes nothing; with agreeing rates it groups.
@@ -2939,7 +3011,7 @@ mod menu_tests {
     fn dragging_a_formula_lane_onto_a_merged_lane() {
         let mut h = Harness::new();
         assert!(h.app.append_computed(&[("X".into(), "Ub".into())]).is_some());
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         let from = rows.iter().position(|r| r.key == Lane::Computed(0)).expect("the formula lane");
         let to = rows.iter().position(|r| r.key == Lane::Analog(1)).expect("a file lane");
         let rate = h.doc().osc.int_rate_hz();
@@ -2956,6 +3028,190 @@ mod menu_tests {
         assert!(h.doc().computed[0].group.is_some() && h.doc().computed[0].group == h.doc().chans[1].group, "one lane now");
     }
 
+    /// After «Объединить» and a rate change the record's rate is above the
+    /// channels' own: the analog painters visit ⌈W/(25f·R/r)⌉ samples, so a
+    /// lane stops short of the plot's right edge, at W·r/R from its left
+    /// (VM, the original and ours: the lanes of the demo record end 300 px
+    /// into a 370 px plot after 2000 → 2450 Hz) — #100.
+    #[test]
+    fn merged_lanes_stop_short_of_the_right_edge_after_a_rate_rise() {
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into_iter().collect();
+        h.app.copy_channels_for_merge();
+        h.app.paste_channels_for_merge();
+        h.app.merge_records();
+        let curve_right = |h: &Harness| h.shapes.iter().filter_map(|c| if let Shape::Mesh(m) = &c.shape { Some(m) } else { None }).filter(|m| m.vertices.len() > 300).flat_map(|m| m.vertices.iter().map(|v| v.pos.x)).fold(0.0f32, f32::max);
+        h.app.active_doc_mut().unwrap().xscale = Some(0.25);
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let full = curve_right(&h);
+        assert_eq!(h.app.apply_file_rate(0, "2450"), Ok(()));
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let (left, short) = (h.app.view_left, curve_right(&h));
+        assert!(full > 1100.0, "before the change the curves run to the right edge: {full}");
+        let w = full - left;
+        assert!((short - left - w / 1.225).abs() < 12.0, "after it they stop at W/1.225: {short} (W = {w})");
+    }
+
+    /// A digital lane's base bar (`0x463e2d`) is trunc(25·N·f·R/r) long: after
+    /// a merge and a rate rise it is 1.225 times the record's length (#100).
+    #[test]
+    fn a_merged_digital_lane_draws_its_base_bar_by_the_ratio() {
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into_iter().collect();
+        h.app.copy_channels_for_merge();
+        h.app.paste_channels_for_merge();
+        h.app.merge_records();
+        let bar = |h: &Harness| h.shapes.iter().find_map(|c| if let Shape::Rect(r) = &c.shape { (r.fill == Color32::from_rgb(150, 150, 255)).then(|| r.rect.width()) } else { None });
+        h.app.active_doc_mut().unwrap().xscale = Some(0.03125);
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let before = bar(&h).expect("the base bar");
+        assert_eq!(h.app.apply_file_rate(0, "2450"), Ok(()));
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let after = bar(&h).expect("the base bar");
+        assert!((after / before - 1.225).abs() < 0.01, "{before} -> {after}");
+    }
+
+    /// A pasted analog lane takes part in a lane drag and a drop on one: the
+    /// drop selects the dragged lanes with the target and 33035's enable check
+    /// (`0x468c80`) refuses them with message 1086. Digital lanes (file and
+    /// pasted) lie past `doc+0x1d8`, the bound of the drag collector and the
+    /// drop's loops: a digital-only selection starts no drag, a drop on a
+    /// digital lane does nothing, and with a digital lane also selected the
+    /// enable check (it walks the whole list) refuses (#102).
+    #[test]
+    fn pasted_and_digital_lanes_take_part_in_a_drag_and_the_drop_is_refused() {
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(1)].into_iter().collect();
+        h.app.copy_channels_for_merge();
+        h.app.paste_channels_for_merge();
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
+        let pend = rows.iter().position(|r| matches!(r.key, Lane::Computed(j) if h.doc().pending_of(j).is_some())).expect("the pasted lane");
+        let file = rows.iter().position(|r| matches!(r.key, Lane::Analog(_))).expect("a file lane");
+        let (pk, fk) = (rows[pend].key, rows[file].key);
+        // The pasted lane dragged onto a file lane.
+        h.app.active_doc_mut().unwrap().selection = [pk].into_iter().collect();
+        drag_rows(&mut h, pend, file);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "message 1086");
+        assert!(h.doc().selection.contains(&pk) && h.doc().selection.contains(&fk), "the drop selected both");
+        h.app.dlg.alerts.clear();
+        // A file lane dragged onto the pasted one.
+        h.app.active_doc_mut().unwrap().selection = [fk].into_iter().collect();
+        drag_rows(&mut h, file, pend);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "a drop on a pasted lane: message 1086");
+        h.app.dlg.alerts.clear();
+        // A digital lane dragged: no drag starts, nothing happens.
+        let dig = rows.iter().position(|r| matches!(r.key, Lane::Digital(_))).expect("a digital lane");
+        let dk = rows[dig].key;
+        h.app.active_doc_mut().unwrap().selection = [dk].into_iter().collect();
+        drag_rows(&mut h, dig, file);
+        assert!(h.app.dlg.alert().is_none(), "a digital-only selection starts no drag");
+        assert_eq!(h.doc().selection, [dk].into_iter().collect(), "the selection is unchanged");
+        // A drop on a digital lane: no target, nothing happens.
+        h.app.active_doc_mut().unwrap().selection = [fk].into_iter().collect();
+        drag_rows(&mut h, file, dig);
+        assert!(h.app.dlg.alert().is_none(), "a digital lane is no target");
+        assert_eq!(h.doc().selection, [fk].into_iter().collect(), "the selection is unchanged");
+        // An analog and a digital lane selected, dropped on another analog
+        // lane: the enable check walks the whole list and refuses.
+        let other = (file + 1..rows.len()).find(|&i| matches!(rows[i].key, Lane::Analog(_))).expect("another analog lane");
+        let (pa, pb) = (h.row(file), h.row(other));
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(pa), ev(pa, true)]);
+        // The press selected the lane alone; the digital lane joins it.
+        h.app.active_doc_mut().unwrap().selection = [fk, dk].into_iter().collect();
+        for k in 1..=((pb.y - pa.y).abs() / 5.0).ceil().max(1.0) as usize {
+            h.frame(vec![egui::Event::PointerMoved(pa + (pb - pa) * (k as f32 * 5.0 / (pb.y - pa.y).abs()).min(1.0))]);
+        }
+        h.frame(vec![ev(pb, false)]);
+        h.frame(vec![]);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "message 1086 through the enable check");
+        h.app.dlg.alerts.clear();
+        // A pasted digital lane: the same, and it never reaches a pane.
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Digital(0)].into_iter().collect();
+        h.app.copy_channels_for_merge();
+        h.app.paste_channels_for_merge();
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
+        let pd = rows.iter().position(|r| matches!(r.key, Lane::Computed(j) if h.doc().pending_digital(j))).expect("a pasted digital lane");
+        let file = rows.iter().position(|r| matches!(r.key, Lane::Analog(_))).unwrap();
+        let (pdk, fk) = (rows[pd].key, rows[file].key);
+        let started = |h: &Harness| egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&h.ctx);
+        let hold = |h: &mut Harness, from: usize| {
+            let (pa, pb) = (h.row(from), h.row(from) + Vec2::new(0.0, 12.0));
+            let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            h.frame(vec![egui::Event::PointerMoved(pa), ev(pa, true)]);
+            h.frame(vec![egui::Event::PointerMoved(pb)]);
+            h.t += 0.3;
+            h.frame(vec![egui::Event::PointerMoved(pb + Vec2::new(0.0, 3.0))]);
+            started(h)
+        };
+        h.app.active_doc_mut().unwrap().selection = [pdk].into_iter().collect();
+        assert!(!hold(&mut h, pd), "a pasted digital lane alone starts no drag");
+        assert!(h.app.dlg.alert().is_none());
+        h.frame(vec![egui::Event::PointerButton { pos: h.row(pd), button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }]);
+        let dig = rows.iter().position(|r| matches!(r.key, Lane::Digital(_))).unwrap();
+        h.app.active_doc_mut().unwrap().selection = [rows[dig].key].into_iter().collect();
+        assert!(!hold(&mut h, dig), "a file digital lane alone starts no drag");
+        h.frame(vec![egui::Event::PointerButton { pos: h.row(dig), button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }]);
+        // A drop on the pasted digital lane does nothing.
+        h.app.active_doc_mut().unwrap().selection = [fk].into_iter().collect();
+        drag_rows(&mut h, file, pd);
+        assert!(h.app.dlg.alert().is_none(), "a pasted digital lane is no target");
+        assert_eq!(h.doc().selection, [fk].into_iter().collect(), "the selection is unchanged");
+        // In a pane drop it is skipped.
+        let j = match pdk { Lane::Computed(j) => j, _ => unreachable!() };
+        h.app.active_doc_mut().unwrap().computed[j].on_freq = false;
+        h.app.drop_channels(&[pdk], crate::app::Pane::Frequency);
+        assert!(!h.doc().computed[j].on_freq, "a pasted digital lane never reaches a pane");
+    }
+
+    /// The drop on a diagram pane takes formula channels too (#103): the
+    /// pane's command 35000+i sets the channel's bit for every record
+    /// (`0x46f100`, `0x48f590`); the circle diagram only an Ohm / VA channel
+    /// that is not pending.
+    #[test]
+    fn dropping_formula_channels_on_diagram_panes() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        assert!(app.append_computed(&[("X".into(), "Ub".into())]).is_some());
+        let d = app.active_doc_mut().unwrap();
+        d.computed[0].unit = "Ohm".into();
+        (d.computed[0].on_freq, d.computed[0].on_vector, d.computed[0].on_circle) = (false, false, false);
+        app.drop_channels(&[ChanKey::Computed(0)], crate::app::Pane::Frequency);
+        app.drop_channels(&[ChanKey::Computed(0)], crate::app::Pane::Vector);
+        app.drop_channels(&[ChanKey::Computed(0)], crate::app::Pane::Circle);
+        let d = app.active_doc().unwrap();
+        assert!(d.computed[0].on_freq && d.computed[0].on_vector && d.computed[0].on_circle);
+        assert!(d.set.modified);
+        // A pasted analog lane: the frequency / vector bits are set, the circle's never.
+        app.active_doc_mut().unwrap().selection = [ChanKey::Analog(1)].into_iter().collect();
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let p = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).expect("the pasted lane");
+        d.computed[p].unit = "Ohm".into();
+        (d.computed[p].on_freq, d.computed[p].on_vector, d.computed[p].on_circle) = (false, false, false);
+        for pane in [crate::app::Pane::Frequency, crate::app::Pane::Vector, crate::app::Pane::Circle] {
+            app.drop_channels(&[ChanKey::Computed(p)], pane);
+        }
+        let c = &app.active_doc().unwrap().computed[p];
+        assert!(c.on_freq && c.on_vector && !c.on_circle, "a pasted lane takes the frequency / vector bits, never the circle's");
+        // Another unit: not on the circle diagram.
+        let d = app.active_doc_mut().unwrap();
+        d.computed[0].unit = "A".into();
+        d.computed[0].on_circle = false;
+        app.drop_channels(&[ChanKey::Computed(0)], crate::app::Pane::Circle);
+        assert!(!app.active_doc().unwrap().computed[0].on_circle);
+    }
+
     #[test]
     fn dropping_on_diagram_panes_adds_the_channels() {
         let mut app = App::new();
@@ -2965,10 +3221,10 @@ mod menu_tests {
             (c.on_freq, c.on_vector, c.on_circle) = (false, false, false);
         }
         let ohm = d.osc.analog.iter().position(|a| a.unit.eq_ignore_ascii_case("ohm"));
-        app.drop_channels(&[0, 1], crate::app::Pane::Frequency);
-        app.drop_channels(&[0], crate::app::Pane::Vector);
-        app.drop_channels(&[0], crate::app::Pane::Circle);
-        app.drop_channels(&[0], crate::app::Pane::Differential);
+        app.drop_channels(&[ChanKey::Analog(0), ChanKey::Analog(1)], crate::app::Pane::Frequency);
+        app.drop_channels(&[ChanKey::Analog(0)], crate::app::Pane::Vector);
+        app.drop_channels(&[ChanKey::Analog(0)], crate::app::Pane::Circle);
+        app.drop_channels(&[ChanKey::Analog(0)], crate::app::Pane::Differential);
         let d = app.active_doc().unwrap();
         assert!(d.chans[0].on_freq && d.chans[1].on_freq && d.chans[0].on_vector);
         assert_eq!(d.chans[0].on_circle, ohm == Some(0) || d.osc.analog[0].unit.eq_ignore_ascii_case("va"), "the circle diagram takes Ohm / VA only");
@@ -3044,7 +3300,7 @@ mod menu_tests {
             h.wheel(at, 1.0, egui::Modifiers::CTRL);
         }
         let doc = h.doc();
-        let rows = lane_layout(doc, h.app.y_analog, false);
+        let rows = lane_layout(doc, h.app.y_analog);
         let band = g::RULER_H + if doc.diff_band { g::DIFF_BAND_H } else { 0.0 };
         let client_h = SCREEN.y - 16.0 - HSCROLL_H;
         let vbar = rows.iter().map(|r| r.h).sum::<f32>() + band + 2.0 > client_h;
@@ -3120,7 +3376,7 @@ mod menu_tests {
     #[test]
     fn a_rect_zoomed_curve_is_clipped_to_its_lane() {
         let mut h = Harness::new();
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         let (top, lh) = (8.0f32, rows[0].h);
         h.app.dispatch(Command::RectZoom);
         h.frame(vec![]);
@@ -3182,7 +3438,7 @@ mod menu_tests {
             h.shapes.iter().filter_map(|c| if let Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect()
         };
         let mut h = Harness::new();
-        let (lo, hi) = chan_range(h.doc(), 0, false);
+        let (lo, hi) = chan_range(h.doc(), 0);
         let d = h.app.active_doc_mut().unwrap();
         d.hviz[0] = crate::app::HVizir { shown: true, chan: Some(0), value: (lo + hi) / 2.0 };
         h.frame(vec![]);
@@ -3216,13 +3472,13 @@ mod menu_tests {
     #[test]
     fn range_cache_follows_value_changes() {
         let mut h = Harness::new();
-        let (lo, hi) = chan_range(h.doc(), 0, false);
+        let (lo, hi) = chan_range(h.doc(), 0);
         h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into_iter().collect();
         h.app.dispatch(Command::ToggleFlag(ChanFlag::Invert));
-        let (lo2, hi2) = chan_range(h.doc(), 0, false);
+        let (lo2, hi2) = chan_range(h.doc(), 0);
         assert!((lo2 + hi).abs() < 1e-9 && (hi2 + lo).abs() < 1e-9, "inverted: {lo2}..{hi2} vs {lo}..{hi}");
         h.app.dispatch(Command::SetValueMode(ValueMode::Rms));
-        let (lo3, _) = chan_range(h.doc(), 0, false);
+        let (lo3, _) = chan_range(h.doc(), 0);
         assert!(lo3 >= 0.0, "an RMS series is never negative: {lo3}");
     }
 
@@ -3248,8 +3504,24 @@ mod menu_tests {
         assert_eq!(rms.to_bits(), rms_at(&shown, k_main, n).to_bits(), "СКЗ over the same shown samples");
         let (lo, hi) = (shown.iter().copied().fold(f64::MAX, f64::min), shown.iter().copied().fold(f64::MIN, f64::max));
         assert_eq!((mn, mx), (lo, hi), "Max / Min in the same factor");
-        let (rlo, rhi) = chan_range(d, 1, true);
+        let (rlo, rhi) = chan_range(d, 1);
         assert!(rlo >= lo - (hi - lo) && rhi <= hi + (hi - lo), "the zoom range is in the same factor: {rlo}..{rhi} vs {lo}..{hi}");
+    }
+
+    /// `0x462b15`: a lane's «*K» icon follows the channel's own primary / secondary flag, not the document's.
+    #[test]
+    fn a_lanes_ratio_icon_follows_the_channels_own_mode() {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary, d.osc.analog[1].is_primary) = (1234.0, 1.0, true);
+        // The document (channel 0) shows primary values, this channel (stored primary) secondary: its
+        // ratio applies. Without the fix the document's mode decided and the icon was missing.
+        (d.chans[0].primary, d.chans[1].primary) = (true, false);
+        assert!(key_icons(d, Lane::Analog(1)).contains(&"*K"), "the channel's own mode scales it");
+        // The document shows secondary values, this channel primary (as stored): no ratio. Without the
+        // fix the icon was wrongly there.
+        (d.chans[0].primary, d.chans[1].primary) = (false, true);
+        assert!(!key_icons(d, Lane::Analog(1)).contains(&"*K"), "the channel's own mode leaves it as stored");
     }
 
     /// With «Удалить постоянную» an instantaneous value is the accessor's `x·k − dc·k`, not `(x − dc)·k`.
@@ -3303,7 +3575,7 @@ mod menu_tests {
         let d = h.app.active_doc_mut().unwrap();
         d.chans[0].invert = true;
         // name row + 10 + Max, Min, СКЗ, A1 + the icon row = 15 + 10 + 60 + 23.
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         assert_eq!(rows[0].h, 108.0);
         assert_eq!(rows[1].h, 93.0, "no icons: YAnalogSize");
     }
@@ -3649,11 +3921,11 @@ mod menu_tests {
     #[test]
     fn rectangle_zoom_windows_the_lane_and_141_resets_it() {
         let mut h = Harness::new();
-        let r0 = lane_layout(h.doc(), h.app.y_analog, false)[0].clone();
+        let r0 = lane_layout(h.doc(), h.app.y_analog)[0].clone();
         let top = 8.0;
         h.app.dispatch(Command::RectZoom);
         assert_eq!(h.app.rect_zoom, RectZoom::Armed);
-        let full = chan_range(h.doc(), 0, false);
+        let full = chan_range(h.doc(), 0);
         // From a quarter of the lane down to its middle.
         drag(&mut h, Pos2::new(600.0, top + r0.h * 0.25), Pos2::new(600.0, top + r0.h * 0.5));
         assert_eq!(h.app.rect_zoom, RectZoom::Off, "one-shot");

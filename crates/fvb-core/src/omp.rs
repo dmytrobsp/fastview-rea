@@ -192,20 +192,55 @@ pub fn debounce(x: &[bool], p: usize) -> Vec<bool> {
     y
 }
 
-/// Sequence components of three phasors: `(I1, I2, I0)`, each divided by 3.
-fn components(a: Complex64, b: Complex64, c: Complex64) -> (Complex64, Complex64, Complex64) {
-    let op = Complex64::from_polar(1.0, 2.0 * std::f64::consts::PI / 3.0);
-    let op2 = op * op;
-    ((a + op * b + op2 * c) / 3.0, (a + op2 * b + op * c) / 3.0, (a + b + c) / 3.0)
+/// Sequence components of three phasors: `(I1, I2, I0)`, each divided by 3, as ОМП's routine `0x497090` forms
+/// them: no complex product with the operator `a`, but real expressions with s = √3·0.5 (`sqrt` of 3.0 times 0.5,
+/// computed once, cached at `0x4ed4c0`; no trig). The isolated-neutral method (`+0x68` = 1) uses
+/// `(A − (B + C)·½) ∓ s·(B − C)` rotated by 90° (`0x49722b`..`0x49730c`); the grounded and double-ended ones
+/// (`+0x68` = 2, 4) the same sum with the rotation written as a product by (0, s): (s·Im(B−C) − (−Re(B−C))·0,
+/// s·(−Re(B−C)) + Im(B−C)·0) (`0x4973bd`..`0x49751c`, `0x4977e9`..); the two agree except for the sign of a zero
+/// and for non-finite values. I0 is `((A + B) + C) / 3`.
+fn components(isolated: bool, a: Complex64, b: Complex64, c: Complex64) -> (Complex64, Complex64, Complex64) {
+    let s = 3f64.sqrt() * 0.5;
+    let i0 = Complex64::new(((a.re + b.re) + c.re) / 3.0, ((b.im + a.im) + c.im) / 3.0);
+    let (hr, hi) = ((c.re + b.re) / 2.0, (c.im + b.im) / 2.0);
+    if isolated {
+        // The real part pairs with (B.im − C.im), the imaginary with (B.re − C.re).
+        let (x, y) = (a.re - (b.re + c.re) * 0.5, a.im - (c.im + b.im) * 0.5);
+        let (u, v) = ((b.im - c.im) * s, (b.re - c.re) * s);
+        return (Complex64::new((x - u) / 3.0, (y + v) / 3.0), Complex64::new((x + u) / 3.0, (y - v) / 3.0), i0);
+    }
+    let (nre, dim) = (-(b.re - c.re), b.im - c.im);
+    let p = (s * dim - nre * 0.0, s * nre + dim * 0.0);
+    let (x, y) = (a.re - hr, a.im - hi);
+    (Complex64::new((x - p.0) / 3.0, (y - p.1) / 3.0), Complex64::new((x + p.0) / 3.0, (y + p.1) / 3.0), i0)
 }
 
-/// MSVC `std::complex` division as the original uses it (`0x420ca0`): an
-/// exactly-zero or NaN divisor gives NaN.
+/// MSVC `std::complex` division as the original uses it (`0x420ca0`): Smith's scaled form (`num_complex`'s own `/`
+/// is the unscaled one, which rounds differently). The branch is on |re| > |im| strictly (w = im/re), else w = re/im;
+/// a NaN part, a zero divisor and a zero or NaN scaled denominator give NaN in both parts.
 fn cdiv(a: Complex64, b: Complex64) -> Complex64 {
-    if (b.re == 0.0 && b.im == 0.0) || b.re.is_nan() || b.im.is_nan() {
-        return Complex64::new(f64::NAN, f64::NAN);
+    let nan = Complex64::new(f64::NAN, f64::NAN);
+    if b.re.is_nan() || b.im.is_nan() {
+        return nan;
     }
-    a / b
+    let (w, d) = if b.re.abs() > b.im.abs() {
+        let w = b.im / b.re;
+        (w, w * b.im + b.re)
+    } else {
+        if b.im == 0.0 {
+            return nan;
+        }
+        let w = b.re / b.im;
+        (w, w * b.re + b.im)
+    };
+    if d.is_nan() || d == 0.0 {
+        return nan;
+    }
+    if b.re.abs() > b.im.abs() {
+        Complex64::new((a.re + a.im * w) / d, (a.im - a.re * w) / d)
+    } else {
+        Complex64::new((a.re * w + a.im) / d, (a.im * w - a.re) / d)
+    }
 }
 
 const ONE: Complex64 = Complex64::new(1.0, 0.0);
@@ -238,7 +273,7 @@ pub fn single_ended(inp: &SingleEnded) -> Trace {
     let ip: Vec<Vec<Complex64>> = inp.i.iter().enumerate().map(|(c, s)| ph(true, c, &s[..nk])).collect();
     let up: Vec<Vec<Complex64>> = inp.u.iter().enumerate().map(|(c, s)| ph(false, c, &s[..nk.min(s.len())])).collect();
     let uph = |c: usize, k: usize| up[c].get(k).copied().unwrap_or_default();
-    let comps: Vec<_> = (0..nk).map(|k| components(ip[0][k], ip[1][k], ip[2][k])).collect();
+    let comps: Vec<_> = (0..nk).map(|k| components(inp.neutral == NeutralMode::Isolated, ip[0][k], ip[1][k], ip[2][k])).collect();
     let m = |z: Complex64| z.norm();
     let g = 0.1 * 2f64.sqrt() * inp.inom;
     let mut t = Trace {
@@ -529,9 +564,10 @@ pub fn choose_window(dist: &[f64], inst: &[f64], lo: usize, hi: usize, p: usize)
         }
         bt
     };
-    let bias = |t: usize, eps: f64| eps - (t - lo) as f64 * eps / (10.0 * p as f64);
-    let sigma_score = |t: usize| window_sigma(dist, t, p) + bias(t, 0.001);
-    let mean_score = |t: usize| window_mean_abs(inst, t, p) + bias(t, 1e-6);
+    // The original's order (`0x477a20`, `0x477c40`): the step eps / (10·P) first, then (σ − m·step) + eps.
+    let score = |v: f64, t: usize, eps: f64| v - (t - lo) as f64 * (eps / (10.0 * p as f64)) + eps;
+    let sigma_score = |t: usize| score(window_sigma(dist, t, p), t, 0.001);
+    let mean_score = |t: usize| score(window_mean_abs(inst, t, p), t, 1e-6);
     let (mut ta, mut tb) = (0.0, 0.0);
     for i in 0..1000 {
         let a = search(&sigma_score, ta);
@@ -869,9 +905,9 @@ pub struct DoubleEnded<'a> {
     pub phasor: Option<PhasorFn<'a>>,
 }
 
-/// Negative-sequence component `(A + a²B + aC)/3`.
+/// Negative-sequence component, in the double-ended routine's form (`0x497090`, mode 4).
 fn negative(a: Complex64, b: Complex64, c: Complex64) -> Complex64 {
-    components(a, b, c).1
+    components(false, a, b, c).1
 }
 
 fn taps_zeq(sec: &Section) -> Option<Complex64> {
@@ -961,8 +997,8 @@ pub fn double_ended(inp: &DoubleEnded) -> Trace {
     let neg2: Vec<Vec<f64>> = inp.i2.iter().map(|s| s.iter().map(|x| -x).collect()).collect();
     let i2_samples = [&neg2[0][..], &neg2[1][..], &neg2[2][..]];
     let (i1, i2, u1, u2) = (ph(&inp.i1, 0, true), ph(&i2_samples, 1, true), ph(&inp.u1, 0, false), ph(&inp.u2, 1, false));
-    let c1: Vec<_> = (0..nk).map(|k| components(i1[0][k], i1[1][k], i1[2][k])).collect();
-    let c2: Vec<_> = (0..nk).map(|k| components(i2[0][k], i2[1][k], i2[2][k])).collect();
+    let c1: Vec<_> = (0..nk).map(|k| components(false, i1[0][k], i1[1][k], i1[2][k])).collect();
+    let c2: Vec<_> = (0..nk).map(|k| components(false, i2[0][k], i2[1][k], i2[2][k])).collect();
     let m = |z: Complex64| z.norm();
     let rt2 = 2f64.sqrt();
     let (in1, in2) = (inp.inom1, inp.inom2.abs());
@@ -1160,5 +1196,145 @@ mod tracked_tests {
         let by_track = omp_phasors_tracked(&x, n, &t_us, &[], &[50.0; 200]);
         assert!((by_track[100] - tr[100]).norm() < 1e-12);
         assert!(omp_phasors_tracked(&x, n, &t_us, &[], &[])[100].re.is_nan());
+    }
+}
+
+/// #106: the grounded-distance rotation (`0x49a670`) and the θ re-estimation (`0x49adc0`) call the
+/// original's runtime sin / cos (`crate::trig`). Each half is pinned on its own: a candidate is
+/// found where reverting only the sin (or only the cos) to std changes the result, and the site must
+/// equal the port-built reference there.
+#[cfg(test)]
+mod trig_site_tests {
+    use super::*;
+
+    type Fns = (fn(f64) -> f64, fn(f64) -> f64);
+    const TRIG: Fns = (crate::trig::sin, crate::trig::cos);
+    const SIN_STD: Fns = (f64::sin, crate::trig::cos);
+    const COS_STD: Fns = (crate::trig::sin, f64::cos);
+
+    fn halves<P: Copy + std::fmt::Debug, R: PartialEq + std::fmt::Debug>(what: &str, cands: impl Iterator<Item = P> + Clone, reference: impl Fn(P, Fns) -> R, site: impl Fn(P) -> R) {
+        let find = |mixed: Fns| cands.clone().find(|&p| reference(p, mixed) != reference(p, TRIG));
+        let (s, c) = (find(SIN_STD), find(COS_STD));
+        let (s, c) = (s.unwrap_or_else(|| panic!("{what}: no candidate tells the sin half from std's")), c.unwrap_or_else(|| panic!("{what}: no candidate tells the cos half from std's")));
+        for p in [s, c] {
+            assert_eq!(site(p), reference(p, TRIG), "{what} at {p:?}");
+        }
+    }
+
+    /// One section, a non-earth fault: `d = Im(U/Iref') / Im(Z1·I/Iref')`, `Iref' = Iref·e^{jθ}`.
+    #[test]
+    fn the_grounded_distance_rotation_uses_the_runtime_sin_cos() {
+        let sec = Section { length_km: 1.0e9, r1_per_km: 0.21, x1_per_km: 0.37, ..Default::default() };
+        let t = Trace {
+            e: vec![false],
+            uloop: vec![Complex64::new(3.1, 4.7)],
+            iloop: vec![Complex64::new(1.3, -0.7)],
+            iref: vec![Complex64::new(0.9, 0.4)],
+            ..Default::default()
+        };
+        let reference = |theta: f64, f: Fns| {
+            let r = t.iref[0] * Complex64::new((f.1)(theta), (f.0)(theta));
+            let z1 = Complex64::new(sec.r1_per_km, sec.x1_per_km);
+            cdiv(t.uloop[0], r).im / cdiv(z1 * t.iloop[0], r).im
+        };
+        let site = |theta: f64| grounded_distance(&t, 0, Complex64::default(), Complex64::default(), std::slice::from_ref(&sec), theta);
+        // The site clamps a negative distance to 0: only angles with a positive one tell anything.
+        let positive = |theta: &f64| reference(*theta, TRIG) > 0.0 && reference(*theta, SIN_STD) > 0.0 && reference(*theta, COS_STD) > 0.0;
+        halves("grounded_distance", (1..6000).map(|j| j as f64 * 0.00137).filter(positive), |p, f| reference(p, f).to_bits(), |p| site(p).to_bits());
+    }
+
+    /// One section without taps or parallel lines: the medians are of the constant `A = I0` and
+    /// `B = current_beyond`; `θ = arg(Mb − Mc·e^{jMa})`.
+    #[test]
+    fn refine_theta_uses_the_runtime_sin_cos() {
+        let sec = Section { length_km: 10.0, r0_per_km: 0.3, x0_per_km: 1.2, taps: vec![Tap { r0: 40.0, x0: 80.0 }], ..Default::default() };
+        let secs = std::slice::from_ref(&sec);
+        let d = 4.0;
+        let build = |phase: f64| {
+            let i0 = Complex64::from_polar(23.0, phase);
+            Trace { e: vec![true; 3], dist: vec![d; 3], u0: vec![Complex64::new(1000.0, 200.0); 3], i0: vec![i0; 3], ..Default::default() }
+        };
+        let reference = |phase: f64, f: Fns| {
+            let t = build(phase);
+            let (_, a) = carry_zero_sequence(secs, 0, t.u0[0], t.i0[0], d);
+            let b = current_beyond(secs, 0, t.u0[0], t.i0[0], d).unwrap();
+            let pi = std::f64::consts::PI;
+            let mut da = b.im.atan2(b.re) - a.im.atan2(a.re);
+            if da < -pi {
+                da += 2.0 * pi;
+            } else if da > pi {
+                da -= 2.0 * pi;
+            }
+            ((-b.norm() * (f.0)(da)).atan2(a.norm() - b.norm() * (f.1)(da))).to_bits()
+        };
+        let site = |phase: f64| refine_theta(&build(phase), secs, (0, 2), d).unwrap().to_bits();
+        halves("refine_theta", (1..6000).map(|j| j as f64 * 0.00113), reference, site);
+    }
+}
+
+/// #107 (review): ОМП's sequence components are `0x497090`'s real expressions with s = √3·0.5, not a product with
+/// the polar `1∠120°` of std's sin / cos; and `0x420ca0`'s branch and NaN rules.
+#[cfg(test)]
+mod components_tests {
+    use super::*;
+
+    fn polar_form(a: Complex64, b: Complex64, c: Complex64) -> (Complex64, Complex64) {
+        let op = Complex64::from_polar(1.0, 2.0 * std::f64::consts::PI / 3.0);
+        let op2 = op * op;
+        ((a + op * b + op2 * c) / 3.0, (a + op2 * b + op * c) / 3.0)
+    }
+
+    /// The expressions of `0x49722b` / `0x4972ae` written out, with s from `sqrt` of 3.0 times ½.
+    #[test]
+    fn the_components_are_the_originals_real_expressions() {
+        let s = 3f64.sqrt() * 0.5;
+        let mut z = 12345u64;
+        let mut next = || {
+            z ^= z << 13;
+            z ^= z >> 7;
+            z ^= z << 17;
+            (z % 100_000) as f64 * 0.0123 - 600.0
+        };
+        let mut differs = 0;
+        for _ in 0..2000 {
+            let (a, b, c) = (Complex64::new(next(), next()), Complex64::new(next(), next()), Complex64::new(next(), next()));
+            let i1 = Complex64::new(((a.re - (b.re + c.re) * 0.5) - (b.im - c.im) * s) / 3.0, ((a.im - (c.im + b.im) * 0.5) + (b.re - c.re) * s) / 3.0);
+            let i2 = Complex64::new(((a.re - (b.re + c.re) * 0.5) + (b.im - c.im) * s) / 3.0, ((a.im - (c.im + b.im) * 0.5) - (b.re - c.re) * s) / 3.0);
+            let i0 = Complex64::new(((a.re + b.re) + c.re) / 3.0, ((b.im + a.im) + c.im) / 3.0);
+            for isolated in [true, false] {
+                assert_eq!(components(isolated, a, b, c), (i1, i2, i0), "isolated {isolated}");
+            }
+            assert_eq!(negative(a, b, c), i2);
+            let (p1, p2) = polar_form(a, b, c);
+            differs += usize::from(p1 != i1 || p2 != i2);
+        }
+        assert!(differs > 1000, "the polar form differs from the original's in the last bit ({differs} of 2000)");
+    }
+
+    /// The two forms differ in the sign of a zero: for A = (0, −0), B = C = 0 the isolated form's I1.im is +0, the
+    /// grounded form's −0 (a mutation using one form for both modes fails here).
+    #[test]
+    fn the_isolated_and_the_grounded_forms_differ_in_the_sign_of_a_zero() {
+        let (a, z) = (Complex64::new(0.0, -0.0), Complex64::new(0.0, 0.0));
+        let (iso, _, _) = components(true, a, z, z);
+        let (gnd, _, _) = components(false, a, z, z);
+        assert_eq!(iso.im.to_bits(), 0.0f64.to_bits(), "isolated: +0");
+        assert_eq!(gnd.im.to_bits(), (-0.0f64).to_bits(), "grounded: −0");
+    }
+
+    /// 0x420ca0 takes w = im/re only where |re| > |im|; at equal magnitudes w = re/im, which gives an exact zero its
+    /// sign: (3 + 3j) / (2 − 2j) has the real part −0, not +0. A zero denominator gives NaN.
+    #[test]
+    fn the_division_branches_strictly_and_gives_nan_for_a_zero_denominator() {
+        let q = cdiv(Complex64::new(3.0, 3.0), Complex64::new(2.0, -2.0));
+        assert!(q.re == 0.0 && q.re.is_sign_negative(), "{q:?}");
+        assert!(cdiv(ONE, Complex64::new(0.0, 0.0)).re.is_nan());
+        assert!(cdiv(ONE, Complex64::new(f64::NAN, 1.0)).im.is_nan());
+        // Equal magnitudes with opposite signs: w = re/im = −1, the denominator w·re + im = −2e-200 is finite and
+        // non-zero, so the quotient is finite.
+        assert!(cdiv(ONE, Complex64::new(1e-200, -1e-200)).re.is_finite());
+        // Equal infinities: w = ∞/∞ = NaN, so the scaled denominator is NaN and both parts are NaN.
+        let inf = cdiv(ONE, Complex64::new(f64::INFINITY, f64::INFINITY));
+        assert!(inf.re.is_nan() && inf.im.is_nan());
     }
 }
