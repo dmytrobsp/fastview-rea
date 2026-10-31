@@ -1090,6 +1090,15 @@ impl App {
         if was_modal && !self.modal_up {
             self.copy_focus = app::CopyFocus::View;
         }
+        // An MDI activation — a document picked from the ▾ list, opened or
+        // closed — focuses the activated child's view (clone: a document's
+        // tab, the list's pick, an Open). A system file dialog closed
+        // unanswered leaves the focus where it was (clone: Ctrl+O, Esc).
+        let doc = self.active_doc().map(|d| d.serial);
+        if doc != self.focus_doc {
+            self.copy_focus = app::CopyFocus::View;
+        }
+        self.focus_doc = doc;
         if self.modal_up {
             dialogs::backdrop(ctx, "fv_modal_backdrop", egui::Order::PanelResizeLine);
             self.keytips.exit();
@@ -4577,6 +4586,9 @@ mod window_tests {
         assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating, "the double-click on the caption");
         w.press(Primary, caption, caption + Vec2::new(90.0, 70.0));
         assert_eq!(win(&w), rect, "a drag of the caption");
+        // A press on it does not raise it over the dialog.
+        let top = w.ctx.memory(|m| m.areas().top_layer_id(egui::Order::Middle));
+        assert_eq!(top.map(|l| l.id), Some(egui::Id::new("Цвета")), "the dialog stays above the floating window");
         // The dialog gone, the same press is the pane's again.
         w.app.color_dialog = None;
         w.idle(3);
@@ -4818,6 +4830,46 @@ mod window_tests {
         w.idle(3);
         let d = w.app.active_doc().unwrap();
         assert_eq!((d.chans[0].on_freq, d.chans[0].on_vector), (false, true), "the slid-out diagram takes it");
+    }
+
+    /// Every way the active document changes — the tab list's pick (the ▾
+    /// button leaves `Other` until then), opening, closing — focuses the
+    /// activated document's view (clone: MDI activation); a system file dialog
+    /// closed unanswered does not (#65).
+    #[test]
+    fn a_new_active_document_gives_the_view_the_focus() {
+        use app::{Command, CopyFocus, Pane};
+        let mut w = Win::new();
+        w.app.dispatch(Command::Demo);
+        w.idle(3);
+        assert_eq!(w.app.docs.len(), 2);
+        for before in [CopyFocus::Other, CopyFocus::Diagram(Pane::Vector), CopyFocus::Pane(Pane::Vector), CopyFocus::Grid(Pane::Circle)] {
+            // The tab list's pick: the other document.
+            let other = 1 - w.app.active.unwrap();
+            w.app.copy_focus = before;
+            w.app.dispatch(Command::ActivateDoc(other));
+            w.idle(2);
+            assert_eq!(w.app.copy_focus, CopyFocus::View, "{before:?}: activated");
+            // Closing the active one.
+            w.app.copy_focus = before;
+            w.app.dispatch(Command::CloseDoc(w.app.active.unwrap()));
+            w.idle(2);
+            assert_eq!(w.app.copy_focus, CopyFocus::View, "{before:?}: closed");
+            // Opening one.
+            w.app.copy_focus = before;
+            w.app.dispatch(Command::Demo);
+            w.idle(2);
+            assert_eq!(w.app.copy_focus, CopyFocus::View, "{before:?}: opened");
+            // A file dialog closed unanswered leaves it (clone).
+            w.app.copy_focus = before;
+            let _ = dialogs::file_dialog();
+            w.idle(2);
+            assert_eq!(w.app.copy_focus, before, "{before:?}: a file dialog");
+            // And nothing else does it.
+            w.app.copy_focus = before;
+            w.idle(3);
+            assert_eq!(w.app.copy_focus, before, "{before:?}: left alone");
+        }
     }
 
     /// `FV_FRAME_BENCH=<file.cfg> cargo test --release frame_bench -- --nocapture`

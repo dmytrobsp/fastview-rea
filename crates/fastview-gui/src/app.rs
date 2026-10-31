@@ -1637,6 +1637,9 @@ pub struct App {
     /// enabled combo boxes and buttons of the merge bar, the document
     /// tabs' ▾ button) this frame: `CopyFocus::Other`.
     pub focus_other: Vec<egui::Rect>,
+    /// The active document (its serial) the copy focus was last settled
+    /// for: a change is an MDI activation, which focuses its view.
+    pub focus_doc: Option<u64>,
     /// The pointer over the view's client area at the last frame it was
     /// there: a change is the original's WM_MOUSEMOVE.
     pub view_pointer: Option<egui::Pos2>,
@@ -1854,6 +1857,7 @@ impl App {
             pane_tab_rects: Vec::new(),
             doc_tab_rects: Vec::new(),
             focus_other: Vec::new(),
+            focus_doc: None,
             pane_grid: Vec::new(),
             view_pointer: None,
             tab_auto: TabAuto::default(),
