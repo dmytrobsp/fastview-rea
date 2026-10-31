@@ -79,8 +79,8 @@ maintainer), **issue**.
 
 ## sin / cos of very large angles in formulas
 
-- **What differs**: for |x| ≥ 90 112 rad (and for non-finite arguments) ours computes a formula's `sin:` / `cos:` with
-  the platform's sin / cos; the original's runtime (msvcr120) uses a large-argument reduction of its own, less accurate
+- **What differs**: for |x| ≥ 90 112 rad ours computes a formula's `sin:` / `cos:` with the platform's sin / cos
+  (non-finite arguments give NaN in both); the original's runtime (msvcr120) uses a large-argument reduction of its own, less accurate
   than either, so the results differ. Below 90 112 ours matches the original bit for bit (L9.412).
 - **Where it shows**: only in a formula channel taking `sin:` / `cos:` of an angle beyond about 5.16 million degrees;
   the signal maths (DFT, phasors, ОМП) never reach such angles.
