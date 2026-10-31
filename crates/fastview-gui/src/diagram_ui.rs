@@ -2238,6 +2238,41 @@ mod tests {
         assert!(value(&texts(&mut app)), "hidden again: the values stay");
     }
 
+    /// #115: the frequency diagram's painter prints the fundamental bar's label as «100» in «% of the
+    /// fundamental» mode, also where the original's `(v·100)/v` lands one bit under 100 and prints «100.0».
+    #[test]
+    fn the_fundamentals_percent_label_is_painted_100() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        app.freq_percent = true;
+        app.freq_use_rms = false;
+        let periods = app.freq_periods.max(1);
+        let k_max = app.freq_harmonics;
+        // A channel and a cursor position where the original's label would read «100.0».
+        let (i, pos) = {
+            let d = app.active_doc().unwrap();
+            let n = d.osc.samples_per_cycle().max(2);
+            let found = (0..d.osc.analog.len()).find_map(|i| {
+                (n * periods..d.osc.sample_count()).find_map(|pos| {
+                    let v = super::freq_bins(d, d.shown_samples(i), Some(i), d.osc.analog[i].own_rate, pos, periods, k_max.min(n * periods / 2).max(periods))[periods];
+                    (v != 0.0 && fvb_core::views::freq_label(100.0 * v / v).trim() == "100.0").then_some((i, pos))
+                })
+            });
+            found.expect("a window where (v·100)/v lands under 100")
+        };
+        let d = app.active_doc_mut().unwrap();
+        d.chans.iter_mut().for_each(|c| c.on_freq = false);
+        d.chans[i].on_freq = true;
+        d.main_cursor = pos;
+        let ctx = egui::Context::default();
+        let out = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(900.0, 500.0))), ..Default::default() }, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| app.frequency_ui(ui));
+        });
+        let texts: Vec<String> = out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
+        assert!(texts.iter().any(|t| t == "100"), "the fundamental reads 100: {texts:?}");
+        assert!(!texts.iter().any(|t| t == "100.0"), "never 100.0: {texts:?}");
+    }
+
     #[test]
     fn the_vector_grid_lies_on_gdis_pixels() {
         // VM: the 227 px ring about pixel (2297, 802) spans 2070…2523 and
