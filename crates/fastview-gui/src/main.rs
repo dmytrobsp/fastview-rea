@@ -4969,12 +4969,9 @@ mod window_tests {
             w.app.dispatch(Command::Demo);
             w.idle(2);
             assert_eq!(w.app.copy_focus, CopyFocus::View, "{before:?}: opened");
-            // A file dialog closed unanswered leaves it (clone).
-            w.app.copy_focus = before;
-            let _ = dialogs::file_dialog();
-            w.idle(2);
-            assert_eq!(w.app.copy_focus, before, "{before:?}: a file dialog");
-            // And nothing else does it.
+            // Nothing else does it. (A system file dialog closed
+            // unanswered leaves the focus where it was, clone; it cannot be
+            // driven headless, so the rule is not tested here.)
             w.app.copy_focus = before;
             w.idle(3);
             assert_eq!(w.app.copy_focus, before, "{before:?}: left alone");
@@ -5396,9 +5393,6 @@ mod window_tests {
     /// the call pinned here.
     #[test]
     fn make_app_passes_the_system_dpi_to_the_chrome() {
-        // `make_app` takes the chrome's dpi from GetDpiForSystem
-        // (`system_dpi_scale`) before the monitor's scale; its source line is
-        // the call pinned here.
         let src = include_str!("main.rs");
         assert!(src.contains(concat!("start_scaling(DEVICE_PIXELS, ctx, scale, ", "system_dpi_scale());")));
     }

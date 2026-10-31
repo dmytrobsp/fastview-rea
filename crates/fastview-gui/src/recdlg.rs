@@ -1385,13 +1385,11 @@ mod tests {
     /// 1251 lacks («√», «ä») is not an alias.
     #[test]
     fn a_name_a_utf8_record_holds_is_not_an_alias() {
-        for shown in [Encoding::Utf8, Encoding::Cp1251, Encoding::Cp866] {
+        // Shown in 1251 / UTF-8 the name is the bytes as read (shown in 866 it is the OEM view, the next test).
+        for shown in [Encoding::Utf8, Encoding::Cp1251] {
             let name = "Струм √ ä";
             let bytes = name_bytes_of(name, Encoding::Utf8, shown);
-            // Shown in 1251 / UTF-8 the name is the bytes as read.
-            if shown != Encoding::Cp866 {
-                assert!(!added_name(name, bytes, Encoding::Utf8, shown).alias, "{shown:?}");
-            }
+            assert!(!added_name(name, bytes, Encoding::Utf8, shown).alias, "{shown:?}");
         }
     }
 

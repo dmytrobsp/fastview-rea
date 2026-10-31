@@ -76,6 +76,9 @@ misbehaves and the better behaviour is obvious (the maintainer,
     becomes «(ўбв.)», L9.404, clone). Ours does the same for a name the
     shown code page can hold; a name it cannot hold (і under 866) is kept as
     typed instead of turning into «?».
+  - *Record read in 1251 / 866, shown in its own code page*: a name with
+    letters that page lacks (copied from a UTF-8 / KOI8-R record: «√», «ä»,
+    і under 866) is kept as typed, where the original shows «?» for them.
   - *Record read in UTF-8*: the bytes hold every letter, so a name is an
     alias only while 866 is shown and the name has a letter 866 cannot hold
     (і); otherwise it follows «Кодировка» as the record's own names do (1251
