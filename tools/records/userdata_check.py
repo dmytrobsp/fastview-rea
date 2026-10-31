@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Prove that a generated record carries nothing of the record it was made from.
+
+    python3 -I tools/records/userdata_check.py --source SRC.cfg [--source SRC2.cfg ...] OUT.cfg [OUT2.cfg ...]
+
+Every source record (its `.cfg`, and the `.dat` / `.hdr` beside it) is indexed in memory:
+
+- text: every text field of the `.cfg` and `.hdr` (names, station, device, dates and times, comment
+  lines) and the source's file name, case-folded, apart from structure (standard units, phase letters,
+  the data-type words, revision years; a time code is a record's own value and is checked);
+- words: every word of four letters or more of those texts;
+- numbers: every number that identifies (not 0, +-1, a whole number up to 100, a revision year, an
+  ADC range or the float32 range) in the `.cfg` and `.hdr`, and every non-whole data value with six or
+  more significant digits, compared by value to six significant digits;
+- lines: every `.cfg` / `.hdr` line holding one of those, compared whole;
+- codes: the rate-segment lines and the lines after the multiplier (time code / local code, time quality /
+  leap second) as whole lines, however short their fields;
+- windows: four consecutive data rows of the analog channels (a row that is not constant), compared
+  as numbers, so a copied stretch of samples shows even where single samples are small whole numbers.
+
+Each output record is then searched for all of them. The tool prints counts only, never a value of any
+record, and exits 1 when anything matched. At most --max-rows data rows of each record are read (a
+default of two million).
+"""
+import argparse
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import recfmt  # noqa: E402
+
+WINDOW = 4
+
+
+def _whole(v):
+    return v == int(v)
+
+
+def _data_float(v):
+    if _whole(v):
+        return None
+    digits = ("%.10g" % abs(v)).replace(".", "").replace("-", "").lstrip("0")
+    if "e" in digits:
+        digits = digits.split("e")[0]
+    return recfmt.sig6(v) if len(digits.rstrip("0")) >= 6 else None
+
+
+def _iter_texts(rec):
+    """(line, kind) text of the cfg fields and hdr; yields (field text, whole line text)."""
+    for i, line in enumerate(rec.cfg.lines):
+        if i == 1:  # the channel-count line is structure
+            continue
+        for k, f in enumerate(line.split(",")):
+            if k == 0 and rec.analog_at <= i < rec.freq_at:
+                continue  # a channel's number
+            yield f, line
+    if rec.hdr:
+        for line in rec.hdr.lines:
+            yield line, line
+            for f in line.replace(":", " ").split():
+                yield f, line
+
+
+def codes(rec):
+    """Whole lines that are a record's own values even when short: rate segments, time/quality codes."""
+    ls = rec.cfg.lines
+    pick = list(range(rec.rates_at, rec.rates_at + rec.n_rates)) + list(range(rec.tail_at + 1, len(ls)))
+    return {"".join(ls[i].split()).casefold() for i in pick if i < len(ls) and any(c.isalnum() for c in ls[i])}
+
+
+def inventory(rec, max_rows):
+    """What identifies a record: sets of texts, words, numbers, lines, data windows."""
+    texts, nums, lines = set(), set(), set()
+    for f, line in _iter_texts(rec):
+        t = recfmt.identifying_text(f)
+        n = recfmt.identifying_number(f.strip())
+        if t:
+            texts.add(t)
+        if n is not None:
+            nums.add(n)
+        if t or n is not None:
+            lines.add(" ".join(line.split()).casefold())
+    stem = recfmt.identifying_text(rec.stem)  # a name that is also a structure word ("binary") is no identity
+    if stem:
+        texts.add(stem)
+    words = recfmt.words_of(rec.cfg.text + "\n" + (rec.hdr.text if rec.hdr else ""))
+    windows = set()
+    ring = []
+    for a, d in rec.rows(max_rows):
+        row = tuple(recfmt.sig6(x) for x in a) if a else tuple(d)
+        for x in a:
+            v = _data_float(x)
+            if v is not None:
+                nums.add(v)
+        ring.append(row)
+        if len(ring) == WINDOW:
+            w = tuple(x for r in ring for x in r)
+            if len(set(w)) > 2:
+                windows.add(hash(w))
+            ring.pop(0)
+    return {"texts": texts, "words": words, "nums": nums, "lines": lines, "windows": windows, "codes": codes(rec)}
+
+
+def check(src, rec, max_rows):
+    """Counts of source items found in the record `rec` (all 0 means clean) and how much was checked."""
+    out = inventory(rec, max_rows)
+    blob = (rec.cfg.text + "\n" + (rec.hdr.text if rec.hdr else "")).casefold()
+    fields = set()
+    for f, _ in _iter_texts(rec):
+        fields.add(f.strip().strip("�").strip().casefold())
+    text_hits = 0
+    for t in src["texts"]:
+        if (t in blob) if len(t) >= 4 else (t in fields):
+            text_hits += 1
+    name_hit = 1 if rec.stem.casefold() in src["texts"] else 0
+    return {
+        "text": text_hits + name_hit,
+        "words": len(src["words"] & out["words"]),
+        "numbers": len(src["nums"] & out["nums"]),
+        "lines": len(src["lines"] & out["lines"]),
+        "windows": len(src["windows"] & out["windows"]),
+        "codes": len(src["codes"] & out["codes"]),
+    }, {"texts": len(src["texts"]), "words": len(src["words"]), "numbers": len(src["nums"]),
+        "lines": len(src["lines"]), "windows": len(src["windows"]), "out_windows": len(out["windows"]), "codes": len(src["codes"])}
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--source", action="append", required=True, help="a source record's .cfg (repeatable)")
+    ap.add_argument("--max-rows", type=int, default=2_000_000)
+    ap.add_argument("outputs", nargs="+", help="the generated records' .cfg")
+    a = ap.parse_args(argv)
+    sources = []
+    for p in a.source:
+        r = recfmt.Record(p)
+        sources.append(inventory(r, a.max_rows))
+    bad = 0
+    for o in a.outputs:
+        rec = recfmt.Record(o)
+        for i, src in enumerate(sources, 1):
+            hits, seen = check(src, rec, a.max_rows)
+            total = sum(hits.values())
+            tag = "FAIL" if total else "ok"
+            print(f"{tag}: output {os.path.basename(o)} vs source {i}: matches {hits}; "
+                  f"checked {seen['texts']} texts, {seen['words']} words, {seen['numbers']} numbers, "
+                  f"{seen['lines']} lines, {seen['codes']} code lines, {seen['windows']} source windows")
+            bad += total
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
