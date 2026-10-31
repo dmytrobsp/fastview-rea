@@ -63,19 +63,23 @@ misbehaves and the better behaviour is obvious (the maintainer,
   keeps a pasted or merged name as the bytes of the record's code page only.
   Ours keeps the name as an alias, shown as typed across every «Кодировка»
   switch, when its text does not come back from those bytes:
-  - *Record read in KOI8-R* (no і ї є ґ): the original brings such letters
-    back as «?» after a switch away and back; ours keeps the name as typed.
+  - *Record read in KOI8-R* (no і ї є ґ; the original has no KOI8-R record
+    mode, ours before kept such a name as KOI8-R bytes, so the letters came
+    back as «?» after a switch away and back): ours keeps the name as typed.
     A name KOI8-R holds stays a plain stored name, re-decoded like the
-    record's own.
+    record's own, except while 866 is shown: there the names are the OEM
+    view of the bytes, which KOI8-R cannot give back, so every Cyrillic name
+    pasted under 866 is kept as typed.
   - *Record read in 1251 / 866, shown in the other one at the paste*: the
     original keeps the name as the shown code page's bytes, so back in the
     first it reads as those bytes (every pasted name is garbled, «(вст.)»
     becomes «(ўбв.)», L9.404, clone). Ours does the same for a name the
     shown code page can hold; a name it cannot hold (і under 866) is kept as
     typed instead of turning into «?».
-  - *Record read in UTF-8*: the bytes hold every letter, so a name is never
-    an alias; it follows «Кодировка» as the record's own names do (1251 its
-    ANSI narrowing, 866 its OEM view).
+  - *Record read in UTF-8*: the bytes hold every letter, so a name is an
+    alias only while 866 is shown and the name has a letter 866 cannot hold
+    (і); otherwise it follows «Кодировка» as the record's own names do (1251
+    its ANSI narrowing, 866 its OEM view).
   Reason: a name that cannot survive its own bytes is lost for good in the
   original; keeping it as typed costs nothing.
 - **ADC codes beyond ±2³¹** (float32-range samples with a tiny `a`). The

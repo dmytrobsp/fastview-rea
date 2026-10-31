@@ -214,9 +214,9 @@ pub fn added_name(name: &str, bytes: Vec<u8>, read: Encoding, shown: Encoding) -
     let alias = if matches!(read, Encoding::Cp1251 | Encoding::Cp866) {
         decode_name(&bytes, read, shown) != name
     } else {
-        // The name as read: shown in 866 it is the OEM view of the names.
-        let as_read = if shown == Encoding::Cp866 { comtrade::decode_bytes(&comtrade::encode_shown(name, Encoding::Cp866), Encoding::Cp1251) } else { name.to_string() };
-        comtrade::decode_bytes(&bytes, read) != as_read
+        // Shown in 866 the names are the OEM view of the bytes as read
+        // (`decode_name`); elsewhere the name is the bytes as read.
+        if shown == Encoding::Cp866 { decode_name(&bytes, read, shown) != name } else { comtrade::decode_bytes(&bytes, read) != name }
     };
     crate::app::RawName { bytes, seen: name.to_string(), alias }
 }
@@ -1391,6 +1391,22 @@ mod tests {
             if shown != Encoding::Cp866 {
                 assert!(!added_name(name, bytes, Encoding::Utf8, shown).alias, "{shown:?}");
             }
+        }
+    }
+
+    /// #81 on a UTF-8 / KOI8-R record while 866 is shown: a name 866 cannot
+    /// hold (і) is kept as typed; one it holds stays plain on a UTF-8 record
+    /// (it follows «Кодировка» as the record's own names do) and, KOI8-R
+    /// lacking the OEM view's letters, is kept as typed on a KOI8-R record.
+    #[test]
+    fn a_name_pasted_under_866_into_a_utf8_or_koi8r_record() {
+        for (read, plain_alias) in [(Encoding::Utf8, false), (Encoding::Koi8r, true)] {
+            let with_i = "Струм і (вст.)";
+            let bytes = name_bytes_of(with_i, read, Encoding::Cp866);
+            assert!(added_name(with_i, bytes, read, Encoding::Cp866).alias, "{read:?}: і kept as typed");
+            let plain = "Струм (вст.)";
+            let bytes = name_bytes_of(plain, read, Encoding::Cp866);
+            assert_eq!(added_name(plain, bytes, read, Encoding::Cp866).alias, plain_alias, "{read:?}");
         }
     }
 
