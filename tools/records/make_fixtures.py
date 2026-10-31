@@ -165,7 +165,7 @@ def cff(sections, dat_kind, dat, bom=False):
 def src_g(d):
     """2013 single file (.cff), UTF-8 with a BOM, Cyrillic, INF and HDR sections, ASCII data with a byte count."""
     cfg = CRLF.join([
-        "Підстанція Ліра,Реєстратор Т3,2013",
+        "Підстанція Ліра,Фіксатор Т3,2013",
         "3,2A,1D",
         "1,Фідер Нота,A,,A,0.1273,0,0,-32767,32767,2310,5,P",
         "2,Шина Серпа,B,,kV,0.0891,0,0,-32767,32767,11700,100,P",
@@ -182,7 +182,7 @@ def src_g(d):
         "",
     ])
     inf = CRLF.join(["Мова: укр", "Версія файлу 4.2 від 2023", ""])
-    hdr = CRLF.join(["Примітка: перевірка зв'язку Ліра 12", "Пристрій «Реєстратор» Т3", ""])
+    hdr = CRLF.join(["Примітка: перевірка зв'язку Ліра 12", "Пристрій «Фіксатор» Т3", ""])
     rows = CRLF.join(f"{i + 1},{i * 690},{(i * 421) % 3000 - 1400},{(i * 173) % 2000 - 900},{(i // 7) % 2}" for i in range(21)) + CRLF
     with open(os.path.join(d, "g.cff"), "wb") as f:
         f.write(cff([("CFG", cfg.encode()), ("INF", inf.encode()), ("HDR", hdr.encode())], "ASCII", rows.encode(), bom=True))
@@ -226,12 +226,12 @@ def src_h(d):
     import math
     CR = "\r\n"
     texts = [
-        ("nnA,003" + CR + "1,Струм Орса,A,А" + CR + "2,Напруга Нерун,B,Т7,кВ" + CR + "3,Струм Кала,C,А" + CR).encode("cp1251"),
+        ("nnA,003" + CR + "1,Потік Орса,A,А" + CR + "2,Вольтаж Нерун,B,Т7,кВ" + CR + "3,Потік Кала,C,А" + CR).encode("cp1251"),
         ("nnD,008" + CR + "".join(f"{i},Рл Ка{i},{i % 2}" + CR for i in range(1, 9))).encode("cp1251"),
         ("nnD,008" + CR + "".join(f"{i},Рл Ко{i},{i % 2}" + CR for i in range(9, 17))).encode("cp1251"),
         b"nnF,14" + CR.encode(),
     ]
-    cal = [(1357.3, 213, 0.4167, -157), (2417.9, -311, 0.3871, 129), (1119.7, 87, 0.4293, 405)]
+    cal = [(1357.3, 238, 0.4167, -157), (2417.9, -311, 0.3871, 129), (1119.7, 87, 0.4293, 405)]
     rows = []
     for b in range(6):
         rows.append([([int(7000 * math.sin((b * 14 + s) / 4.0 + k)) for k in range(3)], ((b * 14 + s) * 37 + (s % 5)) & 0xFFFF)

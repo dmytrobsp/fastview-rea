@@ -46,10 +46,6 @@ COLUMN_SPREAD = 16  # whole numbers: a per-channel window counts from this sprea
 COLUMN_CAP = 2_000_000  # at most this many per-channel windows of a record are indexed
 
 
-def sig6_step(v):
-    return recfmt.sig6(v)
-
-
 def _whole(v):
     return v == int(v)
 
@@ -149,7 +145,7 @@ def inventory(rec, max_rows):
         prev, diffs = None, []
         for t in rec.stamps(max_rows):
             if prev is not None:
-                diffs.append(sig6_step(t - prev))
+                diffs.append(recfmt.sig6(t - prev))
                 if len(diffs) == WINDOW:
                     if len(set(diffs)) >= 3:
                         steps.add(hash(tuple(diffs)))
