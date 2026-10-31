@@ -71,6 +71,9 @@ impl ApplicationHandler for Soft {
             window.set_maximized(true);
         }
         crate::minsize::install_on(&window);
+        if self.viewport.decorations == Some(false) {
+            crate::winframe::install_on(&window, &self.ctx);
+        }
         crate::device_window(&self.ctx, window.scale_factor() as f32);
         trace(&format!("window {:?} visible {:?}", window.inner_size(), window.is_visible()));
         let state = egui_winit::State::new(self.ctx.clone(), egui::ViewportId::ROOT, &window, Some(window.scale_factor() as f32), None, Some(16384));
@@ -216,7 +219,7 @@ fn blit(window: &Window, c: &crate::raster::Canvas) {
     let Ok(handle) = window.window_handle() else { return };
     let RawWindowHandle::Win32(h) = handle.as_raw() else { return };
     let hwnd = h.hwnd.get() as windows_sys::Win32::Foundation::HWND;
-    let bgra: Vec<u8> = c.px.iter().flat_map(|p| [p[2], p[1], p[0], 0]).collect();
+    let bgra: Vec<u8> = c.px.iter().flat_map(|p| [p[2], p[1], p[0], 255]).collect();
     // SAFETY: the window's own DC, released; the bits outlive the call and
     // match the header's size.
     unsafe {

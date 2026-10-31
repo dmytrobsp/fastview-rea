@@ -2591,7 +2591,13 @@ pub(crate) fn caption_buttons(ui: &mut egui::Ui) {
     for k in 0..3 {
         let (r, resp) = ui.allocate_exact_size(egui::vec2(s(46.0), h), egui::Sense::click());
         let close = k == 0;
-        let hot = resp.hovered();
+        // The maximise button also answers `WM_NCHITTEST` (the snap-layout flyout, `winframe`): the
+        // pointer over it is then non-client input, the hover known from the frame's messages.
+        if k == 1 {
+            let enabled = ui.is_enabled();
+            crate::winframe::publish_max_button(enabled.then_some(r), ui.ctx().pixels_per_point());
+        }
+        let hot = resp.hovered() || (k == 1 && ui.is_enabled() && crate::winframe::max_hot());
         // Under the pointer (VM, maximised): a 45 × 28 face from a pixel
         // left of the button — (245) or the close button's (196, 43, 28).
         if hot {

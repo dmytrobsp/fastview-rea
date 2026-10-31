@@ -47,6 +47,7 @@ mod theme;
 mod tips;
 mod util;
 mod views;
+mod winframe;
 mod windows_dlg;
 
 use app::App;
@@ -1027,7 +1028,12 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(windows)]
-        minsize::install_on(_frame);
+        {
+            minsize::install_on(_frame);
+            if self.own_caption {
+                winframe::install_on(_frame, ctx);
+            }
+        }
         self.frame_ui(ctx);
         self.splash(ctx);
     }
@@ -5061,12 +5067,30 @@ mod window_tests {
                 for x in [10.0, 150.0, 400.0, 700.0, 1000.0, 1300.0] {
                     let t = ctx.input(|i| i.time) + 0.075;
                     let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), time: Some(t), events: vec![egui::Event::PointerMoved(Pos2::new(x, y))], ..Default::default() };
-                    ctx.run(raw, |ctx| app.frame_ui(ctx));
+                    let _ = ctx.run(raw, |ctx| app.frame_ui(ctx));
                     let d = idle_delays(&mut app, &ctx, size, 16);
                     assert!(d[10..].iter().all(|x| *x == std::time::Duration::MAX), "the pointer resting at {x},{y}: {d:?}");
                 }
             }
         }
+    }
+
+    /// #34: the frameless window tells Windows where its maximise button is (`WM_NCHITTEST` answers
+    /// `HTMAXBUTTON` there, the snap-layout flyout): the middle of the three caption buttons at the
+    /// window's right edge, in device pixels, and none while a modal disables the buttons.
+    #[test]
+    fn the_maximise_button_is_published_for_the_frame() {
+        let size = Vec2::new(1280.0, 800.0);
+        let mut app = demo(&[]);
+        app.own_caption = true;
+        let ctx = egui::Context::default();
+        idle_delays(&mut app, &ctx, size, 3);
+        let r = winframe::max_button().expect("the caption's maximise button is published");
+        let w = dpi::s(46.0).round() as i32;
+        assert_eq!(r[2] - r[0], w, "one caption button wide: {r:?}");
+        assert_eq!(r[2], size.x as i32 - w, "the middle one of three at the right edge: {r:?}");
+        assert!(r[1] == 0 && r[3] > 20 && r[3] < 50, "on the caption row: {r:?}");
+        assert!(winframe::on_max_button(r[0] + 3, 5) && !winframe::on_max_button(r[2] + 3, 5) && !winframe::on_max_button(r[0] - 3, 5));
     }
 
     /// `FV_WINDOW_DUMP=<file.png> cargo test window_dump` renders the window
