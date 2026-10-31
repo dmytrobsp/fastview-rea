@@ -564,7 +564,7 @@ impl App {
         // another popup reaches no pane under it; elsewhere the topmost
         // pane window (floating ones drawn after the docked).
         let top = ctx.layer_id_at(p);
-        let slid = crate::docking::UNITS.into_iter().find(|&u| top == Some(egui::LayerId::new(egui::Order::Foreground, egui::Id::new(("fv_slide", u)))));
+        let slid = top.and_then(crate::views::slid_pane_unit);
         let popup = slid.is_none() && top.is_some_and(|l| l.order >= egui::Order::Foreground);
         let editor = top.is_some_and(|l| {
             let at = |name: &str, i: usize| egui::LayerId::new(egui::Order::Foreground, egui::Id::new(name).with(i));

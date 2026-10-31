@@ -4725,6 +4725,101 @@ mod window_tests {
         assert!(w.app.clip.picture().is_some() && w.app.clip.get().is_some());
     }
 
+    /// A channel let go on a floating window that lies over a docked diagram
+    /// goes to the window's diagram (or nowhere, on its caption), never to
+    /// the docked diagram beneath it (#113; the window under the pointer
+    /// takes the drop).
+    #[test]
+    fn a_channel_dropped_on_a_floating_window_over_a_docked_diagram_misses_the_docked_one() {
+        use app::{ChanKey, Pane};
+        use docking::{Place, Unit};
+        use egui::PointerButton::Primary;
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: Primary, modifiers: Default::default(), pressed };
+        let run = |onto_diagram: bool| {
+            let mut w = Win::new();
+            let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the frequency diagram").1;
+            let d = &mut w.app.docks.0[Unit::Vector as usize];
+            d.float_rect = Some(Rect::from_min_size(freq.min + Vec2::new(40.0, 4.0), Vec2::new(300.0, 200.0)));
+            d.place = Place::Floating;
+            w.idle(3);
+            // The docked layout changed as the group left: place the window over where Частотная is now.
+            let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the frequency diagram").1;
+            w.app.docks.0[Unit::Vector as usize].float_rect = Some(Rect::from_min_size(freq.min + Vec2::new(40.0, 4.0), Vec2::new(300.0, 200.0)));
+            w.idle(3);
+            {
+                let d = w.app.active_doc_mut().unwrap();
+                d.chans[0].on_freq = false;
+                d.chans[0].on_vector = false;
+            }
+            let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the frequency diagram").1;
+            let win = w.ctx.memory(|m| m.area_rect(egui::Id::new(("fv_floating_pane", Unit::Vector)))).expect("the floating window");
+            let to = if onto_diagram {
+                let v = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the floating vector diagram").1;
+                Pos2::new(freq.left() + 60.0, v.center().y)
+            } else {
+                Pos2::new(freq.left() + 30.0, win.top() + 10.0)
+            };
+            assert!(freq.contains(to), "the window lies over the frequency diagram");
+            let client = w.app.view_rects.expect("the view").1;
+            let rows = lanes::lane_layout(w.app.active_doc().unwrap(), w.app.y_analog, false);
+            let a = Pos2::new(client.left() + 40.0, client.top() + rows[0].h / 2.0);
+            w.run(vec![egui::Event::PointerMoved(a), ev(a, true)]);
+            let steps = ((to - a).length() / 6.0).ceil().max(1.0) as usize;
+            for k in 1..=steps {
+                w.run(vec![egui::Event::PointerMoved(a + (to - a) * (k as f32 / steps as f32))]);
+            }
+            w.run(vec![ev(to, false)]);
+            w.idle(3);
+            let d = w.app.active_doc().unwrap();
+            assert!(matches!(rows[0].key, ChanKey::Analog(0)));
+            (d.chans[0].on_freq, d.chans[0].on_vector)
+        };
+        assert_eq!(run(true), (false, true), "on the floating diagram: it takes the channel, not the frequency diagram");
+        assert_eq!(run(false), (false, false), "on the floating caption: nobody does");
+    }
+
+    /// The same for a slid-out pane over a docked group on the same edge: a
+    /// channel let go on the slid-out diagram goes to it, not to the docked
+    /// diagram under it (#113).
+    #[test]
+    fn a_channel_dropped_on_a_slid_out_pane_over_a_docked_diagram_misses_the_docked_one() {
+        use app::Pane;
+        use docking::{Edge, Spot, Unit};
+        use egui::PointerButton::Primary;
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: Primary, modifiers: Default::default(), pressed };
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: Edge::Right, outer: true };
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Right, outer: true };
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+        w.idle(30);
+        let [c0, c1, ..] = w.app.slid_ranges[Unit::Vector as usize].expect("slid out");
+        let slid = w.app.pane_canvas[c0..c1].iter().find(|(p, _)| *p == Pane::Vector).expect("the slid-out vector diagram").1;
+        let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Frequency).expect("the docked frequency diagram").1;
+        let to = Pos2::new(freq.center().x, slid.center().y);
+        {
+            let d = w.app.active_doc_mut().unwrap();
+            d.chans[0].on_freq = false;
+            d.chans[0].on_vector = false;
+        }
+        assert!(freq.contains(to) && slid.contains(to), "the slid-out pane lies over the docked diagram: {freq:?} {slid:?}");
+        {
+            let d = w.app.active_doc_mut().unwrap();
+            d.chans[0].on_freq = false;
+            d.chans[0].on_vector = false;
+        }
+        // The pane holds the focus (so it stays out) and a drag from the lanes is in flight.
+        w.press(Primary, to, to);
+        egui::DragAndDrop::set_payload(&w.ctx, lanes::ChanDrag { chans: vec![0], computed: vec![] });
+        w.run(vec![egui::Event::PointerMoved(to)]);
+        w.run(vec![ev(to, true)]);
+        w.run(vec![ev(to, false)]);
+        w.idle(3);
+        let d = w.app.active_doc().unwrap();
+        assert_eq!((d.chans[0].on_freq, d.chans[0].on_vector), (false, true), "the slid-out diagram takes it");
+    }
+
     /// `FV_FRAME_BENCH=<file.cfg> cargo test --release frame_bench -- --nocapture`
     /// prints the mean whole-window frame time on that record.
     #[test]

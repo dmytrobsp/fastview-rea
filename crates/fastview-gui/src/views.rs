@@ -1105,6 +1105,11 @@ impl App {
         if !released || !pos.is_some_and(|p| ui.max_rect().contains(p)) || !egui::DragAndDrop::has_payload_of_type::<crate::lanes::ChanDrag>(ctx) {
             return;
         }
+        // The window under the pointer takes the drop: not a diagram that a
+        // floating or slid-out window lies over (clone).
+        if pos.is_some_and(|p| ctx.layer_id_at(p).is_some_and(|l| l != ui.layer_id() && (is_floating_pane_layer(l) || slid_pane_unit(l).is_some()))) {
+            return;
+        }
         let Some(drag) = egui::DragAndDrop::take_payload::<crate::lanes::ChanDrag>(ctx) else { return };
         self.drop_channels(&drag.keys(), pane);
     }
@@ -1870,10 +1875,15 @@ pub fn is_floating_pane_layer(l: egui::LayerId) -> bool {
     crate::docking::UNITS.into_iter().any(|u| l == floating_pane_layer(u))
 }
 
-/// Whether `l` is a slid-out auto-hidden group's window (it lies over the
-/// view like a floating one).
+/// The group whose slid-out window `l` is (it lies over the view like a
+/// floating one).
+pub fn slid_pane_unit(l: egui::LayerId) -> Option<crate::docking::Unit> {
+    crate::docking::UNITS.into_iter().find(|&u| l == egui::LayerId::new(egui::Order::Foreground, egui::Id::new(("fv_slide", u))))
+}
+
+/// Whether `l` is a slid-out auto-hidden group's window.
 pub fn is_slid_pane_layer(l: egui::LayerId) -> bool {
-    crate::docking::UNITS.into_iter().any(|u| l == egui::LayerId::new(egui::Order::Foreground, egui::Id::new(("fv_slide", u))))
+    slid_pane_unit(l).is_some()
 }
 
 fn pane_dim(p: Pane) -> fvb_core::model::Dimension {
@@ -2042,7 +2052,6 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
     let spots = [Some(rect.right() - s(11.0)), pinned.map(|_| rect.right() - s(26.0))];
     let cy = rect.center().y.floor() + 0.5;
     let on_button = ui.input(|i| i.pointer.press_origin()).is_some_and(|p| spots.iter().flatten().any(|&x| egui::Rect::from_center_size(egui::pos2(x, cy), egui::vec2(s(15.0), s(15.0))).contains(p)));
-    // (Nothing from a disabled window: a floating pane under a modal dialog.)
     act.armed = resp.is_pointer_button_down_on() && !on_button && ui.input(|i| i.pointer.primary_down());
     act.dragging = resp.dragged_by(egui::PointerButton::Primary) && !on_button;
     act.pressed = resp.contains_pointer() && ui.input(|i| i.pointer.any_pressed());
