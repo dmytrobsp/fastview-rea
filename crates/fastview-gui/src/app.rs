@@ -3095,6 +3095,29 @@ mod tests {
         assert_ne!(corrected, plain, "the correction reaches a formula channel");
     }
 
+    /// With a formula channel as the selected frequency channel, the other
+    /// formula channels (read through `OTHER`) keep the correction: the two
+    /// sentinels were one number and every such read lost it (#42).
+    #[test]
+    fn a_formula_frequency_channel_does_not_disable_the_correction_of_others() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua".into()), ("Y".into(), "Ub".into())]).is_some());
+        let d = &mut app.docs[0];
+        d.computed[0].unit = "Гц".into();
+        d.computed[0].samples = vec![51.3; d.osc.sample_count()];
+        d.channels_changed();
+        assert_eq!(d.osc.freq_sel, 1);
+        assert_eq!(fvb_core::freqcorr::selected_extra(&d.osc), Some(0));
+        let k = 300;
+        let n = d.osc.samples_per_cycle().max(2);
+        let y = &d.computed[1].samples;
+        let corr = d.computed_corr(1).expect("Y is corrected");
+        assert!((fvb_core::freqcorr::rms_at(Some(corr), fvb_core::freqcorr::OTHER, y, k, n, 1) - corr.rms(y, k, 1.0)).abs() < 1e-12);
+        assert_ne!(corr.rms(y, k, 1.0), fvb_core::signal::rms_at(y, k, n));
+        // The frequency channel itself is read plainly.
+        assert!(d.computed_corr(0).is_none());
+    }
+
     #[test]
     fn frequency_correction_on_load_off_and_back() {
         let cfg = DEMO_CFG.replacen("2,Ub,B,,V,", "2,Ub,B,,Гц,", 1);
