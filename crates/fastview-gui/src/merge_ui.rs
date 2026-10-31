@@ -489,6 +489,7 @@ impl App {
         let other = HeaderSide { title: &rec.title, station: &rec.station_id, block: &rec.block_id, start: &rec.start_time, comment: &rec.hdr_file };
         d.hdr = Some(merged_header(&own, &other));
         d.hdr_cp = crate::setfile::cp_of(1);
+        d.set.tree.section_mut("Comments").set_int("Codepage", 1);
         d.merge_offset = 0.0;
         d.refresh_pending();
         // The new channels' caches (`0x4254b9`), flags 0x40e1.

@@ -624,8 +624,16 @@ impl Doc {
                 continue;
             }
             let known_c = flag::VISIBLE | flag::VECTOR | flag::CIRCLE | flag::MINMAX | flag::A1 | flag::RMS_ROW | flag::MODE_INSTANT | flag::MODE_RMS | flag::MODE_HARMONIC | flag::REMOVE_DC | flag::INVERT | flag::COMPUTED;
+            // A pasted lane is bit 14, not bit 13, and writes its own frequency
+            // vector as `NetFreq` (a clone run, #28).
+            let pending = c.formula == crate::merge_ui::PENDING;
+            let (flags, known) = if pending {
+                ((self.computed_flags(j) & !flag::COMPUTED) | flag::PENDING | if c.adc_counts { flag::ADC } else { 0 }, (known_c & !flag::COMPUTED) | flag::PENDING | flag::ADC)
+            } else {
+                (self.computed_flags(j), known_c)
+            };
             let rec = ChannelRec {
-                show_flags: Self::merged_flags(t, &c.name, self.computed_flags(j), known_c) & mask,
+                show_flags: Self::merged_flags(t, &c.name, flags, known) & mask,
                 primary_mul: 1.0,
                 secondary_mul: 1.0,
                 alias: String::new(),
@@ -634,6 +642,9 @@ impl Doc {
                 custom_color: c.custom_color.then(|| colorref(c.color)),
             };
             recset::write_channel(t.section_mut(&c.name), &rec);
+            if let Some(Ok(a)) = pending.then(|| self.pending_of(j).map(|p| &p.pasted.channel)).flatten() {
+                recset::write_net_freq(t.section_mut(&c.name), &a.own_freq);
+            }
         }
         let o = t.section_mut("Oscillogram");
         // The stored value as loaded while «Кодировка» was not used since
@@ -1566,6 +1577,31 @@ mod tests {
         let (rec, no) = app.docs[di].file_record();
         assert_eq!(rec.analog.len(), n, "the lane is not a record of the file");
         assert_eq!(no.analog, (2..=n + 1).collect::<Vec<_>>());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pasted lane's `.set` section (a clone run): ShowFlags with bit 14 (not
+    /// bit 13), its own frequency vector as `NetFreq`; the paste's summary
+    /// comment stores `Comments/Codepage` 1 (#28).
+    #[test]
+    fn a_pending_lane_is_saved_as_bit_14_with_its_net_freq() {
+        let dir = temp_dir("pendset");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        app.docs[di].selection = [ChanKey::Analog(1)].into();
+        app.copy_channels_for_merge();
+        app.docs[di].selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        let d = &app.docs[di];
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let sec = t.section(&d.computed[j].name).expect("the lane's section");
+        let flags: u32 = sec.get_str("ShowFlags", "0").parse().unwrap();
+        assert_eq!((flags >> 13) & 3, 2, "bit 14 only: {flags}");
+        assert_eq!(sec.get_str("NetFreq", "").split(',').count(), d.osc.sample_count());
+        assert_eq!(t.section("Comments").unwrap().get_str("Codepage", ""), "1");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
