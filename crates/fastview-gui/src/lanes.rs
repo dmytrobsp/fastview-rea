@@ -1931,6 +1931,7 @@ impl App {
                 self.view_pointer = Some(p);
             }
         }
+        let v_before = self.docs.get(ai).map(|d| d.vscroll);
         for a in actions {
             let d = &mut self.docs[ai];
             match a {
@@ -2034,6 +2035,10 @@ impl App {
             d.first = d.first.min(hmax_c);
             d.vscroll = d.vscroll.clamp(vmin_c, 0.0);
         }
+        // The view's OnScrollBy (`0x468f00`) ends in the refresh-all (`0x468f3d`).
+        if self.docs.get(ai).map(|d| d.vscroll) != v_before {
+            self.refresh_blocks();
+        }
 
         // Hover popup over a cut name (`0x469060`): the full text.
         if let Some(full) = cut_hover {
@@ -2106,6 +2111,8 @@ impl App {
                     d.comments = recs.iter().map(|r| d.comment_of(r)).collect();
                 }
                 d.set.modified = true;
+                // The rename `0x465df0` ends in the refresh-all (`0x46607c`).
+                self.refresh_blocks();
             }
         }
     }
@@ -4173,5 +4180,37 @@ mod menu_tests {
         d.chans[0].on_circle = true;
         app.run_menu_cmd(0, MenuCmd::Combine);
         assert!(app.active_doc().unwrap().chans[0].on_circle, "a refused 33035 stops before the refresh");
+    }
+
+    /// #23: the view's scroll (`OnScrollBy` `0x468f00` → `0x468f3d`) and the lane rename (`0x465df0` → `0x46607c`)
+    /// end in the refresh-all, which clears a stale circle / vector flag.
+    #[test]
+    fn scrolling_and_renaming_end_in_the_refresh_all() {
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let mut h = Harness::new();
+        h.app.y_analog = 400.0;
+        h.frame(vec![]);
+        let o = h.row(0);
+        h.frame(vec![egui::Event::PointerMoved(o), ev(o, true)]);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(1.0, 0.0))]);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(5.0, 0.0))]);
+        let client = h.app.view_rects.unwrap().1;
+        crate::app::stale_flags::make(&mut h.app);
+        h.frame(vec![egui::Event::PointerMoved(Pos2::new(o.x + 5.0, client.bottom() - 5.0))]);
+        for _ in 0..3 {
+            h.frame(vec![]);
+        }
+        assert_eq!(h.doc().vscroll, -100.0, "the drag scrolled");
+        assert!(crate::app::stale_flags::swept(&h.app), "scroll");
+        // The rename.
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().init_set_keys();
+        crate::app::stale_flags::make(&mut h.app);
+        h.app.rename_edit = Some((1, "Zz9".to_string()));
+        h.frame(vec![]);
+        h.frame(vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+        h.frame(vec![]);
+        assert_eq!(h.doc().osc.analog[1].id, "Zz9");
+        assert!(crate::app::stale_flags::swept(&h.app), "rename");
     }
 }
