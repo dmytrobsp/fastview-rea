@@ -4471,6 +4471,60 @@ mod window_tests {
         assert!(!egui::DragAndDrop::has_any_payload(&w.ctx), "the drag is over");
     }
 
+    /// The lane's rename box and the level editor are windows over the view
+    /// (children of it): a press in one is a press in the view, which holds
+    /// the focus then — not in a popup that leaves it where it was (#83).
+    #[test]
+    fn a_press_in_an_editor_over_the_view_gives_the_view_the_focus() {
+        use app::{CopyFocus, Pane};
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        let mut seen = 0;
+        for edit in ["fv_rename", "fv_level_edit"] {
+            w.press(Primary, canvas.center(), canvas.center());
+            assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
+            if edit == "fv_rename" {
+                w.app.rename_edit = Some((0, "Ia".into()));
+            } else {
+                w.app.rename_edit = None;
+                w.app.level_edit = Some((0, "1.00".into()));
+            }
+            w.idle(3);
+            let Some(r) = w.ctx.memory(|m| m.area_rect(egui::Id::new(edit).with(0usize))) else { continue };
+            seen += 1;
+            w.press(Primary, r.center(), r.center());
+            assert_eq!(w.app.copy_focus, CopyFocus::View, "{edit}: the press in the editor");
+            w.app.rename_edit = None;
+            w.app.level_edit = None;
+        }
+        assert!(seen > 0, "an editor was up");
+        // A menu or a combo box's list over the view takes no focus: the
+        // window that holds it keeps it.
+        let (full, _) = w.app.view_rects.expect("the view");
+        let at = full.min + Vec2::new(180.0, 200.0);
+        let cover = Rect::from_center_size(at, Vec2::splat(60.0));
+        for before in [CopyFocus::Other, CopyFocus::Diagram(Pane::Vector)] {
+            w.app.copy_focus = before;
+            for pressed in [None, Some(true), Some(false), None] {
+                let events = match pressed {
+                    None => vec![egui::Event::PointerMoved(at)],
+                    Some(pressed) => vec![egui::Event::PointerButton { pos: at, button: Primary, pressed, modifiers: Default::default() }],
+                };
+                let t = w.ctx.input(|i| i.time) + 0.05;
+                let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), events, ..Default::default() };
+                let app = &mut w.app;
+                let _ = w.ctx.run(raw, |ctx| {
+                    egui::Area::new(egui::Id::new("test_popup")).order(egui::Order::Foreground).fixed_pos(cover.min).show(ctx, |ui| {
+                        ui.allocate_exact_size(cover.size(), egui::Sense::click());
+                    });
+                    app.frame_ui(ctx);
+                });
+            }
+            assert_eq!(w.app.copy_focus, before, "a popup over the view took the press");
+        }
+    }
+
     /// `FV_FRAME_BENCH=<file.cfg> cargo test --release frame_bench -- --nocapture`
     /// prints the mean whole-window frame time on that record.
     #[test]

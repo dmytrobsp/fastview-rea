@@ -566,6 +566,10 @@ impl App {
         let top = ctx.layer_id_at(p);
         let slid = crate::docking::UNITS.into_iter().find(|&u| top == Some(egui::LayerId::new(egui::Order::Foreground, egui::Id::new(("fv_slide", u)))));
         let popup = slid.is_none() && top.is_some_and(|l| l.order >= egui::Order::Foreground);
+        let editor = top.is_some_and(|l| {
+            let at = |name: &str, i: usize| egui::LayerId::new(egui::Order::Foreground, egui::Id::new(name).with(i));
+            self.rename_edit.as_ref().is_some_and(|(i, _)| l == at("fv_rename", *i)) || self.level_edit.as_ref().is_some_and(|(i, _)| l == at("fv_level_edit", *i))
+        });
         let [c0, c1, g0, g1] = match slid {
             Some(u) => self.slid_ranges[u as usize].unwrap_or([0; 4]),
             None if popup => [0; 4],
@@ -604,7 +608,10 @@ impl App {
             if let Some(pane) = owner.and_then(|u| self.panes.front(self.docks.members(u))) {
                 self.copy_focus = CopyFocus::Grid(pane);
             }
-        } else if slid.is_none() && on_float.is_none() && self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
+        } else if slid.is_none() && on_float.is_none() && (!popup || editor) && self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
+            // A menu or a combo box's list takes no focus (the window that
+            // has it keeps it); the lane's rename box and the level editor
+            // are windows of the view.
             self.copy_focus = CopyFocus::View;
         }
     }
