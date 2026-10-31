@@ -2763,7 +2763,8 @@ mod window_tests {
         assert!(shown(&w).is_empty(), "in its strip nothing of it is drawn");
         // A stub: its pane in front, alone in the pane, the button long now.
         let front = w.app.panes.front(w.app.docks.members(Unit::Vector));
-        let stub = buttons.iter().find(|r| r.height() <= 24.5).expect("a visible stub").center();
+        let stub_rect = *buttons.iter().find(|r| r.height() <= 24.5).expect("a visible stub");
+        let (front_slot, stub) = (*buttons.iter().find(|r| r.height() > 100.0).expect("the front's button"), stub_rect.center());
         w.run(vec![egui::Event::PointerMoved(stub)]);
         w.idle(30);
         assert!(w.app.docks[Unit::Vector].out);
@@ -2774,9 +2775,16 @@ mod window_tests {
         let (long, _, after) = long_stub(&w);
         assert_eq!(long, 1, "one full button again: {after:?}");
         let long_rect = after.iter().find(|r| r.height() > 100.0).expect("the front's button");
-        assert!(long_rect.contains(w.app.strip_hits[Unit::Vector as usize].buttons.iter().find(|r| r.height() > 100.0).unwrap().center()));
-        // The stub's top is where it lay: the hit was on a button of the same slot.
-        assert!(after.iter().any(|r| r.height() <= 24.5), "the former front is a stub now: {after:?}");
+        // The column starts 4 px under the window's top and runs in tab order: the front pane was first
+        // (its button 4 px + its length down), so with the hovered pane in front the former front keeps
+        // its place as a 24 px stub and the new long button follows it. (The new button does not start
+        // where the hovered stub lay: the former front shrank above it.)
+        let len = |p: app::Pane, front: bool| docking::strip_button_len(views::pane_title(p).chars().count(), front, true);
+        assert!((front_slot.bottom() - (4.0 + len(front.unwrap(), true))).abs() < 0.5, "the front pane was first in the column: {front_slot:?}");
+        assert!((long_rect.bottom() - (4.0 + len(front.unwrap(), false) + len(now.unwrap(), true))).abs() < 0.5, "the former front's slot is a 24 px stub, the new long button after it: {long_rect:?}");
+        assert!((stub_rect.top() - front_slot.bottom()).abs() < 0.5, "the hovered stub lay right after the former front's button");
+        let stub_after = after.iter().find(|r| r.height() <= 24.5).expect("the stub that followed");
+        assert!((stub_after.top() - long_rect.bottom()).abs() < 0.5 && stub_after.height() == 24.0, "the stubs follow the long button: {stub_after:?}");
     }
 
     /// A divider beside a slid-out pane (#63; VM, `0x10087a4a`): the pointer
