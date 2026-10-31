@@ -717,9 +717,10 @@ pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool) -> 
 }
 
 /// The status icons of analog channel `i`.
-fn chan_icons(doc: &crate::app::Doc, i: usize, primary: bool) -> Vec<&'static str> {
+fn chan_icons(doc: &crate::app::Doc, i: usize, _primary: bool) -> Vec<&'static str> {
     let (c, ch) = (&doc.chans[i], &doc.osc.analog[i]);
-    let scaled = crate::app::display_k(ch, primary) != 1.0;
+    // The channel's own flags (`+0x88` / `+0x89`) and ratio decide, not the document's mode.
+    let scaled = crate::app::display_k(ch, c.primary) != 1.0;
     [
         (c.window.is_some(), "↕"),
         (c.remove_dc, "DC"),
@@ -3456,6 +3457,20 @@ mod menu_tests {
         assert_eq!((mn, mx), (lo, hi), "Max / Min in the same factor");
         let (rlo, rhi) = chan_range(d, 1, true);
         assert!(rlo >= lo - (hi - lo) && rhi <= hi + (hi - lo), "the zoom range is in the same factor: {rlo}..{rhi} vs {lo}..{hi}");
+    }
+
+    /// `0x462b15`: a lane's «*K» icon follows the channel's own primary / secondary flag, not the document's.
+    #[test]
+    fn a_lanes_ratio_icon_follows_the_channels_own_mode() {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary, d.osc.analog[1].is_primary) = (1234.0, 1.0, true);
+        d.chans[1].primary = false;
+        // The document shows primary values, the channel (stored primary) shows secondary: its ratio applies.
+        assert!(key_icons(d, Lane::Analog(1), true).contains(&"*K"), "the channel's own mode scales it");
+        d.chans[1].primary = true;
+        // The document shows secondary values, this channel shows primary (as stored): no ratio.
+        assert!(!key_icons(d, Lane::Analog(1), false).contains(&"*K"), "the channel's own mode leaves it as stored");
     }
 
     /// With «Удалить постоянную» an instantaneous value is the accessor's `x·k − dc·k`, not `(x − dc)·k`.
