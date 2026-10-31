@@ -3204,6 +3204,72 @@ mod window_tests {
         }
     }
 
+    /// A divider resize of a slid-out pane is the slid state's own (#109; VM,
+    /// the original, a bottom pane): unpinned, the pane docks back at the size it
+    /// had before it was pinned, and pinned again it slides out at the docked
+    /// size (the resize is forgotten) — it only survives hiding and showing from
+    /// the strip.
+    #[test]
+    fn a_divider_resize_is_forgotten_when_the_pane_docks_back() {
+        use docking::{Edge, Place, Spot, Unit};
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        for edge in [Edge::Bottom, Edge::Right] {
+            // pin, slide out (resized by `drag` px or not), unpin, pin again,
+            // slide out: the docked size after unpinning and the second slid
+            // size, with the first one.
+            let run = |drag: f32| {
+                let mut w = Win::new();
+                w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+                // On its own: no pane beside it to share its slot.
+                w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: edge.opposite(), outer: true };
+                w.idle(3);
+                let across = |r: Rect| if edge.vertical() { r.width() } else { r.height() };
+                let pin = |w: &mut Win, pane: Rect| {
+                    let at = Pos2::new(pane.right() - dpi::s(26.0), pane.top() + dpi::s(10.0));
+                    w.press(egui::PointerButton::Primary, at, at);
+                    w.idle(3);
+                };
+                let slid = |w: &mut Win| {
+                    w.run(vec![egui::Event::PointerMoved(Pos2::new(300.0, 300.0))]);
+                    w.idle(40);
+                    let button = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
+                    w.run(vec![egui::Event::PointerMoved(button)]);
+                    w.idle(30);
+                    w.app.dock_areas[Unit::Vector as usize].expect("slid out")
+                };
+                let pane = w.app.dock_rects[Unit::Vector as usize].expect("docked");
+                pin(&mut w, pane);
+                assert_eq!(w.app.docks[Unit::Vector].place, Place::AutoHide);
+                let first = across(slid(&mut w));
+                let mut area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+                if drag != 0.0 {
+                    let div = w.app.dock_dividers[Unit::Vector as usize].expect("its divider");
+                    let by = if edge.vertical() { Vec2::new(-drag, 0.0) } else { Vec2::new(0.0, -drag) };
+                    w.run(vec![egui::Event::PointerMoved(div.center())]);
+                    w.run(vec![ev(div.center(), true)]);
+                    w.run(vec![egui::Event::PointerMoved(div.center() + by * 0.5)]);
+                    w.run(vec![egui::Event::PointerMoved(div.center() + by)]);
+                    w.idle(2);
+                    w.run(vec![ev(div.center() + by, false)]);
+                    w.idle(3);
+                    area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+                    assert!((across(area) - first - drag).abs() <= 2.0, "{edge:?}: wider by the drag: {first} → {}", across(area));
+                }
+                pin(&mut w, area);
+                assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "{edge:?}: docked again");
+                let back = across(w.app.dock_rects[Unit::Vector as usize].expect("docked"));
+                let pane = w.app.dock_rects[Unit::Vector as usize].expect("docked");
+                pin(&mut w, pane);
+                (first, back, across(slid(&mut w)))
+            };
+            let (first, back, again) = run(0.0);
+            let (first2, back2, again2) = run(100.0);
+            assert_eq!(first, first2, "{edge:?}: the same first slid size");
+            assert!((back2 - back).abs() <= 1.0, "{edge:?}: docked back at {back2}, as with no resize ({back})");
+            assert!((again - first).abs() <= 1.0 && (again2 - first).abs() <= 1.0, "{edge:?}: pinned again it slides at {again2}, as the first time {first} ({again})");
+        }
+    }
+
     /// Hiding a background tab of the focused pane's group leaves the focus.
     #[test]
     fn hiding_a_background_tab_keeps_the_pane_focus() {
