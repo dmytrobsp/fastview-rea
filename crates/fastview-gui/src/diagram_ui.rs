@@ -2316,7 +2316,7 @@ mod tests {
             egui::CentralPanel::default().show(ctx, |ui| app.frequency_ui(ui));
         });
         let texts: Vec<String> = out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
-        assert!(texts.iter().any(|t| *t == name), "the pasted lane's legend entry {name:?}: {texts:?}");
+        assert!(texts.contains(&name), "the pasted lane's legend entry {name:?}: {texts:?}");
         assert!(texts.iter().any(|t| t == "100"), "its fundamental reads 100: {texts:?}");
     }
 
