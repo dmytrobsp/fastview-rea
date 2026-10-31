@@ -3516,7 +3516,7 @@ mod tests {
         assert_eq!(d.computed[j].display[k], rms(40), "the display at the own window");
         assert_eq!(d.computed[y].display[k], rms(25), "the later formula at the record's");
         assert_ne!(rms(40), rms(25));
-        let lane = |i: usize| crate::lanes::lane_stats(d, &ChanKey::Computed(i), k, false);
+        let lane = |i: usize| crate::lanes::lane_stats(d, &ChanKey::Computed(i), k);
         let (st_j, st_y) = (lane(j), lane(y));
         assert_eq!((st_j.5, st_j.6), (rms(40), fvb_core::signal::harmonic_rms(&d.computed[j].samples, k, 40, 1)));
         assert_eq!((st_y.5, st_y.6), (rms(25), fvb_core::signal::harmonic_rms(&d.computed[y].samples, k, 25, 1)));
