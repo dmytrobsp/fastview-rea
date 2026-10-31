@@ -441,6 +441,16 @@ impl Doc {
         true
     }
 
+    /// Digital channel `k` shows an alias now (`+0x6c` non-empty): kept as
+    /// typed across «Кодировка», or a name that differs from the file's.
+    pub(crate) fn digital_shows_alias(&self, k: usize) -> bool {
+        let p = 2 + self.osc.analog.len() + k;
+        match self.name_raw.get(p).filter(|_| self.name_raw.len() == 2 + self.osc.analog.len() + self.osc.digital.len()) {
+            Some(r) => r.alias,
+            None => !self.alias(self.osc.analog.len() + k, &self.osc.digital[k].id).is_empty(),
+        }
+    }
+
     /// `AliasName`: the displayed name when it differs from the file's.
     fn alias(&self, i: usize, id: &str) -> String {
         let file = self.file_name(i);
@@ -575,7 +585,13 @@ impl Doc {
                 secondary_mul: 1.0,
                 // The ОМП's flags show their stored names: no alias, in any
                 // code page (#66).
-                alias: if self.dig(k).omp { String::new() } else { self.alias(na + k, &self.osc.digital[k].id) },
+                // A flag the run made has none (#66); one that took over a
+                // channel showing a user alias keeps it (`0x425f90`, #114).
+                alias: match self.dig(k) {
+                    f if f.omp && f.omp_alias => self.osc.digital[k].id.clone(),
+                    f if f.omp => String::new(),
+                    _ => self.alias(na + k, &self.osc.digital[k].id),
+                },
                 custom_color: self.dig(k).color.map(colorref),
             };
             recset::write_channel(t.section_mut(&key), &rec);
@@ -793,7 +809,7 @@ impl App {
                 };
                 let r = recset::read_channel(&sec, &cur);
                 d.digital_visible[k] = r.show_flags & flag::VISIBLE != 0;
-                *d.dig_mut(k) = crate::app::DigFlags { invert: r.show_flags & flag::INVERT != 0, remove_dc: r.show_flags & flag::REMOVE_DC != 0, mode: mode_of(r.show_flags), color: r.custom_color.map(from_colorref), omp: d.dig(k).omp };
+                *d.dig_mut(k) = crate::app::DigFlags { invert: r.show_flags & flag::INVERT != 0, remove_dc: r.show_flags & flag::REMOVE_DC != 0, mode: mode_of(r.show_flags), color: r.custom_color.map(from_colorref), omp: d.dig(k).omp, omp_alias: d.dig(k).omp_alias };
                 if !r.alias.is_empty() {
                     d.osc.digital[k].id = r.alias;
                     d.mark_alias(ChanKey::Digital(k), true);

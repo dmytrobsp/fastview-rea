@@ -1322,6 +1322,10 @@ pub struct DigFlags {
     /// this, not by its name, since «Кодировка» shows it as stored while
     /// the record's own names are re-decoded (#66).
     pub omp: bool,
+    /// The run took over a record channel that showed a user alias: the
+    /// original's `0x425f90` sets bit 13 and the samples only, so the alias
+    /// (`+0x6c`) stays and is written on save (#114).
+    pub omp_alias: bool,
 }
 
 /// An undo/redo entry: the record's data model (`doc+0x180 … 0x27f`,
