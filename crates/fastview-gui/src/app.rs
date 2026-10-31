@@ -394,6 +394,9 @@ pub struct Computed {
     pub seq: u64,
     /// The colour was set by 33030 or a `.set` (`ch+0x140`).
     pub custom_color: bool,
+    /// The channel's own rate (`ch+0x108`): set only by «Объединить» on the
+    /// formula channels present; a later formula has none.
+    pub own_rate: f64,
 }
 
 static NEXT_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -426,6 +429,7 @@ impl Computed {
             group: None,
             seq: NEXT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             custom_color: false,
+            own_rate: 0.0,
         }
     }
 
@@ -474,6 +478,7 @@ impl Computed {
             formula: self.formula.clone(),
             samples: self.samples.clone(),
             phasors: self.phasors.clone(),
+            own_rate: self.own_rate,
         }
     }
 }
@@ -824,15 +829,15 @@ impl Doc {
     }
 
     pub fn new(osc: Oscillogram, name: String) -> Self {
-        let n = osc.samples_per_cycle().max(2);
         let corr = fvb_core::freqcorr::of(&osc);
+        let np = |i: usize| osc.period_of(osc.analog[i].own_rate).max(2);
         let chans: Vec<ChanView> = (0..osc.analog.len()).map(|i| ChanView::new(&osc.analog[i], i)).collect();
         // The channels read through the accessor: the shown factor per sample.
-        let shown: Vec<Option<Vec<f64>>> = (0..osc.analog.len()).map(|i| shown_series(&osc.analog[i], &chans[i], whole_period_mean(&osc.analog[i].samples, n), shown_factor(&osc.analog[i], &chans[i]))).collect();
+        let shown: Vec<Option<Vec<f64>>> = (0..osc.analog.len()).map(|i| shown_series(&osc.analog[i], &chans[i], whole_period_mean(&osc.analog[i].samples, np(i)), shown_factor(&osc.analog[i], &chans[i]))).collect();
         let series: Vec<&[f64]> = (0..osc.analog.len()).map(|i| shown[i].as_deref().unwrap_or(&osc.analog[i].samples)).collect();
         let analysis = Analysis::compute_over(&osc, &series, corr);
-        let rms: Vec<Vec<f64>> = series.iter().enumerate().map(|(i, x)| fvb_core::freqcorr::sliding_rms(corr, i, x, n)).collect();
-        let dc_mean = osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
+        let rms: Vec<Vec<f64>> = series.iter().enumerate().map(|(i, x)| fvb_core::freqcorr::sliding_rms(corr.map(|c| c.at_rate(osc.analog[i].own_rate)), i, x, np(i))).collect();
+        let dc_mean = osc.analog.iter().enumerate().map(|(i, c)| (whole_period_mean(&c.samples, np(i)), whole_period_mean(&adc_codes(c), np(i)))).collect();
         let flagged = osc.clone();
         let digital_visible = vec![true; osc.digital.len()];
         Doc {
@@ -894,12 +899,11 @@ impl Doc {
     /// change (the original's full recompute, `FUN_00428490` per channel):
     /// the flagged record, its RMS and phasors, and the formula channels.
     pub fn recompute(&mut self, show_primary: bool) {
-        let n = self.osc.samples_per_cycle().max(2);
         // The record may have been re-timed or re-scaled (file parameters,
         // coefficients): rebuild the copy and the whole-period DC from it.
         self.flagged = self.osc.clone();
         self.series_gen += 1;
-        self.dc_mean = self.osc.analog.iter().map(|c| (whole_period_mean(&c.samples, n), whole_period_mean(&adc_codes(c), n))).collect();
+        self.dc_mean = self.osc.analog.iter().enumerate().map(|(i, c)| (whole_period_mean(&c.samples, self.period_of(i)), whole_period_mean(&adc_codes(c), self.period_of(i)))).collect();
         self.rms.resize(self.osc.analog.len(), Vec::new());
         self.shown.resize(self.osc.analog.len(), None);
         for i in 0..self.osc.analog.len() {
@@ -907,7 +911,7 @@ impl Doc {
             self.flagged.analog[i].samples = flag_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i], k);
             // Every readout sums the samples as the accessor returns them: times the shown factor.
             self.shown[i] = shown_series(&self.osc.analog[i], &self.chans[i], self.dc_mean[i].0, shown_factor(&self.osc.analog[i], &self.chans[i]));
-            self.rms[i] = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&self.osc), i, self.shown_samples(i), n);
+            self.rms[i] = fvb_core::freqcorr::sliding_rms(self.corr_of(i), i, self.shown_samples(i), self.period_of(i));
         }
         self.flag_digital(false);
         // The correction reads the frequency channel as stored (L9.65).
@@ -916,6 +920,17 @@ impl Doc {
         self.analysis = analysis;
         // The copy was just taken: no name to bring over.
         let _ = self.evaluate_formula_list(show_primary);
+    }
+
+    /// Analog channel `i`'s window of statistics and phasors: its own rate
+    /// ÷ 50 when it has one (`0x428490`), else the record's.
+    pub fn period_of(&self, i: usize) -> usize {
+        self.osc.period_of(self.osc.analog.get(i).map_or(0.0, |c| c.own_rate)).max(2)
+    }
+
+    /// The record's frequency correction at analog channel `i`'s own rate.
+    fn corr_of(&self, i: usize) -> Option<fvb_core::freqcorr::FreqCorr<'_>> {
+        fvb_core::freqcorr::of(&self.osc).map(|c| c.at_rate(self.osc.analog.get(i).map_or(0.0, |a| a.own_rate)))
     }
 
     /// The formulas resolve a channel by its name as shown now (`0x42edf0`
@@ -1015,6 +1030,7 @@ impl Doc {
             }
             return;
         }
+        let (n, corr) = if c.own_rate != 0.0 { (self.osc.period_of(c.own_rate).max(2), corr.map(|q| q.at_rate(c.own_rate))) } else { (n, corr) };
         let dc = if c.remove_dc { whole_period_mean(&c.raw, n) } else { 0.0 };
         c.samples = c.raw.iter().map(|x| sign * (x - dc)).collect();
         c.phasors = c.raw_phasors.as_ref().map(|p| p.iter().map(|z| z * sign).collect());
@@ -1053,19 +1069,17 @@ impl Doc {
     /// `0x426240` read `rec+0x874` live) — unlike the cached series, which
     /// keep the correction they were built with until a full recompute.
     pub fn stat_rms(&self, i: usize, k: usize) -> f64 {
-        let n = self.osc.samples_per_cycle().max(2);
         if i >= self.flagged.analog.len() {
             return 0.0;
         }
-        fvb_core::freqcorr::rms_at(fvb_core::freqcorr::of(&self.osc), i, self.shown_samples(i), k, n, 1)
+        fvb_core::freqcorr::rms_at(self.corr_of(i), i, self.shown_samples(i), k, self.period_of(i), 1)
     }
 
     pub fn stat_a1(&self, i: usize, k: usize) -> f64 {
-        let n = self.osc.samples_per_cycle().max(2);
         if i >= self.flagged.analog.len() {
             return 0.0;
         }
-        fvb_core::freqcorr::fundamental_at(fvb_core::freqcorr::of(&self.osc), i, self.shown_samples(i), k, n)
+        fvb_core::freqcorr::fundamental_at(self.corr_of(i), i, self.shown_samples(i), k, self.period_of(i))
     }
 
     pub fn harmonic_at(&self, i: usize, k: usize) -> f64 {
@@ -1571,7 +1585,7 @@ pub struct App {
     pub rename_edit: Option<(usize, String)>,
     /// A stats-panel drag waiting to start (MFC's OnBeginDrag loop): where
     /// the pointer was, when, and the channels.
-    pub stats_drag_arm: Option<(egui::Pos2, f64, Vec<usize>)>,
+    pub stats_drag_arm: Option<(egui::Pos2, f64, Vec<ChanKey>)>,
     /// A channel drag in the view's 11 px scroll inset: its scroll code
     /// (vertical part high, horizontal low) and when the delay last
     /// restarted or it last scrolled.
@@ -3331,6 +3345,206 @@ mod tests {
         let merged = d.osc.analog.iter().position(|c| c.id.contains("(вст.)")).expect("the merged channel");
         assert!(d.selection.contains(&ChanKey::Analog(merged)), "still selected after the merge");
         assert!(!d.selection.iter().any(|k| matches!(k, ChanKey::Computed(_))));
+    }
+
+    /// «Объединить» gives every channel present its own rate R (`0x47d990`);
+    /// a later rate change sets only the record's, so the merged channels
+    /// keep their window (#71) and «Совместить каналы» refuses a later
+    /// formula (message 239, #57).
+    #[test]
+    fn a_merge_gives_the_channels_an_own_rate_the_rate_dialog_leaves_alone() {
+        let mut app = demo_app();
+        let r = app.docs[0].osc.rate_r;
+        assert!(app.docs[0].osc.analog.iter().all(|c| c.own_rate == 0.0), "a file's channels have none");
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = &app.docs[0];
+        assert!(d.osc.analog.iter().all(|c| c.own_rate == r), "every channel present, the pasted one too");
+        // The rate dialog sets only the record's.
+        assert_eq!(app.apply_file_rate(0, "1250"), Ok(()));
+        let d = &app.docs[0];
+        assert!(d.osc.analog.iter().all(|c| c.own_rate == r), "the dialog leaves the own rate alone");
+        // The merged channel keeps its period, the record's follows the new rate (#71).
+        assert_eq!((d.osc.samples_per_cycle(), d.period_of(3)), (25, 40));
+        let want = fvb_core::freqcorr::sliding_rms(fvb_core::freqcorr::of(&d.osc).map(|c| c.at_rate(r)), 3, d.shown_samples(3), d.period_of(3));
+        assert_eq!(d.rms[3], want, "the RMS window is the own rate / 50");
+        assert_ne!(d.period_of(3), d.osc.samples_per_cycle());
+        // A formula added now has none: it follows the record's rate.
+        assert!(app.append_computed(&[("X".into(), "Ib".into())]).is_some());
+        let d = &app.docs[0];
+        assert_eq!(d.computed.last().unwrap().own_rate, 0.0);
+        // 33035 over the merged Ib and the new formula: rates differ.
+        let j = d.computed.len() - 1;
+        let d = &mut app.docs[0];
+        d.selection = BTreeSet::from([ChanKey::Analog(4), ChanKey::Computed(j)]);
+        assert!(d.can_combine(), "the enable check passes");
+        assert!(!d.combine_selected(), "message 239: nothing changed");
+        assert!(d.chans[4].group.is_none() && d.computed[j].group.is_none());
+        // Two merged channels group normally.
+        d.selection = BTreeSet::from([ChanKey::Analog(3), ChanKey::Analog(4)]);
+        assert!(d.combine_selected());
+        assert!(d.chans[3].group.is_some() && d.chans[3].group == d.chans[4].group);
+    }
+
+    /// Every reader of a channel's period gives an own rate its window
+    /// (L9.142): the formula functions, the frequency diagram's bins, a
+    /// formula channel's phasors, statistics and correction (#71).
+    #[test]
+    fn the_readers_take_a_channels_own_rate() {
+        let mut app = demo_app();
+        let d = &mut app.docs[0];
+        // The plain windows (the correction has its own: `FreqCorr::at_rate`).
+        d.osc.freq_sel = 0;
+        let n_rec = d.osc.samples_per_cycle();
+        let own = 1250.0;
+        d.osc.analog[3].own_rate = own;
+        let n_own = d.osc.period_of(own);
+        assert_eq!((n_own, n_rec), (25, 40));
+        d.recompute(false);
+        // A sample where the two windows disagree (the fault's onset).
+        let x = d.shown_samples(3).to_vec();
+        let k = (0..x.len()).max_by(|&a, &b| {
+            let gap = |k: usize| (fvb_core::signal::rms_at(&x, k, n_own) - fvb_core::signal::rms_at(&x, k, n_rec)).abs();
+            gap(a).total_cmp(&gap(b))
+        });
+        let k = k.unwrap();
+        // The formula function reads the channel at its window.
+        assert!(app.append_computed(&[("X".into(), "rms:(Ia)".into()), ("Y".into(), "rms:(Ib)".into())]).is_some());
+        let d = &app.docs[0];
+        let want = fvb_core::signal::rms_at(d.shown_samples(3), k, n_own);
+        let record = fvb_core::signal::rms_at(d.shown_samples(3), k, n_rec);
+        assert!((want - record).abs() > 1e-3, "the record tells the windows apart: {want} {record}");
+        assert!((d.computed[0].samples[k] - want).abs() < 1e-9, "own window");
+        let want_b = fvb_core::signal::rms_at(d.shown_samples(4), k, n_rec);
+        assert!((d.computed[1].samples[k] - want_b).abs() < 1e-9, "a channel without one keeps the record's");
+        // The frequency diagram's bins.
+        let bins = crate::diagram_ui::freq_bins(d, d.shown_samples(3), Some(3), own, k, 1, 5);
+        assert_eq!(bins, fvb_core::signal::spectrum(d.shown_samples(3), k, n_own, 1, 5, d.osc.harmonic1_gain));
+        // A formula channel with an own rate: its window.
+        let d = &mut app.docs[0];
+        d.computed[0].own_rate = own;
+        assert_eq!(d.computed_period(0), n_own);
+        assert_eq!(d.computed_period(1), n_rec);
+    }
+
+    /// The original's readings on a synthetic record (VM, 2026-10-31): a
+    /// merged channel keeps its window (2000 Hz / 50 = 40) after the record's
+    /// rate drops to 1250 Hz, a formula added later takes the record's (25); at
+    /// one sample the merged ones read 20.209 / 20.209, the formula 20.7659 /
+    /// 17.3493 (СКЗ / A1).
+    #[test]
+    fn a_merged_channel_keeps_its_window_after_a_rate_change() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(0)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        assert_eq!(app.apply_file_rate(0, "1250"), Ok(()));
+        assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
+        let d = &app.docs[0];
+        let (k, j) = (236, d.computed.len() - 1);
+        let r4 = |v: f64| (v * 1e4).round() / 1e4;
+        for i in [0, 1] {
+            assert_eq!((r4(d.stat_rms(i, k)), r4(d.stat_a1(i, k))), (20.209, 20.209), "the merged channel {i} and the record's own: their own window");
+        }
+        let (rms, a1) = (fvb_core::signal::rms_at(&d.computed[j].samples, k, d.computed_period(j)), fvb_core::signal::harmonic_rms(&d.computed[j].samples, k, d.computed_period(j), 1));
+        assert_eq!((r4(rms), r4(a1)), (20.7659, 17.3493), "the later formula: the record's window");
+    }
+
+    /// The frequency diagram after the same steps (VM, 2026-10-31, the
+    /// original at the vizir over sample 236): the merged channel's bars are
+    /// clean, the later formula's — a window of 25 samples (the record's
+    /// new 1250 Hz / 50) — reads 45.6 / 100 / 31.8 / 20.0 / 14.9 / 12.1 / 10.3 / 9.1 / 8.3 / 7.7 / 7.4 %
+    /// in the original.
+    #[test]
+    fn the_frequency_diagram_keeps_a_merged_channels_window() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(0)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        assert_eq!(app.apply_file_rate(0, "1250"), Ok(()));
+        assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
+        let d = &app.docs[0];
+        let pct = |b: Vec<f64>| b.iter().map(|v| (v / b[1] * 1000.0).round() / 10.0).collect::<Vec<_>>();
+        let x = pct(crate::diagram_ui::freq_bins(d, &d.computed[0].samples, None, 0.0, 236, 1, 10));
+        assert_eq!(x, [45.6, 100.0, 31.8, 20.0, 14.9, 12.1, 10.3, 9.1, 8.3, 7.7, 7.4]);
+        let m = pct(crate::diagram_ui::freq_bins(d, d.shown_samples(0), Some(0), d.osc.analog[0].own_rate, 236, 1, 10));
+        assert_eq!(m, [0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    }
+
+    /// The own rate of every channel present at the merge reaches every reader
+    /// (#71): a formula channel present at the merge keeps R after the rate
+    /// change and reads at its window (40 at R = 2000 Hz, the record's is 25 at
+    /// 1250 Hz); the phasor cache, the DC mean, a formula's RMS display and the
+    /// lane's СКЗ / A1 read it; a refused 33035 dissolves no group (#57).
+    #[test]
+    fn a_formula_present_at_the_merge_keeps_its_own_window() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(0)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let r = app.docs[0].osc.rate_r;
+        let j = app.docs[0].computed.iter().position(|c| c.name == "X").unwrap();
+        assert_eq!(app.docs[0].computed[j].own_rate, r, "a formula present at the merge gets R");
+        assert_eq!(app.apply_file_rate(0, "1250"), Ok(()));
+        // A later formula has none.
+        assert!(app.append_computed(&[("Y".into(), "Ua".into())]).is_some());
+        let d = &mut app.docs[0];
+        let y = d.computed.iter().position(|c| c.name == "Y").unwrap();
+        assert_eq!((d.computed[j].own_rate, d.computed[y].own_rate), (r, 0.0), "the dialog leaves it alone");
+        assert_eq!((d.computed_period(j), d.computed_period(y)), (40, 25));
+        let k = 236;
+        // The phasor cache of a merged channel: its window.
+        let want = fvb_core::signal::sliding_phasors(d.shown_samples(1), 40);
+        assert_eq!(d.analysis.phasors[1][k], want[k], "the phasor cache at the own window");
+        assert_ne!(d.analysis.phasors[1][k], fvb_core::signal::sliding_phasors(d.shown_samples(1), 25)[k]);
+        // The whole-period DC mean: its window.
+        let x = &d.osc.analog[1].samples;
+        assert_eq!(d.dc_mean[1].0, whole_period_mean(x, 40));
+        assert_ne!(whole_period_mean(x, 40), whole_period_mean(x, 25), "the record tells the windows apart");
+        // A formula channel's RMS display and its lane's СКЗ / A1.
+        d.computed[j].mode = ValueMode::Rms;
+        d.computed[y].mode = ValueMode::Rms;
+        d.reflag_computed(j);
+        d.reflag_computed(y);
+        let rms = |n: usize| fvb_core::signal::rms_at(&d.computed[j].samples, k, n);
+        assert_eq!(d.computed[j].display[k], rms(40), "the display at the own window");
+        assert_eq!(d.computed[y].display[k], rms(25), "the later formula at the record's");
+        assert_ne!(rms(40), rms(25));
+        let lane = |i: usize| crate::lanes::lane_stats(d, &ChanKey::Computed(i), k, false);
+        let (st_j, st_y) = (lane(j), lane(y));
+        assert_eq!((st_j.5, st_j.6), (rms(40), fvb_core::signal::harmonic_rms(&d.computed[j].samples, k, 40, 1)));
+        assert_eq!((st_y.5, st_y.6), (rms(25), fvb_core::signal::harmonic_rms(&d.computed[y].samples, k, 25, 1)));
+        // A refused 33035 dissolves no group: the group of a selected channel survives.
+        d.selection = BTreeSet::from([ChanKey::Analog(1), ChanKey::Analog(2)]);
+        assert!(d.combine_selected());
+        let g = d.chans[1].group;
+        assert!(g.is_some() && g == d.chans[2].group);
+        d.selection = BTreeSet::from([ChanKey::Analog(2), ChanKey::Computed(y)]);
+        assert!(!d.combine_selected(), "message 239");
+        assert!(d.chans[1].group == g && d.chans[2].group == g, "the old group stays");
+    }
+
+    /// Without the rate change a formula after a merge groups with the
+    /// merged channels (the record's rate equals R).
+    #[test]
+    fn a_later_formula_groups_while_the_rates_agree() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        assert!(app.append_computed(&[("X".into(), "Ib".into())]).is_some());
+        let d = &mut app.docs[0];
+        let j = d.computed.len() - 1;
+        d.selection = BTreeSet::from([ChanKey::Analog(4), ChanKey::Computed(j)]);
+        assert!(d.combine_selected());
+        assert!(d.chans[4].group.is_some() && d.chans[4].group == d.computed[j].group);
     }
 
     /// The ribbon's update rules (`0x45c8c0`, `0x42fc60`, `0x475750`,

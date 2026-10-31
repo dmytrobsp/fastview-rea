@@ -380,6 +380,8 @@ pub struct ComputedChannel {
     pub formula: String,
     pub samples: Vec<f64>,
     pub phasors: Option<Vec<num_complex::Complex64>>,
+    /// The channel's own rate (`ch+0x108`), 0 for a formula added after the merge.
+    pub own_rate: f64,
 }
 
 /// Evaluate `(name, formula)` channels in order on `osc` plus the
@@ -440,6 +442,7 @@ pub fn evaluate_batch_with(
             formula: formula.clone(),
             samples,
             phasors: all_c.then_some(cplx),
+            own_rate: 0.0,
         };
         all.push(ch.clone());
         added.push(ch);

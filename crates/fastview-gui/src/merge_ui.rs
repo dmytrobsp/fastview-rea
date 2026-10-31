@@ -184,6 +184,7 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
                     samples: c.data.clone(),
                     // `0x45ad02` → `0x424cb0` (`0x425002`): net_frequency to ch+0x50.
                     own_freq: net_freq.clone(),
+                    own_rate: 0.0,
                 })
             };
             ClipChan { pasted: Pasted { channel, times, rate: rec.rate, pad: 0.0 }, color: c.color.map_or(egui::Color32::TRANSPARENT, from_colorref), start, primary_mode: c.primary_mode, lane: 0 }
@@ -715,6 +716,10 @@ impl App {
         };
         let (at_a, at_d) = (anchor(false).unwrap_or(nb).min(nb), anchor(true).unwrap_or(nd).min(nd));
         d.osc = merged;
+        // The formula channels present get the merged rate too (`0x47d990`).
+        for c in d.computed.iter_mut().filter(|c| c.formula != PENDING) {
+            c.own_rate = d.osc.sample_rate;
+        }
         for (i, p) in (nb..d.osc.analog.len()).zip(&pend_a) {
             let mut v = ChanView::new(&d.osc.analog[i], i);
             if let Some((color, custom)) = p.color {

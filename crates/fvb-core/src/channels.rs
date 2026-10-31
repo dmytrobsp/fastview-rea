@@ -18,6 +18,9 @@ pub struct OscChannels {
     samples: Vec<Vec<f64>>,
     phasors: Vec<Phasors>,
     n: usize,
+    /// Per channel: its own rate (`ch+0x108`, 0 = the record's), which gives
+    /// its window round(rate / 50) and the correction's rate (L9.142).
+    rates: Vec<f64>,
     /// Channels from here on are digital (appended after the computed
     /// ones, the original's vector order): their RMS / a0 / harmonics /
     /// fault / phasor are 0 (`0x4272ae`, `0x426c9b`, `0x426274`, `0x42767e`,
@@ -70,11 +73,14 @@ impl OscChannels {
             .zip(&ratios)
             .map(|(c, (k, _, _))| c.samples.iter().map(|v| v * k).collect())
             .collect();
-        let mut phasors: Vec<Phasors> = samples.iter().enumerate().map(|(i, s)| freqcorr::sliding_phasors(corr, i, s, n)).collect();
+        let mut rates: Vec<f64> = osc.analog.iter().map(|c| c.own_rate).collect();
+        let np = |r: f64| osc.period_of(r).max(2);
+        let mut phasors: Vec<Phasors> = samples.iter().enumerate().map(|(i, s)| freqcorr::sliding_phasors(corr.map(|c| c.at_rate(rates[i])), i, s, np(rates[i]))).collect();
         for c in extra {
             names.push(c.name.clone());
             let ch = phasors.len();
-            phasors.push(c.phasors.clone().unwrap_or_else(|| freqcorr::sliding_phasors(corr, ch, &c.samples, n)));
+            phasors.push(c.phasors.clone().unwrap_or_else(|| freqcorr::sliding_phasors(corr.map(|q| q.at_rate(c.own_rate)), ch, &c.samples, np(c.own_rate))));
+            rates.push(c.own_rate);
             samples.push(c.samples.clone());
             ratios.push((1.0, 1.0, 1.0));
         }
@@ -85,6 +91,7 @@ impl OscChannels {
             names.push(d.id.trim_end_matches(' ').to_string());
             samples.push(d.samples.iter().map(|&b| f64::from(u8::from(b))).collect());
             phasors.push(Vec::new());
+            rates.push(0.0);
             ratios.push((1.0, 1.0, 1.0));
         }
         let units = osc.analog.iter().map(|c| c.unit.clone()).chain(extra.iter().map(|c| c.unit.clone())).chain(osc.digital.iter().map(|_| String::new())).collect();
@@ -96,6 +103,7 @@ impl OscChannels {
             samples,
             phasors,
             n,
+            rates: rates.clone(),
             freq: osc.freq_track.clone(),
             gain1: osc.harmonic1_gain,
             corr: corr.map(|c| (c.chan, c.freq.to_vec(), c.fs)),
@@ -104,7 +112,16 @@ impl OscChannels {
 
     /// The correction for channel `ch`, if any.
     fn fc(&self, ch: usize) -> Option<FreqCorr<'_>> {
-        self.corr.as_ref().and_then(|(chan, freq, fs)| FreqCorr { chan: *chan, freq, fs: *fs }.for_chan(ch))
+        self.corr.as_ref().and_then(|(chan, freq, fs)| FreqCorr { chan: *chan, freq, fs: *fs }.at_rate(self.rates[ch]).for_chan(ch))
+    }
+
+    /// Channel `ch`'s window (`0x428490` and the signal functions).
+    fn n_of(&self, ch: usize) -> usize {
+        if self.rates[ch] != 0.0 {
+            ((self.rates[ch] / 50.0).round() as usize).max(2)
+        } else {
+            self.n
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -149,7 +166,7 @@ impl Channels for OscChannels {
         }
         match self.fc(ch) {
             Some(c) => c.rms(&self.samples[ch], idx, 1.0),
-            None => signal::rms_at(&self.samples[ch], idx, self.n),
+            None => signal::rms_at(&self.samples[ch], idx, self.n_of(ch)),
         }
     }
     fn a0(&self, ch: usize, idx: usize) -> f64 {
@@ -158,7 +175,7 @@ impl Channels for OscChannels {
         }
         match self.fc(ch) {
             Some(c) => c.a0(&self.samples[ch], idx, 1.0),
-            None => signal::a0_at(&self.samples[ch], idx, self.n),
+            None => signal::a0_at(&self.samples[ch], idx, self.n_of(ch)),
         }
     }
     fn fourie(&self, ch: usize, n: i32, idx: usize) -> f64 {
@@ -170,7 +187,7 @@ impl Channels for OscChannels {
         if let Some(c) = self.fc(ch) {
             return c.harmonic(&self.samples[ch], idx, f64::from(n), false, 1.0).norm();
         }
-        let h = signal::harmonic_rms(&self.samples[ch], idx, self.n, n.unsigned_abs() as usize);
+        let h = signal::harmonic_rms(&self.samples[ch], idx, self.n_of(ch), n.unsigned_abs() as usize);
         if n == 1 {
             h * self.gain1
         } else {
@@ -183,7 +200,7 @@ impl Channels for OscChannels {
         }
         match self.fc(ch) {
             Some(c) => c.fault(&self.samples[ch], idx),
-            None => signal::fault_at(&self.samples[ch], idx, self.n),
+            None => signal::fault_at(&self.samples[ch], idx, self.n_of(ch)),
         }
     }
     /// `0x414e90`: the track at the sample, 0 past its end.

@@ -378,6 +378,15 @@ fn shown_by_name(d: &Doc, name: &str) -> fvb_core::units::Shown {
 /// or [min(c1,c2), max(c1,c2)] with «Диапазон между визирами»; both bounds
 /// raised to N, then capped at the sample count itself — so the default
 /// range ends one past the samples, at a (0, 0) point.
+/// A channel's bins in the frequency diagram (`0x426510`): its window is
+/// round(own rate / 50) with an own rate (`ch+0x108`), else the record's, and
+/// the correction runs at that rate too.
+pub(crate) fn freq_bins(d: &Doc, samples: &[f64], file: Option<usize>, own_rate: f64, pos: usize, periods: usize, k_max: usize) -> Vec<f64> {
+    let corr = fvb_core::freqcorr::of(&d.osc);
+    let mine = file.and_then(|i| corr.and_then(|cr| cr.for_chan(i))).map(|c| c.at_rate(own_rate));
+    fvb_core::freqcorr::spectrum(mine, samples, pos, d.osc.period_of(own_rate).max(2), periods, k_max, d.osc.harmonic1_gain)
+}
+
 fn circle_range(d: &Doc, between: bool) -> std::ops::RangeInclusive<usize> {
     let len = d.osc.sample_count();
     let n = d.osc.samples_per_cycle().max(1);
@@ -450,7 +459,6 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
         }
         return out;
     }
-    let n = d.osc.samples_per_cycle().max(2);
     let mut push = |name: String, unit: fvb_core::units::Shown, color: Color32, power: bool, markers: bool, f: &dyn Fn(usize) -> [f64; 2]| {
         let g = |k| finite_or_origin(f(k));
         out.push(Locus { name, unit, color, power, pts: range.clone().map(g).collect(), c1: f(k1), c2: f(k2), markers, pair_units: None });
@@ -472,7 +480,7 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
             }
             let z = match &c.phasors {
                 Some(p) => p.get(k).copied().unwrap_or_default(),
-                None => fvb_core::freqcorr::phasor_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, &c.samples, k, n),
+                None => fvb_core::freqcorr::phasor_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, &c.samples, k, d.computed_period(j)),
             };
             [z.re, z.im]
         };
@@ -1422,7 +1430,6 @@ impl App {
         // rows with empty cells; a click, the 32813 toggle or the keys
         // place it and the values stay when it is hidden again).
         let values = d.v1_placed || d.v_shown[0];
-        let n = d.osc.samples_per_cycle().max(2);
         let phasor_of = |name: &str| -> Option<Complex64> {
             if let Some(i) = d.osc.analog.iter().position(|c| c.id == name) {
                 return d.analysis.phasors.get(i).and_then(|p| p.get(k)).copied();
@@ -1435,7 +1442,7 @@ impl App {
                 }
                 match &c.phasors {
                     Some(p) => p.get(k).copied().unwrap_or_default(),
-                    None => fvb_core::freqcorr::phasor_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, &c.samples, k, n),
+                    None => fvb_core::freqcorr::phasor_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, &c.samples, k, d.computed_period(j)),
                 }
             })
         };
@@ -1606,11 +1613,13 @@ impl App {
             samples: &'a [f64],
             /// The file channel (its frequency correction and k).
             file: Option<usize>,
+            /// Its own rate (`ch+0x108`): the window and the correction's rate.
+            own_rate: f64,
         }
         let chans: Vec<FreqChan> = (0..d.osc.analog.len())
             .filter(|i| d.chans[*i].on_freq)
-            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: d.shown_samples(i), file: Some(i) })
-            .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && d.pending_of(*j).is_none()).map(|(_, c)| FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: None }))
+            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: d.shown_samples(i), file: Some(i), own_rate: d.osc.analog[i].own_rate })
+            .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && d.pending_of(*j).is_none()).map(|(_, c)| FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: None, own_rate: c.own_rate }))
             .collect();
         let s = print_s().unwrap_or(1.0);
         let si = s as i32;
@@ -1653,12 +1662,12 @@ impl App {
             let (c, r) = tl.cell(pi);
             let (row_top, yb) = (g.top + r * tl.row_h, tl.row_bottom(&g, r));
             let samples = ch.samples;
-            let mine = ch.file.and_then(|i| corr.and_then(|cr| cr.for_chan(i)));
+            let n = d.osc.period_of(ch.own_rate).max(2);
             // The spectrum and the norm sum the samples as `0x426020` returns them (times k, each one).
-            let sp: Vec<f64> = fvb_core::freqcorr::spectrum(mine, samples, pos, n, periods, k_max.max(periods), d.osc.harmonic1_gain);
+            let sp: Vec<f64> = freq_bins(d, samples, ch.file, ch.own_rate, pos, periods, k_max.max(periods));
             let max = sp[..=k_max].iter().copied().fold(0.0, f64::max);
             let max = if max == 0.0 { 1.0 } else { max };
-            let norm = if use_rms { fvb_core::freqcorr::rms_at(ch.file.and(corr), ch.file.unwrap_or(0), samples, pos, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
+            let norm = if use_rms { fvb_core::freqcorr::rms_at(ch.file.and(corr).map(|c| c.at_rate(ch.own_rate)), ch.file.unwrap_or(0), samples, pos, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
             let color = ch.color;
             if g.plot_h() - 30 * si - g.h <= 0 {
                 continue;

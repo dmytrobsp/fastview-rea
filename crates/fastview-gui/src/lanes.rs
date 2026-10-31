@@ -1236,7 +1236,7 @@ enum Act {
     Select(ChanKey, SelClick),
     ClearSelection,
     OpenMenu(Pos2, LaneMenuKind),
-    DropCombine(Vec<usize>, usize),
+    DropCombine(Vec<ChanKey>, ChanKey),
     Cmd(Command),
 }
 
@@ -1245,6 +1245,16 @@ enum Act {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChanDrag {
     pub chans: Vec<usize>,
+    /// The formula channels among them (analog-kind records of the same
+    /// vector, `0x4415b0` walks them all).
+    pub computed: Vec<usize>,
+}
+
+impl ChanDrag {
+    fn of(keys: Vec<ChanKey>) -> ChanDrag {
+        let pick = |f: fn(&ChanKey) -> Option<usize>| keys.iter().filter_map(f).collect::<Vec<_>>();
+        ChanDrag { chans: pick(|k| if let ChanKey::Analog(i) = k { Some(*i) } else { None }), computed: pick(|k| if let ChanKey::Computed(j) = k { Some(*j) } else { None }) }
+    }
 }
 
 /// MFC's drag delay (`DD_DEFDRAGDELAY`, ms → s).
@@ -1256,6 +1266,9 @@ const DRAG_SCROLL_S: f64 = 0.05;
 
 /// Message 1086.
 pub const MSG_COMBINE_UNITS: &str = "Совмещение невозможно.\nУ каналов разные единицы измерения.";
+
+/// Message 239 (error icon), «Совместить каналы» with channels of different rates.
+pub const MSG_COMBINE_RATES: &str = "Выбранные каналы имеют разную частоту";
 
 /// A command chosen in one of the context menus.
 enum MenuCmd {
@@ -1705,14 +1718,14 @@ impl App {
             // it drops.
             if let Some((_, t0, chans)) = self.stats_drag_arm.take().filter(|_| released && !r_down && !esc && !egui::DragAndDrop::has_any_payload(&ctx)) {
                 if t - t0 > DRAG_DELAY {
-                    egui::DragAndDrop::set_payload(&ctx, ChanDrag { chans });
+                    egui::DragAndDrop::set_payload(&ctx, ChanDrag::of(chans));
                 }
             }
         } else if let Some((a, t0, chans)) = self.stats_drag_arm.take() {
             let p = now.unwrap_or(a);
             let (dx, dy) = ((p.x - a.x).floor(), (p.y - a.y).floor());
             if !(-2.0..2.0).contains(&dx) || !(-2.0..2.0).contains(&dy) || t - t0 > DRAG_DELAY {
-                egui::DragAndDrop::set_payload(&ctx, ChanDrag { chans });
+                egui::DragAndDrop::set_payload(&ctx, ChanDrag::of(chans));
             } else {
                 ctx.request_repaint_after(std::time::Duration::from_secs_f64(DRAG_DELAY - (t - t0) + 0.001));
                 self.stats_drag_arm = Some((a, t0, chans));
@@ -1720,7 +1733,7 @@ impl App {
         } else if moved && !ctrl && !menu_busy && self.rename_edit.is_none() && resp.is_pointer_button_down_on() {
             let mode0 = self.vizir_drag.is_none() && self.comment_drag.is_none() && self.merge_drag.is_none() && !matches!(self.rect_zoom, RectZoom::Dragging { .. });
             if let (Some(o), Some(p)) = (origin, now) {
-                let sel = doc.selected_analog();
+                let sel: Vec<ChanKey> = doc.selected_analog().into_iter().map(ChanKey::Analog).chain(doc.selected_computed().into_iter().filter(|&j| doc.pending_of(j).is_none()).map(ChanKey::Computed)).collect();
                 if mode0 && in_view(o) && p.x < left && !sel.is_empty() {
                     self.stats_drag_arm = Some((p, t, sel));
                 }
@@ -1766,8 +1779,14 @@ impl App {
                 let lane = rows.iter().zip(&tops).find(|(r, &t)| p.y >= t && p.y < t + r.h).map(|(r, _)| r.key);
                 if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
                     if let Some(drag) = egui::DragAndDrop::take_payload::<ChanDrag>(&ctx) {
-                        if let Some(Lane::Analog(i)) = lane.filter(|k| matches!(k, Lane::Analog(i) if !drag.chans.contains(i))) {
-                            actions.push(Act::DropCombine(drag.chans.clone(), i));
+                        let target = lane.and_then(|k| match k {
+                            Lane::Analog(i) if !drag.chans.contains(&i) => Some(ChanKey::Analog(i)),
+                            Lane::Computed(j) if !drag.computed.contains(&j) && doc.pending_of(j).is_none() => Some(ChanKey::Computed(j)),
+                            _ => None,
+                        });
+                        if let Some(target) = target {
+                            let keys = drag.chans.iter().map(|&i| ChanKey::Analog(i)).chain(drag.computed.iter().map(|&j| ChanKey::Computed(j))).collect();
+                            actions.push(Act::DropCombine(keys, target));
                         }
                     }
                 }
@@ -1962,9 +1981,12 @@ impl App {
                 Act::DropCombine(chans, target) => {
                     // The dragged channels and the target are selected (other
                     // selections stay), then 33035 or message 1086.
-                    d.selection.extend(chans.iter().chain([&target]).map(|&i| Lane::Analog(i)));
+                    d.selection.extend(chans.iter().chain([&target]).copied());
                     if d.can_combine() {
-                        d.combine_selected();
+                        if !d.combine_selected() {
+                            // VM: after the box (and a repaint) the target stays selected beside the dragged lane.
+                            self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
+                        }
                     } else {
                         self.dlg.push_alert(MSG_COMBINE_UNITS.to_string());
                     }
@@ -2254,7 +2276,11 @@ impl App {
                     MenuCmd::Hide => d.hide_selected(),
                     MenuCmd::Mode(m) => d.set_mode_selected(m),
                     MenuCmd::ResetZoom => d.reset_zoom_selected(),
-                    MenuCmd::Combine => d.combine_selected(),
+                    MenuCmd::Combine => {
+                        if !d.combine_selected() {
+                            self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
+                        }
+                    }
                     MenuCmd::Split => d.split_selected(),
                     MenuCmd::LockComment(i) => d.comments[i].locked = !d.comments[i].locked,
                     MenuCmd::DeleteComment(i) => {
@@ -2641,7 +2667,7 @@ fn analog_unit(doc: &crate::app::Doc, i: usize) -> fvb_core::units::Shown {
 }
 
 /// Compute (name, unit, color, max, min, rms, a1, value@cursor) for a lane.
-fn lane_stats(
+pub(crate) fn lane_stats(
     doc: &crate::app::Doc,
     lane: &Lane,
     k_main: usize,
@@ -2662,6 +2688,7 @@ fn lane_stats(
             // A computed channel is read out like any other channel.
             let c = &doc.computed[*i];
             let n = doc.osc.samples_per_cycle().max(2);
+            let n_own = doc.computed_period(*i);
             // Value and Max / Min from the display cache (mode, invert, DC).
             let series = |k: usize| c.shown(k);
             let (mut mx, mut mn) = (f64::MIN, f64::MAX);
@@ -2693,8 +2720,8 @@ fn lane_stats(
                 let (mx, mn) = finite.fold((f64::MIN, f64::MAX), |(hi, lo), v| (hi.max(v), lo.min(v)));
                 return (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, val);
             }
-            let rms = fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n, 1);
-            let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n) * gain;
+            let rms = fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n_own, 1);
+            let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n_own) * gain;
             (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, series(k_main))
         }
         Lane::Digital(i) => {
@@ -2927,10 +2954,43 @@ mod menu_tests {
         assert!(h.doc().chans[c0].group.is_none() && h.doc().chans[co].group.is_none());
         h.app.dlg.alerts.clear();
         h.app.active_doc_mut().unwrap().selection.clear();
+        // Another own rate on the dragged channel: message 239 (error
+        // icon), nothing changed (#57).
+        h.app.active_doc_mut().unwrap().osc.analog[c0].own_rate = 1234.0;
+        drag_rows(&mut h, 0, same);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_RATES), "different rates: message 239");
+        assert!(h.doc().chans[c0].group.is_none() && h.doc().chans[cs].group.is_none());
+        h.app.dlg.alerts.clear();
+        h.app.active_doc_mut().unwrap().osc.analog[c0].own_rate = 0.0;
+        h.app.active_doc_mut().unwrap().selection.clear();
         drag_rows(&mut h, 0, same);
         let d = h.doc();
         assert!(d.chans[c0].group.is_some() && d.chans[c0].group == d.chans[cs].group, "one lane now");
         assert!(!egui::DragAndDrop::has_any_payload(&h.ctx));
+    }
+
+    /// The drop works for formula channels too (#57): a formula added after
+    /// the rate changed has no own rate while the merged lane has one, so the
+    /// drop shows message 239 and changes nothing; with agreeing rates it groups.
+    #[test]
+    fn dragging_a_formula_lane_onto_a_merged_lane() {
+        let mut h = Harness::new();
+        assert!(h.app.append_computed(&[("X".into(), "Ub".into())]).is_some());
+        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let from = rows.iter().position(|r| r.key == Lane::Computed(0)).expect("the formula lane");
+        let to = rows.iter().position(|r| r.key == Lane::Analog(1)).expect("a file lane");
+        let rate = h.doc().osc.int_rate_hz();
+        h.app.active_doc_mut().unwrap().osc.analog[1].own_rate = rate * 2.0;
+        drag_rows(&mut h, from, to);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_RATES), "message 239");
+        assert!(h.doc().computed[0].group.is_none() && h.doc().chans[1].group.is_none());
+        assert!(h.doc().selection.contains(&Lane::Analog(1)) && h.doc().selection.contains(&Lane::Computed(0)), "both stay selected after a refused drop (VM)");
+        h.app.dlg.alerts.clear();
+        h.app.active_doc_mut().unwrap().osc.analog[1].own_rate = 0.0;
+        h.app.active_doc_mut().unwrap().selection.clear();
+        drag_rows(&mut h, from, to);
+        assert!(h.app.dlg.alert().is_none());
+        assert!(h.doc().computed[0].group.is_some() && h.doc().computed[0].group == h.doc().chans[1].group, "one lane now");
     }
 
     #[test]
