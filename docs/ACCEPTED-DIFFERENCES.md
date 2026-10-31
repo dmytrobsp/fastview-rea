@@ -76,3 +76,15 @@ maintainer), **issue**.
   record exists to reverse or verify the format against; the vendor's own software reads these records.
 - **Decided**: 2026-10-30, the maintainer.
 - **Issue**: [#49](https://github.com/dmytrobsp/fastview-rea/issues/49).
+
+## sin / cos of very large angles in formulas
+
+- **What differs**: for |x| ≥ 90 112 rad (and for non-finite arguments) ours computes a formula's `sin:` / `cos:` with
+  the platform's sin / cos; the original's runtime (msvcr120) uses a large-argument reduction of its own, less accurate
+  than either, so the results differ. Below 90 112 ours matches the original bit for bit (L9.412).
+- **Where it shows**: only in a formula channel taking `sin:` / `cos:` of an angle beyond about 5.16 million degrees;
+  the signal maths (DFT, phasors, ОМП) never reach such angles.
+- **Why it isn't fixed**: reproducing msvcr120's large-argument reduction would mean reading Microsoft's runtime,
+  whose terms forbid reverse engineering; the port it matches below that bound is Intel's BSD-licensed code.
+- **Decided**: 2026-10-30, the maintainer (with #72: "values beyond 90 112 and non-finite ones fall back to std").
+- **Issue**: [#116](https://github.com/dmytrobsp/fastview-rea/issues/116).
