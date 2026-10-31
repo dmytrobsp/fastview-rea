@@ -88,3 +88,16 @@ maintainer), **issue**.
   whose terms forbid reverse engineering; the port it matches below that bound is Intel's BSD-licensed code.
 - **Decided**: 2026-10-30, the maintainer (with #72: "values beyond 90 112 and non-finite ones fall back to std").
 - **Issue**: [#116](https://github.com/dmytrobsp/fastview-rea/issues/116).
+
+## tan of very large angles in formulas
+
+- **What differs**: for |x| ≥ 12 800 rad ours computes a formula's `tg:` / `ctg:` with the platform's tan; the original's
+  runtime (msvcr120) takes its own large-argument path there, so the results can differ in the last digits. Below
+  12 800 rad ours is a port of Intel's SSE2 tan that matches the original bit for bit (about 3.4 million angles checked
+  on a clone, L9.416).
+- **Where it shows**: only in a formula channel taking `tg:` / `ctg:` of an angle beyond about 733 000 degrees, and only
+  around the 16th significant digit — no display, cursor readout or printout shows that many.
+- **Why it isn't fixed**: porting the large-argument path as well would be about a day's work and more of Intel's code
+  under its licence for a difference nobody can see; the same bound was accepted for sin / cos (#116).
+- **Decided**: 2026-10-31, the maintainer ("accept it").
+- **Issue**: [#131](https://github.com/dmytrobsp/fastview-rea/issues/131).
