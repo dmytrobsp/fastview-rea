@@ -638,6 +638,9 @@ impl App {
             picked: bool,
             /// The lane's name as read (its bytes, its alias flag).
             raw: Option<crate::app::RawName>,
+            /// The lane's frequency / vector / circle bits (#133): the merged
+            /// channel is the lane's channel and keeps them (clone).
+            bits: Option<[bool; 3]>,
         }
         let pend = |p: &ClipChan| {
             let j = d.computed.iter().position(|c| c.formula == PENDING && c.seq == p.lane);
@@ -657,6 +660,7 @@ impl App {
                 after,
                 picked: j.is_some_and(|j| d.selection.contains(&ChanKey::Computed(j))),
                 raw: c.and_then(|c| c.name_raw.clone()),
+                bits: c.map(|c| [c.on_freq, c.on_vector, c.on_circle]),
             }
         };
         let (pend_a, pend_d): (Vec<Pend>, Vec<Pend>) = {
@@ -731,6 +735,9 @@ impl App {
                 (v.invert, v.remove_dc, v.mode) = (inv, dc, mode);
             }
             v.primary = p.mode;
+            if let Some([freq, vector, circle]) = p.bits {
+                (v.on_freq, v.on_vector, v.on_circle) = (freq, vector, circle);
+            }
             // Pasted at the block's end or before a formula channel: the
             // merged channel stays there, among the formula channels.
             v.merged_after = p.after.clone();
@@ -1084,6 +1091,33 @@ mod tests {
         assert_eq!(d.chans.len(), d.osc.analog.len());
         assert!(d.osc.analog.iter().all(|c| c.samples.len() == d.osc.time.len()));
         assert!(app.merge.is_none(), "the bar is hidden");
+    }
+
+    /// A pasted lane dropped on the frequency and the vector pane keeps
+    /// those bits on the channel «Объединить» makes of it (clone, #133: the
+    /// merged channel is still drawn on both panes); the circle's never.
+    #[test]
+    fn a_merged_channel_keeps_its_pasted_lanes_pane_bits() {
+        use crate::app::{ChanKey, Pane};
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        let n0 = d.osc.analog.len();
+        d.selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let j = app.active_doc().unwrap().computed.iter().position(|c| c.formula == PENDING).unwrap();
+        for c in &mut app.active_doc_mut().unwrap().chans {
+            (c.on_freq, c.on_vector, c.on_circle) = (false, false, false);
+        }
+        app.drop_channels(&[ChanKey::Computed(j)], Pane::Frequency);
+        app.drop_channels(&[ChanKey::Computed(j)], Pane::Vector);
+        app.drop_channels(&[ChanKey::Computed(j)], Pane::Circle);
+        app.merge_records();
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.osc.analog.len(), n0 + 1);
+        let new = d.chans.iter().position(|c| c.on_freq && c.on_vector).expect("the merged channel keeps the bits");
+        assert!(!d.chans[new].on_circle, "the circle's bit was never set");
+        assert_eq!(d.chans.iter().filter(|c| c.on_freq || c.on_vector || c.on_circle).count(), 1, "no other channel gained a bit");
     }
 
     /// A pasted channel is read in its copied display mode (VM: primary

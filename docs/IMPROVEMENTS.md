@@ -212,6 +212,16 @@ misbehaves and the better behaviour is obvious (the maintainer,
   button) and while it is dragged, as for a caption drag (the entry
   above). The distance is the caption's, grown with the display scale.
   Reason: as for the caption, it hints that dragging on pulls the pane out.
+- **A channel drag dropped on another record's view or diagram does nothing (#74).** With two tab groups, the original
+  runs the drop on the *active* document (`0x4415b0`; the lane is found in the drop window): channels dragged out of
+  record A and let go on record B's view: the lane under the pointer in B's view is added, by its number, to A's
+  selection without repainting A; then the combine runs on B's own current selection, which joins or is refused with message 1086 (clone). The drag carries only channel
+  numbers (the private format, `0x42be30`), no record identity, so the result is arbitrary. Ours remembers the record
+  the drag began in and treats a drop on another record's view as a drop outside: no change, no message, and the
+  "no-drop" cursor over that view (the drag keeps auto-scrolling it, as the original's drop target does). A diagram
+  pane shows the active record only, so a drag begun in a record that is no longer the active one drops nowhere
+  there either. Reason: the maintainer's decision (2026-10-31); Copy / Paste remains the way to move channels
+  between records.
 - **The frequency diagram's «%» labels of a constant channel read 0 (#93).** A channel stuck at one non-zero value
   has no harmonics and no fundamental, but computed in floating point each bin holds rounding noise (around 1e-14 of
   the level). In «% of the fundamental» mode the original divides that noise by the noise (`0x4704e7`) and prints

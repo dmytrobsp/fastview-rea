@@ -1077,6 +1077,13 @@ impl App {
     /// One frame of the whole window (kept apart from `eframe::App::update`
     /// so headless tests can drive it).
     pub fn frame_ui(&mut self, ctx: &egui::Context) {
+        self.frame_ui_inner(ctx);
+        // The channel drag's cursor is decided last: the targets have
+        // said by then whether the pointer is over one (#73).
+        self.finish_drag_cursor(ctx);
+    }
+
+    fn frame_ui_inner(&mut self, ctx: &egui::Context) {
         dialogs::track_input(ctx);
         dialogs::route_combo_keys(ctx);
         self.device_pixels(ctx);
@@ -4780,6 +4787,169 @@ mod window_tests {
         assert!(!egui::DragAndDrop::has_any_payload(&w.ctx), "the drag is over");
     }
 
+    /// A channel drag shows the move-drop cursor over the oscillogram view and
+    /// the frequency / vector diagrams, "copy" with Ctrl inside the view's
+    /// 11 px auto-scroll band, and "no-drop" everywhere else — the ribbon, the
+    /// bars, a pane's caption (clone, #73).
+    #[test]
+    fn a_channel_drag_shows_the_drop_cursor_over_its_targets_only() {
+        use app::Pane;
+        use egui::CursorIcon::{Copy, NoDrop};
+        let mut w = Win::new();
+        let serial = w.app.active_doc().unwrap().serial;
+        let client = w.app.view_rects.expect("the view").1;
+        let canvas = |w: &Win, p: Pane| w.app.pane_canvas.iter().find(|(q, _)| *q == p).unwrap_or_else(|| panic!("{p:?}")).1;
+        let (vector, freq) = (canvas(&w, Pane::Vector), canvas(&w, Pane::Frequency));
+        egui::DragAndDrop::set_payload(&w.ctx, lanes::ChanDrag { chans: vec![0], computed: vec![], doc: serial });
+        let at = |w: &mut Win, p: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(p)]);
+            w.run(vec![])
+        };
+        let drop = lanes::MOVE_DROP_CURSOR;
+        let mid = client.center();
+        assert_eq!(at(&mut w, mid), drop, "over the view");
+        assert_eq!(at(&mut w, vector.center()), drop, "over the vector diagram");
+        assert_eq!(at(&mut w, freq.center()), drop, "over the frequency diagram");
+        assert_eq!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "over the window's top rows");
+        assert_eq!(at(&mut w, Pos2::new(vector.center().x, vector.top() - 12.0)), NoDrop, "over a pane's caption");
+        // The auto-scroll band: Ctrl turns the cursor to "copy", only there.
+        let band = Pos2::new(mid.x, client.bottom() - 4.0);
+        assert_eq!(at(&mut w, band), drop, "in the band without Ctrl");
+        w.held = egui::Modifiers::CTRL;
+        assert_eq!(at(&mut w, mid), drop, "Ctrl beside the band changes nothing");
+        assert_eq!(at(&mut w, vector.center()), drop, "Ctrl over a diagram changes nothing");
+        assert_eq!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "Ctrl elsewhere changes nothing");
+        assert_eq!(at(&mut w, band), Copy, "Ctrl in the band");
+        w.held = egui::Modifiers::NONE;
+        // Ctrl+Shift in the band: MFC answers "link", the drag allows none.
+        w.held = egui::Modifiers { ctrl: true, shift: true, command: true, ..Default::default() };
+        assert_eq!(at(&mut w, band), NoDrop, "Ctrl+Shift in the band");
+        w.held = egui::Modifiers::NONE;
+        egui::DragAndDrop::clear_payload(&w.ctx);
+        assert_ne!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "no drag, no cursor");
+    }
+
+    /// The circle's drop target is its window (property grid and diagram), not
+    /// the pane's toolbar around it; the differential pane has none; a
+    /// floating window over the view is no part of the view (clone, #73).
+    #[test]
+    fn the_circle_toolbar_and_the_differential_pane_are_no_drop_targets() {
+        use app::{Command, Pane};
+        use docking::{Place, Unit};
+        let mut w = Win::new();
+        let serial = w.app.active_doc().unwrap().serial;
+        // The vector and circle panes share a dock: the toolbar column right of the vector canvas is the circle pane's too.
+        let toolbar = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).map(|(_, r)| Pos2::new(r.right() + 8.0, r.center().y)).expect("the vector diagram");
+        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        w.idle(3);
+        let circle = w.app.drop_targets.iter().find(|(p, _)| *p == Pane::Circle).expect("the circle window").1;
+        let payload = || lanes::ChanDrag { chans: vec![0], computed: vec![], doc: serial };
+        let at = |w: &mut Win, p: Pos2| {
+            egui::DragAndDrop::set_payload(&w.ctx, payload());
+            w.run(vec![egui::Event::PointerMoved(p)]);
+            w.run(vec![])
+        };
+        let (drop, no) = (lanes::MOVE_DROP_CURSOR, egui::CursorIcon::NoDrop);
+        assert_eq!(at(&mut w, circle.center()), drop, "over the circle window");
+        assert!(!circle.contains(toolbar), "the toolbar is outside the circle window");
+        assert_eq!(at(&mut w, toolbar), no, "over the circle pane's toolbar");
+        // Every point that shows the drop cursor lies in the view window (its scroll bars too) or a drop target: none in the differential pane.
+        w.app.dispatch(Command::ActivatePane(Pane::Differential));
+        w.idle(3);
+        let view = w.app.view_rects.expect("the view").1;
+        let mut seen = 0;
+        for y in (20..840).step_by(41) {
+            for x in (10..1310).step_by(43) {
+                let p = Pos2::new(x as f32, y as f32);
+                if at(&mut w, p) == drop {
+                    seen += 1;
+                    assert!(view.expand2(Vec2::new(20.0, 20.0)).contains(p) || w.app.drop_targets.iter().any(|(_, r)| r.contains(p)), "{p:?}");
+                }
+            }
+        }
+        assert!(seen > 0);
+        egui::DragAndDrop::clear_payload(&w.ctx);
+        // A floating pane's window lying over the view: no-drop on its caption.
+        w.app.dispatch(Command::ActivatePane(Pane::Vector));
+        let to = Pos2::new(view.left() + 200.0, view.center().y);
+        let d = &mut w.app.docks.0[Unit::Vector as usize];
+        d.float_rect = Some(Rect::from_min_size(Pos2::new(to.x - 90.0, to.y - 8.0), Vec2::new(260.0, 220.0)));
+        d.place = Place::Floating;
+        w.idle(3);
+        assert_eq!(at(&mut w, to), no, "over a floating window's caption lying over the view");
+        assert_eq!(at(&mut w, Pos2::new(view.left() + 60.0, view.top() + 30.0)), drop, "beside it, still the view");
+    }
+
+    /// Channels dragged out of one record and dropped on another record's
+    /// view or diagram change nothing and show no message (the maintainer's
+    /// decision, #74: the drag carries only channel numbers; the original
+    /// applied them to the active record), and the cursor there is "no-drop".
+    #[test]
+    fn a_channel_dropped_on_another_records_view_does_nothing() {
+        use egui::PointerButton::Primary;
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: Primary, modifiers: Default::default(), pressed };
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Demo);
+        w.idle(3);
+        w.app.mdi_vertical = true;
+        let at = w.app.mdi_area.center();
+        w.app.drop_doc_tab(1, at);
+        w.idle(3);
+        assert_eq!(w.app.group_count(), 2, "two tab groups");
+        let (a, b) = (w.app.docs.iter().position(|d| d.mdi_group == 0).unwrap(), w.app.docs.iter().position(|d| d.mdi_group == 1).unwrap());
+        let (sa, sb) = (w.app.docs[a].serial, w.app.docs[b].serial);
+        w.app.dispatch(app::Command::ActivateDoc(b));
+        w.idle(3);
+        let client = w.app.view_rects.expect("the view").1;
+        let (to, c0, cs) = {
+            let rows = lanes::lane_layout(w.app.active_doc().unwrap(), w.app.y_analog);
+            let d = w.app.active_doc().unwrap();
+            let unit = |li: usize| match rows[li].key {
+                app::ChanKey::Analog(i) => Some(d.osc.analog[i].unit.clone()),
+                _ => None,
+            };
+            let same = (1..rows.len()).find(|&li| unit(li).is_some() && unit(li) == unit(0)).expect("a lane with the same unit");
+            let (app::ChanKey::Analog(c0), app::ChanKey::Analog(cs)) = (rows[0].key, rows[same].key) else { unreachable!() };
+            (Pos2::new(client.left() + 320.0, client.top() + rows[..same].iter().map(|r| r.h).sum::<f32>() + rows[same].h / 2.0), c0, cs)
+        };
+        let drop_from = |w: &mut Win, from_doc: u64| {
+            egui::DragAndDrop::set_payload(&w.ctx, lanes::ChanDrag { chans: vec![c0], computed: vec![], doc: from_doc });
+            w.run(vec![egui::Event::PointerMoved(to)]);
+            let cursor = w.run(vec![]);
+            w.run(vec![ev(to, true)]);
+            w.run(vec![ev(to, false)]);
+            w.idle(3);
+            cursor
+        };
+        let grouped = |w: &Win| {
+            let d = &w.app.docs[b];
+            d.chans[c0].group.is_some() && d.chans[c0].group == d.chans[cs].group
+        };
+        // From a record onto its own view: the lanes group (the geometry is right).
+        assert_eq!(drop_from(&mut w, sb), lanes::MOVE_DROP_CURSOR);
+        assert!(grouped(&w), "the control: a drop on the record's own view");
+        w.app.docs[b].chans[c0].group = None;
+        w.app.docs[b].chans[cs].group = None;
+        w.app.docs[b].set.modified = false;
+        w.idle(2);
+        // From the other record: nothing.
+        assert_eq!(drop_from(&mut w, sa), egui::CursorIcon::NoDrop, "the cursor over another record's view");
+        assert!(!grouped(&w), "no combine on the other record");
+        assert!(!w.app.docs[b].set.modified, "no change");
+        assert!(w.app.dlg.alert().is_none(), "no message");
+        assert!(!egui::DragAndDrop::has_any_payload(&w.ctx), "the drag is over");
+        // Nor on a diagram that shows the other record.
+        let freq = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Frequency).unwrap().1;
+        w.app.docs[b].chans[c0].on_freq = false;
+        egui::DragAndDrop::set_payload(&w.ctx, lanes::ChanDrag { chans: vec![c0], computed: vec![], doc: sa });
+        w.run(vec![egui::Event::PointerMoved(freq.center())]);
+        assert_eq!(w.run(vec![]), egui::CursorIcon::NoDrop, "the cursor over a diagram of the other record");
+        w.run(vec![ev(freq.center(), true)]);
+        w.run(vec![ev(freq.center(), false)]);
+        w.idle(3);
+        assert!(!w.app.docs[b].chans[c0].on_freq && !w.app.docs[b].set.modified, "nothing on the diagram");
+    }
+
     /// The lane's rename box and the level editor are windows over the view
     /// (children of it): a press in one is a press in the view, which holds
     /// the focus then — not in a popup that leaves it where it was (#83).
@@ -4946,7 +5116,7 @@ mod window_tests {
         }
         // The pane holds the focus (so it stays out) and a drag from the lanes is in flight.
         w.press(Primary, to, to);
-        egui::DragAndDrop::set_payload(&w.ctx, lanes::ChanDrag { chans: vec![0], computed: vec![] });
+        egui::DragAndDrop::set_payload(&w.ctx, lanes::ChanDrag { chans: vec![0], computed: vec![], doc: w.app.active_doc().unwrap().serial });
         w.run(vec![egui::Event::PointerMoved(to)]);
         w.run(vec![ev(to, true)]);
         w.run(vec![ev(to, false)]);

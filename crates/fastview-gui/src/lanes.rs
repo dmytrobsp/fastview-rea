@@ -1254,18 +1254,54 @@ pub struct ChanDrag {
     /// The formula channels among them, pasted (pending) lanes too
     /// (analog-kind records of the same vector, `0x4415b0` walks them all).
     pub computed: Vec<usize>,
+    /// The record the drag started in (its serial): the payload carries
+    /// channel numbers only, so a drop on another record's view or pane
+    /// must not apply them there (#74, an improvement).
+    pub doc: u64,
 }
 
 impl ChanDrag {
-    fn of(keys: Vec<ChanKey>) -> ChanDrag {
+    fn of(keys: Vec<ChanKey>, doc: u64) -> ChanDrag {
         let pick = |f: fn(&ChanKey) -> Option<usize>| keys.iter().filter_map(f).collect::<Vec<_>>();
-        ChanDrag { chans: pick(|k| if let ChanKey::Analog(i) = k { Some(*i) } else { None }), computed: pick(|k| if let ChanKey::Computed(j) = k { Some(*j) } else { None }) }
+        ChanDrag { chans: pick(|k| if let ChanKey::Analog(i) = k { Some(*i) } else { None }), computed: pick(|k| if let ChanKey::Computed(j) = k { Some(*j) } else { None }), doc }
     }
 
     /// The dragged channels as keys.
     pub fn keys(&self) -> Vec<ChanKey> {
         let a = self.chans.iter().map(|&i| ChanKey::Analog(i));
         a.chain(self.computed.iter().map(|&j| ChanKey::Computed(j))).collect()
+    }
+}
+
+/// What a drop target shows for a move drop. The original shows OLE's
+/// move-drop cursor (an arrow with a small box); the platform cursors have no
+/// such shape, the plain arrow is the nearest (it is also what winit gives
+/// "copy" on Windows).
+pub const MOVE_DROP_CURSOR: egui::CursorIcon = egui::CursorIcon::Default;
+
+impl App {
+    /// The channel drag's cursor: what a target put in `drag_cursor` this
+    /// frame, "no-drop" everywhere else (ribbon, bars, the differential
+    /// pane, captions, other records' views, #73). egui's own end-of-pass
+    /// hook sets its "grabbing" cursor for any drag, after everything the
+    /// frame drew, so ours runs after it (callbacks run in the order they
+    /// were registered) and the frame hands it the decision.
+    pub fn finish_drag_cursor(&mut self, ctx: &egui::Context) {
+        let key = egui::Id::new("fv_drag_cursor");
+        if !ctx.data(|d| d.get_temp::<bool>(key).unwrap_or(false)) {
+            ctx.data_mut(|d| d.insert_temp(key, true));
+            ctx.on_end_pass(
+                "fv_drag_cursor",
+                std::sync::Arc::new(move |ctx: &egui::Context| {
+                    if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(ctx) {
+                        let set = ctx.data(|d| d.get_temp::<Option<egui::CursorIcon>>(key.with("icon")).flatten());
+                        ctx.set_cursor_icon(set.unwrap_or(egui::CursorIcon::NoDrop));
+                    }
+                }),
+            );
+        }
+        let set = self.drag_cursor.take();
+        ctx.data_mut(|d| d.insert_temp(key.with("icon"), set));
     }
 }
 
@@ -1721,6 +1757,7 @@ impl App {
         // the button held; a release, another press or Esc cancels it (a
         // later move arms it again). The payload is taken at the move.
         let ctx = ui.ctx().clone();
+        let serial = doc.serial;
         let (l_down, r_down, origin, now, released, t, moved, esc) = ui.input(|i| {
             let p = &i.pointer;
             (p.primary_down(), p.secondary_down(), p.press_origin(), p.latest_pos(), p.primary_released(), i.time, p.delta() != Vec2::ZERO, i.key_pressed(egui::Key::Escape))
@@ -1732,14 +1769,14 @@ impl App {
             // it drops.
             if let Some((_, t0, chans)) = self.stats_drag_arm.take().filter(|_| released && !r_down && !esc && !egui::DragAndDrop::has_any_payload(&ctx)) {
                 if t - t0 > DRAG_DELAY {
-                    egui::DragAndDrop::set_payload(&ctx, ChanDrag::of(chans));
+                    egui::DragAndDrop::set_payload(&ctx, ChanDrag::of(chans, serial));
                 }
             }
         } else if let Some((a, t0, chans)) = self.stats_drag_arm.take() {
             let p = now.unwrap_or(a);
             let (dx, dy) = ((p.x - a.x).floor(), (p.y - a.y).floor());
             if !(-2.0..2.0).contains(&dx) || !(-2.0..2.0).contains(&dy) || t - t0 > DRAG_DELAY {
-                egui::DragAndDrop::set_payload(&ctx, ChanDrag::of(chans));
+                egui::DragAndDrop::set_payload(&ctx, ChanDrag::of(chans, serial));
             } else {
                 ctx.request_repaint_after(std::time::Duration::from_secs_f64(DRAG_DELAY - (t - t0) + 0.001));
                 self.stats_drag_arm = Some((a, t0, chans));
@@ -1760,9 +1797,6 @@ impl App {
                     self.stats_drag_arm = Some((p, t, sel));
                 }
             }
-        }
-        if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
-            ctx.set_cursor_icon(egui::CursorIcon::Move);
         }
         // Drag auto-scroll during the channel drag only (COleDropTarget::
         // OnDragScroll, mfc120u `0x102172dd`; the view has no timer of its
@@ -1809,7 +1843,9 @@ impl App {
                 let lane = rows.iter().zip(&tops).find(|(r, &t)| p.y >= t && p.y < t + r.h).map(|(r, _)| r.key);
                 if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
                     if let Some(drag) = egui::DragAndDrop::take_payload::<ChanDrag>(&ctx) {
-                        let target = lane.filter(|k| match k {
+                        // Another record's view: nothing (#74); the payload
+                        // holds channel numbers of the record it began in.
+                        let target = lane.filter(|_| drag.doc == serial).filter(|k| match k {
                             Lane::Digital(_) => false,
                             Lane::Computed(j) if doc.pending_digital(*j) => false,
                             _ => !drag.keys().contains(k),
@@ -1820,6 +1856,21 @@ impl App {
                     }
                 }
             }
+        }
+        // The cursor over the view (#73): the move-drop one over the view
+        // window of the record the drag began in, "copy" with Ctrl inside
+        // the auto-scroll band (MFC's OnDragScroll), "no-drop" over another
+        // record's view and under a window lying over it.
+        if let (Some(_), Some(drag)) = (now.filter(|p| resp.rect.contains(*p) && !over_float(*p)), egui::DragAndDrop::payload::<ChanDrag>(&ctx)) {
+            self.drag_cursor = Some(if drag.doc != serial {
+                egui::CursorIcon::NoDrop
+            } else if ctrl && code.is_some() {
+                // MFC's OnDragScroll answers "link" for Ctrl+Shift, which
+                // the drag does not allow: no-drop.
+                if shift { egui::CursorIcon::NoDrop } else { egui::CursorIcon::Copy }
+            } else {
+                MOVE_DROP_CURSOR
+            });
         }
         // Wheel (`0x45d990`), per WM_MOUSEWHEEL (one per wheel event): Alt
         // = lane height, exactly Ctrl (no button held) = time zoom, exactly
@@ -2802,6 +2853,7 @@ mod menu_tests {
             let cover = self.cover;
             let out = self.ctx.run(raw, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| app.lanes_ui(ui));
+                app.finish_drag_cursor(ctx);
                 if let Some((id, order, r)) = cover {
                     egui::Area::new(id).order(order).fixed_pos(r.min).show(ctx, |ui| {
                         ui.allocate_exact_size(r.size(), egui::Sense::click_and_drag());
