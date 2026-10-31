@@ -1774,8 +1774,13 @@ impl App {
         }
         // Drop on a lane (`0x4415b0`, kind 1): x is ignored; the analog lane
         // under y, unless it is one of the dragged channels, joins them.
+        // The window under the pointer takes the drop, not the lane under
+        // it: a floating pane's window over the view (its caption, tab
+        // strip, toolbar; a diagram of it takes the drop as a pane's)
+        // leaves the lane out (clone).
+        let over_float = |p: Pos2| ctx.layer_id_at(p).is_some_and(crate::views::is_floating_pane_layer);
         if released && !self.modal_up {
-            if let Some(p) = now.filter(|p| in_view(*p) && p.y < plot_bottom) {
+            if let Some(p) = now.filter(|p| in_view(*p) && p.y < plot_bottom && !over_float(*p)) {
                 let lane = rows.iter().zip(&tops).find(|(r, &t)| p.y >= t && p.y < t + r.h).map(|(r, _)| r.key);
                 if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
                     if let Some(drag) = egui::DragAndDrop::take_payload::<ChanDrag>(&ctx) {

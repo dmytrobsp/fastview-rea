@@ -4362,6 +4362,115 @@ mod window_tests {
         }
     }
 
+    /// MFC's frame disables its floating windows while a modal dialog is up
+    /// (clone: «Каналы» open, the floating pane's mini-frame reads as
+    /// disabled): a press, a double-click or a drag on the floating pane's
+    /// caption, or a press on its tab, does nothing until the dialog is gone
+    /// (#113).
+    #[test]
+    fn a_floating_pane_takes_no_input_while_a_dialog_is_up() {
+        use app::{CopyFocus, Pane};
+        use docking::{Place, Unit};
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector pane").1;
+        let at = Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0);
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: Primary, modifiers: Default::default(), pressed };
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        let id = egui::Id::new(("fv_floating_pane", Unit::Vector));
+        let win = |w: &Win| w.ctx.memory(|m| m.area_rect(id)).expect("the floating window");
+        let (caption, tab) = (Pos2::new(win(&w).left() + 60.0, win(&w).top() + 10.0), w.app.pane_tab_rects.iter().find(|(p, _)| *p == Pane::Circle).map(|(_, r)| r.center()).expect("the circle tab"));
+        let shown = win(&w);
+        w.app.copy_focus = CopyFocus::View;
+        w.app.color_dialog = Some(egui::Color32::RED);
+        w.idle(3);
+        assert!(w.app.modal_up);
+        let dialog = w.ctx.memory(|m| m.area_rect(egui::Id::new("Цвета"))).expect("the colour dialog");
+        assert!(!dialog.contains(caption) && !dialog.contains(tab), "the dialog stays clear of the window's caption and tab");
+        let (rect, front) = (win(&w), w.app.panes.front(w.app.docks.members(Unit::Vector)));
+        w.press(Primary, caption, caption);
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the caption's press");
+        w.press(Primary, tab, tab);
+        assert_eq!(w.app.panes.front(w.app.docks.members(Unit::Vector)), front, "the tab's press");
+        w.run(vec![egui::Event::PointerMoved(caption)]);
+        w.run(vec![ev(caption, true), ev(caption, false)]);
+        w.run(vec![ev(caption, true), ev(caption, false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating, "the double-click on the caption");
+        w.press(Primary, caption, caption + Vec2::new(90.0, 70.0));
+        assert_eq!(win(&w), rect, "a drag of the caption");
+        // The dialog gone, the same press is the pane's again.
+        w.app.color_dialog = None;
+        w.idle(3);
+        w.press(Primary, caption, caption);
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the dialog gone");
+        assert_eq!(win(&w).size(), shown.size(), "the window keeps its size");
+    }
+
+    /// A channel drag let go over a floating pane's window that lies over the
+    /// view drops nowhere unless it is on its diagram (clone: the dragged
+    /// lane released on the mini-frame's caption over another lane of the
+    /// same unit: nothing grouped; released beside the window the same drag
+    /// groups them): the window under the pointer is the drop target, not
+    /// the lane under it (#113).
+    #[test]
+    fn a_channel_dropped_on_a_floating_window_over_the_view_drops_nowhere() {
+        use docking::{Place, Unit};
+        use egui::PointerButton::Primary;
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: Primary, modifiers: Default::default(), pressed };
+        // The lane under `to` is the first one after lane 0 of its unit.
+        let setup = |floating: bool| {
+            let mut w = Win::new();
+            let (rows, same) = {
+                let d = w.app.active_doc().unwrap();
+                let rows = lanes::lane_layout(d, w.app.y_analog, false);
+                let unit = |li: usize| match rows[li].key {
+                    app::ChanKey::Analog(i) => Some(d.osc.analog[i].unit.clone()),
+                    _ => None,
+                };
+                let same = (1..rows.len()).find(|&li| unit(li).is_some() && unit(li) == unit(0)).expect("a lane with the same unit");
+                (rows, same)
+            };
+            let client = w.app.view_rects.expect("the view").1;
+            let from = Pos2::new(client.left() + 40.0, client.top() + rows[0].h / 2.0);
+            let to = Pos2::new(client.left() + 320.0, client.top() + rows[..same].iter().map(|r| r.h).sum::<f32>() + rows[same].h / 2.0);
+            if floating {
+                // The window's caption (its top 20 px) over `to`.
+                let d = &mut w.app.docks.0[Unit::Vector as usize];
+                d.float_rect = Some(Rect::from_min_size(Pos2::new(to.x - 90.0, to.y - 8.0), Vec2::new(260.0, 220.0)));
+                d.place = Place::Floating;
+                w.idle(3);
+            }
+            let (app::ChanKey::Analog(c0), app::ChanKey::Analog(cs)) = (rows[0].key, rows[same].key) else { unreachable!() };
+            (w, from, to, c0, cs)
+        };
+        let drag = |w: &mut Win, a: Pos2, b: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(a), ev(a, true)]);
+            let steps = (((b - a).length()) / 6.0).ceil().max(1.0) as usize;
+            for k in 1..=steps {
+                w.run(vec![egui::Event::PointerMoved(a + (b - a) * (k as f32 / steps as f32))]);
+            }
+            w.run(vec![ev(b, false)]);
+            w.idle(3);
+        };
+        // Beside any window: the drop groups the two lanes (the geometry is right).
+        let (mut w, from, to, c0, cs) = setup(false);
+        drag(&mut w, from, to);
+        let d = w.app.active_doc().unwrap();
+        assert!(d.chans[c0].group.is_some() && d.chans[c0].group == d.chans[cs].group, "dropped on the lane");
+        // On the floating window's caption lying over that lane: nothing.
+        let (mut w, from, to, c0, cs) = setup(true);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        drag(&mut w, from, to);
+        let d = w.app.active_doc().unwrap();
+        assert!(d.chans[c0].group.is_none() && d.chans[cs].group.is_none(), "dropped on the window over the lane");
+        assert!(!egui::DragAndDrop::has_any_payload(&w.ctx), "the drag is over");
+    }
+
     /// `FV_FRAME_BENCH=<file.cfg> cargo test --release frame_bench -- --nocapture`
     /// prints the mean whole-window frame time on that record.
     #[test]

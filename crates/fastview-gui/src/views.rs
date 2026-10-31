@@ -381,7 +381,8 @@ impl App {
         // A press on the caption gives the pane the focus (its
         // WM_LBUTTONDOWN `0x10086d23`: SetFocus on the pane or its one
         // child window; WM_RBUTTONDOWN `0x10086f01`: on the pane).
-        if act.pressed {
+        // (Not in a floating window under a modal dialog: it is disabled.)
+        if act.pressed && !(place == Place::Floating && self.modal_up) {
             self.copy_focus = crate::app::CopyFocus::Pane(v.unit);
         }
         let ctx = ui.ctx().clone();
@@ -613,7 +614,8 @@ impl App {
         let resp = egui::Window::new(pane_title(v.front))
             .id(floating_pane_id(unit))
             .title_bar(false)
-            .resizable(true)
+            .interactable(!self.modal_up)
+            .resizable(!self.modal_up)
             .collapsible(false)
             .current_pos(r.min)
             .default_size(r.size())
@@ -621,6 +623,14 @@ impl App {
             .show(ctx, |ui| {
                 ui.set_min_size(ui.available_size());
                 self.unit_body(ui, v);
+                // MFC's frame disables its floating windows while a modal
+                // dialog is up (clone: «Каналы» open, the mini-frame reads
+                // as disabled): a widget over the whole window, the last
+                // of its layer, takes every click and drag (an egui
+                // disabled window would fade).
+                if self.modal_up {
+                    ui.interact(ui.max_rect(), ui.id().with("fv_float_disabled"), egui::Sense::click_and_drag());
+                }
             });
         if let Some(resp) = resp {
             // Its size as the user leaves it; the position the caption sets.
@@ -2007,6 +2017,7 @@ fn pane_caption(ui: &mut egui::Ui, pal: &crate::theme::Palette, title: &str, pin
     let spots = [Some(rect.right() - s(11.0)), pinned.map(|_| rect.right() - s(26.0))];
     let cy = rect.center().y.floor() + 0.5;
     let on_button = ui.input(|i| i.pointer.press_origin()).is_some_and(|p| spots.iter().flatten().any(|&x| egui::Rect::from_center_size(egui::pos2(x, cy), egui::vec2(s(15.0), s(15.0))).contains(p)));
+    // (Nothing from a disabled window: a floating pane under a modal dialog.)
     act.armed = resp.is_pointer_button_down_on() && !on_button && ui.input(|i| i.pointer.primary_down());
     act.dragging = resp.dragged_by(egui::PointerButton::Primary) && !on_button;
     act.pressed = resp.contains_pointer() && ui.input(|i| i.pointer.any_pressed());
