@@ -261,6 +261,8 @@ impl App {
         // The tab a left press is held on (the detach's arming: the original
         // tracks the press itself, not egui's drag decision).
         let mut armed: Option<Pane> = None;
+        // The tab a double-click landed on (`0x10068d99`: the detach, mode 2).
+        let mut double: Option<Pane> = None;
         let mut tabs: Vec<(Pane, egui::Rect)> = Vec::new();
         // The tab strip (VM, Office 2007 Blue): a (157, 189, 216) line over
         // the brush (191, 219, 255), 20 px tabs from 4 px in; the front tab
@@ -338,6 +340,9 @@ impl App {
                     if r.dragged() {
                         dragged = Some(p);
                     }
+                    if r.double_clicked() {
+                        double = Some(p);
+                    }
                     if r.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
                         armed = Some(p);
                     }
@@ -364,6 +369,16 @@ impl App {
             // keeps the arrow).
             ctx.set_cursor_icon(egui::CursorIcon::Move);
             self.tab_drag_out(&ctx, v, p, strip.response.rect);
+        }
+        // A double-click on a tab of a docked group with more than one tab
+        // floats that pane alone (clone, #124), at its recent floating rect
+        // as a caption double-click does.
+        if let (Some(p), true) = (double, tabs.len() > 1) {
+            if self.docks[v.unit].place == crate::docking::Place::Docked && self.dock_drag.is_none() {
+                let next = self.tab_order.into_iter().find(|&q| q != p && v.mask[q as usize]).unwrap_or(v.unit);
+                let rect = self.docks[p].float_at(Self::float_origin(ui.ctx()));
+                self.docks.float_tab(p, v.unit, next, rect);
+            }
         }
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
             ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));

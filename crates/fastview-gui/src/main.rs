@@ -3937,6 +3937,44 @@ mod window_tests {
         assert!((at - Pos2::new(496.0, 373.0)).length() < 1.0, "{at:?}");
     }
 
+    /// #124 (clone, the original): a double-click on a tab of a docked
+    /// group's strip floats that pane alone, the front one or not (mfc120u's
+    /// tab double-click `0x10068d99` calls the detach `0x10068657` in mode 2
+    /// when the group has more than one tab); a single click floats nothing.
+    #[test]
+    fn a_double_click_on_a_tab_floats_that_pane() {
+        use docking::{Place, Unit};
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let tab_of = |w: &Win, p: app::Pane| w.app.pane_tab_rects.iter().find(|(q, _)| *q == p).map(|(_, r)| r.center()).expect("the tab");
+        // A single click only brings the tab to the front.
+        let mut w = Win::new();
+        w.idle(2);
+        let at = tab_of(&w, app::Pane::Circle);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.idle(3);
+        assert_eq!((w.app.docks[Unit::Circle].place, w.app.docks[Unit::Vector].place), (Place::Docked, Place::Docked), "a click floats nothing");
+        // A double-click on the other tab floats that pane; the group stays.
+        let mut w = Win::new();
+        w.idle(2);
+        let at = tab_of(&w, app::Pane::Circle);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.idle(3);
+        assert_eq!((w.app.docks[Unit::Circle].place, w.app.docks[Unit::Vector].place), (Place::Floating, Place::Docked), "the double-clicked tab floats alone");
+        // On the front tab: the group's own pane floats, the next tab takes the group.
+        let mut w = Win::new();
+        w.idle(2);
+        let at = tab_of(&w, app::Pane::Vector);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating, "the front tab floats too");
+        assert_eq!(w.app.docks[Unit::Circle].place, Place::Docked);
+    }
+
     /// A tab pulled out of a tab strip follows the caption drag's distance rule
     /// (#111; `0x10068657` reads the metric once, `>=` on either axis — the
     /// caption's rule `0x10086f3a` is a strict `>` — the distance scaled with
