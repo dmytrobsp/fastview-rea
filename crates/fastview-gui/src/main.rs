@@ -4676,7 +4676,7 @@ mod window_tests {
             let mut w = Win::new();
             let (rows, same) = {
                 let d = w.app.active_doc().unwrap();
-                let rows = lanes::lane_layout(d, w.app.y_analog, false);
+                let rows = lanes::lane_layout(d, w.app.y_analog);
                 let unit = |li: usize| match rows[li].key {
                     app::ChanKey::Analog(i) => Some(d.osc.analog[i].unit.clone()),
                     _ => None,
@@ -4836,7 +4836,7 @@ mod window_tests {
             };
             assert!(freq.contains(to), "the window lies over the frequency diagram");
             let client = w.app.view_rects.expect("the view").1;
-            let rows = lanes::lane_layout(w.app.active_doc().unwrap(), w.app.y_analog, false);
+            let rows = lanes::lane_layout(w.app.active_doc().unwrap(), w.app.y_analog);
             let a = Pos2::new(client.left() + 40.0, client.top() + rows[0].h / 2.0);
             w.run(vec![egui::Event::PointerMoved(a), ev(a, true)]);
             let steps = ((to - a).length() / 6.0).ceil().max(1.0) as usize;

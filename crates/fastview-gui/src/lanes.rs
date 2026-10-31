@@ -2973,7 +2973,7 @@ mod menu_tests {
     /// on its caption over another lane of the unit: nothing grouped).
     #[test]
     fn a_channel_dropped_on_a_slid_out_pane_over_the_view_drops_nowhere() {
-        let unit = |h: &Harness, li: usize| match lane_layout(h.doc(), h.app.y_analog, false)[li].key {
+        let unit = |h: &Harness, li: usize| match lane_layout(h.doc(), h.app.y_analog)[li].key {
             Lane::Analog(i) => Some(h.doc().osc.analog[i].unit.clone()),
             _ => None,
         };
@@ -2986,7 +2986,7 @@ mod menu_tests {
                 h.cover = Some((id, egui::Order::Foreground, Rect::from_min_size(Pos2::new(to.x + 100.0, to.y - 20.0), Vec2::new(300.0, 40.0))));
                 h.frame(vec![]);
             }
-            let (Lane::Analog(c0), Lane::Analog(cs)) = (lane_layout(h.doc(), h.app.y_analog, false)[0].key, lane_layout(h.doc(), h.app.y_analog, false)[same].key) else { unreachable!() };
+            let (Lane::Analog(c0), Lane::Analog(cs)) = (lane_layout(h.doc(), h.app.y_analog)[0].key, lane_layout(h.doc(), h.app.y_analog)[same].key) else { unreachable!() };
             // Release at x 200 past the stats panel, over the cover when there is one.
             let b = Pos2::new(to.x + 200.0, to.y);
             let a = h.row(0);
