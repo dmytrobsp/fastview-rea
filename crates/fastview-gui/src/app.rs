@@ -3465,6 +3465,27 @@ mod tests {
         assert_eq!(crate::oscgeom::base_bar_len(100, 1.0, d.lane_ratio(ChanKey::Digital(0))), 5000.0);
     }
 
+    /// The frequency diagram's period and harmonic caps (`0x46ee20`) follow the
+    /// record's integer rate and sample count, not a merged channel's own
+    /// window — read in the binary and seen in a clone (the demo record,
+    /// merged, then set to 2450 Hz: «от 1 до 9» periods, «от 1 до 24»
+    /// harmonics) — #104.
+    #[test]
+    fn the_frequency_dialog_caps_follow_the_records_rate_after_a_merge_and_a_rate_change() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(0)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        assert_eq!(app.apply_file_rate(0, "2450"), Ok(()));
+        let o = &app.docs[0].osc;
+        let (n, r, f) = (o.sample_count(), o.rate_r, o.line_freq);
+        assert_eq!(n, 475, "the merged grid");
+        assert_eq!(crate::diagram_ui::freq_exchange_field("0", "10", n, r, f), Err((0, "Введите целое число от 1 до 9.".into())));
+        assert_eq!(crate::diagram_ui::freq_exchange_field("1", "999", n, r, f), Err((1, "Введите целое число от 1 до 24.".into())));
+        assert_eq!(crate::diagram_ui::freq_exchange_field("9", "10", n, r, f), Ok((9, 10)));
+    }
+
     /// Every reader of a channel's period gives an own rate its window
     /// (L9.142): the formula functions, the frequency diagram's bins, a
     /// formula channel's phasors, statistics and correction (#71).
