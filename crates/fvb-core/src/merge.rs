@@ -361,14 +361,36 @@ pub struct Pasted {
 /// (the zero minus the DC, inverted…), `dig_pads` the base digital ones'
 /// (an inverted channel's zero reads 1).
 pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f64], dig_pads: &[bool]) -> Oscillogram {
+    merge_with(base, pasted, offset, base_pads, dig_pads, &[])
+}
+
+/// [`merge`] with the rates of the formula channels present (`formula_rates`,
+/// each its own rate, else 0): the original's loop over the document's
+/// channels (`0x47db30`) counts them in R like any other channel.
+///
+/// Every channel — analog, digital, formula, pasted — has a rate of its own
+/// here: its own rate when it has one, else the record's integer rate
+/// (`rec+0x228`, `0x47db30`, `0x47dd2e`, `0x47df76`, `0x428c20`). R is the
+/// highest of them, the front pad is ceil(rate·|offset|) and the back pad
+/// counted in the channel's own periods; so a record whose rate was changed
+/// in «Параметры файла» after a merge merges again at its channels' rates,
+/// not at the record's new one.
+pub fn merge_with(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f64], dig_pads: &[bool], formula_rates: &[f64]) -> Oscillogram {
     let t0 = base.time.first().copied().unwrap_or(0.0);
     let base_t: Vec<f64> = base.time.iter().map(|t| t - t0).collect();
-    let mut rates = vec![base.sample_rate];
-    rates.extend(pasted.iter().map(|p| p.rate));
+    let rec_rate = base.int_rate_hz();
+    let own = |rate: f64| if rate > 0.0 { rate } else { rec_rate };
+    let a_rate = |c: &AnalogChannel| own(c.own_rate);
+    let d_rate = |c: &DigitalChannel| own(c.own_rate);
+    let mut rates: Vec<f64> = base.analog.iter().map(a_rate).chain(base.digital.iter().map(d_rate)).collect();
+    rates.extend(formula_rates.iter().map(|&r| own(r)));
+    rates.extend(pasted.iter().map(|p| own(p.rate)));
+    if rates.is_empty() {
+        rates.push(rec_rate);
+    }
     let r = merged_rate(&rates, base.line_freq);
     let g = 1.0 / r;
     let shift = -(g - (offset % g).abs());
-    let own = |rate: f64| if rate > 0.0 { rate } else { base.sample_rate };
     // The lanes with their values, base analog / digital, then pasted.
     enum Vals {
         A(Vec<f64>),
@@ -379,18 +401,18 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
     // Each lane's padding value, for the trailing pads too.
     let mut pads: Vec<f64> = Vec::new();
     let front = |rate: f64, base_side: bool| if (base_side && offset < 0.0) || (!base_side && offset > 0.0) { (own(rate) * offset.abs()).ceil() as usize } else { 0 };
-    let base_step = 1.0 / own(base.sample_rate);
-    let nb = front(base.sample_rate, true);
     for (i, c) in base.analog.iter().enumerate() {
-        let (mut t, mut x) = (base_t.clone(), c.samples.clone());
-        pad(&mut t, &mut x, base_pads.get(i).copied().unwrap_or(0.0), nb, base_step, true);
-        lanes.push((Lane { t, step: base_step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::A(x), pad_own(c.own_freq.clone(), nb, true, base.line_freq)));
+        let (rate, mut t, mut x) = (a_rate(c), base_t.clone(), c.samples.clone());
+        let (step, nb) = (1.0 / rate, front(rate, true));
+        pad(&mut t, &mut x, base_pads.get(i).copied().unwrap_or(0.0), nb, step, true);
+        lanes.push((Lane { t, step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::A(x), pad_own(c.own_freq.clone(), nb, true, base.line_freq)));
         pads.push(base_pads.get(i).copied().unwrap_or(0.0));
     }
     for (i, c) in base.digital.iter().enumerate() {
-        let (mut t, mut x) = (base_t.clone(), c.samples.clone());
-        pad(&mut t, &mut x, dig_pads.get(i).copied().unwrap_or(false), nb, base_step, true);
-        lanes.push((Lane { t, step: base_step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::D(x), Vec::new()));
+        let (rate, mut t, mut x) = (d_rate(c), base_t.clone(), c.samples.clone());
+        let (step, nb) = (1.0 / rate, front(rate, true));
+        pad(&mut t, &mut x, dig_pads.get(i).copied().unwrap_or(false), nb, step, true);
+        lanes.push((Lane { t, step, shift: if nb > 0 { shift } else { 0.0 } }, Vals::D(x), Vec::new()));
         pads.push(f64::from(u8::from(dig_pads.get(i).copied().unwrap_or(false))));
     }
     for p in pasted {
@@ -464,6 +486,7 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
     }
     for dst in out.digital.iter_mut().take(nd) {
         dst.samples = it.next().map(digital).unwrap_or_default();
+        dst.own_rate = r;
     }
     for (p, lane) in pasted.iter().zip(it) {
         match &p.channel {
@@ -476,6 +499,7 @@ pub fn merge(base: &Oscillogram, pasted: &[Pasted], offset: f64, base_pads: &[f6
             Err(d) => {
                 let mut c = d.clone();
                 c.samples = digital(lane);
+                c.own_rate = r;
                 out.digital.push(c);
             }
         }
@@ -631,7 +655,14 @@ mod tests {
         assert_eq!(m.analog[1].own_freq[0], base.line_freq, "the padding reads f_nom");
         // An inverted digital channel's padding reads 1 through the accessor.
         let dig = Pasted {
-            channel: Err(crate::comtrade::DigitalChannel { index: 1, id: "D".into(), phase: String::new(), normal: 0, samples: vec![false; 100] }),
+            channel: Err(crate::comtrade::DigitalChannel {
+                index: 1,
+                id: "D".into(),
+                phase: String::new(),
+                normal: 0,
+                samples: vec![false; 100],
+                own_rate: 0.0,
+            }),
             times: (0..100).map(|k| k as f64 / 1000.0).collect(),
             rate: 1000.0,
             pad: 1.0,
@@ -639,5 +670,54 @@ mod tests {
         let m = merge(&base, &[dig], 0.0025, &[0.0], &[]);
         let d = &m.digital.last().unwrap().samples;
         assert!(d[0] && !d[10], "the front padding on, the samples off");
+    }
+
+    /// #101 (`0x47db30`, `0x47dd2e`, `0x47df76`, `0x428c20`): R, the front
+    /// pad and the step of the pads take each channel's own rate, else the
+    /// record's integer rate — not the first rate line.
+    #[test]
+    fn merge_takes_each_channels_own_rate_else_the_records_integer_rate() {
+        let mut cfg = String::from(
+            "S,D,1999\n1,1A,0D\n1,A,,,V,1,0,0,-32768,32767,1,1,S\n50\n1\n1250,100\n01/01/2024,00:00:00.000000\n01/01/2024,00:00:00.000000\nASCII\n1\n",
+        );
+        cfg.push_str("");
+        let dat: String = (0..100).map(|k| format!("{},{},{k}\n", k + 1, k * 800)).collect();
+        let mut base = crate::comtrade::parse(&cfg, dat.as_bytes()).unwrap();
+        let mut ch = base.analog[0].clone();
+        ch.samples = vec![5.0; 100];
+        let times: Vec<f64> = (0..100).map(|k| k as f64 * 0.0008).collect();
+        let pasted = |rate: f64| [Pasted { channel: Ok(ch.clone()), times: times.clone(), rate, pad: 0.0 }];
+        // The record's rate changed in «Параметры файла» (rec+0x228 only):
+        // the channels without an own rate follow it.
+        assert_eq!(base.sample_rate, 1250.0);
+        base.set_rate_r(1450.0);
+        let m = merge(&base, &pasted(1250.0), 0.0, &[0.0], &[]);
+        assert_eq!(m.sample_rate, 1450.0, "R from the integer rate");
+        assert_eq!(m.rate_r, 1450.0);
+        // A channel with an own rate keeps it, whatever the record says; the
+        // highest of the channels rules.
+        base.analog[0].own_rate = 1250.0;
+        let m = merge(&base, &pasted(1250.0), 0.0, &[0.0], &[]);
+        assert_eq!(m.sample_rate, 1250.0);
+        assert!(m.analog.iter().all(|c| c.own_rate == 1250.0));
+        // A formula channel without an own rate counts at the record's rate.
+        let m = merge_with(&base, &pasted(1250.0), 0.0, &[0.0], &[], &[0.0]);
+        assert_eq!(m.sample_rate, 1450.0);
+        // The front pad is ceil(rate·|offset|) at the channel's own rate.
+        base.set_rate_r(1450.0);
+        base.analog[0].own_rate = 900.0;
+        let m = merge(&base, &pasted(1250.0), -0.0125, &[0.0], &[]);
+        // The base is the later one: ceil(900·0.0125) = 12 zero samples in
+        // front, each 1/900 s apart; the grid at 1250 Hz.
+        let b = &m.analog[0].samples;
+        assert_eq!(b.len(), m.time.len());
+        assert!(b.iter().take(2).all(|v| v.abs() < 1e-9), "padding at the start");
+        let lead = b.iter().take_while(|v| v.abs() < 1e-9).count();
+        assert!((15..=17).contains(&lead), "12 samples at 1/900 s are 13.3 ms, 16.7 grid samples: {lead}");
+        // Digital channels carry the rate too.
+        let mut d = base.clone();
+        d.digital.push(crate::comtrade::DigitalChannel { index: 1, id: "D".into(), phase: String::new(), normal: 0, samples: vec![false; 100], own_rate: 0.0 });
+        let m = merge(&d, &pasted(1250.0), 0.0, &[0.0], &[false]);
+        assert_eq!(m.digital[0].own_rate, m.sample_rate);
     }
 }

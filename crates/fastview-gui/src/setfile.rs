@@ -1459,7 +1459,14 @@ mod tests {
         assert!(nd > 0, "the demo record has digital channels");
         let first = d.file_key(na);
         let samples = vec![false; d.osc.sample_count()];
-        d.osc.digital.push(fvb_core::DigitalChannel { index: nd as u32 + 1, id: crate::omp_ui::KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples });
+        d.osc.digital.push(fvb_core::DigitalChannel {
+            index: nd as u32 + 1,
+            id: crate::omp_ui::KZ_PHASES[0].into(),
+            phase: String::new(),
+            normal: 0,
+            samples,
+            own_rate: 0.0,
+        });
         d.digital_visible.resize(nd + 1, true);
         d.dig_mut(nd).omp = true;
         d.move_appended(na, na, 0, nd);

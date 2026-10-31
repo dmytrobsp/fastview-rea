@@ -114,6 +114,9 @@ pub struct DigitalChannel {
     /// The normal state as read (`ch+0x104`), written back as is.
     pub normal: i32,
     pub samples: Vec<bool>,
+    /// The channel's own sample rate (`ch+0x108`), as an analog channel's:
+    /// 0 for a file's channel, R after «Объединить» (`0x47d990`).
+    pub own_rate: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -962,7 +965,14 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
     let mut digital: Vec<DigitalChannel> = digital_defs
         .iter()
         .enumerate()
-        .map(|(i, (name, normal))| DigitalChannel { index: i as u32 + 1, id: name.clone(), phase: String::new(), normal: *normal, samples: Vec::new() })
+        .map(|(i, (name, normal))| DigitalChannel {
+            index: i as u32 + 1,
+            id: name.clone(),
+            phase: String::new(),
+            normal: *normal,
+            samples: Vec::new(),
+            own_rate: 0.0,
+        })
         .collect();
     let m = analog_defs.iter().filter(|(_, _, _, u)| matches!(u.trim(), "V" | "В" | "A" | "А" | "")).count() as f64;
     let words = nd / 16;
@@ -1754,6 +1764,7 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
             phase: if f.len() >= 5 { g(2).to_string() } else { String::new() },
             normal: crate::clipdata::wtoi(normal) as i32,
             samples: Vec::new(),
+            own_rate: 0.0,
         });
     }
 

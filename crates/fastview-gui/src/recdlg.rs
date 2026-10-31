@@ -1873,7 +1873,7 @@ mod tests {
         d.set_codepage(Encoding::Cp866);
         let (na, nd) = (d.osc.analog.len(), d.osc.digital.len());
         let samples = vec![false; d.osc.sample_count()];
-        d.osc.digital.push(fvb_core::DigitalChannel { index: nd as u32 + 1, id: "Ток".into(), phase: String::new(), normal: 0, samples });
+        d.osc.digital.push(fvb_core::DigitalChannel { index: nd as u32 + 1, id: "Ток".into(), phase: String::new(), normal: 0, samples, own_rate: 0.0 });
         d.digital_visible.resize(nd + 1, true);
         d.move_appended(na, na, nd, nd);
         assert_eq!(d.original_name(ChanKey::Digital(nd)), None, "the file's name");

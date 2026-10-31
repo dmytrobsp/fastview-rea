@@ -3415,6 +3415,33 @@ mod tests {
         assert!(d.chans[3].group.is_some() && d.chans[3].group == d.chans[4].group);
     }
 
+    /// «Объединить» takes each channel's own rate, else the record's integer
+    /// rate, for R and the pads (`0x47db30`, `0x47dd2e`, `0x47df76`, #101):
+    /// a record whose rate was changed in «Параметры файла» before the merge
+    /// merges at the new one; a second merge after a rate change keeps the
+    /// channels' own rate.
+    #[test]
+    fn a_merge_after_a_rate_change_takes_the_records_integer_rate_then_the_own_rates() {
+        let mut app = demo_app();
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        assert_eq!(app.apply_file_rate(0, "2450"), Ok(()));
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = &app.docs[0];
+        assert_eq!(d.osc.sample_rate, 2450.0, "R from the record's integer rate, not the first rate line");
+        assert!(d.osc.analog.iter().all(|c| c.own_rate == 2450.0));
+        // Another rate change, then another merge: the channels keep theirs.
+        assert_eq!(app.apply_file_rate(0, "1250"), Ok(()));
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(3)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let d = &app.docs[0];
+        assert_eq!(d.osc.sample_rate, 2450.0, "the own rates, not the record's new 1250");
+        assert!(d.osc.analog.iter().all(|c| c.own_rate == 2450.0));
+    }
+
     /// Every reader of a channel's period gives an own rate its window
     /// (L9.142): the formula functions, the frequency diagram's bins, a
     /// formula channel's phasors, statistics and correction (#71).
