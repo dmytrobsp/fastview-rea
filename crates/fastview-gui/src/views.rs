@@ -159,7 +159,7 @@ impl App {
     fn caption_acts(&mut self, ctx: &egui::Context, unit: crate::docking::Unit, shown: Pane, act: CaptionAct, pane: egui::Rect) {
         use crate::docking::Place;
         if act.close {
-            self.dispatch(Command::TogglePane(shown));
+            self.dispatch(Command::HidePane(shown));
             return;
         }
         let origin = Self::float_origin(ctx);

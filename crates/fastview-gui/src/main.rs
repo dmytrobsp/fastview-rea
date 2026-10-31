@@ -3181,6 +3181,44 @@ mod window_tests {
         assert_ne!(w.view_state(), before, "the arrow key reaches the view");
     }
 
+    /// The caption «×» of a slid-out auto-hidden pane closes it (the ribbon's
+    /// toggle only shows such a pane), and the focus its press gave goes back
+    /// to the view (#64, #77).
+    #[test]
+    fn the_caption_button_closes_a_slid_out_pane() {
+        use app::{CopyFocus, Pane};
+        use docking::{Edge, Spot, Unit};
+        for edge in [Edge::Bottom, Edge::Right] {
+            let mut w = Win::new();
+            w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+            w.app.docks.0[Unit::Vector as usize].pin();
+            w.idle(3);
+            w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+            w.idle(30);
+            let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+            let at = Pos2::new(area.right() - dpi::s(11.0), area.top() + dpi::s(10.0));
+            w.press(egui::PointerButton::Primary, at, at);
+            w.idle(30);
+            assert!(!w.app.panes.visible(Pane::Vector), "{edge:?}: the caption button closed the pane");
+            assert_eq!(w.app.copy_focus, CopyFocus::View, "{edge:?}");
+        }
+    }
+
+    /// Hiding a background tab of the focused pane's group leaves the focus.
+    #[test]
+    fn hiding_a_background_tab_keeps_the_pane_focus() {
+        use app::{Command, CopyFocus, Pane};
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        let at = Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0);
+        w.press(egui::PointerButton::Primary, at, at);
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector));
+        w.app.dispatch(Command::TogglePane(Pane::Circle));
+        w.idle(3);
+        assert!(!w.app.panes.visible(Pane::Circle));
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the shown pane keeps the focus");
+    }
+
     /// A press on a menu or other popup over a pane gives that pane no
     /// focus.
     #[test]

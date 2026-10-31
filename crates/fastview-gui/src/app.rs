@@ -1380,6 +1380,8 @@ pub enum Command {
     QuickAnalysis,
     /// 32809 / 32808 / 140 / 32811: show or hide a diagram pane.
     TogglePane(Pane),
+    /// Hides a pane that shows (the caption's «×»).
+    HidePane(Pane),
     /// Bring a pane of the tab group to the front.
     ActivatePane(Pane),
     /// 32867 / 32868: every file channel to primary / secondary values.
@@ -1977,6 +1979,31 @@ impl App {
     }
 
     // ---------- command dispatch ----------
+    /// Hides pane `p` if it shows: the nearest visible tab of its group
+    /// comes to the front when `p` was, and a focus the group's window
+    /// holds (a caption or strip press gave it) goes back to the view
+    /// (#77) when `p` was the pane shown; a tabbed group stays shown, so
+    /// the frame's rule would not.
+    pub fn close_pane(&mut self, p: Pane) {
+        if !self.panes.visible(p) {
+            return;
+        }
+        let host = self.docks.host(p);
+        let strip: Vec<Pane> = self.tab_order.into_iter().filter(|&q| self.docks.host(q) == host).collect();
+        let was_front = self.panes.front(strip.iter().copied()) == Some(p);
+        self.panes.set(p, false);
+        if was_front {
+            if matches!(self.copy_focus, CopyFocus::Pane(u) if u == host || u == p) {
+                self.copy_focus = CopyFocus::View;
+            }
+            let i = strip.iter().position(|&q| q == p).unwrap_or(0);
+            let next = strip[i + 1..].iter().find(|&&q| self.panes.visible(q)).or_else(|| strip[..i].iter().rev().find(|&&q| self.panes.visible(q)));
+            if let Some(&q) = next {
+                self.dispatch(Command::ActivatePane(q));
+            }
+        }
+    }
+
     pub fn dispatch(&mut self, cmd: Command) {
         let mark = crate::setfile::marks_modified(&cmd).then_some(self.active).flatten();
         // The handlers that end in the frame's refresh-all `0x475420` (the
@@ -2059,25 +2086,16 @@ impl App {
                     self.docks[host].request_show();
                     return;
                 }
-                let on = !self.panes.visible(p);
-                let strip: Vec<Pane> = self.tab_order.into_iter().filter(|&q| self.docks.host(q) == host).collect();
-                let was_front = self.panes.front(strip.iter().copied()) == Some(p);
-                self.panes.set(p, on);
-                // Whatever way a pane closes (caption button, pane menu,
-                // ribbon), a focus its group's window holds (a caption or
-                // strip press gave it) goes back to the view (#77); a
-                // tabbed group stays shown, so the frame's rule would not.
-                if !on && matches!(self.copy_focus, CopyFocus::Pane(u) if u == host || u == p) {
-                    self.copy_focus = CopyFocus::View;
-                }
-                if !on && was_front {
-                    let i = strip.iter().position(|&q| q == p).unwrap_or(0);
-                    let next = strip[i + 1..].iter().find(|&&q| self.panes.visible(q)).or_else(|| strip[..i].iter().rev().find(|&&q| self.panes.visible(q)));
-                    if let Some(&q) = next {
-                        self.dispatch(Command::ActivatePane(q));
-                    }
+                if self.panes.visible(p) {
+                    self.close_pane(p);
+                } else {
+                    self.panes.set(p, true);
                 }
             }
+            // The caption's «×» (MFC's OnPressCloseButton, apart from the
+            // ribbon's toggle): closes the pane whether its group is docked,
+            // floating or slid out of its strip.
+            Command::HidePane(p) => self.close_pane(p),
             Command::ActivatePane(p) => {
                 self.panes.activate(p);
                 match p {
