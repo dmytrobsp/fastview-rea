@@ -12,7 +12,7 @@ fn cfg(rev: &str) -> String {
     [
         &format!("Підстанція Тест,Реєстратор 1,{rev}"),
         "4,2A,2D",
-        "1,Струм фази А,A,,A,2.7e-37,0.0061,0,-3.4028235E38,3.4028235E38,10000,5,S",
+        "1,Струм фази А,A,,A,2.9e-37,0.0061,0,-3.4028235E38,3.4028235E38,10000,5,S",
         "2,Шина 2 напр\u{FFFD},,,kV,2.0e-37,0.0125,0,-3.4028235E38,3.4028235E38,35000,110,S",
         "1,Пуск захисту,,,0",
         "2,Вимкнення,,,0",
@@ -149,7 +149,7 @@ fn float32_range_samples_with_tiny_scale_factors() {
     let [ia, ur] = [&rec.analog[0], &rec.analog[1]];
     let v = |c: &comtrade::AnalogChannel, x: f64| c.unit_mult * c.a * x + c.b;
     assert_eq!(ia.samples, [v(ia, -2.8e+38), v(ia, 2.4e+38), v(ia, 3.4028235e+38), v(ia, -3.4028235e+38)]);
-    assert!((ia.samples[0] - -75.5939).abs() < 1e-4 && (ia.samples[2] - 91.8823).abs() < 1e-4, "{:?}", ia.samples);
+    assert!((ia.samples[0] - -81.1939).abs() < 1e-4 && (ia.samples[2] - 98.6880).abs() < 1e-4, "{:?}", ia.samples);
     assert_eq!(ur.unit_mult, 1000.0, "kV");
     assert_eq!(ur.samples[1], 1000.0 * ur.a * -3.2e+38 + ur.b, "kV: × 1000");
     assert!((ur.samples[1] - -63999.99).abs() < 0.01, "{}", ur.samples[1]);
