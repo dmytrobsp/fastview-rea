@@ -655,14 +655,7 @@ mod tests {
         assert_eq!(m.analog[1].own_freq[0], base.line_freq, "the padding reads f_nom");
         // An inverted digital channel's padding reads 1 through the accessor.
         let dig = Pasted {
-            channel: Err(crate::comtrade::DigitalChannel {
-                index: 1,
-                id: "D".into(),
-                phase: String::new(),
-                normal: 0,
-                samples: vec![false; 100],
-                own_rate: 0.0,
-            }),
+            channel: Err(crate::comtrade::DigitalChannel { index: 1, id: "D".into(), phase: String::new(), normal: 0, samples: vec![false; 100], own_rate: 0.0 }),
             times: (0..100).map(|k| k as f64 / 1000.0).collect(),
             rate: 1000.0,
             pad: 1.0,
@@ -677,10 +670,9 @@ mod tests {
     /// record's integer rate — not the first rate line.
     #[test]
     fn merge_takes_each_channels_own_rate_else_the_records_integer_rate() {
-        let mut cfg = String::from(
+        let cfg = String::from(
             "S,D,1999\n1,1A,0D\n1,A,,,V,1,0,0,-32768,32767,1,1,S\n50\n1\n1250,100\n01/01/2024,00:00:00.000000\n01/01/2024,00:00:00.000000\nASCII\n1\n",
         );
-        cfg.push_str("");
         let dat: String = (0..100).map(|k| format!("{},{},{k}\n", k + 1, k * 800)).collect();
         let mut base = crate::comtrade::parse(&cfg, dat.as_bytes()).unwrap();
         let mut ch = base.analog[0].clone();

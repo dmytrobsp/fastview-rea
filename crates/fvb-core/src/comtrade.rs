@@ -965,14 +965,7 @@ fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Res
     let mut digital: Vec<DigitalChannel> = digital_defs
         .iter()
         .enumerate()
-        .map(|(i, (name, normal))| DigitalChannel {
-            index: i as u32 + 1,
-            id: name.clone(),
-            phase: String::new(),
-            normal: *normal,
-            samples: Vec::new(),
-            own_rate: 0.0,
-        })
+        .map(|(i, (name, normal))| DigitalChannel { index: i as u32 + 1, id: name.clone(), phase: String::new(), normal: *normal, samples: Vec::new(), own_rate: 0.0 })
         .collect();
     let m = analog_defs.iter().filter(|(_, _, _, u)| matches!(u.trim(), "V" | "В" | "A" | "А" | "")).count() as f64;
     let words = nd / 16;

@@ -1243,17 +1243,17 @@ enum Act {
     Cmd(Command),
 }
 
-/// The drag payload of the stats panel (`0x42be30`): every selected channel
-/// of the active document (`ch+0x100` set, `0x45ea70`) — file, formula,
-/// pasted (pending) and digital ones alike, whatever the drop then makes of
-/// them (#102).
+/// The drag payload of the stats panel (`0x42be30`): every selected
+/// analog-kind channel of the active document (`ch+0x100` set; the collector
+/// `0x45edc4` loops to `doc+0x1d8`, which counts file analog, formula and
+/// pasted analog records only) — pasted lanes included, digital ones never
+/// (#102).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChanDrag {
     pub chans: Vec<usize>,
     /// The formula channels among them, pasted (pending) lanes too
     /// (analog-kind records of the same vector, `0x4415b0` walks them all).
     pub computed: Vec<usize>,
-    pub digital: Vec<usize>,
 }
 
 impl ChanDrag {
@@ -1262,14 +1262,13 @@ impl ChanDrag {
         ChanDrag {
             chans: pick(|k| if let ChanKey::Analog(i) = k { Some(*i) } else { None }),
             computed: pick(|k| if let ChanKey::Computed(j) = k { Some(*j) } else { None }),
-            digital: pick(|k| if let ChanKey::Digital(i) = k { Some(*i) } else { None }),
         }
     }
 
     /// The dragged channels as keys.
     pub fn keys(&self) -> Vec<ChanKey> {
         let a = self.chans.iter().map(|&i| ChanKey::Analog(i));
-        a.chain(self.computed.iter().map(|&j| ChanKey::Computed(j))).chain(self.digital.iter().map(|&i| ChanKey::Digital(i))).collect()
+        a.chain(self.computed.iter().map(|&j| ChanKey::Computed(j))).collect()
     }
 }
 
@@ -1749,14 +1748,14 @@ impl App {
         } else if moved && !ctrl && !menu_busy && self.rename_edit.is_none() && resp.is_pointer_button_down_on() {
             let mode0 = self.vizir_drag.is_none() && self.comment_drag.is_none() && self.merge_drag.is_none() && !matches!(self.rect_zoom, RectZoom::Dragging { .. });
             if let (Some(o), Some(p)) = (origin, now) {
-                // Every selected channel goes (`0x45edd0`: the selected byte
-                // of each record), pasted and digital ones too.
+                // Every selected analog-kind record goes (`0x45edc4`, bound
+                // `doc+0x1d8`), pasted analog lanes too; digital ones lie
+                // past the bound.
                 let sel: Vec<ChanKey> = doc
                     .selected_analog()
                     .into_iter()
                     .map(ChanKey::Analog)
-                    .chain(doc.selected_computed().into_iter().map(ChanKey::Computed))
-                    .chain(doc.selected_digital().into_iter().map(ChanKey::Digital))
+                    .chain(doc.selected_computed().into_iter().filter(|&j| !doc.pending_digital(j)).map(ChanKey::Computed))
                     .collect();
                 if mode0 && in_view(o) && p.x < left && !sel.is_empty() {
                     self.stats_drag_arm = Some((p, t, sel));
@@ -1796,16 +1795,21 @@ impl App {
             }
             None => self.drag_scroll = None,
         }
-        // Drop on a lane (`0x4415b0`, kind 1): x is ignored; the lane under
-        // y, whatever its kind, unless it is one of the dragged channels,
-        // joins them (a digital or pasted one is refused by 33035's enable
-        // check: message 1086).
+        // Drop on a lane (`0x4415b0`, kind 1): x is ignored; the analog-kind
+        // lane under y (the search stops at `doc+0x1d8`: a digital lane is
+        // no target and nothing happens), unless it is one of the dragged
+        // channels, joins them; a pasted one is refused by 33035's enable
+        // check (`0x468c80`): message 1086.
         if released && !self.modal_up {
             if let Some(p) = now.filter(|p| in_view(*p) && p.y < plot_bottom) {
                 let lane = rows.iter().zip(&tops).find(|(r, &t)| p.y >= t && p.y < t + r.h).map(|(r, _)| r.key);
                 if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
                     if let Some(drag) = egui::DragAndDrop::take_payload::<ChanDrag>(&ctx) {
-                        let target = lane.filter(|k| !drag.keys().contains(k));
+                        let target = lane.filter(|k| match k {
+                            Lane::Digital(_) => false,
+                            Lane::Computed(j) if doc.pending_digital(*j) => false,
+                            _ => !drag.keys().contains(k),
+                        });
                         if let Some(target) = target {
                             actions.push(Act::DropCombine(drag.keys(), target));
                         }
@@ -2979,8 +2983,6 @@ mod menu_tests {
 
     /// A pasted (pending) lane and a digital one are dragged like any other
     /// selected channel and dropped on any lane (`0x45ea70`, `0x4415b0`): the
-    /// drop selects them with the target and 33035's enable check (`0x468c80`)
-    /// refuses them with message 1086 (#102).
     /// After «Объединить» and a rate change the record's rate is above the
     /// channels' own: the analog painters visit ⌈W/(25f·R/r)⌉ samples, so a
     /// lane stops short of the plot's right edge, at W·r/R from its left
@@ -3007,6 +3009,34 @@ mod menu_tests {
         assert!((short - left - w / 1.225).abs() < 12.0, "after it they stop at W/1.225: {short} (W = {w})");
     }
 
+    /// A digital lane's base bar (`0x463e2d`) is trunc(25·N·f·R/r) long: after
+    /// a merge and a rate rise it is 1.225 times the record's length (#100).
+    #[test]
+    fn a_merged_digital_lane_draws_its_base_bar_by_the_ratio() {
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into_iter().collect();
+        h.app.copy_channels_for_merge();
+        h.app.paste_channels_for_merge();
+        h.app.merge_records();
+        let bar = |h: &Harness| h.shapes.iter().find_map(|c| if let Shape::Rect(r) = &c.shape { (r.fill == Color32::from_rgb(150, 150, 255)).then(|| r.rect.width()) } else { None });
+        h.app.active_doc_mut().unwrap().xscale = Some(0.03125);
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let before = bar(&h).expect("the base bar");
+        assert_eq!(h.app.apply_file_rate(0, "2450"), Ok(()));
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let after = bar(&h).expect("the base bar");
+        assert!((after / before - 1.225).abs() < 0.01, "{before} -> {after}");
+    }
+
+    /// A pasted analog lane takes part in a lane drag and a drop on one: the
+    /// drop selects the dragged lanes with the target and 33035's enable check
+    /// (`0x468c80`) refuses them with message 1086. Digital lanes (file and
+    /// pasted) lie past `doc+0x1d8`, the bound of the drag collector and the
+    /// drop's loops: a digital-only selection starts no drag, a drop on a
+    /// digital lane does nothing, and with a digital lane also selected the
+    /// enable check (it walks the whole list) refuses (#102).
     #[test]
     fn pasted_and_digital_lanes_take_part_in_a_drag_and_the_drop_is_refused() {
         let mut h = Harness::new();
@@ -3030,16 +3060,32 @@ mod menu_tests {
         drag_rows(&mut h, file, pend);
         assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "a drop on a pasted lane: message 1086");
         h.app.dlg.alerts.clear();
-        // A digital lane, both ways.
+        // A digital lane dragged: no drag starts, nothing happens.
         let dig = rows.iter().position(|r| matches!(r.key, Lane::Digital(_))).expect("a digital lane");
         let dk = rows[dig].key;
         h.app.active_doc_mut().unwrap().selection = [dk].into_iter().collect();
         drag_rows(&mut h, dig, file);
-        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "a digital lane dragged: message 1086");
-        h.app.dlg.alerts.clear();
+        assert!(h.app.dlg.alert().is_none(), "a digital-only selection starts no drag");
+        assert_eq!(h.doc().selection, [dk].into_iter().collect(), "the selection is unchanged");
+        // A drop on a digital lane: no target, nothing happens.
         h.app.active_doc_mut().unwrap().selection = [fk].into_iter().collect();
         drag_rows(&mut h, file, dig);
-        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "a drop on a digital lane: message 1086");
+        assert!(h.app.dlg.alert().is_none(), "a digital lane is no target");
+        assert_eq!(h.doc().selection, [fk].into_iter().collect(), "the selection is unchanged");
+        // An analog and a digital lane selected, dropped on another analog
+        // lane: the enable check walks the whole list and refuses.
+        let other = (file + 1..rows.len()).find(|&i| matches!(rows[i].key, Lane::Analog(_))).expect("another analog lane");
+        let (pa, pb) = (h.row(file), h.row(other));
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(pa), ev(pa, true)]);
+        // The press selected the lane alone; the digital lane joins it.
+        h.app.active_doc_mut().unwrap().selection = [fk, dk].into_iter().collect();
+        for k in 1..=((pb.y - pa.y).abs() / 5.0).ceil().max(1.0) as usize {
+            h.frame(vec![egui::Event::PointerMoved(pa + (pb - pa) * (k as f32 * 5.0 / (pb.y - pa.y).abs()).min(1.0))]);
+        }
+        h.frame(vec![ev(pb, false)]);
+        h.frame(vec![]);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_UNITS), "message 1086 through the enable check");
     }
 
     /// The drop on a diagram pane takes formula channels too (#103): the
@@ -3060,6 +3106,19 @@ mod menu_tests {
         let d = app.active_doc().unwrap();
         assert!(d.computed[0].on_freq && d.computed[0].on_vector && d.computed[0].on_circle);
         assert!(d.set.modified);
+        // A pasted analog lane: the frequency / vector bits are set, the circle's never.
+        app.active_doc_mut().unwrap().selection = [ChanKey::Analog(1)].into_iter().collect();
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let p = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).expect("the pasted lane");
+        d.computed[p].unit = "Ohm".into();
+        (d.computed[p].on_freq, d.computed[p].on_vector, d.computed[p].on_circle) = (false, false, false);
+        for pane in [crate::app::Pane::Frequency, crate::app::Pane::Vector, crate::app::Pane::Circle] {
+            app.drop_channels(&[ChanKey::Computed(p)], pane);
+        }
+        let c = &app.active_doc().unwrap().computed[p];
+        assert!(c.on_freq && c.on_vector && !c.on_circle, "a pasted lane takes the frequency / vector bits, never the circle's");
         // Another unit: not on the circle diagram.
         let d = app.active_doc_mut().unwrap();
         d.computed[0].unit = "A".into();

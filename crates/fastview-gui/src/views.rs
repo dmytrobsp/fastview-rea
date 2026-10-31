@@ -1078,9 +1078,7 @@ impl App {
         if !released || !pos.is_some_and(|p| ui.max_rect().contains(p)) || !egui::DragAndDrop::has_payload_of_type::<crate::lanes::ChanDrag>(ctx) {
             return;
         }
-        let Some(drag) = egui::DragAndDrop::take_payload::<crate::lanes::ChanDrag>(ctx) else {
-            return;
-        };
+        let Some(drag) = egui::DragAndDrop::take_payload::<crate::lanes::ChanDrag>(ctx) else { return };
         self.drop_channels(&drag.keys(), pane);
     }
 
@@ -1090,12 +1088,10 @@ impl App {
     /// formula channels alike, the vector and frequency panes without any
     /// test of the channel (#103). The circle diagram only takes channels of
     /// an Ohm / VA unit that are not pending (CompareNoCase on the canonical
-    /// unit, `0x414c30`; none in ADC mode). A digital channel has no pane
-    /// bits here.
+    /// unit, `0x414c30`; none in ADC mode). A digital channel never reaches a pane: the drag payload stops
+    /// at `doc+0x1d8` (analog-kind records).
     pub fn drop_channels(&mut self, keys: &[ChanKey], pane: Pane) {
-        let Some(d) = self.active_doc_mut() else {
-            return;
-        };
+        let Some(d) = self.active_doc_mut() else { return };
         let mut changed = false;
         for &k in keys {
             let (pending, unit, flag) = match k {
@@ -1104,10 +1100,10 @@ impl App {
                     let c = &mut d.chans[i];
                     (false, unit, [&mut c.on_freq, &mut c.on_vector, &mut c.on_circle])
                 }
-                ChanKey::Computed(j) if j < d.computed.len() => {
+                ChanKey::Computed(j) if j < d.computed.len() && !d.pending_digital(j) => {
                     let pending = d.computed[j].formula == crate::merge_ui::PENDING;
                     let c = &mut d.computed[j];
-                    (pending, c.unit.to_lowercase(), [&mut c.on_freq, &mut c.on_vector, &mut c.on_circle])
+                    (pending, c.unit.trim().to_lowercase(), [&mut c.on_freq, &mut c.on_vector, &mut c.on_circle])
                 }
                 _ => continue,
             };
