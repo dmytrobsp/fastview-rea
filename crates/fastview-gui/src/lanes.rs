@@ -2671,7 +2671,7 @@ fn analog_unit(doc: &crate::app::Doc, i: usize) -> fvb_core::units::Shown {
 }
 
 /// Compute (name, unit, color, max, min, rms, a1, value@cursor) for a lane.
-fn lane_stats(
+pub(crate) fn lane_stats(
     doc: &crate::app::Doc,
     lane: &Lane,
     k_main: usize,

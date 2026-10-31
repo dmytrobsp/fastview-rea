@@ -3475,6 +3475,61 @@ mod tests {
         assert_eq!(m, [0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
     }
 
+    /// The own rate of every channel present at the merge reaches every reader
+    /// (#71): a formula channel present at the merge keeps R after the rate
+    /// change and reads at its window (40 at R = 2000 Hz, the record's is 25 at
+    /// 1250 Hz); the phasor cache, the DC mean, a formula's RMS display and the
+    /// lane's СКЗ / A1 read it; a refused 33035 dissolves no group (#57).
+    #[test]
+    fn a_formula_present_at_the_merge_keeps_its_own_window() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
+        app.docs[0].selection = BTreeSet::from([ChanKey::Analog(0)]);
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.merge_records();
+        let r = app.docs[0].osc.rate_r;
+        let j = app.docs[0].computed.iter().position(|c| c.name == "X").unwrap();
+        assert_eq!(app.docs[0].computed[j].own_rate, r, "a formula present at the merge gets R");
+        assert_eq!(app.apply_file_rate(0, "1250"), Ok(()));
+        // A later formula has none.
+        assert!(app.append_computed(&[("Y".into(), "Ua".into())]).is_some());
+        let d = &mut app.docs[0];
+        let y = d.computed.iter().position(|c| c.name == "Y").unwrap();
+        assert_eq!((d.computed[j].own_rate, d.computed[y].own_rate), (r, 0.0), "the dialog leaves it alone");
+        assert_eq!((d.computed_period(j), d.computed_period(y)), (40, 25));
+        let k = 236;
+        // The phasor cache of a merged channel: its window.
+        let want = fvb_core::signal::sliding_phasors(d.shown_samples(1), 40);
+        assert_eq!(d.analysis.phasors[1][k], want[k], "the phasor cache at the own window");
+        assert_ne!(d.analysis.phasors[1][k], fvb_core::signal::sliding_phasors(d.shown_samples(1), 25)[k]);
+        // The whole-period DC mean: its window.
+        let x = &d.osc.analog[1].samples;
+        assert_eq!(d.dc_mean[1].0, whole_period_mean(x, 40));
+        assert_ne!(whole_period_mean(x, 40), whole_period_mean(x, 25), "the record tells the windows apart");
+        // A formula channel's RMS display and its lane's СКЗ / A1.
+        d.computed[j].mode = ValueMode::Rms;
+        d.computed[y].mode = ValueMode::Rms;
+        d.reflag_computed(j);
+        d.reflag_computed(y);
+        let rms = |n: usize| fvb_core::signal::rms_at(&d.computed[j].samples, k, n);
+        assert_eq!(d.computed[j].display[k], rms(40), "the display at the own window");
+        assert_eq!(d.computed[y].display[k], rms(25), "the later formula at the record's");
+        assert_ne!(rms(40), rms(25));
+        let lane = |i: usize| crate::lanes::lane_stats(d, &ChanKey::Computed(i), k, false);
+        let (st_j, st_y) = (lane(j), lane(y));
+        assert_eq!((st_j.5, st_j.6), (rms(40), fvb_core::signal::harmonic_rms(&d.computed[j].samples, k, 40, 1)));
+        assert_eq!((st_y.5, st_y.6), (rms(25), fvb_core::signal::harmonic_rms(&d.computed[y].samples, k, 25, 1)));
+        // A refused 33035 dissolves no group: the group of a selected channel survives.
+        d.selection = BTreeSet::from([ChanKey::Analog(1), ChanKey::Analog(2)]);
+        assert!(d.combine_selected());
+        let g = d.chans[1].group;
+        assert!(g.is_some() && g == d.chans[2].group);
+        d.selection = BTreeSet::from([ChanKey::Analog(2), ChanKey::Computed(y)]);
+        assert!(!d.combine_selected(), "message 239");
+        assert!(d.chans[1].group == g && d.chans[2].group == g, "the old group stays");
+    }
+
     /// Without the rate change a formula after a merge groups with the
     /// merged channels (the record's rate equals R).
     #[test]
