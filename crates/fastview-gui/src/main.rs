@@ -1037,6 +1037,9 @@ impl App {
         }
 
         let pal = self.skin.palette();
+        // The auto-hide strips of the left, right and top edges take the
+        // frame's outermost space, before the ribbon and the bars.
+        self.strips_outer(ctx);
         egui::TopBottomPanel::top("top")
             .show_separator_line(false)
             .frame(egui::Frame::none().fill(pal.tab_active))
@@ -1110,6 +1113,8 @@ impl App {
         }
 
 
+        // The bottom edge's strip is the last row, under the status row.
+        self.strip_bottom(ctx);
         egui::TopBottomPanel::bottom("status")
             .exact_height(dpi::s(24.0))
             .show_separator_line(false)
@@ -2144,12 +2149,196 @@ mod window_tests {
         w.app.docks[Unit::Vector].pin();
         w.idle(2);
         assert!(canvas(&w).is_none(), "pinned away");
-        let strip = Pos2::new(1320.0 - 12.0, w.app.view_rects.unwrap().0.top() + 40.0);
-        w.run(vec![egui::Event::PointerMoved(strip)]);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
         w.idle(10);
         assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
         w.idle(14);
         assert!(canvas(&w).is_some(), "drawn over the content");
+    }
+
+    /// A floating pane is an ordinary tool window, not a dialog (#70): the
+    /// frame keeps its shortcuts and its view takes input, and a press on
+    /// the window's caption, tab strip or toolbar over the view does not
+    /// hand the focus to the view.
+    #[test]
+    fn a_floating_pane_is_no_dialog() {
+        use docking::{Place, Unit};
+        let mut w = Win::new();
+        let canvas = |w: &Win| w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r);
+        let docked = canvas(&w).expect("the vector pane is drawn");
+        let at = Pos2::new(docked.left() + 60.0, docked.top() - 10.0);
+        let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, modifiers: Default::default(), pressed };
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(true), ev(false)]);
+        w.run(vec![ev(true), ev(false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        assert!(!w.app.modal_up, "a floating pane is no dialog");
+        let win = w.ctx.memory(|m| m.area_rect(egui::Id::new(("fv_floating_pane", Unit::Vector)))).expect("the floating window");
+        // The view takes input beside the window.
+        let free = [Pos2::new(700.0, 470.0), Pos2::new(700.0, 330.0), Pos2::new(420.0, 470.0), Pos2::new(560.0, 330.0), Pos2::new(250.0, 600.0)]
+            .into_iter()
+            .find(|p| !win.expand(6.0).contains(*p))
+            .unwrap_or_else(|| panic!("a point of the view beside the window {win:?}"));
+        let before = w.view_state();
+        w.poke(free);
+        assert_ne!(w.view_state(), before, "input reaches the view at {free:?} (window {win:?})");
+        // A press on the window's caption, tab strip or toolbar over the
+        // view leaves the focus off the view.
+        let tab = w.app.pane_tab_rects.iter().map(|(_, r)| r.center()).next().expect("the tab strip");
+        let toolbar = Pos2::new(win.right() - 12.0, win.center().y);
+        let caption = Pos2::new(win.left() + 60.0, win.top() + 10.0);
+        w.press(egui::PointerButton::Primary, caption, caption);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Pane(Unit::Vector), "the caption gives the pane the focus");
+        for (what, p) in [("tab strip", tab), ("toolbar", toolbar)] {
+            w.press(egui::PointerButton::Primary, p, p);
+            assert_eq!(w.app.copy_focus, app::CopyFocus::Pane(Unit::Vector), "{what}: the press leaves the focus on the pane");
+        }
+        // The same from the view's focus: the window's caption takes it.
+        w.press(egui::PointerButton::Primary, free, free);
+        assert_eq!(w.app.copy_focus, app::CopyFocus::View);
+        w.press(egui::PointerButton::Primary, caption, caption);
+        assert_ne!(w.app.copy_focus, app::CopyFocus::View);
+    }
+
+    /// A docked pane's caption drag floats it once the pointer is past the
+    /// drag distance from the press — 4 px at 100 %, grown with the display
+    /// scale — wherever the pointer is, with the four-way move cursor from
+    /// the press on (#90); the caption's buttons never start a drag.
+    #[test]
+    fn a_short_caption_drag_floats_a_docked_pane_with_the_move_cursor() {
+        use docking::{Place, Unit};
+        use egui::CursorIcon::{Default as Arrow, Move};
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        for dpi in [96, 120, 144] {
+            dpi::set(dpi);
+            let reach = dpi::s(docking::DRAG_PX);
+            let fresh = || {
+                let mut w = Win::new();
+                w.idle(3);
+                let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+                (w, pane)
+            };
+            // The press on the caption body, 60 px in from the pane's left.
+            let (mut w, pane) = fresh();
+            let at = Pos2::new(pane.left() + 60.0, pane.top() + 8.0);
+            assert_eq!(w.run(vec![egui::Event::PointerMoved(at)]), Arrow, "{dpi}: hovering the caption leaves the arrow");
+            assert_eq!(w.run(vec![ev(at, true)]), Move, "{dpi}: the press arms the drag: move cursor");
+            // Up to the distance: still docked, still armed.
+            assert_eq!(w.run(vec![egui::Event::PointerMoved(at + Vec2::new(reach, 0.0))]), Move);
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "{dpi}: {reach} px is not past the distance");
+            // One more px, the pointer still over the pane: it floats.
+            let to = at + Vec2::new(reach + 1.0, 0.0);
+            assert!(w.app.dock_rects[Unit::Vector as usize].is_some_and(|r| r.contains(to)));
+            assert_eq!(w.run(vec![egui::Event::PointerMoved(to)]), Move, "{dpi}: the cursor goes on while dragging");
+            w.idle(1);
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating, "{dpi}: past the drag distance");
+            assert_eq!(w.run(vec![egui::Event::PointerMoved(to + Vec2::new(3.0, 3.0))]), Move, "{dpi}: moving the floated pane");
+            w.run(vec![ev(to, false)]);
+            w.idle(3);
+            assert_eq!(w.run(vec![egui::Event::PointerMoved(Pos2::new(5.0, 5.0))]), Arrow, "{dpi}: released: the arrow");
+            // A vertical drag counts the same.
+            let (mut w, pane) = fresh();
+            let at = Pos2::new(pane.left() + 60.0, pane.top() + 8.0);
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true)]);
+            w.run(vec![egui::Event::PointerMoved(at + Vec2::new(0.0, reach))]);
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked);
+            w.run(vec![egui::Event::PointerMoved(at + Vec2::new(0.0, reach + 1.0))]);
+            w.idle(1);
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating, "{dpi}: down past the distance");
+            // The caption's buttons (close at 11 px from the right edge, pin
+            // at 26) never start a drag, however far the pointer goes.
+            for from_right in [11.0, 26.0] {
+                let (mut w, pane) = fresh();
+                let btn = Pos2::new(pane.right() - dpi::s(from_right), pane.top() + dpi::s(10.0));
+                w.run(vec![egui::Event::PointerMoved(btn)]);
+                assert_eq!(w.run(vec![ev(btn, true)]), Arrow, "{dpi}: a press on a button: the arrow");
+                for k in 1..=6 {
+                    w.run(vec![egui::Event::PointerMoved(btn + Vec2::new(-20.0 * k as f32, 3.0 * k as f32))]);
+                }
+                assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "{dpi}: a drag from the button at {from_right} did not float it");
+            }
+        }
+        dpi::set(96);
+    }
+
+    /// Only the left button drags a caption (`0x10086f3a` reads the left
+    /// button): a right-drag floats nothing, shows no move cursor and
+    /// moves no floating window.
+    #[test]
+    fn a_right_drag_on_a_caption_does_nothing() {
+        use docking::{Place, Unit};
+        use egui::CursorIcon::Move;
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() };
+        let mut w = Win::new();
+        let pane = w.app.dock_rects[Unit::Vector as usize].expect("docked");
+        let at = Pos2::new(pane.left() + 60.0, pane.top() + 8.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true)]);
+        for k in 1..=6 {
+            assert_ne!(w.run(vec![egui::Event::PointerMoved(at + Vec2::new(10.0 * k as f32, 0.0))]), Move);
+        }
+        w.run(vec![ev(at + Vec2::new(60.0, 0.0), false)]);
+        w.idle(2);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "a right-drag floats nothing");
+        w.app.pane_menu = None;
+        w.app.docks.0[Unit::Vector as usize].double_click(Pos2::ZERO);
+        w.idle(3);
+        let win = w.app.docks[Unit::Vector].float_rect.expect("floating");
+        let at = Pos2::new(win.left() + 60.0, win.top() + 10.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true)]);
+        for k in 1..=6 {
+            assert_ne!(w.run(vec![egui::Event::PointerMoved(at + Vec2::new(10.0 * k as f32, 5.0))]), Move);
+        }
+        w.run(vec![ev(at + Vec2::new(60.0, 5.0), false)]);
+        w.idle(2);
+        assert_eq!(w.app.docks[Unit::Vector].float_rect, Some(win), "a right-drag moves no window");
+    }
+
+    /// The new drag rule leaves the other captions alone (#90): a floating
+    /// pane's caption press shows the move cursor and a click on it moves
+    /// nothing; a slid-out pane's caption keeps the arrow and is never
+    /// floated by a drag.
+    #[test]
+    fn floating_and_slid_out_captions_under_the_short_drag_rule() {
+        use docking::{Place, Unit};
+        use egui::CursorIcon::Move;
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        // Slid out.
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out);
+        let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+        let at = Pos2::new(area.left() + 60.0, area.top() + 8.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        assert_ne!(w.run(vec![ev(at, true)]), Move, "a slid-out caption keeps the arrow");
+        w.run(vec![egui::Event::PointerMoved(at + Vec2::new(30.0, 10.0))]);
+        w.run(vec![ev(at + Vec2::new(30.0, 10.0), false)]);
+        w.idle(2);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::AutoHide, "no float from a drag");
+        // Floating: a click (press and release in place) changes nothing,
+        // the press shows the move cursor.
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r).expect("drawn");
+        let dbl = Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0);
+        w.run(vec![egui::Event::PointerMoved(dbl)]);
+        w.run(vec![ev(dbl, true), ev(dbl, false)]);
+        w.run(vec![ev(dbl, true), ev(dbl, false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        let win = w.app.docks[Unit::Vector].float_rect.expect("floating");
+        let at = Pos2::new(win.left() + 60.0, win.top() + 10.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        assert_eq!(w.run(vec![ev(at, true)]), Move);
+        w.run(vec![ev(at, false)]);
+        w.idle(2);
+        assert_eq!(w.app.docks[Unit::Vector].float_rect, Some(win), "a click moves nothing");
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
     }
 
     /// An auto-hidden group slid out by hovering its strip button stays
@@ -2174,20 +2363,24 @@ mod window_tests {
             w.app.docks.0[unit as usize].pin();
             w.idle(2);
             let strip = w.app.dock_strips[unit as usize].unwrap_or_else(|| panic!("{case}: its strip"));
+            // The top strip lies under the caption's glass and the pane
+            // slides out over it, from the window's top (VM): the pane
+            // covers its buttons, so the hover ends once it is out.
+            let top = w.app.docks.edge(unit) == docking::Edge::Top;
             let area = |w: &Win| w.ctx.memory(|m| m.area_rect(egui::Id::new(("fv_slide", unit))));
             // On the first button.
-            let on = if w.app.docks.edge(unit).vertical() { Pos2::new(strip.center().x, strip.top() + 20.0) } else { Pos2::new(strip.left() + 20.0, strip.center().y) };
+            let on = w.app.strip_hits[unit as usize].buttons[0].center();
             w.run(vec![egui::Event::PointerMoved(on)]);
             let mut first = None;
             for k in 0..80 {
                 w.run(vec![]);
                 let d = w.app.docks[unit];
-                assert!(d.on_button(), "{case}: frame {k}: the button lost its hover");
+                assert!(d.on_button() || (top && d.out), "{case}: frame {k}: the button lost its hover: layer {:?} at {on:?}", w.ctx.layer_id_at(on));
                 if d.out {
                     first.get_or_insert(k);
                     // The pane keeps to its rect: the strip stays uncovered.
                     let (a, r) = (area(&w).expect("the slid-out pane"), w.app.dock_areas[unit as usize].expect("its rect"));
-                    assert!(r.expand(0.5).contains_rect(a) && !a.intersects(strip.shrink(0.5)), "{case}: frame {k}: area {a:?}, rect {r:?}, strip {strip:?}");
+                    assert!(r.expand(0.5).contains_rect(a) && (top || !a.intersects(strip.shrink(0.5))), "{case}: frame {k}: area {a:?}, rect {r:?}, strip {strip:?}");
                 } else {
                     assert!(first.is_none(), "{case}: frame {k}: it went back while the button was hovered");
                 }
@@ -2211,13 +2404,16 @@ mod window_tests {
                 }
                 w.run(vec![]);
             }
-            // Sliding in, back on the button: hovered at once, out again.
+            // Sliding in, back on the button: hovered at once, out again
+            // (not under the top pane, which covers it).
             w.idle(3);
             assert!(!w.app.docks[unit].out && w.app.docks[unit].slide > 0.0, "{case}: sliding in");
-            w.run(vec![egui::Event::PointerMoved(on)]);
-            assert!(w.app.docks[unit].on_button(), "{case}: the button is hovered while the pane slides in");
-            w.idle(20);
-            assert!(w.app.docks[unit].out, "{case}: the hover slid it out again");
+            if !top {
+                w.run(vec![egui::Event::PointerMoved(on)]);
+                assert!(w.app.docks[unit].on_button(), "{case}: the button is hovered while the pane slides in");
+                w.idle(20);
+                assert!(w.app.docks[unit].out, "{case}: the hover slid it out again");
+            }
             w.run(vec![egui::Event::PointerMoved(away)]);
             w.idle(30);
             let pane = w.app.dock_areas[unit as usize];
@@ -2235,7 +2431,6 @@ mod window_tests {
         let mut w = Win::new();
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(2);
-        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
         // One frame with `events`, then frames only as asked, for `secs`;
         // the frames' times and delays.
         let run = |w: &mut Win, events: Vec<egui::Event>, secs: f64| {
@@ -2254,7 +2449,8 @@ mod window_tests {
             log
         };
         // On the button: out at 400 ms, with no frames between.
-        let log = run(&mut w, vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))], 0.6);
+        let button = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
+        let log = run(&mut w, vec![egui::Event::PointerMoved(button)], 0.6);
         let open = log.iter().find(|f| f.1).expect("the hover slid it out");
         assert!((0.4..0.45).contains(&open.0), "out at {:.3} s: {log:?}", open.0);
         assert!(log.len() < 5 + 12, "frames while hovering: {log:?}");
@@ -2284,8 +2480,7 @@ mod window_tests {
         let mut w = Win::new();
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(2);
-        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
-        w.run(vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))]);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
         w.idle(30);
         assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
         let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Vector).map(|(_, r)| *r).expect("the slid-out vector diagram");
@@ -2317,8 +2512,7 @@ mod window_tests {
         let mut w = Win::new();
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(2);
-        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
-        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let on = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
         let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
         let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         w.run(vec![egui::Event::PointerMoved(on), ev(on, true), ev(on, false)]);
@@ -2349,12 +2543,11 @@ mod window_tests {
         let mut w = Win::new();
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(2);
-        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
         w.app.docks.0[Unit::Vector as usize].out = true;
         let (mut seen, mut out_frames) = (0, 0);
         for k in 0..14 {
             let t = w.ctx.input(|i| i.time) + 0.016;
-            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), events: if k == 0 { vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))] } else { vec![] }, ..Default::default() };
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), events: if k == 0 { vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())] } else { vec![] }, ..Default::default() };
             let app = &mut w.app;
             let out = w.ctx.run(raw, |ctx| app.frame_ui(ctx));
             let Some(rect) = w.app.dock_areas[Unit::Vector as usize] else { continue };
@@ -2384,7 +2577,6 @@ mod window_tests {
         w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: Edge::Left, outer: true };
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(3);
-        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
         let away = w.app.view_rects.expect("the view").0.center();
         let canvas = |w: &Win, p: app::Pane| w.app.pane_canvas.iter().rev().find(|(q, _)| *q == p).map(|(_, r)| *r);
         let press = |w: &mut Win, at: Pos2, button| {
@@ -2395,7 +2587,7 @@ mod window_tests {
         };
         let freq = canvas(&w, app::Pane::Frequency).expect("Частотная docked");
         for button in [egui::PointerButton::Primary, egui::PointerButton::Secondary] {
-            w.run(vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))]);
+            w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
             w.idle(30);
             let v = canvas(&w, app::Pane::Vector).expect("the slid-out vector diagram");
             assert!(w.app.dock_areas[Unit::Vector as usize].is_some_and(|a| !a.contains(away) && !a.contains(freq.center())), "away and Частотная clear of the pane");
@@ -2421,21 +2613,319 @@ mod window_tests {
         let mut w = Win::new();
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(2);
-        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
-        w.run(vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))]);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
         w.idle(30);
         assert!(w.app.docks[Unit::Vector].out);
         let shown: Vec<app::Pane> = [app::Pane::Vector, app::Pane::Circle, app::Pane::Differential].into_iter().filter(|&p| w.app.panes.visible(p)).collect();
+        // (The ribbon's toggle does not hide an auto-hidden pane: closed here
+        // as the pane's caption does.)
         for &p in &shown {
-            w.app.dispatch(app::Command::TogglePane(p));
+            w.app.panes.set(p, false);
         }
         w.idle(2);
         for &p in &shown {
-            w.app.dispatch(app::Command::TogglePane(p));
+            w.app.panes.set(p, true);
         }
         w.run(vec![egui::Event::PointerMoved(w.app.view_rects.expect("the view").0.center())]);
         let d = w.app.docks[Unit::Vector];
         assert!(!d.out && d.slide == 0.0, "in its strip: {d:?}");
+    }
+
+    /// Each edge's auto-hide strip is the frame's outermost row or column
+    /// (#61; VM, maximised): a side strip runs from under the caption row
+    /// to the window's bottom, beside the ribbon, the bars and the status
+    /// row (which stop at it); the bottom one is under the status row; the
+    /// top one is the first row, the ribbon pushed down by it. A slid-out
+    /// side pane spans the window's whole height, a top / bottom one its
+    /// whole width, against its strip.
+    #[test]
+    fn auto_hide_strips_are_the_outermost_on_every_edge() {
+        use docking::{Edge, Spot, Unit};
+        let (screen, cap) = (Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0)), ribbon::caption_h());
+        for edge in Edge::ALL {
+            let mut w = Win::new();
+            w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+            w.idle(2);
+            let base = w.app.dock_client;
+            w.app.docks.0[Unit::Vector as usize].pin();
+            w.idle(2);
+            let strip = w.app.dock_strips[Unit::Vector as usize].unwrap_or_else(|| panic!("{edge:?}: its strip"));
+            let after = w.app.dock_client;
+            match edge {
+                Edge::Right => {
+                    assert_eq!((strip.right(), strip.top(), strip.bottom(), strip.width()), (screen.right(), cap, screen.bottom(), 23.0), "{edge:?}: {strip:?}");
+                    assert!((base.right() - after.right() - 23.0).abs() < 0.5, "{edge:?}: the bars and panes stop at it: {base:?} → {after:?}");
+                }
+                Edge::Left => {
+                    assert_eq!((strip.left(), strip.top(), strip.bottom(), strip.width()), (0.0, cap, screen.bottom(), 23.0), "{edge:?}: {strip:?}");
+                    assert!((after.left() - base.left() - 23.0).abs() < 0.5, "{edge:?}: {base:?} → {after:?}");
+                }
+                Edge::Bottom => {
+                    assert_eq!((strip.left(), strip.right(), strip.bottom(), strip.height()), (0.0, screen.right(), screen.bottom(), 21.0), "{edge:?}: {strip:?}");
+                    assert!((base.bottom() - after.bottom() - 21.0).abs() < 0.5, "{edge:?}: the status row is above it: {base:?} → {after:?}");
+                }
+                Edge::Top => {
+                    assert_eq!((strip.left(), strip.top(), strip.right(), strip.height()), (0.0, 0.0, screen.right(), 21.0), "{edge:?}: {strip:?}");
+                    assert!((after.top() - base.top() - 21.0).abs() < 0.5, "{edge:?}: the ribbon is pushed down: {base:?} → {after:?}");
+                }
+            }
+            // Out: the pane against its strip, over the whole extent along it.
+            let button = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
+            w.run(vec![egui::Event::PointerMoved(button)]);
+            w.idle(30);
+            let pane = w.app.dock_areas[Unit::Vector as usize].unwrap_or_else(|| panic!("{edge:?}: slid out"));
+            match edge {
+                Edge::Right => assert_eq!((pane.right(), pane.top(), pane.bottom()), (strip.left(), 0.0, screen.bottom()), "{edge:?}: {pane:?}"),
+                Edge::Left => assert_eq!((pane.left(), pane.top(), pane.bottom()), (strip.right(), 0.0, screen.bottom()), "{edge:?}: {pane:?}"),
+                Edge::Bottom => assert_eq!((pane.left(), pane.right(), pane.bottom()), (0.0, screen.right(), strip.top()), "{edge:?}: {pane:?}"),
+                Edge::Top => assert_eq!((pane.left(), pane.right(), pane.top()), (0.0, screen.right(), 0.0), "{edge:?}: {pane:?}"),
+            }
+        }
+    }
+
+    /// The window's own buttons stay whole at the window's edge beside a
+    /// right strip and under a top strip (VM; the review of #61): a click
+    /// at the right edge in the caption row's top, middle and bottom closes
+    /// the window — not clipped by the strip's or the ribbon's panel.
+    #[test]
+    fn the_window_buttons_stay_live_beside_a_right_and_a_top_strip() {
+        use docking::{Edge, Spot, Unit};
+        let screen = Vec2::new(1320.0, 860.0);
+        for edge in [Edge::Right, Edge::Top] {
+            let mut w = Win::new();
+            w.app.own_caption = true;
+            w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+            w.app.docks.0[Unit::Vector as usize].pin();
+            w.idle(3);
+            for y in [2.0, 15.0, ribbon::caption_h() - 3.0] {
+                for dx in [2.0, 10.0] {
+                    let at = Pos2::new(screen.x - dx, y);
+                    let mut closed = false;
+                    for events in [vec![egui::Event::PointerMoved(at)], vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }], vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }]] {
+                        let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, screen)), time: Some(w.ctx.input(|i| i.time) + 0.05), events, ..Default::default() };
+                        let out = w.ctx.run(raw, |ctx| w.app.frame_ui(ctx));
+                        closed |= out.viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.commands.iter().any(|c| matches!(c, egui::ViewportCommand::Close)));
+                    }
+                    assert!(closed, "{edge:?}: a click at {at:?} closes the window");
+                    w.idle(2);
+                }
+            }
+        }
+    }
+
+    /// Beside a right strip the caption row has no dead band: the ribbon's panel is narrower by the strip's
+    /// width and the window's buttons lie at the window's edge, so the free space reserves the buttons' width
+    /// less that inset. A drag anywhere in the row up to the buttons moves the window, as elsewhere in the row.
+    #[test]
+    fn the_caption_row_beside_a_right_strip_has_no_dead_band() {
+        use docking::{Edge, Spot, Unit};
+        let screen = Vec2::new(1320.0, 860.0);
+        let mut w = Win::new();
+        w.app.own_caption = true;
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Right, outer: true };
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        // The strip is 23 px wide: the band was [W - 161, W - 138].
+        for dx in [160.0, 150.0, 140.0, 139.0] {
+            let at = Pos2::new(screen.x - dx, 10.0);
+            let mut dragged = false;
+            for events in [vec![egui::Event::PointerMoved(at)], vec![ev(at, true)], vec![egui::Event::PointerMoved(at + Vec2::new(12.0, 0.0))], vec![egui::Event::PointerMoved(at + Vec2::new(24.0, 0.0))], vec![ev(at + Vec2::new(24.0, 0.0), false)]] {
+                let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, screen)), time: Some(w.ctx.input(|i| i.time) + 0.05), events, ..Default::default() };
+                let out = w.ctx.run(raw, |ctx| w.app.frame_ui(ctx));
+                dragged |= out.viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.commands.iter().any(|c| matches!(c, egui::ViewportCommand::StartDrag)));
+            }
+            assert!(dragged, "a press at {dx} px from the right edge drags the window");
+            w.idle(2);
+        }
+    }
+
+    /// An auto-hidden tabbed group has a strip button per visible tab (#62;
+    /// VM, three tabs): the front pane's full length, the others' stubs of
+    /// 24 px, the buttons laid out in the tab order from 4 px under the
+    /// window's top (so the first ones' ends lie under the caption glass);
+    /// hovering a stub slides the group out with that pane alone, no tab
+    /// strip, and the pane becomes the front one with the full length.
+    #[test]
+    fn an_auto_hidden_tabbed_group_has_a_full_front_button_and_stubs() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let long_stub = |w: &Win| {
+            let b = &w.app.strip_hits[Unit::Vector as usize].buttons;
+            (b.iter().filter(|r| r.height() > 100.0).count(), b.iter().filter(|r| r.height() <= 24.5).count(), b.clone())
+        };
+        let (long, stubs, buttons) = long_stub(&w);
+        assert_eq!((long, stubs), (1, buttons.len() - 1), "one full button, the rest stubs: {buttons:?}");
+        assert!(buttons.windows(2).all(|b| (b[0].bottom() - b[1].top()).abs() < 0.5), "one after the other");
+        let shown = |w: &Win| w.app.pane_canvas.iter().filter(|(p, _)| *p != app::Pane::Frequency).map(|(p, _)| *p).collect::<Vec<_>>();
+        assert!(shown(&w).is_empty(), "in its strip nothing of it is drawn");
+        // A stub: its pane in front, alone in the pane, the button long now.
+        let front = w.app.panes.front(w.app.docks.members(Unit::Vector));
+        let stub_rect = *buttons.iter().find(|r| r.height() <= 24.5).expect("a visible stub");
+        let (front_slot, stub) = (*buttons.iter().find(|r| r.height() > 100.0).expect("the front's button"), stub_rect.center());
+        w.run(vec![egui::Event::PointerMoved(stub)]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out);
+        let now = w.app.panes.front(w.app.docks.members(Unit::Vector));
+        assert_ne!(now, front, "the stub's pane came to the front");
+        assert!(w.app.pane_tab_rects.is_empty(), "no tab strip in the slid-out pane: {:?}", w.app.pane_tab_rects);
+        assert!(shown(&w).iter().all(|&p| Some(p) == now), "only the front pane is drawn: {:?}", shown(&w));
+        let (long, _, after) = long_stub(&w);
+        assert_eq!(long, 1, "one full button again: {after:?}");
+        let long_rect = after.iter().find(|r| r.height() > 100.0).expect("the front's button");
+        // The column starts 4 px under the window's top and runs in tab order: the front pane was first
+        // (its button 4 px + its length down), so with the hovered pane in front the former front keeps
+        // its place as a 24 px stub and the new long button follows it. (The new button does not start
+        // where the hovered stub lay: the former front shrank above it.)
+        let len = |p: app::Pane, front: bool| docking::strip_button_len(views::pane_title(p).chars().count(), front, true);
+        assert!((front_slot.bottom() - (4.0 + len(front.unwrap(), true))).abs() < 0.5, "the front pane was first in the column: {front_slot:?}");
+        assert!((long_rect.bottom() - (4.0 + len(front.unwrap(), false) + len(now.unwrap(), true))).abs() < 0.5, "the former front's slot is a 24 px stub, the new long button after it: {long_rect:?}");
+        assert!((stub_rect.top() - front_slot.bottom()).abs() < 0.5, "the hovered stub lay right after the former front's button");
+        let stub_after = after.iter().find(|r| r.height() <= 24.5).expect("the stub that followed");
+        assert!((stub_after.top() - long_rect.bottom()).abs() < 0.5 && stub_after.height() == 24.0, "the stubs follow the long button: {stub_after:?}");
+    }
+
+    /// A divider beside a slid-out pane (#63; VM, `0x10087a4a`): the pointer
+    /// on it counts as inside, a drag on it resizes the pane and the size
+    /// stays; a visible dock-bar tooltip of the pane holds it out too.
+    #[test]
+    fn a_slid_out_pane_has_a_divider_that_resizes_it_and_holds_it_out() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let button = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
+        w.run(vec![egui::Event::PointerMoved(button)]);
+        w.idle(30);
+        let (pane, div) = (w.app.dock_areas[Unit::Vector as usize].expect("its rect"), w.app.dock_dividers[Unit::Vector as usize].expect("its divider"));
+        assert_eq!((div.right(), div.width(), div.top(), div.bottom()), (pane.left(), docking::DIVIDER_PX, pane.top(), pane.bottom()), "against the pane on the side facing the view: {div:?} {pane:?}");
+        // The pointer on the divider alone: still out through the checks.
+        w.run(vec![egui::Event::PointerMoved(div.center())]);
+        w.idle(40);
+        assert!(w.app.docks[Unit::Vector].out, "the divider counts as inside");
+        // Dragged, it resizes the pane; the size stays for the next time.
+        let before = pane.width();
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(div.center())]);
+        w.run(vec![ev(div.center(), true)]);
+        let to = div.center() - Vec2::new(120.0, 0.0);
+        w.run(vec![egui::Event::PointerMoved(div.center() - Vec2::new(60.0, 0.0))]);
+        w.run(vec![egui::Event::PointerMoved(to)]);
+        w.idle(2);
+        w.run(vec![ev(to, false)]);
+        w.idle(3);
+        let wider = w.app.dock_areas[Unit::Vector as usize].expect("its rect").width();
+        assert!((wider - before - 120.0).abs() <= 2.0, "wider by the drag: {before} → {wider}");
+        w.run(vec![egui::Event::PointerMoved(Pos2::new(300.0, 400.0))]);
+        w.idle(30);
+        assert!(!w.app.docks[Unit::Vector].out);
+        let button = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
+        w.run(vec![egui::Event::PointerMoved(button)]);
+        w.idle(30);
+        let again = w.app.dock_areas[Unit::Vector as usize].expect("its rect").width();
+        assert!((again - wider).abs() <= 1.0, "the size stays: {wider} → {again}");
+        // A visible tooltip of the pane holds it out with the pointer away
+        // (the anchor the tips module records for the check).
+        let inside = w.app.dock_areas[Unit::Vector as usize].expect("its rect").shrink(20.0);
+        w.run(vec![egui::Event::PointerMoved(Pos2::new(300.0, 400.0))]);
+        for _ in 0..40 {
+            let pass = w.ctx.cumulative_pass_nr();
+            w.ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_tip_anchor"), (inside, pass)));
+            w.run(vec![]);
+        }
+        assert!(w.app.docks[Unit::Vector].out, "its tooltip holds it out");
+        w.idle(40);
+        assert!(!w.app.docks[Unit::Vector].out, "the tooltip gone, it slides back");
+    }
+
+    /// The ribbon's pane toggle on an auto-hidden group (#64; VM, the
+    /// original): the ribbon button never checks for it, slid out or not;
+    /// the toggle shows the pane — in its strip it slides out, out it stays
+    /// — and never closes or docks it; the pointer elsewhere, the next hide
+    /// check slides it back.
+    #[test]
+    fn the_ribbon_toggle_shows_an_auto_hidden_pane_and_never_closes_it() {
+        use docking::{Place, Unit};
+        let mut w = Win::new();
+        assert!(w.app.pane_checked(app::Pane::Vector), "docked, its button is checked");
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let away = w.app.view_rects.expect("the view").0.center();
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        assert!(!w.app.pane_checked(app::Pane::Vector) && !w.app.pane_checked(app::Pane::Differential), "auto-hidden, its buttons do not check");
+        assert!(w.app.pane_checked(app::Pane::Frequency), "a docked pane's still does");
+        // In its strip: the toggle slides it out, the check takes it back.
+        w.app.dispatch(app::Command::TogglePane(app::Pane::Vector));
+        w.idle(3);
+        assert!(w.app.docks[Unit::Vector].out, "the toggle slid it out");
+        assert!(w.app.panes.visible(app::Pane::Vector) && w.app.docks[Unit::Vector].place == Place::AutoHide, "not closed, not docked");
+        assert!(!w.app.pane_checked(app::Pane::Vector), "slid out, still unchecked");
+        w.idle(30);
+        assert!(!w.app.docks[Unit::Vector].out, "taken back by the next check");
+        // The pointer on the pane keeps it out.
+        w.app.dispatch(app::Command::TogglePane(app::Pane::Vector));
+        w.idle(4);
+        let rect = w.app.dock_areas[Unit::Vector as usize].expect("its rect");
+        w.run(vec![egui::Event::PointerMoved(rect.center())]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the pointer in the pane holds it");
+        // Out, toggled again: still out, still in its strip afterwards.
+        w.app.dispatch(app::Command::TogglePane(app::Pane::Vector));
+        w.idle(3);
+        assert!(w.app.docks[Unit::Vector].out && w.app.panes.visible(app::Pane::Vector));
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(30);
+        assert!(!w.app.docks[Unit::Vector].out && w.app.panes.visible(app::Pane::Vector), "back in its strip, open");
+        // The real click on the ribbon's button, the pane out from a hover:
+        // taken back with the pointer left on the ribbon.
+        let button = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
+        w.run(vec![egui::Event::PointerMoved(button)]);
+        w.idle(20);
+        assert!(w.app.docks[Unit::Vector].out, "hovered out");
+        let ribbon = Pos2::new(240.0, 90.0);
+        w.press(egui::PointerButton::Primary, ribbon, ribbon);
+        w.idle(30);
+        assert!(!w.app.docks[Unit::Vector].out && w.app.panes.visible(app::Pane::Vector), "taken back with the pointer on the ribbon");
+        // A tab of the group other than the front one: shown in front.
+        w.app.dispatch(app::Command::TogglePane(app::Pane::Differential));
+        w.idle(3);
+        assert!(w.app.docks[Unit::Vector].out);
+        assert_eq!(w.app.panes.front(w.app.docks.members(Unit::Vector)), Some(app::Pane::Differential), "the toggled pane in front");
+    }
+
+    /// Toggled out from a hover, the pane is taken back with frames only as
+    /// asked (the event loop): the check's timer keeps the pane's frames
+    /// coming while the pointer rests on the ribbon.
+    #[test]
+    fn a_toggled_out_pane_is_taken_back_by_the_timer_alone() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(2);
+        let run = |w: &mut Win, events: Vec<egui::Event>, secs: f64| {
+            let (start, mut events) = (w.ctx.input(|i| i.time) + 0.05, events);
+            let mut t = start;
+            let mut log = Vec::new();
+            while t < start + secs && log.len() < 400 {
+                let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(t), events: std::mem::take(&mut events), ..Default::default() };
+                let out = w.ctx.run(raw, |ctx| w.app.frame_ui(ctx));
+                let delay = out.viewport_output.get(&egui::ViewportId::ROOT).map_or(f64::INFINITY, |v| v.repaint_delay.as_secs_f64());
+                log.push((t - start, w.app.docks[Unit::Vector].out));
+                t += (delay + 1.0 / 60.0).min(10.0);
+            }
+            log
+        };
+        let button = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
+        run(&mut w, vec![egui::Event::PointerMoved(button)], 1.0);
+        assert!(w.app.docks[Unit::Vector].out);
+        let at = Pos2::new(240.0, 90.0);
+        let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let log = run(&mut w, vec![egui::Event::PointerMoved(at), ev(true), ev(false)], 2.0);
+        assert!(log[0].1, "still out right after the press (the toggle shows it, never hides it): {log:?}");
+        assert!(log.iter().any(|f| !f.1), "taken back within 2 s: {log:?}");
+        assert!(w.app.panes.visible(app::Pane::Vector) && w.app.docks[Unit::Vector].place == docking::Place::AutoHide, "still open and auto-hidden");
     }
 
     /// A strip press gives the pane window the focus, the one focus there
@@ -2455,8 +2945,7 @@ mod window_tests {
         assert_ne!(b1(&w), before, "the view has the keys");
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(2);
-        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
-        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let on = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
         let ev = |pressed| egui::Event::PointerButton { pos: on, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         w.run(vec![egui::Event::PointerMoved(on), ev(true)]);
         w.idle(1);
@@ -2498,8 +2987,7 @@ mod window_tests {
         w.app.docks.0[Unit::Frequency as usize].pin();
         w.idle(3);
         let button = |w: &Win, u: Unit| {
-            let s = w.app.dock_strips[u as usize].expect("its strip");
-            Pos2::new(s.center().x, s.top() + 20.0)
+            w.app.strip_hits[u as usize].buttons[0].center()
         };
         // Частотная clicked out (it keeps the focus), then the vector group
         // hovered out over it.
@@ -2510,7 +2998,7 @@ mod window_tests {
         let v = button(&w, Unit::Vector);
         w.run(vec![egui::Event::PointerMoved(v)]);
         w.idle(30);
-        assert!(w.app.docks[Unit::Frequency].out && w.app.docks[Unit::Vector].out, "both out");
+        assert!(w.app.docks[Unit::Frequency].out && w.app.docks[Unit::Vector].out, "both out: {:?} {:?} f {f:?} v {v:?} {:?}", w.app.docks[Unit::Frequency], w.app.docks[Unit::Vector], w.app.dock_strips);
         let canvas = |w: &Win, p: app::Pane| w.app.pane_canvas.iter().rev().find(|(q, _)| *q == p).map(|(_, r)| *r);
         let over = canvas(&w, app::Pane::Vector).expect("the vector diagram").intersect(canvas(&w, app::Pane::Frequency).expect("Частотная"));
         assert!(over.is_positive(), "they overlap");
@@ -2528,8 +3016,7 @@ mod window_tests {
         let mut w = Win::new();
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(3);
-        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
-        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let on = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
         let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
         w.run(vec![egui::Event::PointerMoved(on)]);
         w.idle(30);
@@ -2540,7 +3027,7 @@ mod window_tests {
         assert!(g1 > g0, "its grid drawn");
         let grid = w.app.pane_grid[g0];
         w.press(egui::PointerButton::Primary, grid.center(), grid.center());
-        assert_eq!(w.app.copy_focus, app::CopyFocus::Grid(Unit::Vector));
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Grid(app::Pane::Circle));
         w.run(vec![egui::Event::PointerMoved(away)]);
         w.idle(60);
         assert!(w.app.docks[Unit::Vector].out, "the grid's focus holds it out");
@@ -2567,8 +3054,7 @@ mod window_tests {
         w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: Edge::Left, outer: true };
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(3);
-        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
-        w.run(vec![egui::Event::PointerMoved(Pos2::new(strip.center().x, strip.top() + 20.0))]);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
         w.idle(30);
         let area = w.app.dock_areas[Unit::Vector as usize].expect("out");
         let [c0, c1, ..] = w.app.slid_ranges[Unit::Vector as usize].expect("drawn out");
@@ -2583,6 +3069,154 @@ mod window_tests {
             .expect("a point of the pane, off its diagram, over the view");
         w.press(egui::PointerButton::Primary, off, off);
         assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Vector), "not the view under it");
+    }
+
+    /// The focus leaves a pane that closes (#77): a focused diagram's, and
+    /// a focused property grid's (Windows hands a hidden window's focus to
+    /// its parent, the frame passes it on to the view), so the view's arrow
+    /// keys work again at once.
+    #[test]
+    fn closing_the_pane_that_holds_the_focus_returns_it_to_the_view() {
+        use app::{Command, CopyFocus, Pane};
+        let mut w = Win::new();
+        // A focused diagram.
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        w.press(egui::PointerButton::Primary, canvas.center(), canvas.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
+        w.app.dispatch(Command::TogglePane(Pane::Vector));
+        w.idle(3);
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the diagram's pane closed");
+        // A focused property grid, its group's other panes still shown.
+        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        w.idle(3);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        w.press(egui::PointerButton::Primary, grid.center(), grid.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
+        w.app.dispatch(Command::TogglePane(Pane::Circle));
+        w.idle(3);
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the grid's pane closed");
+        // The view's keys work again without a press in it.
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_ne!(w.view_state(), before, "the arrow key reaches the view");
+    }
+
+    /// The same through the pane's caption «×» (#77): the press on the
+    /// button first gives the pane the focus, and closing takes it back.
+    #[test]
+    fn closing_a_pane_with_its_caption_button_returns_the_focus_to_the_view() {
+        use app::{Command, CopyFocus, Pane};
+        use docking::Unit;
+        // The caption sits right over the pane's window, its «×» 11 px in from the group's right edge.
+        let close_button = |w: &Win, window_top: f32| {
+            let r = w.app.dock_rects[Unit::Vector as usize].expect("the group's rect");
+            Pos2::new(r.right() - dpi::s(11.0), window_top - dpi::s(10.0))
+        };
+        // A focused diagram.
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        w.press(egui::PointerButton::Primary, canvas.center(), canvas.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
+        let at = close_button(&w, canvas.top());
+        w.press(egui::PointerButton::Primary, at, at);
+        assert!(!w.app.panes.visible(Pane::Vector), "the caption button closed the pane");
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the diagram's pane closed");
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_ne!(w.view_state(), before, "the arrow key reaches the view");
+        // A focused property grid.
+        let mut w = Win::new();
+        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        w.idle(3);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        w.press(egui::PointerButton::Primary, grid.center(), grid.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
+        let at = close_button(&w, grid.top());
+        w.press(egui::PointerButton::Primary, at, at);
+        assert!(!w.app.panes.visible(Pane::Circle), "the caption button closed the pane");
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the grid's pane closed");
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_ne!(w.view_state(), before, "the arrow key reaches the view");
+    }
+
+    /// The other ways to close a pane after a caption press gave its group
+    /// the focus (#77): the pane menu's «Скрыть» (the right-click that opens
+    /// the menu gives the focus), and the ribbon's toggle. The group is
+    /// tabbed, so closing the front tab leaves the group shown.
+    #[test]
+    fn closing_a_tab_by_the_menu_or_the_ribbon_after_a_caption_press_returns_the_focus() {
+        use app::{Command, CopyFocus, Pane};
+        use egui::PointerButton::{Primary, Secondary};
+        let caption = |w: &Win| {
+            let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+            Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0)
+        };
+        // The pane menu's last entry, «Скрыть».
+        let mut w = Win::new();
+        let at = caption(&w);
+        w.press(Secondary, at, at);
+        assert!(w.app.pane_menu.is_some(), "the pane menu opens");
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the right-click gave the pane the focus");
+        for _ in 0..5 {
+            w.key(egui::Key::ArrowDown);
+        }
+        w.key(egui::Key::Enter);
+        w.idle(3);
+        assert!(!w.app.panes.visible(Pane::Vector), "the menu hid the pane");
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the menu's Скрыть");
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_ne!(w.view_state(), before, "the arrow key reaches the view");
+        // The ribbon's toggle.
+        let mut w = Win::new();
+        let at = caption(&w);
+        w.press(Primary, at, at);
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector));
+        w.app.dispatch(Command::TogglePane(Pane::Vector));
+        w.idle(3);
+        assert_eq!(w.app.copy_focus, CopyFocus::View, "the ribbon toggle");
+        let before = w.view_state();
+        w.key(egui::Key::ArrowRight);
+        assert_ne!(w.view_state(), before, "the arrow key reaches the view");
+    }
+
+    /// The caption «×» of a slid-out auto-hidden pane closes it (the ribbon's
+    /// toggle only shows such a pane), and the focus its press gave goes back
+    /// to the view (#64, #77).
+    #[test]
+    fn the_caption_button_closes_a_slid_out_pane() {
+        use app::{CopyFocus, Pane};
+        use docking::{Edge, Spot, Unit};
+        for edge in [Edge::Bottom, Edge::Right] {
+            let mut w = Win::new();
+            w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+            w.app.docks.0[Unit::Vector as usize].pin();
+            w.idle(3);
+            w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+            w.idle(30);
+            let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+            let at = Pos2::new(area.right() - dpi::s(11.0), area.top() + dpi::s(10.0));
+            w.press(egui::PointerButton::Primary, at, at);
+            w.idle(30);
+            assert!(!w.app.panes.visible(Pane::Vector), "{edge:?}: the caption button closed the pane");
+            assert_eq!(w.app.copy_focus, CopyFocus::View, "{edge:?}");
+        }
+    }
+
+    /// Hiding a background tab of the focused pane's group leaves the focus.
+    #[test]
+    fn hiding_a_background_tab_keeps_the_pane_focus() {
+        use app::{Command, CopyFocus, Pane};
+        let mut w = Win::new();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        let at = Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0);
+        w.press(egui::PointerButton::Primary, at, at);
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector));
+        w.app.dispatch(Command::TogglePane(Pane::Circle));
+        w.idle(3);
+        assert!(!w.app.panes.visible(Pane::Circle));
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the shown pane keeps the focus");
     }
 
     /// A press on a menu or other popup over a pane gives that pane no
@@ -2618,8 +3252,7 @@ mod window_tests {
         let mut w = Win::new();
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(3);
-        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
-        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let on = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
         let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
         let canvas = |w: &Win, p: app::Pane| w.app.pane_canvas.iter().rev().find(|(q, _)| *q == p).map(|(_, r)| *r);
         let press = |w: &mut Win, at: Pos2| {
@@ -2662,8 +3295,7 @@ mod window_tests {
         let mut w = Win::new();
         w.app.docks.0[Unit::Vector as usize].pin();
         w.idle(2);
-        let strip = w.app.dock_strips[Unit::Vector as usize].expect("its strip");
-        let on = Pos2::new(strip.center().x, strip.top() + 20.0);
+        let on = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
         w.run(vec![egui::Event::PointerMoved(on)]);
         w.idle(30);
         assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");

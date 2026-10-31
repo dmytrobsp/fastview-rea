@@ -352,6 +352,9 @@ impl Doc {
             }
             kept.push(crate::app::RawName { bytes, seen, alias });
         }
+        // The ОМП's flags are computed channels (bit 13): their shown name is
+        // the stored one, never re-decoded (`0x425960`, #66).
+        let flags: Vec<(usize, String)> = (0..self.osc.digital.len()).filter(|&k| self.dig(k).omp).map(|k| (k, self.osc.digital[k].id.clone())).collect();
         let mut it = names.into_iter();
         self.osc.station = it.next().unwrap_or_default();
         self.osc.device = it.next().unwrap_or_default();
@@ -360,6 +363,13 @@ impl Doc {
         }
         for c in &mut self.osc.digital {
             c.id = it.next().unwrap_or_default();
+        }
+        for (k, name) in flags {
+            let p = 2 + na + k;
+            if let Some(r) = kept.get_mut(p) {
+                *r = crate::app::RawName { bytes: name_bytes_of(&name, read, cp), seen: name.clone(), alias: true };
+            }
+            self.osc.digital[k].id = name;
         }
         self.name_raw = kept;
         // A pasted lane (bit 14) is re-decoded too — `0x425960` spares only
@@ -534,7 +544,12 @@ impl Doc {
     /// The correction for computed channel `j`: none for the frequency
     /// channel itself (the gate compares the channel, `0x4262b6`).
     pub fn computed_corr(&self, j: usize) -> Option<fvb_core::freqcorr::FreqCorr<'_>> {
-        fvb_core::freqcorr::of(&self.osc).filter(|_| fvb_core::freqcorr::selected_extra(&self.osc) != Some(j))
+        fvb_core::freqcorr::of(&self.osc).filter(|_| fvb_core::freqcorr::selected_extra(&self.osc) != Some(j)).map(|c| c.at_rate(self.computed.get(j).map_or(0.0, |c| c.own_rate)))
+    }
+
+    /// Formula channel `j`'s window (`0x428490`): its own rate ÷ 50 when it has one.
+    pub fn computed_period(&self, j: usize) -> usize {
+        self.osc.period_of(self.computed.get(j).map_or(0.0, |c| c.own_rate)).max(2)
     }
 
     pub fn recompute_signals(&mut self) {

@@ -135,6 +135,15 @@ impl<'a> FreqCorr<'a> {
         (ch != self.chan).then_some(self)
     }
 
+    /// The correction at a channel's own rate (`ch+0x108`) when it has one.
+    pub fn at_rate(self, own_rate: f64) -> FreqCorr<'a> {
+        if own_rate != 0.0 {
+            FreqCorr { fs: own_rate, ..self }
+        } else {
+            self
+        }
+    }
+
     /// `f` at `idx`, 50 when it is 0; `None` past the channel's end.
     fn f_at(&self, idx: usize) -> Option<f64> {
         self.freq.get(idx).map(|&f| if f == 0.0 { F_ZERO } else { f })
@@ -182,7 +191,7 @@ impl<'a> FreqCorr<'a> {
         for j in 0..=k + 1 {
             let v = Self::weight(j, k, tau, dt) * x[idx - j];
             let a = j as f64 * th;
-            s += Complex64::new(-a.sin(), a.cos()) * v;
+            s += Complex64::new(-crate::trig::sin(a), crate::trig::cos(a)) * v;
         }
         s * (2f64.sqrt() * f / p)
     }

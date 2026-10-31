@@ -226,7 +226,7 @@ impl OscView<'_> {
         let k_main = doc.main_cursor;
         let x_of = |k: f64| self.x_of(k);
         let lane = &r.key;
-        let (name, unit, color, maxv, minv, rms, a1, val) = lane_stats(doc, lane, k_main, primary);
+        let (name, unit, color, maxv, minv, rms, a1, val) = lane_stats(doc, lane, k_main);
         // Stats text: the name (cut to 25 characters) framed in its colour,
         // the value at В1 after the label column, then the enabled rows;
         // digital lanes show the name only.
@@ -279,7 +279,7 @@ impl OscView<'_> {
             // has stat rows, and its own icons ending at top + (k+1)·S.
             let mut first = None;
             for (k, &m) in r.members.iter().enumerate() {
-                let (mn, mu, mc, mmax, mmin, mrms, ma1, mv) = lane_stats(doc, &m, k_main, primary);
+                let (mn, mu, mc, mmax, mmin, mrms, ma1, mv) = lane_stats(doc, &m, k_main);
                 let stride = group_stride(doc, m);
                 let y = top + 5.0 + k as f32 * stride;
                 let nr = header(y, &mn, &mu, mc, mv);
@@ -330,7 +330,7 @@ impl OscView<'_> {
                 // whatever the scroll position.
                 let end_x = (left + g::base_bar_len(s.len(), f, 1.0)).min(plot_right);
                 pp.rect_filled(Rect::from_min_max(Pos2::new(left, mid - 2.0), Pos2::new(end_x, mid + 2.0)), 0.0, Color32::from_rgb(150, 150, 255));
-                let fill = if r.selected(doc) { Color32::from_rgb(253, 219, 102) } else { digital_fill(&doc.osc.digital[*i].id) };
+                let fill = if r.selected(doc) { Color32::from_rgb(253, 219, 102) } else { digital_fill(doc.dig(*i).omp) };
                 let red = Color32::from_rgb(200, 0, 0);
                 // The painter's runs and transition ticks (`0x42a0f0`), x
                 // from leftW, GDI rectangles mid−6..mid+6.
@@ -368,7 +368,7 @@ impl OscView<'_> {
                     match m {
                         Lane::Analog(i) => {
                             let c = doc.chans[i].color;
-                            draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k, primary), &x_of, top, h, (lo, hi), c, f);
+                            draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f);
                         }
                         Lane::Computed(j) if doc.pending_of(j).is_some() => self.pasted_analog(pp, j, top, h, (lo, hi), doc.computed[j].color),
                         Lane::Computed(j) => {
@@ -743,7 +743,7 @@ fn chan_icons(doc: &crate::app::Doc, i: usize, primary: bool) -> Vec<&'static st
 /// `0x46121c`): «Max:000.00mV|Min:000.00mV», «СКЗ:000.00mV», «A1:000.00mV»
 /// for the rows it shows, `|`-joined.
 /// Returns (label column, panel width).
-pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], primary: bool, abs_time: bool) -> (f32, f32) {
+pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], _primary: bool, abs_time: bool) -> (f32, f32) {
     // The names are drawn bold: measured so.
     let name_font = bold_font(fonts, NAME_FONT.size).unwrap_or(NAME_FONT);
     let w = |s: &str, f: &FontId| {
@@ -757,7 +757,7 @@ pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, ro
     let mut any = false;
     for lane in analog {
         any = true;
-        let (name, unit, ..) = lane_stats(doc, &lane, 0, primary);
+        let (name, unit, ..) = lane_stats(doc, &lane, 0);
         label = label.max(w(&cut(&name), &NAME_FONT) + 5.0);
         let t = if fvb_core::views::si_unit(&unit.canon) { ": -0.00000000 A" } else { ": -0.0000000E-000 " };
         templ = templ.max(w(t, &NAME_FONT) + 10.0);
@@ -899,8 +899,8 @@ fn member_range(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> (f64, f64) 
     }
 }
 
-pub fn chan_range(doc: &crate::app::Doc, i: usize, primary: bool) -> (f64, f64) {
-    let [mut lo, mut hi, ..] = scaled_minmax(doc, i, primary);
+pub fn chan_range(doc: &crate::app::Doc, i: usize, _primary: bool) -> (f64, f64) {
+    let [mut lo, mut hi, ..] = scaled_minmax(doc, i);
     if lo > hi {
         (lo, hi) = (0.0, 0.0);
     }
@@ -944,8 +944,8 @@ fn paste_icon(p: &egui::Painter, at: Pos2, large: bool) {
 /// colour by place (L9.170).
 pub const DIGITAL_FILL: Color32 = Color32::from_rgb(255, 255, 100);
 
-fn digital_fill(id: &str) -> Color32 {
-    if crate::omp_ui::KZ_PHASES.contains(&id) {
+fn digital_fill(omp: bool) -> Color32 {
+    if omp {
         Color32::from_rgb(249, 175, 172)
     } else {
         DIGITAL_FILL
@@ -1236,7 +1236,7 @@ enum Act {
     Select(ChanKey, SelClick),
     ClearSelection,
     OpenMenu(Pos2, LaneMenuKind),
-    DropCombine(Vec<usize>, usize),
+    DropCombine(Vec<ChanKey>, ChanKey),
     Cmd(Command),
 }
 
@@ -1245,6 +1245,16 @@ enum Act {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChanDrag {
     pub chans: Vec<usize>,
+    /// The formula channels among them (analog-kind records of the same
+    /// vector, `0x4415b0` walks them all).
+    pub computed: Vec<usize>,
+}
+
+impl ChanDrag {
+    fn of(keys: Vec<ChanKey>) -> ChanDrag {
+        let pick = |f: fn(&ChanKey) -> Option<usize>| keys.iter().filter_map(f).collect::<Vec<_>>();
+        ChanDrag { chans: pick(|k| if let ChanKey::Analog(i) = k { Some(*i) } else { None }), computed: pick(|k| if let ChanKey::Computed(j) = k { Some(*j) } else { None }) }
+    }
 }
 
 /// MFC's drag delay (`DD_DEFDRAGDELAY`, ms → s).
@@ -1256,6 +1266,9 @@ const DRAG_SCROLL_S: f64 = 0.05;
 
 /// Message 1086.
 pub const MSG_COMBINE_UNITS: &str = "Совмещение невозможно.\nУ каналов разные единицы измерения.";
+
+/// Message 239 (error icon), «Совместить каналы» with channels of different rates.
+pub const MSG_COMBINE_RATES: &str = "Выбранные каналы имеют разную частоту";
 
 /// A command chosen in one of the context menus.
 enum MenuCmd {
@@ -1379,7 +1392,7 @@ impl App {
             }
             let name_rect = ov.row(&lp, &pp, r, top, ranges[li]);
             let lane = &r.key;
-            let name = lane_stats(doc, lane, k_main, primary).0;
+            let name = lane_stats(doc, lane, k_main).0;
             if name.chars().count() > NAME_CHARS && hover.is_some_and(|p| name_rect.contains(p)) {
                 cut_hover = Some(name.clone());
             }
@@ -1705,14 +1718,14 @@ impl App {
             // it drops.
             if let Some((_, t0, chans)) = self.stats_drag_arm.take().filter(|_| released && !r_down && !esc && !egui::DragAndDrop::has_any_payload(&ctx)) {
                 if t - t0 > DRAG_DELAY {
-                    egui::DragAndDrop::set_payload(&ctx, ChanDrag { chans });
+                    egui::DragAndDrop::set_payload(&ctx, ChanDrag::of(chans));
                 }
             }
         } else if let Some((a, t0, chans)) = self.stats_drag_arm.take() {
             let p = now.unwrap_or(a);
             let (dx, dy) = ((p.x - a.x).floor(), (p.y - a.y).floor());
             if !(-2.0..2.0).contains(&dx) || !(-2.0..2.0).contains(&dy) || t - t0 > DRAG_DELAY {
-                egui::DragAndDrop::set_payload(&ctx, ChanDrag { chans });
+                egui::DragAndDrop::set_payload(&ctx, ChanDrag::of(chans));
             } else {
                 ctx.request_repaint_after(std::time::Duration::from_secs_f64(DRAG_DELAY - (t - t0) + 0.001));
                 self.stats_drag_arm = Some((a, t0, chans));
@@ -1720,7 +1733,7 @@ impl App {
         } else if moved && !ctrl && !menu_busy && self.rename_edit.is_none() && resp.is_pointer_button_down_on() {
             let mode0 = self.vizir_drag.is_none() && self.comment_drag.is_none() && self.merge_drag.is_none() && !matches!(self.rect_zoom, RectZoom::Dragging { .. });
             if let (Some(o), Some(p)) = (origin, now) {
-                let sel = doc.selected_analog();
+                let sel: Vec<ChanKey> = doc.selected_analog().into_iter().map(ChanKey::Analog).chain(doc.selected_computed().into_iter().filter(|&j| doc.pending_of(j).is_none()).map(ChanKey::Computed)).collect();
                 if mode0 && in_view(o) && p.x < left && !sel.is_empty() {
                     self.stats_drag_arm = Some((p, t, sel));
                 }
@@ -1766,8 +1779,14 @@ impl App {
                 let lane = rows.iter().zip(&tops).find(|(r, &t)| p.y >= t && p.y < t + r.h).map(|(r, _)| r.key);
                 if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
                     if let Some(drag) = egui::DragAndDrop::take_payload::<ChanDrag>(&ctx) {
-                        if let Some(Lane::Analog(i)) = lane.filter(|k| matches!(k, Lane::Analog(i) if !drag.chans.contains(i))) {
-                            actions.push(Act::DropCombine(drag.chans.clone(), i));
+                        let target = lane.and_then(|k| match k {
+                            Lane::Analog(i) if !drag.chans.contains(&i) => Some(ChanKey::Analog(i)),
+                            Lane::Computed(j) if !drag.computed.contains(&j) && doc.pending_of(j).is_none() => Some(ChanKey::Computed(j)),
+                            _ => None,
+                        });
+                        if let Some(target) = target {
+                            let keys = drag.chans.iter().map(|&i| ChanKey::Analog(i)).chain(drag.computed.iter().map(|&j| ChanKey::Computed(j))).collect();
+                            actions.push(Act::DropCombine(keys, target));
                         }
                     }
                 }
@@ -1962,9 +1981,12 @@ impl App {
                 Act::DropCombine(chans, target) => {
                     // The dragged channels and the target are selected (other
                     // selections stay), then 33035 or message 1086.
-                    d.selection.extend(chans.iter().chain([&target]).map(|&i| Lane::Analog(i)));
+                    d.selection.extend(chans.iter().chain([&target]).copied());
                     if d.can_combine() {
-                        d.combine_selected();
+                        if !d.combine_selected() {
+                            // VM: after the box (and a repaint) the target stays selected beside the dragged lane.
+                            self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
+                        }
                     } else {
                         self.dlg.push_alert(MSG_COMBINE_UNITS.to_string());
                     }
@@ -2254,7 +2276,11 @@ impl App {
                     MenuCmd::Hide => d.hide_selected(),
                     MenuCmd::Mode(m) => d.set_mode_selected(m),
                     MenuCmd::ResetZoom => d.reset_zoom_selected(),
-                    MenuCmd::Combine => d.combine_selected(),
+                    MenuCmd::Combine => {
+                        if !d.combine_selected() {
+                            self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
+                        }
+                    }
                     MenuCmd::Split => d.split_selected(),
                     MenuCmd::LockComment(i) => d.comments[i].locked = !d.comments[i].locked,
                     MenuCmd::DeleteComment(i) => {
@@ -2559,30 +2585,24 @@ fn comment_menu(ui: &mut egui::Ui, c: &crate::app::Comment, i: usize, pick: &mut
     }
 }
 
-fn primary_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
-    crate::app::display_k(&doc.osc.analog[i], primary)
-}
-
-/// Displayed sample of analog channel `i` at `k`: raw ADC counts when the channel
-/// is in «отсчёты АЦП» mode, otherwise the (optionally primary-scaled) value with
-/// invert / remove-DC applied.
-/// An analog channel's plotted / read-out value in the display mode
-/// (`0x461440`): instantaneous, one-period RMS or first harmonic.
-/// The unscaled display series of channel `i` in its mode.
+/// An analog channel's plotted / read-out value in the display mode (`0x461440`), before any factor:
+/// an instantaneous value is the channel's shown series (the accessor `0x426020`: x·k − dc·k with
+/// «Удалить постоянную», read with the channel's own factor `ch+0xf0`), RMS and first harmonic are
+/// sums over those same shown samples.
 fn mode_raw(doc: &crate::app::Doc, i: usize, k: usize) -> f64 {
     match doc.chans[i].mode {
-        ValueMode::Instant => doc.sample(i, k),
+        ValueMode::Instant => doc.shown_samples(i).get(k).copied().unwrap_or(0.0),
         ValueMode::Rms => doc.rms_at(i, k),
         ValueMode::FirstHarmonic => doc.harmonic_at(i, k) * doc.osc.harmonic1_gain,
     }
 }
 
 /// [finite min, finite max, min, max] of channel `i`'s display series, the
-/// scan cached per (channel, mode, `series_gen`) and the scale applied.
-fn scaled_minmax(doc: &crate::app::Doc, i: usize, primary: bool) -> [f64; 4] {
+/// scan cached per (channel, mode, `series_gen`).
+fn scaled_minmax(doc: &crate::app::Doc, i: usize) -> [f64; 4] {
     let key = (i, doc.chans[i].mode);
     let cached = doc.minmax_cache.borrow().get(&key).filter(|c| c.0 == doc.series_gen).map(|c| c.1);
-    let raw = cached.unwrap_or_else(|| {
+    cached.unwrap_or_else(|| {
         let mut m = [f64::INFINITY, f64::NEG_INFINITY, f64::MAX, f64::MIN];
         for k in 0..doc.osc.sample_count() {
             let v = mode_raw(doc, i, k);
@@ -2595,31 +2615,11 @@ fn scaled_minmax(doc: &crate::app::Doc, i: usize, primary: bool) -> [f64; 4] {
         }
         doc.minmax_cache.borrow_mut().insert(key, (doc.series_gen, m));
         m
-    });
-    let s = value_scale(doc, i, primary);
-    let pair = |a: f64, b: f64| if s >= 0.0 { (a * s, b * s) } else { (b * s, a * s) };
-    let (lo, hi) = pair(raw[0], raw[1]);
-    let (mn, mx) = pair(raw[2], raw[3]);
-    [lo, hi, mn, mx]
+    })
 }
 
-fn mode_disp(doc: &crate::app::Doc, i: usize, k: usize, primary: bool) -> f64 {
-    let scale = value_scale(doc, i, primary);
-    match doc.chans[i].mode {
-        ValueMode::Instant => doc.sample(i, k) * scale,
-        ValueMode::Rms => doc.rms_at(i, k) * scale,
-        ValueMode::FirstHarmonic => doc.harmonic_at(i, k) * doc.osc.harmonic1_gain * scale,
-    }
-}
-
-/// The primary/secondary ratio a channel's flagged values are shown with;
-/// an ADC code is shown as is (`0x426020`).
-fn value_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
-    if doc.chans[i].adc_counts {
-        1.0
-    } else {
-        primary_scale(doc, i, primary)
-    }
+fn mode_disp(doc: &crate::app::Doc, i: usize, k: usize) -> f64 {
+    mode_raw(doc, i, k)
 }
 
 fn analog_unit(doc: &crate::app::Doc, i: usize) -> fvb_core::units::Shown {
@@ -2631,28 +2631,27 @@ fn analog_unit(doc: &crate::app::Doc, i: usize) -> fvb_core::units::Shown {
 }
 
 /// Compute (name, unit, color, max, min, rms, a1, value@cursor) for a lane.
-fn lane_stats(
+pub(crate) fn lane_stats(
     doc: &crate::app::Doc,
     lane: &Lane,
     k_main: usize,
-    primary: bool,
 ) -> (String, fvb_core::units::Shown, Color32, f64, f64, f64, f64, f64) {
     match lane {
         Lane::Analog(i) => {
             let ch = &doc.osc.analog[*i];
-            let scale = value_scale(doc, *i, primary);
             // Value at the cursor and Max/Min follow the display mode; СКЗ
             // and A1 are always the one-period RMS and first harmonic.
-            let [.., mn, mx] = scaled_minmax(doc, *i, primary);
-            let rms = doc.stat_rms(*i, k_main) * scale;
-            let a1 = doc.stat_a1(*i, k_main) * doc.osc.harmonic1_gain * scale;
-            let val = mode_disp(doc, *i, k_main, primary);
+            let [.., mn, mx] = scaled_minmax(doc, *i);
+            let rms = doc.stat_rms(*i, k_main);
+            let a1 = doc.stat_a1(*i, k_main) * doc.osc.harmonic1_gain;
+            let val = mode_disp(doc, *i, k_main);
             (ch.id.clone(), analog_unit(doc, *i), doc.chans[*i].color, mx, mn, rms, a1, val)
         }
         Lane::Computed(i) => {
             // A computed channel is read out like any other channel.
             let c = &doc.computed[*i];
             let n = doc.osc.samples_per_cycle().max(2);
+            let n_own = doc.computed_period(*i);
             // Value and Max / Min from the display cache (mode, invert, DC).
             let series = |k: usize| c.shown(k);
             let (mut mx, mut mn) = (f64::MIN, f64::MAX);
@@ -2684,8 +2683,8 @@ fn lane_stats(
                 let (mx, mn) = finite.fold((f64::MIN, f64::MAX), |(hi, lo), v| (hi.max(v), lo.min(v)));
                 return (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, val);
             }
-            let rms = fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n, 1);
-            let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n) * gain;
+            let rms = fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n_own, 1);
+            let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n_own) * gain;
             (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, series(k_main))
         }
         Lane::Digital(i) => {
@@ -2918,10 +2917,43 @@ mod menu_tests {
         assert!(h.doc().chans[c0].group.is_none() && h.doc().chans[co].group.is_none());
         h.app.dlg.alerts.clear();
         h.app.active_doc_mut().unwrap().selection.clear();
+        // Another own rate on the dragged channel: message 239 (error
+        // icon), nothing changed (#57).
+        h.app.active_doc_mut().unwrap().osc.analog[c0].own_rate = 1234.0;
+        drag_rows(&mut h, 0, same);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_RATES), "different rates: message 239");
+        assert!(h.doc().chans[c0].group.is_none() && h.doc().chans[cs].group.is_none());
+        h.app.dlg.alerts.clear();
+        h.app.active_doc_mut().unwrap().osc.analog[c0].own_rate = 0.0;
+        h.app.active_doc_mut().unwrap().selection.clear();
         drag_rows(&mut h, 0, same);
         let d = h.doc();
         assert!(d.chans[c0].group.is_some() && d.chans[c0].group == d.chans[cs].group, "one lane now");
         assert!(!egui::DragAndDrop::has_any_payload(&h.ctx));
+    }
+
+    /// The drop works for formula channels too (#57): a formula added after
+    /// the rate changed has no own rate while the merged lane has one, so the
+    /// drop shows message 239 and changes nothing; with agreeing rates it groups.
+    #[test]
+    fn dragging_a_formula_lane_onto_a_merged_lane() {
+        let mut h = Harness::new();
+        assert!(h.app.append_computed(&[("X".into(), "Ub".into())]).is_some());
+        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let from = rows.iter().position(|r| r.key == Lane::Computed(0)).expect("the formula lane");
+        let to = rows.iter().position(|r| r.key == Lane::Analog(1)).expect("a file lane");
+        let rate = h.doc().osc.int_rate_hz();
+        h.app.active_doc_mut().unwrap().osc.analog[1].own_rate = rate * 2.0;
+        drag_rows(&mut h, from, to);
+        assert_eq!(h.app.dlg.alert(), Some(MSG_COMBINE_RATES), "message 239");
+        assert!(h.doc().computed[0].group.is_none() && h.doc().chans[1].group.is_none());
+        assert!(h.doc().selection.contains(&Lane::Analog(1)) && h.doc().selection.contains(&Lane::Computed(0)), "both stay selected after a refused drop (VM)");
+        h.app.dlg.alerts.clear();
+        h.app.active_doc_mut().unwrap().osc.analog[1].own_rate = 0.0;
+        h.app.active_doc_mut().unwrap().selection.clear();
+        drag_rows(&mut h, from, to);
+        assert!(h.app.dlg.alert().is_none());
+        assert!(h.doc().computed[0].group.is_some() && h.doc().computed[0].group == h.doc().chans[1].group, "one lane now");
     }
 
     #[test]
@@ -3192,6 +3224,55 @@ mod menu_tests {
         h.app.dispatch(Command::SetValueMode(ValueMode::Rms));
         let (lo3, _) = chan_range(h.doc(), 0, false);
         assert!(lo3 >= 0.0, "an RMS series is never negative: {lo3}");
+    }
+
+    /// `ch+0xf0`: every reading of a channel carries the channel's own factor. A channel whose
+    /// primary / secondary flag differs from channel 0's (a pasted one) shows its waveform, its value at
+    /// the cursor, its range and its СКЗ in one factor.
+    #[test]
+    fn a_lane_reads_every_value_with_its_own_factor() {
+        use fvb_core::signal::rms_at;
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary, d.osc.analog[1].is_primary) = (1234.0, 1.0, true);
+        d.chans[0].primary = true;
+        d.chans[1].primary = false;
+        d.recompute(false);
+        let k_main = d.osc.samples_per_cycle().max(2) * 2;
+        let n = d.period_of(1);
+        let want_k = 1.0 / 1234.0;
+        assert_eq!(d.shown_k(1), want_k);
+        let shown = d.shown_samples(1).to_vec();
+        let (_, _, _, mx, mn, rms, _, val) = lane_stats(d, &Lane::Analog(1), k_main);
+        assert_eq!(val.to_bits(), shown[k_main].to_bits(), "the value at the cursor is the shown series'");
+        assert_eq!(rms.to_bits(), rms_at(&shown, k_main, n).to_bits(), "СКЗ over the same shown samples");
+        let (lo, hi) = (shown.iter().copied().fold(f64::MAX, f64::min), shown.iter().copied().fold(f64::MIN, f64::max));
+        assert_eq!((mn, mx), (lo, hi), "Max / Min in the same factor");
+        let (rlo, rhi) = chan_range(d, 1, true);
+        assert!(rlo >= lo - (hi - lo) && rhi <= hi + (hi - lo), "the zoom range is in the same factor: {rlo}..{rhi} vs {lo}..{hi}");
+    }
+
+    /// With «Удалить постоянную» an instantaneous value is the accessor's `x·k − dc·k`, not `(x − dc)·k`.
+    #[test]
+    fn an_instantaneous_value_follows_the_accessors_remove_dc_order() {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1234.0, 7.0, false);
+        d.chans[0].primary = true;
+        d.chans[0].remove_dc = true;
+        d.recompute(true);
+        let k = d.shown_k(0);
+        assert_eq!(k, 1234.0 / 7.0);
+        let dc = d.dc_mean[0].0;
+        let mut differs = false;
+        for j in 0..d.osc.sample_count() {
+            let x = d.osc.analog[0].samples[j];
+            let want = x * k - dc * k;
+            differs |= want.to_bits() != ((x - dc) * k).to_bits();
+            let (.., val) = lane_stats(d, &Lane::Analog(0), j);
+            assert_eq!(val.to_bits(), want.to_bits(), "sample {j}");
+        }
+        assert!(differs, "the record must tell the two orders apart");
     }
 
     /// The визир hit test (`0x495800`) uses trunc(leftW + (s − first)·25·f),

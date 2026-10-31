@@ -378,6 +378,15 @@ fn shown_by_name(d: &Doc, name: &str) -> fvb_core::units::Shown {
 /// or [min(c1,c2), max(c1,c2)] with «Диапазон между визирами»; both bounds
 /// raised to N, then capped at the sample count itself — so the default
 /// range ends one past the samples, at a (0, 0) point.
+/// A channel's bins in the frequency diagram (`0x426510`): its window is
+/// round(own rate / 50) with an own rate (`ch+0x108`), else the record's, and
+/// the correction runs at that rate too.
+pub(crate) fn freq_bins(d: &Doc, samples: &[f64], file: Option<usize>, own_rate: f64, pos: usize, periods: usize, k_max: usize) -> Vec<f64> {
+    let corr = fvb_core::freqcorr::of(&d.osc);
+    let mine = file.and_then(|i| corr.and_then(|cr| cr.for_chan(i))).map(|c| c.at_rate(own_rate));
+    fvb_core::freqcorr::spectrum(mine, samples, pos, d.osc.period_of(own_rate).max(2), periods, k_max, d.osc.harmonic1_gain)
+}
+
 fn circle_range(d: &Doc, between: bool) -> std::ops::RangeInclusive<usize> {
     let len = d.osc.sample_count();
     let n = d.osc.samples_per_cycle().max(1);
@@ -450,18 +459,18 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
         }
         return out;
     }
-    let n = d.osc.samples_per_cycle().max(2);
     let mut push = |name: String, unit: fvb_core::units::Shown, color: Color32, power: bool, markers: bool, f: &dyn Fn(usize) -> [f64; 2]| {
         let g = |k| finite_or_origin(f(k));
         out.push(Locus { name, unit, color, power, pts: range.clone().map(g).collect(), c1: f(k1), c2: f(k2), markers, pair_units: None });
     };
     for (i, ch) in d.osc.analog.iter().enumerate() {
         if d.chans[i].on_circle {
-            let (ph, kf) = (&d.analysis.phasors[i], d.shown_k(i));
+            // The phasor cache holds the values read through the shown factor (`0x428490`).
+            let ph = &d.analysis.phasors[i];
             // The scale by the canonical unit, "" in ADC mode (→ power).
             let canon = if d.chans[i].adc_counts { "" } else { ch.unit.trim() };
             let unit = fvb_core::units::Shown::file(canon, ch.per_second);
-            push(ch.id.clone(), unit, d.chans[i].color, !dg::is_ohm(canon), true, &|k| ph.get(k).map_or([0.0, 0.0], |z| [z.re * kf, z.im * kf]));
+            push(ch.id.clone(), unit, d.chans[i].color, !dg::is_ohm(canon), true, &|k| ph.get(k).map_or([0.0, 0.0], |z| [z.re, z.im]));
         }
     }
     for (j, c) in d.computed.iter().enumerate().filter(|(_, c)| c.on_circle) {
@@ -471,7 +480,7 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
             }
             let z = match &c.phasors {
                 Some(p) => p.get(k).copied().unwrap_or_default(),
-                None => fvb_core::freqcorr::phasor_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, &c.samples, k, n),
+                None => fvb_core::freqcorr::phasor_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, &c.samples, k, d.computed_period(j)),
             };
             [z.re, z.im]
         };
@@ -1421,10 +1430,9 @@ impl App {
         // rows with empty cells; a click, the 32813 toggle or the keys
         // place it and the values stay when it is hidden again).
         let values = d.v1_placed || d.v_shown[0];
-        let n = d.osc.samples_per_cycle().max(2);
         let phasor_of = |name: &str| -> Option<Complex64> {
             if let Some(i) = d.osc.analog.iter().position(|c| c.id == name) {
-                return d.analysis.phasors.get(i).and_then(|p| p.get(k)).map(|z| z * d.shown_k(i));
+                return d.analysis.phasors.get(i).and_then(|p| p.get(k)).copied();
             }
             d.computed.iter().enumerate().find(|(_, c)| c.name == name).map(|(j, c)| {
                 // A pasted channel: its own cache by own time (`0x490120`),
@@ -1434,7 +1442,7 @@ impl App {
                 }
                 match &c.phasors {
                     Some(p) => p.get(k).copied().unwrap_or_default(),
-                    None => fvb_core::freqcorr::phasor_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, &c.samples, k, n),
+                    None => fvb_core::freqcorr::phasor_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, &c.samples, k, d.computed_period(j)),
                 }
             })
         };
@@ -1605,11 +1613,13 @@ impl App {
             samples: &'a [f64],
             /// The file channel (its frequency correction and k).
             file: Option<usize>,
+            /// Its own rate (`ch+0x108`): the window and the correction's rate.
+            own_rate: f64,
         }
         let chans: Vec<FreqChan> = (0..d.osc.analog.len())
             .filter(|i| d.chans[*i].on_freq)
-            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: &d.flagged.analog[i].samples, file: Some(i) })
-            .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && d.pending_of(*j).is_none()).map(|(_, c)| FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: None }))
+            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: d.shown_samples(i), file: Some(i), own_rate: d.osc.analog[i].own_rate })
+            .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && d.pending_of(*j).is_none()).map(|(_, c)| FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: None, own_rate: c.own_rate }))
             .collect();
         let s = print_s().unwrap_or(1.0);
         let si = s as i32;
@@ -1652,13 +1662,12 @@ impl App {
             let (c, r) = tl.cell(pi);
             let (row_top, yb) = (g.top + r * tl.row_h, tl.row_bottom(&g, r));
             let samples = ch.samples;
-            let mine = ch.file.and_then(|i| corr.and_then(|cr| cr.for_chan(i)));
-            // The spectrum reads the samples through `0x426020`: times k.
-            let kf = ch.file.map_or(1.0, |i| d.shown_k(i));
-            let sp: Vec<f64> = fvb_core::freqcorr::spectrum(mine, samples, pos, n, periods, k_max.max(periods), d.osc.harmonic1_gain).into_iter().map(|v| v * kf).collect();
+            let n = d.osc.period_of(ch.own_rate).max(2);
+            // The spectrum and the norm sum the samples as `0x426020` returns them (times k, each one).
+            let sp: Vec<f64> = freq_bins(d, samples, ch.file, ch.own_rate, pos, periods, k_max.max(periods));
             let max = sp[..=k_max].iter().copied().fold(0.0, f64::max);
             let max = if max == 0.0 { 1.0 } else { max };
-            let norm = if use_rms { fvb_core::freqcorr::rms_at(ch.file.and(corr), ch.file.unwrap_or(0), samples, pos, n, periods) * kf } else { sp.get(periods).copied().unwrap_or(0.0) };
+            let norm = if use_rms { fvb_core::freqcorr::rms_at(ch.file.and(corr).map(|c| c.at_rate(ch.own_rate)), ch.file.unwrap_or(0), samples, pos, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
             let color = ch.color;
             if g.plot_h() - 30 * si - g.h <= 0 {
                 continue;
@@ -1680,11 +1689,8 @@ impl App {
                     painter.add(egui::Shape::mesh(mesh));
                     painter.px_rect_stroke(bar.shrink(0.5), 0.0, Stroke::new(1.0f32, color));
                 }
-                let val = if percent {
-                    if norm == 0.0 { 0.0 } else { 100.0 * v / norm }
-                } else {
-                    v
-                };
+                // The fundamental's own bar reads 100 (an improvement, #60); `use_rms` has its own norm.
+                let val = if percent { fvb_core::views::percent_bar_value(v, norm, k == periods && !use_rms) } else { v };
                 let label = fvb_core::views::freq_label(val).trim().to_string();
                 // Measured in the diagrams' Tahoma 13 (`0x4705e6`): its
                 // digits advance 6 px, «.» 3 — numbers only reach here.
@@ -2447,17 +2453,38 @@ mod tests {
     }
 
     /// A «P» record shown «Вторичные» is drawn in secondary values on the
-    /// diagrams too: the phasor cache and `0x426020` carry k (L9.69).
+    /// diagrams too: the phasor cache and `0x426020` carry k (L9.69) — and the
+    /// original reads every sample through it before it sums (#60), so the
+    /// phasor, the RMS, the first harmonic and the spectrum are sums of
+    /// `x·k`, not `k` times a sum of `x` (the two differ in the last bits).
     #[test]
     fn diagrams_carry_the_display_factor() {
+        use fvb_core::signal::{phasor_at, rms_at, spectrum};
         let mut h = H::new(Pane::Circle);
         let d = h.app.active_doc_mut().unwrap();
-        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (2000.0, 1.0, true);
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1234.0, 1.0, true);
+        // Synthetic values whose per-sample and after-the-sum orders give different bits.
+        let mut z: u64 = 0x2545_f491_4f6c_dd1d;
+        for v in d.osc.analog[0].samples.iter_mut() {
+            z ^= z << 13;
+            z ^= z >> 7;
+            z ^= z << 17;
+            *v = 1000.0 + (z % 1_000_000) as f64 * 0.37;
+        }
         d.chans[0].on_circle = true;
         d.recompute(false);
+        let n = d.osc.samples_per_cycle().max(2);
         let k = d.osc.sample_count() - 1;
-        let raw = d.analysis.phasors[0][k];
-        assert_eq!(d.shown_k(0), 1.0 / 2000.0);
+        assert_eq!(d.shown_k(0), 1.0 / 1234.0);
+        let kf = 1.0 / 1234.0;
+        let scaled: Vec<f64> = d.osc.analog[0].samples.iter().map(|v| v * kf).collect();
+        let (per_sample, after) = (phasor_at(&scaled, k, n), phasor_at(&d.osc.analog[0].samples, k, n) * kf);
+        assert_ne!(per_sample, after, "the synthetic record tells the two orders apart");
+        assert_eq!(d.analysis.phasors[0][k], per_sample, "the phasor cache sums the scaled samples");
+        assert_eq!(d.rms_at(0, k).to_bits(), rms_at(&scaled, k, n).to_bits());
+        assert_eq!(d.stat_rms(0, k).to_bits(), rms_at(&scaled, k, n).to_bits());
+        assert_eq!(d.harmonic_at(0, k).to_bits(), per_sample.norm().to_bits());
+        assert_eq!(spectrum(d.shown_samples(0), k, n, 2, 6, 1.0), spectrum(&scaled, k, n, 2, 6, 1.0));
         let id = d.osc.analog[0].id.clone();
         // The point of sample k: the range's end is one past it (0x43a880).
         let at = |d: &Doc| {
@@ -2465,12 +2492,43 @@ mod tests {
             assert_eq!(pts.last(), Some(&[0.0, 0.0]), "the locus ends at the origin");
             pts[pts.len() - 2]
         };
-        assert_eq!(at(d), [raw.re / 2000.0, raw.im / 2000.0]);
+        assert_eq!(at(d), [per_sample.re, per_sample.im]);
         d.chans[0].primary = true;
         d.recompute(true);
+        let raw = phasor_at(&d.osc.analog[0].samples, k, n);
         assert_eq!(at(d), [raw.re, raw.im], "shown primary: the stored values");
         d.chans[0].adc_counts = true;
         assert_eq!(d.shown_k(0), 1.0, "ADC codes are taken as is");
+    }
+
+    /// With «Удалить постоянную» the accessor `0x426020` returns `x·k − dc·k` (negated by «Инвертировать»),
+    /// not `(x − dc)·k`: the sums read the former.
+    #[test]
+    fn remove_dc_follows_the_accessors_order() {
+        use fvb_core::signal::{phasor_at, rms_at};
+        let mut h = H::new(Pane::Circle);
+        let d = h.app.active_doc_mut().unwrap();
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1234.0, 1.0, true);
+        let mut z: u64 = 0x9e37_79b9_7f4a_7c15;
+        for v in d.osc.analog[0].samples.iter_mut() {
+            z ^= z << 13;
+            z ^= z >> 7;
+            z ^= z << 17;
+            *v = 700.0 + (z % 900_000) as f64 * 0.013;
+        }
+        d.chans[0].remove_dc = true;
+        d.chans[0].invert = true;
+        d.recompute(false);
+        let n = d.osc.samples_per_cycle().max(2);
+        let k = 1.0 / 1234.0;
+        let dc = crate::app::whole_period_mean(&d.osc.analog[0].samples, n);
+        let want: Vec<f64> = d.osc.analog[0].samples.iter().map(|x| -(x * k - dc * k)).collect();
+        let other: Vec<f64> = d.osc.analog[0].samples.iter().map(|x| -((x - dc) * k)).collect();
+        assert_ne!(want, other, "the synthetic record tells the two orders apart");
+        let i = d.osc.sample_count() - 1;
+        assert_eq!(d.shown_samples(0), &want[..]);
+        assert_eq!(d.analysis.phasors[0][i], phasor_at(&want, i, n));
+        assert_eq!(d.stat_rms(0, i).to_bits(), rms_at(&want, i, n).to_bits());
     }
 
     #[test]

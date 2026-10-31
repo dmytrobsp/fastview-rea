@@ -562,7 +562,7 @@ impl Doc {
         for k in 0..self.osc.digital.len() {
             // The ОМП run's phase lanes are not a change (it never marks
             // the document, `0x4a00b0`).
-            if print && crate::omp_ui::KZ_PHASES.contains(&self.osc.digital[k].id.as_str()) {
+            if print && self.dig(k).omp {
                 continue;
             }
             let key = self.file_key(na + k);
@@ -571,7 +571,9 @@ impl Doc {
                 show_flags: Self::merged_flags(t, &key, self.digital_flags(k), known_d) & mask,
                 primary_mul: 1.0,
                 secondary_mul: 1.0,
-                alias: self.alias(na + k, &self.osc.digital[k].id),
+                // The ОМП's flags show their stored names: no alias, in any
+                // code page (#66).
+                alias: if self.dig(k).omp { String::new() } else { self.alias(na + k, &self.osc.digital[k].id) },
                 custom_color: self.dig(k).color.map(colorref),
             };
             recset::write_channel(t.section_mut(&key), &rec);
@@ -784,7 +786,7 @@ impl App {
                 };
                 let r = recset::read_channel(&sec, &cur);
                 d.digital_visible[k] = r.show_flags & flag::VISIBLE != 0;
-                *d.dig_mut(k) = crate::app::DigFlags { invert: r.show_flags & flag::INVERT != 0, remove_dc: r.show_flags & flag::REMOVE_DC != 0, mode: mode_of(r.show_flags), color: r.custom_color.map(from_colorref) };
+                *d.dig_mut(k) = crate::app::DigFlags { invert: r.show_flags & flag::INVERT != 0, remove_dc: r.show_flags & flag::REMOVE_DC != 0, mode: mode_of(r.show_flags), color: r.custom_color.map(from_colorref), omp: d.dig(k).omp };
                 if !r.alias.is_empty() {
                     d.osc.digital[k].id = r.alias;
                     d.mark_alias(ChanKey::Digital(k), true);
@@ -1459,6 +1461,7 @@ mod tests {
         let samples = vec![false; d.osc.sample_count()];
         d.osc.digital.push(fvb_core::DigitalChannel { index: nd as u32 + 1, id: crate::omp_ui::KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples });
         d.digital_visible.resize(nd + 1, true);
+        d.dig_mut(nd).omp = true;
         d.move_appended(na, na, 0, nd);
         assert_eq!(d.file_key(na), crate::omp_ui::KZ_PHASES[0]);
         assert_eq!(d.file_key(na + 1), first);

@@ -127,3 +127,36 @@ misbehaves and the better behaviour is obvious (the maintainer,
 - **The lanes' names after «Кодировка» (#7).** The original's lanes keep
   the old names until their next layout (a missing repaint, ledger
   L9.350); ours shows the new names at once. Reason: a stale repaint.
+- **The fundamental's own label in «% of the fundamental» (#60).** The
+  original prints the label as `(v · 100) / v`, with the bar's value and
+  the norm both taken from the same spectrum call (the label at
+  `0x4704e7`–`0x4704f3`, the format by `0x46f5a0`). In doubles that is
+  exactly 100, or 100 plus an ulp (printed «100»), or 100 minus an ulp,
+  which its "%2.1f below 100" branch prints as «100.0» — wider, so it can
+  also rotate differently. Ours always prints «100» for the fundamental's own
+  bar (the bar at the number of periods, when the norm is the fundamental,
+  not the RMS); the other bars are computed as the original does. Reason:
+  the fundamental is 100 % of itself by definition; «100.0» is a rounding
+  accident of the format's branch, not a choice.
+- **The caption drag of a docked pane shows the move cursor (#90).** The
+  original floats a docked pane once the pointer is more than the system
+  drag distance (SM_CXDRAG / SM_CYDRAG, read once at start-up,
+  `0x1005a5fb`) from the press along an axis, wherever the pointer is
+  (`0x10086f3a`; clone at 100 %: 4 px stays docked, 5 px floats the pane
+  with the pointer still on it), and keeps the arrow cursor: the four-way
+  move cursor in its docking code (`0x100d66dd`, `0x100d75a8`) is set only in the
+  immediate, non-smart docking mode, which FastView does not use; the
+  clone showed the arrow at 0 / 3 / 4 / 5 px and, with the button held,
+  at 8 px (a reading under mouse capture, so the binary is the firmer
+  evidence). Ours floats at the same distance and shows the four-way move
+  cursor from the press on the caption (not on its pin or close buttons)
+  and while the pane is dragged, for a docked or a floating pane (an
+  auto-hidden pane's caption does nothing, so keeps the arrow); the left
+  button only. Reason: the maintainer's request (2026-10-30): the arrow
+  gave no hint that dragging on would pull the pane out of its dock.
+  The distance: ours grows it with the display scale (5 px at 125 %, 6 at
+  150 %), by the maintainer's decision; the original reads the system
+  metric once at start-up, and whether Windows scales that metric at a
+  scaled display was not checked, so this may be parity. (An earlier build
+  of ours also asked the pointer to leave the pane: a fix to match the
+  original, not an improvement.)

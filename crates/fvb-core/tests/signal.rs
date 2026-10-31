@@ -94,3 +94,43 @@ fn spectrum_over_periods() {
     let ph = sliding_phasors(&x, n);
     assert_eq!(phasor_at(&x, 57, n), ph[57]);
 }
+
+/// #72: every sin / cos of the DFT, the phasor and the harmonic is the original's runtime's, and the
+/// angle is formed as the original does (`0x426510`, `0x426240`: `j·(k·2π)/w`, the harmonic's
+/// `k·2π` first, so it differs from `(j·k)·2π/w` for some k above 10). A flat window makes every
+/// harmonic rounding noise, so a single last-bit difference in an angle's sine shows in the result.
+#[test]
+fn dft_angles_and_trig_are_the_originals() {
+    use fvb_core::trig::{cos, sin};
+    let tau = 2.0 * std::f64::consts::PI;
+    let mut checked = 0;
+    for w in [20usize, 40, 80, 100, 120, 160] {
+        let x = vec![1234.5678_f64; w];
+        for k in 1..=30usize {
+            let (mut c, mut s) = (0.0, 0.0);
+            for (j, v) in (1..=w).zip(&x) {
+                let th = j as f64 * (k as f64 * tau) / w as f64;
+                c += v * cos(th);
+                s += v * sin(th);
+            }
+            let want = 2f64.sqrt() * (c * c + s * s).sqrt() / w as f64;
+            let got = spectrum(&x, w - 1, w, 1, 30, 1.0)[k];
+            assert_eq!(got.to_bits(), want.to_bits(), "spectrum w={w} k={k}");
+            let rms = harmonic_rms(&x, w - 1, w, k);
+            let want = (c * c + s * s).sqrt() * 2f64.sqrt() / w as f64;
+            assert_eq!(rms.to_bits(), want.to_bits(), "harmonic w={w} k={k}");
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 180);
+    // The sliding fundamental: (k·2π)/n, k = 1..=n.
+    let x = vec![1234.5678_f64; 80];
+    let (mut re, mut im) = (0.0, 0.0);
+    for (k, v) in (1..=40usize).zip(&x[40..]) {
+        let th = tau * k as f64 / 40.0;
+        re += sin(th) * v;
+        im += cos(th) * v;
+    }
+    let want = num_complex::Complex64::new(re * (2f64.sqrt() / 40.0), im * (2f64.sqrt() / 40.0));
+    assert_eq!(phasor_at(&x, 79, 40), want);
+}

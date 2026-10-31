@@ -1053,8 +1053,8 @@ fn call(f: Func, name: &'static str, a: &[Value], env: Env) -> Result<Value, Exp
     }
     let x = first(a)?;
     Ok(match f {
-        Func::Sin => x.scalar(rad(x.v).sin()),
-        Func::Cos => x.scalar(rad(x.v).cos()),
+        Func::Sin => x.scalar(crate::trig::sin(rad(x.v))),
+        Func::Cos => x.scalar(crate::trig::cos(rad(x.v))),
         Func::Tg => x.scalar(rad(x.v).tan()),
         Func::Ctg => x.scalar(1.0 / rad(x.v).tan()),
         Func::Sqrt => x.scalar(x.v.sqrt()),
@@ -1076,7 +1076,7 @@ fn call(f: Func, name: &'static str, a: &[Value], env: Env) -> Result<Value, Exp
         }
         Func::Cosui => {
             let y = a[1];
-            x.scalar((y.im.atan2(y.re) - x.im.atan2(x.re)).cos())
+            x.scalar(crate::trig::cos(y.im.atan2(y.re) - x.im.atan2(x.re)))
         }
         Func::Absig => {
             let y = a[1];
@@ -1232,8 +1232,9 @@ fn channel_func(name: &'static str, a: &[Value], env: Env) -> Result<Value, Expr
                 let km = (Complex64::new(a[6].v, a[9].v) / d) / 3.0;
                 e1.z() + k0 * a[2].z() + km * a[3].z()
             } else {
-                let za = Complex64::from_polar(a[4].v, rad(a[6].v));
-                let zb = Complex64::from_polar(a[5].v, rad(a[7].v));
+                let polar = |r: f64, deg: f64| Complex64::new(r * crate::trig::cos(rad(deg)), r * crate::trig::sin(rad(deg)));
+                let za = polar(a[4].v, a[6].v);
+                let zb = polar(a[5].v, a[7].v);
                 e1.z() + a[2].z() * za + a[3].z() * zb
             };
             let (re, im) = complex_div(e0.re, e0.im, den.re, den.im);

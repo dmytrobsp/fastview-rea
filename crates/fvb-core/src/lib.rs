@@ -25,6 +25,7 @@ pub mod quick;
 pub mod recset;
 pub mod settree;
 pub mod signal;
+pub mod trig;
 pub mod units;
 pub mod views;
 

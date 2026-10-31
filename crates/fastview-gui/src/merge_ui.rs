@@ -184,6 +184,7 @@ fn clip_chans(rec: &ClipRecord, rev_year: i32) -> Vec<ClipChan> {
                     samples: c.data.clone(),
                     // `0x45ad02` → `0x424cb0` (`0x425002`): net_frequency to ch+0x50.
                     own_freq: net_freq.clone(),
+                    own_rate: 0.0,
                 })
             };
             ClipChan { pasted: Pasted { channel, times, rate: rec.rate, pad: 0.0 }, color: c.color.map_or(egui::Color32::TRANSPARENT, from_colorref), start, primary_mode: c.primary_mode, lane: 0 }
@@ -541,8 +542,8 @@ impl App {
                 // flagged values (`0x47a1b0` → `0x42edf0` by display name).
                 let corr = fvb_core::freqcorr::of(&d.osc);
                 let (x1, corr1) = match c1 {
-                    ChanKey::Computed(j) => (&d.computed[j].samples, d.computed_corr(j).map(|c| fvb_core::freqcorr::FreqCorr { chan: fvb_core::freqcorr::OTHER, ..c })),
-                    ChanKey::Analog(i) | ChanKey::Digital(i) => (&d.flagged.analog[i].samples, corr.and_then(|c| c.for_chan(i))),
+                    ChanKey::Computed(j) => (&d.computed[j].samples[..], d.computed_corr(j).map(|c| fvb_core::freqcorr::FreqCorr { chan: fvb_core::freqcorr::OTHER, ..c })),
+                    ChanKey::Analog(i) | ChanKey::Digital(i) => (d.shown_samples(i), corr.and_then(|c| c.for_chan(i))),
                 };
                 let s1 = SyncChan { times: &t1, x: x1, n: n1, corr: corr1 };
                 let corr2 = corr.map(|c| fvb_core::freqcorr::FreqCorr { chan: fvb_core::freqcorr::OTHER, fs: if p.pasted.rate > 0.0 { p.pasted.rate } else { c.fs }, ..c });
@@ -715,6 +716,10 @@ impl App {
         };
         let (at_a, at_d) = (anchor(false).unwrap_or(nb).min(nb), anchor(true).unwrap_or(nd).min(nd));
         d.osc = merged;
+        // The formula channels present get the merged rate too (`0x47d990`).
+        for c in d.computed.iter_mut().filter(|c| c.formula != PENDING) {
+            c.own_rate = d.osc.sample_rate;
+        }
         for (i, p) in (nb..d.osc.analog.len()).zip(&pend_a) {
             let mut v = ChanView::new(&d.osc.analog[i], i);
             if let Some((color, custom)) = p.color {
@@ -732,7 +737,7 @@ impl App {
         d.digital_visible.resize(d.osc.digital.len(), true);
         for (i, p) in (nd..d.osc.digital.len()).zip(&pend_d) {
             if let Some((invert, remove_dc, mode)) = p.flags {
-                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode, color: None };
+                *d.dig_mut(i) = crate::app::DigFlags { invert, remove_dc, mode, color: None, omp: false };
             }
         }
         d.move_appended(at_a, nb, at_d, nd);

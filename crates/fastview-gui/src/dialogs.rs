@@ -1725,12 +1725,14 @@ fn message_icon(p: &egui::Painter, r: Rect, icon: MsgIcon) {
 
 /// Whether a dialog window (egui's `Order::Middle` layer, where every
 /// `egui::Window` of ours lives or puts its backdrop) was shown last frame.
+/// A floating diagram pane is a Middle window too but no dialog: in the
+/// original it is an ordinary tool window and the frame keeps working.
 pub fn window_up(ctx: &egui::Context) -> bool {
     // A backdrop shown in the last pass counts too, whatever its order (a
     // message box over a dialog sits above the Middle windows).
     let pass = ctx.cumulative_pass_nr();
     ctx.data(|d| d.get_temp::<u64>(egui::Id::new("fv_modal_pass"))).is_some_and(|p| p + 1 >= pass)
-        || ctx.memory(|m| m.areas().visible_layer_ids().iter().any(|l| l.order == egui::Order::Middle))
+        || ctx.memory(|m| m.areas().visible_layer_ids().iter().any(|l| l.order == egui::Order::Middle && !crate::views::is_floating_pane_layer(*l)))
 }
 
 impl App {

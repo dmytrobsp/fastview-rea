@@ -74,6 +74,20 @@ pub fn finite_or_zero(z: Complex64) -> Complex64 {
     }
 }
 
+/// The value a frequency-diagram bar's label prints. In «% of the fundamental» mode it is `100·v / norm`
+/// (`0x4704e7`), except for the fundamental's own bar, which always reads 100: the original's
+/// `(v·100)/v` lands one bit under 100 for some `v`, and its «%2.1f below 100» branch then prints
+/// «100.0» (an approved improvement, #60). `norm == 0` gives 0.
+pub fn percent_bar_value(v: f64, norm: f64, fundamental: bool) -> f64 {
+    if norm == 0.0 {
+        0.0
+    } else if fundamental {
+        100.0
+    } else {
+        100.0 * v / norm
+    }
+}
+
 /// Frequency-diagram bar label (`0x46f5a0`): below 0.01 the literal "0",
 /// below 10 `"%1.1f"`, below 100 `"%2.1f"`, else `"%10.0f"`.
 pub fn freq_label(v: f64) -> String {
@@ -197,6 +211,33 @@ pub fn group_stats_line(minmax: Option<(f64, f64)>, rms: Option<f64>, a1: Option
 mod tests {
     use super::*;
 
+    /// A kV / kA channel's unit in every readout (#86): the value column,
+    /// the single-lane rows and the group line all take the SI prefix from
+    /// the magnitude (`0x43d960`) and the unit text through `0x42bc50`, so
+    /// 354 V of a kV channel reads «В» and 70 kV «кВ» in all of them.
+    #[test]
+    fn kilovolt_and_kiloampere_units_in_every_row() {
+        let shown = |raw: &str| {
+            let n = crate::units::normalize(raw);
+            crate::units::Shown::file(&n.unit, n.per_second)
+        };
+        // The channel's values are in volts / amperes (the unit multiplier is applied).
+        let (kv, ka) = (shown("kV"), shown("кА"));
+        // (value, row, value column, group line)
+        let kv_big = (100_000.0, " 100      кВ", " 100    кВ", "СКЗ:100кВ|A1:100кВ");
+        let kv_small = (353.5, " 353.5    В", " 353.5  В", "СКЗ:353.5В|A1:353.5В");
+        let ka_big = (35_000.0, " 35       кА", " 35     кА", "СКЗ:35кА|A1:35кА");
+        let ka_small = (0.25, " 250      мА", " 250    мА", "СКЗ:250мА|A1:250мА");
+        for (unit, cases) in [(&kv, [kv_big, kv_small]), (&ka, [ka_big, ka_small])] {
+            for (v, row, col, group) in cases {
+                assert_eq!(readout_text(v, unit), row, "row {v}");
+                assert_eq!(stats_value_text(v, unit).unwrap(), col, "value column {v}");
+                assert_eq!(group_stats_line(None, Some(v), Some(v), unit), group, "group line {v}");
+            }
+        }
+        assert_eq!(readout_text(70_710.2, crate::units::Shown::file("V", false)), " 70.7102  кВ");
+    }
+
     #[test]
     fn group_line() {
         assert_eq!(group_stats_line(Some((1500.0, -0.125)), None, Some(10.004), "A"), "Max:1.5кА|Min:-125мА|A1:10.А", "a bare dot can stay");
@@ -259,5 +300,27 @@ mod tests {
         assert_eq!(freq_label(3.27), "3.3");
         assert_eq!(freq_label(42.25), "42.2");
         assert_eq!(freq_label(1234.6), "      1235");
+    }
+
+    /// #60: the fundamental's own label reads «100», not the original's «100.0» for the values whose
+    /// `(v·100)/v` lands one bit under 100.
+    #[test]
+    fn the_fundamentals_label_is_always_100() {
+        let (mut under, mut other) = (0, 0);
+        let mut v = 0.731_f64;
+        for _ in 0..2000 {
+            v = v * 1.0137 + 0.0113;
+            let original = 100.0 * v / v;
+            under += usize::from(original < 100.0);
+            let own = percent_bar_value(v, v, true);
+            assert_eq!(own, 100.0);
+            assert_eq!(freq_label(own).trim(), "100", "{v}");
+            // Other bars and the original's own formula are untouched.
+            assert_eq!(percent_bar_value(v, v, false), original);
+            other += usize::from(freq_label(original).trim() == "100.0");
+        }
+        assert!(under > 0 && other == under, "the synthetic values include ones under 100 ({under})");
+        assert_eq!(percent_bar_value(3.0, 0.0, true), 0.0, "a zero norm gives 0");
+        assert_eq!(percent_bar_value(0.0, 0.0, false), 0.0);
     }
 }
