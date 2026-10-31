@@ -409,7 +409,7 @@ impl App {
             self.status = "Не выбраны каналы для копирования.".into();
             return;
         }
-        let picture = if focus == CopyFocus::View { self.view_picture() } else { None };
+        let picture = if matches!(focus, CopyFocus::View | CopyFocus::Other) { self.view_picture() } else { None };
         if !self.clip.put(Some(&rec.to_text()), picture.as_ref()) {
             self.status = "Не удалось записать в буфер обмена.".into();
         }

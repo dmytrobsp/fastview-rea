@@ -598,7 +598,7 @@ impl App {
     /// it has it.
     pub fn focus_group(&self) -> Option<crate::docking::Unit> {
         match self.copy_focus {
-            CopyFocus::View => None,
+            CopyFocus::View | CopyFocus::Other => None,
             CopyFocus::Diagram(u) | CopyFocus::Grid(u) | CopyFocus::Pane(u) => Some(self.docks.host(u)),
         }
     }

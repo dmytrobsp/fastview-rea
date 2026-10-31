@@ -280,6 +280,12 @@ impl App {
                     // An id per pane: the drag follows the tab when it moves.
                     let (rect, _) = ui.allocate_exact_size(egui::vec2(g.size().x + crate::dpi::s(12.0), strip_h - 4.0), egui::Sense::hover());
                     let r = ui.interact(rect, ui.id().with(("fv_pane_tab", p as u8)), egui::Sense::click_and_drag());
+                    // A press on a tab (either button, the front one too)
+                    // gives the group's pane the focus (clone: the tab
+                    // control focuses the pane it shows).
+                    if r.hovered() && ui.input(|i| i.pointer.primary_pressed() || i.pointer.secondary_pressed()) {
+                        self.copy_focus = crate::app::CopyFocus::Pane(v.unit);
+                    }
                     let pnt = ui.painter();
                     if on {
                         crate::lanes::gradient(pnt, rect, egui::Color32::from_rgb(224, 233, 246), egui::Color32::from_rgb(247, 251, 255));

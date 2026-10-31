@@ -1027,7 +1027,13 @@ impl App {
         self.ppp = ctx.pixels_per_point();
         // Every dialog is modal: while one is up, a backdrop between the
         // panels and the windows takes the pointer, and no shortcuts run.
-        self.modal_up = dialogs::window_up(ctx);
+        let was_modal = std::mem::replace(&mut self.modal_up, dialogs::window_up(ctx));
+        // A closed dialog gives the activation back to the frame, which
+        // hands the focus to its view (clone: a pane's or a window's focus
+        // is the view's after the dialog; copy asks the focus window).
+        if was_modal && !self.modal_up {
+            self.copy_focus = app::CopyFocus::View;
+        }
         if self.modal_up {
             dialogs::backdrop(ctx, "fv_modal_backdrop", egui::Order::PanelResizeLine);
             self.keytips.exit();
@@ -4182,6 +4188,68 @@ mod window_tests {
         let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Circle).expect("the circle canvas").1;
         w.press(Primary, canvas.center(), canvas.center());
         assert_eq!(w.app.copy_focus, app::CopyFocus::Diagram(app::Pane::Circle));
+    }
+
+    /// A press on a pane's tab — the front one's too, with either button —
+    /// gives the group's front pane the focus (clone: a grid focused in the
+    /// circle pane, the vector tab pressed: the vector pane's window holds
+    /// the focus, not the hidden circle pane's grid; #112, #65).
+    #[test]
+    fn a_press_on_a_tab_gives_the_front_pane_the_focus() {
+        use app::{Command, CopyFocus, Pane};
+        use egui::PointerButton::{Primary, Secondary};
+        let tab = |w: &Win, p| w.app.pane_tab_rects.iter().find(|(q, _)| *q == p).map(|(_, r)| r.center()).expect("the tab");
+        let mut w = Win::new();
+        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        w.idle(3);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        w.press(Primary, grid.center(), grid.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Grid(Pane::Circle));
+        let at = tab(&w, Pane::Vector);
+        w.press(Primary, at, at);
+        assert_eq!(w.app.panes.front(w.app.docks.members(docking::Unit::Vector)), Some(Pane::Vector), "the tab came to the front");
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the shown pane holds the focus");
+        // Copy now takes the shown pane's diagram, not the hidden grid's document.
+        w.app.dispatch(Command::Copy);
+        assert!(w.app.clip.picture().is_some() && w.app.clip.get().is_none(), "the vector diagram's picture alone");
+        // The front tab, pressed while a diagram of the group holds the focus.
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).expect("the vector diagram").1;
+        w.press(Primary, canvas.center(), canvas.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
+        let at = tab(&w, Pane::Vector);
+        w.press(Primary, at, at);
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the front tab too");
+        // A right press activates the tab and gives the pane the focus.
+        w.app.copy_focus = CopyFocus::View;
+        let at = tab(&w, Pane::Circle);
+        w.press(Secondary, at, at);
+        assert_eq!(w.app.panes.front(w.app.docks.members(docking::Unit::Vector)), Some(Pane::Circle));
+        assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "the right press");
+    }
+
+    /// Every dialog is modal, and the frame it gives the activation back to
+    /// hands the focus to its view (clone: a diagram's pane focused, «Каналы»
+    /// opened and closed: the view holds it; the ОМП parameters' tree held it
+    /// while up): a focus held by a pane or by another window is the view's
+    /// again once the dialog is gone (#65).
+    #[test]
+    fn a_dialog_that_closes_hands_the_focus_to_the_view() {
+        use app::CopyFocus;
+        for before in [CopyFocus::Diagram(app::Pane::Vector), CopyFocus::Grid(app::Pane::Circle), CopyFocus::Pane(app::Pane::Vector), CopyFocus::Other] {
+            let mut w = Win::new();
+            w.app.copy_focus = before;
+            w.app.color_dialog = Some(egui::Color32::RED);
+            w.idle(3);
+            assert!(w.app.modal_up);
+            assert_eq!(w.app.copy_focus, before, "{before:?}: while the dialog is up it is the dialog's, not changed");
+            w.app.color_dialog = None;
+            w.idle(3);
+            assert!(!w.app.modal_up);
+            assert_eq!(w.app.copy_focus, CopyFocus::View, "{before:?}: the dialog closed");
+            let at = w.view_state();
+            w.key(egui::Key::ArrowRight);
+            assert_ne!(w.view_state(), at, "{before:?}: the view's keys work again");
+        }
     }
 
     /// `FV_FRAME_BENCH=<file.cfg> cargo test --release frame_bench -- --nocapture`

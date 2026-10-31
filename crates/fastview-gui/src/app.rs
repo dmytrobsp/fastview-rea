@@ -140,8 +140,13 @@ pub enum CopyFocus {
     /// closes.
     Grid(Pane),
     /// A group's pane window itself: its caption or its strip button
-    /// pressed (`0x10086d23` / `0x10086f01`, `0x1005f612`).
+    /// pressed (`0x10086d23` / `0x10086f01`, `0x1005f612`), or its tab.
     Pane(Pane),
+    /// A window of the frame that takes the focus and is neither the view
+    /// nor a pane's (a button or combo box of the merge bar, the document
+    /// tabs' ▾ button): no untitled child, so copy puts the view's picture
+    /// and the document, but the view's keys go to that window.
+    Other,
 }
 
 /// Visibility of the four diagram panes (all created visible) and the active
@@ -1608,6 +1613,10 @@ pub struct App {
     pub pane_tab_rects: Vec<(Pane, egui::Rect)>,
     /// The document tabs this frame, in strip order.
     pub doc_tab_rects: Vec<egui::Rect>,
+    /// The frame's own windows that take the copy focus when pressed (the
+    /// enabled combo boxes and buttons of the merge bar, the document
+    /// tabs' ▾ button) this frame: `CopyFocus::Other`.
+    pub focus_other: Vec<egui::Rect>,
     /// The pointer over the view's client area at the last frame it was
     /// there: a change is the original's WM_MOUSEMOVE.
     pub view_pointer: Option<egui::Pos2>,
@@ -1823,6 +1832,7 @@ impl App {
             pane_canvas: Vec::new(),
             pane_tab_rects: Vec::new(),
             doc_tab_rects: Vec::new(),
+            focus_other: Vec::new(),
             pane_grid: Vec::new(),
             view_pointer: None,
             tab_auto: TabAuto::default(),
