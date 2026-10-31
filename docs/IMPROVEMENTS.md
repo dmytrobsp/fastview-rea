@@ -138,7 +138,6 @@ misbehaves and the better behaviour is obvious (the maintainer,
   not the RMS); the other bars are computed as the original does. Reason:
   the fundamental is 100 % of itself by definition; «100.0» is a rounding
   accident of the format's branch, not a choice.
-||||||| 2f98950
 - **The caption drag of a docked pane shows the move cursor (#90).** The
   original floats a docked pane once the pointer is more than the system
   drag distance (SM_CXDRAG / SM_CYDRAG, read once at start-up,
