@@ -72,6 +72,14 @@ const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 /// stays, a Retina screen's 2 included).
 const DEVICE_PIXELS: bool = cfg!(any(windows, test));
 
+/// The saved window placement the first frame sends again: only where
+/// the frame lays out in device pixels (`device_pixels` is its one reader;
+/// elsewhere the runner's own placement in points stands, and the rect
+/// would only sit in the app unused).
+fn placement_to_resend(saved: Option<egui::Rect>, device_pixels: bool) -> Option<egui::Rect> {
+    saved.filter(|_| device_pixels)
+}
+
 /// The zoom that makes egui's pixels per point (zoom · native) 1: exactly
 /// where an f32 does it, else just above (0.99999994 would floor a whole
 /// coordinate into the pixel before, 1.0000001 floors and rounds as 1).
@@ -349,7 +357,7 @@ fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path
     });
     let mut app = App::new().with_persistence();
     app.own_caption = own_caption;
-    app.placement_px = placement;
+    app.placement_px = placement_to_resend(placement, DEVICE_PIXELS);
     app.splash_until = Some(2.0);
     app.print.fonts = fonts;
     let c = ctx.clone();
@@ -1570,6 +1578,16 @@ mod window_tests {
         let at = cmds.iter().find_map(|c| if let egui::ViewportCommand::OuterPosition(p) = c { Some(p.to_vec2() * ppp) } else { None }).expect("the position sent");
         assert!((size - Vec2::new(1906.0, 1016.0)).length() < 0.01 && (at - Vec2::new(2600.0, 40.0)).length() < 0.01, "{size:?} at {at:?}");
         assert!(app.placement_px.is_none(), "once");
+    }
+
+    /// The saved placement is kept for the first frame only where device
+    /// pixels are used; elsewhere nothing reads it (#83).
+    #[test]
+    fn the_saved_placement_is_kept_only_where_it_is_read() {
+        let r = Rect::from_min_size(Pos2::new(40.0, 30.0), Vec2::new(900.0, 700.0));
+        assert_eq!(placement_to_resend(Some(r), true), Some(r));
+        assert_eq!(placement_to_resend(Some(r), false), None);
+        assert_eq!(placement_to_resend(None, true), None);
     }
 
     /// A tiling window manager ignores the minimum size: every window size
