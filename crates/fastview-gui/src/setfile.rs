@@ -660,6 +660,12 @@ impl Doc {
         recset::write_pairs(t.section_mut("Circle Chart"), recset::CIRCLE_KEYS, &pairs(&self.rx_pairs));
         let items: Vec<CommentRec> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
         recset::write_comments(t.section_mut("Comments"), &items);
+        // The summary comment a paste makes is a `.hdr` text with its code
+        // page (`Comments/Codepage`, 1), stored where the reader's guess
+        // was not (a clone run, #28).
+        if !print && self.hdr.is_some() && !t.section_mut("Comments").attrs.contains_key("Codepage") {
+            t.section_mut("Comments").set_int("Codepage", cp_code(self.hdr_cp));
+        }
     }
 
     pub(crate) fn comment_rec(&self, c: &Comment) -> CommentRec {
