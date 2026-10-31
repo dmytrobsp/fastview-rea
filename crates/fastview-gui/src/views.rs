@@ -159,6 +159,12 @@ impl App {
     fn caption_acts(&mut self, ctx: &egui::Context, unit: crate::docking::Unit, shown: Pane, act: CaptionAct, pane: egui::Rect) {
         use crate::docking::Place;
         if act.close {
+            // The press on the button gave the pane the focus (`pane_body`);
+            // the pane closing hands it back to the view like any other way
+            // of closing (#77).
+            if matches!(self.copy_focus, crate::app::CopyFocus::Pane(u) if u == unit) {
+                self.copy_focus = crate::app::CopyFocus::View;
+            }
             self.dispatch(Command::TogglePane(shown));
             return;
         }
