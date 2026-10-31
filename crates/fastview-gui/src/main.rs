@@ -2669,16 +2669,18 @@ mod window_tests {
                     assert!((after.top() - base.top() - 21.0).abs() < 0.5, "{edge:?}: the ribbon is pushed down: {base:?} → {after:?}");
                 }
             }
-            // Out: the pane against its strip, over the whole extent along it.
+            // Out: the pane against its strip, over the whole extent along it,
+            // from below the caption row (not from the window's top, as the
+            // original's: its caption's buttons would lie under the window's).
             let button = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
             w.run(vec![egui::Event::PointerMoved(button)]);
             w.idle(30);
             let pane = w.app.dock_areas[Unit::Vector as usize].unwrap_or_else(|| panic!("{edge:?}: slid out"));
             match edge {
-                Edge::Right => assert_eq!((pane.right(), pane.top(), pane.bottom()), (strip.left(), 0.0, screen.bottom()), "{edge:?}: {pane:?}"),
-                Edge::Left => assert_eq!((pane.left(), pane.top(), pane.bottom()), (strip.right(), 0.0, screen.bottom()), "{edge:?}: {pane:?}"),
+                Edge::Right => assert_eq!((pane.right(), pane.top(), pane.bottom()), (strip.left(), cap, screen.bottom()), "{edge:?}: {pane:?}"),
+                Edge::Left => assert_eq!((pane.left(), pane.top(), pane.bottom()), (strip.right(), cap, screen.bottom()), "{edge:?}: {pane:?}"),
                 Edge::Bottom => assert_eq!((pane.left(), pane.right(), pane.bottom()), (0.0, screen.right(), strip.top()), "{edge:?}: {pane:?}"),
-                Edge::Top => assert_eq!((pane.left(), pane.right(), pane.top()), (0.0, screen.right(), 0.0), "{edge:?}: {pane:?}"),
+                Edge::Top => assert_eq!((pane.left(), pane.right(), pane.top()), (0.0, screen.right(), cap), "{edge:?}: {pane:?}"),
             }
         }
     }
@@ -2783,7 +2785,7 @@ mod window_tests {
         assert!((front_slot.bottom() - (4.0 + len(front.unwrap(), true))).abs() < 0.5, "the front pane was first in the column: {front_slot:?}");
         assert!((long_rect.bottom() - (4.0 + len(front.unwrap(), false) + len(now.unwrap(), true))).abs() < 0.5, "the former front's slot is a 24 px stub, the new long button after it: {long_rect:?}");
         assert!((stub_rect.top() - front_slot.bottom()).abs() < 0.5, "the hovered stub lay right after the former front's button");
-        let stub_after = after.iter().find(|r| r.height() <= 24.5).expect("the stub that followed");
+        let stub_after = after.iter().find(|r| r.height() <= 24.5 && r.top() >= long_rect.bottom() - 0.5).expect("the stub that followed");
         assert!((stub_after.top() - long_rect.bottom()).abs() < 0.5 && stub_after.height() == 24.0, "the stubs follow the long button: {stub_after:?}");
     }
 
@@ -3204,6 +3206,150 @@ mod window_tests {
         }
     }
 
+    /// A divider resize of a slid-out pane is the slid state's own (#109; VM,
+    /// the original, a bottom pane): unpinned, the pane docks back at the size it
+    /// had before it was pinned, and pinned again it slides out at the docked
+    /// size (the resize is forgotten) — it only survives hiding and showing from
+    /// the strip.
+    #[test]
+    fn a_divider_resize_is_forgotten_when_the_pane_docks_back() {
+        use docking::{Edge, Place, Spot, Unit};
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        for edge in [Edge::Bottom, Edge::Right] {
+            // pin, slide out (resized by `drag` px or not), unpin, pin again,
+            // slide out: the docked size after unpinning and the second slid
+            // size, with the first one.
+            let run = |drag: f32| {
+                let mut w = Win::new();
+                w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+                // On its own: no pane beside it to share its slot.
+                w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: edge.opposite(), outer: true };
+                w.idle(3);
+                let across = |r: Rect| if edge.vertical() { r.width() } else { r.height() };
+                let pin = |w: &mut Win, pane: Rect| {
+                    let at = Pos2::new(pane.right() - dpi::s(26.0), pane.top() + dpi::s(10.0));
+                    w.press(egui::PointerButton::Primary, at, at);
+                    w.idle(3);
+                };
+                let slid = |w: &mut Win| {
+                    w.run(vec![egui::Event::PointerMoved(Pos2::new(300.0, 300.0))]);
+                    w.idle(40);
+                    let button = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
+                    w.run(vec![egui::Event::PointerMoved(button)]);
+                    w.idle(30);
+                    w.app.dock_areas[Unit::Vector as usize].expect("slid out")
+                };
+                let pane = w.app.dock_rects[Unit::Vector as usize].expect("docked");
+                pin(&mut w, pane);
+                assert_eq!(w.app.docks[Unit::Vector].place, Place::AutoHide);
+                let first = across(slid(&mut w));
+                let mut area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+                if drag != 0.0 {
+                    let div = w.app.dock_dividers[Unit::Vector as usize].expect("its divider");
+                    let by = if edge.vertical() { Vec2::new(-drag, 0.0) } else { Vec2::new(0.0, -drag) };
+                    w.run(vec![egui::Event::PointerMoved(div.center())]);
+                    w.run(vec![ev(div.center(), true)]);
+                    w.run(vec![egui::Event::PointerMoved(div.center() + by * 0.5)]);
+                    w.run(vec![egui::Event::PointerMoved(div.center() + by)]);
+                    w.idle(2);
+                    w.run(vec![ev(div.center() + by, false)]);
+                    w.idle(3);
+                    area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+                    assert!((across(area) - first - drag).abs() <= 2.0, "{edge:?}: wider by the drag: {first} → {}", across(area));
+                }
+                pin(&mut w, area);
+                assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "{edge:?}: docked again");
+                let back = across(w.app.dock_rects[Unit::Vector as usize].expect("docked"));
+                let pane = w.app.dock_rects[Unit::Vector as usize].expect("docked");
+                pin(&mut w, pane);
+                (first, back, across(slid(&mut w)))
+            };
+            let (first, back, again) = run(0.0);
+            let (first2, back2, again2) = run(100.0);
+            assert_eq!(first, first2, "{edge:?}: the same first slid size");
+            assert!((back2 - back).abs() <= 1.0, "{edge:?}: docked back at {back2}, as with no resize ({back})");
+            assert!((again - first).abs() <= 1.0 && (again2 - first).abs() <= 1.0, "{edge:?}: pinned again it slides at {again2}, as the first time {first} ({again})");
+        }
+    }
+
+    /// A slid-out side or top pane starts below the caption row, so its caption's
+    /// pin and close are in reach (#110, the maintainer's decision; the original
+    /// puts the pane's caption under the window's caption glass, where its
+    /// buttons lie under the window's own buttons): a press on each acts, with
+    /// the window's buttons present.
+    #[test]
+    fn a_slid_out_pane_lies_below_the_caption_row_with_its_caption_in_reach() {
+        use docking::{Edge, Place, Spot, Unit};
+        let cap = ribbon::caption_h();
+        for edge in [Edge::Right, Edge::Left, Edge::Top] {
+            for close in [false, true] {
+                let case = format!("{edge:?} close={close}");
+                let mut w = Win::new();
+                w.app.own_caption = true;
+                w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+                w.app.docks.0[Unit::Vector as usize].pin();
+                w.idle(3);
+                w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+                w.idle(30);
+                let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+                assert!(area.top() >= cap, "{case}: below the caption row: {area:?}");
+                let at = Pos2::new(area.right() - dpi::s(if close { 11.0 } else { 26.0 }), area.top() + dpi::s(10.0));
+                w.press(egui::PointerButton::Primary, at, at);
+                w.idle(30);
+                if close {
+                    assert!(!w.app.panes.visible(app::Pane::Vector), "{case}: the close acts");
+                } else {
+                    assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "{case}: the pin acts");
+                }
+            }
+        }
+    }
+
+    /// The hide check keeps the original's region (#110): a side or top pane
+    /// is checked from the window's top, so the pointer resting between a top
+    /// strip and its pane, or in the caption row above a side pane, keeps it out.
+    #[test]
+    fn the_hide_check_covers_the_band_above_a_slid_out_pane() {
+        use docking::{Edge, Spot, Unit};
+        for (edge, y) in [(Edge::Top, 23.0), (Edge::Right, 5.0), (Edge::Left, 5.0)] {
+            let mut w = Win::new();
+            w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+            w.app.docks.0[Unit::Vector as usize].pin();
+            w.idle(3);
+            w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+            w.idle(30);
+            let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+            assert!(y < area.top(), "{edge:?}: the probe lies above the pane");
+            let at = Pos2::new(area.center().x, y);
+            let button = w.app.strip_hits[Unit::Vector as usize].buttons.iter().any(|b| b.contains(at));
+            assert!(!button, "{edge:?}: the probe is on no button");
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.idle(60);
+            assert!(w.app.docks[Unit::Vector].out, "{edge:?}: resting above the pane keeps it out");
+        }
+    }
+
+    /// A strip button lying wholly under the caption glass is hovered like any
+    /// other (#110; VM, the original, a left strip with the second tab in front:
+    /// the first tab's 24 px stub, 4 px under the window's top, slides its pane
+    /// out when the pointer rests on it).
+    #[test]
+    fn a_stub_under_the_caption_glass_can_be_hovered() {
+        use docking::{Edge, Spot, Unit};
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Left, outer: true };
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let cap = ribbon::caption_h();
+        let stub = w.app.strip_hits[Unit::Vector as usize].buttons.iter().copied().find(|r| r.bottom() <= cap).expect("a button wholly under the glass");
+        assert!(stub.height() <= 24.5, "a stub: {stub:?}");
+        w.run(vec![egui::Event::PointerMoved(stub.center())]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid the group out");
+        assert_eq!(w.app.panes.front(w.app.docks.members(Unit::Vector)), Some(app::Pane::Vector), "with the stub's pane in front");
+    }
+
     /// Hiding a background tab of the focused pane's group leaves the focus.
     #[test]
     fn hiding_a_background_tab_keeps_the_pane_focus() {
@@ -3478,6 +3624,63 @@ mod window_tests {
         assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked);
         let at = w.app.docks[Unit::Circle].float_rect.expect("floating").min;
         assert!((at - Pos2::new(496.0, 373.0)).length() < 1.0, "{at:?}");
+    }
+
+    /// A tab pulled out of a tab strip follows the caption drag's distance rule
+    /// (#111; `0x10068657` reads the metric once, `>=` on either axis — the
+    /// caption's rule `0x10086f3a` is a strict `>` — the distance scaled with
+    /// the display as the caption's, by the maintainer's decision, L9.411) once the pointer has left the strip (the
+    /// original needs that: `0x100690b4` calls the detach only outside the tab
+    /// area; VM: 5 and 8 px up inside the strip float nothing, 14 px up out of it
+    /// floats the pane), with the caption drag's move cursor from the press on.
+    #[test]
+    fn a_tab_pulled_out_follows_the_drag_distance_and_shows_the_move_cursor() {
+        use docking::{Place, Unit};
+        use egui::CursorIcon::{Default as Arrow, Move};
+        let ev = |pos, pressed, button| egui::Event::PointerButton { pos, button, pressed, modifiers: Default::default() };
+        let primary = egui::PointerButton::Primary;
+        for dpi in [96, 120, 144] {
+            dpi::set(dpi);
+            let reach = dpi::s(docking::DRAG_PX);
+            // Pressed on the tab's top row, dragged straight up out of the strip
+            // (whose top is the tab's less 1 px) by `dist` px.
+            let pull = |dist: f32| {
+                let mut w = Win::new();
+                w.idle(2);
+                let tab = w.app.pane_tab_rects.iter().find(|(p, _)| *p == app::Pane::Circle).map(|(_, r)| *r).expect("the Круговая tab");
+                let at = Pos2::new(tab.center().x, tab.top() + 0.5);
+                assert_eq!(w.run(vec![egui::Event::PointerMoved(at)]), Arrow, "{dpi}: hovering a tab leaves the arrow");
+                assert_eq!(w.run(vec![ev(at, true, primary)]), Move, "{dpi}: the press arms the drag: move cursor");
+                let to = at - Vec2::new(0.0, dist);
+                assert_eq!(w.run(vec![egui::Event::PointerMoved(to)]), Move, "{dpi}: still");
+                w.idle(2);
+                let floated = w.app.docks[Unit::Circle].place == Place::Floating;
+                w.run(vec![ev(to, false, primary)]);
+                w.idle(3);
+                assert_eq!(w.run(vec![egui::Event::PointerMoved(Pos2::new(5.0, 5.0))]), Arrow, "{dpi}: released: the arrow");
+                floated
+            };
+            assert!(!pull(reach - 0.5), "{dpi}: {} px up is short of the distance {reach}", reach - 0.5);
+            assert!(pull(reach), "{dpi}: {reach} px up, out of the strip: floated (the rule is >=)");
+        }
+        dpi::set(96);
+        // Inside the strip nothing floats, however far (the pointer must leave the
+        // tab area), and only the left button arms the drag.
+        let mut w = Win::new();
+        w.idle(2);
+        let tab = w.app.pane_tab_rects.iter().find(|(p, _)| *p == app::Pane::Circle).map(|(_, r)| *r).expect("the Круговая tab");
+        let at = Pos2::new(tab.center().x, tab.top() + 8.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true, primary)]);
+        w.run(vec![egui::Event::PointerMoved(at - Vec2::new(0.0, 7.0))]);
+        w.idle(2);
+        assert_eq!(w.app.docks[Unit::Circle].place, Place::Docked, "7 px up inside the strip floats nothing");
+        w.run(vec![ev(at, false, primary)]);
+        w.idle(2);
+        let sec = egui::PointerButton::Secondary;
+        w.app.pane_menu = None;
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        assert_ne!(w.run(vec![ev(at, true, sec)]), Move, "a right press arms nothing");
     }
 
     /// Table 128 as egui-winit delivers it: Ctrl+C arrives as `Event::Copy`
