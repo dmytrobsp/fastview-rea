@@ -3495,8 +3495,8 @@ mod window_tests {
     }
 
     /// The caption «×» of a slid-out auto-hidden pane closes it (the ribbon's
-    /// toggle only shows such a pane), and the focus its press gave goes back
-    /// to the view (#64, #77).
+    /// toggle only shows such a pane); a group stays out with its next tab in
+    /// front and the press's focus on its window (#64, #77, #143).
     #[test]
     fn the_caption_button_closes_a_slid_out_pane() {
         use app::{CopyFocus, Pane};
@@ -3513,7 +3513,11 @@ mod window_tests {
             w.press(egui::PointerButton::Primary, at, at);
             w.idle(30);
             assert!(!w.app.panes.visible(Pane::Vector), "{edge:?}: the caption button closed the pane");
-            assert_eq!(w.app.copy_focus, CopyFocus::View, "{edge:?}");
+            // #143 (clone): the group stays out, the next tab in front, and
+            // the focus the press gave sits on the group's window.
+            assert!(w.app.docks[Unit::Vector].out, "{edge:?}: the group stays slid out");
+            assert!(w.app.panes.front(w.app.docks.members(Unit::Vector)).is_some_and(|p| p != Pane::Vector), "{edge:?}: another tab in front");
+            assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "{edge:?}");
         }
     }
 
