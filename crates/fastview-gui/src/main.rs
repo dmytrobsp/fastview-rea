@@ -2713,6 +2713,33 @@ mod window_tests {
         }
     }
 
+    /// Beside a right strip the caption row has no dead band: the ribbon's panel is narrower by the strip's
+    /// width and the window's buttons lie at the window's edge, so the free space reserves the buttons' width
+    /// less that inset. A drag anywhere in the row up to the buttons moves the window, as elsewhere in the row.
+    #[test]
+    fn the_caption_row_beside_a_right_strip_has_no_dead_band() {
+        use docking::{Edge, Spot, Unit};
+        let screen = Vec2::new(1320.0, 860.0);
+        let mut w = Win::new();
+        w.app.own_caption = true;
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Right, outer: true };
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        // The strip is 23 px wide: the band was [W - 161, W - 138].
+        for dx in [160.0, 150.0, 140.0, 139.0] {
+            let at = Pos2::new(screen.x - dx, 10.0);
+            let mut dragged = false;
+            for events in [vec![egui::Event::PointerMoved(at)], vec![ev(at, true)], vec![egui::Event::PointerMoved(at + Vec2::new(12.0, 0.0))], vec![egui::Event::PointerMoved(at + Vec2::new(24.0, 0.0))], vec![ev(at + Vec2::new(24.0, 0.0), false)]] {
+                let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, screen)), time: Some(w.ctx.input(|i| i.time) + 0.05), events, ..Default::default() };
+                let out = w.ctx.run(raw, |ctx| w.app.frame_ui(ctx));
+                dragged |= out.viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.commands.iter().any(|c| matches!(c, egui::ViewportCommand::StartDrag)));
+            }
+            assert!(dragged, "a press at {dx} px from the right edge drags the window");
+            w.idle(2);
+        }
+    }
+
     /// An auto-hidden tabbed group has a strip button per visible tab (#62;
     /// VM, three tabs): the front pane's full length, the others' stubs of
     /// 24 px, the buttons laid out in the tab order from 4 px under the
