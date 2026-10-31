@@ -17,10 +17,12 @@ an OSC2 `.osc` through its channel lines, calibration, ratios, timing codes and 
 - codes: the rate-segment lines and the lines after the multiplier (time code / local code, time quality /
   leap second) as whole lines, however short their fields;
 - labels: the phase and ccbm fields by channel position, apart from format phases (A, B, C, N, L1 ...);
-- windows: four consecutive data rows of the analog channels (not constant), and columns: four consecutive
-  values of one channel (three distinct values; for whole numbers a spread of 64 or more, so that small
+- windows: four consecutive data rows of the analog channels (not constant), and columns: six consecutive
+  values of one channel (three distinct values; for whole numbers a spread of 16 or more, so that small
   whole-number samples of unrelated records do not meet by chance; any non-whole value counts), compared as
-  numbers, so a copied stretch of samples or a copied channel shows even where single samples are small whole numbers.
+  numbers, so a copied stretch of samples or a copied channel shows even where single samples are small whole
+  numbers; and, for a timestamp-only record, four consecutive steps of its time column (differences, so an offset
+  does not hide a copy; three distinct steps).
 
 Not compared, because the generator keeps them on purpose: the channel-count line and channel numbers, digital
 normal states and the first row's digital states, format phases, standard units, P/S, the frequency line, the rate-segment count and the
@@ -39,8 +41,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import recfmt  # noqa: E402
 
 WINDOW = 4
-COLUMN_SPREAD = 64  # whole-number samples: a per-channel window counts from this spread (smaller ones meet by chance)
+COLUMN_WINDOW = 6  # a per-channel window: six values of one channel
+COLUMN_SPREAD = 16  # whole numbers: a per-channel window counts from this spread (narrower ones meet by chance)
 COLUMN_CAP = 2_000_000  # at most this many per-channel windows of a record are indexed
+
+
+def sig6_step(v):
+    return recfmt.sig6(v)
 
 
 def _whole(v):
@@ -115,8 +122,8 @@ def inventory(rec, max_rows):
     if stem:
         texts.add(stem)
     words = recfmt.words_of(rec.cfg.text + "\n" + rec.others_text)
-    windows, columns = set(), set()
-    ring = []
+    windows, columns, steps = set(), set(), set()
+    ring, col = [], []
     for a, d in rec.rows(max_rows):
         row = tuple(recfmt.sig6(x) for x in a) if a else tuple(d)
         for x in a:
@@ -128,13 +135,27 @@ def inventory(rec, max_rows):
             w = tuple(x for r in ring for x in r)
             if len(set(w)) > 2:
                 windows.add(hash(w))
-            if len(columns) < COLUMN_CAP:
-                for j in range(len(row) if a else 0):
-                    c = (ring[0][j], ring[1][j], ring[2][j], ring[3][j])
-                    if len(set(c)) >= 3 and (max(c) - min(c) >= COLUMN_SPREAD or any(x != int(x) for x in c)):
-                        columns.add(hash(c))
             ring.pop(0)
-    return {"texts": texts, "words": words, "nums": nums, "lines": lines, "windows": windows, "columns": columns,
+        if a:
+            col.append(row)
+            if len(col) == COLUMN_WINDOW:
+                if len(columns) < COLUMN_CAP:
+                    for j in range(len(row)):
+                        c = tuple(r[j] for r in col)
+                        if len(set(c)) >= 3 and (max(c) - min(c) >= COLUMN_SPREAD or any(x != int(x) for x in c)):
+                            columns.add(hash(c))
+                col.pop(0)
+    if getattr(rec, "timestamp_only", False):  # the time column is the record's own data: windows of its steps
+        prev, diffs = None, []
+        for t in rec.stamps(max_rows):
+            if prev is not None:
+                diffs.append(sig6_step(t - prev))
+                if len(diffs) == WINDOW:
+                    if len(set(diffs)) >= 3:
+                        steps.add(hash(tuple(diffs)))
+                    diffs.pop(0)
+            prev = t
+    return {"texts": texts, "words": words, "nums": nums, "lines": lines, "windows": windows, "columns": columns, "steps": steps,
             "codes": codes(rec), "labels": labels(rec)}
 
 
@@ -158,9 +179,10 @@ def check(src, rec, max_rows):
         "windows": len(src["windows"] & out["windows"]),
         "codes": len(src["codes"] & out["codes"]),
         "columns": len(src["columns"] & out["columns"]),
+        "steps": len(src["steps"] & out["steps"]),
         "labels": len(src["labels"] & out["labels"]),
     }, {"texts": len(src["texts"]), "words": len(src["words"]), "numbers": len(src["nums"]),
-        "lines": len(src["lines"]), "windows": len(src["windows"]), "out_windows": len(out["windows"]), "codes": len(src["codes"]), "columns": len(src["columns"]), "labels": len(src["labels"])}
+        "lines": len(src["lines"]), "windows": len(src["windows"]), "out_windows": len(out["windows"]), "codes": len(src["codes"]), "columns": len(src["columns"]), "steps": len(src["steps"]), "labels": len(src["labels"])}
 
 
 def main(argv=None):
@@ -185,7 +207,7 @@ def main(argv=None):
             tag = "FAIL" if total else "ok"
             print(f"{tag}: output {os.path.basename(o)} vs source {i}: matches {hits}; "
                   f"checked {seen['texts']} texts, {seen['words']} words, {seen['numbers']} numbers, "
-                  f"{seen['lines']} lines, {seen['codes']} code lines, {seen['labels']} labels, {seen['windows']} row windows, {seen['columns']} column windows")
+                  f"{seen['lines']} lines, {seen['codes']} code lines, {seen['labels']} labels, {seen['windows']} row windows, {seen['columns']} column windows, {seen['steps']} time-step windows")
             bad += total
     return 1 if bad else 0
 

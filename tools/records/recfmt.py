@@ -314,6 +314,39 @@ class Record:
                     if n >= limit:
                         return
 
+    def stamps(self, limit):
+        """Up to `limit` time stamps (the second field of each data row) of a record's rows, as numbers."""
+        if not self.has_dat:
+            return
+        ab, words = self.row_layout()
+        na, nd = self.n_analog, self.n_digital
+        n = 0
+        with self._open_dat() as f:
+            if ab == 0:
+                for line in f:
+                    t = line.replace(b"\x1a", b"").strip().split(b",")
+                    if len(t) < 2 + na + nd:
+                        continue
+                    try:
+                        yield float(t[1])
+                    except ValueError:
+                        continue
+                    n += 1
+                    if n >= limit:
+                        return
+                return
+            fmt = "<ii" + ("h" if ab == 2 else "i") * na + "H" * words
+            size = struct.calcsize(fmt)
+            while n < limit:
+                buf = f.read(size * min(4096, limit - n))
+                if len(buf) < size:
+                    return
+                for t in struct.iter_unpack(fmt, buf[: len(buf) // size * size]):
+                    yield t[1]
+                    n += 1
+                    if n >= limit:
+                        return
+
     def ascii_style(self):
         """How the first ASCII row is written: widths, separators, number styles."""
         if not self.has_dat or self.row_layout()[0] != 0:

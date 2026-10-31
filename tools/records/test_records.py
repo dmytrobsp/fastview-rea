@@ -248,6 +248,52 @@ class Check(Base):
         self.assertEqual(h["columns"], 0, "unrelated small whole-number columns must not look like a leak")
         self.assertEqual(h["windows"], 0)
 
+    def test_a_copied_integer_channel_of_moderate_spread_is_found(self):
+        import math
+        import random
+        rng = random.Random(3)
+        d = os.path.join(self.tmp, "mod")
+        os.makedirs(d)
+        n = 600
+
+        def rec(name, cols):
+            lines = ["Plant %s,Unit 2,1999" % name, "3,3A,0D"]
+            for i in range(1, 4):
+                lines.append(f"{i},Chan {name} {i},,,A,0.5{i}27,0,0,-32767,32767,{3100 + 17 * i},3,S")
+            lines += ["50", "1", f"1710.0,{n}", "01/02/2021,03:04:05.600000", "01/02/2021,03:04:05.700000", "ASCII", "1"]
+            os.makedirs(os.path.join(d, name))
+            wb(os.path.join(d, name, "r.cfg"), ("\n".join(lines) + "\n").encode())
+            wb(os.path.join(d, name, "r.dat"), "".join(
+                f"{i + 1},{i * 585}," + ",".join(str(c[i]) for c in cols) + "\n" for i in range(n)).encode())
+            return recfmt.open_record(os.path.join(d, name, "r.cfg"))
+
+        def sine(amp, ph):
+            return [round(amp * math.sin(2 * math.pi * i / 24 + ph) + rng.uniform(-1, 1)) for i in range(n)]
+
+        src = rec("alfa", [sine(40, 0.1), sine(30, 1.0), sine(35, 2.0)])
+        out = rec("beta", [sine(25, 0.5), sine(45, 1.7), sine(33, 2.6)])
+        self.assertEqual(self.hits(src, out)["columns"], 0, "unrelated channels")
+        # only the second column is the source's own (its amplitude about 30 counts, 24 samples per cycle)
+        src_cols = [list(map(int, l.split(",")[2:])) for l in rb(src.dat_path).decode().split("\n") if l]
+        col1 = [r[1] for r in src_cols]
+        mixed = rec("delta", [sine(25, 0.5), col1, sine(33, 2.6)])
+        h = self.hits(src, mixed)
+        self.assertGreater(h["columns"], 0, "one copied channel of moderate spread")
+        self.assertEqual(h["windows"], 0, "whole rows differ")
+
+    def test_a_copied_time_column_of_a_timestamp_only_record_is_found(self):
+        src = self.source(make_fixtures.src_f)
+        out = self.synth(src, 2, rows=30)
+        self.assertEqual(self.hits(src, out)["steps"], 0)
+        s = [r.split(",") for r in rb(src.dat_path).decode().split("\r\n") if r]
+        o = rb(out.dat_path).decode().split("\r\n")
+        for i, r in enumerate(s):
+            cells = o[i].split(",")
+            cells[1] = str(int(r[1]) + 1000)  # an offset does not hide it
+            o[i] = ",".join(cells)
+        wb(out.dat_path, "\r\n".join(o).encode())
+        self.assertGreater(self.hits(src, recfmt.open_record(out.cfg_path))["steps"], 0)
+
     def test_one_copied_sample_column_is_found(self):
         for mk in (make_fixtures.src_b, make_fixtures.src_d, make_fixtures.src_e):
             h, _ = self.copy_column(mk, mk.__name__)

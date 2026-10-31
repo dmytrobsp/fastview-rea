@@ -106,9 +106,10 @@ name) and words of four letters or more, case-folded; identifying numbers by val
 whole `.cfg` / `.hdr` lines; the rate-segment lines and the time-code / quality lines as whole lines, short as they
 are (a record's time code is its own value, not structure); phase and ccbm fields by channel position (apart from
 format phases such as A, B, C, N, L1); and four-row windows of the analog samples, both of whole rows and of each
-channel alone (a copied column shows; a channel's window of whole numbers counts from a spread of 64, because small
-whole-number samples of unrelated records meet by chance, so a copied column that never leaves a narrow band is
-seen only through its whole rows). It prints counts only, never a value, and exits 1 on any match. It reads at
+channel alone (six consecutive values of one channel, a spread of 16 or more for whole numbers, so that a copied
+column shows even at a moderate amplitude while small whole-number samples of unrelated records do not meet by
+chance), and, for a timestamp-only record, four consecutive steps of its time column (differences, so an offset does
+not hide a copy). It prints counts only, never a value, and exits 1 on any match. It reads at
 most `--max-rows` data rows of a record (default 2 000 000) and indexes at most 2 000 000 per-channel windows of it;
 the generator's own check after each draw reads at most 200 000 rows of the source.
 
