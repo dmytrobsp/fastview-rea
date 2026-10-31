@@ -124,7 +124,7 @@ impl Row {
 /// channels, then digital channels; pending pasted lanes sit at their
 /// insertion point (`Computed::before`). Analog lanes `YAnalogSize` high (a
 /// group at least one name row per member), digital lanes 20 px. No stretch.
-pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<Row> {
+pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32) -> Vec<Row> {
     let mut rows: Vec<Row> = Vec::new();
     let mut groups: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
     // A visible analog-kind channel: its own lane, or a member of its
@@ -163,7 +163,7 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
     // need = name row + 10 + one row per enabled stat (Max/Min two) + 23
     // when any status icon shows; a group lane one name row (+33) per member.
     for r in rows.iter_mut().filter(|r| !matches!(r.key, Lane::Digital(_)) && !matches!(r.key, Lane::Computed(j) if doc.pending_digital(j))) {
-        let icons = if status_icons(doc, r, primary).is_empty() { 0.0 } else { 23.0 };
+        let icons = if status_icons(doc, r).is_empty() { 0.0 } else { 23.0 };
         let need = if r.members.len() > 1 {
             // `0x460290`: N × the owner's stride (each member is painted
             // with its own — the original's mismatch, kept).
@@ -180,7 +180,6 @@ pub fn lane_layout(doc: &crate::app::Doc, y_analog: f32, primary: bool) -> Vec<R
 /// screen (`lanes_ui`) and the printout (`printout`) paint through it.
 pub struct OscView<'a> {
     pub doc: &'a crate::app::Doc,
-    pub primary: bool,
     pub unit: TimeUnit,
     /// Horizontal scale, first drawn sample, sample count.
     pub f: f64,
@@ -220,7 +219,7 @@ impl OscView<'_> {
     /// One lane's stats text (`0x461440`) and waveforms (`0x45fbe0`);
     /// returns the name badge rectangle.
     pub fn row(&self, lp: &egui::Painter, pp: &egui::Painter, r: &Row, top: f32, (lo, hi): (f64, f64)) -> Rect {
-        let (doc, primary, left, plot_right) = (self.doc, self.primary, self.left, self.right);
+        let (doc, left, plot_right) = (self.doc, self.left, self.right);
         let (first, n, f) = (self.first, self.n, self.f);
         let h = r.h;
         let k_main = doc.main_cursor;
@@ -290,7 +289,7 @@ impl OscView<'_> {
                     let band = Rect::from_min_size(Pos2::new(self.x0 + 5.0, top + 8.0 + k as f32 * stride + GROUP_STATS_H), Vec2::new(left - self.x0 - 5.0, GROUP_STATS_H));
                     lp.with_clip_rect(band.intersect(lp.clip_rect())).text(band.left_center(), Align2::LEFT_CENTER, line, ROW_FONT, row_col);
                 }
-                icons(key_icons(doc, m, primary), top - 21.0 + (k + 1) as f32 * stride);
+                icons(key_icons(doc, m), top - 21.0 + (k + 1) as f32 * stride);
             }
             first.expect("a group has members")
         } else {
@@ -316,7 +315,7 @@ impl OscView<'_> {
                     yy += GROUP_STATS_H;
                 }
             }
-            icons(status_icons(doc, r, primary), top + h - 21.0);
+            icons(status_icons(doc, r), top + h - 21.0);
             name_rect
         };
 
@@ -672,14 +671,14 @@ fn stat_rows(doc: &crate::app::Doc, key: &ChanKey) -> Option<crate::app::StatRow
 /// Status icons of a lane (bitmap 0x136 in the original; our own glyphs):
 /// window zoom, remove DC, invert, primary/secondary scaling, RMS mode,
 /// harmonic mode, ADC counts.
-fn status_icons(doc: &crate::app::Doc, r: &Row, primary: bool) -> Vec<&'static str> {
-    key_icons(doc, r.key, primary)
+fn status_icons(doc: &crate::app::Doc, r: &Row) -> Vec<&'static str> {
+    key_icons(doc, r.key)
 }
 
 /// The status icons of one channel.
-pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> Vec<&'static str> {
+pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey) -> Vec<&'static str> {
     match k {
-        Lane::Analog(i) => chan_icons(doc, i, primary),
+        Lane::Analog(i) => chan_icons(doc, i),
         // A computed or pasted channel's icons: no bit-13 / 14 gate but the
         // ratio's (`0x462b15`).
         Lane::Computed(j) if !doc.pending_digital(j) => {
@@ -717,7 +716,7 @@ pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool) -> 
 }
 
 /// The status icons of analog channel `i`.
-fn chan_icons(doc: &crate::app::Doc, i: usize, _primary: bool) -> Vec<&'static str> {
+fn chan_icons(doc: &crate::app::Doc, i: usize, ) -> Vec<&'static str> {
     let (c, ch) = (&doc.chans[i], &doc.osc.analog[i]);
     // The channel's own flags (`+0x88` / `+0x89`) and ratio decide, not the document's mode.
     let scaled = crate::app::display_k(ch, c.primary) != 1.0;
@@ -747,7 +746,7 @@ fn chan_icons(doc: &crate::app::Doc, i: usize, _primary: bool) -> Vec<&'static s
 /// `0x46121c`): «Max:000.00mV|Min:000.00mV», «СКЗ:000.00mV», «A1:000.00mV»
 /// for the rows it shows, `|`-joined.
 /// Returns (label column, panel width).
-pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], _primary: bool, abs_time: bool) -> (f32, f32) {
+pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], abs_time: bool) -> (f32, f32) {
     // The names are drawn bold: measured so.
     let name_font = bold_font(fonts, NAME_FONT.size).unwrap_or(NAME_FONT);
     let w = |s: &str, f: &FontId| {
@@ -835,7 +834,7 @@ pub(crate) fn bold_text(p: &egui::Painter, pos: Pos2, text: &str, font: FontId, 
 
 /// The amplitude range of a lane: min..max of the displayed series over the
 /// whole record (a group: min of mins, max of maxes).
-pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, f64) {
+pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row) -> (f64, f64) {
     let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
     let mut take = |v: f64| {
         if v.is_finite() {
@@ -846,13 +845,13 @@ pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, 
     match r.key {
         _ if r.members.len() > 1 => {
             for &m in &r.members {
-                let (a, b) = member_range(doc, m, primary);
+                let (a, b) = member_range(doc, m);
                 take(a);
                 take(b);
             }
         }
         Lane::Analog(i) => {
-            let (a, b) = chan_range(doc, i, primary);
+            let (a, b) = chan_range(doc, i);
             take(a);
             take(b);
         }
@@ -875,10 +874,10 @@ pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row, primary: bool) -> (f64, 
 /// the whole record, or its window zoom (`0x42b640`).
 /// A level's channel range for 33042's commit (ch+0xb0 / ch+0xa8, the
 /// whole record): `None` when the channel does not resolve.
-fn level_range(doc: &crate::app::Doc, chan: crate::app::ChanKey, primary: bool) -> Option<(f64, f64)> {
+fn level_range(doc: &crate::app::Doc, chan: crate::app::ChanKey) -> Option<(f64, f64)> {
     use crate::app::ChanKey;
     match chan {
-        ChanKey::Analog(i) if i < doc.osc.analog.len() => Some(chan_range(doc, i, primary)),
+        ChanKey::Analog(i) if i < doc.osc.analog.len() => Some(chan_range(doc, i)),
         ChanKey::Computed(j) => doc.computed.get(j).map(|c| c.samples.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| (lo.min(v), hi.max(v)))),
         ChanKey::Digital(k) if k < doc.osc.digital.len() => Some((0.0, 1.0)),
         _ => None,
@@ -887,9 +886,9 @@ fn level_range(doc: &crate::app::Doc, chan: crate::app::ChanKey, primary: bool) 
 
 /// A group member's own range (`0x42b640` over its `+0xa8` / `+0xb0`): a
 /// file channel's [`chan_range`], a computed one's displayed series.
-fn member_range(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> (f64, f64) {
+fn member_range(doc: &crate::app::Doc, k: ChanKey) -> (f64, f64) {
     match k {
-        Lane::Analog(i) => chan_range(doc, i, primary),
+        Lane::Analog(i) => chan_range(doc, i),
         Lane::Computed(j) => {
             let v = doc.computed[j].shown_series().iter().copied().filter(|v| v.is_finite());
             let (lo, hi) = v.fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), x| (l.min(x), h.max(x)));
@@ -903,7 +902,7 @@ fn member_range(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> (f64, f64) 
     }
 }
 
-pub fn chan_range(doc: &crate::app::Doc, i: usize, _primary: bool) -> (f64, f64) {
+pub fn chan_range(doc: &crate::app::Doc, i: usize) -> (f64, f64) {
     let [mut lo, mut hi, ..] = scaled_minmax(doc, i);
     if lo > hi {
         (lo, hi) = (0.0, 0.0);
@@ -998,11 +997,11 @@ pub struct RowGeo<'a> {
 /// The analog lane under `y` and the value there on its scale.
 /// A level line's place (`0x471020`): the lane of channel `k` and its
 /// current range — a digital channel its raw 0 / 1 window, drawn snapped.
-pub fn level_place(doc: &crate::app::Doc, (rows, tops, ranges): (&[Row], &[f32], &[(f64, f64)]), primary: bool, k: Lane, v: f64) -> Option<g::LevelY> {
+pub fn level_place(doc: &crate::app::Doc, (rows, tops, ranges): (&[Row], &[f32], &[(f64, f64)]), k: Lane, v: f64) -> Option<g::LevelY> {
     let li = rows.iter().position(|r| r.has(k))?;
     let ((lo, hi), digital) = match k {
         Lane::Digital(j) => (g::digital_window(&doc.osc.digital.get(j)?.samples), true),
-        _ if rows[li].members.len() > 1 => (member_range(doc, k, primary), false),
+        _ if rows[li].members.len() > 1 => (member_range(doc, k), false),
         _ => (ranges[li], false),
     };
     g::level_y(v, tops[li], rows[li].h, lo, hi, digital)
@@ -1308,7 +1307,6 @@ impl App {
     pub fn lanes_ui(&mut self, ui: &mut egui::Ui) {
         // No document: the MDI client's bare ground (`view_oscillogram`).
         let Some(ai) = self.active else { return };
-        let primary = self.docs[ai].primary_values();
         let (time_unit, show_grid, y_analog) = (self.time_unit, self.show_grid, self.y_analog);
         let full = ui.available_rect_before_wrap();
         let resp = ui.allocate_rect(full, Sense::click_and_drag());
@@ -1332,9 +1330,9 @@ impl App {
 
         // ---- layout (`0x460290`, `0x45d4a0`) ----
         let band = g::RULER_H + if doc.diff_band { g::DIFF_BAND_H } else { 0.0 };
-        let rows = lane_layout(doc, y_analog, primary);
+        let rows = lane_layout(doc, y_analog);
         let abs_time = self.time_unit == crate::app::TimeUnit::Absolute;
-        let (label_col, left_w) = ui.fonts(|fo| stats_columns(fo, doc, &rows, primary, abs_time));
+        let (label_col, left_w) = ui.fonts(|fo| stats_columns(fo, doc, &rows, abs_time));
         self.view_left = left_w;
         let content_h: f32 = rows.iter().map(|r| r.h).sum();
         // Each window scroll bar only while there is something to scroll
@@ -1365,7 +1363,7 @@ impl App {
             tops.push(y);
             y += r.h;
         }
-        let ranges: Vec<(f64, f64)> = rows.iter().map(|r| row_range(doc, r, primary)).collect();
+        let ranges: Vec<(f64, f64)> = rows.iter().map(|r| row_range(doc, r)).collect();
         let grid_bottom = client.bottom() - g::RULER_H;
         let lanes_clip = Rect::from_min_max(client.min, Pos2::new(plot_right, plot_bottom));
         let painter = ui.painter_at(client);
@@ -1397,7 +1395,7 @@ impl App {
         let mut rename_rect = None;
         let mut cut_hover: Option<String> = None;
         let hover = resp.hover_pos();
-        let ov = OscView { doc, primary, unit: time_unit, f, first, n, left, right: plot_right, x0: client.left(), label_col };
+        let ov = OscView { doc, unit: time_unit, f, first, n, left, right: plot_right, x0: client.left(), label_col };
         for (li, r) in rows.iter().enumerate() {
             let (top, h) = (tops[li], r.h);
             if top > plot_bottom || top + h < client.top() {
@@ -1460,7 +1458,7 @@ impl App {
         // A level line (`0x471020` / `0x470e4a`) uses its channel's current
         // range — a digital channel its raw 0 / 1 window, the line snapped —
         // outside it the line is neither drawn nor hit.
-        let level_y = |k: ChanKey, v: f64| level_place(doc, (&rows, &tops, &ranges), primary, k, v);
+        let level_y = |k: ChanKey, v: f64| level_place(doc, (&rows, &tops, &ranges), k, v);
         let us_at = |k: usize| g::micros(time_at(k));
         let abs_at = |dt: i64| fvb_core::comtrade::moment_time_text(&doc.osc.stamps, doc.osc.rev_year, dt);
         let cgeo = crate::comments::Geo { x_of: &x_of, lane: &lane_of, value_y: &level_y, top: client.top(), v_bottom, us: &us_at, abs: &abs_at };
@@ -1968,7 +1966,7 @@ impl App {
                 Act::MergeOffset(o) => d.set_merge_offset(o),
                 Act::WindowZoom(chan, a, b) => {
                     let dd: &crate::app::Doc = d;
-                    let cur: Vec<(f64, f64)> = (0..dd.chans.len()).map(|i| chan_range(dd, i, primary)).collect();
+                    let cur: Vec<(f64, f64)> = (0..dd.chans.len()).map(|i| chan_range(dd, i)).collect();
                     d.apply_window_zoom(chan, a, b, &|i| cur[i]);
                     self.rect_zoom = RectZoom::Off;
                 }
@@ -2147,10 +2145,9 @@ impl App {
             Some(true) => {
                 let v = crate::chandlg::wtof(&text);
                 let d = &mut self.docs[ai];
-                let primary = d.primary_values();
                 let target = d.comment_hot;
                 let range = target.and_then(|t| d.comments.get(t)).and_then(|c| match c.kind {
-                    crate::comments::CommentKind::Level { chan, .. } => level_range(d, chan, primary),
+                    crate::comments::CommentKind::Level { chan, .. } => level_range(d, chan),
                     _ => None,
                 });
                 if let (Some(t), Some((lo, hi))) = (target, range) {
@@ -2784,7 +2781,7 @@ mod menu_tests {
         /// Centre of stats-panel row `li`, from the layout `lanes_ui` uses
         /// (central panel margin 8 px, no scroll).
         fn row(&self, li: usize) -> Pos2 {
-            let rows = lane_layout(self.app.active_doc().unwrap(), self.app.y_analog, false);
+            let rows = lane_layout(self.app.active_doc().unwrap(), self.app.y_analog);
             let top: f32 = 8.0 + rows[..li].iter().map(|r| r.h).sum::<f32>();
             Pos2::new(40.0, top + rows[li].h / 2.0)
         }
@@ -2797,7 +2794,7 @@ mod menu_tests {
 
         /// Rows whose centre is above the bottom band.
         fn rows(&self) -> usize {
-            let n = lane_layout(self.app.active_doc().unwrap(), self.app.y_analog, false).len();
+            let n = lane_layout(self.app.active_doc().unwrap(), self.app.y_analog).len();
             (0..n).take_while(|&li| self.row(li).y < self.plot_bottom()).count()
         }
 
@@ -2829,7 +2826,7 @@ mod menu_tests {
     #[test]
     fn lanes_are_fixed_height_analog_93_digital_20() {
         let h = Harness::new();
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         for r in &rows {
             let want = if matches!(r.key, ChanKey::Digital(_)) { 20.0 } else { 93.0 };
             assert_eq!(r.h, want, "{:?}", r.key);
@@ -2844,12 +2841,12 @@ mod menu_tests {
         let d = h.app.active_doc_mut().unwrap();
         d.chans[0].group = Some(7);
         d.chans[1].group = Some(7);
-        let n = lane_layout(h.doc(), h.app.y_analog, false).len();
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let n = lane_layout(h.doc(), h.app.y_analog).len();
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         assert_eq!(rows[0].members, [ChanKey::Analog(0), ChanKey::Analog(1)]);
         assert_eq!(rows[0].h, 2.0 * (ROW_H + 33.0 + GROUP_STATS_H), "default СКЗ + A1 rows");
         h.app.active_doc_mut().unwrap().chans[0].stats = crate::app::StatRows { minmax: false, rms: false, a1: false };
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         assert_eq!(rows[0].h, h.app.y_analog.max(2.0 * (ROW_H + 33.0)), "the owner's flags decide");
         assert_eq!(rows.len(), n);
     }
@@ -2899,7 +2896,7 @@ mod menu_tests {
     #[test]
     fn a_plot_drag_into_the_stats_panel_drops_after_the_delay() {
         let mut h = Harness::new();
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         let unit = |li: usize| match rows[li].key {
             Lane::Analog(i) => Some(h.doc().osc.analog[i].unit.clone()),
             _ => None,
@@ -2922,7 +2919,7 @@ mod menu_tests {
     #[test]
     fn dragging_a_channel_onto_another_lane_combines_them() {
         let mut h = Harness::new();
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         let unit = |li: usize| match rows[li].key {
             Lane::Analog(i) => Some(h.doc().osc.analog[i].unit.clone()),
             _ => None,
@@ -2962,7 +2959,7 @@ mod menu_tests {
     fn dragging_a_formula_lane_onto_a_merged_lane() {
         let mut h = Harness::new();
         assert!(h.app.append_computed(&[("X".into(), "Ub".into())]).is_some());
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         let from = rows.iter().position(|r| r.key == Lane::Computed(0)).expect("the formula lane");
         let to = rows.iter().position(|r| r.key == Lane::Analog(1)).expect("a file lane");
         let rate = h.doc().osc.int_rate_hz();
@@ -3041,7 +3038,7 @@ mod menu_tests {
         h.app.paste_channels_for_merge();
         h.frame(vec![]);
         h.frame(vec![]);
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         let pend = rows.iter().position(|r| matches!(r.key, Lane::Computed(j) if h.doc().pending_of(j).is_some())).expect("the pasted lane");
         let file = rows.iter().position(|r| matches!(r.key, Lane::Analog(_))).expect("a file lane");
         let (pk, fk) = (rows[pend].key, rows[file].key);
@@ -3090,7 +3087,7 @@ mod menu_tests {
         h.app.paste_channels_for_merge();
         h.frame(vec![]);
         h.frame(vec![]);
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         let pd = rows.iter().position(|r| matches!(r.key, Lane::Computed(j) if h.doc().pending_digital(j))).expect("a pasted digital lane");
         let file = rows.iter().position(|r| matches!(r.key, Lane::Analog(_))).unwrap();
         let (pdk, fk) = (rows[pd].key, rows[file].key);
@@ -3251,7 +3248,7 @@ mod menu_tests {
             h.wheel(at, 1.0, egui::Modifiers::CTRL);
         }
         let doc = h.doc();
-        let rows = lane_layout(doc, h.app.y_analog, false);
+        let rows = lane_layout(doc, h.app.y_analog);
         let band = g::RULER_H + if doc.diff_band { g::DIFF_BAND_H } else { 0.0 };
         let client_h = SCREEN.y - 16.0 - HSCROLL_H;
         let vbar = rows.iter().map(|r| r.h).sum::<f32>() + band + 2.0 > client_h;
@@ -3327,7 +3324,7 @@ mod menu_tests {
     #[test]
     fn a_rect_zoomed_curve_is_clipped_to_its_lane() {
         let mut h = Harness::new();
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         let (top, lh) = (8.0f32, rows[0].h);
         h.app.dispatch(Command::RectZoom);
         h.frame(vec![]);
@@ -3389,7 +3386,7 @@ mod menu_tests {
             h.shapes.iter().filter_map(|c| if let Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect()
         };
         let mut h = Harness::new();
-        let (lo, hi) = chan_range(h.doc(), 0, false);
+        let (lo, hi) = chan_range(h.doc(), 0);
         let d = h.app.active_doc_mut().unwrap();
         d.hviz[0] = crate::app::HVizir { shown: true, chan: Some(0), value: (lo + hi) / 2.0 };
         h.frame(vec![]);
@@ -3423,13 +3420,13 @@ mod menu_tests {
     #[test]
     fn range_cache_follows_value_changes() {
         let mut h = Harness::new();
-        let (lo, hi) = chan_range(h.doc(), 0, false);
+        let (lo, hi) = chan_range(h.doc(), 0);
         h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into_iter().collect();
         h.app.dispatch(Command::ToggleFlag(ChanFlag::Invert));
-        let (lo2, hi2) = chan_range(h.doc(), 0, false);
+        let (lo2, hi2) = chan_range(h.doc(), 0);
         assert!((lo2 + hi).abs() < 1e-9 && (hi2 + lo).abs() < 1e-9, "inverted: {lo2}..{hi2} vs {lo}..{hi}");
         h.app.dispatch(Command::SetValueMode(ValueMode::Rms));
-        let (lo3, _) = chan_range(h.doc(), 0, false);
+        let (lo3, _) = chan_range(h.doc(), 0);
         assert!(lo3 >= 0.0, "an RMS series is never negative: {lo3}");
     }
 
@@ -3455,7 +3452,7 @@ mod menu_tests {
         assert_eq!(rms.to_bits(), rms_at(&shown, k_main, n).to_bits(), "СКЗ over the same shown samples");
         let (lo, hi) = (shown.iter().copied().fold(f64::MAX, f64::min), shown.iter().copied().fold(f64::MIN, f64::max));
         assert_eq!((mn, mx), (lo, hi), "Max / Min in the same factor");
-        let (rlo, rhi) = chan_range(d, 1, true);
+        let (rlo, rhi) = chan_range(d, 1);
         assert!(rlo >= lo - (hi - lo) && rhi <= hi + (hi - lo), "the zoom range is in the same factor: {rlo}..{rhi} vs {lo}..{hi}");
     }
 
@@ -3466,11 +3463,11 @@ mod menu_tests {
         let d = h.app.active_doc_mut().unwrap();
         (d.osc.analog[1].primary, d.osc.analog[1].secondary, d.osc.analog[1].is_primary) = (1234.0, 1.0, true);
         d.chans[1].primary = false;
-        // The document shows primary values, the channel (stored primary) shows secondary: its ratio applies.
-        assert!(key_icons(d, Lane::Analog(1), true).contains(&"*K"), "the channel's own mode scales it");
+        // The channel (stored primary) shows secondary values: its ratio applies, whatever the document's mode.
+        assert!(key_icons(d, Lane::Analog(1)).contains(&"*K"), "the channel's own mode scales it");
         d.chans[1].primary = true;
-        // The document shows secondary values, this channel shows primary (as stored): no ratio.
-        assert!(!key_icons(d, Lane::Analog(1), false).contains(&"*K"), "the channel's own mode leaves it as stored");
+        // This channel shows primary values (as stored): no ratio.
+        assert!(!key_icons(d, Lane::Analog(1)).contains(&"*K"), "the channel's own mode leaves it as stored");
     }
 
     /// With «Удалить постоянную» an instantaneous value is the accessor's `x·k − dc·k`, not `(x − dc)·k`.
@@ -3524,7 +3521,7 @@ mod menu_tests {
         let d = h.app.active_doc_mut().unwrap();
         d.chans[0].invert = true;
         // name row + 10 + Max, Min, СКЗ, A1 + the icon row = 15 + 10 + 60 + 23.
-        let rows = lane_layout(h.doc(), h.app.y_analog, false);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
         assert_eq!(rows[0].h, 108.0);
         assert_eq!(rows[1].h, 93.0, "no icons: YAnalogSize");
     }
@@ -3870,11 +3867,11 @@ mod menu_tests {
     #[test]
     fn rectangle_zoom_windows_the_lane_and_141_resets_it() {
         let mut h = Harness::new();
-        let r0 = lane_layout(h.doc(), h.app.y_analog, false)[0].clone();
+        let r0 = lane_layout(h.doc(), h.app.y_analog)[0].clone();
         let top = 8.0;
         h.app.dispatch(Command::RectZoom);
         assert_eq!(h.app.rect_zoom, RectZoom::Armed);
-        let full = chan_range(h.doc(), 0, false);
+        let full = chan_range(h.doc(), 0);
         // From a quarter of the lane down to its middle.
         drag(&mut h, Pos2::new(600.0, top + r0.h * 0.25), Pos2::new(600.0, top + r0.h * 0.5));
         assert_eq!(h.app.rect_zoom, RectZoom::Off, "one-shot");

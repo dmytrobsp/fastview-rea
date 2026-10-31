@@ -919,13 +919,13 @@ mod tests {
         app.copy_channels_for_merge();
         app.paste_channels_for_merge();
         let d = app.active_doc().unwrap();
-        let rows = crate::lanes::lane_layout(d, 93.0, false);
+        let rows = crate::lanes::lane_layout(d, 93.0);
         let lane = |digital: bool| rows.iter().find(|r| matches!(r.key, ChanKey::Computed(j) if d.pending_of(j).is_some_and(|p| p.pasted.channel.is_err() == digital))).unwrap();
         assert_eq!(lane(true).h, crate::oscgeom::DIGITAL_H);
         assert!(lane(false).h >= 93.0);
         let Ok(a) = &d.pending_of(match lane(false).key { ChanKey::Computed(j) => j, _ => unreachable!() }).unwrap().pasted.channel else { unreachable!() };
         let own = a.samples.iter().copied().fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), v| (l.min(v), h.max(v)));
-        assert_eq!(crate::lanes::row_range(d, lane(false), false), own);
+        assert_eq!(crate::lanes::row_range(d, lane(false)), own);
         // The analog one carries its own phasor cache (`0x490120`'s
         // source), the digital one none.
         let cj = |digital: bool| match lane(digital).key { ChanKey::Computed(j) => &d.computed[j], _ => unreachable!() };
@@ -953,7 +953,7 @@ mod tests {
         let n = d.osc.analog.len();
         assert_eq!(order[n..], [ChanKey::Computed(j), ChanKey::Computed(0)]);
         assert_eq!(crate::chandlg::rows(d)[n..n + 2], [ChanKey::Computed(j), ChanKey::Computed(0)]);
-        let lanes: Vec<ChanKey> = crate::lanes::lane_layout(d, 93.0, false).into_iter().map(|r| r.key).collect();
+        let lanes: Vec<ChanKey> = crate::lanes::lane_layout(d, 93.0).into_iter().map(|r| r.key).collect();
         let at = |k| lanes.iter().position(|&x| x == k).unwrap();
         assert!(at(ChanKey::Computed(j)) + 1 == at(ChanKey::Computed(0)));
     }
@@ -1092,7 +1092,7 @@ mod tests {
         let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
         let own = &d.computed[j].pending_own;
         assert!(own.iter().zip(&src).all(|(o, s)| (o - s / 2000.0).abs() < 1e-9), "shown ÷2000, secondary");
-        assert!(crate::lanes::key_icons(d, ChanKey::Computed(j), false).contains(&"*K"), "the ratio's icon");
+        assert!(crate::lanes::key_icons(d, ChanKey::Computed(j)).contains(&"*K"), "the ratio's icon");
         app.merge_records();
         let d = app.active_doc().unwrap();
         let merged = d.osc.analog.iter().find(|a| a.id.ends_with("(вст.)")).expect("the merged channel");
@@ -1254,7 +1254,7 @@ mod tests {
         d.hviz[0].chan = Some(1);
         app.paste_channels_for_merge();
         let d = app.active_doc().unwrap();
-        let rows = crate::lanes::lane_layout(d, 93.0, false);
+        let rows = crate::lanes::lane_layout(d, 93.0);
         let pos = rows.iter().position(|r| matches!(r.key, ChanKey::Computed(_))).unwrap();
         assert!(matches!(rows[pos - 1].key, ChanKey::Analog(0)) && matches!(rows[pos + 1].key, ChanKey::Analog(1)), "shown in front of channel 1");
         assert!(d.selection.iter().all(|k| matches!(k, ChanKey::Computed(_))) && d.selection.len() == 1, "the pasted lane comes in selected");
