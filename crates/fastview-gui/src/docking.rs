@@ -195,8 +195,10 @@ pub enum Place {
     AutoHide,
 }
 
-/// A caption drag detaches past the system drag distance (SM_CXDRAG, 4 px)
-/// once the pointer has left the pane (`0x10086f3a`).
+/// A caption drag detaches once the pointer is more than the system drag
+/// distance (SM_CXDRAG / SM_CYDRAG, 4 px at 100 %) from the press along an
+/// axis (`0x10086f3a`). The original does not ask for the pointer to leave
+/// the pane; ours once did (#90).
 pub const DRAG_PX: f32 = 4.0;
 /// Hovering a strip button this long shows the pane (timer 0xec00).
 pub const HOVER_S: f64 = 0.4;
@@ -205,6 +207,27 @@ pub const HOVER_S: f64 = 0.4;
 pub const CHECK_S: f64 = 0.7;
 /// The slide moves 1/12 of the extent per step (`0x10088459`).
 pub const SLIDE_STEPS: f32 = 12.0;
+/// The divider beside a slid-out pane (the pane's splitter window, +0x33c
+/// of the pane; VM: the brush between the view and the pane, 4 px).
+pub const DIVIDER_PX: f32 = 4.0;
+/// An auto-hide strip button's length along its strip at 100 % (VM, the
+/// original; three tabs pinned): the group's front pane's button is full
+/// length — about 7.86 px per character of its title plus 5 on a side
+/// strip (19 characters 154, 26 characters 209), 7.58 per character along
+/// a top / bottom one (19 characters 144, one datum) —, every other tab's
+/// a stub of 24 px with its title clipped. Hovering a stub shows its pane,
+/// which becomes the front one and takes the full length.
+pub fn strip_button_len(chars: usize, front: bool, vertical: bool) -> f32 {
+    let n = chars as f32;
+    match (front, vertical) {
+        (false, _) => 24.0,
+        (true, true) => (7.86 * n + 5.0).round(),
+        (true, false) => (7.58 * n).round(),
+    }
+}
+
+/// The smallest a slid-out pane is dragged to by its divider.
+pub const SLIDE_MIN_PX: f32 = 60.0;
 
 /// One dockable unit's state.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -231,13 +254,19 @@ pub struct Dockable {
     /// start on its button and the next hide check.
     pub out: bool,
     pub slide: f32,
+    /// The size across its edge a divider drag left it (the slid-out
+    /// pane's own; the docked size is not touched); `None` the create size.
+    pub slide_extent: Option<f32>,
     hover_since: Option<f64>,
     next_check: f64,
+    /// A show with activation asked for (the ribbon's toggle): the next
+    /// frame slides the group out and starts the hide check's timer.
+    show_req: bool,
 }
 
 impl Dockable {
     pub fn new(create: Vec2, spot: Spot) -> Dockable {
-        Dockable { place: Place::Docked, spot, extent: None, gen: 0, order: 0, float_rect: None, create, out: false, slide: 0.0, hover_since: None, next_check: 0.0 }
+        Dockable { place: Place::Docked, spot, extent: None, gen: 0, order: 0, float_rect: None, create, out: false, slide: 0.0, slide_extent: None, hover_since: None, next_check: 0.0, show_req: false }
     }
 
     /// The recent floating rect, or the create rect at `origin`.
@@ -265,14 +294,18 @@ impl Dockable {
             Place::AutoHide => Place::Docked,
             p => p,
         };
-        (self.out, self.slide, self.hover_since) = (false, 0.0, None);
+        (self.out, self.slide, self.hover_since, self.show_req) = (false, 0.0, None, false);
     }
 
-    /// A caption drag of a docked unit: it detaches when the pointer has
-    /// moved past [`DRAG_PX`] from `press` and left `pane`; then it floats
-    /// with the caption still under the pointer. True when it detached.
+    /// A caption drag of a docked unit: it detaches when the pointer is more
+    /// than the drag distance ([`DRAG_PX`], grown with the display scale)
+    /// from `press` along either axis, wherever it is (`0x10086f3a`); then
+    /// it floats with the caption still under the pointer. `pane` is the
+    /// pane's rect, to keep the grab point. True when it detached.
     pub fn drag_detach(&mut self, press: Pos2, now: Pos2, pane: Rect, origin: Pos2) -> bool {
-        if self.place != Place::Docked || (now - press).length() <= DRAG_PX || pane.contains(now) {
+        let reach = crate::dpi::s(DRAG_PX);
+        let d = now - press;
+        if self.place != Place::Docked || (d.x.abs() <= reach && d.y.abs() <= reach) {
             return false;
         }
         let size = self.float_at(origin).size();
@@ -285,7 +318,25 @@ impl Dockable {
 
     /// Its panes hidden: an auto-hidden one is back in its strip.
     pub fn hide(&mut self) {
-        (self.out, self.slide, self.hover_since) = (false, 0.0, None);
+        (self.out, self.slide, self.hover_since, self.show_req) = (false, 0.0, None, false);
+    }
+
+    /// The ribbon's toggle on an auto-hidden group (`0x10089800`: the pane
+    /// shown with activation): it slides out, to be taken back by the next
+    /// hide check unless the pointer is on it or something holds it (VM:
+    /// toggled in or out, it never closes and the ribbon's button never
+    /// checks; a second later it is back in its strip). A group not
+    /// auto-hidden is left alone.
+    pub fn request_show(&mut self) {
+        if self.place == Place::AutoHide {
+            self.show_req = true;
+        }
+    }
+
+    /// Whether the group is in auto-hide mode (shown from its strip, not
+    /// docked): the ribbon's buttons for its panes do not check.
+    pub fn auto_hidden(&self) -> bool {
+        self.place == Place::AutoHide
     }
 
     /// When it next needs a frame, in seconds from `now`: at once while it
@@ -315,6 +366,10 @@ impl Dockable {
     pub fn auto_hide_frame(&mut self, now: f64, on_button: bool, clicked: bool, in_pane: bool, held: bool) {
         if self.place != Place::AutoHide {
             return;
+        }
+        if std::mem::take(&mut self.show_req) && !self.out {
+            self.out = true;
+            self.next_check = now + CHECK_S;
         }
         if on_button {
             let since = *self.hover_since.get_or_insert(now);
@@ -744,16 +799,37 @@ mod tests {
     }
 
     #[test]
-    fn a_drag_detaches_past_the_threshold_outside_the_pane() {
+    fn a_drag_detaches_past_the_drag_distance_wherever_the_pointer_is() {
         let pane = Rect::from_min_size(Pos2::new(800.0, 100.0), Vec2::new(500.0, 600.0));
-        let mut d = unit();
         let press = Pos2::new(900.0, 110.0);
-        assert!(!d.drag_detach(press, Pos2::new(903.0, 110.0), pane, Pos2::ZERO), "inside the drag distance");
-        assert!(!d.drag_detach(press, Pos2::new(850.0, 110.0), pane, Pos2::ZERO), "still over the pane");
-        assert!(d.drag_detach(press, Pos2::new(700.0, 105.0), pane, Pos2::ZERO));
-        assert_eq!(d.place, Place::Floating);
-        let r = d.float_rect.unwrap();
-        assert!(r.contains(Pos2::new(700.0, 105.0)), "the caption stays under the pointer: {r:?}");
+        for scale in [96, 120, 144] {
+            crate::dpi::set(scale);
+            let reach = crate::dpi::s(DRAG_PX);
+            let mut d = unit();
+            // Within the drag distance on both axes: not yet.
+            assert!(!d.drag_detach(press, press + Vec2::new(reach, 0.0), pane, Pos2::ZERO), "{scale}: x at the distance");
+            assert!(!d.drag_detach(press, press + Vec2::new(-reach, reach), pane, Pos2::ZERO), "{scale}: both at the distance");
+            // Past it on one axis, the pointer still over the pane.
+            assert!(d.drag_detach(press, press + Vec2::new(reach + 1.0, 0.0), pane, Pos2::ZERO), "{scale}: x past");
+            assert_eq!(d.place, Place::Floating);
+            let r = d.float_rect.unwrap();
+            assert!(r.contains(press + Vec2::new(reach + 1.0, 0.0)), "the caption stays under the pointer: {r:?}");
+            let mut d = unit();
+            assert!(d.drag_detach(press, press + Vec2::new(0.0, reach + 1.0), pane, Pos2::ZERO), "{scale}: y past");
+            // A floating one is never pulled out again.
+            assert!(!d.drag_detach(press, press + Vec2::new(500.0, 0.0), pane, Pos2::ZERO));
+        }
+        crate::dpi::set(96);
+    }
+
+    #[test]
+    fn strip_buttons_are_full_length_for_the_front_pane_only() {
+        let title = |t: &str| t.chars().count();
+        assert_eq!(strip_button_len(title("Векторная диаграмма"), true, true), 154.0);
+        assert_eq!(strip_button_len(title("Дифференциальная диаграмма"), true, true), 209.0);
+        assert_eq!(strip_button_len(title("Частотная диаграмма"), true, false), 144.0);
+        assert_eq!(strip_button_len(title("Круговая диаграмма"), false, true), 24.0);
+        assert_eq!(strip_button_len(title("Круговая диаграмма"), false, false), 24.0);
     }
 
     #[test]
@@ -781,6 +857,48 @@ mod tests {
         assert!(!d.out);
         d.pin();
         assert_eq!((d.place, d.slide), (Place::Docked, 0.0));
+    }
+
+    /// The ribbon's toggle on an auto-hidden group (#64): it slides out and
+    /// the next hide check takes it back with the pointer elsewhere; a
+    /// docked group is left alone, a group already out stays out.
+    #[test]
+    fn a_shown_auto_hidden_group_is_taken_back_by_the_next_check() {
+        let mut docked = unit();
+        docked.request_show();
+        docked.auto_hide_frame(0.0, false, false, false, false);
+        assert!(!docked.out && docked.place == Place::Docked, "a docked group has no slide");
+        let mut d = unit();
+        d.pin();
+        assert!(d.auto_hidden());
+        d.request_show();
+        d.auto_hide_frame(0.0, false, false, false, false);
+        assert!(d.out, "shown at once");
+        for k in 1..14 {
+            d.auto_hide_frame(f64::from(k) * 0.016, false, false, false, false);
+        }
+        assert_eq!(d.slide, 1.0);
+        d.auto_hide_frame(0.5, false, false, false, false);
+        assert!(d.out, "not before the check's 700 ms");
+        d.auto_hide_frame(0.75, false, false, false, false);
+        assert!(!d.out, "taken back by the first check, nothing holding it");
+        // With the pointer on the pane, or the focus in it, it stays.
+        d.request_show();
+        d.auto_hide_frame(1.0, false, false, false, false);
+        d.auto_hide_frame(1.8, false, false, true, false);
+        d.auto_hide_frame(2.6, false, false, false, true);
+        assert!(d.out);
+        // The request is used once: asked while out it does not restart
+        // the timer.
+        d.request_show();
+        d.auto_hide_frame(2.7, false, false, false, false);
+        d.auto_hide_frame(3.35, false, false, false, false);
+        assert!(!d.out);
+        // A pin / hide drops a request not yet used.
+        d.request_show();
+        d.hide();
+        d.auto_hide_frame(4.0, false, false, false, false);
+        assert!(!d.out);
     }
 
     /// `FloatTab` (`0x1013a259`): a tab pulled out floats alone; the

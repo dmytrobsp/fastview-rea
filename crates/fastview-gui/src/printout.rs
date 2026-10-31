@@ -571,19 +571,25 @@ impl App {
             None if popup => [0; 4],
             None => [0, self.pane_canvas.len(), 0, self.pane_grid.len()],
         };
-        if let Some(&(pane, _)) = self.pane_canvas[c0..c1].iter().rev().find(|(_, r)| r.contains(p)) {
+        // A floating pane's window on top there: its own diagram or grid,
+        // else (caption, tab strip, toolbar) the press keeps the focus
+        // where it is — it is a window of its own, not the view under it.
+        let on_float = if slid.is_none() && !popup { crate::docking::UNITS.into_iter().find(|&u| top == Some(crate::views::floating_pane_layer(u))) } else { None };
+        let own = |pane: Pane| on_float.is_none_or(|u| self.docks.members(u).any(|m| m == pane));
+        if let Some(&(pane, _)) = self.pane_canvas[c0..c1].iter().rev().find(|(q, r)| own(*q) && r.contains(p)) {
             self.copy_focus = CopyFocus::Diagram(pane);
-        } else if self.pane_grid[g0..g1].iter().any(|r| r.contains(p)) {
+        } else if self.pane_grid[g0..g1].iter().any(|r| r.contains(p) && on_float.is_none_or(|u| self.docks[u].float_rect.is_some_and(|f| f.contains_rect(*r)))) {
             // The grid's group: the slid-out one, else the floating window
             // or docked group it lies in (floating ones over the docked).
             let floating = |u: crate::docking::Unit| self.docks[u].float_rect.filter(|_| self.docks[u].place == crate::docking::Place::Floating);
             let owner = slid
                 .or_else(|| crate::docking::UNITS.into_iter().find(|&u| floating(u).is_some_and(|r| r.contains(p))))
                 .or_else(|| crate::docking::UNITS.into_iter().find(|&u| self.dock_rects[u as usize].is_some_and(|r| r.contains(p))));
-            if let Some(u) = owner {
-                self.copy_focus = CopyFocus::Grid(u);
+            // The grid is its group's front pane's (circle or differential).
+            if let Some(pane) = owner.and_then(|u| self.panes.front(self.docks.members(u))) {
+                self.copy_focus = CopyFocus::Grid(pane);
             }
-        } else if slid.is_none() && self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
+        } else if slid.is_none() && on_float.is_none() && self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
             self.copy_focus = CopyFocus::View;
         }
     }

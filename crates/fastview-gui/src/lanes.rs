@@ -330,7 +330,7 @@ impl OscView<'_> {
                 // whatever the scroll position.
                 let end_x = (left + g::base_bar_len(s.len(), f, 1.0)).min(plot_right);
                 pp.rect_filled(Rect::from_min_max(Pos2::new(left, mid - 2.0), Pos2::new(end_x, mid + 2.0)), 0.0, Color32::from_rgb(150, 150, 255));
-                let fill = if r.selected(doc) { Color32::from_rgb(253, 219, 102) } else { digital_fill(&doc.osc.digital[*i].id) };
+                let fill = if r.selected(doc) { Color32::from_rgb(253, 219, 102) } else { digital_fill(doc.dig(*i).omp) };
                 let red = Color32::from_rgb(200, 0, 0);
                 // The painter's runs and transition ticks (`0x42a0f0`), x
                 // from leftW, GDI rectangles mid−6..mid+6.
@@ -944,8 +944,8 @@ fn paste_icon(p: &egui::Painter, at: Pos2, large: bool) {
 /// colour by place (L9.170).
 pub const DIGITAL_FILL: Color32 = Color32::from_rgb(255, 255, 100);
 
-fn digital_fill(id: &str) -> Color32 {
-    if crate::omp_ui::KZ_PHASES.contains(&id) {
+fn digital_fill(omp: bool) -> Color32 {
+    if omp {
         Color32::from_rgb(249, 175, 172)
     } else {
         DIGITAL_FILL

@@ -138,3 +138,26 @@ misbehaves and the better behaviour is obvious (the maintainer,
   not the RMS); the other bars are computed as the original does. Reason:
   the fundamental is 100 % of itself by definition; «100.0» is a rounding
   accident of the format's branch, not a choice.
+||||||| 2f98950
+- **The caption drag of a docked pane shows the move cursor (#90).** The
+  original floats a docked pane once the pointer is more than the system
+  drag distance (SM_CXDRAG / SM_CYDRAG, read once at start-up,
+  `0x1005a5fb`) from the press along an axis, wherever the pointer is
+  (`0x10086f3a`; clone at 100 %: 4 px stays docked, 5 px floats the pane
+  with the pointer still on it), and keeps the arrow cursor: the only
+  four-way move cursor in its docking code (`0x100d66dd`) is set in the
+  immediate, non-smart docking mode, which FastView does not use; the
+  clone showed the arrow at 0 / 3 / 4 / 5 px and, with the button held,
+  at 8 px (a reading under mouse capture, so the binary is the firmer
+  evidence). Ours floats at the same distance and shows the four-way move
+  cursor from the press on the caption (not on its pin or close buttons)
+  and while the pane is dragged, for a docked or a floating pane (an
+  auto-hidden pane's caption does nothing, so keeps the arrow); the left
+  button only. Reason: the maintainer's request (2026-10-30): the arrow
+  gave no hint that dragging on would pull the pane out of its dock.
+  The distance: ours grows it with the display scale (5 px at 125 %, 6 at
+  150 %), by the maintainer's decision; the original reads the system
+  metric once at start-up, and whether Windows scales that metric at a
+  scaled display was not checked, so this may be parity. (An earlier build
+  of ours also asked the pointer to leave the pane: a fix to match the
+  original, not an improvement.)

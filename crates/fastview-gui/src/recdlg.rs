@@ -352,6 +352,9 @@ impl Doc {
             }
             kept.push(crate::app::RawName { bytes, seen, alias });
         }
+        // The ОМП's flags are computed channels (bit 13): their shown name is
+        // the stored one, never re-decoded (`0x425960`, #66).
+        let flags: Vec<(usize, String)> = (0..self.osc.digital.len()).filter(|&k| self.dig(k).omp).map(|k| (k, self.osc.digital[k].id.clone())).collect();
         let mut it = names.into_iter();
         self.osc.station = it.next().unwrap_or_default();
         self.osc.device = it.next().unwrap_or_default();
@@ -360,6 +363,13 @@ impl Doc {
         }
         for c in &mut self.osc.digital {
             c.id = it.next().unwrap_or_default();
+        }
+        for (k, name) in flags {
+            let p = 2 + na + k;
+            if let Some(r) = kept.get_mut(p) {
+                *r = crate::app::RawName { bytes: name_bytes_of(&name, read, cp), seen: name.clone(), alias: true };
+            }
+            self.osc.digital[k].id = name;
         }
         self.name_raw = kept;
         // A pasted lane (bit 14) is re-decoded too — `0x425960` spares only

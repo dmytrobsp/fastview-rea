@@ -136,7 +136,8 @@ pub enum CopyFocus {
     Diagram(Pane),
     /// A circle / differential property grid (its untitled children are a
     /// scroll bar and a header, no diagram window): the document only. With
-    /// the group it lies in.
+    /// the pane that holds the grid, so that it loses the focus as the pane
+    /// closes.
     Grid(Pane),
     /// A group's pane window itself: its caption or its strip button
     /// pressed (`0x10086d23` / `0x10086f01`, `0x1005f612`).
@@ -1200,7 +1201,7 @@ impl Doc {
     /// carry bit 13 (`0x4245a0` → `0x425f90`), so the copy, its CMDUI and
     /// the rename treat them as computed channels (L9.188).
     pub fn dig_computed(&self, i: usize) -> bool {
-        self.osc.digital.get(i).is_some_and(|c| crate::omp_ui::KZ_PHASES.contains(&c.id.as_str()))
+        self.dig(i).omp
     }
 
     /// 32817..32819 (`FUN_0042f4b0`): when not every analog channel has the
@@ -1296,6 +1297,10 @@ pub struct DigFlags {
     /// A colour set by 33030 (`ch+0x140` / `ch+0x144`), else the table's by
     /// place.
     pub color: Option<egui::Color32>,
+    /// A flag the ОМП made (bit 13, `0x4245a0` from `0x42ead0`): found by
+    /// this, not by its name, since «Кодировка» shows it as stored while
+    /// the record's own names are re-decoded (#66).
+    pub omp: bool,
 }
 
 /// An undo/redo entry: the record's data model (`doc+0x180 … 0x27f`,
@@ -1472,6 +1477,15 @@ pub struct App {
     pub dock_drag_hold: bool,
     pub dock_areas: [Option<egui::Rect>; 4],
     pub dock_strips: [Option<egui::Rect>; 4],
+    /// What each pinned group's strip buttons saw this frame.
+    pub strip_hits: [crate::views::StripHit; 4],
+    /// The width / height of the strips on the left, right, top and bottom
+    /// edges this frame (0: none): the ribbon, bars and status row make
+    /// room for them.
+    pub strip_inset: [f32; 4],
+    /// Each slid-out group's divider rect, and whether it is being dragged.
+    pub dock_dividers: [Option<egui::Rect>; 4],
+    pub divider_drag: [bool; 4],
     pub skin: Skin,
     pub time_unit: TimeUnit,
     pub show_grid: bool,
@@ -1734,6 +1748,10 @@ impl App {
             dock_drag_hold: false,
             dock_areas: [None; 4],
             dock_strips: [None; 4],
+            strip_hits: Default::default(),
+            strip_inset: [0.0; 4],
+            dock_dividers: [None; 4],
+            divider_drag: [false; 4],
             skin: Skin::Blue,
             time_unit: TimeUnit::Milli,
             show_grid: true,
@@ -1935,6 +1953,13 @@ impl App {
         }
     }
 
+    /// The ribbon's check on a pane's button: shown docked or floating — an
+    /// auto-hidden pane's never checks, slid out or not (VM, `0x475040`
+    /// asks the pane's window).
+    pub fn pane_checked(&self, p: Pane) -> bool {
+        self.panes.visible(p) && !self.docks[self.docks.host(p)].auto_hidden()
+    }
+
     // ---------- command dispatch ----------
     pub fn dispatch(&mut self, cmd: Command) {
         let mark = crate::setfile::marks_modified(&cmd).then_some(self.active).flatten();
@@ -2007,8 +2032,18 @@ impl App {
             // shows; hiding the front tab brings the nearest visible one on
             // its right in the strip, else on its left (`0x10067f1f`).
             Command::TogglePane(p) => {
-                let on = !self.panes.visible(p);
                 let host = self.docks.host(p);
+                // An auto-hidden pane is shown, never hidden, by the toggle
+                // (`0x10089800`, VM: in or out it stays in its strip; its
+                // ribbon button never checks): its group slides out with
+                // it in front, the next hide check takes it back.
+                if self.docks[host].auto_hidden() {
+                    self.panes.set(p, true);
+                    self.dispatch(Command::ActivatePane(p));
+                    self.docks[host].request_show();
+                    return;
+                }
+                let on = !self.panes.visible(p);
                 let strip: Vec<Pane> = self.tab_order.into_iter().filter(|&q| self.docks.host(q) == host).collect();
                 let was_front = self.panes.front(strip.iter().copied()) == Some(p);
                 self.panes.set(p, on);

@@ -48,8 +48,8 @@ fn trig_conversion_order_is_bit_exact() {
     // 1.5, 2.3, 3.0, 4.6 round differently under v*(pi/180) (to_radians).
     for v in [1.5f64, 2.3, 3.0, 4.6, 30.0, 33.3, 45.0, 89.9, 123.456] {
         let r = v * std::f64::consts::PI / 180.0;
-        assert_eq!(ev(&format!("sin:({v})")), r.sin());
-        assert_eq!(ev(&format!("cos:({v})")), r.cos());
+        assert_eq!(ev(&format!("sin:({v})")), fvb_core::trig::sin(r));
+        assert_eq!(ev(&format!("cos:({v})")), fvb_core::trig::cos(r));
         assert_eq!(ev(&format!("tg:({v})")), r.tan());
         assert_eq!(ev(&format!("ctg:({v})")), 1.0 / r.tan());
     }

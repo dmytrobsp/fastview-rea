@@ -148,7 +148,16 @@ fn tip(ui: &egui::Ui, r: &egui::Response, at: Pos2, img: TipImage, title: &str, 
         ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait));
         return;
     }
+    // The visible tip's owner, for the auto-hide check (`0x10087a4a`).
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_tip_anchor"), (r.rect, pass)));
     paint(ctx, at, img, title, desc, bold_title, inset);
+}
+
+/// The rect of the element whose tooltip is up, when one was painted this
+/// frame or the last.
+pub fn visible_anchor(ctx: &egui::Context) -> Option<egui::Rect> {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<(egui::Rect, u64)>(egui::Id::new("fv_tip_anchor"))).and_then(|(r, p)| (p + 1 >= pass).then_some(r))
 }
 
 /// Words of `text` in lines no wider than `max` (a single longer word on
