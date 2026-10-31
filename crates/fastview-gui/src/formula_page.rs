@@ -30,9 +30,15 @@ const FRM_FILTER: &str = "Вычисляемые каналы FastView (*.frm)";
 impl App {
     /// The page's copy of the record's formula channels (`0x485e30`).
     pub fn formula_page_open(&mut self) {
+        // The definitions: the formula channels' own, then the rows kill-active kept without a channel.
         let rows = self
             .active_doc()
-            .map(|d| d.computed.iter().filter(|c| crate::setfile::is_formula(c)).map(|c| (c.name.clone(), c.formula.clone())).collect())
+            .map(|d| {
+                let mut rows: Vec<(String, String)> = d.computed.iter().filter(|c| crate::setfile::is_formula(c)).map(|c| (c.name.clone(), c.formula.clone())).collect();
+                let loose = d.loose_defs.iter().filter(|(n, _)| !rows.iter().any(|r| r.0 == *n)).cloned().collect::<Vec<_>>();
+                rows.extend(loose);
+                rows
+            })
             .unwrap_or_default();
         self.formula_page = FormulaPage { rows, ..Default::default() };
     }
@@ -84,12 +90,27 @@ impl App {
         }
     }
 
-    /// Kill-active (`0x486d20`): end the edit and update. (The original also
-    /// writes the copy into the record's definition list without computing
-    /// it; ours computes only on «Рассчитать».)
+    /// Kill-active (`0x486d20`): end the edit and update; with the list
+    /// changed the copy is written into the record's definition list without
+    /// computing it (#31): a channel of a row's name takes the row's formula
+    /// text and keeps its values until the next calculation, the other rows
+    /// are kept as definitions without a channel.
     pub fn fp_kill_active(&mut self) {
         self.fp_commit_edit();
         self.fp_update();
+        if !self.formula_page.dirty {
+            return;
+        }
+        let rows = self.formula_page.rows.clone();
+        let Some(d) = self.active_doc_mut() else { return };
+        let mut loose = Vec::new();
+        for (name, formula) in rows {
+            match d.computed.iter_mut().find(|c| c.name == name && crate::setfile::is_formula(c)) {
+                Some(c) => c.formula = formula,
+                None => loose.push((name, formula)),
+            }
+        }
+        d.loose_defs = loose;
     }
 
     /// ↑ (`0x487210`) / ↓ (`0x4873a0`): move the selected row, keep it selected.
@@ -196,6 +217,8 @@ impl App {
                 }
             }
         }
+        // The rows are channels now.
+        d.loose_defs.clear();
         // `0x415b9a`: the batch done, groups whose member is gone dissolve.
         d.prune_groups();
         d.channels_changed();

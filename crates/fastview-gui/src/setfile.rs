@@ -407,6 +407,17 @@ impl Doc {
     /// an element already naming a missing channel goes; the hot element
     /// is cleared. Returns whether any channel went.
     pub fn removing_channels(&mut self, remove: impl FnOnce(&mut Doc)) -> bool {
+        self.removing_channels_inner(remove, false)
+    }
+
+    /// The sweep alone (`0x440800`), as the rollback of a failed quick analysis runs it after deleting the channels
+    /// it had added (`0x416f1b`, `0x42ecf0` per name; #31): the batch's channels are never added in ours, so only
+    /// the sweep is left.
+    pub fn sweep_review_list(&mut self) {
+        self.removing_channels_inner(|_| {}, true);
+    }
+
+    fn removing_channels_inner(&mut self, remove: impl FnOnce(&mut Doc), force: bool) -> bool {
         let before = (self.computed.len(), self.osc.digital.len());
         let names: Vec<Vec<String>> = self
             .comments
@@ -418,7 +429,7 @@ impl Doc {
             })
             .collect();
         remove(self);
-        if (self.computed.len(), self.osc.digital.len()) == before {
+        if !force && (self.computed.len(), self.osc.digital.len()) == before {
             return false;
         }
         // The places behind the removed ones moved (`0x42b5f0`).

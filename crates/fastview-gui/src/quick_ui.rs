@@ -331,7 +331,7 @@ impl App {
         // (`0x411c70`, CB_FINDSTRINGEXACT): Ia… Uc, Uab / Ubc, 3I0 / 3U0;
         // a name the record lacks shows «Канал отсутствует» at the top
         // (3Ion «Не учитывать»); Uни / Uик take the first channel.
-        let all: Vec<String> = d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect();
+        let all: Vec<String> = d.quick_names();
         let found = |want: &str| all.iter().find(|n| n.to_lowercase() == want).cloned();
         let named = |want: &str| found(want).unwrap_or_else(|| NO_CHANNEL.to_string());
         let (ua, ub, uc) = (named("ua"), named("ub"), named("uc"));
@@ -527,7 +527,7 @@ impl App {
         }
         self.quick_shown[k] = true;
         let Some(d) = self.active.and_then(|i| self.docs.get_mut(i)) else { return };
-        let items: Vec<String> = d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect();
+        let items: Vec<String> = d.quick_names();
         let sec = d.set.tree.section_mut(PAGE_KEYS[k]);
         if k < 5 {
             load_page(k, &mut self.quick[k], sec, &items);
@@ -573,8 +573,7 @@ impl App {
     pub fn quick_tab_ui(&mut self, ui: &mut egui::Ui, origin: egui::Pos2) {
         self.quick_defaults();
         let Some(d) = self.active_doc() else { return };
-        let names: Vec<String> =
-            d.osc.analog.iter().map(|c| c.id.clone()).chain(d.computed.iter().map(|c| c.name.clone())).collect();
+        let names: Vec<String> = d.quick_names();
         let tab = self.analysis_tab;
         let Some(i) = page_index(tab) else { return };
         let f = &mut self.quick[i];

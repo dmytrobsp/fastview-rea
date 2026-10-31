@@ -797,6 +797,10 @@ pub struct Doc {
     /// Pasted channels waiting for «Объединить» (bit 14) and their offset in
     /// seconds (`doc+0x6d8`).
     pub pending: Vec<ClipChan>,
+    /// Definitions of the «Редактор формул» list that have no channel (kill-active `0x486d20` writes the page's
+    /// whole list into the record's definitions without computing it, #31): a row added or loaded and not yet
+    /// calculated. A formula channel's own `formula` is its definition.
+    pub loose_defs: Vec<(String, String)>,
     pub merge_offset: f64,
     /// Shown flag of each digital channel (bit 0; «Каналы» dialog column 1; 32845 / 32846 / 32847).
     pub digital_visible: Vec<bool>,
@@ -898,6 +902,7 @@ impl Doc {
             read_enc: Encoding::Cp1251,
             omp: Default::default(),
             pending: Vec::new(),
+            loose_defs: Vec::new(),
             merge_offset: 0.0,
             set: Default::default(),
             undo: Vec::new(),
@@ -969,6 +974,18 @@ impl Doc {
                 dch.samples.iter_mut().for_each(|v| *v = !*v);
             }
         }
+    }
+
+    /// What the quick-analysis pages' channel combos list (L9.151): the file's analog channels, the computed ones,
+    /// and the formula editor's definitions that have no channel yet (#31).
+    pub fn quick_names(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.osc.analog.iter().map(|c| c.id.clone()).chain(self.computed.iter().map(|c| c.name.clone())).collect();
+        for (n, _) in &self.loose_defs {
+            if !v.contains(n) {
+                v.push(n.clone());
+            }
+        }
+        v
     }
 
     /// The batch `0x415780` over the record's formula channels (merged and
@@ -2991,9 +3008,22 @@ impl App {
     /// reference / show-values and the circle readout, and remember the
     /// differential pairs.
     pub fn apply_quick(&mut self, g: &fvb_core::quick::Generated) {
-        let Some(names) = self.append_computed(&g.channels) else {
+        // The batch `0x415780` runs over the record's whole definition list, the formula editor's rows that have
+        // no channel yet included (#31): they become channels in front of the page's own.
+        let loose = self.active_doc().map(|d| d.loose_defs.clone()).unwrap_or_default();
+        let batch: Vec<(String, String)> = loose.iter().cloned().chain(g.channels.iter().cloned()).collect();
+        let Some(names) = self.append_computed(&batch) else {
+            // The original has added the batch's channels by then and deletes them again when the recompute fails
+            // (`0x416f1b`), each deletion sweeping the review list (`0x42ecf0`, #31).
+            if let Some(d) = self.active_doc_mut().filter(|_| !batch.is_empty()) {
+                d.sweep_review_list();
+            }
             return;
         };
+        let names = names[loose.len().min(names.len())..].to_vec();
+        if let Some(d) = self.active_doc_mut() {
+            d.loose_defs.clear();
+        }
         // Map generated names to the names actually given; a name generated
         // twice is its first line's (the original uniq's the flag and pair
         // names against the state before the batch, `0x41699d`).
@@ -4204,5 +4234,72 @@ mod tests {
         let _ = ctx.run(enter_key(), |ctx| app.record_dialogs_ui(ctx));
         assert!(!app.show_file_params, "Enter closed the dialog");
         assert!(crate::app::stale_flags::swept(&app));
+    }
+
+    /// #31 / L9.56: leaving the formula editor (kill-active `0x486d20`) writes the page's list into the record's
+    /// definitions without computing it: a channel keeps its values under the new formula text, a row without a
+    /// channel is kept as a definition (the page, the pages' combos), and the next calculation of any page
+    /// evaluates it (L9.151).
+    #[test]
+    fn leaving_the_formula_editor_writes_the_definitions() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        let values = app.active_doc().unwrap().computed[0].samples.clone();
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.rows[0].1 = "Ub*3".into();
+        app.formula_page.dirty = true;
+        app.fp_add_row("Z1".into(), "X+1".into());
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.computed[0].formula, "Ua*2", "nothing written before kill-active");
+        assert!(d.loose_defs.is_empty());
+        app.fp_kill_active();
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.computed[0].formula, "Ub*3", "the definition changed");
+        assert_eq!(d.computed[0].samples, values, "without a recompute");
+        assert_eq!(d.loose_defs, [("Z1".to_string(), "X+1".to_string())]);
+        assert!(d.quick_names().contains(&"Z1".to_string()), "the pages' combos list the row");
+        assert!(!d.computed.iter().any(|c| c.name == "Z1"));
+        // «Отмена», then a new sheet: the page shows the definitions.
+        app.quick_open = false;
+        app.dispatch(Command::QuickAnalysis);
+        assert_eq!(app.formula_page.rows, [("X".to_string(), "Ub*3".to_string()), ("Z1".to_string(), "X+1".to_string())]);
+        // Another page's calculation evaluates the whole list (`0x415780`): the row becomes a channel.
+        let g = fvb_core::quick::Generated { channels: vec![("Z2".into(), "Z1*2".into())], ..Default::default() };
+        app.apply_quick(&g);
+        let d = app.active_doc().unwrap();
+        let names: Vec<_> = d.computed.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["X", "Z1", "Z2"]);
+        assert!(d.loose_defs.is_empty());
+    }
+
+    /// #31 / L9.201: a quick analysis whose recompute fails deletes the channels it added through `0x42ecf0`, which
+    /// sweeps the review list: an element naming a missing channel goes, the hot element is reset.
+    #[test]
+    fn a_failed_quick_analysis_sweeps_the_review_list() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        let d = app.active_doc_mut().unwrap();
+        let kept = fvb_core::recset::CommentRec {
+            kind: fvb_core::recset::CommentKindRec::Level { channel: "Нет".into(), y: 0.0, from: 0, to: 1 },
+            text: String::new(),
+            locked: false,
+            visible: true,
+        };
+        d.comments = vec![crate::comments::Comment { kind: crate::comments::CommentKind::Kept(Box::new(kept)), text: String::new(), locked: false, hidden: false }];
+        d.comment_hot = Some(0);
+        d.computed[0].formula = "Нет*2".into();
+        let g = fvb_core::quick::Generated { channels: vec![("Y".into(), "Ub*2".into())], ..Default::default() };
+        app.apply_quick(&g);
+        let d = app.active_doc().unwrap();
+        assert!(app.dlg.alert().is_some(), "the box");
+        assert!(d.comments.is_empty(), "swept");
+        assert_eq!(d.comment_hot, None);
+        // Nothing added, nothing deleted: no sweep.
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.comments = vec![crate::comments::Comment { kind: crate::comments::CommentKind::Moment { pos: 1 }, text: String::new(), locked: false, hidden: false }];
+        d.comment_hot = Some(0);
+        app.apply_quick(&fvb_core::quick::Generated::default());
+        assert_eq!(app.active_doc().unwrap().comment_hot, Some(0));
     }
 }
