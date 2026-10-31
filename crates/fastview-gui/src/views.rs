@@ -48,6 +48,12 @@ impl App {
         self.dock_drag_frame(ctx);
         self.pane_menu_frame(ctx);
         self.diagram_overlays(ctx);
+        for &(p, r) in &self.pane_canvas {
+            match self.canvas_memo.iter_mut().find(|(q, _)| *q == p) {
+                Some(m) => m.1 = r,
+                None => self.canvas_memo.push((p, r)),
+            }
+        }
         // The circle / differential state stays the last activated one's.
         self.switch_diagram(match self.panes.active {
             Pane::Circle | Pane::Differential => pane_dim(self.panes.active),
@@ -280,6 +286,12 @@ impl App {
                     // An id per pane: the drag follows the tab when it moves.
                     let (rect, _) = ui.allocate_exact_size(egui::vec2(g.size().x + crate::dpi::s(12.0), strip_h - 4.0), egui::Sense::hover());
                     let r = ui.interact(rect, ui.id().with(("fv_pane_tab", p as u8)), egui::Sense::click_and_drag());
+                    // A press on a tab (either button, the front one too)
+                    // gives the group's pane the focus (clone: the tab
+                    // control focuses the pane it shows).
+                    if r.hovered() && ui.input(|i| i.pointer.primary_pressed() || i.pointer.secondary_pressed()) {
+                        self.copy_focus = crate::app::CopyFocus::Pane(v.unit);
+                    }
                     let pnt = ui.painter();
                     if on {
                         crate::lanes::gradient(pnt, rect, egui::Color32::from_rgb(224, 233, 246), egui::Color32::from_rgb(247, 251, 255));
@@ -369,7 +381,8 @@ impl App {
         // A press on the caption gives the pane the focus (its
         // WM_LBUTTONDOWN `0x10086d23`: SetFocus on the pane or its one
         // child window; WM_RBUTTONDOWN `0x10086f01`: on the pane).
-        if act.pressed {
+        // (Not in a floating window under a modal dialog: it is disabled.)
+        if act.pressed && !(place == Place::Floating && self.modal_up) {
             self.copy_focus = crate::app::CopyFocus::Pane(v.unit);
         }
         let ctx = ui.ctx().clone();
@@ -601,7 +614,8 @@ impl App {
         let resp = egui::Window::new(pane_title(v.front))
             .id(floating_pane_id(unit))
             .title_bar(false)
-            .resizable(true)
+            .interactable(!self.modal_up)
+            .resizable(!self.modal_up)
             .collapsible(false)
             .current_pos(r.min)
             .default_size(r.size())
@@ -609,6 +623,14 @@ impl App {
             .show(ctx, |ui| {
                 ui.set_min_size(ui.available_size());
                 self.unit_body(ui, v);
+                // MFC's frame disables its floating windows while a modal
+                // dialog is up (clone: «Каналы» open, the mini-frame reads
+                // as disabled): a widget over the whole window, the last
+                // of its layer, takes every click and drag (an egui
+                // disabled window would fade).
+                if self.modal_up {
+                    ui.interact(ui.max_rect(), ui.id().with("fv_float_disabled"), egui::Sense::click_and_drag());
+                }
             });
         if let Some(resp) = resp {
             // Its size as the user leaves it; the position the caption sets.
@@ -764,10 +786,15 @@ impl App {
         // group closed or auto-hidden and in its strip (Windows hands a
         // hidden window's focus to its parent, the frame passes it on to
         // the view).
+        // A pane of a tabbed group keeps the focus window it was when it
+        // or its group hides (clone: GetFocus still names the hidden pane
+        // after the ribbon toggle or the caption «×»); only a group slid
+        // back into its strip takes it off.
         if let Some(g) = self.focus_group() {
             let d = self.docks[g];
-            let pane_closed = matches!(self.copy_focus, crate::app::CopyFocus::Diagram(p) | crate::app::CopyFocus::Grid(p) if !self.panes.visible(p));
-            if pane_closed || !views.iter().any(|v| v.unit == g) || (d.place == Place::AutoHide && !d.out && d.slide == 0.0) {
+            let tabbed = self.docks.members(g).count() > 1;
+            let hidden = !views.iter().any(|v| v.unit == g);
+            if (hidden && !tabbed) || (d.place == Place::AutoHide && !d.out && d.slide == 0.0) {
                 self.copy_focus = crate::app::CopyFocus::View;
             }
         }
@@ -1076,6 +1103,11 @@ impl App {
         let ctx = ui.ctx();
         let (released, pos) = ctx.input(|i| (i.pointer.primary_released(), i.pointer.latest_pos()));
         if !released || !pos.is_some_and(|p| ui.max_rect().contains(p)) || !egui::DragAndDrop::has_payload_of_type::<crate::lanes::ChanDrag>(ctx) {
+            return;
+        }
+        // The window under the pointer takes the drop: not a diagram that a
+        // floating or slid-out window lies over (clone).
+        if pos.is_some_and(|p| ctx.layer_id_at(p).is_some_and(|l| l != ui.layer_id() && (is_floating_pane_layer(l) || slid_pane_unit(l).is_some()))) {
             return;
         }
         let Some(drag) = egui::DragAndDrop::take_payload::<crate::lanes::ChanDrag>(ctx) else { return };
@@ -1841,6 +1873,17 @@ pub fn floating_pane_layer(unit: crate::docking::Unit) -> egui::LayerId {
 /// dialog).
 pub fn is_floating_pane_layer(l: egui::LayerId) -> bool {
     crate::docking::UNITS.into_iter().any(|u| l == floating_pane_layer(u))
+}
+
+/// The group whose slid-out window `l` is (it lies over the view like a
+/// floating one).
+pub fn slid_pane_unit(l: egui::LayerId) -> Option<crate::docking::Unit> {
+    crate::docking::UNITS.into_iter().find(|&u| l == egui::LayerId::new(egui::Order::Foreground, egui::Id::new(("fv_slide", u))))
+}
+
+/// Whether `l` is a slid-out auto-hidden group's window.
+pub fn is_slid_pane_layer(l: egui::LayerId) -> bool {
+    slid_pane_unit(l).is_some()
 }
 
 fn pane_dim(p: Pane) -> fvb_core::model::Dimension {
