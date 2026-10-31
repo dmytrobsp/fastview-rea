@@ -360,9 +360,10 @@ impl Doc {
                 let bytes = if matches!(read, Encoding::Cp1251 | Encoding::Cp866) { name_bytes_of(f, read, from) } else { comtrade::encode_text(&self.file_key(p - 2), Encoding::Cp1251) };
                 (bytes, false, true)
             } else {
-                let bytes = name_bytes_of(n, read, from);
-                let alias = decode_name(&bytes, read, from) != *n;
-                (bytes, !alias, alias)
+                // As every site that makes a raw name from a shown one: a
+                // best-fitted pseudo-graphic is the 866 byte it was read as.
+                let r = added_name(n, shown_bytes_of(n, read, from), read, from);
+                (r.bytes, !r.alias, r.alias)
             });
         }
         let decode = |b: &[u8]| -> String { decode_name(b, read, cp) };
@@ -1426,6 +1427,22 @@ mod tests {
             d.set_codepage(cp);
         }
         assert_eq!(d.osc.station, "Ї станція");
+    }
+
+    /// The same fallback for a name shown in 866 holding a best-fitted
+    /// pseudo-graphic: it is re-decoded from the 866 byte it was read as,
+    /// not kept as typed (final review, Minor 3).
+    #[test]
+    fn an_out_of_step_name_with_a_pseudo_graphic_is_decoded_from_its_866_byte() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.init_record_text(Encoding::Cp1251);
+        d.init_set_keys();
+        d.set_codepage(Encoding::Cp866);
+        d.osc.station = "A¦".into();
+        d.name_raw.clear();
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.osc.station, "Aі", "the byte 0xB3 read in 1251");
     }
 
     /// A channel appended past the kept names (`move_appended_keys`, merge)
