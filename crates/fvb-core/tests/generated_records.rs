@@ -7,9 +7,35 @@
 
 use fvb_core::comtrade::{self, Encoding};
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+/// The fixtures are compiled into the test executable and written to a folder of the system's temporary
+/// directory on first use, so that an executable cross-built on one machine (a Windows test executable run
+/// on a clone) runs as it is: no path of the build machine is looked up at run time.
+const FIXTURES: &[(&str, &str, &[u8])] = &[
+    ("a", "a.cfg", include_bytes!("data/generated/a/a.cfg")),
+    ("a", "a.dat", include_bytes!("data/generated/a/a.dat")),
+    ("a", "a.hdr", include_bytes!("data/generated/a/a.hdr")),
+    ("b", "b.CFG", include_bytes!("data/generated/b/b.CFG")),
+    ("b", "b.DAT", include_bytes!("data/generated/b/b.DAT")),
+    ("c", "c.cfg", include_bytes!("data/generated/c/c.cfg")),
+    ("c", "c.dat", include_bytes!("data/generated/c/c.dat")),
+    ("c", "c.hdr", include_bytes!("data/generated/c/c.hdr")),
+    ("d", "d.cfg", include_bytes!("data/generated/d/d.cfg")),
+    ("d", "d.dat", include_bytes!("data/generated/d/d.dat")),
+];
 
 fn fixture(dir: &str, file: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/generated").join(dir).join(file)
+    static ROOT: OnceLock<PathBuf> = OnceLock::new();
+    let root = ROOT.get_or_init(|| {
+        let root = std::env::temp_dir().join(format!("fvb-generated-records-{}", std::process::id()));
+        for (d, f, bytes) in FIXTURES {
+            std::fs::create_dir_all(root.join(d)).unwrap();
+            std::fs::write(root.join(d).join(f), bytes).unwrap();
+        }
+        root
+    });
+    root.join(dir).join(file)
 }
 
 /// 2013, BOM, ASCII, samples over the whole float32 range, a tiny `a`, a name cut by U+FFFD.
