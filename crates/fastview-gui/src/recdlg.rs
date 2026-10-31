@@ -360,9 +360,10 @@ impl Doc {
                 let bytes = if matches!(read, Encoding::Cp1251 | Encoding::Cp866) { name_bytes_of(f, read, from) } else { comtrade::encode_text(&self.file_key(p - 2), Encoding::Cp1251) };
                 (bytes, false, true)
             } else {
-                let bytes = name_bytes_of(n, read, from);
-                let alias = decode_name(&bytes, read, from) != *n;
-                (bytes, !alias, alias)
+                // As every site that makes a raw name from a shown one: a
+                // best-fitted pseudo-graphic is the 866 byte it was read as.
+                let r = added_name(n, shown_bytes_of(n, read, from), read, from);
+                (r.bytes, !r.alias, r.alias)
             });
         }
         let decode = |b: &[u8]| -> String { decode_name(b, read, cp) };
@@ -1384,13 +1385,11 @@ mod tests {
     /// 1251 lacks («√», «ä») is not an alias.
     #[test]
     fn a_name_a_utf8_record_holds_is_not_an_alias() {
-        for shown in [Encoding::Utf8, Encoding::Cp1251, Encoding::Cp866] {
+        // Shown in 1251 / UTF-8 the name is the bytes as read (shown in 866 it is the OEM view, the next test).
+        for shown in [Encoding::Utf8, Encoding::Cp1251] {
             let name = "Струм √ ä";
             let bytes = name_bytes_of(name, Encoding::Utf8, shown);
-            // Shown in 1251 / UTF-8 the name is the bytes as read.
-            if shown != Encoding::Cp866 {
-                assert!(!added_name(name, bytes, Encoding::Utf8, shown).alias, "{shown:?}");
-            }
+            assert!(!added_name(name, bytes, Encoding::Utf8, shown).alias, "{shown:?}");
         }
     }
 
@@ -1426,6 +1425,22 @@ mod tests {
             d.set_codepage(cp);
         }
         assert_eq!(d.osc.station, "Ї станція");
+    }
+
+    /// The same fallback for a name shown in 866 holding a best-fitted
+    /// pseudo-graphic: it is re-decoded from the 866 byte it was read as,
+    /// not kept as typed (final review, Minor 3).
+    #[test]
+    fn an_out_of_step_name_with_a_pseudo_graphic_is_decoded_from_its_866_byte() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.init_record_text(Encoding::Cp1251);
+        d.init_set_keys();
+        d.set_codepage(Encoding::Cp866);
+        d.osc.station = "A¦".into();
+        d.name_raw.clear();
+        d.set_codepage(Encoding::Cp1251);
+        assert_eq!(d.osc.station, "Aі", "the byte 0xB3 read in 1251");
     }
 
     /// A channel appended past the kept names (`move_appended_keys`, merge)

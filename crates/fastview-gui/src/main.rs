@@ -4608,6 +4608,66 @@ mod window_tests {
         }
     }
 
+    /// A slid-out auto-hidden pane is a child of the frame, which a modal
+    /// dialog disables, and the dialog lies above it: the pane takes no
+    /// input under the dialog (its caption «×», its pin, the divider) and
+    /// does not cover it (final review, Important 1; #113).
+    #[test]
+    fn a_slid_out_pane_takes_no_input_while_a_dialog_is_up() {
+        use app::{CopyFocus, Pane};
+        use docking::{Edge, Spot, Unit};
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Right, outer: true };
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+        w.idle(30);
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).map(|(_, r)| *r).expect("the slid-out diagram");
+        // A press in its diagram: it holds the focus, so it stays out.
+        w.press(Primary, canvas.center(), canvas.center());
+        assert_eq!(w.app.copy_focus, CopyFocus::Diagram(Pane::Vector));
+        let away = w.app.view_rects.expect("the view").0.left_top() + Vec2::new(40.0, 40.0);
+        w.run(vec![egui::Event::PointerMoved(away)]);
+        w.idle(5);
+        w.app.color_dialog = Some(egui::Color32::RED);
+        w.idle(3);
+        assert!(w.app.modal_up);
+        assert!(w.app.docks[Unit::Vector].out, "the pane is still out under the dialog");
+        let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+        let close = Pos2::new(area.right() - dpi::s(11.0), area.top() + dpi::s(10.0));
+        let dialog = w.ctx.memory(|m| m.area_rect(egui::Id::new("Цвета"))).expect("the colour dialog");
+        // Wherever the dialog lies, it is the window on top there.
+        for at in [dialog.center(), Pos2::new(dialog.right() - 3.0, dialog.top() + 3.0)] {
+            let layer = w.ctx.layer_id_at(at).expect("a layer");
+            assert!(!crate::views::is_slid_pane_layer(layer), "{at:?}: the dialog is above the slid-out pane");
+        }
+        w.press(Primary, close, close);
+        assert!(w.app.panes.visible(Pane::Vector), "a press on the pane's caption button does nothing");
+        let top = w.ctx.memory(|m| m.areas().top_layer_id(egui::Order::Middle));
+        assert_eq!(top.map(|l| l.id), Some(egui::Id::new("Цвета")), "the dialog stays on top");
+        // Its divider takes no drag either.
+        // A point of it clear of the dialog (the dialog lies over its middle).
+        let strip = w.app.dock_dividers[Unit::Vector as usize].expect("its divider");
+        let div = [strip.top() + 30.0, strip.bottom() - 30.0].into_iter().map(|y| Pos2::new(strip.center().x, y)).find(|p| !dialog.contains(*p)).expect("a divider point clear of the dialog");
+        let extent = w.app.docks[Unit::Vector].slide_extent;
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(div)]);
+        w.run(vec![ev(div, true)]);
+        w.run(vec![egui::Event::PointerMoved(div - Vec2::new(60.0, 0.0))]);
+        w.run(vec![egui::Event::PointerMoved(div - Vec2::new(120.0, 0.0))]);
+        w.idle(2);
+        w.run(vec![ev(div - Vec2::new(120.0, 0.0), false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].slide_extent, extent, "a drag of the divider does nothing");
+        // The dialog gone, the same press closes the pane.
+        w.app.color_dialog = None;
+        w.idle(3);
+        w.press(Primary, close, close);
+        w.idle(30);
+        assert!(!w.app.panes.visible(Pane::Vector), "the dialog gone, the caption button works");
+    }
+
     /// MFC's frame disables its floating windows while a modal dialog is up
     /// (clone: «Каналы» open, the floating pane's mini-frame reads as
     /// disabled): a press, a double-click or a drag on the floating pane's
@@ -4923,12 +4983,9 @@ mod window_tests {
             w.app.dispatch(Command::Demo);
             w.idle(2);
             assert_eq!(w.app.copy_focus, CopyFocus::View, "{before:?}: opened");
-            // A file dialog closed unanswered leaves it (clone).
-            w.app.copy_focus = before;
-            let _ = dialogs::file_dialog();
-            w.idle(2);
-            assert_eq!(w.app.copy_focus, before, "{before:?}: a file dialog");
-            // And nothing else does it.
+            // Nothing else does it. (A system file dialog closed
+            // unanswered leaves the focus where it was, clone; it cannot be
+            // driven headless, so the rule is not tested here.)
             w.app.copy_focus = before;
             w.idle(3);
             assert_eq!(w.app.copy_focus, before, "{before:?}: left alone");
@@ -5350,9 +5407,6 @@ mod window_tests {
     /// the call pinned here.
     #[test]
     fn make_app_passes_the_system_dpi_to_the_chrome() {
-        // `make_app` takes the chrome's dpi from GetDpiForSystem
-        // (`system_dpi_scale`) before the monitor's scale; its source line is
-        // the call pinned here.
         let src = include_str!("main.rs");
         assert!(src.contains(concat!("start_scaling(DEVICE_PIXELS, ctx, scale, ", "system_dpi_scale());")));
     }

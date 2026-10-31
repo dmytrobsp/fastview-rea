@@ -2165,7 +2165,7 @@ mod tests {
     /// Отмена and are above them: a press on the hidden rows reaches the
     /// grid, one below its bottom edge the button.
     #[test]
-    fn the_grid_covers_the_top_of_ok_and_cancel_at_150_percent() {
+    fn the_grid_covers_the_top_of_ok_and_cancel_at_125_and_150_percent() {
         // 150 %: OK at 310 DLU × 254 DLU is x 698.., y 603..636 and the grid
         // ends on 618 (15 rows hidden); 125 %: x 543.., y 508..536, the grid
         // ends on 510 (2 rows hidden).
