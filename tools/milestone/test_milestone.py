@@ -234,6 +234,20 @@ class MilestoneTest(unittest.TestCase):
         self.assertEqual(git(self.repo, "rev-list", "--parents", "-n1", new).split()[1], old)
         self.assertEqual(len(git(self.repo, "rev-list", "--parents", "-n1", new).split()), 3)
 
+    def test_gate_merge_carries_the_coauthor_trailer(self):
+        self.start()
+        wt = self.add("fix-2")
+        commit_file(wt, "v.txt", "v\n")
+        os.environ["FV_COAUTHOR"] = "Claude Test <noreply@anthropic.com>"
+        try:
+            code, _, _ = self.run_cli("gate", "trial", "fix-2")
+        finally:
+            del os.environ["FV_COAUTHOR"]
+        self.assertEqual(code, 0)
+        msg = git(self.repo, "log", "-1", "--format=%B", "milestone/trial")
+        self.assertIn("Merge branch 'm/trial/fix-2' into milestone/trial", msg)
+        self.assertTrue(msg.rstrip().endswith("Co-Authored-By: Claude Test <noreply@anthropic.com>"))
+
     def test_gate_conflict_aborts(self):
         gate = self.start()
         wt = self.add("fix-1")

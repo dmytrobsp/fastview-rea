@@ -10,7 +10,8 @@ Commands:
   rm NAME UNIT [--delete-branch]   remove that worktree with its build output (the branch only if merged)
   end NAME                         remove the gate worktree once no unit worktree is left
   ls [NAME]                        the worktrees with their size in GB, then the free GB
-  gate NAME UNIT                   merge --no-ff the unit into the clean gate; prints `old SHA`, then `new SHA`
+  gate NAME UNIT                   merge --no-ff the unit into the clean gate; prints `old SHA`, then `new SHA`;
+                                   with FV_COAUTHOR set, the merge message ends with that Co-Authored-By trailer
   ungate NAME                      reset the clean gate to origin/milestone/NAME (a red gate, before its push)
 Global option: --repo PATH (the repository to work on; default: the one this script lives in).
 Exit codes: 0 done, 2 refused (bad name, exists, disk floor, not our worktree, dirty gate, no or diverged
@@ -262,7 +263,11 @@ def cmd_gate(repo: Path, rt: Path, a) -> int:
     if not branch_exists(repo, branch):
         raise Refused(f"branch {branch} does not exist")
     old = git(gate, "rev-parse", "HEAD").stdout.strip()
-    r = git(gate, "merge", "--no-ff", "--no-edit", branch, check=False)
+    message = f"Merge branch '{branch}' into milestone/{a.name}"
+    coauthor = os.environ.get("FV_COAUTHOR", "").strip()
+    if coauthor:
+        message += f"\n\nCo-Authored-By: {coauthor}"
+    r = git(gate, "merge", "--no-ff", "-m", message, branch, check=False)
     if r.returncode != 0:
         files = git(gate, "diff", "--name-only", "--diff-filter=U", check=False).stdout.split()
         if git(gate, "rev-parse", "-q", "--verify", "MERGE_HEAD", check=False).returncode != 0:
