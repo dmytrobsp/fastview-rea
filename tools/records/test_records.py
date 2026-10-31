@@ -227,6 +227,27 @@ class Check(Base):
             wb(out.dat_path, b"\n".join(o))
         return self.hits(src, recfmt.Record(out.cfg_path)), None
 
+    def small_integer_record(self, name, seed, rows=3000):
+        """A record whose samples are small whole numbers (invented, uniform within +-20)."""
+        import random
+        rng = random.Random(seed)
+        d = os.path.join(self.tmp, name)
+        os.makedirs(d)
+        lines = ["Plant %s,Unit 2,1999" % name, "3,3A,0D"]
+        for i in range(1, 4):
+            lines.append(f"{i},Chan {name} {i},,,A,0.5{i}27,0,0,-32767,32767,{3100 + 17 * i},3,S")
+        lines += ["50", "1", f"1710.0,{rows}", "01/02/2021,03:04:05.600000", "01/02/2021,03:04:05.700000", "ASCII", "1"]
+        wb(os.path.join(d, "r.cfg"), ("\n".join(lines) + "\n").encode())
+        wb(os.path.join(d, "r.dat"), "".join(
+            f"{i + 1},{i * 585}," + ",".join(str(rng.randint(-20, 20)) for _ in range(3)) + "\n" for i in range(rows)).encode())
+        return recfmt.Record(os.path.join(d, "r.cfg"))
+
+    def test_unrelated_small_integer_records_do_not_match_by_chance(self):
+        a, b = self.small_integer_record("alfa", 1), self.small_integer_record("beta", 2)
+        h = self.hits(a, b)
+        self.assertEqual(h["columns"], 0, "unrelated small whole-number columns must not look like a leak")
+        self.assertEqual(h["windows"], 0)
+
     def test_one_copied_sample_column_is_found(self):
         for mk in (make_fixtures.src_b, make_fixtures.src_d, make_fixtures.src_e):
             h, _ = self.copy_column(mk, mk.__name__)

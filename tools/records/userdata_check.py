@@ -17,11 +17,12 @@ Every source record (its `.cfg`, and the `.dat` / `.hdr` beside it) is indexed i
   leap second) as whole lines, however short their fields;
 - labels: the phase and ccbm fields by channel position, apart from format phases (A, B, C, N, L1 ...);
 - windows: four consecutive data rows of the analog channels (not constant), and columns: four consecutive
-  values of one channel (three distinct values, a spread of 16 or more), compared as numbers, so a copied
-  stretch of samples or a copied channel shows even where single samples are small whole numbers.
+  values of one channel (three distinct values; for whole numbers a spread of 64 or more, so that small
+  whole-number samples of unrelated records do not meet by chance; any non-whole value counts), compared as
+  numbers, so a copied stretch of samples or a copied channel shows even where single samples are small whole numbers.
 
 Not compared, because the generator keeps them on purpose: the channel-count line and channel numbers, digital
-normal states and states, format phases, standard units, P/S, the frequency line, the rate-segment count and the
+normal states and the first row's digital states, format phases, standard units, P/S, the frequency line, the rate-segment count and the
 approximate ratios, the layout of name tokens, the .hdr's punctuation, the data type. A clean result means no value
 was copied, not that the structure is unrecognisable: an output made from a user record stays local.
 
@@ -37,6 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import recfmt  # noqa: E402
 
 WINDOW = 4
+COLUMN_SPREAD = 64  # whole-number samples: a per-channel window counts from this spread (smaller ones meet by chance)
 COLUMN_CAP = 2_000_000  # at most this many per-channel windows of a record are indexed
 
 
@@ -121,7 +123,7 @@ def inventory(rec, max_rows):
             if len(columns) < COLUMN_CAP:
                 for j in range(len(row) if a else 0):
                     c = (ring[0][j], ring[1][j], ring[2][j], ring[3][j])
-                    if len(set(c)) >= 3 and (max(c) - min(c) >= 16 or any(x != int(x) for x in c)):
+                    if len(set(c)) >= 3 and (max(c) - min(c) >= COLUMN_SPREAD or any(x != int(x) for x in c)):
                         columns.add(hash(c))
             ring.pop(0)
     return {"texts": texts, "words": words, "nums": nums, "lines": lines, "windows": windows, "columns": columns,
