@@ -1345,6 +1345,24 @@ mod tests {
         app.save_doc_to(di, Path::new(parts[2])).expect("saved");
     }
 
+    /// `FV_OMP_FILE=<file.omp> [FV_OMP_INOM=<text>] [FV_OMP_SECTION=<length>] cargo test omp_file_dump`:
+    /// the `.omp` of «Сохранить» for the default parameters, with the
+    /// first station's rated current and one section's length typed in — for
+    /// a byte compare with the original's after the same entries by hand
+    /// (W4.2, #28).
+    #[test]
+    fn omp_file_dump() {
+        let Ok(out) = std::env::var("FV_OMP_FILE") else { return };
+        let mut p = fvb_core::omp_params::OmpParams::default();
+        if let Ok(v) = std::env::var("FV_OMP_INOM") {
+            p.stations[0].inom = v;
+        }
+        if let Ok(v) = std::env::var("FV_OMP_SECTION") {
+            p.stations[0].sections.push(fvb_core::omp_params::SectionParams { length: v, ..Default::default() });
+        }
+        std::fs::write(out, fvb_core::recset::omp_file_bytes(&p)).expect("omp written");
+    }
+
     /// `FV_CLIP_DUMP=<record>,<file> cargo test clip_dump`: open a record,
     /// select its first analog channel and write the clipboard document as
     /// Copy puts it up (UTF-16LE, a NUL at the end) — for a byte compare
