@@ -1162,3 +1162,77 @@ mod tracked_tests {
         assert!(omp_phasors_tracked(&x, n, &t_us, &[], &[])[100].re.is_nan());
     }
 }
+
+/// #106: the grounded-distance rotation (`0x49a670`) and the θ re-estimation (`0x49adc0`) call the
+/// original's runtime sin / cos (`crate::trig`). Each half is pinned on its own: a candidate is
+/// found where reverting only the sin (or only the cos) to std changes the result, and the site must
+/// equal the port-built reference there.
+#[cfg(test)]
+mod trig_site_tests {
+    use super::*;
+
+    type Fns = (fn(f64) -> f64, fn(f64) -> f64);
+    const TRIG: Fns = (crate::trig::sin, crate::trig::cos);
+    const SIN_STD: Fns = (f64::sin, crate::trig::cos);
+    const COS_STD: Fns = (crate::trig::sin, f64::cos);
+
+    fn halves<P: Copy + std::fmt::Debug, R: PartialEq + std::fmt::Debug>(what: &str, cands: impl Iterator<Item = P> + Clone, reference: impl Fn(P, Fns) -> R, site: impl Fn(P) -> R) {
+        let find = |mixed: Fns| cands.clone().find(|&p| reference(p, mixed) != reference(p, TRIG));
+        let (s, c) = (find(SIN_STD), find(COS_STD));
+        let (s, c) = (s.unwrap_or_else(|| panic!("{what}: no candidate tells the sin half from std's")), c.unwrap_or_else(|| panic!("{what}: no candidate tells the cos half from std's")));
+        for p in [s, c] {
+            assert_eq!(site(p), reference(p, TRIG), "{what} at {p:?}");
+        }
+    }
+
+    /// One section, a non-earth fault: `d = Im(U/Iref') / Im(Z1·I/Iref')`, `Iref' = Iref·e^{jθ}`.
+    #[test]
+    fn the_grounded_distance_rotation_uses_the_runtime_sin_cos() {
+        let sec = Section { length_km: 1.0e9, r1_per_km: 0.21, x1_per_km: 0.37, ..Default::default() };
+        let t = Trace {
+            e: vec![false],
+            uloop: vec![Complex64::new(3.1, 4.7)],
+            iloop: vec![Complex64::new(1.3, -0.7)],
+            iref: vec![Complex64::new(0.9, 0.4)],
+            ..Default::default()
+        };
+        let reference = |theta: f64, f: Fns| {
+            let r = t.iref[0] * Complex64::new((f.1)(theta), (f.0)(theta));
+            let z1 = Complex64::new(sec.r1_per_km, sec.x1_per_km);
+            cdiv(t.uloop[0], r).im / cdiv(z1 * t.iloop[0], r).im
+        };
+        let site = |theta: f64| grounded_distance(&t, 0, Complex64::default(), Complex64::default(), std::slice::from_ref(&sec), theta);
+        // The site clamps a negative distance to 0: only angles with a positive one tell anything.
+        let positive = |theta: &f64| reference(*theta, TRIG) > 0.0 && reference(*theta, SIN_STD) > 0.0 && reference(*theta, COS_STD) > 0.0;
+        halves("grounded_distance", (1..6000).map(|j| j as f64 * 0.00137).filter(positive), |p, f| reference(p, f).to_bits(), |p| site(p).to_bits());
+    }
+
+    /// One section without taps or parallel lines: the medians are of the constant `A = I0` and
+    /// `B = current_beyond`; `θ = arg(Mb − Mc·e^{jMa})`.
+    #[test]
+    fn refine_theta_uses_the_runtime_sin_cos() {
+        let sec = Section { length_km: 10.0, r0_per_km: 0.3, x0_per_km: 1.2, taps: vec![Tap { r0: 40.0, x0: 80.0 }], ..Default::default() };
+        let secs = std::slice::from_ref(&sec);
+        let d = 4.0;
+        let build = |phase: f64| {
+            let i0 = Complex64::from_polar(23.0, phase);
+            let t = Trace { e: vec![true; 3], dist: vec![d; 3], u0: vec![Complex64::new(1000.0, 200.0); 3], i0: vec![i0; 3], ..Default::default() };
+            t
+        };
+        let reference = |phase: f64, f: Fns| {
+            let t = build(phase);
+            let (_, a) = carry_zero_sequence(secs, 0, t.u0[0], t.i0[0], d);
+            let b = current_beyond(secs, 0, t.u0[0], t.i0[0], d).unwrap();
+            let pi = std::f64::consts::PI;
+            let mut da = b.im.atan2(b.re) - a.im.atan2(a.re);
+            if da < -pi {
+                da += 2.0 * pi;
+            } else if da > pi {
+                da -= 2.0 * pi;
+            }
+            ((-b.norm() * (f.0)(da)).atan2(a.norm() - b.norm() * (f.1)(da))).to_bits()
+        };
+        let site = |phase: f64| refine_theta(&build(phase), secs, (0, 2), d).unwrap().to_bits();
+        halves("refine_theta", (1..6000).map(|j| j as f64 * 0.00113), reference, site);
+    }
+}
