@@ -46,7 +46,7 @@ Last rewritten: 2026-10-31 (v0.5.0 released; milestone 0.6.0 started: the follow
 - **Waiting for the maintainer:** #74 (a drop on another record's view: match the original or do nothing), #75
   (accept the cross-instance drag difference?), #93 (flat channels' harmonics as «0»? — asked of the user).
 - **Waiting for samples:** #59 (an OSC2 record, for the `.osc` Save As comparison). `.sto` is not supported — an
-  accepted difference (#49); #72 needs no more samples (the user's 1 kHz and 16 kHz records were enough).
+  accepted difference (#49); #72 needs no more samples (the users' records, at their own rates, were enough).
 - The rest of the queue: the `later` milestone (`gh issue list -m later -S '-label:triage'`).
 
 ## Where things live

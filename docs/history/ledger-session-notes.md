@@ -120,8 +120,7 @@ digital, computed and pending channels; L9.137 own frequency vectors and
 the ОМП tracked phasor; L9.138 ОМП lookup ignores case, the merge's beep;
 L9.139 ↑ / ↓ place a never-placed ГВ; L9.140 the merge's padding via the
 accessor; L9.141 **record times from the readers** (ASCII timestamps,
-binary k·1e6/R; a trailing ^Z line is no row — DOC_1999 is 11000
-samples); L9.142 **N from rec+0x228**; L9.143 `.set` per channel (whole
+binary k·1e6/R; a trailing ^Z line is no row — a clone test record's row count excludes it); L9.142 **N from rec+0x228**; L9.143 `.set` per channel (whole
 ShowFlags, NetFreq); L9.144 / L9.146 context menus (MFC separators, check
 column, keyboard); L9.145 formulas name digital channels; L9.147 status
 bar formats / persistence; L9.148 DDX as MFC 12 (scanf "%d"), Enter /

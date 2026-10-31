@@ -287,8 +287,8 @@ impl Doc {
     /// «Кодировка» of DIALOG 392 (`0x4543e0`): re-decode the station, the
     /// recorder and every channel name in the new code page — from the
     /// bytes as read, so 1251 → 866 → 1251 gives the names back (VM) —
-    /// into the original's ANSI strings (`comtrade::best_fit_1251`: «БЛОКА»
-    /// read as 866 shows «+T+¦L»). A renamed channel keeps its name: the
+    /// into the original's ANSI strings (`comtrade::best_fit_1251`: a
+    /// Cyrillic word read as 866 shows box-drawing characters, narrowed to ASCII). A renamed channel keeps its name: the
     /// shown name is the alias while there is one, else the file's name
     /// decoded (`0x425960`). Ours alone: whatever named a channel before
     /// names it after (formulas, quick-analysis picks, levels and areas,
@@ -397,8 +397,8 @@ impl Doc {
         }
         self.name_raw = kept;
         // A pasted lane (bit 14) is re-decoded too — `0x425960` spares only
-        // the computed ones (bit 13): VM, «IA БЛОКА 3 (вст.)» pasted, then
-        // 866, lists «IA +T+¦L 3 (тёЄ.)». Its bytes go with the channel; a
+        // the computed ones (bit 13): VM, a pasted lane's name read as
+        // 866 lists its best-fit form with the suffix re-decoded. Its bytes go with the channel; a
         // renamed one keeps its name.
         let pasted: Vec<usize> = (0..self.computed.len()).filter(|&j| self.pending_of(j).is_some()).collect();
         for j in pasted {
@@ -1193,24 +1193,24 @@ mod tests {
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         d.codepage = Encoding::Cp1251;
-        d.osc.analog[0].id = "IA БЛОКА 3".into();
-        d.osc.analog[1].id = "UA I CШ".into();
+        d.osc.analog[0].id = "IA ДОМНА 6".into();
+        d.osc.analog[1].id = "UA I CН".into();
         d.init_set_keys();
         d.set_codepage(Encoding::Cp866);
-        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA +T+¦L 3", "UA I C+"));
+        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA -+¦=L 6", "UA I C="));
         assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)), None, "still the file's name");
         d.set_codepage(Encoding::Cp1251);
-        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA БЛОКА 3", "UA I CШ"));
+        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA ДОМНА 6", "UA I CН"));
         // A name renamed meanwhile is its alias, kept as typed (`0x425960`;
-        // VM: «TokIA БЛОКА 3» stays, its file name re-decoded beside it).
+        // VM: the renamed text stays, its file name re-decoded beside it).
         d.set_codepage(Encoding::Cp866);
         d.osc.analog[0].id = "Ток".into();
         d.set_codepage(Encoding::Cp1251);
         assert_eq!(d.osc.analog[0].id, "Ток");
-        assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)).as_deref(), Some("IA БЛОКА 3"));
+        assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)).as_deref(), Some("IA ДОМНА 6"));
         d.set_codepage(Encoding::Cp866);
-        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("Ток", "UA I C+"));
-        assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)).as_deref(), Some("IA +T+¦L 3"));
+        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("Ток", "UA I C="));
+        assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)).as_deref(), Some("IA -+¦=L 6"));
     }
 
     /// The load's order: the guess switches the names before the keys are
@@ -1221,19 +1221,19 @@ mod tests {
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         d.codepage = Encoding::Cp1251;
-        d.osc.analog[0].id = "IA БЛОКА 3".into();
-        d.osc.analog[1].id = "UA I CШ".into();
+        d.osc.analog[0].id = "IA ДОМНА 6".into();
+        d.osc.analog[1].id = "UA I CН".into();
         d.set_codepage(Encoding::Cp866);
         d.init_set_keys();
-        assert_eq!(d.osc.analog[0].id, "IA +T+¦L 3");
+        assert_eq!(d.osc.analog[0].id, "IA -+¦=L 6");
         d.osc.analog[1].id = "Ток".into();
         // An empty rename shows the file's name as read now, not the lossy
         // key's («¦» kept), and stays the file's name.
         assert_eq!(crate::chandlg::rename(d, crate::app::ChanKey::Analog(0), ""), Ok(()));
-        assert_eq!(d.osc.analog[0].id, "IA +T+¦L 3");
+        assert_eq!(d.osc.analog[0].id, "IA -+¦=L 6");
         assert_eq!(d.original_name(crate::app::ChanKey::Analog(0)), None);
         d.set_codepage(Encoding::Cp1251);
-        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA БЛОКА 3", "Ток"));
+        assert_eq!((d.osc.analog[0].id.as_str(), d.osc.analog[1].id.as_str()), ("IA ДОМНА 6", "Ток"));
     }
 
     /// A channel merged in before the record's own moves them: each still
@@ -1244,8 +1244,8 @@ mod tests {
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         d.codepage = Encoding::Cp1251;
-        d.osc.analog[0].id = "IA БЛОКА 3".into();
-        d.osc.analog[1].id = "IB БЛОКА 3".into();
+        d.osc.analog[0].id = "IA ДОМНА 6".into();
+        d.osc.analog[1].id = "IB ДОМНА 6".into();
         d.set_codepage(Encoding::Cp866);
         d.init_set_keys();
         d.selection = [ChanKey::Analog(2)].into();
@@ -1254,9 +1254,9 @@ mod tests {
         app.paste_channels_for_merge();
         app.merge_records();
         let d = app.active_doc_mut().unwrap();
-        assert_eq!(d.osc.analog[1].id, "IA +T+¦L 3", "moved by the merge");
+        assert_eq!(d.osc.analog[1].id, "IA -+¦=L 6", "moved by the merge");
         d.set_codepage(Encoding::Cp1251);
-        assert_eq!((d.osc.analog[1].id.as_str(), d.osc.analog[2].id.as_str()), ("IA БЛОКА 3", "IB БЛОКА 3"));
+        assert_eq!((d.osc.analog[1].id.as_str(), d.osc.analog[2].id.as_str()), ("IA ДОМНА 6", "IB ДОМНА 6"));
     }
 
     /// Out of step (no bytes kept: an undo past a merge), a renamed
@@ -1492,15 +1492,15 @@ mod tests {
         assert_eq!(d.computed[j].name, "Ї лінія");
     }
 
-    /// A pasted lane's name is re-decoded too (VM: «IA БЛОКА 3 (вст.)»
-    /// read as 866 lists «IA +T+¦L 3 (тёЄ.)»), and comes back.
+    /// A pasted lane's name is re-decoded too (VM: a pasted lane's
+    /// name read as 866 lists its best-fit form), and comes back.
     #[test]
     fn a_pasted_lane_is_re_decoded() {
         use crate::app::ChanKey;
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         d.codepage = Encoding::Cp1251;
-        d.osc.analog[3].id = "IA БЛОКА 3".into();
+        d.osc.analog[3].id = "IA ДОМНА 6".into();
         d.init_set_keys();
         d.selection = [ChanKey::Analog(3)].into();
         app.copy_channels_for_merge();
@@ -1508,7 +1508,7 @@ mod tests {
         let d = app.active_doc_mut().unwrap();
         let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
         let pasted = d.computed[j].name.clone();
-        assert!(pasted.starts_with("IA БЛОКА 3"), "{pasted}");
+        assert!(pasted.starts_with("IA ДОМНА 6"), "{pasted}");
         d.set_codepage(Encoding::Cp866);
         let want: String = comtrade::decode_bytes(&comtrade::encode_text(&pasted, Encoding::Cp1251), Encoding::Cp866).chars().map(comtrade::best_fit_1251).collect();
         assert_eq!(d.computed[j].name, want);
@@ -1522,15 +1522,15 @@ mod tests {
     }
 
     /// Pasted while the record shows 866, a lane's raw name is its name in
-    /// 866 bytes (VM: «IA +T+¦L 3 (вст.)» reads «IA +T+іL 3 (ўбв.)» back in
-    /// 1251, and itself again in 866).
+    /// 866 bytes (VM: a best-fit name pasted under 866 reads back in
+    /// 1251 with «¦» as 0xB3, and itself again in 866).
     #[test]
     fn a_lane_pasted_while_866_is_shown_reads_its_866_bytes() {
         use crate::app::ChanKey;
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         d.codepage = Encoding::Cp1251;
-        d.osc.analog[3].id = "IA БЛОКА 3".into();
+        d.osc.analog[3].id = "IA ДОМНА 6".into();
         d.init_set_keys();
         d.set_codepage(Encoding::Cp866);
         d.selection = [ChanKey::Analog(3)].into();
@@ -1538,12 +1538,12 @@ mod tests {
         app.paste_channels_for_merge();
         let d = app.active_doc_mut().unwrap();
         let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
-        assert_eq!(d.computed[j].name, "IA +T+¦L 3 (вст.)");
+        assert_eq!(d.computed[j].name, "IA -+¦=L 6 (вст.)");
         d.set_codepage(Encoding::Cp1251);
-        assert_eq!(d.computed[j].name, "IA +T+іL 3 (ўбв.)");
-        assert_eq!(d.osc.analog[3].id, "IA БЛОКА 3");
+        assert_eq!(d.computed[j].name, "IA -+і=L 6 (ўбв.)");
+        assert_eq!(d.osc.analog[3].id, "IA ДОМНА 6");
         d.set_codepage(Encoding::Cp866);
-        assert_eq!(d.computed[j].name, "IA +T+¦L 3 (вст.)");
+        assert_eq!(d.computed[j].name, "IA -+¦=L 6 (вст.)");
     }
 
     /// A lane pasted while 866 is shown into a UTF-8 record stores the name
@@ -1606,7 +1606,7 @@ mod tests {
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         d.codepage = Encoding::Cp1251;
-        d.osc.analog[3].id = "IA БЛОКА 3".into();
+        d.osc.analog[3].id = "IA ДОМНА 6".into();
         d.init_set_keys();
         d.selection = [ChanKey::Analog(3)].into();
         app.copy_channels_for_merge();
@@ -1634,8 +1634,8 @@ mod tests {
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         d.codepage = Encoding::Cp1251;
-        d.osc.analog[3].id = "IA БЛОКА 3".into();
-        d.osc.analog[4].id = "IB БЛОКА 3".into();
+        d.osc.analog[3].id = "IA ДОМНА 6".into();
+        d.osc.analog[4].id = "IB ДОМНА 6".into();
         d.init_set_keys();
         d.selection = [ChanKey::Analog(3), ChanKey::Analog(4)].into();
         app.copy_channels_for_merge();
@@ -1722,8 +1722,8 @@ mod tests {
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         d.codepage = Encoding::Cp1251;
-        d.osc.analog[3].id = "Ток фазы В".into();
-        d.osc.analog[4].id = "Ток фазы С".into();
+        d.osc.analog[3].id = "Ток линии В".into();
+        d.osc.analog[4].id = "Ток линии С".into();
         d.init_set_keys();
         let (b, c) = (d.osc.analog[3].samples.clone(), d.osc.analog[4].samples.clone());
         d.selection = [ChanKey::Analog(3), ChanKey::Analog(4)].into();
@@ -1762,7 +1762,7 @@ mod tests {
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         d.codepage = Encoding::Cp1251;
-        d.osc.analog[0].id = "IA БЛОКА 3".into();
+        d.osc.analog[0].id = "IA ДОМНА 6".into();
         d.set_codepage(Encoding::Cp866);
         d.init_set_keys();
         d.selection = [ChanKey::Analog(2)].into();
@@ -1780,7 +1780,7 @@ mod tests {
         let d = app.active_doc_mut().unwrap();
         assert_eq!(d.osc.analog.len(), n + 1, "merged at the end");
         d.set_codepage(Encoding::Cp1251);
-        assert_eq!(d.osc.analog[0].id, "IA БЛОКА 3");
+        assert_eq!(d.osc.analog[0].id, "IA ДОМНА 6");
     }
 
     /// «В» and «С» read as 866 both show «T»: two names alike each take
@@ -1792,8 +1792,8 @@ mod tests {
             let mut app = demo_app();
             let d = app.active_doc_mut().unwrap();
             d.codepage = Encoding::Cp1251;
-            d.osc.analog[0].id = "Ток фазы В".into();
-            d.osc.analog[1].id = "Ток фазы С".into();
+            d.osc.analog[0].id = "Ток линии В".into();
+            d.osc.analog[1].id = "Ток линии С".into();
             d.set_codepage(Encoding::Cp866);
             d.init_set_keys();
             assert_eq!(d.osc.analog[0].id, d.osc.analog[1].id);
@@ -1807,12 +1807,12 @@ mod tests {
             let d = app.active_doc_mut().unwrap();
             let k = usize::from(merge);
             d.set_codepage(Encoding::Cp1251);
-            assert_eq!((d.osc.analog[k].id.as_str(), d.osc.analog[k + 1].id.as_str()), ("Ток фазы В", "Ток фазы С"), "merge: {merge}");
+            assert_eq!((d.osc.analog[k].id.as_str(), d.osc.analog[k + 1].id.as_str()), ("Ток линии В", "Ток линии С"), "merge: {merge}");
             d.set_codepage(Encoding::Cp866);
             // В renamed meanwhile: С still takes its own bytes.
             d.osc.analog[k].id = "IB".into();
             d.set_codepage(Encoding::Cp1251);
-            assert_eq!((d.osc.analog[k].id.as_str(), d.osc.analog[k + 1].id.as_str()), ("IB", "Ток фазы С"), "merge: {merge}");
+            assert_eq!((d.osc.analog[k].id.as_str(), d.osc.analog[k + 1].id.as_str()), ("IB", "Ток линии С"), "merge: {merge}");
         }
     }
 
@@ -1828,43 +1828,43 @@ mod tests {
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         d.codepage = Encoding::Cp1251;
-        for (i, n) in [(3, "IA БЛОКА 3"), (4, "IB БЛОКА 3"), (5, "IC БЛОКА 3")] {
+        for (i, n) in [(3, "IA ДОМНА 6"), (4, "IB ДОМНА 6"), (5, "IC ДОМНА 6")] {
             d.osc.analog[i].id = n.into();
         }
         d.osc.analog[1].id = "Свой".into();
-        d.osc.digital[0].id = "Пуск БЛОКА".into();
+        d.osc.digital[0].id = "Пуск ДОМНА".into();
         d.init_set_keys();
         d.osc.analog[1].id = "Другой".into();
-        d.omp.params.stations[0].ia = "IA БЛОКА 3".into();
+        d.omp.params.stations[0].ia = "IA ДОМНА 6".into();
         for i in [3, 1] {
             d.comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(i), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
         }
-        d.dif_pairs.push(crate::diagram::ChanPair::new("IA БЛОКА 3", "IB БЛОКА 3"));
+        d.dif_pairs.push(crate::diagram::ChanPair::new("IA ДОМНА 6", "IB ДОМНА 6"));
         app.analysis_tab = AnalysisTab::Zero;
         let z = crate::quick_ui::page_index(AnalysisTab::Zero).unwrap();
         let q = &mut app.quick[z];
-        (q.ia, q.ib, q.ic) = ("IA БЛОКА 3".into(), "IB БЛОКА 3".into(), "IC БЛОКА 3".into());
+        (q.ia, q.ib, q.ic) = ("IA ДОМНА 6".into(), "IB ДОМНА 6".into(), "IC ДОМНА 6".into());
         q.zero_u_off = true;
         let g = q.generate(AnalysisTab::Zero, &[]);
         app.apply_quick(&g);
         crate::quick_ui::save_page(z, &app.quick[z].clone(), app.active_doc_mut().unwrap().set.tree.section_mut(crate::quick_ui::PAGE_KEYS[z]));
-        assert!(app.append_computed(&[("D".into(), "\"Пуск БЛОКА\"*2".into())]).is_some(), "{:?}", app.dlg.alert());
+        assert!(app.append_computed(&[("D".into(), "\"Пуск ДОМНА\"*2".into())]).is_some(), "{:?}", app.dlg.alert());
         let d = app.active_doc_mut().unwrap();
         // A differential arm's pick follows; a text that only equals a name
         // (an edit's) does not.
         let dif = d.set.tree.section_mut(crate::quick_ui::PAGE_KEYS[4]);
-        dif.child_mut("Leg_0").set_str("IA", "IA БЛОКА 3");
-        dif.set_str("brakeCoeff", "IA БЛОКА 3");
+        dif.child_mut("Leg_0").set_str("IA", "IA ДОМНА 6");
+        dif.set_str("brakeCoeff", "IA ДОМНА 6");
         let before = d.computed.iter().find(|c| c.name == "3I0").unwrap().samples.clone();
         d.set_codepage(Encoding::Cp866);
         let dif = d.set.tree.section(crate::quick_ui::PAGE_KEYS[4]).unwrap();
         assert_eq!(dif.children["Leg_0"].attrs["IA"], d.osc.analog[3].id);
-        assert_eq!(dif.attrs["brakeCoeff"], "IA БЛОКА 3", "not a channel pick");
+        assert_eq!(dif.attrs["brakeCoeff"], "IA ДОМНА 6", "not a channel pick");
         assert_eq!(d.omp.params.stations[0].ia, d.osc.analog[3].id, "ОМП's channel too");
         let dig = d.osc.digital[0].id.clone();
         assert!(d.computed.iter().find(|c| c.name == "D").unwrap().formula.contains(&format!("\"{dig}\"")), "a digital channel's reference too");
         let ia = d.osc.analog[3].id.clone();
-        assert_eq!(ia, "IA +T+¦L 3");
+        assert_eq!(ia, "IA -+¦=L 6");
         let i0 = d.computed.iter().find(|c| c.name == "3I0").unwrap();
         assert!(i0.formula.contains(&format!("\"{ia}\"")), "{}", i0.formula);
         assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(3), .. }), "the level stays on IA");
@@ -1877,11 +1877,11 @@ mod tests {
         let d = app.active_doc_mut().unwrap();
         assert_eq!(d.computed.iter().find(|c| c.name == "3I0").unwrap().samples, before);
         d.set_codepage(Encoding::Cp1251);
-        assert!(d.computed.iter().find(|c| c.name == "3I0").unwrap().formula.contains("\"IA БЛОКА 3\""));
+        assert!(d.computed.iter().find(|c| c.name == "3I0").unwrap().formula.contains("\"IA ДОМНА 6\""));
     }
 
-    /// Names that decode alike are not followed: a formula on «Ток фазы С»
-    /// is not rewritten to the text it shares with «Ток фазы В» in 866
+    /// Names that decode alike are not followed: a formula on one channel
+    /// is not rewritten to the text it shares with another channel's name in 866
     /// (it would read В) — it fails there as in the original, and works
     /// again back in 1251; a level on С stays on С.
     #[test]
@@ -1891,16 +1891,16 @@ mod tests {
         let mut app = demo_app();
         let d = app.active_doc_mut().unwrap();
         d.codepage = Encoding::Cp1251;
-        d.osc.analog[3].id = "Ток фазы В".into();
-        d.osc.analog[4].id = "Ток фазы С".into();
+        d.osc.analog[3].id = "Ток линии В".into();
+        d.osc.analog[4].id = "Ток линии С".into();
         d.init_set_keys();
         d.comments.push(Comment { kind: CommentKind::Level { chan: ChanKey::Analog(4), value: 1.0, from: 10, to: 20 }, text: String::new(), locked: false, hidden: false });
-        assert!(app.append_computed(&[("X".into(), "\"Ток фазы С\"*2".into())]).is_some());
+        assert!(app.append_computed(&[("X".into(), "\"Ток линии С\"*2".into())]).is_some());
         let d = app.active_doc_mut().unwrap();
         let before = d.computed[0].samples.clone();
         d.set_codepage(Encoding::Cp866);
         assert_eq!(d.osc.analog[3].id, d.osc.analog[4].id);
-        assert_eq!(d.computed[0].formula, "\"Ток фазы С\"*2", "not rewritten");
+        assert_eq!(d.computed[0].formula, "\"Ток линии С\"*2", "not rewritten");
         assert!(matches!(d.comments[0].kind, CommentKind::Level { chan: ChanKey::Analog(4), .. }));
         d.set_codepage(Encoding::Cp1251);
         assert!(app.append_computed(&[("Y".into(), "1".into())]).is_some(), "{:?}", app.dlg.alert());
@@ -1934,27 +1934,27 @@ mod tests {
         // A 1251 record whose names were read as 866 (the guess, or the
         // user's pick), and computed on.
         d.codepage = Encoding::Cp1251;
-        for (i, n) in [(3, "IA БЛОКА 3"), (4, "IB БЛОКА 3"), (5, "IC БЛОКА 3")] {
+        for (i, n) in [(3, "IA ДОМНА 6"), (4, "IB ДОМНА 6"), (5, "IC ДОМНА 6")] {
             d.osc.analog[i].id = n.into();
         }
         d.init_set_keys();
         d.set_codepage(Encoding::Cp866);
         d.recompute(false);
         let old = d.osc.analog[3].id.clone();
-        assert_eq!(old, "IA +T+¦L 3");
+        assert_eq!(old, "IA -+¦=L 6");
         d.set_codepage(Encoding::Cp1251);
         app.analysis_tab = AnalysisTab::Zero;
         let q = &mut app.quick[crate::quick_ui::page_index(AnalysisTab::Zero).unwrap()];
-        (q.ia, q.ib, q.ic) = ("IA БЛОКА 3".into(), "IB БЛОКА 3".into(), "IC БЛОКА 3".into());
+        (q.ia, q.ib, q.ic) = ("IA ДОМНА 6".into(), "IB ДОМНА 6".into(), "IC ДОМНА 6".into());
         (q.ua, q.ub, q.uc) = ("Ua".into(), "Ub".into(), "Uc".into());
         let g = q.generate(AnalysisTab::Zero, &[]);
         app.apply_quick(&g);
         assert_eq!(app.dlg.alert(), None);
         let d = app.active_doc().unwrap();
         let i0 = d.computed.iter().find(|c| c.name == "3I0").expect("3I0 computed");
-        assert_eq!(i0.formula, "3I0: (\"IA БЛОКА 3\", \"IB БЛОКА 3\", \"IC БЛОКА 3\")");
+        assert_eq!(i0.formula, "3I0: (\"IA ДОМНА 6\", \"IB ДОМНА 6\", \"IC ДОМНА 6\")");
         // The formula editor alike; the old name is the record's no more.
-        assert!(app.append_computed(&[("X".into(), "\"IB БЛОКА 3\"*2".into())]).is_some());
+        assert!(app.append_computed(&[("X".into(), "\"IB ДОМНА 6\"*2".into())]).is_some());
         assert!(app.append_computed(&[("Y".into(), format!("\"{old}\"*2"))]).is_none());
         assert_eq!(app.dlg.alert(), Some("Имя канала задано неправильно."), "the bare 0x162 (VM)");
     }

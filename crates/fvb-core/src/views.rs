@@ -102,7 +102,7 @@ pub fn freq_label(v: f64) -> String {
 
 /// C's `%g` (precision 6): exponent form when the decimal exponent is below
 /// −4 or at least 6, trailing zeros removed — with MSVC 12's three exponent
-/// digits (the VS2013 CRT; seen on the VM: «-3.79074e-005»).
+/// digits (the VS2013 CRT; seen on the VM: a small value printed with a three-digit exponent).
 pub fn fmt_g(v: f64) -> String {
     fmt_gp(v, 6)
 }
@@ -255,11 +255,11 @@ mod tests {
         assert_eq!(nice_scale(0.0), 0.0);
         assert_eq!(vector_header_value(1500.0), "1500.0");
         assert_eq!(vector_header_value(0.0), "0.0");
-        assert_eq!(vector_header_value(0.4), "0.40");
+        assert_eq!(vector_header_value(0.35), "0.35");
         assert_eq!(vector_header_value(0.05), "0.050");
         assert_eq!(vector_header_value(1.0), "1.0", "w = 3: %3.1f");
-        assert_eq!(vector_value_text(57.9232, "V"), "57.92 В");
-        assert_eq!(vector_value_text(0.354, "A"), "354.00 мА");
+        assert_eq!(vector_value_text(61.3487, "V"), "61.35 В");
+        assert_eq!(vector_value_text(0.317, "A"), "317.00 мА");
         assert_eq!(vector_value_text(0.0, "A"), "0.00 А");
     }
 

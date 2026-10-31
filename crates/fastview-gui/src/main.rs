@@ -2008,7 +2008,7 @@ mod window_tests {
     }
 
     /// The ruler labels its ticks out to the plot's edge, past the record's
-    /// end too (VM, L9.398: «12 288» after a 10.999 s record).
+    /// end too (VM, L9.398: the first tick past a record's end is labelled).
     #[test]
     fn the_ruler_labels_ticks_past_the_record_end() {
         let mut app = demo(&[]);

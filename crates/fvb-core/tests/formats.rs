@@ -291,7 +291,7 @@ fn osc_loading_progress() {
 /// normal state, ", " in the data rows, no time-code line.
 #[test]
 fn cfg_dat_writer_as_the_original() {
-    let cfg = "St,Dev,1999\r\n2,1A,1D\r\n1,Ia,A,,кА,0.025227049,0.000000000,0.000000,-2047,2047,2000.000000,1.000000,P\r\n\
+    let cfg = "St,Dev,1999\r\n2,1A,1D\r\n1,Ia,A,,кА,0.031846127,0.000000000,0.000000,-2047,2047,2380.000000,1.000000,P\r\n\
                1,D1,,,1\r\n50.000000\r\n1\r\n1000.000000,3\r\n01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.001000\r\nASCII\r\n1.000000\r\n";
     let dat = "1,0,10,1\r\n2,1000,-20,0\r\n3,2000,5,1\r\n";
     let rec = comtrade::parse(cfg, dat.as_bytes()).unwrap();
@@ -299,7 +299,7 @@ fn cfg_dat_writer_as_the_original() {
     let c = comtrade::decode_bytes(&c, Encoding::Cp1251);
     assert_eq!(
         c,
-        "St,Dev,1999\r\n2,1A,1D\r\n1,Ia,A,,кА,0.025227,0,0,-20000,10000,2000.000000,1.000000,P\r\n1,D1,,,1\r\n50\r\n1\r\n1000,3\r\n\
+        "St,Dev,1999\r\n2,1A,1D\r\n1,Ia,A,,кА,0.0318461,0,0,-20000,10000,2380.000000,1.000000,P\r\n1,D1,,,1\r\n50\r\n1\r\n1000,3\r\n\
          01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.001000\r\nASCII\r\n1\r\n"
     );
     assert_eq!(String::from_utf8(d).unwrap(), "1,0, 10, 1\r\n2,1000, -20, 0\r\n3,2000, 5, 1\r\n");

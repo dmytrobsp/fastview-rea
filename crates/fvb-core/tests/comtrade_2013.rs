@@ -12,7 +12,7 @@ fn cfg(rev: &str) -> String {
     [
         &format!("Підстанція Тест,Реєстратор 1,{rev}"),
         "4,2A,2D",
-        "1,Струм фази А,A,,A,2.5e-37,0.005,0,-3.4028235E38,3.4028235E38,10000,5,S",
+        "1,Струм фази А,A,,A,2.9e-37,0.0061,0,-3.4028235E38,3.4028235E38,10000,5,S",
         "2,Шина 2 напр\u{FFFD},,,kV,2.0e-37,0.0125,0,-3.4028235E38,3.4028235E38,35000,110,S",
         "1,Пуск захисту,,,0",
         "2,Вимкнення,,,0",
@@ -30,7 +30,7 @@ fn cfg(rev: &str) -> String {
     .join("\r\n")
 }
 
-const DAT: &[u8] = b"0000000001,0000000000000,-3.0e+38,9.0e+37,0,1\r\n\
+const DAT: &[u8] = b"0000000001,0000000000000,-2.8e+38,7.0e+37,0,1\r\n\
 0000000002,0000000001000,2.4e+38,-3.2e+38,1,1\r\n\
 0000000003,0000000002000,3.4028235e+38,1.0e-3,1,0\r\n\
 0000000004,0000000003000,-3.4028235e+38,0,0,0\r\n";
@@ -148,12 +148,12 @@ fn float32_range_samples_with_tiny_scale_factors() {
     let rec = load("float", &with_bom(&cfg("2013")));
     let [ia, ur] = [&rec.analog[0], &rec.analog[1]];
     let v = |c: &comtrade::AnalogChannel, x: f64| c.unit_mult * c.a * x + c.b;
-    assert_eq!(ia.samples, [v(ia, -3.0e+38), v(ia, 2.4e+38), v(ia, 3.4028235e+38), v(ia, -3.4028235e+38)]);
-    assert!((ia.samples[0] - -74.995).abs() < 1e-4 && (ia.samples[2] - 85.0756).abs() < 1e-4, "{:?}", ia.samples);
+    assert_eq!(ia.samples, [v(ia, -2.8e+38), v(ia, 2.4e+38), v(ia, 3.4028235e+38), v(ia, -3.4028235e+38)]);
+    assert!((ia.samples[0] - -81.1939).abs() < 1e-4 && (ia.samples[2] - 98.6880).abs() < 1e-4, "{:?}", ia.samples);
     assert_eq!(ur.unit_mult, 1000.0, "kV");
     assert_eq!(ur.samples[1], 1000.0 * ur.a * -3.2e+38 + ur.b, "kV: × 1000");
     assert!((ur.samples[1] - -63999.99).abs() < 0.01, "{}", ur.samples[1]);
-    for (c, raw) in [(ia, [-3.0e+38, 2.4e+38, 3.4028235e+38, -3.4028235e+38]), (ur, [9.0e+37, -3.2e+38, 1.0e-3, 0.0])] {
+    for (c, raw) in [(ia, [-2.8e+38, 2.4e+38, 3.4028235e+38, -3.4028235e+38]), (ur, [7.0e+37, -3.2e+38, 1.0e-3, 0.0])] {
         for (s, x) in c.samples.iter().zip(raw as [f64; 4]) {
             let code = c.adc_code(*s);
             assert!((code - x.round()).abs() <= 1e-9 * x.abs().max(1.0), "{} {code} {x}", c.id);
@@ -176,13 +176,13 @@ fn float32_range_codes_in_the_ascii_and_binary_writers() {
     let first = String::from_utf8(dat).unwrap().lines().next().unwrap().to_string();
     let f: Vec<&str> = first.split(", ").collect();
     let code: f64 = f[1].parse().unwrap();
-    assert!((code - -3.0e38).abs() <= 3.0e38 * 1e-12, "whole in ASCII: {first}");
+    assert!((code - -2.8e38).abs() <= 2.8e38 * 1e-12, "whole in ASCII: {first}");
     let file = comtrade::write_cff(&rec, &CffSections::default(), Encoding::Utf8).unwrap();
     let marker = b"--- file type: DAT BINARY: ";
     let at = file.windows(marker.len()).position(|w| w == marker).unwrap();
     let data = &file[at + file[at..].iter().position(|b| *b == b'\n').unwrap() + 1..];
     let i32_at = |o: usize| i32::from_le_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]]);
-    // Row 1: number, time, then the two analog codes (−3e38, 9e37).
+    // Row 1: number, time, then the two analog codes (−2.8e38, 7e37).
     assert_eq!((i32_at(8), i32_at(12)), (i32::MIN, i32::MAX), "saturated in a .cff");
 }
 

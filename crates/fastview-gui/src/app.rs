@@ -3852,7 +3852,7 @@ mod tests {
         assert_eq!(phase_class("X", "б"), 2);
         assert_eq!(phase_class("X", "CA"), 7);
         assert_eq!(phase_class("Uab", ""), 5, "uab before ua");
-        assert_eq!(phase_class("IC БЛОКА", ""), 3);
+        assert_eq!(phase_class("IC ДОМНА", ""), 3);
         assert_eq!(phase_class("3I0", ""), 4);
         assert_eq!(phase_class("Uп", ""), 4, "Cyrillic п for n");
         assert_eq!(phase_class("Pin 7", ""), 4, "any «in» left over");
@@ -3912,11 +3912,11 @@ mod tests {
         let d = app.active_doc().unwrap();
         let mut ch = d.osc.analog[0].clone();
         let view = d.chans[0].clone();
-        (ch.primary, ch.secondary, ch.is_primary) = (2000.0, 1.0, true);
-        assert_eq!(display_k(&ch, false), 1.0 / 2000.0);
+        (ch.primary, ch.secondary, ch.is_primary) = (2380.0, 1.0, true);
+        assert_eq!(display_k(&ch, false), 1.0 / 2380.0);
         assert_eq!(display_k(&ch, true), 1.0);
         ch.is_primary = false;
-        assert_eq!(display_k(&ch, true), 2000.0);
+        assert_eq!(display_k(&ch, true), 2380.0);
         assert_eq!(display_k(&ch, false), 1.0);
         ch.samples = vec![1.0, 3.0];
         let v = ChanView { adc_counts: false, remove_dc: true, invert: false, ..view.clone() };
