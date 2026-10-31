@@ -361,7 +361,7 @@ mod tests {
         // Real signals: a ripple of 1e-5 of a large level, and a plain sine.
         let ripple: Vec<f64> = (0..200).map(|j| 220.5 + 2.205e-3 * (std::f64::consts::TAU * j as f64 / n as f64).sin()).collect();
         let l = labels(&ripple);
-        assert_eq!(l[periods + 0], "100");
+        assert_eq!(l[periods], "100");
         assert_ne!(l[0], "0");
         let sine: Vec<f64> = (0..200).map(|j| 5.0 * (std::f64::consts::TAU * j as f64 / n as f64).sin()).collect();
         assert_eq!(labels(&sine)[periods], "100");
