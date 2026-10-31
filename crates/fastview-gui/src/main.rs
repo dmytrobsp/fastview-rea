@@ -57,6 +57,27 @@ use eframe::egui;
 /// rect with Windows 11's invisible borders; what shows of it (VM, by a
 /// drag of an edge) is 852 × 493 — ours, with no system frame, as its
 /// client. Physical pixels: the original is system-DPI aware.
+/// The size grip a normal window's last status pane also holds (at 100 %, px).
+const STATUS_GRIP: f32 = 20.0;
+
+/// The status bar's six panes in `left..right` before the extended pane of width `ext_w`
+/// (none of it when that pane is hidden): `(index, x, width)` of each shown one, a hidden pane
+/// leaving no gap and the first that does not fit ending the row.
+fn status_pane_places(left: f32, right: f32, ext_w: f32, hidden: &[bool; 7]) -> Vec<(usize, f32, f32)> {
+    let room = if hidden[6] { right } else { right - ext_w };
+    let mut x = left;
+    let mut out = Vec::new();
+    for i in (0..6).filter(|&i| !hidden[i]) {
+        let w = dpi::s(if i == 2 || i == 5 { 218.0 } else { 153.0 });
+        if x + w > room {
+            break;
+        }
+        out.push((i, x, w));
+        x += w;
+    }
+    out
+}
+
 const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 
 /// One point is one device pixel at any display scale. The original is
@@ -733,20 +754,19 @@ impl App {
         // The panes' widths and the font at the system DPI (VM, 125 % and
         // 150 %: the bar 30 / 36 px, its text and panes 1.25 / 1.5 ×).
         let font = egui::FontId::proportional(dpi::font(12.0));
-        let mut x = r.left();
-        let ext_w = dpi::s(if p.bands.is_some() { 135.0 } else { 155.0 });
-        let room = if self.status_hidden[6] { r.right() } else { r.right() - ext_w };
+        // A normal (not maximised) window's last pane also holds the size
+        // grip: the original keeps room for 20 px more there (VM, 100 %:
+        // «Гор. визир 2:» shows from a 996 px frame, not 992).
+        let grip = if ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false)) { 0.0 } else { dpi::s(STATUS_GRIP) };
+        let ext_w = dpi::s(if p.bands.is_some() { 135.0 } else { 155.0 }) + grip;
+        let hidden = self.status_hidden;
         // A hidden pane leaves no gap: the rest move left (VM). A pane that
         // does not fit before the extended one is not shown (VM, 150 % at
         // 1280 px: «Гор. визир 2:» and on gone).
-        for (i, text) in s.iter().enumerate().filter(|(i, _)| !self.status_hidden[*i]) {
-            let w = dpi::s(if i == 2 || i == 5 { 218.0 } else { 153.0 });
-            if x + w > room {
-                break;
-            }
+        for (i, x, w) in status_pane_places(r.left(), r.right(), ext_w, &hidden) {
+            let text = &s[i];
             let clip = egui::Rect::from_min_max(egui::pos2(x, r.top()), egui::pos2(x + w - 2.0, r.bottom()));
             painter.with_clip_rect(clip).text(egui::pos2(x + dpi::s(9.0), r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
-            x += w;
         }
         // The last pane: 135 px at the right (VM), its own rows and a light
         // and a dark column at its left in the Office 2007 styles.
@@ -1222,6 +1242,27 @@ fn one_press_per_pass(mut raw: egui::RawInput) -> Vec<egui::RawInput> {
 
 #[cfg(test)]
 mod tests {
+    /// #79 (VM, 100 %): in a narrow window the panes that fit before the last one stay, in order, and
+    /// the rest are gone; a normal window's last pane holds the size grip, so «Гор. визир 2:» shows
+    /// 20 px later (the original's 1000 and 1004 px frames), and a maximised one has none.
+    #[test]
+    fn a_narrow_status_bar_keeps_the_panes_that_fit() {
+        let none = [false; 7];
+        let count = |w: f32, grip: f32| status_pane_places(0.0, w, 135.0 + grip, &none).len();
+        assert_eq!(count(1280.0, 0.0), 6, "wide: all six");
+        assert_eq!(count(850.0, STATUS_GRIP), 4, "the narrowest window: four");
+        assert_eq!(count(984.0, STATUS_GRIP), 4, "the original's 1000 px frame (984 visible): the fifth is not there");
+        assert_eq!(count(988.0, STATUS_GRIP), 5, "its 1004 px frame (988 visible): it is");
+        assert_eq!(count(964.0, 0.0), 4);
+        assert_eq!(count(966.0, 0.0), 5, "a maximised window has no grip");
+        // A hidden pane leaves no gap; the hidden last pane gives its room to the others.
+        let mut hid = none;
+        hid[1] = true;
+        assert_eq!(status_pane_places(0.0, 850.0, 135.0 + STATUS_GRIP, &hid)[1].1, 153.0);
+        hid[6] = true;
+        assert_eq!(status_pane_places(0.0, 1000.0, 135.0, &hid).len(), 5);
+    }
+
     use super::*;
 
     /// A missing or failed DPI call is no scale (egui's native one stays).
