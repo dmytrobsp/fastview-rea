@@ -391,8 +391,7 @@ impl App {
             f => f,
         };
         let focus = match focus {
-            CopyFocus::Diagram(p) if !self.pane_canvas.iter().any(|(q, _)| *q == p) => CopyFocus::View,
-            CopyFocus::Grid(_) if self.pane_grid.is_empty() => CopyFocus::View,
+            CopyFocus::Diagram(p) if !self.pane_canvas.iter().chain(&self.canvas_memo).any(|(q, _)| *q == p) => CopyFocus::View,
             f => f,
         };
         if let CopyFocus::Diagram(pane) = focus {
@@ -409,7 +408,7 @@ impl App {
             self.status = "Не выбраны каналы для копирования.".into();
             return;
         }
-        let picture = if focus == CopyFocus::View { self.view_picture() } else { None };
+        let picture = if matches!(focus, CopyFocus::View | CopyFocus::Other) { self.view_picture() } else { None };
         if !self.clip.put(Some(&rec.to_text()), picture.as_ref()) {
             self.status = "Не удалось записать в буфер обмена.".into();
         }
@@ -869,6 +868,11 @@ impl App {
             bar.ch2 = Some(analog[k]);
         }
         let w = r.width() - 20.0;
+        // The enabled ones take the focus when pressed (`track_copy_focus`).
+        self.focus_other.extend([at(110.0, 10.0, 170.0, 21.0), at(w - 220.0, 9.0, 100.0, 23.0), at(w - 110.0, 9.0, 100.0, 23.0)]);
+        if on {
+            self.focus_other.extend([at(350.0, 10.0, 90.0, 21.0), at(510.0, 10.0, 90.0, 21.0)]);
+        }
         sync = win_button(ui, at(w - 220.0, 9.0, 100.0, 23.0), "Синхронизация", false).clicked() || sync;
         join = win_button(ui, at(w - 110.0, 9.0, 100.0, 23.0), "Объединить", false).clicked() || join;
         let text = r.shrink2(egui::vec2(15.0, 14.0));

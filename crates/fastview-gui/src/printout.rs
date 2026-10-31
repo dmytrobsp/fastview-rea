@@ -544,7 +544,7 @@ impl App {
     /// no toolbar or property grid) as last drawn, at the screen's
     /// resolution.
     pub fn diagram_picture(&mut self, pane: Pane) -> Option<Canvas> {
-        let rect = self.pane_canvas.iter().find(|(p, _)| *p == pane)?.1;
+        let rect = self.pane_canvas.iter().chain(&self.canvas_memo).find(|(p, _)| *p == pane)?.1;
         let (di, fonts, ppp) = (self.active?, self.print.fonts.clone(), self.ppp);
         Some(self.render_diagram(&fonts, di, pane, rect.size(), ppp))
     }
@@ -563,8 +563,12 @@ impl App {
         // another popup reaches no pane under it; elsewhere the topmost
         // pane window (floating ones drawn after the docked).
         let top = ctx.layer_id_at(p);
-        let slid = crate::docking::UNITS.into_iter().find(|&u| top == Some(egui::LayerId::new(egui::Order::Foreground, egui::Id::new(("fv_slide", u)))));
+        let slid = top.and_then(crate::views::slid_pane_unit);
         let popup = slid.is_none() && top.is_some_and(|l| l.order >= egui::Order::Foreground);
+        let editor = top.is_some_and(|l| {
+            let at = |name: &str, i: usize| egui::LayerId::new(egui::Order::Foreground, egui::Id::new(name).with(i));
+            self.rename_edit.as_ref().is_some_and(|(i, _)| l == at("fv_rename", *i)) || self.level_edit.as_ref().is_some_and(|(i, _)| l == at("fv_level_edit", *i))
+        });
         let [c0, c1, g0, g1] = match slid {
             Some(u) => self.slid_ranges[u as usize].unwrap_or([0; 4]),
             None if popup => [0; 4],
@@ -574,6 +578,21 @@ impl App {
         // else (caption, tab strip, toolbar) the press keeps the focus
         // where it is — it is a window of its own, not the view under it.
         let on_float = if slid.is_none() && !popup { crate::docking::UNITS.into_iter().find(|&u| top == Some(crate::views::floating_pane_layer(u))) } else { None };
+        // The frame's own windows lie under any pane window or popup: a
+        // press on the merge bar's combo box or buttons or the tab list's
+        // button gives that window the focus (no untitled child: copy takes
+        // the view's picture and the document); on a document's tab, the
+        // view's (clone).
+        if slid.is_none() && !popup && on_float.is_none() {
+            if self.focus_other.iter().any(|r| r.contains(p)) {
+                self.copy_focus = CopyFocus::Other;
+                return;
+            }
+            if self.doc_tab_rects.iter().any(|r| r.contains(p)) {
+                self.copy_focus = CopyFocus::View;
+                return;
+            }
+        }
         let own = |pane: Pane| on_float.is_none_or(|u| self.docks.members(u).any(|m| m == pane));
         if let Some(&(pane, _)) = self.pane_canvas[c0..c1].iter().rev().find(|(q, r)| own(*q) && r.contains(p)) {
             self.copy_focus = CopyFocus::Diagram(pane);
@@ -588,7 +607,10 @@ impl App {
             if let Some(pane) = owner.and_then(|u| self.panes.front(self.docks.members(u))) {
                 self.copy_focus = CopyFocus::Grid(pane);
             }
-        } else if slid.is_none() && on_float.is_none() && self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
+        } else if slid.is_none() && on_float.is_none() && (!popup || editor) && self.view_rects.is_some_and(|(full, _)| full.contains(p)) {
+            // A menu or a combo box's list takes no focus (the window that
+            // has it keeps it); the lane's rename box and the level editor
+            // are windows of the view.
             self.copy_focus = CopyFocus::View;
         }
     }
@@ -597,7 +619,7 @@ impl App {
     /// it has it.
     pub fn focus_group(&self) -> Option<crate::docking::Unit> {
         match self.copy_focus {
-            CopyFocus::View => None,
+            CopyFocus::View | CopyFocus::Other => None,
             CopyFocus::Diagram(u) | CopyFocus::Grid(u) | CopyFocus::Pane(u) => Some(self.docks.host(u)),
         }
     }

@@ -1640,6 +1640,31 @@ mod tests {
         assert_eq!(d.osc.analog[na + 1].id, "Своё");
     }
 
+    /// The names as read, taken from the names shown now (`ensure_name_raw`)
+    /// or for channels a merge appends (`move_appended_keys`), keep a
+    /// character 866 lacks but its reading shows as the 866 byte read so
+    /// ([`comtrade::encode_shown`]), as a pasted lane's name does (#83).
+    #[test]
+    fn names_taken_from_the_shown_ones_use_the_shown_encoding() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.read_enc = Encoding::Cp1251;
+        d.codepage = Encoding::Cp866;
+        d.osc.analog[0].id = "A¦".into();
+        d.name_raw.clear();
+        d.ensure_name_raw();
+        assert_eq!(d.name_raw[2].bytes, [b'A', 0xB3], "«¦» is the 866 byte it reads back from");
+        // A channel appended by a merge, its name shown the same way.
+        d.init_set_keys();
+        let (na, nd) = (d.osc.analog.len(), d.osc.digital.len());
+        let mut added = d.osc.analog[0].clone();
+        added.id = "B¦".into();
+        d.osc.analog.push(added);
+        d.move_appended_keys(na, na, nd, nd);
+        assert_eq!(d.name_raw[2 + na].bytes, [b'B', 0xB3]);
+        assert_eq!(d.set.keys[na], "B\u{456}", "its file-name key: those bytes as 1251 text");
+    }
+
     /// A rename on a document whose names as read were never taken (the
     /// demo) takes them first: an empty rename brings the file's name back.
     #[test]

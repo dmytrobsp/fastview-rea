@@ -277,13 +277,16 @@ impl Doc {
     pub fn move_appended_keys(&mut self, at_a: usize, nb: usize, at_d: usize, nd: usize) {
         // The names' bytes kept by «Кодировка» move alike (a new name's are
         // its text shown in the record's code page taken back to the bytes
-        // as read, `recdlg::name_bytes_of`).
+        // as read, `recdlg::shown_bytes_of`).
         if self.name_raw.len() == 2 + nb + nd {
             let mut old = std::mem::take(&mut self.name_raw);
             let mut d = old.split_off(2 + nb);
             let mut a = old.split_off(2);
             let (read, cp) = (self.read_enc, self.codepage);
-            let own = |id: &String| crate::recdlg::added_name(id, crate::recdlg::name_bytes_of(id, read, cp), read, cp);
+            // The bytes are the shown ones (`shown_bytes_of`: a best-fitted
+            // character keeps the byte it reads back from); whether the name
+            // is an alias is `added_name`'s (a name the code page can't hold).
+            let own = |id: &String| crate::recdlg::added_name(id, crate::recdlg::shown_bytes_of(id, read, cp), read, cp);
             a.extend(self.osc.analog[nb..].iter().map(|c| own(&c.id)));
             d.extend(self.osc.digital[nd..].iter().map(|c| own(&c.id)));
             a[at_a..].rotate_right(self.osc.analog.len() - nb);
@@ -296,7 +299,7 @@ impl Doc {
             return;
         }
         let old = std::mem::take(&mut self.set.keys);
-        let own = |id: &str| comtrade::decode_bytes(&crate::recdlg::name_bytes_of(id, self.read_enc, self.codepage), Encoding::Cp1251);
+        let own = |id: &str| comtrade::decode_bytes(&crate::recdlg::shown_bytes_of(id, self.read_enc, self.codepage), Encoding::Cp1251);
         let mut a: Vec<String> = self.osc.analog.iter().enumerate().map(|(i, c)| old.get(i).filter(|_| i < nb).cloned().unwrap_or_else(|| own(&c.id))).collect();
         let mut d: Vec<String> = self.osc.digital.iter().enumerate().map(|(k, c)| old.get(nb + k).filter(|_| k < nd).cloned().unwrap_or_else(|| own(&c.id))).collect();
         let (ka, kd) = (a.len() - nb, d.len() - nd);
@@ -338,7 +341,7 @@ impl Doc {
             return;
         }
         let (read, cp) = (self.read_enc, self.codepage);
-        let own = |s: &String| crate::app::RawName { bytes: crate::recdlg::name_bytes_of(s, read, cp), seen: s.clone(), alias: false };
+        let own = |s: &String| crate::app::RawName { bytes: crate::recdlg::shown_bytes_of(s, read, cp), seen: s.clone(), alias: false };
         let v: Vec<_> = [&self.osc.station, &self.osc.device].into_iter().chain(self.osc.analog.iter().map(|c| &c.id)).chain(self.osc.digital.iter().map(|c| &c.id)).map(own).collect();
         self.name_raw = v;
     }
