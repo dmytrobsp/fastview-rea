@@ -30,13 +30,10 @@ Last rewritten: 2026-10-31 (v0.5.0 released; milestone 0.6.0 started: the follow
 
 ## In flight
 
-- **Milestone 0.6.0** ([GitHub](https://github.com/dmytrobsp/fastview-rea/milestone/4), plan and ledger:
-  [milestones/0.6.0.md](milestones/0.6.0.md)): the follow-ups of 0.5.0 (#100–#115, #118, #119, #121) and of 0.4.0
-  (#65, #67–#69, #78–#83) — own rates' remaining readers, sin / cos / tan parity, auto-hide and focus leftovers, code
-  pages, the view's clipboard picture and В1, scaling residuals, synthetic test records. Eight units in three waves.
-  **Status (2026-10-31):** all eight units, the final review and its fix wave merged into `milestone/0.6.0` (723 tests,
-  GATES-OK); awaiting the maintainer's merge into main. Open for the maintainer: the published test-record values
-  (a local inventory; scrub forward or rewrite history), #131.
+- **Milestone 0.6.0 merged into main** (2026-10-31, PR #151; [ledger](milestones/0.6.0.md)): the follow-ups of 0.5.0
+  and 0.4.0 — 27 issues, record L9.414–L9.420. The release is on hold (the maintainer).
+- **A forward-only scrub** of clone test-record values published before 0.6.0 (code comments / tests, docs/original/,
+  issue bodies) — the maintainer's choice; history stays as it is.
 
 ## Next topics
 
