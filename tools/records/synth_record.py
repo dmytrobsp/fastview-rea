@@ -223,6 +223,17 @@ class Gen:
             return f"{x:.{dec}f}" if dec else str(x)
         return tok
 
+    def irregular_instants(self, n):
+        """Instants (seconds) of a timestamp-only record: a base step (never a round rate) with a jitter of up
+        to 40 % and now and then a pause, strictly increasing."""
+        r = self.rng
+        base = r.uniform(250.0, 1900.0) * 1e-6
+        t, ts = 0.0, []
+        for _ in range(n):
+            ts.append(t)
+            t += base * r.uniform(0.6, 1.4) * (r.uniform(3, 6) if r.randrange(17) == 0 else 1)
+        return ts
+
     def date(self, tok, rev):
         """An invented date written like `tok` (day 13..27 so the order is unambiguous)."""
         if not tok.strip():
@@ -314,25 +325,35 @@ def generate(src, seed, rows):
 
     out.append(list(L[src.freq_at]))
     # rate segments: invented rates, proportional invented counts, a new total
+    # (a timestamp-only record: `0` and one `0,N` line, the instants invented below)
     total_src = max(src.total_samples, 1)
     nr = src.n_rates
-    rows = max(rows, 8 * nr)
+    rows = max(rows, 8 * max(nr, 1))
     if rows == total_src:
         rows += 1
-    counts, prev = [], 0
-    for k in range(nr):
-        e = src.end_samples[k]
-        share = (e - prev) / total_src
-        prev = e
-        counts.append(max(8, round(rows * share)))
-    ends = [sum(counts[: k + 1]) for k in range(nr)]
-    rows = ends[-1] if ends else rows
-    rates = [g.rate(t) for t in src.rates]
-    out.append([str(nr)] + L[src.nrates_at][1:])
-    for k in range(nr):
-        f = list(L[src.rates_at + k])
-        f[0], f[1] = rates[k], str(ends[k])
-        out.append(f)
+    if src.timestamp_only:
+        rates, ends = [], [rows]
+        out.append([str(nr)] + L[src.nrates_at][1:])
+        line = list(L[src.rates_at])
+        line[1] = str(rows)
+        out.append(line)
+        ts = g.irregular_instants(rows)
+    else:
+        counts, prev = [], 0
+        for k in range(nr):
+            e = src.end_samples[k]
+            share = (e - prev) / total_src
+            prev = e
+            counts.append(max(8, round(rows * share)))
+        ends = [sum(counts[: k + 1]) for k in range(nr)]
+        rows = ends[-1] if ends else rows
+        rates = [g.rate(t) for t in src.rates]
+        out.append([str(nr)] + L[src.nrates_at][1:])
+        for k in range(nr):
+            f = list(L[src.rates_at + k])
+            f[0], f[1] = rates[k], str(ends[k])
+            out.append(f)
+        ts = segment_instants(rates, ends)
 
     rev = src.rev
     sl, el = L[src.start_at], L[src.end_at]
@@ -340,7 +361,10 @@ def generate(src, seed, rows):
     t1, s1 = g.clock(sl[1] if len(sl) > 1 else "")
     out.append([d1, t1] if len(sl) > 1 else [d1])
     # the end of the record: the start plus the duration of the data
-    duration = sum((ends[k] - (ends[k - 1] if k else 0)) / float(rates[k]) for k in range(nr))
+    if src.timestamp_only:
+        duration = ts[-1] + (ts[-1] - ts[-2])
+    else:
+        duration = sum((ends[k] - (ends[k - 1] if k else 0)) / float(rates[k]) for k in range(nr))
     out.append([d1, g.clock_at(el[1], s1 + duration)] if len(el) > 1 else [d1])
     out.append(list(L[src.ftype_at]))
     tail = []
@@ -372,7 +396,7 @@ def generate(src, seed, rows):
     # -- data
     dat = None
     if src.dat_path:
-        dat = make_dat(g, src, rates, ends, rows, mult)
+        dat = make_dat(g, src, ts, rows, mult)
 
     hdr = None
     if src.hdr:
@@ -428,7 +452,19 @@ def make_hdr(g, t):
     return t.encode(lines)
 
 
-def make_dat(g, src, rates, ends, rows, mult):
+def segment_instants(rates, ends):
+    """Sample instants (seconds) of the rate segments."""
+    t, ts, prev = 0.0, [], 0
+    for k, e in enumerate(ends):
+        dt = 1.0 / float(rates[k])
+        for _ in range(prev, e):
+            ts.append(t)
+            t += dt
+        prev = e
+    return ts
+
+
+def make_dat(g, src, ts, rows, mult):
     r = g.rng
     na, nd = src.n_analog, src.n_digital
     ab, words = src.row_layout()
@@ -440,15 +476,6 @@ def make_dat(g, src, rates, ends, rows, mult):
             dmax[i] = max(dmax[i], abs(x))
         if n == 0:
             first_digital = d
-    # sample instants (seconds) from the segments
-    t, ts = 0.0, []
-    prev = 0
-    for k, e in enumerate(ends):
-        dt = 1.0 / float(rates[k])
-        for _ in range(prev, e):
-            ts.append(t)
-            t += dt
-        prev = e
     amp = [r.uniform(0.3, 0.9) for _ in range(na)]
     phase = [r.uniform(0, 2 * math.pi) for _ in range(na)]
     f0 = r.uniform(49.0, 51.0)

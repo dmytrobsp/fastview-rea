@@ -139,8 +139,23 @@ def src_e(d):
         f.write(("\n".join(rows) + "\n").encode())
 
 
-SOURCES = [("a", src_a), ("b", src_b), ("c", src_c), ("d", src_d)]
-SEED = {"a": 11, "b": 22, "c": 33, "d": 44}
+def src_f(d):
+    """1999, Latin ASCII, CRLF, timestamp-only (`0` then `0,N`, irregular instants), a time multiplier, no .hdr."""
+    lines = ["Station Quill,Recorder P4,1999", "5,2A,3D",
+             "1,Volt Rho,A,,V,0.0731,0,0,-32767,32767,1370,3,P",
+             "2,Amp Sigma,B,,A,0.0417,0,0,-32767,32767,225,1,P",
+             "1,Trip Tau,0", "2,Block Upsi,0", "3,Alarm Phi,1",
+             "50", "0", "0,17", "14/06/2022,08:15:42.318000", "14/06/2022,08:15:42.331000", "ASCII", "0.5"]
+    with open(os.path.join(d, "f.cfg"), "wb") as f:
+        f.write((CRLF.join(lines) + CRLF).encode())
+    gaps = [0, 413, 788, 1203, 1598, 2022, 2417, 3902, 4311, 4707, 5121, 5504, 5933, 6347, 8836, 9244, 9650]
+    rows = [f"{i + 1},{gaps[i]},{(i * 307) % 1900 - 800},{(i * 113) % 1200 - 500},{i % 2},0,{1 if i > 9 else 0}" for i in range(17)]
+    with open(os.path.join(d, "f.dat"), "wb") as f:
+        f.write((CRLF.join(rows) + CRLF).encode())
+
+
+SOURCES = [("a", src_a), ("b", src_b), ("c", src_c), ("d", src_d), ("f", src_f)]
+SEED = {"a": 11, "b": 22, "c": 33, "d": 44, "f": 66}
 
 
 def main():
@@ -155,7 +170,7 @@ def main():
             mk(sd)
             src = recfmt.Record(next(os.path.join(sd, n) for n in os.listdir(sd) if n.lower().endswith(".cfg")))
             od = os.path.join(tmp if a.check else FIXTURES, "out_" + name if a.check else name)
-            seed = synth_record.write_record(src, od, name, SEED[name], 96 if name != "d" else 30)
+            seed = synth_record.write_record(src, od, name, SEED[name], 30 if name in "df" else 96)
             print(f"{name}: seed {seed}")
             for n in sorted(os.listdir(od)):
                 if a.check:

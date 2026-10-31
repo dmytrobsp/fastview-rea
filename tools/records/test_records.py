@@ -115,7 +115,7 @@ class Generator(Base):
         # Regenerate into a temp folder and compare with the committed ones.
         for name, mk in make_fixtures.SOURCES:
             src = self.source(mk)
-            rows = 30 if name == "d" else 96
+            rows = 30 if name in "df" else 96
             od = os.path.join(self.tmp, "fx_" + name)
             synth_record.write_record(src, od, name, make_fixtures.SEED[name], rows)
             for n in os.listdir(od):
@@ -282,15 +282,24 @@ class Check(Base):
                 tested += 1
         self.assertEqual(tested, 9 * 30)
 
-    def test_unsupported_layouts_are_refused_with_a_message(self):
-        d = os.path.join(self.tmp, "ts")
-        os.makedirs(d)
-        wb(os.path.join(d, "t.cfg"), b"S,D,1999\n1,1A,0D\n1,I,A,,A,1,0,0,-1,1,1,1,S\n50\n0\n0,5\n01/01/2020,00:00:00.0\n01/01/2020,00:00:00.1\nASCII\n1\n")
-        with self.assertRaises(recfmt.UnsupportedRecord):
-            recfmt.Record(os.path.join(d, "t.cfg"))
-        with self.assertRaises(SystemExit) as cm:
-            synth_record.main([os.path.join(d, "t.cfg"), os.path.join(d, "o")])
-        self.assertIn("not supported", str(cm.exception))
+    def test_a_timestamp_only_record_is_generated_with_its_structure(self):
+        src = self.source(make_fixtures.src_f)
+        self.assertTrue(src.timestamp_only)
+        for seed in range(1, 8):
+            out = self.synth(src, seed, rows=30)
+            self.assertTrue(out.timestamp_only)
+            self.assertEqual(out.n_rates, 0)
+            self.assertEqual(out.fields[out.nrates_at], ["0"])
+            line = out.fields[out.rates_at]
+            self.assertEqual((line[0], int(line[1])), ("0", 30), "the line `0,N` with the new count")
+            self.assertEqual((out.n_analog, out.n_digital, out.ftype, out.rev), (2, 3, "ASCII", "1999"))
+            rows = [r.split(",") for r in rb(out.dat_path).decode().split("\r\n") if r]
+            self.assertEqual(len(rows), 30)
+            stamps = [int(r[1]) for r in rows]
+            steps = [b - a for a, b in zip(stamps, stamps[1:])]
+            self.assertTrue(all(x > 0 for x in steps), "the instants increase")
+            self.assertGreater(len(set(steps)), 5, "the steps are irregular")
+            self.assertEqual(self.hits(src, out), {k: 0 for k in self.hits(src, out)})
 
     def test_a_failed_draw_leaves_no_files(self):
         src = self.source(make_fixtures.src_d)

@@ -181,17 +181,18 @@ class Record:
         self.freq_at = i
         self.nrates_at = i + 1
         nr = int(float(L[self.nrates_at][0])) if L[self.nrates_at][0].strip() else 0
-        if nr == 0:
-            raise UnsupportedRecord("a record without rate segments (timestamp-only) is not supported")
+        # A timestamp-only record has `0` here and one `0,N` line (no rate, N samples): the times are the data's own.
+        self.timestamp_only = nr == 0
         self.n_rates = nr
         self.rates_at = i + 2
-        i = self.rates_at + nr
+        lines = max(nr, 1)
+        i = self.rates_at + lines
         self.start_at, self.end_at, self.ftype_at = i, i + 1, i + 2
         self.ftype = L[self.ftype_at][0].strip() if len(L) > self.ftype_at else "ASCII"
         self.tail_at = i + 3
-        self.end_samples = [int(float(L[self.rates_at + k][1])) for k in range(nr)]
+        self.end_samples = [int(float(L[self.rates_at + k][1])) for k in range(lines)]
         self.rates = [L[self.rates_at + k][0].strip() for k in range(nr)]
-        self.total_samples = self.end_samples[-1] if nr else 0
+        self.total_samples = self.end_samples[-1]
 
     # -- data
     def row_layout(self):

@@ -23,6 +23,8 @@ const FIXTURES: &[(&str, &str, &[u8])] = &[
     ("c", "c.hdr", include_bytes!("data/generated/c/c.hdr")),
     ("d", "d.cfg", include_bytes!("data/generated/d/d.cfg")),
     ("d", "d.dat", include_bytes!("data/generated/d/d.dat")),
+    ("f", "f.cfg", include_bytes!("data/generated/f/f.cfg")),
+    ("f", "f.dat", include_bytes!("data/generated/f/f.dat")),
 ];
 
 fn fixture(dir: &str, file: &str) -> PathBuf {
@@ -104,6 +106,16 @@ fn revision_1991_layout() {
     assert_eq!((rec.analog.len(), rec.digital.len(), rec.rev_year), (3, 3, 1991));
     assert_eq!(rec.sample_count(), 30);
     assert_eq!(rec.time_mult, 1.0);
+}
+
+/// 1999, ASCII, timestamp-only (`0` rate lines, one `0,N` line): the rows' own instants are the time axis.
+#[test]
+fn timestamp_only_record_uses_its_own_instants() {
+    let rec = comtrade::load_with(fixture("f", "f.cfg"), Encoding::Cp1251).unwrap();
+    assert_eq!((rec.analog.len(), rec.digital.len(), rec.rev_year, rec.sample_count()), (2, 3, 1999, 30));
+    assert!(rec.time.windows(2).all(|w| w[1] > w[0]), "the instants increase");
+    let steps: Vec<i64> = rec.time.windows(2).map(|w| ((w[1] - w[0]) * 1e9).round() as i64).collect();
+    assert!(steps.iter().any(|s| *s != steps[0]), "the steps are irregular");
 }
 
 /// The reader's own writer reproduces the structure it was given (names are invented, kept).

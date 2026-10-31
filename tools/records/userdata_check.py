@@ -74,7 +74,7 @@ def _iter_texts(rec):
 def codes(rec):
     """Whole lines that are a record's own values even when short: rate segments, time/quality codes."""
     ls = rec.cfg.lines
-    pick = list(range(rec.rates_at, rec.rates_at + rec.n_rates)) + list(range(rec.tail_at + 1, len(ls)))
+    pick = list(range(rec.rates_at, rec.rates_at + max(rec.n_rates, 1))) + list(range(rec.tail_at + 1, len(ls)))
     return {"".join(ls[i].split()).casefold() for i in pick if i < len(ls) and any(c.isalnum() for c in ls[i])}
 
 
