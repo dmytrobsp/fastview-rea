@@ -4,42 +4,42 @@ The current state, in short. This page is rewritten when things change, never ap
 What happened before is in the milestones' ledgers ([milestones/](milestones/README.md)), the record of the original
 ([original/](original/README.md)), [history/](history/) and `git log`.
 
-Last rewritten: 2026-10-30 (milestone 0.5.0 started: calculation fidelity and panes).
+Last rewritten: 2026-10-31 (v0.5.0 released; milestone 0.5.0 closed).
 
 ## Latest release
 
-- **v0.4.0**, 2026-10-30: [release page](https://github.com/dmytrobsp/fastview-rea/releases/tag/v0.4.0). Linux x86-64,
-  Windows x86-64 and macOS (universal), each one flat archive, built by CI from the tag.
-- What it brought ([milestone 0.4.0](https://github.com/dmytrobsp/fastview-rea/milestone/1), merged by #87): the first
-  user feedback on v0.3.0 — auto-hidden panes that stay out (#4), crisp display scaling with MFC's chrome growing as
-  the original's (#5, #6, #12), quick analysis and every channel reference after «Кодировка» (#7) —, COMTRADE 2013
-  UTF-8 exports such as Siemens SIPROTEC 7KE85 (#8).
-- Checked: the whole suite on Linux (CI, gates) and on Windows in a throwaway clone (590 passed); the release exe
-  starts on Windows 10 before 1607 again (no statically imported DPI functions). Not run: the eframe GPU path on
-  Windows, two monitors at different scales on hardware.
-- Before it: v0.3.0 (2026-10-25), v0.2.0, v0.1.0.
+- **v0.5.0**, 2026-10-31: [release page](https://github.com/dmytrobsp/fastview-rea/releases/tag/v0.5.0). Linux x86-64,
+  Windows x86-64 and macOS (universal), each one flat archive (now with `LICENSE-intel-libm.txt`), built by CI from
+  the tag.
+- What it brought ([milestone 0.5.0](https://github.com/dmytrobsp/fastview-rea/milestone/3), merged by #122):
+  calculations to the original's last digit — its sin / cos bit for bit through a port of Intel's BSD SSE2 code (#72),
+  the display factor per sample (#60), own rates after «Объединить» and message 239 (#57, #71), the ОМП flags after
+  «Кодировка» (#66) — and panes — auto-hide strips, tab buttons, divider and toggle as the original's (#61–#64),
+  floating panes as tool windows (#70), the focus back after any close (#77), a short drag to float with a move
+  cursor (#90).
+- Checked: the whole suite on Linux, Windows and macOS (CI, gates, 633 tests) and the Windows test executables in a
+  throwaway clone (630 passed); smoke runs of each fixed issue in a clone. Not run: #66 end to end on a clone (#114).
+- Before it: v0.4.0 (2026-10-30), v0.3.0, v0.2.0, v0.1.0.
 
 ## Where the reconstruction stands
 
-- Every engine and the UI layer read and reconciled: the record runs L1–L9.408 ([original/](original/README.md)); 91.8 %
+- Every engine and the UI layer read and reconciled: the record runs L1–L9.413 ([original/](original/README.md)); 91.8 %
   of the program's own code is in cited functions (`tools/coverage.py`).
 - Deliberate improvements: [IMPROVEMENTS.md](IMPROVEMENTS.md); differences the maintainer accepted:
   [ACCEPTED-DIFFERENCES.md](ACCEPTED-DIFFERENCES.md).
 
 ## In flight
 
-- **Milestone 0.5.0** ([GitHub](https://github.com/dmytrobsp/fastview-rea/milestone/3), plan and ledger:
-  [milestones/0.5.0.md](milestones/0.5.0.md)): calculation fidelity — the original's sin / cos bit for bit (#72), the
-  display factor per sample (#60), own rates after a merge (#57, #71), the ОМП flags after «Кодировка» (#66), kV units
-  in the stats rows (#86) — and panes — auto-hide (#61–#64), floating panes (#70), focus (#77), a short drag to float
-  (#90). Five units in two waves.
+- Nothing: no milestone is open. Milestone 0.5.0's ledger and retro: [milestones/0.5.0.md](milestones/0.5.0.md).
 
 ## Next topics
 
-- **After 0.5.0**, candidates: the drag-and-drop gaps #73–#76 (#74 / #75 need the maintainer), #85 (the pre-1607
-  DPI fallback), the 0.4.0 follow-ups (#65, #67–#69, #78–#83).
+- **The next milestone**, to propose to the maintainer: candidates are 0.5.0's follow-ups (#100–#115, #118, #119,
+  #121 — own rates' remaining readers and merge pads, sin / cos site tests, auto-hide and focus leftovers), the
+  drag-and-drop gaps #73–#76 (#74 / #75 need the maintainer), #85 (the pre-1607 DPI fallback), the 0.4.0 follow-ups
+  (#65, #67–#69, #78–#83).
 - **The maintainer's new direction (filed 2026-10-30, all `improvement`):** translations (#88), anti-aliased
-  waveforms keeping every sample exact (#89), a short drag to float a pane with a grab cursor (#90), and — designed
+  waveforms keeping every sample exact (#89), and — designed
   together, `size:l` — light / dark themes replacing the nine «Стиль» skins (#91) with a simpler modern look (#92);
   #19 / #20 (per-skin fidelity) are on hold for them.
 - **Waiting for the maintainer:** #74 (a drop on another record's view: match the original or do nothing), #75
