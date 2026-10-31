@@ -475,7 +475,7 @@ impl App {
             // read in UTF-8 / KOI8-R keeps it as bytes the way it reads its
             // own (`recdlg::shown_bytes_of`).
             let bytes = crate::recdlg::shown_bytes_of(&lane.name, d.read_enc, d.codepage);
-            lane.name_raw = Some(crate::app::RawName { bytes, seen: lane.name.clone(), alias: false });
+            lane.name_raw = Some(crate::recdlg::added_name(&lane.name, bytes, d.read_enc, d.codepage));
             d.computed.push(lane);
             d.selection.insert(ChanKey::Computed(d.computed.len() - 1));
             d.pending.push(c);

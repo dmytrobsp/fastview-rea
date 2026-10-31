@@ -800,6 +800,10 @@ pub struct Doc {
     /// The code page the record's names are currently decoded in (`doc+0x6e8`,
     /// 866 / 1251: file parameters «Кодировка»; see `recdlg`).
     pub codepage: Encoding,
+    /// A stored `Oscillogram/Codepage` other than 0 / 1 (65001, 20866 …),
+    /// kept as it is until «Кодировка» is used (#82; the original's
+    /// `doc+0x6e8` holds any int, ANSI for non-zero, and writes it back).
+    pub cp_raw: Option<i32>,
     /// The station's, the recorder's and each channel's name as read (see
     /// [`RawName`]), in step with the channels (`Doc::ensure_name_raw`).
     pub name_raw: Vec<RawName>,
@@ -882,6 +886,7 @@ impl Doc {
             digital_visible,
             dig_flags: Vec::new(),
             codepage: Encoding::Cp1251,
+            cp_raw: None,
             name_raw: Vec::new(),
             hdr: None,
             hdr_cp: Encoding::Cp1251,

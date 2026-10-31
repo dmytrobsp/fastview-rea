@@ -200,6 +200,18 @@ pub fn shown_bytes_of(name: &str, read: Encoding, shown: Encoding) -> Vec<u8> {
     name_bytes_of(name, read, shown)
 }
 
+/// The kept name of one added to a record (a pasted lane, a merged channel):
+/// `bytes` is the name taken to the record's bytes. A name whose text does
+/// not come back from them in the code page it is shown in (KOI8-R has no
+/// і ї є ґ, 866 lacks some, 1251 lacks more) is kept as an alias, so it
+/// survives «Кодировка» as typed (ours: the original keeps such a name as
+/// bytes, so the letters turn into «?», #81); one that round-trips stays a
+/// plain stored name, re-decoded with the code page like the record's own.
+pub fn added_name(name: &str, bytes: Vec<u8>, read: Encoding, shown: Encoding) -> crate::app::RawName {
+    let alias = decode_name(&bytes, read, shown) != name;
+    crate::app::RawName { bytes, seen: name.to_string(), alias }
+}
+
 impl Doc {
     /// 32867/32868 CMDUI (`0x42ffb0`): the radio follows channel 0.
     pub fn primary_values(&self) -> bool {
@@ -339,7 +351,9 @@ impl Doc {
                 let bytes = if matches!(read, Encoding::Cp1251 | Encoding::Cp866) { name_bytes_of(f, read, from) } else { comtrade::encode_text(&self.file_key(p - 2), Encoding::Cp1251) };
                 (bytes, false, true)
             } else {
-                (name_bytes_of(n, read, from), true, false)
+                let bytes = name_bytes_of(n, read, from);
+                let alias = decode_name(&bytes, read, from) != *n;
+                (bytes, !alias, alias)
             });
         }
         let decode = |b: &[u8]| -> String { decode_name(b, read, cp) };
@@ -384,7 +398,10 @@ impl Doc {
                     let redo = !r.alias && r.seen == c.name;
                     (r.bytes, redo)
                 }
-                None => (shown_bytes_of(&c.name, read, from), true),
+                None => {
+                    let r = added_name(&c.name, shown_bytes_of(&c.name, read, from), read, from);
+                    (r.bytes, !r.alias)
+                }
             };
             let seen = decode(&bytes);
             if redecode {
@@ -765,7 +782,9 @@ impl App {
                 win_label(ui, dlu(client, 12, 234, 96, 9), "Кодировка:", true, true);
                 let items = codepage_items(d.read_enc);
                 let cps: Vec<String> = items.iter().map(|(_, l)| l.to_string()).collect();
-                let cur = items.iter().position(|(e, _)| *e == d.codepage).unwrap_or(0);
+                // A stored value the combo has no entry for shows empty
+                // (`SetCurSel` out of range, `0x44a112`).
+                let cur = if d.cp_raw.is_some() { items.len() } else { items.iter().position(|(e, _)| *e == d.codepage).unwrap_or(0) };
                 if let Some(k) = crate::dialogs::win_combo_list(ui, dlu(client, 121, 233, 80, 70), egui::Id::new("fv_codepage"), &cps, cur, true) {
                     cp_pick = Some(items[k].0);
                 }
@@ -780,6 +799,7 @@ impl App {
                 }
             });
         if let Some(cp) = cp_pick {
+            self.docs[ai].cp_raw = None;
             // The vector diagram's angle reference follows its channel too.
             for (old, new) in self.docs[ai].set_codepage(cp) {
                 if self.vec_angle_ref.as_deref() == Some(old.as_str()) {
@@ -1277,6 +1297,46 @@ mod tests {
                 assert!(d.computed[j].name.starts_with(&d.osc.analog[3].id), "{read:?} → {cp:?}: as the record's own channel");
             }
             assert_eq!(d.computed[j].name, pasted, "{read:?}: back as pasted");
+        }
+    }
+
+    /// #81: a name pasted into a KOI8-R record (no і ї є ґ) is kept as an
+    /// alias when its text does not round-trip through the encoding, so a
+    /// switch away and back gives it back; a name that does round-trip stays
+    /// a plain stored name (re-decoded with the code page like the record's
+    /// own).
+    #[test]
+    fn a_pasted_name_the_encoding_cannot_hold_survives_switches() {
+        use crate::app::ChanKey;
+        for (src, lossy) in [("Струм фази ї", true), ("Струм фази", false)] {
+            let mut app = demo_app();
+            let d = app.active_doc_mut().unwrap();
+            d.codepage = Encoding::Cp1251;
+            d.osc.analog[3].id = src.into();
+            d.init_set_keys();
+            d.selection = [ChanKey::Analog(3)].into();
+            app.copy_channels_for_merge();
+            let d = app.active_doc_mut().unwrap();
+            // The record now reads in KOI8-R (the paste target).
+            d.osc.analog[3].id = "Ток".into();
+            d.osc.text_enc = Some(Encoding::Koi8r);
+            d.name_raw.clear();
+            d.init_record_text(Encoding::Cp1251);
+            d.init_set_keys();
+            d.selection.clear();
+            app.paste_channels_for_merge();
+            let d = app.active_doc_mut().unwrap();
+            let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+            let pasted = d.computed[j].name.clone();
+            assert!(pasted.starts_with(src), "{pasted}");
+            assert_eq!(d.computed[j].name_raw.as_ref().unwrap().alias, lossy, "{src}: kept as an alias only when KOI8-R cannot hold it");
+            for cp in [Encoding::Cp1251, Encoding::Cp866, Encoding::Koi8r, Encoding::Utf8, Encoding::Koi8r] {
+                d.set_codepage(cp);
+                if lossy {
+                    assert_eq!(d.computed[j].name, pasted, "{src} → {cp:?}");
+                }
+            }
+            assert_eq!(d.computed[j].name, pasted, "{src}: back as pasted");
         }
     }
 
@@ -1914,6 +1974,48 @@ mod tests {
         d.set.tree.section_mut("Oscillogram").set_int("Codepage", 20866);
         app.apply_record_settings(ai, false);
         assert_eq!(app.docs[ai].codepage, Encoding::Utf8);
+    }
+
+    /// #82: a stored `Oscillogram/Codepage` other than 0 / 1 (65001, 20866,
+    /// 866 …) is ANSI for the original — `0x4543e0` only tests for 0 — so a
+    /// record read in 1251 / 866 shows its names as read, the combo shows
+    /// no entry (`SetCurSel` out of range), and the value is written back
+    /// as it is until «Кодировка» is used.
+    #[test]
+    fn a_stored_65001_or_20866_is_ansi_and_written_back() {
+        let saved = |d: &Doc| {
+            let mut t = d.set.tree.clone();
+            d.store_settings(&mut t, false);
+            t.section("Oscillogram").unwrap().get_int("Codepage", -1)
+        };
+        for stored in [65001, 20866, 866, 2] {
+            let mut app = demo_app();
+            let ai = app.active.unwrap();
+            let d = &mut app.docs[ai];
+            d.osc.analog[0].id = "Струм".into();
+            d.init_record_text(Encoding::Cp1251);
+            d.init_set_keys();
+            d.set_codepage(Encoding::Cp866);
+            d.set.tree.section_mut("Oscillogram").set_int("Codepage", stored);
+            app.apply_record_settings(ai, false);
+            let d = &mut app.docs[ai];
+            assert_eq!(d.codepage, Encoding::Cp1251, "{stored}: ANSI");
+            assert_eq!(d.osc.analog[0].id, "Струм", "{stored}: the names as read");
+            assert_eq!(codepage_items(d.read_enc).len(), 2);
+            assert_eq!(d.cp_raw, Some(stored));
+            assert_eq!(saved(d), stored, "written back as stored");
+            // Using «Кодировка» replaces it by the combo's index.
+            d.cp_raw = None;
+            assert_eq!(saved(d), 1);
+            d.set_codepage(Encoding::Cp866);
+            assert_eq!(saved(d), 0);
+        }
+        // 0 and 1 are the combo's own entries.
+        let mut app = demo_app();
+        let ai = app.active.unwrap();
+        app.docs[ai].set.tree.section_mut("Oscillogram").set_int("Codepage", 1);
+        app.apply_record_settings(ai, false);
+        assert_eq!(app.docs[ai].cp_raw, None);
     }
 
     #[test]

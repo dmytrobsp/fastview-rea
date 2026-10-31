@@ -55,9 +55,13 @@ misbehaves and the better behaviour is obvious (the maintainer,
   best-fitted («√», box-drawing, U+FFFD kept). Reason: the combo shows the
   record's real encoding, and coming back from 866 / 1251 loses nothing of
   the record's own names, which come back as read. A name pasted or merged
-  in comes back only as far as the shown encoding could hold it (KOI8-R has
-  no і ї є ґ; a lane pasted under 1251 into a UTF-8 record keeps only what
-  1251 holds).
+  in whose text does not round-trip through the record's encoding (KOI8-R
+  has no і ї є ґ; 866 and 1251 lack some letters too) is kept as an alias
+  (#81, the maintainer's decision 2026-10-31): the original keeps such a
+  name as bytes only, so after a switch away and back the letters come
+  back as «?»; ours shows the name as pasted across every switch. A name
+  that does round-trip stays a plain stored name, re-decoded with the code
+  page like the record's own.
 - **ADC codes beyond ±2³¹** (float32-range samples with a tiny `a`). The
   original truncates the code to a 32-bit int (`0x422250` → `0x411bf0`),
   every such code −2147483648; ours keeps it whole. Reason: the true raw
