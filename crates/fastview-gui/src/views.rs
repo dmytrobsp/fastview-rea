@@ -854,7 +854,6 @@ impl App {
         // as the original's does (its caption's pin and close would lie under
         // the window's own buttons): an improvement, docs/IMPROVEMENTS.md.
         let cap = screen.top() + crate::ribbon::caption_h();
-        let top = cap;
         let divider = crate::dpi::s(DIVIDER_PX);
         self.dock_areas = [None; 4];
         self.dock_dividers = [None; 4];
@@ -882,12 +881,12 @@ impl App {
                 Edge::Right => {
                     let right = s.map_or(screen.right(), |s| s.left());
                     let w = ext.min(right - screen.left() - divider) * k;
-                    egui::Rect::from_min_max(egui::pos2(right - w, top), egui::pos2(right, s.map_or(screen.bottom(), |s| s.bottom())))
+                    egui::Rect::from_min_max(egui::pos2(right - w, cap), egui::pos2(right, s.map_or(screen.bottom(), |s| s.bottom())))
                 }
                 Edge::Left => {
                     let left = s.map_or(screen.left(), |s| s.right());
                     let w = ext.min(screen.right() - left - divider) * k;
-                    egui::Rect::from_min_max(egui::pos2(left, top), egui::pos2(left + w, s.map_or(screen.bottom(), |s| s.bottom())))
+                    egui::Rect::from_min_max(egui::pos2(left, cap), egui::pos2(left + w, s.map_or(screen.bottom(), |s| s.bottom())))
                 }
                 Edge::Bottom => {
                     let bottom = s.map_or(screen.bottom(), |s| s.top());
@@ -895,8 +894,8 @@ impl App {
                     egui::Rect::from_min_max(egui::pos2(screen.left(), bottom - h), egui::pos2(screen.right(), bottom))
                 }
                 Edge::Top => {
-                    let h = ext.min(screen.bottom() - top - divider) * k;
-                    egui::Rect::from_min_max(egui::pos2(screen.left(), top), egui::pos2(screen.right(), top + h))
+                    let h = ext.min(screen.bottom() - cap - divider) * k;
+                    egui::Rect::from_min_max(egui::pos2(screen.left(), cap), egui::pos2(screen.right(), cap + h))
                 }
             };
             // On a pixel, as egui places an area.
@@ -962,7 +961,8 @@ impl App {
     fn slide_area(&mut self, ctx: &egui::Context, id: egui::Id, rect: egui::Rect, body: impl FnOnce(&mut App, &mut egui::Ui)) {
         // `rect` on a pixel (as egui places an area); no fade-in (the pane
         // only slides).
-        egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(rect.min).constrain(false).default_size(rect.size()).fade_in(false).show(ctx, |ui| {
+        let modal = self.modal_up;
+        egui::Area::new(id).order(slid_order(modal)).fixed_pos(rect.min).constrain(false).default_size(rect.size()).fade_in(false).show(ctx, |ui| {
             // The area claims its rect for clicks before its content runs,
             // with the last frame's size: sliding in, a size that still
             // reaches over the strip — claimed again with this frame's rect
@@ -974,6 +974,13 @@ impl App {
             let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(3.0)));
             body(self, &mut inner);
             ui.expand_to_include_rect(rect);
+            // MFC's frame, which a modal dialog disables, is the pane's
+            // parent: a widget over the whole pane, the last of its layer,
+            // takes every click and drag while the dialog is up (as the
+            // floating window's).
+            if modal {
+                ui.interact(rect, id.with("fv_slide_disabled"), egui::Sense::click_and_drag());
+            }
         });
     }
 
@@ -981,15 +988,16 @@ impl App {
     /// along the strip's axis across it.
     fn slide_divider(&mut self, ctx: &egui::Context, id: egui::Id, rect: egui::Rect, vertical: bool) -> egui::Response {
         let brush = self.skin.splitter();
+        let modal = self.modal_up;
         egui::Area::new(id)
-            .order(egui::Order::Foreground)
+            .order(slid_order(modal))
             .fixed_pos(rect.min)
             .constrain(false)
             .default_size(rect.size())
             .fade_in(false)
             .show(ctx, |ui| {
                 ui.painter().rect_filled(rect, 0.0, brush);
-                let r = ui.interact(rect, id.with("drag"), egui::Sense::drag());
+                let r = ui.interact(rect, id.with("drag"), if modal { egui::Sense::hover() } else { egui::Sense::drag() });
                 if r.hovered() || r.dragged() {
                     ctx.set_cursor_icon(if vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical });
                 }
@@ -1107,7 +1115,7 @@ impl App {
         }
         // The window under the pointer takes the drop: not a diagram that a
         // floating or slid-out window lies over (clone).
-        if pos.is_some_and(|p| ctx.layer_id_at(p).is_some_and(|l| l != ui.layer_id() && (is_floating_pane_layer(l) || slid_pane_unit(l).is_some()))) {
+        if pos.is_some_and(|p| ctx.layer_id_at(p).is_some_and(|l| l != ui.layer_id() && is_pane_window_layer(l))) {
             return;
         }
         let Some(drag) = egui::DragAndDrop::take_payload::<crate::lanes::ChanDrag>(ctx) else { return };
@@ -1878,7 +1886,24 @@ pub fn is_floating_pane_layer(l: egui::LayerId) -> bool {
 /// The group whose slid-out window `l` is (it lies over the view like a
 /// floating one).
 pub fn slid_pane_unit(l: egui::LayerId) -> Option<crate::docking::Unit> {
-    crate::docking::UNITS.into_iter().find(|&u| l == egui::LayerId::new(egui::Order::Foreground, egui::Id::new(("fv_slide", u))))
+    crate::docking::UNITS.into_iter().find(|&u| [slid_order(false), slid_order(true)].into_iter().any(|o| l == egui::LayerId::new(o, egui::Id::new(("fv_slide", u)))))
+}
+
+/// The order a slid-out pane's window is drawn in: over the view; under a
+/// modal dialog (the Middle order) while one is up, so the dialog lies above
+/// it.
+fn slid_order(modal: bool) -> egui::Order {
+    if modal {
+        egui::Order::PanelResizeLine
+    } else {
+        egui::Order::Foreground
+    }
+}
+
+/// Whether `l` is a floating group's window or a slid-out one's (a pane's own
+/// window, over the view).
+pub fn is_pane_window_layer(l: egui::LayerId) -> bool {
+    is_floating_pane_layer(l) || is_slid_pane_layer(l)
 }
 
 /// Whether `l` is a slid-out auto-hidden group's window.

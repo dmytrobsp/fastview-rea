@@ -1803,7 +1803,7 @@ impl App {
         // it: a floating or slid-out pane's window over the view (its
         // caption, tab strip, toolbar; a diagram of it takes the drop as a
         // pane's) leaves the lane out (clone).
-        let over_float = |p: Pos2| ctx.layer_id_at(p).is_some_and(|l| crate::views::is_floating_pane_layer(l) || crate::views::is_slid_pane_layer(l));
+        let over_float = |p: Pos2| ctx.layer_id_at(p).is_some_and(crate::views::is_pane_window_layer);
         if released && !self.modal_up {
             if let Some(p) = now.filter(|p| in_view(*p) && p.y < plot_bottom && !over_float(*p)) {
                 let lane = rows.iter().zip(&tops).find(|(r, &t)| p.y >= t && p.y < t + r.h).map(|(r, _)| r.key);
