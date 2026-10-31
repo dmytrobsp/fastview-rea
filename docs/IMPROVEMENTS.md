@@ -160,3 +160,16 @@ misbehaves and the better behaviour is obvious (the maintainer,
   scaled display was not checked, so this may be parity. (An earlier build
   of ours also asked the pointer to leave the pane: a fix to match the
   original, not an improvement.)
+- **A slid-out side or top pane starts below the caption row (#110).** The
+  original lays a slid-out auto-hidden pane over the window's whole height
+  (a side pane) or width (a top one) from the window's top, its caption
+  under the window's caption glass (`0x10087a4a`'s pane, L9.410); a pin or
+  close pressed there still acts (clone, a left pane: the pin docks it
+  back, the close hides it, the ribbon button then unchecked), but the
+  buttons are invisible, and on a right or top pane they lie under the
+  window's own buttons, so they can't be reached at all. Ours starts the
+  pane below the caption row, so its caption shows and its pin and close
+  work on every edge; the pane is that much shorter. Reason: the
+  maintainer's decision (2026-10-31): a pane's pin and close should be in
+  reach. A strip button under the glass (a left strip's first stub) is
+  hovered as in the original, which is parity, not an improvement.

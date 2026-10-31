@@ -2669,16 +2669,18 @@ mod window_tests {
                     assert!((after.top() - base.top() - 21.0).abs() < 0.5, "{edge:?}: the ribbon is pushed down: {base:?} → {after:?}");
                 }
             }
-            // Out: the pane against its strip, over the whole extent along it.
+            // Out: the pane against its strip, over the whole extent along it,
+            // from below the caption row (not from the window's top, as the
+            // original's: its caption's buttons would lie under the window's).
             let button = w.app.strip_hits[Unit::Vector as usize].buttons[0].center();
             w.run(vec![egui::Event::PointerMoved(button)]);
             w.idle(30);
             let pane = w.app.dock_areas[Unit::Vector as usize].unwrap_or_else(|| panic!("{edge:?}: slid out"));
             match edge {
-                Edge::Right => assert_eq!((pane.right(), pane.top(), pane.bottom()), (strip.left(), 0.0, screen.bottom()), "{edge:?}: {pane:?}"),
-                Edge::Left => assert_eq!((pane.left(), pane.top(), pane.bottom()), (strip.right(), 0.0, screen.bottom()), "{edge:?}: {pane:?}"),
+                Edge::Right => assert_eq!((pane.right(), pane.top(), pane.bottom()), (strip.left(), cap, screen.bottom()), "{edge:?}: {pane:?}"),
+                Edge::Left => assert_eq!((pane.left(), pane.top(), pane.bottom()), (strip.right(), cap, screen.bottom()), "{edge:?}: {pane:?}"),
                 Edge::Bottom => assert_eq!((pane.left(), pane.right(), pane.bottom()), (0.0, screen.right(), strip.top()), "{edge:?}: {pane:?}"),
-                Edge::Top => assert_eq!((pane.left(), pane.right(), pane.top()), (0.0, screen.right(), 0.0), "{edge:?}: {pane:?}"),
+                Edge::Top => assert_eq!((pane.left(), pane.right(), pane.top()), (0.0, screen.right(), cap), "{edge:?}: {pane:?}"),
             }
         }
     }
@@ -2783,7 +2785,7 @@ mod window_tests {
         assert!((front_slot.bottom() - (4.0 + len(front.unwrap(), true))).abs() < 0.5, "the front pane was first in the column: {front_slot:?}");
         assert!((long_rect.bottom() - (4.0 + len(front.unwrap(), false) + len(now.unwrap(), true))).abs() < 0.5, "the former front's slot is a 24 px stub, the new long button after it: {long_rect:?}");
         assert!((stub_rect.top() - front_slot.bottom()).abs() < 0.5, "the hovered stub lay right after the former front's button");
-        let stub_after = after.iter().find(|r| r.height() <= 24.5).expect("the stub that followed");
+        let stub_after = after.iter().find(|r| r.height() <= 24.5 && r.top() >= long_rect.bottom() - 0.5).expect("the stub that followed");
         assert!((stub_after.top() - long_rect.bottom()).abs() < 0.5 && stub_after.height() == 24.0, "the stubs follow the long button: {stub_after:?}");
     }
 
@@ -3268,6 +3270,60 @@ mod window_tests {
             assert!((back2 - back).abs() <= 1.0, "{edge:?}: docked back at {back2}, as with no resize ({back})");
             assert!((again - first).abs() <= 1.0 && (again2 - first).abs() <= 1.0, "{edge:?}: pinned again it slides at {again2}, as the first time {first} ({again})");
         }
+    }
+
+    /// A slid-out side or top pane starts below the caption row, so its caption's
+    /// pin and close are in reach (#110, the maintainer's decision; the original
+    /// puts the pane's caption under the window's caption glass, where its
+    /// buttons lie under the window's own buttons): a press on each acts, with
+    /// the window's buttons present.
+    #[test]
+    fn a_slid_out_pane_lies_below_the_caption_row_with_its_caption_in_reach() {
+        use docking::{Edge, Place, Spot, Unit};
+        let cap = ribbon::caption_h();
+        for edge in [Edge::Right, Edge::Left, Edge::Top] {
+            for close in [false, true] {
+                let case = format!("{edge:?} close={close}");
+                let mut w = Win::new();
+                w.app.own_caption = true;
+                w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge, outer: true };
+                w.app.docks.0[Unit::Vector as usize].pin();
+                w.idle(3);
+                w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+                w.idle(30);
+                let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+                assert!(area.top() >= cap, "{case}: below the caption row: {area:?}");
+                let at = Pos2::new(area.right() - dpi::s(if close { 11.0 } else { 26.0 }), area.top() + dpi::s(10.0));
+                w.press(egui::PointerButton::Primary, at, at);
+                w.idle(30);
+                if close {
+                    assert!(!w.app.panes.visible(app::Pane::Vector), "{case}: the close acts");
+                } else {
+                    assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "{case}: the pin acts");
+                }
+            }
+        }
+    }
+
+    /// A strip button lying wholly under the caption glass is hovered like any
+    /// other (#110; VM, the original, a left strip with the second tab in front:
+    /// the first tab's 24 px stub, 4 px under the window's top, slides its pane
+    /// out when the pointer rests on it).
+    #[test]
+    fn a_stub_under_the_caption_glass_can_be_hovered() {
+        use docking::{Edge, Spot, Unit};
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Left, outer: true };
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let cap = ribbon::caption_h();
+        let stub = w.app.strip_hits[Unit::Vector as usize].buttons.iter().copied().find(|r| r.bottom() <= cap).expect("a button wholly under the glass");
+        assert!(stub.height() <= 24.5, "a stub: {stub:?}");
+        w.run(vec![egui::Event::PointerMoved(stub.center())]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid the group out");
+        assert_eq!(w.app.panes.front(w.app.docks.members(Unit::Vector)), Some(app::Pane::Vector), "with the stub's pane in front");
     }
 
     /// Hiding a background tab of the focused pane's group leaves the focus.

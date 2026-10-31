@@ -686,9 +686,11 @@ impl App {
                         Edge::Bottom => egui::Rect::from_min_size(egui::pos2(strip.left() + at, strip.top() + crate::dpi::s(2.0)), egui::vec2(len, across - crate::dpi::s(2.0))),
                     };
                     at += len;
-                    // Only what the strip shows can be hovered (the part
-                    // under the glass is not the strip).
-                    let vis = rect.intersect(strip);
+                    // A button is hovered where it lies, under the caption's
+                    // glass too (VM: the stub of a left strip's first tab, 4 px
+                    // under the window's top, slides its pane out); the window's
+                    // own buttons, above the strip, take theirs.
+                    let vis = rect.intersect(full);
                     if vis.width() <= 0.0 || vis.height() <= 0.0 {
                         continue;
                     }
@@ -797,23 +799,22 @@ impl App {
     }
 
     /// Slid-out auto-hide groups, over the content beside their strip: a
-    /// side pane spans the frame's whole height (its caption above the
-    /// window's top, under the caption row's glass), the top and bottom
-    /// ones its whole width; one pane of the group, with no tab strip, and
-    /// a divider on the side facing the content (VM).
+    /// side pane spans the frame's height below the caption row (the
+    /// original's starts under its glass), the top and bottom ones its whole
+    /// width; one pane of the group, with no tab strip, and a divider on the
+    /// side facing the content (VM).
     fn slid_out_units(&mut self, ctx: &egui::Context, views: &[DockView]) {
         use crate::docking::{Edge, Place, DIVIDER_PX};
         let screen = ctx.screen_rect();
-        // The window's top: a maximised frame's client starts 8 px above
-        // the screen (its invisible border).
-        let maximised = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-        let top = screen.top() - if maximised { 8.0 } else { 0.0 };
+        // A side or top pane starts below the caption row, not under its glass
+        // as the original's does (its caption's pin and close would lie under
+        // the window's own buttons): an improvement, docs/IMPROVEMENTS.md.
         let cap = screen.top() + crate::ribbon::caption_h();
+        let top = cap;
         let divider = crate::dpi::s(DIVIDER_PX);
         self.dock_areas = [None; 4];
         self.dock_dividers = [None; 4];
         self.slid_ranges = [None; 4];
-        let mut glass: Vec<egui::Rect> = Vec::new();
         for v in views.iter().copied() {
             let d = self.docks[v.unit];
             if d.place != Place::AutoHide || d.slide <= 0.0 {
@@ -865,11 +866,6 @@ impl App {
             };
             self.dock_areas[v.unit as usize] = Some(rect);
             self.dock_dividers[v.unit as usize] = Some(div);
-            // Its caption row under the glass: not painted over the window's
-            // own buttons.
-            if rect.top() < cap {
-                glass.push(rect);
-            }
             let (c0, g0) = (self.pane_canvas.len(), self.pane_grid.len());
             let one = DockView { strip: false, ..v };
             self.slide_area(ctx, egui::Id::new(("fv_slide", v.unit)), rect, |app, ui| app.unit_body(ui, one));
@@ -896,23 +892,10 @@ impl App {
                 ctx.request_repaint();
             }
         }
-        // The caption row's glass over a pane reaching up into it: white,
-        // the pane's caption under it not seen (VM: only its toolbar's top
-        // shows faintly); the window's own buttons stay on top.
-        let glass_any = !glass.is_empty();
-        if glass_any {
-            let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("fv_glass"));
-            let p = ctx.layer_painter(layer);
-            for r in glass {
-                p.rect_filled(egui::Rect::from_min_max(egui::pos2(r.left(), screen.top()), egui::pos2(r.right(), cap)), 0.0, egui::Color32::WHITE);
-            }
-            ctx.move_to_top(layer);
-            p.rect_filled(self.caption_buttons_row(ctx), 0.0, egui::Color32::WHITE);
-        }
         // The window's own buttons stay at the window's edge (VM) beside a
-        // right strip, on the caption row under a top strip, and over a pane
-        // reaching up into it: drawn here, where no panel clips them.
-        if self.own_caption && (glass_any || self.strip_inset[1] > 0.0 || self.strip_inset[2] > 0.0) {
+        // right strip and on the caption row under a top strip: drawn here,
+        // where no panel clips them.
+        if self.own_caption && (self.strip_inset[1] > 0.0 || self.strip_inset[2] > 0.0) {
             let row = self.caption_buttons_row(ctx);
             let modal = self.modal_up;
             let area = egui::Area::new(egui::Id::new("fv_caption_buttons")).order(egui::Order::Foreground).fixed_pos(row.min).constrain(false).fade_in(false).show(ctx, |ui| {
