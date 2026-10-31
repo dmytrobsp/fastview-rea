@@ -617,12 +617,28 @@ mod vizir_tests {
     }
 }
 
-/// The last sample the analog painter draws (`0x4295fc`): offsets
-/// 0..min(⌈W/k⌉, len − first) from `first`, W the plot width, k = 25·f.
-pub fn drawn_last(len: usize, first: usize, f: f64, plot_w: f32) -> Option<usize> {
-    let k = PX_PER_SAMPLE * f;
+/// The last sample the analog painter draws (`0x4295fc`, `0x429d24`):
+/// offsets 0..min(⌈W/(k·ratio)⌉, len − first) from `first`, W the plot
+/// width, k = 25·f, `ratio` the lane's [`lane_ratio`].
+pub fn drawn_last(len: usize, first: usize, f: f64, plot_w: f32, ratio: f64) -> Option<usize> {
+    let k = PX_PER_SAMPLE * f * ratio;
     let count = ((f64::from(plot_w.max(0.0)) / k).ceil() as usize).min(len.saturating_sub(first));
     (count > 0).then(|| first + count - 1)
+}
+
+/// The painters' scale of a channel with an own rate (`0x4295dc`,
+/// `0x429cf1`, `0x463e2d`): the record's integer rate ÷ the channel's own
+/// rate, 1 when it has none. After «Объединить» and a rate change in
+/// «Параметры файла» (which sets only the record's) it is not 1: the analog
+/// painters visit ⌈W/(25f·ratio)⌉ samples — a lane of a record whose rate
+/// was raised stops short of the right edge — and a digital lane's base bar
+/// is ratio times as long.
+pub fn lane_ratio(rec_rate: f64, own_rate: f64) -> f64 {
+    if own_rate == 0.0 {
+        1.0
+    } else {
+        rec_rate / own_rate
+    }
 }
 
 /// GDI draws a pen on whole pixels; egui centres a stroke on its
@@ -1142,9 +1158,13 @@ mod draw_tests {
     #[test]
     fn analog_draws_ceil_w_over_k_samples() {
         // 25 px per sample, 100 px plot: offsets 0..3 (no point at R).
-        assert_eq!(drawn_last(480, 10, 1.0, 100.0), Some(13));
-        assert_eq!(drawn_last(12, 10, 1.0, 100.0), Some(11), "the data end");
-        assert_eq!(drawn_last(10, 10, 1.0, 100.0), None);
+        assert_eq!(drawn_last(480, 10, 1.0, 100.0, 1.0), Some(13));
+        assert_eq!(drawn_last(12, 10, 1.0, 100.0, 1.0), Some(11), "the data end");
+        // A lane whose own rate is half the record's: twice as few samples visited.
+        assert_eq!(drawn_last(480, 10, 1.0, 100.0, 2.0), Some(11));
+        assert_eq!(drawn_last(480, 10, 1.0, 100.0, 0.5), Some(17));
+        assert_eq!((lane_ratio(2450.0, 0.0), lane_ratio(2450.0, 1225.0)), (1.0, 2.0));
+        assert_eq!(drawn_last(10, 10, 1.0, 100.0, 1.0), None);
     }
 
     #[test]

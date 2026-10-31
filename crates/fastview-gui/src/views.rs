@@ -2,7 +2,7 @@
 //! over the active document (ОМП lives in `omp_ui.rs`). The oscillogram (lane) view lives in
 //! `lanes.rs`.
 
-use crate::app::{App, Command, Pane, View};
+use crate::app::{App, ChanKey, Command, Pane, View};
 use crate::diagram_ui::Window;
 use crate::oscgeom::PixelLines;
 use eframe::egui;
@@ -1106,20 +1106,39 @@ impl App {
             return;
         }
         let Some(drag) = egui::DragAndDrop::take_payload::<crate::lanes::ChanDrag>(ctx) else { return };
-        self.drop_channels(&drag.chans, pane);
+        self.drop_channels(&drag.keys(), pane);
     }
 
-    pub fn drop_channels(&mut self, chans: &[usize], pane: Pane) {
+    /// The drop's work on a pane (`0x4415b0`): every dragged channel whose
+    /// bit for the pane is clear gets the pane's command 35000+i, which sets
+    /// it (`0x46f100`, `0x48f590`; recompute, modified mark) — file and
+    /// formula channels alike, the vector and frequency panes without any
+    /// test of the channel (#103). The circle diagram only takes channels of
+    /// an Ohm / VA unit that are not pending (CompareNoCase on the canonical
+    /// unit, `0x414c30`; none in ADC mode). A digital channel never reaches a
+    /// pane: the drag payload stops at `doc+0x1d8` (analog-kind records).
+    pub fn drop_channels(&mut self, keys: &[ChanKey], pane: Pane) {
         let Some(d) = self.active_doc_mut() else { return };
-        let (mut changed, n) = (false, d.chans.len());
-        for &i in chans.iter().filter(|&&i| i < n) {
-            // The canonical unit, none in ADC mode (`0x414c30`).
-            let unit = if d.chans[i].adc_counts { String::new() } else { d.osc.analog[i].unit.to_lowercase() };
-            let c = &mut d.chans[i];
+        let mut changed = false;
+        for &k in keys {
+            let (pending, unit, flag) = match k {
+                ChanKey::Analog(i) if i < d.chans.len() => {
+                    let unit = if d.chans[i].adc_counts { String::new() } else { d.osc.analog[i].unit.to_lowercase() };
+                    let c = &mut d.chans[i];
+                    (false, unit, [&mut c.on_freq, &mut c.on_vector, &mut c.on_circle])
+                }
+                ChanKey::Computed(j) if j < d.computed.len() && !d.pending_digital(j) => {
+                    let pending = d.computed[j].formula == crate::merge_ui::PENDING;
+                    let c = &mut d.computed[j];
+                    (pending, c.unit.trim().to_lowercase(), [&mut c.on_freq, &mut c.on_vector, &mut c.on_circle])
+                }
+                _ => continue,
+            };
+            let [freq, vector, circle] = flag;
             let flag = match pane {
-                Pane::Frequency => &mut c.on_freq,
-                Pane::Vector => &mut c.on_vector,
-                Pane::Circle if unit == "ohm" || unit == "va" => &mut c.on_circle,
+                Pane::Frequency => freq,
+                Pane::Vector => vector,
+                Pane::Circle if !pending && (unit == "ohm" || unit == "va") => circle,
                 _ => continue,
             };
             if !*flag {

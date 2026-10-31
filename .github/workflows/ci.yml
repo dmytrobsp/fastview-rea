@@ -32,6 +32,8 @@ jobs:
       - run: python3 -I tools/publish_guard.py --all
       # The milestone helper's own tests (cheap; tools/ changes alone skip the builds).
       - run: python3 -I -m unittest discover -s tools/milestone -p 'test_*.py'
+      # The synthetic-record generator and the user-data check (tools/records).
+      - run: python3 -I -m unittest discover -s tools/records -p 'test_*.py'
 
   # Whether anything that is built changed since the last commit whose
   # checks passed: notes, docs, tools, indexes or Markdown alone skip the checks
