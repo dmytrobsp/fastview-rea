@@ -2453,7 +2453,7 @@ mod tests {
         use fvb_core::signal::{phasor_at, rms_at, spectrum};
         let mut h = H::new(Pane::Circle);
         let d = h.app.active_doc_mut().unwrap();
-        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (2000.0, 1.0, true);
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1234.0, 1.0, true);
         // Synthetic values whose per-sample and after-the-sum orders give different bits.
         let mut z: u64 = 0x2545_f491_4f6c_dd1d;
         for v in d.osc.analog[0].samples.iter_mut() {
@@ -2466,8 +2466,8 @@ mod tests {
         d.recompute(false);
         let n = d.osc.samples_per_cycle().max(2);
         let k = d.osc.sample_count() - 1;
-        assert_eq!(d.shown_k(0), 1.0 / 2000.0);
-        let kf = 1.0 / 2000.0;
+        assert_eq!(d.shown_k(0), 1.0 / 1234.0);
+        let kf = 1.0 / 1234.0;
         let scaled: Vec<f64> = d.osc.analog[0].samples.iter().map(|v| v * kf).collect();
         let (per_sample, after) = (phasor_at(&scaled, k, n), phasor_at(&d.osc.analog[0].samples, k, n) * kf);
         assert_ne!(per_sample, after, "the synthetic record tells the two orders apart");
@@ -2499,7 +2499,7 @@ mod tests {
         use fvb_core::signal::{phasor_at, rms_at};
         let mut h = H::new(Pane::Circle);
         let d = h.app.active_doc_mut().unwrap();
-        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1000.0, 1.0, true);
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1234.0, 1.0, true);
         let mut z: u64 = 0x9e37_79b9_7f4a_7c15;
         for v in d.osc.analog[0].samples.iter_mut() {
             z ^= z << 13;
@@ -2511,7 +2511,7 @@ mod tests {
         d.chans[0].invert = true;
         d.recompute(false);
         let n = d.osc.samples_per_cycle().max(2);
-        let k = 1.0 / 1000.0;
+        let k = 1.0 / 1234.0;
         let dc = crate::app::whole_period_mean(&d.osc.analog[0].samples, n);
         let want: Vec<f64> = d.osc.analog[0].samples.iter().map(|x| -(x * k - dc * k)).collect();
         let other: Vec<f64> = d.osc.analog[0].samples.iter().map(|x| -((x - dc) * k)).collect();

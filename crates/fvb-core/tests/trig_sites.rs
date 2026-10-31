@@ -41,16 +41,17 @@ fn phasor_ref(x: &[f64], i: usize, n: usize, f: Fns) -> Complex64 {
 
 #[test]
 fn phasors_use_the_runtime_sin_cos() {
-    let mut differ = 0;
-    for n in 8..70usize {
+    let (mut dre, mut dim) = (0, 0);
+    for n in 8..260usize {
         let x = samples(3 * n, n as u64 + 11);
         let i = 3 * n - 1;
         let (a, b) = (phasor_ref(&x, i, n, TRIG), phasor_ref(&x, i, n, STD));
-        differ += usize::from(a != b);
+        dre += usize::from(a.re != b.re);
+        dim += usize::from(a.im != b.im);
         assert_eq!(phasor_at(&x, i, n), a, "phasor_at n={n}");
         assert_eq!(sliding_phasors(&x, n)[i], a, "sliding_phasors n={n}");
     }
-    assert!(differ > 0, "the std-built reference differs at some n ({differ})");
+    assert!(dre > 0 && dim > 0, "the std-built reference differs in both parts at some n ({dre}, {dim})");
 }
 
 #[test]
@@ -80,24 +81,26 @@ fn the_corrected_harmonic_uses_the_runtime_sin_cos() {
         }
         s * (2f64.sqrt() * f / p)
     }
-    let mut differ = 0;
-    for (fs, f) in [(1000.0, 50.0), (1600.0, 50.0), (2000.0, 49.7), (3200.0, 50.3), (4000.0, 50.0), (950.0, 47.0)] {
+    let (mut dre, mut dim) = (0, 0);
+    let pairs = (0..120).map(|i| (900.0 + 31.0 * i as f64, 47.0 + 0.043 * i as f64));
+    for (fs, f) in pairs {
         let x = samples(400, fs as u64);
         let freq = vec![f; 400];
         let c = FreqCorr { chan: usize::MAX, freq: &freq, fs };
         for idx in [150usize, 211, 399] {
             let (a, b) = (reference(&x, idx, fs, f, TRIG), reference(&x, idx, fs, f, STD));
-            differ += usize::from(a != b);
+            dre += usize::from(a.re != b.re);
+            dim += usize::from(a.im != b.im);
             assert_eq!(c.harmonic(&x, idx, 1.0, false, 1.0), a, "fs={fs} f={f} idx={idx}");
         }
     }
-    assert!(differ > 0, "the std-built reference differs somewhere ({differ})");
+    assert!(dre > 0 && dim > 0, "the std-built reference differs in both parts ({dre}, {dim})");
 }
 
 #[test]
 fn the_omp_phasor_uses_the_runtime_sin_cos() {
-    let mut differ = 0;
-    for p in [19usize, 27, 29, 34, 40, 80] {
+    let (mut dre, mut dim) = (0, 0);
+    for p in (8..140usize).chain([160, 240]) {
         let x = samples(4 * p, p as u64 + 5);
         let tau = 2.0 * std::f64::consts::PI;
         let reference = |k: usize, f: Fns| {
@@ -113,11 +116,13 @@ fn the_omp_phasor_uses_the_runtime_sin_cos() {
         };
         let got = fvb_core::omp::omp_phasors(&x, p);
         for k in [p, 2 * p, 4 * p - 1] {
-            differ += usize::from(reference(k, TRIG) != reference(k, STD));
+            let (a, b) = (reference(k, TRIG), reference(k, STD));
+            dre += usize::from(a.re != b.re);
+            dim += usize::from(a.im != b.im);
             assert_eq!(got[k], reference(k, TRIG), "p={p} k={k}");
         }
     }
-    assert!(differ > 0, "the std-built reference differs somewhere ({differ})");
+    assert!(dre > 0 && dim > 0, "the std-built reference differs in both parts ({dre}, {dim})");
 }
 
 #[test]
