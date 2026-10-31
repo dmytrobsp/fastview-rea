@@ -1311,6 +1311,17 @@ mod components_tests {
         assert!(differs > 1000, "the polar form differs from the original's in the last bit ({differs} of 2000)");
     }
 
+    /// The two forms differ in the sign of a zero: for A = (0, −0), B = C = 0 the isolated form's I1.im is +0, the
+    /// grounded form's −0 (a mutation using one form for both modes fails here).
+    #[test]
+    fn the_isolated_and_the_grounded_forms_differ_in_the_sign_of_a_zero() {
+        let (a, z) = (Complex64::new(0.0, -0.0), Complex64::new(0.0, 0.0));
+        let (iso, _, _) = components(true, a, z, z);
+        let (gnd, _, _) = components(false, a, z, z);
+        assert_eq!(iso.im.to_bits(), 0.0f64.to_bits(), "isolated: +0");
+        assert_eq!(gnd.im.to_bits(), (-0.0f64).to_bits(), "grounded: −0");
+    }
+
     /// 0x420ca0 takes w = im/re only where |re| > |im|; at equal magnitudes w = re/im, which gives an exact zero its
     /// sign: (3 + 3j) / (2 − 2j) has the real part −0, not +0. A zero denominator gives NaN.
     #[test]
@@ -1319,7 +1330,11 @@ mod components_tests {
         assert!(q.re == 0.0 && q.re.is_sign_negative(), "{q:?}");
         assert!(cdiv(ONE, Complex64::new(0.0, 0.0)).re.is_nan());
         assert!(cdiv(ONE, Complex64::new(f64::NAN, 1.0)).im.is_nan());
-        // A scaled denominator that underflows to zero: w·re + im = 0 for re = 1e-200, im = 1e-200·(−1).
+        // Equal magnitudes with opposite signs: w = re/im = −1, the denominator w·re + im = −2e-200 is finite and
+        // non-zero, so the quotient is finite.
         assert!(cdiv(ONE, Complex64::new(1e-200, -1e-200)).re.is_finite());
+        // Equal infinities: w = ∞/∞ = NaN, so the scaled denominator is NaN and both parts are NaN.
+        let inf = cdiv(ONE, Complex64::new(f64::INFINITY, f64::INFINITY));
+        assert!(inf.re.is_nan() && inf.im.is_nan());
     }
 }

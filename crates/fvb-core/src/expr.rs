@@ -1369,3 +1369,17 @@ fn int_pow(z: Complex64, n: i32) -> Complex64 {
         acc
     }
 }
+
+#[cfg(test)]
+mod complex_div_tests {
+    use super::complex_div;
+
+    /// `0x420ca0` takes w = im/re only where |re| > |im| strictly; at equal magnitudes w = re/im, which gives an
+    /// exact zero its sign: (3 + 3i) / (2 − 2i) has the real part −0, not +0 (the `>=` mutation gives +0).
+    #[test]
+    fn the_equal_magnitude_branch_takes_the_reciprocal_ratio() {
+        let (re, im) = complex_div(3.0, 3.0, 2.0, -2.0);
+        assert_eq!(re.to_bits(), (-0.0f64).to_bits(), "{re:?}");
+        assert_eq!(im, 1.5);
+    }
+}
