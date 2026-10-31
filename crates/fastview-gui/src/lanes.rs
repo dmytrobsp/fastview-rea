@@ -1865,7 +1865,9 @@ impl App {
             self.drag_cursor = Some(if drag.doc != serial {
                 egui::CursorIcon::NoDrop
             } else if ctrl && code.is_some() {
-                egui::CursorIcon::Copy
+                // MFC's OnDragScroll answers "link" for Ctrl+Shift, which
+                // the drag does not allow: no-drop.
+                if shift { egui::CursorIcon::NoDrop } else { egui::CursorIcon::Copy }
             } else {
                 MOVE_DROP_CURSOR
             });

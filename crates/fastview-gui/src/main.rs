@@ -4821,8 +4821,63 @@ mod window_tests {
         assert_eq!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "Ctrl elsewhere changes nothing");
         assert_eq!(at(&mut w, band), Copy, "Ctrl in the band");
         w.held = egui::Modifiers::NONE;
+        // Ctrl+Shift in the band: MFC answers "link", the drag allows none.
+        w.held = egui::Modifiers { ctrl: true, shift: true, command: true, ..Default::default() };
+        assert_eq!(at(&mut w, band), NoDrop, "Ctrl+Shift in the band");
+        w.held = egui::Modifiers::NONE;
         egui::DragAndDrop::clear_payload(&w.ctx);
         assert_ne!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "no drag, no cursor");
+    }
+
+    /// The circle's drop target is its window (property grid and diagram), not
+    /// the pane's toolbar around it; the differential pane has none; a
+    /// floating window over the view is no part of the view (clone, #73).
+    #[test]
+    fn the_circle_toolbar_and_the_differential_pane_are_no_drop_targets() {
+        use app::{Command, Pane};
+        use docking::{Place, Unit};
+        let mut w = Win::new();
+        let serial = w.app.active_doc().unwrap().serial;
+        // The vector and circle panes share a dock: the toolbar column right of the vector canvas is the circle pane's too.
+        let toolbar = w.app.pane_canvas.iter().find(|(p, _)| *p == Pane::Vector).map(|(_, r)| Pos2::new(r.right() + 8.0, r.center().y)).expect("the vector diagram");
+        w.app.dispatch(Command::ActivatePane(Pane::Circle));
+        w.idle(3);
+        let circle = w.app.drop_targets.iter().find(|(p, _)| *p == Pane::Circle).expect("the circle window").1;
+        let payload = || lanes::ChanDrag { chans: vec![0], computed: vec![], doc: serial };
+        let at = |w: &mut Win, p: Pos2| {
+            egui::DragAndDrop::set_payload(&w.ctx, payload());
+            w.run(vec![egui::Event::PointerMoved(p)]);
+            w.run(vec![])
+        };
+        let (drop, no) = (lanes::MOVE_DROP_CURSOR, egui::CursorIcon::NoDrop);
+        assert_eq!(at(&mut w, circle.center()), drop, "over the circle window");
+        assert!(!circle.contains(toolbar), "the toolbar is outside the circle window");
+        assert_eq!(at(&mut w, toolbar), no, "over the circle pane's toolbar");
+        // Every point that shows the drop cursor lies in the view window (its scroll bars too) or a drop target: none in the differential pane.
+        w.app.dispatch(Command::ActivatePane(Pane::Differential));
+        w.idle(3);
+        let view = w.app.view_rects.expect("the view").1;
+        let mut seen = 0;
+        for y in (20..840).step_by(41) {
+            for x in (10..1310).step_by(43) {
+                let p = Pos2::new(x as f32, y as f32);
+                if at(&mut w, p) == drop {
+                    seen += 1;
+                    assert!(view.expand2(Vec2::new(20.0, 20.0)).contains(p) || w.app.drop_targets.iter().any(|(_, r)| r.contains(p)), "{p:?}");
+                }
+            }
+        }
+        assert!(seen > 0);
+        egui::DragAndDrop::clear_payload(&w.ctx);
+        // A floating pane's window lying over the view: no-drop on its caption.
+        w.app.dispatch(Command::ActivatePane(Pane::Vector));
+        let to = Pos2::new(view.left() + 200.0, view.center().y);
+        let d = &mut w.app.docks.0[Unit::Vector as usize];
+        d.float_rect = Some(Rect::from_min_size(Pos2::new(to.x - 90.0, to.y - 8.0), Vec2::new(260.0, 220.0)));
+        d.place = Place::Floating;
+        w.idle(3);
+        assert_eq!(at(&mut w, to), no, "over a floating window's caption lying over the view");
+        assert_eq!(at(&mut w, Pos2::new(view.left() + 60.0, view.top() + 30.0)), drop, "beside it, still the view");
     }
 
     /// Channels dragged out of one record and dropped on another record's

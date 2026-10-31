@@ -214,8 +214,8 @@ misbehaves and the better behaviour is obvious (the maintainer,
   Reason: as for the caption, it hints that dragging on pulls the pane out.
 - **A channel drag dropped on another record's view or diagram does nothing (#74).** With two tab groups, the original
   runs the drop on the *active* document (`0x4415b0`; the lane is found in the drop window): channels dragged out of
-  record A and let go on record B's view are added to A's selection without repainting it, then the combine runs on
-  B's own current selection, which joins or is refused with message 1086 (clone). The drag carries only channel
+  record A and let go on record B's view: the lane under the pointer in B's view is added, by its number, to A's
+  selection without repainting A; then the combine runs on B's own current selection, which joins or is refused with message 1086 (clone). The drag carries only channel
   numbers (the private format, `0x42be30`), no record identity, so the result is arbitrary. Ours remembers the record
   the drag began in and treats a drop on another record's view as a drop outside: no change, no message, and the
   "no-drop" cursor over that view (the drag keeps auto-scrolling it, as the original's drop target does). A diagram

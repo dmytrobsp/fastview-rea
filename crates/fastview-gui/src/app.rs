@@ -1625,6 +1625,9 @@ pub struct App {
     /// The diagram windows (the canvas, without toolbar or property grid)
     /// as last drawn.
     pub pane_canvas: Vec<(Pane, egui::Rect)>,
+    /// The diagram windows that take a channel drop (the circle's: its grid
+    /// and diagram, not its toolbar), as last drawn.
+    pub drop_targets: Vec<(Pane, egui::Rect)>,
     /// Each diagram window's rect as it was last drawn, kept while its pane
     /// is hidden (a hidden window keeps its size; copy of a focused hidden
     /// diagram takes its picture).
@@ -1857,6 +1860,7 @@ impl App {
             view_left: crate::lanes::LEFT_W_DEFAULT,
             view_rects: None,
             pane_canvas: Vec::new(),
+            drop_targets: Vec::new(),
             canvas_memo: Vec::new(),
             pane_tab_rects: Vec::new(),
             doc_tab_rects: Vec::new(),

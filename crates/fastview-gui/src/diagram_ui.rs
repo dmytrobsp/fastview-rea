@@ -394,6 +394,21 @@ pub(crate) fn freq_bins(d: &Doc, samples: &[f64], file: Option<usize>, own_rate:
     fvb_core::freqcorr::spectrum(mine, samples, pos, d.osc.period_of(own_rate).max(2), periods, k_max, d.osc.harmonic1_gain)
 }
 
+/// The record's frequency correction for pasted lane `j` at its own rate: as
+/// `Doc::reflag_computed` builds it (`0x426510` gates on the record, never on
+/// the channel's kind; only the selected frequency channel itself is exempt).
+pub(crate) fn pending_corr(d: &Doc, j: usize) -> Option<fvb_core::freqcorr::FreqCorr<'_>> {
+    let rate = d.pending_of(j)?.pasted.rate;
+    fvb_core::freqcorr::of(&d.osc).filter(|_| fvb_core::freqcorr::selected_extra(&d.osc) != Some(j)).map(|c| c.at_rate(rate))
+}
+
+/// A pasted analog lane's bins in the frequency diagram: its own samples at
+/// the record's cursor index, its own rate's window, the record's correction.
+pub(crate) fn pending_bins(d: &Doc, j: usize, pos: usize, periods: usize, k_max: usize) -> Vec<f64> {
+    let (Some(p), Some(c)) = (d.pending_of(j), d.computed.get(j)) else { return vec![0.0; k_max + 1] };
+    fvb_core::freqcorr::spectrum(pending_corr(d, j), &c.pending_own, pos, d.osc.period_of(p.pasted.rate).max(2), periods, k_max, d.osc.harmonic1_gain)
+}
+
 fn circle_range(d: &Doc, between: bool) -> std::ops::RangeInclusive<usize> {
     let len = d.osc.sample_count();
     let n = d.osc.samples_per_cycle().max(1);
@@ -1622,16 +1637,18 @@ impl App {
             file: Option<usize>,
             /// Its own rate (`ch+0x108`): the window and the correction's rate.
             own_rate: f64,
+            /// A pasted lane (its computed index): own samples and correction.
+            pend: Option<usize>,
         }
         let chans: Vec<FreqChan> = (0..d.osc.analog.len())
             .filter(|i| d.chans[*i].on_freq)
-            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: d.shown_samples(i), file: Some(i), own_rate: d.osc.analog[i].own_rate })
+            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: d.shown_samples(i), file: Some(i), own_rate: d.osc.analog[i].own_rate, pend: None })
             .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && !d.pending_digital(*j)).map(|(j, c)| match d.pending_of(j) {
                 // A pasted analog lane too (`0x46fb1c` tests bit 1 only; clone,
                 // #133): the spectrum at the record's cursor index over the
                 // lane's own samples, its own rate's period.
-                Some(p) => FreqChan { name: &c.name, color: c.color, samples: &c.pending_own, file: None, own_rate: p.pasted.rate },
-                None => FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: None, own_rate: c.own_rate },
+                Some(p) => FreqChan { name: &c.name, color: c.color, samples: &c.pending_own, file: None, own_rate: p.pasted.rate, pend: Some(j) },
+                None => FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: None, own_rate: c.own_rate, pend: None },
             }))
             .collect();
         let s = print_s().unwrap_or(1.0);
@@ -1677,10 +1694,13 @@ impl App {
             let samples = ch.samples;
             let n = d.osc.period_of(ch.own_rate).max(2);
             // The spectrum and the norm sum the samples as `0x426020` returns them (times k, each one).
-            let sp: Vec<f64> = freq_bins(d, samples, ch.file, ch.own_rate, pos, periods, k_max.max(periods));
+            let sp: Vec<f64> = match ch.pend {
+                Some(j) => pending_bins(d, j, pos, periods, k_max.max(periods)),
+                None => freq_bins(d, samples, ch.file, ch.own_rate, pos, periods, k_max.max(periods)),
+            };
             let max = sp[..=k_max].iter().copied().fold(0.0, f64::max);
             let max = if max == 0.0 { 1.0 } else { max };
-            let norm = if use_rms { fvb_core::freqcorr::rms_at(ch.file.and(corr).map(|c| c.at_rate(ch.own_rate)), ch.file.unwrap_or(0), samples, pos, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
+            let norm = if use_rms { fvb_core::freqcorr::rms_at(ch.pend.map_or_else(|| ch.file.and(corr).map(|c| c.at_rate(ch.own_rate)), |j| pending_corr(d, j)), ch.file.unwrap_or(fvb_core::freqcorr::OTHER), samples, pos, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
             let color = ch.color;
             if g.plot_h() - 30 * si - g.h <= 0 {
                 continue;
@@ -2318,6 +2338,46 @@ mod tests {
         let texts: Vec<String> = out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
         assert!(texts.contains(&name), "the pasted lane's legend entry {name:?}: {texts:?}");
         assert!(texts.iter().any(|t| t == "100"), "its fundamental reads 100: {texts:?}");
+    }
+
+    /// A pasted lane at its own rate on the frequency diagram takes the
+    /// record's frequency correction at that rate (`0x426510` gates on the
+    /// record: one segment, a frequency channel selected, not this one; no
+    /// test of the channel's kind) and its own rate's window.
+    #[test]
+    fn a_pasted_lane_at_its_own_rate_is_corrected_on_the_frequency_diagram() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        // A synthetic frequency channel, selected.
+        let last = d.osc.analog.len() - 1;
+        let len = d.osc.sample_count();
+        d.osc.analog[last].phase = "system".into();
+        d.osc.analog[last].samples = (0..len).map(|k| 49.3 + 0.0007 * k as f64).collect();
+        d.osc.freq_sel = 1;
+        assert!(fvb_core::freqcorr::of(&d.osc).is_some());
+        d.selection.insert(crate::app::ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).expect("the pasted lane");
+        d.pending_of_mut(j).unwrap().pasted.rate = 1234.0;
+        d.recompute(false);
+        let d = app.active_doc().unwrap();
+        let rate = d.pending_of(j).unwrap().pasted.rate;
+        let n = d.osc.period_of(rate);
+        assert_ne!(n, d.osc.samples_per_cycle(), "a window of its own");
+        let corr = fvb_core::freqcorr::of(&d.osc).unwrap().at_rate(rate);
+        assert_eq!(corr.fs, rate);
+        let x = &d.computed[j].pending_own;
+        assert!(!x.is_empty());
+        let mut told_apart = false;
+        for pos in (3 * n..len).step_by(7) {
+            let got = super::pending_bins(d, j, pos, 1, 5);
+            assert_eq!(got, fvb_core::freqcorr::spectrum(Some(corr), x, pos, n, 1, 5, d.osc.harmonic1_gain), "pos {pos}");
+            told_apart |= got != fvb_core::signal::spectrum(x, pos, n, 1, 5, d.osc.harmonic1_gain);
+        }
+        assert!(told_apart, "the correction changes the bars somewhere");
     }
 
     #[test]
