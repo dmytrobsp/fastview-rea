@@ -2981,6 +2981,32 @@ mod menu_tests {
     /// selected channel and dropped on any lane (`0x45ea70`, `0x4415b0`): the
     /// drop selects them with the target and 33035's enable check (`0x468c80`)
     /// refuses them with message 1086 (#102).
+    /// After «Объединить» and a rate change the record's rate is above the
+    /// channels' own: the analog painters visit ⌈W/(25f·R/r)⌉ samples, so a
+    /// lane stops short of the plot's right edge, at W·r/R from its left
+    /// (VM, the original and ours: the lanes of the demo record end 300 px
+    /// into a 370 px plot after 2000 → 2450 Hz) — #100.
+    #[test]
+    fn merged_lanes_stop_short_of_the_right_edge_after_a_rate_rise() {
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(0)].into_iter().collect();
+        h.app.copy_channels_for_merge();
+        h.app.paste_channels_for_merge();
+        h.app.merge_records();
+        let curve_right = |h: &Harness| h.shapes.iter().filter_map(|c| if let Shape::Mesh(m) = &c.shape { Some(m) } else { None }).filter(|m| m.vertices.len() > 300).flat_map(|m| m.vertices.iter().map(|v| v.pos.x)).fold(0.0f32, f32::max);
+        h.app.active_doc_mut().unwrap().xscale = Some(0.25);
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let full = curve_right(&h);
+        assert_eq!(h.app.apply_file_rate(0, "2450"), Ok(()));
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let (left, short) = (h.app.view_left, curve_right(&h));
+        assert!(full > 1100.0, "before the change the curves run to the right edge: {full}");
+        let w = full - left;
+        assert!((short - left - w / 1.225).abs() < 12.0, "after it they stop at W/1.225: {short} (W = {w})");
+    }
+
     #[test]
     fn pasted_and_digital_lanes_take_part_in_a_drag_and_the_drop_is_refused() {
         let mut h = Harness::new();
