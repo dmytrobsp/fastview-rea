@@ -205,7 +205,16 @@ fn cdiv(a: Complex64, b: Complex64) -> Complex64 {
     if (b.re == 0.0 && b.im == 0.0) || b.re.is_nan() || b.im.is_nan() {
         return Complex64::new(f64::NAN, f64::NAN);
     }
-    a / b
+    // Smith's scaled form of `0x420ca0` (`num_complex`'s own `/` is the unscaled one, which rounds differently).
+    if b.re.abs() < b.im.abs() {
+        let w = b.re / b.im;
+        let d = b.im + w * b.re;
+        Complex64::new((a.re * w + a.im) / d, (a.im * w - a.re) / d)
+    } else {
+        let w = b.im / b.re;
+        let d = b.re + w * b.im;
+        Complex64::new((a.re + a.im * w) / d, (a.im - a.re * w) / d)
+    }
 }
 
 const ONE: Complex64 = Complex64::new(1.0, 0.0);
@@ -529,9 +538,10 @@ pub fn choose_window(dist: &[f64], inst: &[f64], lo: usize, hi: usize, p: usize)
         }
         bt
     };
-    let bias = |t: usize, eps: f64| eps - (t - lo) as f64 * eps / (10.0 * p as f64);
-    let sigma_score = |t: usize| window_sigma(dist, t, p) + bias(t, 0.001);
-    let mean_score = |t: usize| window_mean_abs(inst, t, p) + bias(t, 1e-6);
+    // The original's order (`0x477a20`, `0x477c40`): the step eps / (10·P) first, then (σ − m·step) + eps.
+    let score = |v: f64, t: usize, eps: f64| v - (t - lo) as f64 * (eps / (10.0 * p as f64)) + eps;
+    let sigma_score = |t: usize| score(window_sigma(dist, t, p), t, 0.001);
+    let mean_score = |t: usize| score(window_mean_abs(inst, t, p), t, 1e-6);
     let (mut ta, mut tb) = (0.0, 0.0);
     for i in 0..1000 {
         let a = search(&sigma_score, ta);
