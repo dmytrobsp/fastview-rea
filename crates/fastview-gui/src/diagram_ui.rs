@@ -1675,6 +1675,7 @@ impl App {
             let max = sp[..=k_max].iter().copied().fold(0.0, f64::max);
             let max = if max == 0.0 { 1.0 } else { max };
             let norm = if use_rms { fvb_core::freqcorr::rms_at(ch.file.and(corr).map(|c| c.at_rate(ch.own_rate)), ch.file.unwrap_or(0), samples, pos, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
+            let magnitude = fvb_core::views::window_magnitude(samples, pos, n * periods);
             let color = ch.color;
             if g.plot_h() - 30 * si - g.h <= 0 {
                 continue;
@@ -1697,7 +1698,7 @@ impl App {
                     painter.px_rect_stroke(bar.shrink(0.5), 0.0, Stroke::new(1.0f32, color));
                 }
                 // The fundamental's own bar reads 100 (an improvement, #60); `use_rms` has its own norm.
-                let val = if percent { fvb_core::views::percent_bar_value(v, norm, k == periods && !use_rms) } else { v };
+                let val = if percent { fvb_core::views::percent_bar_value(v, norm, k == periods && !use_rms, magnitude) } else { v };
                 let label = fvb_core::views::freq_label(val).trim().to_string();
                 // Measured in the diagrams' Tahoma 13 (`0x4705e6`): its
                 // digits advance 6 px, «.» 3 — numbers only reach here.

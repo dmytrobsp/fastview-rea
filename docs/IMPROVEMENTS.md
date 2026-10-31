@@ -212,3 +212,10 @@ misbehaves and the better behaviour is obvious (the maintainer,
   button) and while it is dragged, as for a caption drag (the entry
   above). The distance is the caption's, grown with the display scale.
   Reason: as for the caption, it hints that dragging on pulls the pane out.
+- **The frequency diagram's «%» labels of a constant channel read 0 (#93).** A channel stuck at one non-zero value
+  has no harmonics and no fundamental, but computed in floating point each bin holds rounding noise (around 1e-14 of
+  the level). In «% of the fundamental» mode the original divides that noise by the noise (`0x4704e7`) and prints
+  numbers like «37.5» or a huge DC figure, which mean nothing (absolute mode prints 0). Ours prints «0» on every
+  bar when the fundamental is below 1e-9 of the window's largest |sample|; the threshold sits five orders above
+  the noise and three below a ripple of 1e-6 of the level, so real signals, near-constant ones included, keep their
+  labels. Reason: the maintainer's decision (2026-10-31). The «% of RMS» mode is untouched (its norm is the level).
