@@ -64,6 +64,14 @@ questions at the start and looks again at the end.
   review and the report. It keeps its own context lean: short reports, details in scratch files.
 - **Agent ids**: the controller keeps every background agent's id in its scratch folder (`agents.md`: unit, role, id),
   so a fix round, a conflict or a lost session can resume the agent with its context.
+- **Never wait on a notice alone.** After every dispatch or resume (implementer, reviewer, re-reviewer), the controller
+  starts `tools/watch-report.sh FILE PATTERN MAX_SECONDS` in the background on the file the agent must write (the
+  report's next `# Round N` heading, the review's `Assessment`), with a time cap. Its exit wakes the controller whether
+  or not the agent's own completion notice arrives; TIMEOUT means look at the agent now. Why: on 0.5.0 an implementer
+  left a background command waiting on stdin; its run never ended, so no completion notice came, the next round's
+  message landed in that same run, and its second hand-back was refused — the milestone sat idle for 7½ hours with
+  the round done. A notice saying an agent is "waiting on its own background work" means its run is still open: stop
+  its leftovers (or have it stop them) before sending it new work.
 - **How many at once**: three implementers that build; at most three Windows clones exist at once (each 6.5 GB of
   RAM; `<claim tool> slot status` shows the room), so units needing the original's runs are staggered.
 - **The model, chosen per dispatch and always named** (an omitted model silently inherits the session's most
@@ -126,8 +134,11 @@ repository. Only the controller runs it. Pushes run from the main checkout, whic
    identity and trailer, guard); the clone rules of [windows-testing.md](windows-testing.md) with the unit's own
    `FV_CLONE` file; and the limits: **never `git push`, never `gh pr` / `gh issue` writes, never edit the record of
    the original, ACCEPTED-DIFFERENCES.md or the milestone ledger** (the report carries the drafts), never run
-   `milestone.py`, **never dispatch subagents** (no reviewers of its own: the review is the controller's). A
-   deliberate improvement adds its own IMPROVEMENTS.md entry in the unit. The controller records the base commit.
+   `milestone.py`, **never dispatch subagents** (no reviewers of its own: the review is the controller's); and the
+   background rule: **every background command and Monitor ended before the final message**, stdin closed on any
+   command that might read it, and a refused hand-back answered with SendMessage to the controller. A deliberate
+   improvement adds its own IMPROVEMENTS.md entry in the unit. The controller records the base commit and starts the
+   report watchdog (above).
 2. **Implementation.** Reproduce first (headless or in a clone); read the original in its binary where behaviour must
    be matched; the test that fails without the fix (shown failing, by reverting the fix); `tools/gates.sh` →
    GATES-OK; one commit per logical step. The implementer reviews its own diff before reporting, but that never

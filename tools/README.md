@@ -96,3 +96,7 @@ Its tests: `python3 -I -m unittest discover -s tools/milestone -p 'test_*.py'`
 
 `tools/review-package.sh BASE HEAD OUT` writes a unit's review package (commits, stat, diff with
 context) for an independent reviewer ([`../docs/agents/review.md`](../docs/agents/review.md)).
+
+`tools/watch-report.sh FILE PATTERN MAX_SECONDS [LABEL]` is the controller's watchdog for a dispatched agent: it exits
+when FILE gains a line matching PATTERN (READY) or after MAX_SECONDS (TIMEOUT), so the controller is woken even when an
+agent's completion notice never arrives ([`../docs/agents/workflow.md`](../docs/agents/workflow.md)).
