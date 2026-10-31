@@ -4,7 +4,7 @@ The current state, in short. This page is rewritten when things change, never ap
 What happened before is in the milestones' ledgers ([milestones/](milestones/README.md)), the record of the original
 ([original/](original/README.md)), [history/](history/) and `git log`.
 
-Last rewritten: 2026-10-31 (v0.5.0 released; milestone 0.5.0 closed).
+Last rewritten: 2026-10-31 (v0.5.0 released; milestone 0.6.0 started: the follow-ups of 0.5.0 and 0.4.0).
 
 ## Latest release
 
@@ -30,14 +30,15 @@ Last rewritten: 2026-10-31 (v0.5.0 released; milestone 0.5.0 closed).
 
 ## In flight
 
-- Nothing: no milestone is open. Milestone 0.5.0's ledger and retro: [milestones/0.5.0.md](milestones/0.5.0.md).
+- **Milestone 0.6.0** ([GitHub](https://github.com/dmytrobsp/fastview-rea/milestone/4), plan and ledger:
+  [milestones/0.6.0.md](milestones/0.6.0.md)): the follow-ups of 0.5.0 (#100–#115, #118, #119, #121) and of 0.4.0
+  (#65, #67–#69, #78–#83) — own rates' remaining readers, sin / cos / tan parity, auto-hide and focus leftovers, code
+  pages, the view's clipboard picture and В1, scaling residuals, synthetic test records. Eight units in three waves.
 
 ## Next topics
 
-- **The next milestone**, to propose to the maintainer: candidates are 0.5.0's follow-ups (#100–#115, #118, #119,
-  #121 — own rates' remaining readers and merge pads, sin / cos site tests, auto-hide and focus leftovers), the
-  drag-and-drop gaps #73–#76 (#74 / #75 need the maintainer), #85 (the pre-1607 DPI fallback), the 0.4.0 follow-ups
-  (#65, #67–#69, #78–#83).
+- **After 0.6.0**, candidates: the drag-and-drop gaps #73–#76 (#74 / #75 need the maintainer), #85 (the pre-1607
+  DPI fallback).
 - **The maintainer's new direction (filed 2026-10-30, all `improvement`):** translations (#88), anti-aliased
   waveforms keeping every sample exact (#89), and — designed
   together, `size:l` — light / dark themes replacing the nine «Стиль» skins (#91) with a simpler modern look (#92);
