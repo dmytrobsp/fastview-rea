@@ -143,8 +143,8 @@ misbehaves and the better behaviour is obvious (the maintainer,
   drag distance (SM_CXDRAG / SM_CYDRAG, read once at start-up,
   `0x1005a5fb`) from the press along an axis, wherever the pointer is
   (`0x10086f3a`; clone at 100 %: 4 px stays docked, 5 px floats the pane
-  with the pointer still on it), and keeps the arrow cursor: the only
-  four-way move cursor in its docking code (`0x100d66dd`) is set in the
+  with the pointer still on it), and keeps the arrow cursor: the four-way
+  move cursor in its docking code (`0x100d66dd`, `0x100d75a8`) is set only in the
   immediate, non-smart docking mode, which FastView does not use; the
   clone showed the arrow at 0 / 3 / 4 / 5 px and, with the button held,
   at 8 px (a reading under mouse capture, so the binary is the firmer

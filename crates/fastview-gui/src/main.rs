@@ -2713,6 +2713,33 @@ mod window_tests {
         }
     }
 
+    /// Beside a right strip the caption row has no dead band: the ribbon's panel is narrower by the strip's
+    /// width and the window's buttons lie at the window's edge, so the free space reserves the buttons' width
+    /// less that inset. A drag anywhere in the row up to the buttons moves the window, as elsewhere in the row.
+    #[test]
+    fn the_caption_row_beside_a_right_strip_has_no_dead_band() {
+        use docking::{Edge, Spot, Unit};
+        let screen = Vec2::new(1320.0, 860.0);
+        let mut w = Win::new();
+        w.app.own_caption = true;
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Right, outer: true };
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let ev = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        // The strip is 23 px wide: the band was [W - 161, W - 138].
+        for dx in [160.0, 150.0, 140.0, 139.0] {
+            let at = Pos2::new(screen.x - dx, 10.0);
+            let mut dragged = false;
+            for events in [vec![egui::Event::PointerMoved(at)], vec![ev(at, true)], vec![egui::Event::PointerMoved(at + Vec2::new(12.0, 0.0))], vec![egui::Event::PointerMoved(at + Vec2::new(24.0, 0.0))], vec![ev(at + Vec2::new(24.0, 0.0), false)]] {
+                let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, screen)), time: Some(w.ctx.input(|i| i.time) + 0.05), events, ..Default::default() };
+                let out = w.ctx.run(raw, |ctx| w.app.frame_ui(ctx));
+                dragged |= out.viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.commands.iter().any(|c| matches!(c, egui::ViewportCommand::StartDrag)));
+            }
+            assert!(dragged, "a press at {dx} px from the right edge drags the window");
+            w.idle(2);
+        }
+    }
+
     /// An auto-hidden tabbed group has a strip button per visible tab (#62;
     /// VM, three tabs): the front pane's full length, the others' stubs of
     /// 24 px, the buttons laid out in the tab order from 4 px under the
@@ -2736,7 +2763,8 @@ mod window_tests {
         assert!(shown(&w).is_empty(), "in its strip nothing of it is drawn");
         // A stub: its pane in front, alone in the pane, the button long now.
         let front = w.app.panes.front(w.app.docks.members(Unit::Vector));
-        let stub = buttons.iter().find(|r| r.height() <= 24.5).expect("a visible stub").center();
+        let stub_rect = *buttons.iter().find(|r| r.height() <= 24.5).expect("a visible stub");
+        let (front_slot, stub) = (*buttons.iter().find(|r| r.height() > 100.0).expect("the front's button"), stub_rect.center());
         w.run(vec![egui::Event::PointerMoved(stub)]);
         w.idle(30);
         assert!(w.app.docks[Unit::Vector].out);
@@ -2747,9 +2775,16 @@ mod window_tests {
         let (long, _, after) = long_stub(&w);
         assert_eq!(long, 1, "one full button again: {after:?}");
         let long_rect = after.iter().find(|r| r.height() > 100.0).expect("the front's button");
-        assert!(long_rect.contains(w.app.strip_hits[Unit::Vector as usize].buttons.iter().find(|r| r.height() > 100.0).unwrap().center()));
-        // The stub's top is where it lay: the hit was on a button of the same slot.
-        assert!(after.iter().any(|r| r.height() <= 24.5), "the former front is a stub now: {after:?}");
+        // The column starts 4 px under the window's top and runs in tab order: the front pane was first
+        // (its button 4 px + its length down), so with the hovered pane in front the former front keeps
+        // its place as a 24 px stub and the new long button follows it. (The new button does not start
+        // where the hovered stub lay: the former front shrank above it.)
+        let len = |p: app::Pane, front: bool| docking::strip_button_len(views::pane_title(p).chars().count(), front, true);
+        assert!((front_slot.bottom() - (4.0 + len(front.unwrap(), true))).abs() < 0.5, "the front pane was first in the column: {front_slot:?}");
+        assert!((long_rect.bottom() - (4.0 + len(front.unwrap(), false) + len(now.unwrap(), true))).abs() < 0.5, "the former front's slot is a 24 px stub, the new long button after it: {long_rect:?}");
+        assert!((stub_rect.top() - front_slot.bottom()).abs() < 0.5, "the hovered stub lay right after the former front's button");
+        let stub_after = after.iter().find(|r| r.height() <= 24.5).expect("the stub that followed");
+        assert!((stub_after.top() - long_rect.bottom()).abs() < 0.5 && stub_after.height() == 24.0, "the stubs follow the long button: {stub_after:?}");
     }
 
     /// A divider beside a slid-out pane (#63; VM, `0x10087a4a`): the pointer

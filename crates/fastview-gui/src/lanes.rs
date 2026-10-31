@@ -226,7 +226,7 @@ impl OscView<'_> {
         let k_main = doc.main_cursor;
         let x_of = |k: f64| self.x_of(k);
         let lane = &r.key;
-        let (name, unit, color, maxv, minv, rms, a1, val) = lane_stats(doc, lane, k_main, primary);
+        let (name, unit, color, maxv, minv, rms, a1, val) = lane_stats(doc, lane, k_main);
         // Stats text: the name (cut to 25 characters) framed in its colour,
         // the value at В1 after the label column, then the enabled rows;
         // digital lanes show the name only.
@@ -279,7 +279,7 @@ impl OscView<'_> {
             // has stat rows, and its own icons ending at top + (k+1)·S.
             let mut first = None;
             for (k, &m) in r.members.iter().enumerate() {
-                let (mn, mu, mc, mmax, mmin, mrms, ma1, mv) = lane_stats(doc, &m, k_main, primary);
+                let (mn, mu, mc, mmax, mmin, mrms, ma1, mv) = lane_stats(doc, &m, k_main);
                 let stride = group_stride(doc, m);
                 let y = top + 5.0 + k as f32 * stride;
                 let nr = header(y, &mn, &mu, mc, mv);
@@ -368,7 +368,7 @@ impl OscView<'_> {
                     match m {
                         Lane::Analog(i) => {
                             let c = doc.chans[i].color;
-                            draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k, primary), &x_of, top, h, (lo, hi), c, f);
+                            draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f);
                         }
                         Lane::Computed(j) if doc.pending_of(j).is_some() => self.pasted_analog(pp, j, top, h, (lo, hi), doc.computed[j].color),
                         Lane::Computed(j) => {
@@ -743,7 +743,7 @@ fn chan_icons(doc: &crate::app::Doc, i: usize, primary: bool) -> Vec<&'static st
 /// `0x46121c`): «Max:000.00mV|Min:000.00mV», «СКЗ:000.00mV», «A1:000.00mV»
 /// for the rows it shows, `|`-joined.
 /// Returns (label column, panel width).
-pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], primary: bool, abs_time: bool) -> (f32, f32) {
+pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, rows: &[Row], _primary: bool, abs_time: bool) -> (f32, f32) {
     // The names are drawn bold: measured so.
     let name_font = bold_font(fonts, NAME_FONT.size).unwrap_or(NAME_FONT);
     let w = |s: &str, f: &FontId| {
@@ -757,7 +757,7 @@ pub(crate) fn stats_columns(fonts: &egui::text::Fonts, doc: &crate::app::Doc, ro
     let mut any = false;
     for lane in analog {
         any = true;
-        let (name, unit, ..) = lane_stats(doc, &lane, 0, primary);
+        let (name, unit, ..) = lane_stats(doc, &lane, 0);
         label = label.max(w(&cut(&name), &NAME_FONT) + 5.0);
         let t = if fvb_core::views::si_unit(&unit.canon) { ": -0.00000000 A" } else { ": -0.0000000E-000 " };
         templ = templ.max(w(t, &NAME_FONT) + 10.0);
@@ -899,8 +899,8 @@ fn member_range(doc: &crate::app::Doc, k: ChanKey, primary: bool) -> (f64, f64) 
     }
 }
 
-pub fn chan_range(doc: &crate::app::Doc, i: usize, primary: bool) -> (f64, f64) {
-    let [mut lo, mut hi, ..] = scaled_minmax(doc, i, primary);
+pub fn chan_range(doc: &crate::app::Doc, i: usize, _primary: bool) -> (f64, f64) {
+    let [mut lo, mut hi, ..] = scaled_minmax(doc, i);
     if lo > hi {
         (lo, hi) = (0.0, 0.0);
     }
@@ -1392,7 +1392,7 @@ impl App {
             }
             let name_rect = ov.row(&lp, &pp, r, top, ranges[li]);
             let lane = &r.key;
-            let name = lane_stats(doc, lane, k_main, primary).0;
+            let name = lane_stats(doc, lane, k_main).0;
             if name.chars().count() > NAME_CHARS && hover.is_some_and(|p| name_rect.contains(p)) {
                 cut_hover = Some(name.clone());
             }
@@ -2585,40 +2585,24 @@ fn comment_menu(ui: &mut egui::Ui, c: &crate::app::Comment, i: usize, pick: &mut
     }
 }
 
-fn primary_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
-    crate::app::display_k(&doc.osc.analog[i], primary)
-}
-
-/// Displayed sample of analog channel `i` at `k`: raw ADC counts when the channel
-/// is in «отсчёты АЦП» mode, otherwise the (optionally primary-scaled) value with
-/// invert / remove-DC applied.
-/// An analog channel's plotted / read-out value in the display mode
-/// (`0x461440`): instantaneous, one-period RMS or first harmonic.
-/// The unscaled display series of channel `i` in its mode.
+/// An analog channel's plotted / read-out value in the display mode (`0x461440`), before any factor:
+/// an instantaneous value is the channel's shown series (the accessor `0x426020`: x·k − dc·k with
+/// «Удалить постоянную», read with the channel's own factor `ch+0xf0`), RMS and first harmonic are
+/// sums over those same shown samples.
 fn mode_raw(doc: &crate::app::Doc, i: usize, k: usize) -> f64 {
     match doc.chans[i].mode {
-        ValueMode::Instant => doc.sample(i, k),
+        ValueMode::Instant => doc.shown_samples(i).get(k).copied().unwrap_or(0.0),
         ValueMode::Rms => doc.rms_at(i, k),
         ValueMode::FirstHarmonic => doc.harmonic_at(i, k) * doc.osc.harmonic1_gain,
     }
 }
 
-/// The factor a channel's display series in its mode still waits for: the RMS and the first harmonic
-/// are summed over samples already read through `k` (`0x426020`), an instantaneous value is `k` times
-/// the one sample.
-fn mode_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
-    match doc.chans[i].mode {
-        ValueMode::Instant => value_scale(doc, i, primary),
-        ValueMode::Rms | ValueMode::FirstHarmonic => 1.0,
-    }
-}
-
 /// [finite min, finite max, min, max] of channel `i`'s display series, the
-/// scan cached per (channel, mode, `series_gen`) and the scale applied.
-fn scaled_minmax(doc: &crate::app::Doc, i: usize, primary: bool) -> [f64; 4] {
+/// scan cached per (channel, mode, `series_gen`).
+fn scaled_minmax(doc: &crate::app::Doc, i: usize) -> [f64; 4] {
     let key = (i, doc.chans[i].mode);
     let cached = doc.minmax_cache.borrow().get(&key).filter(|c| c.0 == doc.series_gen).map(|c| c.1);
-    let raw = cached.unwrap_or_else(|| {
+    cached.unwrap_or_else(|| {
         let mut m = [f64::INFINITY, f64::NEG_INFINITY, f64::MAX, f64::MIN];
         for k in 0..doc.osc.sample_count() {
             let v = mode_raw(doc, i, k);
@@ -2631,31 +2615,11 @@ fn scaled_minmax(doc: &crate::app::Doc, i: usize, primary: bool) -> [f64; 4] {
         }
         doc.minmax_cache.borrow_mut().insert(key, (doc.series_gen, m));
         m
-    });
-    let s = mode_scale(doc, i, primary);
-    let pair = |a: f64, b: f64| if s >= 0.0 { (a * s, b * s) } else { (b * s, a * s) };
-    let (lo, hi) = pair(raw[0], raw[1]);
-    let (mn, mx) = pair(raw[2], raw[3]);
-    [lo, hi, mn, mx]
+    })
 }
 
-fn mode_disp(doc: &crate::app::Doc, i: usize, k: usize, primary: bool) -> f64 {
-    let scale = value_scale(doc, i, primary);
-    match doc.chans[i].mode {
-        ValueMode::Instant => doc.sample(i, k) * scale,
-        ValueMode::Rms => doc.rms_at(i, k),
-        ValueMode::FirstHarmonic => doc.harmonic_at(i, k) * doc.osc.harmonic1_gain,
-    }
-}
-
-/// The primary/secondary ratio a channel's flagged values are shown with;
-/// an ADC code is shown as is (`0x426020`).
-fn value_scale(doc: &crate::app::Doc, i: usize, primary: bool) -> f64 {
-    if doc.chans[i].adc_counts {
-        1.0
-    } else {
-        primary_scale(doc, i, primary)
-    }
+fn mode_disp(doc: &crate::app::Doc, i: usize, k: usize) -> f64 {
+    mode_raw(doc, i, k)
 }
 
 fn analog_unit(doc: &crate::app::Doc, i: usize) -> fvb_core::units::Shown {
@@ -2671,17 +2635,16 @@ pub(crate) fn lane_stats(
     doc: &crate::app::Doc,
     lane: &Lane,
     k_main: usize,
-    primary: bool,
 ) -> (String, fvb_core::units::Shown, Color32, f64, f64, f64, f64, f64) {
     match lane {
         Lane::Analog(i) => {
             let ch = &doc.osc.analog[*i];
             // Value at the cursor and Max/Min follow the display mode; СКЗ
             // and A1 are always the one-period RMS and first harmonic.
-            let [.., mn, mx] = scaled_minmax(doc, *i, primary);
+            let [.., mn, mx] = scaled_minmax(doc, *i);
             let rms = doc.stat_rms(*i, k_main);
             let a1 = doc.stat_a1(*i, k_main) * doc.osc.harmonic1_gain;
-            let val = mode_disp(doc, *i, k_main, primary);
+            let val = mode_disp(doc, *i, k_main);
             (ch.id.clone(), analog_unit(doc, *i), doc.chans[*i].color, mx, mn, rms, a1, val)
         }
         Lane::Computed(i) => {
@@ -3261,6 +3224,55 @@ mod menu_tests {
         h.app.dispatch(Command::SetValueMode(ValueMode::Rms));
         let (lo3, _) = chan_range(h.doc(), 0, false);
         assert!(lo3 >= 0.0, "an RMS series is never negative: {lo3}");
+    }
+
+    /// `ch+0xf0`: every reading of a channel carries the channel's own factor. A channel whose
+    /// primary / secondary flag differs from channel 0's (a pasted one) shows its waveform, its value at
+    /// the cursor, its range and its СКЗ in one factor.
+    #[test]
+    fn a_lane_reads_every_value_with_its_own_factor() {
+        use fvb_core::signal::rms_at;
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary, d.osc.analog[1].is_primary) = (1234.0, 1.0, true);
+        d.chans[0].primary = true;
+        d.chans[1].primary = false;
+        d.recompute(false);
+        let k_main = d.osc.samples_per_cycle().max(2) * 2;
+        let n = d.period_of(1);
+        let want_k = 1.0 / 1234.0;
+        assert_eq!(d.shown_k(1), want_k);
+        let shown = d.shown_samples(1).to_vec();
+        let (_, _, _, mx, mn, rms, _, val) = lane_stats(d, &Lane::Analog(1), k_main);
+        assert_eq!(val.to_bits(), shown[k_main].to_bits(), "the value at the cursor is the shown series'");
+        assert_eq!(rms.to_bits(), rms_at(&shown, k_main, n).to_bits(), "СКЗ over the same shown samples");
+        let (lo, hi) = (shown.iter().copied().fold(f64::MAX, f64::min), shown.iter().copied().fold(f64::MIN, f64::max));
+        assert_eq!((mn, mx), (lo, hi), "Max / Min in the same factor");
+        let (rlo, rhi) = chan_range(d, 1, true);
+        assert!(rlo >= lo - (hi - lo) && rhi <= hi + (hi - lo), "the zoom range is in the same factor: {rlo}..{rhi} vs {lo}..{hi}");
+    }
+
+    /// With «Удалить постоянную» an instantaneous value is the accessor's `x·k − dc·k`, not `(x − dc)·k`.
+    #[test]
+    fn an_instantaneous_value_follows_the_accessors_remove_dc_order() {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        (d.osc.analog[0].primary, d.osc.analog[0].secondary, d.osc.analog[0].is_primary) = (1234.0, 7.0, false);
+        d.chans[0].primary = true;
+        d.chans[0].remove_dc = true;
+        d.recompute(true);
+        let k = d.shown_k(0);
+        assert_eq!(k, 1234.0 / 7.0);
+        let dc = d.dc_mean[0].0;
+        let mut differs = false;
+        for j in 0..d.osc.sample_count() {
+            let x = d.osc.analog[0].samples[j];
+            let want = x * k - dc * k;
+            differs |= want.to_bits() != ((x - dc) * k).to_bits();
+            let (.., val) = lane_stats(d, &Lane::Analog(0), j);
+            assert_eq!(val.to_bits(), want.to_bits(), "sample {j}");
+        }
+        assert!(differs, "the record must tell the two orders apart");
     }
 
     /// The визир hit test (`0x495800`) uses trunc(leftW + (s − first)·25·f),

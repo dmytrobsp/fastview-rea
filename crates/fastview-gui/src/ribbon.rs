@@ -383,7 +383,9 @@ impl App {
                     // (VM), under a top strip on its row.
                     // Drawn by the frame, unclipped, in `caption_buttons_area`.
                     if self.strip_inset[1] > 0.0 || self.strip_inset[2] > 0.0 {
-                        ui.add_space(3.0 * s(46.0));
+                        // The ribbon's panel is narrower than the window by the right strip: the buttons
+                        // lie that much inside it already.
+                        ui.add_space((3.0 * s(46.0) - self.strip_inset[1]).max(0.0));
                     } else {
                         caption_buttons(ui);
                     }

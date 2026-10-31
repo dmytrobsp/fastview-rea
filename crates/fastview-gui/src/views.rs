@@ -1832,7 +1832,7 @@ fn pane_dim(p: Pane) -> fvb_core::model::Dimension {
     }
 }
 
-fn pane_title(p: Pane) -> &'static str {
+pub(crate) fn pane_title(p: Pane) -> &'static str {
     match p {
         Pane::Vector => "Векторная диаграмма",
         Pane::Circle => "Круговая диаграмма",
