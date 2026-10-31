@@ -210,6 +210,9 @@ pub const SLIDE_STEPS: f32 = 12.0;
 /// The divider beside a slid-out pane (the pane's splitter window, +0x33c
 /// of the pane; VM: the brush between the view and the pane, 4 px).
 pub const DIVIDER_PX: f32 = 4.0;
+/// The frame a tab control draws around its pane inside a docked group
+/// (VM: 3 px on the side facing the view; a slid-out pane has none).
+pub const GROUP_FRAME_PX: f32 = 3.0;
 /// An auto-hide strip button's length along its strip at 100 % (VM, the
 /// original; three tabs pinned): the group's front pane's button is full
 /// length — about 7.86 px per character of its title plus 5 on a side

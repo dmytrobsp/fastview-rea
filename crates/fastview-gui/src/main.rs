@@ -3937,6 +3937,48 @@ mod window_tests {
         assert!((at - Pos2::new(496.0, 373.0)).length() < 1.0, "{at:?}");
     }
 
+    /// #126 (clone, the original): a slid-out pane is as large across its
+    /// edge as its window was docked, the 4 px divider outside it — the
+    /// bottom Частотная's pane 144 px tall slid out as docked, with no margin
+    /// around its window; a tabbed group's pane is the docked size less its
+    /// tab control's 3 px frame and the divider's place (the right group).
+    #[test]
+    fn a_slid_out_pane_is_as_large_as_it_was_docked() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks = docking::Docks::default();
+        w.idle(4);
+        let slide_out = |w: &mut Win, u: Unit| -> egui::Rect {
+            // A click on the caption's pin.
+            let pane = if u == Unit::Vector { app::Pane::Vector } else { app::Pane::Frequency };
+            let r = w.app.pane_canvas.iter().find(|(p, _)| *p == pane).map(|(_, r)| *r).expect("the pane");
+            let at = Pos2::new(w.app.dock_rects[u as usize].expect("docked").right() - 26.0, r.top() - 10.0);
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(true), ev(false)]);
+            w.idle(3);
+            assert_eq!(w.app.docks[u].place, docking::Place::AutoHide, "{u:?} pinned");
+            let button = w.app.strip_hits[u as usize].buttons[0].center();
+            w.run(vec![egui::Event::PointerMoved(button)]);
+            w.idle(30);
+            assert!(w.app.docks[u].out, "{u:?} slid out");
+            w.app.dock_areas[u as usize].expect("its rect")
+        };
+        // The lone bottom pane: the docked height, the window with no inset.
+        let docked = w.app.dock_rects[Unit::Frequency as usize].expect("docked");
+        let area = slide_out(&mut w, Unit::Frequency);
+        assert_eq!(area.height(), docked.height(), "the pane as tall as docked: {area:?} vs {docked:?}");
+        let div = w.app.dock_dividers[Unit::Frequency as usize].expect("its divider");
+        assert_eq!((div.height(), div.bottom()), (docking::DIVIDER_PX, area.top()), "the divider above it");
+        // The right group (two tabs): the docked width less 3 + 4 px.
+        let mut w = Win::new();
+        w.app.docks = docking::Docks::default();
+        w.idle(4);
+        let docked = w.app.dock_rects[Unit::Vector as usize].expect("docked");
+        let area = slide_out(&mut w, Unit::Vector);
+        assert_eq!(area.width(), docked.width() - docking::GROUP_FRAME_PX - docking::DIVIDER_PX, "the group's pane: {area:?} vs {docked:?}");
+    }
+
     /// #124 (clone, the original): a double-click on a tab of a docked
     /// group's strip floats that pane alone, the front one or not (mfc120u's
     /// tab double-click `0x10068d99` calls the detach `0x10068657` in mode 2

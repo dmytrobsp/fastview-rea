@@ -186,11 +186,17 @@ impl App {
             };
             for u in units {
                 if self.docks[u].place == Place::Docked {
-                    // The slid-out pane keeps the size its window had docked
-                    // (VM: pane and divider as wide as the docked pane).
+                    // The slid-out pane's window is as large as its docked
+                    // one (#126, VM): a lone pane (the bottom Частотная, the
+                    // right Дифференциальная) the same size, its divider
+                    // outside it, over the view; a tabbed group without the
+                    // frame its tab control drew (3 px) and without a place
+                    // for the divider (4 px; L9.410).
                     if let Some(r) = self.dock_rects[u as usize] {
                         let across = if self.docks.edge(u).vertical() { r.width() } else { r.height() };
-                        self.docks[u].slide_extent = Some((across - crate::dpi::s(crate::docking::DIVIDER_PX)).max(crate::docking::SLIDE_MIN_PX));
+                        let grouped = self.dock_views().iter().any(|g| g.unit == u && g.strip);
+                        let lost = if grouped { crate::docking::GROUP_FRAME_PX + crate::docking::DIVIDER_PX } else { 0.0 };
+                        self.docks[u].slide_extent = Some((across - crate::dpi::s(lost)).max(crate::docking::SLIDE_MIN_PX));
                     }
                     self.dock_leave(u);
                 }
@@ -984,9 +990,11 @@ impl App {
             // (the last claim of an id wins; from the same corner, one rect
             // holds the other, so egui sees no clash).
             ui.interact(rect, id.with("move"), egui::Sense::click());
-            let v = ui.visuals();
-            ui.painter().rect(rect, 0.0, v.panel_fill, v.window_stroke());
-            let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(3.0)));
+            // The pane's window fills the rect (VM: no margin, no outline
+            // around it; #126).
+            let fill = ui.visuals().panel_fill;
+            ui.painter().rect_filled(rect, 0.0, fill);
+            let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect));
             body(self, &mut inner);
             ui.expand_to_include_rect(rect);
             // MFC's frame, which a modal dialog disables, is the pane's
