@@ -639,23 +639,36 @@ impl Doc {
             // A pasted lane is bit 14, not bit 13, and writes its own frequency
             // vector as `NetFreq` (a clone run, #28).
             let pending = c.formula == crate::merge_ui::PENDING;
+            // A pasted lane's section is named by its raw name's bytes read as
+            // 1251, as a file channel's (a clone run: «(вст.)» pasted in a record
+            // shown in 866 is saved as «(ўбв.)»).
+            let key = match (&c.name_raw, pending) {
+                (Some(r), true) => comtrade::decode_bytes(&r.bytes, Encoding::Cp1251),
+                _ => c.name.clone(),
+            };
             let (flags, known) = if pending {
                 ((self.computed_flags(j) & !flag::COMPUTED) | flag::PENDING | if c.adc_counts { flag::ADC } else { 0 }, (known_c & !flag::COMPUTED) | flag::PENDING | flag::ADC)
             } else {
                 (self.computed_flags(j), known_c)
             };
+            // A pasted analog lane is a copy of the channel's record: its
+            // ratios are the source's (a clone run).
+            let (primary_mul, secondary_mul) = match pending.then(|| self.pending_of(j).map(|p| &p.pasted.channel)).flatten() {
+                Some(Ok(a)) => (a.primary, a.secondary),
+                _ => (1.0, 1.0),
+            };
             let rec = ChannelRec {
-                show_flags: Self::merged_flags(t, &c.name, flags, known) & mask,
-                primary_mul: 1.0,
-                secondary_mul: 1.0,
+                show_flags: Self::merged_flags(t, &key, flags, known) & mask,
+                primary_mul,
+                secondary_mul,
                 alias: String::new(),
                 // `ch+0x140` as it is (a VM run, L9.213): a place colour
                 // writes CustomColorSet 0, colorCustom 0.
                 custom_color: c.custom_color.then(|| colorref(c.color)),
             };
-            recset::write_channel(t.section_mut(&c.name), &rec);
+            recset::write_channel(t.section_mut(&key), &rec);
             if let Some(Ok(a)) = pending.then(|| self.pending_of(j).map(|p| &p.pasted.channel)).flatten() {
-                recset::write_net_freq(t.section_mut(&c.name), &a.own_freq);
+                recset::write_net_freq(t.section_mut(&key), &a.own_freq);
             }
         }
         let o = t.section_mut("Oscillogram");
@@ -1680,6 +1693,60 @@ mod tests {
         assert_eq!((flags >> 13) & 3, 2, "bit 14 only: {flags}");
         assert_eq!(sec.get_str("NetFreq", "").split(',').count(), d.osc.sample_count());
         assert_eq!(t.section("Comments").unwrap().get_str("Codepage", ""), "1");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pasted lane's `.set` section keeps the source channel's ratios and the
+    /// summary comment names both records by their file names (a clone run, a
+    /// synthetic 1234:5 channel; #192's comparison).
+    #[test]
+    fn a_pending_lane_keeps_the_ratios_and_the_summary_names_the_file() {
+        let dir = temp_dir("pendmul");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        app.docs[di].osc.analog[1].primary = 1234.0;
+        app.docs[di].osc.analog[1].secondary = 5.0;
+        app.docs[di].selection = [ChanKey::Analog(1)].into();
+        app.copy_channels_for_merge();
+        app.docs[di].selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        let d = &app.docs[di];
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let sec = t.section(&d.computed[j].name).expect("the lane's section");
+        assert_eq!((sec.get_str("PrimaryMul", ""), sec.get_str("SecondaryMul", "")), ("1234.000000".to_string(), "5.000000".to_string()));
+        let hdr = d.hdr.clone().unwrap();
+        assert_eq!(hdr.matches("Имя осциллограммы: rec.cfg\r\n").count(), 2, "{hdr}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pasted lane's `.set` section is named by its raw name's bytes read as
+    /// 1251, as a file channel's is: in a record shown in 866 «(вст.)» is its
+    /// 866 bytes, so the section reads «(ўбв.)» (a clone run, a synthetic
+    /// record without Cyrillic letters, whose reader's guess is OEM).
+    #[test]
+    fn a_pending_lane_section_is_named_by_its_raw_bytes() {
+        let dir = temp_dir("pendname");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        app.docs[di].codepage = Encoding::Cp866;
+        app.docs[di].selection = [ChanKey::Analog(1)].into();
+        app.copy_channels_for_merge();
+        app.docs[di].selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        let d = &app.docs[di];
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let shown = &d.computed[j].name;
+        assert!(shown.ends_with("(вст.)"), "{shown}");
+        assert!(t.section(shown).is_none(), "not under the shown name");
+        let raw = comtrade::decode_bytes(&d.computed[j].name_raw.as_ref().unwrap().bytes, Encoding::Cp1251);
+        assert!(raw.ends_with("(ўбв.)"), "{raw}");
+        assert!(t.section(&raw).is_some(), "under the bytes read as 1251");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
