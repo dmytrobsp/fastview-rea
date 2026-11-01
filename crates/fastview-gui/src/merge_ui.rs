@@ -38,6 +38,14 @@ impl ClipChan {
         }
     }
 
+    /// The lane's «*K» icon: the channel's flags and stored values as `0x462b22` tests them.
+    pub fn ratio_icon(&self) -> bool {
+        match &self.pasted.channel {
+            Ok(a) => crate::lanes::ratio_icon(a, self.primary_mode),
+            Err(_) => false,
+        }
+    }
+
     pub fn name(&self) -> &str {
         match &self.pasted.channel {
             Ok(a) => &a.id,
@@ -1151,6 +1159,31 @@ mod tests {
         // The merged channel, now first, keeps the copied mode: the
         // document stays secondary (VM).
         assert!(!d.primary_values(), "the document's mode is its first channel's");
+    }
+
+    /// A pasted lane's «*K» tests the copied channel's stored ratio values with its mode, as a lane's
+    /// does (`0x462b22`): equal values other than 1 show it, both 1 do not.
+    #[test]
+    fn a_pasted_lanes_ratio_icon_tests_the_stored_values() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        let a = &mut d.osc.analog[0];
+        (a.primary, a.secondary, a.is_primary) = (7.5, 7.5, true);
+        d.chans[0].primary = false;
+        d.selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
+        assert!(crate::lanes::key_icons(d, ChanKey::Computed(j)).contains(&"*K"), "equal values other than 1");
+        let d = app.active_doc_mut().unwrap();
+        for p in &mut d.pending {
+            if let Ok(a) = &mut p.pasted.channel {
+                (a.primary, a.secondary) = (1.0, 1.0);
+            }
+        }
+        let d = app.active_doc().unwrap();
+        assert!(!crate::lanes::key_icons(d, ChanKey::Computed(j)).contains(&"*K"), "both 1");
     }
 
     /// A pending lane's flags (L9.111's residual; `0x428490` with bit 14):
