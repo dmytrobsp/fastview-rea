@@ -1116,8 +1116,8 @@ impl ParamsDialog {
         let inner = grid.shrink(1.0);
         ui.painter().rect_filled(inner, 0.0, Color32::WHITE);
         let split = inner.left() + crate::dpi::dx(231.0);
-        // The rows from the font's height (17 px at 100 %).
-        let row_h = crate::dpi::base_units().1 as f32 + 4.0;
+        // The rows: 17 / 23 / 27 px at 100 / 125 / 150 % (clone).
+        let row_h = grid_row_h();
         let rule = egui::Stroke::new(1.0f32, Color32::from_gray(240));
         ui.painter().vline(split - 0.5, inner.y_range(), rule);
         let node = self.sel;
@@ -1144,7 +1144,7 @@ impl ParamsDialog {
             // Seen on the VM: the names left-aligned, a value changed since
             // the grid was built (not its name) bold.
             let modified = built.get(k).is_some_and(|b| b != v);
-            let font = dlg_font();
+            let font = grid_font();
             ui.painter().with_clip_rect(name).text(egui::pos2(name.left() + 5.0, name.center().y), egui::Align2::LEFT_CENTER, ellipsize_to(ui, label, name.width() - 7.0), font.clone(), Color32::BLACK);
             // A click selects the row (CMFCPropertyGridCtrl, VM): its name
             // on (180, 201, 233) and its value in place — a number in a
@@ -1255,10 +1255,31 @@ impl ParamsDialog {
     }
 }
 
+/// The property grid's font: 11 px at 100 %, and the 11 px font scaled by the display's ratio on whole pixels
+/// above (clone: «Название» 49 / 59 / 74 px wide at 100 / 125 / 150 % — 11 / 14 / 17 px; not the dialogs' 8 pt
+/// font, 11 / 13 / 16).
+pub(crate) fn grid_font_px() -> f32 {
+    if crate::dpi::unscaled() {
+        11.0
+    } else {
+        (11.0 * crate::dpi::k()).round()
+    }
+}
+
+fn grid_font() -> egui::FontId {
+    egui::FontId::proportional(grid_font_px())
+}
+
+/// The property grid's row pitch: 17 / 23 / 27 px at 100 / 125 / 150 % on a clone (CMFCPropertyGridCtrl's
+/// row height is its font's height + 4; the grid's font is taller than the dialogs' base unit says).
+pub(crate) fn grid_row_h() -> f32 {
+    crate::dpi::measured(17.0, 23.0, 27.0)
+}
+
 /// A grid name cut to `width` with «...» (DT_END_ELLIPSIS), whole when it
 /// fits.
 fn ellipsize_to(ui: &egui::Ui, text: &str, width: f32) -> String {
-    let font = crate::dialogs::dlg_font();
+    let font = grid_font();
     if ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::BLACK).size().x) <= width {
         return text.to_owned();
     }
@@ -2227,6 +2248,32 @@ mod tests {
         let xs: Vec<usize> = (318..392).filter(|&x| (10..50).any(|y| ink(x, y))).collect();
         let width = (xs.last().unwrap() - xs.first().unwrap() + 1) as f32;
         assert!((width - w17).abs() < (width - w16).abs(), "ink {width} against {w17} at 17 px and {w16} at 16");
+    }
+
+    /// #140 (clone, «Параметры ОМП»): the property grid's rows are 17 / 23 / 27 px apart at 100 / 125 / 150 % and
+    /// its text the 11 / 14 / 17 px font — «Название» 49 / 59 / 74 px wide in the original (the dialogs' 8 pt
+    /// font, 13 / 16 px, is narrower and the base unit + 4 gave 20 / 23 px rows).
+    #[test]
+    fn the_property_grid_rows_and_text_follow_the_system_scale() {
+        let fonts = crate::app_fonts();
+        for (dpi, row, px) in [(96, 17usize, 11.0f32), (120, 23, 14.0), (144, 27, 17.0)] {
+            crate::dpi::set(dpi);
+            assert_eq!((grid_row_h(), grid_font_px()), (row as f32, px), "{dpi}");
+            let mut d = ParamsDialog::new(0, OmpParams { method: ISOLATED, ..Default::default() });
+            let size = crate::dialogs::dlu_size(475, 275) + egui::vec2(20.0, 20.0);
+            let c = crate::raster::render_native(size, 1.0, |_| {}, |_, _| {}, Some(&fonts), vec![vec![]; 3], |ctx| {
+                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                    d.ui(ui, &[]);
+                });
+            });
+            // The rules (240) ruled under the rows, down a column well inside the value column.
+            let x = c.w - 40;
+            let rules: Vec<usize> = (0..c.h).filter(|&y| c.px[y * c.w + x] == [240, 240, 240]).collect();
+            let gaps: Vec<usize> = rules.windows(2).map(|w| w[1] - w[0]).filter(|&g| g > 1).collect();
+            assert!(gaps.len() >= 4 && gaps.iter().all(|&g| g == row), "{dpi}: rule gaps {gaps:?}");
+            crate::dpi::set(96);
+        }
+        crate::dpi::set(96);
     }
 }
 
