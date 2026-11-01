@@ -1475,7 +1475,17 @@ impl App {
                 // (the rows and the scroll bar at the system DPI: `dpi`)
                 let (row, bar_w) = (crate::dpi::s(17.0), crate::dpi::s(17.0));
                 let page = (inner.height() / row).floor() * row;
-                let max_off = (content_h - page).max(0.0);
+                // The window scroll bar's range as MFC sets it (clone: with
+                // P rows in view and N in all, the wheel and the bar reach
+                // N - P + 2 rows down, a page of P - 2 sizing the thumb);
+                // it is there when the rows overflow the window.
+                let bar_page = (page - 2.0 * row).max(row);
+                let max_off = if content_h > page { (content_h - bar_page).max(0.0) } else { 0.0 };
+                ui.data_mut(|d| d.insert_temp(grid_rows_id(), (page / row) as i32));
+                // PgUp / PgDn scroll a page (P - 1 rows) with the selection.
+                if let Some(rows) = ui.data_mut(|d| d.remove_temp::<i32>(grid_page_id())) {
+                    off = (off + rows as f32 * row).clamp(0.0, max_off);
+                }
                 if ui.rect_contains_pointer(inner) {
                     for dy in ui.input(|i| crate::lanes::wheel_deltas(&i.events)) {
                         off -= dy.signum() * 3.0 * row;
@@ -1488,7 +1498,7 @@ impl App {
                 let content = if max_off > 0.0 { egui::Rect::from_min_max(inner.min, egui::pos2(inner.right() - bar_w, inner.bottom())) } else { inner };
                 if max_off > 0.0 {
                     let bar = egui::Rect::from_min_max(egui::pos2(content.right(), inner.top()), inner.max);
-                    if let Some(v) = crate::lanes::scrollbar(ui, bar, false, off, max_off, page, row, page) {
+                    if let Some(v) = crate::lanes::scrollbar(ui, bar, false, off, max_off, bar_page, row, page) {
                         off = v;
                     }
                 }
@@ -1810,6 +1820,11 @@ impl App {
             });
             let [up, down, home, end, enter, f4, open_key, close_key] = keys;
             let last = order.len().saturating_sub(1);
+            // PgUp / PgDn (clone): the selection and the window both move
+            // by a page, P - 1 rows (P: the rows in view), kept inside the
+            // rows and the scroll range.
+            let (pg_up, pg_down) = ui.input(|i| (i.key_pressed(egui::Key::PageUp), i.key_pressed(egui::Key::PageDown)));
+            let page_rows = ui.data(|d| d.get_temp::<i32>(grid_rows_id())).unwrap_or(2).saturating_sub(1).max(1) as usize;
             // «Тип блока» alone (no block's rows): ↓ / ↑ step its value in
             // an in-place edit and Enter keeps the text — the block is not
             // loaded (VM: «Нет» → «БМРЗ - Защита линий» → «… генераторов»,
@@ -1834,6 +1849,9 @@ impl App {
                 }
                 self.block_text = (next != self.block_idx).then(|| names[next].clone());
                 None
+            } else if pg_up || pg_down {
+                ui.data_mut(|d| d.insert_temp(grid_page_id(), if pg_down { page_rows as i32 } else { -(page_rows as i32) }));
+                Some(if pg_down { (at + page_rows).min(last) } else { at.saturating_sub(page_rows) })
             } else if up {
                 Some(at.saturating_sub(1))
             } else if down {
@@ -1911,6 +1929,17 @@ impl App {
     }
 
     // ---- Быстрый анализ ----
+}
+
+/// The rows in view of the grid's window, passed to its keys.
+fn grid_rows_id() -> egui::Id {
+    egui::Id::new("fv_grid_rows_in_view")
+}
+
+/// A PgUp / PgDn's page (rows, signed), passed from the grid's keys to its
+/// scroll.
+fn grid_page_id() -> egui::Id {
+    egui::Id::new("fv_grid_page_scroll")
 }
 
 /// Where the key-selected row is passed from the grid's rows to its scroll.

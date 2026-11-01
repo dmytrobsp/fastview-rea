@@ -1445,7 +1445,13 @@ pub fn win_combo_list_in(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[Stri
     if open {
         return combo_popup(ui, r, id, items, (current < items.len()).then_some(current));
     }
-    // Closed with the focus: ↑ / ↓ pick the previous / next item.
+    // Closed with the focus: F4 drops the list (clone, the merge bar's
+    // method combo box; Space does nothing), ↑ / ↓ pick the previous / next
+    // item.
+    if resp.has_focus() && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F4)) {
+        ui.data_mut(|d| d.insert_temp(open_id, true));
+        return None;
+    }
     if resp.has_focus() && !items.is_empty() {
         let keys = focused_arrows(ui, resp.id);
         let up = keys.iter().any(|k| matches!(k, egui::Key::ArrowUp | egui::Key::ArrowLeft));

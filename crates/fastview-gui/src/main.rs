@@ -2233,6 +2233,51 @@ mod window_tests {
         assert_eq!(state(&w).0, 0.0, "Home scrolls back to the first row");
     }
 
+    /// PgDn / PgUp in the parameter grid move the selection and the window by
+    /// a page, P - 1 rows with P in view; the wheel and the bar reach
+    /// N - P + 2 rows down (clone, a block's grid: PgDn from the top went ten
+    /// rows with eleven in view and scrolled to the range's end, the second
+    /// PgDn to the last row, PgUp back to the top) (#24).
+    #[test]
+    fn page_keys_and_the_scroll_range_of_the_grid() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.app.store.view.insert("Circle Diagram\\Properties Height".into(), "120".into());
+        w.idle(2);
+        let b = (0..w.app.library.blocks.len()).find(|&b| w.app.library.blocks[b].characteristics.len() >= 2 && !w.app.library.blocks[b].characteristics[0].parameters.is_empty()).expect("a block with two characteristics");
+        w.app.block_idx = b;
+        w.app.ensure_block_state();
+        w.idle(3);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let at = Pos2::new(grid.left() + 60.0, grid.top() + 1.0 + 8.0);
+        w.press(Primary, at, at);
+        let sid = egui::Id::new(("char_grid_scroll", app::Pane::Circle));
+        let state = |w: &Win| w.ctx.data(|d| d.get_temp::<(f32, f32)>(sid)).expect("the grid's scroll state");
+        let rows_in_view = w.ctx.data(|d| d.get_temp::<i32>(egui::Id::new("fv_grid_rows_in_view"))).expect("the rows in view") as f32;
+        let (_, content) = state(&w);
+        let row = 17.0;
+        let max = content - (rows_in_view - 2.0) * row;
+        assert!(content > rows_in_view * row);
+        w.key(egui::Key::PageDown);
+        w.idle(3);
+        assert_eq!(state(&w).0, ((rows_in_view - 1.0) * row).min(max), "a page down scrolls a page");
+        for _ in 0..80 {
+            w.key(egui::Key::PageDown);
+        }
+        w.idle(3);
+        assert_eq!(state(&w).0, max, "the end of the range lies N - P + 2 rows down");
+        w.key(egui::Key::PageUp);
+        w.idle(3);
+        assert_eq!(state(&w).0, (max - (rows_in_view - 1.0) * row).max(0.0), "a page up");
+        // The wheel reaches the same end.
+        for _ in 0..40 {
+            w.wheel(Pos2::new(grid.left() + 60.0, grid.top() + 30.0));
+        }
+        w.idle(2);
+        assert_eq!(state(&w).0, max, "the wheel's end");
+    }
+
     /// The parameters bar is a message-mode caption bar (`0x474dc5`): its
     /// close button at the top right hides it.
     #[test]
@@ -4950,6 +4995,16 @@ mod window_tests {
         w.key(egui::Key::ArrowUp);
         assert_eq!(method(&w), 1, "↑ the previous");
         assert_eq!(w.view_state(), before, "the view's keys are off");
+        // F4 drops the list (Space does nothing); Esc closes it, the focus stays.
+        let open = |w: &Win| w.ctx.data(|d| d.get_temp::<bool>(egui::Id::new("merge_method").with("open"))).unwrap_or(false);
+        w.key(egui::Key::Space);
+        assert!(!open(&w), "Space does nothing");
+        w.key(egui::Key::F4);
+        assert!(open(&w), "F4 drops the list");
+        w.key(egui::Key::Escape);
+        assert!(!open(&w));
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(method(&w), 0, "the focus stayed");
     }
 
     /// «Синхронизация» holding the focus (a press let go outside it) is
