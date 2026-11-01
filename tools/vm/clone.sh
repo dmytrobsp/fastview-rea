@@ -78,13 +78,17 @@ push_ours() {
     [ -f "$ours" ] || { echo "no $ours (cargo build -p fastview-gui --release --target x86_64-pc-windows-gnu)" >&2; exit 2; }
     local h
     h=$(cu sha256 "$ours")
-    if [ -z "${FV_FORCE:-}" ] && [ "$(cat "$state.ours" 2>/dev/null || true)" = "$h" ] &&
-        tb_exec "if exist $G\\ours\\fastview.exe echo present" 2>/dev/null | grep -q present; then
+    # The skip trusts the clone's own file, not the host's mark: the hash of what is there now.
+    local there=""
+    if [ -z "${FV_FORCE:-}" ]; then
+        there=$(tb_exec "certutil -hashfile $G\\ours\\fastview.exe SHA256" 2>/dev/null </dev/null |
+            tr -d ' \r' | grep -iE '^[0-9a-f]{64}$' | head -1 | tr 'A-F' 'a-f' || true)
+    fi
+    if [ -n "$there" ] && [ "$there" = "$h" ]; then
         echo "ours: unchanged (sha256 ${h:0:12}), not pushed again" >&2
         return 0
     fi
     tb_push "$ours" "$G\\ours\\fastview.exe"
-    (umask 077; printf '%s\n' "$h" >"$state.ours")
 }
 
 case ${1:-} in
@@ -96,7 +100,6 @@ new)
     id=$(printf '%s\n' "$out" | sed -n 's/^instance \([^ ]*\) id=\([^ ]*\) .*/\2/p')
     [ -n "$name" ] && [ -n "$id" ] || { echo "clone: instance new said: $out" >&2; exit 5; }
     mkdir -p "$(dirname "$state")"; (umask 077; printf '%s %s\n' "$name" "$id" >"$state")
-    rm -f "${state:?}.ours"
     echo "clone $name: preparing"
     stop_onedrive
     tb_exec "mkdir $G\\FastView5\\eng $G\\records $G\\out $G\\ours $G\\harness\\shots"
@@ -156,7 +159,7 @@ ours) load; push_ours; overlay ;;
 rm)
     load
     "${TB[@]}" instance rm "$name" "$id"
-    rm -f "$state" "${state:?}.ours"
+    rm -f "${state:?}"
     ;;
 *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

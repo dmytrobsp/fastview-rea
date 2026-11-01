@@ -88,7 +88,11 @@ def pull_cleanup(src, guest=GUEST):
     if not low.startswith(g):
         return None
     rel = low[len(g):]
-    if not any(rel.startswith(a + "\\") and len(rel) > len(a) + 1 for a in PULLED_AREAS):
+    if not any(rel.startswith(a + "\\") for a in PULLED_AREAS):
+        return None
+    # Windows trims trailing dots and spaces, so `out\.` or `out\ ` would name the area itself; wildcards and
+    # stream / drive colons are never a single pulled output.
+    if any(c in "*?:" for c in rel) or any(p.strip(". ") == "" or p[-1] in ". " for p in rel.split("\\")):
         return None
     return 'if exist "%s\\*" (rmdir /s /q "%s") else (del /f /q "%s")' % (s, s, s)
 

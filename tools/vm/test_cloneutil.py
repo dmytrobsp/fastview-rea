@@ -67,9 +67,10 @@ class Overlay(unittest.TestCase):
             os.mkdir(os.path.join(d, "sub"))
             wr(os.path.join(d, "sub", "x"), b"y" * 40000, "wb")
             os.symlink("/nonexistent", os.path.join(d, "link"))
-            n = cu.folder_bytes(d)
-            self.assertGreaterEqual(n, 50000)
-            self.assertLess(n, 50000 + 40000)  # the subfolder is not counted
+            want = sum(os.lstat(os.path.join(d, f)).st_blocks * 512 for f in ("overlay.qcow2",))
+            self.assertGreaterEqual(want, 50000)
+            # exactly the regular files: the subfolder and the link add nothing
+            self.assertEqual(cu.folder_bytes(d), want)
             self.assertIsNone(cu.folder_bytes(os.path.join(d, "missing")))
 
     def test_cli_prints_a_line_for_a_folder(self):
@@ -103,7 +104,10 @@ class PullCleanup(unittest.TestCase):
 
     def test_traversal_and_metacharacters_refused(self):
         for src in (G + r"\out\..\ours\fastview.exe", G + r"\out\a & del x", G + r"\out\a|b",
-                    G + r'\out\a"b', G + r"\out\%TEMP%", G + "\\out\\a\nb"):
+                    G + r'\out\a"b', G + r"\out\%TEMP%", G + "\\out\\a\nb",
+                    G + "\\out\\.", G + "\\out\\ ", G + "\\out\\...", G + "\\out\\.. ", G + "\\out\\a.",
+                    G + "\\out\\a \\b.txt", G + "\\out\\a\\.\\b", G + "\\out\\*", G + "\\out\\a?.png",
+                    G + "\\out\\a:stream"):
             self.assertIsNone(cu.pull_cleanup(src), src)
 
     def test_case_insensitive_like_windows(self):
