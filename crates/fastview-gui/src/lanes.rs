@@ -4342,6 +4342,7 @@ mod menu_tests {
         h.app.rename_edit = Some((1, "Zz9".to_string()));
         h.frame(vec![]);
         h.frame(vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+        h.frame(vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: false, repeat: false, modifiers: Default::default() }]);
         h.frame(vec![]);
         assert_eq!(h.doc().osc.analog[1].id, "Zz9");
         assert!(crate::app::stale_flags::swept(&h.app), "rename");
@@ -4356,6 +4357,7 @@ mod menu_tests {
         h.app.rename_edit = Some((1, "Zz9".to_string()));
         h.frame(vec![]);
         h.frame(vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+        h.frame(vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: false, repeat: false, modifiers: Default::default() }]);
         h.frame(vec![]);
         assert!(h.app.rename_edit.is_none());
         assert!(crate::app::stale_flags::swept(&h.app), "Esc");
