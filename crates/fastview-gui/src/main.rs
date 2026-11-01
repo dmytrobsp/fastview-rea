@@ -62,6 +62,15 @@ use eframe::egui;
 /// client. Physical pixels: the original is system-DPI aware.
 const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 
+/// [`MIN_VISIBLE`] at a system dpi: the window rect 866 × 500 (physical pixels at every scale) less the invisible
+/// border, `WinMetrics::border() − 1` a side (7 at 100 %, 12 at 200 %; #176).
+fn min_visible_at(dpi: u32) -> [f32; 2] {
+    let b = oscgeom::WinMetrics::at(dpi).border() - 1.0;
+    [866.0 - 2.0 * b, MIN_TRACK_H - b]
+}
+/// The frame's minimum tracking height as a window rect (see [`MIN_VISIBLE`]).
+const MIN_TRACK_H: f32 = 500.0;
+
 /// The size grip of a normal (not maximised) window, at 100 % in px, as the original's last status pane
 /// holds it: 20 px beyond the extended pane's own width (VM: «Гор. визир 2:» shows from 988 px of client,
 /// not 984).
@@ -75,7 +84,7 @@ const STATUS_GRIP_ALONE: f32 = 28.0;
 /// The status bar's right end at `right` (the extended pane's width `ext` at this scale, its grip
 /// not included): `(the extended pane's width with its grip, where the panes must end)`.
 fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f32, f32) {
-    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::s(STATUS_GRIP), dpi::measured(STATUS_GRIP_ALONE, 32.0, 38.0)) };
+    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::s(STATUS_GRIP), dpi::measured5([STATUS_GRIP_ALONE, 32.0, 38.0, 43.0, 48.0])) };
     if ext_hidden {
         (ext, right - alone)
     } else {
@@ -92,7 +101,7 @@ fn status_grip_pitch() -> f32 {
 /// templates are measured in); ours the nearest Tahoma by width: against the original's «Верт. визир 1:»
 /// (73 / 86 / 107 px of ink on a clone at 100 / 125 / 150 %) 11 / 13 / 17 px (accepted difference #52).
 fn status_font_px() -> f32 {
-    dpi::measured(11.0, 13.0, 17.0)
+    dpi::measured5([11.0, 13.0, 17.0, 19.0, 22.0])
 }
 
 /// The size grip's shapes, as `(rect, colour)` painted in order, at the client's right / bottom edges (clone, the
@@ -173,19 +182,19 @@ fn resize_dir_at(own_caption: bool, grip: Option<egui::Rect>, screen: egui::Rect
 /// 5 / 6 / 7 px at 100 / 125 / 150 % (clone: panes 153 / 180 / 207 and 218 / 258 / 298 px apart), the 18 not scaled.
 fn status_pane_w(i: usize) -> f32 {
     let n = if i == 2 || i == 5 { 40.0 } else { 27.0 };
-    n * dpi::measured(5.0, 6.0, 7.0) + 18.0
+    n * dpi::measured5([5.0, 6.0, 7.0, 8.0, 10.0]) + 18.0
 }
 
 /// The extended pane's width: its text's width in the UI font + 27 (clone: 135 / 157 / 189 px at 100 / 125 /
 /// 150 %), on every look: the older looks' pane is no wider (clone, #167: the fifth / fourth pane appears at the
 /// same width as on the blue look at 100 / 125 / 150 %, and the text sits at the same place).
 fn status_ext_w() -> f32 {
-    dpi::measured(135.0, 157.0, 189.0)
+    dpi::measured5([135.0, 157.0, 189.0, 213.0, 238.0])
 }
 
 /// A pane's text starts this far into it (clone: ink 10 / 10 / 11 px from the pane's edge at 100 / 125 / 150 %).
 fn status_text_inset() -> f32 {
-    dpi::measured(9.0, 9.0, 10.0)
+    dpi::measured5([9.0, 9.0, 10.0, 11.0, 11.0])
 }
 
 /// The status bar's six panes from `left` to `room` (the first that does not fit ends the row, a hidden
@@ -195,8 +204,10 @@ fn status_pane_places(left: f32, room: f32, hidden: &[bool; 7]) -> Vec<(usize, f
     let mut out = Vec::new();
     for i in (0..6).filter(|&i| !hidden[i]) {
         let w = status_pane_w(i);
+        // A pane that does not fit is left out, a later narrower one that does is still placed (clone, 175 / 200 %:
+        // the wide third pane gone, the fourth in its place).
         if x + w > room {
-            break;
+            continue;
         }
         out.push((i, x, w));
         x += w;
@@ -416,7 +427,7 @@ fn main() -> eframe::Result<()> {
     let scale = system_scale();
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1320.0, 860.0])
-        .with_min_inner_size(MIN_VISIBLE)
+        .with_min_inner_size(min_visible_at(scale.map_or(96, |s| (s * 96.0).round() as u32)))
         .with_title(app::APP_TITLE)
         .with_icon(app_icon())
         .with_drag_and_drop(true);
@@ -606,7 +617,10 @@ fn first_run_client(work: [f32; 2], dpi: u32) -> [f32; 2] {
         d if d < 168 => (21.0 + (d as f32 - 96.0) / 6.0).round(),
         d => (34.0 + (d as f32 - 168.0) / 6.0).round(),
     };
-    [(work[0] * 0.75).floor() - 2.0 * m.border(), (work[1] * 0.75).floor() - cut - m.border()]
+    // The frame is never shorter than its minimum tracking size, 500 px (`OnGetMinMaxInfo` `0x4728a0`; clone at 200 %:
+    // the work area 704 gives 528 − 38 = 490, the window came out 500 high, 960 wide).
+    let rect_h = ((work[1] * 0.75).floor() - cut).max(MIN_TRACK_H);
+    [(work[0] * 0.75).floor() - 2.0 * m.border(), rect_h - m.border()]
 }
 
 #[cfg(windows)]
@@ -1126,7 +1140,7 @@ impl App {
         }
         if self.min_size_ppp != native {
             self.min_size_ppp = native;
-            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::Vec2::from(MIN_VISIBLE) / ctx.pixels_per_point()));
+            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::Vec2::from(min_visible_at(dpi::dpi())) / ctx.pixels_per_point()));
         }
     }
 
@@ -1865,6 +1879,30 @@ mod window_tests {
             assert_eq!(rows.len(), 2, "{native}");
             assert_eq!(rows[1] - rows[0] + 1, h, "{native}: the ОМП bar");
         }
+        dpi::set(96);
+    }
+
+    /// #179 (clone, 175 / 200 %): the status bar's text is the Tahoma 19 / 22 px (the original's ink 123 / 141 px
+    /// for «Верт. визир 1:»; the 125 → 150 slope gave 21 / 25), the panes 234 / 288 px apart ("_" 8 / 10 px), the
+    /// extended pane with its grip 248 / 278 px from the right edge, and a pane that does not fit is left out while
+    /// a later one that does is shown (the wide third gone, the fourth in its place).
+    #[test]
+    fn the_status_bar_at_175_and_200_percent() {
+        for (d, font, apart, ext_grip) in [(168, 19.0, 234.0, 248.0), (192, 22.0, 288.0, 278.0)] {
+            dpi::set(d);
+            assert_eq!(status_font_px(), font, "{d}");
+            assert_eq!(status_pane_w(0), apart, "{d}");
+            assert_eq!(status_ext_w() + dpi::s(STATUS_GRIP), ext_grip, "{d}");
+        }
+        // 175 %, the extended pane shown: the fourth pane (it ends at 702) from about 950 px of client, the wide
+        // third (ends at 806) from about 1055 (clone: absent at 940 / 1060, present at 980 / 1100 px windows, 25 px
+        // of frame).
+        dpi::set(168);
+        let shown = |w: f32| status_pane_places(0.0, status_reserve(w, status_ext_w(), false, false).1, &[false; 7]).iter().map(|p| p.0).collect::<Vec<_>>();
+        assert_eq!(shown(940.0), vec![0, 1], "no room for the third or the fourth");
+        assert_eq!(shown(960.0), vec![0, 1, 3], "the fourth moves up into the third's place");
+        assert_eq!(shown(1050.0), vec![0, 1, 3]);
+        assert_eq!(shown(1060.0), vec![0, 1, 2], "the third fits, the fourth after it does not");
         dpi::set(96);
     }
 
@@ -2850,13 +2888,29 @@ mod window_tests {
         assert_eq!(first_run_client([1280.0, 740.0], 120), [942.0, 521.0]);
         assert_eq!(first_run_client([1280.0, 728.0], 144), [938.0, 506.0]);
         assert_eq!(first_run_client([1280.0, 716.0], 168), [936.0, 491.0]);
-        // 200 %: the cut 34 + 4 = 38 px, the borders 5 + 8 = 13.
-        assert_eq!(first_run_client([1280.0, 704.0], 192), [934.0, 477.0]);
+        // 200 % (clone: the work area 1280 × 704, the window rect 960 × 500): the table's cut would give 490, the
+        // minimum tracking height 500 holds; the borders 5 + 8 = 13.
+        assert_eq!(first_run_client([1280.0, 704.0], 192), [934.0, 487.0]);
+        // A taller work area is cut as before (4 px per 24 dpi beyond 168).
+        assert_eq!(first_run_client([1280.0, 800.0], 192)[1], 600.0 - 38.0 - 13.0);
         // The MDI area that follows: a quarter of it less 6, rounded up (230, 230, 229 on the VM).
         for (dpi, w) in [(96, 230.0), (120, 230.0), (144, 229.0)] {
             let c = first_run_client([1280.0, 740.0], dpi)[0];
             assert_eq!((c / 4.0 - 6.0).ceil(), w, "dpi {dpi}");
         }
+    }
+
+    /// #176 (clone, 200 %): the frame is never shorter than its 866 × 500 minimum tracking rect: a first run on a
+    /// 704 px work area is 500 high (the ¾ rule gives 490), and the smallest client is the rect less the invisible
+    /// border (852 × 493 at 100 %, 842 × 488 at 200 %).
+    #[test]
+    fn the_first_run_frame_keeps_the_minimum_tracking_size() {
+        assert_eq!(min_visible_at(96), MIN_VISIBLE);
+        assert_eq!(min_visible_at(192), [842.0, 488.0]);
+        // The work area 1280 × 704 at 192 dpi: 528 − 38 = 490 would be below the minimum 500.
+        assert_eq!(first_run_client([1280.0, 704.0], 192)[1], 500.0 - 13.0);
+        // Where the rule gives more, the rule stands (168 dpi: 537 − 34 = 503).
+        assert_eq!(first_run_client([1280.0, 716.0], 168)[1], 503.0 - 12.0);
     }
 
     /// #147: on a first run's frame ours' MDI area is the original's at every display scale (clone,
