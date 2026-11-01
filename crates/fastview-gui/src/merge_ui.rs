@@ -817,8 +817,11 @@ impl App {
         for k in [&mut d.main_cursor, &mut d.aux_cursor, &mut d.v3_cursor, &mut d.first] {
             *k = (*k).min(last);
         }
-        d.recompute_signals();
+        let failed = d.recompute_with_batch();
         d.set.modified = true;
+        if let Some(m) = failed {
+            self.dlg.push_alert(m);
+        }
         self.run_omp_silent(ai);
         self.merge = None;
         // MessageBeep(MB_OK) when done (`0x47e910`).
