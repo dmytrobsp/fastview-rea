@@ -19,7 +19,7 @@ pub struct WindowsDlg {
     /// «Закрыть окна» under way: the windows still to close, in order.
     pub closing: Vec<u64>,
     /// Refill and reselect once the closing is done.
-    refresh: bool,
+    pub(crate) refresh: bool,
 }
 
 /// The enabled buttons for `n` selected windows (`0x101aa897`); every
@@ -112,7 +112,7 @@ impl App {
         // `0x101aa666`: WM_CLOSE to each selected window, the last row
         // first; each runs its own save question, «Отмена» keeps that one
         // and the next follows.
-        if self.setfile.prompt.is_none() {
+        if self.setfile.prompt.is_none() && !self.sysdlg_busy() {
             while !dlg.closing.is_empty() {
                 let s = dlg.closing.remove(0);
                 if let Some(i) = self.doc_by_serial(s) {

@@ -334,4 +334,47 @@ mod tests {
         assert!(dir.join("saved.cfg").exists(), "the record was written");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// «Закрыть окна» with «Да» on a record that needs Save As: the frame painted while the dialog is
+    /// up must not go on closing the next selected window, and the answer closes the record the
+    /// question was about (by serial), not whatever the index now names.
+    #[test]
+    fn closing_windows_waits_for_a_save_as_and_closes_the_right_ones() {
+        let ctx = egui::Context::default();
+        let dir = temp_dir("windows");
+        let mut app = App::new();
+        app.persist = false;
+        app.dispatch(Command::Demo);
+        let osc = fvb_core::comtrade::parse(crate::app::DEMO_CFG, crate::app::DEMO_DAT).unwrap();
+        for n in ["a", "b", "c"] {
+            app.add_doc(Doc::new(osc.clone(), n.into()));
+        }
+        let serial = |app: &App, name: &str| app.docs.iter().find(|d| d.name == name).unwrap().serial;
+        let (a, b) = (serial(&app, "a"), serial(&app, "b"));
+        app.docs.iter_mut().find(|d| d.serial == b).unwrap().set.modified = true;
+        app.open_windows_dialog();
+        {
+            let dlg = app.windows_dlg.as_mut().unwrap();
+            dlg.closing = vec![b, a];
+            dlg.refresh = true;
+        }
+        let frame = |app: &mut App| {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| app.windows_dialog(ctx));
+        };
+        let (_guard, answer) = testing::gate();
+        frame(&mut app);
+        assert!(app.setfile.prompt.is_some(), "b asks first");
+        app.answer_save_prompt(&ctx, Some(true));
+        assert!(app.sysdlg_busy());
+        frame(&mut app);
+        frame(&mut app);
+        assert_eq!(app.docs.len(), 4, "nothing closed while the dialog is up");
+        answer.send(Some((dir.join("b.cfg"), Some(0)))).unwrap();
+        poll_until(&mut app, &ctx, "the dialog answers", |a| !a.sysdlg_busy());
+        frame(&mut app);
+        frame(&mut app);
+        let names: Vec<&str> = app.docs.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(names, ["demo_fault", "c"], "b (saved) and a closed, c kept");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

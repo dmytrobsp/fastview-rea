@@ -1271,6 +1271,8 @@ impl App {
     /// Отмена.
     pub fn answer_save_prompt(&mut self, ctx: &egui::Context, answer: Option<bool>) {
         let Some(p) = self.setfile.prompt.take() else { return };
+        // By serial: documents may close while a Save As dialog is up (an index would outlive it).
+        let serial = self.docs.get(p.doc).map(|d| d.serial);
         // The question's document is saved first (a Save As waits for its
         // dialog, outside the frame); the close or the exit goes on after.
         let go_on = move |app: &mut App, ctx: &egui::Context, go_on: bool| {
@@ -1278,8 +1280,8 @@ impl App {
                 app.setfile.exit_queue = None;
             } else if p.exit {
                 app.next_exit_prompt(ctx);
-            } else {
-                app.close_doc_now(p.doc);
+            } else if let Some(i) = serial.and_then(|s| app.doc_by_serial(s)) {
+                app.close_doc_now(i);
             }
         };
         match answer {

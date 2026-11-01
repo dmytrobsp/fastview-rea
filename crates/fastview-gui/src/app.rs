@@ -3046,12 +3046,12 @@ impl App {
             self.status = "Нет осциллограммы для экспорта.".into();
             return;
         };
-        let (name, di) = (format!("{}.csv", d.name), self.active);
+        let (name, serial) = (format!("{}.csv", d.name), d.serial);
         let dlg = crate::dialogs::file_dialog().add_filter("CSV", &["csv"]).set_file_name(name);
         self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
             let Some((path, _)) = picked else { return };
             // The record the command was given for (the dialog ran meanwhile).
-            let Some(d) = di.and_then(|i| app.docs.get(i)) else { return };
+            let Some(d) = app.doc_by_serial(serial).and_then(|i| app.docs.get(i)) else { return };
             let out = Self::csv_string(d);
             match std::fs::write(&path, out) {
                 Ok(()) => app.status = format!("Экспортировано в {}", path.display()),
@@ -3066,11 +3066,11 @@ impl App {
             self.status = "Нет осциллограммы для архивирования.".into();
             return;
         };
-        let (name, di) = (format!("{}.zip", d.name), self.active);
+        let (name, serial) = (format!("{}.zip", d.name), d.serial);
         let dlg = crate::dialogs::file_dialog().add_filter("ZIP", &["zip"]).set_file_name(name);
         self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
             let Some((path, _)) = picked else { return };
-            let Some(d) = di.and_then(|i| app.docs.get(i)) else { return };
+            let Some(d) = app.doc_by_serial(serial).and_then(|i| app.docs.get(i)) else { return };
             let (cfg, dat) = fvb_core::comtrade::write(&d.osc, d.codepage);
             let csv = Self::csv_string(d);
             let zip = crate::util::zip_store(&[
