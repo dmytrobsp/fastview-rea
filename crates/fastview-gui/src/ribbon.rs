@@ -2639,7 +2639,7 @@ mod tests {
         let ctx = egui::Context::default();
         let run = || {
             let _ = ctx.run(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 200.0))), ..Default::default() }, |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| ui.horizontal(|ui| caption_buttons(ui)));
+                egui::CentralPanel::default().show(ctx, |ui| ui.horizontal(caption_buttons));
             });
         };
         crate::winframe::set_modal(false);
