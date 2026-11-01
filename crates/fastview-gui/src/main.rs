@@ -4826,6 +4826,8 @@ mod window_tests {
         // a block of its own inside it.
         w.app.docks = docking::Docks::default();
         w.app.docks[Unit::Vector].extent = Some(437.0);
+        // Circle's own order is not the group's (a tab's is never read).
+        w.app.docks[Unit::Circle].order = 5;
         w.idle(6);
         let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
         assert!((pane.width() - 437.0).abs() < 8.0, "the group's width: {pane:?}");
