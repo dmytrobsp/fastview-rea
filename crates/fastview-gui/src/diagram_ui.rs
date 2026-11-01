@@ -2120,19 +2120,30 @@ fn readout_table(p: &egui::Painter, ui: &egui::Ui, rect: Rect, text_h: f32, loci
 fn scrollbar(ui: &mut egui::Ui, track: Rect, horizontal: bool, pos: i32, page: i32, m: i32, id: impl std::hash::Hash) -> Option<i32> {
     let resp = ui.interact(track, egui::Id::new(id), egui::Sense::click_and_drag());
     let p = ui.painter();
-    p.rect_filled(track, 0.0, Color32::from_gray(235));
-    let len = if horizontal { track.width() } else { track.height() };
-    let thumb_len = (len * page as f32 / 10000.0).max(12.0).min(len);
+    // Windows 11's bar as the view's (VM, #187): a (240) track whose arrows
+    // are hidden until the pointer is over it (their room kept at both ends),
+    // the thumb a 2 px (133) line along the middle, 6 px and rounded under the
+    // pointer.
+    p.rect_filled(track, 0.0, Color32::from_gray(240));
+    let full = if horizontal { track.width() } else { track.height() };
+    let thick = if horizontal { track.height() } else { track.width() };
+    let arrow = thick.min(full / 2.0);
+    let (lo, len) = (arrow, (full - 2.0 * arrow).max(1.0));
+    let thumb_len = (len * page as f32 / 10000.0).max(8.0).min(len);
     let free = (len - thumb_len).max(1.0);
     let pos = pos.clamp(0, m.max(0));
-    let start = free * pos as f32 / m.max(1) as f32;
+    let start = lo + free * pos as f32 / m.max(1) as f32;
+    let hot = resp.hovered() || resp.dragged();
+    let w = if hot { 6.0 } else { 2.0 };
+    let mid = (thick - w) / 2.0;
     let thumb = if horizontal {
-        Rect::from_min_size(Pos2::new(track.left() + start, track.top() + 2.0), Vec2::new(thumb_len, track.height() - 4.0))
+        Rect::from_min_size(Pos2::new(track.left() + start + 1.0, track.top() + mid.floor()), Vec2::new(thumb_len - 2.0, w))
     } else {
-        Rect::from_min_size(Pos2::new(track.left() + 2.0, track.top() + start), Vec2::new(track.width() - 4.0, thumb_len))
+        Rect::from_min_size(Pos2::new(track.left() + mid.floor(), track.top() + start + 1.0), Vec2::new(w, thumb_len - 2.0))
     };
-    p.rect_filled(thumb, 2.0, Color32::from_gray(190));
-    let at = |q: Pos2| if horizontal { q.x - track.left() } else { q.y - track.top() };
+    p.rect_filled(thumb, if hot { 3.0 } else { 0.0 }, Color32::from_gray(133));
+    let (thumb_len, start) = (thumb_len, start - lo);
+    let at = |q: Pos2| if horizontal { q.x - track.left() - lo } else { q.y - track.top() - lo };
     if resp.dragged() {
         let q = resp.interact_pointer_pos()?;
         let v = ((at(q) - thumb_len / 2.0) / free * m as f32).round() as i32;

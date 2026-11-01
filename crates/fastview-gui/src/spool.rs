@@ -98,6 +98,7 @@ pub fn properties_busy() -> bool {
 /// and, with no position of its own, Windows puts a dialog at its owner's
 /// client origin plus the template's offset — on a clone 20 px right and
 /// 18 px below the print dialog's top-left corner at 96 dpi (VM, #187).
+#[cfg(any(windows, test))]
 pub fn driver_dialog_pos(print_dialog: (i32, i32), dpi: f32) -> (i32, i32) {
     let k = dpi / 96.0;
     (print_dialog.0 + (20.0 * k).round() as i32, print_dialog.1 + (18.0 * k).round() as i32)
