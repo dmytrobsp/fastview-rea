@@ -2632,6 +2632,27 @@ pub(crate) fn caption_buttons(ui: &mut egui::Ui) {
 mod tests {
     use super::*;
 
+    /// The maximise button is published as live only while no modal dialog is up (the original's frame is
+    /// disabled by one): a bare context, no backdrop, only the modal flag decides.
+    #[test]
+    fn the_maximise_button_is_inert_while_a_modal_flag_is_set() {
+        let ctx = egui::Context::default();
+        let run = || {
+            let _ = ctx.run(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 200.0))), ..Default::default() }, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| ui.horizontal(caption_buttons));
+            });
+        };
+        crate::winframe::set_modal(false);
+        run();
+        assert!(crate::winframe::max_button().is_some(), "live without a dialog");
+        crate::winframe::set_modal(true);
+        run();
+        assert_eq!(crate::winframe::max_button(), None, "inert under a dialog");
+        crate::winframe::set_modal(false);
+        run();
+        assert!(crate::winframe::max_button().is_some(), "live again");
+    }
+
     /// Ribbon labels stay legible in every look: enabled, disabled and on
     /// the checked fill (the dark look's disabled labels used to fade into
     /// its body).

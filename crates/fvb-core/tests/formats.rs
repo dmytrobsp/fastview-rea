@@ -386,6 +386,8 @@ fn binary_record_size_follows_the_sample_number_check() {
     let want = |n: usize| (0..n).map(|k| k as f64 + 5.0).collect::<Vec<_>>();
     // nd = 1: standard 22-byte rows read as written.
     assert_eq!(first(&load("std", 1, "BINARY", &rows(40, 22)).unwrap()), want(40));
+    // Three rows numbered 1, 2, 3 and no fourth: read whole at the computed size (the check needs four).
+    assert_eq!(first(&load("three", 1, "BINARY", &rows(3, 22)).unwrap()), want(3));
     // Not numbered 1, 2, 3, 4: the packed 21-byte record (880 / 21 = 41 rows).
     assert_eq!(load("zero", 1, "BINARY", &vec![0u8; 880]).unwrap().analog[0].samples.len(), 41);
     // nd = 9 (mod 16 in 8..15): the computed size has a slip (23), a standard

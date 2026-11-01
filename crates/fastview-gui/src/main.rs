@@ -912,10 +912,11 @@ impl App {
         }
         let s = self.status_panes.clone();
         // As the VM shows it: a 1 px line on top of a light band, six panes
-        // with no separators — 27 / 40 × "_" templates (`0x4729b0`) in the
-        // 9 pt UI font, 153 / 218 px with the text 9 px in, left-aligned —
-        // and the extended element, 155 px on a darker band behind a light
-        // edge, its text centred clear of the size grip.
+        // with no separators — 27 / 40 × "_" templates (`0x4729b0`), each
+        // `status_pane_w` wide (the "_" 5 / 6 / 7 px, + 18) with the text
+        // `status_text_inset` in, left-aligned — and the extended element,
+        // `status_ext_w` wide (135 / 157 / 189 px, 20 more on the older
+        // looks) on a darker band behind a light edge, its text 16 px in.
         let r = ui.max_rect();
         let painter = ui.painter();
         let band = |c0: egui::Color32, c1: egui::Color32, rr: egui::Rect| {
@@ -958,9 +959,8 @@ impl App {
                 }
             },
         }
-        // The panes' widths and the font at the system DPI (VM, 125 % and
-        // 150 %: the bar 30 / 36 px, its text and panes 1.25 / 1.5 ×).
-        // The ribbon status bar's font is MFC's UI font, ours the nearest Tahoma (clone, 100 / 125 / 150 %: «Верт. визир 1:» 73 / 86 /
+        // The panes' widths (`status_pane_w`, `status_ext_w`) and the font
+        // (`status_font_px`) at the system DPI. The ribbon status bar's font is MFC's UI font, ours the nearest Tahoma (clone, 100 / 125 / 150 %: «Верт. визир 1:» 73 / 86 /
         // 107 px wide: 11 / 13 / 17 px in ours; the ribbon's 12 / 15 / 18 is wider).
         let font = egui::FontId::proportional(status_font_px());
         // A normal (not maximised) window's last pane also holds the size grip
@@ -1084,7 +1084,8 @@ impl App {
     /// 5 px, corners 12 px along each edge; not while maximised.
     fn resize_edges(&mut self, ctx: &egui::Context) {
         use egui::viewport::ResizeDirection as D;
-        if ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
+        // A dialog disables the original's frame: no resizing from its border or its grip while one is up.
+        if self.modal_up || ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
             return;
         }
         let screen = ctx.screen_rect();
@@ -1901,6 +1902,34 @@ mod window_tests {
         dpi::set(96);
     }
 
+    /// #138 / the final review: a press on a normal (decorated) window's size grip begins a south-east resize;
+    /// while a dialog is up the original's frame is disabled and the press does nothing.
+    #[test]
+    fn the_size_grip_resizes_only_while_no_dialog_is_up() {
+        let resizes = |dialog: bool| {
+            let mut w = Win::new();
+            w.app.own_caption = false;
+            w.idle(3);
+            if dialog {
+                w.app.color_dialog = Some(egui::Color32::RED);
+                w.idle(3);
+            }
+            assert_eq!(w.app.modal_up, dialog);
+            let grip = w.app.status_grip.expect("a normal window has the grip");
+            let at = grip.center();
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            let mut begun = false;
+            for events in [vec![egui::Event::PointerMoved(at)], vec![ev(true)], vec![ev(false)]] {
+                let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1320.0, 860.0))), time: Some(w.ctx.input(|i| i.time) + 0.05), events, ..Default::default() };
+                let out = w.ctx.run(raw, |ctx| w.app.frame_ui(ctx));
+                begun |= out.viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.commands.iter().any(|c| matches!(c, egui::ViewportCommand::BeginResize(egui::viewport::ResizeDirection::SouthEast))));
+            }
+            begun
+        };
+        assert!(resizes(false), "the grip resizes a normal window");
+        assert!(!resizes(true), "a dialog disables the frame");
+    }
+
     /// #12: «Параметры ОМП» places its tree and grid as OnInitDialog
     /// (`0x4a7c50`) does, in pixels from its client: at 150 % (client 1069 ×
     /// 653) from row 55 under the 34 px toolbar, 563 px tall — down past
@@ -2715,6 +2744,8 @@ mod window_tests {
         assert_eq!(first_run_client([1280.0, 740.0], 120), [942.0, 521.0]);
         assert_eq!(first_run_client([1280.0, 728.0], 144), [938.0, 506.0]);
         assert_eq!(first_run_client([1280.0, 716.0], 168), [936.0, 491.0]);
+        // 200 %: the cut 34 + 4 = 38 px, the borders 5 + 8 = 13.
+        assert_eq!(first_run_client([1280.0, 704.0], 192), [934.0, 477.0]);
         // The MDI area that follows: a quarter of it less 6, rounded up (230, 230, 229 on the VM).
         for (dpi, w) in [(96, 230.0), (120, 230.0), (144, 229.0)] {
             let c = first_run_client([1280.0, 740.0], dpi)[0];

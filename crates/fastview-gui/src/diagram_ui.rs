@@ -170,10 +170,10 @@ const AXES: Color32 = Color32::from_rgb(150, 150, 150);
 const SCROLL_W: f32 = 16.0;
 
 /// The plane windows' scroll bars at the system DPI: the system metric less the pixel the plane's own edge
-/// takes (SM_CXVSCROLL 17 / 21 / 26, the bars on a clone 16 / 20 / 25 px at 100 / 125 / 150 %): not the 100 %
-/// width scaled (24 at 150 %), not the lanes' metric.
+/// takes (SM_CXVSCROLL 17 / 21 / 26 / 30 / 34, the bars on a clone 16 / 20 / 25 px at 100 / 125 / 150 % and one
+/// less than the metric beyond): not the 100 % width scaled (24 at 150 %).
 pub(crate) fn scroll_w() -> f32 {
-    // One rule with the lanes' (17 / 21 / 26 = MulDiv(17, dpi, 96)): less the plane's own edge pixel.
+    // One rule with the lanes' (MulDiv(17, dpi, 96)): less the plane's own edge pixel.
     if crate::dpi::unscaled() {
         SCROLL_W
     } else {
@@ -2156,7 +2156,7 @@ fn header_texts([u, i]: [f64; 2]) -> (String, String) {
 /// `max(0, W − L − Wv − m − 10)`.
 fn vector_header_off(painter: &egui::Painter, full: Rect, scales: [f64; 2]) -> f32 {
     let s = print_s().unwrap_or(1.0);
-    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), header_font(print_look()), Color32::BLACK).size().x;
+    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), header_font(print_s()), Color32::BLACK).size().x;
     let (ut, it) = header_texts(scales);
     let m = 6.0;
     let l = measure("U max") + 2.0 * m;
@@ -2198,12 +2198,12 @@ fn header_cy(print: Option<f32>, measured: f32) -> f32 {
 /// fits "U max" only, the value column the wider of "0.0000" and both texts.
 fn vector_header(painter: &egui::Painter, full: Rect, [u, i]: [f64; 2]) {
     let s = print_s().unwrap_or(1.0);
-    let hf = header_font(print_look());
+    let hf = header_font(print_s());
     let ink = Color32::from_rgb(20, 20, 20);
     let measure = |t: &str| painter.layout_no_wrap(t.to_string(), hf.clone(), ink).size();
     let (ut, it) = header_texts([u, i]);
     let (m, ten) = (6.0, 10.0 / s);
-    let cy = header_cy(print_look(), measure("Ay").y);
+    let cy = header_cy(print_s(), measure("Ay").y);
     let h = (3.0 * cy * s / 2.0).floor() / s;
     let l = measure("U max").x + 2.0 * m;
     let w = measure("0.0000").x.max(measure(&ut).x).max(measure(&it).x) + 2.0 * m;
@@ -2239,6 +2239,30 @@ mod tests {
         assert!((f.size - 62.0 / 1.1172 / 6.0).abs() < 1e-3, "{}", f.size);
         assert_eq!(header_font(None).size, font().size);
         assert!(header_font(Some(6.0)).size > FontId::proportional(8.8).size, "larger than the 0.8 screen font it had");
+    }
+
+    /// The page painter hands the vector header Arial's cell ⌊52·s/5⌋ for
+    /// every s, also s = 1 (a printer under twice the system dpi), where the
+    /// pens and layout keep the screen look (L9.66, L9.429).
+    #[test]
+    fn the_header_at_s_one_uses_the_page_font() {
+        assert!((header_font(Some(1.0)).size - 10.0 / 1.1172).abs() < 1e-3);
+        assert_eq!(header_cy(Some(1.0), 99.0), 9.0);
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |_| {});
+        let out = ctx.run(Default::default(), |ctx| {
+            let painter = ctx.layer_painter(egui::LayerId::background());
+            let full = Rect::from_min_size(Pos2::ZERO, egui::vec2(600.0, 400.0));
+            with_print_scale(Some(1.0), None, || vector_header(&painter, full, [1234.5, 6.7]));
+        });
+        let mut sizes = Vec::new();
+        for c in &out.shapes {
+            if let egui::epaint::Shape::Text(t) = &c.shape {
+                sizes.extend(t.galley.job.sections.iter().map(|s| s.format.font_id.size));
+            }
+        }
+        assert_eq!(sizes.len(), 4, "the four header texts");
+        assert!(sizes.iter().all(|&z| (z - 10.0 / 1.1172).abs() < 1e-3), "{sizes:?}");
     }
 
     #[test]
@@ -2453,6 +2477,60 @@ mod tests {
             told_apart |= got != fvb_core::signal::spectrum(x, pos, n, 1, 5, d.osc.harmonic1_gain);
         }
         assert!(told_apart, "the correction changes the bars somewhere");
+    }
+
+    /// The frequency painter draws a pasted lane's bars from `pending_bins` (the record's correction at the
+    /// lane's own rate), not from the uncorrected spectrum: the value labels (`freq_percent = false`) read the
+    /// corrected bins, at a cursor where a corrected label differs from the uncorrected one.
+    #[test]
+    fn the_frequency_painter_labels_a_pasted_lane_with_the_corrected_bins() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        d.chans.iter_mut().for_each(|c| c.on_freq = false);
+        let last = d.osc.analog.len() - 1;
+        let len = d.osc.sample_count();
+        d.osc.analog[last].phase = "system".into();
+        d.osc.analog[last].samples = (0..len).map(|k| 49.3 + 0.0007 * k as f64).collect();
+        d.osc.freq_sel = 1;
+        d.selection.insert(crate::app::ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.freq_percent = false;
+        let periods = app.freq_periods.max(1);
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).expect("the pasted lane");
+        d.pending_of_mut(j).unwrap().pasted.rate = 1234.0;
+        d.computed[j].on_freq = true;
+        d.recompute(false);
+        let d = app.active_doc().unwrap();
+        let rate = d.pending_of(j).unwrap().pasted.rate;
+        let n = d.osc.period_of(rate).max(2);
+        let k_max = app.freq_harmonics.min(n * periods / 2).max(periods);
+        let x = &d.computed[j].pending_own;
+        let label = |v: f64| fvb_core::views::freq_label(v).trim().to_string();
+        let mut found = None;
+        for pos in (3 * n..len).step_by(5) {
+            let corrected: Vec<String> = super::pending_bins(d, j, pos, periods, k_max).into_iter().map(label).collect();
+            let plain: Vec<String> = fvb_core::signal::spectrum(x, pos, n, periods, k_max, d.osc.harmonic1_gain).into_iter().map(label).collect();
+            if let Some(k) = (0..=k_max).find(|&k| corrected[k] != plain[k] && !corrected.contains(&plain[k]) && plain[k] != "0") {
+                found = Some((pos, corrected[k].clone(), plain[k].clone()));
+                break;
+            }
+        }
+        let (pos, want, not) = found.expect("a cursor where the correction changes a label");
+        app.active_doc_mut().unwrap().main_cursor = pos;
+        let ctx = egui::Context::default();
+        let raw = || egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1300.0, 500.0))), ..Default::default() };
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let out = ctx.run(raw(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| app.frequency_ui(ui));
+            });
+            texts = out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
+        }
+        assert!(texts.contains(&want), "the corrected label {want:?}: {texts:?}");
+        assert!(!texts.contains(&not), "not the uncorrected {not:?}: {texts:?}");
     }
 
     #[test]
@@ -2837,7 +2915,7 @@ mod tests {
     /// 125 / 150 % — the system metric less one (the lanes' are 17 / 21 / 26), not the 100 % width scaled.
     #[test]
     fn the_plane_scroll_bars_follow_the_system_metric() {
-        for (dpi, w) in [(96, 16.0), (120, 20.0), (144, 25.0)] {
+        for (dpi, w) in [(96, 16.0), (120, 20.0), (144, 25.0), (168, 29.0), (192, 33.0)] {
             crate::dpi::set(dpi);
             assert_eq!(scroll_w(), w, "{dpi}");
         }
