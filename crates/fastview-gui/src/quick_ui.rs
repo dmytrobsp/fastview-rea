@@ -770,6 +770,8 @@ fn zero_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) {
     pg.combo(ui, (198, 55, 120, 54), "q_z3io", &mut f.i3o, names, !i_off && !calc);
     pg.group(ui, (6, 132, 318, 138), "Напряжение 3Uo");
     crate::dialogs::tab_index(ui, 13);
+    // «Отключить» ×2 are one span (537 template).
+    crate::dialogs::group_continue(ui);
     pg.check(ui, (244, 137, 78, 8), "Отключить", &mut f.zero_u_off, !i_off, true);
     for (m, (r, text)) in [((54, 156, 107, 10), "Расчитанный из Ua, Ub, Uc"), ((198, 156, 102, 10), "Расчитанный из Uни, Uик"), ((198, 228, 72, 10), "Измеренный")].into_iter().enumerate() {
         if m == 0 {

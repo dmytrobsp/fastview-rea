@@ -780,10 +780,15 @@ impl App {
                 btn.request_focus();
             }
             if btn.has_focus() {
-                ui.memory_mut(|m| m.set_focus_lock_filter(btn.id, egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, escape: true, ..Default::default() }));
+                ui.memory_mut(|m| m.set_focus_lock_filter(btn.id, egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true }));
             }
             let mut open: Option<u64> = ui.data(|d| d.get_temp(list_id));
-            if btn.clicked() {
+            // The list is an MFC popup menu: with it open the arrows walk it and Enter
+            // picks the row (an Enter is no click on the button then).
+            let hot_id = list_id.with("hot");
+            let mut hot: Option<usize> = ui.data(|d| d.get_temp(hot_id));
+            let list_keys = if open.is_some() && btn.has_focus() { ui.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp), i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown), i.consume_key(egui::Modifiers::NONE, egui::Key::Enter))) } else { (false, false, false) };
+            if btn.clicked() && !list_keys.2 {
                 open = if open.is_some() { None } else { Some(ui.ctx().cumulative_pass_nr()) };
             }
             let lit = egui::Rect::from_min_size(egui::pos2(x0 - 3.0, y0 + 1.0 - (dpi::s(15.0) / 2.0).ceil()), egui::vec2(dpi::s(15.0), dpi::s(15.0)));
@@ -800,10 +805,22 @@ impl App {
                     p.rect_stroke(w, 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_gray(110)));
                     p.rect_filled(egui::Rect::from_min_max(w.left_top(), egui::pos2(w.left() + 3.0, w.bottom())), 0.0, egui::Color32::from_rgb(70, 130, 110));
                 };
+                let n = order.len();
+                if n > 0 && (list_keys.0 || list_keys.1) {
+                    hot = Some(match (hot, list_keys.1) {
+                        (None, true) => 0,
+                        (None, false) => n - 1,
+                        (Some(h), true) => (h + 1) % n,
+                        (Some(h), false) => (h + n - 1) % n,
+                    });
+                }
+                if list_keys.2 {
+                    activate = hot.and_then(|h| order.get(h).copied());
+                }
                 let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom()).constrain(true).show(ui.ctx(), |ui| {
                     crate::popmenu::mfc_frame(ui, |ui| {
-                        for i in order {
-                            if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, false, Some(&window)).clicked() {
+                        for (k, i) in order.iter().copied().enumerate() {
+                            if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, hot == Some(k), Some(&window)).clicked() {
                                 activate = Some(i);
                             }
                         }
@@ -815,6 +832,10 @@ impl App {
                 }
             }
             self.doc_list_open |= open.is_some();
+            ui.data_mut(|d| match hot.filter(|_| open.is_some()) {
+                Some(h) => d.insert_temp(hot_id, h),
+                None => d.remove::<usize>(hot_id),
+            });
             ui.data_mut(|d| match open {
                 Some(o) => d.insert_temp(list_id, o),
                 None => d.remove::<u64>(list_id),
@@ -1113,7 +1134,7 @@ fn startup_args(args: impl Iterator<Item = String>) -> StartupArgs {
 impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         device_screen(ctx, raw);
-        winkeys::filter(raw);
+        winkeys::filter(ctx, raw);
         dialogs::take_dialog_tabs(ctx, raw);
     }
 
@@ -2486,7 +2507,7 @@ mod window_tests {
         w.press(Primary, at, at);
         let sid = egui::Id::new(("char_grid_scroll", app::Pane::Circle));
         let state = |w: &Win| w.ctx.data(|d| d.get_temp::<(f32, f32)>(sid)).expect("the grid's scroll state");
-        let rows_in_view = w.ctx.data(|d| d.get_temp::<i32>(egui::Id::new("fv_grid_rows_in_view"))).expect("the rows in view") as f32;
+        let rows_in_view = w.ctx.data(|d| d.get_temp::<i32>(egui::Id::new(("fv_grid_rows_in_view", app::Pane::Circle)))).expect("the rows in view") as f32;
         let (_, content) = state(&w);
         let row = 17.0;
         let max = content - (rows_in_view - 2.0) * row;
@@ -4607,9 +4628,11 @@ mod window_tests {
         let down = egui::Event::Key { key: egui::Key::V, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::CTRL };
         w.run(vec![down]);
         assert_eq!(pending(&w), 1, "Ctrl+V pastes at the key press");
-        w.run(vec![up.clone()]);
-        assert_eq!(pending(&w), 1, "the key-up pastes nothing more");
+        // (Undone first, so that a second paste would be enabled.)
         w.app.dispatch(app::Command::Undo);
+        assert_eq!(pending(&w), 0);
+        w.run(vec![up.clone()]);
+        assert_eq!(pending(&w), 0, "the key-up pastes nothing more: the press was the paste");
         // With text there: the paste fires on the press, not again on the key-up.
         w.run(vec![egui::Event::Paste("x".into())]);
         w.run(vec![up]);
@@ -5375,6 +5398,18 @@ mod window_tests {
         let w = page(app::AnalysisTab::PhasePhase);
         has(&w, "fv_quick_sheet", &[Other, Check]);
         has(&w, "fv_quick_sheet", &[Radio, Radio, Other, Other, Other, Other]);
+        // 537: «Ic» with the 3Io radios; the two «Отключить» one span.
+        let w = page(app::AnalysisTab::Zero);
+        has(&w, "fv_quick_sheet", &[Other, Radio, Radio]);
+        has(&w, "fv_quick_sheet", &[Check, Check]);
+        // A disabled control takes up the span flag meant for it: with the
+        // voltages off the sheet's buttons stay their own span (review).
+        let mut w = page(app::AnalysisTab::Zero);
+        w.app.quick[crate::quick_ui::page_index(app::AnalysisTab::Zero).unwrap()].zero_u_off = true;
+        w.idle(4);
+        let spans = arrow_spans(&w.ctx, "fv_quick_sheet");
+        let with_push: Vec<_> = spans.iter().filter(|s| s.contains(&Push)).collect();
+        assert_eq!(with_push, vec![&vec![Push, Push]], "{spans:?}");
         let w = page(app::AnalysisTab::Phase);
         has(&w, "fv_quick_sheet", &[Other, Radio, Radio]);
         let w = page(app::AnalysisTab::Differential);
@@ -5400,6 +5435,98 @@ mod window_tests {
         // (No folder set: no link, «...» alone; with a folder the link joins it.)
         has(&w, "Установка настроек программы", &[Push, Push]);
         has(&w, "Установка настроек программы", &[Push]);
+    }
+
+    /// A bar is no dialog (clone: Tab goes nowhere in the original, a push
+    /// button outside a dialog takes no arrow): a frame control holding the
+    /// focus keeps Tab and the arrows from walking egui's focus on to another
+    /// widget, which Space would then press (#145, review).
+    #[test]
+    fn tab_and_arrows_do_not_walk_the_frames_controls() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        let setup = || {
+            let mut w = Win::new();
+            w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+            w.app.copy_channels_for_merge();
+            w.app.paste_channels_for_merge();
+            w.idle(3);
+            w
+        };
+        let status = |w: &Win| w.app.merge.as_ref().map(|m| m.status.clone());
+        // The method combo, then Tab, Space: nothing is pressed; Tab twice too.
+        for tabs in [1, 2] {
+            let mut w = setup();
+            let combo = w.app.focus_other[0];
+            w.press(Primary, combo.center(), combo.center());
+            w.key(egui::Key::Escape);
+            for _ in 0..tabs {
+                w.key(egui::Key::Tab);
+            }
+            w.key(egui::Key::Space);
+            assert_eq!(status(&w), Some(String::new()), "{tabs} Tab: «Синхронизация» not pressed, the bar stays");
+        }
+        // «Синхронизация» focused: →, ↓ and Tab move nothing, Space does not merge.
+        for key in [egui::Key::ArrowRight, egui::Key::ArrowDown, egui::Key::Tab] {
+            let mut w = setup();
+            let sync = w.app.focus_other[1];
+            w.press(Primary, sync.center(), sync.center() + Vec2::new(0.0, 200.0));
+            let focus = w.ctx.memory(|m| m.focused());
+            assert!(focus.is_some());
+            w.key(key);
+            assert_eq!(w.ctx.memory(|m| m.focused()), focus, "{key:?}");
+        }
+        let mut w = setup();
+        let sync = w.app.focus_other[1];
+        w.press(Primary, sync.center(), sync.center() + Vec2::new(0.0, 200.0));
+        w.key(egui::Key::ArrowRight);
+        w.key(egui::Key::Space);
+        assert!(w.app.merge.is_some(), "→ then Space does not reach «Объединить»");
+        // The tab list's ▾: Tab leaves the focus where it is.
+        let mut w = Win::new();
+        let strip = w.app.mdi_strips[0];
+        let list = Pos2::new(strip.right() - 10.0, strip.center().y);
+        w.press(Primary, list, list);
+        w.key(egui::Key::Escape);
+        let focus = w.ctx.memory(|m| m.focused());
+        assert!(focus.is_some());
+        w.key(egui::Key::Tab);
+        assert_eq!(w.ctx.memory(|m| m.focused()), focus, "Tab on ▾");
+    }
+
+    /// The ▾ list is an MFC popup menu: opened by Space, the arrows walk it
+    /// and Enter picks the row, which comes forward (#145, review).
+    #[test]
+    fn the_tab_lists_popup_is_walked_by_the_arrows() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Demo);
+        w.idle(3);
+        assert_eq!(w.app.active, Some(1));
+        let strip = w.app.mdi_strips[0];
+        let list = Pos2::new(strip.right() - 10.0, strip.center().y);
+        w.press(Primary, list, list);
+        w.key(egui::Key::Escape);
+        w.key(egui::Key::Space);
+        assert!(w.app.doc_list_open);
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::Enter);
+        w.idle(2);
+        assert!(!w.app.doc_list_open, "Enter picked and closed it");
+        assert_eq!(w.app.active, Some(0), "the first row (by title) is forward");
+    }
+
+    /// Insert's copy / paste kept for a text edit are the edit's own: the
+    /// frame's channel copy and paste ignore them (#26, review).
+    #[test]
+    fn inserts_events_kept_for_an_edit_are_not_the_frames() {
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(app::ChanKey::Analog(0));
+        w.ctx.data_mut(|d| d.insert_temp(egui::Id::new(winkeys::KEPT_FOR_EDIT), (1u8, 0u8)));
+        w.run(vec![egui::Event::Copy]);
+        assert!(!w.app.clip.available(), "Ctrl+Insert in an edit copies no channel");
+        w.run(vec![egui::Event::Copy]);
+        assert!(w.app.clip.available(), "a plain copy still does");
     }
 
     /// A slid-out auto-hidden pane is a child of the frame, which a modal

@@ -196,6 +196,8 @@ impl App {
                         st.select(flat[k].0.clone(), flat[k].2);
                     }
                     win_label(ui, dlu(client, 204, 14, 62, 8), "Название канала:", true, true);
+                    // The tree, the name edit, OK and Отмена are one span (359 template).
+                    crate::dialogs::group_continue(ui);
                     win_edit(ui, dlu(client, 272, 12, 131, 12), egui::Id::new("af_name"), &mut st.name, false);
                     // The selected template's form in the place of control
                     // 1035 (205, 36, 198 × 243).

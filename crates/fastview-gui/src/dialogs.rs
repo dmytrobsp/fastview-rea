@@ -242,6 +242,7 @@ impl<'o> Dlg<'o> {
                 r.prev_items = group_list(std::mem::take(&mut r.items));
                 r.brk = false;
                 r.cont = false;
+                r.start = false;
                 r.pass = frame;
             }
             r.prev.clone()
@@ -934,7 +935,7 @@ fn take_arrows(ctx: &egui::Context) -> Vec<egui::Key> {
 pub fn focused_arrows(ui: &egui::Ui, id: egui::Id) -> Vec<egui::Key> {
     let ctx = ui.ctx();
     let mut keys = take_arrows(ctx);
-    ctx.memory_mut(|m| m.set_focus_lock_filter(id, egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, escape: true, ..Default::default() }));
+    ctx.memory_mut(|m| m.set_focus_lock_filter(id, egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true }));
     for k in [egui::Key::ArrowUp, egui::Key::ArrowDown, egui::Key::ArrowLeft, egui::Key::ArrowRight] {
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, k)) {
             keys.push(k);
@@ -965,6 +966,8 @@ struct Ring {
     /// one), a group box drawn since the last, and last pass's.
     items: Vec<RawItem>,
     brk: bool,
+    /// The next control starts a span of its own (`group_start`).
+    start: bool,
     /// The next control continues the group before it (no WS_GROUP).
     cont: bool,
     prev_items: Vec<(egui::Id, GroupKind, bool)>,
@@ -999,10 +1002,11 @@ fn group_item(ui: &egui::Ui, id: egui::Id, kind: GroupKind) {
         let place = m.get_temp::<Option<u32>>(egui::Id::new("fv_tab_index")).flatten();
         let r: &mut Ring = m.get_temp_mut_or_default(d.with("fv_tab_ring"));
         let place = place.unwrap_or(10_000 + r.items.len() as u32);
-        let (brk, cont) = (r.brk, r.cont);
+        let (brk, cont) = (r.brk || r.start, r.cont);
         r.items.push(RawItem { id, kind, brk, cont, place });
         r.brk = false;
         r.cont = false;
+        r.start = false;
     });
 }
 
@@ -1051,7 +1055,23 @@ fn group_list(mut raw: Vec<RawItem>) -> Vec<(egui::Id, GroupKind, bool)> {
 /// The next control has a WS_GROUP of its own: it starts a span (a push
 /// button after a group box that the drawing order puts elsewhere, 347).
 pub fn group_start(ui: &egui::Ui) {
-    group_break(ui);
+    let ctx = ui.ctx();
+    if let Some(d) = cur_dlg(ctx) {
+        ctx.data_mut(|m| m.get_temp_mut_or_default::<Ring>(d.with("fv_tab_ring")).start = true);
+    }
+}
+
+/// A control drawn disabled takes up the pending `group_continue` /
+/// `group_start`, so that they do not pass on to the next enabled one.
+fn consume_span_flags(ui: &egui::Ui) {
+    let ctx = ui.ctx();
+    if let Some(d) = cur_dlg(ctx) {
+        ctx.data_mut(|m| {
+            let r: &mut Ring = m.get_temp_mut_or_default(d.with("fv_tab_ring"));
+            r.cont = false;
+            r.start = false;
+        });
+    }
 }
 
 /// The next control has no WS_GROUP: it joins the span before it, a combo
@@ -1134,6 +1154,7 @@ pub fn tab_stop_if(ui: &egui::Ui, id: egui::Id, kind: StopKind, on: bool) -> boo
         return tab_stop(ui, id, kind);
     }
     ui.ctx().data_mut(|d| d.remove_temp::<Option<u32>>(egui::Id::new("fv_tab_index")));
+    consume_span_flags(ui);
     false
 }
 

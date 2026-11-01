@@ -1486,9 +1486,9 @@ impl App {
                 // it is there when the rows overflow the window.
                 let bar_page = (page - 2.0 * row).max(row);
                 let max_off = if content_h > page { (content_h - bar_page).max(0.0) } else { 0.0 };
-                ui.data_mut(|d| d.insert_temp(grid_rows_id(), (page / row) as i32));
+                ui.data_mut(|d| d.insert_temp(grid_rows_id(pane), (page / row) as i32));
                 // PgUp / PgDn scroll a page (P - 1 rows) with the selection.
-                if let Some(rows) = ui.data_mut(|d| d.remove_temp::<i32>(grid_page_id())) {
+                if let Some(rows) = ui.data_mut(|d| d.remove_temp::<i32>(grid_page_id(pane))) {
                     off = (off + rows as f32 * row).clamp(0.0, max_off);
                 }
                 if ui.rect_contains_pointer(inner) {
@@ -1497,7 +1497,7 @@ impl App {
                     }
                 }
                 // A row selected by a key comes into view (EnsureVisible).
-                if let Some(j) = ui.data_mut(|d| d.remove_temp::<usize>(ui_grid_ensure_id())) {
+                if let Some(j) = ui.data_mut(|d| d.remove_temp::<usize>(ui_grid_ensure_id(pane))) {
                     off = ensure_row_visible(off, page, row, j);
                 }
                 let content = if max_off > 0.0 { egui::Rect::from_min_max(inner.min, egui::pos2(inner.right() - bar_w, inner.bottom())) } else { inner };
@@ -1510,7 +1510,7 @@ impl App {
                 off = ((off / row).round() * row).clamp(0.0, max_off);
                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(content.min - egui::vec2(0.0, off), egui::vec2(content.width(), f32::INFINITY))));
                 child.set_clip_rect(content.intersect(ui.clip_rect()));
-                self.char_side_panel(&mut child);
+                self.char_side_panel(&mut child, pane);
                 let h = child.min_rect().height();
                 // The name / value divider on down the empty list (VM).
                 let below = content.top() - off + h;
@@ -1562,7 +1562,7 @@ impl App {
     /// 12 × 12 box framed in the characteristic's colour with a tick while
     /// it is shown (`0x407dc0`; a click there toggles it, `0x4075c0`) — and
     /// its parameters as text rows; an edit re-evaluates the whole block.
-    fn char_side_panel(&mut self, ui: &mut egui::Ui) {
+    fn char_side_panel(&mut self, ui: &mut egui::Ui, pane: Pane) {
         const TEXT: egui::Color32 = egui::Color32::from_rgb(40, 40, 40);
         // CMFCPropertyGridCtrl as the VM shows it (Office 2007 Blue): 17 px
         // rows (16 + a (185, 208, 237) line), the name column half the
@@ -1829,7 +1829,7 @@ impl App {
             // by a page, P - 1 rows (P: the rows in view), kept inside the
             // rows and the scroll range.
             let (pg_up, pg_down) = ui.input(|i| (i.key_pressed(egui::Key::PageUp), i.key_pressed(egui::Key::PageDown)));
-            let page_rows = ui.data(|d| d.get_temp::<i32>(grid_rows_id())).unwrap_or(2).saturating_sub(1).max(1) as usize;
+            let page_rows = ui.data(|d| d.get_temp::<i32>(grid_rows_id(pane))).unwrap_or(2).saturating_sub(1).max(1) as usize;
             // «Тип блока» alone (no block's rows): ↓ / ↑ step its value in
             // an in-place edit and Enter keeps the text — the block is not
             // loaded (VM: «Нет» → «БМРЗ - Защита линий» → «… генераторов»,
@@ -1855,7 +1855,7 @@ impl App {
                 self.block_text = (next != self.block_idx).then(|| names[next].clone());
                 None
             } else if pg_up || pg_down {
-                ui.data_mut(|d| d.insert_temp(grid_page_id(), if pg_down { page_rows as i32 } else { -(page_rows as i32) }));
+                ui.data_mut(|d| d.insert_temp(grid_page_id(pane), if pg_down { page_rows as i32 } else { -(page_rows as i32) }));
                 Some(if pg_down { (at + page_rows).min(last) } else { at.saturating_sub(page_rows) })
             } else if up {
                 Some(at.saturating_sub(1))
@@ -1872,7 +1872,7 @@ impl App {
                 select.set(Some(order[j].0));
                 // MFC scrolls a key-selected row into view (EnsureVisible):
                 // the grid's scroll reads the row's place.
-                ui.data_mut(|d| d.insert_temp(ui_grid_ensure_id(), j));
+                ui.data_mut(|d| d.insert_temp(ui_grid_ensure_id(pane), j));
                 // As a click on the group's row does.
                 if let GridRow::Group(.., ci) = order[j].1 {
                     self.selected_char = Some(ci);
@@ -1937,19 +1937,19 @@ impl App {
 }
 
 /// The rows in view of the grid's window, passed to its keys.
-fn grid_rows_id() -> egui::Id {
-    egui::Id::new("fv_grid_rows_in_view")
+fn grid_rows_id(pane: Pane) -> egui::Id {
+    egui::Id::new(("fv_grid_rows_in_view", pane))
 }
 
 /// A PgUp / PgDn's page (rows, signed), passed from the grid's keys to its
 /// scroll.
-fn grid_page_id() -> egui::Id {
-    egui::Id::new("fv_grid_page_scroll")
+fn grid_page_id(pane: Pane) -> egui::Id {
+    egui::Id::new(("fv_grid_page_scroll", pane))
 }
 
 /// Where the key-selected row is passed from the grid's rows to its scroll.
-fn ui_grid_ensure_id() -> egui::Id {
-    egui::Id::new("fv_grid_ensure_visible")
+fn ui_grid_ensure_id(pane: Pane) -> egui::Id {
+    egui::Id::new(("fv_grid_ensure_visible", pane))
 }
 
 /// The scroll offset that shows grid row `j` (`row` px each) in a window of

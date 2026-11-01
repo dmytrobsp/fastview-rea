@@ -2447,6 +2447,8 @@ impl App {
     /// paste no `Event::Paste` announced fires there.
     pub fn handle_keys(&mut self, ctx: &egui::Context) {
         let mut cmds = Vec::new();
+        // (Taken before the input's lock: the data store shares it.)
+        let (mut edit_copies, mut edit_pastes) = ctx.data_mut(|d| d.remove_temp::<(u8, u8)>(egui::Id::new(crate::winkeys::KEPT_FOR_EDIT))).unwrap_or_default();
         ctx.input(|i| {
             let m = i.modifiers;
             // No MDI keys: TranslateMDISysAccel (Ctrl+F4 / Ctrl+F6 /
@@ -2459,8 +2461,11 @@ impl App {
             // too: refused while Shift / Alt is held).
             let accel = |m: &egui::Modifiers| (m.command || m.ctrl) && !m.shift && !m.alt;
             let plain = !m.shift && !m.alt;
+            // Insert's copy / paste kept for a text edit are the edit's own.
             for e in &i.events {
                 match e {
+                    egui::Event::Copy if edit_copies > 0 => edit_copies -= 1,
+                    egui::Event::Paste(_) if edit_pastes > 0 => edit_pastes -= 1,
                     egui::Event::Key { key, pressed: true, modifiers, .. } if accel(modifiers) => {
                         if let Some((_, c)) = Self::keymap().into_iter().find(|(k, _)| k == key) {
                             // Ctrl+V acts at the press (a key-up after it
