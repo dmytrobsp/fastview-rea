@@ -43,6 +43,7 @@ mod setfile;
 #[cfg(windows)]
 mod softrun;
 mod spool;
+mod sysdlg;
 mod theme;
 mod tips;
 mod util;
@@ -1242,6 +1243,8 @@ impl App {
         dialogs::track_input(ctx);
         dialogs::route_combo_keys(ctx);
         self.device_pixels(ctx);
+        sysdlg::set_wake(ctx);
+        self.poll_sysdlg(ctx);
         self.run_deferred(ctx);
         // A click or a key acts after the frame that drew it (a command is
         // dispatched once its button is drawn): one more frame shows the

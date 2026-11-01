@@ -194,59 +194,6 @@ pub fn save_target(p: std::path::PathBuf, exts: &[&str], chosen: Option<usize>) 
     }
 }
 
-/// The save dialog (MFC's CFileDialog): on Windows comdlg32's, which
-/// reports the chosen file type (OPENFILENAME's nFilterIndex); elsewhere
-/// rfd's, which does not.
-fn save_dialog(filters: &[(&str, &str)], dir: Option<String>, name: &str) -> Option<(std::path::PathBuf, Option<usize>)> {
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::UI::Controls::Dialogs::{GetSaveFileNameW, OFN_EXPLORER, OFN_HIDEREADONLY, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW};
-        let wide = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
-        let mut filter: Vec<u16> = Vec::new();
-        for (desc, ext) in filters {
-            filter.extend(wide(desc));
-            filter.push(0);
-            filter.extend(wide(&format!("*.{ext}")));
-            filter.push(0);
-        }
-        filter.push(0);
-        let mut file = vec![0u16; 1024];
-        let n = wide(name);
-        file[..n.len().min(1023)].copy_from_slice(&n[..n.len().min(1023)]);
-        let dir_w: Option<Vec<u16>> = dir.map(|d| wide(&d).into_iter().chain(Some(0)).collect());
-        // SAFETY: every pointer outlives the call; the file buffer's size is
-        // given.
-        unsafe {
-            let mut ofn: OPENFILENAMEW = std::mem::zeroed();
-            ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
-            // Owned by the frame (`dialogs::file_dialog`).
-            ofn.hwndOwner = crate::dialogs::Owner::active().map_or(std::ptr::null_mut(), |o| o.hwnd());
-            ofn.lpstrFilter = filter.as_ptr();
-            ofn.nFilterIndex = 1;
-            ofn.lpstrFile = file.as_mut_ptr();
-            ofn.nMaxFile = file.len() as u32;
-            ofn.lpstrInitialDir = dir_w.as_ref().map_or(std::ptr::null(), |d| d.as_ptr());
-            ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR;
-            if GetSaveFileNameW(&mut ofn) == 0 {
-                return None;
-            }
-            let len = file.iter().position(|&c| c == 0).unwrap_or(file.len());
-            Some((std::path::PathBuf::from(String::from_utf16_lossy(&file[..len])), Some(ofn.nFilterIndex.max(1) as usize - 1)))
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        let mut dlg = crate::dialogs::file_dialog();
-        for (desc, ext) in filters {
-            dlg = dlg.add_filter(*desc, &[*ext]);
-        }
-        if let Some(d) = dir {
-            dlg = dlg.set_directory(d);
-        }
-        dlg.set_file_name(name).save_file().map(|p| (p, None))
-    }
-}
-
 impl Doc {
     /// The section key of file channel `i` (analog, then digital).
     pub(crate) fn file_key(&self, i: usize) -> String {
@@ -955,14 +902,14 @@ impl App {
     /// without the comments, mark modified, refresh.
     pub fn load_settings_command(&mut self) {
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
-        let Some(path) = crate::dialogs::file_dialog()
-            .add_filter("Настройки осциллограммы FastView (*.set)", &["set"])
-            .add_filter("Все файлы (*.*)", &["*"])
-            .pick_file()
-        else {
-            return;
-        };
-        self.load_settings_from(ai, &path);
+        let serial = self.docs[ai].serial;
+        let dlg = crate::dialogs::file_dialog().add_filter("Настройки осциллограммы FastView (*.set)", &["set"]).add_filter("Все файлы (*.*)", &["*"]);
+        self.pick(crate::sysdlg::Job::Open(dlg), move |app, _, picked| {
+            // The document the command was given for, if it is still open.
+            if let (Some((path, _)), Some(ai)) = (picked, app.doc_by_serial(serial)) {
+                app.load_settings_from(ai, &path);
+            }
+        });
     }
 
     pub fn load_settings_from(&mut self, di: usize, path: &std::path::Path) {
@@ -1030,23 +977,59 @@ impl App {
         Ok(())
     }
 
-    /// Сохранить (57603, `DoFileSave`): onto the document's own file when it
-    /// has one the save dispatcher knows, else Save As.
+    /// The file Сохранить writes onto: the document's own when it has one the
+    /// save dispatcher knows.
+    pub fn save_path_of(&self, ai: usize) -> Option<std::path::PathBuf> {
+        self.docs.get(ai)?.path.clone().filter(|p| save_kind(p).is_some())
+    }
+
+    /// Сохранить (57603, `DoFileSave`) onto the document's own file; false
+    /// when it has none (that asks for one: [`App::save_doc_then`]).
     pub fn save_active(&mut self) -> bool {
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return false };
-        match self.docs[ai].path.clone().filter(|p| save_kind(p).is_some()) {
+        match self.save_path_of(ai) {
             Some(p) => self.report_save(ai, &p),
-            None => self.save_active_as(),
+            None => {
+                self.ask_save_as(ai, |_, _, _| {});
+                false
+            }
+        }
+    }
+
+    /// Сохранить for document `ai` onto its own file (it has one: [`App::save_path_of`]).
+    pub(crate) fn save_active_at(&mut self, ai: usize) -> bool {
+        match self.save_path_of(ai) {
+            Some(p) => self.report_save(ai, &p),
+            None => false,
+        }
+    }
+
+    /// Сохранить for document `ai`: onto its own file, else Save As; `then`
+    /// runs with whether it was saved — at once, or once the file dialog
+    /// (outside the frame, [`crate::sysdlg`]) has answered.
+    pub fn save_doc_then(&mut self, ctx: &egui::Context, ai: usize, then: impl FnOnce(&mut App, &egui::Context, bool) + 'static) {
+        match self.save_path_of(ai) {
+            Some(p) => {
+                let ok = self.report_save(ai, &p);
+                then(self, ctx, ok);
+            }
+            None => self.ask_save_as(ai, then),
         }
     }
 
     /// Сохранить как (57604): the file dialog, then `OnSaveDocument`.
-    pub fn save_active_as(&mut self) -> bool {
+    pub fn save_active_as(&mut self) {
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else {
             self.status = "Нет осциллограммы для сохранения.".into();
-            return false;
+            return;
         };
-        let d = &self.docs[ai];
+        self.ask_save_as(ai, |_, _, _| {});
+    }
+
+    /// The Save As dialog of document `ai`; `then` gets whether the record was saved.
+    pub fn ask_save_as(&mut self, ai: usize, then: impl FnOnce(&mut App, &egui::Context, bool) + 'static) {
+        let Some(d) = self.docs.get(ai) else { return };
+        let serial = d.serial;
         let filters = save_filters(d.path.as_deref());
         // Proposed: the record's folder and its title without extension.
         // `0x447e30` lowers the name in place (three MakeLower calls) before
@@ -1056,20 +1039,25 @@ impl App {
         let lower = |s: String| if cfg!(windows) { s.to_lowercase() } else { s };
         let stem = lower(d.path.as_ref().and_then(|p| p.file_stem()).map_or_else(|| d.name.clone(), |s| s.to_string_lossy().into_owned()));
         let dir = d.path.as_ref().and_then(|p| p.parent()).filter(|p| !p.as_os_str().is_empty()).map(|p| lower(p.to_string_lossy().into_owned()));
-        let Some((path, chosen)) = save_dialog(&filters, dir, &stem) else { return false };
-        let path = save_target(path, &filters.map(|f| f.1), chosen);
-        // The proposed name taken as it is: the original keeps the text it
-        // proposed (lowercase), where a shell dialog may hand back an
-        // existing file's own case — the files written anew (the `.set`)
-        // come out lowercase (VM: «win_1999.set» beside «WIN_1999.cfg»).
-        let path = match path.file_stem().map(|s| s.to_string_lossy().into_owned()) {
-            Some(s) if cfg!(windows) && s != stem && s.to_lowercase() == stem => {
-                let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-                path.with_file_name(format!("{stem}.{ext}"))
-            }
-            _ => path,
-        };
-        self.report_save(ai, &path)
+        let job = crate::sysdlg::Job::SaveTyped { filters: filters.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect(), dir, name: stem.clone(), owner: crate::sysdlg::owner() };
+        self.pick(job, move |app, ctx, picked| {
+            let Some((path, chosen)) = picked else { return then(app, ctx, false) };
+            let Some(ai) = app.doc_by_serial(serial) else { return then(app, ctx, false) };
+            let path = save_target(path, &filters.map(|f| f.1), chosen);
+            // The proposed name taken as it is: the original keeps the text it
+            // proposed (lowercase), where a shell dialog may hand back an
+            // existing file's own case — the files written anew (the `.set`)
+            // come out lowercase (VM: «win_1999.set» beside «WIN_1999.cfg»).
+            let path = match path.file_stem().map(|s| s.to_string_lossy().into_owned()) {
+                Some(s) if cfg!(windows) && s != stem && s.to_lowercase() == stem => {
+                    let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+                    path.with_file_name(format!("{stem}.{ext}"))
+                }
+                _ => path,
+            };
+            let ok = app.report_save(ai, &path);
+            then(app, ctx, ok);
+        });
     }
 
     fn report_save(&mut self, di: usize, path: &std::path::Path) -> bool {
@@ -1270,25 +1258,21 @@ impl App {
     /// Отмена.
     pub fn answer_save_prompt(&mut self, ctx: &egui::Context, answer: Option<bool>) {
         let Some(p) = self.setfile.prompt.take() else { return };
-        let go_on = match answer {
-            None => false,
-            Some(false) => true,
-            Some(true) => {
-                let prev = self.active;
-                self.active = Some(p.doc);
-                let ok = self.save_active();
-                self.active = prev;
-                ok
+        // The question's document is saved first (a Save As waits for its
+        // dialog, outside the frame); the close or the exit goes on after.
+        let go_on = move |app: &mut App, ctx: &egui::Context, go_on: bool| {
+            if !go_on {
+                app.setfile.exit_queue = None;
+            } else if p.exit {
+                app.next_exit_prompt(ctx);
+            } else {
+                app.close_doc_now(p.doc);
             }
         };
-        if !go_on {
-            self.setfile.exit_queue = None;
-            return;
-        }
-        if p.exit {
-            self.next_exit_prompt(ctx);
-        } else {
-            self.close_doc_now(p.doc);
+        match answer {
+            None => go_on(self, ctx, false),
+            Some(false) => go_on(self, ctx, true),
+            Some(true) => self.save_doc_then(ctx, p.doc, go_on),
         }
     }
 

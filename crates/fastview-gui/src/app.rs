@@ -1907,6 +1907,8 @@ pub struct App {
     /// later pass once the closed menu has been painted (the dialog blocks
     /// the frame loop).
     pub deferred: Vec<(Command, u64)>,
+    /// The system dialog in progress (#190): [`crate::sysdlg`].
+    pub sysdlg: Option<crate::sysdlg::Pending>,
     /// Dialogs and bars of `chandlg` / `recdlg` (backlog 16, 18, 28, 29, 34, 39).
     pub dlg: crate::recdlg::DialogState,
 
@@ -2071,6 +2073,7 @@ impl App {
             status_menu: None,
             status_grip: None,
             deferred: Vec::new(),
+            sysdlg: None,
             status_panes: ["Верт. визир 1:", "Верт. визир 2:", "Разница в. визиров:", "Гор. визир 1:", "Гор. визир 2:", "Разница г. визиров:"].map(String::from),
             dlg: Default::default(),
             status: "Готово".to_string(),
@@ -2835,47 +2838,47 @@ impl App {
 
     // ---------- data loading ----------
     pub fn open_fvb(&mut self) {
-        if let Some(path) = crate::dialogs::file_dialog()
-            .add_filter("FastView library", &["fvb"])
-            .pick_file()
-        {
+        let dlg = crate::dialogs::file_dialog().add_filter("FastView library", &["fvb"]);
+        self.pick(crate::sysdlg::Job::Open(dlg), |app, _, picked| {
+            let Some((path, _)) = picked else { return };
             match std::fs::read(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|b| fvb_core::load_fvb_bytes(&b).map_err(|e| e.to_string()))
             {
                 Ok(lib) => {
-                    self.library = plane_library(&lib, self.diagram_dim);
-                    self.full_library = lib;
-                    self.diagrams = [None, None];
-                    self.source_name = path
+                    app.library = plane_library(&lib, app.diagram_dim);
+                    app.full_library = lib;
+                    app.diagrams = [None, None];
+                    app.source_name = path
                         .file_name()
                         .map(|s| s.to_string_lossy().into_owned())
                         .unwrap_or_default();
-                    self.block_idx = 0;
-                    self.chars.clear();
-                    self.selected_char = None;
-                    self.ensure_block_state();
-                    self.status = format!("Загружена библиотека: {}", self.source_name);
+                    app.block_idx = 0;
+                    app.chars.clear();
+                    app.selected_char = None;
+                    app.ensure_block_state();
+                    app.status = format!("Загружена библиотека: {}", app.source_name);
                 }
-                Err(e) => self.status = format!("Ошибка загрузки .fvb: {e}"),
+                Err(e) => app.status = format!("Ошибка загрузки .fvb: {e}"),
             }
-        }
+        });
     }
 
     pub fn open_comtrade(&mut self) {
         // String 328 (`0x447e30` when opening); patterns in both cases for
         // the case-sensitive dialogs off Windows.
-        if let Some(path) = crate::dialogs::file_dialog()
+        let dlg = crate::dialogs::file_dialog()
             .add_filter("Осциллограммы (*.cfg, *.cff, *.osc, *.sto)", &["cfg", "cff", "osc", "sto", "CFG", "CFF", "OSC", "STO"])
             .add_filter("Осциллограммы COMTRADE (*.cfg)", &["cfg", "CFG"])
             .add_filter("Осциллограммы COMTRADE'13 (*.cff)", &["cff", "CFF"])
             .add_filter("Осциллограммы OSC2 (*.osc)", &["osc", "OSC"])
             .add_filter("Осциллограммы Configurator-MT (*.sto)", &["sto", "STO"])
-            .add_filter("Все файлы (*.*)", &["*"])
-            .pick_file()
-        {
-            self.load_comtrade_path(&path);
-        }
+            .add_filter("Все файлы (*.*)", &["*"]);
+        self.pick(crate::sysdlg::Job::Open(dlg), |app, _, picked| {
+            if let Some((path, _)) = picked {
+                app.load_comtrade_path(&path);
+            }
+        });
     }
 
     /// Open a record as a new document. Parsing runs on a worker thread
@@ -3017,18 +3020,18 @@ impl App {
             self.status = "Нет осциллограммы для экспорта.".into();
             return;
         };
-        let Some(path) = crate::dialogs::file_dialog()
-            .add_filter("CSV", &["csv"])
-            .set_file_name(format!("{}.csv", d.name))
-            .save_file()
-        else {
-            return;
-        };
-        let out = Self::csv_string(d);
-        match std::fs::write(&path, out) {
-            Ok(()) => self.status = format!("Экспортировано в {}", path.display()),
-            Err(e) => self.status = format!("Ошибка экспорта: {e}"),
-        }
+        let (name, di) = (format!("{}.csv", d.name), self.active);
+        let dlg = crate::dialogs::file_dialog().add_filter("CSV", &["csv"]).set_file_name(name);
+        self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
+            let Some((path, _)) = picked else { return };
+            // The record the command was given for (the dialog ran meanwhile).
+            let Some(d) = di.and_then(|i| app.docs.get(i)) else { return };
+            let out = Self::csv_string(d);
+            match std::fs::write(&path, out) {
+                Ok(()) => app.status = format!("Экспортировано в {}", path.display()),
+                Err(e) => app.status = format!("Ошибка экспорта: {e}"),
+            }
+        });
     }
 
     /// Archive the active record (COMTRADE + CSV) into a `.zip` for sending.
@@ -3037,24 +3040,23 @@ impl App {
             self.status = "Нет осциллограммы для архивирования.".into();
             return;
         };
-        let Some(path) = crate::dialogs::file_dialog()
-            .add_filter("ZIP", &["zip"])
-            .set_file_name(format!("{}.zip", d.name))
-            .save_file()
-        else {
-            return;
-        };
-        let (cfg, dat) = fvb_core::comtrade::write(&d.osc, d.codepage);
-        let csv = Self::csv_string(d);
-        let zip = crate::util::zip_store(&[
-            (format!("{}.cfg", d.name), cfg),
-            (format!("{}.dat", d.name), dat),
-            (format!("{}.csv", d.name), csv.into_bytes()),
-        ]);
-        match std::fs::write(&path, zip) {
-            Ok(()) => self.status = format!("Архив сохранён: {}", path.display()),
-            Err(e) => self.status = format!("Ошибка архивирования: {e}"),
-        }
+        let (name, di) = (format!("{}.zip", d.name), self.active);
+        let dlg = crate::dialogs::file_dialog().add_filter("ZIP", &["zip"]).set_file_name(name);
+        self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
+            let Some((path, _)) = picked else { return };
+            let Some(d) = di.and_then(|i| app.docs.get(i)) else { return };
+            let (cfg, dat) = fvb_core::comtrade::write(&d.osc, d.codepage);
+            let csv = Self::csv_string(d);
+            let zip = crate::util::zip_store(&[
+                (format!("{}.cfg", d.name), cfg),
+                (format!("{}.dat", d.name), dat),
+                (format!("{}.csv", d.name), csv.into_bytes()),
+            ]);
+            match std::fs::write(&path, zip) {
+                Ok(()) => app.status = format!("Архив сохранён: {}", path.display()),
+                Err(e) => app.status = format!("Ошибка архивирования: {e}"),
+            }
+        });
     }
 
     /// Ask for an export path and flag that the next frame's screenshot should be
@@ -3064,14 +3066,13 @@ impl App {
             self.status = "Нет осциллограммы для печати/экспорта изображения.".into();
             return;
         }
-        if let Some(path) = crate::dialogs::file_dialog()
-            .add_filter("PNG", &["png"])
-            .set_file_name("fastview.png")
-            .save_file()
-        {
-            self.want_screenshot = Some(path);
-            self.status = "Готовится изображение…".into();
-        }
+        let dlg = crate::dialogs::file_dialog().add_filter("PNG", &["png"]).set_file_name("fastview.png");
+        self.pick(crate::sysdlg::Job::Save(dlg), |app, _, picked| {
+            if let Some((path, _)) = picked {
+                app.want_screenshot = Some(path);
+                app.status = "Готовится изображение…".into();
+            }
+        });
     }
 
     // ---- undo / redo ----
