@@ -516,9 +516,9 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
     // The open popup owns these keys (Win32's menu loop): taken from the
     // input, so a dialog the chosen item opens in this pass does not see
     // the Enter that chose it (VM: the frequency «Настройки» by keys).
-    let (up, down, right, left, enter, esc_key) = ctx.input_mut(|i| {
+    let (up, down, right, left, enter, esc_key, home, end) = ctx.input_mut(|i| {
         let mut k = |key| i.consume_key(egui::Modifiers::NONE, key);
-        (k(egui::Key::ArrowUp), k(egui::Key::ArrowDown), k(egui::Key::ArrowRight), k(egui::Key::ArrowLeft), k(egui::Key::Enter), k(egui::Key::Escape))
+        (k(egui::Key::ArrowUp), k(egui::Key::ArrowDown), k(egui::Key::ArrowRight), k(egui::Key::ArrowLeft), k(egui::Key::Enter), k(egui::Key::Escape), k(egui::Key::Home), k(egui::Key::End))
     });
     let sub_entries = |i: Option<usize>| match i.and_then(|i| entries.get(i)) {
         Some(Entry::Sub { entries, .. }) => Some(entries.as_slice()),
@@ -549,6 +549,10 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
         if up || down {
             menu.sub_hot = step(sub, menu.sub_hot, down);
         }
+        // Home and End: the first and the last row (clone, the Help menu).
+        if home || end {
+            menu.sub_hot = step(sub, None, home);
+        }
         if left || esc_key {
             (menu.in_sub, menu.sub_hot) = (false, None);
             if left {
@@ -563,6 +567,9 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
     } else {
         if up || down {
             menu.hot = step(entries, menu.hot, down);
+        }
+        if home || end {
+            menu.hot = step(entries, None, home);
         }
         let into_sub = (right || enter) && sub_entries(menu.hot).is_some();
         if into_sub {

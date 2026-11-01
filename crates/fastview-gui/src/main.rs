@@ -1890,6 +1890,25 @@ mod window_tests {
         assert!(!app.keytips.shown());
     }
 
+    /// The Help button's key tip «A» opens its drop-down with the first row
+    /// highlighted (MFC posts Home; clone: «Помощь» lit, ↓ then «О программе...»,
+    /// Home back) (#26).
+    #[test]
+    fn the_help_menu_opened_by_its_key_tip_has_its_first_row_lit() {
+        let mut app = demo(&[]);
+        let ctx = egui::Context::default();
+        let size = Vec2::new(1320.0, 860.0);
+        let key = |key| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }];
+        frames(&mut app, &ctx, size, vec![vec![], key(egui::Key::F10), vec![]]);
+        frames(&mut app, &ctx, size, vec![key(egui::Key::A), vec![], vec![]]);
+        let (_, menu) = app.top_menu.expect("the Help menu is open");
+        assert_eq!(menu.hot, Some(0), "the first row is lit");
+        frames(&mut app, &ctx, size, vec![key(egui::Key::ArrowDown), vec![]]);
+        assert_eq!(app.top_menu.unwrap().1.hot, Some(2), "↓ goes to «О программе...»");
+        frames(&mut app, &ctx, size, vec![key(egui::Key::Home), vec![]]);
+        assert_eq!(app.top_menu.unwrap().1.hot, Some(0), "Home back to the first");
+    }
+
     /// A whole window at the default size with the demo document.
     struct Win {
         ctx: egui::Context,
