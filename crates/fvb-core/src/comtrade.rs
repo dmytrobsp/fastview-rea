@@ -2031,23 +2031,36 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
             let sample_no = |at: usize| -> Option<i32> { dat.get(at..at + 4).map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]])) };
             // The readers test the record size against the data (BINARY
             // `0x451c32`–`0x451cea`, binary32 `0x4521bd`–`0x4521dc`): the
-            // sample numbers of the first four records, `size` apart, must
-            // read 1, 2, 3, 4.
-            let numbered = |size: usize| (0..4).all(|k| k + 1 == sample_no(k * size).filter(|_| (k + 1) * size <= dat.len()).unwrap_or(0) as usize);
+            // sample numbers of the first three records, `size` apart, are
+            // read unconditionally and must be 1, 2, 3; the fourth is read
+            // (and must be 4) only then. A record that does not fit is a
+            // null pointer in the original — it faults when fewer than three
+            // records exist, or when 1, 2, 3 have no fourth after them
+            // (NOT DETERMINED what the user sees; ours takes the computed
+            // size, as before). Some(true) = numbered, Some(false) = not,
+            // None = the fault zone.
+            let numbered = |size: usize| -> Option<bool> {
+                let at = |k: usize| sample_no(k * size).filter(|_| (k + 1) * size <= dat.len());
+                let (a, b, c) = (at(0)?, at(1)?, at(2)?);
+                if (a, b, c) != (1, 2, 3) {
+                    return Some(false);
+                }
+                at(3).map(|d| d == 4)
+            };
             match fmt {
                 DataFormat::Int16 => {
                     // BINARY: the size the reader computes first has a slip
-                    // — a digital part of `nd/8 + 2 (nd not a multiple of
-                    // 16)` bytes, one too many for nd = 8..15 mod 16 —; when
-                    // the numbers do not read 1, 2, 3, 4 at that size it
-                    // takes the digital part as `ceil(nd/8)` bytes.
+                    // — a digital part of `nd/8 + 2` bytes when nd is not a
+                    // multiple of 16, one too many for nd = 8..15 mod 16 —;
+                    // when the numbers do not read 1, 2, 3, 4 at that size it
+                    // takes the digital part as `nd/8 + 1` bytes.
                     let first = nd / 8 + if nd.is_multiple_of(16) { 0 } else { 2 } + (na + 4) * 2;
                     let packed = nd / 8 + usize::from(!nd.is_multiple_of(16)) + 8 + na * 2;
-                    rec_len = if dat.len() < 4 * first || numbered(first) { first } else { packed };
+                    rec_len = if numbered(first) == Some(false) { packed } else { first };
                 }
                 DataFormat::Int32 => {
                     // binary32 has no fallback: the check failing is error 330.
-                    if dat.len() >= 4 * rec_len && !numbered(rec_len) {
+                    if numbered(rec_len) == Some(false) {
                         return Err(ComtradeError::Format);
                     }
                 }

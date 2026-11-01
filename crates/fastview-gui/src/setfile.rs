@@ -661,10 +661,10 @@ impl Doc {
         let items: Vec<CommentRec> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
         recset::write_comments(t.section_mut("Comments"), &items);
         // The summary comment a paste makes is a `.hdr` text with its code
-        // page (`Comments/Codepage`, 1), stored where the reader's guess
-        // was not (a clone run, #28).
-        if !print && self.hdr.is_some() && !t.section_mut("Comments").attrs.contains_key("Codepage") {
-            t.section_mut("Comments").set_int("Codepage", cp_code(self.hdr_cp));
+        // page (`Comments/Codepage`, 1), set at every paste, whatever the reader
+        // guessed before (a clone run, #28).
+        if !print && self.hdr.is_some() && self.hdr_pasted {
+            t.section_mut("Comments").set_int("Codepage", 1);
         }
     }
 
@@ -1615,6 +1615,8 @@ mod tests {
         let mut app = App::new();
         app.persist = false;
         let di = open(&mut app, &write_record(&dir));
+        // A reader's OEM guess stored before is overwritten by the paste.
+        app.docs[di].set.tree.section_mut("Comments").set_int("Codepage", 0);
         app.docs[di].selection = [ChanKey::Analog(1)].into();
         app.copy_channels_for_merge();
         app.docs[di].selection = [ChanKey::Analog(0)].into();

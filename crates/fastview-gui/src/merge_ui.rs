@@ -489,6 +489,7 @@ impl App {
         let other = HeaderSide { title: &rec.title, station: &rec.station_id, block: &rec.block_id, start: &rec.start_time, comment: &rec.hdr_file };
         d.hdr = Some(merged_header(&own, &other));
         d.hdr_cp = crate::setfile::cp_of(1);
+        d.hdr_pasted = true;
         d.merge_offset = 0.0;
         d.refresh_pending();
         // The new channels' caches (`0x4254b9`), flags 0x40e1.
@@ -1173,6 +1174,15 @@ mod tests {
         let (_, unit, ..) = crate::lanes::lane_stats(d, &ChanKey::Analog(0), 10);
         assert_eq!(unit.text, "");
         d.chans[0].adc_counts = false;
+        // The lane's status icon (`0x462c32`, bit 12 on any analog-kind record).
+        assert!(crate::lanes::key_icons(d, ChanKey::Computed(j)).contains(&"#"));
+        // The unit the eligibility tests read is none in ADC mode: a unit the
+        // vector diagram refuses no longer does (`0x414c30`).
+        d.computed[j].unit = "Xx".into();
+        assert!(d.flag_state(ChanFlag::OnVector).enabled, "ADC mode: no unit to refuse");
+        d.computed[j].adc_counts = false;
+        assert!(!d.flag_state(ChanFlag::OnVector).enabled, "the unit is refused");
+        d.computed[j].adc_counts = true;
         // A formula channel in the selection is counted, never set: unchecked.
         let mut f = crate::app::Computed::new("F1".into(), "1".into(), vec![0.0; d.osc.time.len()], eframe::egui::Color32::RED);
         f.unit = String::new();

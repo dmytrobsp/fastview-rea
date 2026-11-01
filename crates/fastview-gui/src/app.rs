@@ -411,6 +411,16 @@ pub struct Computed {
 static NEXT_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Computed {
+    /// The canonical unit the readouts and the eligibility tests read
+    /// (`0x414c30`): none in ADC mode (a pasted lane takes the mode).
+    pub fn canon_unit(&self) -> &str {
+        if self.adc_counts {
+            ""
+        } else {
+            self.unit.trim()
+        }
+    }
+
     pub fn new(name: String, formula: String, samples: Vec<f64>, color: egui::Color32) -> Computed {
         let samples_raw = samples.clone();
         Computed {
@@ -820,6 +830,8 @@ pub struct Doc {
     /// The record comment (`.hdr` text, 32805) and its code page.
     pub hdr: Option<String>,
     pub hdr_cp: Encoding,
+    /// A paste made the record comment (`Comments/Codepage` is then 1, stored at save).
+    pub hdr_pasted: bool,
     /// The encoding the names were read in (the program's, or the UTF-8 a
     /// `.cfg` fixes): «Кодировка»'s ANSI — the names as read.
     pub read_enc: Encoding,
@@ -900,6 +912,7 @@ impl Doc {
             name_raw: Vec::new(),
             hdr: None,
             hdr_cp: Encoding::Cp1251,
+            hdr_pasted: false,
             read_enc: Encoding::Cp1251,
             omp: Default::default(),
             pending: Vec::new(),

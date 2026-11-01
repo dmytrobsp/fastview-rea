@@ -357,32 +357,51 @@ fn ascii_rows_are_fields_not_lines() {
 }
 
 /// The BINARY reader's record size (`0x451c32`–`0x451cea`): the sample numbers
-/// of the first four records must read 1, 2, 3, 4 at the computed size, else
-/// the digital part is taken as `ceil(nd/8)` bytes (a record one byte shorter
-/// for one digital channel); binary32 has no fallback (error 330). Seen in a
+/// of the first three records at the computed size must read 1, 2, 3 (the
+/// fourth, 4, only then), else the digital part is taken as `nd/8 + 1` bytes
+/// (nd not a multiple of 16); the computed size itself has a slip for nd = 8..15
+/// mod 16 (one byte too many); binary32 has no fallback (error 330). Seen in a
 /// clone: an int32 data part under a BINARY label read in 21-byte records (#28).
 #[test]
 fn binary_record_size_follows_the_sample_number_check() {
-    let cfg = |fmt: &str| {
-        format!("S,D,2013\r\n7,6A,1D\r\n{}1,T,,,0\r\n50\r\n1\r\n1234,40\r\n01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.000000\r\n{fmt}\r\n1\r\n0,0\r\n0,0\r\n",
-            (1..=6).map(|i| format!("{i},C{i},,,V,1,0,0,-32768,32767,1,1,S\r\n")).collect::<String>())
+    let cfg = |nd: usize, fmt: &str| {
+        format!("S,D,2013\r\n{},6A,{nd}D\r\n{}{}50\r\n1\r\n1234,40\r\n01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.000000\r\n{fmt}\r\n1\r\n0,0\r\n0,0\r\n",
+            6 + nd,
+            (1..=6).map(|i| format!("{i},C{i},,,V,1,0,0,-32768,32767,1,1,S\r\n")).collect::<String>(),
+            (1..=nd).map(|i| format!("{i},D{i},,,0\r\n")).collect::<String>())
     };
     let dir = std::env::temp_dir().join(format!("fvb_recsize_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let load = |name: &str, fmt: &str, dat: &[u8]| {
+    let load = |name: &str, nd: usize, fmt: &str, dat: &[u8]| {
         let path = dir.join(format!("{name}.cfg"));
-        std::fs::write(&path, cfg(fmt)).unwrap();
+        std::fs::write(&path, cfg(nd, fmt)).unwrap();
         std::fs::write(dir.join(format!("{name}.dat")), dat).unwrap();
         comtrade::load(path)
     };
-    // Standard rows: numbered 1..n, 22 bytes — read as written.
-    let rows22: Vec<u8> = (0..40u32).flat_map(|k| { let mut r = vec![0u8; 22]; r[..4].copy_from_slice(&(k + 1).to_le_bytes()); r }).collect();
-    assert_eq!(load("std", "BINARY", &rows22).unwrap().analog[0].samples.len(), 40);
+    // `rows` records of `size` bytes numbered from 1 (analog value k in the first channel).
+    let rows = |n: u32, size: usize| -> Vec<u8> {
+        (0..n).flat_map(|k| { let mut r = vec![0u8; size]; r[..4].copy_from_slice(&(k + 1).to_le_bytes()); r[8..10].copy_from_slice(&(k as i16 + 5).to_le_bytes()); r }).collect()
+    };
+    let first = |r: &comtrade::Oscillogram| r.analog[0].samples.clone();
+    let want = |n: usize| (0..n).map(|k| k as f64 + 5.0).collect::<Vec<_>>();
+    // nd = 1: standard 22-byte rows read as written.
+    assert_eq!(first(&load("std", 1, "BINARY", &rows(40, 22)).unwrap()), want(40));
     // Not numbered 1, 2, 3, 4: the packed 21-byte record (880 / 21 = 41 rows).
-    let zeros = vec![0u8; 880];
-    assert_eq!(load("zero", "BINARY", &zeros).unwrap().analog[0].samples.len(), 41);
-    // binary32 has no fallback.
-    let zeros32 = vec![0u8; 34 * 40];
-    assert!(matches!(load("z32", "binary32", &zeros32), Err(ComtradeError::Format)), "error 330");
+    assert_eq!(load("zero", 1, "BINARY", &vec![0u8; 880]).unwrap().analog[0].samples.len(), 41);
+    // nd = 9 (mod 16 in 8..15): the computed size has a slip (23), a standard
+    // file (22) comes through the fallback — also with exactly four rows.
+    assert_eq!(first(&load("n9_std", 9, "BINARY", &rows(40, 22)).unwrap()), want(40));
+    assert_eq!(first(&load("n9_four", 9, "BINARY", &rows(4, 22)).unwrap()), want(4));
+    // Rows written at the slip size and numbered are read at it.
+    assert_eq!(first(&load("n9_slip", 9, "BINARY", &rows(40, 23)).unwrap()), want(40));
+    // nd = 24 (= 8 mod 16): the fallback's digital part is nd/8 + 1 = 4 bytes,
+    // the standard record's (two words), not 3.
+    assert_eq!(first(&load("n24_std", 24, "BINARY", &rows(40, 24)).unwrap()), want(40));
+    // binary32 has no fallback: three rows not numbered 1, 2, 3 is error 330.
+    assert!(matches!(load("z32", 1, "binary32", &vec![0u8; 34 * 40]), Err(ComtradeError::Format)), "error 330");
+    assert!(matches!(load("z32_three", 1, "binary32", &vec![0u8; 34 * 3]), Err(ComtradeError::Format)), "error 330 with three rows");
+    // The original faults with fewer than three records (or 1, 2, 3 and no fourth);
+    // ours reads them at the computed size.
+    assert_eq!(first(&load("two", 1, "BINARY", &rows(2, 22)).unwrap()), want(2));
     let _ = std::fs::remove_dir_all(&dir);
 }

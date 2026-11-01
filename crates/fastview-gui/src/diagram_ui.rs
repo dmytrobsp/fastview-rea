@@ -287,8 +287,8 @@ fn doc_chans(d: &Doc) -> Vec<DChan> {
                 let c = &d.computed[j];
                 DChan {
                     name: c.name.clone(),
-                    unit: c.unit.trim().to_string(),
-                    shown: fvb_core::units::Shown::computed(c.unit.trim()),
+                    unit: c.canon_unit().to_string(),
+                    shown: fvb_core::units::Shown::computed(c.canon_unit()),
                     color: c.color,
                     analog: None,
                     computed: Some(j),
@@ -513,7 +513,7 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
             [z.re, z.im]
         };
         // The canonical unit decides the scale, "" → power (`0x43a880`).
-        let unit = c.unit.trim();
+        let unit = c.canon_unit();
         let power = !dg::is_ohm(unit);
         push(c.name.clone(), fvb_core::units::Shown::computed(unit), c.color, power, true, &series);
     }

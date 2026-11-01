@@ -686,7 +686,7 @@ pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey) -> Vec<&'static str> 
             // A pasted lane read ×k in its copied mode (VM: «*K» on a
             // pasted channel with a ratio, shown secondary).
             let scaled = c.formula == crate::merge_ui::PENDING && doc.pending.iter().find(|p| p.lane == c.seq).is_some_and(|p| p.display_k() != 1.0);
-            [(c.remove_dc, "DC"), (c.invert, "−"), (scaled, "*K"), (c.mode == ValueMode::Rms, "~"), (c.mode == ValueMode::FirstHarmonic, "1")]
+            [(c.remove_dc, "DC"), (c.invert, "−"), (scaled, "*K"), (c.mode == ValueMode::Rms, "~"), (c.mode == ValueMode::FirstHarmonic, "1"), (c.adc_counts, "#")]
                 .into_iter()
                 .filter_map(|(on, g)| on.then_some(g))
                 .collect()
