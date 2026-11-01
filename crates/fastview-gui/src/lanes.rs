@@ -685,7 +685,7 @@ pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey) -> Vec<&'static str> 
             let c = &doc.computed[j];
             // A pasted lane read ×k in its copied mode (VM: «*K» on a
             // pasted channel with a ratio, shown secondary).
-            let scaled = c.formula == crate::merge_ui::PENDING && doc.pending.iter().find(|p| p.lane == c.seq).is_some_and(|p| p.display_k() != 1.0);
+            let scaled = c.formula == crate::merge_ui::PENDING && doc.pending.iter().find(|p| p.lane == c.seq).is_some_and(|p| p.ratio_icon());
             [(c.remove_dc, "DC"), (c.invert, "−"), (scaled, "*K"), (c.mode == ValueMode::Rms, "~"), (c.mode == ValueMode::FirstHarmonic, "1")]
                 .into_iter()
                 .filter_map(|(on, g)| on.then_some(g))
@@ -718,7 +718,7 @@ pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool) -> 
 /// The «*K» test (`0x462b22`–`0x462b8f`): the channel's shown and stored primary / secondary flags
 /// differ and either stored ratio value is not 1 (a zero or a NaN is not 1). The stored values are
 /// tested, not the factor they give: primary == secondary ≠ 1 shows the icon, a zero value too.
-fn ratio_icon(ch: &fvb_core::comtrade::AnalogChannel, show_primary: bool) -> bool {
+pub(crate) fn ratio_icon(ch: &fvb_core::comtrade::AnalogChannel, show_primary: bool) -> bool {
     show_primary != ch.is_primary && (ch.primary != 1.0 || ch.secondary != 1.0)
 }
 
@@ -3605,6 +3605,14 @@ mod menu_tests {
         (d.osc.analog[1].primary, d.osc.analog[1].secondary) = (7.5, 7.5);
         d.chans[1].primary = true;
         assert!(!key_icons(d, Lane::Analog(1)).contains(&"*K"), "same flags");
+        // The other direction: stored secondary, shown primary.
+        d.osc.analog[1].is_primary = false;
+        d.chans[1].primary = true;
+        assert!(key_icons(d, Lane::Analog(1)).contains(&"*K"), "stored secondary, shown primary: equal values");
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary) = (1.0, 1.0);
+        assert!(!key_icons(d, Lane::Analog(1)).contains(&"*K"), "stored secondary, shown primary: both 1");
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary) = (0.0, 1.0);
+        assert!(key_icons(d, Lane::Analog(1)).contains(&"*K"), "stored secondary, shown primary: a zero");
     }
 
     /// With «Удалить постоянную» an instantaneous value is the accessor's `x·k − dc·k`, not `(x − dc)·k`.

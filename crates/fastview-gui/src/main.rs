@@ -1026,6 +1026,13 @@ impl eframe::App for App {
         dialogs::take_dialog_tabs(ctx, raw);
     }
 
+    /// An opaque clear colour: the DWM frame is extended into the client (`winframe`), where a
+    /// translucent one could show through.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        let c = visuals.panel_fill;
+        [f32::from(c.r()) / 255.0, f32::from(c.g()) / 255.0, f32::from(c.b()) / 255.0, 1.0]
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(windows)]
         {
@@ -1133,6 +1140,7 @@ impl App {
         // panels and the windows takes the pointer, and no shortcuts run.
         self.focus_other.clear();
         let was_modal = std::mem::replace(&mut self.modal_up, dialogs::window_up(ctx));
+        winframe::set_modal(self.modal_up);
         // A closed dialog gives the activation back to the frame, which
         // hands the focus to its view (clone: a pane's or a window's focus
         // is the view's after the dialog; copy asks the focus window).
@@ -5247,7 +5255,8 @@ mod window_tests {
 
     /// #34: the frameless window tells Windows where its maximise button is (`WM_NCHITTEST` answers
     /// `HTMAXBUTTON` there, the snap-layout flyout): the middle of the three caption buttons at the
-    /// window's right edge, in device pixels, and none while a modal disables the buttons.
+    /// window's right edge, in device pixels; none while a modal dialog is up, nor under a floating
+    /// pane lying over it (`the_maximise_button_is_not_published_under_a_modal_or_a_pane`).
     #[test]
     fn the_maximise_button_is_published_for_the_frame() {
         let size = Vec2::new(1280.0, 800.0);
@@ -5261,6 +5270,34 @@ mod window_tests {
         assert_eq!(r[2], size.x as i32 - w, "the middle one of three at the right edge: {r:?}");
         assert!(r[1] == 0 && r[3] > 20 && r[3] < 50, "on the caption row: {r:?}");
         assert!(winframe::on_max_button(r[0] + 3, 5) && !winframe::on_max_button(r[2] + 3, 5) && !winframe::on_max_button(r[0] - 3, 5));
+    }
+
+    #[test]
+    fn the_maximise_button_is_not_published_under_a_modal_or_a_pane() {
+        use app::{Command, Pane};
+        use docking::{Place, Unit};
+        let mut w = Win::new();
+        w.app.own_caption = true;
+        w.idle(3);
+        let r = winframe::max_button().expect("published");
+        // A floating pane over the top-right corner takes the clicks there.
+        w.app.dispatch(Command::ActivatePane(Pane::Vector));
+        let d = &mut w.app.docks.0[Unit::Vector as usize];
+        d.float_rect = Some(Rect::from_min_size(Pos2::new(r[0] as f32 - 60.0, r[1] as f32 - 2.0), Vec2::new(260.0, 220.0)));
+        d.place = Place::Floating;
+        w.idle(4);
+        assert_eq!(winframe::max_button(), None, "a floating pane lies over the button");
+        w.app.docks.0[Unit::Vector as usize].float_rect = Some(Rect::from_min_size(Pos2::new(300.0, 300.0), Vec2::new(260.0, 220.0)));
+        w.idle(4);
+        assert!(winframe::max_button().is_some(), "the pane moved away");
+        // A modal dialog disables the frame's buttons.
+        w.app.color_dialog = Some(egui::Color32::RED);
+        w.idle(4);
+        assert!(w.app.modal_up);
+        assert_eq!(winframe::max_button(), None, "a modal dialog is up");
+        w.app.color_dialog = None;
+        w.idle(4);
+        assert!(winframe::max_button().is_some(), "the dialog closed");
     }
 
     /// `FV_WINDOW_DUMP=<file.png> cargo test window_dump` renders the window
