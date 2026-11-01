@@ -104,6 +104,9 @@ mod tests {
         egui::RawInput { events, ..Default::default() }
     }
 
+    /// The tests share the global counters: one at a time.
+    static COUNTERS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     const CI: Seen = Seen { paste_keys: 0, ctrl_inserts: 1, shift_inserts: 0 };
     const SI: Seen = Seen { paste_keys: 0, ctrl_inserts: 0, shift_inserts: 1 };
 
@@ -155,6 +158,7 @@ mod tests {
     /// dropped when none has.
     #[test]
     fn filter_keeps_insert_events_only_while_a_widget_has_the_focus() {
+        let _g = COUNTERS.lock().unwrap_or_else(|e| e.into_inner());
         let ctx = egui::Context::default();
         let focus = std::cell::Cell::new(false);
         let run = |events: Vec<egui::Event>| {
@@ -202,6 +206,7 @@ mod tests {
 
     #[test]
     fn only_the_accelerators_are_noted() {
+        let _g = COUNTERS.lock().unwrap_or_else(|e| e.into_inner());
         let take = || Seen { paste_keys: PASTE_KEYS.swap(0, Ordering::Relaxed), ctrl_inserts: CTRL_INSERTS.swap(0, Ordering::Relaxed), shift_inserts: SHIFT_INSERTS.swap(0, Ordering::Relaxed) };
         take();
         note_key_down(0x56, false, true, true, false);

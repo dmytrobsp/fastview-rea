@@ -5506,6 +5506,19 @@ mod window_tests {
         w.key(egui::Key::ArrowUp);
         w.key(egui::Key::ArrowDown);
         assert_eq!(w.app.quick[q].zero_i, before, "no arrow reached the 3Io radios");
+        // A disabled combo box keeps its place too: with 3Uo «Расчитанный из Uни,
+        // Uик» (Ua–Uc off) the voltage radios stay a span of their own, and ↓ on
+        // the 3Io radio does not reach them.
+        let mut w = page(app::AnalysisTab::Zero);
+        w.app.quick[q].zero_u = 2;
+        w.app.quick[q].zero_i = 2;
+        w.idle(4);
+        // (The 3Io combo box, enabled with the measured current, ends that span.)
+        has(&w, "fv_quick_sheet", &[Radio, Radio]);
+        has(&w, "fv_quick_sheet", &[Radio, Radio, Radio, Other]);
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(w.app.quick[q].zero_u, 2, "no arrow reached the voltage radios");
         // 359: the tree, the name edit and Отмена are one span (OK is off).
         let mut w = page(app::AnalysisTab::Formula);
         w.app.open_formula_dlg();
