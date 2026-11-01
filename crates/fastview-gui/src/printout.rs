@@ -499,16 +499,36 @@ impl App {
                 let s = diagram_scale(job.attrib_dpi);
                 let to_printer = job.attrib_dpi / dev.dpi;
                 let page = (!preview).then(|| rdev.min.to_vec2() * to_printer / s);
-                let mut size = Vec2::new(rw as f32, rh as f32) * to_printer / s;
+                let size = Vec2::new(rw as f32, rh as f32) * to_printer / s;
                 let kd = s / to_printer;
-                // The vector page's legend starts in the page's own coordinates
-                // when it does not fit (`0x490d4b`, #191): on a real print the
-                // image reaches the page's left edge, R at `ext`.
-                let ext = if pane == Pane::Vector { page.map_or(0.0, |o| o.x) } else { 0.0 };
-                size.x += ext;
-                // GDI's pens: none under a device pixel, unfeathered.
-                let img = crate::diagram_ui::with_print_scale(Some(s), page, || crate::diagram_ui::with_print_ext(ext, || crate::diagram_ui::with_pixel(1.0 / kd, || raster::crisp(|| self.render_diagram(fonts, job.di, pane, size, kd)))));
-                canvas.blit(&img, rdev.min.x as i64 - (ext * kd).round() as i64, rdev.min.y as i64);
+                // The vector and frequency pages paint into the page DC with no
+                // clip (nothing in `0x441fe0`, `0x490360` or `0x46f5a0` sets
+                // one): on a real print what runs past R — the vector legend
+                // that does not fit (it starts at the page's own 6s, `0x490d4b`)
+                // or the frequency separators — lands on the sheet (clone,
+                // #191). So the page image is the whole sheet with R at `o`.
+                let sheet = page.filter(|_| matches!(pane, Pane::Vector | Pane::Frequency));
+                if let Some(o) = sheet {
+                    let whole = Vec2::new(dev.w as f32, dev.h as f32) * to_printer / s;
+                    let r = Rect::from_min_size(Pos2::new(o.x, o.y), size);
+                    // GDI's pens: none under a device pixel, unfeathered.
+                    let img = crate::diagram_ui::with_print_scale(Some(s), page, || crate::diagram_ui::with_print_rect(Some(r), || crate::diagram_ui::with_pixel(1.0 / kd, || raster::crisp(|| self.render_diagram(fonts, job.di, pane, whole, kd)))));
+                    // The diagram is painted before the header and footer: the
+                    // decor stays over it outside R, R is the diagram's.
+                    let (x0, y0) = (rdev.min.x as usize, rdev.min.y as usize);
+                    for y in 0..canvas.h.min(img.h) {
+                        for x in 0..canvas.w.min(img.w) {
+                            let inside = x >= x0 && x < x0 + rw && y >= y0 && y < y0 + rh;
+                            if inside || canvas.px[y * canvas.w + x] == [255, 255, 255] {
+                                canvas.px[y * canvas.w + x] = img.px[y * img.w + x];
+                            }
+                        }
+                    }
+                } else {
+                    // GDI's pens: none under a device pixel, unfeathered.
+                    let img = crate::diagram_ui::with_print_scale(Some(s), page, || crate::diagram_ui::with_pixel(1.0 / kd, || raster::crisp(|| self.render_diagram(fonts, job.di, pane, size, kd))));
+                    canvas.blit(&img, rdev.min.x as i64, rdev.min.y as i64);
+                }
                 // At s = 1 the circle / differential painter's screen branch
                 // also paints its 5 px splitter strip after RestoreDC: a
                 // PatBlt at the DC's (0, 0), as wide as the live window
@@ -814,6 +834,46 @@ mod tests {
         let preview = app.render_page(&fonts, &job, 0, true);
         let x = first(&preview, true);
         assert!((x as i64 - (r.min.x as i64 + 6 * s as i64)).abs() <= 2, "the preview starts at R + 6·s: {x}");
+    }
+
+    /// #191 (clone): the vector page's painter sets no clip, so on a real print the legend that does not fit
+    /// runs past R onto the sheet; the preview's bitmap is R, which cuts it. The table's start, when it does not
+    /// fit, is R's left + m on paper too (`0x4908d1`–`0x490a1b` add the rect's left).
+    #[test]
+    fn nothing_clips_the_vector_page_to_r_on_a_real_print() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        {
+            let d = &mut app.docs[0];
+            for (i, c) in d.osc.analog.iter_mut().enumerate() {
+                c.id = format!("Channel number {i} of a long feeder name that cannot fit a page");
+            }
+            for c in &mut d.chans {
+                c.on_vector = true;
+            }
+        }
+        app.vec_show_values = false;
+        app.docs[0].print_ticks = [false, false, true, false, false];
+        let setup = PageSetup::default();
+        let dev = Device::sheet(&setup, 300.0);
+        let job = app.print_job(0, dev, setup);
+        let s = diagram_scale(job.attrib_dpi) as usize;
+        let r = dev.margin_rect(&setup);
+        let fonts = egui::FontDefinitions::default();
+        // The legend's rows: just under the circle, above the footer; right of R's right edge.
+        let past = |c: &Canvas| {
+            let (x0, y0, y1) = (r.max.x as usize + 2, r.max.y as usize - 40 * s, r.max.y as usize);
+            (y0..y1).flat_map(|y| (x0..c.w).map(move |x| (x, y))).filter(|&(x, y)| c.get(x, y) != [255, 255, 255]).count()
+        };
+        assert!(past(&app.render_page(&fonts, &job, 0, false)) > 0, "a real print lets the legend run onto the sheet");
+        assert_eq!(past(&app.render_page(&fonts, &job, 0, true)), 0, "the preview's bitmap is R");
+        // The table (values shown), wider than R: its left border is R's left + 6s.
+        app.vec_show_values = true;
+        let real = app.render_page(&fonts, &job, 0, false);
+        let rows = (r.min.y as usize + 20 * s)..(r.max.y as usize - 4 * s);
+        let leftmost = (0..real.w).find(|&x| rows.clone().filter(|&y| real.get(x, y) != [255, 255, 255]).count() > 8 * s);
+        let x = leftmost.expect("the table's first vertical line");
+        assert!((x as i64 - (r.min.x as i64 + 6 * s as i64)).abs() <= s as i64, "the table starts at R + 6s: {x} (R at {})", r.min.x);
     }
 
     #[test]
