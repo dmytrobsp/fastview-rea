@@ -5489,6 +5489,28 @@ mod window_tests {
         let spans = arrow_spans(&w.ctx, "fv_quick_sheet");
         let with_push: Vec<_> = spans.iter().filter(|s| s.contains(&Push)).collect();
         assert_eq!(with_push, vec![&vec![Push, Push]], "{spans:?}");
+        // The disabled «Отключить» keeps its place in the span: the other one
+        // stands alone and ↑ on it changes nothing (the original's dialog manager).
+        let mut w = page(app::AnalysisTab::Zero);
+        let q = crate::quick_ui::page_index(app::AnalysisTab::Zero).unwrap();
+        w.app.quick[q].zero_u_off = true;
+        w.idle(4);
+        let spans = arrow_spans(&w.ctx, "fv_quick_sheet");
+        let with_check: Vec<_> = spans.iter().filter(|s| s.contains(&Check)).collect();
+        assert_eq!(with_check, vec![&vec![Check]], "{spans:?}");
+        let before = w.app.quick[q].zero_i;
+        // Ia, Ib, Ic, «Расчетный», then the 3Io «Отключить» (the voltage side is off).
+        for _ in 0..4 {
+            w.key(egui::Key::Tab);
+        }
+        w.key(egui::Key::ArrowUp);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(w.app.quick[q].zero_i, before, "no arrow reached the 3Io radios");
+        // 359: the tree, the name edit and Отмена are one span (OK is off).
+        let mut w = page(app::AnalysisTab::Formula);
+        w.app.open_formula_dlg();
+        w.idle(4);
+        has(&w, "fv_add_formula", &[Other, Other, Push, Push]);
         let w = page(app::AnalysisTab::Phase);
         has(&w, "fv_quick_sheet", &[Other, Radio, Radio]);
         let w = page(app::AnalysisTab::Differential);

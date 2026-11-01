@@ -295,7 +295,7 @@ impl<'o> Dlg<'o> {
             if let Some(mut at) = on {
                 for key in take_arrows(ctx) {
                     at = group_step(&items, at, matches!(key, egui::Key::ArrowLeft | egui::Key::ArrowUp));
-                    let (to, kind, _) = items[at];
+                    let (to, kind, ..) = items[at];
                     ctx.memory_mut(|m| m.request_focus(to));
                     if kind == GroupKind::Radio {
                         ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_arrow_click"), (to, frame)));
@@ -449,9 +449,7 @@ pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enab
     // default button loses meanwhile (the dialog manager's DM_SETDEFID;
     // VM: «Печать»'s OK plain while «Свойства...» has the focus); its focus
     // rectangle with the cues.
-    if enabled {
-        group_item(ui, resp.id, GroupKind::Push);
-    }
+    group_item(ui, resp.id, GroupKind::Push, enabled);
     let focused = tab_stop_if(ui, resp.id, StopKind::Button, enabled);
     let default = (default && !other_button_focused(ui, resp.id)) || focused;
     let face = r.shrink(1.0);
@@ -570,9 +568,7 @@ pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
     // the focus as it gets checked.
     let pressed = ui.input(|i| i.pointer.primary_pressed()) && resp.contains_pointer();
     let held = ui.memory(|m| m.has_focus(resp.id));
-    if enabled {
-        group_item(ui, resp.id, GroupKind::Radio);
-    }
+    group_item(ui, resp.id, GroupKind::Radio, enabled);
     let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled && (checked || pressed || held));
     // The theme's 13 px disc, larger at > 100 %.
     let (rad, dot) = (crate::dpi::half(6.5), (3.0 * crate::dpi::k()).round());
@@ -819,9 +815,7 @@ pub fn win_check(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool 
 /// right-aligned before it.
 pub fn win_check_ex(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabled: bool, left: bool) -> bool {
     let resp = ui.interact(r, ui.id().with(("fv_check", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    if enabled {
-        group_item(ui, resp.id, GroupKind::Check);
-    }
+    group_item(ui, resp.id, GroupKind::Check, enabled);
     let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled);
     // The theme's 13 px box, larger at > 100 % (VM, 150 %: 20 px).
     let side = crate::dpi::s(13.0);
@@ -970,7 +964,7 @@ struct Ring {
     start: bool,
     /// The next control continues the group before it (no WS_GROUP).
     cont: bool,
-    prev_items: Vec<(egui::Id, GroupKind, bool)>,
+    prev_items: Vec<(egui::Id, GroupKind, bool, bool)>,
 }
 
 /// A control as the arrows see it (the dialog manager's
@@ -989,10 +983,14 @@ pub enum GroupKind {
 }
 
 /// Register `id` as the next control of the dialog being drawn for the
-/// arrows' groups (an enabled one: the dialog manager skips the others).
-fn group_item(ui: &egui::Ui, id: egui::Id, kind: GroupKind) {
+/// arrows' groups. A disabled one stays in its span (with its WS_GROUP) and
+/// the arrows skip it, as the dialog manager does.
+fn group_item(ui: &egui::Ui, id: egui::Id, kind: GroupKind, enabled: bool) {
     let ctx = ui.ctx();
     let Some(d) = cur_dlg(ctx) else { return };
+    if ctx.data(|m| m.get_temp::<bool>(egui::Id::new("fv_no_span"))).unwrap_or(false) {
+        return;
+    }
     ctx.data_mut(|m| {
         let r: &mut Ring = m.get_temp_mut_or_default(d.with("fv_tab_ring"));
         if r.items.iter().any(|s| s.id == id) {
@@ -1003,7 +1001,7 @@ fn group_item(ui: &egui::Ui, id: egui::Id, kind: GroupKind) {
         let r: &mut Ring = m.get_temp_mut_or_default(d.with("fv_tab_ring"));
         let place = place.unwrap_or(10_000 + r.items.len() as u32);
         let (brk, cont) = (r.brk || r.start, r.cont);
-        r.items.push(RawItem { id, kind, brk, cont, place });
+        r.items.push(RawItem { id, kind, brk, cont, place, enabled });
         r.brk = false;
         r.cont = false;
         r.start = false;
@@ -1016,12 +1014,15 @@ fn group_item(ui: &egui::Ui, id: egui::Id, kind: GroupKind) {
 pub fn arrow_spans(ctx: &egui::Context, title: &str) -> Vec<Vec<GroupKind>> {
     let ring: Ring = ctx.data(|d| d.get_temp(egui::Id::new(title).with("fv_tab_ring"))).unwrap_or_default();
     let mut out: Vec<Vec<GroupKind>> = Vec::new();
-    for (_, kind, start) in ring.prev_items {
+    for (_, kind, start, enabled) in ring.prev_items {
         if start || out.is_empty() {
             out.push(Vec::new());
         }
-        out.last_mut().unwrap().push(kind);
+        if enabled {
+            out.last_mut().unwrap().push(kind);
+        }
     }
+    out.retain(|s| !s.is_empty());
     out
 }
 
@@ -1036,18 +1037,19 @@ struct RawItem {
     /// whatever that holds (537's radios after the combo box of «Ic»).
     cont: bool,
     place: u32,
+    enabled: bool,
 }
 
 /// The controls in the template's order with whether each starts a group:
 /// after a group box, or when it is another kind than the one before it, or
 /// a control that keeps the arrows (a label and its combo or edit begin a
 /// span in the templates) — unless the template gives it no WS_GROUP.
-fn group_list(mut raw: Vec<RawItem>) -> Vec<(egui::Id, GroupKind, bool)> {
+fn group_list(mut raw: Vec<RawItem>) -> Vec<(egui::Id, GroupKind, bool, bool)> {
     raw.sort_by_key(|i| i.place);
-    let mut out: Vec<(egui::Id, GroupKind, bool)> = Vec::new();
+    let mut out: Vec<(egui::Id, GroupKind, bool, bool)> = Vec::new();
     for i in raw {
         let start = !i.cont && (i.brk || i.kind == GroupKind::Other || out.last().is_none_or(|l| l.1 != i.kind));
-        out.push((i.id, i.kind, start));
+        out.push((i.id, i.kind, start, i.enabled));
     }
     out
 }
@@ -1058,19 +1060,6 @@ pub fn group_start(ui: &egui::Ui) {
     let ctx = ui.ctx();
     if let Some(d) = cur_dlg(ctx) {
         ctx.data_mut(|m| m.get_temp_mut_or_default::<Ring>(d.with("fv_tab_ring")).start = true);
-    }
-}
-
-/// A control drawn disabled takes up the pending `group_continue` /
-/// `group_start`, so that they do not pass on to the next enabled one.
-fn consume_span_flags(ui: &egui::Ui) {
-    let ctx = ui.ctx();
-    if let Some(d) = cur_dlg(ctx) {
-        ctx.data_mut(|m| {
-            let r: &mut Ring = m.get_temp_mut_or_default(d.with("fv_tab_ring"));
-            r.cont = false;
-            r.start = false;
-        });
     }
 }
 
@@ -1093,11 +1082,12 @@ fn group_break(ui: &egui::Ui) {
 }
 
 /// The item an arrow (`back`: ← / ↑) passes the focus to from `at`.
-fn group_step(items: &[(egui::Id, GroupKind, bool)], at: usize, back: bool) -> usize {
+fn group_step(items: &[(egui::Id, GroupKind, bool, bool)], at: usize, back: bool) -> usize {
     let s = (0..=at).rev().find(|&k| items[k].2).unwrap_or(0);
     let e = (at + 1..items.len()).find(|&k| items[k].2).unwrap_or(items.len());
     let n = e - s;
-    s + (at - s + if back { n - 1 } else { 1 }) % n
+    // Round the span, past the disabled controls; nothing else enabled: stay.
+    (1..n).map(|i| s + (at - s + if back { n - i } else { i }) % n).find(|&k| items[k].3).unwrap_or(at)
 }
 
 /// The stop holding the focus: the focused control when it is one of
@@ -1117,7 +1107,7 @@ fn cur_dlg(ctx: &egui::Context) -> Option<egui::Id> {
 pub fn tab_stop(ui: &egui::Ui, id: egui::Id, kind: StopKind) -> bool {
     // Push buttons, radios and checks registered themselves; the rest
     // keep the arrows.
-    group_item(ui, id, GroupKind::Other);
+    group_item(ui, id, GroupKind::Other, true);
     let ctx = ui.ctx();
     // A press on it gives it the focus (a Win32 control takes the focus at
     // its WM_LBUTTONDOWN; egui gives none but to its text edits).
@@ -1153,8 +1143,10 @@ pub fn tab_stop_if(ui: &egui::Ui, id: egui::Id, kind: StopKind, on: bool) -> boo
     if on {
         return tab_stop(ui, id, kind);
     }
+    // A disabled control stays in its span, skipped when stepping (the dialog
+    // manager keeps it there, its WS_GROUP included).
+    group_item(ui, id, GroupKind::Other, false);
     ui.ctx().data_mut(|d| d.remove_temp::<Option<u32>>(egui::Id::new("fv_tab_index")));
-    consume_span_flags(ui);
     false
 }
 
@@ -1164,6 +1156,15 @@ pub fn no_tab_stop<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_no_tab"), true));
     let r = add(ui);
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_no_tab"), false));
+    r
+}
+
+/// Controls drawn in `add` are in none of the dialog's spans (a hosted child
+/// dialog without DS_CONTROL: DIALOG 359's form).
+pub fn outside_the_spans<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_no_span"), true));
+    let r = add(ui);
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_no_span"), false));
     r
 }
 
@@ -2317,7 +2318,7 @@ mod tests {
     #[test]
     fn an_arrow_steps_round_its_group() {
         let id = |n: u32| egui::Id::new(("g", n));
-        let items = [(id(0), GroupKind::Other, true), (id(1), GroupKind::Radio, true), (id(2), GroupKind::Radio, false), (id(3), GroupKind::Radio, false), (id(4), GroupKind::Push, true), (id(5), GroupKind::Push, false)];
+        let items = [(id(0), GroupKind::Other, true, true), (id(1), GroupKind::Radio, true, true), (id(2), GroupKind::Radio, false, true), (id(3), GroupKind::Radio, false, true), (id(4), GroupKind::Push, true, true), (id(5), GroupKind::Push, false, true)];
         assert_eq!(group_step(&items, 1, false), 2);
         assert_eq!(group_step(&items, 3, false), 1, "round to the first radio");
         assert_eq!(group_step(&items, 1, true), 3, "back round to the last");
@@ -2375,6 +2376,19 @@ mod tests {
         pass(key(egui::Key::ArrowDown));
         pass(vec![]);
         assert_eq!((focused(), choice.get()), (Some(combo), 1), "the combo box keeps its arrows");
+    }
+
+    /// A disabled control stays in its span and the arrows step over it (the
+    /// dialog manager's way); with nothing else enabled in the span they stay.
+    #[test]
+    fn a_disabled_control_is_skipped_by_the_arrows() {
+        let id = |n: u32| egui::Id::new(("g", n));
+        let items = [(id(0), GroupKind::Push, true, true), (id(1), GroupKind::Push, false, false), (id(2), GroupKind::Push, false, true), (id(3), GroupKind::Push, true, false), (id(4), GroupKind::Push, false, true)];
+        assert_eq!(group_step(&items, 0, false), 2, "↓ past the disabled one");
+        assert_eq!(group_step(&items, 2, true), 0, "↑ past it");
+        assert_eq!(group_step(&items, 2, false), 0, "round to the first");
+        assert_eq!(group_step(&items, 4, false), 4, "alone in its span: stays");
+        assert_eq!(group_step(&items, 4, true), 4);
     }
 
     /// ↓ on a focused radio focuses and clicks the next one of its frame

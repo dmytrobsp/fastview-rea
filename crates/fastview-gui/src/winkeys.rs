@@ -56,8 +56,8 @@ struct Seen {
 
 /// The pass's raw input corrected by the key presses noted since the last.
 /// A text edit (a Win32 EDIT in the original) pastes on Shift+Insert and
-/// copies on Ctrl+Insert itself: with one holding the keyboard (as of the
-/// last pass) the events stay for it, and `KEPT_FOR_EDIT` tells the frame's
+/// copies on Ctrl+Insert itself: with a widget holding the keyboard focus (as of the
+/// last pass — a text edit, as far as copy and paste go) the events stay for it, and `KEPT_FOR_EDIT` tells the frame's
 /// copy / paste to ignore them; otherwise they are dropped (the original's
 /// accelerator table has no Insert entries).
 pub fn filter(ctx: &egui::Context, raw: &mut egui::RawInput) {
@@ -137,7 +137,7 @@ mod tests {
         assert_eq!(r.events.len(), 1, "only the noted one");
     }
 
-    /// With a text edit holding the keyboard the events stay for it (a Win32
+    /// With a widget holding the keyboard focus (a text edit) the events stay for it (a Win32
     /// EDIT copies on Ctrl+Insert and pastes on Shift+Insert itself), counted
     /// so that the frame's copy / paste can ignore exactly those.
     #[test]
@@ -148,6 +148,44 @@ mod tests {
         let mut r = raw(vec![egui::Event::Paste("t".into())]);
         assert_eq!(apply(&mut r, SI, true), (0, 1));
         assert_eq!(r.events.len(), 1);
+    }
+
+    /// Through `filter`: Insert's copy and paste are kept while a widget has
+    /// the keyboard focus (a text edit then copies / pastes itself) and
+    /// dropped when none has.
+    #[test]
+    fn filter_keeps_insert_events_only_while_a_widget_has_the_focus() {
+        let ctx = egui::Context::default();
+        let focus = std::cell::Cell::new(false);
+        let mut run = |events: Vec<egui::Event>| {
+            let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let mut t = String::new();
+                    let r = ui.text_edit_singleline(&mut t);
+                    if focus.get() {
+                        r.request_focus();
+                    } else {
+                        r.surrender_focus();
+                    }
+                });
+            });
+        };
+        run(vec![]);
+        run(vec![]);
+        let take = |ctx: &egui::Context, key_down: u32, ev: egui::Event| {
+            let _ = PASTE_KEYS.swap(0, Ordering::Relaxed);
+            let _ = CTRL_INSERTS.swap(0, Ordering::Relaxed);
+            let _ = SHIFT_INSERTS.swap(0, Ordering::Relaxed);
+            note_key_down(key_down, false, false, true, false);
+            let mut raw = raw(vec![ev]);
+            filter(ctx, &mut raw);
+            raw.events.len()
+        };
+        assert_eq!(take(&ctx, 0x2D, egui::Event::Paste("t".into())), 0, "no widget focused: dropped");
+        focus.set(true);
+        run(vec![]);
+        run(vec![]);
+        assert_eq!(take(&ctx, 0x2D, egui::Event::Paste("t".into())), 1, "an edit focused: kept for it");
     }
 
     /// Ctrl+V with nothing for egui to paste is a key press when it is

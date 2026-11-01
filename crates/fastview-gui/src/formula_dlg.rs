@@ -206,10 +206,12 @@ impl App {
                     // Отмена).
                     let place = dlu(client, 205, 36, 198, 243);
                     if let Some(d) = st.form {
-                        crate::dialogs::no_tab_stop(ui, |ui| {
-                            if !template_form(ui, place.min, d, &mut st) {
-                                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(place), |ui| form_ui(ui, d, &mut st));
-                            }
+                        crate::dialogs::outside_the_spans(ui, |ui| {
+                            crate::dialogs::no_tab_stop(ui, |ui| {
+                                if !template_form(ui, place.min, d, &mut st) {
+                                    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(place), |ui| form_ui(ui, d, &mut st));
+                                }
+                            });
                         });
                     }
                     let ok_r = dlu(client, 293, 290, 50, 14);

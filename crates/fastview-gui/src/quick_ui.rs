@@ -742,6 +742,9 @@ fn zero_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) {
     // The template's tab order (537): Ia–Ic, the checked 3Io radio, Ua–Uc,
     // the checked 3Uo radio, 3Io, Uни, Uик, 3Uo, the two «Отключить».
     pg.group(ui, (6, 12, 319, 113), "Ток 3Io");
+    // The two «Отключить» are a span of their own (a hidden WS_GROUP static
+    // before them in the 537 template); a disabled one stays in it.
+    crate::dialogs::group_start(ui);
     crate::dialogs::tab_index(ui, 12);
     pg.check(ui, (238, 17, 86, 10), "Отключить", &mut f.zero_i_off, !u_off, true);
     // The radios have no WS_GROUP: with the combo box of «Ic» they make one
