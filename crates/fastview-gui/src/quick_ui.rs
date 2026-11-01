@@ -1473,6 +1473,18 @@ mod tests {
         assert!(!all.contains("GrsPosl"), "{all}");
     }
 
+    /// The pages' per-combo test `0x48b8b0` reads the combo's text and compares it with string 191 («Канал
+    /// отсутствует») exactly (case-sensitive `CString::Compare`): only that text is unchosen; «Не учитывать» and any
+    /// other channel name count as chosen. (An empty text cannot occur: a loaded record has an analog channel,
+    /// `0x450bc1`, so no combo is empty; ours treats it as unchosen all the same.) #193
+    #[test]
+    fn only_the_no_channel_text_is_unchosen() {
+        assert!(!chosen(fvb_core::addformula::NO_CHANNEL));
+        assert!(chosen("канал отсутствует"), "the compare is case-sensitive");
+        assert!(chosen(fvb_core::addformula::NOT_COUNTED));
+        assert!(chosen("Ia"));
+    }
+
     /// «Рассчитать» greying of 536 / 538 (`0x48d5a0`, `0x488550`).
     #[test]
     fn calculate_needs_the_pages_channels() {

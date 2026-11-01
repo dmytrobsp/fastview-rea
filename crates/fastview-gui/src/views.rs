@@ -7,6 +7,12 @@ use crate::diagram_ui::Window;
 use crate::oscgeom::PixelLines;
 use eframe::egui;
 
+/// Remember the offset from the frame's corner of the spot a first float
+/// opens at ([`App::float_origin`]).
+pub fn set_float_corner(ctx: &egui::Context, corner: egui::Vec2) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_float_corner"), corner));
+}
+
 impl App {
     pub fn render_tab(&mut self, ctx: &egui::Context) {
         match self.view {
@@ -100,9 +106,14 @@ impl App {
         self.docks.leave_sized(unit, |u| shown[u as usize], own);
     }
 
-    /// The frame client's top-left, where a first float opens.
+    /// Where a first float opens: the frame's corner plus the offset
+    /// [`set_float_corner`] left (clone: the mini-frame's corner is on the
+    /// spot MFC took at the pane's creation, in screen coordinates — the
+    /// frame's corner when the frame was shown where Windows first put it,
+    /// the default frame's spot when a saved or maximised placement moved it
+    /// afterwards, #161).
     fn float_origin(ctx: &egui::Context) -> egui::Pos2 {
-        ctx.available_rect().min
+        ctx.screen_rect().min + ctx.data(|d| d.get_temp::<egui::Vec2>(egui::Id::new("fv_float_corner"))).unwrap_or(egui::Vec2::ZERO)
     }
 
     /// A caption's actions on the group of `unit` whose pane spans `pane`:
@@ -404,6 +415,14 @@ impl App {
                 // Clone (FOCUS): the keyboard focus is the floated pane's own
                 // window, in its mini-frame, whichever tab it was.
                 self.copy_focus = crate::app::CopyFocus::Pane(p);
+            } else if self.docks[v.unit].place == crate::docking::Place::Floating && self.dock_drag.is_none() {
+                // In a floating group the same double-click docks that pane
+                // alone where the group was last docked (clone, #162).
+                let next = self.tab_order.into_iter().find(|&q| q != p && v.mask[q as usize]).unwrap_or(v.unit);
+                self.docks.dock_tab_back(p, v.unit, next);
+                // Clone (FOCUS): the keyboard focus is the docked pane's own
+                // window.
+                self.copy_focus = crate::app::CopyFocus::Pane(p);
             }
         }
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
@@ -671,6 +690,9 @@ impl App {
         let origin = Self::float_origin(ctx);
         let unit = v.unit;
         let r = self.docks[unit].float_at(origin);
+        // The rect is the mini-frame's outer one (clone: 200 x 200 and
+        // 500 x 500 outside); egui sizes the content, its frame comes on top.
+        let chrome = egui::Frame::window(&ctx.style()).total_margin().sum();
         let resp = egui::Window::new(pane_title(v.front))
             .id(floating_pane_id(unit))
             .title_bar(false)
@@ -678,8 +700,8 @@ impl App {
             .resizable(!self.modal_up)
             .collapsible(false)
             .current_pos(r.min)
-            .default_size(r.size())
-            .min_size(egui::vec2(200.0, 150.0))
+            .default_size(r.size() - chrome)
+            .min_size(egui::vec2(200.0, 150.0) - chrome)
             .show(ctx, |ui| {
                 ui.set_min_size(ui.available_size());
                 self.unit_body(ui, v);

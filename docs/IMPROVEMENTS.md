@@ -229,3 +229,30 @@ misbehaves and the better behaviour is obvious (the maintainer,
   Ours prints «0» on every bar when the fundamental is below 1e-9 of the window's largest |sample|; the threshold sits five orders above
   the noise and three below a ripple of 1e-6 of the level, so real signals, near-constant ones included, keep their
   labels. Reason: the maintainer's decision (2026-10-31). The «% of RMS» mode is untouched (its norm is the level).
+- **A BINARY or binary32 record of three rows numbered 1, 2, 3 or fewer opens (#171).** The original checks the record
+  size by reading the first three sample numbers (and the fourth after 1, 2, 3) unconditionally (`0x451be0` for BINARY,
+  `0x4521bd` for binary32); with too few records the read is a null read and the program dies with an access
+  violation (exception 0xc0000005 on a clone, fault offsets at `0x451c9c`–`0x451cd1` and `0x452198`–`0x4521d9`; no
+  window, no message; synthetic records of 1, 2 and 3 rows numbered 1, 2, 3 in both formats, all six crash; four
+  rows and more load; other numberings take BINARY's fallback size or binary32's error 330, in both programs). Ours
+  loads such a record at the computed record size. Reason: a crash in the original is a visible failure; the
+  controller's ruling (2026-11-01).
+- **A `.cff` saved after a lane paste is consistent (#192).** With a pasted lane in the record the original's `.cff`
+  counts the written channels in its CFG part (`3A`, `2D` on the clone record) but its DAT part (BINARY, int32)
+  carries a column for the lane in front of the file channels (a clone run: 26-byte rows where 22 are declared).
+  Such a file cannot be read back correctly — inferred for a record labelled BINARY; an ASCII-labelled one reopens
+  as garbage in both programs. Ours writes the DAT part of the channels the CFG part declares. Reason: the
+  original's file is internally inconsistent; the controller's ruling (2026-11-01).
+- **Quick analysis on crafted input: a header-only `.osc` with a formula, and page 539 with two stored reduction methods (#193).**
+  (1) The original's `.osc` reader (`0x4524b0`) has no zero-sample check (only the `.cfg` / `.cff` loader has one,
+  `0x450bc1`), so a header-only `.osc` loads with no samples. A formula over it runs the batch (`0x415780`) with zero
+  samples: the evaluator never runs, and the unit walk (`0x415bd0`) reads the token at the position an earlier
+  evaluation left (only the per-sample evaluate resets it, `0x419997`; the tokenizer does not). The token getter
+  (`0x419800`) is bounds-checked: a position past the formula's tokens throws string 343 «Синтаксическая ошибка в
+  формуле», an in-range bracket token becomes the unit. So the result depends on the definition evaluated before it
+  in the session: a spurious syntax-error box or a wrong unit (the manager's initial position was not read).
+  Ours always walks the formula from its start: empty channels with the formula's own unit, no spurious error.
+  (2) A `.set` that stores two 539 reduction methods makes the formulas outnumber the names list (one set per arm);
+  `0x4167f0` pairs them by index with no bounds check (`0x416c61`-`0x416c9d`) and reads past the names vector:
+  undefined (garbage or a crash). Ours names the extra lines «_2», «_3»... Reason: both are reachable only through a
+  hand-made `.osc` / `.set`; a defined, error-free result beats a session-dependent fault or undefined behaviour.
