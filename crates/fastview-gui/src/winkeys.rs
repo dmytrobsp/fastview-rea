@@ -36,7 +36,14 @@ pub fn note_key_down(vk: u32, repeat: bool, ctrl: bool, shift: bool, alt: bool) 
         VK_INSERT if shift && !ctrl && !alt => &SHIFT_INSERTS,
         _ => return,
     };
-    let _ = count.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| Some(n.saturating_add(1)));
+    // A saturating count by compare-and-swap (`fetch_update` is renamed in newer toolchains).
+    let mut n = count.load(Ordering::Relaxed);
+    while n < u8::MAX {
+        match count.compare_exchange_weak(n, n + 1, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => break,
+            Err(now) => n = now,
+        }
+    }
 }
 
 /// What the messages noted.
