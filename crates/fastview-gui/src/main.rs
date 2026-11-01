@@ -105,6 +105,33 @@ fn status_grip_dots(right: f32, bottom: f32, pitch: f32) -> Vec<egui::Pos2> {
     out
 }
 
+/// The resize direction a press at `p` starts, if any: the frameless window's edges (5 px, corners 12 px
+/// along each edge) and, in a normal window, the status bar's size grip box as a south-east corner (the
+/// original's grip resizes: a clone drag from its top dot).
+fn resize_dir_at(own_caption: bool, grip: Option<egui::Rect>, screen: egui::Rect, p: egui::Pos2) -> Option<egui::viewport::ResizeDirection> {
+    use egui::viewport::ResizeDirection as D;
+    if grip.is_some_and(|g| g.contains(p)) {
+        return Some(D::SouthEast);
+    }
+    if !own_caption {
+        return None;
+    }
+    let (b, c) = (5.0, 12.0);
+    let (l, r, t, bt) = (p.x - screen.left() < b, screen.right() - p.x < b, p.y - screen.top() < b, screen.bottom() - p.y < b);
+    let (lc, rc, tc, bc) = (p.x - screen.left() < c, screen.right() - p.x < c, p.y - screen.top() < c, screen.bottom() - p.y < c);
+    match () {
+        _ if (t && lc) || (l && tc) => Some(D::NorthWest),
+        _ if (t && rc) || (r && tc) => Some(D::NorthEast),
+        _ if (bt && lc) || (l && bc) => Some(D::SouthWest),
+        _ if (bt && rc) || (r && bc) => Some(D::SouthEast),
+        _ if t => Some(D::North),
+        _ if bt => Some(D::South),
+        _ if l => Some(D::West),
+        _ if r => Some(D::East),
+        _ => None,
+    }
+}
+
 /// The status bar's six panes from `left` to `room` (the first that does not fit ends the row, a hidden
 /// pane leaves no gap): `(index, x, width)` of each shown one.
 fn status_pane_places(left: f32, room: f32, hidden: &[bool; 7]) -> Vec<(usize, f32, f32)> {
@@ -888,6 +915,7 @@ impl App {
             painter.text(egui::pos2((ext.left() + ext.right() - dpi::s(12.0)) / 2.0, ext.center().y), egui::Align2::CENTER_CENTER, "НТЦ Механотроника", font, p.status_text);
         }
         // The size grip, in a normal window only (the visual style's gripper).
+        self.status_grip = (!maximised).then(|| egui::Rect::from_min_max(egui::pos2(r.right() - 11.0, r.bottom() - 11.0), r.right_bottom()));
         if !maximised {
             let (dark, light) = if p.bands.is_some() && p.status_bg == egui::Color32::from_rgb(186, 212, 247) {
                 (egui::Color32::from_rgb(69, 93, 128), egui::Color32::from_rgb(177, 201, 232))
@@ -974,25 +1002,12 @@ impl App {
     /// 5 px, corners 12 px along each edge; not while maximised.
     fn resize_edges(&mut self, ctx: &egui::Context) {
         use egui::viewport::ResizeDirection as D;
-        if !self.own_caption || ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
+        if ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
             return;
         }
         let screen = ctx.screen_rect();
         let Some(p) = ctx.input(|i| i.pointer.hover_pos()) else { return };
-        let (b, c) = (5.0, 12.0);
-        let (l, r, t, bt) = (p.x - screen.left() < b, screen.right() - p.x < b, p.y - screen.top() < b, screen.bottom() - p.y < b);
-        let (lc, rc, tc, bc) = (p.x - screen.left() < c, screen.right() - p.x < c, p.y - screen.top() < c, screen.bottom() - p.y < c);
-        let dir = match () {
-            _ if (t && lc) || (l && tc) => Some(D::NorthWest),
-            _ if (t && rc) || (r && tc) => Some(D::NorthEast),
-            _ if (bt && lc) || (l && bc) => Some(D::SouthWest),
-            _ if (bt && rc) || (r && bc) => Some(D::SouthEast),
-            _ if t => Some(D::North),
-            _ if bt => Some(D::South),
-            _ if l => Some(D::West),
-            _ if r => Some(D::East),
-            _ => None,
-        };
+        let dir = resize_dir_at(self.own_caption, self.status_grip, screen, p);
         let Some(dir) = dir else { return };
         ctx.set_cursor_icon(match dir {
             D::North | D::South => egui::CursorIcon::ResizeVertical,
@@ -1695,6 +1710,30 @@ mod window_tests {
         let width = (xs.last().unwrap() - xs.first().unwrap() + 1) as f32;
         assert!((width - 107.0).abs() <= 3.0, "ink {width} against the original's 107");
         dpi::set(96);
+    }
+
+    /// #138 (clone: a drag from the original's grip top dot resizes the window): a press on the grip's box
+    /// resizes south-east, whatever the window's frame; a maximised window has no grip box.
+    #[test]
+    fn a_press_on_the_size_grip_resizes_south_east() {
+        use egui::viewport::ResizeDirection as D;
+        let screen = egui::Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 600.0));
+        let grip = Some(egui::Rect::from_min_max(Pos2::new(989.0, 577.0), Pos2::new(1000.0, 588.0)));
+        assert_eq!(resize_dir_at(false, grip, screen, Pos2::new(992.0, 580.0)), Some(D::SouthEast), "the top dot's corner, 8 px from both edges");
+        assert_eq!(resize_dir_at(false, grip, screen, Pos2::new(900.0, 580.0)), None);
+        assert_eq!(resize_dir_at(false, None, screen, Pos2::new(992.0, 580.0)), None);
+        assert_eq!(resize_dir_at(true, None, screen, Pos2::new(0.0, 300.0)), Some(D::West));
+        let mut app = demo(&[]);
+        let fonts = app_fonts();
+        for (maximised, some) in [(false, true), (true, false)] {
+            let hook = move |ctx: &egui::Context, raw: &mut egui::RawInput| {
+                device_screen(ctx, raw);
+                raw.viewports.entry(egui::ViewportId::ROOT).or_default().maximized = Some(maximised);
+            };
+            raster::render_native(Vec2::new(1280.0, 722.0), 1.0, |ctx| device_options(ctx, Some(1.0)), hook, Some(&fonts), vec![vec![]; 3], |ctx| app.frame_ui(ctx));
+            assert_eq!(app.status_grip.is_some(), some, "maximised {maximised}");
+        }
+        assert!(app.status_grip.is_none());
     }
 
     /// #138 (clone, 150 %): a normal window's status bar draws the size grip, a triangle of six 2 px dots at
