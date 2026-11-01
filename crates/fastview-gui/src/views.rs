@@ -100,9 +100,12 @@ impl App {
         self.docks.leave_sized(unit, |u| shown[u as usize], own);
     }
 
-    /// The frame client's top-left, where a first float opens.
+    /// The frame client's top-left, where a first float opens (clone: the
+    /// mini-frame's corner on the frame's own corner, over the ribbon — MFC
+    /// keeps the create rect in screen coordinates taken at the pane's
+    /// creation, #161).
     fn float_origin(ctx: &egui::Context) -> egui::Pos2 {
-        ctx.available_rect().min
+        ctx.screen_rect().min
     }
 
     /// A caption's actions on the group of `unit` whose pane spans `pane`:
@@ -404,6 +407,11 @@ impl App {
                 // Clone (FOCUS): the keyboard focus is the floated pane's own
                 // window, in its mini-frame, whichever tab it was.
                 self.copy_focus = crate::app::CopyFocus::Pane(p);
+            } else if self.docks[v.unit].place == crate::docking::Place::Floating && self.dock_drag.is_none() {
+                // In a floating group the same double-click docks that pane
+                // alone where the group was last docked (clone, #162).
+                let next = self.tab_order.into_iter().find(|&q| q != p && v.mask[q as usize]).unwrap_or(v.unit);
+                self.docks.dock_tab_back(p, v.unit, next);
             }
         }
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {

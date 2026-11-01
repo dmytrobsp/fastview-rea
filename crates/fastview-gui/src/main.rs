@@ -4668,6 +4668,94 @@ mod window_tests {
         assert_eq!(w.app.docks[Unit::Circle].place, Place::Docked);
     }
 
+    /// #161 (clone, the original): a pane floated for the first time opens with
+    /// its create rect's corner on the frame's own top-left corner, over the
+    /// ribbon — not below it, at the documents' corner — whichever pane and
+    /// however it floats (a caption or a tab double-click).
+    #[test]
+    fn a_pane_floated_for_the_first_time_opens_at_the_frames_corner() {
+        use docking::{Place, Unit};
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let double = |w: &mut Win, at: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(3);
+        };
+        // A caption double-click: Частотная, and the group's front pane.
+        let mut w = Win::new();
+        w.idle(3);
+        let screen = w.ctx.screen_rect();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Frequency).expect("the frequency diagram").1;
+        assert!(w.ctx.available_rect().min != screen.min, "the ribbon takes the top: the documents' corner is elsewhere");
+        double(&mut w, Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0));
+        assert_eq!(w.app.docks[Unit::Frequency].place, Place::Floating);
+        assert_eq!(w.app.docks[Unit::Frequency].float_rect.map(|r| r.min), Some(screen.min), "Частотная");
+        let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+        double(&mut w, Pos2::new(pane.left() + 60.0, pane.top() + 8.0));
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        assert_eq!(w.app.docks[Unit::Vector].float_rect.map(|r| r.min), Some(screen.min), "the group");
+        // A tab's double-click floats that pane at the same corner.
+        let mut w = Win::new();
+        w.idle(2);
+        let at = w.app.pane_tab_rects.iter().find(|(q, _)| *q == app::Pane::Circle).map(|(_, r)| r.center()).expect("the tab");
+        double(&mut w, at);
+        assert_eq!(w.app.docks[Unit::Circle].float_rect.map(|r| r.min), Some(w.ctx.screen_rect().min), "a tab");
+    }
+
+    /// #162 (clone, the original): a double-click on a tab of a floating
+    /// group docks that pane alone where the group was last docked — the
+    /// right edge in the start-up layout, the left one after the group was
+    /// docked there —, the front tab or another; the other panes stay in
+    /// the floating group, which gets a new front pane. A click does
+    /// nothing.
+    #[test]
+    fn a_double_click_on_a_floating_groups_tab_docks_that_pane_back() {
+        use docking::{Edge, Place, Spot, Unit};
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let floated = |edge: Edge| {
+            let mut w = Win::new();
+            w.app.docks[Unit::Vector].spot = Spot::Edge { edge, outer: true };
+            w.idle(2);
+            w.app.docks[Unit::Vector].double_click(Pos2::ZERO);
+            w.idle(3);
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+            w
+        };
+        let tab_of = |w: &Win, p: app::Pane| w.app.pane_tab_rects.iter().find(|(q, _)| *q == p).map(|(_, r)| r.center()).expect("the tab");
+        let double = |w: &mut Win, at: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(3);
+        };
+        for edge in [Edge::Right, Edge::Left] {
+            // Another tab than the front one.
+            let mut w = floated(edge);
+            let at = tab_of(&w, app::Pane::Circle);
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(3);
+            assert_eq!(w.app.docks[Unit::Circle].place, Place::Docked, "{edge:?}: a click docks nothing");
+            let at = tab_of(&w, app::Pane::Circle);
+            double(&mut w, at);
+            let c = w.app.docks[Unit::Circle];
+            assert_eq!((c.place, c.spot), (Place::Docked, Spot::Edge { edge, outer: true }), "{edge:?}: the double-clicked pane docks at the group's edge");
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating, "{edge:?}: the group stays floating");
+            assert_eq!(w.app.docks[Unit::Differential].spot, Spot::Tab(Unit::Vector), "{edge:?}: with its other tab");
+            assert!(w.app.dock_rects[Unit::Circle as usize].is_some_and(|r| (edge == Edge::Left) == (r.center().x < 600.0)), "{edge:?}: drawn on that side");
+            // The front tab: the group's own pane docks, the next tab takes the group.
+            let mut w = floated(edge);
+            let at = tab_of(&w, app::Pane::Vector);
+            double(&mut w, at);
+            let v = w.app.docks[Unit::Vector];
+            assert_eq!((v.place, v.spot), (Place::Docked, Spot::Edge { edge, outer: true }), "{edge:?}: the front pane docks");
+            let c = w.app.docks[Unit::Circle];
+            assert_eq!(c.place, Place::Floating, "{edge:?}: the next tab holds the floating group");
+            assert_eq!(w.app.docks[Unit::Differential].spot, Spot::Tab(Unit::Circle), "{edge:?}: its tab follows");
+        }
+    }
+
     /// A tab pulled out of a tab strip follows the caption drag's distance rule
     /// (#111; `0x10068657` reads the metric once, `>=` on either axis — the
     /// caption's rule `0x10086f3a` is a strict `>` — the distance scaled with
