@@ -30,35 +30,73 @@ pub fn fit_scale(width: f32, n: usize) -> f64 {
     f
 }
 
+/// Windows' window metrics at a system DPI (GetSystemMetrics), which fix how a default MDI child
+/// is sized and how wide the view's scroll bars are (#147, #45). Measured on clones at 96, 120,
+/// 144, 168 and 192 dpi (SM_CXSIZEFRAME, SM_CXPADDEDBORDER, SM_CYCAPTION, SM_CXVSCROLL): the
+/// system DPI's, in physical pixels — the original is system-DPI aware, so none of them scale
+/// with anything else. All five points follow, with Windows' MulDiv rounding: the caption
+/// `MulDiv(22, dpi, 96) + 1`, the sizing frame `MulDiv(1, dpi, 96) + 3`, the padded border
+/// `MulDiv(4, dpi, 96)`, the scroll bar `MulDiv(17, dpi, 96)`; any other dpi uses them too.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WinMetrics {
+    pub caption: f32,
+    pub size_frame: f32,
+    pub padded: f32,
+    pub scroll: f32,
+}
+
+impl WinMetrics {
+    pub fn at(dpi: u32) -> WinMetrics {
+        let md = |v: i32| crate::dpi::mul_div(v, dpi as i32, 96) as f32;
+        WinMetrics { caption: md(22) + 1.0, size_frame: md(1) + 3.0, padded: md(4), scroll: md(17) }
+    }
+
+    /// One side of a window's sizing border (SM_CXSIZEFRAME + SM_CXPADDEDBORDER: 8 px at 100 %).
+    pub fn border(&self) -> f32 {
+        self.size_frame + self.padded
+    }
+
+    /// The cascade step of a default MDI child (SM_CYCAPTION + SM_CYSIZEFRAME − 1: 26 px at 100 %).
+    pub fn step(&self) -> f32 {
+        self.caption + self.size_frame - 1.0
+    }
+}
+
 /// The width the view measures for its first zoom (`0x45c430`, `GetClientRect` of the view, in its
-/// `OnInitialUpdate` `0x45ab70`), from the MDI client `area_w` × `area_h` and the lanes'
-/// `content_h` (the lanes and the ruler band).
+/// `OnInitialUpdate` `0x45ab70`), from the MDI client `area_w` × `area_h`, the lanes' total height
+/// `lanes_h`, the ruler band's `band` (30, 75 with the difference band) and the system DPI's
+/// window metrics `m`.
 ///
-/// Windows places a new MDI child with CW_USEDEFAULT at the MDI client less one cascade step of 26 px
-/// (the caption's 23 + the frame's 4 − 1: Wine's `MDI_CalcDefaultChildPos`, and measured on a clone with
-/// a plain MDICLIENT) per three steps of its height; the child's frame takes 16 px, the view's own edge
-/// 4. The view's vertical scroll bar (17 px) is already there when the zoom is measured if it has
-/// something to scroll: measured with a window-event log of the original, the view's client went
-/// 442 → 442 × 195 (the horizontal bar) → 425 (the vertical one) on a maximised start, and
-/// 184 → 184 × 54 (the horizontal bar only) on a first run's small frame. Its height there, 54 px, is
-/// under the 70 px of the smallest lane; the bar's rule below is that, INFERRED from those two cases.
+/// Windows places a new MDI child with CW_USEDEFAULT at the MDI client less one cascade step
+/// ([`WinMetrics::step`]: Wine's `MDI_CalcDefaultChildPos`, and measured on a clone with a plain
+/// MDICLIENT at 96 / 120 / 144 / 168 / 192 dpi) per three steps of its height; the child's frame
+/// takes two sizing borders across (16 px at 100 %) and, below its caption, the same again, the
+/// view's own edge 4 (2 · SM_CXEDGE, never scaled). The view's vertical scroll bar is already
+/// there when the zoom is measured if it has something to scroll: measured with a window-event
+/// log of the original, the view's client went 442 → 442 × 195 (the horizontal bar) → 425 (the
+/// vertical one) on a maximised start at 100 %, and 184 → 184 × 54 (the horizontal bar only) on a
+/// first run's small frame. Its height there, 54 px, is under the 70 px of the smallest lane; the
+/// bar's rule below is that, INFERRED from those two cases (147). Above the floor it is the
+/// original's own scroll-bar rule (`0x45d4a0`): the lanes taller than the view (after its
+/// horizontal bar) less the ruler band plus 2 — a clone at 125 %: one lane (93 px) in a view 166
+/// high, the band 75 (the difference band shown), is exactly at the limit and shows no bar; at 150 % in 148 it does. On a first
+/// run's small frame the bar is also missing at 125 % / 150 % (the view 9 / 0 px high after its
+/// horizontal bar), opened from the command line or in the running program with the frame shown:
+/// not the frame's visibility.
 ///
-/// Fitted to what the original opens: the borders total 21 (16 + 4 + 1) against our MDI areas, which
-/// differ from the original's by one or two px (first run: 230 × 140 in the original, 231 × 142 ours;
-/// maximised on 1280 × 800: 566 × 359, 565 × 358). Brackets of the width from synthetic records
-/// (1250 Hz, the sample count where the first zoom steps over): a first run's default frame
-/// 183.6…184.4, a frame restored maximised 415.6…428.1 (with the record on the command line or opened
-/// in the running program: the same), a 1552 × 955 area 1212.5…1225; this gives 184, 423 and 1219.
-/// Not measured: 125 / 150 % (the metrics are physical px), other pane layouts, a lane taller than
-/// the view with its bar shown at other heights.
-pub fn view_width_at_creation(area_w: f32, area_h: f32, content_h: f32) -> f32 {
-    let step = 26.0;
+/// At 125 % / 150 % (clone, the original: first run 230 × 113 → view 176 wide, 229 × 86 → 203;
+/// maximised 568 × 334 → 450 and 571 × 310 → 469 before the bar; a synthetic record's first zoom
+/// at 150 % showed the bar counted in the maximised case, 469 − 26 = 443, and not in the first
+/// run's 203) the rule is the same with the metrics of that DPI.
+pub fn view_width_at_creation(area_w: f32, area_h: f32, lanes_h: f32, band: f32, m: WinMetrics) -> f32 {
+    let step = m.step();
     let k = (area_h / (3.0 * step)).floor();
     let child_h = area_h - step * k;
-    // The view: the child's frame (16 + 23 caption) and its own edge (4), then the horizontal bar.
-    let view_h = child_h - 43.0 - 17.0;
-    let vbar = view_h >= 70.0 && content_h > view_h;
-    (area_w - step * k - 21.0 - if vbar { 17.0 } else { 0.0 }).max(1.0)
+    // The view: the child's frame (the borders and the caption) and its own edge (4), then the
+    // horizontal bar.
+    let view_h = child_h - m.caption - 2.0 * m.border() - 4.0 - m.scroll;
+    let vbar = view_h >= 70.0 && lanes_h > view_h - band + 2.0;
+    (area_w - step * k - 2.0 * m.border() - 4.0 - if vbar { m.scroll } else { 0.0 }).max(1.0)
 }
 
 /// Initial scale of a new view (`0x45ab70`): the stored `View/XScale`, by
@@ -373,33 +411,85 @@ mod tests {
         assert_eq!(initial_scale(None, 1000.0, 400), 0.125);
         assert_eq!(initial_scale(Some(0.5), 1000.0, 400), 0.5);
         // VM: on a 1552 × 955 MDI area (one lane: no vertical bar) the view measured 1212.5…1225 px at
-        // its creation (388 samples open at 0.25, 392 at 0.125); the rule gives 1219.
-        let w = view_width_at_creation(1552.0, 955.0, 200.0);
-        assert_eq!(w, 1219.0);
+        // its creation (388 samples open at 0.25, 392 at 0.125); the rule gives 1220.
+        let w = view_width_at_creation(1552.0, 955.0, 170.0, 30.0, WinMetrics::at(96));
+        assert_eq!(w, 1220.0);
         assert_eq!((initial_scale(None, w, 388), initial_scale(None, w, 392)), (0.25, 0.125));
     }
 
-    /// A first run's default frame (231 × 142 MDI area, VM, synthetic records of 1250 Hz): 235 samples
+    /// A first run's default frame (230 × 140 MDI area, VM, synthetic records of 1250 Hz): 235 samples
     /// open at 0.0625, 236 at 0.03125 — the width is 184, not 189 (#69: the original's view showed the
     /// record half as wide, so a click at the same point put В1 twice as far in ours).
     #[test]
     fn a_default_frames_first_view_zoom_matches_the_originals() {
-        let w = view_width_at_creation(231.0, 142.0, 700.0);
+        let w = view_width_at_creation(230.0, 140.0, 670.0, 30.0, WinMetrics::at(96));
         assert_eq!(w, 184.0, "a 54 px view shows no vertical bar");
         assert_eq!((initial_scale(None, w, 235), initial_scale(None, w, 236)), (0.0625, 0.03125));
     }
 
-    /// #69, a frame restored maximised on 1280 × 800 (our MDI area 565 × 358, VM, the record
+    /// #69, a frame restored maximised on 1280 × 800 (the MDI area 566 × 359, VM, the record
     /// on the command line or opened in the running program): 266 samples open at 0.125, 274 at 0.0625
     /// on the original (a width of 415.6…428.1, the view's vertical bar included); 445 px (ours before)
     /// opened 274 at 0.125.
     #[test]
     fn a_maximised_starts_first_view_zoom_matches_the_originals() {
-        let w = view_width_at_creation(565.0, 358.0, 700.0);
+        let w = view_width_at_creation(566.0, 359.0, 670.0, 30.0, WinMetrics::at(96));
+        assert_eq!(w, 425.0, "the original's view, from its window-event log");
         assert!((415.6..428.1).contains(&w), "{w}");
         // A record that fits the view's height has no bar: 17 px wider.
-        assert_eq!(view_width_at_creation(565.0, 358.0, 100.0), w + 17.0);
+        assert_eq!(view_width_at_creation(566.0, 359.0, 70.0, 30.0, WinMetrics::at(96)), w + 17.0);
         assert_eq!((initial_scale(None, w, 266), initial_scale(None, w, 274)), (0.125, 0.0625));
+    }
+
+    /// #147, #45: at 125 % / 150 % the default MDI child's cascade step, borders and the view's
+    /// bars are the system DPI's metrics (GetSystemMetrics on clones), not the 100 % ones.
+    #[test]
+    fn window_metrics_follow_the_system_dpi() {
+        let step = |d| WinMetrics::at(d).step();
+        // Measured with a plain MDICLIENT and a CW_USEDEFAULT child: 26, 32, 38, 44 (168), 49.
+        assert_eq!((step(96), step(120), step(144), step(168), step(192)), (26.0, 32.0, 38.0, 44.0, 49.0));
+        let m = WinMetrics::at(144);
+        assert_eq!((m.border(), m.caption, m.scroll), (11.0, 34.0, 26.0));
+        // The measured table (clones: caption, sizing frame, padded border, scroll bar).
+        for (dpi, c, f, p, s) in [(96, 23.0, 4.0, 4.0, 17.0), (120, 29.0, 4.0, 5.0, 21.0), (144, 34.0, 5.0, 6.0, 26.0), (168, 40.0, 5.0, 7.0, 30.0), (192, 45.0, 5.0, 8.0, 34.0)] {
+            assert_eq!(WinMetrics::at(dpi), WinMetrics { caption: c, size_frame: f, padded: p, scroll: s }, "dpi {dpi}");
+        }
+        // A custom scale (110 % = 106 dpi).
+        assert_eq!(WinMetrics::at(106), WinMetrics { caption: 25.0, size_frame: 4.0, padded: 4.0, scroll: 19.0 });
+    }
+
+    /// The first zoom at 150 % (clone, the original, synthetic records of 1250 Hz): a first run's
+    /// 229 × 86 MDI area gives a view 203 wide (60 samples open at 0.25, the view's 26 px height
+    /// shows no bar), a maximised start's 571 × 310 one 443 after the vertical bar (146 samples
+    /// open at 0.125; 469 would open them at 0.25). With the 100 % metrics ours gave 184 and 452.
+    #[test]
+    fn the_first_zoom_at_150_percent_matches_the_originals() {
+        let m = WinMetrics::at(144);
+        let first = view_width_at_creation(229.0, 86.0, 670.0, 30.0, m);
+        assert_eq!(first, 203.0);
+        assert_eq!(initial_scale(None, first, 60), 0.25);
+        let max = view_width_at_creation(571.0, 310.0, 93.0, 75.0, m);
+        assert_eq!(max, 443.0);
+        assert_eq!(initial_scale(None, max, 146), 0.125);
+        assert_eq!(view_width_at_creation(571.0, 310.0, 70.0, 30.0, m), 469.0, "no bar for lanes that fit");
+        assert_eq!(initial_scale(None, view_width_at_creation(229.0, 86.0, 670.0, 30.0, WinMetrics::at(96)), 60), 0.125, "the 100 % metrics");
+    }
+
+    /// And at 125 % (the original's window-event log): a first run's 230 × 113 area is cut by one
+    /// 32 px step, the view 176 wide before its bars; a maximised 568 × 334 one by three, 450
+    /// before the vertical bar (21 px), 429 after.
+    #[test]
+    fn the_first_view_at_125_percent_is_cut_by_the_scaled_steps() {
+        let m = WinMetrics::at(120);
+        assert_eq!(view_width_at_creation(230.0, 113.0, 670.0, 30.0, m), 176.0);
+        assert_eq!(view_width_at_creation(568.0, 334.0, 670.0, 30.0, m), 429.0);
+        assert_eq!(view_width_at_creation(568.0, 334.0, 70.0, 30.0, m), 450.0);
+        // One lane (93 px, band 75) in the 166 px the view has left: exactly at the limit, no bar
+        // (clone: the original's view stayed 450 wide and opened 140 samples at 0.25); a pixel more,
+        // the bar.
+        assert_eq!(view_width_at_creation(568.0, 334.0, 93.0, 75.0, m), 450.0);
+        assert_eq!(view_width_at_creation(568.0, 334.0, 94.0, 75.0, m), 429.0);
+        assert_eq!(initial_scale(None, 450.0, 140), 0.25);
     }
 
     #[test]

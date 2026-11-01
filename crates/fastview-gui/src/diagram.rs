@@ -8,9 +8,11 @@
 
 use crate::popmenu::{Entry, Mark, MenuImage};
 
-/// Grid cell of the circle / differential plane: `LOGPIXELSX · scale / 5`
-/// (`0x438b50`), 19 px at 96 dpi.
-pub const CELL_PX: i32 = 96 / 5;
+/// Grid cell of the circle / differential plane on the screen: `LOGPIXELSX · scale / 5`
+/// (`0x438b50`, scale 1), the system DPI's (#35): 19 px at 96 dpi, 24 at 120, 28 at 144.
+pub fn cell_px() -> i32 {
+    crate::dpi::dpi() as i32 / 5
+}
 
 /// Pixel extent of the shown characteristics above which zoom-in is refused
 /// (`0x4379e0`) and above which painting resets the zoom to 1 (`0x43b570`).
@@ -163,12 +165,12 @@ pub fn plane_scale(w: i32, h: i32, z: f64, max: [f64; 2]) -> PlaneScale {
 }
 
 /// [`plane_scale`] on a device `s` times the screen's (a printout): the
-/// cell is ⌊LOGPIXELSX·s/5⌋ device px with the screen's 96 dpi
+/// cell is ⌊LOGPIXELSX·s/5⌋ device px with the screen's (system) dpi
 /// (`0x4390cb`–`0x439103`, the differential's `0x44446d`), the halves and
 /// the cells counted in device px; `w`, `h` and the pixels per unit in
 /// points.
 pub fn plane_scale_s(w: i32, h: i32, z: f64, max: [f64; 2], s: f32) -> PlaneScale {
-    let cell = if s == 1.0 { CELL_PX } else { (96.0 * s / 5.0).floor() as i32 };
+    let cell = if s == 1.0 { cell_px() } else { (crate::dpi::dpi() as f32 * s / 5.0).floor() as i32 };
     let (wd, hd) = if s == 1.0 { (w, h) } else { ((w as f32 * s).floor() as i32, (h as f32 * s).floor() as i32) };
     let cells = ((wd / 2).min(hd / 2)) / cell;
     let upc = max.map(|m| if cells > 0 { nice_up(m / (z * f64::from(cells))) } else { 0.0 });
@@ -180,7 +182,7 @@ pub fn plane_scale_s(w: i32, h: i32, z: f64, max: [f64; 2], s: f32) -> PlaneScal
 /// The pan limit of one axis (`0x437b90`): `round((span / cell) · z / 2)`
 /// with the plot rect's width (x) or height (y).
 pub fn max_pan(span: i32, z: f64) -> i32 {
-    (f64::from(span / CELL_PX) * z * 0.5).round() as i32
+    (f64::from(span / cell_px()) * z * 0.5).round() as i32
 }
 
 /// What a wheel notch does (`0x437ae0`): exactly Ctrl zooms ×1.5 / ×⅔,
@@ -802,6 +804,23 @@ mod tests {
         let p = plane_scale_s(400, 300, 1.0, [30.0, 0.0], 5.0);
         assert_eq!((p.cell, p.cells, p.half_cells), (96, 7, (10, 7)));
         assert_eq!(p.cell_pt, 19.2);
+    }
+
+    /// #35: the plane's cell is the system DPI's ⌊LOGPIXELSX·s/5⌋ (`0x438b50`, `0x4441b0`), not
+    /// the 96 dpi's: 24 px at 125 %, 28 at 150 % on the screen, the print's cell on the same dpi,
+    /// the pan limit counting the same cells.
+    #[test]
+    fn the_planes_cell_follows_the_system_dpi() {
+        for (dpi, cell, cells, limit) in [(96u32, 19, 7, 11), (120, 24, 6, 8), (144, 28, 5, 7), (192, 38, 3, 5)] {
+            crate::dpi::set(dpi);
+            let s = plane_scale(400, 300, 1.0, [30.0, 0.0]);
+            assert_eq!((s.cell, s.cells), (cell, cells), "dpi {dpi}");
+            assert_eq!(s.ppu[0], Some(f64::from(cell) / s.upc[0]), "dpi {dpi}");
+            assert_eq!(max_pan(400, 1.0), limit, "dpi {dpi}");
+            // On paper: ⌊dpi·s/5⌋ device px.
+            let p = plane_scale_s(400, 300, 1.0, [30.0, 0.0], 5.0);
+            assert_eq!(p.cell, dpi as i32, "dpi {dpi}");
+        }
     }
 
     #[test]
