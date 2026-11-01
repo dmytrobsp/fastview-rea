@@ -78,6 +78,30 @@ fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f
     }
 }
 
+/// The dots' pitch in px at the system DPI (measured at 150 %: 4).
+fn status_grip_pitch() -> f32 {
+    4.0
+}
+
+/// The status bar's text size in px: the 8 pt font (11 / 13 / 16 px at 100 / 125 / 150 %).
+fn status_font_px() -> f32 {
+    dpi::dlg_font(11.0)
+}
+
+/// The size grip's dots (the visual style's gripper, the original on a clone at 150 %): a triangle of 2 × 2
+/// px dots on a 4 px pitch at the client's bottom-right corner, the lowest row and the rightmost column
+/// longest; each dot has a light shadow one pixel down and right. `right` / `bottom` are the client's edges;
+/// the dots as `(top-left x, y)`.
+fn status_grip_dots(right: f32, bottom: f32, pitch: f32) -> Vec<egui::Pos2> {
+    let mut out = Vec::new();
+    for j in 0..3 {
+        for i in 0..(3 - j) {
+            out.push(egui::pos2(right - 3.0 - pitch * i as f32, bottom - 3.0 - pitch * j as f32));
+        }
+    }
+    out
+}
+
 /// The status bar's six panes from `left` to `room` (the first that does not fit ends the row, a hidden
 /// pane leaves no gap): `(index, x, width)` of each shown one.
 fn status_pane_places(left: f32, room: f32, hidden: &[bool; 7]) -> Vec<(usize, f32, f32)> {
@@ -825,7 +849,9 @@ impl App {
         }
         // The panes' widths and the font at the system DPI (VM, 125 % and
         // 150 %: the bar 30 / 36 px, its text and panes 1.25 / 1.5 ×).
-        let font = egui::FontId::proportional(dpi::font(12.0));
+        // The ribbon status bar's font is the 8 pt one (clone, 100 / 125 / 150 %: «Верт. визир 1:» 73 / 86 /
+        // 107 px wide, as the 11 / 13 / 16 px font; the 9 pt font of the ribbon is wider).
+        let font = egui::FontId::proportional(status_font_px());
         // A normal (not maximised) window's last pane also holds the size grip
         // (see [`status_reserve`]).
         let maximised = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
@@ -857,6 +883,19 @@ impl App {
         }
         if ext_shown {
             painter.text(egui::pos2((ext.left() + ext.right() - dpi::s(12.0)) / 2.0, ext.center().y), egui::Align2::CENTER_CENTER, "НТЦ Механотроника", font, p.status_text);
+        }
+        // The size grip, in a normal window only (the visual style's gripper).
+        if !maximised {
+            let (dark, light) = if p.bands.is_some() && p.status_bg == egui::Color32::from_rgb(186, 212, 247) {
+                (egui::Color32::from_rgb(69, 93, 128), egui::Color32::from_rgb(177, 201, 232))
+            } else {
+                (egui::Color32::from_gray(100), egui::Color32::WHITE)
+            };
+            for d in status_grip_dots(r.right(), r.bottom(), status_grip_pitch()) {
+                let dot = egui::Rect::from_min_size(d, egui::vec2(2.0, 2.0));
+                painter.rect_filled(dot.translate(egui::vec2(1.0, 1.0)), 0.0, light);
+                painter.rect_filled(dot, 0.0, dark);
+            }
         }
         // CMFCRibbonStatusBar's right-click: its configuration menu.
         let bar = ui.allocate_rect(r, egui::Sense::click());
@@ -1610,6 +1649,72 @@ mod window_tests {
             let rows: Vec<usize> = (0..c.h).filter(|&y| c.px[y * c.w + 600] == line).take(2).collect();
             assert_eq!(rows.len(), 2, "{native}");
             assert_eq!(rows[1] - rows[0] + 1, h, "{native}: the ОМП bar");
+        }
+        dpi::set(96);
+    }
+
+    /// #139 (clone, 100 / 125 / 150 %): the status bar's text is the 8 pt font, 11 / 13 / 16 px («Верт.
+    /// визир 1:» 73 / 86 / 107 px wide in the original; the 9 pt font's 12 / 15 / 18 is 8 % wider).
+    #[test]
+    fn the_status_bar_text_is_the_8_pt_font() {
+        for (d, px) in [(96, 11.0), (120, 13.0), (144, 16.0)] {
+            dpi::set(d);
+            assert_eq!(status_font_px(), px, "{d}");
+        }
+        // Through the frame at 150 %: the first pane's ink is as wide as the 16 px layout, not the 18 px one.
+        dpi::set(96);
+        chrome_dpi(Some(1.5));
+        let fonts = app_fonts();
+        let mut app = demo(&[]);
+        let c = raster::render_native(Vec2::new(1280.0, 722.0), 1.5, |ctx| device_options(ctx, Some(1.5)), device_screen, Some(&fonts), vec![vec![]; 5], |ctx| app.frame_ui(ctx));
+        let ink = |x: usize, y: usize| {
+            let p = c.px[y * c.w + x];
+            p[0] < 110 && p[2] > p[0] + 30
+        };
+        let xs: Vec<usize> = (0..150).filter(|&x| (c.h - 27..c.h).any(|y| ink(x, y))).collect();
+        let width = (xs.last().unwrap() - xs.first().unwrap() + 1) as f32;
+        let layout = |px: f32| {
+            let ctx = egui::Context::default();
+            ctx.set_fonts(fonts.clone());
+            let _ = ctx.run(Default::default(), |_| {});
+            ctx.fonts(|f| f.layout_no_wrap("Верт. визир 1:".into(), egui::FontId::proportional(px), egui::Color32::BLACK).size().x)
+        };
+        let (w16, w18) = (layout(16.0), layout(18.0));
+        assert!((width - w16).abs() < (width - w18).abs(), "ink {width} against {w16} at 16 px and {w18} at 18");
+        dpi::set(96);
+    }
+
+    /// #138 (clone, 150 %): a normal window's status bar draws the size grip, a triangle of six 2 px dots at
+    /// its bottom-right corner on a 4 px pitch (the lowest row longest), each with a light shadow; a
+    /// maximised window draws none. Drawn at 125 / 150 % through the whole frame.
+    #[test]
+    fn a_normal_window_draws_the_size_grip_and_a_maximised_one_does_not() {
+        let dots = status_grip_dots(100.0, 50.0, 4.0);
+        assert_eq!(dots.len(), 6);
+        assert_eq!((dots[0], dots[2], dots[3], dots[5]), (egui::pos2(97.0, 47.0), egui::pos2(89.0, 47.0), egui::pos2(97.0, 43.0), egui::pos2(97.0, 39.0)));
+        let dark = [69, 93, 128];
+        let fonts = app_fonts();
+        for (native, maximised) in [(1.25, false), (1.5, false), (1.5, true), (1.0, false)] {
+            dpi::set(96);
+            chrome_dpi(Some(native));
+            let mut app = demo(&[]);
+            let hook = move |ctx: &egui::Context, raw: &mut egui::RawInput| {
+                device_screen(ctx, raw);
+                raw.viewports.entry(egui::ViewportId::ROOT).or_default().maximized = Some(maximised);
+            };
+            let px = Vec2::new(1280.0, 722.0);
+            let c = raster::render_native(px, native, |ctx| device_options(ctx, Some(native)), hook, Some(&fonts), vec![vec![]; 5], |ctx| app.frame_ui(ctx));
+            let found: Vec<(usize, usize)> = (c.h - 60..c.h).flat_map(|y| (c.w - 14..c.w).map(move |x| (x, y))).filter(|&(x, y)| c.px[y * c.w + x] == dark).collect();
+            if maximised {
+                assert!(found.is_empty(), "{native}: a maximised window has no grip");
+                continue;
+            }
+            assert_eq!(found.len(), 24, "{native}: six 2 × 2 dots");
+            let (right, bottom) = (found.iter().map(|p| p.0).max().unwrap() + 2, found.iter().map(|p| p.1).max().unwrap() + 2);
+            assert_eq!(right, c.w, "{native}: the dots end at the client's right edge");
+            for d in status_grip_dots(right as f32, bottom as f32, status_grip_pitch()) {
+                assert!(found.contains(&(d.x as usize, d.y as usize)), "{native}: a dot at {d:?}");
+            }
         }
         dpi::set(96);
     }
