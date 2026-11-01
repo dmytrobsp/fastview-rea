@@ -624,8 +624,19 @@ impl App {
     /// keyboard (the merge bar's combo or buttons, the ▾) keeps it, so its keys
     /// still reach it; egui drops the focus of a widget at any press elsewhere.
     pub fn keep_key_focus(&mut self, ctx: &egui::Context) {
+        // The foreground layers (menus, popups) now and last frame: one that appeared while a frame control
+        // holds the keyboard is a menu the press opened, which has the keys.
+        let now: Vec<egui::LayerId> = ctx.memory(|m| m.areas().visible_layer_ids().into_iter().filter(|l| l.order == egui::Order::Foreground && !crate::views::is_floating_pane_layer(*l)).collect());
+        let appeared = now.iter().any(|l| !self.fg_prev.contains(l));
+        self.fg_prev = now;
         let Some(owner) = self.key_owner else { return };
-        if self.modal_up || crate::dialogs::window_up(ctx) {
+        // Called after the dialogs of this frame are drawn. A modal dialog takes the keyboard (DoModal;
+        // the view gets it back on close): the frame control behind it lets go of it, whatever opened the
+        // dialog.
+        // The frame control's own list (the merge combos', the ▾'s) is not a menu of the ribbon's.
+        let own_list = self.doc_list_open || ["merge_method", "merge_ch1", "merge_ch2"].iter().any(|n| ctx.data(|d| d.get_temp::<bool>(egui::Id::new(*n).with("open"))).unwrap_or(false));
+        if self.modal_up || crate::dialogs::window_up(ctx) || (appeared && !own_list) {
+            ctx.memory_mut(|m| m.surrender_focus(owner));
             return;
         }
         let Some(p) = ctx.input(|i| if i.pointer.any_pressed() { crate::lanes::press_pos(i) } else { None }) else { return };

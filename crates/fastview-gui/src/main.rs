@@ -1405,9 +1405,9 @@ impl App {
         self.diagram_panes(ctx);
         self.render_tab(ctx);
         self.track_copy_focus(ctx);
-        self.keep_key_focus(ctx);
         self.dialogs_ui(ctx);
         self.print_windows(ctx);
+        self.keep_key_focus(ctx);
         // The record settings follow the active document; leaving asks
         // about modified documents.
         self.track_settings();
@@ -5444,6 +5444,37 @@ mod window_tests {
         w.press(Primary, blank, blank);
         w.key(egui::Key::Space);
         assert!(!w.app.merge.as_ref().unwrap().status.is_empty(), "the button kept the focus through the ribbon press");
+    }
+
+    /// A dialog or a menu opened by the press that would keep the bar's focus has the keys, not the
+    /// merge bar behind it (review: Ctrl+P / the QAT print button, then ↓ changed the method).
+    #[test]
+    fn a_dialog_or_menu_takes_the_keys_from_the_merge_bar() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        let setup = || {
+            let mut w = Win::new();
+            w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+            w.app.copy_channels_for_merge();
+            w.app.paste_channels_for_merge();
+            w.idle(3);
+            let combo = w.app.focus_other[0];
+            w.press(Primary, combo.center(), combo.center());
+            w.key(egui::Key::Escape);
+            w
+        };
+        let method = |w: &Win| w.app.merge.as_ref().unwrap().method;
+        let mut w = setup();
+        w.app.dispatch(app::Command::Print);
+        w.idle(3);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 0, "a dialog is up: ↓ does not reach the merge bar");
+        // The application menu opened by a press on the ribbon's button.
+        let mut w = setup();
+        let button = Pos2::new(48.0, 12.0);
+        w.press(Primary, button, button);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 0, "a menu is up: ↓ does not reach the merge bar");
     }
 
     /// «Синхронизация» holding the focus (a press let go outside it) is

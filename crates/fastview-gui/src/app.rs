@@ -1829,6 +1829,8 @@ pub struct App {
     pub keep_focus_rects: Vec<egui::Rect>,
     /// The frame control (merge bar, ▾) holding egui's keyboard focus at the start of the frame.
     pub key_owner: Option<egui::Id>,
+    /// The foreground layers of the last frame (`keep_key_focus`).
+    pub fg_prev: Vec<egui::LayerId>,
     /// A document group's ▾ list was open at the last frame.
     pub doc_list_open: bool,
     /// Each document group's ▾ button as last drawn.
@@ -2062,6 +2064,7 @@ impl App {
             focus_other: Vec::new(),
             keep_focus_rects: Vec::new(),
             key_owner: None,
+            fg_prev: Vec::new(),
             doc_list_open: false,
             list_buttons: Vec::new(),
             focus_doc: None,
