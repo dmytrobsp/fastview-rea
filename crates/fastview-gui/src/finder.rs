@@ -755,6 +755,18 @@ impl App {
         self.finder = Some(Finder::new(folder, recursive, station, block));
     }
 
+    /// The finder's «Удалить файлы»: the shell's delete (its dialogs of its own) outside the frame; the
+    /// list is rescanned once it has finished.
+    pub fn finder_delete(&mut self, paths: Vec<PathBuf>, permanent: bool) {
+        self.pick(crate::sysdlg::Job::Task(Box::new(move || shell_delete(&paths, permanent))), |app, _, done| {
+            if done.is_some() {
+                if let Some(f) = app.finder.as_mut() {
+                    f.rescan();
+                }
+            }
+        });
+    }
+
     fn close_finder(&mut self) {
         if let Some(mut f) = self.finder.take() {
             f.stop();
@@ -786,6 +798,7 @@ impl App {
         if keys == Some(true) {
             open_files = f.selected.iter().map(|&i| f.files[i].path.clone()).collect();
         }
+        let mut delete_req: Option<(Vec<PathBuf>, bool)> = None;
         let mut rescan = false;
         let mut open = true;
         // The template's caption (DIALOG 558), not the menu item's; its
@@ -1019,7 +1032,7 @@ impl App {
                     let paths: Vec<PathBuf> = f.selected.iter().flat_map(|&i| companions(&f.files[i].path)).collect();
                     let permanent = ui.input(|i| i.modifiers.shift);
                     if cfg!(windows) {
-                        rescan = shell_delete(&paths, permanent);
+                        delete_req = Some((paths, permanent));
                     } else {
                         f.confirm_delete = Some((paths, permanent));
                     }
@@ -1044,7 +1057,7 @@ impl App {
                 crate::dialogs::dlg(ctx, crate::app::APP_TITLE).id(egui::Id::new("finder_confirm")).margin(0.0).collapsible(false).resizable(false).order(egui::Order::Foreground).show(ctx, |ui| {
                     match crate::dialogs::message_box(ui, crate::dialogs::MsgIcon::Question, &text, &["Да", "Нет"]) {
                         Some(0) => {
-                            rescan = shell_delete(&paths, permanent);
+                            delete_req = Some((paths, permanent));
                             f.confirm_delete = None;
                         }
                         Some(_) => f.confirm_delete = None,
@@ -1052,6 +1065,10 @@ impl App {
                     }
                 });
             }
+        }
+        // The shell's delete shows dialogs of its own: outside the frame (#190); the list is rescanned once it ends.
+        if let Some((paths, permanent)) = delete_req {
+            self.finder_delete(paths, permanent);
         }
         if rescan {
             if let Some(f) = self.finder.as_mut() {
@@ -1229,5 +1246,30 @@ mod tests {
         let left: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert_eq!(left, ["b.cfg"]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The shell delete is a request: it returns at once, and the list is rescanned only after the
+    /// delete has finished.
+    #[test]
+    fn the_shell_delete_runs_outside_the_frame_and_rescans_after() {
+        let (_guard, answer) = crate::sysdlg::testing::gate();
+        let ctx = egui::Context::default();
+        let mut app = crate::app::App::new();
+        app.persist = false;
+        app.open_finder();
+        app.finder.as_mut().unwrap().stop();
+        app.finder_delete(vec![PathBuf::from("synthetic.cfg")], true);
+        assert!(app.sysdlg_busy(), "the delete is pending");
+        assert!(!app.finder.as_ref().unwrap().busy(), "no rescan before it finished");
+        answer.send(Some((PathBuf::new(), None))).unwrap();
+        for _ in 0..400 {
+            app.poll_sysdlg(&ctx);
+            if !app.sysdlg_busy() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(app.finder.as_ref().unwrap().busy(), "rescanning after");
+        app.finder.as_mut().unwrap().stop();
     }
 }

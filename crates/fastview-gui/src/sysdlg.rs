@@ -25,6 +25,8 @@ pub enum Job {
     Open(rfd::FileDialog),
     Save(rfd::FileDialog),
     Folder(rfd::FileDialog),
+    /// Another system call that shows dialogs of its own (the shell's delete): answers `Some` when it returns true.
+    Task(Box<dyn FnOnce() -> bool + Send>),
     /// A save dialog that reports the chosen file type: `filters` are (description, extension).
     SaveTyped { filters: Vec<(String, String)>, dir: Option<String>, name: String, owner: isize },
 }
@@ -73,6 +75,7 @@ pub fn run(job: Job) -> Picked {
         Job::Open(d) => d.pick_file().map(|p| (p, None)),
         Job::Save(d) => d.save_file().map(|p| (p, None)),
         Job::Folder(d) => d.pick_folder().map(|p| (p, None)),
+        Job::Task(f) => f().then(|| (PathBuf::new(), None)),
         Job::SaveTyped { filters, dir, name, owner } => save_typed(&filters, dir, &name, owner),
     }
 }
@@ -188,7 +191,8 @@ pub mod testing {
     use super::*;
     use std::sync::{Mutex, MutexGuard};
 
-    /// What the next dialog answers once the test lets it.
+    /// What the next dialog answers once the test lets it (process-wide: only a test that holds `gate()`
+    /// may reach `pick`; the others get the cancel).
     pub static ANSWER: Mutex<Option<std::sync::mpsc::Receiver<Picked>>> = Mutex::new(None);
     static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
@@ -213,7 +217,8 @@ impl App {
         let runner: Box<dyn FnOnce() -> Picked + Send> = {
             drop(job);
             let rx = testing::ANSWER.lock().unwrap().take();
-            Box::new(move || rx.and_then(|rx| rx.recv().ok()).flatten())
+            // A timeout answers as a cancel: a test that blocks on the dialog fails on its assertions, it does not hang CI.
+            Box::new(move || rx.and_then(|rx| rx.recv_timeout(std::time::Duration::from_secs(10)).ok()).flatten())
         };
         #[cfg(not(test))]
         let runner: Box<dyn FnOnce() -> Picked + Send> = Box::new(move || run(job));
