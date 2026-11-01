@@ -508,7 +508,7 @@ mod imp {
             dpi: dpi as f32,
             sheet_mm: (w as f32 / dpi as f32 * 25.4, h as f32 / dpi as f32 * 25.4),
             offset: (0, 0),
-            stock_t: (a_h > 0).then(|| a_h as f32 * crate::printout::SCREEN_DPI / dpi as f32),
+            stock_t: (a_h > 0).then(|| a_h as f32 * crate::printout::screen_dpi() / dpi as f32),
         })
     }
 
