@@ -3606,8 +3606,8 @@ mod window_tests {
     }
 
     /// The caption «×» of a slid-out auto-hidden pane closes it (the ribbon's
-    /// toggle only shows such a pane), and the focus its press gave goes back
-    /// to the view (#64, #77).
+    /// toggle only shows such a pane); a group stays out with its next tab in
+    /// front and the press's focus on its window (#64, #77, #143).
     #[test]
     fn the_caption_button_closes_a_slid_out_pane() {
         use app::{CopyFocus, Pane};
@@ -3624,7 +3624,11 @@ mod window_tests {
             w.press(egui::PointerButton::Primary, at, at);
             w.idle(30);
             assert!(!w.app.panes.visible(Pane::Vector), "{edge:?}: the caption button closed the pane");
-            assert_eq!(w.app.copy_focus, CopyFocus::View, "{edge:?}");
+            // #143 (clone): the group stays out, the next tab in front, and
+            // the focus the press gave sits on the group's window.
+            assert!(w.app.docks[Unit::Vector].out, "{edge:?}: the group stays slid out");
+            assert!(w.app.panes.front(w.app.docks.members(Unit::Vector)).is_some_and(|p| p != Pane::Vector), "{edge:?}: another tab in front");
+            assert_eq!(w.app.copy_focus, CopyFocus::Pane(Pane::Vector), "{edge:?}");
         }
     }
 
@@ -3749,6 +3753,29 @@ mod window_tests {
             w.idle(60);
             assert!(w.app.docks[Unit::Vector].out, "{edge:?}: resting above the pane keeps it out");
         }
+    }
+
+    /// #128 (clone, the original): with a top strip as well, a slid-out side
+    /// pane starts at the strip's top, the caption row's bottom, and its hide
+    /// region with it: the pointer resting in the caption row above the pane
+    /// no longer keeps it out.
+    #[test]
+    fn a_side_pane_beside_a_top_strip_is_not_held_from_the_windows_top() {
+        use docking::{Edge, Spot, Unit};
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Right, outer: true };
+        w.app.docks.0[Unit::Frequency as usize].spot = Spot::Edge { edge: Edge::Top, outer: true };
+        w.app.docks.0[Unit::Frequency as usize].pin();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+        w.idle(30);
+        let area = w.app.dock_areas[Unit::Vector as usize].expect("slid out");
+        let at = Pos2::new(area.center().x, 5.0);
+        assert!(at.y < area.top());
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.idle(60);
+        assert!(!w.app.docks[Unit::Vector].out, "resting in the caption row above the pane lets it slide in");
     }
 
     /// A strip button lying wholly under the caption glass is hovered like any
@@ -4046,6 +4073,235 @@ mod window_tests {
         assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked);
         let at = w.app.docks[Unit::Circle].float_rect.expect("floating").min;
         assert!((at - Pos2::new(496.0, 373.0)).length() < 1.0, "{at:?}");
+    }
+
+    /// #126 (clone, the original): a slid-out pane is as large across its
+    /// edge as its window was docked, the 4 px divider outside it — the
+    /// bottom Частотная's pane 144 px tall slid out as docked, with no margin
+    /// around its window; a tabbed group's pane is the docked size less its
+    /// tab control's 3 px frame and the divider's place (the right group).
+    #[test]
+    fn a_slid_out_pane_is_as_large_as_it_was_docked() {
+        use docking::Unit;
+        let mut w = Win::new();
+        w.app.docks = docking::Docks::default();
+        w.idle(4);
+        let slide_out = |w: &mut Win, u: Unit| -> egui::Rect {
+            // A click on the caption's pin.
+            let pane = if u == Unit::Vector { app::Pane::Vector } else { app::Pane::Frequency };
+            let r = w.app.pane_canvas.iter().find(|(p, _)| *p == pane).map(|(_, r)| *r).expect("the pane");
+            let at = Pos2::new(w.app.dock_rects[u as usize].expect("docked").right() - 26.0, r.top() - 10.0);
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(true), ev(false)]);
+            w.idle(3);
+            assert_eq!(w.app.docks[u].place, docking::Place::AutoHide, "{u:?} pinned");
+            let button = w.app.strip_hits[u as usize].buttons[0].center();
+            w.run(vec![egui::Event::PointerMoved(button)]);
+            w.idle(30);
+            assert!(w.app.docks[u].out, "{u:?} slid out");
+            w.app.dock_areas[u as usize].expect("its rect")
+        };
+        // The lone bottom pane: the docked height, the window with no inset.
+        let docked = w.app.dock_rects[Unit::Frequency as usize].expect("docked");
+        let area = slide_out(&mut w, Unit::Frequency);
+        assert_eq!(area.height(), docked.height(), "the pane as tall as docked: {area:?} vs {docked:?}");
+        let div = w.app.dock_dividers[Unit::Frequency as usize].expect("its divider");
+        assert_eq!((div.height(), div.bottom()), (docking::DIVIDER_PX, area.top()), "the divider above it");
+        // The right group (two tabs): the docked width less 3 + 4 px.
+        let mut w = Win::new();
+        w.app.docks = docking::Docks::default();
+        w.idle(4);
+        let docked = w.app.dock_rects[Unit::Vector as usize].expect("docked");
+        let area = slide_out(&mut w, Unit::Vector);
+        assert_eq!(area.width(), docked.width() - docking::GROUP_FRAME_PX - docking::DIVIDER_PX, "the group's pane: {area:?} vs {docked:?}");
+        // A group on the bottom edge: its tab strip lies across the extent
+        // (clone: 48 px lower than docked at 100 %).
+        let mut w = Win::new();
+        w.app.docks = docking::Docks::default();
+        w.app.docks.0[Unit::Vector as usize].spot = docking::Spot::Edge { edge: docking::Edge::Bottom, outer: true };
+        w.idle(4);
+        let docked = w.app.dock_rects[Unit::Vector as usize].expect("docked");
+        let area = slide_out(&mut w, Unit::Vector);
+        assert_eq!(area.height(), docked.height() - 48.0, "the bottom group's pane: {area:?} vs {docked:?}");
+    }
+
+    /// #127: a pane that shares its docking slot with a neighbour docks back
+    /// at the size it had when it was pinned and unpinned (clone: the original
+    /// keeps it to within a few px; ours handed it the neighbour's share, and
+    /// a bottom Частотная beside Дифференциальной grew or shrank by the
+    /// difference of the two). The owner of the slot, Частотная, is the one
+    /// whose share the container did not store.
+    #[test]
+    fn a_pane_sharing_its_slot_docks_back_at_its_size() {
+        use docking::{Edge, Place, Spot, Unit};
+        for (neighbour_share, resize) in [(500.0, None), (500.0, Some(280.0)), (250.0, None)] {
+            let mut w = Win::new();
+            w.app.docks = docking::Docks::default();
+            w.app.docks.0[Unit::Differential as usize].spot = Spot::Beside(Unit::Frequency, Edge::Right);
+            w.app.docks.0[Unit::Differential as usize].extent = Some(neighbour_share);
+            w.idle(4);
+            if let Some(e) = resize {
+                w.app.docks.0[Unit::Differential as usize].extent = Some(e);
+                w.idle(3);
+            }
+            let before = w.app.dock_rects[Unit::Frequency as usize].expect("docked").width();
+            let r = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Frequency).map(|(_, r)| *r).expect("the pane");
+            let at = Pos2::new(w.app.dock_rects[Unit::Frequency as usize].unwrap().right() - 26.0, r.top() - 10.0);
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(true), ev(false)]);
+            w.idle(3);
+            assert_eq!(w.app.docks[Unit::Frequency].place, Place::AutoHide, "pinned");
+            w.app.docks.0[Unit::Frequency as usize].pin();
+            w.idle(4);
+            let after = w.app.dock_rects[Unit::Frequency as usize].expect("docked again").width();
+            assert!((after - before).abs() < 1.0, "share {neighbour_share} {resize:?}: it docks back at {after}, was {before}");
+        }
+    }
+
+    /// #127, across the block: a block whose divider was dragged keeps that
+    /// size when its owner is pinned (the neighbour takes the block over) and
+    /// unpinned. Real drag of the block's grip.
+    #[test]
+    fn a_dragged_block_keeps_its_size_through_a_pin_and_unpin() {
+        use docking::{Edge, Place, Spot, Unit};
+        let mut w = Win::new();
+        w.app.docks = docking::Docks::default();
+        w.app.docks.0[Unit::Differential as usize].spot = Spot::Beside(Unit::Frequency, Edge::Right);
+        w.app.docks.0[Unit::Differential as usize].extent = Some(500.0);
+        w.idle(4);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let h0 = w.app.dock_rects[Unit::Frequency as usize].expect("docked").height();
+        let top = w.app.dock_rects[Unit::Frequency as usize].unwrap().top();
+        let from = Pos2::new(100.0, top - 2.0);
+        w.run(vec![egui::Event::PointerMoved(from)]);
+        w.run(vec![ev(from, true)]);
+        for k in 1..=6 {
+            w.run(vec![egui::Event::PointerMoved(from - Vec2::new(0.0, 10.0 * k as f32))]);
+        }
+        w.run(vec![ev(from - Vec2::new(0.0, 60.0), false)]);
+        w.idle(3);
+        let h1 = w.app.dock_rects[Unit::Frequency as usize].unwrap().height();
+        assert!((h1 - h0 - 60.0).abs() < 2.0, "the grip drag grew the block: {h0} -> {h1}");
+        // Pin Частотная by its caption; Дифференциальная keeps the block's size.
+        let r = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Frequency).map(|(_, r)| *r).expect("the pane");
+        let at = Pos2::new(w.app.dock_rects[Unit::Frequency as usize].unwrap().right() - 26.0, r.top() - 10.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.idle(4);
+        assert_eq!(w.app.docks[Unit::Frequency].place, Place::AutoHide);
+        let d = w.app.dock_rects[Unit::Differential as usize].expect("it took the block").height();
+        assert!((d - h1).abs() < 2.0, "the neighbour's block keeps the dragged size: {d} vs {h1}");
+        w.app.docks.0[Unit::Frequency as usize].pin();
+        w.idle(4);
+        let back = w.app.dock_rects[Unit::Frequency as usize].expect("docked again").height();
+        assert!((back - h1).abs() < 2.0, "it docks back at {back}, was {h1}");
+    }
+
+    /// #127: the frame shrunk and grown back leaves the blocks' stored
+    /// extents alone (only a grip drag writes one).
+    #[test]
+    fn a_frame_shrunk_and_grown_back_keeps_the_extents() {
+        let mut w = Win::new();
+        w.app.docks = docking::Docks::default();
+        w.idle(4);
+        let before: Vec<Option<f32>> = docking::UNITS.iter().map(|&u| w.app.docks[u].extent).collect();
+        for size in [Vec2::new(420.0, 360.0), Vec2::new(1320.0, 860.0)] {
+            for _ in 0..3 {
+                frames_held(&mut w.app, &w.ctx, size, vec![vec![]], w.held);
+            }
+        }
+        let after: Vec<Option<f32>> = docking::UNITS.iter().map(|&u| w.app.docks[u].extent).collect();
+        assert_eq!(before, after, "no clamp is stored");
+    }
+
+    /// #126 through the pane menu: «Автоматически скрывать» shares the
+    /// caption pin's rule: the slid-out pane is as large as it was docked.
+    #[test]
+    fn auto_hide_from_the_pane_menu_slides_out_at_the_docked_size() {
+        use docking::{Place, Unit};
+        let mut w = Win::new();
+        w.app.docks = docking::Docks::default();
+        w.app.docks.0[Unit::Frequency as usize].extent = Some(260.0);
+        w.idle(4);
+        let docked = w.app.dock_rects[Unit::Frequency as usize].expect("docked").height();
+        let f = w.app.pane_canvas.iter().find(|(q, _)| *q == app::Pane::Frequency).map(|(_, r)| *r).expect("Частотная drawn");
+        let at = Pos2::new(f.left() + 80.0, f.top() - 10.0);
+        w.press(egui::PointerButton::Secondary, at, at);
+        assert!(w.app.pane_menu.is_some(), "the pane menu opens");
+        for _ in 0..4 {
+            w.key(egui::Key::ArrowDown);
+        }
+        w.key(egui::Key::Enter);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Frequency].place, Place::AutoHide, "Автоматически скрывать");
+        let button = w.app.strip_hits[Unit::Frequency as usize].buttons[0].center();
+        w.run(vec![egui::Event::PointerMoved(button)]);
+        w.idle(30);
+        let area = w.app.dock_areas[Unit::Frequency as usize].expect("slid out");
+        assert!((area.height() - docked).abs() < 1.0, "slid out at {} but docked {docked}", area.height());
+    }
+
+    /// #143: closing the last visible tab of a slid-out group hides the group
+    /// and the view has the focus (not seen on a clone: the group is gone).
+    #[test]
+    fn closing_the_last_tab_of_a_slid_out_group_gives_the_view_the_focus() {
+        use app::{CopyFocus, Pane};
+        use docking::{Edge, Spot, Unit};
+        let mut w = Win::new();
+        w.app.docks.0[Unit::Vector as usize].spot = Spot::Edge { edge: Edge::Bottom, outer: true };
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+        w.idle(30);
+        for p in [Pane::Circle, Pane::Differential] {
+            if w.app.docks.members(Unit::Vector).any(|u| u as usize == p as usize) {
+                w.app.dispatch(app::Command::HidePane(p));
+            }
+        }
+        w.app.copy_focus = CopyFocus::Pane(Pane::Vector);
+        w.app.close_pane(Pane::Vector);
+        assert_eq!(w.app.copy_focus, CopyFocus::View);
+    }
+
+    /// #124 (clone, the original): a double-click on a tab of a docked
+    /// group's strip floats that pane alone, the front one or not (mfc120u's
+    /// tab double-click `0x10068d99` calls the detach `0x10068657` in mode 2
+    /// when the group has more than one tab); a single click floats nothing.
+    #[test]
+    fn a_double_click_on_a_tab_floats_that_pane() {
+        use docking::{Place, Unit};
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let tab_of = |w: &Win, p: app::Pane| w.app.pane_tab_rects.iter().find(|(q, _)| *q == p).map(|(_, r)| r.center()).expect("the tab");
+        // A single click only brings the tab to the front.
+        let mut w = Win::new();
+        w.idle(2);
+        let at = tab_of(&w, app::Pane::Circle);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.idle(3);
+        assert_eq!((w.app.docks[Unit::Circle].place, w.app.docks[Unit::Vector].place), (Place::Docked, Place::Docked), "a click floats nothing");
+        // A double-click on the other tab floats that pane; the group stays.
+        let mut w = Win::new();
+        w.idle(2);
+        let at = tab_of(&w, app::Pane::Circle);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.idle(3);
+        assert_eq!((w.app.docks[Unit::Circle].place, w.app.docks[Unit::Vector].place), (Place::Floating, Place::Docked), "the double-clicked tab floats alone");
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Pane(app::Pane::Circle), "the focus is the floated pane's window (clone)");
+        // On the front tab: the group's own pane floats, the next tab takes the group.
+        let mut w = Win::new();
+        w.idle(2);
+        let at = tab_of(&w, app::Pane::Vector);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating, "the front tab floats too");
+        assert_eq!(w.app.docks[Unit::Circle].place, Place::Docked);
     }
 
     /// A tab pulled out of a tab strip follows the caption drag's distance rule
