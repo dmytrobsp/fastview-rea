@@ -2037,6 +2037,11 @@ pub fn is_floating_pane_layer(l: egui::LayerId) -> bool {
     crate::docking::UNITS.into_iter().any(|u| l == floating_pane_layer(u))
 }
 
+/// A foreground layer that is pane chrome, no menu: the caption buttons' row and a slid-out pane's divider.
+pub fn is_pane_chrome_layer(l: egui::LayerId) -> bool {
+    l.id == egui::Id::new("fv_caption_buttons") || crate::docking::UNITS.into_iter().any(|u| l.id == egui::Id::new(("fv_slide_div", u)))
+}
+
 /// The group whose slid-out window `l` is (it lies over the view like a
 /// floating one).
 pub fn slid_pane_unit(l: egui::LayerId) -> Option<crate::docking::Unit> {

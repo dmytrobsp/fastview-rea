@@ -1316,7 +1316,7 @@ impl App {
         let Some((menu, at, opened)) = ctx.data(|d| d.get_temp::<(QatMenu, egui::Pos2, u64)>(qat_menu_id())) else { return };
         let mut chosen = false;
         let min = self.ribbon_minimized;
-        let area = egui::Area::new(qat_menu_id()).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
+        let area = egui::Area::new(qat_menu_id()).order(egui::Order::Foreground).fixed_pos(at).constrain_to(crate::popmenu::bounds(ctx, at)).show(ctx, |ui| {
             // The minimise item is a menu row (its pads, VM); the print list
             // a panel of large items.
             let row_menu = menu == QatMenu::Minimize;

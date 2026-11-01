@@ -8,12 +8,30 @@
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
-use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect, IsIconic, IsZoomed, SWP_NOSIZE, WINDOWPOS, WM_KEYDOWN, WM_SETCURSOR, WM_SYSKEYDOWN, WM_WINDOWPOSCHANGING};
+use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_APP, GetClientRect, GetWindowRect, IsIconic, IsZoomed, SWP_NOSIZE, WINDOWPOS, WM_KEYDOWN, WM_SETCURSOR, WM_SYSKEYDOWN, WM_WINDOWPOSCHANGING};
+
+/// The frame's turn for the system dialogs waiting in [`crate::sysdlg`].
+const WM_RUN_DIALOGS: u32 = WM_APP + 0x51;
+
+static DONE: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// Our frame (the subclassed window), once it is known.
+pub fn frame() -> Option<HWND> {
+    let h = DONE.load(std::sync::atomic::Ordering::Relaxed) as HWND;
+    (!h.is_null()).then_some(h)
+}
+
+#[cfg_attr(test, allow(dead_code))]
+/// Post the frame its turn for the queued system dialogs (false: no frame is subclassed yet).
+pub fn post_run() -> bool {
+    let hwnd = DONE.load(std::sync::atomic::Ordering::Relaxed) as HWND;
+    // SAFETY: a message to our own window, which may be gone (the call then fails).
+    !hwnd.is_null() && unsafe { PostMessageW(hwnd, WM_RUN_DIALOGS, 0, 0) != 0 }
+}
 
 /// Subclass `hwnd` (once; later calls for it do nothing).
 pub fn install(hwnd: HWND) {
-    use std::sync::atomic::{AtomicIsize, Ordering};
-    static DONE: AtomicIsize = AtomicIsize::new(0);
+    use std::sync::atomic::Ordering;
     if DONE.swap(hwnd as isize, Ordering::Relaxed) == hwnd as isize {
         return;
     }
@@ -44,6 +62,10 @@ fn min_window(hwnd: HWND) -> (i32, i32) {
 }
 
 unsafe extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _id: usize, _data: usize) -> LRESULT {
+    if msg == WM_RUN_DIALOGS {
+        crate::sysdlg::run_queued();
+        return 0;
+    }
     // The key presses egui-winit turns into copy / paste events (`winkeys`).
     if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
         let held = |vk: u16| GetKeyState(vk as i32) < 0;

@@ -44,6 +44,7 @@ mod setfile;
 #[cfg(windows)]
 mod softrun;
 mod spool;
+mod sysdlg;
 mod theme;
 mod tips;
 mod util;
@@ -858,16 +859,21 @@ impl App {
                         (Some(h), false) => (h + n - 1) % n,
                     });
                 }
+                if let (Some(h), true) = (hot, list_keys.0 || list_keys.1) {
+                    crate::popmenu::reveal(ui.ctx(), list_id.with(serial), lit.left_bottom(), h as f32 * crate::popmenu::row_pitch(), crate::popmenu::row_pitch());
+                }
                 if list_keys.2 {
                     activate = hot.and_then(|h| order.get(h).copied());
                 }
-                let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom() - egui::vec2(0.0, 1.0)).constrain(true).show(ui.ctx(), |ui| {
+                let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom() - egui::vec2(0.0, 1.0)).constrain_to(crate::popmenu::bounds(ui.ctx(), lit.left_bottom())).show(ui.ctx(), |ui| {
                     crate::popmenu::mfc_frame(ui, |ui| {
-                        for (k, i) in order.iter().copied().enumerate() {
-                            if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, hot == Some(k), Some(&window)).clicked() {
-                                activate = Some(i);
+                        crate::popmenu::cut_to_screen(ui, list_id.with(serial), lit.left_bottom(), |ui| {
+                            for (k, i) in order.iter().copied().enumerate() {
+                                if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, hot == Some(k), Some(&window)).clicked() {
+                                    activate = Some(i);
+                                }
                             }
-                        }
+                        })
                     })
                 });
                 let outside = ui.input(|inp| inp.pointer.any_pressed() && inp.pointer.interact_pos().is_some_and(|q| !area.response.rect.contains(q) && !hit.contains(q)));
@@ -1051,17 +1057,19 @@ impl App {
         let id = egui::Id::new("fv_status_menu");
         let pos = crate::popmenu::menu_pos(ctx, id, at);
         let mut toggle = None;
-        let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain(true).show(ctx, |ui| {
+        let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain_to(crate::popmenu::bounds(ctx, at)).show(ctx, |ui| {
             crate::popmenu::mfc_frame_with(ui, true, false, |ui| {
                 crate::popmenu::title_band(ui, "Конфигурация строки состояния");
-                for (i, t) in texts.iter().map(String::as_str).chain(Some("НТЦ Механотроника")).enumerate() {
-                    if i == 6 {
-                        crate::popmenu::panel_separator(ui);
+                crate::popmenu::cut_to_screen(ui, id, at, |ui| {
+                    for (i, t) in texts.iter().map(String::as_str).chain(Some("НТЦ Механотроника")).enumerate() {
+                        if i == 6 {
+                            crate::popmenu::panel_separator(ui);
+                        }
+                        if crate::popmenu::mark_item_keys(ui, "", Some(t), true, (!self.status_hidden[i]).then_some("✓"), false).clicked() {
+                            toggle = Some(i);
+                        }
                     }
-                    if crate::popmenu::mark_item_keys(ui, "", Some(t), true, (!self.status_hidden[i]).then_some("✓"), false).clicked() {
-                        toggle = Some(i);
-                    }
-                }
+                });
             })
         });
         if let Some(i) = toggle {
@@ -1260,6 +1268,8 @@ impl App {
         dialogs::track_input(ctx);
         dialogs::route_combo_keys(ctx);
         self.device_pixels(ctx);
+        sysdlg::set_wake(ctx);
+        self.poll_sysdlg(ctx);
         self.run_deferred(ctx);
         // A click or a key acts after the frame that drew it (a command is
         // dispatched once its button is drawn): one more frame shows the
@@ -1295,6 +1305,10 @@ impl App {
         self.ppp = ctx.pixels_per_point();
         // Every dialog is modal: while one is up, a backdrop between the
         // panels and the windows takes the pointer, and no shortcuts run.
+        // A frame control holding the keyboard focus (the merge bar's combo box and buttons, the tab
+        // list's ▾): a press on the ribbon, the parameters bar or the status bar leaves it there (#186).
+        self.key_owner = ctx.memory(|m| m.focused()).filter(|f| ctx.read_response(*f).is_some_and(|r| self.focus_other.iter().any(|q| q.contains(r.rect.center()))));
+        self.keep_focus_rects.clear();
         self.focus_other.clear();
         let was_modal = std::mem::replace(&mut self.modal_up, dialogs::window_up(ctx));
         winframe::set_modal(self.modal_up);
@@ -1325,7 +1339,7 @@ impl App {
         // The auto-hide strips of the left, right and top edges take the
         // frame's outermost space, before the ribbon and the bars.
         self.strips_outer(ctx);
-        egui::TopBottomPanel::top("top")
+        let ribbon = egui::TopBottomPanel::top("top")
             .show_separator_line(false)
             .frame(egui::Frame::none().fill(pal.tab_active))
             .show(ctx, |ui| {
@@ -1337,6 +1351,7 @@ impl App {
                     ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0f32, b.under_ribbon[0]));
                 }
             });
+        self.keep_focus_rects.push(ribbon.response.rect);
         // The frame's client area shows the splitter brush between its bars
         // (VM, Office 2007 Blue): under the ribbon two shade rows ((174, 199,
         // 232), (185, 212, 247)) and 4 px of (191, 219, 255).
@@ -1390,7 +1405,7 @@ impl App {
         // gradient from white to (213, 228, 242) between (157, 189, 216)
         // lines —, then 4 px of the brush.
         if self.dlg.param_bar {
-            egui::TopBottomPanel::top("parambar")
+            let bar = egui::TopBottomPanel::top("parambar")
                 .exact_height(67.0)
                 .show_separator_line(false)
                 .frame(egui::Frame::none().fill(pal.info_bar.unwrap_or(pal.group_bg)))
@@ -1398,17 +1413,19 @@ impl App {
                     bar_face(ui);
                     self.param_bar_ui(ui)
                 });
+            self.keep_focus_rects.push(bar.response.rect);
             egui::TopBottomPanel::top("fv_under_parambar").exact_height(4.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
         }
 
 
         // The bottom edge's strip is the last row, under the status row.
         self.strip_bottom(ctx);
-        egui::TopBottomPanel::bottom("status")
+        let status = egui::TopBottomPanel::bottom("status")
             .exact_height(dpi::s(24.0))
             .show_separator_line(false)
             .frame(egui::Frame::none().fill(pal.status_bg))
             .show(ctx, |ui| self.status_bar(ui));
+        self.keep_focus_rects.push(status.response.rect);
 
 
         // The print preview takes the document view's place in its window
@@ -1418,6 +1435,7 @@ impl App {
         self.track_copy_focus(ctx);
         self.dialogs_ui(ctx);
         self.print_windows(ctx);
+        self.keep_key_focus(ctx);
         // The record settings follow the active document; leaving asks
         // about modified documents.
         self.track_settings();
@@ -5614,6 +5632,113 @@ mod window_tests {
         assert_eq!(method(&w), 0, "the focus stayed");
     }
 
+    /// A press on the ribbon, the parameters bar or the status bar leaves the
+    /// keyboard focus where it was (clone, #186: the merge bar's combo box
+    /// keeps it through presses on a ribbon tab and on ribbon buttons, and ↓
+    /// then changes the method): egui's focus stays on the bar's control.
+    #[test]
+    fn a_press_on_the_ribbon_leaves_the_bars_focus_where_it_was() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        let combo = w.app.focus_other[0];
+        let method = |w: &Win| w.app.merge.as_ref().unwrap().method;
+        w.press(Primary, combo.center(), combo.center());
+        w.key(egui::Key::Escape);
+        let ribbon = w.app.keep_focus_rects[0];
+        let blank = Pos2::new(ribbon.center().x + 100.0, ribbon.top() + 8.0);
+        w.press(Primary, blank, blank);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 1, "↓ still reaches the combo box after a press on the ribbon");
+        // The status bar, too.
+        let status = *w.app.keep_focus_rects.last().unwrap();
+        w.press(Primary, status.center(), status.center());
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 2, "and after a press on the status bar");
+        // A press on the bar's own button takes the focus (nothing to keep).
+        let sync = w.app.focus_other[1];
+        w.press(Primary, sync.center(), sync.center() + Vec2::new(0.0, 200.0));
+        w.press(Primary, blank, blank);
+        w.key(egui::Key::Space);
+        assert!(!w.app.merge.as_ref().unwrap().status.is_empty(), "the button kept the focus through the ribbon press");
+    }
+
+    /// DIALOG 492's progress bar and «Отмена» are one span (neither has WS_GROUP): on a clone, in a native
+    /// dialog of just those two, an arrow from the button moves the focus to the bar and the next arrow back.
+    #[test]
+    fn the_loading_dialogs_arrows_pass_between_the_bar_and_cancel() {
+        let mut w = Win::new();
+        let _tx = w.app.test_hold_loading();
+        w.idle(3);
+        w.key(egui::Key::Tab);
+        let focused = |w: &Win| w.ctx.memory(|m| m.focused());
+        let cancel = focused(&w);
+        assert!(cancel.is_some(), "«Отмена» has the focus");
+        w.key(egui::Key::ArrowRight);
+        let bar = focused(&w);
+        assert!(bar.is_some() && bar != cancel, "→ moves the focus to the progress bar");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(focused(&w), cancel, "and back");
+    }
+
+    /// A pane that slides out on hover (a foreground layer, no press) does not take the merge bar's
+    /// keyboard focus (re-review of #186).
+    #[test]
+    fn a_pane_sliding_out_on_hover_leaves_the_merge_bars_focus() {
+        use app::ChanKey;
+        use docking::Unit;
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let combo = w.app.focus_other[0];
+        w.press(Primary, combo.center(), combo.center());
+        w.key(egui::Key::Escape);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(w.app.merge.as_ref().unwrap().method, 1, "↓ still reaches the combo box");
+    }
+
+    /// A dialog or a menu opened by the press that would keep the bar's focus has the keys, not the
+    /// merge bar behind it (review: Ctrl+P / the QAT print button, then ↓ changed the method).
+    #[test]
+    fn a_dialog_or_menu_takes_the_keys_from_the_merge_bar() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        let setup = || {
+            let mut w = Win::new();
+            w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+            w.app.copy_channels_for_merge();
+            w.app.paste_channels_for_merge();
+            w.idle(3);
+            let combo = w.app.focus_other[0];
+            w.press(Primary, combo.center(), combo.center());
+            w.key(egui::Key::Escape);
+            w
+        };
+        let method = |w: &Win| w.app.merge.as_ref().unwrap().method;
+        let mut w = setup();
+        w.app.dispatch(app::Command::Print);
+        w.idle(3);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 0, "a dialog is up: ↓ does not reach the merge bar");
+        // The application menu opened by a press on the ribbon's button.
+        let mut w = setup();
+        let button = Pos2::new(48.0, 12.0);
+        w.press(Primary, button, button);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 0, "a menu is up: ↓ does not reach the merge bar");
+    }
+
     /// «Синхронизация» holding the focus (a press let go outside it) is
     /// pressed by Space and by Enter (clone: the status line fills with
     /// neither a click), as the tab list's ▾ button opens its list by both
@@ -5649,6 +5774,39 @@ mod window_tests {
             w.idle(2);
             assert_eq!(open(&w), opens, "{key:?}");
         }
+    }
+
+    /// «Объединить» holding the focus (a press let go outside it) is not
+    /// pressed by Space nor by Enter, while a click merges (clone, #182: the
+    /// handler and the button's style are the same as «Синхронизация»'s, which
+    /// both keys press; the key does nothing on «Объединить»).
+    #[test]
+    fn the_merge_button_ignores_space_and_enter() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        for key in [egui::Key::Space, egui::Key::Enter] {
+            let mut w = Win::new();
+            w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+            w.app.copy_channels_for_merge();
+            w.app.paste_channels_for_merge();
+            w.idle(3);
+            let join = w.app.focus_other[2];
+            w.press(Primary, join.center(), join.center() + Vec2::new(0.0, 200.0));
+            assert!(w.app.merge.is_some(), "no click: the bar stays");
+            w.key(key);
+            w.idle(2);
+            assert!(w.app.merge.is_some(), "{key:?} does not press «Объединить»");
+            assert!(!w.app.active_doc().unwrap().pending.is_empty(), "{key:?}: the pasted lane is still pending");
+        }
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        let join = w.app.focus_other[2];
+        w.press(Primary, join.center(), join.center());
+        w.idle(2);
+        assert!(w.app.merge.is_none(), "a click merges and the bar hides");
     }
 
     /// A press on the ▾ of a document group that is not the active one
@@ -5809,6 +5967,102 @@ mod window_tests {
         // (No folder set: no link, «...» alone; with a folder the link joins it.)
         has(&w, "Установка настроек программы", &[Push, Push]);
         has(&w, "Установка настроек программы", &[Push]);
+    }
+
+    /// Every dialog's arrow spans are its template's WS_GROUP spans (#183): a
+    /// span runs from a control with WS_GROUP to the next, whatever the kinds
+    /// (labels and group boxes only mark where one starts; the dialog manager
+    /// walks the controls left in it, a disabled one kept in its place:
+    /// lower case below). The list per dialog is the template's spans that hold
+    /// a push button, a radio or a check box (P, R, C; O is any other control),
+    /// read from the 100 templates, so a span no heuristic of kinds can give
+    /// (536's two «Отключить», 539's «Kторм» after the radios) is checked too;
+    /// 347's «Свойства...» with «Параметры страницы» is only annotated (the kinds
+    /// already join them). 492 has its own test; 335 has no dialog of ours.
+    #[test]
+    fn every_dialogs_arrow_spans_follow_its_template() {
+        use crate::dialogs::{arrow_spans_all, GroupKind};
+        let spans = |w: &Win, t: &str| -> Vec<String> {
+            arrow_spans_all(&w.ctx, t)
+                .iter()
+                .map(|s| {
+                    s.iter()
+                        .map(|(k, on)| {
+                            let c = match k {
+                                GroupKind::Push => 'P',
+                                GroupKind::Radio => 'R',
+                                GroupKind::Check => 'C',
+                                GroupKind::Bar => 'B',
+                                GroupKind::Other => 'O',
+                            };
+                            if *on { c } else { c.to_ascii_lowercase() }
+                        })
+                        .collect::<String>()
+                })
+                .filter(|s| s.chars().any(|c| "PRCprc".contains(c)))
+                .collect()
+        };
+        let check = |w: &Win, t: &str, want: &[&str]| assert_eq!(spans(w, t), want, "{t}");
+        // 347 «Печать»: «Свойства...» with «Параметры страницы»; the preview alone;
+        // OK, Отмена and the five checks.
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Print);
+        w.idle(4);
+        // «Свойства...» is enabled where a printer exists (`cfg!(windows) && a printer`: a Windows runner
+        // has one, Linux and macOS none), so its enabled bit is not part of the check: the kinds are.
+        let kinds: Vec<String> = spans(&w, "Печать").iter().map(|s| s.to_ascii_uppercase()).collect();
+        assert_eq!(kinds, ["PP", "P", "PPCCCCC"], "Печать");
+        // 477, 336, 332, 353.
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Coefficients);
+        w.idle(4);
+        check(&w, "Коэффициенты трансформации", &["OPP"]);
+        let mut w = Win::new();
+        w.app.diag_cmd(diagram_ui::Window::Freq, diagram::DiagCmd::FreqSettings, Pos2::ZERO);
+        w.idle(4);
+        check(&w, "Настройки частотной диаграммы", &["RR", "RR", "PP"]);
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Demo);
+        w.idle(2);
+        w.app.dispatch(app::Command::OmpParams);
+        w.idle(4);
+        check(&w, "omp_params_dialog", &["OPP"]);
+        let mut w = Win::new();
+        w.app.comment_edit = Some(crate::comments::CommentEdit { idx: 0, text: "x".into() });
+        w.idle(4);
+        check(&w, "Комментарии к диаграмме", &["OPP"]);
+        // 558 the finder, 510 the settings (no folder: no link), 554 the pair dialog.
+        let mut w = Win::new();
+        w.app.open_finder();
+        w.idle(4);
+        check(&w, "Поиск файлов", &["PPPOOOO", "POC"]);
+        let mut w = Win::new();
+        w.app.show_settings = true;
+        w.idle(4);
+        check(&w, "Установка настроек программы", &["PP", "P", "RR", "RRRR"]);
+        let mut w = Win::new();
+        let names: Vec<String> = vec!["A".into(), "B".into()];
+        w.app.diag.pair_dlg = Some(crate::diagram_ui::PairDialog { diff: true, pairs: Vec::new(), a: Some(names[0].clone()), b: Some(names[1].clone()), sel: None, list_focus: false });
+        w.idle(4);
+        check(&w, "Задать соответствие между дифференциальным током и током торможения", &["PPOOPOp"]);
+        // The quick-analysis pages 536–539, 543 and the formula editor 340 (each with the sheet's own buttons) and 359.
+        let page = |tab: app::AnalysisTab| {
+            let mut w = Win::new();
+            w.app.dispatch(app::Command::QuickAnalysis);
+            w.app.analysis_tab = tab;
+            w.idle(4);
+            w
+        };
+        check(&page(app::AnalysisTab::Symmetric), "fv_quick_sheet", &["OC", "RR", "CC", "PP"]);
+        check(&page(app::AnalysisTab::Zero), "fv_quick_sheet", &["ORR", "ORRRo", "CC", "PP"]);
+        check(&page(app::AnalysisTab::PhasePhase), "fv_quick_sheet", &["OC", "RROOOO", "PP"]);
+        check(&page(app::AnalysisTab::Phase), "fv_quick_sheet", &["ORR", "PP"]);
+        check(&page(app::AnalysisTab::Differential), "fv_quick_sheet", &["ORRRRPp", "RRRO", "RRR", "c", "PP"]);
+        let mut w = page(app::AnalysisTab::Formula);
+        check(&w, "fv_quick_sheet", &["OPPPPPPP", "PP"]);
+        w.app.open_formula_dlg();
+        w.idle(4);
+        check(&w, "fv_add_formula", &["OOPP"]);
     }
 
     /// A bar is no dialog (clone: Tab goes nowhere in the original, a push
