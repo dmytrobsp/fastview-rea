@@ -6731,6 +6731,37 @@ mod window_tests {
         dpi::set(96);
     }
 
+    /// #173 (clone, 125 / 150 %): the circle diagram's property grid takes the same MFC global font as
+    /// «Параметры ОМП»'s: its rows are 17 / 23 / 27 px apart (ours had the system scale of 17: 21 / 26).
+    #[test]
+    fn the_circle_grid_rows_are_the_property_grid_rows() {
+        let fonts = app_fonts();
+        for (native, row) in [(1.0f32, 17usize), (1.25, 23), (1.5, 27)] {
+            dpi::set(96);
+            chrome_dpi(Some(native));
+            let mut app = demo(&[]);
+            app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+            let mut grid = None;
+            let mut pass = 0;
+            let c = raster::render_native(Vec2::new(1280.0, 722.0), native, |ctx| device_options(ctx, Some(native)), device_screen, Some(&fonts), vec![vec![]; 5], |ctx| {
+                if pass == 2 {
+                    app.block_idx = 1;
+                    app.ensure_block_state();
+                }
+                pass += 1;
+                app.frame_ui(ctx);
+                grid = app.pane_grid.first().copied();
+            });
+            let g = grid.expect("the circle pane's grid");
+            // The rows' rules (185, 208, 237) down a column in the name part.
+            let x = (g.left() + 12.0) as usize;
+            let rules: Vec<usize> = (g.top() as usize..g.bottom() as usize).filter(|&y| c.px[y * c.w + x] == [185, 208, 237]).collect();
+            let gaps: Vec<usize> = rules.windows(2).map(|w| w[1] - w[0]).collect();
+            assert!(gaps.len() >= 2 && gaps.iter().all(|&d| d == row), "{native}: rule gaps {gaps:?}");
+        }
+        dpi::set(96);
+    }
+
     /// #78 through the strip layout: an inactive tab is its text in the
     /// whole 8 pt font (16 px at 150 %) plus 34 px scaled (51).
     #[test]

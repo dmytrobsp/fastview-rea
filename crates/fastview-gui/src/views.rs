@@ -1478,7 +1478,7 @@ impl App {
                 let sid = egui::Id::new(("char_grid_scroll", pane));
                 let (mut off, content_h): (f32, f32) = ui.data(|d| d.get_temp(sid)).unwrap_or((0.0, 0.0));
                 // (the rows and the scroll bar at the system DPI: `dpi`)
-                let (row, bar_w) = (crate::dpi::s(17.0), crate::dpi::s(17.0));
+                let (row, bar_w) = (crate::omp_ui::grid_row_h(), crate::dpi::s(17.0));
                 let page = (inner.height() / row).floor() * row;
                 // The window scroll bar's range as MFC sets it (clone: with
                 // P rows in view and N in all, the wheel and the bar reach
@@ -1571,9 +1571,10 @@ impl App {
         // 233) with the focus, (213, 228, 242) without.
         let w = ui.available_width();
         let name_w = (w / 2.0).floor();
-        // The rows follow the system font (MFC's from its height; VM, 150 %:
-        // 26 px), the font with them.
-        let row_h = crate::dpi::s(17.0);
+        // The rows follow the grid's font, the same MFC global font as
+        // «Параметры ОМП»'s grid: 17 / 23 / 27 px at 100 / 125 / 150 %
+        // (clone, #173; the dialogs' base units gave 21 / 26).
+        let row_h = crate::omp_ui::grid_row_h();
         // Rows edge to edge (VM: a 17 px pitch).
         ui.spacing_mut().item_spacing.y = 0.0;
         let line = egui::Stroke::new(1.0f32, egui::Color32::from_rgb(185, 208, 237));
