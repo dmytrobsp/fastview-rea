@@ -5440,6 +5440,39 @@ mod window_tests {
         }
     }
 
+    /// «Объединить» holding the focus (a press let go outside it) is not
+    /// pressed by Space nor by Enter, while a click merges (clone, #182: the
+    /// handler and the button's style are the same as «Синхронизация»'s, which
+    /// both keys press; the key does nothing on «Объединить»).
+    #[test]
+    fn the_merge_button_ignores_space_and_enter() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        for key in [egui::Key::Space, egui::Key::Enter] {
+            let mut w = Win::new();
+            w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+            w.app.copy_channels_for_merge();
+            w.app.paste_channels_for_merge();
+            w.idle(3);
+            let join = w.app.focus_other[2];
+            w.press(Primary, join.center(), join.center() + Vec2::new(0.0, 200.0));
+            assert!(w.app.merge.is_some(), "no click: the bar stays");
+            w.key(key);
+            w.idle(2);
+            assert!(w.app.merge.is_some(), "{key:?} does not press «Объединить»");
+            assert!(!w.app.active_doc().unwrap().pending.is_empty(), "{key:?}: the pasted lane is still pending");
+        }
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        let join = w.app.focus_other[2];
+        w.press(Primary, join.center(), join.center());
+        w.idle(2);
+        assert!(w.app.merge.is_none(), "a click merges and the bar hides");
+    }
+
     /// A press on the ▾ of a document group that is not the active one
     /// (clone, two groups): the button holds the focus and the active
     /// document stays (the title does not change); a pick from its list
