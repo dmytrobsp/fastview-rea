@@ -3523,6 +3523,38 @@ mod menu_tests {
         }
     }
 
+    /// Copy (and a dialog-only command) leaves the kept position; a change of the view's height alone
+    /// drops it (re-review of #196).
+    #[test]
+    fn the_kept_bar_position_survives_copy_and_drops_with_the_view_height() {
+        let setup = || {
+            let mut h = Harness::new();
+            let at = Pos2::new(600.0, h.row(0).y);
+            h.button(at, egui::PointerButton::Primary);
+            for _ in 0..3 {
+                h.wheel(at, 1.0, egui::Modifiers::CTRL);
+            }
+            h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+            h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+            (h, at)
+        };
+        let (mut h, at) = setup();
+        let one = h.doc().hscroll_pos.map(|k| k.0).unwrap();
+        h.app.dispatch(Command::Copy);
+        assert!(h.doc().hscroll_pos.is_some(), "Copy keeps it");
+        h.wheel(at, 1.0, egui::Modifiers::SHIFT);
+        assert_ne!(h.doc().first, one);
+        // The height: the same state with another view height in the memo's key.
+        let (mut h, at) = setup();
+        let k = h.doc().hscroll_pos.unwrap();
+        h.app.active_doc_mut().unwrap().hscroll_pos = Some((k.0, k.1, k.2, k.3, k.4 + 20));
+        h.wheel(at, 1.0, egui::Modifiers::SHIFT);
+        let (_, v, n, _, _) = h.doc().hscroll_pos.unwrap();
+        // The view as drawn is not the memo's height: re-derived from the first sample.
+        assert_eq!(h.doc().first, hscroll_page(k.0, n, v, true, None).0);
+        assert_ne!(hscroll_page(k.0, n, v, true, None).0, hscroll_page(k.0, n, v, true, Some(k.3)).0);
+    }
+
     /// With the whole record in view there is no horizontal bar (seen on
     /// the VM, L9.196): nothing is painted along the bottom.
     #[test]

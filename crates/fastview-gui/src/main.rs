@@ -5675,6 +5675,29 @@ mod window_tests {
         assert_eq!(focused(&w), cancel, "and back");
     }
 
+    /// A pane that slides out on hover (a foreground layer, no press) does not take the merge bar's
+    /// keyboard focus (re-review of #186).
+    #[test]
+    fn a_pane_sliding_out_on_hover_leaves_the_merge_bars_focus() {
+        use app::ChanKey;
+        use docking::Unit;
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let combo = w.app.focus_other[0];
+        w.press(Primary, combo.center(), combo.center());
+        w.key(egui::Key::Escape);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(w.app.merge.as_ref().unwrap().method, 1, "↓ still reaches the combo box");
+    }
+
     /// A dialog or a menu opened by the press that would keep the bar's focus has the keys, not the
     /// merge bar behind it (review: Ctrl+P / the QAT print button, then ↓ changed the method).
     #[test]

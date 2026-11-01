@@ -2268,8 +2268,12 @@ impl App {
     pub fn dispatch(&mut self, cmd: Command) {
         // Nearly every command ends in the views' refresh (`0x45ac60`), which sets the horizontal bar from
         // the first sample again (`lanes::hscroll_page`).
-        if let Some(d) = self.active_doc_mut() {
-            d.hscroll_pos = None;
+        // Copy (`0x45acb0`, case 57634 returns at `0x45befa` before the refresh) and the commands that only
+        // open a dialog or a chooser (Open, Печать, its preview) leave the bar alone.
+        if !matches!(cmd, Command::Copy | Command::Open | Command::Print | Command::PrintPreview) {
+            if let Some(d) = self.active_doc_mut() {
+                d.hscroll_pos = None;
+            }
         }
         let mark = crate::setfile::marks_modified(&cmd).then_some(self.active).flatten();
         // The handlers that end in the frame's refresh-all `0x475420` (the

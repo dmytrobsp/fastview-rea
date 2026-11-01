@@ -626,7 +626,8 @@ impl App {
     pub fn keep_key_focus(&mut self, ctx: &egui::Context) {
         // The foreground layers (menus, popups) now and last frame: one that appeared while a frame control
         // holds the keyboard is a menu the press opened, which has the keys.
-        let now: Vec<egui::LayerId> = ctx.memory(|m| m.areas().visible_layer_ids().into_iter().filter(|l| l.order == egui::Order::Foreground && !crate::views::is_floating_pane_layer(*l)).collect());
+        let now: Vec<egui::LayerId> = ctx.memory(|m| m.areas().visible_layer_ids().into_iter().filter(|l| l.order == egui::Order::Foreground && !crate::views::is_floating_pane_layer(*l) && crate::views::slid_pane_unit(*l).is_none() && !crate::views::is_pane_chrome_layer(*l)).collect());
+        // (A pane that slides out on hover is a foreground layer too, without a press: not a menu.)
         let appeared = now.iter().any(|l| !self.fg_prev.contains(l));
         self.fg_prev = now;
         let Some(owner) = self.key_owner else { return };
