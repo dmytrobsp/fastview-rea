@@ -10,8 +10,15 @@
 #                                first drops its saved state (a first run);
 #                                every SHOT named in the keys lands in $FV_SHOTS
 #   clone.sh push SRC DST | pull SRC DST | exec CMD... | desk CMD... | shot OUT.png
-#   clone.sh ours                push a fresh ours (after a rebuild)
+#   clone.sh ours                push a fresh ours (after a rebuild); an exe already there with the
+#                                same SHA-256 is not pushed again (FV_FORCE=1 pushes anyway)
 #   clone.sh rm                  remove the clone
+#
+# The clone's disk is a small overlay in the host's RAM (cap in testbox's boxes.json, 4 GB;
+# past it the tool removes the clone): every step prints "overlay: X GB of Y GB" on stderr,
+# with a warning from 60 % of the cap. A file pulled from out\ or harness\shots\ is deleted in
+# the clone right after the pull (FV_KEEP=1 keeps it), OneDrive is stopped at the start and
+# before each run, ours is pushed once. The logic is in cloneutil.py (tested).
 #
 # Preparing: the original from your own copy (FV_ORIG, default extracted/stage1:
 # its files, the English resource DLL moved to eng\ so the UI is Russian), the
@@ -44,6 +51,18 @@ load() {
 tb_exec() { "${TB[@]}" instance exec "$name" "$id" -- "$@"; }
 tb_desk() { "${TB[@]}" instance exec --desktop "$name" "$id" -- "$@"; }
 tb_push() { "${TB[@]}" instance push "$name" "$id" "$1" "$2"; }
+cu() { python3 -I "$here/cloneutil.py" "$@"; }
+# The overlay's size against its cap (stderr; never fails a step).
+overlay() { cu overlay "$id" >&2 || true; }
+# A pulled output is deleted in the clone (FV_KEEP=1 keeps it); only out\ and harness\shots\ qualify.
+pull_clean() {
+    [ -z "${FV_KEEP:-}" ] || return 0
+    local cmd
+    cmd=$(cu pull-cleanup "$1") || return 0
+    tb_exec "$cmd" >/dev/null 2>&1 || echo "clone: could not delete $1 after the pull" >&2
+}
+# OneDrive fills the overlay with its sync work: stopped when it runs (no setting is changed).
+stop_onedrive() { tb_exec 'taskkill /f /im OneDrive.exe' >/dev/null 2>&1 || true; }
 
 # The guest answers ssh and its desktop (explorer) is up again.
 wait_desktop() {
@@ -57,7 +76,15 @@ wait_desktop() {
 
 push_ours() {
     [ -f "$ours" ] || { echo "no $ours (cargo build -p fastview-gui --release --target x86_64-pc-windows-gnu)" >&2; exit 2; }
+    local h
+    h=$(cu sha256 "$ours")
+    if [ -z "${FV_FORCE:-}" ] && [ "$(cat "$state.ours" 2>/dev/null || true)" = "$h" ] &&
+        tb_exec "if exist $G\\ours\\fastview.exe echo present" 2>/dev/null | grep -q present; then
+        echo "ours: unchanged (sha256 ${h:0:12}), not pushed again" >&2
+        return 0
+    fi
     tb_push "$ours" "$G\\ours\\fastview.exe"
+    (umask 077; printf '%s\n' "$h" >"$state.ours")
 }
 
 case ${1:-} in
@@ -69,7 +96,9 @@ new)
     id=$(printf '%s\n' "$out" | sed -n 's/^instance \([^ ]*\) id=\([^ ]*\) .*/\2/p')
     [ -n "$name" ] && [ -n "$id" ] || { echo "clone: instance new said: $out" >&2; exit 5; }
     mkdir -p "$(dirname "$state")"; (umask 077; printf '%s %s\n' "$name" "$id" >"$state")
+    rm -f "${state:?}.ours"
     echo "clone $name: preparing"
+    stop_onedrive
     tb_exec "mkdir $G\\FastView5\\eng $G\\records $G\\out $G\\ours $G\\harness\\shots"
     for f in "$orig"/*; do
         case $(basename "$f") in
@@ -77,17 +106,22 @@ new)
         *) tb_push "$f" "$G\\FastView5\\$(basename "$f")" ;;
         esac
     done
+    overlay
     tb_exec "$G\\FastView5\\vcredist_vs13_x86.exe /install /quiet /norestart"
+    overlay
     for r in BINARY DOC_1999 WIN_1999; do
         for e in cfg dat; do tb_push "$records/$r.$e" "$G\\records\\$r.$e"; done
     done
     for f in "$here"/*.ps1; do tb_push "$f" "$G\\harness\\$(basename "$f")"; done
     push_ours
+    overlay
     tb_exec 'powershell -NoProfile -Command "Set-WinSystemLocale ru-RU; Set-Culture ru-RU"'
     tb_exec 'shutdown /r /t 0' || true
     sleep 20
     wait_desktop
+    stop_onedrive
     tb_exec 'powershell -NoProfile -Command "(Get-WinSystemLocale).Name; (Get-Culture).Name"'
+    overlay
     echo "clone $name: ready"
     ;;
 run)
@@ -97,6 +131,7 @@ run)
     open="-Open $G\\records\\$rec"; [ "$rec" != - ] || open=""
     [ -n "${FV_NOMAX:-}" ] || keys="% ;x;;$keys"
     tb_exec "powershell -NoProfile -ExecutionPolicy Bypass -File $H\\cleanup.ps1" >/dev/null 2>&1 || true
+    stop_onedrive
     if [ "$who" = o ]; then exe="$G\\FastView5\\FastView.exe"; extra=""; else exe="$G\\ours\\fastview.exe"; extra="-Soft"; fi
     if [ -n "${FV_FRESH:-}" ]; then
         if [ "$who" = o ]; then
@@ -108,18 +143,20 @@ run)
     tb_exec "powershell -NoProfile -ExecutionPolicy Bypass -File $H\\drive.ps1 -Exe $exe $open $extra -Keys \"$keys\"" 2>&1 | grep -v '^step' | tail -3
     for s in $(printf '%s' "$keys" | grep -o 'SHOT [^;]*' | cut -d' ' -f2); do
         "${TB[@]}" instance pull "$name" "$id" "$H\\shots\\$s" "$shots/$s"
+        pull_clean "$H\\shots\\$s"
     done
+    overlay
     ;;
-push) load; tb_push "$2" "$3" ;;
-pull) load; "${TB[@]}" instance pull "$name" "$id" "$2" "$3" ;;
-exec) load; shift; tb_exec "$@" ;;
-desk) load; shift; tb_desk "$@" ;;
+push) load; tb_push "$2" "$3"; overlay ;;
+pull) load; "${TB[@]}" instance pull "$name" "$id" "$2" "$3"; pull_clean "$2"; overlay ;;
+exec) load; shift; tb_exec "$@"; overlay ;;
+desk) load; shift; tb_desk "$@"; overlay ;;
 shot) load; "${TB[@]}" instance shot "$name" "$id" "$2" ;;
-ours) load; push_ours ;;
+ours) load; push_ours; overlay ;;
 rm)
     load
     "${TB[@]}" instance rm "$name" "$id"
-    rm -f "$state"
+    rm -f "$state" "${state:?}.ours"
     ;;
 *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
