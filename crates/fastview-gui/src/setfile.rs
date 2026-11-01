@@ -411,6 +411,17 @@ impl Doc {
     /// an element already naming a missing channel goes; the hot element
     /// is cleared. Returns whether any channel went.
     pub fn removing_channels(&mut self, remove: impl FnOnce(&mut Doc)) -> bool {
+        self.removing_channels_inner(remove, false)
+    }
+
+    /// The sweep alone (`0x440800`), as the rollback of a failed quick analysis runs it after deleting the channels
+    /// it had added (`0x416f1b`, `0x42ecf0` per name; #31): the batch's channels are never added in ours, so only
+    /// the sweep is left.
+    pub fn sweep_review_list(&mut self) {
+        self.removing_channels_inner(|_| {}, true);
+    }
+
+    fn removing_channels_inner(&mut self, remove: impl FnOnce(&mut Doc), force: bool) -> bool {
         let before = (self.computed.len(), self.osc.digital.len());
         let names: Vec<Vec<String>> = self
             .comments
@@ -422,7 +433,7 @@ impl Doc {
             })
             .collect();
         remove(self);
-        if (self.computed.len(), self.osc.digital.len()) == before {
+        if !force && (self.computed.len(), self.osc.digital.len()) == before {
             return false;
         }
         // The places behind the removed ones moved (`0x42b5f0`).
@@ -575,7 +586,8 @@ impl Doc {
         for k in ["Circle Chart", "Diff Chart"] {
             t.section_mut(k).child_mut("Selected Block");
         }
-        let calc: Vec<(String, String)> = self.computed.iter().filter(|c| is_formula(c)).map(|c| (c.name.clone(), c.formula.clone())).collect();
+        // The calculation manager's list (kill-active's rows and their order included, `0x4153a0`).
+        let calc = self.definition_pairs();
         recset::write_calculated(t.section_mut("CalculatedChannels"), &calc);
         recset::write_omp(t.section_mut("WrongPlaceFinding"), &self.omp.params);
         let mask = if print { !flag::VISIBLE } else { u32::MAX };
@@ -797,6 +809,9 @@ impl App {
             d.selection.retain(|k| !matches!(k, ChanKey::Computed(_)));
             d.channels_changed();
         }
+        // The manager's lists are emptied with them (`0x4156e0`): kept rows and their order go too.
+        d.loose_defs.clear();
+        d.def_order.clear();
         if let Some(cp_raw) = osc.attrs.get("Codepage").map(|v| recset::wtoi(v)) {
             // 0 is OEM; anything else for a record read in UTF-8 or KOI8-R
             // (ours keeps it, `Doc::init_record_text`) its own encoding —
@@ -1973,5 +1988,61 @@ mod tests {
         assert_eq!(save_kind(Path::new("/a/b.dat")), None);
         assert_eq!((cp_code(Encoding::Cp866), cp_code(Encoding::Cp1251)), (0, 1));
         assert_eq!((cp_of(0), cp_of(1)), (Encoding::Cp866, Encoding::Cp1251));
+    }
+
+    /// #31: the definition list kill-active writes — rows without a channel and the order ↑ / ↓ gave — is what the
+    /// `.set` saves as `CalculatedChannels` (`0x4153a0`): a reopened record has them as channels, in that order.
+    #[test]
+    fn the_definition_list_is_saved_in_its_order() {
+        let dir = temp_dir("deflist");
+        let cfg = write_record(&dir);
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        app.active = Some(di);
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into()), ("Y".into(), "Ub*2".into())]).is_some());
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.selected = Some(1);
+        app.fp_move(true);
+        app.fp_add_row("Z1".into(), "Uc*2".into());
+        app.formula_page.selected = Some(2);
+        app.fp_move(true);
+        app.fp_kill_active();
+        app.quick_open = false;
+        app.docs[di].set.modified = true;
+        assert_eq!(app.docs[di].definition_pairs().iter().map(|p| p.0.as_str()).collect::<Vec<_>>(), ["Y", "Z1", "X"]);
+        assert!(app.save_active());
+        drop(app);
+        let mut back = App::new();
+        back.persist = false;
+        let bi = open(&mut back, &cfg);
+        let names: Vec<_> = back.docs[bi].computed.iter().map(|c| (c.name.as_str(), c.formula.as_str())).collect();
+        assert_eq!(names, [("Y", "Ub*2"), ("Z1", "Uc*2"), ("X", "Ua*2")]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #31: «Загрузка настроек» (32860, `0x4156e0`) empties the calculation manager's lists with the channels: a
+    /// row kept by kill-active and the list's order do not survive into the loaded file's channels.
+    #[test]
+    fn loading_settings_clears_the_kept_rows() {
+        let dir = temp_dir("loadclear");
+        let cfg = write_record(&dir);
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        app.active = Some(di);
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        app.docs[di].set.modified = true;
+        assert!(app.save_active());
+        app.dispatch(Command::QuickAnalysis);
+        app.fp_add_row("Z1".into(), "Uc*2".into());
+        app.fp_kill_active();
+        app.quick_open = false;
+        assert_eq!(app.docs[di].loose_defs.len(), 1);
+        app.load_settings_from(di, &dir.join("rec.set"));
+        let d = &app.docs[di];
+        assert_eq!(d.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["X"]);
+        assert!(d.loose_defs.is_empty() && d.def_order.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

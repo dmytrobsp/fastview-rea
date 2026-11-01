@@ -508,6 +508,27 @@ fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<us
     chosen
 }
 
+/// Where a popup menu of `size` opens for the point `at` on `screen` (CMFCPopupMenu's layout, mfc120u about
+/// `0x100dd75e`–`0x100dd7b4`; the clone at 125 %): at the point when it fits below it; otherwise upward from
+/// the point, its bottom edge at the point, clamped to the top of the monitor's work area (the lane menu near
+/// the foot opened at y 0). Horizontally the original moves a menu past the right edge to 1 px inside the work
+/// area; `constrain` leaves it flush (1 px). Differences: ours is confined to the window's client (the work
+/// area when maximised), and a menu taller than the area is not cut and scrolled.
+pub fn menu_origin(at: Pos2, size: Vec2, screen: Rect) -> Pos2 {
+    if at.y + size.y > screen.bottom() {
+        Pos2::new(at.x, (at.y - size.y).max(screen.top()))
+    } else {
+        at
+    }
+}
+
+/// [`menu_origin`] for the area `id`, whose height is last pass's (an area's first pass is a hidden
+/// sizing one, so the menu is never seen at the wrong place).
+pub fn menu_pos(ctx: &egui::Context, id: egui::Id, at: Pos2) -> Pos2 {
+    let size = ctx.memory(|m| m.area_rect(id)).map_or(Vec2::ZERO, |r| r.size());
+    menu_origin(at, size, ctx.screen_rect())
+}
+
 /// Show an open menu for one frame.
 pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entries: &[Entry<C>]) -> Outcome<C> {
     let mut chosen = None;
@@ -587,10 +608,11 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
             }
         });
     };
-    let root = egui::Area::new(area_id(base, menu.serial))
+    let root_id = area_id(base, menu.serial);
+    let root = egui::Area::new(root_id)
         .kind(egui::UiKind::Menu)
         .order(egui::Order::Foreground)
-        .fixed_pos(menu.pos)
+        .fixed_pos(menu_pos(ctx, root_id, menu.pos))
         .constrain(true)
         .show(ctx, |ui| {
             frame_ui(ui, &mut |ui| {
@@ -694,5 +716,43 @@ mod tests {
         frame(&mut m, &[egui::Key::ArrowDown]);
         let o = frame(&mut m, &[egui::Key::Enter]);
         assert_eq!(o.chosen, Some(8), "Enter on the submenu's second item");
+    }
+
+    /// A menu that does not fit below its point opens upward from it, its bottom edge at the point and
+    /// clamped to the screen's top (the original, on a clone at 125 %), at every scale; one that fits stays.
+    #[test]
+    fn a_menu_that_does_not_fit_below_opens_upward_from_the_point() {
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0));
+        for k in [1.0f32, 1.25, 1.5] {
+            let h = (22.0 * 9.0 * k).round();
+            let size = Vec2::new(200.0 * k, h);
+            let near = Pos2::new(300.0, 800.0 - h / 3.0);
+            assert_eq!(menu_origin(near, size, screen), Pos2::new(300.0, near.y - h), "{k}");
+            let fits = Pos2::new(300.0, 800.0 - h);
+            assert_eq!(menu_origin(fits, size, screen), fits, "{k}: exactly fitting");
+            let high = Pos2::new(40.0, 123.0);
+            assert_eq!(menu_origin(high, size, screen), high, "{k}: plenty of room");
+            let tall = Vec2::new(200.0, 900.0);
+            assert_eq!(menu_origin(Pos2::new(5.0, 790.0), tall, screen).y, 0.0, "{k}: taller than the screen: the top");
+        }
+    }
+
+    /// The same through an open menu: after its sizing pass the menu's bottom edge lies at the point.
+    #[test]
+    fn an_open_menu_near_the_screens_foot_ends_at_its_point() {
+        let entries: Vec<Entry<u8>> = (0..12).map(|n| Entry::item(format!("item {n}"), true, Mark::None, n)).collect();
+        let ctx = egui::Context::default();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0));
+        let at = Pos2::new(400.0, 780.0);
+        let mut m = PopMenu::new(1, at);
+        let mut bottom = 0.0;
+        for _ in 0..4 {
+            let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+            let _ = ctx.run(input, |ctx| {
+                show(ctx, "t", &mut m, &entries);
+                bottom = ctx.memory(|mem| mem.area_rect(area_id("t", 1))).unwrap().bottom();
+            });
+        }
+        assert!((bottom - at.y).abs() < 0.5, "the menu's bottom {bottom} at the point {}", at.y);
     }
 }

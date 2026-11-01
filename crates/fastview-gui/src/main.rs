@@ -66,17 +66,90 @@ const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 const STATUS_GRIP: f32 = 20.0;
 /// What a normal window reserves at its right edge for the grip when the extended pane is hidden: the
 /// sixth pane shows from 1078 px of client, not 1074 (VM; 1048 of panes + 26…30).
+/// At 125 % 32 px (fifth pane from 1010 px of client, not 1009: clone) and at 150 % 36…39 (the fourth from
+/// between 954 and 958 px; 38 taken); the 100 % value is this constant.
 const STATUS_GRIP_ALONE: f32 = 28.0;
 
 /// The status bar's right end at `right` (the extended pane's width `ext` at this scale, its grip
 /// not included): `(the extended pane's width with its grip, where the panes must end)`.
 fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f32, f32) {
-    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::s(STATUS_GRIP), dpi::s(STATUS_GRIP_ALONE)) };
+    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::s(STATUS_GRIP), dpi::measured(STATUS_GRIP_ALONE, 32.0, 38.0)) };
     if ext_hidden {
         (ext, right - alone)
     } else {
         (ext + grip, right - ext - grip)
     }
+}
+
+/// The dots' pitch in px at the system DPI (measured at 150 %: 4).
+fn status_grip_pitch() -> f32 {
+    4.0
+}
+
+/// The status bar's text size in px. The original's is MFC's UI font (Segoe UI, the one the pane
+/// templates are measured in); ours the nearest Tahoma by width: against the original's «Верт. визир 1:»
+/// (73 / 86 / 107 px of ink on a clone at 100 / 125 / 150 %) 11 / 13 / 17 px (accepted difference #52).
+fn status_font_px() -> f32 {
+    dpi::measured(11.0, 13.0, 17.0)
+}
+
+/// The size grip's dots (the visual style's gripper, the original on a clone at 150 %): a triangle of 2 × 2
+/// px dots on a 4 px pitch at the client's bottom-right corner, the lowest row and the rightmost column
+/// longest; each dot has a light shadow one pixel down and right. `right` / `bottom` are the client's edges;
+/// the dots as `(top-left x, y)`.
+fn status_grip_dots(right: f32, bottom: f32, pitch: f32) -> Vec<egui::Pos2> {
+    let mut out = Vec::new();
+    for j in 0..3 {
+        for i in 0..(3 - j) {
+            out.push(egui::pos2(right - 3.0 - pitch * i as f32, bottom - 3.0 - pitch * j as f32));
+        }
+    }
+    out
+}
+
+/// The resize direction a press at `p` starts, if any: the frameless window's edges (5 px, corners 12 px
+/// along each edge) and, in a normal window, the status bar's size grip box as a south-east corner (the
+/// original's grip resizes: a clone drag from its top dot).
+fn resize_dir_at(own_caption: bool, grip: Option<egui::Rect>, screen: egui::Rect, p: egui::Pos2) -> Option<egui::viewport::ResizeDirection> {
+    use egui::viewport::ResizeDirection as D;
+    if grip.is_some_and(|g| g.contains(p)) {
+        return Some(D::SouthEast);
+    }
+    if !own_caption {
+        return None;
+    }
+    let (b, c) = (5.0, 12.0);
+    let (l, r, t, bt) = (p.x - screen.left() < b, screen.right() - p.x < b, p.y - screen.top() < b, screen.bottom() - p.y < b);
+    let (lc, rc, tc, bc) = (p.x - screen.left() < c, screen.right() - p.x < c, p.y - screen.top() < c, screen.bottom() - p.y < c);
+    match () {
+        _ if (t && lc) || (l && tc) => Some(D::NorthWest),
+        _ if (t && rc) || (r && tc) => Some(D::NorthEast),
+        _ if (bt && lc) || (l && bc) => Some(D::SouthWest),
+        _ if (bt && rc) || (r && bc) => Some(D::SouthEast),
+        _ if t => Some(D::North),
+        _ if bt => Some(D::South),
+        _ if l => Some(D::West),
+        _ if r => Some(D::East),
+        _ => None,
+    }
+}
+
+/// A status pane's width: its template of 27 (40 for the wide ones) "_" in the UI font plus 18 px; the "_" is
+/// 5 / 6 / 7 px at 100 / 125 / 150 % (clone: panes 153 / 180 / 207 and 218 / 258 / 298 px apart), the 18 not scaled.
+fn status_pane_w(i: usize) -> f32 {
+    let n = if i == 2 || i == 5 { 40.0 } else { 27.0 };
+    n * dpi::measured(5.0, 6.0, 7.0) + 18.0
+}
+
+/// The extended pane's width: its text's width in the UI font + 27 (clone: 135 / 157 / 189 px at 100 / 125 /
+/// 150 %); the older looks' 155 at 100 % keep their 20 more.
+fn status_ext_w(bands: bool) -> f32 {
+    dpi::measured(135.0, 157.0, 189.0) + if bands { 0.0 } else { 20.0 }
+}
+
+/// A pane's text starts this far into it (clone: ink 10 / 10 / 11 px from the pane's edge at 100 / 125 / 150 %).
+fn status_text_inset() -> f32 {
+    dpi::measured(9.0, 9.0, 10.0)
 }
 
 /// The status bar's six panes from `left` to `room` (the first that does not fit ends the row, a hidden
@@ -85,7 +158,7 @@ fn status_pane_places(left: f32, room: f32, hidden: &[bool; 7]) -> Vec<(usize, f
     let mut x = left;
     let mut out = Vec::new();
     for i in (0..6).filter(|&i| !hidden[i]) {
-        let w = dpi::s(if i == 2 || i == 5 { 218.0 } else { 153.0 });
+        let w = status_pane_w(i);
         if x + w > room {
             break;
         }
@@ -846,11 +919,13 @@ impl App {
         }
         // The panes' widths and the font at the system DPI (VM, 125 % and
         // 150 %: the bar 30 / 36 px, its text and panes 1.25 / 1.5 ×).
-        let font = egui::FontId::proportional(dpi::font(12.0));
+        // The ribbon status bar's font is MFC's UI font, ours the nearest Tahoma (clone, 100 / 125 / 150 %: «Верт. визир 1:» 73 / 86 /
+        // 107 px wide: 11 / 13 / 17 px in ours; the ribbon's 12 / 15 / 18 is wider).
+        let font = egui::FontId::proportional(status_font_px());
         // A normal (not maximised) window's last pane also holds the size grip
         // (see [`status_reserve`]).
         let maximised = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
-        let (ext_w, room) = status_reserve(r.right(), dpi::s(if p.bands.is_some() { 135.0 } else { 155.0 }), maximised, self.status_hidden[6]);
+        let (ext_w, room) = status_reserve(r.right(), status_ext_w(p.bands.is_some()), maximised, self.status_hidden[6]);
         let hidden = self.status_hidden;
         // A hidden pane leaves no gap: the rest move left (VM). A pane that
         // does not fit before the extended one is not shown (VM, 150 % at
@@ -858,7 +933,7 @@ impl App {
         for (i, x, w) in status_pane_places(r.left(), room, &hidden) {
             let text = &s[i];
             let clip = egui::Rect::from_min_max(egui::pos2(x, r.top()), egui::pos2(x + w - 2.0, r.bottom()));
-            painter.with_clip_rect(clip).text(egui::pos2(x + dpi::s(9.0), r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
+            painter.with_clip_rect(clip).text(egui::pos2(x + status_text_inset(), r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
         }
         // The last pane: 135 px at the right (VM), its own rows and a light
         // and a dark column at its left in the Office 2007 styles.
@@ -877,7 +952,22 @@ impl App {
             painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.6)));
         }
         if ext_shown {
-            painter.text(egui::pos2((ext.left() + ext.right() - dpi::s(12.0)) / 2.0, ext.center().y), egui::Align2::CENTER_CENTER, "НТЦ Механотроника", font, p.status_text);
+            // Its text starts 16 px in (clone: ink 17 px from the pane's edge at every scale).
+            painter.text(egui::pos2(ext.left() + 16.0, ext.center().y), egui::Align2::LEFT_CENTER, "НТЦ Механотроника", font, p.status_text);
+        }
+        // The size grip, in a normal window only (the visual style's gripper).
+        self.status_grip = (!maximised).then(|| egui::Rect::from_min_max(egui::pos2(r.right() - 11.0, r.bottom() - 11.0), r.right_bottom()));
+        if !maximised {
+            let (dark, light) = if p.bands.is_some() && p.status_bg == egui::Color32::from_rgb(186, 212, 247) {
+                (egui::Color32::from_rgb(69, 93, 128), egui::Color32::from_rgb(177, 201, 232))
+            } else {
+                (egui::Color32::from_gray(100), egui::Color32::WHITE)
+            };
+            for d in status_grip_dots(r.right(), r.bottom(), status_grip_pitch()) {
+                let dot = egui::Rect::from_min_size(d, egui::vec2(2.0, 2.0));
+                painter.rect_filled(dot.translate(egui::vec2(1.0, 1.0)), 0.0, light);
+                painter.rect_filled(dot, 0.0, dark);
+            }
         }
         // CMFCRibbonStatusBar's right-click: its configuration menu.
         let bar = ui.allocate_rect(r, egui::Sense::click());
@@ -900,8 +990,7 @@ impl App {
     fn status_config_menu(&mut self, ctx: &egui::Context, texts: &[String; 6]) {
         let Some((at, opened)) = self.status_menu else { return };
         let id = egui::Id::new("fv_status_menu");
-        let h = ctx.memory(|m| m.area_rect(id)).map_or(0.0, |r| r.height());
-        let pos = if at.y + h > ctx.screen_rect().bottom() { egui::pos2(at.x, at.y - h) } else { at };
+        let pos = crate::popmenu::menu_pos(ctx, id, at);
         let mut toggle = None;
         let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain(true).show(ctx, |ui| {
             crate::popmenu::mfc_frame_with(ui, true, false, |ui| {
@@ -954,25 +1043,12 @@ impl App {
     /// 5 px, corners 12 px along each edge; not while maximised.
     fn resize_edges(&mut self, ctx: &egui::Context) {
         use egui::viewport::ResizeDirection as D;
-        if !self.own_caption || ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
+        if ctx.input(|i| i.viewport().maximized.unwrap_or(false)) {
             return;
         }
         let screen = ctx.screen_rect();
         let Some(p) = ctx.input(|i| i.pointer.hover_pos()) else { return };
-        let (b, c) = (5.0, 12.0);
-        let (l, r, t, bt) = (p.x - screen.left() < b, screen.right() - p.x < b, p.y - screen.top() < b, screen.bottom() - p.y < b);
-        let (lc, rc, tc, bc) = (p.x - screen.left() < c, screen.right() - p.x < c, p.y - screen.top() < c, screen.bottom() - p.y < c);
-        let dir = match () {
-            _ if (t && lc) || (l && tc) => Some(D::NorthWest),
-            _ if (t && rc) || (r && tc) => Some(D::NorthEast),
-            _ if (bt && lc) || (l && bc) => Some(D::SouthWest),
-            _ if (bt && rc) || (r && bc) => Some(D::SouthEast),
-            _ if t => Some(D::North),
-            _ if bt => Some(D::South),
-            _ if l => Some(D::West),
-            _ if r => Some(D::East),
-            _ => None,
-        };
+        let dir = resize_dir_at(self.own_caption, self.status_grip, screen, p);
         let Some(dir) = dir else { return };
         ctx.set_cursor_icon(match dir {
             D::North | D::South => egui::CursorIcon::ResizeVertical,
@@ -1406,6 +1482,35 @@ mod tests {
 
     use super::*;
 
+    /// #139 (clone, 125 % / 150 %): the panes are 27 / 40 "_" templates of 5 / 6 / 7 px plus 18 px (153 / 180 /
+    /// 207 and 218 / 258 / 298), the extended pane 135 / 157 / 189; at 125 % the fifth pane shows from 1160 px
+    /// of client in a normal window and not from 1159 (the grip's reserve 25 px, bracketed on the clone).
+    #[test]
+    fn the_status_panes_follow_the_uis_underscore_at_every_scale() {
+        for (d, a, b, ext) in [(96, 153.0, 218.0, 135.0), (120, 180.0, 258.0, 157.0), (144, 207.0, 298.0, 189.0)] {
+            dpi::set(d);
+            assert_eq!((status_pane_w(0), status_pane_w(2), status_ext_w(true)), (a, b, ext), "{d}");
+        }
+        dpi::set(120);
+        let count = |w: f32| {
+            let (_, room) = status_reserve(w, status_ext_w(true), false, false);
+            status_pane_places(0.0, room, &[false; 7]).len()
+        };
+        assert_eq!((count(1159.0), count(1160.0)), (4, 5), "the fifth pane's bracket at 125 %");
+        // The extended pane hidden: the reserve alone (clone, 125 %: from 1010 px of client, not 1009; 150 %: the
+        // fourth pane from between 954 and 958).
+        let alone = |w: f32| {
+            let mut h = [false; 7];
+            h[6] = true;
+            let (_, room) = status_reserve(w, status_ext_w(true), false, true);
+            status_pane_places(0.0, room, &h).len()
+        };
+        assert_eq!((alone(1009.0), alone(1010.0)), (4, 5), "the hidden-pane bracket at 125 %");
+        dpi::set(144);
+        assert_eq!((alone(953.0), alone(958.0)), (3, 4), "the hidden-pane bracket at 150 %");
+        dpi::set(96);
+    }
+
     /// #78: the document tabs' font is whole pixels at every scale.
     #[test]
     fn the_tab_font_is_whole_pixels() {
@@ -1652,6 +1757,90 @@ mod window_tests {
             let rows: Vec<usize> = (0..c.h).filter(|&y| c.px[y * c.w + 600] == line).take(2).collect();
             assert_eq!(rows.len(), 2, "{native}");
             assert_eq!(rows[1] - rows[0] + 1, h, "{native}: the ОМП bar");
+        }
+        dpi::set(96);
+    }
+
+    /// #139 (clone, 100 / 125 / 150 %): the status bar's text is the Tahoma size nearest the original's width,
+    /// 11 / 13 / 17 px («Верт. визир 1:» 73 / 86 / 107 px of ink in the original; at 150 % 16 px is 5 px short
+    /// and the ribbon's 18 px 10 over).
+    #[test]
+    fn the_status_bar_text_matches_the_originals_width() {
+        for (d, px) in [(96, 11.0), (120, 13.0), (144, 17.0)] {
+            dpi::set(d);
+            assert_eq!(status_font_px(), px, "{d}");
+        }
+        // Through the frame at 150 %: the first pane's ink is within 3 px of the original's 107.
+        dpi::set(96);
+        chrome_dpi(Some(1.5));
+        let fonts = app_fonts();
+        let mut app = demo(&[]);
+        let c = raster::render_native(Vec2::new(1280.0, 722.0), 1.5, |ctx| device_options(ctx, Some(1.5)), device_screen, Some(&fonts), vec![vec![]; 5], |ctx| app.frame_ui(ctx));
+        let ink = |x: usize, y: usize| {
+            let p = c.px[y * c.w + x];
+            p[0] < 110 && p[2] > p[0] + 30
+        };
+        let xs: Vec<usize> = (0..150).filter(|&x| (c.h - 27..c.h).any(|y| ink(x, y))).collect();
+        let width = (xs.last().unwrap() - xs.first().unwrap() + 1) as f32;
+        assert!((width - 107.0).abs() <= 3.0, "ink {width} against the original's 107");
+        dpi::set(96);
+    }
+
+    /// #138 (clone: a drag from the original's grip top dot resizes the window): a press on the grip's box
+    /// resizes south-east, whatever the window's frame; a maximised window has no grip box.
+    #[test]
+    fn a_press_on_the_size_grip_resizes_south_east() {
+        use egui::viewport::ResizeDirection as D;
+        let screen = egui::Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 600.0));
+        let grip = Some(egui::Rect::from_min_max(Pos2::new(989.0, 577.0), Pos2::new(1000.0, 588.0)));
+        assert_eq!(resize_dir_at(false, grip, screen, Pos2::new(992.0, 580.0)), Some(D::SouthEast), "the top dot's corner, 8 px from both edges");
+        assert_eq!(resize_dir_at(false, grip, screen, Pos2::new(900.0, 580.0)), None);
+        assert_eq!(resize_dir_at(false, None, screen, Pos2::new(992.0, 580.0)), None);
+        assert_eq!(resize_dir_at(true, None, screen, Pos2::new(0.0, 300.0)), Some(D::West));
+        let mut app = demo(&[]);
+        let fonts = app_fonts();
+        for (maximised, some) in [(false, true), (true, false)] {
+            let hook = move |ctx: &egui::Context, raw: &mut egui::RawInput| {
+                device_screen(ctx, raw);
+                raw.viewports.entry(egui::ViewportId::ROOT).or_default().maximized = Some(maximised);
+            };
+            raster::render_native(Vec2::new(1280.0, 722.0), 1.0, |ctx| device_options(ctx, Some(1.0)), hook, Some(&fonts), vec![vec![]; 3], |ctx| app.frame_ui(ctx));
+            assert_eq!(app.status_grip.is_some(), some, "maximised {maximised}");
+        }
+        assert!(app.status_grip.is_none());
+    }
+
+    /// #138 (clone, 150 %): a normal window's status bar draws the size grip, a triangle of six 2 px dots at
+    /// its bottom-right corner on a 4 px pitch (the lowest row longest), each with a light shadow; a
+    /// maximised window draws none. Drawn at 125 / 150 % through the whole frame.
+    #[test]
+    fn a_normal_window_draws_the_size_grip_and_a_maximised_one_does_not() {
+        let dots = status_grip_dots(100.0, 50.0, 4.0);
+        assert_eq!(dots.len(), 6);
+        assert_eq!((dots[0], dots[2], dots[3], dots[5]), (egui::pos2(97.0, 47.0), egui::pos2(89.0, 47.0), egui::pos2(97.0, 43.0), egui::pos2(97.0, 39.0)));
+        let dark = [69, 93, 128];
+        let fonts = app_fonts();
+        for (native, maximised) in [(1.25, false), (1.5, false), (1.5, true), (1.0, false)] {
+            dpi::set(96);
+            chrome_dpi(Some(native));
+            let mut app = demo(&[]);
+            let hook = move |ctx: &egui::Context, raw: &mut egui::RawInput| {
+                device_screen(ctx, raw);
+                raw.viewports.entry(egui::ViewportId::ROOT).or_default().maximized = Some(maximised);
+            };
+            let px = Vec2::new(1280.0, 722.0);
+            let c = raster::render_native(px, native, |ctx| device_options(ctx, Some(native)), hook, Some(&fonts), vec![vec![]; 5], |ctx| app.frame_ui(ctx));
+            let found: Vec<(usize, usize)> = (c.h - 60..c.h).flat_map(|y| (c.w - 14..c.w).map(move |x| (x, y))).filter(|&(x, y)| c.px[y * c.w + x] == dark).collect();
+            if maximised {
+                assert!(found.is_empty(), "{native}: a maximised window has no grip");
+                continue;
+            }
+            assert_eq!(found.len(), 24, "{native}: six 2 × 2 dots");
+            let (right, bottom) = (found.iter().map(|p| p.0).max().unwrap() + 2, found.iter().map(|p| p.1).max().unwrap() + 2);
+            assert_eq!(right, c.w, "{native}: the dots end at the client's right edge");
+            for d in status_grip_dots(right as f32, bottom as f32, status_grip_pitch()) {
+                assert!(found.contains(&(d.x as usize, d.y as usize)), "{native}: a dot at {d:?}");
+            }
         }
         dpi::set(96);
     }
@@ -4518,6 +4707,19 @@ mod window_tests {
         assert_eq!(w.app.docs[ai].computed.len(), n, "the paste undone");
     }
 
+    /// #44 at the lane menu's call site: near the screen's foot the menu's bottom edge lies at the point.
+    #[test]
+    fn the_lane_menu_near_the_foot_opens_upward_from_the_point() {
+        let mut w = Win::new();
+        let at = Pos2::new(300.0, 860.0 - 8.0);
+        w.app.lane_menu_serial += 1;
+        let serial = w.app.lane_menu_serial;
+        w.app.lane_menu = Some(lanes::LaneMenu { serial, pos: at, kind: lanes::LaneMenuKind::Channels });
+        w.idle(4);
+        let menu = w.ctx.memory(|m| m.area_rect(egui::Id::new("fv_lane_menu").with(serial))).expect("the menu shown");
+        assert!((menu.bottom() - at.y).abs() <= 0.5, "bottom {} at the point {}", menu.bottom(), at.y);
+    }
+
     /// The status bar's right-click menu (CMFCRibbonStatusBar): a click
     /// on an element's row hides it and the menu stays; Esc closes it; the
     /// workspace keeps the hidden ids, one pane's hiding all six (VM).
@@ -4530,7 +4732,7 @@ mod window_tests {
         w.idle(2);
         assert!(w.app.status_menu.is_some());
         let menu = w.ctx.memory(|m| m.area_rect(egui::Id::new("fv_status_menu"))).expect("the menu shown");
-        assert!(menu.bottom() <= 860.0 + 0.5, "opened upward from the bar");
+        assert!((menu.bottom() - at.y).abs() <= 0.5, "opened upward from the point: its bottom at it, not at the screen's foot");
         // The fourth element's row: under the 19 px title, 22 px rows.
         let row = Pos2::new(menu.center().x, menu.top() + 3.0 + 19.0 + 3.0 * 22.0 + 11.0);
         w.press(Primary, row, row);
@@ -5953,13 +6155,13 @@ mod window_tests {
         std::fs::write(path, util::png_rgba(c.w as u32, c.h as u32, &rgba)).unwrap();
     }
 
-    /// #78 through the call site: a zoomed plane's scroll bar is the
-    /// system's 26 px at 150 % (its grey track across the window's right
+    /// #78, #141 through the call site: a zoomed plane's scroll bar is 25 px at
+    /// 150 % (the system's 26 less one; its grey track across the window's right
     /// edge), not the 100 % width scaled (24).
     #[test]
     fn a_zoomed_planes_scroll_bar_is_the_system_width() {
         let fonts = app_fonts();
-        for (dpi_v, native, bar) in [(96u32, 1.0f32, 16usize), (120, 1.25, 21), (144, 1.5, 26)] {
+        for (dpi_v, native, bar) in [(96u32, 1.0f32, 16usize), (120, 1.25, 20), (144, 1.5, 25)] {
             dpi::set(dpi_v);
             let mut app = demo(&[]);
             app.diag.circle.z = 2.0;

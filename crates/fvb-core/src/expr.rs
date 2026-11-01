@@ -54,6 +54,12 @@ pub trait Channels {
     fn resolve(&self, name: &str) -> Option<usize>;
     /// Instantaneous value at `idx` (`FUN_00426020`).
     fn sample(&self, ch: usize, idx: usize) -> f64;
+    /// A channel reference after one of the analysis functions (tokens 0x30–0x39) reads its scalar through
+    /// `FUN_00426120` instead: the same as [`Channels::sample`] unless the channel's data is stored in primary
+    /// values (#30).
+    fn sample_late(&self, ch: usize, idx: usize) -> f64 {
+        self.sample(ch, idx)
+    }
     /// RMS fundamental phasor at `idx` (`FUN_00428ac0`).
     fn phasor(&self, ch: usize, idx: usize) -> Complex64;
     /// True RMS over one period ending at `idx` (`FUN_004272a0(idx, 1)`).
@@ -125,6 +131,10 @@ pub enum ExprError {
     /// 0x162: no channel of that name (channel mode).
     #[error("Имя канала задано неправильно.")]
     BadChannelName(String),
+    /// 0x1d4: a formula names the definition being built or one after it (`0x4194fb`; the text is the
+    /// definition's name, the offending identifier and string 468).
+    #[error("{owner}: '{ident}' -  не определен")]
+    NotDefined { owner: String, ident: String },
     /// 0x42e: a computed channel whose samples are neither all scalar nor all
     /// complex.
     #[error("Результат не действителен")]
@@ -147,7 +157,7 @@ impl std::fmt::Display for FormulaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.error {
             ExprError::ArgCount(..) | ExprError::NeedsChannel(_) => write!(f, "{}: '{}'", self.error, self.formula),
-            ExprError::BadChannelName(_) => write!(f, "{}", self.error),
+            ExprError::BadChannelName(_) | ExprError::NotDefined { .. } => write!(f, "{}", self.error),
             _ => write!(f, "{}: {}", self.formula, self.error),
         }
     }
@@ -323,6 +333,8 @@ enum Tok {
     Num(f64),
     Ident(String),
     Chan(usize),
+    /// A channel reference after an analysis function (token 0x46, #30).
+    ChanLate(usize),
     /// `[...]`: the text between the brackets, case kept.
     Dimension(String),
     End,
@@ -336,6 +348,7 @@ enum Node {
     Num(f64),
     Var(String),
     Chan(usize),
+    ChanLate(usize),
     Pi,
     Null,
     Neg(Box<Node>),
@@ -371,7 +384,7 @@ impl Expr {
     /// Keep a formula string whatever it contains; a syntax error (an empty
     /// attribute included) surfaces when it is evaluated.
     pub fn lenient(src: &str) -> Expr {
-        Expr::compile(src, None)
+        Expr::compile(src, None, None)
     }
 
     /// Parse a formula in channel mode (the formula editor's computed
@@ -379,15 +392,26 @@ impl Expr {
     /// identifier that resolves to nothing is dropped from the token stream,
     /// as the original's tokenizer does.
     pub fn parse_channels(src: &str, chans: &dyn Channels) -> Result<Expr, ExprError> {
-        let e = Expr::compile(src, Some(chans));
+        let e = Expr::compile(src, Some(chans), None);
         match &e.root {
             Ok(_) => Ok(e),
             Err(err) => Err(err.clone()),
         }
     }
 
-    fn compile(src: &str, chans: Option<&dyn Channels>) -> Expr {
-        let parsed = tokenize(src, chans).and_then(|(toks, idents)| {
+    /// [`Expr::parse_channels`] for the definition `owner` of a batch (`0x415780`): an identifier equal, ignoring
+    /// case, to the name of a definition from this one on (`guard`: its own name and the later ones) is the
+    /// error 0x1d4 before any channel lookup (`0x419074`–`0x4194fb`), #30.
+    pub fn parse_channels_guarded(src: &str, chans: &dyn Channels, owner: &str, guard: &[String]) -> Result<Expr, ExprError> {
+        let e = Expr::compile(src, Some(chans), Some((owner, guard)));
+        match &e.root {
+            Ok(_) => Ok(e),
+            Err(err) => Err(err.clone()),
+        }
+    }
+
+    fn compile(src: &str, chans: Option<&dyn Channels>, guard: Option<(&str, &[String])>) -> Expr {
+        let parsed = tokenize(src, chans, guard).and_then(|(toks, idents)| {
             let mut p = Parser { toks, pos: 0 };
             Ok((Box::new(Node::List(p.list()?)), idents))
         });
@@ -461,7 +485,7 @@ impl Expr {
 /// (`0x415d10`…`0x4166b0`) — the text of the `[...]` where the walk stops,
 /// or the unit it carried. A formula that does not parse has none.
 pub fn formula_unit(src: &str, chans: &dyn Channels) -> String {
-    let Ok((toks, _)) = tokenize(src, Some(chans)) else { return String::new() };
+    let Ok((toks, _)) = tokenize(src, Some(chans), None) else { return String::new() };
     let mut p = Parser { toks, pos: 0 };
     if p.list().is_err() {
         return String::new();
@@ -545,7 +569,7 @@ pub fn eval_str(src: &str, ctx: &Context) -> Result<f64, ExprError> {
     Expr::parse(src)?.eval(ctx)
 }
 
-fn tokenize(src: &str, chans: Option<&dyn Channels>) -> Result<(Vec<Tok>, Vec<String>), ExprError> {
+fn tokenize(src: &str, chans: Option<&dyn Channels>, guard: Option<(&str, &[String])>) -> Result<(Vec<Tok>, Vec<String>), ExprError> {
     // Lowercase outside [...] (`0x418ca4`..`0x418cee` restore bracketed text).
     let mut s = String::with_capacity(src.len());
     let mut in_dim = false;
@@ -597,7 +621,7 @@ fn tokenize(src: &str, chans: Option<&dyn Channels>) -> Result<(Vec<Tok>, Vec<St
         if c == '"' {
             let body = &rest[1..];
             let end = body.find('"').ok_or(ExprError::Expected("closing \""))?;
-            ident(&body[..end], chans, &mut toks, &mut idents)?;
+            ident(&body[..end], chans, guard, &mut toks, &mut idents)?;
             pos += end + 2;
             continue;
         }
@@ -605,7 +629,7 @@ fn tokenize(src: &str, chans: Option<&dyn Channels>) -> Result<(Vec<Tok>, Vec<St
             let len = rest
                 .find(|ch: char| !(ch == '_' || ch.is_alphanumeric()))
                 .unwrap_or(rest.len());
-            ident(&rest[..len], chans, &mut toks, &mut idents)?;
+            ident(&rest[..len], chans, guard, &mut toks, &mut idents)?;
             pos += len;
             continue;
         }
@@ -618,6 +642,16 @@ fn tokenize(src: &str, chans: Option<&dyn Channels>) -> Result<(Vec<Tok>, Vec<St
         return Err(ExprError::UnexpectedChar(c, pos));
     }
 
+    // Evaluating one of the analysis functions (tokens 0x30–0x39, `0x41a1ca`) retags every later channel token
+    // 0x41 to 0x46 (#30).
+    let mut late = false;
+    for t in &mut toks {
+        match t {
+            Tok::Func(0x30..=0x39) => late = true,
+            Tok::Chan(c) if late => *t = Tok::ChanLate(*c),
+            _ => {}
+        }
+    }
     // Post-pass: `,` followed by `,` or `)` gets a null value in between.
     let mut out = Vec::with_capacity(toks.len() + 1);
     for (i, t) in toks.iter().enumerate() {
@@ -632,13 +666,19 @@ fn tokenize(src: &str, chans: Option<&dyn Channels>) -> Result<(Vec<Tok>, Vec<St
 
 /// An identifier: a variable, or in channel mode a channel (`0x419126`;
 /// `CalcChannels` never returns null — an unknown name is error 0x162).
-fn ident(name: &str, chans: Option<&dyn Channels>, toks: &mut Vec<Tok>, idents: &mut Vec<String>) -> Result<(), ExprError> {
+fn ident(name: &str, chans: Option<&dyn Channels>, guard: Option<(&str, &[String])>, toks: &mut Vec<Tok>, idents: &mut Vec<String>) -> Result<(), ExprError> {
     match chans {
         None => {
             idents.push(name.to_string());
             toks.push(Tok::Ident(name.to_string()));
         }
         Some(c) => {
+            if let Some((owner, names)) = guard {
+                let low = name.to_lowercase();
+                if names.iter().any(|n| n.to_lowercase() == low) {
+                    return Err(ExprError::NotDefined { owner: owner.to_string(), ident: name.to_string() });
+                }
+            }
             let ch = c.resolve(name).ok_or_else(|| ExprError::BadChannelName(name.to_string()))?;
             toks.push(Tok::Chan(ch));
         }
@@ -762,6 +802,7 @@ impl Parser {
             Tok::Num(v) => Node::Num(v),
             Tok::Ident(name) => Node::Var(name),
             Tok::Chan(ch) => Node::Chan(ch),
+            Tok::ChanLate(ch) => Node::ChanLate(ch),
             Tok::Pi => Node::Pi,
             Tok::Null => Node::Null,
             Tok::End => return Err(ExprError::UnexpectedEof),
@@ -880,7 +921,7 @@ impl Walk<'_> {
     fn leaf(&mut self, out: &mut [String]) {
         match self.peek() {
             Tok::Pi | Tok::Null | Tok::Num(_) => out[0].clear(),
-            Tok::Chan(c) => out[0] = self.chans.unit(*c),
+            Tok::Chan(c) | Tok::ChanLate(c) => out[0] = self.chans.unit(*c),
             _ => {}
         }
         self.advance();
@@ -937,12 +978,13 @@ fn eval_node(n: &Node, env: Env) -> Result<Vec<Value>, ExprError> {
                 .ok_or_else(|| ExprError::UnknownIdent(name.clone()))?;
             vec![Value::real(v)]
         }
-        Node::Chan(ch) => {
-            // 0x41f960: scalar = instantaneous value, complex = phasor, flags 7.
+        Node::Chan(ch) | Node::ChanLate(ch) => {
+            // 0x41f960: scalar = instantaneous value, complex = phasor, flags 7. After an analysis function
+            // the scalar comes from `0x426120` (token 0x46, `0x41fae7`).
             let c = env.chans.ok_or(ExprError::NeedsChannel("chan"))?;
             let z = c.phasor(*ch, env.idx);
             vec![Value {
-                v: c.sample(*ch, env.idx),
+                v: if matches!(n, Node::ChanLate(_)) { c.sample_late(*ch, env.idx) } else { c.sample(*ch, env.idx) },
                 re: z.re,
                 im: z.im,
                 f: 7,

@@ -221,15 +221,19 @@ impl App {
                 if let Some(d) = self.active_doc_mut() {
                     d.set_color_selected(st.new);
                 }
+                // 33030 ends in the refresh-all (`0x465879`), whatever the dialog returned.
+                self.refresh_blocks();
                 self.color_dialog = None;
                 ctx.data_mut(|d| d.remove::<ColorState>(key));
             }
             Some(false) => {
+                self.refresh_blocks();
                 self.color_dialog = None;
                 ctx.data_mut(|d| d.remove::<ColorState>(key));
             }
             None if open => ctx.data_mut(|d| d.insert_temp(key, st)),
             None => {
+                self.refresh_blocks();
                 self.color_dialog = None;
                 ctx.data_mut(|d| d.remove::<ColorState>(key));
             }
