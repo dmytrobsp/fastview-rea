@@ -723,6 +723,52 @@ mod tests {
         }
     }
 
+    /// #158 (clone): a frequency bar with no height (a bin of 1e-11 of the largest) prints as one line of
+    /// the pen's width centred on its edge (the original: GDI's `Rectangle` at `0x470488`), not as the
+    /// outline's edges inside the box (all of it above the baseline).
+    #[test]
+    fn a_frequency_bar_with_no_height_prints_one_pen_wide_line() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        {
+            let d = &mut app.docs[0];
+            let n = d.osc.samples_per_cycle().max(2);
+            let len = d.osc.analog[0].samples.len();
+            d.osc.analog[0].samples = (0..len).map(|i| { let a = std::f64::consts::TAU * i as f64 / n as f64; 123.0 * a.sin() + 1e-9 * (3.0 * a).sin() + 2e-9 * (5.0 * a).cos() }).collect();
+            d.recompute(false);
+            for c in &mut d.chans {
+                c.on_freq = false;
+            }
+            d.chans[0].on_freq = true;
+            d.main_cursor = len - 1;
+        }
+        let colour = app.docs[0].chans[0].color;
+        app.docs[0].print_ticks = [false, true, false, false, false];
+        let setup = PageSetup::default();
+        let job = app.print_job(0, Device::sheet(&setup, 600.0), setup);
+        let c = app.render_page(&egui::FontDefinitions::default(), &job, 0, false);
+        let s = diagram_scale(job.attrib_dpi) as usize;
+        assert_eq!(s, 6);
+        let want = [colour.r(), colour.g(), colour.b()];
+        // The longest vertical run of the channel's own colour in each column.
+        let mut runs = vec![0usize; c.w];
+        for (x, run) in runs.iter_mut().enumerate() {
+            let mut cur = 0;
+            for y in 0..c.h {
+                cur = if c.get(x, y) == want { cur + 1 } else { 0 };
+                *run = (*run).max(cur);
+            }
+        }
+        // The tall bar's columns (its sides are runs of many rows) are left out.
+        let tall: Vec<usize> = (0..c.w).filter(|&x| runs[x] > 4 * s).collect();
+        let (lo, hi) = (*tall.first().expect("the fundamental's bar"), *tall.last().unwrap());
+        let thin: Vec<usize> = (0..c.w).filter(|&x| x < lo || x > hi).map(|x| runs[x]).filter(|&r| r > 0).collect();
+        assert!(!thin.is_empty(), "the flat bars are drawn");
+        // The pen is `s` wide, centred on the bar's edge, and the baseline (`s / 2` wide) covers its lower half
+        // (the original on a clone at 600 dpi: three rows of colour above the baseline; with this test's page offset two).
+        assert!(thin.iter().all(|&r| r <= s / 2), "a flat bar is the pen's width centred on its edge, half under the baseline: {:?}", thin.iter().max());
+    }
+
     #[test]
     fn renders_an_oscillogram_page_with_frame_and_header() {
         let mut app = App::new();

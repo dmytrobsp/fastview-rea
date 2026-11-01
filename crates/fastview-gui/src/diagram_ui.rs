@@ -1737,7 +1737,17 @@ impl App {
                 let sl = g.left + tl.slot_left(&g, c, k);
                 let bl = sl + tl.inset;
                 if v != 0.0 {
-                    let bar = Rect::from_min_max(pt(bl, row_top + 12 * si + g.h + t), pt(bl + tl.bar, yb - 18 * si));
+                    let (top_dev, bottom_dev) = (row_top + 12 * si + g.h + t, yb - 18 * si);
+                    let bar = Rect::from_min_max(pt(bl, top_dev), pt(bl + tl.bar, bottom_dev));
+                    // A bar with no height: GDI's Rectangle draws nothing under a
+                    // 1-pixel pen and, under a wider one, a single line of the pen's
+                    // width centred on the edge (the baseline then covers its lower half) (`0x470488`; clone, #158).
+                    if bottom_dev - top_dev <= 0 {
+                        if let Some(w) = dg::flat_bar_pen(si, bottom_dev - top_dev) {
+                            let y = pt(0, bottom_dev - w / 2).y;
+                            painter.rect_filled(Rect::from_min_max(Pos2::new(bar.left(), y), Pos2::new(bar.right(), y + w as f32 / s)), 0.0, color);
+                        }
+                    } else {
                     // GradientFill (channel colour at the top to white), then
                     // the outline in the channel colour.
                     let mut mesh = egui::Mesh::default();
@@ -1748,6 +1758,7 @@ impl App {
                     mesh.add_triangle(0, 2, 3);
                     painter.add(egui::Shape::mesh(mesh));
                     painter.px_rect_stroke(bar.shrink(0.5), 0.0, Stroke::new(1.0f32, color));
+                    }
                 }
                 // The fundamental's own bar reads 100 (an improvement, #60); `use_rms` has its own norm.
                 let val = if percent { fvb_core::views::percent_bar_value(v, norm, k == periods && !use_rms, magnitude) } else { v };

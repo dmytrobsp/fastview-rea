@@ -412,6 +412,14 @@ pub fn vector_layout((left, top, right, bottom): (f32, f32, f32, f32), m: f32, c
     VectorLayout { b, table, r, cx: (left + w / 2.0).floor(), cy: (top + (y - r).min((b - top) / 2.0 + m + cy)).floor() }
 }
 
+/// The line GDI's `Rectangle` leaves of a frequency bar with no height
+/// (`0x470488`, clone #158): nothing under the screen's 1-pixel pen, a
+/// line `s` device pixels thick (the pen's width) along its edge under a
+/// wider print pen. `Some(thickness)` in device pixels.
+pub fn flat_bar_pen(s: i32, height: i32) -> Option<i32> {
+    (height == 0 && s > 1).then_some(s)
+}
+
 /// The one-row legend's start x (`0x490d2f`–`0x490d4f`): centred by a
 /// truncating halving while the window is strictly wider than the row,
 /// else m from the window's left edge (a row that does not fit overflows
