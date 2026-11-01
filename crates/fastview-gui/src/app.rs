@@ -819,6 +819,9 @@ pub struct Doc {
     /// Transient: the next [`Doc::recompute`] is the batch of a flag / value-mode command (`0x415780` over the
     /// list), which also makes channels of the rows that have none (#31).
     pub batch_makes_rows: bool,
+    /// Transient: the text of the failure that ended the batch of a flag / value-mode command run inside
+    /// [`Doc::recompute`]; the app shows it as the box the original's batch posts (`0x475680`, #174) and clears it.
+    pub batch_error: Option<String>,
     /// The definition list's row order as kill-active last wrote it (↑ / ↓ move rows, `0x487210` / `0x4873a0`):
     /// the formula page lists its rows in it.
     pub def_order: Vec<String>,
@@ -928,6 +931,7 @@ impl Doc {
             pending: Vec::new(),
             loose_defs: Vec::new(),
             batch_makes_rows: false,
+            batch_error: None,
             def_order: Vec::new(),
             merge_offset: 0.0,
             set: Default::default(),
@@ -962,7 +966,12 @@ impl Doc {
         self.analysis = analysis;
         // The copy was just taken: no name to bring over.
         let create = std::mem::take(&mut self.batch_makes_rows);
-        let _ = self.evaluate_formula_list_before(show_primary, &[], create);
+        // The batch's failure is its box (`0x415780` catches and posts, #174); a recompute that is no batch stays silent.
+        if let Err(e) = self.evaluate_formula_list_before(show_primary, &[], create, false) {
+            if create {
+                self.batch_error = Some(e.to_string());
+            }
+        }
     }
 
     /// Analog channel `i`'s window of statistics and phasors: its own rate
@@ -1024,7 +1033,15 @@ impl Doc {
     /// formula naming one of them, itself or a later one is the error 0x1d4 (#30).
     pub fn try_reevaluate_formulas_before(&mut self, show_primary: bool, new_names: &[String]) -> Result<(), fvb_core::expr::FormulaError> {
         self.sync_flagged_names();
-        self.evaluate_formula_list_before(show_primary, new_names, true)
+        self.evaluate_formula_list_before(show_primary, new_names, true, true)
+    }
+
+    /// The batch `0x415780` as the flag / value-mode / stats-row commands run it: like
+    /// [`Doc::try_reevaluate_formulas_before`], but the channels it made before a failing row stay (only the quick
+    /// analysis deletes what it added, `0x416f1b`).
+    pub fn run_batch(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
+        self.sync_flagged_names();
+        self.evaluate_formula_list_before(show_primary, &[], true, false)
     }
 
     /// [`Doc::try_reevaluate_formulas`] over the flagged copy as it is.
@@ -1060,7 +1077,7 @@ impl Doc {
     /// `create_loose` the rows without a channel become channels (at the block's end, as a new formula is). A
     /// definition's name guard (`0x419074`) covers the names after it in the list, then `new_names`. A failure ends
     /// the walk (the ones before keep their new values, the channels it created go again, `0x416f1b`).
-    fn evaluate_formula_list_before(&mut self, show_primary: bool, new_names: &[String], create_loose: bool) -> Result<(), fvb_core::expr::FormulaError> {
+    fn evaluate_formula_list_before(&mut self, show_primary: bool, new_names: &[String], create_loose: bool, rollback: bool) -> Result<(), fvb_core::expr::FormulaError> {
         let is_def = |c: &Computed| crate::setfile::is_formula(c);
         let seq = self.definition_list();
         let names: Vec<String> = seq
@@ -1115,7 +1132,7 @@ impl Doc {
             Ok(())
         };
         if let Err(e) = walk() {
-            if !created.is_empty() {
+            if rollback && !created.is_empty() {
                 self.computed.truncate(len0);
                 self.loose_defs = loose0;
                 self.channels_changed();
@@ -2594,7 +2611,10 @@ impl App {
     pub fn run_definition_batch(&mut self) {
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
         let show_primary = self.docs[ai].primary_values();
-        let _ = self.docs[ai].try_reevaluate_formulas_before(show_primary, &[]);
+        // A failing batch is a box with the exception's text (`0x415780` → `0x475680`; its callers ignore the result, #174).
+        if let Err(e) = self.docs[ai].run_batch(show_primary) {
+            self.dlg.push_alert(e.to_string());
+        }
     }
 
     /// Save the view preferences (`View`: XScale, YAnalogSize, RulerState,
@@ -4745,6 +4765,35 @@ mod tests {
 
     fn computed_names(app: &App) -> Vec<String> {
         app.active_doc().unwrap().computed.iter().map(|c| c.name.clone()).collect()
+    }
+
+    /// #174: the batch `0x415780` catches its own exception and posts it to the frame (`0x475680`, message 0x40a):
+    /// a box with the failure's text, whichever command ran the batch; the callers (`0x42fad3`, `0x4305e3`,
+    /// `0x42ff54`) ignore its result. The channels made before the failing row stay (only the quick analysis
+    /// deletes what it added, `0x416f1b`).
+    #[test]
+    fn a_failing_definition_batch_shows_its_box() {
+        let bad = |app: &mut App| app.active_doc_mut().unwrap().loose_defs.push(("Q1".into(), "NoSuchChannel+1".into()));
+        // The commands that run the batch without a recompute (stats rows, value modes, 32849-32852).
+        let mut app = kept_row_app();
+        bad(&mut app);
+        app.run_definition_batch();
+        assert_eq!(app.dlg.alerts.len(), 1, "one box");
+        assert!(computed_names(&app).contains(&"L1".to_string()), "the rows before the failure became channels: {:?}", computed_names(&app));
+        assert!(!computed_names(&app).contains(&"Q1".to_string()));
+        // Invert / DC / ADC and «Коэффициенты» recompute first and end in the same batch.
+        let mut app = kept_row_app();
+        bad(&mut app);
+        app.after_flag_command(crate::chansel::ChanFlag::Invert);
+        assert_eq!(app.dlg.alerts.len(), 1, "invert");
+        let mut app = kept_row_app();
+        bad(&mut app);
+        app.set_primary_values(true);
+        assert_eq!(app.dlg.alerts.len(), 1, "32867");
+        // A batch that succeeds shows nothing.
+        let mut app = kept_row_app();
+        app.run_definition_batch();
+        assert!(app.dlg.alerts.is_empty());
     }
 
     /// «Коэффициенты» OK with nothing edited: the dialog's OK (`0x47b610`) ends

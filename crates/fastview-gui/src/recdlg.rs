@@ -601,6 +601,9 @@ impl App {
         RECOMPUTES.with(|c| c.set(c.get() + 1));
         let Some(d) = self.docs.get_mut(di) else { return };
         d.recompute_signals();
+        if let Some(m) = d.batch_error.take() {
+            self.dlg.push_alert(m);
+        }
         if self.docs[di].omp.shown {
             let (active, status) = (self.active, self.status.clone());
             self.active = Some(di);
