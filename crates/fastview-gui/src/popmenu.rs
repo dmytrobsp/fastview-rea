@@ -78,11 +78,15 @@ pub struct PopMenu {
     /// A context menu's pixel pads above and below its rows; a ribbon
     /// button's menu has none (VM: «Стиль»).
     pub pad: bool,
+    /// A menu taller than the screen is cut to it and scrolls (CMFCPopupMenu's scroll mode,
+    /// `0x100dd6a9`–`0x100dd733`): whether it does, and how far it is scrolled.
+    pub tall: bool,
+    pub scroll: f32,
 }
 
 impl PopMenu {
     pub fn new(serial: u64, pos: Pos2) -> Self {
-        PopMenu { serial, pos, sub: None, hot: None, sub_hot: None, in_sub: false, pad: true }
+        PopMenu { serial, pos, sub: None, hot: None, sub_hot: None, in_sub: false, pad: true, tall: false, scroll: 0.0 }
     }
 
     /// A ribbon button's menu: no pads.
@@ -512,8 +516,8 @@ fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<us
 /// `0x100dd75e`–`0x100dd7b4`; the clone at 125 %): at the point when it fits below it; otherwise upward from
 /// the point, its bottom edge at the point, clamped to the top of the monitor's work area (the lane menu near
 /// the foot opened at y 0). Horizontally the original moves a menu past the right edge to 1 px inside the work
-/// area; `constrain` leaves it flush (1 px). Differences: ours is confined to the window's client (the work
-/// area when maximised), and a menu taller than the area is not cut and scrolled.
+/// area; `constrain` leaves it flush (1 px). Difference: ours is confined to the window's client (the work
+/// area when maximised); a menu taller than that is cut to it and scrolls (`show`).
 pub fn menu_origin(at: Pos2, size: Vec2, screen: Rect) -> Pos2 {
     if at.y + size.y > screen.bottom() {
         Pos2::new(at.x, (at.y - size.y).max(screen.top()))
@@ -527,6 +531,53 @@ pub fn menu_origin(at: Pos2, size: Vec2, screen: Rect) -> Pos2 {
 pub fn menu_pos(ctx: &egui::Context, id: egui::Id, at: Pos2) -> Pos2 {
     let size = ctx.memory(|m| m.area_rect(id)).map_or(Vec2::ZERO, |r| r.size());
     menu_origin(at, size, ctx.screen_rect())
+}
+
+
+/// The scroll arrows of a menu taller than the screen are 16 px bands (inferred: the binary's scroll
+/// mode is read at `0x100dd6a9`–`0x100dd733`, the arrows' size and rate were not run) that scroll
+/// the rows while the pointer is on them, a row per 100 ms; the wheel scrolls by rows.
+pub fn arrow_band() -> f32 {
+    crate::dpi::s(16.0)
+}
+
+/// Pixels a menu scrolls while the pointer rests on an arrow for `dt` seconds.
+pub fn scroll_speed(dt: f32) -> f32 {
+    row_pitch() * dt / 0.1
+}
+
+/// `add` (the rows) in a menu cut to `avail` high: an arrow band above and below, the rows between,
+/// scrolled by `scroll` (updated).
+fn scrolled<R>(ui: &mut egui::Ui, avail: f32, scroll: &mut f32, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let band = arrow_band();
+    let body = (avail - 2.0 * band - 12.0).max(band);
+    let dt = ui.ctx().input(|i| i.stable_dt).min(0.1);
+    let arrow = |ui: &mut egui::Ui, up: bool, on: bool, scroll: &mut f32| {
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(1.0, band), egui::Sense::hover());
+        let row = Rect::from_x_y_ranges(ui.max_rect().x_range(), r.y_range());
+        let col = if on { MFC_TEXT } else { MFC_GREY };
+        let c = row.center();
+        let d = if up { -1.0 } else { 1.0 };
+        ui.painter().add(egui::Shape::convex_polygon(vec![c + Vec2::new(-4.0, 2.0 * -d), c + Vec2::new(4.0, 2.0 * -d), c + Vec2::new(0.0, 2.0 * d)], col, Stroke::NONE));
+        if on && ui.rect_contains_pointer(row) {
+            *scroll += d * scroll_speed(dt);
+            ui.ctx().request_repaint();
+        }
+        let _ = resp;
+    };
+    let hold = *scroll;
+    arrow(ui, true, hold > 0.5, scroll);
+    let out = egui::ScrollArea::vertical()
+        .max_height(body)
+        .auto_shrink([false, true])
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+        .vertical_scroll_offset(scroll.max(0.0))
+        .show(ui, add);
+    let max = (out.content_size.y - out.inner_rect.height()).max(0.0);
+    *scroll = out.state.offset.y.clamp(0.0, max);
+    arrow(ui, false, *scroll < max - 0.5, scroll);
+    *scroll = scroll.clamp(0.0, max);
+    out.inner
 }
 
 /// Show an open menu for one frame.
@@ -616,6 +667,12 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
         });
     };
     let root_id = area_id(base, menu.serial);
+    let avail = ctx.screen_rect().height();
+    // Taller than the screen: cut to it and scrolled (once seen so, always: the cut menu is never taller).
+    if ctx.memory(|m| m.area_rect(root_id)).is_some_and(|r| r.height() > avail) {
+        menu.tall = true;
+    }
+    let (tall, hot, mut scroll) = (menu.tall, menu.hot, menu.scroll);
     let root = egui::Area::new(root_id)
         .kind(egui::UiKind::Menu)
         .order(egui::Order::Foreground)
@@ -623,11 +680,19 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
         .constrain(true)
         .show(ctx, |ui| {
             frame_ui(ui, &mut |ui| {
-                if let Some(c) = items(ui, entries, &mut open, &mut sub_rect, true, menu.hot, pad) {
-                    chosen = Some(c);
+                let mut rows = |ui: &mut egui::Ui| {
+                    if let Some(c) = items(ui, entries, &mut open, &mut sub_rect, true, hot, pad) {
+                        chosen = Some(c);
+                    }
+                };
+                if tall {
+                    scrolled(ui, avail, &mut scroll, rows);
+                } else {
+                    rows(ui);
                 }
             })
         });
+    menu.scroll = scroll;
     let mut rects = vec![root.response.rect];
     if let (Some(i), Some(at)) = (open, sub_rect) {
         if let Some(Entry::Sub { entries: sub, .. }) = entries.get(i) {
@@ -761,5 +826,48 @@ mod tests {
             });
         }
         assert!((bottom - at.y).abs() < 0.5, "the menu's bottom {bottom} at the point {}", at.y);
+    }
+
+    /// A menu taller than the screen is cut to it and scrolls: the arrow bands scroll it while the
+    /// pointer rests on one, and it never grows past the screen.
+    #[test]
+    fn a_menu_taller_than_the_screen_is_cut_and_scrolls() {
+        let entries: Vec<Entry<u8>> = (0..60).map(|n| Entry::item(format!("item {n}"), true, Mark::None, n)).collect();
+        let ctx = egui::Context::default();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 300.0));
+        let mut m = PopMenu::new(1, Pos2::new(400.0, 100.0));
+        let mut t = 0.0;
+        let mut frame = |m: &mut PopMenu, pointer: Option<Pos2>| {
+            t += 0.05;
+            let mut events = vec![];
+            if let Some(p) = pointer {
+                events.push(egui::Event::PointerMoved(p));
+            }
+            let input = egui::RawInput { screen_rect: Some(screen), time: Some(t), events, ..Default::default() };
+            let mut r = Rect::NOTHING;
+            let _ = ctx.run(input, |ctx| {
+                show(ctx, "t", m, &entries);
+                r = ctx.memory(|mem| mem.area_rect(area_id("t", 1))).unwrap_or(Rect::NOTHING);
+            });
+            r
+        };
+        for _ in 0..4 {
+            frame(&mut m, None);
+        }
+        let r = frame(&mut m, None);
+        assert!(m.tall, "seen taller than the screen");
+        assert!(r.height() <= screen.height() + 0.5 && r.top() >= 0.0, "cut to the screen: {r:?}");
+        assert_eq!(m.scroll, 0.0);
+        let down = Pos2::new(r.center().x, r.bottom() - arrow_band() * 0.5 - 3.0);
+        for _ in 0..12 {
+            frame(&mut m, Some(down));
+        }
+        assert!(m.scroll > 20.0, "scrolled down by the lower arrow: {}", m.scroll);
+        let up = Pos2::new(r.center().x, r.top() + arrow_band() * 0.5 + 3.0);
+        let was = m.scroll;
+        for _ in 0..40 {
+            frame(&mut m, Some(up));
+        }
+        assert!(m.scroll < was, "and back up by the upper one");
     }
 }
