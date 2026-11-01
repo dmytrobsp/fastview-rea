@@ -61,6 +61,7 @@ use eframe::egui;
 /// rect with Windows 11's invisible borders; what shows of it (VM, by a
 /// drag of an edge) is 852 × 493 — ours, with no system frame, as its
 /// client. Physical pixels: the original is system-DPI aware.
+#[cfg(test)]
 const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 
 /// [`MIN_VISIBLE`] at a system dpi: the window rect 866 × 500 (physical pixels at every scale) less the invisible
