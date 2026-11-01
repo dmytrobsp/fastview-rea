@@ -5710,12 +5710,15 @@ mod window_tests {
                 .collect()
         };
         let check = |w: &Win, t: &str, want: &[&str]| assert_eq!(spans(w, t), want, "{t}");
-        // 347 «Печать»: «Свойства...» (off with no printer) with «Параметры страницы»; the preview alone;
+        // 347 «Печать»: «Свойства...» with «Параметры страницы»; the preview alone;
         // OK, Отмена and the five checks.
         let mut w = Win::new();
         w.app.dispatch(app::Command::Print);
         w.idle(4);
-        check(&w, "Печать", &["pP", "P", "PPCCCCC"]);
+        // «Свойства...» is enabled where a printer exists (`cfg!(windows) && a printer`: a Windows runner
+        // has one, Linux and macOS none), so its enabled bit is not part of the check: the kinds are.
+        let kinds: Vec<String> = spans(&w, "Печать").iter().map(|s| s.to_ascii_uppercase()).collect();
+        assert_eq!(kinds, ["PP", "P", "PPCCCCC"], "Печать");
         // 477, 336, 332, 353.
         let mut w = Win::new();
         w.app.dispatch(app::Command::Coefficients);
