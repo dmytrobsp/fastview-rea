@@ -157,7 +157,7 @@ mod tests {
     fn filter_keeps_insert_events_only_while_a_widget_has_the_focus() {
         let ctx = egui::Context::default();
         let focus = std::cell::Cell::new(false);
-        let mut run = |events: Vec<egui::Event>| {
+        let run = |events: Vec<egui::Event>| {
             let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     let mut t = String::new();
