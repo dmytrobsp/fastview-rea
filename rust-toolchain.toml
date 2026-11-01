@@ -1,0 +1,8 @@
+# The Rust toolchain every build uses, here and in CI (.github/workflows/ci.yml). A new stable release's
+# lints cannot turn CI red by themselves: bump `channel` on purpose (see AGENTS.md, Build and test).
+[toolchain]
+channel = "1.98.1"
+profile = "minimal"
+components = ["clippy"]
+# The Windows cross-build (tools/gates.sh, the clone runs). CI adds the targets of its own build matrix.
+targets = ["x86_64-pc-windows-gnu"]

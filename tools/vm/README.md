@@ -26,8 +26,12 @@ original in the main checkout's `extracted/`). `FV_FRESH=1 run …` starts
 from no saved state; record `-` opens none. `tools/gates.sh` is the gate
 (clippy both targets, tests, publish guard; GATES-OK).
 
+`clone.sh` keeps the clone's overlay small and prints its size after every step (`cloneutil.py` holds the logic,
+tested by `python3 -I -m unittest discover -s tools/vm -p 'test_*.py'`; see docs/agents/windows-testing.md).
+
 | script | what |
 |---|---|
+| `cloneutil.py` | the logic of `clone.sh`: SHA-256 of ours' exe (reused when unchanged), the overlay's size against the cap, the delete command for a pulled output |
 | `autologon.ps1` | turns on automatic sign-in of the test user (asks for the password at a hidden prompt, checks it first; undo commands at its top) — a desktop session is needed for anything visible |
 | `insession.ps1 -Exe <path> [-Args …] [-Wait]` | runs a program in that user's desktop session (an `ssh` session has none) through a one-off scheduled task |
 | `shot.ps1 -Out <png>` | captures the whole desktop (DPI-aware) |
