@@ -66,12 +66,14 @@ const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 const STATUS_GRIP: f32 = 20.0;
 /// What a normal window reserves at its right edge for the grip when the extended pane is hidden: the
 /// sixth pane shows from 1078 px of client, not 1074 (VM; 1048 of panes + 26…30).
+/// At 125 % 32 px (fifth pane from 1010 px of client, not 1009: clone) and at 150 % 36…39 (the fourth from
+/// between 954 and 958 px; 38 taken); the 100 % value is this constant.
 const STATUS_GRIP_ALONE: f32 = 28.0;
 
 /// The status bar's right end at `right` (the extended pane's width `ext` at this scale, its grip
 /// not included): `(the extended pane's width with its grip, where the panes must end)`.
 fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f32, f32) {
-    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::s(STATUS_GRIP), dpi::s(STATUS_GRIP_ALONE)) };
+    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::s(STATUS_GRIP), dpi::measured(STATUS_GRIP_ALONE, 32.0, 38.0)) };
     if ext_hidden {
         (ext, right - alone)
     } else {
@@ -1471,6 +1473,17 @@ mod tests {
             status_pane_places(0.0, room, &[false; 7]).len()
         };
         assert_eq!((count(1159.0), count(1160.0)), (4, 5), "the fifth pane's bracket at 125 %");
+        // The extended pane hidden: the reserve alone (clone, 125 %: from 1010 px of client, not 1009; 150 %: the
+        // fourth pane from between 954 and 958).
+        let alone = |w: f32| {
+            let mut h = [false; 7];
+            h[6] = true;
+            let (_, room) = status_reserve(w, status_ext_w(true), false, true);
+            status_pane_places(0.0, room, &h).len()
+        };
+        assert_eq!((alone(1009.0), alone(1010.0)), (4, 5), "the hidden-pane bracket at 125 %");
+        dpi::set(144);
+        assert_eq!((alone(953.0), alone(958.0)), (3, 4), "the hidden-pane bracket at 150 %");
         dpi::set(96);
     }
 
