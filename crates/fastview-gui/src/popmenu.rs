@@ -580,6 +580,21 @@ fn scrolled<R>(ui: &mut egui::Ui, avail: f32, scroll: &mut f32, add: impl FnOnce
     out.inner
 }
 
+/// The rows of the Area `id`'s menu, cut to the screen and scrolled when the menu (as last drawn)
+/// is taller than it, as [`show`]'s are; the scroll state is kept in the context.
+pub fn cut_to_screen<R>(ui: &mut egui::Ui, id: egui::Id, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let ctx = ui.ctx().clone();
+    let avail = ctx.screen_rect().height();
+    let key = id.with("fv_cut");
+    let (mut tall, mut scroll) = ctx.data(|d| d.get_temp::<(bool, f32)>(key)).unwrap_or((false, 0.0));
+    if ctx.memory(|m| m.area_rect(id)).is_some_and(|r| r.height() > avail) {
+        tall = true;
+    }
+    let r = if tall { scrolled(ui, avail, &mut scroll, add) } else { add(ui) };
+    ctx.data_mut(|d| d.insert_temp(key, (tall, scroll)));
+    r
+}
+
 /// Show an open menu for one frame.
 pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entries: &[Entry<C>]) -> Outcome<C> {
     let mut chosen = None;
@@ -869,5 +884,44 @@ mod tests {
             frame(&mut m, Some(up));
         }
         assert!(m.scroll < was, "and back up by the upper one");
+    }
+
+    /// The Area-based menus (lane, status bar, tab list) are cut and scrolled too: a tall one in a
+    /// short screen stays inside it, and its lower arrow scrolls it.
+    #[test]
+    fn an_area_menu_taller_than_the_screen_scrolls_too() {
+        let ctx = egui::Context::default();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 300.0));
+        let id = egui::Id::new("area_menu");
+        let mut t = 0.0;
+        let mut frame = |pointer: Option<Pos2>| {
+            t += 0.05;
+            let events = pointer.map(egui::Event::PointerMoved).into_iter().collect();
+            let mut r = Rect::NOTHING;
+            let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), time: Some(t), events, ..Default::default() }, |ctx| {
+                let a = egui::Area::new(id).fixed_pos(Pos2::new(100.0, 0.0)).constrain(true).show(ctx, |ui| {
+                    mfc_frame(ui, |ui| {
+                        cut_to_screen(ui, id, |ui| {
+                            for n in 0..50 {
+                                mark_item_hot(ui, &format!("row {n}"), true, None, false);
+                            }
+                        })
+                    })
+                });
+                r = a.response.rect;
+            });
+            r
+        };
+        for _ in 0..4 {
+            frame(None);
+        }
+        let r = frame(None);
+        assert!(r.height() <= screen.height() + 0.5, "cut to the screen: {r:?}");
+        let down = Pos2::new(r.center().x, r.bottom() - arrow_band() * 0.5 - 3.0);
+        for _ in 0..12 {
+            frame(Some(down));
+        }
+        let off = ctx.data(|d| d.get_temp::<(bool, f32)>(id.with("fv_cut"))).unwrap();
+        assert!(off.0 && off.1 > 20.0, "scrolled: {off:?}");
     }
 }

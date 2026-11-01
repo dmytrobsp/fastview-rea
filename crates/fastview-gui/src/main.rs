@@ -846,11 +846,13 @@ impl App {
                 }
                 let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom() - egui::vec2(0.0, 1.0)).constrain(true).show(ui.ctx(), |ui| {
                     crate::popmenu::mfc_frame(ui, |ui| {
-                        for (k, i) in order.iter().copied().enumerate() {
-                            if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, hot == Some(k), Some(&window)).clicked() {
-                                activate = Some(i);
+                        crate::popmenu::cut_to_screen(ui, list_id.with(serial), |ui| {
+                            for (k, i) in order.iter().copied().enumerate() {
+                                if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, hot == Some(k), Some(&window)).clicked() {
+                                    activate = Some(i);
+                                }
                             }
-                        }
+                        })
                     })
                 });
                 let outside = ui.input(|inp| inp.pointer.any_pressed() && inp.pointer.interact_pos().is_some_and(|q| !area.response.rect.contains(q) && !hit.contains(q)));
@@ -1037,14 +1039,16 @@ impl App {
         let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain(true).show(ctx, |ui| {
             crate::popmenu::mfc_frame_with(ui, true, false, |ui| {
                 crate::popmenu::title_band(ui, "Конфигурация строки состояния");
-                for (i, t) in texts.iter().map(String::as_str).chain(Some("НТЦ Механотроника")).enumerate() {
-                    if i == 6 {
-                        crate::popmenu::panel_separator(ui);
+                crate::popmenu::cut_to_screen(ui, id, |ui| {
+                    for (i, t) in texts.iter().map(String::as_str).chain(Some("НТЦ Механотроника")).enumerate() {
+                        if i == 6 {
+                            crate::popmenu::panel_separator(ui);
+                        }
+                        if crate::popmenu::mark_item_keys(ui, "", Some(t), true, (!self.status_hidden[i]).then_some("✓"), false).clicked() {
+                            toggle = Some(i);
+                        }
                     }
-                    if crate::popmenu::mark_item_keys(ui, "", Some(t), true, (!self.status_hidden[i]).then_some("✓"), false).clicked() {
-                        toggle = Some(i);
-                    }
-                }
+                });
             })
         });
         if let Some(i) = toggle {
