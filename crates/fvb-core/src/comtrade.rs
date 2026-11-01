@@ -2285,7 +2285,8 @@ mod cfg_atof_tests {
     /// A synthetic ASCII record whose numeric `.cfg` fields are the given
     /// tokens (the analog line's a, b, skew, primary, secondary; the line
     /// frequency; the rate; the time multiplier).
-    fn rec(a: &str, b: &str, skew: &str, pri: &str, sec: &str, freq: &str, rate: &str, mult: &str) -> super::Oscillogram {
+    fn rec(f: [&str; 8]) -> super::Oscillogram {
+        let [a, b, skew, pri, sec, freq, rate, mult] = f;
         let cfg = format!(
             "Stn,Dev,1999\r\n1,1A,0D\r\n1,Ix,A,,A,{a},{b},{skew},-32767,32767,{pri},{sec},P\r\n{freq}\r\n1\r\n{rate},2\r\n\
              01/02/2003,04:05:06.700000\r\n01/02/2003,04:05:06.900000\r\nASCII\r\n{mult}\r\n"
@@ -2295,7 +2296,7 @@ mod cfg_atof_tests {
 
     #[test]
     fn plain_numbers_read_as_before() {
-        let r = rec("0.25", "-1.5", "3", "1234", "5.5", "60", "1250", "2");
+        let r = rec(["0.25", "-1.5", "3", "1234", "5.5", "60", "1250", "2"]);
         let c = &r.analog[0];
         assert_eq!((c.a, c.b, c.skew, c.primary, c.secondary), (0.25, -1.5, 3.0, 1234.0, 5.5));
         assert_eq!((r.line_freq, r.sample_rate, r.time_mult), (60.0, 1250.0, 2.0));
@@ -2304,7 +2305,7 @@ mod cfg_atof_tests {
     #[test]
     fn a_leading_number_is_read_whatever_follows() {
         // atof stops at the first character that cannot continue the number.
-        let r = rec("0.5x", " 2.5 V", "1.5.7", "12ab", "3,", "49.9Hz", "1250x", "4 s");
+        let r = rec(["0.5x", " 2.5 V", "1.5.7", "12ab", "3,", "49.9Hz", "1250x", "4 s"]);
         let c = &r.analog[0];
         assert_eq!((c.a, c.b, c.skew, c.primary, c.secondary), (0.5, 2.5, 1.5, 12.0, 3.0));
         assert_eq!((r.line_freq, r.sample_rate, r.time_mult), (49.9, 1250.0, 4.0));
@@ -2312,7 +2313,7 @@ mod cfg_atof_tests {
 
     #[test]
     fn d_is_an_exponent_letter_in_every_field() {
-        let r = rec("2.5d-1", "1D1", "3d0", "1.5d3", "2D1", "5d1", "1.25d3", "1d1");
+        let r = rec(["2.5d-1", "1D1", "3d0", "1.5d3", "2D1", "5d1", "1.25d3", "1d1"]);
         let c = &r.analog[0];
         assert_eq!((c.a, c.b, c.skew, c.primary, c.secondary), (0.25, 10.0, 3.0, 1500.0, 20.0));
         assert_eq!((r.line_freq, r.sample_rate, r.time_mult), (50.0, 1250.0, 10.0));
@@ -2321,7 +2322,7 @@ mod cfg_atof_tests {
     #[test]
     fn garbage_inf_nan_and_empty_read_zero_not_the_default() {
         for bad in ["junk", "inf", "-inf", "nan", "Infinity", "0x1F"] {
-            let r = rec(bad, bad, bad, bad, bad, bad, bad, bad);
+            let r = rec([bad, bad, bad, bad, bad, bad, bad, bad]);
             let c = &r.analog[0];
             assert_eq!((c.a, c.b, c.skew, c.primary, c.secondary), (0.0, 0.0, 0.0, 0.0, 0.0), "{bad:?}");
             assert_eq!((r.line_freq, r.sample_rate), (0.0, 0.0), "{bad:?}");
@@ -2331,7 +2332,7 @@ mod cfg_atof_tests {
     #[test]
     fn empty_comma_fields_read_zero() {
         // (a wholly empty line is skipped by the tokenizer, as by ours.)
-        let r = rec("", " ", "", "", "", "50", "", "1");
+        let r = rec(["", " ", "", "", "", "50", "", "1"]);
         let c = &r.analog[0];
         assert_eq!((c.a, c.b, c.skew, c.primary, c.secondary, r.sample_rate), (0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
     }
@@ -2339,8 +2340,8 @@ mod cfg_atof_tests {
     #[test]
     fn the_time_multiplier_is_kept_as_read() {
         // 0x451632 stores atof's result unfiltered; the default 1 is for no token.
-        assert_eq!(rec("1", "0", "0", "1", "1", "50", "1250", "junk").time_mult, 0.0);
-        assert_eq!(rec("1", "0", "0", "1", "1", "50", "1250", "-2").time_mult, -2.0);
+        assert_eq!(rec(["1", "0", "0", "1", "1", "50", "1250", "junk"]).time_mult, 0.0);
+        assert_eq!(rec(["1", "0", "0", "1", "1", "50", "1250", "-2"]).time_mult, -2.0);
         let cfg = "Stn,Dev,1999\r\n1,1A,0D\r\n1,Ix,A,,A,1,0,0,-1,1,1,1,P\r\n50\r\n1\r\n1250,2\r\n\
                    01/02/2003,04:05:06.700000\r\n01/02/2003,04:05:06.900000\r\nASCII\r\n";
         assert_eq!(super::parse(cfg, b"1,0,7\r\n2,800,9\r\n").unwrap().time_mult, 1.0);
