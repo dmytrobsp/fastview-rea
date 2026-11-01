@@ -1284,10 +1284,17 @@ impl ChanDrag {
 }
 
 /// What a drop target shows for a move drop. The original shows OLE's
-/// move-drop cursor (an arrow with a small box); the platform cursors have no
-/// such shape, the plain arrow is the nearest (it is also what winit gives
-/// "copy" on Windows).
+/// move-drop cursor (an arrow with a small box); egui's cursor set has
+/// no such shape, the plain arrow is the nearest here — on Windows the main
+/// window draws the original's one instead (`dragcursor`, #157).
 pub const MOVE_DROP_CURSOR: egui::CursorIcon = egui::CursorIcon::Default;
+
+/// Whether the last pass showed the move-drop cursor (a channel drag over
+/// a target that takes a move): the platform's own picture is on then.
+#[cfg(test)]
+pub fn move_drop_shown(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(egui::Id::new("fv_drag_cursor").with("move")).unwrap_or(false))
+}
 
 impl App {
     /// The channel drag's cursor: what a target put in `drag_cursor` this
@@ -1303,10 +1310,16 @@ impl App {
             ctx.on_end_pass(
                 "fv_drag_cursor",
                 std::sync::Arc::new(move |ctx: &egui::Context| {
+                    let mut move_drop = false;
                     if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(ctx) {
                         let set = ctx.data(|d| d.get_temp::<Option<egui::CursorIcon>>(key.with("icon")).flatten());
                         ctx.set_cursor_icon(set.unwrap_or(egui::CursorIcon::NoDrop));
+                        move_drop = set == Some(MOVE_DROP_CURSOR);
                     }
+                    // The move drop's own picture where the platform has one
+                    // (#157, `dragcursor`); egui's cursor set has none.
+                    ctx.data_mut(|d| d.insert_temp(key.with("move"), move_drop));
+                    crate::dragcursor::show_move_drop(move_drop);
                 }),
             );
         }

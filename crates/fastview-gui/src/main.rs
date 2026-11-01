@@ -15,6 +15,7 @@ mod diagram_ui;
 mod dialogs;
 mod fontfix;
 mod docking;
+mod dragcursor;
 mod dpi;
 mod finder;
 mod formula_dlg;
@@ -5972,10 +5973,17 @@ mod window_tests {
         };
         let drop = lanes::MOVE_DROP_CURSOR;
         let mid = client.center();
+        // The original's OLE move-drop picture (an arrow with a box,
+        // #157): shown exactly where the move cursor is.
+        assert!(!lanes::move_drop_shown(&w.ctx), "no pass yet with the drag over a target");
         assert_eq!(at(&mut w, mid), drop, "over the view");
+        assert!(lanes::move_drop_shown(&w.ctx), "over the view: the move-drop picture");
         assert_eq!(at(&mut w, vector.center()), drop, "over the vector diagram");
+        assert!(lanes::move_drop_shown(&w.ctx), "over the vector diagram");
         assert_eq!(at(&mut w, freq.center()), drop, "over the frequency diagram");
+        assert!(lanes::move_drop_shown(&w.ctx), "over the frequency diagram");
         assert_eq!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "over the window's top rows");
+        assert!(!lanes::move_drop_shown(&w.ctx), "no-drop has the system's cursor");
         assert_eq!(at(&mut w, Pos2::new(vector.center().x, vector.top() - 12.0)), NoDrop, "over a pane's caption");
         // The auto-scroll band: Ctrl turns the cursor to "copy", only there.
         let band = Pos2::new(mid.x, client.bottom() - 4.0);
@@ -5985,13 +5993,17 @@ mod window_tests {
         assert_eq!(at(&mut w, vector.center()), drop, "Ctrl over a diagram changes nothing");
         assert_eq!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "Ctrl elsewhere changes nothing");
         assert_eq!(at(&mut w, band), Copy, "Ctrl in the band");
+        assert!(!lanes::move_drop_shown(&w.ctx), "copy is not the move picture");
         w.held = egui::Modifiers::NONE;
         // Ctrl+Shift in the band: MFC answers "link", the drag allows none.
         w.held = egui::Modifiers { ctrl: true, shift: true, command: true, ..Default::default() };
         assert_eq!(at(&mut w, band), NoDrop, "Ctrl+Shift in the band");
         w.held = egui::Modifiers::NONE;
+        assert_eq!(at(&mut w, band), drop, "back in the band without Ctrl");
+        assert!(lanes::move_drop_shown(&w.ctx));
         egui::DragAndDrop::clear_payload(&w.ctx);
         assert_ne!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "no drag, no cursor");
+        assert!(!lanes::move_drop_shown(&w.ctx), "the drag over: the picture is off");
     }
 
     /// The circle's drop target is its window (property grid and diagram), not
