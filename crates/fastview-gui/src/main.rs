@@ -4691,11 +4691,11 @@ mod window_tests {
         assert!(w.ctx.available_rect().min != screen.min, "the ribbon takes the top: the documents' corner is elsewhere");
         double(&mut w, Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0));
         assert_eq!(w.app.docks[Unit::Frequency].place, Place::Floating);
-        assert_eq!(w.app.docks[Unit::Frequency].float_rect.map(|r| r.min), Some(screen.min), "Частотная");
+        assert_eq!(w.app.docks[Unit::Frequency].float_rect, Some(Rect::from_min_size(screen.min, Vec2::splat(200.0))), "Частотная: the mini-frame's outer size is the create size (clone)");
         let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
         double(&mut w, Pos2::new(pane.left() + 60.0, pane.top() + 8.0));
         assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
-        assert_eq!(w.app.docks[Unit::Vector].float_rect.map(|r| r.min), Some(screen.min), "the group");
+        assert_eq!(w.app.docks[Unit::Vector].float_rect, Some(Rect::from_min_size(screen.min, Vec2::splat(500.0))), "the group");
         // A tab's double-click floats that pane at the same corner.
         let mut w = Win::new();
         w.idle(2);

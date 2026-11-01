@@ -679,6 +679,9 @@ impl App {
         let origin = Self::float_origin(ctx);
         let unit = v.unit;
         let r = self.docks[unit].float_at(origin);
+        // The rect is the mini-frame's outer one (clone: 200 x 200 and
+        // 500 x 500 outside); egui sizes the content, its frame comes on top.
+        let chrome = egui::Frame::window(&ctx.style()).total_margin().sum();
         let resp = egui::Window::new(pane_title(v.front))
             .id(floating_pane_id(unit))
             .title_bar(false)
@@ -686,8 +689,8 @@ impl App {
             .resizable(!self.modal_up)
             .collapsible(false)
             .current_pos(r.min)
-            .default_size(r.size())
-            .min_size(egui::vec2(200.0, 150.0))
+            .default_size(r.size() - chrome)
+            .min_size(egui::vec2(200.0, 150.0) - chrome)
             .show(ctx, |ui| {
                 ui.set_min_size(ui.available_size());
                 self.unit_body(ui, v);
