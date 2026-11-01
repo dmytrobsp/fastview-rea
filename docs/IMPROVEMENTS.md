@@ -243,7 +243,6 @@ misbehaves and the better behaviour is obvious (the maintainer,
   Such a file cannot be read back correctly — inferred for a record labelled BINARY; an ASCII-labelled one reopens
   as garbage in both programs. Ours writes the DAT part of the channels the CFG part declares. Reason: the
   original's file is internally inconsistent; the controller's ruling (2026-11-01).
-||||||| 32a24d0
 - **Quick analysis on crafted input: a header-only `.osc` with a formula, and page 539 with two stored reduction methods (#193).**
   (1) The original's `.osc` reader (`0x4524b0`) has no zero-sample check (only the `.cfg` / `.cff` loader has one,
   `0x450bc1`), so a header-only `.osc` loads with no samples. A formula over it runs the batch (`0x415780`) with zero
