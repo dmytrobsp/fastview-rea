@@ -503,11 +503,11 @@ impl App {
     }
 }
 
-/// The scale a preview sheet is shown at: the height left less 12 px (VM:
-/// the original's sheet is 314 px in a 330 px area, 8 px taller than the
+/// The scale a preview sheet is shown at: the height left less 14 px (VM:
+/// the original's sheet is 314 px in a 330 px area, 6 px taller than the
 /// 20 px margin gave), the width less 20 px and 10 px between sheets.
 fn preview_fit(avail: Vec2, page: Vec2, sheets: usize) -> f32 {
-    ((avail.y - 12.0) / page.y).min((avail.x - 20.0) / (page.x * sheets as f32 + 10.0)).max(0.05)
+    ((avail.y - 14.0) / page.y).min((avail.x - 20.0) / (page.x * sheets as f32 + 10.0)).max(0.05)
 }
 
 #[cfg(test)]
@@ -527,10 +527,10 @@ mod tests {
     }
 
     #[test]
-    fn the_preview_sheet_leaves_twelve_pixels_of_height() {
+    fn the_preview_sheet_leaves_fourteen_pixels_of_height() {
         let page = Vec2::new(850.0, 1100.0);
         let fit = preview_fit(Vec2::new(560.0, 330.0), page, 1);
-        assert_eq!((page.y * fit).round(), 318.0);
+        assert_eq!((page.y * fit).round(), 316.0);
         assert!(preview_fit(Vec2::new(200.0, 900.0), page, 1) < 0.3, "width limits a narrow area");
     }
 
