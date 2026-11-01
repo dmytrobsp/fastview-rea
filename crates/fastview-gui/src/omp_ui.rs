@@ -1001,7 +1001,7 @@ impl ParamsDialog {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, channels: &[String]) -> Option<DialogAction> {
-        use crate::dialogs::{win_button, win_combo_list, dlg_font};
+        use crate::dialogs::{win_button, win_combo_list};
         let mut action = None;
         // DIALOG 336: 475 × 275 DLU in MS Shell Dlg 8 — a 713 × 447 client;
         // OnInitDialog `0x4a7c50` places the method combo and the toolbar,
