@@ -301,7 +301,11 @@ impl Doc {
         let old = std::mem::take(&mut self.set.keys);
         let own = |id: &str| comtrade::decode_bytes(&crate::recdlg::shown_bytes_of(id, self.read_enc, self.codepage), Encoding::Cp1251);
         let mut a: Vec<String> = self.osc.analog.iter().enumerate().map(|(i, c)| old.get(i).filter(|_| i < nb).cloned().unwrap_or_else(|| own(&c.id))).collect();
-        let mut d: Vec<String> = self.osc.digital.iter().enumerate().map(|(k, c)| old.get(nb + k).filter(|_| k < nd).cloned().unwrap_or_else(|| own(&c.id))).collect();
+        // The ОМП's flags are named from the program's own strings, 1251
+        // text in any record (a UTF-8 record's `.set` still has «КЗ фазы»,
+        // not the UTF-8 bytes read as 1251; a clone run, #28).
+        let omp = |k: usize| self.dig_flags.get(k).is_some_and(|f| f.omp);
+        let mut d: Vec<String> = self.osc.digital.iter().enumerate().map(|(k, c)| old.get(nb + k).filter(|_| k < nd).cloned().unwrap_or_else(|| if omp(k) { c.id.clone() } else { own(&c.id) })).collect();
         let (ka, kd) = (a.len() - nb, d.len() - nd);
         a[at_a..].rotate_right(ka);
         d[at_d..].rotate_right(kd);
@@ -522,15 +526,31 @@ impl Doc {
     /// The record as the `.cfg` / `.cff` writers see it: the ОМП's flag
     /// channels (bit 13) left out (VM: `7,6A,1D` after a run), the others
     /// numbered by their place among all digital channels (VM: «4,
-    /// <name> …» after the three flags).
-    fn file_record(&self) -> (std::borrow::Cow<'_, fvb_core::Oscillogram>, Vec<usize>) {
+    /// <name> …» after the three flags); likewise the analog channels by
+    /// their place among all analog-kind records, a pasted lane before them
+    /// counting (VM, #28).
+    fn file_record(&self) -> (std::borrow::Cow<'_, fvb_core::Oscillogram>, comtrade::Numbers) {
+        let pending_before = |analog: bool| -> Vec<usize> {
+            (0..self.computed.len())
+                .filter(|&j| self.computed[j].formula == crate::merge_ui::PENDING && self.pending_digital(j) != analog)
+                .filter_map(|j| match (self.computed[j].before, analog) {
+                    (Some(ChanKey::Analog(a)), true) => Some(a),
+                    (Some(ChanKey::Digital(k)), false) => Some(k),
+                    _ => None,
+                })
+                .collect()
+        };
+        let (pa, pd) = (pending_before(true), pending_before(false));
+        let analog: Vec<usize> = (0..self.osc.analog.len()).map(|i| i + 1 + pa.iter().filter(|&&a| a <= i).count()).collect();
+        let place = |k: usize| k + 1 + pd.iter().filter(|&&d| d <= k).count();
         if !(0..self.osc.digital.len()).any(|k| self.dig_computed(k)) {
-            return (std::borrow::Cow::Borrowed(&self.osc), Vec::new());
+            let digital = if pd.is_empty() { Vec::new() } else { (0..self.osc.digital.len()).map(place).collect() };
+            return (std::borrow::Cow::Borrowed(&self.osc), comtrade::Numbers { analog: if pa.is_empty() { Vec::new() } else { analog }, digital });
         }
         let keep: Vec<usize> = (0..self.osc.digital.len()).filter(|&k| !self.dig_computed(k)).collect();
         let mut osc = self.osc.clone();
         osc.digital = keep.iter().map(|&k| self.osc.digital[k].clone()).collect();
-        (std::borrow::Cow::Owned(osc), keep.iter().map(|k| k + 1).collect())
+        (std::borrow::Cow::Owned(osc), comtrade::Numbers { analog: if pa.is_empty() { Vec::new() } else { analog }, digital: keep.iter().map(|&k| place(k)).collect() })
     }
 
     /// The modelled bits replace their stored values; the others (bits we
@@ -604,8 +624,16 @@ impl Doc {
                 continue;
             }
             let known_c = flag::VISIBLE | flag::VECTOR | flag::CIRCLE | flag::MINMAX | flag::A1 | flag::RMS_ROW | flag::MODE_INSTANT | flag::MODE_RMS | flag::MODE_HARMONIC | flag::REMOVE_DC | flag::INVERT | flag::COMPUTED;
+            // A pasted lane is bit 14, not bit 13, and writes its own frequency
+            // vector as `NetFreq` (a clone run, #28).
+            let pending = c.formula == crate::merge_ui::PENDING;
+            let (flags, known) = if pending {
+                ((self.computed_flags(j) & !flag::COMPUTED) | flag::PENDING | if c.adc_counts { flag::ADC } else { 0 }, (known_c & !flag::COMPUTED) | flag::PENDING | flag::ADC)
+            } else {
+                (self.computed_flags(j), known_c)
+            };
             let rec = ChannelRec {
-                show_flags: Self::merged_flags(t, &c.name, self.computed_flags(j), known_c) & mask,
+                show_flags: Self::merged_flags(t, &c.name, flags, known) & mask,
                 primary_mul: 1.0,
                 secondary_mul: 1.0,
                 alias: String::new(),
@@ -614,6 +642,9 @@ impl Doc {
                 custom_color: c.custom_color.then(|| colorref(c.color)),
             };
             recset::write_channel(t.section_mut(&c.name), &rec);
+            if let Some(Ok(a)) = pending.then(|| self.pending_of(j).map(|p| &p.pasted.channel)).flatten() {
+                recset::write_net_freq(t.section_mut(&c.name), &a.own_freq);
+            }
         }
         let o = t.section_mut("Oscillogram");
         // The stored value as loaded while «Кодировка» was not used since
@@ -629,6 +660,12 @@ impl Doc {
         recset::write_pairs(t.section_mut("Circle Chart"), recset::CIRCLE_KEYS, &pairs(&self.rx_pairs));
         let items: Vec<CommentRec> = self.comments.iter().map(|c| self.comment_rec(c)).collect();
         recset::write_comments(t.section_mut("Comments"), &items);
+        // The summary comment a paste makes is a `.hdr` text with its code
+        // page (`Comments/Codepage`, 1), set at every paste, whatever the reader
+        // guessed before (a clone run, #28).
+        if !print && self.hdr.is_some() && self.hdr_pasted {
+            t.section_mut("Comments").set_int("Codepage", 1);
+        }
     }
 
     pub(crate) fn comment_rec(&self, c: &Comment) -> CommentRec {
@@ -1297,6 +1334,34 @@ mod tests {
                 "invert" => app.dispatch(crate::app::Command::ToggleFlag(crate::chansel::ChanFlag::Invert)),
                 "dc" => app.dispatch(crate::app::Command::ToggleFlag(crate::chansel::ChanFlag::RemoveDc)),
                 "rms" => app.dispatch(crate::app::Command::SetValueMode(crate::app::ValueMode::Rms)),
+                // A formula channel X = Ua shown on the frequency diagram.
+                "calc" => {
+                    assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
+                    app.docs[di].computed[0].on_freq = true;
+                }
+                // Copy the digital channel and paste it in front of itself.
+                "pastedig" => {
+                    app.docs[di].selection = [ChanKey::Digital(0)].into();
+                    app.copy_channels_for_merge();
+                    app.docs[di].selection = [ChanKey::Digital(0)].into();
+                    app.paste_channels_for_merge();
+                }
+                // ADC on a pasted lane: copy the second channel, paste it in front of the first, ADC.
+                "pasteadc" => {
+                    app.docs[di].selection = [ChanKey::Analog(1)].into();
+                    app.copy_channels_for_merge();
+                    app.docs[di].selection = [ChanKey::Analog(0)].into();
+                    app.paste_channels_for_merge();
+                    app.dispatch(crate::app::Command::ToggleFlag(crate::chansel::ChanFlag::Adc));
+                }
+                // Copy the second channel and paste it in front of the first
+                // (a pending lane among the file channels), then save.
+                "paste" => {
+                    app.docs[di].selection = [ChanKey::Analog(1)].into();
+                    app.copy_channels_for_merge();
+                    app.docs[di].selection = [ChanKey::Analog(0)].into();
+                    app.paste_channels_for_merge();
+                }
                 // Quick analysis, «Симметричные составляющие»: Ia / Ib / Ic =
                 // the first three analog channels, voltages «Отключить».
                 "symm" => {
@@ -1343,6 +1408,24 @@ mod tests {
             std::fs::write(out, fvb_core::omp_params::utf16le_crlf(&text)).expect("report written");
         }
         app.save_doc_to(di, Path::new(parts[2])).expect("saved");
+    }
+
+    /// `FV_OMP_FILE=<file.omp> [FV_OMP_INOM=<text>] [FV_OMP_SECTION=<length>] cargo test omp_file_dump`:
+    /// the `.omp` of «Сохранить» for the default parameters, with the
+    /// first station's rated current and one section's length typed in — for
+    /// a byte compare with the original's after the same entries by hand
+    /// (W4.2, #28).
+    #[test]
+    fn omp_file_dump() {
+        let Ok(out) = std::env::var("FV_OMP_FILE") else { return };
+        let mut p = fvb_core::omp_params::OmpParams::default();
+        if let Ok(v) = std::env::var("FV_OMP_INOM") {
+            p.stations[0].inom = v;
+        }
+        if let Ok(v) = std::env::var("FV_OMP_SECTION") {
+            p.stations[0].sections.push(fvb_core::omp_params::SectionParams { length: v, ..Default::default() });
+        }
+        std::fs::write(out, fvb_core::recset::omp_file_bytes(&p)).expect("omp written");
     }
 
     /// `FV_CLIP_DUMP=<record>,<file> cargo test clip_dump`: open a record,
@@ -1495,11 +1578,110 @@ mod tests {
         assert_eq!(d.file_key(na + 1), first);
         let (rec, no) = d.file_record();
         assert_eq!(rec.digital.len(), nd);
-        assert_eq!(no, (2..=nd + 1).collect::<Vec<_>>());
+        assert_eq!(no.digital, (2..=nd + 1).collect::<Vec<_>>());
         let keep: Vec<bool> = (0..=nd).map(|k| k > 0).collect();
         d.retain_digital_keys(&keep);
         d.osc.digital.remove(0);
         assert_eq!(d.file_key(na), first);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pasted lane in front of the file channels is left out of the record
+    /// files and still counts in the analog numbering (a clone run: the first
+    /// file channel is «2»; #28, L9.217's residual).
+    #[test]
+    fn a_pending_lane_counts_in_the_analog_numbering() {
+        let dir = temp_dir("pendnum");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        let n = app.docs[di].osc.analog.len();
+        app.docs[di].selection = [ChanKey::Analog(1)].into();
+        app.copy_channels_for_merge();
+        app.docs[di].selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        let (rec, no) = app.docs[di].file_record();
+        assert_eq!(rec.analog.len(), n, "the lane is not a record of the file");
+        assert_eq!(no.analog, (2..=n + 1).collect::<Vec<_>>());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pasted lane's `.set` section (a clone run): ShowFlags with bit 14 (not
+    /// bit 13), its own frequency vector as `NetFreq`; the paste's summary
+    /// comment stores `Comments/Codepage` 1 (#28).
+    #[test]
+    fn a_pending_lane_is_saved_as_bit_14_with_its_net_freq() {
+        let dir = temp_dir("pendset");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        // A reader's OEM guess stored before is overwritten by the paste.
+        app.docs[di].set.tree.section_mut("Comments").set_int("Codepage", 0);
+        app.docs[di].selection = [ChanKey::Analog(1)].into();
+        app.copy_channels_for_merge();
+        app.docs[di].selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        let d = &app.docs[di];
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let sec = t.section(&d.computed[j].name).expect("the lane's section");
+        let flags: u32 = sec.get_str("ShowFlags", "0").parse().unwrap();
+        assert_eq!((flags >> 13) & 3, 2, "bit 14 only: {flags}");
+        assert_eq!(sec.get_str("NetFreq", "").split(',').count(), d.osc.sample_count());
+        assert_eq!(t.section("Comments").unwrap().get_str("Codepage", ""), "1");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pasted DIGITAL lane in front of a digital channel (a clone run, byte for
+    /// byte): the channel after it is numbered 2, the lane's `.set` section has
+    /// bit 14 and no `NetFreq` (#28).
+    #[test]
+    fn a_pending_digital_lane_counts_in_the_digital_numbering_and_has_no_net_freq() {
+        let dir = temp_dir("penddig");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        let nd = app.docs[di].osc.digital.len();
+        app.docs[di].selection = [ChanKey::Digital(0)].into();
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = &app.docs[di];
+        let (rec, no) = d.file_record();
+        assert_eq!(rec.digital.len(), nd);
+        assert_eq!(no.digital, (2..=nd + 1).collect::<Vec<_>>());
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let sec = t.section(&d.computed[j].name).expect("the lane's section");
+        assert_eq!(sec.get_str("ShowFlags", "0"), "16609");
+        assert!(!sec.attrs.contains_key("NetFreq"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A UTF-8 record keeps the ОМП flags' section names as the program's own
+    /// text in the `.set` (the original's, in a clone run); the UTF-8 bytes
+    /// of a name read as 1251 are only the file's own channels' keys (#28).
+    #[test]
+    fn omp_flags_in_a_utf8_record_keep_their_own_names_as_keys() {
+        let dir = temp_dir("flags8");
+        let cfg = dir.join("rec.cfg");
+        let text = DEMO_CFG.replacen(",1999", ",2013", 1);
+        std::fs::write(&cfg, text).unwrap();
+        std::fs::write(dir.join("rec.dat"), DEMO_DAT).unwrap();
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        let d = &mut app.docs[di];
+        assert_eq!(d.read_enc, Encoding::Utf8, "the demo is UTF-8");
+        let (na, nd) = (d.osc.analog.len(), d.osc.digital.len());
+        let samples = vec![false; d.osc.sample_count()];
+        d.osc.digital.push(fvb_core::DigitalChannel { index: nd as u32 + 1, id: crate::omp_ui::KZ_PHASES[0].into(), phase: String::new(), normal: 0, samples, own_rate: 0.0 });
+        d.digital_visible.resize(nd + 1, true);
+        d.dig_flags.resize(nd + 1, Default::default());
+        d.dig_mut(nd).omp = true;
+        d.move_appended(na, na, 0, nd);
+        assert_eq!(d.file_key(na), crate::omp_ui::KZ_PHASES[0]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

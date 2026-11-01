@@ -128,7 +128,7 @@ fn candidates_in_vector_order() {
     assert_eq!(freqcorr::candidate_names(&rec), ["P".to_string(), ub, "F".into()]);
     assert_eq!(rec.freq_sel, 1);
     assert_eq!(freqcorr::selected_extra(&rec), Some(3), "the pasted channel is now the frequency channel");
-    assert_eq!(freqcorr::of(&rec).unwrap().chan, usize::MAX);
+    assert_eq!(freqcorr::of(&rec).unwrap().chan, freqcorr::EXTRA_CHAN);
     rec.freq_sel = 2;
     assert_eq!(freqcorr::selected_extra(&rec), None);
     rec.freq_sel = 3;
