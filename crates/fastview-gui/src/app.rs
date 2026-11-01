@@ -777,6 +777,9 @@ pub struct Doc {
     pub comment_mode: u8,
     /// First visible sample (`view+0xfc`).
     pub first: usize,
+    /// The horizontal scroll bar's position (first sample, samples shown, record's, position) as the
+    /// Shift+wheel left it (`0x45d990` sets the bar and leaves it); valid while those still hold.
+    pub hscroll_pos: Option<(usize, usize, usize, usize, i64)>,
     /// Horizontal scale `f` (`view+0xf0`, a power of two ≤ 1, 25·f px per
     /// sample); `None` until the view first lays out (initial = stored
     /// `View/XScale`, else twice the fit scale).
@@ -909,6 +912,7 @@ impl Doc {
             group_names: Default::default(),
             comment_mode: 0,
             first: 0,
+            hscroll_pos: None,
             xscale: None,
             vscroll: 0.0,
             diff_band: true,
@@ -1820,6 +1824,13 @@ pub struct App {
     /// enabled combo boxes and buttons of the merge bar, the document
     /// tabs' ▾ button) this frame: `CopyFocus::Other`.
     pub focus_other: Vec<egui::Rect>,
+    /// The ribbon, the parameters bar and the status bar as last drawn (the status bar last): a press on
+    /// them leaves the keyboard focus where it was.
+    pub keep_focus_rects: Vec<egui::Rect>,
+    /// The frame control (merge bar, ▾) holding egui's keyboard focus at the start of the frame.
+    pub key_owner: Option<egui::Id>,
+    /// The foreground layers of the last frame (`keep_key_focus`).
+    pub fg_prev: Vec<egui::LayerId>,
     /// A document group's ▾ list was open at the last frame.
     pub doc_list_open: bool,
     /// Each document group's ▾ button as last drawn.
@@ -2051,6 +2062,9 @@ impl App {
             pane_tab_rects: Vec::new(),
             doc_tab_rects: Vec::new(),
             focus_other: Vec::new(),
+            keep_focus_rects: Vec::new(),
+            key_owner: None,
+            fg_prev: Vec::new(),
             doc_list_open: false,
             list_buttons: Vec::new(),
             focus_doc: None,
@@ -2252,6 +2266,15 @@ impl App {
     }
 
     pub fn dispatch(&mut self, cmd: Command) {
+        // Nearly every command ends in the views' refresh (`0x45ac60`), which sets the horizontal bar from
+        // the first sample again (`lanes::hscroll_page`).
+        // Copy (`0x45acb0`, case 57634 returns at `0x45befa` before the refresh) and the commands that only
+        // open a dialog or a chooser (Open, Печать, its preview) leave the bar alone.
+        if !matches!(cmd, Command::Copy | Command::Open | Command::Print | Command::PrintPreview) {
+            if let Some(d) = self.active_doc_mut() {
+                d.hscroll_pos = None;
+            }
+        }
         let mark = crate::setfile::marks_modified(&cmd).then_some(self.active).flatten();
         // The handlers that end in the frame's refresh-all `0x475420` (the
         // diagrams' refresh, slot 90): paste 57637 and undo / redo
@@ -2945,6 +2968,14 @@ impl App {
             }
         });
         self.loading.push(Loading { path: path.to_path_buf(), big: loading_shown(path), rx, progress, shown: (0, f64::NEG_INFINITY) });
+    }
+
+    /// A load that never finishes, big enough for the progress dialog (tests); keep the sender alive.
+    #[cfg(test)]
+    pub fn test_hold_loading(&mut self) -> std::sync::mpsc::Sender<LoadResult> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.loading.push(Loading { path: "held.cfg".into(), big: true, rx, progress: Default::default(), shown: (0, f64::NEG_INFINITY) });
+        tx
     }
 
     /// Collect finished loads (called every frame).
