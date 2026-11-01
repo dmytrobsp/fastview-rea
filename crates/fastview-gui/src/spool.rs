@@ -57,6 +57,7 @@ pub fn details(printer: &str) -> [String; 4] {
 /// orientation (VM); the choice applies to this printer's jobs once the
 /// print dialog ends in OK ([`end_properties`]). Windows only — false
 /// where there is none (CUPS).
+#[cfg(test)]
 pub fn properties(printer: &str) -> bool {
     imp::properties(printer, 0)
 }
@@ -64,6 +65,7 @@ pub fn properties(printer: &str) -> bool {
 static PROPS_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Take the one-at-a-time flag: true for the caller that got it.
+#[cfg(any(windows, test))]
 fn claim(flag: &std::sync::atomic::AtomicBool) -> bool {
     flag.compare_exchange(false, true, std::sync::atomic::Ordering::AcqRel, std::sync::atomic::Ordering::Acquire).is_ok()
 }
@@ -223,6 +225,7 @@ mod imp {
 
     pub fn end_properties(_keep: bool) {}
 
+    #[cfg(test)]
     pub fn properties(_printer: &str, _owner: isize) -> bool {
         false
     }
