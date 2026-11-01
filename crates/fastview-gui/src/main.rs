@@ -1277,6 +1277,10 @@ impl App {
         self.ppp = ctx.pixels_per_point();
         // Every dialog is modal: while one is up, a backdrop between the
         // panels and the windows takes the pointer, and no shortcuts run.
+        // A frame control holding the keyboard focus (the merge bar's combo box and buttons, the tab
+        // list's ▾): a press on the ribbon, the parameters bar or the status bar leaves it there (#186).
+        self.key_owner = ctx.memory(|m| m.focused()).filter(|f| ctx.read_response(*f).is_some_and(|r| self.focus_other.iter().any(|q| q.contains(r.rect.center()))));
+        self.keep_focus_rects.clear();
         self.focus_other.clear();
         let was_modal = std::mem::replace(&mut self.modal_up, dialogs::window_up(ctx));
         winframe::set_modal(self.modal_up);
@@ -1307,7 +1311,7 @@ impl App {
         // The auto-hide strips of the left, right and top edges take the
         // frame's outermost space, before the ribbon and the bars.
         self.strips_outer(ctx);
-        egui::TopBottomPanel::top("top")
+        let ribbon = egui::TopBottomPanel::top("top")
             .show_separator_line(false)
             .frame(egui::Frame::none().fill(pal.tab_active))
             .show(ctx, |ui| {
@@ -1319,6 +1323,7 @@ impl App {
                     ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0f32, b.under_ribbon[0]));
                 }
             });
+        self.keep_focus_rects.push(ribbon.response.rect);
         // The frame's client area shows the splitter brush between its bars
         // (VM, Office 2007 Blue): under the ribbon two shade rows ((174, 199,
         // 232), (185, 212, 247)) and 4 px of (191, 219, 255).
@@ -1372,7 +1377,7 @@ impl App {
         // gradient from white to (213, 228, 242) between (157, 189, 216)
         // lines —, then 4 px of the brush.
         if self.dlg.param_bar {
-            egui::TopBottomPanel::top("parambar")
+            let bar = egui::TopBottomPanel::top("parambar")
                 .exact_height(67.0)
                 .show_separator_line(false)
                 .frame(egui::Frame::none().fill(pal.info_bar.unwrap_or(pal.group_bg)))
@@ -1380,17 +1385,19 @@ impl App {
                     bar_face(ui);
                     self.param_bar_ui(ui)
                 });
+            self.keep_focus_rects.push(bar.response.rect);
             egui::TopBottomPanel::top("fv_under_parambar").exact_height(4.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
         }
 
 
         // The bottom edge's strip is the last row, under the status row.
         self.strip_bottom(ctx);
-        egui::TopBottomPanel::bottom("status")
+        let status = egui::TopBottomPanel::bottom("status")
             .exact_height(dpi::s(24.0))
             .show_separator_line(false)
             .frame(egui::Frame::none().fill(pal.status_bg))
             .show(ctx, |ui| self.status_bar(ui));
+        self.keep_focus_rects.push(status.response.rect);
 
 
         // The print preview takes the document view's place in its window
@@ -1398,6 +1405,7 @@ impl App {
         self.diagram_panes(ctx);
         self.render_tab(ctx);
         self.track_copy_focus(ctx);
+        self.keep_key_focus(ctx);
         self.dialogs_ui(ctx);
         self.print_windows(ctx);
         // The record settings follow the active document; leaving asks
@@ -5401,6 +5409,41 @@ mod window_tests {
         assert!(!open(&w));
         w.key(egui::Key::ArrowUp);
         assert_eq!(method(&w), 0, "the focus stayed");
+    }
+
+    /// A press on the ribbon, the parameters bar or the status bar leaves the
+    /// keyboard focus where it was (clone, #186: the merge bar's combo box
+    /// keeps it through presses on a ribbon tab and on ribbon buttons, and ↓
+    /// then changes the method): egui's focus stays on the bar's control.
+    #[test]
+    fn a_press_on_the_ribbon_leaves_the_bars_focus_where_it_was() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        let combo = w.app.focus_other[0];
+        let method = |w: &Win| w.app.merge.as_ref().unwrap().method;
+        w.press(Primary, combo.center(), combo.center());
+        w.key(egui::Key::Escape);
+        let ribbon = w.app.keep_focus_rects[0];
+        let blank = Pos2::new(ribbon.center().x + 100.0, ribbon.top() + 8.0);
+        w.press(Primary, blank, blank);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 1, "↓ still reaches the combo box after a press on the ribbon");
+        // The status bar, too.
+        let status = *w.app.keep_focus_rects.last().unwrap();
+        w.press(Primary, status.center(), status.center());
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 2, "and after a press on the status bar");
+        // A press on the bar's own button takes the focus (nothing to keep).
+        let sync = w.app.focus_other[1];
+        w.press(Primary, sync.center(), sync.center() + Vec2::new(0.0, 200.0));
+        w.press(Primary, blank, blank);
+        w.key(egui::Key::Space);
+        assert!(!w.app.merge.as_ref().unwrap().status.is_empty(), "the button kept the focus through the ribbon press");
     }
 
     /// «Синхронизация» holding the focus (a press let go outside it) is

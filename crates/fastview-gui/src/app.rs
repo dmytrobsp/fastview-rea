@@ -1801,6 +1801,11 @@ pub struct App {
     /// enabled combo boxes and buttons of the merge bar, the document
     /// tabs' ▾ button) this frame: `CopyFocus::Other`.
     pub focus_other: Vec<egui::Rect>,
+    /// The ribbon, the parameters bar and the status bar as last drawn (the status bar last): a press on
+    /// them leaves the keyboard focus where it was.
+    pub keep_focus_rects: Vec<egui::Rect>,
+    /// The frame control (merge bar, ▾) holding egui's keyboard focus at the start of the frame.
+    pub key_owner: Option<egui::Id>,
     /// A document group's ▾ list was open at the last frame.
     pub doc_list_open: bool,
     /// Each document group's ▾ button as last drawn.
@@ -2032,6 +2037,8 @@ impl App {
             pane_tab_rects: Vec::new(),
             doc_tab_rects: Vec::new(),
             focus_other: Vec::new(),
+            keep_focus_rects: Vec::new(),
+            key_owner: None,
             doc_list_open: false,
             list_buttons: Vec::new(),
             focus_doc: None,

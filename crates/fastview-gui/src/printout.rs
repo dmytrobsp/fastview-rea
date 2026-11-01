@@ -619,6 +619,21 @@ impl App {
         }
     }
 
+    /// A press on the ribbon, the parameters bar or the status bar takes no
+    /// focus in the original (clone, #186): a frame control that held the
+    /// keyboard (the merge bar's combo or buttons, the ▾) keeps it, so its keys
+    /// still reach it; egui drops the focus of a widget at any press elsewhere.
+    pub fn keep_key_focus(&mut self, ctx: &egui::Context) {
+        let Some(owner) = self.key_owner else { return };
+        if self.modal_up || crate::dialogs::window_up(ctx) {
+            return;
+        }
+        let Some(p) = ctx.input(|i| if i.pointer.any_pressed() { crate::lanes::press_pos(i) } else { None }) else { return };
+        if self.keep_focus_rects.iter().any(|r| r.contains(p)) && ctx.memory(|m| m.focused()) != Some(owner) {
+            ctx.memory_mut(|m| m.request_focus(owner));
+        }
+    }
+
     /// The group holding the keyboard focus, if a pane's window or one in
     /// it has it.
     pub fn focus_group(&self) -> Option<crate::docking::Unit> {
