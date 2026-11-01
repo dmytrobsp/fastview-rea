@@ -15,6 +15,11 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::{Window, WindowId};
 
+/// Whether `FV_SOFTLOG` names a file (the trace lines are only worth building then).
+fn tracing() -> bool {
+    std::env::var_os("FV_SOFTLOG").is_some()
+}
+
 /// A line in the file `FV_SOFTLOG` names (a release build has no console).
 pub fn trace(msg: &str) {
     if let Some(p) = std::env::var_os("FV_SOFTLOG") {
@@ -66,6 +71,9 @@ impl ApplicationHandler for Soft {
             window.set_maximized(true);
         }
         crate::minsize::install_on(&window);
+        if self.viewport.decorations == Some(false) {
+            crate::winframe::install_on(&window, &self.ctx);
+        }
         crate::device_window(&self.ctx, window.scale_factor() as f32);
         trace(&format!("window {:?} visible {:?}", window.inner_size(), window.is_visible()));
         let state = egui_winit::State::new(self.ctx.clone(), egui::ViewportId::ROOT, &window, Some(window.scale_factor() as f32), None, Some(16384));
@@ -85,6 +93,9 @@ impl ApplicationHandler for Soft {
                 window.request_redraw();
             }
             event => {
+                if tracing() && !matches!(event, WindowEvent::CursorMoved { .. }) {
+                    trace(&format!("event {:.70}", format!("{event:?}")));
+                }
                 if matches!(event, WindowEvent::CursorMoved { .. } | WindowEvent::CursorEntered { .. } | WindowEvent::CursorLeft { .. } | WindowEvent::MouseInput { .. }) {
                     trace(&format!("event {event:?}"));
                 }
@@ -148,6 +159,10 @@ impl Soft {
                 app.frame_ui(ctx);
                 app.splash(ctx);
             });
+            if tracing() {
+                let delay = out.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.repaint_delay);
+                trace(&format!("pass: repaint in {delay:?} causes {:?}", self.ctx.repaint_causes().iter().map(|c| c.to_string()).collect::<Vec<_>>()));
+            }
             state.handle_platform_output(window, std::mem::take(&mut out.platform_output));
             textures.append(std::mem::take(&mut out.textures_delta));
             if let Some(vp) = out.viewport_output.get(&egui::ViewportId::ROOT) {
@@ -204,7 +219,7 @@ fn blit(window: &Window, c: &crate::raster::Canvas) {
     let Ok(handle) = window.window_handle() else { return };
     let RawWindowHandle::Win32(h) = handle.as_raw() else { return };
     let hwnd = h.hwnd.get() as windows_sys::Win32::Foundation::HWND;
-    let bgra: Vec<u8> = c.px.iter().flat_map(|p| [p[2], p[1], p[0], 0]).collect();
+    let bgra: Vec<u8> = c.px.iter().flat_map(|p| [p[2], p[1], p[0], 255]).collect();
     // SAFETY: the window's own DC, released; the bits outlive the call and
     // match the header's size.
     unsafe {
