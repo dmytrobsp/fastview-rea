@@ -74,12 +74,29 @@ pub fn finite_or_zero(z: Complex64) -> Complex64 {
     }
 }
 
+/// A fundamental below this fraction of the window's magnitude is rounding noise (#93): the DFT of a constant
+/// channel leaves about 1e-14 of the magnitude in every bin, a real signal that is far down still sits many orders
+/// above 1e-9 (a ripple of 1e-6 of the level is already 1000 times over it).
+pub const NOISE_FRACTION: f64 = 1e-9;
+
+/// The largest |sample| of the `w` samples ending at `i` (0 before a full window): the scale the noise threshold of
+/// [`percent_bar_value`] is taken against.
+pub fn window_magnitude(samples: &[f64], i: usize, w: usize) -> f64 {
+    if w == 0 || i + 1 < w || i >= samples.len() {
+        return 0.0;
+    }
+    samples[i + 1 - w..=i].iter().filter(|v| v.is_finite()).fold(0.0, |m, v| m.max(v.abs()))
+}
+
 /// The value a frequency-diagram bar's label prints. In «% of the fundamental» mode it is `100·v / norm`
 /// (`0x4704e7`), except for the fundamental's own bar, which always reads 100: the original's
 /// `(v·100)/v` lands one bit under 100 for some `v`, and its «%2.1f below 100» branch then prints
-/// «100.0» (an approved improvement, #60). `norm == 0` gives 0.
-pub fn percent_bar_value(v: f64, norm: f64, fundamental: bool) -> f64 {
-    if norm == 0.0 {
+/// «100.0» (an approved improvement, #60). `norm == 0` gives 0. A norm that is only rounding noise
+/// (below [`NOISE_FRACTION`] of `magnitude`, the window's largest |sample|) gives 0 as well: the original
+/// divides noise by noise there and prints numbers like «37.5» for a channel stuck at one value (an
+/// approved improvement, #93).
+pub fn percent_bar_value(v: f64, norm: f64, fundamental: bool, magnitude: f64) -> f64 {
+    if norm == 0.0 || norm.abs() < NOISE_FRACTION * magnitude {
         0.0
     } else if fundamental {
         100.0
@@ -312,15 +329,41 @@ mod tests {
             v = v * 1.0137 + 0.0113;
             let original = 100.0 * v / v;
             under += usize::from(original < 100.0);
-            let own = percent_bar_value(v, v, true);
+            let own = percent_bar_value(v, v, true, 0.0);
             assert_eq!(own, 100.0);
             assert_eq!(freq_label(own).trim(), "100", "{v}");
             // Other bars and the original's own formula are untouched.
-            assert_eq!(percent_bar_value(v, v, false), original);
+            assert_eq!(percent_bar_value(v, v, false, 0.0), original);
             other += usize::from(freq_label(original).trim() == "100.0");
         }
         assert!(under > 0 && other == under, "the synthetic values include ones under 100 ({under})");
-        assert_eq!(percent_bar_value(3.0, 0.0, true), 0.0, "a zero norm gives 0");
-        assert_eq!(percent_bar_value(0.0, 0.0, false), 0.0);
+        assert_eq!(percent_bar_value(3.0, 0.0, true, 0.0), 0.0, "a zero norm gives 0");
+        assert_eq!(percent_bar_value(0.0, 0.0, false, 0.0), 0.0);
+    }
+
+    /// #93: a channel stuck at one value has only rounding noise in its fundamental, and the % labels print 0; a
+    /// near-constant but real signal keeps its labels.
+    #[test]
+    fn a_constant_channels_percent_labels_are_zero() {
+        let (n, periods, k_max) = (37, 2, 5);
+        let labels = |x: &[f64]| -> Vec<String> {
+            let i = x.len() - 1;
+            let sp = crate::signal::spectrum(x, i, n, periods, k_max, 1.0);
+            let mag = window_magnitude(x, i, n * periods);
+            sp.iter().enumerate().map(|(k, &v)| freq_label(percent_bar_value(v, sp[periods], k == periods, mag)).trim().to_string()).collect()
+        };
+        for level in [220.5, -17.3, 3.7e6, 0.00123] {
+            let flat = vec![level; 200];
+            let sp = crate::signal::spectrum(&flat, 199, n, periods, k_max, 1.0);
+            assert!(sp[periods] > 0.0, "the DFT of {level} leaves noise, not an exact 0 (else the case proves nothing)");
+            assert_eq!(labels(&flat), vec!["0"; k_max + 1], "{level}");
+        }
+        // Real signals: a ripple of 1e-5 of a large level, and a plain sine.
+        let ripple: Vec<f64> = (0..200).map(|j| 220.5 + 2.205e-3 * (std::f64::consts::TAU * j as f64 / n as f64).sin()).collect();
+        let l = labels(&ripple);
+        assert_eq!(l[periods], "100");
+        assert_ne!(l[0], "0");
+        let sine: Vec<f64> = (0..200).map(|j| 5.0 * (std::f64::consts::TAU * j as f64 / n as f64).sin()).collect();
+        assert_eq!(labels(&sine)[periods], "100");
     }
 }
