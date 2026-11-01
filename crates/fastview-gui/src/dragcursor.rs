@@ -33,6 +33,17 @@ const ARROW: [&str; 16] = [
     "      XX",
 ];
 
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+/// Which OLE cursor a drag shows over a target.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Drop {
+    None,
+    /// Move: the arrow with a box.
+    Move,
+    /// Copy (Ctrl): the same with a small box with a plus at its lower right.
+    Copy,
+}
+
 /// One pixel of the cursor image.
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -45,13 +56,24 @@ pub enum Px {
 /// The cursor image, row by row: the box (white inside, a black outline 2 px
 /// thick) at the lower left, the arrow over it.
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
-pub fn image() -> [[Px; SIZE]; SIZE] {
+pub fn image(kind: Drop) -> [[Px; SIZE]; SIZE] {
     let mut img = [[Px::Clear; SIZE]; SIZE];
     let (x0, y0, x1, y1) = (4usize, 16usize, 16usize, 27usize);
     for (y, row) in img.iter_mut().enumerate().take(y1 + 1).skip(y0) {
         for (x, px) in row.iter_mut().enumerate().take(x1 + 1).skip(x0) {
             let edge = x < x0 + 2 || x + 2 > x1 || y < y0 + 2 || y + 2 > y1;
             *px = if edge { Px::Black } else { Px::White };
+        }
+    }
+    if kind == Drop::Copy {
+        // The copy mark: a box 8 px square at the lower right of the big one,
+        // a plus inside.
+        for (y, row) in img.iter_mut().enumerate().take(30).skip(22) {
+            for (x, px) in row.iter_mut().enumerate().take(20).skip(12) {
+                let edge = x == 12 || x == 19 || y == 22 || y == 29;
+                let plus = (x == 15 || x == 16) && (24..28).contains(&y) || (y == 25 || y == 26) && (14..18).contains(&x);
+                *px = if edge || plus { Px::Black } else { Px::White };
+            }
         }
     }
     for (row, art) in img.iter_mut().zip(ARROW) {
@@ -66,33 +88,34 @@ pub fn image() -> [[Px; SIZE]; SIZE] {
     img
 }
 
-/// Tell the window a move drop is shown (`true`) or not any more: on Windows
-/// the cursor changes at once if it was not this one.
+/// Tell the window which drop cursor is shown (or none): on Windows the
+/// cursor changes at once if it was not this one.
 #[cfg(not(windows))]
-pub fn show_move_drop(_on: bool) {}
+pub fn show(_kind: Drop) {}
 
 #[cfg(windows)]
-pub use win::{handle_set_cursor, show_move_drop};
+pub use win::{handle_set_cursor, show};
 
 #[cfg(windows)]
 mod win {
     use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+    use std::sync::atomic::{AtomicIsize, AtomicU8, Ordering};
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject};
     use windows_sys::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, PostMessageW, SetCursor, HCURSOR, HTCLIENT, ICONINFO, WM_MOUSEMOVE, WM_SETCURSOR};
 
-    static ON: AtomicBool = AtomicBool::new(false);
+    static ON: AtomicU8 = AtomicU8::new(0);
     static HWND_OURS: AtomicIsize = AtomicIsize::new(0);
-    static CURSOR: AtomicIsize = AtomicIsize::new(0);
+    static CURSORS: [AtomicIsize; 2] = [AtomicIsize::new(0), AtomicIsize::new(0)];
 
-    /// The cursor, made on first use.
-    fn cursor() -> HCURSOR {
-        let have = CURSOR.load(Ordering::Relaxed);
+    /// The cursor of `kind` (Move or Copy), made on first use.
+    fn cursor(kind: Drop) -> HCURSOR {
+        let slot = &CURSORS[(kind == Drop::Copy) as usize];
+        let have = slot.load(Ordering::Relaxed);
         if have != 0 {
             return have as HCURSOR;
         }
-        let img = image();
+        let img = image(kind);
         // The AND mask (1 = the screen shows through) and the XOR bits
         // (1 = white where the mask is 0), one bit per pixel, rows of 4 bytes.
         let (mut and, mut xor) = (vec![0xffu8; SIZE * SIZE / 8], vec![0u8; SIZE * SIZE / 8]);
@@ -122,13 +145,13 @@ mod win {
             DeleteObject(m);
             h
         };
-        CURSOR.store(h as isize, Ordering::Relaxed);
+        slot.store(h as isize, Ordering::Relaxed);
         h
     }
 
     /// Remember the window the cursor is for (the subclass sees it first).
-    pub fn show_move_drop(on: bool) {
-        if ON.swap(on, Ordering::Relaxed) != on {
+    pub fn show(kind: Drop) {
+        if ON.swap(kind as u8, Ordering::Relaxed) != kind as u8 {
             // egui-winit sets its own cursor after the frame; ask the window
             // to choose again once that is done.
             let hwnd = HWND_OURS.load(Ordering::Relaxed) as HWND;
@@ -145,8 +168,13 @@ mod win {
     /// shown the cursor is ours (true: handled).
     pub fn handle_set_cursor(hwnd: HWND, lparam: LPARAM) -> Option<LRESULT> {
         HWND_OURS.store(hwnd as isize, Ordering::Relaxed);
-        if ON.load(Ordering::Relaxed) && (lparam & 0xffff) as u32 == HTCLIENT {
-            let c = cursor();
+        let kind = match ON.load(Ordering::Relaxed) {
+            1 => Drop::Move,
+            2 => Drop::Copy,
+            _ => Drop::None,
+        };
+        if kind != Drop::None && (lparam & 0xffff) as u32 == HTCLIENT {
+            let c = cursor(kind);
             if !c.is_null() {
                 // SAFETY: a cursor handle made above.
                 unsafe {
@@ -167,7 +195,7 @@ mod tests {
     /// it, everything else clear.
     #[test]
     fn the_move_drop_cursor_is_an_arrow_over_a_box() {
-        let img = image();
+        let img = image(Drop::Move);
         assert_eq!(img[0][0], Px::Black, "the arrow's tip is the hot spot");
         assert_eq!(img[4][2], Px::White, "the arrow's inside");
         assert_eq!(img[4][6], Px::Clear, "beside the arrow");
@@ -176,6 +204,11 @@ mod tests {
         assert_eq!(img[17][8], Px::Black, "two pixels thick");
         assert_eq!(img[18][8], Px::White, "and no more");
         assert_eq!(img[30][30], Px::Clear, "the corner is clear");
+        let copy = image(Drop::Copy);
+        assert_eq!(copy[22][16], Px::Black, "copy: a box at the lower right");
+        assert_eq!(copy[24][15], Px::Black, "with a plus");
+        assert_eq!(copy[24][13], Px::White, "and white around it");
+        assert_eq!((img[28][17], copy[28][17]), (Px::Clear, Px::White), "move: none of it");
         let drawn = img.iter().flatten().filter(|p| **p != Px::Clear).count();
         assert!(drawn > 150 && drawn < 400, "{drawn}");
     }

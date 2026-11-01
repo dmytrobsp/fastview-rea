@@ -1289,11 +1289,11 @@ impl ChanDrag {
 /// window draws the original's one instead (`dragcursor`, #157).
 pub const MOVE_DROP_CURSOR: egui::CursorIcon = egui::CursorIcon::Default;
 
-/// Whether the last pass showed the move-drop cursor (a channel drag over
-/// a target that takes a move): the platform's own picture is on then.
+/// Which OLE picture the last pass showed for a channel drag (move over a
+/// target, copy with Ctrl in the scroll band, none).
 #[cfg(test)]
-pub fn move_drop_shown(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp::<bool>(egui::Id::new("fv_drag_cursor").with("move")).unwrap_or(false))
+pub fn drop_picture(ctx: &egui::Context) -> crate::dragcursor::Drop {
+    ctx.data(|d| d.get_temp::<crate::dragcursor::Drop>(egui::Id::new("fv_drag_cursor").with("kind")).unwrap_or(crate::dragcursor::Drop::None))
 }
 
 impl App {
@@ -1310,16 +1310,21 @@ impl App {
             ctx.on_end_pass(
                 "fv_drag_cursor",
                 std::sync::Arc::new(move |ctx: &egui::Context| {
-                    let mut move_drop = false;
+                    let mut kind = crate::dragcursor::Drop::None;
                     if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(ctx) {
                         let set = ctx.data(|d| d.get_temp::<Option<egui::CursorIcon>>(key.with("icon")).flatten());
                         ctx.set_cursor_icon(set.unwrap_or(egui::CursorIcon::NoDrop));
-                        move_drop = set == Some(MOVE_DROP_CURSOR);
+                        kind = match set {
+                            Some(c) if c == MOVE_DROP_CURSOR => crate::dragcursor::Drop::Move,
+                            Some(egui::CursorIcon::Copy) => crate::dragcursor::Drop::Copy,
+                            _ => crate::dragcursor::Drop::None,
+                        };
                     }
-                    // The move drop's own picture where the platform has one
-                    // (#157, `dragcursor`); egui's cursor set has none.
-                    ctx.data_mut(|d| d.insert_temp(key.with("move"), move_drop));
-                    crate::dragcursor::show_move_drop(move_drop);
+                    // The OLE pictures of move and copy where the platform
+                    // has them (#157, `dragcursor`); egui's cursor set has
+                    // none.
+                    ctx.data_mut(|d| d.insert_temp(key.with("kind"), kind));
+                    crate::dragcursor::show(kind);
                 }),
             );
         }
