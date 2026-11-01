@@ -1298,10 +1298,17 @@ impl ChanDrag {
 }
 
 /// What a drop target shows for a move drop. The original shows OLE's
-/// move-drop cursor (an arrow with a small box); the platform cursors have no
-/// such shape, the plain arrow is the nearest (it is also what winit gives
-/// "copy" on Windows).
+/// move-drop cursor (an arrow with a small box); egui's cursor set has
+/// no such shape, the plain arrow is the nearest here — on Windows the main
+/// window draws the original's one instead (`dragcursor`, #157).
 pub const MOVE_DROP_CURSOR: egui::CursorIcon = egui::CursorIcon::Default;
+
+/// Which OLE picture the last pass showed for a channel drag (move over a
+/// target, copy with Ctrl in the scroll band, none).
+#[cfg(test)]
+pub fn drop_picture(ctx: &egui::Context) -> crate::dragcursor::Drop {
+    ctx.data(|d| d.get_temp::<crate::dragcursor::Drop>(egui::Id::new("fv_drag_cursor").with("kind")).unwrap_or(crate::dragcursor::Drop::None))
+}
 
 impl App {
     /// The channel drag's cursor: what a target put in `drag_cursor` this
@@ -1317,10 +1324,21 @@ impl App {
             ctx.on_end_pass(
                 "fv_drag_cursor",
                 std::sync::Arc::new(move |ctx: &egui::Context| {
+                    let mut kind = crate::dragcursor::Drop::None;
                     if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(ctx) {
                         let set = ctx.data(|d| d.get_temp::<Option<egui::CursorIcon>>(key.with("icon")).flatten());
                         ctx.set_cursor_icon(set.unwrap_or(egui::CursorIcon::NoDrop));
+                        kind = match set {
+                            Some(c) if c == MOVE_DROP_CURSOR => crate::dragcursor::Drop::Move,
+                            Some(egui::CursorIcon::Copy) => crate::dragcursor::Drop::Copy,
+                            _ => crate::dragcursor::Drop::None,
+                        };
                     }
+                    // The OLE pictures of move and copy where the platform
+                    // has them (#157, `dragcursor`); egui's cursor set has
+                    // none.
+                    ctx.data_mut(|d| d.insert_temp(key.with("kind"), kind));
+                    crate::dragcursor::show(kind);
                 }),
             );
         }
