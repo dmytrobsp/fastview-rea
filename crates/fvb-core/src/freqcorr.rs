@@ -124,7 +124,7 @@ pub fn of(osc: &Oscillogram) -> Option<FreqCorr<'_>> {
     match *ordered(osc).get(osc.freq_sel as usize - 1)? {
         Cand::File(chan) => Some(FreqCorr { chan, freq: &osc.analog[chan].samples, fs }),
         // Not a file channel: no file channel is the frequency channel.
-        Cand::Extra(j) => Some(FreqCorr { chan: usize::MAX, freq: &osc.extra_freq[j].samples, fs }),
+        Cand::Extra(j) => Some(FreqCorr { chan: EXTRA_CHAN, freq: &osc.extra_freq[j].samples, fs }),
     }
 }
 
@@ -265,6 +265,12 @@ pub fn sliding_rms(corr: Option<FreqCorr<'_>>, ch: usize, x: &[f64], n: usize) -
 
 /// A channel that is never the frequency one (a computed channel).
 pub const OTHER: usize = usize::MAX;
+
+/// The `chan` of a correction whose frequency channel is a formula channel:
+/// no file channel, and not [`OTHER`] — the two were one number, so every
+/// channel read through `OTHER` counted as the frequency channel and lost
+/// the correction (#42).
+pub const EXTRA_CHAN: usize = usize::MAX - 1;
 
 /// The phasor of channel `ch` at `i`.
 pub fn phasor_at(corr: Option<FreqCorr<'_>>, ch: usize, x: &[f64], i: usize, n: usize) -> num_complex::Complex64 {

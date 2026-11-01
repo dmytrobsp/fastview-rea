@@ -38,6 +38,14 @@ impl ClipChan {
         }
     }
 
+    /// The lane's «*K» icon: the channel's flags and stored values as `0x462b22` tests them.
+    pub fn ratio_icon(&self) -> bool {
+        match &self.pasted.channel {
+            Ok(a) => crate::lanes::ratio_icon(a, self.primary_mode),
+            Err(_) => false,
+        }
+    }
+
     pub fn name(&self) -> &str {
         match &self.pasted.channel {
             Ok(a) => &a.id,
@@ -489,6 +497,7 @@ impl App {
         let other = HeaderSide { title: &rec.title, station: &rec.station_id, block: &rec.block_id, start: &rec.start_time, comment: &rec.hdr_file };
         d.hdr = Some(merged_header(&own, &other));
         d.hdr_cp = crate::setfile::cp_of(1);
+        d.hdr_pasted = true;
         d.merge_offset = 0.0;
         d.refresh_pending();
         // The new channels' caches (`0x4254b9`), flags 0x40e1.
@@ -1143,6 +1152,79 @@ mod tests {
         // The merged channel, now first, keeps the copied mode: the
         // document stays secondary (VM).
         assert!(!d.primary_values(), "the document's mode is its first channel's");
+    }
+
+    /// 32852 skips bit 13 only (`0x430340`, `0x430650`): a pasted analog lane
+    /// takes «Отображать в отсчетах АЦП» and then reads its ADC codes; a
+    /// formula channel selected with it is counted but never set, so the
+    /// item is unchecked and a click sets (#42, L9.197).
+    #[test]
+    fn adc_applies_to_pending_lanes() {
+        use crate::chansel::ChanFlag;
+        let mut app = demo_app();
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
+        d.selection = std::collections::BTreeSet::from([ChanKey::Computed(j)]);
+        assert_eq!(d.flag_state(ChanFlag::Adc), crate::chansel::ItemState { enabled: true, checked: false });
+        d.toggle_flag_selected(ChanFlag::Adc);
+        assert!(d.computed[j].adc_counts);
+        assert_eq!(d.flag_state(ChanFlag::Adc), crate::chansel::ItemState { enabled: true, checked: true });
+        let codes: Vec<f64> = d.osc.analog[0].samples.iter().map(|&v| d.osc.analog[0].adc_code(v)).collect();
+        assert_eq!(d.computed[j].pending_own, codes, "the lane reads the codes");
+        // The readout shows the bare code: no unit in ADC mode, for a pasted
+        // lane and a file channel alike (a clone run; ours had «отсч.»).
+        let (_, unit, ..) = crate::lanes::lane_stats(d, &ChanKey::Computed(j), 10);
+        assert_eq!(unit.text, "");
+        d.chans[0].adc_counts = true;
+        let (_, unit, ..) = crate::lanes::lane_stats(d, &ChanKey::Analog(0), 10);
+        assert_eq!(unit.text, "");
+        d.chans[0].adc_counts = false;
+        // The lane's status icon (`0x462c32`, bit 12 on any analog-kind record).
+        assert!(crate::lanes::key_icons(d, ChanKey::Computed(j)).contains(&"#"));
+        // The unit the eligibility tests read is none in ADC mode: a unit the
+        // vector diagram refuses no longer does (`0x414c30`).
+        d.computed[j].unit = "Xx".into();
+        assert!(d.flag_state(ChanFlag::OnVector).enabled, "ADC mode: no unit to refuse");
+        d.computed[j].adc_counts = false;
+        assert!(!d.flag_state(ChanFlag::OnVector).enabled, "the unit is refused");
+        d.computed[j].adc_counts = true;
+        // A formula channel in the selection is counted, never set: unchecked.
+        let mut f = crate::app::Computed::new("F1".into(), "1".into(), vec![0.0; d.osc.time.len()], eframe::egui::Color32::RED);
+        f.unit = String::new();
+        d.computed.push(f);
+        let fj = d.computed.len() - 1;
+        d.selection.insert(ChanKey::Computed(fj));
+        assert!(!d.flag_state(ChanFlag::Adc).checked);
+        d.toggle_flag_selected(ChanFlag::Adc);
+        assert!(d.computed[j].adc_counts && !d.computed[fj].adc_counts);
+    }
+
+    /// A pasted lane's «*K» tests the copied channel's stored ratio values with its mode, as a lane's
+    /// does (`0x462b22`): equal values other than 1 show it, both 1 do not.
+    #[test]
+    fn a_pasted_lanes_ratio_icon_tests_the_stored_values() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        let a = &mut d.osc.analog[0];
+        (a.primary, a.secondary, a.is_primary) = (7.5, 7.5, true);
+        d.chans[0].primary = false;
+        d.selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
+        assert!(crate::lanes::key_icons(d, ChanKey::Computed(j)).contains(&"*K"), "equal values other than 1");
+        let d = app.active_doc_mut().unwrap();
+        for p in &mut d.pending {
+            if let Ok(a) = &mut p.pasted.channel {
+                (a.primary, a.secondary) = (1.0, 1.0);
+            }
+        }
+        let d = app.active_doc().unwrap();
+        assert!(!crate::lanes::key_icons(d, ChanKey::Computed(j)).contains(&"*K"), "both 1");
     }
 
     /// A pending lane's flags (L9.111's residual; `0x428490` with bit 14):

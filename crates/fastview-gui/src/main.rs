@@ -47,6 +47,7 @@ mod theme;
 mod tips;
 mod util;
 mod views;
+mod winframe;
 mod windows_dlg;
 
 use app::App;
@@ -1063,9 +1064,21 @@ impl eframe::App for App {
         dialogs::take_dialog_tabs(ctx, raw);
     }
 
+    /// An opaque clear colour: the DWM frame is extended into the client (`winframe`), where a
+    /// translucent one could show through.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        let c = visuals.panel_fill;
+        [f32::from(c.r()) / 255.0, f32::from(c.g()) / 255.0, f32::from(c.b()) / 255.0, 1.0]
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(windows)]
-        minsize::install_on(_frame);
+        {
+            minsize::install_on(_frame);
+            if self.own_caption {
+                winframe::install_on(_frame, ctx);
+            }
+        }
         self.frame_ui(ctx);
         self.splash(ctx);
     }
@@ -1082,7 +1095,10 @@ impl App {
             self.splash_until = None;
             return;
         }
-        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        // The picture is static: one wake, at the end, destroys it (the original's timer). A
+        // repaint every 100 ms kept the software runner at ~12 frames a second for those 2 s (#33).
+        let lead = f64::from(ctx.input(|i| i.predicted_dt));
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64((until - ctx.input(|i| i.time) + lead).max(0.0)));
         let size = egui::vec2(630.0, 400.0);
         let monitor = ctx.input(|i| i.viewport().monitor_size).unwrap_or(egui::vec2(1920.0, 1080.0));
         // The work area: the screen less the taskbar (48 px on Windows 11,
@@ -1162,6 +1178,7 @@ impl App {
         // panels and the windows takes the pointer, and no shortcuts run.
         self.focus_other.clear();
         let was_modal = std::mem::replace(&mut self.modal_up, dialogs::window_up(ctx));
+        winframe::set_modal(self.modal_up);
         // A closed dialog gives the activation back to the frame, which
         // hands the focus to its view (clone: a pane's or a window's focus
         // is the view's after the dialog; copy asks the focus window).
@@ -5546,6 +5563,101 @@ mod window_tests {
         let t0 = std::time::Instant::now();
         frames(&mut app, &ctx, Vec2::new(1320.0, 860.0), vec![vec![egui::Event::PointerMoved(Pos2::new(400.0, 400.0))]; n]);
         eprintln!("frame: {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0 / n as f64);
+    }
+
+    /// The delay egui reports for the next repaint after idle frames (no input, time advancing):
+    /// `Duration::MAX` when nothing asks for one.
+    fn idle_delays(app: &mut App, ctx: &egui::Context, size: Vec2, n: usize) -> Vec<std::time::Duration> {
+        let mut out = Vec::new();
+        for _ in 0..n {
+            let t = ctx.input(|i| i.time) + 0.075;
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), time: Some(t), ..Default::default() };
+            let o = ctx.run(raw, |ctx| {
+                app.frame_ui(ctx);
+                app.splash(ctx);
+            });
+            out.push(o.viewport_output.get(&egui::ViewportId::ROOT).map_or(std::time::Duration::MAX, |v| v.repaint_delay));
+        }
+        out
+    }
+
+    /// #33: the splash asks for one repaint, at its end (its timer), not one every 100 ms; and the
+    /// window with nothing happening asks for none, the pointer resting anywhere once it has settled
+    /// (a tooltip's wait, a hover's fade end).
+    #[test]
+    fn an_idle_window_asks_for_no_repaint() {
+        let size = Vec2::new(1320.0, 860.0);
+        let mut app = App::new();
+        app.dispatch(app::Command::Demo);
+        app.splash_until = Some(2.0);
+        let ctx = egui::Context::default();
+        let d = idle_delays(&mut app, &ctx, size, 8);
+        let t = ctx.input(|i| i.time);
+        assert!(t < 2.0, "still in the splash: {t}");
+        assert!(d[4..].iter().all(|x| x.as_secs_f64() > 1.0 && x.as_secs_f64() < 2.0 - t + 1.0), "the splash's single wake at its end: {d:?}");
+        idle_delays(&mut app, &ctx, size, 20);
+        assert!(app.splash_until.is_none());
+        let rest = idle_delays(&mut app, &ctx, size, 6);
+        assert!(rest.iter().all(|x| *x == std::time::Duration::MAX), "no pointer: {rest:?}");
+        for own_caption in [false, true] {
+            app.own_caption = own_caption;
+            for y in [10.0, 45.0, 90.0, 200.0, 420.0, 700.0, 850.0] {
+                for x in [10.0, 150.0, 400.0, 700.0, 1000.0, 1300.0] {
+                    let t = ctx.input(|i| i.time) + 0.075;
+                    let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)), time: Some(t), events: vec![egui::Event::PointerMoved(Pos2::new(x, y))], ..Default::default() };
+                    let _ = ctx.run(raw, |ctx| app.frame_ui(ctx));
+                    let d = idle_delays(&mut app, &ctx, size, 16);
+                    assert!(d[10..].iter().all(|x| *x == std::time::Duration::MAX), "the pointer resting at {x},{y}: {d:?}");
+                }
+            }
+        }
+    }
+
+    /// #34: the frameless window tells Windows where its maximise button is (`WM_NCHITTEST` answers
+    /// `HTMAXBUTTON` there, the snap-layout flyout): the middle of the three caption buttons at the
+    /// window's right edge, in device pixels; none while a modal dialog is up, nor under a floating
+    /// pane lying over it (`the_maximise_button_is_not_published_under_a_modal_or_a_pane`).
+    #[test]
+    fn the_maximise_button_is_published_for_the_frame() {
+        let size = Vec2::new(1280.0, 800.0);
+        let mut app = demo(&[]);
+        app.own_caption = true;
+        let ctx = egui::Context::default();
+        idle_delays(&mut app, &ctx, size, 3);
+        let r = winframe::max_button().expect("the caption's maximise button is published");
+        let w = dpi::s(46.0).round() as i32;
+        assert_eq!(r[2] - r[0], w, "one caption button wide: {r:?}");
+        assert_eq!(r[2], size.x as i32 - w, "the middle one of three at the right edge: {r:?}");
+        assert!(r[1] == 0 && r[3] > 20 && r[3] < 50, "on the caption row: {r:?}");
+        assert!(winframe::on_max_button(r[0] + 3, 5) && !winframe::on_max_button(r[2] + 3, 5) && !winframe::on_max_button(r[0] - 3, 5));
+    }
+
+    #[test]
+    fn the_maximise_button_is_not_published_under_a_modal_or_a_pane() {
+        use app::{Command, Pane};
+        use docking::{Place, Unit};
+        let mut w = Win::new();
+        w.app.own_caption = true;
+        w.idle(3);
+        let r = winframe::max_button().expect("published");
+        // A floating pane over the top-right corner takes the clicks there.
+        w.app.dispatch(Command::ActivatePane(Pane::Vector));
+        let d = &mut w.app.docks.0[Unit::Vector as usize];
+        d.float_rect = Some(Rect::from_min_size(Pos2::new(r[0] as f32 - 60.0, r[1] as f32 - 2.0), Vec2::new(260.0, 220.0)));
+        d.place = Place::Floating;
+        w.idle(4);
+        assert_eq!(winframe::max_button(), None, "a floating pane lies over the button");
+        w.app.docks.0[Unit::Vector as usize].float_rect = Some(Rect::from_min_size(Pos2::new(300.0, 300.0), Vec2::new(260.0, 220.0)));
+        w.idle(4);
+        assert!(winframe::max_button().is_some(), "the pane moved away");
+        // A modal dialog disables the frame's buttons.
+        w.app.color_dialog = Some(egui::Color32::RED);
+        w.idle(4);
+        assert!(w.app.modal_up);
+        assert_eq!(winframe::max_button(), None, "a modal dialog is up");
+        w.app.color_dialog = None;
+        w.idle(4);
+        assert!(winframe::max_button().is_some(), "the dialog closed");
     }
 
     /// `FV_WINDOW_DUMP=<file.png> cargo test window_dump` renders the window
