@@ -19,8 +19,12 @@ use crate::oscgeom as g;
 use crate::raster::{self, Canvas};
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Stroke, Vec2};
 
-/// Screen resolution the original's sizes are in (LOGPIXELSX of the view).
-pub const SCREEN_DPI: f32 = 96.0;
+/// Screen resolution the original's sizes are in: LOGPIXELSX / LOGPIXELSY of the screen DC, the
+/// system dpi (96 off Windows; #35: `0x4054fa`, `0x4059f2`, `0x406637`, the diagram page scale
+/// `0x441fe0`).
+pub fn screen_dpi() -> f32 {
+    crate::dpi::dpi() as f32
+}
 /// The sheet (paper selection is disabled in page setup: PSD_DISABLEPAPER).
 pub const A4_MM: (f32, f32) = (210.0, 297.0);
 
@@ -136,14 +140,14 @@ impl Device {
 
     /// Printer pixels per screen pixel (`k` = LOGPIXELSX ratio).
     pub fn k(&self) -> f32 {
-        self.dpi / SCREEN_DPI
+        self.dpi / screen_dpi()
     }
 }
 
 /// The diagram pages' scale (`0x441fe0`): ⌊LOGPIXELSY(printer) /
 /// LOGPIXELSY(screen)⌋, an integer — 6 at 600 dpi, 1 at 150 dpi.
 pub fn diagram_scale(dpi: f32) -> f32 {
-    (dpi / SCREEN_DPI).floor().max(1.0)
+    (dpi / screen_dpi()).floor().max(1.0)
 }
 
 /// What one page shows.
@@ -795,6 +799,21 @@ mod dump {
         // The vector diagram counts circles from R in printer pixels.
         assert_eq!(crate::diagram::vector_circles(150.0), 4);
         assert_eq!(crate::diagram::vector_circles(150.0 * diagram_scale(600.0)), 10);
+    }
+
+    /// #35: the page scale and the printed ratio divide by the system dpi, the screen DC's
+    /// LOGPIXELSX / Y (`0x441fe0`, `0x4054fa`): at 125 % (120 dpi) a 600 dpi printer gives scale 5
+    /// and a plane cell of 120 printer pixels, a 192 dpi one scale 1 (the screen look); the
+    /// oscillogram's printer pixels per screen pixel are printer dpi / 120.
+    #[test]
+    fn the_print_scale_divides_by_the_system_dpi() {
+        crate::dpi::set(120);
+        assert_eq!([192.0, 300.0, 600.0].map(diagram_scale), [1.0, 2.0, 5.0]);
+        assert_eq!(crate::diagram::plane_scale_s(400, 300, 1.0, [30.0, 0.0], diagram_scale(600.0)).cell, 120);
+        assert_eq!(Device::paper((210.0, 297.0), 600.0).k(), 5.0);
+        crate::dpi::set(96);
+        assert_eq!(diagram_scale(600.0), 6.0);
+        assert_eq!(Device::paper((210.0, 297.0), 600.0).k(), 6.25);
     }
 
     /// `FV_PRINT_DUMP=<file.pdf> cargo test print_dump` renders the demo job.

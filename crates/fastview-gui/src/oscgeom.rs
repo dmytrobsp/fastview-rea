@@ -34,8 +34,9 @@ pub fn fit_scale(width: f32, n: usize) -> f64 {
 /// is sized and how wide the view's scroll bars are (#147, #45). Measured on clones at 96, 120,
 /// 144, 168 and 192 dpi (SM_CXSIZEFRAME, SM_CXPADDEDBORDER, SM_CYCAPTION, SM_CXVSCROLL): the
 /// system DPI's, in physical pixels — the original is system-DPI aware, so none of them scale
-/// with anything else. Between the measured DPIs the padded border and the bars are `round(k · 4)`
-/// and `round(k · 17)`, the caption `round(k · 23)`, the sizing frame 4 below 144 dpi, else 5.
+/// with anything else. All five points follow, with Windows' MulDiv rounding: the caption
+/// `MulDiv(22, dpi, 96) + 1`, the sizing frame `MulDiv(1, dpi, 96) + 3`, the padded border
+/// `MulDiv(4, dpi, 96)`, the scroll bar `MulDiv(17, dpi, 96)`; any other dpi uses them too.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WinMetrics {
     pub caption: f32,
@@ -46,18 +47,8 @@ pub struct WinMetrics {
 
 impl WinMetrics {
     pub fn at(dpi: u32) -> WinMetrics {
-        let m = |caption, size_frame, padded, scroll| WinMetrics { caption, size_frame, padded, scroll };
-        match dpi {
-            96 => m(23.0, 4.0, 4.0, 17.0),
-            120 => m(29.0, 4.0, 5.0, 21.0),
-            144 => m(34.0, 5.0, 6.0, 26.0),
-            168 => m(40.0, 5.0, 7.0, 30.0),
-            192 => m(45.0, 5.0, 8.0, 34.0),
-            d => {
-                let k = d as f32 / 96.0;
-                m((23.0 * k).round(), if d < 144 { 4.0 } else { 5.0 }, (4.0 * k).round(), (17.0 * k).round())
-            }
-        }
+        let md = |v: i32| crate::dpi::mul_div(v, dpi as i32, 96) as f32;
+        WinMetrics { caption: md(22) + 1.0, size_frame: md(1) + 3.0, padded: md(4), scroll: md(17) }
     }
 
     /// One side of a window's sizing border (SM_CXSIZEFRAME + SM_CXPADDEDBORDER: 8 px at 100 %).
@@ -459,7 +450,11 @@ mod tests {
         assert_eq!((step(96), step(120), step(144), step(168), step(192)), (26.0, 32.0, 38.0, 44.0, 49.0));
         let m = WinMetrics::at(144);
         assert_eq!((m.border(), m.caption, m.scroll), (11.0, 34.0, 26.0));
-        // Between the measured ones: the metrics of a custom scale (110 % = 106 dpi).
+        // The measured table (clones: caption, sizing frame, padded border, scroll bar).
+        for (dpi, c, f, p, s) in [(96, 23.0, 4.0, 4.0, 17.0), (120, 29.0, 4.0, 5.0, 21.0), (144, 34.0, 5.0, 6.0, 26.0), (168, 40.0, 5.0, 7.0, 30.0), (192, 45.0, 5.0, 8.0, 34.0)] {
+            assert_eq!(WinMetrics::at(dpi), WinMetrics { caption: c, size_frame: f, padded: p, scroll: s }, "dpi {dpi}");
+        }
+        // A custom scale (110 % = 106 dpi).
         assert_eq!(WinMetrics::at(106), WinMetrics { caption: 25.0, size_frame: 4.0, padded: 4.0, scroll: 19.0 });
     }
 

@@ -390,8 +390,8 @@ fn main() -> eframe::Result<()> {
     viewport = viewport.with_decorations(!own_caption);
     // `LoadState` restores the frame's saved window placement; on a first
     // run the frame is CW_USEDEFAULT's: placed by Windows, three quarters of
-    // the work area less its invisible borders (VM: 1906 × 1016 shown of
-    // a 2560 × 1392 work area).
+    // the work area less its borders (`first_run_client`; clone: the shown
+    // 1906 × 1016 of a 2560 × 1392 work area at 100 %).
     let mut placement = None;
     if let Some((r, max)) = window_placement(&persist::Store::load()) {
         viewport = viewport.with_inner_size(r.size()).with_position(r.min).with_maximized(max);
@@ -549,7 +549,9 @@ fn first_run_client(work: [f32; 2], dpi: u32) -> [f32; 2] {
         120 => 25.0,
         144 => 29.0,
         168 => 34.0,
-        d => (21.0 + (d as f32 - 96.0) / 6.0).round(),
+        // 4 px per 24 dpi from the nearest measured end.
+        d if d < 168 => (21.0 + (d as f32 - 96.0) / 6.0).round(),
+        d => (34.0 + (d as f32 - 168.0) / 6.0).round(),
     };
     [(work[0] * 0.75).floor() - 2.0 * m.border(), (work[1] * 0.75).floor() - cut - m.border()]
 }
@@ -2580,6 +2582,27 @@ mod window_tests {
             app.own_caption = true;
             let [w, h] = first_run_client(work, dpi);
             frames(&mut app, &ctx, Vec2::new(w, h), vec![vec![]; 4]);
+            assert_eq!((app.mdi_area.width(), app.mdi_area.height()), want, "dpi {dpi}: {:?}", app.mdi_area);
+        }
+    }
+
+    /// #147: restored maximised after the first run, ours' MDI area is the original's (clone:
+    /// 566 × 359, 568 × 334, 571 × 310 at 100 / 125 / 150 %; the maximised frame's client the work
+    /// area, Частотная keeping the half of the first-run span).
+    #[test]
+    fn a_maximised_frames_mdi_area_is_the_originals_at_every_scale() {
+        for (dpi, work, want) in [(96u32, [1280.0, 752.0], (566.0, 359.0)), (120, [1280.0, 740.0], (568.0, 334.0)), (144, [1280.0, 728.0], (571.0, 310.0))] {
+            dpi::set(dpi);
+            let ctx = egui::Context::default();
+            let mut app = demo(&[]);
+            app.own_caption = true;
+            let first = first_run_client(work, dpi);
+            frames(&mut app, &ctx, Vec2::new(first[0], first[1]), vec![vec![]; 4]);
+            for _ in 0..4 {
+                let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(work[0], work[1]))), time: Some(ctx.input(|i| i.time) + 0.05), ..Default::default() };
+                raw.viewports.insert(raw.viewport_id, egui::ViewportInfo { maximized: Some(true), ..Default::default() });
+                ctx.run(raw, |ctx| app.frame_ui(ctx));
+            }
             assert_eq!((app.mdi_area.width(), app.mdi_area.height()), want, "dpi {dpi}: {:?}", app.mdi_area);
         }
     }
