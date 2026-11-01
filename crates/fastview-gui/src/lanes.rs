@@ -1355,8 +1355,8 @@ impl App {
                 let area = self.mdi_area;
                 let d = &self.docs[ai];
                 let band = g::RULER_H + if d.diff_band { g::DIFF_BAND_H } else { 0.0 };
-                let content_h: f32 = lane_layout(d, y_analog).iter().map(|r| r.h).sum::<f32>() + band + 2.0;
-                let w = if area.width() > 0.0 { g::view_width_at_creation(area.width(), area.height(), content_h) } else { full.width() };
+                let lanes_h: f32 = lane_layout(d, y_analog).iter().map(|r| r.h).sum::<f32>();
+                let w = if area.width() > 0.0 { g::view_width_at_creation(area.width(), area.height(), lanes_h, band, g::WinMetrics::at(crate::dpi::dpi())) } else { full.width() };
                 let n = d.osc.sample_count();
                 self.docs[ai].xscale = Some(g::initial_scale(pref, w, n));
             }

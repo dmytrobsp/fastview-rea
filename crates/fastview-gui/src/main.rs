@@ -458,9 +458,20 @@ fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path
     app
 }
 
-/// A first run's frame size on Windows (CW_USEDEFAULT): ¾ of the work
-/// area, less the 14 / 28 px of invisible border a framed window keeps
-/// (ours has none). Physical pixels, as the original (system-DPI aware).
+/// A first run's frame on Windows (CW_USEDEFAULT) as the original's frame client
+/// (#147): the window is ¾ of the work area wide and `¾ · (height − caption − sizing frame)`
+/// high, rounded — Windows' default size; measured on clones at 125 / 150 %: 960 × 530 and
+/// 960 × 517 of a 1280 × 740 / 728 work area —, its client that less its sizing borders
+/// (`WinMetrics::border` on each side, and below; the ribbon draws the caption row, so none
+/// above): 944 × 536 at 100 %, 942 × 521, 938 × 506. Ours is frameless, so this is what
+/// the egui area takes, and the MDI area derived from it is the original's (230 × 140, 230 × 113,
+/// 229 × 86 on a first run). Physical pixels, as the original (system-DPI aware).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn first_run_client(work: [f32; 2], dpi: u32) -> [f32; 2] {
+    let m = oscgeom::WinMetrics::at(dpi);
+    [(work[0] * 0.75).floor() - 2.0 * m.border(), (0.75 * (work[1] - m.caption - m.size_frame)).round() - m.border()]
+}
+
 #[cfg(windows)]
 fn default_frame_size() -> Option<[f32; 2]> {
     use windows_sys::Win32::Foundation::RECT;
@@ -469,7 +480,8 @@ fn default_frame_size() -> Option<[f32; 2]> {
     // SAFETY: SPI_GETWORKAREA fills the RECT passed.
     let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, (&mut r as *mut RECT).cast(), 0) } != 0;
     let (w, h) = ((r.right - r.left) as f32, (r.bottom - r.top) as f32);
-    (ok && w > 0.0 && h > 0.0).then(|| [(w * 0.75).floor() - 14.0, (h * 0.75).floor() - 28.0])
+    let dpi = system_dpi_scale().map_or(96, |s| (s * 96.0).round() as u32);
+    (ok && w > 0.0 && h > 0.0).then(|| first_run_client([w, h], dpi))
 }
 
 #[cfg(not(windows))]
@@ -2319,6 +2331,21 @@ mod window_tests {
             let tabs = PanelState::load(&ctx, egui::Id::new(("pane_tabs", docking::Unit::Vector))).expect("the tab strip").rect;
             // Either it ends above the tabs or it is too short for a button.
             assert!(bar.bottom() <= tabs.top() + 0.5 || bar.height() < 22.0, "h {h}: toolbar {bar:?} over tabs {tabs:?}");
+        }
+    }
+
+    /// #147: a first run's frame client (ours has no frame, so its egui area) is the original's
+    /// at every display scale — ¾ of the work area less the sizing borders, VM clones: the client
+    /// 942 × 521 at 125 % (work area 1280 × 740) and 938 × 506 at 150 % (1280 × 728).
+    #[test]
+    fn a_first_runs_frame_is_the_originals_client_at_every_scale() {
+        assert_eq!(first_run_client([1280.0, 752.0], 96), [944.0, 536.0]);
+        assert_eq!(first_run_client([1280.0, 740.0], 120), [942.0, 521.0]);
+        assert_eq!(first_run_client([1280.0, 728.0], 144), [938.0, 506.0]);
+        // The MDI area that follows: a quarter of it less 6, rounded up (230, 230, 229 on the VM).
+        for (dpi, w) in [(96, 230.0), (120, 230.0), (144, 229.0)] {
+            let c = first_run_client([1280.0, 740.0], dpi)[0];
+            assert_eq!((c / 4.0 - 6.0).ceil(), w, "dpi {dpi}");
         }
     }
 
