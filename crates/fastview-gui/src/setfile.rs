@@ -1621,6 +1621,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A formula channel cannot be moved in front of the file channels (#192):
+    /// the original adds it at the end of the analog block (`0x42e810`,
+    /// `0x42e940`), its copy leaves formula channels out, and only a pasted
+    /// lane lands among the file channels. With a formula channel present a
+    /// lane pasted before the third file channel numbers them 1, 2, 4, …, as
+    /// the original's `.cfg` does (a clone run, a synthetic record: the same
+    /// bytes, and the same in front of the first).
+    #[test]
+    fn a_formula_channel_and_a_lane_among_the_file_channels_number_by_place() {
+        let dir = temp_dir("formulanum");
+        let cfg = write_record(&dir);
+        let ids: Vec<String> = fvb_core::comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap().analog.iter().map(|a| a.id.clone()).collect();
+        let xml = format!("<settings><category name=\"CalculatedChannels\" Channel0=\"Xs,{}+{}\"/></settings>", ids[0], ids[1]);
+        std::fs::write(dir.join("rec.set"), fvb_core::settree::utf16le_crlf(&xml)).unwrap();
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        let n = app.docs[di].osc.analog.len();
+        assert!(n >= 3 && app.docs[di].computed.len() == 1, "{n} channels and a formula channel");
+        // Its copy takes nothing: the formula channel is not a lane to move.
+        app.docs[di].selection = [ChanKey::Computed(0)].into();
+        app.copy_channels_for_merge();
+        assert_eq!(app.status, "Не выбраны каналы для копирования.");
+        assert_eq!(app.docs[di].file_record().1.analog, Vec::<usize>::new(), "no lane, the plain numbering");
+        app.docs[di].selection = [ChanKey::Analog(1)].into();
+        app.copy_channels_for_merge();
+        app.docs[di].selection = [ChanKey::Analog(2)].into();
+        app.paste_channels_for_merge();
+        let (rec, no) = app.docs[di].file_record();
+        assert_eq!(rec.analog.len(), n, "neither the lane nor the formula channel is a record of the file");
+        let want: Vec<usize> = (0..n).map(|i| if i < 2 { i + 1 } else { i + 2 }).collect();
+        assert_eq!(no.analog, want);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A pasted lane's `.set` section (a clone run): ShowFlags with bit 14 (not
     /// bit 13), its own frequency vector as `NetFreq`; the paste's summary
     /// comment stores `Comments/Codepage` 1 (#28).
