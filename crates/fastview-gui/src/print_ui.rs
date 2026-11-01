@@ -172,7 +172,9 @@ impl App {
     /// the pages on the application printer's paper (MFC's preview DC).
     pub fn print_preview_open(&mut self) {
         let Some(di) = self.active else { return };
-        let setup = self.print.setup;
+        // «Свойства...»'s orientation, once chosen, rules the sheet over the
+        // page setup's (VM: Landscape there shows a landscape sheet).
+        let setup = self.print.setup.with_driver_orientation(self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).and_then(spool::chosen_portrait));
         let paper = self.app_paper();
         let mut job = self.print_job(di, Device::printable(setup.oriented(paper.mm), setup.oriented_margins(paper.margins), PREVIEW_DPI), setup);
         // The diagram pages at the application printer's scale.

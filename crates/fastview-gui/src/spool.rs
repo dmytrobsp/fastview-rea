@@ -25,6 +25,19 @@ pub struct Paper {
 }
 
 impl Paper {
+    /// A paper measured through a DC the driver had turned to landscape,
+    /// back as a portrait sheet with portrait margins (the inverse of
+    /// `PageSetup::oriented` / `oriented_margins`): the preview turns it
+    /// itself by the orientation in force.
+    #[cfg(any(windows, test))]
+    pub fn unturned(self, landscape: bool) -> Paper {
+        if !landscape {
+            return self;
+        }
+        let [o0, o1, o2, o3] = self.margins;
+        Paper { name: self.name, mm: (self.mm.1, self.mm.0), margins: [o1, o2, o3, o0] }
+    }
+
     /// A sheet with no hardware margins.
     pub fn whole(name: &str, mm: (f32, f32)) -> Paper {
         Paper { name: name.into(), mm, margins: [0.0; 4] }
@@ -37,6 +50,12 @@ impl Paper {
 /// shows its form).
 pub fn paper(printer: &str) -> Option<Paper> {
     imp::paper(printer)
+}
+
+/// The orientation «Свойства...» chose for `printer`'s jobs (`Some(true)`
+/// portrait), if it chose one.
+pub fn chosen_portrait(printer: &str) -> Option<bool> {
+    imp::chosen_portrait(printer)
 }
 
 /// The device to render for `printer` with the page setup's orientation.
@@ -233,6 +252,10 @@ mod imp {
     pub fn forget_properties(_printer: &str) {}
 
     pub fn end_properties(_keep: bool) {}
+
+    pub fn chosen_portrait(_printer: &str) -> Option<bool> {
+        None
+    }
 
     #[cfg(test)]
     pub fn properties(_printer: &str, _owner: isize) -> bool {
@@ -555,8 +578,21 @@ mod imp {
         (!hdc.is_null()).then_some(hdc)
     }
 
-    /// The DEVMODE's form name and the DC's physical page, portrait.
+    pub fn chosen_portrait(printer: &str) -> Option<bool> {
+        let b = chosen(printer)?;
+        // SAFETY: the buffer holds the DEVMODEW DocumentPropertiesW wrote.
+        let (fields, o) = unsafe {
+            let dm = b.as_ptr() as *const DEVMODEW;
+            ((*dm).dmFields, (*dm).Anonymous1.Anonymous1.dmOrientation)
+        };
+        (fields & DM_ORIENTATION != 0).then_some(o as u32 != DMORIENT_LANDSCAPE)
+    }
+
+    /// The DEVMODE's form name and the DC's physical page, portrait (a
+    /// landscape DEVMODE chosen in «Свойства...» is turned back: the caller
+    /// orients by the choice).
     pub fn paper(printer: &str) -> Option<Paper> {
+        let landscape = chosen_portrait(printer) == Some(false);
         let portrait = PageSetup { portrait: true, ..PageSetup::default() };
         let dm = devmode(printer, &portrait)?;
         // SAFETY: the buffer holds the DEVMODEW DocumentPropertiesW wrote.
@@ -580,7 +616,7 @@ mod imp {
         };
         let (mx, my) = (|v: i32| v as f32 / dx as f32 * 25.4, |v: i32| v as f32 / dy as f32 * 25.4);
         let margins = [mx(ox), my(oy), mx(w - ox - hr).max(0.0), my(h - oy - vr).max(0.0)];
-        (w > 0 && h > 0 && dx > 0 && dy > 0).then(|| Paper { name, mm: (mx(w), my(h)), margins })
+        (w > 0 && h > 0 && dx > 0 && dy > 0).then(|| Paper { name, mm: (mx(w), my(h)), margins }.unturned(landscape))
     }
 
     pub fn device(printer: &str, setup: &PageSetup) -> Option<Device> {
@@ -714,6 +750,16 @@ mod tests {
         // Beside the exe: the harness's console is not seen.
         let log = std::env::current_exe().unwrap().with_file_name("driver_dialog.txt");
         std::fs::write(log, format!("{p}: {first} {second}\n")).unwrap();
+    }
+
+    #[test]
+    fn a_paper_measured_landscape_is_turned_back_to_portrait() {
+        // A DC the driver turned to landscape reports the sheet wide and its
+        // margins as the landscape page sees them (`oriented_margins`).
+        let portrait = Paper { name: "Legal".into(), mm: (216.0, 356.0), margins: [3.0, 4.0, 5.0, 6.0] };
+        let turned = Paper { name: "Legal".into(), mm: (356.0, 216.0), margins: PageSetup { portrait: false, ..PageSetup::default() }.oriented_margins(portrait.margins) };
+        assert_eq!(turned.clone().unturned(true), portrait);
+        assert_eq!(portrait.clone().unturned(false), portrait, "a portrait one is left as it is");
     }
 
     #[test]

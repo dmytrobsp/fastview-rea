@@ -83,6 +83,14 @@ impl PageSetup {
         }
     }
 
+    /// This setup with the orientation the driver's «Свойства...» chose
+    /// (`Some(portrait)`), which the job and the preview follow instead of
+    /// the page setup's (the original's preview shows a landscape sheet after
+    /// Landscape there, whatever the page setup holds; VM, #187).
+    pub fn with_driver_orientation(self, chosen: Option<bool>) -> PageSetup {
+        PageSetup { portrait: chosen.unwrap_or(self.portrait), ..self }
+    }
+
     /// A portrait paper size turned by the orientation.
     pub fn oriented(&self, (w, h): (f32, f32)) -> (f32, f32) {
         if self.portrait {
@@ -749,6 +757,19 @@ mod tests {
             let c = app.render_page(&fonts, &job, i, true);
             assert_eq!((c.w, c.h), (dev.w, dev.h));
         }
+    }
+
+    #[test]
+    fn the_drivers_orientation_rules_over_the_page_setups() {
+        let portrait = PageSetup::default();
+        let landscape = PageSetup { portrait: false, ..portrait };
+        assert_eq!(portrait.with_driver_orientation(None), portrait, "no choice: the page setup stands");
+        assert_eq!(landscape.with_driver_orientation(None), landscape);
+        assert_eq!(portrait.with_driver_orientation(Some(false)), landscape, "Landscape chosen in «Свойства...» turns the sheet");
+        assert_eq!(landscape.with_driver_orientation(Some(true)), portrait);
+        // The sheet the preview lays out, Letter-like paper, Landscape in both.
+        let s = landscape.with_driver_orientation(Some(false));
+        assert_eq!(s.oriented((216.0, 279.0)), (279.0, 216.0));
     }
 }
 
