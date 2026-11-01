@@ -7,7 +7,7 @@
 # (a left-button drag in ten steps; "HOLD x1,y1,x2,y2" the same left held,
 # then "UP"), "WHEEL x,y,n"
 # (n notches, + up), "KEYDOWN ctrl" / "KEYUP ctrl" (shift, alt: a modifier
-# held across steps), "SIZE w,h" (the front window restored, w × h at 0,0),
+# held across steps; also space, enter, esc, insert, home, end, pgup, pgdn, the arrows and tab: a key held), "SIZE w,h" (the front window restored, w × h at 0,0),
 # "CLOSE" (WM_CLOSE to the front window), "SHOT name.png" (a capture now),
 # "WINS name.txt" (the program's top-level windows: handle, owner, visible,
 # enabled, class, title — into shots/), "CURSOR name.txt" (the cursor now
@@ -197,9 +197,10 @@ foreach ($k in ($Keys -split ';')) {
         }
         Start-Sleep -Milliseconds 200
         if ($Matches[1] -eq 'DRAG') { [In]::mouse_event(0x4, 0, 0, 0, [UIntPtr]::Zero) }
-    } elseif ($k -match '^KEY(DOWN|UP) (ctrl|shift|alt)$') {
-        # A modifier held across the next steps (KEYDOWN ctrl; WHEEL …; KEYUP ctrl).
-        $v = @{ ctrl = 0x11; shift = 0x10; alt = 0x12 }[$Matches[2]]
+    } elseif ($k -match '^KEY(DOWN|UP) (ctrl|shift|alt|space|enter|esc|insert|home|end|pgup|pgdn|up|down|left|right|tab)$') {
+        # A modifier held across the next steps (KEYDOWN ctrl; WHEEL …; KEYUP ctrl);
+        # a key too (KEYDOWN space; SHOT x.png; KEYUP space: a pushed button's look).
+        $v = @{ ctrl = 0x11; shift = 0x10; alt = 0x12; space = 0x20; enter = 0x0D; esc = 0x1B; insert = 0x2D; home = 0x24; end = 0x23; pgup = 0x21; pgdn = 0x22; up = 0x26; down = 0x28; left = 0x25; right = 0x27; tab = 0x09 }[$Matches[2]]
         [In]::keybd_event([byte]$v, [byte][In]::MapVirtualKey($v, 0), $(if ($Matches[1] -eq 'UP') { 2 } else { 0 }), [UIntPtr]::Zero)
     } elseif ($k -match '^CHORD ((?:\w+\+)*)(\w+)$') {
         # Keys with their scan codes (a real keyboard's; SendKeys' Ctrl+letter

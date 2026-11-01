@@ -1481,6 +1481,10 @@ impl App {
                         off -= dy.signum() * 3.0 * row;
                     }
                 }
+                // A row selected by a key comes into view (EnsureVisible).
+                if let Some(j) = ui.data_mut(|d| d.remove_temp::<usize>(ui_grid_ensure_id())) {
+                    off = ensure_row_visible(off, page, row, j);
+                }
                 let content = if max_off > 0.0 { egui::Rect::from_min_max(inner.min, egui::pos2(inner.right() - bar_w, inner.bottom())) } else { inner };
                 if max_off > 0.0 {
                     let bar = egui::Rect::from_min_max(egui::pos2(content.right(), inner.top()), inner.max);
@@ -1843,6 +1847,9 @@ impl App {
             };
             if let Some(j) = to {
                 select.set(Some(order[j].0));
+                // MFC scrolls a key-selected row into view (EnsureVisible):
+                // the grid's scroll reads the row's place.
+                ui.data_mut(|d| d.insert_temp(ui_grid_ensure_id(), j));
                 // As a click on the group's row does.
                 if let GridRow::Group(.., ci) = order[j].1 {
                     self.selected_char = Some(ci);
@@ -1904,6 +1911,25 @@ impl App {
     }
 
     // ---- Быстрый анализ ----
+}
+
+/// Where the key-selected row is passed from the grid's rows to its scroll.
+fn ui_grid_ensure_id() -> egui::Id {
+    egui::Id::new("fv_grid_ensure_visible")
+}
+
+/// The scroll offset that shows grid row `j` (`row` px each) in a window of
+/// `page` px, moved as little as possible (CMFCPropertyGridCtrl's
+/// EnsureVisible): up to the row's top, or down to its bottom.
+fn ensure_row_visible(off: f32, page: f32, row: f32, j: usize) -> f32 {
+    let (top, bottom) = (j as f32 * row, (j as f32 + 1.0) * row);
+    if top < off {
+        top
+    } else if bottom > off + page {
+        bottom - page
+    } else {
+        off
+    }
 }
 
 /// What an auto-hide strip's buttons of one pinned group saw this frame.

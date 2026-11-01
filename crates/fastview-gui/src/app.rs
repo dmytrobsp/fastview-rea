@@ -1640,6 +1640,8 @@ pub struct App {
     /// enabled combo boxes and buttons of the merge bar, the document
     /// tabs' ▾ button) this frame: `CopyFocus::Other`.
     pub focus_other: Vec<egui::Rect>,
+    /// The document tabs' ▾ list was open at the last frame.
+    pub doc_list_open: bool,
     /// The active document (its serial) the copy focus was last settled
     /// for: a change is an MDI activation, which focuses its view.
     pub focus_doc: Option<u64>,
@@ -1865,6 +1867,7 @@ impl App {
             pane_tab_rects: Vec::new(),
             doc_tab_rects: Vec::new(),
             focus_other: Vec::new(),
+            doc_list_open: false,
             focus_doc: None,
             pane_grid: Vec::new(),
             view_pointer: None,
@@ -2297,6 +2300,11 @@ impl App {
                 match e {
                     egui::Event::Key { key, pressed: true, modifiers, .. } if accel(modifiers) => {
                         if let Some((_, c)) = Self::keymap().into_iter().find(|(k, _)| k == key) {
+                            // Ctrl+V acts at the press (a key-up after it
+                            // is not another paste).
+                            if *key == egui::Key::V {
+                                self.paste_announced = true;
+                            }
                             cmds.push(c);
                         }
                     }

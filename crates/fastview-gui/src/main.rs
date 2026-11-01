@@ -48,6 +48,7 @@ mod tips;
 mod util;
 mod views;
 mod windows_dlg;
+mod winkeys;
 
 use app::App;
 use eframe::egui;
@@ -695,6 +696,15 @@ impl App {
             let list_id = ui.id().with("fv_doc_list");
             let btn = ui.interact(hit, list_id.with("btn"), egui::Sense::click());
             self.focus_other.push(hit);
+            // A window of the frame: a press gives it the keyboard focus,
+            // where Space and Enter (egui's click by key) open the list (clone) and the arrows do
+            // nothing; Esc only closes the list.
+            if btn.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
+                btn.request_focus();
+            }
+            if btn.has_focus() {
+                ui.memory_mut(|m| m.set_focus_lock_filter(btn.id, egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, escape: true, ..Default::default() }));
+            }
             let mut open: Option<u64> = ui.data(|d| d.get_temp(list_id));
             if btn.clicked() {
                 open = if open.is_some() { None } else { Some(ui.ctx().cumulative_pass_nr()) };
@@ -727,6 +737,7 @@ impl App {
                     open = None;
                 }
             }
+            self.doc_list_open = open.is_some();
             ui.data_mut(|d| match open {
                 Some(o) => d.insert_temp(list_id, o),
                 None => d.remove::<u64>(list_id),
@@ -1022,6 +1033,7 @@ fn startup_args(args: impl Iterator<Item = String>) -> StartupArgs {
 impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         device_screen(ctx, raw);
+        winkeys::filter(raw);
         dialogs::take_dialog_tabs(ctx, raw);
     }
 
@@ -2189,6 +2201,36 @@ mod window_tests {
         w.key(egui::Key::ArrowDown);
         w.idle(1);
         assert_eq!(w.app.selected_char, Some(1), "the closed group's parameters are skipped");
+    }
+
+    /// A row selected by a key comes into view (CMFCPropertyGridCtrl's
+    /// EnsureVisible; the grid's rows scroll by whole rows): End on a grid
+    /// taller than its window scrolls to the last row, Home back (#24).
+    #[test]
+    fn a_key_selected_grid_row_scrolls_into_view() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.app.store.view.insert("Circle Diagram\\Properties Height".into(), "68".into());
+        w.idle(2);
+        let b = (0..w.app.library.blocks.len()).find(|&b| w.app.library.blocks[b].characteristics.len() >= 2 && !w.app.library.blocks[b].characteristics[0].parameters.is_empty()).expect("a block with two characteristics");
+        w.app.block_idx = b;
+        w.app.ensure_block_state();
+        w.idle(3);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let at = Pos2::new(grid.left() + 60.0, grid.top() + 1.0 + 8.0);
+        w.press(Primary, at, at);
+        let sid = egui::Id::new(("char_grid_scroll", app::Pane::Circle));
+        let state = |w: &Win| w.ctx.data(|d| d.get_temp::<(f32, f32)>(sid)).expect("the grid's scroll state");
+        let (_, content) = state(&w);
+        assert!(content > grid.height(), "the rows overflow the window: {content} in {}", grid.height());
+        w.key(egui::Key::End);
+        w.idle(3);
+        let (off, content) = state(&w);
+        assert!(off + grid.height() >= content - 17.0, "the last row is in view: offset {off}, rows {content}, window {}", grid.height());
+        w.key(egui::Key::Home);
+        w.idle(3);
+        assert_eq!(state(&w).0, 0.0, "Home scrolls back to the first row");
     }
 
     /// The parameters bar is a message-mode caption bar (`0x474dc5`): its
@@ -4283,6 +4325,14 @@ mod window_tests {
         assert_eq!(pending(&w), 1, "Ctrl+V's key-up pastes");
         w.app.dispatch(app::Command::Undo);
         assert_eq!(pending(&w), 0);
+        // The press the window procedure noted (`winkeys`) pastes at once, whatever the clipboard
+        // holds, and Ctrl released first or not, the key-up is not a second paste (#26).
+        let down = egui::Event::Key { key: egui::Key::V, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::CTRL };
+        w.run(vec![down]);
+        assert_eq!(pending(&w), 1, "Ctrl+V pastes at the key press");
+        w.run(vec![up.clone()]);
+        assert_eq!(pending(&w), 1, "the key-up pastes nothing more");
+        w.app.dispatch(app::Command::Undo);
         // With text there: the paste fires on the press, not again on the key-up.
         w.run(vec![egui::Event::Paste("x".into())]);
         w.run(vec![up]);
@@ -4868,6 +4918,74 @@ mod window_tests {
             w.app.copy_focus = CopyFocus::Diagram(Pane::Vector);
             w.press(Primary, r.center(), r.center());
             assert_eq!(w.app.copy_focus, CopyFocus::Other, "{r:?}");
+        }
+    }
+
+    /// The merge bar's method combo box holding the focus takes ↑ / ↓ as a
+    /// combo box does, one choice each (clone: a press on it, then ↓ / ↑
+    /// change the method; Tab goes nowhere, a bar is no dialog), and the
+    /// view's arrow keys stay off (#145).
+    #[test]
+    fn the_merge_bars_combo_takes_the_arrow_keys() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        let combo = w.app.focus_other[0];
+        let method = |w: &Win| w.app.merge.as_ref().unwrap().method;
+        assert_eq!(method(&w), 0);
+        // The press opens the list; the click at the focus window closes it.
+        w.press(Primary, combo.center(), combo.center());
+        w.key(egui::Key::Escape);
+        let before = w.view_state();
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 1, "↓ picks the next method");
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 2);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 2, "the last one stays");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(method(&w), 1, "↑ the previous");
+        assert_eq!(w.view_state(), before, "the view's keys are off");
+    }
+
+    /// «Синхронизация» holding the focus (a press let go outside it) is
+    /// pressed by Space and by Enter (clone: the status line fills with
+    /// neither a click), as the tab list's ▾ button opens its list by both
+    /// and takes no arrow (#145).
+    #[test]
+    fn the_merge_bars_buttons_and_the_tab_lists_button_take_space_and_enter() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        for key in [egui::Key::Space, egui::Key::Enter] {
+            let mut w = Win::new();
+            w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+            w.app.copy_channels_for_merge();
+            w.app.paste_channels_for_merge();
+            w.idle(3);
+            let sync = w.app.focus_other[1];
+            w.press(Primary, sync.center(), sync.center() + Vec2::new(0.0, 200.0));
+            assert!(w.app.merge.as_ref().unwrap().status.is_empty(), "no click: nothing synchronised");
+            w.key(key);
+            assert!(!w.app.merge.as_ref().unwrap().status.is_empty(), "{key:?} presses the focused button");
+        }
+        // The ▾ at the document strip's end.
+        for (key, opens) in [(egui::Key::Space, true), (egui::Key::Enter, true), (egui::Key::ArrowDown, false), (egui::Key::ArrowUp, false)] {
+            let mut w = Win::new();
+            let strip = w.app.mdi_strips[0];
+            let list = Pos2::new(strip.right() - 10.0, strip.center().y);
+            // The press opens the list; Esc closes it, the button keeps the focus.
+            w.press(Primary, list, list);
+            w.key(egui::Key::Escape);
+            w.idle(2);
+            let open = |w: &Win| w.app.doc_list_open;
+            assert!(!open(&w), "closed");
+            w.key(key);
+            w.idle(2);
+            assert_eq!(open(&w), opens, "{key:?}");
         }
     }
 

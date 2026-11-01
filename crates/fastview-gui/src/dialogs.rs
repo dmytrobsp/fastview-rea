@@ -923,6 +923,23 @@ fn take_arrows(ctx: &egui::Context) -> Vec<egui::Key> {
     ctx.data_mut(|d| d.remove_temp::<(u64, Vec<egui::Key>)>(egui::Id::new("fv_arrows"))).filter(|(p, _)| p + 1 >= pass).map(|a| a.1).unwrap_or_default()
 }
 
+/// The arrows for the control `id` that holds the focus: those a dialog
+/// kept from egui (`take_dialog_tabs`), or, outside a dialog (the merge
+/// bar's combo boxes: clone, ↑ / ↓ change the choice there too), those
+/// of this pass, which egui is told not to turn into a focus move (nor Esc
+/// into a loss of the focus: a closed list leaves the combo focused).
+pub fn focused_arrows(ui: &egui::Ui, id: egui::Id) -> Vec<egui::Key> {
+    let ctx = ui.ctx();
+    let mut keys = take_arrows(ctx);
+    ctx.memory_mut(|m| m.set_focus_lock_filter(id, egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, escape: true, ..Default::default() }));
+    for k in [egui::Key::ArrowUp, egui::Key::ArrowDown, egui::Key::ArrowLeft, egui::Key::ArrowRight] {
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, k)) {
+            keys.push(k);
+        }
+    }
+    keys
+}
+
 /// What a tab stop is, for the keys the dialog manager gives it.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum StopKind {
@@ -1430,7 +1447,7 @@ pub fn win_combo_list_in(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[Stri
     }
     // Closed with the focus: ↑ / ↓ pick the previous / next item.
     if resp.has_focus() && !items.is_empty() {
-        let keys = take_arrows(ui.ctx());
+        let keys = focused_arrows(ui, resp.id);
         let up = keys.iter().any(|k| matches!(k, egui::Key::ArrowUp | egui::Key::ArrowLeft));
         let down = keys.iter().any(|k| matches!(k, egui::Key::ArrowDown | egui::Key::ArrowRight));
         if down && current + 1 < items.len() {

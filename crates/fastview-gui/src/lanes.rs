@@ -2117,9 +2117,9 @@ impl App {
                 ui.data_mut(|d| d.insert_temp(opened, true));
             }
             let keys = r.has_focus() || r.lost_focus();
-            if keys && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if edit_key_at_release(ui, opened, egui::Key::Escape, keys) {
                 done = Some(false);
-            } else if keys && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            } else if edit_key_at_release(ui, opened, egui::Key::Enter, keys) {
                 done = Some(true);
             }
         });
@@ -2129,6 +2129,7 @@ impl App {
         }
         if done.is_some() {
             ui.data_mut(|d| d.remove::<bool>(opened));
+            edit_keys_disarm(ui, opened);
         }
         match done {
             None => self.rename_edit = Some((i, text)),
@@ -2774,6 +2775,31 @@ pub(crate) fn lane_stats(
             (d.id.clone(), Default::default(), color, 1.0, 0.0, 0.0, 0.0, val)
         }
     }
+}
+
+/// The edit `id` closed: its keys no longer wait for a release.
+fn edit_keys_disarm(ui: &egui::Ui, id: egui::Id) {
+    ui.data_mut(|d| {
+        for key in [egui::Key::Enter, egui::Key::Escape] {
+            d.remove::<bool>(id.with(("fv_key_armed", key)));
+        }
+    });
+}
+
+/// An inline edit's Enter and Esc act when the key is let go, not when it
+/// goes down (the rename edit commits on Enter and cancels on Esc at
+/// WM_KEYUP, `0x470ae0`, L9.106; a press while the edit listens arms the
+/// key). `id` names the edit's state.
+fn edit_key_at_release(ui: &egui::Ui, id: egui::Id, key: egui::Key, listening: bool) -> bool {
+    let armed_id = id.with(("fv_key_armed", key));
+    let (pressed, released) = ui.input(|i| (i.key_pressed(key), i.events.iter().any(|e| matches!(e, egui::Event::Key { key: k, pressed: false, .. } if *k == key))));
+    let armed = ui.data(|d| d.get_temp::<bool>(armed_id)).unwrap_or(false) || (pressed && listening);
+    if armed && released {
+        ui.data_mut(|d| d.remove::<bool>(armed_id));
+        return true;
+    }
+    ui.data_mut(|d| d.insert_temp(armed_id, armed));
+    false
 }
 
 #[cfg(test)]
@@ -3849,12 +3875,17 @@ mod menu_tests {
     #[test]
     fn inline_rename_commits_as_typed_or_refuses_with_397() {
         let enter = || egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        let enter_up = || egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: false, repeat: false, modifiers: Default::default() };
         let mut h = Harness::new();
         h.app.active_doc_mut().unwrap().init_set_keys();
         let commit = |h: &mut Harness, text: &str| {
             h.app.rename_edit = Some((0, text.to_string()));
             h.frame(vec![]);
             h.frame(vec![enter()]);
+            // Enter commits when it is let go, not while it is down (L9.106).
+            h.frame(vec![]);
+            assert!(h.app.rename_edit.is_some(), "still open while the key is down");
+            h.frame(vec![enter_up()]);
             h.frame(vec![]);
         };
         let other = h.doc().osc.analog[1].id.clone();
@@ -3889,6 +3920,7 @@ mod menu_tests {
         h.app.rename_edit = Some((1, own.clone()));
         h.frame(vec![]);
         h.frame(vec![enter()]);
+        h.frame(vec![enter_up()]);
         h.frame(vec![]);
         assert_eq!(h.app.dlg.alert(), Some(crate::chandlg::MSG_NAME_TAKEN));
         assert_eq!(h.doc().osc.analog[1].id, other);
@@ -3906,6 +3938,7 @@ mod menu_tests {
         h.app.rename_edit = Some((0, "Новое".to_string()));
         h.frame(vec![]);
         h.frame(vec![enter()]);
+        h.frame(vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: false, repeat: false, modifiers: Default::default() }]);
         h.frame(vec![]);
         assert_eq!(h.doc().osc.analog[0].id, "Новое");
         assert!(matches!(&h.doc().comments[0].kind, CommentKind::Kept(r) if matches!(&r.kind, fvb_core::recset::CommentKindRec::Level { channel, .. } if *channel == old)));
