@@ -254,9 +254,13 @@ impl App {
             // The driver's dialog (Windows); the chosen settings apply to
             // this printer's jobs.
             let real = self.print.printers.get(dlg.printer).cloned();
-            if win_button_en(ui, dlu(client, 258, 17, 60, 14), "Свойства...", false, cfg!(windows) && real.is_some()).clicked() {
+            let busy = spool::properties_busy();
+            if busy {
+                ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            }
+            if win_button_en(ui, dlu(client, 258, 17, 60, 14), "Свойства...", false, cfg!(windows) && real.is_some() && !busy).clicked() {
                 if let Some(p) = real {
-                    spool::properties(&p);
+                    spool::properties_start(&p);
                     dlg.details = None;
                 }
             }

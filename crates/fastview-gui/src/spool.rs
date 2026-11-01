@@ -58,7 +58,44 @@ pub fn details(printer: &str) -> [String; 4] {
 /// print dialog ends in OK ([`end_properties`]). Windows only — false
 /// where there is none (CUPS).
 pub fn properties(printer: &str) -> bool {
-    imp::properties(printer)
+    imp::properties(printer, 0)
+}
+
+static PROPS_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Take the one-at-a-time flag: true for the caller that got it.
+fn claim(flag: &std::sync::atomic::AtomicBool) -> bool {
+    flag.compare_exchange(false, true, std::sync::atomic::Ordering::AcqRel, std::sync::atomic::Ordering::Acquire).is_ok()
+}
+
+/// The driver's dialog is open (started by [`properties_start`]).
+pub fn properties_busy() -> bool {
+    PROPS_BUSY.load(std::sync::atomic::Ordering::Acquire)
+}
+
+/// «Свойства...» on a worker thread, owned by `owner` (our window, taken
+/// on the UI thread as the button is clicked). The dialog's own modal loop
+/// would otherwise run inside our frame, dispatching our window's paint
+/// into the frame in progress — on a Windows 11 clone the driver's dialog
+/// never showed and the window stayed disabled and frozen. False when one
+/// is already open or where there is no driver dialog.
+#[cfg(windows)]
+pub fn properties_start(printer: &str) -> bool {
+    if !claim(&PROPS_BUSY) {
+        return false;
+    }
+    let owner = imp::foreground() as usize;
+    let printer = printer.to_string();
+    std::thread::spawn(move || {
+        imp::properties(&printer, owner as isize);
+        PROPS_BUSY.store(false, std::sync::atomic::Ordering::Release);
+    });
+    true
+}
+
+#[cfg(not(windows))]
+pub fn properties_start(_printer: &str) -> bool {
+    false
 }
 
 /// Drop what «Свойства...» chose for `printer`: the page setup's OK hands
@@ -186,7 +223,7 @@ mod imp {
 
     pub fn end_properties(_keep: bool) {}
 
-    pub fn properties(_printer: &str) -> bool {
+    pub fn properties(_printer: &str, _owner: isize) -> bool {
         false
     }
 
@@ -392,7 +429,14 @@ mod imp {
         }
     }
 
-    pub fn properties(printer: &str) -> bool {
+    /// The foreground window as an owner for the driver's dialog.
+    pub fn foreground() -> isize {
+        // SAFETY: a plain query.
+        unsafe { GetForegroundWindow() as isize }
+    }
+
+    pub fn properties(printer: &str, owner: isize) -> bool {
+        let owner = if owner == 0 { foreground() } else { owner } as *mut std::ffi::c_void;
         let name = wide(printer);
         // SAFETY: the buffers are sized by DocumentPropertiesW; the printer
         // handle is closed on every path.
@@ -410,7 +454,7 @@ mod imp {
             let input = find(&SESSION_DM, printer).or_else(|| chosen(printer));
             let flags = DM_IN_PROMPT | DM_OUT_BUFFER | if input.is_some() { DM_IN_BUFFER } else { 0 };
             let r = DocumentPropertiesW(
-                GetForegroundWindow(),
+                owner,
                 h,
                 name.as_ptr(),
                 out.as_mut_ptr() as *mut DEVMODEW,
@@ -622,5 +666,14 @@ mod tests {
         // Beside the exe: the harness's console is not seen.
         let log = std::env::current_exe().unwrap().with_file_name("driver_dialog.txt");
         std::fs::write(log, format!("{p}: {first} {second}\n")).unwrap();
+    }
+
+    #[test]
+    fn the_driver_dialog_is_taken_one_at_a_time() {
+        let flag = std::sync::atomic::AtomicBool::new(false);
+        assert!(claim(&flag));
+        assert!(!claim(&flag), "a second click while it is open does nothing");
+        flag.store(false, std::sync::atomic::Ordering::Release);
+        assert!(claim(&flag));
     }
 }
