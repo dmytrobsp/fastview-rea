@@ -508,10 +508,12 @@ fn items<C: Clone>(ui: &mut egui::Ui, entries: &[Entry<C>], open: &mut Option<us
     chosen
 }
 
-/// Where a popup menu of `size` opens for the point `at` on `screen` (TrackPopupMenu, the original on a
-/// clone at 125 %): at the point when it fits below it; otherwise upward from the point, its bottom edge at
-/// the point, clamped to the screen's top (the lane menu near the foot opened at y 0). The horizontal
-/// position is left to `constrain`.
+/// Where a popup menu of `size` opens for the point `at` on `screen` (CMFCPopupMenu's layout, mfc120u about
+/// `0x100dd75e`–`0x100dd7b4`; the clone at 125 %): at the point when it fits below it; otherwise upward from
+/// the point, its bottom edge at the point, clamped to the top of the monitor's work area (the lane menu near
+/// the foot opened at y 0). Horizontally the original moves a menu past the right edge to 1 px inside the work
+/// area; `constrain` leaves it flush (1 px). Differences: ours is confined to the window's client (the work
+/// area when maximised), and a menu taller than the area is not cut and scrolled.
 pub fn menu_origin(at: Pos2, size: Vec2, screen: Rect) -> Pos2 {
     if at.y + size.y > screen.bottom() {
         Pos2::new(at.x, (at.y - size.y).max(screen.top()))

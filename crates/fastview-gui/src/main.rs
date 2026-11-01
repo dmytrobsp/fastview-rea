@@ -84,9 +84,11 @@ fn status_grip_pitch() -> f32 {
     4.0
 }
 
-/// The status bar's text size in px: the 8 pt font (11 / 13 / 16 px at 100 / 125 / 150 %).
+/// The status bar's text size in px. The original's is MFC's UI font (Segoe UI, the one the pane
+/// templates are measured in); ours the nearest Tahoma by width: against the original's «Верт. визир 1:»
+/// (73 / 86 / 107 px of ink on a clone at 100 / 125 / 150 %) 11 / 13 / 17 px (accepted difference #52).
 fn status_font_px() -> f32 {
-    dpi::dlg_font(11.0)
+    dpi::measured(11.0, 13.0, 17.0)
 }
 
 /// The size grip's dots (the visual style's gripper, the original on a clone at 150 %): a triangle of 2 × 2
@@ -850,8 +852,8 @@ impl App {
         }
         // The panes' widths and the font at the system DPI (VM, 125 % and
         // 150 %: the bar 30 / 36 px, its text and panes 1.25 / 1.5 ×).
-        // The ribbon status bar's font is the 8 pt one (clone, 100 / 125 / 150 %: «Верт. визир 1:» 73 / 86 /
-        // 107 px wide, as the 11 / 13 / 16 px font; the 9 pt font of the ribbon is wider).
+        // The ribbon status bar's font is MFC's UI font, ours the nearest Tahoma (clone, 100 / 125 / 150 %: «Верт. визир 1:» 73 / 86 /
+        // 107 px wide: 11 / 13 / 17 px in ours; the ribbon's 12 / 15 / 18 is wider).
         let font = egui::FontId::proportional(status_font_px());
         // A normal (not maximised) window's last pane also holds the size grip
         // (see [`status_reserve`]).
@@ -1670,15 +1672,16 @@ mod window_tests {
         dpi::set(96);
     }
 
-    /// #139 (clone, 100 / 125 / 150 %): the status bar's text is the 8 pt font, 11 / 13 / 16 px («Верт.
-    /// визир 1:» 73 / 86 / 107 px wide in the original; the 9 pt font's 12 / 15 / 18 is 8 % wider).
+    /// #139 (clone, 100 / 125 / 150 %): the status bar's text is the Tahoma size nearest the original's width,
+    /// 11 / 13 / 17 px («Верт. визир 1:» 73 / 86 / 107 px of ink in the original; at 150 % 16 px is 5 px short
+    /// and the ribbon's 18 px 10 over).
     #[test]
-    fn the_status_bar_text_is_the_8_pt_font() {
-        for (d, px) in [(96, 11.0), (120, 13.0), (144, 16.0)] {
+    fn the_status_bar_text_matches_the_originals_width() {
+        for (d, px) in [(96, 11.0), (120, 13.0), (144, 17.0)] {
             dpi::set(d);
             assert_eq!(status_font_px(), px, "{d}");
         }
-        // Through the frame at 150 %: the first pane's ink is as wide as the 16 px layout, not the 18 px one.
+        // Through the frame at 150 %: the first pane's ink is within 3 px of the original's 107.
         dpi::set(96);
         chrome_dpi(Some(1.5));
         let fonts = app_fonts();
@@ -1690,14 +1693,7 @@ mod window_tests {
         };
         let xs: Vec<usize> = (0..150).filter(|&x| (c.h - 27..c.h).any(|y| ink(x, y))).collect();
         let width = (xs.last().unwrap() - xs.first().unwrap() + 1) as f32;
-        let layout = |px: f32| {
-            let ctx = egui::Context::default();
-            ctx.set_fonts(fonts.clone());
-            let _ = ctx.run(Default::default(), |_| {});
-            ctx.fonts(|f| f.layout_no_wrap("Верт. визир 1:".into(), egui::FontId::proportional(px), egui::Color32::BLACK).size().x)
-        };
-        let (w16, w18) = (layout(16.0), layout(18.0));
-        assert!((width - w16).abs() < (width - w18).abs(), "ink {width} against {w16} at 16 px and {w18} at 18");
+        assert!((width - 107.0).abs() <= 3.0, "ink {width} against the original's 107");
         dpi::set(96);
     }
 
@@ -4566,6 +4562,19 @@ mod window_tests {
         assert_eq!(w.app.docs[ai].computed.len(), n, "the paste undone");
     }
 
+    /// #44 at the lane menu's call site: near the screen's foot the menu's bottom edge lies at the point.
+    #[test]
+    fn the_lane_menu_near_the_foot_opens_upward_from_the_point() {
+        let mut w = Win::new();
+        let at = Pos2::new(300.0, 860.0 - 8.0);
+        w.app.lane_menu_serial += 1;
+        let serial = w.app.lane_menu_serial;
+        w.app.lane_menu = Some(lanes::LaneMenu { serial, pos: at, kind: lanes::LaneMenuKind::Channels });
+        w.idle(4);
+        let menu = w.ctx.memory(|m| m.area_rect(egui::Id::new("fv_lane_menu").with(serial))).expect("the menu shown");
+        assert!((menu.bottom() - at.y).abs() <= 0.5, "bottom {} at the point {}", menu.bottom(), at.y);
+    }
+
     /// The status bar's right-click menu (CMFCRibbonStatusBar): a click
     /// on an element's row hides it and the menu stays; Esc closes it; the
     /// workspace keeps the hidden ids, one pane's hiding all six (VM).
@@ -4578,7 +4587,7 @@ mod window_tests {
         w.idle(2);
         assert!(w.app.status_menu.is_some());
         let menu = w.ctx.memory(|m| m.area_rect(egui::Id::new("fv_status_menu"))).expect("the menu shown");
-        assert!(menu.bottom() <= 860.0 + 0.5, "opened upward from the bar");
+        assert!((menu.bottom() - at.y).abs() <= 0.5, "opened upward from the point: its bottom at it, not at the screen's foot");
         // The fourth element's row: under the 19 px title, 22 px rows.
         let row = Pos2::new(menu.center().x, menu.top() + 3.0 + 19.0 + 3.0 * 22.0 + 11.0);
         w.press(Primary, row, row);

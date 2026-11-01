@@ -32,7 +32,7 @@ const VSCROLL_W: f32 = 17.0;
 /// The view's window scroll bars at the system DPI: SM_CXVSCROLL / SM_CYHSCROLL
 /// grow for a system-DPI-aware window (VM: 17, 21, 26 px at 100, 125,
 /// 150 %); what the view paints in them stays its own.
-fn scroll_w() -> f32 {
+pub(crate) fn scroll_w() -> f32 {
     crate::dpi::measured(VSCROLL_W, 21.0, 26.0)
 }
 

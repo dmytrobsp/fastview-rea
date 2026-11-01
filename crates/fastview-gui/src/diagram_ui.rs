@@ -173,7 +173,12 @@ const SCROLL_W: f32 = 16.0;
 /// takes (SM_CXVSCROLL 17 / 21 / 26, the bars on a clone 16 / 20 / 25 px at 100 / 125 / 150 %): not the 100 %
 /// width scaled (24 at 150 %), not the lanes' metric.
 pub(crate) fn scroll_w() -> f32 {
-    crate::dpi::measured(SCROLL_W, 20.0, 25.0)
+    // One rule with the lanes' (17 / 21 / 26 = MulDiv(17, dpi, 96)): less the plane's own edge pixel.
+    if crate::dpi::unscaled() {
+        SCROLL_W
+    } else {
+        crate::lanes::scroll_w() - 1.0
+    }
 }
 
 fn stroke(w: f32, c: Color32) -> Stroke {
