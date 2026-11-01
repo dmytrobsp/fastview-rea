@@ -2156,12 +2156,38 @@ fn header_texts([u, i]: [f64; 2]) -> (String, String) {
 /// `max(0, W − L − Wv − m − 10)`.
 fn vector_header_off(painter: &egui::Painter, full: Rect, scales: [f64; 2]) -> f32 {
     let s = print_s().unwrap_or(1.0);
-    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), font(), Color32::BLACK).size().x;
+    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), header_font(print_look()), Color32::BLACK).size().x;
     let (ut, it) = header_texts(scales);
     let m = 6.0;
     let l = measure("U max") + 2.0 * m;
     let w = measure("0.0000").max(measure(&ut)).max(measure(&it)) + 2.0 * m;
     (full.width() - l - w - m - 10.0 / s).max(0.0)
+}
+
+/// The vector header's text font: on paper Arial's em for the page font's
+/// cell height ⌊52·s/5⌋ (`0x442081`): cell / 1.1172 (Arial's ascent + descent
+/// over its em), in points here; ours' diagram font (0.8 of the screen's)
+/// ran a little small. On screen the diagram font.
+fn header_font(print: Option<f32>) -> FontId {
+    match print {
+        Some(s) => FontId::proportional(((52.0 * s / 5.0).floor() / 1.1172) / s),
+        None => font(),
+    }
+}
+
+/// The header's text height cy ("Ay" measured with GetTextExtentPoint32 in
+/// the DC's font, `0x49149c`…`0x49174d`). Read in the binary: the page's font
+/// is Arial, weight 400, created with a positive lfHeight (a cell height) of
+/// ⌊52·s/5⌋ (`0x442081`–`0x4420b1`), and the box's rows are ⌊3·cy/2⌋. The
+/// extent's height is GDI's text height of that font, which the binary does
+/// not hold: the VM gave 61 px at s = 6 (cell 62, rows of 91 px), one under
+/// the cell height, so `⌊52·s/5⌋ − 1` here (INFERRED for other s) in points;
+/// on screen the measured height.
+fn header_cy(print: Option<f32>, measured: f32) -> f32 {
+    match print {
+        Some(s) => ((52.0 * s / 5.0).floor() - 1.0) / s,
+        None => measured,
+    }
 }
 
 /// The vector diagram's header (`0x4910c3`–`0x4917fc`): a box at the top
@@ -2172,11 +2198,12 @@ fn vector_header_off(painter: &egui::Painter, full: Rect, scales: [f64; 2]) -> f
 /// fits "U max" only, the value column the wider of "0.0000" and both texts.
 fn vector_header(painter: &egui::Painter, full: Rect, [u, i]: [f64; 2]) {
     let s = print_s().unwrap_or(1.0);
+    let hf = header_font(print_look());
     let ink = Color32::from_rgb(20, 20, 20);
-    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), font(), ink).size();
+    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), hf.clone(), ink).size();
     let (ut, it) = header_texts([u, i]);
     let (m, ten) = (6.0, 10.0 / s);
-    let cy = measure("Ay").y;
+    let cy = header_cy(print_look(), measure("Ay").y);
     let h = (3.0 * cy * s / 2.0).floor() / s;
     let l = measure("U max").x + 2.0 * m;
     let w = measure("0.0000").x.max(measure(&ut).x).max(measure(&it).x) + 2.0 * m;
@@ -2194,8 +2221,8 @@ fn vector_header(painter: &egui::Painter, full: Rect, [u, i]: [f64; 2]) {
     painter.px_hline(rect.x_range(), top + h, pen);
     for (row, (label, value)) in [("U max", ut), ("I max", it)].into_iter().enumerate() {
         let y = top + cy / 4.0 + row as f32 * h;
-        painter.text(Pos2::new(x0 + m, y), egui::Align2::LEFT_TOP, label, font(), ink);
-        painter.text(Pos2::new(x0 + l + m, y), egui::Align2::LEFT_TOP, value, font(), ink);
+        painter.text(Pos2::new(x0 + m, y), egui::Align2::LEFT_TOP, label, hf.clone(), ink);
+        painter.text(Pos2::new(x0 + l + m, y), egui::Align2::LEFT_TOP, value, hf.clone(), ink);
     }
 }
 
@@ -2206,6 +2233,22 @@ mod tests {
 
     /// The zoom gate scales over the client less 8 / 16 px (`0x4379e0`),
     /// not over the painted plane.
+    #[test]
+    fn the_header_text_uses_arials_em_on_paper() {
+        let f = header_font(Some(6.0));
+        assert!((f.size - 62.0 / 1.1172 / 6.0).abs() < 1e-3, "{}", f.size);
+        assert_eq!(header_font(None).size, font().size);
+        assert!(header_font(Some(6.0)).size > FontId::proportional(8.8).size, "larger than the 0.8 screen font it had");
+    }
+
+    #[test]
+    fn the_header_rows_follow_the_printer_font_height() {
+        let cy = header_cy(Some(6.0), 65.0 / 6.0);
+        assert_eq!(cy * 6.0, 61.0);
+        assert_eq!((3.0 * cy * 6.0 / 2.0).floor(), 91.0);
+        assert_eq!(header_cy(None, 16.0), 16.0);
+    }
+
     #[test]
     fn the_zoom_gate_measures_its_own_rectangle() {
         let g = PlaneGeom { w: 100, h: 100, pan: (0, 0), max: [10.0, 10.0], char_max: 10.0, gate: (400, 400) };

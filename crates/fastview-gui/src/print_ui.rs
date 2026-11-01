@@ -5,7 +5,7 @@
 //! (57609, `AFXPrintPreview`: Печать, Увеличить / Уменьшить, Две страницы,
 //! Следующая / Предыдущая страница, Закрыть).
 
-use crate::app::App;
+use crate::app::{App, Command};
 use crate::printout::{Device, Job, PageSetup};
 use crate::raster::Canvas;
 use crate::spool;
@@ -254,9 +254,13 @@ impl App {
             // The driver's dialog (Windows); the chosen settings apply to
             // this printer's jobs.
             let real = self.print.printers.get(dlg.printer).cloned();
-            if win_button_en(ui, dlu(client, 258, 17, 60, 14), "Свойства...", false, cfg!(windows) && real.is_some()).clicked() {
+            let busy = spool::properties_busy();
+            if busy {
+                ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            }
+            if win_button_en(ui, dlu(client, 258, 17, 60, 14), "Свойства...", false, cfg!(windows) && real.is_some() && !busy).clicked() {
                 if let Some(p) = real {
-                    spool::properties(&p);
+                    spool::properties_start(&p);
                     dlg.details = None;
                 }
             }
@@ -289,8 +293,11 @@ impl App {
         });
         // Enter is the default button OK, Esc Отмена (VM).
         let keys = self.dialog_keys(ctx);
-        let ok = ok || keys == Some(true);
-        let cancel = cancel || keys == Some(false);
+        // Under the driver's dialog the print dialog is inert (the original's
+        // is owned by it): a late result must not land in a closed dialog's
+        // stored choice.
+        let inert = spool::properties_busy();
+        let (ok, cancel, preview, open) = (!inert && (ok || keys == Some(true)), !inert && (cancel || keys == Some(false)), !inert && preview, open || inert);
         // The checkboxes are kept per view, also on Отмена (`0x404b30`).
         self.docs[dlg.doc].print_ticks = dlg.ticks;
         if setup {
@@ -395,6 +402,18 @@ impl App {
 
     /// The print preview in place of the views (CPreviewViewEx): its
     /// toolbar, then one or two pages on grey.
+    /// Run `f` with the preview's document active, then give the active
+    /// document back — unless `f` itself activated another (Ctrl+O onto an
+    /// already open record activates it at once; a new record becomes active).
+    fn run_for_preview_doc(&mut self, di: usize, f: impl FnOnce(&mut App)) {
+        let before = self.active;
+        self.active = Some(di);
+        f(self);
+        if self.active == Some(di) {
+            self.active = before;
+        }
+    }
+
     pub fn preview_ui(&mut self, ui: &mut egui::Ui) {
         let ctx = &ui.ctx().clone();
         let Some(mut pv) = self.print.preview.take() else { return };
@@ -414,6 +433,15 @@ impl App {
                     None
                 }
             });
+        }
+        // The frame's accelerator table 128 stays live over the preview (VM:
+        // Ctrl+P shows the print dialog over it, Ctrl+S «Сохранить как» and
+        // Ctrl+O «Открыть» their dialogs, the preview staying under them).
+        // Ours takes those three here; the preview gate in `handle_keys`'
+        // caller is left alone.
+        let accel = ctx.input(|i| preview_accel(&i.events));
+        if let Some(c) = accel.filter(|_| self.print.dialog.is_none() && !self.modal_up) {
+            self.run_for_preview_doc(pv.job.di, |app| app.dispatch(c));
         }
         let (mut close, mut print) = (false, false);
         if let Some(c) = pv.cmd.take().filter(|c| pv.enabled(*c)) {
@@ -436,7 +464,7 @@ impl App {
             let d = &pv.job.dev;
             Vec2::new(d.sheet_mm.0 / 25.4 * d.dpi, d.sheet_mm.1 / 25.4 * d.dpi).round()
         };
-        let fit = ((avail.y - 20.0) / page.y).min((avail.x - 20.0) / (page.x * shown.len() as f32 + 10.0)).max(0.05);
+        let fit = preview_fit(avail, page, shown.len());
         let scale = fit * [1.0, 1.6, 2.6][pv.zoom as usize];
         let ppp = ctx.pixels_per_point();
         for &i in &shown {
@@ -478,8 +506,8 @@ impl App {
             ui.set_min_size(ui.available_size());
             egui::ScrollArea::both().show(ui, |ui| {
                 // The pages centred in the grey area (stock MFC preview).
-                let total = Vec2::new((page.x * scale + 10.0) * shown.len() as f32 + 10.0, page.y * scale + 20.0);
-                ui.add_space(((avail.y - total.y) / 2.0).max(0.0) + 10.0);
+                let total = Vec2::new((page.x * scale + 10.0) * shown.len() as f32 + 10.0, page.y * scale + PREVIEW_MARGIN);
+                ui.add_space(((avail.y - total.y) / 2.0).max(0.0) + PREVIEW_MARGIN / 2.0);
                 ui.horizontal(|ui| {
                     ui.add_space(((avail.x - total.x) / 2.0).max(0.0));
                     for &i in &shown {
@@ -509,6 +537,33 @@ impl App {
     }
 }
 
+/// The accelerators the frame keeps live over the preview: Ctrl+P, Ctrl+S,
+/// Ctrl+O (and nothing with Shift / Alt).
+fn preview_accel(events: &[egui::Event]) -> Option<Command> {
+    events.iter().find_map(|e| match e {
+        egui::Event::Key { key, pressed: true, modifiers, .. } if (modifiers.command || modifiers.ctrl) && !modifiers.shift && !modifiers.alt => match key {
+            egui::Key::P => Some(Command::Print),
+            egui::Key::S => Some(Command::SaveAs),
+            egui::Key::O => Some(Command::Open),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
+/// The room kept round a preview sheet's height: 8 px above and below, as
+/// the stock MFC preview keeps it (INFERRED from MFC's source; the clone's
+/// numbers agree: the original's sheet is 314 px in a 330 px area, 16 px
+/// less). Ours' area is about 2 px shorter than the original's, so the same
+/// margin leaves our sheet a little smaller (small visual difference).
+const PREVIEW_MARGIN: f32 = 16.0;
+
+/// The scale a preview sheet is shown at: the height left less
+/// [`PREVIEW_MARGIN`], the width less 20 px and 10 px between sheets.
+fn preview_fit(avail: Vec2, page: Vec2, sheets: usize) -> f32 {
+    ((avail.y - PREVIEW_MARGIN) / page.y).min((avail.x - 20.0) / (page.x * sheets as f32 + 10.0)).max(0.05)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -523,6 +578,55 @@ mod tests {
             }
             app.print_windows(ctx);
         });
+    }
+
+    #[test]
+    fn the_preview_sheet_leaves_sixteen_pixels_of_height() {
+        let page = Vec2::new(850.0, 1100.0);
+        let fit = preview_fit(Vec2::new(560.0, 330.0), page, 1);
+        assert_eq!((page.y * fit).round(), 314.0);
+        assert!(preview_fit(Vec2::new(200.0, 900.0), page, 1) < 0.3, "width limits a narrow area");
+    }
+
+    #[test]
+    fn ctrl_p_over_the_preview_opens_the_print_dialog_and_keeps_the_preview() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        app.dispatch(Command::PrintPreview);
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut app, vec![]);
+        assert!(app.print.dialog.is_none());
+        let ctrl = egui::Modifiers { ctrl: true, command: true, ..Default::default() };
+        frame(&ctx, &mut app, vec![egui::Event::Key { key: egui::Key::P, physical_key: None, pressed: true, repeat: false, modifiers: ctrl }]);
+        assert!(app.print.dialog.is_some(), "the dialog opens");
+        assert!(app.print.preview.is_some(), "the preview stays under it");
+    }
+
+    #[test]
+    fn the_preview_keeps_ctrl_p_s_and_o_live() {
+        let ev = |key, shift| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers { ctrl: true, command: true, shift, ..Default::default() } }];
+        assert!(matches!(preview_accel(&ev(egui::Key::P, false)), Some(Command::Print)));
+        assert!(matches!(preview_accel(&ev(egui::Key::S, false)), Some(Command::SaveAs)));
+        assert!(matches!(preview_accel(&ev(egui::Key::O, false)), Some(Command::Open)));
+        assert!(preview_accel(&ev(egui::Key::S, true)).is_none(), "Ctrl+Shift+S is not in the table");
+        assert!(preview_accel(&ev(egui::Key::X, false)).is_none());
+    }
+
+    #[test]
+    fn an_accelerator_over_the_preview_keeps_a_document_it_activated() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        app.dispatch(Command::Demo);
+        app.active = Some(1);
+        // Nothing activated: the old active document comes back.
+        app.run_for_preview_doc(0, |_| {});
+        assert_eq!(app.active, Some(1));
+        // The command activated another document: it stays.
+        app.run_for_preview_doc(0, |a| a.active = Some(1));
+        assert_eq!(app.active, Some(1));
+        app.active = Some(1);
+        app.run_for_preview_doc(1, |a| a.active = Some(0));
+        assert_eq!(app.active, Some(0), "the command's choice is kept");
     }
 
     #[test]

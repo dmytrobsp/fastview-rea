@@ -787,8 +787,9 @@ impl App {
             // The documents sorted by title, each with a small window
             // image, none marked; no «Окна...» (VM: MFC adds it to a
             // «Window» menu only, which this ribbon has not). An MFC popup
-            // at the button's left under it; the button lit (15 px, (252,
-            // 151, 61) → (254, 181, 91)) while it is open (VM).
+            // at the button's left under it; the button lit 15 px, hot
+            // (255, 244, 202) → (255, 220, 122), pressed or open (252, 151, 61)
+            // → (254, 181, 91) (VM).
             let list_id = ui.id().with("fv_doc_list");
             let btn = ui.interact(hit, list_id.with("btn"), egui::Sense::click());
             self.focus_other.push(hit);
@@ -813,13 +814,16 @@ impl App {
             if btn.clicked() && !list_keys.2 {
                 open = if open.is_some() { None } else { Some(ui.ctx().cumulative_pass_nr()) };
             }
-            let lit = egui::Rect::from_min_size(egui::pos2(x0 - 3.0, y0 + 1.0 - (dpi::s(15.0) / 2.0).ceil()), egui::vec2(dpi::s(15.0), dpi::s(15.0)));
-            if let Some(serial) = open {
-                crate::lanes::gradient(ui.painter(), lit, egui::Color32::from_rgb(252, 151, 61), egui::Color32::from_rgb(254, 181, 91));
+            let lit = egui::Rect::from_min_size(egui::pos2(x0 - 3.0, (y0 + 2.0 - (dpi::s(15.0) / 2.0).ceil()).round()), egui::vec2(dpi::s(15.0), dpi::s(15.0)));
+            // Lit (15 px) when hot, pressed or open (L9.265's residual, VM).
+            if let Some((top, bottom)) = doc_menu_fill(open.is_some(), btn.is_pointer_button_down_on(), btn.hovered()) {
+                crate::lanes::gradient(ui.painter(), lit, top, bottom);
                 for k in 0..5 {
                     let row = egui::Rect::from_min_max(egui::pos2(x0 + k as f32, y0 + k as f32), egui::pos2(x0 + 9.0 - k as f32, y0 + k as f32 + 1.0));
                     ui.painter().rect_filled(row, 0.0, tri);
                 }
+            }
+            if let Some(serial) = open {
                 let mut order = members.clone();
                 order.sort_by_key(|&i| self.docs[i].title().to_lowercase());
                 let window = |p: &egui::Painter, r: egui::Rect, _c: egui::Color32| {
@@ -839,7 +843,7 @@ impl App {
                 if list_keys.2 {
                     activate = hot.and_then(|h| order.get(h).copied());
                 }
-                let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom()).constrain(true).show(ui.ctx(), |ui| {
+                let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom() - egui::vec2(0.0, 1.0)).constrain(true).show(ui.ctx(), |ui| {
                     crate::popmenu::mfc_frame(ui, |ui| {
                         for (k, i) in order.iter().copied().enumerate() {
                             if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, hot == Some(k), Some(&window)).clicked() {
@@ -1484,6 +1488,20 @@ fn one_press_per_pass(mut raw: egui::RawInput) -> Vec<egui::RawInput> {
             r
         })
         .collect()
+}
+
+/// The document menu button's face (VM): hot (255, 244, 202) → (255, 220,
+/// 122) under the pointer, (252, 151, 61) → (254, 181, 91) while pressed or
+/// while its list is open; none otherwise.
+fn doc_menu_fill(open: bool, down: bool, hot: bool) -> Option<(egui::Color32, egui::Color32)> {
+    let c = egui::Color32::from_rgb;
+    if open || down {
+        Some((c(252, 151, 61), c(254, 181, 91)))
+    } else if hot {
+        Some((c(255, 244, 202), c(255, 220, 122)))
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -6309,6 +6327,16 @@ mod window_tests {
         w.app.color_dialog = None;
         w.idle(4);
         assert!(winframe::max_button().is_some(), "the dialog closed");
+    }
+
+    #[test]
+    fn the_document_menu_button_is_lit_hot_pressed_and_open() {
+        assert_eq!(doc_menu_fill(false, false, false), None);
+        let hot = doc_menu_fill(false, false, true).unwrap();
+        let lit = doc_menu_fill(false, true, true).unwrap();
+        assert_eq!(hot.0, egui::Color32::from_rgb(255, 244, 202));
+        assert_eq!(lit.1, egui::Color32::from_rgb(254, 181, 91));
+        assert_eq!(doc_menu_fill(true, false, false), Some(lit));
     }
 
     /// `FV_WINDOW_DUMP=<file.png> cargo test window_dump` renders the window
