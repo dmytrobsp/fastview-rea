@@ -1451,6 +1451,32 @@ mod tests {
         assert_eq!((o.attrs["byPowerState"].as_str(), o.attrs["byCastCoeffState"].as_str(), o.attrs["byTransCoeffState"].as_str()), ("1", "1", "0"));
     }
 
+    /// #193: with two stored reduction methods the formulas outnumber the names list (one «прив.» set per arm); the
+    /// original pairs by index with no bounds check (`0x4167f0`, `0x416c61`; a read past the vector, undefined).
+    /// Ours pairs every formula with a defined, distinct name.
+    #[test]
+    fn two_stored_methods_name_every_formula_distinctly() {
+        let mut sec = SetNode::default();
+        let opt = sec.child_mut("legOption");
+        opt.set_int("byPowerState", 1);
+        opt.set_int("byCastCoeffState", 1);
+        let mut f = QuickForms::default();
+        load_page(4, &mut f, &mut sec, &[]);
+        let g = f.generate(AnalysisTab::Differential, &[]);
+        let mut names: Vec<String> = Vec::new();
+        for (n, _) in &g.channels {
+            let u = fvb_core::quick::unique_name(n, &names);
+            names.push(u);
+        }
+        assert_eq!(names.len(), g.channels.len());
+        assert!(names.iter().all(|n| !n.is_empty()));
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), names.len(), "distinct names");
+        assert!(names.iter().any(|n| n.ends_with("_2")), "the extra lines carry _2: {names:?}");
+    }
+
     /// 539's generation: the page's methods for every arm, each arm's own
     /// values and the group number of the chosen method (`0x47ff60`).
     #[test]

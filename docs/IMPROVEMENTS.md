@@ -229,3 +229,13 @@ misbehaves and the better behaviour is obvious (the maintainer,
   Ours prints «0» on every bar when the fundamental is below 1e-9 of the window's largest |sample|; the threshold sits five orders above
   the noise and three below a ripple of 1e-6 of the level, so real signals, near-constant ones included, keep their
   labels. Reason: the maintainer's decision (2026-10-31). The «% of RMS» mode is untouched (its norm is the level).
+- **Quick analysis on crafted input: a header-only `.osc` with a formula, and page 539 with two stored reduction methods (#193).**
+  The original's behaviour there is undefined. (1) Its `.osc` reader (`0x4524b0`) has no zero-sample check (only the
+  `.cfg` / `.cff` loader has one, `0x450bc1`), so a header-only `.osc` loads with no samples; a formula over it runs
+  the batch (`0x415780`) with zero samples, the evaluator never runs, and the unit walk (`0x415bd0`, `0x419800`) starts
+  from the position an earlier evaluation left (the tokenizer does not reset it, only the per-sample evaluate does,
+  `0x419997`). (2) A `.set` that stores two 539 reduction methods makes the formulas outnumber the names list (one
+  set per arm); `0x4167f0` pairs them by index with no bounds check (`0x416c61`-`0x416c9d`) and reads past the names
+  vector (uninitialised heap: garbage or a crash). Ours: the first gives empty channels with the unit from the
+  formula's own walk; the second names the extra lines «_2», «_3»... Reason: undefined behaviour of the original on
+  input only a hand-made `.osc` / `.set` produces; a defined result is better than garbage or a crash.
