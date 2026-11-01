@@ -668,14 +668,17 @@ fn scrolled<R>(ui: &mut egui::Ui, avail: f32, scroll: &mut f32, add: impl FnOnce
         ui.painter().add(egui::Shape::convex_polygon(vec![c + Vec2::new(-3.0, 1.5 * -d), c + Vec2::new(3.0, 1.5 * -d), c + Vec2::new(0.0, 1.5 * d)], MFC_TEXT, Stroke::NONE));
         if ui.rect_contains_pointer(row) {
             // The timer starts when the pointer comes on the arrow and fires every 80 ms of real time.
-            let tick = ui.id().with("fv_tick");
+            // Per arrow; a pass in which the pointer was not on it restarts the timer (the original kills
+            // it on leaving, `0x100de7c5`, and starts it on entry, `0x100deaad`).
+            let tick = ui.id().with(("fv_tick", up));
             let now = ui.ctx().input(|i| i.time);
-            let (mut last, seen): (f64, f64) = ui.ctx().data(|dd| dd.get_temp(tick)).unwrap_or((now, now));
-            if now - seen > 0.5 {
+            let pass = ui.ctx().cumulative_pass_nr();
+            let (mut last, seen): (f64, u64) = ui.ctx().data(|dd| dd.get_temp(tick)).unwrap_or((now, pass));
+            if seen + 1 < pass {
                 last = now;
             }
             *scroll += d * scroll_ticks(&mut last, now) * row_pitch();
-            ui.ctx().data_mut(|dd| dd.insert_temp(tick, (last, now)));
+            ui.ctx().data_mut(|dd| dd.insert_temp(tick, (last, pass)));
             let rest = (SCROLL_TICK as f64 - (now - last)).max(0.001);
             ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(rest));
         }
@@ -1218,5 +1221,42 @@ mod tests {
         }
         let rows = (m.scroll - start) / row_pitch();
         assert!((9.0..=10.0).contains(&rows), "10 frames 80 ms apart, the pointer at rest: {rows} rows");
+    }
+
+    /// Leaving the arrow kills the timer: coming back after 0.4 s scrolls no row on the first frame.
+    #[test]
+    fn coming_back_to_an_arrow_restarts_its_timer() {
+        let entries: Vec<Entry<u8>> = (0..60).map(|n| Entry::item(format!("item {n}"), true, Mark::None, n)).collect();
+        let ctx = egui::Context::default();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 300.0));
+        let mut m = PopMenu::new(1, Pos2::new(400.0, 100.0));
+        let mut t = 0.0;
+        let mut frame = |m: &mut PopMenu, gap: f64, at: Option<Pos2>| {
+            t += gap;
+            let events = at.map(egui::Event::PointerMoved).into_iter().collect();
+            let mut r = Rect::NOTHING;
+            let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), time: Some(t), events, ..Default::default() }, |ctx| {
+                show(ctx, "t", m, &entries);
+                r = ctx.memory(|mem| mem.area_rect(area_id("t", 1))).unwrap_or(Rect::NOTHING);
+            });
+            r
+        };
+        let mut r = Rect::NOTHING;
+        for _ in 0..5 {
+            r = frame(&mut m, 0.02, None);
+        }
+        let down = Pos2::new(r.center().x, r.bottom() - arrow_band() * 0.5 - 3.0);
+        let rows = Pos2::new(r.center().x, r.center().y);
+        frame(&mut m, 0.02, Some(down));
+        for _ in 0..6 {
+            frame(&mut m, 0.08, None);
+        }
+        frame(&mut m, 0.0, Some(rows));
+        for _ in 0..4 {
+            frame(&mut m, 0.1, None);
+        }
+        let before = m.scroll;
+        frame(&mut m, 0.0, Some(down));
+        assert_eq!(m.scroll, before, "no row on the first frame back");
     }
 }
