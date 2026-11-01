@@ -28,7 +28,7 @@ cursor-instant phasor, plain reactance / textbook two-terminal formula) is
   AB. Isolated (0x499c80) Uab/(Ia−Ib)…, phase-earth not located.
 - Grounded formula (0x49a670): K = Z0/Z1 − 1 on I0; Iloop = Iph + K·I0 +
   Σ(Zm/Z1)·I_par; d = Im(U/Iref′)/Im(Z1·Iloop/Iref′), Iref′ = Iref·e^{jθ}
-  (Takagi-type, θ from taps NOT DETERMINED); section walking with voltage drop
+  (Takagi-type; θ, `obj+0x380`, is zero before the first pass and written only by `0x49adc0`: arg(Mb − Mc·e^{jMa}) from the medians over the window — as ours' `refine_theta`; L9.194, spec omp.md §6); section walking with voltage drop
   and tap admittances; d<0 → 0. Isolated (0x49a430): Z′ = U/I − Z_acc; if
   arg(R+jX) − arg(Z′) > 0 → d = Im Z′/X else Re Z′/R.
 - Double-ended (0x49cf00/0x49cd10): minimise | |U_f(end1,x)| − |U_f(end2,L−x)| |
@@ -85,8 +85,7 @@ functions remain only until the GUI moves over): `omp_phasors`, components,
 grounded detection with hysteresis + `debounce`, phase selection, loop choice
 (grounded/isolated), grounded and isolated per-sample distance with section
 walking, voltage drops, taps, parallel-line term, clamp and the over-count
-quirk, `median`. θ fixed at 0 (the tap re-estimation needs the unresolved
-`0x49bd40`). Stage 2 (spec §8–§13): `fault_interval` (first qualifying run),
+quirk, `median`. θ: see the tap re-estimation below. Stage 2 (spec §8–§13): `fault_interval` (first qualifying run),
 `choose_window` (alternating σ / |mean| searches with the later-window bias,
 1000-iteration fallback), `result_for_window` (median, 2σ/mean·100 error,
 upper-median flags, section/support, the original's text with SI prefixes,

@@ -20,8 +20,7 @@ types (exactly `ASCII`/`BINARY`/`binary32`; FLOAT32 etc. → error 330
 "Неправильный формат файла", as the original); `.cff` reader with the
 original's rules — text decoded up to the first NUL, CRLF-based section
 split, DAT byte count = first digit run on the marker line, payload starting
-one byte after the line terminator (the original's LF offset bug, reproduced:
-harmless for ASCII, corrupts binary .cff) — and `.cff` writer (rev ≥ 2013 else
+one byte past the consumed terminator — exact for a CRLF file, an LF-only file loses its first byte (`0x476f30`, `0x450284`; L9.424) — and `.cff` writer (rev ≥ 2013 else
 error 187; CFG, HDR/INF/SET, `DAT BINARY: n---`; CP1251). GUI opens `.cff`,
 keeps its HDR/INF/SET and offers `.cff` in Save-As; load errors read
 "<message> - <file>" (L9.181). Pinned by `tests/formats.rs` (5). A test fixture that
@@ -35,12 +34,11 @@ by `fourie:` n = 1 via `OscChannels`). Pinned by `tests/formats.rs::osc2_reader`
 (synthetic file built to the verified layout — no real `.osc` sample ships, so
 it is not byte-verified against a device file).
 
-Verdict: 🟡 **PARTIAL** (all readers present).
+Verdict: ✅ **MATCH** for every format we can read: `.cfg` / `.dat` (ASCII, BINARY, binary32), `.cff`, `.osc`; only `.sto` stays ⛔ (see below).
 - ✅ `.cfg`/`.dat` file-type rule, ✅ `.cff` read/write, ✅ `.osc` read.
 - ✅ `.osc` Save-As (`0x44ca80` writes the record's own bytes under the new
   name; ours copies the file — triaged 2026-10-23); (OSC stamps and the
   trigger sample: L9.124 / L9.125); unit-prefix
   table beyond micro/milli — settled by L9.34 (the normaliser `0x422b10`).
 - ⛔ `.sto` — needs the native ConvertSto2Comtrade and a sample file.
-- Not modelled: the temp-folder mechanics, `<base>.set` files, the
-  save-onto-own-path rule, the `.dat` → `.cfg` open redirect is native already.
+- Modelled since: the `<base>.set` read and written (L9.17, L9.55); Save onto the record's own path writes only the `.set` (L9.17); the `.cff` split's temp copy `Fast_View_<hex>\tmp_cfg` as the error's detail (L9.268; ours parses in memory). The `.dat` → `.cfg` open redirect is native already.

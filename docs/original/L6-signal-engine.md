@@ -1,4 +1,4 @@
-# L6 — Signal engine (channel methods)  ·  ✅ (freq-channel DFT ✅ L9.65; 0x46 retag ❌)
+# L6 — Signal engine (channel methods)  ·  ✅ (freq-channel DFT ✅ L9.65; the 0x46 late retag ✅ L9.425)
 
 Evidence (subagent objdump/decompile; all double constants read from bytes).
 OscillHelper.dll exports only `ComtradeConverter` — no signal code there.
@@ -21,8 +21,7 @@ OscillHelper.dll exports only `ComtradeConverter` — no signal code there.
   ending at idx inclusive; 0 while W−1 > idx. Calculator passes periods=1.
 - **fourie:(ch,n)** `FUN_00426240`: RMS magnitude of harmonic n over the phasor
   window (`sqrt(C²+S²)·√2/N`); n==1 additionally × `rec+0x278` (1.0128 /
-  1.00259 / 1.014065 by a non-COMTRADE header type; COMTRADE default NOT
-  DETERMINED); n==0 → |a0|.
+  1.00259 / 1.014065 by a non-COMTRADE header type; COMTRADE: 1.0, the record constructor `0x449740`, L9.194); n==0 → |a0|.
 - **a0** `FUN_00426c90(idx, P)`: signed mean over W = N·P ending at idx.
 - **fault** `FUN_00427670`: `d = x[s] − 2x[s−N] + x[s−2N]` (**one-period lag**,
   terms with s < 2N are 0), result `sqrt(Σd²)/sqrt(N)` over k=1..N.
@@ -40,7 +39,7 @@ OscillHelper.dll exports only `ComtradeConverter` — no signal code there.
   0x4d1a00); `zl:(U,I1,I2,Imin)` = U/(I1−I2), divides by 0 when
   Imin > |I1/k1 − I2/k2|; `zf:` (11 args) = U/(I + K0·a2 + Km·a3) with
   K0 = ((a4+ja7)/(a5+ja8) − 1)/3, Km = ((a6+ja9)/(a5+ja8))/3 (roles inferred);
-  `zk:` NOT DETERMINED. The "Быстрый анализ" view code itself NOT located.
+  `zk:` (`0x41ccc7`): Z = e0 / (e1 + e2·ZA + e3·ZB), ZA / ZB the polar pairs of e4–e7 in degrees (`0x41a110`), with the divide-by-zero tail of `zf:` when e8 > |phasor e1| / k — as ours (L9.194). The «Быстрый анализ» sheet: L9.51 (a modal sheet), its pages to the last function in L9.167.
 
 Reconciled (`signal.rs`): `samples_per_period` = `trunc(rate)/trunc(f)` integer
 division (used by `Oscillogram::samples_per_cycle`); `sliding_phasors` = the
@@ -52,13 +51,13 @@ difference, s < 2N terms 0, /sqrt(N)). rms/a0 already matched. Pinned by
 `tests/signal.rs` (4).
 
 Residual: (frequency-channel variant `FUN_004267e0`: done in L9.65);
-`rec+0x278` harmonic-1 gain assumed 1 for COMTRADE (NOT DETERMINED); (which
+`rec+0x278` (the harmonic-1 gain) is 1.0 from the record constructor `0x449740`; only the OSC2 reader writes another value (`0x4527d2`) — as ours (L9.194); (which
 method the frequency-diagram view calls: `0x426510(n, idx, P)` from
 `0x46f5a0`, fundamental at bin n = P — read in L9.65); primary/secondary/ADC/DC-removal flags of
 `FUN_00426020` mapped to the GUI's existing options, not re-verified.
 Calculator channel mode (implemented): `Channels` trait (= `CalcChannels`),
-`Expr::parse_channels` (identifiers resolve to CHANNEL tokens; unresolved ones
-are dropped from the token stream, 0x419126), `Expr::eval_at(idx)`; CHANNEL
+`Expr::parse_channels` (identifiers resolve to CHANNEL tokens; an unknown name
+is error 0x162 — `CalcChannels` never returns null; `0x419126` would drop a null), `Expr::eval_at(idx)`; CHANNEL
 atom scalar = sample, complex = phasor, flag bit 2 kept through arithmetic only
 when both sides carry it, pointer cleared (so `rms:(a+b)` → 0x431); `rms: a0:
 fault: fourie:` via `channels::OscChannels` + `signal::{rms_at,a0_at,fault_at,
@@ -85,7 +84,4 @@ Pinned by `tests/channel_mode.rs` (10).
 `grspos a/b/c` implemented (0x41d7a7: a = −½+j√3/2, P/Q = e^{±j30°}, binary-
 exponentiation integer powers of round(N), integer-rounded zero-sequence factor,
 per-variant a/a² multipliers, forced flags 3 at exit 0x41f1f7, ✔ exit read).
-Residual:
-the computed-channel name guard (error 0x1d4, text unknown); the 0x46 retag
-(only differs for primary-stored data); a computed channel's complex series is
-not kept (only its scalar samples).
+Residual (closed by L9.425): the computed-channel name guard (error 0x1d4, its text — string 468), the 0x46 late retag (`0x41a1ca`, read through `0x426120`) and a computed channel's complex series, which ours keeps.

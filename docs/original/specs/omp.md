@@ -73,8 +73,7 @@ result D; if the LAST section has taps: recompute θ (`0x49adc0`), run the
 grounded pass, window and result again (exactly once). θ recompute only if
 `D > 0` and the upper median of E over the window is non-zero: per k,
 `A_k` = I0 carried to distance D through the zero-sequence ladder
-(`0x49b9e0`), `B_k` = zero-sequence network beyond D (`0x49bd40`, formula NOT
-DETERMINED); `θ = arg(Mb − Mc·e^{jMa})` from the medians of
+(`0x49b9e0`), `B_k` = the zero-sequence current into the network beyond D: a nodal ladder of the remaining sections with their tap admittances, solved with the original's zero-pivot elimination (`0x49bd40`; L7 stage-2 notes, ours' `current_beyond`); `θ = arg(Mb − Mc·e^{jMa})` from the medians of
 `arg B − arg A` (wrapped to (−π, π]), `|A|`, `|B|`.
 
 ## 7. Isolated distance (`0x49a430`), k = 0..Nk−1

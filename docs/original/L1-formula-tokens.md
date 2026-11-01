@@ -14,10 +14,9 @@ Coefficients: `coeffpriv: coefftt: coeffpowerpriv: coeffamppriv:`
 Diff-protection: `grsposlia/b/c: grstriangleia/b/c: grssumcur: tormsumcur: tormsubcur: tormmaxcur:`
 Misc: `chan: uniik:` ; token categories `NUMBER VARIABLE CHANNEL DIMENSION NULL_VALUE`.
 
-Our impl (`crates/fvb-core/src/expr.rs`): `+ - * / ^` and `sin cos tg ctg sqrt
-mod` only (6 functions).
+Our impl (`crates/fvb-core/src/expr.rs`, channel mode through `channels.rs`): the operators and every function of the token table; the channel accessors run in channel mode (L2, L6).
 
-Verdict: 🟡 **PARTIAL** (math part ✅ — see L2).
+Verdict: ✅ **MATCH** (math part: L2; every name of the token table has an evaluator case in `expr.rs`, accessors in channel mode: L6; triaged 2026-10-23).
 - ✅ The **shipped `FastView.fvb`** uses only `tg sin cos sqrt mod ctg` + operators
   and evaluates identically under the decompiled evaluator semantics (L2).
 - ✅ `pi exp: re: im: arg: cosui: absig:` + `null` now implemented per L2.
@@ -27,12 +26,6 @@ Verdict: 🟡 **PARTIAL** (math part ✅ — see L2).
   vocabulary is far larger. Was missing:
   `pi exp: re: im: arg: cosui: absig: rms: fourie: a0: fault: frequency:` and the
   quantity/power/impedance accessors (`ua: ib: zf: pf: pf2wm:` …) and
-  diff-protection currents (`grs*: torm*:`). A user formula using these fails in
-  our editor but works in the original.
+  diff-protection currents (`grs*: torm*:`). (Before L6 a user formula using these failed in our editor; it no longer does.)
 
-Action: implement the math functions (`pi exp re im arg`) and the analysis
-accessors that resolve via the channel-role map + existing signal math
-(`rms: fourie: a0: ua: ib: 3i0: i1: i2: u1f: zf: zk: zl: pf: pk: cosui:`), each
-backed by decompiling its evaluator case. The remainder (`fault: frequency:
-pf2wm: pf3wm: grs*: torm*: coeff*: uncn: uniik: chan:`) need their own per-function
-decompilation (pending, listed below).
+Action: done — the math functions in L2; the analysis accessors, quantity / power / impedance, coefficient and diff-protection cases in L6 (each read in its evaluator case; pinned by `tests/calculator.rs` and `tests/channel_mode.rs`).

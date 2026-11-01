@@ -28,9 +28,7 @@ Distilled from the decompiled `FastView.exe`; addresses as evidence.
 - DAT: lines of the raw bytes (leading tab/LF/CR/space skipped, a line ends at
   CR or LF); the first line containing `--- file type: DAT`; byte count = the
   first run of digits on that line (`ASCII`/`BINARY…` word ignored;
-  `BINARY32: 100` → 32; no digits → 0). **Data starts at the line terminator
-  + 1** — with CRLF that is the LF byte (payload shifted one byte; harmless for
-  ASCII, corrupts binary). n bytes copied to `tmp_cfg.dat`.
+  `BINARY32: 100` → 32; no digits → 0). **Data starts one byte past the consumed terminator** (`0x476f30` consumes CR or LF, `0x450284` steps one more) — exact with CRLF; an LF-only file loses its first payload byte (L9.424). n bytes copied to `tmp_cfg.dat`.
 - No CFG marker or no DAT line → error 330.
 
 ## `.cff` writer (`0x44d0f0`)
@@ -56,7 +54,7 @@ All numbers big-endian. 128-byte blocks, in order:
 | H+1.. | 128·(H+1+j) | data, fixed 128 bytes, until the max count or EOF (a partial last block ignored): N sample records from offset 0, each nA i16 then ⌊nD/16⌋ u16 (bit b of word w → digital 16w+b, LSB first); i16 timing code @0x7C |
 
 - Value = raw × unit multiplier (`0x422b10`: micro "мк"/"mk"/"u"/"µ" 1e-6, milli
-  1e-3, full table NOT DETERMINED) × a + b.
+  1e-3; the rest of the table is the unit normaliser's, `0x422b10`: L9.34, L9.207, L9.210) × a + b.
 - Block rate Fs = round(1e6/(code·0.03125·M)), M = analog channels whose unit is
   V/В/A/А/empty; < 1 → keep the current rate. The first block's rate is snapped
   (`0x453db0`, fnom 50): [14400,22000]→19200, [8000,14400]→9600, [5600,8000]→6400,

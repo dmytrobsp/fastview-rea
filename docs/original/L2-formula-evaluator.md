@@ -1,4 +1,4 @@
-# L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ core language MATCH
+# L2 — Formula evaluator `Calculator` (tokenizer + recursive descent)  ·  ✅ MATCH (core language and channel mode)
 
 Evidence (Ghidra pseudocode + objdump of FastView.exe; spot-checked by hand
 where marked ✔):
@@ -56,10 +56,4 @@ Not verified / residual (honest):
   library needs (`ДЗМф2_Rср` vs `ДЗМФ2_Rср`).
 - `arg:` warm-up count in the `.fvb` context (vtable[2] of that Calculator
   subclass) — settled in L6: no warm-up (vtable `0x4c3df4`).
-- ❌ Channel mode (computed channels): identifiers resolve via vtable[0] to
-  CHANNEL tokens (flags 7; scalar = sample `FUN_00426020`, complex = phasor
-  `FUN_00428ac0`; an unresolved name emits *nothing*). Our GUI feeds channel
-  samples as plain variables, so e.g. `mod:(Ia)` gives |sample| where the
-  original gives |phasor|. The channel accessors `rms: fourie: a0: fault:
-  frequency: ib: … uniik:` are recognised with their exact arg counts but return
-  `NeedsChannel`. → handled with the DFT/signal engine (task table).
+- ✅ Channel mode (computed channels), implemented in L6 (`Channels` trait = `CalcChannels`): identifiers resolve through vtable[0] to CHANNEL tokens (flags 7; scalar = the channel accessor `0x426020`, complex = the phasor `0x428ac0`); `CalcChannels` never returns null, so an unknown name is error 0x162 (`0x419126` would drop a null). A formula such as `mod:(Ia)` gives the phasor's magnitude, as the original. Without a channel context (the pure `eval_str`) the channel accessors return `NeedsChannel`, which `tests/calculator.rs` pins; the late retag of channel references and the name guard: L9.425.

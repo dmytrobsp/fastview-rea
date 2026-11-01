@@ -84,6 +84,4 @@ the unit is the text of the `[...]` where it stops, else the unit it carried:
   `tormsubcur:(a,b,c)`: s = |r(b)Z(b) − r(a)Z(a)| / r(a) / c.s.
   `tormmaxcur:(e0..e23)`: s = max |r(e_i)·Z(e_i)| / r(e0). Z keeps arg 0's
   phasor; forced 3.
-- `grspos a/b/c:` PARTIAL — symmetrical components /3, zero sequence × round(e4),
-  each rotated by integer powers (round(e3)) of 30° phasors; exact constants and
-  per-variant exponents NOT DETERMINED.
+- `grspos a/b/c:` symmetrical components /3, zero sequence × round(e4) (integer-rounded), each rotated by integer powers of round(e3) of the 30° phasors (a = −½ + j√3/2, P / Q = e^{±j30°}, binary exponentiation), with per-variant a / a² multipliers; forced 3 at exit `0x41f1f7` (`0x41d7a7`, read in L6).

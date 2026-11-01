@@ -1,4 +1,4 @@
-# L9 — UI layer (message maps, view input/paint, ribbon, panes, dialogs)  ·  🔄 IN PROGRESS
+# L9 — UI layer (message maps, view input/paint, ribbon, panes, dialogs)  ·  ✅ (reconciled entry by entry; what is still open is a GitHub issue)
 
 **Why.** The UI had been reconstructed from help screenshots + PE resources
 (menus, dialogs, strings, accelerators) while the handlers that give it its
@@ -41,4 +41,4 @@ Status: research pass DONE (7 reports: A input, B paint, C commands, D frame/
 ribbon/panes, E diagrams, F dialogs/bars, G ОМП UI), distilled into
 **`docs/original/specs/ui-behaviour.md`** (§1–8 behaviour, **§9 ranked reconciliation
 backlog — work it top-down**, §10 unknowns; the scratchpad reports are
-temporary). Reconciled so far: **L9.1**–**L9.22** below.
+temporary). The entries are in L9-ui-000.md … L9-ui-400.md (index in README).
