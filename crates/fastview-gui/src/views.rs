@@ -1688,7 +1688,7 @@ impl App {
             // Under the row's line, from 3 px left of the value (VM: x 1791
             // for a value from 1794, row 258 under a 241–256 row).
             let under = egui::Rect::from_min_max(egui::pos2(vr.left() - 3.0, vr.top()), egui::pos2(vr.right(), vr.bottom() + 1.0));
-            if let Some(i) = crate::dialogs::combo_popup(ui, under, list_id, &names, Some(self.block_idx)) {
+            if let Some(i) = crate::dialogs::combo_popup_in(ui, under, list_id, &names, Some(self.block_idx), crate::omp_ui::grid_row_h() - 4.0, egui::FontId::proportional(crate::dpi::font(12.0))) {
                 self.block_idx = i;
             }
         }

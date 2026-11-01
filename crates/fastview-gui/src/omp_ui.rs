@@ -1190,9 +1190,13 @@ impl ParamsDialog {
                 continue;
             }
             if editing {
-                let btn = egui::Rect::from_min_max(egui::pos2(inner.right() - crate::dpi::s(14.0), cell.top()), egui::pos2(inner.right(), cell.bottom()));
+                // The drop button is the row less 3 px wide: 14 / 20 / 24 (clone).
+                let btn = egui::Rect::from_min_max(egui::pos2(inner.right() - (row_h - 3.0), cell.top()), egui::pos2(inner.right(), cell.bottom()));
                 let mut mesh = egui::Mesh::default();
-                for (pt, c) in [(btn.left_top(), (226, 238, 255)), (btn.right_top(), (226, 238, 255)), (btn.right_bottom(), (196, 221, 255)), (btn.left_bottom(), (196, 221, 255))] {
+                // While its list is open the button is lit orange (clone: (252, 153, 61) → (254, 182, 90)).
+                let lit = ui.data(|d| d.get_temp::<bool>(egui::Id::new(("omp_chan", k)).with("open")).unwrap_or(false));
+                let (c0, c1) = if lit { ((252, 153, 61), (254, 182, 90)) } else { ((226, 238, 255), (196, 221, 255)) };
+                for (pt, c) in [(btn.left_top(), c0), (btn.right_top(), c0), (btn.right_bottom(), c1), (btn.left_bottom(), c1)] {
                     mesh.colored_vertex(pt, Color32::from_rgb(c.0, c.1, c.2));
                 }
                 mesh.add_triangle(0, 1, 2);
@@ -1208,7 +1212,7 @@ impl ParamsDialog {
                 }
                 if ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false)) {
                     let cur = channels.iter().position(|c| c == v);
-                    if let Some(pick) = crate::dialogs::combo_popup(ui, cell, list_id, channels, cur) {
+                    if let Some(pick) = crate::dialogs::combo_popup_in(ui, cell, list_id, channels, cur, grid_row_h() - 4.0, grid_font()) {
                         *v = channels[pick].clone();
                     }
                 } else {
@@ -2281,6 +2285,44 @@ mod tests {
             let gaps: Vec<usize> = rules.windows(2).map(|w| w[1] - w[0]).filter(|&g| g > 1).collect();
             assert!(gaps.len() >= 4 && gaps.iter().all(|&g| g == row), "{dpi}: rule gaps {gaps:?}");
             crate::dpi::set(96);
+        }
+        crate::dpi::set(96);
+    }
+
+    /// #172 (clone, «Параметры ОМП», 125 / 150 %): the grid's in-place channel list takes the grid's font and its items
+    /// are the grid's row less 4 px apart (19 / 23 px; 13 at 100 %), and the open list lights the drop button (24 px
+    /// wide at 150 %: the row less 3).
+    #[test]
+    fn the_in_place_channel_list_follows_the_grids_font() {
+        let fonts = crate::app_fonts();
+        let channels: Vec<String> = ["Канал 1", "Канал 2", "Канал 3"].map(String::from).to_vec();
+        for (dpi, item, btn) in [(96, 13usize, 14usize), (120, 19, 20), (144, 23, 24)] {
+            crate::dpi::set(dpi);
+            let mut d = ParamsDialog::new(0, OmpParams { method: ISOLATED, ..Default::default() });
+            let size = crate::dialogs::dlu_size(475, 275) + egui::vec2(20.0, 20.0);
+            let mut pass = 0;
+            let c = crate::raster::render_native(size, 1.0, |_| {}, |_, _| {}, Some(&fonts), vec![vec![]; 4], |ctx| {
+                // The «Ia» row (the third)'s channel list, open.
+                d.edit = Some((d.sel, 2));
+                if pass >= 1 {
+                    ctx.data_mut(|m| m.insert_temp(egui::Id::new(("omp_chan", 2usize)).with("open"), true));
+                }
+                pass += 1;
+                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                    d.ui(ui, &channels);
+                });
+            });
+            let open = [0u8, 120, 215];
+            // The list's border down a column: its first and last row (1 px frame + three items).
+            let col = (0..c.w).find(|&x| (0..c.h).filter(|&y| c.px[y * c.w + x] == open).count() > 30).expect("the list's border");
+            let ys: Vec<usize> = (0..c.h).filter(|&y| c.px[y * c.w + col] == open).collect();
+            let h = ys.last().unwrap() - ys.first().unwrap() + 1;
+            assert_eq!(h + 1, 2 + 3 * item, "{dpi}: the list's height (its top row is under the cell's edge)");
+            // The lit drop button's width: its orange (252, 153, 61)… along its first row.
+            let orange = |p: [u8; 3]| p[0] >= 251 && p[1] >= 140 && p[1] <= 185 && p[2] <= 95;
+            let row = (0..c.h).find(|&y| (0..c.w).any(|x| orange(c.px[y * c.w + x]))).expect("the lit drop button");
+            let w = (0..c.w).filter(|&x| orange(c.px[(row + 3) * c.w + x])).count();
+            assert_eq!(w, btn, "{dpi}: the drop button");
         }
         crate::dpi::set(96);
     }
