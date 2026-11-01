@@ -1989,6 +1989,9 @@ impl App {
                 self.view_pointer = Some(p);
             }
         }
+        let v_before = self.docs.get(ai).map(|d| d.vscroll);
+        let sel_before = self.docs.get(ai).map(|d| d.selection.clone());
+        let paste_dragged = actions.iter().any(|a| matches!(a, Act::MergeOffset(_)));
         for a in actions {
             let d = &mut self.docs[ai];
             match a {
@@ -2070,7 +2073,10 @@ impl App {
                     // selections stay), then 33035 or message 1086.
                     d.selection.extend(chans.iter().chain([&target]).copied());
                     if d.can_combine() {
-                        if !d.combine_selected() {
+                        if d.combine_selected() {
+                            // 33035 reaches the refresh-all (`0x42f4b0` from `0x467a62`).
+                            self.refresh_blocks();
+                        } else {
                             // VM: after the box (and a repaint) the target stays selected beside the dragged lane.
                             self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
                         }
@@ -2088,6 +2094,12 @@ impl App {
         if let Some(d) = self.docs.get_mut(ai) {
             d.first = d.first.min(hmax_c);
             d.vscroll = d.vscroll.clamp(vmin_c, 0.0);
+        }
+        // The view's OnScrollBy (`0x468f00`) ends in the refresh-all (`0x468f3d`), as does its mouse routine
+        // `0x45dc10` once a click has selected a channel (`0x45e312`) and a mouse-move branch after `0x45a820`
+        // (`0x45ec2a`: case 6 of the drag-mode switch, the pasted lanes' drag in time, `0x45a820`).
+        if self.docs.get(ai).map(|d| d.vscroll) != v_before || self.docs.get(ai).map(|d| d.selection.clone()) != sel_before || paste_dragged {
+            self.refresh_blocks();
         }
 
         // Hover popup over a cut name (`0x469060`): the full text.
@@ -2139,7 +2151,8 @@ impl App {
         }
         match done {
             None => self.rename_edit = Some((i, text)),
-            Some(false) => {}
+            // Esc reaches the common tail of `0x465df0` (`0x46607c`): the refresh, no modified mark.
+            Some(false) => self.refresh_blocks(),
             Some(true) => {
                 // `0x465df0`: the text as typed (no trim) is the alias,
                 // refused when another channel has it as its name or its
@@ -2161,6 +2174,8 @@ impl App {
                     d.comments = recs.iter().map(|r| d.comment_of(r)).collect();
                 }
                 d.set.modified = true;
+                // The rename `0x465df0` ends in the refresh-all (`0x46607c`).
+                self.refresh_blocks();
             }
         }
     }
@@ -2315,6 +2330,17 @@ impl App {
     }
 
     fn run_menu_cmd(&mut self, ai: usize, cmd: MenuCmd) {
+        // The picks whose handlers end in the refresh-all `0x475420`: the flags and value modes (the same
+        // commands as the ribbon's, which `dispatch` refreshes), 33037 (`0x467e94`) and 33033 (`0x4557d0`); 33035
+        // too, once it has combined (below). «Цвет канала» refreshes when its dialog is accepted.
+        let refresh = matches!(cmd, MenuCmd::Flag(_) | MenuCmd::Mode(_) | MenuCmd::Split | MenuCmd::DiffBand);
+        self.run_menu_cmd_inner(ai, cmd);
+        if refresh {
+            self.refresh_blocks();
+        }
+    }
+
+    fn run_menu_cmd_inner(&mut self, ai: usize, cmd: MenuCmd) {
         match cmd {
             MenuCmd::CopyMerge => self.copy_channels_for_merge(),
             MenuCmd::PasteMerge => self.paste_channels_for_merge(),
@@ -2356,15 +2382,21 @@ impl App {
                 match cmd {
                     MenuCmd::Flag(f) => {
                         d.toggle_flag_selected(f);
-                        if matches!(f, ChanFlag::Invert | ChanFlag::RemoveDc | ChanFlag::Adc) {
-                            self.recompute_active();
-                        }
+                        self.after_flag_command(f);
                     }
                     MenuCmd::Hide => d.hide_selected(),
-                    MenuCmd::Mode(m) => d.set_mode_selected(m),
+                    MenuCmd::Mode(m) => {
+                        d.set_mode_selected(m);
+                        self.run_definition_batch();
+                    }
                     MenuCmd::ResetZoom => d.reset_zoom_selected(),
                     MenuCmd::Combine => {
-                        if !d.combine_selected() {
+                        let enabled = d.can_combine();
+                        if d.combine_selected() {
+                            if enabled {
+                                self.refresh_blocks();
+                            }
+                        } else {
                             self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
                         }
                     }
@@ -4200,5 +4232,133 @@ mod menu_tests {
         h.button(Pos2::new(900.0, 300.0), egui::PointerButton::Primary);
         assert!(h.app.lane_menu.is_none());
         assert_eq!(h.app.active_doc().unwrap().main_cursor, main, "the dismissing click is swallowed");
+    }
+
+    /// #23: the lane menu's picks that reach the refresh-all in the original (33030's dialog aside) — the flags,
+    /// the value modes, 33033 and 33037 — clear a stale circle / vector flag.
+    #[test]
+    fn lane_menu_picks_end_in_the_refresh_all() {
+        let picks: [(&str, MenuCmd); 4] = [
+            ("flag", MenuCmd::Flag(ChanFlag::OnFreq)),
+            ("mode", MenuCmd::Mode(ValueMode::Rms)),
+            ("33033", MenuCmd::DiffBand),
+            ("33037", MenuCmd::Split),
+        ];
+        for (what, cmd) in picks {
+            let mut app = App::new();
+            app.dispatch(crate::app::Command::Demo);
+            let d = app.active_doc_mut().unwrap();
+            d.selection = std::collections::BTreeSet::from([ChanKey::Analog(1)]);
+            crate::app::stale_flags::make(&mut app);
+            assert!(crate::app::stale_flags::is_stale(&app), "{what}");
+            app.run_menu_cmd(0, cmd);
+            assert!(crate::app::stale_flags::swept(&app), "{what}");
+        }
+    }
+
+    /// 33035 (`0x467a62` → `0x42f4b0`) ends in the refresh-all once it has combined; a refused one does not.
+    #[test]
+    fn combining_lanes_ends_in_the_refresh_all() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        app.active_doc_mut().unwrap().selection = std::collections::BTreeSet::from([ChanKey::Analog(0), ChanKey::Analog(1)]);
+        crate::app::stale_flags::make(&mut app);
+        app.active_doc_mut().unwrap().osc.analog[1].unit = "Hz".into();
+        assert!(app.active_doc().unwrap().can_combine());
+        app.run_menu_cmd(0, MenuCmd::Combine);
+        let d = app.active_doc().unwrap();
+        assert!(d.group_of(ChanKey::Analog(0)).is_some(), "combined");
+        assert!(crate::app::stale_flags::swept(&app));
+        // Refused for different rates: nothing changes, no refresh.
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        d.osc.analog[0].unit = "Hz".into();
+        d.osc.analog[1].unit = "Hz".into();
+        d.osc.analog[1].own_rate = 1234.5;
+        d.selection = std::collections::BTreeSet::from([ChanKey::Analog(0), ChanKey::Analog(1)]);
+        d.chans[0].on_circle = true;
+        app.run_menu_cmd(0, MenuCmd::Combine);
+        assert!(app.active_doc().unwrap().chans[0].on_circle, "a refused 33035 stops before the refresh");
+    }
+
+    /// #23: the view's scroll (`OnScrollBy` `0x468f00` → `0x468f3d`) and the lane rename (`0x465df0` → `0x46607c`)
+    /// end in the refresh-all, which clears a stale circle / vector flag.
+    #[test]
+    fn scrolling_and_renaming_end_in_the_refresh_all() {
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let mut h = Harness::new();
+        h.app.y_analog = 400.0;
+        h.frame(vec![]);
+        let o = h.row(0);
+        h.frame(vec![egui::Event::PointerMoved(o), ev(o, true)]);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(1.0, 0.0))]);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(5.0, 0.0))]);
+        let client = h.app.view_rects.unwrap().1;
+        crate::app::stale_flags::make(&mut h.app);
+        h.frame(vec![egui::Event::PointerMoved(Pos2::new(o.x + 5.0, client.bottom() - 5.0))]);
+        for _ in 0..3 {
+            h.frame(vec![]);
+        }
+        assert_eq!(h.doc().vscroll, -100.0, "the drag scrolled");
+        assert!(crate::app::stale_flags::swept(&h.app), "scroll");
+        // The rename.
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().init_set_keys();
+        crate::app::stale_flags::make(&mut h.app);
+        h.app.rename_edit = Some((1, "Zz9".to_string()));
+        h.frame(vec![]);
+        h.frame(vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+        h.frame(vec![]);
+        assert_eq!(h.doc().osc.analog[1].id, "Zz9");
+        assert!(crate::app::stale_flags::swept(&h.app), "rename");
+    }
+
+    /// #23: Esc on a rename (`0x465df0` → `0x46607c`) and a click that selects a channel (`0x45dc10` → `0x45e312`)
+    /// reach the refresh-all too.
+    #[test]
+    fn rename_escape_and_a_selecting_click_refresh() {
+        let mut h = Harness::new();
+        crate::app::stale_flags::make(&mut h.app);
+        h.app.rename_edit = Some((1, "Zz9".to_string()));
+        h.frame(vec![]);
+        h.frame(vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+        h.frame(vec![]);
+        assert!(h.app.rename_edit.is_none());
+        assert!(crate::app::stale_flags::swept(&h.app), "Esc");
+        let mut h = Harness::new();
+        h.frame(vec![]);
+        h.app.active_doc_mut().unwrap().selection.clear();
+        crate::app::stale_flags::make(&mut h.app);
+        let o = h.row(0);
+        let ev = |pressed| egui::Event::PointerButton { pos: o, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(o), ev(true)]);
+        h.frame(vec![ev(false)]);
+        assert!(!h.doc().selection.is_empty(), "the click selected the lane");
+        assert!(crate::app::stale_flags::swept(&h.app), "click");
+    }
+
+    /// #23: dragging a pending pasted lane in time (the view's mouse-move case 6, `0x45ec2a`) ends in the
+    /// refresh-all: a stale flag is swept.
+    #[test]
+    fn dragging_a_pasted_lane_in_time_refreshes() {
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(1)].into_iter().collect();
+        h.app.copy_channels_for_merge();
+        h.app.paste_channels_for_merge();
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
+        let pend = rows.iter().position(|r| matches!(r.key, Lane::Computed(j) if h.doc().pending_of(j).is_some())).expect("the pasted lane");
+        let o = h.row(pend) + Vec2::new(150.0, 0.0);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(o), ev(o, true)]);
+        h.frame(vec![]);
+        let before = h.doc().merge_offset;
+        crate::app::stale_flags::make(&mut h.app);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(40.0, 0.0))]);
+        h.frame(vec![]);
+        assert_ne!(h.doc().merge_offset, before, "the lane moved in time");
+        assert!(crate::app::stale_flags::swept(&h.app));
     }
 }
