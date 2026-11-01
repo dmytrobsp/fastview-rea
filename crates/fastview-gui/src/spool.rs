@@ -25,6 +25,19 @@ pub struct Paper {
 }
 
 impl Paper {
+    /// A paper measured through a DC the driver had turned to landscape,
+    /// back as a portrait sheet with portrait margins (the inverse of
+    /// `PageSetup::oriented` / `oriented_margins`): the preview turns it
+    /// itself by the orientation in force.
+    #[cfg(any(windows, test))]
+    pub fn unturned(self, landscape: bool) -> Paper {
+        if !landscape {
+            return self;
+        }
+        let [o0, o1, o2, o3] = self.margins;
+        Paper { name: self.name, mm: (self.mm.1, self.mm.0), margins: [o1, o2, o3, o0] }
+    }
+
     /// A sheet with no hardware margins.
     pub fn whole(name: &str, mm: (f32, f32)) -> Paper {
         Paper { name: name.into(), mm, margins: [0.0; 4] }
@@ -37,6 +50,12 @@ impl Paper {
 /// shows its form).
 pub fn paper(printer: &str) -> Option<Paper> {
     imp::paper(printer)
+}
+
+/// The orientation «Свойства...» chose for `printer`'s jobs (`Some(true)`
+/// portrait), if it chose one.
+pub fn chosen_portrait(printer: &str) -> Option<bool> {
+    imp::chosen_portrait(printer)
 }
 
 /// The device to render for `printer` with the page setup's orientation.
@@ -75,6 +94,16 @@ pub fn properties_busy() -> bool {
     PROPS_BUSY.load(std::sync::atomic::Ordering::Acquire)
 }
 
+/// Where the driver's dialog opens: the original owns it by the print dialog
+/// and, with no position of its own, Windows puts a dialog at its owner's
+/// client origin plus the template's offset — on a clone 20 px right and
+/// 18 px below the print dialog's top-left corner at 96 dpi (VM, #187).
+#[cfg(any(windows, test))]
+pub fn driver_dialog_pos(print_dialog: (i32, i32), dpi: f32) -> (i32, i32) {
+    let k = dpi / 96.0;
+    (print_dialog.0 + (20.0 * k).round() as i32, print_dialog.1 + (18.0 * k).round() as i32)
+}
+
 /// «Свойства...» on a worker thread, owned by `owner` (our window, taken
 /// on the UI thread as the button is clicked). Run inside our frame, the
 /// dialog's modal loop meets winit's paint handler: in a nested loop it
@@ -84,11 +113,12 @@ pub fn properties_busy() -> bool {
 /// can idle. The call is traced through `FV_SOFTLOG` (result, error, time).
 /// False when one is already open or where there is no driver dialog.
 #[cfg(windows)]
-pub fn properties_start(printer: &str) -> bool {
+pub fn properties_start(printer: &str, dialog_at: (f32, f32)) -> bool {
     if !claim(&PROPS_BUSY) {
         return false;
     }
     let owner = imp::owner() as usize;
+    imp::place_next_dialog(owner as isize, dialog_at);
     let printer = printer.to_string();
     std::thread::spawn(move || {
         // The driver's UI is COM-heavy: an STA on this thread, as the UI
@@ -105,7 +135,7 @@ pub fn properties_start(printer: &str) -> bool {
 }
 
 #[cfg(not(windows))]
-pub fn properties_start(_printer: &str) -> bool {
+pub fn properties_start(_printer: &str, _dialog_at: (f32, f32)) -> bool {
     false
 }
 
@@ -233,6 +263,10 @@ mod imp {
     pub fn forget_properties(_printer: &str) {}
 
     pub fn end_properties(_keep: bool) {}
+
+    pub fn chosen_portrait(_printer: &str) -> Option<bool> {
+        None
+    }
 
     #[cfg(test)]
     pub fn properties(_printer: &str, _owner: isize) -> bool {
@@ -481,7 +515,50 @@ mod imp {
         }
     }
 
+    static PLACE: std::sync::Mutex<Option<(i32, i32)>> = std::sync::Mutex::new(None);
+
+    /// Take the screen position the next driver dialog is to open at, from
+    /// our print dialog's top-left in the owner's client pixels.
+    pub fn place_next_dialog(owner: isize, at: (f32, f32)) {
+        use windows_sys::Win32::Foundation::POINT;
+        use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+        let mut pt = POINT { x: at.0.round() as i32, y: at.1.round() as i32 };
+        // SAFETY: a plain conversion on a window handle (or none).
+        let ok = owner != 0 && unsafe { ClientToScreen(owner as *mut std::ffi::c_void, &mut pt) } != 0;
+        if let Ok(mut p) = PLACE.lock() {
+            *p = ok.then(|| driver_dialog_pos((pt.x, pt.y), crate::printout::screen_dpi()));
+        }
+    }
+
+    unsafe extern "system" fn place_hook(code: i32, w: usize, l: isize) -> isize {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{CallNextHookEx, SetWindowPos, HCBT_ACTIVATE, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER};
+        if code == HCBT_ACTIVATE as i32 {
+            if let Some((x, y)) = PLACE.lock().ok().and_then(|mut p| p.take()) {
+                // SAFETY: the window being activated, on this thread.
+                unsafe { SetWindowPos(w as *mut std::ffi::c_void, std::ptr::null_mut(), x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) };
+            }
+        }
+        // SAFETY: passes the hook chain on.
+        unsafe { CallNextHookEx(std::ptr::null_mut(), code, w, l) }
+    }
+
     pub fn properties(printer: &str, owner: isize) -> bool {
+        use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowsHookExW, UnhookWindowsHookEx, WH_CBT};
+        // SAFETY: a thread hook on this worker, removed before returning.
+        let hook = unsafe { SetWindowsHookExW(WH_CBT, Some(place_hook), std::ptr::null_mut(), GetCurrentThreadId()) };
+        let r = properties_run(printer, owner);
+        if !hook.is_null() {
+            // SAFETY: the hook set above.
+            unsafe { UnhookWindowsHookEx(hook) };
+        }
+        if let Ok(mut p) = PLACE.lock() {
+            *p = None;
+        }
+        r
+    }
+
+    fn properties_run(printer: &str, owner: isize) -> bool {
         let owner = owner as *mut std::ffi::c_void;
         let name = wide(printer);
         // SAFETY: the buffers are sized by DocumentPropertiesW; the printer
@@ -555,8 +632,21 @@ mod imp {
         (!hdc.is_null()).then_some(hdc)
     }
 
-    /// The DEVMODE's form name and the DC's physical page, portrait.
+    pub fn chosen_portrait(printer: &str) -> Option<bool> {
+        let b = chosen(printer)?;
+        // SAFETY: the buffer holds the DEVMODEW DocumentPropertiesW wrote.
+        let (fields, o) = unsafe {
+            let dm = b.as_ptr() as *const DEVMODEW;
+            ((*dm).dmFields, (*dm).Anonymous1.Anonymous1.dmOrientation)
+        };
+        (fields & DM_ORIENTATION != 0).then_some(o as u32 != DMORIENT_LANDSCAPE)
+    }
+
+    /// The DEVMODE's form name and the DC's physical page, portrait (a
+    /// landscape DEVMODE chosen in «Свойства...» is turned back: the caller
+    /// orients by the choice).
     pub fn paper(printer: &str) -> Option<Paper> {
+        let landscape = chosen_portrait(printer) == Some(false);
         let portrait = PageSetup { portrait: true, ..PageSetup::default() };
         let dm = devmode(printer, &portrait)?;
         // SAFETY: the buffer holds the DEVMODEW DocumentPropertiesW wrote.
@@ -580,7 +670,7 @@ mod imp {
         };
         let (mx, my) = (|v: i32| v as f32 / dx as f32 * 25.4, |v: i32| v as f32 / dy as f32 * 25.4);
         let margins = [mx(ox), my(oy), mx(w - ox - hr).max(0.0), my(h - oy - vr).max(0.0)];
-        (w > 0 && h > 0 && dx > 0 && dy > 0).then(|| Paper { name, mm: (mx(w), my(h)), margins })
+        (w > 0 && h > 0 && dx > 0 && dy > 0).then(|| Paper { name, mm: (mx(w), my(h)), margins }.unturned(landscape))
     }
 
     pub fn device(printer: &str, setup: &PageSetup) -> Option<Device> {
@@ -714,6 +804,22 @@ mod tests {
         // Beside the exe: the harness's console is not seen.
         let log = std::env::current_exe().unwrap().with_file_name("driver_dialog.txt");
         std::fs::write(log, format!("{p}: {first} {second}\n")).unwrap();
+    }
+
+    #[test]
+    fn the_driver_dialog_opens_beside_the_print_dialogs_corner() {
+        assert_eq!(driver_dialog_pos((384, 152), 96.0), (404, 170));
+        assert_eq!(driver_dialog_pos((100, 50), 192.0), (140, 86));
+    }
+
+    #[test]
+    fn a_paper_measured_landscape_is_turned_back_to_portrait() {
+        // A DC the driver turned to landscape reports the sheet wide and its
+        // margins as the landscape page sees them (`oriented_margins`).
+        let portrait = Paper { name: "Legal".into(), mm: (216.0, 356.0), margins: [3.0, 4.0, 5.0, 6.0] };
+        let turned = Paper { name: "Legal".into(), mm: (356.0, 216.0), margins: PageSetup { portrait: false, ..PageSetup::default() }.oriented_margins(portrait.margins) };
+        assert_eq!(turned.clone().unturned(true), portrait);
+        assert_eq!(portrait.clone().unturned(false), portrait, "a portrait one is left as it is");
     }
 
     #[test]

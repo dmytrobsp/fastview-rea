@@ -168,11 +168,19 @@ impl App {
         self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).and_then(spool::paper).unwrap_or(spool::Paper::whole("A4", crate::printout::A4_MM))
     }
 
+    /// The page setup as the preview lays out by (the driver's orientation
+    /// over it once «Свойства...» chose one).
+    fn preview_setup(&self) -> PageSetup {
+        self.print.setup.with_driver_orientation(self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).and_then(spool::chosen_portrait))
+    }
+
     /// 57609 Предварительный просмотр: no dialog, the stored checkboxes;
     /// the pages on the application printer's paper (MFC's preview DC).
     pub fn print_preview_open(&mut self) {
         let Some(di) = self.active else { return };
-        let setup = self.print.setup;
+        // «Свойства...»'s orientation, once chosen, rules the sheet over the
+        // page setup's (VM: Landscape there shows a landscape sheet).
+        let setup = self.preview_setup();
         let paper = self.app_paper();
         let mut job = self.print_job(di, Device::printable(setup.oriented(paper.mm), setup.oriented_margins(paper.margins), PREVIEW_DPI), setup);
         // The diagram pages at the application printer's scale.
@@ -271,7 +279,12 @@ impl App {
             }
             if win_button_en(ui, dlu(client, 258, 17, 60, 14), "Свойства...", false, cfg!(windows) && real.is_some() && !busy).clicked() {
                 if let Some(p) = real {
-                    spool::properties_start(&p);
+                    // Our print dialog's corner in window pixels: the driver's
+                    // dialog opens beside it, as the original's does.
+                    let corner = ctx.memory(|m| m.area_rect(egui::Id::new("Печать"))).map_or(client.min, |r| r.min);
+                    let ppp = ctx.pixels_per_point();
+                    let dialog_at = (corner.x * ppp, corner.y * ppp);
+                    spool::properties_start(&p, dialog_at);
                     dlg.details = None;
                 }
             }
@@ -455,7 +468,19 @@ impl App {
         // caller is left alone.
         let accel = ctx.input(|i| preview_accel(&i.events));
         if let Some(c) = accel.filter(|_| self.print.dialog.is_none() && !self.modal_up) {
+            let changes = matches!(c, Command::Paste | Command::Undo | Command::Redo);
             self.run_for_preview_doc(pv.job.di, |app| app.dispatch(c));
+            // The document changed under the pages: lay them out again.
+            if changes && pv.job.di < self.docs.len() {
+                let (setup, dev, attrib) = (self.preview_setup(), pv.job.dev, pv.job.attrib_dpi);
+                let mut job = self.print_job(pv.job.di, dev, setup);
+                job.attrib_dpi = attrib;
+                job.dev = dev;
+                pv.tex = vec![None; job.pages.len()];
+                pv.sheets = vec![None; job.pages.len()];
+                pv.cur = pv.cur.min(job.pages.len().saturating_sub(1));
+                pv.job = job;
+            }
         }
         let (mut close, mut print) = (false, false);
         if let Some(c) = pv.cmd.take().filter(|c| pv.enabled(*c)) {
@@ -551,14 +576,21 @@ impl App {
     }
 }
 
-/// The accelerators the frame keeps live over the preview: Ctrl+P, Ctrl+S,
-/// Ctrl+O (and nothing with Shift / Alt).
+/// The accelerators the frame keeps live over the preview: Ctrl+P, S, O, C,
+/// V, Z, Y (and nothing with Shift / Alt).
 fn preview_accel(events: &[egui::Event]) -> Option<Command> {
     events.iter().find_map(|e| match e {
         egui::Event::Key { key, pressed: true, modifiers, .. } if (modifiers.command || modifiers.ctrl) && !modifiers.shift && !modifiers.alt => match key {
             egui::Key::P => Some(Command::Print),
             egui::Key::S => Some(Command::SaveAs),
             egui::Key::O => Some(Command::Open),
+            // The edit accelerators too (VM: over the preview Ctrl+C / V copy
+            // and paste a lane, Ctrl+Z / Y undo and redo the paste, the pages
+            // showing the document as it is).
+            egui::Key::C => Some(Command::Copy),
+            egui::Key::V => Some(Command::Paste),
+            egui::Key::Z => Some(Command::Undo),
+            egui::Key::Y => Some(Command::Redo),
             _ => None,
         },
         _ => None,
@@ -673,6 +705,16 @@ mod tests {
         app.active = Some(1);
         app.run_for_preview_doc(1, |a| a.active = Some(0));
         assert_eq!(app.active, Some(0), "the command's choice is kept");
+    }
+
+    #[test]
+    fn the_edit_keys_stay_live_over_the_preview() {
+        let key = |k| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
+        for (k, c) in [(egui::Key::C, Command::Copy), (egui::Key::V, Command::Paste), (egui::Key::Z, Command::Undo), (egui::Key::Y, Command::Redo)] {
+            assert_eq!(preview_accel(&[key(k)]), Some(c));
+        }
+        let shift = egui::Event::Key { key: egui::Key::Z, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers { shift: true, ..egui::Modifiers::COMMAND } };
+        assert_eq!(preview_accel(&[shift]), None);
     }
 
     #[test]
