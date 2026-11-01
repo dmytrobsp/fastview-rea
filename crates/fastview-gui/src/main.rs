@@ -132,13 +132,31 @@ fn resize_dir_at(own_caption: bool, grip: Option<egui::Rect>, screen: egui::Rect
     }
 }
 
+/// A status pane's width: its template of 27 (40 for the wide ones) "_" in the UI font plus 18 px; the "_" is
+/// 5 / 6 / 7 px at 100 / 125 / 150 % (clone: panes 153 / 180 / 207 and 218 / 258 / 298 px apart), the 18 not scaled.
+fn status_pane_w(i: usize) -> f32 {
+    let n = if i == 2 || i == 5 { 40.0 } else { 27.0 };
+    n * dpi::measured(5.0, 6.0, 7.0) + 18.0
+}
+
+/// The extended pane's width: its text's width in the UI font + 27 (clone: 135 / 157 / 189 px at 100 / 125 /
+/// 150 %); the older looks' 155 at 100 % keep their 20 more.
+fn status_ext_w(bands: bool) -> f32 {
+    dpi::measured(135.0, 157.0, 189.0) + if bands { 0.0 } else { 20.0 }
+}
+
+/// A pane's text starts this far into it (clone: ink 10 / 10 / 11 px from the pane's edge at 100 / 125 / 150 %).
+fn status_text_inset() -> f32 {
+    dpi::measured(9.0, 9.0, 10.0)
+}
+
 /// The status bar's six panes from `left` to `room` (the first that does not fit ends the row, a hidden
 /// pane leaves no gap): `(index, x, width)` of each shown one.
 fn status_pane_places(left: f32, room: f32, hidden: &[bool; 7]) -> Vec<(usize, f32, f32)> {
     let mut x = left;
     let mut out = Vec::new();
     for i in (0..6).filter(|&i| !hidden[i]) {
-        let w = dpi::s(if i == 2 || i == 5 { 218.0 } else { 153.0 });
+        let w = status_pane_w(i);
         if x + w > room {
             break;
         }
@@ -885,7 +903,7 @@ impl App {
         // A normal (not maximised) window's last pane also holds the size grip
         // (see [`status_reserve`]).
         let maximised = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
-        let (ext_w, room) = status_reserve(r.right(), dpi::s(if p.bands.is_some() { 135.0 } else { 155.0 }), maximised, self.status_hidden[6]);
+        let (ext_w, room) = status_reserve(r.right(), status_ext_w(p.bands.is_some()), maximised, self.status_hidden[6]);
         let hidden = self.status_hidden;
         // A hidden pane leaves no gap: the rest move left (VM). A pane that
         // does not fit before the extended one is not shown (VM, 150 % at
@@ -893,7 +911,7 @@ impl App {
         for (i, x, w) in status_pane_places(r.left(), room, &hidden) {
             let text = &s[i];
             let clip = egui::Rect::from_min_max(egui::pos2(x, r.top()), egui::pos2(x + w - 2.0, r.bottom()));
-            painter.with_clip_rect(clip).text(egui::pos2(x + dpi::s(9.0), r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
+            painter.with_clip_rect(clip).text(egui::pos2(x + status_text_inset(), r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), p.status_text);
         }
         // The last pane: 135 px at the right (VM), its own rows and a light
         // and a dark column at its left in the Office 2007 styles.
@@ -912,7 +930,8 @@ impl App {
             painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.6)));
         }
         if ext_shown {
-            painter.text(egui::pos2((ext.left() + ext.right() - dpi::s(12.0)) / 2.0, ext.center().y), egui::Align2::CENTER_CENTER, "НТЦ Механотроника", font, p.status_text);
+            // Its text starts 16 px in (clone: ink 17 px from the pane's edge at every scale).
+            painter.text(egui::pos2(ext.left() + 16.0, ext.center().y), egui::Align2::LEFT_CENTER, "НТЦ Механотроника", font, p.status_text);
         }
         // The size grip, in a normal window only (the visual style's gripper).
         self.status_grip = (!maximised).then(|| egui::Rect::from_min_max(egui::pos2(r.right() - 11.0, r.bottom() - 11.0), r.right_bottom()));
@@ -1436,6 +1455,24 @@ mod tests {
     }
 
     use super::*;
+
+    /// #139 (clone, 125 % / 150 %): the panes are 27 / 40 "_" templates of 5 / 6 / 7 px plus 18 px (153 / 180 /
+    /// 207 and 218 / 258 / 298), the extended pane 135 / 157 / 189; at 125 % the fifth pane shows from 1160 px
+    /// of client in a normal window and not from 1159 (the grip's reserve 25 px, bracketed on the clone).
+    #[test]
+    fn the_status_panes_follow_the_uis_underscore_at_every_scale() {
+        for (d, a, b, ext) in [(96, 153.0, 218.0, 135.0), (120, 180.0, 258.0, 157.0), (144, 207.0, 298.0, 189.0)] {
+            dpi::set(d);
+            assert_eq!((status_pane_w(0), status_pane_w(2), status_ext_w(true)), (a, b, ext), "{d}");
+        }
+        dpi::set(120);
+        let count = |w: f32| {
+            let (_, room) = status_reserve(w, status_ext_w(true), false, false);
+            status_pane_places(0.0, room, &[false; 7]).len()
+        };
+        assert_eq!((count(1159.0), count(1160.0)), (4, 5), "the fifth pane's bracket at 125 %");
+        dpi::set(96);
+    }
 
     /// #78: the document tabs' font is whole pixels at every scale.
     #[test]
