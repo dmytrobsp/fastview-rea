@@ -2050,12 +2050,19 @@ impl App {
             // A pane of a tabbed group (a tab control's window) that hides
             // keeps the focus window it was (clone: GetFocus still returns
             // the hidden pane, copy takes its diagram); one with a control
-            // bar of its own hands the focus to the view.
+            // bar of its own hands the focus to the view. A slid-out group
+            // whose front pane is closed by its caption «×» (the one path
+            // that closes it, #143, clone) stays out with the next tab in
+            // front, and the focus the press gave is on the group's window
+            // showing that tab; with no tab left the group hides: the view.
             if matches!(self.copy_focus, CopyFocus::Pane(u) if u == host || u == p) {
-                // (An auto-hidden group's slid-out pane was not run on a
-                // clone: it keeps the view.)
-                let tabbed = strip.len() > 1 && !self.docks[host].auto_hidden();
-                self.copy_focus = if tabbed { CopyFocus::Diagram(p) } else { CopyFocus::View };
+                let tabbed = strip.len() > 1;
+                let next_shown = strip.iter().any(|&q| q != p && self.panes.visible(q));
+                self.copy_focus = match (tabbed, self.docks[host].auto_hidden()) {
+                    (true, false) => CopyFocus::Diagram(p),
+                    (true, true) if next_shown => CopyFocus::Pane(host),
+                    _ => CopyFocus::View,
+                };
             }
             let i = strip.iter().position(|&q| q == p).unwrap_or(0);
             let next = strip[i + 1..].iter().find(|&&q| self.panes.visible(q)).or_else(|| strip[..i].iter().rev().find(|&&q| self.panes.visible(q)));
