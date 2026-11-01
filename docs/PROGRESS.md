@@ -4,42 +4,37 @@ The current state, in short. This page is rewritten when things change, never ap
 What happened before is in the milestones' ledgers ([milestones/](milestones/README.md)), the record of the original
 ([original/](original/README.md)), [history/](history/) and `git log`.
 
-Last rewritten: 2026-10-31 (v0.6.0 released: milestone 0.6.0, the follow-ups of 0.5.0 and 0.4.0; the forward-only scrub).
+Last rewritten: 2026-11-01 (v0.7.0 released: milestone 0.7.0, the follow-ups of 0.6.0, verification debt and older bugs).
 
 ## Latest release
 
-- **v0.6.0**, 2026-10-31: [release page](https://github.com/dmytrobsp/fastview-rea/releases/tag/v0.6.0). Linux x86-64,
-  Windows x86-64 and macOS (universal) archives. Milestone 0.6.0: calculations to the last digit (formula inputs, tan,
-  ОМП's arithmetic), merged channels' own rates, auto-hidden and floating panes, the keyboard focus behind Copy, code
-  pages, display scaling above 100 %, the view's first zoom, synthetic test records.
+- **v0.7.0**, 2026-11-01: [release page](https://github.com/dmytrobsp/fastview-rea/releases/tag/v0.7.0). Linux x86-64,
+  Windows x86-64 and macOS (universal) archives. Milestone 0.7.0: channel drags and pasted lanes, panes, the formula
+  editor's definitions, files byte for byte with the original's, display scaling above 100 %, Windows 11's frame, the
+  keyboard in the frame's controls and dialogs, the print path; the record's stale verdicts corrected.
 
 ## Where the reconstruction stands
 
-- Every engine and the UI layer read and reconciled: the record runs L1–L9.420 ([original/](original/README.md)); 91.8 %
+- Every engine and the UI layer read and reconciled: the record runs L1–L9.430 ([original/](original/README.md)); 91.8 %
   of the program's own code is in cited functions (`tools/coverage.py`).
 - Deliberate improvements: [IMPROVEMENTS.md](IMPROVEMENTS.md); differences the maintainer accepted:
   [ACCEPTED-DIFFERENCES.md](ACCEPTED-DIFFERENCES.md).
 
 ## In flight
 
-- **Milestone 0.7.0** ([GitHub](https://github.com/dmytrobsp/fastview-rea/milestone/5), plan and ledger:
-  [milestones/0.7.0.md](milestones/0.7.0.md)): the 0.6.0 follow-ups, older bugs and gaps (drag and drop, keyboard,
-  formulas, the Windows frame) and verification debt (file round-trips, UI and print runs side by side), the graph at display scaling above 100 % — 41 issues,
-  eleven units in three waves.
-- **The forward-only scrub is done** (PR #152, 2026-10-31): no value of the clone test records or of a user's record is
-  left in the current tree (code comments / tests, docs) or in the current bodies of #7, #9, #13, #27 — the maintainer's
-  choice; history, tags and edit histories stay as they are.
+- **Milestone 0.7.1** (plan and ledger: [milestones/0.7.1.md](milestones/0.7.1.md)): 0.7.0's follow-ups that need no
+  maintainer input — tooling (clone hygiene, a pinned toolchain), keys, formats, scaling at 175 / 200 %, panes, menus and
+  system dialogs, formulas, print, the scenarios not yet run side by side, the record's ND leftovers.
 
 ## Next topics
 
-- **After 0.6.0**, candidates: the drag-and-drop gaps #73–#76 (#74 / #75 need the maintainer), #85 (the pre-1607
-  DPI fallback).
+- **Waiting for the maintainer:** #198 / #199 (accept MSVCR120's atof rounding and towlower differences?), #180 (the
+  original's black print margins — decode first), #155 (scale the graph — design) and #156 (several diagrams, pop-out —
+  design); a lean rebuild of the testbox Windows base (clones die at the overlay cap; the cap is 4 GB meanwhile).
 - **The maintainer's new direction (filed 2026-10-30, all `improvement`):** translations (#88), anti-aliased
   waveforms keeping every sample exact (#89), and — designed
   together, `size:l` — light / dark themes replacing the nine «Стиль» skins (#91) with a simpler modern look (#92);
   #19 / #20 (per-skin fidelity) are on hold for them.
-- **Waiting for the maintainer:** #74 (a drop on another record's view: match the original or do nothing), #75
-  (accept the cross-instance drag difference?), #93 (flat channels' harmonics as «0»? — asked of the user).
 - **Waiting for samples:** #59 (an OSC2 record, for the `.osc` Save As comparison). `.sto` is not supported — an
   accepted difference (#49); #72 needs no more samples (the users' records, at their own rates, were enough).
 - The rest of the queue: the `later` milestone (`gh issue list -m later -S '-label:triage'`).
