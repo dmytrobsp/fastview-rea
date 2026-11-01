@@ -283,7 +283,8 @@ fn unit_rect(x: f64, y: f64) -> IShapes {
 /// Per figure: polygon / polypoint vertices round to the nearest unit,
 /// ties up (`0x409c00`, `0x40ae40`); a circle is the `Ellipse` of its box
 /// rounded outward, drawn into a path (`0x40a170`), so — GDI's compatible
-/// mode, the DC's default — without the box's right and bottom edges
+/// mode, the DC's default — without the box's right and bottom edges and,
+/// from the path's scan conversion, its top row and left column
 /// (VM: «БМРЗ - Защита генераторов (с 2025 г.в.)» scales to 64 Ом, an
 /// 8 Ом cell, not 65 / 9); an ellipse is the axis-aligned one of
 /// ⌊−a/2⌋…⌈a/2⌉−1 × ⌊−b/2⌋…⌈b/2⌉−1 (the same rule, INFERRED: `GetPath`
@@ -326,14 +327,17 @@ fn device_region(v: &FigureValues) -> IShapes {
         FigureValues::Circle { center: [cx, cy], radius } => {
             let r = radius.abs();
             // `Ellipse` into a path in GDI's compatible mode leaves out the
-            // box's right and bottom edges.
-            let (l, t, rt, b) = ((cx - r).floor(), (-(cy + r)).floor(), (cx + r).ceil() - 1.0, (r - cy).ceil() - 1.0);
+            // box's right and bottom edges (L9.285), and `PathToRegion`'s scan
+            // conversion its top row and left column, the tips (clone, #194).
+            let (l, t, rt, b) = ((cx - r).floor() + 1.0, (-(cy + r)).floor() + 1.0, (cx + r).ceil() - 1.0, (r - cy).ceil() - 1.0);
             let ring = ellipse_points([(l + rt) / 2.0, (t + b) / 2.0], (rt - l) / 2.0, (b - t) / 2.0, 0.0);
             (ring, [cx.ceil(), cy.ceil()])
         }
         FigureValues::Ellipse { center: [cx, cy], width, height, angle } => {
             let (a, b) = (width.abs(), height.abs());
-            let (l, t, r, bt) = ((-a / 2.0).floor(), (-b / 2.0).floor(), (a / 2.0).ceil() - 1.0, (b / 2.0).ceil() - 1.0);
+            // The same rule as the circle's (INFERRED): no tip row or column, no
+            // right or bottom edge.
+            let (l, t, r, bt) = ((-a / 2.0).floor() + 1.0, (-b / 2.0).floor() + 1.0, (a / 2.0).ceil() - 1.0, (b / 2.0).ceil() - 1.0);
             let (ox, oy) = (rnd(*cx), rnd(-cy));
             // Device y points down: the turn is mirrored (the box is the
             // same either way).

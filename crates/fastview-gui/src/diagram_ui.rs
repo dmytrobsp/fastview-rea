@@ -195,7 +195,19 @@ thread_local! {
     /// One pixel of the device drawn on, in points, while a page renders:
     /// GDI draws a pen thinner than a device pixel one pixel wide in its
     /// full colour (the preview's pens of a few printer pixels).
+    static PRINT_R: std::cell::Cell<Option<Rect>> = const { std::cell::Cell::new(None) };
     static PIXEL: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+}
+
+/// Run `f` with R's place on the canvas, which is then the whole sheet (a
+/// real print of the vector and frequency pages): the painter gets R as its
+/// rect in the page DC and sets no clip, so what it paints past R — the
+/// vector legend, the frequency separators — runs onto the page (clone, #191).
+pub fn with_print_rect<R>(r: Option<Rect>, f: impl FnOnce() -> R) -> R {
+    let old = PRINT_R.with(|c| c.replace(r));
+    let out = f();
+    PRINT_R.with(|c| c.set(old));
+    out
 }
 
 /// Run `f` with no pen thinner than `px` points (a device pixel).
@@ -1454,9 +1466,12 @@ impl App {
     /// Vector diagram (`0x490360`): no zoom, pan or wheel; options from the
     /// toolbar and MENU 355.
     pub fn vector_ui(&mut self, ui: &mut egui::Ui) {
-        let full = ui.available_rect_before_wrap();
-        let resp = ui.allocate_rect(full, egui::Sense::click());
-        let painter = ui.painter_at(full);
+        let avail = ui.available_rect_before_wrap();
+        // A real print: the canvas is the sheet, R inside it, nothing clipped.
+        let print_r = PRINT_R.with(std::cell::Cell::get);
+        let full = print_r.unwrap_or(avail);
+        let resp = ui.allocate_rect(avail, egui::Sense::click());
+        let painter = if print_r.is_some() { ui.painter().clone() } else { ui.painter_at(full) };
         painter.rect_filled(full, 0.0, Color32::WHITE);
         self.window_menu_click(&resp, Window::Vector);
         let (radians, dir_only, show_values) = (self.vec_radians, self.vec_direction_only, self.vec_show_values);
@@ -1540,9 +1555,14 @@ impl App {
         } else {
             // The legend: one centred row (from x = m when it does not fit).
             let total: f32 = shown.iter().map(|c| measure(&c.0).x + 2.0 * m + sq).sum();
-            let mut x = dg::vector_legend_x(full.left(), full.width(), total, m);
+            // (On a real print the origin is the page's: the DC's, `0x490d4b`.)
+            let real_print = PRINT_PAGE.with(std::cell::Cell::get).is_some();
+            let origin = if real_print { avail.left() } else { full.left() };
+            let mut x = dg::vector_legend_x(full.left(), origin, full.width(), total, m);
             for c in &shown {
-                swatch(Rect::from_min_size(Pos2::new(x, lay.b + dpx(2.0)), Vec2::splat(sq)), c.3);
+                let sw = Rect::from_min_size(Pos2::new(x, lay.b + dpx(2.0)), Vec2::splat(sq));
+                painter.rect_filled(sw, 0.0, c.3);
+                painter.px_rect_stroke(sw, 0.0, black);
                 painter.text(Pos2::new(x + sq + m, lay.b), egui::Align2::LEFT_TOP, &c.0, font(), ink);
                 x += measure(&c.0).x + 2.0 * m + sq;
             }
@@ -1629,9 +1649,11 @@ impl App {
     /// in percent of the fundamental (or RMS) or absolute, no grid, no zoom
     /// or pan. Geometry in device pixels at the print scale `s`.
     pub fn frequency_ui(&mut self, ui: &mut egui::Ui) {
-        let full = ui.available_rect_before_wrap();
-        let resp = ui.allocate_rect(full, egui::Sense::click());
-        let painter = ui.painter_at(full);
+        let avail = ui.available_rect_before_wrap();
+        let print_r = PRINT_R.with(std::cell::Cell::get);
+        let full = print_r.unwrap_or(avail);
+        let resp = ui.allocate_rect(avail, egui::Sense::click());
+        let painter = if print_r.is_some() { ui.painter().clone() } else { ui.painter_at(full) };
         painter.rect_filled(full, 0.0, Color32::WHITE);
         self.window_menu_click(&resp, Window::Freq);
         let (periods, percent, use_rms) = (self.freq_periods.max(1), self.freq_percent, self.freq_use_rms);
@@ -1737,7 +1759,17 @@ impl App {
                 let sl = g.left + tl.slot_left(&g, c, k);
                 let bl = sl + tl.inset;
                 if v != 0.0 {
-                    let bar = Rect::from_min_max(pt(bl, row_top + 12 * si + g.h + t), pt(bl + tl.bar, yb - 18 * si));
+                    let (top_dev, bottom_dev) = (row_top + 12 * si + g.h + t, yb - 18 * si);
+                    let bar = Rect::from_min_max(pt(bl, top_dev), pt(bl + tl.bar, bottom_dev));
+                    // A bar with no height: GDI's Rectangle draws nothing under a
+                    // 1-pixel pen and, under a wider one, a single line of the pen's
+                    // width centred on the edge (the baseline then covers its lower half) (`0x470488`; clone, #158).
+                    if bottom_dev - top_dev <= 0 {
+                        if let Some(w) = dg::flat_bar_pen(si, bottom_dev - top_dev) {
+                            let y = pt(0, bottom_dev - w / 2).y;
+                            painter.rect_filled(Rect::from_min_max(Pos2::new(bar.left(), y), Pos2::new(bar.right(), y + w as f32 / s)), 0.0, color);
+                        }
+                    } else {
                     // GradientFill (channel colour at the top to white), then
                     // the outline in the channel colour.
                     let mut mesh = egui::Mesh::default();
@@ -1748,6 +1780,7 @@ impl App {
                     mesh.add_triangle(0, 2, 3);
                     painter.add(egui::Shape::mesh(mesh));
                     painter.px_rect_stroke(bar.shrink(0.5), 0.0, Stroke::new(1.0f32, color));
+                    }
                 }
                 // The fundamental's own bar reads 100 (an improvement, #60); `use_rms` has its own norm.
                 let val = if percent { fvb_core::views::percent_bar_value(v, norm, k == periods && !use_rms, magnitude) } else { v };

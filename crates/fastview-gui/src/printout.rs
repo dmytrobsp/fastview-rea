@@ -501,9 +501,34 @@ impl App {
                 let page = (!preview).then(|| rdev.min.to_vec2() * to_printer / s);
                 let size = Vec2::new(rw as f32, rh as f32) * to_printer / s;
                 let kd = s / to_printer;
-                // GDI's pens: none under a device pixel, unfeathered.
-                let img = crate::diagram_ui::with_print_scale(Some(s), page, || crate::diagram_ui::with_pixel(1.0 / kd, || raster::crisp(|| self.render_diagram(fonts, job.di, pane, size, kd))));
-                canvas.blit(&img, rdev.min.x as i64, rdev.min.y as i64);
+                // The vector and frequency pages paint into the page DC with no
+                // clip (nothing in `0x441fe0`, `0x490360` or `0x46f5a0` sets
+                // one): on a real print what runs past R — the vector legend
+                // that does not fit (it starts at the page's own 6s, `0x490d4b`)
+                // or the frequency separators — lands on the sheet (clone,
+                // #191). So the page image is the whole sheet with R at `o`.
+                let sheet = page.filter(|_| matches!(pane, Pane::Vector | Pane::Frequency));
+                if let Some(o) = sheet {
+                    let whole = Vec2::new(dev.w as f32, dev.h as f32) * to_printer / s;
+                    let r = Rect::from_min_size(Pos2::new(o.x, o.y), size);
+                    // GDI's pens: none under a device pixel, unfeathered.
+                    let img = crate::diagram_ui::with_print_scale(Some(s), page, || crate::diagram_ui::with_print_rect(Some(r), || crate::diagram_ui::with_pixel(1.0 / kd, || raster::crisp(|| self.render_diagram(fonts, job.di, pane, whole, kd)))));
+                    // The diagram is painted before the header and footer: the
+                    // decor stays over it outside R, R is the diagram's.
+                    let (x0, y0) = (rdev.min.x as usize, rdev.min.y as usize);
+                    for y in 0..canvas.h.min(img.h) {
+                        for x in 0..canvas.w.min(img.w) {
+                            let inside = x >= x0 && x < x0 + rw && y >= y0 && y < y0 + rh;
+                            if inside || canvas.px[y * canvas.w + x] == [255, 255, 255] {
+                                canvas.px[y * canvas.w + x] = img.px[y * img.w + x];
+                            }
+                        }
+                    }
+                } else {
+                    // GDI's pens: none under a device pixel, unfeathered.
+                    let img = crate::diagram_ui::with_print_scale(Some(s), page, || crate::diagram_ui::with_pixel(1.0 / kd, || raster::crisp(|| self.render_diagram(fonts, job.di, pane, size, kd))));
+                    canvas.blit(&img, rdev.min.x as i64, rdev.min.y as i64);
+                }
                 // At s = 1 the circle / differential painter's screen branch
                 // also paints its 5 px splitter strip after RestoreDC: a
                 // PatBlt at the DC's (0, 0), as wide as the live window
@@ -748,6 +773,134 @@ mod tests {
             let c = app.render_page(&fonts, &job, 0, false);
             assert_eq!(c.get(3, 2) == [r, g, b], strip, "{dpi} dpi");
         }
+    }
+
+    /// #158 (clone): a frequency bar with no height (a bin of 1e-11 of the largest) prints as one line of
+    /// the pen's width centred on its edge (the original: GDI's `Rectangle` at `0x470488`), not as the
+    /// outline's edges inside the box (all of it above the baseline).
+    #[test]
+    fn a_frequency_bar_with_no_height_prints_one_pen_wide_line() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        {
+            let d = &mut app.docs[0];
+            let n = d.osc.samples_per_cycle().max(2);
+            let len = d.osc.analog[0].samples.len();
+            d.osc.analog[0].samples = (0..len).map(|i| { let a = std::f64::consts::TAU * i as f64 / n as f64; 123.0 * a.sin() + 1e-9 * (3.0 * a).sin() + 2e-9 * (5.0 * a).cos() }).collect();
+            d.recompute(false);
+            for c in &mut d.chans {
+                c.on_freq = false;
+            }
+            d.chans[0].on_freq = true;
+            d.main_cursor = len - 1;
+        }
+        let colour = app.docs[0].chans[0].color;
+        app.docs[0].print_ticks = [false, true, false, false, false];
+        let setup = PageSetup::default();
+        let job = app.print_job(0, Device::sheet(&setup, 600.0), setup);
+        let c = app.render_page(&egui::FontDefinitions::default(), &job, 0, false);
+        let s = diagram_scale(job.attrib_dpi) as usize;
+        assert_eq!(s, 6);
+        let want = [colour.r(), colour.g(), colour.b()];
+        // The longest vertical run of the channel's own colour in each column.
+        let mut runs = vec![0usize; c.w];
+        for (x, run) in runs.iter_mut().enumerate() {
+            let mut cur = 0;
+            for y in 0..c.h {
+                cur = if c.get(x, y) == want { cur + 1 } else { 0 };
+                *run = (*run).max(cur);
+            }
+        }
+        // The tall bar's columns (its sides are runs of many rows) are left out.
+        let tall: Vec<usize> = (0..c.w).filter(|&x| runs[x] > 4 * s).collect();
+        let (lo, hi) = (*tall.first().expect("the fundamental's bar"), *tall.last().unwrap());
+        let thin: Vec<usize> = (0..c.w).filter(|&x| x < lo || x > hi).map(|x| runs[x]).filter(|&r| r > 0).collect();
+        assert!(!thin.is_empty(), "the flat bars are drawn");
+        // The pen is `s` wide, centred on the bar's edge, and the baseline (`s / 2` wide) covers its lower half
+        // (the original on a clone at 600 dpi: three rows of colour above the baseline; with this test's page offset two).
+        assert!(thin.iter().all(|&r| r <= s / 2), "a flat bar is the pen's width centred on its edge, half under the baseline: {:?}", thin.iter().max());
+    }
+
+    /// #191 (clone): on a real print a vector legend that does not fit starts at the page's `6·s`, left of R
+    /// (the painter gets R in page coordinates: `0x490d4b`); in the preview, whose bitmap starts at R, and
+    /// when it fits (centred in R) the start is R's.
+    #[test]
+    fn the_vector_legend_that_does_not_fit_starts_at_the_pages_origin_in_a_print() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        {
+            let d = &mut app.docs[0];
+            for (i, c) in d.osc.analog.iter_mut().enumerate() {
+                c.id = format!("Channel number {i} of a long feeder name that cannot fit a page");
+            }
+            for c in &mut d.chans {
+                c.on_vector = true;
+            }
+        }
+        app.vec_show_values = false;
+        let colour = app.docs[0].chans[0].color;
+        app.docs[0].print_ticks = [false, false, true, false, false];
+        let setup = PageSetup::default();
+        let dev = Device::sheet(&setup, 300.0);
+        let job = app.print_job(0, dev, setup);
+        let s = diagram_scale(job.attrib_dpi) as usize;
+        let r = dev.margin_rect(&setup);
+        let fonts = egui::FontDefinitions::default();
+        // The first swatch's column: the leftmost pixel of the first channel's colour in the legend's rows
+        // (below the circle, above the footer).
+        let first = |c: &Canvas, preview: bool| {
+            let want = [colour.r(), colour.g(), colour.b()];
+            let rows = (r.max.y as usize - 40 * s)..(r.max.y as usize);
+            let from = if preview { r.min.x as usize } else { 0 };
+            let at = (from..c.w).find(|&x| rows.clone().any(|y| c.get(x, y) == want));
+            at.expect("the legend's first swatch")
+        };
+        let real = app.render_page(&fonts, &job, 0, false);
+        let x = first(&real, false);
+        assert!(x < r.min.x as usize && (x as i64 - 6 * s as i64).abs() <= 2, "a print starts at the page's 6·s = {}: {x} (R at {})", 6 * s, r.min.x);
+        let preview = app.render_page(&fonts, &job, 0, true);
+        let x = first(&preview, true);
+        assert!((x as i64 - (r.min.x as i64 + 6 * s as i64)).abs() <= 2, "the preview starts at R + 6·s: {x}");
+    }
+
+    /// #191 (clone): the vector page's painter sets no clip, so on a real print the legend that does not fit
+    /// runs past R onto the sheet; the preview's bitmap is R, which cuts it. The table's start, when it does not
+    /// fit, is R's left + m on paper too (`0x4908d1`–`0x490a1b` add the rect's left).
+    #[test]
+    fn nothing_clips_the_vector_page_to_r_on_a_real_print() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        {
+            let d = &mut app.docs[0];
+            for (i, c) in d.osc.analog.iter_mut().enumerate() {
+                c.id = format!("Channel number {i} of a long feeder name that cannot fit a page");
+            }
+            for c in &mut d.chans {
+                c.on_vector = true;
+            }
+        }
+        app.vec_show_values = false;
+        app.docs[0].print_ticks = [false, false, true, false, false];
+        let setup = PageSetup::default();
+        let dev = Device::sheet(&setup, 300.0);
+        let job = app.print_job(0, dev, setup);
+        let s = diagram_scale(job.attrib_dpi) as usize;
+        let r = dev.margin_rect(&setup);
+        let fonts = egui::FontDefinitions::default();
+        // The legend's rows: just under the circle, above the footer; right of R's right edge.
+        let past = |c: &Canvas| {
+            let (x0, y0, y1) = (r.max.x as usize + 2, r.max.y as usize - 40 * s, r.max.y as usize);
+            (y0..y1).flat_map(|y| (x0..c.w).map(move |x| (x, y))).filter(|&(x, y)| c.get(x, y) != [255, 255, 255]).count()
+        };
+        assert!(past(&app.render_page(&fonts, &job, 0, false)) > 0, "a real print lets the legend run onto the sheet");
+        assert_eq!(past(&app.render_page(&fonts, &job, 0, true)), 0, "the preview's bitmap is R");
+        // The table (values shown), wider than R: its left border is R's left + 6s.
+        app.vec_show_values = true;
+        let real = app.render_page(&fonts, &job, 0, false);
+        let rows = (r.min.y as usize + 20 * s)..(r.max.y as usize - 4 * s);
+        let leftmost = (0..real.w).find(|&x| rows.clone().filter(|&y| real.get(x, y) != [255, 255, 255]).count() > 8 * s);
+        let x = leftmost.expect("the table's first vertical line");
+        assert!((x as i64 - (r.min.x as i64 + 6 * s as i64)).abs() <= s as i64, "the table starts at R + 6s: {x} (R at {})", r.min.x);
     }
 
     #[test]
