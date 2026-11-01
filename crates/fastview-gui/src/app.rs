@@ -4762,6 +4762,38 @@ mod tests {
         assert_eq!(computed_names(&app), ["X", "L1"]);
     }
 
+    /// «Коэффициенты» closed by its caption's close box: the dialog has no
+    /// close handler of its own (its message map holds only WM_DRAWITEM), so
+    /// the box is IDCANCEL and `0x42fdb0` recomputes and runs the batch
+    /// (`0x42ff54`), as on «Отмена» / Esc.
+    #[test]
+    fn coefficients_close_box_is_a_cancel() {
+        let mut app = kept_row_app();
+        let ai = app.active.unwrap();
+        app.docs[ai].set.modified = false;
+        app.dispatch(Command::Coefficients);
+        let ctx = egui::Context::default();
+        let mut t = 0.0;
+        let mut frame = |app: &mut App, events: Vec<egui::Event>| {
+            t += 0.05;
+            let raw = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0))), time: Some(t), events, ..Default::default() };
+            let _ = ctx.run(raw, |ctx| app.coef_window(ctx));
+        };
+        for _ in 0..6 {
+            frame(&mut app, vec![]);
+        }
+        let r = ctx.memory(|m| m.area_rect(egui::Id::new("Коэффициенты трансформации"))).expect("dialog drawn");
+        // The close box: the caption's right end.
+        let at = egui::pos2(r.right() - 20.0, r.top() + 10.0);
+        let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(&mut app, vec![egui::Event::PointerMoved(at)]);
+        frame(&mut app, vec![ev(true)]);
+        frame(&mut app, vec![ev(false)]);
+        assert!(app.dlg.coef.is_none(), "the close box closed the dialog");
+        assert!(!app.docs[ai].set.modified);
+        assert_eq!(computed_names(&app), ["X", "L1"], "the batch runs on the close box too");
+    }
+
     /// #31: the flag and value-mode commands run the batch over the definition list (`0x42fad3`, `0x42ff54`,
     /// `0x4305e3`): a kept row becomes a channel and a channel naming it computes.
     #[test]

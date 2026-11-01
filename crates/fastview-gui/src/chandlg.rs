@@ -1035,7 +1035,8 @@ impl App {
                 }
             });
         // OK (`0x47b610`) with nothing edited ends as OnCancel: `apply` gives
-        // None, the same IDCANCEL as «Отмена» and Esc.
+        // None, the same IDCANCEL as «Отмена», Esc and the caption's close
+        // box (the dialog has no close handler of its own).
         let ok = match result {
             Some(true) => st.apply(&mut self.docs[ai]),
             Some(false) => None,
@@ -1043,7 +1044,7 @@ impl App {
                 self.dlg.coef = Some(st);
                 return;
             }
-            None => return,
+            None => None,
         };
         match ok {
             Some(changed) => {
