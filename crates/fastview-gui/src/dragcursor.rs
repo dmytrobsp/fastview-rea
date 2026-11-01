@@ -102,7 +102,7 @@ mod win {
     use std::sync::atomic::{AtomicIsize, AtomicU8, Ordering};
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, PostMessageW, SetCursor, HCURSOR, HTCLIENT, ICONINFO, WM_MOUSEMOVE, WM_SETCURSOR};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, GetSystemMetrics, PostMessageW, SM_CXCURSOR, SetCursor, HCURSOR, HTCLIENT, ICONINFO, WM_MOUSEMOVE, WM_SETCURSOR};
 
     static ON: AtomicU8 = AtomicU8::new(0);
     static HWND_OURS: AtomicIsize = AtomicIsize::new(0);
@@ -116,13 +116,19 @@ mod win {
             return have as HCURSOR;
         }
         let img = image(kind);
+        // The system's cursor size (larger at 125 % and above, or with a
+        // bigger pointer): the image scaled to it, nearest pixel.
+        // SAFETY: a plain metric query.
+        let n = (unsafe { GetSystemMetrics(SM_CXCURSOR) }.max(SIZE as i32)) as usize;
+        let stride = n.div_ceil(16) * 2;
         // The AND mask (1 = the screen shows through) and the XOR bits
-        // (1 = white where the mask is 0), one bit per pixel, rows of 4 bytes.
-        let (mut and, mut xor) = (vec![0xffu8; SIZE * SIZE / 8], vec![0u8; SIZE * SIZE / 8]);
-        for (y, row) in img.iter().enumerate() {
-            for (x, px) in row.iter().enumerate() {
-                let (i, bit) = (y * SIZE / 8 + x / 8, 0x80u8 >> (x % 8));
-                match px {
+        // (1 = white where the mask is 0), one bit per pixel, rows padded to
+        // 16 bits.
+        let (mut and, mut xor) = (vec![0xffu8; stride * n], vec![0u8; stride * n]);
+        for y in 0..n {
+            for x in 0..n {
+                let (i, bit) = (y * stride + x / 8, 0x80u8 >> (x % 8));
+                match img[y * SIZE / n][x * SIZE / n] {
                     Px::Clear => {}
                     Px::Black => and[i] &= !bit,
                     Px::White => {
@@ -139,7 +145,7 @@ mod win {
         // SAFETY: plain GDI / USER calls on a buffer that outlives them; the
         // bitmap is freed after the cursor copied it.
         let h = unsafe {
-            let m = CreateBitmap(SIZE as i32, 2 * SIZE as i32, 1, 1, bits.as_ptr().cast());
+            let m = CreateBitmap(n as i32, 2 * n as i32, 1, 1, bits.as_ptr().cast());
             let info = ICONINFO { fIcon: 0, xHotspot: 0, yHotspot: 0, hbmMask: m, hbmColor: std::ptr::null_mut() };
             let h = CreateIconIndirect(&info);
             DeleteObject(m);

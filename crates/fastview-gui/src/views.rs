@@ -7,6 +7,12 @@ use crate::diagram_ui::Window;
 use crate::oscgeom::PixelLines;
 use eframe::egui;
 
+/// Remember the offset from the frame's corner of the spot a first float
+/// opens at ([`App::float_origin`]).
+pub fn set_float_corner(ctx: &egui::Context, corner: egui::Vec2) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_float_corner"), corner));
+}
+
 impl App {
     pub fn render_tab(&mut self, ctx: &egui::Context) {
         match self.view {
@@ -100,12 +106,14 @@ impl App {
         self.docks.leave_sized(unit, |u| shown[u as usize], own);
     }
 
-    /// The frame client's top-left, where a first float opens (clone: the
-    /// mini-frame's corner on the frame's own corner, over the ribbon — MFC
-    /// keeps the create rect in screen coordinates taken at the pane's
-    /// creation, #161).
+    /// Where a first float opens: the frame's corner plus the offset
+    /// [`set_float_corner`] left (clone: the mini-frame's corner is on the
+    /// spot MFC took at the pane's creation, in screen coordinates — the
+    /// frame's corner when the frame was shown where Windows first put it,
+    /// the default frame's spot when a saved or maximised placement moved it
+    /// afterwards, #161).
     fn float_origin(ctx: &egui::Context) -> egui::Pos2 {
-        ctx.screen_rect().min
+        ctx.screen_rect().min + ctx.data(|d| d.get_temp::<egui::Vec2>(egui::Id::new("fv_float_corner"))).unwrap_or(egui::Vec2::ZERO)
     }
 
     /// A caption's actions on the group of `unit` whose pane spans `pane`:
@@ -412,6 +420,9 @@ impl App {
                 // alone where the group was last docked (clone, #162).
                 let next = self.tab_order.into_iter().find(|&q| q != p && v.mask[q as usize]).unwrap_or(v.unit);
                 self.docks.dock_tab_back(p, v.unit, next);
+                // Clone (FOCUS): the keyboard focus is the docked pane's own
+                // window.
+                self.copy_focus = crate::app::CopyFocus::Pane(p);
             }
         }
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {

@@ -635,6 +635,13 @@ impl Docks {
         let d = &mut self[m];
         (d.spot, d.extent, d.order, d.place, d.out, d.slide) = (r.spot, r.extent, r.order, Place::Docked, false, 0.0);
         d.gen += 1;
+        // The floating rest remembers the docked pane as its place: its
+        // redock joins it as a tab (clone: the floating Векторная's caption
+        // double-click after Круговая docked back puts it in Круговая's tabs).
+        let rest = if m == root { next } else { root };
+        if rest != m {
+            self[rest].spot = Spot::Tab(m);
+        }
     }
 
     /// Every unit's workspace entries ([`store`]).
