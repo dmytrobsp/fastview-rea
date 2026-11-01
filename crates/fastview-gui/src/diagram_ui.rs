@@ -2159,9 +2159,14 @@ fn vector_header_off(painter: &egui::Painter, full: Rect, scales: [f64; 2]) -> f
     (full.width() - l - w - m - 10.0 / s).max(0.0)
 }
 
-/// The header's text height cy ("Ay" in the DC's font): on paper the
-/// original's Arial gives ⌊52·s/5⌋ − 1 device px (VM at s = 6: rows of 91
-/// px, so cy = 61), in points here; on screen the measured height.
+/// The header's text height cy ("Ay" measured with GetTextExtentPoint32 in
+/// the DC's font, `0x49149c`…`0x49174d`). Read in the binary: the page's font
+/// is Arial, weight 400, created with a positive lfHeight (a cell height) of
+/// ⌊52·s/5⌋ (`0x442081`–`0x4420b1`), and the box's rows are ⌊3·cy/2⌋. The
+/// extent's height is GDI's text height of that font, which the binary does
+/// not hold: the VM gave 61 px at s = 6 (cell 62, rows of 91 px), one under
+/// the cell height, so `⌊52·s/5⌋ − 1` here (INFERRED for other s) in points;
+/// on screen the measured height.
 fn header_cy(print: Option<f32>, measured: f32) -> f32 {
     match print {
         Some(s) => ((52.0 * s / 5.0).floor() - 1.0) / s,
