@@ -5,7 +5,7 @@
 //! (57609, `AFXPrintPreview`: Печать, Увеличить / Уменьшить, Две страницы,
 //! Следующая / Предыдущая страница, Закрыть).
 
-use crate::app::App;
+use crate::app::{App, Command};
 use crate::printout::{Device, Job, PageSetup};
 use crate::raster::Canvas;
 use crate::spool;
@@ -416,13 +416,16 @@ impl App {
                 }
             });
         }
-        // Ctrl+P over the preview: the print dialog opens over it, the
-        // preview stays (VM; the accelerator table stays live there).
-        let ctrl_p = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { key: egui::Key::P, pressed: true, modifiers, .. } if (modifiers.command || modifiers.ctrl) && !modifiers.shift && !modifiers.alt)));
-        if ctrl_p && self.print.dialog.is_none() && !self.modal_up {
+        // The frame's accelerator table 128 stays live over the preview (VM:
+        // Ctrl+P shows the print dialog over it, Ctrl+S «Сохранить как» and
+        // Ctrl+O «Открыть» their dialogs, the preview staying under them).
+        // Ours takes those three here; the preview gate in `handle_keys`'
+        // caller is left alone.
+        let accel = ctx.input(|i| preview_accel(&i.events));
+        if let Some(c) = accel.filter(|_| self.print.dialog.is_none() && !self.modal_up) {
             let active = self.active;
             self.active = Some(pv.job.di);
-            self.print_open();
+            self.dispatch(c);
             self.active = active;
         }
         let (mut close, mut print) = (false, false);
@@ -519,6 +522,20 @@ impl App {
     }
 }
 
+/// The accelerators the frame keeps live over the preview: Ctrl+P, Ctrl+S,
+/// Ctrl+O (and nothing with Shift / Alt).
+fn preview_accel(events: &[egui::Event]) -> Option<Command> {
+    events.iter().find_map(|e| match e {
+        egui::Event::Key { key, pressed: true, modifiers, .. } if (modifiers.command || modifiers.ctrl) && !modifiers.shift && !modifiers.alt => match key {
+            egui::Key::P => Some(Command::Print),
+            egui::Key::S => Some(Command::SaveAs),
+            egui::Key::O => Some(Command::Open),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
 /// The room kept round a preview sheet's height: 8 px above and below, as
 /// the stock MFC preview keeps it (INFERRED from MFC's source; the clone's
 /// numbers agree: the original's sheet is 314 px in a 330 px area, 16 px
@@ -568,6 +585,16 @@ mod tests {
         frame(&ctx, &mut app, vec![egui::Event::Key { key: egui::Key::P, physical_key: None, pressed: true, repeat: false, modifiers: ctrl }]);
         assert!(app.print.dialog.is_some(), "the dialog opens");
         assert!(app.print.preview.is_some(), "the preview stays under it");
+    }
+
+    #[test]
+    fn the_preview_keeps_ctrl_p_s_and_o_live() {
+        let ev = |key, shift| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers { ctrl: true, command: true, shift, ..Default::default() } }];
+        assert!(matches!(preview_accel(&ev(egui::Key::P, false)), Some(Command::Print)));
+        assert!(matches!(preview_accel(&ev(egui::Key::S, false)), Some(Command::SaveAs)));
+        assert!(matches!(preview_accel(&ev(egui::Key::O, false)), Some(Command::Open)));
+        assert!(preview_accel(&ev(egui::Key::S, true)).is_none(), "Ctrl+Shift+S is not in the table");
+        assert!(preview_accel(&ev(egui::Key::X, false)).is_none());
     }
 
     #[test]
