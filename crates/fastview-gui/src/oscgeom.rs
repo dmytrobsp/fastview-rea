@@ -454,6 +454,9 @@ mod tests {
         for (dpi, c, f, p, s) in [(96, 23.0, 4.0, 4.0, 17.0), (120, 29.0, 4.0, 5.0, 21.0), (144, 34.0, 5.0, 6.0, 26.0), (168, 40.0, 5.0, 7.0, 30.0), (192, 45.0, 5.0, 8.0, 34.0)] {
             assert_eq!(WinMetrics::at(dpi), WinMetrics { caption: c, size_frame: f, padded: p, scroll: s }, "dpi {dpi}");
         }
+        // MulDiv rounds half away from zero: 22 * 216 / 96 = 49.5, 1 * 240 / 96 = 2.5.
+        assert_eq!(WinMetrics::at(216).caption, 51.0);
+        assert_eq!(WinMetrics::at(240).size_frame, 6.0);
         // A custom scale (110 % = 106 dpi).
         assert_eq!(WinMetrics::at(106), WinMetrics { caption: 25.0, size_frame: 4.0, padded: 4.0, scroll: 19.0 });
     }

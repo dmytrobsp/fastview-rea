@@ -2744,6 +2744,8 @@ mod window_tests {
         assert_eq!(first_run_client([1280.0, 740.0], 120), [942.0, 521.0]);
         assert_eq!(first_run_client([1280.0, 728.0], 144), [938.0, 506.0]);
         assert_eq!(first_run_client([1280.0, 716.0], 168), [936.0, 491.0]);
+        // 200 %: the cut 34 + 4 = 38 px, the borders 5 + 8 = 13.
+        assert_eq!(first_run_client([1280.0, 704.0], 192), [934.0, 477.0]);
         // The MDI area that follows: a quarter of it less 6, rounded up (230, 230, 229 on the VM).
         for (dpi, w) in [(96, 230.0), (120, 230.0), (144, 229.0)] {
             let c = first_run_client([1280.0, 740.0], dpi)[0];
