@@ -413,6 +413,15 @@ impl App {
                 }
             });
         }
+        // Ctrl+P over the preview: the print dialog opens over it, the
+        // preview stays (VM; the accelerator table stays live there).
+        let ctrl_p = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { key: egui::Key::P, pressed: true, modifiers, .. } if (modifiers.command || modifiers.ctrl) && !modifiers.shift && !modifiers.alt)));
+        if ctrl_p && self.print.dialog.is_none() {
+            let active = self.active;
+            self.active = Some(pv.job.di);
+            self.print_open();
+            self.active = active;
+        }
         let (mut close, mut print) = (false, false);
         if let Some(c) = pv.cmd.take().filter(|c| pv.enabled(*c)) {
             let step = pv.step();
@@ -536,6 +545,20 @@ mod tests {
         let fit = preview_fit(Vec2::new(560.0, 330.0), page, 1);
         assert_eq!((page.y * fit).round(), 316.0);
         assert!(preview_fit(Vec2::new(200.0, 900.0), page, 1) < 0.3, "width limits a narrow area");
+    }
+
+    #[test]
+    fn ctrl_p_over_the_preview_opens_the_print_dialog_and_keeps_the_preview() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        app.dispatch(Command::PrintPreview);
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut app, vec![]);
+        assert!(app.print.dialog.is_none());
+        let ctrl = egui::Modifiers { ctrl: true, command: true, ..Default::default() };
+        frame(&ctx, &mut app, vec![egui::Event::Key { key: egui::Key::P, physical_key: None, pressed: true, repeat: false, modifiers: ctrl }]);
+        assert!(app.print.dialog.is_some(), "the dialog opens");
+        assert!(app.print.preview.is_some(), "the preview stays under it");
     }
 
     #[test]
