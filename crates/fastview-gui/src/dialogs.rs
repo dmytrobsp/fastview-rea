@@ -979,6 +979,9 @@ pub enum GroupKind {
     Push,
     Radio,
     Check,
+    /// A visible, enabled control with no tab stop that takes no key of its own (a progress bar): the
+    /// arrows reach it and leave it (clone: a native dialog's progress bar and push button, no WS_GROUP).
+    Bar,
     Other,
 }
 
@@ -1023,6 +1026,20 @@ pub fn arrow_spans(ctx: &egui::Context, title: &str) -> Vec<Vec<GroupKind>> {
         }
     }
     out.retain(|s| !s.is_empty());
+    out
+}
+
+/// `arrow_spans` with the disabled controls kept (each with whether it is enabled; tests).
+#[cfg(test)]
+pub fn arrow_spans_all(ctx: &egui::Context, title: &str) -> Vec<Vec<(GroupKind, bool)>> {
+    let ring: Ring = ctx.data(|d| d.get_temp(egui::Id::new(title).with("fv_tab_ring"))).unwrap_or_default();
+    let mut out: Vec<Vec<(GroupKind, bool)>> = Vec::new();
+    for (_, kind, start, enabled) in ring.prev_items {
+        if start || out.is_empty() {
+            out.push(Vec::new());
+        }
+        out.last_mut().unwrap().push((kind, enabled));
+    }
     out
 }
 
@@ -1358,6 +1375,15 @@ pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows:
 /// none stayed up long enough on the VM): a (188) frame on (230), the done
 /// part (6, 176, 37).
 pub fn win_progress(ui: &egui::Ui, r: Rect, fraction: f32) {
+    // A member of the dialog's arrow span (it has no tab stop): the focus can sit on it.
+    let id = ui.id().with(("fv_progress", r.min.x as i32, r.min.y as i32));
+    ui.interact(r, id, egui::Sense::focusable_noninteractive());
+    group_item(ui, id, GroupKind::Bar, true);
+    if ui.ctx().memory(|m| m.has_focus(id)) {
+        // The dialog manager takes its arrows too (it is no edit).
+        let pass = ui.ctx().cumulative_pass_nr();
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_focus_kind"), (pass, StopKind::Other)));
+    }
     let p = ui.painter();
     p.rect_filled(r, 0.0, Color32::from_gray(188));
     let inner = r.shrink(1.0);
@@ -1892,6 +1918,8 @@ impl App {
             crate::dialogs::dlg(ctx, "Загрузка осциллограммы").id(egui::Id::new(("fv_loading", i))).margin(0.0).no_close().collapsible(false).resizable(false).show(ctx, |ui| {
                 let (client, _) = ui.allocate_exact_size(dlu_size(200, 25), egui::Sense::hover());
                 win_progress(ui, dlu(client, 5, 7, 120, 11), l.shown.0 as f32 / 100.0);
+                // No WS_GROUP on «Отмена»: it is in the bar's span (492 template).
+                group_continue(ui);
                 if win_button(ui, dlu(client, 135, 6, 60, 12), "Отмена", false).clicked() {
                     cancel = Some(i);
                 }

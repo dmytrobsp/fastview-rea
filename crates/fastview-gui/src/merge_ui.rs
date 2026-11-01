@@ -904,7 +904,9 @@ impl App {
         sync = b.clicked() || sync;
         let b = win_button(ui, at(w - 110.0, 9.0, 100.0, 23.0), "Объединить", false);
         lock(ui, &b);
-        join = b.clicked() || join;
+        // Space and Enter on it do nothing (clone, #182): only a click merges. (A later move of the
+        // pointer off the button after a key press merges in the original, unexplained: not modelled.)
+        join = (b.clicked() && ui.input(|i| i.pointer.any_click())) || join;
         let text = r.shrink2(egui::vec2(15.0, 14.0));
         // Each static cut at the control after it (VM, 150 %: «Синхрониза»
         // under the larger font).
