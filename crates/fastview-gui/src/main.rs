@@ -5446,6 +5446,24 @@ mod window_tests {
         assert!(!w.app.merge.as_ref().unwrap().status.is_empty(), "the button kept the focus through the ribbon press");
     }
 
+    /// DIALOG 492's progress bar and «Отмена» are one span (neither has WS_GROUP): on a clone, in a native
+    /// dialog of just those two, an arrow from the button moves the focus to the bar and the next arrow back.
+    #[test]
+    fn the_loading_dialogs_arrows_pass_between_the_bar_and_cancel() {
+        let mut w = Win::new();
+        let _tx = w.app.test_hold_loading();
+        w.idle(3);
+        w.key(egui::Key::Tab);
+        let focused = |w: &Win| w.ctx.memory(|m| m.focused());
+        let cancel = focused(&w);
+        assert!(cancel.is_some(), "«Отмена» has the focus");
+        w.key(egui::Key::ArrowRight);
+        let bar = focused(&w);
+        assert!(bar.is_some() && bar != cancel, "→ moves the focus to the progress bar");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(focused(&w), cancel, "and back");
+    }
+
     /// A dialog or a menu opened by the press that would keep the bar's focus has the keys, not the
     /// merge bar behind it (review: Ctrl+P / the QAT print button, then ↓ changed the method).
     #[test]
@@ -5714,10 +5732,9 @@ mod window_tests {
     /// lower case below). The list per dialog is the template's spans that hold
     /// a push button, a radio or a check box (P, R, C; O is any other control),
     /// read from the 100 templates, so a span no heuristic of kinds can give
-    /// (347's «Свойства...» with «Параметры страницы», 536's two «Отключить»,
-    /// 539's «Kторм» after the radios) is checked too. Not here: 492's progress
-    /// bar with «Отмена» (whether the bar takes the arrows' focus is not known),
-    /// 335 (no dialog of ours).
+    /// (536's two «Отключить», 539's «Kторм» after the radios) is checked too;
+    /// 347's «Свойства...» with «Параметры страницы» is only annotated (the kinds
+    /// already join them). 492 has its own test; 335 has no dialog of ours.
     #[test]
     fn every_dialogs_arrow_spans_follow_its_template() {
         use crate::dialogs::{arrow_spans_all, GroupKind};
@@ -5731,6 +5748,7 @@ mod window_tests {
                                 GroupKind::Push => 'P',
                                 GroupKind::Radio => 'R',
                                 GroupKind::Check => 'C',
+                                GroupKind::Bar => 'B',
                                 GroupKind::Other => 'O',
                             };
                             if *on { c } else { c.to_ascii_lowercase() }

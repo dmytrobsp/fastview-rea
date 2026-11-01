@@ -779,7 +779,7 @@ pub struct Doc {
     pub first: usize,
     /// The horizontal scroll bar's position (first sample, samples shown, record's, position) as the
     /// Shift+wheel left it (`0x45d990` sets the bar and leaves it); valid while those still hold.
-    pub hscroll_pos: Option<(usize, usize, usize, usize)>,
+    pub hscroll_pos: Option<(usize, usize, usize, usize, i64)>,
     /// Horizontal scale `f` (`view+0xf0`, a power of two ≤ 1, 25·f px per
     /// sample); `None` until the view first lays out (initial = stored
     /// `View/XScale`, else twice the fit scale).
@@ -2266,6 +2266,11 @@ impl App {
     }
 
     pub fn dispatch(&mut self, cmd: Command) {
+        // Nearly every command ends in the views' refresh (`0x45ac60`), which sets the horizontal bar from
+        // the first sample again (`lanes::hscroll_page`).
+        if let Some(d) = self.active_doc_mut() {
+            d.hscroll_pos = None;
+        }
         let mark = crate::setfile::marks_modified(&cmd).then_some(self.active).flatten();
         // The handlers that end in the frame's refresh-all `0x475420` (the
         // diagrams' refresh, slot 90): paste 57637 and undo / redo
@@ -2959,6 +2964,14 @@ impl App {
             }
         });
         self.loading.push(Loading { path: path.to_path_buf(), big: loading_shown(path), rx, progress, shown: (0, f64::NEG_INFINITY) });
+    }
+
+    /// A load that never finishes, big enough for the progress dialog (tests); keep the sender alive.
+    #[cfg(test)]
+    pub fn test_hold_loading(&mut self) -> std::sync::mpsc::Sender<LoadResult> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.loading.push(Loading { path: "held.cfg".into(), big: true, rx, progress: Default::default(), shown: (0, f64::NEG_INFINITY) });
+        tx
     }
 
     /// Collect finished loads (called every frame).

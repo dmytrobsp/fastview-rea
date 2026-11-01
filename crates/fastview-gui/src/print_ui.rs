@@ -279,7 +279,8 @@ impl App {
                     win_label(ui, dlu(client, vx, vy, vw, 10), v, false, true);
                 }
             }
-            // «Параметры страницы» has no WS_GROUP: it is in the span of «Свойства...» (347 template).
+            // «Параметры страницы» has no WS_GROUP: it is in the span of «Свойства...» (347 template; the kinds
+            // already join them, this only records the template).
             crate::dialogs::group_continue(ui);
             setup = win_button(ui, dlu(client, 7, 107, 120, 14), "Параметры страницы", false).clicked();
             // The template's order is the tab order: the buttons, then the

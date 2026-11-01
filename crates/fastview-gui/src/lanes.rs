@@ -703,13 +703,15 @@ pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey) -> Vec<&'static str> 
 /// 0…10000 (its range is 0…10000 + a page); a page is ⌊V·10000 / N⌋ (V the
 /// samples shown, N the record's), the first sample ⌊(N − V)·pos / 10000⌋,
 /// never past the last screen. The position is the bar's own
-/// (`GetScrollPos`): the scroll-bar update (`0x45d4a0`, after a zoom, a
-/// resize, any other move) sets it to ⌊first·10000 / (N − V)⌋ + 1, the wheel
-/// sets the sum or difference it computed and leaves it, so a notch back
+/// (`GetScrollPos`): the scroll-bar update (`0x45d4a0`) sets it to
+/// ⌊first·10000 / (N − V)⌋ + 1, and runs from the zoom / lane-height handler
+/// (`0x45c4f0`, every Ctrl and Alt wheel step), WM_SIZE and the view's refresh
+/// after every UpdateAllViews (`0x45ac60`); the wheel sets the sum or
+/// difference it computed and leaves it (as the bar's own WM_HSCROLL handler does), so a notch back
 /// starts from where the notch before left the bar, not from a position read
-/// off the first sample again (`kept`: the bar's position when the wheel set
-/// it last and nothing has changed it since). The bar clamps a position to
-/// 0…10001.
+/// off the first sample again. `kept` is that position while none of those ran (ours drops it on
+/// a Ctrl / Alt wheel step, a change of the view's height or of what it shows, and on every command).
+/// The bar clamps a position to 0…10001.
 pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool, kept: Option<usize>) -> (usize, usize) {
     let range = n.saturating_sub(visible);
     if n == 0 || range == 0 {
@@ -1245,7 +1247,7 @@ enum Act {
     EndDrag,
     SetFirst(usize),
     /// The horizontal bar's position as the wheel left it: the first sample, the samples shown and the record's with it.
-    SetHPos(Option<(usize, usize, usize, usize)>),
+    SetHPos(Option<(usize, usize, usize, usize, i64)>),
     SetVScroll(f32),
     PlaceComment(crate::comments::Comment, bool),
     CommentDrag(usize, crate::comments::Part),
@@ -1904,7 +1906,8 @@ impl App {
             let (wheels, buttons) = ui.input(|i| (wheel_deltas(&i.events), i.pointer.any_down()));
             let (mut first_w, mut vscroll_w) = (first as i64, vscroll);
             // The bar's position as the last Shift+wheel left it, while the view is as it left it.
-            let mut hpos_w = doc.hscroll_pos.filter(|&(f, v, nn, _)| f == first && v == visible && nn == n).map(|k| k.3);
+            let vh = full.height().round() as i64;
+            let mut hpos_w = doc.hscroll_pos.filter(|&(f, v, nn, _, h)| f == first && v == visible && nn == n && h == vh).map(|k| k.3);
             for delta in wheels {
                 let up = delta > 0.0;
                 if alt {
@@ -1919,7 +1922,7 @@ impl App {
                     #[cfg(windows)]
                     crate::softrun::trace(&format!("hscroll up={up} first={first_w} pos={pos} visible={visible} n={n}"));
                     actions.push(Act::SetFirst(first_w as usize));
-                    actions.push(Act::SetHPos(Some((first_w as usize, visible, n, pos))));
+                    actions.push(Act::SetHPos(Some((first_w as usize, visible, n, pos, vh))));
                 } else {
                     vscroll_w += delta;
                     actions.push(Act::SetVScroll(vscroll_w));
@@ -3457,6 +3460,49 @@ mod menu_tests {
         assert!(start < one && one < two, "two notches right: {start} {one} {two}");
         h.wheel(at, 1.0, egui::Modifiers::SHIFT);
         assert_eq!(h.doc().first, one, "one notch back lands on the first notch's sample");
+    }
+
+    /// The kept bar position is dropped where the original runs the bar update (`0x45d4a0`): an Alt
+    /// (lane height) or Ctrl wheel step, any command (the views' refresh) — the notch back then starts
+    /// from ⌊first·10000/(N−V)⌋ + 1 (review of #196).
+    #[test]
+    fn the_kept_bar_position_is_dropped_where_the_original_updates_the_bar() {
+        for how in ["alt", "ctrl", "command"] {
+            let mut h = Harness::new();
+            let at = Pos2::new(600.0, h.row(0).y);
+            h.button(at, egui::PointerButton::Primary);
+            for _ in 0..3 {
+                h.wheel(at, 1.0, egui::Modifiers::CTRL);
+            }
+            h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+            h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+            assert!(h.doc().hscroll_pos.is_some(), "kept by the wheel");
+            match how {
+                "alt" => h.wheel(at, 1.0, egui::Modifiers::ALT),
+                // A zoom step at the limit changes nothing, and still runs the update.
+                "ctrl" => {
+                    for _ in 0..12 {
+                        h.wheel(at, -1.0, egui::Modifiers::CTRL);
+                    }
+                    h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+                    h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+                }
+                _ => h.app.dispatch(Command::ToggleParamBar),
+            }
+            let (before, kept) = (h.doc().first, h.doc().hscroll_pos);
+            if how != "ctrl" {
+                assert!(kept.is_none(), "{how}: dropped");
+            }
+            h.wheel(at, 1.0, egui::Modifiers::SHIFT);
+            // The notch back started from ⌊first·10000/(N−V)⌋ + 1 (the bar update's value), not from the kept one.
+            let (_, v, n, _, _) = h.doc().hscroll_pos.expect("set by the notch");
+            let derived = hscroll_page(before, n, v, true, None).0;
+            assert_eq!(h.doc().first, derived, "{how}: re-derived from the first sample");
+            if how != "ctrl" {
+                let kept_rule = hscroll_page(before, n, v, true, Some(10000)).0;
+                assert_ne!(derived, kept_rule, "{how}: (the kept rule would give another sample)");
+            }
+        }
     }
 
     /// With the whole record in view there is no horizontal bar (seen on

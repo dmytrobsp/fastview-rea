@@ -256,3 +256,9 @@ misbehaves and the better behaviour is obvious (the maintainer,
   `0x4167f0` pairs them by index with no bounds check (`0x416c61`-`0x416c9d`) and reads past the names vector:
   undefined (garbage or a crash). Ours names the extra lines «_2», «_3»... Reason: both are reachable only through a
   hand-made `.osc` / `.set`; a defined, error-free result beats a session-dependent fault or undefined behaviour.
+- **The horizontal bar's first sample on long records (#196).** The original's Shift+wheel (`0x45d990`), the bar's
+  thumb drag (`0x45d6d0`) and the bar update (`0x45d4a0`) compute the first sample as (N − V) × position (or
+  first × 10000) in 32-bit arithmetic before dividing: past about 429 000 samples the product wraps, and a wheel
+  notch or a thumb position near the end of the record puts the first sample near the record's start (a visible
+  jump). Ours computes in 64 bits. Reason: a jump to the start of a long record is a visible failure; the
+  controller's ruling (2026-11-01).
