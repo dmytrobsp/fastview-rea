@@ -859,6 +859,7 @@ impl App {
                         rescan = true;
                     }
                 }
+                crate::dialogs::group_continue(ui);
                 crate::dialogs::tab_index(ui, 9);
                 if win_check(ui, r(72, 307, 111, 11), "Включая вложенные папки", f.recursive) {
                     f.recursive = !f.recursive;
@@ -882,6 +883,7 @@ impl App {
                     let list: std::collections::BTreeSet<String> = f.files.iter().map(|x| if k == 0 { x.station.clone() } else { x.block.clone() }).collect();
                     items.extend(list);
                     let at = items.iter().position(|it| it == value).unwrap_or(0);
+                    crate::dialogs::group_continue(ui);
                     crate::dialogs::tab_index(ui, 5 + k as u32);
                     if let Some(pick) = win_combo_list(ui, r(cr.0, cr.1, cr.2, cr.3), egui::Id::new(("finder_combo", k)), &items, at, true) {
                         *value = items[pick].clone();
@@ -889,9 +891,12 @@ impl App {
                 }
                 // A date change refilters (`0x46cfd0`).
                 win_label(ui, r(503, 36, 11, 9), "С:", false, true);
+                // One span from «Открыть файлы» to the second combo box (558 template).
+                crate::dialogs::group_continue(ui);
                 crate::dialogs::tab_index(ui, 3);
                 date_picker(ui, r(517, 34, 94, 12), "С:", &mut f.from);
                 win_label(ui, r(621, 36, 13, 9), "По:", false, true);
+                crate::dialogs::group_continue(ui);
                 crate::dialogs::tab_index(ui, 4);
                 date_picker(ui, r(636, 34, 94, 12), "По:", &mut f.to);
                 // The list (1082, report, grid lines; VM): a (160) border, a
@@ -946,6 +951,8 @@ impl App {
                 }
                 let list_id = egui::Id::new("finder_list");
                 ui.interact(Rect::from_min_max(Pos2::new(inner.left(), inner.top() + hdr_h), inner.max), list_id, egui::Sense::click());
+                // «Выбрать», the list and the check box are one span (558 template).
+                crate::dialogs::group_continue(ui);
                 crate::dialogs::tab_index(ui, 8);
                 crate::dialogs::tab_stop(ui, list_id, crate::dialogs::StopKind::Other);
                 if f.busy() {

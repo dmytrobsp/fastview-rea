@@ -196,6 +196,8 @@ impl App {
                         st.select(flat[k].0.clone(), flat[k].2);
                     }
                     win_label(ui, dlu(client, 204, 14, 62, 8), "Название канала:", true, true);
+                    // The tree, the name edit, OK and Отмена are one span (359 template).
+                    crate::dialogs::group_continue(ui);
                     win_edit(ui, dlu(client, 272, 12, 131, 12), egui::Id::new("af_name"), &mut st.name, false);
                     // The selected template's form in the place of control
                     // 1035 (205, 36, 198 × 243).
@@ -204,14 +206,18 @@ impl App {
                     // Отмена).
                     let place = dlu(client, 205, 36, 198, 243);
                     if let Some(d) = st.form {
-                        crate::dialogs::no_tab_stop(ui, |ui| {
-                            if !template_form(ui, place.min, d, &mut st) {
-                                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(place), |ui| form_ui(ui, d, &mut st));
-                            }
+                        crate::dialogs::outside_the_spans(ui, |ui| {
+                            crate::dialogs::no_tab_stop(ui, |ui| {
+                                if !template_form(ui, place.min, d, &mut st) {
+                                    ui.allocate_new_ui(egui::UiBuilder::new().max_rect(place), |ui| form_ui(ui, d, &mut st));
+                                }
+                            });
                         });
                     }
                     let ok_r = dlu(client, 293, 290, 50, 14);
                     st.ok_rect = Some(ok_r);
+                    // The buttons follow the name edit in its span (template, no WS_GROUP).
+                    crate::dialogs::group_continue(ui);
                     if win_button_en(ui, ok_r, "OK", true, st.form.is_some()).clicked() {
                         done = Some(true);
                     }

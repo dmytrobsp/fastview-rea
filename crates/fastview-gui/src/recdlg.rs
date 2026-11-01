@@ -935,6 +935,13 @@ impl App {
                     }
                 }
                 // «...» (`0x47f950`): the folder browser starts at the current one.
+                // With the folder link before it one span (510 template, no
+                // WS_GROUP); with no link it is a span of its own.
+                if st.dst_folder.is_empty() {
+                    crate::dialogs::group_start(ui);
+                } else {
+                    crate::dialogs::group_continue(ui);
+                }
                 if win_button(ui, dlu(client, 6, 60, 50, 14), "...", false).clicked() {
                     let mut fd = crate::dialogs::file_dialog().set_title("Директория хранения файлов описания осциллограмм");
                     if !st.dst_folder.is_empty() {

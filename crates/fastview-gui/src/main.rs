@@ -49,6 +49,7 @@ mod util;
 mod views;
 mod winframe;
 mod windows_dlg;
+mod winkeys;
 
 use app::App;
 use eframe::egui;
@@ -791,8 +792,25 @@ impl App {
             let list_id = ui.id().with("fv_doc_list");
             let btn = ui.interact(hit, list_id.with("btn"), egui::Sense::click());
             self.focus_other.push(hit);
+            if let Some(b) = self.list_buttons.get_mut(g) {
+                *b = hit;
+            }
+            // A window of the frame: a press gives it the keyboard focus,
+            // where Space and Enter (egui's click by key) open the list (clone) and the arrows do
+            // nothing; Esc only closes the list.
+            if btn.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
+                btn.request_focus();
+            }
+            if btn.has_focus() {
+                ui.memory_mut(|m| m.set_focus_lock_filter(btn.id, egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true }));
+            }
             let mut open: Option<u64> = ui.data(|d| d.get_temp(list_id));
-            if btn.clicked() {
+            // The list is an MFC popup menu: with it open the arrows walk it and Enter
+            // picks the row (an Enter is no click on the button then).
+            let hot_id = list_id.with("hot");
+            let mut hot: Option<usize> = ui.data(|d| d.get_temp(hot_id));
+            let list_keys = if open.is_some() && btn.has_focus() { ui.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp), i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown), i.consume_key(egui::Modifiers::NONE, egui::Key::Enter))) } else { (false, false, false) };
+            if btn.clicked() && !list_keys.2 {
                 open = if open.is_some() { None } else { Some(ui.ctx().cumulative_pass_nr()) };
             }
             let lit = egui::Rect::from_min_size(egui::pos2(x0 - 3.0, y0 + 1.0 - (dpi::s(15.0) / 2.0).ceil()), egui::vec2(dpi::s(15.0), dpi::s(15.0)));
@@ -809,10 +827,22 @@ impl App {
                     p.rect_stroke(w, 0.0, egui::Stroke::new(1.0f32, egui::Color32::from_gray(110)));
                     p.rect_filled(egui::Rect::from_min_max(w.left_top(), egui::pos2(w.left() + 3.0, w.bottom())), 0.0, egui::Color32::from_rgb(70, 130, 110));
                 };
+                let n = order.len();
+                if n > 0 && (list_keys.0 || list_keys.1) {
+                    hot = Some(match (hot, list_keys.1) {
+                        (None, true) => 0,
+                        (None, false) => n - 1,
+                        (Some(h), true) => (h + 1) % n,
+                        (Some(h), false) => (h + n - 1) % n,
+                    });
+                }
+                if list_keys.2 {
+                    activate = hot.and_then(|h| order.get(h).copied());
+                }
                 let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom()).constrain(true).show(ui.ctx(), |ui| {
                     crate::popmenu::mfc_frame(ui, |ui| {
-                        for i in order {
-                            if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, false, Some(&window)).clicked() {
+                        for (k, i) in order.iter().copied().enumerate() {
+                            if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, hot == Some(k), Some(&window)).clicked() {
                                 activate = Some(i);
                             }
                         }
@@ -823,6 +853,11 @@ impl App {
                     open = None;
                 }
             }
+            self.doc_list_open |= open.is_some();
+            ui.data_mut(|d| match hot.filter(|_| open.is_some()) {
+                Some(h) => d.insert_temp(hot_id, h),
+                None => d.remove::<usize>(hot_id),
+            });
             ui.data_mut(|d| match open {
                 Some(o) => d.insert_temp(list_id, o),
                 None => d.remove::<u64>(list_id),
@@ -1121,6 +1156,7 @@ fn startup_args(args: impl Iterator<Item = String>) -> StartupArgs {
 impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         device_screen(ctx, raw);
+        winkeys::filter(ctx, raw);
         dialogs::take_dialog_tabs(ctx, raw);
     }
 
@@ -2107,6 +2143,25 @@ mod window_tests {
         assert!(!app.keytips.shown());
     }
 
+    /// The Help button's key tip «A» opens its drop-down with the first row
+    /// highlighted (MFC posts Home; clone: «Помощь» lit, ↓ then «О программе...»,
+    /// Home back) (#26).
+    #[test]
+    fn the_help_menu_opened_by_its_key_tip_has_its_first_row_lit() {
+        let mut app = demo(&[]);
+        let ctx = egui::Context::default();
+        let size = Vec2::new(1320.0, 860.0);
+        let key = |key| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }];
+        frames(&mut app, &ctx, size, vec![vec![], key(egui::Key::F10), vec![]]);
+        frames(&mut app, &ctx, size, vec![key(egui::Key::A), vec![], vec![]]);
+        let (_, menu) = app.top_menu.expect("the Help menu is open");
+        assert_eq!(menu.hot, Some(0), "the first row is lit");
+        frames(&mut app, &ctx, size, vec![key(egui::Key::ArrowDown), vec![]]);
+        assert_eq!(app.top_menu.unwrap().1.hot, Some(2), "↓ goes to «О программе...»");
+        frames(&mut app, &ctx, size, vec![key(egui::Key::Home), vec![]]);
+        assert_eq!(app.top_menu.unwrap().1.hot, Some(0), "Home back to the first");
+    }
+
     /// A whole window at the default size with the demo document.
     struct Win {
         ctx: egui::Context,
@@ -2362,6 +2417,7 @@ mod window_tests {
         assert_eq!(w.app.block_idx, 0, "«Нет»");
         let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
         let at = Pos2::new(grid.left() + 30.0, grid.top() + 9.0);
+        w.app.active_doc_mut().unwrap().set.modified = false;
         w.press(Primary, at, at);
         w.key(egui::Key::F4);
         w.idle(1);
@@ -2369,6 +2425,9 @@ mod window_tests {
         w.key(egui::Key::ArrowDown);
         w.key(egui::Key::Enter);
         w.idle(2);
+        // Nothing is saved for a keyed-in block: the document stays unmodified
+        // (clone: closed right after, no save prompt) — #24's SelectedBlock.
+        assert!(!w.app.active_doc().unwrap().set.modified);
         let names: Vec<String> = w.app.library.blocks.iter().map(|b| b.name.clone()).collect();
         assert_eq!((w.app.block_idx, w.app.block_text.as_deref()), (0, Some(names[2].as_str())), "the text only");
         assert!(w.app.chars.is_empty(), "no block's rows");
@@ -2421,6 +2480,81 @@ mod window_tests {
         w.key(egui::Key::ArrowDown);
         w.idle(1);
         assert_eq!(w.app.selected_char, Some(1), "the closed group's parameters are skipped");
+    }
+
+    /// A row selected by a key comes into view (CMFCPropertyGridCtrl's
+    /// EnsureVisible; the grid's rows scroll by whole rows): End on a grid
+    /// taller than its window scrolls to the last row, Home back (#24).
+    #[test]
+    fn a_key_selected_grid_row_scrolls_into_view() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.app.store.view.insert("Circle Diagram\\Properties Height".into(), "68".into());
+        w.idle(2);
+        let b = (0..w.app.library.blocks.len()).find(|&b| w.app.library.blocks[b].characteristics.len() >= 2 && !w.app.library.blocks[b].characteristics[0].parameters.is_empty()).expect("a block with two characteristics");
+        w.app.block_idx = b;
+        w.app.ensure_block_state();
+        w.idle(3);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let at = Pos2::new(grid.left() + 60.0, grid.top() + 1.0 + 8.0);
+        w.press(Primary, at, at);
+        let sid = egui::Id::new(("char_grid_scroll", app::Pane::Circle));
+        let state = |w: &Win| w.ctx.data(|d| d.get_temp::<(f32, f32)>(sid)).expect("the grid's scroll state");
+        let (_, content) = state(&w);
+        assert!(content > grid.height(), "the rows overflow the window: {content} in {}", grid.height());
+        w.key(egui::Key::End);
+        w.idle(3);
+        let (off, content) = state(&w);
+        assert!(off + grid.height() >= content - 17.0, "the last row is in view: offset {off}, rows {content}, window {}", grid.height());
+        w.key(egui::Key::Home);
+        w.idle(3);
+        assert_eq!(state(&w).0, 0.0, "Home scrolls back to the first row");
+    }
+
+    /// PgDn / PgUp in the parameter grid move the selection and the window by
+    /// a page, P - 1 rows with P in view; the wheel and the bar reach
+    /// N - P + 2 rows down (clone, a block's grid: PgDn from the top went ten
+    /// rows with eleven in view and scrolled to the range's end, the second
+    /// PgDn to the last row, PgUp back to the top) (#24).
+    #[test]
+    fn page_keys_and_the_scroll_range_of_the_grid() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.app.store.view.insert("Circle Diagram\\Properties Height".into(), "120".into());
+        w.idle(2);
+        let b = (0..w.app.library.blocks.len()).find(|&b| w.app.library.blocks[b].characteristics.len() >= 2 && !w.app.library.blocks[b].characteristics[0].parameters.is_empty()).expect("a block with two characteristics");
+        w.app.block_idx = b;
+        w.app.ensure_block_state();
+        w.idle(3);
+        let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let at = Pos2::new(grid.left() + 60.0, grid.top() + 1.0 + 8.0);
+        w.press(Primary, at, at);
+        let sid = egui::Id::new(("char_grid_scroll", app::Pane::Circle));
+        let state = |w: &Win| w.ctx.data(|d| d.get_temp::<(f32, f32)>(sid)).expect("the grid's scroll state");
+        let rows_in_view = w.ctx.data(|d| d.get_temp::<i32>(egui::Id::new(("fv_grid_rows_in_view", app::Pane::Circle)))).expect("the rows in view") as f32;
+        let (_, content) = state(&w);
+        let row = 17.0;
+        let max = content - (rows_in_view - 2.0) * row;
+        assert!(content > rows_in_view * row);
+        w.key(egui::Key::PageDown);
+        w.idle(3);
+        assert_eq!(state(&w).0, ((rows_in_view - 1.0) * row).min(max), "a page down scrolls a page");
+        for _ in 0..80 {
+            w.key(egui::Key::PageDown);
+        }
+        w.idle(3);
+        assert_eq!(state(&w).0, max, "the end of the range lies N - P + 2 rows down");
+        w.key(egui::Key::PageUp);
+        w.idle(3);
+        assert_eq!(state(&w).0, (max - (rows_in_view - 1.0) * row).max(0.0), "a page up");
+        // The wheel reaches the same end.
+        for _ in 0..40 {
+            w.wheel(Pos2::new(grid.left() + 60.0, grid.top() + 30.0));
+        }
+        w.idle(2);
+        assert_eq!(state(&w).0, max, "the wheel's end");
     }
 
     /// The parameters bar is a message-mode caption bar (`0x474dc5`): its
@@ -4568,6 +4702,16 @@ mod window_tests {
         assert_eq!(pending(&w), 1, "Ctrl+V's key-up pastes");
         w.app.dispatch(app::Command::Undo);
         assert_eq!(pending(&w), 0);
+        // The press the window procedure noted (`winkeys`) pastes at once, whatever the clipboard
+        // holds, and Ctrl released first or not, the key-up is not a second paste (#26).
+        let down = egui::Event::Key { key: egui::Key::V, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::CTRL };
+        w.run(vec![down]);
+        assert_eq!(pending(&w), 1, "Ctrl+V pastes at the key press");
+        // (Undone first, so that a second paste would be enabled.)
+        w.app.dispatch(app::Command::Undo);
+        assert_eq!(pending(&w), 0);
+        w.run(vec![up.clone()]);
+        assert_eq!(pending(&w), 0, "the key-up pastes nothing more: the press was the paste");
         // With text there: the paste fires on the press, not again on the key-up.
         w.run(vec![egui::Event::Paste("x".into())]);
         w.run(vec![up]);
@@ -5167,6 +5311,336 @@ mod window_tests {
             w.press(Primary, r.center(), r.center());
             assert_eq!(w.app.copy_focus, CopyFocus::Other, "{r:?}");
         }
+    }
+
+    /// The merge bar's method combo box holding the focus takes ↑ / ↓ as a
+    /// combo box does, one choice each (clone: a press on it, then ↓ / ↑
+    /// change the method; Tab goes nowhere, a bar is no dialog), and the
+    /// view's arrow keys stay off (#145).
+    #[test]
+    fn the_merge_bars_combo_takes_the_arrow_keys() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        let combo = w.app.focus_other[0];
+        let method = |w: &Win| w.app.merge.as_ref().unwrap().method;
+        assert_eq!(method(&w), 0);
+        // The press opens the list; the click at the focus window closes it.
+        w.press(Primary, combo.center(), combo.center());
+        w.key(egui::Key::Escape);
+        let before = w.view_state();
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 1, "↓ picks the next method");
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 2);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 2, "the last one stays");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(method(&w), 1, "↑ the previous");
+        assert_eq!(w.view_state(), before, "the view's keys are off");
+        // F4 drops the list (Space does nothing); Esc closes it, the focus stays.
+        let open = |w: &Win| w.ctx.data(|d| d.get_temp::<bool>(egui::Id::new("merge_method").with("open"))).unwrap_or(false);
+        w.key(egui::Key::Space);
+        assert!(!open(&w), "Space does nothing");
+        w.key(egui::Key::F4);
+        assert!(open(&w), "F4 drops the list");
+        w.key(egui::Key::Escape);
+        assert!(!open(&w));
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(method(&w), 0, "the focus stayed");
+    }
+
+    /// «Синхронизация» holding the focus (a press let go outside it) is
+    /// pressed by Space and by Enter (clone: the status line fills with
+    /// neither a click), as the tab list's ▾ button opens its list by both
+    /// and takes no arrow (#145).
+    #[test]
+    fn the_merge_bars_buttons_and_the_tab_lists_button_take_space_and_enter() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        for key in [egui::Key::Space, egui::Key::Enter] {
+            let mut w = Win::new();
+            w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+            w.app.copy_channels_for_merge();
+            w.app.paste_channels_for_merge();
+            w.idle(3);
+            let sync = w.app.focus_other[1];
+            w.press(Primary, sync.center(), sync.center() + Vec2::new(0.0, 200.0));
+            assert!(w.app.merge.as_ref().unwrap().status.is_empty(), "no click: nothing synchronised");
+            w.key(key);
+            assert!(!w.app.merge.as_ref().unwrap().status.is_empty(), "{key:?} presses the focused button");
+        }
+        // The ▾ at the document strip's end.
+        for (key, opens) in [(egui::Key::Space, true), (egui::Key::Enter, true), (egui::Key::ArrowDown, false), (egui::Key::ArrowUp, false)] {
+            let mut w = Win::new();
+            let strip = w.app.mdi_strips[0];
+            let list = Pos2::new(strip.right() - 10.0, strip.center().y);
+            // The press opens the list; Esc closes it, the button keeps the focus.
+            w.press(Primary, list, list);
+            w.key(egui::Key::Escape);
+            w.idle(2);
+            let open = |w: &Win| w.app.doc_list_open;
+            assert!(!open(&w), "closed");
+            w.key(key);
+            w.idle(2);
+            assert_eq!(open(&w), opens, "{key:?}");
+        }
+    }
+
+    /// A press on the ▾ of a document group that is not the active one
+    /// (clone, two groups): the button holds the focus and the active
+    /// document stays (the title does not change); a pick from its list
+    /// activates that document, which focuses its view (#148).
+    #[test]
+    fn the_list_button_of_another_document_group_keeps_the_focus() {
+        use app::CopyFocus;
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Demo);
+        w.idle(2);
+        w.app.new_group_after(1, 0, true);
+        w.idle(3);
+        assert_eq!(w.app.group_count(), 2);
+        let active = w.app.active;
+        let strip = w.app.mdi_strips[0];
+        let list = Pos2::new(strip.right() - 10.0, strip.center().y);
+        w.press(Primary, list, list);
+        w.idle(3);
+        assert_eq!(w.app.active, active, "the press activates nothing");
+        assert_eq!(w.app.copy_focus, CopyFocus::Other, "the button holds the focus");
+        assert!(w.app.doc_list_open, "its list is open");
+    }
+
+    /// «Коэффициенты» (DIALOG 477): the buttons have no WS_GROUP, so with the
+    /// list before them they make one span: ↑ from ОК focuses the list (clone),
+    /// not Отмена (#25).
+    #[test]
+    fn the_buttons_of_a_dialog_share_a_span_with_the_control_before_them() {
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Coefficients);
+        w.idle(4);
+        let focused = |w: &Win| w.ctx.memory(|m| m.focused());
+        let list = focused(&w);
+        w.key(egui::Key::Tab);
+        w.idle(2);
+        let ok = focused(&w);
+        w.key(egui::Key::Tab);
+        w.idle(2);
+        let cancel = focused(&w);
+        assert!(ok.is_some() && cancel.is_some() && ok != cancel);
+        w.key(egui::Key::Tab);
+        w.idle(2);
+        w.key(egui::Key::Tab);
+        w.idle(2);
+        assert_eq!(focused(&w), ok, "round the ring to ОК");
+        w.key(egui::Key::ArrowUp);
+        w.idle(2);
+        let up = focused(&w);
+        assert_ne!(up, cancel, "not round to Отмена");
+        assert_ne!(up, ok);
+        assert!(up.is_some() && (up == list || list.is_none()), "the list: {up:?} {list:?}");
+    }
+
+    /// The arrows' spans of the template's WS_GROUPs that mix kinds (the
+    /// original's dialog manager walks a span over every control in it; clone:
+    /// 537, 477). Each dialog family: print (347), the quick-analysis pages
+    /// (340, 536, 538, 539, 543), the finder (558), the pair dialog (554) and
+    /// the program settings (510) (#25).
+    #[test]
+    fn the_templates_mixed_spans_are_one_span_for_the_arrows() {
+        use crate::dialogs::{arrow_spans, GroupKind::{Check, Other, Push, Radio}};
+        let has = |w: &Win, title: &str, span: &[crate::dialogs::GroupKind]| {
+            let spans = arrow_spans(&w.ctx, title);
+            assert!(spans.iter().any(|s| s == span), "{title}: no span {span:?} in {spans:?}");
+        };
+        // 347 «Печать»: [Предв. просмотр] [OK, Отмена, five check boxes].
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Print);
+        w.idle(4);
+        has(&w, "Печать", &[Push, Push, Check, Check, Check, Check, Check]);
+        // The quick-analysis pages.
+        let page = |tab: app::AnalysisTab| {
+            let mut w = Win::new();
+            w.app.dispatch(app::Command::QuickAnalysis);
+            w.app.analysis_tab = tab;
+            w.idle(4);
+            w
+        };
+        let w = page(app::AnalysisTab::Formula);
+        has(&w, "fv_quick_sheet", &[Other, Push, Push, Push, Push, Push, Push, Push]);
+        let w = page(app::AnalysisTab::Symmetric);
+        has(&w, "fv_quick_sheet", &[Other, Check]);
+        let w = page(app::AnalysisTab::PhasePhase);
+        has(&w, "fv_quick_sheet", &[Other, Check]);
+        has(&w, "fv_quick_sheet", &[Radio, Radio, Other, Other, Other, Other]);
+        // 537: «Ic» with the 3Io radios; the two «Отключить» one span.
+        let w = page(app::AnalysisTab::Zero);
+        has(&w, "fv_quick_sheet", &[Other, Radio, Radio]);
+        has(&w, "fv_quick_sheet", &[Check, Check]);
+        // A disabled control takes up the span flag meant for it: with the
+        // voltages off the sheet's buttons stay their own span (review).
+        let mut w = page(app::AnalysisTab::Zero);
+        w.app.quick[crate::quick_ui::page_index(app::AnalysisTab::Zero).unwrap()].zero_u_off = true;
+        w.idle(4);
+        let spans = arrow_spans(&w.ctx, "fv_quick_sheet");
+        let with_push: Vec<_> = spans.iter().filter(|s| s.contains(&Push)).collect();
+        assert_eq!(with_push, vec![&vec![Push, Push]], "{spans:?}");
+        // The disabled «Отключить» keeps its place in the span: the other one
+        // stands alone and ↑ on it changes nothing (the original's dialog manager).
+        let mut w = page(app::AnalysisTab::Zero);
+        let q = crate::quick_ui::page_index(app::AnalysisTab::Zero).unwrap();
+        w.app.quick[q].zero_u_off = true;
+        w.idle(4);
+        let spans = arrow_spans(&w.ctx, "fv_quick_sheet");
+        let with_check: Vec<_> = spans.iter().filter(|s| s.contains(&Check)).collect();
+        assert_eq!(with_check, vec![&vec![Check]], "{spans:?}");
+        let before = w.app.quick[q].zero_i;
+        // Ia, Ib, Ic, «Расчетный», then the 3Io «Отключить» (the voltage side is off).
+        for _ in 0..4 {
+            w.key(egui::Key::Tab);
+        }
+        w.key(egui::Key::ArrowUp);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(w.app.quick[q].zero_i, before, "no arrow reached the 3Io radios");
+        // A disabled combo box keeps its place too: with 3Uo «Расчитанный из Uни,
+        // Uик» (Ua–Uc off) the voltage radios stay a span of their own, and ↓ on
+        // the 3Io radio does not reach them.
+        let mut w = page(app::AnalysisTab::Zero);
+        w.app.quick[q].zero_u = 2;
+        w.app.quick[q].zero_i = 2;
+        w.idle(4);
+        // (The 3Io combo box, enabled with the measured current, ends that span.)
+        has(&w, "fv_quick_sheet", &[Radio, Radio]);
+        has(&w, "fv_quick_sheet", &[Radio, Radio, Radio, Other]);
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(w.app.quick[q].zero_u, 2, "no arrow reached the voltage radios");
+        // 359: the tree, the name edit and Отмена are one span (OK is off).
+        let mut w = page(app::AnalysisTab::Formula);
+        w.app.open_formula_dlg();
+        w.idle(4);
+        has(&w, "fv_add_formula", &[Other, Other, Push, Push]);
+        let w = page(app::AnalysisTab::Phase);
+        has(&w, "fv_quick_sheet", &[Other, Radio, Radio]);
+        let w = page(app::AnalysisTab::Differential);
+        // «<<» is disabled on the first arm.
+        has(&w, "fv_quick_sheet", &[Other, Radio, Radio, Radio, Radio, Push]);
+        // 558 the finder.
+        let mut w = Win::new();
+        w.app.open_finder();
+        w.idle(4);
+        has(&w, "Поиск файлов", &[Push, Push, Push, Other, Other, Other, Other]);
+        has(&w, "Поиск файлов", &[Push, Other, Check]);
+        // 554 the pair dialog.
+        let mut w = Win::new();
+        let names: Vec<String> = vec!["A".into(), "B".into()];
+        w.app.diag.pair_dlg = Some(crate::diagram_ui::PairDialog { diff: true, pairs: Vec::new(), a: Some(names[0].clone()), b: Some(names[1].clone()), sel: None, list_focus: false });
+        w.idle(4);
+        has(&w, "Задать соответствие между дифференциальным током и током торможения", &[Push, Push, Other, Other, Push, Other]);
+        // («Удалить» is disabled with no row selected.)
+        // 510 the program's settings: the folder link and «...».
+        let mut w = Win::new();
+        w.app.show_settings = true;
+        w.idle(4);
+        // (No folder set: no link, «...» alone; with a folder the link joins it.)
+        has(&w, "Установка настроек программы", &[Push, Push]);
+        has(&w, "Установка настроек программы", &[Push]);
+    }
+
+    /// A bar is no dialog (clone: Tab goes nowhere in the original, a push
+    /// button outside a dialog takes no arrow): a frame control holding the
+    /// focus keeps Tab and the arrows from walking egui's focus on to another
+    /// widget, which Space would then press (#145, review).
+    #[test]
+    fn tab_and_arrows_do_not_walk_the_frames_controls() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        let setup = || {
+            let mut w = Win::new();
+            w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+            w.app.copy_channels_for_merge();
+            w.app.paste_channels_for_merge();
+            w.idle(3);
+            w
+        };
+        let status = |w: &Win| w.app.merge.as_ref().map(|m| m.status.clone());
+        // The method combo, then Tab, Space: nothing is pressed; Tab twice too.
+        for tabs in [1, 2] {
+            let mut w = setup();
+            let combo = w.app.focus_other[0];
+            w.press(Primary, combo.center(), combo.center());
+            w.key(egui::Key::Escape);
+            for _ in 0..tabs {
+                w.key(egui::Key::Tab);
+            }
+            w.key(egui::Key::Space);
+            assert_eq!(status(&w), Some(String::new()), "{tabs} Tab: «Синхронизация» not pressed, the bar stays");
+        }
+        // «Синхронизация» focused: →, ↓ and Tab move nothing, Space does not merge.
+        for key in [egui::Key::ArrowRight, egui::Key::ArrowDown, egui::Key::Tab] {
+            let mut w = setup();
+            let sync = w.app.focus_other[1];
+            w.press(Primary, sync.center(), sync.center() + Vec2::new(0.0, 200.0));
+            let focus = w.ctx.memory(|m| m.focused());
+            assert!(focus.is_some());
+            w.key(key);
+            assert_eq!(w.ctx.memory(|m| m.focused()), focus, "{key:?}");
+        }
+        let mut w = setup();
+        let sync = w.app.focus_other[1];
+        w.press(Primary, sync.center(), sync.center() + Vec2::new(0.0, 200.0));
+        w.key(egui::Key::ArrowRight);
+        w.key(egui::Key::Space);
+        assert!(w.app.merge.is_some(), "→ then Space does not reach «Объединить»");
+        // The tab list's ▾: Tab leaves the focus where it is.
+        let mut w = Win::new();
+        let strip = w.app.mdi_strips[0];
+        let list = Pos2::new(strip.right() - 10.0, strip.center().y);
+        w.press(Primary, list, list);
+        w.key(egui::Key::Escape);
+        let focus = w.ctx.memory(|m| m.focused());
+        assert!(focus.is_some());
+        w.key(egui::Key::Tab);
+        assert_eq!(w.ctx.memory(|m| m.focused()), focus, "Tab on ▾");
+    }
+
+    /// The ▾ list is an MFC popup menu: opened by Space, the arrows walk it
+    /// and Enter picks the row, which comes forward (#145, review).
+    #[test]
+    fn the_tab_lists_popup_is_walked_by_the_arrows() {
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Demo);
+        w.idle(3);
+        assert_eq!(w.app.active, Some(1));
+        let strip = w.app.mdi_strips[0];
+        let list = Pos2::new(strip.right() - 10.0, strip.center().y);
+        w.press(Primary, list, list);
+        w.key(egui::Key::Escape);
+        w.key(egui::Key::Space);
+        assert!(w.app.doc_list_open);
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::Enter);
+        w.idle(2);
+        assert!(!w.app.doc_list_open, "Enter picked and closed it");
+        assert_eq!(w.app.active, Some(0), "the first row (by title) is forward");
+    }
+
+    /// Insert's copy / paste kept for a text edit are the edit's own: the
+    /// frame's channel copy and paste ignore them (#26, review).
+    #[test]
+    fn inserts_events_kept_for_an_edit_are_not_the_frames() {
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(app::ChanKey::Analog(0));
+        w.ctx.data_mut(|d| d.insert_temp(egui::Id::new(winkeys::KEPT_FOR_EDIT), (1u8, 0u8)));
+        w.run(vec![egui::Event::Copy]);
+        assert!(!w.app.clip.available(), "Ctrl+Insert in an edit copies no channel");
+        w.run(vec![egui::Event::Copy]);
+        assert!(w.app.clip.available(), "a plain copy still does");
     }
 
     /// A slid-out auto-hidden pane is a child of the frame, which a modal

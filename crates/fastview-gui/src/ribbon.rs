@@ -2452,6 +2452,11 @@ impl App {
                             Target::Help => {
                                 let r = self.kt_rects.iter().find(|(t, ..)| *t == Target::Help).map(|(_, r, _)| *r).unwrap_or(egui::Rect::ZERO);
                                 self.open_top_menu(ctx, TopMenu::Help, r);
+                                // The key tip posts Home to the menu: its first
+                                // row is highlighted at once (clone).
+                                if let Some((_, m)) = self.top_menu.as_mut() {
+                                    m.hot = Some(0);
+                                }
                             }
                             Target::Recent(n) => {
                                 if let Some(path) = self.mru.get(n).cloned() {

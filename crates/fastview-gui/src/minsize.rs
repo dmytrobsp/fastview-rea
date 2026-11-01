@@ -7,7 +7,8 @@
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
-use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect, IsIconic, IsZoomed, SWP_NOSIZE, WINDOWPOS, WM_WINDOWPOSCHANGING};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
+use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect, IsIconic, IsZoomed, SWP_NOSIZE, WINDOWPOS, WM_KEYDOWN, WM_SYSKEYDOWN, WM_WINDOWPOSCHANGING};
 
 /// Subclass `hwnd` (once; later calls for it do nothing).
 pub fn install(hwnd: HWND) {
@@ -43,6 +44,11 @@ fn min_window(hwnd: HWND) -> (i32, i32) {
 }
 
 unsafe extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _id: usize, _data: usize) -> LRESULT {
+    // The key presses egui-winit turns into copy / paste events (`winkeys`).
+    if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
+        let held = |vk: u16| GetKeyState(vk as i32) < 0;
+        crate::winkeys::note_key_down(wparam as u32, lparam & (1 << 30) != 0, held(VK_CONTROL), held(VK_SHIFT), held(VK_MENU));
+    }
     // A minimised or maximised window keeps the size Windows gives it.
     if msg == WM_WINDOWPOSCHANGING && lparam != 0 && IsIconic(hwnd) == 0 && IsZoomed(hwnd) == 0 {
         let wp = &mut *(lparam as *mut WINDOWPOS);
