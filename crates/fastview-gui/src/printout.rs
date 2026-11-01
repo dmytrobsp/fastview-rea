@@ -499,11 +499,16 @@ impl App {
                 let s = diagram_scale(job.attrib_dpi);
                 let to_printer = job.attrib_dpi / dev.dpi;
                 let page = (!preview).then(|| rdev.min.to_vec2() * to_printer / s);
-                let size = Vec2::new(rw as f32, rh as f32) * to_printer / s;
+                let mut size = Vec2::new(rw as f32, rh as f32) * to_printer / s;
                 let kd = s / to_printer;
+                // The vector page's legend starts in the page's own coordinates
+                // when it does not fit (`0x490d4b`, #191): on a real print the
+                // image reaches the page's left edge, R at `ext`.
+                let ext = if pane == Pane::Vector { page.map_or(0.0, |o| o.x) } else { 0.0 };
+                size.x += ext;
                 // GDI's pens: none under a device pixel, unfeathered.
-                let img = crate::diagram_ui::with_print_scale(Some(s), page, || crate::diagram_ui::with_pixel(1.0 / kd, || raster::crisp(|| self.render_diagram(fonts, job.di, pane, size, kd))));
-                canvas.blit(&img, rdev.min.x as i64, rdev.min.y as i64);
+                let img = crate::diagram_ui::with_print_scale(Some(s), page, || crate::diagram_ui::with_print_ext(ext, || crate::diagram_ui::with_pixel(1.0 / kd, || raster::crisp(|| self.render_diagram(fonts, job.di, pane, size, kd)))));
+                canvas.blit(&img, rdev.min.x as i64 - (ext * kd).round() as i64, rdev.min.y as i64);
                 // At s = 1 the circle / differential painter's screen branch
                 // also paints its 5 px splitter strip after RestoreDC: a
                 // PatBlt at the DC's (0, 0), as wide as the live window
@@ -767,6 +772,48 @@ mod tests {
         // The pen is `s` wide, centred on the bar's edge, and the baseline (`s / 2` wide) covers its lower half
         // (the original on a clone at 600 dpi: three rows of colour above the baseline; with this test's page offset two).
         assert!(thin.iter().all(|&r| r <= s / 2), "a flat bar is the pen's width centred on its edge, half under the baseline: {:?}", thin.iter().max());
+    }
+
+    /// #191 (clone): on a real print a vector legend that does not fit starts at the page's `6·s`, left of R
+    /// (the painter gets R in page coordinates: `0x490d4b`); in the preview, whose bitmap starts at R, and
+    /// when it fits (centred in R) the start is R's.
+    #[test]
+    fn the_vector_legend_that_does_not_fit_starts_at_the_pages_origin_in_a_print() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        {
+            let d = &mut app.docs[0];
+            for (i, c) in d.osc.analog.iter_mut().enumerate() {
+                c.id = format!("Channel number {i} of a long feeder name that cannot fit a page");
+            }
+            for c in &mut d.chans {
+                c.on_vector = true;
+            }
+        }
+        app.vec_show_values = false;
+        let colour = app.docs[0].chans[0].color;
+        app.docs[0].print_ticks = [false, false, true, false, false];
+        let setup = PageSetup::default();
+        let dev = Device::sheet(&setup, 300.0);
+        let job = app.print_job(0, dev, setup);
+        let s = diagram_scale(job.attrib_dpi) as usize;
+        let r = dev.margin_rect(&setup);
+        let fonts = egui::FontDefinitions::default();
+        // The first swatch's column: the leftmost pixel of the first channel's colour in the legend's rows
+        // (below the circle, above the footer).
+        let first = |c: &Canvas, preview: bool| {
+            let want = [colour.r(), colour.g(), colour.b()];
+            let rows = (r.max.y as usize - 40 * s)..(r.max.y as usize);
+            let from = if preview { r.min.x as usize } else { 0 };
+            let at = (from..c.w).find(|&x| rows.clone().any(|y| c.get(x, y) == want));
+            at.expect("the legend's first swatch")
+        };
+        let real = app.render_page(&fonts, &job, 0, false);
+        let x = first(&real, false);
+        assert!(x < r.min.x as usize && (x as i64 - 6 * s as i64).abs() <= 2, "a print starts at the page's 6·s = {}: {x} (R at {})", 6 * s, r.min.x);
+        let preview = app.render_page(&fonts, &job, 0, true);
+        let x = first(&preview, true);
+        assert!((x as i64 - (r.min.x as i64 + 6 * s as i64)).abs() <= 2, "the preview starts at R + 6·s: {x}");
     }
 
     #[test]

@@ -195,7 +195,17 @@ thread_local! {
     /// One pixel of the device drawn on, in points, while a page renders:
     /// GDI draws a pen thinner than a device pixel one pixel wide in its
     /// full colour (the preview's pens of a few printer pixels).
+    static PRINT_EXT: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
     static PIXEL: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+}
+
+/// Run `f` with the page's strip left of R drawn too (a real print of the
+/// vector page: its legend can start there), `ext` points wide.
+pub fn with_print_ext<R>(ext: f32, f: impl FnOnce() -> R) -> R {
+    let old = PRINT_EXT.with(|c| c.replace(ext));
+    let r = f();
+    PRINT_EXT.with(|c| c.set(old));
+    r
 }
 
 /// Run `f` with no pen thinner than `px` points (a device pixel).
@@ -1454,9 +1464,13 @@ impl App {
     /// Vector diagram (`0x490360`): no zoom, pan or wheel; options from the
     /// toolbar and MENU 355.
     pub fn vector_ui(&mut self, ui: &mut egui::Ui) {
-        let full = ui.available_rect_before_wrap();
-        let resp = ui.allocate_rect(full, egui::Sense::click());
+        let avail = ui.available_rect_before_wrap();
+        // A real print: the canvas starts at the page's left edge and R at `ext`.
+        let ext = PRINT_EXT.with(std::cell::Cell::get);
+        let full = Rect::from_min_max(avail.min + Vec2::new(ext, 0.0), avail.max);
+        let resp = ui.allocate_rect(avail, egui::Sense::click());
         let painter = ui.painter_at(full);
+        let wide = ui.painter().clone();
         painter.rect_filled(full, 0.0, Color32::WHITE);
         self.window_menu_click(&resp, Window::Vector);
         let (radians, dir_only, show_values) = (self.vec_radians, self.vec_direction_only, self.vec_show_values);
@@ -1540,10 +1554,16 @@ impl App {
         } else {
             // The legend: one centred row (from x = m when it does not fit).
             let total: f32 = shown.iter().map(|c| measure(&c.0).x + 2.0 * m + sq).sum();
-            let mut x = dg::vector_legend_x(full.left(), full.width(), total, m);
+            // (On a real print the origin is the page's: the DC's, `0x490d4b`.)
+            let real_print = PRINT_PAGE.with(std::cell::Cell::get).is_some();
+            let origin = if real_print { avail.left() } else { full.left() };
+            let lp = if real_print { &wide } else { &painter };
+            let mut x = dg::vector_legend_x(full.left(), origin, full.width(), total, m);
             for c in &shown {
-                swatch(Rect::from_min_size(Pos2::new(x, lay.b + dpx(2.0)), Vec2::splat(sq)), c.3);
-                painter.text(Pos2::new(x + sq + m, lay.b), egui::Align2::LEFT_TOP, &c.0, font(), ink);
+                let sw = Rect::from_min_size(Pos2::new(x, lay.b + dpx(2.0)), Vec2::splat(sq));
+                lp.rect_filled(sw, 0.0, c.3);
+                lp.px_rect_stroke(sw, 0.0, black);
+                lp.text(Pos2::new(x + sq + m, lay.b), egui::Align2::LEFT_TOP, &c.0, font(), ink);
                 x += measure(&c.0).x + 2.0 * m + sq;
             }
         }

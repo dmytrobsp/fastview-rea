@@ -422,13 +422,15 @@ pub fn flat_bar_pen(s: i32, height: i32) -> Option<i32> {
 
 /// The one-row legend's start x (`0x490d2f`–`0x490d4f`): centred by a
 /// truncating halving while the window is strictly wider than the row,
-/// else m from the window's left edge (a row that does not fit overflows
-/// to the right only).
-pub fn vector_legend_x(left: f32, width: f32, total: f32, m: f32) -> f32 {
+/// else `m` from `origin` — the window's own origin on screen and in the
+/// preview, but the DC's origin on a real print, where the painter gets
+/// R in page coordinates and the start is the page's `m`, left of R
+/// (clone, #191). A row that does not fit overflows to the right only.
+pub fn vector_legend_x(left: f32, origin: f32, width: f32, total: f32, m: f32) -> f32 {
     if width > total {
         left + ((width - total) / 2.0).trunc()
     } else {
-        left + m
+        origin + m
     }
 }
 
@@ -782,10 +784,13 @@ mod tests {
 
     #[test]
     fn vector_legend_starts_m_from_the_window_when_it_does_not_fit() {
-        assert_eq!(vector_legend_x(740.0, 400.0, 301.0, 6.0), 789.0);
+        assert_eq!(vector_legend_x(740.0, 740.0, 400.0, 301.0, 6.0), 789.0);
         // Equal widths do not centre; a wider row starts at left + m.
-        assert_eq!(vector_legend_x(740.0, 400.0, 400.0, 6.0), 746.0);
-        assert_eq!(vector_legend_x(740.0, 400.0, 900.0, 6.0), 746.0);
+        assert_eq!(vector_legend_x(740.0, 740.0, 400.0, 400.0, 6.0), 746.0);
+        assert_eq!(vector_legend_x(740.0, 740.0, 400.0, 900.0, 6.0), 746.0);
+        // A real print: R sits 72 points into the page and the start is the page's m.
+        assert_eq!(vector_legend_x(72.0, 0.0, 400.0, 900.0, 6.0), 6.0);
+        assert_eq!(vector_legend_x(72.0, 0.0, 400.0, 301.0, 6.0), 121.0, "centred in R as before");
     }
 
     #[test]
