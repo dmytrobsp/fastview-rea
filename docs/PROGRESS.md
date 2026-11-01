@@ -4,7 +4,7 @@ The current state, in short. This page is rewritten when things change, never ap
 What happened before is in the milestones' ledgers ([milestones/](milestones/README.md)), the record of the original
 ([original/](original/README.md)), [history/](history/) and `git log`.
 
-Last rewritten: 2026-11-01 (v0.7.0 released: milestone 0.7.0, the follow-ups of 0.6.0, verification debt and older bugs).
+Last rewritten: 2026-11-02 (milestone 0.7.1 paused at a checkpoint for a usage-limit reset; v0.7.0 is the latest release).
 
 ## Latest release
 
@@ -22,9 +22,10 @@ Last rewritten: 2026-11-01 (v0.7.0 released: milestone 0.7.0, the follow-ups of 
 
 ## In flight
 
-- **Milestone 0.7.1** (plan and ledger: [milestones/0.7.1.md](milestones/0.7.1.md)): 0.7.0's follow-ups that need no
-  maintainer input — tooling (clone hygiene, a pinned toolchain), keys, formats, scaling at 175 / 200 %, panes, menus and
-  system dialogs, formulas, print, the scenarios not yet run side by side, the record's ND leftovers.
+- **Milestone 0.7.1** (plan and ledger: [milestones/0.7.1.md](milestones/0.7.1.md)) — **paused 2026-11-02 for a usage-limit
+  reset** at a clean checkpoint: six of ten units merged into `milestone/0.7.1` (tooling, analysis-2, formats-2, panes-2,
+  keys-2, platform-2), record-2 applied on main; print-2 (PR #213, review asks for small fixes), scaling-2 (PR #218)
+  and verify-ui-2 (PR #217) pushed and waiting for review. The ledger's checkpoint lists the exact next steps.
 
 ## Next topics
 
