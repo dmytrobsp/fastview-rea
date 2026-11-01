@@ -275,7 +275,12 @@ impl App {
             }
             if win_button_en(ui, dlu(client, 258, 17, 60, 14), "Свойства...", false, cfg!(windows) && real.is_some() && !busy).clicked() {
                 if let Some(p) = real {
-                    spool::properties_start(&p);
+                    // Our print dialog's corner in window pixels: the driver's
+                    // dialog opens beside it, as the original's does.
+                    let corner = ctx.memory(|m| m.area_rect(egui::Id::new("Печать"))).map_or(client.min, |r| r.min);
+                    let ppp = ctx.pixels_per_point();
+                    let dialog_at = (corner.x * ppp, corner.y * ppp);
+                    spool::properties_start(&p, dialog_at);
                     dlg.details = None;
                 }
             }
