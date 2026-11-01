@@ -32,7 +32,7 @@ const VSCROLL_W: f32 = 17.0;
 /// The view's window scroll bars at the system DPI: SM_CXVSCROLL / SM_CYHSCROLL
 /// grow for a system-DPI-aware window (VM: 17, 21, 26 px at 100, 125,
 /// 150 %); what the view paints in them stays its own.
-fn scroll_w() -> f32 {
+pub(crate) fn scroll_w() -> f32 {
     crate::dpi::measured(VSCROLL_W, 21.0, 26.0)
 }
 
@@ -2270,10 +2270,11 @@ impl App {
             k.count = 0;
             k.enabled.clear();
         });
-        let area = egui::Area::new(egui::Id::new("fv_lane_menu").with(menu.serial))
+        let menu_id = egui::Id::new("fv_lane_menu").with(menu.serial);
+        let area = egui::Area::new(menu_id)
             .kind(egui::UiKind::Menu)
             .order(egui::Order::Foreground)
-            .fixed_pos(menu.pos)
+            .fixed_pos(crate::popmenu::menu_pos(ctx, menu_id, menu.pos))
             .constrain(true)
             .show(ctx, |ui| {
                 crate::popmenu::mfc_frame(ui, |ui| {

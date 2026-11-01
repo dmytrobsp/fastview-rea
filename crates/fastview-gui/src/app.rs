@@ -1897,6 +1897,8 @@ pub struct App {
     pub status_hidden: [bool; 7],
     /// That menu, open at a point since a pass.
     pub status_menu: Option<(egui::Pos2, u64)>,
+    /// The size grip's box while a normal window draws it (a press there resizes: south-east).
+    pub status_grip: Option<egui::Rect>,
     /// Commands from a menu that open a system file dialog, run in a
     /// later pass once the closed menu has been painted (the dialog blocks
     /// the frame loop).
@@ -2061,6 +2063,7 @@ impl App {
             splash_until: None,
             status_hidden: [false; 7],
             status_menu: None,
+            status_grip: None,
             deferred: Vec::new(),
             status_panes: ["Верт. визир 1:", "Верт. визир 2:", "Разница в. визиров:", "Гор. визир 1:", "Гор. визир 2:", "Разница г. визиров:"].map(String::from),
             dlg: Default::default(),

@@ -169,11 +169,16 @@ const FRAME: Color32 = Color32::from_rgb(200, 200, 200);
 const AXES: Color32 = Color32::from_rgb(150, 150, 150);
 const SCROLL_W: f32 = 16.0;
 
-/// The plane windows' scroll bars at the system DPI: the same system
-/// metric as the lanes' (SM_CXVSCROLL, VM: 21 / 26 px at 125 / 150 %), not
-/// the 100 % width scaled (20 / 24).
+/// The plane windows' scroll bars at the system DPI: the system metric less the pixel the plane's own edge
+/// takes (SM_CXVSCROLL 17 / 21 / 26, the bars on a clone 16 / 20 / 25 px at 100 / 125 / 150 %): not the 100 %
+/// width scaled (24 at 150 %), not the lanes' metric.
 pub(crate) fn scroll_w() -> f32 {
-    crate::dpi::measured(SCROLL_W, 21.0, 26.0)
+    // One rule with the lanes' (17 / 21 / 26 = MulDiv(17, dpi, 96)): less the plane's own edge pixel.
+    if crate::dpi::unscaled() {
+        SCROLL_W
+    } else {
+        crate::lanes::scroll_w() - 1.0
+    }
 }
 
 fn stroke(w: f32, c: Color32) -> Stroke {
@@ -2780,11 +2785,11 @@ mod tests {
         assert!((d.osc.analog[1].samples[1] - 1000.0 * raw.analog[1].samples[1]).abs() < 1e-6);
     }
 
-    /// #78: the plane windows' scroll bars are the system's metric, 21 / 26
-    /// px at 125 / 150 % (the lanes' too), not the 100 % width scaled.
+    /// #141 (clone, a zoomed differential plane): the plane windows' scroll bars are 16 / 20 / 25 px at 100 /
+    /// 125 / 150 % — the system metric less one (the lanes' are 17 / 21 / 26), not the 100 % width scaled.
     #[test]
     fn the_plane_scroll_bars_follow_the_system_metric() {
-        for (dpi, w) in [(96, 16.0), (120, 21.0), (144, 26.0)] {
+        for (dpi, w) in [(96, 16.0), (120, 20.0), (144, 25.0)] {
             crate::dpi::set(dpi);
             assert_eq!(scroll_w(), w, "{dpi}");
         }
