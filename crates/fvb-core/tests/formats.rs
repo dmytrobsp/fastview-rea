@@ -399,7 +399,7 @@ fn binary_record_size_follows_the_sample_number_check() {
     assert_eq!(first(&load("n24_std", 24, "BINARY", &rows(40, 24)).unwrap()), want(40));
     // binary32 has no fallback: three rows not numbered 1, 2, 3 is error 330.
     assert!(matches!(load("z32", 1, "binary32", &vec![0u8; 34 * 40]), Err(ComtradeError::Format)), "error 330");
-    assert!(matches!(load("z32_three", 1, "binary32", &vec![0u8; 34 * 3]), Err(ComtradeError::Format)), "error 330 with three rows");
+    assert!(matches!(load("z32_three", 1, "binary32", &[0u8; 34 * 3]), Err(ComtradeError::Format)), "error 330 with three rows");
     // The original faults with fewer than three records (or 1, 2, 3 and no fourth);
     // ours reads them at the computed size.
     assert_eq!(first(&load("two", 1, "BINARY", &rows(2, 22)).unwrap()), want(2));
