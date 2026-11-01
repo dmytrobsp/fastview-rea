@@ -696,6 +696,9 @@ impl App {
             let list_id = ui.id().with("fv_doc_list");
             let btn = ui.interact(hit, list_id.with("btn"), egui::Sense::click());
             self.focus_other.push(hit);
+            if let Some(b) = self.list_buttons.get_mut(g) {
+                *b = hit;
+            }
             // A window of the frame: a press gives it the keyboard focus,
             // where Space and Enter (egui's click by key) open the list (clone) and the arrows do
             // nothing; Esc only closes the list.
@@ -737,7 +740,7 @@ impl App {
                     open = None;
                 }
             }
-            self.doc_list_open = open.is_some();
+            self.doc_list_open |= open.is_some();
             ui.data_mut(|d| match open {
                 Some(o) => d.insert_temp(list_id, o),
                 None => d.remove::<u64>(list_id),
@@ -2142,6 +2145,7 @@ mod window_tests {
         assert_eq!(w.app.block_idx, 0, "«Нет»");
         let grid = *w.app.pane_grid.first().expect("the circle pane's grid");
         let at = Pos2::new(grid.left() + 30.0, grid.top() + 9.0);
+        w.app.active_doc_mut().unwrap().set.modified = false;
         w.press(Primary, at, at);
         w.key(egui::Key::F4);
         w.idle(1);
@@ -2149,6 +2153,9 @@ mod window_tests {
         w.key(egui::Key::ArrowDown);
         w.key(egui::Key::Enter);
         w.idle(2);
+        // Nothing is saved for a keyed-in block: the document stays unmodified
+        // (clone: closed right after, no save prompt) — #24's SelectedBlock.
+        assert!(!w.app.active_doc().unwrap().set.modified);
         let names: Vec<String> = w.app.library.blocks.iter().map(|b| b.name.clone()).collect();
         assert_eq!((w.app.block_idx, w.app.block_text.as_deref()), (0, Some(names[2].as_str())), "the text only");
         assert!(w.app.chars.is_empty(), "no block's rows");
@@ -5042,6 +5049,30 @@ mod window_tests {
             w.idle(2);
             assert_eq!(open(&w), opens, "{key:?}");
         }
+    }
+
+    /// A press on the ▾ of a document group that is not the active one
+    /// (clone, two groups): the button holds the focus and the active
+    /// document stays (the title does not change); a pick from its list
+    /// activates that document, which focuses its view (#148).
+    #[test]
+    fn the_list_button_of_another_document_group_keeps_the_focus() {
+        use app::CopyFocus;
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Demo);
+        w.idle(2);
+        w.app.new_group_after(1, 0, true);
+        w.idle(3);
+        assert_eq!(w.app.group_count(), 2);
+        let active = w.app.active;
+        let strip = w.app.mdi_strips[0];
+        let list = Pos2::new(strip.right() - 10.0, strip.center().y);
+        w.press(Primary, list, list);
+        w.idle(3);
+        assert_eq!(w.app.active, active, "the press activates nothing");
+        assert_eq!(w.app.copy_focus, CopyFocus::Other, "the button holds the focus");
+        assert!(w.app.doc_list_open, "its list is open");
     }
 
     /// A slid-out auto-hidden pane is a child of the frame, which a modal

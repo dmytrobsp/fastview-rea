@@ -1259,7 +1259,10 @@ impl App {
         // mouse activation), and the view takes the click as well (VM: the
         // визир moves).
         let press = ctx.input(|i| i.pointer.any_pressed().then(|| i.pointer.interact_pos()).flatten());
-        if let Some(p) = press.filter(|&p| ctx.layer_id_at(p).is_some_and(|l| l.order == egui::Order::Background)) {
+        // Not on a group's ▾ button: that press activates nothing (clone —
+        // the title stays, the button holds the focus).
+        let on_list_button = |p: egui::Pos2| self.list_buttons.iter().any(|r| r.contains(p));
+        if let Some(p) = press.filter(|&p| ctx.layer_id_at(p).is_some_and(|l| l.order == egui::Order::Background) && !on_list_button(p)) {
             if let Some(h) = self.mdi_rects.iter().position(|r| r.contains(p)) {
                 if self.active_doc().map(|d| d.mdi_group) != Some(h) {
                     if let Some(f) = self.group_front(h) {
@@ -1278,6 +1281,8 @@ impl App {
             self.layout_groups(ui.max_rect());
             let n = self.group_count();
             self.mdi_strips = vec![egui::Rect::NOTHING; n];
+            self.list_buttons = vec![egui::Rect::NOTHING; n];
+            self.doc_list_open = false;
             // The active group last: what the frame keeps of a view this
             // pass is the active document's.
             let bold = self.active;

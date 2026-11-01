@@ -1640,8 +1640,10 @@ pub struct App {
     /// enabled combo boxes and buttons of the merge bar, the document
     /// tabs' ▾ button) this frame: `CopyFocus::Other`.
     pub focus_other: Vec<egui::Rect>,
-    /// The document tabs' ▾ list was open at the last frame.
+    /// A document group's ▾ list was open at the last frame.
     pub doc_list_open: bool,
+    /// Each document group's ▾ button as last drawn.
+    pub list_buttons: Vec<egui::Rect>,
     /// The active document (its serial) the copy focus was last settled
     /// for: a change is an MDI activation, which focuses its view.
     pub focus_doc: Option<u64>,
@@ -1868,6 +1870,7 @@ impl App {
             doc_tab_rects: Vec::new(),
             focus_other: Vec::new(),
             doc_list_open: false,
+            list_buttons: Vec::new(),
             focus_doc: None,
             pane_grid: Vec::new(),
             view_pointer: None,
