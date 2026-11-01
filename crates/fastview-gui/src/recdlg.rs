@@ -579,6 +579,14 @@ impl Doc {
         self.osc.period_of(self.computed.get(j).map_or(0.0, |c| c.own_rate)).max(2)
     }
 
+    /// The full recompute that ends in the definition batch (`0x42e540` → `0x415780`, «Параметры файла»; «Объединить»
+    /// `0x47e8c0`): rows without a channel become channels; returns the batch's failure, the box to show (#174).
+    pub fn recompute_with_batch(&mut self) -> Option<String> {
+        self.batch_makes_rows = true;
+        self.recompute_signals();
+        self.batch_error.take()
+    }
+
     pub fn recompute_signals(&mut self) {
         let roles = (self.analysis.u_abc, self.analysis.i_abc, self.analysis.calc_ib);
         let primary = self.primary_values();
@@ -838,7 +846,9 @@ impl App {
             if st.correction as i32 != d.osc.freq_sel {
                 d.osc.freq_sel = st.correction as i32;
                 d.set.modified = true;
-                d.recompute_signals();
+                if let Some(m) = d.recompute_with_batch() {
+                    self.dlg.push_alert(m);
+                }
             }
             // «Закрыть» (`0x449f40`) ends in the refresh-all (`0x44a294`, `0x44a2ed`).
             self.refresh_blocks();
@@ -879,8 +889,11 @@ impl App {
             self.dlg.push_alert(fvb_core::comtrade::ComtradeError::Format.to_string());
             return Err(false);
         }
-        d.recompute_signals();
+        let failed = d.recompute_with_batch();
         d.set.modified = true;
+        if let Some(m) = failed {
+            self.dlg.push_alert(m);
+        }
         self.run_omp_silent(ai);
         Ok(())
     }

@@ -230,12 +230,15 @@ misbehaves and the better behaviour is obvious (the maintainer,
   the noise and three below a ripple of 1e-6 of the level, so real signals, near-constant ones included, keep their
   labels. Reason: the maintainer's decision (2026-10-31). The «% of RMS» mode is untouched (its norm is the level).
 - **Quick analysis on crafted input: a header-only `.osc` with a formula, and page 539 with two stored reduction methods (#193).**
-  The original's behaviour there is undefined. (1) Its `.osc` reader (`0x4524b0`) has no zero-sample check (only the
-  `.cfg` / `.cff` loader has one, `0x450bc1`), so a header-only `.osc` loads with no samples; a formula over it runs
-  the batch (`0x415780`) with zero samples, the evaluator never runs, and the unit walk (`0x415bd0`, `0x419800`) starts
-  from the position an earlier evaluation left (the tokenizer does not reset it, only the per-sample evaluate does,
-  `0x419997`). (2) A `.set` that stores two 539 reduction methods makes the formulas outnumber the names list (one
-  set per arm); `0x4167f0` pairs them by index with no bounds check (`0x416c61`-`0x416c9d`) and reads past the names
-  vector (uninitialised heap: garbage or a crash). Ours: the first gives empty channels with the unit from the
-  formula's own walk; the second names the extra lines «_2», «_3»... Reason: undefined behaviour of the original on
-  input only a hand-made `.osc` / `.set` produces; a defined result is better than garbage or a crash.
+  (1) The original's `.osc` reader (`0x4524b0`) has no zero-sample check (only the `.cfg` / `.cff` loader has one,
+  `0x450bc1`), so a header-only `.osc` loads with no samples. A formula over it runs the batch (`0x415780`) with zero
+  samples: the evaluator never runs, and the unit walk (`0x415bd0`) reads the token at the position an earlier
+  evaluation left (only the per-sample evaluate resets it, `0x419997`; the tokenizer does not). The token getter
+  (`0x419800`) is bounds-checked: a position past the formula's tokens throws string 343 «Синтаксическая ошибка в
+  формуле», an in-range bracket token becomes the unit. So the result depends on the definition evaluated before it
+  in the session: a spurious syntax-error box or a wrong unit (the manager's initial position was not read).
+  Ours always walks the formula from its start: empty channels with the formula's own unit, no spurious error.
+  (2) A `.set` that stores two 539 reduction methods makes the formulas outnumber the names list (one set per arm);
+  `0x4167f0` pairs them by index with no bounds check (`0x416c61`-`0x416c9d`) and reads past the names vector:
+  undefined (garbage or a crash). Ours names the extra lines «_2», «_3»... Reason: both are reachable only through a
+  hand-made `.osc` / `.set`; a defined, error-free result beats a session-dependent fault or undefined behaviour.

@@ -1076,7 +1076,8 @@ impl Doc {
     /// `0x415780` over the definition list in the list's order: each formula channel is recomputed in place; with
     /// `create_loose` the rows without a channel become channels (at the block's end, as a new formula is). A
     /// definition's name guard (`0x419074`) covers the names after it in the list, then `new_names`. A failure ends
-    /// the walk (the ones before keep their new values, the channels it created go again, `0x416f1b`).
+    /// the walk (the ones before keep their new values; the channels it created go again with `rollback`, the quick
+    /// analysis's `0x416f1b`, else they stay).
     fn evaluate_formula_list_before(&mut self, show_primary: bool, new_names: &[String], create_loose: bool, rollback: bool) -> Result<(), fvb_core::expr::FormulaError> {
         let is_def = |c: &Computed| crate::setfile::is_formula(c);
         let seq = self.definition_list();
@@ -1135,6 +1136,11 @@ impl Doc {
             if rollback && !created.is_empty() {
                 self.computed.truncate(len0);
                 self.loose_defs = loose0;
+                self.channels_changed();
+            } else if !created.is_empty() {
+                // No roll-back: the channels made stay, registered as the adders `0x42e940` / `0x42e810` do
+                // (frequency candidates, colours); their rows are no longer definitions without a channel.
+                self.loose_defs.retain(|(n, _)| !created.contains(n));
                 self.channels_changed();
             }
             return Err(e);
@@ -4786,6 +4792,7 @@ mod tests {
         bad(&mut app);
         app.after_flag_command(crate::chansel::ChanFlag::Invert);
         assert_eq!(app.dlg.alerts.len(), 1, "invert");
+        assert!(computed_names(&app).contains(&"L1".to_string()), "no roll-back on the recompute path either");
         let mut app = kept_row_app();
         bad(&mut app);
         app.set_primary_values(true);
@@ -4793,6 +4800,86 @@ mod tests {
         // A batch that succeeds shows nothing.
         let mut app = kept_row_app();
         app.run_definition_batch();
+        assert!(app.dlg.alerts.is_empty());
+    }
+
+    /// #193: with two stored reduction methods the formulas outnumber the names list (one «прив.» set per arm); the
+    /// original pairs by index with no bounds check (`0x4167f0`, `0x416c61`: a read past the vector). «Рассчитать»
+    /// in ours gives every channel a defined, distinct name, the extra lines `_2`.
+    #[test]
+    fn two_stored_methods_name_every_added_channel() {
+        let mut app = demo_app();
+        let mut sec = fvb_core::recset::SetNode::default();
+        let opt = sec.child_mut("legOption");
+        opt.set_int("byPowerState", 1);
+        opt.set_int("byCastCoeffState", 1);
+        let page = crate::quick_ui::page_index(AnalysisTab::Differential).unwrap();
+        crate::quick_ui::load_page(page, &mut app.quick[page], &mut sec, &[]);
+        for a in &mut app.quick[page].arms {
+            a.currents = ["Ia".into(), "Ib".into(), "Ic".into()];
+        }
+        app.analysis_tab = AnalysisTab::Differential;
+        app.quick_calc();
+        assert!(app.dlg.alerts.is_empty(), "{:?}", app.dlg.alerts);
+        let names = computed_names(&app);
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert!(names.len() > 6 && sorted.len() == names.len(), "distinct: {names:?}");
+        assert!(names.iter().any(|n| n.ends_with("_2")), "{names:?}");
+    }
+
+    /// A partial batch (#174): the channels made before the failing row stay and are registered as the adders do
+    /// (`0x42e940`, `0x42e810`: the frequency candidates), and their rows are no longer loose definitions.
+    #[test]
+    fn a_partial_batch_registers_the_channels_it_made() {
+        let mut app = kept_row_app();
+        app.active_doc_mut().unwrap().loose_defs.push(("F1".into(), "Ua[Hz]".into()));
+        app.active_doc_mut().unwrap().loose_defs.push(("Q1".into(), "NoSuchChannel+1".into()));
+        app.run_definition_batch();
+        assert_eq!(app.dlg.alerts.len(), 1);
+        let d = app.active_doc().unwrap();
+        assert!(d.computed.iter().any(|c| c.name == "F1"));
+        assert!(d.osc.extra_freq.iter().any(|e| e.name == "F1"), "{:?}", d.osc.extra_freq);
+        assert_eq!(d.loose_defs, [("Q1".to_string(), "NoSuchChannel+1".to_string())]);
+    }
+
+    /// A recompute that is no batch command stays silent and leaves nothing for a later one (#174).
+    #[test]
+    fn a_plain_recompute_shows_no_batch_box() {
+        let mut app = kept_row_app();
+        app.active_doc_mut().unwrap().loose_defs.push(("Q1".into(), "NoSuchChannel+1".into()));
+        let ai = app.active.unwrap();
+        app.recompute_doc(ai);
+        assert!(app.dlg.alerts.is_empty());
+        assert!(app.docs[ai].batch_error.is_none());
+    }
+
+    /// «Параметры файла» (`0x44a25d` → `0x42e540` → `0x415780`) and «Объединить» (`0x47e8c0`) run the batch too: a
+    /// failing definition is a box, and the rows kept without a channel become channels.
+    #[test]
+    fn file_parameters_and_merge_run_the_batch() {
+        let bad = |app: &mut App| app.active_doc_mut().unwrap().loose_defs.push(("Q1".into(), "NoSuchChannel+1".into()));
+        let mut app = kept_row_app();
+        bad(&mut app);
+        let ai = app.active.unwrap();
+        app.apply_file_rate(ai, "1250").unwrap();
+        assert_eq!(app.dlg.alerts.len(), 1, "rate");
+        assert!(computed_names(&app).contains(&"L1".to_string()));
+        assert!(app.docs[ai].batch_error.is_none());
+        let mut app = kept_row_app();
+        bad(&mut app);
+        app.docs[ai].osc.freq_sel = 0;
+        let mut app2 = app;
+        app2.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app2.copy_channels_for_merge();
+        app2.paste_channels_for_merge();
+        app2.merge_records();
+        assert_eq!(app2.dlg.alerts.len(), 1, "merge");
+        assert!(computed_names(&app2).contains(&"L1".to_string()));
+        // A clean batch shows nothing.
+        let mut app = kept_row_app();
+        app.apply_file_rate(ai, "1250").unwrap();
         assert!(app.dlg.alerts.is_empty());
     }
 
