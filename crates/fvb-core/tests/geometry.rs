@@ -60,9 +60,20 @@ fn characteristic_extent_in_whole_units() {
     };
     // (−1.5, −0.2)…(4.2, 3.1): x −1…4, y 0…3 → 4.
     assert_eq!(ext(&square(-1.5, -0.2, 4.2, 3.1, "")), 4.0);
-    // A circle r 2.3 at the origin: ⌊−2.3⌋ = −3 (nearest would give 2; the
-    // right edge, ⌈2.3⌉ − 1 = 2, GDI leaves out).
-    assert_eq!(ext(r#"<circle mode="on" radius="2.3" xcenter="0" ycenter="0"/>"#), 3.0);
+    // A circle r 2.3 at the origin: ⌊−2.3⌋ = −3 (nearest would give 2), but
+    // GDI leaves out the box's right edge (⌈2.3⌉ − 1 = 2) and bottom edge,
+    // and the path's scan conversion the top row and the left column (clone,
+    // #194): −2…2 → 2.
+    assert_eq!(ext(r#"<circle mode="on" radius="2.3" xcenter="0" ycenter="0"/>"#), 2.0);
+    // The same on a clone's plane scale: a circle whose top is the extreme
+    // edge, at 41 above the box's centre line 10 up (⌊−51⌋ = −51, tip row
+    // lost → 50), one unit further → 51; the left edge alike.
+    assert_eq!(ext(r#"<circle mode="on" radius="41" xcenter="0" ycenter="10"/>"#), 50.0);
+    assert_eq!(ext(r#"<circle mode="on" radius="42" xcenter="0" ycenter="10"/>"#), 51.0);
+    assert_eq!(ext(r#"<circle mode="on" radius="41" xcenter="-10" ycenter="0"/>"#), 50.0);
+    assert_eq!(ext(r#"<circle mode="on" radius="42" xcenter="-10" ycenter="0"/>"#), 51.0);
+    // …and the right / bottom edges' own (L9.285): 41 + 10 − 1 = 50 right.
+    assert_eq!(ext(r#"<circle mode="on" radius="41" xcenter="10" ycenter="0"/>"#), 50.0);
     // A sub-unit square rounds to nothing: 1 × 1 at (⌈0.1⌉, −⌈0.1⌉) =
     // (1, −1) → 2.
     assert_eq!(ext(&square(0.1, 0.1, 0.4, 0.3, "")), 2.0);
