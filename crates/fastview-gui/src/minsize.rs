@@ -8,7 +8,7 @@
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
-use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_APP, GetClientRect, GetWindowRect, IsIconic, IsZoomed, SWP_NOSIZE, WINDOWPOS, WM_KEYDOWN, WM_SYSKEYDOWN, WM_WINDOWPOSCHANGING};
+use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_APP, GetClientRect, GetWindowRect, IsIconic, IsZoomed, SWP_NOSIZE, WINDOWPOS, WM_KEYDOWN, WM_SETCURSOR, WM_SYSKEYDOWN, WM_WINDOWPOSCHANGING};
 
 /// The frame's turn for the system dialogs waiting in [`crate::sysdlg`].
 const WM_RUN_DIALOGS: u32 = WM_APP + 0x51;
@@ -70,6 +70,12 @@ unsafe extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LP
     if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
         let held = |vk: u16| GetKeyState(vk as i32) < 0;
         crate::winkeys::note_key_down(wparam as u32, lparam & (1 << 30) != 0, held(VK_CONTROL), held(VK_SHIFT), held(VK_MENU));
+    }
+    // The channel drag's move-drop cursor (#157, `dragcursor`).
+    if msg == WM_SETCURSOR {
+        if let Some(r) = crate::dragcursor::handle_set_cursor(hwnd, lparam) {
+            return r;
+        }
     }
     // A minimised or maximised window keeps the size Windows gives it.
     if msg == WM_WINDOWPOSCHANGING && lparam != 0 && IsIconic(hwnd) == 0 && IsZoomed(hwnd) == 0 {
