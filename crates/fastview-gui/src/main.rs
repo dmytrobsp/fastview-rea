@@ -94,15 +94,48 @@ fn status_font_px() -> f32 {
     dpi::measured(11.0, 13.0, 17.0)
 }
 
-/// The size grip's dots (the visual style's gripper, the original on a clone at 150 %): a triangle of 2 × 2
-/// px dots on a 4 px pitch at the client's bottom-right corner, the lowest row and the rightmost column
-/// longest; each dot has a light shadow one pixel down and right. `right` / `bottom` are the client's edges;
-/// the dots as `(top-left x, y)`.
-fn status_grip_dots(right: f32, bottom: f32, pitch: f32) -> Vec<egui::Pos2> {
+/// The size grip's shapes, as `(rect, colour)` painted in order, at the client's right / bottom edges (clone, the
+/// original at 100 / 125 / 150 %). The Office 2007 looks draw a triangle of 2 × 2 px dots on a 4 px pitch (the
+/// lowest row and the rightmost column longest), each with a light shadow one pixel down and right, the same at
+/// every scale. The older looks scale their grip: diagonal lines (Windows 2000, Office XP) three apart by
+/// 4 / 5 / 6 px and 1 / 1 / 2 px thick, or square dots (Windows XP, Office 2003, VS.NET 2005) 2 / 3 / 3 px
+/// on a 3 / 4 / 4 px pitch.
+fn status_grip_shapes(grip: theme::Grip, right: f32, bottom: f32) -> Vec<(egui::Rect, egui::Color32)> {
+    use theme::Grip;
+    let px = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, h));
     let mut out = Vec::new();
-    for j in 0..3 {
-        for i in 0..(3 - j) {
-            out.push(egui::pos2(right - 3.0 - pitch * i as f32, bottom - 3.0 - pitch * j as f32));
+    match grip {
+        Grip::Shadowed { dark, light } => {
+            let pitch = status_grip_pitch();
+            for j in 0..3 {
+                for i in 0..(3 - j) {
+                    let d = px(right - 3.0 - pitch * i as f32, bottom - 3.0 - pitch * j as f32, 2.0, 2.0);
+                    out.push((d.translate(egui::vec2(1.0, 1.0)), light));
+                    out.push((d, dark));
+                }
+            }
+        }
+        Grip::Lines(c) => {
+            let period = dpi::measured(4.0, 5.0, 6.0) as i32;
+            let thick = dpi::measured(1.0, 1.0, 2.0) as i32;
+            let base = dpi::measured(3.0, 3.0, 5.0) as i32;
+            for n in 0..3 {
+                for t in 0..thick {
+                    let s = base + n * period + t;
+                    for dy in 0..=s {
+                        out.push((px(right - 1.0 - (s - dy) as f32, bottom - 1.0 - dy as f32, 1.0, 1.0), c));
+                    }
+                }
+            }
+        }
+        Grip::Dots(c) => {
+            let (size, pitch) = (dpi::measured(2.0, 3.0, 3.0), dpi::measured(3.0, 4.0, 4.0));
+            let dx0 = dpi::measured(3.0, 3.0, 4.0);
+            for j in 0..3 {
+                for i in 0..(3 - j) {
+                    out.push((px(right - dx0 - pitch * i as f32 - size, bottom - 2.0 - pitch * j as f32 - size, size, size), c));
+                }
+            }
         }
     }
     out
@@ -143,9 +176,10 @@ fn status_pane_w(i: usize) -> f32 {
 }
 
 /// The extended pane's width: its text's width in the UI font + 27 (clone: 135 / 157 / 189 px at 100 / 125 /
-/// 150 %); the older looks' 155 at 100 % keep their 20 more.
-fn status_ext_w(bands: bool) -> f32 {
-    dpi::measured(135.0, 157.0, 189.0) + if bands { 0.0 } else { 20.0 }
+/// 150 %), on every look: the older looks' pane is no wider (clone, #167: the fifth / fourth pane appears at the
+/// same width as on the blue look at 100 / 125 / 150 %, and the text sits at the same place).
+fn status_ext_w() -> f32 {
+    dpi::measured(135.0, 157.0, 189.0)
 }
 
 /// A pane's text starts this far into it (clone: ink 10 / 10 / 11 px from the pane's edge at 100 / 125 / 150 %).
@@ -915,8 +949,7 @@ impl App {
         // with no separators — 27 / 40 × "_" templates (`0x4729b0`), each
         // `status_pane_w` wide (the "_" 5 / 6 / 7 px, + 18) with the text
         // `status_text_inset` in, left-aligned — and the extended element,
-        // `status_ext_w` wide (135 / 157 / 189 px, 20 more on the older
-        // looks) on a darker band behind a light edge, its text 16 px in.
+        // `status_ext_w` wide (135 / 157 / 189 px) on a darker band behind a light edge, its text 16 px in.
         let r = ui.max_rect();
         let painter = ui.painter();
         let band = |c0: egui::Color32, c1: egui::Color32, rr: egui::Rect| {
@@ -966,7 +999,7 @@ impl App {
         // A normal (not maximised) window's last pane also holds the size grip
         // (see [`status_reserve`]).
         let maximised = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
-        let (ext_w, room) = status_reserve(r.right(), status_ext_w(p.bands.is_some()), maximised, self.status_hidden[6]);
+        let (ext_w, room) = status_reserve(r.right(), status_ext_w(), maximised, self.status_hidden[6]);
         let hidden = self.status_hidden;
         // A hidden pane leaves no gap: the rest move left (VM). A pane that
         // does not fit before the extended one is not shown (VM, 150 % at
@@ -999,15 +1032,14 @@ impl App {
         // The size grip, in a normal window only (the visual style's gripper).
         self.status_grip = (!maximised).then(|| egui::Rect::from_min_max(egui::pos2(r.right() - 11.0, r.bottom() - 11.0), r.right_bottom()));
         if !maximised {
-            let (dark, light) = if p.bands.is_some() && p.status_bg == egui::Color32::from_rgb(186, 212, 247) {
-                (egui::Color32::from_rgb(69, 93, 128), egui::Color32::from_rgb(177, 201, 232))
-            } else {
-                (egui::Color32::from_gray(100), egui::Color32::WHITE)
-            };
-            for d in status_grip_dots(r.right(), r.bottom(), status_grip_pitch()) {
-                let dot = egui::Rect::from_min_size(d, egui::vec2(2.0, 2.0));
-                painter.rect_filled(dot.translate(egui::vec2(1.0, 1.0)), 0.0, light);
-                painter.rect_filled(dot, 0.0, dark);
+            for (rect, c) in status_grip_shapes(self.skin.status_grip(), r.right(), r.bottom()) {
+                painter.rect_filled(rect, 0.0, c);
+            }
+            // The older looks' last pane: a line before it, 19 / 23 / 28 px from the right edge, 4 px short of the
+            // bar's top and bottom.
+            if let Some(c) = self.skin.status_pane_line() {
+                let x = r.right() - (19.0 * dpi::k()).floor();
+                painter.rect_filled(egui::Rect::from_min_max(egui::pos2(x, r.bottom() - dpi::s(24.0) + 4.0), egui::pos2(x + 1.0, r.bottom() - 4.0)), 0.0, c);
             }
         }
         // CMFCRibbonStatusBar's right-click: its configuration menu.
@@ -1546,11 +1578,11 @@ mod tests {
     fn the_status_panes_follow_the_uis_underscore_at_every_scale() {
         for (d, a, b, ext) in [(96, 153.0, 218.0, 135.0), (120, 180.0, 258.0, 157.0), (144, 207.0, 298.0, 189.0)] {
             dpi::set(d);
-            assert_eq!((status_pane_w(0), status_pane_w(2), status_ext_w(true)), (a, b, ext), "{d}");
+            assert_eq!((status_pane_w(0), status_pane_w(2), status_ext_w()), (a, b, ext), "{d}");
         }
         dpi::set(120);
         let count = |w: f32| {
-            let (_, room) = status_reserve(w, status_ext_w(true), false, false);
+            let (_, room) = status_reserve(w, status_ext_w(), false, false);
             status_pane_places(0.0, room, &[false; 7]).len()
         };
         assert_eq!((count(1159.0), count(1160.0)), (4, 5), "the fifth pane's bracket at 125 %");
@@ -1559,7 +1591,7 @@ mod tests {
         let alone = |w: f32| {
             let mut h = [false; 7];
             h[6] = true;
-            let (_, room) = status_reserve(w, status_ext_w(true), false, true);
+            let (_, room) = status_reserve(w, status_ext_w(), false, true);
             status_pane_places(0.0, room, &h).len()
         };
         assert_eq!((alone(1009.0), alone(1010.0)), (4, 5), "the hidden-pane bracket at 125 %");
@@ -1872,9 +1904,10 @@ mod window_tests {
     /// maximised window draws none. Drawn at 125 / 150 % through the whole frame.
     #[test]
     fn a_normal_window_draws_the_size_grip_and_a_maximised_one_does_not() {
-        let dots = status_grip_dots(100.0, 50.0, 4.0);
-        assert_eq!(dots.len(), 6);
-        assert_eq!((dots[0], dots[2], dots[3], dots[5]), (egui::pos2(97.0, 47.0), egui::pos2(89.0, 47.0), egui::pos2(97.0, 43.0), egui::pos2(97.0, 39.0)));
+        let shapes = status_grip_shapes(theme::Skin::Blue.status_grip(), 100.0, 50.0);
+        assert_eq!(shapes.len(), 12);
+        // (shadow, dot) pairs: the lowest row's rightmost dot, the second row's, the top one.
+        assert_eq!((shapes[1].0.min, shapes[5].0.min, shapes[7].0.min, shapes[11].0.min), (egui::pos2(97.0, 47.0), egui::pos2(89.0, 47.0), egui::pos2(97.0, 43.0), egui::pos2(97.0, 39.0)));
         let dark = [69, 93, 128];
         let fonts = app_fonts();
         for (native, maximised) in [(1.25, false), (1.5, false), (1.5, true), (1.0, false)] {
@@ -1895,11 +1928,66 @@ mod window_tests {
             assert_eq!(found.len(), 24, "{native}: six 2 × 2 dots");
             let (right, bottom) = (found.iter().map(|p| p.0).max().unwrap() + 2, found.iter().map(|p| p.1).max().unwrap() + 2);
             assert_eq!(right, c.w, "{native}: the dots end at the client's right edge");
-            for d in status_grip_dots(right as f32, bottom as f32, status_grip_pitch()) {
-                assert!(found.contains(&(d.x as usize, d.y as usize)), "{native}: a dot at {d:?}");
+            for (rect, _) in status_grip_shapes(theme::Skin::Blue.status_grip(), right as f32, bottom as f32).iter().skip(1).step_by(2) {
+                assert!(found.contains(&(rect.min.x as usize, rect.min.y as usize)), "{native}: a dot at {rect:?}");
             }
         }
         dpi::set(96);
+    }
+
+    /// #167 (clone, 100 / 125 / 150 %): the size grip of every look. The lines (Windows 2000, Office XP) and the
+    /// dots (Windows XP, Office 2003, VS.NET 2005) scale with the system; the Office 2007 looks keep their 2 px dots
+    /// and each has its own colours; the status text of the older looks is the grey (109) text colour.
+    #[test]
+    fn every_look_draws_its_own_size_grip() {
+        use theme::Skin;
+        // The offsets (from the last pixel, right / down) a grip's pixels take, by row from the bottom.
+        let rows = |skin: Skin| {
+            let (right, bottom) = (200.0, 100.0);
+            let mut m: std::collections::BTreeMap<i32, Vec<i32>> = Default::default();
+            for (r, _) in status_grip_shapes(skin.status_grip(), right, bottom).into_iter().filter(|(_, c)| c.r() == c.g() && c.g() == c.b() && c.r() != 204 && c.r() != 205) {
+                for y in 0..r.height() as i32 {
+                    for x in 0..r.width() as i32 {
+                        m.entry((bottom - 1.0 - (r.min.y + y as f32)) as i32).or_default().push((right - 1.0 - (r.min.x + x as f32)) as i32);
+                    }
+                }
+            }
+            m.values_mut().for_each(|v| v.sort());
+            m
+        };
+        let want = |dy: i32, dx: &[i32]| (dy, dx.to_vec());
+        for (d, lines0, lines_last, dots2, dots_top) in [
+            (96, want(0, &[3, 7, 11]), want(11, &[0]), want(2, &[3, 4, 6, 7, 9, 10]), want(9, &[3, 4])),
+            (120, want(0, &[3, 8, 13]), want(13, &[0]), want(2, &[3, 4, 5, 7, 8, 9, 11, 12, 13]), want(12, &[3, 4, 5])),
+            (144, want(0, &[5, 6, 11, 12, 17, 18]), want(18, &[0]), want(2, &[4, 5, 6, 8, 9, 10, 12, 13, 14]), want(12, &[4, 5, 6])),
+        ] {
+            dpi::set(d);
+            let l = rows(Skin::Win2000);
+            assert_eq!(l.get_key_value(&lines0.0).map(|(k, v)| (*k, v.clone())), Some(lines0), "{d}: the lines' bottom row");
+            assert_eq!(l.get_key_value(&lines_last.0).map(|(k, v)| (*k, v.clone())), Some(lines_last), "{d}: the lines' top");
+            assert_eq!(rows(Skin::OfficeXp), l, "{d}: Office XP draws the same lines");
+            let dots = rows(Skin::WinXp);
+            assert_eq!(dots.get_key_value(&dots2.0).map(|(k, v)| (*k, v.clone())), Some(dots2), "{d}: the dots' bottom row");
+            assert_eq!(dots.get_key_value(&dots_top.0).map(|(k, v)| (*k, v.clone())), Some(dots_top), "{d}: the dots' top row");
+            assert_eq!(rows(Skin::Office2003), dots, "{d}");
+            assert_eq!(rows(Skin::Vs2005), dots, "{d}");
+        }
+        dpi::set(96);
+        // The Office 2007 looks: the measured dark / light pairs, six dots each.
+        for (skin, dark, light) in [
+            (Skin::Blue, [69, 93, 128], [177, 201, 232]),
+            (Skin::Black, [37, 37, 37], [204, 204, 204]),
+            (Skin::Silver, [112, 118, 126], [205, 208, 217]),
+            (Skin::Aqua, [144, 153, 175], [213, 217, 226]),
+        ] {
+            let g = status_grip_shapes(skin.status_grip(), 100.0, 50.0);
+            let c = |i: usize| [g[i].1.r(), g[i].1.g(), g[i].1.b()];
+            assert_eq!((g.len(), c(0), c(1)), (12, light, dark), "{skin:?}");
+        }
+        for skin in [Skin::Win2000, Skin::OfficeXp, Skin::WinXp, Skin::Office2003, Skin::Vs2005] {
+            assert_eq!(skin.palette().status_text, egui::Color32::from_gray(109), "{skin:?}");
+        }
+        assert_eq!((Skin::OfficeXp.status_pane_line(), Skin::WinXp.status_pane_line(), Skin::Win2000.status_pane_line()), (Some(egui::Color32::from_gray(160)), Some(egui::Color32::from_gray(180)), None));
     }
 
     /// #138 / the final review: a press on a normal (decorated) window's size grip begins a south-east resize;
