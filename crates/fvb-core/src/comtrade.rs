@@ -1728,7 +1728,9 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         // The numeric fields go through C's `atof` where the original calls
         // it (`0x42277f`, `0x422796`, `0x4227ad`, `0x422880`, `0x422892`): a
         // field that is there is read by its leading number (garbage, inf /
-        // nan, empty: 0), one that is not keeps the default.
+        // nan, empty: 0), one that is not keeps the default. (An empty last
+        // field after a trailing comma now reads 0; the original's stream
+        // tokenizer reads the next line's token there, #204.)
         let at = |i: usize, dflt: f64| f.get(i).map_or(dflt, |s| c_atof(s.as_bytes()));
         // The unit token is not trimmed (`0x477050` cuts at TAB, CR, LF or
         // a comma only).
@@ -2041,8 +2043,9 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
             // (and must be 4) only then. A record that does not fit is a
             // null pointer in the original — it faults when fewer than three
             // records exist, or when 1, 2, 3 have no fourth after them
-            // (NOT DETERMINED what the user sees; ours takes the computed
-            // size, as before). Some(true) = numbered, Some(false) = not,
+            // (a clone run: the original dies with an access violation, #171;
+            // ours takes the computed size, an improvement recorded in
+            // docs/IMPROVEMENTS.md). Some(true) = numbered, Some(false) = not,
             // None = the fault zone.
             let numbered = |size: usize| -> Option<bool> {
                 let at = |k: usize| sample_no(k * size).filter(|_| (k + 1) * size <= dat.len());
@@ -2385,7 +2388,7 @@ mod short_binary_tests {
     /// BINARY (`0x451be0`) or binary32 (`0x4521bd`) record of one, two or
     /// three rows: its size check reads the first three sample numbers, and
     /// the fourth after 1, 2, 3, unconditionally. Ours loads them at the
-    /// computed record size (a difference left to the maintainer's call).
+    /// computed record size (an improvement, docs/IMPROVEMENTS.md).
     #[test]
     fn a_record_of_fewer_than_four_rows_loads_at_the_computed_size() {
         for fmt in ["BINARY", "binary32"] {

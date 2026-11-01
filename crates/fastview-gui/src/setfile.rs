@@ -1655,6 +1655,7 @@ mod tests {
         assert!(n >= 3 && app.docs[di].computed.len() == 1, "{n} channels and a formula channel");
         // Its copy takes nothing: the formula channel is not a lane to move.
         app.docs[di].selection = [ChanKey::Computed(0)].into();
+        assert!(!app.active_doc().unwrap().can_copy(), "the original's «Копировать» is disabled for it");
         app.copy_channels_for_merge();
         assert_eq!(app.status, "Не выбраны каналы для копирования.");
         assert_eq!(app.docs[di].file_record().1.analog, Vec::<usize>::new(), "no lane, the plain numbering");
