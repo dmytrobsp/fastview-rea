@@ -15,6 +15,7 @@ mod diagram_ui;
 mod dialogs;
 mod fontfix;
 mod docking;
+mod dragcursor;
 mod dpi;
 mod finder;
 mod formula_dlg;
@@ -503,6 +504,7 @@ fn start_scaling(device: bool, ctx: &egui::Context, scale: Option<f32>, system: 
 fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path::Path>, own_caption: bool, scale: Option<f32>, placement: Option<egui::Rect>) -> App {
     let fonts = app_fonts();
     ctx.set_fonts(fonts.clone());
+    views::set_float_corner(ctx, first_float_corner(window_placement(&persist::Store::load())));
     start_scaling(DEVICE_PIXELS, ctx, scale, system_dpi_scale());
     // A double-click within Windows' default GetDoubleClickTime, 500 ms
     // (egui's own is 300 ms: a hand's double-click on the coefficient list
@@ -531,6 +533,22 @@ fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path
         app.load_comtrade_path(f);
     }
     app
+}
+
+/// Where Windows put the original's frame when it made its panes (the
+/// first CW_USEDEFAULT slot, clone at 100 %, 1280 × 800: the mini-frame of a
+/// first float lands there, in screen pixels, whatever placement the frame
+/// takes afterwards). Not measured at other scales or screens (#161).
+const DEFAULT_FRAME_ORIGIN: [f32; 2] = [86.0, 78.0];
+
+/// The offset from our window's corner of a first float's spot: none when
+/// the frame starts where Windows puts it (a first run), the default
+/// frame's spot seen from the saved placement's corner otherwise — never
+/// outside the window (ours keeps floats in it).
+fn first_float_corner(saved: Option<(egui::Rect, bool)>) -> egui::Vec2 {
+    let Some((r, max)) = saved else { return egui::Vec2::ZERO };
+    let origin = if max { egui::Pos2::ZERO } else { r.min };
+    (egui::Pos2::new(DEFAULT_FRAME_ORIGIN[0], DEFAULT_FRAME_ORIGIN[1]) - origin).max(egui::Vec2::ZERO)
 }
 
 /// A first run's frame on Windows (CW_USEDEFAULT) as the original's frame client
@@ -4668,6 +4686,199 @@ mod window_tests {
         assert_eq!(w.app.docks[Unit::Circle].place, Place::Docked);
     }
 
+    /// #161 (clone, the original): a pane floated for the first time opens with
+    /// its create rect's corner on the frame's own top-left corner, over the
+    /// ribbon — not below it, at the documents' corner — whichever pane and
+    /// however it floats (a caption or a tab double-click).
+    #[test]
+    fn a_pane_floated_for_the_first_time_opens_at_the_frames_corner() {
+        use docking::{Place, Unit};
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let double = |w: &mut Win, at: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(3);
+        };
+        // A caption double-click: Частотная, and the group's front pane.
+        let mut w = Win::new();
+        w.idle(3);
+        let screen = w.ctx.screen_rect();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Frequency).expect("the frequency diagram").1;
+        assert!(w.ctx.available_rect().min != screen.min, "the ribbon takes the top: the documents' corner is elsewhere");
+        double(&mut w, Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0));
+        assert_eq!(w.app.docks[Unit::Frequency].place, Place::Floating);
+        assert_eq!(w.app.docks[Unit::Frequency].float_rect, Some(Rect::from_min_size(screen.min, Vec2::splat(200.0))), "Частотная: the mini-frame's outer size is the create size (clone)");
+        let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+        double(&mut w, Pos2::new(pane.left() + 60.0, pane.top() + 8.0));
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        assert_eq!(w.app.docks[Unit::Vector].float_rect, Some(Rect::from_min_size(screen.min, Vec2::splat(500.0))), "the group");
+        // A tab's double-click floats that pane at the same corner.
+        let mut w = Win::new();
+        w.idle(2);
+        let at = w.app.pane_tab_rects.iter().find(|(q, _)| *q == app::Pane::Circle).map(|(_, r)| r.center()).expect("the tab");
+        double(&mut w, at);
+        assert_eq!(w.app.docks[Unit::Circle].float_rect.map(|r| r.min), Some(w.ctx.screen_rect().min), "a tab");
+    }
+
+    /// #161: with a saved or maximised placement the frame is not where it was
+    /// made (clone: a first float lands where the default frame stood, about
+    /// 86 × 78 px in from the screen's corner, whatever the frame does after);
+    /// ours opens it at that spot seen from its window, or at the corner when
+    /// that lies outside it.
+    #[test]
+    fn a_first_float_lands_where_the_default_frame_stood() {
+        use docking::Unit;
+        let (c, corner) = (|s| first_float_corner(s), |x: f32, y: f32| Vec2::new(x, y));
+        assert_eq!(c(None), Vec2::ZERO, "a first run: the frame is where it was made");
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0));
+        assert_eq!(c(Some((screen, true))), corner(86.0, 78.0), "maximised");
+        assert_eq!(c(Some((Rect::from_min_size(Pos2::new(40.0, 30.0), Vec2::new(900.0, 600.0)), false))), corner(46.0, 48.0), "a saved rect");
+        assert_eq!(c(Some((Rect::from_min_size(Pos2::new(300.0, 200.0), Vec2::new(900.0, 600.0)), false))), Vec2::ZERO, "a window beyond the spot: its corner");
+        let mut w = Win::new();
+        views::set_float_corner(&w.ctx, c(Some((screen, true))));
+        w.idle(3);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+        let at = Pos2::new(pane.left() + 60.0, pane.top() + 8.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].float_rect.map(|r| r.min), Some(Pos2::new(86.0, 78.0)), "a maximised start");
+    }
+
+    /// #162 (clone, the original): a double-click on a tab of a floating
+    /// group docks that pane alone where the group was last docked — the
+    /// right edge in the start-up layout, the left one after the group was
+    /// docked there —, the front tab or another; the other panes stay in
+    /// the floating group, which gets a new front pane. A click does
+    /// nothing.
+    #[test]
+    fn a_double_click_on_a_floating_groups_tab_docks_that_pane_back() {
+        use docking::{Edge, Place, Spot, Unit};
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let floated = |edge: Edge| {
+            let mut w = Win::new();
+            // The start-up layout (the group alone on its edge); the shared
+            // slot is the next test.
+            w.app.docks = docking::Docks::default();
+            w.app.docks[Unit::Vector].spot = Spot::Edge { edge, outer: true };
+            w.idle(3);
+            // Floated by its caption's double-click, as the UI does (the
+            // slot's neighbours see it leave); idle past egui's click window.
+            let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+            let at = Pos2::new(pane.left() + 60.0, pane.top() + 8.0);
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(12);
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+            w
+        };
+        let tab_of = |w: &Win, p: app::Pane| w.app.pane_tab_rects.iter().find(|(q, _)| *q == p).map(|(_, r)| r.center()).expect("the tab");
+        let double = |w: &mut Win, at: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(3);
+        };
+        for edge in [Edge::Right, Edge::Left] {
+            // Another tab than the front one.
+            let mut w = floated(edge);
+            let at = tab_of(&w, app::Pane::Circle);
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(12);
+            assert_eq!(w.app.docks[Unit::Circle].place, Place::Docked, "{edge:?}: a click docks nothing");
+            let at = tab_of(&w, app::Pane::Circle);
+            double(&mut w, at);
+            let c = w.app.docks[Unit::Circle];
+            assert_eq!((c.place, c.spot), (Place::Docked, Spot::Edge { edge, outer: true }), "{edge:?}: the double-clicked pane docks at the group's edge");
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating, "{edge:?}: the group stays floating");
+            assert!(w.app.dock_rects[Unit::Circle as usize].is_some_and(|r| (edge == Edge::Left) == (r.center().x < 600.0)), "{edge:?}: drawn on that side");
+            // The front tab: the group's own pane docks, the next tab takes the group.
+            let mut w = floated(edge);
+            let at = tab_of(&w, app::Pane::Vector);
+            double(&mut w, at);
+            let v = w.app.docks[Unit::Vector];
+            assert_eq!((v.place, v.spot), (Place::Docked, Spot::Edge { edge, outer: true }), "{edge:?}: the front pane docks");
+            let c = w.app.docks[Unit::Circle];
+            assert_eq!(c.place, Place::Floating, "{edge:?}: the next tab holds the floating group");
+        }
+    }
+
+    /// #162: the pane docks back at the group's size and in its place in the
+    /// blocks' order (clone: full height, the width the group had, outermost
+    /// on the right — outside Дифференциальная's block).
+    #[test]
+    fn a_pane_docked_back_from_a_floating_group_keeps_the_groups_size_and_order() {
+        use docking::{Place, Spot, Unit};
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let double = |w: &mut Win, at: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(12);
+        };
+        let mut w = Win::new();
+        // The start-up layout: the group outermost on the right, Дифференциальная
+        // a block of its own inside it.
+        w.app.docks = docking::Docks::default();
+        w.app.docks[Unit::Vector].extent = Some(437.0);
+        // Circle's own order is not the group's (a tab's is never read).
+        w.app.docks[Unit::Circle].order = 5;
+        w.idle(6);
+        let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+        assert!((pane.width() - 437.0).abs() < 8.0, "the group's width: {pane:?}");
+        double(&mut w, Pos2::new(pane.left() + 60.0, pane.top() + 8.0));
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        let at = w.app.pane_tab_rects.iter().find(|(q, _)| *q == app::Pane::Circle).map(|(_, r)| r.center()).expect("the tab");
+        double(&mut w, at);
+        let c = w.app.docks[Unit::Circle];
+        assert_eq!((c.place, c.extent), (Place::Docked, Some(437.0)), "the group's size");
+        assert!(c.order < w.app.docks[Unit::Differential].order, "its block comes before Дифференциальная's");
+        let (rc, rd) = (w.app.dock_rects[Unit::Circle as usize].expect("docked"), w.app.dock_rects[Unit::Differential as usize].expect("docked"));
+        assert!((rc.width() - 437.0).abs() < 8.0, "docked at the group's width: {rc:?}");
+        assert!(rc.left() >= rd.right() - 1.0, "outside Дифференциальная's block: {rc:?} {rd:?}");
+        assert_eq!(c.spot, Spot::Edge { edge: docking::Edge::Right, outer: true });
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Pane(app::Pane::Circle), "the focus is the docked pane's window (clone)");
+        // The floating rest's caption double-click joins the docked pane as a tab (clone).
+        assert_eq!(w.app.docks[Unit::Vector].spot, Spot::Tab(Unit::Circle));
+        let win = w.app.docks[Unit::Vector].float_rect.expect("floating");
+        double(&mut w, Pos2::new(win.left() + 60.0, win.top() + 10.0));
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "redocked");
+        assert_eq!(w.app.docks.host(Unit::Vector), Unit::Circle, "as a tab of the docked pane");
+    }
+
+    /// #162 (clone): a group that shared its column with Частотная docks the
+    /// pane back into that slot, beside Частотная, at the group's share.
+    #[test]
+    fn a_pane_docked_back_from_a_group_sharing_its_column_takes_the_slot() {
+        use docking::{Place, Spot, Unit};
+        let mut w = Win::new();
+        w.idle(3);
+        let before = w.app.docks[Unit::Vector].spot;
+        assert!(matches!(before, Spot::Edge { .. }));
+        w.app.docks[Unit::Frequency].spot = Spot::Beside(Unit::Vector, docking::Edge::Top);
+        w.idle(3);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let double = |w: &mut Win, at: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(12);
+        };
+        let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+        double(&mut w, Pos2::new(pane.left() + 60.0, pane.top() + 8.0));
+        let root_spot = w.app.docks[Unit::Vector].spot;
+        let at = w.app.pane_tab_rects.iter().find(|(q, _)| *q == app::Pane::Circle).map(|(_, r)| r.center()).expect("the tab");
+        double(&mut w, at);
+        let c = w.app.docks[Unit::Circle];
+        assert_eq!((c.place, c.spot), (Place::Docked, root_spot), "in the group's slot beside Частотная");
+        assert!(matches!(c.spot, Spot::Beside(..) | Spot::Edge { .. }));
+    }
+
     /// A tab pulled out of a tab strip follows the caption drag's distance rule
     /// (#111; `0x10068657` reads the metric once, `>=` on either axis — the
     /// caption's rule `0x10086f3a` is a strict `>` — the distance scaled with
@@ -5884,10 +6095,17 @@ mod window_tests {
         };
         let drop = lanes::MOVE_DROP_CURSOR;
         let mid = client.center();
+        // The original's OLE move-drop picture (an arrow with a box,
+        // #157): shown exactly where the move cursor is.
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::None, "no pass yet with the drag over a target");
         assert_eq!(at(&mut w, mid), drop, "over the view");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::Move, "over the view: the move-drop picture");
         assert_eq!(at(&mut w, vector.center()), drop, "over the vector diagram");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::Move, "over the vector diagram");
         assert_eq!(at(&mut w, freq.center()), drop, "over the frequency diagram");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::Move, "over the frequency diagram");
         assert_eq!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "over the window's top rows");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::None, "no-drop has the system's cursor");
         assert_eq!(at(&mut w, Pos2::new(vector.center().x, vector.top() - 12.0)), NoDrop, "over a pane's caption");
         // The auto-scroll band: Ctrl turns the cursor to "copy", only there.
         let band = Pos2::new(mid.x, client.bottom() - 4.0);
@@ -5897,13 +6115,17 @@ mod window_tests {
         assert_eq!(at(&mut w, vector.center()), drop, "Ctrl over a diagram changes nothing");
         assert_eq!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "Ctrl elsewhere changes nothing");
         assert_eq!(at(&mut w, band), Copy, "Ctrl in the band");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::Copy, "copy has the copy picture");
         w.held = egui::Modifiers::NONE;
         // Ctrl+Shift in the band: MFC answers "link", the drag allows none.
         w.held = egui::Modifiers { ctrl: true, shift: true, command: true, ..Default::default() };
         assert_eq!(at(&mut w, band), NoDrop, "Ctrl+Shift in the band");
         w.held = egui::Modifiers::NONE;
+        assert_eq!(at(&mut w, band), drop, "back in the band without Ctrl");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::Move);
         egui::DragAndDrop::clear_payload(&w.ctx);
         assert_ne!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "no drag, no cursor");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::None, "the drag over: the picture is off");
     }
 
     /// The circle's drop target is its window (property grid and diagram), not
