@@ -2601,7 +2601,7 @@ mod window_tests {
             for _ in 0..4 {
                 let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(work[0], work[1]))), time: Some(ctx.input(|i| i.time) + 0.05), ..Default::default() };
                 raw.viewports.insert(raw.viewport_id, egui::ViewportInfo { maximized: Some(true), ..Default::default() });
-                ctx.run(raw, |ctx| app.frame_ui(ctx));
+                let _ = ctx.run(raw, |ctx| app.frame_ui(ctx));
             }
             assert_eq!((app.mdi_area.width(), app.mdi_area.height()), want, "dpi {dpi}: {:?}", app.mdi_area);
         }
