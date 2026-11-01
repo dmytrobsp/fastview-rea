@@ -2311,6 +2311,7 @@ impl App {
                 if let Some(d) = self.active_doc_mut() {
                     d.set_mode_selected(m);
                 }
+                self.run_definition_batch();
             }
             Command::ToggleVizir(k) => {
                 let (w, left) = (self.view_width, self.view_left);
@@ -2368,6 +2369,7 @@ impl App {
                 if let Some(d) = self.active_doc_mut() {
                     d.toggle_stats_row(k);
                 }
+                self.run_definition_batch();
             }
             Command::ZoomX(zin) => {
                 let (w, left) = (self.view_width, self.view_left);
@@ -2540,9 +2542,17 @@ impl App {
             self.docs[ai].batch_makes_rows = true;
             self.recompute_doc(ai);
         } else {
-            let show_primary = self.docs[ai].primary_values();
-            let _ = self.docs[ai].try_reevaluate_formulas_before(show_primary, &[]);
+            self.run_definition_batch();
         }
+    }
+
+    /// The batch `0x415780` over the definition list that 32817–32824 (stats rows, value modes, invert / DC,
+    /// `0x45c980` → `0x42f4b0`, `0x42fad3`), 32849–32852 and 32866 end in: it also makes channels of the rows that
+    /// have none (#31).
+    pub fn run_definition_batch(&mut self) {
+        let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
+        let show_primary = self.docs[ai].primary_values();
+        let _ = self.docs[ai].try_reevaluate_formulas_before(show_primary, &[]);
     }
 
     /// Save the view preferences (`View`: XScale, YAnalogSize, RulerState,
@@ -4644,10 +4654,12 @@ mod tests {
             app
         };
         let names = |app: &App| app.active_doc().unwrap().computed.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
-        let cmds: [(&str, Command); 3] = [
+        let cmds: [(&str, Command); 5] = [
             ("invert", Command::ToggleFlag(crate::chansel::ChanFlag::Invert)),
             ("diagram flag", Command::ToggleFlag(crate::chansel::ChanFlag::OnVector)),
             ("primary values", Command::SetPrimaryValues(true)),
+            ("value mode", Command::SetValueMode(ValueMode::Rms)),
+            ("stats row", Command::StatsRow(0)),
         ];
         for (what, cmd) in cmds {
             let mut app = setup();
@@ -4660,6 +4672,17 @@ mod tests {
             let (l1, x) = (&d.computed[1].samples, &d.computed[0].samples);
             assert!(x.iter().zip(l1).all(|(x, l)| (x - (l + 1.0)).abs() < 1e-9), "{what}");
         }
+        // «Коэффициенты» recomputes and runs the batch whatever the dialog returns: Cancel too.
+        let mut app = setup();
+        app.dispatch(Command::Coefficients);
+        assert!(app.dlg.coef.is_some());
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.coef_window(ctx));
+        let _ = ctx.run(raw, |ctx| app.coef_window(ctx));
+        assert!(app.dlg.coef.is_none(), "Esc closed the dialog");
+        assert_eq!(names(&app), ["X", "L1"], "coefficients cancel");
         // Opening a record and undo run no batch: a plain recompute keeps the row.
         let mut app = setup();
         let ai = app.active.unwrap();

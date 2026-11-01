@@ -1036,14 +1036,24 @@ impl App {
             });
         match result {
             Some(true) => {
+                // OK marks the document modified, changed or not (`0x42fdb0`).
+                self.docs[ai].set.modified = true;
                 if let Some(changed) = st.apply(&mut self.docs[ai]) {
-                    self.docs[ai].set.modified = true;
                     if !changed.is_empty() {
+                        self.docs[ai].batch_makes_rows = true;
                         self.recompute_doc(ai);
+                    } else {
+                        self.run_definition_batch();
                     }
+                } else {
+                    self.run_definition_batch();
                 }
             }
-            Some(false) => {}
+            // `0x42fdb0` recomputes and runs the batch (`0x42ff54`) whatever the dialog returned.
+            Some(false) => {
+                self.docs[ai].batch_makes_rows = true;
+                self.recompute_doc(ai);
+            }
             None if open => self.dlg.coef = Some(st),
             None => {}
         }

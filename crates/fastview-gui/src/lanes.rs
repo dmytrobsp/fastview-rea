@@ -2384,7 +2384,10 @@ impl App {
                         self.after_flag_command(f);
                     }
                     MenuCmd::Hide => d.hide_selected(),
-                    MenuCmd::Mode(m) => d.set_mode_selected(m),
+                    MenuCmd::Mode(m) => {
+                        d.set_mode_selected(m);
+                        self.run_definition_batch();
+                    }
                     MenuCmd::ResetZoom => d.reset_zoom_selected(),
                     MenuCmd::Combine => {
                         let enabled = d.can_combine();
@@ -4329,5 +4332,29 @@ mod menu_tests {
         h.frame(vec![ev(false)]);
         assert!(!h.doc().selection.is_empty(), "the click selected the lane");
         assert!(crate::app::stale_flags::swept(&h.app), "click");
+    }
+
+    /// #23: dragging a pending pasted lane in time (the view's mouse-move case 6, `0x45ec2a`) ends in the
+    /// refresh-all: a stale flag is swept.
+    #[test]
+    fn dragging_a_pasted_lane_in_time_refreshes() {
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(1)].into_iter().collect();
+        h.app.copy_channels_for_merge();
+        h.app.paste_channels_for_merge();
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
+        let pend = rows.iter().position(|r| matches!(r.key, Lane::Computed(j) if h.doc().pending_of(j).is_some())).expect("the pasted lane");
+        let o = h.row(pend) + Vec2::new(150.0, 0.0);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(o), ev(o, true)]);
+        h.frame(vec![]);
+        let before = h.doc().merge_offset;
+        crate::app::stale_flags::make(&mut h.app);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(40.0, 0.0))]);
+        h.frame(vec![]);
+        assert_ne!(h.doc().merge_offset, before, "the lane moved in time");
+        assert!(crate::app::stale_flags::swept(&h.app));
     }
 }
