@@ -617,6 +617,8 @@ impl App {
         for c in self.docs[ai].chans.iter_mut() {
             c.primary = primary;
         }
+        // 32866–32868 (`0x42ff54`) run the batch over the definition list too.
+        self.docs[ai].batch_makes_rows = true;
         self.recompute_doc(ai);
     }
 

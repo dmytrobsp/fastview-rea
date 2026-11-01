@@ -1984,7 +1984,7 @@ impl App {
         }
         let v_before = self.docs.get(ai).map(|d| d.vscroll);
         let sel_before = self.docs.get(ai).map(|d| d.selection.clone());
-        let vizir_drag_ended = actions.iter().any(|a| matches!(a, Act::EndDrag));
+        let paste_dragged = actions.iter().any(|a| matches!(a, Act::MergeOffset(_)));
         for a in actions {
             let d = &mut self.docs[ai];
             match a {
@@ -2090,8 +2090,8 @@ impl App {
         }
         // The view's OnScrollBy (`0x468f00`) ends in the refresh-all (`0x468f3d`), as does its mouse routine
         // `0x45dc10` once a click has selected a channel (`0x45e312`) and a mouse-move branch after `0x45a820`
-        // (`0x45ec2a`; taken here for the end of a визир drag, which is inferred).
-        if self.docs.get(ai).map(|d| d.vscroll) != v_before || self.docs.get(ai).map(|d| d.selection.clone()) != sel_before || vizir_drag_ended {
+        // (`0x45ec2a`: case 6 of the drag-mode switch, the pasted lanes' drag in time, `0x45a820`).
+        if self.docs.get(ai).map(|d| d.vscroll) != v_before || self.docs.get(ai).map(|d| d.selection.clone()) != sel_before || paste_dragged {
             self.refresh_blocks();
         }
 
@@ -2374,9 +2374,7 @@ impl App {
                 match cmd {
                     MenuCmd::Flag(f) => {
                         d.toggle_flag_selected(f);
-                        if matches!(f, ChanFlag::Invert | ChanFlag::RemoveDc | ChanFlag::Adc) {
-                            self.recompute_active();
-                        }
+                        self.after_flag_command(f);
                     }
                     MenuCmd::Hide => d.hide_selected(),
                     MenuCmd::Mode(m) => d.set_mode_selected(m),

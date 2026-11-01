@@ -772,6 +772,9 @@ impl App {
             d.selection.retain(|k| !matches!(k, ChanKey::Computed(_)));
             d.channels_changed();
         }
+        // The manager's lists are emptied with them (`0x4156e0`): kept rows and their order go too.
+        d.loose_defs.clear();
+        d.def_order.clear();
         if let Some(cp_raw) = osc.attrs.get("Codepage").map(|v| recset::wtoi(v)) {
             // 0 is OEM; anything else for a record read in UTF-8 or KOI8-R
             // (ours keeps it, `Doc::init_record_text`) its own encoding —
@@ -1833,6 +1836,31 @@ mod tests {
         let bi = open(&mut back, &cfg);
         let names: Vec<_> = back.docs[bi].computed.iter().map(|c| (c.name.as_str(), c.formula.as_str())).collect();
         assert_eq!(names, [("Y", "Ub*2"), ("Z1", "Uc*2"), ("X", "Ua*2")]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #31: «Загрузка настроек» (32860, `0x4156e0`) empties the calculation manager's lists with the channels: a
+    /// row kept by kill-active and the list's order do not survive into the loaded file's channels.
+    #[test]
+    fn loading_settings_clears_the_kept_rows() {
+        let dir = temp_dir("loadclear");
+        let cfg = write_record(&dir);
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        app.active = Some(di);
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        app.docs[di].set.modified = true;
+        assert!(app.save_active());
+        app.dispatch(Command::QuickAnalysis);
+        app.fp_add_row("Z1".into(), "Uc*2".into());
+        app.fp_kill_active();
+        app.quick_open = false;
+        assert_eq!(app.docs[di].loose_defs.len(), 1);
+        app.load_settings_from(di, &dir.join("rec.set"));
+        let d = &app.docs[di];
+        assert_eq!(d.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["X"]);
+        assert!(d.loose_defs.is_empty() && d.def_order.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -801,6 +801,9 @@ pub struct Doc {
     /// whole list into the record's definitions without computing it, #31): a row added or loaded and not yet
     /// calculated. A formula channel's own `formula` is its definition.
     pub loose_defs: Vec<(String, String)>,
+    /// Transient: the next [`Doc::recompute`] is the batch of a flag / value-mode command (`0x415780` over the
+    /// list), which also makes channels of the rows that have none (#31).
+    pub batch_makes_rows: bool,
     /// The definition list's row order as kill-active last wrote it (↑ / ↓ move rows, `0x487210` / `0x4873a0`):
     /// the formula page lists its rows in it.
     pub def_order: Vec<String>,
@@ -906,6 +909,7 @@ impl Doc {
             omp: Default::default(),
             pending: Vec::new(),
             loose_defs: Vec::new(),
+            batch_makes_rows: false,
             def_order: Vec::new(),
             merge_offset: 0.0,
             set: Default::default(),
@@ -939,7 +943,8 @@ impl Doc {
         let analysis = Analysis::compute_over(&self.flagged, &series, fvb_core::freqcorr::of(&self.osc));
         self.analysis = analysis;
         // The copy was just taken: no name to bring over.
-        let _ = self.evaluate_formula_list(show_primary);
+        let create = std::mem::take(&mut self.batch_makes_rows);
+        let _ = self.evaluate_formula_list_before(show_primary, &[], create);
     }
 
     /// Analog channel `i`'s window of statistics and phasors: its own rate
@@ -1005,10 +1010,6 @@ impl Doc {
     }
 
     /// [`Doc::try_reevaluate_formulas`] over the flagged copy as it is.
-    fn evaluate_formula_list(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
-        self.evaluate_formula_list_before(show_primary, &[], false)
-    }
-
     /// The record's definition list (the calculation manager's, `doc+0x190`) in its own order: the formula channels
     /// and the rows kill-active kept without a channel, ordered by [`Doc::def_order`] (what it does not know follows
     /// in the present order: the channels, then the rows).
@@ -2304,9 +2305,7 @@ impl App {
                 if let Some(d) = self.active_doc_mut() {
                     d.toggle_flag_selected(f);
                 }
-                if matches!(f, crate::chansel::ChanFlag::Invert | crate::chansel::ChanFlag::RemoveDc | crate::chansel::ChanFlag::Adc) {
-                    self.recompute_active();
-                }
+                self.after_flag_command(f);
             }
             Command::SetValueMode(m) => {
                 if let Some(d) = self.active_doc_mut() {
@@ -2531,9 +2530,18 @@ impl App {
 
     /// The full recompute after a value-changing command (`0x42f4b0` tail):
     /// the active record's derived data and, when its result is shown, ОМП.
-    pub fn recompute_active(&mut self) {
-        if let Some(ai) = self.active {
+    /// What a flag command (32817–32824 `0x42fad3`, 32849–32852 `0x4305e3`) does after toggling: the full
+    /// recompute for invert / DC / ADC, and for all of them the batch `0x415780` over the definition list, which
+    /// makes channels of the rows that have none (#31).
+    pub fn after_flag_command(&mut self, f: crate::chansel::ChanFlag) {
+        use crate::chansel::ChanFlag;
+        let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
+        if matches!(f, ChanFlag::Invert | ChanFlag::RemoveDc | ChanFlag::Adc) {
+            self.docs[ai].batch_makes_rows = true;
             self.recompute_doc(ai);
+        } else {
+            let show_primary = self.docs[ai].primary_values();
+            let _ = self.docs[ai].try_reevaluate_formulas_before(show_primary, &[]);
         }
     }
 
@@ -4615,5 +4623,47 @@ mod tests {
         let _ = egui::Context::default().run(raw, |ctx| app.color_window(ctx));
         assert!(app.color_dialog.is_none());
         assert!(crate::app::stale_flags::swept(&app));
+    }
+
+    /// #31: the flag and value-mode commands run the batch over the definition list (`0x42fad3`, `0x42ff54`,
+    /// `0x4305e3`): a kept row becomes a channel and a channel naming it computes.
+    #[test]
+    fn flag_and_mode_commands_make_channels_of_kept_rows() {
+        let setup = || {
+            let mut app = demo_app();
+            assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+            app.dispatch(Command::QuickAnalysis);
+            app.fp_add_row("L1".into(), "Ub*2".into());
+            app.formula_page.selected = Some(1);
+            app.fp_move(true);
+            app.formula_page.rows[1].1 = "l1+1".into();
+            app.formula_page.dirty = true;
+            app.fp_kill_active();
+            app.quick_open = false;
+            app.active_doc_mut().unwrap().selection = std::collections::BTreeSet::from([ChanKey::Analog(0)]);
+            app
+        };
+        let names = |app: &App| app.active_doc().unwrap().computed.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        let cmds: [(&str, Command); 3] = [
+            ("invert", Command::ToggleFlag(crate::chansel::ChanFlag::Invert)),
+            ("diagram flag", Command::ToggleFlag(crate::chansel::ChanFlag::OnVector)),
+            ("primary values", Command::SetPrimaryValues(true)),
+        ];
+        for (what, cmd) in cmds {
+            let mut app = setup();
+            assert_eq!(names(&app), ["X"], "{what}");
+            app.dispatch(cmd);
+            assert_eq!(names(&app), ["X", "L1"], "{what}");
+            let d = app.active_doc().unwrap();
+            assert!(d.loose_defs.is_empty(), "{what}");
+            // X = l1 + 1 computed from L1 (Ub*2), whatever the value mode.
+            let (l1, x) = (&d.computed[1].samples, &d.computed[0].samples);
+            assert!(x.iter().zip(l1).all(|(x, l)| (x - (l + 1.0)).abs() < 1e-9), "{what}");
+        }
+        // Opening a record and undo run no batch: a plain recompute keeps the row.
+        let mut app = setup();
+        let ai = app.active.unwrap();
+        app.docs[ai].recompute(false);
+        assert_eq!(names(&app), ["X"]);
     }
 }
