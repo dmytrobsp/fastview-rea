@@ -1458,11 +1458,16 @@ fn combo_keys(ctx: &egui::Context) -> (bool, bool) {
 /// the current one) white on (0, 120, 212), a soft shadow at the right.
 /// Returns the item picked; closes on a pick or a press elsewhere.
 pub fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], current: Option<usize>) -> Option<usize> {
+    // Items the font's height (13 px at 100 %).
+    combo_popup_in(ui, r, id, items, current, crate::dpi::base_units().1 as f32, dlg_font())
+}
+
+/// [`combo_popup`] with items `ih` high and their text in `font`: a property grid's in-place list takes the
+/// grid's font (MFC passes it on), its items that font's height — the grid's row less 4 px (clone, 125 / 150 %).
+pub fn combo_popup_in(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], current: Option<usize>, ih: f32, font: egui::FontId) -> Option<usize> {
     let ctx = ui.ctx().clone();
     let open_id = id.with("open");
     let mut picked = None;
-    // Items the font's height (13 px at 100 %).
-    let ih = crate::dpi::base_units().1 as f32;
     let list = Rect::from_min_size(Pos2::new(r.left(), r.bottom()), Vec2::new(r.width(), 2.0 + ih * items.len() as f32));
     let area = egui::Area::new(id.with("popup")).order(egui::Order::Foreground).fixed_pos(list.min).show(&ctx, |ui| {
         ui.allocate_exact_size(list.size(), egui::Sense::hover());
@@ -1510,7 +1515,7 @@ pub fn combo_popup(ui: &egui::Ui, r: Rect, id: egui::Id, items: &[String], curre
             } else {
                 Color32::BLACK
             };
-            text_p.text(row.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, t, dlg_font(), ink);
+            text_p.text(row.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, t, font.clone(), ink);
         }
         if ui.input(|i| i.pointer.primary_released()) && hover.is_some() {
             picked = hover;

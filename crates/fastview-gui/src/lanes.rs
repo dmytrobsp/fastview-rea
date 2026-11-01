@@ -1421,12 +1421,12 @@ impl App {
         // neither is shown); each takes room from the other's test.
         // Without the H bar: if the record fits, that layout stands.
         let hbar_on = {
-            let vbar = content_h + band + 2.0 > full.height();
+            let vbar = content_h + band + 2.0 > full.height() && full.height() >= g::VBAR_FLOOR;
             let plot_w = full.width() - if vbar { scroll_w() } else { 0.0 };
             g::max_first(n, g::visible_count(plot_w, left_w, f)) > 0
         };
         let client = Rect::from_min_max(full.min, Pos2::new(full.right(), full.bottom() - if hbar_on { scroll_h() } else { 0.0 }));
-        let vbar = content_h + band + 2.0 > client.height();
+        let vbar = content_h + band + 2.0 > client.height() && client.height() >= g::VBAR_FLOOR;
         let plot_right = client.right() - if vbar { scroll_w() } else { 0.0 };
         self.view_rects = Some((full, Rect::from_min_max(client.min, Pos2::new(plot_right, client.bottom()))));
         let left = client.left() + left_w;

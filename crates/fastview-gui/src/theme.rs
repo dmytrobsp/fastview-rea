@@ -22,7 +22,41 @@ pub enum Skin {
     Aqua,
 }
 
+/// The status bar's size grip as a look draws it (clone, 100 / 125 / 150 %, the last pane's corner).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Grip {
+    /// Diagonal lines, three, in one colour (Windows 2000, Office XP).
+    Lines(Color32),
+    /// Square dots, six in a triangle, one colour (Windows XP, Office 2003, VS.NET 2005).
+    Dots(Color32),
+    /// The Office 2007 looks: 2 px dots on a 4 px pitch, a dark colour and a light shadow one pixel down and right.
+    Shadowed { dark: Color32, light: Color32 },
+}
+
 impl Skin {
+    /// The status bar's size grip (clone: the pre-2007 looks (160) lines / (191) dots, the Office 2007 looks' dark and
+    /// light pairs below).
+    pub fn status_grip(self) -> Grip {
+        match self {
+            Skin::Win2000 | Skin::OfficeXp => Grip::Lines(Color32::from_gray(160)),
+            Skin::WinXp | Skin::Office2003 | Skin::Vs2005 => Grip::Dots(Color32::from_gray(191)),
+            Skin::Blue => Grip::Shadowed { dark: Color32::from_rgb(69, 93, 128), light: Color32::from_rgb(177, 201, 232) },
+            Skin::Black => Grip::Shadowed { dark: Color32::from_rgb(37, 37, 37), light: Color32::from_rgb(204, 204, 204) },
+            Skin::Silver => Grip::Shadowed { dark: Color32::from_rgb(112, 118, 126), light: Color32::from_rgb(205, 208, 217) },
+            Skin::Aqua => Grip::Shadowed { dark: Color32::from_rgb(144, 153, 175), light: Color32::from_rgb(213, 217, 226) },
+        }
+    }
+
+    /// The vertical line before the last status pane, where the look draws one (clone): Office XP (160), Windows XP
+    /// (180).
+    pub fn status_pane_line(self) -> Option<Color32> {
+        match self {
+            Skin::OfficeXp => Some(Color32::from_gray(160)),
+            Skin::WinXp => Some(Color32::from_gray(180)),
+            _ => None,
+        }
+    }
+
     /// The splitter strip's brush (`0x438110`, by the frame's look id):
     /// Black (83, 83, 83), Silver (208, 212, 221), Aqua (196, 202, 217),
     /// every other look (191, 219, 255).
@@ -73,7 +107,7 @@ impl Skin {
                 disabled: None,
                 tab_text: Color32::BLACK,
                 status_bg: Color32::from_gray(240),
-                status_text: Color32::BLACK,
+                status_text: Color32::from_gray(109),
                 body: None,
                 caption_band: Some([Color32::from_rgb(191, 205, 219); 2]),
                 caption_text: Color32::BLACK,
@@ -101,7 +135,7 @@ impl Skin {
                 disabled: None,
                 tab_text: Color32::BLACK,
                 status_bg: Color32::from_gray(240),
-                status_text: Color32::BLACK,
+                status_text: Color32::from_gray(109),
                 body: None,
                 caption_band: Some([Color32::from_rgb(191, 205, 219); 2]),
                 caption_text: Color32::BLACK,
@@ -129,7 +163,7 @@ impl Skin {
                 disabled: None,
                 tab_text: Color32::BLACK,
                 status_bg: Color32::from_gray(240),
-                status_text: Color32::BLACK,
+                status_text: Color32::from_gray(109),
                 body: None,
                 caption_band: Some([Color32::from_rgb(191, 205, 219); 2]),
                 caption_text: Color32::BLACK,
@@ -157,7 +191,7 @@ impl Skin {
                 disabled: None,
                 tab_text: Color32::BLACK,
                 status_bg: Color32::from_gray(240),
-                status_text: Color32::BLACK,
+                status_text: Color32::from_gray(109),
                 body: None,
                 caption_band: Some([Color32::from_rgb(191, 205, 219); 2]),
                 caption_text: Color32::BLACK,
@@ -185,7 +219,7 @@ impl Skin {
                 disabled: None,
                 tab_text: Color32::BLACK,
                 status_bg: Color32::from_gray(240),
-                status_text: Color32::BLACK,
+                status_text: Color32::from_gray(109),
                 body: None,
                 caption_band: Some([Color32::from_rgb(191, 205, 219); 2]),
                 caption_text: Color32::BLACK,

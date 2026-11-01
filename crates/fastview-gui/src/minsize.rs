@@ -58,7 +58,8 @@ fn min_window(hwnd: HWND) -> (i32, i32) {
     // SAFETY: plain queries into local RECTs.
     let ok = unsafe { GetWindowRect(hwnd, &mut w) != 0 && GetClientRect(hwnd, &mut c) != 0 };
     let (fx, fy) = if ok { ((w.right - w.left) - c.right, (w.bottom - w.top) - c.bottom) } else { (0, 0) };
-    (crate::MIN_VISIBLE[0] as i32 + fx.max(0), crate::MIN_VISIBLE[1] as i32 + fy.max(0))
+    let min = crate::min_visible_at(crate::dpi::dpi());
+    (min[0] as i32 + fx.max(0), min[1] as i32 + fy.max(0))
 }
 
 unsafe extern "system" fn proc_(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _id: usize, _data: usize) -> LRESULT {
