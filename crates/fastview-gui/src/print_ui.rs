@@ -220,12 +220,16 @@ impl App {
                 Err(_) => self.dlg.push_alert(MSG_PRINT_FAILED),
             },
             None => {
-                if let Some(path) = crate::dialogs::file_dialog().add_filter("PDF", &["pdf"]).set_file_name(format!("{title}.pdf")).save_file() {
-                    self.status = match std::fs::write(&path, spool::pdf_bytes(&imgs, &dev)) {
-                        Ok(()) => format!("Сохранено: {}", path.display()),
-                        Err(e) => format!("Ошибка записи: {e}"),
-                    };
-                }
+                // The PDF's file dialog runs outside the frame (#190); the file is written once it answers.
+                let dlg = crate::dialogs::file_dialog().add_filter("PDF", &["pdf"]).set_file_name(format!("{title}.pdf"));
+                self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
+                    if let Some((path, _)) = picked {
+                        app.status = match std::fs::write(&path, spool::pdf_bytes(&imgs, &dev)) {
+                            Ok(()) => format!("Сохранено: {}", path.display()),
+                            Err(e) => format!("Ошибка записи: {e}"),
+                        };
+                    }
+                });
             }
         }
     }
@@ -279,6 +283,9 @@ impl App {
                     win_label(ui, dlu(client, vx, vy, vw, 10), v, false, true);
                 }
             }
+            // «Параметры страницы» has no WS_GROUP: it is in the span of «Свойства...» (347 template; the kinds
+            // already join them, this only records the template).
+            crate::dialogs::group_continue(ui);
             setup = win_button(ui, dlu(client, 7, 107, 120, 14), "Параметры страницы", false).clicked();
             // The template's order is the tab order: the buttons, then the
             // five check boxes.
