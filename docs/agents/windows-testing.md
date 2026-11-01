@@ -31,6 +31,14 @@ FV_CLONE=… FV_PURPOSE=… tools/vm/clone.sh rm          # always, when done �
 - **Other files**: `push SRC DST`, `pull SRC DST`, `exec CMD` (no desktop), `desk CMD` (in the desktop session; no
   stdout — write to a file and `pull` it).
 - **Loops**: the claim tool reads stdin; close it (`</dev/null`) for every call inside a loop.
+- **The overlay** (the clone's disk, a file in the host's RAM; the testbox cap is 4 GB and a clone past it is removed
+  by the tool): `clone.sh` prints `overlay: X GB of Y GB (N %)` on stderr after each step, with a warning from 60 %
+  of the cap (the size is the allocated bytes of the clone's folder, as the tool counts them; the cap is read from the
+  tool's `boxes.json`). What keeps it small, without any setting of the clone changed: `ours` pushes the exe once and
+  skips the push while its SHA-256 is unchanged (`FV_FORCE=1` pushes anyway); a file pulled from `out\` or
+  `harness\shots\` (`pull`, and the `SHOT`s of `run`) is deleted in the clone right after the pull (`FV_KEEP=1`
+  keeps it; other paths are never deleted); OneDrive is stopped at the clone's start and before each run. Print only
+  the pages a check needs. Windows Update and Defender are not touched: they are the box's, not ours.
 
 ## What a clone is
 

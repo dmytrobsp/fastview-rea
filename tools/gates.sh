@@ -5,6 +5,10 @@
 # never chained with a commit.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# The toolchain is pinned in rust-toolchain.toml; a different rustc (RUSTUP_TOOLCHAIN set, say) is only warned about.
+pinned=$(sed -n 's/^channel *= *"\(.*\)".*/\1/p' rust-toolchain.toml 2>/dev/null || true)
+have=$(rustc --version | awk '{print $2}')
+[ -z "$pinned" ] || [ "$pinned" = "$have" ] || echo "warning: rustc $have, but rust-toolchain.toml pins $pinned" >&2
 L=target/gates
 mkdir -p "$L"
 cargo clippy --workspace --all-targets 2>"$L/clippy.log" || { tail -30 "$L/clippy.log"; echo GATES-FAIL clippy; exit 1; }
