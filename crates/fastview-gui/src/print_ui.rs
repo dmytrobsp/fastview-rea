@@ -287,8 +287,11 @@ impl App {
         });
         // Enter is the default button OK, Esc Отмена (VM).
         let keys = self.dialog_keys(ctx);
-        let ok = ok || keys == Some(true);
-        let cancel = cancel || keys == Some(false);
+        // Under the driver's dialog the print dialog is inert (the original's
+        // is owned by it): a late result must not land in a closed dialog's
+        // stored choice.
+        let inert = spool::properties_busy();
+        let (ok, cancel, preview, open) = (!inert && (ok || keys == Some(true)), !inert && (cancel || keys == Some(false)), !inert && preview, open || inert);
         // The checkboxes are kept per view, also on Отмена (`0x404b30`).
         self.docs[dlg.doc].print_ticks = dlg.ticks;
         if setup {
@@ -416,7 +419,7 @@ impl App {
         // Ctrl+P over the preview: the print dialog opens over it, the
         // preview stays (VM; the accelerator table stays live there).
         let ctrl_p = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { key: egui::Key::P, pressed: true, modifiers, .. } if (modifiers.command || modifiers.ctrl) && !modifiers.shift && !modifiers.alt)));
-        if ctrl_p && self.print.dialog.is_none() {
+        if ctrl_p && self.print.dialog.is_none() && !self.modal_up {
             let active = self.active;
             self.active = Some(pv.job.di);
             self.print_open();
@@ -485,8 +488,8 @@ impl App {
             ui.set_min_size(ui.available_size());
             egui::ScrollArea::both().show(ui, |ui| {
                 // The pages centred in the grey area (stock MFC preview).
-                let total = Vec2::new((page.x * scale + 10.0) * shown.len() as f32 + 10.0, page.y * scale + 20.0);
-                ui.add_space(((avail.y - total.y) / 2.0).max(0.0) + 10.0);
+                let total = Vec2::new((page.x * scale + 10.0) * shown.len() as f32 + 10.0, page.y * scale + PREVIEW_MARGIN);
+                ui.add_space(((avail.y - total.y) / 2.0).max(0.0) + PREVIEW_MARGIN / 2.0);
                 ui.horizontal(|ui| {
                     ui.add_space(((avail.x - total.x) / 2.0).max(0.0));
                     for &i in &shown {
@@ -516,11 +519,17 @@ impl App {
     }
 }
 
-/// The scale a preview sheet is shown at: the height left less 14 px (VM:
-/// the original's sheet is 314 px in a 330 px area, 6 px taller than the
-/// 20 px margin gave), the width less 20 px and 10 px between sheets.
+/// The room kept round a preview sheet's height: 8 px above and below, as
+/// the stock MFC preview keeps it (INFERRED from MFC's source; the clone's
+/// numbers agree: the original's sheet is 314 px in a 330 px area, 16 px
+/// less). Ours' area is about 2 px shorter than the original's, so the same
+/// margin leaves our sheet a little smaller (small visual difference).
+const PREVIEW_MARGIN: f32 = 16.0;
+
+/// The scale a preview sheet is shown at: the height left less
+/// [`PREVIEW_MARGIN`], the width less 20 px and 10 px between sheets.
 fn preview_fit(avail: Vec2, page: Vec2, sheets: usize) -> f32 {
-    ((avail.y - 14.0) / page.y).min((avail.x - 20.0) / (page.x * sheets as f32 + 10.0)).max(0.05)
+    ((avail.y - PREVIEW_MARGIN) / page.y).min((avail.x - 20.0) / (page.x * sheets as f32 + 10.0)).max(0.05)
 }
 
 #[cfg(test)]
@@ -540,10 +549,10 @@ mod tests {
     }
 
     #[test]
-    fn the_preview_sheet_leaves_fourteen_pixels_of_height() {
+    fn the_preview_sheet_leaves_sixteen_pixels_of_height() {
         let page = Vec2::new(850.0, 1100.0);
         let fit = preview_fit(Vec2::new(560.0, 330.0), page, 1);
-        assert_eq!((page.y * fit).round(), 316.0);
+        assert_eq!((page.y * fit).round(), 314.0);
         assert!(preview_fit(Vec2::new(200.0, 900.0), page, 1) < 0.3, "width limits a narrow area");
     }
 

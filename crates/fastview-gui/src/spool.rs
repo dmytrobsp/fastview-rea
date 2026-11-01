@@ -76,20 +76,29 @@ pub fn properties_busy() -> bool {
 }
 
 /// «Свойства...» on a worker thread, owned by `owner` (our window, taken
-/// on the UI thread as the button is clicked). The dialog's own modal loop
-/// would otherwise run inside our frame, dispatching our window's paint
-/// into the frame in progress — on a Windows 11 clone the driver's dialog
-/// never showed and the window stayed disabled and frozen. False when one
-/// is already open or where there is no driver dialog.
+/// on the UI thread as the button is clicked). Run inside our frame, the
+/// dialog's modal loop meets winit's paint handler: in a nested loop it
+/// re-arms an internal paint after every paint, so the thread's queue never
+/// goes idle, the dialog (shown on idle) never appears and its owner stays
+/// disabled — on a Windows 11 clone the window froze. On a worker the loop
+/// can idle. The call is traced through `FV_SOFTLOG` (result, error, time).
+/// False when one is already open or where there is no driver dialog.
 #[cfg(windows)]
 pub fn properties_start(printer: &str) -> bool {
     if !claim(&PROPS_BUSY) {
         return false;
     }
-    let owner = imp::foreground() as usize;
+    let owner = imp::owner() as usize;
     let printer = printer.to_string();
     std::thread::spawn(move || {
-        imp::properties(&printer, owner as isize);
+        // The driver's UI is COM-heavy: an STA on this thread, as the UI
+        // thread has (winit's OleInitialize).
+        let t0 = std::time::Instant::now();
+        let ole = imp::ole_init();
+        crate::softrun::trace(&format!("Свойства...: worker up, owner {owner:#x}, ole {ole:#x}"));
+        let r = imp::properties(&printer, owner as isize);
+        crate::softrun::trace(&format!("Свойства...: returned {r} after {} ms", t0.elapsed().as_millis()));
+        imp::ole_done(ole);
         PROPS_BUSY.store(false, std::sync::atomic::Ordering::Release);
     });
     true
@@ -433,13 +442,47 @@ mod imp {
     }
 
     /// The foreground window as an owner for the driver's dialog.
-    pub fn foreground() -> isize {
-        // SAFETY: a plain query.
-        unsafe { GetForegroundWindow() as isize }
+    /// The owner for the driver's dialog, taken on the UI thread: its
+    /// active window (as the file dialogs do), else the foreground window
+    /// if it is ours, else none.
+    pub fn owner() -> isize {
+        use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow;
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+        // SAFETY: plain queries on the calling thread / a window handle.
+        unsafe {
+            let a = GetActiveWindow();
+            if !a.is_null() {
+                return a as isize;
+            }
+            let f = GetForegroundWindow();
+            let mut pid = 0u32;
+            if !f.is_null() {
+                GetWindowThreadProcessId(f, &mut pid);
+            }
+            if pid == GetCurrentProcessId() {
+                f as isize
+            } else {
+                0
+            }
+        }
+    }
+
+    /// OleInitialize on this thread (0 or 1 is success); the HRESULT.
+    pub fn ole_init() -> i32 {
+        // SAFETY: the documented reserved null argument.
+        unsafe { windows_sys::Win32::System::Ole::OleInitialize(std::ptr::null()) }
+    }
+
+    pub fn ole_done(hr: i32) {
+        if hr >= 0 {
+            // SAFETY: balances a successful OleInitialize on this thread.
+            unsafe { windows_sys::Win32::System::Ole::OleUninitialize() }
+        }
     }
 
     pub fn properties(printer: &str, owner: isize) -> bool {
-        let owner = if owner == 0 { foreground() } else { owner } as *mut std::ffi::c_void;
+        let owner = owner as *mut std::ffi::c_void;
         let name = wide(printer);
         // SAFETY: the buffers are sized by DocumentPropertiesW; the printer
         // handle is closed on every path.
@@ -464,6 +507,8 @@ mod imp {
                 input.as_ref().map_or(std::ptr::null(), |b| b.as_ptr() as *const DEVMODEW),
                 flags,
             );
+            let err = windows_sys::Win32::Foundation::GetLastError();
+            crate::softrun::trace(&format!("Свойства...: DocumentPropertiesW size {size}, result {r}, error {err}"));
             ClosePrinter(h);
             if size > 0 && r == 1 {
                 put(&SESSION_DM, printer, out);

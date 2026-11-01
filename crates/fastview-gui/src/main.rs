@@ -786,8 +786,9 @@ impl App {
             // The documents sorted by title, each with a small window
             // image, none marked; no «Окна...» (VM: MFC adds it to a
             // «Window» menu only, which this ribbon has not). An MFC popup
-            // at the button's left under it; the button lit (15 px, (252,
-            // 151, 61) → (254, 181, 91)) while it is open (VM).
+            // at the button's left under it; the button lit 15 px, hot
+            // (255, 244, 202) → (255, 220, 122), pressed or open (252, 151, 61)
+            // → (254, 181, 91) (VM).
             let list_id = ui.id().with("fv_doc_list");
             let btn = ui.interact(hit, list_id.with("btn"), egui::Sense::click());
             self.focus_other.push(hit);
