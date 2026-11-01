@@ -229,3 +229,14 @@ misbehaves and the better behaviour is obvious (the maintainer,
   Ours prints «0» on every bar when the fundamental is below 1e-9 of the window's largest |sample|; the threshold sits five orders above
   the noise and three below a ripple of 1e-6 of the level, so real signals, near-constant ones included, keep their
   labels. Reason: the maintainer's decision (2026-10-31). The «% of RMS» mode is untouched (its norm is the level).
+- **A BINARY or binary32 record of one, two or three rows opens (#171).** The original checks the record size by
+  reading the first three sample numbers (and the fourth after 1, 2, 3) unconditionally (`0x451be0` for BINARY,
+  `0x4521bd` for binary32); with fewer rows it reads past the data and dies with an access violation (exception
+  0xc0000005 on a clone, fault offsets at `0x451c9c`–`0x451cd1` and `0x452198`–`0x4521d9`; no window, no message;
+  synthetic records of 1, 2 and 3 rows in both formats, all six crash; four rows and more load). Ours loads such a
+  record at the computed record size. Reason: a crash is a visible failure; the maintainer's decision (2026-11-01).
+- **A `.cff` saved after a lane paste is consistent (#192).** With a pasted lane in the record the original's `.cff`
+  counts the written channels in its CFG part (3A) but its DAT part (BINARY, int32) carries a column for the lane in
+  front of the file channels (a clone run: 26-byte rows for 3A + 1D where 22 are declared), so the file cannot be read
+  back correctly. Ours writes the DAT part of the channels the CFG part declares. Reason: the original's file is
+  internally inconsistent; the maintainer's decision (2026-11-01).
