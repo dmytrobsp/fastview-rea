@@ -7,7 +7,7 @@
 //! frequency settings dialog 353. Painted with egui's painter: no free pan,
 //! box zoom or egui legend — only the original's (z, ox, oy) model.
 
-use crate::app::{App, Doc};
+use crate::app::{App, ChanKey, Doc};
 use crate::diagram::{self as dg, ChanPair, DiagCmd, MenuChan, PlaneView, WheelAct};
 use crate::popmenu::{self, Entry, PopMenu};
 use crate::oscgeom::PixelLines;
@@ -169,11 +169,16 @@ const FRAME: Color32 = Color32::from_rgb(200, 200, 200);
 const AXES: Color32 = Color32::from_rgb(150, 150, 150);
 const SCROLL_W: f32 = 16.0;
 
-/// The plane windows' scroll bars at the system DPI: the same system
-/// metric as the lanes' (SM_CXVSCROLL, VM: 21 / 26 px at 125 / 150 %), not
-/// the 100 % width scaled (20 / 24).
+/// The plane windows' scroll bars at the system DPI: the system metric less the pixel the plane's own edge
+/// takes (SM_CXVSCROLL 17 / 21 / 26, the bars on a clone 16 / 20 / 25 px at 100 / 125 / 150 %): not the 100 %
+/// width scaled (24 at 150 %), not the lanes' metric.
 pub(crate) fn scroll_w() -> f32 {
-    crate::dpi::measured(SCROLL_W, 21.0, 26.0)
+    // One rule with the lanes' (17 / 21 / 26 = MulDiv(17, dpi, 96)): less the plane's own edge pixel.
+    if crate::dpi::unscaled() {
+        SCROLL_W
+    } else {
+        crate::lanes::scroll_w() - 1.0
+    }
 }
 
 fn stroke(w: f32, c: Color32) -> Stroke {
@@ -287,8 +292,8 @@ fn doc_chans(d: &Doc) -> Vec<DChan> {
                 let c = &d.computed[j];
                 DChan {
                     name: c.name.clone(),
-                    unit: c.unit.trim().to_string(),
-                    shown: fvb_core::units::Shown::computed(c.unit.trim()),
+                    unit: c.canon_unit().to_string(),
+                    shown: fvb_core::units::Shown::computed(c.canon_unit()),
                     color: c.color,
                     analog: None,
                     computed: Some(j),
@@ -388,9 +393,20 @@ fn shown_by_name(d: &Doc, name: &str) -> fvb_core::units::Shown {
 /// A channel's bins in the frequency diagram (`0x426510`): its window is
 /// round(own rate / 50) with an own rate (`ch+0x108`), else the record's, and
 /// the correction runs at that rate too.
-pub(crate) fn freq_bins(d: &Doc, samples: &[f64], file: Option<usize>, own_rate: f64, pos: usize, periods: usize, k_max: usize) -> Vec<f64> {
-    let corr = fvb_core::freqcorr::of(&d.osc);
-    let mine = file.and_then(|i| corr.and_then(|cr| cr.for_chan(i))).map(|c| c.at_rate(own_rate));
+/// The scale the frequency diagram's noise threshold is taken against (#93): the window's largest |sample|.
+pub(crate) fn freq_magnitude(samples: &[f64], pos: usize, n: usize, periods: usize) -> f64 {
+    fvb_core::views::window_magnitude(samples, pos, n * periods)
+}
+
+pub(crate) fn freq_bins(d: &Doc, samples: &[f64], who: Option<ChanKey>, own_rate: f64, pos: usize, periods: usize, k_max: usize) -> Vec<f64> {
+    let mine = match who {
+        Some(ChanKey::Analog(i)) => fvb_core::freqcorr::of(&d.osc).and_then(|cr| cr.for_chan(i)).map(|c| c.at_rate(own_rate)),
+        // A formula channel is an analog record like the others: `0x426510`
+        // reads the record's selected frequency channel for it too (not its
+        // own `ch+0x50`), unless it is that channel itself.
+        Some(ChanKey::Computed(j)) => d.computed_corr(j),
+        _ => None,
+    };
     fvb_core::freqcorr::spectrum(mine, samples, pos, d.osc.period_of(own_rate).max(2), periods, k_max, d.osc.harmonic1_gain)
 }
 
@@ -507,7 +523,7 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
             [z.re, z.im]
         };
         // The canonical unit decides the scale, "" → power (`0x43a880`).
-        let unit = c.unit.trim();
+        let unit = c.canon_unit();
         let power = !dg::is_ohm(unit);
         push(c.name.clone(), fvb_core::units::Shown::computed(unit), c.color, power, true, &series);
     }
@@ -1633,8 +1649,8 @@ impl App {
             name: &'a str,
             color: Color32,
             samples: &'a [f64],
-            /// The file channel (its frequency correction and k).
-            file: Option<usize>,
+            /// The channel (its frequency correction and k).
+            file: Option<ChanKey>,
             /// Its own rate (`ch+0x108`): the window and the correction's rate.
             own_rate: f64,
             /// A pasted lane (its computed index): own samples and correction.
@@ -1642,13 +1658,14 @@ impl App {
         }
         let chans: Vec<FreqChan> = (0..d.osc.analog.len())
             .filter(|i| d.chans[*i].on_freq)
-            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: d.shown_samples(i), file: Some(i), own_rate: d.osc.analog[i].own_rate, pend: None })
+            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: d.shown_samples(i), file: Some(ChanKey::Analog(i)), own_rate: d.osc.analog[i].own_rate, pend: None })
             .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && !d.pending_digital(*j)).map(|(j, c)| match d.pending_of(j) {
                 // A pasted analog lane too (`0x46fb1c` tests bit 1 only; clone,
                 // #133): the spectrum at the record's cursor index over the
                 // lane's own samples, its own rate's period.
                 Some(p) => FreqChan { name: &c.name, color: c.color, samples: &c.pending_own, file: None, own_rate: p.pasted.rate, pend: Some(j) },
-                None => FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: None, own_rate: c.own_rate, pend: None },
+                // A formula channel: the record's frequency correction too (`0x426510`, #42).
+                None => FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: Some(ChanKey::Computed(j)), own_rate: c.own_rate, pend: None },
             }))
             .collect();
         let s = print_s().unwrap_or(1.0);
@@ -1700,7 +1717,17 @@ impl App {
             };
             let max = sp[..=k_max].iter().copied().fold(0.0, f64::max);
             let max = if max == 0.0 { 1.0 } else { max };
-            let norm = if use_rms { fvb_core::freqcorr::rms_at(ch.pend.map_or_else(|| ch.file.and(corr).map(|c| c.at_rate(ch.own_rate)), |j| pending_corr(d, j)), ch.file.unwrap_or(fvb_core::freqcorr::OTHER), samples, pos, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
+            let norm = if use_rms {
+                match (ch.pend, ch.file) {
+                    (Some(j), _) => fvb_core::freqcorr::rms_at(pending_corr(d, j), fvb_core::freqcorr::OTHER, samples, pos, n, periods),
+                    (None, Some(ChanKey::Computed(j))) => fvb_core::freqcorr::rms_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, samples, pos, n, periods),
+                    (None, Some(ChanKey::Analog(i))) => fvb_core::freqcorr::rms_at(corr.map(|c| c.at_rate(ch.own_rate)), i, samples, pos, n, periods),
+                    _ => fvb_core::freqcorr::rms_at(None, 0, samples, pos, n, periods),
+                }
+            } else {
+                sp.get(periods).copied().unwrap_or(0.0)
+            };
+            let magnitude = freq_magnitude(samples, pos, n, periods);
             let color = ch.color;
             if g.plot_h() - 30 * si - g.h <= 0 {
                 continue;
@@ -1723,7 +1750,7 @@ impl App {
                     painter.px_rect_stroke(bar.shrink(0.5), 0.0, Stroke::new(1.0f32, color));
                 }
                 // The fundamental's own bar reads 100 (an improvement, #60); `use_rms` has its own norm.
-                let val = if percent { fvb_core::views::percent_bar_value(v, norm, k == periods && !use_rms) } else { v };
+                let val = if percent { fvb_core::views::percent_bar_value(v, norm, k == periods && !use_rms, magnitude) } else { v };
                 let label = fvb_core::views::freq_label(val).trim().to_string();
                 // Measured in the diagrams' Tahoma 13 (`0x4705e6`): its
                 // digits advance 6 px, «.» 3 — numbers only reach here.
@@ -2287,7 +2314,7 @@ mod tests {
             let n = d.osc.samples_per_cycle().max(2);
             let found = (0..d.osc.analog.len()).find_map(|i| {
                 (n * periods..d.osc.sample_count()).find_map(|pos| {
-                    let v = super::freq_bins(d, d.shown_samples(i), Some(i), d.osc.analog[i].own_rate, pos, periods, k_max.min(n * periods / 2).max(periods))[periods];
+                    let v = super::freq_bins(d, d.shown_samples(i), Some(ChanKey::Analog(i)), d.osc.analog[i].own_rate, pos, periods, k_max.min(n * periods / 2).max(periods))[periods];
                     (v != 0.0 && fvb_core::views::freq_label(100.0 * v / v).trim() == "100.0").then_some((i, pos))
                 })
             });
@@ -2758,14 +2785,36 @@ mod tests {
         assert!((d.osc.analog[1].samples[1] - 1000.0 * raw.analog[1].samples[1]).abs() < 1e-6);
     }
 
-    /// #78: the plane windows' scroll bars are the system's metric, 21 / 26
-    /// px at 125 / 150 % (the lanes' too), not the 100 % width scaled.
+    /// #141 (clone, a zoomed differential plane): the plane windows' scroll bars are 16 / 20 / 25 px at 100 /
+    /// 125 / 150 % — the system metric less one (the lanes' are 17 / 21 / 26), not the 100 % width scaled.
     #[test]
     fn the_plane_scroll_bars_follow_the_system_metric() {
-        for (dpi, w) in [(96, 16.0), (120, 21.0), (144, 26.0)] {
+        for (dpi, w) in [(96, 16.0), (120, 20.0), (144, 25.0)] {
             crate::dpi::set(dpi);
             assert_eq!(scroll_w(), w, "{dpi}");
         }
         crate::dpi::set(96);
+    }
+
+    /// #93 at the diagram's wiring: a constant channel's window gives a magnitude, and with it every «%» label
+    /// reads 0; a magnitude of 0 (the wiring dropped) would print the noise.
+    #[test]
+    fn a_constant_channel_prints_zero_percent_labels() {
+        let mut app = crate::app::App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        let n = d.osc.samples_per_cycle().max(2);
+        let len = d.osc.analog[0].samples.len();
+        d.osc.analog[0].samples = vec![220.5; len];
+        d.recompute(false);
+        let d = app.active_doc().unwrap();
+        let (pos, periods, k_max) = (len - 1, 1usize, 5usize);
+        let samples = d.shown_samples(0);
+        let sp = freq_bins(d, samples, Some(ChanKey::Analog(0)), d.osc.analog[0].own_rate, pos, periods, k_max);
+        let magnitude = freq_magnitude(samples, pos, n, periods);
+        assert!(magnitude > 200.0, "the window's magnitude is the level");
+        let labels = |m: f64| -> Vec<String> { sp.iter().enumerate().map(|(k, &v)| fvb_core::views::freq_label(fvb_core::views::percent_bar_value(v, sp[periods], k == periods, m)).trim().to_string()).collect() };
+        assert_eq!(labels(magnitude), vec!["0"; k_max + 1]);
+        assert_ne!(labels(0.0), vec!["0"; k_max + 1], "without the magnitude the noise is printed");
     }
 }
