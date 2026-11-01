@@ -2211,15 +2211,20 @@ impl App {
             let field = Rect::from_min_max(r.min + Vec2::new(2.0, 0.0), r.max - Vec2::new(2.0, 1.0));
             let r = egui::TextEdit::singleline(&mut text).frame(false).font(ROW_FONT).text_color(Color32::BLACK).margin(egui::Margin::ZERO).desired_width(field.width()).show(&mut ui.new_child(egui::UiBuilder::new().max_rect(field))).response;
             r.request_focus();
-            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            // As the rename edit, at the key-up (clone, 33042: Enter held, the edit
+            // stays; let go, it commits; Esc likewise).
+            if edit_key_at_release(ui, egui::Id::new(("fv_level_edit_keys", i)), egui::Key::Escape, true) {
                 done = Some(false);
-            } else if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            } else if edit_key_at_release(ui, egui::Id::new(("fv_level_edit_keys", i)), egui::Key::Enter, true) {
                 done = Some(true);
             }
         });
         let pressed_out = ui.input(|inp| inp.pointer.any_pressed() && inp.pointer.interact_pos().is_some_and(|p| !area.response.rect.contains(p)));
         if done.is_none() && pressed_out {
             done = Some(true);
+        }
+        if done.is_some() {
+            edit_keys_disarm(ui, egui::Id::new(("fv_level_edit_keys", i)));
         }
         match done {
             None => self.level_edit = Some((i, text)),
@@ -3848,6 +3853,10 @@ mod menu_tests {
             h.app.level_edit = Some((0, text.into()));
             h.frame(vec![]);
             h.frame(vec![key(k)]);
+            // At the key-up, as the rename edit (clone): open while it is down.
+            h.frame(vec![]);
+            assert!(h.app.level_edit.is_some(), "{text}: open while the key is down");
+            h.frame(vec![egui::Event::Key { key: k, physical_key: None, pressed: false, repeat: false, modifiers: Default::default() }]);
             h.frame(vec![]);
             assert!(h.app.level_edit.is_none(), "{text}: closed");
             assert_eq!(value(&h), want, "{text}");
