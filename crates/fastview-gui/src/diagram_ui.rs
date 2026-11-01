@@ -2159,6 +2159,16 @@ fn vector_header_off(painter: &egui::Painter, full: Rect, scales: [f64; 2]) -> f
     (full.width() - l - w - m - 10.0 / s).max(0.0)
 }
 
+/// The header's text height cy ("Ay" in the DC's font): on paper the
+/// original's Arial gives ⌊52·s/5⌋ − 1 device px (VM at s = 6: rows of 91
+/// px, so cy = 61), in points here; on screen the measured height.
+fn header_cy(print: Option<f32>, measured: f32) -> f32 {
+    match print {
+        Some(s) => ((52.0 * s / 5.0).floor() - 1.0) / s,
+        None => measured,
+    }
+}
+
 /// The vector diagram's header (`0x4910c3`–`0x4917fc`): a box at the top
 /// right, (254,250,220) under the window pen, split into two rows and two
 /// columns — «U max» / «I max» and the group scales `"%.1f V"` / `"%.1f A"`
@@ -2171,7 +2181,7 @@ fn vector_header(painter: &egui::Painter, full: Rect, [u, i]: [f64; 2]) {
     let measure = |t: &str| painter.layout_no_wrap(t.to_string(), font(), ink).size();
     let (ut, it) = header_texts([u, i]);
     let (m, ten) = (6.0, 10.0 / s);
-    let cy = measure("Ay").y;
+    let cy = header_cy(print_look(), measure("Ay").y);
     let h = (3.0 * cy * s / 2.0).floor() / s;
     let l = measure("U max").x + 2.0 * m;
     let w = measure("0.0000").x.max(measure(&ut).x).max(measure(&it).x) + 2.0 * m;
@@ -2201,6 +2211,14 @@ mod tests {
 
     /// The zoom gate scales over the client less 8 / 16 px (`0x4379e0`),
     /// not over the painted plane.
+    #[test]
+    fn the_header_rows_follow_the_printer_font_height() {
+        let cy = header_cy(Some(6.0), 65.0 / 6.0);
+        assert_eq!(cy * 6.0, 61.0);
+        assert_eq!((3.0 * cy * 6.0 / 2.0).floor(), 91.0);
+        assert_eq!(header_cy(None, 16.0), 16.0);
+    }
+
     #[test]
     fn the_zoom_gate_measures_its_own_rectangle() {
         let g = PlaneGeom { w: 100, h: 100, pan: (0, 0), max: [10.0, 10.0], char_max: 10.0, gate: (400, 400) };

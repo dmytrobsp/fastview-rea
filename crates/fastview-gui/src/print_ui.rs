@@ -430,7 +430,7 @@ impl App {
             let d = &pv.job.dev;
             Vec2::new(d.sheet_mm.0 / 25.4 * d.dpi, d.sheet_mm.1 / 25.4 * d.dpi).round()
         };
-        let fit = ((avail.y - 20.0) / page.y).min((avail.x - 20.0) / (page.x * shown.len() as f32 + 10.0)).max(0.05);
+        let fit = preview_fit(avail, page, shown.len());
         let scale = fit * [1.0, 1.6, 2.6][pv.zoom as usize];
         let ppp = ctx.pixels_per_point();
         for &i in &shown {
@@ -503,6 +503,13 @@ impl App {
     }
 }
 
+/// The scale a preview sheet is shown at: the height left less 12 px (VM:
+/// the original's sheet is 314 px in a 330 px area, 8 px taller than the
+/// 20 px margin gave), the width less 20 px and 10 px between sheets.
+fn preview_fit(avail: Vec2, page: Vec2, sheets: usize) -> f32 {
+    ((avail.y - 12.0) / page.y).min((avail.x - 20.0) / (page.x * sheets as f32 + 10.0)).max(0.05)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -517,6 +524,14 @@ mod tests {
             }
             app.print_windows(ctx);
         });
+    }
+
+    #[test]
+    fn the_preview_sheet_leaves_twelve_pixels_of_height() {
+        let page = Vec2::new(850.0, 1100.0);
+        let fit = preview_fit(Vec2::new(560.0, 330.0), page, 1);
+        assert_eq!((page.y * fit).round(), 318.0);
+        assert!(preview_fit(Vec2::new(200.0, 900.0), page, 1) < 0.3, "width limits a narrow area");
     }
 
     #[test]
