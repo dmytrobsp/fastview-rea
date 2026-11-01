@@ -604,12 +604,12 @@ pub fn arrow_band() -> f32 {
 /// The period of the scroll arrow's timer.
 pub const SCROLL_TICK: f32 = 0.08;
 
-/// Whole rows a menu scrolls in `dt` seconds with the pointer on an arrow (`acc` carries the rest).
-pub fn scroll_ticks(acc: &mut f32, dt: f32) -> f32 {
-    *acc += dt;
-    let n = (*acc / SCROLL_TICK).floor();
-    *acc -= n * SCROLL_TICK;
-    n
+/// Whole rows the arrow's timer has fired since `*last` (the time it last fired, set when the pointer
+/// came on the arrow), at the real time `now`; `*last` advances by the ticks taken.
+pub fn scroll_ticks(last: &mut f64, now: f64) -> f32 {
+    let n = ((now - *last) / SCROLL_TICK as f64).floor().max(0.0);
+    *last += n * SCROLL_TICK as f64;
+    n as f32
 }
 
 /// `scroll` moved the least that shows the rows `top..top + h` in a view `view` high.
@@ -654,7 +654,6 @@ pub fn view_height(avail: f32) -> f32 {
 /// scrolled by `scroll` (updated).
 fn scrolled<R>(ui: &mut egui::Ui, avail: f32, scroll: &mut f32, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let band = arrow_band();
-    let dt = ui.ctx().input(|i| i.stable_dt).min(0.1);
     // The menu keeps its height; a band is there only while rows lie beyond it, and the rows take its room
     // otherwise (clone). The rows' height is last frame's.
     let key = ui.id().with("fv_rows_h");
@@ -668,11 +667,17 @@ fn scrolled<R>(ui: &mut egui::Ui, avail: f32, scroll: &mut f32, add: impl FnOnce
         let d = if up { -1.0 } else { 1.0 };
         ui.painter().add(egui::Shape::convex_polygon(vec![c + Vec2::new(-3.0, 1.5 * -d), c + Vec2::new(3.0, 1.5 * -d), c + Vec2::new(0.0, 1.5 * d)], MFC_TEXT, Stroke::NONE));
         if ui.rect_contains_pointer(row) {
+            // The timer starts when the pointer comes on the arrow and fires every 80 ms of real time.
             let tick = ui.id().with("fv_tick");
-            let mut acc: f32 = ui.ctx().data(|dd| dd.get_temp(tick)).unwrap_or(0.0);
-            *scroll += d * scroll_ticks(&mut acc, dt) * row_pitch();
-            ui.ctx().data_mut(|dd| dd.insert_temp(tick, acc));
-            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f32(SCROLL_TICK));
+            let now = ui.ctx().input(|i| i.time);
+            let (mut last, seen): (f64, f64) = ui.ctx().data(|dd| dd.get_temp(tick)).unwrap_or((now, now));
+            if now - seen > 0.5 {
+                last = now;
+            }
+            *scroll += d * scroll_ticks(&mut last, now) * row_pitch();
+            ui.ctx().data_mut(|dd| dd.insert_temp(tick, (last, now)));
+            let rest = (SCROLL_TICK as f64 - (now - last)).max(0.001);
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(rest));
         }
     };
     // A wheel notch over the menu: one row.
@@ -1151,9 +1156,10 @@ mod tests {
     /// The arrow's timer: a row per 80 ms, the remainder carried.
     #[test]
     fn the_scroll_arrow_steps_whole_rows_every_80_ms() {
-        let mut acc = 0.0;
-        let rows: f32 = (0..10).map(|_| scroll_ticks(&mut acc, 0.05)).sum();
+        let mut last = 0.0;
+        let rows: f32 = (1..=10).map(|n| scroll_ticks(&mut last, n as f64 * 0.05)).sum();
         assert_eq!(rows, 6.0, "0.5 s: 6 ticks of 80 ms");
+        assert_eq!(scroll_ticks(&mut last, 0.5 + 0.239), 3.0, "a late frame takes the ticks it missed");
     }
 
     /// A touchpad's pixel deltas pile up to whole rows.
@@ -1179,5 +1185,38 @@ mod tests {
         assert_eq!(m.scroll, 0.0, "less than a row waits");
         frame(&mut m, vec![px(-14.0)]);
         assert!((m.scroll - row_pitch()).abs() < 0.5, "a row after 24 px: {}", m.scroll);
+    }
+
+    /// The pointer resting on an arrow (frames only when the 80 ms timer asks for one) scrolls a row per
+    /// 80 ms of real time, not per frame.
+    #[test]
+    fn a_pointer_resting_on_an_arrow_scrolls_a_row_every_80_ms() {
+        let entries: Vec<Entry<u8>> = (0..60).map(|n| Entry::item(format!("item {n}"), true, Mark::None, n)).collect();
+        let ctx = egui::Context::default();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 300.0));
+        let mut m = PopMenu::new(1, Pos2::new(400.0, 100.0));
+        let mut t = 0.0;
+        let mut frame = |m: &mut PopMenu, gap: f64, events: Vec<egui::Event>| {
+            t += gap;
+            let mut r = Rect::NOTHING;
+            let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), time: Some(t), events, ..Default::default() }, |ctx| {
+                show(ctx, "t", m, &entries);
+                r = ctx.memory(|mem| mem.area_rect(area_id("t", 1))).unwrap_or(Rect::NOTHING);
+            });
+            r
+        };
+        let mut r = Rect::NOTHING;
+        // Frames come at 60 Hz while things move, so egui's smoothed frame time is 1/60 s.
+        for _ in 0..90 {
+            r = frame(&mut m, 1.0 / 60.0, vec![]);
+        }
+        let down = Pos2::new(r.center().x, r.bottom() - arrow_band() * 0.5 - 3.0);
+        frame(&mut m, 1.0 / 60.0, vec![egui::Event::PointerMoved(down)]);
+        let start = m.scroll;
+        for _ in 0..10 {
+            frame(&mut m, 0.08, vec![]);
+        }
+        let rows = (m.scroll - start) / row_pitch();
+        assert!((9.0..=10.0).contains(&rows), "10 frames 80 ms apart, the pointer at rest: {rows} rows");
     }
 }
