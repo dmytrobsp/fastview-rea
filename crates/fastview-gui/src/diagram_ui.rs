@@ -7,7 +7,7 @@
 //! frequency settings dialog 353. Painted with egui's painter: no free pan,
 //! box zoom or egui legend — only the original's (z, ox, oy) model.
 
-use crate::app::{App, Doc};
+use crate::app::{App, ChanKey, Doc};
 use crate::diagram::{self as dg, ChanPair, DiagCmd, MenuChan, PlaneView, WheelAct};
 use crate::popmenu::{self, Entry, PopMenu};
 use crate::oscgeom::PixelLines;
@@ -169,11 +169,16 @@ const FRAME: Color32 = Color32::from_rgb(200, 200, 200);
 const AXES: Color32 = Color32::from_rgb(150, 150, 150);
 const SCROLL_W: f32 = 16.0;
 
-/// The plane windows' scroll bars at the system DPI: the same system
-/// metric as the lanes' (SM_CXVSCROLL, VM: 21 / 26 px at 125 / 150 %), not
-/// the 100 % width scaled (20 / 24).
+/// The plane windows' scroll bars at the system DPI: the system metric less the pixel the plane's own edge
+/// takes (SM_CXVSCROLL 17 / 21 / 26 / 30 / 34, the bars on a clone 16 / 20 / 25 px at 100 / 125 / 150 % and one
+/// less than the metric beyond): not the 100 % width scaled (24 at 150 %).
 pub(crate) fn scroll_w() -> f32 {
-    crate::dpi::measured(SCROLL_W, 21.0, 26.0)
+    // One rule with the lanes' (MulDiv(17, dpi, 96)): less the plane's own edge pixel.
+    if crate::dpi::unscaled() {
+        SCROLL_W
+    } else {
+        crate::lanes::scroll_w() - 1.0
+    }
 }
 
 fn stroke(w: f32, c: Color32) -> Stroke {
@@ -287,8 +292,8 @@ fn doc_chans(d: &Doc) -> Vec<DChan> {
                 let c = &d.computed[j];
                 DChan {
                     name: c.name.clone(),
-                    unit: c.unit.trim().to_string(),
-                    shown: fvb_core::units::Shown::computed(c.unit.trim()),
+                    unit: c.canon_unit().to_string(),
+                    shown: fvb_core::units::Shown::computed(c.canon_unit()),
                     color: c.color,
                     analog: None,
                     computed: Some(j),
@@ -388,10 +393,36 @@ fn shown_by_name(d: &Doc, name: &str) -> fvb_core::units::Shown {
 /// A channel's bins in the frequency diagram (`0x426510`): its window is
 /// round(own rate / 50) with an own rate (`ch+0x108`), else the record's, and
 /// the correction runs at that rate too.
-pub(crate) fn freq_bins(d: &Doc, samples: &[f64], file: Option<usize>, own_rate: f64, pos: usize, periods: usize, k_max: usize) -> Vec<f64> {
-    let corr = fvb_core::freqcorr::of(&d.osc);
-    let mine = file.and_then(|i| corr.and_then(|cr| cr.for_chan(i))).map(|c| c.at_rate(own_rate));
+/// The scale the frequency diagram's noise threshold is taken against (#93): the window's largest |sample|.
+pub(crate) fn freq_magnitude(samples: &[f64], pos: usize, n: usize, periods: usize) -> f64 {
+    fvb_core::views::window_magnitude(samples, pos, n * periods)
+}
+
+pub(crate) fn freq_bins(d: &Doc, samples: &[f64], who: Option<ChanKey>, own_rate: f64, pos: usize, periods: usize, k_max: usize) -> Vec<f64> {
+    let mine = match who {
+        Some(ChanKey::Analog(i)) => fvb_core::freqcorr::of(&d.osc).and_then(|cr| cr.for_chan(i)).map(|c| c.at_rate(own_rate)),
+        // A formula channel is an analog record like the others: `0x426510`
+        // reads the record's selected frequency channel for it too (not its
+        // own `ch+0x50`), unless it is that channel itself.
+        Some(ChanKey::Computed(j)) => d.computed_corr(j),
+        _ => None,
+    };
     fvb_core::freqcorr::spectrum(mine, samples, pos, d.osc.period_of(own_rate).max(2), periods, k_max, d.osc.harmonic1_gain)
+}
+
+/// The record's frequency correction for pasted lane `j` at its own rate: as
+/// `Doc::reflag_computed` builds it (`0x426510` gates on the record, never on
+/// the channel's kind; only the selected frequency channel itself is exempt).
+pub(crate) fn pending_corr(d: &Doc, j: usize) -> Option<fvb_core::freqcorr::FreqCorr<'_>> {
+    let rate = d.pending_of(j)?.pasted.rate;
+    fvb_core::freqcorr::of(&d.osc).filter(|_| fvb_core::freqcorr::selected_extra(&d.osc) != Some(j)).map(|c| c.at_rate(rate))
+}
+
+/// A pasted analog lane's bins in the frequency diagram: its own samples at
+/// the record's cursor index, its own rate's window, the record's correction.
+pub(crate) fn pending_bins(d: &Doc, j: usize, pos: usize, periods: usize, k_max: usize) -> Vec<f64> {
+    let (Some(p), Some(c)) = (d.pending_of(j), d.computed.get(j)) else { return vec![0.0; k_max + 1] };
+    fvb_core::freqcorr::spectrum(pending_corr(d, j), &c.pending_own, pos, d.osc.period_of(p.pasted.rate).max(2), periods, k_max, d.osc.harmonic1_gain)
 }
 
 fn circle_range(d: &Doc, between: bool) -> std::ops::RangeInclusive<usize> {
@@ -492,7 +523,7 @@ fn plane_loci(d: &Doc, diff: bool, between: bool) -> Vec<Locus> {
             [z.re, z.im]
         };
         // The canonical unit decides the scale, "" → power (`0x43a880`).
-        let unit = c.unit.trim();
+        let unit = c.canon_unit();
         let power = !dg::is_ohm(unit);
         push(c.name.clone(), fvb_core::units::Shown::computed(unit), c.color, power, true, &series);
     }
@@ -1618,15 +1649,24 @@ impl App {
             name: &'a str,
             color: Color32,
             samples: &'a [f64],
-            /// The file channel (its frequency correction and k).
-            file: Option<usize>,
+            /// The channel (its frequency correction and k).
+            file: Option<ChanKey>,
             /// Its own rate (`ch+0x108`): the window and the correction's rate.
             own_rate: f64,
+            /// A pasted lane (its computed index): own samples and correction.
+            pend: Option<usize>,
         }
         let chans: Vec<FreqChan> = (0..d.osc.analog.len())
             .filter(|i| d.chans[*i].on_freq)
-            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: d.shown_samples(i), file: Some(i), own_rate: d.osc.analog[i].own_rate })
-            .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && d.pending_of(*j).is_none()).map(|(_, c)| FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: None, own_rate: c.own_rate }))
+            .map(|i| FreqChan { name: &d.osc.analog[i].id, color: d.chans[i].color, samples: d.shown_samples(i), file: Some(ChanKey::Analog(i)), own_rate: d.osc.analog[i].own_rate, pend: None })
+            .chain(d.computed.iter().enumerate().filter(|(j, c)| c.on_freq && !d.pending_digital(*j)).map(|(j, c)| match d.pending_of(j) {
+                // A pasted analog lane too (`0x46fb1c` tests bit 1 only; clone,
+                // #133): the spectrum at the record's cursor index over the
+                // lane's own samples, its own rate's period.
+                Some(p) => FreqChan { name: &c.name, color: c.color, samples: &c.pending_own, file: None, own_rate: p.pasted.rate, pend: Some(j) },
+                // A formula channel: the record's frequency correction too (`0x426510`, #42).
+                None => FreqChan { name: &c.name, color: c.color, samples: &c.samples, file: Some(ChanKey::Computed(j)), own_rate: c.own_rate, pend: None },
+            }))
             .collect();
         let s = print_s().unwrap_or(1.0);
         let si = s as i32;
@@ -1671,10 +1711,23 @@ impl App {
             let samples = ch.samples;
             let n = d.osc.period_of(ch.own_rate).max(2);
             // The spectrum and the norm sum the samples as `0x426020` returns them (times k, each one).
-            let sp: Vec<f64> = freq_bins(d, samples, ch.file, ch.own_rate, pos, periods, k_max.max(periods));
+            let sp: Vec<f64> = match ch.pend {
+                Some(j) => pending_bins(d, j, pos, periods, k_max.max(periods)),
+                None => freq_bins(d, samples, ch.file, ch.own_rate, pos, periods, k_max.max(periods)),
+            };
             let max = sp[..=k_max].iter().copied().fold(0.0, f64::max);
             let max = if max == 0.0 { 1.0 } else { max };
-            let norm = if use_rms { fvb_core::freqcorr::rms_at(ch.file.and(corr).map(|c| c.at_rate(ch.own_rate)), ch.file.unwrap_or(0), samples, pos, n, periods) } else { sp.get(periods).copied().unwrap_or(0.0) };
+            let norm = if use_rms {
+                match (ch.pend, ch.file) {
+                    (Some(j), _) => fvb_core::freqcorr::rms_at(pending_corr(d, j), fvb_core::freqcorr::OTHER, samples, pos, n, periods),
+                    (None, Some(ChanKey::Computed(j))) => fvb_core::freqcorr::rms_at(d.computed_corr(j), fvb_core::freqcorr::OTHER, samples, pos, n, periods),
+                    (None, Some(ChanKey::Analog(i))) => fvb_core::freqcorr::rms_at(corr.map(|c| c.at_rate(ch.own_rate)), i, samples, pos, n, periods),
+                    _ => fvb_core::freqcorr::rms_at(None, 0, samples, pos, n, periods),
+                }
+            } else {
+                sp.get(periods).copied().unwrap_or(0.0)
+            };
+            let magnitude = freq_magnitude(samples, pos, n, periods);
             let color = ch.color;
             if g.plot_h() - 30 * si - g.h <= 0 {
                 continue;
@@ -1697,7 +1750,7 @@ impl App {
                     painter.px_rect_stroke(bar.shrink(0.5), 0.0, Stroke::new(1.0f32, color));
                 }
                 // The fundamental's own bar reads 100 (an improvement, #60); `use_rms` has its own norm.
-                let val = if percent { fvb_core::views::percent_bar_value(v, norm, k == periods && !use_rms) } else { v };
+                let val = if percent { fvb_core::views::percent_bar_value(v, norm, k == periods && !use_rms, magnitude) } else { v };
                 let label = fvb_core::views::freq_label(val).trim().to_string();
                 // Measured in the diagrams' Tahoma 13 (`0x4705e6`): its
                 // digits advance 6 px, «.» 3 — numbers only reach here.
@@ -1764,11 +1817,14 @@ impl App {
             }
             for (k, (cr, slot)) in [(1, (r(204, 36, 167, 30), &mut dlg.b)), (0, (r(18, 36, 168, 30), &mut dlg.a))] {
                 let cur = slot.as_ref().and_then(|v| names.iter().position(|n| n == v)).unwrap_or(0);
+                // One span from OK to «Удалить» (554 template).
+                crate::dialogs::group_continue(ui);
                 if let Some(pick) = win_combo_list(ui, cr, egui::Id::new(("pair_combo", k)), &names, cur, !names.is_empty()) {
                     *slot = Some(names[pick].clone());
                 }
             }
             // «Добавить» needs both channels; the new row is selected.
+            crate::dialogs::group_continue(ui);
             if win_button_en(ui, r(324, 60, 49, 14), "Добавить", false, dlg.a.is_some() && dlg.b.is_some()).clicked() {
                 dlg.pairs.push(ChanPair::new(dlg.a.clone().unwrap_or_default(), dlg.b.clone().unwrap_or_default()));
                 dlg.sel = Some(dlg.pairs.len() - 1);
@@ -1815,6 +1871,7 @@ impl App {
             // The list is a tab stop; a press on it gives it the focus.
             let list_id = egui::Id::new("pair_list");
             ui.interact(Rect::from_min_max(Pos2::new(inner.left(), hdr.bottom()), inner.max), list_id, egui::Sense::click());
+            crate::dialogs::group_continue(ui);
             dlg.list_focus = crate::dialogs::tab_stop(ui, list_id, crate::dialogs::StopKind::Other);
             for (i, pair) in dlg.pairs.iter().enumerate() {
                 let top = hdr.bottom() + row_h * i as f32;
@@ -1836,6 +1893,7 @@ impl App {
                 }
             }
             // «Удалить» removes the selected row and selects the next (or last).
+            crate::dialogs::group_continue(ui);
             if win_button_en(ui, r(324, 318, 50, 14), "Удалить", false, dlg.sel.is_some()).clicked() {
                 if let Some(s) = dlg.sel {
                     dlg.pairs.remove(s);
@@ -2098,12 +2156,38 @@ fn header_texts([u, i]: [f64; 2]) -> (String, String) {
 /// `max(0, W − L − Wv − m − 10)`.
 fn vector_header_off(painter: &egui::Painter, full: Rect, scales: [f64; 2]) -> f32 {
     let s = print_s().unwrap_or(1.0);
-    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), font(), Color32::BLACK).size().x;
+    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), header_font(print_s()), Color32::BLACK).size().x;
     let (ut, it) = header_texts(scales);
     let m = 6.0;
     let l = measure("U max") + 2.0 * m;
     let w = measure("0.0000").max(measure(&ut)).max(measure(&it)) + 2.0 * m;
     (full.width() - l - w - m - 10.0 / s).max(0.0)
+}
+
+/// The vector header's text font: on paper Arial's em for the page font's
+/// cell height ⌊52·s/5⌋ (`0x442081`): cell / 1.1172 (Arial's ascent + descent
+/// over its em), in points here; ours' diagram font (0.8 of the screen's)
+/// ran a little small. On screen the diagram font.
+fn header_font(print: Option<f32>) -> FontId {
+    match print {
+        Some(s) => FontId::proportional(((52.0 * s / 5.0).floor() / 1.1172) / s),
+        None => font(),
+    }
+}
+
+/// The header's text height cy ("Ay" measured with GetTextExtentPoint32 in
+/// the DC's font, `0x49149c`…`0x49174d`). Read in the binary: the page's font
+/// is Arial, weight 400, created with a positive lfHeight (a cell height) of
+/// ⌊52·s/5⌋ (`0x442081`–`0x4420b1`), and the box's rows are ⌊3·cy/2⌋. The
+/// extent's height is GDI's text height of that font, which the binary does
+/// not hold: the VM gave 61 px at s = 6 (cell 62, rows of 91 px), one under
+/// the cell height, so `⌊52·s/5⌋ − 1` here (INFERRED for other s) in points;
+/// on screen the measured height.
+fn header_cy(print: Option<f32>, measured: f32) -> f32 {
+    match print {
+        Some(s) => ((52.0 * s / 5.0).floor() - 1.0) / s,
+        None => measured,
+    }
 }
 
 /// The vector diagram's header (`0x4910c3`–`0x4917fc`): a box at the top
@@ -2114,11 +2198,12 @@ fn vector_header_off(painter: &egui::Painter, full: Rect, scales: [f64; 2]) -> f
 /// fits "U max" only, the value column the wider of "0.0000" and both texts.
 fn vector_header(painter: &egui::Painter, full: Rect, [u, i]: [f64; 2]) {
     let s = print_s().unwrap_or(1.0);
+    let hf = header_font(print_s());
     let ink = Color32::from_rgb(20, 20, 20);
-    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), font(), ink).size();
+    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), hf.clone(), ink).size();
     let (ut, it) = header_texts([u, i]);
     let (m, ten) = (6.0, 10.0 / s);
-    let cy = measure("Ay").y;
+    let cy = header_cy(print_s(), measure("Ay").y);
     let h = (3.0 * cy * s / 2.0).floor() / s;
     let l = measure("U max").x + 2.0 * m;
     let w = measure("0.0000").x.max(measure(&ut).x).max(measure(&it).x) + 2.0 * m;
@@ -2136,8 +2221,8 @@ fn vector_header(painter: &egui::Painter, full: Rect, [u, i]: [f64; 2]) {
     painter.px_hline(rect.x_range(), top + h, pen);
     for (row, (label, value)) in [("U max", ut), ("I max", it)].into_iter().enumerate() {
         let y = top + cy / 4.0 + row as f32 * h;
-        painter.text(Pos2::new(x0 + m, y), egui::Align2::LEFT_TOP, label, font(), ink);
-        painter.text(Pos2::new(x0 + l + m, y), egui::Align2::LEFT_TOP, value, font(), ink);
+        painter.text(Pos2::new(x0 + m, y), egui::Align2::LEFT_TOP, label, hf.clone(), ink);
+        painter.text(Pos2::new(x0 + l + m, y), egui::Align2::LEFT_TOP, value, hf.clone(), ink);
     }
 }
 
@@ -2148,6 +2233,46 @@ mod tests {
 
     /// The zoom gate scales over the client less 8 / 16 px (`0x4379e0`),
     /// not over the painted plane.
+    #[test]
+    fn the_header_text_uses_arials_em_on_paper() {
+        let f = header_font(Some(6.0));
+        assert!((f.size - 62.0 / 1.1172 / 6.0).abs() < 1e-3, "{}", f.size);
+        assert_eq!(header_font(None).size, font().size);
+        assert!(header_font(Some(6.0)).size > FontId::proportional(8.8).size, "larger than the 0.8 screen font it had");
+    }
+
+    /// The page painter hands the vector header Arial's cell ⌊52·s/5⌋ for
+    /// every s, also s = 1 (a printer under twice the system dpi), where the
+    /// pens and layout keep the screen look (L9.66, L9.429).
+    #[test]
+    fn the_header_at_s_one_uses_the_page_font() {
+        assert!((header_font(Some(1.0)).size - 10.0 / 1.1172).abs() < 1e-3);
+        assert_eq!(header_cy(Some(1.0), 99.0), 9.0);
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |_| {});
+        let out = ctx.run(Default::default(), |ctx| {
+            let painter = ctx.layer_painter(egui::LayerId::background());
+            let full = Rect::from_min_size(Pos2::ZERO, egui::vec2(600.0, 400.0));
+            with_print_scale(Some(1.0), None, || vector_header(&painter, full, [1234.5, 6.7]));
+        });
+        let mut sizes = Vec::new();
+        for c in &out.shapes {
+            if let egui::epaint::Shape::Text(t) = &c.shape {
+                sizes.extend(t.galley.job.sections.iter().map(|s| s.format.font_id.size));
+            }
+        }
+        assert_eq!(sizes.len(), 4, "the four header texts");
+        assert!(sizes.iter().all(|&z| (z - 10.0 / 1.1172).abs() < 1e-3), "{sizes:?}");
+    }
+
+    #[test]
+    fn the_header_rows_follow_the_printer_font_height() {
+        let cy = header_cy(Some(6.0), 65.0 / 6.0);
+        assert_eq!(cy * 6.0, 61.0);
+        assert_eq!((3.0 * cy * 6.0 / 2.0).floor(), 91.0);
+        assert_eq!(header_cy(None, 16.0), 16.0);
+    }
+
     #[test]
     fn the_zoom_gate_measures_its_own_rectangle() {
         let g = PlaneGeom { w: 100, h: 100, pan: (0, 0), max: [10.0, 10.0], char_max: 10.0, gate: (400, 400) };
@@ -2261,7 +2386,7 @@ mod tests {
             let n = d.osc.samples_per_cycle().max(2);
             let found = (0..d.osc.analog.len()).find_map(|i| {
                 (n * periods..d.osc.sample_count()).find_map(|pos| {
-                    let v = super::freq_bins(d, d.shown_samples(i), Some(i), d.osc.analog[i].own_rate, pos, periods, k_max.min(n * periods / 2).max(periods))[periods];
+                    let v = super::freq_bins(d, d.shown_samples(i), Some(ChanKey::Analog(i)), d.osc.analog[i].own_rate, pos, periods, k_max.min(n * periods / 2).max(periods))[periods];
                     (v != 0.0 && fvb_core::views::freq_label(100.0 * v / v).trim() == "100.0").then_some((i, pos))
                 })
             });
@@ -2278,6 +2403,134 @@ mod tests {
         let texts: Vec<String> = out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
         assert!(texts.iter().any(|t| t == "100"), "the fundamental reads 100: {texts:?}");
         assert!(!texts.iter().any(|t| t == "100.0"), "never 100.0: {texts:?}");
+    }
+
+    /// A pasted analog lane with the pane's bit is drawn on the frequency
+    /// diagram like any other channel (clone, #133: `0x46fb1c` tests bit 1
+    /// and nothing else): its legend entry and its bars.
+    #[test]
+    fn a_pasted_analog_lane_is_drawn_on_the_frequency_diagram() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        d.chans.iter_mut().for_each(|c| c.on_freq = false);
+        d.selection.insert(crate::app::ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let periods = app.freq_periods.max(1);
+        let d = app.active_doc_mut().unwrap();
+        let n = d.osc.samples_per_cycle().max(2);
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).expect("the pasted lane");
+        d.computed[j].on_freq = true;
+        let name = format!("{}, %", d.computed[j].name);
+        // A cursor position where the lane's spectrum is not empty.
+        let k_max = app.freq_harmonics.min(n * periods / 2).max(periods);
+        let d = app.active_doc().unwrap();
+        let pos = (n * periods..d.osc.sample_count())
+            .find(|&pos| super::freq_bins(d, &d.computed[j].pending_own, None, d.pending_of(j).unwrap().pasted.rate, pos, periods, k_max)[periods] != 0.0)
+            .expect("a window with a spectrum");
+        app.active_doc_mut().unwrap().main_cursor = pos;
+        let ctx = egui::Context::default();
+        let out = ctx.run(egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(900.0, 500.0))), ..Default::default() }, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| app.frequency_ui(ui));
+        });
+        let texts: Vec<String> = out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
+        assert!(texts.contains(&name), "the pasted lane's legend entry {name:?}: {texts:?}");
+        assert!(texts.iter().any(|t| t == "100"), "its fundamental reads 100: {texts:?}");
+    }
+
+    /// A pasted lane at its own rate on the frequency diagram takes the
+    /// record's frequency correction at that rate (`0x426510` gates on the
+    /// record: one segment, a frequency channel selected, not this one; no
+    /// test of the channel's kind) and its own rate's window.
+    #[test]
+    fn a_pasted_lane_at_its_own_rate_is_corrected_on_the_frequency_diagram() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        // A synthetic frequency channel, selected.
+        let last = d.osc.analog.len() - 1;
+        let len = d.osc.sample_count();
+        d.osc.analog[last].phase = "system".into();
+        d.osc.analog[last].samples = (0..len).map(|k| 49.3 + 0.0007 * k as f64).collect();
+        d.osc.freq_sel = 1;
+        assert!(fvb_core::freqcorr::of(&d.osc).is_some());
+        d.selection.insert(crate::app::ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).expect("the pasted lane");
+        d.pending_of_mut(j).unwrap().pasted.rate = 1234.0;
+        d.recompute(false);
+        let d = app.active_doc().unwrap();
+        let rate = d.pending_of(j).unwrap().pasted.rate;
+        let n = d.osc.period_of(rate);
+        assert_ne!(n, d.osc.samples_per_cycle(), "a window of its own");
+        let corr = fvb_core::freqcorr::of(&d.osc).unwrap().at_rate(rate);
+        assert_eq!(corr.fs, rate);
+        let x = &d.computed[j].pending_own;
+        assert!(!x.is_empty());
+        let mut told_apart = false;
+        for pos in (3 * n..len).step_by(7) {
+            let got = super::pending_bins(d, j, pos, 1, 5);
+            assert_eq!(got, fvb_core::freqcorr::spectrum(Some(corr), x, pos, n, 1, 5, d.osc.harmonic1_gain), "pos {pos}");
+            told_apart |= got != fvb_core::signal::spectrum(x, pos, n, 1, 5, d.osc.harmonic1_gain);
+        }
+        assert!(told_apart, "the correction changes the bars somewhere");
+    }
+
+    /// The frequency painter draws a pasted lane's bars from `pending_bins` (the record's correction at the
+    /// lane's own rate), not from the uncorrected spectrum: the value labels (`freq_percent = false`) read the
+    /// corrected bins, at a cursor where a corrected label differs from the uncorrected one.
+    #[test]
+    fn the_frequency_painter_labels_a_pasted_lane_with_the_corrected_bins() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        d.chans.iter_mut().for_each(|c| c.on_freq = false);
+        let last = d.osc.analog.len() - 1;
+        let len = d.osc.sample_count();
+        d.osc.analog[last].phase = "system".into();
+        d.osc.analog[last].samples = (0..len).map(|k| 49.3 + 0.0007 * k as f64).collect();
+        d.osc.freq_sel = 1;
+        d.selection.insert(crate::app::ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.freq_percent = false;
+        let periods = app.freq_periods.max(1);
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).expect("the pasted lane");
+        d.pending_of_mut(j).unwrap().pasted.rate = 1234.0;
+        d.computed[j].on_freq = true;
+        d.recompute(false);
+        let d = app.active_doc().unwrap();
+        let rate = d.pending_of(j).unwrap().pasted.rate;
+        let n = d.osc.period_of(rate).max(2);
+        let k_max = app.freq_harmonics.min(n * periods / 2).max(periods);
+        let x = &d.computed[j].pending_own;
+        let label = |v: f64| fvb_core::views::freq_label(v).trim().to_string();
+        let mut found = None;
+        for pos in (3 * n..len).step_by(5) {
+            let corrected: Vec<String> = super::pending_bins(d, j, pos, periods, k_max).into_iter().map(label).collect();
+            let plain: Vec<String> = fvb_core::signal::spectrum(x, pos, n, periods, k_max, d.osc.harmonic1_gain).into_iter().map(label).collect();
+            if let Some(k) = (0..=k_max).find(|&k| corrected[k] != plain[k] && !corrected.contains(&plain[k]) && plain[k] != "0") {
+                found = Some((pos, corrected[k].clone(), plain[k].clone()));
+                break;
+            }
+        }
+        let (pos, want, not) = found.expect("a cursor where the correction changes a label");
+        app.active_doc_mut().unwrap().main_cursor = pos;
+        let ctx = egui::Context::default();
+        let raw = || egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1300.0, 500.0))), ..Default::default() };
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let out = ctx.run(raw(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| app.frequency_ui(ui));
+            });
+            texts = out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
+        }
+        assert!(texts.contains(&want), "the corrected label {want:?}: {texts:?}");
+        assert!(!texts.contains(&not), "not the uncorrected {not:?}: {texts:?}");
     }
 
     #[test]
@@ -2658,14 +2911,36 @@ mod tests {
         assert!((d.osc.analog[1].samples[1] - 1000.0 * raw.analog[1].samples[1]).abs() < 1e-6);
     }
 
-    /// #78: the plane windows' scroll bars are the system's metric, 21 / 26
-    /// px at 125 / 150 % (the lanes' too), not the 100 % width scaled.
+    /// #141 (clone, a zoomed differential plane): the plane windows' scroll bars are 16 / 20 / 25 px at 100 /
+    /// 125 / 150 % — the system metric less one (the lanes' are 17 / 21 / 26), not the 100 % width scaled.
     #[test]
     fn the_plane_scroll_bars_follow_the_system_metric() {
-        for (dpi, w) in [(96, 16.0), (120, 21.0), (144, 26.0)] {
+        for (dpi, w) in [(96, 16.0), (120, 20.0), (144, 25.0), (168, 29.0), (192, 33.0)] {
             crate::dpi::set(dpi);
             assert_eq!(scroll_w(), w, "{dpi}");
         }
         crate::dpi::set(96);
+    }
+
+    /// #93 at the diagram's wiring: a constant channel's window gives a magnitude, and with it every «%» label
+    /// reads 0; a magnitude of 0 (the wiring dropped) would print the noise.
+    #[test]
+    fn a_constant_channel_prints_zero_percent_labels() {
+        let mut app = crate::app::App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        let n = d.osc.samples_per_cycle().max(2);
+        let len = d.osc.analog[0].samples.len();
+        d.osc.analog[0].samples = vec![220.5; len];
+        d.recompute(false);
+        let d = app.active_doc().unwrap();
+        let (pos, periods, k_max) = (len - 1, 1usize, 5usize);
+        let samples = d.shown_samples(0);
+        let sp = freq_bins(d, samples, Some(ChanKey::Analog(0)), d.osc.analog[0].own_rate, pos, periods, k_max);
+        let magnitude = freq_magnitude(samples, pos, n, periods);
+        assert!(magnitude > 200.0, "the window's magnitude is the level");
+        let labels = |m: f64| -> Vec<String> { sp.iter().enumerate().map(|(k, &v)| fvb_core::views::freq_label(fvb_core::views::percent_bar_value(v, sp[periods], k == periods, m)).trim().to_string()).collect() };
+        assert_eq!(labels(magnitude), vec!["0"; k_max + 1]);
+        assert_ne!(labels(0.0), vec!["0"; k_max + 1], "without the magnitude the noise is printed");
     }
 }

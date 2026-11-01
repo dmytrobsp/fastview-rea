@@ -30,9 +30,18 @@ const FRM_FILTER: &str = "Вычисляемые каналы FastView (*.frm)";
 impl App {
     /// The page's copy of the record's formula channels (`0x485e30`).
     pub fn formula_page_open(&mut self) {
+        // The definitions: the formula channels' own, then the rows kill-active kept without a channel.
         let rows = self
             .active_doc()
-            .map(|d| d.computed.iter().filter(|c| crate::setfile::is_formula(c)).map(|c| (c.name.clone(), c.formula.clone())).collect())
+            .map(|d| {
+                let mut rows: Vec<(String, String)> = d.computed.iter().filter(|c| crate::setfile::is_formula(c)).map(|c| (c.name.clone(), c.formula.clone())).collect();
+                let loose = d.loose_defs.iter().filter(|(n, _)| !rows.iter().any(|r| r.0 == *n)).cloned().collect::<Vec<_>>();
+                rows.extend(loose);
+                // In the order the list was last written in (rows it does not know keep theirs, after).
+                let pos = |n: &String| d.def_order.iter().position(|o| o == n).unwrap_or(usize::MAX);
+                rows.sort_by_key(|r| pos(&r.0));
+                rows
+            })
             .unwrap_or_default();
         self.formula_page = FormulaPage { rows, ..Default::default() };
     }
@@ -84,12 +93,29 @@ impl App {
         }
     }
 
-    /// Kill-active (`0x486d20`): end the edit and update. (The original also
-    /// writes the copy into the record's definition list without computing
-    /// it; ours computes only on «Рассчитать».)
+    /// Kill-active (`0x486d20`): end the edit and update; with the list
+    /// changed the copy is written into the record's definition list without
+    /// computing it (#31): a channel of a row's name takes the row's formula
+    /// text and keeps its values until the next calculation, the other rows
+    /// are kept as definitions without a channel.
     pub fn fp_kill_active(&mut self) {
         self.fp_commit_edit();
         self.fp_update();
+        if !self.formula_page.dirty {
+            return;
+        }
+        let rows = self.formula_page.rows.clone();
+        let names: Vec<String> = rows.iter().map(|r| r.0.clone()).collect();
+        let Some(d) = self.active_doc_mut() else { return };
+        let mut loose = Vec::new();
+        for (name, formula) in rows {
+            match d.computed.iter_mut().find(|c| c.name == name && crate::setfile::is_formula(c)) {
+                Some(c) => c.formula = formula,
+                None => loose.push((name, formula)),
+            }
+        }
+        d.loose_defs = loose;
+        d.def_order = names;
     }
 
     /// ↑ (`0x487210`) / ↓ (`0x4873a0`): move the selected row, keep it selected.
@@ -159,14 +185,16 @@ impl App {
         let Some(d) = self.active_doc_mut() else { return };
         d.sync_flagged_names();
         let before = d.computed.clone();
-        for (name, formula) in &rows {
+        for (ri, (name, formula)) in rows.iter().enumerate() {
             let found = d.computed.iter().position(|c| c.name == *name).or_else(|| {
                 let l = name.to_lowercase();
                 d.computed.iter().position(|c| c.name.to_lowercase() == l)
             });
             let existing: Vec<_> = d.computed.iter().enumerate().filter(|(i, _)| Some(*i) != found).map(|(_, c)| c.as_core()).collect();
             let batch = [(name.clone(), formula.clone())];
-            match d.eval_formulas(&existing, &batch, show_primary) {
+            // The list's later rows follow this definition (`0x419074`, #30).
+            let tail: Vec<String> = rows[ri + 1..].iter().map(|r| r.0.clone()).collect();
+            match d.eval_formulas_before(&existing, &batch, &tail, show_primary) {
                 Ok(mut added) => {
                     let c = added.remove(0);
                     match found {
@@ -196,6 +224,8 @@ impl App {
                 }
             }
         }
+        // The rows are channels now.
+        d.loose_defs.clear();
         // `0x415b9a`: the batch done, groups whose member is gone dissolve.
         d.prune_groups();
         d.channels_changed();
@@ -299,6 +329,8 @@ impl App {
         if self.formula_page.edit.is_some() && (pressed_outside || ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape))) {
             self.fp_commit_edit();
         }
+        // The buttons follow the list in its span (340 template, no WS_GROUP).
+        crate::dialogs::group_continue(ui);
         crate::dialogs::tab_index(ui, 1);
         if win_button(ui, dlu(origin, 7, 218, 52, 14), "Загрузить", false).clicked() {
             if let Some(path) = crate::dialogs::file_dialog().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).pick_file() {

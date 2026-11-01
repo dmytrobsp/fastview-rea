@@ -2452,6 +2452,11 @@ impl App {
                             Target::Help => {
                                 let r = self.kt_rects.iter().find(|(t, ..)| *t == Target::Help).map(|(_, r, _)| *r).unwrap_or(egui::Rect::ZERO);
                                 self.open_top_menu(ctx, TopMenu::Help, r);
+                                // The key tip posts Home to the menu: its first
+                                // row is highlighted at once (clone).
+                                if let Some((_, m)) = self.top_menu.as_mut() {
+                                    m.hot = Some(0);
+                                }
                             }
                             Target::Recent(n) => {
                                 if let Some(path) = self.mru.get(n).cloned() {
@@ -2591,7 +2596,20 @@ pub(crate) fn caption_buttons(ui: &mut egui::Ui) {
     for k in 0..3 {
         let (r, resp) = ui.allocate_exact_size(egui::vec2(s(46.0), h), egui::Sense::click());
         let close = k == 0;
-        let hot = resp.hovered();
+        // The maximise button also answers `WM_NCHITTEST` (the snap-layout flyout, `winframe`): the
+        // pointer over it is then non-client input, the hover known from the frame's messages.
+        if k == 1 {
+            // Not while a modal dialog is up (the original's frame is disabled by it), nor where
+            // another layer (a floating pane) lies over the button: Windows would take its clicks.
+            let ctx = ui.ctx();
+            let own = ui.layer_id();
+            let covered = [r.center(), r.left_top() + egui::vec2(2.0, 2.0), r.right_top() + egui::vec2(-2.0, 2.0), r.left_bottom() + egui::vec2(2.0, -2.0), r.right_bottom() - egui::vec2(2.0, 2.0)]
+                .into_iter()
+                .any(|p| ctx.layer_id_at(p).is_some_and(|l| l != own));
+            let live = ui.is_enabled() && !crate::winframe::modal() && !covered;
+            crate::winframe::publish_max_button(live.then_some(r), ctx.pixels_per_point());
+        }
+        let hot = resp.hovered() || (k == 1 && crate::winframe::max_button().is_some() && crate::winframe::max_hot());
         // Under the pointer (VM, maximised): a 45 × 28 face from a pixel
         // left of the button — (245) or the close button's (196, 43, 28).
         if hot {
@@ -2613,6 +2631,27 @@ pub(crate) fn caption_buttons(ui: &mut egui::Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The maximise button is published as live only while no modal dialog is up (the original's frame is
+    /// disabled by one): a bare context, no backdrop, only the modal flag decides.
+    #[test]
+    fn the_maximise_button_is_inert_while_a_modal_flag_is_set() {
+        let ctx = egui::Context::default();
+        let run = || {
+            let _ = ctx.run(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 200.0))), ..Default::default() }, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| ui.horizontal(caption_buttons));
+            });
+        };
+        crate::winframe::set_modal(false);
+        run();
+        assert!(crate::winframe::max_button().is_some(), "live without a dialog");
+        crate::winframe::set_modal(true);
+        run();
+        assert_eq!(crate::winframe::max_button(), None, "inert under a dialog");
+        crate::winframe::set_modal(false);
+        run();
+        assert!(crate::winframe::max_button().is_some(), "live again");
+    }
 
     /// Ribbon labels stay legible in every look: enabled, disabled and on
     /// the checked fill (the dark look's disabled labels used to fade into

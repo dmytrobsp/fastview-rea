@@ -23,6 +23,7 @@ impl App {
     pub fn diagram_panes(&mut self, ctx: &egui::Context) {
         use crate::docking::Place;
         self.pane_canvas.clear();
+        self.drop_targets.clear();
         self.pane_tab_rects.clear();
         self.pane_grid.clear();
         self.dock_client = ctx.available_rect();
@@ -95,7 +96,8 @@ impl App {
     /// The group `unit` leaves its slot: a group beside it takes it.
     fn dock_leave(&mut self, unit: crate::docking::Unit) {
         let shown = self.groups_shown();
-        self.docks.leave(unit, |u| shown[u as usize]);
+        let own = self.dock_rects[unit as usize].map(|r| r.size());
+        self.docks.leave_sized(unit, |u| shown[u as usize], own);
     }
 
     /// The frame client's top-left, where a first float opens.
@@ -152,14 +154,43 @@ impl App {
             },
             Some(Cmd::Dock) if place == Place::Floating => self.docks[unit].double_click(origin),
             Some(Cmd::AutoHide) => {
-                if place == Place::Docked {
-                    self.dock_leave(unit);
-                }
+                self.pin_prepare(unit);
                 self.docks[unit].pin();
             }
             Some(Cmd::Hide) => self.dispatch(Command::TogglePane(pane)),
             _ => {}
         }
+    }
+
+    /// What every way of auto-hiding a docked group does first (the caption
+    /// pin, Ctrl + pin, the pane menu's «Автоматически скрывать»; MFC has one
+    /// toggle): the slid-out pane's window is as large as its docked one
+    /// (#126, VM): a lone pane (the bottom Частотная, the right
+    /// Дифференциальная) the same size, its divider outside it, over the
+    /// view; a tabbed group without the frame its tab control drew (3 px)
+    /// and without a place for the divider (4 px; L9.410); then the group
+    /// leaves its slot.
+    fn pin_prepare(&mut self, u: crate::docking::Unit) {
+        if self.docks[u].place != crate::docking::Place::Docked {
+            return;
+        }
+        if let Some(r) = self.dock_rects[u as usize] {
+            let across = if self.docks.edge(u).vertical() { r.width() } else { r.height() };
+            let grouped = self.dock_views().iter().any(|g| g.unit == u && g.strip);
+            // On a top / bottom edge the group's tab strip lies across the
+            // extent: VM, a bottom group slid out is 48 px lower than docked
+            // at two docked heights (100 %; 125 / 150 % not run: the strip's
+            // height twice, a reading of the one constant).
+            let lost = if !grouped {
+                0.0
+            } else if self.docks.edge(u).vertical() {
+                crate::dpi::s(crate::docking::GROUP_FRAME_PX + crate::docking::DIVIDER_PX)
+            } else {
+                2.0 * crate::dpi::measured(24.0, 30.0, 34.0)
+            };
+            self.docks[u].slide_extent = Some((across - lost).max(crate::docking::SLIDE_MIN_PX));
+        }
+        self.dock_leave(u);
     }
 
     fn caption_acts(&mut self, ctx: &egui::Context, unit: crate::docking::Unit, shown: Pane, act: CaptionAct, pane: egui::Rect) {
@@ -185,15 +216,7 @@ impl App {
                 vec![unit]
             };
             for u in units {
-                if self.docks[u].place == Place::Docked {
-                    // The slid-out pane keeps the size its window had docked
-                    // (VM: pane and divider as wide as the docked pane).
-                    if let Some(r) = self.dock_rects[u as usize] {
-                        let across = if self.docks.edge(u).vertical() { r.width() } else { r.height() };
-                        self.docks[u].slide_extent = Some((across - crate::dpi::s(crate::docking::DIVIDER_PX)).max(crate::docking::SLIDE_MIN_PX));
-                    }
-                    self.dock_leave(u);
-                }
+                self.pin_prepare(u);
                 self.docks[u].pin();
                 if !ctrl && self.docks[u].place == Place::AutoHide {
                     self.docks[u].slide = 1.0;
@@ -261,6 +284,8 @@ impl App {
         // The tab a left press is held on (the detach's arming: the original
         // tracks the press itself, not egui's drag decision).
         let mut armed: Option<Pane> = None;
+        // The tab a double-click landed on (`0x10068d99`: the detach, mode 2).
+        let mut double: Option<Pane> = None;
         let mut tabs: Vec<(Pane, egui::Rect)> = Vec::new();
         // The tab strip (VM, Office 2007 Blue): a (157, 189, 216) line over
         // the brush (191, 219, 255), 20 px tabs from 4 px in; the front tab
@@ -338,6 +363,9 @@ impl App {
                     if r.dragged() {
                         dragged = Some(p);
                     }
+                    if r.double_clicked() {
+                        double = Some(p);
+                    }
                     if r.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
                         armed = Some(p);
                     }
@@ -364,6 +392,19 @@ impl App {
             // keeps the arrow).
             ctx.set_cursor_icon(egui::CursorIcon::Move);
             self.tab_drag_out(&ctx, v, p, strip.response.rect);
+        }
+        // A double-click on a tab of a docked group with more than one tab
+        // floats that pane alone (clone, #124), at its recent floating rect
+        // as a caption double-click does.
+        if let (Some(p), true) = (double, tabs.len() > 1) {
+            if self.docks[v.unit].place == crate::docking::Place::Docked && self.dock_drag.is_none() {
+                let next = self.tab_order.into_iter().find(|&q| q != p && v.mask[q as usize]).unwrap_or(v.unit);
+                let rect = self.docks[p].float_at(Self::float_origin(ui.ctx()));
+                self.docks.float_tab(p, v.unit, next, rect);
+                // Clone (FOCUS): the keyboard focus is the floated pane's own
+                // window, in its mini-frame, whichever tab it was.
+                self.copy_focus = crate::app::CopyFocus::Pane(p);
+            }
         }
         egui::CentralPanel::default().frame(egui::Frame::none()).show_inside(ui, |ui| {
             ui.set_clip_rect(ui.clip_rect().intersect(ui.max_rect()));
@@ -440,7 +481,7 @@ impl App {
                 egui::CentralPanel::default().frame(egui::Frame::none().inner_margin(egui::Margin { left: 1.0, right: 2.0, top: 1.0, bottom: 1.0 })).show_inside(ui, |ui| {
                     self.pane_canvas.push((Pane::Vector, ui.available_rect_before_wrap()));
                     self.vector_ui(ui);
-                    self.pane_drop(ui, Pane::Vector);
+                    self.pane_drop(ui, ui.max_rect(), Pane::Vector);
                     // A white column before the toolbar, as the plane's.
                     let m = ui.max_rect();
                     let w = egui::Rect::from_min_max(m.min - egui::vec2(1.0, 1.0), m.max + egui::vec2(2.0, 1.0));
@@ -453,16 +494,19 @@ impl App {
                 // pane's is brought in.
                 self.switch_diagram(pane_dim(p));
                 self.pane_toolbar(ui, if p == Pane::Circle { Window::Circle } else { Window::Diff });
+                // The circle window (grid and diagram, `0x437560`) is the drop
+                // target, not the toolbar of the pane around it.
+                let window = ui.available_rect_before_wrap();
                 grid_menu = self.char_ui(ui, p);
                 // The differential diagram has no drop target.
                 if p == Pane::Circle {
-                    self.pane_drop(ui, Pane::Circle);
+                    self.pane_drop(ui, window, Pane::Circle);
                 }
             }
             Pane::Frequency => {
                 self.pane_canvas.push((Pane::Frequency, ui.available_rect_before_wrap()));
                 self.frequency_ui(ui);
-                self.pane_drop(ui, Pane::Frequency);
+                self.pane_drop(ui, ui.max_rect(), Pane::Frequency);
             }
         }
         grid_menu
@@ -542,19 +586,35 @@ impl App {
                 // to 4 px.
                 let range = 6.0..=(ctx.available_rect().width() - 4.0).max(6.0);
                 let size = grip_size(ctx, id, ext + 4.0, range.clone());
+                let mut dragged = None;
                 p.resizable(false).show_separator_line(false).frame(dock_frame(strip, edge)).exact_width(size).show(ctx, |ui| {
-                    grip(ui, id, edge, size, range);
+                    dragged = grip(ui, id, edge, size, range);
                     body(self, ui)
                 });
+                // Only what a drag of the divider gives the block is kept in
+                // the group's extent (its size lives under this panel's id,
+                // which changes when the neighbour takes the block over:
+                // #127) — never a clamp to the room the frame leaves.
+                if let Some(n) = dragged {
+                    self.docks[h.unit].extent = Some(n - 4.0);
+                }
             }
             Edge::Top | Edge::Bottom => {
                 let p = if edge == Edge::Top { egui::TopBottomPanel::top(id) } else { egui::TopBottomPanel::bottom(id) };
                 let range = 6.0..=(ctx.available_rect().height() - 4.0).max(6.0);
                 let size = grip_size(ctx, id, ext + 4.0, range.clone());
+                let mut dragged = None;
                 p.resizable(false).show_separator_line(false).frame(dock_frame(strip, edge)).exact_height(size).show(ctx, |ui| {
-                    grip(ui, id, edge, size, range);
+                    dragged = grip(ui, id, edge, size, range);
                     body(self, ui)
                 });
+                // Only what a drag of the divider gives the block is kept in
+                // the group's extent (its size lives under this panel's id,
+                // which changes when the neighbour takes the block over:
+                // #127) — never a clamp to the room the frame leaves.
+                if let Some(n) = dragged {
+                    self.docks[h.unit].extent = Some(n - 4.0);
+                }
             }
         }
     }
@@ -572,7 +632,7 @@ impl App {
             match side {
                 Edge::Top | Edge::Bottom => {
                     let p = if side == Edge::Top { egui::TopBottomPanel::top(inner) } else { egui::TopBottomPanel::bottom(inner) };
-                    let d = wd.extent.unwrap_or(w.natural()).min(full.y / 2.0);
+                    let d = wd.extent.unwrap_or_else(|| w.natural().min(full.y / 2.0));
                     let gap = if side == Edge::Top { egui::Margin { bottom: 4.0, ..Default::default() } } else { egui::Margin { top: 4.0, ..Default::default() } };
                     let range = 80.0..=(full.y - 120.0).max(80.0);
                     let size = grip_size(ui.ctx(), inner, d, range.clone());
@@ -583,7 +643,7 @@ impl App {
                 }
                 Edge::Left | Edge::Right => {
                     let p = if side == Edge::Left { egui::SidePanel::left(inner) } else { egui::SidePanel::right(inner) };
-                    let d = wd.extent.unwrap_or(full.x / 2.0).min(full.x / 2.0);
+                    let d = wd.extent.unwrap_or(full.x / 2.0);
                     // The panes beside each other: 4 px of the splitter brush
                     // between them (VM).
                     let gap = if side == Edge::Left { egui::Margin { right: 4.0, ..Default::default() } } else { egui::Margin { left: 4.0, ..Default::default() } };
@@ -816,8 +876,14 @@ impl App {
             let (pane, divider) = (self.dock_areas[v.unit as usize], self.dock_dividers[v.unit as usize]);
             // The original's pane starts at the window's top, so its check
             // covers that too: a side or top pane's region reaches up there
-            // although ours is drawn from the caption row's bottom.
-            let pane = pane.map(|a| if self.docks.edge(v.unit) == crate::docking::Edge::Bottom { a } else { egui::Rect::from_min_max(egui::pos2(a.left(), ctx.screen_rect().top().min(a.top())), a.max) });
+            // although ours is drawn from the caption row's bottom. With a
+            // top strip beside a side pane the original's starts at the
+            // caption row's bottom, not the window's top (#128, VM: the pointer
+            // resting in the caption row above the pane lets it slide in).
+            let edge = self.docks.edge(v.unit);
+            let top_strip = self.strip_inset[crate::docking::Edge::Top as usize] > 0.0;
+            let from_top = !(edge == crate::docking::Edge::Bottom || (top_strip && edge.vertical()));
+            let pane = pane.map(|a| if from_top { egui::Rect::from_min_max(egui::pos2(a.left(), ctx.screen_rect().top().min(a.top())), a.max) } else { a });
             let inside = pointer.is_some_and(|q| pane.is_some_and(|a| a.contains(q)) || divider.is_some_and(|a| a.contains(q)) || hit.buttons.iter().any(|b| b.contains(q)));
             // Nor while the pane holds the focus: the check returns at once
             // while its active flag (+0x2c8) is set — at each idle update
@@ -969,9 +1035,11 @@ impl App {
             // (the last claim of an id wins; from the same corner, one rect
             // holds the other, so egui sees no clash).
             ui.interact(rect, id.with("move"), egui::Sense::click());
-            let v = ui.visuals();
-            ui.painter().rect(rect, 0.0, v.panel_fill, v.window_stroke());
-            let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(3.0)));
+            // The pane's window fills the rect (VM: no margin, no outline
+            // around it; #126).
+            let fill = ui.visuals().panel_fill;
+            ui.painter().rect_filled(rect, 0.0, fill);
+            let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect));
             body(self, &mut inner);
             ui.expand_to_include_rect(rect);
             // MFC's frame, which a modal dialog disables, is the pane's
@@ -1107,15 +1175,19 @@ impl App {
     /// 2 / 4 / 8): each dragged channel not on the diagram is put on it
     /// (35000+i; the circle diagram only takes Ohm / VA channels,
     /// CompareNoCase) and the document is marked modified.
-    pub fn pane_drop(&mut self, ui: &egui::Ui, pane: Pane) {
+    pub fn pane_drop(&mut self, ui: &egui::Ui, rect: egui::Rect, pane: Pane) {
         let ctx = ui.ctx();
+        self.drop_targets.push((pane, rect));
         let (released, pos) = ctx.input(|i| (i.pointer.primary_released(), i.pointer.latest_pos()));
-        if !released || !pos.is_some_and(|p| ui.max_rect().contains(p)) || !egui::DragAndDrop::has_payload_of_type::<crate::lanes::ChanDrag>(ctx) {
-            return;
-        }
+        let Some(drag) = egui::DragAndDrop::payload::<crate::lanes::ChanDrag>(ctx) else { return };
         // The window under the pointer takes the drop: not a diagram that a
         // floating or slid-out window lies over (clone).
-        if pos.is_some_and(|p| ctx.layer_id_at(p).is_some_and(|l| l != ui.layer_id() && is_pane_window_layer(l))) {
+        let over = pos.filter(|p| rect.contains(*p) && !ctx.layer_id_at(*p).is_some_and(|l| l != ui.layer_id() && is_pane_window_layer(l)));
+        let Some(_) = over else { return };
+        // Another record's channel numbers mean nothing here (#74).
+        let mine = self.active_doc().is_some_and(|d| d.serial == drag.doc);
+        self.drag_cursor = Some(if mine { crate::lanes::MOVE_DROP_CURSOR } else { egui::CursorIcon::NoDrop });
+        if !released || !mine {
             return;
         }
         let Some(drag) = egui::DragAndDrop::take_payload::<crate::lanes::ChanDrag>(ctx) else { return };
@@ -1187,7 +1259,10 @@ impl App {
         // mouse activation), and the view takes the click as well (VM: the
         // визир moves).
         let press = ctx.input(|i| i.pointer.any_pressed().then(|| i.pointer.interact_pos()).flatten());
-        if let Some(p) = press.filter(|&p| ctx.layer_id_at(p).is_some_and(|l| l.order == egui::Order::Background)) {
+        // Not on a group's ▾ button: that press activates nothing (clone —
+        // the title stays, the button holds the focus).
+        let on_list_button = |p: egui::Pos2| self.list_buttons.iter().any(|r| r.contains(p));
+        if let Some(p) = press.filter(|&p| ctx.layer_id_at(p).is_some_and(|l| l.order == egui::Order::Background) && !on_list_button(p)) {
             if let Some(h) = self.mdi_rects.iter().position(|r| r.contains(p)) {
                 if self.active_doc().map(|d| d.mdi_group) != Some(h) {
                     if let Some(f) = self.group_front(h) {
@@ -1206,6 +1281,8 @@ impl App {
             self.layout_groups(ui.max_rect());
             let n = self.group_count();
             self.mdi_strips = vec![egui::Rect::NOTHING; n];
+            self.list_buttons = vec![egui::Rect::NOTHING; n];
+            self.doc_list_open = false;
             // The active group last: what the frame keeps of a view this
             // pass is the active document's.
             let bold = self.active;
@@ -1403,23 +1480,37 @@ impl App {
                 // (the rows and the scroll bar at the system DPI: `dpi`)
                 let (row, bar_w) = (crate::dpi::s(17.0), crate::dpi::s(17.0));
                 let page = (inner.height() / row).floor() * row;
-                let max_off = (content_h - page).max(0.0);
+                // The window scroll bar's range as MFC sets it (clone: with
+                // P rows in view and N in all, the wheel and the bar reach
+                // N - P + 2 rows down, a page of P - 2 sizing the thumb);
+                // it is there when the rows overflow the window.
+                let bar_page = (page - 2.0 * row).max(row);
+                let max_off = if content_h > page { (content_h - bar_page).max(0.0) } else { 0.0 };
+                ui.data_mut(|d| d.insert_temp(grid_rows_id(pane), (page / row) as i32));
+                // PgUp / PgDn scroll a page (P - 1 rows) with the selection.
+                if let Some(rows) = ui.data_mut(|d| d.remove_temp::<i32>(grid_page_id(pane))) {
+                    off = (off + rows as f32 * row).clamp(0.0, max_off);
+                }
                 if ui.rect_contains_pointer(inner) {
                     for dy in ui.input(|i| crate::lanes::wheel_deltas(&i.events)) {
                         off -= dy.signum() * 3.0 * row;
                     }
                 }
+                // A row selected by a key comes into view (EnsureVisible).
+                if let Some(j) = ui.data_mut(|d| d.remove_temp::<usize>(ui_grid_ensure_id(pane))) {
+                    off = ensure_row_visible(off, page, row, j);
+                }
                 let content = if max_off > 0.0 { egui::Rect::from_min_max(inner.min, egui::pos2(inner.right() - bar_w, inner.bottom())) } else { inner };
                 if max_off > 0.0 {
                     let bar = egui::Rect::from_min_max(egui::pos2(content.right(), inner.top()), inner.max);
-                    if let Some(v) = crate::lanes::scrollbar(ui, bar, false, off, max_off, page, row, page) {
+                    if let Some(v) = crate::lanes::scrollbar(ui, bar, false, off, max_off, bar_page, row, page) {
                         off = v;
                     }
                 }
                 off = ((off / row).round() * row).clamp(0.0, max_off);
                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(content.min - egui::vec2(0.0, off), egui::vec2(content.width(), f32::INFINITY))));
                 child.set_clip_rect(content.intersect(ui.clip_rect()));
-                self.char_side_panel(&mut child);
+                self.char_side_panel(&mut child, pane);
                 let h = child.min_rect().height();
                 // The name / value divider on down the empty list (VM).
                 let below = content.top() - off + h;
@@ -1471,7 +1562,7 @@ impl App {
     /// 12 × 12 box framed in the characteristic's colour with a tick while
     /// it is shown (`0x407dc0`; a click there toggles it, `0x4075c0`) — and
     /// its parameters as text rows; an edit re-evaluates the whole block.
-    fn char_side_panel(&mut self, ui: &mut egui::Ui) {
+    fn char_side_panel(&mut self, ui: &mut egui::Ui, pane: Pane) {
         const TEXT: egui::Color32 = egui::Color32::from_rgb(40, 40, 40);
         // CMFCPropertyGridCtrl as the VM shows it (Office 2007 Blue): 17 px
         // rows (16 + a (185, 208, 237) line), the name column half the
@@ -1734,6 +1825,11 @@ impl App {
             });
             let [up, down, home, end, enter, f4, open_key, close_key] = keys;
             let last = order.len().saturating_sub(1);
+            // PgUp / PgDn (clone): the selection and the window both move
+            // by a page, P - 1 rows (P: the rows in view), kept inside the
+            // rows and the scroll range.
+            let (pg_up, pg_down) = ui.input(|i| (i.key_pressed(egui::Key::PageUp), i.key_pressed(egui::Key::PageDown)));
+            let page_rows = ui.data(|d| d.get_temp::<i32>(grid_rows_id(pane))).unwrap_or(2).saturating_sub(1).max(1) as usize;
             // «Тип блока» alone (no block's rows): ↓ / ↑ step its value in
             // an in-place edit and Enter keeps the text — the block is not
             // loaded (VM: «Нет» → «БМРЗ - Защита линий» → «… генераторов»,
@@ -1758,6 +1854,9 @@ impl App {
                 }
                 self.block_text = (next != self.block_idx).then(|| names[next].clone());
                 None
+            } else if pg_up || pg_down {
+                ui.data_mut(|d| d.insert_temp(grid_page_id(pane), if pg_down { page_rows as i32 } else { -(page_rows as i32) }));
+                Some(if pg_down { (at + page_rows).min(last) } else { at.saturating_sub(page_rows) })
             } else if up {
                 Some(at.saturating_sub(1))
             } else if down {
@@ -1771,6 +1870,9 @@ impl App {
             };
             if let Some(j) = to {
                 select.set(Some(order[j].0));
+                // MFC scrolls a key-selected row into view (EnsureVisible):
+                // the grid's scroll reads the row's place.
+                ui.data_mut(|d| d.insert_temp(ui_grid_ensure_id(pane), j));
                 // As a click on the group's row does.
                 if let GridRow::Group(.., ci) = order[j].1 {
                     self.selected_char = Some(ci);
@@ -1832,6 +1934,36 @@ impl App {
     }
 
     // ---- Быстрый анализ ----
+}
+
+/// The rows in view of the grid's window, passed to its keys.
+fn grid_rows_id(pane: Pane) -> egui::Id {
+    egui::Id::new(("fv_grid_rows_in_view", pane))
+}
+
+/// A PgUp / PgDn's page (rows, signed), passed from the grid's keys to its
+/// scroll.
+fn grid_page_id(pane: Pane) -> egui::Id {
+    egui::Id::new(("fv_grid_page_scroll", pane))
+}
+
+/// Where the key-selected row is passed from the grid's rows to its scroll.
+fn ui_grid_ensure_id(pane: Pane) -> egui::Id {
+    egui::Id::new(("fv_grid_ensure_visible", pane))
+}
+
+/// The scroll offset that shows grid row `j` (`row` px each) in a window of
+/// `page` px, moved as little as possible (CMFCPropertyGridCtrl's
+/// EnsureVisible): up to the row's top, or down to its bottom.
+fn ensure_row_visible(off: f32, page: f32, row: f32, j: usize) -> f32 {
+    let (top, bottom) = (j as f32 * row, (j as f32 + 1.0) * row);
+    if top < off {
+        top
+    } else if bottom > off + page {
+        bottom - page
+    } else {
+        off
+    }
 }
 
 /// What an auto-hide strip's buttons of one pinned group saw this frame.
@@ -1963,8 +2095,9 @@ fn grip_size(ctx: &egui::Context, id: egui::Id, default: f32, range: std::ops::R
 /// on `edge` of its slot — as its only resize grip: MFC's pane divider is
 /// that strip (L9.109); egui's own grab reaches 5 px past the edge, into
 /// the neighbour (VM: a press 2 px inside the oscillogram view starts a
-/// lane drag in the original, not a resize). Call first in the panel.
-fn grip(ui: &mut egui::Ui, id: egui::Id, edge: crate::docking::Edge, size: f32, range: std::ops::RangeInclusive<f32>) {
+/// lane drag in the original, not a resize). Call first in the panel;
+/// returns the size a drag just gave the panel.
+fn grip(ui: &mut egui::Ui, id: egui::Id, edge: crate::docking::Edge, size: f32, range: std::ops::RangeInclusive<f32>) -> Option<f32> {
     use crate::docking::Edge;
     let c = ui.max_rect();
     let (strip, sign) = match edge {
@@ -1981,7 +2114,9 @@ fn grip(ui: &mut egui::Ui, id: egui::Id, edge: crate::docking::Edge, size: f32, 
         let d = resp.drag_delta() * sign;
         let new = (size + d.x + d.y).clamp(*range.start(), *range.end());
         ui.ctx().data_mut(|m| m.insert_temp(id.with("size"), new));
+        return Some(new);
     }
+    None
 }
 
 /// A smart-docking marker in the VS2008 look (VM): a rounded box, white

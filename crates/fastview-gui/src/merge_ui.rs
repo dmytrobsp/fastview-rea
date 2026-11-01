@@ -38,6 +38,14 @@ impl ClipChan {
         }
     }
 
+    /// The lane's «*K» icon: the channel's flags and stored values as `0x462b22` tests them.
+    pub fn ratio_icon(&self) -> bool {
+        match &self.pasted.channel {
+            Ok(a) => crate::lanes::ratio_icon(a, self.primary_mode),
+            Err(_) => false,
+        }
+    }
+
     pub fn name(&self) -> &str {
         match &self.pasted.channel {
             Ok(a) => &a.id,
@@ -489,6 +497,7 @@ impl App {
         let other = HeaderSide { title: &rec.title, station: &rec.station_id, block: &rec.block_id, start: &rec.start_time, comment: &rec.hdr_file };
         d.hdr = Some(merged_header(&own, &other));
         d.hdr_cp = crate::setfile::cp_of(1);
+        d.hdr_pasted = true;
         d.merge_offset = 0.0;
         d.refresh_pending();
         // The new channels' caches (`0x4254b9`), flags 0x40e1.
@@ -638,6 +647,9 @@ impl App {
             picked: bool,
             /// The lane's name as read (its bytes, its alias flag).
             raw: Option<crate::app::RawName>,
+            /// The lane's frequency / vector / circle bits (#133): the merged
+            /// channel is the lane's channel and keeps them (clone).
+            bits: Option<[bool; 3]>,
         }
         let pend = |p: &ClipChan| {
             let j = d.computed.iter().position(|c| c.formula == PENDING && c.seq == p.lane);
@@ -657,6 +669,7 @@ impl App {
                 after,
                 picked: j.is_some_and(|j| d.selection.contains(&ChanKey::Computed(j))),
                 raw: c.and_then(|c| c.name_raw.clone()),
+                bits: c.map(|c| [c.on_freq, c.on_vector, c.on_circle]),
             }
         };
         let (pend_a, pend_d): (Vec<Pend>, Vec<Pend>) = {
@@ -731,6 +744,9 @@ impl App {
                 (v.invert, v.remove_dc, v.mode) = (inv, dc, mode);
             }
             v.primary = p.mode;
+            if let Some([freq, vector, circle]) = p.bits {
+                (v.on_freq, v.on_vector, v.on_circle) = (freq, vector, circle);
+            }
             // Pasted at the block's end or before a formula channel: the
             // merged channel stays there, among the formula channels.
             v.merged_after = p.after.clone();
@@ -873,8 +889,19 @@ impl App {
         if on {
             self.focus_other.extend([at(350.0, 10.0, 90.0, 21.0), at(510.0, 10.0, 90.0, 21.0)]);
         }
-        sync = win_button(ui, at(w - 220.0, 9.0, 100.0, 23.0), "Синхронизация", false).clicked() || sync;
-        join = win_button(ui, at(w - 110.0, 9.0, 100.0, 23.0), "Объединить", false).clicked() || join;
+        // A bar is no dialog (clone: Tab goes nowhere, a push button takes no
+        // arrow): a button holding the focus keeps egui from walking it away.
+        let lock = |ui: &egui::Ui, b: &egui::Response| {
+            if b.has_focus() {
+                ui.memory_mut(|m| m.set_focus_lock_filter(b.id, egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true }));
+            }
+        };
+        let b = win_button(ui, at(w - 220.0, 9.0, 100.0, 23.0), "Синхронизация", false);
+        lock(ui, &b);
+        sync = b.clicked() || sync;
+        let b = win_button(ui, at(w - 110.0, 9.0, 100.0, 23.0), "Объединить", false);
+        lock(ui, &b);
+        join = b.clicked() || join;
         let text = r.shrink2(egui::vec2(15.0, 14.0));
         // Each static cut at the control after it (VM, 150 %: «Синхрониза»
         // under the larger font).
@@ -893,11 +920,19 @@ impl App {
             }
             return;
         }
+        self.merge_bar_buttons(sync, join);
+    }
+
+    /// The bar's «Синхронизация» (1091, `0x449930`) and «Объединить» (1092, `0x449960`): both end in the
+    /// refresh-all whatever the merge did.
+    pub(crate) fn merge_bar_buttons(&mut self, sync: bool, join: bool) {
         if sync {
             self.synchronise();
+            self.refresh_blocks();
         }
         if join {
             self.merge_records();
+            self.refresh_blocks();
         }
     }
 }
@@ -1078,6 +1113,33 @@ mod tests {
         assert!(app.merge.is_none(), "the bar is hidden");
     }
 
+    /// A pasted lane dropped on the frequency and the vector pane keeps
+    /// those bits on the channel «Объединить» makes of it (clone, #133: the
+    /// merged channel is still drawn on both panes); the circle's never.
+    #[test]
+    fn a_merged_channel_keeps_its_pasted_lanes_pane_bits() {
+        use crate::app::{ChanKey, Pane};
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        let n0 = d.osc.analog.len();
+        d.selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let j = app.active_doc().unwrap().computed.iter().position(|c| c.formula == PENDING).unwrap();
+        for c in &mut app.active_doc_mut().unwrap().chans {
+            (c.on_freq, c.on_vector, c.on_circle) = (false, false, false);
+        }
+        app.drop_channels(&[ChanKey::Computed(j)], Pane::Frequency);
+        app.drop_channels(&[ChanKey::Computed(j)], Pane::Vector);
+        app.drop_channels(&[ChanKey::Computed(j)], Pane::Circle);
+        app.merge_records();
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.osc.analog.len(), n0 + 1);
+        let new = d.chans.iter().position(|c| c.on_freq && c.on_vector).expect("the merged channel keeps the bits");
+        assert!(!d.chans[new].on_circle, "the circle's bit was never set");
+        assert_eq!(d.chans.iter().filter(|c| c.on_freq || c.on_vector || c.on_circle).count(), 1, "no other channel gained a bit");
+    }
+
     /// A pasted channel is read in its copied display mode (VM: primary
     /// values with a ratio, shown secondary, paste as the source shows them); the
     /// merge writes the file values back.
@@ -1109,6 +1171,79 @@ mod tests {
         // The merged channel, now first, keeps the copied mode: the
         // document stays secondary (VM).
         assert!(!d.primary_values(), "the document's mode is its first channel's");
+    }
+
+    /// 32852 skips bit 13 only (`0x430340`, `0x430650`): a pasted analog lane
+    /// takes «Отображать в отсчетах АЦП» and then reads its ADC codes; a
+    /// formula channel selected with it is counted but never set, so the
+    /// item is unchecked and a click sets (#42, L9.197).
+    #[test]
+    fn adc_applies_to_pending_lanes() {
+        use crate::chansel::ChanFlag;
+        let mut app = demo_app();
+        app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
+        d.selection = std::collections::BTreeSet::from([ChanKey::Computed(j)]);
+        assert_eq!(d.flag_state(ChanFlag::Adc), crate::chansel::ItemState { enabled: true, checked: false });
+        d.toggle_flag_selected(ChanFlag::Adc);
+        assert!(d.computed[j].adc_counts);
+        assert_eq!(d.flag_state(ChanFlag::Adc), crate::chansel::ItemState { enabled: true, checked: true });
+        let codes: Vec<f64> = d.osc.analog[0].samples.iter().map(|&v| d.osc.analog[0].adc_code(v)).collect();
+        assert_eq!(d.computed[j].pending_own, codes, "the lane reads the codes");
+        // The readout shows the bare code: no unit in ADC mode, for a pasted
+        // lane and a file channel alike (a clone run; ours had «отсч.»).
+        let (_, unit, ..) = crate::lanes::lane_stats(d, &ChanKey::Computed(j), 10);
+        assert_eq!(unit.text, "");
+        d.chans[0].adc_counts = true;
+        let (_, unit, ..) = crate::lanes::lane_stats(d, &ChanKey::Analog(0), 10);
+        assert_eq!(unit.text, "");
+        d.chans[0].adc_counts = false;
+        // The lane's status icon (`0x462c32`, bit 12 on any analog-kind record).
+        assert!(crate::lanes::key_icons(d, ChanKey::Computed(j)).contains(&"#"));
+        // The unit the eligibility tests read is none in ADC mode: a unit the
+        // vector diagram refuses no longer does (`0x414c30`).
+        d.computed[j].unit = "Xx".into();
+        assert!(d.flag_state(ChanFlag::OnVector).enabled, "ADC mode: no unit to refuse");
+        d.computed[j].adc_counts = false;
+        assert!(!d.flag_state(ChanFlag::OnVector).enabled, "the unit is refused");
+        d.computed[j].adc_counts = true;
+        // A formula channel in the selection is counted, never set: unchecked.
+        let mut f = crate::app::Computed::new("F1".into(), "1".into(), vec![0.0; d.osc.time.len()], eframe::egui::Color32::RED);
+        f.unit = String::new();
+        d.computed.push(f);
+        let fj = d.computed.len() - 1;
+        d.selection.insert(ChanKey::Computed(fj));
+        assert!(!d.flag_state(ChanFlag::Adc).checked);
+        d.toggle_flag_selected(ChanFlag::Adc);
+        assert!(d.computed[j].adc_counts && !d.computed[fj].adc_counts);
+    }
+
+    /// A pasted lane's «*K» tests the copied channel's stored ratio values with its mode, as a lane's
+    /// does (`0x462b22`): equal values other than 1 show it, both 1 do not.
+    #[test]
+    fn a_pasted_lanes_ratio_icon_tests_the_stored_values() {
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        let a = &mut d.osc.analog[0];
+        (a.primary, a.secondary, a.is_primary) = (7.5, 7.5, true);
+        d.chans[0].primary = false;
+        d.selection.insert(ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        let d = app.active_doc().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == PENDING).unwrap();
+        assert!(crate::lanes::key_icons(d, ChanKey::Computed(j)).contains(&"*K"), "equal values other than 1");
+        let d = app.active_doc_mut().unwrap();
+        for p in &mut d.pending {
+            if let Ok(a) = &mut p.pasted.channel {
+                (a.primary, a.secondary) = (1.0, 1.0);
+            }
+        }
+        let d = app.active_doc().unwrap();
+        assert!(!crate::lanes::key_icons(d, ChanKey::Computed(j)).contains(&"*K"), "both 1");
     }
 
     /// A pending lane's flags (L9.111's residual; `0x428490` with bit 14):
@@ -1291,5 +1426,17 @@ mod tests {
         d.prune_pending();
         assert!(d.pending.is_empty());
         assert!(!crate::omp_ui::has_pending_paste(d));
+    }
+
+    /// #23: the merge bar's buttons 1091 / 1092 (`0x449930`, `0x449960`) end in the refresh-all.
+    #[test]
+    fn the_merge_bars_buttons_end_in_the_refresh_all() {
+        for (sync, join) in [(true, false), (false, true)] {
+            let mut app = demo_app();
+            crate::app::stale_flags::make(&mut app);
+            assert!(crate::app::stale_flags::is_stale(&app));
+            app.merge_bar_buttons(sync, join);
+            assert!(crate::app::stale_flags::swept(&app), "sync {sync}, join {join}");
+        }
     }
 }

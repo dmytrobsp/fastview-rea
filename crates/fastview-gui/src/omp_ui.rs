@@ -120,6 +120,8 @@ impl App {
         } else if !has_pending_paste(&self.docs[di]) {
             self.run_omp();
         }
+        // `0x454310` refreshes on both branches (`0x454350`, `0x454371`), whatever the run gave.
+        self.refresh_blocks();
     }
 
     /// Interactive run (`0x4a00b0(0)`) on the active document; an error is
@@ -131,6 +133,8 @@ impl App {
             Ok(()) => {
                 self.omp_ui.bar_doc = Some(di);
                 self.omp_ui.bar = self.omp_result().map(|r| r.text);
+                // The run ends in the refresh-all (`0x4a1611`).
+                self.refresh_blocks();
             }
             Err(id) => {
                 self.docs[di].omp.shown = false;
@@ -153,6 +157,7 @@ impl App {
                 self.active = Some(di);
                 self.omp_ui.bar = self.omp_result().map(|r| r.text);
                 self.active = active;
+                self.refresh_blocks();
             }
             Err(_) => self.docs[di].omp.shown = false,
         }
@@ -329,6 +334,8 @@ impl App {
         if self.active == Some(di) {
             self.omp_ui.bar = None;
         }
+        // 32830 and the clearing toggle end in the refresh-all (`0x475210`, `0x454350`).
+        self.refresh_blocks();
     }
 
     /// The ОМП result of the active document over its current В1/В2 interval
@@ -1001,7 +1008,7 @@ impl ParamsDialog {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, channels: &[String]) -> Option<DialogAction> {
-        use crate::dialogs::{win_button, win_combo_list, dlg_font};
+        use crate::dialogs::{win_button, win_combo_list};
         let mut action = None;
         // DIALOG 336: 475 × 275 DLU in MS Shell Dlg 8 — a 713 × 447 client;
         // OnInitDialog `0x4a7c50` places the method combo and the toolbar,
@@ -1116,8 +1123,8 @@ impl ParamsDialog {
         let inner = grid.shrink(1.0);
         ui.painter().rect_filled(inner, 0.0, Color32::WHITE);
         let split = inner.left() + crate::dpi::dx(231.0);
-        // The rows from the font's height (17 px at 100 %).
-        let row_h = crate::dpi::base_units().1 as f32 + 4.0;
+        // The rows: 17 / 23 / 27 px at 100 / 125 / 150 % (clone).
+        let row_h = grid_row_h();
         let rule = egui::Stroke::new(1.0f32, Color32::from_gray(240));
         ui.painter().vline(split - 0.5, inner.y_range(), rule);
         let node = self.sel;
@@ -1144,7 +1151,7 @@ impl ParamsDialog {
             // Seen on the VM: the names left-aligned, a value changed since
             // the grid was built (not its name) bold.
             let modified = built.get(k).is_some_and(|b| b != v);
-            let font = dlg_font();
+            let font = grid_font();
             ui.painter().with_clip_rect(name).text(egui::pos2(name.left() + 5.0, name.center().y), egui::Align2::LEFT_CENTER, ellipsize_to(ui, label, name.width() - 7.0), font.clone(), Color32::BLACK);
             // A click selects the row (CMFCPropertyGridCtrl, VM): its name
             // on (180, 201, 233) and its value in place — a number in a
@@ -1241,6 +1248,8 @@ impl ParamsDialog {
                 let mut clip = ui.clip_rect();
                 clip.min.y = clip.min.y.max(grid.bottom());
                 ui.set_clip_rect(clip);
+                // The buttons follow the tree in its span (template, no WS_GROUP).
+                crate::dialogs::group_continue(ui);
                 let ok = win_button(ui, crate::dialogs::dlu(rect, 310, 254, 76, 14), "OK", true).clicked();
                 (ok, win_button(ui, crate::dialogs::dlu(rect, 392, 254, 76, 14), "Отмена", false).clicked())
             })
@@ -1255,10 +1264,31 @@ impl ParamsDialog {
     }
 }
 
+/// The property grid's font: 11 px at 100 %, and the 11 px font scaled by the display's ratio on whole pixels
+/// above (clone: «Название» 49 / 59 / 74 px wide at 100 / 125 / 150 % — 11 / 14 / 17 px; not the dialogs' 8 pt
+/// font, 11 / 13 / 16).
+pub(crate) fn grid_font_px() -> f32 {
+    if crate::dpi::unscaled() {
+        11.0
+    } else {
+        (11.0 * crate::dpi::k()).round()
+    }
+}
+
+fn grid_font() -> egui::FontId {
+    egui::FontId::proportional(grid_font_px())
+}
+
+/// The property grid's row pitch: 17 / 23 / 27 px at 100 / 125 / 150 % on a clone (CMFCPropertyGridCtrl's
+/// row height is its font's height + 4; the grid's font is taller than the dialogs' base unit says).
+pub(crate) fn grid_row_h() -> f32 {
+    crate::dpi::measured(17.0, 23.0, 27.0)
+}
+
 /// A grid name cut to `width` with «...» (DT_END_ELLIPSIS), whole when it
 /// fits.
 fn ellipsize_to(ui: &egui::Ui, text: &str, width: f32) -> String {
-    let font = crate::dialogs::dlg_font();
+    let font = grid_font();
     if ui.fonts(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::BLACK).size().x) <= width {
         return text.to_owned();
     }
@@ -2228,5 +2258,63 @@ mod tests {
         let width = (xs.last().unwrap() - xs.first().unwrap() + 1) as f32;
         assert!((width - w17).abs() < (width - w16).abs(), "ink {width} against {w17} at 17 px and {w16} at 16");
     }
-}
 
+    /// #140 (clone, «Параметры ОМП»): the property grid's rows are 17 / 23 / 27 px apart at 100 / 125 / 150 % and
+    /// its text the 11 / 14 / 17 px font — «Название» 49 / 59 / 74 px wide in the original (the dialogs' 8 pt
+    /// font, 13 / 16 px, is narrower and the base unit + 4 gave 20 / 23 px rows).
+    #[test]
+    fn the_property_grid_rows_and_text_follow_the_system_scale() {
+        let fonts = crate::app_fonts();
+        for (dpi, row, px) in [(96, 17usize, 11.0f32), (120, 23, 14.0), (144, 27, 17.0)] {
+            crate::dpi::set(dpi);
+            assert_eq!((grid_row_h(), grid_font_px()), (row as f32, px), "{dpi}");
+            let mut d = ParamsDialog::new(0, OmpParams { method: ISOLATED, ..Default::default() });
+            let size = crate::dialogs::dlu_size(475, 275) + egui::vec2(20.0, 20.0);
+            let c = crate::raster::render_native(size, 1.0, |_| {}, |_, _| {}, Some(&fonts), vec![vec![]; 3], |ctx| {
+                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                    d.ui(ui, &[]);
+                });
+            });
+            // The rules (240) ruled under the rows, down a column well inside the value column.
+            let x = c.w - 40;
+            let rules: Vec<usize> = (0..c.h).filter(|&y| c.px[y * c.w + x] == [240, 240, 240]).collect();
+            let gaps: Vec<usize> = rules.windows(2).map(|w| w[1] - w[0]).filter(|&g| g > 1).collect();
+            assert!(gaps.len() >= 4 && gaps.iter().all(|&g| g == row), "{dpi}: rule gaps {gaps:?}");
+            crate::dpi::set(96);
+        }
+        crate::dpi::set(96);
+    }
+
+    /// #23: the ОМП run (`0x4a1611`) and the result's clearing (32830 `0x475210`, the toggle `0x454350`) end in the
+    /// refresh-all; a silent run on another document sweeps that document's flags.
+    #[test]
+    fn the_omp_run_and_its_clearing_end_in_the_refresh_all() {
+        let mut app = demo_app();
+        grounded(&mut app);
+        crate::app::stale_flags::make(&mut app);
+        app.run_omp();
+        assert!(app.active_doc().unwrap().omp.shown, "the run went through");
+        assert!(crate::app::stale_flags::swept(&app), "after the run");
+        crate::app::stale_flags::make(&mut app);
+        let di = app.active.unwrap();
+        app.omp_clear(di);
+        assert!(crate::app::stale_flags::swept(&app), "after the clearing");
+        // A silent run on a document that is not the active one: the refresh-all is the frame's, so it is the
+        // active document's flags that are swept (`0x475420`).
+        app.dispatch(Command::Demo);
+        grounded(&mut app);
+        crate::app::stale_flags::make(&mut app);
+        app.run_omp_silent(0);
+        assert!(crate::app::stale_flags::swept(&app));
+    }
+
+    /// The ОМП toggle `0x454310` refreshes on both branches, also when the run fails.
+    #[test]
+    fn the_omp_toggle_refreshes_when_the_run_fails() {
+        let mut app = demo_app();
+        crate::app::stale_flags::make(&mut app);
+        app.omp_toggle();
+        assert!(!app.active_doc().unwrap().omp.shown, "no settings: the run failed");
+        assert!(crate::app::stale_flags::swept(&app));
+    }
+}

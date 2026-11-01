@@ -26,18 +26,21 @@ const ROW_FONT: FontId = FontId::proportional(11.0);
 const ROW_H: f32 = 15.0;
 /// Horizontal scrollbar height below the view and vertical scrollbar width:
 /// the view's window scroll bars, at the default system metric (96 dpi).
+#[cfg(test)]
 const HSCROLL_H: f32 = 17.0;
+#[cfg(test)]
 const VSCROLL_W: f32 = 17.0;
 
 /// The view's window scroll bars at the system DPI: SM_CXVSCROLL / SM_CYHSCROLL
-/// grow for a system-DPI-aware window (VM: 17, 21, 26 px at 100, 125,
-/// 150 %); what the view paints in them stays its own.
-fn scroll_w() -> f32 {
-    crate::dpi::measured(VSCROLL_W, 21.0, 26.0)
+/// grow for a system-DPI-aware window: MulDiv(17, dpi, 96), the metric graph-scaling measured on clones
+/// (17, 21, 26, 30, 34 px at 100, 125, 150, 175, 200 %; `oscgeom::WinMetrics`); what the view paints in them
+/// stays its own.
+pub(crate) fn scroll_w() -> f32 {
+    crate::oscgeom::WinMetrics::at(crate::dpi::dpi()).scroll
 }
 
 fn scroll_h() -> f32 {
-    crate::dpi::measured(HSCROLL_H, 21.0, 26.0)
+    scroll_w()
 }
 /// The V scroll bar's line step (`0x45d6d0`: SB_LINEUP/DOWN = 100 px).
 const VSCROLL_LINE: f32 = 100.0;
@@ -685,8 +688,8 @@ pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey) -> Vec<&'static str> 
             let c = &doc.computed[j];
             // A pasted lane read ×k in its copied mode (VM: «*K» on a
             // pasted channel with a ratio, shown secondary).
-            let scaled = c.formula == crate::merge_ui::PENDING && doc.pending.iter().find(|p| p.lane == c.seq).is_some_and(|p| p.display_k() != 1.0);
-            [(c.remove_dc, "DC"), (c.invert, "−"), (scaled, "*K"), (c.mode == ValueMode::Rms, "~"), (c.mode == ValueMode::FirstHarmonic, "1")]
+            let scaled = c.formula == crate::merge_ui::PENDING && doc.pending.iter().find(|p| p.lane == c.seq).is_some_and(|p| p.ratio_icon());
+            [(c.remove_dc, "DC"), (c.invert, "−"), (scaled, "*K"), (c.mode == ValueMode::Rms, "~"), (c.mode == ValueMode::FirstHarmonic, "1"), (c.adc_counts, "#")]
                 .into_iter()
                 .filter_map(|(on, g)| on.then_some(g))
                 .collect()
@@ -715,11 +718,18 @@ pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool) -> 
     }
 }
 
+/// The «*K» test (`0x462b22`–`0x462b8f`): the channel's shown and stored primary / secondary flags
+/// differ and either stored ratio value is not 1 (a zero or a NaN is not 1). The stored values are
+/// tested, not the factor they give: primary == secondary ≠ 1 shows the icon, a zero value too.
+pub(crate) fn ratio_icon(ch: &fvb_core::comtrade::AnalogChannel, show_primary: bool) -> bool {
+    show_primary != ch.is_primary && (ch.primary != 1.0 || ch.secondary != 1.0)
+}
+
 /// The status icons of analog channel `i`.
 fn chan_icons(doc: &crate::app::Doc, i: usize) -> Vec<&'static str> {
     let (c, ch) = (&doc.chans[i], &doc.osc.analog[i]);
     // The channel's own flags (`+0x88` / `+0x89`) and ratio decide, not the document's mode.
-    let scaled = crate::app::display_k(ch, c.primary) != 1.0;
+    let scaled = ratio_icon(ch, c.primary);
     [
         (c.window.is_some(), "↕"),
         (c.remove_dc, "DC"),
@@ -1254,18 +1264,54 @@ pub struct ChanDrag {
     /// The formula channels among them, pasted (pending) lanes too
     /// (analog-kind records of the same vector, `0x4415b0` walks them all).
     pub computed: Vec<usize>,
+    /// The record the drag started in (its serial): the payload carries
+    /// channel numbers only, so a drop on another record's view or pane
+    /// must not apply them there (#74, an improvement).
+    pub doc: u64,
 }
 
 impl ChanDrag {
-    fn of(keys: Vec<ChanKey>) -> ChanDrag {
+    fn of(keys: Vec<ChanKey>, doc: u64) -> ChanDrag {
         let pick = |f: fn(&ChanKey) -> Option<usize>| keys.iter().filter_map(f).collect::<Vec<_>>();
-        ChanDrag { chans: pick(|k| if let ChanKey::Analog(i) = k { Some(*i) } else { None }), computed: pick(|k| if let ChanKey::Computed(j) = k { Some(*j) } else { None }) }
+        ChanDrag { chans: pick(|k| if let ChanKey::Analog(i) = k { Some(*i) } else { None }), computed: pick(|k| if let ChanKey::Computed(j) = k { Some(*j) } else { None }), doc }
     }
 
     /// The dragged channels as keys.
     pub fn keys(&self) -> Vec<ChanKey> {
         let a = self.chans.iter().map(|&i| ChanKey::Analog(i));
         a.chain(self.computed.iter().map(|&j| ChanKey::Computed(j))).collect()
+    }
+}
+
+/// What a drop target shows for a move drop. The original shows OLE's
+/// move-drop cursor (an arrow with a small box); the platform cursors have no
+/// such shape, the plain arrow is the nearest (it is also what winit gives
+/// "copy" on Windows).
+pub const MOVE_DROP_CURSOR: egui::CursorIcon = egui::CursorIcon::Default;
+
+impl App {
+    /// The channel drag's cursor: what a target put in `drag_cursor` this
+    /// frame, "no-drop" everywhere else (ribbon, bars, the differential
+    /// pane, captions, other records' views, #73). egui's own end-of-pass
+    /// hook sets its "grabbing" cursor for any drag, after everything the
+    /// frame drew, so ours runs after it (callbacks run in the order they
+    /// were registered) and the frame hands it the decision.
+    pub fn finish_drag_cursor(&mut self, ctx: &egui::Context) {
+        let key = egui::Id::new("fv_drag_cursor");
+        if !ctx.data(|d| d.get_temp::<bool>(key).unwrap_or(false)) {
+            ctx.data_mut(|d| d.insert_temp(key, true));
+            ctx.on_end_pass(
+                "fv_drag_cursor",
+                std::sync::Arc::new(move |ctx: &egui::Context| {
+                    if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(ctx) {
+                        let set = ctx.data(|d| d.get_temp::<Option<egui::CursorIcon>>(key.with("icon")).flatten());
+                        ctx.set_cursor_icon(set.unwrap_or(egui::CursorIcon::NoDrop));
+                    }
+                }),
+            );
+        }
+        let set = self.drag_cursor.take();
+        ctx.data_mut(|d| d.insert_temp(key.with("icon"), set));
     }
 }
 
@@ -1319,8 +1365,8 @@ impl App {
                 let area = self.mdi_area;
                 let d = &self.docs[ai];
                 let band = g::RULER_H + if d.diff_band { g::DIFF_BAND_H } else { 0.0 };
-                let content_h: f32 = lane_layout(d, y_analog).iter().map(|r| r.h).sum::<f32>() + band + 2.0;
-                let w = if area.width() > 0.0 { g::view_width_at_creation(area.width(), area.height(), content_h) } else { full.width() };
+                let lanes_h: f32 = lane_layout(d, y_analog).iter().map(|r| r.h).sum::<f32>();
+                let w = if area.width() > 0.0 { g::view_width_at_creation(area.width(), area.height(), lanes_h, band, g::WinMetrics::at(crate::dpi::dpi())) } else { full.width() };
                 let n = d.osc.sample_count();
                 self.docs[ai].xscale = Some(g::initial_scale(pref, w, n));
             }
@@ -1721,6 +1767,7 @@ impl App {
         // the button held; a release, another press or Esc cancels it (a
         // later move arms it again). The payload is taken at the move.
         let ctx = ui.ctx().clone();
+        let serial = doc.serial;
         let (l_down, r_down, origin, now, released, t, moved, esc) = ui.input(|i| {
             let p = &i.pointer;
             (p.primary_down(), p.secondary_down(), p.press_origin(), p.latest_pos(), p.primary_released(), i.time, p.delta() != Vec2::ZERO, i.key_pressed(egui::Key::Escape))
@@ -1732,14 +1779,14 @@ impl App {
             // it drops.
             if let Some((_, t0, chans)) = self.stats_drag_arm.take().filter(|_| released && !r_down && !esc && !egui::DragAndDrop::has_any_payload(&ctx)) {
                 if t - t0 > DRAG_DELAY {
-                    egui::DragAndDrop::set_payload(&ctx, ChanDrag::of(chans));
+                    egui::DragAndDrop::set_payload(&ctx, ChanDrag::of(chans, serial));
                 }
             }
         } else if let Some((a, t0, chans)) = self.stats_drag_arm.take() {
             let p = now.unwrap_or(a);
             let (dx, dy) = ((p.x - a.x).floor(), (p.y - a.y).floor());
             if !(-2.0..2.0).contains(&dx) || !(-2.0..2.0).contains(&dy) || t - t0 > DRAG_DELAY {
-                egui::DragAndDrop::set_payload(&ctx, ChanDrag::of(chans));
+                egui::DragAndDrop::set_payload(&ctx, ChanDrag::of(chans, serial));
             } else {
                 ctx.request_repaint_after(std::time::Duration::from_secs_f64(DRAG_DELAY - (t - t0) + 0.001));
                 self.stats_drag_arm = Some((a, t0, chans));
@@ -1760,9 +1807,6 @@ impl App {
                     self.stats_drag_arm = Some((p, t, sel));
                 }
             }
-        }
-        if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
-            ctx.set_cursor_icon(egui::CursorIcon::Move);
         }
         // Drag auto-scroll during the channel drag only (COleDropTarget::
         // OnDragScroll, mfc120u `0x102172dd`; the view has no timer of its
@@ -1809,7 +1853,9 @@ impl App {
                 let lane = rows.iter().zip(&tops).find(|(r, &t)| p.y >= t && p.y < t + r.h).map(|(r, _)| r.key);
                 if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(&ctx) {
                     if let Some(drag) = egui::DragAndDrop::take_payload::<ChanDrag>(&ctx) {
-                        let target = lane.filter(|k| match k {
+                        // Another record's view: nothing (#74); the payload
+                        // holds channel numbers of the record it began in.
+                        let target = lane.filter(|_| drag.doc == serial).filter(|k| match k {
                             Lane::Digital(_) => false,
                             Lane::Computed(j) if doc.pending_digital(*j) => false,
                             _ => !drag.keys().contains(k),
@@ -1820,6 +1866,21 @@ impl App {
                     }
                 }
             }
+        }
+        // The cursor over the view (#73): the move-drop one over the view
+        // window of the record the drag began in, "copy" with Ctrl inside
+        // the auto-scroll band (MFC's OnDragScroll), "no-drop" over another
+        // record's view and under a window lying over it.
+        if let (Some(_), Some(drag)) = (now.filter(|p| resp.rect.contains(*p) && !over_float(*p)), egui::DragAndDrop::payload::<ChanDrag>(&ctx)) {
+            self.drag_cursor = Some(if drag.doc != serial {
+                egui::CursorIcon::NoDrop
+            } else if ctrl && code.is_some() {
+                // MFC's OnDragScroll answers "link" for Ctrl+Shift, which
+                // the drag does not allow: no-drop.
+                if shift { egui::CursorIcon::NoDrop } else { egui::CursorIcon::Copy }
+            } else {
+                MOVE_DROP_CURSOR
+            });
         }
         // Wheel (`0x45d990`), per WM_MOUSEWHEEL (one per wheel event): Alt
         // = lane height, exactly Ctrl (no button held) = time zoom, exactly
@@ -1931,6 +1992,9 @@ impl App {
                 self.view_pointer = Some(p);
             }
         }
+        let v_before = self.docs.get(ai).map(|d| d.vscroll);
+        let sel_before = self.docs.get(ai).map(|d| d.selection.clone());
+        let paste_dragged = actions.iter().any(|a| matches!(a, Act::MergeOffset(_)));
         for a in actions {
             let d = &mut self.docs[ai];
             match a {
@@ -2012,7 +2076,10 @@ impl App {
                     // selections stay), then 33035 or message 1086.
                     d.selection.extend(chans.iter().chain([&target]).copied());
                     if d.can_combine() {
-                        if !d.combine_selected() {
+                        if d.combine_selected() {
+                            // 33035 reaches the refresh-all (`0x42f4b0` from `0x467a62`).
+                            self.refresh_blocks();
+                        } else {
                             // VM: after the box (and a repaint) the target stays selected beside the dragged lane.
                             self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
                         }
@@ -2030,6 +2097,12 @@ impl App {
         if let Some(d) = self.docs.get_mut(ai) {
             d.first = d.first.min(hmax_c);
             d.vscroll = d.vscroll.clamp(vmin_c, 0.0);
+        }
+        // The view's OnScrollBy (`0x468f00`) ends in the refresh-all (`0x468f3d`), as does its mouse routine
+        // `0x45dc10` once a click has selected a channel (`0x45e312`) and a mouse-move branch after `0x45a820`
+        // (`0x45ec2a`: case 6 of the drag-mode switch, the pasted lanes' drag in time, `0x45a820`).
+        if self.docs.get(ai).map(|d| d.vscroll) != v_before || self.docs.get(ai).map(|d| d.selection.clone()) != sel_before || paste_dragged {
+            self.refresh_blocks();
         }
 
         // Hover popup over a cut name (`0x469060`): the full text.
@@ -2066,9 +2139,9 @@ impl App {
                 ui.data_mut(|d| d.insert_temp(opened, true));
             }
             let keys = r.has_focus() || r.lost_focus();
-            if keys && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if edit_key_at_release(ui, opened, egui::Key::Escape, keys) {
                 done = Some(false);
-            } else if keys && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            } else if edit_key_at_release(ui, opened, egui::Key::Enter, keys) {
                 done = Some(true);
             }
         });
@@ -2078,10 +2151,12 @@ impl App {
         }
         if done.is_some() {
             ui.data_mut(|d| d.remove::<bool>(opened));
+            edit_keys_disarm(ui, opened);
         }
         match done {
             None => self.rename_edit = Some((i, text)),
-            Some(false) => {}
+            // Esc reaches the common tail of `0x465df0` (`0x46607c`): the refresh, no modified mark.
+            Some(false) => self.refresh_blocks(),
             Some(true) => {
                 // `0x465df0`: the text as typed (no trim) is the alias,
                 // refused when another channel has it as its name or its
@@ -2103,6 +2178,8 @@ impl App {
                     d.comments = recs.iter().map(|r| d.comment_of(r)).collect();
                 }
                 d.set.modified = true;
+                // The rename `0x465df0` ends in the refresh-all (`0x46607c`).
+                self.refresh_blocks();
             }
         }
     }
@@ -2137,15 +2214,20 @@ impl App {
             let field = Rect::from_min_max(r.min + Vec2::new(2.0, 0.0), r.max - Vec2::new(2.0, 1.0));
             let r = egui::TextEdit::singleline(&mut text).frame(false).font(ROW_FONT).text_color(Color32::BLACK).margin(egui::Margin::ZERO).desired_width(field.width()).show(&mut ui.new_child(egui::UiBuilder::new().max_rect(field))).response;
             r.request_focus();
-            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            // As the rename edit, at the key-up (clone, 33042: Enter held, the edit
+            // stays; let go, it commits; Esc likewise).
+            if edit_key_at_release(ui, egui::Id::new(("fv_level_edit_keys", i)), egui::Key::Escape, true) {
                 done = Some(false);
-            } else if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            } else if edit_key_at_release(ui, egui::Id::new(("fv_level_edit_keys", i)), egui::Key::Enter, true) {
                 done = Some(true);
             }
         });
         let pressed_out = ui.input(|inp| inp.pointer.any_pressed() && inp.pointer.interact_pos().is_some_and(|p| !area.response.rect.contains(p)));
         if done.is_none() && pressed_out {
             done = Some(true);
+        }
+        if done.is_some() {
+            edit_keys_disarm(ui, egui::Id::new(("fv_level_edit_keys", i)));
         }
         match done {
             None => self.level_edit = Some((i, text)),
@@ -2197,10 +2279,11 @@ impl App {
             k.count = 0;
             k.enabled.clear();
         });
-        let area = egui::Area::new(egui::Id::new("fv_lane_menu").with(menu.serial))
+        let menu_id = egui::Id::new("fv_lane_menu").with(menu.serial);
+        let area = egui::Area::new(menu_id)
             .kind(egui::UiKind::Menu)
             .order(egui::Order::Foreground)
-            .fixed_pos(menu.pos)
+            .fixed_pos(crate::popmenu::menu_pos(ctx, menu_id, menu.pos))
             .constrain(true)
             .show(ctx, |ui| {
                 crate::popmenu::mfc_frame(ui, |ui| {
@@ -2256,6 +2339,17 @@ impl App {
     }
 
     fn run_menu_cmd(&mut self, ai: usize, cmd: MenuCmd) {
+        // The picks whose handlers end in the refresh-all `0x475420`: the flags and value modes (the same
+        // commands as the ribbon's, which `dispatch` refreshes), 33037 (`0x467e94`) and 33033 (`0x4557d0`); 33035
+        // too, once it has combined (below). «Цвет канала» refreshes when its dialog is accepted.
+        let refresh = matches!(cmd, MenuCmd::Flag(_) | MenuCmd::Mode(_) | MenuCmd::Split | MenuCmd::DiffBand);
+        self.run_menu_cmd_inner(ai, cmd);
+        if refresh {
+            self.refresh_blocks();
+        }
+    }
+
+    fn run_menu_cmd_inner(&mut self, ai: usize, cmd: MenuCmd) {
         match cmd {
             MenuCmd::CopyMerge => self.copy_channels_for_merge(),
             MenuCmd::PasteMerge => self.paste_channels_for_merge(),
@@ -2297,15 +2391,21 @@ impl App {
                 match cmd {
                     MenuCmd::Flag(f) => {
                         d.toggle_flag_selected(f);
-                        if matches!(f, ChanFlag::Invert | ChanFlag::RemoveDc | ChanFlag::Adc) {
-                            self.recompute_active();
-                        }
+                        self.after_flag_command(f);
                     }
                     MenuCmd::Hide => d.hide_selected(),
-                    MenuCmd::Mode(m) => d.set_mode_selected(m),
+                    MenuCmd::Mode(m) => {
+                        d.set_mode_selected(m);
+                        self.run_definition_batch();
+                    }
                     MenuCmd::ResetZoom => d.reset_zoom_selected(),
                     MenuCmd::Combine => {
-                        if !d.combine_selected() {
+                        let enabled = d.can_combine();
+                        if d.combine_selected() {
+                            if enabled {
+                                self.refresh_blocks();
+                            }
+                        } else {
                             self.dlg.push_alert_icon(MSG_COMBINE_RATES, crate::dialogs::MsgIcon::Error);
                         }
                     }
@@ -2652,7 +2752,9 @@ fn mode_disp(doc: &crate::app::Doc, i: usize, k: usize) -> f64 {
 
 fn analog_unit(doc: &crate::app::Doc, i: usize) -> fvb_core::units::Shown {
     if doc.chans[i].adc_counts {
-        fvb_core::units::Shown { canon: "отсч.".into(), text: "отсч.".into() }
+        // No unit in ADC mode (`0x414c30`; the stats readout shows the bare
+        // number — a clone run, #42: ours had «отсч.»).
+        fvb_core::units::Shown::default()
     } else {
         doc.osc.analog[i].shown_unit()
     }
@@ -2709,7 +2811,8 @@ pub(crate) fn lane_stats(
                 let val = t.value_at(k_main, len, &|m| c.own_shown(m));
                 let finite = c.own_series().iter().copied().filter(|v| v.is_finite());
                 let (mx, mn) = finite.fold((f64::MIN, f64::MAX), |(hi, lo), v| (hi.max(v), lo.min(v)));
-                return (c.name.clone(), fvb_core::units::Shown::computed(&c.unit), c.color, mx, mn, rms, a1, val);
+                let unit = if c.adc_counts { fvb_core::units::Shown::default() } else { fvb_core::units::Shown::computed(&c.unit) };
+                return (c.name.clone(), unit, c.color, mx, mn, rms, a1, val);
             }
             let rms = fvb_core::freqcorr::rms_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n_own, 1);
             let a1 = fvb_core::freqcorr::fundamental_at(corr, fvb_core::freqcorr::OTHER, &c.samples, k_main, n_own) * gain;
@@ -2723,6 +2826,31 @@ pub(crate) fn lane_stats(
             (d.id.clone(), Default::default(), color, 1.0, 0.0, 0.0, 0.0, val)
         }
     }
+}
+
+/// The edit `id` closed: its keys no longer wait for a release.
+fn edit_keys_disarm(ui: &egui::Ui, id: egui::Id) {
+    ui.data_mut(|d| {
+        for key in [egui::Key::Enter, egui::Key::Escape] {
+            d.remove::<bool>(id.with(("fv_key_armed", key)));
+        }
+    });
+}
+
+/// An inline edit's Enter and Esc act when the key is let go, not when it
+/// goes down (the rename edit commits on Enter and cancels on Esc at
+/// WM_KEYUP, `0x470ae0`, L9.106; a press while the edit listens arms the
+/// key). `id` names the edit's state.
+fn edit_key_at_release(ui: &egui::Ui, id: egui::Id, key: egui::Key, listening: bool) -> bool {
+    let armed_id = id.with(("fv_key_armed", key));
+    let (pressed, released) = ui.input(|i| (i.key_pressed(key), i.events.iter().any(|e| matches!(e, egui::Event::Key { key: k, pressed: false, .. } if *k == key))));
+    let armed = ui.data(|d| d.get_temp::<bool>(armed_id)).unwrap_or(false) || (pressed && listening);
+    if armed && released {
+        ui.data_mut(|d| d.remove::<bool>(armed_id));
+        return true;
+    }
+    ui.data_mut(|d| d.insert_temp(armed_id, armed));
+    false
 }
 
 #[cfg(test)]
@@ -2771,6 +2899,7 @@ mod menu_tests {
             let cover = self.cover;
             let out = self.ctx.run(raw, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| app.lanes_ui(ui));
+                app.finish_drag_cursor(ctx);
                 if let Some((id, order, r)) = cover {
                     egui::Area::new(id).order(order).fixed_pos(r.min).show(ctx, |ui| {
                         ui.allocate_exact_size(r.size(), egui::Sense::click_and_drag());
@@ -2823,6 +2952,17 @@ mod menu_tests {
         fn doc(&self) -> &crate::app::Doc {
             self.app.active_doc().unwrap()
         }
+    }
+
+    /// The view's bars are the system metric MulDiv(17, dpi, 96), also past 150 % where the first-zoom rule
+    /// (`WinMetrics`) measured 30 / 34 px (a straight line through 17, 21, 26 gave 31 / 36).
+    #[test]
+    fn the_view_scroll_bars_follow_the_system_metric() {
+        for (dpi, w) in [(96, 17.0), (120, 21.0), (144, 26.0), (168, 30.0), (192, 34.0)] {
+            crate::dpi::set(dpi);
+            assert_eq!((scroll_w(), scroll_h()), (w, w), "{dpi}");
+        }
+        crate::dpi::set(96);
     }
 
     #[test]
@@ -3525,6 +3665,37 @@ mod menu_tests {
         assert!(!key_icons(d, Lane::Analog(1)).contains(&"*K"), "the channel's own mode leaves it as stored");
     }
 
+    /// `0x462b22`–`0x462b8f`: the «*K» icon tests the stored ratio values (either not 1), not the factor.
+    #[test]
+    fn a_lanes_ratio_icon_tests_the_stored_values() {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        d.osc.analog[1].is_primary = true;
+        d.chans[1].primary = false;
+        // primary == secondary != 1: the factor is 1, the original still shows the icon.
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary) = (7.5, 7.5);
+        assert!(key_icons(d, Lane::Analog(1)).contains(&"*K"), "equal values other than 1");
+        // A zero value: the factor guard gave 1, the original shows the icon.
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary) = (1234.0, 0.0);
+        assert!(key_icons(d, Lane::Analog(1)).contains(&"*K"), "a zero secondary");
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary) = (0.0, 1.0);
+        assert!(key_icons(d, Lane::Analog(1)).contains(&"*K"), "a zero primary");
+        // Both 1: none. Flags equal: none whatever the values.
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary) = (1.0, 1.0);
+        assert!(!key_icons(d, Lane::Analog(1)).contains(&"*K"), "both 1");
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary) = (7.5, 7.5);
+        d.chans[1].primary = true;
+        assert!(!key_icons(d, Lane::Analog(1)).contains(&"*K"), "same flags");
+        // The other direction: stored secondary, shown primary.
+        d.osc.analog[1].is_primary = false;
+        d.chans[1].primary = true;
+        assert!(key_icons(d, Lane::Analog(1)).contains(&"*K"), "stored secondary, shown primary: equal values");
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary) = (1.0, 1.0);
+        assert!(!key_icons(d, Lane::Analog(1)).contains(&"*K"), "stored secondary, shown primary: both 1");
+        (d.osc.analog[1].primary, d.osc.analog[1].secondary) = (0.0, 1.0);
+        assert!(key_icons(d, Lane::Analog(1)).contains(&"*K"), "stored secondary, shown primary: a zero");
+    }
+
     /// With «Удалить постоянную» an instantaneous value is the accessor's `x·k − dc·k`, not `(x − dc)·k`.
     #[test]
     fn an_instantaneous_value_follows_the_accessors_remove_dc_order() {
@@ -3696,6 +3867,10 @@ mod menu_tests {
             h.app.level_edit = Some((0, text.into()));
             h.frame(vec![]);
             h.frame(vec![key(k)]);
+            // At the key-up, as the rename edit (clone): open while it is down.
+            h.frame(vec![]);
+            assert!(h.app.level_edit.is_some(), "{text}: open while the key is down");
+            h.frame(vec![egui::Event::Key { key: k, physical_key: None, pressed: false, repeat: false, modifiers: Default::default() }]);
             h.frame(vec![]);
             assert!(h.app.level_edit.is_none(), "{text}: closed");
             assert_eq!(value(&h), want, "{text}");
@@ -3797,12 +3972,17 @@ mod menu_tests {
     #[test]
     fn inline_rename_commits_as_typed_or_refuses_with_397() {
         let enter = || egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        let enter_up = || egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: false, repeat: false, modifiers: Default::default() };
         let mut h = Harness::new();
         h.app.active_doc_mut().unwrap().init_set_keys();
         let commit = |h: &mut Harness, text: &str| {
             h.app.rename_edit = Some((0, text.to_string()));
             h.frame(vec![]);
             h.frame(vec![enter()]);
+            // Enter commits when it is let go, not while it is down (L9.106).
+            h.frame(vec![]);
+            assert!(h.app.rename_edit.is_some(), "still open while the key is down");
+            h.frame(vec![enter_up()]);
             h.frame(vec![]);
         };
         let other = h.doc().osc.analog[1].id.clone();
@@ -3837,6 +4017,7 @@ mod menu_tests {
         h.app.rename_edit = Some((1, own.clone()));
         h.frame(vec![]);
         h.frame(vec![enter()]);
+        h.frame(vec![enter_up()]);
         h.frame(vec![]);
         assert_eq!(h.app.dlg.alert(), Some(crate::chandlg::MSG_NAME_TAKEN));
         assert_eq!(h.doc().osc.analog[1].id, other);
@@ -3854,6 +4035,7 @@ mod menu_tests {
         h.app.rename_edit = Some((0, "Новое".to_string()));
         h.frame(vec![]);
         h.frame(vec![enter()]);
+        h.frame(vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: false, repeat: false, modifiers: Default::default() }]);
         h.frame(vec![]);
         assert_eq!(h.doc().osc.analog[0].id, "Новое");
         assert!(matches!(&h.doc().comments[0].kind, CommentKind::Kept(r) if matches!(&r.kind, fvb_core::recset::CommentKindRec::Level { channel, .. } if *channel == old)));
@@ -4106,5 +4288,135 @@ mod menu_tests {
         h.button(Pos2::new(900.0, 300.0), egui::PointerButton::Primary);
         assert!(h.app.lane_menu.is_none());
         assert_eq!(h.app.active_doc().unwrap().main_cursor, main, "the dismissing click is swallowed");
+    }
+
+    /// #23: the lane menu's picks that reach the refresh-all in the original (33030's dialog aside) — the flags,
+    /// the value modes, 33033 and 33037 — clear a stale circle / vector flag.
+    #[test]
+    fn lane_menu_picks_end_in_the_refresh_all() {
+        let picks: [(&str, MenuCmd); 4] = [
+            ("flag", MenuCmd::Flag(ChanFlag::OnFreq)),
+            ("mode", MenuCmd::Mode(ValueMode::Rms)),
+            ("33033", MenuCmd::DiffBand),
+            ("33037", MenuCmd::Split),
+        ];
+        for (what, cmd) in picks {
+            let mut app = App::new();
+            app.dispatch(crate::app::Command::Demo);
+            let d = app.active_doc_mut().unwrap();
+            d.selection = std::collections::BTreeSet::from([ChanKey::Analog(1)]);
+            crate::app::stale_flags::make(&mut app);
+            assert!(crate::app::stale_flags::is_stale(&app), "{what}");
+            app.run_menu_cmd(0, cmd);
+            assert!(crate::app::stale_flags::swept(&app), "{what}");
+        }
+    }
+
+    /// 33035 (`0x467a62` → `0x42f4b0`) ends in the refresh-all once it has combined; a refused one does not.
+    #[test]
+    fn combining_lanes_ends_in_the_refresh_all() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        app.active_doc_mut().unwrap().selection = std::collections::BTreeSet::from([ChanKey::Analog(0), ChanKey::Analog(1)]);
+        crate::app::stale_flags::make(&mut app);
+        app.active_doc_mut().unwrap().osc.analog[1].unit = "Hz".into();
+        assert!(app.active_doc().unwrap().can_combine());
+        app.run_menu_cmd(0, MenuCmd::Combine);
+        let d = app.active_doc().unwrap();
+        assert!(d.group_of(ChanKey::Analog(0)).is_some(), "combined");
+        assert!(crate::app::stale_flags::swept(&app));
+        // Refused for different rates: nothing changes, no refresh.
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        d.osc.analog[0].unit = "Hz".into();
+        d.osc.analog[1].unit = "Hz".into();
+        d.osc.analog[1].own_rate = 1234.5;
+        d.selection = std::collections::BTreeSet::from([ChanKey::Analog(0), ChanKey::Analog(1)]);
+        d.chans[0].on_circle = true;
+        app.run_menu_cmd(0, MenuCmd::Combine);
+        assert!(app.active_doc().unwrap().chans[0].on_circle, "a refused 33035 stops before the refresh");
+    }
+
+    /// #23: the view's scroll (`OnScrollBy` `0x468f00` → `0x468f3d`) and the lane rename (`0x465df0` → `0x46607c`)
+    /// end in the refresh-all, which clears a stale circle / vector flag.
+    #[test]
+    fn scrolling_and_renaming_end_in_the_refresh_all() {
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let mut h = Harness::new();
+        h.app.y_analog = 400.0;
+        h.frame(vec![]);
+        let o = h.row(0);
+        h.frame(vec![egui::Event::PointerMoved(o), ev(o, true)]);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(1.0, 0.0))]);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(5.0, 0.0))]);
+        let client = h.app.view_rects.unwrap().1;
+        crate::app::stale_flags::make(&mut h.app);
+        h.frame(vec![egui::Event::PointerMoved(Pos2::new(o.x + 5.0, client.bottom() - 5.0))]);
+        for _ in 0..3 {
+            h.frame(vec![]);
+        }
+        assert_eq!(h.doc().vscroll, -100.0, "the drag scrolled");
+        assert!(crate::app::stale_flags::swept(&h.app), "scroll");
+        // The rename.
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().init_set_keys();
+        crate::app::stale_flags::make(&mut h.app);
+        h.app.rename_edit = Some((1, "Zz9".to_string()));
+        h.frame(vec![]);
+        h.frame(vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+        h.frame(vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: false, repeat: false, modifiers: Default::default() }]);
+        h.frame(vec![]);
+        assert_eq!(h.doc().osc.analog[1].id, "Zz9");
+        assert!(crate::app::stale_flags::swept(&h.app), "rename");
+    }
+
+    /// #23: Esc on a rename (`0x465df0` → `0x46607c`) and a click that selects a channel (`0x45dc10` → `0x45e312`)
+    /// reach the refresh-all too.
+    #[test]
+    fn rename_escape_and_a_selecting_click_refresh() {
+        let mut h = Harness::new();
+        crate::app::stale_flags::make(&mut h.app);
+        h.app.rename_edit = Some((1, "Zz9".to_string()));
+        h.frame(vec![]);
+        h.frame(vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }]);
+        h.frame(vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: false, repeat: false, modifiers: Default::default() }]);
+        h.frame(vec![]);
+        assert!(h.app.rename_edit.is_none());
+        assert!(crate::app::stale_flags::swept(&h.app), "Esc");
+        let mut h = Harness::new();
+        h.frame(vec![]);
+        h.app.active_doc_mut().unwrap().selection.clear();
+        crate::app::stale_flags::make(&mut h.app);
+        let o = h.row(0);
+        let ev = |pressed| egui::Event::PointerButton { pos: o, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(o), ev(true)]);
+        h.frame(vec![ev(false)]);
+        assert!(!h.doc().selection.is_empty(), "the click selected the lane");
+        assert!(crate::app::stale_flags::swept(&h.app), "click");
+    }
+
+    /// #23: dragging a pending pasted lane in time (the view's mouse-move case 6, `0x45ec2a`) ends in the
+    /// refresh-all: a stale flag is swept.
+    #[test]
+    fn dragging_a_pasted_lane_in_time_refreshes() {
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().selection = [ChanKey::Analog(1)].into_iter().collect();
+        h.app.copy_channels_for_merge();
+        h.app.paste_channels_for_merge();
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let rows = lane_layout(h.doc(), h.app.y_analog);
+        let pend = rows.iter().position(|r| matches!(r.key, Lane::Computed(j) if h.doc().pending_of(j).is_some())).expect("the pasted lane");
+        let o = h.row(pend) + Vec2::new(150.0, 0.0);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        h.frame(vec![egui::Event::PointerMoved(o), ev(o, true)]);
+        h.frame(vec![]);
+        let before = h.doc().merge_offset;
+        crate::app::stale_flags::make(&mut h.app);
+        h.frame(vec![egui::Event::PointerMoved(o + Vec2::new(40.0, 0.0))]);
+        h.frame(vec![]);
+        assert_ne!(h.doc().merge_offset, before, "the lane moved in time");
+        assert!(crate::app::stale_flags::swept(&h.app));
     }
 }

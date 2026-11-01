@@ -18,8 +18,10 @@ seed (up to 50 times; a clashing draw's files are removed) and the seed used is 
 Kept on purpose, and not compared by the check: the channel-count line and channel numbers, digital normal
 states and the first row's digital states, format phases, standard units, P/S, the frequency line, the number of
 rate segments and the approximate ratios of their rates and sample counts, the layout of name tokens, the
-.hdr's punctuation, the data type. So an output made from a user record is local data; commit only fixtures
-made from hand-written sources. Records without rate segments (timestamp-only) are refused.
+.hdr's punctuation, the data type; for an .osc also the pre-trigger block count, the ratios between its timing
+codes and the block geometry. So an output made from a user record is local data; commit only fixtures
+made from hand-written sources. A source may also be timestamp-only, a single-file .cff or an OSC2 .osc (see
+README); layouts the tools cannot take are refused with a message.
 """
 import argparse
 import math
@@ -46,8 +48,8 @@ class Gen:
         self.src = src
         self.rng = random.Random(seed)
         self.rows = rows
-        self.cyr = bool(recfmt.CYR.search(src.cfg.text)) or bool(src.hdr and recfmt.CYR.search(src.hdr.text))
-        self.avoid_words = recfmt.words_of(src.cfg.text + "\n" + (src.hdr.text if src.hdr else ""))
+        self.cyr = bool(recfmt.CYR.search(src.cfg.text + src.others_text))
+        self.avoid_words = recfmt.words_of(src.cfg.text + "\n" + src.others_text)
         self.avoid_texts = set()
         self.avoid_nums = set()
         for f, _ in userdata_check._iter_texts(src):
@@ -223,6 +225,17 @@ class Gen:
             return f"{x:.{dec}f}" if dec else str(x)
         return tok
 
+    def irregular_instants(self, n):
+        """Instants (seconds) of a timestamp-only record: a base step (never a round rate) with a jitter of up
+        to 40 % and now and then a pause, strictly increasing."""
+        r = self.rng
+        base = r.uniform(250.0, 1900.0) * 1e-6
+        t, ts = 0.0, []
+        for _ in range(n):
+            ts.append(t)
+            t += base * r.uniform(0.6, 1.4) * (r.uniform(3, 6) if r.randrange(17) == 0 else 1)
+        return ts
+
     def date(self, tok, rev):
         """An invented date written like `tok` (day 13..27 so the order is unambiguous)."""
         if not tok.strip():
@@ -314,25 +327,35 @@ def generate(src, seed, rows):
 
     out.append(list(L[src.freq_at]))
     # rate segments: invented rates, proportional invented counts, a new total
+    # (a timestamp-only record: `0` and one `0,N` line, the instants invented below)
     total_src = max(src.total_samples, 1)
     nr = src.n_rates
-    rows = max(rows, 8 * nr)
+    rows = max(rows, 8 * max(nr, 1))
     if rows == total_src:
         rows += 1
-    counts, prev = [], 0
-    for k in range(nr):
-        e = src.end_samples[k]
-        share = (e - prev) / total_src
-        prev = e
-        counts.append(max(8, round(rows * share)))
-    ends = [sum(counts[: k + 1]) for k in range(nr)]
-    rows = ends[-1] if ends else rows
-    rates = [g.rate(t) for t in src.rates]
-    out.append([str(nr)] + L[src.nrates_at][1:])
-    for k in range(nr):
-        f = list(L[src.rates_at + k])
-        f[0], f[1] = rates[k], str(ends[k])
-        out.append(f)
+    if src.timestamp_only:
+        rates, ends = [], [rows]
+        out.append([str(nr)] + L[src.nrates_at][1:])
+        line = list(L[src.rates_at])
+        line[1] = str(rows)
+        out.append(line)
+        ts = g.irregular_instants(rows)
+    else:
+        counts, prev = [], 0
+        for k in range(nr):
+            e = src.end_samples[k]
+            share = (e - prev) / total_src
+            prev = e
+            counts.append(max(8, round(rows * share)))
+        ends = [sum(counts[: k + 1]) for k in range(nr)]
+        rows = ends[-1] if ends else rows
+        rates = [g.rate(t) for t in src.rates]
+        out.append([str(nr)] + L[src.nrates_at][1:])
+        for k in range(nr):
+            f = list(L[src.rates_at + k])
+            f[0], f[1] = rates[k], str(ends[k])
+            out.append(f)
+        ts = segment_instants(rates, ends)
 
     rev = src.rev
     sl, el = L[src.start_at], L[src.end_at]
@@ -340,7 +363,10 @@ def generate(src, seed, rows):
     t1, s1 = g.clock(sl[1] if len(sl) > 1 else "")
     out.append([d1, t1] if len(sl) > 1 else [d1])
     # the end of the record: the start plus the duration of the data
-    duration = sum((ends[k] - (ends[k - 1] if k else 0)) / float(rates[k]) for k in range(nr))
+    if src.timestamp_only:
+        duration = ts[-1] + (ts[-1] - ts[-2])
+    else:
+        duration = sum((ends[k] - (ends[k - 1] if k else 0)) / float(rates[k]) for k in range(nr))
     out.append([d1, g.clock_at(el[1], s1 + duration)] if len(el) > 1 else [d1])
     out.append(list(L[src.ftype_at]))
     tail = []
@@ -371,13 +397,157 @@ def generate(src, seed, rows):
 
     # -- data
     dat = None
-    if src.dat_path:
-        dat = make_dat(g, src, rates, ends, rows, mult)
+    if src.has_dat:
+        dat = make_dat(g, src, ts, rows, mult)
 
-    hdr = None
-    if src.hdr:
-        hdr = make_hdr(g, src.hdr)
-    return cfg_bytes, dat, hdr
+    others = [make_hdr(g, t) for t in src.others]  # the .hdr, or a .cff's HDR / INF / SET sections
+    return cfg_bytes, dat, others
+
+
+OSC_BANNED_NEAR = (1000, 2000, 4000, 5000)
+
+
+def canonical_tag(tagline):
+    """A text block's tag line as `tag`, one separator and the digits of the count; whatever follows is dropped."""
+    m = re.match(rb"(nn[ADF].)(\d*)", tagline)
+    return (m.group(1) + m.group(2)).decode("latin-1")
+
+
+def generate_osc(src, seed, rows):
+    """An invented OSC2 oscillogram with the structure of `src` (see recfmt.OscRecord): the same blocks, tags,
+    channel counts, line layout, samples per block and block geometry; every name, phase, unit, calibration
+    number, ratio, timing code, the trigger moment and every sample invented."""
+    g = Gen(src, seed, rows)
+    r, B = g.rng, recfmt.OSC_BLOCK
+    enc = "utf-8" if src.enc == "ascii" else src.enc
+
+    def invent(line, kind):
+        f = line.split(",")
+        if kind == "nnD":
+            return ",".join([f[0], g.name(f[1]) if f[1].strip() else f[1], f[2]])
+        out = [f[0], g.name(f[1]) if f[1].strip() else f[1], g.label(f[2], phase=True)]
+        if len(f) == 5:
+            out.append(g.label(f[3], phase=False))
+        out.append(g.unit(f[-1]))
+        return ",".join(out)
+
+    # text blocks: the tag line as it is, the lines invented; a block that outgrows 128 bytes draws again
+    text_blocks = []
+    for b in src.blocks:
+        for _ in range(200):
+            lines = [invent(l, b["tag"]) for l in b["lines"]] if b["tag"] != "nnF" else []
+            raw = (b["eol"].join([canonical_tag(b["tagline"])] + lines) + (b["eol"] if b["trailing"] else "")).encode(enc, errors="replace")
+            if len(raw) <= B:
+                break
+        else:
+            raise SystemExit("cannot invent channel lines that fit an .osc text block")
+        text_blocks.append(raw + bytes(B - len(raw)))
+
+    # timing codes: one factor for the record keeps the ratios of its segments; the rate a code gives is checked
+    m = sum(1 for l in src.analog_lines() if l.split(",")[-1].strip() in ("V", "В", "A", "А", ""))
+    mapping = {}
+    for _ in range(100):  # a factor whose codes give no near-round rate; else the next factor
+        factor = r.uniform(0.55, 1.8)
+        mapping, taken = {}, set()
+        for c in sorted(set(src.codes_by_block)):
+            if c <= 0:
+                mapping[c] = c
+                continue
+            for _ in range(50):
+                x = max(1, min(32767, round(c * factor * r.uniform(0.99, 1.01)) + r.randrange(1, 9)))
+                fs = 1e6 / (x * 0.03125 * max(m, 1))
+                if x != c and recfmt.sig6(x) not in g.avoid_nums and not any(abs(fs / n - 1) < 0.03 for n in OSC_BANNED_NEAR):
+                    mapping[c] = x
+                    taken.add(recfmt.sig6(x))
+                    break
+        if len(mapping) == len(set(src.codes_by_block)):
+            g.avoid_nums |= taken
+            break
+    else:
+        raise SystemExit("cannot invent timing codes")
+    nb = max(2, -(-rows // src.n_per_block))
+    if nb == src.n_blocks:
+        nb += 1
+    codes = [mapping[src.codes_by_block[min(len(src.codes_by_block) - 1, b * len(src.codes_by_block) // nb)]] for b in range(nb)]
+
+    def f32(v):
+        if v == 0 or recfmt.is_structural_number(v) or not math.isfinite(v):
+            return v
+        for _ in range(200):
+            x = struct.unpack(">f", struct.pack(">f", v * r.uniform(0.5, 1.6)))[0]
+            if x != v and x != 0 and recfmt.sig6(x) not in g.avoid_nums:
+                g.avoid_nums.add(recfmt.sig6(x))
+                return x
+        return v
+
+    def i16(v):
+        if recfmt.is_structural_number(v):
+            return v
+        d = len(str(abs(v)))
+        for _ in range(200):
+            x = r.choice((-1, 1)) * r.randrange(10 ** (d - 1) if d > 1 else 2, min(10 ** d, 32768))
+            if x != v and not recfmt.is_structural_number(x) and (abs(x) <= 100 or recfmt.sig6(x) not in g.avoid_nums):
+                if abs(x) > 100:
+                    g.avoid_nums.add(recfmt.sig6(x))
+                return x
+        return v
+
+    # header, calibration, info
+    head = bytearray(B)
+    head[0], head[1], head[2] = src.major, src.minor, src.H
+    if src.K == 2:
+        head[0x7D] = 1
+    cals = [bytearray(B) for _ in range(src.K)]
+    for i, c in enumerate(src.cal):
+        if c is None:
+            continue
+        f1, s1, f2, s2 = f32(c[0]), i16(c[1]), f32(c[2]), i16(c[3])
+        blk, j = cals[i // 8], i % 8
+        struct.pack_into(">f", blk, 4 * j, f1)
+        struct.pack_into(">h", blk, 0x20 + 2 * j, s1)
+        struct.pack_into(">f", blk, 0x30 + 4 * j, f2)
+        struct.pack_into(">h", blk, 0x50 + 2 * j, s2)
+    info = bytearray(B)
+    struct.pack_into(">h", info, 2, nb)
+    struct.pack_into(">h", info, 0xE, min(max(src.pretrig, 0), nb - 1))
+    day, mon, yr = r.randrange(13, 28), r.randrange(1, 13), r.randrange(11, 31)
+    ms10, sec, mi, hh = r.randrange(0, 100), r.randrange(0, 59), r.randrange(0, 60), r.randrange(0, 22)
+    for at, v in zip((5, 6, 7, 8, 9, 0xA, 0xB), (ms10, sec, mi, hh, day, mon, yr)):
+        info[at] = (v // 10) << 4 | v % 10
+    for i, x in enumerate(src.ratios):
+        if 0x40 + 4 * i + 4 <= B:
+            struct.pack_into(">f", info, 0x40 + 4 * i, f32(x) if 0.1 < x < 100000.0 else 1.0)  # out of range reads as 1
+
+    # data: what the source's channels look like (largest sample, first digital states), then invented samples
+    na, nd, words, n = src.n_analog, src.n_digital, src.words, src.n_per_block
+    dmax, first_digital = [0] * na, [0] * nd
+    for k, (a, d) in enumerate(src.rows(2000)):
+        dmax = [max(x, abs(y)) for x, y in zip(dmax, a)]
+        if k == 0:
+            first_digital = d
+    amp = [r.uniform(0.3, 0.9) for _ in range(na)]
+    phase = [r.uniform(0, 2 * math.pi) for _ in range(na)]
+    f0 = r.uniform(49.0, 51.0)
+    switch = [(r.randrange(nb * n // 4, nb * n), r.randrange(0, 2)) for _ in range(nd)]
+    data = bytearray()
+    row = 0
+    for b in range(nb):
+        blk = bytearray(B)
+        fs = 1e6 / (codes[b] * 0.03125 * max(m, 1)) if codes[b] > 0 else 2400.0
+        for s in range(n):
+            t = row / fs
+            vals = [max(-32767, min(32767, int(round(min(dmax[i], 32767) * amp[i] * math.sin(2 * math.pi * f0 * t + phase[i])
+                                                    + r.uniform(-0.01, 0.01) * min(dmax[i], 32767))))) for i in range(na)]
+            wl = [0] * words
+            for i in range(16 * words):
+                at, v = switch[i]
+                bit = 1 - first_digital[i] if v and row >= at else first_digital[i]
+                wl[i // 16] |= bit << (i % 16)
+            struct.pack_into(">" + "h" * na + "H" * words, blk, s * src.rec_len, *vals, *wl)
+            row += 1
+        struct.pack_into(">h", blk, 0x7C, codes[b])
+        data += blk
+    return bytes(head) + b"".join(bytes(c) for c in cals) + b"".join(text_blocks) + bytes(info) + bytes(data)
 
 
 def encode_cfg(t, out):
@@ -405,6 +575,23 @@ def encode_cfg(t, out):
     return (b"\xef\xbb\xbf" if t.bom else b"") + body
 
 
+def build_cff(src, cfg, dat, others):
+    """The single file: the sections in the source's order, the data section last with its byte count."""
+    parts, extra = [], iter(others)
+    for kind, marker, _ in src.sections:
+        eol = b"\r\n" if marker.endswith(b"\r\n") else b"\n"
+        parts.append(b"--- file type: " + kind.encode() + b" ---" + eol)  # whatever else the source's line held is not copied
+        parts.append(cfg if kind == "CFG" else next(extra))
+    eol = b"\r\n" if src.dat_marker.endswith(b"\r\n") else b"\n"
+    word = re.search(rb"DAT\s+([A-Za-z0-9]+)", src.dat_marker)
+    word = word.group(1) if word and word.group(1).upper() in (b"ASCII", b"BINARY", b"BINARY32", b"FLOAT32") else b""
+    has_count = re.search(rb":\s*\d+", src.dat_marker)
+    marker = b"--- file type: DAT" + (b" " + word if word else b"") + (b": " + str(len(dat)).encode() if has_count else b"") + b" ---" + eol
+    parts += [marker, dat]
+    return (b"\xef\xbb\xbf" if src.file_bom else b"") + b"".join(parts)
+
+
+
 def make_hdr(g, t):
     lines = []
     for line in t.lines:
@@ -428,7 +615,19 @@ def make_hdr(g, t):
     return t.encode(lines)
 
 
-def make_dat(g, src, rates, ends, rows, mult):
+def segment_instants(rates, ends):
+    """Sample instants (seconds) of the rate segments."""
+    t, ts, prev = 0.0, [], 0
+    for k, e in enumerate(ends):
+        dt = 1.0 / float(rates[k])
+        for _ in range(prev, e):
+            ts.append(t)
+            t += dt
+        prev = e
+    return ts
+
+
+def make_dat(g, src, ts, rows, mult):
     r = g.rng
     na, nd = src.n_analog, src.n_digital
     ab, words = src.row_layout()
@@ -440,15 +639,6 @@ def make_dat(g, src, rates, ends, rows, mult):
             dmax[i] = max(dmax[i], abs(x))
         if n == 0:
             first_digital = d
-    # sample instants (seconds) from the segments
-    t, ts = 0.0, []
-    prev = 0
-    for k, e in enumerate(ends):
-        dt = 1.0 / float(rates[k])
-        for _ in range(prev, e):
-            ts.append(t)
-            t += dt
-        prev = e
     amp = [r.uniform(0.3, 0.9) for _ in range(na)]
     phase = [r.uniform(0, 2 * math.pi) for _ in range(na)]
     f0 = r.uniform(49.0, 51.0)
@@ -524,19 +714,25 @@ def fmt_like(tok, v):
 def write_record(src, outdir, stem, seed, rows, tries=50, check_rows=200_000):
     sidx = userdata_check.inventory(src, check_rows)
     for k in range(tries):
-        cfg, dat, hdr = generate(src, seed + k, rows)
         os.makedirs(outdir, exist_ok=True)
         ext = src.cfg_ext
         paths = {}
-        paths[ext] = cfg
-        if dat is not None:
-            paths[_case(".dat", ext)] = dat
-        if hdr is not None:
-            paths[_case(".hdr", ext)] = hdr
+        if src.is_osc:
+            paths[ext] = generate_osc(src, seed + k, rows)
+        else:
+            cfg, dat, others = generate(src, seed + k, rows)
+            if src.is_cff:
+                paths[ext] = build_cff(src, cfg, dat, others)
+            else:
+                paths[ext] = cfg
+                if dat is not None:
+                    paths[_case(".dat", ext)] = dat
+                if others:
+                    paths[_case(".hdr", ext)] = others[0]
         for e, data in paths.items():
             with open(os.path.join(outdir, stem + e), "wb") as f:
                 f.write(data)
-        out = recfmt.Record(os.path.join(outdir, stem + ext))
+        out = recfmt.open_record(os.path.join(outdir, stem + ext))
         hits, _ = userdata_check.check(sidx, out, check_rows)
         if not sum(hits.values()):
             return seed + k
@@ -558,7 +754,7 @@ def main(argv=None):
     ap.add_argument("--rows", type=int, default=96, help="data rows to write (default 96)")
     a = ap.parse_args(argv)
     try:
-        src = recfmt.Record(a.source)
+        src = recfmt.open_record(a.source)
     except recfmt.UnsupportedRecord as e:
         raise SystemExit(f"error: {e}")
     used = write_record(src, a.outdir, a.stem, a.seed, a.rows)

@@ -141,7 +141,7 @@ pub fn row_name(doc: &Doc, key: ChanKey) -> String {
 fn unit_of(doc: &Doc, key: ChanKey) -> Option<String> {
     match key {
         ChanKey::Analog(i) => Some(if doc.chans[i].adc_counts { String::new() } else { doc.osc.analog[i].unit.clone() }),
-        ChanKey::Computed(j) => Some(doc.computed[j].unit.clone()),
+        ChanKey::Computed(j) => Some(doc.computed[j].canon_unit().to_string()),
         ChanKey::Digital(_) => None,
     }
 }
@@ -1023,6 +1023,8 @@ impl App {
                 });
                 });
                 let btn = |x: f32| crate::dialogs::dp(client, x, 380.0, 110.0, 23.0);
+                // No WS_GROUP on the buttons: with the control before them they make one span for the arrows (clone, 477: ↑ from ОК focuses the list).
+                crate::dialogs::group_continue(ui);
                 if crate::dialogs::win_button(ui, btn(272.0), "ОК", true).clicked() {
                     result = Some(true);
                 }
@@ -1034,18 +1036,34 @@ impl App {
                     result = ui.input(|i| if i.key_pressed(egui::Key::Enter) { Some(true) } else if i.key_pressed(egui::Key::Escape) { Some(false) } else { None });
                 }
             });
-        match result {
-            Some(true) => {
-                if let Some(changed) = st.apply(&mut self.docs[ai]) {
-                    self.docs[ai].set.modified = true;
-                    if !changed.is_empty() {
-                        self.recompute_doc(ai);
-                    }
+        // OK (`0x47b610`) with nothing edited ends as OnCancel: `apply` gives
+        // None, the same IDCANCEL as «Отмена», Esc and the caption's close
+        // box (the dialog has no close handler of its own).
+        let ok = match result {
+            Some(true) => st.apply(&mut self.docs[ai]),
+            Some(false) => None,
+            None if open => {
+                self.dlg.coef = Some(st);
+                return;
+            }
+            None => None,
+        };
+        match ok {
+            Some(changed) => {
+                // IDOK marks the document modified, changed or not (`0x42fea7`).
+                self.docs[ai].set.modified = true;
+                if !changed.is_empty() {
+                    self.docs[ai].batch_makes_rows = true;
+                    self.recompute_doc(ai);
+                } else {
+                    self.run_definition_batch();
                 }
             }
-            Some(false) => {}
-            None if open => self.dlg.coef = Some(st),
-            None => {}
+            // `0x42fdb0` recomputes and runs the batch (`0x42ff54`) whatever the dialog returned.
+            None => {
+                self.docs[ai].batch_makes_rows = true;
+                self.recompute_doc(ai);
+            }
         }
     }
 }

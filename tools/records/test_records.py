@@ -24,7 +24,7 @@ def wb(path, data):
 
 
 def cfg_of(d):
-    return next(os.path.join(d, n) for n in sorted(os.listdir(d)) if n.lower().endswith(".cfg"))
+    return next(os.path.join(d, n) for n in sorted(os.listdir(d)) if n.lower().endswith((".cfg", ".cff", ".osc")))
 
 
 class Base(unittest.TestCase):
@@ -36,12 +36,12 @@ class Base(unittest.TestCase):
         d = os.path.join(self.tmp, "src_" + mk.__name__)
         os.makedirs(d, exist_ok=True)
         mk(d)
-        return recfmt.Record(cfg_of(d))
+        return recfmt.open_record(cfg_of(d))
 
     def synth(self, src, seed=5, rows=40, name="o"):
         d = tempfile.mkdtemp(dir=self.tmp)
         synth_record.write_record(src, d, name, seed, rows)
-        return recfmt.Record(cfg_of(d))
+        return recfmt.open_record(cfg_of(d))
 
     def hits(self, src, out):
         h, _ = userdata_check.check(userdata_check.inventory(src, 10**6), out, 10**6)
@@ -115,7 +115,7 @@ class Generator(Base):
         # Regenerate into a temp folder and compare with the committed ones.
         for name, mk in make_fixtures.SOURCES:
             src = self.source(mk)
-            rows = 30 if name == "d" else 96
+            rows = 30 if name in ("d", "f") else 96
             od = os.path.join(self.tmp, "fx_" + name)
             synth_record.write_record(src, od, name, make_fixtures.SEED[name], rows)
             for n in os.listdir(od):
@@ -227,6 +227,73 @@ class Check(Base):
             wb(out.dat_path, b"\n".join(o))
         return self.hits(src, recfmt.Record(out.cfg_path)), None
 
+    def small_integer_record(self, name, seed, rows=3000):
+        """A record whose samples are small whole numbers (invented, uniform within +-20)."""
+        import random
+        rng = random.Random(seed)
+        d = os.path.join(self.tmp, name)
+        os.makedirs(d)
+        lines = ["Plant %s,Unit 2,1999" % name, "3,3A,0D"]
+        for i in range(1, 4):
+            lines.append(f"{i},Chan {name} {i},,,A,0.5{i}27,0,0,-32767,32767,{3100 + 17 * i},3,S")
+        lines += ["50", "1", f"1710.0,{rows}", "01/02/2021,03:04:05.600000", "01/02/2021,03:04:05.700000", "ASCII", "1"]
+        wb(os.path.join(d, "r.cfg"), ("\n".join(lines) + "\n").encode())
+        wb(os.path.join(d, "r.dat"), "".join(
+            f"{i + 1},{i * 585}," + ",".join(str(rng.randint(-20, 20)) for _ in range(3)) + "\n" for i in range(rows)).encode())
+        return recfmt.Record(os.path.join(d, "r.cfg"))
+
+    def test_unrelated_small_integer_records_do_not_match_by_chance(self):
+        a, b = self.small_integer_record("alfa", 1), self.small_integer_record("beta", 2)
+        h = self.hits(a, b)
+        self.assertEqual(h["columns"], 0, "unrelated small whole-number columns must not look like a leak")
+        self.assertEqual(h["windows"], 0)
+
+    def test_a_copied_integer_channel_of_moderate_spread_is_found(self):
+        import math
+        import random
+        rng = random.Random(3)
+        d = os.path.join(self.tmp, "mod")
+        os.makedirs(d)
+        n = 600
+
+        def rec(name, cols):
+            lines = ["Plant %s,Unit 2,1999" % name, "3,3A,0D"]
+            for i in range(1, 4):
+                lines.append(f"{i},Chan {name} {i},,,A,0.5{i}27,0,0,-32767,32767,{3100 + 17 * i},3,S")
+            lines += ["50", "1", f"1710.0,{n}", "01/02/2021,03:04:05.600000", "01/02/2021,03:04:05.700000", "ASCII", "1"]
+            os.makedirs(os.path.join(d, name))
+            wb(os.path.join(d, name, "r.cfg"), ("\n".join(lines) + "\n").encode())
+            wb(os.path.join(d, name, "r.dat"), "".join(
+                f"{i + 1},{i * 585}," + ",".join(str(c[i]) for c in cols) + "\n" for i in range(n)).encode())
+            return recfmt.open_record(os.path.join(d, name, "r.cfg"))
+
+        def sine(amp, ph):
+            return [round(amp * math.sin(2 * math.pi * i / 24 + ph) + rng.uniform(-1, 1)) for i in range(n)]
+
+        src = rec("alfa", [sine(40, 0.1), sine(30, 1.0), sine(35, 2.0)])
+        out = rec("beta", [sine(25, 0.5), sine(45, 1.7), sine(33, 2.6)])
+        self.assertEqual(self.hits(src, out)["columns"], 0, "unrelated channels")
+        # only the second column is the source's own (its amplitude about 30 counts, 24 samples per cycle)
+        src_cols = [list(map(int, l.split(",")[2:])) for l in rb(src.dat_path).decode().split("\n") if l]
+        col1 = [r[1] for r in src_cols]
+        mixed = rec("delta", [sine(25, 0.5), col1, sine(33, 2.6)])
+        h = self.hits(src, mixed)
+        self.assertGreater(h["columns"], 0, "one copied channel of moderate spread")
+        self.assertEqual(h["windows"], 0, "whole rows differ")
+
+    def test_a_copied_time_column_of_a_timestamp_only_record_is_found(self):
+        src = self.source(make_fixtures.src_f)
+        out = self.synth(src, 2, rows=30)
+        self.assertEqual(self.hits(src, out)["steps"], 0)
+        s = [r.split(",") for r in rb(src.dat_path).decode().split("\r\n") if r]
+        o = rb(out.dat_path).decode().split("\r\n")
+        for i, r in enumerate(s):
+            cells = o[i].split(",")
+            cells[1] = str(int(r[1]) + 1000)  # an offset does not hide it
+            o[i] = ",".join(cells)
+        wb(out.dat_path, "\r\n".join(o).encode())
+        self.assertGreater(self.hits(src, recfmt.open_record(out.cfg_path))["steps"], 0)
+
     def test_one_copied_sample_column_is_found(self):
         for mk in (make_fixtures.src_b, make_fixtures.src_d, make_fixtures.src_e):
             h, _ = self.copy_column(mk, mk.__name__)
@@ -261,15 +328,239 @@ class Check(Base):
                 tested += 1
         self.assertEqual(tested, 9 * 30)
 
-    def test_unsupported_layouts_are_refused_with_a_message(self):
-        d = os.path.join(self.tmp, "ts")
+    def test_a_timestamp_only_record_is_generated_with_its_structure(self):
+        src = self.source(make_fixtures.src_f)
+        self.assertTrue(src.timestamp_only)
+        for seed in range(1, 8):
+            out = self.synth(src, seed, rows=30)
+            self.assertTrue(out.timestamp_only)
+            self.assertEqual(out.n_rates, 0)
+            self.assertEqual(out.fields[out.nrates_at], ["0"])
+            line = out.fields[out.rates_at]
+            self.assertEqual((line[0], int(line[1])), ("0", 30), "the line `0,N` with the new count")
+            self.assertEqual((out.n_analog, out.n_digital, out.ftype, out.rev), (2, 3, "ASCII", "1999"))
+            rows = [r.split(",") for r in rb(out.dat_path).decode().split("\r\n") if r]
+            self.assertEqual(len(rows), 30)
+            stamps = [int(r[1]) for r in rows]
+            steps = [b - a for a, b in zip(stamps, stamps[1:])]
+            self.assertTrue(all(x > 0 for x in steps), "the instants increase")
+            self.assertGreater(len(set(steps)), 5, "the steps are irregular")
+            self.assertEqual(self.hits(src, out), {k: 0 for k in self.hits(src, out)})
+
+    def binary_cff(self):
+        """A single-file record with int16 BINARY data (src_b's cfg and data) and no other section."""
+        src = self.source(make_fixtures.src_b)
+        d = os.path.join(self.tmp, "bcff")
         os.makedirs(d)
-        wb(os.path.join(d, "t.cfg"), b"S,D,1999\n1,1A,0D\n1,I,A,,A,1,0,0,-1,1,1,1,S\n50\n0\n0,5\n01/01/2020,00:00:00.0\n01/01/2020,00:00:00.1\nASCII\n1\n")
-        with self.assertRaises(recfmt.UnsupportedRecord):
-            recfmt.Record(os.path.join(d, "t.cfg"))
+        wb(os.path.join(d, "b.cff"), make_fixtures.cff([("CFG", rb(src.cfg_path))], "BINARY", rb(src.dat_path)))
+        return recfmt.Record(os.path.join(d, "b.cff")), src
+
+    def test_a_cff_source_is_generated_with_its_structure(self):
+        src = self.source(make_fixtures.src_g)
+        self.assertTrue(src.is_cff)
+        self.assertEqual([k for k, _, _ in src.sections], ["CFG", "INF", "HDR"])
+        self.assertEqual(len(list(src.rows(10**6))), 21)
+        for seed in (1, 2, 3):
+            out = self.synth(src, seed, rows=40)
+            raw = rb(out.cfg_path)
+            self.assertEqual(raw[:3], b"\xef\xbb\xbf")
+            self.assertEqual([k for k, _, _ in out.sections], ["CFG", "INF", "HDR"], "the sections keep their order")
+            self.assertEqual((out.cfg.enc, out.cfg.eol, out.rev, out.n_analog, out.n_digital, out.ftype), ("utf-8", "\r\n", "2013", 2, 1, "ASCII"))
+            self.assertEqual(out.total_samples, 40)
+            n = len(out.dat_bytes)
+            self.assertTrue(raw.endswith(out.dat_bytes))
+            self.assertIn(f"--- file type: DAT ASCII: {n} ---".encode(), raw, "the data section's byte count is the new one")
+            self.assertEqual(len(list(out.rows(10**6))), 40)
+            self.assertEqual(sum(self.hits(src, out).values()), 0)
+            for (_, _, a), (_, _, b) in zip(src.sections, out.sections):
+                self.assertNotEqual(a.text, b.text)
+
+    def test_a_binary_cff_is_generated_and_its_count_follows_the_data(self):
+        src, plain = self.binary_cff()
+        out = self.synth(src, 4, rows=50)
+        self.assertEqual((out.n_analog, out.n_digital, out.ftype, out.cfg.enc), (6, 20, "BINARY", "cp1251"))
+        size = 8 + 2 * 6 + 2 * 2
+        self.assertEqual(len(out.dat_bytes), size * out.total_samples)
+        self.assertIn(f"DAT BINARY: {len(out.dat_bytes)} ---".encode(), rb(out.cfg_path))
+        self.assertEqual(len(list(out.rows(10**6))), out.total_samples)
+        self.assertEqual(sum(self.hits(src, out).values()), 0)
+        # the same data as the sibling-file source gives, so the two layouts are checked alike
+        self.assertEqual(list(src.rows(10**6)), list(plain.rows(10**6)))
+
+    def test_a_copied_cff_section_or_data_stretch_is_found(self):
+        src = self.source(make_fixtures.src_g)
+        out = self.synth(src, 2, rows=40)
+        raw = rb(out.cfg_path)
+        # the source's HDR section in place of the output's
+        mod = os.path.join(self.tmp, "m_hdr")
+        os.makedirs(mod)
+        (_, _, hs), (_, _, ho) = src.sections[2], out.sections[2]
+        wb(os.path.join(mod, "x.cff"), raw.replace(ho.raw, hs.raw))
+        self.assertGreater(self.hits(src, recfmt.Record(os.path.join(mod, "x.cff")))["text"], 0)
+        # the source's data rows in place of the output's
+        mod2 = os.path.join(self.tmp, "m_dat")
+        os.makedirs(mod2)
+        wb(os.path.join(mod2, "x.cff"), raw.replace(out.dat_bytes, src.dat_bytes))
+        self.assertGreater(self.hits(src, recfmt.Record(os.path.join(mod2, "x.cff")))["windows"], 0)
+
+    def test_cff_layouts_the_tools_do_not_take_are_refused(self):
+        d = os.path.join(self.tmp, "badcff")
+        os.makedirs(d)
+        cfg = rb(self.source(make_fixtures.src_f).cfg_path)
+        good = make_fixtures.cff([("CFG", cfg)], "ASCII", b"1,2,3\r\n")
+        for name, data in (("nodat", b"--- file type: CFG ---\r\n" + cfg),
+                           ("nocfg", b"--- file type: DAT ASCII: 3 ---\r\n1,2"),
+                           ("after", good + b"--- file type: HDR ---\r\nx\r\n"),
+                           ("before", b"stray\r\n" + good)):
+            wb(os.path.join(d, name + ".cff"), data)
+            with self.assertRaises(recfmt.UnsupportedRecord, msg=name):
+                recfmt.Record(os.path.join(d, name + ".cff"))
         with self.assertRaises(SystemExit) as cm:
-            synth_record.main([os.path.join(d, "t.cfg"), os.path.join(d, "o")])
-        self.assertIn("not supported", str(cm.exception))
+            synth_record.main([os.path.join(d, "nodat.cff"), os.path.join(d, "o")])
+        self.assertIn("error:", str(cm.exception))
+
+    def test_an_osc_source_is_generated_with_its_structure(self):
+        src = self.source(make_fixtures.src_h)
+        self.assertTrue(src.is_osc)
+        self.assertEqual((src.n_analog, src.n_digital, src.n_per_block, src.n_blocks, src.enc), (3, 16, 14, 6, "cp1251"))
+        self.assertEqual(sorted(set(src.codes_by_block)), [4711, 9421])
+        for seed in (1, 2, 3, 4):
+            out = self.synth(src, seed, rows=60)
+            self.assertEqual((out.major, out.minor, out.H, out.K), (2, 4, src.H, 1), "version and block geometry")
+            self.assertEqual((out.n_analog, out.n_digital, out.n_per_block, out.enc), (3, 16, 14, "cp1251"))
+            self.assertEqual([(b["tag"], b["count"], len(b["lines"]), b["eol"]) for b in out.blocks],
+                             [(b["tag"], b["count"], len(b["lines"]), b["eol"]) for b in src.blocks])
+            self.assertEqual([b["tagline"] for b in out.blocks if b["tag"] == "nnF"], [b"nnF,14"])
+            self.assertEqual((out.n_blocks, out.max_blocks, out.total_samples), (5, 5, 70))
+            self.assertEqual(len(list(out.rows(10**6))), 70)
+            self.assertEqual(len(set(out.codes_by_block)), 2, "two timing codes, as in the source")
+            self.assertTrue(all(0 < c < 32768 for c in out.codes_by_block))
+            self.assertEqual(len(out.raw) % 128, 0)
+            self.assertEqual(len(out.analog_lines()[1].split(",")), 5, "the line with a ccbm field keeps its shape")
+            self.assertTrue(all(c is not None for c in out.cal))
+            self.assertNotEqual(out.trigger, src.trigger)
+            self.assertEqual(sum(self.hits(src, out).values()), 0)
+        a, b = self.synth(src, 5, name="x"), self.synth(src, 5, name="y")
+        self.assertEqual(a.raw, b.raw, "deterministic")
+        self.assertNotEqual(a.raw, self.synth(src, 6, name="z").raw)
+
+    def test_osc_rates_are_not_round_ones(self):
+        src = self.source(make_fixtures.src_h)
+        m = 2  # the analog channels whose unit is V / A / empty
+        for seed in range(1, 25):
+            out = self.synth(src, seed)
+            for c in out.codes_by_block:
+                fs = 1e6 / (c * 0.03125 * m)
+                for n in (1000, 2000, 4000, 5000):
+                    self.assertGreater(abs(fs / n - 1), 0.03, (seed, c))
+
+    def test_a_copied_osc_part_is_found(self):
+        src = self.source(make_fixtures.src_h)
+        out = self.synth(src, 2, rows=60)
+        B = 128
+
+        def altered(name, edit):
+            raw = bytearray(out.raw)
+            edit(raw)
+            p = os.path.join(self.tmp, name + ".osc")
+            wb(p, bytes(raw))
+            return self.hits(src, recfmt.open_record(p))
+
+        s = src.raw
+        text_at = (src.K + 1) * B
+        h = altered("name", lambda r: r.__setitem__(slice(text_at, text_at + B), s[text_at:text_at + B]))
+        self.assertGreater(h["text"], 0, "a copied text block (names)")
+        self.assertGreater(h["labels"], 0)
+        h = altered("cal", lambda r: r.__setitem__(slice(B, 2 * B), s[B:2 * B]))
+        self.assertGreater(h["numbers"], 0, "copied calibration")
+        info = src.H * B
+
+        def copy_trigger(r):
+            r[info + 5:info + 0xC] = s[info + 5:info + 0xC]
+
+        def copy_ratios(r):
+            r[info + 0x40:info + 0x40 + 4 * src.n_analog] = s[info + 0x40:info + 0x40 + 4 * src.n_analog]
+
+        h = altered("trigger", copy_trigger)
+        self.assertGreater(h["text"] + h["codes"], 0, "a copied trigger moment")
+        self.assertGreater(altered("ratios", copy_ratios)["numbers"], 0, "copied ratios")
+        date_only = altered("date", lambda r: r.__setitem__(slice(info + 9, info + 0xC), s[info + 9:info + 0xC]))
+        self.assertGreater(date_only["text"], 0, "a copied trigger date")
+        d0 = src.data_at
+
+        def copy_code(r):
+            struct_code = s[d0 + 0x7C:d0 + 0x7E]
+            for b in range(out.n_blocks):
+                r[out.data_at + b * B + 0x7C:out.data_at + b * B + 0x7E] = struct_code
+
+        self.assertGreater(altered("code", copy_code)["codes"], 0, "a copied timing code")
+
+        def copy_data(r):
+            r[out.data_at:out.data_at + 2 * B] = s[d0:d0 + 2 * B]
+            for b in range(2):  # keep the output's own timing codes
+                r[out.data_at + b * B + 0x7C:out.data_at + b * B + 0x7E] = out.raw[out.data_at + b * B + 0x7C:out.data_at + b * B + 0x7E]
+
+        h = altered("data", copy_data)
+        self.assertGreater(h["windows"], 0, "copied sample rows")
+        self.assertGreater(h["columns"], 0)
+
+    def test_free_text_on_marker_and_tag_lines_is_not_copied(self):
+        d = os.path.join(self.tmp, "free")
+        os.makedirs(d)
+        g = self.source(make_fixtures.src_g)
+        raw = rb(g.cfg_path).replace(b"--- file type: HDR ---", b"--- file type: HDR --- Qzxvb Notez ---").replace(
+            b"--- file type: DAT ASCII:", b"--- file type: DAT ASCII Wqxyz Pleno:")
+        wb(os.path.join(d, "g.cff"), raw)
+        out = self.synth(recfmt.open_record(os.path.join(d, "g.cff")), 2, rows=30)
+        for w in (b"Notez", b"Pleno", b"Qzxvb", b"Wqxyz"):
+            self.assertNotIn(w, rb(out.cfg_path))
+        self.assertIn(b"--- file type: HDR ---\r\n", rb(out.cfg_path))
+        h = self.source(make_fixtures.src_h)
+        raw = bytearray(h.raw)
+        at = (h.K + 1) * 128
+        blk = bytes(raw[at:at + 128]).rstrip(b"\0").replace(b"nnA,003", b"nnA,003 Tzqwx", 1)
+        self.assertLessEqual(len(blk), 128)
+        raw[at:at + 128] = blk + bytes(128 - len(blk))
+        wb(os.path.join(d, "h.osc"), bytes(raw))
+        out = self.synth(recfmt.open_record(os.path.join(d, "h.osc")), 2)
+        self.assertNotIn(b"Tzqwx", out.raw)
+        self.assertIn(b"nnA,003\r\n", out.raw)
+
+    def test_osc_small_offsets_are_invented_and_a_bad_ratio_is_written_as_one(self):
+        import struct
+        src = self.source(make_fixtures.src_h)
+        raw = bytearray(src.raw)
+        struct.pack_into(">f", raw, src.H * 128 + 0x40, 0.0)  # a ratio the reader reads as 1
+        p = os.path.join(self.tmp, "ratio.osc")
+        wb(p, bytes(raw))
+        bad = recfmt.open_record(p)
+        for seed in range(1, 6):
+            out = self.synth(bad, seed)  # does not run out of draws
+            self.assertEqual(out.ratios[0], 1.0)
+            for a, b in zip(bad.cal, out.cal):
+                self.assertNotEqual(a[1], b[1])
+                self.assertNotEqual(a[3], b[3])
+            self.assertTrue(any(abs(c[1]) <= 100 or abs(c[3]) <= 100 for c in bad.cal), "the source has small offsets")
+
+    def test_osc_layouts_the_tools_do_not_take_are_refused(self):
+        src = self.source(make_fixtures.src_h)
+        d = os.path.join(self.tmp, "badosc")
+        os.makedirs(d)
+        raw = bytearray(src.raw)
+        cases = {"short": bytes(raw[:200]), "nodata_header": bytes(raw[:3]) + bytes(300)}
+        bad_tag = bytearray(raw)
+        bad_tag[(src.K + 1) * 128:(src.K + 1) * 128 + 3] = b"xyz"
+        cases["tag"] = bytes(bad_tag)
+        wide = bytearray(raw)
+        wide[(src.H - 1) * 128 + 4:(src.H - 1) * 128 + 6] = b"99"  # nnF,14 -> nnF,99: 99 records do not fit a block
+        cases["wide"] = bytes(wide)
+        for name, data in cases.items():
+            wb(os.path.join(d, name + ".osc"), data)
+            with self.assertRaises(recfmt.UnsupportedRecord, msg=name):
+                recfmt.open_record(os.path.join(d, name + ".osc"))
+        with self.assertRaises(SystemExit) as cm:
+            synth_record.main([os.path.join(d, "tag.osc"), os.path.join(d, "o")])
+        self.assertIn("error:", str(cm.exception))
 
     def test_a_failed_draw_leaves_no_files(self):
         src = self.source(make_fixtures.src_d)
