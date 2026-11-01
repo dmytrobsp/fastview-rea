@@ -243,3 +243,17 @@ misbehaves and the better behaviour is obvious (the maintainer,
   Such a file cannot be read back correctly — inferred for a record labelled BINARY; an ASCII-labelled one reopens
   as garbage in both programs. Ours writes the DAT part of the channels the CFG part declares. Reason: the
   original's file is internally inconsistent; the controller's ruling (2026-11-01).
+||||||| 32a24d0
+- **Quick analysis on crafted input: a header-only `.osc` with a formula, and page 539 with two stored reduction methods (#193).**
+  (1) The original's `.osc` reader (`0x4524b0`) has no zero-sample check (only the `.cfg` / `.cff` loader has one,
+  `0x450bc1`), so a header-only `.osc` loads with no samples. A formula over it runs the batch (`0x415780`) with zero
+  samples: the evaluator never runs, and the unit walk (`0x415bd0`) reads the token at the position an earlier
+  evaluation left (only the per-sample evaluate resets it, `0x419997`; the tokenizer does not). The token getter
+  (`0x419800`) is bounds-checked: a position past the formula's tokens throws string 343 «Синтаксическая ошибка в
+  формуле», an in-range bracket token becomes the unit. So the result depends on the definition evaluated before it
+  in the session: a spurious syntax-error box or a wrong unit (the manager's initial position was not read).
+  Ours always walks the formula from its start: empty channels with the formula's own unit, no spurious error.
+  (2) A `.set` that stores two 539 reduction methods makes the formulas outnumber the names list (one set per arm);
+  `0x4167f0` pairs them by index with no bounds check (`0x416c61`-`0x416c9d`) and reads past the names vector:
+  undefined (garbage or a crash). Ours names the extra lines «_2», «_3»... Reason: both are reachable only through a
+  hand-made `.osc` / `.set`; a defined, error-free result beats a session-dependent fault or undefined behaviour.

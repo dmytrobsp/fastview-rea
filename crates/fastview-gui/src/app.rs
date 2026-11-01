@@ -819,6 +819,9 @@ pub struct Doc {
     /// Transient: the next [`Doc::recompute`] is the batch of a flag / value-mode command (`0x415780` over the
     /// list), which also makes channels of the rows that have none (#31).
     pub batch_makes_rows: bool,
+    /// Transient: the text of the failure that ended the batch of a flag / value-mode command run inside
+    /// [`Doc::recompute`]; the app shows it as the box the original's batch posts (`0x475680`, #174) and clears it.
+    pub batch_error: Option<String>,
     /// The definition list's row order as kill-active last wrote it (↑ / ↓ move rows, `0x487210` / `0x4873a0`):
     /// the formula page lists its rows in it.
     pub def_order: Vec<String>,
@@ -928,6 +931,7 @@ impl Doc {
             pending: Vec::new(),
             loose_defs: Vec::new(),
             batch_makes_rows: false,
+            batch_error: None,
             def_order: Vec::new(),
             merge_offset: 0.0,
             set: Default::default(),
@@ -962,7 +966,12 @@ impl Doc {
         self.analysis = analysis;
         // The copy was just taken: no name to bring over.
         let create = std::mem::take(&mut self.batch_makes_rows);
-        let _ = self.evaluate_formula_list_before(show_primary, &[], create);
+        // The batch's failure is its box (`0x415780` catches and posts, #174); a recompute that is no batch stays silent.
+        if let Err(e) = self.evaluate_formula_list_before(show_primary, &[], create, false) {
+            if create {
+                self.batch_error = Some(e.to_string());
+            }
+        }
     }
 
     /// Analog channel `i`'s window of statistics and phasors: its own rate
@@ -1024,7 +1033,15 @@ impl Doc {
     /// formula naming one of them, itself or a later one is the error 0x1d4 (#30).
     pub fn try_reevaluate_formulas_before(&mut self, show_primary: bool, new_names: &[String]) -> Result<(), fvb_core::expr::FormulaError> {
         self.sync_flagged_names();
-        self.evaluate_formula_list_before(show_primary, new_names, true)
+        self.evaluate_formula_list_before(show_primary, new_names, true, true)
+    }
+
+    /// The batch `0x415780` as the flag / value-mode / stats-row commands run it: like
+    /// [`Doc::try_reevaluate_formulas_before`], but the channels it made before a failing row stay (only the quick
+    /// analysis deletes what it added, `0x416f1b`).
+    pub fn run_batch(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
+        self.sync_flagged_names();
+        self.evaluate_formula_list_before(show_primary, &[], true, false)
     }
 
     /// [`Doc::try_reevaluate_formulas`] over the flagged copy as it is.
@@ -1059,8 +1076,9 @@ impl Doc {
     /// `0x415780` over the definition list in the list's order: each formula channel is recomputed in place; with
     /// `create_loose` the rows without a channel become channels (at the block's end, as a new formula is). A
     /// definition's name guard (`0x419074`) covers the names after it in the list, then `new_names`. A failure ends
-    /// the walk (the ones before keep their new values, the channels it created go again, `0x416f1b`).
-    fn evaluate_formula_list_before(&mut self, show_primary: bool, new_names: &[String], create_loose: bool) -> Result<(), fvb_core::expr::FormulaError> {
+    /// the walk (the ones before keep their new values; the channels it created go again with `rollback`, the quick
+    /// analysis's `0x416f1b`, else they stay).
+    fn evaluate_formula_list_before(&mut self, show_primary: bool, new_names: &[String], create_loose: bool, rollback: bool) -> Result<(), fvb_core::expr::FormulaError> {
         let is_def = |c: &Computed| crate::setfile::is_formula(c);
         let seq = self.definition_list();
         let names: Vec<String> = seq
@@ -1115,9 +1133,14 @@ impl Doc {
             Ok(())
         };
         if let Err(e) = walk() {
-            if !created.is_empty() {
+            if rollback && !created.is_empty() {
                 self.computed.truncate(len0);
                 self.loose_defs = loose0;
+                self.channels_changed();
+            } else if !created.is_empty() {
+                // No roll-back: the channels made stay, registered as the adders `0x42e940` / `0x42e810` do
+                // (frequency candidates, colours); their rows are no longer definitions without a channel.
+                self.loose_defs.retain(|(n, _)| !created.contains(n));
                 self.channels_changed();
             }
             return Err(e);
@@ -2594,7 +2617,10 @@ impl App {
     pub fn run_definition_batch(&mut self) {
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
         let show_primary = self.docs[ai].primary_values();
-        let _ = self.docs[ai].try_reevaluate_formulas_before(show_primary, &[]);
+        // A failing batch is a box with the exception's text (`0x415780` → `0x475680`; its callers ignore the result, #174).
+        if let Err(e) = self.docs[ai].run_batch(show_primary) {
+            self.dlg.push_alert(e.to_string());
+        }
     }
 
     /// Save the view preferences (`View`: XScale, YAnalogSize, RulerState,
@@ -4745,6 +4771,116 @@ mod tests {
 
     fn computed_names(app: &App) -> Vec<String> {
         app.active_doc().unwrap().computed.iter().map(|c| c.name.clone()).collect()
+    }
+
+    /// #174: the batch `0x415780` catches its own exception and posts it to the frame (`0x475680`, message 0x40a):
+    /// a box with the failure's text, whichever command ran the batch; the callers (`0x42fad3`, `0x4305e3`,
+    /// `0x42ff54`) ignore its result. The channels made before the failing row stay (only the quick analysis
+    /// deletes what it added, `0x416f1b`).
+    #[test]
+    fn a_failing_definition_batch_shows_its_box() {
+        let bad = |app: &mut App| app.active_doc_mut().unwrap().loose_defs.push(("Q1".into(), "NoSuchChannel+1".into()));
+        // The commands that run the batch without a recompute (stats rows, value modes, 32849-32852).
+        let mut app = kept_row_app();
+        bad(&mut app);
+        app.run_definition_batch();
+        assert_eq!(app.dlg.alerts.len(), 1, "one box");
+        assert!(computed_names(&app).contains(&"L1".to_string()), "the rows before the failure became channels: {:?}", computed_names(&app));
+        assert!(!computed_names(&app).contains(&"Q1".to_string()));
+        // Invert / DC / ADC and «Коэффициенты» recompute first and end in the same batch.
+        let mut app = kept_row_app();
+        bad(&mut app);
+        app.after_flag_command(crate::chansel::ChanFlag::Invert);
+        assert_eq!(app.dlg.alerts.len(), 1, "invert");
+        assert!(computed_names(&app).contains(&"L1".to_string()), "no roll-back on the recompute path either");
+        let mut app = kept_row_app();
+        bad(&mut app);
+        app.set_primary_values(true);
+        assert_eq!(app.dlg.alerts.len(), 1, "32867");
+        // A batch that succeeds shows nothing.
+        let mut app = kept_row_app();
+        app.run_definition_batch();
+        assert!(app.dlg.alerts.is_empty());
+    }
+
+    /// #193: with two stored reduction methods the formulas outnumber the names list (one «прив.» set per arm); the
+    /// original pairs by index with no bounds check (`0x4167f0`, `0x416c61`: a read past the vector). «Рассчитать»
+    /// in ours gives every channel a defined, distinct name, the extra lines `_2`.
+    #[test]
+    fn two_stored_methods_name_every_added_channel() {
+        let mut app = demo_app();
+        let mut sec = fvb_core::recset::SetNode::default();
+        let opt = sec.child_mut("legOption");
+        opt.set_int("byPowerState", 1);
+        opt.set_int("byCastCoeffState", 1);
+        let page = crate::quick_ui::page_index(AnalysisTab::Differential).unwrap();
+        crate::quick_ui::load_page(page, &mut app.quick[page], &mut sec, &[]);
+        for a in &mut app.quick[page].arms {
+            a.currents = ["Ia".into(), "Ib".into(), "Ic".into()];
+        }
+        app.analysis_tab = AnalysisTab::Differential;
+        app.quick_calc();
+        assert!(app.dlg.alerts.is_empty(), "{:?}", app.dlg.alerts);
+        let names = computed_names(&app);
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert!(names.len() > 6 && sorted.len() == names.len(), "distinct: {names:?}");
+        assert!(names.iter().any(|n| n.ends_with("_2")), "{names:?}");
+    }
+
+    /// A partial batch (#174): the channels made before the failing row stay and are registered as the adders do
+    /// (`0x42e940`, `0x42e810`: the frequency candidates), and their rows are no longer loose definitions.
+    #[test]
+    fn a_partial_batch_registers_the_channels_it_made() {
+        let mut app = kept_row_app();
+        app.active_doc_mut().unwrap().loose_defs.push(("F1".into(), "Ua[Hz]".into()));
+        app.active_doc_mut().unwrap().loose_defs.push(("Q1".into(), "NoSuchChannel+1".into()));
+        app.run_definition_batch();
+        assert_eq!(app.dlg.alerts.len(), 1);
+        let d = app.active_doc().unwrap();
+        assert!(d.computed.iter().any(|c| c.name == "F1"));
+        assert!(d.osc.extra_freq.iter().any(|e| e.name == "F1"), "{:?}", d.osc.extra_freq);
+        assert_eq!(d.loose_defs, [("Q1".to_string(), "NoSuchChannel+1".to_string())]);
+    }
+
+    /// A recompute that is no batch command stays silent and leaves nothing for a later one (#174).
+    #[test]
+    fn a_plain_recompute_shows_no_batch_box() {
+        let mut app = kept_row_app();
+        app.active_doc_mut().unwrap().loose_defs.push(("Q1".into(), "NoSuchChannel+1".into()));
+        let ai = app.active.unwrap();
+        app.recompute_doc(ai);
+        assert!(app.dlg.alerts.is_empty());
+        assert!(app.docs[ai].batch_error.is_none());
+    }
+
+    /// «Параметры файла» (`0x44a25d` → `0x42e540` → `0x415780`) and «Объединить» (`0x47e8c0`) run the batch too: a
+    /// failing definition is a box, and the rows kept without a channel become channels.
+    #[test]
+    fn file_parameters_and_merge_run_the_batch() {
+        let bad = |app: &mut App| app.active_doc_mut().unwrap().loose_defs.push(("Q1".into(), "NoSuchChannel+1".into()));
+        let mut app = kept_row_app();
+        bad(&mut app);
+        let ai = app.active.unwrap();
+        app.apply_file_rate(ai, "1250").unwrap();
+        assert_eq!(app.dlg.alerts.len(), 1, "rate");
+        assert!(computed_names(&app).contains(&"L1".to_string()));
+        assert!(app.docs[ai].batch_error.is_none());
+        let mut app = kept_row_app();
+        bad(&mut app);
+        app.docs[ai].osc.freq_sel = 0;
+        let mut app2 = app;
+        app2.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app2.copy_channels_for_merge();
+        app2.paste_channels_for_merge();
+        app2.merge_records();
+        assert_eq!(app2.dlg.alerts.len(), 1, "merge");
+        assert!(computed_names(&app2).contains(&"L1".to_string()));
+        // A clean batch shows nothing.
+        let mut app = kept_row_app();
+        app.apply_file_rate(ai, "1250").unwrap();
+        assert!(app.dlg.alerts.is_empty());
     }
 
     /// «Коэффициенты» OK with nothing edited: the dialog's OK (`0x47b610`) ends
