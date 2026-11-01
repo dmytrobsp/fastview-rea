@@ -402,6 +402,18 @@ impl App {
 
     /// The print preview in place of the views (CPreviewViewEx): its
     /// toolbar, then one or two pages on grey.
+    /// Run `f` with the preview's document active, then give the active
+    /// document back — unless `f` itself activated another (Ctrl+O onto an
+    /// already open record activates it at once; a new record becomes active).
+    fn run_for_preview_doc(&mut self, di: usize, f: impl FnOnce(&mut App)) {
+        let before = self.active;
+        self.active = Some(di);
+        f(self);
+        if self.active == Some(di) {
+            self.active = before;
+        }
+    }
+
     pub fn preview_ui(&mut self, ui: &mut egui::Ui) {
         let ctx = &ui.ctx().clone();
         let Some(mut pv) = self.print.preview.take() else { return };
@@ -429,10 +441,7 @@ impl App {
         // caller is left alone.
         let accel = ctx.input(|i| preview_accel(&i.events));
         if let Some(c) = accel.filter(|_| self.print.dialog.is_none() && !self.modal_up) {
-            let active = self.active;
-            self.active = Some(pv.job.di);
-            self.dispatch(c);
-            self.active = active;
+            self.run_for_preview_doc(pv.job.di, |app| app.dispatch(c));
         }
         let (mut close, mut print) = (false, false);
         if let Some(c) = pv.cmd.take().filter(|c| pv.enabled(*c)) {
@@ -601,6 +610,23 @@ mod tests {
         assert!(matches!(preview_accel(&ev(egui::Key::O, false)), Some(Command::Open)));
         assert!(preview_accel(&ev(egui::Key::S, true)).is_none(), "Ctrl+Shift+S is not in the table");
         assert!(preview_accel(&ev(egui::Key::X, false)).is_none());
+    }
+
+    #[test]
+    fn an_accelerator_over_the_preview_keeps_a_document_it_activated() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        app.dispatch(Command::Demo);
+        app.active = Some(1);
+        // Nothing activated: the old active document comes back.
+        app.run_for_preview_doc(0, |_| {});
+        assert_eq!(app.active, Some(1));
+        // The command activated another document: it stays.
+        app.run_for_preview_doc(0, |a| a.active = Some(1));
+        assert_eq!(app.active, Some(1));
+        app.active = Some(1);
+        app.run_for_preview_doc(1, |a| a.active = Some(0));
+        assert_eq!(app.active, Some(0), "the command's choice is kept");
     }
 
     #[test]
