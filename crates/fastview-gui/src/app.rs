@@ -376,6 +376,10 @@ pub struct Computed {
     pub raw_phasors: Option<Vec<Complex64>>,
     pub invert: bool,
     pub remove_dc: bool,
+    /// «Отображать в отсчетах АЦП» (bit 12) on a pasted analog lane: 32852
+    /// skips bit 13 only, so pending lanes take it (`0x430407`, `0x4304f5`);
+    /// the lane then reads its ADC codes (`0x426020` → `0x422250`).
+    pub adc_counts: bool,
     /// The display mode (bits 7–9): the lane, its value and Max / Min read
     /// `display` (`ch+0x2c`), the RMS / first-harmonic series of `samples`.
     pub mode: ValueMode,
@@ -407,6 +411,16 @@ pub struct Computed {
 static NEXT_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl Computed {
+    /// The canonical unit the readouts and the eligibility tests read
+    /// (`0x414c30`): none in ADC mode (a pasted lane takes the mode).
+    pub fn canon_unit(&self) -> &str {
+        if self.adc_counts {
+            ""
+        } else {
+            self.unit.trim()
+        }
+    }
+
     pub fn new(name: String, formula: String, samples: Vec<f64>, color: egui::Color32) -> Computed {
         let samples_raw = samples.clone();
         Computed {
@@ -426,6 +440,7 @@ impl Computed {
             raw_phasors: None,
             invert: false,
             remove_dc: false,
+            adc_counts: false,
             mode: ValueMode::Instant,
             display: Vec::new(),
             pending_own: Vec::new(),
@@ -815,6 +830,8 @@ pub struct Doc {
     /// The record comment (`.hdr` text, 32805) and its code page.
     pub hdr: Option<String>,
     pub hdr_cp: Encoding,
+    /// A paste made the record comment (`Comments/Codepage` is then 1, stored at save).
+    pub hdr_pasted: bool,
     /// The encoding the names were read in (the program's, or the UTF-8 a
     /// `.cfg` fixes): «Кодировка»'s ANSI — the names as read.
     pub read_enc: Encoding,
@@ -895,6 +912,7 @@ impl Doc {
             name_raw: Vec::new(),
             hdr: None,
             hdr_cp: Encoding::Cp1251,
+            hdr_pasted: false,
             read_enc: Encoding::Cp1251,
             omp: Default::default(),
             pending: Vec::new(),
@@ -1030,7 +1048,12 @@ impl Doc {
                     let own_corr = corr.map(|q| fvb_core::freqcorr::FreqCorr { fs: if p.pasted.rate == 0.0 { q.fs } else { p.pasted.rate }, ..q });
                     // Read ×k in the copied channel's display mode.
                     let k = p.display_k();
-                    let x: Vec<f64> = a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v * k }).collect();
+                    let x: Vec<f64> = if c.adc_counts {
+                        // The code is not scaled by k (`0x426020`).
+                        a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { a.adc_code(*v) }).collect()
+                    } else {
+                        a.samples.iter().map(|v| if v.is_nan() { 0.0 } else { *v * k }).collect()
+                    };
                     let dc = if c.remove_dc { whole_period_mean(&x, pn) } else { 0.0 };
                     c.pending_own = x.iter().map(|v| sign * (v - dc)).collect();
                     c.pending_phasors = fvb_core::freqcorr::sliding_phasors(own_corr, fvb_core::freqcorr::OTHER, &c.pending_own, pn);
@@ -3076,6 +3099,54 @@ mod tests {
         }
     }
 
+    /// A formula channel is an analog record like the file's: its frequency
+    /// diagram bins go through the record's selected frequency channel
+    /// (`0x426510` → `0x4267e0`; the test there is on the channel being
+    /// measured, not on its kind), not through a vector of their own
+    /// (L9.189's open question, #42).
+    #[test]
+    fn a_formula_channels_spectrum_is_corrected_by_the_records_frequency_channel() {
+        let cfg = DEMO_CFG.replacen("2,Ub,B,,V,", "2,Ub,B,,Гц,", 1);
+        let osc = fvb_core::comtrade::parse(&cfg, DEMO_DAT).unwrap();
+        let mut app = App::new();
+        app.docs.push(Doc::new(osc, "f".into()));
+        app.active = Some(0);
+        assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
+        let d = &app.docs[0];
+        assert_eq!(d.osc.freq_sel, 1, "the frequency channel is selected");
+        let n = d.osc.samples_per_cycle().max(2);
+        let x = &d.computed[0].samples;
+        let k = 300;
+        let plain = fvb_core::signal::spectrum(x, k, n, 1, 5, d.osc.harmonic1_gain);
+        let corrected = crate::diagram_ui::freq_bins(d, x, Some(ChanKey::Computed(0)), 0.0, k, 1, 5);
+        let want = fvb_core::freqcorr::spectrum(d.computed_corr(0), x, k, n, 1, 5, d.osc.harmonic1_gain);
+        assert_eq!(corrected, want);
+        assert_ne!(corrected, plain, "the correction reaches a formula channel");
+    }
+
+    /// With a formula channel as the selected frequency channel, the other
+    /// formula channels (read through `OTHER`) keep the correction: the two
+    /// sentinels were one number and every such read lost it (#42).
+    #[test]
+    fn a_formula_frequency_channel_does_not_disable_the_correction_of_others() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua".into()), ("Y".into(), "Ub".into())]).is_some());
+        let d = &mut app.docs[0];
+        d.computed[0].unit = "Гц".into();
+        d.computed[0].samples = vec![51.3; d.osc.sample_count()];
+        d.channels_changed();
+        assert_eq!(d.osc.freq_sel, 1);
+        assert_eq!(fvb_core::freqcorr::selected_extra(&d.osc), Some(0));
+        let k = 300;
+        let n = d.osc.samples_per_cycle().max(2);
+        let y = &d.computed[1].samples;
+        let corr = d.computed_corr(1).expect("Y is corrected");
+        assert!((fvb_core::freqcorr::rms_at(Some(corr), fvb_core::freqcorr::OTHER, y, k, n, 1) - corr.rms(y, k, 1.0)).abs() < 1e-12);
+        assert_ne!(corr.rms(y, k, 1.0), fvb_core::signal::rms_at(y, k, n));
+        // The frequency channel itself is read plainly.
+        assert!(d.computed_corr(0).is_none());
+    }
+
     #[test]
     fn frequency_correction_on_load_off_and_back() {
         let cfg = DEMO_CFG.replacen("2,Ub,B,,V,", "2,Ub,B,,Гц,", 1);
@@ -3620,7 +3691,7 @@ mod tests {
         let want_b = fvb_core::signal::rms_at(d.shown_samples(4), k, n_rec);
         assert!((d.computed[1].samples[k] - want_b).abs() < 1e-9, "a channel without one keeps the record's");
         // The frequency diagram's bins.
-        let bins = crate::diagram_ui::freq_bins(d, d.shown_samples(3), Some(3), own, k, 1, 5);
+        let bins = crate::diagram_ui::freq_bins(d, d.shown_samples(3), Some(ChanKey::Analog(3)), own, k, 1, 5);
         assert_eq!(bins, fvb_core::signal::spectrum(d.shown_samples(3), k, n_own, 1, 5, d.osc.harmonic1_gain));
         // A formula channel with an own rate: its window.
         let d = &mut app.docs[0];
@@ -3669,9 +3740,9 @@ mod tests {
         assert!(app.append_computed(&[("X".into(), "Ua".into())]).is_some());
         let d = &app.docs[0];
         let pct = |b: Vec<f64>| b.iter().map(|v| (v / b[1] * 1000.0).round() / 10.0).collect::<Vec<_>>();
-        let x = pct(crate::diagram_ui::freq_bins(d, &d.computed[0].samples, None, 0.0, 236, 1, 10));
+        let x = pct(crate::diagram_ui::freq_bins(d, &d.computed[0].samples, Some(ChanKey::Computed(0)), 0.0, 236, 1, 10));
         assert_eq!(x, [45.6, 100.0, 31.8, 20.0, 14.9, 12.1, 10.3, 9.1, 8.3, 7.7, 7.4]);
-        let m = pct(crate::diagram_ui::freq_bins(d, d.shown_samples(0), Some(0), d.osc.analog[0].own_rate, 236, 1, 10));
+        let m = pct(crate::diagram_ui::freq_bins(d, d.shown_samples(0), Some(ChanKey::Analog(0)), d.osc.analog[0].own_rate, 236, 1, 10));
         assert_eq!(m, [0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
     }
 
