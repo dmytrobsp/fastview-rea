@@ -136,6 +136,13 @@ const TICK_LABELS: [&str; 5] = ["Осциллограмма", "Частотна�
 /// mfc120rus string 61702.
 pub const MSG_PRINT_FAILED: &str = "Не удалось запустить задание печати.";
 
+/// What the print dialog does with this frame's buttons and keys: under the driver's dialog it is inert (the
+/// original's is owned by it) — nothing is accepted and the dialog stays open. `keys` is Enter (`Some(true)`) or Esc
+/// (`Some(false)`). Returns `(ok, cancel, preview, open)`.
+fn dialog_gate(inert: bool, ok: bool, cancel: bool, keys: Option<bool>, preview: bool, open: bool) -> (bool, bool, bool, bool) {
+    (!inert && (ok || keys == Some(true)), !inert && (cancel || keys == Some(false)), !inert && preview, open || inert)
+}
+
 impl App {
     fn printers_refresh(&mut self) {
         let (list, default) = spool::printers();
@@ -297,7 +304,7 @@ impl App {
         // is owned by it): a late result must not land in a closed dialog's
         // stored choice.
         let inert = spool::properties_busy();
-        let (ok, cancel, preview, open) = (!inert && (ok || keys == Some(true)), !inert && (cancel || keys == Some(false)), !inert && preview, open || inert);
+        let (ok, cancel, preview, open) = dialog_gate(inert, ok, cancel, keys, preview, open);
         // The checkboxes are kept per view, also on Отмена (`0x404b30`).
         self.docs[dlg.doc].print_ticks = dlg.ticks;
         if setup {
@@ -600,6 +607,38 @@ mod tests {
         frame(&ctx, &mut app, vec![egui::Event::Key { key: egui::Key::P, physical_key: None, pressed: true, repeat: false, modifiers: ctrl }]);
         assert!(app.print.dialog.is_some(), "the dialog opens");
         assert!(app.print.preview.is_some(), "the preview stays under it");
+    }
+
+    /// Under another dialog the preview's accelerators do nothing (the frame is disabled by it).
+    #[test]
+    fn ctrl_p_over_the_preview_does_nothing_under_another_dialog() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        app.dispatch(Command::PrintPreview);
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut app, vec![]);
+        app.color_dialog = Some(egui::Color32::RED);
+        app.modal_up = true;
+        let ctrl = egui::Modifiers { ctrl: true, command: true, ..Default::default() };
+        frame(&ctx, &mut app, vec![egui::Event::Key { key: egui::Key::P, physical_key: None, pressed: true, repeat: false, modifiers: ctrl }]);
+        assert!(app.print.dialog.is_none(), "no print dialog over the colour dialog");
+        assert!(app.print.preview.is_some());
+    }
+
+    /// Under the driver's dialog the print dialog is inert: Enter, Esc and its buttons do nothing and it stays
+    /// open; otherwise they act. (A pure gate: the global busy flag is not touched by tests.)
+    #[test]
+    fn the_print_dialog_is_inert_under_the_drivers_dialog() {
+        // (inert, ok, cancel, keys, preview, open) -> (ok, cancel, preview, open)
+        for (ok, cancel, keys, preview) in [(true, false, None, false), (false, true, None, false), (false, false, Some(true), false), (false, false, Some(false), false), (false, false, None, true)] {
+            let (o, c, p, open) = dialog_gate(true, ok, cancel, keys, preview, true);
+            assert_eq!((o, c, p, open), (false, false, false, true), "inert: {ok} {cancel} {keys:?} {preview}");
+        }
+        assert_eq!(dialog_gate(false, true, false, None, false, true), (true, false, false, true));
+        assert_eq!(dialog_gate(false, false, false, Some(true), false, true), (true, false, false, true), "Enter is OK");
+        assert_eq!(dialog_gate(false, false, false, Some(false), false, true), (false, true, false, true), "Esc is Отмена");
+        assert_eq!(dialog_gate(false, false, false, None, true, true), (false, false, true, true));
+        assert!(!dialog_gate(false, false, false, None, false, false).3, "a closed window stays closed");
     }
 
     #[test]
