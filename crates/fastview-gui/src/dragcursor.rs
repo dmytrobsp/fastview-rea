@@ -8,10 +8,12 @@
 //! plain arrow stays the nearest.
 
 /// The cursor's size in pixels (a standard one).
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 pub const SIZE: usize = 32;
 
 /// The arrow, the tip at the top-left corner (the hot spot): `X` black,
 /// `o` white.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 const ARROW: [&str; 16] = [
     "X",
     "XX",
@@ -32,6 +34,7 @@ const ARROW: [&str; 16] = [
 ];
 
 /// One pixel of the cursor image.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Px {
     Clear,
@@ -41,20 +44,21 @@ pub enum Px {
 
 /// The cursor image, row by row: the box (white inside, a black outline 2 px
 /// thick) at the lower left, the arrow over it.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 pub fn image() -> [[Px; SIZE]; SIZE] {
     let mut img = [[Px::Clear; SIZE]; SIZE];
     let (x0, y0, x1, y1) = (4usize, 16usize, 16usize, 27usize);
-    for y in y0..=y1 {
-        for x in x0..=x1 {
+    for (y, row) in img.iter_mut().enumerate().take(y1 + 1).skip(y0) {
+        for (x, px) in row.iter_mut().enumerate().take(x1 + 1).skip(x0) {
             let edge = x < x0 + 2 || x + 2 > x1 || y < y0 + 2 || y + 2 > y1;
-            img[y][x] = if edge { Px::Black } else { Px::White };
+            *px = if edge { Px::Black } else { Px::White };
         }
     }
-    for (y, row) in ARROW.iter().enumerate() {
-        for (x, c) in row.chars().enumerate() {
+    for (row, art) in img.iter_mut().zip(ARROW) {
+        for (px, c) in row.iter_mut().zip(art.chars()) {
             match c {
-                'X' => img[y][x] = Px::Black,
-                'o' => img[y][x] = Px::White,
+                'X' => *px = Px::Black,
+                'o' => *px = Px::White,
                 _ => {}
             }
         }
