@@ -1034,28 +1034,33 @@ impl App {
                     result = ui.input(|i| if i.key_pressed(egui::Key::Enter) { Some(true) } else if i.key_pressed(egui::Key::Escape) { Some(false) } else { None });
                 }
             });
-        match result {
-            Some(true) => {
-                // OK marks the document modified, changed or not (`0x42fdb0`).
+        // OK (`0x47b610`) with nothing edited ends as OnCancel: `apply` gives
+        // None, the same IDCANCEL as «Отмена» and Esc.
+        let ok = match result {
+            Some(true) => st.apply(&mut self.docs[ai]),
+            Some(false) => None,
+            None if open => {
+                self.dlg.coef = Some(st);
+                return;
+            }
+            None => return,
+        };
+        match ok {
+            Some(changed) => {
+                // IDOK marks the document modified, changed or not (`0x42fea7`).
                 self.docs[ai].set.modified = true;
-                if let Some(changed) = st.apply(&mut self.docs[ai]) {
-                    if !changed.is_empty() {
-                        self.docs[ai].batch_makes_rows = true;
-                        self.recompute_doc(ai);
-                    } else {
-                        self.run_definition_batch();
-                    }
+                if !changed.is_empty() {
+                    self.docs[ai].batch_makes_rows = true;
+                    self.recompute_doc(ai);
                 } else {
                     self.run_definition_batch();
                 }
             }
             // `0x42fdb0` recomputes and runs the batch (`0x42ff54`) whatever the dialog returned.
-            Some(false) => {
+            None => {
                 self.docs[ai].batch_makes_rows = true;
                 self.recompute_doc(ai);
             }
-            None if open => self.dlg.coef = Some(st),
-            None => {}
         }
     }
 }

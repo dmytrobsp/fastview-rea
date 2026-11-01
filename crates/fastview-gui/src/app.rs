@@ -4706,25 +4706,68 @@ mod tests {
         assert!(crate::app::stale_flags::swept(&app));
     }
 
+    /// A demo record with channel X = l1 + 1 and the definition row L1 = Ub*2
+    /// kept without a channel (the formula page's kill-active), for the
+    /// definition batch's tests (#31).
+    fn kept_row_app() -> App {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        app.dispatch(Command::QuickAnalysis);
+        app.fp_add_row("L1".into(), "Ub*2".into());
+        app.formula_page.selected = Some(1);
+        app.fp_move(true);
+        app.formula_page.rows[1].1 = "l1+1".into();
+        app.formula_page.dirty = true;
+        app.fp_kill_active();
+        app.quick_open = false;
+        app.active_doc_mut().unwrap().selection = std::collections::BTreeSet::from([ChanKey::Analog(0)]);
+        app
+    }
+
+    fn computed_names(app: &App) -> Vec<String> {
+        app.active_doc().unwrap().computed.iter().map(|c| c.name.clone()).collect()
+    }
+
+    /// «Коэффициенты» OK with nothing edited: the dialog's OK (`0x47b610`) ends
+    /// as OnCancel when its dirty flag is clear, so `0x42fdb0` sees no IDOK and
+    /// sets no modified mark (`0x42fea7`); its common tail still recomputes and
+    /// runs the batch (`0x42ff54`).
+    #[test]
+    fn coefficients_ok_with_nothing_edited_is_a_cancel() {
+        let mut app = kept_row_app();
+        let ai = app.active.unwrap();
+        app.docs[ai].set.modified = false;
+        app.dispatch(Command::Coefficients);
+        assert!(app.dlg.coef.is_some());
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.coef_window(ctx));
+        let _ = ctx.run(raw, |ctx| app.coef_window(ctx));
+        assert!(app.dlg.coef.is_none(), "Enter closed the dialog");
+        assert!(!app.docs[ai].set.modified, "a clean OK is a Cancel: no modified mark");
+        assert_eq!(computed_names(&app), ["X", "L1"], "the batch still runs");
+        // Edited (dirty), OK is IDOK: modified, changed values or not.
+        let mut app = kept_row_app();
+        app.docs[ai].set.modified = false;
+        app.dispatch(Command::Coefficients);
+        app.dlg.coef.as_mut().unwrap().dirty = true;
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.coef_window(ctx));
+        let _ = ctx.run(raw, |ctx| app.coef_window(ctx));
+        assert!(app.dlg.coef.is_none());
+        assert!(app.docs[ai].set.modified, "a dirty OK marks the document modified");
+        assert_eq!(computed_names(&app), ["X", "L1"]);
+    }
+
     /// #31: the flag and value-mode commands run the batch over the definition list (`0x42fad3`, `0x42ff54`,
     /// `0x4305e3`): a kept row becomes a channel and a channel naming it computes.
     #[test]
     fn flag_and_mode_commands_make_channels_of_kept_rows() {
-        let setup = || {
-            let mut app = demo_app();
-            assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
-            app.dispatch(Command::QuickAnalysis);
-            app.fp_add_row("L1".into(), "Ub*2".into());
-            app.formula_page.selected = Some(1);
-            app.fp_move(true);
-            app.formula_page.rows[1].1 = "l1+1".into();
-            app.formula_page.dirty = true;
-            app.fp_kill_active();
-            app.quick_open = false;
-            app.active_doc_mut().unwrap().selection = std::collections::BTreeSet::from([ChanKey::Analog(0)]);
-            app
-        };
-        let names = |app: &App| app.active_doc().unwrap().computed.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        let setup = kept_row_app;
+        let names = computed_names;
         let cmds: [(&str, Command); 5] = [
             ("invert", Command::ToggleFlag(crate::chansel::ChanFlag::Invert)),
             ("diagram flag", Command::ToggleFlag(crate::chansel::ChanFlag::OnVector)),
